@@ -1,0 +1,21 @@
+# Local secrets and overrides
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Dependency and build output
+node_modules/
+target/
+build/
+dist/
+coverage/
+*.log
+
+# Local tool state
+.cache/
+.tmp/
+.idea/
+.vscode/
+.DS_Store
