@@ -8,7 +8,7 @@
 
 1. `.design` 是产品与架构合同；本目录不得另立同义实体、状态、权限或 Workflow。
 2. `.references` 只读。不得在其中编辑、构建、测试、安装依赖、运行迁移或生成文件；上游代码只用于证据核验与差异分析。
-3. 每项实现必须关联一个设计要求、`DD-*`、`SS-*`、`GAP-*` 或 `V-SCN-*`。无法建立追溯关系的功能不进入主干。
+3. 每项实现必须关联一个设计要求、`DD-*`、`SS-*`、`GAP-*` 或 `V-SCN-*`，并在 `05-设计覆盖矩阵.md` 中有归属、在 `06-工程基线规范.md` §1 的格式下有追溯记录。无法建立追溯关系的功能不进入主干。
 4. `BLOCKED: GAP-*` 不得用临时绕过、隐藏开关或弱化安全边界启用。
 5. `ADAPTER_REQUIRED: SS-*` 必须在独立实现目录中闭合，并由接缝级测试证明；不得直接修改 `.references` 工作树充当交付物。
 6. Core/BFF 保持单一模块化 Rust 服务。不得拆出 Agent Registry、Quota、Capacity、Audit、Observability、Workflow Projection 或 Memory 微服务。
