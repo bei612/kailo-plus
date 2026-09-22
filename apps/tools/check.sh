@@ -96,14 +96,20 @@ def at(rev, path):
     r = subprocess.run(["git", "show", f"{rev}:{path}"], capture_output=True, text=True)
     return json.loads(r.stdout) if r.returncode == 0 else None
 
-files = subprocess.run(["git", "ls-files", "contracts"], capture_output=True, text=True).stdout.split()
+# --full-name 取仓库根相对路径：git show <rev>:<path> 只认这种形式，
+# 而工作树读取要用相对当前目录的路径，两者不可混用。
+files = subprocess.run(["git", "ls-files", "--full-name", "contracts"],
+                       capture_output=True, text=True).stdout.split()
 schemas = [f for f in files if f.endswith(".schema.json")]
+prefix = subprocess.run(["git", "rev-parse", "--show-prefix"],
+                        capture_output=True, text=True).stdout.strip()
 breaking = []
 for f in schemas:
     old = at(tag, f)
     if old is None:
         continue  # 新增 schema 是向后兼容变更
-    new = json.load(open(f, encoding="utf-8"))
+    local = f[len(prefix):] if prefix and f.startswith(prefix) else f
+    new = json.load(open(local, encoding="utf-8"))
     # 删除字段、把可选改必填、删除枚举值，都是破坏性变更
     for k in (old.get("properties") or {}):
         if k not in (new.get("properties") or {}):

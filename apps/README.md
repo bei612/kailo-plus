@@ -66,6 +66,10 @@ trellis init --claude --codex -u "<你的名字>" --workflow native
 
 ## 当前阶段
 
-当前阶段是 Stage 0。ADR-01 至 ADR-07 已全部「已接受」（见 [工程基线规范](06-工程基线规范.md) §6），[实施总纲](00-实施总纲.md) §6 的工程决策门禁已解除，Stage 0 的工程基线代码可以开始写：目录骨架、`contracts/`、追溯清单、基础库、`tools/check.sh` 与供应链。
+**Stage 0 已完成**：十项退出条件全部达成，`tools/check.sh --full` 退出码 0（21 项通过、2 项无适用对象）。
 
-**业务代码**——即 Stage 1 起的领域逻辑——的先决条件是 Stage 0 退出条件逐项达成，并通过 [验证、发布与验收门禁](03-验证发布与验收门禁.md) §5 的合并门禁。两者不是同一件事：Stage 0 的交付物本身就是代码，它不以自己为前提。
+已就位：四门语言的契约生成与 round-trip（Rust/Go/TypeScript/Dart）、Core 的六个模块 schema 与可回滚迁移、Temporal Worker 的 history replay 回归、四层 network 的本地拓扑、追溯记录与能力注册表的校验器、上游 baseline manifest 校验、发布单元与 SBOM/provenance、CI 与 pre-push 钩子（同一入口）。
+
+两项 SKIP 是无适用对象而非遗漏：尚无追溯记录（Stage 0 不产出用户可达能力）；十份 runbook 在生产发布前补齐（`07-运行与运维基线.md` §6）。
+
+**下一步是 Stage 1**：身份、Tenant/Workspace 与三端协作。进入前先读 [纵向交付路线](02-纵向交付路线.md) §1.1 的端交付规则——每个 Stage 的退出门禁必须在其声明的每个端上各自成立。
