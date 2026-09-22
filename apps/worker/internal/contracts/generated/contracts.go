@@ -1,28 +1,26 @@
 // This file was generated from JSON Schema using quicktype, do not modify it directly.
 // To parse and unparse this JSON data, add this code to your project and do:
 //
-//    contracts, err := UnmarshalContracts(bytes)
-//    bytes, err = contracts.Marshal()
+//    canary, err := UnmarshalCanary(bytes)
+//    bytes, err = canary.Marshal()
 
 package generated
 
-import "time"
-
 import "encoding/json"
 
-func UnmarshalContracts(data []byte) (Contracts, error) {
-	var r Contracts
+func UnmarshalCanary(data []byte) (Canary, error) {
+	var r Canary
 	err := json.Unmarshal(data, &r)
 	return r, err
 }
 
-func (r *Contracts) Marshal() ([]byte, error) {
+func (r *Canary) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
 // 可用 JSON Schema 子集的可执行定义。它穷举 contracts/README.md 第 1
 // 节允许的每一种构造；四侧生成器必须全部生成成功并通过双向序列化。新增构造先加进本文件并四侧验证通过，才允许在其他 schema 中使用。
-type Contracts struct {
+type Canary struct {
 	// 可选的枚举引用
 	CapabilityState *CapabilityState `json:"capabilityState,omitempty"`
 	// 基础 integer
@@ -37,8 +35,9 @@ type Contracts struct {
 	Name string `json:"name"`
 	// 内联对象，同样显式关闭 additionalProperties
 	Nested Nested `json:"nested"`
-	// format: date-time，且为可选字段
-	OccurredAt *time.Time `json:"occurredAt,omitempty"`
+	// RFC3339 时间戳，按普通 string 传输。format: date-time 不在可用子集内——Dart 的 toIso8601String()
+	// 强制补毫秒，四侧线格式不等价。取值合法性由 Core 在 Admission 校验，不由 schema 承担。
+	OccurredAt *string `json:"occurredAt,omitempty"`
 	// 基础 number
 	Ratio float64 `json:"ratio"`
 	// 同构数组

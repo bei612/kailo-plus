@@ -1,0 +1,17 @@
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "occurredAt": "2026-09-22T16:30:00Z",
+  "name": "canary",
+  "count": 42,
+  "ratio": 0.5,
+  "enabled": true,
+  "tags": ["alpha", "beta"],
+  "errorClass": "UNKNOWN",
+  "capabilityState": "ADAPTER_REQUIRED",
+  "nested": { "label": "inner", "weights": [1.5, 2.5] },
+  "variants": [
+    { "kind": "FILE", "fileDigest": "sha256:abc" },
+    { "kind": "MESSAGE", "messageBody": "hello" },
+    { "kind": "TASK", "taskAttempt": 3 }
+  ]
+}

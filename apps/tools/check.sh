@@ -59,6 +59,10 @@ step_verify()   { hdr "2/10 受影响范围的验证"
     cargo test --manifest-path core/Cargo.toml >/dev/null 2>&1 && pass "cargo test" || fail "cargo test"; fi
   if populated worker && have go; then ran=1
     (cd worker && go test ./... >/dev/null 2>&1) && pass "go test" || fail "go test"; fi
+  if populated web/packages && have pnpm; then ran=1
+    pnpm -r test >/dev/null 2>&1 && pass "node --test（TypeScript）" || fail "node --test（TypeScript）"; fi
+  if populated mobile/test && have dart; then ran=1
+    (cd mobile && dart test >/dev/null 2>&1) && pass "dart test" || fail "dart test"; fi
   [ "$ran" -eq 0 ] && skip "尚无可验证范围"
   return 0
 }
@@ -68,8 +72,10 @@ step_contract() { hdr "3/10 contract compatibility"
     skip "contracts/ 尚无 schema"; return 0; fi
   if [ ! -f contracts/canary.schema.json ]; then
     fail "contracts/ 有 schema 但缺 canary.schema.json（见 contracts/README.md §1）"; return 0; fi
+  if [ ! -f contracts/samples/canary.sample.json ]; then
+    fail "缺 contracts/samples/canary.sample.json，四侧 round-trip 无样例可跑"; return 0; fi
   if bash tools/gen.sh --check >/tmp/gen.$$ 2>&1; then
-    pass "四侧生成物与 contracts/ 同步"
+    pass "四侧生成物与 contracts/ 同步（round-trip 由第 2 步的四侧测试承担）"
   else
     fail "生成物与 contracts/ 不同步，运行 tools/gen.sh 后提交"; sed 's/^/    /' /tmp/gen.$$
   fi

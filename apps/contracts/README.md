@@ -17,13 +17,15 @@ ADR-03 要求四门语言由同一 schema 生成。四个生成器支持的构�
 | `enum`（字符串字面量） | 封闭枚举，一律定义在 `enums/` 并以 `$ref` 引用 |
 | `$ref`（同仓相对路径） | 跨文件引用；不使用远程 `$ref` |
 | `items`（单一 schema） | 同构数组 |
-| `format`: `date-time`/`uuid` | 仅这两种 |
+| `format`: `uuid` | 仅此一种。`uuid` 在四侧都映射为字符串且原样往返 |
 | `description` | 生成为各语言的文档注释 |
 | `additionalProperties: false` | 所有对象必须显式关闭 |
 
 禁止的构造（任一生成器支持不足或语义在四侧不一致）：
 
 `oneOf`/`anyOf`/`allOf`、元组式 `items` 数组、`patternProperties`、`additionalProperties` 为 schema、`if`/`then`/`else`、`not`、`dependentSchemas`、`const`、数值/字符串约束（`minimum`、`maxLength`、`pattern` 等）。
+
+**`format: date-time` 也被排除**，这是 canary 实测的结果而非预设：Dart 的 `DateTime.toIso8601String()` 强制补足毫秒，`2026-09-22T16:30:00Z` 往返后变成 `...:00.000Z`，与另外三侧不等价。时间戳一律按普通 `string` 传输，约定 RFC3339，取值合法性由 Core 在 Admission 校验。
 
 约束不是不需要，而是**不由 schema 承担**：值域约束属于领域规则，由 Core 在 Admission 中校验并映射到 `06-工程基线规范.md` §4 的 `DENIED` 或 `CONFLICT`，不依赖各语言生成器各自实现的校验。
 

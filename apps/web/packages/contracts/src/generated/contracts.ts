@@ -2,7 +2,7 @@
  * 可用 JSON Schema 子集的可执行定义。它穷举 contracts/README.md 第 1
  * 节允许的每一种构造；四侧生成器必须全部生成成功并通过双向序列化。新增构造先加进本文件并四侧验证通过，才允许在其他 schema 中使用。
  */
-export interface Contracts {
+export interface Canary {
     /**
      * 可选的枚举引用
      */
@@ -32,9 +32,10 @@ export interface Contracts {
      */
     nested: Nested;
     /**
-     * format: date-time，且为可选字段
+     * RFC3339 时间戳，按普通 string 传输。format: date-time 不在可用子集内——Dart 的 toIso8601String()
+     * 强制补毫秒，四侧线格式不等价。取值合法性由 Core 在 Admission 校验，不由 schema 承担。
      */
-    occurredAt?: Date;
+    occurredAt?: string;
     /**
      * 基础 number
      */
