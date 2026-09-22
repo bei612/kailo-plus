@@ -471,12 +471,31 @@ if os.path.exists(agw_cfg):
     if not found_route:
         bad.append("agentgateway: 没有任何 request transformation，身份不会被投影")
 
+# SpiceDB 是访问允许/拒绝的权威（03 §1），部署的 schema 必须与 .design/03 §5
+# 的固定 schema 逐字相等。漂移不会让任何调用报错，只会静默改变授权判定。
+zed_path = "deploy/local/spicedb/schema.zed"
+design_03 = os.path.join(os.environ.get("DESIGN", "../.design"), "03-领域模型与权限模型.md")
+if os.path.exists(zed_path):
+    if not os.path.exists(design_03):
+        bad.append(f"{zed_path}: 找不到 {design_03}，无法比对固定 schema")
+    else:
+        blocks = re.findall(r"^```zed\n(.*?)^```", open(design_03, encoding="utf-8").read(), re.M | re.S)
+        if len(blocks) != 1:
+            bad.append(f"{design_03}: §5 的 zed 代码块应恰好有 1 个，实际 {len(blocks)} 个")
+        else:
+            got = open(zed_path, encoding="utf-8").read()
+            # 文件头允许 // 注释说明来源，正文之后必须逐字相等
+            body = re.sub(r"\A(?:(?://[^\n]*)?\n)*", "", got)
+            if body != blocks[0]:
+                bad.append(f"{zed_path}: 与 {design_03} §5 的 zed 块不等，授权判定会与设计脱节")
+
 # 杜绝硬编码：可配置项必须来自 ${VAR:?}，不得是字面量
 for m in re.finditer(r"^\s+-\s+\"?(\d{2,5}):(\d{2,5})\"?\s*$", raw, re.M):
     bad.append(f"端口字面量 {m.group(0).strip()}，应取自 ${{VAR:?}}")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
-print(f"  \033[32mPASS\033[0m {len(d.get('services') or {})} 个服务：network 显式、边界不越层、镜像按 digest、无端口字面量")
+zed_note = "；SpiceDB schema 与 .design/03 §5 逐字相等" if os.path.exists(zed_path) else ""
+print(f"  \033[32mPASS\033[0m {len(d.get('services') or {})} 个服务：network 显式、边界不越层、镜像按 digest、无端口字面量{zed_note}")
 PY
   return 0
 }

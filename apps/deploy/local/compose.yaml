@@ -17,6 +17,7 @@ volumes:
   core-db-data:
   buzz-db-data:
   temporal-db-data:
+  spicedb-db-data:
 
 services:
   core-db:
@@ -362,6 +363,27 @@ services:
         fi
     restart: "no"
 
+  # schema 是运行前提：SpiceDB 启动时是空 schema，写 relationship 会失败。
+  # 与 Temporal 的 namespace、Relay 的 migrate 同一形态——建面与启动分离。
+  # 只能经 gRPC WriteSchema 写入（spicedb 二进制没有读 .zed 文件的子命令），
+  # 因此用官方 zed CLI；它本身是幂等的全量写入。
+  spicedb-schema:
+    image: authzed/zed@sha256:075810514ce2b5b494240b8015dd1ee686b47c00e238a5925eaf5f5fe3c8d02e
+    networks: [component]
+    depends_on:
+      spicedb: { condition: service_healthy }
+    # PSK 经 env_file 投递；ZED_TOKEN 不上命令行（SF-SPZ-04 的同一理由）。
+    env_file:
+      - ./secrets/zed.env
+    environment:
+      ZED_ENDPOINT: spicedb:50051
+      ZED_INSECURE: "true"
+    configs:
+      - source: spicedb_schema
+        target: /etc/spicedb/schema.zed
+    command: ["schema", "write", "/etc/spicedb/schema.zed"]
+    restart: "no"
+
   # Keycloak 是 OIDC 的默认实现（.design/01 §2：OIDC 是可替换认证契约）。
   # 它同时承担两件事：人类登录，以及 Core/Worker 以 client_credentials 取得
   # 面向 Temporal 的服务令牌——Temporal 的 default claim mapper 从 permissions
@@ -404,16 +426,47 @@ services:
 
   # SpiceDB 是关系授权权威。07 §1 不变式：preshared key 经环境变量或文件投递，
   # 不用命令行 flag——flag 在启用 tracing 时会随 OTel resource 导出（SF-SPZ-04）。
+  # SpiceDB 是访问允许/拒绝的权威（03 §1），relationship 必须跨重启存活：
+  # memory datastore 重启即清空，而 Core 的 projection 记录仍说「已投影」，
+  # 两边对不上账且无法收敛（DD-41/45 的对账前提失效）。与 Temporal、Relay
+  # 一样自持一个库，不与 Core 业务库共用。
+  spicedb-db:
+    image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    networks: [component]
+    environment:
+      POSTGRES_DB: ${SPICEDB_DB_NAME:?必须显式提供，禁止硬编码}
+      POSTGRES_USER: ${SPICEDB_DB_USER:?必须显式提供，禁止硬编码}
+      POSTGRES_PASSWORD_FILE: /run/secrets/spicedb_db_password
+    secrets: [spicedb_db_password]
+    volumes:
+      - spicedb-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # 数据库迁移与 schema 写入是两件事：前者建 SpiceDB 自己的表，后者写平台
+  # 的 object type 定义。迁移先于 serve，schema 后于 serve。
+  spicedb-migrate:
+    image: authzed/spicedb@sha256:aa96009a0477f8a759149823407d47ad16d1a74390bae3102b3b0b7143502764
+    networks: [component]
+    depends_on:
+      spicedb-db: { condition: service_healthy }
+    env_file:
+      - ./secrets/spicedb.env
+    command: ["datastore", "migrate", "head"]
+    restart: "no"
+
   spicedb:
     image: authzed/spicedb@sha256:aa96009a0477f8a759149823407d47ad16d1a74390bae3102b3b0b7143502764
     networks: [component, app]
     depends_on:
-      core-db: { condition: service_healthy }
+      spicedb-migrate: { condition: service_completed_successfully }
     environment:
-      SPICEDB_DATASTORE_ENGINE: memory
       SPICEDB_OTEL_PROVIDER: none
-    # key 经 env_file 以环境变量投递，不作为命令行 flag——flag 在启用 tracing
-    # 时会随 OTel resource 导出（SF-SPZ-04、07 §1）。该文件在 secrets/ 下，
+    # key 与连接串经 env_file 以环境变量投递，不作为命令行 flag——flag 在启用
+    # tracing 时会随 OTel resource 导出（SF-SPZ-04、07 §1）。该文件在 secrets/ 下，
     # 由 bootstrap.sh 生成并被 gitignore；镜像是 distroless，无法用入口脚本读取挂载。
     env_file:
       - ./secrets/spicedb.env
@@ -431,12 +484,16 @@ secrets:
     file: ./secrets/keycloak_admin_password
   temporal_db_password:
     file: ./secrets/temporal_db_password
+  spicedb_db_password:
+    file: ./secrets/spicedb_db_password
   core_db_password:
     # 开发用 secret 也经受控投递面取得，不在仓库、环境文件或脚本中出现明文
     # （07 §2）。该文件由 deploy/local/bootstrap.sh 从受控来源生成。
     file: ./secrets/core_db_password
 
 configs:
+  spicedb_schema:
+    file: ./spicedb/schema.zed
   agentgateway_config:
     file: ./agentgateway-config.yaml
   openbao_config:

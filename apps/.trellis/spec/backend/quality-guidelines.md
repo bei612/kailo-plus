@@ -46,3 +46,22 @@ fi
 
 先确认镜像是否有 shell、是否支持 `_FILE`，再决定投递方式；
 无论哪种，凭据都不进 `.env`、不进配置文件、不上命令行。
+
+## 要拼进 URI 的随机口令必须用 URL-safe 字母表
+
+`bootstrap.sh` 的 `gen` 原本输出标准 base64，而三个组件的口令都要拼进
+`postgres://user:pass@host/db`。标准 base64 的 `/` 在 userinfo 里是路径分隔符，
+连接串会被截成另一个库名。43 个字符里不出现 `/` 的概率约 51%——
+一半的全新 bootstrap 会随机失败，且每次现象不同。
+
+`head -c 32 /dev/urandom | base64 | tr -d '\n' | tr '+/' '-_'`。
+熵不变，去掉了对拼接位置的隐含要求。
+
+## 上游子命令要先确认存在，不要按「应该有」来写编排
+
+`spicedb` 二进制没有 `validate` 子命令（可用的只有 `completion/datastore/
+help/lsp/man/postgres-fdw/serve/serve-testing/version`）。schema 只能经 gRPC
+`WriteSchema` 写入，本仓库用官方 `authzed/zed` 镜像的 `schema write`。
+
+编排里每写一个上游子命令，先 `docker run --rm <image> <cmd> --help` 确认；
+`--help` 的退出码与输出比任何记忆都便宜。

@@ -14,8 +14,10 @@ gen() {
     printf '  已存在，保留：%s\n' "$path"
     return
   fi
-  # 32 字节随机，base64 去掉换行；不落任何中间文件
-  head -c 32 /dev/urandom | base64 | tr -d '\n' > "$path"
+  # 32 字节随机，base64 去掉换行；不落任何中间文件。
+  # 用 URL-safe 字母表：口令要拼进 postgres:// 连接串的 userinfo，标准
+  # base64 的 '/' 在那里是路径分隔符，会把连接串截断成另一个库名。
+  head -c 32 /dev/urandom | base64 | tr -d '\n' | tr '+/' '-_' > "$path"
   chmod 600 "$path"
   printf '  已生成：%s\n' "$path"
 }
@@ -39,11 +41,7 @@ gen buzz_objects_root_password
 gen keycloak_admin_password
 gen temporal_db_password
 gen spicedb_preshared_key
-# SpiceDB 镜像是 distroless，无法在容器内读取挂载的 secret，改以 env_file 投递。
-# 该文件与上面的原始 secret 同源，保持单一真值。
-{ printf 'SPICEDB_GRPC_PRESHARED_KEY='; cat secrets/spicedb_preshared_key; printf '\n'; } > secrets/spicedb.env
-chmod 600 secrets/spicedb.env
-printf '  已生成：secrets/spicedb.env\n'
+gen spicedb_db_password
 
 gen kailo_core_client_secret
 gen browser_client_secret
@@ -118,6 +116,21 @@ printf '  已生成：secrets/browser-client.env\n'
   printf 'RELAY_OPERATOR_API_ORIGIN=%s\n' "${RELAY_OPERATOR_API_ORIGIN:?}"
   printf 'RELAY_OPERATOR_PUBKEYS='; cat secrets/relay_operator_pubkey; printf '\n'
   printf 'REDIS_URL=redis://buzz-replay:6379\n'; } > secrets/buzz-relay.env
+
+# SpiceDB 镜像是 distroless，无法在容器内读取挂载的 secret，PSK 与连接串
+# 都以 env_file 投递；两者与上面的原始 secret 同源，保持单一真值。
+# 不写成命令行 flag：flag 在启用 tracing 时随 OTel resource 导出（SF-SPZ-04）。
+{ printf 'SPICEDB_GRPC_PRESHARED_KEY='; cat secrets/spicedb_preshared_key; printf '\n'
+  printf 'SPICEDB_DATASTORE_ENGINE=postgres\n'
+  printf 'SPICEDB_DATASTORE_CONN_URI=postgres://%s:%s@spicedb-db:5432/%s?sslmode=disable\n' \
+    "${SPICEDB_DB_USER:?}" "$(cat secrets/spicedb_db_password)" "${SPICEDB_DB_NAME:?}"; } > secrets/spicedb.env
+chmod 600 secrets/spicedb.env
+printf '  已生成：secrets/spicedb.env\n'
+
+# zed 写 schema 用同一把 PSK，但不应拿到数据库连接串——它只需要 gRPC 凭据。
+{ printf 'ZED_TOKEN='; cat secrets/spicedb_preshared_key; printf '\n'; } > secrets/zed.env
+chmod 600 secrets/zed.env
+printf '  已生成：secrets/zed.env\n'
 
 # 对象存储自身的凭据；与 Relay 侧同源，保持单一真值。
 { printf 'MINIO_ROOT_USER=%s\n' "${BUZZ_OBJECTS_USER:?}"

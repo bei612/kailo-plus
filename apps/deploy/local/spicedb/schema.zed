@@ -1,0 +1,96 @@
+// 由 .design/03-领域模型与权限模型.md §5 的 zed 代码块逐字提取，不手工编辑。
+// tools/check.sh 的安全不变式步骤比对两处内容，漂移即失败——
+// SpiceDB 是关系授权权威，schema 与设计脱节意味着授权判定不再可信。
+
+definition principal {}
+
+definition tenant {
+  relation member: principal
+  relation admin: principal
+  relation creator: principal
+  relation auditor: principal
+  permission discover = member + admin
+  permission create = creator + admin
+  permission manage = admin
+  permission audit = auditor + admin
+}
+
+definition workspace {
+  relation tenant: tenant
+  relation member: principal
+  relation admin: principal
+  relation creator: principal
+  relation auditor: principal
+  permission discover = member + admin + tenant->manage
+  permission create = creator + admin + tenant->create + tenant->manage
+  permission manage = admin + tenant->manage
+  permission audit = auditor + admin + tenant->audit
+}
+
+definition resource {
+  relation tenant: tenant
+  relation home_workspace: workspace
+  relation owner: principal
+  relation discoverer: principal
+  relation consumer: principal
+  relation reader: principal
+  relation exporter: principal
+  relation creator: principal
+  relation editor: principal
+  relation deleter: principal
+  relation sharer: principal
+  relation manager: principal
+  relation executor: principal
+  relation approver: principal
+  relation delegator: principal
+  relation owner_transferrer: principal
+  relation auditor: principal
+
+  permission discover = owner + discoverer + home_workspace->manage + tenant->manage
+  permission consume = owner + consumer + home_workspace->manage + tenant->manage
+  permission read = owner + reader + home_workspace->manage + tenant->manage
+  permission export = owner + exporter + home_workspace->manage + tenant->manage
+  permission create = owner + creator + home_workspace->manage + tenant->manage
+  permission update = owner + editor + home_workspace->manage + tenant->manage
+  permission delete = owner + deleter + home_workspace->manage + tenant->manage
+  permission share = owner + sharer + home_workspace->manage + tenant->manage
+  permission manage = owner + manager + home_workspace->manage + tenant->manage
+  permission execute = owner + executor + home_workspace->manage + tenant->manage
+  permission approve = owner + approver + home_workspace->manage + tenant->manage
+  permission delegate = owner + delegator + home_workspace->manage + tenant->manage
+  permission transfer_owner = owner + owner_transferrer + tenant->manage
+  permission audit = owner + auditor + home_workspace->audit + tenant->audit
+}
+
+definition asset {
+  relation tenant: tenant
+  relation resource: resource
+  relation owner: principal
+  relation discoverer: principal
+  relation consumer: principal
+  relation reader: principal
+  relation exporter: principal
+  relation editor: principal
+  relation deleter: principal
+  relation sharer: principal
+  relation manager: principal
+  relation executor: principal
+  relation approver: principal
+  relation delegator: principal
+  relation owner_transferrer: principal
+  relation auditor: principal
+
+  permission discover = owner + discoverer + resource->manage
+  permission consume = owner + consumer + resource->manage
+  permission read = owner + reader + resource->manage
+  permission export = owner + exporter + resource->manage
+  permission update = owner + editor + resource->manage
+  permission delete = owner + deleter + resource->manage
+  permission share = owner + sharer + resource->manage
+  permission manage = owner + manager + resource->manage
+  permission execute = owner + executor + resource->manage
+  permission approve = owner + approver + resource->approve
+  permission delegate = owner + delegator + resource->delegate
+  permission transfer_owner = owner + owner_transferrer + resource->transfer_owner
+  permission audit = owner + auditor + resource->audit
+}
