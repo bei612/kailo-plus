@@ -102,9 +102,11 @@ services:
     networks: [component, app]
     depends_on:
       temporal-schema: { condition: service_completed_successfully }
+      keycloak: { condition: service_healthy }
     environment:
       POSTGRES_USER: ${TEMPORAL_DB_USER:?必须显式提供，禁止硬编码}
       TEMPORAL_ENVIRONMENT: local
+      OIDC_JWKS_URI: ${OIDC_JWKS_URI:?必须显式提供，禁止硬编码}
     secrets: [temporal_db_password]
     configs:
       - source: temporal_dynamic_config
@@ -136,6 +138,63 @@ services:
       timeout: 5s
       retries: 30
 
+  # namespace 是运行前提而非业务动作：它必须在 Core 连接之前存在。
+  # 用 server 镜像而非 auto-setup 之后，这一步要显式做。
+  # 走 internal-frontend（7236）——那是 Temporal 为内部组件保留的入口，
+  # 与系统 Worker 同一条路径；公开 frontend 留给受令牌约束的业务调用。
+  temporal-namespace:
+    image: temporalio/admin-tools@sha256:a9f84fb9a374b2374fe2e67c8efc0468ff3f1c66c8a0b14597ec86e349e62bca
+    networks: [component]
+    depends_on:
+      temporal: { condition: service_healthy }
+    environment:
+      TEMPORAL_ADDRESS: temporal:7236
+      NAMESPACE: ${TEMPORAL_NAMESPACE:?必须显式提供，禁止硬编码}
+      RETENTION: ${TEMPORAL_RETENTION:?必须显式提供，禁止硬编码}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        # 已存在即视为成立：注册是幂等的运行前提，不是一次性迁移
+        if temporal operator namespace describe --namespace "$$NAMESPACE" >/dev/null 2>&1; then
+          echo "namespace $$NAMESPACE 已存在"
+        else
+          temporal operator namespace create --namespace "$$NAMESPACE" --retention "$$RETENTION"
+          echo "namespace $$NAMESPACE 已创建，retention=$$RETENTION"
+        fi
+    restart: "no"
+
+  # Keycloak 是 OIDC 的默认实现（.design/01 §2：OIDC 是可替换认证契约）。
+  # 它同时承担两件事：人类登录，以及 Core/Worker 以 client_credentials 取得
+  # 面向 Temporal 的服务令牌——Temporal 的 default claim mapper 从 permissions
+  # 声明读取 "<namespace>:<role>"（SF-TMP-06）。
+  keycloak:
+    image: quay.io/keycloak/keycloak@sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007
+    networks: [edge, app, component]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?必须显式提供，禁止硬编码}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+    secrets: [keycloak_admin_password]
+    volumes:
+      - ./secrets/keycloak-import:/opt/keycloak/data/import:ro
+    # 口令从 secret 挂载读入后导出：Keycloak 不支持 _FILE 变体，
+    # 直接写进 environment 会让它出现在 compose 与 .env 里。
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -eu
+        export KC_BOOTSTRAP_ADMIN_PASSWORD="$$(cat /run/secrets/keycloak_admin_password)"
+        exec /opt/keycloak/bin/kc.sh start-dev --import-realm
+    ports:
+      - "127.0.0.1:${KEYCLOAK_PORT:?必须显式提供，禁止硬编码}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
   # SpiceDB 是关系授权权威。07 §1 不变式：preshared key 经环境变量或文件投递，
   # 不用命令行 flag——flag 在启用 tracing 时会随 OTel resource 导出（SF-SPZ-04）。
   spicedb:
@@ -159,6 +218,8 @@ services:
       retries: 20
 
 secrets:
+  keycloak_admin_password:
+    file: ./secrets/keycloak_admin_password
   temporal_db_password:
     file: ./secrets/temporal_db_password
   core_db_password:

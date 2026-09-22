@@ -6,7 +6,6 @@ package main
 
 import (
 	"log"
-	"os"
 
 	"github.com/kailo/apps/worker/workflows"
 	"go.temporal.io/sdk/client"
@@ -17,11 +16,11 @@ import (
 const taskQueue = "kailo-baseline"
 
 func main() {
-	hostPort := os.Getenv("TEMPORAL_ADDRESS")
-	if hostPort == "" {
-		hostPort = client.DefaultHostPort
+	opts, err := clientOptionsFromEnv()
+	if err != nil {
+		log.Fatalf("构造 Temporal 连接选项失败: %v", err)
 	}
-	c, err := client.Dial(client.Options{HostPort: hostPort, Namespace: os.Getenv("TEMPORAL_NAMESPACE")})
+	c, err := client.Dial(opts)
 	if err != nil {
 		log.Fatalf("连接 Temporal 失败: %v", err)
 	}

@@ -1,0 +1,54 @@
+{
+  "realm": "kailo",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 900,
+  "clients": [
+    {
+      "clientId": "kailo-core",
+      "name": "Platform Core/BFF 与 Application Worker 的服务身份",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "access.token.lifespan": "900"
+      },
+      "protocolMappers": [
+        {
+          "name": "temporal-permissions",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "permissions",
+            "claim.value": "[\"__TEMPORAL_NAMESPACE__:worker\",\"__TEMPORAL_NAMESPACE__:write\",\"__TEMPORAL_NAMESPACE__:read\"]",
+            "jsonType.label": "JSON",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ],
+      "secret": "__KAILO_CORE_CLIENT_SECRET__"
+    },
+    {
+      "clientId": "buzz-web",
+      "name": "Buzz Web 的浏览器登录客户端",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:*/*"
+      ],
+      "webOrigins": [
+        "+"
+      ]
+    }
+  ]
+}

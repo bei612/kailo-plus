@@ -51,8 +51,12 @@ global:
   # 07-运行与运维基线.md §1 不变式：authorization 留空时所有调用方获得
   # system admin（SF-TMP-09）。两项必须显式设置。
   authorization:
+    # 令牌由 OIDC 提供方签发（.design/01 §2：OIDC 是可替换认证契约，
+    # Keycloak 只是默认选项）。Temporal 只验签并从 permissions 声明取角色，
+    # 它不认识 Kailo 的 Tenant/Workspace/Resource（SF-TMP-06）。
     jwtKeyProvider:
-      keySourceURIs: []
+      keySourceURIs:
+        - '{{ env "OIDC_JWKS_URI" }}'
       refreshInterval: 1m
     permissionsClaimName: permissions
     authorizer: default
