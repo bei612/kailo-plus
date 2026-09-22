@@ -20,6 +20,8 @@ const PROVISION_PATH: &str = "/operator/communities";
 pub enum OperatorError {
     #[error("RelayOperatorIdentity 的 audience 与配置不符")]
     AudienceMismatch,
+    #[error("该身份由客户端托管，Core 不持有其私钥，不能代签")]
+    CustodyNotServer,
     #[error("密钥不是有效的 32 字节十六进制")]
     InvalidKey,
     #[error("operator API origin 无法解析: {0}")]

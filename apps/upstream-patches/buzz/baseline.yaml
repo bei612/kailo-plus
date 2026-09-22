@@ -12,8 +12,8 @@ patch_series: []
 patch_series_digest: none
 artifact_digest: sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
 
-source_facts: [SF-BUZ-26, SF-BUZ-30]
-source_seams: [SS-BUZ-OPERATOR]
-compatibility_evidence: [upstream-patches/buzz/verify/operator-provisioning.md]
+source_facts: [SF-BUZ-26, SF-BUZ-30, SF-BUZ-31, SF-BUZ-32, SF-BUZ-33]
+source_seams: [SS-BUZ-OPERATOR, SS-BUZ-SERVER-CLIENT]
+compatibility_evidence: [upstream-patches/buzz/verify/operator-provisioning.md, upstream-patches/buzz/verify/server-client.md]
 owner: team-platform
 last_reverified: 2026-09-22
