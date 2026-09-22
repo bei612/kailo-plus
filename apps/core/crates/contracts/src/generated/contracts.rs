@@ -11,7 +11,7 @@
 //     let model: contracts = serde_json::from_str(&json).unwrap();
 // }
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// 可用 JSON Schema 子集的可执行定义。它穷举 contracts/README.md 第 1
 /// 节允许的每一种构造；四侧生成器必须全部生成成功并通过双向序列化。新增构造先加进本文件并四侧验证通过，才允许在其他 schema 中使用。

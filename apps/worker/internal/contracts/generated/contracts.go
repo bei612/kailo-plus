@@ -1,30 +1,50 @@
+// This file was generated from JSON Schema using quicktype, do not modify it directly.
+// To parse and unparse this JSON data, add this code to your project and do:
+//
+//    contracts, err := UnmarshalContracts(bytes)
+//    bytes, err = contracts.Marshal()
+
+package generated
+
 import "time"
+
+import "encoding/json"
+
+func UnmarshalContracts(data []byte) (Contracts, error) {
+	var r Contracts
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *Contracts) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
 
 // 可用 JSON Schema 子集的可执行定义。它穷举 contracts/README.md 第 1
 // 节允许的每一种构造；四侧生成器必须全部生成成功并通过双向序列化。新增构造先加进本文件并四侧验证通过，才允许在其他 schema 中使用。
 type Contracts struct {
-	// 可选的枚举引用                                                    
-	CapabilityState                              *CapabilityState `json:"capabilityState,omitempty"`
-	// 基础 integer                                                 
-	Count                                        int64            `json:"count"`
-	// 基础 boolean                                                 
-	Enabled                                      bool             `json:"enabled"`
-	// 跨文件 $ref 引用封闭枚举                                            
-	ErrorClass                                   ErrorClass       `json:"errorClass"`
-	// format: uuid                                               
-	ID                                           string           `json:"id"`
-	// 基础 string                                                  
-	Name                                         string           `json:"name"`
-	// 内联对象，同样显式关闭 additionalProperties                           
-	Nested                                       Nested           `json:"nested"`
-	// format: date-time，且为可选字段                                   
-	OccurredAt                                   *time.Time       `json:"occurredAt,omitempty"`
-	// 基础 number                                                  
-	Ratio                                        float64          `json:"ratio"`
-	// 同构数组                                                       
-	Tags                                         []string         `json:"tags"`
-	// 变体类型的平坦表达：封闭枚举 tag 加各变体字段全部可选，替代被禁用的 oneOf                 
-	Variants                                     []Variant        `json:"variants,omitempty"`
+	// 可选的枚举引用
+	CapabilityState *CapabilityState `json:"capabilityState,omitempty"`
+	// 基础 integer
+	Count int64 `json:"count"`
+	// 基础 boolean
+	Enabled bool `json:"enabled"`
+	// 跨文件 $ref 引用封闭枚举
+	ErrorClass ErrorClass `json:"errorClass"`
+	// format: uuid
+	ID string `json:"id"`
+	// 基础 string
+	Name string `json:"name"`
+	// 内联对象，同样显式关闭 additionalProperties
+	Nested Nested `json:"nested"`
+	// format: date-time，且为可选字段
+	OccurredAt *time.Time `json:"occurredAt,omitempty"`
+	// 基础 number
+	Ratio float64 `json:"ratio"`
+	// 同构数组
+	Tags []string `json:"tags"`
+	// 变体类型的平坦表达：封闭枚举 tag 加各变体字段全部可选，替代被禁用的 oneOf
+	Variants []Variant `json:"variants,omitempty"`
 }
 
 // 内联对象，同样显式关闭 additionalProperties

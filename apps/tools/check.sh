@@ -56,7 +56,12 @@ step_contract() { hdr "3/10 contract compatibility"
     skip "contracts/ 尚无 schema"; return 0; fi
   if [ ! -f contracts/canary.schema.json ]; then
     fail "contracts/ 有 schema 但缺 canary.schema.json（见 contracts/README.md §1）"; return 0; fi
-  pass "canary 存在；四侧生成与 round-trip 由 tools/gen 执行"
+  if bash tools/gen.sh --check >/tmp/gen.$$ 2>&1; then
+    pass "四侧生成物与 contracts/ 同步"
+  else
+    fail "生成物与 contracts/ 不同步，运行 tools/gen.sh 后提交"; sed 's/^/    /' /tmp/gen.$$
+  fi
+  rm -f /tmp/gen.$$
   return 0
 }
 

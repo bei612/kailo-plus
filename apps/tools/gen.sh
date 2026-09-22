@@ -19,7 +19,7 @@ declare -A OUT=(
 )
 declare -A EXTRA=(
   [rs]="--visibility public --derive-debug --derive-clone --derive-partial-eq"
-  [go]="--package generated --just-types"
+  [go]="--package generated"
   [ts]="--just-types --explicit-unions"
   [dart]="--just-types --final-props"
 )
@@ -36,6 +36,11 @@ for lang in "${!OUT[@]}"; do
         ${EXTRA[$lang]} --out "$tmp" "$SRC/canary.schema.json" >/dev/null 2>"$work/$lang.err"; then
     printf '  \033[31mFAIL\033[0m %-5s 生成失败\n' "$lang"; sed 's/^/        /' "$work/$lang.err"; fail=1; continue
   fi
+  case "$lang" in
+    rs) command -v rustfmt >/dev/null 2>&1 && rustfmt --edition 2021 "$tmp" ;;
+    go) command -v gofmt   >/dev/null 2>&1 && gofmt -w "$tmp" ;;
+  esac
+
   if [ "$CHECK" -eq 1 ]; then
     if [ ! -f "$dest" ] || ! diff -q "$tmp" "$dest" >/dev/null; then
       printf '  \033[31mFAIL\033[0m %-5s 生成物与工作树不一致\n' "$lang"; fail=1
