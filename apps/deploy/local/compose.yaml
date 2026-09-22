@@ -475,6 +475,9 @@ services:
     env_file:
       - ./secrets/spicedb.env
     command: ["serve"]
+    ports:
+      # 仅绑回环，供本机对投影链路做查证；不暴露到宿主网络之外。
+      - "127.0.0.1:${SPICEDB_PORT:?必须显式提供，禁止硬编码}:50051"
     healthcheck:
       test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
       interval: 5s

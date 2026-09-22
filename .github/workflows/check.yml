@@ -35,8 +35,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Temporal Go SDK v1.48.0 的 go.mod 声明 Go >= 1.25.4；低于它时
-      # Go 会静默下载并切换工具链，使 CI 实际使用的编译器版本不可控。
+      # 版本从 worker/go.mod 的 go 指令读，不在这里重复写死：下界由依赖中
+      # 最高的那个决定，会随依赖变动上移。给低了 Go 会静默下载并切换工具链，
+      # 使 CI 实际使用的编译器版本不可控（ADR-07）。
       - uses: actions/setup-go@v5
         with:
           go-version-file: apps/worker/go.mod
