@@ -1,0 +1,6 @@
+.DS_Store
+*.tmp
+
+# 上游只读证据克隆，不进版本库
+/.references/
+/.old/
