@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/capability_state.schema.json",
+  "title": "CapabilityState",
+  "description": "能力状态。权威定义见 .design/02-源码证据与设计决策.md。BLOCKED 的能力不得生成任何入口、路由、动作、工具或开关。",
+  "type": "string",
+  "enum": ["UPSTREAM_SUPPORTED", "DESIGN_DEFINED", "ADAPTER_REQUIRED", "BLOCKED", "EXCLUDED"]
+}

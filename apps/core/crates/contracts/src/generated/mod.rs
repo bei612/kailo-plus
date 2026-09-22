@@ -1,1 +1,6 @@
-//! 生成物落点。`tools/gen` 写入此目录，其余代码不得手工添加内容。
+//! 生成物落点。由 `tools/gen.sh` 从 `contracts/**/*.schema.json` 写出，不手工编辑。
+
+#[allow(clippy::all, dead_code)]
+mod contracts;
+
+pub use contracts::*;

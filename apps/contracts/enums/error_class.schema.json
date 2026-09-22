@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/error_class.schema.json",
+  "title": "ErrorClass",
+  "description": "错误分类。每个 API 错误、Workflow 失败与 UI 状态必须落在其中之一。权威定义见 apps/06-工程基线规范.md 第 4 节。UNKNOWN 表示外部副作用结果不明，等待对账，禁止渲染成成功或失败，也禁止盲目重放。",
+  "type": "string",
+  "enum": ["DENIED", "BLOCKED", "PRECONDITION", "LIMIT", "CONFLICT", "UNKNOWN"]
+}
