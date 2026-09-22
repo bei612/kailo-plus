@@ -80,6 +80,46 @@ step_contract() { hdr "3/10 contract compatibility"
     fail "生成物与 contracts/ 不同步，运行 tools/gen.sh 后提交"; sed 's/^/    /' /tmp/gen.$$
   fi
   rm -f /tmp/gen.$$
+
+  # 06 §5 的兼容比对。「上一个已发布版本」以 git tag contracts-v* 表示，
+  # 不另存快照——git 已经是历史权威，再存一份就是第二权威。
+  local last
+  last=$(git tag -l 'contracts-v*' --sort=-v:refname | head -1)
+  if [ -z "$last" ]; then
+    skip "尚无 contracts-v* 发布 tag，无基线可比对"
+    return 0
+  fi
+  LAST_TAG="$last" python3 - <<'PY' || FAIL=1
+import json, os, subprocess, sys
+tag = os.environ["LAST_TAG"]
+def at(rev, path):
+    r = subprocess.run(["git", "show", f"{rev}:{path}"], capture_output=True, text=True)
+    return json.loads(r.stdout) if r.returncode == 0 else None
+
+files = subprocess.run(["git", "ls-files", "contracts"], capture_output=True, text=True).stdout.split()
+schemas = [f for f in files if f.endswith(".schema.json")]
+breaking = []
+for f in schemas:
+    old = at(tag, f)
+    if old is None:
+        continue  # 新增 schema 是向后兼容变更
+    new = json.load(open(f, encoding="utf-8"))
+    # 删除字段、把可选改必填、删除枚举值，都是破坏性变更
+    for k in (old.get("properties") or {}):
+        if k not in (new.get("properties") or {}):
+            breaking.append(f"{f}: 删除字段 {k}")
+    added_required = set(new.get("required") or []) - set(old.get("required") or [])
+    for k in sorted(added_required):
+        breaking.append(f"{f}: 字段 {k} 由可选改为必填")
+    removed_enum = set(old.get("enum") or []) - set(new.get("enum") or [])
+    for v in sorted(removed_enum):
+        breaking.append(f"{f}: 删除枚举值 {v}")
+if breaking:
+    print(f"  \033[31mFAIL\033[0m 相对 {tag} 的破坏性变更，必须新版本号：")
+    [print("   ", b) for b in breaking]
+    sys.exit(1)
+print(f"  \033[32mPASS\033[0m 相对 {tag} 无破坏性变更（{len(schemas)} 个 schema）")
+PY
   return 0
 }
 
@@ -188,6 +228,12 @@ if not files:
 else:
     print(f"  \033[32mPASS\033[0m {len(files)} 条追溯记录通过 06 §1 的六条硬规则")
 PY
+  # 06 §3：注册表由追溯记录生成，并执行四个构建期拒绝条件
+  if DESIGN="${DESIGN:-../.design}" python3 tools/gen-registry.py; then
+    pass "能力注册表已生成，四个构建期拒绝条件全部通过"
+  else
+    fail "能力注册表生成被拒绝，见上"
+  fi
   return 0
 }
 
