@@ -1,0 +1,19 @@
+# 格式见 apps/06-工程基线规范.md §2。字段含义冲突时以该节为准。
+project: buzz
+upstream_url: https://github.com/block/buzz
+
+# 上游按 commit 发布镜像（ghcr.io/block/buzz:sha-<short>），固定 commit
+# 恰好有对应镜像，因此不自行构建。
+evidence_commit: 779af8886caae1317b4de962082429867ab61503
+implementation_base_commit: 779af8886caae1317b4de962082429867ab61503
+base_divergence: none
+
+patch_series: []
+patch_series_digest: none
+artifact_digest: sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
+
+source_facts: [SF-BUZ-26, SF-BUZ-30]
+source_seams: [SS-BUZ-OPERATOR]
+compatibility_evidence: [upstream-patches/buzz/verify/operator-provisioning.md]
+owner: team-platform
+last_reverified: 2026-09-22

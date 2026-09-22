@@ -112,7 +112,12 @@ printf '  已生成：secrets/browser-client.env\n'
   printf 'BUZZ_S3_REGION=%s\n' "${BUZZ_S3_REGION:?}"
   printf 'BUZZ_S3_ADDRESSING_STYLE=path\n'
   printf 'BUZZ_S3_ACCESS_KEY=%s\n' "${BUZZ_OBJECTS_USER:?}"
-  printf 'BUZZ_S3_SECRET_KEY='; cat secrets/buzz_objects_root_password; printf '\n'; } > secrets/buzz-relay.env
+  printf 'BUZZ_S3_SECRET_KEY='; cat secrets/buzz_objects_root_password; printf '\n'
+  # operator 面：签名 URL 必须精确等于 origin + path，因此 origin 是配置而非
+  # 入站 Host 头推导（SS-BUZ-OPERATOR）。允许的 operator pubkey 白名单同理。
+  printf 'RELAY_OPERATOR_API_ORIGIN=%s\n' "${RELAY_OPERATOR_API_ORIGIN:?}"
+  printf 'RELAY_OPERATOR_PUBKEYS='; cat secrets/relay_operator_pubkey; printf '\n'
+  printf 'REDIS_URL=redis://buzz-replay:6379\n'; } > secrets/buzz-relay.env
 
 # 对象存储自身的凭据；与 Relay 侧同源，保持单一真值。
 { printf 'MINIO_ROOT_USER=%s\n' "${BUZZ_OBJECTS_USER:?}"

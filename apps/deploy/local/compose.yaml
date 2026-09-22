@@ -167,6 +167,17 @@ services:
       timeout: 3s
       retries: 20
 
+  # NIP-98 重放守卫的存储。缺它时 operator 面返回「replay check unavailable」
+  # 并拒绝请求——fail closed，而不是放行未去重的请求。
+  buzz-replay:
+    image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    networks: [component]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   # Relay 的 git 对象与媒体 pack 存 S3 兼容对象存储；缺它时 Relay 的
   # conformance probe 失败并拒绝启动，因此不是可选项。
   buzz-objects:
@@ -221,10 +232,15 @@ services:
   #   发布路径上，roster 校验是协作数据平面唯一的准入执行点（SF-BUZ-26、DD-75）。
   buzz-relay:
     image: ghcr.io/block/buzz@sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
-    networks: [component, app]
+    networks:
+      component:
+        aliases: [buzz-relay.kailo.local]
+      app:
+        aliases: [buzz-relay.kailo.local]
     depends_on:
       buzz-schema: { condition: service_completed_successfully }
       buzz-objects-init: { condition: service_completed_successfully }
+      buzz-replay: { condition: service_healthy }
     environment:
       BUZZ_BIND_ADDR: 0.0.0.0:8090
       BUZZ_HEALTH_PORT: "8091"
@@ -235,6 +251,10 @@ services:
       BUZZ_REQUIRE_AUTH_TOKEN: "true"
     env_file:
       - ./secrets/buzz-relay.env
+    ports:
+      # operator 面的签名 URL 必须逐字符等于 RELAY_OPERATOR_API_ORIGIN，
+      # 因此本机核验也要用同一主机名与端口；仅绑回环。
+      - "127.0.0.1:8090:8090"
     healthcheck:
       # 镜像里只有 curl，没有 nc。/health 在主路由上（router.rs 的 route("/health")），
       # 不在 BUZZ_HEALTH_PORT 那个探针监听上。
