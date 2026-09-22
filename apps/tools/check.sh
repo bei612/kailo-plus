@@ -118,7 +118,76 @@ step_trace()    { hdr "6/10 设计 ID 与验证场景追溯"
   bash tools/check-docs.sh >/tmp/cd.$$ 2>&1 && pass "文档门禁六项（含设计语料）" \
     || { fail "文档门禁未过"; tail -25 /tmp/cd.$$; }
   rm -f /tmp/cd.$$
-  populated tools/traceability && pass "追溯清单存在" || skip "尚无追溯记录（无 active 能力）"
+  DESIGN="${DESIGN:-../.design}" python3 - <<'PY' || FAIL=1
+import glob, os, re, sys, yaml
+d = os.environ["DESIGN"]
+t02 = open(glob.glob(f"{d}/02-*.md")[0], encoding="utf-8").read()
+t16 = open(glob.glob(f"{d}/16-*.md")[0], encoding="utf-8").read()
+t03 = open(glob.glob(f"{d}/03-*.md")[0], encoding="utf-8").read()
+cov = open(glob.glob("05-*.md")[0], encoding="utf-8").read()
+
+known = {
+    "requirements": set(re.findall(r"^\| (V-REQ-\d+) \|", t16, re.M)),
+    "scenarios":    set(re.findall(r"^\| (V-SCN-\d+) \|", t16, re.M)),
+    "decisions":    set(re.findall(r"^\| (DD-\d+) \|", t02, re.M)),
+    "facts":        set(re.findall(r"^\| (SF-[A-Z]+-[A-Z0-9-]+) \|", t02, re.M)),
+    "seams":        set(re.findall(r"^\| (SS-[A-Z]+-[A-Z0-9-]+) \|", t02, re.M)),
+    "blockers":     set(re.findall(r"^\| (GAP-[A-Z]+-\d+) \|", t02, re.M)),
+    "entities":     set(re.findall(r"^([A-Z][A-Za-z]+)\(", t03, re.M)),
+}
+stage_of = {}
+for line in cov.split("\n"):
+    m = re.match(r"\| (Stage \d)[^|]*\| `(DD-\d+)`", line)
+    if m:
+        stage_of[m.group(2)] = m.group(1).replace("Stage ", "S")
+
+files = sorted(glob.glob("tools/traceability/*.yaml"))
+bad = []
+for f in files:
+    r = yaml.safe_load(open(f, encoding="utf-8")) or {}
+    cid = r.get("capability_id", f)
+    design = r.get("design") or {}
+    status = r.get("status")
+    exposure = r.get("exposure")
+    # 规则 1：每个 design.* ID 必须在 .design 中解析
+    for key, universe in known.items():
+        for ref in design.get(key) or []:
+            if ref not in universe:
+                bad.append(f"{cid}: design.{key} 的 {ref} 在 .design 中解析不到")
+    for ref in (r.get("validation") or {}).get("scenarios") or []:
+        if ref not in known["scenarios"]:
+            bad.append(f"{cid}: validation.scenarios 的 {ref} 解析不到")
+    # 规则 2：status 非 withdrawn 时至少有一个 requirements/decisions/seams
+    if status != "withdrawn" and not any(design.get(k) for k in ("requirements", "decisions", "seams")):
+        bad.append(f"{cid}: status={status} 但 requirements/decisions/seams 全为空")
+    # 规则 3：blockers 非空时 exposure 必须是 none
+    if (design.get("blockers") or []) and exposure != "none":
+        bad.append(f"{cid}: blockers 非空但 exposure={exposure}")
+    # 规则 4：seams 非空时每个接缝要有一条 dimension 为「上游接缝」的证据
+    ev = (r.get("validation") or {}).get("evidence") or []
+    if (design.get("seams") or []) and not any(e.get("dimension") == "上游接缝" for e in ev):
+        bad.append(f"{cid}: seams 非空但缺少 dimension 为「上游接缝」的证据")
+    for e in ev:
+        ref = e.get("ref")
+        if ref and not os.path.exists(ref):
+            bad.append(f"{cid}: 证据指向不存在的 {ref}")
+    # 规则 5：stage 必须与覆盖矩阵对所含决策的归属一致
+    for dd in design.get("decisions") or []:
+        want = stage_of.get(dd)
+        if want and r.get("stage") and r["stage"] != want:
+            bad.append(f"{cid}: stage={r['stage']} 与覆盖矩阵对 {dd} 的归属 {want} 不一致")
+    # 规则 6：exposure 高于 none 时 release.artifacts 必须有 digest
+    if exposure and exposure != "none":
+        arts = ((r.get("release") or {}).get("artifacts")) or []
+        if not arts or any(not a.get("digest") for a in arts):
+            bad.append(f"{cid}: exposure={exposure} 但 release.artifacts 缺 digest")
+if bad:
+    print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
+if not files:
+    print("  \033[90mSKIP\033[0m 尚无追溯记录——Stage 0 不产出用户可达能力，属正确状态")
+else:
+    print(f"  \033[32mPASS\033[0m {len(files)} 条追溯记录通过 06 §1 的六条硬规则")
+PY
   return 0
 }
 
