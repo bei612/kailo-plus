@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/workspace_buzz_binding_state.schema.json",
+  "title": "BuzzBindingState",
+  "description": "TenantBuzzBinding 与 WorkspaceBuzzBinding 的状态机（.design/03 §2）。正常建立路径固定为 UNBOUND → PROVISIONING → RECONCILING → ACTIVE，停用进入 DISABLED。RECONCILING 必须核对 Relay roster；只发出 admin event 而未查证不得 ACTIVE。",
+  "type": "string",
+  "enum": ["UNBOUND", "PROVISIONING", "RECONCILING", "ACTIVE", "DISABLED"]
+}
