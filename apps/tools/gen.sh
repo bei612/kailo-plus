@@ -30,6 +30,11 @@ work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 
 # 顶层类型名取自 schema 的 title，不取输出文件名——否则类型名会随文件名漂移
 TOPLEVEL=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["title"])' "$SRC/canary.schema.json")
+
+# 输入集合：canary 定义可用子集，domain/ 是业务契约。
+# enums/ 不单独传入——它们由 $ref 引入，单独传会生成重复类型。
+SCHEMAS=("$SRC/canary.schema.json")
+while IFS= read -r f; do SCHEMAS+=("$f"); done < <(find "$SRC/domain" -name '*.schema.json' 2>/dev/null | sort)
 fail=0
 
 for lang in "${!OUT[@]}"; do
@@ -38,7 +43,7 @@ for lang in "${!OUT[@]}"; do
   mkdir -p "$(dirname "$dest")"
   # shellcheck disable=SC2086
   if ! npx --yes "$QT" --src-lang schema --lang "$lang" --top-level "$TOPLEVEL" \
-        ${EXTRA[$lang]} --out "$tmp" "$SRC/canary.schema.json" >/dev/null 2>"$work/$lang.err"; then
+        ${EXTRA[$lang]} --out "$tmp" "${SCHEMAS[@]}" >/dev/null 2>"$work/$lang.err"; then
     printf '  \033[31mFAIL\033[0m %-5s 生成失败\n' "$lang"; sed 's/^/        /' "$work/$lang.err"; fail=1; continue
   fi
   case "$lang" in

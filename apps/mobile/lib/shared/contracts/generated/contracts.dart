@@ -1,12 +1,18 @@
 // To parse this JSON data, do
 //
 //     final canary = canaryFromJson(jsonString);
+//     final workflowRef = workflowRefFromJson(jsonString);
 
 import 'dart:convert';
 
 Canary canaryFromJson(String str) => Canary.fromJson(json.decode(str));
 
 String canaryToJson(Canary data) => json.encode(data.toJson());
+
+WorkflowRef workflowRefFromJson(String str) =>
+    WorkflowRef.fromJson(json.decode(str));
+
+String workflowRefToJson(WorkflowRef data) => json.encode(data.toJson());
 
 ///可用 JSON Schema 子集的可执行定义。它穷举 contracts/README.md 第 1
 ///节允许的每一种构造；四侧生成器必须全部生成成功并通过双向序列化。新增构造先加进本文件并四侧验证通过，才允许在其他 schema 中使用。
@@ -182,6 +188,69 @@ final kindValues = EnumValues({
   "FILE": Kind.FILE,
   "MESSAGE": Kind.MESSAGE,
   "TASK": Kind.TASK,
+});
+
+///Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
+///kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
+class WorkflowRef {
+  ///RFC3339；Describe 返回 NotFound 时用它判断是否仍在 retention 窗口内
+  final String createdAt;
+  final int entityVersion;
+  final WorkflowKind kind;
+  final String primaryEntityId;
+
+  ///Start 成功后回填；未知时缺省
+  final String? runId;
+  final String tenantId;
+
+  ///固定格式的业务 workflow ID
+  final String workflowId;
+
+  WorkflowRef({
+    required this.createdAt,
+    required this.entityVersion,
+    required this.kind,
+    required this.primaryEntityId,
+    this.runId,
+    required this.tenantId,
+    required this.workflowId,
+  });
+
+  factory WorkflowRef.fromJson(Map<String, dynamic> json) => WorkflowRef(
+    createdAt: json["createdAt"],
+    entityVersion: json["entityVersion"],
+    kind: workflowKindValues.map[json["kind"]]!,
+    primaryEntityId: json["primaryEntityId"],
+    runId: json["runId"],
+    tenantId: json["tenantId"],
+    workflowId: json["workflowId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "createdAt": createdAt,
+    "entityVersion": entityVersion,
+    "kind": workflowKindValues.reverse[kind],
+    "primaryEntityId": primaryEntityId,
+    "runId": runId,
+    "tenantId": tenantId,
+    "workflowId": workflowId,
+  });
+}
+
+///ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
+///必须同时出现在那里，否则能力注册表在构建期拒绝。本文件当前只含 Stage 1 已实现的四个。
+enum WorkflowKind {
+  MEMBERSHIP_PROJECTION,
+  MEMBERSHIP_REVOCATION,
+  TENANT_LIFECYCLE,
+  WORKSPACE_LIFECYCLE,
+}
+
+final workflowKindValues = EnumValues({
+  "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
+  "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
+  "TENANT_LIFECYCLE": WorkflowKind.TENANT_LIFECYCLE,
+  "WORKSPACE_LIFECYCLE": WorkflowKind.WORKSPACE_LIFECYCLE,
 });
 
 class EnumValues<T> {

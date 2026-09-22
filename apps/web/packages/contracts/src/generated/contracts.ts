@@ -98,3 +98,37 @@ export enum Kind {
     Message = "MESSAGE",
     Task = "TASK",
 }
+
+/**
+ * Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
+ * kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
+ */
+export interface WorkflowRef {
+    /**
+     * RFC3339；Describe 返回 NotFound 时用它判断是否仍在 retention 窗口内
+     */
+    createdAt:       string;
+    entityVersion:   number;
+    kind:            WorkflowKind;
+    primaryEntityId: string;
+    /**
+     * Start 成功后回填；未知时缺省
+     */
+    runId?:   string;
+    tenantId: string;
+    /**
+     * 固定格式的业务 workflow ID
+     */
+    workflowId: string;
+}
+
+/**
+ * ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
+ * 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件当前只含 Stage 1 已实现的四个。
+ */
+export enum WorkflowKind {
+    MembershipProjection = "MEMBERSHIP_PROJECTION",
+    MembershipRevocation = "MEMBERSHIP_REVOCATION",
+    TenantLifecycle = "TENANT_LIFECYCLE",
+    WorkspaceLifecycle = "WORKSPACE_LIFECYCLE",
+}

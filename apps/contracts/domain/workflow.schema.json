@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/workflow.schema.json",
+  "title": "WorkflowRef",
+  "description": "Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取 kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workflowId", "kind", "tenantId", "primaryEntityId", "entityVersion", "createdAt"],
+  "properties": {
+    "workflowId": { "type": "string", "description": "固定格式的业务 workflow ID" },
+    "kind": { "$ref": "../enums/workflow_kind.schema.json" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "primaryEntityId": { "type": "string", "format": "uuid" },
+    "entityVersion": { "type": "integer" },
+    "createdAt": { "type": "string", "description": "RFC3339；Describe 返回 NotFound 时用它判断是否仍在 retention 窗口内" },
+    "runId": { "type": "string", "description": "Start 成功后回填；未知时缺省" }
+  }
+}

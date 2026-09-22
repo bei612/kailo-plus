@@ -136,3 +136,45 @@ pub enum Kind {
     #[serde(rename = "TASK")]
     Task,
 }
+
+/// Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
+/// kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRef {
+    /// RFC3339；Describe 返回 NotFound 时用它判断是否仍在 retention 窗口内
+    pub created_at: String,
+
+    pub entity_version: i64,
+
+    pub kind: WorkflowKind,
+
+    pub primary_entity_id: String,
+
+    /// Start 成功后回填；未知时缺省
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+
+    pub tenant_id: String,
+
+    /// 固定格式的业务 workflow ID
+    pub workflow_id: String,
+}
+
+/// ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
+/// 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件当前只含 Stage 1 已实现的四个。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum WorkflowKind {
+    #[serde(rename = "MEMBERSHIP_PROJECTION")]
+    MembershipProjection,
+
+    #[serde(rename = "MEMBERSHIP_REVOCATION")]
+    MembershipRevocation,
+
+    #[serde(rename = "TENANT_LIFECYCLE")]
+    TenantLifecycle,
+
+    #[serde(rename = "WORKSPACE_LIFECYCLE")]
+    WorkspaceLifecycle,
+}

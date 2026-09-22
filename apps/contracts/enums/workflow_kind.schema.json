@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/workflow_kind.schema.json",
+  "title": "WorkflowKind",
+  "description": "ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件当前只含 Stage 1 已实现的四个。",
+  "type": "string",
+  "enum": ["TENANT_LIFECYCLE", "WORKSPACE_LIFECYCLE", "MEMBERSHIP_PROJECTION", "MEMBERSHIP_REVOCATION"]
+}

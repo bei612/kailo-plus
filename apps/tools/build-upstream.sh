@@ -53,7 +53,13 @@ fi
 
 tag="kailo/upstream-$project:$base"
 echo "== 构建 $tag =="
-$SUDO docker build -q -t "$tag" "$src" >/dev/null
+# 上游普遍把版本与 revision 作为构建参数注入二进制，并在构建末尾自检——
+# 例如 agentgateway 在 version 为 "unknown" 时直接让构建失败。
+# 取值用 manifest 里的 commit，产物因此天然可追溯到它。
+$SUDO docker build -q \
+  --build-arg "VERSION=${base:0:12}" \
+  --build-arg "GIT_REVISION=$base" \
+  -t "$tag" "$src" >/dev/null
 digest=$($SUDO docker image inspect --format '{{.Id}}' "$tag")
 echo "  $digest"
 

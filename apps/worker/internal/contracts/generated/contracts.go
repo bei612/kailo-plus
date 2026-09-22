@@ -3,6 +3,9 @@
 //
 //    canary, err := UnmarshalCanary(bytes)
 //    bytes, err = canary.Marshal()
+//
+//    workflowRef, err := UnmarshalWorkflowRef(bytes)
+//    bytes, err = workflowRef.Marshal()
 
 package generated
 
@@ -15,6 +18,16 @@ func UnmarshalCanary(data []byte) (Canary, error) {
 }
 
 func (r *Canary) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWorkflowRef(data []byte) (WorkflowRef, error) {
+	var r WorkflowRef
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WorkflowRef) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -59,6 +72,21 @@ type Variant struct {
 	TaskAttempt *int64  `json:"taskAttempt,omitempty"`
 }
 
+// Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
+// kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
+type WorkflowRef struct {
+	// RFC3339；Describe 返回 NotFound 时用它判断是否仍在 retention 窗口内
+	CreatedAt       string       `json:"createdAt"`
+	EntityVersion   int64        `json:"entityVersion"`
+	Kind            WorkflowKind `json:"kind"`
+	PrimaryEntityID string       `json:"primaryEntityId"`
+	// Start 成功后回填；未知时缺省
+	RunID    *string `json:"runId,omitempty"`
+	TenantID string  `json:"tenantId"`
+	// 固定格式的业务 workflow ID
+	WorkflowID string `json:"workflowId"`
+}
+
 // 可选的枚举引用
 //
 // 能力状态。权威定义见 .design/02-源码证据与设计决策.md。BLOCKED 的能力不得生成任何入口、路由、动作、工具或开关。
@@ -93,4 +121,15 @@ const (
 	File    Kind = "FILE"
 	Message Kind = "MESSAGE"
 	Task    Kind = "TASK"
+)
+
+// ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
+// 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件当前只含 Stage 1 已实现的四个。
+type WorkflowKind string
+
+const (
+	MembershipProjection WorkflowKind = "MEMBERSHIP_PROJECTION"
+	MembershipRevocation WorkflowKind = "MEMBERSHIP_REVOCATION"
+	TenantLifecycle      WorkflowKind = "TENANT_LIFECYCLE"
+	WorkspaceLifecycle   WorkflowKind = "WORKSPACE_LIFECYCLE"
 )
