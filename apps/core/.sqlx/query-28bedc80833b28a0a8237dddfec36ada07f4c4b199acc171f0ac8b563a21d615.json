@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select last_event_id from projection.task_projection where workflow_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_event_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "28bedc80833b28a0a8237dddfec36ada07f4c4b199acc171f0ac8b563a21d615"
+}

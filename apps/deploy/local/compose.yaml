@@ -281,6 +281,17 @@ services:
     environment:
       DATABASE_URL: ${CORE_DATABASE_URL:?必须显式提供，禁止硬编码}
       BFF_LISTEN: ${BFF_LISTEN:?必须显式提供，禁止硬编码}
+      # service API 与 BFF 分端口：网关以 pathPrefix: / 整体转发给 BFF，
+      # 同端口的服务面等于对任何已登录用户开放。
+      SERVICE_LISTEN: ${SERVICE_BIND_ADDR:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}
+      SERVICE_OIDC_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
+      SERVICE_OIDC_JWKS_URI: ${OIDC_JWKS_URI:?必须显式提供，禁止硬编码}
+      # 「这张票是开给 Core 的」与「是谁来敲的」是两件事，两条都要核。
+      SERVICE_OIDC_AUDIENCE: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
+      SERVICE_CALLER_CLIENT_ID: ${OIDC_WORKER_CLIENT_ID:?必须显式提供，禁止硬编码}
+    ports:
+      # 仅绑回环，供本机核验 service API；不暴露到宿主网络之外。
+      - "127.0.0.1:${SERVICE_PORT:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}"
 
   # AgentGateway 是 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。
   # 镜像由 tools/build-upstream.sh 从 .design/02 §1 的固定 commit 构建——

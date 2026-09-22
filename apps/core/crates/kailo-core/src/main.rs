@@ -4,6 +4,8 @@
 //! `01-工程结构与模块边界.md` §3 以 crate 与可见性划分，不走网络、不引消息总线。
 
 mod bff;
+mod service_api;
+mod service_auth;
 
 use std::net::SocketAddr;
 
@@ -24,13 +26,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&database_url)
         .await?;
 
-    let app = bff::router(pool);
-    let listener = tokio::net::TcpListener::bind(listen).await?;
-    tracing::info!(addr = %listen, "bff listening");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
+    // BFF 与 service API 分开监听。网关的路由是 pathPrefix: /，整体转发给
+    // BFF；把 Worker 的写入口挂在同一端口上，等于让任何已登录用户能打到它。
+    // 端口隔离让这件事在拓扑层就不成立，而不是只靠代码里的认证分支。
+    let service_listen: SocketAddr = std::env::var("SERVICE_LISTEN")
+        .map_err(|_| "缺少 SERVICE_LISTEN")?
+        .parse()?;
+    let service_state = service_api::ServiceState {
+        pool: pool.clone(),
+        auth: std::sync::Arc::new(service_auth::ServiceAuth::from_env()?),
+    };
+
+    let bff = tokio::net::TcpListener::bind(listen).await?;
+    let service = tokio::net::TcpListener::bind(service_listen).await?;
+    tracing::info!(bff = %listen, service = %service_listen, "listening");
+
+    let shutdown = || async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    // 任一监听退出即整体退出：只剩半边可用会让调用方看到不一致的可用性。
+    tokio::try_join!(
+        axum::serve(bff, bff::router(pool)).with_graceful_shutdown(shutdown()),
+        axum::serve(service, service_api::router(service_state)).with_graceful_shutdown(shutdown()),
+    )?;
     Ok(())
 }

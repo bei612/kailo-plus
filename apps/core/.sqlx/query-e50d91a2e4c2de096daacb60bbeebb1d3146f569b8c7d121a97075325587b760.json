@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into projection.task_projection\n            (workflow_id, run_id, last_event_id, status, waiting_reason, progress, updated_at)\n        values ($1, $2, $3, $4, $5, $6, now())\n        on conflict (workflow_id) do update set\n            run_id         = excluded.run_id,\n            last_event_id  = excluded.last_event_id,\n            status         = excluded.status,\n            waiting_reason = excluded.waiting_reason,\n            progress       = excluded.progress,\n            updated_at     = now()\n        where projection.task_projection.last_event_id < excluded.last_event_id\n        returning last_event_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_event_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e50d91a2e4c2de096daacb60bbeebb1d3146f569b8c7d121a97075325587b760"
+}

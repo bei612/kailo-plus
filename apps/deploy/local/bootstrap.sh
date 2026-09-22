@@ -44,6 +44,7 @@ gen spicedb_preshared_key
 gen spicedb_db_password
 
 gen kailo_core_client_secret
+gen kailo_worker_client_secret
 gen browser_client_secret
 gen_hex oidc_cookie_secret
 # Relay 自身的 Nostr 身份，32 字节十六进制。它与 RelayOperatorIdentity 的密钥
@@ -86,6 +87,7 @@ mkdir -p secrets/keycloak-import
 [ -f .env ] && . ./.env
 : "${TEMPORAL_NAMESPACE:?bootstrap 需要 .env 中的 TEMPORAL_NAMESPACE}"
 sed -e "s|__KAILO_CORE_CLIENT_SECRET__|$(cat secrets/kailo_core_client_secret)|" \
+    -e "s|__KAILO_WORKER_CLIENT_SECRET__|$(cat secrets/kailo_worker_client_secret)|" \
     -e "s|__TEMPORAL_NAMESPACE__|${TEMPORAL_NAMESPACE}|g" \
     -e "s|__BROWSER_CLIENT_SECRET__|$(cat secrets/browser_client_secret)|" \
     -e "s|__VERIFY_USER__|${VERIFY_USER:?bootstrap 需要 .env 中的 VERIFY_USER}|" \

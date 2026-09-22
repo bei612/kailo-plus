@@ -7,7 +7,7 @@
   "clients": [
     {
       "clientId": "kailo-core",
-      "name": "Platform Core/BFF 与 Application Worker 的服务身份",
+      "name": "Platform Core/BFF 的服务身份",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -25,7 +25,7 @@
           "consentRequired": false,
           "config": {
             "claim.name": "permissions",
-            "claim.value": "[\"__TEMPORAL_NAMESPACE__:worker\",\"__TEMPORAL_NAMESPACE__:write\",\"__TEMPORAL_NAMESPACE__:read\"]",
+            "claim.value": "[\"__TEMPORAL_NAMESPACE__:write\", \"__TEMPORAL_NAMESPACE__:read\"]",
             "jsonType.label": "JSON",
             "access.token.claim": "true",
             "id.token.claim": "false",
@@ -34,6 +34,47 @@
         }
       ],
       "secret": "__KAILO_CORE_CLIENT_SECRET__"
+    },
+    {
+      "clientId": "kailo-worker",
+      "name": "Application Worker 的服务身份",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "access.token.lifespan": "900"
+      },
+      "protocolMappers": [
+        {
+          "name": "temporal-permissions",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "permissions",
+            "claim.value": "[\"__TEMPORAL_NAMESPACE__:worker\", \"__TEMPORAL_NAMESPACE__:write\", \"__TEMPORAL_NAMESPACE__:read\"]",
+            "jsonType.label": "JSON",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "core-service-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "kailo-core",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ],
+      "secret": "__KAILO_WORKER_CLIENT_SECRET__"
     },
     {
       "clientId": "buzz-web",
