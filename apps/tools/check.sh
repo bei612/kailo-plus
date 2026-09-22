@@ -78,7 +78,26 @@ step_contract() { hdr "3/10 contract compatibility"
 }
 
 step_migrate()  { hdr "4/10 数据迁移前进与回退演练"
-  populated core/migrations && pass "迁移目录存在，演练由 tools/migrate 执行" || skip "尚无迁移"
+  if ! populated core/migrations; then skip "尚无迁移"; return 0; fi
+  # 结构规则：每个 up 必须有配对的 down，否则「可回滚」无从谈起
+  local miss=0
+  for up in core/migrations/*.up.sql; do
+    [ -f "${up%.up.sql}.down.sql" ] || { fail "缺少回退脚本：${up%.up.sql}.down.sql"; miss=1; }
+  done
+  [ "$miss" -eq 0 ] && pass "每个迁移都有配对的回退脚本"
+  if [ -z "${DATABASE_URL:-}" ]; then
+    skip "未提供 DATABASE_URL，跳过实际演练（本地见 deploy/local/bootstrap.sh）"
+    return 0
+  fi
+  if ! have sqlx; then fail "有 DATABASE_URL 但未安装 sqlx-cli，无法演练"; return 0; fi
+  # 演练：前进 → 回退 → 再前进，任一失败即门禁失败
+  if sqlx migrate run --source core/migrations >/dev/null 2>&1 \
+     && sqlx migrate revert --source core/migrations >/dev/null 2>&1 \
+     && sqlx migrate run --source core/migrations >/dev/null 2>&1; then
+    pass "前进、回退、再前进三步演练通过"
+  else
+    fail "迁移演练失败"
+  fi
   return 0
 }
 
@@ -150,9 +169,34 @@ PY
 }
 
 step_security() { hdr "9/10 受影响安全不变式"
-  # 07-运行与运维基线.md §1 的校验机制；尚无已接入组件时无适用对象
-  populated deploy/local && pass "部署描述存在，不变式校验由 tools/invariants 执行" \
-    || skip "尚无部署描述"
+  if [ ! -f deploy/local/compose.yaml ]; then skip "尚无部署描述"; return 0; fi
+  python3 - <<'PY' || FAIL=1
+import re, sys, yaml
+d = yaml.safe_load(open("deploy/local/compose.yaml", encoding="utf-8"))
+raw = open("deploy/local/compose.yaml", encoding="utf-8").read()
+bad = []
+declared = set(d.get("networks") or {})
+for name, svc in (d.get("services") or {}).items():
+    nets = set(svc.get("networks") or [])
+    # 01 §8 与 07 §1：网络归属必须显式声明，默认网络会让边界失效
+    if not nets:
+        bad.append(f"{name}: 未声明 networks，会落到默认网络")
+    for n in nets - declared:
+        bad.append(f"{name}: 使用了未声明的 network {n}")
+    # 公开入口与管理面不得同属一个服务（SS-AGW-ADMIN 的编排层表达）
+    if {"edge", "mgmt"} <= nets:
+        bad.append(f"{name}: 同时接入 edge 与 mgmt，管理面对公开入口可达")
+    # ADR-06：按 digest 引用，不使用可变 tag
+    img = svc.get("image")
+    if img and "@sha256:" not in img:
+        bad.append(f"{name}: image 未按 digest 引用（{img}）")
+# 杜绝硬编码：可配置项必须来自 ${VAR:?}，不得是字面量
+for m in re.finditer(r"^\s+-\s+\"?(\d{2,5}):(\d{2,5})\"?\s*$", raw, re.M):
+    bad.append(f"端口字面量 {m.group(0).strip()}，应取自 ${{VAR:?}}")
+if bad:
+    print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
+print(f"  \033[32mPASS\033[0m {len(d.get('services') or {})} 个服务：network 显式、边界不越层、镜像按 digest、无端口字面量")
+PY
   return 0
 }
 

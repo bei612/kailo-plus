@@ -1,0 +1,35 @@
+# Collector 承担 07-运行与运维基线.md §3 禁止清单的第二道防线：
+# 丢弃不在允许清单内的属性键。第一道防线仍在应用侧——不产生就不会泄漏，
+# 本过滤不构成产生它们的许可。
+#
+# 用 transform 的 keep_keys 表达允许清单，而不是用 attributes 的 delete 加模式：
+# Collector 的正则是 Go RE2，不支持负向先行断言，「删除不在清单内的键」无法
+# 用单条模式表达。keep_keys 是该语义的直接算子。
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+      http: { endpoint: 0.0.0.0:4318 }
+
+processors:
+  # 允许清单只含封闭枚举与稳定 ID（07 §3 禁高基数自由文本）。
+  # 新增键必须同时在此登记，否则会被丢弃——这是刻意的 fail-closed。
+  transform/allowlist:
+    error_mode: propagate
+    trace_statements:
+      - keep_keys(span.attributes, ["operation_id", "tenant_id", "workspace_id", "capability_id", "reason_code", "stage"])
+    metric_statements:
+      - keep_keys(datapoint.attributes, ["operation_id", "tenant_id", "workspace_id", "capability_id", "reason_code", "stage"])
+    log_statements:
+      - keep_keys(log.attributes, ["operation_id", "tenant_id", "workspace_id", "capability_id", "reason_code", "stage"])
+  batch: {}
+
+exporters:
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    traces:  { receivers: [otlp], processors: [transform/allowlist, batch], exporters: [debug] }
+    metrics: { receivers: [otlp], processors: [transform/allowlist, batch], exporters: [debug] }
+    logs:    { receivers: [otlp], processors: [transform/allowlist, batch], exporters: [debug] }

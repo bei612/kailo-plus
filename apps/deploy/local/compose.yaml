@@ -1,0 +1,61 @@
+# 本地开发拓扑（ADR-04）。它不复刻生产，但不简化网络边界——
+# 07-运行与运维基线.md §2 明写「本地可以简化副本数与持久化，不可以简化边界」。
+#
+# 四层 network 的可达关系在此显式声明，默认不可达。任何服务加入新 network
+# 视同边界变更，按 AGENTS.md 评审。本文件只含 Stage 0 已接入的服务；
+# 上游组件随各自 Stage 加入，届时一并声明其 network 归属。
+
+name: kailo-local
+
+networks:
+  edge:       # 仅公开入口可达
+  app:        # Core/BFF、Worker、Web 静态服务
+  mgmt:       # 管理面与 admin router
+  component:  # 各上游组件 runtime
+
+volumes:
+  core-db-data:
+
+services:
+  core-db:
+    # 按 digest 引用，不使用可变 tag（ADR-06）。tag 16-alpine 只作人类可读别名。
+    image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    # 仅 app 网络可达：Worker 不直写 Core 数据库（01 §4），
+    # 但迁移与 Core 自身需要它，二者都在 app 网络内。
+    networks: [app]
+    environment:
+      POSTGRES_DB: ${CORE_DB_NAME:?必须显式提供，禁止硬编码}
+      POSTGRES_USER: ${CORE_DB_USER:?必须显式提供，禁止硬编码}
+      POSTGRES_PASSWORD_FILE: /run/secrets/core_db_password
+    secrets: [core_db_password]
+    volumes:
+      - core-db-data:/var/lib/postgresql/data
+    ports:
+      # 仅绑定回环，供本机迁移演练与 psql 使用；不暴露到宿主网络之外。
+      - "127.0.0.1:${CORE_DB_PORT:?必须显式提供，禁止硬编码}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  otel-collector:
+    # 按 digest 引用（ADR-06）。别名 tag 为 0.139.0。
+    image: otel/opentelemetry-collector-contrib@sha256:faf125d656fa47cea568b2f3b4494efd2525083bc75c1e96038bc23f05cd68fd
+    # 应用侧只依赖 OTLP（ADR-05）。Stage 0/1 只跑 Collector 并导出到
+    # 控制台与本地文件；Prometheus/Loki/Tempo 在 Stage 2 出现跨服务链路时接入。
+    networks: [app, mgmt]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    configs:
+      - source: otel_config
+        target: /etc/otelcol/config.yaml
+
+secrets:
+  core_db_password:
+    # 开发用 secret 也经受控投递面取得，不在仓库、环境文件或脚本中出现明文
+    # （07 §2）。该文件由 deploy/local/bootstrap.sh 从受控来源生成。
+    file: ./secrets/core_db_password
+
+configs:
+  otel_config:
+    file: ./otel-collector.yaml

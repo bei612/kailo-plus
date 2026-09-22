@@ -35,3 +35,6 @@ coverage/
 # Dart / Flutter
 /mobile/.dart_tool/
 /mobile/pubspec.lock
+
+# 本地开发 secret（由 deploy/local/bootstrap.sh 生成）
+/deploy/local/secrets/
