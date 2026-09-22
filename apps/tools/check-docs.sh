@@ -128,6 +128,37 @@ else
   say "  跳过：未找到 npx"
 fi
 
+say "== 7. 设计语料自检 =="
+DESIGN="$DESIGN" python3 - <<'PY' || FAIL=1
+import re, os, glob, sys
+d = os.environ['DESIGN']
+bad = []
+files = sorted(glob.glob(f'{d}/*.md'))
+BAN = re.compile(r'\bTODO\b|\bTBD\b|待补充|待完善|待实现|待 PoC')
+for f in files:
+    txt = open(f, encoding='utf-8').read()
+    if os.path.basename(f) != 'AGENTS.md':
+        for n, line in enumerate(txt.split('\n'), 1):
+            if BAN.search(line):
+                bad.append(f"禁用词 {os.path.basename(f)}:{n}")
+    for m in re.finditer(r'\]\(([^)#][^)]*)\)', txt):
+        q = m.group(1)
+        if not q.startswith('http') and not os.path.exists(os.path.join(d, q)):
+            bad.append(f"断链 {os.path.basename(f)} -> {q}")
+if bad:
+    print("  \033[31mFAIL\033[0m"); [print("   ", x) for x in bad]; sys.exit(1)
+print(f"  \033[32mPASS\033[0m {len(files)} 篇：无禁用词、相对链接全部可达")
+PY
+
+if command -v npx >/dev/null 2>&1; then
+  if (cd "$DESIGN" && npx --yes markdownlint-cli2 "*.md" >/tmp/mdd.$$ 2>&1); then
+    pass "设计语料 markdownlint 0 issues"
+  else
+    fail "设计语料 markdownlint 报错"; tail -20 /tmp/mdd.$$
+  fi
+  rm -f /tmp/mdd.$$
+fi
+
 say ""
 if [ "$FAIL" -eq 0 ]; then
   say "全部通过。"
