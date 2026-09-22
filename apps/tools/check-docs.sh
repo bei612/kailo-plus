@@ -16,21 +16,24 @@ if [ ! -d "$DESIGN" ]; then
   say "找不到设计目录：$DESIGN"; exit 2
 fi
 
+# 纳入检查的文档集：顶层实施合同 + docs/ 下的 ADR 与 runbook
+DOCS=(./*.md)
+while IFS= read -r f; do DOCS+=("$f"); done < <(find docs -name '*.md' 2>/dev/null | sort)
+
 say "== 1. 禁用词 =="
-HITS=$(grep -nE '\bTODO\b|\bTBD\b|待实现|待 PoC' ./*.md 2>/dev/null; \
-       grep -nE '可能' ./*.md 2>/dev/null | grep -vE '不可能|可能性|可能的')
+HITS=$(grep -nE '\bTODO\b|\bTBD\b|待实现|待 PoC' "${DOCS[@]}" 2>/dev/null; \
+       grep -nE '可能' "${DOCS[@]}" 2>/dev/null | grep -vE '不可能|可能性|可能的')
 if [ -z "$HITS" ]; then pass "无禁用词"; else fail "发现禁用词"; printf '%s\n' "$HITS"; fi
 
 say "== 2. 相对链接 =="
 python3 - <<'PY' || FAIL=1
-import re, os, sys
+import re, os, glob, sys
 bad = []
-for f in sorted(os.listdir('.')):
-    if not f.endswith('.md'):
-        continue
+for f in sorted(glob.glob('*.md')) + sorted(glob.glob('docs/**/*.md', recursive=True)):
+    base = os.path.dirname(f) or '.'
     for m in re.finditer(r'\]\(([^)#][^)]*)\)', open(f, encoding='utf-8').read()):
         p = m.group(1)
-        if not p.startswith('http') and not os.path.exists(p):
+        if not p.startswith('http') and not os.path.exists(os.path.join(base, p)):
             bad.append(f"{f} -> {p}")
 if bad:
     print("  \033[31mFAIL\033[0m 断链:"); [print("   ", b) for b in bad]; sys.exit(1)
@@ -45,7 +48,8 @@ t02 = open(glob.glob(f'{d}/02-*.md')[0], encoding='utf-8').read()
 t16 = open(glob.glob(f'{d}/16-*.md')[0], encoding='utf-8').read()
 known = set(re.findall(r'^\| ((?:SF|SS)-[A-Z]+-[A-Z0-9-]+|DD-\d+|GAP-[A-Z]+-\d+) \|', t02, re.M))
 known |= set(re.findall(r'^\| (V-(?:SCN|REQ|SRC)-\d+) \|', t16, re.M))
-apps = ''.join(open(f, encoding='utf-8').read() for f in sorted(glob.glob('*.md')))
+apps = ''.join(open(f, encoding='utf-8').read()
+               for f in sorted(glob.glob('*.md')) + sorted(glob.glob('docs/**/*.md', recursive=True)))
 used = set()
 for p in (r'\b(?:SF|SS)-[A-Z]+-[A-Z0-9][A-Z0-9-]*', r'\bDD-\d+',
           r'\bGAP-[A-Z]+-\d+', r'\bV-(?:SCN|REQ)-\d+'):
@@ -114,7 +118,7 @@ PY
 
 say "== 6. markdownlint =="
 if command -v npx >/dev/null 2>&1; then
-  if npx --yes markdownlint-cli2 "*.md" >/tmp/mdl.$$ 2>&1; then
+  if npx --yes markdownlint-cli2 "*.md" "docs/**/*.md" >/tmp/mdl.$$ 2>&1; then
     pass "0 issues"
   else
     fail "markdownlint 报错"; tail -20 /tmp/mdl.$$
