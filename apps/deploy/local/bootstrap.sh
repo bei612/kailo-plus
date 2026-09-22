@@ -129,6 +129,11 @@ printf '  已生成：secrets/browser-client.env\n'
 chmod 600 secrets/spicedb.env
 printf '  已生成：secrets/spicedb.env\n'
 
+# Core 自己的 OIDC client secret：连 Temporal 要服务令牌（SF-TMP-06）。
+{ printf 'OIDC_SERVICE_CLIENT_SECRET='; cat secrets/kailo_core_client_secret; printf '\n'; } > secrets/core-service.env
+chmod 600 secrets/core-service.env
+printf '  已生成：secrets/core-service.env\n'
+
 # Worker 的两把凭据：自己的 OIDC client secret 与 SpiceDB 的 PSK。
 # 与上面的原始 secret 同源，保持单一真值。
 { printf 'OIDC_WORKER_CLIENT_SECRET='; cat secrets/kailo_worker_client_secret; printf '\n'

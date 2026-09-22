@@ -278,6 +278,8 @@ services:
     networks: [app]
     depends_on:
       core-db: { condition: service_healthy }
+      temporal: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
     environment:
       DATABASE_URL: ${CORE_DATABASE_URL:?必须显式提供，禁止硬编码}
       BFF_LISTEN: ${BFF_LISTEN:?必须显式提供，禁止硬编码}
@@ -298,8 +300,18 @@ services:
       # Relay 的网络地址。与 Community host 不是一回事：后者参与 NIP-98
       # 签名并作为 Host 头，前者只用于建立连接（SF-BUZ-32）。
       BUZZ_RELAY_TRANSPORT: ${BUZZ_RELAY_TRANSPORT:?必须显式提供，禁止硬编码}
+      # Core 在 Start 前持久化 WorkflowRef，再以固定 ID 启动（DD-48）。
+      # namespace 写错即全部调用被拒：Temporal 的 default claim mapper 按
+      # "<namespace>:<role>" 解析 permissions（SF-TMP-06）。
+      TEMPORAL_TARGET_URL: ${TEMPORAL_TARGET_URL:?必须显式提供，禁止硬编码}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:?必须显式提供，禁止硬编码}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:?必须显式提供，禁止硬编码}
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:?必须显式提供，禁止硬编码}
+      OIDC_SERVICE_CLIENT_ID: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/openbao-core.env
+      # Core 自己的 OIDC client secret；不进 .env、不上命令行
+      - ./secrets/core-service.env
     ports:
       # 仅绑回环，供本机核验 service API；不暴露到宿主网络之外。
       - "127.0.0.1:${SERVICE_PORT:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}"

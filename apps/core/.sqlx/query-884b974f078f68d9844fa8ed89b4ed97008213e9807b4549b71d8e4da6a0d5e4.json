@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select tenant_id, tenant_principal_id, version, state\n                 from identity.tenant_membership where id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_principal_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "884b974f078f68d9844fa8ed89b4ed97008213e9807b4549b71d8e4da6a0d5e4"
+}

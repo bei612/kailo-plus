@@ -33,6 +33,7 @@ pub struct ServiceState {
     pub relay_transport: String,
     /// 复用连接池。每次投影新建 Client 会让 TLS 与连接开销落在重试路径上。
     pub http: reqwest::Client,
+    pub temporal: Arc<crate::temporal::TemporalClient>,
 }
 
 pub fn router(state: ServiceState) -> Router {
@@ -45,6 +46,10 @@ pub fn router(state: ServiceState) -> Router {
         .route(
             "/service/v1/memberships/state",
             post(crate::membership_state::transition_membership),
+        )
+        .route(
+            "/service/v1/memberships/lifecycle",
+            post(crate::membership_lifecycle::start_membership_lifecycle),
         )
         .with_state(state)
 }

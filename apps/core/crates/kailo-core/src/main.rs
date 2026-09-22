@@ -4,10 +4,13 @@
 //! `01-工程结构与模块边界.md` §3 以 crate 与可见性划分，不走网络、不引消息总线。
 
 mod bff;
+mod membership_lifecycle;
 mod membership_projection;
 mod membership_state;
+mod oidc;
 mod service_api;
 mod service_auth;
+mod temporal;
 
 use std::net::SocketAddr;
 
@@ -41,6 +44,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
             .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
         http: reqwest::Client::new(),
+        temporal: std::sync::Arc::new(
+            temporal::TemporalClient::from_env(oidc::TokenSource::from_env()?).await?,
+        ),
     };
 
     let bff = tokio::net::TcpListener::bind(listen).await?;

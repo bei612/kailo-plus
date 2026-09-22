@@ -1,0 +1,264 @@
+//! 成员生命周期 Workflow 的启动面（`.design/06` §3.1、`DD-48`）。
+//!
+//! 这条路径上 Core 做三件事，顺序不能换：
+//!
+//! 1. 确认 Core 自己的 fail-closed 状态**已经**成立——建立走 `PROVISIONING`，
+//!    撤权走 `REVOKING`。撤权先置 `REVOKING` 再投影是设计固定的顺序
+//!    （`.design/09` 第 5 步）：先关门再收敛，反过来会在收敛期间继续放行。
+//! 2. 在 Start 之前持久化唯一 `WorkflowRef`，workflow ID 固定为
+//!    `kailo:<kind>:<tenant_id>:<primary_entity_id>:<entity_version>`。
+//! 3. 以 reuse/conflict 三项策略至多一次启动，并回填 run ID。
+//!
+//! 它**不做准入判定**。谁可以邀请或撤销一个成员，是 ActionExecution 的门禁
+//! 结论；本端点要求调用方给出一个已持久化且 `gate_state=ALLOWED` 的
+//! ActionExecution，并核对它与该成员同 Tenant。在这里凭空造一个 `ALLOWED`
+//! 的 ActionExecution，就是给自己发了一张准入通行证。
+
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    Json,
+};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::membership_projection::MembershipScope;
+use crate::service_api::{authorize, unavailable, ServiceState};
+use crate::temporal::{Started, TemporalError};
+
+/// Worker 注册的 Workflow 类型名。两侧必须逐字相同，否则 Start 成功但没有
+/// 任何 Worker 认领，表现为「启动了却永远不动」。
+const WORKFLOW_TYPE: &str = "ComponentTaskWorkflow";
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LifecycleRequest {
+    pub scope: MembershipScope,
+    pub membership_id: Uuid,
+    /// 已持久化且已准入的 ActionExecution。它是这次启动的授权依据。
+    pub action_execution_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LifecycleResponse {
+    pub workflow_id: String,
+    pub kind: String,
+    /// 为空表示本次调用没有创建 execution（同一 ID 的已存在）。
+    pub run_id: Option<String>,
+}
+
+/// Workflow 的冻结输入。字段名必须与 Go 侧的 `ComponentTaskInput` 一致——
+/// 两侧共用 JSON payload，名字对不上时 Workflow 收到的是零值而不是错误。
+#[derive(Debug, Serialize)]
+struct ComponentTaskInput {
+    kind: String,
+    membership: MembershipTarget,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MembershipTarget {
+    scope: String,
+    membership_id: String,
+    membership_version: i32,
+    subject_principal_id: String,
+    relation_object_id: String,
+}
+
+pub async fn start_membership_lifecycle(
+    State(state): State<ServiceState>,
+    headers: HeaderMap,
+    body: Result<Json<LifecycleRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if let Err(e) = authorize(&state, &headers).await {
+        return e;
+    }
+    let Ok(Json(req)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
+    let (tenant_id, principal_id, object_id, version, membership_state) =
+        match load(&state, &req).await {
+            Ok(v) => v,
+            Err(Some(r)) => return r,
+            Err(None) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        };
+
+    // 状态决定 kind，不由调用方指定：让调用方选 kind 就等于让它决定这是建立
+    // 还是撤权，而那件事已经由 Core 的 fail-closed 状态表达过一次了。
+    let kind = match membership_state.as_str() {
+        "PROVISIONING" => "MEMBERSHIP_PROJECTION",
+        "REVOKING" => "MEMBERSHIP_REVOCATION",
+        other => {
+            tracing::warn!(state = other, "成员状态不在可启动生命周期的两个状态上");
+            return StatusCode::CONFLICT.into_response();
+        }
+    };
+
+    // 准入依据：ActionExecution 必须已存在、已 ALLOWED、且与该成员同 Tenant。
+    match sqlx::query!(
+        "select 1 as ok from admission.action_execution
+         where id = $1 and tenant_id = $2 and gate_state = 'ALLOWED'",
+        req.action_execution_id,
+        tenant_id
+    )
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            tracing::warn!(action = %req.action_execution_id, "ActionExecution 不存在或未准入");
+            return StatusCode::FORBIDDEN.into_response();
+        }
+        Err(e) => return unavailable(e),
+    }
+
+    let workflow_id = format!("kailo:{kind}:{tenant_id}:{}:{version}", req.membership_id);
+
+    // Start 之前先落 WorkflowRef。ON CONFLICT DO NOTHING 让重复调用收敛到同一
+    // 行而不是失败——重复调用与崩溃重试是同一件事。action_execution_id 上的
+    // 唯一约束保证一个 ActionExecution 至多一个业务 Workflow。
+    if let Err(e) = sqlx::query!(
+        "insert into projection.workflow_ref
+             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
+              operation_id, action_execution_id, projection_state)
+         select $1, $2, 1, $3, $4, ae.operation_id, ae.id, 'PENDING_START'
+         from admission.action_execution ae where ae.id = $5
+         on conflict (workflow_id) do nothing",
+        workflow_id,
+        WORKFLOW_TYPE,
+        kind,
+        tenant_id,
+        req.action_execution_id,
+    )
+    .execute(&state.pool)
+    .await
+    {
+        return unavailable(e);
+    }
+
+    let input = ComponentTaskInput {
+        kind: kind.to_owned(),
+        membership: MembershipTarget {
+            scope: match req.scope {
+                MembershipScope::Tenant => "TENANT".to_owned(),
+                MembershipScope::Workspace => "WORKSPACE".to_owned(),
+            },
+            membership_id: req.membership_id.to_string(),
+            membership_version: version,
+            subject_principal_id: principal_id.to_string(),
+            relation_object_id: object_id.to_string(),
+        },
+    };
+
+    match state
+        .temporal
+        .start(&workflow_id, WORKFLOW_TYPE, &input)
+        .await
+    {
+        Ok(Started::Created { run_id }) => {
+            mark_running(&state, &workflow_id, Some(&run_id)).await;
+            (
+                StatusCode::OK,
+                Json(LifecycleResponse {
+                    workflow_id,
+                    kind: kind.to_owned(),
+                    run_id: Some(run_id),
+                }),
+            )
+                .into_response()
+        }
+        // 已存在不是失败：它恰好证明目标状态成立。run ID 只从 observation
+        // 回填，这里不编一个（`.design/03` §6）。
+        Ok(Started::AlreadyStarted) => {
+            mark_running(&state, &workflow_id, None).await;
+            (
+                StatusCode::OK,
+                Json(LifecycleResponse {
+                    workflow_id,
+                    kind: kind.to_owned(),
+                    run_id: None,
+                }),
+            )
+                .into_response()
+        }
+        Err(e @ TemporalError::Rejected(_)) => {
+            tracing::warn!(error = %e, "Start 被拒绝");
+            StatusCode::CONFLICT.into_response()
+        }
+        // 结果不明：WorkflowRef 停在 PENDING_START，调用方只能用同一 ID 收敛，
+        // 不换 ID 重试（DD-48）。
+        Err(e) => {
+            tracing::warn!(error = %e, workflow_id, "Start 结果不明");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+/// 回填 run ID 并把投影状态推进到 RUNNING。
+///
+/// 失败只记日志：execution 已经起来了，这里再报错会让调用方以为没启动而重试，
+/// 那比投影落后更糟。兜底由 `ListWorkflowExecutions` 对账作业承担（06 §3.1）。
+async fn mark_running(state: &ServiceState, workflow_id: &str, run_id: Option<&str>) {
+    if let Err(e) = sqlx::query!(
+        "update projection.workflow_ref
+         set run_id = coalesce($2, run_id), projection_state = 'RUNNING', version = version + 1
+         where workflow_id = $1 and projection_state = 'PENDING_START'",
+        workflow_id,
+        run_id,
+    )
+    .execute(&state.pool)
+    .await
+    {
+        tracing::warn!(error = %e, workflow_id, "回填 run ID 失败，留给对账作业");
+    }
+}
+
+type Loaded = (Uuid, Uuid, Uuid, i32, String);
+
+/// `Err(Some(resp))` 是确定的拒绝，`Err(None)` 是依赖不可用。
+async fn load(state: &ServiceState, req: &LifecycleRequest) -> Result<Loaded, Option<Response>> {
+    match req.scope {
+        MembershipScope::Tenant => {
+            let row = sqlx::query!(
+                "select tenant_id, tenant_principal_id, version, state
+                 from identity.tenant_membership where id = $1",
+                req.membership_id
+            )
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|_| None)?
+            .ok_or(Some(StatusCode::NOT_FOUND.into_response()))?;
+            // Tenant 成员的 SpiceDB 关系客体就是 Tenant 自己
+            Ok((
+                row.tenant_id,
+                row.tenant_principal_id,
+                row.tenant_id,
+                row.version,
+                row.state,
+            ))
+        }
+        MembershipScope::Workspace => {
+            let row = sqlx::query!(
+                "select w.tenant_id, wm.tenant_principal_id, wm.workspace_id, wm.version, wm.state
+                 from identity.workspace_membership wm
+                 join identity.workspace w on w.id = wm.workspace_id
+                 where wm.id = $1",
+                req.membership_id
+            )
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|_| None)?
+            .ok_or(Some(StatusCode::NOT_FOUND.into_response()))?;
+            Ok((
+                row.tenant_id,
+                row.tenant_principal_id,
+                row.workspace_id,
+                row.version,
+                row.state,
+            ))
+        }
+    }
+}
