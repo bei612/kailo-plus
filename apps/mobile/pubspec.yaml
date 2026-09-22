@@ -1,0 +1,7 @@
+name: kailo_mobile
+description: Buzz Mobile 的 Kailo 契约绑定与应用代码（Flutter/Dart）。
+publish_to: none
+version: 0.0.0
+
+environment:
+  sdk: ^3.9.0

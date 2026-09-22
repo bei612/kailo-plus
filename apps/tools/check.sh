@@ -37,7 +37,19 @@ step_lint() {
     (cd worker && gofmt -l . | grep -q . ) && fail "gofmt 有未格式化文件" || pass "gofmt"
     (cd worker && go vet ./... >/dev/null 2>&1) && pass "go vet" || fail "go vet"
   fi
-  [ "$ran" -eq 0 ] && skip "尚无 Rust/Go 源码"
+  if populated web/packages && have pnpm; then
+    ran=1
+    pnpm -r typecheck >/dev/null 2>&1 && pass "tsc --noEmit" || fail "tsc --noEmit"
+  fi
+  if populated mobile/lib; then
+    if have dart; then
+      ran=1
+      (cd mobile && dart analyze >/dev/null 2>&1) && pass "dart analyze" || fail "dart analyze"
+    else
+      fail "mobile/ 有 Dart 源码但本机无 dart 工具链，该侧无法校验"
+    fi
+  fi
+  [ "$ran" -eq 0 ] && skip "尚无源码"
   return 0
 }
 
@@ -97,8 +109,43 @@ step_supply()   { hdr "7/10 secret、依赖、许可证与供应链"
 }
 
 step_seam()     { hdr "8/10 上游 seam diff"
-  populated upstream-patches && pass "baseline manifest 存在，比对由 tools/seam 执行" \
-    || skip "尚无上游进入运行拓扑"
+  if ! populated upstream-patches; then skip "尚无上游进入运行拓扑"; return 0; fi
+  DESIGN="${DESIGN:-../.design}" python3 - <<'PY' || FAIL=1
+import glob, os, re, sys
+d = os.environ["DESIGN"]
+t02 = open(glob.glob(f"{d}/02-*.md")[0], encoding="utf-8").read()
+known = set(re.findall(r"^\| ((?:SF|SS)-[A-Z]+-[A-Z0-9-]+) \|", t02, re.M))
+hexes = set(re.findall(r"\b[0-9a-f]{40}\b", t02))
+bad, n = [], 0
+for f in sorted(glob.glob("upstream-patches/*/baseline.yaml")):
+    n += 1
+    raw = open(f, encoding="utf-8").read()
+    def val(k):
+        m = re.search(rf"^{k}:\s*(\S+)", raw, re.M)
+        return m.group(1) if m else None
+    def lst(k):
+        m = re.search(rf"^{k}:\s*\[(.*?)\]", raw, re.M | re.S)
+        return [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
+    ev, ib, div = val("evidence_commit"), val("implementation_base_commit"), val("base_divergence")
+    for name, v in (("evidence_commit", ev), ("implementation_base_commit", ib)):
+        if not v or not re.fullmatch(r"[0-9a-f]{40}", v):
+            bad.append(f"{f}: {name} 不是 40 位 commit")
+    # 06 §2 的硬规则：两者不同而 base_divergence 声明为 none 即构建失败
+    if ev and ib and ev != ib and div == "none":
+        bad.append(f"{f}: evidence_commit 与 implementation_base_commit 不同，但 base_divergence 声明为 none")
+    if ev and ev not in hexes:
+        bad.append(f"{f}: evidence_commit 未出现在 .design/02，无法追溯")
+    for ref in lst("source_facts") + lst("source_seams"):
+        if ref not in known:
+            bad.append(f"{f}: {ref} 在 .design/02 中解析不到")
+    for ref in lst("compatibility_evidence"):
+        q = ref[5:] if ref.startswith("apps/") else ref
+        if not os.path.exists(q):
+            bad.append(f"{f}: compatibility_evidence 指向不存在的 {ref}")
+if bad:
+    print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
+print(f"  \033[32mPASS\033[0m {n} 份 baseline manifest：commit 可追溯、设计引用闭合、证据可达")
+PY
   return 0
 }
 

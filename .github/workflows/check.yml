@@ -31,6 +31,10 @@ jobs:
         with:
           node-version: '24'
 
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.9.4'
+
       - name: tools/check.sh --full
         working-directory: apps
         run: ./tools/check.sh --full

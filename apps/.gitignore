@@ -31,3 +31,7 @@ coverage/
 
 # Go
 /worker/bin/
+
+# Dart / Flutter
+/mobile/.dart_tool/
+/mobile/pubspec.lock

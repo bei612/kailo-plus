@@ -1,0 +1,5 @@
+# 生成目录由 tools/gen.sh 写出，不手工编辑，因此不对其施加风格规则；
+# 但它必须能通过分析器——这是 ADR-03 要求的四侧可验证性的一部分。
+analyzer:
+  errors:
+    todo: ignore

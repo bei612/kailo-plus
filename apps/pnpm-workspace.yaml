@@ -1,3 +1,4 @@
 packages:
-  - "web/*"
-  - "sdk/*"
+  - "web/packages/*"
+  - "web/buzz-web"
+  - "desktop"
