@@ -32,6 +32,13 @@ pub enum OperatorError {
     Transport(#[from] reqwest::Error),
     #[error("Relay 拒绝: HTTP {status} {body}")]
     Rejected { status: u16, body: String },
+    /// 投影动作已发出，但再次读取 roster 仍与目标状态不符。
+    ///
+    /// 这是**结果不明**而不是拒绝：上游的 roster 快照事件由 best-effort 路径
+    /// 发布（失败只 warn），因此读到旧值既可能是快照落后，也可能是写入没生效。
+    /// 调用方必须当作可重试失败，绝不能据此把成员置为 active。
+    #[error("roster 未收敛: {0}")]
+    NotConverged(String),
 }
 
 /// 取用密钥前先校验 audience：同一把 operator key 不得被用于它不该服务的部署。

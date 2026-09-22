@@ -250,6 +250,10 @@ services:
       # 默认 false 时 REST API 绕过令牌认证（SF-BUZ-27）。WebSocket 协议认证
       # 不受影响，但 REST 面同样承载业务读写，不能留在默认值上。
       BUZZ_REQUIRE_AUTH_TOKEN: "true"
+      # roster 快照重建会在「同一秒内回到此前出现过的成员集合」时整事务回滚，
+      # 快照停留在过期值上；修复只来自这个周期对账（SF-BUZ-34）。它因此是
+      # 成员投影查证的收敛上界，必须显式给值而不是留在默认 60 秒。
+      BUZZ_NIP43_RECONCILE_INTERVAL_SECS: ${BUZZ_NIP43_RECONCILE_INTERVAL_SECS:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/buzz-relay.env
     ports:

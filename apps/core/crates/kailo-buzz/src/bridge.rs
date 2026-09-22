@@ -15,6 +15,38 @@ use url::Url;
 
 use crate::operator::OperatorError;
 
+/// Buzz 的事件 kind。取自上游 `buzz-core/src/kind.rs` 的同名常量，
+/// 不是本仓库自定义的编号——改动必须回到上游确认。
+const KIND_RELAY_ADMIN_ADD: u16 = 9030;
+const KIND_RELAY_ADMIN_REMOVE: u16 = 9031;
+const KIND_RELAY_MEMBERSHIP_LIST: u16 = 13534;
+const KIND_CHANNEL_ADD_USER: u16 = 9000;
+const KIND_CHANNEL_REMOVE_USER: u16 = 9001;
+const KIND_CHANNEL_MEMBERS: u16 = 39002;
+
+/// roster 的两个层级。Tenant 成员投影到 relay roster，Workspace 成员投影到
+/// 所属 Channel 的 roster（`DD-45`）。
+#[derive(Debug, Clone, Copy)]
+pub enum Scope<'a> {
+    Relay,
+    Channel(&'a str),
+}
+
+/// 收敛目标。`converge` 只认这两个终态，没有「尽力而为」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Presence {
+    Present,
+    Absent,
+}
+
+/// roster 快照里的一行。角色原样保留，不映射成平台角色——平台角色的权威
+/// 在 Core，这里只是执行投影的核对依据。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RosterEntry {
+    pub pubkey: String,
+    pub role: String,
+}
+
 /// 密钥托管方。只有 `Server` 才可能由 Core 代签（`DD-75`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Custody {
@@ -151,6 +183,131 @@ impl IdentityClient {
         Self::accepted_event_id(&accepted)
     }
 
+    /// 读取 roster 快照。
+    ///
+    /// 这是 roster 唯一的读取面：上游没有暴露直接读 `relay_members` 或
+    /// `channel_members` 的 REST endpoint，只有 relay 自签的可替换快照事件。
+    /// 快照由 best-effort 路径发布（发布失败只 warn），因此它可能落后于表，
+    /// 这正是 `converge` 把「读到旧值」当作未收敛而非失败的原因。
+    pub async fn roster(
+        &self,
+        http: &reqwest::Client,
+        scope: Scope<'_>,
+    ) -> Result<Vec<RosterEntry>, OperatorError> {
+        // 快照是可替换事件，同一 scope 只有一条当前版本。
+        let (filter, tag_name) = match scope {
+            // NIP-43 kind 13534：标签形如 ["member", pubkey, role]
+            Scope::Relay => (
+                serde_json::json!({ "kinds": [KIND_RELAY_MEMBERSHIP_LIST], "limit": 1 }),
+                "member",
+            ),
+            // NIP-29 kind 39002：标签形如 ["p", pubkey, relay_url, role]，
+            // ["d", channel_uuid] 标识所属 Channel
+            Scope::Channel(id) => (
+                serde_json::json!({ "kinds": [KIND_CHANNEL_MEMBERS], "#d": [id], "limit": 1 }),
+                "p",
+            ),
+        };
+        let page = self.query(http, &[filter]).await?;
+        Ok(Self::roster_entries(&page, tag_name))
+    }
+
+    /// 把 `target_pubkey` 在该 scope 的 roster 上收敛到 `want`。
+    ///
+    /// 成功判据是**再次读到的 roster**，不是 Relay 是否接受了事件
+    /// （`.design/09`：只发出 admin event 而未查证不得 active）。这一点不是
+    /// 谨慎而已，上游两条路径都要求它：
+    ///
+    /// - 移除已不在 roster 的目标会返回错误（relay 面 `member not found`、
+    ///   Channel 面 `DbError::MemberNotFound`），不是幂等成功。Activity 重试
+    ///   或崩溃重放都会撞上它。
+    /// - 加入已在 roster 的目标是静默 no-op，且**不覆盖**既有角色。
+    ///
+    /// 先读一次可以在已收敛时完全不发事件；发完再读一次则让「事件被拒绝」
+    /// 与「目标状态已成立」这两件事分开判断。
+    pub async fn converge(
+        &self,
+        http: &reqwest::Client,
+        scope: Scope<'_>,
+        target_pubkey: &str,
+        want: Presence,
+    ) -> Result<(), OperatorError> {
+        let target = target_pubkey.to_ascii_lowercase();
+        let satisfied = |roster: &[RosterEntry]| {
+            let present = roster.iter().any(|e| e.pubkey == target);
+            present == (want == Presence::Present)
+        };
+
+        if satisfied(&self.roster(http, scope).await?) {
+            return Ok(());
+        }
+
+        // 拒绝本身是**有歧义**的，不能直接当失败：上游对「移除一个已不在
+        // roster 的成员」返回 400，而那恰恰说明目标状态已经成立，只是快照还旧。
+        // 想靠错误文本区分这两种拒绝就成了对上游措辞的隐式依赖，措辞一改就
+        // 静默失效。因此这里只把传输/签名失败当确定失败，拒绝一律并入未收敛，
+        // 把理由带进详情供人排查，由调用方的重试上界决定何时放弃。
+        let rejection = match self.send_admin_event(http, scope, &target, want).await {
+            Ok(()) => None,
+            Err(e @ OperatorError::Rejected { .. }) => Some(e.to_string()),
+            Err(e) => return Err(e),
+        };
+
+        let after = self.roster(http, scope).await?;
+        if satisfied(&after) {
+            return Ok(());
+        }
+        Err(OperatorError::NotConverged(format!(
+            "{target} 在 {scope:?} 上未达到 {want:?}，当前 roster {} 人{}",
+            after.len(),
+            rejection
+                .map(|r| format!("；上游拒绝：{r}"))
+                .unwrap_or_default()
+        )))
+    }
+
+    /// 发出一条 roster 管理事件。私有：调用方只应经 `converge` 使用，
+    /// 否则就会得到一个「发出去了但没查证」的结果。
+    async fn send_admin_event(
+        &self,
+        http: &reqwest::Client,
+        scope: Scope<'_>,
+        target_pubkey: &str,
+        want: Presence,
+    ) -> Result<(), OperatorError> {
+        let tag = |parts: [&str; 2]| {
+            Tag::parse(parts).map_err(|e| OperatorError::Sign(format!("tag: {e}")))
+        };
+        // 不带 role 标签：上游在缺该标签时按 member 处理（Channel 面则保留既有
+        // 角色）。角色语义的权威在 Core，一期不投影 admin/owner。
+        let (kind, tags) = match (scope, want) {
+            (Scope::Relay, Presence::Present) => {
+                (KIND_RELAY_ADMIN_ADD, vec![tag(["p", target_pubkey])?])
+            }
+            (Scope::Relay, Presence::Absent) => {
+                (KIND_RELAY_ADMIN_REMOVE, vec![tag(["p", target_pubkey])?])
+            }
+            (Scope::Channel(id), Presence::Present) => (
+                KIND_CHANNEL_ADD_USER,
+                vec![tag(["h", id])?, tag(["p", target_pubkey])?],
+            ),
+            (Scope::Channel(id), Presence::Absent) => (
+                KIND_CHANNEL_REMOVE_USER,
+                vec![tag(["h", id])?, tag(["p", target_pubkey])?],
+            ),
+        };
+        // relay-admin 事件另有 ±120 秒的 created_at 窗口作为重放守卫，
+        // EventBuilder 用当前时间签名；Core 与 Relay 的时钟偏移超过该窗口
+        // 会让全部 roster 投影失败，属于部署前提。
+        let event = EventBuilder::new(Kind::Custom(kind), "")
+            .tags(tags)
+            .sign_with_keys(&self.keys)
+            .map_err(|e| OperatorError::Sign(format!("sign: {e}")))?;
+        let payload = serde_json::to_vec(&event).map_err(|e| OperatorError::Sign(e.to_string()))?;
+        let accepted: Value = self.bridge_post(http, "/events", &payload).await?;
+        Self::accepted_event_id(&accepted).map(|_| ())
+    }
+
     /// 以该身份查询历史。filter 由调用方给出，BFF 不接受 Browser 提交的
     /// 任意 filter（`.design/09` 第 2 步）。
     pub async fn query(
@@ -161,6 +318,36 @@ impl IdentityClient {
         let payload =
             serde_json::to_vec(filters).map_err(|e| OperatorError::Sign(e.to_string()))?;
         self.bridge_post(http, "/query", &payload).await
+    }
+
+    /// 从快照事件里取出 roster。
+    ///
+    /// 两种快照的标签形状不同，但角色都在最后一位：relay 面是
+    /// `["member", pubkey, role]`，Channel 面是 `["p", pubkey, relay_url, role]`。
+    /// 因此按标签名筛选后取首尾，而不是按固定下标读角色。
+    fn roster_entries(page: &Value, tag_name: &str) -> Vec<RosterEntry> {
+        let mut out = Vec::new();
+        for ev in page.as_array().into_iter().flatten() {
+            for tag in ev
+                .get("tags")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+            {
+                let parts: Vec<&str> = tag
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                    .unwrap_or_default();
+                if parts.first() != Some(&tag_name) || parts.len() < 3 {
+                    continue;
+                }
+                out.push(RosterEntry {
+                    pubkey: parts[1].to_ascii_lowercase(),
+                    role: parts[parts.len() - 1].to_owned(),
+                });
+            }
+        }
+        out
     }
 
     /// Relay 接受事件后回传 `{"accepted":true,"event_id":"..."}`。

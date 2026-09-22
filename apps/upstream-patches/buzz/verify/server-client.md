@@ -37,3 +37,34 @@ UUID 的 `h` 值；传 event id 会得到「must include an h tag」这个不区
 **Relay 的接受响应是 `{"accepted":true,"event_id":"..."}`。** 客户端只认它给的
 id——本地算得出不等于 Relay 接受了它，而 event id 要作为 operation outcome 与
 audit evidence（`.design/09` 第 6 步）。
+
+## roster 投影面（2026-09-22）
+
+`DD-41`/`DD-45` 的两个执行投影都落在这个接缝上：TenantMembership 投到 relay-level
+roster（kind 9030/9031），WorkspaceMembership 投到 Channel roster（kind 9000/9001）。
+`core/crates/kailo-buzz/tests/bridge.rs::roster_projection_converges_and_is_repeatable`
+对运行中的 Relay 执行：
+
+| 性质 | 结果 |
+|---|---|
+| 加入 relay roster 与 Channel roster，各重复执行两次 | 通过。两次都返回成功 |
+| 撤 relay roster 与 Channel roster，各重复执行两次 | 通过。第二次是关键——上游此时返回 `member not found` |
+| 撤权后该 pubkey 发布被拒 | 通过。撤的是执行点，不只是快照 |
+| 普通 member 发出 roster 管理事件 | 通过。得到「未收敛」并带上游拒绝理由，不是成功 |
+
+重复执行是必须验的：Activity 会重试、Worker 会崩溃重放，同一次投影必然被执行多次。
+
+## 实测撞出的第四处上游契约
+
+**roster 的成功判据只能是查证结果，不能是事件被接受。** 上游两端都不幂等：
+移除已不在 roster 的目标返回错误（relay 面 `member not found`、Channel 面
+`DbError::MemberNotFound`），加入已在 roster 的目标是静默 no-op 且不覆盖既有角色。
+更麻烦的是拒绝本身有歧义——「移除一个已经不在 roster 的成员」这条拒绝恰恰
+说明目标状态已经成立。想靠错误文本区分两类拒绝就成了对上游措辞的隐式依赖。
+
+因此 `converge` 只把传输与签名失败当确定失败，把**全部拒绝并入「未收敛」**
+并把理由带进详情，由调用方的重试上界决定何时放弃。这同时解决了 `SF-BUZ-34`：
+relay-level roster 唯一的读取面是 best-effort 重建的 NIP-43 快照，同一秒内回到
+此前出现过的成员集合会让重建整事务回滚，快照停留在过期值上，只有 Relay 的周期
+对账能修。读到旧值是结果不明，不是拒绝，收敛上界即 `BUZZ_NIP43_RECONCILE_INTERVAL_SECS`
+（已登记进 `07` §1）。
