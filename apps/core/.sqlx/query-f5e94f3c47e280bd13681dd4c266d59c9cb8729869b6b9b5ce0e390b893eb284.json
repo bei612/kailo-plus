@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into identity.relay_operator_identity\n             (catalog_tenant_id, pubkey, private_key_secret_ref, private_key_secret_version,\n              private_key_secret_audience, audience, relay_operator_api_origin, state)\n         values ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE')\n         on conflict (catalog_tenant_id) do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f5e94f3c47e280bd13681dd4c266d59c9cb8729869b6b9b5ce0e390b893eb284"
+}

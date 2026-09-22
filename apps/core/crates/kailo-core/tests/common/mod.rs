@@ -35,6 +35,8 @@ pub struct Env {
     pub zed_env_file: String,
     pub zed_image: String,
     pub spicedb_in_network: String,
+    /// 平台引导建立的 Catalog Tenant 的 slug
+    pub catalog_tenant_slug: String,
 }
 
 /// 集成核验要显式开启（`KAILO_INTEGRATION=1`），不按「某个环境变量碰巧存在」
@@ -64,6 +66,7 @@ pub fn env() -> Option<Env> {
         zed_env_file: v("VERIFY_ZED_ENV_FILE")?,
         zed_image: v("VERIFY_ZED_IMAGE")?,
         spicedb_in_network: v("VERIFY_SPICEDB_ENDPOINT")?,
+        catalog_tenant_slug: v("PLATFORM_CATALOG_TENANT_SLUG")?,
     })
 }
 

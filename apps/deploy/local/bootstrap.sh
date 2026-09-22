@@ -129,8 +129,15 @@ printf '  已生成：secrets/browser-client.env\n'
 chmod 600 secrets/spicedb.env
 printf '  已生成：secrets/spicedb.env\n'
 
-# Core 自己的 OIDC client secret：连 Temporal 要服务令牌（SF-TMP-06）。
-{ printf 'OIDC_SERVICE_CLIENT_SECRET='; cat secrets/kailo_core_client_secret; printf '\n'; } > secrets/core-service.env
+# Core 自己的两把凭据：连 Temporal 的 OIDC client secret（SF-TMP-06），
+# 与平台引导用的 RelayOperatorIdentity 私钥（.design/09 第 3 步）。
+#
+# 走 env_file 而不是 compose 的 secrets：非 swarm 模式下 secrets 就是把宿主
+# 文件 bind mount 进去，uid/gid/mode 全部被忽略。宿主上这些文件是 0600 属主
+# 为当前用户，而 core 镜像以 uid 10001 运行，因此读不到。同一原因下
+# SpiceDB 也走 env_file（它是 distroless）。
+{ printf 'OIDC_SERVICE_CLIENT_SECRET='; cat secrets/kailo_core_client_secret; printf '\n'
+  printf 'RELAY_OPERATOR_PRIVATE_KEY='; cat secrets/relay_operator_private_key; printf '\n'; } > secrets/core-service.env
 chmod 600 secrets/core-service.env
 printf '  已生成：secrets/core-service.env\n'
 

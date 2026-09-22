@@ -32,10 +32,22 @@ type MembershipTarget struct {
 	RelationObjectID string `json:"relationObjectId"`
 }
 
+// ScopeTarget 是 Tenant/Workspace 生命周期的冻结输入。
+//
+// 与 MembershipTarget 分开：scope 的投影目标是它自己的 Buzz 绑定
+// （Community / Channel），而成员的投影目标是 roster 里的一个 pubkey。
+type ScopeTarget struct {
+	ID      string `json:"id"`
+	Version int32  `json:"version"`
+	// Workspace 才有：SpiceDB 里 workspace 通过 tenant 关系归属其 Tenant
+	TenantID string `json:"tenantId,omitempty"`
+}
+
 // ComponentTaskInput 是 ComponentTaskWorkflow 的统一输入。
 type ComponentTaskInput struct {
 	Kind       generated.WorkflowKind `json:"kind"`
 	Membership *MembershipTarget      `json:"membership,omitempty"`
+	Scope      *ScopeTarget           `json:"scope,omitempty"`
 }
 
 // 三类 Activity 的超时与重试纪律（06 §5.1）。SDK 要求每个 Activity 至少设置
@@ -70,6 +82,38 @@ func stateOptions() workflow.ActivityOptions {
 	return o
 }
 
+// projector 返回一个把状态写回 Core 的闭包。
+//
+// event_id 取自 history 长度：它在同一次 run 内单调，且重放会走过同一段 history，
+// 因此在每个调用点取到同一个值——既能给 Core 做单调去重，又不破坏确定性
+// （时钟与随机数都不行）。
+func projector(ctx workflow.Context, info *workflow.Info) func(string) error {
+	return func(status string) error {
+		o := workflow.WithActivityOptions(ctx, stateOptions())
+		return workflow.ExecuteActivity(o, (*activities.CoreAPI).ProjectTaskState,
+			activities.ProjectTaskStateInput{
+				WorkflowID: info.WorkflowExecution.ID,
+				RunID:      info.WorkflowExecution.RunID,
+				EventID:    int64(workflow.GetInfo(ctx).GetCurrentHistoryLength()),
+				Status:     status,
+			}).Get(ctx, nil)
+	}
+}
+
+// failer 返回一个「记下失败再把原因抛出去」的闭包。
+//
+// 失败路径也要留下可见状态。投影自己再失败时，两个错误一并返回而不是丢掉其中
+// 一个：工作台上看不到的失败，和没发生过的失败无法区分。
+func failer(ctx workflow.Context, project func(string) error) func(error) error {
+	return func(cause error) error {
+		if err := project("FAILED"); err != nil {
+			workflow.GetLogger(ctx).Error("终态投影失败", "cause", cause, "error", err)
+			return fmt.Errorf("%w（且 FAILED 投影未写入: %v）", cause, err)
+		}
+		return cause
+	}
+}
+
 // ComponentTask 执行一个 ComponentTaskWorkflow。
 //
 // 一期只实现成员生命周期的两个 kind。其余 kind 在 .design/06 里已登记但没有
@@ -81,6 +125,10 @@ func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 		return membershipLifecycle(ctx, in, activities.Present, "ACTIVE")
 	case generated.MembershipRevocation:
 		return membershipLifecycle(ctx, in, activities.Absent, "REVOKED")
+	case generated.TenantLifecycle:
+		return tenantLifecycle(ctx, in)
+	case generated.WorkspaceLifecycle:
+		return workspaceLifecycle(ctx, in)
 	default:
 		return temporal.NewNonRetryableApplicationError(
 			"kind 尚未实现", activities.ErrTypeRejected, nil)
@@ -108,29 +156,8 @@ func membershipLifecycle(
 	}
 
 	info := workflow.GetInfo(ctx)
-	// event_id 取自 history 长度：它在同一次 run 内单调，且重放会走过同一段
-	// history，因此在每个调用点取到同一个值——既能给 Core 做单调去重，又不破坏
-	// 确定性（时钟与随机数都不行）。
-	project := func(status string) error {
-		o := workflow.WithActivityOptions(ctx, stateOptions())
-		return workflow.ExecuteActivity(o, (*activities.CoreAPI).ProjectTaskState,
-			activities.ProjectTaskStateInput{
-				WorkflowID: info.WorkflowExecution.ID,
-				RunID:      info.WorkflowExecution.RunID,
-				EventID:    int64(workflow.GetInfo(ctx).GetCurrentHistoryLength()),
-				Status:     status,
-			}).Get(ctx, nil)
-	}
-
-	// 失败路径也要留下可见状态。投影自己再失败时，两个错误一并返回而不是
-	// 丢掉其中一个：工作台上看不到的失败，和没发生过的失败无法区分。
-	failWith := func(cause error) error {
-		if err := project("FAILED"); err != nil {
-			workflow.GetLogger(ctx).Error("终态投影失败", "cause", cause, "error", err)
-			return fmt.Errorf("%w（且 FAILED 投影未写入: %v）", cause, err)
-		}
-		return cause
-	}
+	project := projector(ctx, info)
+	failWith := failer(ctx, project)
 
 	if err := project("RUNNING"); err != nil {
 		return err
@@ -185,5 +212,98 @@ func membershipLifecycle(
 	workflow.GetLogger(ctx).Info("成员状态已跃迁", "state", out.State, "version", out.Version)
 
 	// 终态投影失败就不算 terminal（06 §3.1）：工作台上看不到的完成不是完成。
+	return project("COMPLETED")
+}
+
+// tenantLifecycle 建立一个 Tenant 的协作面（`.design/09` 第 3 步）。
+//
+// 两步分开不是分层：provision 做完只证明事件发出去了，verify 才回头抓 NIP-11
+// 确认该部署真的执行成员准入。把它们合成一步，就只剩「发出去了」这一个信号，
+// 而 .design/09 明写「只发出 admin event 而未查证不得 active」。
+func tenantLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
+	s := in.Scope
+	if s == nil {
+		return temporal.NewNonRetryableApplicationError(
+			"TENANT_LIFECYCLE 缺少冻结的 scope 输入", activities.ErrTypeRejected, nil)
+	}
+	info := workflow.GetInfo(ctx)
+	project := projector(ctx, info)
+	if err := project("RUNNING"); err != nil {
+		return err
+	}
+	fail := failer(ctx, project)
+
+	ao := workflow.WithActivityOptions(ctx, projectionOptions())
+	step := activities.TenantStepInput{TenantID: s.ID, TenantVersion: s.Version}
+	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProvisionTenantBuzz, step).
+		Get(ctx, nil); err != nil {
+		return fail(err)
+	}
+	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).VerifyTenantBuzz, step).
+		Get(ctx, nil); err != nil {
+		return fail(err)
+	}
+
+	var out activities.TransitionOutput
+	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
+		activities.ScopeTransitionInput{
+			Kind:        "TENANT",
+			ID:          s.ID,
+			FromVersion: s.Version,
+			ToState:     "ACTIVE",
+			WorkflowID:  info.WorkflowExecution.ID,
+		}).Get(ctx, &out); err != nil {
+		return fail(err)
+	}
+	workflow.GetLogger(ctx).Info("Tenant 已就绪", "state", out.State, "version", out.Version)
+	return project("COMPLETED")
+}
+
+// workspaceLifecycle 建立一个 Workspace 的协作面与授权归属。
+//
+// SpiceDB 那一步写的是 workspace 对 tenant 的归属关系，不是成员关系：
+// .design/03 §5 的 workspace 定义里 `relation tenant: tenant` 正是它，
+// workspace 的 discover/create/manage/audit 都经 `tenant->...` 继承。少了它，
+// Tenant admin 对新建 Workspace 的权限无从推导。
+func workspaceLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
+	s := in.Scope
+	if s == nil || s.TenantID == "" {
+		return temporal.NewNonRetryableApplicationError(
+			"WORKSPACE_LIFECYCLE 缺少冻结的 scope 或 tenant 输入", activities.ErrTypeRejected, nil)
+	}
+	info := workflow.GetInfo(ctx)
+	project := projector(ctx, info)
+	if err := project("RUNNING"); err != nil {
+		return err
+	}
+	fail := failer(ctx, project)
+
+	ao := workflow.WithActivityOptions(ctx, projectionOptions())
+	if err := workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
+		activities.Relationship{
+			ResourceType: "workspace", ResourceID: s.ID, Relation: "tenant",
+			SubjectType: "tenant", SubjectID: s.TenantID,
+		}, activities.Present).Get(ctx, nil); err != nil {
+		return fail(err)
+	}
+	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProvisionWorkspaceBuzz,
+		activities.WorkspaceStepInput{
+			WorkspaceID: s.ID, WorkspaceVersion: s.Version,
+		}).Get(ctx, nil); err != nil {
+		return fail(err)
+	}
+
+	var out activities.TransitionOutput
+	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
+		activities.ScopeTransitionInput{
+			Kind:        "WORKSPACE",
+			ID:          s.ID,
+			FromVersion: s.Version,
+			ToState:     "ACTIVE",
+			WorkflowID:  info.WorkflowExecution.ID,
+		}).Get(ctx, &out); err != nil {
+		return fail(err)
+	}
+	workflow.GetLogger(ctx).Info("Workspace 已就绪", "state", out.State, "version", out.Version)
 	return project("COMPLETED")
 }

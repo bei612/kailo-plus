@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select tenant_id, version, state from identity.workspace where id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "46f32b838cb7588a03acaa546bcac3528ba8c2b07c1bf140dbf4f83579d452d1"
+}

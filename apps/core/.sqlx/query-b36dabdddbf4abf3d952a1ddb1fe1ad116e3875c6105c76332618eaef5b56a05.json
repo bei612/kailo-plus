@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update identity.buzz_identity_binding set state = 'ACTIVE', version = version + 1\n         where tenant_id = $1 and principal_id = $2 and state = 'RECONCILING'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b36dabdddbf4abf3d952a1ddb1fe1ad116e3875c6105c76332618eaef5b56a05"
+}

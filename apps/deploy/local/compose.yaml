@@ -295,6 +295,7 @@ services:
       # 由 openbao-init.sh 生成并被 gitignore；不进 .env、不上命令行。
       OPENBAO_ADDR: ${OPENBAO_ADDR:?必须显式提供，禁止硬编码}
       OPENBAO_PLATFORM_NAMESPACE: ${OPENBAO_PLATFORM_NAMESPACE:?必须显式提供，禁止硬编码}
+      OPENBAO_KV_MOUNT: ${OPENBAO_KV_MOUNT:?必须显式提供，禁止硬编码}
       # SecretRef 的 audience 必须等于它，否则拒绝取用
       OPENBAO_SERVICE_IDENTITY: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
       # Relay 的网络地址。与 Community host 不是一回事：后者参与 NIP-98
@@ -308,6 +309,14 @@ services:
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:?必须显式提供，禁止硬编码}
       OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:?必须显式提供，禁止硬编码}
       OIDC_SERVICE_CLIENT_ID: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
+      # 平台引导（.design/09 第 3 步）：Catalog Tenant 与 RelayOperatorIdentity。
+      # operator 私钥经 secret 挂载读入，写进 OpenBao 后只留 locator 与版本。
+      PLATFORM_CATALOG_TENANT_SLUG: ${PLATFORM_CATALOG_TENANT_SLUG:?必须显式提供，禁止硬编码}
+      RELAY_OPERATOR_AUDIENCE: ${RELAY_OPERATOR_AUDIENCE:?必须显式提供，禁止硬编码}
+      RELAY_OPERATOR_API_ORIGIN: ${RELAY_OPERATOR_API_ORIGIN:?必须显式提供，禁止硬编码}
+      # Community host = <tenant slug>.<domain>。host 是 NIP-98 的签名权威
+      # （SF-BUZ-32），必须稳定可推导。
+      BUZZ_COMMUNITY_DOMAIN: ${BUZZ_COMMUNITY_DOMAIN:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/openbao-core.env
       # Core 自己的 OIDC client secret；不进 .env、不上命令行

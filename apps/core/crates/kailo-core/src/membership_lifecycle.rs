@@ -52,14 +52,35 @@ pub struct LifecycleResponse {
 /// Workflow 的冻结输入。字段名必须与 Go 侧的 `ComponentTaskInput` 一致——
 /// 两侧共用 JSON payload，名字对不上时 Workflow 收到的是零值而不是错误。
 #[derive(Debug, Serialize)]
-struct ComponentTaskInput {
-    kind: String,
-    membership: MembershipTarget,
+pub struct ComponentTaskInput<T> {
+    pub kind: String,
+    #[serde(flatten)]
+    pub target: T,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MembershipEnvelope {
+    pub membership: MembershipTarget,
+}
+
+/// Tenant/Workspace 生命周期的冻结输入。
+#[derive(Debug, Serialize)]
+pub struct ScopeEnvelope {
+    pub scope: ScopeTarget,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct MembershipTarget {
+pub struct ScopeTarget {
+    pub id: String,
+    pub version: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MembershipTarget {
     scope: String,
     membership_id: String,
     membership_version: i32,
@@ -141,15 +162,17 @@ pub async fn start_membership_lifecycle(
 
     let input = ComponentTaskInput {
         kind: kind.to_owned(),
-        membership: MembershipTarget {
-            scope: match req.scope {
-                MembershipScope::Tenant => "TENANT".to_owned(),
-                MembershipScope::Workspace => "WORKSPACE".to_owned(),
+        target: MembershipEnvelope {
+            membership: MembershipTarget {
+                scope: match req.scope {
+                    MembershipScope::Tenant => "TENANT".to_owned(),
+                    MembershipScope::Workspace => "WORKSPACE".to_owned(),
+                },
+                membership_id: req.membership_id.to_string(),
+                membership_version: version,
+                subject_principal_id: principal_id.to_string(),
+                relation_object_id: object_id.to_string(),
             },
-            membership_id: req.membership_id.to_string(),
-            membership_version: version,
-            subject_principal_id: principal_id.to_string(),
-            relation_object_id: object_id.to_string(),
         },
     };
 
@@ -259,6 +282,161 @@ async fn load(state: &ServiceState, req: &LifecycleRequest) -> Result<Loaded, Op
                 row.version,
                 row.state,
             ))
+        }
+    }
+}
+
+// ---- Tenant / Workspace 生命周期的启动面 ----
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopeLifecycleRequest {
+    pub kind: crate::scope_state::ScopeKind,
+    pub id: Uuid,
+    pub action_execution_id: Uuid,
+}
+
+/// 启动 `TENANT_LIFECYCLE` 或 `WORKSPACE_LIFECYCLE`。
+///
+/// 与成员那条同形：状态决定这是不是该起 Workflow（只有 `PROVISIONING` 能起
+/// 建立链），ActionExecution 提供准入依据，WorkflowRef 先于 Start 落库。
+///
+/// 不复用成员那个端点：两者的 target 解析、状态机与 Workflow input 形状都不同，
+/// 合并后只会得到一个内部按 kind 分叉三次的函数。
+pub async fn start_scope_lifecycle(
+    State(state): State<ServiceState>,
+    headers: HeaderMap,
+    body: Result<Json<ScopeLifecycleRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if let Err(e) = authorize(&state, &headers).await {
+        return e;
+    }
+    let Ok(Json(req)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
+    let (kind, tenant_id, version, scope_state) = match req.kind {
+        crate::scope_state::ScopeKind::Tenant => {
+            match sqlx::query!(
+                "select version, state from identity.tenant where id = $1",
+                req.id
+            )
+            .fetch_optional(&state.pool)
+            .await
+            {
+                Ok(Some(r)) => ("TENANT_LIFECYCLE", req.id, r.version, r.state),
+                Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+                Err(e) => return unavailable(e),
+            }
+        }
+        crate::scope_state::ScopeKind::Workspace => {
+            match sqlx::query!(
+                "select tenant_id, version, state from identity.workspace where id = $1",
+                req.id
+            )
+            .fetch_optional(&state.pool)
+            .await
+            {
+                Ok(Some(r)) => ("WORKSPACE_LIFECYCLE", r.tenant_id, r.version, r.state),
+                Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+                Err(e) => return unavailable(e),
+            }
+        }
+    };
+
+    // Stage 1 只注册建立链。暂停/恢复有各自的入口与 input，不能靠同一个端点
+    // 按当前状态猜——猜错就是对一个运行中的 Tenant 执行建立。
+    if scope_state != "PROVISIONING" {
+        tracing::warn!(state = %scope_state, "scope 不在 PROVISIONING，不启动建立链");
+        return StatusCode::CONFLICT.into_response();
+    }
+
+    match sqlx::query!(
+        "select 1 as ok from admission.action_execution
+         where id = $1 and tenant_id = $2 and gate_state = 'ALLOWED'",
+        req.action_execution_id,
+        tenant_id
+    )
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(_)) => {}
+        Ok(None) => return StatusCode::FORBIDDEN.into_response(),
+        Err(e) => return unavailable(e),
+    }
+
+    let workflow_id = format!("kailo:{kind}:{tenant_id}:{}:{version}", req.id);
+    if let Err(e) = sqlx::query!(
+        "insert into projection.workflow_ref
+             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
+              operation_id, action_execution_id, projection_state)
+         select $1, $2, 1, $3, $4, ae.operation_id, ae.id, 'PENDING_START'
+         from admission.action_execution ae where ae.id = $5
+         on conflict (workflow_id) do nothing",
+        workflow_id,
+        WORKFLOW_TYPE,
+        kind,
+        tenant_id,
+        req.action_execution_id,
+    )
+    .execute(&state.pool)
+    .await
+    {
+        return unavailable(e);
+    }
+
+    let input = ComponentTaskInput {
+        kind: kind.to_owned(),
+        target: ScopeEnvelope {
+            scope: ScopeTarget {
+                id: req.id.to_string(),
+                version,
+                // Workspace 在 SpiceDB 里经 tenant 关系归属其 Tenant；
+                // Tenant 自己没有上层客体
+                tenant_id: match req.kind {
+                    crate::scope_state::ScopeKind::Workspace => Some(tenant_id.to_string()),
+                    crate::scope_state::ScopeKind::Tenant => None,
+                },
+            },
+        },
+    };
+
+    match state
+        .temporal
+        .start(&workflow_id, WORKFLOW_TYPE, &input)
+        .await
+    {
+        Ok(Started::Created { run_id }) => {
+            mark_running(&state, &workflow_id, Some(&run_id)).await;
+            (
+                StatusCode::OK,
+                Json(LifecycleResponse {
+                    workflow_id,
+                    kind: kind.to_owned(),
+                    run_id: Some(run_id),
+                }),
+            )
+                .into_response()
+        }
+        Ok(Started::AlreadyStarted) => {
+            mark_running(&state, &workflow_id, None).await;
+            (
+                StatusCode::OK,
+                Json(LifecycleResponse {
+                    workflow_id,
+                    kind: kind.to_owned(),
+                    run_id: None,
+                }),
+            )
+                .into_response()
+        }
+        Err(e @ TemporalError::Rejected(_)) => {
+            tracing::warn!(error = %e, "Start 被拒绝");
+            StatusCode::CONFLICT.into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, workflow_id, "Start 结果不明");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
 }

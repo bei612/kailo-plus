@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select channel_id from projection.workspace_buzz_binding where workspace_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8d8823e3e1106d1a6a49979de0e71bf8a2c85c5ac7558f3d6534d7170df9e192"
+}

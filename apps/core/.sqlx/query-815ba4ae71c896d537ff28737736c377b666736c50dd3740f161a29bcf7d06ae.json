@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into projection.workspace_buzz_binding (workspace_id, channel_id, state)\n         values ($1, $2, 'ACTIVE') on conflict (workspace_id) do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "815ba4ae71c896d537ff28737736c377b666736c50dd3740f161a29bcf7d06ae"
+}

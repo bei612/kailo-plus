@@ -19,7 +19,13 @@ ns() {
     -e BAO_NAMESPACE="$OPENBAO_PLATFORM_NAMESPACE" openbao bao "$@"
 }
 
-ns kv put "${OPENBAO_KV_MOUNT}/verify/secret-ref" value=v1 >/dev/null
-ns kv put "${OPENBAO_KV_MOUNT}/verify/secret-ref" value=v2 >/dev/null
-printf '已写入 %s/%s/verify/secret-ref 的版本 1 与 2\n' \
-  "$OPENBAO_PLATFORM_NAMESPACE" "$OPENBAO_KV_MOUNT"
+# 写两版并把版本号回传给核验用例。
+#
+# 不假设它们是 1 和 2：KV v2 会按 max_versions 裁掉旧版本，同一路径反复写之后
+# 最旧可读版本会往后移。断言「版本 1 可读」在跑够次数后必然失败，而那看起来
+# 像 SecretRef 解析坏了——实际是版本已被裁掉（见 core/verify/secret-ref.md）。
+v1=$(ns kv put -format=json "${OPENBAO_KV_MOUNT}/verify/secret-ref" value=v1 \
+     | python3 -c 'import json,sys;print(json.load(sys.stdin)["data"]["version"])')
+v2=$(ns kv put -format=json "${OPENBAO_KV_MOUNT}/verify/secret-ref" value=v2 \
+     | python3 -c 'import json,sys;print(json.load(sys.stdin)["data"]["version"])')
+printf 'VERIFY_SECRET_VERSION_V1=%s\nVERIFY_SECRET_VERSION_V2=%s\n' "$v1" "$v2"

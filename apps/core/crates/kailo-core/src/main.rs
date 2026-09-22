@@ -8,9 +8,12 @@ mod membership_lifecycle;
 mod membership_projection;
 mod membership_state;
 mod oidc;
+mod platform_bootstrap;
+mod scope_state;
 mod service_api;
 mod service_auth;
 mod temporal;
+mod tenant_lifecycle;
 
 use std::net::SocketAddr;
 
@@ -37,10 +40,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service_listen: SocketAddr = std::env::var("SERVICE_LISTEN")
         .map_err(|_| "缺少 SERVICE_LISTEN")?
         .parse()?;
+    // 平台引导先于监听：没有 operator 身份就永远创建不了任何 Tenant，
+    // 此时「起来但做不了事」比拒绝启动更糟——前者要等到第一次建 Tenant 才暴露。
+    let secrets = std::sync::Arc::new(kailo_secrets::SecretStore::from_env()?);
+    let catalog_tenant = platform_bootstrap::ensure(
+        &pool,
+        &secrets,
+        &platform_bootstrap::BootstrapConfig::from_env()?,
+    )
+    .await?;
+
     let service_state = service_api::ServiceState {
         pool: pool.clone(),
         auth: std::sync::Arc::new(service_auth::ServiceAuth::from_env()?),
-        secrets: std::sync::Arc::new(kailo_secrets::SecretStore::from_env()?),
+        secrets: std::sync::Arc::clone(&secrets),
+        catalog_tenant,
+        secret_mount: format!(
+            "{}/{}",
+            std::env::var("OPENBAO_PLATFORM_NAMESPACE")
+                .map_err(|_| "缺少 OPENBAO_PLATFORM_NAMESPACE")?,
+            std::env::var("OPENBAO_KV_MOUNT").map_err(|_| "缺少 OPENBAO_KV_MOUNT")?
+        ),
+        secret_audience: std::env::var("OPENBAO_SERVICE_IDENTITY")
+            .map_err(|_| "缺少 OPENBAO_SERVICE_IDENTITY")?,
+        community_domain: std::env::var("BUZZ_COMMUNITY_DOMAIN")
+            .map_err(|_| "缺少 BUZZ_COMMUNITY_DOMAIN")?,
         relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
             .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
         http: reqwest::Client::new(),

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select tenant_id, slug from identity.workspace\n         where id = $1 and version = $2 and state = 'PROVISIONING'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "671e40995b592d732744387c48766fa2b4bc8e644ec637081d73eca407723ee8"
+}

@@ -28,6 +28,14 @@ pub struct ServiceState {
     pub pool: PgPool,
     pub auth: Arc<ServiceAuth>,
     pub secrets: Arc<SecretStore>,
+    /// Platform Catalog Tenant：RelayOperatorIdentity 挂在它下面（.design/09 第 3 步）
+    pub catalog_tenant: uuid::Uuid,
+    /// SecretRef locator 的前缀 `<namespace>/<mount>`
+    pub secret_mount: String,
+    /// 允许取用 secret 的 service identity
+    pub secret_audience: String,
+    /// Community host 的域部分。host 是签名权威（SF-BUZ-32），必须稳定可推导
+    pub community_domain: String,
     /// Relay 的网络地址。它与 Community host 不是一回事：后者参与 NIP-98
     /// 签名并作为 Host 头，前者只用于建立连接（SF-BUZ-32）。
     pub relay_transport: String,
@@ -50,6 +58,26 @@ pub fn router(state: ServiceState) -> Router {
         .route(
             "/service/v1/memberships/lifecycle",
             post(crate::membership_lifecycle::start_membership_lifecycle),
+        )
+        .route(
+            "/service/v1/tenants/buzz-provision",
+            post(crate::tenant_lifecycle::provision_tenant_buzz),
+        )
+        .route(
+            "/service/v1/tenants/buzz-verify",
+            post(crate::tenant_lifecycle::verify_tenant_buzz),
+        )
+        .route(
+            "/service/v1/workspaces/buzz-provision",
+            post(crate::tenant_lifecycle::provision_workspace_buzz),
+        )
+        .route(
+            "/service/v1/scopes/state",
+            post(crate::scope_state::transition_scope),
+        )
+        .route(
+            "/service/v1/scopes/lifecycle",
+            post(crate::membership_lifecycle::start_scope_lifecycle),
         )
         .with_state(state)
 }

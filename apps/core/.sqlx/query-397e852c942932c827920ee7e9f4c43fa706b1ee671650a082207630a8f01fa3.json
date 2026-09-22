@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into projection.tenant_buzz_binding\n             (tenant_id, community_id, normalized_host, control_service_principal_id,\n              require_relay_membership, allow_nip_oa_auth, pubkey_allowlist_enabled, state)\n         values ($1, $2, $3, $4, false, true, false, 'RECONCILING')\n         on conflict (tenant_id) do nothing",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "397e852c942932c827920ee7e9f4c43fa706b1ee671650a082207630a8f01fa3"
+}

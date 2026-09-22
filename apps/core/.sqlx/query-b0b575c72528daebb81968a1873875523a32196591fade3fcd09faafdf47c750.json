@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update projection.tenant_buzz_binding\n         set nip11_snapshot_digest = $2, nip11_observed_at = now(),\n             require_relay_membership = true, allow_nip_oa_auth = false,\n             state = 'ACTIVE', version = version + 1\n         where tenant_id = $1 and state in ('RECONCILING', 'ACTIVE')\n         returning tenant_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b0b575c72528daebb81968a1873875523a32196591fade3fcd09faafdf47c750"
+}

@@ -58,6 +58,10 @@ func main() {
 	w.RegisterActivity(core.ProjectTaskState)
 	w.RegisterActivity(core.ProjectBuzzRoster)
 	w.RegisterActivity(core.TransitionMembership)
+	w.RegisterActivity(core.ProvisionTenantBuzz)
+	w.RegisterActivity(core.VerifyTenantBuzz)
+	w.RegisterActivity(core.ProvisionWorkspaceBuzz)
+	w.RegisterActivity(core.TransitionScope)
 
 	if err := w.Run(worker.InterruptCh()); err != nil {
 		log.Fatalf("worker 退出: %v", err)

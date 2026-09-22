@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update identity.tenant set state = $1, version = version + 1\n             where id = $2 and version = $3 and state = any($4)\n             returning state, version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Int4",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1640317663f6b16d5dd40d378b8e6b349abb86910cfaf0e4f5e2ccff936ddf9c"
+}

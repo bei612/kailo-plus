@@ -81,6 +81,10 @@ struct KvOuter {
 struct KvMetadata {
     version: u32,
 }
+#[derive(Deserialize)]
+struct KvWriteResponse {
+    data: KvMetadata,
+}
 
 impl SecretStore {
     /// 四项配置都不接受默认值：缺任一项即拒绝构造。回落到某个猜测的地址或
@@ -124,6 +128,51 @@ impl SecretStore {
             .cloned()
             .map(SecretValue)
             .ok_or(SecretError::VersionUnavailable)
+    }
+
+    /// 写入一个新版本，返回该版本号。
+    ///
+    /// 只写不删：策略没给 `delete`/`destroy`，secret 的撤销是受治理动作而不是
+    /// 运维旁路（`.design/03` §9）。因此这里永远是追加一个新版本，旧版本保留
+    /// 供在途执行按其冻结的版本号继续取用。
+    ///
+    /// 返回的是 KV v2 给的版本号，不是本地推算的。调用方把它连同 locator 与
+    /// audience 一起存成 SecretRef——推算出来的版本号在并发写入下会指向别人的值。
+    pub async fn write(&self, locator: &str, field: &str, value: &str) -> Result<u32, SecretError> {
+        let (namespace, mount, path) = split_locator(locator)?;
+        let mut version = self.put(&namespace, &mount, &path, field, value).await?;
+        if version.is_none() {
+            self.login(true).await?;
+            version = self.put(&namespace, &mount, &path, field, value).await?;
+        }
+        version.ok_or(SecretError::VersionUnavailable)
+    }
+
+    async fn put(
+        &self,
+        namespace: &str,
+        mount: &str,
+        path: &str,
+        field: &str,
+        value: &str,
+    ) -> Result<Option<u32>, SecretError> {
+        let token = self.login(false).await?;
+        let resp = self
+            .http
+            .post(format!("{}/v1/{mount}/data/{path}", self.addr))
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token.as_str())
+            .json(&serde_json::json!({ "data": { field: value } }))
+            .send()
+            .await?;
+        match resp.status().as_u16() {
+            200 => {
+                let body: KvWriteResponse = resp.json().await?;
+                Ok(Some(body.data.version))
+            }
+            401 | 403 => Ok(None),
+            _ => Err(SecretError::VersionUnavailable),
+        }
     }
 
     /// 返回 `None` 表示「凭据被拒」，由调用方决定是否重新登录；

@@ -34,6 +34,8 @@ export VERIFY_SECRET_LOCATOR="${OPENBAO_PLATFORM_NAMESPACE}/${OPENBAO_KV_MOUNT}/
 export VERIFY_DOCKER_NETWORK=kailo-local_component
 export VERIFY_ZED_ENV_FILE="$(pwd)/$local_dir/secrets/zed.env"
 export VERIFY_SPICEDB_ENDPOINT=spicedb:50051
+# Catalog Tenant 的 slug：核验要按它找到平台引导建立的那个 Tenant
+export PLATFORM_CATALOG_TENANT_SLUG
 # zed 镜像按 digest 引用（ADR-06），与 compose 中同一个
 export VERIFY_ZED_IMAGE="$(python3 -c '
 import re,io
@@ -42,7 +44,9 @@ print(re.search(r"image: (authzed/zed@sha256:[0-9a-f]+)", t).group(1))')"
 # 整条链要串起三步投影，其中 roster 那步以 Relay 的对账间隔为界
 export VERIFY_CONVERGE_BOUND_SECS=$(( BUZZ_NIP43_RECONCILE_INTERVAL_SECS * 4 + 20 ))
 
-./core/verify/seed-secret-ref.sh >/dev/null
+# 夹具回传本次写入的两个版本号；不假设它们是 1 和 2（KV v2 会裁旧版本）
+eval "$(./core/verify/seed-secret-ref.sh)"
+export VERIFY_SECRET_VERSION_V1 VERIFY_SECRET_VERSION_V2
 (cd core && cargo test --workspace)
 # Go 侧同理
 # -count=1 关掉缓存：集成核验的结论取决于外部系统当下的状态，缓存命中等于没跑

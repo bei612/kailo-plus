@@ -85,3 +85,25 @@ async 测试没有等价物，`Drop` 里也不能 await。可行形状是把断�
 代价是真实的：本仓库一次失败的端到端测试在 `identity.buzz_identity_binding`
 里留下一行 `custody=SERVER`，随后新增的三元组约束因该行不满足而无法应用，
 **迁移演练门禁整体变红**。测试残留会变成门禁故障，不只是脏数据。
+
+## compose 的 `secrets:` 在非 swarm 模式下只是 bind mount
+
+`uid`/`gid`/`mode` 全部被**静默忽略**——`docker compose config` 照样把它们打印
+出来，`docker inspect` 里却是一个普通 bind。宿主文件是 `0600` 属主为当前用户时，
+以非 root 运行的镜像读不到，报 `Permission denied (os error 13)`。
+
+本仓库的做法与 SpiceDB 一致：走 `env_file`。凭据仍在 gitignore 的 `secrets/` 下，
+不进 `.env`、不上命令行。改属主/改权限的方案都要动宿主文件，而那份文件同时被
+别的消费者读。
+
+## KV v2 默认只保留 10 个版本，且是静默裁剪
+
+SecretRef 钉的是具体版本（`.design/03` §9），被裁掉的版本永远读不回来；而
+SecretRef 不可读时 binding 不得 active（`DD-70`）。于是一个**还在用**的 binding
+会因为别处的几次轮换而永久失效，失效点离原因很远。
+
+实测：核验夹具每跑一次写两版，写到第 18 版时 `oldest_version` 已经是 9，
+断言「版本 1 可读」于是失败——看起来像解析坏了，实际是版本没了。
+
+两件事都要做：mount 上显式设 `max_versions`（已写进 `07` §1），以及测试夹具
+回传本次写入的版本号而不是假设 1 和 2。

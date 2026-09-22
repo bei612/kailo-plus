@@ -30,6 +30,21 @@ fn locator() -> String {
     std::env::var("VERIFY_SECRET_LOCATOR").expect("核验需要 VERIFY_SECRET_LOCATOR")
 }
 
+/// 夹具本次写入的两个版本号。
+///
+/// 不写死 1 和 2：KV v2 按 `max_versions` 裁掉旧版本，同一路径反复写之后最旧
+/// 可读版本会往后移。写死会让用例在跑够次数后必然失败，而失败信息看起来像
+/// 「SecretRef 解析坏了」——实际是那个版本已经不存在了。
+fn versions() -> (u32, u32) {
+    let v = |k: &str| {
+        std::env::var(k)
+            .expect("核验需要夹具回传的版本号")
+            .parse()
+            .expect("版本号必须是数字")
+    };
+    (v("VERIFY_SECRET_VERSION_V1"), v("VERIFY_SECRET_VERSION_V2"))
+}
+
 /// 取到的必须正是请求的那个版本。
 ///
 /// 不取 latest 是 binding 语义的要求：binding 冻结的是某个具体版本，取 latest
@@ -37,11 +52,12 @@ fn locator() -> String {
 #[tokio::test]
 async fn reads_the_exact_requested_version() {
     let Some(s) = store() else { return };
+    let (n1, n2) = versions();
     let v1 = s
         .read(
             &SecretRef {
                 locator: locator(),
-                version: 1,
+                version: n1,
                 audience: identity(),
             },
             "value",
@@ -52,7 +68,7 @@ async fn reads_the_exact_requested_version() {
         .read(
             &SecretRef {
                 locator: locator(),
-                version: 2,
+                version: n2,
                 audience: identity(),
             },
             "value",
@@ -79,7 +95,7 @@ async fn audience_mismatch_is_refused() {
         .read(
             &SecretRef {
                 locator: locator(),
-                version: 1,
+                version: versions().0,
                 audience: "some-other-service".into(),
             },
             "value",
@@ -129,7 +145,7 @@ async fn path_outside_policy_is_refused() {
         .read(
             &SecretRef {
                 locator: format!("{ns}/not-a-mount/{path}"),
-                version: 1,
+                version: versions().0,
                 audience: identity(),
             },
             "value",

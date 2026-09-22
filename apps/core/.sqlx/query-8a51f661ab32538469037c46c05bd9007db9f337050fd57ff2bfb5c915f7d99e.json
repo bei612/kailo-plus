@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select version, state from identity.tenant where id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8a51f661ab32538469037c46c05bd9007db9f337050fd57ff2bfb5c915f7d99e"
+}

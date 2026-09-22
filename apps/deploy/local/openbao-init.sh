@@ -108,6 +108,15 @@ root namespace list 2>/dev/null | grep -qx "${OPENBAO_PLATFORM_NAMESPACE}/" \
   || root namespace create "$OPENBAO_PLATFORM_NAMESPACE" >/dev/null
 ns secrets list -format=json 2>/dev/null | grep -q "\"${OPENBAO_KV_MOUNT}/\"" \
   || ns secrets enable -path="$OPENBAO_KV_MOUNT" -version=2 kv >/dev/null
+
+# KV v2 默认只保留 10 个版本，超出的**静默**删除。SecretRef 钉的是具体版本
+# （.design/03 §9），被裁掉的版本就永远读不回来——而 DD-70 规定 SecretRef 不可读
+# 时 binding 不得 active，于是一个还在用的 binding 会因为别处的几次轮换而永久
+# 失效。实测过：verify 路径写到第 18 版时，最旧可读版本已是第 9 版。
+#
+# 因此显式设定保留数，并把它登记为部署前置不变式（07 §1）。
+: "${OPENBAO_KV_MAX_VERSIONS:?缺少 .env 中的 OPENBAO_KV_MAX_VERSIONS}"
+ns write "${OPENBAO_KV_MOUNT}/config" max_versions="$OPENBAO_KV_MAX_VERSIONS" >/dev/null
 ns auth list -format=json 2>/dev/null | grep -q '"approle/"' \
   || ns auth enable approle >/dev/null
 

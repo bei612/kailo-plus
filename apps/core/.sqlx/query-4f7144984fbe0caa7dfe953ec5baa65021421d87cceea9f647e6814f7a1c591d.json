@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select principal_id, pubkey from identity.buzz_identity_binding\n             where tenant_id = $1 and kind = 'CONTROL' and state <> 'REVOKED'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "principal_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "pubkey",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4f7144984fbe0caa7dfe953ec5baa65021421d87cceea9f647e6814f7a1c591d"
+}

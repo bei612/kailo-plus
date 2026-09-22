@@ -206,3 +206,46 @@ func (c *CoreAPI) TransitionMembership(
 	err := c.post(ctx, "/service/v1/memberships/state", in, &out)
 	return out, err
 }
+
+// TenantStepInput 是 Tenant 生命周期两步的载荷。tenant 版本是 Workflow input
+// 冻结的那个：Core 用它确认这条 Workflow 没有对着一个已经变过的事实做投影。
+type TenantStepInput struct {
+	TenantID      string `json:"tenantId"`
+	TenantVersion int32  `json:"tenantVersion"`
+}
+
+func (c *CoreAPI) ProvisionTenantBuzz(ctx context.Context, in TenantStepInput) error {
+	return c.post(ctx, "/service/v1/tenants/buzz-provision", in, nil)
+}
+
+func (c *CoreAPI) VerifyTenantBuzz(ctx context.Context, in TenantStepInput) error {
+	return c.post(ctx, "/service/v1/tenants/buzz-verify", in, nil)
+}
+
+// WorkspaceStepInput 同理。
+type WorkspaceStepInput struct {
+	WorkspaceID      string `json:"workspaceId"`
+	WorkspaceVersion int32  `json:"workspaceVersion"`
+}
+
+func (c *CoreAPI) ProvisionWorkspaceBuzz(ctx context.Context, in WorkspaceStepInput) error {
+	return c.post(ctx, "/service/v1/workspaces/buzz-provision", in, nil)
+}
+
+// ScopeTransitionInput 是 Tenant/Workspace 自身状态的跃迁载荷。
+// 与成员状态跃迁分开：两者是不同的状态机（scope 有 SUSPENDING/RESTORING）。
+type ScopeTransitionInput struct {
+	Kind        string `json:"kind"`
+	ID          string `json:"id"`
+	FromVersion int32  `json:"fromVersion"`
+	ToState     string `json:"toState"`
+	WorkflowID  string `json:"workflowId"`
+}
+
+func (c *CoreAPI) TransitionScope(
+	ctx context.Context, in ScopeTransitionInput,
+) (TransitionOutput, error) {
+	var out TransitionOutput
+	err := c.post(ctx, "/service/v1/scopes/state", in, &out)
+	return out, err
+}
