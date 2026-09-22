@@ -27,13 +27,15 @@
 - **SBOM**：`syft` 为每个镜像生成 SPDX 格式 SBOM，作为 OCI referrer 附到镜像 digest 上。依赖与许可证清单由 SBOM 派生，不单独维护第二份。
 - **provenance**：构建时生成 SLSA provenance 断言，至少记录源码 commit、依赖锁文件的摘要、构建参数与构建者身份，同样作为 referrer 附到 digest。
 - **上游 patch 的可验证性**：`06-工程基线规范.md` §2 的 `patch_series_digest` 由 patch 文件内容的规范化摘要计算，写入 provenance 断言。构建上游镜像时重新计算并比对，不一致即失败。这把「`evidence_commit` 与 `implementation_base_commit` 关系已声明」从文档记录升级为构建期检查。
+- **客户端发布单元按端分离**：Buzz Web 是 OCI 镜像，按 digest 引用、改 digest 即回退。Buzz Desktop 与 Buzz Mobile 是平台分发产物（桌面安装包、应用商店包），其回退是发布新版本而非更换 digest，因此这两端各自维护一条带平台签名的发布链，且必须登记「当前最低可用版本」以便在缺陷版本流出后强制升级。三者共用同一 `contracts/` 版本号与同一份 provenance 格式。
+- **Buzz Desktop 的编译 feature 进 provenance**：`system-keyring` 等影响安全边界的 Cargo feature 必须写入 provenance 断言并在发布前校验，依据是 `SF-DSK-02`——该 feature 关闭时 nsec 回落为 `0o600` 明文文件，且这是编译期开关，运行时无法纠正。
 - **secret 扫描**：提交与构建两个时点各扫描一次，命中即失败。扫描范围含 `contracts/`、compose 文件与 ADR 目录。
 
 ## 后果
 
 正面：每个 digest 都能回答「谁构建的、从哪个 commit、依赖是什么、上游打了哪些 patch」；工具全部独立于托管平台，接入远端不需重新设计；SBOM 是依赖与许可证清单的唯一来源，不会分叉。
 
-负面：本地阶段的签名密钥需要人工管理，直到接入 OIDC 身份为止；每次构建多出签名、SBOM 与 provenance 三步，构建时间上升；按 digest 引用意味着每次升级都要改引用处。
+负面：本地阶段的签名密钥需要人工管理，直到接入 OIDC 身份为止；每次构建多出签名、SBOM 与 provenance 三步，构建时间上升；按 digest 引用意味着每次升级都要改引用处；两个原生端的回退受平台审核时延约束，与服务端回退不同步，缺陷响应必须依赖「最低可用版本」而非回滚。
 
 锁定：OCI referrer 机制与 cosign 的签名格式。放弃：使用可变 tag 快速滚动的便利。
 
