@@ -330,7 +330,7 @@ PY
 step_security() { hdr "9/10 受影响安全不变式"
   if [ ! -f deploy/local/compose.yaml ]; then skip "尚无部署描述"; return 0; fi
   python3 - <<'PY' || FAIL=1
-import re, sys, yaml
+import os, re, sys, yaml
 d = yaml.safe_load(open("deploy/local/compose.yaml", encoding="utf-8"))
 raw = open("deploy/local/compose.yaml", encoding="utf-8").read()
 bad = []
@@ -349,6 +349,23 @@ for name, svc in (d.get("services") or {}).items():
     img = svc.get("image")
     if img and "@sha256:" not in img:
         bad.append(f"{name}: image 未按 digest 引用（{img}）")
+# OpenBao 的部署前置不变式（07 §1）中可由部署描述校验的两条
+bao_cfg = "deploy/local/openbao-config.hcl"
+if os.path.exists(bao_cfg):
+    lines = [l for l in open(bao_cfg, encoding="utf-8").read().split("\n")
+             if not l.strip().startswith("#")]
+    body = "\n".join(lines)
+    # 上游已移除 mlock：出现该键且为 false 时进程直接拒绝启动（SF-OBA-10）
+    if "disable_mlock" in body:
+        bad.append("openbao-config.hcl: 出现 disable_mlock，上游已移除该支持（SF-OBA-10）")
+    # 零 audit device 时 audit broker 的 fail-closed 分支被短路（SF-OBA-06）；
+    # 该版本只接受声明式配置，且必须给满 type 与 path 两个块标签（SF-OBA-11）
+    if not re.search(r'^\s*audit\s+"[^"]+"\s+"[^"]+"\s*\{', body, re.M):
+        bad.append("openbao-config.hcl: 缺少带 type 与 path 两个标签的 audit 块（SF-OBA-06/11）")
+    for svc, spec in (d.get("services") or {}).items():
+        if "openbao" in (spec.get("image") or "") and "-dev" in " ".join(spec.get("command") or []):
+            bad.append(f"{svc}: 使用了 server -dev，07 §1 禁止它进入任何 active 拓扑")
+
 # 杜绝硬编码：可配置项必须来自 ${VAR:?}，不得是字面量
 for m in re.finditer(r"^\s+-\s+\"?(\d{2,5}):(\d{2,5})\"?\s*$", raw, re.M):
     bad.append(f"端口字面量 {m.group(0).strip()}，应取自 ${{VAR:?}}")

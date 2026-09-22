@@ -138,6 +138,33 @@ services:
       timeout: 5s
       retries: 30
 
+  # OpenBao 是 secret 的版本、取用、轮换与撤销权威（DD-70）。
+  # 不用 server -dev：那是内存 storage 加固定 root token，07 §1 明确禁止它
+  # 进入任何 active 拓扑。初始化与解封由 openbao-init 完成。
+  openbao:
+    image: openbao/openbao@sha256:7d26314820a535ef346f1e63911809e4d356b48068fef00a9dcb3400bb9e11b6
+    networks: [app, mgmt]
+    # disable_mlock=false 要求进程能锁定内存，否则私钥可被换出（07 §1）
+    cap_add: [IPC_LOCK]
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+    configs:
+      - source: openbao_config
+        target: /openbao/config/config.hcl
+    volumes:
+      - ./data/openbao:/openbao/data
+    # 具名卷由 Docker 以 root 创建，而镜像以 uid 100 运行；不改成 root 运行，
+    # 而是让卷归属进程自身的 uid，保持最小权限。
+    user: "100:1000"
+    command: ["server", "-config=/openbao/config/config.hcl"]
+    healthcheck:
+      # 未初始化返回 501、已封存返回 503：两者都不算就绪。
+      # 只有 200 才表示可取用 secret——SecretRef 不可读时 binding 不得 active。
+      test: ["CMD-SHELL", "bao status -format=json >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
   # namespace 是运行前提而非业务动作：它必须在 Core 连接之前存在。
   # 用 server 镜像而非 auto-setup 之后，这一步要显式做。
   # 走 internal-frontend（7236）——那是 Temporal 为内部组件保留的入口，
@@ -228,6 +255,8 @@ secrets:
     file: ./secrets/core_db_password
 
 configs:
+  openbao_config:
+    file: ./openbao-config.hcl
   otel_config:
     file: ./otel-collector.yaml
   temporal_dynamic_config:

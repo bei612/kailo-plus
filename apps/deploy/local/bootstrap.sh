@@ -34,6 +34,15 @@ gen kailo_core_client_secret
 
 # Keycloak 的 realm 定义入库，但客户端密钥不入库：把占位符替换成本机生成的值，
 # 渲染到 gitignore 的目录后挂载。入库文件始终只有占位符。
+# OpenBao 的 raft 数据目录：镜像以 uid 100 运行，具名卷由 Docker 以 root 创建
+# 会导致写入被拒。用绑定挂载并在此设好属主，避免新克隆需要手工 chown。
+mkdir -p data/openbao
+if [ "$(stat -c %u data/openbao)" != "100" ]; then
+  sudo -n chown 100:1000 data/openbao 2>/dev/null || {
+    printf '  需要一次 sudo 设置 data/openbao 属主为 100:1000\n' >&2; exit 2; }
+fi
+printf '  已就绪：data/openbao（uid 100）\n'
+
 mkdir -p secrets/keycloak-import
 # namespace 名来自 .env，不写死在 realm 定义里：Temporal 的 default claim mapper
 # 按 "<namespace>:<role>" 解析 permissions，namespace 写错即全部调用被拒。

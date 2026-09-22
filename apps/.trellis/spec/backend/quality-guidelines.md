@@ -1,51 +1,48 @@
-# Quality Guidelines
+# Backend Quality Guidelines
 
-> Code quality standards for backend development.
+从本仓库实际犯过的错误提炼，不是通用建议。每条都对应一次真实故障。
 
----
+## 产物写入必须原子：先临时文件，成功且非空才落位
 
-## Overview
+`cmd > file` 会在命令失败**之前**就创建好文件。命令失败时留下 0 字节文件，
+后续步骤把它当成有效产物。
 
-<!--
-Document your project's quality standards here.
+本仓库栽过两次：
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
+- `tools/release.sh` 的 SBOM 生成失败后留下 0 字节 `*.spdx.json`，供应链检查
+  一度把它当成已生成。
+- `deploy/local/openbao-init.sh` 的 `bao operator init` 失败后留下 0 字节
+  `openbao_init.json`，**解封分片永久丢失**，raft 数据不可解，只能清库重来。
 
-(To be filled by the team)
+写法：
 
----
+```sh
+tmp=$(mktemp)
+if cmd > "$tmp" && [ -s "$tmp" ]; then
+  mv "$tmp" "$dest"
+else
+  rm -f "$tmp"; exit 2
+fi
+```
 
-## Forbidden Patterns
+`[ -s ]` 不能省：命令成功但输出为空同样是失败。
 
-<!-- Patterns that should never be used and why -->
+## 不要用退出码推断外部服务的状态
 
-(To be filled by the team)
+`bao status` 在封存时以非零码退出。配合 `set -o pipefail`，
+`bao status | parse || echo sealed` 的结果取决于退出码而不是实际状态，
+判定会在两种失败之间摇摆。
 
----
+只解析输出内容，解析不到就取保守值——宁可多做一次幂等操作，
+也不要漏做后在下游才发现。
 
-## Required Patterns
+## 容器内的凭据投递：不要依赖 `_FILE` 约定
 
-<!-- Patterns that must always be used -->
+`_FILE` 后缀不是通用约定。本仓库三个上游各不相同：
 
-(To be filled by the team)
+- Temporal 的 `server` 镜像不做配置模板渲染，口令要在入口脚本里从挂载读入后导出。
+- SpiceDB 是 distroless，容器内没有 shell，只能用 `env_file` 投递。
+- Keycloak 不认 `KC_BOOTSTRAP_ADMIN_PASSWORD_FILE`，同样要入口脚本转一手。
 
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+先确认镜像是否有 shell、是否支持 `_FILE`，再决定投递方式；
+无论哪种，凭据都不进 `.env`、不进配置文件、不上命令行。

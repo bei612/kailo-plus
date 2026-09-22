@@ -41,3 +41,6 @@ coverage/
 
 # 发布产物（由 tools/release.sh 生成，可追溯性来自 provenance）
 /dist/
+
+# OpenBao raft 数据（本地拓扑，不进版本库）
+/deploy/local/data/
