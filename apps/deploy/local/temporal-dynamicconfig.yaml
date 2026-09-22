@@ -1,0 +1,5 @@
+# Temporal 动态配置。保持最小：本 Stage 只需要一个可用的 namespace 面，
+# 容量与限流项随 07-运行与运维基线.md §5 的基线测量结果再定，不预设数字。
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}

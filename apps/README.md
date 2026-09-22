@@ -30,7 +30,7 @@
 
 - 一期同时交付 Buzz Web、Buzz Desktop、Buzz Mobile 三端；它们是仅有的用户入口，能力按 `REQ-21` 分级。
 - Platform Core/BFF 是单一模块化 Rust 服务，共享业务事务边界。
-- Application Worker 是同仓库、独立部署的 Go 进程，固定使用 Temporal Go SDK `v1.48.0`。
+- Application Worker 是同仓库、独立部署的 Go 进程，使用 Temporal Go SDK `v1.48.0`；该版本是 Kailo 的选择，与 Server 内部依赖版本无关（`SF-TMP-04`）。
 - 平台级能力通过固定 Platform Port Client 接入；应用级组件通过 Remote Adapter、Embedded Driver 或已证明的 Protocol Peer 接入。
 - `.references` 是只读上游证据与差异来源，不是实现目录，不在其中开发、构建或打补丁。
 - `BLOCKED` 能力不进入路由、菜单、Action、Tool、Workflow 或发布清单。

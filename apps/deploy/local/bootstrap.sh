@@ -21,6 +21,13 @@ gen() {
 }
 
 gen core_db_password
+gen temporal_db_password
+gen spicedb_preshared_key
+# SpiceDB 镜像是 distroless，无法在容器内读取挂载的 secret，改以 env_file 投递。
+# 该文件与上面的原始 secret 同源，保持单一真值。
+{ printf 'SPICEDB_GRPC_PRESHARED_KEY='; cat secrets/spicedb_preshared_key; printf '\n'; } > secrets/spicedb.env
+chmod 600 secrets/spicedb.env
+printf '  已生成：secrets/spicedb.env\n'
 
 if [ ! -f .env ]; then
   printf '\n缺少 deploy/local/.env。复制 .env.example 并填写后再启动：\n  cp .env.example .env\n' >&2

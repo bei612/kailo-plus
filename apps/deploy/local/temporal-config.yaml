@@ -1,0 +1,96 @@
+# enable-template
+#
+# 首行的 enable-template 是 Temporal 配置加载器启用模板的开关：它只扫描文件前
+# 1024 字节的注释行找这个词（common/config/loader.go 的 checkTemplatingEnabled）。
+# 模板执行时数据为 nil，取值只能用 sprig 的 env 函数，不能用 {{ .Env.X }}。
+#
+# Temporal Server 配置。用 server 镜像而非 auto-setup：后者把建库与启动耦合，
+# 生产不可用，本地用它会让两边拓扑分叉。
+#
+# 口令经 {{ env "POSTGRES_PWD" }} 注入，由入口脚本从 secret 挂载读取后导出——
+# 不写进配置文件、不写进 .env、不出现在命令行。
+
+log:
+  stdout: true
+  level: info
+
+persistence:
+  defaultStore: default
+  visibilityStore: visibility
+  numHistoryShards: 4
+  datastores:
+    default:
+      sql:
+        pluginName: postgres12
+        databaseName: temporal
+        connectAddr: "temporal-db:5432"
+        connectProtocol: tcp
+        user: "{{ env "POSTGRES_USER" }}"
+        password: "{{ env "POSTGRES_PWD" }}"
+        maxConns: 20
+        maxIdleConns: 20
+        maxConnLifetime: 1h
+    visibility:
+      sql:
+        pluginName: postgres12
+        databaseName: temporal_visibility
+        connectAddr: "temporal-db:5432"
+        connectProtocol: tcp
+        user: "{{ env "POSTGRES_USER" }}"
+        password: "{{ env "POSTGRES_PWD" }}"
+        maxConns: 10
+        maxIdleConns: 10
+        maxConnLifetime: 1h
+
+global:
+  membership:
+    maxJoinDuration: 30s
+    broadcastAddress: "{{ env "TEMPORAL_BROADCAST_ADDRESS" }}"
+  pprof:
+    port: 7936
+  # 07-运行与运维基线.md §1 不变式：authorization 留空时所有调用方获得
+  # system admin（SF-TMP-09）。两项必须显式设置。
+  authorization:
+    jwtKeyProvider:
+      keySourceURIs: []
+      refreshInterval: 1m
+    permissionsClaimName: permissions
+    authorizer: default
+    claimMapper: default
+
+services:
+  # 公开 frontend：Core 与 Worker 经此进入，受 authorization 约束。
+  frontend:
+    rpc: { grpcPort: 7233, membershipPort: 6933, bindOnIP: "0.0.0.0" }
+  # internal-frontend：Temporal 自身的系统 Worker 经此进入。
+  # 没有它时，开启 authorizer: default 会让内部 Worker 因 claims == nil 被拒
+  # （common/authorization/default_authorizer.go 的 `if claims == nil` 分支），
+  # 集群起不来。定义该服务后内部组件自动改连它，且 publicClient 必须为空
+  # （common/config/config.go 的 hasIFE 校验）。
+  internal-frontend:
+    rpc: { grpcPort: 7236, membershipPort: 6936, bindOnIP: "0.0.0.0" }
+  matching:
+    rpc: { grpcPort: 7235, membershipPort: 6935, bindOnIP: "0.0.0.0" }
+  history:
+    rpc: { grpcPort: 7234, membershipPort: 6934, bindOnIP: "0.0.0.0" }
+  worker:
+    rpc: { grpcPort: 7239, membershipPort: 6939, bindOnIP: "0.0.0.0" }
+
+clusterMetadata:
+  enableGlobalNamespace: false
+  failoverVersionIncrement: 10
+  masterClusterName: active
+  currentClusterName: active
+  clusterInformation:
+    active:
+      enabled: true
+      initialFailoverVersion: 1
+      rpcName: frontend
+      rpcAddress: "temporal:7233"
+
+dcRedirectionPolicy:
+  policy: noop
+
+dynamicConfigClient:
+  filepath: /etc/temporal/config/dynamicconfig/local.yaml
+  pollInterval: 10s

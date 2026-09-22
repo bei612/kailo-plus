@@ -2,8 +2,10 @@
 project: temporal-sdk-go
 upstream_url: https://github.com/temporalio/sdk-go
 
-# .design/02 §1 固定基线：clone HEAD 为 626130f1...，但 SF-TSDK 行引用
-# v1.48.0 的 tag commit，因为 Temporal Server 的 go.mod 钉定的是该版本。
+# .design/02 §1 固定基线：clone HEAD 为 626130f1...，SF-TSDK 行引用 v1.48.0
+# 的 tag commit。Worker 使用哪个 SDK 版本是 Kailo 自己的选择，与 Temporal
+# Server 内部依赖的版本（v1.32.0 上为 v1.44.0）无关——二者经 gRPC 通信、
+# 各自独立演进（SF-TMP-04）。该独立性由真实连通性验证背书。
 evidence_commit: b7c242c6894df088a57a85b33d0586e908da8b93
 implementation_base_commit: b7c242c6894df088a57a85b33d0586e908da8b93
 base_divergence: none

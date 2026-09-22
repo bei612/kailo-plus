@@ -14,7 +14,7 @@
 4. `BLOCKED: GAP-*` 不得用临时绕过、隐藏开关或弱化安全边界启用。
 5. `ADAPTER_REQUIRED: SS-*` 必须在独立实现目录中闭合，并留下该接缝在固定 commit 上仍然成立的可复核证据；不得直接修改 `.references` 工作树充当交付物。
 6. Core/BFF 保持单一模块化 Rust 服务。不得拆出 Agent Registry、Quota、Capacity、Audit、Observability、Workflow Projection 或 Memory 微服务。
-7. Application Worker 使用 Go 与 Temporal Go SDK `v1.48.0`。Workflow 代码遵守确定性与重放门禁；组件 native task 只作为 `ExternalExecution`。
+7. Application Worker 使用 Go 与 Temporal Go SDK `v1.48.0`；该版本由 Kailo 选定，不随 Server 内部依赖变化（`SF-TMP-04`）。Workflow 代码遵守确定性与重放门禁；组件 native task 只作为 `ExternalExecution`。
 8. Browser 不持有 Nostr 私钥、平台 service credential、SpiceDB/Temporal/OpenMeter/AgentGateway 管理凭据，也不直连 Buzz Relay 或应用组件管理 API。Buzz Desktop 与 Buzz Mobile 按 `DD-75` 本机持有自己的 Nostr 私钥并直连 Relay，但同样不得持有平台 service credential 或任何组件管理凭据，其管理平面一律经 BFF；不得以本机持钥为由放宽任一管理平面准入。
 9. 所有用户或 Agent 可达写动作必须经过 scope guard、Action Admission、fresh authorization、所需审批、Quota/Capacity、Audit 与业务可观测性合同。
 10. 外部副作用前先持久化 `ActionExecution`、`Operation`、`ExternalExecution` 或等价权威引用；结果不明时进入设计规定的 `UNKNOWN`，不得盲目重放。
