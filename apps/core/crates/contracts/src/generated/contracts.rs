@@ -137,6 +137,54 @@ pub enum Kind {
     Task,
 }
 
+/// 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorBody {
+    pub class: ErrorClass,
+
+    /// 贯穿 Core、Worker、adapter 与组件的关联键
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+
+    pub reason: ReasonCode,
+}
+
+/// 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
+/// 字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ReasonCode {
+    #[serde(rename = "IDENTITY_HEADER_MISSING")]
+    IdentityHeaderMissing,
+
+    #[serde(rename = "IDENTITY_UNKNOWN")]
+    IdentityUnknown,
+
+    #[serde(rename = "SESSION_NOT_ACTIVE")]
+    SessionNotActive,
+
+    #[serde(rename = "TENANT_MEMBERSHIP_NOT_ACTIVE")]
+    TenantMembershipNotActive,
+}
+
+/// BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedIdentity {
+    /// 当前选定的 Workspace；未选定时缺省
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_workspace_id: Option<String>,
+
+    pub human_identity_id: String,
+
+    pub tenant_id: String,
+
+    pub tenant_membership_id: String,
+
+    pub tenant_principal_id: String,
+}
+
 /// Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
 /// kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

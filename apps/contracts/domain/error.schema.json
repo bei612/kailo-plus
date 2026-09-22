@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/error.schema.json",
+  "title": "ErrorBody",
+  "description": "统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["class", "reason"],
+  "properties": {
+    "class": { "$ref": "../enums/error_class.schema.json" },
+    "reason": { "$ref": "../enums/reason_code.schema.json" },
+    "operationId": { "type": "string", "description": "贯穿 Core、Worker、adapter 与组件的关联键" }
+  }
+}

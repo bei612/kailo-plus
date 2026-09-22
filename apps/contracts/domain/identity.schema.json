@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/identity.schema.json",
+  "title": "ResolvedIdentity",
+  "description": "BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["humanIdentityId", "tenantId", "tenantMembershipId", "tenantPrincipalId"],
+  "properties": {
+    "humanIdentityId": { "type": "string", "format": "uuid" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "tenantMembershipId": { "type": "string", "format": "uuid" },
+    "tenantPrincipalId": { "type": "string", "format": "uuid" },
+    "currentWorkspaceId": { "type": "string", "format": "uuid", "description": "当前选定的 Workspace；未选定时缺省" }
+  }
+}

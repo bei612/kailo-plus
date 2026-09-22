@@ -149,6 +149,20 @@ services:
     ports:
       - "127.0.0.1:${REGISTRY_PORT:?必须显式提供，禁止硬编码}:5000"
 
+  # Platform Core/BFF：单一模块化 Rust 服务，共享业务事务边界（DD-05）。
+  # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
+  # 只在 app 网络：Browser 永远到不了它，必须经 edge 上的网关。
+  core-bff:
+    build:
+      context: ../..
+      dockerfile: core/Dockerfile
+    networks: [app]
+    depends_on:
+      core-db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: ${CORE_DATABASE_URL:?必须显式提供，禁止硬编码}
+      BFF_LISTEN: ${BFF_LISTEN:?必须显式提供，禁止硬编码}
+
   # AgentGateway 是 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。
   # 镜像由 tools/build-upstream.sh 从 .design/02 §1 的固定 commit 构建——
   # 该 commit 在 v1.6.0-alpha.1 之后且无 tag 包含它，发布镜像缺少
@@ -180,16 +194,6 @@ services:
     command: ["-f", "/etc/agentgateway/config.yaml"]
     ports:
       - "127.0.0.1:${AGENTGATEWAY_PORT:?必须显式提供，禁止硬编码}:8080"
-
-  # 仅用于采集 SS-AGW-OIDC 的接缝证据：回显收到的请求头，以便观察
-  # 哪些被移除、哪些被投影。profile 为 verify，默认不启动，不属于运行拓扑。
-  # Core BFF 就位后本服务即删除，不允许长期充当假后端。
-  echo-bff:
-    image: mendhak/http-https-echo@sha256:f55000d9196bd3c853d384af7315f509d21ffb85de315c26e9874033b9f83e15
-    profiles: [verify]
-    networks: [app]
-    environment:
-      HTTP_PORT: "8081"
 
   # OpenBao 是 secret 的版本、取用、轮换与撤销权威（DD-70）。
   # 不用 server -dev：那是内存 storage 加固定 root token，07 §1 明确禁止它

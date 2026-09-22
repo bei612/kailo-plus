@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/contracts", "crates/kailo-core"]
+members = ["crates/contracts", "crates/kailo-identity", "crates/kailo-core"]
 
 [workspace.package]
 version = "0.0.0"

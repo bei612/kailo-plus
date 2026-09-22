@@ -27,6 +27,15 @@ step_lint() {
   local ran=0
   if populated core && have cargo; then
     ran=1
+    # sqlx 离线数据必须与查询同步：否则编译期 SQL 校验会在没有库的环境里
+    # 悄悄用过期快照通过。与 contracts 生成物同一套「入库 + 校验同步」模式。
+    if [ -n "${DATABASE_URL:-}" ] && have sqlx; then
+      if (cd core && cargo sqlx prepare --check --workspace >/dev/null 2>&1); then
+        pass "sqlx 离线数据与查询同步"
+      else
+        fail "sqlx 离线数据过期，在 core/ 下运行 cargo sqlx prepare --workspace 后提交"
+      fi
+    fi
     cargo fmt --manifest-path core/Cargo.toml --all --check >/dev/null 2>&1 \
       && pass "cargo fmt" || fail "cargo fmt"
     cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings >/dev/null 2>&1 \

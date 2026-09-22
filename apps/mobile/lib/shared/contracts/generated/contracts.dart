@@ -1,6 +1,8 @@
 // To parse this JSON data, do
 //
 //     final canary = canaryFromJson(jsonString);
+//     final errorBody = errorBodyFromJson(jsonString);
+//     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
 
 import 'dart:convert';
@@ -8,6 +10,16 @@ import 'dart:convert';
 Canary canaryFromJson(String str) => Canary.fromJson(json.decode(str));
 
 String canaryToJson(Canary data) => json.encode(data.toJson());
+
+ErrorBody errorBodyFromJson(String str) => ErrorBody.fromJson(json.decode(str));
+
+String errorBodyToJson(ErrorBody data) => json.encode(data.toJson());
+
+ResolvedIdentity resolvedIdentityFromJson(String str) =>
+    ResolvedIdentity.fromJson(json.decode(str));
+
+String resolvedIdentityToJson(ResolvedIdentity data) =>
+    json.encode(data.toJson());
 
 WorkflowRef workflowRefFromJson(String str) =>
     WorkflowRef.fromJson(json.decode(str));
@@ -189,6 +201,84 @@ final kindValues = EnumValues({
   "MESSAGE": Kind.MESSAGE,
   "TASK": Kind.TASK,
 });
+
+///统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
+class ErrorBody {
+  final ErrorClass errorBodyClass;
+
+  ///贯穿 Core、Worker、adapter 与组件的关联键
+  final String? operationId;
+  final ReasonCode reason;
+
+  ErrorBody({
+    required this.errorBodyClass,
+    this.operationId,
+    required this.reason,
+  });
+
+  factory ErrorBody.fromJson(Map<String, dynamic> json) => ErrorBody(
+    errorBodyClass: errorClassValues.map[json["class"]]!,
+    operationId: json["operationId"],
+    reason: reasonCodeValues.map[json["reason"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "class": errorClassValues.reverse[errorBodyClass],
+    "operationId": operationId,
+    "reason": reasonCodeValues.reverse[reason],
+  });
+}
+
+///稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
+///字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
+enum ReasonCode {
+  IDENTITY_HEADER_MISSING,
+  IDENTITY_UNKNOWN,
+  SESSION_NOT_ACTIVE,
+  TENANT_MEMBERSHIP_NOT_ACTIVE,
+}
+
+final reasonCodeValues = EnumValues({
+  "IDENTITY_HEADER_MISSING": ReasonCode.IDENTITY_HEADER_MISSING,
+  "IDENTITY_UNKNOWN": ReasonCode.IDENTITY_UNKNOWN,
+  "SESSION_NOT_ACTIVE": ReasonCode.SESSION_NOT_ACTIVE,
+  "TENANT_MEMBERSHIP_NOT_ACTIVE": ReasonCode.TENANT_MEMBERSHIP_NOT_ACTIVE,
+});
+
+///BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
+class ResolvedIdentity {
+  ///当前选定的 Workspace；未选定时缺省
+  final String? currentWorkspaceId;
+  final String humanIdentityId;
+  final String tenantId;
+  final String tenantMembershipId;
+  final String tenantPrincipalId;
+
+  ResolvedIdentity({
+    this.currentWorkspaceId,
+    required this.humanIdentityId,
+    required this.tenantId,
+    required this.tenantMembershipId,
+    required this.tenantPrincipalId,
+  });
+
+  factory ResolvedIdentity.fromJson(Map<String, dynamic> json) =>
+      ResolvedIdentity(
+        currentWorkspaceId: json["currentWorkspaceId"],
+        humanIdentityId: json["humanIdentityId"],
+        tenantId: json["tenantId"],
+        tenantMembershipId: json["tenantMembershipId"],
+        tenantPrincipalId: json["tenantPrincipalId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "currentWorkspaceId": currentWorkspaceId,
+    "humanIdentityId": humanIdentityId,
+    "tenantId": tenantId,
+    "tenantMembershipId": tenantMembershipId,
+    "tenantPrincipalId": tenantPrincipalId,
+  });
+}
 
 ///Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
 ///kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。

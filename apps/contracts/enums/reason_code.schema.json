@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/reason_code.schema.json",
+  "title": "ReasonCode",
+  "description": "稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API 字段同等对待，走兼容检查。本文件只含已被实现使用的 code。",
+  "type": "string",
+  "enum": [
+    "IDENTITY_HEADER_MISSING",
+    "IDENTITY_UNKNOWN",
+    "TENANT_MEMBERSHIP_NOT_ACTIVE",
+    "SESSION_NOT_ACTIVE"
+  ]
+}

@@ -4,6 +4,12 @@
 //    canary, err := UnmarshalCanary(bytes)
 //    bytes, err = canary.Marshal()
 //
+//    errorBody, err := UnmarshalErrorBody(bytes)
+//    bytes, err = errorBody.Marshal()
+//
+//    resolvedIdentity, err := UnmarshalResolvedIdentity(bytes)
+//    bytes, err = resolvedIdentity.Marshal()
+//
 //    workflowRef, err := UnmarshalWorkflowRef(bytes)
 //    bytes, err = workflowRef.Marshal()
 
@@ -18,6 +24,26 @@ func UnmarshalCanary(data []byte) (Canary, error) {
 }
 
 func (r *Canary) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalErrorBody(data []byte) (ErrorBody, error) {
+	var r ErrorBody
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ErrorBody) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalResolvedIdentity(data []byte) (ResolvedIdentity, error) {
+	var r ResolvedIdentity
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResolvedIdentity) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -72,6 +98,24 @@ type Variant struct {
 	TaskAttempt *int64  `json:"taskAttempt,omitempty"`
 }
 
+// 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
+type ErrorBody struct {
+	Class ErrorClass `json:"class"`
+	// 贯穿 Core、Worker、adapter 与组件的关联键
+	OperationID *string    `json:"operationId,omitempty"`
+	Reason      ReasonCode `json:"reason"`
+}
+
+// BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
+type ResolvedIdentity struct {
+	// 当前选定的 Workspace；未选定时缺省
+	CurrentWorkspaceID *string `json:"currentWorkspaceId,omitempty"`
+	HumanIdentityID    string  `json:"humanIdentityId"`
+	TenantID           string  `json:"tenantId"`
+	TenantMembershipID string  `json:"tenantMembershipId"`
+	TenantPrincipalID  string  `json:"tenantPrincipalId"`
+}
+
 // Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
 // kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
 type WorkflowRef struct {
@@ -121,6 +165,17 @@ const (
 	File    Kind = "FILE"
 	Message Kind = "MESSAGE"
 	Task    Kind = "TASK"
+)
+
+// 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
+// 字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
+type ReasonCode string
+
+const (
+	IdentityHeaderMissing     ReasonCode = "IDENTITY_HEADER_MISSING"
+	IdentityUnknown           ReasonCode = "IDENTITY_UNKNOWN"
+	SessionNotActive          ReasonCode = "SESSION_NOT_ACTIVE"
+	TenantMembershipNotActive ReasonCode = "TENANT_MEMBERSHIP_NOT_ACTIVE"
 )
 
 // ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind

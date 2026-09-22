@@ -9,6 +9,9 @@ WORKDIR /build
 # 先只拷清单，让依赖层在源码变动时仍可复用
 COPY core/Cargo.toml core/Cargo.lock* ./
 COPY core/crates ./crates
+COPY core/.sqlx ./.sqlx
+# 离线编译：镜像构建时没有数据库，用入库的 sqlx 查询快照做编译期 SQL 校验
+ENV SQLX_OFFLINE=true
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked --bin kailo-core
 

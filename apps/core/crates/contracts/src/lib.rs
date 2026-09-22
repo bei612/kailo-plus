@@ -6,4 +6,4 @@
 
 pub mod generated;
 
-pub use generated::ErrorClass;
+pub use generated::*;

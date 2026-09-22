@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select tm.id           as tenant_membership_id,\n               tm.tenant_id    as tenant_id,\n               tm.tenant_principal_id as tenant_principal_id,\n               hi.id           as human_identity_id,\n               tm.state        as membership_state\n        from identity.external_identity ei\n        join identity.human_identity hi on hi.id = ei.human_identity_id\n        join identity.tenant_membership tm on tm.human_identity_id = hi.id\n        where ei.issuer = $1 and ei.subject = $2\n          and ei.status = 'ACTIVE' and hi.status = 'ACTIVE'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_membership_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "tenant_principal_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "human_identity_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "membership_state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "61e7eaa93bc1da90b4f21cce23f2c0547fb4525cbfae594873595fab7dd82794"
+}
