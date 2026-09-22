@@ -65,3 +65,23 @@ help/lsp/man/postgres-fdw/serve/serve-testing/version`）。schema 只能经 gRP
 
 编排里每写一个上游子命令，先 `docker run --rm <image> <cmd> --help` 确认；
 `--help` 的退出码与输出比任何记忆都便宜。
+
+## 已应用的迁移一个字符都不能改，注释也算
+
+sqlx 对每份 up 迁移存 checksum，改动后再跑会得到
+`migration <version> was previously applied but has been modified` 并拒绝前进。
+本仓库栽过两次：第一次是往已应用的迁移里补 `CREATE SCHEMA`，第二次是**只加了
+一段注释**。
+
+要补充的说明写到别处（提交说明、运维基线、runbook），或者追加一份新迁移。
+本地卡住时只能 `sqlx migrate revert` 到该版本之前再重来，生产上没有这个选项。
+
+## 集成测试的夹具清理要能扛住断言失败
+
+断言失败会 panic，写在断言之后的清理就跑不到。Go 用 `t.Cleanup`；Rust 的
+async 测试没有等价物，`Drop` 里也不能 await。可行形状是把断言体抽成一个 async
+函数，`AssertUnwindSafe(...).catch_unwind().await` 之后先清理再 `resume_unwind`。
+
+代价是真实的：本仓库一次失败的端到端测试在 `identity.buzz_identity_binding`
+里留下一行 `custody=SERVER`，随后新增的三元组约束因该行不满足而无法应用，
+**迁移演练门禁整体变红**。测试残留会变成门禁故障，不只是脏数据。

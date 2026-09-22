@@ -295,6 +295,9 @@ services:
       OPENBAO_PLATFORM_NAMESPACE: ${OPENBAO_PLATFORM_NAMESPACE:?必须显式提供，禁止硬编码}
       # SecretRef 的 audience 必须等于它，否则拒绝取用
       OPENBAO_SERVICE_IDENTITY: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
+      # Relay 的网络地址。与 Community host 不是一回事：后者参与 NIP-98
+      # 签名并作为 Host 头，前者只用于建立连接（SF-BUZ-32）。
+      BUZZ_RELAY_TRANSPORT: ${BUZZ_RELAY_TRANSPORT:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/openbao-core.env
     ports:

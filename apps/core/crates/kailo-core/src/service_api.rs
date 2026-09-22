@@ -19,17 +19,29 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
+use kailo_secrets::SecretStore;
+
 use crate::service_auth::{ServiceAuth, ServiceAuthError};
 
 #[derive(Clone)]
 pub struct ServiceState {
     pub pool: PgPool,
     pub auth: Arc<ServiceAuth>,
+    pub secrets: Arc<SecretStore>,
+    /// Relay 的网络地址。它与 Community host 不是一回事：后者参与 NIP-98
+    /// 签名并作为 Host 头，前者只用于建立连接（SF-BUZ-32）。
+    pub relay_transport: String,
+    /// 复用连接池。每次投影新建 Client 会让 TLS 与连接开销落在重试路径上。
+    pub http: reqwest::Client,
 }
 
 pub fn router(state: ServiceState) -> Router {
     Router::new()
         .route("/service/v1/task-projections", post(project_task_state))
+        .route(
+            "/service/v1/membership-projections/buzz",
+            post(crate::membership_projection::project_buzz_roster),
+        )
         .with_state(state)
 }
 
@@ -139,12 +151,12 @@ async fn project_task_state(
 
 /// 依赖不可用是结果不明，不是拒绝。写成 4xx 会让可恢复故障在 Activity 侧
 /// 被当作永久失败而不再重试。
-fn unavailable(e: sqlx::Error) -> Response {
+pub(crate) fn unavailable(e: sqlx::Error) -> Response {
     tracing::warn!(error = %e, "service API 依赖不可用");
     StatusCode::SERVICE_UNAVAILABLE.into_response()
 }
 
-async fn authorize(state: &ServiceState, headers: &HeaderMap) -> Result<(), Response> {
+pub(crate) async fn authorize(state: &ServiceState, headers: &HeaderMap) -> Result<(), Response> {
     let header = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());

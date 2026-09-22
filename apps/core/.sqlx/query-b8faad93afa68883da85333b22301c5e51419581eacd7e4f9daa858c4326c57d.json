@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select wm.tenant_principal_id, wm.workspace_id, w.tenant_id\n                 from identity.workspace_membership wm\n                 join identity.workspace w on w.id = wm.workspace_id\n                 where wm.id = $1 and wm.version = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_principal_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "tenant_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b8faad93afa68883da85333b22301c5e51419581eacd7e4f9daa858c4326c57d"
+}

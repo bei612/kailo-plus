@@ -4,6 +4,7 @@
 //! `01-工程结构与模块边界.md` §3 以 crate 与可见性划分，不走网络、不引消息总线。
 
 mod bff;
+mod membership_projection;
 mod service_api;
 mod service_auth;
 
@@ -35,6 +36,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service_state = service_api::ServiceState {
         pool: pool.clone(),
         auth: std::sync::Arc::new(service_auth::ServiceAuth::from_env()?),
+        secrets: std::sync::Arc::new(kailo_secrets::SecretStore::from_env()?),
+        relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
+            .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
+        http: reqwest::Client::new(),
     };
 
     let bff = tokio::net::TcpListener::bind(listen).await?;
