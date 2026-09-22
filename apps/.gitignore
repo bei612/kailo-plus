@@ -19,3 +19,10 @@ coverage/
 .idea/
 .vscode/
 .DS_Store
+
+# Trellis 工作流（本机工具状态，不进版本库）
+# 由 `trellis init` 生成；重建方式见 README「工具链」
+.trellis/
+.claude/
+.codex/
+.agents/
