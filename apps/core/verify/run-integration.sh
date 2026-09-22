@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# 跑全部集成核验：Buzz roster、SecretRef、SpiceDB 关系、成员生命周期整条链。
+#
+# 这些用例默认跳过（`KAILO_INTEGRATION` 未设）。原因不是它们可选，而是变量名
+# 与产品侧同名：部署里 OPENBAO_ADDR 是 http://openbao:8200、SPICEDB_ENDPOINT 是
+# spicedb:50051，都只在容器网络内可达。谁 source 过 deploy/local/.env 再跑门禁，
+# 没有这道开关就会让本该跳过的用例拿着网内地址去连，以一堆看不懂的失败收场。
+#
+# 本脚本把网内地址换成本机发布端口，再显式开启。
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+local_dir=deploy/local
+[ -f "$local_dir/.env" ] || { echo "缺少 $local_dir/.env，先跑 $local_dir/bootstrap.sh" >&2; exit 2; }
+
+set -a
+. "$local_dir/.env"
+. "$local_dir/secrets/openbao-core.env"
+set +a
+
+export KAILO_INTEGRATION=1
+export DATABASE_URL="${CORE_DATABASE_URL/@core-db:5432/@127.0.0.1:${CORE_DB_PORT}}"
+export OPENBAO_ADDR="http://127.0.0.1:${OPENBAO_PORT}"
+export OPENBAO_SERVICE_IDENTITY="${OIDC_SERVICE_CLIENT_ID}"
+export SPICEDB_ENDPOINT="127.0.0.1:${SPICEDB_PORT}"
+export SPICEDB_INSECURE=true
+export SPICEDB_GRPC_PRESHARED_KEY="$(cat "$local_dir/secrets/spicedb_preshared_key")"
+export CORE_SERVICE_URL="http://127.0.0.1:${SERVICE_PORT}"
+export OIDC_TOKEN_URL="http://127.0.0.1:${KEYCLOAK_PORT}/realms/${OIDC_REALM}/protocol/openid-connect/token"
+# Keycloak 按请求 Host 推导 issuer；令牌里的 iss 必须逐字符等于 Core 配置的那个
+export OIDC_TOKEN_HOST="${OIDC_ISSUER#*://}"; OIDC_TOKEN_HOST="${OIDC_TOKEN_HOST%%/realms/*}"
+export WORKER_CLIENT_SECRET="$(cat "$local_dir/secrets/kailo_worker_client_secret")"
+export RELAY_OPERATOR_PRIVATE_KEY="$(cat "$local_dir/secrets/relay_operator_private_key")"
+export VERIFY_SECRET_LOCATOR="${OPENBAO_PLATFORM_NAMESPACE}/${OPENBAO_KV_MOUNT}/verify/secret-ref"
+export VERIFY_DOCKER_NETWORK=kailo-local_component
+export VERIFY_ZED_ENV_FILE="$(pwd)/$local_dir/secrets/zed.env"
+export VERIFY_SPICEDB_ENDPOINT=spicedb:50051
+# zed 镜像按 digest 引用（ADR-06），与 compose 中同一个
+export VERIFY_ZED_IMAGE="$(python3 -c '
+import re,io
+t=io.open("deploy/local/compose.yaml",encoding="utf-8").read()
+print(re.search(r"image: (authzed/zed@sha256:[0-9a-f]+)", t).group(1))')"
+# 整条链要串起三步投影，其中 roster 那步以 Relay 的对账间隔为界
+export VERIFY_CONVERGE_BOUND_SECS=$(( BUZZ_NIP43_RECONCILE_INTERVAL_SECS * 4 + 20 ))
+
+./core/verify/seed-secret-ref.sh >/dev/null
+(cd core && cargo test --workspace)
+# Go 侧同理
+# -count=1 关掉缓存：集成核验的结论取决于外部系统当下的状态，缓存命中等于没跑
+(cd worker && KAILO_INTEGRATION=1 go test -count=1 ./...)

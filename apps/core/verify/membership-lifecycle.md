@@ -24,7 +24,20 @@ Keycloak 令牌、真实 Temporal、真实 SpiceDB、真实 Relay、真实 OpenB
 不复用 Worker 的 Go 客户端读 SpiceDB：那会让「Worker 说写了」给「Worker 写了」
 背书。也不查 SpiceDB 的库表：那绕过 API 的一致性语义。
 
+## 怎么跑
+
+`core/verify/run-integration.sh`。这些用例默认跳过（`KAILO_INTEGRATION` 未设），
+不是因为可选，而是因为变量名与产品侧同名：部署里 `OPENBAO_ADDR` 是
+`http://openbao:8200`、`SPICEDB_ENDPOINT` 是 `spicedb:50051`，都只在容器网络内
+可达。谁 source 过 `deploy/local/.env` 再跑门禁，没有这道开关就会让本该跳过的
+用例拿着网内地址去连，以一堆看不懂的失败收场——本仓库已经撞过两次。脚本把
+网内地址换成本机发布端口再显式开启。
+
 ## 实测结果（2026-09-22，连跑三次稳定）
+
+TENANT 与 WORKSPACE 两个层级各验一遍。两者共用一个 Workflow kind，靠 input 的
+target type 区分投影目标（`DD-45`）——只验 TENANT 无法证明 WORKSPACE 那条分支
+走得通。
 
 | 性质 | 结果 |
 |---|---|
@@ -38,6 +51,12 @@ Keycloak 令牌、真实 Temporal、真实 SpiceDB、真实 Relay、真实 OpenB
 | `REVOKED` 后 SpiceDB 无该关系 | 通过 |
 | `REVOKED` 后 roster 无该 pubkey | 通过 |
 | 撤权 Workflow 的任务投影 | `COMPLETED`——工作台上看得到终态 |
+| WORKSPACE：`PROVISIONING` → `ACTIVE` | SpiceDB 有 `workspace:<id>#member@principal:<id>`；Channel roster 有该 pubkey |
+| WORKSPACE：`REVOKING` → `REVOKED` | 两处都撤掉 |
+
+WORKSPACE 那半边的 Channel 由 CONTROL 身份真实创建，`channel_id` 从 Relay 签发
+的 kind 39002 的 `d` 标签取得（`SF-BUZ-33`），不是自造的 UUID——自造的 UUID 会
+让 roster 投影发到一个不存在的 Channel 上，而那不会报错。
 
 `REVOKING` 立即拒绝新动作那一半早已由 `core/verify/identity-chain.md` 实测，
 不在此重复。

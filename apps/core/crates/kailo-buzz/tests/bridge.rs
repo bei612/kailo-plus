@@ -13,7 +13,12 @@ use nostr::Keys;
 
 const AUDIENCE: &str = "kailo-local";
 
+/// 集成核验要显式开启（`KAILO_INTEGRATION=1`）：这些变量名与产品侧同名，
+/// source 过 `.env` 的 shell 会让本该跳过的用例拿着网内地址去连。
 fn env() -> Option<(String, String)> {
+    if std::env::var("KAILO_INTEGRATION").as_deref() != Ok("1") {
+        return None;
+    }
     let origin = std::env::var("RELAY_OPERATOR_API_ORIGIN").ok()?;
     let key = std::env::var("RELAY_OPERATOR_PRIVATE_KEY").ok()?;
     (!origin.is_empty() && !key.is_empty()).then_some((origin, key))

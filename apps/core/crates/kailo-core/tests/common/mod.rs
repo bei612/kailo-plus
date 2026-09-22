@@ -37,7 +37,12 @@ pub struct Env {
     pub spicedb_in_network: String,
 }
 
+/// 集成核验要显式开启（`KAILO_INTEGRATION=1`），不按「某个环境变量碰巧存在」
+/// 来判断——那些变量名与产品侧同名，而部署里它们指向网内地址。
 pub fn env() -> Option<Env> {
+    if std::env::var("KAILO_INTEGRATION").as_deref() != Ok("1") {
+        return None;
+    }
     let v = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
     Some(Env {
         service_url: v("CORE_SERVICE_URL")?,
@@ -121,6 +126,50 @@ pub struct Fixture {
     pub control_principal: Uuid,
     pub member_principal: Uuid,
     pub membership: Uuid,
+}
+
+/// 在既有 Tenant 夹具上加一个 Workspace 与它的 Channel 绑定。
+///
+/// `channel_id` 必须是 Relay 分配的 UUID（SF-BUZ-33），由调用方先用 CONTROL
+/// 身份建 Channel 再从 kind 39002 的 `d` 标签取得——这里不接受自造的 UUID，
+/// 那会让 roster 投影发到一个不存在的 Channel 上。
+pub async fn seed_workspace_fixture(pool: &PgPool, f: &Fixture, channel_id: Uuid) -> (Uuid, Uuid) {
+    let workspace = Uuid::new_v4();
+    let membership = Uuid::new_v4();
+    sqlx::query(
+        "insert into identity.workspace (id, tenant_id, slug, name, state)
+         values ($1, $2, $3, $3, 'ACTIVE')",
+    )
+    .bind(workspace)
+    .bind(f.tenant)
+    .bind(format!("w-{}", &workspace.to_string()[..8]))
+    .execute(pool)
+    .await
+    .expect("建 Workspace");
+
+    // PROVISIONING：投影尚未对账，成员还不能进入该 Workspace（DD-41）
+    sqlx::query(
+        "insert into identity.workspace_membership
+             (id, workspace_id, tenant_principal_id, state)
+         values ($1, $2, $3, 'PROVISIONING')",
+    )
+    .bind(membership)
+    .bind(workspace)
+    .bind(f.member_principal)
+    .execute(pool)
+    .await
+    .expect("建 WorkspaceMembership");
+
+    sqlx::query(
+        "insert into projection.workspace_buzz_binding (workspace_id, channel_id, state)
+         values ($1, $2, 'ACTIVE')",
+    )
+    .bind(workspace)
+    .bind(channel_id)
+    .execute(pool)
+    .await
+    .expect("建 WorkspaceBuzzBinding");
+    (workspace, membership)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -235,6 +284,10 @@ pub async fn cleanup(pool: &PgPool, f: &Fixture) {
     // 按外键依赖的逆序。编排三张表是后加的——夹具清理漏了它们时，库里会攒下
     // 一堆孤立的 ActionExecution 与 WorkflowRef，下一次迁移演练就会撞上。
     for sql in [
+        "delete from projection.workspace_buzz_binding where workspace_id in
+             (select id from identity.workspace where tenant_id = $1)",
+        "delete from identity.workspace_membership where workspace_id in
+             (select id from identity.workspace where tenant_id = $1)",
         "delete from projection.task_projection where workflow_id in
              (select workflow_id from projection.workflow_ref where tenant_id = $1)",
         "delete from projection.workflow_ref where tenant_id = $1",
@@ -242,6 +295,7 @@ pub async fn cleanup(pool: &PgPool, f: &Fixture) {
         "delete from projection.tenant_buzz_binding where tenant_id = $1",
         "delete from identity.buzz_identity_binding where tenant_id = $1",
         "delete from identity.tenant_membership where tenant_id = $1",
+        "delete from identity.workspace where tenant_id = $1",
         "delete from identity.principal where tenant_id = $1",
         "delete from identity.tenant where id = $1",
     ] {

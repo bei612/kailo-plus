@@ -9,11 +9,17 @@
 
 use kailo_secrets::{SecretError, SecretRef, SecretStore};
 
+/// 集成核验要显式开启，不按「某个环境变量碰巧存在」来判断。
+///
+/// 这些变量名与产品侧同名（`OPENBAO_ADDR` 等），而部署里它们指向网内地址；
+/// 谁在自己的 shell 里 source 过 `.env`，再跑门禁就会让本该跳过的用例拿着
+/// `http://openbao:8200` 去连，然后以一堆看不懂的失败收场。显式开关让
+/// 「跳过」有确定含义：没开，而不是某个变量恰好没设。
 fn store() -> Option<SecretStore> {
-    std::env::var("OPENBAO_ADDR")
-        .ok()
-        .filter(|v| !v.is_empty())
-        .map(|_| SecretStore::from_env().expect("构造 SecretStore"))
+    if std::env::var("KAILO_INTEGRATION").as_deref() != Ok("1") {
+        return None;
+    }
+    Some(SecretStore::from_env().expect("构造 SecretStore"))
 }
 
 fn identity() -> String {

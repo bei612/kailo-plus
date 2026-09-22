@@ -8,11 +8,14 @@ import (
 	"time"
 )
 
-// 对运行中的 SpiceDB 执行。没有配置时跳过——这不是可选实现，是本机拓扑没起来。
+// 对运行中的 SpiceDB 执行。
+// 集成核验要显式开启，不按「某个环境变量碰巧存在」来判断：这些变量名与产品
+// 侧同名，而部署里它们指向网内地址（spicedb:50051）。谁在自己的 shell 里
+// source 过 .env 再跑门禁，就会让本该跳过的用例拿着网内地址去连。
 func client(t *testing.T) *SpiceDB {
 	t.Helper()
-	if os.Getenv("SPICEDB_ENDPOINT") == "" {
-		t.Skip("未提供 SPICEDB_ENDPOINT，跳过")
+	if os.Getenv("KAILO_INTEGRATION") != "1" {
+		t.Skip("未开启 KAILO_INTEGRATION，跳过集成核验")
 	}
 	s, err := NewSpiceDBFromEnv()
 	if err != nil {

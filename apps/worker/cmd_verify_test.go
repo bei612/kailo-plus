@@ -22,9 +22,8 @@ import (
 )
 
 func TestBaselineRunsAgainstRealServer(t *testing.T) {
-	addr := os.Getenv("TEMPORAL_ADDRESS")
-	if addr == "" {
-		t.Skip("未提供 TEMPORAL_ADDRESS，跳过连通性验证")
+	if os.Getenv("KAILO_INTEGRATION") != "1" {
+		t.Skip("未开启 KAILO_INTEGRATION，跳过连通性验证")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

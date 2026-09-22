@@ -23,7 +23,7 @@ use std::process::Command;
 use uuid::Uuid;
 
 mod common;
-use common::{seed_tenant_fixture, Env, Fixture};
+use common::{seed_tenant_fixture, seed_workspace_fixture, Env, Fixture};
 
 /// 用官方 zed CLI 直接读 SpiceDB。
 ///
@@ -75,15 +75,24 @@ fn spicedb_has(env: &Env, object: &str, relation: &str, subject: &str) -> bool {
 }
 
 async fn wait_for_state(pool: &PgPool, membership: Uuid, want: &str, bound: u64) -> String {
+    wait_for_state_in(pool, "identity.tenant_membership", membership, want, bound).await
+}
+
+async fn wait_for_state_in(
+    pool: &PgPool,
+    table: &str,
+    membership: Uuid,
+    want: &str,
+    bound: u64,
+) -> String {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(bound);
     loop {
-        let last = sqlx::query_scalar::<_, String>(
-            "select state from identity.tenant_membership where id = $1",
-        )
-        .bind(membership)
-        .fetch_one(pool)
-        .await
-        .expect("读成员状态");
+        let last =
+            sqlx::query_scalar::<_, String>(&format!("select state from {table} where id = $1"))
+                .bind(membership)
+                .fetch_one(pool)
+                .await
+                .expect("读成员状态");
         if last == want || std::time::Instant::now() > deadline {
             return last;
         }
@@ -98,6 +107,10 @@ async fn wait_for_state(pool: &PgPool, membership: Uuid, want: &str, bound: u64)
 /// ActionExecution，因此这一步不能省——也正因为它在测试里而不在 Core 里，
 /// Core 没有给自己发准入通行证。
 async fn seed_action(pool: &PgPool, f: &Fixture, action_key: &str) -> Uuid {
+    seed_action_for(pool, f, action_key, f.membership).await
+}
+
+async fn seed_action_for(pool: &PgPool, f: &Fixture, action_key: &str, target: Uuid) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
         "insert into admission.action_execution
@@ -111,7 +124,7 @@ async fn seed_action(pool: &PgPool, f: &Fixture, action_key: &str) -> Uuid {
     .bind(f.tenant)
     .bind(action_key)
     .bind(f.control_principal)
-    .bind(f.membership)
+    .bind(target)
     .bind(Uuid::new_v4())
     .execute(pool)
     .await
@@ -123,7 +136,8 @@ async fn start_lifecycle(
     http: &reqwest::Client,
     e: &Env,
     token: &str,
-    f: &Fixture,
+    scope: &str,
+    membership: Uuid,
     action: Uuid,
 ) -> reqwest::StatusCode {
     http.post(format!(
@@ -132,8 +146,8 @@ async fn start_lifecycle(
     ))
     .bearer_auth(token)
     .json(&serde_json::json!({
-        "scope": "TENANT",
-        "membershipId": f.membership,
+        "scope": scope,
+        "membershipId": membership,
         "actionExecutionId": action,
     }))
     .send()
@@ -206,12 +220,17 @@ async fn membership_lifecycle_converges_both_directions() {
     // 清理跨三个系统：Core 库、SpiceDB、Relay roster。断言中途失败时前两者
     // 都可能已经写入，只清 Core 会把授权面的残留留给下一次运行。
     common::cleanup(&pool, &f).await;
-    spicedb_delete(
-        &e,
-        &format!("tenant:{}", f.tenant),
-        "member",
-        &format!("principal:{}", f.member_principal),
-    );
+    for object in [
+        format!("tenant:{}", f.tenant),
+        workspace_object(&pool, &f).await,
+    ] {
+        spicedb_delete(
+            &e,
+            &object,
+            "member",
+            &format!("principal:{}", f.member_principal),
+        );
+    }
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);
     }
@@ -270,7 +289,7 @@ async fn run(
     // 成员当前是 PROVISIONING：Core 的 fail-closed 状态先成立，投影才开始。
     let action = seed_action(pool, f, "membership.project").await;
     assert_eq!(
-        start_lifecycle(http, e, token, f, action).await,
+        start_lifecycle(http, e, token, "TENANT", f.membership, action).await,
         reqwest::StatusCode::OK,
         "启动建立 Workflow"
     );
@@ -291,7 +310,7 @@ async fn run(
     // 重复启动同一 ActionExecution 不产生第二个 workflow ID：固定 ID 加
     // reuse/conflict 三项策略（DD-48）。
     assert_eq!(
-        start_lifecycle(http, e, token, f, action).await,
+        start_lifecycle(http, e, token, "TENANT", f.membership, action).await,
         reqwest::StatusCode::CONFLICT,
         "membership 版本已变，同一 ActionExecution 不应再起新 Workflow"
     );
@@ -318,7 +337,7 @@ async fn run(
 
     let action = seed_action(pool, f, "membership.revoke").await;
     assert_eq!(
-        start_lifecycle(http, e, token, f, action).await,
+        start_lifecycle(http, e, token, "TENANT", f.membership, action).await,
         reqwest::StatusCode::OK,
         "启动撤权 Workflow（版本 {before}）"
     );
@@ -336,15 +355,125 @@ async fn run(
         "REVOKED 后 roster 不应再有该 pubkey，实际 {roster:?}"
     );
 
+    // ---- WORKSPACE scope ----
+    //
+    // 同一条链的另一个目标层级：SpiceDB 客体换成 workspace，Buzz 侧从
+    // relay roster 换成该 Workspace 绑定的 Channel roster（DD-41、DD-45）。
+    // 两个层级共用一个 Workflow kind，靠 input 的 target type 区分——因此
+    // 必须各验一遍，只验 TENANT 无法证明 WORKSPACE 那条分支走得通。
+    //
+    // Channel 由 CONTROL 身份真实创建，channel_id 从 Relay 签发的 kind 39002
+    // 取（SF-BUZ-33），不是自造的 UUID。
+    let reader_before = reader
+        .member_channel_ids(http)
+        .await
+        .expect("列出 CONTROL 所属 Channel");
+    reader
+        .create_channel(http, "workspace-verify")
+        .await
+        .expect("创建 Channel");
+    let channel = reader
+        .member_channel_ids(http)
+        .await
+        .expect("列出 CONTROL 所属 Channel")
+        .into_iter()
+        .find(|c| !reader_before.contains(c))
+        .expect("新建的 Channel 应出现在所属列表里");
+    let channel_uuid: Uuid = channel.parse().expect("Channel 标识必须是 UUID");
+
+    let (workspace, ws_membership) = seed_workspace_fixture(pool, f, channel_uuid).await;
+    let ws_action = seed_action_for(pool, f, "workspace.membership.project", ws_membership).await;
+    assert_eq!(
+        start_lifecycle(http, e, token, "WORKSPACE", ws_membership, ws_action).await,
+        reqwest::StatusCode::OK,
+        "启动 Workspace 建立 Workflow"
+    );
+    let ws_state = wait_for_state_in(
+        pool,
+        "identity.workspace_membership",
+        ws_membership,
+        "ACTIVE",
+        e.converge_bound_secs,
+    )
+    .await;
+    assert_eq!(ws_state, "ACTIVE", "Workspace 成员应收敛到 ACTIVE");
+
+    assert!(
+        spicedb_has(e, &format!("workspace:{workspace}"), "member", &subject),
+        "ACTIVE 后 SpiceDB 必须有 workspace 关系"
+    );
+    let ch_roster = reader
+        .roster(http, Scope::Channel(&channel))
+        .await
+        .expect("读 Channel roster");
+    assert!(
+        ch_roster.iter().any(|r| r.pubkey == member_hex),
+        "ACTIVE 后 Channel roster 必须有该 pubkey，实际 {ch_roster:?}"
+    );
+
+    // Workspace 撤权：同一条链反向
+    sqlx::query(
+        "update identity.workspace_membership set state = 'REVOKING', version = version + 1
+         where id = $1",
+    )
+    .bind(ws_membership)
+    .execute(pool)
+    .await
+    .expect("置 Workspace 成员 REVOKING");
+    let ws_action = seed_action_for(pool, f, "workspace.membership.revoke", ws_membership).await;
+    assert_eq!(
+        start_lifecycle(http, e, token, "WORKSPACE", ws_membership, ws_action).await,
+        reqwest::StatusCode::OK,
+        "启动 Workspace 撤权 Workflow"
+    );
+    let ws_state = wait_for_state_in(
+        pool,
+        "identity.workspace_membership",
+        ws_membership,
+        "REVOKED",
+        e.converge_bound_secs,
+    )
+    .await;
+    assert_eq!(ws_state, "REVOKED", "Workspace 成员应收敛到 REVOKED");
+    assert!(
+        !spicedb_has(e, &format!("workspace:{workspace}"), "member", &subject),
+        "REVOKED 后 SpiceDB 不应再有 workspace 关系"
+    );
+    let ch_roster = reader
+        .roster(http, Scope::Channel(&channel))
+        .await
+        .expect("读 Channel roster");
+    assert!(
+        !ch_roster.iter().any(|r| r.pubkey == member_hex),
+        "REVOKED 后 Channel roster 不应再有该 pubkey，实际 {ch_roster:?}"
+    );
+
     // 工作台看得到终态：Workflow 未完成最后一次投影即不视为 terminal（06 §3.1）
     let status: String = sqlx::query_scalar(
         "select tp.status from projection.task_projection tp
          join projection.workflow_ref wr on wr.workflow_id = tp.workflow_id
-         where wr.tenant_id = $1 and wr.kind = 'MEMBERSHIP_REVOCATION'",
+         where wr.tenant_id = $1 and wr.kind = 'MEMBERSHIP_REVOCATION'
+         order by tp.updated_at desc limit 1",
     )
     .bind(f.tenant)
     .fetch_one(pool)
     .await
     .expect("读任务投影");
     assert_eq!(status, "COMPLETED", "撤权 Workflow 的终态应已投影");
+}
+
+/// 取该 Tenant 的 Workspace 关系客体，供清理用。
+///
+/// 在 `common::cleanup` 之前调用：那一步会把 Workspace 行删掉，之后就查不到
+/// 该删哪条 SpiceDB 关系了。没有 Workspace 时返回一个不会命中的占位客体——
+/// 删除路径本就允许目标不存在。
+async fn workspace_object(pool: &PgPool, f: &Fixture) -> String {
+    sqlx::query_scalar::<_, Uuid>("select id from identity.workspace where tenant_id = $1 limit 1")
+        .bind(f.tenant)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|id| format!("workspace:{id}"))
+        .unwrap_or_else(|| format!("workspace:{}", Uuid::nil()))
 }
