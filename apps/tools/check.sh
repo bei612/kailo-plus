@@ -167,9 +167,12 @@ step_migrate()  { hdr "4/10 数据迁移前进与回退演练"
 import glob, json, os, re, subprocess, sys
 
 url = os.environ["DATABASE_URL"]
+# 扫全部非系统 schema，不点名 identity：ADR-01 的模块划分会继续加 schema，
+# 写死一个名字就让后加的模块悄悄躲开这项检查。
 sql = ("select c.conname, pg_get_constraintdef(c.oid) from pg_constraint c "
        "join pg_namespace n on n.oid = c.connamespace "
-       "where c.contype = 'c' and n.nspname = 'identity'")
+       "where c.contype = 'c' and n.nspname not in ('pg_catalog', 'information_schema') "
+       "and n.nspname not like 'pg\\_%'")
 out = subprocess.run(["psql", url, "-tAF", "\t", "-c", sql], capture_output=True, text=True)
 if out.returncode != 0:
     print(f"  \033[31mFAIL\033[0m 无法读取约束：{out.stderr.strip()[:120]}"); sys.exit(1)

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/action_dispatch_state.schema.json",
+  "title": "ActionDispatchState",
+  "description": "ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe seam 能把它收敛，不能因无 native ID 就自动重放（DD-48）。",
+  "type": "string",
+  "enum": ["NOT_DISPATCHED", "DISPATCHED", "ABORTED", "UNKNOWN"]
+}

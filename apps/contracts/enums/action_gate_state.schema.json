@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/action_gate_state.schema.json",
+  "title": "ActionGateState",
+  "description": "ActionExecution 的准入门禁状态（.design/03 §6）。它与 dispatch_state 是两台独立状态机：门禁说的是「允许不允许」，派发说的是「副作用发生没发生」，合并后无法表达「准入通过但派发结果不明」。",
+  "type": "string",
+  "enum": ["EVALUATING", "WAITING", "ALLOWED", "DENIED", "REVOKED", "EXPIRED"]
+}

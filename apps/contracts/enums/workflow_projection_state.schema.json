@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/workflow_projection_state.schema.json",
+  "title": "WorkflowProjectionState",
+  "description": "WorkflowRef 的投影状态（.design/03 §6、.design/06 §3.1）。Start 响应不明时停在 PENDING_START 或 UNKNOWN 并按同一 workflow ID 收敛，不生成第二个 ID。",
+  "type": "string",
+  "enum": ["PENDING_START", "RUNNING", "TERMINAL", "UNKNOWN"]
+}
