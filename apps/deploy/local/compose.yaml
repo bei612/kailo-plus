@@ -304,6 +304,36 @@ services:
       # 仅绑回环，供本机核验 service API；不暴露到宿主网络之外。
       - "127.0.0.1:${SERVICE_PORT:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}"
 
+  # Application Worker：Temporal Server 不执行应用逻辑，Workflow Task 必须由它
+  # poll 并 Respond（SF-TMP-02）。它同时接 SpiceDB（关系投影）与 Core service
+  # API（状态投影与 Buzz roster 投影）——Buzz 的签名留在 Core，CONTROL 私钥在
+  # 那里（DD-72）。
+  worker:
+    build:
+      context: ../..
+      dockerfile: worker/Dockerfile
+    # app 到 Core 与 Temporal，component 到 SpiceDB 与 Keycloak。
+    # 不接 edge：它不对外提供任何入口。
+    networks: [app, component]
+    depends_on:
+      temporal: { condition: service_healthy }
+      spicedb: { condition: service_healthy }
+      core-bff: { condition: service_started }
+    environment:
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:?必须显式提供，禁止硬编码}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:?必须显式提供，禁止硬编码}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:?必须显式提供，禁止硬编码}
+      # 令牌按需取并在到期前复用：本部署签发 900 秒，持静态令牌只是把失败
+      # 推迟到第一次续期之后。
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:?必须显式提供，禁止硬编码}
+      OIDC_WORKER_CLIENT_ID: ${OIDC_WORKER_CLIENT_ID:?必须显式提供，禁止硬编码}
+      CORE_SERVICE_URL: ${CORE_SERVICE_URL:?必须显式提供，禁止硬编码}
+      SPICEDB_ENDPOINT: ${SPICEDB_ENDPOINT:?必须显式提供，禁止硬编码}
+      SPICEDB_INSECURE: "true"
+    env_file:
+      # Worker 自己的 client secret 与 SpiceDB 的 PSK；都不进 .env、不上命令行
+      - ./secrets/worker.env
+
   # AgentGateway 是 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。
   # 镜像由 tools/build-upstream.sh 从 .design/02 §1 的固定 commit 构建——
   # 该 commit 在 v1.6.0-alpha.1 之后且无 tag 包含它，发布镜像缺少

@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update identity.workspace_membership\n                 set state = $1, version = version + 1\n                 where id = $2 and version = $3 and state = any($4)\n                 returning state, version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Int4",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8b249e1ea2f7b0d1d84491389b66ac4aceec6144e7fed69657c2286286bf238f"
+}

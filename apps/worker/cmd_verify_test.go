@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kailo/apps/worker/internal/oidc"
 	"github.com/kailo/apps/worker/workflows"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
@@ -33,7 +34,11 @@ func TestBaselineRunsAgainstRealServer(t *testing.T) {
 	// API 一律被拒（SF-TMP-06）。令牌由 OIDC 提供方以 client_credentials 签发，
 	// permissions 声明携带 "<namespace>:<role>"。SDK 用它填 authorization 头。
 	// 与 main.go 共用同一份选项构造，避免连接语义出现第二份实现
-	opts, err := clientOptionsFromEnv()
+	tokens, err := oidc.FromEnv()
+	if err != nil {
+		t.Skip(err.Error())
+	}
+	opts, err := clientOptionsFromEnv(tokens)
 	if err != nil {
 		t.Skip(err.Error())
 	}

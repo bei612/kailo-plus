@@ -42,6 +42,10 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/membership-projections/buzz",
             post(crate::membership_projection::project_buzz_roster),
         )
+        .route(
+            "/service/v1/memberships/state",
+            post(crate::membership_state::transition_membership),
+        )
         .with_state(state)
 }
 

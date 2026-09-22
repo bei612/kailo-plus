@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kailo/apps/worker/internal/contracts/generated"
+	"github.com/kailo/apps/worker/internal/oidc"
 	"github.com/kailo/apps/worker/workflows"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
@@ -22,7 +23,11 @@ func TestStartOnceConvergesToSameRun(t *testing.T) {
 	if os.Getenv("TEMPORAL_ADDRESS") == "" {
 		t.Skip("未提供 TEMPORAL_ADDRESS，跳过连通性验证")
 	}
-	opts, err := clientOptionsFromEnv()
+	tokens, err := oidc.FromEnv()
+	if err != nil {
+		t.Skip(err.Error())
+	}
+	opts, err := clientOptionsFromEnv(tokens)
 	if err != nil {
 		t.Skip(err.Error())
 	}

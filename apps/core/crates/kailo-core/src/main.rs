@@ -5,6 +5,7 @@
 
 mod bff;
 mod membership_projection;
+mod membership_state;
 mod service_api;
 mod service_auth;
 
