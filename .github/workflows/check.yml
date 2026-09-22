@@ -1,0 +1,36 @@
+# 门禁只在 apps/tools/check.sh 里定义（ADR-07）。本工作流只负责调用它，
+# 不在 YAML 中写任何门禁逻辑——两处行为出现差异即为缺陷。
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Temporal Go SDK v1.48.0 的 go.mod 声明 Go >= 1.25.4；低于它时
+      # Go 会静默下载并切换工具链，使 CI 实际使用的编译器版本不可控。
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/worker/go.mod
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: tools/check.sh --full
+        working-directory: apps
+        run: ./tools/check.sh --full
