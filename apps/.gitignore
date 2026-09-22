@@ -38,3 +38,6 @@ coverage/
 
 # 本地开发 secret（由 deploy/local/bootstrap.sh 生成）
 /deploy/local/secrets/
+
+# 发布产物（由 tools/release.sh 生成，可追溯性来自 provenance）
+/dist/

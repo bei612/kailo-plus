@@ -199,6 +199,38 @@ step_supply()   { hdr "7/10 secret、依赖、许可证与供应链"
     if git grep -nIE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|nsec1[a-z0-9]{20,}|xox[baprs]-' -- . >/dev/null 2>&1; then
       fail "发现疑似凭据"; else pass "内置扫描无命中（未安装 gitleaks）"; fi
   fi
+  # 产物来源验证（ADR-06）：每个镜像 digest 必须同时有 SBOM 与 provenance，
+  # provenance 必须指向本仓库中真实存在的 commit。
+  if [ -d dist ] && [ -n "$(ls -A dist 2>/dev/null)" ]; then
+    python3 - <<'PY' || FAIL=1
+import glob, json, os, re, subprocess, sys
+bad = []
+empty = [f for f in glob.glob("dist/*") if os.path.getsize(f) == 0]
+bad += [f"{f}: 0 字节产物" for f in empty]
+digests = {m.group(1) for f in glob.glob("dist/*")
+           if (m := re.search(r"\.([0-9a-f]{64})\.", f))}
+for dg in sorted(digests):
+    for kind in ("spdx.json", "provenance.json"):
+        if not glob.glob(f"dist/*.{dg}.{kind}"):
+            bad.append(f"{dg[:12]}: 缺 {kind}")
+for f in glob.glob("dist/*.provenance.json"):
+    if os.path.getsize(f) == 0:
+        continue
+    d = json.load(open(f, encoding="utf-8"))
+    deps = d["predicate"]["buildDefinition"]["resolvedDependencies"]
+    commit = next((x["digest"]["gitCommit"] for x in deps if "gitCommit" in x.get("digest", {})), None)
+    if not commit:
+        bad.append(f"{os.path.basename(f)}: provenance 未记录源码 commit"); continue
+    if subprocess.run(["git", "cat-file", "-e", commit + "^{commit}"],
+                      capture_output=True).returncode != 0:
+        bad.append(f"{os.path.basename(f)}: commit {commit[:12]} 在本仓库中不存在")
+if bad:
+    print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
+print(f"  \033[32mPASS\033[0m {len(digests)} 个产物 digest：SBOM 与 provenance 齐备、commit 可解析")
+PY
+  else
+    skip "尚无构建产物（tools/release.sh 生成）"
+  fi
   return 0
 }
 
