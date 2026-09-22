@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/buzz_identity_state.schema.json",
+  "title": "BuzzIdentityState",
+  "description": "BuzzIdentityBinding 状态机。custody=CLIENT 时跳过 PENDING_SECRET，自 RECONCILING 起始。",
+  "type": "string",
+  "enum": ["PENDING_SECRET", "RECONCILING", "ACTIVE", "REVOKING", "REVOKED"]
+}

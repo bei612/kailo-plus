@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/tenant_state.schema.json",
+  "title": "TenantState",
+  "description": "Tenant 状态机。权威定义见 .design/03-领域模型与权限模型.md。DELETING/DELETED 因 GAP-LCM-01 开放而不注册入口，但状态本身保留以承载已有记录。",
+  "type": "string",
+  "enum": ["PROVISIONING", "ACTIVE", "SUSPENDING", "SUSPENDED", "RESTORING", "DELETING", "DELETED", "ERROR"]
+}

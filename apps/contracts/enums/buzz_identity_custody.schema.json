@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/buzz_identity_custody.schema.json",
+  "title": "BuzzIdentityCustody",
+  "description": "Buzz 协议身份的密钥托管方（DD-75）。SERVER 表示 Core 代签且 private_key_secret_ref 非空；CLIENT 表示原生端本机持钥、该引用为空。托管方不改变任何授权、审批、额度或审计判定。",
+  "type": "string",
+  "enum": ["SERVER", "CLIENT"]
+}

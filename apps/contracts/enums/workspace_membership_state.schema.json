@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/workspace_membership_state.schema.json",
+  "title": "WorkspaceMembershipState",
+  "description": "WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。",
+  "type": "string",
+  "enum": ["PROVISIONING", "ACTIVE", "REVOKING", "REVOKED", "ERROR"]
+}

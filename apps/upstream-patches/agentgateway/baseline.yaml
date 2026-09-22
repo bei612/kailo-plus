@@ -1,0 +1,24 @@
+# 格式见 apps/06-工程基线规范.md §2。字段含义冲突时以该节为准。
+project: agentgateway
+upstream_url: https://github.com/agentgateway/agentgateway
+
+# .design/02 §1 固定基线。该 commit 在 v1.6.0-alpha.1 之后 65 个提交，
+# 没有任何 tag 包含它，因此没有官方镜像。
+evidence_commit: 1f7ebbf87cbdbe9517f6f181221879d04dc50692
+implementation_base_commit: 1f7ebbf87cbdbe9517f6f181221879d04dc50692
+base_divergence: none
+
+# 为什么不退回 v1.6.0-alpha.1：SS-AGW-OIDC 的 logout 同步半边依赖
+# crates/agentgateway/src/http/oidc/browser.rs::handle_logout，而该文件在
+# v1.6.0-alpha.1 上不存在（是 tag 之后新增的）。退回发布版会让 Stage 1
+# 退出门禁里的「logout 端到端通过」失去源码基础——那是为包装便利削弱设计。
+# 因此从固定 commit 自行构建，evidence 与 implementation base 保持相等。
+patch_series: []
+patch_series_digest: none
+artifact_digest: none
+
+source_facts: [SF-AGW-10, SF-AGW-11, SF-AGW-16, SF-AGW-17, SF-AGW-20]
+source_seams: [SS-AGW-OIDC, SS-AGW-PEP, SS-AGW-ADMIN, SS-AGW-USAGE]
+compatibility_evidence: [upstream-patches/agentgateway/verify/oidc-header-projection.md]
+owner: team-platform
+last_reverified: 2026-09-22

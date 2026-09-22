@@ -28,7 +28,7 @@
 
 选择 **PostgreSQL 16**，单库单写入点。
 
-- **schema 划分**：按模块分 schema（`catalog`、`admission`、`projection`、`reservation`、`audit`、`outbox`），同一数据库、同一连接，模块边界靠 schema 与代码可见性表达，不靠独立数据库表达。
+- **schema 划分**：按模块分 schema（`identity`、`catalog`、`admission`、`projection`、`reservation`、`audit`、`outbox`），同一数据库、同一连接，模块边界靠 schema 与代码可见性表达，不靠独立数据库表达。
 - **事务**：默认隔离级别 `READ COMMITTED`。一次业务操作的全部写入（含 outbox 插入与 audit 写入）在单个事务内完成。跨事务的"先写 A 再写 B"一律不允许。
 - **outbox**：`outbox.message` 表与业务写同事务插入，携带 `operation_id` 作为幂等键。独立 relay 任务读取未投递记录并投递，投递方按 `operation_id` 去重。relay 崩溃只导致重复投递，不导致丢失，因此下游必须幂等。
 - **严格 reservation**：以 `(tenant_id, subject_id, meter_id)` 为主键的行，取用前 `SELECT ... FOR UPDATE`。等待超时映射到 `LIMIT` 类，冲突映射到 `CONFLICT` 类，均按 `06-工程基线规范.md` §4 的 reason code 返回。
@@ -52,3 +52,7 @@
 ## 不改变的事
 
 本 ADR 不改变 `.design` 的任何权威划分与能力状态。Core 仍是单一模块化服务，各模块不因 schema 划分而成为独立服务。
+
+## 修订
+
+2026-09-22：schema 列表补入 `identity`。原列表遗漏了它——`01-工程结构与模块边界.md` §3 的 Identity/Scope 模块持有 session 存储等持久状态，把这些表塞进 `catalog` 会让模块边界与 schema 边界对不上。其余六个 schema 与事务、outbox、锁语义不变。

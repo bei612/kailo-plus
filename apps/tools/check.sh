@@ -148,8 +148,45 @@ step_migrate()  { hdr "4/10 数据迁移前进与回退演练"
      && sqlx migrate run --source core/migrations >/dev/null 2>&1; then
     pass "前进、回退、再前进三步演练通过"
   else
-    fail "迁移演练失败"
+    fail "迁移演练失败"; return 0
   fi
+
+  # 枚举漂移：迁移里的 CHECK 取值是时间点快照，contracts/enums/ 是当前权威。
+  # 约束显式命名为 <枚举名>_enum，按名字精确对应，不做模糊匹配——
+  # 模糊匹配会把取值恰好是子集的不同枚举误判成漂移。
+  python3 - <<'PY' || FAIL=1
+import glob, json, os, re, subprocess, sys
+
+url = os.environ["DATABASE_URL"]
+sql = ("select c.conname, pg_get_constraintdef(c.oid) from pg_constraint c "
+       "join pg_namespace n on n.oid = c.connamespace "
+       "where c.contype = 'c' and n.nspname = 'identity'")
+out = subprocess.run(["psql", url, "-tAF", "\t", "-c", sql], capture_output=True, text=True)
+if out.returncode != 0:
+    print(f"  \033[31mFAIL\033[0m 无法读取约束：{out.stderr.strip()[:120]}"); sys.exit(1)
+
+in_db = {}
+for line in out.stdout.strip().split("\n"):
+    if "\t" not in line:
+        continue
+    name, definition = line.split("\t", 1)
+    if name.endswith("_enum"):
+        in_db[name[: -len("_enum")]] = set(re.findall(r"'([A-Z_]+)'::text", definition))
+
+bad, checked = [], 0
+for enum_name, dbvals in sorted(in_db.items()):
+    f = f"contracts/enums/{enum_name}.schema.json"
+    if not os.path.exists(f):
+        bad.append(f"{enum_name}_enum: 约束按命名约定应对应 {f}，但该文件不存在")
+        continue
+    vals = set(json.load(open(f, encoding="utf-8"))["enum"])
+    if dbvals != vals:
+        bad.append(f"{enum_name}: 库中 {sorted(dbvals)} 与契约 {sorted(vals)} 不等")
+    checked += 1
+if bad:
+    print("  \033[31mFAIL\033[0m 枚举漂移："); [print("   ", b) for b in bad]; sys.exit(1)
+print(f"  \033[32mPASS\033[0m {checked} 个命名约束与 contracts/enums/ 逐值相等")
+PY
   return 0
 }
 

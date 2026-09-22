@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/tenant_membership_state.schema.json",
+  "title": "TenantMembershipState",
+  "description": "TenantMembership 状态机。REVOKING 期间必须立即拒绝新动作，对账完成后才进 REVOKED（.design/10 §4）。",
+  "type": "string",
+  "enum": ["INVITED", "PROVISIONING", "ACTIVE", "REVOKING", "REVOKED", "ERROR"]
+}
