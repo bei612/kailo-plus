@@ -425,6 +425,20 @@ for mf in glob.glob("upstream-patches/*/baseline.yaml"):
         if f"upstream-{proj}@" in img and not img.endswith(want):
             bad.append(f"{svc}: 镜像 digest 与 {mf} 的 artifact_digest 不一致")
 
+# Buzz Relay 的三个「缺省即关闭」开关（07 §1、SF-BUZ-26/30）。
+# 原生端本机持钥直连 Relay，Core 不在其发布路径上，roster 校验是协作
+# 数据平面唯一的准入执行点——这三项写错等于整条协作面无准入。
+for svc, spec in (d.get("services") or {}).items():
+    env = spec.get("environment") or {}
+    if not isinstance(env, dict) or "BUZZ_BIND_ADDR" not in env:
+        continue
+    for key, want in (("BUZZ_REQUIRE_RELAY_MEMBERSHIP", "true"),
+                      ("BUZZ_ALLOW_NIP_OA_AUTH", "false"),
+                      ("BUZZ_REQUIRE_AUTH_TOKEN", "true")):
+        got = str(env.get(key, "")).strip().lower()
+        if got != want:
+            bad.append(f"{svc}: {key} 为 {got or '未设置'}，必须显式为 {want}")
+
 # SS-AGW-OIDC：身份 header 投影的三条硬约束
 agw_cfg = "deploy/local/agentgateway-config.yaml"
 if os.path.exists(agw_cfg):

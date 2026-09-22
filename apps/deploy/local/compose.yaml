@@ -15,6 +15,7 @@ networks:
 
 volumes:
   core-db-data:
+  buzz-db-data:
   temporal-db-data:
 
 services:
@@ -148,6 +149,99 @@ services:
       - ./data/registry:/var/lib/registry
     ports:
       - "127.0.0.1:${REGISTRY_PORT:?必须显式提供，禁止硬编码}:5000"
+
+  # Buzz Relay 是协作与 NIP-AE 记忆权威（.design/01 §2）。存储与 Core 分离。
+  buzz-db:
+    image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    networks: [component]
+    environment:
+      POSTGRES_DB: ${BUZZ_DB_NAME:?必须显式提供，禁止硬编码}
+      POSTGRES_USER: ${BUZZ_DB_USER:?必须显式提供，禁止硬编码}
+      POSTGRES_PASSWORD_FILE: /run/secrets/buzz_db_password
+    secrets: [buzz_db_password]
+    volumes:
+      - buzz-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Relay 的 git 对象与媒体 pack 存 S3 兼容对象存储；缺它时 Relay 的
+  # conformance probe 失败并拒绝启动，因此不是可选项。
+  buzz-objects:
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    networks: [component]
+    env_file:
+      - ./secrets/buzz-objects.env
+    command: ["server", "/data"]
+    volumes:
+      - ./data/buzz-objects:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # bucket 是运行前提：Relay 不会自己创建它。
+  buzz-objects-init:
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    networks: [component]
+    depends_on:
+      buzz-objects: { condition: service_healthy }
+    env_file:
+      - ./secrets/buzz-objects.env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set obj http://buzz-objects:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "obj/$$BUZZ_S3_BUCKET"
+        echo "bucket $$BUZZ_S3_BUCKET 就绪"
+    restart: "no"
+
+  # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
+  # 建库与启动分离，避免服务在缺表时反复崩溃重启。
+  buzz-schema:
+    image: ghcr.io/block/buzz@sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
+    networks: [component]
+    depends_on:
+      buzz-db: { condition: service_healthy }
+    env_file:
+      - ./secrets/buzz-relay.env
+    entrypoint: ["/usr/local/bin/buzz-admin"]
+    command: ["migrate"]
+    restart: "no"
+
+  # 07 §1 两条不变式在此落实，二者都是「默认值不安全」：
+  #   BUZZ_REQUIRE_RELAY_MEMBERSHIP 默认 false，此时 check_relay_membership
+  #   立即返回 OpenRelay，所有已认证调用方一律放行，roster 只是展示事实；
+  #   BUZZ_ALLOW_NIP_OA_AUTH 开启后，不在 roster 中的 pubkey 可凭 owner
+  #   attestation 以 ViaOwner 通过。原生端本机持钥直连 Relay，Core 不在其
+  #   发布路径上，roster 校验是协作数据平面唯一的准入执行点（SF-BUZ-26、DD-75）。
+  buzz-relay:
+    image: ghcr.io/block/buzz@sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
+    networks: [component, app]
+    depends_on:
+      buzz-schema: { condition: service_completed_successfully }
+      buzz-objects-init: { condition: service_completed_successfully }
+    environment:
+      BUZZ_BIND_ADDR: 0.0.0.0:8090
+      BUZZ_HEALTH_PORT: "8091"
+      BUZZ_REQUIRE_RELAY_MEMBERSHIP: "true"
+      BUZZ_ALLOW_NIP_OA_AUTH: "false"
+      # 默认 false 时 REST API 绕过令牌认证（SF-BUZ-27）。WebSocket 协议认证
+      # 不受影响，但 REST 面同样承载业务读写，不能留在默认值上。
+      BUZZ_REQUIRE_AUTH_TOKEN: "true"
+    env_file:
+      - ./secrets/buzz-relay.env
+    healthcheck:
+      # 镜像里只有 curl，没有 nc。/health 在主路由上（router.rs 的 route("/health")），
+      # 不在 BUZZ_HEALTH_PORT 那个探针监听上。
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8090/health >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
   # Platform Core/BFF：单一模块化 Rust 服务，共享业务事务边界（DD-05）。
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
@@ -311,6 +405,8 @@ services:
       retries: 20
 
 secrets:
+  buzz_db_password:
+    file: ./secrets/buzz_db_password
   keycloak_admin_password:
     file: ./secrets/keycloak_admin_password
   temporal_db_password:

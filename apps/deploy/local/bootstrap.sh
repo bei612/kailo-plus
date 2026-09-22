@@ -34,6 +34,8 @@ gen_hex() {
 }
 
 gen core_db_password
+gen buzz_db_password
+gen buzz_objects_root_password
 gen keycloak_admin_password
 gen temporal_db_password
 gen spicedb_preshared_key
@@ -46,13 +48,34 @@ printf '  已生成：secrets/spicedb.env\n'
 gen kailo_core_client_secret
 gen browser_client_secret
 gen_hex oidc_cookie_secret
+# Relay 自身的 Nostr 身份，32 字节十六进制。它与 RelayOperatorIdentity 的密钥
+# 不是一回事：后者由 Core 持有、用于创建 Community（SS-BUZ-OPERATOR）。
+gen_hex buzz_relay_private_key
+
+# RelayOperatorIdentity 的密钥对：Relay 在 BUZZ_REQUIRE_RELAY_MEMBERSHIP=true
+# 时要求 RELAY_OWNER_PUBKEY，而 Core 用对应私钥创建 Community（SS-BUZ-OPERATOR）。
+# 用上游自带的 generate-key 生成，不自己实现 secp256k1 派生。
+if [ ! -s secrets/relay_operator_pubkey ] || [ ! -s secrets/relay_operator_private_key ]; then
+  kp=$(sudo -n docker run --rm --entrypoint /usr/local/bin/buzz-admin \
+        "$(python3 -c '
+import re,sys
+t=open("compose.yaml",encoding="utf-8").read()
+print(re.search(r"image: (ghcr\.io/block/buzz@sha256:[0-9a-f]+)", t).group(1))
+')" generate-key 2>/dev/null | grep -E "^(Public|Secret) key:")
+  printf '%s' "$kp" | awk '/Public/{print $3}' | tr -d '\n' > secrets/relay_operator_pubkey
+  printf '%s' "$kp" | awk '/Secret/{print $3}' | tr -d '\n' > secrets/relay_operator_private_key
+  chmod 600 secrets/relay_operator_pubkey secrets/relay_operator_private_key
+  printf '  已生成：RelayOperatorIdentity 密钥对\n'
+else
+  printf '  已存在，保留：RelayOperatorIdentity 密钥对\n'
+fi
 gen verify_user_password
 
 # Keycloak 的 realm 定义入库，但客户端密钥不入库：把占位符替换成本机生成的值，
 # 渲染到 gitignore 的目录后挂载。入库文件始终只有占位符。
 # OpenBao 的 raft 数据目录：镜像以 uid 100 运行，具名卷由 Docker 以 root 创建
 # 会导致写入被拒。用绑定挂载并在此设好属主，避免新克隆需要手工 chown。
-mkdir -p data/openbao data/registry
+mkdir -p data/openbao data/registry data/buzz-objects
 if [ "$(stat -c %u data/openbao)" != "100" ]; then
   sudo -n chown 100:1000 data/openbao 2>/dev/null || {
     printf '  需要一次 sudo 设置 data/openbao 属主为 100:1000\n' >&2; exit 2; }
@@ -79,6 +102,26 @@ printf '  已渲染：secrets/keycloak-import/kailo-realm.json\n'
   printf 'OIDC_COOKIE_SECRET='; cat secrets/oidc_cookie_secret; printf '\n'; } > secrets/browser-client.env
 chmod 600 secrets/browser-client.env
 printf '  已生成：secrets/browser-client.env\n'
+
+# Relay 的数据库连接串含口令，走 env_file 而不是 .env。
+{ printf 'DATABASE_URL=postgres://%s:%s@buzz-db:5432/%s\n' "${BUZZ_DB_USER:?}" "$(cat secrets/buzz_db_password)" "${BUZZ_DB_NAME:?}"
+  printf 'BUZZ_RELAY_PRIVATE_KEY='; cat secrets/buzz_relay_private_key; printf '\n'
+  printf 'RELAY_OWNER_PUBKEY='; cat secrets/relay_operator_pubkey; printf '\n'
+  printf 'BUZZ_S3_ENDPOINT=http://buzz-objects:9000\n'
+  printf 'BUZZ_S3_BUCKET=%s\n' "${BUZZ_S3_BUCKET:?}"
+  printf 'BUZZ_S3_REGION=%s\n' "${BUZZ_S3_REGION:?}"
+  printf 'BUZZ_S3_ADDRESSING_STYLE=path\n'
+  printf 'BUZZ_S3_ACCESS_KEY=%s\n' "${BUZZ_OBJECTS_USER:?}"
+  printf 'BUZZ_S3_SECRET_KEY='; cat secrets/buzz_objects_root_password; printf '\n'; } > secrets/buzz-relay.env
+
+# 对象存储自身的凭据；与 Relay 侧同源，保持单一真值。
+{ printf 'MINIO_ROOT_USER=%s\n' "${BUZZ_OBJECTS_USER:?}"
+  printf 'MINIO_ROOT_PASSWORD='; cat secrets/buzz_objects_root_password; printf '\n'
+  printf 'BUZZ_S3_BUCKET=%s\n' "${BUZZ_S3_BUCKET:?}"; } > secrets/buzz-objects.env
+chmod 600 secrets/buzz-objects.env
+printf '  已生成：secrets/buzz-objects.env\n'
+chmod 600 secrets/buzz-relay.env
+printf '  已生成：secrets/buzz-relay.env\n'
 
 if [ ! -f .env ]; then
   printf '\n缺少 deploy/local/.env。复制 .env.example 并填写后再启动：\n  cp .env.example .env\n' >&2
