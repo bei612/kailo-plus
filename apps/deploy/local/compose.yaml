@@ -138,6 +138,59 @@ services:
       timeout: 5s
       retries: 30
 
+  # 本地 OCI registry（ADR-06）。自建产物必须先入 registry 才能按 digest 引用——
+  # 本地镜像只有 image ID，无法写成 repo@sha256 形式。接入托管 registry 后
+  # 只改地址，digest 引用方式不变。
+  registry:
+    image: registry@sha256:325b4b29b041e82803abeb703e201655e4e23ab83264ec1a7c9ddb0a5b14a6e0
+    networks: [mgmt]
+    volumes:
+      - ./data/registry:/var/lib/registry
+    ports:
+      - "127.0.0.1:${REGISTRY_PORT:?必须显式提供，禁止硬编码}:5000"
+
+  # AgentGateway 是 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。
+  # 镜像由 tools/build-upstream.sh 从 .design/02 §1 的固定 commit 构建——
+  # 该 commit 在 v1.6.0-alpha.1 之后且无 tag 包含它，发布镜像缺少
+  # http/oidc/browser.rs，而 SS-AGW-OIDC 的 logout 半边依赖其中的 handle_logout。
+  agentgateway:
+    # digest 与 upstream-patches/agentgateway/baseline.yaml 的 artifact_digest
+    # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-agentgateway@sha256:e1ddf6cbf61ae4b85aaea5c1ec7755e48275918f0e9f31dc6433b72533687071
+    # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
+    # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。
+    networks:
+      edge:
+        aliases: [gateway.kailo.local]
+      app:
+        aliases: [gateway.kailo.local]
+    depends_on:
+      keycloak: { condition: service_healthy }
+    environment:
+      OIDC_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
+      OIDC_BROWSER_CLIENT_ID: ${OIDC_BROWSER_CLIENT_ID:?必须显式提供，禁止硬编码}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:?必须显式提供，禁止硬编码}
+      BFF_UPSTREAM: ${BFF_UPSTREAM:?必须显式提供，禁止硬编码}
+    env_file:
+      # 浏览器客户端密钥由网关持有，浏览器不持有。文件在 gitignore 的 secrets/ 下。
+      - ./secrets/browser-client.env
+    configs:
+      - source: agentgateway_config
+        target: /etc/agentgateway/config.yaml
+    command: ["-f", "/etc/agentgateway/config.yaml"]
+    ports:
+      - "127.0.0.1:${AGENTGATEWAY_PORT:?必须显式提供，禁止硬编码}:8080"
+
+  # 仅用于采集 SS-AGW-OIDC 的接缝证据：回显收到的请求头，以便观察
+  # 哪些被移除、哪些被投影。profile 为 verify，默认不启动，不属于运行拓扑。
+  # Core BFF 就位后本服务即删除，不允许长期充当假后端。
+  echo-bff:
+    image: mendhak/http-https-echo@sha256:f55000d9196bd3c853d384af7315f509d21ffb85de315c26e9874033b9f83e15
+    profiles: [verify]
+    networks: [app]
+    environment:
+      HTTP_PORT: "8081"
+
   # OpenBao 是 secret 的版本、取用、轮换与撤销权威（DD-70）。
   # 不用 server -dev：那是内存 storage 加固定 root token，07 §1 明确禁止它
   # 进入任何 active 拓扑。初始化与解封由 openbao-init 完成。
@@ -197,7 +250,16 @@ services:
   # 声明读取 "<namespace>:<role>"（SF-TMP-06）。
   keycloak:
     image: quay.io/keycloak/keycloak@sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007
-    networks: [edge, app, component]
+    # 带点的别名：HTTP 客户端的 cookie 引擎普遍不为单标签主机名保存或发送
+    # cookie，OIDC 浏览器流会因此在本地拓扑里断掉。真实部署用 FQDN 不会遇到，
+    # 本地也应保持同一形状，否则接缝在本地验不了。
+    networks:
+      edge:
+        aliases: [keycloak.kailo.local]
+      app:
+        aliases: [keycloak.kailo.local]
+      component:
+        aliases: [keycloak.kailo.local]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?必须显式提供，禁止硬编码}
       KC_HTTP_ENABLED: "true"
@@ -255,6 +317,8 @@ secrets:
     file: ./secrets/core_db_password
 
 configs:
+  agentgateway_config:
+    file: ./agentgateway-config.yaml
   openbao_config:
     file: ./openbao-config.hcl
   otel_config:

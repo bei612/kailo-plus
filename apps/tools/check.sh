@@ -367,7 +367,7 @@ PY
 step_security() { hdr "9/10 受影响安全不变式"
   if [ ! -f deploy/local/compose.yaml ]; then skip "尚无部署描述"; return 0; fi
   python3 - <<'PY' || FAIL=1
-import os, re, sys, yaml
+import glob, os, re, sys, yaml
 d = yaml.safe_load(open("deploy/local/compose.yaml", encoding="utf-8"))
 raw = open("deploy/local/compose.yaml", encoding="utf-8").read()
 bad = []
@@ -402,6 +402,51 @@ if os.path.exists(bao_cfg):
     for svc, spec in (d.get("services") or {}).items():
         if "openbao" in (spec.get("image") or "") and "-dev" in " ".join(spec.get("command") or []):
             bad.append(f"{svc}: 使用了 server -dev，07 §1 禁止它进入任何 active 拓扑")
+
+# 自建上游的 digest 必须与其 baseline manifest 一致：compose 与 manifest
+# 各写一份，两处脱节就意味着跑的不是被登记的那个产物。
+for mf in glob.glob("upstream-patches/*/baseline.yaml"):
+    proj = mf.split("/")[1]
+    m = re.search(r"^artifact_digest:\s*(\S+)", open(mf, encoding="utf-8").read(), re.M)
+    if not m or m.group(1) == "none":
+        continue
+    want = m.group(1)
+    for svc, spec in (d.get("services") or {}).items():
+        img = spec.get("image") or ""
+        if f"upstream-{proj}@" in img and not img.endswith(want):
+            bad.append(f"{svc}: 镜像 digest 与 {mf} 的 artifact_digest 不一致")
+
+# SS-AGW-OIDC：身份 header 投影的三条硬约束
+agw_cfg = "deploy/local/agentgateway-config.yaml"
+if os.path.exists(agw_cfg):
+    agw = yaml.safe_load(open(agw_cfg, encoding="utf-8"))
+    PROJECTED = {"x-kailo-oidc-issuer", "x-kailo-oidc-subject"}
+    FORBIDDEN_SOURCES = ("jwt.rawToken", "jwt.raw_token", "jwt.roles", "jwt.groups",
+                         "jwt.realm_access", "jwt.resource_access")
+    found_route = False
+    for bind in agw.get("binds") or []:
+        for lis in bind.get("listeners") or []:
+            for route in lis.get("routes") or []:
+                tr = ((route.get("policies") or {}).get("transformations") or {}).get("request") or {}
+                if not tr:
+                    continue
+                found_route = True
+                sets = set((tr.get("set") or {}).keys())
+                removes = set(tr.get("remove") or [])
+                # 投影目标不得进入 remove：set 已保证要么是已验证的值、要么不存在
+                for h in sets & removes:
+                    bad.append(f"agentgateway: {h} 同时出现在 set 与 remove（SS-AGW-OIDC 禁止）")
+                # 只许投影这两条，多一条都是扩大信任面
+                for h in sets - PROJECTED:
+                    bad.append(f"agentgateway: 投影了 {h}，SS-AGW-OIDC 只允许 {sorted(PROJECTED)}")
+                for h in PROJECTED - sets:
+                    bad.append(f"agentgateway: 缺少对 {h} 的 set，BFF 会因缺失而全部拒绝")
+                # 禁止投影 raw token 与角色 claim：授权在 Core 重做
+                for h, expr in (tr.get("set") or {}).items():
+                    if any(s in str(expr) for s in FORBIDDEN_SOURCES):
+                        bad.append(f"agentgateway: {h} 取自 {expr}，禁止投影 raw token 或角色 claim")
+    if not found_route:
+        bad.append("agentgateway: 没有任何 request transformation，身份不会被投影")
 
 # 杜绝硬编码：可配置项必须来自 ${VAR:?}，不得是字面量
 for m in re.finditer(r"^\s+-\s+\"?(\d{2,5}):(\d{2,5})\"?\s*$", raw, re.M):

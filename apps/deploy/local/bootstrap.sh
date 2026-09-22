@@ -20,6 +20,19 @@ gen() {
   printf '  已生成：%s\n' "$path"
 }
 
+# 十六进制变体：某些上游要求特定编码。AgentGateway 的 OIDC cookie 密钥走
+# hex::decode 且必须恰好 32 字节（64 个十六进制字符），base64 会被拒。
+gen_hex() {
+  local path="secrets/$1"
+  if [ -s "$path" ]; then
+    printf '  已存在，保留：%s\n' "$path"
+    return
+  fi
+  head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$path"
+  chmod 600 "$path"
+  printf '  已生成：%s（%s 个十六进制字符）\n' "$path" "$(wc -c < "$path" | tr -d ' ')"
+}
+
 gen core_db_password
 gen keycloak_admin_password
 gen temporal_db_password
@@ -31,12 +44,15 @@ chmod 600 secrets/spicedb.env
 printf '  已生成：secrets/spicedb.env\n'
 
 gen kailo_core_client_secret
+gen browser_client_secret
+gen_hex oidc_cookie_secret
+gen verify_user_password
 
 # Keycloak 的 realm 定义入库，但客户端密钥不入库：把占位符替换成本机生成的值，
 # 渲染到 gitignore 的目录后挂载。入库文件始终只有占位符。
 # OpenBao 的 raft 数据目录：镜像以 uid 100 运行，具名卷由 Docker 以 root 创建
 # 会导致写入被拒。用绑定挂载并在此设好属主，避免新克隆需要手工 chown。
-mkdir -p data/openbao
+mkdir -p data/openbao data/registry
 if [ "$(stat -c %u data/openbao)" != "100" ]; then
   sudo -n chown 100:1000 data/openbao 2>/dev/null || {
     printf '  需要一次 sudo 设置 data/openbao 属主为 100:1000\n' >&2; exit 2; }
@@ -50,9 +66,19 @@ mkdir -p secrets/keycloak-import
 : "${TEMPORAL_NAMESPACE:?bootstrap 需要 .env 中的 TEMPORAL_NAMESPACE}"
 sed -e "s|__KAILO_CORE_CLIENT_SECRET__|$(cat secrets/kailo_core_client_secret)|" \
     -e "s|__TEMPORAL_NAMESPACE__|${TEMPORAL_NAMESPACE}|g" \
+    -e "s|__BROWSER_CLIENT_SECRET__|$(cat secrets/browser_client_secret)|" \
+    -e "s|__VERIFY_USER__|${VERIFY_USER:?bootstrap 需要 .env 中的 VERIFY_USER}|" \
+    -e "s|__OIDC_REDIRECT_URI__|${OIDC_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_REDIRECT_URI}|" \
+    -e "s|__VERIFY_USER_PASSWORD__|$(cat secrets/verify_user_password)|" \
   keycloak/kailo-realm.json > secrets/keycloak-import/kailo-realm.json
 chmod 600 secrets/keycloak-import/kailo-realm.json
 printf '  已渲染：secrets/keycloak-import/kailo-realm.json\n'
+
+# 网关以环境变量读取浏览器客户端密钥；与上面的 secret 同源，保持单一真值。
+{ printf 'OIDC_BROWSER_CLIENT_SECRET='; cat secrets/browser_client_secret; printf '\n';
+  printf 'OIDC_COOKIE_SECRET='; cat secrets/oidc_cookie_secret; printf '\n'; } > secrets/browser-client.env
+chmod 600 secrets/browser-client.env
+printf '  已生成：secrets/browser-client.env\n'
 
 if [ ! -f .env ]; then
   printf '\n缺少 deploy/local/.env。复制 .env.example 并填写后再启动：\n  cp .env.example .env\n' >&2

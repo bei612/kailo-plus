@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+#
+# AgentGateway 作为 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。
+#
+# 它只做两件事：验证 OIDC 会话，把已验证的 issuer 与 subject 投影成两条固定
+# 的内网 header。BFF 只信任这两条 header，缺任一条即拒绝——fail closed。
+#
+# 四条来自 SS-AGW-OIDC 的硬约束，改动前先读该接缝：
+#   1. OIDC 在 route transformation 之前运行，因此 transformation 可读 jwt.*
+#   2. 只用两条 set 投影固定 issuer 与 subject，二者不得进入 remove 列表
+#   3. 其它 x-kailo-* 身份 header 先移除——Browser 自报的一律不可信
+#   4. set 求值失败会删除目标 header；BFF 以缺失即拒绝保持 fail closed
+#
+# 禁止投影 raw token 与任何角色 claim：授权在 Core 重做，网关不是授权权威。
+
+binds:
+- port: 8080
+  listeners:
+  - name: browser
+    protocol: HTTP
+    routes:
+    - name: bff
+      matches:
+      - path:
+          pathPrefix: /
+      backends:
+      - host: ${BFF_UPSTREAM}
+      policies:
+        oidc:
+          issuer: ${OIDC_ISSUER}
+          clientId: ${OIDC_BROWSER_CLIENT_ID}
+          clientSecret: ${OIDC_BROWSER_CLIENT_SECRET}
+          redirectURI: ${OIDC_REDIRECT_URI}
+          scopes:
+          - profile
+          - email
+        transformations:
+          request:
+            # 移除 Browser 可能自报的其它身份 header。
+            #
+            # 两个投影目标 x-kailo-oidc-issuer / x-kailo-oidc-subject 刻意
+            # 不在此列表中——接缝明确禁止。它们由下面的 set 无条件覆盖，
+            # 而 CEL 求值得不到值时 apply_header 走 (Header(k), None) 分支
+            # 直接删除该 header。因此 set 本身已保证「要么是已验证的值，
+            # 要么不存在」；再列进 remove 只会引入删掉正确值的风险。
+            remove:
+            - x-kailo-human-identity
+            - x-kailo-tenant
+            - x-kailo-workspace
+            - x-kailo-principal
+            set:
+              x-kailo-oidc-issuer: jwt.iss
+              x-kailo-oidc-subject: jwt.sub

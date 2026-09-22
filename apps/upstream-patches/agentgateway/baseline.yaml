@@ -15,7 +15,7 @@ base_divergence: none
 # 因此从固定 commit 自行构建，evidence 与 implementation base 保持相等。
 patch_series: []
 patch_series_digest: none
-artifact_digest: none
+artifact_digest: sha256:e1ddf6cbf61ae4b85aaea5c1ec7755e48275918f0e9f31dc6433b72533687071
 
 source_facts: [SF-AGW-10, SF-AGW-11, SF-AGW-16, SF-AGW-17, SF-AGW-20]
 source_seams: [SS-AGW-OIDC, SS-AGW-PEP, SS-AGW-ADMIN, SS-AGW-USAGE]

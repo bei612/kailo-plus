@@ -60,8 +60,14 @@ $SUDO docker build -q \
   --build-arg "VERSION=${base:0:12}" \
   --build-arg "GIT_REVISION=$base" \
   -t "$tag" "$src" >/dev/null
-digest=$($SUDO docker image inspect --format '{{.Id}}' "$tag")
-echo "  $digest"
+# 推入本地 registry：自建产物只有 image ID，必须先入 registry 才能按 digest
+# 引用（ADR-06）。REGISTRY 由调用方给出，接入托管 registry 后只改这一个值。
+registry="${REGISTRY:?需要 REGISTRY，例如 127.0.0.1:55000}"
+remote="$registry/upstream-$project:${base:0:12}"
+$SUDO docker tag "$tag" "$remote"
+$SUDO docker push -q "$remote" >/dev/null
+digest=$($SUDO docker inspect --format '{{index .RepoDigests 0}}' "$remote" | sed 's/.*@//')
+echo "  $remote@$digest"
 
 # 把 digest 写回 manifest：产物与 commit 的对应关系是可追溯性的落点
 python3 - "$manifest" "$digest" <<'PY'

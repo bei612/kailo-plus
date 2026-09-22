@@ -37,17 +37,35 @@
     },
     {
       "clientId": "buzz-web",
-      "name": "Buzz Web 的浏览器登录客户端",
+      "name": "Browser 登录客户端；密钥由 AgentGateway 持有，浏览器不持有",
       "enabled": true,
       "protocol": "openid-connect",
-      "publicClient": true,
+      "publicClient": false,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "redirectUris": [
-        "http://localhost:*/*"
+        "__OIDC_REDIRECT_URI__"
       ],
       "webOrigins": [
         "+"
+      ],
+      "secret": "__BROWSER_CLIENT_SECRET__"
+    }
+  ],
+  "users": [
+    {
+      "username": "__VERIFY_USER__",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "verify@kailo.local",
+      "firstName": "Seam",
+      "lastName": "Verifier",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__VERIFY_USER_PASSWORD__",
+          "temporary": false
+        }
       ]
     }
   ]

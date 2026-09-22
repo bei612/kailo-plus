@@ -44,3 +44,6 @@ coverage/
 
 # OpenBao raft 数据（本地拓扑，不进版本库）
 /deploy/local/data/
+
+# 本地 registry 数据
+/deploy/local/data/registry/
