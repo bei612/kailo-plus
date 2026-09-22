@@ -83,4 +83,69 @@ else
   exit 2
 fi
 
+
+# ---- 平台 namespace、KV v2 与 Core 的 AppRole ----
+#
+# SecretRef 的 locator 形如 <namespace>/<mount>/<path>（.design/03 §9），
+# 这三段在此建立。namespace 是真实隔离边界：mount entry、policy store 与
+# token store 都按 namespace 分区（SF-OBA-02），因此按 Tenant 分区的 secret
+# 以后加新 namespace 即可，不改这里的形状。
+#
+# 名字取自 .env，不写死：mount 名是 locator 的一段，属于配置而非常量。
+: "${OPENBAO_PLATFORM_NAMESPACE:?缺少 .env 中的 OPENBAO_PLATFORM_NAMESPACE}"
+: "${OPENBAO_KV_MOUNT:?缺少 .env 中的 OPENBAO_KV_MOUNT}"
+
+ns() {
+  compose exec -T -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN="$root_token" \
+    -e BAO_NAMESPACE="$OPENBAO_PLATFORM_NAMESPACE" openbao bao "$@"
+}
+root() {
+  compose exec -T -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN="$root_token" openbao bao "$@"
+}
+
+# 每一步都先查后建：这个脚本要能在已初始化的拓扑上重复跑。
+root namespace list 2>/dev/null | grep -qx "${OPENBAO_PLATFORM_NAMESPACE}/" \
+  || root namespace create "$OPENBAO_PLATFORM_NAMESPACE" >/dev/null
+ns secrets list -format=json 2>/dev/null | grep -q "\"${OPENBAO_KV_MOUNT}/\"" \
+  || ns secrets enable -path="$OPENBAO_KV_MOUNT" -version=2 kv >/dev/null
+ns auth list -format=json 2>/dev/null | grep -q '"approle/"' \
+  || ns auth enable approle >/dev/null
+
+# Core 的策略：只读写自己要用的 KV 路径，不给 delete/destroy。
+# secret 的撤销是受治理动作，不是运维旁路（.design/03 §9）——真要撤销时
+# 显式扩策略，而不是一开始就把能力留在那里等人用。
+ns policy write kailo-core - <<POLICY >/dev/null
+path "${OPENBAO_KV_MOUNT}/data/*" {
+  capabilities = ["create", "update", "read"]
+}
+path "${OPENBAO_KV_MOUNT}/metadata/*" {
+  capabilities = ["read", "list"]
+}
+POLICY
+
+# token 生存期短：Core 以 AppRole 换取短 TTL service token（DD-70），
+# 到期重新登录，不持有长期凭据。
+ns write auth/approle/role/kailo-core \
+  token_policies=kailo-core token_ttl=20m token_max_ttl=1h \
+  secret_id_num_uses=0 secret_id_ttl=0 >/dev/null
+
+role_id=$(ns read -field=role_id auth/approle/role/kailo-core/role-id)
+# secret_id 每次生成都是新的，因此只在文件缺失时生成——重复跑不会让
+# 正在运行的 Core 手里那个失效。
+if [ ! -s secrets/openbao_core_secret_id ]; then
+  tmp=$(mktemp)
+  if ns write -f -field=secret_id auth/approle/role/kailo-core/secret-id > "$tmp" && [ -s "$tmp" ]; then
+    mv "$tmp" secrets/openbao_core_secret_id
+    chmod 600 secrets/openbao_core_secret_id
+  else
+    rm -f "$tmp"; echo "生成 secret_id 失败" >&2; exit 2
+  fi
+fi
+
+{ printf 'OPENBAO_ROLE_ID=%s\n' "$role_id"
+  printf 'OPENBAO_SECRET_ID='; cat secrets/openbao_core_secret_id; printf '\n'; } > secrets/openbao-core.env
+chmod 600 secrets/openbao-core.env
+printf '  已生成：secrets/openbao-core.env（namespace=%s mount=%s）\n' \
+  "$OPENBAO_PLATFORM_NAMESPACE" "$OPENBAO_KV_MOUNT"
+
 printf 'OpenBao 就绪。root token 在 secrets/openbao_init.json，不要外传。\n'

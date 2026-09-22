@@ -1,0 +1,223 @@
+//! SecretRef 解析（`DD-70`、`.design/03` §9）。
+//!
+//! SecretRef 只是 locator：`provider=OPENBAO`、`locator=<namespace>/<mount>/<path>`、
+//! `version` 为 KV v2 版本号、`audience` 为允许取用的 service identity。本 crate
+//! 把 locator 换成内存中的 secret 值，此外什么都不做——**值不写数据库、不写日志、
+//! 不落盘**，因此这里既没有 `Debug` 派生，也没有任何 `to_string`。
+//!
+//! Core 以 AppRole 换取短 TTL service token，不持有长期凭据。token 过期即重新
+//! 登录；不做后台续期——续期失败与过期是同一种情况，重新登录能同时覆盖两者。
+
+use std::sync::Arc;
+
+use serde::Deserialize;
+use tokio::sync::RwLock;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SecretError {
+    #[error("locator 必须形如 <namespace>/<mount>/<path>，得到 {0}")]
+    LocatorMalformed(String),
+    #[error("SecretRef 的 audience 与本服务身份不符")]
+    AudienceMismatch,
+    #[error("指定版本不存在或不可读")]
+    VersionUnavailable,
+    #[error("OpenBao 不可达: {0}")]
+    Transport(#[from] reqwest::Error),
+    #[error("AppRole 登录失败")]
+    LoginFailed,
+}
+
+/// 一条 SecretRef。字段与 `.design/03` §9 的定义一一对应。
+#[derive(Debug, Clone)]
+pub struct SecretRef {
+    pub locator: String,
+    /// KV v2 版本号。必填且精确：不取 latest——binding 冻结的是某个具体版本，
+    /// 取 latest 会让一次无关的轮换悄悄改变已 active 的 binding 行为。
+    pub version: u32,
+    pub audience: String,
+}
+
+/// 取回的 secret 值。
+///
+/// 不实现 `Debug`/`Display`/`Serialize`：任何一个都会给「把它打出来」开一扇门。
+/// 需要用它的地方显式调 `expose`，让每个取用点在代码里可见、可审。
+pub struct SecretValue(String);
+
+impl SecretValue {
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+pub struct SecretStore {
+    addr: String,
+    role_id: String,
+    secret_id: String,
+    /// 本服务的身份。SecretRef 的 audience 必须等于它，否则拒绝取用——
+    /// 同一把 secret 不得被用于它不该服务的调用方（`DD-70`）。
+    identity: String,
+    http: reqwest::Client,
+    token: RwLock<Option<Arc<String>>>,
+}
+
+#[derive(Deserialize)]
+struct LoginResponse {
+    auth: LoginAuth,
+}
+#[derive(Deserialize)]
+struct LoginAuth {
+    client_token: String,
+}
+#[derive(Deserialize)]
+struct KvResponse {
+    data: KvOuter,
+}
+#[derive(Deserialize)]
+struct KvOuter {
+    data: std::collections::HashMap<String, String>,
+    metadata: KvMetadata,
+}
+#[derive(Deserialize)]
+struct KvMetadata {
+    version: u32,
+}
+
+impl SecretStore {
+    /// 四项配置都不接受默认值：缺任一项即拒绝构造。回落到某个猜测的地址或
+    /// 身份，会让「取不到 secret 就 fail closed」退化成「取到了别人的 secret」。
+    pub fn from_env() -> Result<Self, String> {
+        let get = |k: &str| std::env::var(k).map_err(|_| format!("缺少 {k}"));
+        Ok(Self {
+            addr: get("OPENBAO_ADDR")?.trim_end_matches('/').to_owned(),
+            role_id: get("OPENBAO_ROLE_ID")?,
+            secret_id: get("OPENBAO_SECRET_ID")?,
+            identity: get("OPENBAO_SERVICE_IDENTITY")?,
+            http: reqwest::Client::new(),
+            token: RwLock::new(None),
+        })
+    }
+
+    /// 按 SecretRef 取出某个字段的值。
+    ///
+    /// 成功的判据包含**返回的版本号等于请求的版本号**：KV v2 在版本被删除时
+    /// 仍返回 200 与空 data，只靠状态码会把「已删除」读成「拿到了」。
+    pub async fn read(&self, r: &SecretRef, field: &str) -> Result<SecretValue, SecretError> {
+        if r.audience != self.identity {
+            return Err(SecretError::AudienceMismatch);
+        }
+        let (namespace, mount, path) = split_locator(&r.locator)?;
+
+        let mut body = self.fetch(&namespace, &mount, &path, r.version).await?;
+        // token 过期表现为 403；重新登录后再试一次，不把它当成取不到
+        if body.is_none() {
+            self.login(true).await?;
+            body = self.fetch(&namespace, &mount, &path, r.version).await?;
+        }
+        let body = body.ok_or(SecretError::VersionUnavailable)?;
+
+        if body.data.metadata.version != r.version {
+            return Err(SecretError::VersionUnavailable);
+        }
+        body.data
+            .data
+            .get(field)
+            .cloned()
+            .map(SecretValue)
+            .ok_or(SecretError::VersionUnavailable)
+    }
+
+    /// 返回 `None` 表示「凭据被拒」，由调用方决定是否重新登录；
+    /// 其余失败原样返回，不与「凭据问题」混为一谈。
+    async fn fetch(
+        &self,
+        namespace: &str,
+        mount: &str,
+        path: &str,
+        version: u32,
+    ) -> Result<Option<KvResponse>, SecretError> {
+        let token = self.login(false).await?;
+        let resp = self
+            .http
+            .get(format!("{}/v1/{mount}/data/{path}", self.addr))
+            .query(&[("version", version.to_string())])
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token.as_str())
+            .send()
+            .await?;
+        match resp.status().as_u16() {
+            200 => Ok(Some(resp.json().await?)),
+            // 401/403 是凭据问题，404 是版本/路径不存在——两者不同
+            401 | 403 => Ok(None),
+            404 => Err(SecretError::VersionUnavailable),
+            _ => Err(SecretError::VersionUnavailable),
+        }
+    }
+
+    async fn login(&self, force: bool) -> Result<Arc<String>, SecretError> {
+        if !force {
+            if let Some(t) = self.token.read().await.clone() {
+                return Ok(t);
+            }
+        }
+        let resp = self
+            .http
+            .post(format!("{}/v1/auth/approle/login", self.addr))
+            .header("X-Vault-Namespace", self.platform_namespace())
+            .json(&serde_json::json!({
+                "role_id": self.role_id,
+                "secret_id": self.secret_id,
+            }))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(SecretError::LoginFailed);
+        }
+        let parsed: LoginResponse = resp.json().await?;
+        let token = Arc::new(parsed.auth.client_token);
+        *self.token.write().await = Some(Arc::clone(&token));
+        Ok(token)
+    }
+
+    /// AppRole 挂在平台 namespace 下；取用的 secret 可能在别的 namespace，
+    /// 二者是不同的请求头值，不能混用。
+    fn platform_namespace(&self) -> String {
+        std::env::var("OPENBAO_PLATFORM_NAMESPACE").unwrap_or_default()
+    }
+}
+
+/// locator 必须恰好三段。多一段少一段都不做兼容解析——猜错一段就是去另一个
+/// namespace 或另一个 mount 取值，而那不会报错，只会悄悄拿到别的东西。
+fn split_locator(locator: &str) -> Result<(String, String, String), SecretError> {
+    let mut parts = locator.splitn(3, '/');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(ns), Some(mount), Some(path))
+            if !ns.is_empty() && !mount.is_empty() && !path.is_empty() =>
+        {
+            Ok((ns.to_owned(), mount.to_owned(), path.to_owned()))
+        }
+        _ => Err(SecretError::LocatorMalformed(locator.to_owned())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn locator_must_have_three_parts() {
+        assert!(split_locator("platform/kv/buzz/control").is_ok());
+        for bad in ["platform/kv", "platform", "", "/kv/path", "platform//path"] {
+            assert!(split_locator(bad).is_err(), "{bad} 应被拒绝");
+        }
+    }
+
+    #[test]
+    fn path_may_contain_slashes() {
+        // 第三段是完整路径，内部的 / 属于它，不再继续切分
+        let (ns, mount, path) = split_locator("platform/kv/buzz/control/t-1").unwrap();
+        assert_eq!(
+            (ns.as_str(), mount.as_str(), path.as_str()),
+            ("platform", "kv", "buzz/control/t-1")
+        );
+    }
+}

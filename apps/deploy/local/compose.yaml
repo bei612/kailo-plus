@@ -289,6 +289,14 @@ services:
       # 「这张票是开给 Core 的」与「是谁来敲的」是两件事，两条都要核。
       SERVICE_OIDC_AUDIENCE: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
       SERVICE_CALLER_CLIENT_ID: ${OIDC_WORKER_CLIENT_ID:?必须显式提供，禁止硬编码}
+      # SecretRef 解析（DD-70）。role_id/secret_id 经 env_file 投递，
+      # 由 openbao-init.sh 生成并被 gitignore；不进 .env、不上命令行。
+      OPENBAO_ADDR: ${OPENBAO_ADDR:?必须显式提供，禁止硬编码}
+      OPENBAO_PLATFORM_NAMESPACE: ${OPENBAO_PLATFORM_NAMESPACE:?必须显式提供，禁止硬编码}
+      # SecretRef 的 audience 必须等于它，否则拒绝取用
+      OPENBAO_SERVICE_IDENTITY: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
+    env_file:
+      - ./secrets/openbao-core.env
     ports:
       # 仅绑回环，供本机核验 service API；不暴露到宿主网络之外。
       - "127.0.0.1:${SERVICE_PORT:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}"
@@ -344,6 +352,10 @@ services:
     # 而是让卷归属进程自身的 uid，保持最小权限。
     user: "100:1000"
     command: ["server", "-config=/openbao/config/config.hcl"]
+    ports:
+      # 仅绑回环，供本机初始化与 SecretRef 解析核验；不暴露到宿主网络之外。
+      # 取用仍要 AppRole 凭据与策略，端口可达不等于 secret 可读。
+      - "127.0.0.1:${OPENBAO_PORT:?必须显式提供，禁止硬编码}:8200"
     healthcheck:
       # 未初始化返回 501、已封存返回 503：两者都不算就绪。
       # 只有 200 才表示可取用 secret——SecretRef 不可读时 binding 不得 active。
