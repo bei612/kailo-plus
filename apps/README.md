@@ -49,14 +49,18 @@ tools/check-docs.sh /path/to/.design
 
 ## 工具链
 
-本目录的工作流工具状态（`.trellis/`、`.claude/`、`.codex/`、`.agents/`）不进版本库，新克隆后自行重建：
+本目录的工作流工具状态（`.trellis/` 下除 `spec/` 外的内容、`.claude/`、`.codex/`、`.agents/`）不进版本库，新克隆后自行重建：
 
 ```bash
 npm install -g @mindfoldhq/trellis@latest
 trellis init --claude --codex -u "<你的名字>" --workflow native
 ```
 
-固定使用 `native` workflow。Trellis 的 `.trellis/spec/` 是从**已有代码**提炼的编码约定知识库（函数签名、字段、边界行为），用于后续会话自动注入上下文；它不是先于实现的规格，与 `.design` 的产品合同是两回事。由于该目录不入库，其中积累的约定不会随仓库分发，需要长期保留的结论应写进本目录的实施文档。
+固定使用 `native` workflow。
+
+`.trellis/spec/` 是唯一入库的 Trellis 目录。它是从**已有代码**提炼的编码约定知识库（函数签名、字段、边界行为），提炼时机在任务完成之后，用于后续会话自动注入上下文；它不是先于实现的规格，与 `.design` 的产品合同是两回事。入库的原因是这些约定属于工程资产，必须随仓库分发并进入 code review，而不是只存在于某台机器上。
+
+其中 `backend/` 与 `frontend/` 下的文件当前是空模板，随首批代码落地后逐步填写；`guides/` 由 Trellis 模板提供，升级工具会覆写它，产生的差异按普通改动评审。仍然成立的约束：进入 `.design` 或本目录实施文档的结论以那两处为准，`spec/` 只记录代码层面的约定，不得在其中重新定义产品语义或能力状态。
 
 代码检索与影响分析使用 GitNexus（`gitnexus analyze` 建索引）。
 
