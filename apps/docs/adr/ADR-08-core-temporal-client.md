@@ -47,6 +47,20 @@ Rust，但它面向各语言 SDK 的桥接层，不是应用侧客户端。
   签发 900 秒）。每次 Start 前从 `TokenSource` 取，后者缓存到期前的值。
 - **`AlreadyExists` 视为成功**：它恰好证明同一 ID 的 execution 已存在。此时不换
   ID 重试——换 ID 就是分配了第二个业务 workflow ID（`DD-48`）。
+- **已终结的版本不再 Start**：`REJECT_DUPLICATE` 下，已终结的 execution 同样让
+  Start 返回 `AlreadyExists`。WorkflowRef 已是 `TERMINAL` 时 Core 不发这次调用而
+  直接回 409——否则调用方会把「已存在」读成「已启动」，实际什么也没在跑。
+- **兜底对账按固定 ID Describe**（`.design/06` §3.1 的对账作业）：对超过新鲜度
+  上界仍非 `TERMINAL` 的 WorkflowRef 逐个 `DescribeWorkflowExecution`，而不是按
+  `KailoTenantId` 列举。Core 预写了全部 WorkflowRef，Describe 对它们是强一致的；
+  列举读的是最终一致的 visibility，刚终结的 execution 在其中不一定已经可见。NotFound 的
+  解释按 WorkflowRef 的创建时间与 namespace retention（每轮经 `DescribeNamespace`
+  现取，不另配一份）判定：窗口内不改状态，窗口外记 `UNKNOWN`。只有 Schedule 触发
+  的 run 没有预写的 WorkflowRef，需要按 Search Attribute 列举回填——一期没有
+  Schedule，这条路径没有适用对象；三个 Search Attribute 已在 Start 时写入
+  `KailoTenantId` 与 `KailoWorkflowKind`，届时直接可用。
+- **Search Attribute**：namespace 初始化登记 `.design/06` §2 固定的三个 Keyword；
+  Start 写入 Tenant 与 kind。Workspace 不是每个 kind 都有，缺的不写。
 
 ## 后果
 

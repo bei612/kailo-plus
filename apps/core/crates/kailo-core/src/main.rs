@@ -19,10 +19,13 @@ mod scope_state;
 mod service_api;
 mod service_auth;
 mod stream;
+mod task_projection;
+mod telemetry;
 mod temporal;
 mod tenant_lifecycle;
 mod user_state;
 mod web_transport;
+mod workflow_reconcile;
 
 use std::net::SocketAddr;
 
@@ -31,6 +34,8 @@ use sqlx::postgres::PgPoolOptions;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().json().init();
+    // 运维信号的导出先于一切：启动期的失败也要能被看见（ADR-05）
+    let meter_provider = telemetry::init()?;
 
     // 配置一律显式提供：缺任一项拒绝启动，不回退默认值（GOAL 的硬编码红线）
     let database_url = std::env::var("DATABASE_URL").map_err(|_| "缺少 DATABASE_URL")?;
@@ -39,7 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()?;
 
     let pool = PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(
+            std::env::var("CORE_DB_MAX_CONNECTIONS")
+                .map_err(|_| "缺少 CORE_DB_MAX_CONNECTIONS")?
+                .parse()
+                .map_err(|_| "CORE_DB_MAX_CONNECTIONS 必须是正整数")?,
+        )
         .connect(&database_url)
         .await?;
 
@@ -64,6 +74,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let temporal = std::sync::Arc::new(
         temporal::TemporalClient::from_env(oidc::TokenSource::from_env()?).await?,
     );
+    // 兜底对账：修补漏写的 Workflow 终态投影并发出收敛度量（06 §3.1）
+    workflow_reconcile::spawn(
+        pool.clone(),
+        std::sync::Arc::clone(&temporal),
+        &opentelemetry::global::meter("kailo-core"),
+        workflow_reconcile::Config::from_env()?,
+    );
+
     let service_state = service_api::ServiceState {
         pool: pool.clone(),
         auth: std::sync::Arc::new(service_auth::ServiceAuth::from_env()?),
@@ -148,5 +166,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         axum::serve(bff, bff::router(bff_state)).with_graceful_shutdown(shutdown()),
         axum::serve(service, service_api::router(service_state)).with_graceful_shutdown(shutdown()),
     )?;
+    // 退出前把缓冲中的指标送出去
+    if let Err(e) = meter_provider.shutdown() {
+        tracing::warn!(error = %e, "指标导出未能完成");
+    }
     Ok(())
 }

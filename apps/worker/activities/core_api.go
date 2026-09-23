@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kailo/apps/worker/internal/contracts/generated"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -157,17 +158,8 @@ func (c *CoreAPI) post(ctx context.Context, path string, payload any, out any) e
 	}
 }
 
-// ProjectTaskStateInput 对应 .design/06 §3.1 的投影载荷。
-type ProjectTaskStateInput struct {
-	WorkflowID    string  `json:"workflowId"`
-	RunID         string  `json:"runId"`
-	EventID       int64   `json:"eventId"`
-	Status        string  `json:"status"`
-	WaitingReason *string `json:"waitingReason,omitempty"`
-	Progress      *string `json:"progress,omitempty"`
-}
-
-func (c *CoreAPI) ProjectTaskState(ctx context.Context, in ProjectTaskStateInput) error {
+// ProjectTaskState 写回一次状态跃迁（.design/06 §3.1），载荷由 contracts 定义。
+func (c *CoreAPI) ProjectTaskState(ctx context.Context, in generated.TaskStateReport) error {
 	return c.post(ctx, "/service/v1/task-projections", in, nil)
 }
 

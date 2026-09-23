@@ -5,8 +5,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/kailo/apps/worker/activities"
 	"github.com/kailo/apps/worker/internal/oidc"
@@ -25,6 +29,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("构造 Temporal 连接选项失败: %v", err)
 	}
+	meters, metrics, err := initMetrics(context.Background())
+	if err != nil {
+		log.Fatalf("构造运维信号导出失败: %v", err)
+	}
+	// 退出前把缓冲中的指标送出去
+	defer func() { _ = meters.Shutdown(context.Background()) }()
+	opts.MetricsHandler = metrics
 	c, err := client.Dial(opts)
 	if err != nil {
 		log.Fatalf("连接 Temporal 失败: %v", err)
@@ -48,6 +59,14 @@ func main() {
 		log.Fatalf("构造 Core service 客户端失败: %v", err)
 	}
 
+	// Activity 的超时与重试间隔是部署事实，缺任一项即拒绝启动：Workflow
+	// 里没有默认值可以回退，零值会让每次 Activity 调度当场失败。
+	retry, err := retryFromEnv()
+	if err != nil {
+		log.Fatalf("Activity 重试配置不完整: %v", err)
+	}
+	workflows.Configure(retry)
+
 	w := worker.New(c, taskQueue, worker.Options{})
 	w.RegisterWorkflowWithOptions(workflows.Baseline,
 		workflow.RegisterOptions{Name: workflows.BaselineKind})
@@ -67,4 +86,49 @@ func main() {
 	if err := w.Run(worker.InterruptCh()); err != nil {
 		log.Fatalf("worker 退出: %v", err)
 	}
+}
+
+// retryFromEnv 读取 Activity 的超时、重试上界与两轮收敛之间的等待。时长单位
+// 秒，全部必须为正整数；缺任一项即拒绝启动（06 §5.1 要求显式固定）。
+func retryFromEnv() (workflows.Retry, error) {
+	positive := func(name string) (int, error) {
+		n, err := strconv.Atoi(os.Getenv(name))
+		if err != nil || n <= 0 {
+			return 0, fmt.Errorf("%s 必须是正整数", name)
+		}
+		return n, nil
+	}
+	seconds := func(name string) (time.Duration, error) {
+		n, err := positive(name)
+		return time.Duration(n) * time.Second, err
+	}
+	var r workflows.Retry
+	var err error
+	if r.StartToClose, err = seconds("WORKER_ACTIVITY_START_TO_CLOSE_SECONDS"); err != nil {
+		return r, err
+	}
+	if r.ScheduleToClose, err = seconds("WORKER_ACTIVITY_SCHEDULE_TO_CLOSE_SECONDS"); err != nil {
+		return r, err
+	}
+	attempts, err := positive("WORKER_ACTIVITY_MAX_ATTEMPTS")
+	if err != nil {
+		return r, err
+	}
+	r.MaxAttempts = int32(attempts)
+	if r.InitialInterval, err = seconds("WORKER_ACTIVITY_RETRY_INITIAL_SECONDS"); err != nil {
+		return r, err
+	}
+	if r.MaxInterval, err = seconds("WORKER_ACTIVITY_RETRY_MAX_SECONDS"); err != nil {
+		return r, err
+	}
+	if r.RoundInterval, err = seconds("WORKER_CONVERGE_ROUND_INTERVAL_SECONDS"); err != nil {
+		return r, err
+	}
+	if r.MaxInterval < r.InitialInterval {
+		return r, fmt.Errorf("WORKER_ACTIVITY_RETRY_MAX_SECONDS 不得小于 WORKER_ACTIVITY_RETRY_INITIAL_SECONDS")
+	}
+	if r.ScheduleToClose < r.StartToClose {
+		return r, fmt.Errorf("WORKER_ACTIVITY_SCHEDULE_TO_CLOSE_SECONDS 不得小于 WORKER_ACTIVITY_START_TO_CLOSE_SECONDS")
+	}
+	return r, nil
 }

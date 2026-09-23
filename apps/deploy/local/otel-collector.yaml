@@ -13,15 +13,17 @@ receivers:
 
 processors:
   # 允许清单只含封闭枚举与稳定 ID（07 §3 禁高基数自由文本）。
+  # projection_state/outcome/entity/state 是 Core 收敛度量的标签，取值都是
+  # 契约或代码里的封闭集合；activity_type/workflow_type 是 Worker 注册的类型名。
   # 新增键必须同时在此登记，否则会被丢弃——这是刻意的 fail-closed。
   transform/allowlist:
     error_mode: propagate
     trace_statements:
-      - keep_keys(span.attributes, ["operation_id", "tenant_id", "workspace_id", "capability_id", "reason_code", "stage"])
+      - keep_keys(span.attributes, ["operation_id", "tenant_id", "workspace_id", "capability_id", "reason_code", "stage", "projection_state", "outcome", "entity", "state", "activity_type", "workflow_type"])
     metric_statements:
-      - keep_keys(datapoint.attributes, ["operation_id", "tenant_id", "workspace_id", "capability_id", "reason_code", "stage"])
+      - keep_keys(datapoint.attributes, ["operation_id", "tenant_id", "workspace_id", "capability_id", "reason_code", "stage", "projection_state", "outcome", "entity", "state", "activity_type", "workflow_type"])
     log_statements:
-      - keep_keys(log.attributes, ["operation_id", "tenant_id", "workspace_id", "capability_id", "reason_code", "stage"])
+      - keep_keys(log.attributes, ["operation_id", "tenant_id", "workspace_id", "capability_id", "reason_code", "stage", "projection_state", "outcome", "entity", "state", "activity_type", "workflow_type"])
   batch: {}
 
 exporters:

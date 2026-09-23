@@ -10,6 +10,9 @@
 //    resolvedIdentity, err := UnmarshalResolvedIdentity(bytes)
 //    bytes, err = resolvedIdentity.Marshal()
 //
+//    taskStateReport, err := UnmarshalTaskStateReport(bytes)
+//    bytes, err = taskStateReport.Marshal()
+//
 //    workflowRef, err := UnmarshalWorkflowRef(bytes)
 //    bytes, err = workflowRef.Marshal()
 
@@ -44,6 +47,16 @@ func UnmarshalResolvedIdentity(data []byte) (ResolvedIdentity, error) {
 }
 
 func (r *ResolvedIdentity) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalTaskStateReport(data []byte) (TaskStateReport, error) {
+	var r TaskStateReport
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TaskStateReport) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -116,6 +129,19 @@ type ResolvedIdentity struct {
 	TenantPrincipalID  string  `json:"tenantPrincipalId"`
 }
 
+// Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId
+// 单调 upsert，eventId 不大于已有值的报告按幂等成功忽略。
+type TaskStateReport struct {
+	// 报告时的 history 长度；同一 workflow 内单调，重放时取到同一值
+	EventID       int64      `json:"eventId"`
+	Progress      *string    `json:"progress,omitempty"`
+	RunID         string     `json:"runId"`
+	Status        TaskStatus `json:"status"`
+	WaitingReason *string    `json:"waitingReason,omitempty"`
+	// 固定格式的业务 workflow ID
+	WorkflowID string `json:"workflowId"`
+}
+
 // Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
 // kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
 type WorkflowRef struct {
@@ -182,6 +208,20 @@ const (
 	SessionNotActive            ReasonCode = "SESSION_NOT_ACTIVE"
 	TenantMembershipNotActive   ReasonCode = "TENANT_MEMBERSHIP_NOT_ACTIVE"
 	TenantSelectionNotAvailable ReasonCode = "TENANT_SELECTION_NOT_AVAILABLE"
+)
+
+// TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
+// status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
+// WorkflowRef 进入 TERMINAL。
+type TaskStatus string
+
+const (
+	Canceled   TaskStatus = "CANCELED"
+	Completed  TaskStatus = "COMPLETED"
+	Failed     TaskStatus = "FAILED"
+	Running    TaskStatus = "RUNNING"
+	Terminated TaskStatus = "TERMINATED"
+	TimedOut   TaskStatus = "TIMED_OUT"
 )
 
 // ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind

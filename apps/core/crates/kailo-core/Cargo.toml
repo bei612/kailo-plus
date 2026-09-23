@@ -28,6 +28,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 temporalio-client = { version = "1.0.0", features = ["vendored-protox"] }
 temporalio-common = { version = "1.0.0", features = ["vendored-protox"] }
+opentelemetry = { version = "0.33", default-features = false, features = ["metrics"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["metrics", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["metrics", "http-proto", "reqwest-blocking-client"] }
 
 [dev-dependencies]
 base64 = "0.22"

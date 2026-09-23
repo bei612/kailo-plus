@@ -350,6 +350,15 @@ services:
       # Community host = <tenant slug>.<domain>。host 是 NIP-98 的签名权威
       # （SF-BUZ-32），必须稳定可推导。
       BUZZ_COMMUNITY_DOMAIN: ${BUZZ_COMMUNITY_DOMAIN:?必须显式提供，禁止硬编码}
+      CORE_DB_MAX_CONNECTIONS: ${CORE_DB_MAX_CONNECTIONS:?必须显式提供，禁止硬编码}
+      # 运维信号只经 OTLP 交给 Collector（ADR-05）；导出周期是 SDK 的标准变量
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?必须显式提供，禁止硬编码}
+      OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:?必须显式提供，禁止硬编码}
+      # 兜底对账（.design/06 §3.1）：WorkflowRef 超过新鲜度上界仍非终态才按固定
+      # ID 去 Temporal 查；每轮条数有上界，按最久未观察的先查。
+      WORKFLOW_RECONCILE_INTERVAL_SECONDS: ${WORKFLOW_RECONCILE_INTERVAL_SECONDS:?必须显式提供，禁止硬编码}
+      WORKFLOW_PROJECTION_FRESHNESS_SECONDS: ${WORKFLOW_PROJECTION_FRESHNESS_SECONDS:?必须显式提供，禁止硬编码}
+      WORKFLOW_RECONCILE_BATCH: ${WORKFLOW_RECONCILE_BATCH:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/openbao-core.env
       # Core 自己的 OIDC client secret；不进 .env、不上命令行
@@ -387,6 +396,18 @@ services:
       CORE_SERVICE_URL: ${CORE_SERVICE_URL:?必须显式提供，禁止硬编码}
       SPICEDB_ENDPOINT: ${SPICEDB_ENDPOINT:?必须显式提供，禁止硬编码}
       SPICEDB_INSECURE: "true"
+      # 每个 Activity 显式固定两个超时与重试上界（.design/06 §5.1）。上界约束的是
+      # 一轮：一轮耗尽而结果仍不明时，Workflow 以持久 timer 等一轮再做——撤权
+      # 必须闭合（DD-45）。卡住多久由 Core 的兜底对账度量。
+      WORKER_ACTIVITY_START_TO_CLOSE_SECONDS: ${WORKER_ACTIVITY_START_TO_CLOSE_SECONDS:?必须显式提供，禁止硬编码}
+      WORKER_ACTIVITY_SCHEDULE_TO_CLOSE_SECONDS: ${WORKER_ACTIVITY_SCHEDULE_TO_CLOSE_SECONDS:?必须显式提供，禁止硬编码}
+      WORKER_ACTIVITY_MAX_ATTEMPTS: ${WORKER_ACTIVITY_MAX_ATTEMPTS:?必须显式提供，禁止硬编码}
+      WORKER_CONVERGE_ROUND_INTERVAL_SECONDS: ${WORKER_CONVERGE_ROUND_INTERVAL_SECONDS:?必须显式提供，禁止硬编码}
+      WORKER_ACTIVITY_RETRY_INITIAL_SECONDS: ${WORKER_ACTIVITY_RETRY_INITIAL_SECONDS:?必须显式提供，禁止硬编码}
+      WORKER_ACTIVITY_RETRY_MAX_SECONDS: ${WORKER_ACTIVITY_RETRY_MAX_SECONDS:?必须显式提供，禁止硬编码}
+      # Temporal SDK 的指标经 OTLP 交给 Collector（ADR-05）
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?必须显式提供，禁止硬编码}
+      OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:?必须显式提供，禁止硬编码}
     env_file:
       # Worker 自己的 client secret 与 SpiceDB 的 PSK；都不进 .env、不上命令行
       - ./secrets/worker.env
@@ -505,6 +526,15 @@ services:
           temporal operator namespace create --namespace "$$NAMESPACE" --retention "$$RETENTION"
           echo "namespace $$NAMESPACE 已创建，retention=$$RETENTION"
         fi
+        # 固定登记三个 Keyword Search Attribute（.design/06 §2）。逐个判定已存在
+        # 再建：重复创建会报错，而它是幂等的运行前提。
+        for sa in KailoTenantId KailoWorkspaceId KailoWorkflowKind; do
+          if temporal operator search-attribute list --namespace "$$NAMESPACE" | grep -qw "$$sa"; then
+            echo "search attribute $$sa 已存在"
+          else
+            temporal operator search-attribute create --namespace "$$NAMESPACE" --name "$$sa" --type Keyword
+          fi
+        done
     restart: "no"
 
   # schema 是运行前提：SpiceDB 启动时是空 schema，写 relationship 会失败。

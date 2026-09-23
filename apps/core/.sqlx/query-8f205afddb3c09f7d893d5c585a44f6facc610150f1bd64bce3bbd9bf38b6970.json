@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update projection.workflow_ref set last_observed_at = now() where workflow_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f205afddb3c09f7d893d5c585a44f6facc610150f1bd64bce3bbd9bf38b6970"
+}

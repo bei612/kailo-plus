@@ -40,6 +40,14 @@ export VERIFY_ZED_IMAGE="$(python3 -c '
 import re,io
 t=io.open("deploy/local/compose.yaml",encoding="utf-8").read()
 print(re.search(r"image: (authzed/zed@sha256:[0-9a-f]+)", t).group(1))')"
+# Temporal 的官方 CLI 与其经内部 frontend 的地址，都取 compose 里 namespace 初始化
+# 用的那一份：核验与部署用同一个镜像、同一个入口
+eval "$(python3 -c '
+import re,io
+t=io.open("deploy/local/compose.yaml",encoding="utf-8").read()
+svc=t.split("\n  temporal-namespace:\n",1)[1].split("\n  spicedb-schema:",1)[0]
+print("export VERIFY_TEMPORAL_ADMIN_IMAGE=" + re.search(r"image: (\S+)", svc).group(1))
+print("export VERIFY_TEMPORAL_INTERNAL_ADDRESS=" + re.search(r"TEMPORAL_ADDRESS: (\S+)", svc).group(1))')"
 # 原生端（DD-78）：经网关原生入口、以 PKCE 取得的 Bearer 调用。核验像原生应用
 # 一样登录 IdP，口令从文件读入进程，不进环境变量。
 export VERIFY_NATIVE_URL="http://127.0.0.1:${AGENTGATEWAY_NATIVE_PORT}"

@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -58,23 +59,41 @@ type ComponentTaskInput struct {
 	Membership *MembershipTarget      `json:"membership,omitempty"`
 	Scope      *ScopeTarget           `json:"scope,omitempty"`
 	Identity   *IdentityTarget        `json:"identity,omitempty"`
+	// continue-as-new 时带入的 history 长度累计。投影的 event_id 按 workflow ID
+	// 单调去重（06 §2：按 workflow ID 而非 run ID 聚合），新 run 的 history 从零
+	// 数起，不加上它，续跑后的投影会被当成旧事件丢掉。
+	EventBase int64 `json:"eventBase,omitempty"`
 }
 
-// 三类 Activity 的超时与重试纪律（06 §5.1）。SDK 要求每个 Activity 至少设置
-// 一个超时，而 Server 默认重试策略是无限次——不显式固定就等于没有上界。
-//
-// 投影类 Activity 的重试上界必须覆盖 roster 快照的收敛时间：relay roster 的
-// 快照由 best-effort 路径重建，读到旧值是结果不明，修复来自 Relay 的周期对账
-// （SF-BUZ-34）。上界给得比对账间隔短，撤权会在还没收敛时就被判失败。
-func projectionOptions() workflow.ActivityOptions {
+// Retry 是 Activity 的超时与重试上界，以及两轮收敛之间的等待。它们是部署
+// 事实，由进程启动时给出（main.go 的 Configure），不写死在 Workflow 里。
+type Retry struct {
+	StartToClose    time.Duration
+	ScheduleToClose time.Duration
+	MaxAttempts     int32
+	InitialInterval time.Duration
+	MaxInterval     time.Duration
+	// 一轮 Activity 重试耗尽后，Workflow 以持久 timer 等这么久再做下一轮
+	RoundInterval time.Duration
+}
+
+var retry Retry
+
+// Configure 在注册 Workflow 之前调用一次。Workflow 代码只读它，重放同一段
+// history 时取到同一组值；换值只影响之后新发出的命令。
+func Configure(r Retry) { retry = r }
+
+// 每个 Activity 显式固定两个超时与重试上界（06 §5.1）。上界约束的是**一轮**，
+// 不是整条收敛：见 converge。
+func activityOptions() workflow.ActivityOptions {
 	return workflow.ActivityOptions{
-		StartToCloseTimeout:    30 * time.Second,
-		ScheduleToCloseTimeout: 10 * time.Minute,
+		StartToCloseTimeout:    retry.StartToClose,
+		ScheduleToCloseTimeout: retry.ScheduleToClose,
 		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    time.Second,
+			InitialInterval:    retry.InitialInterval,
 			BackoffCoefficient: 2,
-			MaximumInterval:    30 * time.Second,
-			MaximumAttempts:    20,
+			MaximumInterval:    retry.MaxInterval,
+			MaximumAttempts:    retry.MaxAttempts,
 			NonRetryableErrorTypes: []string{
 				activities.ErrTypeRejected,
 				activities.ErrTypeAdmissionDenied,
@@ -83,45 +102,115 @@ func projectionOptions() workflow.ActivityOptions {
 	}
 }
 
-// 状态投影自己不该把 Workflow 拖住：它写的是工作台的可见状态，不是业务事实。
-// 但也不能失败即忽略——Workflow 未完成最后一次投影即不视为 terminal（06 §3.1）。
-func stateOptions() workflow.ActivityOptions {
-	o := projectionOptions()
-	o.ScheduleToCloseTimeout = 2 * time.Minute
-	o.RetryPolicy.MaximumAttempts = 10
-	return o
+// waitingConvergence 是一轮重试耗尽、等待下一轮时写回的等待原因。它是封闭
+// 取值，不带错误原文：错误原文是高基数自由文本，不进投影（07 §3）。
+const waitingConvergence = "CONVERGENCE_PENDING"
+
+// converge 执行一步幂等的收敛，直到成功或被确定拒绝。
+//
+// 这些 Activity 的失败只有两种：依赖暂不可用或快照落后（结果不明），以及
+// Core 的 4xx 拒绝（确定失败，NonRetryableErrorTypes）。前一种在一轮重试上界
+// 内没有恢复时，Workflow 不能就此失败——撤权会停在 REVOKING，而那把钥匙仍在
+// Relay 的 roster 上，原生端照样直连发布（DD-45「对账闭合后才 REVOKED」）。
+// 因此以持久 timer 等一轮再做，并写回等待原因让工作台看得见；history 接近
+// 上限时 continue-as-new（06 §2）。拒绝则立即返回，由调用方写 FAILED。
+func converge(
+	ctx workflow.Context,
+	in ComponentTaskInput,
+	project func(generated.TaskStatus, *string) error,
+	fn func(workflow.Context) error,
+) error {
+	ao := workflow.WithActivityOptions(ctx, activityOptions())
+	for {
+		err := fn(ao)
+		if err == nil {
+			return nil
+		}
+		var app *temporal.ApplicationError
+		if errors.As(err, &app) &&
+			(app.Type() == activities.ErrTypeRejected || app.Type() == activities.ErrTypeAdmissionDenied) {
+			return err
+		}
+		workflow.GetLogger(ctx).Warn("本轮收敛未完成，等待下一轮", "error", err)
+		reason := waitingConvergence
+		// 等待原因写不进去不阻塞收敛本身：下一轮会再写
+		_ = project(generated.Running, &reason)
+		if err := workflow.Sleep(ctx, retry.RoundInterval); err != nil {
+			return err
+		}
+		if workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
+			next := in
+			next.EventBase = eventID(ctx, in)
+			return workflow.NewContinueAsNewError(ctx, ComponentTask, next)
+		}
+	}
+}
+
+// eventID 是本次投影的单调序号：跨 run 累计的 history 长度。
+func eventID(ctx workflow.Context, in ComponentTaskInput) int64 {
+	return in.EventBase + int64(workflow.GetInfo(ctx).GetCurrentHistoryLength())
 }
 
 // projector 返回一个把状态写回 Core 的闭包。
 //
-// event_id 取自 history 长度：它在同一次 run 内单调，且重放会走过同一段 history，
-// 因此在每个调用点取到同一个值——既能给 Core 做单调去重，又不破坏确定性
-// （时钟与随机数都不行）。
-func projector(ctx workflow.Context, info *workflow.Info) func(string) error {
-	return func(status string) error {
-		o := workflow.WithActivityOptions(ctx, stateOptions())
+// event_id 取自 history 长度（加上 continue-as-new 带入的累计）：它单调，且
+// 重放会走过同一段 history，因此在每个调用点取到同一个值——既能给 Core 做单调
+// 去重，又不破坏确定性（时钟与随机数都不行）。
+func projector(ctx workflow.Context, in ComponentTaskInput) func(generated.TaskStatus, *string) error {
+	info := workflow.GetInfo(ctx)
+	return func(status generated.TaskStatus, waiting *string) error {
+		o := workflow.WithActivityOptions(ctx, activityOptions())
 		return workflow.ExecuteActivity(o, (*activities.CoreAPI).ProjectTaskState,
-			activities.ProjectTaskStateInput{
-				WorkflowID: info.WorkflowExecution.ID,
-				RunID:      info.WorkflowExecution.RunID,
-				EventID:    int64(workflow.GetInfo(ctx).GetCurrentHistoryLength()),
-				Status:     status,
+			generated.TaskStateReport{
+				WorkflowID:    info.WorkflowExecution.ID,
+				RunID:         info.WorkflowExecution.RunID,
+				EventID:       eventID(ctx, in),
+				Status:        status,
+				WaitingReason: waiting,
 			}).Get(ctx, nil)
 	}
 }
 
-// failer 返回一个「记下失败再把原因抛出去」的闭包。
+// task 是一条 ComponentTaskWorkflow 的公共骨架：先写 RUNNING，逐步收敛，最后写
+// COMPLETED；任一步被确定拒绝则写 FAILED 并把原因抛出。
 //
-// 失败路径也要留下可见状态。投影自己再失败时，两个错误一并返回而不是丢掉其中
-// 一个：工作台上看不到的失败，和没发生过的失败无法区分。
-func failer(ctx workflow.Context, project func(string) error) func(error) error {
-	return func(cause error) error {
-		if err := project("FAILED"); err != nil {
-			workflow.GetLogger(ctx).Error("终态投影失败", "cause", cause, "error", err)
-			return fmt.Errorf("%w（且 FAILED 投影未写入: %v）", cause, err)
-		}
+// RUNNING 与 COMPLETED 的写回同样走 converge：Core 暂不可用时不能因此放弃
+// 收敛，而「Workflow 未完成最后一次投影即不视为 terminal」（06 §3.1）。
+type task struct {
+	ctx     workflow.Context
+	in      ComponentTaskInput
+	project func(generated.TaskStatus, *string) error
+}
+
+func newTask(ctx workflow.Context, in ComponentTaskInput) *task {
+	return &task{ctx: ctx, in: in, project: projector(ctx, in)}
+}
+
+func (t *task) step(fn func(workflow.Context) error) error {
+	return converge(t.ctx, t.in, t.project, fn)
+}
+
+func (t *task) begin() error {
+	return t.step(func(workflow.Context) error { return t.project(generated.Running, nil) })
+}
+
+func (t *task) complete() error {
+	return t.step(func(workflow.Context) error { return t.project(generated.Completed, nil) })
+}
+
+// fail 记下失败再把原因抛出。失败路径也要留下可见状态；投影自己再失败时，
+// 两个错误一并返回而不是丢掉其中一个：工作台上看不到的失败，和没发生过的
+// 失败无法区分。
+func (t *task) fail(cause error) error {
+	var cont *workflow.ContinueAsNewError
+	if errors.As(cause, &cont) {
 		return cause
 	}
+	if err := t.project(generated.Failed, nil); err != nil {
+		workflow.GetLogger(t.ctx).Error("终态投影失败", "cause", cause, "error", err)
+		return fmt.Errorf("%w（且 FAILED 投影未写入: %v）", cause, err)
+	}
+	return cause
 }
 
 // ComponentTask 执行一个 ComponentTaskWorkflow。
@@ -165,13 +254,9 @@ func membershipLifecycle(
 		return temporal.NewNonRetryableApplicationError(
 			"成员生命周期 kind 缺少冻结的 membership 输入", activities.ErrTypeRejected, nil)
 	}
-
-	info := workflow.GetInfo(ctx)
-	project := projector(ctx, info)
-	failWith := failer(ctx, project)
-
-	if err := project("RUNNING"); err != nil {
-		return err
+	t := newTask(ctx, in)
+	if err := t.begin(); err != nil {
+		return t.fail(err)
 	}
 
 	// 1. SpiceDB 关系：授权投影。Converge 内部以 FullyConsistent 读回查证。
@@ -179,17 +264,17 @@ func membershipLifecycle(
 	if m.Scope == "WORKSPACE" {
 		relationObject = "workspace"
 	}
-	ao := workflow.WithActivityOptions(ctx, projectionOptions())
-	if err := workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
-		activities.Relationship{
-			ResourceType: relationObject,
-			ResourceID:   m.RelationObjectID,
-			Relation:     "member",
-			SubjectType:  "principal",
-			SubjectID:    m.SubjectPrincipalID,
-		}, want).Get(ctx, nil); err != nil {
-		_ = project("FAILED")
-		return err
+	if err := t.step(func(ao workflow.Context) error {
+		return workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
+			activities.Relationship{
+				ResourceType: relationObject,
+				ResourceID:   m.RelationObjectID,
+				Relation:     "member",
+				SubjectType:  "principal",
+				SubjectID:    m.SubjectPrincipalID,
+			}, want).Get(ctx, nil)
+	}); err != nil {
+		return t.fail(err)
 	}
 
 	// 2. Buzz roster：协作数据平面的准入执行点。签名在 Core，因为 CONTROL
@@ -198,32 +283,36 @@ func membershipLifecycle(
 	if want == activities.Absent {
 		presence = "ABSENT"
 	}
-	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProjectBuzzRoster,
-		activities.BuzzProjectionInput{
-			Scope:             m.Scope,
-			MembershipID:      m.MembershipID,
-			MembershipVersion: m.MembershipVersion,
-			Presence:          presence,
-		}).Get(ctx, nil); err != nil {
-		return failWith(err)
+	if err := t.step(func(ao workflow.Context) error {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProjectBuzzRoster,
+			activities.BuzzProjectionInput{
+				Scope:             m.Scope,
+				MembershipID:      m.MembershipID,
+				MembershipVersion: m.MembershipVersion,
+				Presence:          presence,
+			}).Get(ctx, nil)
+	}); err != nil {
+		return t.fail(err)
 	}
 
 	// 3. 两个投影都已查证，才让 Core 跃迁成员状态。
 	var out activities.TransitionOutput
-	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionMembership,
-		activities.TransitionInput{
-			Scope:        m.Scope,
-			MembershipID: m.MembershipID,
-			FromVersion:  m.MembershipVersion,
-			ToState:      terminal,
-			WorkflowID:   info.WorkflowExecution.ID,
-		}).Get(ctx, &out); err != nil {
-		return failWith(err)
+	if err := t.step(func(ao workflow.Context) error {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionMembership,
+			activities.TransitionInput{
+				Scope:        m.Scope,
+				MembershipID: m.MembershipID,
+				FromVersion:  m.MembershipVersion,
+				ToState:      terminal,
+				WorkflowID:   workflow.GetInfo(ctx).WorkflowExecution.ID,
+			}).Get(ctx, &out)
+	}); err != nil {
+		return t.fail(err)
 	}
 	workflow.GetLogger(ctx).Info("成员状态已跃迁", "state", out.State, "version", out.Version)
 
 	// 终态投影失败就不算 terminal（06 §3.1）：工作台上看不到的完成不是完成。
-	return project("COMPLETED")
+	return t.complete()
 }
 
 // tenantLifecycle 建立一个 Tenant 的协作面（`.design/09` 第 3 步）。
@@ -237,37 +326,38 @@ func tenantLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 		return temporal.NewNonRetryableApplicationError(
 			"TENANT_LIFECYCLE 缺少冻结的 scope 输入", activities.ErrTypeRejected, nil)
 	}
-	info := workflow.GetInfo(ctx)
-	project := projector(ctx, info)
-	if err := project("RUNNING"); err != nil {
-		return err
+	t := newTask(ctx, in)
+	if err := t.begin(); err != nil {
+		return t.fail(err)
 	}
-	fail := failer(ctx, project)
 
-	ao := workflow.WithActivityOptions(ctx, projectionOptions())
-	step := activities.TenantStepInput{TenantID: s.ID, TenantVersion: s.Version}
-	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProvisionTenantBuzz, step).
-		Get(ctx, nil); err != nil {
-		return fail(err)
+	stepIn := activities.TenantStepInput{TenantID: s.ID, TenantVersion: s.Version}
+	if err := t.step(func(ao workflow.Context) error {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProvisionTenantBuzz, stepIn).Get(ctx, nil)
+	}); err != nil {
+		return t.fail(err)
 	}
-	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).VerifyTenantBuzz, step).
-		Get(ctx, nil); err != nil {
-		return fail(err)
+	if err := t.step(func(ao workflow.Context) error {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).VerifyTenantBuzz, stepIn).Get(ctx, nil)
+	}); err != nil {
+		return t.fail(err)
 	}
 
 	var out activities.TransitionOutput
-	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
-		activities.ScopeTransitionInput{
-			Kind:        "TENANT",
-			ID:          s.ID,
-			FromVersion: s.Version,
-			ToState:     "ACTIVE",
-			WorkflowID:  info.WorkflowExecution.ID,
-		}).Get(ctx, &out); err != nil {
-		return fail(err)
+	if err := t.step(func(ao workflow.Context) error {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
+			activities.ScopeTransitionInput{
+				Kind:        "TENANT",
+				ID:          s.ID,
+				FromVersion: s.Version,
+				ToState:     "ACTIVE",
+				WorkflowID:  workflow.GetInfo(ctx).WorkflowExecution.ID,
+			}).Get(ctx, &out)
+	}); err != nil {
+		return t.fail(err)
 	}
 	workflow.GetLogger(ctx).Info("Tenant 已就绪", "state", out.State, "version", out.Version)
-	return project("COMPLETED")
+	return t.complete()
 }
 
 // workspaceLifecycle 建立一个 Workspace 的协作面与授权归属。
@@ -282,41 +372,44 @@ func workspaceLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 		return temporal.NewNonRetryableApplicationError(
 			"WORKSPACE_LIFECYCLE 缺少冻结的 scope 或 tenant 输入", activities.ErrTypeRejected, nil)
 	}
-	info := workflow.GetInfo(ctx)
-	project := projector(ctx, info)
-	if err := project("RUNNING"); err != nil {
-		return err
+	t := newTask(ctx, in)
+	if err := t.begin(); err != nil {
+		return t.fail(err)
 	}
-	fail := failer(ctx, project)
 
-	ao := workflow.WithActivityOptions(ctx, projectionOptions())
-	if err := workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
-		activities.Relationship{
-			ResourceType: "workspace", ResourceID: s.ID, Relation: "tenant",
-			SubjectType: "tenant", SubjectID: s.TenantID,
-		}, activities.Present).Get(ctx, nil); err != nil {
-		return fail(err)
+	if err := t.step(func(ao workflow.Context) error {
+		return workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
+			activities.Relationship{
+				ResourceType: "workspace", ResourceID: s.ID, Relation: "tenant",
+				SubjectType: "tenant", SubjectID: s.TenantID,
+			}, activities.Present).Get(ctx, nil)
+	}); err != nil {
+		return t.fail(err)
 	}
-	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProvisionWorkspaceBuzz,
-		activities.WorkspaceStepInput{
-			WorkspaceID: s.ID, WorkspaceVersion: s.Version,
-		}).Get(ctx, nil); err != nil {
-		return fail(err)
+	if err := t.step(func(ao workflow.Context) error {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProvisionWorkspaceBuzz,
+			activities.WorkspaceStepInput{
+				WorkspaceID: s.ID, WorkspaceVersion: s.Version,
+			}).Get(ctx, nil)
+	}); err != nil {
+		return t.fail(err)
 	}
 
 	var out activities.TransitionOutput
-	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
-		activities.ScopeTransitionInput{
-			Kind:        "WORKSPACE",
-			ID:          s.ID,
-			FromVersion: s.Version,
-			ToState:     "ACTIVE",
-			WorkflowID:  info.WorkflowExecution.ID,
-		}).Get(ctx, &out); err != nil {
-		return fail(err)
+	if err := t.step(func(ao workflow.Context) error {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
+			activities.ScopeTransitionInput{
+				Kind:        "WORKSPACE",
+				ID:          s.ID,
+				FromVersion: s.Version,
+				ToState:     "ACTIVE",
+				WorkflowID:  workflow.GetInfo(ctx).WorkflowExecution.ID,
+			}).Get(ctx, &out)
+	}); err != nil {
+		return t.fail(err)
 	}
 	workflow.GetLogger(ctx).Info("Workspace 已就绪", "state", out.State, "version", out.Version)
-	return project("COMPLETED")
+	return t.complete()
 }
 
 // identityProjection 把一台原生设备的公钥投入或移出 roster（DD-79）。
@@ -325,27 +418,26 @@ func workspaceLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 // 投入后的撤权复核，以及最后的状态跃迁。拆成多个 Activity 会让「投入之后、
 // 复核之前」横跨两次调用，而撤权恰恰可能落在那个缝里。
 func identityProjection(ctx workflow.Context, in ComponentTaskInput) error {
-	t := in.Identity
-	if t == nil {
+	id := in.Identity
+	if id == nil {
 		return temporal.NewNonRetryableApplicationError(
 			"BUZZ_IDENTITY_PROJECTION 缺少冻结的 identity 输入", activities.ErrTypeRejected, nil)
 	}
-	info := workflow.GetInfo(ctx)
-	project := projector(ctx, info)
-	if err := project("RUNNING"); err != nil {
-		return err
+	t := newTask(ctx, in)
+	if err := t.begin(); err != nil {
+		return t.fail(err)
 	}
-	fail := failer(ctx, project)
 
-	ao := workflow.WithActivityOptions(ctx, projectionOptions())
 	var out activities.IdentityProjectionOutput
-	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProjectBuzzIdentity,
-		activities.IdentityProjectionInput{
-			Pubkey:         t.Pubkey,
-			BindingVersion: t.BindingVersion,
-		}).Get(ctx, &out); err != nil {
-		return fail(err)
+	if err := t.step(func(ao workflow.Context) error {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProjectBuzzIdentity,
+			activities.IdentityProjectionInput{
+				Pubkey:         id.Pubkey,
+				BindingVersion: id.BindingVersion,
+			}).Get(ctx, &out)
+	}); err != nil {
+		return t.fail(err)
 	}
 	workflow.GetLogger(ctx).Info("设备公钥已收敛", "pubkey", out.Pubkey, "state", out.State)
-	return project("COMPLETED")
+	return t.complete()
 }

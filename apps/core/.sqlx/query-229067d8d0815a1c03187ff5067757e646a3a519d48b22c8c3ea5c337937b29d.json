@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select projection_state as \"state!\", count(*) as \"n!\",\n                  extract(epoch from now() - min(created_at))::bigint as \"age!\"\n           from projection.workflow_ref\n           where projection_state <> 'TERMINAL'\n           group by projection_state",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "n!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "age!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "229067d8d0815a1c03187ff5067757e646a3a519d48b22c8c3ea5c337937b29d"
+}

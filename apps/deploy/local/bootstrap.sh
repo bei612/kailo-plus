@@ -55,12 +55,21 @@ gen_hex buzz_relay_private_key
 # 时要求 RELAY_OWNER_PUBKEY，而 Core 用对应私钥创建 Community（SS-BUZ-OPERATOR）。
 # 用上游自带的 generate-key 生成，不自己实现 secp256k1 派生。
 if [ ! -s secrets/relay_operator_pubkey ] || [ ! -s secrets/relay_operator_private_key ]; then
+  # 取 Relay 服务实际运行的镜像（补丁构建，按 digest 存于本地 registry），
+  # 而不是另写一个镜像名：两处脱节时生成密钥的与运行的就不是同一份二进制。
+  relay_image=$(python3 - <<'PYIMG'
+import re
+env = dict(l.split("=", 1) for l in open(".env", encoding="utf-8").read().splitlines()
+           if "=" in l and not l.lstrip().startswith("#"))
+t = open("compose.yaml", encoding="utf-8").read()
+svc = t.split("\n  buzz-relay:\n", 1)[1]
+img = re.search(r"^    image: (\S+)", svc, re.M).group(1)
+print(re.sub(r"\$\{(\w+)(?::\?[^}]*)?\}", lambda m: env[m.group(1)], img))
+PYIMG
+)
+  sudo -n docker compose --env-file .env -f compose.yaml up -d registry >/dev/null
   kp=$(sudo -n docker run --rm --entrypoint /usr/local/bin/buzz-admin \
-        "$(python3 -c '
-import re,sys
-t=open("compose.yaml",encoding="utf-8").read()
-print(re.search(r"image: (ghcr\.io/block/buzz@sha256:[0-9a-f]+)", t).group(1))
-')" generate-key 2>/dev/null | grep -E "^(Public|Secret) key:")
+        "$relay_image" generate-key 2>/dev/null | grep -E "^(Public|Secret) key:")
   printf '%s' "$kp" | awk '/Public/{print $3}' | tr -d '\n' > secrets/relay_operator_pubkey
   printf '%s' "$kp" | awk '/Secret/{print $3}' | tr -d '\n' > secrets/relay_operator_private_key
   chmod 600 secrets/relay_operator_pubkey secrets/relay_operator_private_key

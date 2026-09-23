@@ -203,6 +203,48 @@ pub struct ResolvedIdentity {
     pub tenant_principal_id: String,
 }
 
+/// Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId
+/// 单调 upsert，eventId 不大于已有值的报告按幂等成功忽略。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskStateReport {
+    /// 报告时的 history 长度；同一 workflow 内单调，重放时取到同一值
+    pub event_id: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<String>,
+
+    pub run_id: String,
+
+    pub status: TaskStatus,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting_reason: Option<String>,
+
+    /// 固定格式的业务 workflow ID
+    pub workflow_id: String,
+}
+
+/// TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
+/// status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
+/// WorkflowRef 进入 TERMINAL。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TaskStatus {
+    Canceled,
+
+    Completed,
+
+    Failed,
+
+    Running,
+
+    Terminated,
+
+    #[serde(rename = "TIMED_OUT")]
+    TimedOut,
+}
+
 /// Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
 /// kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

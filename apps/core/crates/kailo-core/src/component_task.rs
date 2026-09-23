@@ -72,7 +72,33 @@ pub async fn start<T: Serialize>(
         return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
     }
 
-    match temporal.start(workflow_id, WORKFLOW_TYPE, input).await {
+    // 同一版本的 execution 已经终结：再 Start 只会撞上 REJECT_DUPLICATE，
+    // Server 答「已存在」，而调用方会把它读成「已启动」——实际什么也没在跑。
+    // 终结的结果已在 TaskProjection 里；要重做就是新的事实版本与新的 ID。
+    match sqlx::query_scalar!(
+        "select projection_state from projection.workflow_ref where workflow_id = $1",
+        workflow_id
+    )
+    .fetch_one(pool)
+    .await
+    {
+        Ok(state) if state == "TERMINAL" => return Err(StatusCode::CONFLICT.into_response()),
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!(error = %e, workflow_id, "读取 WorkflowRef 失败");
+            return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+        }
+    }
+
+    let tenant = tenant_id.to_string();
+    let attributes = [
+        (crate::temporal::SA_TENANT, tenant.as_str()),
+        (crate::temporal::SA_KIND, input.kind.as_str()),
+    ];
+    match temporal
+        .start(workflow_id, WORKFLOW_TYPE, input, &attributes)
+        .await
+    {
         Ok(Started::Created { run_id }) => {
             mark_running(pool, workflow_id, Some(&run_id)).await;
             Ok(Some(run_id))
@@ -98,7 +124,7 @@ pub async fn start<T: Serialize>(
 /// 回填 run ID 并把投影状态推进到 RUNNING。
 ///
 /// 失败只记日志：execution 已经起来了，这里再报错会让调用方以为没启动而重试，
-/// 那比投影落后更糟。兜底由 `ListWorkflowExecutions` 对账作业承担（06 §3.1）。
+/// 那比投影落后更糟。兜底由 `workflow_reconcile` 的对账作业承担（06 §3.1）。
 async fn mark_running(pool: &PgPool, workflow_id: &str, run_id: Option<&str>) {
     if let Err(e) = sqlx::query!(
         "update projection.workflow_ref

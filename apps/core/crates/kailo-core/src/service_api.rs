@@ -16,7 +16,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::PgPool;
 
 use kailo_secrets::SecretStore;
@@ -87,20 +87,6 @@ pub fn router(state: ServiceState) -> Router {
         .with_state(state)
 }
 
-/// `ProjectTaskState` 的请求体（`.design/06` §3.1）。
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectTaskStateRequest {
-    pub workflow_id: String,
-    pub run_id: String,
-    /// history 事件序号。去重与排序都按它，不按到达顺序——Activity 会重试，
-    /// 也会乱序到达。
-    pub event_id: i64,
-    pub status: String,
-    pub waiting_reason: Option<String>,
-    pub progress: Option<String>,
-}
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectTaskStateResponse {
@@ -114,79 +100,28 @@ async fn project_task_state(
     State(state): State<ServiceState>,
     headers: HeaderMap,
     // body 放在最后：axum 的 extractor 顺序要求消费 body 的放最末
-    body: Result<Json<ProjectTaskStateRequest>, axum::extract::rejection::JsonRejection>,
+    body: Result<Json<contracts::TaskStateReport>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     if let Err(e) = authorize(&state, &headers).await {
         return e;
     }
-    let Ok(Json(req)) = body else {
+    let Ok(Json(report)) = body else {
         // 请求体不合法是调用方的错，Activity 侧应列入 NonRetryableErrorTypes：
         // 同样的体重试多少次都一样（06 §5.1）。
         return StatusCode::BAD_REQUEST.into_response();
     };
-
-    // 单调 upsert：只有更大的 event_id 才覆盖。`applied` 直接取决于这次写是否
-    // 真的更新了行——用返回的 last_event_id 与请求比对，不靠 rows_affected，
-    // 因为 ON CONFLICT DO UPDATE 的 WHERE 不成立时不返回行。
-    let updated = sqlx::query!(
-        r#"
-        insert into projection.task_projection
-            (workflow_id, run_id, last_event_id, status, waiting_reason, progress, updated_at)
-        values ($1, $2, $3, $4, $5, $6, now())
-        on conflict (workflow_id) do update set
-            run_id         = excluded.run_id,
-            last_event_id  = excluded.last_event_id,
-            status         = excluded.status,
-            waiting_reason = excluded.waiting_reason,
-            progress       = excluded.progress,
-            updated_at     = now()
-        where projection.task_projection.last_event_id < excluded.last_event_id
-        returning last_event_id
-        "#,
-        req.workflow_id,
-        req.run_id,
-        req.event_id,
-        req.status,
-        req.waiting_reason,
-        req.progress,
-    )
-    .fetch_optional(&state.pool)
-    .await;
-
-    match updated {
-        Ok(Some(row)) => (
+    match crate::task_projection::apply(&state.pool, &report, false).await {
+        Ok(Some(a)) => (
             StatusCode::OK,
             Json(ProjectTaskStateResponse {
-                applied: true,
-                last_event_id: row.last_event_id,
+                applied: a.applied,
+                last_event_id: a.last_event_id,
             }),
         )
             .into_response(),
-        // 没有返回行只有一种可能：已存在的 last_event_id 不小于本次。
-        // 回读它并按幂等成功返回，让调用方知道权威值是什么。
-        Ok(None) => match sqlx::query!(
-            "select last_event_id from projection.task_projection where workflow_id = $1",
-            req.workflow_id
-        )
-        .fetch_optional(&state.pool)
-        .await
-        {
-            Ok(Some(row)) => (
-                StatusCode::OK,
-                Json(ProjectTaskStateResponse {
-                    applied: false,
-                    last_event_id: row.last_event_id,
-                }),
-            )
-                .into_response(),
-            // 行不存在说明 WorkflowRef 还没建；那是 Core 在 Start 之前的职责，
-            // Worker 不能替它建（DD-48）。这是调用方错误，不重试。
-            Ok(None) => StatusCode::NOT_FOUND.into_response(),
-            Err(e) => unavailable(e),
-        },
-        Err(sqlx::Error::Database(e)) if e.is_foreign_key_violation() => {
-            StatusCode::NOT_FOUND.into_response()
-        }
+        // WorkflowRef 还没建：那是 Core 在 Start 之前的职责，Worker 不能替它建
+        // （DD-48）。这是调用方错误，不重试。
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(e) => unavailable(e),
     }
 }

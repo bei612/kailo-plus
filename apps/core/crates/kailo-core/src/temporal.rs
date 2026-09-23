@@ -12,12 +12,16 @@
 use std::collections::HashMap;
 
 use temporalio_client::{tonic, Client, ClientOptions, ConnectionOptions, Url};
-use temporalio_common::protos::temporal::api::common::v1::{Payload, Payloads, WorkflowType};
+use temporalio_common::protos::temporal::api::common::v1::{
+    Payload, Payloads, SearchAttributes, WorkflowExecution, WorkflowType,
+};
 use temporalio_common::protos::temporal::api::enums::v1::{
-    WorkflowIdConflictPolicy, WorkflowIdReusePolicy,
+    WorkflowExecutionStatus, WorkflowIdConflictPolicy, WorkflowIdReusePolicy,
 };
 use temporalio_common::protos::temporal::api::taskqueue::v1::TaskQueue;
-use temporalio_common::protos::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
+use temporalio_common::protos::temporal::api::workflowservice::v1::{
+    DescribeNamespaceRequest, DescribeWorkflowExecutionRequest, StartWorkflowExecutionRequest,
+};
 
 use crate::oidc::TokenSource;
 
@@ -47,6 +51,26 @@ pub enum Started {
     /// 不换 ID 重试——换 ID 就是分配了第二个业务 workflow ID（`DD-48`）。
     AlreadyStarted,
 }
+
+/// Describe 观察到的一个 execution。
+pub struct Observed {
+    pub run_id: String,
+    pub history_length: i64,
+    pub state: ObservedState,
+}
+
+pub enum ObservedState {
+    /// 仍在运行（含 Paused：暂停不是终态）
+    Open,
+    /// 已终结，映射到 TaskProjection 的封闭枚举
+    Closed(contracts::TaskStatus),
+    /// Server 返回了本客户端不认识的状态值。不猜：既不当运行也不当终态
+    Unrecognized(i32),
+}
+
+/// 本 namespace 固定登记的三个 Keyword Search Attribute（`.design/06` §2）。
+pub const SA_TENANT: &str = "KailoTenantId";
+pub const SA_KIND: &str = "KailoWorkflowKind";
 
 pub struct TemporalClient {
     client: Client,
@@ -93,14 +117,9 @@ impl TemporalClient {
         workflow_id: &str,
         workflow_type: &str,
         input: &impl serde::Serialize,
+        search_attributes: &[(&str, &str)],
     ) -> Result<Started, TemporalError> {
-        // 每次调用前刷新令牌；TokenSource 自己缓存到期前的值。
-        let token = self
-            .tokens
-            .token()
-            .await
-            .map_err(|e| TemporalError::Token(e.to_string()))?;
-        self.client.connection().set_api_key(Some(token));
+        self.refresh_token().await?;
 
         let json = serde_json::to_vec(input).map_err(|e| TemporalError::Encode(e.to_string()))?;
         let request = StartWorkflowExecutionRequest {
@@ -114,13 +133,15 @@ impl TemporalClient {
                 ..Default::default()
             }),
             input: Some(Payloads {
-                payloads: vec![Payload {
-                    // Go SDK 的默认 DataConverter 按这个 metadata 认 JSON；
-                    // 两侧编码不一致时 Workflow 会收到空输入而不是报错。
-                    metadata: HashMap::from([("encoding".to_owned(), b"json/plain".to_vec())]),
-                    data: json,
-                    ..Default::default()
-                }],
+                payloads: vec![raw_json_payload(json)],
+            }),
+            // 运维按 Tenant 或 kind 检索 execution 的唯一入口；投影字段只在
+            // Core 的 TaskProjection 里，不做 Search Attribute（06 §2）。
+            search_attributes: Some(SearchAttributes {
+                indexed_fields: search_attributes
+                    .iter()
+                    .map(|(k, v)| ((*k).to_owned(), json_payload(v)))
+                    .collect(),
             }),
             identity: IDENTITY.to_owned(),
             request_id: uuid::Uuid::new_v4().to_string(),
@@ -162,4 +183,103 @@ impl TemporalClient {
             }
         }
     }
+
+    async fn refresh_token(&self) -> Result<(), TemporalError> {
+        // 每次调用前刷新令牌；TokenSource 自己缓存到期前的值。
+        let token = self
+            .tokens
+            .token()
+            .await
+            .map_err(|e| TemporalError::Token(e.to_string()))?;
+        self.client.connection().set_api_key(Some(token));
+        Ok(())
+    }
+
+    /// 按固定 workflow ID 观察最新一次 run（`DD-48`：结果不明时只用该 ID 查）。
+    ///
+    /// `Ok(None)` 是 Server 明确答复 NotFound。它**不等于**「未启动」：已终结
+    /// 且超出 retention 的 execution 同样 NotFound，解释交给调用方按 WorkflowRef
+    /// 的创建时间与 retention 判断（`SF-TMP-07`）。
+    pub async fn describe(&self, workflow_id: &str) -> Result<Option<Observed>, TemporalError> {
+        self.refresh_token().await?;
+        let request = DescribeWorkflowExecutionRequest {
+            namespace: self.namespace.clone(),
+            execution: Some(WorkflowExecution {
+                workflow_id: workflow_id.to_owned(),
+                run_id: String::new(),
+            }),
+        };
+        let mut svc = self.client.connection().workflow_service();
+        let info = match svc
+            .describe_workflow_execution(tonic::Request::new(request))
+            .await
+        {
+            Ok(resp) => resp.into_inner().workflow_execution_info,
+            Err(status) if status.code() == tonic::Code::NotFound => return Ok(None),
+            Err(status) => {
+                return Err(TemporalError::Unknown(format!(
+                    "{}: {}",
+                    status.code(),
+                    status.message()
+                )))
+            }
+        };
+        let info = info.ok_or_else(|| TemporalError::Unknown("Describe 响应缺执行信息".into()))?;
+        use contracts::TaskStatus as T;
+        let state = match WorkflowExecutionStatus::try_from(info.status) {
+            Ok(WorkflowExecutionStatus::Running | WorkflowExecutionStatus::Paused) => {
+                ObservedState::Open
+            }
+            Ok(WorkflowExecutionStatus::Completed) => ObservedState::Closed(T::Completed),
+            Ok(WorkflowExecutionStatus::Failed) => ObservedState::Closed(T::Failed),
+            Ok(WorkflowExecutionStatus::Canceled) => ObservedState::Closed(T::Canceled),
+            Ok(WorkflowExecutionStatus::Terminated) => ObservedState::Closed(T::Terminated),
+            Ok(WorkflowExecutionStatus::TimedOut) => ObservedState::Closed(T::TimedOut),
+            // 按 ID Describe 取的是最新一次 run，ContinuedAsNew 不该出现在这里；
+            // 出现了就是不认识的情形，与未知值同样不猜
+            _ => ObservedState::Unrecognized(info.status),
+        };
+        Ok(Some(Observed {
+            run_id: info.execution.map(|e| e.run_id).unwrap_or_default(),
+            history_length: info.history_length,
+            state,
+        }))
+    }
+
+    /// namespace 的 retention。它是 Server 上的运行时事实，不另配一份：两处
+    /// 不一致时，NotFound 的解释会错到「把已过期的当成未启动」而重复执行。
+    pub async fn retention(&self) -> Result<std::time::Duration, TemporalError> {
+        self.refresh_token().await?;
+        let mut svc = self.client.connection().workflow_service();
+        let resp = svc
+            .describe_namespace(tonic::Request::new(DescribeNamespaceRequest {
+                namespace: self.namespace.clone(),
+                ..Default::default()
+            }))
+            .await
+            .map_err(|s| TemporalError::Unknown(format!("{}: {}", s.code(), s.message())))?
+            .into_inner();
+        let ttl = resp
+            .config
+            .and_then(|c| c.workflow_execution_retention_ttl)
+            .ok_or_else(|| TemporalError::Unknown("namespace 未返回 retention".into()))?;
+        Ok(std::time::Duration::new(
+            u64::try_from(ttl.seconds).unwrap_or(0),
+            u32::try_from(ttl.nanos).unwrap_or(0),
+        ))
+    }
+}
+
+/// Go SDK 的默认 DataConverter 按 `encoding: json/plain` 认 JSON；两侧编码不
+/// 一致时 Workflow 收到的是空输入而不是错误。
+fn raw_json_payload(data: Vec<u8>) -> Payload {
+    Payload {
+        metadata: HashMap::from([("encoding".to_owned(), b"json/plain".to_vec())]),
+        data,
+        ..Default::default()
+    }
+}
+
+fn json_payload(value: &str) -> Payload {
+    raw_json_payload(serde_json::to_vec(value).unwrap_or_default())
 }
