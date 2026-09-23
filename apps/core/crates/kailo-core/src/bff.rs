@@ -46,6 +46,8 @@ pub struct BffState {
     /// 撤权对**已建立流**生效的上界。请求路径上撤权立刻生效，长连接靠这个
     /// 周期回头看——它是一个必须被说出来的时间窗，不是实现细节。
     pub stream_readmit_seconds: u64,
+    /// 单份媒体的上界。压力在 BFF 侧先行设界，不透传给 Relay（`07` §5）。
+    pub media_max_bytes: u64,
 }
 
 /// 一次请求的执行身份。
@@ -108,6 +110,15 @@ pub fn router(state: BffState) -> Router {
         .route(
             "/api/v1/user-state/workspaces/{workspace_id}",
             axum::routing::put(crate::user_state::put_workspace_preference),
+        )
+        // 媒体也经 BFF 代签读写（DD-39）；上界在 BFF 侧先行设定
+        .route(
+            "/api/v1/workspaces/{workspace_id}/media",
+            axum::routing::post(crate::web_transport::upload_media),
+        )
+        .route(
+            "/api/v1/workspaces/{workspace_id}/media/{sha256}",
+            get(crate::web_transport::fetch_media),
         )
         .route(
             "/api/v1/workspaces/{workspace_id}/stream",

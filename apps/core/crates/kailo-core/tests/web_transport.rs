@@ -619,3 +619,96 @@ async fn run_logout(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
         "会话已撤后再注销应仍成功——注销是幂等的，重复调用不该报错"
     );
 }
+
+/// 媒体读写也经 BFF 代签（`DD-39`）。
+///
+/// 验四件事：上传拿得到 blob descriptor、按 sha256 取得回原字节、超限被拒、
+/// 撤权后拒绝。
+#[tokio::test]
+async fn media_round_trips_through_bff() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+    let outcome = std::panic::AssertUnwindSafe(run_media(&http, &e, &pool, &fx))
+        .catch_unwind()
+        .await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn run_media(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWorkspace) {
+    let base = format!("{}/api/v1/workspaces/{}/media", e.bff_url, fx.workspace);
+    let payload = b"kailo media probe".to_vec();
+
+    let resp = http
+        .post(&base)
+        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+        .header("x-kailo-oidc-subject", &fx.subject)
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .body(payload.clone())
+        .send()
+        .await
+        .expect("上传");
+    assert_eq!(resp.status(), reqwest::StatusCode::OK, "上传应成功");
+    let descriptor: serde_json::Value = resp.json().await.expect("blob descriptor");
+    let sha256 = descriptor["sha256"].as_str().expect("sha256").to_owned();
+    assert_eq!(sha256.len(), 64, "sha256 应为 64 位十六进制");
+
+    // 取回的必须逐字节等于上传的：Core 只是代签与转发，不该改动内容
+    let resp = http
+        .get(format!("{base}/{sha256}"))
+        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+        .header("x-kailo-oidc-subject", &fx.subject)
+        .send()
+        .await
+        .expect("取回");
+    assert_eq!(resp.status(), reqwest::StatusCode::OK, "取回应成功");
+    assert_eq!(
+        resp.bytes().await.expect("字节").to_vec(),
+        payload,
+        "内容必须逐字节一致"
+    );
+
+    // sha256 形状不对：不把路径段交给调用方拼
+    let resp = http
+        .get(format!("{base}/../../etc/passwd"))
+        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+        .header("x-kailo-oidc-subject", &fx.subject)
+        .send()
+        .await
+        .expect("非法路径");
+    assert!(
+        !resp.status().is_success(),
+        "非法 sha256 必须拒绝，得到 {}",
+        resp.status()
+    );
+
+    // 撤权后拒绝
+    sqlx::query("update identity.workspace_membership set state = 'REVOKING' where id = $1")
+        .bind(fx.workspace_membership)
+        .execute(pool)
+        .await
+        .expect("置 REVOKING");
+    let resp = http
+        .post(&base)
+        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+        .header("x-kailo-oidc-subject", &fx.subject)
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .body(payload)
+        .send()
+        .await
+        .expect("撤权后上传");
+    assert_eq!(
+        resp.status(),
+        reqwest::StatusCode::FORBIDDEN,
+        "撤权后上传必须拒绝"
+    );
+}

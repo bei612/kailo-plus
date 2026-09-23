@@ -321,3 +321,98 @@ pub fn identity_client(
         StatusCode::FORBIDDEN.into_response()
     })
 }
+
+/// 上传一份媒体到该 Workspace 的 Relay。
+///
+/// `DD-39`：Relay media 也由 BFF 以 actor identity 签名读写。Browser 不持
+/// signer，因此 Blossom 授权事件只能由 Core 代签。
+pub async fn upload_media(
+    State(state): State<BffState>,
+    Path(workspace_id): Path<Uuid>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    // 大小上界在 BFF 侧先行设定，不把压力透传给 Relay（`07` §5）。
+    // 超限是确定的拒绝，映射到 LIMIT 类，而不是让上游给一个不区分成因的错误。
+    if body.len() as u64 > state.media_max_bytes {
+        tracing::warn!(size = body.len(), "媒体超过登记上界");
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
+    let mime = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream")
+        .to_owned();
+
+    let scope = match admit_workspace(&state, &ctx, workspace_id).await {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let keys = match actor_keys(&state, &ctx).await {
+        Ok(k) => k,
+        Err(r) => return r,
+    };
+    let client = match identity_client(&state, &keys, &scope) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+
+    match client.upload_media(&state.http, body.to_vec(), &mime).await {
+        Ok(descriptor) => (StatusCode::OK, Json(descriptor)).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "媒体上传失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+/// 取回一份媒体。
+///
+/// 路径由 Core 拼成 `/media/<sha256>`，不接受调用方给出的任意路径——放开它
+/// 等于把 Relay 的整个 HTTP 面变成一个可代签的代理。
+pub async fn fetch_media(
+    State(state): State<BffState>,
+    Path((workspace_id, sha256)): Path<(Uuid, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    // sha256 必须是 64 位十六进制。不校验就等于把路径段交给调用方拼。
+    if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let scope = match admit_workspace(&state, &ctx, workspace_id).await {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let keys = match actor_keys(&state, &ctx).await {
+        Ok(k) => k,
+        Err(r) => return r,
+    };
+    let client = match identity_client(&state, &keys, &scope) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+
+    match client
+        .fetch_media(&state.http, &format!("/media/{sha256}"))
+        .await
+    {
+        Ok((bytes, content_type)) => (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, content_type)],
+            bytes,
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "媒体取回失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}

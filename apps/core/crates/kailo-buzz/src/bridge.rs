@@ -418,3 +418,137 @@ impl IdentityClient {
         ))
     }
 }
+
+/// Relay 接受上传后回传的媒体描述（Blossom BUD-02 的 blob descriptor）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MediaDescriptor {
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
+impl IdentityClient {
+    /// 以该身份上传一份媒体（Blossom kind 24242）。
+    ///
+    /// `DD-39` 把 Relay media 也划进 BFF：Browser 不持 signer，因此这份授权事件
+    /// 只能由 Core 以 actor 身份签。
+    pub async fn upload_media(
+        &self,
+        http: &reqwest::Client,
+        bytes: Vec<u8>,
+        mime_type: &str,
+    ) -> Result<MediaDescriptor, OperatorError> {
+        let sha256 = hex::encode(Sha256::digest(&bytes));
+        // `x` 标签必须与 X-SHA-256 头一致：上游按头查 `x` 标签，对不上即拒。
+        // 两处各算一次会在实现漂移时给出一个不区分成因的 400。
+        let auth = self.blossom_auth("upload", "Upload file", Some(&sha256))?;
+        let url = self.transport.join("/upload")?;
+        let resp = http
+            .put(url)
+            .header(reqwest::header::HOST, &self.community_host)
+            .header("Authorization", auth)
+            .header("Content-Type", mime_type)
+            .header("X-SHA-256", &sha256)
+            .body(bytes)
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await?;
+        if !status.is_success() {
+            return Err(OperatorError::Rejected {
+                status: status.as_u16(),
+                body: text.chars().take(200).collect(),
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| OperatorError::Sign(e.to_string()))
+    }
+
+    /// 以该身份取回一份媒体，返回字节与 content-type。
+    pub async fn fetch_media(
+        &self,
+        http: &reqwest::Client,
+        path: &str,
+    ) -> Result<(Vec<u8>, String), OperatorError> {
+        // 路径由调用方给出，但必须限定在 media 命名空间内——放开它等于把
+        // Relay 的整个 HTTP 面变成一个可代签的代理。
+        if !path.starts_with("/media/") || path.contains("..") {
+            return Err(OperatorError::Sign(format!(
+                "媒体路径不在允许范围内: {path}"
+            )));
+        }
+        let auth = self.blossom_auth("get", "Get media", None)?;
+        let url = self.transport.join(path)?;
+        let resp = http
+            .get(url)
+            .header(reqwest::header::HOST, &self.community_host)
+            .header("Authorization", auth)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(OperatorError::Rejected {
+                status: status.as_u16(),
+                body: resp
+                    .text()
+                    .await
+                    .unwrap_or_default()
+                    .chars()
+                    .take(200)
+                    .collect(),
+            });
+        }
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_owned();
+        Ok((resp.bytes().await?.to_vec(), content_type))
+    }
+
+    /// 构造 Blossom 授权头。
+    ///
+    /// 编码用 base64url 无填充（BUD-11 规定的形式）。上游同时接受标准 base64
+    /// 以兼容 nostr-tools，但兼容分支不是我们该依赖的东西。
+    fn blossom_auth(
+        &self,
+        action: &str,
+        content: &str,
+        sha256: Option<&str>,
+    ) -> Result<String, OperatorError> {
+        let tag = |parts: [&str; 2]| {
+            Tag::parse(parts).map_err(|e| OperatorError::Sign(format!("tag: {e}")))
+        };
+        // 过期时间是授权的上界。给死一个短窗口而不是让调用方指定：
+        // 这份授权由 Core 代签，调用方没有理由决定它能用多久。
+        let expiration = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| OperatorError::Sign(e.to_string()))?
+            .as_secs()
+            + BLOSSOM_AUTH_TTL_SECS)
+            .to_string();
+        let mut tags = vec![tag(["t", action])?];
+        if let Some(x) = sha256 {
+            tags.push(tag(["x", x])?);
+        }
+        tags.push(tag(["expiration", &expiration])?);
+        tags.push(tag(["server", &self.community_host])?);
+
+        let event = EventBuilder::new(Kind::Custom(KIND_BLOSSOM_AUTH), content)
+            .tags(tags)
+            .sign_with_keys(&self.keys)
+            .map_err(|e| OperatorError::Sign(format!("Blossom 签名失败: {e}")))?;
+        let json = serde_json::to_string(&event).map_err(|e| OperatorError::Sign(e.to_string()))?;
+        Ok(format!(
+            "Nostr {}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json)
+        ))
+    }
+}
+
+/// Blossom 授权事件的 kind（BUD-01）。
+const KIND_BLOSSOM_AUTH: u16 = 24242;
+/// 授权有效期。短窗口：这份授权由 Core 代签，泄漏出去也只能用很短一段时间。
+const BLOSSOM_AUTH_TTL_SECS: u64 = 600;

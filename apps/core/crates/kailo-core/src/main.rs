@@ -100,6 +100,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "缺少 BFF_STREAM_READMIT_SECONDS")?
             .parse()
             .map_err(|_| "BFF_STREAM_READMIT_SECONDS 必须是秒数")?,
+        media_max_bytes: std::env::var("BFF_MEDIA_MAX_BYTES")
+            .map_err(|_| "缺少 BFF_MEDIA_MAX_BYTES")?
+            .parse()
+            .map_err(|_| "BFF_MEDIA_MAX_BYTES 必须是字节数")?,
     };
 
     let bff = tokio::net::TcpListener::bind(listen).await?;
