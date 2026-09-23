@@ -1,0 +1,28 @@
+# 格式见 apps/06-工程基线规范.md §2。字段含义冲突时以该节为准。
+project: buzz-web
+upstream_url: https://github.com/hardy4yooz/buzz-web.git
+
+# .design/02 §1 固定基线。Buzz Web 是三端共用主体的 TypeScript 那一份：
+# Desktop 复用同一主体，Mobile 另有 Dart 主体（DD-74）。
+evidence_commit: a6766c482533d028582d0efcfd3740769f86217c
+implementation_base_commit: a6766c482533d028582d0efcfd3740769f86217c
+base_divergence: none
+
+# 与 agentgateway 不同，这个上游**必须改**：SS-WEB-RELAY 要求整体移除浏览器
+# 直连 Relay 与本地 signer，SS-WEB-01 要求在构建期静态 route/navigation 里
+# 加入平台页面。两者都不是配置能表达的，因此有真实的 patch series。
+#
+# 改动以 patch series 形式保存而不是把 130 个源文件搬进本仓库：上游仍在演进，
+# 搬进来之后每次升级都变成手工比对，而 patch 能在新 commit 上直接重放并暴露冲突。
+patch_series: []
+patch_series_digest: none
+artifact_digest: sha256:e306bda7431c737d011942f1293fd5f8bd64939d808742e067738377d5fbc72c
+
+# Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
+build_context: web
+
+source_facts: [SF-WEB-01, SF-WEB-04, SF-WEB-05, SF-WEB-06, SF-WEB-07]
+source_seams: [SS-WEB-RELAY, SS-WEB-01]
+compatibility_evidence: [upstream-patches/buzz-web/verify/baseline-build.md]
+owner: team-platform
+last_reverified: 2026-09-23

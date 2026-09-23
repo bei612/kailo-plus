@@ -13,14 +13,14 @@ project="${1:?用法: tools/build-upstream.sh <project>}"
 manifest="upstream-patches/$project/baseline.yaml"
 [ -f "$manifest" ] || { echo "缺少 $manifest" >&2; exit 2; }
 
-read -r url commit base div <<EOF
+read -r url commit base div ctx <<EOF
 $(python3 - "$manifest" <<'PY'
 import re, sys
 raw = open(sys.argv[1], encoding="utf-8").read()
 def v(k):
     m = re.search(rf"^{k}:\s*(\S+)", raw, re.M)
     return m.group(1) if m else ""
-print(v("upstream_url"), v("evidence_commit"), v("implementation_base_commit"), v("base_divergence"))
+print(v("upstream_url"), v("evidence_commit"), v("implementation_base_commit"), v("base_divergence"), v("build_context") or ".")
 PY
 )
 EOF
@@ -41,6 +41,9 @@ git -C "$src" remote add origin "$url"
 git -C "$src" fetch -q --depth 1 origin "$base"
 git -C "$src" checkout -q FETCH_HEAD
 
+# 构建上下文可能在子目录下（例如 buzz-web 的 web/）。默认仓库根。
+[ -d "$src/$ctx" ] || { echo "build_context $ctx 不存在于源树" >&2; exit 2; }
+
 # patch series 按 manifest 顺序应用；为空表示不打补丁
 patch_dir="upstream-patches/$project/patches"
 if [ -d "$patch_dir" ]; then
@@ -59,7 +62,7 @@ echo "== 构建 $tag =="
 $SUDO docker build -q \
   --build-arg "VERSION=${base:0:12}" \
   --build-arg "GIT_REVISION=$base" \
-  -t "$tag" "$src" >/dev/null
+  -t "$tag" "$src/$ctx" >/dev/null
 # 推入本地 registry：自建产物只有 image ID，必须先入 registry 才能按 digest
 # 引用（ADR-06）。REGISTRY 由调用方给出，接入托管 registry 后只改这一个值。
 registry="${REGISTRY:?需要 REGISTRY，例如 127.0.0.1:55000}"
