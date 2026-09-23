@@ -23,8 +23,6 @@ use crate::audit::{append, AuditEntry};
 use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
 use crate::component_task::{self, ComponentTaskInput};
 
-/// 网关在原生 listener 上投影、在浏览器 listener 上移除的入口标识（DD-78）。
-const HEADER_CLIENT_SURFACE: &str = "x-kailo-client-surface";
 /// 登记端点的路径。持钥证明的 `u` 必须指向它：证明只对这一个动作有效。
 pub const REGISTER_PATH: &str = "/api/v1/identity/client-keys";
 /// NIP-98 HTTP Auth 事件
@@ -95,16 +93,8 @@ pub async fn register(
         Ok(c) => c,
         Err(r) => return r,
     };
-    if headers
-        .get(HEADER_CLIENT_SURFACE)
-        .and_then(|v| v.to_str().ok())
-        != Some("native")
-    {
-        return refuse(
-            StatusCode::FORBIDDEN,
-            ErrorClass::Denied,
-            ReasonCode::NativeSurfaceRequired,
-        );
+    if let Err(r) = crate::native::require_native(&headers) {
+        return r;
     }
     let Ok(Json(req)) = body else {
         return refuse(

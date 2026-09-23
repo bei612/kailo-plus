@@ -122,6 +122,43 @@ async fn run(
         .expect("会话 ID")
         .to_owned();
 
+    // Community 连接事实只给原生端：主机名就是 Community host（SF-BUZ-32）
+    let (status, facts) = native(
+        http,
+        n,
+        &access,
+        reqwest::Method::GET,
+        "/api/v1/native/community",
+        None,
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{facts}");
+    let host = facts["communityHost"]
+        .as_str()
+        .expect("communityHost")
+        .to_owned();
+    let relay_url = facts["relayUrl"].as_str().expect("relayUrl");
+    assert_eq!(
+        reqwest::Url::parse(relay_url).expect("relayUrl").host_str(),
+        Some(host.as_str()),
+        "原生端连接地址的主机名必须就是 Community host"
+    );
+    let (status, body) = browser(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::GET,
+        "/api/v1/native/community",
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::FORBIDDEN,
+        "浏览器不得拿到 Relay 地址：{body}"
+    );
+    assert_eq!(body["reason"], "NATIVE_SURFACE_REQUIRED");
+
     // 令牌不带或伪造：网关在 BFF 之前拒绝
     let no_token = http
         .get(format!("{}/api/v1/session", n.native_url))

@@ -305,6 +305,11 @@ services:
       BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS: ${BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
       # 每人可同时登记的原生设备上界（DD-77）
       BFF_CLIENT_KEYS_PER_PRINCIPAL: ${BFF_CLIENT_KEYS_PER_PRINCIPAL:?必须显式提供，禁止硬编码}
+      # 原生端直连 Relay 的地址模板，{host} 由 Community host 代入（DD-75/78）。
+      # 它是「原生端从哪里能连到 Relay」的部署事实，与 BFF 自己连 Relay 用的
+      # BUZZ_RELAY_WS_URL 不是一回事——后者是网内地址，前者要在客户端所在网络可达，
+      # 且主机名必须就是 Community host（Relay 按 Host 绑定 Community，SF-BUZ-32）。
+      BUZZ_RELAY_NATIVE_URL_TEMPLATE: ${BUZZ_RELAY_NATIVE_URL_TEMPLATE:?必须显式提供，禁止硬编码}
       # service API 与 BFF 分端口：网关以 pathPrefix: / 整体转发给 BFF，
       # 同端口的服务面等于对任何已登录用户开放。
       SERVICE_LISTEN: ${SERVICE_BIND_ADDR:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}

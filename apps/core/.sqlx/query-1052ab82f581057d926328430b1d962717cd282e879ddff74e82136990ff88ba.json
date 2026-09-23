@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select normalized_host from projection.tenant_buzz_binding\n         where tenant_id = $1 and state = 'ACTIVE'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "normalized_host",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1052ab82f581057d926328430b1d962717cd282e879ddff74e82136990ff88ba"
+}

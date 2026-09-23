@@ -11,6 +11,7 @@ mod identity_projection;
 mod membership_lifecycle;
 mod membership_projection;
 mod membership_state;
+mod native;
 mod oidc;
 mod platform_bootstrap;
 mod platform_views;
@@ -95,6 +96,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "缺少 BFF_CLIENT_KEYS_PER_PRINCIPAL")?
             .parse()
             .map_err(|_| "BFF_CLIENT_KEYS_PER_PRINCIPAL 必须是正整数")?,
+        relay_native_url_template: {
+            let t = std::env::var("BUZZ_RELAY_NATIVE_URL_TEMPLATE")
+                .map_err(|_| "缺少 BUZZ_RELAY_NATIVE_URL_TEMPLATE")?;
+            // 没有占位符就是一个固定地址：所有 Tenant 会被连到同一个 Community
+            if !t.contains("{host}") {
+                return Err("BUZZ_RELAY_NATIVE_URL_TEMPLATE 必须包含 {host}".into());
+            }
+            t
+        },
         session_ttl_seconds: std::env::var("PLATFORM_SESSION_TTL_SECONDS")
             .map_err(|_| "缺少 PLATFORM_SESSION_TTL_SECONDS")?
             .parse()

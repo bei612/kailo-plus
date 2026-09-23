@@ -34,6 +34,8 @@ pub struct BffState {
     pub client_key_proof_window_seconds: u64,
     /// 每人可同时登记的原生设备上界（DD-77）。超出是 LIMIT 类的确定拒绝。
     pub client_keys_per_principal: i64,
+    /// 原生端直连 Relay 的地址模板，含 `{host}` 占位（Community host）。
+    pub relay_native_url_template: String,
     /// PlatformSession 的有效期。它是部署事实，不是常量——不同部署对「多久要
     /// 重新过一次 OIDC」的要求不同。
     pub session_ttl_seconds: i64,
@@ -135,6 +137,8 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/identity/client-keys/{pubkey}",
             axum::routing::delete(crate::client_keys::revoke),
         )
+        // 原生端的 Community 连接事实（DD-75/78）；Web 拿不到
+        .route("/api/v1/native/community", get(crate::native::community))
         .route("/api/v1/user-state", get(crate::user_state::get_user_state))
         .route(
             "/api/v1/user-state/workspaces/{workspace_id}",

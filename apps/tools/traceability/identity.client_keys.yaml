@@ -32,7 +32,7 @@ implementation:
   migrations: [core/migrations/20260923040000_buzz_identity_multi_binding.up.sql, core/migrations/20260923050000_workflow_kind_buzz_identity.up.sql]
 
 runtime:
-  routes: ["/api/v1/identity/client-keys", "/api/v1/identity/client-keys/{pubkey}"]
+  routes: ["/api/v1/identity/client-keys", "/api/v1/identity/client-keys/{pubkey}", "/api/v1/native/community"]
   workflow_kinds: [BUZZ_IDENTITY_PROJECTION]
 
 release:
