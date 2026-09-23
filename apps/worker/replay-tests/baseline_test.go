@@ -23,8 +23,9 @@ func TestBaselineReplay(t *testing.T) {
 // .design/06 §2 把这件事定成发布前提：行为变更以 GetVersion changeID 门控，
 // 发布前对录制 history 用 WorkflowReplayer 回归，重放失败即阻断发布。
 //
-// 两个 kind 各录一份，不是凑数：它们走的是同一条链的两个方向（Present/Absent、
-// ACTIVE/REVOKED），只录一份会让另一个方向的确定性破坏漏过去。
+// 四个 kind 各录一份，不是凑数：它们的命令序列各不相同——成员两个 kind 是同一
+// 条链的两个方向（Present/Absent、ACTIVE/REVOKED），Tenant 走 provision→verify，
+// Workspace 走 SpiceDB→Channel。少录一份就让那条分支的确定性破坏漏过去。
 //
 // history 取自本地拓扑上真实跑通的执行（core/verify/membership-lifecycle.md
 // 记录的那条链），不是手工构造的事件序列——手工构造的 history 只能证明代码
@@ -41,6 +42,8 @@ func TestComponentTaskReplay(t *testing.T) {
 	for _, f := range []string{
 		"testdata/component_task_projection_history.json",
 		"testdata/component_task_revocation_history.json",
+		"testdata/component_task_tenant_lifecycle_history.json",
+		"testdata/component_task_workspace_lifecycle_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.ComponentTask,
