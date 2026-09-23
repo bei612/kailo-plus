@@ -35,9 +35,9 @@ runtime:
 release:
   artifacts:
     - name: kailo-core
-      digest: sha256:c11d06405818d1ab815a23adf856bd11b3950588a5781e07c623df39a6bac1cd
+      digest: sha256:d83b5057e4f47617a6e6e22554ffc6a1474114ea6ea6a7f095e77f2577cb7baf
     - name: kailo-worker
-      digest: sha256:2d4a48ed1b4cbe571e0bddccb07bb80bf9dbae452325704d22487e08e5f48b60
+      digest: sha256:5d82c8160acc5c13c468b73636a0b5e14ba15cf11141104e76864964b7833edc
     - name: upstream-buzz
       digest: sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
   gate: shipped

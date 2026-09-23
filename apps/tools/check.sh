@@ -272,10 +272,27 @@ for f in files:
         if want and r.get("stage") and r["stage"] != want:
             bad.append(f"{cid}: stage={r['stage']} 与覆盖矩阵对 {dd} 的归属 {want} 不一致")
     # 规则 6：exposure 高于 none 时 release.artifacts 必须有 digest
+    arts = ((r.get("release") or {}).get("artifacts")) or []
     if exposure and exposure != "none":
-        arts = ((r.get("release") or {}).get("artifacts")) or []
         if not arts or any(not a.get("digest") for a in arts):
             bad.append(f"{cid}: exposure={exposure} 但 release.artifacts 缺 digest")
+    # 记录里的 digest 必须指向真实在发的产物：上游镜像等于其 manifest 的
+    # artifact_digest，自建单元在 dist/ 中有对应的 SBOM。否则记录与实际发出的
+    # 东西脱节——重建镜像之后最容易出现，而且没有任何其他检查会发现。
+    for a in arts:
+        name, dg = a.get("name") or "", str(a.get("digest") or "")
+        if name.startswith("upstream-"):
+            mf = f"upstream-patches/{name[len('upstream-'):]}/baseline.yaml"
+            m = re.search(r"^artifact_digest:\s*(\S+)", open(mf, encoding="utf-8").read(), re.M) \
+                if os.path.exists(mf) else None
+            if not m:
+                bad.append(f"{cid}: 产物 {name} 找不到 {mf}")
+            elif dg != m.group(1):
+                bad.append(f"{cid}: 产物 {name} 的 digest 与 {mf} 的 artifact_digest 不一致")
+        elif name.startswith("kailo-"):
+            unit = name[len("kailo-"):]
+            if not os.path.exists(f"dist/{unit}.{dg.removeprefix('sha256:')}.spdx.json"):
+                bad.append(f"{cid}: 产物 {name} 的 digest 在 dist/ 中没有对应的发布产物")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
 if not files:
