@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update identity.buzz_identity_binding\n                     set state = $3, version = version + 1\n                     where tenant_id = $1 and pubkey = $2 and state = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c939fe4cf54a28fd0a09c008e2f91c814850c5cfb62f954b6e2ab0eef1ad6f8"
+}

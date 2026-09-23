@@ -322,40 +322,11 @@ async fn run(
             .expect("数 WorkflowRef");
     assert_eq!(refs, 1, "一个 ActionExecution 至多一个业务 Workflow");
 
-    // ---- 撤权 ----
-    //
-    // Core 先置 REVOKING 并立即拒绝新动作，再由 Workflow 撤投影（.design/09
-    // 第 5 步）。这一步在真实链路上由撤权动作的准入路径完成。
-    let before = sqlx::query_scalar::<_, i32>(
-        "update identity.tenant_membership set state = 'REVOKING', version = version + 1
-         where id = $1 returning version",
-    )
-    .bind(f.membership)
-    .fetch_one(pool)
-    .await
-    .expect("置 REVOKING");
-
-    let action = seed_action(pool, f, "membership.revoke").await;
-    assert_eq!(
-        start_lifecycle(http, e, token, "TENANT", f.membership, action).await,
-        reqwest::StatusCode::OK,
-        "启动撤权 Workflow（版本 {before}）"
-    );
-
-    let state = wait_for_state(pool, f.membership, "REVOKED", e.converge_bound_secs).await;
-    assert_eq!(state, "REVOKED", "撤权应收敛到 REVOKED");
-
-    assert!(
-        !spicedb_has(e, &tenant_object, "member", &subject),
-        "REVOKED 后 SpiceDB 不应再有该关系"
-    );
-    let roster = reader.roster(http, Scope::Relay).await.expect("读 roster");
-    assert!(
-        !roster.iter().any(|r| r.pubkey == member_hex),
-        "REVOKED 后 roster 不应再有该 pubkey，实际 {roster:?}"
-    );
-
     // ---- WORKSPACE scope ----
+    //
+    // 放在 Tenant 撤权**之前**：Tenant 撤权会把该 Principal 的 Buzz 身份一并置为
+    // REVOKED，之后它在任何 Workspace 上都不该还能操作。先撤 Tenant 再建
+    // Workspace 成员是现实里不会发生的顺序，拿它当核验只会验出一个假的通过。
     //
     // 同一条链的另一个目标层级：SpiceDB 客体换成 workspace，Buzz 侧从
     // relay roster 换成该 Workspace 绑定的 Channel roster（DD-41、DD-45）。
@@ -446,6 +417,39 @@ async fn run(
     assert!(
         !ch_roster.iter().any(|r| r.pubkey == member_hex),
         "REVOKED 后 Channel roster 不应再有该 pubkey，实际 {ch_roster:?}"
+    );
+
+    // ---- 撤权 ----
+    //
+    // Core 先置 REVOKING 并立即拒绝新动作，再由 Workflow 撤投影（.design/09
+    // 第 5 步）。这一步在真实链路上由撤权动作的准入路径完成。
+    let before = sqlx::query_scalar::<_, i32>(
+        "update identity.tenant_membership set state = 'REVOKING', version = version + 1
+         where id = $1 returning version",
+    )
+    .bind(f.membership)
+    .fetch_one(pool)
+    .await
+    .expect("置 REVOKING");
+
+    let action = seed_action(pool, f, "membership.revoke").await;
+    assert_eq!(
+        start_lifecycle(http, e, token, "TENANT", f.membership, action).await,
+        reqwest::StatusCode::OK,
+        "启动撤权 Workflow（版本 {before}）"
+    );
+
+    let state = wait_for_state(pool, f.membership, "REVOKED", e.converge_bound_secs).await;
+    assert_eq!(state, "REVOKED", "撤权应收敛到 REVOKED");
+
+    assert!(
+        !spicedb_has(e, &tenant_object, "member", &subject),
+        "REVOKED 后 SpiceDB 不应再有该关系"
+    );
+    let roster = reader.roster(http, Scope::Relay).await.expect("读 roster");
+    assert!(
+        !roster.iter().any(|r| r.pubkey == member_hex),
+        "REVOKED 后 roster 不应再有该 pubkey，实际 {roster:?}"
     );
 
     // 工作台看得到终态：Workflow 未完成最后一次投影即不视为 terminal（06 §3.1）

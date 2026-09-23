@@ -16,6 +16,7 @@ use contracts::{ErrorBody, ErrorClass, ReasonCode};
 use crate::audit;
 use kailo_identity::{resolve, session, IdentityError};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 /// 网关投影的两条 header。名字与 `SS-AGW-OIDC` 的 `set` 目标严格一致——
 /// 改这里而不改网关配置会让整条链静默失效。
@@ -29,12 +30,67 @@ pub struct BffState {
     /// PlatformSession 的有效期。它是部署事实，不是常量——不同部署对「多久要
     /// 重新过一次 OIDC」的要求不同。
     pub session_ttl_seconds: i64,
+    pub secrets: std::sync::Arc<kailo_secrets::SecretStore>,
+    pub http: reqwest::Client,
+    /// Relay 的网络地址；Community host 另从 binding 取（SF-BUZ-32）
+    pub relay_transport: String,
+    /// 历史查询的单页上界。NIP-11 声明的 1000 是 Relay 的上限，不是平台该放行
+    /// 的值——上界在 BFF 侧先行设定（`07` §5）。
+    pub message_page_limit: i64,
+}
+
+/// 一次请求的执行身份。
+///
+/// 它只由网关投影的 issuer/subject 解析而来，且必须伴随一条 active
+/// PlatformSession。任何 Browser 可控字段都不参与构造。
+pub struct ExecutionContext {
+    pub human_identity_id: Uuid,
+    pub tenant_id: Uuid,
+    pub tenant_principal_id: Uuid,
+    pub session_id: Uuid,
+}
+
+/// 解析执行身份，失败即返回可直接下发的响应。
+///
+/// 每个业务端点都从这里开始。它不缓存：撤权要对**下一个**请求生效，而缓存的
+/// 生命周期就是撤权失效的时间窗。
+pub async fn resolve_execution_context(
+    state: &BffState,
+    headers: &HeaderMap,
+) -> Result<ExecutionContext, Response> {
+    let header = |name: &str| -> Option<&str> { headers.get(name).and_then(|v| v.to_str().ok()) };
+    let identity = resolve(&state.pool, header(HEADER_ISSUER), header(HEADER_SUBJECT))
+        .await
+        .map_err(error_response)?;
+
+    let (Ok(human), Ok(membership), Ok(tenant), Ok(principal)) = (
+        identity.human_identity_id.parse(),
+        identity.tenant_membership_id.parse(),
+        identity.tenant_id.parse::<Uuid>(),
+        identity.tenant_principal_id.parse::<Uuid>(),
+    ) else {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    };
+    let s = session::ensure(&state.pool, human, membership, state.session_ttl_seconds)
+        .await
+        .map_err(|e| error_response(IdentityError::Unavailable(e)))?;
+    Ok(ExecutionContext {
+        human_identity_id: human,
+        tenant_id: tenant,
+        tenant_principal_id: principal,
+        session_id: s.id,
+    })
 }
 
 pub fn router(state: BffState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/api/v1/session", get(current_session))
+        // SS-WEB-RELAY：Browser 只发类型化语义命令，不发 raw event、不发任意 filter
+        .route(
+            "/api/v1/workspaces/{workspace_id}/messages",
+            get(crate::web_transport::query_messages).post(crate::web_transport::publish_message),
+        )
         .with_state(state)
 }
 

@@ -36,6 +36,8 @@ export VERIFY_ZED_ENV_FILE="$(pwd)/$local_dir/secrets/zed.env"
 export VERIFY_SPICEDB_ENDPOINT=spicedb:50051
 # Catalog Tenant 的 slug：核验要按它找到平台引导建立的那个 Tenant
 export PLATFORM_CATALOG_TENANT_SLUG
+# BFF 面：核验从 app 网络外经发布端口访问，与 Browser 经网关到达的是同一个 router
+export VERIFY_BFF_URL="http://127.0.0.1:${BFF_PORT}"
 # zed 镜像按 digest 引用（ADR-06），与 compose 中同一个
 export VERIFY_ZED_IMAGE="$(python3 -c '
 import re,io

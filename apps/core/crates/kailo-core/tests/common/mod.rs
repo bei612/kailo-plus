@@ -37,6 +37,8 @@ pub struct Env {
     pub spicedb_in_network: String,
     /// 平台引导建立的 Catalog Tenant 的 slug
     pub catalog_tenant_slug: String,
+    pub bff_url: String,
+    pub oidc_issuer: String,
 }
 
 /// 集成核验要显式开启（`KAILO_INTEGRATION=1`），不按「某个环境变量碰巧存在」
@@ -67,6 +69,8 @@ pub fn env() -> Option<Env> {
         zed_image: v("VERIFY_ZED_IMAGE")?,
         spicedb_in_network: v("VERIFY_SPICEDB_ENDPOINT")?,
         catalog_tenant_slug: v("PLATFORM_CATALOG_TENANT_SLUG")?,
+        bff_url: v("VERIFY_BFF_URL")?,
+        oidc_issuer: v("OIDC_ISSUER")?,
     })
 }
 
@@ -328,4 +332,316 @@ pub async fn cleanup(pool: &PgPool, f: &Fixture) {
         .await
         .unwrap_or(-1);
     assert_eq!(left, 0, "夹具 Tenant {} 没有被清掉", f.tenant);
+}
+
+/// 一个完全由真实生命周期产出的 Workspace 夹具。
+///
+/// 与 `seed_tenant_fixture` 的区别是它**不手工 seed 任何 Buzz 事实**：Tenant、
+/// Workspace、两级成员都经各自的 Workflow 产出，HUMAN 的 Buzz 身份因此是投影链
+/// 自己建起来的。只有 OIDC 侧的三张表是手工写的——Stage 1 不注册登录开户。
+pub struct LiveWorkspace {
+    pub tenant: Uuid,
+    pub workspace: Uuid,
+    pub principal: Uuid,
+    pub human: Uuid,
+    pub subject: String,
+    pub workspace_membership: Uuid,
+    pub provider: Uuid,
+}
+
+/// 启动一条生命周期 Workflow 并等它把目标推到 `want`。
+struct AwaitTarget<'a> {
+    endpoint: &'a str,
+    body: serde_json::Value,
+    table: &'a str,
+    id: Uuid,
+    want: &'a str,
+}
+
+async fn start_and_wait(
+    http: &reqwest::Client,
+    e: &Env,
+    token: &str,
+    pool: &PgPool,
+    t: AwaitTarget<'_>,
+) -> Result<(), String> {
+    let AwaitTarget {
+        endpoint,
+        body,
+        table,
+        id,
+        want,
+    } = t;
+    let status = http
+        .post(format!("{}{endpoint}", e.service_url))
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?
+        .status();
+    if !status.is_success() {
+        return Err(format!("{endpoint} 返回 {status}"));
+    }
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(e.converge_bound_secs);
+    loop {
+        let got: String = sqlx::query_scalar(&format!("select state from {table} where id = $1"))
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .map_err(|err| err.to_string())?;
+        if got == want {
+            return Ok(());
+        }
+        if std::time::Instant::now() > deadline {
+            return Err(format!("{table}/{id} 停在 {got}，未到 {want}"));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    }
+}
+
+async fn allowed_action(
+    pool: &PgPool,
+    tenant: Uuid,
+    initiator: Uuid,
+    target: Uuid,
+) -> Result<Uuid, String> {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "insert into admission.action_execution
+             (id, operation_id, tenant_id, action_key, action_version,
+              initiator_principal_id, actor_principal_id, target_id, parameter_hash,
+              gate_state, dispatch_state, correlation_id)
+         values ($1, $2, $3, 'verify.provision', 1, $4, $4, $5, 'verify',
+                 'ALLOWED', 'NOT_DISPATCHED', $6)",
+    )
+    .bind(id)
+    .bind(Uuid::new_v4())
+    .bind(tenant)
+    .bind(initiator)
+    .bind(target)
+    .bind(Uuid::new_v4())
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+pub async fn provision_live_workspace(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    token: &str,
+) -> Result<LiveWorkspace, String> {
+    let catalog: Uuid = sqlx::query_scalar("select id from identity.tenant where slug = $1")
+        .bind(&e.catalog_tenant_slug)
+        .fetch_one(pool)
+        .await
+        .map_err(|err| format!("Catalog Tenant 应由平台引导建立: {err}"))?;
+    let initiator = Uuid::new_v4();
+    sqlx::query("insert into identity.principal (id, tenant_id, kind, status) values ($1,$2,'SERVICE','ACTIVE')")
+        .bind(initiator).bind(catalog).execute(pool).await.map_err(|e| e.to_string())?;
+
+    // Tenant
+    let tenant = Uuid::new_v4();
+    let slug = format!("v{}", &tenant.to_string()[..8]);
+    sqlx::query(
+        "insert into identity.tenant (id, slug, name, state) values ($1,$2,$2,'PROVISIONING')",
+    )
+    .bind(tenant)
+    .bind(&slug)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    let action = allowed_action(pool, tenant, initiator, tenant).await?;
+    start_and_wait(
+        http,
+        e,
+        token,
+        pool,
+        AwaitTarget {
+            endpoint: "/service/v1/scopes/lifecycle",
+            body: serde_json::json!({"kind":"TENANT","id":tenant,"actionExecutionId":action}),
+            table: "identity.tenant",
+            id: tenant,
+            want: "ACTIVE",
+        },
+    )
+    .await?;
+
+    // Workspace
+    let workspace = Uuid::new_v4();
+    sqlx::query("insert into identity.workspace (id, tenant_id, slug, name, state) values ($1,$2,$3,$3,'PROVISIONING')")
+        .bind(workspace).bind(tenant).bind(format!("w{}", &workspace.to_string()[..8]))
+        .execute(pool).await.map_err(|e| e.to_string())?;
+    let action = allowed_action(pool, tenant, initiator, workspace).await?;
+    start_and_wait(
+        http,
+        e,
+        token,
+        pool,
+        AwaitTarget {
+            endpoint: "/service/v1/scopes/lifecycle",
+            body: serde_json::json!({"kind":"WORKSPACE","id":workspace,"actionExecutionId":action}),
+            table: "identity.workspace",
+            id: workspace,
+            want: "ACTIVE",
+        },
+    )
+    .await?;
+
+    // OIDC 侧身份：Stage 1 不注册登录开户，这三张表由夹具写
+    let human = Uuid::new_v4();
+    let provider = Uuid::new_v4();
+    let subject = format!("verify-{}", &human.to_string()[..8]);
+    sqlx::query("insert into identity.human_identity (id, display_name, status) values ($1,'verify','ACTIVE')")
+        .bind(human).execute(pool).await.map_err(|e| e.to_string())?;
+    sqlx::query("insert into identity.identity_provider (id, issuer, client_id, claim_mapping_version, status)
+                 values ($1,$2,$3,1,'ACTIVE') on conflict (issuer, client_id) do nothing")
+        .bind(provider).bind(&e.oidc_issuer).bind(&subject)
+        .execute(pool).await.map_err(|e| e.to_string())?;
+    let provider: Uuid = sqlx::query_scalar(
+        "select id from identity.identity_provider where issuer=$1 and client_id=$2",
+    )
+    .bind(&e.oidc_issuer)
+    .bind(&subject)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    sqlx::query("insert into identity.external_identity (id, provider_id, issuer, subject, human_identity_id, status)
+                 values ($1,$2,$3,$4,$5,'ACTIVE')")
+        .bind(Uuid::new_v4()).bind(provider).bind(&e.oidc_issuer).bind(&subject).bind(human)
+        .execute(pool).await.map_err(|e| e.to_string())?;
+
+    // Tenant 成员
+    let principal = Uuid::new_v4();
+    sqlx::query("insert into identity.principal (id, tenant_id, kind, status) values ($1,$2,'HUMAN','ACTIVE')")
+        .bind(principal).bind(tenant).execute(pool).await.map_err(|e| e.to_string())?;
+    let membership = Uuid::new_v4();
+    sqlx::query("insert into identity.tenant_membership (id, tenant_id, human_identity_id, tenant_principal_id, state)
+                 values ($1,$2,$3,$4,'PROVISIONING')")
+        .bind(membership).bind(tenant).bind(human).bind(principal)
+        .execute(pool).await.map_err(|e| e.to_string())?;
+    let action = allowed_action(pool, tenant, initiator, membership).await?;
+    start_and_wait(http, e, token, pool, AwaitTarget {
+        endpoint: "/service/v1/memberships/lifecycle",
+        body: serde_json::json!({"scope":"TENANT","membershipId":membership,"actionExecutionId":action}),
+        table: "identity.tenant_membership",
+        id: membership,
+        want: "ACTIVE",
+    })
+    .await?;
+
+    // Workspace 成员
+    let workspace_membership = Uuid::new_v4();
+    sqlx::query(
+        "insert into identity.workspace_membership (id, workspace_id, tenant_principal_id, state)
+                 values ($1,$2,$3,'PROVISIONING')",
+    )
+    .bind(workspace_membership)
+    .bind(workspace)
+    .bind(principal)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    let action = allowed_action(pool, tenant, initiator, workspace_membership).await?;
+    start_and_wait(http, e, token, pool, AwaitTarget {
+        endpoint: "/service/v1/memberships/lifecycle",
+        body: serde_json::json!({"scope":"WORKSPACE","membershipId":workspace_membership,"actionExecutionId":action}),
+        table: "identity.workspace_membership",
+        id: workspace_membership,
+        want: "ACTIVE",
+    })
+    .await?;
+
+    Ok(LiveWorkspace {
+        tenant,
+        workspace,
+        principal,
+        human,
+        subject,
+        workspace_membership,
+        provider,
+    })
+}
+
+pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace) {
+    // SpiceDB 侧：Workspace 归属与两级成员关系
+    for (object, relation, subject) in [
+        (
+            format!("workspace:{}", fx.workspace),
+            "tenant",
+            format!("tenant:{}", fx.tenant),
+        ),
+        (
+            format!("workspace:{}", fx.workspace),
+            "member",
+            format!("principal:{}", fx.principal),
+        ),
+        (
+            format!("tenant:{}", fx.tenant),
+            "member",
+            format!("principal:{}", fx.principal),
+        ),
+    ] {
+        let _ = std::process::Command::new("sudo")
+            .args([
+                "-n",
+                "docker",
+                "run",
+                "--rm",
+                "--network",
+                &e.docker_network,
+                "--env-file",
+                &e.zed_env_file,
+                "-e",
+                &format!("ZED_ENDPOINT={}", e.spicedb_in_network),
+                "-e",
+                "ZED_INSECURE=true",
+                &e.zed_image,
+                "relationship",
+                "delete",
+                &object,
+                relation,
+                &subject,
+            ])
+            .output();
+    }
+    for sql in [
+        "delete from identity.platform_session where human_identity_id = $2",
+        "delete from projection.workspace_buzz_binding where workspace_id in
+             (select id from identity.workspace where tenant_id = $1)",
+        "delete from identity.workspace_membership where workspace_id in
+             (select id from identity.workspace where tenant_id = $1)",
+        "delete from projection.task_projection where workflow_id in
+             (select workflow_id from projection.workflow_ref where tenant_id = $1)",
+        "delete from projection.workflow_ref where tenant_id = $1",
+        "delete from admission.action_execution where tenant_id = $1",
+        "delete from projection.tenant_buzz_binding where tenant_id = $1",
+        "delete from identity.buzz_identity_binding where tenant_id = $1",
+        "delete from identity.tenant_membership where tenant_id = $1",
+        "delete from identity.workspace where tenant_id = $1",
+        "delete from identity.principal where tenant_id = $1",
+        "delete from identity.tenant where id = $1",
+        "delete from identity.external_identity where human_identity_id = $2",
+        "delete from identity.human_identity where id = $2",
+        "delete from identity.identity_provider where id = $3",
+    ] {
+        if let Err(err) = sqlx::query(sql)
+            .bind(fx.tenant)
+            .bind(fx.human)
+            .bind(fx.provider)
+            .execute(pool)
+            .await
+        {
+            eprintln!("夹具清理失败：{sql}\n  {err}");
+        }
+    }
+    let left: i64 = sqlx::query_scalar("select count(*) from identity.tenant where id = $1")
+        .bind(fx.tenant)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(-1);
+    assert_eq!(left, 0, "夹具 Tenant {} 没有被清掉", fx.tenant);
 }

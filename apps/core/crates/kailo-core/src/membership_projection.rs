@@ -126,14 +126,43 @@ pub async fn project_buzz_roster(
         .converge(&state.http, scope, &plan.target_pubkey, want)
         .await
     {
-        Ok(()) => (
-            StatusCode::OK,
-            Json(BuzzProjectionResponse {
-                converged: true,
-                target_pubkey: plan.target_pubkey,
-            }),
-        )
-            .into_response(),
+        Ok(()) => {
+            // roster 查证通过才推进 BuzzIdentityBinding 的状态机
+            // （`.design/03` §2：`RECONCILING` 必须核对 Relay roster）。
+            //
+            // 只有 Tenant 层的撤权才把身份置为 `REVOKED`：退出一个 Workspace
+            // 不等于退出 Tenant，把身份撤掉会顺手把他在其他 Workspace 的协作面
+            // 也关了。Workspace 层的撤权只动 Channel roster。
+            let next = match (req.presence, req.scope) {
+                (TargetPresence::Present, _) => Some(("RECONCILING", "ACTIVE")),
+                (TargetPresence::Absent, MembershipScope::Tenant) => Some(("ACTIVE", "REVOKED")),
+                (TargetPresence::Absent, MembershipScope::Workspace) => None,
+            };
+            if let Some((from, to)) = next {
+                if let Err(e) = sqlx::query!(
+                    "update identity.buzz_identity_binding
+                     set state = $3, version = version + 1
+                     where tenant_id = $1 and pubkey = $2 and state = $4",
+                    plan.tenant_id,
+                    plan.target_pubkey,
+                    to,
+                    from,
+                )
+                .execute(&state.pool)
+                .await
+                {
+                    return unavailable(e);
+                }
+            }
+            (
+                StatusCode::OK,
+                Json(BuzzProjectionResponse {
+                    converged: true,
+                    target_pubkey: plan.target_pubkey,
+                }),
+            )
+                .into_response()
+        }
         // 未收敛是结果不明，不是拒绝：roster 快照可能落后，修复来自 Relay 的
         // 周期对账（SF-BUZ-34）。503 让 Activity 按其重试上界继续。
         Err(e @ OperatorError::NotConverged(_)) => {
@@ -149,6 +178,7 @@ pub async fn project_buzz_roster(
 
 /// 一次投影所需的全部事实，解析完就不再回库。
 struct Plan {
+    tenant_id: Uuid,
     community_host: String,
     /// `None` 表示 relay 层 roster
     channel_id: Option<String>,
@@ -248,7 +278,10 @@ async fn resolve(
 
     // 被投影的目标：该 Principal 的 Buzz pubkey。两种托管都要投影——撤权的
     // 执行点是 roster，与私钥在谁手里无关（DD-75、.design/10 §4）。
-    let target = sqlx::query!(
+    // 没有就现建一个。Buzz Web 的 HUMAN 是 SERVER 托管（DD-75），私钥由 Core
+    // 持有并只在内存中签名；撤权方向上**不**建——REVOKED 的身份不复活，
+    // 重新授权走新 binding version（.design/10 §4）。
+    let target = match sqlx::query_scalar!(
         "select pubkey from identity.buzz_identity_binding
          where tenant_id = $1 and principal_id = $2 and state <> 'REVOKED'",
         tenant_id,
@@ -257,9 +290,17 @@ async fn resolve(
     .fetch_optional(&state.pool)
     .await
     .map_err(Err)?
-    .ok_or(Ok(Refusal::NotFound(
-        "目标 Principal 没有可用的 BuzzIdentityBinding",
-    )))?;
+    {
+        Some(pubkey) => pubkey,
+        None if req.presence == TargetPresence::Present => {
+            ensure_human_identity(state, tenant_id, principal_id).await?
+        }
+        None => {
+            return Err(Ok(Refusal::NotFound(
+                "目标 Principal 没有可用的 BuzzIdentityBinding",
+            )))
+        }
+    };
 
     let channel_id = match workspace_id {
         None => None,
@@ -279,9 +320,10 @@ async fn resolve(
     };
 
     Ok(Plan {
+        tenant_id,
         community_host: binding.normalized_host,
         channel_id,
-        target_pubkey: target.pubkey,
+        target_pubkey: target,
         control_secret,
     })
 }
@@ -297,4 +339,62 @@ fn refusal_response(r: Refusal) -> Response {
             StatusCode::FORBIDDEN.into_response()
         }
     }
+}
+
+/// 为一个 HUMAN Principal 建立 SERVER 托管的 Buzz 身份。
+///
+/// Buzz Web 的 HUMAN 由 Core 代签（`DD-75`），因此私钥写进 OpenBao、只留
+/// SecretRef 三元组落库。原生端的 HUMAN 是 CLIENT 托管、本机持钥，它们的
+/// binding 由端上注册 pubkey 建立，不走这条路径。
+///
+/// 状态直接给 `RECONCILING`：此刻只有 Core 侧的事实，roster 还没投影。把它置为
+/// `ACTIVE` 要等 roster 查证通过——而那正是紧接着这一步要做的事。
+async fn ensure_human_identity(
+    state: &ServiceState,
+    tenant_id: Uuid,
+    principal_id: Uuid,
+) -> Result<String, Result<Refusal, sqlx::Error>> {
+    let keys = nostr::Keys::generate();
+    let locator = format!(
+        "{}/buzz-human/{tenant_id}/{principal_id}",
+        state.secret_mount
+    );
+    let version = state
+        .secrets
+        .write(&locator, "value", &keys.secret_key().to_secret_hex())
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "写 HUMAN 私钥失败");
+            Ok(Refusal::Denied("HUMAN 私钥无法托管"))
+        })?;
+
+    let pubkey = keys.public_key().to_hex();
+    sqlx::query!(
+        "insert into identity.buzz_identity_binding
+             (tenant_id, principal_id, pubkey, custody, private_key_secret_ref,
+              private_key_secret_version, private_key_secret_audience, kind, state)
+         values ($1, $2, $3, 'SERVER', $4, $5, $6, 'HUMAN', 'RECONCILING')
+         on conflict (tenant_id, principal_id) do nothing",
+        tenant_id,
+        principal_id,
+        pubkey,
+        locator,
+        version as i32,
+        state.secret_audience,
+    )
+    .execute(&state.pool)
+    .await
+    .map_err(Err)?;
+
+    // 并发下另一个请求可能先插入了。回读实际生效的那条，不用本地生成的值——
+    // 用错 pubkey 会把 roster 投影投到一个谁也不持有的身份上。
+    sqlx::query_scalar!(
+        "select pubkey from identity.buzz_identity_binding
+         where tenant_id = $1 and principal_id = $2",
+        tenant_id,
+        principal_id
+    )
+    .fetch_one(&state.pool)
+    .await
+    .map_err(Err)
 }

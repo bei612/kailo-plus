@@ -15,6 +15,7 @@ mod service_api;
 mod service_auth;
 mod temporal;
 mod tenant_lifecycle;
+mod web_transport;
 
 use std::net::SocketAddr;
 
@@ -80,6 +81,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "缺少 PLATFORM_SESSION_TTL_SECONDS")?
             .parse()
             .map_err(|_| "PLATFORM_SESSION_TTL_SECONDS 必须是秒数")?,
+        secrets: std::sync::Arc::clone(&secrets),
+        http: reqwest::Client::new(),
+        relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
+            .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
+        message_page_limit: std::env::var("BFF_MESSAGE_PAGE_LIMIT")
+            .map_err(|_| "缺少 BFF_MESSAGE_PAGE_LIMIT")?
+            .parse()
+            .map_err(|_| "BFF_MESSAGE_PAGE_LIMIT 必须是数字")?,
     };
 
     let bff = tokio::net::TcpListener::bind(listen).await?;
