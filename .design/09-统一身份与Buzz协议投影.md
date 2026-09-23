@@ -6,12 +6,12 @@
 
 | 层 | 对象 | 作用 |
 |---|---|---|
-| 边缘认证 | AgentGateway OIDC cookie session | authorization-code+PKCE、ID-token 校验与 browser session |
+| 边缘认证 | AgentGateway OIDC cookie session（Buzz Web）；AgentGateway jwtAuth Bearer（原生端，DD-78） | authorization-code+PKCE、ID-token 校验与 browser session；原生端为 RFC 8252 取得的访问令牌 |
 | 平台身份 | `HumanIdentity + ExternalIdentity + PlatformSession` | issuer+subject 唯一映射、Tenant membership 与业务 session |
 | 业务主体 | `Principal(HUMAN/AGENT/SERVICE)` | Tenant 成员、SpiceDB 关系、owner/actor/producer |
 | Buzz 协议身份 | `BuzzIdentityBinding(pubkey, secret_ref)` | NIP-42/NIP-98 与 event 签名 |
 
-OIDC subject 不是 Nostr pubkey，IdP role 不是 SpiceDB permission。AgentGateway 只把已验证 issuer/subject 送到内网 BFF；BFF 重新解析 ExternalIdentity/TenantMembership，禁止把 `jwt.groups` 直接写成 SpiceDB relationship。一个 HUMAN/AGENT Principal 在一个 Tenant 有独立 Buzz pubkey；CONTROL SERVICE identity 只用于 Community/roster 管理和该 Tenant 的 NIP-AE Memory Counterparty/解密边界，不代表人，不得成为 Resource/Asset owner 或业务 actor（DD-66）。
+OIDC subject 不是 Nostr pubkey，IdP role 不是 SpiceDB permission。AgentGateway 只把已验证 issuer/subject 送到内网 BFF；BFF 重新解析 ExternalIdentity/TenantMembership，禁止把 `jwt.groups` 直接写成 SpiceDB relationship。一个 HUMAN/AGENT Principal 在一个 Tenant 有自己的 Buzz pubkey，不与任何其他 Principal 共享；HUMAN 可同时持有 Web 的一把（SERVER 托管）与每台原生设备各一把（CLIENT 托管），全部归属同一 Principal（DD-77）；CONTROL SERVICE identity 只用于 Community/roster 管理和该 Tenant 的 NIP-AE Memory Counterparty/解密边界，不代表人，不得成为 Resource/Asset owner 或业务 actor（DD-66）。
 
 Agent Definition/Version 不持有运行身份。每个 Workspace AgentInstallation 创建独立 AgentPrincipal 与 BuzzIdentityBinding；同一 Definition 安装到两个 Workspace 时不得共享 pubkey、Delegation、runtime state 或额度归集（DD-25）。
 
@@ -68,6 +68,23 @@ Web 采用服务端托管的唯一理由是浏览器没有安全的持钥方式�
 - **协作数据平面的准入执行点是 Relay，不是 Core。** Relay 依自身源码顺序校验 signer、scope、membership 和 kind（`SF-BUZ-03/07`），`require_relay_membership=true` 是它成立的前提（`SF-BUZ-26`）。原生端本地签名后直接发布，Core 不在这条路径上，因此不得声称对原生端消息做过发布前 admission。Web 的「发布前 fresh admission」来自 Core 代签，是 Web 的附加能力，不是三端共同承诺。
 - **管理平面三端一律经 BFF。** 审批、云盘、知识库、智能问数、Agent、工具、额度、计费、审计与全部 Governed Action 都走 BFF over HTTPS，身份来自 OIDC 投影，与持钥方式无关。原生端不得以持有 Nostr 私钥为由绕过任一管理平面准入。
 - **撤权收敛不依赖持钥方。** 按 `10-授权审批与撤权一致性.md` §4，执行点是 SpiceDB relationship 与 Buzz relay/Channel roster；roster 移除后 Relay 拒绝该 pubkey，与私钥在谁手里无关。`secret_ref` 为空的 binding 不适用密钥轮换流程中依赖 Core 停止签名的步骤，其等价收敛手段是 roster 移除加已知连接关闭。
+
+### 原生端的认证入口与设备公钥登记
+
+原生端没有浏览器 cookie 会话，管理平面以 OAuth 2.0 for Native Apps（RFC 8252）进入：授权码 + PKCE，经系统浏览器登录、以本机回环地址接收回调，向 IdP 取得访问令牌，再以 Bearer 调用 AgentGateway 上**专供原生端的 listener**（DD-78）。该 listener 与浏览器 listener 同样在 gateway 阶段完成认证、清洗外来身份 header 并只投影 issuer/subject，区别只在认证方式：
+
+- 用 `jwtAuth`，模式必须是 `strict`、`audiences` 必须非空；上游缺省的 `optional` 放行无令牌请求，省略 audience 即关闭 audience 校验（SF-AGW-24、SF-AGW-11/19）；
+- 令牌校验后从请求中移除，不转发给 BFF（SF-AGW-24）；
+- 额外投影一条 `x-kailo-client-surface=native`，浏览器 listener 无条件移除同名 header。BFF 据此区分只对原生端开放的入口，而不是信任客户端自报。
+
+BFF 在两条 listener 之后是同一个服务，身份解析、PlatformSession、准入与审计完全相同；原生端不因持有 Nostr 私钥而获得任何额外的管理面权限。
+
+原生设备首次加入某 Tenant 时，在本机生成密钥对并向 BFF 登记公钥（DD-79）：
+
+1. 请求只接受原生 listener 投影的身份；Buzz Web 没有登记入口。
+2. 请求体携带以该私钥签名的 NIP-98 事件：`kind 27235`，`u` 为登记端点、`method` 为 `POST`，并带上调用方**当前 PlatformSession ID**；时间偏差不得超过部署登记的窗口。绑定会话使得截获的持钥证明无法被他人在自己的会话里重放，从而无法把别人的 pubkey 登记到自己名下。
+3. Core 校验签名与上述字段后建立 `custody=CLIENT`、`RECONCILING` 的 binding，启动 `BUZZ_IDENTITY_PROJECTION` 把该 pubkey 投入 relay roster 与此人全部 ACTIVE Workspace 的 Channel roster；全部查证后置 `ACTIVE`。超过设备上界是 `LIMIT` 类的确定拒绝。
+4. 撤销一台设备：binding 进入 `REVOKING`，同一 kind 把该 pubkey 从全部 roster 移出后置 `REVOKED`。成员撤权则由 `MEMBERSHIP_REVOCATION` 移出此人的全部 pubkey。
 
 ### 人类/Agent 正常 event（Buzz Web 路径）
 
