@@ -10,6 +10,7 @@ mod membership_projection;
 mod membership_state;
 mod oidc;
 mod platform_bootstrap;
+mod platform_views;
 mod scope_state;
 mod service_api;
 mod service_auth;
@@ -100,6 +101,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "缺少 BFF_STREAM_READMIT_SECONDS")?
             .parse()
             .map_err(|_| "BFF_STREAM_READMIT_SECONDS 必须是秒数")?,
+        stream_retry_millis: std::env::var("BFF_STREAM_RETRY_MILLIS")
+            .map_err(|_| "缺少 BFF_STREAM_RETRY_MILLIS")?
+            .parse()
+            .map_err(|_| "BFF_STREAM_RETRY_MILLIS 必须是毫秒数")?,
         media_max_bytes: std::env::var("BFF_MEDIA_MAX_BYTES")
             .map_err(|_| "缺少 BFF_MEDIA_MAX_BYTES")?
             .parse()

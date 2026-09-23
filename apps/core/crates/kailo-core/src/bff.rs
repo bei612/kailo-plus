@@ -46,6 +46,9 @@ pub struct BffState {
     /// 撤权对**已建立流**生效的上界。请求路径上撤权立刻生效，长连接靠这个
     /// 周期回头看——它是一个必须被说出来的时间窗，不是实现细节。
     pub stream_readmit_seconds: u64,
+    /// 断线后浏览器重连前的等待，经 SSE `retry:` 下发。重连由浏览器的
+    /// EventSource 自己做，间隔由服务端说了算——客户端里不写死任何时长。
+    pub stream_retry_millis: u64,
     /// 单份媒体的上界。压力在 BFF 侧先行设界，不透传给 Relay（`07` §5）。
     pub media_max_bytes: u64,
 }
@@ -106,6 +109,16 @@ pub fn router(state: BffState) -> Router {
         // 注销：必须在调用网关 logout **之前**。网关的 logout 是短路的，
         // 请求根本不到后端（SF-AGW-21），Core 无从得知注销发生过。
         .route("/api/v1/logout", axum::routing::post(logout))
+        // SS-WEB-01 的三个内置管理页所需的只读视图
+        .route(
+            "/api/v1/workspaces",
+            get(crate::platform_views::list_workspaces),
+        )
+        .route(
+            "/api/v1/workspaces/{workspace_id}/members",
+            get(crate::platform_views::list_members),
+        )
+        .route("/api/v1/audit", get(crate::platform_views::list_own_audit))
         .route("/api/v1/user-state", get(crate::user_state::get_user_state))
         .route(
             "/api/v1/user-state/workspaces/{workspace_id}",
@@ -147,17 +160,30 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
             // 会话在身份解析**之后**建立：解析不过就没有会话可用，撤权因此
             // 对下一个请求立刻生效，不需要等任何凭证过期（`.design/03` §4.1）。
             let (Ok(human), Ok(membership)) = (
-                identity.human_identity_id.parse(),
-                identity.tenant_membership_id.parse(),
+                identity.human_identity_id.parse::<uuid::Uuid>(),
+                identity.tenant_membership_id.parse::<uuid::Uuid>(),
             ) else {
                 tracing::warn!("解析出的身份 ID 不是 UUID");
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            };
+            // 显示名是 HumanIdentity 自己的字段（`.design/03`），只用于界面上认出
+            // 「这是我」；它不参与任何判定。取不到就是依赖不可用，照常 fail closed。
+            let display_name = match sqlx::query_scalar!(
+                "select display_name from identity.human_identity where id = $1",
+                human
+            )
+            .fetch_one(pool)
+            .await
+            {
+                Ok(n) => n,
+                Err(e) => return error_response(IdentityError::Unavailable(e)),
             };
             match session::ensure(pool, human, membership, state.session_ttl_seconds).await {
                 Ok(s) => (
                     StatusCode::OK,
                     Json(serde_json::json!({
                         "humanIdentityId": identity.human_identity_id,
+                        "displayName": display_name,
                         "tenantId": identity.tenant_id,
                         "tenantMembershipId": identity.tenant_membership_id,
                         "tenantPrincipalId": identity.tenant_principal_id,

@@ -40,6 +40,7 @@ pub struct Env {
     pub bff_url: String,
     pub oidc_issuer: String,
     pub stream_readmit_seconds: u64,
+    pub stream_retry_millis: u64,
 }
 
 /// 集成核验要显式开启（`KAILO_INTEGRATION=1`），不按「某个环境变量碰巧存在」
@@ -73,6 +74,7 @@ pub fn env() -> Option<Env> {
         bff_url: v("VERIFY_BFF_URL")?,
         oidc_issuer: v("OIDC_ISSUER")?,
         stream_readmit_seconds: v("BFF_STREAM_READMIT_SECONDS")?.parse().ok()?,
+        stream_retry_millis: v("BFF_STREAM_RETRY_MILLIS")?.parse().ok()?,
     })
 }
 
@@ -308,6 +310,9 @@ pub async fn cleanup(pool: &PgPool, f: &Fixture) {
         "delete from identity.buzz_identity_binding where tenant_id = $1",
         "delete from identity.tenant_membership where tenant_id = $1",
         "delete from identity.workspace where tenant_id = $1",
+        // 收藏/静音/已读挂在 principal 上（外键），必须先于 principal 删除
+        "delete from identity.collaboration_user_state where tenant_principal_id in
+             (select id from identity.principal where tenant_id = $1)",
         "delete from identity.principal where tenant_id = $1",
         "delete from identity.tenant where id = $1",
     ] {
@@ -342,6 +347,9 @@ pub async fn cleanup(pool: &PgPool, f: &Fixture) {
 /// Workspace、两级成员都经各自的 Workflow 产出，HUMAN 的 Buzz 身份因此是投影链
 /// 自己建起来的。只有 OIDC 侧的三张表是手工写的——Stage 1 不注册登录开户。
 pub struct LiveWorkspace {
+    /// Catalog Tenant 下的发起方 SERVICE Principal。它不属于夹具 Tenant，
+    /// 按 Tenant 清理够不着它，必须单独删。
+    pub initiator: Uuid,
     pub tenant: Uuid,
     pub workspace: Uuid,
     pub principal: Uuid,
@@ -436,6 +444,22 @@ pub async fn provision_live_workspace(
     pool: &PgPool,
     token: &str,
 ) -> Result<LiveWorkspace, String> {
+    let subject = format!("verify-{}", &Uuid::new_v4().to_string()[..8]);
+    provision_live_workspace_for(http, e, pool, token, &subject).await
+}
+
+/// 同上，但 OIDC subject 由调用方给定。
+///
+/// 真实浏览器走查要用 IdP 里一个真能登录的用户，它的 subject 由 IdP 签发、
+/// 不能由夹具编造；其余一切——Tenant、Workspace、两级成员、Buzz binding——
+/// 仍走与集成测试完全相同的 lifecycle Workflow。
+pub async fn provision_live_workspace_for(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    token: &str,
+    subject: &str,
+) -> Result<LiveWorkspace, String> {
     let catalog: Uuid = sqlx::query_scalar("select id from identity.tenant where slug = $1")
         .bind(&e.catalog_tenant_slug)
         .fetch_one(pool)
@@ -496,7 +520,7 @@ pub async fn provision_live_workspace(
     // OIDC 侧身份：Stage 1 不注册登录开户，这三张表由夹具写
     let human = Uuid::new_v4();
     let provider = Uuid::new_v4();
-    let subject = format!("verify-{}", &human.to_string()[..8]);
+    let subject = subject.to_owned();
     sqlx::query("insert into identity.human_identity (id, display_name, status) values ($1,'verify','ACTIVE')")
         .bind(human).execute(pool).await.map_err(|e| e.to_string())?;
     sqlx::query("insert into identity.identity_provider (id, issuer, client_id, claim_mapping_version, status)
@@ -558,6 +582,7 @@ pub async fn provision_live_workspace(
     .await?;
 
     Ok(LiveWorkspace {
+        initiator,
         tenant,
         workspace,
         principal,
@@ -624,6 +649,9 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
         "delete from identity.buzz_identity_binding where tenant_id = $1",
         "delete from identity.tenant_membership where tenant_id = $1",
         "delete from identity.workspace where tenant_id = $1",
+        // 收藏/静音/已读挂在 principal 上（外键），必须先于 principal 删除
+        "delete from identity.collaboration_user_state where tenant_principal_id in
+             (select id from identity.principal where tenant_id = $1)",
         "delete from identity.principal where tenant_id = $1",
         "delete from identity.tenant where id = $1",
         "delete from identity.external_identity where human_identity_id = $2",
@@ -640,10 +668,25 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
             eprintln!("夹具清理失败：{sql}\n  {err}");
         }
     }
-    let left: i64 = sqlx::query_scalar("select count(*) from identity.tenant where id = $1")
-        .bind(fx.tenant)
-        .fetch_one(pool)
+    if let Err(err) = sqlx::query("delete from identity.principal where id = $1")
+        .bind(fx.initiator)
+        .execute(pool)
         .await
-        .unwrap_or(-1);
-    assert_eq!(left, 0, "夹具 Tenant {} 没有被清掉", fx.tenant);
+    {
+        eprintln!("夹具清理失败（发起方 Principal）：{err}");
+    }
+    let left: i64 = sqlx::query_scalar(
+        "select (select count(*) from identity.tenant where id = $1)
+              + (select count(*) from identity.principal where id = $2)",
+    )
+    .bind(fx.tenant)
+    .bind(fx.initiator)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(-1);
+    assert_eq!(
+        left, 0,
+        "夹具 Tenant {} 或发起方 Principal {} 没有被清掉",
+        fx.tenant, fx.initiator
+    );
 }

@@ -189,9 +189,12 @@ async fn pump(
             // 也无从得知。交给上层重建连接——重建会重新走 snapshot。
             Some("AUTH") => return closed("会话中途要求重新认证".into(), tx).await,
             Some("CLOSED") => {
+                // NIP-01 允许 CLOSED 的 message 为空串。空原因往下传会变成一个
+                // 没有 data 的 SSE 帧，而浏览器不派发这种帧——客户端就看不到关闭。
                 let reason = parts
                     .get(2)
                     .and_then(Value::as_str)
+                    .filter(|r| !r.is_empty())
                     .unwrap_or("订阅被关闭")
                     .to_owned();
                 return closed(reason, tx).await;

@@ -1,0 +1,13 @@
+# 构建上下文用 allowlist：先排除一切，再只放回各 Dockerfile 真正 COPY 的路径。
+#
+# 上下文根是 apps/，其下有 deploy/local/secrets/（私钥、数据库口令）与
+# deploy/local/data/（OpenBao 存储）。denylist 的失败方式是「新加一个 secret
+# 文件忘了列」——它会被静默送进 Docker daemon 的构建上下文。allowlist 的失败
+# 方式是「新加一个源码目录忘了列」——构建当场报找不到文件。后者才是 fail closed。
+*
+!core/Cargo.toml
+!core/Cargo.lock
+!core/crates
+!core/.sqlx
+!worker
+**/target

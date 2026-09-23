@@ -107,12 +107,11 @@ pub async fn put_workspace_preference(
         return r;
     }
 
+    // updatedAt 由 upsert 用库时钟补上，不取调用方的值：三端时钟不一致时，
+    // 用谁的都会让「最后更新」这件事变得不可比较。
     let value = serde_json::json!({
         "starred": req.starred,
         "muted": req.muted,
-        // 时间由库给，不取调用方的值：三端时钟不一致时，用谁的都会让
-        // 「最后更新」这件事变得不可比较
-        "updatedAt": null,
     });
     upsert(
         &state,
@@ -121,6 +120,7 @@ pub async fn put_workspace_preference(
         "workspace_preferences",
         &workspace_id.to_string(),
         value,
+        Stamp::UpdatedAt,
     )
     .await
 }
@@ -176,15 +176,31 @@ pub async fn put_read_mark(
         }
     }
 
+    // 三端读写同一个值，格式必须是一个：RFC 3339，统一存成 UTC。不校验，
+    // 一端写进去的任意字符串在另一端就是解析不了的垃圾。
+    let Ok(last_read_at) = chrono::DateTime::parse_from_rfc3339(&req.last_read_at) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let last_read_at = last_read_at
+        .with_timezone(&chrono::Utc)
+        .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true);
     upsert(
         &state,
         &ctx,
         req.version,
         "read_contexts",
         &req.context_key,
-        serde_json::json!(req.last_read_at),
+        serde_json::json!(last_read_at),
+        Stamp::None,
     )
     .await
+}
+
+/// 写入时是否由库时钟补一个 `updatedAt`。
+#[derive(Clone, Copy)]
+enum Stamp {
+    None,
+    UpdatedAt,
 }
 
 /// 带乐观并发的单键写入。
@@ -198,15 +214,21 @@ async fn upsert(
     column: &str,
     key: &str,
     value: serde_json::Value,
+    stamp: Stamp,
 ) -> Response {
     // 列名来自本模块的两个调用点，不来自请求；这里只在两个字面量之间选。
+    // 时间戳用库时钟：多副本 Core 的进程时钟不保证一致（与 session 同一条规则）。
+    let value_sql = match stamp {
+        Stamp::None => "$3::jsonb",
+        Stamp::UpdatedAt => "($3::jsonb || jsonb_build_object('updatedAt', now()))",
+    };
     let sql = format!(
         "insert into identity.collaboration_user_state
              (tenant_principal_id, {column}, version, updated_at)
-         values ($1, jsonb_build_object($2::text, $3::jsonb), 1, now())
+         values ($1, jsonb_build_object($2::text, {value_sql}), 1, now())
          on conflict (tenant_principal_id) do update set
              {column} = jsonb_set(
-                 identity.collaboration_user_state.{column}, array[$2::text], $3::jsonb, true),
+                 identity.collaboration_user_state.{column}, array[$2::text], {value_sql}, true),
              version = identity.collaboration_user_state.version + 1,
              updated_at = now()
          where identity.collaboration_user_state.version = $4

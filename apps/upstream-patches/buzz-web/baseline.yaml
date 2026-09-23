@@ -14,15 +14,15 @@ base_divergence: none
 #
 # 改动以 patch series 形式保存而不是把 130 个源文件搬进本仓库：上游仍在演进，
 # 搬进来之后每次升级都变成手工比对，而 patch 能在新 commit 上直接重放并暴露冲突。
-patch_series: []
-patch_series_digest: none
-artifact_digest: sha256:e306bda7431c737d011942f1293fd5f8bd64939d808742e067738377d5fbc72c
+patch_series: [0001-bff-transport-and-platform-pages.patch]
+patch_series_digest: sha256:1f6f8492026f54b4f7ed98905dfa65faf5bfd7093008c7845d0d1a2e5689a306
+artifact_digest: sha256:cb855df6da5635976192de1f869ee7d7ac500edb07c59664b4d6f4e68bb285e6
 
 # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
 build_context: web
 
 source_facts: [SF-WEB-01, SF-WEB-04, SF-WEB-05, SF-WEB-06, SF-WEB-07]
 source_seams: [SS-WEB-RELAY, SS-WEB-01]
-compatibility_evidence: [upstream-patches/buzz-web/verify/baseline-build.md]
+compatibility_evidence: [upstream-patches/buzz-web/verify/baseline-build.md, upstream-patches/buzz-web/verify/web-surface.md]
 owner: team-platform
 last_reverified: 2026-09-23

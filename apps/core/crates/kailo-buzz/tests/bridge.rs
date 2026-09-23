@@ -99,7 +99,7 @@ async fn non_member_publish_is_rejected_and_member_publish_is_accepted() {
         .unwrap_or_else(|| panic!("创建后应至少属于一个 Channel，实际 {channels:?}"));
 
     let err = outsider_client
-        .publish_channel_message(&http, &channel_id, "should not pass")
+        .publish_channel_message(&http, &channel_id, "should not pass", &[])
         .await
         .expect_err("非成员发布必须被拒绝");
     assert!(
@@ -110,7 +110,7 @@ async fn non_member_publish_is_rejected_and_member_publish_is_accepted() {
     // Community owner 在 roster 中，其发布应被接受并返回 event id——
     // 该 id 是 operation outcome 与 audit evidence（.design/09 第 6 步）。
     let event_id = owner_client
-        .publish_channel_message(&http, &channel_id, "hello from core")
+        .publish_channel_message(&http, &channel_id, "hello from core", &[])
         .await
         .expect("成员发布应被接受");
     assert_eq!(
@@ -295,7 +295,7 @@ async fn roster_projection_converges_and_is_repeatable() {
 
     // 撤权是真的生效，不只是快照好看：roster 之外的 pubkey 发布必须被拒。
     let err = member_client
-        .publish_channel_message(&http, &channel_id, "should not pass")
+        .publish_channel_message(&http, &channel_id, "should not pass", &[])
         .await
         .expect_err("撤权后发布必须被拒绝");
     assert!(

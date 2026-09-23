@@ -8,13 +8,17 @@
 //! （撤权、Workspace 停用、Channel 重绑）就必然换一个 generation，因此客户端
 //! 不可能拿着旧 generation 悄悄续上一条本不该继续的流。
 //!
+//! 续流走 SSE 自带的协议，不另造：generation 作为事件 `id:` 下发，浏览器的
+//! EventSource 断线后自动重连并把它放进 `Last-Event-ID` 头带回来；重连间隔
+//! 由这里经 `retry:` 下发。客户端因此没有自己的重连循环，也没有写死的时长。
+//!
 //! 流只转发当前 active scope 的事件（`.design/09`）：filter 由 Core 构造并锁定
 //! 在该 Workspace 的 Channel 上，调用方没有提交 filter 的入口。
 
 use std::convert::Infallible;
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -23,25 +27,16 @@ use axum::{
 };
 use futures_util::stream::Stream;
 use kailo_buzz::stream::{subscribe, Frame};
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::bff::{resolve_execution_context, BffState};
 use crate::web_transport::{actor_keys, admit_workspace};
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StreamQuery {
-    /// 上次拿到的 generation。缺失或对不上都意味着要重新取 snapshot。
-    pub generation: Option<String>,
-}
-
 /// 打开一条 Workspace 事件流。
 pub async fn open_stream(
     State(state): State<BffState>,
     Path(workspace_id): Path<Uuid>,
-    Query(q): Query<StreamQuery>,
     headers: HeaderMap,
 ) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
@@ -61,7 +56,10 @@ pub async fn open_stream(
     // 是必要的：同一个 Channel 上不同人看到的 scope 一样，但撤权只影响其中一个，
     // 而撤权必须让那个人的旧 generation 失效。
     let generation = generation_of(&ctx.tenant_principal_id, &scope.channel_id, scope.version);
-    let resume = q.generation.as_deref() == Some(generation.as_str());
+    // 上次拿到的 generation 由 EventSource 放在 Last-Event-ID 里带回。
+    // 缺失或对不上都意味着要重新取 snapshot。
+    let resume =
+        headers.get("last-event-id").and_then(|v| v.to_str().ok()) == Some(generation.as_str());
 
     // snapshot 走 HTTP bridge，增量走 WS 订阅。两者用同一把钥匙、同一个
     // Community host，因此看到的 scope 是同一个。
@@ -112,6 +110,7 @@ pub async fn open_stream(
 
     Sse::new(frames(
         generation,
+        std::time::Duration::from_millis(state.stream_retry_millis),
         snapshot,
         sub,
         Readmission {
@@ -141,14 +140,19 @@ struct Readmission {
 /// 把 snapshot 与订阅帧拼成一条 SSE 流。
 fn frames(
     generation: String,
+    retry: std::time::Duration,
     snapshot: Option<serde_json::Value>,
     mut sub: kailo_buzz::stream::Subscription,
     readmit: Readmission,
 ) -> impl Stream<Item = Result<Event, Infallible>> {
     async_stream::stream! {
-        // generation 先发：客户端拿到它才知道这次是续流还是新流，
-        // 也才知道断线后该带什么回来。
-        yield Ok(Event::default().event("generation").data(generation));
+        // generation 先发，并作为 SSE id：浏览器记下它，断线重连时自动放进
+        // Last-Event-ID 带回来。后续事件不再带 id，浏览器保留的就一直是它。
+        yield Ok(Event::default()
+            .event("generation")
+            .id(generation.clone())
+            .retry(retry)
+            .data(&generation));
         if let Some(s) = snapshot {
             yield Ok(Event::default().event("snapshot").data(s.to_string()));
         }
@@ -188,8 +192,12 @@ fn frames(
                 }
                 // 历史与增量的分界。客户端据此知道"追平了"，在此之前不必
                 // 把每条事件都当成新消息去提示。
+                //
+                // data 不能为空：SSE 规范规定 data 缓冲为空的事件**不派发**，浏览器
+                // 会静默丢掉它，客户端于是永远停在「连接中」。带上 generation——
+                // 它本身也说明了「在哪一代上追平的」。
                 Frame::EndOfStored => {
-                    yield Ok(Event::default().event("live").data(""));
+                    yield Ok(Event::default().event("live").data(&generation));
                 }
                 // 关闭原因要发出去：客户端看到通道结束时必须能区分
                 // 「没有更多事件」与「连接断了」——前者不该重连，后者必须重连。

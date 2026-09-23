@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Web 端真实浏览器走查：经 AgentGateway 登录，在一个真实 Workspace 里收发消息、
+# 看成员与审计、经历一次 BFF 重启、注销。
+#
+# 集成测试在 HTTP 层证明 BFF 的每个端点成立；这里证明 Web 端代码真的按这些
+# 端点工作——SSE 续流、消息渲染、失败时的状态、注销顺序都在浏览器里。
+#
+# Workspace 由 verify_workspace 夹具经真实 lifecycle Workflow 开通，OIDC subject
+# 取自 IdP 里那个真能登录的核验用户。夹具在 stdin 关闭时拆除，trap 保证任何
+# 退出路径都会关闭它。
+#
+# 需要 Docker 权限（走查中途重启 core-bff，夹具拆除时清 SpiceDB 关系）。
+# 用法：core/verify/web-walkthrough.sh <证据输出目录>
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+. core/verify/integration-env.sh
+out="$(realpath -m "${1:?用法: web-walkthrough.sh <证据输出目录>}")"
+mkdir -p "$out"
+
+# 核验用户的 subject 由 IdP 签发。经 admin API 按用户名取回；口令从文件读入
+# 进程内存，不进命令行、不进环境变量。
+subject="$(python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "$KEYCLOAK_ADMIN_USER" \
+  "$local_dir/secrets/keycloak_admin_password" "$VERIFY_USER" <<'PY'
+import json, sys, urllib.parse, urllib.request
+port, realm, admin, pw_file, user = sys.argv[1:]
+base = f"http://127.0.0.1:{port}"
+body = urllib.parse.urlencode({
+    "grant_type": "password", "client_id": "admin-cli",
+    "username": admin, "password": open(pw_file).read().strip(),
+}).encode()
+token = json.load(urllib.request.urlopen(
+    f"{base}/realms/master/protocol/openid-connect/token", body))["access_token"]
+req = urllib.request.Request(
+    f"{base}/admin/realms/{realm}/users?exact=true&username={urllib.parse.quote(user)}",
+    headers={"Authorization": f"Bearer {token}"})
+users = json.load(urllib.request.urlopen(req))
+if len(users) != 1:
+    sys.exit(f"用户名 {user} 应恰好对应 1 个 IdP 用户，实际 {len(users)}")
+print(users[0]["id"])
+PY
+)"
+
+fifo="$(mktemp -u)"
+mkfifo "$fifo"
+(cd core && exec cargo run -q -p kailo-core --example verify_workspace -- "$subject") \
+  <"$fifo" >"$out/workspace.json" 2>"$out/fixture.log" &
+fixture=$!
+# 持有写端：夹具读 stdin 读到 EOF 才拆除，关掉它即触发拆除
+exec 3>"$fifo"
+cleanup() {
+  exec 3>&-
+  rm -f "$fifo"
+  # 拆除失败必须让整次走查失败：留下的 Tenant 是脏数据，而「走查通过」会把它藏起来
+  if ! wait "$fixture"; then
+    echo "夹具拆除失败，见 $out/fixture.log" >&2
+    exit 1
+  fi
+}
+trap cleanup EXIT
+
+while kill -0 "$fixture" 2>/dev/null && [ ! -s "$out/workspace.json" ]; do sleep 1; done
+[ -s "$out/workspace.json" ] || { cat "$out/fixture.log" >&2; exit 1; }
+workspace="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["workspace"])' "$out/workspace.json")"
+echo "Workspace 已开通：$workspace"
+
+node core/verify/web-walkthrough.mjs \
+  --gateway-port "$AGENTGATEWAY_PORT" --keycloak-port "$KEYCLOAK_PORT" \
+  --user "$VERIFY_USER" --password-file "$local_dir/secrets/verify_user_password" \
+  --compose-file "$local_dir/compose.yaml" --retry-millis "$BFF_STREAM_RETRY_MILLIS" \
+  --out "$out"
+
+# 注销前那条会话必须在 Core 里已被撤销，而不只是网关清了 cookie（SF-AGW-21）。
+# 按会话 ID 查，不按「此人有没有 ACTIVE 会话」查：IdP 会话还在时浏览器会重新
+# 登录并得到一条新会话，那是正确行为。
+revoked="$(tr -d '[:space:]' <"$out/revoked-session.txt")"
+[[ "$revoked" =~ ^[0-9a-f-]{36}$ ]] || { echo "revoked-session.txt 不是会话 ID" >&2; exit 1; }
+state="$(PGPASSWORD="$(cat "$local_dir/secrets/core_db_password")" psql -h 127.0.0.1 -p "$CORE_DB_PORT" \
+  -U "$CORE_DB_USER" -d "$CORE_DB_NAME" -tA -c \
+  "select status from identity.platform_session where id = '$revoked'")"
+echo "注销前的会话 $revoked：$state" | tee "$out/sessions.txt"
+[ "$state" = "REVOKED" ] || { echo "注销前的会话未被撤销" >&2; exit 1; }

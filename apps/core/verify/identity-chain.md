@@ -48,10 +48,13 @@ HTTP 200
 
 ## 核验夹具
 
-`core/verify/seed-identity.sh` 只登记 `.design/03` 已定义的字段。
-它不绕过 BFF 的任何判定——BFF 仍按 issuer/subject 查库，查不到照样拒绝。
-真实的 Tenant 与成员建立走 Stage 1 的 `TENANT_LIFECYCLE` /
-`MEMBERSHIP_PROJECTION` Workflow，不是这个脚本。
+上面几节的结果最初用一个手写 ACTIVE Tenant 与成员的脚本取得。该脚本已删除：
+现在的核验身份一律由 `core/crates/kailo-core/examples/verify_workspace.rs` 建立，
+它复用集成测试的夹具，Tenant、Workspace、两级成员与 Buzz binding 全部走
+`TENANT_LIFECYCLE`/`WORKSPACE_LIFECYCLE`/`MEMBERSHIP_PROJECTION` Workflow，
+只有 OIDC subject 取自 IdP 里真能登录的核验用户。经网关的整条链由
+`core/verify/web-walkthrough.sh` 在真实浏览器里重跑（见
+`upstream-patches/buzz-web/verify/web-surface.md`）。
 
 ## PlatformSession（2026-09-23）
 

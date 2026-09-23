@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select display_name from identity.human_identity where id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "display_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4094ae7ed9d1971410ed66d36cafb35001a40528c23922bd0842b1881c1d8979"
+}

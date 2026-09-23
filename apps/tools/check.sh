@@ -338,7 +338,7 @@ PY
 step_seam()     { hdr "8/10 上游 seam diff"
   if ! populated upstream-patches; then skip "尚无上游进入运行拓扑"; return 0; fi
   DESIGN="${DESIGN:-../.design}" python3 - <<'PY' || FAIL=1
-import glob, os, re, sys
+import glob, hashlib, os, re, sys
 d = os.environ["DESIGN"]
 t02 = open(glob.glob(f"{d}/02-*.md")[0], encoding="utf-8").read()
 known = set(re.findall(r"^\| ((?:SF|SS)-[A-Z]+-[A-Z0-9-]+) \|", t02, re.M))
@@ -369,9 +369,31 @@ for f in sorted(glob.glob("upstream-patches/*/baseline.yaml")):
         q = ref[5:] if ref.startswith("apps/") else ref
         if not os.path.exists(q):
             bad.append(f"{f}: compatibility_evidence 指向不存在的 {ref}")
+    # patch series 与其摘要。摘要 = 按 patch_series 顺序拼接各 patch 文件字节
+    # 后的 SHA-256；空 series 记 none。它把「manifest 声称打了哪些补丁」与
+    # 「目录里实际是哪些字节」钉在一起：改了 patch 却没重建、多放一个未登记
+    # 的 patch、或登记了却不存在，三种都在这里失败，而不是等到构建或上线。
+    series = lst("patch_series")
+    pdir = os.path.join(os.path.dirname(f), "patches")
+    present = sorted(os.path.basename(x) for x in glob.glob(os.path.join(pdir, "*.patch")))
+    for x in sorted(set(present) - set(series)):
+        bad.append(f"{f}: patches/{x} 未登记在 patch_series，构建不会应用它")
+    missing = sorted(set(series) - set(present))
+    for x in missing:
+        bad.append(f"{f}: patch_series 登记的 {x} 不存在")
+    if not missing:
+        want = "none"
+        if series:
+            h = hashlib.sha256()
+            for x in series:
+                h.update(open(os.path.join(pdir, x), "rb").read())
+            want = "sha256:" + h.hexdigest()
+        got = val("patch_series_digest")
+        if got != want:
+            bad.append(f"{f}: patch_series_digest 为 {got}，按 patch 实际字节应为 {want}——改了 patch 就必须重建并写回")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
-print(f"  \033[32mPASS\033[0m {n} 份 baseline manifest：commit 可追溯、设计引用闭合、证据可达")
+print(f"  \033[32mPASS\033[0m {n} 份 baseline manifest：commit 可追溯、设计引用闭合、证据可达、patch 与摘要一致")
 PY
   return 0
 }
@@ -442,37 +464,74 @@ for svc, spec in (d.get("services") or {}).items():
         if got != want:
             bad.append(f"{svc}: {key} 为 {got or '未设置'}，必须显式为 {want}")
 
-# SS-AGW-OIDC：身份 header 投影的三条硬约束
+# SS-AGW-OIDC：身份 header 投影的硬约束。
+#
+# 按 route 逐条检查是不够的：认证与投影挂在 listener 的 gateway 阶段，
+# 而 gateway 阶段先于选路执行（SF-AGW-22）。因此这里对**每条 route**算出
+# 它实际生效的那份 transformation——listener 级优先，退回 route 级——
+# 再逐条判定。没有任何一条能落在检查之外。
 agw_cfg = "deploy/local/agentgateway-config.yaml"
 if os.path.exists(agw_cfg):
     agw = yaml.safe_load(open(agw_cfg, encoding="utf-8"))
     PROJECTED = {"x-kailo-oidc-issuer", "x-kailo-oidc-subject"}
     FORBIDDEN_SOURCES = ("jwt.rawToken", "jwt.raw_token", "jwt.roles", "jwt.groups",
                          "jwt.realm_access", "jwt.resource_access")
-    found_route = False
+    # DD-73：AgentGateway 故意不把它当 hop-by-hop 清理（SF-AGW-20），
+    # 不显式删除就会把调用方的代理凭据转给 upstream。
+    MUST_REMOVE = {"proxy-authorization"}
+
+    def transform_of(node):
+        return ((node.get("policies") or {}).get("transformations") or {}).get("request") or {}
+
+    checked = 0
     for bind in agw.get("binds") or []:
         for lis in bind.get("listeners") or []:
-            for route in lis.get("routes") or []:
-                tr = ((route.get("policies") or {}).get("transformations") or {}).get("request") or {}
+            lis_name = lis.get("name") or "?"
+            lis_tr = transform_of(lis)
+            routes = lis.get("routes") or []
+            if not routes:
+                continue
+            for route in routes:
+                where = f"agentgateway {lis_name}/{route.get('name') or '?'}"
+                tr = lis_tr or transform_of(route)
                 if not tr:
+                    bad.append(f"{where}: 没有生效的 request transformation，身份不会被投影")
                     continue
-                found_route = True
+                checked += 1
                 sets = set((tr.get("set") or {}).keys())
-                removes = set(tr.get("remove") or [])
+                removes = {str(h).lower() for h in (tr.get("remove") or [])}
                 # 投影目标不得进入 remove：set 已保证要么是已验证的值、要么不存在
                 for h in sets & removes:
-                    bad.append(f"agentgateway: {h} 同时出现在 set 与 remove（SS-AGW-OIDC 禁止）")
+                    bad.append(f"{where}: {h} 同时出现在 set 与 remove（SS-AGW-OIDC 禁止）")
                 # 只许投影这两条，多一条都是扩大信任面
                 for h in sets - PROJECTED:
-                    bad.append(f"agentgateway: 投影了 {h}，SS-AGW-OIDC 只允许 {sorted(PROJECTED)}")
+                    bad.append(f"{where}: 投影了 {h}，SS-AGW-OIDC 只允许 {sorted(PROJECTED)}")
                 for h in PROJECTED - sets:
-                    bad.append(f"agentgateway: 缺少对 {h} 的 set，BFF 会因缺失而全部拒绝")
+                    bad.append(f"{where}: 缺少对 {h} 的 set，BFF 会因缺失而全部拒绝")
+                for h in MUST_REMOVE - removes:
+                    bad.append(f"{where}: 未删除 {h}，会把调用方的代理凭据转给 upstream（DD-73、SF-AGW-20）")
                 # 禁止投影 raw token 与角色 claim：授权在 Core 重做
                 for h, expr in (tr.get("set") or {}).items():
                     if any(s in str(expr) for s in FORBIDDEN_SOURCES):
-                        bad.append(f"agentgateway: {h} 取自 {expr}，禁止投影 raw token 或角色 claim")
-    if not found_route:
-        bad.append("agentgateway: 没有任何 request transformation，身份不会被投影")
+                        bad.append(f"{where}: {h} 取自 {expr}，禁止投影 raw token 或角色 claim")
+
+            # 认证同样必须挂在 listener 上：route 内联 OIDC 的 cookie 名由
+            # route key 派生，多条 route 各持互不相认的会话，登录跨 route
+            # 完不成（SF-AGW-22）。
+            lis_oidc = (lis.get("policies") or {}).get("oidc")
+            if not lis_oidc:
+                bad.append(f"agentgateway {lis_name}: OIDC 未挂在 listener 上，"
+                           f"多 route 会各持一套会话且新增 route 可绕开认证（SF-AGW-22）")
+            elif not (lis_oidc.get("logout") or {}).get("path"):
+                # logout 是可选项；缺了它，退出请求被当普通请求转给后端，
+                # 网关 cookie 原样留着，下一个请求就建起新会话（SF-AGW-23）
+                bad.append(f"agentgateway {lis_name}: OIDC 未配置 logout，退出后网关会话仍在（SF-AGW-23）")
+            for route in routes:
+                if ((route.get("policies") or {}).get("oidc")):
+                    bad.append(f"agentgateway {lis_name}/{route.get('name') or '?'}: "
+                               f"route 内联 OIDC，会与 listener 级会话互不相认（SF-AGW-22）")
+    if not checked:
+        bad.append("agentgateway: 没有任何 route 被身份投影覆盖")
 
 # SpiceDB 是访问允许/拒绝的权威（03 §1），部署的 schema 必须与 .design/03 §5
 # 的固定 schema 逐字相等。漂移不会让任何调用报错，只会静默改变授权判定。

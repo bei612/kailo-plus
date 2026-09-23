@@ -296,6 +296,9 @@ services:
       # 撤权对已建立流生效的上界。请求路径上撤权立刻生效，长连接靠这个周期
       # 回头看——它是一个必须被说出来的时间窗（07 §1）。
       BFF_STREAM_READMIT_SECONDS: ${BFF_STREAM_READMIT_SECONDS:?必须显式提供，禁止硬编码}
+      # 断线后浏览器重连前的等待，经 SSE retry: 下发。重连由浏览器的
+      # EventSource 自己做；间隔由部署决定，客户端代码里没有任何时长。
+      BFF_STREAM_RETRY_MILLIS: ${BFF_STREAM_RETRY_MILLIS:?必须显式提供，禁止硬编码}
       # 单份媒体的上界。压力在 BFF 侧先行设界，不透传给 Relay（07 §5）
       BFF_MEDIA_MAX_BYTES: ${BFF_MEDIA_MAX_BYTES:?必须显式提供，禁止硬编码}
       # service API 与 BFF 分端口：网关以 pathPrefix: / 整体转发给 BFF，
@@ -373,6 +376,21 @@ services:
       # Worker 自己的 client secret 与 SpiceDB 的 PSK；都不进 .env、不上命令行
       - ./secrets/worker.env
 
+  # Web 面：三端共用 TypeScript 主体的浏览器那一份（DD-74）。
+  # 镜像由 tools/build-upstream.sh 从固定 commit 加 patch series 构建——
+  # patch 把浏览器直连 Relay 与本地 signer 整体移除（SS-WEB-RELAY），
+  # 并换成经 BFF 的传输与平台页面（SS-WEB-01）。
+  #
+  # 它只是静态资源服务：没有后端逻辑、不持任何 secret、不连数据库。
+  # 因此只进 app 网络、不进 edge——对外只有 AgentGateway 一个入口，
+  # 绕过网关就等于绕过 OIDC。
+  buzz-web:
+    # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
+    # 必须一致，由 check.sh 校验。
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:cb855df6da5635976192de1f869ee7d7ac500edb07c59664b4d6f4e68bb285e6
+    networks: [app]
+    # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
+
   # AgentGateway 是 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。
   # 镜像由 tools/build-upstream.sh 从 .design/02 §1 的固定 commit 构建——
   # 该 commit 在 v1.6.0-alpha.1 之后且无 tag 包含它，发布镜像缺少
@@ -390,12 +408,18 @@ services:
         aliases: [gateway.kailo.local]
     depends_on:
       keycloak: { condition: service_healthy }
+      # 网关起来就该能服务 /app；web 未就绪时先失败，好过把 404 当成「页面没写」
+      buzz-web: { condition: service_healthy }
     environment:
       OIDC_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
       OIDC_BROWSER_CLIENT_ID: ${OIDC_BROWSER_CLIENT_ID:?必须显式提供，禁止硬编码}
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:?必须显式提供，禁止硬编码}
       # 端口只在 BFF_CONTAINER_PORT 一处取值：写两遍迟早有一天只改一处
       BFF_UPSTREAM: ${BFF_SERVICE_NAME:?必须显式提供，禁止硬编码}:${BFF_CONTAINER_PORT:?必须显式提供，禁止硬编码}
+      # WEB_CONTAINER_PORT 是镜像事实：buzz-web 的 Caddyfile 监听该端口。
+      # 它与 BFF_CONTAINER_PORT 不同——后者由 Core 从 env 读，前者烧在镜像里，
+      # 改它必须连着改 patch 并重建。
+      WEB_UPSTREAM: ${WEB_SERVICE_NAME:?必须显式提供，禁止硬编码}:${WEB_CONTAINER_PORT:?必须显式提供，禁止硬编码}
     env_file:
       # 浏览器客户端密钥由网关持有，浏览器不持有。文件在 gitignore 的 secrets/ 下。
       - ./secrets/browser-client.env

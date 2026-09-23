@@ -34,6 +34,70 @@ pub struct PublishRequest {
     /// 消息正文。它是业务数据，进 Relay 不进 Core——Core 只存 scope、owner、
     /// binding、准入、投影、审计与外部引用（`.design/01`）。
     pub content: String,
+    /// 先经 `upload_media` 上传、再随消息引用的媒体。
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
+}
+
+/// 一份已上传的媒体，即 `upload_media` 返回的 Blossom descriptor。
+#[derive(Debug, Deserialize)]
+pub struct Attachment {
+    pub url: String,
+    pub sha256: String,
+    #[serde(rename = "type")]
+    pub mime: String,
+    pub size: u64,
+}
+
+impl Attachment {
+    /// 按上游客户端的同一形式输出：正文追加一行 markdown，另带一条 NIP-92
+    /// `imeta`。形式必须与原生端一致，否则原生端收到 Web 发的图看不见
+    /// （上游 `formatImetaMediaLine`/`buildImetaTags`，`SF-BUZ-36`）。
+    ///
+    /// 只接受图片与视频：通用文件在上游还要带 filename 与链接文字，一期
+    /// Web 不提供那条入口。
+    ///
+    /// URL 只核结构：必须是**本 Workspace 的 Community host** 下的
+    /// `/media/<sha256>.<ext>`。不核它就等于让 BFF 替任何人签一条指向任意
+    /// 地址的引用。blob 是否存在、MIME 与大小是否属实，由 Relay 按自己的
+    /// sidecar 核对（`verify_imeta_blobs`），这里不再做一遍。
+    fn render(&self, community_host: &str) -> Option<(String, Vec<String>)> {
+        let kind = match self.mime.split_once('/') {
+            Some(("image", _)) => "image",
+            Some(("video", _)) => "video",
+            _ => return None,
+        };
+        if self.sha256.len() != 64 || !self.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            return None;
+        }
+        let url = reqwest::Url::parse(&self.url).ok()?;
+        let ext = url
+            .path()
+            .strip_prefix("/media/")?
+            .strip_prefix(self.sha256.as_str())?
+            .strip_prefix('.')?;
+        let ext_ok = (1..=8).contains(&ext.len())
+            && ext
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+        if url.host_str() != Some(community_host)
+            || !ext_ok
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return None;
+        }
+        let mut tag = vec![
+            "imeta".to_owned(),
+            format!("url {}", self.url),
+            format!("m {}", self.mime),
+            format!("x {}", self.sha256),
+        ];
+        if self.size > 0 {
+            tag.push(format!("size {}", self.size));
+        }
+        Some((format!("\n![{kind}]({})", self.url), tag))
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -78,8 +142,18 @@ pub async fn publish_message(
         Err(r) => return r,
     };
 
+    let mut content = req.content;
+    let mut media_tags = Vec::with_capacity(req.attachments.len());
+    for a in &req.attachments {
+        let Some((line, tag)) = a.render(&scope.community_host) else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        content.push_str(&line);
+        media_tags.push(tag);
+    }
+
     let event_id = match client
-        .publish_channel_message(&state.http, &scope.channel_id, &req.content)
+        .publish_channel_message(&state.http, &scope.channel_id, &content, &media_tags)
         .await
     {
         Ok(id) => id,

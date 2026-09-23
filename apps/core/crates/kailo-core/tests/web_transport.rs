@@ -210,10 +210,14 @@ async fn run_user_state(
     .await;
     assert_eq!(status, reqwest::StatusCode::OK);
     assert_eq!(body["version"], 0, "没设过偏好时版本为 0");
-    let rows: i64 = sqlx::query_scalar("select count(*) from identity.collaboration_user_state")
-        .fetch_one(pool)
-        .await
-        .expect("数行");
+    // 只数本夹具的 principal：别的用例或走查留下的行与这条断言无关
+    let rows: i64 = sqlx::query_scalar(
+        "select count(*) from identity.collaboration_user_state where tenant_principal_id = $1",
+    )
+    .bind(fx.principal)
+    .fetch_one(pool)
+    .await
+    .expect("数行");
     assert_eq!(rows, 0, "读取不得建行");
 
     // 收藏一个可见 Workspace
@@ -262,7 +266,8 @@ async fn run_user_state(
         "/api/v1/user-state/read",
         Some(serde_json::json!({
             "contextKey": channel.to_string(),
-            "lastReadAt": "2026-09-23T00:00:00Z",
+            // 带时区偏移写入，读回必须是同一时刻的 UTC 形式
+            "lastReadAt": "2026-09-23T08:00:00+08:00",
             "version": version,
         })),
     )
@@ -286,9 +291,38 @@ async fn run_user_state(
         true,
         "写另一个键不得抹掉先前的键，实际 {body}"
     );
+    assert_eq!(
+        body["readContexts"][channel.to_string()],
+        "2026-09-23T00:00:00Z",
+        "已读位置必须统一存成 UTC 的 RFC 3339——三端读的是同一个值"
+    );
+    let updated_at = body["workspacePreferences"][fx.workspace.to_string()]["updatedAt"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
     assert!(
-        body["readContexts"][channel.to_string()].is_string(),
-        "已读位置应在"
+        chrono::DateTime::parse_from_rfc3339(&updated_at).is_ok(),
+        "偏好的 updatedAt 必须由库时钟补上（.design/03），实际 {body}"
+    );
+
+    // 可见 Channel、但已读时间不是 RFC 3339：拒绝，而不是存一个别的端解析不了的串
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::PUT,
+        "/api/v1/user-state/read",
+        Some(serde_json::json!({
+            "contextKey": channel.to_string(),
+            "lastReadAt": "yesterday",
+            "version": body["version"],
+        })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::BAD_REQUEST,
+        "非 RFC 3339 的已读时间必须拒绝"
     );
 
     // 不可见的 Workspace：拒绝
@@ -372,20 +406,33 @@ async fn stream_delivers_snapshot_and_generation() {
 }
 
 /// 读若干 SSE 帧，直到拿到 `live`（追平）或超时。
+/// 一帧 SSE。`id` 与 `retry` 是 EventSource 续流协议的两半：浏览器记下 id，
+/// 断线后按 retry 等待，再把 id 放进 Last-Event-ID 带回来。
+#[derive(Debug)]
+struct SseFrame {
+    name: String,
+    data: String,
+    id: Option<String>,
+    retry: Option<u64>,
+}
+
+/// `last_event_id` 模拟 EventSource 重连时自动带回的那个头。
 async fn read_sse(
     http: &reqwest::Client,
     e: &Env,
     subject: &str,
     path: &str,
-) -> Result<Vec<(String, String)>, reqwest::StatusCode> {
+    last_event_id: Option<&str>,
+) -> Result<Vec<SseFrame>, reqwest::StatusCode> {
     use futures_util::StreamExt;
-    let resp = http
+    let mut req = http
         .get(format!("{}{path}", e.bff_url))
         .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", subject)
-        .send()
-        .await
-        .expect("打开 stream");
+        .header("x-kailo-oidc-subject", subject);
+    if let Some(id) = last_event_id {
+        req = req.header("last-event-id", id);
+    }
+    let resp = req.send().await.expect("打开 stream");
     if !resp.status().is_success() {
         return Err(resp.status());
     }
@@ -401,18 +448,31 @@ async fn read_sse(
         while let Some(idx) = buf.find("\n\n") {
             let block = buf[..idx].to_owned();
             buf = buf[idx + 2..].to_owned();
-            let mut name = String::new();
-            let mut data = String::new();
+            let mut f = SseFrame {
+                name: String::new(),
+                data: String::new(),
+                id: None,
+                retry: None,
+            };
+            // 按 SSE 规范分派：没有任何 data 行的事件浏览器**不会**派发
+            // （HTML Living Standard「dispatch the event」第 2 步）。这里若只看
+            // event: 行，就会比真实浏览器宽松，把浏览器收不到的帧当成已送达。
+            let mut has_data = false;
             for line in block.lines() {
                 if let Some(v) = line.strip_prefix("event:") {
-                    name = v.trim().to_owned();
+                    f.name = v.trim().to_owned();
                 } else if let Some(v) = line.strip_prefix("data:") {
-                    data.push_str(v.trim());
+                    has_data = true;
+                    f.data.push_str(v.trim());
+                } else if let Some(v) = line.strip_prefix("id:") {
+                    f.id = Some(v.trim().to_owned());
+                } else if let Some(v) = line.strip_prefix("retry:") {
+                    f.retry = v.trim().parse().ok();
                 }
             }
-            if !name.is_empty() {
-                let done = name == "live" || name == "closed";
-                frames.push((name, data));
+            if has_data && !f.name.is_empty() {
+                let done = f.name == "live" || f.name == "closed";
+                frames.push(f);
                 if done {
                     return Ok(frames);
                 }
@@ -437,10 +497,10 @@ async fn run_stream(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
     assert_eq!(status, reqwest::StatusCode::OK);
 
     let path = format!("/api/v1/workspaces/{}/stream", fx.workspace);
-    let frames = read_sse(http, e, &fx.subject, &path)
+    let frames = read_sse(http, e, &fx.subject, &path, None)
         .await
         .expect("首连应成功");
-    let names: Vec<&str> = frames.iter().map(|(n, _)| n.as_str()).collect();
+    let names: Vec<&str> = frames.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(
         names.first(),
         Some(&"generation"),
@@ -451,11 +511,23 @@ async fn run_stream(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
         "首连必须带 snapshot，实际 {names:?}"
     );
     assert!(names.contains(&"live"), "必须发 live 分界，实际 {names:?}");
-    let generation = frames[0].1.clone();
+    let generation = frames[0].data.clone();
+    // generation 同时是 SSE id：浏览器靠它续流，客户端不必自己记
+    assert_eq!(
+        frames[0].id.as_deref(),
+        Some(generation.as_str()),
+        "generation 帧必须以自身为 id，否则 EventSource 重连时带不回它"
+    );
+    // 重连间隔由服务端经 retry 下发，且就是部署登记的那个值
+    assert_eq!(
+        frames[0].retry,
+        Some(e.stream_retry_millis),
+        "retry 必须等于 BFF_STREAM_RETRY_MILLIS"
+    );
     let snapshot = frames
         .iter()
-        .find(|(n, _)| n == "snapshot")
-        .map(|(_, d)| d.clone())
+        .find(|f| f.name == "snapshot")
+        .map(|f| f.data.clone())
         .unwrap();
     assert!(
         snapshot.contains("before stream"),
@@ -463,31 +535,26 @@ async fn run_stream(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
     );
 
     // 带对的 generation 续流：不重发 snapshot
-    let resumed = read_sse(
-        http,
-        e,
-        &fx.subject,
-        &format!("{path}?generation={generation}"),
-    )
-    .await
-    .expect("续流应成功");
-    let names: Vec<&str> = resumed.iter().map(|(n, _)| n.as_str()).collect();
+    let resumed = read_sse(http, e, &fx.subject, &path, Some(&generation))
+        .await
+        .expect("续流应成功");
+    let names: Vec<&str> = resumed.iter().map(|f| f.name.as_str()).collect();
     assert!(
         !names.contains(&"snapshot"),
         "续流不得重发 snapshot，实际 {names:?}"
     );
 
     // 对不上的 generation：重新取 snapshot，而不是从猜测的位置接着读
-    let stale = read_sse(http, e, &fx.subject, &format!("{path}?generation=deadbeef"))
+    let stale = read_sse(http, e, &fx.subject, &path, Some("deadbeef"))
         .await
         .expect("旧 generation 也应能开流");
-    let names: Vec<&str> = stale.iter().map(|(n, _)| n.as_str()).collect();
+    let names: Vec<&str> = stale.iter().map(|f| f.name.as_str()).collect();
     assert!(
         names.contains(&"snapshot"),
         "generation 对不上必须重取 snapshot，实际 {names:?}"
     );
     assert_ne!(
-        stale[0].1, "deadbeef",
+        stale[0].data, "deadbeef",
         "服务端必须给出自己的 generation，不回显调用方的"
     );
 
@@ -497,7 +564,7 @@ async fn run_stream(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
         .execute(pool)
         .await
         .expect("置 REVOKING");
-    match read_sse(http, e, &fx.subject, &path).await {
+    match read_sse(http, e, &fx.subject, &path, None).await {
         Err(status) => assert_eq!(status, reqwest::StatusCode::FORBIDDEN, "撤权后开流必须被拒"),
         Ok(f) => panic!("撤权后不应开得起流，却拿到 {f:?}"),
     }
@@ -691,6 +758,8 @@ async fn run_media(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::
         resp.status()
     );
 
+    run_media_message(http, e, fx).await;
+
     // 撤权后拒绝
     sqlx::query("update identity.workspace_membership set state = 'REVOKING' where id = $1")
         .bind(fx.workspace_membership)
@@ -710,5 +779,110 @@ async fn run_media(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::
         resp.status(),
         reqwest::StatusCode::FORBIDDEN,
         "撤权后上传必须拒绝"
+    );
+}
+
+/// 1×1 PNG。Relay 按内容校验图片，不能拿任意字节冒充 image/png。
+const PNG_1X1: &str = "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63f8cfc0000003010100c9fe92ef0000000049454e44ae426082";
+
+/// 带媒体的消息（`SF-BUZ-36`）：形式与原生端一致，URL 只认本 Workspace 的
+/// Community host，blob 真伪由 Relay 按 sidecar 判定。
+async fn run_media_message(http: &reqwest::Client, e: &Env, fx: &common::LiveWorkspace) {
+    let base = format!("{}/api/v1/workspaces/{}", e.bff_url, fx.workspace);
+    let png = hex::decode(PNG_1X1).expect("PNG 常量");
+    let resp = http
+        .post(format!("{base}/media"))
+        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+        .header("x-kailo-oidc-subject", &fx.subject)
+        .header(reqwest::header::CONTENT_TYPE, "image/png")
+        .body(png)
+        .send()
+        .await
+        .expect("上传图片");
+    assert_eq!(resp.status(), reqwest::StatusCode::OK, "图片上传应成功");
+    let d: serde_json::Value = resp.json().await.expect("descriptor");
+    let (url, sha) = (d["url"].as_str().unwrap(), d["sha256"].as_str().unwrap());
+
+    let publish = |attachment: serde_json::Value| {
+        let req = http
+            .post(format!("{base}/messages"))
+            .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+            .header("x-kailo-oidc-subject", &fx.subject)
+            .json(&serde_json::json!({"content": "with media", "attachments": [attachment]}));
+        async move { req.send().await.expect("发布") }
+    };
+
+    // 正路：正文追加一行 markdown，另带 imeta，与原生端同形
+    let resp = publish(d.clone()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK, "带图消息应发布成功");
+    let event_id = resp.json::<serde_json::Value>().await.unwrap()["eventId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, page) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::GET,
+        &format!("/api/v1/workspaces/{}/messages", fx.workspace),
+        None,
+    )
+    .await;
+    let ev = page["events"]
+        .as_array()
+        .and_then(|a| a.iter().find(|ev| ev["id"] == event_id.as_str()))
+        .expect("发布的事件应能查回")
+        .clone();
+    assert_eq!(
+        ev["content"].as_str().unwrap(),
+        format!("with media\n![image]({url})"),
+        "正文形式必须与上游 formatImetaMediaLine 一致"
+    );
+    let imeta: Vec<&str> = ev["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t[0] == "imeta")
+        .expect("必须带 imeta")
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        imeta,
+        vec![
+            "imeta".to_owned(),
+            format!("url {url}"),
+            "m image/png".to_owned(),
+            format!("x {sha}"),
+            format!("size {}", d["size"]),
+        ],
+        "imeta 必须与上游 buildImetaTags 同序同形"
+    );
+
+    // 别人的地址：BFF 不替任何人签一条指向任意地址的引用
+    let mut foreign = d.clone();
+    foreign["url"] = url.replacen("://", "://evil.example.", 1).into();
+    assert_eq!(
+        publish(foreign).await.status(),
+        reqwest::StatusCode::BAD_REQUEST
+    );
+
+    // 非图片/视频：一期 Web 不提供通用文件入口
+    let mut file = d.clone();
+    file["type"] = "application/pdf".into();
+    assert_eq!(
+        publish(file).await.status(),
+        reqwest::StatusCode::BAD_REQUEST
+    );
+
+    // 谎报 MIME：结构上合法，但与 Relay 的 sidecar 不符——由 Relay 拒绝，
+    // BFF 不得报成功
+    let mut lying = d.clone();
+    lying["type"] = "image/jpeg".into();
+    assert!(
+        !publish(lying).await.status().is_success(),
+        "与 sidecar 不符的 imeta 必须被 Relay 拒绝"
     );
 }

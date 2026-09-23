@@ -44,15 +44,28 @@ git -C "$src" checkout -q FETCH_HEAD
 # 构建上下文可能在子目录下（例如 buzz-web 的 web/）。默认仓库根。
 [ -d "$src/$ctx" ] || { echo "build_context $ctx 不存在于源树" >&2; exit 2; }
 
-# patch series 按 manifest 顺序应用；为空表示不打补丁
+# patch series 按 manifest 的 patch_series 顺序应用；为空表示不打补丁。
+# 不按目录 glob：未登记的 patch 被悄悄打进去、或登记了的 patch 缺失却照常
+# 构建，产物都会与 manifest 声称的不一致。两种情况都在这里拒绝。
 patch_dir="upstream-patches/$project/patches"
-if [ -d "$patch_dir" ]; then
-  for p in "$patch_dir"/*.patch; do
-    [ -e "$p" ] || continue
-    echo "  应用 $(basename "$p")"
-    git -C "$src" apply "$(realpath "$p")"
-  done
-fi
+series_out=$(python3 - "$manifest" "$patch_dir" <<'PY'
+import glob, os, re, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r"^patch_series:\s*\[(.*?)\]", raw, re.M | re.S)
+series = [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
+present = {os.path.basename(x) for x in glob.glob(os.path.join(sys.argv[2], "*.patch"))}
+extra, missing = sorted(present - set(series)), sorted(set(series) - present)
+if extra or missing:
+    sys.exit(f"patch 目录与 patch_series 不一致：未登记 {extra}，缺失 {missing}")
+print("\n".join(series))
+PY
+) || exit 2
+mapfile -t series <<<"$series_out"
+for p in "${series[@]}"; do
+  [ -n "$p" ] || continue
+  echo "  应用 $p"
+  git -C "$src" apply "$(realpath "$patch_dir/$p")"
+done
 
 tag="kailo/upstream-$project:$base"
 echo "== 构建 $tag =="
@@ -72,11 +85,21 @@ $SUDO docker push -q "$remote" >/dev/null
 digest=$($SUDO docker inspect --format '{{index .RepoDigests 0}}' "$remote" | sed 's/.*@//')
 echo "  $remote@$digest"
 
-# 把 digest 写回 manifest：产物与 commit 的对应关系是可追溯性的落点
-python3 - "$manifest" "$digest" <<'PY'
-import re, sys
-p, digest = sys.argv[1], sys.argv[2]
+# 两个摘要一起写回 manifest：产物与 commit、与所打 patch 字节的对应关系是
+# 可追溯性的落点。同时写，所以 check.sh seam 看到 patch 摘要与目录一致，就
+# 意味着 artifact 正是由这些字节构建的；只改 patch 不重建，那一步当场失败。
+python3 - "$manifest" "$digest" "$patch_dir" "${series[@]}" <<'PY'
+import hashlib, os, re, sys
+p, digest, pdir = sys.argv[1], sys.argv[2], sys.argv[3]
+series = [x for x in sys.argv[4:] if x]
+ps = "none"
+if series:
+    h = hashlib.sha256()
+    for x in series:
+        h.update(open(os.path.join(pdir, x), "rb").read())
+    ps = "sha256:" + h.hexdigest()
 raw = open(p, encoding="utf-8").read()
+raw = re.sub(r"^patch_series_digest:.*$", f"patch_series_digest: {ps}", raw, count=1, flags=re.M)
 raw = re.sub(r"^artifact_digest:.*$", f"artifact_digest: {digest}", raw, count=1, flags=re.M)
 open(p, "w", encoding="utf-8").write(raw)
 PY

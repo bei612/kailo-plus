@@ -164,17 +164,26 @@ impl IdentityClient {
     /// event id 是 operation outcome 与 audit evidence（`.design/09` 第 6 步），
     /// 因此必须从 Relay 的响应里取，不能用本地算出的值——本地算得出不等于
     /// Relay 接受了它。
+    ///
+    /// `media_tags` 是 NIP-92 `imeta` 标签，每个是完整的一行（首元素为
+    /// `"imeta"`）。这里不校验它们：Relay 按自己存的 sidecar 核对 hash、MIME
+    /// 与大小（`verify_imeta_blobs`），那才是权威；这里再做一遍只会与之漂移。
     pub async fn publish_channel_message(
         &self,
         http: &reqwest::Client,
         channel_id: &str,
         content: &str,
+        media_tags: &[Vec<String>],
     ) -> Result<String, OperatorError> {
-        let tag = |parts: [&str; 2]| {
+        let parse = |parts: &[String]| {
             Tag::parse(parts).map_err(|e| OperatorError::Sign(format!("tag: {e}")))
         };
+        let mut tags = vec![parse(&["h".to_owned(), channel_id.to_owned()])?];
+        for t in media_tags {
+            tags.push(parse(t)?);
+        }
         let event = EventBuilder::new(Kind::Custom(9), content)
-            .tags(vec![tag(["h", channel_id])?])
+            .tags(tags)
             .sign_with_keys(&self.keys)
             .map_err(|e| OperatorError::Sign(format!("sign: {e}")))?;
 

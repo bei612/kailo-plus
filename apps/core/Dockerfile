@@ -1,5 +1,6 @@
 # Platform Core/BFF 的发布单元（00-实施总纲.md Stage 0 第 8 项）。
-# 构建上下文为 apps/，因为 core 需要读取 contracts/ 的 schema 校验同步。
+# 构建上下文为 apps/（与 worker 共用）；进入上下文的路径由 apps/.dockerignore
+# 的 allowlist 决定，secrets/ 与 data/ 不在其中。
 #
 # 多阶段：builder 产出静态二进制，runtime 只含二进制与运行所需证书。
 # 不在镜像内保留工具链、源码或依赖缓存——它们会进 SBOM 并放大攻击面。
