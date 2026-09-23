@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select b.pubkey from identity.buzz_identity_binding b\n         join identity.tenant_membership m\n           on m.tenant_principal_id = b.principal_id and m.tenant_id = b.tenant_id\n         where b.tenant_id = $1 and b.kind <> 'CONTROL'\n           and b.state = 'ACTIVE' and m.state = 'ACTIVE'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pubkey",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6a3038931b0286399c63038ddf4a7a608e1c7be09455250e66f69f2cb4b87487"
+}

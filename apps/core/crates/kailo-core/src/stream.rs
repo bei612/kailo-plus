@@ -19,7 +19,7 @@ use std::convert::Infallible;
 
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
@@ -61,6 +61,8 @@ pub async fn open_stream(
     let resume =
         headers.get("last-event-id").and_then(|v| v.to_str().ok()) == Some(generation.as_str());
 
+    let retry = std::time::Duration::from_millis(state.stream_retry_millis);
+
     // snapshot 走 HTTP bridge，增量走 WS 订阅。两者用同一把钥匙、同一个
     // Community host，因此看到的 scope 是同一个。
     let client = match crate::web_transport::identity_client(&state, &keys, &scope) {
@@ -86,7 +88,7 @@ pub async fn open_stream(
             Ok(v) => Some(v),
             Err(e) => {
                 tracing::warn!(error = %e, "取 snapshot 失败");
-                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                return upstream_unavailable(retry);
             }
         }
     };
@@ -104,13 +106,13 @@ pub async fn open_stream(
         Ok(s) => s,
         Err(e) => {
             tracing::warn!(error = %e, "建立订阅失败");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            return upstream_unavailable(retry);
         }
     };
 
     Sse::new(frames(
         generation,
-        std::time::Duration::from_millis(state.stream_retry_millis),
+        retry,
         snapshot,
         sub,
         Readmission {
@@ -121,6 +123,21 @@ pub async fn open_stream(
     ))
     .keep_alive(KeepAlive::default())
     .into_response()
+}
+
+/// 准入已过而上游（Relay）暂不可用时的回应。
+///
+/// 不能回 503：SSE 规范规定重连得到非 200 回应时浏览器「使连接失败」，永久停止
+/// 重连——一次 Relay 的短暂不可用就会让页面停在「刷新页面重连」。非 200 只留给
+/// 确定的拒绝（身份、撤权）。结果不明在带内表达：一个 `closed` 帧说明原因并带上
+/// 重连间隔，然后正常结束，浏览器按间隔自动重连。
+fn upstream_unavailable(retry: std::time::Duration) -> Response {
+    let frames = async_stream::stream! {
+        yield Ok::<_, Infallible>(
+            Event::default().event("closed").retry(retry).data("upstream-unavailable"),
+        );
+    };
+    Sse::new(frames).into_response()
 }
 
 /// 长连接的周期性再准入。

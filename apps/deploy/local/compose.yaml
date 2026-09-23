@@ -359,6 +359,14 @@ services:
       WORKFLOW_RECONCILE_INTERVAL_SECONDS: ${WORKFLOW_RECONCILE_INTERVAL_SECONDS:?必须显式提供，禁止硬编码}
       WORKFLOW_PROJECTION_FRESHNESS_SECONDS: ${WORKFLOW_PROJECTION_FRESHNESS_SECONDS:?必须显式提供，禁止硬编码}
       WORKFLOW_RECONCILE_BATCH: ${WORKFLOW_RECONCILE_BATCH:?必须显式提供，禁止硬编码}
+      # roster 与 Core 成员事实的对账周期（07 §3）。每轮以各 Tenant 的 CONTROL
+      # 身份读一次 relay roster 与每个 Channel roster，只度量、不修复。
+      ROSTER_RECONCILE_INTERVAL_SECONDS: ${ROSTER_RECONCILE_INTERVAL_SECONDS:?必须显式提供，禁止硬编码}
+      # 结果不明的消息发布按 event id 对账（DD-81）。settle 必须不小于 Relay 的
+      # 时间漂移窗口：超出窗口仍查不到，这条事件才确定不会再被接受（07 §1）。
+      PUBLISH_RECONCILE_INTERVAL_SECONDS: ${PUBLISH_RECONCILE_INTERVAL_SECONDS:?必须显式提供，禁止硬编码}
+      PUBLISH_RESULT_SETTLE_SECONDS: ${PUBLISH_RESULT_SETTLE_SECONDS:?必须显式提供，禁止硬编码}
+      PUBLISH_RECONCILE_BATCH: ${PUBLISH_RECONCILE_BATCH:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/openbao-core.env
       # Core 自己的 OIDC client secret；不进 .env、不上命令行
@@ -423,7 +431,7 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:36c306ed034787d5728d9ca726a9976c652e2395dc70ee3369fdbea52695e739
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:9cb1041bd702c9a1fa203f67388a10c7ddc75832f23af6be000a455538a057fc
     networks: [app]
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 
@@ -526,6 +534,14 @@ services:
           temporal operator namespace create --namespace "$$NAMESPACE" --retention "$$RETENTION"
           echo "namespace $$NAMESPACE 已创建，retention=$$RETENTION"
         fi
+        # 新建的 namespace 要等 Server 的 namespace 缓存刷新后才可见；在那之前
+        # 登记 Search Attribute 会报 not found。等它可见，超时即失败而不是跳过。
+        visible=no
+        for _ in $$(seq 1 30); do
+          if temporal operator search-attribute list --namespace "$$NAMESPACE" >/dev/null 2>&1; then visible=yes; break; fi
+          sleep 2
+        done
+        [ "$$visible" = yes ] || { echo "namespace $$NAMESPACE 在超时内不可见" >&2; exit 1; }
         # 固定登记三个 Keyword Search Attribute（.design/06 §2）。逐个判定已存在
         # 再建：重复创建会报错，而它是幂等的运行前提。
         for sa in KailoTenantId KailoWorkspaceId KailoWorkflowKind; do

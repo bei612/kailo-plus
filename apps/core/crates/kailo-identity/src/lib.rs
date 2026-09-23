@@ -35,18 +35,20 @@ impl IdentityError {
             Self::HeaderMissing | Self::Unknown | Self::MembershipNotActive => ErrorClass::Denied,
             // 能力未开放，不是身份不成立：修配置或重试都不会让它通过
             Self::TenantSelectionUnavailable => ErrorClass::Blocked,
-            // 依赖不可用时结果不明，不得当成拒绝：那会把可恢复故障写成永久否决
-            Self::Unavailable(_) => ErrorClass::Unknown,
+            // 依赖不可用：这次没法判定，不是拒绝——写成拒绝会把可恢复故障记成
+            // 永久否决。它也不是外部副作用结果不明（UNKNOWN 专指那个）：身份解析
+            // 只读，没有副作用。依赖恢复后重试即可（06 §4 的 PRECONDITION）。
+            Self::Unavailable(_) => ErrorClass::Precondition,
         }
     }
 
-    pub fn reason(&self) -> Option<ReasonCode> {
+    pub fn reason(&self) -> ReasonCode {
         match self {
-            Self::HeaderMissing => Some(ReasonCode::IdentityHeaderMissing),
-            Self::Unknown => Some(ReasonCode::IdentityUnknown),
-            Self::MembershipNotActive => Some(ReasonCode::TenantMembershipNotActive),
-            Self::TenantSelectionUnavailable => Some(ReasonCode::TenantSelectionNotAvailable),
-            Self::Unavailable(_) => None,
+            Self::HeaderMissing => ReasonCode::IdentityHeaderMissing,
+            Self::Unknown => ReasonCode::IdentityUnknown,
+            Self::MembershipNotActive => ReasonCode::TenantMembershipNotActive,
+            Self::TenantSelectionUnavailable => ReasonCode::TenantSelectionNotAvailable,
+            Self::Unavailable(_) => ReasonCode::DependencyUnavailable,
         }
     }
 }

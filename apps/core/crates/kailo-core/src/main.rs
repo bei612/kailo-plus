@@ -15,6 +15,8 @@ mod native;
 mod oidc;
 mod platform_bootstrap;
 mod platform_views;
+mod publish_reconcile;
+mod roster_reconcile;
 mod scope_state;
 mod service_api;
 mod service_auth;
@@ -102,6 +104,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         http: reqwest::Client::new(),
         temporal: std::sync::Arc::clone(&temporal),
     };
+
+    // roster 与成员事实的对账度量（07 §3）。它用 CONTROL 身份读 roster，与
+    // service API 共用同一份依赖。
+    roster_reconcile::spawn(
+        service_state.clone(),
+        &opentelemetry::global::meter("kailo-core"),
+        roster_reconcile::Config::from_env()?,
+    );
+
+    // 结果不明的消息发布按 event id 对账成确定结果（DD-81）
+    publish_reconcile::spawn(
+        service_state.clone(),
+        &opentelemetry::global::meter("kailo-core"),
+        publish_reconcile::Config::from_env()?,
+    );
 
     let bff_state = bff::BffState {
         pool: pool.clone(),

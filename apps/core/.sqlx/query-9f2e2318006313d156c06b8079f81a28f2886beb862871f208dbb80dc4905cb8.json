@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select count(*) as \"n!\",\n                  coalesce(extract(epoch from now() - min(d.occurred_at))::bigint, 0) as \"age!\"\n           from audit.audit_event d\n           join identity.tenant t on t.id = d.tenant_id\n           where d.event_type = 'DISPATCH' and d.action_key = $1\n             and not exists (\n                 select 1 from audit.audit_event o\n                 where o.operation_id = d.operation_id\n                   and o.event_type in ('OUTCOME', 'RECONCILIATION'))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "age!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "9f2e2318006313d156c06b8079f81a28f2886beb862871f208dbb80dc4905cb8"
+}

@@ -199,4 +199,9 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
+# Core 的 OpenBao AppRole 凭据由 openbao-init.sh 写入。compose 解析时要求每个
+# env_file 都存在——缺它连对 openbao 容器的 exec 都执行不了，而写它的恰恰是
+# 那一步。先放一个空文件：此时启动的 Core 缺 OPENBAO_ROLE_ID 会当场拒绝启动。
+[ -e secrets/openbao-core.env ] || { : > secrets/openbao-core.env; chmod 600 secrets/openbao-core.env; }
+
 printf '\n就绪。启动：docker compose --env-file .env -f compose.yaml up -d\n'

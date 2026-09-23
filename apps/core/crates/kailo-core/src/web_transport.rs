@@ -21,13 +21,17 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use kailo_buzz::bridge::{Custody, IdentityClient};
+use contracts::{ErrorBody, ErrorClass, ReasonCode};
+use kailo_buzz::bridge::{Custody, Delivery, IdentityClient};
 use kailo_secrets::SecretRef;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::audit::{append, AuditEntry};
 use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
+
+/// 消息发布的 action key。审计、对账与度量都按它找这一类动作。
+pub const PUBLISH_ACTION: &str = "workspace.message.publish";
 
 #[derive(Debug, Deserialize)]
 pub struct PublishRequest {
@@ -152,66 +156,137 @@ pub async fn publish_message(
         media_tags.push(tag);
     }
 
-    let event_id = match client
-        .publish_channel_message(&state.http, &scope.channel_id, &content, &media_tags)
-        .await
-    {
-        Ok(id) => id,
+    // 先签名：event id 在签完时就确定。把它连同 actor、scope、operation 落进
+    // DISPATCH 审计之后才发送——之后无论结果如何，这条消息动作都可关联
+    // （Stage 1 退出门禁），结果不明时也有一个能去 Relay 查证的键（DD-81）。
+    let event = match client.sign_channel_message(&scope.channel_id, &content, &media_tags) {
+        Ok(e) => e,
         Err(e) => {
-            tracing::warn!(error = %e, "发布被 Relay 拒绝或结果不明");
-            // 不区分拒绝与不明：两者对调用方的下一步都是「别当成已发出」。
-            // 真要区分得先能查证该 event 是否落库，而那要 event id——恰恰是
-            // 这次没拿到的东西。
+            tracing::warn!(error = %e, "签名失败");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-
-    // 退出门禁要求「每次消息动作可关联 actor、scope、operation、Buzz event 与
-    // AuditEvent」。五者在这一条记录里齐了：actor 是 principal，scope 是
-    // tenant+workspace，operation 是 operation_id，Buzz event 进 evidence。
+    let event_id = event.id.to_hex();
     let operation_id = Uuid::new_v4();
-    let entry = AuditEntry {
-        event_key: format!("message.publish:{event_id}"),
-        tenant_id: Some(ctx.tenant_id),
-        workspace_id: Some(workspace_id),
-        operation_id,
-        event_type: "OUTCOME",
-        human_identity_id: Some(ctx.human_identity_id),
-        initiator_principal_id: Some(ctx.tenant_principal_id),
-        actor_principal_id: Some(ctx.tenant_principal_id),
-        action_key: "workspace.message.publish",
-        action_version: 1,
-        component_type_key: "buzz",
-        target_type: Some("CHANNEL"),
-        target_id: Some(workspace_id),
-        // 正文不进审计。摘要也不进：它对正文可做字典攻击，而审计要的是
-        // 「谁在哪里做了什么」，不是「说了什么」（`.design/03` §9）。
-        parameter_hash: "NONE",
-        decision: "ALLOW",
-        result_code: "ACCEPTED",
-        result_exposure: "NONE",
-        evidence_refs: serde_json::json!([
-            { "kind": "BUZZ_EVENT_ID", "value": event_id },
-            { "kind": "PLATFORM_SESSION_ID", "value": ctx.session_id },
-        ]),
-        correlation_id: operation_id,
-    };
-    match state.pool.begin().await {
-        Ok(mut tx) => {
-            if let Err(e) = append(&mut tx, entry).await {
-                tracing::warn!(error = %e, "消息审计未写入");
-            } else if let Err(e) = tx.commit().await {
-                tracing::warn!(error = %e, "消息审计未提交");
-            }
+    let entry = |event_type: &'static str, event_key: String, result_code: &'static str| {
+        AuditEntry {
+            event_key,
+            tenant_id: Some(ctx.tenant_id),
+            workspace_id: Some(workspace_id),
+            operation_id,
+            event_type,
+            human_identity_id: Some(ctx.human_identity_id),
+            initiator_principal_id: Some(ctx.tenant_principal_id),
+            actor_principal_id: Some(ctx.tenant_principal_id),
+            action_key: PUBLISH_ACTION,
+            action_version: 1,
+            component_type_key: "buzz",
+            target_type: Some("CHANNEL"),
+            target_id: Some(workspace_id),
+            // 正文不进审计。摘要也不进：它对正文可做字典攻击，而审计要的是
+            // 「谁在哪里做了什么」，不是「说了什么」（`.design/03` §9）。
+            parameter_hash: "NONE",
+            decision: "ALLOW",
+            result_code,
+            result_exposure: "NONE",
+            evidence_refs: serde_json::json!([
+                { "kind": "BUZZ_EVENT_ID", "value": event_id },
+                { "kind": "PLATFORM_SESSION_ID", "value": ctx.session_id },
+            ]),
+            correlation_id: operation_id,
         }
-        Err(e) => tracing::warn!(error = %e, "消息审计未写入"),
+    };
+
+    // 没落账就不发：一条发出去却无从关联的消息，正是「成功但不可核验」
+    if let Err(e) = record(
+        &state,
+        entry(
+            "DISPATCH",
+            format!("message.publish:{event_id}:dispatch"),
+            "DISPATCHED",
+        ),
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "发布前审计未写入，不发送");
+        return error_body(
+            StatusCode::SERVICE_UNAVAILABLE,
+            ErrorClass::Precondition,
+            ReasonCode::DependencyUnavailable,
+            None,
+        );
     }
 
+    match client.deliver(&state.http, &event).await {
+        Delivery::Accepted => {
+            // 结果写不进去不改变「已送达」：DISPATCH 已在，兜底对账按 event id
+            // 查到它后补记（publish_reconcile）
+            if let Err(e) = record(
+                &state,
+                entry("OUTCOME", format!("message.publish:{event_id}"), "ACCEPTED"),
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "发布结果审计未写入，留给对账");
+            }
+            (
+                StatusCode::OK,
+                Json(PublishResponse {
+                    event_id,
+                    operation_id,
+                }),
+            )
+                .into_response()
+        }
+        Delivery::Rejected(why) => {
+            tracing::warn!(reason = %why, "Relay 拒绝发布");
+            if let Err(e) = record(
+                &state,
+                entry("OUTCOME", format!("message.publish:{event_id}"), "REJECTED"),
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "发布结果审计未写入，留给对账");
+            }
+            error_body(
+                StatusCode::FORBIDDEN,
+                ErrorClass::Denied,
+                ReasonCode::PublishRejected,
+                Some(operation_id),
+            )
+        }
+        // 结果不明：不写结果、不重发，交给对账（DD-81）。调用方拿到 operation
+        // id，界面显示待确认而不是成功或失败（06 §4）。
+        Delivery::Unknown(why) => {
+            tracing::warn!(error = %why, "发布结果不明");
+            error_body(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ErrorClass::Unknown,
+                ReasonCode::PublishResultUnknown,
+                Some(operation_id),
+            )
+        }
+    }
+}
+
+async fn record(state: &BffState, entry: AuditEntry<'_>) -> Result<(), sqlx::Error> {
+    let mut tx = state.pool.begin().await?;
+    append(&mut tx, entry).await?;
+    tx.commit().await
+}
+
+fn error_body(
+    status: StatusCode,
+    class: ErrorClass,
+    reason: ReasonCode,
+    operation_id: Option<Uuid>,
+) -> Response {
     (
-        StatusCode::OK,
-        Json(PublishResponse {
-            event_id,
-            operation_id,
+        status,
+        Json(ErrorBody {
+            class,
+            reason,
+            operation_id: operation_id.map(|o| o.to_string()),
         }),
     )
         .into_response()

@@ -124,6 +124,20 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWo
         "正文不得进入审计"
     );
 
+    // 发送之前已落 DISPATCH：同一 operation、同一 event id，时间不晚于结果（DD-81）
+    let (dispatch_op, dispatched_before): (Uuid, bool) = sqlx::query_as(
+        "select d.operation_id, d.occurred_at <= o.occurred_at
+         from audit.audit_event d, audit.audit_event o
+         where d.event_key = $1 and o.event_key = $2",
+    )
+    .bind(format!("message.publish:{event_id}:dispatch"))
+    .bind(format!("message.publish:{event_id}"))
+    .fetch_one(pool)
+    .await
+    .expect("发送前应有 DISPATCH 审计");
+    assert_eq!(dispatch_op, audit.0, "DISPATCH 与结果属于同一 operation");
+    assert!(dispatched_before, "DISPATCH 必须先于结果落账");
+
     // 撤掉 WorkspaceMembership：下一个请求必须立刻被拒
     sqlx::query("update identity.workspace_membership set state = 'REVOKING' where id = $1")
         .bind(fx.workspace_membership)
@@ -980,4 +994,120 @@ async fn multiple_active_tenants_are_refused_not_guessed() {
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);
     }
+}
+
+/// 结果不明的发布按 event id 对账成确定结果（DD-81）。
+///
+/// 三条只有 DISPATCH 的发布，分别对应对账的三种结论：Relay 存着那条事件
+/// （已送达）；查不到且已超出 settle 窗口（确定未送达）；查不到而仍在窗口内
+/// （继续等，不写结论）。第一条用真实发出的事件，后两条的 event id 从未发出。
+/// 审计只追加，因此以显式的发生时间写入历史 DISPATCH，而不是改已有行。
+#[tokio::test]
+async fn unsettled_publishes_are_reconciled_by_event_id() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+    let outcome = std::panic::AssertUnwindSafe(run_reconcile(&http, &e, &pool, &fx))
+        .catch_unwind()
+        .await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn run_reconcile(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWorkspace) {
+    let secs = |k: &str| -> i64 {
+        std::env::var(k)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("缺少 {k}"))
+    };
+    let interval = secs("PUBLISH_RECONCILE_INTERVAL_SECONDS");
+    let settle = secs("PUBLISH_RESULT_SETTLE_SECONDS");
+
+    let (status, body) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::POST,
+        &format!("/api/v1/workspaces/{}/messages", fx.workspace),
+        Some(serde_json::json!({ "content": "reconcile me" })),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "发布应成功：{body}");
+    let delivered = body["eventId"].as_str().expect("eventId").to_owned();
+    let never_sent = || hex::encode(Uuid::new_v4().as_bytes()).repeat(2);
+
+    let seed = |event_id: String, age: i64| {
+        let pool = pool.clone();
+        async move {
+            let op = Uuid::new_v4();
+            sqlx::query(
+                "insert into audit.audit_event
+                     (id, event_key, tenant_id, workspace_id, operation_id, event_type,
+                      initiator_principal_id, actor_principal_id, action_key, action_version,
+                      component_type_key, target_type, target_id, parameter_hash, decision,
+                      result_code, result_exposure, evidence_refs, correlation_id, occurred_at)
+                 values ($1, $2, $3, $4, $5, 'DISPATCH', $6, $6, 'workspace.message.publish', 1,
+                         'buzz', 'CHANNEL', $4, 'NONE', 'ALLOW', 'DISPATCHED', 'NONE',
+                         jsonb_build_array(jsonb_build_object('kind', 'BUZZ_EVENT_ID', 'value', $7::text)),
+                         $5, now() - make_interval(secs => $8))",
+            )
+            .bind(Uuid::new_v4())
+            .bind(format!("verify.reconcile:{op}"))
+            .bind(fx.tenant)
+            .bind(fx.workspace)
+            .bind(op)
+            .bind(fx.principal)
+            .bind(&event_id)
+            .bind(age as f64)
+            .execute(&pool)
+            .await
+            .expect("写入历史 DISPATCH");
+            op
+        }
+    };
+    let accepted = seed(delivered, interval * 2).await;
+    let lost = seed(never_sent(), settle + interval * 2).await;
+    let pending = seed(never_sent(), interval * 2).await;
+
+    let result = |op: Uuid| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, String>(
+                "select result_code from audit.audit_event
+                 where operation_id = $1 and event_type = 'RECONCILIATION'",
+            )
+            .bind(op)
+            .fetch_optional(&pool)
+            .await
+            .expect("读对账结果")
+        }
+    };
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_secs(u64::try_from(interval * 3 + 10).unwrap_or(u64::MAX));
+    loop {
+        if result(accepted).await.is_some() && result(lost).await.is_some() {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "三轮内没有对账出结论");
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    assert_eq!(
+        result(accepted).await.as_deref(),
+        Some("ACCEPTED"),
+        "Relay 存着它：已送达"
+    );
+    assert_eq!(
+        result(lost).await.as_deref(),
+        Some("NOT_DELIVERED"),
+        "超出 settle 窗口仍查不到：确定未送达"
+    );
+    assert_eq!(result(pending).await, None, "窗口内查不到：不下结论");
 }

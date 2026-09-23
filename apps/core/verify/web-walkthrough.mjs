@@ -162,6 +162,30 @@ await step("BFF 重启：状态如实离开已同步，恢复后续流并能继�
   await shot("05-after-restart");
 });
 
+await step("发布结果不明：Relay 不可达时显示待确认与操作号，不说成功也不说失败", async () => {
+  execFileSync("docker", ["compose", "-f", a["compose-file"], "stop", "buzz-relay"], {
+    stdio: "ignore",
+  });
+  await input.fill(`${nonce} unknown`);
+  await input.press("Enter");
+  const alert = page.getByRole("alert");
+  await alert.filter({ hasText: "not confirmed" }).waitFor({ timeout: bound });
+  const text = await alert.innerText();
+  // 操作号是查证入口（06 §4）：没有它，「待确认」就无从确认
+  if (!/[0-9a-f]{8}-[0-9a-f]{4}-/.test(text)) throw new Error(`待确认提示缺操作号：${text}`);
+  if (/Send failed/.test(text)) throw new Error("结果不明不得说成失败");
+  if ((await input.inputValue()) !== `${nonce} unknown`) throw new Error("结果不明时草稿必须保留");
+  if (await message.getByText(`${nonce} unknown`).count())
+    throw new Error("未确认的消息不得出现在列表里");
+  steps.push({ name: "结果不明的提示", value: text });
+  await shot("05b-publish-unknown");
+  execFileSync("docker", ["compose", "-f", a["compose-file"], "start", "buzz-relay"], {
+    stdio: "ignore",
+  });
+  await status.filter({ hasText: SYNCED }).waitFor({ timeout: bound });
+  await input.fill("");
+});
+
 // 1×1 PNG。Relay 按内容校验图片，不能拿任意字节冒充 image/png。
 const PNG_1X1 = Buffer.from(
   "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63f8cfc0000003010100c9fe92ef0000000049454e44ae426082",

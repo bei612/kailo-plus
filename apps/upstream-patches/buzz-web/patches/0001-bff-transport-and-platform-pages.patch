@@ -17532,10 +17532,10 @@ index 5ff7fdf..0000000
 -}
 diff --git a/web/src/platform/bff-client.ts b/web/src/platform/bff-client.ts
 new file mode 100644
-index 0000000..3437845
+index 0000000..4f3161a
 --- /dev/null
 +++ b/web/src/platform/bff-client.ts
-@@ -0,0 +1,256 @@
+@@ -0,0 +1,279 @@
 +// Kailo BFF 传输（DD-39、SS-WEB-RELAY）。
 +//
 +// Browser 只发类型化的语义命令。它不接收 Relay URL、不接收 Nostr 私钥，
@@ -17545,13 +17545,29 @@ index 0000000..3437845
 +// 同源请求：页面由同一个网关入口提供，BFF 在其后。因此这里不配置任何主机名——
 +// 出现一个可配置的 API 地址，就等于给「连到别处去」留了口子。
 +
-+/** 后端拒绝一次调用。`status` 保留原值，调用方据此区分拒绝与结果不明。 */
++/**
++ * 后端拒绝一次调用。`status` 保留原值；`errorClass`、`reason`、`operationId`
++ * 取自统一错误体（Kailo contracts 的 ErrorBody），没有错误体时缺省。
++ *
++ * `errorClass === "UNKNOWN"` 是外部副作用结果不明：界面不得把它渲染成成功或
++ * 失败，只能显示待确认并给出 operationId 作为查证入口。
++ */
 +export class BffError extends Error {
 +  readonly status: number;
-+  constructor(status: number, message: string) {
++  readonly errorClass?: string;
++  readonly reason?: string;
++  readonly operationId?: string;
++  constructor(
++    status: number,
++    message: string,
++    body?: { class?: string; reason?: string; operationId?: string },
++  ) {
 +    super(message);
 +    this.name = "BffError";
 +    this.status = status;
++    this.errorClass = body?.class;
++    this.reason = body?.reason;
++    this.operationId = body?.operationId;
 +  }
 +}
 +
@@ -17581,7 +17597,14 @@ index 0000000..3437845
 +  });
 +  if (response.type === "opaqueredirect" || response.status === 401) reauthenticate();
 +  if (!response.ok) {
-+    throw new BffError(response.status, `${init?.method ?? "GET"} ${path} → ${response.status}`);
++    // 错误体只有分类、reason code 与 operationId，不含任何业务内容；取不到
++    // 就当没有，不从状态码猜分类
++    const body = await response.json().catch(() => undefined);
++    throw new BffError(
++      response.status,
++      `${init?.method ?? "GET"} ${path} → ${response.status}`,
++      body,
++    );
 +  }
 +  if (response.status === 204) return undefined as T;
 +  return (await response.json()) as T;
@@ -17794,10 +17817,10 @@ index 0000000..3437845
 +}
 diff --git a/web/src/platform/ui/ChannelPane.tsx b/web/src/platform/ui/ChannelPane.tsx
 new file mode 100644
-index 0000000..2b0f663
+index 0000000..dbfd88f
 --- /dev/null
 +++ b/web/src/platform/ui/ChannelPane.tsx
-@@ -0,0 +1,325 @@
+@@ -0,0 +1,337 @@
 +// 频道（SS-WEB-RELAY、SS-WEB-01）：消息、附件、已读位置。
 +//
 +// 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
@@ -18054,7 +18077,19 @@ index 0000000..2b0f663
 +        setDraft((current) => (current.trim() === content ? "" : current));
 +        setPending((current) => current.filter((p) => !attachments.includes(p.descriptor)));
 +      })
-+      .catch(() => setProblem(t("platform.sendFailed")));
++      .catch((e: unknown) => {
++        if (!(e instanceof BffError)) {
++          setProblem(t("platform.sendFailed"));
++        } else if (e.errorClass === "UNKNOWN") {
++          // 结果不明：可能已送达。不说成功也不说失败，草稿保留；若消息随后出现
++          // 在频道里，它就已送达（06 §4、DD-81）
++          setProblem(t("platform.sendUnknown", { operation: e.operationId ?? "" }));
++        } else if (e.reason === "PUBLISH_REJECTED") {
++          setProblem(t("platform.sendRejected"));
++        } else {
++          setProblem(t("platform.sendFailed"));
++        }
++      });
 +  }, [draft, pending, workspaceId]);
 +
 +  return (
@@ -20294,10 +20329,10 @@ index c032d55..0000000
 -  };
 -}
 diff --git a/web/src/shared/i18n/index.ts b/web/src/shared/i18n/index.ts
-index 9a1bbc3..81a0e70 100644
+index 9a1bbc3..20a638d 100644
 --- a/web/src/shared/i18n/index.ts
 +++ b/web/src/shared/i18n/index.ts
-@@ -1,536 +1,81 @@
+@@ -1,536 +1,86 @@
  export type AppLocale = "en" | "zh-CN";
  
  const messages = {
@@ -20895,6 +20930,11 @@ index 9a1bbc3..81a0e70 100644
 +    "zh-CN": "撤销未完成，结果不明。请刷新后确认。",
 +  },
 +  "platform.sendFailed": { en: "Send failed", "zh-CN": "发送失败" },
++  "platform.sendUnknown": {
++    en: "Delivery not confirmed yet. If the message shows up in the channel, it was delivered. Reference: {operation}",
++    "zh-CN": "发送结果待确认：若消息稍后出现在频道中，即已送达。操作号 {operation}",
++  },
++  "platform.sendRejected": { en: "The message was rejected", "zh-CN": "消息被拒绝" },
 +  "platform.message": { en: "Message", "zh-CN": "消息" },
 +  "platform.send": { en: "Send", "zh-CN": "发送" },
 +  "platform.member": { en: "Member", "zh-CN": "成员" },
@@ -20907,7 +20947,7 @@ index 9a1bbc3..81a0e70 100644
    "error.attachmentImagePrepare": {
      en: "We couldn't prepare this image for upload.",
      "zh-CN": "无法处理此图片以上传。",
-@@ -539,197 +84,6 @@ const messages = {
+@@ -539,197 +89,6 @@ const messages = {
      en: "This media format isn't supported for upload.",
      "zh-CN": "暂不支持上传此媒体格式。",
    },

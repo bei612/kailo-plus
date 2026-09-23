@@ -11,7 +11,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use contracts::{ErrorBody, ErrorClass, ReasonCode};
+use contracts::{ErrorBody, ErrorClass};
 
 use crate::audit;
 use kailo_identity::{resolve, session, IdentityError};
@@ -241,7 +241,7 @@ async fn record_denied_authentication(
     subject: Option<&str>,
     e: &IdentityError,
 ) {
-    let reason = e.reason().unwrap_or(ReasonCode::SessionNotActive);
+    let reason = e.reason();
     let code = serde_json::to_value(reason)
         .ok()
         .and_then(|v| v.as_str().map(str::to_owned))
@@ -306,14 +306,15 @@ fn error_response(e: IdentityError) -> Response {
     let status = match class {
         // BLOCKED 同样不可重试：能力未开放，不是服务端故障
         ErrorClass::Denied | ErrorClass::Blocked => StatusCode::FORBIDDEN,
-        ErrorClass::Unknown => StatusCode::SERVICE_UNAVAILABLE,
+        // 依赖恢复后可重试
+        ErrorClass::Precondition | ErrorClass::Unknown => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
     // 错误体不携带业务正文、secret、原始 SQL 或依赖的内部细节
     tracing::warn!(error = %e, "identity resolution failed");
     let body = ErrorBody {
         class,
-        reason: e.reason().unwrap_or(ReasonCode::SessionNotActive),
+        reason: e.reason(),
         operation_id: None,
     };
     (status, Json(body)).into_response()

@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select d.operation_id, d.tenant_id as \"tenant_id!\", d.workspace_id,\n                  d.human_identity_id, d.initiator_principal_id, d.actor_principal_id,\n                  d.target_id, d.evidence_refs,\n                  (select e->>'value' from jsonb_array_elements(d.evidence_refs) e\n                    where e->>'kind' = 'BUZZ_EVENT_ID') as \"event_id?\",\n                  (d.occurred_at < now() - make_interval(secs => $3::bigint)) as \"settled!\"\n           from audit.audit_event d\n           join identity.tenant t on t.id = d.tenant_id\n           where d.event_type = 'DISPATCH' and d.action_key = $1\n             and d.occurred_at < now() - make_interval(secs => $4::bigint)\n             and not exists (\n                 select 1 from audit.audit_event o\n                 where o.operation_id = d.operation_id\n                   and o.event_type in ('OUTCOME', 'RECONCILIATION'))\n           order by d.occurred_at\n           limit $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "operation_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "human_identity_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "initiator_principal_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "actor_principal_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "target_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "evidence_refs",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "event_id?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "settled!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "9f4d0345e81345014c1380bfc9957482568a2aa4d80dbb2a38f78a698f7ac6e9"
+}

@@ -67,6 +67,20 @@ enum Refusal {
     Denied(&'static str),
 }
 
+/// 投影前置步骤不成立的两种方式，对 Activity 的意义相反：拒绝不重试，依赖
+/// 不可用必须重试。把后者报成拒绝，一次 OpenBao 的短暂不可用就会让成员建立
+/// 永久失败（06 §4 的 PRECONDITION 与 DENIED 之别）。
+enum Blocked {
+    Refused(Refusal),
+    Unavailable(String),
+}
+
+impl From<sqlx::Error> for Blocked {
+    fn from(e: sqlx::Error) -> Self {
+        Self::Unavailable(e.to_string())
+    }
+}
+
 pub async fn project_buzz_roster(
     State(state): State<ServiceState>,
     headers: HeaderMap,
@@ -81,8 +95,11 @@ pub async fn project_buzz_roster(
 
     let plan = match resolve(&state, &req).await {
         Ok(p) => p,
-        Err(Ok(refusal)) => return refusal_response(refusal),
-        Err(Err(e)) => return unavailable(e),
+        Err(Blocked::Refused(refusal)) => return refusal_response(refusal),
+        Err(Blocked::Unavailable(why)) => {
+            tracing::warn!(error = %why, "投影前置步骤的依赖不可用");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
     };
 
     // 私钥只在这里出现，且只进 IdentityClient 的内存。SecretValue 不实现
@@ -204,12 +221,9 @@ struct Plan {
     control_secret: SecretRef,
 }
 
-/// 外层 `Err` 区分两类：`Ok(Refusal)` 是确定的拒绝，`Err(sqlx)` 是依赖不可用。
-/// 两者映射到不同 HTTP 状态，进而决定调用方重试与否。
-async fn resolve(
-    state: &ServiceState,
-    req: &BuzzProjectionRequest,
-) -> Result<Plan, Result<Refusal, sqlx::Error>> {
+/// `Blocked` 区分确定的拒绝与依赖不可用，两者映射到不同 HTTP 状态，进而决定
+/// 调用方重试与否。
+async fn resolve(state: &ServiceState, req: &BuzzProjectionRequest) -> Result<Plan, Blocked> {
     // membership → tenant/principal，并在同一句里核版本。分两句查会在两次
     // 查询之间留下版本变化的窗口。
     let (tenant_id, principal_id, workspace_id) = match req.scope {
@@ -221,9 +235,10 @@ async fn resolve(
                 req.membership_version
             )
             .fetch_optional(&state.pool)
-            .await
-            .map_err(Err)?;
-            let row = row.ok_or(Ok(Refusal::NotFound("TenantMembership 不存在或版本不符")))?;
+            .await?;
+            let row = row.ok_or(Blocked::Refused(Refusal::NotFound(
+                "TenantMembership 不存在或版本不符",
+            )))?;
             (row.tenant_id, row.tenant_principal_id, None)
         }
         MembershipScope::Workspace => {
@@ -236,9 +251,8 @@ async fn resolve(
                 req.membership_version
             )
             .fetch_optional(&state.pool)
-            .await
-            .map_err(Err)?;
-            let row = row.ok_or(Ok(Refusal::NotFound(
+            .await?;
+            let row = row.ok_or(Blocked::Refused(Refusal::NotFound(
                 "WorkspaceMembership 不存在或版本不符",
             )))?;
             (
@@ -259,9 +273,10 @@ async fn resolve(
         tenant_id
     )
     .fetch_optional(&state.pool)
-    .await
-    .map_err(Err)?
-    .ok_or(Ok(Refusal::Denied("TenantBuzzBinding 不是 ACTIVE")))?;
+    .await?
+    .ok_or(Blocked::Refused(Refusal::Denied(
+        "TenantBuzzBinding 不是 ACTIVE",
+    )))?;
 
     // CONTROL 身份：必须 SERVER 托管且 ACTIVE。CLIENT 托管说明私钥不在 Core
     // 手里，此时代签是走错了路径，必须当场失败而不是换个身份凑合（DD-75）。
@@ -274,9 +289,8 @@ async fn resolve(
         binding.control_service_principal_id
     )
     .fetch_optional(&state.pool)
-    .await
-    .map_err(Err)?
-    .ok_or(Ok(Refusal::Denied(
+    .await?
+    .ok_or(Blocked::Refused(Refusal::Denied(
         "CONTROL BuzzIdentityBinding 不可用于代签",
     )))?;
 
@@ -285,13 +299,14 @@ async fn resolve(
     let control_secret = SecretRef {
         locator: control
             .private_key_secret_ref
-            .ok_or(Ok(Refusal::Denied("CONTROL 密钥缺 locator")))?,
+            .ok_or(Blocked::Refused(Refusal::Denied("CONTROL 密钥缺 locator")))?,
         version: control
             .private_key_secret_version
-            .ok_or(Ok(Refusal::Denied("CONTROL 密钥缺版本")))? as u32,
+            .ok_or(Blocked::Refused(Refusal::Denied("CONTROL 密钥缺版本")))?
+            as u32,
         audience: control
             .private_key_secret_audience
-            .ok_or(Ok(Refusal::Denied("CONTROL 密钥缺 audience")))?,
+            .ok_or(Blocked::Refused(Refusal::Denied("CONTROL 密钥缺 audience")))?,
     };
 
     // 被投影的目标：该 Principal 的全部 Buzz pubkey（DD-77）。两种托管都要
@@ -301,27 +316,29 @@ async fn resolve(
     // REVOKING 的设备正在被移出，不能在这里被重新加回去。撤权方向覆盖全部
     // 非 REVOKED 的钥匙，包括登记中与撤销中的。
     let mut targets: Vec<String> = match req.presence {
-        TargetPresence::Present => sqlx::query_scalar!(
-            "select pubkey from identity.buzz_identity_binding
+        TargetPresence::Present => {
+            sqlx::query_scalar!(
+                "select pubkey from identity.buzz_identity_binding
              where tenant_id = $1 and principal_id = $2
                and state in ('RECONCILING', 'ACTIVE')
              order by pubkey",
-            tenant_id,
-            principal_id
-        )
-        .fetch_all(&state.pool)
-        .await
-        .map_err(Err)?,
-        TargetPresence::Absent => sqlx::query_scalar!(
-            "select pubkey from identity.buzz_identity_binding
+                tenant_id,
+                principal_id
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+        TargetPresence::Absent => {
+            sqlx::query_scalar!(
+                "select pubkey from identity.buzz_identity_binding
              where tenant_id = $1 and principal_id = $2 and state <> 'REVOKED'
              order by pubkey",
-            tenant_id,
-            principal_id
-        )
-        .fetch_all(&state.pool)
-        .await
-        .map_err(Err)?,
+                tenant_id,
+                principal_id
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
     };
     // Buzz Web 的 HUMAN 是 SERVER 托管（DD-75），建立方向上没有就现建；撤权方向
     // 上**不**建——REVOKED 的身份不复活，重新授权走新 binding（.design/10 §4）。
@@ -332,7 +349,7 @@ async fn resolve(
         }
     }
     if targets.is_empty() {
-        return Err(Ok(Refusal::NotFound(
+        return Err(Blocked::Refused(Refusal::NotFound(
             "目标 Principal 没有可用的 BuzzIdentityBinding",
         )));
     }
@@ -346,9 +363,10 @@ async fn resolve(
                 ws
             )
             .fetch_optional(&state.pool)
-            .await
-            .map_err(Err)?
-            .ok_or(Ok(Refusal::Denied("WorkspaceBuzzBinding 不是 ACTIVE")))?
+            .await?
+            .ok_or(Blocked::Refused(Refusal::Denied(
+                "WorkspaceBuzzBinding 不是 ACTIVE",
+            )))?
             .channel_id
             .to_string(),
         ),
@@ -388,7 +406,7 @@ async fn ensure_human_identity(
     state: &ServiceState,
     tenant_id: Uuid,
     principal_id: Uuid,
-) -> Result<String, Result<Refusal, sqlx::Error>> {
+) -> Result<String, Blocked> {
     // 已有就用已有的：每人至多一条非 REVOKED 的 SERVER binding（DD-77）。
     // 先查再建，免得每次投影都往 OpenBao 写一把用不上的私钥。
     if let Some(pubkey) = sqlx::query_scalar!(
@@ -399,8 +417,7 @@ async fn ensure_human_identity(
         principal_id
     )
     .fetch_optional(&state.pool)
-    .await
-    .map_err(Err)?
+    .await?
     {
         return Ok(pubkey);
     }
@@ -414,9 +431,13 @@ async fn ensure_human_identity(
         .secrets
         .write(&locator, "value", &keys.secret_key().to_secret_hex())
         .await
-        .map_err(|e| {
-            tracing::warn!(error = %e, "写 HUMAN 私钥失败");
-            Ok(Refusal::Denied("HUMAN 私钥无法托管"))
+        .map_err(|e| match e {
+            // locator 与 audience 是配置：重试多少次都一样
+            SecretError::LocatorMalformed(_) | SecretError::AudienceMismatch => {
+                tracing::warn!(error = %e, "写 HUMAN 私钥被拒");
+                Blocked::Refused(Refusal::Denied("HUMAN 私钥无法托管"))
+            }
+            _ => Blocked::Unavailable(format!("写 HUMAN 私钥：{e}")),
         })?;
 
     let pubkey = keys.public_key().to_hex();
@@ -435,8 +456,7 @@ async fn ensure_human_identity(
         state.secret_audience,
     )
     .execute(&state.pool)
-    .await
-    .map_err(Err)?;
+    .await?;
 
     // 并发下另一个请求可能先插入了。回读实际生效的那条，不用本地生成的值——
     // 用错 pubkey 会把 roster 投影投到一个谁也不持有的身份上。
@@ -449,5 +469,5 @@ async fn ensure_human_identity(
     )
     .fetch_one(&state.pool)
     .await
-    .map_err(Err)
+    .map_err(Blocked::from)
 }

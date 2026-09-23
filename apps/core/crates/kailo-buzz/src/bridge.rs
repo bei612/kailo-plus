@@ -8,7 +8,7 @@
 //! queue/seen/retry 不升格为业务可靠权威——重试与去重由 Core 的 outbox 承担。
 
 use base64::Engine;
-use nostr::{EventBuilder, Keys, Kind, Tag};
+use nostr::{Event, EventBuilder, Keys, Kind, Tag};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -47,6 +47,16 @@ pub enum Presence {
 pub struct RosterEntry {
     pub pubkey: String,
     pub role: String,
+}
+
+/// 一次发送的确定结果（见 [`IdentityClient::deliver`]）。
+#[derive(Debug)]
+pub enum Delivery {
+    Accepted,
+    /// Relay 明确拒绝。原因是 Relay 的原话，只进日志不进审计与响应体
+    Rejected(String),
+    /// 可能已送达也可能没有
+    Unknown(String),
 }
 
 /// 密钥托管方。只有 `Server` 才可能由 Core 代签（`DD-75`）。
@@ -153,12 +163,25 @@ impl IdentityClient {
         content: &str,
         media_tags: &[Vec<String>],
     ) -> Result<String, OperatorError> {
+        let event = self.sign_channel_message(channel_id, content, media_tags)?;
+        let accepted = self.send(http, &event).await?;
+        Self::accepted_event_id(&accepted)
+    }
+
+    /// 以该身份签一条频道消息，不发送。
+    ///
+    /// event id 是签名内容的摘要，签完就确定。先拿到它再发送，调用方才能在
+    /// 发出之前把「要发的是哪一条」落账——结果不明时，这个 id 是唯一能去 Relay
+    /// 查证的键（`DD-48` 的幂等键与查询接缝）。
+    pub fn sign_channel_message(
+        &self,
+        channel_id: &str,
+        content: &str,
+        media_tags: &[Vec<String>],
+    ) -> Result<Event, OperatorError> {
         let mut tags = vec![vec!["h".to_owned(), channel_id.to_owned()]];
         tags.extend(media_tags.iter().cloned());
-        let accepted = self
-            .publish(http, KIND_CHANNEL_MESSAGE, content, &tags)
-            .await?;
-        Self::accepted_event_id(&accepted)
+        self.sign(KIND_CHANNEL_MESSAGE, content, &tags)
     }
 
     /// 以该身份签名并发布一条事件，返回 Relay 的原始回应。
@@ -172,16 +195,71 @@ impl IdentityClient {
         content: &str,
         tags: &[Vec<String>],
     ) -> Result<Value, OperatorError> {
+        let event = self.sign(kind, content, tags)?;
+        self.send(http, &event).await
+    }
+
+    pub fn sign(
+        &self,
+        kind: u16,
+        content: &str,
+        tags: &[Vec<String>],
+    ) -> Result<Event, OperatorError> {
         let tags = tags
             .iter()
             .map(|t| Tag::parse(t).map_err(|e| OperatorError::Sign(format!("tag: {e}"))))
             .collect::<Result<Vec<_>, _>>()?;
-        let event = EventBuilder::new(Kind::Custom(kind), content)
+        EventBuilder::new(Kind::Custom(kind), content)
             .tags(tags)
             .sign_with_keys(&self.keys)
-            .map_err(|e| OperatorError::Sign(format!("sign: {e}")))?;
-        let payload = serde_json::to_vec(&event).map_err(|e| OperatorError::Sign(e.to_string()))?;
+            .map_err(|e| OperatorError::Sign(format!("sign: {e}")))
+    }
+
+    async fn send(&self, http: &reqwest::Client, event: &Event) -> Result<Value, OperatorError> {
+        let payload = serde_json::to_vec(event).map_err(|e| OperatorError::Sign(e.to_string()))?;
         self.bridge_post(http, "/events", &payload).await
+    }
+
+    /// 发送一条已签好的事件，并把 Relay 的回应分成三种确定的结果。
+    ///
+    /// 同一条事件重发是幂等的：Relay 以「duplicate」回应，说明它已经存着这条——
+    /// 那是已送达，不是拒绝。Relay 的 5xx 与传输失败是结果不明：事件可能已落库
+    /// 也可能没有，只能按 event id 去查（`DD-81`）。
+    pub async fn deliver(&self, http: &reqwest::Client, event: &Event) -> Delivery {
+        match self.send(http, event).await {
+            Ok(v) => {
+                let accepted = v.get("accepted").and_then(|a| a.as_bool()) == Some(true);
+                let message = v
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or_default();
+                if accepted || message.starts_with("duplicate:") {
+                    Delivery::Accepted
+                } else {
+                    Delivery::Rejected(message.to_owned())
+                }
+            }
+            Err(OperatorError::Rejected { status, body }) if (400..500).contains(&status) => {
+                Delivery::Rejected(format!("HTTP {status} {body}"))
+            }
+            Err(e) => Delivery::Unknown(e.to_string()),
+        }
+    }
+
+    /// 按 event id 查 Relay 是否存着这条事件。只用于结果不明后的对账。
+    pub async fn event_exists(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+    ) -> Result<bool, OperatorError> {
+        let page = self
+            .query(http, &[serde_json::json!({ "ids": [event_id] })])
+            .await?;
+        Ok(page
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|e| e.get("id").and_then(|v| v.as_str()) == Some(event_id)))
     }
 
     /// 读取 roster 快照。

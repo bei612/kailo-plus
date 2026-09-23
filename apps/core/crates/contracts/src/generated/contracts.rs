@@ -167,6 +167,9 @@ pub enum ReasonCode {
     #[serde(rename = "CLIENT_KEY_PROOF_INVALID")]
     ClientKeyProofInvalid,
 
+    #[serde(rename = "DEPENDENCY_UNAVAILABLE")]
+    DependencyUnavailable,
+
     #[serde(rename = "IDENTITY_HEADER_MISSING")]
     IdentityHeaderMissing,
 
@@ -175,6 +178,12 @@ pub enum ReasonCode {
 
     #[serde(rename = "NATIVE_SURFACE_REQUIRED")]
     NativeSurfaceRequired,
+
+    #[serde(rename = "PUBLISH_REJECTED")]
+    PublishRejected,
+
+    #[serde(rename = "PUBLISH_RESULT_UNKNOWN")]
+    PublishResultUnknown,
 
     #[serde(rename = "SESSION_NOT_ACTIVE")]
     SessionNotActive,

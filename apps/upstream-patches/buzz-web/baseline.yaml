@@ -15,8 +15,8 @@ base_divergence: none
 # 改动以 patch series 形式保存而不是把 130 个源文件搬进本仓库：上游仍在演进，
 # 搬进来之后每次升级都变成手工比对，而 patch 能在新 commit 上直接重放并暴露冲突。
 patch_series: [0001-bff-transport-and-platform-pages.patch]
-patch_series_digest: sha256:f5b7eff0ff849864864fa94e0f252c18a63c776b0911b28b9317897ccf62e9dd
-artifact_digest: sha256:36c306ed034787d5728d9ca726a9976c652e2395dc70ee3369fdbea52695e739
+patch_series_digest: sha256:3115909a97c8e5fb37b412ff94067138e4600ff68d73b540ead2900a6c3a9408
+artifact_digest: sha256:9cb1041bd702c9a1fa203f67388a10c7ddc75832f23af6be000a455538a057fc
 
 # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
 build_context: web

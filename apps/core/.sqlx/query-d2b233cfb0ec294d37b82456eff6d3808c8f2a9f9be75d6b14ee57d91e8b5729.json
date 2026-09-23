@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select b.pubkey from identity.buzz_identity_binding b\n         left join identity.tenant_membership m\n           on m.tenant_principal_id = b.principal_id and m.tenant_id = b.tenant_id\n         where b.tenant_id = $1 and b.kind <> 'CONTROL'\n           and (b.state in ('PENDING_SECRET', 'RECONCILING', 'REVOKING')\n                or m.state in ('INVITED', 'PROVISIONING', 'REVOKING'))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pubkey",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d2b233cfb0ec294d37b82456eff6d3808c8f2a9f9be75d6b14ee57d91e8b5729"
+}

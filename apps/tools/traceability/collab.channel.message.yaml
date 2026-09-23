@@ -6,8 +6,8 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-01, V-REQ-02, V-REQ-03]
-  decisions: [DD-02, DD-39, DD-72]
-  facts: [SF-BUZ-32]
+  decisions: [DD-02, DD-39, DD-72, DD-81]
+  facts: [SF-BUZ-32, SF-BUZ-40]
   seams: [SS-WEB-RELAY, SS-BUZ-SERVER-CLIENT]
   blockers: []
   entities: [BuzzIdentityBinding, WorkspaceBuzzBinding, WorkspaceMembership, AuditEvent]
@@ -23,13 +23,15 @@ validation:
       ref: upstream-patches/buzz-web/verify/web-surface.md
     - dimension: 故障与恢复
       ref: upstream-patches/buzz-web/verify/web-surface.md
+    - dimension: 故障与恢复
+      ref: docs/runbooks/RB-07-unknown-external-results.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/web_transport.rs, core/crates/kailo-core/src/stream.rs, core/crates/kailo-buzz, upstream-patches/buzz-web]
+  paths: [core/crates/kailo-core/src/web_transport.rs, core/crates/kailo-core/src/stream.rs, core/crates/kailo-core/src/publish_reconcile.rs, core/crates/kailo-buzz, upstream-patches/buzz-web]
   surfaces: [web]
   schemas: []
-  migrations: []
+  migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql]
 
 runtime:
   routes: ["/api/v1/workspaces/{workspace_id}/messages", "/api/v1/workspaces/{workspace_id}/stream"]
@@ -40,7 +42,7 @@ release:
     - name: kailo-core
       digest: sha256:d83b5057e4f47617a6e6e22554ffc6a1474114ea6ea6a7f095e77f2577cb7baf
     - name: upstream-buzz-web
-      digest: sha256:36c306ed034787d5728d9ca726a9976c652e2395dc70ee3369fdbea52695e739
+      digest: sha256:9cb1041bd702c9a1fa203f67388a10c7ddc75832f23af6be000a455538a057fc
     - name: upstream-buzz
       digest: sha256:01927d9475e8690087780f9b08194b08eb10bb0aa758d5aad45b76afd0bcbf46
   gate: shipped
