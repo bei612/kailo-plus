@@ -32,7 +32,10 @@ async fn bff(
         .header("x-kailo-oidc-issuer", &e.oidc_issuer)
         .header("x-kailo-oidc-subject", subject);
     if let Some(b) = body {
-        req = req.json(&b);
+        // 每次调用是一次新的发送意图：带新的幂等键（发布端点要求它，DD-81）
+        req = req
+            .header("idempotency-key", Uuid::new_v4().to_string())
+            .json(&b);
     }
     let resp = req.send().await.expect("调 BFF");
     let status = resp.status();
@@ -820,6 +823,7 @@ async fn run_media_message(http: &reqwest::Client, e: &Env, fx: &common::LiveWor
     let publish = |attachment: serde_json::Value| {
         let req = http
             .post(format!("{base}/messages"))
+            .header("idempotency-key", Uuid::new_v4().to_string())
             .header("x-kailo-oidc-issuer", &e.oidc_issuer)
             .header("x-kailo-oidc-subject", &fx.subject)
             .json(&serde_json::json!({"content": "with media", "attachments": [attachment]}));
@@ -1110,4 +1114,93 @@ async fn run_reconcile(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &comm
         "超出 settle 窗口仍查不到：确定未送达"
     );
     assert_eq!(result(pending).await, None, "窗口内查不到：不下结论");
+}
+
+/// 同一个幂等键重发不产生第二条消息（DD-81）。
+///
+/// 结果不明之后用户再点发送，界面带的是同一个键：Core 回答原操作的结论，而不是
+/// 再签一条。这里用两次都成功的发送证明「不重复」这一半；结果不明那一半由
+/// `unsettled_publishes_are_reconciled_by_event_id` 与 RB-07 的演练覆盖。
+#[tokio::test]
+async fn resend_with_same_key_does_not_publish_twice() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+    let outcome = std::panic::AssertUnwindSafe(run_resend(&http, &e, &pool, &fx))
+        .catch_unwind()
+        .await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn run_resend(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWorkspace) {
+    let path = format!("{}/api/v1/workspaces/{}/messages", e.bff_url, fx.workspace);
+    let key = Uuid::new_v4().to_string();
+    let content = format!("once {key}");
+    let send = |idem: Option<&str>| {
+        let mut req = http
+            .post(&path)
+            .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+            .header("x-kailo-oidc-subject", &fx.subject)
+            .json(&serde_json::json!({ "content": content }));
+        if let Some(k) = idem {
+            req = req.header("idempotency-key", k);
+        }
+        async move {
+            let resp = req.send().await.expect("调 BFF");
+            let status = resp.status();
+            (
+                status,
+                resp.json::<serde_json::Value>().await.unwrap_or_default(),
+            )
+        }
+    };
+
+    let (status, _) = send(None).await;
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST, "缺幂等键必须拒绝");
+
+    let (s1, b1) = send(Some(&key)).await;
+    let (s2, b2) = send(Some(&key)).await;
+    assert_eq!(s1, reqwest::StatusCode::OK, "首次发送：{b1}");
+    assert_eq!(s2, reqwest::StatusCode::OK, "重发回答原结论：{b2}");
+    assert_eq!(b1["eventId"], b2["eventId"], "同一个键指向同一条事件");
+    assert_eq!(
+        b1["operationId"], b2["operationId"],
+        "同一个键指向同一次操作"
+    );
+
+    let (_, history) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::GET,
+        &format!("/api/v1/workspaces/{}/messages", fx.workspace),
+        None,
+    )
+    .await;
+    let copies = history["events"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter(|ev| ev["content"] == content.as_str())
+                .count()
+        })
+        .unwrap_or(0);
+    assert_eq!(copies, 1, "Relay 上只有一条");
+    let dispatches: i64 = sqlx::query_scalar(
+        "select count(*) from audit.audit_event
+         where event_type = 'DISPATCH' and operation_id = $1::text::uuid",
+    )
+    .bind(b1["operationId"].as_str().unwrap_or_default())
+    .fetch_one(pool)
+    .await
+    .expect("读审计");
+    assert_eq!(dispatches, 1, "只发出过一次");
 }

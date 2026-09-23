@@ -133,10 +133,80 @@ pub async fn publish_message(
         return StatusCode::BAD_REQUEST.into_response();
     };
 
+    // 幂等键由调用方为「这一次发送意图」生成，重发时带同一个键（DD-81）。
+    // 缺失即拒绝：没有它，结果不明后的重发只能再发一条。
+    let Some(idempotency_key) = headers
+        .get("idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<Uuid>().ok())
+    else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
     let scope = match admit_workspace(&state, &ctx, workspace_id).await {
         Ok(s) => s,
         Err(r) => return r,
     };
+
+    // 同一个键已经发过：不再发，回答那次的结论。只有确定未送达才允许重新发送。
+    let previous = match sqlx::query!(
+        r#"select a.operation_id, a.event_id,
+                  (select r.result_code from audit.audit_event r
+                    where r.operation_id = a.operation_id
+                      and r.event_type in ('OUTCOME', 'RECONCILIATION')
+                    order by r.occurred_at desc limit 1) as "result?"
+           from admission.publish_attempt a
+           where a.tenant_principal_id = $1 and a.idempotency_key = $2"#,
+        ctx.tenant_principal_id,
+        idempotency_key
+    )
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(error = %e, "读取发布幂等记录失败");
+            return error_body(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ErrorClass::Precondition,
+                ReasonCode::DependencyUnavailable,
+                None,
+            );
+        }
+    };
+    if let Some(p) = &previous {
+        match p.result.as_deref() {
+            Some("ACCEPTED") => {
+                return (
+                    StatusCode::OK,
+                    Json(PublishResponse {
+                        event_id: p.event_id.clone(),
+                        operation_id: p.operation_id,
+                    }),
+                )
+                    .into_response()
+            }
+            Some("REJECTED") => {
+                return error_body(
+                    StatusCode::FORBIDDEN,
+                    ErrorClass::Denied,
+                    ReasonCode::PublishRejected,
+                    Some(p.operation_id),
+                )
+            }
+            Some("NOT_DELIVERED") => {}
+            // 还没有结论：仍是那一次的结果不明，不能再发一条
+            _ => {
+                return error_body(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    ErrorClass::Unknown,
+                    ReasonCode::PublishResultUnknown,
+                    Some(p.operation_id),
+                )
+            }
+        }
+    }
+
     let keys = match actor_keys(&state, &ctx).await {
         Ok(k) => k,
         Err(r) => return r,
@@ -197,24 +267,74 @@ pub async fn publish_message(
         }
     };
 
-    // 没落账就不发：一条发出去却无从关联的消息，正是「成功但不可核验」
-    if let Err(e) = record(
-        &state,
-        entry(
-            "DISPATCH",
-            format!("message.publish:{event_id}:dispatch"),
-            "DISPATCHED",
-        ),
-    )
-    .await
-    {
-        tracing::warn!(error = %e, "发布前审计未写入，不发送");
-        return error_body(
-            StatusCode::SERVICE_UNAVAILABLE,
-            ErrorClass::Precondition,
-            ReasonCode::DependencyUnavailable,
-            None,
-        );
+    // 没落账就不发：一条发出去却无从关联的消息，正是「成功但不可核验」。
+    // 幂等记录与 DISPATCH 同一事务：两者只能一起成立。
+    let dispatched: Result<bool, sqlx::Error> = async {
+        let mut tx = state.pool.begin().await?;
+        let claimed = match &previous {
+            // 上一次确定未送达：把这个键改指向新的一次，条件是它仍指向上一次
+            Some(p) => sqlx::query!(
+                "update admission.publish_attempt
+                 set operation_id = $3, event_id = $4, created_at = now()
+                 where tenant_principal_id = $1 and idempotency_key = $2 and operation_id = $5",
+                ctx.tenant_principal_id,
+                idempotency_key,
+                operation_id,
+                event_id,
+                p.operation_id,
+            )
+            .execute(&mut *tx)
+            .await?
+            .rows_affected(),
+            None => sqlx::query!(
+                "insert into admission.publish_attempt
+                     (tenant_principal_id, idempotency_key, operation_id, event_id)
+                 values ($1, $2, $3, $4) on conflict do nothing",
+                ctx.tenant_principal_id,
+                idempotency_key,
+                operation_id,
+                event_id,
+            )
+            .execute(&mut *tx)
+            .await?
+            .rows_affected(),
+        };
+        if claimed == 0 {
+            // 同一个键的另一次请求抢先了：那一次在发，这一次不发
+            return Ok(false);
+        }
+        append(
+            &mut tx,
+            entry(
+                "DISPATCH",
+                format!("message.publish:{event_id}:dispatch"),
+                "DISPATCHED",
+            ),
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(true)
+    }
+    .await;
+    match dispatched {
+        Ok(true) => {}
+        Ok(false) => {
+            return error_body(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ErrorClass::Unknown,
+                ReasonCode::PublishResultUnknown,
+                None,
+            )
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "发布前审计未写入，不发送");
+            return error_body(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ErrorClass::Precondition,
+                ReasonCode::DependencyUnavailable,
+                None,
+            );
+        }
     }
 
     match client.deliver(&state.http, &event).await {

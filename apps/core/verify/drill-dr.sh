@@ -39,7 +39,7 @@ tenant=$(python3 -c 'import json;print(json.load(open("/tmp/rbdr.fixture"))["ten
 publish() {
   curl -s -o /tmp/rbdr.body -w '%{http_code}' -X POST "$VERIFY_BFF_URL/api/v1/workspaces/$ws/messages" \
     -H "x-kailo-oidc-issuer: $OIDC_ISSUER" -H "x-kailo-oidc-subject: $subject" \
-    -H 'Content-Type: application/json' -d "{\"content\":\"$1\"}"
+    -H 'Content-Type: application/json' -H "Idempotency-Key: $(python3 -c 'import uuid;print(uuid.uuid4())')" -d "{\"content\":\"$1\"}"
 }
 history_has() {
   curl -s "$VERIFY_BFF_URL/api/v1/workspaces/$ws/messages" \

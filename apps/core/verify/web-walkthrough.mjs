@@ -183,6 +183,17 @@ await step("发布结果不明：Relay 不可达时显示待确认与操作号�
     stdio: "ignore",
   });
   await status.filter({ hasText: SYNCED }).waitFor({ timeout: bound });
+  // Relay 恢复后原样再点发送：同一次发送意图带同一个幂等键，BFF 回答原操作的
+  // 结论（仍待确认、同一个操作号），而不是再发一条（DD-81）
+  const reference = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
+  await input.press("Enter");
+  await page.waitForTimeout(retry);
+  const again = await alert.innerText();
+  if (!reference || !again.includes(reference))
+    throw new Error(`重发应回答原操作 ${reference}，实际：${again}`);
+  if (await message.getByText(`${nonce} unknown`).count())
+    throw new Error("重发不得产生一条新消息");
+  steps.push({ name: "结果不明后重发", value: again });
   await input.fill("");
 });
 

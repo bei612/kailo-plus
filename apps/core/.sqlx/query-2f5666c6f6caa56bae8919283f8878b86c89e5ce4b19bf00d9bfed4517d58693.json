@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update admission.publish_attempt\n                 set operation_id = $3, event_id = $4, created_at = now()\n                 where tenant_principal_id = $1 and idempotency_key = $2 and operation_id = $5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f5666c6f6caa56bae8919283f8878b86c89e5ce4b19bf00d9bfed4517d58693"
+}

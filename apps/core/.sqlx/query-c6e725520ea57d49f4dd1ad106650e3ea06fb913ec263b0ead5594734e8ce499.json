@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from admission.publish_attempt a\n         where a.created_at < now() - make_interval(secs => $1::bigint)\n           and exists (select 1 from audit.audit_event r\n                       where r.operation_id = a.operation_id\n                         and r.event_type in ('OUTCOME', 'RECONCILIATION'))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c6e725520ea57d49f4dd1ad106650e3ea06fb913ec263b0ead5594734e8ce499"
+}

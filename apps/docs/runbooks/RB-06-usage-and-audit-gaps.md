@@ -55,7 +55,7 @@ from audit.audit_event where operation_id = '<operation id>' order by occurred_a
 
 1. **补录边界**：只追加由权威证据推导出的 RECONCILIATION，证据必须能按 ID 复核（Relay 上的 event id）。不补写 OUTCOME，不为没有 DISPATCH 的动作补 DISPATCH，不编造 operation、actor 或结果——那会让审计为一件无从核验的事背书。
 2. 不 UPDATE 或 DELETE 任何审计行，不临时禁用 `audit_event_append_only` 触发器。
-3. 不因结果不明而重发消息：用户或许已经重新发送，自动重发会造出重复（`DD-48`）。
+3. 不由系统替用户重发消息（`DD-48`）。用户在界面上重发时带同一个幂等键，BFF 回答原操作的结论而不是再发一条（`DD-81`）；不要为了「帮用户送达」绕过这个键直接调用发布。
 4. 不把 `PUBLISH_RESULT_SETTLE_SECONDS` 调到 Relay 时间漂移窗口（900 秒）以下来加快结论（`07` §1）。
 
 ## 完成判据

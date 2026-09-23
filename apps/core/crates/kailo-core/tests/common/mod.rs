@@ -357,6 +357,8 @@ pub async fn cleanup(e: &Env, pool: &PgPool, f: &Fixture) {
         // 收藏/静音/已读挂在 principal 上（外键），必须先于 principal 删除
         "delete from identity.collaboration_user_state where tenant_principal_id in
              (select id from identity.principal where tenant_id = $1)",
+        "delete from admission.publish_attempt where tenant_principal_id in
+             (select id from identity.principal where tenant_id = $1)",
         "delete from identity.principal where tenant_id = $1",
         "delete from identity.tenant where id = $1",
     ] {
@@ -699,6 +701,8 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
         "delete from identity.workspace where tenant_id = $1",
         // 收藏/静音/已读挂在 principal 上（外键），必须先于 principal 删除
         "delete from identity.collaboration_user_state where tenant_principal_id in
+             (select id from identity.principal where tenant_id = $1)",
+        "delete from admission.publish_attempt where tenant_principal_id in
              (select id from identity.principal where tenant_id = $1)",
         "delete from identity.principal where tenant_id = $1",
         "delete from identity.tenant where id = $1",

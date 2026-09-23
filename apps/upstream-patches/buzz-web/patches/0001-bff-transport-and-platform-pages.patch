@@ -17532,10 +17532,10 @@ index 5ff7fdf..0000000
 -}
 diff --git a/web/src/platform/bff-client.ts b/web/src/platform/bff-client.ts
 new file mode 100644
-index 0000000..4f3161a
+index 0000000..e4d187c
 --- /dev/null
 +++ b/web/src/platform/bff-client.ts
-@@ -0,0 +1,279 @@
+@@ -0,0 +1,285 @@
 +// Kailo BFF 传输（DD-39、SS-WEB-RELAY）。
 +//
 +// Browser 只发类型化的语义命令。它不接收 Relay URL、不接收 Nostr 私钥，
@@ -17669,13 +17669,19 @@ index 0000000..4f3161a
 +}
 +
 +/** 发一条消息。只给正文——身份、签名、频道归属都由 BFF 决定。 */
++/**
++ * 发布一条消息。`idempotencyKey` 标识「这一次发送意图」：结果不明之后重发必须带
++ * 同一个键，BFF 据此回答原操作的结论而不是再发一条（Kailo DD-81）。
++ */
 +export function publishMessage(
 +  workspaceId: string,
 +  content: string,
-+  attachments: readonly MediaDescriptor[] = [],
++  attachments: readonly MediaDescriptor[],
++  idempotencyKey: string,
 +): Promise<{ eventId: string; operationId: string }> {
 +  return call(`/api/v1/workspaces/${workspaceId}/messages`, {
 +    method: "POST",
++    headers: { "Idempotency-Key": idempotencyKey },
 +    body: JSON.stringify({ content, attachments }),
 +  });
 +}
@@ -17817,10 +17823,10 @@ index 0000000..4f3161a
 +}
 diff --git a/web/src/platform/ui/ChannelPane.tsx b/web/src/platform/ui/ChannelPane.tsx
 new file mode 100644
-index 0000000..dbfd88f
+index 0000000..bb4fd78
 --- /dev/null
 +++ b/web/src/platform/ui/ChannelPane.tsx
-@@ -0,0 +1,337 @@
+@@ -0,0 +1,358 @@
 +// 频道（SS-WEB-RELAY、SS-WEB-01）：消息、附件、已读位置。
 +//
 +// 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
@@ -18035,12 +18041,27 @@ index 0000000..dbfd88f
 +
 +type Pending = { name: string; descriptor: MediaDescriptor };
 +
++/**
++ * 一次发送意图的幂等键（UUID v4）。不用 crypto.randomUUID：它只在安全上下文中
++ * 存在，而 getRandomValues 在任何上下文都可用。
++ */
++function newIntentKey(): string {
++  const b = crypto.getRandomValues(new Uint8Array(16));
++  b[6] = (b[6] & 0x0f) | 0x40;
++  b[8] = (b[8] & 0x3f) | 0x80;
++  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
++  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
++}
++
 +function Composer({ workspaceId }: { workspaceId: string }) {
 +  const [draft, setDraft] = useState("");
 +  const [pending, setPending] = useState<Pending[]>([]);
 +  const [uploading, setUploading] = useState(0);
 +  const [problem, setProblem] = useState<string | null>(null);
 +  const picker = useRef<HTMLInputElement>(null);
++  // 当前发送意图：内容与附件不变时重发沿用同一个键——结果不明之后再点发送，
++  // BFF 回答原操作的结论而不是再发一条（DD-81）。确定的结论之后换新键。
++  const intent = useRef<{ key: string; signature: string } | null>(null);
 +
 +  const attach = useCallback(
 +    async (files: FileList | null) => {
@@ -18072,8 +18093,13 @@ index 0000000..dbfd88f
 +    // 不本地插入这条消息：它要等 Relay 接受并回传 event id 才算发出去。
 +    // 先渲染再等确认，会让一条被拒绝的消息看起来已经发出。草稿与附件也只在
 +    // 确认后才清空——发送失败时它们都还在。
-+    void publishMessage(workspaceId, content, attachments)
++    const signature = JSON.stringify([content, attachments.map((a) => a.sha256)]);
++    if (intent.current?.signature !== signature) {
++      intent.current = { key: newIntentKey(), signature };
++    }
++    void publishMessage(workspaceId, content, attachments, intent.current.key)
 +      .then(() => {
++        intent.current = null;
 +        setDraft((current) => (current.trim() === content ? "" : current));
 +        setPending((current) => current.filter((p) => !attachments.includes(p.descriptor)));
 +      })
@@ -18085,6 +18111,7 @@ index 0000000..dbfd88f
 +          // 在频道里，它就已送达（06 §4、DD-81）
 +          setProblem(t("platform.sendUnknown", { operation: e.operationId ?? "" }));
 +        } else if (e.reason === "PUBLISH_REJECTED") {
++          intent.current = null;
 +          setProblem(t("platform.sendRejected"));
 +        } else {
 +          setProblem(t("platform.sendFailed"));

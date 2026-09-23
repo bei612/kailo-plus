@@ -28,7 +28,10 @@ async fn native(
         .request(method, format!("{}{path}", n.native_url))
         .bearer_auth(token);
     if let Some(b) = body {
-        req = req.json(&b);
+        // 每次调用是一次新的发送意图：带新的幂等键（发布端点要求它，DD-81）
+        req = req
+            .header("idempotency-key", uuid::Uuid::new_v4().to_string())
+            .json(&b);
     }
     let resp = req.send().await.expect("调原生入口");
     let status = resp.status();
@@ -49,7 +52,10 @@ async fn browser(
         .header("x-kailo-oidc-issuer", &e.oidc_issuer)
         .header("x-kailo-oidc-subject", subject);
     if let Some(b) = body {
-        req = req.json(&b);
+        // 每次调用是一次新的发送意图：带新的幂等键（发布端点要求它，DD-81）
+        req = req
+            .header("idempotency-key", uuid::Uuid::new_v4().to_string())
+            .json(&b);
     }
     let resp = req.send().await.expect("调 BFF");
     let status = resp.status();

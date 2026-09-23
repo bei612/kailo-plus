@@ -30,7 +30,7 @@ ws=$(python3 -c 'import json;print(json.load(open("/tmp/rbaudit.fixture"))["work
 bff() {
   curl -s -o /tmp/rbaudit.body -w '%{http_code}' -X "$1" "$VERIFY_BFF_URL/api/v1/workspaces/$ws/messages" \
     -H "x-kailo-oidc-issuer: $OIDC_ISSUER" -H "x-kailo-oidc-subject: $subject" \
-    ${2:+-H 'Content-Type: application/json' -d "$2"}
+    ${2:+-H 'Content-Type: application/json' -H "Idempotency-Key: $(python3 -c 'import uuid;print(uuid.uuid4())')" -d "$2"}
 }
 in_history() { bff GET >/dev/null; grep -c "$1" /tmp/rbaudit.body || true; }
 

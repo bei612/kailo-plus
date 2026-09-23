@@ -367,6 +367,7 @@ services:
       PUBLISH_RECONCILE_INTERVAL_SECONDS: ${PUBLISH_RECONCILE_INTERVAL_SECONDS:?必须显式提供，禁止硬编码}
       PUBLISH_RESULT_SETTLE_SECONDS: ${PUBLISH_RESULT_SETTLE_SECONDS:?必须显式提供，禁止硬编码}
       PUBLISH_RECONCILE_BATCH: ${PUBLISH_RECONCILE_BATCH:?必须显式提供，禁止硬编码}
+      PUBLISH_IDEMPOTENCY_RETENTION_SECONDS: ${PUBLISH_IDEMPOTENCY_RETENTION_SECONDS:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/openbao-core.env
       # Core 自己的 OIDC client secret；不进 .env、不上命令行
@@ -431,7 +432,7 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:9cb1041bd702c9a1fa203f67388a10c7ddc75832f23af6be000a455538a057fc
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:7ac25ab35ba861db3897f9928c3656a12bd0c382b5e5b0e4a0a3fabc38124d2a
     networks: [app]
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 

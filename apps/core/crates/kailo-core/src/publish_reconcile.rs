@@ -33,6 +33,9 @@ pub struct Config {
     /// 时间漂移窗口（`07` §1）
     pub settle: Duration,
     pub batch: i64,
+    /// 幂等记录在其操作有结论之后再保留这么久：够用户在界面上重试，也不让它
+    /// 无限增长
+    pub idempotency_retention: Duration,
 }
 
 impl Config {
@@ -50,6 +53,9 @@ impl Config {
             settle: Duration::from_secs(get("PUBLISH_RESULT_SETTLE_SECONDS")?),
             batch: i64::try_from(get("PUBLISH_RECONCILE_BATCH")?)
                 .map_err(|_| "PUBLISH_RECONCILE_BATCH 超出范围".to_owned())?,
+            idempotency_retention: Duration::from_secs(get(
+                "PUBLISH_IDEMPOTENCY_RETENTION_SECONDS",
+            )?),
         })
     }
 }
@@ -174,6 +180,20 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
     .map_err(|e| e.to_string())?;
     metrics.unsettled.record(row.n.max(0) as u64, &[]);
     metrics.oldest_age.record(row.age.max(0) as u64, &[]);
+
+    // 已有结论且超过保留期的幂等记录不再有用：同一个键再来，按新的发送意图处理
+    let retention = i64::try_from(cfg.idempotency_retention.as_secs()).unwrap_or(i64::MAX);
+    sqlx::query!(
+        "delete from admission.publish_attempt a
+         where a.created_at < now() - make_interval(secs => $1::bigint)
+           and exists (select 1 from audit.audit_event r
+                       where r.operation_id = a.operation_id
+                         and r.event_type in ('OUTCOME', 'RECONCILIATION'))",
+        retention
+    )
+    .execute(&state.pool)
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
