@@ -79,3 +79,47 @@ Workspace → 出 Tenant」。原先那个顺序现实里不会发生，拿它�
 决定。可见性因此退到「该 HUMAN 至少有一个 active WorkspaceMembership」。更细的
 判定要按 event 反查 Channel，那是 stream 面闭合之后才有的能力——这里不写一个
 恒为真的检查冒充它。
+
+## BFF stream：snapshot + generation
+
+`apps/02` Stage 1 要求「完整 snapshot + generation 的 BFF stream 恢复」。
+
+实时那一半走 **NIP-42 WebSocket 会话**，不是轮询 HTTP bridge。`.design/09` 第 4 步
+把两条路分开：写入与历史查询无状态走 NIP-98，只有实时订阅与 WS-only kind 才需要
+该 pubkey 的 WebSocket 会话。用轮询假装实时是一条绕过订阅协议的影子路径——
+延迟、重复、漏事件的行为都与真正的订阅不一样，而上层看不出区别。
+
+Community 的绑定同样靠 Host 头：Relay 在 WS 升级请求上按 Host 绑定 Community
+（`SF-BUZ-32`），因此握手显式带 Community host，AUTH 事件里的 relay URL 也用它
+构造，与 Host 头一致。
+
+实测：
+
+| 性质 | 结果 |
+|---|---|
+| 首连 | 第一帧就是 `generation`，随后 `snapshot`（含先前发的消息），再 `live` |
+| 带对的 generation 续流 | **不重发** snapshot——客户端手里那份仍然有效 |
+| generation 对不上 | 重新取 snapshot，而不是从猜测的位置接着读；且服务端给出自己的 generation，不回显调用方的 |
+| 撤权后开流 | `403`，流建不起来 |
+
+`generation` 由 principal + channel + WorkspaceMembership 版本三者的摘要构成。
+放 principal 进去是必要的：同一个 Channel 上不同人看到的 scope 一样，但撤权只
+影响其中一个，而撤权必须让那个人的旧 generation 失效。重新授权创建新 membership
+version（`.design/10` §4），因此旧 generation 必然对不上——客户端拿不着一条本不该
+继续的流。
+
+用摘要而不是原样拼接：generation 会出现在 URL 与客户端存储里，原样拼会把
+principal 与 channel 的内部 ID 散出去。
+
+`live` 帧是历史与增量的分界（NIP-01 的 EOSE）。客户端据此知道「追平了」，在此
+之前不必把每条事件都当成新消息去提示。
+
+`closed` 帧带关闭原因：客户端看到通道结束时必须能区分「没有更多事件」与
+「连接断了」——前者不该重连，后者必须重连。
+
+会话中途收到 AUTH 挑战时不就地重认证，而是关闭并让上层重建：重认证成功与否无法
+让上层知道，订阅在此期间的缺口也无从得知；重建会重新走 snapshot，缺口因此被 snapshot
+覆盖掉。
+
+通道满时对上游形成背压而不是丢帧——丢帧会让客户端以为自己看到了完整序列，
+那比慢更糟。

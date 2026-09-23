@@ -346,3 +346,159 @@ async fn run_user_state(
         "撤权后写同一个键必须拒绝"
     );
 }
+
+/// BFF stream 的 snapshot + generation 恢复（`apps/02` Stage 1）。
+///
+/// 验三件事：首连拿到 generation 与 snapshot；带对的 generation 续流不重发
+/// snapshot；撤权后旧 generation 失效且流本身建不起来。
+#[tokio::test]
+async fn stream_delivers_snapshot_and_generation() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+    let outcome = std::panic::AssertUnwindSafe(run_stream(&http, &e, &pool, &fx))
+        .catch_unwind()
+        .await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+/// 读若干 SSE 帧，直到拿到 `live`（追平）或超时。
+async fn read_sse(
+    http: &reqwest::Client,
+    e: &Env,
+    subject: &str,
+    path: &str,
+) -> Result<Vec<(String, String)>, reqwest::StatusCode> {
+    use futures_util::StreamExt;
+    let resp = http
+        .get(format!("{}{path}", e.bff_url))
+        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+        .header("x-kailo-oidc-subject", subject)
+        .send()
+        .await
+        .expect("打开 stream");
+    if !resp.status().is_success() {
+        return Err(resp.status());
+    }
+    let mut body = resp.bytes_stream();
+    let mut buf = String::new();
+    let mut frames = Vec::new();
+    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(15);
+    while tokio::time::Instant::now() < deadline {
+        let Ok(Some(Ok(chunk))) = tokio::time::timeout_at(deadline, body.next()).await else {
+            break;
+        };
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(idx) = buf.find("\n\n") {
+            let block = buf[..idx].to_owned();
+            buf = buf[idx + 2..].to_owned();
+            let mut name = String::new();
+            let mut data = String::new();
+            for line in block.lines() {
+                if let Some(v) = line.strip_prefix("event:") {
+                    name = v.trim().to_owned();
+                } else if let Some(v) = line.strip_prefix("data:") {
+                    data.push_str(v.trim());
+                }
+            }
+            if !name.is_empty() {
+                let done = name == "live" || name == "closed";
+                frames.push((name, data));
+                if done {
+                    return Ok(frames);
+                }
+            }
+        }
+    }
+    Ok(frames)
+}
+
+async fn run_stream(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWorkspace) {
+    // 先发一条，snapshot 才有内容可验
+    let msg_path = format!("/api/v1/workspaces/{}/messages", fx.workspace);
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::POST,
+        &msg_path,
+        Some(serde_json::json!({"content":"before stream"})),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+
+    let path = format!("/api/v1/workspaces/{}/stream", fx.workspace);
+    let frames = read_sse(http, e, &fx.subject, &path)
+        .await
+        .expect("首连应成功");
+    let names: Vec<&str> = frames.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(
+        names.first(),
+        Some(&"generation"),
+        "generation 必须先发：客户端据此知道断线后该带什么回来，实际 {names:?}"
+    );
+    assert!(
+        names.contains(&"snapshot"),
+        "首连必须带 snapshot，实际 {names:?}"
+    );
+    assert!(names.contains(&"live"), "必须发 live 分界，实际 {names:?}");
+    let generation = frames[0].1.clone();
+    let snapshot = frames
+        .iter()
+        .find(|(n, _)| n == "snapshot")
+        .map(|(_, d)| d.clone())
+        .unwrap();
+    assert!(
+        snapshot.contains("before stream"),
+        "snapshot 应含先前发的消息"
+    );
+
+    // 带对的 generation 续流：不重发 snapshot
+    let resumed = read_sse(
+        http,
+        e,
+        &fx.subject,
+        &format!("{path}?generation={generation}"),
+    )
+    .await
+    .expect("续流应成功");
+    let names: Vec<&str> = resumed.iter().map(|(n, _)| n.as_str()).collect();
+    assert!(
+        !names.contains(&"snapshot"),
+        "续流不得重发 snapshot，实际 {names:?}"
+    );
+
+    // 对不上的 generation：重新取 snapshot，而不是从猜测的位置接着读
+    let stale = read_sse(http, e, &fx.subject, &format!("{path}?generation=deadbeef"))
+        .await
+        .expect("旧 generation 也应能开流");
+    let names: Vec<&str> = stale.iter().map(|(n, _)| n.as_str()).collect();
+    assert!(
+        names.contains(&"snapshot"),
+        "generation 对不上必须重取 snapshot，实际 {names:?}"
+    );
+    assert_ne!(
+        stale[0].1, "deadbeef",
+        "服务端必须给出自己的 generation，不回显调用方的"
+    );
+
+    // 撤权后：流建不起来
+    sqlx::query("update identity.workspace_membership set state = 'REVOKING' where id = $1")
+        .bind(fx.workspace_membership)
+        .execute(pool)
+        .await
+        .expect("置 REVOKING");
+    match read_sse(http, e, &fx.subject, &path).await {
+        Err(status) => assert_eq!(status, reqwest::StatusCode::FORBIDDEN, "撤权后开流必须被拒"),
+        Ok(f) => panic!("撤权后不应开得起流，却拿到 {f:?}"),
+    }
+}

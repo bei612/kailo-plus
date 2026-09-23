@@ -69,7 +69,11 @@ pub async fn publish_message(
         Ok(s) => s,
         Err(r) => return r,
     };
-    let client = match actor_client(&state, &ctx, &scope).await {
+    let keys = match actor_keys(&state, &ctx).await {
+        Ok(k) => k,
+        Err(r) => return r,
+    };
+    let client = match identity_client(&state, &keys, &scope) {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -157,7 +161,11 @@ pub async fn query_messages(
         Ok(s) => s,
         Err(r) => return r,
     };
-    let client = match actor_client(&state, &ctx, &scope).await {
+    let keys = match actor_keys(&state, &ctx).await {
+        Ok(k) => k,
+        Err(r) => return r,
+    };
+    let client = match identity_client(&state, &keys, &scope) {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -180,9 +188,13 @@ pub async fn query_messages(
 }
 
 /// 一次 Workspace 准入通过后确定下来的事实。
-struct WorkspaceScope {
-    channel_id: String,
-    community_host: String,
+pub struct WorkspaceScope {
+    pub channel_id: String,
+    pub community_host: String,
+    /// WorkspaceMembership 的版本。它进 stream 的 generation：撤权与重新授权
+    /// 都会推进版本，因此旧 generation 必然对不上，客户端拿不着一条本不该
+    /// 继续的流（重新授权创建新 membership version，不复活旧投影——`.design/10` §4）。
+    pub version: i32,
 }
 
 /// HUMAN 的 Workspace scope guard（`.design/03` §4）。
@@ -191,13 +203,13 @@ struct WorkspaceScope {
 /// 证明 workspace `manage`」要 Core 侧的 SpiceDB 客户端，那属于 Stage 2 的 fresh
 /// Check 面。这里不写一个恒为假的分支冒充它——没实现的路径不存在，比存在但永远
 /// 走不到好。
-async fn admit_workspace(
+pub async fn admit_workspace(
     state: &BffState,
     ctx: &ExecutionContext,
     workspace_id: Uuid,
 ) -> Result<WorkspaceScope, Response> {
     let row = sqlx::query!(
-        "select b.channel_id, t.normalized_host
+        "select b.channel_id, t.normalized_host, wm.version
          from identity.workspace w
          join identity.workspace_membership wm
            on wm.workspace_id = w.id and wm.tenant_principal_id = $2 and wm.state = 'ACTIVE'
@@ -232,6 +244,7 @@ async fn admit_workspace(
     Ok(WorkspaceScope {
         channel_id: row.channel_id.to_string(),
         community_host: row.normalized_host,
+        version: row.version,
     })
 }
 
@@ -240,11 +253,11 @@ async fn admit_workspace(
 /// `custody=CLIENT` 的身份由原生端本机持钥直连 Relay，Core 手里没有那把钥匙。
 /// 走到这里说明调用方是 Web 端而该身份是原生端托管——不拿别的身份凑合，
 /// 当场拒绝（`DD-75`）。
-async fn actor_client(
-    state: &BffState,
-    ctx: &ExecutionContext,
-    scope: &WorkspaceScope,
-) -> Result<IdentityClient, Response> {
+/// 取该 HUMAN 的签名密钥。
+///
+/// 与构造 HTTP 客户端分开：实时订阅要用同一把钥匙另建 NIP-42 WebSocket 会话
+/// （`.design/09` 第 4 步），两条路共用密钥取用与托管校验，不共用连接。
+pub async fn actor_keys(state: &BffState, ctx: &ExecutionContext) -> Result<nostr::Keys, Response> {
     let row = sqlx::query!(
         "select custody, private_key_secret_ref, private_key_secret_version,
                 private_key_secret_audience
@@ -283,9 +296,23 @@ async fn actor_client(
         StatusCode::SERVICE_UNAVAILABLE.into_response()
     })?;
 
+    nostr::Keys::parse(key.expose()).map_err(|_| {
+        tracing::warn!(principal = %ctx.tenant_principal_id, "HUMAN 私钥不可解析");
+        StatusCode::SERVICE_UNAVAILABLE.into_response()
+    })
+}
+
+/// 用已取到的密钥构造 HTTP bridge 客户端。
+// Response 本身较大，但这条路径每请求只走一次，装箱换来的间接寻址不值当
+#[allow(clippy::result_large_err)]
+pub fn identity_client(
+    state: &BffState,
+    keys: &nostr::Keys,
+    scope: &WorkspaceScope,
+) -> Result<IdentityClient, Response> {
     IdentityClient::new(
         Custody::Server,
-        key.expose(),
+        &keys.secret_key().to_secret_hex(),
         &state.relay_transport,
         &scope.community_host,
     )

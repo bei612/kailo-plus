@@ -37,6 +37,12 @@ pub struct BffState {
     /// 历史查询的单页上界。NIP-11 声明的 1000 是 Relay 的上限，不是平台该放行
     /// 的值——上界在 BFF 侧先行设定（`07` §5）。
     pub message_page_limit: i64,
+    /// Relay 的 WebSocket 地址。与 HTTP transport 分开配置：两者在部署里
+    /// 可能经不同的入口，而 Community host 都另从 binding 取。
+    pub relay_ws_url: String,
+    /// 单条流的缓冲帧数。满了对上游形成背压而不是丢帧——丢帧会让客户端
+    /// 以为自己看到了完整序列。
+    pub stream_buffer: usize,
 }
 
 /// 一次请求的执行身份。
@@ -96,6 +102,10 @@ pub fn router(state: BffState) -> Router {
         .route(
             "/api/v1/user-state/workspaces/{workspace_id}",
             axum::routing::put(crate::user_state::put_workspace_preference),
+        )
+        .route(
+            "/api/v1/workspaces/{workspace_id}/stream",
+            get(crate::stream::open_stream),
         )
         .route(
             "/api/v1/user-state/read",

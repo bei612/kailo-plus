@@ -13,6 +13,7 @@ mod platform_bootstrap;
 mod scope_state;
 mod service_api;
 mod service_auth;
+mod stream;
 mod temporal;
 mod tenant_lifecycle;
 mod user_state;
@@ -90,6 +91,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "缺少 BFF_MESSAGE_PAGE_LIMIT")?
             .parse()
             .map_err(|_| "BFF_MESSAGE_PAGE_LIMIT 必须是数字")?,
+        relay_ws_url: std::env::var("BUZZ_RELAY_WS_URL").map_err(|_| "缺少 BUZZ_RELAY_WS_URL")?,
+        stream_buffer: std::env::var("BFF_STREAM_BUFFER")
+            .map_err(|_| "缺少 BFF_STREAM_BUFFER")?
+            .parse()
+            .map_err(|_| "BFF_STREAM_BUFFER 必须是数字")?,
     };
 
     let bff = tokio::net::TcpListener::bind(listen).await?;

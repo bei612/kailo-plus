@@ -4,3 +4,4 @@
 
 pub mod bridge;
 pub mod operator;
+pub mod stream;

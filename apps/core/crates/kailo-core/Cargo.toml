@@ -9,7 +9,9 @@ contracts = { path = "../contracts" }
 kailo-identity = { path = "../kailo-identity" }
 kailo-buzz = { path = "../kailo-buzz" }
 kailo-secrets = { path = "../kailo-secrets" }
-axum = "0.8"
+async-stream = "0.3"
+axum = { version = "0.8", features = ["macros"] }
+futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "uuid", "macros", "json"] }
 hex = "0.4"
@@ -29,5 +31,5 @@ temporalio-common = { version = "1.0.0", features = ["vendored-protox"] }
 [dev-dependencies]
 futures-util = "0.3"
 nostr = { version = "0.44", default-features = false, features = ["std"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

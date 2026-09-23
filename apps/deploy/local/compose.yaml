@@ -289,6 +289,10 @@ services:
       # 历史查询单页上界。NIP-11 声明的 1000 是 Relay 的上限，不是平台该
       # 放行的值——上界在 BFF 侧先行设定（07 §5）。
       BFF_MESSAGE_PAGE_LIMIT: ${BFF_MESSAGE_PAGE_LIMIT:?必须显式提供，禁止硬编码}
+      # 实时订阅走 NIP-42 WebSocket 会话；Community host 另从 binding 取
+      BUZZ_RELAY_WS_URL: ${BUZZ_RELAY_WS_URL:?必须显式提供，禁止硬编码}
+      # 单条流的缓冲帧数。满了对上游形成背压而不是丢帧
+      BFF_STREAM_BUFFER: ${BFF_STREAM_BUFFER:?必须显式提供，禁止硬编码}
       # service API 与 BFF 分端口：网关以 pathPrefix: / 整体转发给 BFF，
       # 同端口的服务面等于对任何已登录用户开放。
       SERVICE_LISTEN: ${SERVICE_BIND_ADDR:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}
