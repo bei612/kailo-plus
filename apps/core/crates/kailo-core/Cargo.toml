@@ -11,7 +11,7 @@ kailo-buzz = { path = "../kailo-buzz" }
 kailo-secrets = { path = "../kailo-secrets" }
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "uuid", "macros"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "uuid", "macros", "json"] }
 hex = "0.4"
 jsonwebtoken = "9"
 nostr = { version = "0.44", default-features = false, features = ["std"] }

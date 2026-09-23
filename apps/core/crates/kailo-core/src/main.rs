@@ -15,6 +15,7 @@ mod service_api;
 mod service_auth;
 mod temporal;
 mod tenant_lifecycle;
+mod user_state;
 mod web_transport;
 
 use std::net::SocketAddr;

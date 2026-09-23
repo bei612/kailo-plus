@@ -91,6 +91,16 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/workspaces/{workspace_id}/messages",
             get(crate::web_transport::query_messages).post(crate::web_transport::publish_message),
         )
+        // 收藏/静音/已读：Core 是唯一权威，三端共用（DD-40）
+        .route("/api/v1/user-state", get(crate::user_state::get_user_state))
+        .route(
+            "/api/v1/user-state/workspaces/{workspace_id}",
+            axum::routing::put(crate::user_state::put_workspace_preference),
+        )
+        .route(
+            "/api/v1/user-state/read",
+            axum::routing::put(crate::user_state::put_read_mark),
+        )
         .with_state(state)
 }
 

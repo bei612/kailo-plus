@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select workspace_preferences, read_contexts, version\n         from identity.collaboration_user_state where tenant_principal_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workspace_preferences",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "read_contexts",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "version",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "31558cb9f7e82c4632cde073eb744586586cfbb10067f044b8bafa0a6f584253"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select 1 from identity.workspace_membership wm\n         join identity.workspace w on w.id = wm.workspace_id\n         where wm.tenant_principal_id = $1 and wm.state = 'ACTIVE'\n           and w.tenant_id = $2 and w.state = 'ACTIVE'\n         limit 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "?column?",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4ff763fd38a5aa9162954be5305e7aeb456c16570d95f325ca74b4b6919c56b4"
+}

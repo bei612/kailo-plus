@@ -162,3 +162,187 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWo
         "不存在的 Workspace 应与无权限同一个回答"
     );
 }
+
+/// CollaborationUserState（`DD-40`）：收藏/静音/已读的唯一权威在 Core。
+///
+/// 验四件事：键必须指向可见的 Workspace/Channel、版本冲突会被发现、并发改不同
+/// 的键不会互相抹掉、撤权后再写同一个键被拒。
+#[tokio::test]
+async fn user_state_is_scoped_and_concurrency_safe() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+    let outcome = std::panic::AssertUnwindSafe(run_user_state(&http, &e, &pool, &fx))
+        .catch_unwind()
+        .await;
+    let _ =
+        sqlx::query("delete from identity.collaboration_user_state where tenant_principal_id = $1")
+            .bind(fx.principal)
+            .execute(&pool)
+            .await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn run_user_state(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    fx: &common::LiveWorkspace,
+) {
+    // 初始状态为空，且读取不建行——读取不产生副作用
+    let (status, body) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::GET,
+        "/api/v1/user-state",
+        None,
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body["version"], 0, "没设过偏好时版本为 0");
+    let rows: i64 = sqlx::query_scalar("select count(*) from identity.collaboration_user_state")
+        .fetch_one(pool)
+        .await
+        .expect("数行");
+    assert_eq!(rows, 0, "读取不得建行");
+
+    // 收藏一个可见 Workspace
+    let ws_path = format!("/api/v1/user-state/workspaces/{}", fx.workspace);
+    let (status, body) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::PUT,
+        &ws_path,
+        Some(serde_json::json!({"starred": true, "muted": false, "version": 0})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "设置可见 Workspace 的偏好应成功：{body}"
+    );
+    let version = body["version"].as_i64().expect("version");
+
+    // 版本不符即冲突：拿旧版本再写一次
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::PUT,
+        &ws_path,
+        Some(serde_json::json!({"starred": false, "muted": true, "version": 0})),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::CONFLICT, "旧版本写入必须冲突");
+
+    // 另一个键的写入不抹掉先前的键
+    let channel: Uuid = sqlx::query_scalar(
+        "select channel_id from projection.workspace_buzz_binding where workspace_id = $1",
+    )
+    .bind(fx.workspace)
+    .fetch_one(pool)
+    .await
+    .expect("取 channel");
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::PUT,
+        "/api/v1/user-state/read",
+        Some(serde_json::json!({
+            "contextKey": channel.to_string(),
+            "lastReadAt": "2026-09-23T00:00:00Z",
+            "version": version,
+        })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "标记可见 Channel 的已读应成功"
+    );
+    let (_, body) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::GET,
+        "/api/v1/user-state",
+        None,
+    )
+    .await;
+    assert_eq!(
+        body["workspacePreferences"][fx.workspace.to_string()]["starred"],
+        true,
+        "写另一个键不得抹掉先前的键，实际 {body}"
+    );
+    assert!(
+        body["readContexts"][channel.to_string()].is_string(),
+        "已读位置应在"
+    );
+
+    // 不可见的 Workspace：拒绝
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::PUT,
+        &format!("/api/v1/user-state/workspaces/{}", Uuid::new_v4()),
+        Some(serde_json::json!({"starred": true, "muted": false, "version": 2})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::FORBIDDEN,
+        "不可见的 Workspace 必须拒绝"
+    );
+
+    // 既不是 UUID 也不是 msg: 形式的键：拒绝。放开键空间等于开了任意写入面
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::PUT,
+        "/api/v1/user-state/read",
+        Some(
+            serde_json::json!({"contextKey": "../../etc/passwd", "lastReadAt": "x", "version": 2}),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::BAD_REQUEST,
+        "非法 context_key 必须拒绝"
+    );
+
+    // 撤权后再写同一个键：拒绝。校验在写入路径上，不是读取时过滤
+    sqlx::query("update identity.workspace_membership set state = 'REVOKING' where id = $1")
+        .bind(fx.workspace_membership)
+        .execute(pool)
+        .await
+        .expect("置 REVOKING");
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::PUT,
+        &ws_path,
+        Some(serde_json::json!({"starred": false, "muted": false, "version": 2})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::FORBIDDEN,
+        "撤权后写同一个键必须拒绝"
+    );
+}
