@@ -74,6 +74,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     };
 
+    let bff_state = bff::BffState {
+        pool: pool.clone(),
+        session_ttl_seconds: std::env::var("PLATFORM_SESSION_TTL_SECONDS")
+            .map_err(|_| "缺少 PLATFORM_SESSION_TTL_SECONDS")?
+            .parse()
+            .map_err(|_| "PLATFORM_SESSION_TTL_SECONDS 必须是秒数")?,
+    };
+
     let bff = tokio::net::TcpListener::bind(listen).await?;
     let service = tokio::net::TcpListener::bind(service_listen).await?;
     tracing::info!(bff = %listen, service = %service_listen, "listening");
@@ -83,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     // 任一监听退出即整体退出：只剩半边可用会让调用方看到不一致的可用性。
     tokio::try_join!(
-        axum::serve(bff, bff::router(pool)).with_graceful_shutdown(shutdown()),
+        axum::serve(bff, bff::router(bff_state)).with_graceful_shutdown(shutdown()),
         axum::serve(service, service_api::router(service_state)).with_graceful_shutdown(shutdown()),
     )?;
     Ok(())

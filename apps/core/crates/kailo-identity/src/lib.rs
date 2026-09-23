@@ -4,6 +4,8 @@
 //! 解析失败一律 fail closed——不回退默认 Tenant、不自动建号、不接受调用方自报的
 //! 任何字段（`00-实施总纲.md` §3.4、`.design/09`）。
 
+pub mod session;
+
 use contracts::{ErrorClass, ReasonCode, ResolvedIdentity};
 use sqlx::PgPool;
 

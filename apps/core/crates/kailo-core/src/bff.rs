@@ -14,7 +14,7 @@ use axum::{
 use contracts::{ErrorBody, ErrorClass, ReasonCode};
 
 use crate::audit;
-use kailo_identity::{resolve, IdentityError};
+use kailo_identity::{resolve, session, IdentityError};
 use sqlx::PgPool;
 
 /// 网关投影的两条 header。名字与 `SS-AGW-OIDC` 的 `set` 目标严格一致——
@@ -22,11 +22,20 @@ use sqlx::PgPool;
 const HEADER_ISSUER: &str = "x-kailo-oidc-issuer";
 const HEADER_SUBJECT: &str = "x-kailo-oidc-subject";
 
-pub fn router(pool: PgPool) -> Router {
+/// BFF 的运行状态。
+#[derive(Clone)]
+pub struct BffState {
+    pub pool: PgPool,
+    /// PlatformSession 的有效期。它是部署事实，不是常量——不同部署对「多久要
+    /// 重新过一次 OIDC」的要求不同。
+    pub session_ttl_seconds: i64,
+}
+
+pub fn router(state: BffState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/api/v1/session", get(current_session))
-        .with_state(pool)
+        .with_state(state)
 }
 
 /// 健康检查不解析身份：它不返回任何业务事实。
@@ -34,13 +43,41 @@ async fn healthz() -> StatusCode {
     StatusCode::OK
 }
 
-async fn current_session(State(pool): State<PgPool>, headers: HeaderMap) -> Response {
+async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> Response {
+    let pool = &state.pool;
     // 只取这两条 header，不读请求体、查询串或任何 Browser 可控位置
     let header = |name: &str| -> Option<&str> { headers.get(name).and_then(|v| v.to_str().ok()) };
     let (issuer, subject) = (header(HEADER_ISSUER), header(HEADER_SUBJECT));
 
-    match resolve(&pool, issuer, subject).await {
-        Ok(identity) => (StatusCode::OK, Json(identity)).into_response(),
+    match resolve(pool, issuer, subject).await {
+        Ok(identity) => {
+            // 会话在身份解析**之后**建立：解析不过就没有会话可用，撤权因此
+            // 对下一个请求立刻生效，不需要等任何凭证过期（`.design/03` §4.1）。
+            let (Ok(human), Ok(membership)) = (
+                identity.human_identity_id.parse(),
+                identity.tenant_membership_id.parse(),
+            ) else {
+                tracing::warn!("解析出的身份 ID 不是 UUID");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            };
+            match session::ensure(pool, human, membership, state.session_ttl_seconds).await {
+                Ok(s) => (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "humanIdentityId": identity.human_identity_id,
+                        "tenantId": identity.tenant_id,
+                        "tenantMembershipId": identity.tenant_membership_id,
+                        "tenantPrincipalId": identity.tenant_principal_id,
+                        "platformSessionId": s.id,
+                        "currentWorkspaceId": s.current_workspace_id,
+                    })),
+                )
+                    .into_response(),
+                // 会话建不起来就没有执行上下文可用——fail closed，不返回一个
+                // 没有会话的身份让调用方以为可以继续
+                Err(e) => error_response(IdentityError::Unavailable(e)),
+            }
+        }
         Err(e) => {
             // 这里是 `.design/03` §9 允许 `tenant_id=NONE` 的那段边界：网关已经
             // 验过 OIDC，但 Core 还没解析出可用的 TenantMembership。拒绝必须留痕，
@@ -48,7 +85,7 @@ async fn current_session(State(pool): State<PgPool>, headers: HeaderMap) -> Resp
             //
             // 依赖不可用不记：那不是一次身份判定，记下来会把运维故障混进拒绝审计。
             if !matches!(e, IdentityError::Unavailable(_)) {
-                record_denied_authentication(&pool, issuer, subject, &e).await;
+                record_denied_authentication(pool, issuer, subject, &e).await;
             }
             error_response(e)
         }

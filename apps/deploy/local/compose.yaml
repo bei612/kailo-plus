@@ -283,6 +283,9 @@ services:
     environment:
       DATABASE_URL: ${CORE_DATABASE_URL:?必须显式提供，禁止硬编码}
       BFF_LISTEN: ${BFF_LISTEN:?必须显式提供，禁止硬编码}
+      # PlatformSession 有效期。部署事实：不同部署对「多久重新过一次 OIDC」
+      # 的要求不同，写死会让这件事变成改代码才能调。
+      PLATFORM_SESSION_TTL_SECONDS: ${PLATFORM_SESSION_TTL_SECONDS:?必须显式提供，禁止硬编码}
       # service API 与 BFF 分端口：网关以 pathPrefix: / 整体转发给 BFF，
       # 同端口的服务面等于对任何已登录用户开放。
       SERVICE_LISTEN: ${SERVICE_BIND_ADDR:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}

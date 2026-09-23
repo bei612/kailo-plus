@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into identity.platform_session\n             (id, human_identity_id, tenant_membership_id, issued_at, expires_at, status)\n         values ($1, $2, $3, now(), now() + make_interval(secs => $4), 'ACTIVE')\n         returning id, current_workspace_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "current_workspace_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "cabbd7a5e4e254c3d5228768a6c02ddc39326136860ece7a4f83903e8684be39"
+}

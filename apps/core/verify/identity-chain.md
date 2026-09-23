@@ -52,3 +52,28 @@ HTTP 200
 它不绕过 BFF 的任何判定——BFF 仍按 issuer/subject 查库，查不到照样拒绝。
 真实的 Tenant 与成员建立走 Stage 1 的 `TENANT_LIFECYCLE` /
 `MEMBERSHIP_PROJECTION` Workflow，不是这个脚本。
+
+## PlatformSession（2026-09-23）
+
+会话不由 Browser 携带：网关只投影 issuer/subject，Core 据此重新解析身份，再找出
+或建立该 `(HumanIdentity, TenantMembership)` 的 active 会话。直接后果是**撤销立刻
+对下一个请求生效**——不依赖客户端丢弃任何东西，外面也没有一张需要等它过期的凭证。
+
+实测：
+
+| 步骤 | 结果 |
+|---|---|
+| 首次解析 | `200`，返回新建的 `platformSessionId` |
+| 再次解析 | `200`，返回**同一个** `platformSessionId`；库里仍只有 1 条 |
+| 成员经 service API 进入 `REVOKING` | `{"state":"REVOKING","version":2}`；会话同一事务内变为 `REVOKED` |
+| 撤权后立刻再请求 | `403`，且不再建新会话（身份解析先失败，走不到建会话那一步） |
+
+一个 `(HumanIdentity, TenantMembership)` 同时至多一条 active 会话。不为同一个人
+同一个 Tenant 开第二条，否则「撤销会话」会变成需要遍历的动作，而遍历总有漏网的。
+
+撤会话与 membership 跃迁同事务（`.design/03` §3 要求「进入 `REVOKING` 时立即撤销
+其 PlatformSession」）。分两次提交，崩在中间就得到一个已被撤权却还能继续发请求的
+会话——而 `REVOKING` 的全部意义就是立刻关门。
+
+过期判定按库里的 `now()`，不按进程时钟：多副本 Core 的时钟不保证一致，用各自的
+时钟会让同一条会话在一个副本上有效、在另一个副本上过期。

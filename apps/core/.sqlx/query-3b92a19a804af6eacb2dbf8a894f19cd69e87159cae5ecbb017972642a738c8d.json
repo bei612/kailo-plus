@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update identity.platform_session set status = 'REVOKED'\n         where tenant_membership_id = $1 and status = 'ACTIVE'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3b92a19a804af6eacb2dbf8a894f19cd69e87159cae5ecbb017972642a738c8d"
+}

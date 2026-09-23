@@ -169,12 +169,35 @@ pub async fn transition_membership(
         Ok(Some((new_state, version))) => {
             // 审计与状态变化同事务：分两次提交，崩在中间就得到一次
             // 「发生过但没人记得」的撤权（.design/03 §9）。
+            // 进入 REVOKING 即撤会话，与状态变化同事务（`.design/03` §3）。
+            // 分两次提交，崩在中间就得到一个已被撤权却还能继续发请求的会话，
+            // 而 REVOKING 的全部意义就是立刻关门。
+            let revoked_sessions = if matches!(req.scope, MembershipScope::Tenant)
+                && matches!(new_state.as_str(), "REVOKING" | "REVOKED")
+            {
+                match kailo_identity::session::revoke_for_membership(&mut tx, req.membership_id)
+                    .await
+                {
+                    Ok(n) => n,
+                    Err(e) => return unavailable(e),
+                }
+            } else {
+                0
+            };
+
             let entry = membership_audit(&req, &new_state, wf_tenant, wf_operation);
             if let Err(e) = append(&mut tx, entry).await {
                 return unavailable(e);
             }
             if let Err(e) = tx.commit().await {
                 return unavailable(e);
+            }
+            if revoked_sessions > 0 {
+                tracing::info!(
+                    membership = %req.membership_id,
+                    revoked_sessions,
+                    "撤权同时撤销了 PlatformSession"
+                );
             }
             (
                 StatusCode::OK,
