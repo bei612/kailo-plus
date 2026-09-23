@@ -116,8 +116,13 @@ export interface ErrorBody {
  * 字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
  */
 export enum ReasonCode {
+    ClientKeyAlreadyBound = "CLIENT_KEY_ALREADY_BOUND",
+    ClientKeyLimitReached = "CLIENT_KEY_LIMIT_REACHED",
+    ClientKeyNotFound = "CLIENT_KEY_NOT_FOUND",
+    ClientKeyProofInvalid = "CLIENT_KEY_PROOF_INVALID",
     IdentityHeaderMissing = "IDENTITY_HEADER_MISSING",
     IdentityUnknown = "IDENTITY_UNKNOWN",
+    NativeSurfaceRequired = "NATIVE_SURFACE_REQUIRED",
     SessionNotActive = "SESSION_NOT_ACTIVE",
     TenantMembershipNotActive = "TENANT_MEMBERSHIP_NOT_ACTIVE",
     TenantSelectionNotAvailable = "TENANT_SELECTION_NOT_AVAILABLE",
@@ -162,9 +167,10 @@ export interface WorkflowRef {
 
 /**
  * ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
- * 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件当前只含 Stage 1 已实现的四个。
+ * 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
  */
 export enum WorkflowKind {
+    BuzzIdentityProjection = "BUZZ_IDENTITY_PROJECTION",
     MembershipProjection = "MEMBERSHIP_PROJECTION",
     MembershipRevocation = "MEMBERSHIP_REVOCATION",
     TenantLifecycle = "TENANT_LIFECYCLE",

@@ -184,6 +184,32 @@ func (c *CoreAPI) ProjectBuzzRoster(ctx context.Context, in BuzzProjectionInput)
 	return c.post(ctx, "/service/v1/membership-projections/buzz", in, nil)
 }
 
+// IdentityProjectionInput 是原生设备公钥投影的载荷（DD-79）。方向不在这里：
+// Core 按 binding 状态决定投入还是移出，Worker 只给出冻结的 pubkey 与版本。
+type IdentityProjectionInput struct {
+	Pubkey         string `json:"pubkey"`
+	BindingVersion int32  `json:"bindingVersion"`
+}
+
+// IdentityProjectionOutput 回传查证后该 binding 的状态。
+type IdentityProjectionOutput struct {
+	Converged bool   `json:"converged"`
+	Pubkey    string `json:"pubkey"`
+	State     string `json:"state"`
+}
+
+// ProjectBuzzIdentity 把一台设备的公钥投入或移出 roster。
+//
+// 撤权与登记并发、且撤权先到时 Core 回 409：这次登记不成立，属于确定的结论，
+// 不重试。roster 未收敛回 503，按投影类的重试上界继续。
+func (c *CoreAPI) ProjectBuzzIdentity(
+	ctx context.Context, in IdentityProjectionInput,
+) (IdentityProjectionOutput, error) {
+	var out IdentityProjectionOutput
+	err := c.post(ctx, "/service/v1/identity-projections/buzz", in, &out)
+	return out, err
+}
+
 // TransitionInput 是成员状态跃迁的载荷。
 type TransitionInput struct {
 	Scope        string `json:"scope"`

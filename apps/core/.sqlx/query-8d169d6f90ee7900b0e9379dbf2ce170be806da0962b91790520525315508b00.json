@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update identity.buzz_identity_binding set state = 'REVOKING', version = version + 1\n         where pubkey = $1 returning version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8d169d6f90ee7900b0e9379dbf2ce170be806da0962b91790520525315508b00"
+}

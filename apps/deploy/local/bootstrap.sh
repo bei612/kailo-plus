@@ -86,14 +86,37 @@ mkdir -p secrets/keycloak-import
 # 按 "<namespace>:<role>" 解析 permissions，namespace 写错即全部调用被拒。
 [ -f .env ] && . ./.env
 : "${TEMPORAL_NAMESPACE:?bootstrap 需要 .env 中的 TEMPORAL_NAMESPACE}"
-sed -e "s|__KAILO_CORE_CLIENT_SECRET__|$(cat secrets/kailo_core_client_secret)|" \
-    -e "s|__KAILO_WORKER_CLIENT_SECRET__|$(cat secrets/kailo_worker_client_secret)|" \
-    -e "s|__TEMPORAL_NAMESPACE__|${TEMPORAL_NAMESPACE}|g" \
-    -e "s|__BROWSER_CLIENT_SECRET__|$(cat secrets/browser_client_secret)|" \
-    -e "s|__VERIFY_USER__|${VERIFY_USER:?bootstrap 需要 .env 中的 VERIFY_USER}|" \
-    -e "s|__OIDC_REDIRECT_URI__|${OIDC_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_REDIRECT_URI}|" \
-    -e "s|__VERIFY_USER_PASSWORD__|$(cat secrets/verify_user_password)|" \
-  keycloak/kailo-realm.json > secrets/keycloak-import/kailo-realm.json
+# 渲染在进程内完成：secret 从文件读入内存，不经命令行——`sed "s|…|$(cat …)|"`
+# 会把每个 client secret 与核验口令都摆进进程表，任何能 ps 的人都看得见。
+: "${VERIFY_USER:?bootstrap 需要 .env 中的 VERIFY_USER}"
+: "${OIDC_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_REDIRECT_URI}"
+: "${OIDC_NATIVE_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_NATIVE_CLIENT_ID}"
+: "${OIDC_NATIVE_AUDIENCE:?bootstrap 需要 .env 中的 OIDC_NATIVE_AUDIENCE}"
+TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" VERIFY_USER="$VERIFY_USER" \
+OIDC_REDIRECT_URI="$OIDC_REDIRECT_URI" OIDC_NATIVE_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
+OIDC_NATIVE_AUDIENCE="$OIDC_NATIVE_AUDIENCE" python3 - <<'RENDER'
+import os
+from_file = {
+    "__KAILO_CORE_CLIENT_SECRET__": "secrets/kailo_core_client_secret",
+    "__KAILO_WORKER_CLIENT_SECRET__": "secrets/kailo_worker_client_secret",
+    "__BROWSER_CLIENT_SECRET__": "secrets/browser_client_secret",
+    "__VERIFY_USER_PASSWORD__": "secrets/verify_user_password",
+}
+from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "OIDC_REDIRECT_URI",
+            "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE"]
+text = open("keycloak/kailo-realm.json", encoding="utf-8").read()
+for placeholder, path in from_file.items():
+    text = text.replace(placeholder, open(path, encoding="utf-8").read().strip())
+for name in from_env:
+    text = text.replace(f"__{name}__", os.environ[name])
+import re
+left = sorted(set(re.findall(r"__[A-Z][A-Z_]*__", text)))
+if left:
+    raise SystemExit(f"realm 模板里还有未替换的占位符：{left}")
+fd = os.open("secrets/keycloak-import/kailo-realm.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    fh.write(text)
+RENDER
 chmod 600 secrets/keycloak-import/kailo-realm.json
 printf '  已渲染：secrets/keycloak-import/kailo-realm.json\n'
 

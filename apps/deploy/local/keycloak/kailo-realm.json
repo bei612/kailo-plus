@@ -91,6 +91,35 @@
         "+"
       ],
       "secret": "__BROWSER_CLIENT_SECRET__"
+    },
+    {
+      "clientId": "__OIDC_NATIVE_CLIENT_ID__",
+      "name": "Kailo Desktop/Mobile",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://127.0.0.1/*"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "kailo-native-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "__OIDC_NATIVE_AUDIENCE__",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "users": [

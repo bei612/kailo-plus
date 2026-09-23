@@ -23,13 +23,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::component_task::{self, ComponentTaskInput};
 use crate::membership_projection::MembershipScope;
 use crate::service_api::{authorize, unavailable, ServiceState};
-use crate::temporal::{Started, TemporalError};
-
-/// Worker 注册的 Workflow 类型名。两侧必须逐字相同，否则 Start 成功但没有
-/// 任何 Worker 认领，表现为「启动了却永远不动」。
-const WORKFLOW_TYPE: &str = "ComponentTaskWorkflow";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,15 +43,6 @@ pub struct LifecycleResponse {
     pub kind: String,
     /// 为空表示本次调用没有创建 execution（同一 ID 的已存在）。
     pub run_id: Option<String>,
-}
-
-/// Workflow 的冻结输入。字段名必须与 Go 侧的 `ComponentTaskInput` 一致——
-/// 两侧共用 JSON payload，名字对不上时 Workflow 收到的是零值而不是错误。
-#[derive(Debug, Serialize)]
-pub struct ComponentTaskInput<T> {
-    pub kind: String,
-    #[serde(flatten)]
-    pub target: T,
 }
 
 #[derive(Debug, Serialize)]
@@ -136,30 +123,8 @@ pub async fn start_membership_lifecycle(
         Err(e) => return unavailable(e),
     }
 
-    let workflow_id = format!("kailo:{kind}:{tenant_id}:{}:{version}", req.membership_id);
-
-    // Start 之前先落 WorkflowRef。ON CONFLICT DO NOTHING 让重复调用收敛到同一
-    // 行而不是失败——重复调用与崩溃重试是同一件事。action_execution_id 上的
-    // 唯一约束保证一个 ActionExecution 至多一个业务 Workflow。
-    if let Err(e) = sqlx::query!(
-        "insert into projection.workflow_ref
-             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
-              operation_id, action_execution_id, projection_state)
-         select $1, $2, 1, $3, $4, ae.operation_id, ae.id, 'PENDING_START'
-         from admission.action_execution ae where ae.id = $5
-         on conflict (workflow_id) do nothing",
-        workflow_id,
-        WORKFLOW_TYPE,
-        kind,
-        tenant_id,
-        req.action_execution_id,
-    )
-    .execute(&state.pool)
-    .await
-    {
-        return unavailable(e);
-    }
-
+    let workflow_id =
+        component_task::workflow_id(kind, tenant_id, &req.membership_id.to_string(), version);
     let input = ComponentTaskInput {
         kind: kind.to_owned(),
         target: MembershipEnvelope {
@@ -176,66 +141,26 @@ pub async fn start_membership_lifecycle(
         },
     };
 
-    match state
-        .temporal
-        .start(&workflow_id, WORKFLOW_TYPE, &input)
-        .await
-    {
-        Ok(Started::Created { run_id }) => {
-            mark_running(&state, &workflow_id, Some(&run_id)).await;
-            (
-                StatusCode::OK,
-                Json(LifecycleResponse {
-                    workflow_id,
-                    kind: kind.to_owned(),
-                    run_id: Some(run_id),
-                }),
-            )
-                .into_response()
-        }
-        // 已存在不是失败：它恰好证明目标状态成立。run ID 只从 observation
-        // 回填，这里不编一个（`.design/03` §6）。
-        Ok(Started::AlreadyStarted) => {
-            mark_running(&state, &workflow_id, None).await;
-            (
-                StatusCode::OK,
-                Json(LifecycleResponse {
-                    workflow_id,
-                    kind: kind.to_owned(),
-                    run_id: None,
-                }),
-            )
-                .into_response()
-        }
-        Err(e @ TemporalError::Rejected(_)) => {
-            tracing::warn!(error = %e, "Start 被拒绝");
-            StatusCode::CONFLICT.into_response()
-        }
-        // 结果不明：WorkflowRef 停在 PENDING_START，调用方只能用同一 ID 收敛，
-        // 不换 ID 重试（DD-48）。
-        Err(e) => {
-            tracing::warn!(error = %e, workflow_id, "Start 结果不明");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
-        }
-    }
-}
-
-/// 回填 run ID 并把投影状态推进到 RUNNING。
-///
-/// 失败只记日志：execution 已经起来了，这里再报错会让调用方以为没启动而重试，
-/// 那比投影落后更糟。兜底由 `ListWorkflowExecutions` 对账作业承担（06 §3.1）。
-async fn mark_running(state: &ServiceState, workflow_id: &str, run_id: Option<&str>) {
-    if let Err(e) = sqlx::query!(
-        "update projection.workflow_ref
-         set run_id = coalesce($2, run_id), projection_state = 'RUNNING', version = version + 1
-         where workflow_id = $1 and projection_state = 'PENDING_START'",
-        workflow_id,
-        run_id,
+    match component_task::start(
+        &state.pool,
+        &state.temporal,
+        &workflow_id,
+        tenant_id,
+        req.action_execution_id,
+        &input,
     )
-    .execute(&state.pool)
     .await
     {
-        tracing::warn!(error = %e, workflow_id, "回填 run ID 失败，留给对账作业");
+        Ok(run_id) => (
+            StatusCode::OK,
+            Json(LifecycleResponse {
+                workflow_id,
+                kind: kind.to_owned(),
+                run_id,
+            }),
+        )
+            .into_response(),
+        Err(r) => r,
     }
 }
 
@@ -365,26 +290,7 @@ pub async fn start_scope_lifecycle(
         Err(e) => return unavailable(e),
     }
 
-    let workflow_id = format!("kailo:{kind}:{tenant_id}:{}:{version}", req.id);
-    if let Err(e) = sqlx::query!(
-        "insert into projection.workflow_ref
-             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
-              operation_id, action_execution_id, projection_state)
-         select $1, $2, 1, $3, $4, ae.operation_id, ae.id, 'PENDING_START'
-         from admission.action_execution ae where ae.id = $5
-         on conflict (workflow_id) do nothing",
-        workflow_id,
-        WORKFLOW_TYPE,
-        kind,
-        tenant_id,
-        req.action_execution_id,
-    )
-    .execute(&state.pool)
-    .await
-    {
-        return unavailable(e);
-    }
-
+    let workflow_id = component_task::workflow_id(kind, tenant_id, &req.id.to_string(), version);
     let input = ComponentTaskInput {
         kind: kind.to_owned(),
         target: ScopeEnvelope {
@@ -401,42 +307,25 @@ pub async fn start_scope_lifecycle(
         },
     };
 
-    match state
-        .temporal
-        .start(&workflow_id, WORKFLOW_TYPE, &input)
-        .await
+    match component_task::start(
+        &state.pool,
+        &state.temporal,
+        &workflow_id,
+        tenant_id,
+        req.action_execution_id,
+        &input,
+    )
+    .await
     {
-        Ok(Started::Created { run_id }) => {
-            mark_running(&state, &workflow_id, Some(&run_id)).await;
-            (
-                StatusCode::OK,
-                Json(LifecycleResponse {
-                    workflow_id,
-                    kind: kind.to_owned(),
-                    run_id: Some(run_id),
-                }),
-            )
-                .into_response()
-        }
-        Ok(Started::AlreadyStarted) => {
-            mark_running(&state, &workflow_id, None).await;
-            (
-                StatusCode::OK,
-                Json(LifecycleResponse {
-                    workflow_id,
-                    kind: kind.to_owned(),
-                    run_id: None,
-                }),
-            )
-                .into_response()
-        }
-        Err(e @ TemporalError::Rejected(_)) => {
-            tracing::warn!(error = %e, "Start 被拒绝");
-            StatusCode::CONFLICT.into_response()
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, workflow_id, "Start 结果不明");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
-        }
+        Ok(run_id) => (
+            StatusCode::OK,
+            Json(LifecycleResponse {
+                workflow_id,
+                kind: kind.to_owned(),
+                run_id,
+            }),
+        )
+            .into_response(),
+        Err(r) => r,
     }
 }

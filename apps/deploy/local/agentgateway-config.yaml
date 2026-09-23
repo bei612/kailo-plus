@@ -73,12 +73,16 @@ binds:
           # 而 CEL 求值得不到值时 apply_header 走 (Header(k), None) 分支
           # 直接删除该 header。因此 set 本身已保证「要么是已验证的值，
           # 要么不存在」；再列进 remove 只会引入删掉正确值的风险。
+          #
+          # x-kailo-client-surface 只由原生 listener 投影（DD-78）。浏览器能
+          # 自报它，就能打开只对原生端开放的入口（设备公钥登记）。
           remove:
           - proxy-authorization
           - x-kailo-human-identity
           - x-kailo-tenant
           - x-kailo-workspace
           - x-kailo-principal
+          - x-kailo-client-surface
           set:
             x-kailo-oidc-issuer: jwt.iss
             x-kailo-oidc-subject: jwt.sub
@@ -105,3 +109,47 @@ binds:
           pathPrefix: /
       backends:
       - host: ${BFF_UPSTREAM}
+
+# 原生端入口（DD-78）：Desktop/Mobile 按 RFC 8252 以授权码 + PKCE 取得访问令牌，
+# 以 Bearer 调用。与浏览器入口是两个 bind 而不是同一 listener 上的两套认证：
+# gateway 阶段的 OIDC 会先于 jwtAuth 处理每个请求，把不带 cookie 的原生请求当成
+# 未登录的浏览器导航（SF-AGW-22）。
+- port: 8091
+  listeners:
+  - name: native
+    protocol: HTTP
+    policies:
+      # 上游缺省 mode=optional：不带令牌的请求直接放行；省略 audiences 即关闭
+      # audience 校验；保留令牌会把用户凭据转给 BFF（SF-AGW-24、SF-AGW-11/19）。
+      # 三项都显式写死在这里，并由 tools/check.sh 核对。
+      jwtAuth:
+        mode: strict
+        issuer: ${OIDC_ISSUER}
+        audiences:
+        - ${OIDC_NATIVE_AUDIENCE}
+        preserveToken: false
+        jwks:
+          url: ${OIDC_JWKS_URI}
+      transformations:
+        request:
+          # 与浏览器入口相同的清洗与投影，另外声明请求来自原生端。set 无条件
+          # 覆盖，客户端自报的同名 header 不会留下来。
+          remove:
+          - proxy-authorization
+          - x-kailo-human-identity
+          - x-kailo-tenant
+          - x-kailo-workspace
+          - x-kailo-principal
+          set:
+            x-kailo-oidc-issuer: jwt.iss
+            x-kailo-oidc-subject: jwt.sub
+            x-kailo-client-surface: '"native"'
+    routes:
+    # 原生端只有管理平面经 BFF（DD-75）；Web 静态资源与 OIDC 回调都不在这里
+    - name: bff-native
+      matches:
+      - path:
+          pathPrefix: /api/
+      backends:
+      - host: ${BFF_UPSTREAM}
+

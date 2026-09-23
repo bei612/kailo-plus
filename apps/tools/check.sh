@@ -474,6 +474,9 @@ agw_cfg = "deploy/local/agentgateway-config.yaml"
 if os.path.exists(agw_cfg):
     agw = yaml.safe_load(open(agw_cfg, encoding="utf-8"))
     PROJECTED = {"x-kailo-oidc-issuer", "x-kailo-oidc-subject"}
+    # 原生入口标识（DD-78）：只许原生 listener 投影，且值固定；浏览器 listener
+    # 必须移除它，否则浏览器自报就能打开只对原生端开放的入口
+    SURFACE = "x-kailo-client-surface"
     FORBIDDEN_SOURCES = ("jwt.rawToken", "jwt.raw_token", "jwt.roles", "jwt.groups",
                          "jwt.realm_access", "jwt.resource_access")
     # DD-73：AgentGateway 故意不把它当 hop-by-hop 清理（SF-AGW-20），
@@ -487,10 +490,41 @@ if os.path.exists(agw_cfg):
     for bind in agw.get("binds") or []:
         for lis in bind.get("listeners") or []:
             lis_name = lis.get("name") or "?"
+            lis_pol = lis.get("policies") or {}
+            oidc, jwt = lis_pol.get("oidc"), lis_pol.get("jwtAuth")
             lis_tr = transform_of(lis)
             routes = lis.get("routes") or []
             if not routes:
                 continue
+
+            # 认证必须挂在 listener 上，且恰好一种：浏览器入口用 OIDC（cookie 会话），
+            # 原生入口用 jwtAuth（Bearer）。两者同挂时 OIDC 先执行，会把不带 cookie
+            # 的原生请求当成未登录导航（SF-AGW-22、DD-78）。
+            if bool(oidc) == bool(jwt):
+                bad.append(f"agentgateway {lis_name}: listener 必须恰好挂一种认证（oidc 或 jwtAuth）"
+                           f"——route 内联认证会各持一套会话且新增 route 可绕开（SF-AGW-22）")
+            if oidc and not (oidc.get("logout") or {}).get("path"):
+                # logout 是可选项；缺了它，退出请求被当普通请求转给后端，
+                # 网关 cookie 原样留着，下一个请求就建起新会话（SF-AGW-23）
+                bad.append(f"agentgateway {lis_name}: OIDC 未配置 logout，退出后网关会话仍在（SF-AGW-23）")
+            if jwt:
+                # 上游缺省 optional 放行无令牌请求；省略 audiences 即不校验 aud；
+                # 保留令牌会把用户凭据转给 BFF（SF-AGW-24、SF-AGW-11/19）
+                if str(jwt.get("mode", "")).lower() != "strict":
+                    bad.append(f"agentgateway {lis_name}: jwtAuth.mode 必须显式为 strict（缺省 optional 放行无令牌请求，SF-AGW-24）")
+                if not [a for a in (jwt.get("audiences") or []) if str(a).strip()]:
+                    bad.append(f"agentgateway {lis_name}: jwtAuth.audiences 必须非空（省略即不校验 aud，SF-AGW-11/19）")
+                if jwt.get("preserveToken") is True:
+                    bad.append(f"agentgateway {lis_name}: jwtAuth.preserveToken 不得为 true（令牌会被转给 BFF，SF-AGW-24）")
+            for route in routes:
+                rp = route.get("policies") or {}
+                if rp.get("oidc") or rp.get("jwtAuth"):
+                    bad.append(f"agentgateway {lis_name}/{route.get('name') or '?'}: "
+                               f"route 内联认证，会与 listener 级认证互不相认（SF-AGW-22）")
+
+            # 每条 route 实际生效的 transformation：listener 级优先，退回 route 级。
+            # gateway 阶段先于选路执行，所以这样算出的就是请求真正经过的那一份。
+            allowed_sets = PROJECTED | ({SURFACE} if jwt else set())
             for route in routes:
                 where = f"agentgateway {lis_name}/{route.get('name') or '?'}"
                 tr = lis_tr or transform_of(route)
@@ -498,38 +532,27 @@ if os.path.exists(agw_cfg):
                     bad.append(f"{where}: 没有生效的 request transformation，身份不会被投影")
                     continue
                 checked += 1
-                sets = set((tr.get("set") or {}).keys())
+                set_map = tr.get("set") or {}
+                sets = set(set_map.keys())
                 removes = {str(h).lower() for h in (tr.get("remove") or [])}
                 # 投影目标不得进入 remove：set 已保证要么是已验证的值、要么不存在
                 for h in sets & removes:
                     bad.append(f"{where}: {h} 同时出现在 set 与 remove（SS-AGW-OIDC 禁止）")
-                # 只许投影这两条，多一条都是扩大信任面
-                for h in sets - PROJECTED:
-                    bad.append(f"{where}: 投影了 {h}，SS-AGW-OIDC 只允许 {sorted(PROJECTED)}")
+                for h in sets - allowed_sets:
+                    bad.append(f"{where}: 投影了 {h}，该入口只允许 {sorted(allowed_sets)}")
                 for h in PROJECTED - sets:
                     bad.append(f"{where}: 缺少对 {h} 的 set，BFF 会因缺失而全部拒绝")
                 for h in MUST_REMOVE - removes:
                     bad.append(f"{where}: 未删除 {h}，会把调用方的代理凭据转给 upstream（DD-73、SF-AGW-20）")
+                if jwt:
+                    if str(set_map.get(SURFACE, "")).strip() != '"native"':
+                        bad.append(f"{where}: 原生入口必须把 {SURFACE} 投影为固定值 \"native\"（DD-78）")
+                elif SURFACE not in removes:
+                    bad.append(f"{where}: 浏览器入口必须移除 {SURFACE}，否则浏览器可自报为原生端（DD-78）")
                 # 禁止投影 raw token 与角色 claim：授权在 Core 重做
-                for h, expr in (tr.get("set") or {}).items():
-                    if any(s in str(expr) for s in FORBIDDEN_SOURCES):
+                for h, expr in set_map.items():
+                    if any(src in str(expr) for src in FORBIDDEN_SOURCES):
                         bad.append(f"{where}: {h} 取自 {expr}，禁止投影 raw token 或角色 claim")
-
-            # 认证同样必须挂在 listener 上：route 内联 OIDC 的 cookie 名由
-            # route key 派生，多条 route 各持互不相认的会话，登录跨 route
-            # 完不成（SF-AGW-22）。
-            lis_oidc = (lis.get("policies") or {}).get("oidc")
-            if not lis_oidc:
-                bad.append(f"agentgateway {lis_name}: OIDC 未挂在 listener 上，"
-                           f"多 route 会各持一套会话且新增 route 可绕开认证（SF-AGW-22）")
-            elif not (lis_oidc.get("logout") or {}).get("path"):
-                # logout 是可选项；缺了它，退出请求被当普通请求转给后端，
-                # 网关 cookie 原样留着，下一个请求就建起新会话（SF-AGW-23）
-                bad.append(f"agentgateway {lis_name}: OIDC 未配置 logout，退出后网关会话仍在（SF-AGW-23）")
-            for route in routes:
-                if ((route.get("policies") or {}).get("oidc")):
-                    bad.append(f"agentgateway {lis_name}/{route.get('name') or '?'}: "
-                               f"route 内联 OIDC，会与 listener 级会话互不相认（SF-AGW-22）")
     if not checked:
         bad.append("agentgateway: 没有任何 route 被身份投影覆盖")
 

@@ -172,20 +172,26 @@ const (
 type ReasonCode string
 
 const (
+	ClientKeyAlreadyBound       ReasonCode = "CLIENT_KEY_ALREADY_BOUND"
+	ClientKeyLimitReached       ReasonCode = "CLIENT_KEY_LIMIT_REACHED"
+	ClientKeyNotFound           ReasonCode = "CLIENT_KEY_NOT_FOUND"
+	ClientKeyProofInvalid       ReasonCode = "CLIENT_KEY_PROOF_INVALID"
 	IdentityHeaderMissing       ReasonCode = "IDENTITY_HEADER_MISSING"
 	IdentityUnknown             ReasonCode = "IDENTITY_UNKNOWN"
+	NativeSurfaceRequired       ReasonCode = "NATIVE_SURFACE_REQUIRED"
 	SessionNotActive            ReasonCode = "SESSION_NOT_ACTIVE"
 	TenantMembershipNotActive   ReasonCode = "TENANT_MEMBERSHIP_NOT_ACTIVE"
 	TenantSelectionNotAvailable ReasonCode = "TENANT_SELECTION_NOT_AVAILABLE"
 )
 
 // ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
-// 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件当前只含 Stage 1 已实现的四个。
+// 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
 type WorkflowKind string
 
 const (
-	MembershipProjection WorkflowKind = "MEMBERSHIP_PROJECTION"
-	MembershipRevocation WorkflowKind = "MEMBERSHIP_REVOCATION"
-	TenantLifecycle      WorkflowKind = "TENANT_LIFECYCLE"
-	WorkspaceLifecycle   WorkflowKind = "WORKSPACE_LIFECYCLE"
+	BuzzIdentityProjection WorkflowKind = "BUZZ_IDENTITY_PROJECTION"
+	MembershipProjection   WorkflowKind = "MEMBERSHIP_PROJECTION"
+	MembershipRevocation   WorkflowKind = "MEMBERSHIP_REVOCATION"
+	TenantLifecycle        WorkflowKind = "TENANT_LIFECYCLE"
+	WorkspaceLifecycle     WorkflowKind = "WORKSPACE_LIFECYCLE"
 )

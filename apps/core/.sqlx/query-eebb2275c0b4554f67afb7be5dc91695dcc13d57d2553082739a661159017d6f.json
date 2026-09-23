@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select count(*) as \"n!\" from identity.buzz_identity_binding\n           where tenant_id = $1 and principal_id = $2 and custody = 'CLIENT' and state <> 'REVOKED'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "eebb2275c0b4554f67afb7be5dc91695dcc13d57d2553082739a661159017d6f"
+}

@@ -27,6 +27,13 @@ const HEADER_SUBJECT: &str = "x-kailo-oidc-subject";
 #[derive(Clone)]
 pub struct BffState {
     pub pool: PgPool,
+    /// 设备公钥登记等用户动作要启动 ComponentTaskWorkflow（DD-79）
+    pub temporal: std::sync::Arc<crate::temporal::TemporalClient>,
+    /// 设备持钥证明（NIP-98 事件）`created_at` 与服务端时钟允许的最大偏差。
+    /// 它限定了一份截获的证明还能被使用多久。
+    pub client_key_proof_window_seconds: u64,
+    /// 每人可同时登记的原生设备上界（DD-77）。超出是 LIMIT 类的确定拒绝。
+    pub client_keys_per_principal: i64,
     /// PlatformSession 的有效期。它是部署事实，不是常量——不同部署对「多久要
     /// 重新过一次 OIDC」的要求不同。
     pub session_ttl_seconds: i64,
@@ -119,6 +126,15 @@ pub fn router(state: BffState) -> Router {
             get(crate::platform_views::list_members),
         )
         .route("/api/v1/audit", get(crate::platform_views::list_own_audit))
+        // 原生设备公钥（DD-77/79）：登记只对原生入口开放，查看与撤销两端都开放
+        .route(
+            crate::client_keys::REGISTER_PATH,
+            get(crate::client_keys::list).post(crate::client_keys::register),
+        )
+        .route(
+            "/api/v1/identity/client-keys/{pubkey}",
+            axum::routing::delete(crate::client_keys::revoke),
+        )
         .route("/api/v1/user-state", get(crate::user_state::get_user_state))
         .route(
             "/api/v1/user-state/workspaces/{workspace_id}",

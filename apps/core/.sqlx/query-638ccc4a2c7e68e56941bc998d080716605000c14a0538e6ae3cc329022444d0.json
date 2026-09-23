@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update identity.buzz_identity_binding b\n         set state = 'ACTIVE', version = version + 1\n         where b.pubkey = $1 and b.state = 'RECONCILING'\n           and exists (select 1 from identity.tenant_membership tm\n                       where tm.tenant_principal_id = b.principal_id and tm.state = 'ACTIVE')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "638ccc4a2c7e68e56941bc998d080716605000c14a0538e6ae3cc329022444d0"
+}

@@ -2,8 +2,8 @@
 project: buzz-web
 upstream_url: https://github.com/hardy4yooz/buzz-web.git
 
-# .design/02 §1 固定基线。Buzz Web 是三端共用主体的 TypeScript 那一份：
-# Desktop 复用同一主体，Mobile 另有 Dart 主体（DD-74）。
+# .design/02 §1 固定基线。三端各有自己的上游主体（DD-74）：Web 是 buzz-web，
+# Desktop 与 Mobile 分别是 block/buzz 的 desktop/（Tauri）与 mobile/（Dart）。
 evidence_commit: a6766c482533d028582d0efcfd3740769f86217c
 implementation_base_commit: a6766c482533d028582d0efcfd3740769f86217c
 base_divergence: none
@@ -15,8 +15,8 @@ base_divergence: none
 # 改动以 patch series 形式保存而不是把 130 个源文件搬进本仓库：上游仍在演进，
 # 搬进来之后每次升级都变成手工比对，而 patch 能在新 commit 上直接重放并暴露冲突。
 patch_series: [0001-bff-transport-and-platform-pages.patch]
-patch_series_digest: sha256:1f6f8492026f54b4f7ed98905dfa65faf5bfd7093008c7845d0d1a2e5689a306
-artifact_digest: sha256:cb855df6da5635976192de1f869ee7d7ac500edb07c59664b4d6f4e68bb285e6
+patch_series_digest: sha256:f5b7eff0ff849864864fa94e0f252c18a63c776b0911b28b9317897ccf62e9dd
+artifact_digest: sha256:36c306ed034787d5728d9ca726a9976c652e2395dc70ee3369fdbea52695e739
 
 # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
 build_context: web

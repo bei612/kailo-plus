@@ -71,6 +71,11 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/workspaces/buzz-provision",
             post(crate::tenant_lifecycle::provision_workspace_buzz),
         )
+        // 原生设备公钥的 roster 投影（DD-79）
+        .route(
+            "/service/v1/identity-projections/buzz",
+            post(crate::identity_projection::project_buzz_identity),
+        )
         .route(
             "/service/v1/scopes/state",
             post(crate::scope_state::transition_scope),

@@ -690,3 +690,191 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
         fx.tenant, fx.initiator
     );
 }
+
+/// 原生端核验所需的环境（DD-78）。与 `Env` 分开：只有原生端用例需要它。
+pub struct NativeEnv {
+    /// 网关原生入口
+    pub native_url: String,
+    /// IdP 的本机发布地址；请求时以 `idp_host` 作 Host，令牌 `iss` 才与配置一致
+    pub keycloak_url: String,
+    pub idp_host: String,
+    pub realm: String,
+    pub native_client_id: String,
+    pub user: String,
+    pub user_password_file: String,
+    pub admin_user: String,
+    pub admin_password_file: String,
+    pub proof_window_secs: u64,
+    pub keys_per_principal: usize,
+}
+
+pub fn native_env() -> Option<NativeEnv> {
+    if std::env::var("KAILO_INTEGRATION").as_deref() != Ok("1") {
+        return None;
+    }
+    let v = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
+    Some(NativeEnv {
+        native_url: v("VERIFY_NATIVE_URL")?,
+        keycloak_url: v("VERIFY_KEYCLOAK_URL")?,
+        idp_host: v("OIDC_TOKEN_HOST")?,
+        realm: v("OIDC_REALM")?,
+        native_client_id: v("OIDC_NATIVE_CLIENT_ID")?,
+        user: v("VERIFY_USER")?,
+        user_password_file: v("VERIFY_USER_PASSWORD_FILE")?,
+        admin_user: v("KEYCLOAK_ADMIN_USER")?,
+        admin_password_file: v("VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE")?,
+        proof_window_secs: v("BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")?.parse().ok()?,
+        keys_per_principal: v("BFF_CLIENT_KEYS_PER_PRINCIPAL")?.parse().ok()?,
+    })
+}
+
+fn read_secret(path: &str) -> String {
+    std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("读 {path} 失败: {e}"))
+        .trim()
+        .to_owned()
+}
+
+/// IdP 为核验用户签发的 subject。它由 IdP 决定，夹具编造不出来。
+pub async fn idp_subject(http: &reqwest::Client, n: &NativeEnv) -> String {
+    let token: serde_json::Value = http
+        .post(format!(
+            "{}/realms/master/protocol/openid-connect/token",
+            n.keycloak_url
+        ))
+        .form(&[
+            ("grant_type", "password"),
+            ("client_id", "admin-cli"),
+            ("username", n.admin_user.as_str()),
+            ("password", read_secret(&n.admin_password_file).as_str()),
+        ])
+        .send()
+        .await
+        .expect("取 IdP 管理令牌")
+        .json()
+        .await
+        .expect("管理令牌 JSON");
+    let users: Vec<serde_json::Value> = http
+        .get(format!("{}/admin/realms/{}/users", n.keycloak_url, n.realm))
+        .query(&[("username", n.user.as_str()), ("exact", "true")])
+        .bearer_auth(token["access_token"].as_str().expect("access_token"))
+        .send()
+        .await
+        .expect("查 IdP 用户")
+        .json()
+        .await
+        .expect("IdP 用户 JSON");
+    assert_eq!(users.len(), 1, "用户名 {} 应恰好对应 1 个 IdP 用户", n.user);
+    users[0]["id"].as_str().expect("id").to_owned()
+}
+
+/// 像原生应用那样取访问令牌：RFC 8252 授权码 + PKCE，本机回环 redirect。
+///
+/// 回环地址不真的监听：IdP 把授权码放在 302 的 Location 里，读出来即可。IdP 的
+/// 会话 cookie 手工携带——测试不为这一处引入 cookie 依赖。
+pub async fn native_access_token(n: &NativeEnv) -> String {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    let http = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("http client");
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let verifier = b64.encode(Uuid::new_v4().as_bytes().repeat(3));
+    let challenge = b64.encode(sha2::Sha256::digest(verifier.as_bytes()));
+    let redirect = "http://127.0.0.1:53682/callback";
+    // IdP 页面里的地址是对外名字；换成本机发布地址，Host 保持对外名字
+    let local = |url: &str| {
+        let u = reqwest::Url::parse(url).expect("IdP 地址");
+        format!(
+            "{}{}{}",
+            n.keycloak_url,
+            u.path(),
+            u.query().map(|q| format!("?{q}")).unwrap_or_default()
+        )
+    };
+    let mut cookies: Vec<String> = Vec::new();
+    let mut keep = |resp: &reqwest::Response| {
+        for c in resp.headers().get_all(reqwest::header::SET_COOKIE) {
+            if let Some(pair) = c.to_str().ok().and_then(|s| s.split(';').next()) {
+                cookies.push(pair.to_owned());
+            }
+        }
+    };
+
+    let auth = http
+        .get(format!(
+            "{}/realms/{}/protocol/openid-connect/auth",
+            n.keycloak_url, n.realm
+        ))
+        .header(reqwest::header::HOST, &n.idp_host)
+        .query(&[
+            ("response_type", "code"),
+            ("client_id", n.native_client_id.as_str()),
+            ("redirect_uri", redirect),
+            ("scope", "openid"),
+            ("code_challenge", challenge.as_str()),
+            ("code_challenge_method", "S256"),
+        ])
+        .send()
+        .await
+        .expect("打开授权页");
+    keep(&auth);
+    let page = auth.text().await.expect("授权页");
+    let action = page
+        .split("action=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .expect("登录表单 action")
+        .replace("&amp;", "&");
+    let login = http
+        .post(local(&action))
+        .header(reqwest::header::HOST, &n.idp_host)
+        .header(reqwest::header::COOKIE, cookies.join("; "))
+        .form(&[
+            ("username", n.user.as_str()),
+            ("password", read_secret(&n.user_password_file).as_str()),
+        ])
+        .send()
+        .await
+        .expect("提交登录");
+    let location = login
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        location.starts_with(redirect),
+        "登录后应回到回环地址，得到 {location}"
+    );
+    let code = reqwest::Url::parse(&location)
+        .expect("回调地址")
+        .query_pairs()
+        .find(|(k, _)| k == "code")
+        .map(|(_, v)| v.into_owned())
+        .expect("授权码");
+    let token: serde_json::Value = http
+        .post(format!(
+            "{}/realms/{}/protocol/openid-connect/token",
+            n.keycloak_url, n.realm
+        ))
+        .header(reqwest::header::HOST, &n.idp_host)
+        .form(&[
+            ("grant_type", "authorization_code"),
+            ("client_id", n.native_client_id.as_str()),
+            ("code", code.as_str()),
+            ("redirect_uri", redirect),
+            ("code_verifier", verifier.as_str()),
+        ])
+        .send()
+        .await
+        .expect("换取令牌")
+        .json()
+        .await
+        .expect("令牌 JSON");
+    token["access_token"]
+        .as_str()
+        .expect("access_token")
+        .to_owned()
+}

@@ -30,6 +30,7 @@ temporalio-client = { version = "1.0.0", features = ["vendored-protox"] }
 temporalio-common = { version = "1.0.0", features = ["vendored-protox"] }
 
 [dev-dependencies]
+base64 = "0.22"
 futures-util = "0.3"
 nostr = { version = "0.44", default-features = false, features = ["std"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }

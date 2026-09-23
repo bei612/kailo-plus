@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select tenant_id, principal_id, state from identity.buzz_identity_binding\n         where pubkey = $1 and version = $2 and custody = 'CLIENT'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "principal_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "01a5e24e2dc43db183d36c52a1c5090b4d4c9271012029f123912b59a8cc3f86"
+}

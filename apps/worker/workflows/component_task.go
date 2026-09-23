@@ -43,11 +43,21 @@ type ScopeTarget struct {
 	TenantID string `json:"tenantId,omitempty"`
 }
 
+// IdentityTarget 是原生设备公钥投影的冻结输入（DD-79）。
+//
+// 只冻结 pubkey 与 binding 版本：投入还是移出由 Core 按 binding 状态决定，
+// Workflow 不重复判定——两处判定迟早不一致。
+type IdentityTarget struct {
+	Pubkey         string `json:"pubkey"`
+	BindingVersion int32  `json:"bindingVersion"`
+}
+
 // ComponentTaskInput 是 ComponentTaskWorkflow 的统一输入。
 type ComponentTaskInput struct {
 	Kind       generated.WorkflowKind `json:"kind"`
 	Membership *MembershipTarget      `json:"membership,omitempty"`
 	Scope      *ScopeTarget           `json:"scope,omitempty"`
+	Identity   *IdentityTarget        `json:"identity,omitempty"`
 }
 
 // 三类 Activity 的超时与重试纪律（06 §5.1）。SDK 要求每个 Activity 至少设置
@@ -116,9 +126,8 @@ func failer(ctx workflow.Context, project func(string) error) func(error) error 
 
 // ComponentTask 执行一个 ComponentTaskWorkflow。
 //
-// 一期只实现成员生命周期的两个 kind。其余 kind 在 .design/06 里已登记但没有
-// 实现，落到 default 分支当场失败——不写一个「什么都不做就成功」的分支，
-// 那会让未实现的能力看起来像执行过了。
+// 未实现的 kind 落到 default 分支当场失败——不写一个「什么都不做就成功」的
+// 分支，那会让未实现的能力看起来像执行过了。
 func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 	switch in.Kind {
 	case generated.MembershipProjection:
@@ -129,6 +138,8 @@ func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 		return tenantLifecycle(ctx, in)
 	case generated.WorkspaceLifecycle:
 		return workspaceLifecycle(ctx, in)
+	case generated.BuzzIdentityProjection:
+		return identityProjection(ctx, in)
 	default:
 		return temporal.NewNonRetryableApplicationError(
 			"kind 尚未实现", activities.ErrTypeRejected, nil)
@@ -305,5 +316,36 @@ func workspaceLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 		return fail(err)
 	}
 	workflow.GetLogger(ctx).Info("Workspace 已就绪", "state", out.State, "version", out.Version)
+	return project("COMPLETED")
+}
+
+// identityProjection 把一台原生设备的公钥投入或移出 roster（DD-79）。
+//
+// 整条收敛在 Core 的一次调用里完成：relay roster、此人全部 Channel roster、每次
+// 投入后的撤权复核，以及最后的状态跃迁。拆成多个 Activity 会让「投入之后、
+// 复核之前」横跨两次调用，而撤权恰恰可能落在那个缝里。
+func identityProjection(ctx workflow.Context, in ComponentTaskInput) error {
+	t := in.Identity
+	if t == nil {
+		return temporal.NewNonRetryableApplicationError(
+			"BUZZ_IDENTITY_PROJECTION 缺少冻结的 identity 输入", activities.ErrTypeRejected, nil)
+	}
+	info := workflow.GetInfo(ctx)
+	project := projector(ctx, info)
+	if err := project("RUNNING"); err != nil {
+		return err
+	}
+	fail := failer(ctx, project)
+
+	ao := workflow.WithActivityOptions(ctx, projectionOptions())
+	var out activities.IdentityProjectionOutput
+	if err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProjectBuzzIdentity,
+		activities.IdentityProjectionInput{
+			Pubkey:         t.Pubkey,
+			BindingVersion: t.BindingVersion,
+		}).Get(ctx, &out); err != nil {
+		return fail(err)
+	}
+	workflow.GetLogger(ctx).Info("设备公钥已收敛", "pubkey", out.Pubkey, "state", out.State)
 	return project("COMPLETED")
 }

@@ -52,9 +52,10 @@ pub struct BuzzProjectionRequest {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuzzProjectionResponse {
-    /// roster 查证后该 pubkey 的实际状态。调用方据此对账，不据 HTTP 200。
+    /// roster 查证后这些 pubkey 的实际状态。调用方据此对账，不据 HTTP 200。
     pub converged: bool,
-    pub target_pubkey: String,
+    /// 本次投影覆盖的全部 pubkey：此人的 Web 身份与各台原生设备（DD-77）。
+    pub target_pubkeys: Vec<String>,
 }
 
 /// 解析失败的分类。它决定 HTTP 状态，进而决定 Activity 侧是否重试
@@ -122,43 +123,60 @@ pub async fn project_buzz_roster(
         TargetPresence::Absent => Presence::Absent,
     };
 
-    match client
-        .converge(&state.http, scope, &plan.target_pubkey, want)
-        .await
-    {
+    // 此人的每个 pubkey 都要收敛：一个人同时在用 Web 与原生设备时，撤权漏掉
+    // 任何一把都等于这台设备还能继续发言（DD-77）。任一未收敛即整体未收敛，
+    // 已收敛的部分在重试时是幂等的。
+    let mut outcome = Ok(());
+    for pubkey in &plan.target_pubkeys {
+        outcome = client.converge(&state.http, scope, pubkey, want).await;
+        if outcome.is_err() {
+            break;
+        }
+    }
+    match outcome {
         Ok(()) => {
             // roster 查证通过才推进 BuzzIdentityBinding 的状态机
             // （`.design/03` §2：`RECONCILING` 必须核对 Relay roster）。
             //
-            // 只有 Tenant 层的撤权才把身份置为 `REVOKED`：退出一个 Workspace
-            // 不等于退出 Tenant，把身份撤掉会顺手把他在其他 Workspace 的协作面
-            // 也关了。Workspace 层的撤权只动 Channel roster。
-            let next = match (req.presence, req.scope) {
-                (TargetPresence::Present, _) => Some(("RECONCILING", "ACTIVE")),
-                (TargetPresence::Absent, MembershipScope::Tenant) => Some(("ACTIVE", "REVOKED")),
-                (TargetPresence::Absent, MembershipScope::Workspace) => None,
-            };
-            if let Some((from, to)) = next {
-                if let Err(e) = sqlx::query!(
+            // 状态机的归属：成员投影只推进 Web 的 SERVER 身份；原生设备的 CLIENT
+            // 身份由 BUZZ_IDENTITY_PROJECTION 推进（它还要覆盖此人全部 Channel，
+            // 这里只见到一个 scope，不能替它宣布 ACTIVE）。唯一的例外是 Tenant 层
+            // 撤权：人离开了 Tenant，他的每一把钥匙都随之作废。
+            //
+            // Workspace 层的撤权只动 Channel roster：退出一个 Workspace 不等于退出
+            // Tenant，把身份撤掉会顺手关掉他在其他 Workspace 的协作面。
+            let transition = match (req.presence, req.scope) {
+                (TargetPresence::Present, _) => sqlx::query!(
                     "update identity.buzz_identity_binding
-                     set state = $3, version = version + 1
-                     where tenant_id = $1 and pubkey = $2 and state = $4",
+                     set state = 'ACTIVE', version = version + 1
+                     where tenant_id = $1 and pubkey = any($2)
+                       and custody = 'SERVER' and state = 'RECONCILING'",
                     plan.tenant_id,
-                    plan.target_pubkey,
-                    to,
-                    from,
+                    &plan.target_pubkeys,
                 )
                 .execute(&state.pool)
                 .await
-                {
-                    return unavailable(e);
-                }
+                .map(|_| ()),
+                (TargetPresence::Absent, MembershipScope::Tenant) => sqlx::query!(
+                    "update identity.buzz_identity_binding
+                     set state = 'REVOKED', version = version + 1
+                     where tenant_id = $1 and pubkey = any($2) and state <> 'REVOKED'",
+                    plan.tenant_id,
+                    &plan.target_pubkeys,
+                )
+                .execute(&state.pool)
+                .await
+                .map(|_| ()),
+                (TargetPresence::Absent, MembershipScope::Workspace) => Ok(()),
+            };
+            if let Err(e) = transition {
+                return unavailable(e);
             }
             (
                 StatusCode::OK,
                 Json(BuzzProjectionResponse {
                     converged: true,
-                    target_pubkey: plan.target_pubkey,
+                    target_pubkeys: plan.target_pubkeys,
                 }),
             )
                 .into_response()
@@ -182,7 +200,7 @@ struct Plan {
     community_host: String,
     /// `None` 表示 relay 层 roster
     channel_id: Option<String>,
-    target_pubkey: String,
+    target_pubkeys: Vec<String>,
     control_secret: SecretRef,
 }
 
@@ -276,31 +294,48 @@ async fn resolve(
             .ok_or(Ok(Refusal::Denied("CONTROL 密钥缺 audience")))?,
     };
 
-    // 被投影的目标：该 Principal 的 Buzz pubkey。两种托管都要投影——撤权的
-    // 执行点是 roster，与私钥在谁手里无关（DD-75、.design/10 §4）。
-    // 没有就现建一个。Buzz Web 的 HUMAN 是 SERVER 托管（DD-75），私钥由 Core
-    // 持有并只在内存中签名；撤权方向上**不**建——REVOKED 的身份不复活，
-    // 重新授权走新 binding version（.design/10 §4）。
-    let target = match sqlx::query_scalar!(
-        "select pubkey from identity.buzz_identity_binding
-         where tenant_id = $1 and principal_id = $2 and state <> 'REVOKED'",
-        tenant_id,
-        principal_id
-    )
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(Err)?
-    {
-        Some(pubkey) => pubkey,
-        None if req.presence == TargetPresence::Present => {
-            ensure_human_identity(state, tenant_id, principal_id).await?
-        }
-        None => {
-            return Err(Ok(Refusal::NotFound(
-                "目标 Principal 没有可用的 BuzzIdentityBinding",
-            )))
-        }
+    // 被投影的目标：该 Principal 的全部 Buzz pubkey（DD-77）。两种托管都要
+    // 投影——撤权的执行点是 roster，与私钥在谁手里无关（DD-75、.design/10 §4）。
+    //
+    // 建立方向只投入仍在使用的钥匙：ACTIVE，以及尚在登记中的 RECONCILING。
+    // REVOKING 的设备正在被移出，不能在这里被重新加回去。撤权方向覆盖全部
+    // 非 REVOKED 的钥匙，包括登记中与撤销中的。
+    let mut targets: Vec<String> = match req.presence {
+        TargetPresence::Present => sqlx::query_scalar!(
+            "select pubkey from identity.buzz_identity_binding
+             where tenant_id = $1 and principal_id = $2
+               and state in ('RECONCILING', 'ACTIVE')
+             order by pubkey",
+            tenant_id,
+            principal_id
+        )
+        .fetch_all(&state.pool)
+        .await
+        .map_err(Err)?,
+        TargetPresence::Absent => sqlx::query_scalar!(
+            "select pubkey from identity.buzz_identity_binding
+             where tenant_id = $1 and principal_id = $2 and state <> 'REVOKED'
+             order by pubkey",
+            tenant_id,
+            principal_id
+        )
+        .fetch_all(&state.pool)
+        .await
+        .map_err(Err)?,
     };
+    // Buzz Web 的 HUMAN 是 SERVER 托管（DD-75），建立方向上没有就现建；撤权方向
+    // 上**不**建——REVOKED 的身份不复活，重新授权走新 binding（.design/10 §4）。
+    if req.presence == TargetPresence::Present {
+        let server = ensure_human_identity(state, tenant_id, principal_id).await?;
+        if !targets.contains(&server) {
+            targets.push(server);
+        }
+    }
+    if targets.is_empty() {
+        return Err(Ok(Refusal::NotFound(
+            "目标 Principal 没有可用的 BuzzIdentityBinding",
+        )));
+    }
 
     let channel_id = match workspace_id {
         None => None,
@@ -323,7 +358,7 @@ async fn resolve(
         tenant_id,
         community_host: binding.normalized_host,
         channel_id,
-        target_pubkey: target,
+        target_pubkeys: targets,
         control_secret,
     })
 }
@@ -354,6 +389,22 @@ async fn ensure_human_identity(
     tenant_id: Uuid,
     principal_id: Uuid,
 ) -> Result<String, Result<Refusal, sqlx::Error>> {
+    // 已有就用已有的：每人至多一条非 REVOKED 的 SERVER binding（DD-77）。
+    // 先查再建，免得每次投影都往 OpenBao 写一把用不上的私钥。
+    if let Some(pubkey) = sqlx::query_scalar!(
+        "select pubkey from identity.buzz_identity_binding
+         where tenant_id = $1 and principal_id = $2
+           and custody = 'SERVER' and state <> 'REVOKED'",
+        tenant_id,
+        principal_id
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(Err)?
+    {
+        return Ok(pubkey);
+    }
+
     let keys = nostr::Keys::generate();
     let locator = format!(
         "{}/buzz-human/{tenant_id}/{principal_id}",
@@ -374,7 +425,8 @@ async fn ensure_human_identity(
              (tenant_id, principal_id, pubkey, custody, private_key_secret_ref,
               private_key_secret_version, private_key_secret_audience, kind, state)
          values ($1, $2, $3, 'SERVER', $4, $5, $6, 'HUMAN', 'RECONCILING')
-         on conflict (tenant_id, principal_id) do nothing",
+         on conflict (tenant_id, principal_id)
+             where custody = 'SERVER' and state <> 'REVOKED' do nothing",
         tenant_id,
         principal_id,
         pubkey,
@@ -390,7 +442,8 @@ async fn ensure_human_identity(
     // 用错 pubkey 会把 roster 投影投到一个谁也不持有的身份上。
     sqlx::query_scalar!(
         "select pubkey from identity.buzz_identity_binding
-         where tenant_id = $1 and principal_id = $2",
+         where tenant_id = $1 and principal_id = $2
+           and custody = 'SERVER' and state <> 'REVOKED'",
         tenant_id,
         principal_id
     )

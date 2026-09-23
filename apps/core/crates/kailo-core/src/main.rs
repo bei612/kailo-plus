@@ -5,6 +5,9 @@
 
 mod audit;
 mod bff;
+mod client_keys;
+mod component_task;
+mod identity_projection;
 mod membership_lifecycle;
 mod membership_projection;
 mod membership_state;
@@ -55,6 +58,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
 
+    // Service API 与 BFF 共用同一个 Temporal 客户端：两边启动的是同一种
+    // ComponentTaskWorkflow，令牌缓存也只该有一份。
+    let temporal = std::sync::Arc::new(
+        temporal::TemporalClient::from_env(oidc::TokenSource::from_env()?).await?,
+    );
     let service_state = service_api::ServiceState {
         pool: pool.clone(),
         auth: std::sync::Arc::new(service_auth::ServiceAuth::from_env()?),
@@ -73,13 +81,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
             .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
         http: reqwest::Client::new(),
-        temporal: std::sync::Arc::new(
-            temporal::TemporalClient::from_env(oidc::TokenSource::from_env()?).await?,
-        ),
+        temporal: std::sync::Arc::clone(&temporal),
     };
 
     let bff_state = bff::BffState {
         pool: pool.clone(),
+        temporal,
+        client_key_proof_window_seconds: std::env::var("BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")
+            .map_err(|_| "缺少 BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")?
+            .parse()
+            .map_err(|_| "BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS 必须是秒数")?,
+        client_keys_per_principal: std::env::var("BFF_CLIENT_KEYS_PER_PRINCIPAL")
+            .map_err(|_| "缺少 BFF_CLIENT_KEYS_PER_PRINCIPAL")?
+            .parse()
+            .map_err(|_| "BFF_CLIENT_KEYS_PER_PRINCIPAL 必须是正整数")?,
         session_ttl_seconds: std::env::var("PLATFORM_SESSION_TTL_SECONDS")
             .map_err(|_| "缺少 PLATFORM_SESSION_TTL_SECONDS")?
             .parse()

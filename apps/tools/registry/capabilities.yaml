@@ -26,6 +26,15 @@ capabilities:
   actions: []
   tools: []
   workflow_kinds: []
+- id: identity.client_keys
+  exposure: end_user
+  routes:
+  - /api/v1/identity/client-keys
+  - /api/v1/identity/client-keys/{pubkey}
+  actions: []
+  tools: []
+  workflow_kinds:
+  - BUZZ_IDENTITY_PROJECTION
 - id: lifecycle.tenant_workspace_membership
   exposure: internal
   routes: []

@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select pubkey, state, created_at from identity.buzz_identity_binding\n         where tenant_id = $1 and principal_id = $2 and custody = 'CLIENT' and state <> 'REVOKED'\n         order by created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pubkey",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ae3e50789e4fa8c4f335498f5486b40722067be105c401765ae8aebd70cd92d6"
+}

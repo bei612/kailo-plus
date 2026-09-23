@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into identity.buzz_identity_binding\n             (tenant_id, principal_id, pubkey, custody, kind, state)\n         values ($1, $2, $3, 'CLIENT', 'HUMAN', 'RECONCILING')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ed8a654f80393ac8717fefba5101d3cd64ec73d26b02494e8ec7cbb08c08ac72"
+}

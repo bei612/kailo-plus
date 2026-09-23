@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select b.channel_id from projection.workspace_buzz_binding b\n         join identity.workspace_membership wm on wm.workspace_id = b.workspace_id\n         where wm.tenant_principal_id = $1 and wm.state = 'ACTIVE' and b.state = 'ACTIVE'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b6cf964a403ac4b0ca7fe4e8c9a01e7664f8b4befd8f1cc00fd80914c85ed1df"
+}

@@ -155,11 +155,26 @@ pub struct ErrorBody {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ReasonCode {
+    #[serde(rename = "CLIENT_KEY_ALREADY_BOUND")]
+    ClientKeyAlreadyBound,
+
+    #[serde(rename = "CLIENT_KEY_LIMIT_REACHED")]
+    ClientKeyLimitReached,
+
+    #[serde(rename = "CLIENT_KEY_NOT_FOUND")]
+    ClientKeyNotFound,
+
+    #[serde(rename = "CLIENT_KEY_PROOF_INVALID")]
+    ClientKeyProofInvalid,
+
     #[serde(rename = "IDENTITY_HEADER_MISSING")]
     IdentityHeaderMissing,
 
     #[serde(rename = "IDENTITY_UNKNOWN")]
     IdentityUnknown,
+
+    #[serde(rename = "NATIVE_SURFACE_REQUIRED")]
+    NativeSurfaceRequired,
 
     #[serde(rename = "SESSION_NOT_ACTIVE")]
     SessionNotActive,
@@ -213,10 +228,13 @@ pub struct WorkflowRef {
 }
 
 /// ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
-/// 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件当前只含 Stage 1 已实现的四个。
+/// 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum WorkflowKind {
+    #[serde(rename = "BUZZ_IDENTITY_PROJECTION")]
+    BuzzIdentityProjection,
+
     #[serde(rename = "MEMBERSHIP_PROJECTION")]
     MembershipProjection,
 

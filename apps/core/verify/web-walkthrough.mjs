@@ -247,6 +247,27 @@ await step("审计页：本人的消息发布有记录，且不含正文", async
   await shot("09-audit");
 });
 
+await step("设备页：列出本人登记的原生设备，未登记时如实说明", async () => {
+  await page.getByRole("button", { name: "Devices" }).click();
+  await page.getByText("No devices yet").waitFor();
+  await shot("10-devices");
+});
+
+await step("浏览器不能自称原生端：网关移除伪造的入口标识（DD-78）", async () => {
+  // 标识若穿过网关，BFF 会越过入口检查、转而判持钥证明无效；两个 reason 因此
+  // 能区分「网关移除了它」与「它到达了 BFF」。
+  const reply = await page.evaluate(() =>
+    fetch("/api/v1/identity/client-keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-kailo-client-surface": "native" },
+      body: JSON.stringify({ proof: {} }),
+    }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) })),
+  );
+  if (reply.status !== 403 || reply.body?.reason !== "NATIVE_SURFACE_REQUIRED")
+    throw new Error(`伪造的原生入口标识应被网关移除，实际 ${JSON.stringify(reply)}`);
+  steps.push({ name: "伪造原生入口标识的回应", value: reply.body.reason });
+});
+
 await step("注销：撤掉 Core 会话与网关 cookie；再次进入是一次新的登录", async () => {
   const session = () =>
     page.evaluate(() =>
@@ -291,7 +312,7 @@ await step("注销：撤掉 Core 会话与网关 cookie；再次进入是一次�
     throw new Error("重新进入后沿用了注销前的会话");
   fs.writeFileSync(path.join(a.out, "revoked-session.txt"), `${before.platformSessionId}\n`);
   steps.push({ name: "注销后重新进入", value: `${reentry}；得到新会话` });
-  await shot("11-after-reentry");
+  await shot("12-after-reentry");
 });
 
 await browser.close();

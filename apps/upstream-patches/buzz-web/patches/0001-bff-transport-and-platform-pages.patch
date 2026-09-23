@@ -17532,10 +17532,10 @@ index 5ff7fdf..0000000
 -}
 diff --git a/web/src/platform/bff-client.ts b/web/src/platform/bff-client.ts
 new file mode 100644
-index 0000000..6812acf
+index 0000000..3437845
 --- /dev/null
 +++ b/web/src/platform/bff-client.ts
-@@ -0,0 +1,242 @@
+@@ -0,0 +1,256 @@
 +// Kailo BFF 传输（DD-39、SS-WEB-RELAY）。
 +//
 +// Browser 只发类型化的语义命令。它不接收 Relay URL、不接收 Nostr 私钥，
@@ -17753,9 +17753,23 @@ index 0000000..6812acf
 +export type MemberRow = {
 +  principalId: string;
 +  displayName: string;
-+  pubkey: string | null;
++  /** 此人全部 ACTIVE 的 Buzz 公钥：Web 一把，另加每台原生设备一把（DD-77）。 */
++  pubkeys: string[];
 +  state: string;
 +};
++
++/** 本人登记过的一台原生设备（Desktop/Mobile）。私钥只在那台设备上。 */
++export type ClientKey = { pubkey: string; state: string; createdAt: string };
++
++/** 本人的设备。登记只能在设备上完成；查看与撤销在任一端都可以。 */
++export function fetchClientKeys(): Promise<ClientKey[]> {
++  return call<ClientKey[]>("/api/v1/identity/client-keys");
++}
++
++/** 撤销一台设备：只移出这一把公钥，Relay 随即拒绝它；其他设备与 Web 不受影响。 */
++export function revokeClientKey(pubkey: string): Promise<{ pubkey: string; state: string }> {
++  return call(`/api/v1/identity/client-keys/${encodeURIComponent(pubkey)}`, { method: "DELETE" });
++}
 +export type AuditRow = {
 +  occurredAt: string;
 +  eventType: string;
@@ -17780,10 +17794,10 @@ index 0000000..6812acf
 +}
 diff --git a/web/src/platform/ui/ChannelPane.tsx b/web/src/platform/ui/ChannelPane.tsx
 new file mode 100644
-index 0000000..e2682c8
+index 0000000..2b0f663
 --- /dev/null
 +++ b/web/src/platform/ui/ChannelPane.tsx
-@@ -0,0 +1,319 @@
+@@ -0,0 +1,325 @@
 +// 频道（SS-WEB-RELAY、SS-WEB-01）：消息、附件、已读位置。
 +//
 +// 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
@@ -17892,19 +17906,25 @@ index 0000000..e2682c8
 +  const members = useQuery(platformQueries.members(workspaceId));
 +  const userState = useQuery(platformQueries.userState);
 +
-+  // 作者按成员名显示；取不到时退回上游统一的 pubkey 缩写形式，而不是空白
++  // 作者按成员名显示。一个人可能有多把公钥（Web 与各台原生设备，DD-77），
++  // 任一把签发的消息都归到同一个人名下；取不到时退回上游统一的 pubkey 缩写。
 +  const byPubkey = useMemo(
-+    () => new Map((members.data ?? []).flatMap((m) => (m.pubkey ? [[m.pubkey, m] as const] : []))),
++    () => new Map((members.data ?? []).flatMap((m) => m.pubkeys.map((k) => [k, m] as const))),
 +    [members.data],
 +  );
 +  const mentions: MessageMention[] = useMemo(
 +    () =>
 +      (members.data ?? []).flatMap((m) =>
-+        m.pubkey ? [{ pubkey: m.pubkey, name: m.displayName, isAgent: false }] : [],
++        m.pubkeys.length > 0
++          ? [{ pubkey: m.pubkeys[0] as string, name: m.displayName, isAgent: false }]
++          : [],
 +      ),
 +    [members.data],
 +  );
-+  const myPubkey = (members.data ?? []).find((m) => m.principalId === myPrincipalId)?.pubkey;
++  const mine = useMemo(
++    () => new Set((members.data ?? []).find((m) => m.principalId === myPrincipalId)?.pubkeys),
++    [members.data, myPrincipalId],
++  );
 +
 +  // 已读：key 是该 Workspace 的 Channel ID，取自消息自身的 h 标签（.design/03）
 +  const channelId = events
@@ -17922,7 +17942,7 @@ index 0000000..e2682c8
 +  }, [anchor, userState.isSuccess, live, lastRead]);
 +
 +  const unreadFromOthers = events.filter(
-+    (e) => e.created_at > lastRead && e.pubkey !== myPubkey,
++    (e) => e.created_at > lastRead && !mine.has(e.pubkey),
 +  ).length;
 +  const newest = events[events.length - 1];
 +
@@ -17962,8 +17982,8 @@ index 0000000..e2682c8
 +          const firstUnread =
 +            anchor !== null &&
 +            e.created_at > anchor &&
-+            e.pubkey !== myPubkey &&
-+            !events.slice(0, i).some((p) => p.created_at > anchor && p.pubkey !== myPubkey);
++            !mine.has(e.pubkey) &&
++            !events.slice(0, i).some((p) => p.created_at > anchor && !mine.has(p.pubkey));
 +          return (
 +            <li key={e.id}>
 +              {firstUnread ? (
@@ -18105,10 +18125,10 @@ index 0000000..e2682c8
 +}
 diff --git a/web/src/platform/ui/PlatformApp.tsx b/web/src/platform/ui/PlatformApp.tsx
 new file mode 100644
-index 0000000..c625a28
+index 0000000..6155fe5
 --- /dev/null
 +++ b/web/src/platform/ui/PlatformApp.tsx
-@@ -0,0 +1,252 @@
+@@ -0,0 +1,324 @@
 +// Kailo 平台页（SS-WEB-01）。
 +//
 +// 一期的内置管理页：登录状态、Tenant/Workspace 选择、频道、成员、基础审计。
@@ -18124,6 +18144,7 @@ index 0000000..c625a28
 +  BffError,
 +  fetchSession,
 +  type PlatformSession,
++  revokeClientKey,
 +  setWorkspacePreference,
 +  signOut,
 +} from "@/platform/bff-client";
@@ -18135,7 +18156,7 @@ index 0000000..c625a28
 +import { Badge } from "@/shared/ui/badge";
 +import { Button } from "@/shared/ui/button";
 +
-+type Tab = "channel" | "members" | "audit";
++type Tab = "channel" | "members" | "devices" | "audit";
 +
 +/** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 +export function PlatformApp() {
@@ -18195,17 +18216,20 @@ index 0000000..c625a28
 +  const onSignOut = useCallback(() => void signOut(), []);
 +
 +  const tabLabel = (name: Tab) =>
-+    name === "channel"
-+      ? t("platform.tab.channel")
-+      : name === "members"
-+        ? t("platform.tab.members")
-+        : t("platform.tab.audit");
++    ({
++      channel: t("platform.tab.channel"),
++      members: t("platform.tab.members"),
++      devices: t("platform.tab.devices"),
++      audit: t("platform.tab.audit"),
++    })[name];
 +
-+  // 审计看的是「我自己的动作」，属于 Tenant 而不属于某个 Workspace，
++  // 审计与设备都是「我自己的」，属于 Tenant 而不属于某个 Workspace，
 +  // 因此不随 Workspace 是否存在而隐藏。
 +  const body =
 +    tab === "audit" ? (
 +      <AuditPane />
++    ) : tab === "devices" ? (
++      <DevicesPane />
 +    ) : workspaces.isError ? (
 +      <Notice text={t("platform.loadFailed")} />
 +    ) : workspaces.isPending ? (
@@ -18274,7 +18298,7 @@ index 0000000..c625a28
 +          </>
 +        ) : null}
 +        <nav className="flex gap-1">
-+          {(["channel", "members", "audit"] as const).map((name) => (
++          {(["channel", "members", "devices", "audit"] as const).map((name) => (
 +            <Button
 +              key={name}
 +              aria-pressed={tab === name}
@@ -18317,7 +18341,9 @@ index 0000000..c625a28
 +            <td className="py-1">
 +              <Badge variant={m.state === "ACTIVE" ? "secondary" : "outline"}>{m.state}</Badge>
 +            </td>
-+            <td className="py-1 font-mono text-xs">{m.pubkey ? truncatePubkey(m.pubkey) : "—"}</td>
++            <td className="py-1 font-mono text-xs">
++              {m.pubkeys.length > 0 ? m.pubkeys.map(truncatePubkey).join(" · ") : "—"}
++            </td>
 +          </tr>
 +        ))}
 +      </tbody>
@@ -18361,12 +18387,78 @@ index 0000000..c625a28
 +    </table>
 +  );
 +}
++
++/**
++ * 本人的原生设备（DD-77/79）。
++ *
++ * 登记只能在设备上完成——私钥在那里生成、从不离开。这里只能查看与撤销：
++ * 设备丢了，应当能在浏览器里把它撤掉。撤销只移出这一把公钥，Relay 随即拒绝
++ * 它；其他设备与本页所在的 Web 身份不受影响。
++ */
++function DevicesPane() {
++  const queryClient = useQueryClient();
++  const keys = useQuery(platformQueries.clientKeys);
++  const revoke = useMutation({
++    mutationFn: revokeClientKey,
++    onSettled: () =>
++      queryClient.invalidateQueries({ queryKey: platformQueries.clientKeys.queryKey }),
++  });
++  if (keys.isPending) return <Notice text={t("platform.loading")} />;
++  if (keys.isError) return <Notice text={t("platform.loadFailed")} />;
++  if (keys.data.length === 0) return <Notice text={t("platform.devices.none")} />;
++  return (
++    <div className="flex flex-col gap-2">
++      <p className="text-xs text-muted-foreground">{t("platform.devices.explain")}</p>
++      {revoke.isError ? (
++        <div className="text-xs text-destructive" role="alert">
++          {t("platform.devices.revokeFailed")}
++        </div>
++      ) : null}
++      <table className="w-full text-left">
++        <thead className="text-muted-foreground">
++          <tr>
++            <th className="py-1">{t("platform.protocolIdentity")}</th>
++            <th className="py-1">{t("platform.state")}</th>
++            <th className="py-1">{t("platform.devices.added")}</th>
++            <th className="py-1" />
++          </tr>
++        </thead>
++        <tbody>
++          {keys.data.map((k) => (
++            <tr key={k.pubkey} className="border-t">
++              <td className="py-1 font-mono text-xs">{truncatePubkey(k.pubkey)}</td>
++              <td className="py-1">
++                <Badge variant={k.state === "ACTIVE" ? "secondary" : "outline"}>{k.state}</Badge>
++              </td>
++              <td className="py-1 text-xs" title={k.createdAt}>
++                {relativeTime(Date.parse(k.createdAt) / 1_000)}
++              </td>
++              <td className="py-1 text-right">
++                {k.state === "REVOKING" ? null : (
++                  <Button
++                    size="sm"
++                    type="button"
++                    variant="outline"
++                    disabled={revoke.isPending}
++                    onClick={() => revoke.mutate(k.pubkey)}
++                  >
++                    {t("platform.devices.revoke")}
++                  </Button>
++                )}
++              </td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </div>
++  );
++}
 diff --git a/web/src/platform/ui/queries.ts b/web/src/platform/ui/queries.ts
 new file mode 100644
-index 0000000..8ebff91
+index 0000000..f96c80c
 --- /dev/null
 +++ b/web/src/platform/ui/queries.ts
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,24 @@
 +// 平台页的读取统一走 react-query。它的 error 态是这里要的关键区分：取不到不是
 +// 「空」。把失败渲染成空列表，等于把结果不明说成了确定的「没有」——用户会以为
 +// 自己没有 Workspace、没有成员、没有记录。
@@ -18374,6 +18466,7 @@ index 0000000..8ebff91
 +// 同一份数据只有一个 query key：频道页与成员页共用成员查询，只取一次。
 +
 +import {
++  fetchClientKeys,
 +  fetchOwnAudit,
 +  fetchUserState,
 +  fetchWorkspaceMembers,
@@ -18384,6 +18477,7 @@ index 0000000..8ebff91
 +  workspaces: { queryKey: ["platform", "workspaces"], queryFn: fetchWorkspaces },
 +  audit: { queryKey: ["platform", "audit"], queryFn: fetchOwnAudit },
 +  userState: { queryKey: ["platform", "user-state"], queryFn: fetchUserState },
++  clientKeys: { queryKey: ["platform", "client-keys"], queryFn: fetchClientKeys },
 +  members: (workspaceId: string) => ({
 +    queryKey: ["platform", "members", workspaceId],
 +    queryFn: () => fetchWorkspaceMembers(workspaceId),
@@ -20200,10 +20294,10 @@ index c032d55..0000000
 -  };
 -}
 diff --git a/web/src/shared/i18n/index.ts b/web/src/shared/i18n/index.ts
-index 9a1bbc3..02d8b5e 100644
+index 9a1bbc3..81a0e70 100644
 --- a/web/src/shared/i18n/index.ts
 +++ b/web/src/shared/i18n/index.ts
-@@ -1,536 +1,66 @@
+@@ -1,536 +1,81 @@
  export type AppLocale = "en" | "zh-CN";
  
  const messages = {
@@ -20785,6 +20879,21 @@ index 9a1bbc3..02d8b5e 100644
 +    en: "Mute this workspace (no unread count in the tab title)",
 +    "zh-CN": "静音此工作区（标签页标题不显示未读数）",
 +  },
++  "platform.tab.devices": { en: "Devices", "zh-CN": "设备" },
++  "platform.devices.none": {
++    en: "No devices yet. Sign in to Kailo Desktop or Mobile to add one.",
++    "zh-CN": "还没有设备。在 Kailo Desktop 或 Mobile 上登录即可添加。",
++  },
++  "platform.devices.explain": {
++    en: "Each device holds its own key. Revoking one stops only that device.",
++    "zh-CN": "每台设备各持自己的密钥。撤销只停用那一台设备。",
++  },
++  "platform.devices.added": { en: "Added", "zh-CN": "添加于" },
++  "platform.devices.revoke": { en: "Revoke", "zh-CN": "撤销" },
++  "platform.devices.revokeFailed": {
++    en: "Couldn't revoke — the result is unknown. Reload to check.",
++    "zh-CN": "撤销未完成，结果不明。请刷新后确认。",
++  },
 +  "platform.sendFailed": { en: "Send failed", "zh-CN": "发送失败" },
 +  "platform.message": { en: "Message", "zh-CN": "消息" },
 +  "platform.send": { en: "Send", "zh-CN": "发送" },
@@ -20798,7 +20907,7 @@ index 9a1bbc3..02d8b5e 100644
    "error.attachmentImagePrepare": {
      en: "We couldn't prepare this image for upload.",
      "zh-CN": "无法处理此图片以上传。",
-@@ -539,197 +69,6 @@ const messages = {
+@@ -539,197 +84,6 @@ const messages = {
      en: "This media format isn't supported for upload.",
      "zh-CN": "暂不支持上传此媒体格式。",
    },

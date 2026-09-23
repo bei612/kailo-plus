@@ -1,0 +1,48 @@
+capability_id: identity.client_keys
+title: 原生设备公钥的登记、投影与撤销；同一人可同时持有 Web 与多台设备的 Buzz 身份
+stage: S1
+status: shipped
+exposure: end_user
+
+design:
+  requirements: [V-REQ-01, V-REQ-08, V-REQ-19]
+  decisions: [DD-77, DD-78, DD-79]
+  facts: [SF-AGW-22, SF-AGW-24, SF-BUZ-26]
+  seams: [SS-AGW-OIDC]
+  blockers: []
+  entities: [BuzzIdentityBinding, PlatformSession, TenantMembership, WorkflowRef]
+
+validation:
+  scenarios: [V-SCN-63, V-SCN-64]
+  evidence:
+    - dimension: 上游接缝
+      ref: core/verify/native-identity.md
+    - dimension: 安全边界
+      ref: core/verify/native-identity.md
+    - dimension: 端到端场景
+      ref: upstream-patches/buzz-web/verify/web-surface.md
+    - dimension: Workflow 重放
+      ref: worker/replay-tests/testdata/component_task_identity_register_history.json
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-core/src/client_keys.rs, core/crates/kailo-core/src/identity_projection.rs, core/crates/kailo-core/src/membership_projection.rs, worker/workflows/component_task.go, deploy/local/agentgateway-config.yaml, upstream-patches/buzz-web]
+  surfaces: [web]
+  schemas: [contracts/enums/workflow_kind.schema.json, contracts/enums/reason_code.schema.json]
+  migrations: [core/migrations/20260923040000_buzz_identity_multi_binding.up.sql, core/migrations/20260923050000_workflow_kind_buzz_identity.up.sql]
+
+runtime:
+  routes: ["/api/v1/identity/client-keys", "/api/v1/identity/client-keys/{pubkey}"]
+  workflow_kinds: [BUZZ_IDENTITY_PROJECTION]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:c11d06405818d1ab815a23adf856bd11b3950588a5781e07c623df39a6bac1cd
+    - name: kailo-worker
+      digest: sha256:2d4a48ed1b4cbe571e0bddccb07bb80bf9dbae452325704d22487e08e5f48b60
+    - name: upstream-agentgateway
+      digest: sha256:e1ddf6cbf61ae4b85aaea5c1ec7755e48275918f0e9f31dc6433b72533687071
+    - name: upstream-buzz-web
+      digest: sha256:36c306ed034787d5728d9ca726a9976c652e2395dc70ee3369fdbea52695e739
+  gate: shipped

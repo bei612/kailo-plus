@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into admission.action_execution\n             (id, operation_id, tenant_id, workspace_id, action_key, action_version,\n              initiator_principal_id, actor_principal_id, target_id, parameter_hash,\n              temporal_workflow_id, gate_state, dispatch_state, correlation_id)\n         values ($1, $2, $3, null, $4, 1, $5, $5, $5, $6, $7, 'ALLOWED', 'NOT_DISPATCHED', $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "551d76a8b03ace9b3a438d61a7a9986126b43abd42213d6f3b7fbfa8b181c9c0"
+}

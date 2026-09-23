@@ -31,8 +31,10 @@ pub struct WorkspaceRow {
 pub struct MemberRow {
     pub principal_id: Uuid,
     pub display_name: String,
-    /// Buzz 协议身份的公钥。它是公开事实，与私钥托管无关。
-    pub pubkey: Option<String>,
+    /// 此人全部 ACTIVE 的 Buzz 协议公钥：Web 一把，另加每台原生设备一把
+    /// （DD-77）。公钥是公开事实，与私钥托管无关；客户端据此把任一端签发的
+    /// 消息归到同一个人名下。
+    pub pubkeys: Vec<String>,
     pub state: String,
 }
 
@@ -103,8 +105,12 @@ pub async fn list_members(
     if let Err(r) = crate::web_transport::admit_workspace(&state, &ctx, workspace_id).await {
         return r;
     }
-    match sqlx::query_as::<_, (Uuid, String, Option<String>, String)>(
-        "select wm.tenant_principal_id, hi.display_name, bib.pubkey, wm.state
+    // 一人多把公钥时按人聚合：左连接直接展开会让同一个人出现多行。
+    match sqlx::query_as::<_, (Uuid, String, Vec<String>, String)>(
+        "select wm.tenant_principal_id, hi.display_name,
+                coalesce(array_agg(bib.pubkey order by bib.pubkey)
+                         filter (where bib.pubkey is not null), '{}') as pubkeys,
+                wm.state
          from identity.workspace_membership wm
          join identity.tenant_membership tm
            on tm.tenant_principal_id = wm.tenant_principal_id
@@ -112,6 +118,7 @@ pub async fn list_members(
          left join identity.buzz_identity_binding bib
            on bib.principal_id = wm.tenant_principal_id and bib.state = 'ACTIVE'
          where wm.workspace_id = $1 and wm.state <> 'REVOKED'
+         group by wm.tenant_principal_id, hi.display_name, wm.state
          order by hi.display_name",
     )
     .bind(workspace_id)
@@ -122,10 +129,10 @@ pub async fn list_members(
             StatusCode::OK,
             Json(
                 rows.into_iter()
-                    .map(|(principal_id, display_name, pubkey, state)| MemberRow {
+                    .map(|(principal_id, display_name, pubkeys, state)| MemberRow {
                         principal_id,
                         display_name,
-                        pubkey,
+                        pubkeys,
                         state,
                     })
                     .collect::<Vec<_>>(),

@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select state, version from identity.buzz_identity_binding\n         where pubkey = $1 and tenant_id = $2 and principal_id = $3 and custody = 'CLIENT'\n         for update",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "cee23e6536080adecf02cfe3992b2305c3806dc9fbc044932a8c15fd4e420916"
+}

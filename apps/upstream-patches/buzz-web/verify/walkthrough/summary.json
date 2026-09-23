@@ -2,19 +2,19 @@
   "steps": [
     {
       "name": "未登录访问 /app/ 被带到 IdP，登录后回到 /app/",
-      "ms": 275
+      "ms": 482
     },
     {
       "name": "会话与 Workspace 解析，频道流进入已同步",
-      "ms": 143
+      "ms": 139
     },
     {
       "name": "发送消息：经 BFF 代签，由流回显后才出现，作者显示为成员名",
-      "ms": 84
+      "ms": 81
     },
     {
       "name": "发送失败：草稿保留、明确报错，不假装已发出",
-      "ms": 71
+      "ms": 73
     },
     {
       "name": "断线期间的状态文案",
@@ -22,7 +22,7 @@
     },
     {
       "name": "BFF 重启：状态如实离开已同步，恢复后续流并能继续收发",
-      "ms": 13529
+      "ms": 13510
     },
     {
       "name": "附件：图片经 BFF 代签上传、随消息发出，再经 BFF 同源读取渲染",
@@ -30,11 +30,11 @@
     },
     {
       "name": "收藏与静音：写入 Core 用户状态，刷新页面后仍在",
-      "ms": 232
+      "ms": 282
     },
     {
       "name": "已读：频道同步且页面可见时，已读位置推进到最新消息",
-      "ms": 16
+      "ms": 17
     },
     {
       "name": "成员页：本人 ACTIVE，协议身份按上游统一形式缩写",
@@ -45,12 +45,24 @@
       "ms": 84
     },
     {
+      "name": "设备页：列出本人登记的原生设备，未登记时如实说明",
+      "ms": 82
+    },
+    {
+      "name": "伪造原生入口标识的回应",
+      "value": "NATIVE_SURFACE_REQUIRED"
+    },
+    {
+      "name": "浏览器不能自称原生端：网关移除伪造的入口标识（DD-78）",
+      "ms": 3
+    },
+    {
       "name": "注销后重新进入",
       "value": "IdP 会话仍在，未要求口令；得到新会话"
     },
     {
       "name": "注销：撤掉 Core 会话与网关 cookie；再次进入是一次新的登录",
-      "ms": 666
+      "ms": 683
     }
   ],
   "origins": [
@@ -60,10 +72,12 @@
   "strayOrigins": [],
   "consoleErrors": [
     "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
-    "Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING"
+    "Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING",
+    "Failed to load resource: the server responded with a status of 403 (Forbidden)"
   ],
   "failedResponses": [
-    "503 POST http://gateway.kailo.local:8080/api/v1/workspaces/75173a6a-f0bf-4de4-870b-13ca8c8cef53/messages"
+    "503 POST http://gateway.kailo.local:8080/api/v1/workspaces/b17f872b-ff87-4db9-bc32-c011b7f8faf2/messages",
+    "403 POST http://gateway.kailo.local:8080/api/v1/identity/client-keys"
   ],
   "cspViolations": []
 }

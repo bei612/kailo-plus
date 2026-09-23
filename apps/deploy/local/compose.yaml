@@ -301,6 +301,10 @@ services:
       BFF_STREAM_RETRY_MILLIS: ${BFF_STREAM_RETRY_MILLIS:?必须显式提供，禁止硬编码}
       # 单份媒体的上界。压力在 BFF 侧先行设界，不透传给 Relay（07 §5）
       BFF_MEDIA_MAX_BYTES: ${BFF_MEDIA_MAX_BYTES:?必须显式提供，禁止硬编码}
+      # 设备持钥证明允许的时钟偏差：截获的证明最多还能用这么久（DD-79）
+      BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS: ${BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
+      # 每人可同时登记的原生设备上界（DD-77）
+      BFF_CLIENT_KEYS_PER_PRINCIPAL: ${BFF_CLIENT_KEYS_PER_PRINCIPAL:?必须显式提供，禁止硬编码}
       # service API 与 BFF 分端口：网关以 pathPrefix: / 整体转发给 BFF，
       # 同端口的服务面等于对任何已登录用户开放。
       SERVICE_LISTEN: ${SERVICE_BIND_ADDR:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}
@@ -387,7 +391,7 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:cb855df6da5635976192de1f869ee7d7ac500edb07c59664b4d6f4e68bb285e6
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:36c306ed034787d5728d9ca726a9976c652e2395dc70ee3369fdbea52695e739
     networks: [app]
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 
@@ -420,6 +424,9 @@ services:
       # 它与 BFF_CONTAINER_PORT 不同——后者由 Core 从 env 读，前者烧在镜像里，
       # 改它必须连着改 patch 并重建。
       WEB_UPSTREAM: ${WEB_SERVICE_NAME:?必须显式提供，禁止硬编码}:${WEB_CONTAINER_PORT:?必须显式提供，禁止硬编码}
+      # 原生端入口（DD-78）：Bearer 令牌的签发者、受众与验签公钥来源
+      OIDC_NATIVE_AUDIENCE: ${OIDC_NATIVE_AUDIENCE:?必须显式提供，禁止硬编码}
+      OIDC_JWKS_URI: ${OIDC_JWKS_URI:?必须显式提供，禁止硬编码}
     env_file:
       # 浏览器客户端密钥由网关持有，浏览器不持有。文件在 gitignore 的 secrets/ 下。
       - ./secrets/browser-client.env
@@ -429,6 +436,8 @@ services:
     command: ["-f", "/etc/agentgateway/config.yaml"]
     ports:
       - "127.0.0.1:${AGENTGATEWAY_PORT:?必须显式提供，禁止硬编码}:8080"
+      # 原生端入口。容器端口是网关配置里 native bind 的端口
+      - "127.0.0.1:${AGENTGATEWAY_NATIVE_PORT:?必须显式提供，禁止硬编码}:8091"
 
   # OpenBao 是 secret 的版本、取用、轮换与撤销权威（DD-70）。
   # 不用 server -dev：那是内存 storage 加固定 root token，07 §1 明确禁止它

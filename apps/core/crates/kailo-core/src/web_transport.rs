@@ -332,11 +332,15 @@ pub async fn admit_workspace(
 /// 与构造 HTTP 客户端分开：实时订阅要用同一把钥匙另建 NIP-42 WebSocket 会话
 /// （`.design/09` 第 4 步），两条路共用密钥取用与托管校验，不共用连接。
 pub async fn actor_keys(state: &BffState, ctx: &ExecutionContext) -> Result<nostr::Keys, Response> {
+    // 只取 Web 的那一把：一个人还可能有原生设备的 CLIENT 身份（DD-77），
+    // 那些私钥不在 Core 手里，也就不在这里的候选之内。每人至多一条非 REVOKED
+    // 的 SERVER binding，由库里的部分唯一索引保证。
     let row = sqlx::query!(
-        "select custody, private_key_secret_ref, private_key_secret_version,
+        "select private_key_secret_ref, private_key_secret_version,
                 private_key_secret_audience
          from identity.buzz_identity_binding
-         where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN' and state = 'ACTIVE'",
+         where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN'
+           and custody = 'SERVER' and state = 'ACTIVE'",
         ctx.tenant_id,
         ctx.tenant_principal_id,
     )
@@ -347,18 +351,9 @@ pub async fn actor_keys(state: &BffState, ctx: &ExecutionContext) -> Result<nost
         StatusCode::SERVICE_UNAVAILABLE.into_response()
     })?
     .ok_or_else(|| {
-        tracing::warn!(principal = %ctx.tenant_principal_id, "没有 ACTIVE 的 HUMAN Buzz 身份");
+        tracing::warn!(principal = %ctx.tenant_principal_id, "没有 ACTIVE 的 Web（SERVER）Buzz 身份");
         StatusCode::FORBIDDEN.into_response()
     })?;
-
-    if row.custody != "SERVER" {
-        tracing::warn!(
-            principal = %ctx.tenant_principal_id,
-            custody = %row.custody,
-            "该身份由客户端托管，Web 面不能代签"
-        );
-        return Err(StatusCode::FORBIDDEN.into_response());
-    }
 
     let secret = SecretRef {
         locator: row.private_key_secret_ref.unwrap_or_default(),

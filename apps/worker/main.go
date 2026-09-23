@@ -57,6 +57,7 @@ func main() {
 	w.RegisterActivity(spicedb.Converge)
 	w.RegisterActivity(core.ProjectTaskState)
 	w.RegisterActivity(core.ProjectBuzzRoster)
+	w.RegisterActivity(core.ProjectBuzzIdentity)
 	w.RegisterActivity(core.TransitionMembership)
 	w.RegisterActivity(core.ProvisionTenantBuzz)
 	w.RegisterActivity(core.VerifyTenantBuzz)

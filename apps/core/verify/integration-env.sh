@@ -40,5 +40,11 @@ export VERIFY_ZED_IMAGE="$(python3 -c '
 import re,io
 t=io.open("deploy/local/compose.yaml",encoding="utf-8").read()
 print(re.search(r"image: (authzed/zed@sha256:[0-9a-f]+)", t).group(1))')"
+# 原生端（DD-78）：经网关原生入口、以 PKCE 取得的 Bearer 调用。核验像原生应用
+# 一样登录 IdP，口令从文件读入进程，不进环境变量。
+export VERIFY_NATIVE_URL="http://127.0.0.1:${AGENTGATEWAY_NATIVE_PORT}"
+export VERIFY_KEYCLOAK_URL="http://127.0.0.1:${KEYCLOAK_PORT}"
+export VERIFY_USER_PASSWORD_FILE="$(pwd)/$local_dir/secrets/verify_user_password"
+export VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE="$(pwd)/$local_dir/secrets/keycloak_admin_password"
 # 整条链要串起三步投影，其中 roster 那步以 Relay 的对账间隔为界
 export VERIFY_CONVERGE_BOUND_SECS=$(( BUZZ_NIP43_RECONCILE_INTERVAL_SECS * 4 + 20 ))

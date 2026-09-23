@@ -36,7 +36,7 @@ OIDC、`proxy-authorization` 与 `x-kailo-*` 清洗、issuer/subject 投影全�
 `core/verify/web-walkthrough.sh <输出目录>`：以真实 lifecycle Workflow 开通 Workspace，
 用 IdP 里的核验用户经网关登录，Chromium 逐步操作并断言；结束时拆除 Workspace。
 
-2026-09-23 的一次完整运行，11 步全部通过（`walkthrough/summary.json`）：
+2026-09-23 的一次完整运行，13 步全部通过（`walkthrough/summary.json`）：
 
 | 步骤 | 结果 |
 |---|---|
@@ -49,9 +49,13 @@ OIDC、`proxy-authorization` 与 `x-kailo-*` 清洗、issuer/subject 投影全�
 | 收藏与静音 | 写入 Core `CollaborationUserState`，刷新后仍在，收藏项排在最前；`updatedAt` 由库时钟写入 |
 | 已读 | 同步且页面可见时推进到最新消息，存为 UTC RFC 3339 |
 | 成员页 / 审计页 | 本人 ACTIVE；`workspace.message.publish` 有记录，页面不含消息正文 |
+| 设备页 | 列出本人登记的原生设备，可在浏览器里撤销丢失的设备；未登记时如实说明 |
+| 自称原生端 | 页面带着伪造的 `x-kailo-client-surface: native` 提交设备登记，网关移除该 header，BFF 回 `NATIVE_SURFACE_REQUIRED`（`DD-78`） |
 | 注销 | 注销前的 PlatformSession 在库中为 `REVOKED`，网关 cookie 被清除，再次进入得到新会话 |
 
-全程请求来源只有网关与 IdP 两个 origin，CSP 违规 0。唯一的失败响应是走查自己注入的 503。
+全程请求来源只有网关与 IdP 两个 origin，CSP 违规 0。失败响应只有走查自己造成的两个：注入的 503 与伪造入口标识得到的 403。
+
+一个人可以同时持有 Web 与多台原生设备的公钥（`DD-77`）。频道按成员的全部公钥归属作者，原生设备直连 Relay 发出的消息在 Web 上同样显示为本人；「未读」与「新消息」分隔线也按全部公钥排除本人的消息。
 
 注销后能否不输口令直接回来取决于 IdP 自身的会话：Kailo 一侧的 PlatformSession 与网关
 cookie 都已失效，再次进入是一次新的 OIDC 登录；IdP 会话仍在时这一程不要求口令

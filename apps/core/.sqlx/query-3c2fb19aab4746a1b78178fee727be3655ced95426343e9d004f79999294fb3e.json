@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select pubkey from identity.buzz_identity_binding\n         where tenant_id = $1 and principal_id = $2",
+  "query": "select pubkey from identity.buzz_identity_binding\n         where tenant_id = $1 and principal_id = $2\n           and custody = 'SERVER' and state <> 'REVOKED'",
   "describe": {
     "columns": [
       {
@@ -19,5 +19,5 @@
       false
     ]
   },
-  "hash": "94c6e66f57b916a369cd3a30e622e30325cc5e2dd4b92a92b24d5004d2f3b725"
+  "hash": "3c2fb19aab4746a1b78178fee727be3655ced95426343e9d004f79999294fb3e"
 }

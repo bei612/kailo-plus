@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select exists (\n             select 1 from identity.buzz_identity_binding b\n             join identity.tenant_membership tm\n               on tm.tenant_principal_id = b.principal_id and tm.tenant_id = b.tenant_id\n             where b.pubkey = $1 and b.state = 'RECONCILING' and tm.state = 'ACTIVE'\n               and b.tenant_id = $2 and b.principal_id = $3) as \"ok!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "97b25ffcbf08fb320369202e87f30ce88c8698bf5d21954e1d667c98216b9eb2"
+}

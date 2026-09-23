@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select id from admission.action_execution\n         where tenant_id = $1 and action_key = $2 and parameter_hash = $3\n           and temporal_workflow_id = $4 and gate_state = 'ALLOWED'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c3b0579a90d4e4d9485912b0c5c944d65dc13db955f0345c46f9afb7ff3f60b0"
+}
