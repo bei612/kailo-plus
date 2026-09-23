@@ -1,0 +1,21 @@
+# 格式见 apps/06-工程基线规范.md §2。字段含义冲突时以该节为准。
+project: buzz-desktop
+upstream_url: https://github.com/block/buzz
+
+# Buzz Desktop 的受控上游是 block/buzz 仓库的 desktop/（Tauri），与 Buzz Web 的
+# buzz-web 不是同一代码库（DD-74）。它与 Relay 同在一个 monorepo，因此 commit 与
+# buzz 的基线相同。
+evidence_commit: 779af8886caae1317b4de962082429867ab61503
+implementation_base_commit: 779af8886caae1317b4de962082429867ab61503
+base_divergence: none
+
+patch_series: []
+patch_series_digest: none
+# 产物是桌面安装包而不是镜像；Kailo 版本的构建建立之前没有可登记的产物。
+artifact_digest: none
+
+source_facts: [SF-DSK-01, SF-DSK-02, SF-MOB-02]
+source_seams: []
+compatibility_evidence: [upstream-patches/buzz-desktop/verify/baseline-build.md]
+owner: team-platform
+last_reverified: 2026-09-23
