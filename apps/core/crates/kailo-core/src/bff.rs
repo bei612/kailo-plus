@@ -43,6 +43,9 @@ pub struct BffState {
     /// 单条流的缓冲帧数。满了对上游形成背压而不是丢帧——丢帧会让客户端
     /// 以为自己看到了完整序列。
     pub stream_buffer: usize,
+    /// 撤权对**已建立流**生效的上界。请求路径上撤权立刻生效，长连接靠这个
+    /// 周期回头看——它是一个必须被说出来的时间窗，不是实现细节。
+    pub stream_readmit_seconds: u64,
 }
 
 /// 一次请求的执行身份。
@@ -98,6 +101,9 @@ pub fn router(state: BffState) -> Router {
             get(crate::web_transport::query_messages).post(crate::web_transport::publish_message),
         )
         // 收藏/静音/已读：Core 是唯一权威，三端共用（DD-40）
+        // 注销：必须在调用网关 logout **之前**。网关的 logout 是短路的，
+        // 请求根本不到后端（SF-AGW-21），Core 无从得知注销发生过。
+        .route("/api/v1/logout", axum::routing::post(logout))
         .route("/api/v1/user-state", get(crate::user_state::get_user_state))
         .route(
             "/api/v1/user-state/workspaces/{workspace_id}",
@@ -253,4 +259,34 @@ fn error_response(e: IdentityError) -> Response {
         operation_id: None,
     };
     (status, Json(body)).into_response()
+}
+
+/// 撤销调用方自己的 PlatformSession。
+///
+/// `SS-AGW-OIDC` 把注销分成两半：网关清本地 cookie，Kailo 在同一条成功路径上
+/// 撤销 Core 会话并关闭 stream。顺序不能反——网关的 logout 是短路的，请求不到
+/// 后端（`SF-AGW-21`），先调它就再也没机会告诉 Core。
+///
+/// 只撤调用方那一条会话：同一个人可能在另一台设备上还开着，注销一台不该把
+/// 另一台踢掉。要踢全部是撤权，不是注销。
+async fn logout(State(state): State<BffState>, headers: HeaderMap) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    match session::revoke_one(&state.pool, ctx.session_id).await {
+        Ok(revoked) => {
+            // 已经撤过也是成功：注销是幂等的，重复调用不该报错。
+            tracing::info!(session = %ctx.session_id, revoked, "注销");
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "revoked": revoked })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "撤销会话失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
 }

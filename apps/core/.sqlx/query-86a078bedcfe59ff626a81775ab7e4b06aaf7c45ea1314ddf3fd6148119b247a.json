@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update identity.platform_session set status = 'REVOKED'\n         where id = $1 and status = 'ACTIVE'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "86a078bedcfe59ff626a81775ab7e4b06aaf7c45ea1314ddf3fd6148119b247a"
+}

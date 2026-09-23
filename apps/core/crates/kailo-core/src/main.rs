@@ -96,6 +96,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "缺少 BFF_STREAM_BUFFER")?
             .parse()
             .map_err(|_| "BFF_STREAM_BUFFER 必须是数字")?,
+        stream_readmit_seconds: std::env::var("BFF_STREAM_READMIT_SECONDS")
+            .map_err(|_| "缺少 BFF_STREAM_READMIT_SECONDS")?
+            .parse()
+            .map_err(|_| "BFF_STREAM_READMIT_SECONDS 必须是秒数")?,
     };
 
     let bff = tokio::net::TcpListener::bind(listen).await?;

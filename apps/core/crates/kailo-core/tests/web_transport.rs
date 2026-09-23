@@ -502,3 +502,120 @@ async fn run_stream(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
         Ok(f) => panic!("撤权后不应开得起流，却拿到 {f:?}"),
     }
 }
+
+/// 注销（`SS-AGW-OIDC` 的 Kailo 半边）。
+///
+/// 网关的 logout 是短路的，请求根本不到后端（`SF-AGW-21`），因此 Core 只能靠
+/// Browser 先调这里。验两件事：注销撤掉会话且幂等；已建立的流在登记的上界内
+/// 被关掉，而不是继续推事件。
+#[tokio::test]
+async fn logout_revokes_session_and_closes_stream() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+    let outcome = std::panic::AssertUnwindSafe(run_logout(&http, &e, &pool, &fx))
+        .catch_unwind()
+        .await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn run_logout(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWorkspace) {
+    use futures_util::StreamExt;
+
+    // 先建立会话与一条流
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::GET,
+        "/api/v1/session",
+        None,
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    let session_id: Uuid = sqlx::query_scalar(
+        "select id from identity.platform_session where human_identity_id = $1 and status='ACTIVE'",
+    )
+    .bind(fx.human)
+    .fetch_one(pool)
+    .await
+    .expect("会话应已建立");
+
+    let resp = http
+        .get(format!(
+            "{}/api/v1/workspaces/{}/stream",
+            e.bff_url, fx.workspace
+        ))
+        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+        .header("x-kailo-oidc-subject", &fx.subject)
+        .send()
+        .await
+        .expect("开流");
+    assert!(resp.status().is_success(), "流应开得起来");
+    let mut body = resp.bytes_stream();
+
+    // 注销：只撤这一条会话
+    let (status, out) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::POST,
+        "/api/v1/logout",
+        None,
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "注销应成功：{out}");
+    assert_eq!(out["revoked"], true, "第一次注销应确实撤掉了会话");
+    let live: i64 = sqlx::query_scalar(
+        "select count(*) from identity.platform_session where id=$1 and status='ACTIVE'",
+    )
+    .bind(session_id)
+    .fetch_one(pool)
+    .await
+    .expect("查会话");
+    assert_eq!(live, 0, "注销后会话不应仍是 ACTIVE");
+
+    // 已建立的流必须在登记的上界内关闭，而不是继续推事件
+    let bound = std::time::Duration::from_secs(e.stream_readmit_seconds * 3 + 5);
+    let deadline = tokio::time::Instant::now() + bound;
+    let mut saw_closed = false;
+    let mut buf = String::new();
+    while tokio::time::Instant::now() < deadline && !saw_closed {
+        let Ok(Some(Ok(chunk))) = tokio::time::timeout_at(deadline, body.next()).await else {
+            break;
+        };
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        if buf.contains("session-revoked") {
+            saw_closed = true;
+        }
+    }
+    assert!(
+        saw_closed,
+        "注销后已建立的流必须在 {bound:?} 内关闭并说明 session-revoked，实际收到：{buf}"
+    );
+
+    // 注销是幂等的：会话已撤，身份解析随之失败，后续请求一律被拒
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::POST,
+        "/api/v1/logout",
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "会话已撤后再注销应仍成功——注销是幂等的，重复调用不该报错"
+    );
+}

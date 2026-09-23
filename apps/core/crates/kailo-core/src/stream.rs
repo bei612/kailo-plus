@@ -110,9 +110,32 @@ pub async fn open_stream(
         }
     };
 
-    Sse::new(frames(generation, snapshot, sub))
-        .keep_alive(KeepAlive::default())
-        .into_response()
+    Sse::new(frames(
+        generation,
+        snapshot,
+        sub,
+        Readmission {
+            pool: state.pool.clone(),
+            session_id: ctx.session_id,
+            every: std::time::Duration::from_secs(state.stream_readmit_seconds),
+        },
+    ))
+    .keep_alive(KeepAlive::default())
+    .into_response()
+}
+
+/// 长连接的周期性再准入。
+///
+/// 请求/响应路径每次都重新解析身份，撤权因此对下一个请求立刻生效；而一条已经
+/// 建立的流不会再经过那条路径。`.design/03` §4.1 要求撤销对 stream 同样生效，
+/// 所以流必须自己回头看。
+///
+/// 间隔是**撤权对已建立流生效的上界**，因此是部署登记值而不是常量——它和
+/// roster 对账间隔一样，是一个必须被说出来的时间窗，不是实现细节。
+struct Readmission {
+    pool: sqlx::PgPool,
+    session_id: Uuid,
+    every: std::time::Duration,
 }
 
 /// 把 snapshot 与订阅帧拼成一条 SSE 流。
@@ -120,6 +143,7 @@ fn frames(
     generation: String,
     snapshot: Option<serde_json::Value>,
     mut sub: kailo_buzz::stream::Subscription,
+    readmit: Readmission,
 ) -> impl Stream<Item = Result<Event, Infallible>> {
     async_stream::stream! {
         // generation 先发：客户端拿到它才知道这次是续流还是新流，
@@ -129,7 +153,35 @@ fn frames(
             yield Ok(Event::default().event("snapshot").data(s.to_string()));
         }
 
-        while let Some(frame) = sub.next().await {
+        let mut tick = tokio::time::interval(readmit.every);
+        // 第一次 tick 立即返回，跳过它：刚刚才过完准入
+        tick.tick().await;
+
+        loop {
+            let frame = tokio::select! {
+                f = sub.next() => match f {
+                    Some(f) => f,
+                    None => break,
+                },
+                _ = tick.tick() => {
+                    match kailo_identity::session::is_live(&readmit.pool, readmit.session_id).await {
+                        Ok(true) => continue,
+                        // 会话没了：注销或撤权。关流并说明原因——客户端据此
+                        // 知道不该重连。
+                        Ok(false) => {
+                            yield Ok(Event::default().event("closed").data("session-revoked"));
+                            break;
+                        }
+                        // 查不动数据库是结果不明，不是"已撤销"。关流但给不同的
+                        // 原因：客户端应当重连，而不是当成被登出。
+                        Err(e) => {
+                            tracing::warn!(error = %e, "再准入查询失败");
+                            yield Ok(Event::default().event("closed").data("readmission-unavailable"));
+                            break;
+                        }
+                    }
+                }
+            };
             match frame {
                 Frame::Event(ev) => {
                     yield Ok(Event::default().event("event").data(ev.to_string()));

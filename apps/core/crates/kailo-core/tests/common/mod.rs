@@ -39,6 +39,7 @@ pub struct Env {
     pub catalog_tenant_slug: String,
     pub bff_url: String,
     pub oidc_issuer: String,
+    pub stream_readmit_seconds: u64,
 }
 
 /// 集成核验要显式开启（`KAILO_INTEGRATION=1`），不按「某个环境变量碰巧存在」
@@ -71,6 +72,7 @@ pub fn env() -> Option<Env> {
         catalog_tenant_slug: v("PLATFORM_CATALOG_TENANT_SLUG")?,
         bff_url: v("VERIFY_BFF_URL")?,
         oidc_issuer: v("OIDC_ISSUER")?,
+        stream_readmit_seconds: v("BFF_STREAM_READMIT_SECONDS")?.parse().ok()?,
     })
 }
 

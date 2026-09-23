@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select 1 from identity.platform_session\n         where id = $1 and status = 'ACTIVE' and expires_at > now()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "?column?",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2b95d345b6ebd06ba343d658a660f973ac5617460001c2abc825f172ca321392"
+}

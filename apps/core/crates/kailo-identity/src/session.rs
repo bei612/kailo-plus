@@ -84,3 +84,34 @@ pub async fn revoke_for_membership(
     .await?;
     Ok(done.rows_affected())
 }
+
+/// 撤销一条指定的会话，返回是否确实撤销了。
+///
+/// 注销走这条：它只动调用方自己那条会话，不牵连同一 membership 下别的会话
+/// （同一个人可能在另一台设备上还开着，注销一台不该把另一台踢掉）。
+pub async fn revoke_one(pool: &PgPool, session_id: Uuid) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query!(
+        "update identity.platform_session set status = 'REVOKED'
+         where id = $1 and status = 'ACTIVE'",
+        session_id
+    )
+    .execute(pool)
+    .await?;
+    Ok(done.rows_affected() > 0)
+}
+
+/// 该会话此刻是否仍然可用。
+///
+/// 长连接用它做周期性再准入：请求/响应路径每次都重新解析身份，因此撤权对
+/// 下一个请求立刻生效；而一条已经建立的流不会再经过那条路径，必须自己回头看
+/// （`.design/03` §4.1 要求撤销对 stream 同样生效）。
+pub async fn is_live(pool: &PgPool, session_id: Uuid) -> Result<bool, sqlx::Error> {
+    Ok(sqlx::query_scalar!(
+        "select 1 from identity.platform_session
+         where id = $1 and status = 'ACTIVE' and expires_at > now()",
+        session_id
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some())
+}
