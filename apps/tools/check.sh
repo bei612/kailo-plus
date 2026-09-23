@@ -279,7 +279,7 @@ for f in files:
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
 if not files:
-    print("  \033[90mSKIP\033[0m 尚无追溯记录——Stage 0 不产出用户可达能力，属正确状态")
+    print("  \033[90mSKIP\033[0m 尚无追溯记录")
 else:
     print(f"  \033[32mPASS\033[0m {len(files)} 条追溯记录通过 06 §1 的六条硬规则")
 PY

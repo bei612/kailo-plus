@@ -1,0 +1,39 @@
+capability_id: collab.user_state
+title: 收藏、静音与已读由 Core CollaborationUserState 统一承载
+stage: S1
+status: shipped
+exposure: end_user
+
+design:
+  requirements: [V-REQ-01]
+  decisions: [DD-40]
+  facts: []
+  seams: []
+  blockers: []
+  entities: [CollaborationUserState]
+
+validation:
+  scenarios: [V-SCN-29]
+  evidence:
+    - dimension: 领域规则
+      ref: upstream-patches/buzz-web/verify/web-surface.md
+    - dimension: 端到端场景
+      ref: upstream-patches/buzz-web/verify/web-surface.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-core/src/user_state.rs, upstream-patches/buzz-web]
+  surfaces: [web]
+  schemas: []
+  migrations: [core/migrations/20260923020000_collaboration_user_state.up.sql]
+
+runtime:
+  routes: ["/api/v1/user-state", "/api/v1/user-state/workspaces/{workspace_id}", "/api/v1/user-state/read"]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:c11d06405818d1ab815a23adf856bd11b3950588a5781e07c623df39a6bac1cd
+    - name: upstream-buzz-web
+      digest: sha256:cb855df6da5635976192de1f869ee7d7ac500edb07c59664b4d6f4e68bb285e6
+  gate: shipped

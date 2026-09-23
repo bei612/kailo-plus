@@ -1,0 +1,43 @@
+capability_id: lifecycle.tenant_workspace_membership
+title: Tenant、Workspace 与两级成员的建立和撤权经 ComponentTaskWorkflow 对账收敛
+stage: S1
+status: shipped
+exposure: internal
+
+design:
+  requirements: [V-REQ-02, V-REQ-08]
+  decisions: [DD-03, DD-45, DD-48]
+  facts: []
+  seams: [SS-BUZ-OPERATOR]
+  blockers: []
+  entities: [Tenant, Workspace, TenantMembership, WorkspaceMembership, TenantBuzzBinding, WorkspaceBuzzBinding, WorkflowRef, TaskProjection]
+
+validation:
+  scenarios: [V-SCN-03, V-SCN-32, V-SCN-34, V-SCN-35]
+  evidence:
+    - dimension: 上游接缝
+      ref: upstream-patches/buzz/verify/operator-provisioning.md
+    - dimension: 组件集成
+      ref: core/verify/membership-lifecycle.md
+    - dimension: 安全边界
+      ref: core/verify/service-api.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-core/src/membership_lifecycle.rs, core/crates/kailo-core/src/tenant_lifecycle.rs, worker/workflows]
+  surfaces: []
+  schemas: [contracts/enums/workflow_kind.schema.json]
+  migrations: [core/migrations/20260922214500_orchestration_stage1.up.sql, core/migrations/20260922230000_buzz_bindings_stage1.up.sql]
+
+runtime:
+  workflow_kinds: [TENANT_LIFECYCLE, WORKSPACE_LIFECYCLE, MEMBERSHIP_PROJECTION, MEMBERSHIP_REVOCATION]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:c11d06405818d1ab815a23adf856bd11b3950588a5781e07c623df39a6bac1cd
+    - name: kailo-worker
+      digest: sha256:2d4a48ed1b4cbe571e0bddccb07bb80bf9dbae452325704d22487e08e5f48b60
+    - name: upstream-buzz
+      digest: sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
+  gate: shipped

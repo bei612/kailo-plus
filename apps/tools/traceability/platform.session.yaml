@@ -1,0 +1,43 @@
+capability_id: platform.session
+title: 经 AgentGateway OIDC 登录、解析平台身份与会话、注销
+stage: S1
+status: shipped
+exposure: end_user
+
+design:
+  requirements: [V-REQ-01, V-REQ-08]
+  decisions: [DD-02, DD-73]
+  facts: [SF-AGW-17, SF-AGW-18, SF-AGW-20, SF-AGW-21, SF-AGW-22, SF-AGW-23]
+  seams: [SS-AGW-OIDC]
+  blockers: []
+  entities: [HumanIdentity, ExternalIdentity, PlatformSession, TenantMembership]
+
+validation:
+  scenarios: [V-SCN-02, V-SCN-13, V-SCN-43]
+  evidence:
+    - dimension: 上游接缝
+      ref: upstream-patches/agentgateway/verify/oidc-header-projection.md
+    - dimension: 安全边界
+      ref: core/verify/identity-chain.md
+    - dimension: 端到端场景
+      ref: upstream-patches/buzz-web/verify/web-surface.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-identity, core/crates/kailo-core/src/bff.rs, deploy/local/agentgateway-config.yaml]
+  surfaces: [web]
+  schemas: [contracts/enums/reason_code.schema.json]
+  migrations: []
+
+runtime:
+  routes: ["/app/", "/api/v1/session", "/api/v1/logout"]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:c11d06405818d1ab815a23adf856bd11b3950588a5781e07c623df39a6bac1cd
+    - name: upstream-agentgateway
+      digest: sha256:e1ddf6cbf61ae4b85aaea5c1ec7755e48275918f0e9f31dc6433b72533687071
+    - name: upstream-buzz-web
+      digest: sha256:cb855df6da5635976192de1f869ee7d7ac500edb07c59664b4d6f4e68bb285e6
+  gate: shipped

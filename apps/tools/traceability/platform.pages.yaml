@@ -1,0 +1,39 @@
+capability_id: platform.pages
+title: Web 平台页：Workspace 选择、频道、成员与本人审计
+stage: S1
+status: shipped
+exposure: end_user
+
+design:
+  requirements: [V-REQ-01, V-REQ-03, V-REQ-17]
+  decisions: [DD-39]
+  facts: []
+  seams: [SS-WEB-01]
+  blockers: []
+  entities: [Workspace, WorkspaceMembership, AuditEvent]
+
+validation:
+  scenarios: []
+  evidence:
+    - dimension: 上游接缝
+      ref: upstream-patches/buzz-web/verify/web-surface.md
+    - dimension: 呈现
+      ref: upstream-patches/buzz-web/verify/web-surface.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-core/src/platform_views.rs, upstream-patches/buzz-web]
+  surfaces: [web]
+  schemas: []
+  migrations: []
+
+runtime:
+  routes: ["/app/", "/api/v1/workspaces", "/api/v1/workspaces/{workspace_id}/members", "/api/v1/audit"]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:c11d06405818d1ab815a23adf856bd11b3950588a5781e07c623df39a6bac1cd
+    - name: upstream-buzz-web
+      digest: sha256:cb855df6da5635976192de1f869ee7d7ac500edb07c59664b4d6f4e68bb285e6
+  gate: shipped

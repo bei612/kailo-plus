@@ -1,2 +1,57 @@
 # 生成物，不手工编辑。由 tools/gen-registry.py 从 tools/traceability/ 生成。
-capabilities: []
+capabilities:
+- id: collab.channel.media
+  exposure: end_user
+  routes:
+  - /api/v1/workspaces/{workspace_id}/media
+  - /api/v1/workspaces/{workspace_id}/media/{sha256}
+  actions: []
+  tools: []
+  workflow_kinds: []
+- id: collab.channel.message
+  exposure: end_user
+  routes:
+  - /api/v1/workspaces/{workspace_id}/messages
+  - /api/v1/workspaces/{workspace_id}/stream
+  actions:
+  - workspace.message.publish
+  tools: []
+  workflow_kinds: []
+- id: collab.user_state
+  exposure: end_user
+  routes:
+  - /api/v1/user-state
+  - /api/v1/user-state/workspaces/{workspace_id}
+  - /api/v1/user-state/read
+  actions: []
+  tools: []
+  workflow_kinds: []
+- id: lifecycle.tenant_workspace_membership
+  exposure: internal
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds:
+  - TENANT_LIFECYCLE
+  - WORKSPACE_LIFECYCLE
+  - MEMBERSHIP_PROJECTION
+  - MEMBERSHIP_REVOCATION
+- id: platform.pages
+  exposure: end_user
+  routes:
+  - /app/
+  - /api/v1/workspaces
+  - /api/v1/workspaces/{workspace_id}/members
+  - /api/v1/audit
+  actions: []
+  tools: []
+  workflow_kinds: []
+- id: platform.session
+  exposure: end_user
+  routes:
+  - /app/
+  - /api/v1/session
+  - /api/v1/logout
+  actions: []
+  tools: []
+  workflow_kinds: []

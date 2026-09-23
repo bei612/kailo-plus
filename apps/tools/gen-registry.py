@@ -64,8 +64,9 @@ def main() -> int:
         for k in runtime.get("workflow_kinds") or []:
             if k not in kinds:
                 bad.append(f"{cid}: workflow_kind {k} 不在 .design/06 的封闭列表中")
-        # 条件 4：id 必须已在覆盖矩阵中归属
-        if assigned and cid not in assigned:
+        # 条件 4：id 必须已在覆盖矩阵中归属。不以「矩阵里一个 id 都没有」为由
+        # 放行——那会让第一条记录在没有任何归属的情况下直接进入注册表。
+        if cid not in assigned:
             bad.append(f"{cid}: 未在 05-设计覆盖矩阵.md 中归属")
 
         caps.append({
