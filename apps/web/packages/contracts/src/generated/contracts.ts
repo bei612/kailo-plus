@@ -120,6 +120,7 @@ export enum ReasonCode {
     IdentityUnknown = "IDENTITY_UNKNOWN",
     SessionNotActive = "SESSION_NOT_ACTIVE",
     TenantMembershipNotActive = "TENANT_MEMBERSHIP_NOT_ACTIVE",
+    TenantSelectionNotAvailable = "TENANT_SELECTION_NOT_AVAILABLE",
 }
 
 /**

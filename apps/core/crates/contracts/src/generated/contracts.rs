@@ -166,6 +166,9 @@ pub enum ReasonCode {
 
     #[serde(rename = "TENANT_MEMBERSHIP_NOT_ACTIVE")]
     TenantMembershipNotActive,
+
+    #[serde(rename = "TENANT_SELECTION_NOT_AVAILABLE")]
+    TenantSelectionNotAvailable,
 }
 
 /// BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。

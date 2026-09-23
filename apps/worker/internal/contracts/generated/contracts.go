@@ -172,10 +172,11 @@ const (
 type ReasonCode string
 
 const (
-	IdentityHeaderMissing     ReasonCode = "IDENTITY_HEADER_MISSING"
-	IdentityUnknown           ReasonCode = "IDENTITY_UNKNOWN"
-	SessionNotActive          ReasonCode = "SESSION_NOT_ACTIVE"
-	TenantMembershipNotActive ReasonCode = "TENANT_MEMBERSHIP_NOT_ACTIVE"
+	IdentityHeaderMissing       ReasonCode = "IDENTITY_HEADER_MISSING"
+	IdentityUnknown             ReasonCode = "IDENTITY_UNKNOWN"
+	SessionNotActive            ReasonCode = "SESSION_NOT_ACTIVE"
+	TenantMembershipNotActive   ReasonCode = "TENANT_MEMBERSHIP_NOT_ACTIVE"
+	TenantSelectionNotAvailable ReasonCode = "TENANT_SELECTION_NOT_AVAILABLE"
 )
 
 // ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind

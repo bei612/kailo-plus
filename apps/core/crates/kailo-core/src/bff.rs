@@ -284,7 +284,8 @@ async fn record_denied_authentication(
 fn error_response(e: IdentityError) -> Response {
     let class = e.class();
     let status = match class {
-        ErrorClass::Denied => StatusCode::FORBIDDEN,
+        // BLOCKED 同样不可重试：能力未开放，不是服务端故障
+        ErrorClass::Denied | ErrorClass::Blocked => StatusCode::FORBIDDEN,
         ErrorClass::Unknown => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };

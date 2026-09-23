@@ -236,6 +236,7 @@ enum ReasonCode {
   IDENTITY_UNKNOWN,
   SESSION_NOT_ACTIVE,
   TENANT_MEMBERSHIP_NOT_ACTIVE,
+  TENANT_SELECTION_NOT_AVAILABLE,
 }
 
 final reasonCodeValues = EnumValues({
@@ -243,6 +244,7 @@ final reasonCodeValues = EnumValues({
   "IDENTITY_UNKNOWN": ReasonCode.IDENTITY_UNKNOWN,
   "SESSION_NOT_ACTIVE": ReasonCode.SESSION_NOT_ACTIVE,
   "TENANT_MEMBERSHIP_NOT_ACTIVE": ReasonCode.TENANT_MEMBERSHIP_NOT_ACTIVE,
+  "TENANT_SELECTION_NOT_AVAILABLE": ReasonCode.TENANT_SELECTION_NOT_AVAILABLE,
 });
 
 ///BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。

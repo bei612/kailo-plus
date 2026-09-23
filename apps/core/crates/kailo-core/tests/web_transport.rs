@@ -886,3 +886,98 @@ async fn run_media_message(http: &reqwest::Client, e: &Env, fx: &common::LiveWor
         "与 sidecar 不符的 imeta 必须被 Relay 拒绝"
     );
 }
+
+/// 一个人在多个 Tenant 各有一条 ACTIVE membership 时，不任取其一。
+///
+/// `.design/03` 允许一人多 Tenant，但没有定义登录时如何选定 Tenant，一期也没有
+/// 选择入口。任取一个就是「回退默认租户」，因此必须是确定的拒绝。已撤销的
+/// membership 也不得遮住唯一 ACTIVE 的那条。
+#[tokio::test]
+async fn multiple_active_tenants_are_refused_not_guessed() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+
+    // 另一个 Tenant 里同一个人的第二条 membership。这里只验解析器的判定，
+    // 直接写库；Tenant 与成员的真实建立走 lifecycle Workflow，已由别的用例覆盖。
+    let other = Uuid::new_v4();
+    let other_principal = Uuid::new_v4();
+    let other_membership = Uuid::new_v4();
+    let outcome = std::panic::AssertUnwindSafe(async {
+        sqlx::query("insert into identity.tenant (id, slug, name, state) values ($1,$2,$2,'ACTIVE')")
+            .bind(other)
+            .bind(format!("m{}", &other.to_string()[..8]))
+            .execute(&pool)
+            .await
+            .expect("建第二个 Tenant");
+        sqlx::query(
+            "insert into identity.principal (id, tenant_id, kind, status) values ($1,$2,'HUMAN','ACTIVE')",
+        )
+        .bind(other_principal)
+        .bind(other)
+        .execute(&pool)
+        .await
+        .expect("建第二个 Principal");
+        sqlx::query(
+            "insert into identity.tenant_membership (id, tenant_id, human_identity_id, tenant_principal_id, state)
+             values ($1,$2,$3,$4,'ACTIVE')",
+        )
+        .bind(other_membership)
+        .bind(other)
+        .bind(fx.human)
+        .bind(other_principal)
+        .execute(&pool)
+        .await
+        .expect("建第二条 membership");
+
+        let (status, body) = bff(&http, &e, &fx.subject, reqwest::Method::GET, "/api/v1/session", None).await;
+        assert_eq!(status, reqwest::StatusCode::FORBIDDEN, "两条 ACTIVE 必须拒绝：{body}");
+        assert_eq!(body["class"], "BLOCKED");
+        assert_eq!(body["reason"], "TENANT_SELECTION_NOT_AVAILABLE");
+        let (status, _) = bff(
+            &http,
+            &e,
+            &fx.subject,
+            reqwest::Method::GET,
+            &format!("/api/v1/workspaces/{}/messages", fx.workspace),
+            None,
+        )
+        .await;
+        assert_eq!(status, reqwest::StatusCode::FORBIDDEN, "任何经身份解析的入口都必须拒绝");
+
+        // 撤掉第二条：唯一 ACTIVE 的那条必须被选中，已撤销的不得遮住它
+        sqlx::query("update identity.tenant_membership set state = 'REVOKED' where id = $1")
+            .bind(other_membership)
+            .execute(&pool)
+            .await
+            .expect("撤第二条");
+        let (status, body) = bff(&http, &e, &fx.subject, reqwest::Method::GET, "/api/v1/session", None).await;
+        assert_eq!(status, reqwest::StatusCode::OK, "撤掉第二条后应恢复：{body}");
+        assert_eq!(body["tenantId"], fx.tenant.to_string(), "必须解析到仍 ACTIVE 的那个 Tenant");
+    })
+    .catch_unwind()
+    .await;
+
+    for sql in [
+        "delete from identity.tenant_membership where id = $1",
+        "delete from identity.principal where id = $2",
+        "delete from identity.tenant where id = $3",
+    ] {
+        sqlx::query(sql)
+            .bind(other_membership)
+            .bind(other_principal)
+            .bind(other)
+            .execute(&pool)
+            .await
+            .unwrap_or_else(|err| panic!("清理第二个 Tenant 失败：{sql}\n  {err}"));
+    }
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}

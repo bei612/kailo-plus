@@ -18,6 +18,11 @@ pub enum IdentityError {
     Unknown,
     #[error("TenantMembership 不是 ACTIVE")]
     MembershipNotActive,
+    /// 同一个人在多个 Tenant 各有一条 ACTIVE membership。`.design/03` 允许这种
+    /// 情形，但没有定义登录时如何选定 Tenant；一期也没有选择入口。在那之前
+    /// 只能拒绝——任取一个就是「回退默认租户」。
+    #[error("多个 ACTIVE TenantMembership，且没有选择 Tenant 的入口")]
+    TenantSelectionUnavailable,
     #[error("数据库不可用")]
     Unavailable(#[from] sqlx::Error),
 }
@@ -28,6 +33,8 @@ impl IdentityError {
         match self {
             // 身份不成立是拒绝，不是前置条件不满足——修配置不会让它通过
             Self::HeaderMissing | Self::Unknown | Self::MembershipNotActive => ErrorClass::Denied,
+            // 能力未开放，不是身份不成立：修配置或重试都不会让它通过
+            Self::TenantSelectionUnavailable => ErrorClass::Blocked,
             // 依赖不可用时结果不明，不得当成拒绝：那会把可恢复故障写成永久否决
             Self::Unavailable(_) => ErrorClass::Unknown,
         }
@@ -38,6 +45,7 @@ impl IdentityError {
             Self::HeaderMissing => Some(ReasonCode::IdentityHeaderMissing),
             Self::Unknown => Some(ReasonCode::IdentityUnknown),
             Self::MembershipNotActive => Some(ReasonCode::TenantMembershipNotActive),
+            Self::TenantSelectionUnavailable => Some(ReasonCode::TenantSelectionNotAvailable),
             Self::Unavailable(_) => None,
         }
     }
@@ -60,8 +68,12 @@ pub async fn resolve(
     };
 
     // 一次查询走完 ExternalIdentity → HumanIdentity → TenantMembership → Principal。
-    // 只接受两侧都 ACTIVE 的行：停用的身份不得取得任何执行上下文。
-    let row = sqlx::query!(
+    // 只接受两侧都 ACTIVE 的身份：停用的身份不得取得任何执行上下文。
+    //
+    // 取回此人的**全部** membership 再判定，而不是取第一行：一个人可以在多个
+    // Tenant 各有一条 membership（`.design/03`），行序由数据库决定，取第一行
+    // 就是任意挑一个 Tenant——而且可能挑中一条已撤销的、把 ACTIVE 的那条挡在门外。
+    let rows = sqlx::query!(
         r#"
         select tm.id           as tenant_membership_id,
                tm.tenant_id    as tenant_id,
@@ -77,13 +89,19 @@ pub async fn resolve(
         issuer,
         subject
     )
-    .fetch_optional(pool)
+    .fetch_all(pool)
     .await?;
 
-    let row = row.ok_or(IdentityError::Unknown)?;
-    if row.membership_state != "ACTIVE" {
-        return Err(IdentityError::MembershipNotActive);
+    if rows.is_empty() {
+        return Err(IdentityError::Unknown);
     }
+    let mut active = rows.into_iter().filter(|r| r.membership_state == "ACTIVE");
+    let row = match (active.next(), active.next()) {
+        (Some(row), None) => row,
+        (Some(_), Some(_)) => return Err(IdentityError::TenantSelectionUnavailable),
+        // 有 membership 但没有一条 ACTIVE：与「不认识此人」是两回事
+        (None, _) => return Err(IdentityError::MembershipNotActive),
+    };
 
     Ok(ResolvedIdentity {
         human_identity_id: row.human_identity_id.to_string(),
