@@ -206,12 +206,24 @@ async fn tenant_and_workspace_lifecycle_converge() {
         "delete from identity.principal where tenant_id = $1",
         "delete from identity.tenant where id = $1",
     ] {
-        let _ = sqlx::query(sql).bind(tenant).execute(&pool).await;
+        if let Err(e) = sqlx::query(sql).bind(tenant).execute(&pool).await {
+            eprintln!("夹具清理失败：{sql}\n  {e}");
+        }
     }
-    let _ = sqlx::query("delete from identity.principal where id = $1")
+    if let Err(e) = sqlx::query("delete from identity.principal where id = $1")
         .bind(initiator)
         .execute(&pool)
-        .await;
+        .await
+    {
+        eprintln!("夹具清理失败（发起方 Principal）：{e}");
+    }
+    // 复核：清理被挡住时只在下一次跑别的用例才表现出来，那时已经难以归因
+    let left: i64 = sqlx::query_scalar("select count(*) from identity.tenant where id = $1")
+        .bind(tenant)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(-1);
+    assert_eq!(left, 0, "夹具 Tenant {tenant} 没有被清掉");
 
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);

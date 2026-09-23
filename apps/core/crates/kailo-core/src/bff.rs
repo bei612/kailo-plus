@@ -12,6 +12,8 @@ use axum::{
     Json, Router,
 };
 use contracts::{ErrorBody, ErrorClass, ReasonCode};
+
+use crate::audit;
 use kailo_identity::{resolve, IdentityError};
 use sqlx::PgPool;
 
@@ -35,10 +37,87 @@ async fn healthz() -> StatusCode {
 async fn current_session(State(pool): State<PgPool>, headers: HeaderMap) -> Response {
     // 只取这两条 header，不读请求体、查询串或任何 Browser 可控位置
     let header = |name: &str| -> Option<&str> { headers.get(name).and_then(|v| v.to_str().ok()) };
+    let (issuer, subject) = (header(HEADER_ISSUER), header(HEADER_SUBJECT));
 
-    match resolve(&pool, header(HEADER_ISSUER), header(HEADER_SUBJECT)).await {
+    match resolve(&pool, issuer, subject).await {
         Ok(identity) => (StatusCode::OK, Json(identity)).into_response(),
-        Err(e) => error_response(e),
+        Err(e) => {
+            // 这里是 `.design/03` §9 允许 `tenant_id=NONE` 的那段边界：网关已经
+            // 验过 OIDC，但 Core 还没解析出可用的 TenantMembership。拒绝必须留痕，
+            // 否则「谁被挡在门外」这件事无处可查——而这恰恰是最需要查的。
+            //
+            // 依赖不可用不记：那不是一次身份判定，记下来会把运维故障混进拒绝审计。
+            if !matches!(e, IdentityError::Unavailable(_)) {
+                record_denied_authentication(&pool, issuer, subject, &e).await;
+            }
+            error_response(e)
+        }
+    }
+}
+
+/// 记一条被拒的认证。
+///
+/// 写失败只记日志：请求本身已经被拒，再因为审计写不进去返回另一个错误，会把
+/// 一次正确的拒绝变成一次看起来像故障的响应。缺口由 §3 的审计缺口度量兜底。
+async fn record_denied_authentication(
+    pool: &PgPool,
+    issuer: Option<&str>,
+    subject: Option<&str>,
+    e: &IdentityError,
+) {
+    let reason = e.reason().unwrap_or(ReasonCode::SessionNotActive);
+    let code = serde_json::to_value(reason)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "SESSION_NOT_ACTIVE".to_owned());
+
+    // header 缺失时没有可摘要的 subject。此时用固定占位 evidence：这段边界要求
+    // 「human_identity 或不可逆 subject hash 至少有一个」，而「没带任何身份
+    // header」本身就是需要留痕的事实。
+    let evidence = match (issuer, subject) {
+        (Some(i), Some(s)) if !i.is_empty() && !s.is_empty() => audit::subject_evidence(i, s),
+        _ => serde_json::json!([{ "kind": "IDENTITY_HEADER_MISSING" }]),
+    };
+
+    // operation_id 在这段边界上没有上游来源：请求还没进入任何 Governed Action。
+    // 每次拒绝各自成一条，event_key 因此也用它——同一次拒绝不会被重试写两遍，
+    // 因为这条路径上根本没有重试。
+    let operation_id = uuid::Uuid::new_v4();
+    let entry = audit::AuditEntry {
+        event_key: format!("auth-denied:{operation_id}"),
+        tenant_id: None,
+        workspace_id: None,
+        operation_id,
+        event_type: "AUTHENTICATION",
+        human_identity_id: None,
+        initiator_principal_id: None,
+        actor_principal_id: None,
+        action_key: "session.resolve",
+        action_version: 1,
+        component_type_key: "core",
+        target_type: None,
+        target_id: None,
+        parameter_hash: "NONE",
+        decision: "DENY",
+        result_code: &code,
+        result_exposure: "NONE",
+        evidence_refs: evidence,
+        correlation_id: operation_id,
+    };
+
+    let mut tx = match pool.begin().await {
+        Ok(t) => t,
+        Err(err) => {
+            tracing::warn!(error = %err, "认证拒绝审计未写入");
+            return;
+        }
+    };
+    if let Err(err) = audit::append(&mut tx, entry).await {
+        tracing::warn!(error = %err, "认证拒绝审计未写入");
+        return;
+    }
+    if let Err(err) = tx.commit().await {
+        tracing::warn!(error = %err, "认证拒绝审计未提交");
     }
 }
 

@@ -286,6 +286,9 @@ pub async fn seed_tenant_fixture(
 pub async fn cleanup(pool: &PgPool, f: &Fixture) {
     // 按外键依赖的逆序。编排三张表是后加的——夹具清理漏了它们时，库里会攒下
     // 一堆孤立的 ActionExecution 与 WorkflowRef，下一次迁移演练就会撞上。
+    //
+    // 失败不吞掉：`let _ = ...` 曾经让「审计外键挡住 Tenant 删除」这件事
+    // 静默发生，库里攒了几轮租户才被发现。清不掉要当场说出来。
     for sql in [
         "delete from projection.workspace_buzz_binding where workspace_id in
              (select id from identity.workspace where tenant_id = $1)",
@@ -302,13 +305,27 @@ pub async fn cleanup(pool: &PgPool, f: &Fixture) {
         "delete from identity.principal where tenant_id = $1",
         "delete from identity.tenant where id = $1",
     ] {
-        let _ = sqlx::query(sql).bind(f.tenant).execute(pool).await;
+        if let Err(e) = sqlx::query(sql).bind(f.tenant).execute(pool).await {
+            eprintln!("夹具清理失败：{sql}\n  {e}");
+        }
     }
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "delete from identity.human_identity where id not in
          (select human_identity_id from identity.tenant_membership)
          and display_name = 'verify'",
     )
     .execute(pool)
-    .await;
+    .await
+    {
+        eprintln!("夹具清理失败（human_identity）：{e}");
+    }
+
+    // 复核而不是相信：上面每一句都可能因为新增的引用而被挡住，而那种失败
+    // 只在下一次跑别的用例时才表现出来。
+    let left: i64 = sqlx::query_scalar("select count(*) from identity.tenant where id = $1")
+        .bind(f.tenant)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(-1);
+    assert_eq!(left, 0, "夹具 Tenant {} 没有被清掉", f.tenant);
 }

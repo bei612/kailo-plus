@@ -17,6 +17,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::audit::{append, AuditEntry};
 use crate::service_api::{authorize, unavailable, ServiceState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -84,8 +85,8 @@ pub async fn transition_scope(
     };
 
     // 可归属：跃迁必须指向已登记的 scope 生命周期 Workflow。
-    match sqlx::query!(
-        "select kind from projection.workflow_ref where workflow_id = $1",
+    let (wf_tenant, wf_operation) = match sqlx::query!(
+        "select kind, tenant_id, operation_id from projection.workflow_ref where workflow_id = $1",
         req.workflow_id
     )
     .fetch_optional(&state.pool)
@@ -95,13 +96,16 @@ pub async fn transition_scope(
             if matches!(
                 row.kind.as_deref(),
                 Some("TENANT_LIFECYCLE") | Some("WORKSPACE_LIFECYCLE")
-            ) => {}
+            ) =>
+        {
+            (row.tenant_id, row.operation_id)
+        }
         Ok(_) => {
             tracing::warn!(workflow_id = %req.workflow_id, "跃迁未指向已登记的 scope 生命周期 Workflow");
             return StatusCode::FORBIDDEN.into_response();
         }
         Err(e) => return unavailable(e),
-    }
+    };
 
     let allowed = match req.kind {
         ScopeKind::Tenant => TENANT_TRANSITIONS,
@@ -117,6 +121,10 @@ pub async fn transition_scope(
         return StatusCode::FORBIDDEN.into_response();
     }
 
+    let mut tx = match state.pool.begin().await {
+        Ok(t) => t,
+        Err(e) => return unavailable(e),
+    };
     let updated = match req.kind {
         ScopeKind::Tenant => sqlx::query!(
             "update identity.tenant set state = $1, version = version + 1
@@ -127,7 +135,7 @@ pub async fn transition_scope(
             req.from_version,
             &froms
         )
-        .fetch_optional(&state.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map(|o| o.map(|r| (r.state, r.version))),
         ScopeKind::Workspace => sqlx::query!(
@@ -139,17 +147,59 @@ pub async fn transition_scope(
             req.from_version,
             &froms
         )
-        .fetch_optional(&state.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map(|o| o.map(|r| (r.state, r.version))),
     };
 
     match updated {
-        Ok(Some((state, version))) => (
-            StatusCode::OK,
-            Json(ScopeTransitionResponse { state, version }),
-        )
-            .into_response(),
+        Ok(Some((new_state, version))) => {
+            // 审计与状态变化同事务，理由同成员跃迁
+            let entry = AuditEntry {
+                event_key: format!("{}:{}:{}", req.workflow_id, req.id, new_state),
+                tenant_id: Some(wf_tenant),
+                workspace_id: match req.kind {
+                    ScopeKind::Workspace => Some(req.id),
+                    ScopeKind::Tenant => None,
+                },
+                operation_id: wf_operation,
+                event_type: "OUTCOME",
+                human_identity_id: None,
+                initiator_principal_id: None,
+                actor_principal_id: None,
+                action_key: "scope.transition",
+                action_version: 1,
+                component_type_key: "core",
+                target_type: Some(match req.kind {
+                    ScopeKind::Tenant => "TENANT",
+                    ScopeKind::Workspace => "WORKSPACE",
+                }),
+                target_id: Some(req.id),
+                parameter_hash: &new_state,
+                decision: "ALLOW",
+                result_code: &new_state,
+                result_exposure: "NONE",
+                evidence_refs: serde_json::json!([{
+                    "kind": "TEMPORAL_WORKFLOW_ID",
+                    "value": req.workflow_id,
+                }]),
+                correlation_id: wf_operation,
+            };
+            if let Err(e) = append(&mut tx, entry).await {
+                return unavailable(e);
+            }
+            if let Err(e) = tx.commit().await {
+                return unavailable(e);
+            }
+            (
+                StatusCode::OK,
+                Json(ScopeTransitionResponse {
+                    state: new_state,
+                    version,
+                }),
+            )
+                .into_response()
+        }
         Ok(None) => {
             tracing::warn!(
                 id = %req.id,

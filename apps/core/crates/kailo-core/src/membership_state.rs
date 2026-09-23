@@ -26,6 +26,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::audit::{append, AuditEntry};
 use crate::membership_projection::MembershipScope;
 use crate::service_api::{authorize, unavailable, ServiceState};
 
@@ -87,17 +88,20 @@ pub async fn transition_membership(
     // 可归属：跃迁必须指向一个已登记的成员生命周期 Workflow。
     // 两个 kind 共用同一套跃迁——建立与撤权是同一条状态机的两个方向（DD-45）。
     let wf = sqlx::query!(
-        "select kind from projection.workflow_ref where workflow_id = $1",
+        "select kind, tenant_id, operation_id from projection.workflow_ref where workflow_id = $1",
         req.workflow_id
     )
     .fetch_optional(&state.pool)
     .await;
-    match wf {
+    let (wf_tenant, wf_operation) = match wf {
         Ok(Some(row))
             if matches!(
                 row.kind.as_deref(),
                 Some("MEMBERSHIP_PROJECTION") | Some("MEMBERSHIP_REVOCATION")
-            ) => {}
+            ) =>
+        {
+            (row.tenant_id, row.operation_id)
+        }
         Ok(_) => {
             tracing::warn!(
                 workflow_id = %req.workflow_id,
@@ -106,7 +110,7 @@ pub async fn transition_membership(
             return StatusCode::FORBIDDEN.into_response();
         }
         Err(e) => return unavailable(e),
-    }
+    };
 
     let allowed = match req.scope {
         MembershipScope::Tenant => TENANT_TRANSITIONS,
@@ -128,6 +132,10 @@ pub async fn transition_membership(
         return StatusCode::FORBIDDEN.into_response();
     }
 
+    let mut tx = match state.pool.begin().await {
+        Ok(t) => t,
+        Err(e) => return unavailable(e),
+    };
     let updated = match req.scope {
         MembershipScope::Tenant => sqlx::query!(
             "update identity.tenant_membership
@@ -139,7 +147,7 @@ pub async fn transition_membership(
             req.from_version,
             &froms
         )
-        .fetch_optional(&state.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map(|o| o.map(|r| (r.state, r.version))),
         MembershipScope::Workspace => sqlx::query!(
@@ -152,14 +160,30 @@ pub async fn transition_membership(
             req.from_version,
             &froms
         )
-        .fetch_optional(&state.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map(|o| o.map(|r| (r.state, r.version))),
     };
 
     match updated {
-        Ok(Some((state, version))) => {
-            (StatusCode::OK, Json(TransitionResponse { state, version })).into_response()
+        Ok(Some((new_state, version))) => {
+            // 审计与状态变化同事务：分两次提交，崩在中间就得到一次
+            // 「发生过但没人记得」的撤权（.design/03 §9）。
+            let entry = membership_audit(&req, &new_state, wf_tenant, wf_operation);
+            if let Err(e) = append(&mut tx, entry).await {
+                return unavailable(e);
+            }
+            if let Err(e) = tx.commit().await {
+                return unavailable(e);
+            }
+            (
+                StatusCode::OK,
+                Json(TransitionResponse {
+                    state: new_state,
+                    version,
+                }),
+            )
+                .into_response()
         }
         // 没有行被更新有三种成因：id 不存在、版本不匹配、当前状态不允许该跃迁。
         // 三者都是「按现在的事实这次跃迁不成立」，都不该重试；不逐一区分是因为
@@ -174,5 +198,52 @@ pub async fn transition_membership(
             StatusCode::CONFLICT.into_response()
         }
         Err(e) => unavailable(e),
+    }
+}
+
+/// 成员跃迁的审计事实。
+///
+/// `REVOKED` 记 `REVOCATION`，其余记 `OUTCOME`：撤权在 `.design/03` §9 的类型表
+/// 里是独立一类，把它混进 OUTCOME 会让「按撤权取证」漏掉记录。
+///
+/// `event_key` 由 workflow ID、目标与目标状态构成，因此同一次跃迁重试算出同一个
+/// 键；唯一约束据此拒绝第二条。
+fn membership_audit<'a>(
+    req: &'a TransitionRequest,
+    new_state: &'a str,
+    tenant_id: Uuid,
+    operation_id: Uuid,
+) -> AuditEntry<'a> {
+    AuditEntry {
+        event_key: format!("{}:{}:{}", req.workflow_id, req.membership_id, new_state),
+        tenant_id: Some(tenant_id),
+        workspace_id: None,
+        operation_id,
+        event_type: if new_state == "REVOKED" {
+            "REVOCATION"
+        } else {
+            "OUTCOME"
+        },
+        human_identity_id: None,
+        initiator_principal_id: None,
+        actor_principal_id: None,
+        action_key: "membership.transition",
+        action_version: 1,
+        component_type_key: "core",
+        target_type: Some(match req.scope {
+            MembershipScope::Tenant => "TENANT_MEMBERSHIP",
+            MembershipScope::Workspace => "WORKSPACE_MEMBERSHIP",
+        }),
+        target_id: Some(req.membership_id),
+        parameter_hash: new_state,
+        decision: "ALLOW",
+        result_code: new_state,
+        result_exposure: "NONE",
+        // Workflow 是这次跃迁的责任链起点，记它的 ID 就能顺回整条投影链
+        evidence_refs: serde_json::json!([{
+            "kind": "TEMPORAL_WORKFLOW_ID",
+            "value": req.workflow_id,
+        }]),
+        correlation_id: operation_id,
     }
 }

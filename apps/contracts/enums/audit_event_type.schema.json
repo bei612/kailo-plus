@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/audit_event_type.schema.json",
+  "title": "AuditEventType",
+  "description": "AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。",
+  "type": "string",
+  "enum": ["AUTHENTICATION", "SESSION", "INTENT", "DECISION", "APPROVAL", "DISPATCH", "OUTCOME", "REVOCATION", "RECONCILIATION", "ACCESS"]
+}
