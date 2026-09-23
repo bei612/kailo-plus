@@ -73,7 +73,7 @@ Web 采用服务端托管的唯一理由是浏览器没有安全的持钥方式�
 
 以下六步仅描述 Buzz Web。原生端的协作 event 在客户端完成第 3 至 4 步的等价动作后直接进入第 5 步。
 
-1. AgentGateway OIDC policy 校验 cookie 中 ID token；route transformation 无条件删除外来 `Proxy-Authorization` 与 Browser 自报的其它 `x-kailo-*` 身份 header，并仅用两条 set 写 `x-kailo-oidc-issuer=jwt.iss` 与 `x-kailo-oidc-subject=jwt.sub`。这两个目标不得再列入 remove；禁止投影 `jwt.rawToken`、其未脱敏形式或任何角色 claim。CEL 求值失败会删除目标 header，BFF 对任一缺失固定拒绝（SF-AGW-17/20、SS-AGW-OIDC、DD-73）。
+1. AgentGateway OIDC policy 校验 cookie 中 ID token；同一 listener 上的 gateway 阶段 transformation 无条件删除外来 `Proxy-Authorization` 与 Browser 自报的其它 `x-kailo-*` 身份 header，并仅用两条 set 写 `x-kailo-oidc-issuer=jwt.iss` 与 `x-kailo-oidc-subject=jwt.sub`。这两个目标不得再列入 remove；禁止投影 `jwt.rawToken`、其未脱敏形式或任何角色 claim。CEL 求值失败会删除目标 header，BFF 对任一缺失固定拒绝（SF-AGW-17/20/22、SS-AGW-OIDC、DD-73）。挂在 listener 而非各条 route 上是强制的：route 内联 OIDC 的 cookie 名由 route key 派生，多条 route 各持互不相认的会话，登录无法跨 route 完成；且 gateway 阶段先于选路执行，新增 route 不可能绕开这次清洗（SF-AGW-22）。
 2. BFF 只从该内网 header 解析 HumanIdentity/TenantMembership/PlatformSession；Browser 经 SS-WEB-RELAY 定义的 BFF transport 提交类型化 query/stream/semantic command/media request，不提交可信 principal、私钥、pubkey、raw signed event 或任意 Relay filter。
 3. Core 构造 ExecutionContext，做 Action Admission 并固定 event kind/content/tags 摘要。
 4. Core 从 `private_key_secret_ref` 获取该 Principal 的 key 并对 event 签名，按传输选择认证方式：写入与历史查询走 NIP-98 HTTP bridge，每请求一个签名、无连接状态；只有实时订阅与 WS-only kind（gift wrap、presence update）需要该 pubkey 的 NIP-42 WebSocket 会话。两条路径的 signer guard 相同（SF-BUZ-02/03）。
