@@ -437,6 +437,15 @@ for name, svc in (d.get("services") or {}).items():
     img = svc.get("image")
     if img and "@sha256:" not in img:
         bad.append(f"{name}: image 未按 digest 引用（{img}）")
+# 同一条规则延伸到本仓库自建镜像的基础镜像：compose 按 digest 引用了产物，
+# 产物的 FROM 却跟着可变 tag 走，两次构建就不是同一份输入（ADR-06）。
+for df in sorted(glob.glob("**/Dockerfile", recursive=True)):
+    if "/node_modules/" in df or df.startswith("target/"):
+        continue
+    for n, line in enumerate(open(df, encoding="utf-8"), 1):
+        m = re.match(r"\s*FROM\s+(\S+)", line, re.I)
+        if m and "@sha256:" not in m.group(1) and not m.group(1).startswith("$"):
+            bad.append(f"{df}:{n}: 基础镜像未按 digest 引用（{m.group(1)}）")
 # OpenBao 的部署前置不变式（07 §1）中可由部署描述校验的两条
 bao_cfg = "deploy/local/openbao-config.hcl"
 if os.path.exists(bao_cfg):
@@ -618,8 +627,14 @@ PY
 }
 
 step_docs()     { hdr "10/10 文档、runbook 与 release note 同步"
-  local n; n=$(find docs/runbooks -name '*.md' 2>/dev/null | wc -l)
-  if [ "$n" -gt 0 ]; then pass "$n 份 runbook"; else skip "生产发布前需补齐 07 §6 的十份"; fi
+  # 07 §6 的清单是权威：清单有几项就必须有几份，编号一一对应。每份必须写明
+  # 触发信号、判定依据、可执行步骤、不可执行的动作与完成判据，并留下带日期的
+  # 演练记录——没演练过的 runbook 在事故里第一次跑，等于没有。
+  if python3 tools/check-runbooks.py; then
+    pass "07 §6 的 runbook 逐项齐全，章节完整且有演练记录"
+  else
+    fail "runbook 不完整"
+  fi
   return 0
 }
 

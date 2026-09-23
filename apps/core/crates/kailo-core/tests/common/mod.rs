@@ -299,7 +299,11 @@ pub async fn seed_tenant_fixture(
 /// operator 面只能按 owner 列举——CONTROL 身份一删，它就再也找不回来，只会在
 /// Relay 里越攒越多。因此必须在删行**之前**、趁还读得到 host 与 owner 时归档。
 /// 夹具从未真正开通（伪造 host）时 Relay 回 404，那是没有可退役的东西。
-pub async fn retire_relay_community(e: &Env, pool: &PgPool, tenant: Uuid) {
+///
+/// 失败以返回值交给调用方，而不是当场 panic：panic 会让其后的库表清理一行
+/// 都不执行，一次 Relay 侧的失败就变成 Core 库里整组残留。调用方先做完其余
+/// 清理，最后再把它报出来。
+pub async fn retire_relay_community(e: &Env, pool: &PgPool, tenant: Uuid) -> Result<(), String> {
     let row: Option<(String, String)> = sqlx::query_as(
         "select b.normalized_host, i.pubkey
          from projection.tenant_buzz_binding b
@@ -310,27 +314,28 @@ pub async fn retire_relay_community(e: &Env, pool: &PgPool, tenant: Uuid) {
     .bind(tenant)
     .fetch_optional(pool)
     .await
-    .expect("读取 TenantBuzzBinding");
-    let Some((host, owner)) = row else { return };
+    .map_err(|err| format!("读取 TenantBuzzBinding：{err}"))?;
+    let Some((host, owner)) = row else {
+        return Ok(());
+    };
     let operator = kailo_buzz::operator::OperatorIdentity::new(
         &e.operator_key,
         &e.relay_origin,
         &e.operator_audience,
         &e.operator_audience,
     )
-    .expect("operator 身份");
+    .map_err(|err| format!("operator 身份：{err}"))?;
     match operator
         .archive_community(&reqwest::Client::new(), &host, &owner)
         .await
     {
-        Ok(_) => {}
-        Err(kailo_buzz::operator::OperatorError::Rejected { status: 404, .. }) => {}
-        Err(err) => panic!("归档夹具 Community {host} 失败：{err}"),
+        Ok(_) | Err(kailo_buzz::operator::OperatorError::Rejected { status: 404, .. }) => Ok(()),
+        Err(err) => Err(format!("归档夹具 Community {host} 失败：{err}")),
     }
 }
 
 pub async fn cleanup(e: &Env, pool: &PgPool, f: &Fixture) {
-    retire_relay_community(e, pool, f.tenant).await;
+    let retired = retire_relay_community(e, pool, f.tenant).await;
     // 按外键依赖的逆序。编排三张表是后加的——夹具清理漏了它们时，库里会攒下
     // 一堆孤立的 ActionExecution 与 WorkflowRef，下一次迁移演练就会撞上。
     //
@@ -378,6 +383,9 @@ pub async fn cleanup(e: &Env, pool: &PgPool, f: &Fixture) {
         .await
         .unwrap_or(-1);
     assert_eq!(left, 0, "夹具 Tenant {} 没有被清掉", f.tenant);
+    if let Err(err) = retired {
+        panic!("{err}");
+    }
 }
 
 /// 一个完全由真实生命周期产出的 Workspace 夹具。
@@ -633,7 +641,7 @@ pub async fn provision_live_workspace_for(
 }
 
 pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace) {
-    retire_relay_community(e, pool, fx.tenant).await;
+    let retired = retire_relay_community(e, pool, fx.tenant).await;
     // SpiceDB 侧：Workspace 归属与两级成员关系
     for (object, relation, subject) in [
         (
@@ -729,6 +737,9 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
         "夹具 Tenant {} 或发起方 Principal {} 没有被清掉",
         fx.tenant, fx.initiator
     );
+    if let Err(err) = retired {
+        panic!("{err}");
+    }
 }
 
 /// 原生端核验所需的环境（DD-78）。与 `Env` 分开：只有原生端用例需要它。

@@ -14,6 +14,19 @@ cd "$(dirname "$0")"
 compose() { sudo -n docker compose --env-file .env -f compose.yaml "$@"; }
 bao() { compose exec -T -e BAO_ADDR=http://127.0.0.1:8200 openbao bao "$@"; }
 
+# root token 与解封分片只经 stdin 进入容器。放进 docker 的 -e 或命令参数，
+# 任何能看进程表的人都读得到（07 §2、DD-71：secret 不上命令行）。
+# stdin 第一行是令牌，其后的内容（例如 policy 正文）原样交给 bao。
+# 第一个参数是 namespace，空串表示 root namespace。
+run_bao() {
+  local nsv=$1; shift
+  local env=(-e BAO_ADDR=http://127.0.0.1:8200)
+  [ -n "$nsv" ] && env+=(-e "BAO_NAMESPACE=$nsv")
+  compose exec -T "${env[@]}" openbao \
+    sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"' bao "$@"
+}
+root() { printf '%s\n' "$root_token" | run_bao "" "$@"; }
+
 umask 077
 mkdir -p secrets
 
@@ -54,7 +67,9 @@ print("unsealed" if not d.get("sealed", True) else "sealed")' 2>/dev/null || ech
 
 if [ "$(state)" != "unsealed" ]; then
   echo "解封"
-  bao operator unseal "$unseal_key" >/dev/null
+  # 分片经 stdin 以 key=- 传入。operator unseal 的「-」不读 stdin，会把它当成
+  # 分片本身（实测 400 'key' must be a valid hex or base64 string）。
+  printf '%s' "$unseal_key" | bao write sys/unseal key=- >/dev/null
 fi
 
 # 解封后 raft 节点需要一段时间成为 leader；对 standby 节点写 sys/audit 会得到
@@ -75,8 +90,7 @@ done
 # audit device 由 openbao-config.hcl 声明式配置，不经 API 启用——该版本
 # 直接拒绝 API 创建（SF-OBA-11）。此处只核验它确实生效：零 device 时
 # audit broker 的 fail-closed 分支被短路，取用不留痕（SF-OBA-06）。
-if compose exec -T -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN="$root_token" \
-     openbao bao audit list 2>/dev/null | grep -q 'file'; then
+if root audit list 2>/dev/null | grep -q 'file'; then
   echo "audit device 已生效（声明式）"
 else
   echo "audit device 未生效：检查 openbao-config.hcl 的 audit 块" >&2
@@ -95,13 +109,9 @@ fi
 : "${OPENBAO_PLATFORM_NAMESPACE:?缺少 .env 中的 OPENBAO_PLATFORM_NAMESPACE}"
 : "${OPENBAO_KV_MOUNT:?缺少 .env 中的 OPENBAO_KV_MOUNT}"
 
-ns() {
-  compose exec -T -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN="$root_token" \
-    -e BAO_NAMESPACE="$OPENBAO_PLATFORM_NAMESPACE" openbao bao "$@"
-}
-root() {
-  compose exec -T -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN="$root_token" openbao bao "$@"
-}
+ns() { printf '%s\n' "$root_token" | run_bao "$OPENBAO_PLATFORM_NAMESPACE" "$@"; }
+# 带正文的调用：令牌之后接调用方的 stdin
+ns_stdin() { { printf '%s\n' "$root_token"; cat; } | run_bao "$OPENBAO_PLATFORM_NAMESPACE" "$@"; }
 
 # 每一步都先查后建：这个脚本要能在已初始化的拓扑上重复跑。
 root namespace list 2>/dev/null | grep -qx "${OPENBAO_PLATFORM_NAMESPACE}/" \
@@ -123,7 +133,7 @@ ns auth list -format=json 2>/dev/null | grep -q '"approle/"' \
 # Core 的策略：只读写自己要用的 KV 路径，不给 delete/destroy。
 # secret 的撤销是受治理动作，不是运维旁路（.design/03 §9）——真要撤销时
 # 显式扩策略，而不是一开始就把能力留在那里等人用。
-ns policy write kailo-core - <<POLICY >/dev/null
+ns_stdin policy write kailo-core - <<POLICY >/dev/null
 path "${OPENBAO_KV_MOUNT}/data/*" {
   capabilities = ["create", "update", "read"]
 }

@@ -193,7 +193,7 @@ async fn tenant_and_workspace_lifecycle_converge() {
             &format!("tenant:{tenant}"),
         );
     }
-    common::retire_relay_community(&e, &pool, tenant).await;
+    let retired = common::retire_relay_community(&e, &pool, tenant).await;
     for sql in [
         "delete from projection.workspace_buzz_binding where workspace_id in
              (select id from identity.workspace where tenant_id = $1)",
@@ -225,6 +225,9 @@ async fn tenant_and_workspace_lifecycle_converge() {
         .await
         .unwrap_or(-1);
     assert_eq!(left, 0, "夹具 Tenant {tenant} 没有被清掉");
+    if let Err(err) = retired {
+        panic!("{err}");
+    }
 
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);

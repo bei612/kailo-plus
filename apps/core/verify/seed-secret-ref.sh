@@ -13,10 +13,11 @@ cd "$(dirname "$0")/../../deploy/local"
 : "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_KV_MOUNT:?}"
 
 root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
+# 令牌经 stdin 进入容器，不上命令行（与 openbao-init.sh 同一做法）
 ns() {
-  sudo -n docker compose --env-file .env -f compose.yaml exec -T \
-    -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN="$root_token" \
-    -e BAO_NAMESPACE="$OPENBAO_PLATFORM_NAMESPACE" openbao bao "$@"
+  printf '%s\n' "$root_token" | sudo -n docker compose --env-file .env -f compose.yaml exec -T \
+    -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_NAMESPACE="$OPENBAO_PLATFORM_NAMESPACE" openbao \
+    sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"' bao "$@"
 }
 
 # 写两版并把版本号回传给核验用例。

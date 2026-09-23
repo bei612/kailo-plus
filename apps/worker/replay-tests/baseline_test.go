@@ -2,6 +2,7 @@ package replaytests
 
 import (
 	"testing"
+	"time"
 
 	"github.com/kailo/apps/worker/workflows"
 	"go.temporal.io/sdk/worker"
@@ -40,6 +41,12 @@ func TestBaselineReplay(t *testing.T) {
 // WorkflowReplayer 比对的是命令序列与类型，不比对 Activity 选项。因此
 // 超时与重试策略的变更由代码评审与 06 §5.1 的纪律守，replay 守不住。
 func TestComponentTaskReplay(t *testing.T) {
+	// 与部署同形的非零取值。等待一轮用的是持久 timer；零值时 Sleep 不产生
+	// timer 命令，与录制的 history 对不上。取值本身不参与比对。
+	workflows.Configure(workflows.Retry{
+		StartToClose: time.Second, ScheduleToClose: time.Second, MaxAttempts: 1,
+		InitialInterval: time.Second, MaxInterval: time.Second, RoundInterval: time.Second,
+	})
 	for _, f := range []string{
 		"testdata/component_task_projection_history.json",
 		"testdata/component_task_revocation_history.json",
@@ -47,6 +54,9 @@ func TestComponentTaskReplay(t *testing.T) {
 		"testdata/component_task_workspace_lifecycle_history.json",
 		"testdata/component_task_identity_register_history.json",
 		"testdata/component_task_identity_revoke_history.json",
+		// Relay 不可达时撤权按轮等待（RB-03 演练录制）：Activity 一轮失败、
+		// 持久 timer、下一轮成功
+		"testdata/component_task_revocation_round_wait_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.ComponentTask,

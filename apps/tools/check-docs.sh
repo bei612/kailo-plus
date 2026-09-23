@@ -21,7 +21,7 @@ DOCS=(./*.md)
 while IFS= read -r f; do DOCS+=("$f"); done < <(find docs -name '*.md' 2>/dev/null | sort)
 
 say "== 1. 禁用词 =="
-HITS=$(grep -nE '\bTODO\b|\bTBD\b|待实现|待 PoC' "${DOCS[@]}" 2>/dev/null; \
+HITS=$(grep -nE '\bTODO\b|\bTBD\b|待实现|待 PoC|视情况' "${DOCS[@]}" 2>/dev/null; \
        grep -nE '可能' "${DOCS[@]}" 2>/dev/null | grep -vE '不可能|可能性|可能的')
 if [ -z "$HITS" ]; then pass "无禁用词"; else fail "发现禁用词"; printf '%s\n' "$HITS"; fi
 
