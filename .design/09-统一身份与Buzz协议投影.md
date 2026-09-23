@@ -65,7 +65,7 @@ Web 采用服务端托管的唯一理由是浏览器没有安全的持钥方式�
 
 由此固定三条边界：
 
-- **协作数据平面的准入执行点是 Relay，不是 Core。** Relay 依自身源码顺序校验 signer、scope、membership 和 kind（`SF-BUZ-03/07`），`require_relay_membership=true` 是它成立的前提（`SF-BUZ-26`）。原生端本地签名后直接发布，Core 不在这条路径上，因此不得声称对原生端消息做过发布前 admission。Web 的「发布前 fresh admission」来自 Core 代签，是 Web 的附加能力，不是三端共同承诺。
+- **协作数据平面的准入执行点是 Relay，不是 Core。** Relay 依自身源码顺序校验 signer、scope、membership 和 kind（`SF-BUZ-03/07`），`require_relay_membership=true` 是它成立的前提（`SF-BUZ-26`）。上游的 NIP-29 权限比 Kailo 宽（`SF-BUZ-37`）：非成员可读写非 private Channel，成员可自建 Channel、自加入与加人。因此还需 `SS-BUZ-GOVERNANCE` 让 Relay 只接受 CONTROL 签发的管理类事件，并以 private 建立 Workspace Channel（`DD-80`）——否则原生端可以绕开 Workspace 成员关系。原生端本地签名后直接发布，Core 不在这条路径上，因此不得声称对原生端消息做过发布前 admission。Web 的「发布前 fresh admission」来自 Core 代签，是 Web 的附加能力，不是三端共同承诺。
 - **管理平面三端一律经 BFF。** 审批、云盘、知识库、智能问数、Agent、工具、额度、计费、审计与全部 Governed Action 都走 BFF over HTTPS，身份来自 OIDC 投影，与持钥方式无关。原生端不得以持有 Nostr 私钥为由绕过任一管理平面准入。
 - **撤权收敛不依赖持钥方。** 按 `10-授权审批与撤权一致性.md` §4，执行点是 SpiceDB relationship 与 Buzz relay/Channel roster；roster 移除后 Relay 拒绝该 pubkey，与私钥在谁手里无关。`secret_ref` 为空的 binding 不适用密钥轮换流程中依赖 Core 停止签名的步骤，其等价收敛手段是 roster 移除加已知连接关闭。
 
