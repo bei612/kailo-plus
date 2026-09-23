@@ -480,6 +480,21 @@ for svc, spec in (d.get("services") or {}).items():
         got = str(env.get(key, "")).strip().lower()
         if got != want:
             bad.append(f"{svc}: {key} 为 {got or '未设置'}，必须显式为 {want}")
+    # SS-BUZ-GOVERNANCE（DD-80）：未设定即上游行为——成员可自建 Channel、
+    # 自加入、读写非 private Channel。空值是合法的收紧（成员什么都不能发），
+    # 因此只要求显式出现，不要求非空。
+    if "BUZZ_MEMBER_EVENT_KINDS" not in env:
+        bad.append(f"{svc}: 未设定 BUZZ_MEMBER_EVENT_KINDS，Relay 以上游行为运行（SF-BUZ-37）")
+
+# 该开关只存在于打过补丁的构建里，上游镜像会静默忽略它。跑 Buzz 二进制的
+# 服务（Relay 本身，以及以 buzz-admin 建 schema 的一次性服务）都必须用补丁
+# 构建：同一套二进制混用两个来源，schema 与服务就可能不是同一份代码。
+for svc, spec in (d.get("services") or {}).items():
+    env = spec.get("environment") or {}
+    entry = " ".join(spec.get("entrypoint") or []) if isinstance(spec.get("entrypoint"), list) else str(spec.get("entrypoint") or "")
+    runs_buzz = (isinstance(env, dict) and "BUZZ_BIND_ADDR" in env) or "/buzz-" in entry
+    if runs_buzz and "upstream-buzz@" not in str(spec.get("image") or ""):
+        bad.append(f"{svc}: 未运行 upstream-patches/buzz 的补丁构建，SS-BUZ-GOVERNANCE 不生效")
 
 # SS-AGW-OIDC：身份 header 投影的硬约束。
 #

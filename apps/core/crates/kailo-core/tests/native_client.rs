@@ -301,6 +301,30 @@ async fn run(
         .await
         .expect("登记后的设备应能直连 Relay 发布");
 
+    // 能直连不等于能治理：设备自建 Channel 必须被 Relay 拒绝，否则原生端就
+    // 能在 Workspace 之外造出协作空间（SS-BUZ-GOVERNANCE、DD-80）。逐项的
+    // 治理核验在 kailo-buzz 的 members_cannot_govern_the_community。
+    let rogue = uuid::Uuid::new_v4().to_string();
+    let tag = |k: &str, v: &str| vec![k.to_owned(), v.to_owned()];
+    let created = as_device
+        .publish(
+            http,
+            9007,
+            "",
+            &[
+                tag("h", &rogue),
+                tag("name", "rogue"),
+                tag("visibility", "private"),
+            ],
+        )
+        .await;
+    let refused = match &created {
+        Ok(v) => v["accepted"] == false,
+        Err(kailo_buzz::operator::OperatorError::Rejected { .. }) => true,
+        Err(_) => false,
+    };
+    assert!(refused, "设备不得自建 Channel：{created:?}");
+
     // 在浏览器入口撤销这台设备（设备丢了，应当能在任一端撤掉）
     let (status, body) = browser(
         http,

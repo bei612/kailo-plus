@@ -2,18 +2,19 @@
 project: buzz
 upstream_url: https://github.com/block/buzz
 
-# 上游按 commit 发布镜像（ghcr.io/block/buzz:sha-<short>），固定 commit
-# 恰好有对应镜像，因此不自行构建。
+# Kailo Community 的治理要求 Relay 只接受 owner（Tenant CONTROL）签发的
+# 管理类事件（SS-BUZ-GOVERNANCE、DD-80）。上游没有这个开关（SF-BUZ-37），因此
+# 不能直接用上游发布的镜像，改由 tools/build-upstream.sh 打 patch 构建。
 evidence_commit: 779af8886caae1317b4de962082429867ab61503
 implementation_base_commit: 779af8886caae1317b4de962082429867ab61503
 base_divergence: none
 
-patch_series: []
-patch_series_digest: none
-artifact_digest: sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
+patch_series: [0001-owner-governed-communities.patch]
+patch_series_digest: sha256:cddd9c9a37af0ae02a5c12357b52324ae6f19f9a12f7e4c13eb549abe0851ce0
+artifact_digest: sha256:01927d9475e8690087780f9b08194b08eb10bb0aa758d5aad45b76afd0bcbf46
 
-source_facts: [SF-BUZ-26, SF-BUZ-30, SF-BUZ-31, SF-BUZ-32, SF-BUZ-33]
-source_seams: [SS-BUZ-OPERATOR, SS-BUZ-SERVER-CLIENT]
-compatibility_evidence: [upstream-patches/buzz/verify/operator-provisioning.md, upstream-patches/buzz/verify/server-client.md]
+source_facts: [SF-BUZ-26, SF-BUZ-30, SF-BUZ-31, SF-BUZ-32, SF-BUZ-33, SF-BUZ-37, SF-BUZ-38, SF-BUZ-39]
+source_seams: [SS-BUZ-OPERATOR, SS-BUZ-SERVER-CLIENT, SS-BUZ-GOVERNANCE]
+compatibility_evidence: [upstream-patches/buzz/verify/operator-provisioning.md, upstream-patches/buzz/verify/server-client.md, upstream-patches/buzz/verify/governance.md]
 owner: team-platform
-last_reverified: 2026-09-22
+last_reverified: 2026-09-23

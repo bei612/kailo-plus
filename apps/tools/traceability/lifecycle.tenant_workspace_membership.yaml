@@ -6,9 +6,9 @@ exposure: internal
 
 design:
   requirements: [V-REQ-02, V-REQ-08]
-  decisions: [DD-03, DD-45, DD-48]
-  facts: []
-  seams: [SS-BUZ-OPERATOR]
+  decisions: [DD-03, DD-45, DD-48, DD-80]
+  facts: [SF-BUZ-37, SF-BUZ-38, SF-BUZ-39]
+  seams: [SS-BUZ-OPERATOR, SS-BUZ-GOVERNANCE]
   blockers: []
   entities: [Tenant, Workspace, TenantMembership, WorkspaceMembership, TenantBuzzBinding, WorkspaceBuzzBinding, WorkflowRef, TaskProjection]
 
@@ -21,10 +21,12 @@ validation:
       ref: core/verify/membership-lifecycle.md
     - dimension: 安全边界
       ref: core/verify/service-api.md
+    - dimension: 安全边界
+      ref: upstream-patches/buzz/verify/governance.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/membership_lifecycle.rs, core/crates/kailo-core/src/tenant_lifecycle.rs, worker/workflows]
+  paths: [core/crates/kailo-core/src/membership_lifecycle.rs, core/crates/kailo-core/src/tenant_lifecycle.rs, worker/workflows, upstream-patches/buzz]
   surfaces: []
   schemas: [contracts/enums/workflow_kind.schema.json]
   migrations: [core/migrations/20260922214500_orchestration_stage1.up.sql, core/migrations/20260922230000_buzz_bindings_stage1.up.sql]
@@ -39,5 +41,5 @@ release:
     - name: kailo-worker
       digest: sha256:5d82c8160acc5c13c468b73636a0b5e14ba15cf11141104e76864964b7833edc
     - name: upstream-buzz
-      digest: sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
+      digest: sha256:01927d9475e8690087780f9b08194b08eb10bb0aa758d5aad45b76afd0bcbf46
   gate: shipped

@@ -215,7 +215,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ghcr.io/block/buzz@sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz@sha256:01927d9475e8690087780f9b08194b08eb10bb0aa758d5aad45b76afd0bcbf46
     networks: [component]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -231,8 +231,10 @@ services:
   #   BUZZ_ALLOW_NIP_OA_AUTH 开启后，不在 roster 中的 pubkey 可凭 owner
   #   attestation 以 ViaOwner 通过。原生端本机持钥直连 Relay，Core 不在其
   #   发布路径上，roster 校验是协作数据平面唯一的准入执行点（SF-BUZ-26、DD-75）。
+  # 镜像是打过 SS-BUZ-GOVERNANCE 补丁的构建（upstream-patches/buzz），不是上游
+  # 发布镜像：上游的 NIP-29 权限比 Kailo 宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ghcr.io/block/buzz@sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz@sha256:01927d9475e8690087780f9b08194b08eb10bb0aa758d5aad45b76afd0bcbf46
     networks:
       component:
         aliases: [buzz-relay.kailo.local]
@@ -254,6 +256,10 @@ services:
       # 快照停留在过期值上；修复只来自这个周期对账（SF-BUZ-34）。它因此是
       # 成员投影查证的收敛上界，必须显式给值而不是留在默认 60 秒。
       BUZZ_NIP43_RECONCILE_INTERVAL_SECS: ${BUZZ_NIP43_RECONCILE_INTERVAL_SECS:?必须显式提供，禁止硬编码}
+      # SS-BUZ-GOVERNANCE（DD-80）：成员可发布的 kind，其余只收 Community owner
+      # （Tenant CONTROL）签发的；Channel 一律 private。只存在于补丁构建里，
+      # 未设定即上游行为——成员可自建 Channel、自加入、读写非 private Channel。
+      BUZZ_MEMBER_EVENT_KINDS: ${BUZZ_MEMBER_EVENT_KINDS:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/buzz-relay.env
     ports:

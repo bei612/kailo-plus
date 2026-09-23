@@ -7,21 +7,55 @@
 //! - roster 投影面（`DD-41`/`DD-45`）：加入与撤权重复执行都收敛；做不成时
 //!   给出结果不明而不是成功。
 
+use futures_util::FutureExt;
 use kailo_buzz::bridge::{Custody, IdentityClient, Presence, Scope};
 use kailo_buzz::operator::{OperatorError, OperatorIdentity};
 use nostr::Keys;
-
-const AUDIENCE: &str = "kailo-local";
+use std::panic::AssertUnwindSafe;
 
 /// 集成核验要显式开启（`KAILO_INTEGRATION=1`）：这些变量名与产品侧同名，
 /// source 过 `.env` 的 shell 会让本该跳过的用例拿着网内地址去连。
-fn env() -> Option<(String, String)> {
+fn env() -> Option<(String, String, String)> {
     if std::env::var("KAILO_INTEGRATION").as_deref() != Ok("1") {
         return None;
     }
-    let origin = std::env::var("RELAY_OPERATOR_API_ORIGIN").ok()?;
-    let key = std::env::var("RELAY_OPERATOR_PRIVATE_KEY").ok()?;
-    (!origin.is_empty() && !key.is_empty()).then_some((origin, key))
+    let v = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
+    Some((
+        v("RELAY_OPERATOR_API_ORIGIN")?,
+        v("RELAY_OPERATOR_PRIVATE_KEY")?,
+        v("RELAY_OPERATOR_AUDIENCE")?,
+    ))
+}
+
+/// 以 operator 建一个 Community，owner 为新生成的 Tenant CONTROL 身份。
+async fn provision(
+    http: &reqwest::Client,
+    origin: &str,
+    op_key: &str,
+    audience: &str,
+    prefix: &str,
+) -> (OperatorIdentity, Keys, String) {
+    let op = OperatorIdentity::new(op_key, origin, audience, audience).expect("operator 身份");
+    let control = Keys::generate();
+    let host = format!(
+        "{prefix}{}.kailo.local",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_micros()
+    );
+    op.provision_community(http, &host, &control.public_key().to_hex())
+        .await
+        .expect("创建 Community");
+    (op, control, host)
+}
+
+/// 测试建的 Community 不留在 Relay 里：Relay 的 operator 面只能按 owner 列举，
+/// 测试进程一退出这把 owner 钥匙就没了，留下的 Community 再也找不回来。
+async fn retire(http: &reqwest::Client, op: &OperatorIdentity, host: &str, control: &Keys) {
+    op.archive_community(http, host, &control.public_key().to_hex())
+        .await
+        .expect("归档 Community");
 }
 
 #[test]
@@ -44,33 +78,29 @@ fn client_custody_identity_is_never_signed_by_core() {
 
 #[tokio::test]
 async fn non_member_publish_is_rejected_and_member_publish_is_accepted() {
-    let Some((origin, op_key)) = env() else {
+    let Some((origin, op_key, audience)) = env() else {
         return;
     };
     let http = reqwest::Client::new();
+    let (op, control, host) = provision(&http, &origin, &op_key, &audience, "b").await;
+    let outcome = AssertUnwindSafe(publish_gate(&http, &origin, &control, &host))
+        .catch_unwind()
+        .await;
+    retire(&http, &op, &host, &control).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
 
-    // 先以 operator 建一个 Community，owner 为新生成的 Tenant CONTROL 身份
-    let op = OperatorIdentity::new(&op_key, &origin, AUDIENCE, AUDIENCE).expect("operator 身份");
-    let control = Keys::generate();
-    let host = format!(
-        "b{}.kailo.local",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_micros()
-    );
-    op.provision_community(&http, &host, &control.public_key().to_hex())
-        .await
-        .expect("创建 Community");
-
+async fn publish_gate(http: &reqwest::Client, origin: &str, control: &Keys, host: &str) {
     // roster 之外的身份发布必须被拒。require_relay_membership=true 时
     // roster 校验是协作数据平面唯一的准入执行点（SF-BUZ-26、DD-75）。
     let outsider = Keys::generate();
     let outsider_client = IdentityClient::new(
         Custody::Server,
         &outsider.secret_key().to_secret_hex(),
-        &origin,
-        &host,
+        origin,
+        host,
     )
     .expect("构造客户端");
     // 先由 owner 建一个 Channel：一个 Workspace 绑定一个 Channel（DD-01），
@@ -78,28 +108,32 @@ async fn non_member_publish_is_rejected_and_member_publish_is_accepted() {
     let owner_client = IdentityClient::new(
         Custody::Server,
         &control.secret_key().to_secret_hex(),
-        &origin,
-        &host,
+        origin,
+        host,
     )
     .expect("构造客户端");
-    owner_client
-        .create_channel(&http, "verify")
+    // Channel id 由调用方给出；重发同一个 id 不另建（DD-80）。
+    let channel_id = uuid::Uuid::new_v4().to_string();
+    for _ in 0..2 {
+        owner_client
+            .ensure_channel(http, &channel_id, "verify")
+            .await
+            .expect("建立 Channel");
+    }
+    // 成员关系由 Relay 签发的 kind 39002 承载；创建者在 roster 上且只一次。
+    let owner_hex = control.public_key().to_hex();
+    let roster = owner_client
+        .roster(http, Scope::Channel(&channel_id))
         .await
-        .expect("创建 Channel");
-
-    // Channel 的标识是 Relay 分配的 UUID，不是创建事件的 id；
-    // 成员关系由 Relay 签发的 kind 39002 承载。
-    let channels = owner_client
-        .member_channel_ids(&http)
-        .await
-        .expect("列出所属 Channel");
-    let channel_id = channels
-        .first()
-        .cloned()
-        .unwrap_or_else(|| panic!("创建后应至少属于一个 Channel，实际 {channels:?}"));
+        .expect("读取 Channel roster");
+    assert_eq!(
+        roster.iter().filter(|e| e.pubkey == owner_hex).count(),
+        1,
+        "创建者应在 roster 上且只一次：{roster:?}"
+    );
 
     let err = outsider_client
-        .publish_channel_message(&http, &channel_id, "should not pass", &[])
+        .publish_channel_message(http, &channel_id, "should not pass", &[])
         .await
         .expect_err("非成员发布必须被拒绝");
     assert!(
@@ -110,7 +144,7 @@ async fn non_member_publish_is_rejected_and_member_publish_is_accepted() {
     // Community owner 在 roster 中，其发布应被接受并返回 event id——
     // 该 id 是 operation outcome 与 audit evidence（.design/09 第 6 步）。
     let event_id = owner_client
-        .publish_channel_message(&http, &channel_id, "hello from core", &[])
+        .publish_channel_message(http, &channel_id, "hello from core", &[])
         .await
         .expect("成员发布应被接受");
     assert_eq!(
@@ -148,6 +182,173 @@ where
     }
 }
 
+/// Kailo Community 的治理由 Relay 执行（`SS-BUZ-GOVERNANCE`、`DD-80`）。
+///
+/// 原生端持钥直连 Relay，Core 不在其路径上。上游的 NIP-29 权限比 Kailo 宽
+/// （`SF-BUZ-37`）：成员能自建 Channel、自加入、读写非 private Channel。这里
+/// 以一个**在 roster 上**的成员逐项尝试，每项都必须被拒且理由指向治理规则——
+/// 被别的原因拒掉证明不了治理生效。
+#[tokio::test]
+async fn members_cannot_govern_the_community() {
+    let Some((origin, op_key, audience)) = env() else {
+        return;
+    };
+    let http = reqwest::Client::new();
+    let (op, control, host) = provision(&http, &origin, &op_key, &audience, "g").await;
+    let outcome = AssertUnwindSafe(governance_gate(&http, &origin, &control, &host))
+        .catch_unwind()
+        .await;
+    retire(&http, &op, &host, &control).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+/// Relay 的拒绝有两种形状：HTTP 非 2xx，或 2xx 而 `accepted` 为 false。
+fn refusal(result: Result<serde_json::Value, OperatorError>) -> String {
+    match result {
+        Ok(v) if v.get("accepted").and_then(|a| a.as_bool()) == Some(false) => v
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or_default()
+            .to_owned(),
+        Err(OperatorError::Rejected { body, .. }) => body,
+        other => panic!("应被拒绝，得到 {other:?}"),
+    }
+}
+
+async fn governance_gate(http: &reqwest::Client, origin: &str, control: &Keys, host: &str) {
+    let control_client = IdentityClient::new(
+        Custody::Server,
+        &control.secret_key().to_secret_hex(),
+        origin,
+        host,
+    )
+    .expect("构造客户端");
+    let mine = uuid::Uuid::new_v4().to_string();
+    let other = uuid::Uuid::new_v4().to_string();
+    for channel in [&mine, &other] {
+        control_client
+            .ensure_channel(http, channel, "governed")
+            .await
+            .expect("owner 建 Channel");
+    }
+
+    let member = Keys::generate();
+    let member_hex = member.public_key().to_hex();
+    let member_client = IdentityClient::new(
+        Custody::Server,
+        &member.secret_key().to_secret_hex(),
+        origin,
+        host,
+    )
+    .expect("构造客户端");
+    retry_until_converged(|| {
+        control_client.converge(http, Scope::Relay, &member_hex, Presence::Present)
+    })
+    .await
+    .expect("投入 relay roster");
+    retry_until_converged(|| {
+        control_client.converge(http, Scope::Channel(&mine), &member_hex, Presence::Present)
+    })
+    .await
+    .expect("投入自己 Workspace 的 Channel roster");
+
+    // 放行的 kind 在自己的 Channel 里照常可用：拒绝不是一刀切
+    member_client
+        .publish_channel_message(http, &mine, "in my workspace", &[])
+        .await
+        .expect("成员在自己的 Channel 发消息应被接受");
+    control_client
+        .publish_channel_message(http, &other, "not for this member", &[])
+        .await
+        .expect("owner 发消息");
+
+    let t = |k: &str, v: &str| vec![k.to_owned(), v.to_owned()];
+    let fresh = uuid::Uuid::new_v4().to_string();
+    for (what, kind, tags) in [
+        (
+            "自建 Channel",
+            9007,
+            vec![
+                t("h", &fresh),
+                t("name", "rogue"),
+                t("visibility", "private"),
+            ],
+        ),
+        (
+            "把自己加进别的 Channel",
+            9000,
+            vec![t("h", &other), t("p", &member_hex)],
+        ),
+        ("申请加入别的 Channel", 9021, vec![t("h", &other)]),
+        (
+            "改 Channel 元数据",
+            9002,
+            vec![t("h", &mine), t("name", "renamed")],
+        ),
+        (
+            "加 relay 成员",
+            9030,
+            vec![t("p", &Keys::generate().public_key().to_hex())],
+        ),
+        ("发 Workspace 之外的全局事件", 1, vec![]),
+    ] {
+        let why = refusal(member_client.publish(http, kind, "", &tags).await);
+        assert!(
+            why.contains("reserved to the community owner"),
+            "{what}（kind {kind}）应因治理规则被拒，实际理由：{why}"
+        );
+    }
+
+    // 不在其 roster 上的 Channel：写被拒，读不到
+    let why = refusal(
+        member_client
+            .publish(http, 9, "cross-workspace", &[t("h", &other)])
+            .await,
+    );
+    assert!(
+        why.contains("not a channel member"),
+        "跨 Workspace 写应被拒，实际理由：{why}"
+    );
+    let read = |channel: &str| serde_json::json!({ "kinds": [9], "#h": [channel] });
+    let own = member_client
+        .query(http, &[read(&mine)])
+        .await
+        .expect("读自己的 Channel");
+    assert!(
+        own.as_array().is_some_and(|a| !a.is_empty()),
+        "自己的 Channel 应读得到：{own}"
+    );
+    match member_client.query(http, &[read(&other)]).await {
+        Ok(v) => assert!(
+            v.as_array().is_some_and(|a| a.is_empty()),
+            "别的 Workspace 的消息不得被读到：{v}"
+        ),
+        Err(OperatorError::Rejected { .. }) => {}
+        Err(e) => panic!("读取失败而非被拒：{e}"),
+    }
+
+    // owner 也不能建非 private 的 Channel：缺省即 open（SF-BUZ-38）
+    for tags in [
+        vec![
+            t("h", &uuid::Uuid::new_v4().to_string()),
+            t("name", "open"),
+            t("visibility", "open"),
+        ],
+        vec![
+            t("h", &uuid::Uuid::new_v4().to_string()),
+            t("name", "implicit"),
+        ],
+    ] {
+        let why = refusal(control_client.publish(http, 9007, "", &tags).await);
+        assert!(
+            why.contains("private"),
+            "非 private Channel 应被拒，实际理由：{why}"
+        );
+    }
+}
+
 /// roster 投影的收敛语义（`DD-41`/`DD-45` 的执行投影）。
 ///
 /// 重点不是「能加能删」，而是**重复执行**：Activity 会重试、Worker 会崩溃重放，
@@ -155,29 +356,26 @@ where
 /// 因此收敛判据必须是再次读到的 roster，不是事件是否被接受。
 #[tokio::test]
 async fn roster_projection_converges_and_is_repeatable() {
-    let Some((origin, op_key)) = env() else {
+    let Some((origin, op_key, audience)) = env() else {
         return;
     };
     let http = reqwest::Client::new();
+    let (op, control, host) = provision(&http, &origin, &op_key, &audience, "r").await;
+    let outcome = AssertUnwindSafe(roster_projection(&http, &origin, &control, &host))
+        .catch_unwind()
+        .await;
+    retire(&http, &op, &host, &control).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
 
-    let op = OperatorIdentity::new(&op_key, &origin, AUDIENCE, AUDIENCE).expect("operator 身份");
-    let control = Keys::generate();
-    let host = format!(
-        "r{}.kailo.local",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_micros()
-    );
-    op.provision_community(&http, &host, &control.public_key().to_hex())
-        .await
-        .expect("创建 Community");
-
+async fn roster_projection(http: &reqwest::Client, origin: &str, control: &Keys, host: &str) {
     let control_client = IdentityClient::new(
         Custody::Server,
         &control.secret_key().to_secret_hex(),
-        &origin,
-        &host,
+        origin,
+        host,
     )
     .expect("构造客户端");
 
@@ -187,12 +385,12 @@ async fn roster_projection_converges_and_is_repeatable() {
     // relay-level roster：TenantMembership 的执行投影（DD-45）
     for round in 1..=2 {
         control_client
-            .converge(&http, Scope::Relay, &member_hex, Presence::Present)
+            .converge(http, Scope::Relay, &member_hex, Presence::Present)
             .await
             .unwrap_or_else(|e| panic!("第 {round} 次加入 relay roster 失败: {e}"));
     }
     let roster = control_client
-        .roster(&http, Scope::Relay)
+        .roster(http, Scope::Relay)
         .await
         .expect("读 relay roster");
     assert!(
@@ -207,13 +405,13 @@ async fn roster_projection_converges_and_is_repeatable() {
     let member_client = IdentityClient::new(
         Custody::Server,
         &member.secret_key().to_secret_hex(),
-        &origin,
-        &host,
+        origin,
+        host,
     )
     .expect("构造客户端");
     let err = member_client
         .converge(
-            &http,
+            http,
             Scope::Relay,
             &control.public_key().to_hex(),
             Presence::Absent,
@@ -228,22 +426,16 @@ async fn roster_projection_converges_and_is_repeatable() {
     }
 
     // Channel roster：WorkspaceMembership 的执行投影（DD-41）
+    let channel_id = uuid::Uuid::new_v4().to_string();
     control_client
-        .create_channel(&http, "roster-verify")
+        .ensure_channel(http, &channel_id, "roster-verify")
         .await
-        .expect("创建 Channel");
-    let channel_id = control_client
-        .member_channel_ids(&http)
-        .await
-        .expect("列出所属 Channel")
-        .first()
-        .cloned()
-        .expect("创建后应至少属于一个 Channel");
+        .expect("建立 Channel");
 
     for round in 1..=2 {
         control_client
             .converge(
-                &http,
+                http,
                 Scope::Channel(&channel_id),
                 &member_hex,
                 Presence::Present,
@@ -252,7 +444,7 @@ async fn roster_projection_converges_and_is_repeatable() {
             .unwrap_or_else(|e| panic!("第 {round} 次加入 Channel roster 失败: {e}"));
     }
     let roster = control_client
-        .roster(&http, Scope::Channel(&channel_id))
+        .roster(http, Scope::Channel(&channel_id))
         .await
         .expect("读 Channel roster");
     assert!(
@@ -270,7 +462,7 @@ async fn roster_projection_converges_and_is_repeatable() {
     for round in 1..=2 {
         control_client
             .converge(
-                &http,
+                http,
                 Scope::Channel(&channel_id),
                 &member_hex,
                 Presence::Absent,
@@ -278,14 +470,14 @@ async fn roster_projection_converges_and_is_repeatable() {
             .await
             .unwrap_or_else(|e| panic!("第 {round} 次撤 Channel roster 失败: {e}"));
         retry_until_converged(|| {
-            control_client.converge(&http, Scope::Relay, &member_hex, Presence::Absent)
+            control_client.converge(http, Scope::Relay, &member_hex, Presence::Absent)
         })
         .await
         .unwrap_or_else(|e| panic!("第 {round} 次撤 relay roster 失败: {e}"));
     }
 
     let roster = control_client
-        .roster(&http, Scope::Relay)
+        .roster(http, Scope::Relay)
         .await
         .expect("读 relay roster");
     assert!(
@@ -295,7 +487,7 @@ async fn roster_projection_converges_and_is_repeatable() {
 
     // 撤权是真的生效，不只是快照好看：roster 之外的 pubkey 发布必须被拒。
     let err = member_client
-        .publish_channel_message(&http, &channel_id, "should not pass", &[])
+        .publish_channel_message(http, &channel_id, "should not pass", &[])
         .await
         .expect_err("撤权后发布必须被拒绝");
     assert!(

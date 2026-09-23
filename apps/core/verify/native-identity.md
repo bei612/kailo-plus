@@ -53,6 +53,14 @@ RFC 8252 登录 IdP、在本机生成设备密钥、自己签名直连 Relay。D
 | 同一人经 Web 发布 | 仍成功：只撤了那一台 |
 | 已撤销的公钥再次登记 | `409 CLIENT_KEY_ALREADY_BOUND`：撤销的身份不复活 |
 
+## 直连 Relay 不等于能治理
+
+设备持钥直连 Relay 之后，上游宽松的 NIP-29 权限就成了它可直达的旁路（`SF-BUZ-37`）：
+自建 Channel、自加入别的 Workspace、读写非成员 Channel。Relay 以 `SS-BUZ-GOVERNANCE`
+只接受成员发布 `BUZZ_MEMBER_EVENT_KINDS` 里的 kind，其余只收 Tenant CONTROL 签发，
+Channel 一律 private（`DD-80`）。上面的生命周期里，已登记的设备能直连发消息，但自建
+Channel 被 Relay 拒绝。逐项核验见 `upstream-patches/buzz/verify/governance.md`。
+
 ## 与撤权并发时不留下已撤销的钥匙
 
 设备投影与成员撤权可能交错。设计固定两件事：撤权一方先把状态置为 `REVOKING`（成员或设备）

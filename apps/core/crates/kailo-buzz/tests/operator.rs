@@ -15,23 +15,23 @@ fn fresh_control_pubkey() -> String {
     Keys::generate().public_key().to_hex()
 }
 
-const AUDIENCE: &str = "kailo-local";
-
-fn env() -> Option<(String, String)> {
-    let origin = std::env::var("RELAY_OPERATOR_API_ORIGIN").ok()?;
-    let key = std::env::var("RELAY_OPERATOR_PRIVATE_KEY").ok()?;
-    if origin.is_empty() || key.is_empty() {
-        return None;
-    }
-    Some((origin, key))
+fn env() -> Option<(String, String, String)> {
+    let v = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
+    Some((
+        v("RELAY_OPERATOR_API_ORIGIN")?,
+        v("RELAY_OPERATOR_PRIVATE_KEY")?,
+        v("RELAY_OPERATOR_AUDIENCE")?,
+    ))
 }
 
 #[tokio::test]
 async fn audience_mismatch_is_rejected_before_any_network_call() {
-    let Some((origin, key)) = env() else { return };
+    let Some((origin, key, audience)) = env() else {
+        return;
+    };
     // audience 不符时必须在取用密钥之后、发请求之前就失败——
     // 同一把 operator key 不得服务它不该服务的部署。
-    let err = OperatorIdentity::new(&key, &origin, AUDIENCE, "other-deployment").unwrap_err();
+    let err = OperatorIdentity::new(&key, &origin, &audience, "other-deployment").unwrap_err();
     assert!(
         matches!(err, OperatorError::AudienceMismatch),
         "得到 {err:?}"
@@ -40,8 +40,11 @@ async fn audience_mismatch_is_rejected_before_any_network_call() {
 
 #[tokio::test]
 async fn provision_is_idempotent_for_same_owner_and_rejects_a_different_owner() {
-    let Some((origin, key)) = env() else { return };
-    let id = OperatorIdentity::new(&key, &origin, AUDIENCE, AUDIENCE).expect("构造 operator 身份");
+    let Some((origin, key, audience)) = env() else {
+        return;
+    };
+    let id =
+        OperatorIdentity::new(&key, &origin, &audience, &audience).expect("构造 operator 身份");
     let http = reqwest::Client::new();
 
     let host = format!(
@@ -86,15 +89,38 @@ async fn provision_is_idempotent_for_same_owner_and_rejects_a_different_owner() 
         matches!(err, OperatorError::Rejected { .. }),
         "得到 {err:?}"
     );
+
+    // 归档同样只认 owner：换 owner 是 404，不会误归档别人的 Community。
+    let err = id
+        .archive_community(&http, &host, &other_owner)
+        .await
+        .expect_err("非 owner 归档必须被拒绝");
+    assert!(
+        matches!(err, OperatorError::Rejected { status: 404, .. }),
+        "得到 {err:?}"
+    );
+    // 真 owner 归档成功且可重发：测试建的 Community 不留在 Relay 里。
+    for _ in 0..2 {
+        id.archive_community(&http, &host, &owner)
+            .await
+            .expect("owner 归档应幂等成功");
+    }
 }
 
 #[tokio::test]
 async fn signature_over_wrong_origin_is_rejected() {
-    let Some((_, key)) = env() else { return };
+    let Some((_, key, audience)) = env() else {
+        return;
+    };
     // 签名 URL 与 Relay 配置的 origin 不符时不可能通过——这条证明 origin
     // 确实参与了签名校验，而不是可被入站 Host 头顶替。
-    let id = OperatorIdentity::new(&key, "http://wrong-origin.invalid:9999", AUDIENCE, AUDIENCE)
-        .expect("构造 operator 身份");
+    let id = OperatorIdentity::new(
+        &key,
+        "http://wrong-origin.invalid:9999",
+        &audience,
+        &audience,
+    )
+    .expect("构造 operator 身份");
     let http = reqwest::Client::new();
     let err = id
         .provision_community(&http, "x.kailo.local", &id.pubkey_hex())

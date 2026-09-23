@@ -26,6 +26,7 @@ pub struct Env {
     pub core_identity: String,
     pub relay_origin: String,
     pub operator_key: String,
+    pub operator_audience: String,
     pub reconcile_bound_secs: u64,
     /// 整条链的收敛上界。它比单个投影的上界大：Workflow 要串起 SpiceDB、
     /// roster 与状态跃迁三步，其中 roster 那步自身就以对账间隔为界。
@@ -64,6 +65,7 @@ pub fn env() -> Option<Env> {
         core_identity: v("OPENBAO_SERVICE_IDENTITY")?,
         relay_origin: v("RELAY_OPERATOR_API_ORIGIN")?,
         operator_key: v("RELAY_OPERATOR_PRIVATE_KEY")?,
+        operator_audience: v("RELAY_OPERATOR_AUDIENCE")?,
         reconcile_bound_secs: v("BUZZ_NIP43_RECONCILE_INTERVAL_SECS")?.parse().ok()?,
         converge_bound_secs: v("VERIFY_CONVERGE_BOUND_SECS")?.parse().ok()?,
         docker_network: v("VERIFY_DOCKER_NETWORK")?,
@@ -291,7 +293,44 @@ pub async fn seed_tenant_fixture(
     f
 }
 
-pub async fn cleanup(pool: &PgPool, f: &Fixture) {
+/// 夹具 Tenant 在 Relay 上的 Community 随夹具一起退役。
+///
+/// Core 库里的行删掉之后，没有任何东西再指向那个 Community，而 Relay 的
+/// operator 面只能按 owner 列举——CONTROL 身份一删，它就再也找不回来，只会在
+/// Relay 里越攒越多。因此必须在删行**之前**、趁还读得到 host 与 owner 时归档。
+/// 夹具从未真正开通（伪造 host）时 Relay 回 404，那是没有可退役的东西。
+pub async fn retire_relay_community(e: &Env, pool: &PgPool, tenant: Uuid) {
+    let row: Option<(String, String)> = sqlx::query_as(
+        "select b.normalized_host, i.pubkey
+         from projection.tenant_buzz_binding b
+         join identity.buzz_identity_binding i
+           on i.tenant_id = b.tenant_id and i.principal_id = b.control_service_principal_id
+         where b.tenant_id = $1 and i.custody = 'SERVER'",
+    )
+    .bind(tenant)
+    .fetch_optional(pool)
+    .await
+    .expect("读取 TenantBuzzBinding");
+    let Some((host, owner)) = row else { return };
+    let operator = kailo_buzz::operator::OperatorIdentity::new(
+        &e.operator_key,
+        &e.relay_origin,
+        &e.operator_audience,
+        &e.operator_audience,
+    )
+    .expect("operator 身份");
+    match operator
+        .archive_community(&reqwest::Client::new(), &host, &owner)
+        .await
+    {
+        Ok(_) => {}
+        Err(kailo_buzz::operator::OperatorError::Rejected { status: 404, .. }) => {}
+        Err(err) => panic!("归档夹具 Community {host} 失败：{err}"),
+    }
+}
+
+pub async fn cleanup(e: &Env, pool: &PgPool, f: &Fixture) {
+    retire_relay_community(e, pool, f.tenant).await;
     // 按外键依赖的逆序。编排三张表是后加的——夹具清理漏了它们时，库里会攒下
     // 一堆孤立的 ActionExecution 与 WorkflowRef，下一次迁移演练就会撞上。
     //
@@ -594,6 +633,7 @@ pub async fn provision_live_workspace_for(
 }
 
 pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace) {
+    retire_relay_community(e, pool, fx.tenant).await;
     // SpiceDB 侧：Workspace 归属与两级成员关系
     for (object, relation, subject) in [
         (

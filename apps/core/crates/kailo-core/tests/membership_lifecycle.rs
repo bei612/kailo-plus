@@ -177,8 +177,8 @@ async fn membership_lifecycle_converges_both_directions() {
     OperatorIdentity::new(
         &e.operator_key,
         &e.relay_origin,
-        "kailo-local",
-        "kailo-local",
+        &e.operator_audience,
+        &e.operator_audience,
     )
     .expect("operator 身份")
     .provision_community(&http, &host, &control.public_key().to_hex())
@@ -219,7 +219,7 @@ async fn membership_lifecycle_converges_both_directions() {
     .await;
     // 清理跨三个系统：Core 库、SpiceDB、Relay roster。断言中途失败时前两者
     // 都可能已经写入，只清 Core 会把授权面的残留留给下一次运行。
-    common::cleanup(&pool, &f).await;
+    common::cleanup(&e, &pool, &f).await;
     for object in [
         format!("tenant:{}", f.tenant),
         workspace_object(&pool, &f).await,
@@ -333,24 +333,12 @@ async fn run(
     // 两个层级共用一个 Workflow kind，靠 input 的 target type 区分——因此
     // 必须各验一遍，只验 TENANT 无法证明 WORKSPACE 那条分支走得通。
     //
-    // Channel 由 CONTROL 身份真实创建，channel_id 从 Relay 签发的 kind 39002
-    // 取（SF-BUZ-33），不是自造的 UUID。
-    let reader_before = reader
-        .member_channel_ids(http)
-        .await
-        .expect("列出 CONTROL 所属 Channel");
+    // Channel 由 CONTROL 身份在 Relay 上真实建立（DD-80）。
+    let channel_uuid = Uuid::new_v4();
     reader
-        .create_channel(http, "workspace-verify")
+        .ensure_channel(http, &channel_uuid.to_string(), "workspace-verify")
         .await
-        .expect("创建 Channel");
-    let channel = reader
-        .member_channel_ids(http)
-        .await
-        .expect("列出 CONTROL 所属 Channel")
-        .into_iter()
-        .find(|c| !reader_before.contains(c))
-        .expect("新建的 Channel 应出现在所属列表里");
-    let channel_uuid: Uuid = channel.parse().expect("Channel 标识必须是 UUID");
+        .expect("建立 Channel");
 
     let (workspace, ws_membership) = seed_workspace_fixture(pool, f, channel_uuid).await;
     let ws_action = seed_action_for(pool, f, "workspace.membership.project", ws_membership).await;
@@ -374,7 +362,7 @@ async fn run(
         "ACTIVE 后 SpiceDB 必须有 workspace 关系"
     );
     let ch_roster = reader
-        .roster(http, Scope::Channel(&channel))
+        .roster(http, Scope::Channel(&channel_uuid.to_string()))
         .await
         .expect("读 Channel roster");
     assert!(
@@ -411,7 +399,7 @@ async fn run(
         "REVOKED 后 SpiceDB 不应再有 workspace 关系"
     );
     let ch_roster = reader
-        .roster(http, Scope::Channel(&channel))
+        .roster(http, Scope::Channel(&channel_uuid.to_string()))
         .await
         .expect("读 Channel roster");
     assert!(

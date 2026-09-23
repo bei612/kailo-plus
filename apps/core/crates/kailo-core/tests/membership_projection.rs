@@ -97,8 +97,8 @@ async fn membership_projects_to_relay_roster_and_revokes() {
     OperatorIdentity::new(
         &e.operator_key,
         &e.relay_origin,
-        "kailo-local",
-        "kailo-local",
+        &e.operator_audience,
+        &e.operator_audience,
     )
     .expect("operator 身份")
     .provision_community(&http, &host, &control.public_key().to_hex())
@@ -132,7 +132,7 @@ async fn membership_projects_to_relay_roster_and_revokes() {
         std::panic::AssertUnwindSafe(run(&http, &e, &pool, &token, &f, &control, &member, &host))
             .catch_unwind()
             .await;
-    cleanup(&pool, &f).await;
+    cleanup(&e, &pool, &f).await;
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);
     }

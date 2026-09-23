@@ -42,5 +42,5 @@ release:
     - name: upstream-buzz-web
       digest: sha256:36c306ed034787d5728d9ca726a9976c652e2395dc70ee3369fdbea52695e739
     - name: upstream-buzz
-      digest: sha256:473942a6bc6725e95643460a9bc67e3f6ec8142c2618cf8ece9b1df92dabc38b
+      digest: sha256:01927d9475e8690087780f9b08194b08eb10bb0aa758d5aad45b76afd0bcbf46
   gate: shipped

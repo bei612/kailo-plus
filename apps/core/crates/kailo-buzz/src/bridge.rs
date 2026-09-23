@@ -23,6 +23,8 @@ const KIND_RELAY_MEMBERSHIP_LIST: u16 = 13534;
 const KIND_CHANNEL_ADD_USER: u16 = 9000;
 const KIND_CHANNEL_REMOVE_USER: u16 = 9001;
 const KIND_CHANNEL_MEMBERS: u16 = 39002;
+const KIND_CHANNEL_MESSAGE: u16 = 9;
+const KIND_CHANNEL_CREATE: u16 = 9007;
 
 /// roster 的两个层级。Tenant 成员投影到 relay roster，Workspace 成员投影到
 /// 所属 Channel 的 roster（`DD-45`）。
@@ -101,62 +103,38 @@ impl IdentityClient {
         self.keys.public_key().to_hex()
     }
 
-    /// 以该身份创建一个 Channel（NIP-29 kind 9007），返回 Relay 分配的 channel id。
+    /// 以该身份建立 id 为 `channel_id` 的 Channel（NIP-29 kind 9007 带 `h`）。
     ///
     /// 一个 Workspace 绑定一个 Channel（`DD-01`）。创建者成为该 Channel 的
-    /// owner（`SF-BUZ-05`），因此调用方必须是该 Tenant 的 CONTROL 身份。
-    pub async fn create_channel(
-        &self,
-        http: &reqwest::Client,
-        name: &str,
-    ) -> Result<String, OperatorError> {
-        let tag = |parts: [&str; 2]| {
-            Tag::parse(parts).map_err(|e| OperatorError::Sign(format!("tag: {e}")))
-        };
-        let event = EventBuilder::new(Kind::Custom(9007), "")
-            .tags(vec![tag(["name", name])?])
-            .sign_with_keys(&self.keys)
-            .map_err(|e| OperatorError::Sign(format!("sign: {e}")))?;
-        let payload = serde_json::to_vec(&event).map_err(|e| OperatorError::Sign(e.to_string()))?;
-        let accepted: Value = self.bridge_post(http, "/events", &payload).await?;
-        // NIP-29 里 Channel 由创建事件标识，Relay 回传的 event_id 即 channel id
-        Self::accepted_event_id(&accepted)
-    }
-
-    /// 列出该身份所属的 Channel UUID。
+    /// owner（`SF-BUZ-05`），而 Kailo Community 只接受 owner 建 Channel
+    /// （`DD-80`），因此调用方必须是该 Tenant 的 CONTROL 身份。
     ///
-    /// Channel 的标识是 Relay 分配的 UUID，不是创建事件的 id——`extract_channel_id`
-    /// 要求 `h` 标签的值能解析为 UUID。成员关系由 Relay 签发的 kind 39002
-    /// （NIP-29 group members）承载，`d` 标签是 Channel UUID、`p` 标签是成员。
-    pub async fn member_channel_ids(
+    /// id 由调用方给出，重发同一个 id 由 Relay 判为已存在而不另建（`SF-BUZ-38`
+    /// 所在的 9007 校验）。于是结果不明后的重试不会造出第二个 Channel；但
+    /// 「已存在」不证明是自己建的——调用方须回读自己的所属列表确认。
+    /// Channel 以 private 建立：读写都只按 roster 判定（`DD-80`）。
+    pub async fn ensure_channel(
         &self,
         http: &reqwest::Client,
-    ) -> Result<Vec<String>, OperatorError> {
-        let filter = serde_json::json!({
-            "kinds": [39002],
-            "#p": [self.pubkey_hex()],
-            "limit": 100
-        });
-        let page = self.query(http, &[filter]).await?;
-        let mut ids = Vec::new();
-        for ev in page.as_array().into_iter().flatten() {
-            for tag in ev
-                .get("tags")
-                .and_then(|v| v.as_array())
-                .into_iter()
-                .flatten()
-            {
-                let parts = tag.as_array().map(|a| a.as_slice()).unwrap_or_default();
-                if parts.first().and_then(|v| v.as_str()) == Some("d") {
-                    if let Some(id) = parts.get(1).and_then(|v| v.as_str()) {
-                        ids.push(id.to_owned());
-                    }
-                }
-            }
+        channel_id: &str,
+        name: &str,
+    ) -> Result<(), OperatorError> {
+        let tag = |k: &str, v: &str| vec![k.to_owned(), v.to_owned()];
+        let tags = [
+            tag("h", channel_id),
+            tag("name", name),
+            tag("visibility", "private"),
+        ];
+        let accepted = self.publish(http, KIND_CHANNEL_CREATE, "", &tags).await?;
+        let duplicate = accepted.get("accepted").and_then(|v| v.as_bool()) == Some(false)
+            && accepted
+                .get("message")
+                .and_then(|v| v.as_str())
+                .is_some_and(|m| m.starts_with("duplicate: channel already exists"));
+        if duplicate {
+            return Ok(());
         }
-        ids.sort();
-        ids.dedup();
-        Ok(ids)
+        Self::accepted_event_id(&accepted).map(|_| ())
     }
 
     /// 以该身份发布一条频道消息，返回 Relay 接受后的 event id。
@@ -175,21 +153,35 @@ impl IdentityClient {
         content: &str,
         media_tags: &[Vec<String>],
     ) -> Result<String, OperatorError> {
-        let parse = |parts: &[String]| {
-            Tag::parse(parts).map_err(|e| OperatorError::Sign(format!("tag: {e}")))
-        };
-        let mut tags = vec![parse(&["h".to_owned(), channel_id.to_owned()])?];
-        for t in media_tags {
-            tags.push(parse(t)?);
-        }
-        let event = EventBuilder::new(Kind::Custom(9), content)
+        let mut tags = vec![vec!["h".to_owned(), channel_id.to_owned()]];
+        tags.extend(media_tags.iter().cloned());
+        let accepted = self
+            .publish(http, KIND_CHANNEL_MESSAGE, content, &tags)
+            .await?;
+        Self::accepted_event_id(&accepted)
+    }
+
+    /// 以该身份签名并发布一条事件，返回 Relay 的原始回应。
+    ///
+    /// 回应里 `accepted` 为 false 不是传输错误——那是 Relay 的判定，由调用方
+    /// 按语义解读（例如 9007 的「已存在」）。每个标签是完整的一行。
+    pub async fn publish(
+        &self,
+        http: &reqwest::Client,
+        kind: u16,
+        content: &str,
+        tags: &[Vec<String>],
+    ) -> Result<Value, OperatorError> {
+        let tags = tags
+            .iter()
+            .map(|t| Tag::parse(t).map_err(|e| OperatorError::Sign(format!("tag: {e}"))))
+            .collect::<Result<Vec<_>, _>>()?;
+        let event = EventBuilder::new(Kind::Custom(kind), content)
             .tags(tags)
             .sign_with_keys(&self.keys)
             .map_err(|e| OperatorError::Sign(format!("sign: {e}")))?;
-
         let payload = serde_json::to_vec(&event).map_err(|e| OperatorError::Sign(e.to_string()))?;
-        let accepted: Value = self.bridge_post(http, "/events", &payload).await?;
-        Self::accepted_event_id(&accepted)
+        self.bridge_post(http, "/events", &payload).await
     }
 
     /// 读取 roster 快照。
@@ -284,36 +276,29 @@ impl IdentityClient {
         target_pubkey: &str,
         want: Presence,
     ) -> Result<(), OperatorError> {
-        let tag = |parts: [&str; 2]| {
-            Tag::parse(parts).map_err(|e| OperatorError::Sign(format!("tag: {e}")))
-        };
+        let tag = |k: &str, v: &str| vec![k.to_owned(), v.to_owned()];
         // 不带 role 标签：上游在缺该标签时按 member 处理（Channel 面则保留既有
         // 角色）。角色语义的权威在 Core，一期不投影 admin/owner。
         let (kind, tags) = match (scope, want) {
             (Scope::Relay, Presence::Present) => {
-                (KIND_RELAY_ADMIN_ADD, vec![tag(["p", target_pubkey])?])
+                (KIND_RELAY_ADMIN_ADD, vec![tag("p", target_pubkey)])
             }
             (Scope::Relay, Presence::Absent) => {
-                (KIND_RELAY_ADMIN_REMOVE, vec![tag(["p", target_pubkey])?])
+                (KIND_RELAY_ADMIN_REMOVE, vec![tag("p", target_pubkey)])
             }
             (Scope::Channel(id), Presence::Present) => (
                 KIND_CHANNEL_ADD_USER,
-                vec![tag(["h", id])?, tag(["p", target_pubkey])?],
+                vec![tag("h", id), tag("p", target_pubkey)],
             ),
             (Scope::Channel(id), Presence::Absent) => (
                 KIND_CHANNEL_REMOVE_USER,
-                vec![tag(["h", id])?, tag(["p", target_pubkey])?],
+                vec![tag("h", id), tag("p", target_pubkey)],
             ),
         };
         // relay-admin 事件另有 ±120 秒的 created_at 窗口作为重放守卫，
         // EventBuilder 用当前时间签名；Core 与 Relay 的时钟偏移超过该窗口
         // 会让全部 roster 投影失败，属于部署前提。
-        let event = EventBuilder::new(Kind::Custom(kind), "")
-            .tags(tags)
-            .sign_with_keys(&self.keys)
-            .map_err(|e| OperatorError::Sign(format!("sign: {e}")))?;
-        let payload = serde_json::to_vec(&event).map_err(|e| OperatorError::Sign(e.to_string()))?;
-        let accepted: Value = self.bridge_post(http, "/events", &payload).await?;
+        let accepted = self.publish(http, kind, "", &tags).await?;
         Self::accepted_event_id(&accepted).map(|_| ())
     }
 

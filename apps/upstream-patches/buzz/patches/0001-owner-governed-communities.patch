@@ -1,0 +1,240 @@
+From 627b40233bf3e1a9f6eaa19c05ad7e3ba28d1cc0 Mon Sep 17 00:00:00 2001
+From: kailo <kailo@invalid>
+Date: Wed, 23 Sep 2026 16:06:52 +0000
+Subject: [PATCH] owner-governed communities (SS-BUZ-GOVERNANCE)
+
+---
+ crates/buzz-relay/src/audio/handler.rs       |  6 ++
+ crates/buzz-relay/src/config.rs              | 28 +++++++
+ crates/buzz-relay/src/handlers/event.rs      | 16 ++++
+ crates/buzz-relay/src/handlers/governance.rs | 83 ++++++++++++++++++++
+ crates/buzz-relay/src/handlers/ingest.rs     |  8 ++
+ crates/buzz-relay/src/handlers/mod.rs        |  2 +
+ 6 files changed, 143 insertions(+)
+ create mode 100644 crates/buzz-relay/src/handlers/governance.rs
+
+diff --git a/crates/buzz-relay/src/audio/handler.rs b/crates/buzz-relay/src/audio/handler.rs
+index 6e6d467d0..b74ea8615 100644
+--- a/crates/buzz-relay/src/audio/handler.rs
++++ b/crates/buzz-relay/src/audio/handler.rs
+@@ -87,6 +87,12 @@ pub async fn ws_audio_handler(
+         }
+     };
+ 
++    // Kailo (SS-BUZ-GOVERNANCE): huddles are not a capability of governed
++    // communities, and leaving the last peer archives the channel it ran in.
++    if crate::handlers::governance::is_governed(&state) {
++        return (StatusCode::NOT_FOUND, "relay: huddle audio is not served").into_response();
++    }
++
+     let permit = match acquire_audio_connection_permit(&state.conn_semaphore) {
+         Some(permit) => permit,
+         None => {
+diff --git a/crates/buzz-relay/src/config.rs b/crates/buzz-relay/src/config.rs
+index 5d831b3f6..19ee9aa3a 100644
+--- a/crates/buzz-relay/src/config.rs
++++ b/crates/buzz-relay/src/config.rs
+@@ -209,6 +209,13 @@ pub struct Config {
+     /// are permitted regardless of auth method (API token, NIP-42).
+     pub require_relay_membership: bool,
+ 
++    /// Kailo (SS-BUZ-GOVERNANCE): event kinds a non-owner may publish. When
++    /// set, every other kind is accepted only from the community owner, and
++    /// channel access is decided by the channel roster alone — an `open`
++    /// channel no longer admits non-members. `None` (env unset) keeps the
++    /// upstream behavior; an empty list admits no member-authored kind.
++    pub member_event_kinds: Option<Vec<u32>>,
++
+     /// Whether this deployment can serve huddle (voice) audio.
+     ///
+     /// Huddle audio frames are relayed peer-to-peer *within a single pod*
+@@ -670,6 +677,26 @@ impl Config {
+             .map(|v| v == "true" || v == "1")
+             .unwrap_or(false);
+ 
++        let member_event_kinds = match std::env::var("BUZZ_MEMBER_EVENT_KINDS") {
++            Ok(raw) => {
++                let mut kinds = Vec::new();
++                for entry in raw.split(',').map(str::trim).filter(|e| !e.is_empty()) {
++                    // Fail closed: a dropped entry would silently change what
++                    // members may publish.
++                    let kind = entry.parse::<u32>().map_err(|_| {
++                        ConfigError::InvalidValue(format!(
++                            "BUZZ_MEMBER_EVENT_KINDS entry is not an event kind: {entry:?}"
++                        ))
++                    })?;
++                    if !kinds.contains(&kind) {
++                        kinds.push(kind);
++                    }
++                }
++                Some(kinds)
++            }
++            Err(_) => None,
++        };
++
+         // Defaults true → single-pod (N=1) keeps today's huddle behavior. A
+         // horizontally-scaled deployment sets this false; see the field doc.
+         let huddle_audio_available = std::env::var("BUZZ_HUDDLE_AUDIO_AVAILABLE")
+@@ -1234,6 +1261,7 @@ impl Config {
+             metrics_port,
+             pubkey_allowlist_enabled,
+             require_relay_membership,
++            member_event_kinds,
+             huddle_audio_available,
+             mesh,
+             mesh_demo_echo,
+diff --git a/crates/buzz-relay/src/handlers/event.rs b/crates/buzz-relay/src/handlers/event.rs
+index 3f767c187..1d8754e6d 100644
+--- a/crates/buzz-relay/src/handlers/event.rs
++++ b/crates/buzz-relay/src/handlers/event.rs
+@@ -676,6 +676,22 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
+         return;
+     }
+ 
++    // Kailo (SS-BUZ-GOVERNANCE): ephemeral kinds and observer frames never
++    // reach ingest, so the kind gate runs here for them as well. The author
++    // is the authenticated key (gift wraps are not a member kind).
++    if let Err(e) =
++        super::governance::check_event_kind(&conn.tenant, &state, &auth_pubkey, kind_u32).await
++    {
++        let (message, reason) = match e {
++            IngestError::Rejected(message) => (message, "restricted"),
++            IngestError::AuthFailed(message) => (message, "auth"),
++            IngestError::Internal(message) => (message, "error"),
++        };
++        reject(reason);
++        conn.send(RelayMessage::ok(&event_id_hex, false, &message));
++        return;
++    }
++
+     if kind_u32 == KIND_AGENT_OBSERVER_FRAME {
+         if !scopes.is_empty() && !scopes.contains(&buzz_auth::Scope::MessagesWrite) {
+             reject("scope");
+diff --git a/crates/buzz-relay/src/handlers/governance.rs b/crates/buzz-relay/src/handlers/governance.rs
+new file mode 100644
+index 000000000..90f6ae42a
+--- /dev/null
++++ b/crates/buzz-relay/src/handlers/governance.rs
+@@ -0,0 +1,83 @@
++//! Kailo (SS-BUZ-GOVERNANCE): owner-governed communities.
++//!
++//! In a Kailo community the owner is the tenant's control identity, and
++//! channels, rosters and every other piece of shared structure change only
++//! through it. Members hold their own keys and reach the relay directly, so
++//! the relay itself must refuse what the community's governance does not
++//! grant: a member may publish only the kinds in `member_event_kinds`.
++//! Membership-changing, channel-creating and every other kind is accepted
++//! from the owner alone, and every channel is private, so reads and writes
++//! are both decided by the channel roster. Huddle audio, which archives the
++//! channel it ran in when the last peer leaves, is not served.
++
++use nostr::PublicKey;
++
++use crate::handlers::ingest::IngestError;
++use crate::state::AppState;
++use buzz_core::tenant::TenantContext;
++
++/// Whether the deployment runs owner-governed communities.
++pub(crate) fn is_governed(state: &AppState) -> bool {
++    state.config.member_event_kinds.is_some()
++}
++
++/// Refuses a kind:9007 or kind:9002 that would leave a channel non-private.
++/// The upstream default for a missing `visibility` on create is `open`.
++pub(crate) fn check_channel_visibility(
++    state: &AppState,
++    kind: u32,
++    event: &nostr::Event,
++) -> Result<(), IngestError> {
++    use buzz_core::kind::{KIND_NIP29_CREATE_GROUP, KIND_NIP29_EDIT_METADATA};
++    if !is_governed(state) {
++        return Ok(());
++    }
++    let visibility = event
++        .tags
++        .iter()
++        .find(|t| t.kind().to_string() == "visibility")
++        .map(|t| t.content().unwrap_or_default().to_owned());
++    let private = match (kind, visibility.as_deref()) {
++        (KIND_NIP29_CREATE_GROUP, v) => v == Some("private"),
++        (KIND_NIP29_EDIT_METADATA, Some(v)) => v == "private",
++        _ => true,
++    };
++    if private {
++        Ok(())
++    } else {
++        Err(IngestError::Rejected(
++            "restricted: channels in this community are private".into(),
++        ))
++    }
++}
++
++/// Refuses `kind` from `author` unless it is a member-publishable kind or the
++/// author is the community owner. `author` is the authenticated caller, not
++/// the event's signer: a gift wrap is signed by a throwaway key. A no-op when
++/// governance is off.
++pub(crate) async fn check_event_kind(
++    tenant: &TenantContext,
++    state: &AppState,
++    author: &PublicKey,
++    kind: u32,
++) -> Result<(), IngestError> {
++    let Some(allowed) = state.config.member_event_kinds.as_ref() else {
++        return Ok(());
++    };
++    if allowed.contains(&kind) {
++        return Ok(());
++    }
++    match state
++        .db
++        .get_relay_member(tenant.community(), &author.to_hex())
++        .await
++    {
++        Ok(Some(member)) if member.role == "owner" => Ok(()),
++        Ok(_) => Err(IngestError::Rejected(format!(
++            "restricted: kind {kind} is reserved to the community owner"
++        ))),
++        Err(e) => Err(IngestError::Internal(format!(
++            "error: owner lookup failed: {e}"
++        ))),
++    }
++}
+diff --git a/crates/buzz-relay/src/handlers/ingest.rs b/crates/buzz-relay/src/handlers/ingest.rs
+index ee1d0312b..4ba049262 100644
+--- a/crates/buzz-relay/src/handlers/ingest.rs
++++ b/crates/buzz-relay/src/handlers/ingest.rs
+@@ -757,6 +757,10 @@ pub(crate) async fn check_channel_membership(
+         Ok(false) => {}
+         Err(e) => return Err(format!("error: database error: {e}")),
+     }
++    // Kailo (SS-BUZ-GOVERNANCE): the roster is the only admission.
++    if super::governance::is_governed(state) {
++        return Err("restricted: not a channel member".to_string());
++    }
+     // Not a member — check if channel is open.
+     let is_open = match channel {
+         Some(ch) => ch.visibility == "open",
+@@ -2231,6 +2235,10 @@ async fn ingest_event_inner(
+     }
+     let event = std::sync::Arc::try_unwrap(event).unwrap_or_else(|arc| (*arc).clone());
+ 
++    // Kailo (SS-BUZ-GOVERNANCE): after the signature is verified.
++    super::governance::check_event_kind(tenant, state, &auth.pubkey(), kind_u32).await?;
++    super::governance::check_channel_visibility(state, kind_u32, &event)?;
++
+     const MAX_TIMESTAMP_DRIFT_SECS: i64 = 900; // ±15 minutes
+     let now = chrono::Utc::now().timestamp();
+     let event_ts = event.created_at.as_secs() as i64;
+diff --git a/crates/buzz-relay/src/handlers/mod.rs b/crates/buzz-relay/src/handlers/mod.rs
+index 2f4aa00b5..4c6259218 100644
+--- a/crates/buzz-relay/src/handlers/mod.rs
++++ b/crates/buzz-relay/src/handlers/mod.rs
+@@ -10,6 +10,8 @@ pub mod close;
+ pub mod command_executor;
+ /// Relay-operator community provisioning HTTP support.
+ pub mod community_provisioning;
++/// Kailo: owner-governed communities (SS-BUZ-GOVERNANCE).
++pub mod governance;
+ /// NIP-45 COUNT handler.
+ pub mod count;
+ /// EVENT handler — WS dispatcher → ingest pipeline → fan-out.

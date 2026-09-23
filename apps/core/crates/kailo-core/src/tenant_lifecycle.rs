@@ -16,7 +16,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use kailo_buzz::bridge::{Custody, IdentityClient};
+use kailo_buzz::bridge::{Custody, IdentityClient, Scope};
 use kailo_buzz::operator::OperatorIdentity;
 use kailo_secrets::SecretRef;
 use nostr::Keys;
@@ -512,34 +512,33 @@ pub async fn provision_workspace_buzz(
         Err(r) => return r,
     };
 
-    let before = match control.member_channel_ids(&state.http).await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(error = %e, "列出 Channel 失败");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-    };
-    if let Err(e) = control.create_channel(&state.http, &ws.slug).await {
-        tracing::warn!(error = %e, "创建 Channel 失败");
+    // Channel id 取 Workspace id：Channel 在 Community 内按 id 唯一，重试时重发
+    // 同一个 id 不会另建。只剩「事件被接受而回应丢失」这一种结果不明，由下面
+    // 的回读收敛。
+    let channel_uuid = req.workspace_id;
+    let channel = channel_uuid.to_string();
+    if let Err(e) = control
+        .ensure_channel(&state.http, &channel, &ws.slug)
+        .await
+    {
+        tracing::warn!(error = %e, "建立 Channel 失败");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
-    let after = match control.member_channel_ids(&state.http).await {
-        Ok(v) => v,
+    // 「已存在」不证明是 CONTROL 建的。CONTROL 是创建者因而在其 roster 上；
+    // 不在其 roster 上就不绑定。
+    // 快照是 best-effort 发布的，读到旧值时按结果不明交给重试（SF-BUZ-34）。
+    let me = control.pubkey_hex();
+    match control.roster(&state.http, Scope::Channel(&channel)).await {
+        Ok(roster) if roster.iter().any(|e| e.pubkey == me) => {}
+        Ok(_) => {
+            tracing::warn!(workspace = %req.workspace_id, "CONTROL 不在该 Channel 的 roster 上");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
         Err(e) => {
             tracing::warn!(error = %e, "回读 Channel 失败");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
-    };
-    let Some(channel) = after.into_iter().find(|c| !before.contains(c)) else {
-        // 事件被接受但新 Channel 没出现在所属列表里：结果不明，不是失败。
-        // 交给重试——下一次会因为 binding 仍为空而重新走完整条路径。
-        tracing::warn!(workspace = %req.workspace_id, "Channel 创建后未出现在所属列表");
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    };
-    let Ok(channel_uuid) = channel.parse::<Uuid>() else {
-        tracing::warn!(channel, "Channel 标识不是 UUID");
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    };
+    }
 
     if let Err(e) = sqlx::query!(
         "insert into projection.workspace_buzz_binding (workspace_id, channel_id, state)

@@ -15,6 +15,8 @@ use url::Url;
 /// operator 面的固定路径。Relay 的 `authorize_operator_request` 以字面量
 /// `"/operator/communities"` 参与签名校验，此处必须一致。
 const PROVISION_PATH: &str = "/operator/communities";
+/// 同上，`archive_community` 的签名路径。
+const ARCHIVE_PATH: &str = "/operator/communities/archive";
 
 #[derive(Debug, thiserror::Error)]
 pub enum OperatorError {
@@ -120,13 +122,44 @@ impl OperatorIdentity {
         host: &str,
         initial_owner_pubkey: &str,
     ) -> Result<serde_json::Value, OperatorError> {
-        let url = self.api_origin.join(PROVISION_PATH)?;
-        let body = serde_json::json!({
-            "host": host,
-            "initial_owner_pubkey": initial_owner_pubkey,
-            "create_only": true,
-        });
-        let payload = serde_json::to_vec(&body).map_err(|e| OperatorError::Sign(e.to_string()))?;
+        self.post_json(
+            http,
+            PROVISION_PATH,
+            &serde_json::json!({
+                "host": host,
+                "initial_owner_pubkey": initial_owner_pubkey,
+                "create_only": true,
+            }),
+        )
+        .await
+    }
+
+    /// 归档 Community：Relay 随即对它关闭写入并断开全部连接。
+    ///
+    /// 上游对同一 owner 重发是幂等的；owner 不符时回 404，不会误归档别人的
+    /// Community。归档后 Community 不再服务，数据清除由上游的删除流程承担。
+    pub async fn archive_community(
+        &self,
+        http: &reqwest::Client,
+        host: &str,
+        owner_pubkey: &str,
+    ) -> Result<serde_json::Value, OperatorError> {
+        self.post_json(
+            http,
+            ARCHIVE_PATH,
+            &serde_json::json!({ "host": host, "owner_pubkey": owner_pubkey }),
+        )
+        .await
+    }
+
+    async fn post_json(
+        &self,
+        http: &reqwest::Client,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, OperatorError> {
+        let url = self.api_origin.join(path)?;
+        let payload = serde_json::to_vec(body).map_err(|e| OperatorError::Sign(e.to_string()))?;
 
         // NIP-98 事件按上游客户端的同一形状构造（buzz-acp 的 sign_nip98）：
         // u / method / nonce 三个标签必给，带 body 时再加 payload 摘要。

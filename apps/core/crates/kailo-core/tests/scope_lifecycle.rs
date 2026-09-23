@@ -193,6 +193,7 @@ async fn tenant_and_workspace_lifecycle_converge() {
             &format!("tenant:{tenant}"),
         );
     }
+    common::retire_relay_community(&e, &pool, tenant).await;
     for sql in [
         "delete from projection.workspace_buzz_binding where workspace_id in
              (select id from identity.workspace where tenant_id = $1)",
