@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/approval_role_requirement.schema.json",
+  "title": "ApprovalRoleRequirement",
+  "description": "ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03 §4）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "selector",
+    "minDistinct"
+  ],
+  "properties": {
+    "selector": {
+      "$ref": "../enums/approval_selector.schema.json"
+    },
+    "minDistinct": {
+      "type": "integer"
+    }
+  }
+}

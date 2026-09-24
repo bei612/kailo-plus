@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/observability_correlation_mode.schema.json",
+  "title": "ObservabilityCorrelationMode",
+  "description": "BusinessObservabilityPolicy.correlation_mode（.design/03 §4）。",
+  "type": "string",
+  "enum": [
+    "OPERATION_REF",
+    "OPERATION_NATIVE_REF"
+  ]
+}

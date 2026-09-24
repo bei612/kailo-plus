@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/observability_cost_source.schema.json",
+  "title": "ObservabilityCostSource",
+  "description": "BusinessObservabilityPolicy.cost_source（.design/03 §4）。",
+  "type": "string",
+  "enum": [
+    "NONE",
+    "GATEWAY_DURABLE_USAGE",
+    "OPENMETER"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/action_workspace_rule.schema.json",
+  "title": "ActionWorkspaceRule",
+  "description": "ActionDefinition 的 Workspace 解析规则（.design/03 §4、DD-54）。TENANT_ONLY 只用于 Tenant 自身、TenantMembership 与 Tenant 级管理意图。",
+  "type": "string",
+  "enum": [
+    "TENANT_ONLY",
+    "WORKSPACE_REQUIRED",
+    "TARGET_HOME_WORKSPACE",
+    "INHERIT_PARENT"
+  ]
+}

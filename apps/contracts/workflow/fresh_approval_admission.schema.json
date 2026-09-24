@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/fresh_approval_admission.schema.json",
+  "title": "FreshApprovalAdmissionRequest",
+  "description": "FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh 选择器 permission、owner 对账与职责分离由 Core 判定。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "approvalWorkflowId",
+    "approverPrincipalId",
+    "decision"
+  ],
+  "properties": {
+    "approvalWorkflowId": {
+      "type": "string"
+    },
+    "approverPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "decision": {
+      "$ref": "../enums/approval_decision.schema.json"
+    }
+  }
+}

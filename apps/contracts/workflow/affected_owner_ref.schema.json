@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/affected_owner_ref.schema.json",
+  "title": "AffectedOwnerRef",
+  "description": "请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "targetType",
+    "targetId",
+    "targetVersion",
+    "ownerPrincipalId"
+  ],
+  "properties": {
+    "targetType": {
+      "type": "string"
+    },
+    "targetId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "targetVersion": {
+      "type": "integer"
+    },
+    "ownerPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/result_exposure.schema.json",
+  "title": "ResultExposure",
+  "description": "ActionDefinition 的结果暴露。NONE：动作只回稳定状态码与 ID，不回任何业务正文。ResultExposurePolicy（CONSUME_ONLY/READ/EXPORT）随 Agent 工具链进入（.design/03 §6）。",
+  "type": "string",
+  "enum": [
+    "NONE"
+  ]
+}

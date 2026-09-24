@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/decision_outcome.schema.json",
+  "title": "DecisionOutcome",
+  "description": "ActionDecision 各维度的结论（.design/03 §4）。NOT_APPLICABLE 是该 ActionDefinition 明确不涉及的维度（例如 HUMAN 直接发起时的 delegation），不是缺省逃逸。",
+  "type": "string",
+  "enum": [
+    "ALLOW",
+    "DENY",
+    "REQUIRED",
+    "SATISFIED",
+    "NOT_REQUIRED",
+    "NOT_APPLICABLE",
+    "RECORDED"
+  ]
+}

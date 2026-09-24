@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/task_view.schema.json",
+  "title": "TaskView",
+  "description": "GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "operationId",
+    "actionExecutionId",
+    "actionKey",
+    "actionVersion",
+    "targetId",
+    "gateState",
+    "dispatchState",
+    "createdAt"
+  ],
+  "properties": {
+    "operationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "actionExecutionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "actionKey": {
+      "type": "string"
+    },
+    "actionVersion": {
+      "type": "integer"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "targetId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "gateState": {
+      "$ref": "../enums/action_gate_state.schema.json"
+    },
+    "dispatchState": {
+      "$ref": "../enums/action_dispatch_state.schema.json"
+    },
+    "reason": {
+      "$ref": "../enums/reason_code.schema.json"
+    },
+    "approvalWorkflowId": {
+      "type": "string"
+    },
+    "approvalStatus": {
+      "$ref": "../enums/approval_status.schema.json"
+    },
+    "workflowId": {
+      "type": "string"
+    },
+    "workflowKind": {
+      "$ref": "../enums/workflow_kind.schema.json"
+    },
+    "taskStatus": {
+      "$ref": "../enums/task_status.schema.json"
+    },
+    "waitingReason": {
+      "type": "string"
+    },
+    "observation": {
+      "$ref": "../enums/reason_code.schema.json"
+    },
+    "createdAt": {
+      "type": "string",
+      "description": "RFC3339，UTC"
+    }
+  }
+}

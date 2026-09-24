@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/action_submission.schema.json",
+  "title": "ActionSubmission",
+  "description": "POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId 必有；DENIED 时 reason 必有。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "operationId",
+    "actionExecutionId",
+    "actionKey",
+    "gateState",
+    "dispatchState"
+  ],
+  "properties": {
+    "operationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "actionExecutionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "actionKey": {
+      "type": "string"
+    },
+    "gateState": {
+      "$ref": "../enums/action_gate_state.schema.json"
+    },
+    "dispatchState": {
+      "$ref": "../enums/action_dispatch_state.schema.json"
+    },
+    "reason": {
+      "$ref": "../enums/reason_code.schema.json"
+    },
+    "approvalWorkflowId": {
+      "type": "string"
+    },
+    "workflowId": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/approval_state_report.schema.json",
+  "title": "ApprovalStateReport",
+  "description": "ApprovalWorkflow 经 ProjectApprovalState Activity 写回 Core 的一次状态跃迁。Core 按 workflowId 与 eventId 单调 upsert；ApprovalProjection 只接受这一条写入路径（DD-47）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workflowId",
+    "runId",
+    "eventId",
+    "status",
+    "decisions",
+    "expiresAt"
+  ],
+  "properties": {
+    "workflowId": {
+      "type": "string"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "eventId": {
+      "type": "integer",
+      "description": "报告时跨 run 累计的 history 长度"
+    },
+    "status": {
+      "$ref": "../enums/approval_status.schema.json"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "approval_decision_record.schema.json"
+      }
+    },
+    "expiresAt": {
+      "type": "string",
+      "description": "RFC3339，UTC"
+    },
+    "consumeDeadline": {
+      "type": "string",
+      "description": "RFC3339，UTC；进入 APPROVED 时由 workflow.Now() 加 consumeWindowSeconds 得出"
+    },
+    "consumedAt": {
+      "type": "string",
+      "description": "RFC3339，UTC；进入 CONSUMED 时的 workflow.Now()"
+    },
+    "reason": {
+      "$ref": "../enums/reason_code.schema.json",
+      "description": "INVALIDATED/EXPIRED/CANCELLED/DENIED 的原因"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/action_execution_mode.schema.json",
+  "title": "ActionExecutionMode",
+  "description": "ActionDefinition 的执行方式（.design/03 §4）。",
+  "type": "string",
+  "enum": [
+    "SYNC",
+    "PROTOCOL",
+    "TEMPORAL"
+  ]
+}

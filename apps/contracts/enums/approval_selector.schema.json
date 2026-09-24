@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/approval_selector.schema.json",
+  "title": "ApprovalSelector",
+  "description": "ApprovalPolicy.role_requirements 的角色选择器（.design/03 §4、.design/10 §2）：RESOURCE_APPROVER 对目标 Resource/Asset 做 approve，WORKSPACE_ADMIN 对冻结 Workspace 做 manage，TENANT_ADMIN 对冻结 Tenant 做 manage。",
+  "type": "string",
+  "enum": [
+    "RESOURCE_APPROVER",
+    "WORKSPACE_ADMIN",
+    "TENANT_ADMIN"
+  ]
+}

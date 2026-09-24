@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/approval_decision.schema.json",
+  "title": "ApprovalDecision",
+  "description": "approver 的不可变决定（.design/03 §6）。",
+  "type": "string",
+  "enum": [
+    "APPROVE",
+    "DENY"
+  ]
+}

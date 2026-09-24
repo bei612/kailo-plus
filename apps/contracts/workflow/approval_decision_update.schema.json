@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/approval_decision_update.schema.json",
+  "title": "ApprovalDecisionUpdate",
+  "description": "decide Update 的参数。Update ID 固定为 <approval_workflow_id>:<approver_principal_id>，由 Server 侧去重；approverPrincipalId 由 Core 从 PlatformSession 取得，不接受 Browser 自报。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "approverPrincipalId",
+    "decision"
+  ],
+  "properties": {
+    "approverPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "decision": {
+      "$ref": "../enums/approval_decision.schema.json"
+    }
+  }
+}

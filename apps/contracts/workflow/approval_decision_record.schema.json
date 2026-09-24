@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/approval_decision_record.schema.json",
+  "title": "ApprovalDecisionRecord",
+  "description": "一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "approverPrincipalId",
+    "decision",
+    "decidedAt",
+    "satisfiedSelectors"
+  ],
+  "properties": {
+    "approverPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "decision": {
+      "$ref": "../enums/approval_decision.schema.json"
+    },
+    "decidedAt": {
+      "type": "string",
+      "description": "RFC3339，UTC"
+    },
+    "satisfiedSelectors": {
+      "type": "array",
+      "items": {
+        "$ref": "../enums/approval_selector.schema.json"
+      },
+      "description": "该 approver 在决定时经 fresh Check 满足的选择器；同一人可在多个要求中计数，但只产生一个决定"
+    }
+  }
+}

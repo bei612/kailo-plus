@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/action_command.schema.json",
+  "title": "ActionCommand",
+  "description": "POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按 actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "actionKey",
+    "idempotencyKey"
+  ],
+  "properties": {
+    "actionKey": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "format": "uuid",
+      "description": "调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Workspace 内动作的执行 Workspace"
+    },
+    "principalId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "成员动作的目标 Principal"
+    },
+    "slug": {
+      "type": "string",
+      "description": "workspace.create 的 slug"
+    },
+    "name": {
+      "type": "string",
+      "description": "workspace.create 的显示名"
+    }
+  }
+}

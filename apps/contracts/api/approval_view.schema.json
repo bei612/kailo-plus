@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/approval_view.schema.json",
+  "title": "ApprovalView",
+  "description": "GET /api/v1/approvals（待我审批）与 /api/v1/approvals/{workflowId} 的元素。状态只来自 Temporal history 的投影。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workflowId",
+    "actionExecutionId",
+    "actionKey",
+    "targetType",
+    "targetId",
+    "initiatorPrincipalId",
+    "status",
+    "expiresAt",
+    "decisions",
+    "roleRequirements"
+  ],
+  "properties": {
+    "workflowId": {
+      "type": "string"
+    },
+    "actionExecutionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "actionKey": {
+      "type": "string"
+    },
+    "targetType": {
+      "type": "string"
+    },
+    "targetId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "initiatorPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "status": {
+      "$ref": "../enums/approval_status.schema.json"
+    },
+    "expiresAt": {
+      "type": "string",
+      "description": "RFC3339，UTC"
+    },
+    "consumeDeadline": {
+      "type": "string",
+      "description": "RFC3339，UTC"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "../workflow/approval_decision_record.schema.json"
+      }
+    },
+    "roleRequirements": {
+      "type": "array",
+      "items": {
+        "$ref": "../workflow/approval_role_requirement.schema.json"
+      }
+    },
+    "reason": {
+      "$ref": "../enums/reason_code.schema.json"
+    },
+    "observation": {
+      "$ref": "../enums/reason_code.schema.json"
+    }
+  }
+}

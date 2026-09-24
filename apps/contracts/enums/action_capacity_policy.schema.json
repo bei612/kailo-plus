@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/action_capacity_policy.schema.json",
+  "title": "ActionCapacityPolicy",
+  "description": "ActionDefinition 的平台容量策略（.design/05 §6）。",
+  "type": "string",
+  "enum": [
+    "NONE",
+    "PLATFORM_SLOT",
+    "NATIVE"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/approval_decision_request.schema.json",
+  "title": "ApprovalDecisionRequest",
+  "description": "POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为 ApprovalDecisionOutcome。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision"
+  ],
+  "properties": {
+    "decision": {
+      "$ref": "../enums/approval_decision.schema.json"
+    }
+  }
+}

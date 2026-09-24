@@ -1,12 +1,17 @@
 // To parse this JSON data, do
 //
 //     final canary = canaryFromJson(jsonString);
+//     final actionCommand = actionCommandFromJson(jsonString);
+//     final actionSubmission = actionSubmissionFromJson(jsonString);
+//     final approvalDecisionRequest = approvalDecisionRequestFromJson(jsonString);
+//     final approvalView = approvalViewFromJson(jsonString);
 //     final clientKeyView = clientKeyViewFromJson(jsonString);
 //     final clientKeyStatus = clientKeyStatusFromJson(jsonString);
 //     final nativeCommunityFacts = nativeCommunityFactsFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
 //     final platformSessionView = platformSessionViewFromJson(jsonString);
+//     final taskView = taskViewFromJson(jsonString);
 //     final userStateVersion = userStateVersionFromJson(jsonString);
 //     final workspaceView = workspaceViewFromJson(jsonString);
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
@@ -15,12 +20,45 @@
 //     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
+//     final affectedOwnerRef = affectedOwnerRefFromJson(jsonString);
+//     final approvalControlOutcome = approvalControlOutcomeFromJson(jsonString);
+//     final approvalDecisionOutcome = approvalDecisionOutcomeFromJson(jsonString);
+//     final approvalDecisionRecord = approvalDecisionRecordFromJson(jsonString);
+//     final approvalDecisionUpdate = approvalDecisionUpdateFromJson(jsonString);
+//     final approvalWorkflowInput = approvalWorkflowInputFromJson(jsonString);
+//     final approvalInvalidateUpdate = approvalInvalidateUpdateFromJson(jsonString);
+//     final approvalRoleRequirement = approvalRoleRequirementFromJson(jsonString);
+//     final approvalStateReport = approvalStateReportFromJson(jsonString);
+//     final freshApprovalAdmissionRequest = freshApprovalAdmissionRequestFromJson(jsonString);
+//     final freshApprovalAdmissionResult = freshApprovalAdmissionResultFromJson(jsonString);
 
 import 'dart:convert';
 
 Canary canaryFromJson(String str) => Canary.fromJson(json.decode(str));
 
 String canaryToJson(Canary data) => json.encode(data.toJson());
+
+ActionCommand actionCommandFromJson(String str) =>
+    ActionCommand.fromJson(json.decode(str));
+
+String actionCommandToJson(ActionCommand data) => json.encode(data.toJson());
+
+ActionSubmission actionSubmissionFromJson(String str) =>
+    ActionSubmission.fromJson(json.decode(str));
+
+String actionSubmissionToJson(ActionSubmission data) =>
+    json.encode(data.toJson());
+
+ApprovalDecisionRequest approvalDecisionRequestFromJson(String str) =>
+    ApprovalDecisionRequest.fromJson(json.decode(str));
+
+String approvalDecisionRequestToJson(ApprovalDecisionRequest data) =>
+    json.encode(data.toJson());
+
+ApprovalView approvalViewFromJson(String str) =>
+    ApprovalView.fromJson(json.decode(str));
+
+String approvalViewToJson(ApprovalView data) => json.encode(data.toJson());
 
 ClientKeyView clientKeyViewFromJson(String str) =>
     ClientKeyView.fromJson(json.decode(str));
@@ -55,6 +93,10 @@ PlatformSessionView platformSessionViewFromJson(String str) =>
 
 String platformSessionViewToJson(PlatformSessionView data) =>
     json.encode(data.toJson());
+
+TaskView taskViewFromJson(String str) => TaskView.fromJson(json.decode(str));
+
+String taskViewToJson(TaskView data) => json.encode(data.toJson());
 
 UserStateVersion userStateVersionFromJson(String str) =>
     UserStateVersion.fromJson(json.decode(str));
@@ -99,6 +141,74 @@ WorkflowRef workflowRefFromJson(String str) =>
     WorkflowRef.fromJson(json.decode(str));
 
 String workflowRefToJson(WorkflowRef data) => json.encode(data.toJson());
+
+AffectedOwnerRef affectedOwnerRefFromJson(String str) =>
+    AffectedOwnerRef.fromJson(json.decode(str));
+
+String affectedOwnerRefToJson(AffectedOwnerRef data) =>
+    json.encode(data.toJson());
+
+ApprovalControlOutcome approvalControlOutcomeFromJson(String str) =>
+    ApprovalControlOutcome.fromJson(json.decode(str));
+
+String approvalControlOutcomeToJson(ApprovalControlOutcome data) =>
+    json.encode(data.toJson());
+
+ApprovalDecisionOutcome approvalDecisionOutcomeFromJson(String str) =>
+    ApprovalDecisionOutcome.fromJson(json.decode(str));
+
+String approvalDecisionOutcomeToJson(ApprovalDecisionOutcome data) =>
+    json.encode(data.toJson());
+
+ApprovalDecisionRecord approvalDecisionRecordFromJson(String str) =>
+    ApprovalDecisionRecord.fromJson(json.decode(str));
+
+String approvalDecisionRecordToJson(ApprovalDecisionRecord data) =>
+    json.encode(data.toJson());
+
+ApprovalDecisionUpdate approvalDecisionUpdateFromJson(String str) =>
+    ApprovalDecisionUpdate.fromJson(json.decode(str));
+
+String approvalDecisionUpdateToJson(ApprovalDecisionUpdate data) =>
+    json.encode(data.toJson());
+
+ApprovalWorkflowInput approvalWorkflowInputFromJson(String str) =>
+    ApprovalWorkflowInput.fromJson(json.decode(str));
+
+String approvalWorkflowInputToJson(ApprovalWorkflowInput data) =>
+    json.encode(data.toJson());
+
+ApprovalInvalidateUpdate approvalInvalidateUpdateFromJson(String str) =>
+    ApprovalInvalidateUpdate.fromJson(json.decode(str));
+
+String approvalInvalidateUpdateToJson(ApprovalInvalidateUpdate data) =>
+    json.encode(data.toJson());
+
+ApprovalRoleRequirement approvalRoleRequirementFromJson(String str) =>
+    ApprovalRoleRequirement.fromJson(json.decode(str));
+
+String approvalRoleRequirementToJson(ApprovalRoleRequirement data) =>
+    json.encode(data.toJson());
+
+ApprovalStateReport approvalStateReportFromJson(String str) =>
+    ApprovalStateReport.fromJson(json.decode(str));
+
+String approvalStateReportToJson(ApprovalStateReport data) =>
+    json.encode(data.toJson());
+
+FreshApprovalAdmissionRequest freshApprovalAdmissionRequestFromJson(
+  String str,
+) => FreshApprovalAdmissionRequest.fromJson(json.decode(str));
+
+String freshApprovalAdmissionRequestToJson(
+  FreshApprovalAdmissionRequest data,
+) => json.encode(data.toJson());
+
+FreshApprovalAdmissionResult freshApprovalAdmissionResultFromJson(String str) =>
+    FreshApprovalAdmissionResult.fromJson(json.decode(str));
+
+String freshApprovalAdmissionResultToJson(FreshApprovalAdmissionResult data) =>
+    json.encode(data.toJson());
 
 ///可用 JSON Schema 子集的可执行定义。它穷举 contracts/README.md 第 1
 ///节允许的每一种构造；四侧生成器必须全部生成成功并通过双向序列化。新增构造先加进本文件并四侧验证通过，才允许在其他 schema 中使用。
@@ -274,6 +384,408 @@ final kindValues = EnumValues({
   "FILE": Kind.FILE,
   "MESSAGE": Kind.MESSAGE,
   "TASK": Kind.TASK,
+});
+
+///POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
+///actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
+class ActionCommand {
+  final String actionKey;
+
+  ///调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
+  final String idempotencyKey;
+
+  ///workspace.create 的显示名
+  final String? name;
+
+  ///成员动作的目标 Principal
+  final String? principalId;
+
+  ///workspace.create 的 slug
+  final String? slug;
+
+  ///Workspace 内动作的执行 Workspace
+  final String? workspaceId;
+
+  ActionCommand({
+    required this.actionKey,
+    required this.idempotencyKey,
+    this.name,
+    this.principalId,
+    this.slug,
+    this.workspaceId,
+  });
+
+  factory ActionCommand.fromJson(Map<String, dynamic> json) => ActionCommand(
+    actionKey: json["actionKey"],
+    idempotencyKey: json["idempotencyKey"],
+    name: json["name"],
+    principalId: json["principalId"],
+    slug: json["slug"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "idempotencyKey": idempotencyKey,
+    "name": name,
+    "principalId": principalId,
+    "slug": slug,
+    "workspaceId": workspaceId,
+  });
+}
+
+///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
+///必有；DENIED 时 reason 必有。
+class ActionSubmission {
+  final String actionExecutionId;
+  final String actionKey;
+  final String? approvalWorkflowId;
+  final ActionDispatchState dispatchState;
+  final ActionGateState gateState;
+  final String operationId;
+  final ReasonCode? reason;
+  final String? workflowId;
+
+  ActionSubmission({
+    required this.actionExecutionId,
+    required this.actionKey,
+    this.approvalWorkflowId,
+    required this.dispatchState,
+    required this.gateState,
+    required this.operationId,
+    this.reason,
+    this.workflowId,
+  });
+
+  factory ActionSubmission.fromJson(Map<String, dynamic> json) =>
+      ActionSubmission(
+        actionExecutionId: json["actionExecutionId"],
+        actionKey: json["actionKey"],
+        approvalWorkflowId: json["approvalWorkflowId"],
+        dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
+        gateState: actionGateStateValues.map[json["gateState"]]!,
+        operationId: json["operationId"],
+        reason: reasonCodeValues.map[json["reason"]]!,
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "approvalWorkflowId": approvalWorkflowId,
+    "dispatchState": actionDispatchStateValues.reverse[dispatchState],
+    "gateState": actionGateStateValues.reverse[gateState],
+    "operationId": operationId,
+    "reason": reasonCodeValues.reverse[reason],
+    "workflowId": workflowId,
+  });
+}
+
+///ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
+///seam 能把它收敛，不能因无 native ID 就自动重放（DD-48）。
+enum ActionDispatchState { ABORTED, DISPATCHED, NOT_DISPATCHED, UNKNOWN }
+
+final actionDispatchStateValues = EnumValues({
+  "ABORTED": ActionDispatchState.ABORTED,
+  "DISPATCHED": ActionDispatchState.DISPATCHED,
+  "NOT_DISPATCHED": ActionDispatchState.NOT_DISPATCHED,
+  "UNKNOWN": ActionDispatchState.UNKNOWN,
+});
+
+///ActionExecution 的准入门禁状态（.design/03 §6）。它与 dispatch_state
+///是两台独立状态机：门禁说的是「允许不允许」，派发说的是「副作用发生没发生」，合并后无法表达「准入通过但派发结果不明」。
+enum ActionGateState { ALLOWED, DENIED, EVALUATING, EXPIRED, REVOKED, WAITING }
+
+final actionGateStateValues = EnumValues({
+  "ALLOWED": ActionGateState.ALLOWED,
+  "DENIED": ActionGateState.DENIED,
+  "EVALUATING": ActionGateState.EVALUATING,
+  "EXPIRED": ActionGateState.EXPIRED,
+  "REVOKED": ActionGateState.REVOKED,
+  "WAITING": ActionGateState.WAITING,
+});
+
+///稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
+///字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
+///
+///admitted=false 时的拒绝原因
+///
+///INVALIDATED/EXPIRED/CANCELLED/DENIED 的原因
+enum ReasonCode {
+  ADMISSION_ABANDONED,
+  APPROVAL_CONSUME_WINDOW_CLOSED,
+  APPROVAL_DENIED,
+  APPROVAL_EXPIRED,
+  APPROVAL_INVALIDATED,
+  APPROVAL_NOT_OPEN,
+  APPROVAL_SELECTOR_UNRESOLVABLE,
+  APPROVAL_WITHDRAWN,
+  APPROVER_NOT_ELIGIBLE,
+  CAPABILITY_BLOCKED,
+  CLIENT_KEY_ALREADY_BOUND,
+  CLIENT_KEY_LIMIT_REACHED,
+  CLIENT_KEY_NOT_FOUND,
+  CLIENT_KEY_PROOF_INVALID,
+  DEPENDENCY_UNAVAILABLE,
+  DISPATCH_RESULT_UNKNOWN,
+  DUPLICATE_DECISION,
+  EXTERNAL_RESULT_UNKNOWN,
+  IDEMPOTENCY_KEY_REUSED,
+  IDENTITY_HEADER_MISSING,
+  IDENTITY_UNKNOWN,
+  INVALID_PARAMETERS,
+  NATIVE_SURFACE_REQUIRED,
+  PERMISSION_DENIED,
+  PROJECTION_DELAYED,
+  PUBLISH_REJECTED,
+  PUBLISH_RESULT_UNKNOWN,
+  SCOPE_GUARD_FAILED,
+  SELF_APPROVAL_DENIED,
+  SESSION_NOT_ACTIVE,
+  SURFACE_CAPABILITY_UNAVAILABLE,
+  TARGET_NOT_FOUND,
+  TARGET_STATE_CONFLICT,
+  TENANT_MEMBERSHIP_NOT_ACTIVE,
+  TENANT_SELECTION_NOT_AVAILABLE,
+  WAITING_APPROVAL,
+}
+
+final reasonCodeValues = EnumValues({
+  "ADMISSION_ABANDONED": ReasonCode.ADMISSION_ABANDONED,
+  "APPROVAL_CONSUME_WINDOW_CLOSED": ReasonCode.APPROVAL_CONSUME_WINDOW_CLOSED,
+  "APPROVAL_DENIED": ReasonCode.APPROVAL_DENIED,
+  "APPROVAL_EXPIRED": ReasonCode.APPROVAL_EXPIRED,
+  "APPROVAL_INVALIDATED": ReasonCode.APPROVAL_INVALIDATED,
+  "APPROVAL_NOT_OPEN": ReasonCode.APPROVAL_NOT_OPEN,
+  "APPROVAL_SELECTOR_UNRESOLVABLE": ReasonCode.APPROVAL_SELECTOR_UNRESOLVABLE,
+  "APPROVAL_WITHDRAWN": ReasonCode.APPROVAL_WITHDRAWN,
+  "APPROVER_NOT_ELIGIBLE": ReasonCode.APPROVER_NOT_ELIGIBLE,
+  "CAPABILITY_BLOCKED": ReasonCode.CAPABILITY_BLOCKED,
+  "CLIENT_KEY_ALREADY_BOUND": ReasonCode.CLIENT_KEY_ALREADY_BOUND,
+  "CLIENT_KEY_LIMIT_REACHED": ReasonCode.CLIENT_KEY_LIMIT_REACHED,
+  "CLIENT_KEY_NOT_FOUND": ReasonCode.CLIENT_KEY_NOT_FOUND,
+  "CLIENT_KEY_PROOF_INVALID": ReasonCode.CLIENT_KEY_PROOF_INVALID,
+  "DEPENDENCY_UNAVAILABLE": ReasonCode.DEPENDENCY_UNAVAILABLE,
+  "DISPATCH_RESULT_UNKNOWN": ReasonCode.DISPATCH_RESULT_UNKNOWN,
+  "DUPLICATE_DECISION": ReasonCode.DUPLICATE_DECISION,
+  "EXTERNAL_RESULT_UNKNOWN": ReasonCode.EXTERNAL_RESULT_UNKNOWN,
+  "IDEMPOTENCY_KEY_REUSED": ReasonCode.IDEMPOTENCY_KEY_REUSED,
+  "IDENTITY_HEADER_MISSING": ReasonCode.IDENTITY_HEADER_MISSING,
+  "IDENTITY_UNKNOWN": ReasonCode.IDENTITY_UNKNOWN,
+  "INVALID_PARAMETERS": ReasonCode.INVALID_PARAMETERS,
+  "NATIVE_SURFACE_REQUIRED": ReasonCode.NATIVE_SURFACE_REQUIRED,
+  "PERMISSION_DENIED": ReasonCode.PERMISSION_DENIED,
+  "PROJECTION_DELAYED": ReasonCode.PROJECTION_DELAYED,
+  "PUBLISH_REJECTED": ReasonCode.PUBLISH_REJECTED,
+  "PUBLISH_RESULT_UNKNOWN": ReasonCode.PUBLISH_RESULT_UNKNOWN,
+  "SCOPE_GUARD_FAILED": ReasonCode.SCOPE_GUARD_FAILED,
+  "SELF_APPROVAL_DENIED": ReasonCode.SELF_APPROVAL_DENIED,
+  "SESSION_NOT_ACTIVE": ReasonCode.SESSION_NOT_ACTIVE,
+  "SURFACE_CAPABILITY_UNAVAILABLE": ReasonCode.SURFACE_CAPABILITY_UNAVAILABLE,
+  "TARGET_NOT_FOUND": ReasonCode.TARGET_NOT_FOUND,
+  "TARGET_STATE_CONFLICT": ReasonCode.TARGET_STATE_CONFLICT,
+  "TENANT_MEMBERSHIP_NOT_ACTIVE": ReasonCode.TENANT_MEMBERSHIP_NOT_ACTIVE,
+  "TENANT_SELECTION_NOT_AVAILABLE": ReasonCode.TENANT_SELECTION_NOT_AVAILABLE,
+  "WAITING_APPROVAL": ReasonCode.WAITING_APPROVAL,
+});
+
+///POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为
+///ApprovalDecisionOutcome。
+class ApprovalDecisionRequest {
+  final ApprovalDecision decision;
+
+  ApprovalDecisionRequest({required this.decision});
+
+  factory ApprovalDecisionRequest.fromJson(Map<String, dynamic> json) =>
+      ApprovalDecisionRequest(
+        decision: approvalDecisionValues.map[json["decision"]]!,
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"decision": approvalDecisionValues.reverse[decision]});
+}
+
+///approver 的不可变决定（.design/03 §6）。
+///
+///已形成的决定；admitted=false 时缺省
+enum ApprovalDecision { APPROVE, DENY }
+
+final approvalDecisionValues = EnumValues({
+  "APPROVE": ApprovalDecision.APPROVE,
+  "DENY": ApprovalDecision.DENY,
+});
+
+///GET /api/v1/approvals（待我审批）与 /api/v1/approvals/{workflowId} 的元素。状态只来自 Temporal history
+///的投影。
+class ApprovalView {
+  final String actionExecutionId;
+  final String actionKey;
+
+  ///RFC3339，UTC
+  final String? consumeDeadline;
+  final List<DecisionElement> decisions;
+
+  ///RFC3339，UTC
+  final String expiresAt;
+  final String initiatorPrincipalId;
+  final ReasonCode? observation;
+  final ReasonCode? reason;
+  final List<RoleRequirementElement> roleRequirements;
+  final ApprovalStatus status;
+  final String targetId;
+  final String targetType;
+  final String workflowId;
+  final String? workspaceId;
+
+  ApprovalView({
+    required this.actionExecutionId,
+    required this.actionKey,
+    this.consumeDeadline,
+    required this.decisions,
+    required this.expiresAt,
+    required this.initiatorPrincipalId,
+    this.observation,
+    this.reason,
+    required this.roleRequirements,
+    required this.status,
+    required this.targetId,
+    required this.targetType,
+    required this.workflowId,
+    this.workspaceId,
+  });
+
+  factory ApprovalView.fromJson(Map<String, dynamic> json) => ApprovalView(
+    actionExecutionId: json["actionExecutionId"],
+    actionKey: json["actionKey"],
+    consumeDeadline: json["consumeDeadline"],
+    decisions: List<DecisionElement>.from(
+      json["decisions"].map((x) => DecisionElement.fromJson(x)),
+    ),
+    expiresAt: json["expiresAt"],
+    initiatorPrincipalId: json["initiatorPrincipalId"],
+    observation: reasonCodeValues.map[json["observation"]]!,
+    reason: reasonCodeValues.map[json["reason"]]!,
+    roleRequirements: List<RoleRequirementElement>.from(
+      json["roleRequirements"].map((x) => RoleRequirementElement.fromJson(x)),
+    ),
+    status: approvalStatusValues.map[json["status"]]!,
+    targetId: json["targetId"],
+    targetType: json["targetType"],
+    workflowId: json["workflowId"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "consumeDeadline": consumeDeadline,
+    "decisions": List<dynamic>.from(decisions.map((x) => x.toJson())),
+    "expiresAt": expiresAt,
+    "initiatorPrincipalId": initiatorPrincipalId,
+    "observation": reasonCodeValues.reverse[observation],
+    "reason": reasonCodeValues.reverse[reason],
+    "roleRequirements": List<dynamic>.from(
+      roleRequirements.map((x) => x.toJson()),
+    ),
+    "status": approvalStatusValues.reverse[status],
+    "targetId": targetId,
+    "targetType": targetType,
+    "workflowId": workflowId,
+    "workspaceId": workspaceId,
+  });
+}
+
+///一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
+class DecisionElement {
+  final String approverPrincipalId;
+
+  ///RFC3339，UTC
+  final String decidedAt;
+  final ApprovalDecision decision;
+
+  ///该 approver 在决定时经 fresh Check 满足的选择器；同一人可在多个要求中计数，但只产生一个决定
+  final List<ApprovalSelector> satisfiedSelectors;
+
+  DecisionElement({
+    required this.approverPrincipalId,
+    required this.decidedAt,
+    required this.decision,
+    required this.satisfiedSelectors,
+  });
+
+  factory DecisionElement.fromJson(Map<String, dynamic> json) =>
+      DecisionElement(
+        approverPrincipalId: json["approverPrincipalId"],
+        decidedAt: json["decidedAt"],
+        decision: approvalDecisionValues.map[json["decision"]]!,
+        satisfiedSelectors: List<ApprovalSelector>.from(
+          json["satisfiedSelectors"].map((x) => approvalSelectorValues.map[x]!),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "approverPrincipalId": approverPrincipalId,
+    "decidedAt": decidedAt,
+    "decision": approvalDecisionValues.reverse[decision],
+    "satisfiedSelectors": List<dynamic>.from(
+      satisfiedSelectors.map((x) => approvalSelectorValues.reverse[x]),
+    ),
+  });
+}
+
+///ApprovalPolicy.role_requirements 的角色选择器（.design/03 §4、.design/10 §2）：RESOURCE_APPROVER
+///对目标 Resource/Asset 做 approve，WORKSPACE_ADMIN 对冻结 Workspace 做 manage，TENANT_ADMIN 对冻结
+///Tenant 做 manage。
+enum ApprovalSelector { RESOURCE_APPROVER, TENANT_ADMIN, WORKSPACE_ADMIN }
+
+final approvalSelectorValues = EnumValues({
+  "RESOURCE_APPROVER": ApprovalSelector.RESOURCE_APPROVER,
+  "TENANT_ADMIN": ApprovalSelector.TENANT_ADMIN,
+  "WORKSPACE_ADMIN": ApprovalSelector.WORKSPACE_ADMIN,
+});
+
+///ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
+///§4）。
+class RoleRequirementElement {
+  final int minDistinct;
+  final ApprovalSelector selector;
+
+  RoleRequirementElement({required this.minDistinct, required this.selector});
+
+  factory RoleRequirementElement.fromJson(Map<String, dynamic> json) =>
+      RoleRequirementElement(
+        minDistinct: json["minDistinct"],
+        selector: approvalSelectorValues.map[json["selector"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "minDistinct": minDistinct,
+    "selector": approvalSelectorValues.reverse[selector],
+  });
+}
+
+///ApprovalWorkflow 的状态（.design/06 §4）：REQUESTED → WAITING → APPROVED | DENIED | EXPIRED |
+///CANCELLED；APPROVED → CONSUMED | INVALIDATED。只由 Temporal history 投影。
+enum ApprovalStatus {
+  APPROVED,
+  CANCELLED,
+  CONSUMED,
+  DENIED,
+  EXPIRED,
+  INVALIDATED,
+  REQUESTED,
+  WAITING,
+}
+
+final approvalStatusValues = EnumValues({
+  "APPROVED": ApprovalStatus.APPROVED,
+  "CANCELLED": ApprovalStatus.CANCELLED,
+  "CONSUMED": ApprovalStatus.CONSUMED,
+  "DENIED": ApprovalStatus.DENIED,
+  "EXPIRED": ApprovalStatus.EXPIRED,
+  "INVALIDATED": ApprovalStatus.INVALIDATED,
+  "REQUESTED": ApprovalStatus.REQUESTED,
+  "WAITING": ApprovalStatus.WAITING,
 });
 
 ///GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
@@ -509,6 +1021,122 @@ class PlatformSessionView {
   });
 }
 
+///GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
+///非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
+class TaskView {
+  final String actionExecutionId;
+  final String actionKey;
+  final int actionVersion;
+  final ApprovalStatus? approvalStatus;
+  final String? approvalWorkflowId;
+
+  ///RFC3339，UTC
+  final String createdAt;
+  final ActionDispatchState dispatchState;
+  final ActionGateState gateState;
+  final ReasonCode? observation;
+  final String operationId;
+  final ReasonCode? reason;
+  final String targetId;
+  final TaskStatus? taskStatus;
+  final String? waitingReason;
+  final String? workflowId;
+  final WorkflowKind? workflowKind;
+  final String? workspaceId;
+
+  TaskView({
+    required this.actionExecutionId,
+    required this.actionKey,
+    required this.actionVersion,
+    this.approvalStatus,
+    this.approvalWorkflowId,
+    required this.createdAt,
+    required this.dispatchState,
+    required this.gateState,
+    this.observation,
+    required this.operationId,
+    this.reason,
+    required this.targetId,
+    this.taskStatus,
+    this.waitingReason,
+    this.workflowId,
+    this.workflowKind,
+    this.workspaceId,
+  });
+
+  factory TaskView.fromJson(Map<String, dynamic> json) => TaskView(
+    actionExecutionId: json["actionExecutionId"],
+    actionKey: json["actionKey"],
+    actionVersion: json["actionVersion"],
+    approvalStatus: approvalStatusValues.map[json["approvalStatus"]]!,
+    approvalWorkflowId: json["approvalWorkflowId"],
+    createdAt: json["createdAt"],
+    dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
+    gateState: actionGateStateValues.map[json["gateState"]]!,
+    observation: reasonCodeValues.map[json["observation"]]!,
+    operationId: json["operationId"],
+    reason: reasonCodeValues.map[json["reason"]]!,
+    targetId: json["targetId"],
+    taskStatus: taskStatusValues.map[json["taskStatus"]]!,
+    waitingReason: json["waitingReason"],
+    workflowId: json["workflowId"],
+    workflowKind: workflowKindValues.map[json["workflowKind"]]!,
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "approvalStatus": approvalStatusValues.reverse[approvalStatus],
+    "approvalWorkflowId": approvalWorkflowId,
+    "createdAt": createdAt,
+    "dispatchState": actionDispatchStateValues.reverse[dispatchState],
+    "gateState": actionGateStateValues.reverse[gateState],
+    "observation": reasonCodeValues.reverse[observation],
+    "operationId": operationId,
+    "reason": reasonCodeValues.reverse[reason],
+    "targetId": targetId,
+    "taskStatus": taskStatusValues.reverse[taskStatus],
+    "waitingReason": waitingReason,
+    "workflowId": workflowId,
+    "workflowKind": workflowKindValues.reverse[workflowKind],
+    "workspaceId": workspaceId,
+  });
+}
+
+///TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
+///status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
+///WorkflowRef 进入 TERMINAL。
+enum TaskStatus { CANCELED, COMPLETED, FAILED, RUNNING, TERMINATED, TIMED_OUT }
+
+final taskStatusValues = EnumValues({
+  "CANCELED": TaskStatus.CANCELED,
+  "COMPLETED": TaskStatus.COMPLETED,
+  "FAILED": TaskStatus.FAILED,
+  "RUNNING": TaskStatus.RUNNING,
+  "TERMINATED": TaskStatus.TERMINATED,
+  "TIMED_OUT": TaskStatus.TIMED_OUT,
+});
+
+///ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
+///必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
+enum WorkflowKind {
+  BUZZ_IDENTITY_PROJECTION,
+  MEMBERSHIP_PROJECTION,
+  MEMBERSHIP_REVOCATION,
+  TENANT_LIFECYCLE,
+  WORKSPACE_LIFECYCLE,
+}
+
+final workflowKindValues = EnumValues({
+  "BUZZ_IDENTITY_PROJECTION": WorkflowKind.BUZZ_IDENTITY_PROJECTION,
+  "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
+  "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
+  "TENANT_LIFECYCLE": WorkflowKind.TENANT_LIFECYCLE,
+  "WORKSPACE_LIFECYCLE": WorkflowKind.WORKSPACE_LIFECYCLE,
+});
+
 ///CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT
 ////api/v1/user-state/workspaces/{workspaceId} 的 200 回应）。
 class UserStateVersion {
@@ -632,42 +1260,6 @@ class ErrorBody {
   });
 }
 
-///稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
-///字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
-enum ReasonCode {
-  CLIENT_KEY_ALREADY_BOUND,
-  CLIENT_KEY_LIMIT_REACHED,
-  CLIENT_KEY_NOT_FOUND,
-  CLIENT_KEY_PROOF_INVALID,
-  DEPENDENCY_UNAVAILABLE,
-  IDENTITY_HEADER_MISSING,
-  IDENTITY_UNKNOWN,
-  NATIVE_SURFACE_REQUIRED,
-  PUBLISH_REJECTED,
-  PUBLISH_RESULT_UNKNOWN,
-  SESSION_NOT_ACTIVE,
-  SURFACE_CAPABILITY_UNAVAILABLE,
-  TENANT_MEMBERSHIP_NOT_ACTIVE,
-  TENANT_SELECTION_NOT_AVAILABLE,
-}
-
-final reasonCodeValues = EnumValues({
-  "CLIENT_KEY_ALREADY_BOUND": ReasonCode.CLIENT_KEY_ALREADY_BOUND,
-  "CLIENT_KEY_LIMIT_REACHED": ReasonCode.CLIENT_KEY_LIMIT_REACHED,
-  "CLIENT_KEY_NOT_FOUND": ReasonCode.CLIENT_KEY_NOT_FOUND,
-  "CLIENT_KEY_PROOF_INVALID": ReasonCode.CLIENT_KEY_PROOF_INVALID,
-  "DEPENDENCY_UNAVAILABLE": ReasonCode.DEPENDENCY_UNAVAILABLE,
-  "IDENTITY_HEADER_MISSING": ReasonCode.IDENTITY_HEADER_MISSING,
-  "IDENTITY_UNKNOWN": ReasonCode.IDENTITY_UNKNOWN,
-  "NATIVE_SURFACE_REQUIRED": ReasonCode.NATIVE_SURFACE_REQUIRED,
-  "PUBLISH_REJECTED": ReasonCode.PUBLISH_REJECTED,
-  "PUBLISH_RESULT_UNKNOWN": ReasonCode.PUBLISH_RESULT_UNKNOWN,
-  "SESSION_NOT_ACTIVE": ReasonCode.SESSION_NOT_ACTIVE,
-  "SURFACE_CAPABILITY_UNAVAILABLE": ReasonCode.SURFACE_CAPABILITY_UNAVAILABLE,
-  "TENANT_MEMBERSHIP_NOT_ACTIVE": ReasonCode.TENANT_MEMBERSHIP_NOT_ACTIVE,
-  "TENANT_SELECTION_NOT_AVAILABLE": ReasonCode.TENANT_SELECTION_NOT_AVAILABLE,
-});
-
 ///BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
 class ResolvedIdentity {
   ///当前选定的 Workspace；未选定时缺省
@@ -745,20 +1337,6 @@ class TaskStateReport {
   });
 }
 
-///TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
-///status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
-///WorkflowRef 进入 TERMINAL。
-enum TaskStatus { CANCELED, COMPLETED, FAILED, RUNNING, TERMINATED, TIMED_OUT }
-
-final taskStatusValues = EnumValues({
-  "CANCELED": TaskStatus.CANCELED,
-  "COMPLETED": TaskStatus.COMPLETED,
-  "FAILED": TaskStatus.FAILED,
-  "RUNNING": TaskStatus.RUNNING,
-  "TERMINATED": TaskStatus.TERMINATED,
-  "TIMED_OUT": TaskStatus.TIMED_OUT,
-});
-
 ///Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
 ///kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
 class WorkflowRef {
@@ -806,23 +1384,453 @@ class WorkflowRef {
   });
 }
 
-///ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
-///必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
-enum WorkflowKind {
-  BUZZ_IDENTITY_PROJECTION,
-  MEMBERSHIP_PROJECTION,
-  MEMBERSHIP_REVOCATION,
-  TENANT_LIFECYCLE,
-  WORKSPACE_LIFECYCLE,
+///请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
+class AffectedOwnerRef {
+  final String ownerPrincipalId;
+  final String targetId;
+  final String targetType;
+  final int targetVersion;
+
+  AffectedOwnerRef({
+    required this.ownerPrincipalId,
+    required this.targetId,
+    required this.targetType,
+    required this.targetVersion,
+  });
+
+  factory AffectedOwnerRef.fromJson(Map<String, dynamic> json) =>
+      AffectedOwnerRef(
+        ownerPrincipalId: json["ownerPrincipalId"],
+        targetId: json["targetId"],
+        targetType: json["targetType"],
+        targetVersion: json["targetVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "ownerPrincipalId": ownerPrincipalId,
+    "targetId": targetId,
+    "targetType": targetType,
+    "targetVersion": targetVersion,
+  });
 }
 
-final workflowKindValues = EnumValues({
-  "BUZZ_IDENTITY_PROJECTION": WorkflowKind.BUZZ_IDENTITY_PROJECTION,
-  "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
-  "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
-  "TENANT_LIFECYCLE": WorkflowKind.TENANT_LIFECYCLE,
-  "WORKSPACE_LIFECYCLE": WorkflowKind.WORKSPACE_LIFECYCLE,
+///consume、invalidate、withdraw 三个 Update 的结果：执行后的 Approval 状态。
+class ApprovalControlOutcome {
+  final ApprovalStatus status;
+
+  ApprovalControlOutcome({required this.status});
+
+  factory ApprovalControlOutcome.fromJson(Map<String, dynamic> json) =>
+      ApprovalControlOutcome(status: approvalStatusValues.map[json["status"]]!);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"status": approvalStatusValues.reverse[status]});
+}
+
+///decide Update 的结果。admitted=false 表示 FreshApprovalAdmission 未通过，这次 Update 没有形成决定；decision
+///是该 approver 已记录的决定（重复同值时即原决定）。
+class ApprovalDecisionOutcome {
+  final bool admitted;
+  final String approverPrincipalId;
+
+  ///已形成的决定；admitted=false 时缺省
+  final ApprovalDecision? decision;
+
+  ///admitted=false 时的拒绝原因
+  final ReasonCode? reason;
+  final ApprovalStatus status;
+
+  ApprovalDecisionOutcome({
+    required this.admitted,
+    required this.approverPrincipalId,
+    this.decision,
+    this.reason,
+    required this.status,
+  });
+
+  factory ApprovalDecisionOutcome.fromJson(Map<String, dynamic> json) =>
+      ApprovalDecisionOutcome(
+        admitted: json["admitted"],
+        approverPrincipalId: json["approverPrincipalId"],
+        decision: approvalDecisionValues.map[json["decision"]]!,
+        reason: reasonCodeValues.map[json["reason"]]!,
+        status: approvalStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "admitted": admitted,
+    "approverPrincipalId": approverPrincipalId,
+    "decision": approvalDecisionValues.reverse[decision],
+    "reason": reasonCodeValues.reverse[reason],
+    "status": approvalStatusValues.reverse[status],
+  });
+}
+
+///一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
+class ApprovalDecisionRecord {
+  final String approverPrincipalId;
+
+  ///RFC3339，UTC
+  final String decidedAt;
+  final ApprovalDecision decision;
+
+  ///该 approver 在决定时经 fresh Check 满足的选择器；同一人可在多个要求中计数，但只产生一个决定
+  final List<ApprovalSelector> satisfiedSelectors;
+
+  ApprovalDecisionRecord({
+    required this.approverPrincipalId,
+    required this.decidedAt,
+    required this.decision,
+    required this.satisfiedSelectors,
+  });
+
+  factory ApprovalDecisionRecord.fromJson(Map<String, dynamic> json) =>
+      ApprovalDecisionRecord(
+        approverPrincipalId: json["approverPrincipalId"],
+        decidedAt: json["decidedAt"],
+        decision: approvalDecisionValues.map[json["decision"]]!,
+        satisfiedSelectors: List<ApprovalSelector>.from(
+          json["satisfiedSelectors"].map((x) => approvalSelectorValues.map[x]!),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "approverPrincipalId": approverPrincipalId,
+    "decidedAt": decidedAt,
+    "decision": approvalDecisionValues.reverse[decision],
+    "satisfiedSelectors": List<dynamic>.from(
+      satisfiedSelectors.map((x) => approvalSelectorValues.reverse[x]),
+    ),
+  });
+}
+
+///decide Update 的参数。Update ID 固定为 <approval_workflow_id>:<approver_principal_id>，由 Server
+///侧去重；approverPrincipalId 由 Core 从 PlatformSession 取得，不接受 Browser 自报。
+class ApprovalDecisionUpdate {
+  final String approverPrincipalId;
+  final ApprovalDecision decision;
+
+  ApprovalDecisionUpdate({
+    required this.approverPrincipalId,
+    required this.decision,
+  });
+
+  factory ApprovalDecisionUpdate.fromJson(Map<String, dynamic> json) =>
+      ApprovalDecisionUpdate(
+        approverPrincipalId: json["approverPrincipalId"],
+        decision: approvalDecisionValues.map[json["decision"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "approverPrincipalId": approverPrincipalId,
+    "decision": approvalDecisionValues.reverse[decision],
+  });
+}
+
+///ApprovalWorkflow 的冻结输入（.design/06 §4）。运行中不得更换 Tenant、Workspace、target、参数摘要或策略版本；意图改变时建立新
+///ActionExecution。
+class ApprovalWorkflowInput {
+  final int actionDefinitionVersion;
+  final String actionExecutionId;
+  final String actionKey;
+  final List<AffectedOwnerRefElement> affectedOwnerRefs;
+
+  ///APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED
+  final int consumeWindowSeconds;
+
+  ///RFC3339，UTC。Core 按 ApprovalPolicy.expires_in 在请求时冻结；Workflow 以 workflow.Now() 与之比较
+  final String expiresAt;
+  final String initiatorPrincipalId;
+  final String operationId;
+  final ApprovalOwnerRequirement ownerRequirement;
+  final String parameterHash;
+  final String policyId;
+  final int policyVersion;
+  final List<RoleRequirementElement> roleRequirements;
+  final ApprovalSelfApproval selfApproval;
+  final String targetId;
+  final String targetType;
+  final String tenantId;
+
+  ///TENANT_ONLY 动作缺省
+  final String? workspaceId;
+
+  ApprovalWorkflowInput({
+    required this.actionDefinitionVersion,
+    required this.actionExecutionId,
+    required this.actionKey,
+    required this.affectedOwnerRefs,
+    required this.consumeWindowSeconds,
+    required this.expiresAt,
+    required this.initiatorPrincipalId,
+    required this.operationId,
+    required this.ownerRequirement,
+    required this.parameterHash,
+    required this.policyId,
+    required this.policyVersion,
+    required this.roleRequirements,
+    required this.selfApproval,
+    required this.targetId,
+    required this.targetType,
+    required this.tenantId,
+    this.workspaceId,
+  });
+
+  factory ApprovalWorkflowInput.fromJson(
+    Map<String, dynamic> json,
+  ) => ApprovalWorkflowInput(
+    actionDefinitionVersion: json["actionDefinitionVersion"],
+    actionExecutionId: json["actionExecutionId"],
+    actionKey: json["actionKey"],
+    affectedOwnerRefs: List<AffectedOwnerRefElement>.from(
+      json["affectedOwnerRefs"].map((x) => AffectedOwnerRefElement.fromJson(x)),
+    ),
+    consumeWindowSeconds: json["consumeWindowSeconds"],
+    expiresAt: json["expiresAt"],
+    initiatorPrincipalId: json["initiatorPrincipalId"],
+    operationId: json["operationId"],
+    ownerRequirement:
+        approvalOwnerRequirementValues.map[json["ownerRequirement"]]!,
+    parameterHash: json["parameterHash"],
+    policyId: json["policyId"],
+    policyVersion: json["policyVersion"],
+    roleRequirements: List<RoleRequirementElement>.from(
+      json["roleRequirements"].map((x) => RoleRequirementElement.fromJson(x)),
+    ),
+    selfApproval: approvalSelfApprovalValues.map[json["selfApproval"]]!,
+    targetId: json["targetId"],
+    targetType: json["targetType"],
+    tenantId: json["tenantId"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionDefinitionVersion": actionDefinitionVersion,
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "affectedOwnerRefs": List<dynamic>.from(
+      affectedOwnerRefs.map((x) => x.toJson()),
+    ),
+    "consumeWindowSeconds": consumeWindowSeconds,
+    "expiresAt": expiresAt,
+    "initiatorPrincipalId": initiatorPrincipalId,
+    "operationId": operationId,
+    "ownerRequirement":
+        approvalOwnerRequirementValues.reverse[ownerRequirement],
+    "parameterHash": parameterHash,
+    "policyId": policyId,
+    "policyVersion": policyVersion,
+    "roleRequirements": List<dynamic>.from(
+      roleRequirements.map((x) => x.toJson()),
+    ),
+    "selfApproval": approvalSelfApprovalValues.reverse[selfApproval],
+    "targetId": targetId,
+    "targetType": targetType,
+    "tenantId": tenantId,
+    "workspaceId": workspaceId,
+  });
+}
+
+///请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
+class AffectedOwnerRefElement {
+  final String ownerPrincipalId;
+  final String targetId;
+  final String targetType;
+  final int targetVersion;
+
+  AffectedOwnerRefElement({
+    required this.ownerPrincipalId,
+    required this.targetId,
+    required this.targetType,
+    required this.targetVersion,
+  });
+
+  factory AffectedOwnerRefElement.fromJson(Map<String, dynamic> json) =>
+      AffectedOwnerRefElement(
+        ownerPrincipalId: json["ownerPrincipalId"],
+        targetId: json["targetId"],
+        targetType: json["targetType"],
+        targetVersion: json["targetVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "ownerPrincipalId": ownerPrincipalId,
+    "targetId": targetId,
+    "targetType": targetType,
+    "targetVersion": targetVersion,
+  });
+}
+
+///ApprovalPolicy.owner_requirement（.design/03 §4）。
+enum ApprovalOwnerRequirement { ALL_AFFECTED_OWNERS, NONE, TARGET_OWNER }
+
+final approvalOwnerRequirementValues = EnumValues({
+  "ALL_AFFECTED_OWNERS": ApprovalOwnerRequirement.ALL_AFFECTED_OWNERS,
+  "NONE": ApprovalOwnerRequirement.NONE,
+  "TARGET_OWNER": ApprovalOwnerRequirement.TARGET_OWNER,
 });
+
+///ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。
+enum ApprovalSelfApproval { ALLOW, DENY }
+
+final approvalSelfApprovalValues = EnumValues({
+  "ALLOW": ApprovalSelfApproval.ALLOW,
+  "DENY": ApprovalSelfApproval.DENY,
+});
+
+///invalidate Update 的参数：Core 在批准后重新准入不通过时发出（.design/06 §4）。Update ID 固定为
+///<action_execution_id>:invalidate。
+class ApprovalInvalidateUpdate {
+  final ReasonCode reason;
+
+  ApprovalInvalidateUpdate({required this.reason});
+
+  factory ApprovalInvalidateUpdate.fromJson(Map<String, dynamic> json) =>
+      ApprovalInvalidateUpdate(reason: reasonCodeValues.map[json["reason"]]!);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"reason": reasonCodeValues.reverse[reason]});
+}
+
+///ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
+///§4）。
+class ApprovalRoleRequirement {
+  final int minDistinct;
+  final ApprovalSelector selector;
+
+  ApprovalRoleRequirement({required this.minDistinct, required this.selector});
+
+  factory ApprovalRoleRequirement.fromJson(Map<String, dynamic> json) =>
+      ApprovalRoleRequirement(
+        minDistinct: json["minDistinct"],
+        selector: approvalSelectorValues.map[json["selector"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "minDistinct": minDistinct,
+    "selector": approvalSelectorValues.reverse[selector],
+  });
+}
+
+///ApprovalWorkflow 经 ProjectApprovalState Activity 写回 Core 的一次状态跃迁。Core 按 workflowId 与
+///eventId 单调 upsert；ApprovalProjection 只接受这一条写入路径（DD-47）。
+class ApprovalStateReport {
+  ///RFC3339，UTC；进入 CONSUMED 时的 workflow.Now()
+  final String? consumedAt;
+
+  ///RFC3339，UTC；进入 APPROVED 时由 workflow.Now() 加 consumeWindowSeconds 得出
+  final String? consumeDeadline;
+  final List<DecisionElement> decisions;
+
+  ///报告时跨 run 累计的 history 长度
+  final int eventId;
+
+  ///RFC3339，UTC
+  final String expiresAt;
+
+  ///INVALIDATED/EXPIRED/CANCELLED/DENIED 的原因
+  final ReasonCode? reason;
+  final String runId;
+  final ApprovalStatus status;
+  final String workflowId;
+
+  ApprovalStateReport({
+    this.consumedAt,
+    this.consumeDeadline,
+    required this.decisions,
+    required this.eventId,
+    required this.expiresAt,
+    this.reason,
+    required this.runId,
+    required this.status,
+    required this.workflowId,
+  });
+
+  factory ApprovalStateReport.fromJson(Map<String, dynamic> json) =>
+      ApprovalStateReport(
+        consumedAt: json["consumedAt"],
+        consumeDeadline: json["consumeDeadline"],
+        decisions: List<DecisionElement>.from(
+          json["decisions"].map((x) => DecisionElement.fromJson(x)),
+        ),
+        eventId: json["eventId"],
+        expiresAt: json["expiresAt"],
+        reason: reasonCodeValues.map[json["reason"]]!,
+        runId: json["runId"],
+        status: approvalStatusValues.map[json["status"]]!,
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "consumedAt": consumedAt,
+    "consumeDeadline": consumeDeadline,
+    "decisions": List<dynamic>.from(decisions.map((x) => x.toJson())),
+    "eventId": eventId,
+    "expiresAt": expiresAt,
+    "reason": reasonCodeValues.reverse[reason],
+    "runId": runId,
+    "status": approvalStatusValues.reverse[status],
+    "workflowId": workflowId,
+  });
+}
+
+///FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh
+///选择器 permission、owner 对账与职责分离由 Core 判定。
+class FreshApprovalAdmissionRequest {
+  final String approvalWorkflowId;
+  final String approverPrincipalId;
+  final ApprovalDecision decision;
+
+  FreshApprovalAdmissionRequest({
+    required this.approvalWorkflowId,
+    required this.approverPrincipalId,
+    required this.decision,
+  });
+
+  factory FreshApprovalAdmissionRequest.fromJson(Map<String, dynamic> json) =>
+      FreshApprovalAdmissionRequest(
+        approvalWorkflowId: json["approvalWorkflowId"],
+        approverPrincipalId: json["approverPrincipalId"],
+        decision: approvalDecisionValues.map[json["decision"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "approvalWorkflowId": approvalWorkflowId,
+    "approverPrincipalId": approverPrincipalId,
+    "decision": approvalDecisionValues.reverse[decision],
+  });
+}
+
+///FreshApprovalAdmission 的结论。admitted=false 时 reason 必有；该结论作为一条被拒决定进入 history，而不是
+///pre-history 拒绝。
+class FreshApprovalAdmissionResult {
+  final bool admitted;
+  final ReasonCode? reason;
+  final List<ApprovalSelector> satisfiedSelectors;
+
+  FreshApprovalAdmissionResult({
+    required this.admitted,
+    this.reason,
+    required this.satisfiedSelectors,
+  });
+
+  factory FreshApprovalAdmissionResult.fromJson(Map<String, dynamic> json) =>
+      FreshApprovalAdmissionResult(
+        admitted: json["admitted"],
+        reason: reasonCodeValues.map[json["reason"]]!,
+        satisfiedSelectors: List<ApprovalSelector>.from(
+          json["satisfiedSelectors"].map((x) => approvalSelectorValues.map[x]!),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "admitted": admitted,
+    "reason": reasonCodeValues.reverse[reason],
+    "satisfiedSelectors": List<dynamic>.from(
+      satisfiedSelectors.map((x) => approvalSelectorValues.reverse[x]),
+    ),
+  });
+}
 
 class EnumValues<T> {
   Map<String, T> map;

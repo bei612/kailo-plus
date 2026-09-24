@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/fresh_approval_admission_result.schema.json",
+  "title": "FreshApprovalAdmissionResult",
+  "description": "FreshApprovalAdmission 的结论。admitted=false 时 reason 必有；该结论作为一条被拒决定进入 history，而不是 pre-history 拒绝。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "admitted",
+    "satisfiedSelectors"
+  ],
+  "properties": {
+    "admitted": {
+      "type": "boolean"
+    },
+    "reason": {
+      "$ref": "../enums/reason_code.schema.json"
+    },
+    "satisfiedSelectors": {
+      "type": "array",
+      "items": {
+        "$ref": "../enums/approval_selector.schema.json"
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/action_quota_policy.schema.json",
+  "title": "ActionQuotaPolicy",
+  "description": "ActionDefinition 的商业额度策略（.design/05 §6）。",
+  "type": "string",
+  "enum": [
+    "NONE",
+    "CHECK",
+    "STRICT_RESERVATION"
+  ]
+}

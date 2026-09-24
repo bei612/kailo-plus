@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/approval_owner_requirement.schema.json",
+  "title": "ApprovalOwnerRequirement",
+  "description": "ApprovalPolicy.owner_requirement（.design/03 §4）。",
+  "type": "string",
+  "enum": [
+    "NONE",
+    "TARGET_OWNER",
+    "ALL_AFFECTED_OWNERS"
+  ]
+}

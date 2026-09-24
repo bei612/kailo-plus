@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/observability_usage_source.schema.json",
+  "title": "ObservabilityUsageSource",
+  "description": "BusinessObservabilityPolicy.usage_source（.design/03 §4）。GATEWAY_DURABLE_USAGE 只有 SS-AGW-USAGE 闭合后可登记。",
+  "type": "string",
+  "enum": [
+    "NONE",
+    "DRIVER",
+    "GATEWAY_DURABLE_USAGE",
+    "OPENMETER"
+  ]
+}

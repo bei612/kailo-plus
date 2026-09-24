@@ -4,6 +4,18 @@
 //    canary, err := UnmarshalCanary(bytes)
 //    bytes, err = canary.Marshal()
 //
+//    actionCommand, err := UnmarshalActionCommand(bytes)
+//    bytes, err = actionCommand.Marshal()
+//
+//    actionSubmission, err := UnmarshalActionSubmission(bytes)
+//    bytes, err = actionSubmission.Marshal()
+//
+//    approvalDecisionRequest, err := UnmarshalApprovalDecisionRequest(bytes)
+//    bytes, err = approvalDecisionRequest.Marshal()
+//
+//    approvalView, err := UnmarshalApprovalView(bytes)
+//    bytes, err = approvalView.Marshal()
+//
 //    clientKeyView, err := UnmarshalClientKeyView(bytes)
 //    bytes, err = clientKeyView.Marshal()
 //
@@ -21,6 +33,9 @@
 //
 //    platformSessionView, err := UnmarshalPlatformSessionView(bytes)
 //    bytes, err = platformSessionView.Marshal()
+//
+//    taskView, err := UnmarshalTaskView(bytes)
+//    bytes, err = taskView.Marshal()
 //
 //    userStateVersion, err := UnmarshalUserStateVersion(bytes)
 //    bytes, err = userStateVersion.Marshal()
@@ -45,6 +60,39 @@
 //
 //    workflowRef, err := UnmarshalWorkflowRef(bytes)
 //    bytes, err = workflowRef.Marshal()
+//
+//    affectedOwnerRef, err := UnmarshalAffectedOwnerRef(bytes)
+//    bytes, err = affectedOwnerRef.Marshal()
+//
+//    approvalControlOutcome, err := UnmarshalApprovalControlOutcome(bytes)
+//    bytes, err = approvalControlOutcome.Marshal()
+//
+//    approvalDecisionOutcome, err := UnmarshalApprovalDecisionOutcome(bytes)
+//    bytes, err = approvalDecisionOutcome.Marshal()
+//
+//    approvalDecisionRecord, err := UnmarshalApprovalDecisionRecord(bytes)
+//    bytes, err = approvalDecisionRecord.Marshal()
+//
+//    approvalDecisionUpdate, err := UnmarshalApprovalDecisionUpdate(bytes)
+//    bytes, err = approvalDecisionUpdate.Marshal()
+//
+//    approvalWorkflowInput, err := UnmarshalApprovalWorkflowInput(bytes)
+//    bytes, err = approvalWorkflowInput.Marshal()
+//
+//    approvalInvalidateUpdate, err := UnmarshalApprovalInvalidateUpdate(bytes)
+//    bytes, err = approvalInvalidateUpdate.Marshal()
+//
+//    approvalRoleRequirement, err := UnmarshalApprovalRoleRequirement(bytes)
+//    bytes, err = approvalRoleRequirement.Marshal()
+//
+//    approvalStateReport, err := UnmarshalApprovalStateReport(bytes)
+//    bytes, err = approvalStateReport.Marshal()
+//
+//    freshApprovalAdmissionRequest, err := UnmarshalFreshApprovalAdmissionRequest(bytes)
+//    bytes, err = freshApprovalAdmissionRequest.Marshal()
+//
+//    freshApprovalAdmissionResult, err := UnmarshalFreshApprovalAdmissionResult(bytes)
+//    bytes, err = freshApprovalAdmissionResult.Marshal()
 
 package generated
 
@@ -57,6 +105,46 @@ func UnmarshalCanary(data []byte) (Canary, error) {
 }
 
 func (r *Canary) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalActionCommand(data []byte) (ActionCommand, error) {
+	var r ActionCommand
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ActionCommand) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalActionSubmission(data []byte) (ActionSubmission, error) {
+	var r ActionSubmission
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ActionSubmission) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalDecisionRequest(data []byte) (ApprovalDecisionRequest, error) {
+	var r ApprovalDecisionRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalDecisionRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalView(data []byte) (ApprovalView, error) {
+	var r ApprovalView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -117,6 +205,16 @@ func UnmarshalPlatformSessionView(data []byte) (PlatformSessionView, error) {
 }
 
 func (r *PlatformSessionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalTaskView(data []byte) (TaskView, error) {
+	var r TaskView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TaskView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -200,6 +298,116 @@ func (r *WorkflowRef) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAffectedOwnerRef(data []byte) (AffectedOwnerRef, error) {
+	var r AffectedOwnerRef
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AffectedOwnerRef) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalControlOutcome(data []byte) (ApprovalControlOutcome, error) {
+	var r ApprovalControlOutcome
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalControlOutcome) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalDecisionOutcome(data []byte) (ApprovalDecisionOutcome, error) {
+	var r ApprovalDecisionOutcome
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalDecisionOutcome) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalDecisionRecord(data []byte) (ApprovalDecisionRecord, error) {
+	var r ApprovalDecisionRecord
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalDecisionRecord) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalDecisionUpdate(data []byte) (ApprovalDecisionUpdate, error) {
+	var r ApprovalDecisionUpdate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalDecisionUpdate) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalWorkflowInput(data []byte) (ApprovalWorkflowInput, error) {
+	var r ApprovalWorkflowInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalWorkflowInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalInvalidateUpdate(data []byte) (ApprovalInvalidateUpdate, error) {
+	var r ApprovalInvalidateUpdate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalInvalidateUpdate) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalRoleRequirement(data []byte) (ApprovalRoleRequirement, error) {
+	var r ApprovalRoleRequirement
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalRoleRequirement) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalStateReport(data []byte) (ApprovalStateReport, error) {
+	var r ApprovalStateReport
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalStateReport) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFreshApprovalAdmissionRequest(data []byte) (FreshApprovalAdmissionRequest, error) {
+	var r FreshApprovalAdmissionRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FreshApprovalAdmissionRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFreshApprovalAdmissionResult(data []byte) (FreshApprovalAdmissionResult, error) {
+	var r FreshApprovalAdmissionResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FreshApprovalAdmissionResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 // 可用 JSON Schema 子集的可执行定义。它穷举 contracts/README.md 第 1
 // 节允许的每一种构造；四侧生成器必须全部生成成功并通过双向序列化。新增构造先加进本文件并四侧验证通过，才允许在其他 schema 中使用。
 type Canary struct {
@@ -239,6 +447,79 @@ type Variant struct {
 	Kind        Kind    `json:"kind"`
 	MessageBody *string `json:"messageBody,omitempty"`
 	TaskAttempt *int64  `json:"taskAttempt,omitempty"`
+}
+
+// POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
+// actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
+type ActionCommand struct {
+	ActionKey string `json:"actionKey"`
+	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
+	IdempotencyKey string `json:"idempotencyKey"`
+	// workspace.create 的显示名
+	Name *string `json:"name,omitempty"`
+	// 成员动作的目标 Principal
+	PrincipalID *string `json:"principalId,omitempty"`
+	// workspace.create 的 slug
+	Slug *string `json:"slug,omitempty"`
+	// Workspace 内动作的执行 Workspace
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
+// 必有；DENIED 时 reason 必有。
+type ActionSubmission struct {
+	ActionExecutionID  string              `json:"actionExecutionId"`
+	ActionKey          string              `json:"actionKey"`
+	ApprovalWorkflowID *string             `json:"approvalWorkflowId,omitempty"`
+	DispatchState      ActionDispatchState `json:"dispatchState"`
+	GateState          ActionGateState     `json:"gateState"`
+	OperationID        string              `json:"operationId"`
+	Reason             *ReasonCode         `json:"reason,omitempty"`
+	WorkflowID         *string             `json:"workflowId,omitempty"`
+}
+
+// POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为
+// ApprovalDecisionOutcome。
+type ApprovalDecisionRequest struct {
+	Decision ApprovalDecision `json:"decision"`
+}
+
+// GET /api/v1/approvals（待我审批）与 /api/v1/approvals/{workflowId} 的元素。状态只来自 Temporal history
+// 的投影。
+type ApprovalView struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	ActionKey         string `json:"actionKey"`
+	// RFC3339，UTC
+	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
+	Decisions       []DecisionElement `json:"decisions"`
+	// RFC3339，UTC
+	ExpiresAt            string                   `json:"expiresAt"`
+	InitiatorPrincipalID string                   `json:"initiatorPrincipalId"`
+	Observation          *ReasonCode              `json:"observation,omitempty"`
+	Reason               *ReasonCode              `json:"reason,omitempty"`
+	RoleRequirements     []RoleRequirementElement `json:"roleRequirements"`
+	Status               ApprovalStatus           `json:"status"`
+	TargetID             string                   `json:"targetId"`
+	TargetType           string                   `json:"targetType"`
+	WorkflowID           string                   `json:"workflowId"`
+	WorkspaceID          *string                  `json:"workspaceId,omitempty"`
+}
+
+// 一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
+type DecisionElement struct {
+	ApproverPrincipalID string `json:"approverPrincipalId"`
+	// RFC3339，UTC
+	DecidedAt string           `json:"decidedAt"`
+	Decision  ApprovalDecision `json:"decision"`
+	// 该 approver 在决定时经 fresh Check 满足的选择器；同一人可在多个要求中计数，但只产生一个决定
+	SatisfiedSelectors []ApprovalSelector `json:"satisfiedSelectors"`
+}
+
+// ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
+// §4）。
+type RoleRequirementElement struct {
+	MinDistinct int64            `json:"minDistinct"`
+	Selector    ApprovalSelector `json:"selector"`
 }
 
 // GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
@@ -300,6 +581,29 @@ type PlatformSessionView struct {
 	TenantID           string `json:"tenantId"`
 	TenantMembershipID string `json:"tenantMembershipId"`
 	TenantPrincipalID  string `json:"tenantPrincipalId"`
+}
+
+// GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
+// 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
+type TaskView struct {
+	ActionExecutionID  string          `json:"actionExecutionId"`
+	ActionKey          string          `json:"actionKey"`
+	ActionVersion      int64           `json:"actionVersion"`
+	ApprovalStatus     *ApprovalStatus `json:"approvalStatus,omitempty"`
+	ApprovalWorkflowID *string         `json:"approvalWorkflowId,omitempty"`
+	// RFC3339，UTC
+	CreatedAt     string              `json:"createdAt"`
+	DispatchState ActionDispatchState `json:"dispatchState"`
+	GateState     ActionGateState     `json:"gateState"`
+	Observation   *ReasonCode         `json:"observation,omitempty"`
+	OperationID   string              `json:"operationId"`
+	Reason        *ReasonCode         `json:"reason,omitempty"`
+	TargetID      string              `json:"targetId"`
+	TaskStatus    *TaskStatus         `json:"taskStatus,omitempty"`
+	WaitingReason *string             `json:"waitingReason,omitempty"`
+	WorkflowID    *string             `json:"workflowId,omitempty"`
+	WorkflowKind  *WorkflowKind       `json:"workflowKind,omitempty"`
+	WorkspaceID   *string             `json:"workspaceId,omitempty"`
 }
 
 // CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT
@@ -379,6 +683,130 @@ type WorkflowRef struct {
 	WorkflowID string `json:"workflowId"`
 }
 
+// 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
+type AffectedOwnerRef struct {
+	OwnerPrincipalID string `json:"ownerPrincipalId"`
+	TargetID         string `json:"targetId"`
+	TargetType       string `json:"targetType"`
+	TargetVersion    int64  `json:"targetVersion"`
+}
+
+// consume、invalidate、withdraw 三个 Update 的结果：执行后的 Approval 状态。
+type ApprovalControlOutcome struct {
+	Status ApprovalStatus `json:"status"`
+}
+
+// decide Update 的结果。admitted=false 表示 FreshApprovalAdmission 未通过，这次 Update 没有形成决定；decision
+// 是该 approver 已记录的决定（重复同值时即原决定）。
+type ApprovalDecisionOutcome struct {
+	Admitted            bool   `json:"admitted"`
+	ApproverPrincipalID string `json:"approverPrincipalId"`
+	// 已形成的决定；admitted=false 时缺省
+	Decision *ApprovalDecision `json:"decision,omitempty"`
+	// admitted=false 时的拒绝原因
+	Reason *ReasonCode    `json:"reason,omitempty"`
+	Status ApprovalStatus `json:"status"`
+}
+
+// 一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
+type ApprovalDecisionRecord struct {
+	ApproverPrincipalID string `json:"approverPrincipalId"`
+	// RFC3339，UTC
+	DecidedAt string           `json:"decidedAt"`
+	Decision  ApprovalDecision `json:"decision"`
+	// 该 approver 在决定时经 fresh Check 满足的选择器；同一人可在多个要求中计数，但只产生一个决定
+	SatisfiedSelectors []ApprovalSelector `json:"satisfiedSelectors"`
+}
+
+// decide Update 的参数。Update ID 固定为 <approval_workflow_id>:<approver_principal_id>，由 Server
+// 侧去重；approverPrincipalId 由 Core 从 PlatformSession 取得，不接受 Browser 自报。
+type ApprovalDecisionUpdate struct {
+	ApproverPrincipalID string           `json:"approverPrincipalId"`
+	Decision            ApprovalDecision `json:"decision"`
+}
+
+// ApprovalWorkflow 的冻结输入（.design/06 §4）。运行中不得更换 Tenant、Workspace、target、参数摘要或策略版本；意图改变时建立新
+// ActionExecution。
+type ApprovalWorkflowInput struct {
+	ActionDefinitionVersion int64                     `json:"actionDefinitionVersion"`
+	ActionExecutionID       string                    `json:"actionExecutionId"`
+	ActionKey               string                    `json:"actionKey"`
+	AffectedOwnerRefs       []AffectedOwnerRefElement `json:"affectedOwnerRefs"`
+	// APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED
+	ConsumeWindowSeconds int64 `json:"consumeWindowSeconds"`
+	// RFC3339，UTC。Core 按 ApprovalPolicy.expires_in 在请求时冻结；Workflow 以 workflow.Now() 与之比较
+	ExpiresAt            string                   `json:"expiresAt"`
+	InitiatorPrincipalID string                   `json:"initiatorPrincipalId"`
+	OperationID          string                   `json:"operationId"`
+	OwnerRequirement     ApprovalOwnerRequirement `json:"ownerRequirement"`
+	ParameterHash        string                   `json:"parameterHash"`
+	PolicyID             string                   `json:"policyId"`
+	PolicyVersion        int64                    `json:"policyVersion"`
+	RoleRequirements     []RoleRequirementElement `json:"roleRequirements"`
+	SelfApproval         ApprovalSelfApproval     `json:"selfApproval"`
+	TargetID             string                   `json:"targetId"`
+	TargetType           string                   `json:"targetType"`
+	TenantID             string                   `json:"tenantId"`
+	// TENANT_ONLY 动作缺省
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
+type AffectedOwnerRefElement struct {
+	OwnerPrincipalID string `json:"ownerPrincipalId"`
+	TargetID         string `json:"targetId"`
+	TargetType       string `json:"targetType"`
+	TargetVersion    int64  `json:"targetVersion"`
+}
+
+// invalidate Update 的参数：Core 在批准后重新准入不通过时发出（.design/06 §4）。Update ID 固定为
+// <action_execution_id>:invalidate。
+type ApprovalInvalidateUpdate struct {
+	Reason ReasonCode `json:"reason"`
+}
+
+// ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
+// §4）。
+type ApprovalRoleRequirement struct {
+	MinDistinct int64            `json:"minDistinct"`
+	Selector    ApprovalSelector `json:"selector"`
+}
+
+// ApprovalWorkflow 经 ProjectApprovalState Activity 写回 Core 的一次状态跃迁。Core 按 workflowId 与
+// eventId 单调 upsert；ApprovalProjection 只接受这一条写入路径（DD-47）。
+type ApprovalStateReport struct {
+	// RFC3339，UTC；进入 CONSUMED 时的 workflow.Now()
+	ConsumedAt *string `json:"consumedAt,omitempty"`
+	// RFC3339，UTC；进入 APPROVED 时由 workflow.Now() 加 consumeWindowSeconds 得出
+	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
+	Decisions       []DecisionElement `json:"decisions"`
+	// 报告时跨 run 累计的 history 长度
+	EventID int64 `json:"eventId"`
+	// RFC3339，UTC
+	ExpiresAt string `json:"expiresAt"`
+	// INVALIDATED/EXPIRED/CANCELLED/DENIED 的原因
+	Reason     *ReasonCode    `json:"reason,omitempty"`
+	RunID      string         `json:"runId"`
+	Status     ApprovalStatus `json:"status"`
+	WorkflowID string         `json:"workflowId"`
+}
+
+// FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh
+// 选择器 permission、owner 对账与职责分离由 Core 判定。
+type FreshApprovalAdmissionRequest struct {
+	ApprovalWorkflowID  string           `json:"approvalWorkflowId"`
+	ApproverPrincipalID string           `json:"approverPrincipalId"`
+	Decision            ApprovalDecision `json:"decision"`
+}
+
+// FreshApprovalAdmission 的结论。admitted=false 时 reason 必有；该结论作为一条被拒决定进入 history，而不是
+// pre-history 拒绝。
+type FreshApprovalAdmissionResult struct {
+	Admitted           bool               `json:"admitted"`
+	Reason             *ReasonCode        `json:"reason,omitempty"`
+	SatisfiedSelectors []ApprovalSelector `json:"satisfiedSelectors"`
+}
+
 // 可选的枚举引用
 //
 // 能力状态。权威定义见 .design/02-源码证据与设计决策.md。BLOCKED 的能力不得生成任何入口、路由、动作、工具或开关。
@@ -400,11 +828,11 @@ type ErrorClass string
 
 const (
 	Conflict          ErrorClass = "CONFLICT"
-	Denied            ErrorClass = "DENIED"
 	ErrorClassBLOCKED ErrorClass = "BLOCKED"
+	ErrorClassDENIED  ErrorClass = "DENIED"
+	ErrorClassUNKNOWN ErrorClass = "UNKNOWN"
 	Limit             ErrorClass = "LIMIT"
 	Precondition      ErrorClass = "PRECONDITION"
-	Unknown           ErrorClass = "UNKNOWN"
 )
 
 type Kind string
@@ -413,6 +841,113 @@ const (
 	File    Kind = "FILE"
 	Message Kind = "MESSAGE"
 	Task    Kind = "TASK"
+)
+
+// ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
+// seam 能把它收敛，不能因无 native ID 就自动重放（DD-48）。
+type ActionDispatchState string
+
+const (
+	Aborted                    ActionDispatchState = "ABORTED"
+	ActionDispatchStateUNKNOWN ActionDispatchState = "UNKNOWN"
+	Dispatched                 ActionDispatchState = "DISPATCHED"
+	NotDispatched              ActionDispatchState = "NOT_DISPATCHED"
+)
+
+// ActionExecution 的准入门禁状态（.design/03 §6）。它与 dispatch_state
+// 是两台独立状态机：门禁说的是「允许不允许」，派发说的是「副作用发生没发生」，合并后无法表达「准入通过但派发结果不明」。
+type ActionGateState string
+
+const (
+	ActionGateStateDENIED  ActionGateState = "DENIED"
+	ActionGateStateEXPIRED ActionGateState = "EXPIRED"
+	ActionGateStateREVOKED ActionGateState = "REVOKED"
+	ActionGateStateWAITING ActionGateState = "WAITING"
+	Allowed                ActionGateState = "ALLOWED"
+	Evaluating             ActionGateState = "EVALUATING"
+)
+
+// 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
+// 字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
+//
+// admitted=false 时的拒绝原因
+//
+// INVALIDATED/EXPIRED/CANCELLED/DENIED 的原因
+type ReasonCode string
+
+const (
+	AdmissionAbandoned           ReasonCode = "ADMISSION_ABANDONED"
+	ApprovalConsumeWindowClosed  ReasonCode = "APPROVAL_CONSUME_WINDOW_CLOSED"
+	ApprovalDenied               ReasonCode = "APPROVAL_DENIED"
+	ApprovalExpired              ReasonCode = "APPROVAL_EXPIRED"
+	ApprovalInvalidated          ReasonCode = "APPROVAL_INVALIDATED"
+	ApprovalNotOpen              ReasonCode = "APPROVAL_NOT_OPEN"
+	ApprovalSelectorUnresolvable ReasonCode = "APPROVAL_SELECTOR_UNRESOLVABLE"
+	ApprovalWithdrawn            ReasonCode = "APPROVAL_WITHDRAWN"
+	ApproverNotEligible          ReasonCode = "APPROVER_NOT_ELIGIBLE"
+	CapabilityBlocked            ReasonCode = "CAPABILITY_BLOCKED"
+	ClientKeyAlreadyBound        ReasonCode = "CLIENT_KEY_ALREADY_BOUND"
+	ClientKeyLimitReached        ReasonCode = "CLIENT_KEY_LIMIT_REACHED"
+	ClientKeyNotFound            ReasonCode = "CLIENT_KEY_NOT_FOUND"
+	ClientKeyProofInvalid        ReasonCode = "CLIENT_KEY_PROOF_INVALID"
+	DependencyUnavailable        ReasonCode = "DEPENDENCY_UNAVAILABLE"
+	DispatchResultUnknown        ReasonCode = "DISPATCH_RESULT_UNKNOWN"
+	DuplicateDecision            ReasonCode = "DUPLICATE_DECISION"
+	ExternalResultUnknown        ReasonCode = "EXTERNAL_RESULT_UNKNOWN"
+	IdempotencyKeyReused         ReasonCode = "IDEMPOTENCY_KEY_REUSED"
+	IdentityHeaderMissing        ReasonCode = "IDENTITY_HEADER_MISSING"
+	IdentityUnknown              ReasonCode = "IDENTITY_UNKNOWN"
+	InvalidParameters            ReasonCode = "INVALID_PARAMETERS"
+	NativeSurfaceRequired        ReasonCode = "NATIVE_SURFACE_REQUIRED"
+	PermissionDenied             ReasonCode = "PERMISSION_DENIED"
+	ProjectionDelayed            ReasonCode = "PROJECTION_DELAYED"
+	PublishRejected              ReasonCode = "PUBLISH_REJECTED"
+	PublishResultUnknown         ReasonCode = "PUBLISH_RESULT_UNKNOWN"
+	ScopeGuardFailed             ReasonCode = "SCOPE_GUARD_FAILED"
+	SelfApprovalDenied           ReasonCode = "SELF_APPROVAL_DENIED"
+	SessionNotActive             ReasonCode = "SESSION_NOT_ACTIVE"
+	SurfaceCapabilityUnavailable ReasonCode = "SURFACE_CAPABILITY_UNAVAILABLE"
+	TargetNotFound               ReasonCode = "TARGET_NOT_FOUND"
+	TargetStateConflict          ReasonCode = "TARGET_STATE_CONFLICT"
+	TenantMembershipNotActive    ReasonCode = "TENANT_MEMBERSHIP_NOT_ACTIVE"
+	TenantSelectionNotAvailable  ReasonCode = "TENANT_SELECTION_NOT_AVAILABLE"
+	WaitingApproval              ReasonCode = "WAITING_APPROVAL"
+)
+
+// approver 的不可变决定（.design/03 §6）。
+//
+// 已形成的决定；admitted=false 时缺省
+type ApprovalDecision string
+
+const (
+	ApprovalDecisionDENY ApprovalDecision = "DENY"
+	Approve              ApprovalDecision = "APPROVE"
+)
+
+// ApprovalPolicy.role_requirements 的角色选择器（.design/03 §4、.design/10 §2）：RESOURCE_APPROVER
+// 对目标 Resource/Asset 做 approve，WORKSPACE_ADMIN 对冻结 Workspace 做 manage，TENANT_ADMIN 对冻结
+// Tenant 做 manage。
+type ApprovalSelector string
+
+const (
+	ResourceApprover ApprovalSelector = "RESOURCE_APPROVER"
+	TenantAdmin      ApprovalSelector = "TENANT_ADMIN"
+	WorkspaceAdmin   ApprovalSelector = "WORKSPACE_ADMIN"
+)
+
+// ApprovalWorkflow 的状态（.design/06 §4）：REQUESTED → WAITING → APPROVED | DENIED | EXPIRED |
+// CANCELLED；APPROVED → CONSUMED | INVALIDATED。只由 Temporal history 投影。
+type ApprovalStatus string
+
+const (
+	ApprovalStatusDENIED  ApprovalStatus = "DENIED"
+	ApprovalStatusEXPIRED ApprovalStatus = "EXPIRED"
+	ApprovalStatusWAITING ApprovalStatus = "WAITING"
+	Approved              ApprovalStatus = "APPROVED"
+	Cancelled             ApprovalStatus = "CANCELLED"
+	Consumed              ApprovalStatus = "CONSUMED"
+	Invalidated           ApprovalStatus = "INVALIDATED"
+	Requested             ApprovalStatus = "REQUESTED"
 )
 
 // BuzzIdentityBinding 状态机。custody=CLIENT 时跳过 PENDING_SECRET，自 RECONCILING 起始。
@@ -443,38 +978,6 @@ const (
 	Session        AuditEventType = "SESSION"
 )
 
-// WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
-type WorkspaceMembershipState string
-
-const (
-	Error                            WorkspaceMembershipState = "ERROR"
-	Provisioning                     WorkspaceMembershipState = "PROVISIONING"
-	WorkspaceMembershipStateACTIVE   WorkspaceMembershipState = "ACTIVE"
-	WorkspaceMembershipStateREVOKED  WorkspaceMembershipState = "REVOKED"
-	WorkspaceMembershipStateREVOKING WorkspaceMembershipState = "REVOKING"
-)
-
-// 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
-// 字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
-type ReasonCode string
-
-const (
-	ClientKeyAlreadyBound        ReasonCode = "CLIENT_KEY_ALREADY_BOUND"
-	ClientKeyLimitReached        ReasonCode = "CLIENT_KEY_LIMIT_REACHED"
-	ClientKeyNotFound            ReasonCode = "CLIENT_KEY_NOT_FOUND"
-	ClientKeyProofInvalid        ReasonCode = "CLIENT_KEY_PROOF_INVALID"
-	DependencyUnavailable        ReasonCode = "DEPENDENCY_UNAVAILABLE"
-	IdentityHeaderMissing        ReasonCode = "IDENTITY_HEADER_MISSING"
-	IdentityUnknown              ReasonCode = "IDENTITY_UNKNOWN"
-	NativeSurfaceRequired        ReasonCode = "NATIVE_SURFACE_REQUIRED"
-	PublishRejected              ReasonCode = "PUBLISH_REJECTED"
-	PublishResultUnknown         ReasonCode = "PUBLISH_RESULT_UNKNOWN"
-	SessionNotActive             ReasonCode = "SESSION_NOT_ACTIVE"
-	SurfaceCapabilityUnavailable ReasonCode = "SURFACE_CAPABILITY_UNAVAILABLE"
-	TenantMembershipNotActive    ReasonCode = "TENANT_MEMBERSHIP_NOT_ACTIVE"
-	TenantSelectionNotAvailable  ReasonCode = "TENANT_SELECTION_NOT_AVAILABLE"
-)
-
 // TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
 // status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
 // WorkflowRef 进入 TERMINAL。
@@ -499,4 +1002,32 @@ const (
 	MembershipRevocation   WorkflowKind = "MEMBERSHIP_REVOCATION"
 	TenantLifecycle        WorkflowKind = "TENANT_LIFECYCLE"
 	WorkspaceLifecycle     WorkflowKind = "WORKSPACE_LIFECYCLE"
+)
+
+// WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
+type WorkspaceMembershipState string
+
+const (
+	Error                            WorkspaceMembershipState = "ERROR"
+	Provisioning                     WorkspaceMembershipState = "PROVISIONING"
+	WorkspaceMembershipStateACTIVE   WorkspaceMembershipState = "ACTIVE"
+	WorkspaceMembershipStateREVOKED  WorkspaceMembershipState = "REVOKED"
+	WorkspaceMembershipStateREVOKING WorkspaceMembershipState = "REVOKING"
+)
+
+// ApprovalPolicy.owner_requirement（.design/03 §4）。
+type ApprovalOwnerRequirement string
+
+const (
+	AllAffectedOwners ApprovalOwnerRequirement = "ALL_AFFECTED_OWNERS"
+	None              ApprovalOwnerRequirement = "NONE"
+	TargetOwner       ApprovalOwnerRequirement = "TARGET_OWNER"
+)
+
+// ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。
+type ApprovalSelfApproval string
+
+const (
+	Allow                    ApprovalSelfApproval = "ALLOW"
+	ApprovalSelfApprovalDENY ApprovalSelfApproval = "DENY"
 )

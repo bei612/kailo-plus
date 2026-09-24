@@ -31,10 +31,11 @@ work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 # 顶层类型名取自 schema 的 title，不取输出文件名——否则类型名会随文件名漂移
 TOPLEVEL=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["title"])' "$SRC/canary.schema.json")
 
-# 输入集合：canary 定义可用子集，domain/ 是业务契约，api/ 是 BFF 的请求与回应。
+# 输入集合：canary 定义可用子集，domain/ 是业务契约，api/ 是 BFF 的请求与回应，
+# workflow/ 是 Workflow input、Update 参数与结果、Activity 载荷（01 §2）。
 # enums/ 不单独传入——它们由 $ref 引入，单独传会生成重复类型。
 SCHEMAS=("$SRC/canary.schema.json")
-while IFS= read -r f; do SCHEMAS+=("$f"); done < <(find "$SRC/domain" "$SRC/api" -name '*.schema.json' 2>/dev/null | sort)
+while IFS= read -r f; do SCHEMAS+=("$f"); done < <(find "$SRC/domain" "$SRC/api" "$SRC/workflow" -name '*.schema.json' 2>/dev/null | sort)
 fail=0
 
 for lang in "${!OUT[@]}"; do

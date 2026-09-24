@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/observability_progress_source.schema.json",
+  "title": "ObservabilityProgressSource",
+  "description": "BusinessObservabilityPolicy.progress_source（.design/03 §4）。",
+  "type": "string",
+  "enum": [
+    "NONE",
+    "TEMPORAL",
+    "NATIVE"
+  ]
+}

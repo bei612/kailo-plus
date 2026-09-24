@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/audit_policy.schema.json",
+  "title": "AuditPolicy",
+  "description": "ActionDefinition 的审计合同。FULL_LIFECYCLE：每个 operation 追加 DECISION、APPROVAL、DISPATCH、OUTCOME 各阶段事实，event_key 按 operation 与阶段稳定（.design/05 §7）。",
+  "type": "string",
+  "enum": [
+    "FULL_LIFECYCLE"
+  ]
+}

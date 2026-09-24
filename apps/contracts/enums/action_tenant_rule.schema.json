@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/action_tenant_rule.schema.json",
+  "title": "ActionTenantRule",
+  "description": "ActionDefinition 的 Tenant 解析规则（.design/03 §4）。",
+  "type": "string",
+  "enum": [
+    "SESSION_TENANT",
+    "TARGET_TENANT",
+    "INHERIT_PARENT"
+  ]
+}

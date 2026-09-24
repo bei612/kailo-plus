@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/approval_decision_outcome.schema.json",
+  "title": "ApprovalDecisionOutcome",
+  "description": "decide Update 的结果。admitted=false 表示 FreshApprovalAdmission 未通过，这次 Update 没有形成决定；decision 是该 approver 已记录的决定（重复同值时即原决定）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "approverPrincipalId",
+    "admitted",
+    "status"
+  ],
+  "properties": {
+    "approverPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "admitted": {
+      "type": "boolean"
+    },
+    "decision": {
+      "$ref": "../enums/approval_decision.schema.json",
+      "description": "已形成的决定；admitted=false 时缺省"
+    },
+    "reason": {
+      "$ref": "../enums/reason_code.schema.json",
+      "description": "admitted=false 时的拒绝原因"
+    },
+    "status": {
+      "$ref": "../enums/approval_status.schema.json"
+    }
+  }
+}

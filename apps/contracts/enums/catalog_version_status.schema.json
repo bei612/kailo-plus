@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/catalog_version_status.schema.json",
+  "title": "CatalogVersionStatus",
+  "description": "随平台发布的 Catalog 合同（ActionDefinition、ApprovalPolicy）的版本状态。版本内容不可变，只在 ACTIVE 与 RETIRED 之间切换；同一 key 至多一个 ACTIVE 版本。",
+  "type": "string",
+  "enum": [
+    "ACTIVE",
+    "RETIRED"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/approval_invalidate_update.schema.json",
+  "title": "ApprovalInvalidateUpdate",
+  "description": "invalidate Update 的参数：Core 在批准后重新准入不通过时发出（.design/06 §4）。Update ID 固定为 <action_execution_id>:invalidate。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reason"
+  ],
+  "properties": {
+    "reason": {
+      "$ref": "../enums/reason_code.schema.json"
+    }
+  }
+}

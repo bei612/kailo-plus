@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/action_confirmation_mode.schema.json",
+  "title": "ActionConfirmationMode",
+  "description": "ActionDefinition 的确认方式（.design/03 §4）。APPROVAL 必须引用一个 ApprovalPolicy 的确切版本。",
+  "type": "string",
+  "enum": [
+    "NONE",
+    "EXPLICIT",
+    "APPROVAL"
+  ]
+}

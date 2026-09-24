@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/approval_self_approval.schema.json",
+  "title": "ApprovalSelfApproval",
+  "description": "ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。",
+  "type": "string",
+  "enum": [
+    "ALLOW",
+    "DENY"
+  ]
+}

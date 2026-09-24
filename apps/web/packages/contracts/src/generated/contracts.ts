@@ -100,6 +100,216 @@ export enum Kind {
 }
 
 /**
+ * POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
+ * actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
+ */
+export interface ActionCommand {
+    actionKey: string;
+    /**
+     * 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
+     */
+    idempotencyKey: string;
+    /**
+     * workspace.create 的显示名
+     */
+    name?: string;
+    /**
+     * 成员动作的目标 Principal
+     */
+    principalId?: string;
+    /**
+     * workspace.create 的 slug
+     */
+    slug?: string;
+    /**
+     * Workspace 内动作的执行 Workspace
+     */
+    workspaceId?: string;
+}
+
+/**
+ * POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
+ * 必有；DENIED 时 reason 必有。
+ */
+export interface ActionSubmission {
+    actionExecutionId:   string;
+    actionKey:           string;
+    approvalWorkflowId?: string;
+    dispatchState:       ActionDispatchState;
+    gateState:           ActionGateState;
+    operationId:         string;
+    reason?:             ReasonCode;
+    workflowId?:         string;
+}
+
+/**
+ * ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
+ * seam 能把它收敛，不能因无 native ID 就自动重放（DD-48）。
+ */
+export enum ActionDispatchState {
+    Aborted = "ABORTED",
+    Dispatched = "DISPATCHED",
+    NotDispatched = "NOT_DISPATCHED",
+    Unknown = "UNKNOWN",
+}
+
+/**
+ * ActionExecution 的准入门禁状态（.design/03 §6）。它与 dispatch_state
+ * 是两台独立状态机：门禁说的是「允许不允许」，派发说的是「副作用发生没发生」，合并后无法表达「准入通过但派发结果不明」。
+ */
+export enum ActionGateState {
+    Allowed = "ALLOWED",
+    Denied = "DENIED",
+    Evaluating = "EVALUATING",
+    Expired = "EXPIRED",
+    Revoked = "REVOKED",
+    Waiting = "WAITING",
+}
+
+/**
+ * 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
+ * 字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
+ *
+ * admitted=false 时的拒绝原因
+ *
+ * INVALIDATED/EXPIRED/CANCELLED/DENIED 的原因
+ */
+export enum ReasonCode {
+    AdmissionAbandoned = "ADMISSION_ABANDONED",
+    ApprovalConsumeWindowClosed = "APPROVAL_CONSUME_WINDOW_CLOSED",
+    ApprovalDenied = "APPROVAL_DENIED",
+    ApprovalExpired = "APPROVAL_EXPIRED",
+    ApprovalInvalidated = "APPROVAL_INVALIDATED",
+    ApprovalNotOpen = "APPROVAL_NOT_OPEN",
+    ApprovalSelectorUnresolvable = "APPROVAL_SELECTOR_UNRESOLVABLE",
+    ApprovalWithdrawn = "APPROVAL_WITHDRAWN",
+    ApproverNotEligible = "APPROVER_NOT_ELIGIBLE",
+    CapabilityBlocked = "CAPABILITY_BLOCKED",
+    ClientKeyAlreadyBound = "CLIENT_KEY_ALREADY_BOUND",
+    ClientKeyLimitReached = "CLIENT_KEY_LIMIT_REACHED",
+    ClientKeyNotFound = "CLIENT_KEY_NOT_FOUND",
+    ClientKeyProofInvalid = "CLIENT_KEY_PROOF_INVALID",
+    DependencyUnavailable = "DEPENDENCY_UNAVAILABLE",
+    DispatchResultUnknown = "DISPATCH_RESULT_UNKNOWN",
+    DuplicateDecision = "DUPLICATE_DECISION",
+    ExternalResultUnknown = "EXTERNAL_RESULT_UNKNOWN",
+    IdempotencyKeyReused = "IDEMPOTENCY_KEY_REUSED",
+    IdentityHeaderMissing = "IDENTITY_HEADER_MISSING",
+    IdentityUnknown = "IDENTITY_UNKNOWN",
+    InvalidParameters = "INVALID_PARAMETERS",
+    NativeSurfaceRequired = "NATIVE_SURFACE_REQUIRED",
+    PermissionDenied = "PERMISSION_DENIED",
+    ProjectionDelayed = "PROJECTION_DELAYED",
+    PublishRejected = "PUBLISH_REJECTED",
+    PublishResultUnknown = "PUBLISH_RESULT_UNKNOWN",
+    ScopeGuardFailed = "SCOPE_GUARD_FAILED",
+    SelfApprovalDenied = "SELF_APPROVAL_DENIED",
+    SessionNotActive = "SESSION_NOT_ACTIVE",
+    SurfaceCapabilityUnavailable = "SURFACE_CAPABILITY_UNAVAILABLE",
+    TargetNotFound = "TARGET_NOT_FOUND",
+    TargetStateConflict = "TARGET_STATE_CONFLICT",
+    TenantMembershipNotActive = "TENANT_MEMBERSHIP_NOT_ACTIVE",
+    TenantSelectionNotAvailable = "TENANT_SELECTION_NOT_AVAILABLE",
+    WaitingApproval = "WAITING_APPROVAL",
+}
+
+/**
+ * POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为
+ * ApprovalDecisionOutcome。
+ */
+export interface ApprovalDecisionRequest {
+    decision: ApprovalDecision;
+}
+
+/**
+ * approver 的不可变决定（.design/03 §6）。
+ *
+ * 已形成的决定；admitted=false 时缺省
+ */
+export enum ApprovalDecision {
+    Approve = "APPROVE",
+    Deny = "DENY",
+}
+
+/**
+ * GET /api/v1/approvals（待我审批）与 /api/v1/approvals/{workflowId} 的元素。状态只来自 Temporal history
+ * 的投影。
+ */
+export interface ApprovalView {
+    actionExecutionId: string;
+    actionKey:         string;
+    /**
+     * RFC3339，UTC
+     */
+    consumeDeadline?: string;
+    decisions:        DecisionElement[];
+    /**
+     * RFC3339，UTC
+     */
+    expiresAt:            string;
+    initiatorPrincipalId: string;
+    observation?:         ReasonCode;
+    reason?:              ReasonCode;
+    roleRequirements:     RoleRequirementElement[];
+    status:               ApprovalStatus;
+    targetId:             string;
+    targetType:           string;
+    workflowId:           string;
+    workspaceId?:         string;
+}
+
+/**
+ * 一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
+ */
+export interface DecisionElement {
+    approverPrincipalId: string;
+    /**
+     * RFC3339，UTC
+     */
+    decidedAt: string;
+    decision:  ApprovalDecision;
+    /**
+     * 该 approver 在决定时经 fresh Check 满足的选择器；同一人可在多个要求中计数，但只产生一个决定
+     */
+    satisfiedSelectors: ApprovalSelector[];
+}
+
+/**
+ * ApprovalPolicy.role_requirements 的角色选择器（.design/03 §4、.design/10 §2）：RESOURCE_APPROVER
+ * 对目标 Resource/Asset 做 approve，WORKSPACE_ADMIN 对冻结 Workspace 做 manage，TENANT_ADMIN 对冻结
+ * Tenant 做 manage。
+ */
+export enum ApprovalSelector {
+    ResourceApprover = "RESOURCE_APPROVER",
+    TenantAdmin = "TENANT_ADMIN",
+    WorkspaceAdmin = "WORKSPACE_ADMIN",
+}
+
+/**
+ * ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
+ * §4）。
+ */
+export interface RoleRequirementElement {
+    minDistinct: number;
+    selector:    ApprovalSelector;
+}
+
+/**
+ * ApprovalWorkflow 的状态（.design/06 §4）：REQUESTED → WAITING → APPROVED | DENIED | EXPIRED |
+ * CANCELLED；APPROVED → CONSUMED | INVALIDATED。只由 Temporal history 投影。
+ */
+export enum ApprovalStatus {
+    Approved = "APPROVED",
+    Cancelled = "CANCELLED",
+    Consumed = "CONSUMED",
+    Denied = "DENIED",
+    Expired = "EXPIRED",
+    Invalidated = "INVALIDATED",
+    Requested = "REQUESTED",
+    Waiting = "WAITING",
+}
+
+/**
  * GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
  */
 export interface ClientKeyView {
@@ -219,6 +429,59 @@ export interface PlatformSessionView {
 }
 
 /**
+ * GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
+ * 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
+ */
+export interface TaskView {
+    actionExecutionId:   string;
+    actionKey:           string;
+    actionVersion:       number;
+    approvalStatus?:     ApprovalStatus;
+    approvalWorkflowId?: string;
+    /**
+     * RFC3339，UTC
+     */
+    createdAt:      string;
+    dispatchState:  ActionDispatchState;
+    gateState:      ActionGateState;
+    observation?:   ReasonCode;
+    operationId:    string;
+    reason?:        ReasonCode;
+    targetId:       string;
+    taskStatus?:    TaskStatus;
+    waitingReason?: string;
+    workflowId?:    string;
+    workflowKind?:  WorkflowKind;
+    workspaceId?:   string;
+}
+
+/**
+ * TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
+ * status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
+ * WorkflowRef 进入 TERMINAL。
+ */
+export enum TaskStatus {
+    Canceled = "CANCELED",
+    Completed = "COMPLETED",
+    Failed = "FAILED",
+    Running = "RUNNING",
+    Terminated = "TERMINATED",
+    TimedOut = "TIMED_OUT",
+}
+
+/**
+ * ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
+ * 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
+ */
+export enum WorkflowKind {
+    BuzzIdentityProjection = "BUZZ_IDENTITY_PROJECTION",
+    MembershipProjection = "MEMBERSHIP_PROJECTION",
+    MembershipRevocation = "MEMBERSHIP_REVOCATION",
+    TenantLifecycle = "TENANT_LIFECYCLE",
+    WorkspaceLifecycle = "WORKSPACE_LIFECYCLE",
+}
+
+/**
  * CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT
  * /api/v1/user-state/workspaces/{workspaceId} 的 200 回应）。
  */
@@ -283,27 +546,6 @@ export interface ErrorBody {
 }
 
 /**
- * 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
- * 字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
- */
-export enum ReasonCode {
-    ClientKeyAlreadyBound = "CLIENT_KEY_ALREADY_BOUND",
-    ClientKeyLimitReached = "CLIENT_KEY_LIMIT_REACHED",
-    ClientKeyNotFound = "CLIENT_KEY_NOT_FOUND",
-    ClientKeyProofInvalid = "CLIENT_KEY_PROOF_INVALID",
-    DependencyUnavailable = "DEPENDENCY_UNAVAILABLE",
-    IdentityHeaderMissing = "IDENTITY_HEADER_MISSING",
-    IdentityUnknown = "IDENTITY_UNKNOWN",
-    NativeSurfaceRequired = "NATIVE_SURFACE_REQUIRED",
-    PublishRejected = "PUBLISH_REJECTED",
-    PublishResultUnknown = "PUBLISH_RESULT_UNKNOWN",
-    SessionNotActive = "SESSION_NOT_ACTIVE",
-    SurfaceCapabilityUnavailable = "SURFACE_CAPABILITY_UNAVAILABLE",
-    TenantMembershipNotActive = "TENANT_MEMBERSHIP_NOT_ACTIVE",
-    TenantSelectionNotAvailable = "TENANT_SELECTION_NOT_AVAILABLE",
-}
-
-/**
  * BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
  */
 export interface ResolvedIdentity {
@@ -337,20 +579,6 @@ export interface TaskStateReport {
 }
 
 /**
- * TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
- * status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
- * WorkflowRef 进入 TERMINAL。
- */
-export enum TaskStatus {
-    Canceled = "CANCELED",
-    Completed = "COMPLETED",
-    Failed = "FAILED",
-    Running = "RUNNING",
-    Terminated = "TERMINATED",
-    TimedOut = "TIMED_OUT",
-}
-
-/**
  * Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
  * kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
  */
@@ -374,13 +602,190 @@ export interface WorkflowRef {
 }
 
 /**
- * ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
- * 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
+ * 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
  */
-export enum WorkflowKind {
-    BuzzIdentityProjection = "BUZZ_IDENTITY_PROJECTION",
-    MembershipProjection = "MEMBERSHIP_PROJECTION",
-    MembershipRevocation = "MEMBERSHIP_REVOCATION",
-    TenantLifecycle = "TENANT_LIFECYCLE",
-    WorkspaceLifecycle = "WORKSPACE_LIFECYCLE",
+export interface AffectedOwnerRef {
+    ownerPrincipalId: string;
+    targetId:         string;
+    targetType:       string;
+    targetVersion:    number;
+}
+
+/**
+ * consume、invalidate、withdraw 三个 Update 的结果：执行后的 Approval 状态。
+ */
+export interface ApprovalControlOutcome {
+    status: ApprovalStatus;
+}
+
+/**
+ * decide Update 的结果。admitted=false 表示 FreshApprovalAdmission 未通过，这次 Update 没有形成决定；decision
+ * 是该 approver 已记录的决定（重复同值时即原决定）。
+ */
+export interface ApprovalDecisionOutcome {
+    admitted:            boolean;
+    approverPrincipalId: string;
+    /**
+     * 已形成的决定；admitted=false 时缺省
+     */
+    decision?: ApprovalDecision;
+    /**
+     * admitted=false 时的拒绝原因
+     */
+    reason?: ReasonCode;
+    status:  ApprovalStatus;
+}
+
+/**
+ * 一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
+ */
+export interface ApprovalDecisionRecord {
+    approverPrincipalId: string;
+    /**
+     * RFC3339，UTC
+     */
+    decidedAt: string;
+    decision:  ApprovalDecision;
+    /**
+     * 该 approver 在决定时经 fresh Check 满足的选择器；同一人可在多个要求中计数，但只产生一个决定
+     */
+    satisfiedSelectors: ApprovalSelector[];
+}
+
+/**
+ * decide Update 的参数。Update ID 固定为 <approval_workflow_id>:<approver_principal_id>，由 Server
+ * 侧去重；approverPrincipalId 由 Core 从 PlatformSession 取得，不接受 Browser 自报。
+ */
+export interface ApprovalDecisionUpdate {
+    approverPrincipalId: string;
+    decision:            ApprovalDecision;
+}
+
+/**
+ * ApprovalWorkflow 的冻结输入（.design/06 §4）。运行中不得更换 Tenant、Workspace、target、参数摘要或策略版本；意图改变时建立新
+ * ActionExecution。
+ */
+export interface ApprovalWorkflowInput {
+    actionDefinitionVersion: number;
+    actionExecutionId:       string;
+    actionKey:               string;
+    affectedOwnerRefs:       AffectedOwnerRefElement[];
+    /**
+     * APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED
+     */
+    consumeWindowSeconds: number;
+    /**
+     * RFC3339，UTC。Core 按 ApprovalPolicy.expires_in 在请求时冻结；Workflow 以 workflow.Now() 与之比较
+     */
+    expiresAt:            string;
+    initiatorPrincipalId: string;
+    operationId:          string;
+    ownerRequirement:     ApprovalOwnerRequirement;
+    parameterHash:        string;
+    policyId:             string;
+    policyVersion:        number;
+    roleRequirements:     RoleRequirementElement[];
+    selfApproval:         ApprovalSelfApproval;
+    targetId:             string;
+    targetType:           string;
+    tenantId:             string;
+    /**
+     * TENANT_ONLY 动作缺省
+     */
+    workspaceId?: string;
+}
+
+/**
+ * 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
+ */
+export interface AffectedOwnerRefElement {
+    ownerPrincipalId: string;
+    targetId:         string;
+    targetType:       string;
+    targetVersion:    number;
+}
+
+/**
+ * ApprovalPolicy.owner_requirement（.design/03 §4）。
+ */
+export enum ApprovalOwnerRequirement {
+    AllAffectedOwners = "ALL_AFFECTED_OWNERS",
+    None = "NONE",
+    TargetOwner = "TARGET_OWNER",
+}
+
+/**
+ * ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。
+ */
+export enum ApprovalSelfApproval {
+    Allow = "ALLOW",
+    Deny = "DENY",
+}
+
+/**
+ * invalidate Update 的参数：Core 在批准后重新准入不通过时发出（.design/06 §4）。Update ID 固定为
+ * <action_execution_id>:invalidate。
+ */
+export interface ApprovalInvalidateUpdate {
+    reason: ReasonCode;
+}
+
+/**
+ * ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
+ * §4）。
+ */
+export interface ApprovalRoleRequirement {
+    minDistinct: number;
+    selector:    ApprovalSelector;
+}
+
+/**
+ * ApprovalWorkflow 经 ProjectApprovalState Activity 写回 Core 的一次状态跃迁。Core 按 workflowId 与
+ * eventId 单调 upsert；ApprovalProjection 只接受这一条写入路径（DD-47）。
+ */
+export interface ApprovalStateReport {
+    /**
+     * RFC3339，UTC；进入 CONSUMED 时的 workflow.Now()
+     */
+    consumedAt?: string;
+    /**
+     * RFC3339，UTC；进入 APPROVED 时由 workflow.Now() 加 consumeWindowSeconds 得出
+     */
+    consumeDeadline?: string;
+    decisions:        DecisionElement[];
+    /**
+     * 报告时跨 run 累计的 history 长度
+     */
+    eventId: number;
+    /**
+     * RFC3339，UTC
+     */
+    expiresAt: string;
+    /**
+     * INVALIDATED/EXPIRED/CANCELLED/DENIED 的原因
+     */
+    reason?:    ReasonCode;
+    runId:      string;
+    status:     ApprovalStatus;
+    workflowId: string;
+}
+
+/**
+ * FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh
+ * 选择器 permission、owner 对账与职责分离由 Core 判定。
+ */
+export interface FreshApprovalAdmissionRequest {
+    approvalWorkflowId:  string;
+    approverPrincipalId: string;
+    decision:            ApprovalDecision;
+}
+
+/**
+ * FreshApprovalAdmission 的结论。admitted=false 时 reason 必有；该结论作为一条被拒决定进入 history，而不是
+ * pre-history 拒绝。
+ */
+export interface FreshApprovalAdmissionResult {
+    admitted:           boolean;
+    reason?:            ReasonCode;
+    satisfiedSelectors: ApprovalSelector[];
 }

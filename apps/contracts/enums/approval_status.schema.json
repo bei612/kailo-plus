@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/approval_status.schema.json",
+  "title": "ApprovalStatus",
+  "description": "ApprovalWorkflow 的状态（.design/06 §4）：REQUESTED → WAITING → APPROVED | DENIED | EXPIRED | CANCELLED；APPROVED → CONSUMED | INVALIDATED。只由 Temporal history 投影。",
+  "type": "string",
+  "enum": [
+    "REQUESTED",
+    "WAITING",
+    "APPROVED",
+    "DENIED",
+    "EXPIRED",
+    "CANCELLED",
+    "CONSUMED",
+    "INVALIDATED"
+  ]
+}

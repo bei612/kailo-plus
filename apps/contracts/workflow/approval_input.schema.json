@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/approval_input.schema.json",
+  "title": "ApprovalWorkflowInput",
+  "description": "ApprovalWorkflow 的冻结输入（.design/06 §4）。运行中不得更换 Tenant、Workspace、target、参数摘要或策略版本；意图改变时建立新 ActionExecution。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "actionExecutionId",
+    "operationId",
+    "tenantId",
+    "actionKey",
+    "actionDefinitionVersion",
+    "targetType",
+    "targetId",
+    "parameterHash",
+    "policyId",
+    "policyVersion",
+    "roleRequirements",
+    "ownerRequirement",
+    "affectedOwnerRefs",
+    "selfApproval",
+    "initiatorPrincipalId",
+    "expiresAt",
+    "consumeWindowSeconds"
+  ],
+  "properties": {
+    "actionExecutionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "operationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "TENANT_ONLY 动作缺省"
+    },
+    "actionKey": {
+      "type": "string"
+    },
+    "actionDefinitionVersion": {
+      "type": "integer"
+    },
+    "targetType": {
+      "type": "string"
+    },
+    "targetId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "parameterHash": {
+      "type": "string"
+    },
+    "policyId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "policyVersion": {
+      "type": "integer"
+    },
+    "roleRequirements": {
+      "type": "array",
+      "items": {
+        "$ref": "approval_role_requirement.schema.json"
+      }
+    },
+    "ownerRequirement": {
+      "$ref": "../enums/approval_owner_requirement.schema.json"
+    },
+    "affectedOwnerRefs": {
+      "type": "array",
+      "items": {
+        "$ref": "affected_owner_ref.schema.json"
+      }
+    },
+    "selfApproval": {
+      "$ref": "../enums/approval_self_approval.schema.json"
+    },
+    "initiatorPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "expiresAt": {
+      "type": "string",
+      "description": "RFC3339，UTC。Core 按 ApprovalPolicy.expires_in 在请求时冻结；Workflow 以 workflow.Now() 与之比较"
+    },
+    "consumeWindowSeconds": {
+      "type": "integer",
+      "description": "APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED"
+    }
+  }
+}

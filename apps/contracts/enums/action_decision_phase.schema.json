@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/action_decision_phase.schema.json",
+  "title": "ActionDecisionPhase",
+  "description": "一次 ActionDecision 发生的时点：首次准入，或审批之后、dispatch 之前的完整重新准入（.design/05 §1）。",
+  "type": "string",
+  "enum": [
+    "ADMISSION",
+    "RECHECK"
+  ]
+}
