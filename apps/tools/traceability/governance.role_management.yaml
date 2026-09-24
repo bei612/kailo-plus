@@ -1,0 +1,46 @@
+capability_id: governance.role_management
+title: Tenant/Workspace admin 的授予与撤销、有效 Tenant admin 不得为空、角色对账、Tenant 与首位 admin 的部署引导
+stage: S2
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-03]
+  decisions: [DD-82, DD-54, DD-47]
+  facts: [SF-SPZ-01, SF-SPZ-02, SF-SPZ-03]
+  seams: []
+  blockers: []
+  entities: [ActionDefinition, ApprovalPolicy, ActionDecision, ActionExecution, ServicePrincipal, TenantMembership]
+
+validation:
+  scenarios: [V-SCN-07, V-SCN-37]
+  evidence:
+    - dimension: 端到端场景
+      ref: core/verify/role-management.md
+    - dimension: 安全边界
+      ref: core/verify/role-management.md
+    - dimension: Workflow 重放
+      ref: worker/replay-tests/testdata/component_task_revocation_all_relations_history.json
+    - dimension: 运维手册
+      ref: docs/runbooks/RB-01-invariant-check-failure.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-core/src/roles.rs, core/crates/kailo-core/src/role_reconcile.rs, core/crates/kailo-core/src/tenant_bootstrap.rs, core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/spicedb.rs, worker/activities/spicedb.go, worker/workflows/component_task.go, docs/adr/ADR-11-tenant-bootstrap-and-role-writes.md]
+  # BFF 语义命令对三端开放；管理页由共享 TS 包交付，本记录只含 BFF 端点
+  surfaces: []
+  schemas: [contracts/api/action_command.schema.json, contracts/enums/reason_code.schema.json]
+  migrations: [core/migrations/20260925100000_role_management.up.sql]
+
+runtime:
+  routes: ["/api/v1/actions"]
+  actions: [tenant.admin.grant, tenant.admin.revoke, workspace.admin.grant, workspace.admin.revoke]
+  workflow_kinds: [MEMBERSHIP_REVOCATION]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:93e69057965720ac0eaa373a958d469c87e5ed7ecd3ee35980a6318766d77cf7
+    - name: kailo-worker
+      digest: sha256:2fa23de7f0466e9e2d06ac7d76b5a51867026c4a730c5e7422185d4fd2b0ea52
+  gate: ready

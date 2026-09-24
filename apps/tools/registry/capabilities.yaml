@@ -49,6 +49,18 @@ capabilities:
   - MEMBERSHIP_PROJECTION
   - MEMBERSHIP_REVOCATION
   - BUZZ_IDENTITY_PROJECTION
+- id: governance.role_management
+  exposure: end_user
+  routes:
+  - /api/v1/actions
+  actions:
+  - tenant.admin.grant
+  - tenant.admin.revoke
+  - workspace.admin.grant
+  - workspace.admin.revoke
+  tools: []
+  workflow_kinds:
+  - MEMBERSHIP_REVOCATION
 - id: identity.client_keys
   exposure: end_user
   routes:
