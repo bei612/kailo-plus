@@ -7,6 +7,9 @@ mod audit;
 mod bff;
 mod client_keys;
 mod component_task;
+mod governance;
+mod governance_api;
+mod governance_reconcile;
 mod identity_projection;
 mod membership_lifecycle;
 mod membership_projection;
@@ -21,6 +24,7 @@ mod scope_state;
 mod server_keys;
 mod service_api;
 mod service_auth;
+mod spicedb;
 mod stream;
 mod task_projection;
 mod task_rerun;
@@ -106,6 +110,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         workflow_reconcile::Config::from_env()?,
     );
 
+    // 治理内核：准入、审批与派发（.design/05 §1）。BFF 与 service API 共用一份——
+    // 审批投影写回（service）与语义命令（BFF）推进的是同一批 ActionExecution。
+    let governance = std::sync::Arc::new(governance::Governance {
+        pool: pool.clone(),
+        temporal: std::sync::Arc::clone(&temporal),
+        spicedb: spicedb::SpiceDb::from_env(reqwest::Client::new())?,
+        cfg: governance::GovernanceConfig::from_env()?,
+    });
+    governance_reconcile::spawn(
+        std::sync::Arc::clone(&governance),
+        &opentelemetry::global::meter("kailo-core"),
+        governance_reconcile::Config::from_env()?,
+    );
+
     let service_state = service_api::ServiceState {
         pool: pool.clone(),
         auth: std::sync::Arc::new(service_auth::ServiceAuth::from_env()?),
@@ -126,6 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
         http: reqwest::Client::new(),
         temporal: std::sync::Arc::clone(&temporal),
+        governance: std::sync::Arc::clone(&governance),
     };
 
     // roster 与成员事实的对账度量（07 §3）。它用 CONTROL 身份读 roster，与
@@ -146,6 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bff_state = bff::BffState {
         pool: pool.clone(),
         temporal,
+        governance,
         client_key_proof_window_seconds: std::env::var("BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")
             .map_err(|_| "缺少 BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")?
             .parse()

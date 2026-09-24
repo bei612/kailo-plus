@@ -26,6 +26,8 @@ use uuid::Uuid;
 use crate::component_task::{self, ComponentTaskInput};
 use crate::membership_projection::MembershipScope;
 use crate::service_api::{authorize, unavailable, ServiceState};
+use crate::temporal::TemporalClient;
+use sqlx::PgPool;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,12 +93,24 @@ pub async fn start_membership_lifecycle(
 
 /// 成员生命周期的启动核心。handler 与重跑入口（`task_rerun`）共用它：重跑
 /// 不另写一份「按状态选 kind、核准入、落 WorkflowRef、Start」，两份迟早分叉。
+/// service API 形态的外壳：把启动结论写成 HTTP 回应。
 pub(crate) async fn start_membership(state: &ServiceState, req: &LifecycleRequest) -> Response {
+    match launch_membership(&state.pool, &state.temporal, req).await {
+        Ok(r) => (StatusCode::OK, Json(r)).into_response(),
+        Err(r) => r,
+    }
+}
+
+pub(crate) async fn launch_membership(
+    pool: &PgPool,
+    temporal: &TemporalClient,
+    req: &LifecycleRequest,
+) -> Result<LifecycleResponse, Response> {
     let (tenant_id, principal_id, object_id, version, membership_state) =
-        match load(state, req).await {
+        match load(pool, req).await {
             Ok(v) => v,
-            Err(Some(r)) => return r,
-            Err(None) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            Err(Some(r)) => return Err(r),
+            Err(None) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
         };
 
     // 状态决定 kind，不由调用方指定：让调用方选 kind 就等于让它决定这是建立
@@ -106,7 +120,7 @@ pub(crate) async fn start_membership(state: &ServiceState, req: &LifecycleReques
         "REVOKING" => "MEMBERSHIP_REVOCATION",
         other => {
             tracing::warn!(state = other, "成员状态不在可启动生命周期的两个状态上");
-            return StatusCode::CONFLICT.into_response();
+            return Err(StatusCode::CONFLICT.into_response());
         }
     };
 
@@ -117,15 +131,15 @@ pub(crate) async fn start_membership(state: &ServiceState, req: &LifecycleReques
         req.action_execution_id,
         tenant_id
     )
-    .fetch_optional(&state.pool)
+    .fetch_optional(pool)
     .await
     {
         Ok(Some(_)) => {}
         Ok(None) => {
             tracing::warn!(action = %req.action_execution_id, "ActionExecution 不存在或未准入");
-            return StatusCode::FORBIDDEN.into_response();
+            return Err(StatusCode::FORBIDDEN.into_response());
         }
-        Err(e) => return unavailable(e),
+        Err(e) => return Err(unavailable(e)),
     }
 
     let workflow_id =
@@ -147,8 +161,8 @@ pub(crate) async fn start_membership(state: &ServiceState, req: &LifecycleReques
     };
 
     match component_task::start(
-        &state.pool,
-        &state.temporal,
+        pool,
+        temporal,
         &workflow_id,
         tenant_id,
         req.action_execution_id,
@@ -156,23 +170,19 @@ pub(crate) async fn start_membership(state: &ServiceState, req: &LifecycleReques
     )
     .await
     {
-        Ok(run_id) => (
-            StatusCode::OK,
-            Json(LifecycleResponse {
-                workflow_id,
-                kind: kind.to_owned(),
-                run_id,
-            }),
-        )
-            .into_response(),
-        Err(r) => r,
+        Ok(run_id) => Ok(LifecycleResponse {
+            workflow_id,
+            kind: kind.to_owned(),
+            run_id,
+        }),
+        Err(r) => Err(r),
     }
 }
 
 type Loaded = (Uuid, Uuid, Uuid, i32, String);
 
 /// `Err(Some(resp))` 是确定的拒绝，`Err(None)` 是依赖不可用。
-async fn load(state: &ServiceState, req: &LifecycleRequest) -> Result<Loaded, Option<Response>> {
+async fn load(pool: &PgPool, req: &LifecycleRequest) -> Result<Loaded, Option<Response>> {
     match req.scope {
         MembershipScope::Tenant => {
             let row = sqlx::query!(
@@ -180,7 +190,7 @@ async fn load(state: &ServiceState, req: &LifecycleRequest) -> Result<Loaded, Op
                  from identity.tenant_membership where id = $1",
                 req.membership_id
             )
-            .fetch_optional(&state.pool)
+            .fetch_optional(pool)
             .await
             .map_err(|_| None)?
             .ok_or(Some(StatusCode::NOT_FOUND.into_response()))?;
@@ -201,7 +211,7 @@ async fn load(state: &ServiceState, req: &LifecycleRequest) -> Result<Loaded, Op
                  where wm.id = $1",
                 req.membership_id
             )
-            .fetch_optional(&state.pool)
+            .fetch_optional(pool)
             .await
             .map_err(|_| None)?
             .ok_or(Some(StatusCode::NOT_FOUND.into_response()))?;
@@ -248,19 +258,31 @@ pub async fn start_scope_lifecycle(
 }
 
 /// scope 生命周期的启动核心，与 `start_membership` 同理由供重跑入口共用。
+/// service API 形态的外壳：把启动结论写成 HTTP 回应。
 pub(crate) async fn start_scope(state: &ServiceState, req: &ScopeLifecycleRequest) -> Response {
+    match launch_scope(&state.pool, &state.temporal, req).await {
+        Ok(r) => (StatusCode::OK, Json(r)).into_response(),
+        Err(r) => r,
+    }
+}
+
+pub(crate) async fn launch_scope(
+    pool: &PgPool,
+    temporal: &TemporalClient,
+    req: &ScopeLifecycleRequest,
+) -> Result<LifecycleResponse, Response> {
     let (kind, tenant_id, version, scope_state) = match req.kind {
         crate::scope_state::ScopeKind::Tenant => {
             match sqlx::query!(
                 "select version, state from identity.tenant where id = $1",
                 req.id
             )
-            .fetch_optional(&state.pool)
+            .fetch_optional(pool)
             .await
             {
                 Ok(Some(r)) => ("TENANT_LIFECYCLE", req.id, r.version, r.state),
-                Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-                Err(e) => return unavailable(e),
+                Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
+                Err(e) => return Err(unavailable(e)),
             }
         }
         crate::scope_state::ScopeKind::Workspace => {
@@ -268,12 +290,12 @@ pub(crate) async fn start_scope(state: &ServiceState, req: &ScopeLifecycleReques
                 "select tenant_id, version, state from identity.workspace where id = $1",
                 req.id
             )
-            .fetch_optional(&state.pool)
+            .fetch_optional(pool)
             .await
             {
                 Ok(Some(r)) => ("WORKSPACE_LIFECYCLE", r.tenant_id, r.version, r.state),
-                Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-                Err(e) => return unavailable(e),
+                Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
+                Err(e) => return Err(unavailable(e)),
             }
         }
     };
@@ -282,7 +304,7 @@ pub(crate) async fn start_scope(state: &ServiceState, req: &ScopeLifecycleReques
     // 按当前状态猜——猜错就是对一个运行中的 Tenant 执行建立。
     if scope_state != "PROVISIONING" {
         tracing::warn!(state = %scope_state, "scope 不在 PROVISIONING，不启动建立链");
-        return StatusCode::CONFLICT.into_response();
+        return Err(StatusCode::CONFLICT.into_response());
     }
 
     match sqlx::query!(
@@ -291,12 +313,12 @@ pub(crate) async fn start_scope(state: &ServiceState, req: &ScopeLifecycleReques
         req.action_execution_id,
         tenant_id
     )
-    .fetch_optional(&state.pool)
+    .fetch_optional(pool)
     .await
     {
         Ok(Some(_)) => {}
-        Ok(None) => return StatusCode::FORBIDDEN.into_response(),
-        Err(e) => return unavailable(e),
+        Ok(None) => return Err(StatusCode::FORBIDDEN.into_response()),
+        Err(e) => return Err(unavailable(e)),
     }
 
     let workflow_id = component_task::workflow_id(kind, tenant_id, &req.id.to_string(), version);
@@ -317,8 +339,8 @@ pub(crate) async fn start_scope(state: &ServiceState, req: &ScopeLifecycleReques
     };
 
     match component_task::start(
-        &state.pool,
-        &state.temporal,
+        pool,
+        temporal,
         &workflow_id,
         tenant_id,
         req.action_execution_id,
@@ -326,15 +348,11 @@ pub(crate) async fn start_scope(state: &ServiceState, req: &ScopeLifecycleReques
     )
     .await
     {
-        Ok(run_id) => (
-            StatusCode::OK,
-            Json(LifecycleResponse {
-                workflow_id,
-                kind: kind.to_owned(),
-                run_id,
-            }),
-        )
-            .into_response(),
-        Err(r) => r,
+        Ok(run_id) => Ok(LifecycleResponse {
+            workflow_id,
+            kind: kind.to_owned(),
+            run_id,
+        }),
+        Err(r) => Err(r),
     }
 }

@@ -45,6 +45,8 @@ pub struct ServiceState {
     /// 复用连接池。每次投影新建 Client 会让 TLS 与连接开销落在重试路径上。
     pub http: reqwest::Client,
     pub temporal: Arc<crate::temporal::TemporalClient>,
+    /// ApprovalWorkflow 的投影写回与审批者资格判定（.design/06 §4）
+    pub governance: Arc<crate::governance::Governance>,
 }
 
 pub fn router(state: ServiceState) -> Router {
@@ -101,6 +103,15 @@ pub fn router(state: ServiceState) -> Router {
         .route(
             "/service/v1/identities/server-keys/provision",
             post(crate::server_keys::provision_server_key),
+        )
+        // ApprovalWorkflow 的两个 Activity：投影写回与审批者资格（.design/06 §4）
+        .route(
+            "/service/v1/approval-projections",
+            post(crate::governance_api::project_approval_state),
+        )
+        .route(
+            "/service/v1/approvals/admission",
+            post(crate::governance_api::fresh_approval_admission),
         )
         .with_state(state)
 }

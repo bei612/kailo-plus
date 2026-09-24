@@ -29,6 +29,8 @@ pub struct BffState {
     pub pool: PgPool,
     /// 设备公钥登记等用户动作要启动 ComponentTaskWorkflow（DD-79）
     pub temporal: std::sync::Arc<crate::temporal::TemporalClient>,
+    /// 语义命令的准入、审批与派发（.design/05 §1）
+    pub governance: std::sync::Arc<crate::governance::Governance>,
     /// 设备持钥证明（NIP-98 事件）`created_at` 与服务端时钟允许的最大偏差。
     /// 它限定了一份截获的证明还能被使用多久。
     pub client_key_proof_window_seconds: u64,
@@ -176,6 +178,33 @@ pub fn router(state: BffState) -> Router {
         .route(
             "/api/v1/user-state/read",
             axum::routing::put(crate::user_state::put_read_mark),
+        )
+        // 治理内核：语义命令、本人任务、待我审批与审批决定（.design/06 §9）。
+        // 审批状态只经 Temporal Update 推进，这里没有改投影的端点（DD-47）
+        .route(
+            "/api/v1/actions",
+            axum::routing::post(crate::governance_api::submit_action),
+        )
+        .route("/api/v1/tasks", get(crate::governance_api::list_tasks))
+        .route(
+            "/api/v1/tasks/{action_execution_id}",
+            get(crate::governance_api::get_task),
+        )
+        .route(
+            "/api/v1/approvals",
+            get(crate::governance_api::list_pending_approvals),
+        )
+        .route(
+            "/api/v1/approvals/{workflow_id}",
+            get(crate::governance_api::get_approval),
+        )
+        .route(
+            "/api/v1/approvals/{workflow_id}/decision",
+            axum::routing::post(crate::governance_api::decide),
+        )
+        .route(
+            "/api/v1/approvals/{workflow_id}/withdraw",
+            axum::routing::post(crate::governance_api::withdraw),
         )
         .with_state(state)
 }

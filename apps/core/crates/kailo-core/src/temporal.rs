@@ -286,6 +286,138 @@ impl TemporalClient {
         }))
     }
 
+    /// 向一个运行中的 Workflow 发 Update 并等到它在 Worker 上执行完毕。
+    ///
+    /// Update ID 由调用方按设计固定（`.design/06` §4：决定为
+    /// `<approval_workflow_id>:<approver_principal_id>`，消费为
+    /// `<action_execution_id>:consume`），Server 按它去重：同一 ID 的重发拿回第一次
+    /// 的结果，而不是再执行一次。
+    ///
+    /// 三种结论分开：`Completed` 是 handler 返回的值；`Rejected` 是 Validator 或
+    /// handler 以 ApplicationError 拒绝，`reason` 取其 type（Worker 侧固定填
+    /// contracts 的 reason code）；Workflow 已终结或不存在同样是确定的拒绝。
+    /// 其余——超时、不可用、等到 `wait` 仍未完成——一律 `Unknown`，调用方只能以同一
+    /// Update ID 再问，不能当成成功或失败。
+    pub async fn update(
+        &self,
+        workflow_id: &str,
+        update_id: &str,
+        name: &str,
+        arg: Option<serde_json::Value>,
+        wait: std::time::Duration,
+    ) -> Result<UpdateOutcome, TemporalError> {
+        use temporalio_common::protos::temporal::api::enums::v1::UpdateWorkflowExecutionLifecycleStage as Stage;
+        use temporalio_common::protos::temporal::api::update::v1::{
+            Input, Meta, Request, UpdateRef, WaitPolicy,
+        };
+        use temporalio_common::protos::temporal::api::workflowservice::v1::{
+            PollWorkflowExecutionUpdateRequest, UpdateWorkflowExecutionRequest,
+        };
+        self.refresh_token().await?;
+        // 无参数的 Update（consume、withdraw）不带 payload：Go 侧 handler 没有参数，
+        // 多给一个会在解码时被拒
+        let payloads = match arg {
+            Some(v) => vec![raw_json_payload(
+                serde_json::to_vec(&v).map_err(|e| TemporalError::Encode(e.to_string()))?,
+            )],
+            None => vec![],
+        };
+        let execution = WorkflowExecution {
+            workflow_id: workflow_id.to_owned(),
+            run_id: String::new(),
+        };
+        let wait_policy = WaitPolicy {
+            lifecycle_stage: Stage::Completed as i32,
+        };
+        let request = UpdateWorkflowExecutionRequest {
+            namespace: self.namespace.clone(),
+            workflow_execution: Some(execution.clone()),
+            wait_policy: Some(wait_policy),
+            request: Some(Request {
+                meta: Some(Meta {
+                    update_id: update_id.to_owned(),
+                    identity: IDENTITY.to_owned(),
+                }),
+                input: Some(Input {
+                    name: name.to_owned(),
+                    args: Some(Payloads { payloads }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let deadline = tokio::time::Instant::now() + wait;
+        let first = tokio::time::timeout_at(
+            deadline,
+            self.with_auth_retry(|mut svc| {
+                let request = request.clone();
+                async move {
+                    svc.update_workflow_execution(tonic::Request::new(request))
+                        .await
+                }
+            }),
+        )
+        .await;
+        let mut outcome = match first {
+            Err(_) => return Err(TemporalError::Unknown("Update 在等待上界内未返回".into())),
+            Ok(Ok(resp)) => resp.outcome,
+            Ok(Err(status)) => return Err(update_status(status)),
+        };
+        // Server 的长轮询有自己的上界：返回时可能只到 ACCEPTED。按同一 Update ID
+        // 继续问，直到有结果或到达调用方给的等待上界。
+        while outcome.is_none() {
+            let poll = PollWorkflowExecutionUpdateRequest {
+                namespace: self.namespace.clone(),
+                update_ref: Some(UpdateRef {
+                    workflow_execution: Some(execution.clone()),
+                    update_id: update_id.to_owned(),
+                }),
+                identity: IDENTITY.to_owned(),
+                wait_policy: Some(wait_policy),
+            };
+            outcome = match tokio::time::timeout_at(
+                deadline,
+                self.with_auth_retry(|mut svc| {
+                    let poll = poll.clone();
+                    async move {
+                        svc.poll_workflow_execution_update(tonic::Request::new(poll))
+                            .await
+                    }
+                }),
+            )
+            .await
+            {
+                Err(_) => return Err(TemporalError::Unknown("Update 在等待上界内未完成".into())),
+                Ok(Ok(resp)) => resp.outcome,
+                Ok(Err(status)) => return Err(update_status(status)),
+            };
+        }
+        use temporalio_common::protos::temporal::api::failure::v1::failure::FailureInfo;
+        use temporalio_common::protos::temporal::api::update::v1::outcome::Value;
+        match outcome.and_then(|o| o.value) {
+            Some(Value::Success(payloads)) => {
+                let data = payloads
+                    .payloads
+                    .into_iter()
+                    .next()
+                    .map(|p| p.data)
+                    .unwrap_or_default();
+                serde_json::from_slice(&data)
+                    .map(UpdateOutcome::Completed)
+                    .map_err(|e| TemporalError::Unknown(format!("Update 结果不可解析: {e}")))
+            }
+            Some(Value::Failure(f)) => Ok(UpdateOutcome::Rejected {
+                reason: match f.failure_info {
+                    Some(FailureInfo::ApplicationFailureInfo(a)) => a.r#type,
+                    _ => String::new(),
+                },
+                message: f.message,
+            }),
+            None => Err(TemporalError::Unknown("Update 结果为空".into())),
+        }
+    }
+
     /// namespace 的 retention。它是 Server 上的运行时事实，不另配一份：两处
     /// 不一致时，NotFound 的解释会错到「把已过期的当成未启动」而重复执行。
     pub async fn retention(&self) -> Result<std::time::Duration, TemporalError> {
@@ -309,6 +441,25 @@ impl TemporalClient {
             u64::try_from(ttl.seconds).unwrap_or(0),
             u32::try_from(ttl.nanos).unwrap_or(0),
         ))
+    }
+}
+
+/// Update 的确定结论。
+pub enum UpdateOutcome {
+    /// handler 执行完毕并返回的值
+    Completed(serde_json::Value),
+    /// Validator 或 handler 拒绝；`reason` 是 Worker 填入的 ApplicationError type
+    Rejected { reason: String, message: String },
+}
+
+/// Update 调用的 gRPC 错误分类。Workflow 已终结或不存在是确定的拒绝——此时它
+/// 再也不会处理任何 Update；其余是结果不明。
+fn update_status(status: tonic::Status) -> TemporalError {
+    match status.code() {
+        tonic::Code::NotFound | tonic::Code::FailedPrecondition | tonic::Code::InvalidArgument => {
+            TemporalError::Rejected(status.message().to_owned())
+        }
+        _ => TemporalError::Unknown(format!("{}: {}", status.code(), status.message())),
     }
 }
 

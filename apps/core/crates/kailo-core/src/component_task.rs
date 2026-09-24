@@ -49,6 +49,48 @@ pub async fn start<T: Serialize>(
     action_execution_id: Uuid,
     input: &ComponentTaskInput<T>,
 ) -> Result<Option<String>, Response> {
+    start_typed(
+        pool,
+        temporal,
+        Launch {
+            workflow_id,
+            workflow_type: WORKFLOW_TYPE,
+            kind: Some(&input.kind),
+            tenant_id,
+            action_execution_id,
+        },
+        input,
+    )
+    .await
+}
+
+/// 一次启动的固定事实：哪个 ID、哪种 Workflow、哪个 kind、归属哪个 Tenant 与
+/// 哪条 ActionExecution。ApprovalWorkflow 没有 kind（它不是 ComponentTaskWorkflow
+/// 的一种），因此 kind 可空。
+pub(crate) struct Launch<'a> {
+    pub workflow_id: &'a str,
+    pub workflow_type: &'a str,
+    pub kind: Option<&'a str>,
+    pub tenant_id: Uuid,
+    pub action_execution_id: Uuid,
+}
+
+/// 任一类型 Workflow 的唯一启动路径：先落 WorkflowRef、以固定 ID 至多一次启动、
+/// 回填 run ID。`start` 与 ApprovalWorkflow 的启动共用它，「结果不明时换不换 ID」
+/// 这类细节因此只有一份实现。
+pub(crate) async fn start_typed(
+    pool: &PgPool,
+    temporal: &TemporalClient,
+    launch: Launch<'_>,
+    input: &impl Serialize,
+) -> Result<Option<String>, Response> {
+    let Launch {
+        workflow_id,
+        workflow_type,
+        kind,
+        tenant_id,
+        action_execution_id,
+    } = launch;
     // Start 之前先落 WorkflowRef。ON CONFLICT DO NOTHING 让重复调用收敛到同一
     // 行而不是失败——重复调用与崩溃重试是同一件事。action_execution_id 上的
     // 唯一约束保证一个 ActionExecution 至多一个业务 Workflow。
@@ -60,8 +102,8 @@ pub async fn start<T: Serialize>(
          from admission.action_execution ae where ae.id = $5
          on conflict (workflow_id) do nothing",
         workflow_id,
-        WORKFLOW_TYPE,
-        input.kind,
+        workflow_type,
+        kind,
         tenant_id,
         action_execution_id,
     )
@@ -91,12 +133,13 @@ pub async fn start<T: Serialize>(
     }
 
     let tenant = tenant_id.to_string();
-    let attributes = [
-        (crate::temporal::SA_TENANT, tenant.as_str()),
-        (crate::temporal::SA_KIND, input.kind.as_str()),
-    ];
+    // kind 只有 ComponentTaskWorkflow 才有；没有的不写（ADR-08 的 Search Attribute 约定）
+    let mut attributes = vec![(crate::temporal::SA_TENANT, tenant.as_str())];
+    if let Some(kind) = kind {
+        attributes.push((crate::temporal::SA_KIND, kind));
+    }
     match temporal
-        .start(workflow_id, WORKFLOW_TYPE, input, &attributes)
+        .start(workflow_id, workflow_type, input, &attributes)
         .await
     {
         Ok(Started::Created { run_id }) => {
@@ -174,16 +217,19 @@ pub(crate) async fn allowed_action(
     .await
 }
 
-/// 该 ActionExecution 已驱动的 Workflow。一条 ActionExecution 至多驱动一个
-/// （`workflow_ref.action_execution_id` 唯一），因此它就是这些入口的幂等键：
+/// 该 ActionExecution 已驱动的业务 Workflow。一条 ActionExecution 至多驱动一个
+/// ComponentTaskWorkflow（`workflow_ref` 按 action_execution_id 与类型唯一；另一个
+/// 可能的是它的 ApprovalWorkflow），因此它就是这些入口的幂等键：
 /// 已有即以同一 ID 收敛，不再推进任何实体版本。
 pub(crate) async fn workflow_of_action(
     pool: &PgPool,
     action_execution_id: Uuid,
 ) -> Result<Option<String>, sqlx::Error> {
     sqlx::query_scalar!(
-        "select workflow_id from projection.workflow_ref where action_execution_id = $1",
-        action_execution_id
+        "select workflow_id from projection.workflow_ref
+         where action_execution_id = $1 and workflow_type = $2",
+        action_execution_id,
+        WORKFLOW_TYPE
     )
     .fetch_optional(pool)
     .await
