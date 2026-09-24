@@ -11,6 +11,8 @@
   vendor --refresh <manifest> <tree>
                                    同上，用于开发中的上游工作树：只覆盖该树 .gitignore 已忽略
                                    的目标——被忽略才说明那棵树不携带副本
+  export <manifest> <tree> <patch>  从开发中的上游工作树的 HEAD 导出 remove_paths 与唯一的补丁
+                                   （构建的逆运算），写回清单
 """
 
 import hashlib
@@ -158,6 +160,63 @@ def vendor(path, tree, refresh=False):
         print(f"  放入 {src} -> {dst}")
 
 
+def _git(tree, *args):
+    return subprocess.run(["git", "-C", tree, *args], check=True, capture_output=True).stdout
+
+
+def removed_paths(tree, base, head="HEAD"):
+    """base 里有、head 里整个不存在的最上层路径：构建时按它们 `git rm -r`。
+
+    只取「head 里既不是文件也不是任何文件的上级目录」的路径——那才是整块删除。
+    目录里删掉一部分文件、保留其余的，按文件逐个登记；其余改动都进补丁。
+    """
+    ls = lambda rev: set(_git(tree, "ls-tree", "-r", "-z", "--name-only", rev).decode().split("\0")) - {""}
+    before, after = ls(base), ls(head)
+    kept_dirs = {"/".join(p.split("/")[:i]) for p in after for i in range(1, p.count("/") + 1)}
+    out = set()
+    for path in before - after:
+        parts = path.split("/")
+        for i in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:i])
+            if prefix not in kept_dirs and prefix not in after:
+                out.add(prefix)
+                break
+    return sorted(out)
+
+
+def export(path, tree, patch_name):
+    """把开发中的上游工作树（已提交的 HEAD）相对 implementation_base_commit 的改动
+    写回清单：整块删除的路径进 remove_paths，其余改动写成唯一的补丁 patches/<patch_name>。
+
+    与构建互为逆运算：构建先删 remove_paths、再打补丁、再放 vendor_files，得到的就是
+    HEAD 加上 vendor 目标。vendor 目标被那棵树的 .gitignore 忽略，不在 HEAD 里，因此
+    不会进补丁。工作树有未提交改动即拒绝：导出的必须是可复核的某个 commit。
+    """
+    m = load(path)
+    base = str(m["implementation_base_commit"])
+    if _git(tree, "status", "--porcelain", "--untracked-files=no").strip():
+        sys.exit(f"{tree} 有未提交的改动：只导出已提交的 HEAD")
+    removed = removed_paths(tree, base)
+    excludes = [f":(exclude,top){r}" for r in removed]
+    diff = _git(tree, "diff", "--binary", "--full-index", base, "HEAD", "--", ".", *excludes)
+    os.makedirs(patch_dir(path), exist_ok=True)
+    for old in os.listdir(patch_dir(path)):
+        if old.endswith(".patch"):
+            os.remove(os.path.join(patch_dir(path), old))
+    with open(os.path.join(patch_dir(path), patch_name), "wb") as f:
+        f.write(diff)
+    raw = open(path, encoding="utf-8").read()
+    # 只改这两个字段，注释是给人读的记录，不经 YAML 重写
+    raw = re.sub(r"^remove_paths:\n(?:  - .*\n)*", "", raw, flags=re.M)
+    block = "remove_paths:\n" + "".join(f"  - {r}\n" for r in removed) if removed else ""
+    raw, n = re.subn(r"^patch_series:.*$", f"{block}patch_series: [{patch_name}]", raw, count=1, flags=re.M)
+    if n != 1:
+        sys.exit(f"{path}: 缺少 patch_series 行")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(raw)
+    print(f"  remove_paths {len(removed)} 项；patches/{patch_name} {len(diff)} 字节；HEAD {_git(tree, 'rev-parse', 'HEAD').decode().strip()}")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "plan" and len(sys.argv) == 3:
@@ -168,5 +227,7 @@ if __name__ == "__main__":
         vendor(sys.argv[2], sys.argv[3])
     elif cmd == "vendor" and len(sys.argv) == 5 and sys.argv[2] == "--refresh":
         vendor(sys.argv[3], sys.argv[4], refresh=True)
+    elif cmd == "export" and len(sys.argv) == 5:
+        export(sys.argv[2], sys.argv[3], sys.argv[4])
     else:
         sys.exit(__doc__)

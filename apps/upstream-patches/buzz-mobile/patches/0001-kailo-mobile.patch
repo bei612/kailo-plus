@@ -1,5 +1,5 @@
 diff --git a/mobile/.gitignore b/mobile/.gitignore
-index 4782a3d71..63af6dd6e 100644
+index 4782a3d71fda8a266a6b326dc035fa44efa90f5b..63af6dd6e38d7033887d0832f50779aaec4ee811 100644
 --- a/mobile/.gitignore
 +++ b/mobile/.gitignore
 @@ -46,3 +46,7 @@ app.*.map.json
@@ -11,7 +11,7 @@ index 4782a3d71..63af6dd6e 100644
 +/lib/shared/contracts/contracts.dart
 +/lib/shared/contracts/generated/
 diff --git a/mobile/analysis_options.yaml b/mobile/analysis_options.yaml
-index 37b3985d7..6d96f630f 100644
+index 37b3985d799d8542baea17f4a00432afc0a0ff0d..6d96f630fe4a3d8c4321950380fadbbf712c7057 100644
 --- a/mobile/analysis_options.yaml
 +++ b/mobile/analysis_options.yaml
 @@ -7,6 +7,8 @@ analyzer:
@@ -24,7 +24,7 @@ index 37b3985d7..6d96f630f 100644
      - ios/**
      - web/**
 diff --git a/mobile/android/app/build.gradle.kts b/mobile/android/app/build.gradle.kts
-index 0cd277da3..8f57b001b 100644
+index 0cd277da39117e767a5eb80f9736fc6fd6774ec1..8f57b001bf9a48697864a31879cc995bf76abdd5 100644
 --- a/mobile/android/app/build.gradle.kts
 +++ b/mobile/android/app/build.gradle.kts
 @@ -1,5 +1,3 @@
@@ -88,7 +88,7 @@ index 0cd277da3..8f57b001b 100644
  
      testImplementation(kotlin("test"))
 diff --git a/mobile/android/app/src/main/AndroidManifest.xml b/mobile/android/app/src/main/AndroidManifest.xml
-index 9121acbc1..d68c5258d 100644
+index 9121acbc15161c5f0e4782e40c8f3969cc4c2a29..d68c5258ddaa70a21a9c17389b2c692b1cf79a94 100644
 --- a/mobile/android/app/src/main/AndroidManifest.xml
 +++ b/mobile/android/app/src/main/AndroidManifest.xml
 @@ -3,7 +3,6 @@
@@ -115,7 +115,7 @@ index 9121acbc1..d68c5258d 100644
                   incoming URLs so they can be routed with app state in Dart. -->
              <meta-data
 diff --git a/mobile/android/app/src/main/kotlin/xyz/block/buzz/mobile/MainActivity.kt b/mobile/android/app/src/main/kotlin/xyz/block/buzz/mobile/MainActivity.kt
-index 7f3017b9c..8c2107e75 100644
+index 7f3017b9cd54a9181d47e9dd3d566c6964d9c545..8c2107e7542c4abfb59da9d5a0a90a4fa072f20f 100644
 --- a/mobile/android/app/src/main/kotlin/xyz/block/buzz/mobile/MainActivity.kt
 +++ b/mobile/android/app/src/main/kotlin/xyz/block/buzz/mobile/MainActivity.kt
 @@ -11,11 +11,6 @@ import android.media.MediaMetadataRetriever
@@ -254,7 +254,7 @@ index 7f3017b9c..8c2107e75 100644
          private const val TRANSCODE_IMAGE_TO_JPEG_METHOD = "transcodeImageToJpeg"
          private const val TRANSCODE_VIDEO_TO_MP4_METHOD = "transcodeVideoToMp4"
 diff --git a/mobile/ios/Podfile b/mobile/ios/Podfile
-index 901ba5aaa..8eaadb057 100644
+index 901ba5aaa1c56007100995cd471a480456f53d1c..8eaadb05782ba77f655310976a72695a64e304ac 100644
 --- a/mobile/ios/Podfile
 +++ b/mobile/ios/Podfile
 @@ -39,11 +39,4 @@ post_install do |installer|
@@ -270,7 +270,7 @@ index 901ba5aaa..8eaadb057 100644
 -  mlkit_apple_silicon_simulator_patch(installer)
  end
 diff --git a/mobile/ios/Runner/Info.plist b/mobile/ios/Runner/Info.plist
-index 5dfde9077..1b0414c3e 100644
+index 5dfde9077852f475af2096e3d364d51cd07ebe66..1b0414c3edc407ece30e77179921b5274fcded84 100644
 --- a/mobile/ios/Runner/Info.plist
 +++ b/mobile/ios/Runner/Info.plist
 @@ -38,6 +38,16 @@
@@ -309,7 +309,7 @@ index 5dfde9077..1b0414c3e 100644
  	<string>Buzz needs permission to save images to your photo library.</string>
  	<key>NSUserActivityTypes</key>
 diff --git a/mobile/lib/app.dart b/mobile/lib/app.dart
-index 7a4812382..e740352b8 100644
+index 7a48123824230cdd7a13c22cdcc17605f7e1d763..e740352b8c2696d6e9c37ead94da2e8d45ace8c4 100644
 --- a/mobile/lib/app.dart
 +++ b/mobile/lib/app.dart
 @@ -3,307 +3,28 @@ import 'dart:async';
@@ -754,7 +754,7 @@ index 7a4812382..e740352b8 100644
  class _SplashScreen extends StatelessWidget {
    const _SplashScreen();
 diff --git a/mobile/lib/features/channels/channel.dart b/mobile/lib/features/channels/channel.dart
-index 120acca3c..ad844b4cc 100644
+index 120acca3c956a6291c44d4839d4f6c5ad18178a4..ad844b4cc5c57d2a2ec9f6f8c24712ab663e711e 100644
 --- a/mobile/lib/features/channels/channel.dart
 +++ b/mobile/lib/features/channels/channel.dart
 @@ -2,16 +2,13 @@ import 'package:flutter/foundation.dart';
@@ -950,7 +950,7 @@ index 120acca3c..ad844b4cc 100644
    );
  }
 diff --git a/mobile/lib/features/channels/channel_actions_sheet.dart b/mobile/lib/features/channels/channel_actions_sheet.dart
-index 0df6a0386..fe0d8824e 100644
+index 0df6a03863a891d74a6d77ed9ce6c3956eafcbc4..fe0d8824e2e98a11ef603443c474d313dafcc449 100644
 --- a/mobile/lib/features/channels/channel_actions_sheet.dart
 +++ b/mobile/lib/features/channels/channel_actions_sheet.dart
 @@ -1,49 +1,26 @@
@@ -1600,7 +1600,7 @@ index 0df6a0386..fe0d8824e 100644
 -  return result;
 -}
 diff --git a/mobile/lib/features/channels/channel_detail_page.dart b/mobile/lib/features/channels/channel_detail_page.dart
-index d07cf2425..808f9511e 100644
+index d07cf2425b2bc4306b6894e089abc5bccb7448d1..808f9511ea87c2635bfaae1b5e5062c04b69d911 100644
 --- a/mobile/lib/features/channels/channel_detail_page.dart
 +++ b/mobile/lib/features/channels/channel_detail_page.dart
 @@ -1,66 +1,43 @@
@@ -2390,7 +2390,7 @@ index d07cf2425..808f9511e 100644
                              ),
                        ),
 diff --git a/mobile/lib/features/channels/channel_detail_page/app_bar.dart b/mobile/lib/features/channels/channel_detail_page/app_bar.dart
-index 291418472..66816351f 100644
+index 2914184729eb276191bd42727681708a3a9233aa..66816351f512f98e1fd944cbf74071d8e0a65367 100644
 --- a/mobile/lib/features/channels/channel_detail_page/app_bar.dart
 +++ b/mobile/lib/features/channels/channel_detail_page/app_bar.dart
 @@ -1,16 +1,6 @@
@@ -2682,7 +2682,7 @@ index 291418472..66816351f 100644
 -  }
 -}
 diff --git a/mobile/lib/features/channels/channel_detail_page/banners.dart b/mobile/lib/features/channels/channel_detail_page/banners.dart
-index 2ed9c23a5..500f12e29 100644
+index 2ed9c23a5f39b5ca00fa3ebff101ecf0f7d91153..500f12e293f64c9ce54ce678ffd5fa5fb9b7d44e 100644
 --- a/mobile/lib/features/channels/channel_detail_page/banners.dart
 +++ b/mobile/lib/features/channels/channel_detail_page/banners.dart
 @@ -21,8 +21,8 @@ class _ReadOnlyNotice extends StatelessWidget {
@@ -2789,7 +2789,7 @@ index 2ed9c23a5..500f12e29 100644
 -  }
 -}
 diff --git a/mobile/lib/features/channels/channel_detail_page/message_bubble.dart b/mobile/lib/features/channels/channel_detail_page/message_bubble.dart
-index 18bbfb670..66978f818 100644
+index 18bbfb6703756a77a01155bf5f97636a419cd208..66978f818c6bfd3394a618fb7a0e07b3e086ad13 100644
 --- a/mobile/lib/features/channels/channel_detail_page/message_bubble.dart
 +++ b/mobile/lib/features/channels/channel_detail_page/message_bubble.dart
 @@ -37,10 +37,6 @@ class _MessageBubble extends HookConsumerWidget {
@@ -2860,7 +2860,7 @@ index 18bbfb670..66978f818 100644
    return LucideIcons.hash;
  }
 diff --git a/mobile/lib/features/channels/channel_detail_page/message_list.dart b/mobile/lib/features/channels/channel_detail_page/message_list.dart
-index 90af149fe..f81b775c4 100644
+index 90af149fe56346eef13ea0276fcbee0f60923ce7..f81b775c4e90cb7a317af37b54c8e252288bb3a1 100644
 --- a/mobile/lib/features/channels/channel_detail_page/message_list.dart
 +++ b/mobile/lib/features/channels/channel_detail_page/message_list.dart
 @@ -841,11 +841,6 @@ class _MessageList extends HookConsumerWidget {
@@ -2876,7 +2876,7 @@ index 90af149fe..f81b775c4 100644
                          else ...[
                            _MessageBubble(
 diff --git a/mobile/lib/features/channels/channel_detail_page/system_rows.dart b/mobile/lib/features/channels/channel_detail_page/system_rows.dart
-index 8084d6c01..af6f6295c 100644
+index 8084d6c01ba881848c41ebaeec59fd633f5dd7a8..af6f6295c55077415fe7de5d7ea20bfa5ae48715 100644
 --- a/mobile/lib/features/channels/channel_detail_page/system_rows.dart
 +++ b/mobile/lib/features/channels/channel_detail_page/system_rows.dart
 @@ -1,27 +1,13 @@
@@ -3081,7 +3081,7 @@ index 8084d6c01..af6f6295c 100644
    final _MembershipDisplayEvent event;
    final int createdAt;
 diff --git a/mobile/lib/features/channels/channel_management_provider.dart b/mobile/lib/features/channels/channel_management_provider.dart
-index 36e640b41..861f51dfc 100644
+index 36e640b411cdda3c6e62786af9c89e57b18856be..861f51dfc19ea0c44cd0fcbaebc19fb5cf2a8d3b 100644
 --- a/mobile/lib/features/channels/channel_management_provider.dart
 +++ b/mobile/lib/features/channels/channel_management_provider.dart
 @@ -1,47 +1,15 @@
@@ -3539,7 +3539,7 @@ index 36e640b41..861f51dfc 100644
 -  ];
 -}
 diff --git a/mobile/lib/features/channels/channels_page.dart b/mobile/lib/features/channels/channels_page.dart
-index 55fec3f08..9e829d823 100644
+index 55fec3f08eb03eb6bef39b38d37876c997969bbd..9e829d8230998a2626d477a43544cf84be37d74d 100644
 --- a/mobile/lib/features/channels/channels_page.dart
 +++ b/mobile/lib/features/channels/channels_page.dart
 @@ -1,13 +1,11 @@
@@ -3687,7 +3687,7 @@ index 55fec3f08..9e829d823 100644
          usesPinnedGradient: usesPinnedGradient,
          scrollController: channelsScrollController,
 diff --git a/mobile/lib/features/channels/channels_page/body.dart b/mobile/lib/features/channels/channels_page/body.dart
-index 34faa068e..021331608 100644
+index 34faa068eba00b70d56da9c4e8943080f54bd2d9..021331608d6d1c31ae5e57da7acae92f43f4dffa 100644
 --- a/mobile/lib/features/channels/channels_page/body.dart
 +++ b/mobile/lib/features/channels/channels_page/body.dart
 @@ -6,7 +6,6 @@ class _ChannelsBody extends StatelessWidget {
@@ -3984,7 +3984,7 @@ index 34faa068e..021331608 100644
        ),
      );
 diff --git a/mobile/lib/features/channels/channels_page/channel_tile.dart b/mobile/lib/features/channels/channels_page/channel_tile.dart
-index e060e9e9a..c02cd4270 100644
+index e060e9e9ac48b8883dc1cdba14903485a5da0b41..c02cd427019c728dd0564d4ee0b1cf358a26655c 100644
 --- a/mobile/lib/features/channels/channels_page/channel_tile.dart
 +++ b/mobile/lib/features/channels/channels_page/channel_tile.dart
 @@ -3,39 +3,28 @@ part of '../channels_page.dart';
@@ -4253,7 +4253,7 @@ index e060e9e9a..c02cd4270 100644
 -  }
  }
 diff --git a/mobile/lib/features/channels/channels_page/community.dart b/mobile/lib/features/channels/channels_page/community.dart
-index f5a42ae21..61780c520 100644
+index f5a42ae2131b4f716dd4afc78135820185636676..61780c520ae30118f2624ab3459e4ce5dbe5d8e5 100644
 --- a/mobile/lib/features/channels/channels_page/community.dart
 +++ b/mobile/lib/features/channels/channels_page/community.dart
 @@ -1,430 +1,7 @@
@@ -4771,7 +4771,7 @@ index f5a42ae21..61780c520 100644
          initial,
 diff --git a/mobile/lib/features/channels/channels_page/error_view.dart b/mobile/lib/features/channels/channels_page/error_view.dart
 new file mode 100644
-index 000000000..dd9a4e0d5
+index 0000000000000000000000000000000000000000..dd9a4e0d54e08ddb85dd4038d43041f1360c6c23
 --- /dev/null
 +++ b/mobile/lib/features/channels/channels_page/error_view.dart
 @@ -0,0 +1,64 @@
@@ -4840,7 +4840,7 @@ index 000000000..dd9a4e0d5
 +  }
 +}
 diff --git a/mobile/lib/features/channels/channels_page/sections.dart b/mobile/lib/features/channels/channels_page/sections.dart
-index 6e17845d7..590092061 100644
+index 6e17845d744cf79a1a37e9ccd60f432e5c3d5dc7..5900920618ea945a99f791b688c685c78b677dce 100644
 --- a/mobile/lib/features/channels/channels_page/sections.dart
 +++ b/mobile/lib/features/channels/channels_page/sections.dart
 @@ -1,375 +1,5 @@
@@ -5327,7 +5327,7 @@ index 6e17845d7..590092061 100644
            ],
          ),
 diff --git a/mobile/lib/features/channels/channels_page/skeleton.dart b/mobile/lib/features/channels/channels_page/skeleton.dart
-index 75d3fc1a8..af3265c38 100644
+index 75d3fc1a870732542ec80dda33edd604ddad6f07..af3265c382a604cbd7803e8f83fc77046910a473 100644
 --- a/mobile/lib/features/channels/channels_page/skeleton.dart
 +++ b/mobile/lib/features/channels/channels_page/skeleton.dart
 @@ -21,18 +21,8 @@ class _ChannelsSkeleton extends StatelessWidget {
@@ -5352,7 +5352,7 @@ index 75d3fc1a8..af3265c38 100644
          .toList();
      const fallbackWidths = <double>[136, 184, 112, 160, 208, 128];
 diff --git a/mobile/lib/features/channels/channels_provider.dart b/mobile/lib/features/channels/channels_provider.dart
-index c5a77ba93..55ab3bdbb 100644
+index c5a77ba930d0bdd8a895b9139ce197d135edd9de..55ab3bdbb858dfc39028654754de272c3058a59a 100644
 --- a/mobile/lib/features/channels/channels_provider.dart
 +++ b/mobile/lib/features/channels/channels_provider.dart
 @@ -3,32 +3,23 @@ import 'dart:convert';
@@ -5829,7 +5829,7 @@ index c5a77ba93..55ab3bdbb 100644
  final channelsProvider = AsyncNotifierProvider<ChannelsNotifier, List<Channel>>(
 diff --git a/mobile/lib/features/channels/channels_refresh.dart b/mobile/lib/features/channels/channels_refresh.dart
 new file mode 100644
-index 000000000..401d0acb6
+index 0000000000000000000000000000000000000000..401d0acb643217712cb0fab1f628c1dc44fe7e00
 --- /dev/null
 +++ b/mobile/lib/features/channels/channels_refresh.dart
 @@ -0,0 +1,264 @@
@@ -6098,7 +6098,7 @@ index 000000000..401d0acb6
 +  }
 +}
 diff --git a/mobile/lib/features/channels/compose_bar.dart b/mobile/lib/features/channels/compose_bar.dart
-index 71ba39d14..7ad247582 100644
+index 71ba39d14ec83ccc747aabcd3ed2d322df2f654d..7ad247582706931e06d3efd88f442644ced8f7a8 100644
 --- a/mobile/lib/features/channels/compose_bar.dart
 +++ b/mobile/lib/features/channels/compose_bar.dart
 @@ -15,11 +15,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -6129,7 +6129,7 @@ index 71ba39d14..7ad247582 100644
  import 'channel.dart';
  import 'channel_management_provider.dart';
 diff --git a/mobile/lib/features/channels/compose_bar/attachments.dart b/mobile/lib/features/channels/compose_bar/attachments.dart
-index 97bd60579..c93275777 100644
+index 97bd60579b591f9dd2055945460328b007cd7fb7..c9327577768f87f669770633f1ccfb3ccf64349d 100644
 --- a/mobile/lib/features/channels/compose_bar/attachments.dart
 +++ b/mobile/lib/features/channels/compose_bar/attachments.dart
 @@ -329,7 +329,6 @@ class _ComposeDraftPayload {
@@ -6149,7 +6149,7 @@ index 97bd60579..c93275777 100644
    }
  }
 diff --git a/mobile/lib/features/channels/compose_bar/compose_bar_widget.dart b/mobile/lib/features/channels/compose_bar/compose_bar_widget.dart
-index dbf8b8f0f..7e339dc73 100644
+index dbf8b8f0fbea38628320d8f471de6b8ba2b64181..7e339dc738bac5a86ecb17f77a85c918f1722958 100644
 --- a/mobile/lib/features/channels/compose_bar/compose_bar_widget.dart
 +++ b/mobile/lib/features/channels/compose_bar/compose_bar_widget.dart
 @@ -15,16 +15,14 @@ class ComposeBar extends HookConsumerWidget {
@@ -6341,7 +6341,7 @@ index dbf8b8f0f..7e339dc73 100644
        onMentionSelect: insertMention,
      );
 diff --git a/mobile/lib/features/channels/compose_bar/draft_lifecycle.dart b/mobile/lib/features/channels/compose_bar/draft_lifecycle.dart
-index 5ef69eaa5..7dcb50218 100644
+index 5ef69eaa59bb9c13763aeeb0898996f04b955a25..7dcb50218fcc92f3572adcd14fc2974496dfee87 100644
 --- a/mobile/lib/features/channels/compose_bar/draft_lifecycle.dart
 +++ b/mobile/lib/features/channels/compose_bar/draft_lifecycle.dart
 @@ -8,7 +8,6 @@ Future<void> _sendTextOnlyDraft({
@@ -6365,7 +6365,7 @@ index 5ef69eaa5..7dcb50218 100644
        clearedDraftText = controller.value;
        clearedDraftMentions = Map<String, MentionCandidate>.of(mentionMap.value);
 diff --git a/mobile/lib/features/channels/compose_bar/helpers.dart b/mobile/lib/features/channels/compose_bar/helpers.dart
-index fa20df6d1..f2e467404 100644
+index fa20df6d168dcce413cd67a4c6fd998bc57abf14..f2e467404f476cf850dc46ec1fa5e51d99f9629d 100644
 --- a/mobile/lib/features/channels/compose_bar/helpers.dart
 +++ b/mobile/lib/features/channels/compose_bar/helpers.dart
 @@ -45,8 +45,6 @@ void _useComposerChannelNames(
@@ -6715,7 +6715,7 @@ index fa20df6d1..f2e467404 100644
 -  }
  }
 diff --git a/mobile/lib/features/channels/compose_bar/markdown_editing_controller.dart b/mobile/lib/features/channels/compose_bar/markdown_editing_controller.dart
-index 2862aad1f..6baeb556a 100644
+index 2862aad1f370194f011b0669104f6b2d87e95d72..6baeb556a392c80a889b5387a52633dfc3d57de2 100644
 --- a/mobile/lib/features/channels/compose_bar/markdown_editing_controller.dart
 +++ b/mobile/lib/features/channels/compose_bar/markdown_editing_controller.dart
 @@ -392,7 +392,7 @@ class _MarkdownEditingController extends TextEditingController {
@@ -6751,7 +6751,7 @@ index 2862aad1f..6baeb556a 100644
      };
    }
 diff --git a/mobile/lib/features/channels/compose_bar/suggestions.dart b/mobile/lib/features/channels/compose_bar/suggestions.dart
-index 31e57c85f..e7b18a9b7 100644
+index 31e57c85f02053798612926aee33c535782c6a50..e7b18a9b7bf3e08b44946ed169223b0433cfa3f4 100644
 --- a/mobile/lib/features/channels/compose_bar/suggestions.dart
 +++ b/mobile/lib/features/channels/compose_bar/suggestions.dart
 @@ -4,14 +4,12 @@ class _MentionSuggestions extends StatelessWidget {
@@ -6801,7 +6801,7 @@ index 31e57c85f..e7b18a9b7 100644
          if (q.isEmpty) return true;
          return c.name.toLowerCase().contains(q);
 diff --git a/mobile/lib/features/channels/compose_bar/voice_note.dart b/mobile/lib/features/channels/compose_bar/voice_note.dart
-index 0d6c058d7..e53479277 100644
+index 0d6c058d71ff724823a18d184ccae6831653d607..e5347927711392ae8049eb49b12eef20d6bcb9ce 100644
 --- a/mobile/lib/features/channels/compose_bar/voice_note.dart
 +++ b/mobile/lib/features/channels/compose_bar/voice_note.dart
 @@ -71,10 +71,6 @@ _ComposerVoiceNote _useComposerVoiceNote({
@@ -6817,7 +6817,7 @@ index 0d6c058d7..e53479277 100644
      isPreparing.value = true;
 diff --git a/mobile/lib/features/channels/compose_drafts_provider.dart b/mobile/lib/features/channels/compose_drafts_provider.dart
 new file mode 100644
-index 000000000..808ac34b2
+index 0000000000000000000000000000000000000000..808ac34b2e27cc4ce71fe1a1ebc56eb7f503b6ff
 --- /dev/null
 +++ b/mobile/lib/features/channels/compose_drafts_provider.dart
 @@ -0,0 +1,180 @@
@@ -7002,7 +7002,7 @@ index 000000000..808ac34b2
 +      ComposeDraftsNotifier.new,
 +    );
 diff --git a/mobile/lib/features/channels/deep_link_dispatcher.dart b/mobile/lib/features/channels/deep_link_dispatcher.dart
-index 9d3c0fdc8..d3d3ddcf5 100644
+index 9d3c0fdc8a4ee2c8d6d64f579a210a1605aab455..d3d3ddcf58323c7419ddedf2e2bf26bd80ba4da1 100644
 --- a/mobile/lib/features/channels/deep_link_dispatcher.dart
 +++ b/mobile/lib/features/channels/deep_link_dispatcher.dart
 @@ -1,17 +1,15 @@
@@ -7166,7 +7166,7 @@ index 9d3c0fdc8..d3d3ddcf5 100644
 -  }
  }
 diff --git a/mobile/lib/features/channels/emoji_picker.dart b/mobile/lib/features/channels/emoji_picker.dart
-index 22b3ed03e..d0b75232c 100644
+index 22b3ed03e01f2b118490f2ccc0dee1ec9a78719a..d0b75232cbdb0f8c781e336f3515fb7731adc7e8 100644
 --- a/mobile/lib/features/channels/emoji_picker.dart
 +++ b/mobile/lib/features/channels/emoji_picker.dart
 @@ -7,14 +7,10 @@ import 'package:flutter_hooks/flutter_hooks.dart';
@@ -7344,7 +7344,7 @@ index 22b3ed03e..d0b75232c 100644
      if (sourceEntry == null || !seenStandardIds.add(sourceEntry.id)) continue;
      final entry = visibleEntriesById[sourceEntry.id];
 diff --git a/mobile/lib/features/channels/emoji_picker/emoji_grid.dart b/mobile/lib/features/channels/emoji_picker/emoji_grid.dart
-index eb7217be0..a67de75b2 100644
+index eb7217be027ad3486200cc293c5bc944ff58dfd5..a67de75b2227e4d726b6f12818c0bf5f47ddb821 100644
 --- a/mobile/lib/features/channels/emoji_picker/emoji_grid.dart
 +++ b/mobile/lib/features/channels/emoji_picker/emoji_grid.dart
 @@ -118,40 +118,6 @@ class _EmojiTile extends StatelessWidget {
@@ -7467,7 +7467,7 @@ index eb7217be0..a67de75b2 100644
      context.textTheme.labelMedium?.copyWith(
        color: context.colors.onSurfaceVariant,
 diff --git a/mobile/lib/features/channels/emoji_picker/ios_native_picker.dart b/mobile/lib/features/channels/emoji_picker/ios_native_picker.dart
-index 2986af963..b9c574a6c 100644
+index 2986af9636041b64a4e83b5a371d6bd05b23caf2..b9c574a6cd80ec8ea023ec9f367eac7f26670f25 100644
 --- a/mobile/lib/features/channels/emoji_picker/ios_native_picker.dart
 +++ b/mobile/lib/features/channels/emoji_picker/ios_native_picker.dart
 @@ -28,91 +28,11 @@ Future<void> _presentIosEmojiPicker({
@@ -7586,7 +7586,7 @@ index 2986af963..b9c574a6c 100644
          'skinTone': _validSkinTone(prefs.getInt(_emojiSkinTonePrefsKey)),
          'surfaceColor': colors.surface.toARGB32(),
 diff --git a/mobile/lib/features/channels/mentions/mention_candidates.dart b/mobile/lib/features/channels/mentions/mention_candidates.dart
-index 2187fedd7..c0364e5fd 100644
+index 2187fedd73a91e4b846b3c741721a1246e77a8c1..c0364e5fdc2b9ecfed50fb800c0a0e2a14a0c809 100644
 --- a/mobile/lib/features/channels/mentions/mention_candidates.dart
 +++ b/mobile/lib/features/channels/mentions/mention_candidates.dart
 @@ -1,25 +1,8 @@
@@ -7696,7 +7696,7 @@ index 2187fedd7..c0364e5fd 100644
      seen.add(pk);
      candidates.add(
 diff --git a/mobile/lib/features/channels/mentions/mention_candidates_provider.dart b/mobile/lib/features/channels/mentions/mention_candidates_provider.dart
-index 85930a459..16e0ca145 100644
+index 85930a45995cc21217ed413233a8103f075ab9fc..16e0ca145a3e53c80179cd122ad37dcfe348665a 100644
 --- a/mobile/lib/features/channels/mentions/mention_candidates_provider.dart
 +++ b/mobile/lib/features/channels/mentions/mention_candidates_provider.dart
 @@ -1,73 +1,15 @@
@@ -7806,7 +7806,7 @@ index 85930a459..16e0ca145 100644
        );
  
 diff --git a/mobile/lib/features/channels/message_actions.dart b/mobile/lib/features/channels/message_actions.dart
-index 53dd4c30f..667e65eff 100644
+index 53dd4c30f65964859cf07b277003a184944bb1ee..667e65eff196c95f420f754bea4354a73439a924 100644
 --- a/mobile/lib/features/channels/message_actions.dart
 +++ b/mobile/lib/features/channels/message_actions.dart
 @@ -7,7 +7,6 @@ import 'dart:ui' as ui;
@@ -8258,7 +8258,7 @@ index 53dd4c30f..667e65eff 100644
 -  );
 -}
 diff --git a/mobile/lib/features/channels/message_actions/message_action_popover.dart b/mobile/lib/features/channels/message_actions/message_action_popover.dart
-index f56fb7d3a..05e13987e 100644
+index f56fb7d3acb49ea342c603a6604b1e57e0f4efff..05e13987e8e5312ec74dd48ac6d9270a87a13833 100644
 --- a/mobile/lib/features/channels/message_actions/message_action_popover.dart
 +++ b/mobile/lib/features/channels/message_actions/message_action_popover.dart
 @@ -8,8 +8,7 @@ const _messageActionMenuMaxWidth = 288.0;
@@ -8606,7 +8606,7 @@ index f56fb7d3a..05e13987e 100644
                  rect: menuRect,
                  child: AnimatedBuilder(
 diff --git a/mobile/lib/features/channels/message_actions/message_action_popover_widgets.dart b/mobile/lib/features/channels/message_actions/message_action_popover_widgets.dart
-index f8bf649c1..e79fd78b7 100644
+index f8bf649c15466583356785ef4ee8aa6813dee4df..e79fd78b7140fb16dcd1d6e2e3044be38e785bff 100644
 --- a/mobile/lib/features/channels/message_actions/message_action_popover_widgets.dart
 +++ b/mobile/lib/features/channels/message_actions/message_action_popover_widgets.dart
 @@ -135,9 +135,7 @@ class _MessageActionRow extends StatelessWidget {
@@ -8621,7 +8621,7 @@ index f8bf649c1..e79fd78b7 100644
        button: true,
        label: action.title,
 diff --git a/mobile/lib/features/channels/message_content.dart b/mobile/lib/features/channels/message_content.dart
-index 07d4f86a1..51f2c1723 100644
+index 07d4f86a141b199237a909c76ab15442f0f9a884..51f2c1723e9b024dfbd359f3a109a7e1eefc0dd7 100644
 --- a/mobile/lib/features/channels/message_content.dart
 +++ b/mobile/lib/features/channels/message_content.dart
 @@ -22,9 +22,6 @@ import '../../shared/deeplink/pending_deep_link_provider.dart';
@@ -8790,7 +8790,7 @@ index 07d4f86a1..51f2c1723 100644
    final String url;
    final ImetaEntry? imeta;
 diff --git a/mobile/lib/features/channels/message_content/inline_components.dart b/mobile/lib/features/channels/message_content/inline_components.dart
-index 6e17db769..118111758 100644
+index 6e17db769e5245e0712db249fe8d3829501328ab..1181117585523f17a4678ab243d93a4dfcee61a1 100644
 --- a/mobile/lib/features/channels/message_content/inline_components.dart
 +++ b/mobile/lib/features/channels/message_content/inline_components.dart
 @@ -7,8 +7,6 @@ List<MarkdownComponent> _useMessageInlineComponents({
@@ -8870,7 +8870,7 @@ index 6e17db769..118111758 100644
 +  int get hashCode => Object.hash(content, finalContent, hasMentionHandler);
  }
 diff --git a/mobile/lib/features/channels/recent_emoji_provider.dart b/mobile/lib/features/channels/recent_emoji_provider.dart
-index f024ffcd2..4cabba7dc 100644
+index f024ffcd2f4917e9f5b44d80d7d10aff9fd48746..4cabba7dcc0720e21adbe29f56aff94c92146477 100644
 --- a/mobile/lib/features/channels/recent_emoji_provider.dart
 +++ b/mobile/lib/features/channels/recent_emoji_provider.dart
 @@ -13,20 +13,10 @@ import '../../shared/theme/theme_provider.dart';
@@ -8929,7 +8929,7 @@ index f024ffcd2..4cabba7dc 100644
 -  return result;
 -}
 diff --git a/mobile/lib/features/channels/send_message_provider.dart b/mobile/lib/features/channels/send_message_provider.dart
-index 757275c60..c5c30d0ce 100644
+index 757275c60acd34d3669d907177db94800858241e..c5c30d0ce7a93128eb06599cf78836ea61e7c139 100644
 --- a/mobile/lib/features/channels/send_message_provider.dart
 +++ b/mobile/lib/features/channels/send_message_provider.dart
 @@ -4,9 +4,7 @@ import '../../shared/relay/relay.dart';
@@ -9014,7 +9014,7 @@ index 757275c60..c5c30d0ce 100644
      if (_isDeliveryValid?.call() == false) {
        throw StateError(
 diff --git a/mobile/lib/features/channels/thread_detail_helpers.dart b/mobile/lib/features/channels/thread_detail_helpers.dart
-index 7ff39fac5..78bf066e8 100644
+index 7ff39fac53144df4a8ab438355545536da8cb0f4..78bf066e8cae6540a3667c50cba597a53ae023da 100644
 --- a/mobile/lib/features/channels/thread_detail_helpers.dart
 +++ b/mobile/lib/features/channels/thread_detail_helpers.dart
 @@ -151,25 +151,3 @@ class _ThreadTailIntent {
@@ -9044,7 +9044,7 @@ index 7ff39fac5..78bf066e8 100644
 -  }
 -}
 diff --git a/mobile/lib/features/channels/thread_detail_page.dart b/mobile/lib/features/channels/thread_detail_page.dart
-index 154193b3d..f49c80210 100644
+index 154193b3d2f2d4b1794f5c038ebff30d74cc9812..f49c80210182d804f31e6bb66463664d08a5dadd 100644
 --- a/mobile/lib/features/channels/thread_detail_page.dart
 +++ b/mobile/lib/features/channels/thread_detail_page.dart
 @@ -20,8 +20,6 @@ import '../../shared/profile/user_profile.dart';
@@ -9138,7 +9138,7 @@ index 154193b3d..f49c80210 100644
                                rootEventId: effectiveRootId,
                                mediaTags: mediaTags,
 diff --git a/mobile/lib/features/channels/thread_detail_page/thread_message.dart b/mobile/lib/features/channels/thread_detail_page/thread_message.dart
-index 61cab82fa..607be48b2 100644
+index 61cab82fadf30edcdc77d2a39ad6614e75b5cb46..607be48b2ad64c31f61ce1029c4aa122c0811c78 100644
 --- a/mobile/lib/features/channels/thread_detail_page/thread_message.dart
 +++ b/mobile/lib/features/channels/thread_detail_page/thread_message.dart
 @@ -43,10 +43,6 @@ class _ThreadMessage extends HookConsumerWidget {
@@ -9201,7 +9201,7 @@ index 61cab82fa..607be48b2 100644
                ),
              ),
 diff --git a/mobile/lib/features/channels/timeline_message.dart b/mobile/lib/features/channels/timeline_message.dart
-index 716e9f247..f65e58bd2 100644
+index 716e9f247ddcb1dbed1d76e63507aa14d276f5ed..f65e58bd2606510cafb65ba9e75091867113993f 100644
 --- a/mobile/lib/features/channels/timeline_message.dart
 +++ b/mobile/lib/features/channels/timeline_message.dart
 @@ -3,7 +3,6 @@ import 'dart:convert';
@@ -9441,7 +9441,7 @@ index 716e9f247..f65e58bd2 100644
            rootId: threadRef.rootId,
          ),
 diff --git a/mobile/lib/features/channels/unread_badge/observed_unread_event.dart b/mobile/lib/features/channels/unread_badge/observed_unread_event.dart
-index d6a402b4c..acd09f6f6 100644
+index d6a402b4cd9c50c757eef1a4014a8a20af2b3b30..acd09f6f6932c41e96fc10f6fa0601e4bdcc6830 100644
 --- a/mobile/lib/features/channels/unread_badge/observed_unread_event.dart
 +++ b/mobile/lib/features/channels/unread_badge/observed_unread_event.dart
 @@ -23,17 +23,15 @@ ObservedUnreadEvent makeObservedUnreadEvent({
@@ -9465,7 +9465,7 @@ index d6a402b4c..acd09f6f6 100644
  }
  
 diff --git a/mobile/lib/features/channels/unread_badge/unread_badge_provider.dart b/mobile/lib/features/channels/unread_badge/unread_badge_provider.dart
-index 09e33ba95..8760e98e0 100644
+index 09e33ba95fbcc97a5906c5a4f8f7ffe1ef0e486d..8760e98e02492b5411c8365718991791ff10152f 100644
 --- a/mobile/lib/features/channels/unread_badge/unread_badge_provider.dart
 +++ b/mobile/lib/features/channels/unread_badge/unread_badge_provider.dart
 @@ -56,12 +56,11 @@ final unreadBadgeProvider = Provider<UnreadBadgeState>((ref) {
@@ -9487,7 +9487,7 @@ index 09e33ba95..8760e98e0 100644
              observedEvents,
              readAtForObservedEvent,
 diff --git a/mobile/lib/features/home/home_page.dart b/mobile/lib/features/home/home_page.dart
-index 85c4debed..a5f9a6eb0 100644
+index 85c4debed72c0e78e34d11736e9fff6c59a68b90..a5f9a6eb048b72d80fe4bb055e91f0d20ebfec0d 100644
 --- a/mobile/lib/features/home/home_page.dart
 +++ b/mobile/lib/features/home/home_page.dart
 @@ -10,19 +10,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -9706,7 +9706,7 @@ index 85c4debed..a5f9a6eb0 100644
                ),
 diff --git a/mobile/lib/features/kailo/kailo_async_view.dart b/mobile/lib/features/kailo/kailo_async_view.dart
 new file mode 100644
-index 000000000..30bfc1451
+index 0000000000000000000000000000000000000000..30bfc14518d2596e901de21dc9496be8912b7496
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_async_view.dart
 @@ -0,0 +1,105 @@
@@ -9817,7 +9817,7 @@ index 000000000..30bfc1451
 +}
 diff --git a/mobile/lib/features/kailo/kailo_audit_page.dart b/mobile/lib/features/kailo/kailo_audit_page.dart
 new file mode 100644
-index 000000000..1f4101dda
+index 0000000000000000000000000000000000000000..1f4101dda62631b3a2cca14644ddc1cf79dccfac
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_audit_page.dart
 @@ -0,0 +1,48 @@
@@ -9871,7 +9871,7 @@ index 000000000..1f4101dda
 +}
 diff --git a/mobile/lib/features/kailo/kailo_devices_page.dart b/mobile/lib/features/kailo/kailo_devices_page.dart
 new file mode 100644
-index 000000000..bf4a6be7e
+index 0000000000000000000000000000000000000000..bf4a6be7ea7e5b905d416e1f86b1ad0a79baaa54
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_devices_page.dart
 @@ -0,0 +1,135 @@
@@ -10012,7 +10012,7 @@ index 000000000..bf4a6be7e
 +}
 diff --git a/mobile/lib/features/kailo/kailo_members_page.dart b/mobile/lib/features/kailo/kailo_members_page.dart
 new file mode 100644
-index 000000000..5691edfd9
+index 0000000000000000000000000000000000000000..5691edfd921c130f11d07cf494e0aeb13b3383ae
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_members_page.dart
 @@ -0,0 +1,96 @@
@@ -10114,7 +10114,7 @@ index 000000000..5691edfd9
 +}
 diff --git a/mobile/lib/features/kailo/kailo_sign_in_page.dart b/mobile/lib/features/kailo/kailo_sign_in_page.dart
 new file mode 100644
-index 000000000..bd9ca6110
+index 0000000000000000000000000000000000000000..bd9ca6110f0903af2d788cb1275ae56e80c48b32
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_sign_in_page.dart
 @@ -0,0 +1,193 @@
@@ -10313,7 +10313,7 @@ index 000000000..bd9ca6110
 +}
 diff --git a/mobile/lib/features/kailo/kailo_status_text.dart b/mobile/lib/features/kailo/kailo_status_text.dart
 new file mode 100644
-index 000000000..05855ff08
+index 0000000000000000000000000000000000000000..05855ff0818d7c6b5ee59df0ff1b48758a4dcaa2
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_status_text.dart
 @@ -0,0 +1,57 @@
@@ -10374,9 +10374,358 @@ index 000000000..05855ff08
 +    );
 +  }
 +}
+diff --git a/mobile/lib/features/kailo/kailo_tasks_page.dart b/mobile/lib/features/kailo/kailo_tasks_page.dart
+new file mode 100644
+index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9100ff65c
+--- /dev/null
++++ b/mobile/lib/features/kailo/kailo_tasks_page.dart
+@@ -0,0 +1,343 @@
++import 'package:flutter/material.dart';
++import 'package:hooks_riverpod/hooks_riverpod.dart';
++
++import '../../shared/contracts/contracts.dart';
++import '../../shared/kailo/kailo_reason_text.dart';
++import '../../shared/kailo/kailo_views.dart';
++import '../../shared/theme/theme.dart';
++import '../../shared/widgets/app_list.dart';
++import '../../shared/widgets/app_list_card.dart';
++import 'kailo_async_view.dart';
++
++// 任务与审批的只读视图（Kailo apps/02 §4：Mobile 为受权只读视图；REQ-21）。
++//
++// 这里没有撤回、批准或拒绝：Mobile 不渲染这些控制的入口，只在详情里说明去
++// Web/Desktop 完成。状态的读法与 Web/Desktop 共用包（Kailo
++// `web/packages/platform/src/governance.ts` 的 taskPhase）逐条相同：结果不明与投影
++// 落后一律显示「等待对账」，不说成功也不说失败；只有 Workflow 终态 COMPLETED 才是
++// 完成，没有 Workflow 的同步动作以 DISPATCHED 为终态。
++
++/// 一项任务此刻的读法。
++String kailoTaskPhase(TaskView task) {
++  switch (task.observation) {
++    case ReasonCode.EXTERNAL_RESULT_UNKNOWN:
++      return 'Outcome not known yet — waiting for reconciliation';
++    case null:
++      break;
++    default:
++      return 'Status may be out of date — waiting for reconciliation';
++  }
++  switch (task.gateState) {
++    case ActionGateState.EVALUATING:
++      return 'Being evaluated';
++    case ActionGateState.WAITING:
++      return 'Waiting for approval';
++    case ActionGateState.DENIED:
++      return 'Not allowed';
++    case ActionGateState.REVOKED:
++      return 'Withdrawn or no longer allowed';
++    case ActionGateState.EXPIRED:
++      return 'Expired';
++    case ActionGateState.ALLOWED:
++      break;
++  }
++  switch (task.dispatchState) {
++    case ActionDispatchState.NOT_DISPATCHED:
++      return 'Allowed, not started yet';
++    case ActionDispatchState.ABORTED:
++      return 'Stopped before it took effect';
++    case ActionDispatchState.UNKNOWN:
++      return 'Outcome not known yet — waiting for reconciliation';
++    case ActionDispatchState.DISPATCHED:
++      break;
++  }
++  if (task.workflowId == null) return 'Applied';
++  return switch (task.taskStatus) {
++    null => 'Started',
++    TaskStatus.RUNNING => 'Running',
++    TaskStatus.COMPLETED => 'Completed',
++    TaskStatus.FAILED => 'Failed',
++    TaskStatus.CANCELED => 'Canceled',
++    TaskStatus.TERMINATED => 'Terminated',
++    TaskStatus.TIMED_OUT => 'Timed out',
++  };
++}
++
++String kailoApprovalStatusText(ApprovalStatus status) => switch (status) {
++  ApprovalStatus.REQUESTED => 'Requested',
++  ApprovalStatus.WAITING => 'Waiting for decisions',
++  ApprovalStatus.APPROVED => 'Approved, not carried out yet',
++  ApprovalStatus.DENIED => 'Denied',
++  ApprovalStatus.EXPIRED => 'Expired',
++  ApprovalStatus.CANCELLED => 'Withdrawn',
++  ApprovalStatus.CONSUMED => 'Approved and carried out',
++  ApprovalStatus.INVALIDATED => 'No longer valid',
++};
++
++String _approvalPhase(ApprovalView approval) => switch (approval.observation) {
++  null => kailoApprovalStatusText(approval.status),
++  ReasonCode.EXTERNAL_RESULT_UNKNOWN =>
++    'Outcome not known yet — waiting for reconciliation',
++  _ => 'Status may be out of date — waiting for reconciliation',
++};
++
++String _selectorText(ApprovalSelector selector) => switch (selector) {
++  ApprovalSelector.TENANT_ADMIN => 'Organization admin',
++  ApprovalSelector.WORKSPACE_ADMIN => 'Workspace admin',
++  ApprovalSelector.RESOURCE_APPROVER => 'Resource approver',
++};
++
++String _reason(ReasonCode code) =>
++    '${kailoReasonText(code)} (${kailoReasonCode(code)})';
++
++String _when(String rfc3339) =>
++    DateTime.tryParse(rfc3339)?.toLocal().toString() ?? rfc3339;
++
++const _decideElsewhere =
++    'To approve, deny or withdraw, open Kailo on the web or desktop.';
++
++/// 本人发起的受治理动作。
++class KailoTasksPage extends ConsumerWidget {
++  const KailoTasksPage({super.key});
++
++  @override
++  Widget build(BuildContext context, WidgetRef ref) {
++    return Scaffold(
++      appBar: AppBar(title: const Text('My tasks')),
++      body: KailoAsyncView(
++        value: ref.watch(kailoTasksProvider),
++        onRetry: () => ref.invalidate(kailoTasksProvider),
++        builder: (context, tasks) => tasks.isEmpty
++            ? const Center(
++                child: Text('You have not started any governed action yet.'),
++              )
++            : RefreshIndicator(
++                onRefresh: () => ref.refresh(kailoTasksProvider.future),
++                child: ListView(
++                  children: [
++                    AppListCard(
++                      children: [
++                        for (final task in tasks)
++                          AppListRow(
++                            key: ValueKey(
++                              'kailo-task-${task.actionExecutionId}',
++                            ),
++                            title: task.actionKey,
++                            subtitle:
++                                '${kailoTaskPhase(task)}\n${_when(task.createdAt)}',
++                            subtitleMaxLines: 3,
++                            onTap: () => Navigator.of(context).push(
++                              MaterialPageRoute<void>(
++                                builder: (_) => KailoTaskDetailPage(
++                                  actionExecutionId: task.actionExecutionId,
++                                ),
++                              ),
++                            ),
++                          ),
++                      ],
++                    ),
++                  ],
++                ),
++              ),
++      ),
++    );
++  }
++}
++
++class KailoTaskDetailPage extends ConsumerWidget {
++  const KailoTaskDetailPage({super.key, required this.actionExecutionId});
++
++  final String actionExecutionId;
++
++  @override
++  Widget build(BuildContext context, WidgetRef ref) {
++    final provider = kailoTaskProvider(actionExecutionId);
++    return Scaffold(
++      appBar: AppBar(title: const Text('Task')),
++      body: KailoAsyncView(
++        value: ref.watch(provider),
++        onRetry: () => ref.invalidate(provider),
++        builder: (context, task) => ListView(
++          children: [
++            AppListCard(
++              label: task.actionKey,
++              children: [
++                _Fact('State', kailoTaskPhase(task), id: 'kailo-task-state'),
++                if (task.observation case final code?)
++                  _Fact('Reason', _reason(code)),
++                if (task.reason case final code?)
++                  _Fact('Reason', _reason(code)),
++                if (task.waitingReason case final waiting?)
++                  _Fact('Waiting for', waiting),
++                _Fact('Started', _when(task.createdAt)),
++                _Fact('Operation', task.operationId),
++                _Fact('Action execution', task.actionExecutionId),
++                _Fact('Target', task.targetId),
++                if (task.workflowId case final workflow?)
++                  _Fact('Workflow', workflow),
++              ],
++            ),
++            if (task.approvalWorkflowId case final workflowId?)
++              _ApprovalFacts(workflowId: workflowId),
++          ],
++        ),
++      ),
++    );
++  }
++}
++
++/// 待我审批。
++class KailoApprovalsPage extends ConsumerWidget {
++  const KailoApprovalsPage({super.key});
++
++  @override
++  Widget build(BuildContext context, WidgetRef ref) {
++    return Scaffold(
++      appBar: AppBar(title: const Text('Waiting for my approval')),
++      body: KailoAsyncView(
++        value: ref.watch(kailoPendingApprovalsProvider),
++        onRetry: () => ref.invalidate(kailoPendingApprovalsProvider),
++        builder: (context, approvals) => approvals.isEmpty
++            ? const Center(child: Text('Nothing is waiting for your approval.'))
++            : RefreshIndicator(
++                onRefresh: () =>
++                    ref.refresh(kailoPendingApprovalsProvider.future),
++                child: ListView(
++                  children: [
++                    const _Explain(_decideElsewhere),
++                    AppListCard(
++                      children: [
++                        for (final approval in approvals)
++                          AppListRow(
++                            key: ValueKey(
++                              'kailo-approval-${approval.workflowId}',
++                            ),
++                            title: approval.actionKey,
++                            subtitle:
++                                '${_approvalPhase(approval)}\nExpires ${_when(approval.expiresAt)}',
++                            subtitleMaxLines: 3,
++                            onTap: () => Navigator.of(context).push(
++                              MaterialPageRoute<void>(
++                                builder: (_) => Scaffold(
++                                  appBar: AppBar(title: const Text('Approval')),
++                                  body: ListView(
++                                    children: [
++                                      _ApprovalFacts(
++                                        workflowId: approval.workflowId,
++                                      ),
++                                    ],
++                                  ),
++                                ),
++                              ),
++                            ),
++                          ),
++                      ],
++                    ),
++                  ],
++                ),
++              ),
++      ),
++    );
++  }
++}
++
++/// 一项审批的事实（发起者、已决定者或此刻合格的审批者可见，由 BFF 判定）。
++class _ApprovalFacts extends ConsumerWidget {
++  const _ApprovalFacts({required this.workflowId});
++
++  final String workflowId;
++
++  @override
++  Widget build(BuildContext context, WidgetRef ref) {
++    final provider = kailoApprovalProvider(workflowId);
++    return KailoAsyncView(
++      value: ref.watch(provider),
++      onRetry: () => ref.invalidate(provider),
++      builder: (context, approval) => Column(
++        crossAxisAlignment: CrossAxisAlignment.stretch,
++        children: [
++          AppListCard(
++            label: 'Approval',
++            children: [
++              _Fact(
++                'Approval state',
++                _approvalPhase(approval),
++                id: 'kailo-approval-state',
++              ),
++              if (approval.observation case final code?)
++                _Fact('Reason', _reason(code)),
++              if (approval.reason case final code?)
++                _Fact('Reason', _reason(code)),
++              _Fact('Expires', _when(approval.expiresAt)),
++              _Fact('Target', '${approval.targetType} ${approval.targetId}'),
++              _Fact('Requested by', approval.initiatorPrincipalId),
++              _Fact(
++                'Required approvals',
++                approval.roleRequirements
++                    .map(
++                      (r) =>
++                          '${_selectorText(r.selector)}: at least ${r.minDistinct}',
++                    )
++                    .join('; '),
++              ),
++              _Fact('Workflow', approval.workflowId),
++            ],
++          ),
++          AppListCard(
++            label: 'Decisions',
++            children: [
++              if (approval.decisions.isEmpty)
++                const AppListRow(title: 'No decisions yet.')
++              else
++                for (final d in approval.decisions)
++                  AppListRow(
++                    title: d.decision == ApprovalDecision.APPROVE
++                        ? 'Approve'
++                        : 'Deny',
++                    subtitle: '${d.approverPrincipalId}\n${_when(d.decidedAt)}',
++                    subtitleMaxLines: 3,
++                  ),
++            ],
++          ),
++          if (approval.status == ApprovalStatus.REQUESTED ||
++              approval.status == ApprovalStatus.WAITING)
++            const _Explain(_decideElsewhere),
++        ],
++      ),
++    );
++  }
++}
++
++class _Fact extends StatelessWidget {
++  const _Fact(this.label, this.value, {this.id});
++
++  final String label;
++  final String value;
++
++  /// 测试与无障碍定位用的稳定标识
++  final String? id;
++
++  @override
++  Widget build(BuildContext context) => AppListRow(
++    key: id == null ? null : ValueKey(id),
++    title: label,
++    subtitle: value,
++    subtitleMaxLines: 4,
++  );
++}
++
++class _Explain extends StatelessWidget {
++  const _Explain(this.text);
++
++  final String text;
++
++  @override
++  Widget build(BuildContext context) => Padding(
++    padding: const EdgeInsets.all(Grid.gutter),
++    child: Text(
++      text,
++      key: const ValueKey('kailo-decide-elsewhere'),
++      style: context.textTheme.bodyMedium,
++    ),
++  );
++}
 diff --git a/mobile/lib/features/kailo/kailo_unavailable_page.dart b/mobile/lib/features/kailo/kailo_unavailable_page.dart
 new file mode 100644
-index 000000000..e064c1b88
+index 0000000000000000000000000000000000000000..e064c1b88647e8f5906be31d5431ed0a9cf1e374
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_unavailable_page.dart
 @@ -0,0 +1,44 @@
@@ -10425,7 +10774,7 @@ index 000000000..e064c1b88
 +  }
 +}
 diff --git a/mobile/lib/features/profile/profile_avatar.dart b/mobile/lib/features/profile/profile_avatar.dart
-index 43abbb7ca..dde2dce9e 100644
+index 43abbb7ca6800a68c079003cf914157c1d38f295..dde2dce9eac10a8041654e62354511f8e8ec6958 100644
 --- a/mobile/lib/features/profile/profile_avatar.dart
 +++ b/mobile/lib/features/profile/profile_avatar.dart
 @@ -1,115 +1,41 @@
@@ -10562,7 +10911,7 @@ index 43abbb7ca..dde2dce9e 100644
 -  }
  }
 diff --git a/mobile/lib/features/profile/settings_profile_header.dart b/mobile/lib/features/profile/settings_profile_header.dart
-index 1852188ec..d54a76a8d 100644
+index 1852188ecf2dca0cd5e5979f9b980bc65787dffb..d54a76a8d4d21ab388245ed8c2f49d59f102134e 100644
 --- a/mobile/lib/features/profile/settings_profile_header.dart
 +++ b/mobile/lib/features/profile/settings_profile_header.dart
 @@ -1,403 +1,33 @@
@@ -10980,7 +11329,7 @@ index 1852188ec..d54a76a8d 100644
 -  }
 -}
 diff --git a/mobile/lib/features/profile/user_profile_sheet.dart b/mobile/lib/features/profile/user_profile_sheet.dart
-index 97af99fa0..391dc2e53 100644
+index 97af99fa00a2d2a6788b538e42793414186689cd..391dc2e537e8d8d690558e1990b349e83d9e02fb 100644
 --- a/mobile/lib/features/profile/user_profile_sheet.dart
 +++ b/mobile/lib/features/profile/user_profile_sheet.dart
 @@ -14,29 +14,16 @@ import '../../shared/widgets/avatar_image.dart';
@@ -11297,7 +11646,7 @@ index 97af99fa0..391dc2e53 100644
        ),
      );
 diff --git a/mobile/lib/features/search/recent_searches_provider.dart b/mobile/lib/features/search/recent_searches_provider.dart
-index 2fad17832..ec1bd6a96 100644
+index 2fad17832edbfc9c0a74e15cc572a154d420b7c9..ec1bd6a961c0d369b0dbea15ca0b11c0ef00efee 100644
 --- a/mobile/lib/features/search/recent_searches_provider.dart
 +++ b/mobile/lib/features/search/recent_searches_provider.dart
 @@ -20,15 +20,7 @@ class RecentSearchesNotifier extends Notifier<List<String>> {
@@ -11318,7 +11667,7 @@ index 2fad17832..ec1bd6a96 100644
        stored
            .map((query) => query.trim())
 diff --git a/mobile/lib/features/search/search_page.dart b/mobile/lib/features/search/search_page.dart
-index b66a72a70..aede73afb 100644
+index b66a72a709873274993d7e8b738ea7ec1303a801..aede73afbc283e3dd412b1ec4bc3dfc41b31f2cf 100644
 --- a/mobile/lib/features/search/search_page.dart
 +++ b/mobile/lib/features/search/search_page.dart
 @@ -6,7 +6,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -11541,7 +11890,7 @@ index b66a72a70..aede73afb 100644
    };
  }
 diff --git a/mobile/lib/features/search/search_provider.dart b/mobile/lib/features/search/search_provider.dart
-index bc9bfddc3..299007ef9 100644
+index bc9bfddc331188c51c84738b9738a2fe6944abc1..299007ef9bcde6099baf1d6e9877f1440e452cd2 100644
 --- a/mobile/lib/features/search/search_provider.dart
 +++ b/mobile/lib/features/search/search_provider.dart
 @@ -5,7 +5,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -11656,10 +12005,10 @@ index bc9bfddc3..299007ef9 100644
    }
  
 diff --git a/mobile/lib/features/settings/settings_page.dart b/mobile/lib/features/settings/settings_page.dart
-index 24ac64bdf..95c671e0b 100644
+index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..717d041f797808fd42c3189295744d442885682d 100644
 --- a/mobile/lib/features/settings/settings_page.dart
 +++ b/mobile/lib/features/settings/settings_page.dart
-@@ -1,70 +1,36 @@
+@@ -1,70 +1,37 @@
  import 'dart:async';
  
 -import 'package:flutter/foundation.dart';
@@ -11692,6 +12041,7 @@ index 24ac64bdf..95c671e0b 100644
 +import '../kailo/kailo_devices_page.dart';
 +import '../kailo/kailo_members_page.dart';
 +import '../kailo/kailo_status_text.dart';
++import '../kailo/kailo_tasks_page.dart';
  import 'theme_picker_page.dart';
  
 -part 'settings_page/community_section.dart';
@@ -11736,7 +12086,7 @@ index 24ac64bdf..95c671e0b 100644
    @override
    Widget build(BuildContext context, WidgetRef ref) {
      final packageInfoFuture = useMemoized(() => PackageInfo.fromPlatform());
-@@ -74,75 +40,6 @@ class SettingsPage extends HookConsumerWidget {
+@@ -74,75 +41,6 @@ class SettingsPage extends HookConsumerWidget {
        bottomHeight: Grid.xxs,
      );
  
@@ -11812,7 +12162,7 @@ index 24ac64bdf..95c671e0b 100644
      return FrostedScaffold(
        useUtilitySurfaceTheme: true,
        appBar: FrostedAppBar(
-@@ -173,38 +70,6 @@ class SettingsPage extends HookConsumerWidget {
+@@ -173,38 +71,6 @@ class SettingsPage extends HookConsumerWidget {
                    icon: const Icon(LucideIcons.x),
                  ),
                ),
@@ -11851,7 +12201,7 @@ index 24ac64bdf..95c671e0b 100644
          bottomHeight: Grid.xxs,
          bottom: const SizedBox.expand(),
        ),
-@@ -215,12 +80,10 @@ class SettingsPage extends HookConsumerWidget {
+@@ -215,12 +81,10 @@ class SettingsPage extends HookConsumerWidget {
                padding: EdgeInsets.only(top: topSectionHeight, bottom: Grid.xs),
                children: [
                  profileHeader,
@@ -11868,7 +12218,7 @@ index 24ac64bdf..95c671e0b 100644
                ],
              ),
            ),
-@@ -235,6 +98,188 @@ class SettingsPage extends HookConsumerWidget {
+@@ -235,6 +99,202 @@ class SettingsPage extends HookConsumerWidget {
    }
  }
  
@@ -11892,6 +12242,20 @@ index 24ac64bdf..95c671e0b 100644
 +          title: 'Members',
 +          trailing: const _RowChevron(),
 +          onTap: () => open(const KailoWorkspacesPage()),
++        ),
++        AppListRow(
++          key: const ValueKey('settings-kailo-tasks'),
++          icon: LucideIcons.listChecks,
++          title: 'My tasks',
++          trailing: const _RowChevron(),
++          onTap: () => open(const KailoTasksPage()),
++        ),
++        AppListRow(
++          key: const ValueKey('settings-kailo-approvals'),
++          icon: LucideIcons.clipboardCheck,
++          title: 'Waiting for my approval',
++          trailing: const _RowChevron(),
++          onTap: () => open(const KailoApprovalsPage()),
 +        ),
 +        AppListRow(
 +          key: const ValueKey('settings-kailo-audit'),
@@ -12057,7 +12421,7 @@ index 24ac64bdf..95c671e0b 100644
  class _VersionFooter extends StatelessWidget {
    const _VersionFooter({required this.version, required this.buildNumber});
  
-@@ -260,7 +305,7 @@ class _VersionFooter extends StatelessWidget {
+@@ -260,7 +320,7 @@ class _VersionFooter extends StatelessWidget {
    }
  }
  
@@ -12067,7 +12431,7 @@ index 24ac64bdf..95c671e0b 100644
    const _RowChevron();
  
 diff --git a/mobile/lib/features/settings/theme_option_sheets.dart b/mobile/lib/features/settings/theme_option_sheets.dart
-index da96c3b87..25794cd67 100644
+index da96c3b87753db8ac705ee41c5073684ce9266cf..25794cd674553e7b09331b4cd1df21533d9a058e 100644
 --- a/mobile/lib/features/settings/theme_option_sheets.dart
 +++ b/mobile/lib/features/settings/theme_option_sheets.dart
 @@ -17,18 +17,6 @@ const appearanceModeOptions = <({ThemeMode mode, String label, IconData icon})>[
@@ -12223,7 +12587,7 @@ index da96c3b87..25794cd67 100644
    const _AccentColorPicker({
      required this.colorScheme,
 diff --git a/mobile/lib/main.dart b/mobile/lib/main.dart
-index 5b40be40d..675ce3746 100644
+index 5b40be40d3e39fe117799aea018ac7ef1953b647..675ce3746fb16ce27abcb4e2f32aa201fe72a2a1 100644
 --- a/mobile/lib/main.dart
 +++ b/mobile/lib/main.dart
 @@ -3,31 +3,18 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -12262,7 +12626,7 @@ index 5b40be40d..675ce3746 100644
    );
  }
 diff --git a/mobile/lib/shared/animated_avatar.dart b/mobile/lib/shared/animated_avatar.dart
-index f44321746..41efcecb1 100644
+index f44321746e9a4f279450f6db6edb32807292bbf2..41efcecb1e925dca3012f7dcf5de7366e6611585 100644
 --- a/mobile/lib/shared/animated_avatar.dart
 +++ b/mobile/lib/shared/animated_avatar.dart
 @@ -18,11 +18,6 @@ class AnimatedAvatarDescriptor {
@@ -12278,7 +12642,7 @@ index f44321746..41efcecb1 100644
  ///
  /// Returns `null` when the poster or animation URL is missing, malformed, or
 diff --git a/mobile/lib/shared/auth/auth_provider.dart b/mobile/lib/shared/auth/auth_provider.dart
-index 9dc17e1e7..90816ab83 100644
+index 9dc17e1e741895a577ad499cb41b462c0d30d484..90816ab83a3205b5cea78094ff26639d368d3a3a 100644
 --- a/mobile/lib/shared/auth/auth_provider.dart
 +++ b/mobile/lib/shared/auth/auth_provider.dart
 @@ -24,7 +24,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
@@ -12362,7 +12726,7 @@ index 9dc17e1e7..90816ab83 100644
  }
  
 diff --git a/mobile/lib/shared/community/community.dart b/mobile/lib/shared/community/community.dart
-index 86db62bb6..a42e26415 100644
+index 86db62bb62744cb54981e95226ce3b7643f29e8c..a42e264150273c62769798b72fad896e5eae5289 100644
 --- a/mobile/lib/shared/community/community.dart
 +++ b/mobile/lib/shared/community/community.dart
 @@ -1,41 +1,18 @@
@@ -12538,7 +12902,7 @@ index 86db62bb6..a42e26415 100644
 -  }
  }
 diff --git a/mobile/lib/shared/community/community_provider.dart b/mobile/lib/shared/community/community_provider.dart
-index 525bc6956..9ba566bd1 100644
+index 525bc6956f299666b95085941dd7dce7a6e20195..9ba566bd19721bad19c6b5670faf7513181a7c14 100644
 --- a/mobile/lib/shared/community/community_provider.dart
 +++ b/mobile/lib/shared/community/community_provider.dart
 @@ -1,35 +1,13 @@
@@ -13185,7 +13549,7 @@ index 525bc6956..9ba566bd1 100644
 +  return communities.first;
  });
 diff --git a/mobile/lib/shared/community/community_storage.dart b/mobile/lib/shared/community/community_storage.dart
-index cf846c8a8..ae87d7b3b 100644
+index cf846c8a828b3c2fbdf3049fb58748c7f2f08551..ae87d7b3b900655cbe586da8c1b6506b5940a936 100644
 --- a/mobile/lib/shared/community/community_storage.dart
 +++ b/mobile/lib/shared/community/community_storage.dart
 @@ -8,65 +8,14 @@ class CommunityStorage {
@@ -13256,7 +13620,7 @@ index cf846c8a8..ae87d7b3b 100644
  
    Future<void> save(Community community) async {
 diff --git a/mobile/lib/shared/deeplink/deep_link.dart b/mobile/lib/shared/deeplink/deep_link.dart
-index c58acefd2..d8f84db3b 100644
+index c58acefd2189cd9ccb02cee0bb6cc91412cc4ab1..d8f84db3bd6fb6e2b4145391c50ecfe0a55b0674 100644
 --- a/mobile/lib/shared/deeplink/deep_link.dart
 +++ b/mobile/lib/shared/deeplink/deep_link.dart
 @@ -5,51 +5,18 @@
@@ -13523,7 +13887,7 @@ index c58acefd2..d8f84db3b 100644
 +  };
  }
 diff --git a/mobile/lib/shared/deeplink/pending_deep_link_provider.dart b/mobile/lib/shared/deeplink/pending_deep_link_provider.dart
-index 70f1a6a3b..b3c3db86f 100644
+index 70f1a6a3b6f05cae00bc512ad56a94cdd2b2b769..b3c3db86fe63e4c13c9a451063b443d45579807b 100644
 --- a/mobile/lib/shared/deeplink/pending_deep_link_provider.dart
 +++ b/mobile/lib/shared/deeplink/pending_deep_link_provider.dart
 @@ -6,10 +6,6 @@ import 'package:flutter/foundation.dart';
@@ -13614,7 +13978,7 @@ index 70f1a6a3b..b3c3db86f 100644
      if (state == null) {
        state = link;
 diff --git a/mobile/lib/shared/emoji/emoji_avatar.dart b/mobile/lib/shared/emoji/emoji_avatar.dart
-index e1395a78b..6377bb9ed 100644
+index e1395a78b6cf51be35aec1a48539786247df92ce..6377bb9ed6f93ed8b3628c52259a8d6230509dfa 100644
 --- a/mobile/lib/shared/emoji/emoji_avatar.dart
 +++ b/mobile/lib/shared/emoji/emoji_avatar.dart
 @@ -1,48 +1,3 @@
@@ -13687,7 +14051,7 @@ index e1395a78b..6377bb9ed 100644
  EmojiAvatarData? parseEmojiAvatarSvg(String svg) {
    final colorValue = RegExp(
 diff --git a/mobile/lib/shared/emoji/emoji_only.dart b/mobile/lib/shared/emoji/emoji_only.dart
-index e6994f0b9..f235d580d 100644
+index e6994f0b9b06dffba84c090cb02eb5cc365db92d..f235d580da05c5fcc7ae6d3421717027a57fbed7 100644
 --- a/mobile/lib/shared/emoji/emoji_only.dart
 +++ b/mobile/lib/shared/emoji/emoji_only.dart
 @@ -5,8 +5,6 @@ library;
@@ -13757,7 +14121,7 @@ index e6994f0b9..f235d580d 100644
      }
 diff --git a/mobile/lib/shared/kailo/kailo_api.dart b/mobile/lib/shared/kailo/kailo_api.dart
 new file mode 100644
-index 000000000..b661eaf43
+index 0000000000000000000000000000000000000000..b661eaf438f732e17c0a2c7373b57629399e81ea
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_api.dart
 @@ -0,0 +1,229 @@
@@ -13992,7 +14356,7 @@ index 000000000..b661eaf43
 +);
 diff --git a/mobile/lib/shared/kailo/kailo_config.dart b/mobile/lib/shared/kailo/kailo_config.dart
 new file mode 100644
-index 000000000..402106cf4
+index 0000000000000000000000000000000000000000..402106cf423e1f975f0520bc5dd58760f5750e37
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_config.dart
 @@ -0,0 +1,128 @@
@@ -14126,7 +14490,7 @@ index 000000000..402106cf4
 +);
 diff --git a/mobile/lib/shared/kailo/kailo_device.dart b/mobile/lib/shared/kailo/kailo_device.dart
 new file mode 100644
-index 000000000..42bac986b
+index 0000000000000000000000000000000000000000..42bac986b51fc82e1b97b4a91630ae2672e84082
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_device.dart
 @@ -0,0 +1,118 @@
@@ -14250,7 +14614,7 @@ index 000000000..42bac986b
 +);
 diff --git a/mobile/lib/shared/kailo/kailo_link.dart b/mobile/lib/shared/kailo/kailo_link.dart
 new file mode 100644
-index 000000000..86e539af9
+index 0000000000000000000000000000000000000000..86e539af9ba8050fbca6ee851964a98edead7fd8
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_link.dart
 @@ -0,0 +1,326 @@
@@ -14582,7 +14946,7 @@ index 000000000..86e539af9
 +);
 diff --git a/mobile/lib/shared/kailo/kailo_oidc.dart b/mobile/lib/shared/kailo/kailo_oidc.dart
 new file mode 100644
-index 000000000..2dd43d096
+index 0000000000000000000000000000000000000000..2dd43d0968bd84e91000d6cefe7a061cf736a23e
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_oidc.dart
 @@ -0,0 +1,281 @@
@@ -14869,7 +15233,7 @@ index 000000000..2dd43d096
 +}
 diff --git a/mobile/lib/shared/kailo/kailo_read_state.dart b/mobile/lib/shared/kailo/kailo_read_state.dart
 new file mode 100644
-index 000000000..d531ad9f6
+index 0000000000000000000000000000000000000000..d531ad9f68dbdea4126951f27dd4c960e9f73c25
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_read_state.dart
 @@ -0,0 +1,92 @@
@@ -14967,15 +15331,16 @@ index 000000000..d531ad9f6
 +}
 diff --git a/mobile/lib/shared/kailo/kailo_reason_text.dart b/mobile/lib/shared/kailo/kailo_reason_text.dart
 new file mode 100644
-index 000000000..011340ccc
+index 0000000000000000000000000000000000000000..38e072c009745f9957cdebfed7ca971f6ed0f76d
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_reason_text.dart
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,73 @@
 +/// 契约 reason code 的界面文案。code 是稳定的判定结果，文案只是它的说明：
 +/// 界面同时显示两者，文案可以改，code 不变（apps/06-工程基线规范.md §4）。
 +///
 +/// 按 [ReasonCode] 穷举：契约新增 code 时这里编译不过，逼着给出说明，而不是
-+/// 让新 code 悄悄落进一个笼统的「出错了」。
++/// 让新 code 悄悄落进一个笼统的「出错了」。说明与 Web/Desktop 共用包
++/// （Kailo `web/packages/platform/src/i18n.ts` 的 reasonMessages）逐条同义。
 +library;
 +
 +import '../contracts/contracts.dart';
@@ -15004,16 +15369,51 @@ index 000000000..011340ccc
 +    'Your membership in this organization is not active.',
 +  ReasonCode.TENANT_SELECTION_NOT_AVAILABLE =>
 +    'Your account belongs to more than one organization, which this app cannot choose between yet.',
++  ReasonCode.CAPABILITY_BLOCKED => 'This capability is not available.',
++  ReasonCode.INVALID_PARAMETERS => 'The request was incomplete or malformed.',
++  ReasonCode.IDEMPOTENCY_KEY_REUSED =>
++    'This request was already sent with different details.',
++  ReasonCode.SCOPE_GUARD_FAILED =>
++    'This is outside the organization or workspace you belong to.',
++  ReasonCode.PERMISSION_DENIED => 'You do not have permission to do this.',
++  ReasonCode.TARGET_NOT_FOUND => 'It no longer exists, or you cannot see it.',
++  ReasonCode.TARGET_STATE_CONFLICT => 'Its current state does not allow this.',
++  ReasonCode.LAST_TENANT_ADMIN =>
++    'The organization would be left without an admin.',
++  ReasonCode.WAITING_APPROVAL => 'Waiting for approval.',
++  ReasonCode.APPROVAL_SELECTOR_UNRESOLVABLE =>
++    'No one can be asked to approve this.',
++  ReasonCode.APPROVAL_DENIED => 'An approver denied it.',
++  ReasonCode.APPROVAL_EXPIRED => 'The approval expired before it was decided.',
++  ReasonCode.APPROVAL_WITHDRAWN => 'The request was withdrawn.',
++  ReasonCode.APPROVAL_INVALIDATED =>
++    'The approval is no longer valid because the facts or permissions changed.',
++  ReasonCode.APPROVAL_CONSUME_WINDOW_CLOSED =>
++    'The approval was not used in time.',
++  ReasonCode.APPROVAL_NOT_OPEN =>
++    'This approval is no longer taking decisions.',
++  ReasonCode.APPROVER_NOT_ELIGIBLE =>
++    'You are not eligible to decide on this approval.',
++  ReasonCode.SELF_APPROVAL_DENIED => 'You cannot approve your own request.',
++  ReasonCode.DUPLICATE_DECISION =>
++    'You already recorded a different decision, which cannot be changed.',
++  ReasonCode.ADMISSION_ABANDONED =>
++    'The request was abandoned before it could be evaluated.',
++  ReasonCode.DISPATCH_RESULT_UNKNOWN =>
++    'Whether it took effect is not known yet.',
++  ReasonCode.PROJECTION_DELAYED => 'The status shown may be out of date.',
++  ReasonCode.EXTERNAL_RESULT_UNKNOWN =>
++    'The outcome is not known yet; it is being reconciled.',
 +};
 +
 +/// 界面上显示的稳定 code。
 +String kailoReasonCode(ReasonCode reason) => reasonCodeValues.reverse[reason]!;
 diff --git a/mobile/lib/shared/kailo/kailo_views.dart b/mobile/lib/shared/kailo/kailo_views.dart
 new file mode 100644
-index 000000000..c91a424f6
+index 0000000000000000000000000000000000000000..c11735747e2285218fbd417ae9d47de746ddb4b2
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_views.dart
-@@ -0,0 +1,103 @@
+@@ -0,0 +1,149 @@
 +/// 管理平面的只读视图（Kailo `REQ-21`：Mobile 以受权只读视图交付管理面）。
 +///
 +/// 数据一律来自 BFF `/api/v1/`，类型一律取自契约绑定；本端不重新判定任何权限，
@@ -15089,6 +15489,52 @@ index 000000000..c91a424f6
 +  retry: _noRetry,
 +);
 +
++/// 取一项。别人的与不存在的是同一个回答（BFF 回 TARGET_NOT_FOUND）。
++Future<T> _fetchOne<T>(
++  Ref ref,
++  String path,
++  T Function(Map<String, dynamic>) fromJson,
++) async {
++  final config = ref.watch(kailoConfigProvider);
++  if (config == null) throw const KailoNotSignedIn();
++  final response = await ref
++      .read(kailoSessionProvider)
++      .send(config, KailoMethod.get, path);
++  if (response.status != 200) throw KailoApiError(response);
++  return fromJson(response.body! as Map<String, dynamic>);
++}
++
++/// 本人发起的受治理动作，新的在前（`.design/06` §9）。Mobile 只读：取消、撤回与
++/// 审批决定都在 Web/Desktop 上（apps/02 §4）。
++final kailoTasksProvider = FutureProvider<List<TaskView>>(
++  (ref) => _fetchList(ref, '/api/v1/tasks', TaskView.fromJson),
++  retry: _noRetry,
++);
++
++final kailoTaskProvider = FutureProvider.family<TaskView, String>(
++  (ref, actionExecutionId) => _fetchOne(
++    ref,
++    '/api/v1/tasks/${Uri.encodeComponent(actionExecutionId)}',
++    TaskView.fromJson,
++  ),
++  retry: _noRetry,
++);
++
++/// 待我审批：未决、我尚未决定、我此刻能满足某个选择器。
++final kailoPendingApprovalsProvider = FutureProvider<List<ApprovalView>>(
++  (ref) => _fetchList(ref, '/api/v1/approvals', ApprovalView.fromJson),
++  retry: _noRetry,
++);
++
++final kailoApprovalProvider = FutureProvider.family<ApprovalView, String>(
++  (ref, workflowId) => _fetchOne(
++    ref,
++    '/api/v1/approvals/${Uri.encodeComponent(workflowId)}',
++    ApprovalView.fromJson,
++  ),
++  retry: _noRetry,
++);
++
 +/// 本人登记且未撤销的设备。
 +final kailoDevicesProvider = FutureProvider<List<ClientKeyView>>(
 +  (ref) => _fetchList(ref, kailoRegisterPath, ClientKeyView.fromJson),
@@ -15118,7 +15564,7 @@ index 000000000..c91a424f6
 +  }
 +}, retry: _noRetry);
 diff --git a/mobile/lib/shared/profile/user_cache_provider.dart b/mobile/lib/shared/profile/user_cache_provider.dart
-index 4a034315d..158b80682 100644
+index 4a034315d0529b36e35e62aa8c6030b05fdb6e0d..158b80682caeb0b0302fdb821c6453f3d86f53a3 100644
 --- a/mobile/lib/shared/profile/user_cache_provider.dart
 +++ b/mobile/lib/shared/profile/user_cache_provider.dart
 @@ -2,9 +2,6 @@ import 'dart:async';
@@ -15166,7 +15612,7 @@ index 4a034315d..158b80682 100644
      } catch (_) {
        // Silently fail — non-gating callers will just show pubkeys.
 diff --git a/mobile/lib/shared/read_state/read_state_format.dart b/mobile/lib/shared/read_state/read_state_format.dart
-index b21175853..4cd6fe3f7 100644
+index b21175853ee1f8ff2c4ec2e0dba5d71dadcbaa3d..4cd6fe3f72247af7c5aa9fae27d7a586fcad605a 100644
 --- a/mobile/lib/shared/read_state/read_state_format.dart
 +++ b/mobile/lib/shared/read_state/read_state_format.dart
 @@ -1,13 +1,10 @@
@@ -15371,7 +15817,7 @@ index b21175853..4cd6fe3f7 100644
 +  return _uuid.hasMatch(key);
  }
 diff --git a/mobile/lib/shared/read_state/read_state_manager.dart b/mobile/lib/shared/read_state/read_state_manager.dart
-index f8dcb878d..b86d8980f 100644
+index f8dcb878db67eb2561219713fa38a72b4178873a..b86d8980fdbdf46c1371944ddc45732b3ce8bf7d 100644
 --- a/mobile/lib/shared/read_state/read_state_manager.dart
 +++ b/mobile/lib/shared/read_state/read_state_manager.dart
 @@ -1,89 +1,49 @@
@@ -15958,7 +16404,7 @@ index f8dcb878d..b86d8980f 100644
    }
  }
 diff --git a/mobile/lib/shared/read_state/read_state_provider.dart b/mobile/lib/shared/read_state/read_state_provider.dart
-index 22375db95..8905624f7 100644
+index 22375db959e9c3598c32aaf6c30bb1dd7acc7b32..8905624f7f8a39b3f4d47c1f5c79a63e5f843a76 100644
 --- a/mobile/lib/shared/read_state/read_state_provider.dart
 +++ b/mobile/lib/shared/read_state/read_state_provider.dart
 @@ -5,7 +5,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -16047,7 +16493,7 @@ index 22375db95..8905624f7 100644
 -  }
 -}
 diff --git a/mobile/lib/shared/read_state/read_state_storage.dart b/mobile/lib/shared/read_state/read_state_storage.dart
-index 6be7dd438..e63c94886 100644
+index 6be7dd438de2e1e828759d9a05f0f309aa8980a3..e63c948863ff8c43e478ca7e122cb29226ba861c 100644
 --- a/mobile/lib/shared/read_state/read_state_storage.dart
 +++ b/mobile/lib/shared/read_state/read_state_storage.dart
 @@ -1,81 +1,36 @@
@@ -16232,7 +16678,7 @@ index 6be7dd438..e63c94886 100644
 -  return isValidReadStateDTag('$readStateDTagPrefix$value');
  }
 diff --git a/mobile/lib/shared/read_state/read_state_time.dart b/mobile/lib/shared/read_state/read_state_time.dart
-index d812736d0..eed1a9a45 100644
+index d812736d09519a36bc2f84b4020f006272ef2fe9..eed1a9a453b3fe4cc53b37211d8e13d2364d7aaf 100644
 --- a/mobile/lib/shared/read_state/read_state_time.dart
 +++ b/mobile/lib/shared/read_state/read_state_time.dart
 @@ -21,5 +21,3 @@ int? isoToUnixSeconds(Object? value) {
@@ -16242,7 +16688,7 @@ index d812736d0..eed1a9a45 100644
 -
 -const readStateMaxClockDriftSeconds = 300;
 diff --git a/mobile/lib/shared/relay/media_auth.dart b/mobile/lib/shared/relay/media_auth.dart
-index b21eeca36..9ca05ca75 100644
+index b21eeca36d61297d488ef5879da6b086a630c752..9ca05ca756f8cce0be0b20ab660df016d60c1d59 100644
 --- a/mobile/lib/shared/relay/media_auth.dart
 +++ b/mobile/lib/shared/relay/media_auth.dart
 @@ -1,6 +1,5 @@
@@ -16272,7 +16718,7 @@ index b21eeca36..9ca05ca75 100644
    final uri = Uri.parse(baseUrl);
    if (uri.host.isEmpty) return null;
 diff --git a/mobile/lib/shared/relay/media_image.dart b/mobile/lib/shared/relay/media_image.dart
-index 0ab5b5aa2..14187df08 100644
+index 0ab5b5aa2045ca82d28fb28af9056d5aceca092b..14187df081cf811729645b4d6148e04a7f24f928 100644
 --- a/mobile/lib/shared/relay/media_image.dart
 +++ b/mobile/lib/shared/relay/media_image.dart
 @@ -38,10 +38,6 @@ class MediaImageProvider extends ImageProvider<MediaImageProvider> {
@@ -16327,7 +16773,7 @@ index 0ab5b5aa2..14187df08 100644
  
      if (decodeWidth != null) {
 diff --git a/mobile/lib/shared/relay/nostr_filters.dart b/mobile/lib/shared/relay/nostr_filters.dart
-index 71f393903..687e1e6ac 100644
+index 71f393903ea8cd258267f6584700eab31ca905a3..687e1e6ac5febdf424197c24f6e4ecdd5753a32b 100644
 --- a/mobile/lib/shared/relay/nostr_filters.dart
 +++ b/mobile/lib/shared/relay/nostr_filters.dart
 @@ -1,26 +1,10 @@
@@ -16535,7 +16981,7 @@ index 71f393903..687e1e6ac 100644
 -      NostrFilter(kinds: [30315], authors: [pubkey], limit: 1);
  }
 diff --git a/mobile/lib/shared/relay/nostr_models.dart b/mobile/lib/shared/relay/nostr_models.dart
-index c041e4399..40456e291 100644
+index c041e4399fab77f991247b1cae4a4fd1756a2e67..40456e291ed85d1b0c137c54356cfe93cbc46ccc 100644
 --- a/mobile/lib/shared/relay/nostr_models.dart
 +++ b/mobile/lib/shared/relay/nostr_models.dart
 @@ -8,75 +8,39 @@ import 'package:flutter/foundation.dart';
@@ -16723,7 +17169,7 @@ index c041e4399..40456e291 100644
 -  return null;
 -}
 diff --git a/mobile/lib/shared/relay/relay.dart b/mobile/lib/shared/relay/relay.dart
-index dd153fc92..5a06af88d 100644
+index dd153fc928265af3d58244eab4d6e38986b9395b..5a06af88d8262baf30bdbc5ae8d624ae7d131a5d 100644
 --- a/mobile/lib/shared/relay/relay.dart
 +++ b/mobile/lib/shared/relay/relay.dart
 @@ -1,5 +1,4 @@
@@ -16733,7 +17179,7 @@ index dd153fc92..5a06af88d 100644
  export 'media_image.dart';
  export 'media_upload.dart';
 diff --git a/mobile/lib/shared/relay/relay_client.dart b/mobile/lib/shared/relay/relay_client.dart
-index 453e11459..b0a1abedb 100644
+index 453e11459e67436db081a1e028f37ec5407b80d8..b0a1abedbef45fb96c86dd062073d4dd6cf0cce9 100644
 --- a/mobile/lib/shared/relay/relay_client.dart
 +++ b/mobile/lib/shared/relay/relay_client.dart
 @@ -1,31 +1,3 @@
@@ -16769,7 +17215,7 @@ index 453e11459..b0a1abedb 100644
  ///
  /// Retained for backwards compatibility with provider code that still
 diff --git a/mobile/lib/shared/relay/relay_provider.dart b/mobile/lib/shared/relay/relay_provider.dart
-index 73643ff02..a824f23bf 100644
+index 73643ff0206b96c273593409e700f01f3513b189..a824f23bfa847ebdd944b7b90eae1219cd1ce1d4 100644
 --- a/mobile/lib/shared/relay/relay_provider.dart
 +++ b/mobile/lib/shared/relay/relay_provider.dart
 @@ -2,7 +2,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -16810,7 +17256,7 @@ index 73643ff02..a824f23bf 100644
 -  return client;
 -});
 diff --git a/mobile/lib/shared/relay/relay_session.dart b/mobile/lib/shared/relay/relay_session.dart
-index 51fb8bf51..879df1a27 100644
+index 51fb8bf51d48530753cd15919fb1d20d04021509..879df1a27903afdce92c1bb2d37e7ce4d0bd4d0d 100644
 --- a/mobile/lib/shared/relay/relay_session.dart
 +++ b/mobile/lib/shared/relay/relay_session.dart
 @@ -10,7 +10,6 @@ import 'package:uuid/uuid.dart';
@@ -16885,7 +17331,7 @@ index 51fb8bf51..879df1a27 100644
      final generation = ++_connectionGeneration;
      state = SessionState(
 diff --git a/mobile/lib/shared/relay/signed_event_relay.dart b/mobile/lib/shared/relay/signed_event_relay.dart
-index b0106639e..f9d0574fe 100644
+index b0106639eb75547fa7d66c8e6c48f04a97e159ce..f9d0574fedd13509b8d59c9c10fce76032bbe10e 100644
 --- a/mobile/lib/shared/relay/signed_event_relay.dart
 +++ b/mobile/lib/shared/relay/signed_event_relay.dart
 @@ -4,7 +4,6 @@ import 'package:nostr/nostr.dart' as nostr;
@@ -16971,7 +17417,7 @@ index b0106639e..f9d0574fe 100644
 -  }
 -}
 diff --git a/mobile/lib/shared/theme/accent_colors.dart b/mobile/lib/shared/theme/accent_colors.dart
-index 0688a3575..81482e5b8 100644
+index 0688a35754d6055f0e00cec23d0260ca448c956c..81482e5b81ded690b7cd7de558b102dd7db5639d 100644
 --- a/mobile/lib/shared/theme/accent_colors.dart
 +++ b/mobile/lib/shared/theme/accent_colors.dart
 @@ -99,23 +99,7 @@ Color accentColorForScheme(ColorScheme scheme, int accentIndex) {
@@ -16999,7 +17445,7 @@ index 0688a3575..81482e5b8 100644
 -  return '#3b82f6';
 -}
 diff --git a/mobile/lib/shared/theme/app_colors.dart b/mobile/lib/shared/theme/app_colors.dart
-index bb56234bc..2a937ec6b 100644
+index bb56234bc7397a3d5196b42ca006dfbf658c8844..2a937ec6b6c86bc0466e5f02ccbffdf4e46e8e73 100644
 --- a/mobile/lib/shared/theme/app_colors.dart
 +++ b/mobile/lib/shared/theme/app_colors.dart
 @@ -5,9 +5,6 @@ class AppColors extends ThemeExtension<AppColors> {
@@ -17059,7 +17505,7 @@ index bb56234bc..2a937ec6b 100644
          topSectionGradient,
          other.topSectionGradient,
 diff --git a/mobile/lib/shared/theme/app_theme.dart b/mobile/lib/shared/theme/app_theme.dart
-index 0ef3030b8..848b64818 100644
+index 0ef3030b8adfa0f4e321a84062c822e8efd9e6e2..848b6481829ea869be4626e8696e1c93bcc06869 100644
 --- a/mobile/lib/shared/theme/app_theme.dart
 +++ b/mobile/lib/shared/theme/app_theme.dart
 @@ -36,9 +36,6 @@ class AppTheme {
@@ -17086,7 +17532,7 @@ index 0ef3030b8..848b64818 100644
      );
  
 diff --git a/mobile/lib/shared/theme/community_theme_preference.dart b/mobile/lib/shared/theme/community_theme_preference.dart
-index 216f6a8d3..928c1f807 100644
+index 216f6a8d3c53f8ca3e284994fa01506b8420ed19..928c1f8074930f371f6ceef4d1dd628b5f3c4486 100644
 --- a/mobile/lib/shared/theme/community_theme_preference.dart
 +++ b/mobile/lib/shared/theme/community_theme_preference.dart
 @@ -1,5 +1,3 @@
@@ -17272,7 +17718,7 @@ index 216f6a8d3..928c1f807 100644
 -String normalizeCommunityRelayUrl(String relayUrl) =>
 -    relayUrl.trim().replaceFirst(RegExp(r'/+$'), '').toLowerCase();
 diff --git a/mobile/lib/shared/theme/community_theme_provider.dart b/mobile/lib/shared/theme/community_theme_provider.dart
-index 3fdeacd86..1e3dd5f4b 100644
+index 3fdeacd864f954c98e3110ba081a9121898768f7..1e3dd5f4b87269bf8e2ab098da83d2aae81939c6 100644
 --- a/mobile/lib/shared/theme/community_theme_provider.dart
 +++ b/mobile/lib/shared/theme/community_theme_provider.dart
 @@ -2,111 +2,17 @@ import 'dart:async';
@@ -17493,7 +17939,7 @@ index 3fdeacd86..1e3dd5f4b 100644
  
  final communityThemeStorageProvider = Provider<CommunityThemeStorage>(
 diff --git a/mobile/lib/shared/theme/message_typography.dart b/mobile/lib/shared/theme/message_typography.dart
-index 37c1be0ea..be23977ad 100644
+index 37c1be0eaa290882f010aa75263ef3d7f74dec47..be23977addd7562325175124e156913bc0d52d50 100644
 --- a/mobile/lib/shared/theme/message_typography.dart
 +++ b/mobile/lib/shared/theme/message_typography.dart
 @@ -7,9 +7,6 @@ const _fontFamily = 'Inter';
@@ -17546,7 +17992,7 @@ index 37c1be0ea..be23977ad 100644
  const activityContextTextStyle = TextStyle(
    fontFamily: _fontFamily,
 diff --git a/mobile/lib/shared/theme/theme.dart b/mobile/lib/shared/theme/theme.dart
-index 55615b5b7..0869b0ae1 100644
+index 55615b5b734e8029900f601be967a7ec20f80ad2..0869b0ae1fe8cc738ec43cd70d98fab6eba2cdac 100644
 --- a/mobile/lib/shared/theme/theme.dart
 +++ b/mobile/lib/shared/theme/theme.dart
 @@ -8,7 +8,6 @@ export 'code_style.dart';
@@ -17558,7 +18004,7 @@ index 55615b5b7..0869b0ae1 100644
  export 'message_typography.dart';
  export 'theme_catalog.dart';
 diff --git a/mobile/lib/shared/theme/theme_catalog.dart b/mobile/lib/shared/theme/theme_catalog.dart
-index 9e00cfc81..caa4e6053 100644
+index 9e00cfc8119cf0ca26c6809b552cbe8c00ca6ef1..caa4e60535e0be9e12a2725fc1c85bcf06401fa3 100644
 --- a/mobile/lib/shared/theme/theme_catalog.dart
 +++ b/mobile/lib/shared/theme/theme_catalog.dart
 @@ -31,29 +31,6 @@ class ThemeColors {
@@ -17592,7 +18038,7 @@ index 9e00cfc81..caa4e6053 100644
  const themeCatalog = <ThemeColors>[
    ThemeColors(
 diff --git a/mobile/lib/shared/theme/theme_provider.dart b/mobile/lib/shared/theme/theme_provider.dart
-index 908134ebf..769bce6e4 100644
+index 908134ebf7bd1a9fd4efa51ffbd35ef8b05b2ce7..769bce6e4c4f6209a25b85e40ada5205f2ad364a 100644
 --- a/mobile/lib/shared/theme/theme_provider.dart
 +++ b/mobile/lib/shared/theme/theme_provider.dart
 @@ -2,17 +2,12 @@ import 'package:flutter/material.dart';
@@ -17708,7 +18154,7 @@ index 908134ebf..769bce6e4 100644
  ///
  /// System mode only offers paired themes because they have both light and dark
 diff --git a/mobile/lib/shared/widgets/avatar_image.dart b/mobile/lib/shared/widgets/avatar_image.dart
-index 33f4d6547..181f3b8f1 100644
+index 33f4d65470ddf3867caab36bf77a586456971416..181f3b8f11f8b78467fcd27a7ffae8150618e15c 100644
 --- a/mobile/lib/shared/widgets/avatar_image.dart
 +++ b/mobile/lib/shared/widgets/avatar_image.dart
 @@ -1,16 +1,12 @@
@@ -17816,7 +18262,7 @@ index 33f4d6547..181f3b8f1 100644
  
  sealed class _AvatarSource {
 diff --git a/mobile/lib/shared/widgets/buzz_search_field.dart b/mobile/lib/shared/widgets/buzz_search_field.dart
-index d6e5530a1..af826a27b 100644
+index d6e5530a17f0fdf712bc55839f421bb4f759a9c3..af826a27b808e9065a5b74cb5a1ad1866c55e329 100644
 --- a/mobile/lib/shared/widgets/buzz_search_field.dart
 +++ b/mobile/lib/shared/widgets/buzz_search_field.dart
 @@ -3,9 +3,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -17830,7 +18276,7 @@ index d6e5530a1..af826a27b 100644
  const double buzzSearchIdleTextSize = 15;
  const double _searchIdleIconSize = 26;
 diff --git a/mobile/lib/shared/widgets/concentric_sheet_surface.dart b/mobile/lib/shared/widgets/concentric_sheet_surface.dart
-index cfcf9b015..269cf97c1 100644
+index cfcf9b015ae4347d36082dd9b3419a08321886e9..269cf97c1f0bfbca48779912fb363fc3c7a8e18a 100644
 --- a/mobile/lib/shared/widgets/concentric_sheet_surface.dart
 +++ b/mobile/lib/shared/widgets/concentric_sheet_surface.dart
 @@ -8,8 +8,6 @@ import 'package:flutter_hooks/flutter_hooks.dart';
@@ -17915,7 +18361,7 @@ index cfcf9b015..269cf97c1 100644
                        'brightness': brightness.name,
                      },
 diff --git a/mobile/lib/shared/widgets/frosted_app_bar.dart b/mobile/lib/shared/widgets/frosted_app_bar.dart
-index 1a8232bf9..0126cd856 100644
+index 1a8232bf9029e5ff034fd793274704635428680e..0126cd8569aaf817c59bb12a674549c0a2f86889 100644
 --- a/mobile/lib/shared/widgets/frosted_app_bar.dart
 +++ b/mobile/lib/shared/widgets/frosted_app_bar.dart
 @@ -39,22 +39,6 @@ double _barContentHeight(
@@ -17942,7 +18388,7 @@ index 1a8232bf9..0126cd856 100644
  ///
  /// Use this to add top spacing to body content so it starts below the bar.
 diff --git a/mobile/lib/shared/widgets/modal_presentation.dart b/mobile/lib/shared/widgets/modal_presentation.dart
-index a490f3794..7b5625701 100644
+index a490f3794c90e4906fbe0e88d3fe32da5d8130cb..7b5625701b2f64c340e169fd00d202da5e3d2324 100644
 --- a/mobile/lib/shared/widgets/modal_presentation.dart
 +++ b/mobile/lib/shared/widgets/modal_presentation.dart
 @@ -50,7 +50,7 @@ Future<T?> showBuzzModalBottomSheet<T>({
@@ -17955,7 +18401,7 @@ index a490f3794..7b5625701 100644
    // canvas and promote their controls onto the base app surface.
    final sheetTheme = backgroundColor == null
 diff --git a/mobile/pubspec.lock b/mobile/pubspec.lock
-index 76e9e9d6d..17e382f14 100644
+index 76e9e9d6d4dff05e4ccff2e0959e70b650d3a39b..17e382f143bbb0dfffb2a9065296d1fc4cf15330 100644
 --- a/mobile/pubspec.lock
 +++ b/mobile/pubspec.lock
 @@ -81,14 +81,6 @@ packages:
@@ -18121,7 +18567,7 @@ index 76e9e9d6d..17e382f14 100644
      dependency: transitive
      description:
 diff --git a/mobile/pubspec.yaml b/mobile/pubspec.yaml
-index f4f0bcac7..3ea5e8f8e 100644
+index f4f0bcac7aaf4f95ebbb4be611ffa1bd2a7ad830..3ea5e8f8e76d03953c00f963bc38ad9445abd203 100644
 --- a/mobile/pubspec.yaml
 +++ b/mobile/pubspec.yaml
 @@ -9,7 +9,6 @@ environment:
@@ -18169,7 +18615,7 @@ index f4f0bcac7..3ea5e8f8e 100644
  flutter:
    uses-material-design: true
 diff --git a/mobile/test/features/channels/channel_detail_page_test.dart b/mobile/test/features/channels/channel_detail_page_test.dart
-index 7159fb2fd..64d7eb215 100644
+index 7159fb2fd1e619dd37899c1f7341e1ec775f1e98..64d7eb21523e3db2c5bb0089e3f8229c111d51a8 100644
 --- a/mobile/test/features/channels/channel_detail_page_test.dart
 +++ b/mobile/test/features/channels/channel_detail_page_test.dart
 @@ -1,40 +1,25 @@
@@ -30461,7 +30907,7 @@ index 7159fb2fd..64d7eb215 100644
 -  return initial.data!;
 -}
 diff --git a/mobile/test/features/channels/channel_management_provider_test.dart b/mobile/test/features/channels/channel_management_provider_test.dart
-index 69f588622..7c71ed58b 100644
+index 69f588622b6852f1b2f951ffcb4b63440560416d..7c71ed58b0dea2aa0b0c0b4ed4ba6abf5ef51370 100644
 --- a/mobile/test/features/channels/channel_management_provider_test.dart
 +++ b/mobile/test/features/channels/channel_management_provider_test.dart
 @@ -1,8 +1,6 @@
@@ -31156,7 +31602,7 @@ index 69f588622..7c71ed58b 100644
 -  }
 -}
 diff --git a/mobile/test/features/channels/channel_messages_provider_test.dart b/mobile/test/features/channels/channel_messages_provider_test.dart
-index 9e2d93d2a..6b17196d4 100644
+index 9e2d93d2a781f005a4062b207c947c5bcc36899a..6b17196d457e4cd648c990ffe3cac394ebf51445 100644
 --- a/mobile/test/features/channels/channel_messages_provider_test.dart
 +++ b/mobile/test/features/channels/channel_messages_provider_test.dart
 @@ -261,57 +261,6 @@ void main() {
@@ -31245,7 +31691,7 @@ index 9e2d93d2a..6b17196d4 100644
    required String rootId,
    required int replyCount,
 diff --git a/mobile/test/features/channels/channel_test.dart b/mobile/test/features/channels/channel_test.dart
-index 2fce3b948..e0a22ca83 100644
+index 2fce3b94870e7a4f474cc462465c7ad5877ba9c6..e0a22ca837a76a75a4a2d366c2df95ce042fb15b 100644
 --- a/mobile/test/features/channels/channel_test.dart
 +++ b/mobile/test/features/channels/channel_test.dart
 @@ -2,162 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
@@ -31464,7 +31910,7 @@ index 2fce3b948..e0a22ca83 100644
 -  });
  }
 diff --git a/mobile/test/features/channels/channel_window_test.dart b/mobile/test/features/channels/channel_window_test.dart
-index e6d3e9330..1e763e8ed 100644
+index e6d3e9330d5be1374fbfa0b90fc3a1fad253a644..1e763e8edcaee179edc03a2e3401fcdbb35ed123 100644
 --- a/mobile/test/features/channels/channel_window_test.dart
 +++ b/mobile/test/features/channels/channel_window_test.dart
 @@ -503,7 +503,7 @@ NostrEvent _row(String id, {int createdAt = 10}) => _event(
@@ -31477,7 +31923,7 @@ index e6d3e9330..1e763e8ed 100644
      ['e', 'root'],
    ],
 diff --git a/mobile/test/features/channels/channels_page_test.dart b/mobile/test/features/channels/channels_page_test.dart
-index 6293ae373..7482f122a 100644
+index 6293ae373e92ca141a5383dafcbcc5e27fb297b1..7482f122add257c59ababce69b05f2828d375504 100644
 --- a/mobile/test/features/channels/channels_page_test.dart
 +++ b/mobile/test/features/channels/channels_page_test.dart
 @@ -1,39 +1,28 @@
@@ -33460,7 +33906,7 @@ index 6293ae373..7482f122a 100644
 +  platformSessionId: '00000000-0000-4000-8000-000000000005',
 +);
 diff --git a/mobile/test/features/channels/channels_provider_test.dart b/mobile/test/features/channels/channels_provider_test.dart
-index 3bb1be5be..bedd5db94 100644
+index 3bb1be5beb950e1bfe191f3fe2217dffd85f39d2..bedd5db940a11d9cc5570d2d9be46197daadc504 100644
 --- a/mobile/test/features/channels/channels_provider_test.dart
 +++ b/mobile/test/features/channels/channels_provider_test.dart
 @@ -26,73 +26,6 @@ part 'channels_provider_terminal_cases.dart';
@@ -35148,7 +35594,7 @@ index 3bb1be5be..bedd5db94 100644
      queryBatches.add(filters);
      // The unread catch-up is the only batch that carries `since` on every
 diff --git a/mobile/test/features/channels/compose_bar_test.dart b/mobile/test/features/channels/compose_bar_test.dart
-index 34a91e7ea..5be744828 100644
+index 34a91e7ea3ba114c1bf274442cb08bcc21dbe26e..5be7448287e172c446642433e8e537216c1beb35 100644
 --- a/mobile/test/features/channels/compose_bar_test.dart
 +++ b/mobile/test/features/channels/compose_bar_test.dart
 @@ -22,8 +22,6 @@ import 'package:buzz/features/channels/photo_library.dart';
@@ -36125,7 +36571,7 @@ index 34a91e7ea..5be744828 100644
    InlineSpan root,
  ) {
 diff --git a/mobile/test/features/channels/compose_bar_test/exact_mention_tests.dart b/mobile/test/features/channels/compose_bar_test/exact_mention_tests.dart
-index e7b04ddfd..7b4b8ed13 100644
+index e7b04ddfdb227c92d08b08fd210c6ba481aba0fe..7b4b8ed13057472b1f20d2afd74f1cf30a89f3a9 100644
 --- a/mobile/test/features/channels/compose_bar_test/exact_mention_tests.dart
 +++ b/mobile/test/features/channels/compose_bar_test/exact_mention_tests.dart
 @@ -189,14 +189,9 @@ void exactMentionTests() {
@@ -36148,7 +36594,7 @@ index e7b04ddfd..7b4b8ed13 100644
        );
 diff --git a/mobile/test/features/channels/compose_drafts_provider_test.dart b/mobile/test/features/channels/compose_drafts_provider_test.dart
 new file mode 100644
-index 000000000..ea65fb81d
+index 0000000000000000000000000000000000000000..ea65fb81d6937afeb96acf39db27d06fe4250ee7
 --- /dev/null
 +++ b/mobile/test/features/channels/compose_drafts_provider_test.dart
 @@ -0,0 +1,190 @@
@@ -36343,7 +36789,7 @@ index 000000000..ea65fb81d
 +  });
 +}
 diff --git a/mobile/test/features/channels/deep_link_dispatcher_test.dart b/mobile/test/features/channels/deep_link_dispatcher_test.dart
-index 6a581b24a..3a867dc7e 100644
+index 6a581b24a6114c9ccdeb177a3e14f02bda41c1c8..3a867dc7edb3280731fc03e35bc7438ffff32111 100644
 --- a/mobile/test/features/channels/deep_link_dispatcher_test.dart
 +++ b/mobile/test/features/channels/deep_link_dispatcher_test.dart
 @@ -3,17 +3,13 @@ import 'dart:async';
@@ -37068,7 +37514,7 @@ index 6a581b24a..3a867dc7e 100644
    const _CapturedDestination({required this.channel, required this.link});
  
 diff --git a/mobile/test/features/channels/emoji_picker_test.dart b/mobile/test/features/channels/emoji_picker_test.dart
-index 343f93238..c6c582039 100644
+index 343f932384f59a8b6093eabc79cdfc30562dec29..c6c5820394e7be101d558e4d04b0b6c1bc11a271 100644
 --- a/mobile/test/features/channels/emoji_picker_test.dart
 +++ b/mobile/test/features/channels/emoji_picker_test.dart
 @@ -1,20 +1,12 @@
@@ -37906,7 +38352,7 @@ index 343f93238..c6c582039 100644
    });
  }
 diff --git a/mobile/test/features/channels/mentions/mention_candidates_test.dart b/mobile/test/features/channels/mentions/mention_candidates_test.dart
-index 9a0b655f4..f4fd7429d 100644
+index 9a0b655f4bf1e3edf933e1bf3e8aec0be6b4f342..f4fd7429db2352ef48374cd16cb7235ba5acf353 100644
 --- a/mobile/test/features/channels/mentions/mention_candidates_test.dart
 +++ b/mobile/test/features/channels/mentions/mention_candidates_test.dart
 @@ -34,29 +34,6 @@ void main() {
@@ -38116,7 +38562,7 @@ index 9a0b655f4..f4fd7429d 100644
          ownerByAgentPubkey: const {},
          searchResults: [
 diff --git a/mobile/test/features/channels/message_actions_test.dart b/mobile/test/features/channels/message_actions_test.dart
-index a8c44e349..a3d547c71 100644
+index a8c44e34923860b27157df7543eb43b7ef086a59..a3d547c71642cd75e3fed67f0503a54656e5b1fd 100644
 --- a/mobile/test/features/channels/message_actions_test.dart
 +++ b/mobile/test/features/channels/message_actions_test.dart
 @@ -1,19 +1,17 @@
@@ -38887,7 +39333,7 @@ index a8c44e349..a3d547c71 100644
    group('downloadedImageFilename', () {
      test('preserves gif file extensions', () {
 diff --git a/mobile/test/features/channels/message_content_stability_test.dart b/mobile/test/features/channels/message_content_stability_test.dart
-index 3499cc18c..b923298ba 100644
+index 3499cc18ca63b8b989de7cbb5fd0e44fd2345e37..b923298ba1a8c631e8cbfd38f93f93ae6b9460af 100644
 --- a/mobile/test/features/channels/message_content_stability_test.dart
 +++ b/mobile/test/features/channels/message_content_stability_test.dart
 @@ -1,9 +1,5 @@
@@ -38975,7 +39421,7 @@ index 3499cc18c..b923298ba 100644
 -  });
  }
 diff --git a/mobile/test/features/channels/message_content_test.dart b/mobile/test/features/channels/message_content_test.dart
-index 8fe47e880..a4d45a789 100644
+index 8fe47e8803059b625795f9b978532e53598db248..a4d45a789f2a635c8c349caa57ea7b0b9686caf2 100644
 --- a/mobile/test/features/channels/message_content_test.dart
 +++ b/mobile/test/features/channels/message_content_test.dart
 @@ -516,27 +516,6 @@ void main() {
@@ -39188,7 +39634,7 @@ index 8fe47e880..a4d45a789 100644
          tester,
        ) async {
 diff --git a/mobile/test/features/channels/read_state/read_state_format_test.dart b/mobile/test/features/channels/read_state/read_state_format_test.dart
-index 57aa10d4c..70781567e 100644
+index 57aa10d4caff1aa9e559e0309954c176b14281aa..70781567ed1b3339020aaca0939add2dc34bc731 100644
 --- a/mobile/test/features/channels/read_state/read_state_format_test.dart
 +++ b/mobile/test/features/channels/read_state/read_state_format_test.dart
 @@ -1,164 +1,21 @@
@@ -39370,7 +39816,7 @@ index 57aa10d4c..70781567e 100644
 +  });
  }
 diff --git a/mobile/test/features/channels/read_state/read_state_manager_test.dart b/mobile/test/features/channels/read_state/read_state_manager_test.dart
-index f453bf563..75d7c5650 100644
+index f453bf56311cb57cab36320ef8e7b589f83f9b3b..75d7c5650d9da308333ac0043bb989424e9c749c 100644
 --- a/mobile/test/features/channels/read_state/read_state_manager_test.dart
 +++ b/mobile/test/features/channels/read_state/read_state_manager_test.dart
 @@ -1,304 +1,115 @@
@@ -39765,7 +40211,7 @@ index f453bf563..75d7c5650 100644
 +  });
  }
 diff --git a/mobile/test/features/channels/send_message_provider_test.dart b/mobile/test/features/channels/send_message_provider_test.dart
-index 5766fab25..9f2955536 100644
+index 5766fab2551e93bdb5a44b8bf73718f30a58b06f..9f2955536363c18d4f46dbe84e8e5b87c2cfb557 100644
 --- a/mobile/test/features/channels/send_message_provider_test.dart
 +++ b/mobile/test/features/channels/send_message_provider_test.dart
 @@ -3,8 +3,6 @@ import 'dart:async';
@@ -39951,7 +40397,7 @@ index 5766fab25..9f2955536 100644
    final Completer<NostrEvent> _result = Completer<NostrEvent>();
    final Completer<void> _published = Completer<void>();
 diff --git a/mobile/test/features/channels/timeline_message_test.dart b/mobile/test/features/channels/timeline_message_test.dart
-index 71ed82d0e..6666c1a00 100644
+index 71ed82d0e10465e65020510fe4338c75346e92af..6666c1a0043dc0063d1ce77d54e35653fc566d87 100644
 --- a/mobile/test/features/channels/timeline_message_test.dart
 +++ b/mobile/test/features/channels/timeline_message_test.dart
 @@ -122,45 +122,6 @@ NostrEvent _edit({
@@ -40135,7 +40581,7 @@ index 71ed82d0e..6666c1a00 100644
        final events = [
          _textMsg(id: 'a', content: 'first', createdAt: 1000),
 diff --git a/mobile/test/features/channels/unread_badge/unread_badge_provider_test.dart b/mobile/test/features/channels/unread_badge/unread_badge_provider_test.dart
-index 6c385bfd4..7d1b799d3 100644
+index 6c385bfd443496fb446c426a40e9f713372b037f..7d1b799d3b88ecbe9b961dbd9a1e47090775ac5b 100644
 --- a/mobile/test/features/channels/unread_badge/unread_badge_provider_test.dart
 +++ b/mobile/test/features/channels/unread_badge/unread_badge_provider_test.dart
 @@ -103,7 +103,7 @@ void main() {
@@ -40218,7 +40664,7 @@ index 6c385bfd4..7d1b799d3 100644
          ],
    };
 diff --git a/mobile/test/features/home/home_page_test.dart b/mobile/test/features/home/home_page_test.dart
-index fc0aaa966..e382255f8 100644
+index fc0aaa966b7bc4a642a823430daf3cd5dda2477a..e382255f8a53ea0ed42788752101bc0e93213c3d 100644
 --- a/mobile/test/features/home/home_page_test.dart
 +++ b/mobile/test/features/home/home_page_test.dart
 @@ -1,5 +1,4 @@
@@ -40441,7 +40887,7 @@ index fc0aaa966..e382255f8 100644
  Widget _buildSettingsPage(BuildContext context) => const SizedBox.shrink();
 diff --git a/mobile/test/features/kailo/kailo_pages_test.dart b/mobile/test/features/kailo/kailo_pages_test.dart
 new file mode 100644
-index 000000000..195a9a644
+index 0000000000000000000000000000000000000000..195a9a644742bb88e66c42896ec1017a8ebcc77d
 --- /dev/null
 +++ b/mobile/test/features/kailo/kailo_pages_test.dart
 @@ -0,0 +1,204 @@
@@ -40649,8 +41095,199 @@ index 000000000..195a9a644
 +    expect(find.text('1 member'), findsOneWidget);
 +  });
 +}
+diff --git a/mobile/test/features/kailo/kailo_tasks_page_test.dart b/mobile/test/features/kailo/kailo_tasks_page_test.dart
+new file mode 100644
+index 0000000000000000000000000000000000000000..39156a2ead5e875341b85b69e0c1489d79f00490
+--- /dev/null
++++ b/mobile/test/features/kailo/kailo_tasks_page_test.dart
+@@ -0,0 +1,185 @@
++import 'dart:convert';
++
++import 'package:buzz/features/kailo/kailo_tasks_page.dart';
++import 'package:buzz/shared/contracts/contracts.dart';
++import 'package:buzz/shared/kailo/kailo_api.dart';
++import 'package:buzz/shared/theme/theme.dart';
++import 'package:flutter/material.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:hooks_riverpod/hooks_riverpod.dart';
++import 'package:http/testing.dart';
++import 'package:shared_preferences/shared_preferences.dart';
++
++import '../../shared/kailo/kailo_test_support.dart';
++
++const _workflow = 'kailo:APPROVAL:t1:ae1:1';
++
++Map<String, dynamic> _task([Map<String, dynamic> over = const {}]) => {
++  'operationId': 'op-1',
++  'actionExecutionId': 'ae1',
++  'actionKey': 'tenant.member.revoke',
++  'actionVersion': 1,
++  'targetId': 'tg1',
++  'gateState': 'ALLOWED',
++  'dispatchState': 'DISPATCHED',
++  'createdAt': '2026-09-24T00:00:00Z',
++  ...over,
++};
++
++Map<String, dynamic> _approval([Map<String, dynamic> over = const {}]) => {
++  'workflowId': _workflow,
++  'actionExecutionId': 'ae1',
++  'actionKey': 'tenant.member.revoke',
++  'targetType': 'tenant_membership',
++  'targetId': 'tg1',
++  'initiatorPrincipalId': 'p-init',
++  'status': 'WAITING',
++  'expiresAt': '2026-09-25T00:00:00Z',
++  'decisions': <Object>[],
++  'roleRequirements': [
++    {'selector': 'TENANT_ADMIN', 'minDistinct': 1},
++  ],
++  ...over,
++};
++
++Future<List<String>> _pump(
++  WidgetTester tester,
++  Widget page,
++  Map<String, Object? Function()> routes,
++) async {
++  final seen = <String>[];
++  SharedPreferences.setMockInitialValues({
++    'kailo.config.v1': jsonEncode(testKailoConfig.toJson()),
++  });
++  final prefs = await SharedPreferences.getInstance();
++  final client = MockClient((request) async {
++    final oidc = oidcRoutes(request, refreshed: 'access-1');
++    if (oidc != null) return oidc;
++    final key = '${request.method} ${Uri.decodeComponent(request.url.path)}';
++    seen.add(key);
++    final route = routes[key];
++    return route == null ? jsonResponse(null, 404) : jsonResponse(route());
++  });
++  await tester.pumpWidget(
++    ProviderScope(
++      overrides: [
++        savedPrefsProvider.overrideWithValue(prefs),
++        kailoHttpClientProvider.overrideWithValue(client),
++        kailoSessionProvider.overrideWithValue(
++          KailoSession(
++            client: client,
++            refreshStore: MemoryRefreshStore()..value = 'refresh-1',
++          ),
++        ),
++      ],
++      child: MaterialApp(theme: AppTheme.light(), home: page),
++    ),
++  );
++  await tester.pumpAndSettle();
++  return seen;
++}
++
++void main() {
++  test('结果不明与投影落后不说成功也不说失败；只有 COMPLETED 才是完成', () {
++    TaskView t(Map<String, dynamic> over) => TaskView.fromJson(_task(over));
++    expect(
++      kailoTaskPhase(
++        t({
++          'workflowId': 'w',
++          'taskStatus': 'COMPLETED',
++          'observation': 'EXTERNAL_RESULT_UNKNOWN',
++        }),
++      ),
++      startsWith('Outcome not known yet'),
++    );
++    expect(
++      kailoTaskPhase(
++        t({
++          'workflowId': 'w',
++          'taskStatus': 'FAILED',
++          'observation': 'PROJECTION_DELAYED',
++        }),
++      ),
++      startsWith('Status may be out of date'),
++    );
++    expect(kailoTaskPhase(t({'workflowId': 'w'})), 'Started');
++    expect(
++      kailoTaskPhase(t({'workflowId': 'w', 'taskStatus': 'COMPLETED'})),
++      'Completed',
++    );
++    expect(kailoTaskPhase(t({})), 'Applied');
++    expect(kailoTaskPhase(t({'gateState': 'WAITING'})), 'Waiting for approval');
++  });
++
++  testWidgets('tasks: list → detail with its approval; read-only', (
++    tester,
++  ) async {
++    final seen = await _pump(tester, const KailoTasksPage(), {
++      'GET /api/v1/tasks': () => [
++        _task({
++          'gateState': 'WAITING',
++          'dispatchState': 'NOT_DISPATCHED',
++          'reason': 'WAITING_APPROVAL',
++          'approvalWorkflowId': _workflow,
++        }),
++      ],
++      'GET /api/v1/tasks/ae1': () => _task({
++        'gateState': 'WAITING',
++        'dispatchState': 'NOT_DISPATCHED',
++        'reason': 'WAITING_APPROVAL',
++        'approvalWorkflowId': _workflow,
++      }),
++      'GET /api/v1/approvals/$_workflow': () => _approval(),
++    });
++
++    expect(find.textContaining('Waiting for approval'), findsOneWidget);
++    await tester.tap(find.byKey(const ValueKey('kailo-task-ae1')));
++    await tester.pumpAndSettle();
++
++    expect(find.text('op-1'), findsOneWidget);
++    expect(
++      find.text('Waiting for approval. (WAITING_APPROVAL)'),
++      findsOneWidget,
++    );
++    expect(find.text('Organization admin: at least 1'), findsOneWidget);
++    expect(
++      find.byKey(const ValueKey('kailo-decide-elsewhere')),
++      findsOneWidget,
++    );
++    // 只读：没有任何写请求，也没有控制按钮
++    expect(seen.where((k) => !k.startsWith('GET ')), isEmpty);
++    expect(find.byType(TextButton), findsNothing);
++    expect(find.byType(FilledButton), findsNothing);
++  });
++
++  testWidgets(
++    'approvals: pending list, and a delayed projection is not a verdict',
++    (tester) async {
++      await _pump(tester, const KailoApprovalsPage(), {
++        'GET /api/v1/approvals': () => [
++          _approval({'observation': 'PROJECTION_DELAYED'}),
++        ],
++        'GET /api/v1/approvals/$_workflow': () =>
++            _approval({'observation': 'PROJECTION_DELAYED'}),
++      });
++
++      expect(find.textContaining('Status may be out of date'), findsOneWidget);
++      await tester.tap(find.byKey(const ValueKey('kailo-approval-$_workflow')));
++      await tester.pumpAndSettle();
++      expect(
++        find.text('The status shown may be out of date. (PROJECTION_DELAYED)'),
++        findsOneWidget,
++      );
++      expect(find.textContaining('Waiting for decisions'), findsNothing);
++    },
++  );
++
++  testWidgets('a failed read is not an empty list', (tester) async {
++    await _pump(tester, const KailoTasksPage(), {});
++    expect(
++      find.text('You have not started any governed action yet.'),
++      findsNothing,
++    );
++    expect(find.byKey(const ValueKey('kailo-view-error')), findsOneWidget);
++  });
++}
 diff --git a/mobile/test/features/search/recent_searches_provider_test.dart b/mobile/test/features/search/recent_searches_provider_test.dart
-index df0a08a8e..30f13c329 100644
+index df0a08a8ea1fb1cdc4832fe04c95f1a823063935..30f13c329c365e2debd1c12aff32ac665ffead66 100644
 --- a/mobile/test/features/search/recent_searches_provider_test.dart
 +++ b/mobile/test/features/search/recent_searches_provider_test.dart
 @@ -35,27 +35,6 @@ void main() {
@@ -40682,7 +41319,7 @@ index df0a08a8e..30f13c329 100644
      'normalizes, deduplicates, caps, and persists submitted queries',
      () async {
 diff --git a/mobile/test/features/search/search_page_test.dart b/mobile/test/features/search/search_page_test.dart
-index 8e8c4f81e..4a36b8c3e 100644
+index 8e8c4f81ec603ea54c377999523096aaf2df9ab6..4a36b8c3ec13ac9b42a4918e8d05eec852674a37 100644
 --- a/mobile/test/features/search/search_page_test.dart
 +++ b/mobile/test/features/search/search_page_test.dart
 @@ -3,7 +3,6 @@ import 'package:buzz/features/channels/channel_management_provider.dart';
@@ -40894,7 +41531,7 @@ index 8e8c4f81e..4a36b8c3e 100644
    _FakeChannelsNotifier([this.channels = const []]);
  
 diff --git a/mobile/test/features/settings/settings_page_test.dart b/mobile/test/features/settings/settings_page_test.dart
-index 1799d7a36..39260017b 100644
+index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129fb4d19c0 100644
 --- a/mobile/test/features/settings/settings_page_test.dart
 +++ b/mobile/test/features/settings/settings_page_test.dart
 @@ -1,14 +1,11 @@
@@ -41479,7 +42116,7 @@ index 1799d7a36..39260017b 100644
 -  AppLifecycleState build() => AppLifecycleState.resumed;
 -}
 diff --git a/mobile/test/features/settings/theme_picker_page_test.dart b/mobile/test/features/settings/theme_picker_page_test.dart
-index 3c4172ad6..762863cb3 100644
+index 3c4172ad643245756da4514a62088bd0234664ee..762863cb32c4693e867e37995fa77c6078cfaff8 100644
 --- a/mobile/test/features/settings/theme_picker_page_test.dart
 +++ b/mobile/test/features/settings/theme_picker_page_test.dart
 @@ -440,13 +440,12 @@ void main() {
@@ -41499,7 +42136,7 @@ index 3c4172ad6..762863cb3 100644
  
 diff --git a/mobile/test/kailo_e2e/kailo_e2e_test.dart b/mobile/test/kailo_e2e/kailo_e2e_test.dart
 new file mode 100644
-index 000000000..dc6f80173
+index 0000000000000000000000000000000000000000..dc6f80173180c33c80fd20ddff61dc2445c2a44c
 --- /dev/null
 +++ b/mobile/test/kailo_e2e/kailo_e2e_test.dart
 @@ -0,0 +1,241 @@
@@ -41745,7 +42382,7 @@ index 000000000..dc6f80173
 +  );
 +}
 diff --git a/mobile/test/shared/animated_avatar_test.dart b/mobile/test/shared/animated_avatar_test.dart
-index e3b66ec60..773f957a4 100644
+index e3b66ec6010d624ae1075cdab3ec10ae66822e58..773f957a4b09771ba1f4c6a8059019c424bcf190 100644
 --- a/mobile/test/shared/animated_avatar_test.dart
 +++ b/mobile/test/shared/animated_avatar_test.dart
 @@ -6,7 +6,7 @@ void main() {
@@ -41772,7 +42409,7 @@ index e3b66ec60..773f957a4 100644
      expect(parseAnimatedAvatarUrl(posterUrl), isNull);
      expect(parseAnimatedAvatarUrl('$posterUrl#buzz-anim='), isNull);
 diff --git a/mobile/test/shared/auth/auth_provider_test.dart b/mobile/test/shared/auth/auth_provider_test.dart
-index 9dcced5f3..6ed28380d 100644
+index 9dcced5f33343debd85e4b902ce4ec8099ce7188..6ed28380db666d4e0caffab17c5687f51223694d 100644
 --- a/mobile/test/shared/auth/auth_provider_test.dart
 +++ b/mobile/test/shared/auth/auth_provider_test.dart
 @@ -1,6 +1,3 @@
@@ -42096,7 +42733,7 @@ index 9dcced5f3..6ed28380d 100644
      final storage = CommunityStorage(secure: FakeSecureStorage());
      final invalid = Community.create(
 diff --git a/mobile/test/shared/community/community_provider_test.dart b/mobile/test/shared/community/community_provider_test.dart
-index 9052040c4..7c32a4672 100644
+index 9052040c4b976ba844ae802871be4d2d55b22de3..7c32a46721e0281120a0c1bf7aa3eb21ba4f3e91 100644
 --- a/mobile/test/shared/community/community_provider_test.dart
 +++ b/mobile/test/shared/community/community_provider_test.dart
 @@ -1,710 +1,60 @@
@@ -42857,7 +43494,7 @@ index 9052040c4..7c32a4672 100644
    });
  }
 diff --git a/mobile/test/shared/community/community_storage_test.dart b/mobile/test/shared/community/community_storage_test.dart
-index 93874aef2..f4a32ff52 100644
+index 93874aef2533e13330bd5adf8c6f5f460dfea887..f4a32ff5260609c543e51e318687205fed2bef68 100644
 --- a/mobile/test/shared/community/community_storage_test.dart
 +++ b/mobile/test/shared/community/community_storage_test.dart
 @@ -1,10 +1,7 @@
@@ -43050,7 +43687,7 @@ index 93874aef2..f4a32ff52 100644
    });
  }
 diff --git a/mobile/test/shared/community/community_test.dart b/mobile/test/shared/community/community_test.dart
-index 0d229d236..3edf90c7a 100644
+index 0d229d23660988d2133ca36300adb38c5da6c587..3edf90c7a123182af9af001ec4219d2e6b759e8d 100644
 --- a/mobile/test/shared/community/community_test.dart
 +++ b/mobile/test/shared/community/community_test.dart
 @@ -2,63 +2,27 @@ import 'package:buzz/shared/community/community.dart';
@@ -43135,7 +43772,7 @@ index 0d229d236..3edf90c7a 100644
    });
  }
 diff --git a/mobile/test/shared/deeplink/deep_link_test.dart b/mobile/test/shared/deeplink/deep_link_test.dart
-index 2eacca6bd..7e31d1c8e 100644
+index 2eacca6bd3ba3258909e768046ea352c867ab5b0..7e31d1c8e334f6832ef57ed3677a85bcc344bcb6 100644
 --- a/mobile/test/shared/deeplink/deep_link_test.dart
 +++ b/mobile/test/shared/deeplink/deep_link_test.dart
 @@ -114,171 +114,7 @@ void _channelTests() {
@@ -43397,7 +44034,7 @@ index 2eacca6bd..7e31d1c8e 100644
    });
  }
 diff --git a/mobile/test/shared/deeplink/pending_deep_link_provider_test.dart b/mobile/test/shared/deeplink/pending_deep_link_provider_test.dart
-index b13f42df6..43647dab5 100644
+index b13f42df6d232c5a87b1d6e39f524c07487461d0..43647dab5747d605ad659b56f96ea257d7a23397 100644
 --- a/mobile/test/shared/deeplink/pending_deep_link_provider_test.dart
 +++ b/mobile/test/shared/deeplink/pending_deep_link_provider_test.dart
 @@ -1,49 +1,48 @@
@@ -43473,7 +44110,7 @@ index b13f42df6..43647dab5 100644
    });
  }
 diff --git a/mobile/test/shared/emoji/emoji_only_test.dart b/mobile/test/shared/emoji/emoji_only_test.dart
-index 261b7d7cf..d8d687c51 100644
+index 261b7d7cf1e529a7a855e39a54702f30acad9480..d8d687c516962fc88a705ba9a112c22cc0ec3fe5 100644
 --- a/mobile/test/shared/emoji/emoji_only_test.dart
 +++ b/mobile/test/shared/emoji/emoji_only_test.dart
 @@ -1,24 +1,12 @@
@@ -43542,7 +44179,7 @@ index 261b7d7cf..d8d687c51 100644
  }
 diff --git a/mobile/test/shared/kailo/kailo_api_test.dart b/mobile/test/shared/kailo/kailo_api_test.dart
 new file mode 100644
-index 000000000..166edf6d1
+index 0000000000000000000000000000000000000000..166edf6d1288f875eec5cfc0a61e78566a6a9cf0
 --- /dev/null
 +++ b/mobile/test/shared/kailo/kailo_api_test.dart
 @@ -0,0 +1,99 @@
@@ -43647,7 +44284,7 @@ index 000000000..166edf6d1
 +}
 diff --git a/mobile/test/shared/kailo/kailo_config_test.dart b/mobile/test/shared/kailo/kailo_config_test.dart
 new file mode 100644
-index 000000000..7cde3d712
+index 0000000000000000000000000000000000000000..7cde3d712b4ca38f88ece5135508d8b65b34d5d8
 --- /dev/null
 +++ b/mobile/test/shared/kailo/kailo_config_test.dart
 @@ -0,0 +1,77 @@
@@ -43730,7 +44367,7 @@ index 000000000..7cde3d712
 +}
 diff --git a/mobile/test/shared/kailo/kailo_link_test.dart b/mobile/test/shared/kailo/kailo_link_test.dart
 new file mode 100644
-index 000000000..f973741c9
+index 0000000000000000000000000000000000000000..f973741c96c91aca8763062a3108ff26eba77c52
 --- /dev/null
 +++ b/mobile/test/shared/kailo/kailo_link_test.dart
 @@ -0,0 +1,245 @@
@@ -43981,7 +44618,7 @@ index 000000000..f973741c9
 +}
 diff --git a/mobile/test/shared/kailo/kailo_oidc_test.dart b/mobile/test/shared/kailo/kailo_oidc_test.dart
 new file mode 100644
-index 000000000..6bb34de8c
+index 0000000000000000000000000000000000000000..6bb34de8c0620ba8a967aa7be387e02204969c5b
 --- /dev/null
 +++ b/mobile/test/shared/kailo/kailo_oidc_test.dart
 @@ -0,0 +1,116 @@
@@ -44103,7 +44740,7 @@ index 000000000..6bb34de8c
 +}
 diff --git a/mobile/test/shared/kailo/kailo_read_state_test.dart b/mobile/test/shared/kailo/kailo_read_state_test.dart
 new file mode 100644
-index 000000000..8777862d2
+index 0000000000000000000000000000000000000000..8777862d22ca9c7f80e59cf611b1ac1bd8304f7f
 --- /dev/null
 +++ b/mobile/test/shared/kailo/kailo_read_state_test.dart
 @@ -0,0 +1,131 @@
@@ -44240,7 +44877,7 @@ index 000000000..8777862d2
 +}
 diff --git a/mobile/test/shared/kailo/kailo_test_support.dart b/mobile/test/shared/kailo/kailo_test_support.dart
 new file mode 100644
-index 000000000..28ab5003c
+index 0000000000000000000000000000000000000000..28ab5003c1d5ec21cb26954048ef5afcf0e9f389
 --- /dev/null
 +++ b/mobile/test/shared/kailo/kailo_test_support.dart
 @@ -0,0 +1,77 @@
@@ -44322,7 +44959,7 @@ index 000000000..28ab5003c
 +  'platformSessionId': '00000000-0000-4000-8000-000000000005',
 +};
 diff --git a/mobile/test/shared/mentions/agent_identity_provider_test.dart b/mobile/test/shared/mentions/agent_identity_provider_test.dart
-index c5355f26a..d5807e4ef 100644
+index c5355f26a4350887c4bea1275173f75707f4741f..d5807e4ef0368e0b1593c941e5dac17f02f88710 100644
 --- a/mobile/test/shared/mentions/agent_identity_provider_test.dart
 +++ b/mobile/test/shared/mentions/agent_identity_provider_test.dart
 @@ -2,7 +2,6 @@ import 'dart:async';
@@ -44365,7 +45002,7 @@ index c5355f26a..d5807e4ef 100644
      const pubkey = 'deadbeef0123456789';
  
 diff --git a/mobile/test/shared/profile/user_cache_batch_limit_test.dart b/mobile/test/shared/profile/user_cache_batch_limit_test.dart
-index 452a8df65..22f868d9f 100644
+index 452a8df6567cbd1f0ed05eea3f15ff9ae7ba534b..22f868d9fb8d4e6fc157caaad7ffbb869f8308b3 100644
 --- a/mobile/test/shared/profile/user_cache_batch_limit_test.dart
 +++ b/mobile/test/shared/profile/user_cache_batch_limit_test.dart
 @@ -1,89 +1,13 @@
@@ -44497,7 +45134,7 @@ index 452a8df65..22f868d9f 100644
      } finally {
        running--;
 diff --git a/mobile/test/shared/relay/nostr_models_test.dart b/mobile/test/shared/relay/nostr_models_test.dart
-index 3fdd745c3..babcb5e8b 100644
+index 3fdd745c327b3354165da7866df284e010ec904f..babcb5e8bd95b60989fbeb916ba271e311a133d5 100644
 --- a/mobile/test/shared/relay/nostr_models_test.dart
 +++ b/mobile/test/shared/relay/nostr_models_test.dart
 @@ -2,35 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
@@ -44575,7 +45212,7 @@ index 3fdd745c3..babcb5e8b 100644
 -  });
  }
 diff --git a/mobile/test/shared/relay/relay_session_test.dart b/mobile/test/shared/relay/relay_session_test.dart
-index 413f12a82..4d69bdddb 100644
+index 413f12a82ee405a0d640532c059acb5ab42ceeea..4d69bdddb26422d6129e9809cb59b5d5fee2fd9b 100644
 --- a/mobile/test/shared/relay/relay_session_test.dart
 +++ b/mobile/test/shared/relay/relay_session_test.dart
 @@ -7,137 +7,10 @@ import 'package:http/http.dart' as http;
@@ -44796,7 +45433,7 @@ index 413f12a82..4d69bdddb 100644
  // storage initialization and provider retirement while a query is in flight.
  class _PendingAuthNotifier extends AuthNotifier {
 diff --git a/mobile/test/shared/theme/app_theme_test.dart b/mobile/test/shared/theme/app_theme_test.dart
-index 161d2cd80..f038c6d97 100644
+index 161d2cd8006b9115293aaede6822c4630e8fac33..f038c6d974799cc46558c5ea9ef212de75292e1f 100644
 --- a/mobile/test/shared/theme/app_theme_test.dart
 +++ b/mobile/test/shared/theme/app_theme_test.dart
 @@ -1,6 +1,5 @@
@@ -44824,7 +45461,7 @@ index 161d2cd80..f038c6d97 100644
 -  });
  }
 diff --git a/mobile/test/shared/theme/community_theme_preference_test.dart b/mobile/test/shared/theme/community_theme_preference_test.dart
-index ce6a2afae..457e159b7 100644
+index ce6a2afaec989c3a70d81faf1c32eb03d21487b2..457e159b7fdb869eff752eaca65c67b840133c3c 100644
 --- a/mobile/test/shared/theme/community_theme_preference_test.dart
 +++ b/mobile/test/shared/theme/community_theme_preference_test.dart
 @@ -1,123 +1,39 @@
@@ -44970,7 +45607,7 @@ index ce6a2afae..457e159b7 100644
    });
  }
 diff --git a/mobile/test/shared/theme/community_theme_provider_test.dart b/mobile/test/shared/theme/community_theme_provider_test.dart
-index c63356d3b..a229b9a89 100644
+index c63356d3b8cfa8fe322ea8e62ed2daf1b5b3d622..a229b9a89f922028bc4686082ea1ec21d410ce73 100644
 --- a/mobile/test/shared/theme/community_theme_provider_test.dart
 +++ b/mobile/test/shared/theme/community_theme_provider_test.dart
 @@ -1,376 +1,42 @@
@@ -45374,7 +46011,7 @@ index c63356d3b..a229b9a89 100644
 +  });
  }
 diff --git a/mobile/test/shared/theme/message_typography_test.dart b/mobile/test/shared/theme/message_typography_test.dart
-index 6616b7fd2..fd5fd3261 100644
+index 6616b7fd27c5f7df5f28e2b5a18ad776314a6fda..fd5fd3261111d8c9ad80d378b937049b6300c141 100644
 --- a/mobile/test/shared/theme/message_typography_test.dart
 +++ b/mobile/test/shared/theme/message_typography_test.dart
 @@ -50,13 +50,6 @@ void main() {
@@ -45435,7 +46072,7 @@ index 6616b7fd2..fd5fd3261 100644
      expect(messageAvatarContentGap, Grid.twelve);
    });
 diff --git a/mobile/test/shared/utils/string_utils_test.dart b/mobile/test/shared/utils/string_utils_test.dart
-index f5188c2a6..8f688813d 100644
+index f5188c2a680d498b60805c37b3ce94e73020bf3c..8f688813de728f66c3b749f010868ad5b79ffb35 100644
 --- a/mobile/test/shared/utils/string_utils_test.dart
 +++ b/mobile/test/shared/utils/string_utils_test.dart
 @@ -1,4 +1,3 @@
@@ -45460,7 +46097,7 @@ index f5188c2a6..8f688813d 100644
 +  group('copy to paste roundtrip', () {});
  }
 diff --git a/mobile/test/shared/widgets/avatar_image_test.dart b/mobile/test/shared/widgets/avatar_image_test.dart
-index 34cf86c14..1b911136f 100644
+index 34cf86c1443e991168de0ea46712a8eee0d4bab2..1b911136ffcd2fca46a9aab4b0b0bbc5f2ebe1a6 100644
 --- a/mobile/test/shared/widgets/avatar_image_test.dart
 +++ b/mobile/test/shared/widgets/avatar_image_test.dart
 @@ -2,7 +2,6 @@ import 'dart:convert';
@@ -45488,7 +46125,7 @@ index 34cf86c14..1b911136f 100644
      await tester.pumpWidget(subject(null, isAgent: true));
  
 diff --git a/mobile/test/shared/widgets/modal_presentation_test.dart b/mobile/test/shared/widgets/modal_presentation_test.dart
-index 66ea9a108..d1f29d995 100644
+index 66ea9a10877429c0aedca8b4449c7c709cacafcc..d1f29d995903d1b341c9af87788d2e32df1cc97e 100644
 --- a/mobile/test/shared/widgets/modal_presentation_test.dart
 +++ b/mobile/test/shared/widgets/modal_presentation_test.dart
 @@ -100,55 +100,6 @@ void main() {
@@ -45585,7 +46222,7 @@ index 66ea9a108..d1f29d995 100644
        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
          supportChannel,
 diff --git a/mobile/test/widget_test.dart b/mobile/test/widget_test.dart
-index 5b0e357a3..35fbbe3fa 100644
+index 5b0e357a3958e4a246dab2f8bf6d8a6b96a2142e..35fbbe3fa0cc043f01ce4db00ca5f5c7afaeab43 100644
 --- a/mobile/test/widget_test.dart
 +++ b/mobile/test/widget_test.dart
 @@ -1,13 +1,18 @@
