@@ -39,7 +39,7 @@
 3. 确认：`core-bff` 为 `Up`，日志有两行新的 `OpenBao 引导凭据已换成 service token`；一次需要 Core 代签的动作成功（`cargo test -p kailo-core --test web_transport`）。
 4. 撤销旧令牌：以 root token 对平台 namespace 执行 `write auth/token/revoke-accessor accessor=<第 1 步 kailo-core 的值>`，root namespace 对 `kailo-core-audit` 的值同样执行。
 
-`docker compose restart/start core-bff` 不是重启 Core 的方式：它拿着已被消费的投递启动，日志末行 `wrapping token 不可用，按泄漏处理`，进程退出。任何重启都经 `start-core.sh`。
+`docker compose restart/start core-bff` 不是重启 Core 的方式：它拿着已被消费的投递启动，日志末行 `wrapping token 不可用，按泄漏处理`，进程退出。任何重启都经 `start-core.sh`。重建依赖 Core 的其他服务（worker、agentgateway 等）时一律带 `--no-deps`：不带时 compose 会连带重建 `core-bff`，同样拿着已消费的投递启动而退出（2026-09-24 实际发生：`up -d --build worker` 后 `core-bff` `Exited (1)`，经 `start-core.sh` 恢复）。
 
 root token 调用的写法见 `deploy/local/openbao-init.sh` 的 `run_bao`：令牌作为 stdin 第一行进入容器，不进 `-e`、不进参数。
 

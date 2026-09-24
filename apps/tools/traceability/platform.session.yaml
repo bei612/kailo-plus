@@ -39,5 +39,5 @@ release:
     - name: upstream-agentgateway
       digest: sha256:e1ddf6cbf61ae4b85aaea5c1ec7755e48275918f0e9f31dc6433b72533687071
     - name: upstream-buzz-web
-      digest: sha256:af26c83cebbb84be13171a2b8f3849bbd19539010262baf04edaa85f213efd39
+      digest: sha256:a78ca4c86bfcbf97813bd4601ee817591c3f2f3ee436e1212971e616a79867d0
   gate: shipped

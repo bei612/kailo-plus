@@ -18,8 +18,8 @@ patch_series: [0001-bff-transport-and-platform-pages.patch, 0002-stream-reopen-a
 # BFF 请求与回应的类型取自 contracts 的 TypeScript 生成物（ADR-02/03）。补丁只
 # import 它，构建时从本仓库放进源树；补丁里不带副本，contracts 改了就必须重建。
 vendor_files: [web/packages/contracts/src/generated/contracts.ts:web/src/platform/contracts.gen.ts]
-patch_series_digest: sha256:cea373a5cbeb6d8db0827d256f3faf693c8f4b5028d432c307ccc70c1328167f
-artifact_digest: sha256:af26c83cebbb84be13171a2b8f3849bbd19539010262baf04edaa85f213efd39
+patch_series_digest: sha256:ade147c6a0ebbe43456cadc0a482a72429d7e8c1380542d1ffcd7b05543d8c8f
+artifact_digest: sha256:a78ca4c86bfcbf97813bd4601ee817591c3f2f3ee436e1212971e616a79867d0
 
 # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
 build_context: web
