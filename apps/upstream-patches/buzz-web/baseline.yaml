@@ -30,8 +30,8 @@ vendor_files:
   - web/packages/platform/src/react/use-load.ts:web/src/kailo-platform/react/use-load.ts
   - web/packages/platform/src/react/ui.tsx:web/src/kailo-platform/react/ui.tsx
   - web/packages/platform/src/react/pages.tsx:web/src/kailo-platform/react/pages.tsx
-patch_series_digest: sha256:c420a72cd7204429fab3f89f6f09c512fa611001bd1b74e39e2139e1cad6c21d
-artifact_digest: sha256:c491263d051bd2873b9320344d8cbc09dd7e09c268f757cfc64eddfa1fdc45ae
+patch_series_digest: sha256:d7e0530cc791a4d35991ad33f677e65f988017970ca637647de07a6f0888d305
+artifact_digest: sha256:66c394578ac062afafa630dfb773cd2618cde972fbd131ae27ccf8c7081b7259
 
 # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
 build_context: web
