@@ -10,7 +10,23 @@ implementation_base_commit: 779af8886caae1317b4de962082429867ab61503
 base_divergence: none
 
 patch_series: []
-patch_series_digest: none
+# Kailo 自有的 TypeScript 只有一份（ADR-09）：BFF 客户端、平台页、原生登录引导与文案
+# 在 web/packages/platform，与 Buzz Web 放入的是同一批文件；传输换成经 Tauri
+# `kailo_api` 的实现（native.ts）。类型取自 contracts 的生成物。构建时放进源树，
+# 源树只引用、不携带副本（源树的 .gitignore 忽略这些目标）。
+vendor_files:
+  - web/packages/contracts/src/generated/contracts.ts:desktop/src/kailo-contracts.gen.ts
+  - web/packages/platform/src/transport.ts:desktop/src/kailo-platform/transport.ts
+  - web/packages/platform/src/client.ts:desktop/src/kailo-platform/client.ts
+  - web/packages/platform/src/native.ts:desktop/src/kailo-platform/native.ts
+  - web/packages/platform/src/i18n.ts:desktop/src/kailo-platform/i18n.ts
+  - web/packages/platform/src/format.ts:desktop/src/kailo-platform/format.ts
+  - web/packages/platform/src/react/context.tsx:desktop/src/kailo-platform/react/context.tsx
+  - web/packages/platform/src/react/use-load.ts:desktop/src/kailo-platform/react/use-load.ts
+  - web/packages/platform/src/react/ui.tsx:desktop/src/kailo-platform/react/ui.tsx
+  - web/packages/platform/src/react/pages.tsx:desktop/src/kailo-platform/react/pages.tsx
+  - web/packages/platform/src/react/NativeBootstrap.tsx:desktop/src/kailo-platform/react/NativeBootstrap.tsx
+patch_series_digest: sha256:054b82c1b4657d23145a0081fb412c61a8d9f48ec82cbe4f3177d6d5cdb45790
 # 产物是桌面安装包而不是镜像；Kailo 版本的构建建立之前没有可登记的产物。
 artifact_digest: none
 

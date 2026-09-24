@@ -14,12 +14,24 @@ base_divergence: none
 #
 # 改动以 patch series 形式保存而不是把 130 个源文件搬进本仓库：上游仍在演进，
 # 搬进来之后每次升级都变成手工比对，而 patch 能在新 commit 上直接重放并暴露冲突。
-patch_series: [0001-bff-transport-and-platform-pages.patch, 0002-stream-reopen-after-http-error.patch, 0003-platform-contracts-generated-types.patch]
-# BFF 请求与回应的类型取自 contracts 的 TypeScript 生成物（ADR-02/03）。补丁只
-# import 它，构建时从本仓库放进源树；补丁里不带副本，contracts 改了就必须重建。
-vendor_files: [web/packages/contracts/src/generated/contracts.ts:web/src/platform/contracts.gen.ts]
-patch_series_digest: sha256:ade147c6a0ebbe43456cadc0a482a72429d7e8c1380542d1ffcd7b05543d8c8f
-artifact_digest: sha256:a78ca4c86bfcbf97813bd4601ee817591c3f2f3ee436e1212971e616a79867d0
+patch_series: [0001-bff-transport-and-platform-pages.patch, 0002-stream-reopen-after-http-error.patch, 0003-platform-contracts-generated-types.patch, 0004-shared-platform-package.patch]
+# BFF 请求与回应的类型取自 contracts 的 TypeScript 生成物（ADR-02/03）；BFF 客户端、
+# 成员/审计/设备页与文案取自 Kailo 自有的共用包 web/packages/platform——Desktop 用的是
+# 同一份（ADR-09）。补丁只 import 它们，构建时从本仓库放进源树；补丁里不带副本，
+# 这些源改了就必须重建。
+vendor_files:
+  - web/packages/contracts/src/generated/contracts.ts:web/src/platform/contracts.gen.ts
+  - web/packages/platform/src/transport.ts:web/src/kailo-platform/transport.ts
+  - web/packages/platform/src/client.ts:web/src/kailo-platform/client.ts
+  - web/packages/platform/src/web-fetch.ts:web/src/kailo-platform/web-fetch.ts
+  - web/packages/platform/src/i18n.ts:web/src/kailo-platform/i18n.ts
+  - web/packages/platform/src/format.ts:web/src/kailo-platform/format.ts
+  - web/packages/platform/src/react/context.tsx:web/src/kailo-platform/react/context.tsx
+  - web/packages/platform/src/react/use-load.ts:web/src/kailo-platform/react/use-load.ts
+  - web/packages/platform/src/react/ui.tsx:web/src/kailo-platform/react/ui.tsx
+  - web/packages/platform/src/react/pages.tsx:web/src/kailo-platform/react/pages.tsx
+patch_series_digest: sha256:c420a72cd7204429fab3f89f6f09c512fa611001bd1b74e39e2139e1cad6c21d
+artifact_digest: sha256:c491263d051bd2873b9320344d8cbc09dd7e09c268f757cfc64eddfa1fdc45ae
 
 # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
 build_context: web

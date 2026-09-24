@@ -22,7 +22,7 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/platform_views.rs, upstream-patches/buzz-web]
+  paths: [core/crates/kailo-core/src/platform_views.rs, web/packages/platform, upstream-patches/buzz-web]
   surfaces: [web]
   schemas: [contracts/api/workspace.schema.json, contracts/api/workspace_member.schema.json, contracts/api/own_audit_entry.schema.json]
   migrations: []
@@ -35,5 +35,5 @@ release:
     - name: kailo-core
       digest: sha256:2672a6fffa8a50e3f207b5f438757c35f8fd038507b5a97a345ede433aefbc37
     - name: upstream-buzz-web
-      digest: sha256:a78ca4c86bfcbf97813bd4601ee817591c3f2f3ee436e1212971e616a79867d0
+      digest: sha256:c491263d051bd2873b9320344d8cbc09dd7e09c268f757cfc64eddfa1fdc45ae
   gate: shipped
