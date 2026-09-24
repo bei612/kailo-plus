@@ -30,6 +30,15 @@ type recorder struct {
 	mu      sync.Mutex
 	reports []generated.ApprovalStateReport
 	tasks   []generated.TaskStatus
+	// Core 不可达的模拟：置真后审批投影写回与资格判定分别失败
+	projectDown bool
+	admitDown   bool
+}
+
+func (r *recorder) set(f func(*recorder)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	f(r)
 }
 
 func (r *recorder) last() generated.ApprovalStateReport {
@@ -66,8 +75,11 @@ func setup(t *testing.T, admit func(generated.FreshApprovalAdmissionRequest) gen
 	env.OnActivity("ProjectApprovalState", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, r generated.ApprovalStateReport) error {
 			rec.mu.Lock()
+			defer rec.mu.Unlock()
+			if rec.projectDown {
+				return errors.New("Core 不可达")
+			}
 			rec.reports = append(rec.reports, r)
-			rec.mu.Unlock()
 			return nil
 		})
 	env.OnActivity("ProjectTaskState", mock.Anything, mock.Anything).Return(
@@ -79,6 +91,12 @@ func setup(t *testing.T, admit func(generated.FreshApprovalAdmissionRequest) gen
 		})
 	env.OnActivity("FreshApprovalAdmission", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, req generated.FreshApprovalAdmissionRequest) (generated.FreshApprovalAdmissionResult, error) {
+			rec.mu.Lock()
+			down := rec.admitDown
+			rec.mu.Unlock()
+			if down {
+				return generated.FreshApprovalAdmissionResult{}, errors.New("Core 不可达")
+			}
 			return admit(req), nil
 		})
 	in := generated.ApprovalWorkflowInput{

@@ -91,6 +91,14 @@ func TestApprovalReplay(t *testing.T) {
 		"testdata/approval_invalidated_history.json",
 		"testdata/approval_cancelled_history.json",
 		"testdata/approval_expired_history.json",
+		// continue-as-new（.design/06 §3，GetVersion「approval-continue-as-new」）：
+		// core/verify/drill-approval-can.sh 在压低续跑阈值后录制的同一条审批的三个
+		// run——首个 run 在 WAITING 的安全点续跑；第二个 run 带着 WAITING 接收 B 的
+		// 决定、APPROVED 后续跑；第三个 run 带着 APPROVED 与 B 的决定接收 consume
+		// 并终结。上面四份录于门控之前，守住在途旧审批仍可重放
+		"testdata/approval_can_1_waiting_history.json",
+		"testdata/approval_can_2_approved_history.json",
+		"testdata/approval_can_3_consumed_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.Approval,
