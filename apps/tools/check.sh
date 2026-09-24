@@ -616,7 +616,8 @@ if os.path.exists(zed_path):
                 bad.append(f"{zed_path}: 与 {design_03} §5 的 zed 块不等，授权判定会与设计脱节")
 
 # 杜绝硬编码：可配置项必须来自 ${VAR:?}，不得是字面量
-for m in re.finditer(r"^\s+-\s+\"?(\d{2,5}):(\d{2,5})\"?\s*$", raw, re.M):
+# 发布到宿主的端口可带绑定地址前缀（127.0.0.1:…）；前缀不改变「端口写死」这一事实
+for m in re.finditer(r"^\s+-\s+\"?(?:[\d.]+:)?(\d{2,5}):(\d{2,5})\"?\s*$", raw, re.M):
     bad.append(f"端口字面量 {m.group(0).strip()}，应取自 ${{VAR:?}}")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)

@@ -52,6 +52,9 @@ pub struct BffState {
     /// 单条流的缓冲帧数。满了对上游形成背压而不是丢帧——丢帧会让客户端
     /// 以为自己看到了完整序列。
     pub stream_buffer: usize,
+    /// 连上 Relay 后等 NIP-42 challenge 的上界。对端连上却不发 challenge 时，
+    /// 流以可处理的失败结束，而不是永远挂着。
+    pub stream_auth_timeout_seconds: u64,
     /// 撤权对**已建立流**生效的上界。请求路径上撤权立刻生效，长连接靠这个
     /// 周期回头看——它是一个必须被说出来的时间窗，不是实现细节。
     pub stream_readmit_seconds: u64,

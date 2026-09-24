@@ -60,6 +60,7 @@ pub async fn subscribe(
     community_host: &str,
     filters: Vec<Value>,
     buffer: usize,
+    challenge_timeout: tokio::time::Duration,
 ) -> Result<Subscription, OperatorError> {
     // NIP-01 限制单个 REQ 的 filter 数；上游 NIP-11 声明为 10（SF-BUZ-28）。
     // 超了不是这里截断——截断会静默丢掉调用方要的一部分 scope。
@@ -86,7 +87,7 @@ pub async fn subscribe(
 
     // 认证必须在订阅之前完成：Relay 对未认证连接的 REQ 会回 auth-required，
     // 而那条错误不会带上"你还没认证"以外的信息，排查时离原因很远。
-    let challenge = wait_for_challenge(&mut ws).await?;
+    let challenge = wait_for_challenge(&mut ws, challenge_timeout).await?;
     // 签名里的 relay URL 用 Community host 构造，与 Host 头一致
     let relay_url = RelayUrl::parse(&format!("ws://{community_host}"))
         .map_err(|e| OperatorError::Sign(format!("Community host 不可解析为 relay URL: {e}")))?;
@@ -116,10 +117,11 @@ async fn wait_for_challenge(
     ws: &mut tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >,
+    challenge_timeout: tokio::time::Duration,
 ) -> Result<String, OperatorError> {
     // 有界等待：连接建立了但对端不发 challenge 时，无界等待会让调用方永远
     // 挂着而不是得到一个可处理的失败。
-    let deadline = tokio::time::Instant::now() + CHALLENGE_TIMEOUT;
+    let deadline = tokio::time::Instant::now() + challenge_timeout;
     loop {
         let frame = tokio::time::timeout_at(deadline, ws.next())
             .await
@@ -142,8 +144,6 @@ async fn wait_for_challenge(
         }
     }
 }
-
-const CHALLENGE_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(20);
 
 /// 把 Relay 的帧转成 `Frame` 并送进通道。
 ///

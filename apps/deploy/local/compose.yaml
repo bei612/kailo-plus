@@ -245,8 +245,10 @@ services:
       buzz-objects-init: { condition: service_completed_successfully }
       buzz-replay: { condition: service_healthy }
     environment:
-      BUZZ_BIND_ADDR: 0.0.0.0:8090
-      BUZZ_HEALTH_PORT: "8091"
+      # Relay 在网内与本机用同一端口：operator 签名 URL、Community host 与连接
+      # 地址都带它（SF-BUZ-41），两侧不一致时签名与 Host 绑定都对不上
+      BUZZ_BIND_ADDR: 0.0.0.0:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}
+      BUZZ_HEALTH_PORT: ${BUZZ_RELAY_HEALTH_PORT:?必须显式提供，禁止硬编码}
       BUZZ_REQUIRE_RELAY_MEMBERSHIP: "true"
       BUZZ_ALLOW_NIP_OA_AUTH: "false"
       # 默认 false 时 REST API 绕过令牌认证（SF-BUZ-27）。WebSocket 协议认证
@@ -265,11 +267,11 @@ services:
     ports:
       # operator 面的签名 URL 必须逐字符等于 RELAY_OPERATOR_API_ORIGIN，
       # 因此本机核验也要用同一主机名与端口；仅绑回环。
-      - "127.0.0.1:8090:8090"
+      - "127.0.0.1:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}"
     healthcheck:
       # 镜像里只有 curl，没有 nc。/health 在主路由上（router.rs 的 route("/health")），
       # 不在 BUZZ_HEALTH_PORT 那个探针监听上。
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8090/health >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}/health >/dev/null"]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -299,6 +301,8 @@ services:
       BUZZ_RELAY_WS_URL: ${BUZZ_RELAY_WS_URL:?必须显式提供，禁止硬编码}
       # 单条流的缓冲帧数。满了对上游形成背压而不是丢帧
       BFF_STREAM_BUFFER: ${BFF_STREAM_BUFFER:?必须显式提供，禁止硬编码}
+      # 连上 Relay 后等 NIP-42 challenge 的上界；超时即以可处理的失败结束该流
+      BFF_STREAM_AUTH_TIMEOUT_SECONDS: ${BFF_STREAM_AUTH_TIMEOUT_SECONDS:?必须显式提供，禁止硬编码}
       # 撤权对已建立流生效的上界。请求路径上撤权立刻生效，长连接靠这个周期
       # 回头看——它是一个必须被说出来的时间窗（07 §1）。
       BFF_STREAM_READMIT_SECONDS: ${BFF_STREAM_READMIT_SECONDS:?必须显式提供，禁止硬编码}

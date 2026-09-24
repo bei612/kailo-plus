@@ -100,6 +100,7 @@ pub async fn open_stream(
         &scope.community_host,
         vec![serde_json::json!({ "kinds": [9], "#h": [scope.channel_id] })],
         state.stream_buffer,
+        std::time::Duration::from_secs(state.stream_auth_timeout_seconds),
     )
     .await
     {
