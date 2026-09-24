@@ -26,7 +26,7 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/membership_lifecycle.rs, core/crates/kailo-core/src/tenant_lifecycle.rs, worker/workflows, upstream-patches/buzz]
+  paths: [core/crates/kailo-core/src/membership_lifecycle.rs, core/crates/kailo-core/src/tenant_lifecycle.rs, core/crates/kailo-core/src/task_rerun.rs, worker/workflows, upstream-patches/buzz]
   surfaces: []
   schemas: [contracts/enums/workflow_kind.schema.json]
   migrations: [core/migrations/20260922214500_orchestration_stage1.up.sql, core/migrations/20260922230000_buzz_bindings_stage1.up.sql]

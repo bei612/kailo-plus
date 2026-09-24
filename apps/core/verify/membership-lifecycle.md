@@ -87,3 +87,9 @@ revision，于是报出「Workflow 说成功但 SpiceDB 里没有关系」——
 共九张表）、SpiceDB 关系、Relay roster。断言中途失败时前两者都可能已写入，
 因此清理走 `catch_unwind` 之后的路径而不是断言之后。连跑后复核为 `0/0/0`，
 SpiceDB `relationship read` 为空。
+
+## 搁浅之后的重跑（2026-09-24）
+
+生命周期 Workflow 被确定拒绝（`FAILED`）后，实体停在 `PROVISIONING`/`REVOKING`，而驱动它当前版本的固定 workflow ID 已经终结，再 Start 只会得到 `409`。重跑入口 `POST /service/v1/tasks/rerun`（`core/crates/kailo-core/src/task_rerun.rs`）按 `.design/06` §9「`rerun` 创建新 ActionExecution/Workflow，不改写旧 history」实现：旧 Workflow 必须 `TERMINAL` 且为 `FAILED/CANCELED/TERMINATED/TIMED_OUT`；新 ActionExecution 必须 `ALLOWED`、同 Tenant、`target_id` 就是该实体；实体版本 +1、新 WorkflowRef 与 `RERUN_ACCEPTED` 审计同事务落库，然后交给原来的启动核心（`start_scope`/`start_membership`）以新版本的固定 ID 启动。同一 ActionExecution 重发回答同一个新 Workflow。
+
+`cargo test -p kailo-core --test scope_lifecycle` 的 `stranded_workspace_is_rerun_with_new_version` 以「Tenant 就绪前建立 Workspace」得到真实的搁浅，再验上述每一条拒绝与重跑后的收敛；`core/verify/drill-task-rerun.sh` 按 RB-01 第 7 步的命令逐条演练，结果记在 RB-01 的演练记录里。

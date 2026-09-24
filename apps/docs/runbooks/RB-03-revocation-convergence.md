@@ -46,7 +46,7 @@ where w.workflow_id = '<id>';
 1. **`CONVERGENCE_PENDING`**：恢复不可达的依赖（Relay、SpiceDB 或 Core）。不需要任何针对该 Workflow 的动作——下一轮自动继续，投影收敛后 Core 跃迁到 `REVOKED`。依赖恢复后在一轮加 `VERIFY_CONVERGE_BOUND_SECS` 内应观察到终态。
 2. **roster 快照落后**（依赖都可达而仍在等待）：Relay 的 roster 快照在 `BUZZ_NIP43_RECONCILE_INTERVAL_SECS` 周期内重建（`SF-BUZ-34`）。等待不超过该周期的数倍；超过时按第 4 步升级。
 3. **Workflow 从未启动**：由发起方以同一 ActionExecution 重试同一入口（设备撤销：再次 `DELETE /api/v1/identity/client-keys/{pubkey}`，Core 按原 ActionExecution 与同一 workflow ID 续起）。
-4. **搁浅**：收集 workflow ID、Worker 日志中那次 4xx 的 Core 响应与 `kailo.entity.stranded` 读数，按 P1 升级给实施工程负责人。拒绝原因修复后，重试以新实体版本与新 workflow ID 发起，属于 Stage 2 的任务重试能力（`02-纵向交付路线.md` §4）。
+4. **搁浅**：从 Worker 日志中那次 4xx 的 Core 响应找出拒绝原因并修复，然后按 RB-01 第 7 步重跑：成员保持 `REVOKING`（门一直关着），版本 +1，以新 workflow ID 重走撤权链。原因修复前不重跑——同样的拒绝只会再得到一条 `FAILED`。
 
 ## 不可执行的动作
 

@@ -84,6 +84,12 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/scopes/lifecycle",
             post(crate::membership_lifecycle::start_scope_lifecycle),
         )
+        // 搁浅实体的重跑：新 ActionExecution、新实体版本、新 workflow ID
+        // （.design/06 §9、DD-48）
+        .route(
+            "/service/v1/tasks/rerun",
+            post(crate::task_rerun::rerun_task),
+        )
         .with_state(state)
 }
 

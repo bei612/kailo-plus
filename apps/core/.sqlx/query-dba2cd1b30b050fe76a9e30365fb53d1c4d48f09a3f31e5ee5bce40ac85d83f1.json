@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select workflow_id from projection.workflow_ref where action_execution_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workflow_id",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "dba2cd1b30b050fe76a9e30365fb53d1c4d48f09a3f31e5ee5bce40ac85d83f1"
+}

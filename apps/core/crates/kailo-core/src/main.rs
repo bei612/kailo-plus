@@ -22,6 +22,7 @@ mod service_api;
 mod service_auth;
 mod stream;
 mod task_projection;
+mod task_rerun;
 mod telemetry;
 mod temporal;
 mod tenant_lifecycle;

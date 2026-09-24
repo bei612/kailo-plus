@@ -86,9 +86,14 @@ pub async fn start_membership_lifecycle(
     let Ok(Json(req)) = body else {
         return StatusCode::BAD_REQUEST.into_response();
     };
+    start_membership(&state, &req).await
+}
 
+/// 成员生命周期的启动核心。handler 与重跑入口（`task_rerun`）共用它：重跑
+/// 不另写一份「按状态选 kind、核准入、落 WorkflowRef、Start」，两份迟早分叉。
+pub(crate) async fn start_membership(state: &ServiceState, req: &LifecycleRequest) -> Response {
     let (tenant_id, principal_id, object_id, version, membership_state) =
-        match load(&state, &req).await {
+        match load(state, req).await {
             Ok(v) => v,
             Err(Some(r)) => return r,
             Err(None) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
@@ -239,7 +244,11 @@ pub async fn start_scope_lifecycle(
     let Ok(Json(req)) = body else {
         return StatusCode::BAD_REQUEST.into_response();
     };
+    start_scope(&state, &req).await
+}
 
+/// scope 生命周期的启动核心，与 `start_membership` 同理由供重跑入口共用。
+pub(crate) async fn start_scope(state: &ServiceState, req: &ScopeLifecycleRequest) -> Response {
     let (kind, tenant_id, version, scope_state) = match req.kind {
         crate::scope_state::ScopeKind::Tenant => {
             match sqlx::query!(

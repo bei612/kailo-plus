@@ -137,18 +137,14 @@ async fn start_scope(
         .status()
 }
 
-#[tokio::test]
-async fn tenant_and_workspace_lifecycle_converge() {
-    let Some(e) = common::env() else { return };
-    let http = reqwest::Client::new();
-    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
-    let token = common::worker_token(&http, &e).await;
-
-    // 平台引导已经建好 Catalog Tenant 与 operator 身份（Core 启动时做的）。
-    // 发起方 Principal 挂在它下面。
+/// 建发起方 Principal 与一个 `PROVISIONING` 的 Tenant。
+///
+/// 发起方挂在平台引导建好的 Catalog Tenant 下（Core 启动时做的）：建 Tenant
+/// 是平台级动作，目标 Tenant 此刻还一个 Principal 都没有。
+async fn seed_tenant(pool: &PgPool, e: &Env) -> (Uuid, Uuid) {
     let catalog: Uuid = sqlx::query_scalar("select id from identity.tenant where slug = $1")
         .bind(&e.catalog_tenant_slug)
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .expect("Catalog Tenant 应由平台引导建立");
     let initiator = Uuid::new_v4();
@@ -158,7 +154,7 @@ async fn tenant_and_workspace_lifecycle_converge() {
     )
     .bind(initiator)
     .bind(catalog)
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("建发起方 Principal");
 
@@ -169,31 +165,37 @@ async fn tenant_and_workspace_lifecycle_converge() {
     )
     .bind(tenant)
     .bind(&slug)
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("建 Tenant");
+    (tenant, initiator)
+}
 
-    let outcome = std::panic::AssertUnwindSafe(run(&http, &e, &pool, &token, tenant, initiator))
-        .catch_unwind()
-        .await;
-
-    // 清理跨三个系统。Workspace 的 SpiceDB 归属关系要在删库之前取出来。
+/// 清理跨三个系统，并在最后按原样抛出用例本身的 panic。
+async fn teardown(
+    e: &Env,
+    pool: &PgPool,
+    tenant: Uuid,
+    initiator: Uuid,
+    outcome: Result<(), Box<dyn std::any::Any + Send>>,
+) {
+    // Workspace 的 SpiceDB 归属关系要在删库之前取出来。
     let workspace: Option<Uuid> =
         sqlx::query_scalar("select id from identity.workspace where tenant_id = $1 limit 1")
             .bind(tenant)
-            .fetch_optional(&pool)
+            .fetch_optional(pool)
             .await
             .ok()
             .flatten();
     if let Some(ws) = workspace {
         spicedb_delete(
-            &e,
+            e,
             &format!("workspace:{ws}"),
             "tenant",
             &format!("tenant:{tenant}"),
         );
     }
-    let retired = common::retire_relay_community(&e, &pool, tenant).await;
+    let retired = common::retire_relay_community(e, pool, tenant).await;
     for sql in [
         "delete from projection.workspace_buzz_binding where workspace_id in
              (select id from identity.workspace where tenant_id = $1)",
@@ -207,13 +209,13 @@ async fn tenant_and_workspace_lifecycle_converge() {
         "delete from identity.principal where tenant_id = $1",
         "delete from identity.tenant where id = $1",
     ] {
-        if let Err(e) = sqlx::query(sql).bind(tenant).execute(&pool).await {
+        if let Err(e) = sqlx::query(sql).bind(tenant).execute(pool).await {
             eprintln!("夹具清理失败：{sql}\n  {e}");
         }
     }
     if let Err(e) = sqlx::query("delete from identity.principal where id = $1")
         .bind(initiator)
-        .execute(&pool)
+        .execute(pool)
         .await
     {
         eprintln!("夹具清理失败（发起方 Principal）：{e}");
@@ -221,7 +223,7 @@ async fn tenant_and_workspace_lifecycle_converge() {
     // 复核：清理被挡住时只在下一次跑别的用例才表现出来，那时已经难以归因
     let left: i64 = sqlx::query_scalar("select count(*) from identity.tenant where id = $1")
         .bind(tenant)
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .unwrap_or(-1);
     assert_eq!(left, 0, "夹具 Tenant {tenant} 没有被清掉");
@@ -232,6 +234,20 @@ async fn tenant_and_workspace_lifecycle_converge() {
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);
     }
+}
+
+#[tokio::test]
+async fn tenant_and_workspace_lifecycle_converge() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+    let (tenant, initiator) = seed_tenant(&pool, &e).await;
+
+    let outcome = std::panic::AssertUnwindSafe(run(&http, &e, &pool, &token, tenant, initiator))
+        .catch_unwind()
+        .await;
+    teardown(&e, &pool, tenant, initiator, outcome).await;
 }
 
 async fn run(
@@ -366,4 +382,239 @@ async fn run(
         ),
         "ACTIVE 后 SpiceDB 必须有 workspace→tenant 归属关系"
     );
+}
+
+// ---- 搁浅实体的重跑（.design/06 §9 的 rerun、DD-48） ----
+
+async fn rerun(
+    http: &reqwest::Client,
+    e: &Env,
+    token: &str,
+    workflow_id: &str,
+    action: Uuid,
+) -> (reqwest::StatusCode, serde_json::Value) {
+    let resp = http
+        .post(format!("{}/service/v1/tasks/rerun", e.service_url))
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "workflowId": workflow_id, "actionExecutionId": action,
+        }))
+        .send()
+        .await
+        .expect("调用 rerun endpoint");
+    let status = resp.status();
+    (status, resp.json().await.unwrap_or(serde_json::Value::Null))
+}
+
+/// 等某条 Workflow 的投影进入终态，返回 (projection_state, task status)。
+async fn wait_terminal(pool: &PgPool, workflow_id: &str, bound: u64) -> (String, Option<String>) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(bound);
+    loop {
+        let row: (String, Option<String>) = sqlx::query_as(
+            "select w.projection_state, t.status from projection.workflow_ref w
+             left join projection.task_projection t on t.workflow_id = w.workflow_id
+             where w.workflow_id = $1",
+        )
+        .bind(workflow_id)
+        .fetch_one(pool)
+        .await
+        .expect("读 WorkflowRef");
+        if row.0 == "TERMINAL" || std::time::Instant::now() > deadline {
+            return row;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    }
+}
+
+async fn workflow_of(pool: &PgPool, action: Uuid) -> String {
+    sqlx::query_scalar(
+        "select workflow_id from projection.workflow_ref where action_execution_id = $1",
+    )
+    .bind(action)
+    .fetch_one(pool)
+    .await
+    .expect("该 ActionExecution 应已驱动一个 Workflow")
+}
+
+/// Workspace 在其 Tenant 就绪前被建立：WORKSPACE_LIFECYCLE 取不到 ACTIVE 的
+/// CONTROL 身份，被确定拒绝而 FAILED，Workspace 停在 PROVISIONING——正是
+/// `kailo.entity.stranded` 计数的那种搁浅。Tenant 就绪后经重跑入口以新版本与
+/// 新 workflow ID 收敛到 ACTIVE。
+#[tokio::test]
+async fn stranded_workspace_is_rerun_with_new_version() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+    let (tenant, initiator) = seed_tenant(&pool, &e).await;
+
+    let outcome =
+        std::panic::AssertUnwindSafe(run_rerun(&http, &e, &pool, &token, tenant, initiator))
+            .catch_unwind()
+            .await;
+    teardown(&e, &pool, tenant, initiator, outcome).await;
+}
+
+async fn run_rerun(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    token: &str,
+    tenant: Uuid,
+    initiator: Uuid,
+) {
+    let workspace = Uuid::new_v4();
+    sqlx::query(
+        "insert into identity.workspace (id, tenant_id, slug, name, state)
+         values ($1, $2, $3, $3, 'PROVISIONING')",
+    )
+    .bind(workspace)
+    .bind(tenant)
+    .bind(format!("w{}", &workspace.to_string()[..8]))
+    .execute(pool)
+    .await
+    .expect("建 Workspace");
+
+    // 1. Tenant 未就绪时建立 Workspace：确定拒绝，FAILED，实体搁浅
+    let first = seed_action(pool, tenant, initiator, workspace).await;
+    assert_eq!(
+        start_scope(http, e, token, "WORKSPACE", workspace, first).await,
+        reqwest::StatusCode::OK
+    );
+    let failed = workflow_of(pool, first).await;
+    assert!(failed.ends_with(":1"), "首次建立用版本 1：{failed}");
+    let (ref_state, status) = wait_terminal(pool, &failed, e.converge_bound_secs).await;
+    assert_eq!(
+        (ref_state.as_str(), status.as_deref()),
+        ("TERMINAL", Some("FAILED")),
+        "Tenant 未就绪时 WORKSPACE_LIFECYCLE 应被确定拒绝"
+    );
+    let (ws_state, ws_version): (String, i32) =
+        sqlx::query_as("select state, version from identity.workspace where id = $1")
+            .bind(workspace)
+            .fetch_one(pool)
+            .await
+            .expect("读 Workspace");
+    assert_eq!((ws_state.as_str(), ws_version), ("PROVISIONING", 1), "搁浅");
+
+    // 同一 ID 不能再 Start：它已终结（component_task::start 的 409）
+    let again = seed_action(pool, tenant, initiator, workspace).await;
+    assert_eq!(
+        start_scope(http, e, token, "WORKSPACE", workspace, again).await,
+        reqwest::StatusCode::CONFLICT,
+        "终结的固定 ID 不得被当作「已启动」"
+    );
+
+    // 2. 准入必须指向该实体：为 Tenant 签发的准入不能拿来重跑 Workspace
+    let wrong_target = seed_action(pool, tenant, initiator, tenant).await;
+    assert_eq!(
+        rerun(http, e, token, &failed, wrong_target).await.0,
+        reqwest::StatusCode::FORBIDDEN
+    );
+    // 未准入的 ActionExecution 同样不行
+    let denied = seed_action(pool, tenant, initiator, workspace).await;
+    sqlx::query("update admission.action_execution set gate_state = 'DENIED' where id = $1")
+        .bind(denied)
+        .execute(pool)
+        .await
+        .expect("改准入结论");
+    assert_eq!(
+        rerun(http, e, token, &failed, denied).await.0,
+        reqwest::StatusCode::FORBIDDEN
+    );
+    // 没有 service 令牌不行
+    let anon = http
+        .post(format!("{}/service/v1/tasks/rerun", e.service_url))
+        .json(&serde_json::json!({ "workflowId": failed, "actionExecutionId": again }))
+        .send()
+        .await
+        .expect("调用 rerun endpoint")
+        .status();
+    assert_eq!(anon, reqwest::StatusCode::UNAUTHORIZED);
+
+    // 3. 让 Tenant 就绪
+    let tenant_action = seed_action(pool, tenant, initiator, tenant).await;
+    assert_eq!(
+        start_scope(http, e, token, "TENANT", tenant, tenant_action).await,
+        reqwest::StatusCode::OK
+    );
+    assert_eq!(
+        wait_state(
+            pool,
+            "identity.tenant",
+            tenant,
+            "ACTIVE",
+            e.converge_bound_secs
+        )
+        .await,
+        "ACTIVE"
+    );
+    // 已完成的 Workflow 不可重跑：完成却停在收敛中是另一类缺陷，重跑会掩盖它
+    let tenant_wf = workflow_of(pool, tenant_action).await;
+    let (_, tenant_status) = wait_terminal(pool, &tenant_wf, e.converge_bound_secs).await;
+    assert_eq!(tenant_status.as_deref(), Some("COMPLETED"));
+    let on_completed = seed_action(pool, tenant, initiator, tenant).await;
+    assert_eq!(
+        rerun(http, e, token, &tenant_wf, on_completed).await.0,
+        reqwest::StatusCode::CONFLICT
+    );
+
+    // 4. 重跑：新 ActionExecution → 实体版本 +1 → 新 workflow ID
+    let retry = seed_action(pool, tenant, initiator, workspace).await;
+    let (code, body) = rerun(http, e, token, &failed, retry).await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{body}");
+    let next = body["workflowId"].as_str().expect("workflowId").to_owned();
+    assert_eq!(
+        next,
+        failed.trim_end_matches(":1").to_owned() + ":2",
+        "新 ID 只差实体版本"
+    );
+    // 幂等：同一 ActionExecution 重发回答同一个 Workflow，不推进第二次版本
+    let (code, body) = rerun(http, e, token, &failed, retry).await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{body}");
+    assert_eq!(body["workflowId"].as_str(), Some(next.as_str()));
+    // 另一张准入重跑同一条旧 Workflow：实体已不在它冻结的版本
+    let late = seed_action(pool, tenant, initiator, workspace).await;
+    assert_eq!(
+        rerun(http, e, token, &failed, late).await.0,
+        reqwest::StatusCode::CONFLICT
+    );
+
+    assert_eq!(
+        wait_state(
+            pool,
+            "identity.workspace",
+            workspace,
+            "ACTIVE",
+            e.converge_bound_secs
+        )
+        .await,
+        "ACTIVE",
+        "重跑后 Workspace 应收敛到 ACTIVE"
+    );
+    let version: i32 = sqlx::query_scalar("select version from identity.workspace where id = $1")
+        .bind(workspace)
+        .fetch_one(pool)
+        .await
+        .expect("读版本");
+    // 2 是重跑推进的版本，ACTIVE 跃迁再 +1
+    assert_eq!(version, 3);
+    // 旧 history 不被改写：旧 Workflow 仍是 FAILED
+    assert_eq!(
+        wait_terminal(pool, &failed, 0).await.1.as_deref(),
+        Some("FAILED")
+    );
+    // 重跑的决定与版本推进同事务留下审计，指向新旧两个 Workflow
+    let audited: i64 = sqlx::query_scalar(
+        "select count(*) from audit.audit_event
+         where tenant_id = $1 and target_id = $2 and result_code = 'RERUN_ACCEPTED'
+           and evidence_refs @> $3",
+    )
+    .bind(tenant)
+    .bind(workspace)
+    .bind(serde_json::json!([{ "value": failed }, { "value": next }]))
+    .fetch_one(pool)
+    .await
+    .expect("读审计");
+    assert_eq!(audited, 1, "重跑的审计恰好一条（重发不复制）");
 }

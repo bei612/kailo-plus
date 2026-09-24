@@ -45,21 +45,54 @@
 3. 重新执行 `tools/check.sh security`，直到 `全部通过`。
 4. 重建受影响的服务：`docker compose --env-file .env -f compose.yaml up -d <服务>`。
 5. 进程类失败：确认 `docker compose ps` 为 `Up`，且日志没有再次出现同一行。
-6. Tenant 激活类失败：重做第 3 步的 NIP-11 观察，得到 `True`。已经 `FAILED` 的那次 `TENANT_LIFECYCLE` 不会自己恢复：该 Tenant 停在 `PROVISIONING`，不获得任何协作能力（fail closed），它计入 `kailo.entity.stranded`。按「不可执行的动作」第 4 条升级处理。
+6. Tenant 激活类失败：重做第 3 步的 NIP-11 观察，得到 `True`。已经 `FAILED` 的那次 `TENANT_LIFECYCLE` 不会自己恢复：该 Tenant 停在 `PROVISIONING`，不获得任何协作能力（fail closed），它计入 `kailo.entity.stranded`。原因修复后按第 7 步重跑。
+7. **重跑搁浅实体**（Tenant、Workspace、Tenant/Workspace 成员通用；RB-03 的撤权搁浅同样走这里）。重跑创建新的 ActionExecution 与新的 Workflow，不改写旧 history（`.design/06` §9）；新 workflow ID 由实体版本 +1 得到（`.design/06` §3.1、`DD-48`），实体状态不变。在 `apps` 目录下 `. core/verify/integration-env.sh` 后执行：
+   1. 找出驱动实体当前版本、已终结而未完成的那条 Workflow（`<表>` 取 `identity.tenant`、`identity.workspace`、`identity.tenant_membership` 或 `identity.workspace_membership`）：
+
+      ```sh
+      psql "$DATABASE_URL" -Atc "select w.workflow_id, w.tenant_id, t.status from projection.workflow_ref w
+        join projection.task_projection t using (workflow_id) join <表> e
+          on split_part(w.workflow_id, ':', 4) = e.id::text and split_part(w.workflow_id, ':', 5) = e.version::text
+        where e.id = '<实体 ID>' and w.projection_state = 'TERMINAL' and t.status <> 'COMPLETED'"
+      ```
+
+      没有行就不是搁浅：Workflow 还在跑（RB-03 第 1–2 步）、结果不明（RB-05 的 `UNKNOWN`）或已完成——这三种都不重跑。
+   2. 记录这次重跑的准入。Stage 1 没有产品内的 Action 准入面，平台级生命周期动作（建 Tenant 本身也是）由平台运维以 Catalog Tenant 下自己的 `SERVICE` Principal 为发起方记录准入；`target_id` 必须就是该实体（Core 核对，不符即 403）。一条 ActionExecution 只能驱动一个 Workflow，它同时是这次重跑的幂等键：
+
+      ```sh
+      action=$(python3 -c 'import uuid;print(uuid.uuid4())')
+      psql "$DATABASE_URL" -Atc "insert into admission.action_execution (id, operation_id, tenant_id, action_key, action_version,
+        initiator_principal_id, actor_principal_id, target_id, parameter_hash, gate_state, dispatch_state, correlation_id)
+        values ('$action', gen_random_uuid(), '<第 1 步的 tenant_id>', 'task.rerun', 1, '<运维 Principal>', '<运维 Principal>',
+        '<实体 ID>', '<第 1 步的 workflow ID>', 'ALLOWED', 'NOT_DISPATCHED', gen_random_uuid())"
+      ```
+
+   3. 以 Worker 的 service 身份调用重跑入口，client secret 从文件读入：
+
+      ```sh
+      token=$(curl -sf -H "Host: $OIDC_TOKEN_HOST" "$OIDC_TOKEN_URL" --data-urlencode grant_type=client_credentials \
+        --data-urlencode client_id="$OIDC_WORKER_CLIENT_ID" --data-urlencode "client_secret@deploy/local/secrets/kailo_worker_client_secret" \
+        | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
+      curl -s -w ' HTTP %{http_code}\n' -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+        "$CORE_SERVICE_URL/service/v1/tasks/rerun" -d "{\"workflowId\":\"<第 1 步的 workflow ID>\",\"actionExecutionId\":\"$action\"}"
+      ```
+
+      `200` 返回新的 `workflowId`；`409` 是旧 Workflow 不在可重跑的终态，或实体已不在它冻结的版本（有人先重跑过，回第 1 步重新定位）；`403` 是准入不成立；`503` 是结果不明，以**同一个** `actionExecutionId` 重发——同键重发回答同一个新 Workflow，不会第二次推进版本。
+   4. 核验：实体到达目标状态（`ACTIVE` 或 `REVOKED`），新 Workflow `TERMINAL` 且 `COMPLETED`，旧 Workflow 仍是原来的终态；`audit.audit_event` 有一条 `result_code='RERUN_ACCEPTED'`，`evidence_refs` 同时指向新旧两个 workflow ID；`kailo.entity.stranded` 回落。
 
 ## 不可执行的动作
 
 1. 不以关闭门禁条款、在 `check.sh` 中加例外或把值改成「临时」来让部署继续——每一条都对应一种已经证实的 fail-open。
 2. 不以代码默认值补缺失配置；Core 与 Worker 故意没有默认值。
 3. 不在 Relay 成员准入未恢复前激活任何 Tenant，也不直接改 `projection.tenant_buzz_binding` 或 `identity.tenant` 的状态列——ACTIVE 的判据是对 Relay 的实际观察，改库等于伪造这次观察。
-4. 已 `FAILED` 的 Tenant 建立没有产品内的重试入口：重试以新的实体版本与新 workflow ID 发起（`DD-48`），属于 Stage 2 的任务重试能力（`02-纵向交付路线.md` §4）。在此之前按缺陷升级给实施工程负责人，附上该 Tenant 的 ID、workflow ID 与 verify 被拒的日志；不手工改版本号或状态。
+4. 不手工改实体的版本号或状态，不用 Temporal CLI 以旧 workflow ID 重新启动或 reset 已终结的 Workflow：重跑只经第 7 步的入口，它在同一事务里推进版本、预写新 WorkflowRef 并写审计。拒绝原因没有修复就重跑，只会得到第二条以同样原因 `FAILED` 的 Workflow。
 
 ## 完成判据
 
 - `tools/check.sh security` 输出 `全部通过`；
 - 相关容器 `Up`，日志中没有同一条启动失败；
 - 对每个在服务的 Community host，NIP-11 `supported_nips` 含 `43`；
-- `kailo.entity.stranded{entity="tenant"}` 为 0，或非零部分已按不可执行动作第 4 条登记升级。
+- `kailo.entity.stranded{entity="tenant"}` 为 0：搁浅的 Tenant 已按第 7 步重跑并收敛。
 
 ## 演练记录
 
@@ -68,3 +101,8 @@
 1. **门禁**：把 `buzz-relay` 的 `BUZZ_REQUIRE_RELAY_MEMBERSHIP` 改为 `"false"`，`tools/check.sh security` 输出 `FAIL` 与 `buzz-relay: BUZZ_REQUIRE_RELAY_MEMBERSHIP 为 false，必须显式为 true`；还原后 `全部通过`。
 2. **启动**：把 `.env` 的 `BUZZ_RELAY_NATIVE_URL_TEMPLATE` 改为不含 `{host}` 的固定地址并重建 `core-bff`，容器 `Exited (1)`；还原后 `Up`。2026-09-24 该检查收紧为整个 authority 必须恰好是 `{host}` 后复演：以 `ws://{host}:8090` 启动 `core-bff`，日志末行 `Error: "BUZZ_RELAY_NATIVE_URL_TEMPLATE 必须形如 ws[s]://{host}[/path]"`，进程退出。
 3. **激活前观察**：Relay 以 `BUZZ_REQUIRE_RELAY_MEMBERSHIP=false` 重建后，`/info` 的 `supported_nips` 不含 `43`；还原并重建后含 `43`。这正是 Tenant 激活时 Core 读取并据以拒绝的那个值（`tenant_lifecycle.rs` 的 verify）。
+
+2026-09-24，本地拓扑，基于 commit `62051fe` 之上的工作树（新增重跑入口 `core/crates/kailo-core/src/task_rerun.rs`）：
+
+1. **重跑搁浅实体（第 7 步）**：`bash core/verify/drill-task-rerun.sh`。在真实开通的 Tenant 下把 TenantBuzzBinding 暂置 `DISABLED` 后建立第二个 Workspace，`WORKSPACE_LIFECYCLE` 以 `ADMISSION_DENIED` 结束：`…:1 → FAILED；Workspace PROVISIONING v1`，搁浅计数 `1`。还原 binding 后按 7.1–7.4 逐条执行：定位查询返回唯一一行 `…:1|<tenant>|FAILED`；重跑 `HTTP 200` 返回 `…:2`；同键重发 `HTTP 200` 返回同一个 `…:2`、`runId` 为空（未另起执行）；另一张准入重跑同一条旧 Workflow `HTTP 409`。核验：`Workspace ACTIVE v3`，新 Workflow `TERMINAL COMPLETED`，旧 Workflow 仍是 `TERMINAL FAILED`，`RERUN_ACCEPTED` 审计 `1` 条，搁浅计数 `0`。
+2. **入口的拒绝面**：`cargo test -p kailo-core --test scope_lifecycle` 的 `stranded_workspace_is_rerun_with_new_version` 覆盖终结的固定 ID 再 Start 得 `409`、准入 target 指向别的实体得 `403`、`DENIED` 的准入得 `403`、无 service 令牌得 `401`、对 `COMPLETED` 的 Workflow 重跑得 `409`。破坏核验：把准入查询的 target 条件改为不核对后重建 `core-bff`，该用例在「target 指向别的实体」一步失败（`left: 200, right: 403`）；还原后 2 项全部通过。

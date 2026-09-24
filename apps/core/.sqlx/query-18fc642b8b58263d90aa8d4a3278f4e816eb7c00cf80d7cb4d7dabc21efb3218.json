@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select operation_id, action_key, action_version, initiator_principal_id,\n                actor_principal_id, parameter_hash, correlation_id\n         from admission.action_execution\n         where id = $1 and tenant_id = $2 and target_id = $3 and gate_state = 'ALLOWED'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "operation_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "action_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "action_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "initiator_principal_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_principal_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "parameter_hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "correlation_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "18fc642b8b58263d90aa8d4a3278f4e816eb7c00cf80d7cb4d7dabc21efb3218"
+}
