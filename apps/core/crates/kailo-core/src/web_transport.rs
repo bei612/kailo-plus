@@ -84,7 +84,13 @@ impl Attachment {
             && ext
                 .chars()
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
-        if url.host_str() != Some(community_host)
+        // 比 authority 而不只是主机名：Relay 把非默认端口算作 host 的一部分
+        // （SF-BUZ-41），Community host 带端口时 URL 也必须带同一个端口
+        let authority = match url.port() {
+            Some(port) => format!("{}:{port}", url.host_str()?),
+            None => url.host_str()?.to_owned(),
+        };
+        if authority != community_host
             || !ext_ok
             || url.query().is_some()
             || url.fragment().is_some()

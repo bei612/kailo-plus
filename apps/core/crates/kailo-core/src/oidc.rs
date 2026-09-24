@@ -63,12 +63,19 @@ impl TokenSource {
         })
     }
 
+    /// 丢弃缓存的令牌。对端以认证失败拒绝它时调用：IdP 轮换了签名密钥，或令牌
+    /// 在到期临界被判过期，此后同一张令牌永远不会再被接受。
+    pub async fn invalidate(&self) {
+        *self.inner.cached.lock().await = None;
+    }
+
     pub async fn token(&self) -> Result<String, TokenError> {
         let i = &self.inner;
         let mut cached = i.cached.lock().await;
-        // 留 30 秒余量：正好卡在到期瞬间取到的令牌会在服务端被判过期。
+        // 用到声明的到期时刻为止。临界时刻或 IdP 轮换签名密钥后被对端拒绝的
+        // 令牌，由调用方 invalidate 后重取——不靠一个猜出来的提前量。
         if let Some(c) = cached.as_ref() {
-            if Instant::now() + Duration::from_secs(30) < c.till {
+            if Instant::now() < c.till {
                 return Ok(c.token.clone());
             }
         }

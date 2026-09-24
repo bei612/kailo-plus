@@ -509,17 +509,46 @@ pub async fn provision_live_workspace_for(
     token: &str,
     subject: &str,
 ) -> Result<LiveWorkspace, String> {
+    // 标识先分配好：开通中途失败时，已建出的部分（Tenant、Community、Workflow
+    // 引用）按同一份标识拆掉，不在库和 Relay 里留下半开通的残骸
+    let mut fx = LiveWorkspace {
+        initiator: Uuid::new_v4(),
+        tenant: Uuid::new_v4(),
+        workspace: Uuid::new_v4(),
+        principal: Uuid::new_v4(),
+        human: Uuid::new_v4(),
+        subject: subject.to_owned(),
+        workspace_membership: Uuid::new_v4(),
+        provider: Uuid::new_v4(),
+    };
+    match provision_steps(http, e, pool, token, &mut fx).await {
+        Ok(()) => Ok(fx),
+        Err(msg) => {
+            eprintln!("开通失败，拆除已建部分：{msg}");
+            teardown_live_workspace(e, pool, &fx).await;
+            Err(msg)
+        }
+    }
+}
+
+async fn provision_steps(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    token: &str,
+    fx: &mut LiveWorkspace,
+) -> Result<(), String> {
     let catalog: Uuid = sqlx::query_scalar("select id from identity.tenant where slug = $1")
         .bind(&e.catalog_tenant_slug)
         .fetch_one(pool)
         .await
         .map_err(|err| format!("Catalog Tenant 应由平台引导建立: {err}"))?;
-    let initiator = Uuid::new_v4();
+    let initiator = fx.initiator;
     sqlx::query("insert into identity.principal (id, tenant_id, kind, status) values ($1,$2,'SERVICE','ACTIVE')")
         .bind(initiator).bind(catalog).execute(pool).await.map_err(|e| e.to_string())?;
 
     // Tenant
-    let tenant = Uuid::new_v4();
+    let tenant = fx.tenant;
     let slug = format!("v{}", &tenant.to_string()[..8]);
     sqlx::query(
         "insert into identity.tenant (id, slug, name, state) values ($1,$2,$2,'PROVISIONING')",
@@ -546,7 +575,7 @@ pub async fn provision_live_workspace_for(
     .await?;
 
     // Workspace
-    let workspace = Uuid::new_v4();
+    let workspace = fx.workspace;
     sqlx::query("insert into identity.workspace (id, tenant_id, slug, name, state) values ($1,$2,$3,$3,'PROVISIONING')")
         .bind(workspace).bind(tenant).bind(format!("w{}", &workspace.to_string()[..8]))
         .execute(pool).await.map_err(|e| e.to_string())?;
@@ -567,14 +596,13 @@ pub async fn provision_live_workspace_for(
     .await?;
 
     // OIDC 侧身份：Stage 1 不注册登录开户，这三张表由夹具写
-    let human = Uuid::new_v4();
-    let provider = Uuid::new_v4();
-    let subject = subject.to_owned();
+    let human = fx.human;
+    let subject = fx.subject.clone();
     sqlx::query("insert into identity.human_identity (id, display_name, status) values ($1,'verify','ACTIVE')")
         .bind(human).execute(pool).await.map_err(|e| e.to_string())?;
     sqlx::query("insert into identity.identity_provider (id, issuer, client_id, claim_mapping_version, status)
                  values ($1,$2,$3,1,'ACTIVE') on conflict (issuer, client_id) do nothing")
-        .bind(provider).bind(&e.oidc_issuer).bind(&subject)
+        .bind(fx.provider).bind(&e.oidc_issuer).bind(&subject)
         .execute(pool).await.map_err(|e| e.to_string())?;
     let provider: Uuid = sqlx::query_scalar(
         "select id from identity.identity_provider where issuer=$1 and client_id=$2",
@@ -584,13 +612,14 @@ pub async fn provision_live_workspace_for(
     .fetch_one(pool)
     .await
     .map_err(|e| e.to_string())?;
+    fx.provider = provider;
     sqlx::query("insert into identity.external_identity (id, provider_id, issuer, subject, human_identity_id, status)
                  values ($1,$2,$3,$4,$5,'ACTIVE')")
         .bind(Uuid::new_v4()).bind(provider).bind(&e.oidc_issuer).bind(&subject).bind(human)
         .execute(pool).await.map_err(|e| e.to_string())?;
 
     // Tenant 成员
-    let principal = Uuid::new_v4();
+    let principal = fx.principal;
     sqlx::query("insert into identity.principal (id, tenant_id, kind, status) values ($1,$2,'HUMAN','ACTIVE')")
         .bind(principal).bind(tenant).execute(pool).await.map_err(|e| e.to_string())?;
     let membership = Uuid::new_v4();
@@ -609,7 +638,7 @@ pub async fn provision_live_workspace_for(
     .await?;
 
     // Workspace 成员
-    let workspace_membership = Uuid::new_v4();
+    let workspace_membership = fx.workspace_membership;
     sqlx::query(
         "insert into identity.workspace_membership (id, workspace_id, tenant_principal_id, state)
                  values ($1,$2,$3,'PROVISIONING')",
@@ -630,16 +659,7 @@ pub async fn provision_live_workspace_for(
     })
     .await?;
 
-    Ok(LiveWorkspace {
-        initiator,
-        tenant,
-        workspace,
-        principal,
-        human,
-        subject,
-        workspace_membership,
-        provider,
-    })
+    Ok(())
 }
 
 pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace) {

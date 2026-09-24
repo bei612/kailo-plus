@@ -7,13 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
-	"strings"
-	"sync"
-	"time"
 
 	"github.com/kailo/apps/worker/internal/contracts/generated"
+	"github.com/kailo/apps/worker/internal/oidc"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -29,84 +26,25 @@ const (
 
 // CoreAPI 是 Worker 到 Core service API 的客户端（01 §4）。
 //
-// 令牌以 client_credentials 取得并按到期时间复用。不做后台刷新：刷新失败与
-// 过期是同一种情况，下次调用前重新取能同时覆盖两者，也少一条后台失败路径。
+// 令牌来自与 Temporal 连接共用的 oidc.Source：同一个服务身份只有一份取令牌、
+// 缓存与失效的逻辑。
 type CoreAPI struct {
-	base      string
-	tokenURL  string
-	clientID  string
-	secret    string
-	http      *http.Client
-	mu        sync.Mutex
-	token     string
-	tokenTill time.Time
+	base   string
+	tokens *oidc.Source
+	http   *http.Client
 }
 
 // NewCoreAPIFromEnv 按部署投递的配置构造客户端。
 //
-// 五项都不接受默认值：少任一项都说明 Worker 没被正确接上 Core，此时回落到
-// 某个猜测的地址会让状态投影写进一个不是权威的实例。
-func NewCoreAPIFromEnv() (*CoreAPI, error) {
-	get := func(k string) (string, error) {
-		v := os.Getenv(k)
-		if v == "" {
-			return "", fmt.Errorf("缺少 %s", k)
-		}
-		return v, nil
+// 地址不接受默认值：少了它说明 Worker 没被正确接上 Core，此时回落到某个猜测
+// 的地址会让状态投影写进一个不是权威的实例。
+func NewCoreAPIFromEnv(tokens *oidc.Source) (*CoreAPI, error) {
+	base := os.Getenv("CORE_SERVICE_URL")
+	if base == "" {
+		return nil, fmt.Errorf("缺少 CORE_SERVICE_URL")
 	}
-	var err error
-	c := &CoreAPI{http: &http.Client{Timeout: 20 * time.Second}}
-	if c.base, err = get("CORE_SERVICE_URL"); err != nil {
-		return nil, err
-	}
-	if c.tokenURL, err = get("OIDC_TOKEN_URL"); err != nil {
-		return nil, err
-	}
-	if c.clientID, err = get("OIDC_WORKER_CLIENT_ID"); err != nil {
-		return nil, err
-	}
-	if c.secret, err = get("OIDC_WORKER_CLIENT_SECRET"); err != nil {
-		return nil, err
-	}
-	return c, nil
-}
-
-func (c *CoreAPI) accessToken(ctx context.Context) (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	// 留 30 秒余量：正好卡在到期瞬间取到的令牌会在服务端被判过期。
-	if c.token != "" && time.Now().Add(30*time.Second).Before(c.tokenTill) {
-		return c.token, nil
-	}
-	form := url.Values{
-		"grant_type":    {"client_credentials"},
-		"client_id":     {c.clientID},
-		"client_secret": {c.secret},
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenURL,
-		strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("取服务令牌失败: HTTP %d", resp.StatusCode)
-	}
-	var body struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
-	}
-	c.token = body.AccessToken
-	c.tokenTill = time.Now().Add(time.Duration(body.ExpiresIn) * time.Second)
-	return c.token, nil
+	// 不设客户端级超时：每次调用带 Activity 的 ctx，期限由 StartToClose 给出
+	return &CoreAPI{base: base, tokens: tokens, http: &http.Client{}}, nil
 }
 
 // post 调用一个 service endpoint 并按状态码分类结果。
@@ -116,45 +54,52 @@ func (c *CoreAPI) accessToken(ctx context.Context) (string, error) {
 // 无限重试会把一次确定的拒绝变成永远卡住的 Activity；5xx 与网络失败是结果
 // 不明，交给 RetryPolicy。
 func (c *CoreAPI) post(ctx context.Context, path string, payload any, out any) error {
-	token, err := c.accessToken(ctx)
-	if err != nil {
-		return err
-	}
 	buf, err := json.Marshal(payload)
 	if err != nil {
 		return temporal.NewNonRetryableApplicationError(
 			"请求体不可序列化", ErrTypeRejected, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(buf))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-
-	switch {
-	case resp.StatusCode == http.StatusOK:
-		if out == nil {
-			return nil
+	// 401 先当作令牌失效（IdP 轮换签名密钥、到期临界）：丢弃缓存重取再试一次。
+	// 第二次仍 401 才是真的无权，按确定的拒绝处理。
+	for attempt := 0; ; attempt++ {
+		token, err := c.tokens.Token(ctx)
+		if err != nil {
+			return err
 		}
-		return json.Unmarshal(body, out)
-	case resp.StatusCode == http.StatusForbidden:
-		return temporal.NewNonRetryableApplicationError(
-			fmt.Sprintf("%s 前置条件不成立: %s", path, body), ErrTypeAdmissionDenied, nil)
-	case resp.StatusCode >= 400 && resp.StatusCode < 500:
-		return temporal.NewNonRetryableApplicationError(
-			fmt.Sprintf("%s 被拒绝: HTTP %d %s", path, resp.StatusCode, body),
-			ErrTypeRejected, nil)
-	default:
-		// 5xx 含 Core 对「roster 未收敛」的回答，那是结果不明而非失败
-		return fmt.Errorf("%s 结果不明: HTTP %d %s", path, resp.StatusCode, body)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(buf))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return err
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+
+		switch {
+		case resp.StatusCode == http.StatusUnauthorized && attempt == 0:
+			c.tokens.Invalidate()
+			continue
+		case resp.StatusCode == http.StatusOK:
+			if out == nil {
+				return nil
+			}
+			return json.Unmarshal(body, out)
+		case resp.StatusCode == http.StatusForbidden:
+			return temporal.NewNonRetryableApplicationError(
+				fmt.Sprintf("%s 前置条件不成立: %s", path, body), ErrTypeAdmissionDenied, nil)
+		case resp.StatusCode >= 400 && resp.StatusCode < 500:
+			return temporal.NewNonRetryableApplicationError(
+				fmt.Sprintf("%s 被拒绝: HTTP %d %s", path, resp.StatusCode, body),
+				ErrTypeRejected, nil)
+		default:
+			// 5xx 含 Core 对「roster 未收敛」的回答，那是结果不明而非失败
+			return fmt.Errorf("%s 结果不明: HTTP %d %s", path, resp.StatusCode, body)
+		}
 	}
 }
 

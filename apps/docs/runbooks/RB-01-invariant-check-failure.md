@@ -11,7 +11,7 @@
 | 检查点 | 覆盖的不变式 | 失败表现 |
 |---|---|---|
 | `tools/check.sh security`（部署前） | Relay 三个缺省即关闭的开关、`BUZZ_MEMBER_EVENT_KINDS` 与补丁构建；AgentGateway 每个 listener 的认证与身份 header 投影；OpenBao 的 `disable_mlock`、audit 块与 `-dev`；镜像按 digest；上游产物 digest 与 manifest 一致；SpiceDB schema 与设计逐字相等；无端口字面量 | 门禁 `FAIL` 并逐条列出服务与条款 |
-| 进程启动 | Core 与 Worker 的全部必需配置、`BUZZ_RELAY_NATIVE_URL_TEMPLATE` 含 `{host}`、Temporal 与 OTLP 连接 | 容器 `Exited (1)`，日志末行是缺失或不合法的那一项 |
+| 进程启动 | Core 与 Worker 的全部必需配置、`BUZZ_RELAY_NATIVE_URL_TEMPLATE` 形如 `ws[s]://{host}[/path]`、Temporal 与 OTLP 连接 | 容器 `Exited (1)`，日志末行是缺失或不合法的那一项 |
 | Tenant 激活 | Relay 实际执行成员准入：NIP-11 的 `supported_nips` 含 `43`（`SF-BUZ-35`） | `TENANT_LIFECYCLE` 的 verify 步被拒（403 → `ADMISSION_DENIED`，不可重试），Workflow `FAILED`，Tenant 停在 `PROVISIONING` |
 
 ## 触发信号
@@ -66,5 +66,5 @@
 2026-09-23，本地拓扑，基于 commit `395855e`：
 
 1. **门禁**：把 `buzz-relay` 的 `BUZZ_REQUIRE_RELAY_MEMBERSHIP` 改为 `"false"`，`tools/check.sh security` 输出 `FAIL` 与 `buzz-relay: BUZZ_REQUIRE_RELAY_MEMBERSHIP 为 false，必须显式为 true`；还原后 `全部通过`。
-2. **启动**：把 `.env` 的 `BUZZ_RELAY_NATIVE_URL_TEMPLATE` 改为不含 `{host}` 的固定地址并重建 `core-bff`，容器 `Exited (1)`，日志末行 `Error: "BUZZ_RELAY_NATIVE_URL_TEMPLATE 必须包含 {host}"`；还原后 `Up`。
+2. **启动**：把 `.env` 的 `BUZZ_RELAY_NATIVE_URL_TEMPLATE` 改为不含 `{host}` 的固定地址并重建 `core-bff`，容器 `Exited (1)`；还原后 `Up`。2026-09-24 该检查收紧为整个 authority 必须恰好是 `{host}` 后复演：以 `ws://{host}:8090` 启动 `core-bff`，日志末行 `Error: "BUZZ_RELAY_NATIVE_URL_TEMPLATE 必须形如 ws[s]://{host}[/path]"`，进程退出。
 3. **激活前观察**：Relay 以 `BUZZ_REQUIRE_RELAY_MEMBERSHIP=false` 重建后，`/info` 的 `supported_nips` 不含 `43`；还原并重建后含 `43`。这正是 Tenant 激活时 Core 读取并据以拒绝的那个值（`tenant_lifecycle.rs` 的 verify）。

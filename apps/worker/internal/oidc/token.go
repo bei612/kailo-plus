@@ -54,16 +54,26 @@ func FromEnv() (*Source, error) {
 	if s.secret, err = get("OIDC_WORKER_CLIENT_SECRET"); err != nil {
 		return nil, err
 	}
-	s.http = &http.Client{Timeout: 15 * time.Second}
+	// 不设客户端级超时：每次取令牌都带调用方的 ctx，期限由它给出
+	s.http = &http.Client{}
 	return &s, nil
+}
+
+// Invalidate 丢弃缓存的令牌。对端以认证失败拒绝它时调用：IdP 轮换了签名密钥，
+// 或令牌在到期临界被判过期，此后同一张令牌永远不会再被接受。
+func (s *Source) Invalidate() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.token = ""
 }
 
 // Token 返回一张仍然有效的访问令牌。
 func (s *Source) Token(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// 留 30 秒余量：正好卡在到期瞬间取到的令牌会在服务端被判过期。
-	if s.token != "" && time.Now().Add(30*time.Second).Before(s.till) {
+	// 用到声明的到期时刻为止。临界时刻或 IdP 轮换签名密钥后被对端拒绝的令牌，
+	// 由调用方 Invalidate 后重取——不靠一个猜出来的提前量。
+	if s.token != "" && time.Now().Before(s.till) {
 		return s.token, nil
 	}
 	form := url.Values{

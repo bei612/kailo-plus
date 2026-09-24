@@ -5,6 +5,11 @@ import (
 	"fmt"
 	"os"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+
 	"github.com/kailo/apps/worker/internal/oidc"
 	"go.temporal.io/sdk/client"
 )
@@ -47,5 +52,37 @@ func clientOptionsFromEnv(src *oidc.Source) (client.Options, error) {
 		HostPort:        addr,
 		Namespace:       ns,
 		HeadersProvider: bearerHeaders{src: src},
+		ConnectionOptions: client.ConnectionOptions{
+			DialOptions: []grpc.DialOption{
+				grpc.WithChainUnaryInterceptor(retryOnStaleToken(src)),
+			},
+		},
 	}, nil
+}
+
+// retryOnStaleToken 在 Temporal 以认证失败拒绝一次调用时，丢弃缓存的令牌、以新令牌
+// 替换本次请求的 authorization 再试一次。
+//
+// IdP 轮换签名密钥后，缓存里那张令牌永远不会再被接受；不这样做，Worker 会一直
+// 失败到令牌自然过期为止。直接改写本次请求的 metadata，而不依赖拦截器的先后
+// 顺序——HeadersProvider 可能已经把旧令牌写进去了。第二次仍被拒就是真的无权。
+func retryOnStaleToken(src *oidc.Source) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any,
+		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		switch status.Code(err) {
+		case codes.Unauthenticated, codes.PermissionDenied:
+		default:
+			return err
+		}
+		src.Invalidate()
+		token, terr := src.Token(ctx)
+		if terr != nil {
+			return err
+		}
+		md, _ := metadata.FromOutgoingContext(ctx)
+		md = md.Copy()
+		md.Set("authorization", "Bearer "+token)
+		return invoker(metadata.NewOutgoingContext(ctx, md), method, req, reply, cc, opts...)
+	}
 }

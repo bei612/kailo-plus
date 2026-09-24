@@ -144,10 +144,17 @@ async fn run(
         .expect("communityHost")
         .to_owned();
     let relay_url = facts["relayUrl"].as_str().expect("relayUrl");
+    // 比的是 authority 而不只是主机名：Relay 把非默认端口算作 host 的一部分
+    // （SF-BUZ-41），地址上多一个端口，客户端发出的 Host 就不再是 Community host
+    let url = reqwest::Url::parse(relay_url).expect("relayUrl");
+    let authority = match (url.host_str(), url.port()) {
+        (Some(h), Some(p)) => format!("{h}:{p}"),
+        (Some(h), None) => h.to_owned(),
+        (None, _) => panic!("relayUrl 没有主机：{relay_url}"),
+    };
     assert_eq!(
-        reqwest::Url::parse(relay_url).expect("relayUrl").host_str(),
-        Some(host.as_str()),
-        "原生端连接地址的主机名必须就是 Community host"
+        authority, host,
+        "原生端连接地址的 authority 必须就是 Community host"
     );
     let (status, body) = browser(
         http,

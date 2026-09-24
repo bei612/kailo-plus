@@ -26,13 +26,16 @@ RFC 8252 登录 IdP、在本机生成设备密钥、自己签名直连 Relay。D
 原生端本机持钥直连 Relay（`DD-75`），需要知道连到哪里；Buzz Web 永远拿不到这个地址（`DD-39`）。
 `GET /api/v1/native/community` 只对原生入口开放，返回该 Tenant 的 Community host 与由
 `BUZZ_RELAY_NATIVE_URL_TEMPLATE` 代入它得到的 Relay 地址。Relay 按连接的 Host 绑定 Community
-（`SF-BUZ-32`），因此地址的主机名必须就是 Community host——集成测试断言这一点。
+（`SF-BUZ-32`），且只把 `:80`/`:443` 视为默认端口、其余端口算作 host 的一部分（`SF-BUZ-41`），
+因此地址的 authority 必须就是 Community host——集成测试断言这一点。Relay 对外用非默认端口时，端口
+写进 `BUZZ_COMMUNITY_DOMAIN`，Community host 本身就带着它。
 
 | 请求 | 结果 |
 |---|---|
 | 原生入口 | `200`，`relayUrl` 的主机名等于 `communityHost` |
 | 浏览器入口 | `403 NATIVE_SURFACE_REQUIRED` |
 | 模板不含 `{host}` 时启动 Core | 拒绝启动：固定地址会把所有 Tenant 连到同一个 Community |
+| 模板在 `{host}` 旁另带端口时启动 Core | 拒绝启动：客户端发出的 Host 与 Community host 不等，Relay 回 404 |
 
 ## 设备公钥的完整生命周期
 

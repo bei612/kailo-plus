@@ -54,7 +54,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("构造 SpiceDB 客户端失败: %v", err)
 	}
-	core, err := activities.NewCoreAPIFromEnv()
+	core, err := activities.NewCoreAPIFromEnv(tokens)
 	if err != nil {
 		log.Fatalf("构造 Core service 客户端失败: %v", err)
 	}

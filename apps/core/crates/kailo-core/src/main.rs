@@ -134,9 +134,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         relay_native_url_template: {
             let t = std::env::var("BUZZ_RELAY_NATIVE_URL_TEMPLATE")
                 .map_err(|_| "缺少 BUZZ_RELAY_NATIVE_URL_TEMPLATE")?;
-            // 没有占位符就是一个固定地址：所有 Tenant 会被连到同一个 Community
-            if !t.contains("{host}") {
-                return Err("BUZZ_RELAY_NATIVE_URL_TEMPLATE 必须包含 {host}".into());
+            // authority 必须恰好是 {host}：没有占位符就是一个固定地址，所有 Tenant
+            // 会被连到同一个 Community；占位符旁再带端口或 userinfo，客户端发出的
+            // Host 就不再是 Community host（Relay 只剥 :80/:443，其余端口属于
+            // host，SF-BUZ-41）。非默认端口写进 BUZZ_COMMUNITY_DOMAIN。
+            let rest = t
+                .strip_prefix("wss://{host}")
+                .or_else(|| t.strip_prefix("ws://{host}"));
+            if !matches!(rest, Some(r) if r.is_empty() || r.starts_with('/')) {
+                return Err("BUZZ_RELAY_NATIVE_URL_TEMPLATE 必须形如 ws[s]://{host}[/path]".into());
             }
             t
         },

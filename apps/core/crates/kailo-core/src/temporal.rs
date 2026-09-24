@@ -150,13 +150,18 @@ impl TemporalClient {
             ..Default::default()
         };
 
-        let mut svc = self.client.connection().workflow_service();
-        match svc
-            .start_workflow_execution(tonic::Request::new(request))
-            .await
-        {
+        let result = self
+            .with_auth_retry(|mut svc| {
+                let request = request.clone();
+                async move {
+                    svc.start_workflow_execution(tonic::Request::new(request))
+                        .await
+                }
+            })
+            .await;
+        match result {
             Ok(resp) => Ok(Started::Created {
-                run_id: resp.into_inner().run_id,
+                run_id: resp.run_id,
             }),
             Err(status) => {
                 // AlreadyExists 就是「同一 ID 的 execution 已存在」。把它当成功
@@ -184,6 +189,36 @@ impl TemporalClient {
         }
     }
 
+    /// 执行一次调用；对端以认证失败拒绝时丢弃缓存令牌、重取后再试一次。
+    ///
+    /// IdP 轮换签名密钥后，缓存里那张令牌永远不会再被接受；不这样做，Core 会一直
+    /// 失败到令牌自然过期为止。第二次仍被拒就是真的无权，原样返回。
+    async fn with_auth_retry<T, F, Fut>(&self, call: F) -> Result<T, tonic::Status>
+    where
+        F: Fn(Box<dyn temporalio_client::grpc::WorkflowService>) -> Fut,
+        Fut: std::future::Future<Output = Result<tonic::Response<T>, tonic::Status>>,
+    {
+        for attempt in 0..2 {
+            let result = call(self.client.connection().workflow_service()).await;
+            match result {
+                Err(status)
+                    if attempt == 0
+                        && matches!(
+                            status.code(),
+                            tonic::Code::Unauthenticated | tonic::Code::PermissionDenied
+                        ) =>
+                {
+                    self.tokens.invalidate().await;
+                    self.refresh_token()
+                        .await
+                        .map_err(|e| tonic::Status::unavailable(e.to_string()))?;
+                }
+                other => return other.map(tonic::Response::into_inner),
+            }
+        }
+        unreachable!("第二次尝试总会返回")
+    }
+
     async fn refresh_token(&self) -> Result<(), TemporalError> {
         // 每次调用前刷新令牌；TokenSource 自己缓存到期前的值。
         let token = self
@@ -209,12 +244,17 @@ impl TemporalClient {
                 run_id: String::new(),
             }),
         };
-        let mut svc = self.client.connection().workflow_service();
-        let info = match svc
-            .describe_workflow_execution(tonic::Request::new(request))
+        let info = match self
+            .with_auth_retry(|mut svc| {
+                let request = request.clone();
+                async move {
+                    svc.describe_workflow_execution(tonic::Request::new(request))
+                        .await
+                }
+            })
             .await
         {
-            Ok(resp) => resp.into_inner().workflow_execution_info,
+            Ok(resp) => resp.workflow_execution_info,
             Err(status) if status.code() == tonic::Code::NotFound => return Ok(None),
             Err(status) => {
                 return Err(TemporalError::Unknown(format!(
@@ -250,15 +290,17 @@ impl TemporalClient {
     /// 不一致时，NotFound 的解释会错到「把已过期的当成未启动」而重复执行。
     pub async fn retention(&self) -> Result<std::time::Duration, TemporalError> {
         self.refresh_token().await?;
-        let mut svc = self.client.connection().workflow_service();
-        let resp = svc
-            .describe_namespace(tonic::Request::new(DescribeNamespaceRequest {
-                namespace: self.namespace.clone(),
-                ..Default::default()
-            }))
+        let request = DescribeNamespaceRequest {
+            namespace: self.namespace.clone(),
+            ..Default::default()
+        };
+        let resp = self
+            .with_auth_retry(|mut svc| {
+                let request = request.clone();
+                async move { svc.describe_namespace(tonic::Request::new(request)).await }
+            })
             .await
-            .map_err(|s| TemporalError::Unknown(format!("{}: {}", s.code(), s.message())))?
-            .into_inner();
+            .map_err(|s| TemporalError::Unknown(format!("{}: {}", s.code(), s.message())))?;
         let ttl = resp
             .config
             .and_then(|c| c.workflow_execution_retention_ttl)

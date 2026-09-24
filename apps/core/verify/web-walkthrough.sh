@@ -17,28 +17,8 @@ cd "$(dirname "$0")/../.."
 out="$(realpath -m "${1:?用法: web-walkthrough.sh <证据输出目录>}")"
 mkdir -p "$out"
 
-# 核验用户的 subject 由 IdP 签发。经 admin API 按用户名取回；口令从文件读入
-# 进程内存，不进命令行、不进环境变量。
-subject="$(python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "$KEYCLOAK_ADMIN_USER" \
-  "$local_dir/secrets/keycloak_admin_password" "$VERIFY_USER" <<'PY'
-import json, sys, urllib.parse, urllib.request
-port, realm, admin, pw_file, user = sys.argv[1:]
-base = f"http://127.0.0.1:{port}"
-body = urllib.parse.urlencode({
-    "grant_type": "password", "client_id": "admin-cli",
-    "username": admin, "password": open(pw_file).read().strip(),
-}).encode()
-token = json.load(urllib.request.urlopen(
-    f"{base}/realms/master/protocol/openid-connect/token", body))["access_token"]
-req = urllib.request.Request(
-    f"{base}/admin/realms/{realm}/users?exact=true&username={urllib.parse.quote(user)}",
-    headers={"Authorization": f"Bearer {token}"})
-users = json.load(urllib.request.urlopen(req))
-if len(users) != 1:
-    sys.exit(f"用户名 {user} 应恰好对应 1 个 IdP 用户，实际 {len(users)}")
-print(users[0]["id"])
-PY
-)"
+# 核验用户的 subject 由 IdP 签发
+subject="$(bash core/verify/idp-subject.sh)"
 
 fifo="$(mktemp -u)"
 mkfifo "$fifo"
