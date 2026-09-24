@@ -2127,6 +2127,9 @@ impl Governance {
             initiator_principal_id: ae.initiator_principal_id.to_string(),
             expires_at: rfc3339(expires),
             consume_window_seconds: self.cfg.consume_window_seconds,
+            // 续跑状态只由 Workflow 自己在 continue-as-new 时写入；Core 启动的永远是
+            // 首个 run，按同一 ID 重新 Start 的 input 因此逐字不变
+            resume: None,
         })
     }
 
@@ -2415,6 +2418,9 @@ impl Governance {
                 tracing::info!(workflow_id, update_id, reason, message, "Update 被拒绝");
                 UpdateResult::Refused(match parse::<ReasonCode>(&reason) {
                     Some(r @ ReasonCode::ApproverNotEligible) => Refusal::Denied(r),
+                    // 审批正在 continue-as-new，或资格判定的依赖不可用：这次没有形成
+                    // 决定，以同一 Update ID 重发即可——不是冲突
+                    Some(ReasonCode::DependencyUnavailable) => Refusal::Unavailable(message),
                     Some(r) => Refusal::Conflict(r),
                     None => Refusal::Conflict(ReasonCode::ApprovalNotOpen),
                 })

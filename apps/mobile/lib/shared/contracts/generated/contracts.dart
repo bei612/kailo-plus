@@ -27,6 +27,8 @@
 //     final approvalDecisionUpdate = approvalDecisionUpdateFromJson(jsonString);
 //     final approvalWorkflowInput = approvalWorkflowInputFromJson(jsonString);
 //     final approvalInvalidateUpdate = approvalInvalidateUpdateFromJson(jsonString);
+//     final approvalRefusal = approvalRefusalFromJson(jsonString);
+//     final approvalResume = approvalResumeFromJson(jsonString);
 //     final approvalRoleRequirement = approvalRoleRequirementFromJson(jsonString);
 //     final approvalStateReport = approvalStateReportFromJson(jsonString);
 //     final freshApprovalAdmissionRequest = freshApprovalAdmissionRequestFromJson(jsonString);
@@ -183,6 +185,17 @@ ApprovalInvalidateUpdate approvalInvalidateUpdateFromJson(String str) =>
 
 String approvalInvalidateUpdateToJson(ApprovalInvalidateUpdate data) =>
     json.encode(data.toJson());
+
+ApprovalRefusal approvalRefusalFromJson(String str) =>
+    ApprovalRefusal.fromJson(json.decode(str));
+
+String approvalRefusalToJson(ApprovalRefusal data) =>
+    json.encode(data.toJson());
+
+ApprovalResume approvalResumeFromJson(String str) =>
+    ApprovalResume.fromJson(json.decode(str));
+
+String approvalResumeToJson(ApprovalResume data) => json.encode(data.toJson());
 
 ApprovalRoleRequirement approvalRoleRequirementFromJson(String str) =>
     ApprovalRoleRequirement.fromJson(json.decode(str));
@@ -1548,6 +1561,7 @@ class ApprovalWorkflowInput {
   final String parameterHash;
   final String policyId;
   final int policyVersion;
+  final ResumeClass? resume;
   final List<RoleRequirementElement> roleRequirements;
   final ApprovalSelfApproval selfApproval;
   final String targetId;
@@ -1570,6 +1584,7 @@ class ApprovalWorkflowInput {
     required this.parameterHash,
     required this.policyId,
     required this.policyVersion,
+    this.resume,
     required this.roleRequirements,
     required this.selfApproval,
     required this.targetId,
@@ -1596,6 +1611,9 @@ class ApprovalWorkflowInput {
     parameterHash: json["parameterHash"],
     policyId: json["policyId"],
     policyVersion: json["policyVersion"],
+    resume: json["resume"] == null
+        ? null
+        : ResumeClass.fromJson(json["resume"]),
     roleRequirements: List<RoleRequirementElement>.from(
       json["roleRequirements"].map((x) => RoleRequirementElement.fromJson(x)),
     ),
@@ -1622,6 +1640,7 @@ class ApprovalWorkflowInput {
     "parameterHash": parameterHash,
     "policyId": policyId,
     "policyVersion": policyVersion,
+    "resume": resume?.toJson(),
     "roleRequirements": List<dynamic>.from(
       roleRequirements.map((x) => x.toJson()),
     ),
@@ -1672,6 +1691,77 @@ final approvalOwnerRequirementValues = EnumValues({
   "TARGET_OWNER": ApprovalOwnerRequirement.TARGET_OWNER,
 });
 
+///ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+///才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+class ResumeClass {
+  ///RFC3339，UTC
+  final String? consumedAt;
+
+  ///RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+  final String? consumeDeadline;
+  final List<DecisionElement> decisions;
+
+  ///此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+  ///从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+  final int eventBase;
+  final ReasonCode? reason;
+  final List<RefusalElement> refusals;
+  final ApprovalStatus status;
+
+  ResumeClass({
+    this.consumedAt,
+    this.consumeDeadline,
+    required this.decisions,
+    required this.eventBase,
+    this.reason,
+    required this.refusals,
+    required this.status,
+  });
+
+  factory ResumeClass.fromJson(Map<String, dynamic> json) => ResumeClass(
+    consumedAt: json["consumedAt"],
+    consumeDeadline: json["consumeDeadline"],
+    decisions: List<DecisionElement>.from(
+      json["decisions"].map((x) => DecisionElement.fromJson(x)),
+    ),
+    eventBase: json["eventBase"],
+    reason: reasonCodeValues.map[json["reason"]]!,
+    refusals: List<RefusalElement>.from(
+      json["refusals"].map((x) => RefusalElement.fromJson(x)),
+    ),
+    status: approvalStatusValues.map[json["status"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "consumedAt": consumedAt,
+    "consumeDeadline": consumeDeadline,
+    "decisions": List<dynamic>.from(decisions.map((x) => x.toJson())),
+    "eventBase": eventBase,
+    "reason": reasonCodeValues.reverse[reason],
+    "refusals": List<dynamic>.from(refusals.map((x) => x.toJson())),
+    "status": approvalStatusValues.reverse[status],
+  });
+}
+
+///一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+///§4）。
+class RefusalElement {
+  final String approverPrincipalId;
+  final ReasonCode reason;
+
+  RefusalElement({required this.approverPrincipalId, required this.reason});
+
+  factory RefusalElement.fromJson(Map<String, dynamic> json) => RefusalElement(
+    approverPrincipalId: json["approverPrincipalId"],
+    reason: reasonCodeValues.map[json["reason"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "approverPrincipalId": approverPrincipalId,
+    "reason": reasonCodeValues.reverse[reason],
+  });
+}
+
 ///ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。
 enum ApprovalSelfApproval { ALLOW, DENY }
 
@@ -1692,6 +1782,78 @@ class ApprovalInvalidateUpdate {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"reason": reasonCodeValues.reverse[reason]});
+}
+
+///一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+///§4）。
+class ApprovalRefusal {
+  final String approverPrincipalId;
+  final ReasonCode reason;
+
+  ApprovalRefusal({required this.approverPrincipalId, required this.reason});
+
+  factory ApprovalRefusal.fromJson(Map<String, dynamic> json) =>
+      ApprovalRefusal(
+        approverPrincipalId: json["approverPrincipalId"],
+        reason: reasonCodeValues.map[json["reason"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "approverPrincipalId": approverPrincipalId,
+    "reason": reasonCodeValues.reverse[reason],
+  });
+}
+
+///ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+///才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+class ApprovalResume {
+  ///RFC3339，UTC
+  final String? consumedAt;
+
+  ///RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+  final String? consumeDeadline;
+  final List<DecisionElement> decisions;
+
+  ///此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+  ///从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+  final int eventBase;
+  final ReasonCode? reason;
+  final List<RefusalElement> refusals;
+  final ApprovalStatus status;
+
+  ApprovalResume({
+    this.consumedAt,
+    this.consumeDeadline,
+    required this.decisions,
+    required this.eventBase,
+    this.reason,
+    required this.refusals,
+    required this.status,
+  });
+
+  factory ApprovalResume.fromJson(Map<String, dynamic> json) => ApprovalResume(
+    consumedAt: json["consumedAt"],
+    consumeDeadline: json["consumeDeadline"],
+    decisions: List<DecisionElement>.from(
+      json["decisions"].map((x) => DecisionElement.fromJson(x)),
+    ),
+    eventBase: json["eventBase"],
+    reason: reasonCodeValues.map[json["reason"]]!,
+    refusals: List<RefusalElement>.from(
+      json["refusals"].map((x) => RefusalElement.fromJson(x)),
+    ),
+    status: approvalStatusValues.map[json["status"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "consumedAt": consumedAt,
+    "consumeDeadline": consumeDeadline,
+    "decisions": List<dynamic>.from(decisions.map((x) => x.toJson())),
+    "eventBase": eventBase,
+    "reason": reasonCodeValues.reverse[reason],
+    "refusals": List<dynamic>.from(refusals.map((x) => x.toJson())),
+    "status": approvalStatusValues.reverse[status],
+  });
 }
 
 ///ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03

@@ -685,6 +685,7 @@ export interface ApprovalWorkflowInput {
     parameterHash:        string;
     policyId:             string;
     policyVersion:        number;
+    resume?:              ResumeClass;
     roleRequirements:     RoleRequirementElement[];
     selfApproval:         ApprovalSelfApproval;
     targetId:             string;
@@ -716,6 +717,39 @@ export enum ApprovalOwnerRequirement {
 }
 
 /**
+ * ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+ * 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+ */
+export interface ResumeClass {
+    /**
+     * RFC3339，UTC
+     */
+    consumedAt?: string;
+    /**
+     * RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+     */
+    consumeDeadline?: string;
+    decisions:        DecisionElement[];
+    /**
+     * 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+     * 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+     */
+    eventBase: number;
+    reason?:   ReasonCode;
+    refusals:  RefusalElement[];
+    status:    ApprovalStatus;
+}
+
+/**
+ * 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+ * §4）。
+ */
+export interface RefusalElement {
+    approverPrincipalId: string;
+    reason:              ReasonCode;
+}
+
+/**
  * ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。
  */
 export enum ApprovalSelfApproval {
@@ -729,6 +763,39 @@ export enum ApprovalSelfApproval {
  */
 export interface ApprovalInvalidateUpdate {
     reason: ReasonCode;
+}
+
+/**
+ * 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+ * §4）。
+ */
+export interface ApprovalRefusal {
+    approverPrincipalId: string;
+    reason:              ReasonCode;
+}
+
+/**
+ * ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+ * 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+ */
+export interface ApprovalResume {
+    /**
+     * RFC3339，UTC
+     */
+    consumedAt?: string;
+    /**
+     * RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+     */
+    consumeDeadline?: string;
+    decisions:        DecisionElement[];
+    /**
+     * 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+     * 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+     */
+    eventBase: number;
+    reason?:   ReasonCode;
+    refusals:  RefusalElement[];
+    status:    ApprovalStatus;
 }
 
 /**

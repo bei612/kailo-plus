@@ -94,6 +94,9 @@
     "consumeWindowSeconds": {
       "type": "integer",
       "description": "APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED"
+    },
+    "resume": {
+      "$ref": "approval_resume.schema.json"
     }
   }
 }

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/approval_resume.schema.json",
+  "title": "ApprovalResume",
+  "description": "ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "decisions",
+    "refusals",
+    "eventBase"
+  ],
+  "properties": {
+    "status": {
+      "$ref": "../enums/approval_status.schema.json"
+    },
+    "reason": {
+      "$ref": "../enums/reason_code.schema.json"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "approval_decision_record.schema.json"
+      }
+    },
+    "refusals": {
+      "type": "array",
+      "items": {
+        "$ref": "approval_refusal.schema.json"
+      }
+    },
+    "consumeDeadline": {
+      "type": "string",
+      "description": "RFC3339，UTC。进入 APPROVED 时确定，续跑不重算"
+    },
+    "consumedAt": {
+      "type": "string",
+      "description": "RFC3339，UTC"
+    },
+    "eventBase": {
+      "type": "integer",
+      "description": "此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history 从零数起，不加上它续跑后的投影会被当成旧事件丢掉"
+    }
+  }
+}

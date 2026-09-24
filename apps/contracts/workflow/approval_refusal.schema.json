@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/approval_refusal.schema.json",
+  "title": "ApprovalRefusal",
+  "description": "一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06 §4）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "approverPrincipalId",
+    "reason"
+  ],
+  "properties": {
+    "approverPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reason": {
+      "$ref": "../enums/reason_code.schema.json"
+    }
+  }
+}

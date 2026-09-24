@@ -82,6 +82,12 @@
 //    approvalInvalidateUpdate, err := UnmarshalApprovalInvalidateUpdate(bytes)
 //    bytes, err = approvalInvalidateUpdate.Marshal()
 //
+//    approvalRefusal, err := UnmarshalApprovalRefusal(bytes)
+//    bytes, err = approvalRefusal.Marshal()
+//
+//    approvalResume, err := UnmarshalApprovalResume(bytes)
+//    bytes, err = approvalResume.Marshal()
+//
 //    approvalRoleRequirement, err := UnmarshalApprovalRoleRequirement(bytes)
 //    bytes, err = approvalRoleRequirement.Marshal()
 //
@@ -365,6 +371,26 @@ func UnmarshalApprovalInvalidateUpdate(data []byte) (ApprovalInvalidateUpdate, e
 }
 
 func (r *ApprovalInvalidateUpdate) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalRefusal(data []byte) (ApprovalRefusal, error) {
+	var r ApprovalRefusal
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalRefusal) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApprovalResume(data []byte) (ApprovalResume, error) {
+	var r ApprovalResume
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApprovalResume) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -742,6 +768,7 @@ type ApprovalWorkflowInput struct {
 	ParameterHash        string                   `json:"parameterHash"`
 	PolicyID             string                   `json:"policyId"`
 	PolicyVersion        int64                    `json:"policyVersion"`
+	Resume               *ResumeClass             `json:"resume,omitempty"`
 	RoleRequirements     []RoleRequirementElement `json:"roleRequirements"`
 	SelfApproval         ApprovalSelfApproval     `json:"selfApproval"`
 	TargetID             string                   `json:"targetId"`
@@ -759,10 +786,56 @@ type AffectedOwnerRefElement struct {
 	TargetVersion    int64  `json:"targetVersion"`
 }
 
+// ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+// 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+type ResumeClass struct {
+	// RFC3339，UTC
+	ConsumedAt *string `json:"consumedAt,omitempty"`
+	// RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
+	Decisions       []DecisionElement `json:"decisions"`
+	// 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+	// 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+	EventBase int64            `json:"eventBase"`
+	Reason    *ReasonCode      `json:"reason,omitempty"`
+	Refusals  []RefusalElement `json:"refusals"`
+	Status    ApprovalStatus   `json:"status"`
+}
+
+// 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+// §4）。
+type RefusalElement struct {
+	ApproverPrincipalID string     `json:"approverPrincipalId"`
+	Reason              ReasonCode `json:"reason"`
+}
+
 // invalidate Update 的参数：Core 在批准后重新准入不通过时发出（.design/06 §4）。Update ID 固定为
 // <action_execution_id>:invalidate。
 type ApprovalInvalidateUpdate struct {
 	Reason ReasonCode `json:"reason"`
+}
+
+// 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+// §4）。
+type ApprovalRefusal struct {
+	ApproverPrincipalID string     `json:"approverPrincipalId"`
+	Reason              ReasonCode `json:"reason"`
+}
+
+// ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+// 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+type ApprovalResume struct {
+	// RFC3339，UTC
+	ConsumedAt *string `json:"consumedAt,omitempty"`
+	// RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
+	Decisions       []DecisionElement `json:"decisions"`
+	// 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+	// 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+	EventBase int64            `json:"eventBase"`
+	Reason    *ReasonCode      `json:"reason,omitempty"`
+	Refusals  []RefusalElement `json:"refusals"`
+	Status    ApprovalStatus   `json:"status"`
 }
 
 // ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03

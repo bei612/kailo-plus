@@ -946,6 +946,9 @@ pub struct ApprovalWorkflowInput {
 
     pub policy_version: i64,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resume: Option<ResumeClass>,
+
     pub role_requirements: Vec<RoleRequirementElement>,
 
     pub self_approval: ApprovalSelfApproval,
@@ -987,6 +990,43 @@ pub enum ApprovalOwnerRequirement {
     TargetOwner,
 }
 
+/// ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+/// 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResumeClass {
+    /// RFC3339，UTC
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consumed_at: Option<String>,
+
+    /// RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consume_deadline: Option<String>,
+
+    pub decisions: Vec<DecisionElement>,
+
+    /// 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+    /// 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+    pub event_base: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<ReasonCode>,
+
+    pub refusals: Vec<RefusalElement>,
+
+    pub status: ApprovalStatus,
+}
+
+/// 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+/// §4）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefusalElement {
+    pub approver_principal_id: String,
+
+    pub reason: ReasonCode,
+}
+
 /// ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ApprovalSelfApproval {
@@ -1002,6 +1042,43 @@ pub enum ApprovalSelfApproval {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ApprovalInvalidateUpdate {
     pub reason: ReasonCode,
+}
+
+/// 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+/// §4）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalRefusal {
+    pub approver_principal_id: String,
+
+    pub reason: ReasonCode,
+}
+
+/// ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+/// 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalResume {
+    /// RFC3339，UTC
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consumed_at: Option<String>,
+
+    /// RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consume_deadline: Option<String>,
+
+    pub decisions: Vec<DecisionElement>,
+
+    /// 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+    /// 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+    pub event_base: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<ReasonCode>,
+
+    pub refusals: Vec<RefusalElement>,
+
+    pub status: ApprovalStatus,
 }
 
 /// ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
