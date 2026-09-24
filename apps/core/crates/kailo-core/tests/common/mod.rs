@@ -679,6 +679,110 @@ async fn provision_steps(
     Ok(())
 }
 
+/// 夹具 Tenant 里另一位经 MEMBERSHIP_PROJECTION 真实开通的 HUMAN 成员。
+pub struct LiveMember {
+    pub principal: Uuid,
+    pub human: Uuid,
+    pub subject: String,
+    pub membership: Uuid,
+}
+
+/// 在既有夹具 Tenant 上开通一位 Tenant 成员：OIDC 侧三张表由夹具写（Stage 1
+/// 不注册登录开户），Tenant 成员关系走真实的成员生命周期 Workflow。
+pub async fn add_tenant_member(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    token: &str,
+    fx: &LiveWorkspace,
+) -> Result<LiveMember, String> {
+    let m = LiveMember {
+        principal: Uuid::new_v4(),
+        human: Uuid::new_v4(),
+        subject: format!("verify-{}", &Uuid::new_v4().to_string()[..8]),
+        membership: Uuid::new_v4(),
+    };
+    sqlx::query("insert into identity.human_identity (id, display_name, status) values ($1,'verify','ACTIVE')")
+        .bind(m.human).execute(pool).await.map_err(|e| e.to_string())?;
+    sqlx::query("insert into identity.external_identity (id, provider_id, issuer, subject, human_identity_id, status)
+                 values ($1,$2,$3,$4,$5,'ACTIVE')")
+        .bind(Uuid::new_v4()).bind(fx.provider).bind(&e.oidc_issuer).bind(&m.subject).bind(m.human)
+        .execute(pool).await.map_err(|e| e.to_string())?;
+    sqlx::query("insert into identity.principal (id, tenant_id, kind, status) values ($1,$2,'HUMAN','ACTIVE')")
+        .bind(m.principal).bind(fx.tenant).execute(pool).await.map_err(|e| e.to_string())?;
+    sqlx::query("insert into identity.tenant_membership (id, tenant_id, human_identity_id, tenant_principal_id, state)
+                 values ($1,$2,$3,$4,'PROVISIONING')")
+        .bind(m.membership).bind(fx.tenant).bind(m.human).bind(m.principal)
+        .execute(pool).await.map_err(|e| e.to_string())?;
+    let action = allowed_action(pool, fx.tenant, fx.initiator, m.membership).await?;
+    start_and_wait(http, e, token, pool, AwaitTarget {
+        endpoint: "/service/v1/memberships/lifecycle",
+        body: serde_json::json!({"scope":"TENANT","membershipId":m.membership,"actionExecutionId":action}),
+        table: "identity.tenant_membership",
+        id: m.membership,
+        want: "ACTIVE",
+    })
+    .await?;
+    Ok(m)
+}
+
+/// 用 zed CLI 直接写或删一条 SpiceDB 关系。只用于夹具：Tenant/Workspace 的
+/// admin 关系由角色管理动作产出，那条动作不在本切片。
+pub fn zed_relationship(e: &Env, op: &str, object: &str, relation: &str, subject: &str) {
+    let out = std::process::Command::new("sudo")
+        .args([
+            "-n",
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            &e.docker_network,
+            "--env-file",
+            &e.zed_env_file,
+            "-e",
+            &format!("ZED_ENDPOINT={}", e.spicedb_in_network),
+            "-e",
+            "ZED_INSECURE=true",
+            &e.zed_image,
+            "relationship",
+            op,
+            object,
+            relation,
+            subject,
+        ])
+        .output()
+        .expect("运行 zed");
+    assert!(
+        out.status.success(),
+        "zed relationship {op} {object} {relation} {subject} 失败：{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// 夹具额外开通的成员随 Tenant 清理删掉 principal；HumanIdentity 与外部身份不挂在
+/// Tenant 下，按人清掉。须在 `teardown_live_workspace` 之后调用。
+pub async fn teardown_members(pool: &PgPool, fx: &LiveWorkspace, members: &[&LiveMember]) {
+    for m in members {
+        for sql in [
+            "delete from identity.external_identity where human_identity_id = $1",
+            "delete from identity.human_identity where id = $1",
+        ] {
+            if let Err(err) = sqlx::query(sql).bind(m.human).execute(pool).await {
+                eprintln!("夹具清理失败：{sql}\n  {err}");
+            }
+        }
+    }
+    // 成员的外部身份挂在夹具的 IdentityProvider 上，teardown_live_workspace 删它时
+    // 还被引用；此刻引用已清，补删
+    if let Err(err) = sqlx::query("delete from identity.identity_provider where id = $1")
+        .bind(fx.provider)
+        .execute(pool)
+        .await
+    {
+        eprintln!("夹具清理失败（IdentityProvider）：{err}");
+    }
+}
+
 pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace) {
     let retired = retire_relay_community(e, pool, fx.tenant).await;
     // SpiceDB 侧：Workspace 归属与两级成员关系
@@ -724,6 +828,9 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
     }
     for sql in [
         "delete from identity.platform_session where human_identity_id = $2",
+        // 夹具 Tenant 里其他成员的会话（add_tenant_member 开通的人经 BFF 建立过会话）
+        "delete from identity.platform_session where tenant_membership_id in
+             (select id from identity.tenant_membership where tenant_id = $1)",
         "delete from projection.workspace_buzz_binding where workspace_id in
              (select id from identity.workspace where tenant_id = $1)",
         "delete from identity.workspace_membership where workspace_id in
