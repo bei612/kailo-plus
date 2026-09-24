@@ -18,6 +18,9 @@ import (
 // 的 kind，不增加顶层 Workflow 引擎。因此只注册一个类型，kind 在 input 里。
 const ComponentTaskKind = "ComponentTaskWorkflow"
 
+// GetVersion 的 changeID。一经发布即不可改名、不可复用：已录制的 history 里记着它。
+const changeTenantRevocationAllRelations = "tenant-revocation-all-relations"
+
 // MembershipTarget 是 Workflow 的冻结输入（DD-45）。
 //
 // 每个字段都是冻结值：Workflow 运行中不得更换 Tenant、Workspace、target type
@@ -264,7 +267,25 @@ func membershipLifecycle(
 	if m.Scope == "WORKSPACE" {
 		relationObject = "workspace"
 	}
-	if err := t.step(func(ao workflow.Context) error {
+	// Tenant 撤权撤掉该 Principal 在本 Tenant 的全部 tenant/workspace 关系，不只是
+	// member：角色（DD-82）也是 relationship，只撤 member 会让失权者仍持有 admin。
+	// 行为变化以 GetVersion 门控：在途与已录制的旧 history 走原来那一步。
+	fullRevocation := false
+	if m.Scope == "TENANT" && want == activities.Absent {
+		fullRevocation = workflow.GetVersion(ctx, changeTenantRevocationAllRelations,
+			workflow.DefaultVersion, 1) == 1
+	}
+	if fullRevocation {
+		if err := t.step(func(ao workflow.Context) error {
+			return workflow.ExecuteActivity(ao, (*activities.SpiceDB).RevokeSubject,
+				activities.SubjectScope{
+					TenantID:           m.RelationObjectID,
+					SubjectPrincipalID: m.SubjectPrincipalID,
+				}).Get(ctx, nil)
+		}); err != nil {
+			return t.fail(err)
+		}
+	} else if err := t.step(func(ao workflow.Context) error {
 		return workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
 			activities.Relationship{
 				ResourceType: relationObject,

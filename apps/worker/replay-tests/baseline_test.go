@@ -57,6 +57,10 @@ func TestComponentTaskReplay(t *testing.T) {
 		// Relay 不可达时撤权按轮等待（RB-03 演练录制）：Activity 一轮失败、
 		// 持久 timer、下一轮成功
 		"testdata/component_task_revocation_round_wait_history.json",
+		// Tenant 撤权撤掉该 Principal 的全部 tenant/workspace 关系（DD-82），以
+		// GetVersion「tenant-revocation-all-relations」门控；上面两份撤权 history
+		// 录于门控之前，守住的是旧路径仍可重放
+		"testdata/component_task_revocation_all_relations_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.ComponentTask,

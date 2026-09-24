@@ -76,6 +76,7 @@ func main() {
 		workflow.RegisterOptions{Name: workflows.ApprovalKind})
 	// 以方法值注册：Workflow 侧按 (*T).Method 引用同一个函数，两边必须一致。
 	w.RegisterActivity(spicedb.Converge)
+	w.RegisterActivity(spicedb.RevokeSubject)
 	w.RegisterActivity(core.ProjectTaskState)
 	w.RegisterActivity(core.ProjectBuzzRoster)
 	w.RegisterActivity(core.ProjectBuzzIdentity)
