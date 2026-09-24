@@ -162,6 +162,11 @@ pub async fn project_buzz_roster(
             //
             // Workspace 层的撤权只动 Channel roster：退出一个 Workspace 不等于退出
             // Tenant，把身份撤掉会顺手关掉他在其他 Workspace 的协作面。
+            if req.presence == TargetPresence::Present {
+                if let Err(r) = crate::service_api::audit_gate(&state).await {
+                    return r;
+                }
+            }
             let transition = match (req.presence, req.scope) {
                 (TargetPresence::Present, _) => sqlx::query!(
                     "update identity.buzz_identity_binding

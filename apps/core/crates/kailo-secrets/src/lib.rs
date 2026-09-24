@@ -25,6 +25,8 @@ pub enum SecretError {
     Transport(#[from] reqwest::Error),
     #[error("AppRole 登录失败")]
     LoginFailed,
+    #[error("OpenBao 的回应不可解析")]
+    Malformed,
 }
 
 /// 一条 SecretRef。字段与 `.design/03` §9 的定义一一对应。
@@ -49,15 +51,72 @@ impl SecretValue {
     }
 }
 
-pub struct SecretStore {
+/// 一个 AppRole 登录会话：某个 namespace 下的 role 与它换来的 service token。
+///
+/// Core 有两个：平台 namespace 下取用 secret 的那个，与 root namespace 下只读
+/// audit 表的那个（`AuditObserver`）。登录与令牌缓存只写这一份。
+struct AppRoleSession {
     addr: String,
+    /// AppRole 挂载所在的 namespace；空串是 root namespace（不带请求头）
+    namespace: String,
     role_id: String,
     secret_id: String,
+    http: reqwest::Client,
+    token: RwLock<Option<Arc<String>>>,
+}
+
+impl AppRoleSession {
+    fn new(addr: &str, namespace: String, role_id: String, secret_id: String) -> Self {
+        Self {
+            addr: addr.trim_end_matches('/').to_owned(),
+            namespace,
+            role_id,
+            secret_id,
+            http: reqwest::Client::new(),
+            token: RwLock::new(None),
+        }
+    }
+
+    fn with_namespace(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if self.namespace.is_empty() {
+            req
+        } else {
+            req.header("X-Vault-Namespace", &self.namespace)
+        }
+    }
+
+    async fn token(&self, force: bool) -> Result<Arc<String>, SecretError> {
+        if !force {
+            if let Some(t) = self.token.read().await.clone() {
+                return Ok(t);
+            }
+        }
+        let resp = self
+            .with_namespace(
+                self.http
+                    .post(format!("{}/v1/auth/approle/login", self.addr)),
+            )
+            .json(&serde_json::json!({
+                "role_id": self.role_id,
+                "secret_id": self.secret_id,
+            }))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(SecretError::LoginFailed);
+        }
+        let parsed: LoginResponse = resp.json().await?;
+        let token = Arc::new(parsed.auth.client_token);
+        *self.token.write().await = Some(Arc::clone(&token));
+        Ok(token)
+    }
+}
+
+pub struct SecretStore {
+    session: AppRoleSession,
     /// 本服务的身份。SecretRef 的 audience 必须等于它，否则拒绝取用——
     /// 同一把 secret 不得被用于它不该服务的调用方（`DD-70`）。
     identity: String,
-    http: reqwest::Client,
-    token: RwLock<Option<Arc<String>>>,
 }
 
 #[derive(Deserialize)]
@@ -91,13 +150,16 @@ impl SecretStore {
     /// 身份，会让「取不到 secret 就 fail closed」退化成「取到了别人的 secret」。
     pub fn from_env() -> Result<Self, String> {
         let get = |k: &str| std::env::var(k).map_err(|_| format!("缺少 {k}"));
+        // AppRole 挂在平台 namespace 下；取用的 secret 可能在别的 namespace，
+        // 二者是不同的请求头值，不能混用。
         Ok(Self {
-            addr: get("OPENBAO_ADDR")?.trim_end_matches('/').to_owned(),
-            role_id: get("OPENBAO_ROLE_ID")?,
-            secret_id: get("OPENBAO_SECRET_ID")?,
+            session: AppRoleSession::new(
+                &get("OPENBAO_ADDR")?,
+                get("OPENBAO_PLATFORM_NAMESPACE")?,
+                get("OPENBAO_ROLE_ID")?,
+                get("OPENBAO_SECRET_ID")?,
+            ),
             identity: get("OPENBAO_SERVICE_IDENTITY")?,
-            http: reqwest::Client::new(),
-            token: RwLock::new(None),
         })
     }
 
@@ -114,7 +176,7 @@ impl SecretStore {
         let mut body = self.fetch(&namespace, &mount, &path, r.version).await?;
         // token 过期表现为 403；重新登录后再试一次，不把它当成取不到
         if body.is_none() {
-            self.login(true).await?;
+            self.session.token(true).await?;
             body = self.fetch(&namespace, &mount, &path, r.version).await?;
         }
         let body = body.ok_or(SecretError::VersionUnavailable)?;
@@ -142,7 +204,7 @@ impl SecretStore {
         let (namespace, mount, path) = split_locator(locator)?;
         let mut version = self.put(&namespace, &mount, &path, field, value).await?;
         if version.is_none() {
-            self.login(true).await?;
+            self.session.token(true).await?;
             version = self.put(&namespace, &mount, &path, field, value).await?;
         }
         version.ok_or(SecretError::VersionUnavailable)
@@ -156,10 +218,11 @@ impl SecretStore {
         field: &str,
         value: &str,
     ) -> Result<Option<u32>, SecretError> {
-        let token = self.login(false).await?;
+        let token = self.session.token(false).await?;
         let resp = self
+            .session
             .http
-            .post(format!("{}/v1/{mount}/data/{path}", self.addr))
+            .post(format!("{}/v1/{mount}/data/{path}", self.session.addr))
             .header("X-Vault-Namespace", namespace)
             .header("X-Vault-Token", token.as_str())
             .json(&serde_json::json!({ "data": { field: value } }))
@@ -184,10 +247,11 @@ impl SecretStore {
         path: &str,
         version: u32,
     ) -> Result<Option<KvResponse>, SecretError> {
-        let token = self.login(false).await?;
+        let token = self.session.token(false).await?;
         let resp = self
+            .session
             .http
-            .get(format!("{}/v1/{mount}/data/{path}", self.addr))
+            .get(format!("{}/v1/{mount}/data/{path}", self.session.addr))
             .query(&[("version", version.to_string())])
             .header("X-Vault-Namespace", namespace)
             .header("X-Vault-Token", token.as_str())
@@ -201,36 +265,65 @@ impl SecretStore {
             _ => Err(SecretError::VersionUnavailable),
         }
     }
+}
 
-    async fn login(&self, force: bool) -> Result<Arc<String>, SecretError> {
-        if !force {
-            if let Some(t) = self.token.read().await.clone() {
-                return Ok(t);
-            }
-        }
-        let resp = self
-            .http
-            .post(format!("{}/v1/auth/approle/login", self.addr))
-            .header("X-Vault-Namespace", self.platform_namespace())
-            .json(&serde_json::json!({
-                "role_id": self.role_id,
-                "secret_id": self.secret_id,
-            }))
-            .send()
-            .await?;
-        if !resp.status().is_success() {
-            return Err(SecretError::LoginFailed);
-        }
-        let parsed: LoginResponse = resp.json().await?;
-        let token = Arc::new(parsed.auth.client_token);
-        *self.token.write().await = Some(Arc::clone(&token));
-        Ok(token)
+/// 部署 audit device 清单的观察者（`DD-70`、`07` §1）。
+///
+/// OpenBao 的 audit fail-closed 只在已启用至少一个 device 时成立：零 device 时
+/// 取用照常通过、不留任何痕迹（`SF-OBA-06`）。配置里写了 audit 块不等于它此刻
+/// 生效，因此 Core 在启动时与每次把 binding 推进到 ACTIVE 之前，都实际读一次
+/// `sys/audit`。
+///
+/// `sys/audit` 只在 root namespace 可用且要求 `sudo`（`SF-OBA-06`、上游
+/// `restrictedSysAPIs`），平台 namespace 的 token 读不到它；所以这里是一个独立
+/// 的 root namespace AppRole，策略只有这一条路径的 `read`+`sudo`。
+pub struct AuditObserver {
+    session: AppRoleSession,
+}
+
+#[derive(Deserialize)]
+struct AuditTable {
+    data: std::collections::HashMap<String, serde_json::Value>,
+}
+
+impl AuditObserver {
+    pub fn from_env() -> Result<Self, String> {
+        let get = |k: &str| std::env::var(k).map_err(|_| format!("缺少 {k}"));
+        Ok(Self {
+            session: AppRoleSession::new(
+                &get("OPENBAO_ADDR")?,
+                String::new(),
+                get("OPENBAO_AUDIT_ROLE_ID")?,
+                get("OPENBAO_AUDIT_SECRET_ID")?,
+            ),
+        })
     }
 
-    /// AppRole 挂在平台 namespace 下；取用的 secret 可能在别的 namespace，
-    /// 二者是不同的请求头值，不能混用。
-    fn platform_namespace(&self) -> String {
-        std::env::var("OPENBAO_PLATFORM_NAMESPACE").unwrap_or_default()
+    /// 当前启用的 audit device 数。`Ok(0)` 是确定的「没有」，调用方必须 fail
+    /// closed；`Err` 是没观察到，同样不能当作「有」。
+    pub async fn enabled_devices(&self) -> Result<usize, SecretError> {
+        let mut forced = false;
+        loop {
+            let token = self.session.token(forced).await?;
+            let resp = self
+                .session
+                .http
+                .get(format!("{}/v1/sys/audit", self.session.addr))
+                .header("X-Vault-Token", token.as_str())
+                .send()
+                .await?;
+            match resp.status().as_u16() {
+                200 => {
+                    let table: AuditTable =
+                        resp.json().await.map_err(|_| SecretError::Malformed)?;
+                    return Ok(table.data.len());
+                }
+                // 令牌过期：重新登录再问一次，仍被拒就是凭据问题
+                401 | 403 if !forced => forced = true,
+                401 | 403 => return Err(SecretError::LoginFailed),
+                _ => return Err(SecretError::Malformed),
+            }
+        }
     }
 }
 

@@ -287,6 +287,10 @@ pub async fn verify_tenant_buzz(
 
     let digest = canonical_digest(&info);
 
+    if let Err(r) = crate::service_api::audit_gate(&state).await {
+        return r;
+    }
+
     // 一条 UPDATE 同时写快照与三个观测值并推进状态：分成多句会留下
     // 「digest 已更新但状态还没动」的中间态，而那正是对账要排除的东西。
     let updated = sqlx::query!(
@@ -540,6 +544,9 @@ pub async fn provision_workspace_buzz(
         }
     }
 
+    if let Err(r) = crate::service_api::audit_gate(&state).await {
+        return r;
+    }
     if let Err(e) = sqlx::query!(
         "insert into projection.workspace_buzz_binding (workspace_id, channel_id, state)
          values ($1, $2, 'ACTIVE') on conflict (workspace_id) do nothing",

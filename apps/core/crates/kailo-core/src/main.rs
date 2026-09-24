@@ -66,6 +66,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 平台引导先于监听：没有 operator 身份就永远创建不了任何 Tenant，
     // 此时「起来但做不了事」比拒绝启动更糟——前者要等到第一次建 Tenant 才暴露。
     let secrets = std::sync::Arc::new(kailo_secrets::SecretStore::from_env()?);
+    // OpenBao 的 audit fail-closed 只在至少一个 device 启用时成立（SF-OBA-06）。
+    // 零 device 时一切取用照常通过、不留痕，因此在取用任何 secret 之前实际读一次
+    // 清单：为空或读不到都拒绝启动（DD-70「拒绝进入 serving 状态」）。
+    let audit = std::sync::Arc::new(kailo_secrets::AuditObserver::from_env()?);
+    match audit.enabled_devices().await {
+        Ok(0) => return Err("OpenBao 没有启用任何 audit device：取用不留痕，拒绝启动".into()),
+        Ok(n) => tracing::info!(devices = n, "OpenBao audit device 已启用"),
+        Err(e) => return Err(format!("读取 OpenBao audit device 清单失败，拒绝启动: {e}").into()),
+    }
     let catalog_tenant = platform_bootstrap::ensure(
         &pool,
         &secrets,
@@ -91,6 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pool: pool.clone(),
         auth: std::sync::Arc::new(service_auth::ServiceAuth::from_env()?),
         secrets: std::sync::Arc::clone(&secrets),
+        audit: std::sync::Arc::clone(&audit),
         catalog_tenant,
         secret_mount: format!(
             "{}/{}",

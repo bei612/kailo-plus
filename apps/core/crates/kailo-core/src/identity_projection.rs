@@ -152,6 +152,7 @@ async fn admit(
         }
     }
 
+    crate::service_api::audit_gate(state).await?;
     // 置 ACTIVE 与「成员仍 ACTIVE」在同一句里判定，不给撤权留下两句之间的窗口。
     let done = sqlx::query!(
         "update identity.buzz_identity_binding b

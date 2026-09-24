@@ -11,7 +11,8 @@
 | 检查点 | 覆盖的不变式 | 失败表现 |
 |---|---|---|
 | `tools/check.sh security`（部署前） | Relay 三个缺省即关闭的开关、`BUZZ_MEMBER_EVENT_KINDS` 与补丁构建；AgentGateway 每个 listener 的认证与身份 header 投影；OpenBao 的 `disable_mlock`、audit 块与 `-dev`；镜像按 digest；上游产物 digest 与 manifest 一致；SpiceDB schema 与设计逐字相等；无端口字面量 | 门禁 `FAIL` 并逐条列出服务与条款 |
-| 进程启动 | Core 与 Worker 的全部必需配置、`BUZZ_RELAY_NATIVE_URL_TEMPLATE` 形如 `ws[s]://{host}[/path]`、Temporal 与 OTLP 连接 | 容器 `Exited (1)`，日志末行是缺失或不合法的那一项 |
+| 进程启动 | Core 与 Worker 的全部必需配置、`BUZZ_RELAY_NATIVE_URL_TEMPLATE` 形如 `ws[s]://{host}[/path]`、Temporal 与 OTLP 连接；OpenBao 运行期的 audit device 清单非空 | 容器 `Exited (1)`，日志末行是缺失或不合法的那一项 |
+| binding 推进到 ACTIVE | OpenBao 运行期的 audit device 清单非空（`DD-70`） | 该步回 503，Workflow 以 `CONVERGENCE_PENDING` 按轮等待；Core 日志 `OpenBao 没有启用任何 audit device：不把 binding 推进到 ACTIVE` |
 | Tenant 激活 | Relay 实际执行成员准入：NIP-11 的 `supported_nips` 含 `43`（`SF-BUZ-35`） | `TENANT_LIFECYCLE` 的 verify 步被拒（403 → `ADMISSION_DENIED`，不可重试），Workflow `FAILED`，Tenant 停在 `PROVISIONING` |
 
 ## 触发信号
@@ -41,7 +42,8 @@
 2. 修正配置来源：
    - compose 条款：改 `deploy/local/compose.yaml`（或部署描述）中对应的值，使其等于 `07` §1 的要求；
    - 缺失变量：补到 `.env`；若是 secret，补到 `deploy/local/secrets/` 并由 `bootstrap.sh` 生成，不写进 `.env`、不上命令行；
-   - Relay 成员准入：确认 `BUZZ_REQUIRE_RELAY_MEMBERSHIP: "true"` 且 `secrets/buzz-relay.env` 中有 relay 私钥。
+   - Relay 成员准入：确认 `BUZZ_REQUIRE_RELAY_MEMBERSHIP: "true"` 且 `secrets/buzz-relay.env` 中有 relay 私钥；
+   - OpenBao audit device：`openbao-config.hcl` 的 `audit "file" "file/"` 块恢复后重建 `openbao` 并执行 `openbao-init.sh`（解封并核验 `audit device 已生效`），再重建 `core-bff`。已在等待的 Workflow 下一轮自行继续，不需要重跑。
 3. 重新执行 `tools/check.sh security`，直到 `全部通过`。
 4. 重建受影响的服务：`docker compose --env-file .env -f compose.yaml up -d <服务>`。
 5. 进程类失败：确认 `docker compose ps` 为 `Up`，且日志没有再次出现同一行。
@@ -106,3 +108,4 @@
 
 1. **重跑搁浅实体（第 7 步）**：`bash core/verify/drill-task-rerun.sh`。在真实开通的 Tenant 下把 TenantBuzzBinding 暂置 `DISABLED` 后建立第二个 Workspace，`WORKSPACE_LIFECYCLE` 以 `ADMISSION_DENIED` 结束：`…:1 → FAILED；Workspace PROVISIONING v1`，搁浅计数 `1`。还原 binding 后按 7.1–7.4 逐条执行：定位查询返回唯一一行 `…:1|<tenant>|FAILED`；重跑 `HTTP 200` 返回 `…:2`；同键重发 `HTTP 200` 返回同一个 `…:2`、`runId` 为空（未另起执行）；另一张准入重跑同一条旧 Workflow `HTTP 409`。核验：`Workspace ACTIVE v3`，新 Workflow `TERMINAL COMPLETED`，旧 Workflow 仍是 `TERMINAL FAILED`，`RERUN_ACCEPTED` 审计 `1` 条，搁浅计数 `0`。
 2. **入口的拒绝面**：`cargo test -p kailo-core --test scope_lifecycle` 的 `stranded_workspace_is_rerun_with_new_version` 覆盖终结的固定 ID 再 Start 得 `409`、准入 target 指向别的实体得 `403`、`DENIED` 的准入得 `403`、无 service 令牌得 `401`、对 `COMPLETED` 的 Workflow 重跑得 `409`。破坏核验：把准入查询的 target 条件改为不核对后重建 `core-bff`，该用例在「target 指向别的实体」一步失败（`left: 200, right: 403`）；还原后 2 项全部通过。
+3. **OpenBao audit device 的运行期观察**：从 `openbao-config.hcl` 删去 audit 块、重建 `openbao` 并解封，`openbao-init.sh` 输出 `audit device 未生效`。此时仍在运行的 `core-bff` 上跑 `cargo test -p kailo-core --test scope_lifecycle tenant_and_workspace`：Tenant 停在 `PROVISIONING`（`left: "PROVISIONING", right: "ACTIVE"`），Core 日志 6 次 `OpenBao 没有启用任何 audit device：不把 binding 推进到 ACTIVE`。随后重建 `core-bff`：`Exited (1)`，日志末行 `Error: "OpenBao 没有启用任何 audit device：取用不留痕，拒绝启动"`。还原 audit 块、重建并解封后 `audit device 已生效（声明式）`，`core-bff` `Up`，`scope_lifecycle` 2 项全部通过。

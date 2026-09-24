@@ -161,8 +161,39 @@ if [ ! -s secrets/openbao_core_secret_id ]; then
   fi
 fi
 
+# ---- root namespace：Core 只读 audit 清单的 AppRole ----
+#
+# DD-70 要求 Core 启动时与任一 binding ACTIVE 之前确认 audit device 清单非空。
+# sys/audit 只在 root namespace 可用且要求 sudo（上游 restrictedSysAPIs 与
+# PathsSpecial.Root），平台 namespace 的 token 读不到。因此单独一个 root
+# namespace 的 role，策略只有这一条路径：read 列清单，sudo 是该路径的门槛；
+# 启用/停用走 sys/audit/<path>，不在策略内（而且该版本本就拒绝经 API 启用）。
+root auth list -format=json 2>/dev/null | grep -q '"approle/"' \
+  || root auth enable approle >/dev/null
+root_stdin() { { printf '%s\n' "$root_token"; cat; } | run_bao "" "$@"; }
+root_stdin policy write kailo-core-audit - <<'POLICY' >/dev/null
+path "sys/audit" {
+  capabilities = ["read", "sudo"]
+}
+POLICY
+root write auth/approle/role/kailo-core-audit \
+  token_policies=kailo-core-audit token_ttl=20m token_max_ttl=1h \
+  secret_id_num_uses=0 secret_id_ttl=0 >/dev/null
+audit_role_id=$(root read -field=role_id auth/approle/role/kailo-core-audit/role-id)
+if [ ! -s secrets/openbao_core_audit_secret_id ]; then
+  tmp=$(mktemp)
+  if root write -f -field=secret_id auth/approle/role/kailo-core-audit/secret-id > "$tmp" && [ -s "$tmp" ]; then
+    mv "$tmp" secrets/openbao_core_audit_secret_id
+    chmod 600 secrets/openbao_core_audit_secret_id
+  else
+    rm -f "$tmp"; echo "生成 audit 观察 role 的 secret_id 失败" >&2; exit 2
+  fi
+fi
+
 { printf 'OPENBAO_ROLE_ID=%s\n' "$role_id"
-  printf 'OPENBAO_SECRET_ID='; cat secrets/openbao_core_secret_id; printf '\n'; } > secrets/openbao-core.env
+  printf 'OPENBAO_SECRET_ID='; cat secrets/openbao_core_secret_id; printf '\n'
+  printf 'OPENBAO_AUDIT_ROLE_ID=%s\n' "$audit_role_id"
+  printf 'OPENBAO_AUDIT_SECRET_ID='; cat secrets/openbao_core_audit_secret_id; printf '\n'; } > secrets/openbao-core.env
 chmod 600 secrets/openbao-core.env
 printf '  已生成：secrets/openbao-core.env（namespace=%s mount=%s）\n' \
   "$OPENBAO_PLATFORM_NAMESPACE" "$OPENBAO_KV_MOUNT"
