@@ -98,6 +98,16 @@ nondeterministic。
 
 ## IdP 登记（部署前置）
 
-原生端是 RFC 8252 的公开客户端，部署时在 IdP 登记：不发 client secret，PKCE `S256`，redirect
-只允许本机回环 `http://127.0.0.1/*`，访问令牌带 audience `OIDC_NATIVE_AUDIENCE`。本地拓扑的 realm
-模板 `deploy/local/keycloak/kailo-realm.json` 即按此登记；渲染在进程内完成，secret 不上命令行。
+原生端是 RFC 8252 的公开客户端，部署时在 IdP 登记：不发 client secret，PKCE `S256`，访问令牌带
+audience `OIDC_NATIVE_AUDIENCE`。redirect 只允许两种：Desktop 的本机回环 `http://127.0.0.1/*`
+（§7.3，端口由系统分配），Mobile 的私有 URI scheme `OIDC_NATIVE_MOBILE_REDIRECT_URI`（§7.1，
+scheme 随 App 构建固定，部署与 App 构建必须一致）。本地拓扑的 realm 模板
+`deploy/local/keycloak/kailo-realm.json` 即按此登记；渲染在进程内完成，secret 不上命令行。
+realm 只在 IdP 首次启动时导入，已运行的 IdP 改登记要经管理接口。
+
+## 端到端核验
+
+`core/verify/native-e2e.sh <desktop|mobile> <buzz 源码树>`：两端共用同一个真实 Workspace 夹具与
+环境变量，各以自己的代码走完登录 → 设备登记 → `ACTIVE` → 取连接事实 → 直连 Relay 发消息 →
+自建 Channel 被拒 → 撤销后被拒 → 注销。Desktop 跑 `src-tauri` 的 `kailo::e2e`，Mobile 跑
+`mobile/test/kailo_e2e`。

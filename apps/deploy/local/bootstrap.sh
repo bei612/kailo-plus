@@ -101,9 +101,11 @@ mkdir -p secrets/keycloak-import
 : "${OIDC_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_REDIRECT_URI}"
 : "${OIDC_NATIVE_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_NATIVE_CLIENT_ID}"
 : "${OIDC_NATIVE_AUDIENCE:?bootstrap 需要 .env 中的 OIDC_NATIVE_AUDIENCE}"
+: "${OIDC_NATIVE_MOBILE_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_NATIVE_MOBILE_REDIRECT_URI}"
 TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" VERIFY_USER="$VERIFY_USER" \
 OIDC_REDIRECT_URI="$OIDC_REDIRECT_URI" OIDC_NATIVE_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
-OIDC_NATIVE_AUDIENCE="$OIDC_NATIVE_AUDIENCE" python3 - <<'RENDER'
+OIDC_NATIVE_AUDIENCE="$OIDC_NATIVE_AUDIENCE" \
+OIDC_NATIVE_MOBILE_REDIRECT_URI="$OIDC_NATIVE_MOBILE_REDIRECT_URI" python3 - <<'RENDER'
 import os
 from_file = {
     "__KAILO_CORE_CLIENT_SECRET__": "secrets/kailo_core_client_secret",
@@ -112,7 +114,7 @@ from_file = {
     "__VERIFY_USER_PASSWORD__": "secrets/verify_user_password",
 }
 from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "OIDC_REDIRECT_URI",
-            "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE"]
+            "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI"]
 text = open("keycloak/kailo-realm.json", encoding="utf-8").read()
 for placeholder, path in from_file.items():
     text = text.replace(placeholder, open(path, encoding="utf-8").read().strip())

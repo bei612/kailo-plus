@@ -355,7 +355,10 @@ PY
 step_seam()     { hdr "8/10 上游 seam diff"
   if ! populated upstream-patches; then skip "尚无上游进入运行拓扑"; return 0; fi
   DESIGN="${DESIGN:-../.design}" python3 - <<'PY' || FAIL=1
-import glob, hashlib, os, re, sys
+import glob, os, re, sys
+sys.path.insert(0, "tools")
+# 清单结构、补丁登记与摘要由 upstream_manifest 判定——与 build-upstream.sh 同一份
+import upstream_manifest as um
 d = os.environ["DESIGN"]
 t02 = open(glob.glob(f"{d}/02-*.md")[0], encoding="utf-8").read()
 known = set(re.findall(r"^\| ((?:SF|SS)-[A-Z]+-[A-Z0-9-]+) \|", t02, re.M))
@@ -363,60 +366,18 @@ hexes = set(re.findall(r"\b[0-9a-f]{40}\b", t02))
 bad, n = [], 0
 for f in sorted(glob.glob("upstream-patches/*/baseline.yaml")):
     n += 1
-    raw = open(f, encoding="utf-8").read()
-    def val(k):
-        m = re.search(rf"^{k}:\s*(\S+)", raw, re.M)
-        return m.group(1) if m else None
-    def lst(k):
-        m = re.search(rf"^{k}:\s*\[(.*?)\]", raw, re.M | re.S)
-        return [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
-    ev, ib, div = val("evidence_commit"), val("implementation_base_commit"), val("base_divergence")
-    for name, v in (("evidence_commit", ev), ("implementation_base_commit", ib)):
-        if not v or not re.fullmatch(r"[0-9a-f]{40}", v):
-            bad.append(f"{f}: {name} 不是 40 位 commit")
-    # 06 §2 的硬规则：两者不同而 base_divergence 声明为 none 即构建失败
-    if ev and ib and ev != ib and div == "none":
-        bad.append(f"{f}: evidence_commit 与 implementation_base_commit 不同，但 base_divergence 声明为 none")
-    if ev and ev not in hexes:
+    m = um.load(f)
+    bad += [f"{f}: {b}" for b in um.problems(f, m)]
+    # 设计追溯：证据 commit 与引用的 SF/SS 必须在 .design/02 解析得到
+    if str(m.get("evidence_commit")) not in hexes:
         bad.append(f"{f}: evidence_commit 未出现在 .design/02，无法追溯")
-    for ref in lst("source_facts") + lst("source_seams"):
+    for ref in (m.get("source_facts") or []) + (m.get("source_seams") or []):
         if ref not in known:
             bad.append(f"{f}: {ref} 在 .design/02 中解析不到")
-    for ref in lst("compatibility_evidence"):
+    for ref in m.get("compatibility_evidence") or []:
         q = ref[5:] if ref.startswith("apps/") else ref
         if not os.path.exists(q):
             bad.append(f"{f}: compatibility_evidence 指向不存在的 {ref}")
-    # patch series 与其摘要。摘要 = 按 patch_series 顺序拼接各 patch 文件字节
-    # 后的 SHA-256；空 series 记 none。它把「manifest 声称打了哪些补丁」与
-    # 「目录里实际是哪些字节」钉在一起：改了 patch 却没重建、多放一个未登记
-    # 的 patch、或登记了却不存在，三种都在这里失败，而不是等到构建或上线。
-    series = lst("patch_series")
-    pdir = os.path.join(os.path.dirname(f), "patches")
-    present = sorted(os.path.basename(x) for x in glob.glob(os.path.join(pdir, "*.patch")))
-    for x in sorted(set(present) - set(series)):
-        bad.append(f"{f}: patches/{x} 未登记在 patch_series，构建不会应用它")
-    missing = sorted(set(series) - set(present))
-    for x in missing:
-        bad.append(f"{f}: patch_series 登记的 {x} 不存在")
-    # remove_paths 同样进摘要：改了删除清单却没重建，产物就不是清单说的那棵树
-    removed = lst("remove_paths")
-    for x in removed:
-        if x.startswith("/") or ".." in x.split("/"):
-            bad.append(f"{f}: remove_paths 只接受源树内的相对路径：{x}")
-    if len(set(removed)) != len(removed):
-        bad.append(f"{f}: remove_paths 有重复项")
-    if not missing:
-        want = "none"
-        if series or removed:
-            h = hashlib.sha256()
-            for x in series:
-                h.update(open(os.path.join(pdir, x), "rb").read())
-            if removed:
-                h.update(b"\0remove_paths\0" + "\n".join(removed).encode())
-            want = "sha256:" + h.hexdigest()
-        got = val("patch_series_digest")
-        if got != want:
-            bad.append(f"{f}: patch_series_digest 为 {got}，按 patch 实际字节应为 {want}——改了 patch 就必须重建并写回")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
 print(f"  \033[32mPASS\033[0m {n} 份 baseline manifest：commit 可追溯、设计引用闭合、证据可达、patch 与摘要一致")
@@ -453,7 +414,8 @@ for df in sorted(glob.glob("**/Dockerfile", recursive=True)):
         continue
     for n, line in enumerate(open(df, encoding="utf-8"), 1):
         m = re.match(r"\s*FROM\s+(\S+)", line, re.I)
-        if m and "@sha256:" not in m.group(1) and not m.group(1).startswith("$"):
+        # scratch 是保留的空基础镜像，不从任何 registry 拉取，没有可固定的 digest
+        if m and "@sha256:" not in m.group(1) and not m.group(1).startswith("$") and m.group(1) != "scratch":
             bad.append(f"{df}:{n}: 基础镜像未按 digest 引用（{m.group(1)}）")
 # OpenBao 的部署前置不变式（07 §1）中可由部署描述校验的两条
 bao_cfg = "deploy/local/openbao-config.hcl"
