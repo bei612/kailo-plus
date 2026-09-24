@@ -294,7 +294,10 @@ async fn run(
     .await
     .expect("登记的 ActionDefinition 应已登记");
     assert_eq!(version, active, "ActionDecision 未指向登记的定义版本");
-    assert!(zed.is_some_and(|z| !z.is_empty()), "登记的准入没有 fresh Check 的 ZedToken");
+    assert!(
+        zed.is_some_and(|z| !z.is_empty()),
+        "登记的准入没有 fresh Check 的 ZedToken"
+    );
 
     // 同一设备重复登记：幂等，不起第二条 Workflow
     let (status, body) = native(

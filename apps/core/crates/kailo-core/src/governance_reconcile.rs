@@ -128,7 +128,7 @@ async fn pass(g: &Governance, metrics: &Metrics, batch: i64) -> Result<(), Strin
                 "FAILED"
             }
         };
-        metrics.driven.add(1, &[KeyValue::new("step", step)]);
+        metrics.driven.add(1, &[KeyValue::new("stage", step)]);
     }
 
     let rows: Vec<(String, String, i64, i64)> = sqlx::query_as(
@@ -148,10 +148,9 @@ async fn pass(g: &Governance, metrics: &Metrics, batch: i64) -> Result<(), Strin
             .find(|r| r.0 == *gate && r.1 == *dispatch)
             .map(|r| (r.2, r.3))
             .unwrap_or((0, 0));
-        let attrs = [
-            KeyValue::new("gate_state", *gate),
-            KeyValue::new("dispatch_state", *dispatch),
-        ];
+        // 标签复用 Collector 允许清单里的 state（07 §3）：取值是两个封闭枚举的组合，
+        // 不新增键，也不引入高基数
+        let attrs = [KeyValue::new("state", format!("{gate}/{dispatch}"))];
         metrics.open.record(n.max(0) as u64, &attrs);
         metrics.oldest_age.record(age.max(0) as u64, &attrs);
     }
