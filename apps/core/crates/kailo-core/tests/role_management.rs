@@ -7,21 +7,13 @@
 //! 夹具只写一样东西：除首位 admin 之外的成员（B、C、D）的 OIDC 侧身份与成员关系——
 //! 成员邀请受 GAP-IDN-01 阻断，产品里没有这条入口。
 
-use std::process::Command;
-
-use serde_json::{json, Value};
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 mod common;
-use common::{approval_status, bff, gate_of, reason, state_of, submit, until, AwaitTarget, Env};
-
-struct Member {
-    subject: String,
-    principal: Uuid,
-    human: Uuid,
-    membership: Uuid,
-}
+use common::bootstrapped::{add_member, bootstrap, subj, teardown, Member};
+use common::{approval_status, bff, gate_of, reason, state_of, submit, until, Env};
 
 struct World {
     tenant: Uuid,
@@ -32,137 +24,8 @@ struct World {
     initiator: Uuid,
 }
 
-/// 在 Core 容器里执行部署引导，返回（退出码，输出 JSON）。
-fn bootstrap(slug: &str, subject: &str, wait: u64) -> (i32, Value) {
-    let v = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("缺少 {k}"));
-    let out = Command::new("sudo")
-        .args([
-            "-n",
-            "docker",
-            "compose",
-            "--env-file",
-            &v("VERIFY_COMPOSE_ENV_FILE"),
-            "-f",
-            &v("VERIFY_COMPOSE_FILE"),
-            "exec",
-            "-T",
-            "core-bff",
-            "kailo-core",
-            "bootstrap-tenant",
-            "--slug",
-            slug,
-            "--name",
-            "角色核验",
-            "--admin-subject",
-            subject,
-            "--admin-display-name",
-            "verify",
-            "--wait-seconds",
-            &wait.to_string(),
-        ])
-        .output()
-        .expect("执行部署引导");
-    let code = out.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let body = stdout
-        .lines()
-        .rev()
-        .find_map(|l| serde_json::from_str::<Value>(l).ok())
-        .unwrap_or(Value::Null);
-    if body.is_null() {
-        eprintln!(
-            "引导输出：{stdout}\n{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-    (code, body)
-}
-
-/// 夹具：在引导出的 Tenant 上开通一位成员。OIDC 侧三张表由夹具写，成员关系走
-/// 真实的 MEMBERSHIP_PROJECTION。
-async fn add_member(
-    http: &reqwest::Client,
-    e: &Env,
-    pool: &PgPool,
-    token: &str,
-    tenant: Uuid,
-    initiator: Uuid,
-) -> Result<Member, String> {
-    let m = Member {
-        subject: format!("role-{}", &Uuid::new_v4().to_string()[..8]),
-        principal: Uuid::new_v4(),
-        human: Uuid::new_v4(),
-        membership: Uuid::new_v4(),
-    };
-    let provider: Uuid =
-        sqlx::query_scalar("select id from identity.identity_provider where issuer = $1 limit 1")
-            .bind(&e.oidc_issuer)
-            .fetch_one(pool)
-            .await
-            .map_err(|e| e.to_string())?;
-    for (sql, binds) in [
-        (
-            "insert into identity.human_identity (id, display_name, status) values ($1,'verify','ACTIVE')",
-            vec![m.human],
-        ),
-        (
-            "insert into identity.principal (id, tenant_id, kind, status) values ($1,$2,'HUMAN','ACTIVE')",
-            vec![m.principal, tenant],
-        ),
-    ] {
-        let mut q = sqlx::query(sql);
-        for b in binds {
-            q = q.bind(b);
-        }
-        q.execute(pool).await.map_err(|e| e.to_string())?;
-    }
-    sqlx::query(
-        "insert into identity.external_identity (id, provider_id, issuer, subject, human_identity_id, status)
-         values ($1,$2,$3,$4,$5,'ACTIVE')",
-    )
-    .bind(Uuid::new_v4())
-    .bind(provider)
-    .bind(&e.oidc_issuer)
-    .bind(&m.subject)
-    .bind(m.human)
-    .execute(pool)
-    .await
-    .map_err(|e| e.to_string())?;
-    sqlx::query(
-        "insert into identity.tenant_membership (id, tenant_id, human_identity_id, tenant_principal_id, state)
-         values ($1,$2,$3,$4,'PROVISIONING')",
-    )
-    .bind(m.membership)
-    .bind(tenant)
-    .bind(m.human)
-    .bind(m.principal)
-    .execute(pool)
-    .await
-    .map_err(|e| e.to_string())?;
-    let action = common::allowed_action(pool, tenant, initiator, m.membership).await?;
-    common::start_and_wait(
-        http,
-        e,
-        token,
-        pool,
-        AwaitTarget {
-            endpoint: "/service/v1/memberships/lifecycle",
-            body: json!({"scope":"TENANT","membershipId":m.membership,"actionExecutionId":action}),
-            table: "identity.tenant_membership",
-            id: m.membership,
-            want: "ACTIVE",
-        },
-    )
-    .await?;
-    Ok(m)
-}
-
 fn tenant_obj(w: &World) -> String {
     format!("tenant:{}", w.tenant)
-}
-
-fn subj(p: Uuid) -> String {
-    format!("principal:{p}")
 }
 
 #[tokio::test]
@@ -714,83 +577,4 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World, sl
     .await
     .unwrap();
     assert_eq!(invited, 0, "INVITED 不可达（GAP-IDN-01）");
-}
-
-/// 拆除引导出的 Tenant：先归档 Community、删 SpiceDB 关系，再按外键逆序删行。
-async fn teardown(e: &Env, pool: &PgPool, tenant: Uuid, humans: &[Uuid]) {
-    let retired = common::retire_relay_community(e, pool, tenant).await;
-    let workspaces: Vec<Uuid> =
-        sqlx::query_scalar("select id from identity.workspace where tenant_id = $1")
-            .bind(tenant)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default();
-    let principals: Vec<Uuid> =
-        sqlx::query_scalar("select id from identity.principal where tenant_id = $1")
-            .bind(tenant)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default();
-    for p in &principals {
-        for rel in ["member", "admin"] {
-            common::zed_relationship(e, "delete", &format!("tenant:{tenant}"), rel, &subj(*p));
-            for ws in &workspaces {
-                common::zed_relationship(e, "delete", &format!("workspace:{ws}"), rel, &subj(*p));
-            }
-        }
-    }
-    for ws in &workspaces {
-        common::zed_relationship(
-            e,
-            "delete",
-            &format!("workspace:{ws}"),
-            "tenant",
-            &format!("tenant:{tenant}"),
-        );
-    }
-    for sql in [
-        "delete from identity.platform_session where tenant_membership_id in
-             (select id from identity.tenant_membership where tenant_id = $1)",
-        "delete from projection.workspace_buzz_binding where workspace_id in
-             (select id from identity.workspace where tenant_id = $1)",
-        "delete from identity.workspace_membership where workspace_id in
-             (select id from identity.workspace where tenant_id = $1)",
-        "delete from projection.task_projection where workflow_id in
-             (select workflow_id from projection.workflow_ref where tenant_id = $1)",
-        "delete from projection.workflow_ref where tenant_id = $1",
-        "delete from admission.action_execution where tenant_id = $1",
-        "delete from projection.tenant_buzz_binding where tenant_id = $1",
-        "delete from identity.buzz_identity_binding where tenant_id = $1",
-        "delete from identity.tenant_membership where tenant_id = $1",
-        "delete from identity.workspace where tenant_id = $1",
-        "delete from identity.collaboration_user_state where tenant_principal_id in
-             (select id from identity.principal where tenant_id = $1)",
-        "delete from admission.publish_attempt where tenant_principal_id in
-             (select id from identity.principal where tenant_id = $1)",
-        "delete from identity.principal where tenant_id = $1",
-        "delete from identity.tenant where id = $1",
-    ] {
-        if let Err(err) = sqlx::query(sql).bind(tenant).execute(pool).await {
-            eprintln!("拆除失败：{sql}\n  {err}");
-        }
-    }
-    for h in humans.iter().copied() {
-        for sql in [
-            "delete from identity.external_identity where human_identity_id = $1",
-            "delete from identity.human_identity where id = $1",
-        ] {
-            if let Err(err) = sqlx::query(sql).bind(h).execute(pool).await {
-                eprintln!("拆除失败：{sql}\n  {err}");
-            }
-        }
-    }
-    let left: i64 = sqlx::query_scalar("select count(*) from identity.tenant where id = $1")
-        .bind(tenant)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(-1);
-    assert_eq!(left, 0, "引导出的 Tenant {tenant} 没有被清掉");
-    if let Err(err) = retired {
-        panic!("{err}");
-    }
 }
