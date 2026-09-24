@@ -14,7 +14,8 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::{Deserialize, Serialize};
+use contracts::{ReadMarkRequest, UserStateVersion, WorkspacePreferenceRequest};
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
@@ -24,25 +25,6 @@ use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
 pub struct UserStateResponse {
     pub workspace_preferences: serde_json::Value,
     pub read_contexts: serde_json::Value,
-    pub version: i32,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspacePreference {
-    pub starred: bool,
-    pub muted: bool,
-    /// 读到的版本。不匹配即冲突——三端并发改同一份偏好时，后写的不能凭空
-    /// 覆盖先写的（`01` §7）。
-    pub version: i32,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReadMark {
-    /// 只接受该 HUMAN 当前可读 Workspace 内的 Channel ID 或 `msg:<Buzz event id>`
-    pub context_key: String,
-    pub last_read_at: String,
     pub version: i32,
 }
 
@@ -91,13 +73,18 @@ pub async fn put_workspace_preference(
     State(state): State<BffState>,
     Path(workspace_id): Path<Uuid>,
     headers: HeaderMap,
-    body: Result<Json<WorkspacePreference>, axum::extract::rejection::JsonRejection>,
+    body: Result<Json<WorkspacePreferenceRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
     let Ok(Json(req)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    // 读到的版本。不匹配即冲突——三端并发改同一份偏好时，后写的不能凭空
+    // 覆盖先写的（`01` §7）。
+    let Some(version) = stored_version(req.version) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
 
@@ -116,7 +103,7 @@ pub async fn put_workspace_preference(
     upsert(
         &state,
         &ctx,
-        req.version,
+        version,
         "workspace_preferences",
         &workspace_id.to_string(),
         value,
@@ -129,13 +116,16 @@ pub async fn put_workspace_preference(
 pub async fn put_read_mark(
     State(state): State<BffState>,
     headers: HeaderMap,
-    body: Result<Json<ReadMark>, axum::extract::rejection::JsonRejection>,
+    body: Result<Json<ReadMarkRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
     let Ok(Json(req)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let Some(version) = stored_version(req.version) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
 
@@ -187,13 +177,19 @@ pub async fn put_read_mark(
     upsert(
         &state,
         &ctx,
-        req.version,
+        version,
         "read_contexts",
         &req.context_key,
         serde_json::json!(last_read_at),
         Stamp::None,
     )
     .await
+}
+
+/// 请求里的版本换成库里版本列的类型。契约的 `integer` 在 Rust 侧是 `i64`，
+/// 库列是 `integer`：超出范围的值不可能是读到过的版本，按请求非法拒绝。
+fn stored_version(v: i64) -> Option<i32> {
+    i32::try_from(v).ok()
 }
 
 /// 写入时是否由库时钟补一个 `updatedAt`。
@@ -244,7 +240,9 @@ async fn upsert(
     {
         Ok(Some(version)) => (
             StatusCode::OK,
-            Json(serde_json::json!({ "version": version })),
+            Json(UserStateVersion {
+                version: version.into(),
+            }),
         )
             .into_response(),
         // 没有返回行只有一种成因：已存在的行版本与期望不符。

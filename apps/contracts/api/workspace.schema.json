@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/workspace.schema.json",
+  "title": "WorkspaceView",
+  "description": "GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的 Workspace。Workspace id 同时是其 Channel id（DD-80）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "slug", "name"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "slug": { "type": "string" },
+    "name": { "type": "string" }
+  }
+}

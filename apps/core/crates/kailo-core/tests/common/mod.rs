@@ -9,6 +9,36 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+/// 断言一份 BFF 回应恰好是契约类型 `T` 的线格式（ADR-02/03）。
+///
+/// 反序列化成生成类型再序列化回来，必须与原回应逐值相等：多出的键会在往返中
+/// 丢失、`null` 会变成缺省、枚举外的取值与类型不符会反序列化失败——三种漂移
+/// 都在这里暴露，而不是等客户端解析时才发现。数组回应按元素逐个断言。
+pub fn assert_contract<T>(body: &serde_json::Value, what: &str)
+where
+    T: serde::de::DeserializeOwned + serde::Serialize,
+{
+    let items: Vec<&serde_json::Value> = match body {
+        serde_json::Value::Array(a) => a.iter().collect(),
+        v => vec![v],
+    };
+    for item in items {
+        let typed: T = serde_json::from_value(item.clone()).unwrap_or_else(|e| {
+            panic!(
+                "{what} 不符合契约 {}：{e}；实际 {item}",
+                std::any::type_name::<T>()
+            )
+        });
+        let back = serde_json::to_value(&typed).expect("契约类型序列化");
+        assert_eq!(
+            &back,
+            item,
+            "{what} 与契约 {} 的线格式不一致",
+            std::any::type_name::<T>()
+        );
+    }
+}
+
 pub struct Env {
     pub service_url: String,
     pub token_url: String,

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/client_key.schema.json",
+  "title": "ClientKeyView",
+  "description": "GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pubkey", "state", "createdAt"],
+  "properties": {
+    "pubkey": { "type": "string" },
+    "state": { "$ref": "../enums/buzz_identity_state.schema.json" },
+    "createdAt": { "type": "string", "description": "RFC3339" }
+  }
+}

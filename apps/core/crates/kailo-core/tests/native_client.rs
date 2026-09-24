@@ -122,6 +122,7 @@ async fn run(
         reqwest::StatusCode::OK,
         "原生入口应能解析身份：{session}"
     );
+    common::assert_contract::<contracts::PlatformSessionView>(&session, "GET /api/v1/session");
     assert_eq!(session["tenantId"], fx.tenant.to_string());
     let session_id = session["platformSessionId"]
         .as_str()
@@ -139,6 +140,10 @@ async fn run(
     )
     .await;
     assert_eq!(status, reqwest::StatusCode::OK, "{facts}");
+    common::assert_contract::<contracts::NativeCommunityFacts>(
+        &facts,
+        "GET /api/v1/native/community",
+    );
     let host = facts["communityHost"]
         .as_str()
         .expect("communityHost")
@@ -254,6 +259,11 @@ async fn run(
         "登记应被受理：{body}"
     );
     assert_eq!(body["state"], "RECONCILING");
+    common::assert_contract::<contracts::ClientKeyStatus>(&body, "登记受理");
+    assert!(
+        body["workflowId"].is_string(),
+        "受理的登记必须给出推进它的 Workflow：{body}"
+    );
     let pubkey = device.public_key().to_hex();
     wait_for(
         http,
@@ -277,6 +287,50 @@ async fn run(
     .await;
     assert_eq!(status, reqwest::StatusCode::OK, "{body}");
     assert_eq!(body["state"], "ACTIVE");
+    common::assert_contract::<contracts::ClientKeyStatus>(&body, "重复登记");
+    assert!(
+        body.get("workflowId").is_none(),
+        "没有要推进的状态时 workflowId 缺省：{body}"
+    );
+
+    // 登记是 Tenant 级动作：本人审计里有它，且不带 workspaceId（缺省而非 null）
+    let (status, audit) = native(
+        http,
+        n,
+        &access,
+        reqwest::Method::GET,
+        "/api/v1/audit",
+        None,
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{audit}");
+    common::assert_contract::<contracts::OwnAuditEntry>(&audit, "GET /api/v1/audit");
+    let registered = audit
+        .as_array()
+        .and_then(|a| {
+            a.iter()
+                .find(|r| r["actionKey"] == "identity.client_key.register")
+        })
+        .expect("本人审计应有设备登记");
+    assert!(registered.get("workspaceId").is_none(), "{registered}");
+
+    let (status, workspaces) = native(
+        http,
+        n,
+        &access,
+        reqwest::Method::GET,
+        "/api/v1/workspaces",
+        None,
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{workspaces}");
+    common::assert_contract::<contracts::WorkspaceView>(&workspaces, "GET /api/v1/workspaces");
+    assert!(
+        workspaces
+            .as_array()
+            .is_some_and(|w| w.iter().any(|r| r["id"] == fx.workspace.to_string())),
+        "本人可进的 Workspace 应在列表中：{workspaces}"
+    );
 
     // 成员页按人聚合：同一个人名下既有 Web 的公钥也有这台设备的
     let (_, members) = native(
@@ -295,6 +349,7 @@ async fn run(
                 .find(|r| r["principalId"] == fx.principal.to_string())
         })
         .expect("成员页应有本人");
+    common::assert_contract::<contracts::WorkspaceMemberView>(&members, "GET 成员");
     let keys = me["pubkeys"].as_array().expect("pubkeys");
     assert_eq!(keys.len(), 2, "本人应有 Web 与设备两把公钥：{me}");
     assert!(keys.iter().any(|k| k == &pubkey));
@@ -354,6 +409,7 @@ async fn run(
         "撤销应被受理：{body}"
     );
     assert_eq!(body["state"], "REVOKING");
+    common::assert_contract::<contracts::ClientKeyStatus>(&body, "撤销受理");
     wait_for(http, n, &access, &pubkey, None, e.converge_bound_secs).await;
 
     let rejected = as_device
@@ -403,6 +459,14 @@ async fn wait_for(
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(bound_secs);
     loop {
         let (_, list) = native(http, n, token, reqwest::Method::GET, REGISTER, None).await;
+        common::assert_contract::<contracts::ClientKeyView>(&list, "GET 设备列表");
+        for k in list.as_array().into_iter().flatten() {
+            let at = k["createdAt"].as_str().unwrap_or_default();
+            assert!(
+                chrono::DateTime::parse_from_rfc3339(at).is_ok(),
+                "createdAt 必须是 RFC 3339：{k}"
+            );
+        }
         let state = list
             .as_array()
             .and_then(|l| l.iter().find(|k| k["pubkey"] == pubkey))

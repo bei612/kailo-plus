@@ -13,41 +13,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::Serialize;
+use contracts::{OwnAuditEntry, WorkspaceMemberView, WorkspaceView};
 use uuid::Uuid;
 
-use crate::bff::{resolve_execution_context, BffState};
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceRow {
-    pub id: Uuid,
-    pub slug: String,
-    pub name: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemberRow {
-    pub principal_id: Uuid,
-    pub display_name: String,
-    /// 此人全部 ACTIVE 的 Buzz 协议公钥：Web 一把，另加每台原生设备一把
-    /// （DD-77）。公钥是公开事实，与私钥托管无关；客户端据此把任一端签发的
-    /// 消息归到同一个人名下。
-    pub pubkeys: Vec<String>,
-    pub state: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuditRow {
-    pub occurred_at: String,
-    pub event_type: String,
-    pub action_key: String,
-    pub decision: String,
-    pub result_code: String,
-    pub workspace_id: Option<Uuid>,
-}
+use crate::bff::{db_enum, resolve_execution_context, BffState};
 
 /// 我在当前 Tenant 里能进的 Workspace。
 ///
@@ -77,7 +46,11 @@ pub async fn list_workspaces(State(state): State<BffState>, headers: HeaderMap) 
             StatusCode::OK,
             Json(
                 rows.into_iter()
-                    .map(|(id, slug, name)| WorkspaceRow { id, slug, name })
+                    .map(|(id, slug, name)| WorkspaceView {
+                        id: id.to_string(),
+                        slug,
+                        name,
+                    })
                     .collect::<Vec<_>>(),
             ),
         )
@@ -105,7 +78,8 @@ pub async fn list_members(
     if let Err(r) = crate::web_transport::admit_workspace(&state, &ctx, workspace_id).await {
         return r;
     }
-    // 一人多把公钥时按人聚合：左连接直接展开会让同一个人出现多行。
+    // 一人多把公钥时按人聚合：左连接直接展开会让同一个人出现多行。公钥是公开
+    // 事实，与私钥托管无关；客户端据此把任一端签发的消息归到同一个人名下（DD-77）。
     match sqlx::query_as::<_, (Uuid, String, Vec<String>, String)>(
         "select wm.tenant_principal_id, hi.display_name,
                 coalesce(array_agg(bib.pubkey order by bib.pubkey)
@@ -125,20 +99,22 @@ pub async fn list_members(
     .fetch_all(&state.pool)
     .await
     {
-        Ok(rows) => (
-            StatusCode::OK,
-            Json(
-                rows.into_iter()
-                    .map(|(principal_id, display_name, pubkeys, state)| MemberRow {
-                        principal_id,
-                        display_name,
-                        pubkeys,
-                        state,
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-        )
-            .into_response(),
+        Ok(rows) => {
+            let mut members = Vec::with_capacity(rows.len());
+            for (principal_id, display_name, pubkeys, state) in rows {
+                let state = match db_enum("workspace_membership.state", &state) {
+                    Ok(s) => s,
+                    Err(r) => return r,
+                };
+                members.push(WorkspaceMemberView {
+                    principal_id: principal_id.to_string(),
+                    display_name,
+                    pubkeys,
+                    state,
+                });
+            }
+            (StatusCode::OK, Json(members)).into_response()
+        }
         Err(e) => {
             tracing::warn!(error = %e, "列成员失败");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
@@ -180,33 +156,25 @@ pub async fn list_own_audit(State(state): State<BffState>, headers: HeaderMap) -
     .fetch_all(&state.pool)
     .await
     {
-        Ok(rows) => (
-            StatusCode::OK,
-            Json(
-                rows.into_iter()
-                    .map(
-                        |(
-                            occurred_at,
-                            event_type,
-                            action_key,
-                            decision,
-                            result_code,
-                            workspace_id,
-                        )| {
-                            AuditRow {
-                                occurred_at: occurred_at.to_rfc3339(),
-                                event_type,
-                                action_key,
-                                decision,
-                                result_code,
-                                workspace_id,
-                            }
-                        },
-                    )
-                    .collect::<Vec<_>>(),
-            ),
-        )
-            .into_response(),
+        Ok(rows) => {
+            let mut entries = Vec::with_capacity(rows.len());
+            for (occurred_at, event_type, action_key, decision, result_code, workspace_id) in rows {
+                let event_type = match db_enum("audit_event.event_type", &event_type) {
+                    Ok(t) => t,
+                    Err(r) => return r,
+                };
+                entries.push(OwnAuditEntry {
+                    occurred_at: occurred_at.to_rfc3339(),
+                    event_type,
+                    action_key,
+                    decision,
+                    result_code,
+                    // Tenant 级动作没有 Workspace：缺省，不写 null
+                    workspace_id: workspace_id.map(|w| w.to_string()),
+                });
+            }
+            (StatusCode::OK, Json(entries)).into_response()
+        }
         Err(e) => {
             tracing::warn!(error = %e, "列审计失败");
             StatusCode::SERVICE_UNAVAILABLE.into_response()

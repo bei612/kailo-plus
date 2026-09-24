@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/client_key_status.schema.json",
+  "title": "ClientKeyStatus",
+  "description": "设备公钥登记（POST /api/v1/identity/client-keys）与撤销（DELETE /api/v1/identity/client-keys/{pubkey}）的回应。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pubkey", "state"],
+  "properties": {
+    "pubkey": { "type": "string" },
+    "state": { "$ref": "../enums/buzz_identity_state.schema.json" },
+    "workflowId": { "type": "string", "description": "推进该状态的 Workflow；本次调用没有需要推进的状态时缺省" }
+  }
+}

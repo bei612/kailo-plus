@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/native_community.schema.json",
+  "title": "NativeCommunityFacts",
+  "description": "GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是 communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["relayUrl", "communityHost"],
+  "properties": {
+    "relayUrl": { "type": "string", "description": "原生端直连的 Relay 地址" },
+    "communityHost": { "type": "string", "description": "该 Tenant 的 Community host，可能带非默认端口" }
+  }
+}

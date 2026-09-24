@@ -253,6 +253,7 @@ async fn run_user_state(
         reqwest::StatusCode::OK,
         "设置可见 Workspace 的偏好应成功：{body}"
     );
+    common::assert_contract::<contracts::UserStateVersion>(&body, "PUT 偏好");
     let version = body["version"].as_i64().expect("version");
 
     // 版本不符即冲突：拿旧版本再写一次
@@ -275,7 +276,7 @@ async fn run_user_state(
     .fetch_one(pool)
     .await
     .expect("取 channel");
-    let (status, _) = bff(
+    let (status, marked) = bff(
         http,
         e,
         &fx.subject,
@@ -294,6 +295,7 @@ async fn run_user_state(
         reqwest::StatusCode::OK,
         "标记可见 Channel 的已读应成功"
     );
+    common::assert_contract::<contracts::UserStateVersion>(&marked, "PUT 已读");
     let (_, body) = bff(
         http,
         e,
@@ -616,7 +618,7 @@ async fn run_logout(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
     use futures_util::StreamExt;
 
     // 先建立会话与一条流
-    let (status, _) = bff(
+    let (status, session) = bff(
         http,
         e,
         &fx.subject,
@@ -626,6 +628,7 @@ async fn run_logout(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
     )
     .await;
     assert_eq!(status, reqwest::StatusCode::OK);
+    common::assert_contract::<contracts::PlatformSessionView>(&session, "GET /api/v1/session");
     let session_id: Uuid = sqlx::query_scalar(
         "select id from identity.platform_session where human_identity_id = $1 and status='ACTIVE'",
     )

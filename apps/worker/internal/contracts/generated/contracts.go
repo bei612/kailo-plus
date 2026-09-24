@@ -4,6 +4,36 @@
 //    canary, err := UnmarshalCanary(bytes)
 //    bytes, err = canary.Marshal()
 //
+//    clientKeyView, err := UnmarshalClientKeyView(bytes)
+//    bytes, err = clientKeyView.Marshal()
+//
+//    clientKeyStatus, err := UnmarshalClientKeyStatus(bytes)
+//    bytes, err = clientKeyStatus.Marshal()
+//
+//    nativeCommunityFacts, err := UnmarshalNativeCommunityFacts(bytes)
+//    bytes, err = nativeCommunityFacts.Marshal()
+//
+//    ownAuditEntry, err := UnmarshalOwnAuditEntry(bytes)
+//    bytes, err = ownAuditEntry.Marshal()
+//
+//    readMarkRequest, err := UnmarshalReadMarkRequest(bytes)
+//    bytes, err = readMarkRequest.Marshal()
+//
+//    platformSessionView, err := UnmarshalPlatformSessionView(bytes)
+//    bytes, err = platformSessionView.Marshal()
+//
+//    userStateVersion, err := UnmarshalUserStateVersion(bytes)
+//    bytes, err = userStateVersion.Marshal()
+//
+//    workspaceView, err := UnmarshalWorkspaceView(bytes)
+//    bytes, err = workspaceView.Marshal()
+//
+//    workspaceMemberView, err := UnmarshalWorkspaceMemberView(bytes)
+//    bytes, err = workspaceMemberView.Marshal()
+//
+//    workspacePreferenceRequest, err := UnmarshalWorkspacePreferenceRequest(bytes)
+//    bytes, err = workspacePreferenceRequest.Marshal()
+//
 //    errorBody, err := UnmarshalErrorBody(bytes)
 //    bytes, err = errorBody.Marshal()
 //
@@ -27,6 +57,106 @@ func UnmarshalCanary(data []byte) (Canary, error) {
 }
 
 func (r *Canary) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalClientKeyView(data []byte) (ClientKeyView, error) {
+	var r ClientKeyView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ClientKeyView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalClientKeyStatus(data []byte) (ClientKeyStatus, error) {
+	var r ClientKeyStatus
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ClientKeyStatus) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalNativeCommunityFacts(data []byte) (NativeCommunityFacts, error) {
+	var r NativeCommunityFacts
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *NativeCommunityFacts) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalOwnAuditEntry(data []byte) (OwnAuditEntry, error) {
+	var r OwnAuditEntry
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *OwnAuditEntry) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalReadMarkRequest(data []byte) (ReadMarkRequest, error) {
+	var r ReadMarkRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ReadMarkRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPlatformSessionView(data []byte) (PlatformSessionView, error) {
+	var r PlatformSessionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PlatformSessionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalUserStateVersion(data []byte) (UserStateVersion, error) {
+	var r UserStateVersion
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *UserStateVersion) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWorkspaceView(data []byte) (WorkspaceView, error) {
+	var r WorkspaceView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WorkspaceView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWorkspaceMemberView(data []byte) (WorkspaceMemberView, error) {
+	var r WorkspaceMemberView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WorkspaceMemberView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWorkspacePreferenceRequest(data []byte) (WorkspacePreferenceRequest, error) {
+	var r WorkspacePreferenceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WorkspacePreferenceRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -111,6 +241,98 @@ type Variant struct {
 	TaskAttempt *int64  `json:"taskAttempt,omitempty"`
 }
 
+// GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
+type ClientKeyView struct {
+	// RFC3339
+	CreatedAt string            `json:"createdAt"`
+	Pubkey    string            `json:"pubkey"`
+	State     BuzzIdentityState `json:"state"`
+}
+
+// 设备公钥登记（POST /api/v1/identity/client-keys）与撤销（DELETE
+// /api/v1/identity/client-keys/{pubkey}）的回应。
+type ClientKeyStatus struct {
+	Pubkey string            `json:"pubkey"`
+	State  BuzzIdentityState `json:"state"`
+	// 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
+	WorkflowID *string `json:"workflowId,omitempty"`
+}
+
+// GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
+// communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
+type NativeCommunityFacts struct {
+	// 该 Tenant 的 Community host，可能带非默认端口
+	CommunityHost string `json:"communityHost"`
+	// 原生端直连的 Relay 地址
+	RelayURL string `json:"relayUrl"`
+}
+
+// GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
+type OwnAuditEntry struct {
+	ActionKey string         `json:"actionKey"`
+	Decision  string         `json:"decision"`
+	EventType AuditEventType `json:"eventType"`
+	// RFC3339
+	OccurredAt string `json:"occurredAt"`
+	ResultCode string `json:"resultCode"`
+	// 动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
+// msg:<Buzz event id>；version 是读到的 CollaborationUserState 版本，不符即 409。
+type ReadMarkRequest struct {
+	ContextKey string `json:"contextKey"`
+	// RFC3339，Core 统一存成 UTC
+	LastReadAt string `json:"lastReadAt"`
+	Version    int64  `json:"version"`
+}
+
+// GET /api/v1/session 的回应：已解析的执行身份与本次 PlatformSession。原生端以 platformSessionId
+// 绑定设备持钥证明（DD-79）。
+type PlatformSessionView struct {
+	// 当前选定的 Workspace；未选定时缺省
+	CurrentWorkspaceID *string `json:"currentWorkspaceId,omitempty"`
+	// HumanIdentity 的显示名，只用于界面上认出本人，不参与任何判定
+	DisplayName        string `json:"displayName"`
+	HumanIdentityID    string `json:"humanIdentityId"`
+	PlatformSessionID  string `json:"platformSessionId"`
+	TenantID           string `json:"tenantId"`
+	TenantMembershipID string `json:"tenantMembershipId"`
+	TenantPrincipalID  string `json:"tenantPrincipalId"`
+}
+
+// CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT
+// /api/v1/user-state/workspaces/{workspaceId} 的 200 回应）。
+type UserStateVersion struct {
+	Version int64 `json:"version"`
+}
+
+// GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的
+// Workspace。Workspace id 同时是其 Channel id（DD-80）。
+type WorkspaceView struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+// GET /api/v1/workspaces/{workspaceId}/members 回应数组的元素，按人聚合（DD-77）。
+type WorkspaceMemberView struct {
+	DisplayName string `json:"displayName"`
+	PrincipalID string `json:"principalId"`
+	// 此人全部 ACTIVE 的 Buzz 协议公钥：Web 一把，另加每台原生设备一把
+	Pubkeys []string                 `json:"pubkeys"`
+	State   WorkspaceMembershipState `json:"state"`
+}
+
+// PUT /api/v1/user-state/workspaces/{workspaceId} 的请求体（DD-40）：该 Workspace 的收藏与静音。version
+// 是读到的 CollaborationUserState 版本，不符即 409；updatedAt 由 Core 用库时钟补写，不取调用方的值。
+type WorkspacePreferenceRequest struct {
+	Muted   bool  `json:"muted"`
+	Starred bool  `json:"starred"`
+	Version int64 `json:"version"`
+}
+
 // 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
 type ErrorBody struct {
 	Class ErrorClass `json:"class"`
@@ -193,24 +415,64 @@ const (
 	Task    Kind = "TASK"
 )
 
+// BuzzIdentityBinding 状态机。custody=CLIENT 时跳过 PENDING_SECRET，自 RECONCILING 起始。
+type BuzzIdentityState string
+
+const (
+	BuzzIdentityStateACTIVE   BuzzIdentityState = "ACTIVE"
+	BuzzIdentityStateREVOKED  BuzzIdentityState = "REVOKED"
+	BuzzIdentityStateREVOKING BuzzIdentityState = "REVOKING"
+	PendingSecret             BuzzIdentityState = "PENDING_SECRET"
+	Reconciling               BuzzIdentityState = "RECONCILING"
+)
+
+// AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
+// OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
+type AuditEventType string
+
+const (
+	Access         AuditEventType = "ACCESS"
+	Approval       AuditEventType = "APPROVAL"
+	Authentication AuditEventType = "AUTHENTICATION"
+	Decision       AuditEventType = "DECISION"
+	Dispatch       AuditEventType = "DISPATCH"
+	Intent         AuditEventType = "INTENT"
+	Outcome        AuditEventType = "OUTCOME"
+	Reconciliation AuditEventType = "RECONCILIATION"
+	Revocation     AuditEventType = "REVOCATION"
+	Session        AuditEventType = "SESSION"
+)
+
+// WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
+type WorkspaceMembershipState string
+
+const (
+	Error                            WorkspaceMembershipState = "ERROR"
+	Provisioning                     WorkspaceMembershipState = "PROVISIONING"
+	WorkspaceMembershipStateACTIVE   WorkspaceMembershipState = "ACTIVE"
+	WorkspaceMembershipStateREVOKED  WorkspaceMembershipState = "REVOKED"
+	WorkspaceMembershipStateREVOKING WorkspaceMembershipState = "REVOKING"
+)
+
 // 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
 // 字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
 type ReasonCode string
 
 const (
-	ClientKeyAlreadyBound       ReasonCode = "CLIENT_KEY_ALREADY_BOUND"
-	ClientKeyLimitReached       ReasonCode = "CLIENT_KEY_LIMIT_REACHED"
-	ClientKeyNotFound           ReasonCode = "CLIENT_KEY_NOT_FOUND"
-	ClientKeyProofInvalid       ReasonCode = "CLIENT_KEY_PROOF_INVALID"
-	DependencyUnavailable       ReasonCode = "DEPENDENCY_UNAVAILABLE"
-	IdentityHeaderMissing       ReasonCode = "IDENTITY_HEADER_MISSING"
-	IdentityUnknown             ReasonCode = "IDENTITY_UNKNOWN"
-	NativeSurfaceRequired       ReasonCode = "NATIVE_SURFACE_REQUIRED"
-	PublishRejected             ReasonCode = "PUBLISH_REJECTED"
-	PublishResultUnknown        ReasonCode = "PUBLISH_RESULT_UNKNOWN"
-	SessionNotActive            ReasonCode = "SESSION_NOT_ACTIVE"
-	TenantMembershipNotActive   ReasonCode = "TENANT_MEMBERSHIP_NOT_ACTIVE"
-	TenantSelectionNotAvailable ReasonCode = "TENANT_SELECTION_NOT_AVAILABLE"
+	ClientKeyAlreadyBound        ReasonCode = "CLIENT_KEY_ALREADY_BOUND"
+	ClientKeyLimitReached        ReasonCode = "CLIENT_KEY_LIMIT_REACHED"
+	ClientKeyNotFound            ReasonCode = "CLIENT_KEY_NOT_FOUND"
+	ClientKeyProofInvalid        ReasonCode = "CLIENT_KEY_PROOF_INVALID"
+	DependencyUnavailable        ReasonCode = "DEPENDENCY_UNAVAILABLE"
+	IdentityHeaderMissing        ReasonCode = "IDENTITY_HEADER_MISSING"
+	IdentityUnknown              ReasonCode = "IDENTITY_UNKNOWN"
+	NativeSurfaceRequired        ReasonCode = "NATIVE_SURFACE_REQUIRED"
+	PublishRejected              ReasonCode = "PUBLISH_REJECTED"
+	PublishResultUnknown         ReasonCode = "PUBLISH_RESULT_UNKNOWN"
+	SessionNotActive             ReasonCode = "SESSION_NOT_ACTIVE"
+	SurfaceCapabilityUnavailable ReasonCode = "SURFACE_CAPABILITY_UNAVAILABLE"
+	TenantMembershipNotActive    ReasonCode = "TENANT_MEMBERSHIP_NOT_ACTIVE"
+	TenantSelectionNotAvailable  ReasonCode = "TENANT_SELECTION_NOT_AVAILABLE"
 )
 
 // TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close

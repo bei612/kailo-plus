@@ -1,6 +1,16 @@
 // To parse this JSON data, do
 //
 //     final canary = canaryFromJson(jsonString);
+//     final clientKeyView = clientKeyViewFromJson(jsonString);
+//     final clientKeyStatus = clientKeyStatusFromJson(jsonString);
+//     final nativeCommunityFacts = nativeCommunityFactsFromJson(jsonString);
+//     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
+//     final readMarkRequest = readMarkRequestFromJson(jsonString);
+//     final platformSessionView = platformSessionViewFromJson(jsonString);
+//     final userStateVersion = userStateVersionFromJson(jsonString);
+//     final workspaceView = workspaceViewFromJson(jsonString);
+//     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
+//     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
 //     final errorBody = errorBodyFromJson(jsonString);
 //     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
@@ -11,6 +21,63 @@ import 'dart:convert';
 Canary canaryFromJson(String str) => Canary.fromJson(json.decode(str));
 
 String canaryToJson(Canary data) => json.encode(data.toJson());
+
+ClientKeyView clientKeyViewFromJson(String str) =>
+    ClientKeyView.fromJson(json.decode(str));
+
+String clientKeyViewToJson(ClientKeyView data) => json.encode(data.toJson());
+
+ClientKeyStatus clientKeyStatusFromJson(String str) =>
+    ClientKeyStatus.fromJson(json.decode(str));
+
+String clientKeyStatusToJson(ClientKeyStatus data) =>
+    json.encode(data.toJson());
+
+NativeCommunityFacts nativeCommunityFactsFromJson(String str) =>
+    NativeCommunityFacts.fromJson(json.decode(str));
+
+String nativeCommunityFactsToJson(NativeCommunityFacts data) =>
+    json.encode(data.toJson());
+
+OwnAuditEntry ownAuditEntryFromJson(String str) =>
+    OwnAuditEntry.fromJson(json.decode(str));
+
+String ownAuditEntryToJson(OwnAuditEntry data) => json.encode(data.toJson());
+
+ReadMarkRequest readMarkRequestFromJson(String str) =>
+    ReadMarkRequest.fromJson(json.decode(str));
+
+String readMarkRequestToJson(ReadMarkRequest data) =>
+    json.encode(data.toJson());
+
+PlatformSessionView platformSessionViewFromJson(String str) =>
+    PlatformSessionView.fromJson(json.decode(str));
+
+String platformSessionViewToJson(PlatformSessionView data) =>
+    json.encode(data.toJson());
+
+UserStateVersion userStateVersionFromJson(String str) =>
+    UserStateVersion.fromJson(json.decode(str));
+
+String userStateVersionToJson(UserStateVersion data) =>
+    json.encode(data.toJson());
+
+WorkspaceView workspaceViewFromJson(String str) =>
+    WorkspaceView.fromJson(json.decode(str));
+
+String workspaceViewToJson(WorkspaceView data) => json.encode(data.toJson());
+
+WorkspaceMemberView workspaceMemberViewFromJson(String str) =>
+    WorkspaceMemberView.fromJson(json.decode(str));
+
+String workspaceMemberViewToJson(WorkspaceMemberView data) =>
+    json.encode(data.toJson());
+
+WorkspacePreferenceRequest workspacePreferenceRequestFromJson(String str) =>
+    WorkspacePreferenceRequest.fromJson(json.decode(str));
+
+String workspacePreferenceRequestToJson(WorkspacePreferenceRequest data) =>
+    json.encode(data.toJson());
 
 ErrorBody errorBodyFromJson(String str) => ErrorBody.fromJson(json.decode(str));
 
@@ -209,6 +276,335 @@ final kindValues = EnumValues({
   "TASK": Kind.TASK,
 });
 
+///GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
+class ClientKeyView {
+  ///RFC3339
+  final String createdAt;
+  final String pubkey;
+  final BuzzIdentityState state;
+
+  ClientKeyView({
+    required this.createdAt,
+    required this.pubkey,
+    required this.state,
+  });
+
+  factory ClientKeyView.fromJson(Map<String, dynamic> json) => ClientKeyView(
+    createdAt: json["createdAt"],
+    pubkey: json["pubkey"],
+    state: buzzIdentityStateValues.map[json["state"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "createdAt": createdAt,
+    "pubkey": pubkey,
+    "state": buzzIdentityStateValues.reverse[state],
+  });
+}
+
+///BuzzIdentityBinding 状态机。custody=CLIENT 时跳过 PENDING_SECRET，自 RECONCILING 起始。
+enum BuzzIdentityState {
+  ACTIVE,
+  PENDING_SECRET,
+  RECONCILING,
+  REVOKED,
+  REVOKING,
+}
+
+final buzzIdentityStateValues = EnumValues({
+  "ACTIVE": BuzzIdentityState.ACTIVE,
+  "PENDING_SECRET": BuzzIdentityState.PENDING_SECRET,
+  "RECONCILING": BuzzIdentityState.RECONCILING,
+  "REVOKED": BuzzIdentityState.REVOKED,
+  "REVOKING": BuzzIdentityState.REVOKING,
+});
+
+///设备公钥登记（POST /api/v1/identity/client-keys）与撤销（DELETE
+////api/v1/identity/client-keys/{pubkey}）的回应。
+class ClientKeyStatus {
+  final String pubkey;
+  final BuzzIdentityState state;
+
+  ///推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
+  final String? workflowId;
+
+  ClientKeyStatus({required this.pubkey, required this.state, this.workflowId});
+
+  factory ClientKeyStatus.fromJson(Map<String, dynamic> json) =>
+      ClientKeyStatus(
+        pubkey: json["pubkey"],
+        state: buzzIdentityStateValues.map[json["state"]]!,
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "pubkey": pubkey,
+    "state": buzzIdentityStateValues.reverse[state],
+    "workflowId": workflowId,
+  });
+}
+
+///GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
+///communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
+class NativeCommunityFacts {
+  ///该 Tenant 的 Community host，可能带非默认端口
+  final String communityHost;
+
+  ///原生端直连的 Relay 地址
+  final String relayUrl;
+
+  NativeCommunityFacts({required this.communityHost, required this.relayUrl});
+
+  factory NativeCommunityFacts.fromJson(Map<String, dynamic> json) =>
+      NativeCommunityFacts(
+        communityHost: json["communityHost"],
+        relayUrl: json["relayUrl"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"communityHost": communityHost, "relayUrl": relayUrl});
+}
+
+///GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
+class OwnAuditEntry {
+  final String actionKey;
+  final String decision;
+  final AuditEventType eventType;
+
+  ///RFC3339
+  final String occurredAt;
+  final String resultCode;
+
+  ///动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
+  final String? workspaceId;
+
+  OwnAuditEntry({
+    required this.actionKey,
+    required this.decision,
+    required this.eventType,
+    required this.occurredAt,
+    required this.resultCode,
+    this.workspaceId,
+  });
+
+  factory OwnAuditEntry.fromJson(Map<String, dynamic> json) => OwnAuditEntry(
+    actionKey: json["actionKey"],
+    decision: json["decision"],
+    eventType: auditEventTypeValues.map[json["eventType"]]!,
+    occurredAt: json["occurredAt"],
+    resultCode: json["resultCode"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "decision": decision,
+    "eventType": auditEventTypeValues.reverse[eventType],
+    "occurredAt": occurredAt,
+    "resultCode": resultCode,
+    "workspaceId": workspaceId,
+  });
+}
+
+///AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
+///OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
+enum AuditEventType {
+  ACCESS,
+  APPROVAL,
+  AUTHENTICATION,
+  DECISION,
+  DISPATCH,
+  INTENT,
+  OUTCOME,
+  RECONCILIATION,
+  REVOCATION,
+  SESSION,
+}
+
+final auditEventTypeValues = EnumValues({
+  "ACCESS": AuditEventType.ACCESS,
+  "APPROVAL": AuditEventType.APPROVAL,
+  "AUTHENTICATION": AuditEventType.AUTHENTICATION,
+  "DECISION": AuditEventType.DECISION,
+  "DISPATCH": AuditEventType.DISPATCH,
+  "INTENT": AuditEventType.INTENT,
+  "OUTCOME": AuditEventType.OUTCOME,
+  "RECONCILIATION": AuditEventType.RECONCILIATION,
+  "REVOCATION": AuditEventType.REVOCATION,
+  "SESSION": AuditEventType.SESSION,
+});
+
+///PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
+///msg:<Buzz event id>；version 是读到的 CollaborationUserState 版本，不符即 409。
+class ReadMarkRequest {
+  final String contextKey;
+
+  ///RFC3339，Core 统一存成 UTC
+  final String lastReadAt;
+  final int version;
+
+  ReadMarkRequest({
+    required this.contextKey,
+    required this.lastReadAt,
+    required this.version,
+  });
+
+  factory ReadMarkRequest.fromJson(Map<String, dynamic> json) =>
+      ReadMarkRequest(
+        contextKey: json["contextKey"],
+        lastReadAt: json["lastReadAt"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contextKey": contextKey,
+    "lastReadAt": lastReadAt,
+    "version": version,
+  });
+}
+
+///GET /api/v1/session 的回应：已解析的执行身份与本次 PlatformSession。原生端以 platformSessionId
+///绑定设备持钥证明（DD-79）。
+class PlatformSessionView {
+  ///当前选定的 Workspace；未选定时缺省
+  final String? currentWorkspaceId;
+
+  ///HumanIdentity 的显示名，只用于界面上认出本人，不参与任何判定
+  final String displayName;
+  final String humanIdentityId;
+  final String platformSessionId;
+  final String tenantId;
+  final String tenantMembershipId;
+  final String tenantPrincipalId;
+
+  PlatformSessionView({
+    this.currentWorkspaceId,
+    required this.displayName,
+    required this.humanIdentityId,
+    required this.platformSessionId,
+    required this.tenantId,
+    required this.tenantMembershipId,
+    required this.tenantPrincipalId,
+  });
+
+  factory PlatformSessionView.fromJson(Map<String, dynamic> json) =>
+      PlatformSessionView(
+        currentWorkspaceId: json["currentWorkspaceId"],
+        displayName: json["displayName"],
+        humanIdentityId: json["humanIdentityId"],
+        platformSessionId: json["platformSessionId"],
+        tenantId: json["tenantId"],
+        tenantMembershipId: json["tenantMembershipId"],
+        tenantPrincipalId: json["tenantPrincipalId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "currentWorkspaceId": currentWorkspaceId,
+    "displayName": displayName,
+    "humanIdentityId": humanIdentityId,
+    "platformSessionId": platformSessionId,
+    "tenantId": tenantId,
+    "tenantMembershipId": tenantMembershipId,
+    "tenantPrincipalId": tenantPrincipalId,
+  });
+}
+
+///CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT
+////api/v1/user-state/workspaces/{workspaceId} 的 200 回应）。
+class UserStateVersion {
+  final int version;
+
+  UserStateVersion({required this.version});
+
+  factory UserStateVersion.fromJson(Map<String, dynamic> json) =>
+      UserStateVersion(version: json["version"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"version": version});
+}
+
+///GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的
+///Workspace。Workspace id 同时是其 Channel id（DD-80）。
+class WorkspaceView {
+  final String id;
+  final String name;
+  final String slug;
+
+  WorkspaceView({required this.id, required this.name, required this.slug});
+
+  factory WorkspaceView.fromJson(Map<String, dynamic> json) =>
+      WorkspaceView(id: json["id"], name: json["name"], slug: json["slug"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"id": id, "name": name, "slug": slug});
+}
+
+///GET /api/v1/workspaces/{workspaceId}/members 回应数组的元素，按人聚合（DD-77）。
+class WorkspaceMemberView {
+  final String displayName;
+  final String principalId;
+
+  ///此人全部 ACTIVE 的 Buzz 协议公钥：Web 一把，另加每台原生设备一把
+  final List<String> pubkeys;
+  final WorkspaceMembershipState state;
+
+  WorkspaceMemberView({
+    required this.displayName,
+    required this.principalId,
+    required this.pubkeys,
+    required this.state,
+  });
+
+  factory WorkspaceMemberView.fromJson(Map<String, dynamic> json) =>
+      WorkspaceMemberView(
+        displayName: json["displayName"],
+        principalId: json["principalId"],
+        pubkeys: List<String>.from(json["pubkeys"].map((x) => x)),
+        state: workspaceMembershipStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "principalId": principalId,
+    "pubkeys": List<dynamic>.from(pubkeys.map((x) => x)),
+    "state": workspaceMembershipStateValues.reverse[state],
+  });
+}
+
+///WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
+enum WorkspaceMembershipState { ACTIVE, ERROR, PROVISIONING, REVOKED, REVOKING }
+
+final workspaceMembershipStateValues = EnumValues({
+  "ACTIVE": WorkspaceMembershipState.ACTIVE,
+  "ERROR": WorkspaceMembershipState.ERROR,
+  "PROVISIONING": WorkspaceMembershipState.PROVISIONING,
+  "REVOKED": WorkspaceMembershipState.REVOKED,
+  "REVOKING": WorkspaceMembershipState.REVOKING,
+});
+
+///PUT /api/v1/user-state/workspaces/{workspaceId} 的请求体（DD-40）：该 Workspace 的收藏与静音。version
+///是读到的 CollaborationUserState 版本，不符即 409；updatedAt 由 Core 用库时钟补写，不取调用方的值。
+class WorkspacePreferenceRequest {
+  final bool muted;
+  final bool starred;
+  final int version;
+
+  WorkspacePreferenceRequest({
+    required this.muted,
+    required this.starred,
+    required this.version,
+  });
+
+  factory WorkspacePreferenceRequest.fromJson(Map<String, dynamic> json) =>
+      WorkspacePreferenceRequest(
+        muted: json["muted"],
+        starred: json["starred"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"muted": muted, "starred": starred, "version": version});
+}
+
 ///统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
 class ErrorBody {
   final ErrorClass errorBodyClass;
@@ -250,6 +646,7 @@ enum ReasonCode {
   PUBLISH_REJECTED,
   PUBLISH_RESULT_UNKNOWN,
   SESSION_NOT_ACTIVE,
+  SURFACE_CAPABILITY_UNAVAILABLE,
   TENANT_MEMBERSHIP_NOT_ACTIVE,
   TENANT_SELECTION_NOT_AVAILABLE,
 }
@@ -266,6 +663,7 @@ final reasonCodeValues = EnumValues({
   "PUBLISH_REJECTED": ReasonCode.PUBLISH_REJECTED,
   "PUBLISH_RESULT_UNKNOWN": ReasonCode.PUBLISH_RESULT_UNKNOWN,
   "SESSION_NOT_ACTIVE": ReasonCode.SESSION_NOT_ACTIVE,
+  "SURFACE_CAPABILITY_UNAVAILABLE": ReasonCode.SURFACE_CAPABILITY_UNAVAILABLE,
   "TENANT_MEMBERSHIP_NOT_ACTIVE": ReasonCode.TENANT_MEMBERSHIP_NOT_ACTIVE,
   "TENANT_SELECTION_NOT_AVAILABLE": ReasonCode.TENANT_SELECTION_NOT_AVAILABLE,
 });

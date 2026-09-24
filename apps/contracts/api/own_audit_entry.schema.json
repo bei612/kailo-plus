@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/own_audit_entry.schema.json",
+  "title": "OwnAuditEntry",
+  "description": "GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["occurredAt", "eventType", "actionKey", "decision", "resultCode"],
+  "properties": {
+    "occurredAt": { "type": "string", "description": "RFC3339" },
+    "eventType": { "$ref": "../enums/audit_event_type.schema.json" },
+    "actionKey": { "type": "string" },
+    "decision": { "type": "string" },
+    "resultCode": { "type": "string" },
+    "workspaceId": { "type": "string", "format": "uuid", "description": "动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省" }
+  }
+}

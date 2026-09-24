@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/read_mark.schema.json",
+  "title": "ReadMarkRequest",
+  "description": "PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或 msg:<Buzz event id>；version 是读到的 CollaborationUserState 版本，不符即 409。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contextKey", "lastReadAt", "version"],
+  "properties": {
+    "contextKey": { "type": "string" },
+    "lastReadAt": { "type": "string", "description": "RFC3339，Core 统一存成 UTC" },
+    "version": { "type": "integer" }
+  }
+}

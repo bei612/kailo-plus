@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/user_state_version.schema.json",
+  "title": "UserStateVersion",
+  "description": "CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT /api/v1/user-state/workspaces/{workspaceId} 的 200 回应）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "type": "integer" }
+  }
+}

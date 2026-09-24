@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/workspace_member.schema.json",
+  "title": "WorkspaceMemberView",
+  "description": "GET /api/v1/workspaces/{workspaceId}/members 回应数组的元素，按人聚合（DD-77）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["principalId", "displayName", "pubkeys", "state"],
+  "properties": {
+    "principalId": { "type": "string", "format": "uuid" },
+    "displayName": { "type": "string" },
+    "pubkeys": { "type": "array", "items": { "type": "string" }, "description": "此人全部 ACTIVE 的 Buzz 协议公钥：Web 一把，另加每台原生设备一把" },
+    "state": { "$ref": "../enums/workspace_membership_state.schema.json" }
+  }
+}

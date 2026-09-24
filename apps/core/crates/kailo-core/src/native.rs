@@ -10,8 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use contracts::{ErrorBody, ErrorClass, ReasonCode};
-use serde::Serialize;
+use contracts::{ErrorBody, ErrorClass, NativeCommunityFacts, ReasonCode};
 
 use crate::bff::{resolve_execution_context, BffState};
 
@@ -38,21 +37,13 @@ pub fn require_native(headers: &HeaderMap) -> Result<(), Response> {
         .into_response())
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommunityFacts {
-    /// 原生端直连的 Relay 地址。主机名就是 Community host：Relay 按连接的 Host
-    /// 绑定 Community（SF-BUZ-32），因此地址本身决定进入哪个 Community。
-    pub relay_url: String,
-    pub community_host: String,
-}
-
 /// 本人所在 Tenant 的 Community 连接事实。
 ///
 /// Buzz Web 永远拿不到它（DD-39）：Web 经 BFF 代签，不认识 Relay；原生端本机
 /// 持钥直连 Relay（DD-75），需要知道连到哪里。地址的形态（scheme 与对外端口）是
 /// 部署事实，由 `BUZZ_RELAY_NATIVE_URL_TEMPLATE` 给出，Community host 取自
-/// ACTIVE 的 TenantBuzzBinding。
+/// ACTIVE 的 TenantBuzzBinding。地址的 authority 就是 Community host：Relay 按
+/// 连接的 Host 绑定 Community（SF-BUZ-32），因此地址本身决定进入哪个 Community。
 pub async fn community(State(state): State<BffState>, headers: HeaderMap) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
@@ -71,7 +62,7 @@ pub async fn community(State(state): State<BffState>, headers: HeaderMap) -> Res
     {
         Ok(Some(host)) => (
             StatusCode::OK,
-            Json(CommunityFacts {
+            Json(NativeCommunityFacts {
                 relay_url: state.relay_native_url_template.replace("{host}", &host),
                 community_host: host,
             }),

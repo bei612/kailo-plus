@@ -14,13 +14,15 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use contracts::{ErrorBody, ErrorClass, ReasonCode};
+use contracts::{
+    BuzzIdentityState, ClientKeyStatus, ClientKeyView, ErrorBody, ErrorClass, ReasonCode,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::audit::{append, AuditEntry};
-use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
+use crate::bff::{db_enum, resolve_execution_context, BffState, ExecutionContext};
 use crate::component_task::{self, ComponentTaskInput};
 
 /// 登记端点的路径。持钥证明的 `u` 必须指向它：证明只对这一个动作有效。
@@ -33,24 +35,6 @@ pub(crate) const KIND: &str = "BUZZ_IDENTITY_PROJECTION";
 pub struct RegisterRequest {
     /// 以待登记私钥签名的 NIP-98 事件
     pub proof: nostr::Event,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClientKey {
-    pub pubkey: String,
-    pub state: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct KeyStatus {
-    pub pubkey: String,
-    pub state: String,
-    /// 推进该状态的 Workflow。为空表示本次调用没有需要推进的状态。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -162,9 +146,9 @@ pub async fn register(
             }
             (true, "ACTIVE") => (
                 StatusCode::OK,
-                Json(KeyStatus {
+                Json(ClientKeyStatus {
                     pubkey,
-                    state: b.state,
+                    state: BuzzIdentityState::Active,
                     workflow_id: None,
                 }),
             )
@@ -228,7 +212,15 @@ pub async fn register(
         return unavailable(e);
     }
 
-    start(&state, &ctx, &pubkey, 1, action, "RECONCILING").await
+    start(
+        &state,
+        &ctx,
+        &pubkey,
+        1,
+        action,
+        BuzzIdentityState::Reconciling,
+    )
+    .await
 }
 
 /// 本人登记过的设备（未撤销的）。
@@ -237,8 +229,7 @@ pub async fn list(State(state): State<BffState>, headers: HeaderMap) -> Response
         Ok(c) => c,
         Err(r) => return r,
     };
-    match sqlx::query_as!(
-        ClientKey,
+    let rows = match sqlx::query!(
         "select pubkey, state, created_at from identity.buzz_identity_binding
          where tenant_id = $1 and principal_id = $2 and custody = 'CLIENT' and state <> 'REVOKED'
          order by created_at",
@@ -248,9 +239,25 @@ pub async fn list(State(state): State<BffState>, headers: HeaderMap) -> Response
     .fetch_all(&state.pool)
     .await
     {
-        Ok(rows) => (StatusCode::OK, Json(rows)).into_response(),
-        Err(e) => unavailable(e),
+        Ok(rows) => rows,
+        Err(e) => return unavailable(e),
+    };
+    let mut keys = Vec::with_capacity(rows.len());
+    for r in rows {
+        let key_state = match db_enum("buzz_identity_binding.state", &r.state) {
+            Ok(s) => s,
+            Err(resp) => return resp,
+        };
+        keys.push(ClientKeyView {
+            pubkey: r.pubkey,
+            state: key_state,
+            // UTC、以 Z 结尾、小数秒按实际精度：与 chrono 的 serde 形式逐字节相同
+            created_at: r
+                .created_at
+                .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true),
+        });
     }
+    (StatusCode::OK, Json(keys)).into_response()
 }
 
 /// 撤销本人的一台设备。只移出这一把 pubkey，此人的其他设备与 Web 不受影响。
@@ -294,9 +301,9 @@ pub async fn revoke(
         "REVOKED" => {
             return (
                 StatusCode::OK,
-                Json(KeyStatus {
+                Json(ClientKeyStatus {
                     pubkey,
-                    state: row.state,
+                    state: BuzzIdentityState::Revoked,
                     workflow_id: None,
                 }),
             )
@@ -344,7 +351,15 @@ pub async fn revoke(
     if let Err(e) = tx.commit().await {
         return unavailable(e);
     }
-    start(&state, &ctx, &pubkey, version, action, "REVOKING").await
+    start(
+        &state,
+        &ctx,
+        &pubkey,
+        version,
+        action,
+        BuzzIdentityState::Revoking,
+    )
+    .await
 }
 
 /// 核对持钥证明（DD-79）。
@@ -455,7 +470,7 @@ async fn start(
     pubkey: &str,
     version: i32,
     action: Uuid,
-    status: &str,
+    status: BuzzIdentityState,
 ) -> Response {
     let workflow_id = component_task::workflow_id(KIND, ctx.tenant_id, pubkey, version);
     let input = ComponentTaskInput {
@@ -479,9 +494,9 @@ async fn start(
     {
         Ok(_) => (
             StatusCode::ACCEPTED,
-            Json(KeyStatus {
+            Json(ClientKeyStatus {
                 pubkey: pubkey.to_owned(),
-                state: status.to_owned(),
+                state: status,
                 workflow_id: Some(workflow_id),
             }),
         )
@@ -524,9 +539,9 @@ async fn resume(
         Err(e) => return unavailable(e),
     };
     let status = if action_key.ends_with("revoke") {
-        "REVOKING"
+        BuzzIdentityState::Revoking
     } else {
-        "RECONCILING"
+        BuzzIdentityState::Reconciling
     };
     start(state, ctx, pubkey, version, action, status).await
 }

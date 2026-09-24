@@ -11,7 +11,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use contracts::{ErrorBody, ErrorClass};
+use contracts::{ErrorBody, ErrorClass, PlatformSessionView};
 
 use crate::audit;
 use kailo_identity::{resolve, session, IdentityError};
@@ -105,6 +105,19 @@ pub async fn resolve_execution_context(
         tenant_id: tenant,
         tenant_principal_id: principal,
         session_id: s.id,
+    })
+}
+
+/// 把库里的状态列读成契约枚举（ADR-02）。
+///
+/// 状态列的 CHECK 约束与 `contracts/enums/` 逐值相等由 `check.sh migrate` 保证，
+/// 因此这里读不出来只有一种成因：库与契约漂移了。那是服务端缺陷，回 500 并记
+/// 日志，不把一个客户端不认识的值下发出去。
+#[allow(clippy::result_large_err)]
+pub fn db_enum<T: serde::de::DeserializeOwned>(column: &str, value: &str) -> Result<T, Response> {
+    serde_json::from_value(serde_json::Value::String(value.to_owned())).map_err(|_| {
+        tracing::error!(column, value, "库中的状态值不在契约枚举内");
+        StatusCode::INTERNAL_SERVER_ERROR.into_response()
     })
 }
 
@@ -204,15 +217,16 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
             match session::ensure(pool, human, membership, state.session_ttl_seconds).await {
                 Ok(s) => (
                     StatusCode::OK,
-                    Json(serde_json::json!({
-                        "humanIdentityId": identity.human_identity_id,
-                        "displayName": display_name,
-                        "tenantId": identity.tenant_id,
-                        "tenantMembershipId": identity.tenant_membership_id,
-                        "tenantPrincipalId": identity.tenant_principal_id,
-                        "platformSessionId": s.id,
-                        "currentWorkspaceId": s.current_workspace_id,
-                    })),
+                    Json(PlatformSessionView {
+                        human_identity_id: identity.human_identity_id,
+                        display_name,
+                        tenant_id: identity.tenant_id,
+                        tenant_membership_id: identity.tenant_membership_id,
+                        tenant_principal_id: identity.tenant_principal_id,
+                        platform_session_id: s.id.to_string(),
+                        // 未选定 Workspace 时缺省，不写 null（contracts/README.md §1）
+                        current_workspace_id: s.current_workspace_id.map(|w| w.to_string()),
+                    }),
                 )
                     .into_response(),
                 // 会话建不起来就没有执行上下文可用——fail closed，不返回一个

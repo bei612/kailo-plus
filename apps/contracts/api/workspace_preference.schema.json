@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/workspace_preference.schema.json",
+  "title": "WorkspacePreferenceRequest",
+  "description": "PUT /api/v1/user-state/workspaces/{workspaceId} 的请求体（DD-40）：该 Workspace 的收藏与静音。version 是读到的 CollaborationUserState 版本，不符即 409；updatedAt 由 Core 用库时钟补写，不取调用方的值。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["starred", "muted", "version"],
+  "properties": {
+    "starred": { "type": "boolean" },
+    "muted": { "type": "boolean" },
+    "version": { "type": "integer" }
+  }
+}

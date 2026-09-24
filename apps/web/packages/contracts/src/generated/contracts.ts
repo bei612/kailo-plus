@@ -100,6 +100,177 @@ export enum Kind {
 }
 
 /**
+ * GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
+ */
+export interface ClientKeyView {
+    /**
+     * RFC3339
+     */
+    createdAt: string;
+    pubkey:    string;
+    state:     BuzzIdentityState;
+}
+
+/**
+ * BuzzIdentityBinding 状态机。custody=CLIENT 时跳过 PENDING_SECRET，自 RECONCILING 起始。
+ */
+export enum BuzzIdentityState {
+    Active = "ACTIVE",
+    PendingSecret = "PENDING_SECRET",
+    Reconciling = "RECONCILING",
+    Revoked = "REVOKED",
+    Revoking = "REVOKING",
+}
+
+/**
+ * 设备公钥登记（POST /api/v1/identity/client-keys）与撤销（DELETE
+ * /api/v1/identity/client-keys/{pubkey}）的回应。
+ */
+export interface ClientKeyStatus {
+    pubkey: string;
+    state:  BuzzIdentityState;
+    /**
+     * 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
+     */
+    workflowId?: string;
+}
+
+/**
+ * GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
+ * communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
+ */
+export interface NativeCommunityFacts {
+    /**
+     * 该 Tenant 的 Community host，可能带非默认端口
+     */
+    communityHost: string;
+    /**
+     * 原生端直连的 Relay 地址
+     */
+    relayUrl: string;
+}
+
+/**
+ * GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
+ */
+export interface OwnAuditEntry {
+    actionKey: string;
+    decision:  string;
+    eventType: AuditEventType;
+    /**
+     * RFC3339
+     */
+    occurredAt: string;
+    resultCode: string;
+    /**
+     * 动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
+     */
+    workspaceId?: string;
+}
+
+/**
+ * AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
+ * OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
+ */
+export enum AuditEventType {
+    Access = "ACCESS",
+    Approval = "APPROVAL",
+    Authentication = "AUTHENTICATION",
+    Decision = "DECISION",
+    Dispatch = "DISPATCH",
+    Intent = "INTENT",
+    Outcome = "OUTCOME",
+    Reconciliation = "RECONCILIATION",
+    Revocation = "REVOCATION",
+    Session = "SESSION",
+}
+
+/**
+ * PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
+ * msg:<Buzz event id>；version 是读到的 CollaborationUserState 版本，不符即 409。
+ */
+export interface ReadMarkRequest {
+    contextKey: string;
+    /**
+     * RFC3339，Core 统一存成 UTC
+     */
+    lastReadAt: string;
+    version:    number;
+}
+
+/**
+ * GET /api/v1/session 的回应：已解析的执行身份与本次 PlatformSession。原生端以 platformSessionId
+ * 绑定设备持钥证明（DD-79）。
+ */
+export interface PlatformSessionView {
+    /**
+     * 当前选定的 Workspace；未选定时缺省
+     */
+    currentWorkspaceId?: string;
+    /**
+     * HumanIdentity 的显示名，只用于界面上认出本人，不参与任何判定
+     */
+    displayName:        string;
+    humanIdentityId:    string;
+    platformSessionId:  string;
+    tenantId:           string;
+    tenantMembershipId: string;
+    tenantPrincipalId:  string;
+}
+
+/**
+ * CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT
+ * /api/v1/user-state/workspaces/{workspaceId} 的 200 回应）。
+ */
+export interface UserStateVersion {
+    version: number;
+}
+
+/**
+ * GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的
+ * Workspace。Workspace id 同时是其 Channel id（DD-80）。
+ */
+export interface WorkspaceView {
+    id:   string;
+    name: string;
+    slug: string;
+}
+
+/**
+ * GET /api/v1/workspaces/{workspaceId}/members 回应数组的元素，按人聚合（DD-77）。
+ */
+export interface WorkspaceMemberView {
+    displayName: string;
+    principalId: string;
+    /**
+     * 此人全部 ACTIVE 的 Buzz 协议公钥：Web 一把，另加每台原生设备一把
+     */
+    pubkeys: string[];
+    state:   WorkspaceMembershipState;
+}
+
+/**
+ * WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
+ */
+export enum WorkspaceMembershipState {
+    Active = "ACTIVE",
+    Error = "ERROR",
+    Provisioning = "PROVISIONING",
+    Revoked = "REVOKED",
+    Revoking = "REVOKING",
+}
+
+/**
+ * PUT /api/v1/user-state/workspaces/{workspaceId} 的请求体（DD-40）：该 Workspace 的收藏与静音。version
+ * 是读到的 CollaborationUserState 版本，不符即 409；updatedAt 由 Core 用库时钟补写，不取调用方的值。
+ */
+export interface WorkspacePreferenceRequest {
+    muted:   boolean;
+    starred: boolean;
+    version: number;
+}
+
+/**
  * 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
  */
 export interface ErrorBody {
@@ -127,6 +298,7 @@ export enum ReasonCode {
     PublishRejected = "PUBLISH_REJECTED",
     PublishResultUnknown = "PUBLISH_RESULT_UNKNOWN",
     SessionNotActive = "SESSION_NOT_ACTIVE",
+    SurfaceCapabilityUnavailable = "SURFACE_CAPABILITY_UNAVAILABLE",
     TenantMembershipNotActive = "TENANT_MEMBERSHIP_NOT_ACTIVE",
     TenantSelectionNotAvailable = "TENANT_SELECTION_NOT_AVAILABLE",
 }
