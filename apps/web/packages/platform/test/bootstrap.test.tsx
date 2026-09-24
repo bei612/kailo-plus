@@ -26,7 +26,7 @@ const api = (routes: Record<string, () => unknown>) => (args?: Record<string, un
 
 async function mount(invoke: Invoke, connect = vi.fn(async () => {})) {
   const host = await render(
-    <NativeBootstrap invoke={invoke} connect={connect} locale="en" recheckEveryMs={10}>
+    <NativeBootstrap invoke={invoke} connect={connect} locale="en">
       {(s) => <div data-testid="app">connected {s.facts.relayUrl} as {s.devicePubkey}</div>}
     </NativeBootstrap>,
   );
@@ -117,7 +117,15 @@ describe("NativeBootstrap", () => {
     const host = await mount(invoke, connect);
     await click(button(host, "Sign in"));
     expect(host.textContent).toContain("RECONCILING");
-    await vi.waitFor(() => expect(host.querySelector("[data-testid=app]")).not.toBeNull());
+    // 不定时轮询：没有用户的「重新确认」，就不会再去读列表
+    await new Promise((r) => setTimeout(r, 50));
+    await settle();
+    expect(listed).toBe(0);
+    await click(button(host, "Check again"));
+    expect(host.textContent).toContain("RECONCILING");
+    expect(host.querySelector("[data-testid=app]")).toBeNull();
+    await click(button(host, "Check again"));
+    expect(host.querySelector("[data-testid=app]")).not.toBeNull();
     expect(connect).toHaveBeenCalledWith(facts);
     expect(host.textContent).toContain(`connected ${facts.relayUrl} as ${PUBKEY}`);
     expect(listed).toBe(2);
@@ -209,7 +217,7 @@ describe("NativeBootstrap", () => {
       kailo_sign_out: () => null,
     });
     const host = await render(
-      <NativeBootstrap invoke={invoke} connect={async () => {}} locale="en" recheckEveryMs={10}>
+      <NativeBootstrap invoke={invoke} connect={async () => {}} locale="en">
         {(s) => (
           <button type="button" onClick={() => void s.signOut()}>
             out

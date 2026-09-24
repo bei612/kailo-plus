@@ -183,8 +183,8 @@ export const platformMessages = {
     "zh-CN": "正在登记本机…",
   },
   "native.device.pending": {
-    en: "This device is being added ({state}). This usually takes a moment.",
-    "zh-CN": "正在添加本机（{state}），通常片刻即可完成。",
+    en: "This device is being added ({state}). This usually takes a moment; check again to continue.",
+    "zh-CN": "正在添加本机（{state}），通常片刻即可完成；完成后点「重新确认」继续。",
   },
   "native.device.unknown": {
     en: "The registration result is unknown{operation}. Check again before doing anything else.",

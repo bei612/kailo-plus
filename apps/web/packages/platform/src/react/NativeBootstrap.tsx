@@ -67,15 +67,12 @@ function message(e: unknown): string {
 export function NativeBootstrap({
   invoke,
   connect,
-  recheckEveryMs,
   locale,
   children,
 }: {
   invoke: Invoke;
   /** 用连接事实连 Relay（宿主既有的连接路径）；失败以 reject 表示 */
   connect: (facts: NativeCommunityFacts) => Promise<void>;
-  /** 设备投影进行中时重新确认的间隔；只决定刷新节奏，不构成期限 */
-  recheckEveryMs: number;
   locale?: PlatformLocale;
   children: (session: NativeSession) => ReactNode;
 }) {
@@ -159,7 +156,9 @@ export function NativeBootstrap({
     }
   }, [host, fetchCommunity]);
 
-  // 投影进行中：按列表确认本机公钥的状态，直到 ACTIVE。读不到不是失败，下一轮再读。
+  // 投影进行中：由用户「重新确认」时按列表读本机公钥的状态。这里不定时轮询——客户端
+  // 没有依据选一个间隔（投影多快由服务端决定，服务端也没有下发重查间隔），写死的
+  // 间隔只会在后台反复敲 BFF。读不到不是失败，保持「处理中」。
   const recheck = useCallback(
     async (pubkey: string) => {
       try {
@@ -193,12 +192,6 @@ export function NativeBootstrap({
   useEffect(() => {
     void start();
   }, [start]);
-
-  useEffect(() => {
-    if (step.kind !== "devicePending") return;
-    const timer = setTimeout(() => void recheck(step.pubkey), recheckEveryMs);
-    return () => clearTimeout(timer);
-  }, [step, recheck, recheckEveryMs]);
 
   const signIn = async () => {
     cancelled.current = false;
