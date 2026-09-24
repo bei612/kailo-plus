@@ -274,6 +274,27 @@ async fn run(
         e.converge_bound_secs,
     )
     .await;
+    // 登记走统一准入：按登记的 ActionDefinition 确切版本、带 SpiceDB 给出的
+    // ZedToken 写下 ActionDecision（apps/AGENTS.md 规则 9、.design/03 §4）
+    let (version, zed): (i32, Option<String>) = sqlx::query_as(
+        "select d.action_version, d.zed_token from admission.action_decision d
+         join admission.action_execution ae on ae.id = d.action_execution_id
+         where ae.temporal_workflow_id = $1 and d.action_key = 'identity.client_key.register'
+           and d.authorization_decision = 'ALLOW'",
+    )
+    .bind(body["workflowId"].as_str().unwrap())
+    .fetch_one(pool)
+    .await
+    .expect("登记没有 ActionDecision：它绕过了统一准入");
+    let active: i32 = sqlx::query_scalar(
+        "select version from catalog.action_definition
+         where action_key = 'identity.client_key.register' and status = 'ACTIVE'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("登记的 ActionDefinition 应已登记");
+    assert_eq!(version, active, "ActionDecision 未指向登记的定义版本");
+    assert!(zed.is_some_and(|z| !z.is_empty()), "登记的准入没有 fresh Check 的 ZedToken");
 
     // 同一设备重复登记：幂等，不起第二条 Workflow
     let (status, body) = native(

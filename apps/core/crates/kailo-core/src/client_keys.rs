@@ -24,6 +24,7 @@ use uuid::Uuid;
 use crate::audit::{append, AuditEntry};
 use crate::bff::{db_enum, resolve_execution_context, BffState, ExecutionContext};
 use crate::component_task::{self, ComponentTaskInput};
+use crate::governance::{record_owned_decision, Actor, DecisionSubject, OwnedAdmission};
 
 /// 登记端点的路径。持钥证明的 `u` 必须指向它：证明只对这一个动作有效。
 pub const REGISTER_PATH: &str = "/api/v1/identity/client-keys";
@@ -100,6 +101,14 @@ pub async fn register(
     }
     let pubkey = req.proof.pubkey.to_hex();
     let parameter_hash = hex::encode(Sha256::digest(pubkey.as_bytes()));
+    let admitted = match state
+        .governance
+        .admit_owned(actor(&ctx), "identity.client_key.register", &parameter_hash)
+        .await
+    {
+        Ok(a) => a,
+        Err(r) => return r.respond(None),
+    };
 
     let mut tx = match state.pool.begin().await {
         Ok(t) => t,
@@ -202,6 +211,7 @@ pub async fn register(
         &pubkey,
         &parameter_hash,
         1,
+        &admitted,
     )
     .await
     {
@@ -271,6 +281,14 @@ pub async fn revoke(
         Err(r) => return r,
     };
     let parameter_hash = hex::encode(Sha256::digest(pubkey.as_bytes()));
+    let admitted = match state
+        .governance
+        .admit_owned(actor(&ctx), "identity.client_key.revoke", &parameter_hash)
+        .await
+    {
+        Ok(a) => a,
+        Err(r) => return r.respond(None),
+    };
     let mut tx = match state.pool.begin().await {
         Ok(t) => t,
         Err(e) => return unavailable(e),
@@ -342,6 +360,7 @@ pub async fn revoke(
         &pubkey,
         &parameter_hash,
         version,
+        &admitted,
     )
     .await
     {
@@ -401,11 +420,22 @@ async fn proof_is_valid(
     Ok(path_ok && method_ok && session_ok)
 }
 
-/// 记一条已准入的 ActionExecution 与对应审计。
+/// 这两个动作经治理链准入：ActionDefinition 确切版本、scope guard 与 SpiceDB
+/// fresh Check（`governance::admit_owned`）。目标是调用方自己的 Principal，没有
+/// 可交给通用语义解析的业务对象，因此持钥证明、设备上界与 binding 状态机仍在本模块。
+fn actor(ctx: &ExecutionContext) -> Actor {
+    Actor {
+        tenant_id: ctx.tenant_id,
+        principal_id: ctx.tenant_principal_id,
+        human_identity_id: Some(ctx.human_identity_id),
+    }
+}
+
+/// 记一条已准入的 ActionExecution、它的 ActionDecision 与审计，与 binding 变化同事务。
 ///
-/// 这里就是这个用户动作的准入点：会话已解析、成员 ACTIVE、持钥证明成立、未超
-/// 上界——与消息发布由 BFF 准入是同一种角色。ActionExecution 的 target 是此人
-/// 的 Principal，冻结参数是这把公钥的摘要。
+/// 会话已解析、成员 ACTIVE、持钥证明成立、未超上界，且治理链的准入已通过
+/// （`admitted` 带定义版本与 ZedToken）。ActionExecution 的 target 是此人的
+/// Principal，冻结参数是这把公钥的摘要。
 async fn record_action(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ctx: &ExecutionContext,
@@ -413,6 +443,7 @@ async fn record_action(
     pubkey: &str,
     parameter_hash: &str,
     version: i32,
+    admitted: &OwnedAdmission,
 ) -> Result<Uuid, sqlx::Error> {
     let action = Uuid::new_v4();
     let operation = Uuid::new_v4();
@@ -422,7 +453,7 @@ async fn record_action(
              (id, operation_id, tenant_id, workspace_id, action_key, action_version,
               initiator_principal_id, actor_principal_id, target_id, parameter_hash,
               temporal_workflow_id, gate_state, dispatch_state, correlation_id)
-         values ($1, $2, $3, null, $4, 1, $5, $5, $5, $6, $7, 'ALLOWED', 'NOT_DISPATCHED', $2)",
+         values ($1, $2, $3, null, $4, $8, $5, $5, $5, $6, $7, 'ALLOWED', 'NOT_DISPATCHED', $2)",
         action,
         operation,
         ctx.tenant_id,
@@ -430,8 +461,25 @@ async fn record_action(
         ctx.tenant_principal_id,
         parameter_hash,
         workflow_id,
+        admitted.version,
     )
     .execute(&mut **tx)
+    .await?;
+    record_owned_decision(
+        tx,
+        &DecisionSubject {
+            action_execution_id: action,
+            operation_id: operation,
+            tenant_id: ctx.tenant_id,
+            workspace_id: None,
+            principal_id: ctx.tenant_principal_id,
+            action_key,
+            action_version: admitted.version,
+            target_id: ctx.tenant_principal_id,
+            parameter_hash,
+        },
+        &admitted.zed_token,
+    )
     .await?;
     append(
         tx,
@@ -445,7 +493,7 @@ async fn record_action(
             initiator_principal_id: Some(ctx.tenant_principal_id),
             actor_principal_id: Some(ctx.tenant_principal_id),
             action_key,
-            action_version: 1,
+            action_version: admitted.version,
             component_type_key: "buzz",
             target_type: Some("PRINCIPAL"),
             target_id: Some(ctx.tenant_principal_id),
@@ -456,6 +504,7 @@ async fn record_action(
             evidence_refs: serde_json::json!([
                 { "kind": "BUZZ_PUBKEY", "value": pubkey },
                 { "kind": "PLATFORM_SESSION_ID", "value": ctx.session_id },
+                { "kind": "SPICEDB_ZEDTOKEN", "value": admitted.zed_token },
             ]),
             correlation_id: operation,
         },

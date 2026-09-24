@@ -795,7 +795,7 @@ async fn audit(
 #[allow(clippy::too_many_arguments)]
 async fn record_decision(
     tx: &mut Transaction<'_, Postgres>,
-    ae: &Execution,
+    ae: &DecisionSubject<'_>,
     phase: &str,
     scope: &str,
     authorization: &str,
@@ -815,15 +815,15 @@ async fn record_decision(
     )
     .bind(Uuid::new_v4())
     .bind(ae.operation_id)
-    .bind(ae.id)
+    .bind(ae.action_execution_id)
     .bind(phase)
     .bind(ae.tenant_id)
     .bind(ae.workspace_id)
-    .bind(ae.initiator_principal_id)
-    .bind(&ae.action_key)
+    .bind(ae.principal_id)
+    .bind(ae.action_key)
     .bind(ae.action_version)
     .bind(ae.target_id)
-    .bind(&ae.parameter_hash)
+    .bind(ae.parameter_hash)
     .bind(scope)
     .bind(authorization)
     .bind(approval)
@@ -832,6 +832,36 @@ async fn record_decision(
     .execute(&mut **tx)
     .await
     .map(|_| ())
+}
+
+/// 一条 ActionDecision 记在谁名下。治理链自己的动作取自 ActionExecution；自有路径
+/// 的动作（设备公钥）由其模块给出同样的字段。
+pub struct DecisionSubject<'a> {
+    pub action_execution_id: Uuid,
+    pub operation_id: Uuid,
+    pub tenant_id: Uuid,
+    pub workspace_id: Option<Uuid>,
+    pub principal_id: Uuid,
+    pub action_key: &'a str,
+    pub action_version: i32,
+    pub target_id: Uuid,
+    pub parameter_hash: &'a str,
+}
+
+impl Execution {
+    fn subject(&self) -> DecisionSubject<'_> {
+        DecisionSubject {
+            action_execution_id: self.id,
+            operation_id: self.operation_id,
+            tenant_id: self.tenant_id,
+            workspace_id: self.workspace_id,
+            principal_id: self.initiator_principal_id,
+            action_key: &self.action_key,
+            action_version: self.action_version,
+            target_id: self.target_id,
+            parameter_hash: &self.parameter_hash,
+        }
+    }
 }
 
 fn approval_workflow_id(tenant: Uuid, action_execution_id: Uuid) -> String {
@@ -1151,7 +1181,7 @@ impl Governance {
         };
         record_decision(
             &mut tx,
-            ae,
+            &ae.subject(),
             phase,
             eval.scope,
             eval.authorization,
@@ -1285,7 +1315,7 @@ impl Governance {
         .await?;
         record_decision(
             tx,
-            ae,
+            &ae.subject(),
             phase,
             eval.scope,
             eval.authorization,
@@ -1560,7 +1590,7 @@ impl Governance {
         .map_err(|e| (e.into(), op))?;
         record_decision(
             &mut tx,
-            ae,
+            &ae.subject(),
             "ADMISSION",
             eval.scope,
             eval.authorization,
@@ -2345,4 +2375,92 @@ impl Governance {
             _ => Ok("NOTHING_TO_DO"),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 自有路径的动作：设备公钥登记与撤销（DD-79）
+// ---------------------------------------------------------------------------
+
+/// 自有路径动作通过准入后的事实：它按哪个确切版本的定义被准入、SpiceDB 给出的
+/// revision。目标解析与实体推进留在其模块（持钥证明、设备上界、binding 状态机）。
+pub struct OwnedAdmission {
+    pub version: i32,
+    pub zed_token: String,
+}
+
+impl Governance {
+    /// 设备公钥这类动作的目标是调用方自己的 Principal，没有可交给 Semantic 解析的
+    /// 业务对象；但它仍是用户可达的写动作，定义、scope guard 与 fresh Check 走同一条
+    /// 准入（`apps/AGENTS.md` 规则 9）。未登记即 BLOCKED；拒绝时写 DECISION 审计。
+    pub async fn admit_owned(
+        &self,
+        actor: Actor,
+        action_key: &str,
+        parameter_hash: &str,
+    ) -> Result<OwnedAdmission, Refusal> {
+        let def = active_definition(&self.pool, action_key)
+            .await?
+            .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+        let target = Target {
+            id: actor.principal_id,
+            version: 0,
+            workspace_id: None,
+        };
+        let eval = self.evaluate(actor, &def, &target).await?;
+        if eval.allowed {
+            return Ok(OwnedAdmission {
+                version: def.version,
+                zed_token: eval.zed_token.unwrap_or_default(),
+            });
+        }
+        let reason = eval.reason.clone().unwrap_or(ReasonCode::PermissionDenied);
+        let operation_id = Uuid::new_v4();
+        let mut tx = self.pool.begin().await?;
+        append(
+            &mut tx,
+            AuditEntry {
+                event_key: format!("{operation_id}:admission:decision"),
+                tenant_id: Some(actor.tenant_id),
+                workspace_id: None,
+                operation_id,
+                event_type: "DECISION",
+                human_identity_id: actor.human_identity_id,
+                initiator_principal_id: Some(actor.principal_id),
+                actor_principal_id: Some(actor.principal_id),
+                action_key: &def.action_key,
+                action_version: def.version,
+                component_type_key: &def.component_type_key,
+                target_type: Some(&def.target_type),
+                target_id: Some(actor.principal_id),
+                parameter_hash,
+                decision: "DENY",
+                result_code: &wire(&reason),
+                result_exposure: &def.result_exposure,
+                evidence_refs: zed_evidence(eval.zed_token.as_deref()),
+                correlation_id: operation_id,
+            },
+        )
+        .await?;
+        tx.commit().await?;
+        Err(Refusal::Denied(reason))
+    }
+}
+
+/// 自有路径动作的 ActionDecision，与它的 ActionExecution 同事务写入。
+pub async fn record_owned_decision(
+    tx: &mut Transaction<'_, Postgres>,
+    subject: &DecisionSubject<'_>,
+    zed_token: &str,
+) -> Result<(), sqlx::Error> {
+    record_decision(
+        tx,
+        subject,
+        "ADMISSION",
+        "ALLOW",
+        "ALLOW",
+        "NOT_REQUIRED",
+        Some(zed_token),
+        None,
+    )
+    .await
 }
