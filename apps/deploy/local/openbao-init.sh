@@ -142,24 +142,25 @@ path "${OPENBAO_KV_MOUNT}/metadata/*" {
 }
 POLICY
 
-# token 生存期短：Core 以 AppRole 换取短 TTL service token（DD-70），
-# 到期重新登录，不持有长期凭据。
-ns write auth/approle/role/kailo-core \
-  token_policies=kailo-core token_ttl=20m token_max_ttl=1h \
-  secret_id_num_uses=0 secret_id_ttl=0 >/dev/null
+# ---- Core 的两个 AppRole：引导凭据以 response wrapping 一次性投递（DD-70）----
+#
+# 上游 AppRole 的默认值是 secret_id_num_uses=0（不限次）、secret_id_ttl=0（永不
+# 过期）——一份泄漏的 secret_id 可以无限换 token。这里改为：
+#   - secret_id_num_uses=1：换一次 token 即作废，Core 启动时自检这一点；
+#   - secret_id_ttl：只够从投递到启动的那一小段；
+#   - secret_id_bound_cidrs / token_bound_cidrs：只接受 Core 所在的 app 网络；
+#   - token_period：周期令牌，Core 按 lease 续期，不需要也不能重新登录。
+# secret_id 本身不落盘：start-core.sh 在启动 Core 前现取一个 wrapped secret_id。
+: "${OPENBAO_SECRET_ID_TTL:?缺少 .env 中的 OPENBAO_SECRET_ID_TTL}"
+: "${OPENBAO_TOKEN_PERIOD:?缺少 .env 中的 OPENBAO_TOKEN_PERIOD}"
+project=$(python3 -c 'import re,io;print(re.search(r"^name: (\S+)", io.open("compose.yaml",encoding="utf-8").read(), re.M).group(1))')
+app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
+[ -n "$app_cidr" ] || { echo "取不到 ${project}_app 网络的子网，无法做 CIDR 绑定" >&2; exit 2; }
+role_opts=(secret_id_num_uses=1 "secret_id_ttl=$OPENBAO_SECRET_ID_TTL"
+           "secret_id_bound_cidrs=$app_cidr" "token_bound_cidrs=$app_cidr"
+           "token_period=$OPENBAO_TOKEN_PERIOD" token_ttl=0 token_max_ttl=0)
 
-role_id=$(ns read -field=role_id auth/approle/role/kailo-core/role-id)
-# secret_id 每次生成都是新的，因此只在文件缺失时生成——重复跑不会让
-# 正在运行的 Core 手里那个失效。
-if [ ! -s secrets/openbao_core_secret_id ]; then
-  tmp=$(mktemp)
-  if ns write -f -field=secret_id auth/approle/role/kailo-core/secret-id > "$tmp" && [ -s "$tmp" ]; then
-    mv "$tmp" secrets/openbao_core_secret_id
-    chmod 600 secrets/openbao_core_secret_id
-  else
-    rm -f "$tmp"; echo "生成 secret_id 失败" >&2; exit 2
-  fi
-fi
+ns write auth/approle/role/kailo-core token_policies=kailo-core "${role_opts[@]}" >/dev/null
 
 # ---- root namespace：Core 只读 audit 清单的 AppRole ----
 #
@@ -176,26 +177,29 @@ path "sys/audit" {
   capabilities = ["read", "sudo"]
 }
 POLICY
-root write auth/approle/role/kailo-core-audit \
-  token_policies=kailo-core-audit token_ttl=20m token_max_ttl=1h \
-  secret_id_num_uses=0 secret_id_ttl=0 >/dev/null
-audit_role_id=$(root read -field=role_id auth/approle/role/kailo-core-audit/role-id)
-if [ ! -s secrets/openbao_core_audit_secret_id ]; then
-  tmp=$(mktemp)
-  if root write -f -field=secret_id auth/approle/role/kailo-core-audit/secret-id > "$tmp" && [ -s "$tmp" ]; then
-    mv "$tmp" secrets/openbao_core_audit_secret_id
-    chmod 600 secrets/openbao_core_audit_secret_id
+root write auth/approle/role/kailo-core-audit token_policies=kailo-core-audit "${role_opts[@]}" >/dev/null
+
+# ---- 本地核验用的 role（只在本地拓扑）----
+#
+# 集成核验要走 SecretStore 真实的 unwrap→登录→单次自检路径，但它跑在宿主上，
+# 不在 app 网络里，kailo-core 的 CIDR 绑定会（正确地）拒绝它。因此另设一个同
+# 策略、同样单次使用与 wrapping 投递、只是不绑 CIDR 的 role，由
+# core/verify/seed-secret-ref.sh 在每次核验前现取。部署描述里没有它。
+ns write auth/approle/role/kailo-verify token_policies=kailo-core secret_id_num_uses=1 \
+  "secret_id_ttl=$OPENBAO_SECRET_ID_TTL" "token_period=$OPENBAO_TOKEN_PERIOD" token_ttl=0 token_max_ttl=0 >/dev/null
+
+# 旧形态的迁移：此前 secret_id 以明文文件投递且不限次。那些 secret_id 在 role
+# 改配置后仍按其创建时的 num_uses 有效，必须显式销毁，文件随之删除。
+for pair in "kailo-core:secrets/openbao_core_secret_id:ns" "kailo-core-audit:secrets/openbao_core_audit_secret_id:root"; do
+  IFS=: read -r role file where <<<"$pair"
+  [ -s "$file" ] || continue
+  if [ "$where" = ns ]; then
+    { printf '%s\n' "$root_token"; cat "$file"; } | run_bao "$OPENBAO_PLATFORM_NAMESPACE" write "auth/approle/role/$role/secret-id/destroy" secret_id=- >/dev/null
   else
-    rm -f "$tmp"; echo "生成 audit 观察 role 的 secret_id 失败" >&2; exit 2
+    { printf '%s\n' "$root_token"; cat "$file"; } | run_bao "" write "auth/approle/role/$role/secret-id/destroy" secret_id=- >/dev/null
   fi
-fi
+  rm -f "$file"
+  printf '  已销毁并删除明文投递的 %s secret_id\n' "$role"
+done
 
-{ printf 'OPENBAO_ROLE_ID=%s\n' "$role_id"
-  printf 'OPENBAO_SECRET_ID='; cat secrets/openbao_core_secret_id; printf '\n'
-  printf 'OPENBAO_AUDIT_ROLE_ID=%s\n' "$audit_role_id"
-  printf 'OPENBAO_AUDIT_SECRET_ID='; cat secrets/openbao_core_audit_secret_id; printf '\n'; } > secrets/openbao-core.env
-chmod 600 secrets/openbao-core.env
-printf '  已生成：secrets/openbao-core.env（namespace=%s mount=%s）\n' \
-  "$OPENBAO_PLATFORM_NAMESPACE" "$OPENBAO_KV_MOUNT"
-
-printf 'OpenBao 就绪。root token 在 secrets/openbao_init.json，不要外传。\n'
+printf 'OpenBao 就绪。启动 Core 用 ./start-core.sh（现取 wrapped secret_id）。root token 在 secrets/openbao_init.json，不要外传。\n'

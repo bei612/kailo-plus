@@ -11,8 +11,17 @@ local_dir=deploy/local
 
 set -a
 . "$local_dir/.env"
-. "$local_dir/secrets/openbao-core.env"
 set +a
+# Core 的引导凭据是一次性投递（start-core.sh），核验不碰它。核验读写 KV 用一枚
+# 现签的、与 Core 同策略（kailo-core）的令牌：它证明的仍是「那条策略给出的能力」，
+# 有效期取部署登记的令牌周期。root token 经 stdin 进入容器，不上命令行。
+OPENBAO_VERIFY_TOKEN="$(python3 -c 'import json;print(json.load(open("'"$local_dir"'/secrets/openbao_init.json"))["root_token"])' \
+  | sudo -n docker compose --env-file "$local_dir/.env" -f "$local_dir/compose.yaml" exec -T \
+      -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_NAMESPACE="$OPENBAO_PLATFORM_NAMESPACE" openbao \
+      sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"' bao \
+      token create -policy=kailo-core -ttl="$OPENBAO_TOKEN_PERIOD" -format=json \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth"]["client_token"])')"
+export OPENBAO_VERIFY_TOKEN
 
 export KAILO_INTEGRATION=1
 export DATABASE_URL="${CORE_DATABASE_URL/@core-db:5432/@127.0.0.1:${CORE_DB_PORT}}"

@@ -146,7 +146,9 @@ await step("BFF 重启：状态如实离开已同步，恢复后续流并能继�
   );
   const during = await status.innerText();
   await shot("04-bff-down");
-  execFileSync("docker", ["compose", "-f", a["compose-file"], "start", "core-bff"], {
+  // Core 的引导凭据是一次性投递（DD-70）：原样 start 会拿着已消费的 wrapping
+  // token 启动并被拒。重启一律经 start-core.sh 现取投递。
+  execFileSync("bash", [path.join(path.dirname(a["compose-file"]), "start-core.sh")], {
     stdio: "ignore",
   });
   await status.filter({ hasText: SYNCED }).waitFor({ timeout: bound });

@@ -5,10 +5,15 @@
 //! 把 locator 换成内存中的 secret 值，此外什么都不做——**值不写数据库、不写日志、
 //! 不落盘**，因此这里既没有 `Debug` 派生，也没有任何 `to_string`。
 //!
-//! Core 以 AppRole 换取短 TTL service token，不持有长期凭据。token 过期即重新
-//! 登录；不做后台续期——续期失败与过期是同一种情况，重新登录能同时覆盖两者。
+//! 引导凭据（`DD-70`、`.design/03` §9）：部署以 response wrapping 一次性投递 AppRole
+//! `secret_id`。启动时先核对 wrapping token 的创建路径就是本 role 的 secret-id，再
+//! unwrap、登录，然后自检该 secret_id 已不能再登录（`secret_id_num_uses=1`）。从此
+//! 只在内存里持有 service token，按 lease 续期；不再有能重新登录的凭据。wrapping
+//! token 已被消费、过期或来路不对，都按泄漏处理并拒绝启动；运行中续期被确定拒绝
+//! （令牌被撤销），同样 fail closed，由部署重新投递。
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Deserialize;
 use tokio::sync::RwLock;
@@ -21,10 +26,22 @@ pub enum SecretError {
     AudienceMismatch,
     #[error("指定版本不存在或不可读")]
     VersionUnavailable,
+    #[error("凭据被拒或路径不在策略内")]
+    Refused,
     #[error("OpenBao 不可达: {0}")]
     Transport(#[from] reqwest::Error),
     #[error("AppRole 登录失败")]
     LoginFailed,
+    /// wrapping token 不能用：已被消费、已过期，或不是本 role 的 secret-id 签出的。
+    /// 三种都按泄漏处理（`DD-70`）。
+    #[error("引导凭据的 wrapping token 不可用，按泄漏处理: {0}")]
+    WrappingRejected(String),
+    /// secret_id 在一次登录后仍能再登录：role 没有配成单次使用。
+    #[error("引导 secret_id 可重复登录：role 必须配置 secret_id_num_uses=1")]
+    SecretIdReusable,
+    /// 内存里的 service token 已不可用（被撤销或过期），且没有可重新登录的凭据。
+    #[error("service token 已失效，需要部署重新投递引导凭据")]
+    CredentialLost,
     #[error("OpenBao 的回应不可解析")]
     Malformed,
 }
@@ -51,29 +68,73 @@ impl SecretValue {
     }
 }
 
+#[derive(Deserialize)]
+struct LoginResponse {
+    auth: LoginAuth,
+}
+#[derive(Deserialize)]
+struct LoginAuth {
+    client_token: String,
+    accessor: String,
+    lease_duration: u64,
+    renewable: bool,
+}
+#[derive(Deserialize)]
+struct WrapLookup {
+    data: WrapLookupData,
+}
+#[derive(Deserialize)]
+struct WrapLookupData {
+    creation_path: String,
+}
+#[derive(Deserialize)]
+struct Unwrapped {
+    data: UnwrappedSecret,
+}
+#[derive(Deserialize)]
+struct UnwrappedSecret {
+    secret_id: String,
+}
+
+/// 持有中的 service token 与它的 lease。
+struct Lease {
+    token: Arc<String>,
+    ttl: Duration,
+}
+
 /// 一个 AppRole 登录会话：某个 namespace 下的 role 与它换来的 service token。
 ///
 /// Core 有两个：平台 namespace 下取用 secret 的那个，与 root namespace 下只读
-/// audit 表的那个（`AuditObserver`）。登录与令牌缓存只写这一份。
+/// audit 表的那个（`AuditObserver`）。投递、登录与续期只写这一份。
 struct AppRoleSession {
     addr: String,
     /// AppRole 挂载所在的 namespace；空串是 root namespace（不带请求头）
     namespace: String,
     role_id: String,
-    secret_id: String,
+    /// wrapping token 的创建路径必须是它：`auth/approle/role/<name>/secret-id`
+    role_name: String,
+    /// 一次性的 wrapping token。connect 之后即为 None。
+    wrapped: tokio::sync::Mutex<Option<String>>,
     http: reqwest::Client,
-    token: RwLock<Option<Arc<String>>>,
+    lease: RwLock<Option<Lease>>,
 }
 
 impl AppRoleSession {
-    fn new(addr: &str, namespace: String, role_id: String, secret_id: String) -> Self {
+    fn new(
+        addr: &str,
+        namespace: String,
+        role_id: String,
+        role_name: String,
+        wrapped: String,
+    ) -> Self {
         Self {
             addr: addr.trim_end_matches('/').to_owned(),
             namespace,
             role_id,
-            secret_id,
+            role_name,
+            wrapped: tokio::sync::Mutex::new(Some(wrapped)),
             http: reqwest::Client::new(),
-            token: RwLock::new(None),
+            lease: RwLock::new(None),
         }
     }
 
@@ -85,31 +146,188 @@ impl AppRoleSession {
         }
     }
 
-    async fn token(&self, force: bool) -> Result<Arc<String>, SecretError> {
-        if !force {
-            if let Some(t) = self.token.read().await.clone() {
-                return Ok(t);
-            }
+    /// 核对 → unwrap → 登录 → 单次使用自检。只能成功一次：wrapping token 在这里
+    /// 被消费，之后再也没有能换出新 token 的东西。
+    async fn connect(&self) -> Result<(), SecretError> {
+        let wrapped = self
+            .wrapped
+            .lock()
+            .await
+            .take()
+            .ok_or_else(|| SecretError::WrappingRejected("已经使用过".to_owned()))?;
+
+        // 1. 来路：wrapping token 必须是本 role 的 secret-id 端点签出的。换成别的
+        //    wrapping token（哪怕同样有效）就是把别人的响应当成自己的凭据。
+        let want = format!("auth/approle/role/{}/secret-id", self.role_name);
+        let resp = self
+            .with_namespace(
+                self.http
+                    .post(format!("{}/v1/sys/wrapping/lookup", self.addr)),
+            )
+            .json(&serde_json::json!({ "token": wrapped }))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(SecretError::WrappingRejected(format!(
+                "lookup HTTP {}（已被消费或已过期）",
+                resp.status().as_u16()
+            )));
         }
+        let lookup: WrapLookup = resp.json().await.map_err(|_| SecretError::Malformed)?;
+        if lookup.data.creation_path != want {
+            return Err(SecretError::WrappingRejected(format!(
+                "创建路径是 {}，不是 {want}",
+                lookup.data.creation_path
+            )));
+        }
+
+        // 2. unwrap。lookup 与 unwrap 之间被别人抢先消费，这里会失败——那正是
+        //    「按泄漏处理」要捕获的情形。
+        let resp = self
+            .with_namespace(
+                self.http
+                    .post(format!("{}/v1/sys/wrapping/unwrap", self.addr)),
+            )
+            .header("X-Vault-Token", &wrapped)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(SecretError::WrappingRejected(format!(
+                "unwrap HTTP {}",
+                resp.status().as_u16()
+            )));
+        }
+        let secret_id = resp
+            .json::<Unwrapped>()
+            .await
+            .map_err(|_| SecretError::Malformed)?
+            .data
+            .secret_id;
+
+        // 3. 登录
+        let auth = self
+            .login(&secret_id)
+            .await?
+            .ok_or(SecretError::LoginFailed)?;
+        tracing::info!(
+            namespace = %self.namespace,
+            role = %self.role_name,
+            accessor = %auth.accessor,
+            ttl = auth.lease_duration,
+            "OpenBao 引导凭据已换成 service token"
+        );
+        if !auth.renewable || auth.lease_duration == 0 {
+            return Err(SecretError::Malformed);
+        }
+        *self.lease.write().await = Some(Lease {
+            token: Arc::new(auth.client_token),
+            ttl: Duration::from_secs(auth.lease_duration),
+        });
+
+        // 4. 自检：同一 secret_id 必须已经不能登录。能登录说明 role 没配成单次
+        //    使用，泄漏的 secret_id 可以无限换 token——拒绝启动。多出来的那个
+        //    token 立即撤销，不留在 OpenBao 里。
+        if let Some(extra) = self.login(&secret_id).await? {
+            let _ = self
+                .with_namespace(
+                    self.http
+                        .post(format!("{}/v1/auth/token/revoke-self", self.addr)),
+                )
+                .header("X-Vault-Token", &extra.client_token)
+                .send()
+                .await;
+            return Err(SecretError::SecretIdReusable);
+        }
+        Ok(())
+    }
+
+    /// `Ok(None)` 是登录被拒。
+    async fn login(&self, secret_id: &str) -> Result<Option<LoginAuth>, SecretError> {
         let resp = self
             .with_namespace(
                 self.http
                     .post(format!("{}/v1/auth/approle/login", self.addr)),
             )
-            .json(&serde_json::json!({
-                "role_id": self.role_id,
-                "secret_id": self.secret_id,
-            }))
+            .json(&serde_json::json!({ "role_id": self.role_id, "secret_id": secret_id }))
             .send()
             .await?;
         if !resp.status().is_success() {
-            return Err(SecretError::LoginFailed);
+            return Ok(None);
         }
-        let parsed: LoginResponse = resp.json().await?;
-        let token = Arc::new(parsed.auth.client_token);
-        *self.token.write().await = Some(Arc::clone(&token));
-        Ok(token)
+        let parsed: LoginResponse = resp.json().await.map_err(|_| SecretError::Malformed)?;
+        Ok(Some(parsed.auth))
     }
+
+    async fn token(&self) -> Result<Arc<String>, SecretError> {
+        self.lease
+            .read()
+            .await
+            .as_ref()
+            .map(|l| Arc::clone(&l.token))
+            .ok_or(SecretError::CredentialLost)
+    }
+
+    /// 按 lease 续期，直到被确定拒绝。只在出错时返回，返回值就是 fail closed 的原因。
+    ///
+    /// 在 lease 过半时续期；续期暂时失败（OpenBao 不可达、封存）按 lease 的十分之一
+    /// 为间隔重试，直到 lease 到期——到期之后令牌已无效，与被撤销是同一个结论。
+    async fn keep_alive(&self) -> SecretError {
+        loop {
+            let (token, ttl) = match self.lease.read().await.as_ref() {
+                Some(l) => (Arc::clone(&l.token), l.ttl),
+                None => return SecretError::CredentialLost,
+            };
+            tokio::time::sleep(ttl / 2).await;
+            let deadline = tokio::time::Instant::now() + ttl / 2;
+            let renewed = loop {
+                let attempt = self
+                    .with_namespace(
+                        self.http
+                            .post(format!("{}/v1/auth/token/renew-self", self.addr)),
+                    )
+                    .header("X-Vault-Token", token.as_str())
+                    .send()
+                    .await;
+                match attempt {
+                    Ok(r) if r.status().is_success() => match r.json::<LoginResponse>().await {
+                        Ok(p) if p.auth.lease_duration > 0 => {
+                            break Some(Duration::from_secs(p.auth.lease_duration))
+                        }
+                        _ => break None,
+                    },
+                    // 令牌被撤销或已过期：确定的拒绝
+                    Ok(r) if matches!(r.status().as_u16(), 400 | 401 | 403) => break None,
+                    Ok(r) => tracing::warn!(status = %r.status(), "续期 service token 暂时失败"),
+                    Err(e) => tracing::warn!(error = %e, "续期 service token 暂时失败"),
+                }
+                if tokio::time::Instant::now() + ttl / 10 >= deadline {
+                    break None;
+                }
+                tokio::time::sleep(ttl / 10).await;
+            };
+            match renewed {
+                Some(ttl) => {
+                    if let Some(l) = self.lease.write().await.as_mut() {
+                        l.ttl = ttl;
+                    }
+                }
+                None => {
+                    *self.lease.write().await = None;
+                    return SecretError::CredentialLost;
+                }
+            }
+        }
+    }
+}
+
+/// 读投递面：role 的 id 与名字，以及一次性的 wrapping token。
+fn delivered(prefix: &str) -> Result<(String, String, String), String> {
+    let get = |k: String| std::env::var(&k).map_err(|_| format!("缺少 {k}"));
+    Ok((
+        get(format!("{prefix}_ROLE_ID"))?,
+        get(format!("{prefix}_ROLE_NAME"))?,
+        get(format!("{prefix}_WRAPPED_SECRET_ID"))?,
+    ))
 }
 
 pub struct SecretStore {
@@ -119,14 +337,6 @@ pub struct SecretStore {
     identity: String,
 }
 
-#[derive(Deserialize)]
-struct LoginResponse {
-    auth: LoginAuth,
-}
-#[derive(Deserialize)]
-struct LoginAuth {
-    client_token: String,
-}
 #[derive(Deserialize)]
 struct KvResponse {
     data: KvOuter,
@@ -146,21 +356,35 @@ struct KvWriteResponse {
 }
 
 impl SecretStore {
-    /// 四项配置都不接受默认值：缺任一项即拒绝构造。回落到某个猜测的地址或
-    /// 身份，会让「取不到 secret 就 fail closed」退化成「取到了别人的 secret」。
+    /// 配置都不接受默认值：缺任一项即拒绝构造。回落到某个猜测的地址或身份，会让
+    /// 「取不到 secret 就 fail closed」退化成「取到了别人的 secret」。
+    ///
+    /// 构造之后必须 `connect` 一次才能取用。
     pub fn from_env() -> Result<Self, String> {
         let get = |k: &str| std::env::var(k).map_err(|_| format!("缺少 {k}"));
+        let (role_id, role_name, wrapped) = delivered("OPENBAO")?;
         // AppRole 挂在平台 namespace 下；取用的 secret 可能在别的 namespace，
         // 二者是不同的请求头值，不能混用。
         Ok(Self {
             session: AppRoleSession::new(
                 &get("OPENBAO_ADDR")?,
                 get("OPENBAO_PLATFORM_NAMESPACE")?,
-                get("OPENBAO_ROLE_ID")?,
-                get("OPENBAO_SECRET_ID")?,
+                role_id,
+                role_name,
+                wrapped,
             ),
             identity: get("OPENBAO_SERVICE_IDENTITY")?,
         })
+    }
+
+    /// 消费投递的 wrapping token，换出 service token。
+    pub async fn connect(&self) -> Result<(), SecretError> {
+        self.session.connect().await
+    }
+
+    /// 持续续期 service token，只在失效时返回原因。调用方据此 fail closed。
+    pub async fn keep_alive(&self) -> SecretError {
+        self.session.keep_alive().await
     }
 
     /// 按 SecretRef 取出某个字段的值。
@@ -172,15 +396,22 @@ impl SecretStore {
             return Err(SecretError::AudienceMismatch);
         }
         let (namespace, mount, path) = split_locator(&r.locator)?;
-
-        let mut body = self.fetch(&namespace, &mount, &path, r.version).await?;
-        // token 过期表现为 403；重新登录后再试一次，不把它当成取不到
-        if body.is_none() {
-            self.session.token(true).await?;
-            body = self.fetch(&namespace, &mount, &path, r.version).await?;
-        }
-        let body = body.ok_or(SecretError::VersionUnavailable)?;
-
+        let token = self.session.token().await?;
+        let resp = self
+            .session
+            .http
+            .get(format!("{}/v1/{mount}/data/{path}", self.session.addr))
+            .query(&[("version", r.version.to_string())])
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token.as_str())
+            .send()
+            .await?;
+        let body: KvResponse = match resp.status().as_u16() {
+            200 => resp.json().await?,
+            // 401/403 是凭据或策略问题，404 是版本/路径不存在——两者不同
+            401 | 403 => return Err(SecretError::Refused),
+            _ => return Err(SecretError::VersionUnavailable),
+        };
         if body.data.metadata.version != r.version {
             return Err(SecretError::VersionUnavailable);
         }
@@ -202,23 +433,7 @@ impl SecretStore {
     /// audience 一起存成 SecretRef——推算出来的版本号在并发写入下会指向别人的值。
     pub async fn write(&self, locator: &str, field: &str, value: &str) -> Result<u32, SecretError> {
         let (namespace, mount, path) = split_locator(locator)?;
-        let mut version = self.put(&namespace, &mount, &path, field, value).await?;
-        if version.is_none() {
-            self.session.token(true).await?;
-            version = self.put(&namespace, &mount, &path, field, value).await?;
-        }
-        version.ok_or(SecretError::VersionUnavailable)
-    }
-
-    async fn put(
-        &self,
-        namespace: &str,
-        mount: &str,
-        path: &str,
-        field: &str,
-        value: &str,
-    ) -> Result<Option<u32>, SecretError> {
-        let token = self.session.token(false).await?;
+        let token = self.session.token().await?;
         let resp = self
             .session
             .http
@@ -229,39 +444,8 @@ impl SecretStore {
             .send()
             .await?;
         match resp.status().as_u16() {
-            200 => {
-                let body: KvWriteResponse = resp.json().await?;
-                Ok(Some(body.data.version))
-            }
-            401 | 403 => Ok(None),
-            _ => Err(SecretError::VersionUnavailable),
-        }
-    }
-
-    /// 返回 `None` 表示「凭据被拒」，由调用方决定是否重新登录；
-    /// 其余失败原样返回，不与「凭据问题」混为一谈。
-    async fn fetch(
-        &self,
-        namespace: &str,
-        mount: &str,
-        path: &str,
-        version: u32,
-    ) -> Result<Option<KvResponse>, SecretError> {
-        let token = self.session.token(false).await?;
-        let resp = self
-            .session
-            .http
-            .get(format!("{}/v1/{mount}/data/{path}", self.session.addr))
-            .query(&[("version", version.to_string())])
-            .header("X-Vault-Namespace", namespace)
-            .header("X-Vault-Token", token.as_str())
-            .send()
-            .await?;
-        match resp.status().as_u16() {
-            200 => Ok(Some(resp.json().await?)),
-            // 401/403 是凭据问题，404 是版本/路径不存在——两者不同
-            401 | 403 => Ok(None),
-            404 => Err(SecretError::VersionUnavailable),
+            200 => Ok(resp.json::<KvWriteResponse>().await?.data.version),
+            401 | 403 => Err(SecretError::Refused),
             _ => Err(SecretError::VersionUnavailable),
         }
     }
@@ -276,7 +460,8 @@ impl SecretStore {
 ///
 /// `sys/audit` 只在 root namespace 可用且要求 `sudo`（`SF-OBA-06`、上游
 /// `restrictedSysAPIs`），平台 namespace 的 token 读不到它；所以这里是一个独立
-/// 的 root namespace AppRole，策略只有这一条路径的 `read`+`sudo`。
+/// 的 root namespace AppRole，策略只有这一条路径的 `read`+`sudo`。它的引导凭据
+/// 与 `SecretStore` 同样以 response wrapping 投递。
 pub struct AuditObserver {
     session: AppRoleSession,
 }
@@ -289,40 +474,46 @@ struct AuditTable {
 impl AuditObserver {
     pub fn from_env() -> Result<Self, String> {
         let get = |k: &str| std::env::var(k).map_err(|_| format!("缺少 {k}"));
+        let (role_id, role_name, wrapped) = delivered("OPENBAO_AUDIT")?;
         Ok(Self {
             session: AppRoleSession::new(
                 &get("OPENBAO_ADDR")?,
                 String::new(),
-                get("OPENBAO_AUDIT_ROLE_ID")?,
-                get("OPENBAO_AUDIT_SECRET_ID")?,
+                role_id,
+                role_name,
+                wrapped,
             ),
         })
+    }
+
+    pub async fn connect(&self) -> Result<(), SecretError> {
+        self.session.connect().await
+    }
+
+    pub async fn keep_alive(&self) -> SecretError {
+        self.session.keep_alive().await
     }
 
     /// 当前启用的 audit device 数。`Ok(0)` 是确定的「没有」，调用方必须 fail
     /// closed；`Err` 是没观察到，同样不能当作「有」。
     pub async fn enabled_devices(&self) -> Result<usize, SecretError> {
-        let mut forced = false;
-        loop {
-            let token = self.session.token(forced).await?;
-            let resp = self
-                .session
-                .http
-                .get(format!("{}/v1/sys/audit", self.session.addr))
-                .header("X-Vault-Token", token.as_str())
-                .send()
-                .await?;
-            match resp.status().as_u16() {
-                200 => {
-                    let table: AuditTable =
-                        resp.json().await.map_err(|_| SecretError::Malformed)?;
-                    return Ok(table.data.len());
-                }
-                // 令牌过期：重新登录再问一次，仍被拒就是凭据问题
-                401 | 403 if !forced => forced = true,
-                401 | 403 => return Err(SecretError::LoginFailed),
-                _ => return Err(SecretError::Malformed),
-            }
+        let token = self.session.token().await?;
+        let resp = self
+            .session
+            .http
+            .get(format!("{}/v1/sys/audit", self.session.addr))
+            .header("X-Vault-Token", token.as_str())
+            .send()
+            .await?;
+        match resp.status().as_u16() {
+            200 => Ok(resp
+                .json::<AuditTable>()
+                .await
+                .map_err(|_| SecretError::Malformed)?
+                .data
+                .len()),
+            401 | 403 => Err(SecretError::Refused),
+            _ => Err(SecretError::Malformed),
         }
     }
 }

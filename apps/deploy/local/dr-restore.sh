@@ -94,9 +94,13 @@ kc=$(DC ps -a -q keycloak)
 sudo -n docker cp - "$kc:/opt/keycloak/data/" < "$in/keycloak-h2.tar"
 
 step "4. 启动其余服务（公开入口除外）"
-services=$(DC config --services | grep -vx agentgateway | tr '\n' ' ')
+services=$(DC config --services | grep -vx -e agentgateway -e core-bff | tr '\n' ' ')
 # shellcheck disable=SC2086
 DC up -d $services >/dev/null 2>&1
 for s in buzz-relay keycloak temporal spicedb; do wait_healthy "$s"; done
+# Core 的引导凭据是一次性投递（DD-70）：恢复出的 openbao-core.env 里那份早已被
+# 消费。现取投递再启动。
+./start-core.sh >/dev/null 2>&1
+services="$services core-bff"
 echo "  已启动：$services"
 echo "  入口仍关闭。投影对账核验通过后执行：docker compose --env-file .env -f compose.yaml up -d agentgateway"

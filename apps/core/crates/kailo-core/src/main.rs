@@ -70,6 +70,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 零 device 时一切取用照常通过、不留痕，因此在取用任何 secret 之前实际读一次
     // 清单：为空或读不到都拒绝启动（DD-70「拒绝进入 serving 状态」）。
     let audit = std::sync::Arc::new(kailo_secrets::AuditObserver::from_env()?);
+    // 引导凭据以 response wrapping 一次性投递（DD-70）：这里消费它们换出 service
+    // token。wrapping token 已被消费、过期或来路不对都按泄漏处理，拒绝启动。
+    secrets
+        .connect()
+        .await
+        .map_err(|e| format!("OpenBao 引导凭据不可用，拒绝启动: {e}"))?;
+    audit
+        .connect()
+        .await
+        .map_err(|e| format!("OpenBao audit 观察凭据不可用，拒绝启动: {e}"))?;
     match audit.enabled_devices().await {
         Ok(0) => return Err("OpenBao 没有启用任何 audit device：取用不留痕，拒绝启动".into()),
         Ok(n) => tracing::info!(devices = n, "OpenBao audit device 已启用"),
@@ -202,10 +212,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = tokio::signal::ctrl_c().await;
     };
     // 任一监听退出即整体退出：只剩半边可用会让调用方看到不一致的可用性。
-    tokio::try_join!(
-        axum::serve(bff, bff::router(bff_state)).with_graceful_shutdown(shutdown()),
-        axum::serve(service, service_api::router(service_state)).with_graceful_shutdown(shutdown()),
-    )?;
+    let serve = async {
+        tokio::try_join!(
+            axum::serve(bff, bff::router(bff_state)).with_graceful_shutdown(shutdown()),
+            axum::serve(service, service_api::router(service_state))
+                .with_graceful_shutdown(shutdown()),
+        )
+    };
+    // service token 按 lease 续期。续期被确定拒绝（令牌被撤销或过期）时手里已没有
+    // 能重新登录的凭据：继续服务只会让每个要 secret 的动作失败，还看不出原因。
+    // 退出并说明原因，由部署重新投递引导凭据（RB-02 步骤 A/C）。
+    tokio::select! {
+        served = serve => { served?; }
+        e = secrets.keep_alive() => {
+            return Err(format!("OpenBao service token 失效，退出: {e}").into());
+        }
+        e = audit.keep_alive() => {
+            return Err(format!("OpenBao audit 观察 token 失效，退出: {e}").into());
+        }
+    }
     // 退出前把缓冲中的指标送出去
     if let Err(e) = meter_provider.shutdown() {
         tracing::warn!(error = %e, "指标导出未能完成");

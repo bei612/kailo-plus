@@ -21,8 +21,8 @@ pub struct Env {
     pub bao_addr: String,
     pub bao_namespace: String,
     pub bao_mount: String,
-    pub bao_role_id: String,
-    pub bao_secret_id: String,
+    /// 与 Core 同策略的核验令牌（`core/verify/integration-env.sh` 现签）
+    pub bao_token: String,
     pub core_identity: String,
     pub relay_origin: String,
     pub operator_key: String,
@@ -60,8 +60,7 @@ pub fn env() -> Option<Env> {
         bao_addr: v("OPENBAO_ADDR")?,
         bao_namespace: v("OPENBAO_PLATFORM_NAMESPACE")?,
         bao_mount: v("OPENBAO_KV_MOUNT")?,
-        bao_role_id: v("OPENBAO_ROLE_ID")?,
-        bao_secret_id: v("OPENBAO_SECRET_ID")?,
+        bao_token: v("OPENBAO_VERIFY_TOKEN")?,
         core_identity: v("OPENBAO_SERVICE_IDENTITY")?,
         relay_origin: v("RELAY_OPERATOR_API_ORIGIN")?,
         operator_key: v("RELAY_OPERATOR_PRIVATE_KEY")?,
@@ -103,22 +102,10 @@ pub async fn worker_token(http: &reqwest::Client, e: &Env) -> String {
 
 /// 把 CONTROL 私钥写进 OpenBao 的 KV v2，返回版本号。
 ///
-/// 用 Core 自己的 AppRole 凭据写：策略给了 `create/update`，这也顺带证明
-/// 那条策略确实是 Core 能用的那条，而不是写在文件里没生效。
+/// 用与 Core 同策略（`kailo-core`）的核验令牌写：策略给了 `create/update`，这也
+/// 顺带证明那条策略确实给出这些能力，而不是写在文件里没生效。
 pub async fn put_secret(http: &reqwest::Client, e: &Env, path: &str, value: &str) -> u32 {
-    let login: serde_json::Value = http
-        .post(format!("{}/v1/auth/approle/login", e.bao_addr))
-        .header("X-Vault-Namespace", &e.bao_namespace)
-        .json(&serde_json::json!({"role_id": e.bao_role_id, "secret_id": e.bao_secret_id}))
-        .send()
-        .await
-        .expect("AppRole 登录")
-        .json()
-        .await
-        .expect("解析登录响应");
-    let token = login["auth"]["client_token"]
-        .as_str()
-        .expect("client_token");
+    let token = e.bao_token.as_str();
 
     let written: serde_json::Value = http
         .post(format!("{}/v1/{}/data/{path}", e.bao_addr, e.bao_mount))
@@ -983,19 +970,7 @@ pub async fn read_secret_version(
     locator: &str,
     version: i32,
 ) -> String {
-    let login: serde_json::Value = http
-        .post(format!("{}/v1/auth/approle/login", e.bao_addr))
-        .header("X-Vault-Namespace", &e.bao_namespace)
-        .json(&serde_json::json!({"role_id": e.bao_role_id, "secret_id": e.bao_secret_id}))
-        .send()
-        .await
-        .expect("AppRole 登录")
-        .json()
-        .await
-        .expect("解析登录响应");
-    let token = login["auth"]["client_token"]
-        .as_str()
-        .expect("client_token");
+    let token = e.bao_token.as_str();
     // locator = <namespace>/<mount>/<path>
     let mut parts = locator.splitn(3, '/');
     let (ns, mount, path) = (
