@@ -66,3 +66,33 @@ func TestComponentTaskReplay(t *testing.T) {
 		}
 	}
 }
+
+// TestApprovalReplay 对录制的真实 history 回归 ApprovalWorkflow（.design/06 §2 §4）。
+//
+// 四份各对应一个终态，命令序列互不相同：CONSUMED 走「资格被拒的决定 → 合格决定
+// → APPROVED → consume」，INVALIDATED 走「APPROVED → Core 重新准入拒绝 →
+// invalidate」，CANCELLED 走 withdraw，EXPIRED 走过期 timer。录自
+// core/crates/kailo-core/tests/governed_action.rs 在本地拓扑上的真实执行
+// （workflow ID 由该测试打印），不是手工构造的事件序列。
+//
+// Validator 在重放时整段跳过（SF-TSDK-09），因此这里守住的是 handler 与主协程
+// 的命令序列；Validator 的判定由 workflows/approval_test.go 在测试环境里核验。
+func TestApprovalReplay(t *testing.T) {
+	workflows.Configure(workflows.Retry{
+		StartToClose: time.Second, ScheduleToClose: time.Second, MaxAttempts: 1,
+		InitialInterval: time.Second, MaxInterval: time.Second, RoundInterval: time.Second,
+	})
+	for _, f := range []string{
+		"testdata/approval_consumed_history.json",
+		"testdata/approval_invalidated_history.json",
+		"testdata/approval_cancelled_history.json",
+		"testdata/approval_expired_history.json",
+	} {
+		r := worker.NewWorkflowReplayer()
+		r.RegisterWorkflowWithOptions(workflows.Approval,
+			workflowRegisterOptions(workflows.ApprovalKind))
+		if err := r.ReplayWorkflowHistoryFromJSONFile(nil, f); err != nil {
+			t.Fatalf("%s replay 失败: %v", f, err)
+		}
+	}
+}

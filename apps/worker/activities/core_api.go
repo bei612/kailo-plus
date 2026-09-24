@@ -212,3 +212,20 @@ func (c *CoreAPI) TransitionScope(
 	err := c.post(ctx, "/service/v1/scopes/state", in, &out)
 	return out, err
 }
+
+// ProjectApprovalState 写回审批的一次状态跃迁（.design/06 §4）。ApprovalProjection
+// 只接受这一条写入路径（DD-47）；载荷由 contracts 定义。
+func (c *CoreAPI) ProjectApprovalState(ctx context.Context, in generated.ApprovalStateReport) error {
+	return c.post(ctx, "/service/v1/approval-projections", in, nil)
+}
+
+// FreshApprovalAdmission 请 Core 判定 approver 此刻的资格：active HUMAN、fresh
+// 选择器 permission、职责分离（.design/06 §4）。资格未通过是 200 里的
+// admitted=false，不是调用失败。
+func (c *CoreAPI) FreshApprovalAdmission(
+	ctx context.Context, in generated.FreshApprovalAdmissionRequest,
+) (generated.FreshApprovalAdmissionResult, error) {
+	var out generated.FreshApprovalAdmissionResult
+	err := c.post(ctx, "/service/v1/approvals/admission", in, &out)
+	return out, err
+}

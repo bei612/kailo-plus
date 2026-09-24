@@ -72,6 +72,8 @@ func main() {
 		workflow.RegisterOptions{Name: workflows.BaselineKind})
 	w.RegisterWorkflowWithOptions(workflows.ComponentTask,
 		workflow.RegisterOptions{Name: workflows.ComponentTaskKind})
+	w.RegisterWorkflowWithOptions(workflows.Approval,
+		workflow.RegisterOptions{Name: workflows.ApprovalKind})
 	// 以方法值注册：Workflow 侧按 (*T).Method 引用同一个函数，两边必须一致。
 	w.RegisterActivity(spicedb.Converge)
 	w.RegisterActivity(core.ProjectTaskState)
@@ -82,6 +84,8 @@ func main() {
 	w.RegisterActivity(core.VerifyTenantBuzz)
 	w.RegisterActivity(core.ProvisionWorkspaceBuzz)
 	w.RegisterActivity(core.TransitionScope)
+	w.RegisterActivity(core.ProjectApprovalState)
+	w.RegisterActivity(core.FreshApprovalAdmission)
 
 	if err := w.Run(worker.InterruptCh()); err != nil {
 		log.Fatalf("worker 退出: %v", err)
