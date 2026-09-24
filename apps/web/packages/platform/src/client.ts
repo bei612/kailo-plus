@@ -4,11 +4,17 @@
 // 这里不另写一份。身份由网关验证后投影给 BFF，这里没有任何可自报的身份字段。
 
 import type {
+  ApprovalControlOutcome,
+  ApprovalDecision,
+  ApprovalDecisionOutcome,
+  ApprovalDecisionRequest,
+  ApprovalView,
   ClientKeyStatus,
   ClientKeyView,
   NativeCommunityFacts,
   OwnAuditEntry,
   PlatformSessionView,
+  TaskView,
   WorkspaceMemberView,
   WorkspaceView,
 } from "@kailo/contracts";
@@ -55,5 +61,38 @@ export function createBffClient(transport: BffTransport) {
 
     /** 原生端直连 Relay 的连接事实；只对原生入口开放（DD-75/78）。 */
     nativeCommunity: () => get<NativeCommunityFacts>("/api/v1/native/community"),
+
+    /** 本人发起的受治理动作，新的在前（.design/06 §9）。 */
+    tasks: () => get<TaskView[]>("/api/v1/tasks"),
+
+    /** 一项本人的任务；别人的与不存在的是同一个回答（TARGET_NOT_FOUND）。 */
+    task: (actionExecutionId: string) =>
+      get<TaskView>(`/api/v1/tasks/${encodeURIComponent(actionExecutionId)}`),
+
+    /** 待我审批：未决、我尚未决定、我此刻能满足某个选择器。 */
+    pendingApprovals: () => get<ApprovalView[]>("/api/v1/approvals"),
+
+    /** 一项审批：发起者、已决定者或此刻合格的审批者可见。 */
+    approval: (workflowId: string) =>
+      get<ApprovalView>(`/api/v1/approvals/${encodeURIComponent(workflowId)}`),
+
+    /**
+     * 提交本人的决定（Temporal Update）。approver 由会话决定，不在请求里。同一人
+     * 重发同一决定得到原结论，因此结果不明时可以原样重发；不同决定以
+     * DUPLICATE_DECISION 拒绝。
+     */
+    decide: (workflowId: string, decision: ApprovalDecision) =>
+      call<ApprovalDecisionOutcome>({
+        method: "POST",
+        path: `/api/v1/approvals/${encodeURIComponent(workflowId)}/decision`,
+        body: { decision } satisfies ApprovalDecisionRequest,
+      }),
+
+    /** 发起者撤回仍未决的审批请求（REQUESTED/WAITING → CANCELLED）。 */
+    withdraw: (workflowId: string) =>
+      call<ApprovalControlOutcome>({
+        method: "POST",
+        path: `/api/v1/approvals/${encodeURIComponent(workflowId)}/withdraw`,
+      }),
   };
 }

@@ -3,9 +3,13 @@
 
 import { createContext, type ReactNode, useCallback, useContext } from "react";
 import type { BffClient } from "../client";
+import type { ReasonCode } from "@kailo/contracts";
+import type { WriteFailure } from "../transport";
 import {
+  enumLabel,
   type PlatformLocale,
   type PlatformMessageKey,
+  reasonMessages,
   resolveLocale,
   translate,
 } from "../i18n";
@@ -53,4 +57,26 @@ export type Translate = (
 export function useT(): Translate {
   const locale = useLocale();
   return useCallback((key, variables) => translate(locale, key, variables), [locale]);
+}
+
+/** reason code 的界面文案：说明加稳定 code，两者同时显示（apps/06 §4）。 */
+export function useReasonText(): (code: ReasonCode) => string {
+  const locale = useLocale();
+  return useCallback(
+    (code) =>
+      translate(locale, "platform.reasonWithCode", {
+        text: enumLabel(locale, reasonMessages, code),
+        code,
+      }),
+    [locale],
+  );
+}
+
+/** 确定被拒的写动作的说明：有 reason code 就用它，否则只有状态码或原话。 */
+export function useFailureText(): (failure: WriteFailure & { kind: "rejected" }) => string {
+  const reasonText = useReasonText();
+  return useCallback(
+    (failure) => (failure.reason ? reasonText(failure.reason) : failure.detail),
+    [reasonText],
+  );
 }

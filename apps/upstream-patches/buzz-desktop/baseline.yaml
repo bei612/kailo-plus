@@ -21,10 +21,12 @@ vendor_files:
   - web/packages/platform/src/native.ts:desktop/src/kailo-platform/native.ts
   - web/packages/platform/src/i18n.ts:desktop/src/kailo-platform/i18n.ts
   - web/packages/platform/src/format.ts:desktop/src/kailo-platform/format.ts
+  - web/packages/platform/src/governance.ts:desktop/src/kailo-platform/governance.ts
   - web/packages/platform/src/react/context.tsx:desktop/src/kailo-platform/react/context.tsx
   - web/packages/platform/src/react/use-load.ts:desktop/src/kailo-platform/react/use-load.ts
   - web/packages/platform/src/react/ui.tsx:desktop/src/kailo-platform/react/ui.tsx
   - web/packages/platform/src/react/pages.tsx:desktop/src/kailo-platform/react/pages.tsx
+  - web/packages/platform/src/react/governance.tsx:desktop/src/kailo-platform/react/governance.tsx
   - web/packages/platform/src/react/NativeBootstrap.tsx:desktop/src/kailo-platform/react/NativeBootstrap.tsx
 patch_series_digest: sha256:ec897937082cfdc7284c4a7c2047f3c438d9e252c2e85acc84db9d9d3c4208e5
 # 产物是桌面安装包而不是镜像；Kailo 版本的构建建立之前没有可登记的产物。

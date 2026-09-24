@@ -12,7 +12,7 @@ export function Notice({ children, role }: { children: ReactNode; role?: "alert"
   );
 }
 
-type Tone = "neutral" | "positive" | "negative";
+export type Tone = "neutral" | "positive" | "negative";
 
 const toneClass: Record<Tone, string> = {
   neutral: "border-border text-muted-foreground",

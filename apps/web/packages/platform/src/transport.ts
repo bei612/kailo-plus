@@ -89,3 +89,19 @@ export function isOutcomeUnknown(error: unknown): boolean {
     (error instanceof BffError && error.errorClass === ErrorClass.Unknown)
   );
 }
+
+/**
+ * 一次失败写动作的结论：结果不明（带 operationId 作查证入口），或确定被拒（带
+ * reason code；没有错误体时只有状态码，不从状态码猜 reason）。
+ */
+export type WriteFailure =
+  | { kind: "unknown"; operationId?: string }
+  | { kind: "rejected"; reason?: ErrorBody["reason"]; detail: string };
+
+export function writeFailure(error: unknown): WriteFailure {
+  if (isOutcomeUnknown(error))
+    return { kind: "unknown", operationId: error instanceof BffError ? error.operationId : undefined };
+  if (error instanceof BffError)
+    return { kind: "rejected", reason: error.reason, detail: String(error.status) };
+  return { kind: "rejected", detail: String(error) };
+}

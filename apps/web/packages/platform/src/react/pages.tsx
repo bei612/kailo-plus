@@ -11,13 +11,13 @@ import {
 } from "@kailo/contracts";
 import { type ReactNode, useState } from "react";
 import { truncatePubkey, relativeTime } from "../format";
-import { BffError, isOutcomeUnknown } from "../transport";
-import { useBffClient, useLocale, useT } from "./context";
+import { type WriteFailure, writeFailure } from "../transport";
+import { useBffClient, useFailureText, useLocale, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { type Loaded, useLoad } from "./use-load";
 
 /** 按读取状态渲染：载入中、结果不明（可重试）、或数据。 */
-function Resource<T>({
+export function Resource<T>({
   state,
   reload,
   children,
@@ -148,10 +148,6 @@ export function AuditPage() {
   );
 }
 
-type RevokeOutcome =
-  | { kind: "unknown"; operationId?: string }
-  | { kind: "rejected"; reason: string };
-
 /**
  * 本人的原生设备（DD-77/79）。
  *
@@ -165,7 +161,8 @@ export function DevicesPage({ currentDevicePubkey }: { currentDevicePubkey?: str
   const locale = useLocale();
   const [state, reload] = useLoad("client-keys", client.clientKeys);
   const [revoking, setRevoking] = useState<string | null>(null);
-  const [outcome, setOutcome] = useState<RevokeOutcome | null>(null);
+  const failureText = useFailureText();
+  const [outcome, setOutcome] = useState<WriteFailure | null>(null);
 
   const revoke = async (key: ClientKeyView) => {
     setRevoking(key.pubkey);
@@ -174,11 +171,7 @@ export function DevicesPage({ currentDevicePubkey }: { currentDevicePubkey?: str
       await client.revokeClientKey(key.pubkey);
     } catch (e) {
       // 结果不明不说成失败：撤销可能已经生效，只能提示去确认
-      setOutcome(
-        isOutcomeUnknown(e)
-          ? { kind: "unknown", operationId: e instanceof BffError ? e.operationId : undefined }
-          : { kind: "rejected", reason: e instanceof BffError ? (e.reason ?? String(e.status)) : String(e) },
-      );
+      setOutcome(writeFailure(e));
     } finally {
       setRevoking(null);
       reload();
@@ -192,7 +185,7 @@ export function DevicesPage({ currentDevicePubkey }: { currentDevicePubkey?: str
         <div className={`text-xs ${outcome.kind === "rejected" ? "text-destructive" : ""}`} role="alert">
           {outcome.kind === "unknown"
             ? t("platform.devices.revokeUnknown", { operation: outcome.operationId ?? "—" })
-            : t("platform.devices.revokeRejected", { reason: outcome.reason })}
+            : t("platform.devices.revokeRejected", { reason: failureText(outcome) })}
         </div>
       ) : null}
       <Resource state={state} reload={reload}>

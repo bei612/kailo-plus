@@ -1,0 +1,89 @@
+diff --git a/web/src/platform/ui/PlatformApp.tsx b/web/src/platform/ui/PlatformApp.tsx
+index 04e0350..6cde44a 100644
+--- a/web/src/platform/ui/PlatformApp.tsx
++++ b/web/src/platform/ui/PlatformApp.tsx
+@@ -1,9 +1,9 @@
+ // Kailo 平台页（SS-WEB-01）。
+ //
+-// 一期的内置管理页：登录状态、Tenant/Workspace 选择、频道、成员、基础审计、设备。
++// 一期的内置管理页：登录状态、Tenant/Workspace 选择、频道、成员、任务、审批、基础审计、设备。
+ // 全部数据经 BFF；这个文件里没有 Relay 地址、没有 signer、没有 Nostr filter。
+ //
+-// 成员、审计、设备三页是 Kailo 与 Desktop 共用的同一份组件（@kailo/platform，
++// 成员、审计、设备、任务、审批五页是 Kailo 与 Desktop 共用的同一份组件（@kailo/platform，
+ // ADR-09），这里只提供 Web 的外壳：Workspace 选择、收藏/静音、频道与退出。
+ //
+ // 未启用的能力不在这里出现。不渲染一个点进去说「未启用」的入口——
+@@ -11,6 +11,7 @@
+ 
+ import type { PlatformSessionView } from "@kailo/contracts";
+ import { PlatformProvider } from "@kailo/platform/react/context";
++import { ApprovalsPage, TasksPage } from "@kailo/platform/react/governance";
+ import { AuditPage, DevicesPage, MembersPane } from "@kailo/platform/react/pages";
+ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import { BellOff, Star } from "lucide-react";
+@@ -21,7 +22,7 @@ import { platformQueries } from "@/platform/ui/queries";
+ import { getLocale, t } from "@/shared/i18n";
+ import { Button } from "@/shared/ui/button";
+ 
+-type Tab = "channel" | "members" | "devices" | "audit";
++type Tab = "channel" | "members" | "tasks" | "approvals" | "devices" | "audit";
+ 
+ /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
+ export function PlatformApp() {
+@@ -92,14 +93,20 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
+     ({
+       channel: t("platform.tab.channel"),
+       members: t("platform.tab.members"),
++      tasks: t("platform.tab.tasks"),
++      approvals: t("platform.tab.approvals"),
+       devices: t("platform.tab.devices"),
+       audit: t("platform.tab.audit"),
+     })[name];
+ 
+-  // 审计与设备都是「我自己的」，属于 Tenant 而不属于某个 Workspace，
++  // 任务、审批、审计与设备都是「我自己的」，属于 Tenant 而不属于某个 Workspace，
+   // 因此不随 Workspace 是否存在而隐藏。
+   const body =
+-    tab === "audit" ? (
++    tab === "tasks" ? (
++      <TasksPage />
++    ) : tab === "approvals" ? (
++      <ApprovalsPage />
++    ) : tab === "audit" ? (
+       <AuditPage />
+     ) : tab === "devices" ? (
+       <DevicesPage />
+@@ -171,18 +178,20 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
+           </>
+         ) : null}
+         <nav className="flex gap-1">
+-          {(["channel", "members", "devices", "audit"] as const).map((name) => (
+-            <Button
+-              key={name}
+-              aria-pressed={tab === name}
+-              size="sm"
+-              type="button"
+-              variant={tab === name ? "secondary" : "ghost"}
+-              onClick={() => setTab(name)}
+-            >
+-              {tabLabel(name)}
+-            </Button>
+-          ))}
++          {(["channel", "members", "tasks", "approvals", "devices", "audit"] as const).map(
++            (name) => (
++              <Button
++                key={name}
++                aria-pressed={tab === name}
++                size="sm"
++                type="button"
++                variant={tab === name ? "secondary" : "ghost"}
++                onClick={() => setTab(name)}
++              >
++                {tabLabel(name)}
++              </Button>
++            ),
++          )}
+         </nav>
+         <span className="ml-auto text-muted-foreground">{session.displayName}</span>
+         <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
