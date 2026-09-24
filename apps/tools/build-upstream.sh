@@ -53,6 +53,7 @@ done
 for v in "${vendored[@]}"; do
   vs="${v%%:*}"; vd="${v#*:}"
   [ -e "$src/$vd" ] && { echo "vendor_files 的目标 $vd 已存在于源树" >&2; exit 2; }
+  mkdir -p "$(dirname "$src/$vd")"
   cp "$vs" "$src/$vd"
   echo "  放入 $vs -> $vd"
 done

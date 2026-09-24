@@ -1,0 +1,157 @@
+# 格式见 apps/06-工程基线规范.md §2。字段含义冲突时以该节为准。
+project: buzz-mobile
+upstream_url: https://github.com/block/buzz
+
+# Buzz Mobile 的受控上游是 block/buzz 仓库的 mobile/（Flutter/Dart），与 Relay、Desktop 同在
+# 一个 monorepo，因此 commit 与 buzz 的基线相同（DD-74、SF-MOB-01/02）。
+evidence_commit: 779af8886caae1317b4de962082429867ab61503
+implementation_base_commit: 779af8886caae1317b4de962082429867ab61503
+base_divergence: none
+
+# 一期不交付的整块功能（Agent、Workflow、Huddle、自建 Channel/DM、推送、年龄门禁等）按路径
+# 删除；入口、路由、依赖与原生代码随之删除（REQ-21、V-SCN-65）。
+remove_paths:
+  - mobile/HUDDLES.md
+  - mobile/android/app/src/main/kotlin/xyz/block/buzz/mobile/AgeSignalRequest.kt
+  - mobile/android/app/src/main/kotlin/xyz/block/buzz/mobile/HuddleAudioEngine.kt
+  - mobile/android/app/src/main/kotlin/xyz/block/buzz/mobile/HuddleMediaPlugin.kt
+  - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/AgeSignalPayloadTest.kt
+  - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/AgeSignalRequestTest.kt
+  - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/HuddleActiveTalkerSelectorTest.kt
+  - mobile/lib/features/activity
+  - mobile/lib/features/age_gate
+  - mobile/lib/features/channels/add_members_sheet.dart
+  - mobile/lib/features/channels/agent_activity
+  - mobile/lib/features/channels/channel_detail_page/huddle_call_avatar.dart
+  - mobile/lib/features/channels/channel_detail_page/huddle_call_controls.dart
+  - mobile/lib/features/channels/channel_detail_page/huddle_call_participants.dart
+  - mobile/lib/features/channels/channel_detail_page/huddle_drawer.dart
+  - mobile/lib/features/channels/channel_detail_page/huddle_participant_cluster.dart
+  - mobile/lib/features/channels/channel_detail_page/huddle_participant_overlay.dart
+  - mobile/lib/features/channels/channel_detail_page/huddle_reactions.dart
+  - mobile/lib/features/channels/channel_detail_page/huddle_sheet.dart
+  - mobile/lib/features/channels/channel_details_page.dart
+  - mobile/lib/features/channels/channel_directory.dart
+  - mobile/lib/features/channels/channel_huddle_actions.dart
+  - mobile/lib/features/channels/channel_management_actions.dart
+  - mobile/lib/features/channels/channel_metadata_updates.dart
+  - mobile/lib/features/channels/channel_mutes
+  - mobile/lib/features/channels/channel_push_cache.dart
+  - mobile/lib/features/channels/channel_sections
+  - mobile/lib/features/channels/channel_sort
+  - mobile/lib/features/channels/channel_stars
+  - mobile/lib/features/channels/channel_typing_indicator.dart
+  - mobile/lib/features/channels/channel_typing_provider.dart
+  - mobile/lib/features/channels/channels_page/badges.dart
+  - mobile/lib/features/channels/channels_page/browse_channels_sheet.dart
+  - mobile/lib/features/channels/channels_page/quick_actions.dart
+  - mobile/lib/features/channels/channels_page/quick_actions_launcher.dart
+  - mobile/lib/features/channels/channels_page/sheets.dart
+  - mobile/lib/features/channels/dm_channel_labels.dart
+  - mobile/lib/features/channels/ephemeral_channel_display.dart
+  - mobile/lib/features/channels/huddle_channel_filter.dart
+  - mobile/lib/features/channels/manage_channel_sheet.dart
+  - mobile/lib/features/channels/members_sheet.dart
+  - mobile/lib/features/channels/message_actions/message_reaction_tray.dart
+  - mobile/lib/features/channels/message_actions/quick_reaction_row.dart
+  - mobile/lib/features/channels/message_actions/reaction_popover.dart
+  - mobile/lib/features/channels/message_mention_pubkeys.dart
+  - mobile/lib/features/channels/mobile_huddle_controller.dart
+  - mobile/lib/features/channels/reaction_row.dart
+  - mobile/lib/features/forum
+  - mobile/lib/features/invites
+  - mobile/lib/features/pairing
+  - mobile/lib/features/profile/animated_avatar_capture
+  - mobile/lib/features/profile/animated_avatar_capture.dart
+  - mobile/lib/features/profile/animated_avatar_orientation.dart
+  - mobile/lib/features/profile/avatar_background_grid.dart
+  - mobile/lib/features/profile/avatar_editor_option_button.dart
+  - mobile/lib/features/profile/camera_disposal_barrier.dart
+  - mobile/lib/features/profile/emoji_avatar_tile.dart
+  - mobile/lib/features/profile/image_avatar_capture
+  - mobile/lib/features/profile/image_avatar_capture.dart
+  - mobile/lib/features/profile/ios_profile_text_editor.dart
+  - mobile/lib/features/profile/presence_cache_provider.dart
+  - mobile/lib/features/profile/profile_avatar_crop_page.dart
+  - mobile/lib/features/profile/profile_avatar_draft.dart
+  - mobile/lib/features/profile/profile_avatar_editor
+  - mobile/lib/features/profile/profile_avatar_editor.dart
+  - mobile/lib/features/profile/profile_edit_page.dart
+  - mobile/lib/features/profile/profile_provider.dart
+  - mobile/lib/features/profile/profile_text_edit_sheet.dart
+  - mobile/lib/features/profile/profile_text_editor.dart
+  - mobile/lib/features/profile/set_status_sheet.dart
+  - mobile/lib/features/profile/user_status.dart
+  - mobile/lib/features/profile/user_status_cache_provider.dart
+  - mobile/lib/features/profile/user_status_provider.dart
+  - mobile/lib/features/pulse
+  - mobile/lib/features/settings/accent_picker_page.dart
+  - mobile/lib/features/settings/settings_page
+  - mobile/lib/shared/community/community_membership_provider.dart
+  - mobile/lib/shared/crypto/ecdh.dart
+  - mobile/lib/shared/crypto/hkdf.dart
+  - mobile/lib/shared/crypto/nip44.dart
+  - mobile/lib/shared/custom_emoji
+  - mobile/lib/shared/emoji/emoji_burst.dart
+  - mobile/lib/shared/emoji/positive_emoji.dart
+  - mobile/lib/shared/huddle
+  - mobile/lib/shared/push
+  - mobile/lib/shared/relay/identity_scoped_prefs.dart
+  - mobile/lib/shared/relay/relay_validation.dart
+  - mobile/lib/shared/reminders
+  - mobile/lib/shared/security
+  - mobile/lib/shared/theme/community_theme_sync.dart
+  - mobile/lib/shared/widgets/bouncing_dots_indicator.dart
+  - mobile/lib/shared/widgets/editor_option_button.dart
+  - mobile/lib/shared/widgets/immediate_page_route.dart
+  - mobile/lib/shared/widgets/ios_native_segmented_control.dart
+  - mobile/lib/shared/widgets/ios_native_skin_tone_control.dart
+  - mobile/lib/shared/widgets/lucide_star_icon.dart
+  - mobile/lib/shared/widgets/masked_avatar_badge.dart
+  - mobile/lib/shared/widgets/playing_avatar_image.dart
+  - mobile/lib/shared/widgets/tappable_flapping_bee.dart
+  - mobile/test/features/activity
+  - mobile/test/features/age_gate
+  - mobile/test/features/channels/agent_activity
+  - mobile/test/features/channels/channel_actions_sheet_test.dart
+  - mobile/test/features/channels/channel_preferences_manager_test.dart
+  - mobile/test/features/channels/channel_sections
+  - mobile/test/features/channels/channel_sort
+  - mobile/test/features/channels/channel_stars
+  - mobile/test/features/channels/message_content_custom_emoji_test.dart
+  - mobile/test/features/channels/message_mention_pubkeys_test.dart
+  - mobile/test/features/channels/reaction_row_test.dart
+  - mobile/test/features/forum
+  - mobile/test/features/invites
+  - mobile/test/features/pairing
+  - mobile/test/features/profile
+  - mobile/test/features/pulse
+  - mobile/test/features/settings/connection_section_test.dart
+  - mobile/test/features/settings/settings_page_loading_test.dart
+  - mobile/test/shared/community/community_membership_provider_test.dart
+  - mobile/test/shared/crypto/nip44_interop_test.dart
+  - mobile/test/shared/custom_emoji
+  - mobile/test/shared/emoji/emoji_burst_test.dart
+  - mobile/test/shared/emoji/positive_emoji_test.dart
+  - mobile/test/shared/huddle
+  - mobile/test/shared/push
+  - mobile/test/shared/relay/identity_scoped_prefs_test.dart
+  - mobile/test/shared/relay/relay_validation_test.dart
+  - mobile/test/shared/reminders
+  - mobile/test/shared/security
+  - mobile/test/shared/theme/community_theme_sync_test.dart
+  - mobile/test/shared/widgets/masked_avatar_badge_test.dart
+patch_series: [0001-kailo-mobile.patch]
+# Kailo 契约的 Dart 生成物由本仓库放入，补丁只引用（ADR-02/03）
+vendor_files:
+  - mobile/lib/shared/contracts/contracts.dart:mobile/lib/shared/contracts/contracts.dart
+  - mobile/lib/shared/contracts/generated/contracts.dart:mobile/lib/shared/contracts/generated/contracts.dart
+patch_series_digest: sha256:2482f76b25d6d6be21dc06cd0dffaae7abe395424890e869e9ad140e979984a7
+# 产物是移动端安装包而不是镜像；Kailo 版本的构建流水线建立之前没有可登记的产物。
+artifact_digest: none
+
+source_facts: [SF-MOB-01, SF-MOB-02]
+source_seams: []
+compatibility_evidence: [upstream-patches/buzz-mobile/verify/kailo-mobile.md]
+owner: team-platform
+last_reverified: 2026-09-24
