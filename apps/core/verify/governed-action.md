@@ -20,18 +20,21 @@ Temporal 与 Go Worker、Relay roster。
 |---|---|---|
 | ActionDefinition/ApprovalPolicy 的来源 | 迁移种子（`catalog` schema），版本内容由触发器保证不可变，「缺项不得 active」由 CHECK 执行 | 它们是随平台发布的合同（`.design/03` §4）；部署配置会让「要不要审批」变成可随手改的开关；contracts 只承载类型 |
 | ApprovalPolicy 的 `tenant_id` | 本切片不建：只有随平台发布的策略，没有 Tenant 策略管理动作 | 与 Stage 1 的「实体字段子集，随能力追加」同一规则 |
-| 一期登记的动作 | `workspace.create`、`workspace.member.add/revoke`、`tenant.member.revoke`（需另一位 Tenant admin 批准，`self_approval=DENY`）、`identity.client_key.register/revoke` | Tenant delete 受 `GAP-LCM-01` 阻断、Workspace delete 按 `DD-46` 不注册；Tenant 成员「建立」没有邀请/开户入口（Stage 1 不注册登录开户），不登记 |
+| 一期登记的动作 | `workspace.create`、`workspace.member.add/revoke`、`tenant.member.revoke`（需另一位 Tenant admin 批准，`self_approval=DENY`）、`identity.client_key.register/revoke`、`tenant.admin.grant/revoke`（撤销需另一位 Tenant admin 批准）、`workspace.admin.grant/revoke` | Tenant delete 受 `GAP-LCM-01` 阻断、Workspace delete 按 `DD-46` 不注册；Tenant 成员邀请受 `GAP-IDN-01` 阻断，不登记；角色动作见 [role-management.md](role-management.md) |
 | 设备公钥登记是否改走同一准入 | 是。定义在所属 Tenant 上检查 `discover`（固定 schema 没有 principal 上的 permission；`tenant#member` 撤销后即为假）；持钥证明、设备上界与 binding 状态机留在 `client_keys` | `apps/AGENTS.md` 规则 9；`.design/03` §4「每个治理入口都有 operation_id 和 ActionDecision」 |
 | 选择器与 owner 要求无对象时 | 请求不启动（`APPROVAL_SELECTOR_UNRESOLVABLE`），不换用更宽角色 | `.design/10` §2 |
 | 批准到派发的时间窗 | 派发前要求距 consume 截止至少 `APPROVAL_DISPATCH_MARGIN_SECONDS`；不足即不派发、让批准按期失效；已派发而 consume 被拒记 RECONCILIATION 审计 | `.design/06` §4 要求「dispatch 成功后才 consume」，二者之间的竞争必须有确定处理 |
 | 审批 Workflow 的 ID | `kailo:APPROVAL:<tenant>:<action_execution_id>:1` | 沿用 `kailo:<kind>:<tenant>:<entity>:<version>` 使其可机械校验；一个 ActionExecution 至多一个 ApprovalWorkflow |
+| 审批的 continue-as-new | Server 建议续跑时在安全点续跑（写回失败一轮后，或状态已全部写回的主循环），排空 handler，冻结 input 原样加 `resume`（状态、决定、资格结论、consume 截止、event_id 基数）；`approval-continue-as-new` 门控 | `.design/06` §3；在途资格判定以 `DEPENDENCY_UNAVAILABLE` 交还、Core 映射为 503，同一 Update ID 在新 run 重发 |
 | EVALUATING 的终结 | 超过 `ADMISSION_EVALUATION_TIMEOUT_SECONDS` 由对账作业置 `EXPIRED`（`ADMISSION_ABANDONED`）；同幂等键重试在此之前继续判定 | 每个新状态必须回答怎么终结、多久终结 |
 
 ## 用例与断言面
 
 `core/crates/kailo-core/tests/governed_action.rs`（端到端）、
-`worker/workflows/approval_test.go`（状态机，时间可跳跃）、
+`worker/workflows/approval_test.go` 与 `approval_can_test.go`（状态机与续跑，时间可跳跃）、
 `worker/replay-tests`（录制 history 回归）、
+`core/crates/kailo-core/tests/drill_approval_continue_as_new.rs`（续跑演练，由
+`core/verify/drill-approval-can.sh` 在压低续跑阈值后调用）、
 `core/crates/kailo-core/tests/native_client.rs`（设备公钥登记的统一准入）。
 
 没有任何一条断言以「BFF 回了 200」为据：门禁、决定与审批状态直接查 Core 库；
@@ -62,7 +65,8 @@ Temporal 与 Go Worker、Relay roster。
 ## 实测结果（2026-09-24）
 
 - `run-integration.sh` 退出 0；`web-walkthrough.sh` 14/14。
-- `go test ./workflows/` 7/7；`replay-tests` 三组全过（Approval 4 份、ComponentTask 7 份、baseline）。
+- `go test ./workflows/` 10/10（含续跑三例）；`replay-tests` 三组全过（Approval 7 份——其中 3 份是续跑演练录制的同一条审批的三个 run——ComponentTask 8 份、baseline）。
+- 续跑演练 `DRILL_CAN_HISTORY_COUNT=18 bash core/verify/drill-approval-can.sh <目录>`（2026-09-24）：1 passed，同一 workflow ID 3 个 run（两次 `CONTINUED_AS_NEW`、最后 `COMPLETED`），续跑后的写回被 Core 采纳，B 的决定跨 run 保留并被消费。
 
 ## 破坏核验（每条都重建 Core 或改 Worker 后实际跑过，均已还原）
 
@@ -76,11 +80,15 @@ Temporal 与 Go Worker、Relay roster。
 | Validator 删掉冲突分支 | `TestApproveThenConsume` 报冲突值未被拒绝 |
 | WAITING 到期不置 EXPIRED | `TestExpiry` 失败 |
 | 调换首次任务投影与审批投影的顺序 | replay 报 `TMPRL1100 nondeterministic` |
+| 续跑不带决定 | `TestContinueAsNewCarriesFrozenInputAndDecisions`、`TestContinueAsNewResumesWithoutLosingDecisions` 失败（B 一人批准后仍 WAITING） |
+| 关掉续跑 | 录制的 `approval_can_1_waiting_history.json` 报 `TMPRL1100`（多出 StartTimer） |
+| 无条件续跑（不看门控与建议） | 门控前录制的 `approval_consumed_history.json` 报 `TMPRL1100` |
 
 ## 已知边界
 
 - 「待我审批」列表用低延迟一致性：刚授予的 admin 关系可能要等 SpiceDB 的
   quantization 窗口才出现在列表里；决定本身以 FullyConsistent 判定，不受影响。
 - 列表先按 Core 索引取一页、再逐条判定资格，一页里不合格的被滤掉后可能少于页长。
-- ApprovalWorkflow 不做 continue-as-new：history 以审批者人数与投影重试轮次为界；
-  Core 长时间不可用时投影按 `WORKER_CONVERGE_ROUND_INTERVAL_SECONDS` 一轮一轮重试。
+- 审批空闲等待时没有写回，停掉 Core 不会让 history 增长；「Core 不可达、写回逐轮失败后
+  续跑」由 `worker/workflows/approval_can_test.go` 在测试环境核验，真实 Server 上的演练
+  覆盖的是安全点续跑。测试环境不计 history 长度，event_id 基数跨 run 单调由演练证明。

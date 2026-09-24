@@ -20,7 +20,8 @@
 - `tools/check.sh --full` 或 `tools/check.sh security` 输出 `FAIL`；
 - `docker compose ps -a` 中 `core-bff` 或 `worker` 为 `Exited (1)`；
 - 指标 `kailo.entity.stranded{entity="tenant"}` 大于 0，或 `kailo.entity.nonterminal{entity="tenant",state="PROVISIONING"}` 持续不降；
-- Core 日志出现 `实体搁浅`，或 Worker 日志中 `VerifyTenantBuzz` 以 `ADMISSION_DENIED` 结束。
+- Core 日志出现 `实体搁浅`，或 Worker 日志中 `VerifyTenantBuzz` 以 `ADMISSION_DENIED` 结束；
+- 指标 `kailo.tenant.without_effective_admin` 大于 0，或 Core 日志出现 `Tenant 没有有效 admin`（`DD-82` 的「有效 Tenant admin 不得为空」被打破：平台内的撤销路径都拒绝这一步，出现即是旁路改动 SpiceDB 或成员状态）。
 
 ## 判定依据
 
@@ -81,20 +82,31 @@
 
       `200` 返回新的 `workflowId`；`409` 是旧 Workflow 不在可重跑的终态，或实体已不在它冻结的版本（有人先重跑过，回第 1 步重新定位）；`403` 是准入不成立；`503` 是结果不明，以**同一个** `actionExecutionId` 重发——同键重发回答同一个新 Workflow，不会第二次推进版本。
    4. 核验：实体到达目标状态（`ACTIVE` 或 `REVOKED`），新 Workflow `TERMINAL` 且 `COMPLETED`，旧 Workflow 仍是原来的终态；`audit.audit_event` 有一条 `result_code='RERUN_ACCEPTED'`，`evidence_refs` 同时指向新旧两个 workflow ID；`kailo.entity.stranded` 回落。
+8. **Tenant 没有有效 admin**（`DD-82`、ADR-11）。先查清为什么变空：`audit.audit_event` 中该 Tenant 最近的 `ROLE_REVOKED`、`ROLE_REMOVED` 与成员 `REVOKED` 记录，以及 SpiceDB 上 `tenant:<id>#admin` 的现状。旁路改动须按 RB-02/RB-03 处置后再恢复。恢复只有一条路：以该 Tenant 的一位 `ACTIVE` 成员的 IdP subject 执行部署引导，它只在有效 admin 为空时写入一位（0→1）：
+
+   ```sh
+   docker compose --env-file .env -f compose.yaml exec -T core-bff kailo-core bootstrap-tenant \
+     --slug <tenant slug> --name <显示名> --admin-subject <IdP subject> \
+     --admin-display-name <显示名> --wait-seconds <秒>
+   ```
+
+   退出码 `0` 且输出 `COMPLETED` 即恢复；`4`（`INERT`）说明该 Tenant 此刻已有有效 admin，引导什么也没做；`3`（`PENDING`）以同一参数重跑。已撤权的人不能用引导恢复（`GAP-IDN-01`）。
 
 ## 不可执行的动作
 
 1. 不以关闭门禁条款、在 `check.sh` 中加例外或把值改成「临时」来让部署继续——每一条都对应一种已经证实的 fail-open。
 2. 不以代码默认值补缺失配置；Core 与 Worker 故意没有默认值。
 3. 不在 Relay 成员准入未恢复前激活任何 Tenant，也不直接改 `projection.tenant_buzz_binding` 或 `identity.tenant` 的状态列——ACTIVE 的判据是对 Relay 的实际观察，改库等于伪造这次观察。
-4. 不手工改实体的版本号或状态，不用 Temporal CLI 以旧 workflow ID 重新启动或 reset 已终结的 Workflow：重跑只经第 7 步的入口，它在同一事务里推进版本、预写新 WorkflowRef 并写审计。拒绝原因没有修复就重跑，只会得到第二条以同样原因 `FAILED` 的 Workflow。
+4. 不以 zed 或任何旁路直接写 `tenant#admin`/`workspace#admin`：角色只经角色动作与部署引导写入（`DD-82`），旁路写入会被角色对账以成员事实为准删掉，并留下没有准入依据的授权窗口。
+5. 不手工改实体的版本号或状态，不用 Temporal CLI 以旧 workflow ID 重新启动或 reset 已终结的 Workflow：重跑只经第 7 步的入口，它在同一事务里推进版本、预写新 WorkflowRef 并写审计。拒绝原因没有修复就重跑，只会得到第二条以同样原因 `FAILED` 的 Workflow。
 
 ## 完成判据
 
 - `tools/check.sh security` 输出 `全部通过`；
 - 相关容器 `Up`，日志中没有同一条启动失败；
 - 对每个在服务的 Community host，NIP-11 `supported_nips` 含 `43`；
-- `kailo.entity.stranded{entity="tenant"}` 为 0：搁浅的 Tenant 已按第 7 步重跑并收敛。
+- `kailo.entity.stranded{entity="tenant"}` 为 0：搁浅的 Tenant 已按第 7 步重跑并收敛；
+- `kailo.tenant.without_effective_admin` 为 0。
 
 ## 演练记录
 
@@ -109,3 +121,8 @@
 1. **重跑搁浅实体（第 7 步）**：`bash core/verify/drill-task-rerun.sh`。在真实开通的 Tenant 下把 TenantBuzzBinding 暂置 `DISABLED` 后建立第二个 Workspace，`WORKSPACE_LIFECYCLE` 以 `ADMISSION_DENIED` 结束：`…:1 → FAILED；Workspace PROVISIONING v1`，搁浅计数 `1`。还原 binding 后按 7.1–7.4 逐条执行：定位查询返回唯一一行 `…:1|<tenant>|FAILED`；重跑 `HTTP 200` 返回 `…:2`；同键重发 `HTTP 200` 返回同一个 `…:2`、`runId` 为空（未另起执行）；另一张准入重跑同一条旧 Workflow `HTTP 409`。核验：`Workspace ACTIVE v3`，新 Workflow `TERMINAL COMPLETED`，旧 Workflow 仍是 `TERMINAL FAILED`，`RERUN_ACCEPTED` 审计 `1` 条，搁浅计数 `0`。
 2. **入口的拒绝面**：`cargo test -p kailo-core --test scope_lifecycle` 的 `stranded_workspace_is_rerun_with_new_version` 覆盖终结的固定 ID 再 Start 得 `409`、准入 target 指向别的实体得 `403`、`DENIED` 的准入得 `403`、无 service 令牌得 `401`、对 `COMPLETED` 的 Workflow 重跑得 `409`。破坏核验：把准入查询的 target 条件改为不核对后重建 `core-bff`，该用例在「target 指向别的实体」一步失败（`left: 200, right: 403`）；还原后 2 项全部通过。
 3. **OpenBao audit device 的运行期观察**：从 `openbao-config.hcl` 删去 audit 块、重建 `openbao` 并解封，`openbao-init.sh` 输出 `audit device 未生效`。此时仍在运行的 `core-bff` 上跑 `cargo test -p kailo-core --test scope_lifecycle tenant_and_workspace`：Tenant 停在 `PROVISIONING`（`left: "PROVISIONING", right: "ACTIVE"`），Core 日志 6 次 `OpenBao 没有启用任何 audit device：不把 binding 推进到 ACTIVE`。随后重建 `core-bff`：`Exited (1)`，日志末行 `Error: "OpenBao 没有启用任何 audit device：取用不留痕，拒绝启动"`。还原 audit 块、重建并解封后 `audit device 已生效（声明式）`，`core-bff` `Up`，`scope_lifecycle` 2 项全部通过。
+
+2026-09-24，本地拓扑，基于 commit `6ada92e` 之上的工作树：
+
+1. **首位 admin 与 0→1（第 8 步）**：`role_management` 集成用例以部署引导建立 Tenant：`{"state":"COMPLETED"}` 退出码 `0`，zed 读到 `tenant#admin`；同一人重跑 `0`/`COMPLETED`；另一人 `4`/`INERT`，没有登记外部身份、没有成员关系。破坏核验：去掉 0→1 判定后重建 `core-bff`，另一人的引导得到 `COMPLETED`，用例在断言 `INERT` 处失败；还原后通过。
+2. **角色对账**：旁路以 zed 写入已撤权者的 `tenant#admin`，三个对账周期内被删，留 `RECONCILIATION`/`ROLE_REMOVED` 审计。破坏核验：对账不删任何关系时用例超时失败；还原后通过。
