@@ -1,0 +1,104 @@
+diff --git a/web/src/platform/bff-client.ts b/web/src/platform/bff-client.ts
+index e4d187c..8347148 100644
+--- a/web/src/platform/bff-client.ts
++++ b/web/src/platform/bff-client.ts
+@@ -206,38 +206,72 @@ export type StreamFrame =
+ /**
+  * 打开一条 Workspace 事件流。
+  *
+- * 续流用 SSE 自带的协议，这里不另写重连循环：服务端把 generation 作为事件
+- * id、把重连间隔作为 retry 下发，EventSource 断线后按该间隔自动重连，并把
+- * id 放进 Last-Event-ID 带回。对不上时服务端重发 snapshot，而不是从某个猜测
+- * 的位置接着读。
++ * 续流用 SSE 自带的协议：服务端把 generation 作为事件 id、把重连间隔作为
++ * retry 下发，EventSource 断线后按该间隔自动重连，并把 id 放进 Last-Event-ID
++ * 带回。对不上时服务端重发 snapshot，而不是从某个猜测的位置接着读。
++ *
++ * EventSource 只在网络错误时自动重连：重连请求得到 HTTP 错误（BFF 重启期间
++ * 网关回 503）时它永久关闭。此时按服务端 `retry` 帧给出的同一间隔重新打开，
++ * 重开即重取 snapshot。从未收到过间隔（第一次连接就失败）时不自定时长，
++ * 如实显示已断开。
+  *
+  * 唯一需要主动停下的是 `session-revoked`：那是确定的撤销，再连只会被拒。
+  * 其余关闭原因（包括 `readmission-unavailable`）都是结果不明，交给重连。
+  */
+ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) => void): () => void {
+-  const source = new EventSource(`/api/v1/workspaces/${workspaceId}/stream`);
+-  source.addEventListener("snapshot", (e) =>
+-    onFrame({
+-      type: "snapshot",
+-      events: JSON.parse((e as MessageEvent<string>).data) as BuzzEvent[],
+-    }),
+-  );
+-  source.addEventListener("event", (e) =>
+-    onFrame({
+-      type: "event",
+-      event: JSON.parse((e as MessageEvent<string>).data) as BuzzEvent,
+-    }),
+-  );
+-  source.addEventListener("live", () => onFrame({ type: "live" }));
+-  source.addEventListener("closed", (e) => {
+-    const reason = (e as MessageEvent<string>).data;
+-    onFrame({ type: "closed", reason });
+-    if (reason === "session-revoked") source.close();
+-  });
+-  source.addEventListener("error", () =>
+-    onFrame({ type: source.readyState === EventSource.CLOSED ? "ended" : "interrupted" }),
+-  );
+-  return () => source.close();
++  let source: EventSource | undefined;
++  let retryMillis: number | undefined;
++  let reopen: ReturnType<typeof setTimeout> | undefined;
++  let stopped = false;
++
++  const open = () => {
++    const es = new EventSource(`/api/v1/workspaces/${workspaceId}/stream`);
++    source = es;
++    es.addEventListener("retry", (e) => {
++      const ms = Number((e as MessageEvent<string>).data);
++      if (Number.isFinite(ms) && ms > 0) retryMillis = ms;
++    });
++    es.addEventListener("snapshot", (e) =>
++      onFrame({
++        type: "snapshot",
++        events: JSON.parse((e as MessageEvent<string>).data) as BuzzEvent[],
++      }),
++    );
++    es.addEventListener("event", (e) =>
++      onFrame({
++        type: "event",
++        event: JSON.parse((e as MessageEvent<string>).data) as BuzzEvent,
++      }),
++    );
++    es.addEventListener("live", () => onFrame({ type: "live" }));
++    es.addEventListener("closed", (e) => {
++      const reason = (e as MessageEvent<string>).data;
++      onFrame({ type: "closed", reason });
++      if (reason === "session-revoked") {
++        stopped = true;
++        es.close();
++      }
++    });
++    es.addEventListener("error", () => {
++      if (es.readyState !== EventSource.CLOSED) {
++        onFrame({ type: "interrupted" });
++        return;
++      }
++      if (stopped || retryMillis === undefined) {
++        onFrame({ type: "ended" });
++        return;
++      }
++      onFrame({ type: "interrupted" });
++      reopen = setTimeout(open, retryMillis);
++    });
++  };
++
++  open();
++  return () => {
++    stopped = true;
++    clearTimeout(reopen);
++    source?.close();
++  };
+ }
+ 
+ export type WorkspaceRow = { id: string; slug: string; name: string };

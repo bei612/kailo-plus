@@ -10,7 +10,9 @@
 //!
 //! 续流走 SSE 自带的协议，不另造：generation 作为事件 `id:` 下发，浏览器的
 //! EventSource 断线后自动重连并把它放进 `Last-Event-ID` 头带回来；重连间隔
-//! 由这里经 `retry:` 下发。客户端因此没有自己的重连循环，也没有写死的时长。
+//! 由这里经 `retry:` 下发。EventSource 只在网络错误时自动重连；重连请求得到
+//! HTTP 错误时它永久关闭，页面按 `retry` 帧里的同一个间隔重新打开（重开即重取
+//! snapshot）。两条路径的时长都来自服务端，客户端不写死任何时长。
 //!
 //! 流只转发当前 active scope 的事件（`.design/09`）：filter 由 Core 构造并锁定
 //! 在该 Workspace 的 Channel 上，调用方没有提交 filter 的入口。
@@ -137,9 +139,8 @@ pub async fn open_stream(
 /// 重连间隔，然后正常结束，浏览器按间隔自动重连。
 fn upstream_unavailable(retry: std::time::Duration) -> Response {
     let frames = async_stream::stream! {
-        yield Ok::<_, Infallible>(
-            Event::default().event("closed").retry(retry).data("upstream-unavailable"),
-        );
+        yield Ok::<_, Infallible>(retry_frame(retry));
+        yield Ok(Event::default().event("closed").retry(retry).data("upstream-unavailable"));
     };
     Sse::new(frames).into_response()
 }
@@ -179,6 +180,15 @@ impl Readmission {
 }
 
 /// 把 snapshot 与订阅帧拼成一条 SSE 流。
+/// 重连间隔另以一帧明文下发。`retry:` 字段只被 EventSource 内部消费，页面读不到；
+/// 而 EventSource 在重连请求得到 HTTP 错误（BFF 重启期间网关回 503）时会永久关闭、
+/// 不再自动重连，此后只能由页面按这个间隔重新打开。间隔始终来自服务端配置。
+fn retry_frame(retry: std::time::Duration) -> Event {
+    Event::default()
+        .event("retry")
+        .data(retry.as_millis().to_string())
+}
+
 fn frames(
     generation: String,
     retry: std::time::Duration,
@@ -194,6 +204,7 @@ fn frames(
             .id(generation.clone())
             .retry(retry)
             .data(&generation));
+        yield Ok(retry_frame(retry));
         if let Some(s) = snapshot {
             yield Ok(Event::default().event("snapshot").data(s.to_string()));
         }

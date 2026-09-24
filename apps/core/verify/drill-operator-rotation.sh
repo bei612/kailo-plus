@@ -17,7 +17,8 @@ S=deploy/local/secrets
 probe() { (cd core && cargo run -q -p kailo-core --example operator_probe -- "../$1"); }
 row() { PSQL "select pubkey||' v'||version||' kv'||private_key_secret_version from identity.relay_operator_identity where state='ACTIVE'"; }
 core_up() {
-  DC up -d --no-deps --force-recreate core-bff >/dev/null 2>&1
+  # 引导凭据是一次性投递（DD-70）：每次启动都经 start-core.sh 现取
+  deploy/local/start-core.sh >/dev/null 2>&1
   for _ in $(seq 1 60); do
     st=$(sudo -n docker inspect -f '{{.State.Status}}' "$(DC ps -aq core-bff)")
     [ "$st" = exited ] && return 1

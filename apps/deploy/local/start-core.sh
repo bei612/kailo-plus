@@ -6,7 +6,10 @@
 # Core 的每一次启动都要一份新的投递——`docker compose restart/start core-bff`
 # 会拿着已被消费的旧投递启动，Core 按泄漏处理并拒绝启动。
 #
-# 用法（deploy/local 下）：./start-core.sh [docker compose up 的附加参数，如 --build]
+# 用法（deploy/local 下）：./start-core.sh
+#
+# 镜像先构建、投递后取：构建可能远长于 OPENBAO_SECRET_ID_WRAP_TTL，先取投递再构建，
+# 投递在 Core 启动前就已过期。
 set -euo pipefail
 cd "$(dirname "$0")"
 . ./.env
@@ -27,6 +30,8 @@ wrapped() { # <namespace> <role> → wrapping token
     | python3 -c 'import json,sys;print(json.load(sys.stdin)["wrap_info"]["token"])'
 }
 
+compose build core-bff
+
 umask 077
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
@@ -41,4 +46,4 @@ trap 'rm -f "$tmp"' EXIT
 mv "$tmp" secrets/openbao-core.env
 trap - EXIT
 
-compose up -d --no-deps --force-recreate "$@" core-bff
+compose up -d --no-deps --force-recreate --no-build core-bff
