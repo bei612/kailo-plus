@@ -372,10 +372,27 @@ services:
       PUBLISH_RESULT_SETTLE_SECONDS: ${PUBLISH_RESULT_SETTLE_SECONDS:?必须显式提供，禁止硬编码}
       PUBLISH_RECONCILE_BATCH: ${PUBLISH_RECONCILE_BATCH:?必须显式提供，禁止硬编码}
       PUBLISH_IDEMPOTENCY_RETENTION_SECONDS: ${PUBLISH_IDEMPOTENCY_RETENTION_SECONDS:?必须显式提供，禁止硬编码}
+      # 治理内核（.design/05 §1、.design/06 §4）。准入的 fresh Check 经 SpiceDB 的
+      # HTTP gateway（ADR-09）；preshared key 经 env_file 投递。
+      SPICEDB_HTTP_URL: ${SPICEDB_HTTP_URL:?必须显式提供，禁止硬编码}
+      # APPROVED 之后等待 consume 的上界，冻结进 ApprovalWorkflow input；超时自动 INVALIDATED
+      APPROVAL_CONSUME_WINDOW_SECONDS: ${APPROVAL_CONSUME_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
+      # 批准后派发前必须距 consume 截止至少留出的余量；不足则不派发，让批准按期失效
+      APPROVAL_DISPATCH_MARGIN_SECONDS: ${APPROVAL_DISPATCH_MARGIN_SECONDS:?必须显式提供，禁止硬编码}
+      # 同步等一个 Temporal Update 完成的上界；超过即结果不明，以同一 Update ID 再问
+      TEMPORAL_UPDATE_WAIT_SECONDS: ${TEMPORAL_UPDATE_WAIT_SECONDS:?必须显式提供，禁止硬编码}
+      # EVALUATING 与「已允许未派发」被视为停滞、交给对账作业的年龄
+      ADMISSION_EVALUATION_TIMEOUT_SECONDS: ${ADMISSION_EVALUATION_TIMEOUT_SECONDS:?必须显式提供，禁止硬编码}
+      GOVERNANCE_RECONCILE_INTERVAL_SECONDS: ${GOVERNANCE_RECONCILE_INTERVAL_SECONDS:?必须显式提供，禁止硬编码}
+      GOVERNANCE_RECONCILE_BATCH: ${GOVERNANCE_RECONCILE_BATCH:?必须显式提供，禁止硬编码}
+      # 任务列表与待我审批列表的单页上界（07 §5）
+      BFF_TASK_PAGE_LIMIT: ${BFF_TASK_PAGE_LIMIT:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/openbao-core.env
       # Core 自己的 OIDC client secret；不进 .env、不上命令行
       - ./secrets/core-service.env
+      # SpiceDB preshared key（SPICEDB_PRESHARED_KEY）；不进 .env、不上命令行
+      - ./secrets/core-spicedb.env
     ports:
       # 仅绑回环，供本机核验 service API；不暴露到宿主网络之外。
       - "127.0.0.1:${SERVICE_PORT:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}"
@@ -660,6 +677,11 @@ services:
       spicedb-migrate: { condition: service_completed_successfully }
     environment:
       SPICEDB_OTEL_PROVIDER: none
+      # HTTP gateway 供 Core 做 fresh Check（ADR-09）：它是同一套 PermissionsService
+      # 的 grpc-gateway 投影，同一枚 preshared key 认证。只在 app/component 网络内
+      # 可达，不发布到宿主。
+      SPICEDB_HTTP_ENABLED: "true"
+      SPICEDB_HTTP_ADDR: ":${SPICEDB_HTTP_CONTAINER_PORT:?必须显式提供，禁止硬编码}"
     # key 与连接串经 env_file 以环境变量投递，不作为命令行 flag——flag 在启用
     # tracing 时会随 OTel resource 导出（SF-SPZ-04、07 §1）。该文件在 secrets/ 下，
     # 由 bootstrap.sh 生成并被 gitignore；镜像是 distroless，无法用入口脚本读取挂载。

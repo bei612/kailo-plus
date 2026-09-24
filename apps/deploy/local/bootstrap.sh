@@ -186,6 +186,11 @@ printf '  已生成：secrets/core-service.env\n'
 chmod 600 secrets/worker.env
 printf '  已生成：secrets/worker.env\n'
 
+# Core 的准入 fresh Check 经 SpiceDB HTTP gateway（ADR-09），同一把 PSK 作 Bearer。
+{ printf 'SPICEDB_PRESHARED_KEY='; cat secrets/spicedb_preshared_key; printf '\n'; } > secrets/core-spicedb.env
+chmod 600 secrets/core-spicedb.env
+printf '  已生成：secrets/core-spicedb.env\n'
+
 # zed 写 schema 用同一把 PSK，但不应拿到数据库连接串——它只需要 gRPC 凭据。
 { printf 'ZED_TOKEN='; cat secrets/spicedb_preshared_key; printf '\n'; } > secrets/zed.env
 chmod 600 secrets/zed.env
