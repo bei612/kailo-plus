@@ -16,7 +16,7 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 | Tenant 建立/暂停/恢复/销毁 | `ComponentTaskWorkflow(kind=TENANT_LIFECYCLE)`；销毁 input 固定 TenantLifecycleSnapshot 与各组件 ExternalExecution |
 | Workspace 建立/暂停/恢复 | `ComponentTaskWorkflow(kind=WORKSPACE_LIFECYCLE)`，input 固定 Workspace ID/version 和 Buzz/SpiceDB projection refs；暂停/恢复固定映射 Channel archive/unarchive，不注册 delete |
 | Tenant/Workspace 成员建立/撤权 | `ComponentTaskWorkflow(kind=MEMBERSHIP_PROJECTION\|MEMBERSHIP_REVOCATION)`，input 固定 `TENANT\|WORKSPACE` target type、membership ID/version 和 SpiceDB/Buzz projection refs |
-| 原生设备公钥登记/撤销 | `ComponentTaskWorkflow(kind=BUZZ_IDENTITY_PROJECTION)`，input 固定 pubkey 与 binding version；方向由 binding 状态决定（`RECONCILING` 投入、`REVOKING` 移出），覆盖 relay roster 与该 Principal 全部 ACTIVE Workspace 的 Channel roster（DD-79） |
+| 原生设备公钥登记/撤销；Web 托管 HUMAN 身份的 key revoke 与重建 | `ComponentTaskWorkflow(kind=BUZZ_IDENTITY_PROJECTION)`，input 固定 pubkey 与 binding version；方向由 binding 状态决定（`RECONCILING` 投入、`REVOKING` 移出），覆盖 relay roster 与该 Principal 全部 ACTIVE Workspace 的 Channel roster（DD-79）；只接受 `kind=HUMAN` 的 binding，CONTROL 轮换受 GAP-BUZ-01 阻断（`09` 的 key revoke/rotate 行） |
 | ComponentRelease 登记/批准/撤销 | `ComponentTaskWorkflow(kind=COMPONENT_RELEASE)`，input 固定 source commit、manifest/API range、全部合同与 artifact digest；审批决定仍由 ApprovalWorkflow 承接 |
 | PlatformProviderBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=PLATFORM_PROVIDER`、port、binding、old/new release、old/new generation 与 provider projection refs |
 | ApplicationBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=APPLICATION`、binding、old/new release、old/new generation、native scope 与全部投影 refs |
