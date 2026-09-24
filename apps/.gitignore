@@ -47,3 +47,6 @@ coverage/
 
 # 本地 registry 数据
 /deploy/local/data/registry/
+
+# Python 字节码缓存（tools/upstream_manifest.py 被 check.sh 导入时生成）
+__pycache__/
