@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select version from identity.buzz_identity_binding\n         where pubkey = $1 and state = 'RECONCILING'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "87561936c33034abcc51f508015a53ac2812a8fd544bea765bdf0240de79e19f"
+}

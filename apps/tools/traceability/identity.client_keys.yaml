@@ -1,5 +1,5 @@
 capability_id: identity.client_keys
-title: 原生设备公钥的登记、投影与撤销；同一人可同时持有 Web 与多台设备的 Buzz 身份
+title: 原生设备公钥的登记、投影与撤销，Web 托管身份与 operator 身份的轮换；同一人可同时持有 Web 与多台设备的 Buzz 身份
 stage: S1
 status: shipped
 exposure: end_user
@@ -7,7 +7,7 @@ exposure: end_user
 design:
   requirements: [V-REQ-01, V-REQ-08, V-REQ-19]
   decisions: [DD-77, DD-78, DD-79]
-  facts: [SF-AGW-22, SF-AGW-24, SF-BUZ-26]
+  facts: [SF-AGW-22, SF-AGW-24, SF-BUZ-26, SF-BUZ-06, SF-BUZ-42]
   seams: [SS-AGW-OIDC]
   blockers: []
   entities: [BuzzIdentityBinding, PlatformSession, TenantMembership, WorkflowRef]
@@ -19,6 +19,8 @@ validation:
       ref: core/verify/native-identity.md
     - dimension: 安全边界
       ref: core/verify/native-identity.md
+    - dimension: 安全边界
+      ref: docs/runbooks/RB-02-secret-rotation-and-revocation.md
     - dimension: 端到端场景
       ref: upstream-patches/buzz-web/verify/web-surface.md
     - dimension: Workflow 重放
@@ -26,7 +28,7 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/client_keys.rs, core/crates/kailo-core/src/identity_projection.rs, core/crates/kailo-core/src/membership_projection.rs, worker/workflows/component_task.go, deploy/local/agentgateway-config.yaml, upstream-patches/buzz-web]
+  paths: [core/crates/kailo-core/src/client_keys.rs, core/crates/kailo-core/src/identity_projection.rs, core/crates/kailo-core/src/membership_projection.rs, core/crates/kailo-core/src/server_keys.rs, core/crates/kailo-core/src/platform_bootstrap.rs, core/crates/kailo-core/src/stream.rs, worker/workflows/component_task.go, deploy/local/agentgateway-config.yaml, upstream-patches/buzz-web]
   surfaces: [web]
   schemas: [contracts/enums/workflow_kind.schema.json, contracts/enums/reason_code.schema.json]
   migrations: [core/migrations/20260923040000_buzz_identity_multi_binding.up.sql, core/migrations/20260923050000_workflow_kind_buzz_identity.up.sql]

@@ -90,6 +90,15 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/tasks/rerun",
             post(crate::task_rerun::rerun_task),
         )
+        // Web 托管 HUMAN 身份的 key revoke 与重建（.design/09 key revoke/rotate）
+        .route(
+            "/service/v1/identities/server-keys/revoke",
+            post(crate::server_keys::revoke_server_key),
+        )
+        .route(
+            "/service/v1/identities/server-keys/provision",
+            post(crate::server_keys::provision_server_key),
+        )
         .with_state(state)
 }
 

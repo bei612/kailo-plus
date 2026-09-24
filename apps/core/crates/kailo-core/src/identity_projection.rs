@@ -1,6 +1,10 @@
-//! 原生设备公钥的 roster 投影（`DD-79`，`kind=BUZZ_IDENTITY_PROJECTION`）。
+//! HUMAN 身份单把 pubkey 的 roster 投影（`DD-79`，`kind=BUZZ_IDENTITY_PROJECTION`）。
 //!
-//! 一台设备登记或撤销时只动它自己那一把 pubkey：投入或移出 relay roster 与
+//! 两类调用方：原生设备的登记与撤销（`custody=CLIENT`），以及 Web 托管身份的
+//! key revoke 与重建（`custody=SERVER`，`server_keys`，`.design/09` 的 key
+//! revoke/rotate 行）。只接受 `kind=HUMAN`：CONTROL 的轮换受 GAP-BUZ-01 阻断。
+//!
+//! 一把 pubkey 登记或撤销时只动它自己：投入或移出 relay roster 与
 //! 此人全部 ACTIVE Workspace 的 Channel roster。方向由 binding 状态决定，不由
 //! 调用方指定——`RECONCILING` 投入、`REVOKING` 移出，与成员生命周期同一原则。
 //!
@@ -54,7 +58,7 @@ pub async fn project_buzz_identity(
 
     let binding = match sqlx::query!(
         "select tenant_id, principal_id, state from identity.buzz_identity_binding
-         where pubkey = $1 and version = $2 and custody = 'CLIENT'",
+         where pubkey = $1 and version = $2 and kind = 'HUMAN'",
         req.pubkey,
         req.binding_version
     )
@@ -63,7 +67,7 @@ pub async fn project_buzz_identity(
     {
         Ok(Some(b)) => b,
         Ok(None) => {
-            tracing::warn!(pubkey = %req.pubkey, "CLIENT binding 不存在或版本不符");
+            tracing::warn!(pubkey = %req.pubkey, "HUMAN binding 不存在或版本不符");
             return StatusCode::NOT_FOUND.into_response();
         }
         Err(e) => return unavailable(e),
@@ -161,7 +165,19 @@ async fn admit(
     .await
     .map_err(unavailable)?;
     if done.rows_affected() == 0 {
-        // 最后一刻撤权开始了：移出，由撤权流程收尾
+        // Web 托管身份还可能被并发的成员投影先一步置为 ACTIVE（它投入的是同一把
+        // pubkey）。那不是撤权：这里已把它投入 relay 与全部 ACTIVE Channel，照常
+        // 收敛。其余情形是最后一刻撤权开始了：移出，由撤权流程收尾。
+        let now = sqlx::query_scalar!(
+            "select state from identity.buzz_identity_binding where pubkey = $1",
+            req.pubkey
+        )
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(unavailable)?;
+        if now.as_deref() == Some("ACTIVE") {
+            return Ok("ACTIVE".to_owned());
+        }
         converge(state, control, Scope::Relay, &req.pubkey, Presence::Absent).await?;
         return Err(StatusCode::CONFLICT.into_response());
     }

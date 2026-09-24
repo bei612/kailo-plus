@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select tenant_id, principal_id, state from identity.buzz_identity_binding\n         where pubkey = $1 and version = $2 and custody = 'CLIENT'",
+  "query": "select tenant_id, principal_id, state from identity.buzz_identity_binding\n         where pubkey = $1 and version = $2 and kind = 'HUMAN'",
   "describe": {
     "columns": [
       {
@@ -31,5 +31,5 @@
       false
     ]
   },
-  "hash": "01a5e24e2dc43db183d36c52a1c5090b4d4c9271012029f123912b59a8cc3f86"
+  "hash": "dd4736a085fade07734e2d11d47ee1da2f119f5d648e664851a6a4cc96b28125"
 }

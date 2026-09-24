@@ -57,6 +57,7 @@ pub async fn ensure(
     pool: &PgPool,
     secrets: &SecretStore,
     cfg: &BootstrapConfig,
+    http: &reqwest::Client,
 ) -> Result<Uuid, String> {
     // Catalog Tenant 直接是 ACTIVE：它不经 TENANT_LIFECYCLE，也没有协作面——
     // 它只承载平台自己的 binding 与凭据（`.design/09` 第 3 步）。
@@ -72,8 +73,18 @@ pub async fn ensure(
     .await
     .map_err(|e| format!("建立 Catalog Tenant 失败: {e}"))?;
 
-    // 已有 active 身份即完成。轮换是另一件事：它要生成新密钥、写新版本、
-    // 并按重叠窗口切换，不在引导路径上（`.design/03` §9）。
+    // 投递的私钥决定部署此刻要用的 operator 身份；公钥由它派生，不从配置里
+    // 再要一份——两处各存一份必然有一天对不上。
+    let secret_hex = cfg.operator_key.trim().to_owned();
+    let delivered = kailo_buzz::operator::OperatorIdentity::new(
+        &secret_hex,
+        &cfg.operator_api_origin,
+        &cfg.operator_audience,
+        &cfg.operator_audience,
+    )
+    .map_err(|e| format!("operator 私钥不可用: {e}"))?;
+    let pubkey = delivered.pubkey_hex();
+
     let existing = sqlx::query_scalar!(
         "select pubkey from identity.relay_operator_identity
          where catalog_tenant_id = $1 and state = 'ACTIVE'",
@@ -82,23 +93,30 @@ pub async fn ensure(
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("读 RelayOperatorIdentity 失败: {e}"))?;
-    if existing.is_some() {
-        return Ok(tenant);
+    match existing {
+        // 投递的就是在用的那把：引导已完成
+        Some(active) if active == pubkey => return Ok(tenant),
+        // 投递了另一把：这是部署发起的轮换（`.design/09` 的 RelayOperatorIdentity
+        // rotate 行），在引导路径上完成——operator key 本身就是部署引导材料。
+        Some(active) => {
+            rotate(
+                pool,
+                secrets,
+                cfg,
+                http,
+                tenant,
+                &active,
+                &delivered,
+                &secret_hex,
+            )
+            .await?;
+            return Ok(tenant);
+        }
+        None => {}
     }
 
     // 私钥只在这一段内存里出现，随后被写进 OpenBao；落库的只有 locator、
     // 版本与 audience。
-    let secret_hex = cfg.operator_key.trim().to_owned();
-    // 公钥由私钥派生，不从配置里再要一份——两处各存一份必然有一天对不上。
-    let pubkey = kailo_buzz::operator::OperatorIdentity::new(
-        &secret_hex,
-        &cfg.operator_api_origin,
-        &cfg.operator_audience,
-        &cfg.operator_audience,
-    )
-    .map_err(|e| format!("operator 私钥不可用: {e}"))?
-    .pubkey_hex();
-
     let locator = format!(
         "{}/relay-operator/{}",
         cfg.secret_mount, cfg.operator_audience
@@ -133,4 +151,115 @@ pub async fn ensure(
         "平台引导完成"
     );
     Ok(tenant)
+}
+
+/// 以新投递的 operator 私钥原地替换在用的那把（`.design/09` 的
+/// RelayOperatorIdentity rotate 行）。
+///
+/// 顺序决定安全性：
+///
+/// 1. **先查证 Relay 已接受新 key**。部署必须先把新 pubkey 与旧的并列放进
+///    `RELAY_OPERATOR_PUBKEYS`；没放就切换，Core 从此创建不了任何 Community，而
+///    这要等到下一次建 Tenant 才暴露。查证不过即拒绝启动（fail closed），库与
+///    OpenBao 都没有动过，还原投递文件即可回到原状。
+/// 2. 写新 KV 版本，只记版本号。
+/// 3. 以旧 pubkey 为 CAS 原地推进 pubkey、SecretRef 版本与 version，并在同一事务
+///    里写审计。CAS 不中说明另一个 Core 实例已经切过：不覆盖它。
+///
+/// operator key 只签 operator 面的 NIP-98、不产生 Buzz event，没有需要保留的
+/// roster 或历史 binding；旧 KV 版本留在 OpenBao 里，由运维按 RB-02 处置。
+#[allow(clippy::too_many_arguments)]
+async fn rotate(
+    pool: &PgPool,
+    secrets: &SecretStore,
+    cfg: &BootstrapConfig,
+    http: &reqwest::Client,
+    tenant: Uuid,
+    active: &str,
+    delivered: &kailo_buzz::operator::OperatorIdentity,
+    secret_hex: &str,
+) -> Result<(), String> {
+    let pubkey = delivered.pubkey_hex();
+    delivered.probe(http).await.map_err(|e| {
+        format!(
+            "新投递的 operator key {pubkey} 未被 Relay 接受（{e}）：先把它与在用的 {active} \
+             并列放进 RELAY_OPERATOR_PUBKEYS 并重建 Relay，再启动 Core"
+        )
+    })?;
+
+    let locator = format!(
+        "{}/relay-operator/{}",
+        cfg.secret_mount, cfg.operator_audience
+    );
+    let version = secrets
+        .write(&locator, "value", secret_hex)
+        .await
+        .map_err(|e| format!("写 operator 私钥到 OpenBao 失败: {e}"))?;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("轮换 RelayOperatorIdentity 失败: {e}"))?;
+    let row = sqlx::query!(
+        "update identity.relay_operator_identity
+         set pubkey = $3, private_key_secret_ref = $4, private_key_secret_version = $5,
+             private_key_secret_audience = $6, version = version + 1
+         where catalog_tenant_id = $1 and pubkey = $2 and state = 'ACTIVE'
+         returning version",
+        tenant,
+        active,
+        pubkey,
+        locator,
+        version as i32,
+        cfg.secret_audience,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| format!("轮换 RelayOperatorIdentity 失败: {e}"))?
+    .ok_or_else(|| format!("RelayOperatorIdentity 已不是 {active}：另一实例已切换，不覆盖"))?;
+
+    let operation = Uuid::new_v4();
+    crate::audit::append(
+        &mut tx,
+        crate::audit::AuditEntry {
+            event_key: format!("relay_operator.rotate:{active}:{pubkey}"),
+            tenant_id: Some(tenant),
+            workspace_id: None,
+            operation_id: operation,
+            event_type: "OUTCOME",
+            human_identity_id: None,
+            initiator_principal_id: None,
+            actor_principal_id: None,
+            action_key: "relay_operator.rotate",
+            action_version: 1,
+            component_type_key: "buzz",
+            target_type: Some("RELAY_OPERATOR_IDENTITY"),
+            target_id: Some(tenant),
+            parameter_hash: &pubkey,
+            decision: "ALLOW",
+            result_code: "ROTATED",
+            result_exposure: "NONE",
+            evidence_refs: serde_json::json!([
+                { "kind": "BUZZ_PUBKEY", "value": active },
+                { "kind": "BUZZ_PUBKEY", "value": pubkey },
+                { "kind": "SECRET_VERSION", "value": version },
+            ]),
+            correlation_id: operation,
+        },
+    )
+    .await
+    .map_err(|e| format!("写轮换审计失败: {e}"))?;
+    tx.commit()
+        .await
+        .map_err(|e| format!("轮换 RelayOperatorIdentity 失败: {e}"))?;
+
+    tracing::info!(
+        catalog_tenant = %tenant,
+        old = active,
+        new = pubkey,
+        secret_version = version,
+        identity_version = row.version,
+        "RelayOperatorIdentity 已轮换"
+    );
+    Ok(())
 }

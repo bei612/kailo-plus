@@ -17,6 +17,9 @@ use url::Url;
 const PROVISION_PATH: &str = "/operator/communities";
 /// 同上，`archive_community` 的签名路径。
 const ARCHIVE_PATH: &str = "/operator/communities/archive";
+/// 同上，`community_availability` 的签名路径。它是 operator 面唯一只读、
+/// 不产生任何副作用的端点，用来查证「Relay 接受这把 operator key」。
+const AVAILABILITY_PATH: &str = "/operator/communities/availability";
 
 #[derive(Debug, thiserror::Error)]
 pub enum OperatorError {
@@ -150,6 +153,33 @@ impl OperatorIdentity {
             &serde_json::json!({ "host": host, "owner_pubkey": owner_pubkey }),
         )
         .await
+    }
+
+    /// 以这把 key 签一次只读的 operator 请求，查证 Relay 当前接受它。
+    ///
+    /// 问的 host 取 operator origin 自己的主机名：它是部署事实、总是合法的
+    /// authority，结论（可用与否）无关紧要——要的只是「签名者在 allow-list 上」。
+    /// 不在 allow-list 上 Relay 回 403，以 `Rejected` 返回；传输失败原样返回，
+    /// 调用方不得把它当成接受或拒绝。
+    pub async fn probe(&self, http: &reqwest::Client) -> Result<(), OperatorError> {
+        let host = self
+            .api_origin
+            .host_str()
+            .ok_or_else(|| OperatorError::Sign("operator origin 没有主机名".to_owned()))?
+            .to_owned();
+        let mut url = self.api_origin.join(AVAILABILITY_PATH)?;
+        url.query_pairs_mut().append_pair("host", &host);
+        let header = self.nip98_header("GET", url.as_str(), &[])?;
+        let resp = http.get(url).header("Authorization", header).send().await?;
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let text = resp.text().await.unwrap_or_default();
+        Err(OperatorError::Rejected {
+            status: status.as_u16(),
+            body: text.chars().take(200).collect(),
+        })
     }
 
     async fn post_json(

@@ -148,7 +148,11 @@ printf '  已生成：secrets/browser-client.env\n'
   # operator 面：签名 URL 必须精确等于 origin + path，因此 origin 是配置而非
   # 入站 Host 头推导（SS-BUZ-OPERATOR）。允许的 operator pubkey 白名单同理。
   printf 'RELAY_OPERATOR_API_ORIGIN=%s\n' "${RELAY_OPERATOR_API_ORIGIN:?}"
-  printf 'RELAY_OPERATOR_PUBKEYS='; cat secrets/relay_operator_pubkey; printf '\n'
+  # 轮换窗口（RB-02 步骤 F）：退役中的 operator pubkey 与在用的并列，直到 Core
+  # 已切到新 key 并查证；删掉 .retiring 文件再派生一次即关闭窗口。
+  printf 'RELAY_OPERATOR_PUBKEYS='; cat secrets/relay_operator_pubkey
+  [ -s secrets/relay_operator_pubkey.retiring ] && { printf ','; cat secrets/relay_operator_pubkey.retiring; }
+  printf '\n'
   printf 'REDIS_URL=redis://buzz-replay:6379\n'; } > secrets/buzz-relay.env
 
 # SpiceDB 镜像是 distroless，无法在容器内读取挂载的 secret，PSK 与连接串

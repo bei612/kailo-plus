@@ -18,6 +18,7 @@ mod platform_views;
 mod publish_reconcile;
 mod roster_reconcile;
 mod scope_state;
+mod server_keys;
 mod service_api;
 mod service_auth;
 mod stream;
@@ -69,6 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &pool,
         &secrets,
         &platform_bootstrap::BootstrapConfig::from_env()?,
+        &reqwest::Client::new(),
     )
     .await?;
 

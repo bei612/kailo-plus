@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select state from identity.buzz_identity_binding\n         where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN'\n           and custody = 'SERVER' and state <> 'REVOKED'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ed7f9c77437b6817efff09a8594e59c61d6ff387c9147697bf81e760dab6e195"
+}

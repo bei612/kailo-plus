@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update identity.relay_operator_identity\n         set pubkey = $3, private_key_secret_ref = $4, private_key_secret_version = $5,\n             private_key_secret_audience = $6, version = version + 1\n         where catalog_tenant_id = $1 and pubkey = $2 and state = 'ACTIVE'\n         returning version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "76604cc7ccffe4040b4e26630eb80123196e9a18cbfd2561229be370caa384d3"
+}

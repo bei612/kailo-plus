@@ -139,3 +139,80 @@ async fn mark_running(pool: &PgPool, workflow_id: &str, run_id: Option<&str>) {
         tracing::warn!(error = %e, workflow_id, "回填 run ID 失败，留给对账作业");
     }
 }
+
+/// 一条已准入 ActionExecution 中，受治理的启动入口（重跑、托管身份的撤销与
+/// 重建）需要带进 WorkflowRef 与审计的字段。
+pub(crate) struct AllowedAction {
+    pub operation_id: Uuid,
+    pub action_key: String,
+    pub action_version: i32,
+    pub initiator_principal_id: Uuid,
+    pub actor_principal_id: Uuid,
+    pub parameter_hash: String,
+    pub correlation_id: Uuid,
+}
+
+/// 准入依据：ActionExecution 已 `ALLOWED`、与目标同 Tenant、`target_id` 就是该
+/// 目标。target 不核，就能拿一张为别的对象签发的准入来驱动这一个。
+pub(crate) async fn allowed_action(
+    pool: &PgPool,
+    action_execution_id: Uuid,
+    tenant_id: Uuid,
+    target_id: Uuid,
+) -> Result<Option<AllowedAction>, sqlx::Error> {
+    sqlx::query_as!(
+        AllowedAction,
+        "select operation_id, action_key, action_version, initiator_principal_id,
+                actor_principal_id, parameter_hash, correlation_id
+         from admission.action_execution
+         where id = $1 and tenant_id = $2 and target_id = $3 and gate_state = 'ALLOWED'",
+        action_execution_id,
+        tenant_id,
+        target_id
+    )
+    .fetch_optional(pool)
+    .await
+}
+
+/// 该 ActionExecution 已驱动的 Workflow。一条 ActionExecution 至多驱动一个
+/// （`workflow_ref.action_execution_id` 唯一），因此它就是这些入口的幂等键：
+/// 已有即以同一 ID 收敛，不再推进任何实体版本。
+pub(crate) async fn workflow_of_action(
+    pool: &PgPool,
+    action_execution_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "select workflow_id from projection.workflow_ref where action_execution_id = $1",
+        action_execution_id
+    )
+    .fetch_optional(pool)
+    .await
+}
+
+/// 在调用方的事务里预写 WorkflowRef。与实体状态/版本的推进同事务：提交之后
+/// 崩溃，同一 ActionExecution 的重试经 `workflow_of_action` 找回它；`start`
+/// 随后的 `ON CONFLICT DO NOTHING` 收敛到同一行。
+pub(crate) async fn prewrite(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    workflow_id: &str,
+    kind: &str,
+    tenant_id: Uuid,
+    operation_id: Uuid,
+    action_execution_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "insert into projection.workflow_ref
+             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
+              operation_id, action_execution_id, projection_state)
+         values ($1, $2, 1, $3, $4, $5, $6, 'PENDING_START')",
+        workflow_id,
+        WORKFLOW_TYPE,
+        kind,
+        tenant_id,
+        operation_id,
+        action_execution_id,
+    )
+    .execute(&mut **tx)
+    .await
+    .map(|_| ())
+}

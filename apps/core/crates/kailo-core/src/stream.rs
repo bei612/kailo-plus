@@ -93,6 +93,8 @@ pub async fn open_stream(
         }
     };
 
+    // 订阅以这把钥匙建立 NIP-42 会话：它被撤销（key revoke/rotate）后流必须关闭
+    let signer = keys.public_key().to_hex();
     let ws_url = state.relay_ws_url.clone();
     let sub = match subscribe(
         keys,
@@ -119,6 +121,7 @@ pub async fn open_stream(
         Readmission {
             pool: state.pool.clone(),
             session_id: ctx.session_id,
+            signer,
             every: std::time::Duration::from_secs(state.stream_readmit_seconds),
         },
     ))
@@ -152,7 +155,27 @@ fn upstream_unavailable(retry: std::time::Duration) -> Response {
 struct Readmission {
     pool: sqlx::PgPool,
     session_id: Uuid,
+    /// 订阅所用 NIP-42 会话的 pubkey。它不再是 ACTIVE 即关流：key revoke 的
+    /// 「关已知连接」一步（`.design/09`），与会话撤销是两件事。
+    signer: String,
     every: std::time::Duration,
+}
+
+impl Readmission {
+    /// `Ok(Some(reason))` 是该关流的原因；`Ok(None)` 是仍然准入。
+    async fn check(&self) -> Result<Option<&'static str>, sqlx::Error> {
+        if !kailo_identity::session::is_live(&self.pool, self.session_id).await? {
+            return Ok(Some("session-revoked"));
+        }
+        let signer_active = sqlx::query_scalar!(
+            r#"select exists (select 1 from identity.buzz_identity_binding
+                              where pubkey = $1 and state = 'ACTIVE') as "ok!""#,
+            self.signer
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok((!signer_active).then_some("identity-revoked"))
+    }
 }
 
 /// 把 snapshot 与订阅帧拼成一条 SSE 流。
@@ -186,12 +209,12 @@ fn frames(
                     None => break,
                 },
                 _ = tick.tick() => {
-                    match kailo_identity::session::is_live(&readmit.pool, readmit.session_id).await {
-                        Ok(true) => continue,
-                        // 会话没了：注销或撤权。关流并说明原因——客户端据此
-                        // 知道不该重连。
-                        Ok(false) => {
-                            yield Ok(Event::default().event("closed").data("session-revoked"));
+                    match readmit.check().await {
+                        Ok(None) => continue,
+                        // 会话没了（注销或撤权），或订阅所用的身份被撤销。关流并
+                        // 说明原因——客户端据此知道不该原样重连。
+                        Ok(Some(reason)) => {
+                            yield Ok(Event::default().event("closed").data(reason));
                             break;
                         }
                         // 查不动数据库是结果不明，不是"已撤销"。关流但给不同的

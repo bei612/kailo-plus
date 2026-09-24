@@ -60,7 +60,7 @@ pub struct BuzzProjectionResponse {
 
 /// 解析失败的分类。它决定 HTTP 状态，进而决定 Activity 侧是否重试
 /// （`06` §5.1：4xx 类进 `NonRetryableErrorTypes`）。
-enum Refusal {
+pub(crate) enum Refusal {
     /// 事实不存在或版本不符——重试多少次都一样
     NotFound(&'static str),
     /// 前置条件不成立（binding 不是 ACTIVE、托管方不是 Core）——同样不该重试
@@ -70,7 +70,7 @@ enum Refusal {
 /// 投影前置步骤不成立的两种方式，对 Activity 的意义相反：拒绝不重试，依赖
 /// 不可用必须重试。把后者报成拒绝，一次 OpenBao 的短暂不可用就会让成员建立
 /// 永久失败（06 §4 的 PRECONDITION 与 DENIED 之别）。
-enum Blocked {
+pub(crate) enum Blocked {
     Refused(Refusal),
     Unavailable(String),
 }
@@ -402,7 +402,7 @@ fn refusal_response(r: Refusal) -> Response {
 ///
 /// 状态直接给 `RECONCILING`：此刻只有 Core 侧的事实，roster 还没投影。把它置为
 /// `ACTIVE` 要等 roster 查证通过——而那正是紧接着这一步要做的事。
-async fn ensure_human_identity(
+pub(crate) async fn ensure_human_identity(
     state: &ServiceState,
     tenant_id: Uuid,
     principal_id: Uuid,

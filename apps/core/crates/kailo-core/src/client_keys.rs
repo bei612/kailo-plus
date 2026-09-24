@@ -27,7 +27,7 @@ use crate::component_task::{self, ComponentTaskInput};
 pub const REGISTER_PATH: &str = "/api/v1/identity/client-keys";
 /// NIP-98 HTTP Auth 事件
 const NIP98_KIND: u16 = 27235;
-const KIND: &str = "BUZZ_IDENTITY_PROJECTION";
+pub(crate) const KIND: &str = "BUZZ_IDENTITY_PROJECTION";
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
@@ -55,15 +55,15 @@ pub struct KeyStatus {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct IdentityEnvelope {
-    identity: IdentityTarget,
+pub(crate) struct IdentityEnvelope {
+    pub(crate) identity: IdentityTarget,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct IdentityTarget {
-    pubkey: String,
-    binding_version: i32,
+pub(crate) struct IdentityTarget {
+    pub(crate) pubkey: String,
+    pub(crate) binding_version: i32,
 }
 
 fn refuse(status: StatusCode, class: ErrorClass, reason: ReasonCode) -> Response {

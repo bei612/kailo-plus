@@ -301,7 +301,7 @@ async fn run(
 
     // 设备以自己的私钥直连 Relay 发布：准入由 Relay 按 roster 判定。
     // 这里用 Server 托管标记构造客户端，是因为测试进程在扮演原生端自己签名。
-    let (host, channel) = scope_of(pool, fx).await;
+    let (host, channel) = common::live_scope(pool, fx).await;
     let as_device = IdentityClient::new(
         Custody::Server,
         &device.secret_key().to_secret_hex(),
@@ -417,22 +417,4 @@ async fn wait_for(
         );
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
-}
-
-async fn scope_of(pool: &PgPool, fx: &common::LiveWorkspace) -> (String, String) {
-    let host: String = sqlx::query_scalar(
-        "select normalized_host from projection.tenant_buzz_binding where tenant_id = $1",
-    )
-    .bind(fx.tenant)
-    .fetch_one(pool)
-    .await
-    .expect("Community host");
-    let channel: uuid::Uuid = sqlx::query_scalar(
-        "select channel_id from projection.workspace_buzz_binding where workspace_id = $1",
-    )
-    .bind(fx.workspace)
-    .fetch_one(pool)
-    .await
-    .expect("Channel");
-    (host, channel.to_string())
 }

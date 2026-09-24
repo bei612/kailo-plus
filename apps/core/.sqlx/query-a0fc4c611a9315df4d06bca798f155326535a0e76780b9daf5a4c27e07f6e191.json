@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select state from identity.buzz_identity_binding where pubkey = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a0fc4c611a9315df4d06bca798f155326535a0e76780b9daf5a4c27e07f6e191"
+}

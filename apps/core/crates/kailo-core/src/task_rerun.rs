@@ -141,13 +141,7 @@ pub async fn rerun_task(
     // 幂等：同一 ActionExecution 已驱动过一个 Workflow。是本次重跑的那个，就
     // 交回启动核心以同一 ID 收敛（结果不明时的重试走到这里）；是别的，就是
     // 拿一张用过的准入去换第二次执行。
-    match sqlx::query_scalar!(
-        "select workflow_id from projection.workflow_ref where action_execution_id = $1",
-        req.action_execution_id
-    )
-    .fetch_optional(&state.pool)
-    .await
-    {
+    match component_task::workflow_of_action(&state.pool, req.action_execution_id).await {
         Ok(Some(existing)) if existing == next_id => {
             return start(&state, target, entity, req.action_execution_id).await
         }
@@ -178,16 +172,12 @@ pub async fn rerun_task(
 
     // 准入依据：已 ALLOWED、同 Tenant、target 就是该实体。target 不核就可以拿
     // 一张为别的实体签发的准入来重跑这一个。
-    let action = match sqlx::query!(
-        "select operation_id, action_key, action_version, initiator_principal_id,
-                actor_principal_id, parameter_hash, correlation_id
-         from admission.action_execution
-         where id = $1 and tenant_id = $2 and target_id = $3 and gate_state = 'ALLOWED'",
+    let action = match component_task::allowed_action(
+        &state.pool,
         req.action_execution_id,
         old.tenant_id,
-        entity
+        entity,
     )
-    .fetch_optional(&state.pool)
     .await
     {
         Ok(Some(a)) => a,
@@ -226,19 +216,14 @@ pub async fn rerun_task(
     // 新 WorkflowRef 与版本推进同事务：提交之后崩溃，同一 ActionExecution 的
     // 重试经上面的幂等分支找回它；反过来先提交版本再落 WorkflowRef，崩在中间就
     // 得到一个既不搁浅（新版本没有终结的 Workflow）又没有 Workflow 的实体。
-    if let Err(e) = sqlx::query!(
-        "insert into projection.workflow_ref
-             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
-              operation_id, action_execution_id, projection_state)
-         values ($1, $2, 1, $3, $4, $5, $6, 'PENDING_START')",
-        next_id,
-        component_task::WORKFLOW_TYPE,
-        old.kind,
+    if let Err(e) = component_task::prewrite(
+        &mut tx,
+        &next_id,
+        &old.kind,
         old.tenant_id,
         action.operation_id,
         req.action_execution_id,
     )
-    .execute(&mut *tx)
     .await
     {
         return unavailable(e);

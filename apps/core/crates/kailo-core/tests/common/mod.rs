@@ -953,3 +953,69 @@ pub async fn native_access_token(n: &NativeEnv) -> String {
         .expect("access_token")
         .to_owned()
 }
+
+/// 夹具 Workspace 的 Community host 与 Channel ID：直连 Relay 的核验要用它们。
+pub async fn live_scope(pool: &PgPool, fx: &LiveWorkspace) -> (String, String) {
+    let host: String = sqlx::query_scalar(
+        "select normalized_host from projection.tenant_buzz_binding where tenant_id = $1",
+    )
+    .bind(fx.tenant)
+    .fetch_one(pool)
+    .await
+    .expect("Community host");
+    let channel: Uuid = sqlx::query_scalar(
+        "select channel_id from projection.workspace_buzz_binding where workspace_id = $1",
+    )
+    .bind(fx.workspace)
+    .fetch_one(pool)
+    .await
+    .expect("Channel");
+    (host, channel.to_string())
+}
+
+/// 按 SecretRef 的 locator 与版本读回 KV v2 里的值。
+///
+/// 只用于核验「旧版本仍在、但它对应的 pubkey 已被 Relay 拒绝」这类断言：
+/// 核验要以持钥者的身份去试，而持钥者手里就是这个值。
+pub async fn read_secret_version(
+    http: &reqwest::Client,
+    e: &Env,
+    locator: &str,
+    version: i32,
+) -> String {
+    let login: serde_json::Value = http
+        .post(format!("{}/v1/auth/approle/login", e.bao_addr))
+        .header("X-Vault-Namespace", &e.bao_namespace)
+        .json(&serde_json::json!({"role_id": e.bao_role_id, "secret_id": e.bao_secret_id}))
+        .send()
+        .await
+        .expect("AppRole 登录")
+        .json()
+        .await
+        .expect("解析登录响应");
+    let token = login["auth"]["client_token"]
+        .as_str()
+        .expect("client_token");
+    // locator = <namespace>/<mount>/<path>
+    let mut parts = locator.splitn(3, '/');
+    let (ns, mount, path) = (
+        parts.next().expect("namespace"),
+        parts.next().expect("mount"),
+        parts.next().expect("path"),
+    );
+    let read: serde_json::Value = http
+        .get(format!("{}/v1/{mount}/data/{path}", e.bao_addr))
+        .query(&[("version", version.to_string())])
+        .header("X-Vault-Namespace", ns)
+        .header("X-Vault-Token", token)
+        .send()
+        .await
+        .expect("读 KV")
+        .json()
+        .await
+        .expect("解析读取响应");
+    read["data"]["data"]["value"]
+        .as_str()
+        .expect("KV 值")
+        .to_owned()
+}
