@@ -303,7 +303,9 @@ class Canary {
   });
 
   factory Canary.fromJson(Map<String, dynamic> json) => Canary(
-    capabilityState: capabilityStateValues.map[json["capabilityState"]]!,
+    capabilityState: json["capabilityState"] == null
+        ? null
+        : capabilityStateValues.map[json["capabilityState"]]!,
     count: json["count"],
     enabled: json["enabled"],
     errorClass: errorClassValues.map[json["errorClass"]]!,
@@ -517,7 +519,9 @@ class ActionSubmission {
             ? null
             : InvitationClass.fromJson(json["invitation"]),
         operationId: json["operationId"],
-        reason: reasonCodeValues.map[json["reason"]]!,
+        reason: json["reason"] == null
+            ? null
+            : reasonCodeValues.map[json["reason"]]!,
         workflowId: json["workflowId"],
       );
 
@@ -758,8 +762,12 @@ class ApprovalView {
     ),
     expiresAt: json["expiresAt"],
     initiatorPrincipalId: json["initiatorPrincipalId"],
-    observation: reasonCodeValues.map[json["observation"]]!,
-    reason: reasonCodeValues.map[json["reason"]]!,
+    observation: json["observation"] == null
+        ? null
+        : reasonCodeValues.map[json["observation"]]!,
+    reason: json["reason"] == null
+        ? null
+        : reasonCodeValues.map[json["reason"]]!,
     roleRequirements: List<RoleRequirementElement>.from(
       json["roleRequirements"].map((x) => RoleRequirementElement.fromJson(x)),
     ),
@@ -1282,19 +1290,29 @@ class TaskView {
     actionExecutionId: json["actionExecutionId"],
     actionKey: json["actionKey"],
     actionVersion: json["actionVersion"],
-    approvalStatus: approvalStatusValues.map[json["approvalStatus"]]!,
+    approvalStatus: json["approvalStatus"] == null
+        ? null
+        : approvalStatusValues.map[json["approvalStatus"]]!,
     approvalWorkflowId: json["approvalWorkflowId"],
     createdAt: json["createdAt"],
     dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
     gateState: actionGateStateValues.map[json["gateState"]]!,
-    observation: reasonCodeValues.map[json["observation"]]!,
+    observation: json["observation"] == null
+        ? null
+        : reasonCodeValues.map[json["observation"]]!,
     operationId: json["operationId"],
-    reason: reasonCodeValues.map[json["reason"]]!,
+    reason: json["reason"] == null
+        ? null
+        : reasonCodeValues.map[json["reason"]]!,
     targetId: json["targetId"],
-    taskStatus: taskStatusValues.map[json["taskStatus"]]!,
+    taskStatus: json["taskStatus"] == null
+        ? null
+        : taskStatusValues.map[json["taskStatus"]]!,
     waitingReason: json["waitingReason"],
     workflowId: json["workflowId"],
-    workflowKind: workflowKindValues.map[json["workflowKind"]]!,
+    workflowKind: json["workflowKind"] == null
+        ? null
+        : workflowKindValues.map[json["workflowKind"]]!,
     workspaceId: json["workspaceId"],
   );
 
@@ -1755,8 +1773,12 @@ class ApprovalDecisionOutcome {
       ApprovalDecisionOutcome(
         admitted: json["admitted"],
         approverPrincipalId: json["approverPrincipalId"],
-        decision: approvalDecisionValues.map[json["decision"]]!,
-        reason: reasonCodeValues.map[json["reason"]]!,
+        decision: json["decision"] == null
+            ? null
+            : approvalDecisionValues.map[json["decision"]]!,
+        reason: json["reason"] == null
+            ? null
+            : reasonCodeValues.map[json["reason"]]!,
         status: approvalStatusValues.map[json["status"]]!,
       );
 
@@ -2013,7 +2035,9 @@ class ResumeClass {
       json["decisions"].map((x) => DecisionElement.fromJson(x)),
     ),
     eventBase: json["eventBase"],
-    reason: reasonCodeValues.map[json["reason"]]!,
+    reason: json["reason"] == null
+        ? null
+        : reasonCodeValues.map[json["reason"]]!,
     refusals: List<RefusalElement>.from(
       json["refusals"].map((x) => RefusalElement.fromJson(x)),
     ),
@@ -2126,7 +2150,9 @@ class ApprovalResume {
       json["decisions"].map((x) => DecisionElement.fromJson(x)),
     ),
     eventBase: json["eventBase"],
-    reason: reasonCodeValues.map[json["reason"]]!,
+    reason: json["reason"] == null
+        ? null
+        : reasonCodeValues.map[json["reason"]]!,
     refusals: List<RefusalElement>.from(
       json["refusals"].map((x) => RefusalElement.fromJson(x)),
     ),
@@ -2207,7 +2233,9 @@ class ApprovalStateReport {
         ),
         eventId: json["eventId"],
         expiresAt: json["expiresAt"],
-        reason: reasonCodeValues.map[json["reason"]]!,
+        reason: json["reason"] == null
+            ? null
+            : reasonCodeValues.map[json["reason"]]!,
         runId: json["runId"],
         status: approvalStatusValues.map[json["status"]]!,
         workflowId: json["workflowId"],
@@ -2269,7 +2297,9 @@ class FreshApprovalAdmissionResult {
   factory FreshApprovalAdmissionResult.fromJson(Map<String, dynamic> json) =>
       FreshApprovalAdmissionResult(
         admitted: json["admitted"],
-        reason: reasonCodeValues.map[json["reason"]]!,
+        reason: json["reason"] == null
+            ? null
+            : reasonCodeValues.map[json["reason"]]!,
         satisfiedSelectors: List<ApprovalSelector>.from(
           json["satisfiedSelectors"].map((x) => approvalSelectorValues.map[x]!),
         ),

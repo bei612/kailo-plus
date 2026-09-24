@@ -65,6 +65,23 @@ src = re.sub(r"Map<String, dynamic> toJson\(\) => \{",
              "Map<String, dynamic> toJson() => _stripNulls({", src)
 # 与上面的 `{` 配对的结尾：quicktype 固定生成 `    };`
 src = re.sub(r"\n(\s*)\};\n", lambda m: "\n%s});\n" % m.group(1), src)
+# 可选的枚举字段：quicktype 写成 `xValues.map[json["k"]]!`，字段缺省时对 null 取 !
+# 直接抛错——缺省的可选字段恰恰是常态（例如 TaskView.observation）。按类找出声明为
+# 可空的字段，只改写它们：缺省即 null；出现了本端不认识的值仍然抛错（回应不合契约，
+# 不猜它的意思）。必填字段不动。
+def _optional_enums(block):
+    nullable = set(re.findall(r"^\s*final \w+\? (\w+);", block, flags=re.M))
+    return re.sub(
+        r'(\w+): (\w+Values)\.map\[json\["(\w+)"\]\]!',
+        lambda m: (
+            '%s: json["%s"] == null ? null : %s.map[json["%s"]]!'
+            % (m.group(1), m.group(3), m.group(2), m.group(3))
+            if m.group(1) in nullable
+            else m.group(0)
+        ),
+        block,
+    )
+src = "".join(_optional_enums(b) for b in re.split(r"(?=^class \w+ \{)", src, flags=re.M))
 src += """
 
 /// 去掉值为 null 的键。缺省的可选字段必须在线格式中省略而不是写成 null——

@@ -20,4 +20,34 @@ void main() {
 
     expect(back, equals(original), reason: 'round-trip 后与样例不等');
   });
+
+  // 可选的枚举字段缺省是常态（任务投影没有观察项、门禁没有原因）：解析不得因此
+  // 抛错，也不得在回写时补出 null。
+  test('可选枚举字段缺省时解析为 null，回写时省略', () {
+    final minimal = {
+      'operationId': 'op',
+      'actionExecutionId': 'ae',
+      'actionKey': 'workspace.create',
+      'actionVersion': 1,
+      'targetId': 't',
+      'gateState': 'ALLOWED',
+      'dispatchState': 'DISPATCHED',
+      'createdAt': '2026-09-24T00:00:00Z',
+    };
+    final task = TaskView.fromJson(Map<String, dynamic>.from(minimal));
+    expect(task.observation, isNull);
+    expect(task.taskStatus, isNull);
+    expect(jsonDecode(jsonEncode(task.toJson())), equals(minimal));
+
+    final withObservation = {...minimal, 'observation': 'PROJECTION_DELAYED'};
+    expect(
+      TaskView.fromJson(Map<String, dynamic>.from(withObservation)).observation,
+      ReasonCode.PROJECTION_DELAYED,
+    );
+    // 本端不认识的值不是「没有」：回应不合契约，照旧抛错
+    expect(
+      () => TaskView.fromJson({...minimal, 'observation': 'NOT_A_CODE'}),
+      throwsA(isA<TypeError>()),
+    );
+  });
 }
