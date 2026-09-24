@@ -898,6 +898,7 @@ const (
 	IdentityHeaderMissing        ReasonCode = "IDENTITY_HEADER_MISSING"
 	IdentityUnknown              ReasonCode = "IDENTITY_UNKNOWN"
 	InvalidParameters            ReasonCode = "INVALID_PARAMETERS"
+	LastTenantAdmin              ReasonCode = "LAST_TENANT_ADMIN"
 	NativeSurfaceRequired        ReasonCode = "NATIVE_SURFACE_REQUIRED"
 	PermissionDenied             ReasonCode = "PERMISSION_DENIED"
 	ProjectionDelayed            ReasonCode = "PROJECTION_DELAYED"

@@ -197,6 +197,7 @@ export enum ReasonCode {
     IdentityHeaderMissing = "IDENTITY_HEADER_MISSING",
     IdentityUnknown = "IDENTITY_UNKNOWN",
     InvalidParameters = "INVALID_PARAMETERS",
+    LastTenantAdmin = "LAST_TENANT_ADMIN",
     NativeSurfaceRequired = "NATIVE_SURFACE_REQUIRED",
     PermissionDenied = "PERMISSION_DENIED",
     ProjectionDelayed = "PROJECTION_DELAYED",

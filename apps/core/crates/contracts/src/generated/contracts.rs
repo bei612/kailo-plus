@@ -302,6 +302,9 @@ pub enum ReasonCode {
     #[serde(rename = "INVALID_PARAMETERS")]
     InvalidParameters,
 
+    #[serde(rename = "LAST_TENANT_ADMIN")]
+    LastTenantAdmin,
+
     #[serde(rename = "NATIVE_SURFACE_REQUIRED")]
     NativeSurfaceRequired,
 
