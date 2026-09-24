@@ -96,6 +96,20 @@ ADR-02）。0003 删掉这些手写类型，改为 `import` `src/platform/contra
 可选字段按 contracts 子集缺省而非 `null`：`currentWorkspaceId` 在未选定时由 Core 省略，
 平台页以 `?? null` 读取。
 
+## patch 0004：平台页与 BFF 客户端改用 Kailo 共用包
+
+Web 与 Desktop 要写的 Kailo 自有 TypeScript 是同一件事，只写一份（ADR-09）。0004 删掉补丁里的
+成员、审计、设备三页与 BFF 客户端的共用部分，改为引用 `vendor_files` 放入的
+`src/kailo-platform/`（源在本仓库 `web/packages/platform`），以 `@kailo/platform/*` 引用。
+只有 Web 才有的调用——SSE 流、带 `Idempotency-Key` 的发布、二进制媒体上传、已读与偏好、
+网关退出——留在 `src/platform/bff-client.ts`，经共用包的同源 fetch 传输发出，错误体与
+「结果不明」按同一套规则解读：发布没有得到回应也显示为待确认，不再说成发送失败。文案
+key 只在共用包定义，Web 的消息表并入它。
+
+实测：删掉放入的 `src/kailo-platform/` 后 `tsc --noEmit` 报 19 个错误；恢复后 typecheck、
+`npm run check`、vitest 12/12 通过；`core/verify/web-walkthrough.sh` 14/14，成员、审计、
+设备三步渲染的是共用包的组件。
+
 ## 复现
 
 ```bash
