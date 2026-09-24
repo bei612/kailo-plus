@@ -26,6 +26,29 @@ capabilities:
   actions: []
   tools: []
   workflow_kinds: []
+- id: governance.action_admission
+  exposure: end_user
+  routes:
+  - /api/v1/actions
+  - /api/v1/tasks
+  - /api/v1/tasks/{action_execution_id}
+  - /api/v1/approvals
+  - /api/v1/approvals/{workflow_id}
+  - /api/v1/approvals/{workflow_id}/decision
+  - /api/v1/approvals/{workflow_id}/withdraw
+  actions:
+  - workspace.create
+  - workspace.member.add
+  - workspace.member.revoke
+  - tenant.member.revoke
+  - identity.client_key.register
+  - identity.client_key.revoke
+  tools: []
+  workflow_kinds:
+  - WORKSPACE_LIFECYCLE
+  - MEMBERSHIP_PROJECTION
+  - MEMBERSHIP_REVOCATION
+  - BUZZ_IDENTITY_PROJECTION
 - id: identity.client_keys
   exposure: end_user
   routes:

@@ -1,0 +1,52 @@
+capability_id: governance.action_admission
+title: Governed Action 的语义命令与准入、ApprovalWorkflow、批准后重新准入与派发、本人任务与待我审批
+stage: S2
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-03, V-REQ-05]
+  decisions: [DD-47, DD-54]
+  facts: [SF-SPZ-01, SF-SPZ-02, SF-SPZ-03, SF-TMP-01, SF-TMP-02]
+  seams: []
+  blockers: []
+  entities: [ActionDefinition, BusinessObservabilityPolicy, ApprovalPolicy, ActionDecision, ActionExecution, ApprovalProjection, WorkflowRef, TaskProjection]
+
+validation:
+  scenarios: [V-SCN-07, V-SCN-31, V-SCN-32, V-SCN-34, V-SCN-35, V-SCN-37, V-SCN-38]
+  evidence:
+    - dimension: 端到端场景
+      ref: core/verify/governed-action.md
+    - dimension: 安全边界
+      ref: core/verify/governed-action.md
+    - dimension: Workflow 重放
+      ref: worker/replay-tests/testdata/approval_consumed_history.json
+    - dimension: Workflow 重放
+      ref: worker/replay-tests/testdata/approval_invalidated_history.json
+    - dimension: Workflow 重放
+      ref: worker/replay-tests/testdata/approval_cancelled_history.json
+    - dimension: Workflow 重放
+      ref: worker/replay-tests/testdata/approval_expired_history.json
+    - dimension: 运维手册
+      ref: docs/runbooks/RB-05-projection-lag-and-reconciliation.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/governance_api.rs, core/crates/kailo-core/src/governance_reconcile.rs, core/crates/kailo-core/src/spicedb.rs, core/crates/kailo-core/src/temporal.rs, core/crates/kailo-core/src/client_keys.rs, worker/workflows/approval.go, worker/activities/core_api.go, docs/adr/ADR-09-core-spicedb-client.md]
+  # 界面（Tasks/Approvals 页）由共享 TS 包 web/packages/platform 交付；本记录只含 BFF 端点
+  surfaces: []
+  schemas: [contracts/api/action_command.schema.json, contracts/api/action_submission.schema.json, contracts/api/task_view.schema.json, contracts/api/approval_view.schema.json, contracts/api/approval_decision_request.schema.json, contracts/workflow/approval_input.schema.json, contracts/workflow/approval_state_report.schema.json, contracts/workflow/fresh_approval_admission.schema.json, contracts/workflow/fresh_approval_admission_result.schema.json, contracts/enums/approval_status.schema.json, contracts/enums/reason_code.schema.json]
+  migrations: [core/migrations/20260924100000_governed_action.up.sql, core/migrations/20260924110000_client_key_definitions.up.sql]
+
+runtime:
+  routes: ["/api/v1/actions", "/api/v1/tasks", "/api/v1/tasks/{action_execution_id}", "/api/v1/approvals", "/api/v1/approvals/{workflow_id}", "/api/v1/approvals/{workflow_id}/decision", "/api/v1/approvals/{workflow_id}/withdraw"]
+  actions: [workspace.create, workspace.member.add, workspace.member.revoke, tenant.member.revoke, identity.client_key.register, identity.client_key.revoke]
+  workflow_kinds: [WORKSPACE_LIFECYCLE, MEMBERSHIP_PROJECTION, MEMBERSHIP_REVOCATION, BUZZ_IDENTITY_PROJECTION]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:a84872fadd6db90c3a8fd6093f8aeb974b9cb3c2249910f886f66b55f54c5036
+    - name: kailo-worker
+      digest: sha256:d27dc1ead991bf3791b147ad35317a6929269304d82aee1ace3c0fddef78a1ba
+  gate: ready
