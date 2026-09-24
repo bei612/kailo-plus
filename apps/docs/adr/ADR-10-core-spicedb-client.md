@@ -1,4 +1,4 @@
-# ADR-09：Core 做 fresh Check 的 SpiceDB 客户端与传输
+# ADR-10：Core 做 fresh Check 的 SpiceDB 客户端与传输
 
 - 状态：已接受
 - 日期：2026-09-24

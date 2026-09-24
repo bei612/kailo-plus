@@ -11,7 +11,7 @@
 链路：BFF 语义命令 → ActionDefinition 确切版本 → scope guard → SpiceDB
 FullyConsistent Check → ActionDecision →（需要时）`ApprovalWorkflow` → 批准后完整
 重新准入 → 推进实体并以预写的固定 workflow ID 派发既有生命周期 Workflow → consume。
-每一环都是真实实例：BFF 经网关身份 header、SpiceDB（HTTP gateway，ADR-09）、
+每一环都是真实实例：BFF 经网关身份 header、SpiceDB（HTTP gateway，ADR-10）、
 Temporal 与 Go Worker、Relay roster。
 
 ## 设计取舍（写在这里，因为它们不是 `.design` 已有的结论）

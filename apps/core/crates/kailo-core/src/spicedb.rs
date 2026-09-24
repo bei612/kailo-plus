@@ -1,4 +1,4 @@
-//! Core 到 SpiceDB 的 fresh Check（`.design/03` §5、`.design/10` §1、ADR-09）。
+//! Core 到 SpiceDB 的 fresh Check（`.design/03` §5、`.design/10` §1、ADR-10）。
 //!
 //! SpiceDB 是访问允许/拒绝的唯一权威；Core 只问、不缓存、不推断。走 SpiceDB
 //! 自带的 HTTP gateway（`internal/gateway/gateway.go` 注册的 PermissionsService

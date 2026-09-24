@@ -186,7 +186,7 @@ printf '  已生成：secrets/core-service.env\n'
 chmod 600 secrets/worker.env
 printf '  已生成：secrets/worker.env\n'
 
-# Core 的准入 fresh Check 经 SpiceDB HTTP gateway（ADR-09），同一把 PSK 作 Bearer。
+# Core 的准入 fresh Check 经 SpiceDB HTTP gateway（ADR-10），同一把 PSK 作 Bearer。
 { printf 'SPICEDB_PRESHARED_KEY='; cat secrets/spicedb_preshared_key; printf '\n'; } > secrets/core-spicedb.env
 chmod 600 secrets/core-spicedb.env
 printf '  已生成：secrets/core-spicedb.env\n'

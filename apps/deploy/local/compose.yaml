@@ -373,7 +373,7 @@ services:
       PUBLISH_RECONCILE_BATCH: ${PUBLISH_RECONCILE_BATCH:?必须显式提供，禁止硬编码}
       PUBLISH_IDEMPOTENCY_RETENTION_SECONDS: ${PUBLISH_IDEMPOTENCY_RETENTION_SECONDS:?必须显式提供，禁止硬编码}
       # 治理内核（.design/05 §1、.design/06 §4）。准入的 fresh Check 经 SpiceDB 的
-      # HTTP gateway（ADR-09）；preshared key 经 env_file 投递。
+      # HTTP gateway（ADR-10）；preshared key 经 env_file 投递。
       SPICEDB_HTTP_URL: ${SPICEDB_HTTP_URL:?必须显式提供，禁止硬编码}
       # APPROVED 之后等待 consume 的上界，冻结进 ApprovalWorkflow input；超时自动 INVALIDATED
       APPROVAL_CONSUME_WINDOW_SECONDS: ${APPROVAL_CONSUME_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
@@ -677,7 +677,7 @@ services:
       spicedb-migrate: { condition: service_completed_successfully }
     environment:
       SPICEDB_OTEL_PROVIDER: none
-      # HTTP gateway 供 Core 做 fresh Check（ADR-09）：它是同一套 PermissionsService
+      # HTTP gateway 供 Core 做 fresh Check（ADR-10）：它是同一套 PermissionsService
       # 的 grpc-gateway 投影，同一枚 preshared key 认证。只在 app/component 网络内
       # 可达，不发布到宿主。
       SPICEDB_HTTP_ENABLED: "true"

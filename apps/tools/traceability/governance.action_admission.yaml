@@ -32,7 +32,7 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/governance_api.rs, core/crates/kailo-core/src/governance_reconcile.rs, core/crates/kailo-core/src/spicedb.rs, core/crates/kailo-core/src/temporal.rs, core/crates/kailo-core/src/client_keys.rs, worker/workflows/approval.go, worker/activities/core_api.go, docs/adr/ADR-09-core-spicedb-client.md]
+  paths: [core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/governance_api.rs, core/crates/kailo-core/src/governance_reconcile.rs, core/crates/kailo-core/src/spicedb.rs, core/crates/kailo-core/src/temporal.rs, core/crates/kailo-core/src/client_keys.rs, worker/workflows/approval.go, worker/activities/core_api.go, docs/adr/ADR-10-core-spicedb-client.md]
   # 界面（Tasks/Approvals 页）由共享 TS 包 web/packages/platform 交付；本记录只含 BFF 端点
   surfaces: []
   schemas: [contracts/api/action_command.schema.json, contracts/api/action_submission.schema.json, contracts/api/task_view.schema.json, contracts/api/approval_view.schema.json, contracts/api/approval_decision_request.schema.json, contracts/workflow/approval_input.schema.json, contracts/workflow/approval_state_report.schema.json, contracts/workflow/fresh_approval_admission.schema.json, contracts/workflow/fresh_approval_admission_result.schema.json, contracts/enums/approval_status.schema.json, contracts/enums/reason_code.schema.json]
