@@ -7,12 +7,18 @@
 命令行：
   plan <manifest>                  输出可 eval 的 shell 赋值：构建所需的全部字段
   record <manifest> <artifact>     写回按实际字节算出的 patch_series_digest 与产物摘要
+  vendor <manifest> <tree>         把 vendor_files 放进上游源树（构建用：目标已存在即失败）
+  vendor --refresh <manifest> <tree>
+                                   同上，用于开发中的上游工作树：只覆盖该树 .gitignore 已忽略
+                                   的目标——被忽略才说明那棵树不携带副本
 """
 
 import hashlib
 import os
 import re
 import shlex
+import shutil
+import subprocess
 import sys
 
 import yaml
@@ -115,7 +121,6 @@ def plan(path):
     print(f"patch_dir={q(patch_dir(path))}")
     print("series=(" + " ".join(q(x) for x in _list(m, "patch_series")) + ")")
     print("removed=(" + " ".join(q(x) for x in _list(m, "remove_paths")) + ")")
-    print("vendored=(" + " ".join(q(f"{s}:{d}") for s, d in vendor_pairs(m)) + ")")
 
 
 def record(path, artifact):
@@ -130,11 +135,38 @@ def record(path, artifact):
         f.write(raw)
 
 
+def vendor(path, tree, refresh=False):
+    """vendor_files 的唯一放置实现：构建与开发中的上游工作树都用它，不各写一份。
+
+    补丁只引用这些文件、不携带副本——副本会与本仓库慢慢分叉，而唯一权威只能有一份
+    （ADR-02、ADR-09）。构建时目标已存在即失败：那说明补丁或上游自带了一份。
+    """
+    m = load(path)
+    bad = [b for b in problems(path, m, check_digest=False) if "vendor_files" in b]
+    if bad:
+        sys.exit("\n".join(f"{path}: {b}" for b in bad))
+    for src, dst in vendor_pairs(m):
+        target = os.path.join(tree, dst)
+        if os.path.exists(target):
+            if not refresh:
+                sys.exit(f"vendor_files 的目标 {dst} 已存在于源树")
+            ignored = subprocess.run(["git", "-C", tree, "check-ignore", "-q", "--", dst]).returncode == 0
+            if not ignored:
+                sys.exit(f"{dst} 未被 {tree} 的 .gitignore 忽略：那棵树会把副本提交进去")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copyfile(src, target)
+        print(f"  放入 {src} -> {dst}")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "plan" and len(sys.argv) == 3:
         plan(sys.argv[2])
     elif cmd == "record" and len(sys.argv) == 4:
         record(sys.argv[2], sys.argv[3])
+    elif cmd == "vendor" and len(sys.argv) == 4:
+        vendor(sys.argv[2], sys.argv[3])
+    elif cmd == "vendor" and len(sys.argv) == 5 and sys.argv[2] == "--refresh":
+        vendor(sys.argv[3], sys.argv[4], refresh=True)
     else:
         sys.exit(__doc__)

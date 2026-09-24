@@ -47,16 +47,10 @@ for p in "${series[@]}"; do
   git -C "$src" apply "$(realpath "$patch_dir/$p")"
 done
 
-# vendor_files：本仓库的生成物（例如 contracts 的 TypeScript 绑定）在打完补丁后
-# 放进源树。补丁只引用它、不携带它的副本——副本会与 contracts/ 慢慢分叉，而
-# 唯一权威只能有一份（ADR-02）。目标已存在即失败：那说明补丁或上游自带了一份。
-for v in "${vendored[@]}"; do
-  vs="${v%%:*}"; vd="${v#*:}"
-  [ -e "$src/$vd" ] && { echo "vendor_files 的目标 $vd 已存在于源树" >&2; exit 2; }
-  mkdir -p "$(dirname "$src/$vd")"
-  cp "$vs" "$src/$vd"
-  echo "  放入 $vs -> $vd"
-done
+# vendor_files：本仓库的生成物（contracts 的 TypeScript 绑定、Kailo 共用的平台包）
+# 在打完补丁后放进源树。放置规则只在 upstream_manifest.py 的 vendor 里（开发中的
+# 上游工作树用同一个命令），目标已存在即失败。
+python3 tools/upstream_manifest.py vendor "$manifest" "$src"
 
 # 产物有两种形态。镜像：用上游自带的 Dockerfile 构建，推入 registry，摘要是
 # registry digest。安装包：上游没有打包用的 Dockerfile，清单以 build_dockerfile
