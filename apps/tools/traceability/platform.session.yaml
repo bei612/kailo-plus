@@ -26,7 +26,7 @@ implementation:
   owners: [team-platform]
   paths: [core/crates/kailo-identity, core/crates/kailo-core/src/bff.rs, deploy/local/agentgateway-config.yaml]
   surfaces: [web]
-  schemas: [contracts/enums/reason_code.schema.json]
+  schemas: [contracts/enums/reason_code.schema.json, contracts/api/session.schema.json]
   migrations: []
 
 runtime:
@@ -39,5 +39,5 @@ release:
     - name: upstream-agentgateway
       digest: sha256:e1ddf6cbf61ae4b85aaea5c1ec7755e48275918f0e9f31dc6433b72533687071
     - name: upstream-buzz-web
-      digest: sha256:19a742450b618b677ce7a6569e3af661dc7a5c32a81374ca01566302b261b87d
+      digest: sha256:af26c83cebbb84be13171a2b8f3849bbd19539010262baf04edaa85f213efd39
   gate: shipped

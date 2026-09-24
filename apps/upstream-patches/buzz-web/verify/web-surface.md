@@ -81,11 +81,26 @@ cookie 都已失效，再次进入是一次新的 OIDC 登录；IdP 会话仍在
    不校验格式，一端写入的任意串在另一端无法解析。现由库时钟写入 `updatedAt`，已读时间只接受
    RFC 3339 并统一存成 UTC，集成测试在修复前确认失败。
 
+## patch 0003：BFF 类型取自 contracts
+
+`bff-client.ts` 与平台页原先手写了 `PlatformSession`、`WorkspaceRow`、`MemberRow`、
+`ClientKey`、`AuditRow` 以及偏好/已读的请求与回应形状，与 Core 的回应各写一份（违反
+ADR-02）。0003 删掉这些手写类型，改为 `import` `src/platform/contracts.gen.ts`；状态比较
+改用生成的枚举（`BuzzIdentityState`、`WorkspaceMembershipState`）。
+
+该文件是 `contracts/` 的 TypeScript 生成物，由 manifest 的 `vendor_files` 在打完补丁后
+放进源树（06 §2），补丁里不带副本，`.gitignore` 与 biome 均排除它。contracts 重新生成
+而未重建镜像时，`check.sh seam` 因 `patch_series_digest` 不符而失败；源树里没有它时
+`npm run typecheck` 失败——两者都已实测。
+
+可选字段按 contracts 子集缺省而非 `null`：`currentWorkspaceId` 在未选定时由 Core 省略，
+平台页以 `?? null` 读取。
+
 ## 复现
 
 ```bash
 cd apps
-REGISTRY=<registry> ./tools/build-upstream.sh buzz-web   # 取源、按 patch_series 应用、构建、写回两个摘要
-./tools/check.sh seam                                    # patch 字节与 patch_series_digest 一致
+REGISTRY=<registry> ./tools/build-upstream.sh buzz-web   # 取源、按 patch_series 应用、放入 vendor_files、构建、写回两个摘要
+./tools/check.sh seam                                    # patch、删除清单与 vendor_files 的字节与 patch_series_digest 一致
 core/verify/web-walkthrough.sh /tmp/walk                 # 需要 Docker 权限与已启动的本地拓扑
 ```

@@ -436,7 +436,7 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:19a742450b618b677ce7a6569e3af661dc7a5c32a81374ca01566302b261b87d
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:af26c83cebbb84be13171a2b8f3849bbd19539010262baf04edaa85f213efd39
     networks: [app]
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 

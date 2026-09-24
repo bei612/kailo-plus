@@ -31,13 +31,20 @@ def patch_dir(path):
     return os.path.join(os.path.dirname(path), "patches")
 
 
-def expected_digest(path, m):
-    """补丁字节（按 patch_series 顺序）与删除清单一起进摘要；两者都为空记 none。
+def vendor_pairs(m):
+    """vendor_files 的每一项是「本仓库相对源:源树相对目标」。"""
+    return [tuple(x.partition(":")[::2]) for x in _list(m, "vendor_files")]
 
-    改了补丁或删除清单却没重建，产物就不是清单说的那棵树——门禁以此发现。
+
+def expected_digest(path, m):
+    """补丁字节（按 patch_series 顺序）、删除清单与 vendor_files（目标路径与源字节）
+    一起进摘要；全为空记 none。
+
+    改了其中任一项——包括 contracts 重新生成——却没重建，产物就不是清单说的那棵树，
+    门禁以此发现。
     """
-    series, removed = _list(m, "patch_series"), _list(m, "remove_paths")
-    if not series and not removed:
+    series, removed, vendored = _list(m, "patch_series"), _list(m, "remove_paths"), vendor_pairs(m)
+    if not series and not removed and not vendored:
         return "none"
     h = hashlib.sha256()
     for x in series:
@@ -45,6 +52,9 @@ def expected_digest(path, m):
             h.update(f.read())
     if removed:
         h.update(b"\0remove_paths\0" + "\n".join(removed).encode())
+    for src, dst in vendored:
+        with open(src, "rb") as f:
+            h.update(b"\0vendor_file\0" + dst.encode() + b"\0" + f.read())
     return "sha256:" + h.hexdigest()
 
 
@@ -72,6 +82,15 @@ def problems(path, m, check_digest=True):
             bad.append(f"remove_paths 只接受源树内的相对路径：{x}")
     if len(set(removed)) != len(removed):
         bad.append("remove_paths 有重复项")
+    # vendor_files：本仓库的生成物放进源树，补丁只引用它、不带副本（ADR-02/03）
+    for raw in _list(m, "vendor_files"):
+        src, sep, dst = raw.partition(":")
+        if not sep or not src or not dst or any(q.startswith("/") or ".." in q.split("/") for q in (src, dst)):
+            bad.append(f"vendor_files 只接受「本仓库相对源:源树相对目标」：{raw}")
+            missing.append(raw)
+        elif not os.path.isfile(src):
+            bad.append(f"vendor_files 的源 {src} 不存在")
+            missing.append(src)
     # 安装包类产物由 Kailo 维护的构建文件产出；登记了却不存在，构建与摘要都无从复核
     bdf = m.get("build_dockerfile")
     if bdf and not os.path.exists(bdf):
@@ -79,7 +98,7 @@ def problems(path, m, check_digest=True):
     if check_digest and not missing:
         want, got = expected_digest(path, m), str(m.get("patch_series_digest"))
         if got != want:
-            bad.append(f"patch_series_digest 为 {got}，按补丁与删除清单应为 {want}——改了就必须重建并写回")
+            bad.append(f"patch_series_digest 为 {got}，按补丁、删除清单与 vendor_files 应为 {want}——改了就必须重建并写回")
     return bad
 
 
@@ -96,6 +115,7 @@ def plan(path):
     print(f"patch_dir={q(patch_dir(path))}")
     print("series=(" + " ".join(q(x) for x in _list(m, "patch_series")) + ")")
     print("removed=(" + " ".join(q(x) for x in _list(m, "remove_paths")) + ")")
+    print("vendored=(" + " ".join(q(f"{s}:{d}") for s, d in vendor_pairs(m)) + ")")
 
 
 def record(path, artifact):

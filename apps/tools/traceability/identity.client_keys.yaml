@@ -30,7 +30,7 @@ implementation:
   owners: [team-platform]
   paths: [core/crates/kailo-core/src/client_keys.rs, core/crates/kailo-core/src/identity_projection.rs, core/crates/kailo-core/src/membership_projection.rs, core/crates/kailo-core/src/server_keys.rs, core/crates/kailo-core/src/platform_bootstrap.rs, core/crates/kailo-core/src/stream.rs, worker/workflows/component_task.go, deploy/local/agentgateway-config.yaml, upstream-patches/buzz-web]
   surfaces: [web]
-  schemas: [contracts/enums/workflow_kind.schema.json, contracts/enums/reason_code.schema.json]
+  schemas: [contracts/enums/workflow_kind.schema.json, contracts/enums/reason_code.schema.json, contracts/api/client_key.schema.json, contracts/api/client_key_status.schema.json, contracts/api/native_community.schema.json]
   migrations: [core/migrations/20260923040000_buzz_identity_multi_binding.up.sql, core/migrations/20260923050000_workflow_kind_buzz_identity.up.sql]
 
 runtime:
@@ -46,5 +46,5 @@ release:
     - name: upstream-agentgateway
       digest: sha256:e1ddf6cbf61ae4b85aaea5c1ec7755e48275918f0e9f31dc6433b72533687071
     - name: upstream-buzz-web
-      digest: sha256:19a742450b618b677ce7a6569e3af661dc7a5c32a81374ca01566302b261b87d
+      digest: sha256:af26c83cebbb84be13171a2b8f3849bbd19539010262baf04edaa85f213efd39
   gate: shipped

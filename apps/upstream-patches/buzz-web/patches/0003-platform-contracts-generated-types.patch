@@ -1,0 +1,277 @@
+diff --git a/web/.gitignore b/web/.gitignore
+index a2f1104..7d87023 100644
+--- a/web/.gitignore
++++ b/web/.gitignore
+@@ -10,3 +10,6 @@ dist-ssr
+ *.local
+ playwright-report
+ test-results
++
++# Kailo contracts 生成物：构建时由 Kailo 放入，不入库（ADR-02/03）
++src/platform/contracts.gen.ts
+diff --git a/web/biome.json b/web/biome.json
+index 7548248..2ef6181 100644
+--- a/web/biome.json
++++ b/web/biome.json
+@@ -1,7 +1,14 @@
+ {
+   "$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
+   "files": {
+-    "includes": ["**", "!dist", "!playwright-report", "!test-results", "!src/app/routeTree.gen.ts"]
++    "includes": [
++      "**",
++      "!dist",
++      "!playwright-report",
++      "!test-results",
++      "!src/app/routeTree.gen.ts",
++      "!src/platform/contracts.gen.ts"
++    ]
+   },
+   "formatter": {
+     "enabled": true,
+diff --git a/web/src/platform/bff-client.ts b/web/src/platform/bff-client.ts
+index 8347148..9ef24f3 100644
+--- a/web/src/platform/bff-client.ts
++++ b/web/src/platform/bff-client.ts
+@@ -6,6 +6,22 @@
+ //
+ // 同源请求：页面由同一个网关入口提供，BFF 在其后。因此这里不配置任何主机名——
+ // 出现一个可配置的 API 地址，就等于给「连到别处去」留了口子。
++//
++// 请求与回应的形状取自 Kailo contracts 的生成物（ADR-02/03）：`contracts.gen.ts`
++// 由 Kailo 构建时从 contracts/ 生成并放入源树，不入本仓库、不手工编辑。已在
++// contracts 定义的形状这里不另写一份。
++
++import type {
++  ClientKeyStatus,
++  ClientKeyView,
++  OwnAuditEntry,
++  PlatformSessionView,
++  ReadMarkRequest,
++  UserStateVersion,
++  WorkspaceMemberView,
++  WorkspacePreferenceRequest,
++  WorkspaceView,
++} from "@/platform/contracts.gen";
+ 
+ /**
+  * 后端拒绝一次调用。`status` 保留原值；`errorClass`、`reason`、`operationId`
+@@ -72,17 +88,6 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
+   return (await response.json()) as T;
+ }
+ 
+-export type PlatformSession = {
+-  humanIdentityId: string;
+-  /** 界面上认出「这是我」用；不参与任何判定。 */
+-  displayName: string;
+-  tenantId: string;
+-  tenantMembershipId: string;
+-  tenantPrincipalId: string;
+-  platformSessionId: string;
+-  currentWorkspaceId: string | null;
+-};
+-
+ export type BuzzEvent = {
+   id: string;
+   pubkey: string;
+@@ -104,8 +109,8 @@ export type UserState = {
+ export type MediaDescriptor = { url: string; sha256: string; size: number; type: string };
+ 
+ /** 当前会话。撤权后下一次调用即 403——会话不由浏览器持有，不需要它主动丢弃。 */
+-export function fetchSession(): Promise<PlatformSession> {
+-  return call<PlatformSession>("/api/v1/session");
++export function fetchSession(): Promise<PlatformSessionView> {
++  return call<PlatformSessionView>("/api/v1/session");
+ }
+ 
+ /**
+@@ -154,22 +159,18 @@ export function fetchUserState(): Promise<UserState> {
+ 
+ export function setWorkspacePreference(
+   workspaceId: string,
+-  preference: { starred: boolean; muted: boolean; version: number },
+-): Promise<{ version: number }> {
++  preference: WorkspacePreferenceRequest,
++): Promise<UserStateVersion> {
+   return call(`/api/v1/user-state/workspaces/${workspaceId}`, {
+     method: "PUT",
+     body: JSON.stringify(preference),
+   });
+ }
+ 
+-export function markRead(
+-  contextKey: string,
+-  lastReadAt: string,
+-  version: number,
+-): Promise<{ version: number }> {
++export function markRead(mark: ReadMarkRequest): Promise<UserStateVersion> {
+   return call("/api/v1/user-state/read", {
+     method: "PUT",
+-    body: JSON.stringify({ contextKey, lastReadAt, version }),
++    body: JSON.stringify(mark),
+   });
+ }
+ 
+@@ -274,46 +275,27 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
+   };
+ }
+ 
+-export type WorkspaceRow = { id: string; slug: string; name: string };
+-export type MemberRow = {
+-  principalId: string;
+-  displayName: string;
+-  /** 此人全部 ACTIVE 的 Buzz 公钥：Web 一把，另加每台原生设备一把（DD-77）。 */
+-  pubkeys: string[];
+-  state: string;
+-};
+-
+-/** 本人登记过的一台原生设备（Desktop/Mobile）。私钥只在那台设备上。 */
+-export type ClientKey = { pubkey: string; state: string; createdAt: string };
+-
+-/** 本人的设备。登记只能在设备上完成；查看与撤销在任一端都可以。 */
+-export function fetchClientKeys(): Promise<ClientKey[]> {
+-  return call<ClientKey[]>("/api/v1/identity/client-keys");
++/** 本人的设备。登记只能在设备上完成；查看与撤销在任一端都可以。私钥只在那台设备上。 */
++export function fetchClientKeys(): Promise<ClientKeyView[]> {
++  return call<ClientKeyView[]>("/api/v1/identity/client-keys");
+ }
+ 
+ /** 撤销一台设备：只移出这一把公钥，Relay 随即拒绝它；其他设备与 Web 不受影响。 */
+-export function revokeClientKey(pubkey: string): Promise<{ pubkey: string; state: string }> {
++export function revokeClientKey(pubkey: string): Promise<ClientKeyStatus> {
+   return call(`/api/v1/identity/client-keys/${encodeURIComponent(pubkey)}`, { method: "DELETE" });
+ }
+-export type AuditRow = {
+-  occurredAt: string;
+-  eventType: string;
+-  actionKey: string;
+-  decision: string;
+-  resultCode: string;
+-  workspaceId: string | null;
+-};
+ 
+ /** 我能进的 Workspace。列表已排除进不去的——列出一个点进去 403 的比不列更糟。 */
+-export function fetchWorkspaces(): Promise<WorkspaceRow[]> {
+-  return call<WorkspaceRow[]>("/api/v1/workspaces");
++export function fetchWorkspaces(): Promise<WorkspaceView[]> {
++  return call<WorkspaceView[]>("/api/v1/workspaces");
+ }
+ 
+-export function fetchWorkspaceMembers(workspaceId: string): Promise<MemberRow[]> {
+-  return call<MemberRow[]>(`/api/v1/workspaces/${workspaceId}/members`);
++/** 成员按人聚合：`pubkeys` 是此人全部 ACTIVE 的 Buzz 公钥，Web 一把，另加每台原生设备一把（DD-77）。 */
++export function fetchWorkspaceMembers(workspaceId: string): Promise<WorkspaceMemberView[]> {
++  return call<WorkspaceMemberView[]>(`/api/v1/workspaces/${workspaceId}/members`);
+ }
+ 
+ /** 基础审计页只看自己的动作；聚合视图需要 audit permission，属于后续阶段。 */
+-export function fetchOwnAudit(): Promise<AuditRow[]> {
+-  return call<AuditRow[]>("/api/v1/audit");
++export function fetchOwnAudit(): Promise<OwnAuditEntry[]> {
++  return call<OwnAuditEntry[]>("/api/v1/audit");
+ }
+diff --git a/web/src/platform/ui/ChannelPane.tsx b/web/src/platform/ui/ChannelPane.tsx
+index bb4fd78..7b9ae7c 100644
+--- a/web/src/platform/ui/ChannelPane.tsx
++++ b/web/src/platform/ui/ChannelPane.tsx
+@@ -147,8 +147,7 @@ export function ChannelPane({
+   const newest = events[events.length - 1];
+ 
+   const read = useMutation({
+-    mutationFn: (args: { key: string; at: string; version: number }) =>
+-      markRead(args.key, args.at, args.version),
++    mutationFn: markRead,
+     // 成功或冲突都重新取状态：冲突说明别的端先写了，拿新版本再比一次
+     onSettled: () =>
+       queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey }),
+@@ -158,7 +157,11 @@ export function ChannelPane({
+   useEffect(() => {
+     if (!live || !visible || !channelId || !newest || !userState.data || readPending) return;
+     if (newest.created_at <= lastRead) return;
+-    readMutate({ key: channelId, at: toIso(newest.created_at), version: userState.data.version });
++    readMutate({
++      contextKey: channelId,
++      lastReadAt: toIso(newest.created_at),
++      version: userState.data.version,
++    });
+   }, [live, visible, channelId, newest, lastRead, userState.data, readPending, readMutate]);
+ 
+   // 页面在后台时，未读数进标签页标题；静音的 Workspace 不提示
+diff --git a/web/src/platform/ui/PlatformApp.tsx b/web/src/platform/ui/PlatformApp.tsx
+index 6155fe5..6f44e41 100644
+--- a/web/src/platform/ui/PlatformApp.tsx
++++ b/web/src/platform/ui/PlatformApp.tsx
+@@ -12,11 +12,15 @@ import { useCallback, useEffect, useState } from "react";
+ import {
+   BffError,
+   fetchSession,
+-  type PlatformSession,
+   revokeClientKey,
+   setWorkspacePreference,
+   signOut,
+ } from "@/platform/bff-client";
++import {
++  BuzzIdentityState,
++  type PlatformSessionView,
++  WorkspaceMembershipState,
++} from "@/platform/contracts.gen";
+ import { ChannelPane } from "@/platform/ui/ChannelPane";
+ import { platformQueries } from "@/platform/ui/queries";
+ import { t } from "@/shared/i18n";
+@@ -29,7 +33,7 @@ type Tab = "channel" | "members" | "devices" | "audit";
+ 
+ /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
+ export function PlatformApp() {
+-  const [session, setSession] = useState<PlatformSession | null>(null);
++  const [session, setSession] = useState<PlatformSessionView | null>(null);
+   const [error, setError] = useState<string | null>(null);
+ 
+   useEffect(() => {
+@@ -57,11 +61,14 @@ function Notice({ text }: { text: string }) {
+   );
+ }
+ 
+-function SignedIn({ session }: { session: PlatformSession }) {
++function SignedIn({ session }: { session: PlatformSessionView }) {
+   const queryClient = useQueryClient();
+   const workspaces = useQuery(platformQueries.workspaces);
+   const userState = useQuery(platformQueries.userState);
+-  const [chosen, setChosen] = useState<string | null>(session.currentWorkspaceId);
++  const [chosen, setChosen] = useState<string | null>(
++    // 未选定 Workspace 时 Core 省略该字段（contracts 的可选字段一律缺省而非 null）
++    session.currentWorkspaceId ?? null,
++  );
+   const [tab, setTab] = useState<Tab>("channel");
+ 
+   // 收藏的排在前面；其余保持服务端顺序
+@@ -208,7 +215,11 @@ function MembersPane({ workspaceId }: { workspaceId: string }) {
+           <tr key={m.principalId} className="border-t">
+             <td className="py-1">{m.displayName}</td>
+             <td className="py-1">
+-              <Badge variant={m.state === "ACTIVE" ? "secondary" : "outline"}>{m.state}</Badge>
++              <Badge
++                variant={m.state === WorkspaceMembershipState.Active ? "secondary" : "outline"}
++              >
++                {m.state}
++              </Badge>
+             </td>
+             <td className="py-1 font-mono text-xs">
+               {m.pubkeys.length > 0 ? m.pubkeys.map(truncatePubkey).join(" · ") : "—"}
+@@ -297,13 +308,15 @@ function DevicesPane() {
+             <tr key={k.pubkey} className="border-t">
+               <td className="py-1 font-mono text-xs">{truncatePubkey(k.pubkey)}</td>
+               <td className="py-1">
+-                <Badge variant={k.state === "ACTIVE" ? "secondary" : "outline"}>{k.state}</Badge>
++                <Badge variant={k.state === BuzzIdentityState.Active ? "secondary" : "outline"}>
++                  {k.state}
++                </Badge>
+               </td>
+               <td className="py-1 text-xs" title={k.createdAt}>
+                 {relativeTime(Date.parse(k.createdAt) / 1_000)}
+               </td>
+               <td className="py-1 text-right">
+-                {k.state === "REVOKING" ? null : (
++                {k.state === BuzzIdentityState.Revoking ? null : (
+                   <Button
+                     size="sm"
+                     type="button"
