@@ -61,6 +61,32 @@ print("\n".join(series))
 PY
 ) || exit 2
 mapfile -t series <<<"$series_out"
+
+# remove_paths：整块删除的上游功能只登记路径，不做成删除补丁——删除补丁带着
+# 被删文件的全部正文，几百个文件的裁剪会淹没真正需要审阅的改动。先删后打补丁，
+# 补丁以裁剪后的树为基准。登记了却不存在即失败：上游挪了目录时，清单与产物不能
+# 悄悄不一致。
+removed_out=$(python3 - "$manifest" <<'PY'
+import re, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r"^remove_paths:\s*\[(.*?)\]", raw, re.M | re.S)
+paths = [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
+for x in paths:
+    if x.startswith("/") or ".." in x.split("/"):
+        sys.exit(f"remove_paths 只接受源树内的相对路径：{x}")
+if len(set(paths)) != len(paths):
+    sys.exit("remove_paths 有重复项")
+print("\n".join(paths))
+PY
+) || exit 2
+mapfile -t removed <<<"$removed_out"
+for r in "${removed[@]}"; do
+  [ -n "$r" ] || continue
+  [ -e "$src/$r" ] || { echo "remove_paths 登记的 $r 不存在于源树" >&2; exit 2; }
+  git -C "$src" rm -r -q -- "$r"
+done
+[ -n "${removed[0]}" ] && echo "  删除 $(grep -c . <<<"$removed_out") 个登记路径"
+
 for p in "${series[@]}"; do
   [ -n "$p" ] || continue
   echo "  应用 $p"
@@ -88,15 +114,19 @@ echo "  $remote@$digest"
 # 两个摘要一起写回 manifest：产物与 commit、与所打 patch 字节的对应关系是
 # 可追溯性的落点。同时写，所以 check.sh seam 看到 patch 摘要与目录一致，就
 # 意味着 artifact 正是由这些字节构建的；只改 patch 不重建，那一步当场失败。
-python3 - "$manifest" "$digest" "$patch_dir" "${series[@]}" <<'PY'
+python3 - "$manifest" "$digest" "$patch_dir" "$removed_out" "${series[@]}" <<'PY'
 import hashlib, os, re, sys
 p, digest, pdir = sys.argv[1], sys.argv[2], sys.argv[3]
-series = [x for x in sys.argv[4:] if x]
+removed = [x for x in sys.argv[4].split("\n") if x]
+series = [x for x in sys.argv[5:] if x]
+# 摘要覆盖补丁字节与删除清单；两者都为空记 none。与 check.sh seam 的算法一致
 ps = "none"
-if series:
+if series or removed:
     h = hashlib.sha256()
     for x in series:
         h.update(open(os.path.join(pdir, x), "rb").read())
+    if removed:
+        h.update(b"\0remove_paths\0" + "\n".join(removed).encode())
     ps = "sha256:" + h.hexdigest()
 raw = open(p, encoding="utf-8").read()
 raw = re.sub(r"^patch_series_digest:.*$", f"patch_series_digest: {ps}", raw, count=1, flags=re.M)

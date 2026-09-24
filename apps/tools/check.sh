@@ -398,12 +398,21 @@ for f in sorted(glob.glob("upstream-patches/*/baseline.yaml")):
     missing = sorted(set(series) - set(present))
     for x in missing:
         bad.append(f"{f}: patch_series 登记的 {x} 不存在")
+    # remove_paths 同样进摘要：改了删除清单却没重建，产物就不是清单说的那棵树
+    removed = lst("remove_paths")
+    for x in removed:
+        if x.startswith("/") or ".." in x.split("/"):
+            bad.append(f"{f}: remove_paths 只接受源树内的相对路径：{x}")
+    if len(set(removed)) != len(removed):
+        bad.append(f"{f}: remove_paths 有重复项")
     if not missing:
         want = "none"
-        if series:
+        if series or removed:
             h = hashlib.sha256()
             for x in series:
                 h.update(open(os.path.join(pdir, x), "rb").read())
+            if removed:
+                h.update(b"\0remove_paths\0" + "\n".join(removed).encode())
             want = "sha256:" + h.hexdigest()
         got = val("patch_series_digest")
         if got != want:
