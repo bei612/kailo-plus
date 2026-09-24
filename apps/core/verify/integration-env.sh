@@ -65,3 +65,6 @@ export VERIFY_USER_PASSWORD_FILE="$(pwd)/$local_dir/secrets/verify_user_password
 export VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE="$(pwd)/$local_dir/secrets/keycloak_admin_password"
 # 整条链要串起三步投影，其中 roster 那步以 Relay 的对账间隔为界
 export VERIFY_CONVERGE_BOUND_SECS=$(( BUZZ_NIP43_RECONCILE_INTERVAL_SECS * 4 + 20 ))
+# 部署引导（ADR-11）只能在 Core 容器内执行：核验经 compose exec 进入同一个容器
+export VERIFY_COMPOSE_FILE="$(pwd)/$local_dir/compose.yaml"
+export VERIFY_COMPOSE_ENV_FILE="$(pwd)/$local_dir/.env"

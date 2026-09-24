@@ -387,6 +387,16 @@ services:
       GOVERNANCE_RECONCILE_BATCH: ${GOVERNANCE_RECONCILE_BATCH:?必须显式提供，禁止硬编码}
       # 任务列表与待我审批列表的单页上界（07 §5）
       BFF_TASK_PAGE_LIMIT: ${BFF_TASK_PAGE_LIMIT:?必须显式提供，禁止硬编码}
+      # 从 SpiceDB 读关系的单页条数（角色判定与对账）。读取总是翻到底，它只约束
+      # 单次回应的大小（DD-82）
+      SPICEDB_READ_PAGE_LIMIT: ${SPICEDB_READ_PAGE_LIMIT:?必须显式提供，禁止硬编码}
+      # 角色 relationship 以成员事实为准对账的周期；也是「Tenant 没有有效 admin」
+      # 度量的刷新周期（DD-82）
+      ROLE_RECONCILE_INTERVAL_SECONDS: ${ROLE_RECONCILE_INTERVAL_SECONDS:?必须显式提供，禁止硬编码}
+      # 部署引导（ADR-11）登记首位 admin 的外部身份时所属的 IdP：与浏览器登录的
+      # issuer 与 client 相同，身份解析才能在首次登录时找到这个人
+      HUMAN_OIDC_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
+      HUMAN_OIDC_CLIENT_ID: ${OIDC_BROWSER_CLIENT_ID:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/openbao-core.env
       # Core 自己的 OIDC client secret；不进 .env、不上命令行

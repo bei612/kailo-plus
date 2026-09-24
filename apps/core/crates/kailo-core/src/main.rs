@@ -19,6 +19,8 @@ mod oidc;
 mod platform_bootstrap;
 mod platform_views;
 mod publish_reconcile;
+mod role_reconcile;
+mod roles;
 mod roster_reconcile;
 mod scope_state;
 mod server_keys;
@@ -30,6 +32,7 @@ mod task_projection;
 mod task_rerun;
 mod telemetry;
 mod temporal;
+mod tenant_bootstrap;
 mod tenant_lifecycle;
 mod user_state;
 mod web_transport;
@@ -42,6 +45,22 @@ use sqlx::postgres::PgPoolOptions;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().json().init();
+
+    // 部署引导（DD-82、ADR-11）：不监听任何端口、不取 OpenBao 投递，做完即退出。
+    // 只有能在 Core 容器内执行命令的人能走到这里。
+    let argv: Vec<String> = std::env::args().collect();
+    if argv.get(1).map(String::as_str) == Some("bootstrap-tenant") {
+        let outcome = tenant_bootstrap::run(tenant_bootstrap::Args::parse(&argv[2..])?).await?;
+        println!("{}", serde_json::to_string(&outcome)?);
+        // 退出码让脚本不必解析输出就知道要不要重跑：PENDING 重跑以继续；INERT 说明
+        // 该 Tenant 已有其他有效 admin，引导什么也没做
+        std::process::exit(match outcome.state {
+            "COMPLETED" => 0,
+            "PENDING" => 3,
+            _ => 4,
+        });
+    }
+
     // 运维信号的导出先于一切：启动期的失败也要能被看见（ADR-05）
     let meter_provider = telemetry::init()?;
 
@@ -122,6 +141,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::sync::Arc::clone(&governance),
         &opentelemetry::global::meter("kailo-core"),
         governance_reconcile::Config::from_env()?,
+    );
+    // 角色 relationship 以成员事实为准对账，并度量没有有效 admin 的 Tenant（DD-82）
+    role_reconcile::spawn(
+        std::sync::Arc::clone(&governance),
+        &opentelemetry::global::meter("kailo-core"),
+        role_reconcile::Config::from_env()?,
     );
 
     let service_state = service_api::ServiceState {

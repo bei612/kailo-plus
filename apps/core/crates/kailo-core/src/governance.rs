@@ -70,6 +70,8 @@ pub struct GovernanceConfig {
     pub projection_freshness_seconds: i64,
     /// 任务列表与待我审批列表的单页上界
     pub page_limit: i64,
+    /// 从 SpiceDB 读关系的单页条数；读取总是翻到底，它只约束单次回应的大小
+    pub relationship_page: u32,
 }
 
 impl GovernanceConfig {
@@ -89,6 +91,8 @@ impl GovernanceConfig {
             evaluation_timeout_seconds: get("ADMISSION_EVALUATION_TIMEOUT_SECONDS")?,
             projection_freshness_seconds: get("WORKFLOW_PROJECTION_FRESHNESS_SECONDS")?,
             page_limit: get("BFF_TASK_PAGE_LIMIT")?,
+            relationship_page: u32::try_from(get("SPICEDB_READ_PAGE_LIMIT")?)
+                .map_err(|_| "SPICEDB_READ_PAGE_LIMIT 超出范围")?,
         };
         if cfg.dispatch_margin_seconds >= cfg.consume_window_seconds {
             return Err(
@@ -202,12 +206,28 @@ pub struct Definition {
     pub approval_policy_version: Option<i32>,
     pub workflow_kind: Option<String>,
     pub result_exposure: String,
+    pub execution_mode: String,
+    pub role_template_key: Option<String>,
+    pub role_template_version: Option<i32>,
 }
 
 const DEFINITION_COLUMNS: &str =
     "action_key, version, component_type_key, target_type, workspace_rule,
      permission, permission_object_type, confirmation_mode, approval_policy_id,
-     approval_policy_version, workflow_kind, result_exposure";
+     approval_policy_version, workflow_kind, result_exposure, execution_mode,
+     role_template_key, role_template_version";
+
+/// 角色动作按确切版本引用的 RoleTemplate。定义与模板任一缺失即说明目录与语义
+/// 不一致，fail closed。
+async fn role_template_of(
+    conn: &mut sqlx::PgConnection,
+    def: &Definition,
+) -> Result<crate::roles::RoleTemplate, Refusal> {
+    let (Some(k), Some(v)) = (&def.role_template_key, def.role_template_version) else {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    };
+    Ok(crate::roles::template(conn, k, v).await?)
+}
 
 async fn active_definition(pool: &PgPool, key: &str) -> Result<Option<Definition>, sqlx::Error> {
     sqlx::query_as(&format!(
@@ -280,6 +300,11 @@ pub enum Semantic {
     WorkspaceMemberAdd,
     WorkspaceMemberRevoke,
     TenantMemberRevoke,
+    /// 角色的授予与撤销（DD-82）。对象类型与关系由定义引用的 RoleTemplate 决定。
+    TenantRoleGrant,
+    TenantRoleRevoke,
+    WorkspaceRoleGrant,
+    WorkspaceRoleRevoke,
 }
 
 impl Semantic {
@@ -289,8 +314,31 @@ impl Semantic {
             "workspace.member.add" => Self::WorkspaceMemberAdd,
             "workspace.member.revoke" => Self::WorkspaceMemberRevoke,
             "tenant.member.revoke" => Self::TenantMemberRevoke,
+            "tenant.admin.grant" => Self::TenantRoleGrant,
+            "tenant.admin.revoke" => Self::TenantRoleRevoke,
+            "workspace.admin.grant" => Self::WorkspaceRoleGrant,
+            "workspace.admin.revoke" => Self::WorkspaceRoleRevoke,
             _ => return None,
         })
+    }
+
+    fn is_role(self) -> bool {
+        matches!(
+            self,
+            Self::TenantRoleGrant
+                | Self::TenantRoleRevoke
+                | Self::WorkspaceRoleGrant
+                | Self::WorkspaceRoleRevoke
+        )
+    }
+
+    fn is_grant(self) -> bool {
+        matches!(self, Self::TenantRoleGrant | Self::WorkspaceRoleGrant)
+    }
+
+    /// 会改变「有效 Tenant admin」集合的动作在 Tenant 行锁下判定与写入（DD-82）。
+    fn serializes_on_tenant(self) -> bool {
+        self.is_role() || self == Self::TenantMemberRevoke
     }
 }
 
@@ -339,7 +387,7 @@ impl Params {
 
 /// slug 是 Community/Channel 的稳定标识的一部分：只接受小写字母、数字与连字符，
 /// 且以字母或数字开头。长度上界由库列与 Relay 决定，这里不另立一个数字。
-fn valid_slug(s: &str) -> bool {
+pub(crate) fn valid_slug(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
             .next()
@@ -370,13 +418,16 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                 && p.slug.as_deref().is_some_and(valid_slug)
                 && p.name.as_deref().is_some_and(|n| !n.is_empty())
         }
-        Semantic::WorkspaceMemberAdd | Semantic::WorkspaceMemberRevoke => {
+        Semantic::WorkspaceMemberAdd
+        | Semantic::WorkspaceMemberRevoke
+        | Semantic::WorkspaceRoleGrant
+        | Semantic::WorkspaceRoleRevoke => {
             p.workspace_id.is_some()
                 && p.principal_id.is_some()
                 && p.slug.is_none()
                 && p.name.is_none()
         }
-        Semantic::TenantMemberRevoke => {
+        Semantic::TenantMemberRevoke | Semantic::TenantRoleGrant | Semantic::TenantRoleRevoke => {
             p.workspace_id.is_none()
                 && p.principal_id.is_some()
                 && p.slug.is_none()
@@ -413,9 +464,11 @@ pub struct Target {
 
 /// 按当前事实解析 target。`frozen` 是已准入动作冻结的 target ID：新建类动作的
 /// ID 在首次准入时分配，重新准入必须解析到同一个。
+#[allow(clippy::too_many_arguments)]
 async fn resolve_target(
     conn: &mut sqlx::PgConnection,
     tenant: Uuid,
+    def: &Definition,
     sem: Semantic,
     p: &Params,
     frozen: Option<Uuid>,
@@ -423,6 +476,71 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::TenantRoleGrant
+        | Semantic::TenantRoleRevoke
+        | Semantic::WorkspaceRoleGrant
+        | Semantic::WorkspaceRoleRevoke => {
+            let t = role_template_of(&mut *conn, def).await?;
+            let in_workspace = matches!(
+                sem,
+                Semantic::WorkspaceRoleGrant | Semantic::WorkspaceRoleRevoke
+            );
+            // 定义说的对象类型与模板展开的对象类型必须一致，否则按哪一个写都是错的
+            if (t.object_type == "workspace") != in_workspace {
+                tracing::error!(action = %def.action_key, template = %t.role_key, "角色动作与模板的对象类型不一致");
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            let principal = p
+                .principal_id
+                .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+            let object = if in_workspace {
+                let ws_ok: Option<i32> = sqlx::query_scalar(&format!(
+                    "select 1 from identity.workspace where id = $1 and tenant_id = $2 and state = 'ACTIVE'{for_update}"
+                ))
+                .bind(p.workspace_id)
+                .bind(tenant)
+                .fetch_optional(&mut *conn)
+                .await?;
+                if ws_ok.is_none() {
+                    return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+                }
+                p.workspace_id
+                    .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?
+            } else {
+                tenant
+            };
+            // 授予对象必须是本 Tenant 的 active HUMAN 且 TenantMembership ACTIVE
+            // （DD-82）；撤销只要求它是本 Tenant 的 HUMAN——失权者身上残留的角色
+            // 也必须能被撤掉。
+            let subject: Option<i32> = if sem.is_grant() {
+                sqlx::query_scalar(&format!(
+                    "select 1 from identity.principal p
+                     join identity.tenant_membership tm on tm.tenant_principal_id = p.id
+                     where p.id = $1 and p.tenant_id = $2 and p.kind = 'HUMAN' and p.status = 'ACTIVE'
+                       and tm.tenant_id = $2 and tm.state = 'ACTIVE'{for_update}"
+                ))
+                .bind(principal)
+                .bind(tenant)
+                .fetch_optional(&mut *conn)
+                .await?
+            } else {
+                sqlx::query_scalar(
+                    "select 1 from identity.principal where id = $1 and tenant_id = $2 and kind = 'HUMAN'",
+                )
+                .bind(principal)
+                .bind(tenant)
+                .fetch_optional(&mut *conn)
+                .await?
+            };
+            if subject.is_none() {
+                return Err(Refusal::Precondition(ReasonCode::TargetNotFound));
+            }
+            Ok(Target {
+                id: crate::roles::target_id(&t, object, principal),
+                version: 0,
+                workspace_id: in_workspace.then_some(object),
+            })
+        }
         Semantic::WorkspaceCreate => {
             let taken: Option<Uuid> = sqlx::query_scalar(&format!(
                 "select id from identity.workspace where tenant_id = $1 and slug = $2{for_update}"
@@ -911,7 +1029,7 @@ impl Governance {
         }
 
         let mut conn = self.pool.acquire().await.map_err(|e| (e.into(), None))?;
-        let target = resolve_target(&mut conn, actor.tenant_id, sem, &params, None, false)
+        let target = resolve_target(&mut conn, actor.tenant_id, &def, sem, &params, None, false)
             .await
             .map_err(|r| (r, None))?;
         drop(conn);
@@ -1088,6 +1206,35 @@ impl Governance {
             ));
         }
 
+        // 目标事实的门禁在授权之后判定：无权者先得到 PERMISSION_DENIED，而不是借
+        // 这一步探出「谁是最后一位 admin」。审批前也要判定——一个注定不成立的
+        // 动作不该去占用审批人。
+        let gate = match self.pool.acquire().await {
+            Ok(mut conn) => {
+                self.target_gate(&mut conn, ae.tenant_id, def, sem, params)
+                    .await
+            }
+            Err(e) => Err(e.into()),
+        };
+        match gate {
+            Ok(()) => {}
+            Err(r @ (Refusal::Conflict(_) | Refusal::Precondition(_) | Refusal::Denied(_))) => {
+                self.close_gate(
+                    &ae,
+                    def,
+                    "ADMISSION",
+                    "DENIED",
+                    &eval,
+                    &r.reason(),
+                    actor.human_identity_id,
+                )
+                .await
+                .map_err(|e| (e.into(), op))?;
+                return Err((r, op));
+            }
+            Err(r) => return Err((r, op)),
+        }
+
         if def.confirmation_mode == "APPROVAL" {
             return self.request_approval(actor, &ae, def, &eval).await;
         }
@@ -1221,9 +1368,15 @@ impl Governance {
         eval: &Evaluation,
         human: Option<Uuid>,
     ) -> Result<(), Refusal> {
+        // 会改变有效 Tenant admin 的动作先取 Tenant 行锁，其后的判定与写入都在锁内
+        // （DD-82）。锁序固定为 ActionExecution → Tenant，与派发一致。
+        if sem.serializes_on_tenant() && !crate::roles::lock_tenant(tx, ae.tenant_id).await? {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
         let target = resolve_target(
             &mut *tx,
             ae.tenant_id,
+            def,
             sem,
             params,
             Some(ae.target_id),
@@ -1236,6 +1389,47 @@ impl Governance {
             || parameter_hash(def, target.id, params) != ae.parameter_hash
         {
             return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+        }
+        self.target_gate(&mut *tx, ae.tenant_id, def, sem, params)
+            .await?;
+        if def.execution_mode == "SYNC" {
+            // 同步动作没有 Workflow：门禁置 ALLOWED 后由派发在同一把锁下写 SpiceDB
+            sqlx::query(
+                "update admission.action_execution
+                 set gate_state = 'ALLOWED', reason_code = null, updated_at = now()
+                 where id = $1",
+            )
+            .bind(ae.id)
+            .execute(&mut **tx)
+            .await?;
+            record_decision(
+                tx,
+                &ae.subject(),
+                phase,
+                eval.scope,
+                eval.authorization,
+                approval,
+                eval.zed_token.as_deref(),
+                None,
+            )
+            .await?;
+            let mut evidence = zed_evidence(eval.zed_token.as_deref());
+            if let (Some(arr), Some(a)) = (evidence.as_array_mut(), &ae.approval_workflow_id) {
+                arr.push(json!({ "kind": "APPROVAL_WORKFLOW_ID", "value": a }));
+            }
+            audit(
+                tx,
+                ae,
+                def,
+                &format!("{}:decision", phase.to_lowercase()),
+                "DECISION",
+                "ALLOW",
+                "ALLOWED",
+                human,
+                evidence,
+            )
+            .await?;
+            return Ok(());
         }
         let kind = def
             .workflow_kind
@@ -1299,6 +1493,13 @@ impl Governance {
                 kailo_identity::session::revoke_for_membership(tx, target.id).await?;
                 v
             }
+            // 角色动作是 SYNC，已在上面返回；走到这里说明目录把它登记成了别的执行方式
+            Semantic::TenantRoleGrant
+            | Semantic::TenantRoleRevoke
+            | Semantic::WorkspaceRoleGrant
+            | Semantic::WorkspaceRoleRevoke => {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked))
+            }
         };
         let workflow_id =
             component_task::workflow_id(kind, ae.tenant_id, &target.id.to_string(), version);
@@ -1343,6 +1544,257 @@ impl Governance {
             evidence,
         )
         .await?;
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 角色（DD-82）：目标事实门禁与同步派发
+// ---------------------------------------------------------------------------
+
+impl Governance {
+    /// 目标在权威处的事实是否允许这次变更。角色的事实在 SpiceDB，成员的事实在
+    /// Core；二者与「有效 Tenant admin 不得为空」一起在这里判定。
+    ///
+    /// 准入（无锁，给出早拒绝）与落定（持有 Tenant 行锁）各调一次；只有后一次的
+    /// 结论与随后的写入之间没有缝。
+    async fn target_gate(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        tenant: Uuid,
+        def: &Definition,
+        sem: Semantic,
+        p: &Params,
+    ) -> Result<(), Refusal> {
+        let page = self.cfg.relationship_page;
+        let Some(principal) = p.principal_id else {
+            return Ok(());
+        };
+        match sem {
+            Semantic::TenantRoleGrant
+            | Semantic::TenantRoleRevoke
+            | Semantic::WorkspaceRoleGrant
+            | Semantic::WorkspaceRoleRevoke => {
+                let t = role_template_of(&mut *conn, def).await?;
+                let object = p.workspace_id.unwrap_or(tenant);
+                let held = crate::roles::held(&self.spicedb, &t, object, principal, page)
+                    .await
+                    .map_err(|e| Refusal::Unavailable(e.to_string()))?;
+                if sem.is_grant() {
+                    // 已持有：没有要授予的东西。不当作成功重放——那会让两次授予
+                    // 在审计里看起来各自生效过
+                    return if held {
+                        Err(Refusal::Conflict(ReasonCode::TargetStateConflict))
+                    } else {
+                        Ok(())
+                    };
+                }
+                if !held {
+                    return Err(Refusal::Precondition(ReasonCode::TargetNotFound));
+                }
+                if t.grants_tenant_manage() {
+                    let effective = crate::roles::effective_tenant_admins(
+                        &mut *conn,
+                        &self.spicedb,
+                        tenant,
+                        page,
+                    )
+                    .await?;
+                    if crate::roles::would_empty(&effective, principal) {
+                        return Err(Refusal::Precondition(ReasonCode::LastTenantAdmin));
+                    }
+                }
+                Ok(())
+            }
+            // 撤掉一个人的 TenantMembership 也撤掉他的全部角色（DD-82）
+            Semantic::TenantMemberRevoke => {
+                let effective =
+                    crate::roles::effective_tenant_admins(&mut *conn, &self.spicedb, tenant, page)
+                        .await?;
+                if crate::roles::would_empty(&effective, principal) {
+                    return Err(Refusal::Precondition(ReasonCode::LastTenantAdmin));
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// 同步角色动作的派发：在 ActionExecution 与 Tenant 两把行锁下重新核对目标事实，
+    /// 写 SpiceDB，记下结果。锁跨过这次写：「有效 admin 不得为空」的判定与写入之间
+    /// 不能留缝，否则两个并发的撤销各自看到对方还在（DD-82）。
+    ///
+    /// 写结果不明时记 UNKNOWN，由对账作业以同一意图重发——写本身幂等。重发时
+    /// 目标事实已不成立（授予对象失去成员资格、撤销会清空 admin），就不写并记
+    /// ABORTED；授予的那一侧还要先确保关系不在，因为上一次不明的写可能已经生效，
+    /// 而中间状态只允许收紧（`.design/09` §4）。
+    async fn dispatch_role(
+        &self,
+        ae_id: Uuid,
+        def: &Definition,
+        sem: Semantic,
+    ) -> Result<(), Refusal> {
+        let mut tx = self.pool.begin().await?;
+        let ae = lock_execution(&mut tx, ae_id).await?;
+        if ae.gate_state != "ALLOWED"
+            || !matches!(ae.dispatch_state.as_str(), "NOT_DISPATCHED" | "UNKNOWN")
+        {
+            return Ok(());
+        }
+        if !crate::roles::lock_tenant(&mut tx, ae.tenant_id).await? {
+            return Err(Refusal::Unavailable("Tenant 消失".into()));
+        }
+        let params = ae
+            .params()
+            .ok_or_else(|| Refusal::Unavailable("ActionExecution 缺规范化参数".into()))?;
+        let principal = params
+            .principal_id
+            .ok_or_else(|| Refusal::Unavailable("角色动作缺 principal".into()))?;
+        let t = role_template_of(&mut tx, def).await?;
+        let object = params.workspace_id.unwrap_or(ae.tenant_id);
+        let rels = t.expand(object, principal);
+
+        // 目标事实：授予对象仍是 ACTIVE 成员（Workspace 仍 ACTIVE）；撤 Tenant admin
+        // 不会清空有效 admin
+        let still = match resolve_target(
+            &mut tx,
+            ae.tenant_id,
+            def,
+            sem,
+            &params,
+            Some(ae.target_id),
+            true,
+        )
+        .await
+        {
+            Ok(target) if target.id == ae.target_id => Ok(()),
+            Ok(_) => Err(Refusal::Conflict(ReasonCode::TargetStateConflict)),
+            Err(r @ Refusal::Unavailable(_)) => return Err(r),
+            Err(r) => Err(r),
+        };
+        let still = match still {
+            Ok(()) if !sem.is_grant() && t.grants_tenant_manage() => {
+                let effective = crate::roles::effective_tenant_admins(
+                    &mut tx,
+                    &self.spicedb,
+                    ae.tenant_id,
+                    self.cfg.relationship_page,
+                )
+                .await?;
+                if crate::roles::would_empty(&effective, principal) {
+                    Err(Refusal::Precondition(ReasonCode::LastTenantAdmin))
+                } else {
+                    Ok(())
+                }
+            }
+            other => other,
+        };
+
+        let (state, stage, result, reason, token) = match still {
+            Ok(()) => {
+                let op = if sem.is_grant() {
+                    crate::spicedb::Write::Touch
+                } else {
+                    crate::spicedb::Write::Delete
+                };
+                let updates: Vec<_> = rels.iter().cloned().map(|r| (op, r)).collect();
+                match self.spicedb.write(&updates).await {
+                    Ok(token) => ("DISPATCHED", "dispatch", "DISPATCHED", None, Some(token)),
+                    Err(e) => {
+                        tracing::warn!(action = %ae.id, error = %e, "角色写入结果不明");
+                        (
+                            "UNKNOWN",
+                            "dispatch-unknown",
+                            "DISPATCH_RESULT_UNKNOWN",
+                            None,
+                            None,
+                        )
+                    }
+                }
+            }
+            Err(r) => {
+                let mut token = None;
+                if sem.is_grant() && ae.dispatch_state == "UNKNOWN" {
+                    let updates: Vec<_> = rels
+                        .iter()
+                        .cloned()
+                        .map(|r| (crate::spicedb::Write::Delete, r))
+                        .collect();
+                    // 收紧不成功就不能宣称中止：留在 UNKNOWN，下一轮再来
+                    token = Some(
+                        self.spicedb
+                            .write(&updates)
+                            .await
+                            .map_err(|e| Refusal::Unavailable(e.to_string()))?,
+                    );
+                }
+                (
+                    "ABORTED",
+                    "dispatch-aborted",
+                    "DISPATCH_ABORTED",
+                    Some(r.reason()),
+                    token,
+                )
+            }
+        };
+        sqlx::query(
+            "update admission.action_execution
+             set dispatch_state = $2, reason_code = coalesce($3, reason_code), updated_at = now()
+             where id = $1",
+        )
+        .bind(ae.id)
+        .bind(state)
+        .bind(reason.as_ref().map(wire))
+        .execute(&mut *tx)
+        .await?;
+        let mut evidence = zed_evidence(token.as_deref());
+        if let Some(arr) = evidence.as_array_mut() {
+            for r in &rels {
+                arr.push(json!({ "kind": "SPICEDB_RELATIONSHIP", "value": format!(
+                    "{}:{}#{}@principal:{}", r.object_type, r.object_id, r.relation, r.subject_principal) }));
+            }
+        }
+        let decision = if state == "ABORTED" { "DENY" } else { "ALLOW" };
+        let result = reason
+            .as_ref()
+            .map(wire)
+            .unwrap_or_else(|| result.to_owned());
+        audit(
+            &mut tx,
+            &ae,
+            def,
+            stage,
+            "DISPATCH",
+            decision,
+            &result,
+            None,
+            evidence.clone(),
+        )
+        .await?;
+        if state == "DISPATCHED" {
+            audit(
+                &mut tx,
+                &ae,
+                def,
+                "outcome",
+                "OUTCOME",
+                "ALLOW",
+                if sem.is_grant() {
+                    "ROLE_GRANTED"
+                } else {
+                    "ROLE_REVOKED"
+                },
+                None,
+                evidence,
+            )
+            .await?;
+        }
+        tx.commit().await?;
+        match state {
+            "DISPATCHED" if ae.approval_workflow_id.is_some() => self.consume(ae.id).await,
+            "ABORTED" if ae.approval_workflow_id.is_some() => self.invalidate(ae.id).await,
+            _ => {}
+        }
         Ok(())
     }
 }
@@ -1410,6 +1862,9 @@ impl Governance {
         let Some(sem) = Semantic::from_key(&def.action_key) else {
             return Ok(());
         };
+        if def.execution_mode == "SYNC" {
+            return self.dispatch_role(ae_id, &def, sem).await;
+        }
         let Some(workflow_id) = ae.temporal_workflow_id.clone() else {
             return Err(Refusal::Unavailable(
                 "ALLOWED 而没有预写 workflow ID".into(),
@@ -1455,6 +1910,11 @@ impl Governance {
                     )
                     .await
                 }
+                // 角色动作是 SYNC，在上面已分流；没有 Workflow 可启动
+                Semantic::TenantRoleGrant
+                | Semantic::TenantRoleRevoke
+                | Semantic::WorkspaceRoleGrant
+                | Semantic::WorkspaceRoleRevoke => Err(StatusCode::CONFLICT.into_response()),
             };
             match started {
                 Ok(r) if r.workflow_id == workflow_id => Ok(()),
@@ -1871,10 +2331,14 @@ impl Governance {
         let Ok(Some(ae)) = load_execution(&self.pool, ae_id).await else {
             return;
         };
-        let (Some(wf), "REVOKED") = (ae.approval_workflow_id.clone(), ae.gate_state.as_str())
-        else {
+        // 重新准入拒绝（REVOKED），或准入之后、派发之时目标事实不再成立（ABORTED）：
+        // 两者都意味着这份批准再也不会被消费
+        let Some(wf) = ae.approval_workflow_id.clone() else {
             return;
         };
+        if ae.gate_state != "REVOKED" && ae.dispatch_state != "ABORTED" {
+            return;
+        }
         let reason = ae
             .reason_code
             .as_deref()
@@ -2368,7 +2832,7 @@ impl Governance {
                 self.consume(ae.id).await;
                 Ok("CONSUME_RESENT")
             }
-            ("REVOKED", _) if status == "APPROVED" => {
+            ("REVOKED", _) | ("ALLOWED", "ABORTED") if status == "APPROVED" => {
                 self.invalidate(ae.id).await;
                 Ok("INVALIDATE_RESENT")
             }

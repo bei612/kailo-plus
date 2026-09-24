@@ -3,109 +3,24 @@
 //! .design/06 §4、DD-47、DD-48；V-SCN-07/31/32/34/37/38）。
 //!
 //! 全部走真实拓扑：BFF 经网关身份 header、SpiceDB fresh Check、Temporal 上的
-//! Worker。夹具只写 OIDC 侧身份与 admin 关系——登录开户与角色管理不在本切片。
+//! Worker。夹具只写 OIDC 侧身份与首位 admin 关系（夹具 Tenant 不经部署引导）；第二位
+//! admin 经角色动作授予，角色管理本身的核验在 role_management.rs。
 //!
 //! 场景共用一个 Tenant 且会改动全局 Catalog（过期场景登记短时效策略版本），
 //! 因此放在同一个测试函数里顺序执行。
 
 use std::time::Duration;
 
-use contracts::{ActionSubmission, ApprovalDecisionOutcome, ApprovalView, ErrorBody, TaskView};
+use contracts::{ActionSubmission, ApprovalDecisionOutcome, ApprovalView, TaskView};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 mod common;
-use common::{Env, LiveMember, LiveWorkspace};
-
-async fn bff(
-    http: &reqwest::Client,
-    e: &Env,
-    subject: &str,
-    method: reqwest::Method,
-    path: &str,
-    body: Option<Value>,
-) -> (reqwest::StatusCode, Value) {
-    let mut req = http
-        .request(method, format!("{}{path}", e.bff_url))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", subject);
-    if let Some(b) = body {
-        req = req.json(&b);
-    }
-    let resp = req.send().await.expect("调 BFF");
-    let status = resp.status();
-    (status, resp.json().await.unwrap_or(Value::Null))
-}
-
-async fn submit(
-    http: &reqwest::Client,
-    e: &Env,
-    subject: &str,
-    cmd: Value,
-) -> (reqwest::StatusCode, Value) {
-    bff(
-        http,
-        e,
-        subject,
-        reqwest::Method::POST,
-        "/api/v1/actions",
-        Some(cmd),
-    )
-    .await
-}
-
-/// 轮询直到 `probe` 给出值，超过收敛上界即失败。
-async fn until<T, F, Fut>(e: &Env, what: &str, mut probe: F) -> T
-where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Option<T>>,
-{
-    let deadline = std::time::Instant::now() + Duration::from_secs(e.converge_bound_secs);
-    loop {
-        if let Some(v) = probe().await {
-            return v;
-        }
-        assert!(std::time::Instant::now() < deadline, "等待超时：{what}");
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-}
-
-async fn state_of(pool: &PgPool, table: &str, id: Uuid) -> String {
-    sqlx::query_scalar(&format!("select state from {table} where id = $1"))
-        .bind(id)
-        .fetch_one(pool)
-        .await
-        .expect("读实体状态")
-}
-
-async fn gate_of(pool: &PgPool, ae: Uuid) -> (String, String, Option<String>) {
-    sqlx::query_as("select gate_state, dispatch_state, reason_code from admission.action_execution where id = $1")
-        .bind(ae)
-        .fetch_one(pool)
-        .await
-        .expect("读 ActionExecution")
-}
-
-async fn approval_status(pool: &PgPool, wf: &str) -> Option<String> {
-    sqlx::query_scalar("select status from projection.approval_projection where workflow_id = $1")
-        .bind(wf)
-        .fetch_optional(pool)
-        .await
-        .expect("读 ApprovalProjection")
-}
-
-fn refused(v: &Value) -> ErrorBody {
-    serde_json::from_value(v.clone()).unwrap_or_else(|err| panic!("不是 ErrorBody：{v}（{err}）"))
-}
-
-fn reason(v: &Value) -> String {
-    serde_json::to_value(refused(v).reason)
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
+use common::{
+    approval_status, bff, gate_of, reason, refused, state_of, submit, until, Env, LiveMember,
+    LiveWorkspace,
+};
 
 struct World {
     fx: LiveWorkspace,
@@ -384,13 +299,19 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World) {
     assert_eq!(registered, 0, "Tenant delete 不得登记（GAP-LCM-01）");
 
     // ---- 5. 需审批：A 撤 C → B 批准 → 重新准入 → MEMBERSHIP_REVOCATION → CONSUMED ----
-    // B 从这里起是第二位 Tenant admin（职责分离需要另一位 admin 批准）
-    common::zed_relationship(
+    // B 从这里起是第二位 Tenant admin（职责分离需要另一位 admin 批准），经角色动作授予
+    // （DD-82）；A 的 admin 仍由夹具直接写入——夹具 Tenant 不经部署引导
+    let (st, body) = submit(
+        http,
         e,
-        "touch",
-        &format!("tenant:{}", w.fx.tenant),
-        "admin",
-        &format!("principal:{}", w.b.principal),
+        a,
+        json!({"actionKey":"tenant.admin.grant","idempotencyKey":Uuid::new_v4(),"principalId":w.b.principal}),
+    )
+    .await;
+    assert_eq!(
+        st,
+        reqwest::StatusCode::OK,
+        "A 授 B 为 Tenant admin：{body}"
     );
     let (st, body) = submit(
         http,

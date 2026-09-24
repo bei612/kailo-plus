@@ -426,15 +426,15 @@ pub struct LiveWorkspace {
 }
 
 /// 启动一条生命周期 Workflow 并等它把目标推到 `want`。
-struct AwaitTarget<'a> {
-    endpoint: &'a str,
-    body: serde_json::Value,
-    table: &'a str,
-    id: Uuid,
-    want: &'a str,
+pub struct AwaitTarget<'a> {
+    pub endpoint: &'a str,
+    pub body: serde_json::Value,
+    pub table: &'a str,
+    pub id: Uuid,
+    pub want: &'a str,
 }
 
-async fn start_and_wait(
+pub async fn start_and_wait(
     http: &reqwest::Client,
     e: &Env,
     token: &str,
@@ -477,7 +477,7 @@ async fn start_and_wait(
     }
 }
 
-async fn allowed_action(
+pub async fn allowed_action(
     pool: &PgPool,
     tenant: Uuid,
     initiator: Uuid,
@@ -726,8 +726,8 @@ pub async fn add_tenant_member(
     Ok(m)
 }
 
-/// 用 zed CLI 直接写或删一条 SpiceDB 关系。只用于夹具：Tenant/Workspace 的
-/// admin 关系由角色管理动作产出，那条动作不在本切片。
+/// 用 zed CLI 直接写或删一条 SpiceDB 关系。只用于夹具与旁路注入：产品里 Tenant/
+/// Workspace 的 admin 关系只由角色管理动作与部署引导产出（DD-82）。
 pub fn zed_relationship(e: &Env, op: &str, object: &str, relation: &str, subject: &str) {
     let out = std::process::Command::new("sudo")
         .args([
@@ -1131,3 +1131,147 @@ pub async fn read_secret_version(
         .expect("KV 值")
         .to_owned()
 }
+
+/// 用 zed CLI 独立取证：`object#relation@subject` 此刻是否存在。不经 Core——
+/// 被核验的一方不能自证。
+pub fn zed_has(e: &Env, object: &str, relation: &str, subject: &str) -> bool {
+    let out = std::process::Command::new("sudo")
+        .args([
+            "-n",
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            &e.docker_network,
+            "--env-file",
+            &e.zed_env_file,
+            "-e",
+            &format!("ZED_ENDPOINT={}", e.spicedb_in_network),
+            "-e",
+            "ZED_INSECURE=true",
+            &e.zed_image,
+            "relationship",
+            "read",
+            object,
+            relation,
+            subject,
+            "--consistency-full",
+        ])
+        .output()
+        .expect("运行 zed");
+    assert!(
+        out.status.success(),
+        "zed relationship read {object} {relation} {subject} 失败：{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|l| l.contains(subject))
+}
+
+/// BFF 调用与断言的共用件：经网关投影的两条身份 header 调 BFF，等待收敛，读门禁与
+/// 审批投影，解析拒绝体。各核验文件共用一份，免得断言口径慢慢分叉。
+pub mod bff_kit {
+    use std::time::Duration;
+
+    use contracts::ErrorBody;
+    use serde_json::Value;
+    use sqlx::PgPool;
+    use uuid::Uuid;
+
+    use super::Env;
+
+    pub async fn bff(
+        http: &reqwest::Client,
+        e: &Env,
+        subject: &str,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> (reqwest::StatusCode, Value) {
+        let mut req = http
+            .request(method, format!("{}{path}", e.bff_url))
+            .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+            .header("x-kailo-oidc-subject", subject);
+        if let Some(b) = body {
+            req = req.json(&b);
+        }
+        let resp = req.send().await.expect("调 BFF");
+        let status = resp.status();
+        (status, resp.json().await.unwrap_or(Value::Null))
+    }
+
+    pub async fn submit(
+        http: &reqwest::Client,
+        e: &Env,
+        subject: &str,
+        cmd: Value,
+    ) -> (reqwest::StatusCode, Value) {
+        bff(
+            http,
+            e,
+            subject,
+            reqwest::Method::POST,
+            "/api/v1/actions",
+            Some(cmd),
+        )
+        .await
+    }
+
+    /// 轮询直到 `probe` 给出值，超过收敛上界即失败。
+    pub async fn until<T, F, Fut>(e: &Env, what: &str, mut probe: F) -> T
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Option<T>>,
+    {
+        let deadline = std::time::Instant::now() + Duration::from_secs(e.converge_bound_secs);
+        loop {
+            if let Some(v) = probe().await {
+                return v;
+            }
+            assert!(std::time::Instant::now() < deadline, "等待超时：{what}");
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    pub async fn state_of(pool: &PgPool, table: &str, id: Uuid) -> String {
+        sqlx::query_scalar(&format!("select state from {table} where id = $1"))
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("读实体状态")
+    }
+
+    pub async fn gate_of(pool: &PgPool, ae: Uuid) -> (String, String, Option<String>) {
+        sqlx::query_as("select gate_state, dispatch_state, reason_code from admission.action_execution where id = $1")
+            .bind(ae)
+            .fetch_one(pool)
+            .await
+            .expect("读 ActionExecution")
+    }
+
+    pub async fn approval_status(pool: &PgPool, wf: &str) -> Option<String> {
+        sqlx::query_scalar(
+            "select status from projection.approval_projection where workflow_id = $1",
+        )
+        .bind(wf)
+        .fetch_optional(pool)
+        .await
+        .expect("读 ApprovalProjection")
+    }
+
+    pub fn refused(v: &Value) -> ErrorBody {
+        serde_json::from_value(v.clone())
+            .unwrap_or_else(|err| panic!("不是 ErrorBody：{v}（{err}）"))
+    }
+
+    pub fn reason(v: &Value) -> String {
+        serde_json::to_value(refused(v).reason)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+}
+#[allow(unused_imports)]
+pub use bff_kit::*;
