@@ -18,14 +18,14 @@ Channel 里的 kind 9 消息，本机持钥直连 Relay，DD-75）与成员、�
 Kailo 接入在 `mobile/lib/shared/kailo/` 与 `mobile/lib/features/kailo/`：RFC 8252 PKCE 登录（私有
 URI scheme 回调，IdP 登记见 `core/verify/native-identity.md`）、刷新令牌进安全存储、401 刷新一次
 重试一次、只代发 `/api/v1/`、NIP-98 持钥证明登记设备、结果不明显示为待确认。BFF 回应的类型来自
-`contracts/` 的 Dart 生成物，构建时经 `vendor_files` 放入。
+`contracts/` 的 Dart 生成物与共享平台文案生成物，构建时经 `vendor_files` 放入。
 
 ## 清单可复现
 
-清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `98ae2137e0056fc2160e8f41303a509227c6e836`）。
+清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `463d59637c265052e99ea7f1d7a4559eab9121cf`）。
 `UPSTREAM_MIRROR=<开发树> tools/build-upstream.sh --source-only <目录> buzz-mobile` 按本清单从基线
-重建源树（删除 130 条登记路径、打 `0001-kailo-mobile.patch`、放入 2 个生成物），与开发分支
-逐文件比对（内容与可执行位）：前一开发分支 `c6a920747dc62df5b9f6be400fb66cd33848bf37` 的 4966 个已跟踪文件与 2 个 vendor 文件全部一致，差异 0（2026-09-24）；本次导出后的补丁字节与清单摘要已通过 `check.sh seam`，未将前次逐文件结果冒充为新 HEAD 的结果。
+重建源树（删除 130 条登记路径、打 `0001-kailo-mobile.patch`、放入 4 个生成物），与开发分支
+逐文件比对（内容、符号链接目标与可执行位）：4965 个已跟踪路径与 4 个 vendor 文件全部一致，差异 0（2026-09-25）。补丁导出前后分别为 1654196 与 1660294 字节，均为 174 个文件差异；两份平台文案生成物不在补丁内，补丁引用本仓库的唯一生成物。清单摘要已由 `record` 按实际字节写回。
 
 ## 实测（2026-09-25，开发分支 HEAD 加 kailo 仓库当前契约生成物）
 
@@ -43,6 +43,12 @@ URI scheme 回调，IdP 登记见 `core/verify/native-identity.md`）、刷新�
 Dart 契约生成物换回可选枚举取 `!` 的旧版 → 任务详情解析报 `Null check operator used on a null value`。
 
 本次已重跑原生端端到端测试、Flutter 全套测试与 debug APK 构建；还用一次性破坏确认设备重查测试会在手动重查标志丢失时失败，随后恢复并复验通过。
+
+## 平台文案同源增量（2026-09-25）
+
+`web/packages/platform/src/i18n.ts` 是平台 message key、en/zh-CN 文案及五组合同枚举文案的单一来源；`tools/gen-platform-i18n.py` 现在同时生成 `kailo_reason_text.dart` 与 `kailo_platform_text.dart`。Mobile 的任务、审批只读视图使用生成 key、状态、审批选择器与决定文案；`MaterialApp` 登记 en/zh-CN 与 Flutter 本地化代理，以系统 locale 选语言。Web/Desktop 仍直接读取同一 TS 表。此增量未覆盖 Mobile 其余页面，也没有改变任务、审批的只读权限边界。
+
+本次实测：`flutter analyze` 为 `No issues found!`；`flutter test -j 8` 为 `+1143 ~2: All tests passed!`；任务/审批专项为 `+5: All tests passed!`；本仓库 `dart test test/platform_i18n_test.dart` 为 `+4: All tests passed!`；`apps/tools/check.sh --full` 十项通过，其中隔离数据库迁移实演因未提供 `DATABASE_URL` 明确跳过。故意把生成物注释改坏后，`gen-platform-i18n.py --check` 报 `out of sync`；故意把 `EXTERNAL_RESULT_UNKNOWN` 渲染为 Completed 后，专项测试按预期失败，恢复后再次通过。此次未重建 APK，也未重跑原生端端到端测试；上表中的 APK 与 e2e 结果属于上一增量。
 
 ## 未覆盖
 

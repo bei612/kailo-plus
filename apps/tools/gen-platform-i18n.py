@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Project the shared TypeScript reason catalog into Mobile's Dart surface."""
+"""Project the shared TypeScript platform catalog into Mobile's Dart surface."""
 
 import argparse
 import json
@@ -16,6 +16,7 @@ SOURCE = ROOT / "web/packages/platform/src/i18n.ts"
 TS_ENUM = ROOT / "web/packages/contracts/src/generated/contracts.ts"
 DART_ENUM = ROOT / "mobile/lib/shared/contracts/generated/contracts.dart"
 TARGET = ROOT / "mobile/lib/shared/kailo/kailo_reason_text.dart"
+PLATFORM_TARGET = ROOT / "mobile/lib/shared/kailo/kailo_platform_text.dart"
 
 
 def block(source: str, start: str, end: str) -> str:
@@ -52,6 +53,59 @@ def catalog() -> list[tuple[str, str, str]]:
     return [(code, *messages[name]) for name, code in names.items()]
 
 
+def message_catalog(source: str, start: str, end: str, key_pattern: str) -> list[tuple[str, str, str]]:
+    body = block(source, start, end)
+    entry = re.compile(
+        key_pattern
+        + r'\s*:\s*\{\s*en:\s*("(?:\\.|[^"\\])*"),'
+        + r'\s*"zh-CN":\s*("(?:\\.|[^"\\])*"),?\s*\},',
+        re.S,
+    )
+    found = entry.findall(body)
+    if not found or entry.sub("", body).strip():
+        raise ValueError(f"unrecognized or missing message in {start}")
+    rows = [(name, json.loads(en), json.loads(zh)) for name, en, zh in found]
+    if len({name for name, _, _ in rows}) != len(rows):
+        raise ValueError(f"duplicate message key in {start}")
+    for name, en, zh in rows:
+        if set(re.findall(r"\{(\w+)\}", en)) != set(re.findall(r"\{(\w+)\}", zh)):
+            raise ValueError(f"en and zh-CN placeholders differ for {name}")
+    return rows
+
+
+def platform_catalog() -> tuple[list[tuple[str, str, str]], dict[str, list[tuple[str, str, str]]]]:
+    source = SOURCE.read_text()
+    messages = message_catalog(
+        source,
+        "export const platformMessages = {",
+        "} as const;",
+        r'"([^"\\]+)"',
+    )
+    enum_groups = {
+        "ApprovalStatus": "approvalStatusMessages",
+        "TenantInvitationStatus": "invitationStatusMessages",
+        "TenantMembershipState": "tenantMembershipStateMessages",
+        "ApprovalDecision": "approvalDecisionMessages",
+        "ApprovalSelector": "approvalSelectorMessages",
+    }
+    groups = {}
+    for enum, variable in enum_groups.items():
+        rows = message_catalog(
+            source,
+            f"export const {variable} = {{",
+            f"}} as const satisfies Record<{enum}, Message>;",
+            rf"\[{enum}\.(\w+)\]",
+        )
+        ts_enum = block(TS_ENUM.read_text(), f"export enum {enum} {{", "}\n")
+        ts_values = dict(re.findall(r'\b(\w+)\s*=\s*"([A-Z_]+)"\s*,', ts_enum))
+        dart_enum = block(DART_ENUM.read_text(), f"enum {enum} {{", "}\n")
+        dart_names = set(re.findall(r"\b([A-Z_]+)\b", dart_enum))
+        if {name for name, _, _ in rows} != set(ts_values) or set(ts_values.values()) != dart_names:
+            raise ValueError(f"{variable} does not cover both {enum} enums")
+        groups[enum] = [(ts_values[name], en, zh) for name, en, zh in rows]
+    return messages, groups
+
+
 def dart_string(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace("'", "\\'").replace("$", "\\$")
     return "'" + escaped.replace("\n", "\\n") + "'"
@@ -86,27 +140,94 @@ def render(rows: list[tuple[str, str, str]]) -> str:
     return "\n".join(lines)
 
 
+def dart_key(key: str) -> str:
+    parts = re.split(r"[.-]", key)
+    if not parts or not all(re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", p) for p in parts):
+        raise ValueError(f"unsupported platform message key: {key}")
+    return parts[0] + "".join(p[0].upper() + p[1:] for p in parts[1:])
+
+
+def render_platform(
+    messages: list[tuple[str, str, str]],
+    groups: dict[str, list[tuple[str, str, str]]],
+) -> str:
+    keys = [dart_key(key) for key, _, _ in messages]
+    if len(set(keys)) != len(keys):
+        raise ValueError("platform message keys collide after Dart conversion")
+    lines = [
+        "// Generated from web/packages/platform/src/i18n.ts by tools/gen-platform-i18n.py.",
+        "// Do not edit. Message keys and translations have one TypeScript source.",
+        "import 'dart:io' show Platform;",
+        "",
+        "import '../contracts/contracts.dart';",
+        "",
+        "enum KailoMessageKey {",
+    ]
+    lines.extend(f"  {key}," for key in keys)
+    lines.extend(["}", "", "const _messages = <KailoMessageKey, (String, String)>{"])
+    lines.extend(
+        f"  KailoMessageKey.{dart_key(key)}: ({dart_string(en)}, {dart_string(zh)}),"
+        for key, en, zh in messages
+    )
+    lines.extend(
+        [
+            "};",
+            "",
+            "String kailoText(KailoMessageKey key, {String? locale, Map<String, Object>? variables}) {",
+            "  final language = (locale ?? Platform.localeName).toLowerCase();",
+            "  final pair = _messages[key]!;",
+            "  final template = language.startsWith('zh') ? pair.$2 : pair.$1;",
+            "  return template.replaceAllMapped(RegExp(r'\\{(\\w+)\\}'),",
+            "      (match) => variables?[match.group(1)]?.toString() ?? '');",
+            "}",
+            "",
+        ]
+    )
+    for enum, rows in groups.items():
+        lines.extend(
+            [
+                f"String kailo{enum}Text({enum} value, {{String? locale}}) {{",
+                "  final language = (locale ?? Platform.localeName).toLowerCase();",
+                "  if (language.startsWith('zh')) {",
+                "    return switch (value) {",
+            ]
+        )
+        lines.extend(f"      {enum}.{name} => {dart_string(zh)}," for name, _, zh in rows)
+        lines.extend(["    };", "  }", "  return switch (value) {"])
+        lines.extend(f"    {enum}.{name} => {dart_string(en)}," for name, en, _ in rows)
+        lines.extend(["  };", "}", ""])
+    return "\n".join(lines)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory() as directory:
-        temporary = Path(directory) / TARGET.name
-        temporary.write_text(render(catalog()))
+        reason_file = Path(directory) / TARGET.name
+        platform_file = Path(directory) / PLATFORM_TARGET.name
+        reason_file.write_text(render(catalog()))
+        platform_file.write_text(render_platform(*platform_catalog()))
         dart = shutil.which("dart")
         if dart is None:
             raise ValueError("Dart formatter unavailable")
-        subprocess.run([dart, "format", str(temporary)], check=True, capture_output=True)
-        generated = temporary.read_text()
+        subprocess.run(
+            [dart, "format", str(reason_file), str(platform_file)],
+            check=True,
+            capture_output=True,
+        )
+        outputs = {TARGET: reason_file.read_text(), PLATFORM_TARGET: platform_file.read_text()}
     if args.check:
-        if not TARGET.exists() or TARGET.read_text() != generated:
-            print(f"FAIL: {TARGET.relative_to(ROOT)} is out of sync", file=sys.stderr)
-            return 1
-        print("PASS: Mobile reason catalog matches the shared TypeScript source")
+        for target, generated in outputs.items():
+            if not target.exists() or target.read_text() != generated:
+                print(f"FAIL: {target.relative_to(ROOT)} is out of sync", file=sys.stderr)
+                return 1
+        print("PASS: Mobile platform and reason catalogs match the shared TypeScript source")
         return 0
-    TARGET.parent.mkdir(parents=True, exist_ok=True)
-    TARGET.write_text(generated)
-    print(f"Generated {TARGET.relative_to(ROOT)}")
+    for target, generated in outputs.items():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(generated)
+        print(f"Generated {target.relative_to(ROOT)}")
     return 0
 
 

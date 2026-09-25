@@ -80,3 +80,7 @@ HEAD 与 `implementation_base_commit` 不一致即失败。
 - 只构建了 Linux `.deb`；macOS、Windows 安装包与代码签名未做。
 - 安装包未在带桌面会话的机器上安装运行；运行时行为由 `native-e2e.sh`（Rust 侧 Kailo 层对真实
   拓扑）与 Playwright（前端经 e2e bridge）分别覆盖。
+
+## 2026-09-25 共享文案增量
+
+共享 TypeScript 文案新增 Mobile 只读视图所需的 message key，因此 Desktop 的 `vendor_files` 字节变化。固定上游基线与既有补丁重新构建 Linux `.deb` 成功；本次文件 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的 SHA-256 为 `b866d494d54a44591d5809dc907986e32af3051ac95bc6ee1930ed06f19700d2`，已写回 manifest 与追溯记录。前表的 `c2349b...` 是上一次产物，不能用来标识这次包。本次未在真实桌面会话安装，也未重跑 Playwright 全量。

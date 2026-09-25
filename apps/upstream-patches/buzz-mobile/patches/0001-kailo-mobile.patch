@@ -1,8 +1,8 @@
 diff --git a/mobile/.gitignore b/mobile/.gitignore
-index 4782a3d71fda8a266a6b326dc035fa44efa90f5b..63af6dd6e38d7033887d0832f50779aaec4ee811 100644
+index 4782a3d71fda8a266a6b326dc035fa44efa90f5b..6047117b94a0307325a6fad67325ceb3c6275999 100644
 --- a/mobile/.gitignore
 +++ b/mobile/.gitignore
-@@ -46,3 +46,7 @@ app.*.map.json
+@@ -46,3 +46,9 @@ app.*.map.json
  
  # Local environment config (contains keys)
  .env.json
@@ -10,6 +10,8 @@ index 4782a3d71fda8a266a6b326dc035fa44efa90f5b..63af6dd6e38d7033887d0832f50779aa
 +# Kailo 契约的 Dart 生成物：构建时由 kailo 仓库经 vendor_files 放入（apps/06 §2），不在补丁里带副本
 +/lib/shared/contracts/contracts.dart
 +/lib/shared/contracts/generated/
++/lib/shared/kailo/kailo_reason_text.dart
++/lib/shared/kailo/kailo_platform_text.dart
 diff --git a/mobile/analysis_options.yaml b/mobile/analysis_options.yaml
 index 37b3985d799d8542baea17f4a00432afc0a0ff0d..6d96f630fe4a3d8c4321950380fadbbf712c7057 100644
 --- a/mobile/analysis_options.yaml
@@ -309,12 +311,14 @@ index 5dfde9077852f475af2096e3d364d51cd07ebe66..1b0414c3edc407ece30e77179921b527
  	<string>Buzz needs permission to save images to your photo library.</string>
  	<key>NSUserActivityTypes</key>
 diff --git a/mobile/lib/app.dart b/mobile/lib/app.dart
-index 7a48123824230cdd7a13c22cdcc17605f7e1d763..e740352b8c2696d6e9c37ead94da2e8d45ace8c4 100644
+index 7a48123824230cdd7a13c22cdcc17605f7e1d763..a23befb9a9adac7acffa4620c0ea7c881578426d 100644
 --- a/mobile/lib/app.dart
 +++ b/mobile/lib/app.dart
-@@ -3,307 +3,28 @@ import 'dart:async';
+@@ -2,308 +2,30 @@ import 'dart:async';
+ 
  import 'package:app_badge_plus/app_badge_plus.dart';
  import 'package:flutter/material.dart';
++import 'package:flutter_localizations/flutter_localizations.dart';
  import 'package:flutter_hooks/flutter_hooks.dart';
 -
  import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -625,7 +629,7 @@ index 7a48123824230cdd7a13c22cdcc17605f7e1d763..e740352b8c2696d6e9c37ead94da2e8d
      final themeMode = communityTheme.mode;
      final accentIndex = effectiveAccentIndex(
        communityTheme.theme,
-@@ -312,10 +33,10 @@ class App extends HookConsumerWidget {
+@@ -312,10 +34,10 @@ class App extends HookConsumerWidget {
      final schemeName = communityTheme.theme;
      final authState = ref.watch(authProvider);
  
@@ -639,7 +643,7 @@ index 7a48123824230cdd7a13c22cdcc17605f7e1d763..e740352b8c2696d6e9c37ead94da2e8d
        return null;
      }, const []);
  
-@@ -340,19 +61,10 @@ class App extends HookConsumerWidget {
+@@ -340,19 +62,10 @@ class App extends HookConsumerWidget {
  
      // Eagerly initialize websocket session and lifecycle observer when
      // authenticated. These providers connect and manage the websocket.
@@ -661,7 +665,7 @@ index 7a48123824230cdd7a13c22cdcc17605f7e1d763..e740352b8c2696d6e9c37ead94da2e8d
      }
  
      // Start listening for buzz:// links immediately (even pre-auth) so a
-@@ -370,21 +82,14 @@ class App extends HookConsumerWidget {
+@@ -370,21 +83,20 @@ class App extends HookConsumerWidget {
      }
  
      useEffect(() {
@@ -685,10 +689,16 @@ index 7a48123824230cdd7a13c22cdcc17605f7e1d763..e740352b8c2696d6e9c37ead94da2e8d
  
      return MaterialApp(
 -      navigatorKey: _mobileRootNavigatorKey,
++      supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
++      localizationsDelegates: const [
++        GlobalMaterialLocalizations.delegate,
++        GlobalWidgetsLocalizations.delegate,
++        GlobalCupertinoLocalizations.delegate,
++      ],
        navigatorObservers: [voiceNoteRouteObserver],
        title: 'Buzz',
        theme: AppTheme.light(
-@@ -396,30 +101,18 @@ class App extends HookConsumerWidget {
+@@ -396,30 +108,18 @@ class App extends HookConsumerWidget {
          topSectionGradient: buzzDarkGradient,
        ),
        themeMode: effectiveMode,
@@ -725,7 +735,7 @@ index 7a48123824230cdd7a13c22cdcc17605f7e1d763..e740352b8c2696d6e9c37ead94da2e8d
            ),
          },
        ),
-@@ -427,25 +120,8 @@ class App extends HookConsumerWidget {
+@@ -427,25 +127,8 @@ class App extends HookConsumerWidget {
    }
  }
  
@@ -10384,14 +10394,15 @@ index 0000000000000000000000000000000000000000..05855ff0818d7c6b5ee59df0ff1b4875
 +}
 diff --git a/mobile/lib/features/kailo/kailo_tasks_page.dart b/mobile/lib/features/kailo/kailo_tasks_page.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9100ff65c
+index 0000000000000000000000000000000000000000..e9ba73647a13ebbb37756e82c973ae96efc2ec6c
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_tasks_page.dart
-@@ -0,0 +1,343 @@
+@@ -0,0 +1,461 @@
 +import 'package:flutter/material.dart';
 +import 'package:hooks_riverpod/hooks_riverpod.dart';
 +
 +import '../../shared/contracts/contracts.dart';
++import '../../shared/kailo/kailo_platform_text.dart';
 +import '../../shared/kailo/kailo_reason_text.dart';
 +import '../../shared/kailo/kailo_views.dart';
 +import '../../shared/theme/theme.dart';
@@ -10408,83 +10419,95 @@ index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9
 +// 完成，没有 Workflow 的同步动作以 DISPATCHED 为终态。
 +
 +/// 一项任务此刻的读法。
-+String kailoTaskPhase(TaskView task) {
++String kailoTaskPhase(TaskView task, {String? locale}) {
 +  switch (task.observation) {
 +    case ReasonCode.EXTERNAL_RESULT_UNKNOWN:
-+      return 'Outcome not known yet — waiting for reconciliation';
++      return kailoText(KailoMessageKey.tasksStatusUnknown, locale: locale);
 +    case null:
 +      break;
 +    default:
-+      return 'Status may be out of date — waiting for reconciliation';
++      return kailoText(KailoMessageKey.tasksStatusDelayed, locale: locale);
 +  }
 +  switch (task.gateState) {
 +    case ActionGateState.EVALUATING:
-+      return 'Being evaluated';
++      return kailoText(KailoMessageKey.tasksStatusEvaluating, locale: locale);
 +    case ActionGateState.WAITING:
-+      return 'Waiting for approval';
++      return kailoText(
++        KailoMessageKey.tasksStatusWaitingApproval,
++        locale: locale,
++      );
 +    case ActionGateState.DENIED:
-+      return 'Not allowed';
++      return kailoText(KailoMessageKey.tasksStatusDenied, locale: locale);
 +    case ActionGateState.REVOKED:
-+      return 'Withdrawn or no longer allowed';
++      return kailoText(KailoMessageKey.tasksStatusRevoked, locale: locale);
 +    case ActionGateState.EXPIRED:
-+      return 'Expired';
++      return kailoText(KailoMessageKey.tasksStatusExpired, locale: locale);
 +    case ActionGateState.ALLOWED:
 +      break;
 +  }
 +  switch (task.dispatchState) {
 +    case ActionDispatchState.NOT_DISPATCHED:
-+      return 'Allowed, not started yet';
++      return kailoText(KailoMessageKey.tasksStatusNotStarted, locale: locale);
 +    case ActionDispatchState.ABORTED:
-+      return 'Stopped before it took effect';
++      return kailoText(KailoMessageKey.tasksStatusAborted, locale: locale);
 +    case ActionDispatchState.UNKNOWN:
-+      return 'Outcome not known yet — waiting for reconciliation';
++      return kailoText(KailoMessageKey.tasksStatusUnknown, locale: locale);
 +    case ActionDispatchState.DISPATCHED:
 +      break;
 +  }
-+  if (task.workflowId == null) return 'Applied';
++  if (task.workflowId == null) {
++    return kailoText(KailoMessageKey.tasksStatusApplied, locale: locale);
++  }
 +  return switch (task.taskStatus) {
-+    null => 'Started',
-+    TaskStatus.RUNNING => 'Running',
-+    TaskStatus.COMPLETED => 'Completed',
-+    TaskStatus.FAILED => 'Failed',
-+    TaskStatus.CANCELED => 'Canceled',
-+    TaskStatus.TERMINATED => 'Terminated',
-+    TaskStatus.TIMED_OUT => 'Timed out',
++    null => kailoText(KailoMessageKey.tasksStatusStarted, locale: locale),
++    TaskStatus.RUNNING => kailoText(
++      KailoMessageKey.tasksStatusRunning,
++      locale: locale,
++    ),
++    TaskStatus.COMPLETED => kailoText(
++      KailoMessageKey.tasksStatusCompleted,
++      locale: locale,
++    ),
++    TaskStatus.FAILED => kailoText(
++      KailoMessageKey.tasksStatusFailed,
++      locale: locale,
++    ),
++    TaskStatus.CANCELED => kailoText(
++      KailoMessageKey.tasksStatusCanceled,
++      locale: locale,
++    ),
++    TaskStatus.TERMINATED => kailoText(
++      KailoMessageKey.tasksStatusTerminated,
++      locale: locale,
++    ),
++    TaskStatus.TIMED_OUT => kailoText(
++      KailoMessageKey.tasksStatusTimedOut,
++      locale: locale,
++    ),
 +  };
 +}
 +
-+String kailoApprovalStatusText(ApprovalStatus status) => switch (status) {
-+  ApprovalStatus.REQUESTED => 'Requested',
-+  ApprovalStatus.WAITING => 'Waiting for decisions',
-+  ApprovalStatus.APPROVED => 'Approved, not carried out yet',
-+  ApprovalStatus.DENIED => 'Denied',
-+  ApprovalStatus.EXPIRED => 'Expired',
-+  ApprovalStatus.CANCELLED => 'Withdrawn',
-+  ApprovalStatus.CONSUMED => 'Approved and carried out',
-+  ApprovalStatus.INVALIDATED => 'No longer valid',
-+};
++String _approvalPhase(ApprovalView approval, String locale) =>
++    switch (approval.observation) {
++      null => kailoApprovalStatusText(approval.status, locale: locale),
++      ReasonCode.EXTERNAL_RESULT_UNKNOWN => kailoText(
++        KailoMessageKey.tasksStatusUnknown,
++        locale: locale,
++      ),
++      _ => kailoText(KailoMessageKey.tasksStatusDelayed, locale: locale),
++    };
 +
-+String _approvalPhase(ApprovalView approval) => switch (approval.observation) {
-+  null => kailoApprovalStatusText(approval.status),
-+  ReasonCode.EXTERNAL_RESULT_UNKNOWN =>
-+    'Outcome not known yet — waiting for reconciliation',
-+  _ => 'Status may be out of date — waiting for reconciliation',
-+};
-+
-+String _selectorText(ApprovalSelector selector) => switch (selector) {
-+  ApprovalSelector.TENANT_ADMIN => 'Organization admin',
-+  ApprovalSelector.WORKSPACE_ADMIN => 'Workspace admin',
-+  ApprovalSelector.RESOURCE_APPROVER => 'Resource approver',
-+};
-+
-+String _reason(ReasonCode code) =>
-+    '${kailoReasonText(code)} (${kailoReasonCode(code)})';
++String _reason(ReasonCode code, String locale) => kailoText(
++  KailoMessageKey.platformReasonWithCode,
++  locale: locale,
++  variables: {
++    'text': kailoReasonText(code, locale: locale),
++    'code': kailoReasonCode(code),
++  },
++);
 +
 +String _when(String rfc3339) =>
 +    DateTime.tryParse(rfc3339)?.toLocal().toString() ?? rfc3339;
-+
-+const _decideElsewhere =
-+    'To approve, deny or withdraw, open Kailo on the web or desktop.';
 +
 +/// 本人发起的受治理动作。
 +class KailoTasksPage extends ConsumerWidget {
@@ -10492,14 +10515,19 @@ index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9
 +
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    return Scaffold(
-+      appBar: AppBar(title: const Text('My tasks')),
++      appBar: AppBar(
++        title: Text(kailoText(KailoMessageKey.tasksMyTitle, locale: locale)),
++      ),
 +      body: KailoAsyncView(
 +        value: ref.watch(kailoTasksProvider),
 +        onRetry: () => ref.invalidate(kailoTasksProvider),
 +        builder: (context, tasks) => tasks.isEmpty
-+            ? const Center(
-+                child: Text('You have not started any governed action yet.'),
++            ? Center(
++                child: Text(
++                  kailoText(KailoMessageKey.tasksNone, locale: locale),
++                ),
 +              )
 +            : RefreshIndicator(
 +                onRefresh: () => ref.refresh(kailoTasksProvider.future),
@@ -10514,7 +10542,7 @@ index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9
 +                            ),
 +                            title: task.actionKey,
 +                            subtitle:
-+                                '${kailoTaskPhase(task)}\n${_when(task.createdAt)}',
++                                '${kailoTaskPhase(task, locale: locale)}\n${_when(task.createdAt)}',
 +                            subtitleMaxLines: 3,
 +                            onTap: () => Navigator.of(context).push(
 +                              MaterialPageRoute<void>(
@@ -10541,9 +10569,12 @@ index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9
 +
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    final provider = kailoTaskProvider(actionExecutionId);
 +    return Scaffold(
-+      appBar: AppBar(title: const Text('Task')),
++      appBar: AppBar(
++        title: Text(kailoText(KailoMessageKey.tasksTitle, locale: locale)),
++      ),
 +      body: KailoAsyncView(
 +        value: ref.watch(provider),
 +        onRetry: () => ref.invalidate(provider),
@@ -10552,19 +10583,50 @@ index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9
 +            AppListCard(
 +              label: task.actionKey,
 +              children: [
-+                _Fact('State', kailoTaskPhase(task), id: 'kailo-task-state'),
++                _Fact(
++                  kailoText(KailoMessageKey.platformState, locale: locale),
++                  kailoTaskPhase(task, locale: locale),
++                  id: 'kailo-task-state',
++                ),
 +                if (task.observation case final code?)
-+                  _Fact('Reason', _reason(code)),
++                  _Fact(
++                    kailoText(KailoMessageKey.tasksReason, locale: locale),
++                    _reason(code, locale),
++                  ),
 +                if (task.reason case final code?)
-+                  _Fact('Reason', _reason(code)),
++                  _Fact(
++                    kailoText(KailoMessageKey.tasksReason, locale: locale),
++                    _reason(code, locale),
++                  ),
 +                if (task.waitingReason case final waiting?)
-+                  _Fact('Waiting for', waiting),
-+                _Fact('Started', _when(task.createdAt)),
-+                _Fact('Operation', task.operationId),
-+                _Fact('Action execution', task.actionExecutionId),
-+                _Fact('Target', task.targetId),
++                  _Fact(
++                    kailoText(
++                      KailoMessageKey.tasksWaitingReason,
++                      locale: locale,
++                    ),
++                    waiting,
++                  ),
++                _Fact(
++                  kailoText(KailoMessageKey.tasksCreated, locale: locale),
++                  _when(task.createdAt),
++                ),
++                _Fact(
++                  kailoText(KailoMessageKey.tasksOperation, locale: locale),
++                  task.operationId,
++                ),
++                _Fact(
++                  kailoText(KailoMessageKey.tasksExecution, locale: locale),
++                  task.actionExecutionId,
++                ),
++                _Fact(
++                  kailoText(KailoMessageKey.tasksTarget, locale: locale),
++                  task.targetId,
++                ),
 +                if (task.workflowId case final workflow?)
-+                  _Fact('Workflow', workflow),
++                  _Fact(
++                    kailoText(KailoMessageKey.tasksWorkflow, locale: locale),
++                    workflow,
++                  ),
 +              ],
 +            ),
 +            if (task.approvalWorkflowId case final workflowId?)
@@ -10582,19 +10644,33 @@ index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9
 +
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    return Scaffold(
-+      appBar: AppBar(title: const Text('Waiting for my approval')),
++      appBar: AppBar(
++        title: Text(
++          kailoText(KailoMessageKey.approvalsPendingTitle, locale: locale),
++        ),
++      ),
 +      body: KailoAsyncView(
 +        value: ref.watch(kailoPendingApprovalsProvider),
 +        onRetry: () => ref.invalidate(kailoPendingApprovalsProvider),
 +        builder: (context, approvals) => approvals.isEmpty
-+            ? const Center(child: Text('Nothing is waiting for your approval.'))
++            ? Center(
++                child: Text(
++                  kailoText(KailoMessageKey.approvalsNone, locale: locale),
++                ),
++              )
 +            : RefreshIndicator(
 +                onRefresh: () =>
 +                    ref.refresh(kailoPendingApprovalsProvider.future),
 +                child: ListView(
 +                  children: [
-+                    const _Explain(_decideElsewhere),
++                    _Explain(
++                      kailoText(
++                        KailoMessageKey.approvalsMobileReadOnly,
++                        locale: locale,
++                      ),
++                    ),
 +                    AppListCard(
 +                      children: [
 +                        for (final approval in approvals)
@@ -10604,12 +10680,19 @@ index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9
 +                            ),
 +                            title: approval.actionKey,
 +                            subtitle:
-+                                '${_approvalPhase(approval)}\nExpires ${_when(approval.expiresAt)}',
++                                '${_approvalPhase(approval, locale)}\n${kailoText(KailoMessageKey.approvalsExpiresAt, locale: locale, variables: {'time': _when(approval.expiresAt)})}',
 +                            subtitleMaxLines: 3,
 +                            onTap: () => Navigator.of(context).push(
 +                              MaterialPageRoute<void>(
 +                                builder: (_) => Scaffold(
-+                                  appBar: AppBar(title: const Text('Approval')),
++                                  appBar: AppBar(
++                                    title: Text(
++                                      kailoText(
++                                        KailoMessageKey.tasksApproval,
++                                        locale: locale,
++                                      ),
++                                    ),
++                                  ),
 +                                  body: ListView(
 +                                    children: [
 +                                      _ApprovalFacts(
@@ -10639,6 +10722,7 @@ index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9
 +
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    final provider = kailoApprovalProvider(workflowId);
 +    return KailoAsyncView(
 +      value: ref.watch(provider),
@@ -10647,43 +10731,82 @@ index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9
 +        crossAxisAlignment: CrossAxisAlignment.stretch,
 +        children: [
 +          AppListCard(
-+            label: 'Approval',
++            label: kailoText(KailoMessageKey.tasksApproval, locale: locale),
 +            children: [
 +              _Fact(
-+                'Approval state',
-+                _approvalPhase(approval),
++                kailoText(KailoMessageKey.approvalsStatus, locale: locale),
++                _approvalPhase(approval, locale),
 +                id: 'kailo-approval-state',
 +              ),
 +              if (approval.observation case final code?)
-+                _Fact('Reason', _reason(code)),
++                _Fact(
++                  kailoText(KailoMessageKey.tasksReason, locale: locale),
++                  _reason(code, locale),
++                ),
 +              if (approval.reason case final code?)
-+                _Fact('Reason', _reason(code)),
-+              _Fact('Expires', _when(approval.expiresAt)),
-+              _Fact('Target', '${approval.targetType} ${approval.targetId}'),
-+              _Fact('Requested by', approval.initiatorPrincipalId),
++                _Fact(
++                  kailoText(KailoMessageKey.tasksReason, locale: locale),
++                  _reason(code, locale),
++                ),
 +              _Fact(
-+                'Required approvals',
++                kailoText(KailoMessageKey.approvalsExpires, locale: locale),
++                _when(approval.expiresAt),
++              ),
++              _Fact(
++                kailoText(KailoMessageKey.tasksTarget, locale: locale),
++                '${approval.targetType} ${approval.targetId}',
++              ),
++              _Fact(
++                kailoText(KailoMessageKey.approvalsInitiator, locale: locale),
++                approval.initiatorPrincipalId,
++              ),
++              _Fact(
++                kailoText(
++                  KailoMessageKey.approvalsRequirements,
++                  locale: locale,
++                ),
 +                approval.roleRequirements
 +                    .map(
-+                      (r) =>
-+                          '${_selectorText(r.selector)}: at least ${r.minDistinct}',
++                      (r) => kailoText(
++                        KailoMessageKey.approvalsRequirement,
++                        locale: locale,
++                        variables: {
++                          'selector': kailoApprovalSelectorText(
++                            r.selector,
++                            locale: locale,
++                          ),
++                          'count': r.minDistinct,
++                        },
++                      ),
 +                    )
 +                    .join('; '),
 +              ),
-+              _Fact('Workflow', approval.workflowId),
++              _Fact(
++                kailoText(KailoMessageKey.tasksWorkflow, locale: locale),
++                approval.workflowId,
++              ),
 +            ],
 +          ),
 +          AppListCard(
-+            label: 'Decisions',
++            label: kailoText(
++              KailoMessageKey.approvalsDecisions,
++              locale: locale,
++            ),
 +            children: [
 +              if (approval.decisions.isEmpty)
-+                const AppListRow(title: 'No decisions yet.')
++                AppListRow(
++                  title: kailoText(
++                    KailoMessageKey.approvalsNoDecisions,
++                    locale: locale,
++                  ),
++                )
 +              else
 +                for (final d in approval.decisions)
 +                  AppListRow(
-+                    title: d.decision == ApprovalDecision.APPROVE
-+                        ? 'Approve'
-+                        : 'Deny',
++                    title: kailoApprovalDecisionText(
++                      d.decision,
++                      locale: locale,
++                    ),
 +                    subtitle: '${d.approverPrincipalId}\n${_when(d.decidedAt)}',
 +                    subtitleMaxLines: 3,
 +                  ),
@@ -10691,7 +10814,12 @@ index 0000000000000000000000000000000000000000..6823cd7a26f67acc89b76d71d02bf0e9
 +          ),
 +          if (approval.status == ApprovalStatus.REQUESTED ||
 +              approval.status == ApprovalStatus.WAITING)
-+            const _Explain(_decideElsewhere),
++            _Explain(
++              kailoText(
++                KailoMessageKey.approvalsMobileReadOnly,
++                locale: locale,
++              ),
++            ),
 +        ],
 +      ),
 +    );
@@ -18355,7 +18483,7 @@ index a490f3794c90e4906fbe0e88d3fe32da5d8130cb..7b5625701b2f64c340e169fd00d202da
    // canvas and promote their controls onto the base app surface.
    final sheetTheme = backgroundColor == null
 diff --git a/mobile/pubspec.lock b/mobile/pubspec.lock
-index 76e9e9d6d4dff05e4ccff2e0959e70b650d3a39b..17e382f143bbb0dfffb2a9065296d1fc4cf15330 100644
+index 76e9e9d6d4dff05e4ccff2e0959e70b650d3a39b..206591124d5d790782f5d9a8244f0a8cd92c4e0c 100644
 --- a/mobile/pubspec.lock
 +++ b/mobile/pubspec.lock
 @@ -81,14 +81,6 @@ packages:
@@ -18397,7 +18525,19 @@ index 76e9e9d6d4dff05e4ccff2e0959e70b650d3a39b..17e382f143bbb0dfffb2a9065296d1fc
    custom_lint:
      dependency: "direct dev"
      description:
-@@ -600,22 +584,6 @@ packages:
+@@ -486,6 +470,11 @@ packages:
+       url: "https://pub.dev"
+     source: hosted
+     version: "6.0.0"
++  flutter_localizations:
++    dependency: "direct main"
++    description: flutter
++    source: sdk
++    version: "0.0.0"
+   flutter_math_fork:
+     dependency: transitive
+     description:
+@@ -600,22 +589,6 @@ packages:
        url: "https://pub.dev"
      source: hosted
      version: "2.1.3"
@@ -18420,7 +18560,7 @@ index 76e9e9d6d4dff05e4ccff2e0959e70b650d3a39b..17e382f143bbb0dfffb2a9065296d1fc
    gpt_markdown:
      dependency: "direct main"
      description:
-@@ -688,14 +656,6 @@ packages:
+@@ -688,14 +661,6 @@ packages:
        url: "https://pub.dev"
      source: hosted
      version: "4.1.2"
@@ -18435,7 +18575,7 @@ index 76e9e9d6d4dff05e4ccff2e0959e70b650d3a39b..17e382f143bbb0dfffb2a9065296d1fc
    image_picker:
      dependency: "direct main"
      description:
-@@ -856,46 +816,6 @@ packages:
+@@ -856,46 +821,6 @@ packages:
        url: "https://pub.dev"
      source: hosted
      version: "6.1.0"
@@ -18482,7 +18622,7 @@ index 76e9e9d6d4dff05e4ccff2e0959e70b650d3a39b..17e382f143bbb0dfffb2a9065296d1fc
    logging:
      dependency: transitive
      description:
-@@ -944,22 +864,6 @@ packages:
+@@ -944,22 +869,6 @@ packages:
        url: "https://pub.dev"
      source: hosted
      version: "2.0.0"
@@ -18505,7 +18645,7 @@ index 76e9e9d6d4dff05e4ccff2e0959e70b650d3a39b..17e382f143bbb0dfffb2a9065296d1fc
    native_toolchain_c:
      dependency: transitive
      description:
-@@ -1152,14 +1056,6 @@ packages:
+@@ -1152,14 +1061,6 @@ packages:
        url: "https://pub.dev"
      source: hosted
      version: "1.5.2"
@@ -18521,18 +18661,20 @@ index 76e9e9d6d4dff05e4ccff2e0959e70b650d3a39b..17e382f143bbb0dfffb2a9065296d1fc
      dependency: transitive
      description:
 diff --git a/mobile/pubspec.yaml b/mobile/pubspec.yaml
-index f4f0bcac7aaf4f95ebbb4be611ffa1bd2a7ad830..3ea5e8f8e76d03953c00f963bc38ad9445abd203 100644
+index f4f0bcac7aaf4f95ebbb4be611ffa1bd2a7ad830..d40e69347921a7f4f8d7b9b2a6ed45e857458a77 100644
 --- a/mobile/pubspec.yaml
 +++ b/mobile/pubspec.yaml
-@@ -9,7 +9,6 @@ environment:
+@@ -9,7 +9,8 @@ environment:
  dependencies:
    flutter:
      sdk: flutter
 -  cupertino_icons: ^1.0.8
++  flutter_localizations:
++    sdk: flutter
    # Grapheme-cluster segmentation, for deciding whether a message body is
    # nothing but emoji. Already present transitively via the Flutter SDK;
    # declared here because we import it directly.
-@@ -20,7 +19,6 @@ dependencies:
+@@ -20,7 +21,6 @@ dependencies:
    http: ^1.4.0
    flutter_secure_storage: ^10.0.0
    flutter_svg: ^2.2.4
@@ -18540,7 +18682,7 @@ index f4f0bcac7aaf4f95ebbb4be611ffa1bd2a7ad830..3ea5e8f8e76d03953c00f963bc38ad94
    shared_preferences: ^2.5.5
    web_socket_channel: ^3.0.1
    connectivity_plus: ^7.0.0
-@@ -34,8 +32,6 @@ dependencies:
+@@ -34,8 +34,6 @@ dependencies:
    file_selector: ^1.1.0
    camera: ^0.12.0+2
    image_picker: ^1.1.2
@@ -18549,7 +18691,7 @@ index f4f0bcac7aaf4f95ebbb4be611ffa1bd2a7ad830..3ea5e8f8e76d03953c00f963bc38ad94
    photo_manager: ^3.11.0
    video_player: ^2.10.1
    just_audio: ^0.10.6
-@@ -47,18 +43,15 @@ dependencies:
+@@ -47,18 +45,15 @@ dependencies:
    open_filex: ^4.7.0
    path_provider: ^2.1.6
    share_plus: ^13.3.0
@@ -41051,10 +41193,10 @@ index 0000000000000000000000000000000000000000..195a9a644742bb88e66c42896ec1017a
 +}
 diff --git a/mobile/test/features/kailo/kailo_tasks_page_test.dart b/mobile/test/features/kailo/kailo_tasks_page_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..39156a2ead5e875341b85b69e0c1489d79f00490
+index 0000000000000000000000000000000000000000..14ddbff946f9f3ee40f4f9933a019f9b10c20329
 --- /dev/null
 +++ b/mobile/test/features/kailo/kailo_tasks_page_test.dart
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,216 @@
 +import 'dart:convert';
 +
 +import 'package:buzz/features/kailo/kailo_tasks_page.dart';
@@ -41062,6 +41204,7 @@ index 0000000000000000000000000000000000000000..39156a2ead5e875341b85b69e0c1489d
 +import 'package:buzz/shared/kailo/kailo_api.dart';
 +import 'package:buzz/shared/theme/theme.dart';
 +import 'package:flutter/material.dart';
++import 'package:flutter_localizations/flutter_localizations.dart';
 +import 'package:flutter_test/flutter_test.dart';
 +import 'package:hooks_riverpod/hooks_riverpod.dart';
 +import 'package:http/testing.dart';
@@ -41102,8 +41245,9 @@ index 0000000000000000000000000000000000000000..39156a2ead5e875341b85b69e0c1489d
 +Future<List<String>> _pump(
 +  WidgetTester tester,
 +  Widget page,
-+  Map<String, Object? Function()> routes,
-+) async {
++  Map<String, Object? Function()> routes, {
++  Locale locale = const Locale('en'),
++}) async {
 +  final seen = <String>[];
 +  SharedPreferences.setMockInitialValues({
 +    'kailo.config.v1': jsonEncode(testKailoConfig.toJson()),
@@ -41129,7 +41273,17 @@ index 0000000000000000000000000000000000000000..39156a2ead5e875341b85b69e0c1489d
 +          ),
 +        ),
 +      ],
-+      child: MaterialApp(theme: AppTheme.light(), home: page),
++      child: MaterialApp(
++        theme: AppTheme.light(),
++        locale: locale,
++        supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
++        localizationsDelegates: const [
++          GlobalMaterialLocalizations.delegate,
++          GlobalWidgetsLocalizations.delegate,
++          GlobalCupertinoLocalizations.delegate,
++        ],
++        home: page,
++      ),
 +    ),
 +  );
 +  await tester.pumpAndSettle();
@@ -41238,6 +41392,25 @@ index 0000000000000000000000000000000000000000..39156a2ead5e875341b85b69e0c1489d
 +      findsNothing,
 +    );
 +    expect(find.byKey(const ValueKey('kailo-view-error')), findsOneWidget);
++  });
++
++  testWidgets('task and approval read-only text follows zh-CN locale', (
++    tester,
++  ) async {
++    await _pump(tester, const KailoTasksPage(), {
++      'GET /api/v1/tasks': () => [
++        _task({'gateState': 'WAITING'}),
++      ],
++      'GET /api/v1/tasks/ae1': () => _task({'gateState': 'WAITING'}),
++    }, locale: const Locale('zh', 'CN'));
++
++    expect(find.text('我的任务'), findsOneWidget);
++    expect(find.textContaining('等待审批'), findsOneWidget);
++    await tester.tap(find.byKey(const ValueKey('kailo-task-ae1')));
++    await tester.pumpAndSettle();
++    expect(find.text('任务'), findsOneWidget);
++    expect(find.text('状态'), findsOneWidget);
++    expect(find.text('等待审批'), findsOneWidget);
 +  });
 +}
 diff --git a/mobile/test/features/search/recent_searches_provider_test.dart b/mobile/test/features/search/recent_searches_provider_test.dart
