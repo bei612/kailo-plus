@@ -148,7 +148,7 @@ vendor_files:
   - mobile/lib/shared/contracts/generated/contracts.dart:mobile/lib/shared/contracts/generated/contracts.dart
   - mobile/lib/shared/kailo/kailo_reason_text.dart:mobile/lib/shared/kailo/kailo_reason_text.dart
   - mobile/lib/shared/kailo/kailo_platform_text.dart:mobile/lib/shared/kailo/kailo_platform_text.dart
-patch_series_digest: sha256:5903e48eb151cf2f0542bb6560ac986d26987dab8dc0531eaaa869281c3c4a10
+patch_series_digest: sha256:01233918766aa988b9b095712603d90d5608751c47cba2b41e54eb5dd5c89e4b
 # 产物是移动端安装包而不是镜像；Kailo 版本的构建流水线建立之前没有可登记的产物。
 artifact_digest: none
 

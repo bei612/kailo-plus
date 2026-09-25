@@ -7,6 +7,7 @@ import '../contracts/contracts.dart';
 enum KailoMessageKey {
   platformTitle,
   platformWorkspace,
+  platformWorkspaces,
   platformTabMembers,
   platformTabAudit,
   platformTabDevices,
@@ -27,7 +28,12 @@ enum KailoMessageKey {
   platformAction,
   platformResult,
   platformAuditNone,
+  platformAuditMyTitle,
   platformMembersNone,
+  platformMembersCountOne,
+  platformMembersCountOther,
+  platformMembersKeyCountOne,
+  platformMembersKeyCountOther,
   rolesTitle,
   rolesNone,
   rolesTenant,
@@ -46,6 +52,13 @@ enum KailoMessageKey {
   platformDevicesAdded,
   platformDevicesThisDevice,
   platformDevicesRevoke,
+  platformDevicesMyTitle,
+  platformDevicesRegistered,
+  platformDevicesRegisteredAt,
+  platformDevicesRevokeTitle,
+  platformDevicesRevokeThisConfirm,
+  platformDevicesRevokeOtherConfirm,
+  platformDevicesStateAfterRevoke,
   platformDevicesRevokeUnknown,
   platformDevicesRevokeRejected,
   platformNotMember,
@@ -53,6 +66,7 @@ enum KailoMessageKey {
   platformBack,
   platformConfirm,
   platformCancel,
+  platformSettingsOrganization,
   platformReasonWithCode,
   tasksNone,
   tasksTitle,
@@ -189,6 +203,7 @@ enum KailoMessageKey {
 const _messages = <KailoMessageKey, (String, String)>{
   KailoMessageKey.platformTitle: ('Kailo', 'Kailo'),
   KailoMessageKey.platformWorkspace: ('Workspace', '工作区'),
+  KailoMessageKey.platformWorkspaces: ('Workspaces', '工作区'),
   KailoMessageKey.platformTabMembers: ('Members', '成员'),
   KailoMessageKey.platformTabAudit: ('Audit', '审计'),
   KailoMessageKey.platformTabDevices: ('Devices', '设备'),
@@ -218,10 +233,15 @@ const _messages = <KailoMessageKey, (String, String)>{
   KailoMessageKey.platformAction: ('Action', '动作'),
   KailoMessageKey.platformResult: ('Result', '结果'),
   KailoMessageKey.platformAuditNone: ('No actions recorded yet.', '还没有记录到动作。'),
+  KailoMessageKey.platformAuditMyTitle: ('My activity log', '我的活动记录'),
   KailoMessageKey.platformMembersNone: (
     'This workspace has no members.',
     '该工作区没有成员。',
   ),
+  KailoMessageKey.platformMembersCountOne: ('{count} member', '{count} 位成员'),
+  KailoMessageKey.platformMembersCountOther: ('{count} members', '{count} 位成员'),
+  KailoMessageKey.platformMembersKeyCountOne: ('{count} key', '{count} 把密钥'),
+  KailoMessageKey.platformMembersKeyCountOther: ('{count} keys', '{count} 把密钥'),
   KailoMessageKey.rolesTitle: ('Administrator roles', '管理员角色'),
   KailoMessageKey.rolesNone: (
     'No eligible members on this page.',
@@ -264,6 +284,25 @@ const _messages = <KailoMessageKey, (String, String)>{
   KailoMessageKey.platformDevicesAdded: ('Added', '添加于'),
   KailoMessageKey.platformDevicesThisDevice: ('This device', '本机'),
   KailoMessageKey.platformDevicesRevoke: ('Revoke', '撤销'),
+  KailoMessageKey.platformDevicesMyTitle: ('My devices', '我的设备'),
+  KailoMessageKey.platformDevicesRegistered: ('Registered devices', '已登记设备'),
+  KailoMessageKey.platformDevicesRegisteredAt: (
+    '{state} · registered {time}',
+    '{state} · 登记于 {time}',
+  ),
+  KailoMessageKey.platformDevicesRevokeTitle: ('Revoke device', '撤销设备'),
+  KailoMessageKey.platformDevicesRevokeThisConfirm: (
+    'This device will lose access to your workspaces and be signed out.',
+    '本机将失去工作区访问权限，并退出登录。',
+  ),
+  KailoMessageKey.platformDevicesRevokeOtherConfirm: (
+    'That device will lose access to your workspaces.',
+    '该设备将失去工作区访问权限。',
+  ),
+  KailoMessageKey.platformDevicesStateAfterRevoke: (
+    'Device status: {state}.',
+    '设备状态：{state}。',
+  ),
   KailoMessageKey.platformDevicesRevokeUnknown: (
     'The revocation result is unknown (operation {operation}). Reload to check.',
     '撤销结果不明（操作 {operation}）。请刷新后确认。',
@@ -280,6 +319,7 @@ const _messages = <KailoMessageKey, (String, String)>{
   KailoMessageKey.platformBack: ('Back', '返回'),
   KailoMessageKey.platformConfirm: ('Confirm', '确认'),
   KailoMessageKey.platformCancel: ('Cancel', '取消'),
+  KailoMessageKey.platformSettingsOrganization: ('Organization', '组织'),
   KailoMessageKey.platformReasonWithCode: ('{text} ({code})', '{text}（{code}）'),
   KailoMessageKey.tasksNone: (
     'You have not started any governed action yet.',
@@ -691,6 +731,79 @@ String kailoTenantMembershipStateText(
     TenantMembershipState.REVOKING => 'Being removed',
     TenantMembershipState.REVOKED => 'Not a member',
     TenantMembershipState.ERROR => 'Needs attention',
+  };
+}
+
+String kailoWorkspaceMembershipStateText(
+  WorkspaceMembershipState value, {
+  String? locale,
+}) {
+  final language = (locale ?? Platform.localeName).toLowerCase();
+  if (language.startsWith('zh')) {
+    return switch (value) {
+      WorkspaceMembershipState.PROVISIONING => '正在开通',
+      WorkspaceMembershipState.ACTIVE => '成员',
+      WorkspaceMembershipState.REVOKING => '正在移除',
+      WorkspaceMembershipState.REVOKED => '非成员',
+      WorkspaceMembershipState.ERROR => '需要处理',
+    };
+  }
+  return switch (value) {
+    WorkspaceMembershipState.PROVISIONING => 'Being set up',
+    WorkspaceMembershipState.ACTIVE => 'Member',
+    WorkspaceMembershipState.REVOKING => 'Being removed',
+    WorkspaceMembershipState.REVOKED => 'Not a member',
+    WorkspaceMembershipState.ERROR => 'Needs attention',
+  };
+}
+
+String kailoBuzzIdentityStateText(BuzzIdentityState value, {String? locale}) {
+  final language = (locale ?? Platform.localeName).toLowerCase();
+  if (language.startsWith('zh')) {
+    return switch (value) {
+      BuzzIdentityState.PENDING_SECRET => '正在准备密钥',
+      BuzzIdentityState.RECONCILING => '正在接入',
+      BuzzIdentityState.ACTIVE => '有效',
+      BuzzIdentityState.REVOKING => '正在撤销',
+      BuzzIdentityState.REVOKED => '已撤销',
+    };
+  }
+  return switch (value) {
+    BuzzIdentityState.PENDING_SECRET => 'Preparing key',
+    BuzzIdentityState.RECONCILING => 'Being added',
+    BuzzIdentityState.ACTIVE => 'Active',
+    BuzzIdentityState.REVOKING => 'Being removed',
+    BuzzIdentityState.REVOKED => 'Revoked',
+  };
+}
+
+String kailoAuditEventTypeText(AuditEventType value, {String? locale}) {
+  final language = (locale ?? Platform.localeName).toLowerCase();
+  if (language.startsWith('zh')) {
+    return switch (value) {
+      AuditEventType.AUTHENTICATION => '认证',
+      AuditEventType.SESSION => '会话',
+      AuditEventType.INTENT => '意图',
+      AuditEventType.DECISION => '决策',
+      AuditEventType.APPROVAL => '审批',
+      AuditEventType.DISPATCH => '派发',
+      AuditEventType.OUTCOME => '结果',
+      AuditEventType.REVOCATION => '撤权',
+      AuditEventType.RECONCILIATION => '对账',
+      AuditEventType.ACCESS => '访问',
+    };
+  }
+  return switch (value) {
+    AuditEventType.AUTHENTICATION => 'Authentication',
+    AuditEventType.SESSION => 'Session',
+    AuditEventType.INTENT => 'Intent',
+    AuditEventType.DECISION => 'Decision',
+    AuditEventType.APPROVAL => 'Approval',
+    AuditEventType.DISPATCH => 'Dispatch',
+    AuditEventType.OUTCOME => 'Outcome',
+    AuditEventType.REVOCATION => 'Revocation',
+    AuditEventType.RECONCILIATION => 'Reconciliation',
+    AuditEventType.ACCESS => 'Access',
   };
 }
 

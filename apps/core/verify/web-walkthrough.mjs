@@ -271,9 +271,11 @@ await step("已读：频道同步且页面可见时，已读位置推进到最�
   if (!values.every((v) => /Z$/.test(v))) throw new Error(`已读时间必须是 UTC，实际 ${values}`);
 });
 
-await step("成员页：本人 ACTIVE，协议身份按上游统一形式缩写", async () => {
+await step("成员页：本人状态使用本地化文案，协议身份按上游统一形式缩写", async () => {
   await page.getByRole("button", { name: "Members" }).click();
-  const row = page.getByRole("row").filter({ hasText: "ACTIVE" });
+  const row = page.getByRole("row").filter({
+    has: page.getByRole("cell", { name: "Member", exact: true }),
+  });
   await row.first().waitFor();
   const roles = page.getByTestId("role-members");
   await roles.getByText("Administrator roles").waitFor();

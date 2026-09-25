@@ -11,6 +11,12 @@ import {
 } from "@kailo/contracts";
 import { type ReactNode, useState } from "react";
 import { truncatePubkey, relativeTime } from "../format";
+import {
+  auditEventTypeMessages,
+  buzzIdentityStateMessages,
+  enumLabel,
+  workspaceMembershipStateMessages,
+} from "../i18n";
 import { type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
@@ -43,6 +49,7 @@ export function Resource<T>({
 export function MembersPane({ workspaceId }: { workspaceId: string }) {
   const client = useBffClient();
   const t = useT();
+  const locale = useLocale();
   const [state, reload] = useLoad(`members:${workspaceId}`, () => client.members(workspaceId));
   return (
     <Resource state={state} reload={reload}>
@@ -58,7 +65,7 @@ export function MembersPane({ workspaceId }: { workspaceId: string }) {
                   <Badge
                     tone={m.state === WorkspaceMembershipState.Active ? "positive" : "neutral"}
                   >
-                    {m.state}
+                    {enumLabel(locale, workspaceMembershipStateMessages, m.state)}
                   </Badge>
                 </Cell>
                 <Cell mono>
@@ -137,7 +144,7 @@ export function AuditPage() {
               // biome-ignore lint/suspicious/noArrayIndexKey: 见上
               <tr key={i}>
                 <Cell title={a.occurredAt}>{relativeTime(locale, a.occurredAt)}</Cell>
-                <Cell>{a.eventType}</Cell>
+                <Cell>{enumLabel(locale, auditEventTypeMessages, a.eventType)}</Cell>
                 <Cell>{a.actionKey}</Cell>
                 <Cell>
                   <Badge tone={a.decision === "ALLOW" ? "positive" : "negative"}>{a.decision}</Badge>{" "}
@@ -212,7 +219,7 @@ export function DevicesPage({ currentDevicePubkey }: { currentDevicePubkey?: str
                   </Cell>
                   <Cell>
                     <Badge tone={k.state === BuzzIdentityState.Active ? "positive" : "neutral"}>
-                      {k.state}
+                      {enumLabel(locale, buzzIdentityStateMessages, k.state)}
                     </Badge>
                   </Cell>
                   <Cell title={k.createdAt}>{relativeTime(locale, k.createdAt)}</Cell>

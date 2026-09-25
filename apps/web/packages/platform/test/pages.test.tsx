@@ -14,9 +14,9 @@ function transport(route: Route): BffTransport & { send: ReturnType<typeof vi.fn
   return { send: vi.fn(async (r: BffRequest) => route(r)) };
 }
 
-function mount(t: BffTransport, ui: React.ReactNode) {
+function mount(t: BffTransport, ui: React.ReactNode, locale: "en" | "zh-CN" = "en") {
   return render(
-    <PlatformProvider client={createBffClient(t)} locale="en">
+    <PlatformProvider client={createBffClient(t)} locale={locale}>
       {ui}
     </PlatformProvider>,
   );
@@ -54,6 +54,8 @@ describe("DevicesPage", () => {
     const host = await mount(t, <DevicesPage currentDevicePubkey={mine} />);
     await settle();
     expect(host.textContent).toContain("This device");
+    expect(host.textContent).toContain("Active");
+    expect(host.textContent).not.toContain("ACTIVE");
     await click(host.querySelectorAll("button")[0] as HTMLButtonElement);
     const alert = host.querySelector("[role=alert]")?.textContent ?? "";
     expect(alert).toContain("unknown");
@@ -96,6 +98,8 @@ describe("WorkspaceMembersPage", () => {
     await settle();
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/workspaces/w1/members" });
     expect(host.textContent).toContain("Ada");
+    expect(host.textContent).toContain("Member");
+    expect(host.textContent).not.toContain("ACTIVE");
     expect(host.textContent).toContain("eeeeeeee…eeee · ffffffff…ffff");
   });
 
@@ -227,5 +231,23 @@ describe("AuditPage", () => {
     await settle();
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/audit" });
     expect(host.textContent).toContain("identity.client-key.register");
+    expect(host.textContent).toContain("Decision");
+    expect(host.textContent).not.toContain("DECISION");
+  });
+
+  it("中文界面从同一目录翻译审计事件类型", async () => {
+    const host = await mount(transport(() => ({
+      status: 200,
+      body: [{
+        actionKey: "identity.client-key.register",
+        decision: "ALLOW",
+        eventType: "DECISION",
+        occurredAt: new Date().toISOString(),
+        resultCode: "ACCEPTED",
+      }],
+    })), <AuditPage />, "zh-CN");
+    await settle();
+    expect(host.textContent).toContain("决策");
+    expect(host.textContent).not.toContain("DECISION");
   });
 });

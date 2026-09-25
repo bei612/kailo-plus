@@ -88,3 +88,7 @@ HEAD 与 `implementation_base_commit` 不一致即失败。
 ## 2026-09-25 Mobile 登录与连接文案增量
 
 共享 `i18n.ts` 再次变化；固定 Desktop 上游基线、既有补丁和更新后的 vendor 文件重新构建 Linux `.deb` 成功。当前文件 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 经 `sha256sum` 核对为 `723202ab17efacd6e3a271f9d7e19be03cb7dc411e1d0db9c629f85c14d07241`，manifest 与追溯记录同步。此次仅更新共享文案，未在真实桌面会话安装，也未重跑 Playwright 或原生端端到端；上文结果均是历史增量证据。
+
+## 2026-09-25 成员、设备、审计文案增量
+
+Desktop 复用的 `web/packages/platform` 在成员、设备、审计状态视图中使用同一双语枚举映射；固定上游基线、原补丁与新 vendor 文件重新构建 Linux `.deb`。`dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的实测 SHA-256 为 `add870880648eea8ee77b641251b1948b3a21cddc7cb617b1390ee621f62a21a`，已写入 manifest 和当前追溯记录。本增量仍未在真实桌面会话安装，不能把构建成功当作运行验收。

@@ -9,9 +9,12 @@ import {
   ApprovalDecision,
   ApprovalSelector,
   ApprovalStatus,
+  AuditEventType,
+  BuzzIdentityState,
   ReasonCode,
   TenantInvitationStatus,
   TenantMembershipState,
+  WorkspaceMembershipState,
 } from "@kailo/contracts";
 
 export type PlatformLocale = "en" | "zh-CN";
@@ -21,6 +24,7 @@ type Message = { readonly en: string; readonly "zh-CN": string };
 export const platformMessages = {
   "platform.title": { en: "Kailo", "zh-CN": "Kailo" },
   "platform.workspace": { en: "Workspace", "zh-CN": "工作区" },
+  "platform.workspaces": { en: "Workspaces", "zh-CN": "工作区" },
   "platform.tab.members": { en: "Members", "zh-CN": "成员" },
   "platform.tab.audit": { en: "Audit", "zh-CN": "审计" },
   "platform.tab.devices": { en: "Devices", "zh-CN": "设备" },
@@ -47,10 +51,15 @@ export const platformMessages = {
   "platform.action": { en: "Action", "zh-CN": "动作" },
   "platform.result": { en: "Result", "zh-CN": "结果" },
   "platform.audit.none": { en: "No actions recorded yet.", "zh-CN": "还没有记录到动作。" },
+  "platform.audit.myTitle": { en: "My activity log", "zh-CN": "我的活动记录" },
   "platform.members.none": {
     en: "This workspace has no members.",
     "zh-CN": "该工作区没有成员。",
   },
+  "platform.members.countOne": { en: "{count} member", "zh-CN": "{count} 位成员" },
+  "platform.members.countOther": { en: "{count} members", "zh-CN": "{count} 位成员" },
+  "platform.members.keyCountOne": { en: "{count} key", "zh-CN": "{count} 把密钥" },
+  "platform.members.keyCountOther": { en: "{count} keys", "zh-CN": "{count} 把密钥" },
   "roles.title": { en: "Administrator roles", "zh-CN": "管理员角色" },
   "roles.none": { en: "No eligible members on this page.", "zh-CN": "本页没有符合条件的成员。" },
   "roles.tenant": { en: "Tenant admin", "zh-CN": "租户管理员" },
@@ -87,6 +96,25 @@ export const platformMessages = {
   "platform.devices.added": { en: "Added", "zh-CN": "添加于" },
   "platform.devices.thisDevice": { en: "This device", "zh-CN": "本机" },
   "platform.devices.revoke": { en: "Revoke", "zh-CN": "撤销" },
+  "platform.devices.myTitle": { en: "My devices", "zh-CN": "我的设备" },
+  "platform.devices.registered": { en: "Registered devices", "zh-CN": "已登记设备" },
+  "platform.devices.registeredAt": {
+    en: "{state} · registered {time}",
+    "zh-CN": "{state} · 登记于 {time}",
+  },
+  "platform.devices.revokeTitle": { en: "Revoke device", "zh-CN": "撤销设备" },
+  "platform.devices.revokeThisConfirm": {
+    en: "This device will lose access to your workspaces and be signed out.",
+    "zh-CN": "本机将失去工作区访问权限，并退出登录。",
+  },
+  "platform.devices.revokeOtherConfirm": {
+    en: "That device will lose access to your workspaces.",
+    "zh-CN": "该设备将失去工作区访问权限。",
+  },
+  "platform.devices.stateAfterRevoke": {
+    en: "Device status: {state}.",
+    "zh-CN": "设备状态：{state}。",
+  },
   "platform.devices.revokeUnknown": {
     en: "The revocation result is unknown (operation {operation}). Reload to check.",
     "zh-CN": "撤销结果不明（操作 {operation}）。请刷新后确认。",
@@ -104,6 +132,7 @@ export const platformMessages = {
   "platform.back": { en: "Back", "zh-CN": "返回" },
   "platform.confirm": { en: "Confirm", "zh-CN": "确认" },
   "platform.cancel": { en: "Cancel", "zh-CN": "取消" },
+  "platform.settings.organization": { en: "Organization", "zh-CN": "组织" },
   "platform.reasonWithCode": { en: "{text} ({code})", "zh-CN": "{text}（{code}）" },
 
   "tasks.none": {
@@ -412,6 +441,35 @@ export const tenantMembershipStateMessages = {
   [TenantMembershipState.Revoked]: { en: "Not a member", "zh-CN": "非成员" },
   [TenantMembershipState.Error]: { en: "Needs attention", "zh-CN": "需要处理" },
 } as const satisfies Record<TenantMembershipState, Message>;
+
+export const workspaceMembershipStateMessages = {
+  [WorkspaceMembershipState.Provisioning]: { en: "Being set up", "zh-CN": "正在开通" },
+  [WorkspaceMembershipState.Active]: { en: "Member", "zh-CN": "成员" },
+  [WorkspaceMembershipState.Revoking]: { en: "Being removed", "zh-CN": "正在移除" },
+  [WorkspaceMembershipState.Revoked]: { en: "Not a member", "zh-CN": "非成员" },
+  [WorkspaceMembershipState.Error]: { en: "Needs attention", "zh-CN": "需要处理" },
+} as const satisfies Record<WorkspaceMembershipState, Message>;
+
+export const buzzIdentityStateMessages = {
+  [BuzzIdentityState.PendingSecret]: { en: "Preparing key", "zh-CN": "正在准备密钥" },
+  [BuzzIdentityState.Reconciling]: { en: "Being added", "zh-CN": "正在接入" },
+  [BuzzIdentityState.Active]: { en: "Active", "zh-CN": "有效" },
+  [BuzzIdentityState.Revoking]: { en: "Being removed", "zh-CN": "正在撤销" },
+  [BuzzIdentityState.Revoked]: { en: "Revoked", "zh-CN": "已撤销" },
+} as const satisfies Record<BuzzIdentityState, Message>;
+
+export const auditEventTypeMessages = {
+  [AuditEventType.Authentication]: { en: "Authentication", "zh-CN": "认证" },
+  [AuditEventType.Session]: { en: "Session", "zh-CN": "会话" },
+  [AuditEventType.Intent]: { en: "Intent", "zh-CN": "意图" },
+  [AuditEventType.Decision]: { en: "Decision", "zh-CN": "决策" },
+  [AuditEventType.Approval]: { en: "Approval", "zh-CN": "审批" },
+  [AuditEventType.Dispatch]: { en: "Dispatch", "zh-CN": "派发" },
+  [AuditEventType.Outcome]: { en: "Outcome", "zh-CN": "结果" },
+  [AuditEventType.Revocation]: { en: "Revocation", "zh-CN": "撤权" },
+  [AuditEventType.Reconciliation]: { en: "Reconciliation", "zh-CN": "对账" },
+  [AuditEventType.Access]: { en: "Access", "zh-CN": "访问" },
+} as const satisfies Record<AuditEventType, Message>;
 
 export const approvalDecisionMessages = {
   [ApprovalDecision.Approve]: { en: "Approve", "zh-CN": "批准" },

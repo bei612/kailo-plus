@@ -56,6 +56,12 @@ Dart 契约生成物换回可选枚举取 `!` 的旧版 → 任务详情解析�
 
 补丁从 1660294 增至 1667987 字节，登记删除路径仍为 130 项；`--source-only` 重建后的 4966 个已跟踪路径加 4 个 vendor 文件，内容、权限及符号链接逐项比对差异 0。Mobile 整树 `flutter analyze` 输出 `No issues found!`；专项测试为 `+13: All tests passed!`；Mobile 全量 `flutter test` 为 `+1147 ~2: All tests passed!`。故意重新把原始 IdP 详情拼回连接失败文案时，脱敏测试按预期失败，恢复后专项测试通过。`apps/tools/check.sh --full` 十项通过，数据库迁移实演因未提供隔离 `DATABASE_URL` 显式跳过。本增量未重建 APK、未重跑真实拓扑端到端，也未核验 iOS 安装包；旧产物与端到端结果不能算本增量证据。
 
+## 成员、设备、审计文案增量（2026-09-25）
+
+开发分支 HEAD `d323bf037ec2068143b1934b098a8ac1e66565c1`：共享 TS 文案表增加 WorkspaceMembershipState、BuzzIdentityState、AuditEventType 三组完整双语映射，并由同一生成器投递到 Mobile。成员与 Workspace 列表、设备和审计视图、设置页的组织入口改读共享 key；Web/Desktop 对应枚举视图也改读同一映射。频道成员弹层的既有断言随显示文案更新，不改变成员计数、准入或动作语义。
+
+受控补丁由 1667987 增至 1673749 字节，删除路径仍为 130 项。`--source-only` 从固定基线重建后，4966 个已跟踪源码路径内容比对差异 0，4 个 vendor 文件与本仓库生成物一致。`gen-platform-i18n.py --check`、Web 共享包测试 50/50、Flutter 整树 analyze 与全量测试通过（结构化报告 `success=true`）；故意删除一个状态映射时生成检查失败，故意把成员状态改回原始枚举时中文组件测试失败，均已还原。此次未重建 APK、未重跑真实拓扑端到端；主题与日期/复数语义的全端统一尚未闭合。
+
 ## 未覆盖
 
 - iOS 未构建、未核验：需要 macOS/Xcode。iOS 原生侧仍有 Huddle 音频、推送扩展、年龄信号等上游

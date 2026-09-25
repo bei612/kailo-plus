@@ -85,6 +85,9 @@ def platform_catalog() -> tuple[list[tuple[str, str, str]], dict[str, list[tuple
         "ApprovalStatus": "approvalStatusMessages",
         "TenantInvitationStatus": "invitationStatusMessages",
         "TenantMembershipState": "tenantMembershipStateMessages",
+        "WorkspaceMembershipState": "workspaceMembershipStateMessages",
+        "BuzzIdentityState": "buzzIdentityStateMessages",
+        "AuditEventType": "auditEventTypeMessages",
         "ApprovalDecision": "approvalDecisionMessages",
         "ApprovalSelector": "approvalSelectorMessages",
     }
