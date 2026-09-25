@@ -22,12 +22,12 @@ URI scheme 回调，IdP 登记见 `core/verify/native-identity.md`）、刷新�
 
 ## 清单可复现
 
-清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `36cc1f7872e0630bf8223b19f7fc2a19d18c36e0`）。
+清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `c6a920747dc62df5b9f6be400fb66cd33848bf37`）。
 `UPSTREAM_MIRROR=<开发树> tools/build-upstream.sh --source-only <目录> buzz-mobile` 按本清单从基线
 重建源树（删除 130 条登记路径、打 `0001-kailo-mobile.patch`、放入 2 个生成物），与开发分支
 逐文件比对（内容与可执行位）：4966 个已跟踪文件与 2 个 vendor 文件全部一致，差异 0（2026-09-24）。
 
-## 实测（2026-09-24，开发分支 HEAD 加 kailo 仓库当前契约生成物）
+## 实测（2026-09-25，开发分支 HEAD 加 kailo 仓库当前契约生成物）
 
 | 检查 | 结果 |
 |---|---|
@@ -42,7 +42,7 @@ URI scheme 回调，IdP 登记见 `core/verify/native-identity.md`）、刷新�
 任务状态把 `EXTERNAL_RESULT_UNKNOWN` 当作别的 code → 「结果不明与投影落后不说成功也不说失败」失败；
 Dart 契约生成物换回可选枚举取 `!` 的旧版 → 任务详情解析报 `Null check operator used on a null value`。
 
-任务与审批视图加入后（开发分支 `36cc1f787`）重跑 `native-e2e.sh mobile`：`All tests passed!`
+任务与审批视图与邀请 reason code 加入后（开发分支 `c6a920747`，Core 为 DD-83 合并后的 main）重跑 `native-e2e.sh mobile`：`All tests passed!`
 （撤销后 Relay 回 `restricted: channel access revoked`）。上表的 `flutter build apk --debug` 是此前的结果，本次未重跑。
 
 ## 未覆盖

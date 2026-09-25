@@ -35,12 +35,19 @@ validation:
       ref: worker/replay-tests/testdata/approval_can_3_consumed_history.json
     - dimension: 运维手册
       ref: docs/runbooks/RB-05-projection-lag-and-reconciliation.md
+    - dimension: 呈现
+      ref: upstream-patches/buzz-web/verify/web-surface.md
+    - dimension: 呈现
+      ref: upstream-patches/buzz-desktop/verify/kailo-desktop.md
+    - dimension: 呈现
+      ref: upstream-patches/buzz-mobile/verify/kailo-mobile.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/governance_api.rs, core/crates/kailo-core/src/governance_reconcile.rs, core/crates/kailo-core/src/spicedb.rs, core/crates/kailo-core/src/temporal.rs, core/crates/kailo-core/src/client_keys.rs, worker/workflows/approval.go, worker/workflows/approval_can_test.go, core/verify/drill-approval-can.sh, worker/activities/core_api.go, docs/adr/ADR-10-core-spicedb-client.md]
-  # 界面（Tasks/Approvals 页）由共享 TS 包 web/packages/platform 交付；本记录只含 BFF 端点
-  surfaces: []
+  paths: [core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/governance_api.rs, core/crates/kailo-core/src/governance_reconcile.rs, core/crates/kailo-core/src/spicedb.rs, core/crates/kailo-core/src/temporal.rs, core/crates/kailo-core/src/client_keys.rs, worker/workflows/approval.go, worker/workflows/approval_can_test.go, core/verify/drill-approval-can.sh, worker/activities/core_api.go, docs/adr/ADR-10-core-spicedb-client.md, web/packages/platform/src/governance.ts, web/packages/platform/src/react/governance.tsx, upstream-patches/buzz-web/patches/0005-tasks-and-approvals-navigation.patch, upstream-patches/buzz-desktop, upstream-patches/buzz-mobile]
+  # Tasks/Approvals 页：Web 与 Desktop 是共用包 web/packages/platform 的同一份组件；
+  # Mobile 为受权只读视图（apps/02 §4），不渲染撤回与决定
+  surfaces: [web, desktop, mobile]
   schemas: [contracts/api/action_command.schema.json, contracts/api/action_submission.schema.json, contracts/api/task_view.schema.json, contracts/api/approval_view.schema.json, contracts/api/approval_decision_request.schema.json, contracts/workflow/approval_input.schema.json, contracts/workflow/approval_resume.schema.json, contracts/workflow/approval_refusal.schema.json, contracts/workflow/approval_state_report.schema.json, contracts/workflow/fresh_approval_admission.schema.json, contracts/workflow/fresh_approval_admission_result.schema.json, contracts/enums/approval_status.schema.json, contracts/enums/reason_code.schema.json]
   migrations: [core/migrations/20260924100000_governed_action.up.sql, core/migrations/20260924110000_client_key_definitions.up.sql]
 
@@ -51,6 +58,8 @@ runtime:
 
 release:
   artifacts:
+    - name: upstream-buzz-web
+      digest: sha256:d4dc3cb62aca89add7cca4c824055654a5a58d99a038421539ada292f9616168
     - name: kailo-core
       digest: sha256:24751a5558478a1e314dbeec36259044c8d06ce007612325f4c333e0f817406f
     - name: kailo-worker

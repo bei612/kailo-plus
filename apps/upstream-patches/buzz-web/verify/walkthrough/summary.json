@@ -2,19 +2,19 @@
   "steps": [
     {
       "name": "未登录访问 /app/ 被带到 IdP，登录后回到 /app/",
-      "ms": 482
+      "ms": 270
     },
     {
       "name": "会话与 Workspace 解析，频道流进入已同步",
-      "ms": 139
+      "ms": 152
     },
     {
       "name": "发送消息：经 BFF 代签，由流回显后才出现，作者显示为成员名",
-      "ms": 81
+      "ms": 83
     },
     {
       "name": "发送失败：草稿保留、明确报错，不假装已发出",
-      "ms": 73
+      "ms": 72
     },
     {
       "name": "断线期间的状态文案",
@@ -22,31 +22,63 @@
     },
     {
       "name": "BFF 重启：状态如实离开已同步，恢复后续流并能继续收发",
-      "ms": 13510
+      "ms": 134661
+    },
+    {
+      "name": "结果不明的提示",
+      "value": "Delivery not confirmed yet. If the message shows up in the channel, it was delivered. Reference: 4f9c446e-97ab-4fc0-904c-e9bf61f6476b"
+    },
+    {
+      "name": "结果不明后重发",
+      "value": "Delivery not confirmed yet. If the message shows up in the channel, it was delivered. Reference: 4f9c446e-97ab-4fc0-904c-e9bf61f6476b"
+    },
+    {
+      "name": "发布结果不明：Relay 不可达时显示待确认与操作号，不说成功也不说失败",
+      "ms": 19214
     },
     {
       "name": "附件：图片经 BFF 代签上传、随消息发出，再经 BFF 同源读取渲染",
-      "ms": 1351
+      "ms": 1424
     },
     {
       "name": "收藏与静音：写入 Core 用户状态，刷新页面后仍在",
-      "ms": 282
+      "ms": 292
     },
     {
       "name": "已读：频道同步且页面可见时，已读位置推进到最新消息",
-      "ms": 17
+      "ms": 20
     },
     {
       "name": "成员页：本人 ACTIVE，协议身份按上游统一形式缩写",
-      "ms": 50
+      "ms": 99
     },
     {
       "name": "审计页：本人的消息发布有记录，且不含正文",
-      "ms": 84
+      "ms": 100
     },
     {
       "name": "设备页：列出本人登记的原生设备，未登记时如实说明",
-      "ms": 82
+      "ms": 81
+    },
+    {
+      "name": "任务页：本人的待审批任务如实显示；撤回需确认、经 BFF，结论以服务端为准",
+      "ms": 1255
+    },
+    {
+      "name": "批准后的回应",
+      "value": "Your decision “Approve” is recorded. The approval is now: Approved, not carried out yet."
+    },
+    {
+      "name": "审批页：待我审批可见；批准需确认、经 Temporal Update，同值幂等、冲突值拒绝",
+      "ms": 1281
+    },
+    {
+      "name": "兑换已撤回的邀请",
+      "value": "The invitation could not be used: This invitation was withdrawn. Ask for a new one. (INVITATION_REVOKED)"
+    },
+    {
+      "name": "邀请：admin 签发的链接只显示一次、列表不含凭据、撤回需确认；兑换页读完 fragment 即清掉",
+      "ms": 441
     },
     {
       "name": "伪造原生入口标识的回应",
@@ -54,7 +86,7 @@
     },
     {
       "name": "浏览器不能自称原生端：网关移除伪造的入口标识（DD-78）",
-      "ms": 3
+      "ms": 4
     },
     {
       "name": "注销后重新进入",
@@ -62,7 +94,7 @@
     },
     {
       "name": "注销：撤掉 Core 会话与网关 cookie；再次进入是一次新的登录",
-      "ms": 683
+      "ms": 672
     }
   ],
   "origins": [
@@ -73,10 +105,60 @@
   "consoleErrors": [
     "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
     "Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
     "Failed to load resource: the server responded with a status of 403 (Forbidden)"
   ],
   "failedResponses": [
-    "503 POST http://gateway.kailo.local:8080/api/v1/workspaces/b17f872b-ff87-4db9-bc32-c011b7f8faf2/messages",
+    "503 POST http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/messages",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 GET http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/stream",
+    "503 POST http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/messages",
+    "503 POST http://gateway.kailo.local:8080/api/v1/workspaces/2da948df-9b41-479f-ba0c-097d28c6548f/messages",
+    "409 POST http://gateway.kailo.local:8080/api/v1/approvals/kailo%3AAPPROVAL%3A4e01132a-a2c4-4abb-84c3-9e7783dc0444%3Ac95f952e-72dc-4b7b-82fd-4e7816a004aa%3A1/decision",
+    "409 POST http://gateway.kailo.local:8080/api/v1/invitations/redeem",
     "403 POST http://gateway.kailo.local:8080/api/v1/identity/client-keys"
   ],
   "cspViolations": []
