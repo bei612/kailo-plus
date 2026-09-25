@@ -68,6 +68,10 @@ Temporal 与 Go Worker、Relay roster。
 - `go test ./workflows/` 10/10（含续跑三例）；`replay-tests` 三组全过（Approval 7 份——其中 3 份是续跑演练录制的同一条审批的三个 run——ComponentTask 8 份、baseline）。
 - 续跑演练 `DRILL_CAN_HISTORY_COUNT=18 bash core/verify/drill-approval-can.sh <目录>`（2026-09-24）：1 passed，同一 workflow ID 3 个 run（两次 `CONTINUED_AS_NEW`、最后 `COMPLETED`），续跑后的写回被 Core 采纳，B 的决定跨 run 保留并被消费。
 
+## CapacityLease 退出门禁的适用性（2026-09-25）
+
+Stage 2 退出门禁「Activity heartbeat 超时不会直接复用 Capacity slot」本次结论为**无适用对象，通过**，不是声称已有 CapacityLease 实现。`core/migrations/20260924100000_governed_action.up.sql` 的 `capacity_not_yet_enforced` 约束固定 `capacity_policy = 'NONE'`；本机已部署的 Core 库执行 `SELECT status, capacity_policy, COUNT(*) FROM catalog.action_definition GROUP BY status, capacity_policy` 得到 `ACTIVE|NONE|13`，查询 `pg_constraint` 得到 `CHECK ((capacity_policy = 'NONE'::text))`。故当前 13 个 ACTIVE 动作都不持有平台 slot，发生 Activity heartbeat 超时时没有可复用的 CapacityLease。首个实际适用对象是 Stage 5 的 Codex runtime pool（`02-纵向交付路线.md` §7、`.design/03` §8）；注册 `PLATFORM_SLOT` 动作前，该门禁须以真实 lease、heartbeat 超时后的 UNKNOWN、终态证据和恢复对账重新核验。现阶段不创建空池、假 lease 或没有调用方的容量代码。
+
 ## 破坏核验（每条都重建 Core 或改 Worker 后实际跑过，均已还原）
 
 | 破坏 | 结果 |
