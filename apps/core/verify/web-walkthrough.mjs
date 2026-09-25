@@ -371,6 +371,54 @@ await step("审批页：待我审批可见；批准需确认、经 Temporal Upda
   await shot("11b-approval-decided");
 });
 
+await step("邀请：admin 签发的链接只显示一次、列表不含凭据、撤回需确认；兑换页读完 fragment 即清掉", async () => {
+  await page.getByRole("button", { name: "Members", exact: true }).click();
+  const section = page.getByTestId("tenant-invitations");
+  await section.waitFor({ timeout: bound });
+  const label = `walkthrough ${nonce}`;
+  await section.getByLabel("Who is this for?").fill(label);
+  await section.getByRole("button", { name: "Create invitation link" }).click();
+  const issued = section.getByTestId("issued-invitation");
+  await issued.waitFor({ timeout: bound });
+  const link = await issued.getByRole("textbox").inputValue();
+  const credential = new URL(link).hash.slice(1);
+  if (!/^[0-9a-f]{64}$/.test(credential)) throw new Error(`链接的 fragment 不是一次性凭据：${link.replace(credential, "<凭据>")}`);
+  // 链接必须落在 Web 的兑换页：网关只把 /app 前缀交给 Web，其余到 BFF
+  const target = new URL(link);
+  if (target.origin !== gateway || target.pathname !== "/app/invite")
+    throw new Error(`邀请链接不在 Web 兑换页（${gateway}/app/invite），实际 ${target.origin}${target.pathname}——检查 TENANT_INVITATION_LINK_BASE`);
+  const row = section.getByRole("row").filter({ hasText: label });
+  await row.waitFor({ timeout: bound });
+  if ((await section.getByRole("table").innerText()).includes(credential)) throw new Error("邀请列表里出现了凭据");
+  await shot("11c-invitation-issued");
+  await row.getByRole("button", { name: "Withdraw" }).click();
+  await section.getByText("Its link will stop working").waitFor();
+  await section.getByRole("button", { name: "Confirm" }).click();
+  await row.filter({ hasText: "Withdrawn" }).waitFor({ timeout: bound });
+
+  // 兑换页：以核验用户（已是成员）打开已撤回的链接——凭据从地址栏清掉、只进请求体，
+  // 服务端的拒绝以用户能懂的话加 reason code 显示
+  const seen = [];
+  const onRequest = (r) => seen.push(r.url());
+  page.on("request", onRequest);
+  await page.goto(link);
+  await page.getByTestId("invitation-redeem").waitFor({ timeout: bound });
+  if (page.url().includes("#")) throw new Error(`兑换页没有清掉 fragment：${page.url().replace(credential, "<凭据>")}`);
+  await page.getByLabel("Your name").fill("Walkthrough");
+  await page.getByRole("button", { name: "Use this invitation" }).click();
+  const alert = page.getByTestId("invitation-redeem").getByRole("alert");
+  await alert.filter({ hasText: "could not be used" }).waitFor({ timeout: bound });
+  const text = await alert.innerText();
+  if (!/\((INVITATION_REVOKED|INVITEE_ALREADY_MEMBER)\)/.test(text))
+    throw new Error(`已撤回的邀请应被拒绝并给出 reason code，实际 ${text}`);
+  page.off("request", onRequest);
+  if (seen.some((u) => u.includes(credential))) throw new Error("凭据出现在了请求 URL 里");
+  steps.push({ name: "兑换已撤回的邀请", value: text });
+  await shot("11d-redeem-rejected");
+  await page.goto(`${gateway}/app/`);
+  await page.getByRole("combobox", { name: "Workspace" }).waitFor({ timeout: bound });
+});
+
 await step("浏览器不能自称原生端：网关移除伪造的入口标识（DD-78）", async () => {
   // 标识若穿过网关，BFF 会越过入口检查、转而判持钥证明无效；两个 reason 因此
   // 能区分「网关移除了它」与「它到达了 BFF」。

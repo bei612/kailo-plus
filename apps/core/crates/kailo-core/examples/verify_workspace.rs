@@ -79,19 +79,44 @@ async fn prepare_governance(
         common::zed_relationship(e, "touch", &tenant, "admin", &format!("principal:{p}"));
     }
     let for_me = revoke_request(http, e, &b.subject, c.principal).await?;
-    let for_me = for_me["approvalWorkflowId"].as_str().ok_or("缺审批 ID")?.to_owned();
+    let for_me = for_me["approvalWorkflowId"]
+        .as_str()
+        .ok_or("缺审批 ID")?
+        .to_owned();
     wait_open(e, pool, &for_me).await;
     let mine = revoke_request(http, e, &fx.subject, d.principal).await?;
-    let mine_task = mine["actionExecutionId"].as_str().ok_or("缺 ActionExecution")?.to_owned();
-    let mine = mine["approvalWorkflowId"].as_str().ok_or("缺审批 ID")?.to_owned();
+    let mine_task = mine["actionExecutionId"]
+        .as_str()
+        .ok_or("缺 ActionExecution")?
+        .to_owned();
+    let mine = mine["approvalWorkflowId"]
+        .as_str()
+        .ok_or("缺审批 ID")?
+        .to_owned();
     wait_open(e, pool, &mine).await;
-    Ok(Governance { b, c, d, for_me, mine_task, mine })
+    Ok(Governance {
+        b,
+        c,
+        d,
+        for_me,
+        mine_task,
+        mine,
+    })
 }
 
 /// 拆除前让两条审批都走到终态：仍未决的由发起者撤回；已批准的等它被消费或失效
 /// ——在途的撤权 Workflow 不能被拆掉的 Tenant 截断。
-async fn settle_governance(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &LiveWorkspace, g: &Governance) {
-    for (subject, wf) in [(g.b.subject.as_str(), g.for_me.as_str()), (fx.subject.as_str(), g.mine.as_str())] {
+async fn settle_governance(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    fx: &LiveWorkspace,
+    g: &Governance,
+) {
+    for (subject, wf) in [
+        (g.b.subject.as_str(), g.for_me.as_str()),
+        (fx.subject.as_str(), g.mine.as_str()),
+    ] {
         let status = common::approval_status(pool, wf).await;
         if matches!(status.as_deref(), Some("REQUESTED" | "WAITING")) {
             let (st, body) = common::bff(
@@ -116,7 +141,13 @@ async fn settle_governance(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &
         common::zed_relationship(e, "delete", &tenant, "admin", &format!("principal:{p}"));
     }
     for m in [&g.b, &g.c, &g.d] {
-        common::zed_relationship(e, "delete", &tenant, "member", &format!("principal:{}", m.principal));
+        common::zed_relationship(
+            e,
+            "delete",
+            &tenant,
+            "member",
+            &format!("principal:{}", m.principal),
+        );
     }
 }
 
