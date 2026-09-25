@@ -261,6 +261,10 @@ async fn run(
     assert_eq!(body["state"], "RECONCILING");
     common::assert_contract::<contracts::ClientKeyStatus>(&body, "登记受理");
     assert!(
+        body["recheckAfterMillis"].as_i64().is_some_and(|n| n > 0),
+        "收敛中的登记必须给原生端重查间隔：{body}"
+    );
+    assert!(
         body["workflowId"].is_string(),
         "受理的登记必须给出推进它的 Workflow：{body}"
     );
@@ -315,6 +319,10 @@ async fn run(
     assert!(
         body.get("workflowId").is_none(),
         "没有要推进的状态时 workflowId 缺省：{body}"
+    );
+    assert!(
+        body.get("recheckAfterMillis").is_none(),
+        "确定终态不得要求继续重查：{body}"
     );
 
     // 登记是 Tenant 级动作：本人审计里有它，且不带 workspaceId（缺省而非 null）
@@ -434,6 +442,10 @@ async fn run(
     );
     assert_eq!(body["state"], "REVOKING");
     common::assert_contract::<contracts::ClientKeyStatus>(&body, "撤销受理");
+    assert!(
+        body["recheckAfterMillis"].as_i64().is_some_and(|n| n > 0),
+        "收敛中的撤销必须给原生端重查间隔：{body}"
+    );
     wait_for(http, n, &access, &pubkey, None, e.converge_bound_secs).await;
 
     let rejected = as_device

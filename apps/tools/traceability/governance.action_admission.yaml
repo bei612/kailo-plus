@@ -59,7 +59,7 @@ runtime:
 release:
   artifacts:
     - name: upstream-buzz-web
-      digest: sha256:d4dc3cb62aca89add7cca4c824055654a5a58d99a038421539ada292f9616168
+      digest: sha256:43b587c7ede1ce59b6c7e81cc0a73ae12d4420298807a5a695345c960f150555
     - name: kailo-core
       digest: sha256:24751a5558478a1e314dbeec36259044c8d06ce007612325f4c333e0f817406f
     - name: kailo-worker

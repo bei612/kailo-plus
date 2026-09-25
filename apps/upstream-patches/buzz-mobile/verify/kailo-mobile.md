@@ -22,19 +22,19 @@ URI scheme 回调，IdP 登记见 `core/verify/native-identity.md`）、刷新�
 
 ## 清单可复现
 
-清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `c6a920747dc62df5b9f6be400fb66cd33848bf37`）。
+清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `98ae2137e0056fc2160e8f41303a509227c6e836`）。
 `UPSTREAM_MIRROR=<开发树> tools/build-upstream.sh --source-only <目录> buzz-mobile` 按本清单从基线
 重建源树（删除 130 条登记路径、打 `0001-kailo-mobile.patch`、放入 2 个生成物），与开发分支
-逐文件比对（内容与可执行位）：4966 个已跟踪文件与 2 个 vendor 文件全部一致，差异 0（2026-09-24）。
+逐文件比对（内容与可执行位）：前一开发分支 `c6a920747dc62df5b9f6be400fb66cd33848bf37` 的 4966 个已跟踪文件与 2 个 vendor 文件全部一致，差异 0（2026-09-24）；本次导出后的补丁字节与清单摘要已通过 `check.sh seam`，未将前次逐文件结果冒充为新 HEAD 的结果。
 
 ## 实测（2026-09-25，开发分支 HEAD 加 kailo 仓库当前契约生成物）
 
 | 检查 | 结果 |
 |---|---|
 | `flutter analyze` | `No issues found!` |
-| `flutter test -j 8` | `+1141 ~2: All tests passed!`（跳过的是 benchmark 与需环境变量的 e2e；上游原为 +2251 ~4，减少的均为已删功能的测试；任务与审批视图 4 例） |
-| `flutter build apk --debug` | 成功，`app-debug.apk` |
-| `core/verify/native-e2e.sh mobile <源码树>` | `All tests passed!`：登录 → 设备登记 → ACTIVE → 取连接事实 → 直连 Relay 发 kind 9 → 自建 Channel 被拒 → 撤销后被拒（Relay 回 `restricted: channel access revoked`） |
+| `flutter test -j 8` | `+1142 ~2: All other tests passed!`（跳过 benchmark 与需环境变量的 e2e）；设备重查 8 例通过，其中旧服务端无间隔时保持待激活并允许手动重查，重复触发只发一次登记 |
+| `flutter build apk --debug --no-pub` | 当前 HEAD 成功，`app-debug.apk` |
+| `core/verify/native-e2e.sh mobile /tmp/mob` | 当前开发树、当前 Core 容器与真实本地拓扑：登录 → 设备登记 → ACTIVE → 取连接事实 → 直连 Relay 发 kind 9 → 自建 Channel 被拒 → 撤销后被拒；`1 passed` |
 
 破坏核验（均已还原并复验通过）：持钥证明去掉 session 标签、把结果不明当成功 → `kailo_link_test`
 失败；去掉提及候选的成员限制 → channels_provider 测试失败；深链分发放过不可用链接 → 测试失败；
@@ -42,8 +42,7 @@ URI scheme 回调，IdP 登记见 `core/verify/native-identity.md`）、刷新�
 任务状态把 `EXTERNAL_RESULT_UNKNOWN` 当作别的 code → 「结果不明与投影落后不说成功也不说失败」失败；
 Dart 契约生成物换回可选枚举取 `!` 的旧版 → 任务详情解析报 `Null check operator used on a null value`。
 
-任务与审批视图与邀请 reason code 加入后（开发分支 `c6a920747`，Core 为 DD-83 合并后的 main）重跑 `native-e2e.sh mobile`：`All tests passed!`
-（撤销后 Relay 回 `restricted: channel access revoked`）。上表的 `flutter build apk --debug` 是此前的结果，本次未重跑。
+本次已重跑原生端端到端测试、Flutter 全套测试与 debug APK 构建；还用一次性破坏确认设备重查测试会在手动重查标志丢失时失败，随后恢复并复验通过。
 
 ## 未覆盖
 

@@ -938,22 +938,32 @@ final buzzIdentityStateValues = EnumValues({
 ////api/v1/identity/client-keys/{pubkey}）的回应。
 class ClientKeyStatus {
   final String pubkey;
+
+  ///状态仍在收敛时，客户端再次读取设备状态前至少等待的毫秒数；确定终态时缺省
+  final int? recheckAfterMillis;
   final BuzzIdentityState state;
 
   ///推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
   final String? workflowId;
 
-  ClientKeyStatus({required this.pubkey, required this.state, this.workflowId});
+  ClientKeyStatus({
+    required this.pubkey,
+    this.recheckAfterMillis,
+    required this.state,
+    this.workflowId,
+  });
 
   factory ClientKeyStatus.fromJson(Map<String, dynamic> json) =>
       ClientKeyStatus(
         pubkey: json["pubkey"],
+        recheckAfterMillis: json["recheckAfterMillis"],
         state: buzzIdentityStateValues.map[json["state"]]!,
         workflowId: json["workflowId"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "pubkey": pubkey,
+    "recheckAfterMillis": recheckAfterMillis,
     "state": buzzIdentityStateValues.reverse[state],
     "workflowId": workflowId,
   });

@@ -201,6 +201,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "缺少 BFF_CLIENT_KEYS_PER_PRINCIPAL")?
             .parse()
             .map_err(|_| "BFF_CLIENT_KEYS_PER_PRINCIPAL 必须是正整数")?,
+        client_key_recheck_millis: {
+            let value: i64 = std::env::var("BFF_CLIENT_KEY_RECHECK_MILLIS")
+                .map_err(|_| "缺少 BFF_CLIENT_KEY_RECHECK_MILLIS")?
+                .parse()
+                .map_err(|_| "BFF_CLIENT_KEY_RECHECK_MILLIS 必须是正整数毫秒数")?;
+            if !(1..=i32::MAX as i64).contains(&value) {
+                return Err("BFF_CLIENT_KEY_RECHECK_MILLIS 必须在 1..=2147483647 之间".into());
+            }
+            value
+        },
         relay_native_url_template: {
             let t = std::env::var("BUZZ_RELAY_NATIVE_URL_TEMPLATE")
                 .map_err(|_| "缺少 BUZZ_RELAY_NATIVE_URL_TEMPLATE")?;

@@ -9,6 +9,12 @@
   "properties": {
     "pubkey": { "type": "string" },
     "state": { "$ref": "../enums/buzz_identity_state.schema.json" },
-    "workflowId": { "type": "string", "description": "推进该状态的 Workflow；本次调用没有需要推进的状态时缺省" }
+    "workflowId": { "type": "string", "description": "推进该状态的 Workflow；本次调用没有需要推进的状态时缺省" },
+    "recheckAfterMillis": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "状态仍在收敛时，客户端再次读取设备状态前至少等待的毫秒数；确定终态时缺省"
+    }
   }
 }

@@ -159,6 +159,7 @@ pub async fn register(
                     pubkey,
                     state: BuzzIdentityState::Active,
                     workflow_id: None,
+                    recheck_after_millis: None,
                 }),
             )
                 .into_response(),
@@ -323,6 +324,7 @@ pub async fn revoke(
                     pubkey,
                     state: BuzzIdentityState::Revoked,
                     workflow_id: None,
+                    recheck_after_millis: None,
                 }),
             )
                 .into_response()
@@ -547,6 +549,7 @@ async fn start(
                 pubkey: pubkey.to_owned(),
                 state: status,
                 workflow_id: Some(workflow_id),
+                recheck_after_millis: Some(state.client_key_recheck_millis),
             }),
         )
             .into_response(),

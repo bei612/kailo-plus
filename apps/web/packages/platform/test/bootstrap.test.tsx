@@ -105,7 +105,10 @@ describe("NativeBootstrap", () => {
       kailo_sign_in: () => {
         signedIn = true;
       },
-      kailo_register_device: () => ({ status: 202, body: { pubkey: PUBKEY, state: "RECONCILING", workflowId: "wf" } }),
+      kailo_register_device: () => ({
+        status: 202,
+        body: { pubkey: PUBKEY, state: "RECONCILING", workflowId: "wf", recheckAfterMillis: 5 },
+      }),
       kailo_api: api({
         "GET /api/v1/identity/client-keys": () => {
           listed += 1;
@@ -117,18 +120,41 @@ describe("NativeBootstrap", () => {
     const host = await mount(invoke, connect);
     await click(button(host, "Sign in"));
     expect(host.textContent).toContain("RECONCILING");
-    // 不定时轮询：没有用户的「重新确认」，就不会再去读列表
+    // 重查间隔来自登记回应，不由 Desktop 自己猜。
     await new Promise((r) => setTimeout(r, 50));
     await settle();
-    expect(listed).toBe(0);
-    await click(button(host, "Check again"));
-    expect(host.textContent).toContain("RECONCILING");
-    expect(host.querySelector("[data-testid=app]")).toBeNull();
-    await click(button(host, "Check again"));
     expect(host.querySelector("[data-testid=app]")).not.toBeNull();
     expect(connect).toHaveBeenCalledWith(facts);
     expect(host.textContent).toContain(`connected ${facts.relayUrl} as ${PUBKEY}`);
     expect(listed).toBe(2);
+  });
+
+  it("老服务端没有重查间隔时不猜测、不后台敲 BFF，仍可手动确认", async () => {
+    let listed = 0;
+    const invoke = fakeInvoke({
+      kailo_get_config: () => ({}),
+      kailo_status: () => ({ configured: true, signedIn: true }),
+      kailo_register_device: () => ({
+        status: 202,
+        body: { pubkey: PUBKEY, state: "RECONCILING", workflowId: "wf" },
+      }),
+      kailo_api: api({
+        "GET /api/v1/identity/client-keys": () => {
+          listed += 1;
+          return {
+            status: 200,
+            body: [{ pubkey: PUBKEY, state: "ACTIVE", createdAt: "2026-09-24T00:00:00Z" }],
+          };
+        },
+        "GET /api/v1/native/community": () => ({ status: 200, body: facts }),
+      }),
+    });
+    const host = await mount(invoke);
+    await new Promise((r) => setTimeout(r, 20));
+    await settle();
+    expect(listed).toBe(0);
+    await click(button(host, "Check again"));
+    expect(host.querySelector("[data-testid=app]")).not.toBeNull();
   });
 
   it("还不是成员（兑换了邀请、等待确认）：指向浏览器里的邀请链接并显示本人的兑换进度", async () => {

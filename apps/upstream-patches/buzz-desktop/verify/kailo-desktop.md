@@ -39,12 +39,12 @@ HEAD 与 `implementation_base_commit` 不一致即失败。
 
 | 项 | 值 |
 |---|---|
-| 文件 | `dist/buzz-desktop/Buzz_0.5.23_amd64.deb`（20,884,482 字节） |
-| `artifact_digest` | `sha256:423f05e222d59a6b081446d46513abd44435f98ca510e1e5004c33e4810e2de9` |
+| 文件 | `dist/buzz-desktop/Buzz_0.5.23_amd64.deb`（20,885,430 字节） |
+| `artifact_digest` | `sha256:f59a18d3e48e5d8b725552de08604050f721538ab7c5bb0152a7e42a62ac8a5c` |
 | 包元数据 | `Package: buzz`、`Version: 0.5.23`、`Architecture: amd64`、`Depends: libwebkit2gtk-4.1-0, libgtk-3-0` |
 | 内容 | `/usr/bin/buzz-desktop`、`Buzz.desktop` 与图标；可执行文件的 127 个共享库依赖在 Ubuntu 24.04 上全部可解析 |
 
-## 实测（2026-09-25，开发分支 HEAD 加 kailo 仓库当前的共用包与契约生成物）
+## 实测（2026-09-25，开发分支 HEAD 加 Kailo 当前共用包与契约生成物）
 
 | 检查 | 结果 |
 |---|---|
@@ -52,11 +52,12 @@ HEAD 与 `implementation_base_commit` 不一致即失败。
 | `pnpm check`（biome、px-text、pubkey-truncation） | 通过：`Checked 997 files … No fixes applied.` |
 | `pnpm test` | `pass 2290`、`fail 0` |
 | `pnpm build:e2e`（`tsc && vite build`） | 通过 |
-| Playwright `--project=smoke`（437 例） | `435 passed (16.2m)`，2 skipped。此前一次在同机并行 cargo/flutter 构建时 `scroll-history.spec.ts:1287` 的覆盖率阈值失败（194 ≥ 100），单独 `--repeat-each=3` 重跑为 54 passed，本次全量无失败 |
-| Kailo 冒烟（`kailo-bootstrap.spec.ts`、`kailo-platform.spec.ts`） | 16 passed：登记 RECONCILING 时没有定时重读、两次「重新确认」各读一次列表；任务列表→详情→带确认的撤回；审批的确认、结果不明不说成功或失败、原样重发同一决定；非 admin 没有邀请一节；admin 签发的链接只显示一次、列表不含凭据、撤回需确认 |
-| `cargo clippy --all-targets -- -D warnings` | 通过 |
-| `cargo test --lib` | `387 passed; 0 failed; 9 ignored` |
-| `core/verify/native-e2e.sh desktop <开发树>` | `kailo::e2e::desktop_signs_in_registers_device_and_publishes_through_relay ... ok`，`1 passed` |
+| 前一共用包的 Playwright `--project=smoke`（437 例） | `435 passed (16.2m)`，2 skipped；这是前次全量结果，本次未重跑全量 |
+| 当前共用包的 `@kailo/platform` 测试 | `45 passed`：服务端给出间隔时自动重查、未给间隔时保持手动重查 |
+| Kailo 登录冒烟（`kailo-bootstrap.spec.ts`） | 当前共用包 `8 passed`；其中旧服务端未给重查间隔的脚本仍走手动确认。此前版本的登录与平台页合计 `16 passed`，不能代替本次未重跑的平台页冒烟 |
+| 前一开发分支的 `cargo clippy --all-targets -- -D warnings` | 通过；本次安装包构建已重新编译 Rust，未重跑 clippy |
+| 前一开发分支的 `cargo test --lib` | `387 passed; 0 failed; 9 ignored`；本次未重跑 |
+| `core/verify/native-e2e.sh desktop /tmp/dsk` | 当前开发树、当前 Core 容器与真实本地拓扑：`kailo::e2e::desktop_signs_in_registers_device_and_publishes_through_relay ... ok`，`1 passed` |
 
 破坏核验（均已还原并复验通过）：平台页路由把 `tasks` 指向审计页 → 冒烟「my tasks …」失败；
 共用包里把 observation 为 `EXTERNAL_RESULT_UNKNOWN` 的任务按 Workflow 终态显示 → vitest
@@ -64,7 +65,7 @@ HEAD 与 `implementation_base_commit` 不一致即失败。
 
 ## 端差异
 
-- 设备登记进行中不再定时重查：客户端没有依据选间隔，BFF 也不下发；由用户「重新确认」。
+- 设备登记进行中只按 Core 回应的 `recheckAfterMillis` 自动重查；旧服务端未给该字段时保持待激活并提供「重新确认」，不猜间隔。新间隔路径由共享 TypeScript 测试验证；上表的登录冒烟覆盖旧服务端手动路径。
 - 任务的取消与重跑在 Core 目录里没有登记为 Governed Action，Desktop 与 Web 都不渲染入口。
 - 邀请的兑换不在 Desktop：邀请链接是浏览器入口上 Web 兑换页（`/app/invite`）的地址，在系统
   浏览器里打开即兑换。Desktop 不为它注册 URL 处理——那会让一次性凭据经操作系统的 URL 分发

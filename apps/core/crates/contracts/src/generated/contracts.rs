@@ -548,6 +548,10 @@ pub enum BuzzIdentityState {
 pub struct ClientKeyStatus {
     pub pubkey: String,
 
+    /// 状态仍在收敛时，客户端再次读取设备状态前至少等待的毫秒数；确定终态时缺省
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recheck_after_millis: Option<i64>,
+
     pub state: BuzzIdentityState,
 
     /// 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省

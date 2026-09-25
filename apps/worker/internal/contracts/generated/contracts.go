@@ -624,8 +624,10 @@ type ClientKeyView struct {
 // 设备公钥登记（POST /api/v1/identity/client-keys）与撤销（DELETE
 // /api/v1/identity/client-keys/{pubkey}）的回应。
 type ClientKeyStatus struct {
-	Pubkey string            `json:"pubkey"`
-	State  BuzzIdentityState `json:"state"`
+	Pubkey string `json:"pubkey"`
+	// 状态仍在收敛时，客户端再次读取设备状态前至少等待的毫秒数；确定终态时缺省
+	RecheckAfterMillis *int64            `json:"recheckAfterMillis,omitempty"`
+	State              BuzzIdentityState `json:"state"`
 	// 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
 	WorkflowID *string `json:"workflowId,omitempty"`
 }

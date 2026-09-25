@@ -36,6 +36,9 @@ pub struct BffState {
     pub client_key_proof_window_seconds: u64,
     /// 每人可同时登记的原生设备上界（DD-77）。超出是 LIMIT 类的确定拒绝。
     pub client_keys_per_principal: i64,
+    /// 设备 binding 仍在收敛时，原生端再次查询前至少等待的时间。由服务端下发，
+    /// Desktop/Mobile 不各自猜测投影速度。
+    pub client_key_recheck_millis: i64,
     /// 原生端直连 Relay 的地址模板，含 `{host}` 占位（Community host）。
     pub relay_native_url_template: String,
     /// PlatformSession 的有效期。它是部署事实，不是常量——不同部署对「多久要

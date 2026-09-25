@@ -10114,10 +10114,10 @@ index 0000000000000000000000000000000000000000..5691edfd921c130f11d07cf494e0aeb1
 +}
 diff --git a/mobile/lib/features/kailo/kailo_sign_in_page.dart b/mobile/lib/features/kailo/kailo_sign_in_page.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..bd9ca6110f0903af2d788cb1275ae56e80c48b32
+index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4e8ae038a
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_sign_in_page.dart
-@@ -0,0 +1,193 @@
+@@ -0,0 +1,201 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -10195,15 +10195,23 @@ index 0000000000000000000000000000000000000000..bd9ca6110f0903af2d788cb1275ae56e
 +        if (state.busy) ...[
 +          Row(
 +            children: [
-+              const SizedBox.square(
-+                dimension: 20,
-+                child: CircularProgressIndicator(strokeWidth: 2),
-+              ),
-+              const SizedBox(width: Grid.twelve),
++              if (!state.manualRecheck) ...[
++                const SizedBox.square(
++                  dimension: 20,
++                  child: CircularProgressIndicator(strokeWidth: 2),
++                ),
++                const SizedBox(width: Grid.twelve),
++              ],
 +              Expanded(child: Text(kailoPhaseText(state.phase))),
 +            ],
 +          ),
 +          const SizedBox(height: Grid.xs),
++          if (state.manualRecheck)
++            FilledButton(
++              key: const ValueKey('kailo-recheck-activation'),
++              onPressed: () => unawaited(notifier.reconcile()),
++              child: const Text('Check again'),
++            ),
 +          OutlinedButton(
 +            key: const ValueKey('kailo-cancel-sign-in'),
 +            onPressed: notifier.cancel,
@@ -14614,10 +14622,10 @@ index 0000000000000000000000000000000000000000..42bac986b51fc82e1b97b4a91630ae26
 +);
 diff --git a/mobile/lib/shared/kailo/kailo_link.dart b/mobile/lib/shared/kailo/kailo_link.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..86e539af9ba8050fbca6ee851964a98edead7fd8
+index 0000000000000000000000000000000000000000..022a220e5b20e5640eef0733234d07cf4325a8ca
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_link.dart
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,351 @@
 +/// 把一次 Kailo 登录变成可用的协作连接（Kailo `DD-75`、`DD-78`、`DD-79`）。
 +///
 +/// 顺序固定：登录 IdP → 以本机设备密钥登记公钥 → 等它投影到 Relay 与 Channel
@@ -14639,10 +14647,6 @@ index 0000000000000000000000000000000000000000..86e539af9ba8050fbca6ee851964a98e
 +import 'kailo_config.dart';
 +import 'kailo_device.dart';
 +import 'kailo_oidc.dart';
-+
-+/// 设备公钥登记后等待投影完成时，两次查询之间的间隔。它只决定界面多快看到
-+/// `ACTIVE`，不是时限：投影可以花任意长的时间，等待一直可以由用户放弃。
-+const _activationPollInterval = Duration(seconds: 2);
 +
 +enum KailoLinkPhase {
 +  /// 还没有部署配置
@@ -14674,7 +14678,12 @@ index 0000000000000000000000000000000000000000..86e539af9ba8050fbca6ee851964a98e
 +}
 +
 +class KailoLinkState {
-+  const KailoLinkState(this.phase, {this.error, this.detail});
++  const KailoLinkState(
++    this.phase, {
++    this.error,
++    this.detail,
++    this.manualRecheck = false,
++  });
 +
 +  final KailoLinkPhase phase;
 +
@@ -14683,6 +14692,9 @@ index 0000000000000000000000000000000000000000..86e539af9ba8050fbca6ee851964a98e
 +
 +  /// 契约之外的说明（IdP 或网络的原话），只用于展示
 +  final String? detail;
++
++  /// 老服务端没有提供重查间隔时只允许用户主动确认，不猜自动重查频率。
++  final bool manualRecheck;
 +
 +  bool get busy => switch (phase) {
 +    KailoLinkPhase.signingIn ||
@@ -14772,13 +14784,21 @@ index 0000000000000000000000000000000000000000..86e539af9ba8050fbca6ee851964a98e
 +    _cancelSignIn?.complete();
 +    _cancelSignIn = null;
 +    _cancelActivation = true;
++    if (state.phase == KailoLinkPhase.awaitingActivation &&
++        state.manualRecheck) {
++      state = const KailoLinkState(KailoLinkPhase.signedOut);
++    }
 +  }
 +
 +  /// 启动时核对：本机凭据仍在就重走一遍登记与连接事实（已 ACTIVE 的设备重复登记
 +  /// 只回 200，不起新的 Workflow）；凭据已不在就撤掉残留的协作连接。
 +  Future<void> reconcile() async {
 +    final config = ref.read(kailoConfigProvider);
-+    if (config == null || state.busy) return;
++    if (config == null || (state.busy && !state.manualRecheck)) return;
++    if (state.manualRecheck) {
++      state = const KailoLinkState(KailoLinkPhase.registering);
++    }
++    _cancelActivation = false;
 +    if (!await _session.hasCredentials()) {
 +      await _dropCommunity();
 +      state = const KailoLinkState(KailoLinkPhase.signedOut);
@@ -14842,21 +14862,29 @@ index 0000000000000000000000000000000000000000..86e539af9ba8050fbca6ee851964a98e
 +      _fail(response);
 +      return null;
 +    }
-+    var current = ClientKeyStatus.fromJson(
++    var status = ClientKeyStatus.fromJson(
 +      response.body! as Map<String, dynamic>,
-+    ).state;
-+    while (current != BuzzIdentityState.ACTIVE) {
-+      if (current != BuzzIdentityState.RECONCILING) {
++    );
++    while (status.state != BuzzIdentityState.ACTIVE) {
++      if (status.state != BuzzIdentityState.RECONCILING) {
 +        // 登记中途被撤销：这把钥匙不会再 ACTIVE
 +        state = KailoLinkState(
 +          KailoLinkPhase.failed,
 +          detail:
-+              'This device key is ${buzzIdentityStateValues.reverse[current]}',
++              'This device key is ${buzzIdentityStateValues.reverse[status.state]}',
++        );
++        return null;
++      }
++      final recheckAfterMillis = status.recheckAfterMillis;
++      if (recheckAfterMillis == null || recheckAfterMillis <= 0) {
++        state = const KailoLinkState(
++          KailoLinkPhase.awaitingActivation,
++          manualRecheck: true,
 +        );
 +        return null;
 +      }
 +      state = const KailoLinkState(KailoLinkPhase.awaitingActivation);
-+      await Future<void>.delayed(_activationPollInterval);
++      await Future<void>.delayed(Duration(milliseconds: recheckAfterMillis));
 +      if (_cancelActivation) {
 +        state = const KailoLinkState(KailoLinkPhase.signedOut);
 +        return null;
@@ -14870,7 +14898,12 @@ index 0000000000000000000000000000000000000000..86e539af9ba8050fbca6ee851964a98e
 +        );
 +        return null;
 +      }
-+      current = mine.state;
++      if (mine.state == BuzzIdentityState.ACTIVE) return keys;
++      status = ClientKeyStatus(
++        pubkey: mine.pubkey,
++        state: mine.state,
++        recheckAfterMillis: recheckAfterMillis,
++      );
 +    }
 +    return keys;
 +  }
@@ -44377,10 +44410,10 @@ index 0000000000000000000000000000000000000000..7cde3d712b4ca38f88ece5135508d8b6
 +}
 diff --git a/mobile/test/shared/kailo/kailo_link_test.dart b/mobile/test/shared/kailo/kailo_link_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..f973741c96c91aca8763062a3108ff26eba77c52
+index 0000000000000000000000000000000000000000..5cbd55c9b1cbac772aadc95d0a45f838b798c996
 --- /dev/null
 +++ b/mobile/test/shared/kailo/kailo_link_test.dart
-@@ -0,0 +1,245 @@
+@@ -0,0 +1,277 @@
 +import 'dart:async';
 +import 'dart:convert';
 +
@@ -44476,7 +44509,11 @@ index 0000000000000000000000000000000000000000..f973741c96c91aca8763062a3108ff26
 +final _callbacks = StreamController<Uri>.broadcast();
 +
 +http.Response _status(String pubkey, String state, [int code = 202]) =>
-+    jsonResponse({'pubkey': pubkey, 'state': state}, code);
++    jsonResponse({
++      'pubkey': pubkey,
++      'state': state,
++      if (state == 'RECONCILING') 'recheckAfterMillis': 1,
++    }, code);
 +
 +void main() {
 +  test('sign-in registers this device with a session-bound proof, then '
@@ -44533,6 +44570,34 @@ index 0000000000000000000000000000000000000000..f973741c96c91aca8763062a3108ff26
 +    },
 +    timeout: const Timeout(Duration(seconds: 20)),
 +  );
++
++  test('does not guess a polling interval when the server omits it', () async {
++    final bff = _Bff(
++      register: (attempt, pk) => jsonResponse({
++        'pubkey': pk,
++        'state': attempt == 1 ? 'RECONCILING' : 'ACTIVE',
++      }, attempt == 1 ? 202 : 200),
++    );
++    final container = await _container(bff);
++
++    await container.read(kailoLinkProvider.notifier).signIn();
++
++    expect(
++      container.read(kailoLinkProvider).phase,
++      KailoLinkPhase.awaitingActivation,
++    );
++    expect(container.read(kailoLinkProvider).manualRecheck, isTrue);
++    expect(
++      bff.requests.where(
++        (r) => r.method == 'GET' && r.url.path.endsWith('client-keys'),
++      ),
++      isEmpty,
++    );
++    final link = container.read(kailoLinkProvider.notifier);
++    await Future.wait([link.reconcile(), link.reconcile()]);
++    expect(container.read(kailoLinkProvider).phase, KailoLinkPhase.linked);
++    expect(bff.registeredPubkeys, hasLength(2));
++  });
 +
 +  test('a revoked device key is replaced, never revived', () async {
 +    final bff = _Bff(

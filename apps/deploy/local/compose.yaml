@@ -315,6 +315,8 @@ services:
       BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS: ${BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
       # 每人可同时登记的原生设备上界（DD-77）
       BFF_CLIENT_KEYS_PER_PRINCIPAL: ${BFF_CLIENT_KEYS_PER_PRINCIPAL:?必须显式提供，禁止硬编码}
+      # 设备投影仍在收敛时，原生端按服务端给出的间隔重查，不在客户端写死
+      BFF_CLIENT_KEY_RECHECK_MILLIS: ${BFF_CLIENT_KEY_RECHECK_MILLIS:?必须显式提供，禁止硬编码}
       # 原生端直连 Relay 的地址模板，{host} 由 Community host 代入（DD-75/78）。
       # 它是「原生端从哪里能连到 Relay」的部署事实，与 BFF 自己连 Relay 用的
       # BUZZ_RELAY_WS_URL 不是一回事——后者是网内地址，前者要在客户端所在网络可达，
@@ -467,7 +469,7 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:d4dc3cb62aca89add7cca4c824055654a5a58d99a038421539ada292f9616168
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:43b587c7ede1ce59b6c7e81cc0a73ae12d4420298807a5a695345c960f150555
     networks: [app]
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 

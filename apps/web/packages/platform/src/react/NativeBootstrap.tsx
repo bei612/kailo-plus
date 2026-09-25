@@ -52,7 +52,7 @@ type Step =
   | { kind: "signIn"; failed?: string }
   | { kind: "signingIn" }
   | { kind: "registering" }
-  | { kind: "devicePending"; pubkey: string; state: string }
+  | { kind: "devicePending"; pubkey: string; state: string; recheckAfterMillis?: number }
   | { kind: "deviceUnknown"; operationId?: string }
   | { kind: "deviceRejected"; reason: string; revoked: boolean }
   | { kind: "community"; pubkey: string }
@@ -63,6 +63,11 @@ type Step =
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+function validRecheckInterval(value: number | undefined): number | undefined {
+  // 浏览器 timer 的 32 位有符号上界与 ClientKeyStatus 契约上界一致。
+  return Number.isSafeInteger(value) && value! > 0 && value! <= 0x7fffffff ? value : undefined;
 }
 
 export function NativeBootstrap({
@@ -80,6 +85,8 @@ export function NativeBootstrap({
   const [step, setStep] = useState<Step>({ kind: "loading" });
   // 登录被取消后，那次 signIn 的 reject 不是失败，不显示
   const cancelled = useRef(false);
+  // 自动重查与用户手动重查共用一条请求，不能并发叠加。
+  const recheckInFlight = useRef(false);
   // 宿主每次渲染都可能给出新的 connect；引导流程不因此重来
   const connectRef = useRef(connect);
   connectRef.current = connect;
@@ -147,36 +154,53 @@ export function NativeBootstrap({
     }
     if (status.state === BuzzIdentityState.Active) {
       await fetchCommunity(status.pubkey);
-    } else if (
-      status.state === BuzzIdentityState.Revoked ||
-      status.state === BuzzIdentityState.Revoking
-    ) {
-      setStep({ kind: "deviceRejected", reason: status.state, revoked: true });
+    } else if (status.state === BuzzIdentityState.Reconciling) {
+      setStep({
+        kind: "devicePending",
+        pubkey: status.pubkey,
+        state: status.state,
+        recheckAfterMillis: validRecheckInterval(status.recheckAfterMillis),
+      });
     } else {
-      setStep({ kind: "devicePending", pubkey: status.pubkey, state: status.state });
+      setStep({ kind: "deviceRejected", reason: status.state, revoked: true });
     }
   }, [host, fetchCommunity]);
 
-  // 投影进行中：由用户「重新确认」时按列表读本机公钥的状态。这里不定时轮询——客户端
-  // 没有依据选一个间隔（投影多快由服务端决定，服务端也没有下发重查间隔），写死的
-  // 间隔只会在后台反复敲 BFF。读不到不是失败，保持「处理中」。
+  // 投影进行中：只按登记回应里服务端给出的间隔重查。老服务端没有该字段时保持
+  // 手动重查，不在客户端猜一个 fallback。读不到不是失败，保持「处理中」。
   const recheck = useCallback(
-    async (pubkey: string) => {
+    async (pubkey: string, recheckAfterMillis?: number) => {
+      if (recheckInFlight.current) return;
+      recheckInFlight.current = true;
       try {
         const keys = await client.clientKeys();
         const mine = keys.find((k) => k.pubkey === pubkey);
         if (mine?.state === BuzzIdentityState.Active) await fetchCommunity(pubkey);
-        else if (mine?.state === BuzzIdentityState.Revoking)
+        else if (mine?.state === BuzzIdentityState.Reconciling)
+          setStep({ kind: "devicePending", pubkey, state: mine.state, recheckAfterMillis });
+        else if (mine)
           setStep({ kind: "deviceRejected", reason: mine.state, revoked: true });
-        else if (mine) setStep({ kind: "devicePending", pubkey, state: mine.state });
+        else
+          setStep({ kind: "deviceRejected", reason: ReasonCode.ClientKeyNotFound, revoked: true });
       } catch (e) {
         // 读不到只说明这一轮没有答案：保持「处理中」，下一轮再读
         if (!(e instanceof SessionEndedError))
           setStep((s) => (s.kind === "devicePending" ? { ...s } : s));
+      } finally {
+        recheckInFlight.current = false;
       }
     },
     [client, fetchCommunity],
   );
+
+  useEffect(() => {
+    if (step.kind !== "devicePending" || step.recheckAfterMillis === undefined) return;
+    const timer = window.setTimeout(
+      () => void recheck(step.pubkey, step.recheckAfterMillis),
+      step.recheckAfterMillis,
+    );
+    return () => window.clearTimeout(timer);
+  }, [step, recheck]);
 
   const start = useCallback(async () => {
     setStep({ kind: "loading" });
@@ -280,7 +304,7 @@ type Actions = {
   cancelSignIn: () => void;
   signOut: () => void;
   register: () => void;
-  recheck: (pubkey: string) => Promise<void>;
+  recheck: (pubkey: string, recheckAfterMillis?: number) => Promise<void>;
   fetchCommunity: (pubkey: string) => void;
 };
 
@@ -345,7 +369,9 @@ function StepView({ step, actions }: { step: Step; actions: Actions }) {
       return (
         <>
           <Detail>{t("native.device.pending", { state: step.state })}</Detail>
-          <Button onClick={() => void actions.recheck(step.pubkey)}>{t("native.device.check")}</Button>
+          {step.recheckAfterMillis === undefined ? (
+            <Button onClick={() => void actions.recheck(step.pubkey)}>{t("native.device.check")}</Button>
+          ) : null}
         </>
       );
     case "deviceUnknown":

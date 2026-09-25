@@ -365,7 +365,11 @@ export enum BuzzIdentityState {
  */
 export interface ClientKeyStatus {
     pubkey: string;
-    state:  BuzzIdentityState;
+    /**
+     * 状态仍在收敛时，客户端再次读取设备状态前至少等待的毫秒数；确定终态时缺省
+     */
+    recheckAfterMillis?: number;
+    state:               BuzzIdentityState;
     /**
      * 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
      */
