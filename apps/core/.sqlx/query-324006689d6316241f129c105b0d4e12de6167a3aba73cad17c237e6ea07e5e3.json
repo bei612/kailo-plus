@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "with candidates as (\n               (select workflow_id, projection_state, created_at, last_observed_at\n                from projection.workflow_ref\n                where projection_state <> 'TERMINAL'\n                  and created_at < now() - make_interval(secs => $1::bigint)\n                order by coalesce(last_observed_at, created_at)\n                limit $2)\n               union all\n               (select workflow_id, projection_state, created_at, last_observed_at\n                from projection.workflow_ref\n                where projection_state = 'TERMINAL'\n                  and coalesce(last_observed_at, created_at)\n                      < now() - make_interval(secs => $1::bigint)\n                order by coalesce(last_observed_at, created_at)\n                limit $2)\n           )\n           select w.workflow_id as \"workflow_id!\", w.projection_state as \"projection_state!\",\n                  (w.created_at > now() - make_interval(secs => $3::bigint)) as \"within_retention!\",\n                  (w.projection_state <> 'TERMINAL' or t.workflow_id is null\n                   or t.status = 'RUNNING' or t.run_id is null or t.run_id = '') as \"needs_repair!\"\n           from candidates w\n           left join projection.task_projection t on t.workflow_id = w.workflow_id\n           order by coalesce(w.last_observed_at, w.created_at)\n           limit $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workflow_id!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "projection_state!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "within_retention!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "needs_repair!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "324006689d6316241f129c105b0d4e12de6167a3aba73cad17c237e6ea07e5e3"
+}

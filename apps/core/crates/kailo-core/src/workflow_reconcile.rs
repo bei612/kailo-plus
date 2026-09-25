@@ -2,10 +2,11 @@
 //!
 //! 主路径是 Workflow 自己经 `ProjectTaskState` 写回；这里只修补漏写。每一轮：
 //!
-//! 1. 取一批超过新鲜度上界仍非 TERMINAL 的 WorkflowRef，按固定 ID Describe
-//!    （`DD-48`：结果不明时只用该 ID 查），把观察到的终态经唯一写入路径落库并
-//!    标 `observation_gap`，把已在运行的 PENDING_START 推进到 RUNNING，把
-//!    NotFound 且已超出 retention 的记为 UNKNOWN。
+//! 1. 取一批超过新鲜度上界仍非 TERMINAL，或虽已 TERMINAL 却缺少可用终态
+//!    TaskProjection 的 WorkflowRef，按固定 ID Describe（`DD-48`：结果不明时
+//!    只用该 ID 查）；确定关闭才经唯一写入路径修复投影并标 `observation_gap`。
+//!    把已在运行的 PENDING_START 推进到 RUNNING，把 NotFound 且已超出
+//!    retention 的不完整引用记为 UNKNOWN。
 //! 2. 发出收敛度量：各投影状态的非终态数与最久年龄、各实体停在非终态的数量，
 //!    以及「实体仍在收敛中、而驱动它当前版本的 Workflow 已经终结」的搁浅数。
 //!
@@ -33,7 +34,7 @@ use crate::temporal::{ObservedState, TemporalClient};
 pub struct Config {
     /// 两轮之间的间隔
     pub interval: Duration,
-    /// WorkflowRef 超过它仍非 TERMINAL 才被当作可能漏写
+    /// 非终态超过它仍未写回、或终态超过它仍未轮转观察，才进入有界核查
     pub freshness: Duration,
     /// 每轮最多 Describe 的条数
     pub batch: i64,
@@ -164,12 +165,29 @@ async fn pass(
     let retention_secs = i64::try_from(retention.as_secs()).unwrap_or(i64::MAX);
 
     let stale = sqlx::query!(
-        r#"select workflow_id, projection_state,
-                  (created_at > now() - make_interval(secs => $3::bigint)) as "within_retention!"
-           from projection.workflow_ref
-           where projection_state <> 'TERMINAL'
-             and created_at < now() - make_interval(secs => $1::bigint)
-           order by coalesce(last_observed_at, created_at)
+        r#"with candidates as (
+               (select workflow_id, projection_state, created_at, last_observed_at
+                from projection.workflow_ref
+                where projection_state <> 'TERMINAL'
+                  and created_at < now() - make_interval(secs => $1::bigint)
+                order by coalesce(last_observed_at, created_at)
+                limit $2)
+               union all
+               (select workflow_id, projection_state, created_at, last_observed_at
+                from projection.workflow_ref
+                where projection_state = 'TERMINAL'
+                  and coalesce(last_observed_at, created_at)
+                      < now() - make_interval(secs => $1::bigint)
+                order by coalesce(last_observed_at, created_at)
+                limit $2)
+           )
+           select w.workflow_id as "workflow_id!", w.projection_state as "projection_state!",
+                  (w.created_at > now() - make_interval(secs => $3::bigint)) as "within_retention!",
+                  (w.projection_state <> 'TERMINAL' or t.workflow_id is null
+                   or t.status = 'RUNNING' or t.run_id is null or t.run_id = '') as "needs_repair!"
+           from candidates w
+           left join projection.task_projection t on t.workflow_id = w.workflow_id
+           order by coalesce(w.last_observed_at, w.created_at)
            limit $2"#,
         freshness,
         cfg.batch,
@@ -180,6 +198,20 @@ async fn pass(
     .map_err(|e| e.to_string())?;
 
     for r in stale {
+        if !r.needs_repair {
+            // 健康的终态只轮转观察游标，不向 Temporal 重查已终结的历史。
+            sqlx::query!(
+                "update projection.workflow_ref set last_observed_at = now() where workflow_id = $1",
+                r.workflow_id
+            )
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            metrics
+                .reconciled
+                .add(1, &[KeyValue::new("outcome", "TERMINAL_INTACT")]);
+            continue;
+        }
         let outcome = match temporal.describe(&r.workflow_id).await {
             Ok(Some(o)) => match o.state {
                 ObservedState::Open => {
@@ -207,13 +239,13 @@ async fn pass(
                 }
             },
             // NotFound 只在 retention 窗口内才可能是「未启动」（SF-TMP-07）；
-            // 窗口外它与「已终结且被清理」无法区分，只能是 UNKNOWN。
+            // 窗口外无法修复不完整的终态投影，也不能继续声称它可核验。
             Ok(None) if r.within_retention => "NOT_FOUND",
             Ok(None) => {
                 sqlx::query!(
                     "update projection.workflow_ref
                      set projection_state = 'UNKNOWN', version = version + 1
-                     where workflow_id = $1 and projection_state <> 'TERMINAL'",
+                     where workflow_id = $1 and projection_state <> 'UNKNOWN'",
                     r.workflow_id
                 )
                 .execute(pool)
@@ -246,13 +278,16 @@ async fn pass(
 /// Worker 的 event_id 会累加 continue-as-new 之前各 run 的 history 长度；Describe
 /// 只返回最新 run 的 history 长度。因此修复事件必须同时高于已持久化的 event_id
 /// 与当前 run 的 history 长度，不能直接拿后者写回。
-async fn patch_terminal(
+pub(crate) async fn patch_terminal(
     pool: &PgPool,
     workflow_id: &str,
     run_id: String,
     history_length: i64,
     status: TaskStatus,
 ) -> Result<(), String> {
+    if run_id.is_empty() {
+        return Err(format!("{workflow_id} 的 Temporal 终态没有 run ID"));
+    }
     let previous: Option<i64> = sqlx::query_scalar(
         "select last_event_id from projection.task_projection where workflow_id = $1",
     )

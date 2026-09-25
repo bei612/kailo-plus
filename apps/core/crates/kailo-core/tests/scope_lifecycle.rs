@@ -579,6 +579,44 @@ async fn run_rerun(
     // 4. 重跑：新 ActionExecution → 实体版本 +1 → 新 workflow ID
     let retry = seed_action(pool, tenant, initiator, workspace).await;
     mark_rerun_action(pool, retry).await;
+    let original_run: String =
+        sqlx::query_scalar("select run_id from projection.task_projection where workflow_id = $1")
+            .bind(&failed)
+            .fetch_one(pool)
+            .await
+            .expect("读原 Workflow 的 run ID");
+    // 一个错误的、但形式上已终结的派生投影不能让重跑永远搁浅，也不能让
+    // 本次请求在修复投影的同时直接分配下一条 Workflow。
+    sqlx::query(
+        "update projection.task_projection
+         set run_id = 'wrong-run', status = 'COMPLETED' where workflow_id = $1",
+    )
+    .bind(&failed)
+    .execute(pool)
+    .await
+    .expect("制造终态投影与 Temporal 不一致");
+    assert_eq!(
+        rerun(http, e, token, &failed, retry).await.0,
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "本次只修复投影，不分配新 Workflow"
+    );
+    let repaired: (String, String, bool) = sqlx::query_as(
+        "select run_id, status, observation_gap from projection.task_projection
+         where workflow_id = $1",
+    )
+    .bind(&failed)
+    .fetch_one(pool)
+    .await
+    .expect("读修复后的投影");
+    assert_eq!(repaired, (original_run, "FAILED".into(), true));
+    let still_one: i64 = sqlx::query_scalar(
+        "select count(*) from projection.workflow_ref where action_execution_id = $1",
+    )
+    .bind(retry)
+    .fetch_one(pool)
+    .await
+    .expect("确认修复请求未启动新 Workflow");
+    assert_eq!(still_one, 0);
     let (code, body) = rerun(http, e, token, &failed, retry).await;
     assert_eq!(code, reqwest::StatusCode::OK, "{body}");
     let next = body["workflowId"].as_str().expect("workflowId").to_owned();

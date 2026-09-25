@@ -1,0 +1,1 @@
+DROP INDEX projection.workflow_ref_terminal_observation;

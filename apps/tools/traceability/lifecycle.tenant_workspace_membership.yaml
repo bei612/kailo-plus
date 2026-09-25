@@ -21,6 +21,8 @@ validation:
       ref: core/verify/membership-lifecycle.md
     - dimension: 安全边界
       ref: core/verify/service-api.md
+    - dimension: 端到端场景
+      ref: core/verify/task-terminal-repair.md
     - dimension: 安全边界
       ref: upstream-patches/buzz/verify/governance.md
 

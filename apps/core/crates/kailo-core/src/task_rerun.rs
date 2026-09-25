@@ -41,6 +41,7 @@ use crate::scope_state::ScopeKind;
 use crate::service_api::{authorize, unavailable, ServiceState};
 use crate::task_projection;
 use crate::temporal::{Observed, ObservedState};
+use crate::workflow_reconcile;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -193,19 +194,14 @@ pub async fn rerun_task(
         Err(e) => return unavailable(e),
     }
 
-    // 只有「确定已终结且没有完成」才可重跑。仍在跑、结果不明、或投影尚未落库
-    // 都不行——那时另起一条就是同一事实的第二个 Workflow。
-    let rerunnable = old.projection_state == "TERMINAL"
-        && old
-            .status
-            .as_deref()
-            .is_some_and(|s| RERUNNABLE_STATUS.contains(&s));
-    if !rerunnable {
+    // 只有已写回终态的 Workflow 才进入 Temporal 终态核对；非终态由周期对账
+    // 收敛，不能因为请求重跑就擅自推进实体版本。
+    if old.projection_state != "TERMINAL" {
         tracing::warn!(
             workflow_id = %req.workflow_id,
             projection_state = %old.projection_state,
             status = ?old.status,
-            "旧 Workflow 不在可重跑的终态"
+            "旧 Workflow 尚无终态投影"
         );
         return StatusCode::CONFLICT.into_response();
     }
@@ -227,6 +223,22 @@ pub async fn rerun_task(
     if let Err(code) =
         closed_execution_matches_projection(old.status.as_deref(), old.run_id.as_deref(), &observed)
     {
+        // 投影已标终态但缺失、状态错误或 run ID 错误时，用本次 Describe 的
+        // 关闭事实经唯一投影写入路径修复。这个请求不分配新 Workflow；客户端
+        // 以同一 ActionExecution 重发，重新读取修复后的事实与当前准入。
+        if let ObservedState::Closed(status) = &observed.state {
+            if let Err(e) = workflow_reconcile::patch_terminal(
+                &state.pool,
+                &req.workflow_id,
+                observed.run_id.clone(),
+                observed.history_length,
+                status.clone(),
+            )
+            .await
+            {
+                tracing::warn!(workflow_id = %req.workflow_id, error = %e, "终态投影修复失败");
+            }
+        }
         tracing::warn!(
             workflow_id = %req.workflow_id,
             projection_run_id = ?old.run_id,
@@ -236,6 +248,15 @@ pub async fn rerun_task(
             "旧 Workflow 未被证明已关闭且与投影一致"
         );
         return code.into_response();
+    }
+
+    // 完成了却仍停在收敛中状态是另一类缺陷，重跑会掩盖它。
+    if !old
+        .status
+        .as_deref()
+        .is_some_and(|s| RERUNNABLE_STATUS.contains(&s))
+    {
+        return StatusCode::CONFLICT.into_response();
     }
 
     let mut tx = match state.pool.begin().await {

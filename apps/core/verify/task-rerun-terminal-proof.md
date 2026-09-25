@@ -17,3 +17,5 @@
 - `systemd-run --user --scope -p MemoryMax=16G -p CPUQuota=500% -- ./tools/check.sh --full` 退出码 0，十组门禁通过；因未提供隔离 `DATABASE_URL`，实际数据库迁移演练明确 `SKIP`。
 
 本次未重建本地 Core 镜像，也未对运行中的 Temporal Server 做端到端重跑演练；不能把单元与静态门禁记作生产验收。另经源码复核，现有 `workflow_reconcile` 只扫描非 `TERMINAL` WorkflowRef；终态投影若已缺失或写错 run ID，不会被它自动修复，需单独闭合该收敛路径，不能写作“等待现有对账即可恢复”。用户可见 `task.rerun` 入口及其稳定 reason code 属于 Stage 2 剩余交付。
+
+后续收口见 [Task 终态投影的有界修复](task-terminal-repair.md)：周期对账已覆盖缺失或不完整的终态投影，非空错误 run ID 由受权内部重跑查证并修复；本段保留为当时提交的验证边界。

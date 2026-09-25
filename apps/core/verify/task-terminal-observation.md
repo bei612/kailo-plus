@@ -17,3 +17,5 @@
 - 提交前 `gitnexus detect-changes --scope all` 报 `HIGH`、7 条 execution flow：除任务列表/详情外还把同文件后续的 `ApprovalRow.target_id` 等位置移动识别为改变。逐行 `git diff` 核对，实际业务表达式只改 `observation`，未改审批字段、查询或生命周期投影；全量门禁通过。该图风险不当作自动放行，保留本次专项测试与 diff 供复核。
 
 本项仅闭合“终态 TaskProjection 缺失/非终态时的 UI 观测分类”，不宣称终态投影的周期自动修复、用户取消/重试入口或生产验收已完成。
+
+后续周期修复的边界和实际验证见 [Task 终态投影的有界修复](task-terminal-repair.md)；本记录的完成声明仍仅限于 UI 观测分类。

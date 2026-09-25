@@ -17,3 +17,5 @@
 - 在运行中的 Core、Temporal、Worker 与数据库上执行 `cargo test -p kailo-core --test workflow_reconcile -- --nocapture`：1 passed，0 failed。用例先保存 `last_event_id=1000000` 的 RUNNING 投影，再让 Temporal 终结；断言补写 FAILED、`observation_gap=true` 且新序号大于旧值。
 - 同一受限 cgroup 内执行 `sg docker -c 'bash core/verify/run-integration.sh'`：退出码 0；Core 全部非演练集成用例及 Worker 测试通过。明确标记为 ignored 的 Relay 故障演练和审批 continue-as-new 演练不由该命令执行。
 - 受限 cgroup 的 `./tools/check.sh --full`：退出码 0，十组门禁通过。未提供隔离 `DATABASE_URL`，实际迁移前进/回退演练为 `SKIP`；本次没有迁移。
+
+后续对终态缺口的有界轮转与索引见 [Task 终态投影的有界修复](task-terminal-repair.md)。本记录中的扫描范围描述只对应当时的提交。
