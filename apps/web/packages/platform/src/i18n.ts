@@ -19,6 +19,25 @@ import {
 
 export type PlatformLocale = "en" | "zh-CN";
 
+// 相对时间与复数的语义只有这一份；Dart 生成物从这里投影阈值和单数 locale。
+export const platformTimeSeconds = {
+  minute: 60,
+  hour: 3600,
+  day: 86400,
+  month: 2592000,
+} as const;
+
+export const platformPluralOneLocales = ["en"] as const;
+
+// “昨天/明天/上个月/下个月”是日历特例，不依赖语言的语法复数类别。
+export const platformSpecialRelativeUnits = ["day", "month"] as const;
+
+export function platformPluralForm(locale: PlatformLocale, count: number): "one" | "other" {
+  return platformPluralOneLocales.some((candidate) => candidate === locale) && count === 1
+    ? "one"
+    : "other";
+}
+
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
@@ -47,6 +66,32 @@ export const platformMessages = {
   "platform.state": { en: "State", "zh-CN": "状态" },
   "platform.protocolIdentity": { en: "Protocol identity", "zh-CN": "协议身份" },
   "platform.time": { en: "Time", "zh-CN": "时间" },
+  "platform.time.unavailable": { en: "Time unavailable", "zh-CN": "时间不可用" },
+  "platform.time.now": { en: "now", "zh-CN": "现在" },
+  "platform.time.absolute": {
+    en: "{month}/{day}/{year} {hour}:{minute}",
+    "zh-CN": "{year}年{month}月{day}日 {hour}:{minute}",
+  },
+  "platform.time.past.second.one": { en: "{count} second ago", "zh-CN": "{count} 秒前" },
+  "platform.time.past.second.other": { en: "{count} seconds ago", "zh-CN": "{count} 秒前" },
+  "platform.time.future.second.one": { en: "in {count} second", "zh-CN": "{count} 秒后" },
+  "platform.time.future.second.other": { en: "in {count} seconds", "zh-CN": "{count} 秒后" },
+  "platform.time.past.minute.one": { en: "{count} minute ago", "zh-CN": "{count} 分钟前" },
+  "platform.time.past.minute.other": { en: "{count} minutes ago", "zh-CN": "{count} 分钟前" },
+  "platform.time.future.minute.one": { en: "in {count} minute", "zh-CN": "{count} 分钟后" },
+  "platform.time.future.minute.other": { en: "in {count} minutes", "zh-CN": "{count} 分钟后" },
+  "platform.time.past.hour.one": { en: "{count} hour ago", "zh-CN": "{count} 小时前" },
+  "platform.time.past.hour.other": { en: "{count} hours ago", "zh-CN": "{count} 小时前" },
+  "platform.time.future.hour.one": { en: "in {count} hour", "zh-CN": "{count} 小时后" },
+  "platform.time.future.hour.other": { en: "in {count} hours", "zh-CN": "{count} 小时后" },
+  "platform.time.past.day.one": { en: "yesterday", "zh-CN": "昨天" },
+  "platform.time.past.day.other": { en: "{count} days ago", "zh-CN": "{count} 天前" },
+  "platform.time.future.day.one": { en: "tomorrow", "zh-CN": "明天" },
+  "platform.time.future.day.other": { en: "in {count} days", "zh-CN": "{count} 天后" },
+  "platform.time.past.month.one": { en: "last month", "zh-CN": "上个月" },
+  "platform.time.past.month.other": { en: "{count} months ago", "zh-CN": "{count} 个月前" },
+  "platform.time.future.month.one": { en: "next month", "zh-CN": "下个月" },
+  "platform.time.future.month.other": { en: "in {count} months", "zh-CN": "{count} 个月后" },
   "platform.type": { en: "Type", "zh-CN": "类型" },
   "platform.action": { en: "Action", "zh-CN": "动作" },
   "platform.result": { en: "Result", "zh-CN": "结果" },

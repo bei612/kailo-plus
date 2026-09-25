@@ -100,3 +100,7 @@ Desktop 复用的 `web/packages/platform` 在成员、设备、审计状态视�
 ## 2026-09-25 Mobile 主题选择器共享文案增量
 
 共享 TS 目录加入主题与强调色双语 key，固定 Desktop 上游基线和既有补丁重新构建 Linux `.deb`；当前 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的实测 SHA-256 为 `f81ad6a35e3741d056501edc77762db58075f4a1c40e6375147270fa13f3357f`，已写回 manifest 与追溯记录。`check.sh --full` 十项通过。本增量没有改 Desktop 的主题 UI 调用逻辑；尚未在真实桌面会话安装，亦未重跑 Desktop 原生端到端测试。
+
+## 2026-09-25 平台时间文案增量
+
+Desktop 共用的 `web/packages/platform` 采用同源相对时间阈值、双语文案与复数选择。固定 Desktop 上游基线、既有补丁和新 vendor 文件重新构建 Linux `.deb`；当前 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 实测 SHA-256 为 `9a31a28a97e47c7b5252089c4626491bf74ac7f0e48591b700c24ed96818dfe0`，manifest 与追溯记录已同步。共享包定时钟测试 53/53 通过；本增量仍未在真实桌面会话安装，也未重跑 Desktop 原生端到端测试，不能以 Web 走查替代桌面验收。

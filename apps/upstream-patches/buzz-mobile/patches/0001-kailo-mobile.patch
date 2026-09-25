@@ -9844,10 +9844,10 @@ index 0000000000000000000000000000000000000000..674973b8a77af67c683c196206dd8c93
 +}
 diff --git a/mobile/lib/features/kailo/kailo_audit_page.dart b/mobile/lib/features/kailo/kailo_audit_page.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..4f768ce13be81f39da94517f6ddc041b430f546a
+index 0000000000000000000000000000000000000000..6efb3ab90b9f078d63765af586a061684511d69a
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_audit_page.dart
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,57 @@
 +import 'package:flutter/material.dart';
 +import 'package:hooks_riverpod/hooks_riverpod.dart';
 +
@@ -9902,16 +9902,15 @@ index 0000000000000000000000000000000000000000..4f768ce13be81f39da94517f6ddc041b
 +
 +String _auditSubtitle(OwnAuditEntry entry, String locale) {
 +  final type = kailoAuditEventTypeText(entry.eventType, locale: locale);
-+  final when = DateTime.tryParse(entry.occurredAt)?.toLocal();
-+  final at = when == null ? entry.occurredAt : when.toString();
++  final at = kailoAbsoluteTime(entry.occurredAt, locale: locale);
 +  return '$type · ${entry.decision} · ${entry.resultCode}\n$at';
 +}
 diff --git a/mobile/lib/features/kailo/kailo_devices_page.dart b/mobile/lib/features/kailo/kailo_devices_page.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..7a841aad5ddeb28ec010c2495d095b4d3283f0ed
+index 0000000000000000000000000000000000000000..9d7d0194f86de32bffd7b38e90f6531561599337
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_devices_page.dart
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,170 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -9996,11 +9995,13 @@ index 0000000000000000000000000000000000000000..7a841aad5ddeb28ec010c2495d095b4d
 +
 +String _deviceSubtitle(ClientKeyView device, String locale) {
 +  final state = kailoBuzzIdentityStateText(device.state, locale: locale);
-+  final when = DateTime.tryParse(device.createdAt)?.toLocal();
 +  return kailoText(
 +    KailoMessageKey.platformDevicesRegisteredAt,
 +    locale: locale,
-+    variables: {'state': state, 'time': when ?? device.createdAt},
++    variables: {
++      'state': state,
++      'time': kailoAbsoluteTime(device.createdAt, locale: locale),
++    },
 +  );
 +}
 +
@@ -10082,7 +10083,7 @@ index 0000000000000000000000000000000000000000..7a841aad5ddeb28ec010c2495d095b4d
 +}
 diff --git a/mobile/lib/features/kailo/kailo_members_page.dart b/mobile/lib/features/kailo/kailo_members_page.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..b82f8d06ddddcedd85d35e5e415b8c72ea977334
+index 0000000000000000000000000000000000000000..e11504bb5bc37c548797cfb67ed9cdb02970c901
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_members_page.dart
 @@ -0,0 +1,125 @@
@@ -10177,7 +10178,7 @@ index 0000000000000000000000000000000000000000..b82f8d06ddddcedd85d35e5e415b8c72
 +          children: [
 +            AppListCard(
 +              label: kailoText(
-+                members.length == 1
++                kailoPluralOne(members.length, locale: locale)
 +                    ? KailoMessageKey.platformMembersCountOne
 +                    : KailoMessageKey.platformMembersCountOther,
 +                locale: locale,
@@ -10203,7 +10204,7 @@ index 0000000000000000000000000000000000000000..b82f8d06ddddcedd85d35e5e415b8c72
 +  final state = kailoWorkspaceMembershipStateText(member.state, locale: locale);
 +  final keys = member.pubkeys.length;
 +  final count = kailoText(
-+    keys == 1
++    kailoPluralOne(keys, locale: locale)
 +        ? KailoMessageKey.platformMembersKeyCountOne
 +        : KailoMessageKey.platformMembersKeyCountOther,
 +    locale: locale,
@@ -10576,10 +10577,10 @@ index 0000000000000000000000000000000000000000..375287c1ddae1bae743e9db801ab2b96
 +}
 diff --git a/mobile/lib/features/kailo/kailo_tasks_page.dart b/mobile/lib/features/kailo/kailo_tasks_page.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..e9ba73647a13ebbb37756e82c973ae96efc2ec6c
+index 0000000000000000000000000000000000000000..25830647f63ed37fb90cd72688c30deb92e8bf80
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_tasks_page.dart
-@@ -0,0 +1,461 @@
+@@ -0,0 +1,463 @@
 +import 'package:flutter/material.dart';
 +import 'package:hooks_riverpod/hooks_riverpod.dart';
 +
@@ -10688,9 +10689,6 @@ index 0000000000000000000000000000000000000000..e9ba73647a13ebbb37756e82c973ae96
 +  },
 +);
 +
-+String _when(String rfc3339) =>
-+    DateTime.tryParse(rfc3339)?.toLocal().toString() ?? rfc3339;
-+
 +/// 本人发起的受治理动作。
 +class KailoTasksPage extends ConsumerWidget {
 +  const KailoTasksPage({super.key});
@@ -10724,7 +10722,7 @@ index 0000000000000000000000000000000000000000..e9ba73647a13ebbb37756e82c973ae96
 +                            ),
 +                            title: task.actionKey,
 +                            subtitle:
-+                                '${kailoTaskPhase(task, locale: locale)}\n${_when(task.createdAt)}',
++                                '${kailoTaskPhase(task, locale: locale)}\n${kailoRelativeTime(task.createdAt, locale: locale)}',
 +                            subtitleMaxLines: 3,
 +                            onTap: () => Navigator.of(context).push(
 +                              MaterialPageRoute<void>(
@@ -10790,7 +10788,7 @@ index 0000000000000000000000000000000000000000..e9ba73647a13ebbb37756e82c973ae96
 +                  ),
 +                _Fact(
 +                  kailoText(KailoMessageKey.tasksCreated, locale: locale),
-+                  _when(task.createdAt),
++                  kailoAbsoluteTime(task.createdAt, locale: locale),
 +                ),
 +                _Fact(
 +                  kailoText(KailoMessageKey.tasksOperation, locale: locale),
@@ -10862,7 +10860,11 @@ index 0000000000000000000000000000000000000000..e9ba73647a13ebbb37756e82c973ae96
 +                            ),
 +                            title: approval.actionKey,
 +                            subtitle:
-+                                '${_approvalPhase(approval, locale)}\n${kailoText(KailoMessageKey.approvalsExpiresAt, locale: locale, variables: {'time': _when(approval.expiresAt)})}',
++                                '${_approvalPhase(approval, locale)}\n${kailoText(
++                                  KailoMessageKey.approvalsExpiresAt,
++                                  locale: locale,
++                                  variables: {'time': kailoRelativeTime(approval.expiresAt, locale: locale)},
++                                )}',
 +                            subtitleMaxLines: 3,
 +                            onTap: () => Navigator.of(context).push(
 +                              MaterialPageRoute<void>(
@@ -10932,7 +10934,7 @@ index 0000000000000000000000000000000000000000..e9ba73647a13ebbb37756e82c973ae96
 +                ),
 +              _Fact(
 +                kailoText(KailoMessageKey.approvalsExpires, locale: locale),
-+                _when(approval.expiresAt),
++                kailoAbsoluteTime(approval.expiresAt, locale: locale),
 +              ),
 +              _Fact(
 +                kailoText(KailoMessageKey.tasksTarget, locale: locale),
@@ -10989,7 +10991,8 @@ index 0000000000000000000000000000000000000000..e9ba73647a13ebbb37756e82c973ae96
 +                      d.decision,
 +                      locale: locale,
 +                    ),
-+                    subtitle: '${d.approverPrincipalId}\n${_when(d.decidedAt)}',
++                    subtitle:
++                        '${d.approverPrincipalId}\n${kailoAbsoluteTime(d.decidedAt, locale: locale)}',
 +                    subtitleMaxLines: 3,
 +                  ),
 +            ],
@@ -42096,6 +42099,61 @@ index 0000000000000000000000000000000000000000..14ddbff946f9f3ee40f4f9933a019f9b
 +    expect(find.text('任务'), findsOneWidget);
 +    expect(find.text('状态'), findsOneWidget);
 +    expect(find.text('等待审批'), findsOneWidget);
++  });
++}
+diff --git a/mobile/test/features/kailo/kailo_time_test.dart b/mobile/test/features/kailo/kailo_time_test.dart
+new file mode 100644
+index 0000000000000000000000000000000000000000..a5f646fcbc827e6f8e8eb03c1f967c47baeb7f4e
+--- /dev/null
++++ b/mobile/test/features/kailo/kailo_time_test.dart
+@@ -0,0 +1,49 @@
++import 'package:buzz/shared/kailo/kailo_platform_text.dart';
++import 'package:flutter_test/flutter_test.dart';
++
++void main() {
++  final now = DateTime.utc(2026, 9, 25, 14);
++  String at(int secondsFromNow) =>
++      now.add(Duration(seconds: secondsFromNow)).toIso8601String();
++
++  test('relative time uses the shared thresholds and plural forms', () {
++    expect(kailoRelativeTime(at(0), locale: 'en', now: now), 'now');
++    expect(kailoRelativeTime(at(-1), locale: 'en', now: now), '1 second ago');
++    expect(
++      kailoRelativeTime(at(-59), locale: 'en', now: now),
++      '59 seconds ago',
++    );
++    expect(kailoRelativeTime(at(-60), locale: 'en', now: now), '1 minute ago');
++    expect(kailoRelativeTime(at(120), locale: 'en', now: now), 'in 2 minutes');
++    expect(kailoRelativeTime(at(-3600), locale: 'en', now: now), '1 hour ago');
++    expect(kailoRelativeTime(at(-86400), locale: 'en', now: now), 'yesterday');
++    expect(kailoRelativeTime(at(86400), locale: 'en', now: now), 'tomorrow');
++    expect(
++      kailoRelativeTime(at(-2592000), locale: 'en', now: now),
++      'last month',
++    );
++  });
++
++  test('Chinese, future times and unavailable timestamps remain explicit', () {
++    expect(kailoRelativeTime(at(-60), locale: 'zh-CN', now: now), '1 分钟前');
++    expect(kailoRelativeTime(at(120), locale: 'zh-CN', now: now), '2 分钟后');
++    expect(kailoRelativeTime(at(86400), locale: 'zh-CN', now: now), '明天');
++    expect(kailoRelativeTime(at(-2592000), locale: 'zh-CN', now: now), '上个月');
++    expect(kailoRelativeTime('invalid', locale: 'zh-CN', now: now), '时间不可用');
++    expect(
++      kailoRelativeTime('invalid', locale: 'en', now: now),
++      'Time unavailable',
++    );
++    expect(kailoPluralOne(1, locale: 'en'), isTrue);
++    expect(kailoPluralOne(2, locale: 'en'), isFalse);
++    expect(kailoPluralOne(1, locale: 'zh-CN'), isFalse);
++  });
++
++  test('absolute time follows the catalog date pattern in local time', () {
++    final local = DateTime(2026, 9, 25, 14, 5);
++    final timestamp = local.toUtc().toIso8601String();
++    expect(kailoAbsoluteTime(timestamp, locale: 'en'), '9/25/2026 14:05');
++    expect(kailoAbsoluteTime(timestamp, locale: 'zh-CN'), '2026年9月25日 14:05');
++    expect(kailoAbsoluteTime('invalid', locale: 'zh-CN'), '时间不可用');
 +  });
 +}
 diff --git a/mobile/test/features/search/recent_searches_provider_test.dart b/mobile/test/features/search/recent_searches_provider_test.dart

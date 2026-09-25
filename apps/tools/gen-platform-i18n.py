@@ -109,6 +109,45 @@ def platform_catalog() -> tuple[list[tuple[str, str, str]], dict[str, list[tuple
     return messages, groups
 
 
+def presentation_rules(
+    messages: list[tuple[str, str, str]],
+) -> tuple[dict[str, int], list[str], list[str]]:
+    source = SOURCE.read_text()
+    seconds_body = block(source, "export const platformTimeSeconds = {", "} as const;")
+    seconds_entries = re.findall(r"\b(minute|hour|day|month):\s*(\d+),", seconds_body)
+    seconds = {unit: int(value) for unit, value in seconds_entries}
+    if len(seconds_entries) != 4 or set(seconds) != {"minute", "hour", "day", "month"}:
+        raise ValueError("platformTimeSeconds must define four distinct units")
+    if not (0 < seconds["minute"] < seconds["hour"] < seconds["day"] < seconds["month"]):
+        raise ValueError("platformTimeSeconds must increase by unit")
+
+    plural_match = re.search(r"export const platformPluralOneLocales = (\[[^;]+\]) as const;", source)
+    if plural_match is None:
+        raise ValueError("platformPluralOneLocales not found")
+    plural_locales = json.loads(plural_match.group(1))
+    if plural_locales != ["en"]:
+        raise ValueError("platformPluralOneLocales must match the supported English/Chinese rules")
+
+    special_match = re.search(r"export const platformSpecialRelativeUnits = (\[[^;]+\]) as const;", source)
+    if special_match is None:
+        raise ValueError("platformSpecialRelativeUnits not found")
+    special_units = json.loads(special_match.group(1))
+    if len(special_units) != len(set(special_units)) or not set(special_units) <= {"day", "month"}:
+        raise ValueError("platformSpecialRelativeUnits must contain distinct calendar units")
+
+    keys = {key for key, _, _ in messages}
+    required = {"platform.time.unavailable", "platform.time.now", "platform.time.absolute"}
+    required.update(
+        f"platform.time.{direction}.{unit}.{form}"
+        for direction in ("past", "future")
+        for unit in ("second", "minute", "hour", "day", "month")
+        for form in ("one", "other")
+    )
+    if not required <= keys:
+        raise ValueError(f"platform relative-time messages missing: {sorted(required - keys)}")
+    return seconds, plural_locales, special_units
+
+
 def dart_string(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace("'", "\\'").replace("$", "\\$")
     return "'" + escaped.replace("\n", "\\n") + "'"
@@ -154,6 +193,7 @@ def render_platform(
     messages: list[tuple[str, str, str]],
     groups: dict[str, list[tuple[str, str, str]]],
 ) -> str:
+    seconds, plural_locales, special_units = presentation_rules(messages)
     keys = [dart_key(key) for key, _, _ in messages]
     if len(set(keys)) != len(keys):
         raise ValueError("platform message keys collide after Dart conversion")
@@ -199,6 +239,92 @@ def render_platform(
         lines.extend(["    };", "  }", "  return switch (value) {"])
         lines.extend(f"    {enum}.{name} => {dart_string(en)}," for name, en, _ in rows)
         lines.extend(["  };", "}", ""])
+
+    lines.extend(
+        [
+            "String _kailoLanguage(String? locale) =>",
+            "    (locale ?? Platform.localeName).toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';",
+            "",
+            "const _kailoPluralOneLocales = <String>{",
+        ]
+    )
+    lines.extend(f"  {dart_string(locale)}," for locale in plural_locales)
+    lines.extend(
+        [
+            "};",
+            "",
+            "bool kailoPluralOne(int count, {String? locale}) =>",
+            "    count == 1 && _kailoPluralOneLocales.contains(_kailoLanguage(locale));",
+            "",
+            "const _kailoSpecialRelativeUnits = <String>{",
+        ]
+    )
+    lines.extend(f"  {dart_string(unit)}," for unit in special_units)
+    lines.extend(
+        [
+            "};",
+            "",
+            "String kailoAbsoluteTime(String rfc3339, {String? locale}) {",
+            "  final at = DateTime.tryParse(rfc3339);",
+            "  if (at == null) {",
+            "    return kailoText(KailoMessageKey.platformTimeUnavailable, locale: locale);",
+            "  }",
+            "  final local = at.toLocal();",
+            "  return kailoText(KailoMessageKey.platformTimeAbsolute, locale: locale, variables: {",
+            "    'year': local.year,",
+            "    'month': local.month,",
+            "    'day': local.day,",
+            "    'hour': local.hour.toString().padLeft(2, '0'),",
+            "    'minute': local.minute.toString().padLeft(2, '0'),",
+            "  });",
+            "}",
+            "",
+            "String kailoRelativeTime(String rfc3339, {String? locale, DateTime? now}) {",
+            "  final at = DateTime.tryParse(rfc3339);",
+            "  if (at == null) {",
+            "    return kailoText(KailoMessageKey.platformTimeUnavailable, locale: locale);",
+            "  }",
+            "  final current = now ?? DateTime.now();",
+            "  final elapsed = ((at.millisecondsSinceEpoch - current.millisecondsSinceEpoch).abs() / 1000).round();",
+            "  if (elapsed == 0) {",
+            "    return kailoText(KailoMessageKey.platformTimeNow, locale: locale);",
+            "  }",
+            "  var unit = 'second';",
+            "  var count = elapsed;",
+        ]
+    )
+    for index, unit in enumerate(("month", "day", "hour", "minute")):
+        lines.extend(
+            [
+                f"  {'if' if index == 0 else 'else if'} (elapsed >= {seconds[unit]}) {{",
+                f"    unit = '{unit}';",
+                f"    count = (elapsed / {seconds[unit]}).round();",
+                "  }",
+            ]
+        )
+    lines.extend(
+        [
+            "  final direction = at.isAfter(current) ? 'future' : 'past';",
+            "  final form = count == 1 && _kailoSpecialRelativeUnits.contains(unit)",
+            "      ? 'one'",
+            "      : (kailoPluralOne(count, locale: locale) ? 'one' : 'other');",
+            "  final key = switch ('$direction.$unit.$form') {",
+        ]
+    )
+    for direction in ("past", "future"):
+        for unit in ("second", "minute", "hour", "day", "month"):
+            for form in ("one", "other"):
+                key = f"platform.time.{direction}.{unit}.{form}"
+                lines.append(f"    '{direction}.{unit}.{form}' => KailoMessageKey.{dart_key(key)},")
+    lines.extend(
+        [
+            "    _ => KailoMessageKey.platformTimeUnavailable,",
+            "  };",
+            "  return kailoText(key, locale: locale, variables: {'count': count});",
+            "}",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 

@@ -24,6 +24,29 @@ enum KailoMessageKey {
   platformState,
   platformProtocolIdentity,
   platformTime,
+  platformTimeUnavailable,
+  platformTimeNow,
+  platformTimeAbsolute,
+  platformTimePastSecondOne,
+  platformTimePastSecondOther,
+  platformTimeFutureSecondOne,
+  platformTimeFutureSecondOther,
+  platformTimePastMinuteOne,
+  platformTimePastMinuteOther,
+  platformTimeFutureMinuteOne,
+  platformTimeFutureMinuteOther,
+  platformTimePastHourOne,
+  platformTimePastHourOther,
+  platformTimeFutureHourOne,
+  platformTimeFutureHourOther,
+  platformTimePastDayOne,
+  platformTimePastDayOther,
+  platformTimeFutureDayOne,
+  platformTimeFutureDayOther,
+  platformTimePastMonthOne,
+  platformTimePastMonthOther,
+  platformTimeFutureMonthOne,
+  platformTimeFutureMonthOther,
   platformType,
   platformAction,
   platformResult,
@@ -259,6 +282,68 @@ const _messages = <KailoMessageKey, (String, String)>{
   KailoMessageKey.platformState: ('State', '状态'),
   KailoMessageKey.platformProtocolIdentity: ('Protocol identity', '协议身份'),
   KailoMessageKey.platformTime: ('Time', '时间'),
+  KailoMessageKey.platformTimeUnavailable: ('Time unavailable', '时间不可用'),
+  KailoMessageKey.platformTimeNow: ('now', '现在'),
+  KailoMessageKey.platformTimeAbsolute: (
+    '{month}/{day}/{year} {hour}:{minute}',
+    '{year}年{month}月{day}日 {hour}:{minute}',
+  ),
+  KailoMessageKey.platformTimePastSecondOne: (
+    '{count} second ago',
+    '{count} 秒前',
+  ),
+  KailoMessageKey.platformTimePastSecondOther: (
+    '{count} seconds ago',
+    '{count} 秒前',
+  ),
+  KailoMessageKey.platformTimeFutureSecondOne: (
+    'in {count} second',
+    '{count} 秒后',
+  ),
+  KailoMessageKey.platformTimeFutureSecondOther: (
+    'in {count} seconds',
+    '{count} 秒后',
+  ),
+  KailoMessageKey.platformTimePastMinuteOne: (
+    '{count} minute ago',
+    '{count} 分钟前',
+  ),
+  KailoMessageKey.platformTimePastMinuteOther: (
+    '{count} minutes ago',
+    '{count} 分钟前',
+  ),
+  KailoMessageKey.platformTimeFutureMinuteOne: (
+    'in {count} minute',
+    '{count} 分钟后',
+  ),
+  KailoMessageKey.platformTimeFutureMinuteOther: (
+    'in {count} minutes',
+    '{count} 分钟后',
+  ),
+  KailoMessageKey.platformTimePastHourOne: ('{count} hour ago', '{count} 小时前'),
+  KailoMessageKey.platformTimePastHourOther: (
+    '{count} hours ago',
+    '{count} 小时前',
+  ),
+  KailoMessageKey.platformTimeFutureHourOne: ('in {count} hour', '{count} 小时后'),
+  KailoMessageKey.platformTimeFutureHourOther: (
+    'in {count} hours',
+    '{count} 小时后',
+  ),
+  KailoMessageKey.platformTimePastDayOne: ('yesterday', '昨天'),
+  KailoMessageKey.platformTimePastDayOther: ('{count} days ago', '{count} 天前'),
+  KailoMessageKey.platformTimeFutureDayOne: ('tomorrow', '明天'),
+  KailoMessageKey.platformTimeFutureDayOther: ('in {count} days', '{count} 天后'),
+  KailoMessageKey.platformTimePastMonthOne: ('last month', '上个月'),
+  KailoMessageKey.platformTimePastMonthOther: (
+    '{count} months ago',
+    '{count} 个月前',
+  ),
+  KailoMessageKey.platformTimeFutureMonthOne: ('next month', '下个月'),
+  KailoMessageKey.platformTimeFutureMonthOther: (
+    'in {count} months',
+    '{count} 个月后',
+  ),
   KailoMessageKey.platformType: ('Type', '类型'),
   KailoMessageKey.platformAction: ('Action', '动作'),
   KailoMessageKey.platformResult: ('Result', '结果'),
@@ -910,4 +995,93 @@ String kailoApprovalSelectorText(ApprovalSelector value, {String? locale}) {
     ApprovalSelector.WORKSPACE_ADMIN => 'Workspace admin',
     ApprovalSelector.RESOURCE_APPROVER => 'Resource approver',
   };
+}
+
+String _kailoLanguage(String? locale) =>
+    (locale ?? Platform.localeName).toLowerCase().startsWith('zh')
+    ? 'zh-CN'
+    : 'en';
+
+const _kailoPluralOneLocales = <String>{'en'};
+
+bool kailoPluralOne(int count, {String? locale}) =>
+    count == 1 && _kailoPluralOneLocales.contains(_kailoLanguage(locale));
+
+const _kailoSpecialRelativeUnits = <String>{'day', 'month'};
+
+String kailoAbsoluteTime(String rfc3339, {String? locale}) {
+  final at = DateTime.tryParse(rfc3339);
+  if (at == null) {
+    return kailoText(KailoMessageKey.platformTimeUnavailable, locale: locale);
+  }
+  final local = at.toLocal();
+  return kailoText(
+    KailoMessageKey.platformTimeAbsolute,
+    locale: locale,
+    variables: {
+      'year': local.year,
+      'month': local.month,
+      'day': local.day,
+      'hour': local.hour.toString().padLeft(2, '0'),
+      'minute': local.minute.toString().padLeft(2, '0'),
+    },
+  );
+}
+
+String kailoRelativeTime(String rfc3339, {String? locale, DateTime? now}) {
+  final at = DateTime.tryParse(rfc3339);
+  if (at == null) {
+    return kailoText(KailoMessageKey.platformTimeUnavailable, locale: locale);
+  }
+  final current = now ?? DateTime.now();
+  final elapsed =
+      ((at.millisecondsSinceEpoch - current.millisecondsSinceEpoch).abs() /
+              1000)
+          .round();
+  if (elapsed == 0) {
+    return kailoText(KailoMessageKey.platformTimeNow, locale: locale);
+  }
+  var unit = 'second';
+  var count = elapsed;
+  if (elapsed >= 2592000) {
+    unit = 'month';
+    count = (elapsed / 2592000).round();
+  } else if (elapsed >= 86400) {
+    unit = 'day';
+    count = (elapsed / 86400).round();
+  } else if (elapsed >= 3600) {
+    unit = 'hour';
+    count = (elapsed / 3600).round();
+  } else if (elapsed >= 60) {
+    unit = 'minute';
+    count = (elapsed / 60).round();
+  }
+  final direction = at.isAfter(current) ? 'future' : 'past';
+  final form = count == 1 && _kailoSpecialRelativeUnits.contains(unit)
+      ? 'one'
+      : (kailoPluralOne(count, locale: locale) ? 'one' : 'other');
+  final key = switch ('$direction.$unit.$form') {
+    'past.second.one' => KailoMessageKey.platformTimePastSecondOne,
+    'past.second.other' => KailoMessageKey.platformTimePastSecondOther,
+    'past.minute.one' => KailoMessageKey.platformTimePastMinuteOne,
+    'past.minute.other' => KailoMessageKey.platformTimePastMinuteOther,
+    'past.hour.one' => KailoMessageKey.platformTimePastHourOne,
+    'past.hour.other' => KailoMessageKey.platformTimePastHourOther,
+    'past.day.one' => KailoMessageKey.platformTimePastDayOne,
+    'past.day.other' => KailoMessageKey.platformTimePastDayOther,
+    'past.month.one' => KailoMessageKey.platformTimePastMonthOne,
+    'past.month.other' => KailoMessageKey.platformTimePastMonthOther,
+    'future.second.one' => KailoMessageKey.platformTimeFutureSecondOne,
+    'future.second.other' => KailoMessageKey.platformTimeFutureSecondOther,
+    'future.minute.one' => KailoMessageKey.platformTimeFutureMinuteOne,
+    'future.minute.other' => KailoMessageKey.platformTimeFutureMinuteOther,
+    'future.hour.one' => KailoMessageKey.platformTimeFutureHourOne,
+    'future.hour.other' => KailoMessageKey.platformTimeFutureHourOther,
+    'future.day.one' => KailoMessageKey.platformTimeFutureDayOne,
+    'future.day.other' => KailoMessageKey.platformTimeFutureDayOther,
+    'future.month.one' => KailoMessageKey.platformTimeFutureMonthOne,
+    'future.month.other' => KailoMessageKey.platformTimeFutureMonthOther,
+    _ => KailoMessageKey.platformTimeUnavailable,
+  };
+  return kailoText(key, locale: locale, variables: {'count': count});
 }
