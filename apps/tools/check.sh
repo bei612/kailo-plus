@@ -313,8 +313,11 @@ step_supply()   { hdr "7/10 secret、依赖、许可证与供应链"
   if have gitleaks; then
     gitleaks detect --no-banner -q >/dev/null 2>&1 && pass "gitleaks 无命中" || fail "gitleaks 命中"
   else
-    # 兜底：仓库内明显的私钥/令牌形态
-    if git grep -nIE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|nsec1[a-z0-9]{20,}|xox[baprs]-' -- . >/dev/null 2>&1; then
+    # 兜底：仓库内明显的私钥/令牌形态。上游补丁里以 `-` 开头的是被删掉的上游原文（例如
+    # 上游测试桩里的假 nsec），不是本仓库交付的内容；补丁只扫新增行与上下文行。
+    local secret='BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|nsec1[a-z0-9]{20,}|xox[baprs]-'
+    if git grep -nIE "$secret" -- . ':(exclude)upstream-patches/*/patches/*.patch' >/dev/null 2>&1 \
+       || git grep -hIE "^[+ ].*($secret)" -- 'upstream-patches/*/patches/*.patch' >/dev/null 2>&1; then
       fail "发现疑似凭据"; else pass "内置扫描无命中（未安装 gitleaks）"; fi
   fi
   # 产物来源验证（ADR-06）：每个镜像 digest 必须同时有 SBOM 与 provenance，
