@@ -107,4 +107,5 @@ PYDART
     printf '  \033[32mOK\033[0m   %-5s -> %s\n' "$lang" "$dest"
   fi
 done
+python3 tools/gen-platform-i18n.py "$@" || fail=1
 exit "$fail"
