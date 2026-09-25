@@ -12,8 +12,9 @@ SpiceDB relationship、授予与撤销定为同步 Governed Action，并规定�
 不得为空。剩下两件 `.design` 没有定下的工程选择：
 
 1. **第一位 admin 从哪里来。** `.design` 没有 `tenant.create` 动作，没有定义 Tenant 的
-   发起方（`.design/06` §1 只说建立走 `TENANT_LIFECYCLE`）；成员邀请受 `GAP-IDN-01`
-   阻断，`.design/09` §5 要求「首次认证的 Human 只有在已有 provisioning fact 时建立
+   发起方（`.design/06` §1 只说建立走 `TENANT_LIFECYCLE`）；成员邀请（`DD-83`，本 ADR
+   写成时受 `GAP-IDN-01` 阻断）要由持有 Tenant manage 的人签发，空 Tenant 里没有这样
+   的人；`.design/09` §5 要求「首次认证的 Human 只有在已有 provisioning fact 时建立
    TenantMembership」。`DD-82` 只给出约束：部署引导只能在有效 admin 为空时写入一位。
    它以什么形态执行，是这里要定的。
 2. **Core 怎么写 SpiceDB。** ADR-10 只让 Core 做 Check；关系写入此前都在 Worker 的
@@ -65,7 +66,7 @@ Tenant 与成员的建立必须走既有生命周期 Workflow（`DD-01`、`DD-45
    - admin 关系在 Tenant 行锁内写入，写前再判一次「有效 admin 为空」；
    - 有效 admin 非空时不登记身份、不建成员、不写关系，以退出码 4（`INERT`）返回；生命
      周期未在 `--wait-seconds` 内完成时以退出码 3（`PENDING`）返回，重跑继续；
-   - 已撤权的人不由引导恢复（恢复成员属于 `GAP-IDN-01` 阻断的入口）。
+   - 已撤权的人不由引导恢复：成员恢复只经邀请（`DD-83`）。
 
    同一形态兼作「有效 admin 为空」时的恢复手段：`kailo.tenant.without_effective_admin`
    大于 0 时，部署者以一位现有成员的 subject 执行引导即可 0→1；它不能动已有 admin 的
@@ -85,8 +86,8 @@ Tenant 与成员的建立必须走既有生命周期 Workflow（`DD-01`、`DD-45
 正面：真实用户可以成为 admin，审批链在产品里可用；引导没有网络入口；每个 admin 都能
 追溯到一次引导或一次受治理授予。
 
-负面：引导需要部署者进入容器；Tenant 成员除首位外仍无产品入口（`GAP-IDN-01`），邀请
-闭合前一个 Tenant 只有引导出的那一位成员。Core 对 SpiceDB 的依赖从
+负面：引导需要部署者进入容器；首位成员之外的成员经邀请（`DD-83`）加入，而签发邀请
+要有一位有效 admin，所以每个 Tenant 仍要先经一次引导。Core 对 SpiceDB 的依赖从
 「只读判定」扩大到「写角色关系」，gateway 端口的可用性成为角色动作的前提。
 
 锁定：角色关系由 Core 写、成员关系由 Worker 写；二者都只写固定 schema 的 relation。
@@ -94,12 +95,19 @@ Tenant 与成员的建立必须走既有生命周期 Workflow（`DD-01`、`DD-45
 ## 替换边界
 
 出现以下任一即重新评估：`.design` 登记 `tenant.create` 或 Catalog 内的 platform admin
-动作（引导退为只建 Catalog 的那一位）；`GAP-IDN-01` 闭合（首位成员改走邀请，引导只写
-admin）；Core 拆出多实例且不共享同一库（行锁不再是串行点，需要 SpiceDB 写前置条件或
+动作（引导退为只建 Catalog 的那一位）；Core 拆出多实例且不共享同一库（行锁不再是串行点，需要 SpiceDB 写前置条件或
 分布式锁）。替换只动 `tenant_bootstrap.rs`、`roles.rs` 与 `spicedb.rs`，Governed Action 的
 定义与审计形状不变。
 
 ## 不改变的事
 
 本 ADR 不改变 SpiceDB 的权威地位、固定 schema（`.design/03` §5）、`DD-82` 的约束，也不
-开放任何 `GAP-IDN-01` 阻断的入口；它只选择部署引导的执行形态与 Core 写关系的传输。
+提供第二条成员建立入口（成员经 `DD-83` 的邀请加入）；它只选择部署引导的执行形态与 Core
+写关系的传输。
+
+## 复评（2026-09-25，`GAP-IDN-01` 由 `DD-83` 闭合）
+
+替换边界曾把「`GAP-IDN-01` 闭合」列为重新评估的条件，设想首位成员改走邀请、引导只写
+admin。复评结论是不改：`tenant.member.invite` 检查 Tenant `manage`，空 Tenant 里没有
+任何人持有它，首位成员无从被邀请。引导仍建立首位成员并写入 admin；它不恢复已撤权的
+人——恢复经邀请与 admin 确认。

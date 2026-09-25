@@ -90,7 +90,7 @@
      --admin-display-name <显示名> --wait-seconds <秒>
    ```
 
-   退出码 `0` 且输出 `COMPLETED` 即恢复；`4`（`INERT`）说明该 Tenant 此刻已有有效 admin，引导什么也没做；`3`（`PENDING`）以同一参数重跑。已撤权的人不能用引导恢复（`GAP-IDN-01`）。
+   退出码 `0` 且输出 `COMPLETED` 即恢复；`4`（`INERT`）说明该 Tenant 此刻已有有效 admin，引导什么也没做；`3`（`PENDING`）以同一参数重跑。已撤权的人不能用引导恢复：成员恢复只经邀请签发、兑换与 Tenant admin 确认（`DD-83`），而没有有效 admin 时无人能签发邀请，所以先以一位现有 `ACTIVE` 成员完成 0→1。
 
 ## 不可执行的动作
 

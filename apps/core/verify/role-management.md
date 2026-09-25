@@ -1,10 +1,10 @@
-# 角色管理、部署引导与 Tenant 成员邀请的核验
+# 角色管理与部署引导的核验
 
 对应 Stage 2 治理内核（`02-纵向交付路线.md` §4）中让审批链在产品里可用的三件事：
 真实用户能成为 Tenant/Workspace admin、Tenant 永不失去最后一位 admin、第一位 admin
-有一条可审计的来路；以及 Tenant 成员邀请为什么不开放。
+有一条可审计的来路。
 
-权威：`DD-82`（角色）、`GAP-IDN-01`（邀请）、`.design/03` §5 的固定 schema 与 RoleTemplate
+权威：`DD-82`（角色）、`.design/03` §5 的固定 schema 与 RoleTemplate
 规则、`.design/09` §5（provisioning fact）、`.design/10` §4 §5（撤权收敛）、ADR-11（引导形态
 与 Core 写关系）。
 
@@ -25,18 +25,11 @@
 | 与成员事实不一致的角色关系 | `role_reconcile` 以 Core 成员事实为准删除（非成员、已撤权、跨 Tenant、非 HUMAN），留 RECONCILIATION 审计；并度量 `kailo.tenant.without_effective_admin` | DD-82 |
 | 第一位 admin | 部署引导：Core 容器内的一次性子命令，只做 0→1，见 ADR-11 | DD-82、`.design/09` §5 |
 
-## Tenant 成员邀请的形状与缺口
+## Tenant 成员邀请
 
-| 要素 | `.design` 给出的 | 结论 |
-|---|---|---|
-| 谁能邀请 | TenantMembership 动作是 `TENANT_ONLY`（`03` §4），固定 schema 中成员管理即 `tenant manage` | 可推出，但入口本身受下面三项阻断 |
-| 被邀请人首次登录如何绑定 | `09` §5：只有「已有 invitation/provisioning fact」时才建立 membership；身份键是 `(issuer, subject)` | fact 以什么指向被邀请人没有定义：BFF 只收到 issuer/subject（SS-AGW-OIDC），拿不到经验证的邮箱；默认 IdP 不在 `.references`，其邀请/注册语义不可声明 |
-| 过期 | 无；TenantMembership 没有过期字段 | 没有定义 |
-| 撤回 | 无；`INVITED` 之后的转移没有定义 | 没有定义 |
-
-按 `.design/02` 的缺口规范登记为 `GAP-IDN-01`，入口关闭：`tenant.member.add`（含已撤权
-成员的恢复）不登记，`INVITED` 不可达，首次认证而无 membership 的人保持
-`IDENTITY_UNKNOWN`。一期唯一的 provisioning fact 是部署引导（ADR-11）。
+成员邀请曾受 `GAP-IDN-01` 阻断，现由 `DD-83` 闭合，核验见
+[tenant-invitation.md](tenant-invitation.md)。本文件的夹具成员（B、C、D）仍由夹具直接
+开通：它们只是角色动作的对象，不经邀请以免两份核验互相牵连。
 
 ## 用例与断言面
 
@@ -54,7 +47,7 @@
 | Workspace admin | 授予前非成员管理 Workspace 被拒；授予后可加成员；撤销后再管理被拒 |
 | Tenant 撤权撤全部关系 | 被撤者的 `tenant#admin`、`tenant#member`、`workspace#admin` 全部不在 |
 | 角色对账 | 旁路写入失权者的 `tenant#admin` → 三个对账周期内被删，留 `RECONCILIATION`/`ROLE_REMOVED` 审计 |
-| GAP-IDN-01 | `tenant.member.add` → 403 `CAPABILITY_BLOCKED`；目录无该定义；库中无 `INVITED` |
+| 成员建立只有邀请一条入口 | `tenant.member.add` → 403 `CAPABILITY_BLOCKED`（`DD-83`；邀请本身的断言在 `tenant_invitation.rs`） |
 
 `worker/replay-tests` 纳入走新撤权路径（`tenant-revocation-all-relations`）的录制 history；
 门禁之前录制的两份撤权 history 仍走旧路径。
@@ -86,7 +79,7 @@
 ## 已知边界
 
 - 引导需要部署者进入 Core 容器；平台内没有 Tenant 创建入口（`.design` 未定义发起方）。
-- 邀请闭合前，一个 Tenant 在产品里只有引导出的那一位成员，其余成员只能由夹具开通
-  （核验）——因而「另一位 admin 批准」在产品里要等 `GAP-IDN-01` 闭合后才有第二个人。
+- 引导只建首位成员；其余成员经邀请（`DD-83`）加入，「另一位 admin 批准」所需的第二个
+  人由此而来。
 - `role_reconcile` 每轮读出全部角色关系：量级与角色数成正比，一期可接受；超出时按
   Tenant 分片读取。
