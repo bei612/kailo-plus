@@ -96,3 +96,7 @@ Desktop 复用的 `web/packages/platform` 在成员、设备、审计状态视�
 ## 2026-09-25 Mobile 设置页共享文案增量
 
 固定 Desktop 上游基线、既有补丁与新增的共享文案文件重新构建 Linux `.deb`；当前 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的实测 SHA-256 为 `8510d2d6835849feafbefc5f208cb50a81d81a1da729f0c2ae2620cd48f30753`，已写回 manifest 与追溯记录。首次构建因磁盘余量跌至 2.4 GiB 主动取消，后台缓存回收后余量恢复至约 50 GiB；重试复用已缓存阶段并完成打包。`check.sh --full` 十项通过。本增量未在真实桌面会话安装，也未重跑 Desktop 原生端到端测试。
+
+## 2026-09-25 Mobile 主题选择器共享文案增量
+
+共享 TS 目录加入主题与强调色双语 key，固定 Desktop 上游基线和既有补丁重新构建 Linux `.deb`；当前 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的实测 SHA-256 为 `f81ad6a35e3741d056501edc77762db58075f4a1c40e6375147270fa13f3357f`，已写回 manifest 与追溯记录。`check.sh --full` 十项通过。本增量没有改 Desktop 的主题 UI 调用逻辑；尚未在真实桌面会话安装，亦未重跑 Desktop 原生端到端测试。

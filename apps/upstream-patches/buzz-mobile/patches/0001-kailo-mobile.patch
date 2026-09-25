@@ -12842,13 +12842,28 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..d2110f184cc6d7def6dd67e6430ed63a
    const _RowChevron();
  
 diff --git a/mobile/lib/features/settings/theme_option_sheets.dart b/mobile/lib/features/settings/theme_option_sheets.dart
-index da96c3b87753db8ac705ee41c5073684ce9266cf..25794cd674553e7b09331b4cd1df21533d9a058e 100644
+index da96c3b87753db8ac705ee41c5073684ce9266cf..8072b89cd5efe39515272638d80a9dec954cafa7 100644
 --- a/mobile/lib/features/settings/theme_option_sheets.dart
 +++ b/mobile/lib/features/settings/theme_option_sheets.dart
-@@ -17,18 +17,6 @@ const appearanceModeOptions = <({ThemeMode mode, String label, IconData icon})>[
- String appearanceModeLabel(ThemeMode mode) =>
-     appearanceModeOptions.firstWhere((option) => option.mode == mode).label;
+@@ -3,31 +3,32 @@ import 'dart:async';
+ import 'package:flutter/material.dart';
+ import 'package:flutter/services.dart';
+ import 'package:flutter_hooks/flutter_hooks.dart';
+-import 'package:lucide_icons_flutter/lucide_icons.dart';
  
++import '../../shared/kailo/kailo_platform_text.dart';
+ import '../../shared/theme/theme.dart';
+ import '../../shared/widgets/modal_presentation.dart';
+ 
+-const appearanceModeOptions = <({ThemeMode mode, String label, IconData icon})>[
+-  (mode: ThemeMode.light, label: 'Light', icon: LucideIcons.sun),
+-  (mode: ThemeMode.dark, label: 'Dark', icon: LucideIcons.moon),
+-  (mode: ThemeMode.system, label: 'System', icon: LucideIcons.sunMoon),
+-];
+-
+-String appearanceModeLabel(ThemeMode mode) =>
+-    appearanceModeOptions.firstWhere((option) => option.mode == mode).label;
+-
 -Future<void> showAppearanceModePickerSheet({
 -  required BuildContext context,
 -  required ThemeMode selectedMode,
@@ -12860,11 +12875,43 @@ index da96c3b87753db8ac705ee41c5073684ce9266cf..25794cd674553e7b09331b4cd1df2153
 -  builder: (_) =>
 -      _AppearanceModePicker(initialMode: selectedMode, onSelected: onSelected),
 -);
--
++String appearanceModeLabel(ThemeMode mode, {String? locale}) =>
++    kailoText(switch (mode) {
++      ThemeMode.light => KailoMessageKey.platformThemeModeLight,
++      ThemeMode.dark => KailoMessageKey.platformThemeModeDark,
++      ThemeMode.system => KailoMessageKey.platformThemeModeSystem,
++    }, locale: locale);
++
++String accentColorLabel(int index, {String? locale}) =>
++    kailoText(switch (accentColors[index].name) {
++      'Neutral' => KailoMessageKey.platformThemeAccentNeutral,
++      'Blue' => KailoMessageKey.platformThemeAccentBlue,
++      'Cyan' => KailoMessageKey.platformThemeAccentCyan,
++      'Green' => KailoMessageKey.platformThemeAccentGreen,
++      'Orange' => KailoMessageKey.platformThemeAccentOrange,
++      'Red' => KailoMessageKey.platformThemeAccentRed,
++      'Pink' => KailoMessageKey.platformThemeAccentPink,
++      'Lilac' => KailoMessageKey.platformThemeAccentLilac,
++      'Purple' => KailoMessageKey.platformThemeAccentPurple,
++      'Indigo' => KailoMessageKey.platformThemeAccentIndigo,
++      _ => KailoMessageKey.platformThemeAccentColor,
++    }, locale: locale);
+ 
  Future<void> showAccentColorPickerSheet({
    required BuildContext context,
-   required ColorScheme colorScheme,
-@@ -45,132 +33,6 @@ Future<void> showAccentColorPickerSheet({
+@@ -36,7 +37,10 @@ Future<void> showAccentColorPickerSheet({
+   required ValueChanged<int> onSelected,
+ }) => showBuzzModalBottomSheet<void>(
+   context: context,
+-  title: 'Accent color',
++  title: kailoText(
++    KailoMessageKey.platformThemeAccentColor,
++    locale: Localizations.localeOf(context).toLanguageTag(),
++  ),
+   showDragHandle: true,
+   builder: (_) => _AccentColorPicker(
+     colorScheme: colorScheme,
+@@ -45,132 +49,6 @@ Future<void> showAccentColorPickerSheet({
    ),
  );
  
@@ -12997,6 +13044,202 @@ index da96c3b87753db8ac705ee41c5073684ce9266cf..25794cd674553e7b09331b4cd1df2153
  class _AccentColorPicker extends HookWidget {
    const _AccentColorPicker({
      required this.colorScheme,
+@@ -236,7 +114,10 @@ class _AccentSheetOption extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) => Semantics(
+-    label: '${accentColors[index].name} accent color',
++    label: accentColorLabel(
++      index,
++      locale: Localizations.localeOf(context).toLanguageTag(),
++    ),
+     button: true,
+     selected: selected,
+     child: InkResponse(
+diff --git a/mobile/lib/features/settings/theme_picker_page.dart b/mobile/lib/features/settings/theme_picker_page.dart
+index 5242a05fae7c9fab17a5ce8c116dc67b7a12b127..f639c940c9eca37201f4d0abcb6fe24f0e47861a 100644
+--- a/mobile/lib/features/settings/theme_picker_page.dart
++++ b/mobile/lib/features/settings/theme_picker_page.dart
+@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
+ 
+ import '../../shared/community/community_icon_provider.dart';
+ import '../../shared/community/community_provider.dart';
++import '../../shared/kailo/kailo_platform_text.dart';
+ import '../../shared/theme/theme.dart';
+ import '../../shared/widgets/avatar_image.dart';
+ import '../../shared/widgets/frosted_app_bar.dart';
+diff --git a/mobile/lib/features/settings/theme_picker_page/theme_home_preview.dart b/mobile/lib/features/settings/theme_picker_page/theme_home_preview.dart
+index 795d3a5f89ac90e6308e65425086fb082b6c9d0b..c031600b6f02c59a8860a25f1aed2a98f8763835 100644
+--- a/mobile/lib/features/settings/theme_picker_page/theme_home_preview.dart
++++ b/mobile/lib/features/settings/theme_picker_page/theme_home_preview.dart
+@@ -43,14 +43,20 @@ class _ThemeHomePreview extends StatelessWidget {
+             _PreviewDeviceFrame(
+               key: const ValueKey('theme-home-device-preview'),
+               theme: previewTheme,
+-              semanticLabel: 'Home preview',
++              semanticLabel: kailoText(
++                KailoMessageKey.platformThemeHomePreview,
++                locale: Localizations.localeOf(context).toLanguageTag(),
++              ),
+               child: const _FigmaHomeScreen(),
+             ),
+             const SizedBox(width: 96),
+             _PreviewDeviceFrame(
+               key: const ValueKey('theme-chat-device-preview'),
+               theme: previewTheme,
+-              semanticLabel: 'Chat preview',
++              semanticLabel: kailoText(
++                KailoMessageKey.platformThemeChatPreview,
++                locale: Localizations.localeOf(context).toLanguageTag(),
++              ),
+               child: const _FigmaChatScreen(),
+             ),
+           ],
+@@ -192,7 +198,12 @@ class _FigmaHomeScreen extends ConsumerWidget {
+                     constraints: const BoxConstraints(maxWidth: 210),
+                     child: Text(
+                       communityName == null || communityName.isEmpty
+-                          ? 'Community'
++                          ? kailoText(
++                              KailoMessageKey.platformThemeCommunitySample,
++                              locale: Localizations.localeOf(
++                                context,
++                              ).toLanguageTag(),
++                            )
+                           : communityName,
+                       key: const ValueKey('theme-preview-community-name'),
+                       maxLines: 1,
+diff --git a/mobile/lib/features/settings/theme_picker_page/theme_preview_sheet.dart b/mobile/lib/features/settings/theme_picker_page/theme_preview_sheet.dart
+index 70437c23c9275698cf67a3d3241771d335c9ebc9..fe503ba2e34c12d320ec4663f6578f7009b5ebb6 100644
+--- a/mobile/lib/features/settings/theme_picker_page/theme_preview_sheet.dart
++++ b/mobile/lib/features/settings/theme_picker_page/theme_preview_sheet.dart
+@@ -109,7 +109,12 @@ class _ThemePreviewExperience extends HookConsumerWidget {
+         centerTitle: true,
+         showBottomDivider: false,
+         leading: _ThemePreviewCloseButton(onPressed: close),
+-        title: const Text('Theme'),
++        title: Text(
++          kailoText(
++            KailoMessageKey.platformSettingsTheme,
++            locale: Localizations.localeOf(context).toLanguageTag(),
++          ),
++        ),
+         actions: [_ThemePreviewSetButton(onPressed: applySelection)],
+       ),
+       body: Column(
+@@ -198,7 +203,12 @@ class _ThemePreviewExperience extends HookConsumerWidget {
+                                 key: const ValueKey(
+                                   'theme-preview-accent-action-button',
+                                 ),
+-                                semanticLabel: 'Accent color',
++                                semanticLabel: kailoText(
++                                  KailoMessageKey.platformThemeAccentColor,
++                                  locale: Localizations.localeOf(
++                                    context,
++                                  ).toLanguageTag(),
++                                ),
+                                 color: accentColorForScheme(
+                                   selectedBaseScheme,
+                                   draftAccent.value,
+@@ -380,14 +390,20 @@ class _ThemeDevicePairPreview extends StatelessWidget {
+         _PreviewDeviceFrame(
+           key: ValueKey('theme-full-home-${theme.name}'),
+           theme: previewTheme,
+-          semanticLabel: 'Home preview',
++          semanticLabel: kailoText(
++            KailoMessageKey.platformThemeHomePreview,
++            locale: Localizations.localeOf(context).toLanguageTag(),
++          ),
+           child: const _FigmaHomeScreen(),
+         ),
+         const SizedBox(width: 72),
+         _PreviewDeviceFrame(
+           key: ValueKey('theme-full-chat-${theme.name}'),
+           theme: previewTheme,
+-          semanticLabel: 'Chat preview',
++          semanticLabel: kailoText(
++            KailoMessageKey.platformThemeChatPreview,
++            locale: Localizations.localeOf(context).toLanguageTag(),
++          ),
+           child: const _FigmaChatScreen(),
+         ),
+       ],
+@@ -406,7 +422,10 @@ class _ThemePreviewCloseButton extends StatelessWidget {
+       return IosGlassNavigationButton(
+         key: const ValueKey('theme-preview-close'),
+         icon: IosGlassNavigationIcon.close,
+-        semanticLabel: 'Close preview',
++        semanticLabel: kailoText(
++          KailoMessageKey.platformThemeClosePreview,
++          locale: Localizations.localeOf(context).toLanguageTag(),
++        ),
+         onPressed: onPressed,
+         width: 44,
+         height: 44,
+@@ -417,7 +436,10 @@ class _ThemePreviewCloseButton extends StatelessWidget {
+       dimension: 44,
+       child: IconButton(
+         key: const ValueKey('theme-preview-close'),
+-        tooltip: 'Close preview',
++        tooltip: kailoText(
++          KailoMessageKey.platformThemeClosePreview,
++          locale: Localizations.localeOf(context).toLanguageTag(),
++        ),
+         onPressed: onPressed,
+         style: IconButton.styleFrom(
+           padding: EdgeInsets.zero,
+@@ -444,7 +466,10 @@ class _ThemePreviewSetButton extends StatelessWidget {
+     if (defaultTargetPlatform == TargetPlatform.iOS) {
+       return IosGlassNavigationAction(
+         key: const ValueKey('theme-preview-set'),
+-        label: 'Set',
++        label: kailoText(
++          KailoMessageKey.platformThemeApply,
++          locale: Localizations.localeOf(context).toLanguageTag(),
++        ),
+         width: 64,
+         height: 44,
+         foregroundColor: foreground,
+@@ -464,7 +489,10 @@ class _ThemePreviewSetButton extends StatelessWidget {
+             padding: const EdgeInsets.symmetric(horizontal: Grid.xs),
+             child: Center(
+               child: Text(
+-                'Set',
++                kailoText(
++                  KailoMessageKey.platformThemeApply,
++                  locale: Localizations.localeOf(context).toLanguageTag(),
++                ),
+                 style: context.textTheme.labelLarge?.copyWith(
+                   color: foreground,
+                   fontWeight: FontWeight.w600,
+@@ -561,8 +589,12 @@ class _AppearanceCycleAction extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final semanticLabel =
+-        '${appearanceModeLabel(mode)} appearance. Double tap to change.';
++    final locale = Localizations.localeOf(context).toLanguageTag();
++    final semanticLabel = kailoText(
++      KailoMessageKey.platformThemeAppearanceCycle,
++      locale: locale,
++      variables: {'mode': appearanceModeLabel(mode, locale: locale)},
++    );
+     if (defaultTargetPlatform == TargetPlatform.iOS) {
+       return IosGlassNavigationButton(
+         key: const ValueKey('theme-preview-appearance-action-button'),
+@@ -642,7 +674,11 @@ class _ThemeScrubber extends StatelessWidget {
+     }
+ 
+     return Semantics(
+-      label: 'Theme ${selected + 1} of $count',
++      label: kailoText(
++        KailoMessageKey.platformThemeScrubber,
++        locale: Localizations.localeOf(context).toLanguageTag(),
++        variables: {'index': selected + 1, 'count': count},
++      ),
+       slider: true,
+       value: '${selected + 1}',
+       increasedValue: selected < count - 1 ? '${selected + 2}' : null,
 diff --git a/mobile/lib/main.dart b/mobile/lib/main.dart
 index 5b40be40d3e39fe117799aea018ac7ef1953b647..675ce3746fb16ce27abcb4e2f32aa201fe72a2a1 100644
 --- a/mobile/lib/main.dart
@@ -42711,10 +42954,116 @@ index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..2fca1122bc775e10cbc5b03e022bd5c1
 +  );
  }
 diff --git a/mobile/test/features/settings/theme_picker_page_test.dart b/mobile/test/features/settings/theme_picker_page_test.dart
-index 3c4172ad643245756da4514a62088bd0234664ee..762863cb32c4693e867e37995fa77c6078cfaff8 100644
+index 3c4172ad643245756da4514a62088bd0234664ee..560945ec8a75010e6fe74968d3f205f569b9becb 100644
 --- a/mobile/test/features/settings/theme_picker_page_test.dart
 +++ b/mobile/test/features/settings/theme_picker_page_test.dart
-@@ -440,13 +440,12 @@ void main() {
+@@ -1,9 +1,13 @@
+ import 'package:buzz/features/settings/theme_picker_page.dart';
++import 'package:buzz/features/settings/theme_option_sheets.dart';
++import 'package:buzz/shared/kailo/kailo_platform_text.dart';
+ import 'package:buzz/shared/theme/theme.dart';
+ import 'package:flutter/foundation.dart';
+ import 'package:flutter/material.dart';
+ import 'package:flutter/services.dart';
+ import 'package:flutter_test/flutter_test.dart';
++import 'package:flutter_localizations/flutter_localizations.dart';
++import 'package:hooks_riverpod/hooks_riverpod.dart';
+ import 'package:shared_preferences/shared_preferences.dart';
+ 
+ import '../../helpers/widget_helpers.dart';
+@@ -47,6 +51,91 @@ Future<void> _swipeToNextTheme(WidgetTester tester) async {
+ }
+ 
+ void main() {
++  test('theme copy comes from the shared English and Chinese catalog', () {
++    expect(appearanceModeLabel(ThemeMode.light, locale: 'en'), 'Light');
++    expect(appearanceModeLabel(ThemeMode.dark, locale: 'zh-CN'), '深色');
++    expect(appearanceModeLabel(ThemeMode.system, locale: 'zh-CN'), '跟随系统');
++    expect(
++      kailoText(
++        KailoMessageKey.platformThemeAppearanceCycle,
++        locale: 'zh-CN',
++        variables: {
++          'mode': appearanceModeLabel(ThemeMode.light, locale: 'zh-CN'),
++        },
++      ),
++      '浅色外观。双击切换。',
++    );
++    expect(
++      kailoText(
++        KailoMessageKey.platformThemeScrubber,
++        locale: 'zh-CN',
++        variables: {'index': 2, 'count': 7},
++      ),
++      '第 2 个主题，共 7 个',
++    );
++    expect(
++      List.generate(
++        accentColors.length,
++        (index) => accentColorLabel(index, locale: 'zh-CN'),
++      ),
++      [
++        '中性强调色',
++        '蓝色强调色',
++        '青色强调色',
++        '绿色强调色',
++        '橙色强调色',
++        '红色强调色',
++        '粉色强调色',
++        '淡紫色强调色',
++        '紫色强调色',
++        '靛蓝色强调色',
++      ],
++    );
++  });
++
++  testWidgets('theme controls use the active Chinese locale', (tester) async {
++    final prefs = await _prefs({
++      'buzz_theme_mode': 'light',
++      'buzz_color_scheme': 'github-light',
++    });
++    final semantics = tester.ensureSemantics();
++    try {
++      await tester.pumpWidget(
++        ProviderScope(
++          overrides: [savedPrefsProvider.overrideWithValue(prefs)],
++          child: MaterialApp(
++            locale: const Locale('zh', 'CN'),
++            supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
++            localizationsDelegates: const [
++              GlobalMaterialLocalizations.delegate,
++              GlobalWidgetsLocalizations.delegate,
++              GlobalCupertinoLocalizations.delegate,
++            ],
++            theme: AppTheme.light(),
++            home: const Scaffold(body: ThemePickerPage()),
++          ),
++        ),
++      );
++      await tester.pumpAndSettle();
++      expect(find.text('主题'), findsOneWidget);
++      expect(find.text('应用'), findsOneWidget);
++      expect(find.bySemanticsLabel('首页预览'), findsWidgets);
++      expect(find.bySemanticsLabel('聊天预览'), findsWidgets);
++      expect(find.bySemanticsLabel('浅色外观。双击切换。'), findsOneWidget);
++      await tester.tap(
++        find.byKey(const ValueKey('theme-preview-accent-action-button')),
++      );
++      await tester.pumpAndSettle();
++      final green = accentColors.indexWhere((accent) => accent.name == 'Green');
++      expect(
++        tester.getSemantics(find.byKey(ValueKey('accent-option-$green'))).label,
++        contains('绿色强调色'),
++      );
++    } finally {
++      semantics.dispose();
++    }
++  });
++
+   group('ThemePickerPage', () {
+     testWidgets(
+       'is the direct preview page with the name inside its container',
+@@ -440,13 +529,12 @@ void main() {
        tester,
      ) async {
        final green = accentColors.indexWhere((accent) => accent.name == 'Green');
