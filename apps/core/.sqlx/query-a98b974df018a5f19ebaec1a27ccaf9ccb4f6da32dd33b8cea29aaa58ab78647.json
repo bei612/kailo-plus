@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select w.kind as \"kind!\", w.tenant_id, w.projection_state, t.status as \"status?\"\n           from projection.workflow_ref w\n           left join projection.task_projection t on t.workflow_id = w.workflow_id\n           where w.workflow_id = $1 and w.kind is not null",
+  "query": "select w.kind as \"kind!\", w.tenant_id, w.projection_state,\n                  t.status as \"status?\", t.run_id as \"run_id?\"\n           from projection.workflow_ref w\n           left join projection.task_projection t on t.workflow_id = w.workflow_id\n           where w.workflow_id = $1 and w.kind is not null",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,11 @@
         "ordinal": 3,
         "name": "status?",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "run_id?",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -33,8 +38,9 @@
       true,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "f41efbcf308952365739dc456032608b0f3f1200b15d81e1ee2b9d210e877c3a"
+  "hash": "a98b974df018a5f19ebaec1a27ccaf9ccb4f6da32dd33b8cea29aaa58ab78647"
 }

@@ -39,6 +39,8 @@ use crate::membership_lifecycle::{
 use crate::membership_projection::MembershipScope;
 use crate::scope_state::ScopeKind;
 use crate::service_api::{authorize, unavailable, ServiceState};
+use crate::task_projection;
+use crate::temporal::{Observed, ObservedState};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +56,28 @@ pub struct RerunRequest {
 /// Workflow 以这些终态结束时，它驱动的实体没有到达目标状态，可以重跑。
 /// `COMPLETED` 不在其中：完成了还停在收敛中状态是另一类缺陷，重跑会掩盖它。
 const RERUNNABLE_STATUS: &[&str] = &["FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"];
+
+/// 投影先写、Temporal 后关闭；二者的 status 与 run ID 均一致才构成重跑证据。
+/// Open 是确定的尚不可重跑，其余缺口属于结果不明，不据此分配新 Workflow。
+fn closed_execution_matches_projection(
+    projection_status: Option<&str>,
+    projection_run_id: Option<&str>,
+    observed: &Observed,
+) -> Result<(), StatusCode> {
+    match &observed.state {
+        ObservedState::Open => Err(StatusCode::CONFLICT),
+        ObservedState::Closed(status)
+            if !observed.run_id.is_empty()
+                && projection_run_id == Some(observed.run_id.as_str())
+                && projection_status == Some(task_projection::wire(status).as_str()) =>
+        {
+            Ok(())
+        }
+        ObservedState::Closed(_) | ObservedState::Unrecognized(_) => {
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
+    }
+}
 
 /// 可重跑的实体及其所在表与收敛中状态。闭集，不来自外部输入。
 #[derive(Clone, Copy)]
@@ -108,7 +132,8 @@ pub async fn rerun_task(
     };
 
     let old = match sqlx::query!(
-        r#"select w.kind as "kind!", w.tenant_id, w.projection_state, t.status as "status?"
+        r#"select w.kind as "kind!", w.tenant_id, w.projection_state,
+                  t.status as "status?", t.run_id as "run_id?"
            from projection.workflow_ref w
            left join projection.task_projection t on t.workflow_id = w.workflow_id
            where w.workflow_id = $1 and w.kind is not null"#,
@@ -183,6 +208,34 @@ pub async fn rerun_task(
             "旧 Workflow 不在可重跑的终态"
         );
         return StatusCode::CONFLICT.into_response();
+    }
+
+    // TaskProjection 是 Workflow 写回的派生事实：它可以先于 Temporal close 落库。
+    // 因此 TERMINAL 投影只是必要条件；还要观察旧 execution 已关闭，并核对
+    // close status 与 run ID，才允许推进实体版本、分配第二条业务 Workflow。
+    let observed = match state.temporal.describe(&req.workflow_id).await {
+        Ok(Some(observed)) => observed,
+        Ok(None) => {
+            tracing::warn!(workflow_id = %req.workflow_id, "旧 Workflow 的 Temporal 终态无法查证");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+        Err(e) => {
+            tracing::warn!(workflow_id = %req.workflow_id, error = %e, "旧 Workflow 的 Temporal 观察失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    if let Err(code) =
+        closed_execution_matches_projection(old.status.as_deref(), old.run_id.as_deref(), &observed)
+    {
+        tracing::warn!(
+            workflow_id = %req.workflow_id,
+            projection_run_id = ?old.run_id,
+            temporal_run_id = %observed.run_id,
+            projection_status = ?old.status,
+            response_status = %code,
+            "旧 Workflow 未被证明已关闭且与投影一致"
+        );
+        return code.into_response();
     }
 
     let mut tx = match state.pool.begin().await {
@@ -338,6 +391,49 @@ async fn resolve_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use contracts::TaskStatus;
+
+    #[test]
+    fn rerun_requires_matching_temporal_close_not_just_terminal_projection() {
+        let mut observed = Observed {
+            run_id: "run-1".into(),
+            history_length: 1,
+            state: ObservedState::Open,
+        };
+        assert_eq!(
+            closed_execution_matches_projection(Some("FAILED"), Some("run-1"), &observed),
+            Err(StatusCode::CONFLICT),
+            "终态投影先到时，Temporal 仍 Open 不能重跑"
+        );
+
+        observed.state = ObservedState::Closed(TaskStatus::Failed);
+        assert_eq!(
+            closed_execution_matches_projection(Some("FAILED"), Some("run-1"), &observed),
+            Ok(())
+        );
+        for (status, run_id) in [
+            (Some("CANCELED"), Some("run-1")),
+            (Some("FAILED"), Some("run-0")),
+            (Some("FAILED"), None),
+        ] {
+            assert_eq!(
+                closed_execution_matches_projection(status, run_id, &observed),
+                Err(StatusCode::SERVICE_UNAVAILABLE),
+                "投影与 Temporal close 不一致属于结果不明"
+            );
+        }
+        observed.run_id.clear();
+        assert_eq!(
+            closed_execution_matches_projection(Some("FAILED"), Some(""), &observed),
+            Err(StatusCode::SERVICE_UNAVAILABLE),
+            "空 run ID 不能作为终态证据"
+        );
+        observed.state = ObservedState::Unrecognized(99);
+        assert_eq!(
+            closed_execution_matches_projection(Some("FAILED"), Some(""), &observed),
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        );
+    }
 
     #[test]
     fn workflow_id_must_match_its_ref() {

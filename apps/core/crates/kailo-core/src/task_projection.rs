@@ -27,8 +27,8 @@ pub fn wire(status: &TaskStatus) -> String {
 }
 
 /// 按 `event_id` 单调 upsert。报告是终态且被采纳时，同一事务里把 WorkflowRef
-/// 推进到 TERMINAL——Workflow 未完成最后一次投影即不视为 terminal，反过来
-/// 最后一次投影落库就是 terminal 的唯一判据。
+/// 的投影状态推进到 TERMINAL。写回发生在 Temporal close 之前，因此这个投影
+/// 不能单独证明 execution 已关闭；重跑仍需按固定 ID 向 Temporal 查证。
 ///
 /// `observation_gap` 只由兜底对账置真：那说明 Workflow 自己的写回没有到达，
 /// 工作台据此显示 PROJECTION_DELAYED 而不是装作一切按时。
