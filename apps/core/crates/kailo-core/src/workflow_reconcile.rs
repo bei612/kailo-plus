@@ -243,7 +243,9 @@ async fn pass(
 }
 
 /// Temporal 已终结而 Core 没收到终态投影：以观察到的终态经唯一写入路径落库。
-/// event_id 取当前 history 长度，它不小于 Workflow 生前任何一次投影的值。
+/// Worker 的 event_id 会累加 continue-as-new 之前各 run 的 history 长度；Describe
+/// 只返回最新 run 的 history 长度。因此修复事件必须同时高于已持久化的 event_id
+/// 与当前 run 的 history 长度，不能直接拿后者写回。
 async fn patch_terminal(
     pool: &PgPool,
     workflow_id: &str,
@@ -251,18 +253,52 @@ async fn patch_terminal(
     history_length: i64,
     status: TaskStatus,
 ) -> Result<(), String> {
+    let previous: Option<i64> = sqlx::query_scalar(
+        "select last_event_id from projection.task_projection where workflow_id = $1",
+    )
+    .bind(workflow_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    let event_id = next_reconciled_event_id(previous, history_length)
+        .ok_or_else(|| format!("{workflow_id} 的投影事件序号已达上限"))?;
     let report = TaskStateReport {
         workflow_id: workflow_id.to_owned(),
         run_id,
-        event_id: history_length,
+        event_id,
         status,
         waiting_reason: None,
         progress: None,
     };
-    task_projection::apply(pool, &report, true)
+    let applied = task_projection::apply(pool, &report, true)
         .await
         .map_err(|e| e.to_string())?;
+    match applied {
+        Some(result) if result.applied => {}
+        Some(_) => {
+            // 并发的主路径写回抢先提交。它若写的不是本次观察到的终态，
+            // 本轮不能宣称修复成功；下一轮继续按 Temporal 事实对账。
+            let actual: Option<(String, Option<String>)> = sqlx::query_as(
+                "select status, run_id from projection.task_projection where workflow_id = $1",
+            )
+            .bind(workflow_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            if actual.as_ref().is_none_or(|(status, run_id)| {
+                status != &task_projection::wire(&report.status)
+                    || run_id.as_deref() != Some(report.run_id.as_str())
+            }) {
+                return Err(format!("{workflow_id} 的终态投影在对账时发生并发变化"));
+            }
+        }
+        None => return Err(format!("{workflow_id} 缺少预写的 WorkflowRef")),
+    }
     Ok(())
+}
+
+fn next_reconciled_event_id(previous: Option<i64>, history_length: i64) -> Option<i64> {
+    previous.unwrap_or(0).max(history_length).checked_add(1)
 }
 
 async fn record_refs(pool: &PgPool, metrics: &Metrics) -> Result<(), String> {
@@ -343,4 +379,23 @@ async fn record_entities(pool: &PgPool, metrics: &Metrics) -> Result<(), String>
             .record(stranded, &[KeyValue::new("entity", *entity)]);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::next_reconciled_event_id;
+
+    #[test]
+    fn reconcile_event_id_stays_ahead_of_prior_runs() {
+        assert_eq!(next_reconciled_event_id(None, 20), Some(21));
+        assert_eq!(
+            next_reconciled_event_id(Some(1_000_000), 20),
+            Some(1_000_001)
+        );
+        assert_eq!(
+            next_reconciled_event_id(Some(20), 1_000_000),
+            Some(1_000_001)
+        );
+        assert_eq!(next_reconciled_event_id(Some(i64::MAX), 20), None);
+    }
 }

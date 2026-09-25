@@ -2,8 +2,9 @@
 //!
 //! 对运行中的 Core、Temporal 与 Worker 构造四种真实情形，只从 Core 库取证：
 //!
-//! 1. Workflow 已在 Temporal 终结，而它自己的终态投影从未到达——对账以观察到
-//!    的终态补写，标 `observation_gap`，WorkflowRef 进入 TERMINAL；
+//! 1. Workflow 已在 Temporal 终结，而它自己的终态投影从未到达——即使此前
+//!    跨 run 累加的 event_id 高于最新 run 的 history 长度，对账仍补写终态、
+//!    标 `observation_gap`，WorkflowRef 进入 TERMINAL；
 //! 2. NotFound 且已超出 retention——只能是 UNKNOWN，不能解释为「未启动」；
 //! 3. NotFound 而仍在 retention 窗口内——只记观察，不改状态；
 //! 4. 同一版本的 Workflow 已终结时再启动——409，而不是「已启动」的 200。
@@ -147,9 +148,22 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
     let stale = freshness + std::time::Duration::from_secs(5);
     let tag = Uuid::new_v4().simple().to_string();
 
-    // 1. 漏写的终态
+    // 1. 漏写的终态。已有较大的 event_id 模拟 continue-as-new 前多个 run
+    // 的累计长度；Describe 的最新 run history 长度不能直接覆盖它。
     let missed = format!("kailo:verify:{}:missed-{tag}:1", f.tenant);
     seed_ref(pool, f, &missed, "RUNNING", stale).await;
+    let previous_event_id = 1_000_000_i64;
+    sqlx::query(
+        "insert into projection.task_projection
+             (workflow_id, run_id, last_event_id, status)
+         values ($1, $2, $3, 'RUNNING')",
+    )
+    .bind(&missed)
+    .bind("previous-run")
+    .bind(previous_event_id)
+    .execute(pool)
+    .await
+    .expect("建此前的运行中投影");
     temporal_start(e, &missed, "NOT_A_REGISTERED_KIND");
 
     // 2. 超出 retention 的 NotFound。十年一定在任何 retention 之外
@@ -195,8 +209,9 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
-    let (status, gap): (String, bool) = sqlx::query_as(
-        "select status, observation_gap from projection.task_projection where workflow_id = $1",
+    let (status, gap, event_id): (String, bool, i64) = sqlx::query_as(
+        "select status, observation_gap, last_event_id
+         from projection.task_projection where workflow_id = $1",
     )
     .bind(&missed)
     .fetch_one(pool)
@@ -206,6 +221,10 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
     assert!(
         gap,
         "补写必须标 observation_gap：工作台据此显示 PROJECTION_DELAYED"
+    );
+    assert!(
+        event_id > previous_event_id,
+        "兜底补写的 event_id 必须高于跨 run 累加的旧值"
     );
 
     let state: String = sqlx::query_scalar(
