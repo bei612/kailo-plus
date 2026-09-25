@@ -31402,13 +31402,14 @@ index 82deb4ac733bf9cd864777af899c90d4b75295de..1bca3653b867876ddcae6732b3acf6aa
      <HomeScreen
 diff --git a/desktop/src/app/routes/platform.$section.tsx b/desktop/src/app/routes/platform.$section.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..2c883b667ecb633cc73db97eb823de070c4f87ae
+index 0000000000000000000000000000000000000000..a956a3381e6caa8cb068094b4deda8e9e23af496
 --- /dev/null
 +++ b/desktop/src/app/routes/platform.$section.tsx
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,65 @@
 +import { createFileRoute, notFound } from "@tanstack/react-router";
 +import { translate, resolveLocale } from "@kailo/platform/i18n";
 +import { ApprovalsPage, TasksPage } from "@kailo/platform/react/governance";
++import { TenantInvitations } from "@kailo/platform/react/invitations";
 +import {
 +  AuditPage,
 +  DevicesPage,
@@ -31453,7 +31454,11 @@ index 0000000000000000000000000000000000000000..2c883b667ecb633cc73db97eb823de07
 +        {translate(resolveLocale(), PLATFORM_SECTION_LABEL[section])}
 +      </h1>
 +      {section === "members" ? (
-+        <WorkspaceMembersPage />
++        // 邀请属于 Tenant：只对 admin 出现（由邀请列表的 403 决定）
++        <div className="flex flex-col gap-6">
++          <WorkspaceMembersPage />
++          <TenantInvitations />
++        </div>
 +      ) : section === "tasks" ? (
 +        <TasksPage />
 +      ) : section === "approvals" ? (
@@ -83104,7 +83109,7 @@ index 0ac6f1536b5a3a17b226e596d78f18fb8a0a2fd8..8a655bc22dafcf5376c46a5b3c2ce9d1
 +  useMessageDeepLinks();
  }
 diff --git a/desktop/src/testing/e2eBridge.ts b/desktop/src/testing/e2eBridge.ts
-index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a782e793529 100644
+index 78f2ed3eb57e6c916247964f7fde4069980da867..02726b25ce7b02d331f79a45dc64f8d8c305380a 100644
 --- a/desktop/src/testing/e2eBridge.ts
 +++ b/desktop/src/testing/e2eBridge.ts
 @@ -1,19 +1,7 @@
@@ -86704,7 +86709,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
  function recordMockMessage(channelId: string, event: RelayEvent) {
    const history = getMockMessageStore(channelId);
    history.push(event);
-@@ -5118,27 +2123,185 @@ function recordMockMessage(channelId: string, event: RelayEvent) {
+@@ -5118,27 +2123,192 @@ function recordMockMessage(channelId: string, event: RelayEvent) {
    touchMockChannel(channel);
  }
  
@@ -86841,6 +86846,13 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 +    kailoMock.routeCalls.set(key, calls + 1);
 +    return replies[Math.min(calls, replies.length - 1)] as KailoReply;
 +  }
++  // 缺省的核验用户不是 Tenant admin：邀请列表与 BFF 一样回 403
++  if (key === "GET /api/v1/invitations") {
++    return {
++      status: 403,
++      body: { class: "DENIED", reason: "PERMISSION_DENIED" },
++    };
++  }
 +  return kailoError(404, "E2E_UNMOCKED_ROUTE");
 +}
 +
@@ -86909,7 +86921,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
  }
  
  let mockPendingNavigationDeepLinks: Array<{
-@@ -5159,50 +2322,6 @@ function resetMockPendingNavigationDeepLinks(config: E2eConfig | null) {
+@@ -5159,50 +2329,6 @@ function resetMockPendingNavigationDeepLinks(config: E2eConfig | null) {
    }));
  }
  
@@ -86960,7 +86972,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
  function emitMockChannelMessage(
    channelId: string,
    content: string,
-@@ -5266,151 +2385,10 @@ function emitMockChannelMessage(
+@@ -5266,151 +2392,10 @@ function emitMockChannelMessage(
    );
    if (pending) event.pending = true;
    recordMockMessage(channelId, event);
@@ -87112,7 +87124,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
  type RawThreadCursor = {
    created_at: number;
    event_id: string;
-@@ -5455,14 +2433,6 @@ async function handleGetThreadReplies(
+@@ -5455,14 +2440,6 @@ async function handleGetThreadReplies(
      filter.thread_cursor_id = args.cursor.event_id;
    }
    const identity = getIdentity(config);
@@ -87127,7 +87139,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
  
    let subtree: RelayEvent[];
    if (!identity) {
-@@ -5553,68 +2523,7 @@ async function handleGetThreadReplies(
+@@ -5553,68 +2530,7 @@ async function handleGetThreadReplies(
    return { events: page, next_cursor: nextCursor };
  }
  
@@ -87197,7 +87209,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
  
  type RawChannelMessagesPageResponse = {
    events: RelayEvent[];
-@@ -5717,24 +2626,12 @@ function buildMockChannelWindowAux(
+@@ -5717,24 +2633,12 @@ function buildMockChannelWindowAux(
    events: RelayEvent[],
    rows: RelayEvent[],
  ): RelayEvent[] {
@@ -87227,7 +87239,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
  }
  
  function buildMockChannelThreadSummary(
-@@ -5834,10 +2731,7 @@ async function handleGetChannelReconnectRepair(
+@@ -5834,10 +2738,7 @@ async function handleGetChannelReconnectRepair(
    },
    config: E2eConfig | undefined,
  ): Promise<RelayEvent[]> {
@@ -87239,7 +87251,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
    const filter: Record<string, unknown> = {
      "#h": [args.channelId],
      kinds: [...kinds],
-@@ -5982,565 +2876,84 @@ async function handleGetChannelWindow(
+@@ -5982,561 +2883,80 @@ async function handleGetChannelWindow(
    }
  }
  
@@ -87854,23 +87866,15 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -): Promise<T> {
 -  const identity = getRelayIdentity(config);
 -  const headers = new Headers(init.headers);
--
--  headers.set("X-Pubkey", identity.pubkey);
--  if (init.body && !headers.has("Content-Type")) {
--    headers.set("Content-Type", "application/json");
 +  path: string,
 +  init: RequestInit = {},
 +): Promise<T> {
 +  const identity = getRelayIdentity(config);
 +  const headers = new Headers(init.headers);
-+
-+  headers.set("X-Pubkey", identity.pubkey);
-+  if (init.body && !headers.has("Content-Type")) {
-+    headers.set("Content-Type", "application/json");
-   }
  
-   const response = await fetch(`${getRelayHttpUrl(config)}${path}`, {
-@@ -6560,13 +2973,6 @@ async function relayQuery(
+   headers.set("X-Pubkey", identity.pubkey);
+   if (init.body && !headers.has("Content-Type")) {
+@@ -6560,13 +2980,6 @@ async function relayQuery(
    filters: Array<Record<string, unknown>>,
  ): Promise<RelayEvent[]> {
    const identity = getRelayIdentity(config);
@@ -87884,7 +87888,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
  
    const response = await fetch(`${getRelayHttpUrl(config)}/query`, {
      method: "POST",
-@@ -6829,91 +3235,6 @@ async function handleGetProfile(config: E2eConfig | undefined) {
+@@ -6829,91 +3242,6 @@ async function handleGetProfile(config: E2eConfig | undefined) {
    });
  }
  
@@ -87976,7 +87980,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
  async function handleGetUserProfile(
    args: {
      pubkey?: string;
-@@ -7150,369 +3471,59 @@ async function handleSearchUsers(
+@@ -7150,369 +3478,59 @@ async function handleSearchUsers(
    };
  }
  
@@ -88388,7 +88392,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
    }
  
    const identity = getIdentity(config);
-@@ -7546,779 +3557,103 @@ async function handleGetChannelMembers(
+@@ -7546,779 +3564,103 @@ async function handleGetChannelMembers(
    return { members, next_cursor: null };
  }
  
@@ -89225,7 +89229,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
        "#p": [identity.pubkey],
        limit,
      },
-@@ -8374,12 +3709,7 @@ async function handleGetFeed(
+@@ -8374,12 +3716,7 @@ async function handleGetFeed(
      };
    });
    return {
@@ -89239,7 +89243,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
      meta: {
        since: Math.floor(Date.now() / 1000) - 7 * 86400,
        total: items.length,
-@@ -8388,5896 +3718,1220 @@ async function handleGetFeed(
+@@ -8388,5896 +3725,1220 @@ async function handleGetFeed(
    };
  }
  
@@ -89270,13 +89274,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -  syncMockRelayAgentsFromManagedAgents();
 -  return mockRelayAgents.map(cloneRelayAgent);
 -}
-+): Promise<RawSearchResponse> {
-+  const identity = getIdentity(config);
-+  if (!identity) {
-+    const query = args.q.trim().toLowerCase();
-+    const limit = args.limit ?? 20;
-+    const now = Math.floor(Date.now() / 1000);
- 
+-
 -function withMockRuntimeConfigMetadata(
 -  runtime: RawAcpRuntimeCatalogEntry,
 -): RawAcpRuntimeCatalogEntry {
@@ -89332,6 +89330,16 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -          : null,
 -  };
 -}
++): Promise<RawSearchResponse> {
++  const identity = getIdentity(config);
++  if (!identity) {
++    const query = args.q.trim().toLowerCase();
++    const limit = args.limit ?? 20;
++    const now = Math.floor(Date.now() / 1000);
+ 
+-let runtimeCatalogDiscoveryCount = 0;
+-let mockInstallCompleted = false;
+-let mockConnectCompleted = false;
 +    const mockHits: RawSearchHit[] = [
 +      {
 +        event_id: "mock-general-welcome",
@@ -89384,13 +89392,6 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 +      }
 +    }
  
--let runtimeCatalogDiscoveryCount = 0;
--let mockInstallCompleted = false;
--let mockConnectCompleted = false;
-+    const authorSet = args.authors?.length
-+      ? new Set(args.authors.map((author) => author.toLowerCase()))
-+      : null;
- 
 -async function handleDiscoverAcpRuntimes(
 -  config: E2eConfig | undefined,
 -): Promise<RawAcpRuntimeCatalogEntry[]> {
@@ -89399,6 +89400,13 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -    await new Promise<void>((resolve) => {
 -      window.setTimeout(resolve, delayMs);
 -    });
+-  }
++    const authorSet = args.authors?.length
++      ? new Set(args.authors.map((author) => author.toLowerCase()))
++      : null;
+ 
+-  if (config?.mock?.acpRuntimesError) {
+-    throw new Error("Mocked catalog discovery failure");
 -  }
 +    const hits = mockHits
 +      .filter((hit) =>
@@ -89411,14 +89419,6 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 +        }),
 +      )
 +      .slice(0, limit);
- 
--  if (config?.mock?.acpRuntimesError) {
--    throw new Error("Mocked catalog discovery failure");
-+    return {
-+      hits,
-+      found: hits.length,
-+    };
-   }
  
 -  const afterInstallSequence =
 -    config?.mock?.acpRuntimesCatalogAfterInstallSequence;
@@ -89449,15 +89449,10 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -    return mergeMockCustomHarnesses(
 -      configured.map(withMockRuntimeConfigMetadata),
 -    );
-+  // NIP-50 search via POST /query — forward operator pushdown fields.
-+  const limit = args.limit ?? 20;
-+  const filter: Record<string, unknown> = {
-+    kinds: [9, 40002],
-+    search: args.q,
-+    limit,
-+  };
-+  if (args.channelId) {
-+    filter["#h"] = [args.channelId];
++    return {
++      hits,
++      found: hits.length,
++    };
    }
 -  const defaultCatalog: RawAcpRuntimeCatalogEntry[] = [
 -    {
@@ -89543,7 +89538,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -    defaultCatalog.map(withMockRuntimeConfigMetadata),
 -  );
 -}
--
+ 
 -async function handleDiscoverAcpAuthMethods(
 -  args: { runtimeId?: string },
 -  config: E2eConfig | undefined,
@@ -89551,6 +89546,16 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -  const globalError = config?.mock?.acpAuthMethodsError;
 -  if (globalError) {
 -    throw new Error(globalError);
++  // NIP-50 search via POST /query — forward operator pushdown fields.
++  const limit = args.limit ?? 20;
++  const filter: Record<string, unknown> = {
++    kinds: [9, 40002],
++    search: args.q,
++    limit,
++  };
++  if (args.channelId) {
++    filter["#h"] = [args.channelId];
++  }
 +  if (args.authors?.length) {
 +    filter.authors = args.authors;
    }
@@ -89651,13 +89656,13 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -
 -// Per-page confirm_team_snapshot_import call counter for sequenced error testing.
 -let teamSnapshotConfirmCallCount = 0;
--
+ 
 -// Live-output sequence for the install currently being replayed. The backend
 -// counter is per run (`InstallReporter::for_run` starts a fresh one), so this
 -// restarts too — a bridge that stayed monotonic across installs would hide a UI
 -// that carried a stale sequence number into the next run and rejected all of it.
 -let installOutputSeq = 0;
- 
+-
 -/**
 - * Replay the live output the Rust reporter emits while an install runs: a clear
 - * signal, then one line per entry. `seq` is install-wide and monotonic, matching
@@ -90325,8 +90330,9 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -function hasExactSharedTag(event: RelayEvent): boolean {
 -  const tags = event.tags.filter((tag) => tag[0] === "shared");
 -  return tags.length === 1 && tags[0]?.length === 2 && tags[0]?.[1] === "true";
--}
--
++  return resolveGetEvent(args, config);
+ }
+ 
 -function upsertMockPersonaRelayEvent(event: RelayEvent): void {
 -  const sourceId = event.tags.find((tag) => tag[0] === "d")?.[1];
 -  if (!sourceId) return;
@@ -90337,11 +90343,19 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -  );
 -  if (existingIndex >= 0) {
 -    mockPersonaEvents.splice(existingIndex, 1);
--  }
++async function resolveGetEvent(
++  args: {
++    eventId: string;
++  },
++  config: E2eConfig | undefined,
++) {
++  // Allow test specs to mark specific event IDs as definitively deleted.
++  if (config?.mock?.deletedEventIds?.includes(args.eventId)) {
++    throw new Error("event not found");
+   }
 -  mockPersonaEvents.push(event);
-+  return resolveGetEvent(args, config);
- }
- 
+-}
+-
 -function upsertMockPersonaEvent(
 -  persona: RawPersona,
 -  identity?: TestIdentity,
@@ -90408,12 +90422,10 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -}
 -
 -async function handleSetPersonaShared(
-+async function resolveGetEvent(
-   args: {
+-  args: {
 -    id: string;
 -    shared: boolean;
-+    eventId: string;
-   },
+-  },
 -  config?: E2eConfig,
 -): Promise<MockPersonaPublicationResult> {
 -  const persona = mockPersonas.find((candidate) => candidate.id === args.id);
@@ -90446,12 +90458,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -  }
 -  if (!persona.is_active) {
 -    throw new Error(`${persona.display_name} is not in My Agents.`);
-+  config: E2eConfig | undefined,
-+) {
-+  // Allow test specs to mark specific event IDs as definitively deleted.
-+  if (config?.mock?.deletedEventIds?.includes(args.eventId)) {
-+    throw new Error("event not found");
-   }
+-  }
 -}
 +  const identity = getIdentity(config);
 +  if (!identity) {
@@ -90493,7 +90500,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -function cloneMockTeam(team: RawTeam): RawTeam {
 -  return { ...team, persona_ids: [...team.persona_ids] };
 -}
- 
+-
 -async function handleListTeams(): Promise<RawTeam[]> {
 -  return mockTeams.map(cloneMockTeam);
 -}
@@ -90523,7 +90530,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -  mockTeams.push(team);
 -  return { ...team, persona_ids: [...team.persona_ids] };
 -}
--
+ 
 -async function handleUpdateTeam(args: {
 -  input: {
 -    id: string;
@@ -90774,13 +90781,13 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -  mockTeams.push(team);
 -  return { team: cloneMockTeam(team), alreadyPresent: false };
 -}
--
+ 
 -async function handleExportTeamToJson(args: { id: string }): Promise<boolean> {
 -  const team = mockTeams.find((candidate) => candidate.id === args.id);
 -  if (!team) {
 -    throw new Error(`Team ${args.id} not found.`);
 -  }
- 
+-
 -  const missingPersonaIds = team.persona_ids.filter(
 -    (personaId) =>
 -      !mockPersonas.some((candidate) => candidate.id === personaId),
@@ -91128,11 +91135,11 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
 -    ),
 -  };
 -}
--
+ 
 -function isRelayMeshManagedAgent(agent: MockManagedAgent): boolean {
 -  return agent.backend.type === "local" && agent.provider === "relay-mesh";
 -}
- 
+-
 -async function handleStartManagedAgent(
 -  args: {
 -    pubkey: string;
@@ -96176,7 +96183,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
            activeConfig,
          );
        case "get_channel_details":
-@@ -14290,70 +4944,11 @@ export function maybeInstallE2eTauriMocks() {
+@@ -14290,70 +4951,11 @@ export function maybeInstallE2eTauriMocks() {
            payload as Parameters<typeof handleGetChannelMembers>[0],
            activeConfig,
          );
@@ -96247,7 +96254,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
        case "get_thread_replies":
          return handleGetThreadReplies(
            payload as Parameters<typeof handleGetThreadReplies>[0],
-@@ -14379,54 +4974,10 @@ export function maybeInstallE2eTauriMocks() {
+@@ -14379,54 +4981,10 @@ export function maybeInstallE2eTauriMocks() {
            payload as Parameters<typeof handleSendChannelMessage>[0],
            activeConfig,
          );
@@ -96302,7 +96309,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
        case "upload_media_bytes": {
          const input = payload as {
            data: number[];
-@@ -14522,45 +5073,12 @@ export function maybeInstallE2eTauriMocks() {
+@@ -14522,45 +5080,12 @@ export function maybeInstallE2eTauriMocks() {
          }
          return null;
        }
@@ -96348,7 +96355,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
        case "copy_image_to_clipboard":
          return;
        case "copy_text_to_clipboard":
-@@ -14609,10 +5127,6 @@ export function maybeInstallE2eTauriMocks() {
+@@ -14609,10 +5134,6 @@ export function maybeInstallE2eTauriMocks() {
              (payload as { createdAt?: number }).createdAt,
            ),
          );
@@ -96359,7 +96366,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
        case "create_auth_event":
          mockAuthSigningAttempts++;
          if (
-@@ -14696,16 +5210,6 @@ export function maybeInstallE2eTauriMocks() {
+@@ -14696,16 +5217,6 @@ export function maybeInstallE2eTauriMocks() {
        case "plugin:window|set_badge_count":
        case "plugin:window|set_badge_label":
          return null;
@@ -96376,7 +96383,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
        case "relay_reconnect_hook":
          return null;
        case "relay_reconnect_hook_configured":
-@@ -14714,81 +5218,9 @@ export function maybeInstallE2eTauriMocks() {
+@@ -14714,81 +5225,9 @@ export function maybeInstallE2eTauriMocks() {
          return null;
        case "plugin:process|restart":
          return handleRestart(activeConfig);
@@ -96458,7 +96465,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
        case "get_relay_self":
          if ((activeConfig?.mock?.relaySelfDelayMs ?? 0) > 0) {
            await new Promise((resolve) =>
-@@ -14799,108 +5231,6 @@ export function maybeInstallE2eTauriMocks() {
+@@ -14799,108 +5238,6 @@ export function maybeInstallE2eTauriMocks() {
            );
          }
          return activeConfig?.mock?.relaySelf ?? null;
@@ -96567,7 +96574,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
        case "channel_head_cache_load": {
          const args = payload as {
            scope: { pubkey: string; relayUrl: string };
-@@ -15115,10 +5445,6 @@ export function maybeInstallE2eTauriMocks() {
+@@ -15115,10 +5452,6 @@ export function maybeInstallE2eTauriMocks() {
          // `serialized_response_matches_the_typescript_contract`.
          return { channels: results };
        }
@@ -96578,7 +96585,7 @@ index 78f2ed3eb57e6c916247964f7fde4069980da867..f7356ab55344c485d555291de7650a78
        case "set_window_vibrancy":
          return null;
        case "plugin:window|is_fullscreen":
-@@ -15128,50 +5454,6 @@ export function maybeInstallE2eTauriMocks() {
+@@ -15128,50 +5461,6 @@ export function maybeInstallE2eTauriMocks() {
        // shows up as noise in unrelated specs.
        case "plugin:app|version":
          return MOCK_APP_VERSION;
@@ -105883,10 +105890,10 @@ index 0000000000000000000000000000000000000000..335503644067eb3d4320eafd5a113740
 +});
 diff --git a/desktop/tests/e2e/kailo-platform.spec.ts b/desktop/tests/e2e/kailo-platform.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..fdd7a9b2eff2a60173ebe396908c6d33cdbbf7f7
+index 0000000000000000000000000000000000000000..7f25fed224758ecc1170dce64cd25fb0e75c4075
 --- /dev/null
 +++ b/desktop/tests/e2e/kailo-platform.spec.ts
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,438 @@
 +import { expect, type Page, test } from "@playwright/test";
 +
 +import { installMockBridge } from "../helpers/bridge";
@@ -106228,6 +106235,102 @@ index 0000000000000000000000000000000000000000..fdd7a9b2eff2a60173ebe396908c6d33
 +      .filter((call) => call.method === "POST")
 +      .map((call) => call.body),
 +  ).toEqual([{ decision: "APPROVE" }, { decision: "APPROVE" }]);
++});
++
++test("invitations: absent for non-admins", async ({ page }) => {
++  // Default bridge: the invitation list answers 403, as the BFF does for non-admins.
++  await installMockBridge(page);
++  await page.goto("/#/platform/members");
++  await expect(
++    page.getByTestId("platform-members").getByRole("row").first(),
++  ).toBeVisible();
++  await expect(page.getByTestId("tenant-invitations")).toHaveCount(0);
++});
++
++test("invitations: an admin issues a link that is shown once, and withdraws it", async ({
++  page,
++}) => {
++  const credential = "c".repeat(64);
++  const link = `http://gateway.example/app/invite#${credential}`;
++  const issued = {
++    invitationId: "inv-1",
++    inviteeLabel: "Grace from Ops",
++    inviterPrincipalId: "principal-self",
++    status: "ISSUED",
++    createdAt: new Date().toISOString(),
++    expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
++  };
++  await installMockBridge(page, {
++    kailo: {
++      routes: {
++        "GET /api/v1/invitations": [
++          { status: 200, body: [] },
++          { status: 200, body: [issued] },
++          { status: 200, body: [{ ...issued, status: "REVOKED" }] },
++        ],
++        "POST /api/v1/actions": [
++          {
++            status: 200,
++            body: {
++              operationId: "op-1",
++              actionExecutionId: "ae-1",
++              actionKey: "tenant.member.invite",
++              gateState: "ALLOWED",
++              dispatchState: "DISPATCHED",
++              invitation: {
++                invitationId: "inv-1",
++                link,
++                expiresAt: issued.expiresAt,
++              },
++            },
++          },
++          {
++            status: 200,
++            body: {
++              operationId: "op-2",
++              actionExecutionId: "ae-2",
++              actionKey: "tenant.member.invite.revoke",
++              gateState: "ALLOWED",
++              dispatchState: "DISPATCHED",
++            },
++          },
++        ],
++      },
++    },
++  });
++  await page.goto("/#/platform/members");
++
++  const section = page.getByTestId("tenant-invitations");
++  await section.getByLabel("Who is this for?").fill("Grace from Ops");
++  await section.getByRole("button", { name: "Create invitation link" }).click();
++  const shown = section.getByTestId("issued-invitation");
++  await expect(shown).toContainText("shown only this once");
++  await expect(shown.getByRole("textbox")).toHaveValue(link);
++  // The list never carries the credential; only the issuing reply did.
++  await expect(section.getByRole("table")).not.toContainText(credential);
++
++  await section
++    .getByRole("row", { name: /Grace from Ops/ })
++    .getByRole("button", { name: "Withdraw" })
++    .click();
++  await section.getByRole("button", { name: "Confirm" }).click();
++  await expect(
++    section.getByRole("row", { name: /Grace from Ops/ }),
++  ).toContainText("Withdrawn");
++
++  const posts = (await kailoCalls(page)).filter(
++    (call) => call.method === "POST",
++  );
++  expect(posts.map((call) => call.body)).toEqual([
++    expect.objectContaining({
++      actionKey: "tenant.member.invite",
++      name: "Grace from Ops",
++    }),
++    expect.objectContaining({
++      actionKey: "tenant.member.invite.revoke",
++      invitationId: "inv-1",
++    }),
++  ]);
 +});
 diff --git a/desktop/tests/e2e/mention-clipboard.spec.ts b/desktop/tests/e2e/mention-clipboard.spec.ts
 index 19cd599c08e82e4c129e03fa0ab650de6388f000..e61efa63a7ab7bce1a0439d9a3c619d8c0053b10 100644
