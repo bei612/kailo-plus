@@ -406,6 +406,14 @@ async fn rerun(
     (status, resp.json().await.unwrap_or(serde_json::Value::Null))
 }
 
+async fn mark_rerun_action(pool: &PgPool, id: Uuid) {
+    sqlx::query("update admission.action_execution set action_key = 'task.rerun' where id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("重跑准入必须有重跑 action_key");
+}
+
 /// 等某条 Workflow 的投影进入终态，返回 (projection_state, task status)。
 async fn wait_terminal(pool: &PgPool, workflow_id: &str, bound: u64) -> (String, Option<String>) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(bound);
@@ -505,14 +513,22 @@ async fn run_rerun(
         "终结的固定 ID 不得被当作「已启动」"
     );
 
-    // 2. 准入必须指向该实体：为 Tenant 签发的准入不能拿来重跑 Workspace
+    // 2. 其他动作即使已 ALLOWED、目标相同，也不能充当重跑准入
+    let wrong_action = seed_action(pool, tenant, initiator, workspace).await;
+    assert_eq!(
+        rerun(http, e, token, &failed, wrong_action).await.0,
+        reqwest::StatusCode::FORBIDDEN
+    );
+    // 准入必须指向该实体：为 Tenant 签发的准入不能拿来重跑 Workspace
     let wrong_target = seed_action(pool, tenant, initiator, tenant).await;
+    mark_rerun_action(pool, wrong_target).await;
     assert_eq!(
         rerun(http, e, token, &failed, wrong_target).await.0,
         reqwest::StatusCode::FORBIDDEN
     );
     // 未准入的 ActionExecution 同样不行
     let denied = seed_action(pool, tenant, initiator, workspace).await;
+    mark_rerun_action(pool, denied).await;
     sqlx::query("update admission.action_execution set gate_state = 'DENIED' where id = $1")
         .bind(denied)
         .execute(pool)
@@ -554,6 +570,7 @@ async fn run_rerun(
     let (_, tenant_status) = wait_terminal(pool, &tenant_wf, e.converge_bound_secs).await;
     assert_eq!(tenant_status.as_deref(), Some("COMPLETED"));
     let on_completed = seed_action(pool, tenant, initiator, tenant).await;
+    mark_rerun_action(pool, on_completed).await;
     assert_eq!(
         rerun(http, e, token, &tenant_wf, on_completed).await.0,
         reqwest::StatusCode::CONFLICT
@@ -561,6 +578,7 @@ async fn run_rerun(
 
     // 4. 重跑：新 ActionExecution → 实体版本 +1 → 新 workflow ID
     let retry = seed_action(pool, tenant, initiator, workspace).await;
+    mark_rerun_action(pool, retry).await;
     let (code, body) = rerun(http, e, token, &failed, retry).await;
     assert_eq!(code, reqwest::StatusCode::OK, "{body}");
     let next = body["workflowId"].as_str().expect("workflowId").to_owned();
@@ -573,8 +591,19 @@ async fn run_rerun(
     let (code, body) = rerun(http, e, token, &failed, retry).await;
     assert_eq!(code, reqwest::StatusCode::OK, "{body}");
     assert_eq!(body["workflowId"].as_str(), Some(next.as_str()));
+    sqlx::query("update admission.action_execution set gate_state = 'REVOKED' where id = $1")
+        .bind(retry)
+        .execute(pool)
+        .await
+        .expect("撤销旧准入");
+    assert_eq!(
+        rerun(http, e, token, &failed, retry).await.0,
+        reqwest::StatusCode::FORBIDDEN,
+        "同键重发也必须重新核对门禁"
+    );
     // 另一张准入重跑同一条旧 Workflow：实体已不在它冻结的版本
     let late = seed_action(pool, tenant, initiator, workspace).await;
+    mark_rerun_action(pool, late).await;
     assert_eq!(
         rerun(http, e, token, &failed, late).await.0,
         reqwest::StatusCode::CONFLICT

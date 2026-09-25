@@ -93,3 +93,5 @@ SpiceDB `relationship read` 为空。
 生命周期 Workflow 被确定拒绝（`FAILED`）后，实体停在 `PROVISIONING`/`REVOKING`，而驱动它当前版本的固定 workflow ID 已经终结，再 Start 只会得到 `409`。重跑入口 `POST /service/v1/tasks/rerun`（`core/crates/kailo-core/src/task_rerun.rs`）按 `.design/06` §9「`rerun` 创建新 ActionExecution/Workflow，不改写旧 history」实现：旧 Workflow 必须 `TERMINAL` 且为 `FAILED/CANCELED/TERMINATED/TIMED_OUT`；新 ActionExecution 必须 `ALLOWED`、同 Tenant、`target_id` 就是该实体；实体版本 +1、新 WorkflowRef 与 `RERUN_ACCEPTED` 审计同事务落库，然后交给原来的启动核心（`start_scope`/`start_membership`）以新版本的固定 ID 启动。同一 ActionExecution 重发回答同一个新 Workflow。
 
 `cargo test -p kailo-core --test scope_lifecycle` 的 `stranded_workspace_is_rerun_with_new_version` 以「Tenant 就绪前建立 Workspace」得到真实的搁浅，再验上述每一条拒绝与重跑后的收敛；`core/verify/drill-task-rerun.sh` 按 RB-01 第 7 步的命令逐条演练，结果记在 RB-01 的演练记录里。
+
+2026-09-25 收紧内部入口：上述 ActionExecution 每次调用（包括同键重发）都须为 `task.rerun` 且仍为 `ALLOWED`，不能把同目标的 `scope.provision` 准入串用，也不能凭后来已撤销的准入重启。真实 Core、Temporal、SpiceDB、Buzz 链路的 `stranded_workspace_is_rerun_with_new_version` 为 `1 passed; 0 failed`；用例主动投递同目标的错误 action key 与撤销后的同键请求，均得到 `403`，正确重跑仍以新实体版本收敛。此入口仍是 service API，不是用户可见的 BFF 控制；在 Catalog 登记 Governed Action 与用户准入链闭合前，任务页不显示重跑按钮。

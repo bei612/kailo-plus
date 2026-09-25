@@ -138,6 +138,21 @@ pub async fn rerun_task(
     let next_id =
         component_task::workflow_id(&old.kind, old.tenant_id, &entity.to_string(), version + 1);
 
+    // 每次请求（包括同键重发）先核对准入。不能借另一种已 ALLOWED 的动作，
+    // 或借后来已被撤销的准入，触发这个 Workflow 的启动与收敛。
+    let action = match component_task::allowed_action(
+        &state.pool,
+        req.action_execution_id,
+        old.tenant_id,
+        entity,
+    )
+    .await
+    {
+        Ok(Some(a)) if a.action_key == "task.rerun" => a,
+        Ok(_) => return StatusCode::FORBIDDEN.into_response(),
+        Err(e) => return unavailable(e),
+    };
+
     // 幂等：同一 ActionExecution 已驱动过一个 Workflow。是本次重跑的那个，就
     // 交回启动核心以同一 ID 收敛（结果不明时的重试走到这里）；是别的，就是
     // 拿一张用过的准入去换第二次执行。
@@ -169,24 +184,6 @@ pub async fn rerun_task(
         );
         return StatusCode::CONFLICT.into_response();
     }
-
-    // 准入依据：已 ALLOWED、同 Tenant、target 就是该实体。target 不核就可以拿
-    // 一张为别的实体签发的准入来重跑这一个。
-    let action = match component_task::allowed_action(
-        &state.pool,
-        req.action_execution_id,
-        old.tenant_id,
-        entity,
-    )
-    .await
-    {
-        Ok(Some(a)) => a,
-        Ok(None) => {
-            tracing::warn!(action = %req.action_execution_id, "ActionExecution 不存在、未准入或 target 不是该实体");
-            return StatusCode::FORBIDDEN.into_response();
-        }
-        Err(e) => return unavailable(e),
-    };
 
     let mut tx = match state.pool.begin().await {
         Ok(t) => t,
