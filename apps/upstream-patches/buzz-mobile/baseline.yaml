@@ -146,7 +146,7 @@ patch_series: [0001-kailo-mobile.patch]
 vendor_files:
   - mobile/lib/shared/contracts/contracts.dart:mobile/lib/shared/contracts/contracts.dart
   - mobile/lib/shared/contracts/generated/contracts.dart:mobile/lib/shared/contracts/generated/contracts.dart
-patch_series_digest: sha256:95f1b515c1baab93f6ee7f0f19182eddec50b3c22025b455b188524583dbba99
+patch_series_digest: sha256:ed0b1f4acba2f024c145494bdf58454925ba9d784ee4ad4e8ade23f2129967a0
 # 产物是移动端安装包而不是镜像；Kailo 版本的构建流水线建立之前没有可登记的产物。
 artifact_digest: none
 

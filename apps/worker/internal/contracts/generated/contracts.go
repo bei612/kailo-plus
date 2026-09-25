@@ -40,6 +40,12 @@
 //    readMarkRequest, err := UnmarshalReadMarkRequest(bytes)
 //    bytes, err = readMarkRequest.Marshal()
 //
+//    roleMemberPage, err := UnmarshalRoleMemberPage(bytes)
+//    bytes, err = roleMemberPage.Marshal()
+//
+//    roleWorkspacePage, err := UnmarshalRoleWorkspacePage(bytes)
+//    bytes, err = roleWorkspacePage.Marshal()
+//
 //    platformSessionView, err := UnmarshalPlatformSessionView(bytes)
 //    bytes, err = platformSessionView.Marshal()
 //
@@ -243,6 +249,26 @@ func UnmarshalReadMarkRequest(data []byte) (ReadMarkRequest, error) {
 }
 
 func (r *ReadMarkRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalRoleMemberPage(data []byte) (RoleMemberPage, error) {
+	var r RoleMemberPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *RoleMemberPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalRoleWorkspacePage(data []byte) (RoleWorkspacePage, error) {
+	var r RoleWorkspacePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *RoleWorkspacePage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -692,6 +718,41 @@ type ReadMarkRequest struct {
 	// RFC3339，Core 统一存成 UTC
 	LastReadAt string `json:"lastReadAt"`
 	Version    int64  `json:"version"`
+}
+
+// GET /api/v1/role-members 的有界回应。只列当前 Tenant 的 ACTIVE HUMAN 成员；角色从 SpiceDB fresh
+// 读取，动作可用性只作界面提示，提交时仍重新准入（DD-82）。
+type RoleMemberPage struct {
+	Members []RoleMemberView `json:"members"`
+	// 下一页首项之前的 Principal ID；缺省即已经读完
+	NextCursor *string `json:"nextCursor,omitempty"`
+}
+
+type RoleMemberView struct {
+	CanGrantTenantAdmin     bool   `json:"canGrantTenantAdmin"`
+	CanGrantWorkspaceAdmin  bool   `json:"canGrantWorkspaceAdmin"`
+	CanRevokeTenantAdmin    bool   `json:"canRevokeTenantAdmin"`
+	CanRevokeWorkspaceAdmin bool   `json:"canRevokeWorkspaceAdmin"`
+	DisplayName             string `json:"displayName"`
+	// 有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查
+	LastTenantAdmin bool   `json:"lastTenantAdmin"`
+	PrincipalID     string `json:"principalId"`
+	TenantAdmin     bool   `json:"tenantAdmin"`
+	// 没有 workspaceId 时恒为 false
+	WorkspaceAdmin bool `json:"workspaceAdmin"`
+}
+
+// GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage
+// permission。只供角色管理选择，不等于可进入频道。
+type RoleWorkspacePage struct {
+	// 下一页的 Core 索引偏移；不暴露无权 Workspace 的 ID，缺省即读完
+	NextOffset *int64              `json:"nextOffset,omitempty"`
+	Workspaces []RoleWorkspaceView `json:"workspaces"`
+}
+
+type RoleWorkspaceView struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // GET /api/v1/session 的回应：已解析的执行身份与本次 PlatformSession。原生端以 platformSessionId

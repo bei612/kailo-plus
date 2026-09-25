@@ -709,6 +709,61 @@ pub struct ReadMarkRequest {
     pub version: i64,
 }
 
+/// GET /api/v1/role-members 的有界回应。只列当前 Tenant 的 ACTIVE HUMAN 成员；角色从 SpiceDB fresh
+/// 读取，动作可用性只作界面提示，提交时仍重新准入（DD-82）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleMemberPage {
+    pub members: Vec<RoleMemberView>,
+
+    /// 下一页首项之前的 Principal ID；缺省即已经读完
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleMemberView {
+    pub can_grant_tenant_admin: bool,
+
+    pub can_grant_workspace_admin: bool,
+
+    pub can_revoke_tenant_admin: bool,
+
+    pub can_revoke_workspace_admin: bool,
+
+    pub display_name: String,
+
+    /// 有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查
+    pub last_tenant_admin: bool,
+
+    pub principal_id: String,
+
+    pub tenant_admin: bool,
+
+    /// 没有 workspaceId 时恒为 false
+    pub workspace_admin: bool,
+}
+
+/// GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage
+/// permission。只供角色管理选择，不等于可进入频道。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleWorkspacePage {
+    /// 下一页的 Core 索引偏移；不暴露无权 Workspace 的 ID，缺省即读完
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub workspaces: Vec<RoleWorkspaceView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RoleWorkspaceView {
+    pub id: String,
+
+    pub name: String,
+}
+
 /// GET /api/v1/session 的回应：已解析的执行身份与本次 PlatformSession。原生端以 platformSessionId
 /// 绑定设备持钥证明（DD-79）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

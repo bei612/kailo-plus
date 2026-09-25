@@ -53,7 +53,8 @@ HEAD 与 `implementation_base_commit` 不一致即失败。
 | `pnpm test` | `pass 2290`、`fail 0` |
 | `pnpm build:e2e`（`tsc && vite build`） | 通过 |
 | 前一共用包的 Playwright `--project=smoke`（437 例） | `435 passed (16.2m)`，2 skipped；这是前次全量结果，本次未重跑全量 |
-| 当前共用包的 `@kailo/platform` 测试 | `45 passed`：服务端给出间隔时自动重查、未给间隔时保持手动重查 |
+| 当前共用包的 `@kailo/platform` 测试 | `49 passed`：设备重查、角色管理候选人、最后一位 admin 的不可撤销提示、受控动作提交与异常响应均通过 |
+| 本次 Linux `.deb` | 固定上游 commit + manifest 补丁 + 当前共用包重新构建成功；`Buzz_0.5.23_amd64.deb` SHA-256 `c2349b05821540e12441b08d4e5a27bd449162efee4cc69e6f6b343905ee9b75`；未在真实桌面会话中安装运行 |
 | Kailo 登录冒烟（`kailo-bootstrap.spec.ts`） | 当前共用包 `8 passed`；其中旧服务端未给重查间隔的脚本仍走手动确认。此前版本的登录与平台页合计 `16 passed`，不能代替本次未重跑的平台页冒烟 |
 | 前一开发分支的 `cargo clippy --all-targets -- -D warnings` | 通过；本次安装包构建已重新编译 Rust，未重跑 clippy |
 | 前一开发分支的 `cargo test --lib` | `387 passed; 0 failed; 9 ignored`；本次未重跑 |
@@ -70,8 +71,9 @@ HEAD 与 `implementation_base_commit` 不一致即失败。
 - 邀请的兑换不在 Desktop：邀请链接是浏览器入口上 Web 兑换页（`/app/invite`）的地址，在系统
   浏览器里打开即兑换。Desktop 不为它注册 URL 处理——那会让一次性凭据经操作系统的 URL 分发
   与日志；尚不是成员时原生引导显示本人的兑换进度，管理员确认后「重新确认」即可登记本机。
-- Tenant/Workspace admin 的授予与撤销没有界面入口：BFF 不给出成员当前的角色，界面既无法显示
-  谁是 admin，也无法决定该给「授予」还是「撤销」；前端不自判权限，因此不渲染。
+- 新 `.deb` 已包含共用包的 Tenant/Workspace admin 管理页；BFF 按 SpiceDB 当前关系返回
+  角色与按钮可用性，前端不自判权限。首次构建因磁盘余量降至 9.1 GiB 主动取消；打包
+  Dockerfile 将编译目录改为 BuildKit cache mount 后重建成功，安装包仍需真实桌面会话验证。
 
 ## 未覆盖
 

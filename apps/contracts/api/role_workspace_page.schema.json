@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/role_workspace_page.schema.json",
+  "title": "RoleWorkspacePage",
+  "description": "GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage permission。只供角色管理选择，不等于可进入频道。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspaces"],
+  "properties": {
+    "workspaces": {
+      "type": "array",
+      "items": {
+        "title": "RoleWorkspaceView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" }
+        }
+      }
+    },
+    "nextOffset": { "type": "integer", "minimum": 0, "description": "下一页的 Core 索引偏移；不暴露无权 Workspace 的 ID，缺省即读完" }
+  }
+}

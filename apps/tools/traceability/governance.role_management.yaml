@@ -23,22 +23,30 @@ validation:
       ref: worker/replay-tests/testdata/component_task_revocation_all_relations_history.json
     - dimension: 运维手册
       ref: docs/runbooks/RB-01-invariant-check-failure.md
+    - dimension: 呈现
+      ref: upstream-patches/buzz-web/verify/web-surface.md
+    - dimension: 呈现
+      ref: upstream-patches/buzz-desktop/verify/kailo-desktop.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/roles.rs, core/crates/kailo-core/src/role_reconcile.rs, core/crates/kailo-core/src/tenant_bootstrap.rs, core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/spicedb.rs, worker/activities/spicedb.go, worker/workflows/component_task.go, docs/adr/ADR-11-tenant-bootstrap-and-role-writes.md]
-  # BFF 语义命令对三端开放；管理页由共享 TS 包交付，本记录只含 BFF 端点
-  surfaces: []
-  schemas: [contracts/api/action_command.schema.json, contracts/enums/reason_code.schema.json]
+  paths: [core/crates/kailo-core/src/roles.rs, core/crates/kailo-core/src/role_reconcile.rs, core/crates/kailo-core/src/tenant_bootstrap.rs, core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/platform_views.rs, core/crates/kailo-core/src/spicedb.rs, worker/activities/spicedb.go, worker/workflows/component_task.go, web/packages/platform/src/react/roles.tsx, upstream-patches/buzz-web/patches/0007-role-management.patch, docs/adr/ADR-11-tenant-bootstrap-and-role-writes.md]
+  # 管理页由共享 TS 包交付；Mobile 只读普通成员页，不提供角色编辑
+  surfaces: [web, desktop]
+  schemas: [contracts/api/action_command.schema.json, contracts/api/role_member_page.schema.json, contracts/api/role_workspace_page.schema.json, contracts/enums/reason_code.schema.json]
   migrations: [core/migrations/20260925100000_role_management.up.sql]
 
 runtime:
-  routes: ["/api/v1/actions"]
+  routes: ["/api/v1/actions", "/api/v1/role-members", "/api/v1/role-workspaces"]
   actions: [tenant.admin.grant, tenant.admin.revoke, workspace.admin.grant, workspace.admin.revoke]
   workflow_kinds: [MEMBERSHIP_REVOCATION]
 
 release:
   artifacts:
+    - name: upstream-buzz-web
+      digest: sha256:e6759365e5425fa6ae2296572c4227fb769a6734b454591380446f42d1a82212
+    - name: upstream-buzz-desktop
+      digest: sha256:c2349b05821540e12441b08d4e5a27bd449162efee4cc69e6f6b343905ee9b75
     - name: kailo-core
       digest: sha256:24751a5558478a1e314dbeec36259044c8d06ce007612325f4c333e0f817406f
     - name: kailo-worker

@@ -9,6 +9,8 @@
 //! 结论只有两种确定值：有、没有。`CONDITIONAL_PERMISSION`（caveat 缺上下文）与
 //! 任何非 2xx 一律不是「有」——前者按没有处理，后者交给调用方当结果不明。
 
+use std::collections::HashSet;
+
 use serde::Deserialize;
 
 /// 一次 Check 的一致性要求（`.design/10` §1 的固定使用规则）。
@@ -147,6 +149,99 @@ impl SpiceDb {
             allowed: r.permissionship == "PERMISSIONSHIP_HAS_PERMISSION",
             zed_token: r.checked_at.map(|t| t.token).unwrap_or_default(),
         })
+    }
+
+    /// Core 自有索引先分页，再由同一次 FullyConsistent CheckBulkPermissions 过滤这一
+    /// 页（`.design/03` §5）。任何 item error、遗漏、重复或未知 permissionship 都让
+    /// 整页失败；不能拿部分结果显示为完整的可管理 Workspace 列表。
+    pub async fn check_bulk(
+        &self,
+        object_type: &str,
+        object_ids: &[String],
+        permission: &str,
+        subject_principal: &str,
+    ) -> Result<HashSet<String>, SpiceDbError> {
+        if object_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+        let items: Vec<_> = object_ids
+            .iter()
+            .map(|id| {
+                serde_json::json!({
+                    "resource": { "objectType": object_type, "objectId": id },
+                    "permission": permission,
+                    "subject": { "object": { "objectType": "principal", "objectId": subject_principal } },
+                })
+            })
+            .collect();
+        let resp = self
+            .http
+            .post(format!("{}/v1/permissions/checkbulk", self.base))
+            .bearer_auth(&self.key)
+            .json(&serde_json::json!({
+                "consistency": { "fullyConsistent": true },
+                "items": items,
+            }))
+            .send()
+            .await
+            .map_err(|e| SpiceDbError::Unavailable(e.to_string()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            tracing::warn!(%status, "SpiceDB 批量 Check 未成功");
+            return Err(SpiceDbError::Unavailable(format!("HTTP {status}")));
+        }
+        let value: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| SpiceDbError::Unavailable(format!("回应不可解析: {e}")))?;
+        if value
+            .pointer("/checkedAt/token")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            return Err(SpiceDbError::Unavailable(
+                "批量 Check 缺 fresh revision".into(),
+            ));
+        }
+        let pairs = value["pairs"]
+            .as_array()
+            .ok_or_else(|| SpiceDbError::Unavailable("批量 Check 缺 pairs".into()))?;
+        if pairs.len() != object_ids.len() {
+            return Err(SpiceDbError::Unavailable("批量 Check 回应条数不符".into()));
+        }
+        let expected: HashSet<&str> = object_ids.iter().map(String::as_str).collect();
+        if expected.len() != object_ids.len() {
+            return Err(SpiceDbError::Unavailable(
+                "批量 Check 请求有重复对象".into(),
+            ));
+        }
+        let mut seen = HashSet::new();
+        let mut allowed = HashSet::new();
+        for pair in pairs {
+            let id = pair
+                .pointer("/request/resource/objectId")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| SpiceDbError::Unavailable("批量 Check 缺资源 ID".into()))?;
+            if !expected.contains(id) || !seen.insert(id) {
+                return Err(SpiceDbError::Unavailable(
+                    "批量 Check 回应对象不符或重复".into(),
+                ));
+            }
+            if pair.get("error").is_some() {
+                return Err(SpiceDbError::Unavailable("批量 Check 含 item error".into()));
+            }
+            match pair
+                .pointer("/item/permissionship")
+                .and_then(serde_json::Value::as_str)
+            {
+                Some("PERMISSIONSHIP_HAS_PERMISSION") => {
+                    allowed.insert(id.to_owned());
+                }
+                Some("PERMISSIONSHIP_NO_PERMISSION" | "PERMISSIONSHIP_CONDITIONAL_PERMISSION") => {}
+                _ => return Err(SpiceDbError::Unavailable("批量 Check 权限值未知".into())),
+            }
+        }
+        Ok(allowed)
     }
 
     /// 写一组关系，返回 SpiceDB 给出的 revision（`writtenAt`）。同一请求内的更新

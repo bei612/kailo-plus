@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { AuditPage, DevicesPage, WorkspaceMembersPage } from "../src/react/pages";
 import { PlatformProvider } from "../src/react/context";
+import { RoleManagement, RoleMembers } from "../src/react/roles";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { TransportError } from "../src/transport";
 import { button, click, render, settle } from "./render";
@@ -80,6 +81,10 @@ describe("WorkspaceMembersPage", () => {
     const t = transport((r) =>
       r.path === "/api/v1/workspaces"
         ? { status: 200, body: [{ id: "w1", name: "Ops", slug: "ops" }] }
+        : r.path.startsWith("/api/v1/role-workspaces")
+          ? { status: 200, body: { workspaces: [{ id: "w1", name: "Ops" }] } }
+        : r.path.startsWith("/api/v1/role-members")
+          ? { status: 403, body: {} }
         : {
             status: 200,
             body: [
@@ -95,10 +100,112 @@ describe("WorkspaceMembersPage", () => {
   });
 
   it("没有可进入的 Workspace 就不画选择器", async () => {
-    const host = await mount(transport(() => ({ status: 200, body: [] })), <WorkspaceMembersPage />);
+    const host = await mount(transport((r) =>
+      r.path.startsWith("/api/v1/role-members")
+        ? { status: 403, body: {} }
+        : r.path.startsWith("/api/v1/role-workspaces")
+          ? { status: 200, body: { workspaces: [] } }
+        : { status: 200, body: [] },
+    ), <WorkspaceMembersPage />);
     await settle();
     expect(host.querySelector("select")).toBeNull();
     expect(host.textContent).toContain("no workspace");
+  });
+});
+
+describe("RoleMembers", () => {
+  const members = [
+    {
+      principalId: "00000000-0000-0000-0000-000000000001",
+      displayName: "Ada",
+      tenantAdmin: true,
+      workspaceAdmin: false,
+      canGrantTenantAdmin: false,
+      canRevokeTenantAdmin: false,
+      canGrantWorkspaceAdmin: false,
+      canRevokeWorkspaceAdmin: false,
+      lastTenantAdmin: true,
+    },
+    {
+      principalId: "00000000-0000-0000-0000-000000000002",
+      displayName: "Bo",
+      tenantAdmin: false,
+      workspaceAdmin: false,
+      canGrantTenantAdmin: true,
+      canRevokeTenantAdmin: false,
+      canGrantWorkspaceAdmin: false,
+      canRevokeWorkspaceAdmin: false,
+      lastTenantAdmin: false,
+    },
+  ];
+
+  it("候选人不依赖 WorkspaceMembership；最后一位 admin 不能撤，授予仍走 Governed Action", async () => {
+    const t = transport((r) =>
+      r.method === "POST"
+        ? {
+            status: 200,
+            body: {
+              actionKey: "tenant.admin.grant",
+              actionExecutionId: "execution-1",
+              operationId: "operation-1",
+              gateState: "ALLOWED",
+              dispatchState: "DISPATCHED",
+            },
+          }
+        : { status: 200, body: { members } },
+    );
+    const host = await mount(t, <RoleMembers />);
+    await settle();
+    expect(host.textContent).toContain("Ada");
+    expect(host.textContent).toContain("Bo");
+    expect(host.textContent).toContain("LAST_TENANT_ADMIN");
+    expect(button(host, "Revoke").disabled).toBe(true);
+    await click(button(host, "Grant"));
+    await click(button(host, "Confirm"));
+    expect(t.send).toHaveBeenCalledWith(expect.objectContaining({
+      method: "POST",
+      path: "/api/v1/actions",
+      body: expect.objectContaining({
+        actionKey: "tenant.admin.grant",
+        principalId: "00000000-0000-0000-0000-000000000002",
+      }),
+    }));
+    expect(host.textContent).toContain("Check Tasks for its final result");
+  });
+
+  it("角色关系读取失败不变成空角色；无管理权时整节不出现", async () => {
+    const down = await mount(transport(() => ({ status: 503, body: {} })), <RoleMembers />);
+    await settle();
+    expect(down.textContent).toContain("result is unknown");
+    const denied = await mount(transport(() => ({ status: 403, body: {} })), <RoleMembers />);
+    await settle();
+    expect(denied.textContent).toBe("");
+  });
+
+  it("角色管理的 200 响应缺字段时显示读取失败，不当作空列表", async () => {
+    const host = await mount(transport(() => ({ status: 200, body: { members: [null] } })), <RoleMembers />);
+    await settle();
+    expect(host.textContent).toContain("result is unknown");
+    expect(host.textContent).not.toContain("No members");
+  });
+
+  it("Workspace 管理员即使不是频道成员，也能从独立管理列表选中 Workspace", async () => {
+    const t = transport((r) =>
+      r.path.startsWith("/api/v1/role-workspaces")
+        ? { status: 200, body: { workspaces: [{ id: "w-admin", name: "Managed only" }] } }
+        : { status: 200, body: { members: [{
+          ...members[1],
+          canGrantTenantAdmin: false,
+          canGrantWorkspaceAdmin: true,
+        }] } },
+    );
+    const host = await mount(t, <RoleManagement />);
+    await settle();
+    expect(host.textContent).toContain("Managed only");
+    expect(t.send).toHaveBeenCalledWith({
+      method: "GET", path: "/api/v1/role-members?workspaceId=w-admin",
+    });
+    expect(button(host, "Grant").disabled).toBe(false);
   });
 });
 

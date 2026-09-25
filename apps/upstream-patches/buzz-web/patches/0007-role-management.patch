@@ -1,0 +1,20 @@
+diff --git a/web/src/platform/ui/PlatformApp.tsx b/web/src/platform/ui/PlatformApp.tsx
+index c727b79..1aaf2b7 100644
+--- a/web/src/platform/ui/PlatformApp.tsx
++++ b/web/src/platform/ui/PlatformApp.tsx
+@@ -14,6 +14,7 @@ import { PlatformProvider } from "@kailo/platform/react/context";
+ import { ApprovalsPage, TasksPage } from "@kailo/platform/react/governance";
+ import { RedemptionProgress, TenantInvitations } from "@kailo/platform/react/invitations";
+ import { AuditPage, DevicesPage, MembersPane } from "@kailo/platform/react/pages";
++import { RoleManagement } from "@kailo/platform/react/roles";
+ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import { BellOff, Star } from "lucide-react";
+ import { useCallback, useEffect, useState } from "react";
+@@ -149,6 +150,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
+       // 邀请属于 Tenant：只对 admin 出现（由邀请列表的 403 决定），不依赖 Workspace
+       <div className="flex flex-col gap-6">
+         {workspaceBody}
++        <RoleManagement />
+         <TenantInvitations />
+       </div>
+     ) : (

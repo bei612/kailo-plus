@@ -7,16 +7,23 @@
 //! 每个视图的可见范围都由调用方自己的 scope 决定，不接受任何范围参数：
 //! 放开范围参数等于把「我能看谁」交给调用方声明。
 
+use std::collections::HashSet;
+
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use contracts::{OwnAuditEntry, WorkspaceMemberView, WorkspaceView};
+use contracts::{
+    OwnAuditEntry, RoleMemberPage, RoleMemberView, RoleWorkspacePage, RoleWorkspaceView,
+    WorkspaceMemberView, WorkspaceView,
+};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::bff::{db_enum, resolve_execution_context, BffState};
+use crate::spicedb::{Consistency, RelationshipFilter};
 
 /// 我在当前 Tenant 里能进的 Workspace。
 ///
@@ -120,6 +127,351 @@ pub async fn list_members(
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleMemberQuery {
+    workspace_id: Option<Uuid>,
+    cursor: Option<Uuid>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleWorkspaceQuery {
+    offset: Option<i64>,
+}
+
+/// 管理角色的 Workspace 选择与频道准入是两个不同的集合：角色持有者未必有
+/// WorkspaceMembership。先从 Core 的 Tenant 索引有界分页，再对本页做 SpiceDB
+/// CheckBulkPermissions；游标只暴露偏移，不泄露无权 Workspace 的 ID。
+pub async fn list_role_workspaces(
+    State(state): State<BffState>,
+    Query(query): Query<RoleWorkspaceQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    let offset = query.offset.unwrap_or(0);
+    if offset < 0 {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let page = state.governance.cfg.role_member_page_limit;
+    let Some(fetch_limit) = page.checked_add(1) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let mut rows: Vec<(Uuid, String)> = match sqlx::query_as(
+        "select id, name from identity.workspace
+         where tenant_id = $1 and state = 'ACTIVE'
+         order by id limit $2 offset $3",
+    )
+    .bind(ctx.tenant_id)
+    .bind(fetch_limit)
+    .bind(offset)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(error = %e, "列角色管理 Workspace 失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let more = rows.len() as i64 > page;
+    rows.truncate(page as usize);
+    let next_offset = if more {
+        match offset.checked_add(rows.len() as i64) {
+            Some(next) => Some(next),
+            None => return StatusCode::BAD_REQUEST.into_response(),
+        }
+    } else {
+        None
+    };
+    let ids: Vec<String> = rows.iter().map(|(id, _)| id.to_string()).collect();
+    let allowed = match state
+        .governance
+        .spicedb
+        .check_bulk(
+            "workspace",
+            &ids,
+            "manage",
+            &ctx.tenant_principal_id.to_string(),
+        )
+        .await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!(error = %e, "角色管理 Workspace 批量权限判定失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let workspaces = rows
+        .into_iter()
+        .filter(|(id, _)| allowed.contains(&id.to_string()))
+        .map(|(id, name)| RoleWorkspaceView {
+            id: id.to_string(),
+            name,
+        })
+        .collect();
+    (
+        StatusCode::OK,
+        Json(RoleWorkspacePage {
+            workspaces,
+            next_offset,
+        }),
+    )
+        .into_response()
+}
+
+/// 角色管理候选人是本 Tenant 的全部 ACTIVE HUMAN 成员，不限于 WorkspaceMembership：
+/// Workspace admin 可以授给尚未加入该 Workspace 的 Tenant 成员（DD-82）。角色只从
+/// SpiceDB fresh 读取，不在 Core 缓存；按钮只是当前视图，动作仍走重新准入。
+pub async fn list_role_members(
+    State(state): State<BffState>,
+    Query(query): Query<RoleMemberQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    let tenant = ctx.tenant_id.to_string();
+    let actor = ctx.tenant_principal_id.to_string();
+    let tenant_manage = match state
+        .governance
+        .spicedb
+        .check(
+            "tenant",
+            &tenant,
+            "manage",
+            &actor,
+            Consistency::FullyConsistent,
+        )
+        .await
+    {
+        Ok(result) => result.allowed,
+        Err(e) => {
+            tracing::warn!(error = %e, "角色列表 Tenant 权限判定失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let workspace_manage = if let Some(workspace_id) = query.workspace_id {
+        let belongs: Option<i32> = match sqlx::query_scalar(
+            "select 1 from identity.workspace where id = $1 and tenant_id = $2 and state = 'ACTIVE'",
+        )
+        .bind(workspace_id)
+        .bind(ctx.tenant_id)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(row) => row,
+            Err(e) => {
+                tracing::warn!(error = %e, "角色列表 Workspace 范围判定失败");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        };
+        if belongs.is_none() {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+        match state
+            .governance
+            .spicedb
+            .check(
+                "workspace",
+                &workspace_id.to_string(),
+                "manage",
+                &actor,
+                Consistency::FullyConsistent,
+            )
+            .await
+        {
+            Ok(result) => result.allowed,
+            Err(e) => {
+                tracing::warn!(error = %e, "角色列表 Workspace 权限判定失败");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        }
+    } else {
+        false
+    };
+    if !tenant_manage && !workspace_manage {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    let page = state.governance.cfg.role_member_page_limit;
+    let Some(fetch_limit) = page.checked_add(1) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let mut rows: Vec<(Uuid, String)> = match sqlx::query_as(
+        "select p.id, hi.display_name
+         from identity.principal p
+         join identity.tenant_membership tm on tm.tenant_principal_id = p.id
+         join identity.human_identity hi on hi.id = tm.human_identity_id
+         where p.tenant_id = $1 and p.kind = 'HUMAN' and p.status = 'ACTIVE'
+           and tm.tenant_id = $1 and tm.state = 'ACTIVE'
+           and ($2::uuid is null or p.id > $2)
+         order by p.id limit $3",
+    )
+    .bind(ctx.tenant_id)
+    .bind(query.cursor)
+    .bind(fetch_limit)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(error = %e, "列 Tenant 角色候选成员失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let more = rows.len() as i64 > page;
+    rows.truncate(page as usize);
+    let next_cursor = if more {
+        rows.last().map(|r| r.0.to_string())
+    } else {
+        None
+    };
+
+    // 必须读完整关系集；SpiceDB 断流或数据形状不符时整个视图失败，不能把
+    // "未读到"显示成"无人持有角色"。分页只约束 Core 成员，不截断关系读取。
+    let tenant_rels = match state
+        .governance
+        .spicedb
+        .read(
+            &RelationshipFilter {
+                object_type: "tenant",
+                object_id: Some(&tenant),
+                relation: Some("admin"),
+                subject_principal: None,
+            },
+            state.governance.cfg.relationship_page,
+        )
+        .await
+    {
+        Ok(rels) => rels,
+        Err(e) => {
+            tracing::warn!(error = %e, "读取 Tenant admin 关系失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let workspace_rels = if let Some(id) = query.workspace_id {
+        let object = id.to_string();
+        match state
+            .governance
+            .spicedb
+            .read(
+                &RelationshipFilter {
+                    object_type: "workspace",
+                    object_id: Some(&object),
+                    relation: Some("admin"),
+                    subject_principal: None,
+                },
+                state.governance.cfg.relationship_page,
+            )
+            .await
+        {
+            Ok(rels) => rels,
+            Err(e) => {
+                tracing::warn!(error = %e, "读取 Workspace admin 关系失败");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        }
+    } else {
+        vec![]
+    };
+    let parse_subjects = |rels: Vec<crate::spicedb::Relationship>| -> Option<HashSet<Uuid>> {
+        rels.into_iter()
+            .map(|r| Uuid::parse_str(&r.subject_principal).ok())
+            .collect()
+    };
+    let (Some(tenant_admins), Some(workspace_admins)) =
+        (parse_subjects(tenant_rels), parse_subjects(workspace_rels))
+    else {
+        tracing::error!("SpiceDB admin relation 含非法 Principal ID");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    // Catalog 中没有 ACTIVE 且与 DD-82 模板一致的动作，不给按钮；不能把一个
+    // 已撤下或漂移的 ActionDefinition 在前端继续展示为可用。
+    let enabled: HashSet<String> = match sqlx::query_scalar(
+        "select ad.action_key from catalog.action_definition ad
+         join catalog.role_template rt
+           on rt.role_key = ad.role_template_key and rt.version = ad.role_template_version
+         where ad.status = 'ACTIVE' and rt.status = 'ACTIVE'
+           and ad.action_key in ('tenant.admin.grant', 'tenant.admin.revoke',
+                                 'workspace.admin.grant', 'workspace.admin.revoke')
+           and ad.permission = 'manage' and ad.execution_mode = 'SYNC'
+           and rt.relations = ARRAY['admin']::text[]
+           and ((ad.target_type = 'TENANT_ROLE' and ad.permission_object_type = 'tenant'
+                 and rt.object_type = 'tenant' and ad.action_key like 'tenant.admin.%')
+             or (ad.target_type = 'WORKSPACE_ROLE' and ad.permission_object_type = 'workspace'
+                 and rt.object_type = 'workspace' and ad.action_key like 'workspace.admin.%'))",
+    )
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(keys) => keys.into_iter().collect(),
+        Err(e) => {
+            tracing::warn!(error = %e, "读取角色 ActionDefinition 失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let admin_ids: Vec<Uuid> = tenant_admins.iter().copied().collect();
+    let effective: Vec<Uuid> = match sqlx::query_scalar(
+        "select p.id from identity.principal p
+         join identity.tenant_membership tm on tm.tenant_principal_id = p.id
+         where p.id = any($1) and p.tenant_id = $2 and p.kind = 'HUMAN' and p.status = 'ACTIVE'
+           and tm.tenant_id = $2 and tm.state = 'ACTIVE'",
+    )
+    .bind(&admin_ids)
+    .bind(ctx.tenant_id)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!(error = %e, "角色列表有效 Tenant admin 判定失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let members = rows
+        .into_iter()
+        .map(|(principal_id, display_name)| {
+            let tenant_admin = tenant_admins.contains(&principal_id);
+            let workspace_admin = workspace_admins.contains(&principal_id);
+            let last_tenant_admin =
+                tenant_admin && effective.len() == 1 && effective.first() == Some(&principal_id);
+            RoleMemberView {
+                principal_id: principal_id.to_string(),
+                display_name,
+                tenant_admin,
+                workspace_admin,
+                can_grant_tenant_admin: tenant_manage
+                    && !tenant_admin
+                    && enabled.contains("tenant.admin.grant"),
+                can_revoke_tenant_admin: tenant_manage
+                    && tenant_admin
+                    && !last_tenant_admin
+                    && enabled.contains("tenant.admin.revoke"),
+                can_grant_workspace_admin: workspace_manage
+                    && !workspace_admin
+                    && enabled.contains("workspace.admin.grant"),
+                can_revoke_workspace_admin: workspace_manage
+                    && workspace_admin
+                    && enabled.contains("workspace.admin.revoke"),
+                last_tenant_admin,
+            }
+        })
+        .collect();
+    (
+        StatusCode::OK,
+        Json(RoleMemberPage {
+            members,
+            next_cursor,
+        }),
+    )
+        .into_response()
 }
 
 /// 基础审计页：**只看自己的动作**。

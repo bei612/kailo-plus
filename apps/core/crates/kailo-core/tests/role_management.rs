@@ -104,6 +104,67 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World, sl
     let t = tenant_obj(w);
     let a = w.a.subject.as_str();
 
+    // 角色视图只给管理者：候选人按 TenantMembership 枚举，不要求先加入 Workspace；
+    // 最后一位有效 admin 的撤销按钮由 BFF 禁用，写路径仍独立重新判定。
+    let (st, view) = bff(
+        http,
+        e,
+        a,
+        reqwest::Method::GET,
+        "/api/v1/role-members",
+        None,
+    )
+    .await;
+    assert_eq!(st, reqwest::StatusCode::OK, "{view}");
+    let entries = view["members"].as_array().expect("角色页成员数组");
+    assert_eq!(
+        entries.len(),
+        4,
+        "候选人应包含全部 ACTIVE Tenant 成员：{view}"
+    );
+    let a_view = entries
+        .iter()
+        .find(|m| m["principalId"] == w.a.principal.to_string())
+        .unwrap();
+    assert_eq!(a_view["tenantAdmin"], true);
+    assert_eq!(a_view["lastTenantAdmin"], true);
+    assert_eq!(a_view["canRevokeTenantAdmin"], false);
+    let b_view = entries
+        .iter()
+        .find(|m| m["principalId"] == w.b.principal.to_string())
+        .unwrap();
+    assert_eq!(b_view["canGrantTenantAdmin"], true);
+    let (st, _) = bff(
+        http,
+        e,
+        &w.b.subject,
+        reqwest::Method::GET,
+        "/api/v1/role-members",
+        None,
+    )
+    .await;
+    assert_eq!(
+        st,
+        reqwest::StatusCode::FORBIDDEN,
+        "普通成员不可枚举角色管理候选人"
+    );
+    let cursor = entries[0]["principalId"].as_str().unwrap();
+    let (st, next) = bff(
+        http,
+        e,
+        a,
+        reqwest::Method::GET,
+        &format!("/api/v1/role-members?cursor={cursor}"),
+        None,
+    )
+    .await;
+    assert_eq!(st, reqwest::StatusCode::OK, "{next}");
+    assert!(next["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|m| m["principalId"] != cursor));
+
     // ---- 1. 引导留下的事实：A 是 admin，整条链有 ActionExecution 与审计 ----
     assert!(
         common::zed_has(e, &t, "admin", &subj(w.a.principal)),
@@ -451,6 +512,70 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World, sl
     .await;
     assert_eq!(st, reqwest::StatusCode::OK, "{body}");
     assert!(common::zed_has(e, &ws_obj, "admin", &subj(w.c.principal)));
+    let (st, selectable) = bff(
+        http,
+        e,
+        &w.c.subject,
+        reqwest::Method::GET,
+        "/api/v1/role-workspaces",
+        None,
+    )
+    .await;
+    assert_eq!(
+        st,
+        reqwest::StatusCode::OK,
+        "非频道成员的 Workspace admin 仍应能选中管理对象：{selectable}"
+    );
+    assert!(selectable["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["id"] == ws.to_string()));
+    let (st, unpermitted) = bff(
+        http,
+        e,
+        &w.d.subject,
+        reqwest::Method::GET,
+        "/api/v1/role-workspaces",
+        None,
+    )
+    .await;
+    assert_eq!(st, reqwest::StatusCode::OK, "{unpermitted}");
+    assert!(!unpermitted["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["id"] == ws.to_string()));
+    let (st, view) = bff(
+        http,
+        e,
+        &w.c.subject,
+        reqwest::Method::GET,
+        &format!("/api/v1/role-members?workspaceId={ws}"),
+        None,
+    )
+    .await;
+    assert_eq!(
+        st,
+        reqwest::StatusCode::OK,
+        "没有 WorkspaceMembership 的 admin 应能管理此 Workspace：{view}"
+    );
+    let entries = view["members"].as_array().unwrap();
+    let c_view = entries
+        .iter()
+        .find(|m| m["principalId"] == w.c.principal.to_string())
+        .unwrap();
+    assert_eq!(c_view["workspaceAdmin"], true);
+    assert_eq!(c_view["canRevokeWorkspaceAdmin"], true);
+    let b_view = entries
+        .iter()
+        .find(|m| m["principalId"] == w.b.principal.to_string())
+        .unwrap();
+    assert_eq!(b_view["canGrantWorkspaceAdmin"], true);
+    assert_eq!(
+        b_view["canGrantTenantAdmin"], false,
+        "Workspace admin 不可授 Tenant admin"
+    );
     let (st, body) = submit(
         http,
         e,

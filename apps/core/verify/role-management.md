@@ -48,6 +48,8 @@
 | Tenant 撤权撤全部关系 | 被撤者的 `tenant#admin`、`tenant#member`、`workspace#admin` 全部不在 |
 | 角色对账 | 旁路写入失权者的 `tenant#admin` → 三个对账周期内被删，留 `RECONCILIATION`/`ROLE_REMOVED` 审计 |
 | 成员建立只有邀请一条入口 | `tenant.member.add` → 403 `CAPABILITY_BLOCKED`（`DD-83`；邀请本身的断言在 `tenant_invitation.rs`） |
+| 角色管理候选人与管理范围 | BFF 的 `/api/v1/role-members` 只向 Tenant/Workspace 管理者列出本 Tenant 的 ACTIVE HUMAN 成员；未加入频道的 Tenant 成员仍可作为 Workspace 角色对象；最后一位有效 Tenant admin 的撤销按钮不可用，最终写路径仍重新准入 |
+| 可管理 Workspace 选择 | `/api/v1/role-workspaces` 从本 Tenant 有界分页，逐个经 SpiceDB 的 fully-consistent `CheckBulkPermissions` 过滤；非频道成员但持有 Workspace 管理权者能选择该 Workspace；无权对象不进入结果 |
 
 `worker/replay-tests` 纳入走新撤权路径（`tenant-revocation-all-relations`）的录制 history；
 门禁之前录制的两份撤权 history 仍走旧路径。
@@ -75,6 +77,22 @@
   1 passed，其余全部通过；`go test ./...` 全过。
 - `web-walkthrough.sh` 14/14。
 - 部署引导实跑：`{"state":"COMPLETED"}` 退出 0；重跑同一人 0；另一人 4。
+
+## 角色管理界面与 BFF 增量核验（2026-09-25）
+
+- Core 由 `deploy/local/start-core.sh` 重建并重启；受 cgroup CPU/内存限制的 release 构建退出 0。
+- 真实拓扑执行 `cargo test -p kailo-core --test role_management -- --nocapture`：1 passed，
+  0 failed，耗时 90.86 秒；新增断言覆盖管理范围、候选成员、最后 admin 标志与角色按钮。
+- 共用 Web/Desktop TypeScript 平台包执行 `pnpm --filter @kailo/platform test`：49 passed，
+  0 failed；异常形状的 200 响应显示读取失败，403 不展示管理区，动作仍经 BFF。
+- 破坏验证：把异常响应错误提示故意改成“本页无成员”，该用例当场失败
+  （1 failed、48 passed）；恢复后上述 49 项全绿。
+- Web 镜像已按新补丁与共用包重建、登记 digest 并部署；真实浏览器走查 17 步通过，
+  其中成员页实际载入了角色区、既有 admin 标记与授予入口。
+- 首次 Desktop `.deb` 构建在 Rust 编译阶段因宿主磁盘余量降至 9.1 GiB 而主动取消；
+  打包 Dockerfile 随后将编译 `target` 移到 BuildKit cache mount、只把 `.deb` 复制到最终阶段。
+  再次受限构建成功，`dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的实际 SHA-256 为
+  `c2349b05821540e12441b08d4e5a27bd449162efee4cc69e6f6b343905ee9b75`。
 
 ## 已知边界
 

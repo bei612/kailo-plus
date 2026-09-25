@@ -53,6 +53,8 @@ capabilities:
   exposure: end_user
   routes:
   - /api/v1/actions
+  - /api/v1/role-members
+  - /api/v1/role-workspaces
   actions:
   - tenant.admin.grant
   - tenant.admin.revoke

@@ -30,7 +30,10 @@ RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-too
     && cd desktop/src-tauri && rustup toolchain install
 RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install --frozen-lockfile
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    cd desktop && pnpm tauri build --bundles deb
+    --mount=type=cache,target=/src/desktop/src-tauri/target,sharing=locked \
+    cd desktop && pnpm tauri build --bundles deb \
+    && mkdir -p /out \
+    && cp src-tauri/target/release/bundle/deb/*.deb /out/
 
 FROM scratch AS bundle
-COPY --from=build /src/desktop/src-tauri/target/release/bundle/deb/ /
+COPY --from=build /out/ /

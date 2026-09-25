@@ -148,6 +148,14 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/workspaces/{workspace_id}/members",
             get(crate::platform_views::list_members),
         )
+        .route(
+            "/api/v1/role-members",
+            get(crate::platform_views::list_role_members),
+        )
+        .route(
+            "/api/v1/role-workspaces",
+            get(crate::platform_views::list_role_workspaces),
+        )
         .route("/api/v1/audit", get(crate::platform_views::list_own_audit))
         // 原生设备公钥（DD-77/79）：登记只对原生入口开放，查看与撤销两端都开放
         .route(

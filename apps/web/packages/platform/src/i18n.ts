@@ -51,6 +51,31 @@ export const platformMessages = {
     en: "This workspace has no members.",
     "zh-CN": "该工作区没有成员。",
   },
+  "roles.title": { en: "Administrator roles", "zh-CN": "管理员角色" },
+  "roles.none": { en: "No eligible members on this page.", "zh-CN": "本页没有符合条件的成员。" },
+  "roles.tenant": { en: "Tenant admin", "zh-CN": "租户管理员" },
+  "roles.workspace": { en: "Workspace admin", "zh-CN": "工作区管理员" },
+  "roles.grant": { en: "Grant", "zh-CN": "授予" },
+  "roles.revoke": { en: "Revoke", "zh-CN": "撤销" },
+  "roles.lastAdmin": {
+    en: "Cannot revoke the last effective tenant admin (LAST_TENANT_ADMIN).",
+    "zh-CN": "不能撤销最后一位有效租户管理员（LAST_TENANT_ADMIN）。",
+  },
+  "roles.submitted": {
+    en: "Action {action} was submitted (execution {execution}). Check Tasks for its final result.",
+    "zh-CN": "动作 {action} 已提交（执行 {execution}）。请到任务页确认最终结果。",
+  },
+  "roles.unknown": {
+    en: "Whether the action was accepted is unknown (operation {operation}). Check Tasks before trying again.",
+    "zh-CN": "动作是否被接受尚不明确（操作 {operation}）。重试前请先查看任务页。",
+  },
+  "roles.rejected": { en: "Role change rejected: {reason}", "zh-CN": "角色变更被拒绝：{reason}" },
+  "roles.confirm": {
+    en: "Submit {action} for {member}? The final result is shown in Tasks.",
+    "zh-CN": "为 {member} 提交 {action}？最终结果请到任务页查看。",
+  },
+  "roles.next": { en: "Next page", "zh-CN": "下一页" },
+  "roles.previous": { en: "Previous page", "zh-CN": "上一页" },
   "platform.devices.none": {
     en: "No devices yet. Sign in to Kailo Desktop or Mobile to add one.",
     "zh-CN": "还没有设备。在 Kailo Desktop 或 Mobile 上登录即可添加。",

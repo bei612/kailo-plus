@@ -14,7 +14,7 @@ base_divergence: none
 #
 # 改动以 patch series 形式保存而不是把 130 个源文件搬进本仓库：上游仍在演进，
 # 搬进来之后每次升级都变成手工比对，而 patch 能在新 commit 上直接重放并暴露冲突。
-patch_series: [0001-bff-transport-and-platform-pages.patch, 0002-stream-reopen-after-http-error.patch, 0003-platform-contracts-generated-types.patch, 0004-shared-platform-package.patch, 0005-tasks-and-approvals-navigation.patch, 0006-tenant-invitations.patch]
+patch_series: [0001-bff-transport-and-platform-pages.patch, 0002-stream-reopen-after-http-error.patch, 0003-platform-contracts-generated-types.patch, 0004-shared-platform-package.patch, 0005-tasks-and-approvals-navigation.patch, 0006-tenant-invitations.patch, 0007-role-management.patch]
 # BFF 请求与回应的类型取自 contracts 的 TypeScript 生成物（ADR-02/03）；BFF 客户端、
 # 成员/邀请/审计/设备/任务/审批页、邀请兑换页与文案取自 Kailo 自有的共用包 web/packages/platform——Desktop 用的是
 # 同一份（ADR-09）。补丁只 import 它们，构建时从本仓库放进源树；补丁里不带副本，
@@ -33,8 +33,9 @@ vendor_files:
   - web/packages/platform/src/react/pages.tsx:web/src/kailo-platform/react/pages.tsx
   - web/packages/platform/src/react/governance.tsx:web/src/kailo-platform/react/governance.tsx
   - web/packages/platform/src/react/invitations.tsx:web/src/kailo-platform/react/invitations.tsx
-patch_series_digest: sha256:a6fc27bf7fd1c22fd12d1cc45428d0b750ad8f0e63c15b0bece8034408c234a2
-artifact_digest: sha256:43b587c7ede1ce59b6c7e81cc0a73ae12d4420298807a5a695345c960f150555
+  - web/packages/platform/src/react/roles.tsx:web/src/kailo-platform/react/roles.tsx
+patch_series_digest: sha256:86997d40db8f812f6922ba35a8c031e36d396a9caacec1db9d73aaa5444846fc
+artifact_digest: sha256:e6759365e5425fa6ae2296572c4227fb769a6734b454591380446f42d1a82212
 
 # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
 build_context: web

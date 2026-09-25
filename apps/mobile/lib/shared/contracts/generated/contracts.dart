@@ -13,6 +13,8 @@
 //     final nativeCommunityFacts = nativeCommunityFactsFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
+//     final roleMemberPage = roleMemberPageFromJson(jsonString);
+//     final roleWorkspacePage = roleWorkspacePageFromJson(jsonString);
 //     final platformSessionView = platformSessionViewFromJson(jsonString);
 //     final taskView = taskViewFromJson(jsonString);
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
@@ -110,6 +112,17 @@ ReadMarkRequest readMarkRequestFromJson(String str) =>
     ReadMarkRequest.fromJson(json.decode(str));
 
 String readMarkRequestToJson(ReadMarkRequest data) =>
+    json.encode(data.toJson());
+
+RoleMemberPage roleMemberPageFromJson(String str) =>
+    RoleMemberPage.fromJson(json.decode(str));
+
+String roleMemberPageToJson(RoleMemberPage data) => json.encode(data.toJson());
+
+RoleWorkspacePage roleWorkspacePageFromJson(String str) =>
+    RoleWorkspacePage.fromJson(json.decode(str));
+
+String roleWorkspacePageToJson(RoleWorkspacePage data) =>
     json.encode(data.toJson());
 
 PlatformSessionView platformSessionViewFromJson(String str) =>
@@ -1207,6 +1220,116 @@ class ReadMarkRequest {
     "lastReadAt": lastReadAt,
     "version": version,
   });
+}
+
+///GET /api/v1/role-members 的有界回应。只列当前 Tenant 的 ACTIVE HUMAN 成员；角色从 SpiceDB fresh
+///读取，动作可用性只作界面提示，提交时仍重新准入（DD-82）。
+class RoleMemberPage {
+  final List<RoleMemberView> members;
+
+  ///下一页首项之前的 Principal ID；缺省即已经读完
+  final String? nextCursor;
+
+  RoleMemberPage({required this.members, this.nextCursor});
+
+  factory RoleMemberPage.fromJson(Map<String, dynamic> json) => RoleMemberPage(
+    members: List<RoleMemberView>.from(
+      json["members"].map((x) => RoleMemberView.fromJson(x)),
+    ),
+    nextCursor: json["nextCursor"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "members": List<dynamic>.from(members.map((x) => x.toJson())),
+    "nextCursor": nextCursor,
+  });
+}
+
+class RoleMemberView {
+  final bool canGrantTenantAdmin;
+  final bool canGrantWorkspaceAdmin;
+  final bool canRevokeTenantAdmin;
+  final bool canRevokeWorkspaceAdmin;
+  final String displayName;
+
+  ///有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查
+  final bool lastTenantAdmin;
+  final String principalId;
+  final bool tenantAdmin;
+
+  ///没有 workspaceId 时恒为 false
+  final bool workspaceAdmin;
+
+  RoleMemberView({
+    required this.canGrantTenantAdmin,
+    required this.canGrantWorkspaceAdmin,
+    required this.canRevokeTenantAdmin,
+    required this.canRevokeWorkspaceAdmin,
+    required this.displayName,
+    required this.lastTenantAdmin,
+    required this.principalId,
+    required this.tenantAdmin,
+    required this.workspaceAdmin,
+  });
+
+  factory RoleMemberView.fromJson(Map<String, dynamic> json) => RoleMemberView(
+    canGrantTenantAdmin: json["canGrantTenantAdmin"],
+    canGrantWorkspaceAdmin: json["canGrantWorkspaceAdmin"],
+    canRevokeTenantAdmin: json["canRevokeTenantAdmin"],
+    canRevokeWorkspaceAdmin: json["canRevokeWorkspaceAdmin"],
+    displayName: json["displayName"],
+    lastTenantAdmin: json["lastTenantAdmin"],
+    principalId: json["principalId"],
+    tenantAdmin: json["tenantAdmin"],
+    workspaceAdmin: json["workspaceAdmin"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canGrantTenantAdmin": canGrantTenantAdmin,
+    "canGrantWorkspaceAdmin": canGrantWorkspaceAdmin,
+    "canRevokeTenantAdmin": canRevokeTenantAdmin,
+    "canRevokeWorkspaceAdmin": canRevokeWorkspaceAdmin,
+    "displayName": displayName,
+    "lastTenantAdmin": lastTenantAdmin,
+    "principalId": principalId,
+    "tenantAdmin": tenantAdmin,
+    "workspaceAdmin": workspaceAdmin,
+  });
+}
+
+///GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage
+///permission。只供角色管理选择，不等于可进入频道。
+class RoleWorkspacePage {
+  ///下一页的 Core 索引偏移；不暴露无权 Workspace 的 ID，缺省即读完
+  final int? nextOffset;
+  final List<RoleWorkspaceView> workspaces;
+
+  RoleWorkspacePage({this.nextOffset, required this.workspaces});
+
+  factory RoleWorkspacePage.fromJson(Map<String, dynamic> json) =>
+      RoleWorkspacePage(
+        nextOffset: json["nextOffset"],
+        workspaces: List<RoleWorkspaceView>.from(
+          json["workspaces"].map((x) => RoleWorkspaceView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nextOffset": nextOffset,
+    "workspaces": List<dynamic>.from(workspaces.map((x) => x.toJson())),
+  });
+}
+
+class RoleWorkspaceView {
+  final String id;
+  final String name;
+
+  RoleWorkspaceView({required this.id, required this.name});
+
+  factory RoleWorkspaceView.fromJson(Map<String, dynamic> json) =>
+      RoleWorkspaceView(id: json["id"], name: json["name"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"id": id, "name": name});
 }
 
 ///GET /api/v1/session 的回应：已解析的执行身份与本次 PlatformSession。原生端以 platformSessionId

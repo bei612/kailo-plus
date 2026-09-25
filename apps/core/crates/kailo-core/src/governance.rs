@@ -70,6 +70,8 @@ pub struct GovernanceConfig {
     pub projection_freshness_seconds: i64,
     /// 任务列表与待我审批列表的单页上界
     pub page_limit: i64,
+    /// Tenant 成员角色管理视图的单页上界；不与 Relay 消息页或任务页混用。
+    pub role_member_page_limit: i64,
     /// 从 SpiceDB 读关系的单页条数；读取总是翻到底，它只约束单次回应的大小
     pub relationship_page: u32,
     /// 邀请的有效期，签发时冻结进 `expires_at`（DD-83）
@@ -105,6 +107,7 @@ impl GovernanceConfig {
             evaluation_timeout_seconds: get("ADMISSION_EVALUATION_TIMEOUT_SECONDS")?,
             projection_freshness_seconds: get("WORKFLOW_PROJECTION_FRESHNESS_SECONDS")?,
             page_limit: get("BFF_TASK_PAGE_LIMIT")?,
+            role_member_page_limit: get("BFF_ROLE_MEMBER_PAGE_LIMIT")?,
             relationship_page: u32::try_from(get("SPICEDB_READ_PAGE_LIMIT")?)
                 .map_err(|_| "SPICEDB_READ_PAGE_LIMIT 超出范围")?,
             invitation_ttl_seconds: get("TENANT_INVITATION_TTL_SECONDS")?,

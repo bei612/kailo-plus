@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/role_member_page.schema.json",
+  "title": "RoleMemberPage",
+  "description": "GET /api/v1/role-members 的有界回应。只列当前 Tenant 的 ACTIVE HUMAN 成员；角色从 SpiceDB fresh 读取，动作可用性只作界面提示，提交时仍重新准入（DD-82）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["members"],
+  "properties": {
+    "members": {
+      "type": "array",
+      "items": {
+        "title": "RoleMemberView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["principalId", "displayName", "tenantAdmin", "workspaceAdmin", "canGrantTenantAdmin", "canRevokeTenantAdmin", "canGrantWorkspaceAdmin", "canRevokeWorkspaceAdmin", "lastTenantAdmin"],
+        "properties": {
+          "principalId": { "type": "string", "format": "uuid" },
+          "displayName": { "type": "string" },
+          "tenantAdmin": { "type": "boolean" },
+          "workspaceAdmin": { "type": "boolean", "description": "没有 workspaceId 时恒为 false" },
+          "canGrantTenantAdmin": { "type": "boolean" },
+          "canRevokeTenantAdmin": { "type": "boolean" },
+          "canGrantWorkspaceAdmin": { "type": "boolean" },
+          "canRevokeWorkspaceAdmin": { "type": "boolean" },
+          "lastTenantAdmin": { "type": "boolean", "description": "有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查" }
+        }
+      }
+    },
+    "nextCursor": { "type": "string", "format": "uuid", "description": "下一页首项之前的 Principal ID；缺省即已经读完" }
+  }
+}

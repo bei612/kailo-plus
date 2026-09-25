@@ -500,6 +500,53 @@ export interface ReadMarkRequest {
 }
 
 /**
+ * GET /api/v1/role-members 的有界回应。只列当前 Tenant 的 ACTIVE HUMAN 成员；角色从 SpiceDB fresh
+ * 读取，动作可用性只作界面提示，提交时仍重新准入（DD-82）。
+ */
+export interface RoleMemberPage {
+    members: RoleMemberView[];
+    /**
+     * 下一页首项之前的 Principal ID；缺省即已经读完
+     */
+    nextCursor?: string;
+}
+
+export interface RoleMemberView {
+    canGrantTenantAdmin:     boolean;
+    canGrantWorkspaceAdmin:  boolean;
+    canRevokeTenantAdmin:    boolean;
+    canRevokeWorkspaceAdmin: boolean;
+    displayName:             string;
+    /**
+     * 有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查
+     */
+    lastTenantAdmin: boolean;
+    principalId:     string;
+    tenantAdmin:     boolean;
+    /**
+     * 没有 workspaceId 时恒为 false
+     */
+    workspaceAdmin: boolean;
+}
+
+/**
+ * GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage
+ * permission。只供角色管理选择，不等于可进入频道。
+ */
+export interface RoleWorkspacePage {
+    /**
+     * 下一页的 Core 索引偏移；不暴露无权 Workspace 的 ID，缺省即读完
+     */
+    nextOffset?: number;
+    workspaces:  RoleWorkspaceView[];
+}
+
+export interface RoleWorkspaceView {
+    id:   string;
+    name: string;
+}
+
+/**
  * GET /api/v1/session 的回应：已解析的执行身份与本次 PlatformSession。原生端以 platformSessionId
  * 绑定设备持钥证明（DD-79）。
  */

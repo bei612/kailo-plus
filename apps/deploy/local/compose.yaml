@@ -389,6 +389,7 @@ services:
       GOVERNANCE_RECONCILE_BATCH: ${GOVERNANCE_RECONCILE_BATCH:?必须显式提供，禁止硬编码}
       # 任务列表与待我审批列表的单页上界（07 §5）
       BFF_TASK_PAGE_LIMIT: ${BFF_TASK_PAGE_LIMIT:?必须显式提供，禁止硬编码}
+      BFF_ROLE_MEMBER_PAGE_LIMIT: ${BFF_ROLE_MEMBER_PAGE_LIMIT:?必须显式提供，禁止硬编码}
       # 从 SpiceDB 读关系的单页条数（角色判定与对账）。读取总是翻到底，它只约束
       # 单次回应的大小（DD-82）
       SPICEDB_READ_PAGE_LIMIT: ${SPICEDB_READ_PAGE_LIMIT:?必须显式提供，禁止硬编码}
@@ -469,7 +470,7 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:43b587c7ede1ce59b6c7e81cc0a73ae12d4420298807a5a695345c960f150555
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:e6759365e5425fa6ae2296572c4227fb769a6734b454591380446f42d1a82212
     networks: [app]
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 

@@ -275,6 +275,10 @@ await step("成员页：本人 ACTIVE，协议身份按上游统一形式缩写"
   await page.getByRole("button", { name: "Members" }).click();
   const row = page.getByRole("row").filter({ hasText: "ACTIVE" });
   await row.first().waitFor();
+  const roles = page.getByTestId("role-members");
+  await roles.getByText("Administrator roles").waitFor();
+  await roles.getByText("Tenant admin", { exact: true }).first().waitFor();
+  await roles.getByRole("button", { name: "Grant" }).first().waitFor();
   await shot("08-members");
 });
 

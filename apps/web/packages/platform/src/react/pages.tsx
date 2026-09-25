@@ -15,6 +15,7 @@ import { type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { type Loaded, useLoad } from "./use-load";
+import { RoleManagement } from "./roles";
 
 /** 按读取状态渲染：载入中、结果不明（可重试）、或数据。 */
 export function Resource<T>({
@@ -82,7 +83,8 @@ export function WorkspaceMembersPage() {
   const [state, reload] = useLoad("workspaces", client.workspaces);
   const [chosen, setChosen] = useState<string | null>(null);
   return (
-    <Resource state={state} reload={reload}>
+    <div className="flex flex-col gap-6">
+      <Resource state={state} reload={reload}>
       {(rows) => {
         if (rows.length === 0) return <Notice>{t("platform.noWorkspace")}</Notice>;
         // 只认列表里的：列表已经排除了进不去的
@@ -109,7 +111,9 @@ export function WorkspaceMembersPage() {
           </div>
         );
       }}
-    </Resource>
+      </Resource>
+      <RoleManagement />
+    </div>
   );
 }
 

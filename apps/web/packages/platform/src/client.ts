@@ -18,6 +18,8 @@ import type {
   NativeCommunityFacts,
   OwnAuditEntry,
   PlatformSessionView,
+  RoleMemberPage,
+  RoleWorkspacePage,
   TaskView,
   TenantInvitationView,
   WorkspaceMemberView,
@@ -50,6 +52,19 @@ export function createBffClient(transport: BffTransport) {
     /** 成员按人聚合：`pubkeys` 是此人全部 ACTIVE 的 Buzz 公钥（DD-77）。 */
     members: (workspaceId: string) =>
       get<WorkspaceMemberView[]>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`),
+
+    /** DD-82：管理候选人来自 Tenant 成员事实，角色来自 SpiceDB；游标按 Principal ID。 */
+    roleMembers: (workspaceId?: string, cursor?: string) => {
+      const query = new URLSearchParams();
+      if (workspaceId) query.set("workspaceId", workspaceId);
+      if (cursor) query.set("cursor", cursor);
+      const suffix = query.size > 0 ? `?${query}` : "";
+      return get<RoleMemberPage>(`/api/v1/role-members${suffix}`);
+    },
+
+    /** 有界的角色管理 Workspace 选择；它不等于可进入频道的 Workspace 列表。 */
+    roleWorkspaces: (offset?: number) =>
+      get<RoleWorkspacePage>(`/api/v1/role-workspaces${offset ? `?offset=${offset}` : ""}`),
 
     /** 基础审计页只看自己的动作；聚合视图需要 audit permission，属于后续阶段。 */
     ownAudit: () => get<OwnAuditEntry[]>("/api/v1/audit"),
