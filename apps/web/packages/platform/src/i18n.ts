@@ -284,6 +284,22 @@ export const platformMessages = {
   "native.config.nativeApiUrl": { en: "Kailo native entry URL", "zh-CN": "Kailo 原生入口地址" },
   "native.config.oidcIssuer": { en: "Sign-in issuer (OIDC)", "zh-CN": "登录 issuer（OIDC）" },
   "native.config.oidcClientId": { en: "Client ID", "zh-CN": "客户端 ID" },
+  "native.config.server": { en: "Server: {host}", "zh-CN": "服务器：{host}" },
+  "native.config.invalidUrl": {
+    en: "{field} is not a valid URL.", "zh-CN": "{field} 不是有效的网址。",
+  },
+  "native.config.invalidScheme": {
+    en: "{field} must use HTTP or HTTPS.", "zh-CN": "{field} 必须使用 HTTP 或 HTTPS。",
+  },
+  "native.config.invalidExtras": {
+    en: "{field} must not include a query or fragment.", "zh-CN": "{field} 不能包含查询参数或片段。",
+  },
+  "native.config.invalidUserInfo": {
+    en: "{field} must not include user information.", "zh-CN": "{field} 不能包含用户信息。",
+  },
+  "native.config.clientIdRequired": {
+    en: "Client ID is required.", "zh-CN": "必须填写客户端 ID。",
+  },
   "native.config.save": { en: "Save and continue", "zh-CN": "保存并继续" },
   "native.config.saving": { en: "Saving…", "zh-CN": "正在保存…" },
   "native.config.edit": { en: "Change connection settings", "zh-CN": "修改连接设置" },
@@ -303,6 +319,36 @@ export const platformMessages = {
   },
   "native.signIn.cancel": { en: "Cancel", "zh-CN": "取消" },
   "native.signIn.failed": { en: "Sign-in did not complete: {message}", "zh-CN": "登录未完成：{message}" },
+  "native.status.unconfigured": {
+    en: "Kailo is not set up on this device.", "zh-CN": "本机尚未配置 Kailo。",
+  },
+  "native.status.signedOut": { en: "Signed out.", "zh-CN": "已退出登录。" },
+  "native.status.awaitingActivation": {
+    en: "Waiting for this device to be added to your workspaces…",
+    "zh-CN": "正在等待本机加入你的工作区…",
+  },
+  "native.status.linked": { en: "Connected.", "zh-CN": "已连接。" },
+  "native.status.failed": { en: "Could not connect.", "zh-CN": "未能连接。" },
+  "native.status.outcomeUnknown": {
+    en: "The outcome is not known yet.", "zh-CN": "结果尚不明确。",
+  },
+  "native.error.httpOutcomeUnknown": {
+    en: "Kailo answered HTTP {status}; the outcome is not known.",
+    "zh-CN": "Kailo 返回 HTTP {status}；结果尚不明确。",
+  },
+  "native.error.unavailable": {
+    en: "Kailo could not be reached; the outcome is not known.",
+    "zh-CN": "无法连接 Kailo；结果尚不明确。",
+  },
+  "native.error.contract": {
+    en: "Kailo answered outside the contract; the outcome is not known.",
+    "zh-CN": "Kailo 的响应不符合契约；结果尚不明确。",
+  },
+  "native.error.sessionEnded": {
+    en: "Your Kailo sign-in has ended.", "zh-CN": "你的 Kailo 登录已失效。",
+  },
+  "native.error.signInAgain": { en: "Sign in again", "zh-CN": "重新登录" },
+  "native.unavailable.title": { en: "Not available here", "zh-CN": "此处不可用" },
   "native.device.registering": {
     en: "Registering this device…",
     "zh-CN": "正在登记本机…",

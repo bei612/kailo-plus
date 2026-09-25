@@ -84,3 +84,7 @@ HEAD 与 `implementation_base_commit` 不一致即失败。
 ## 2026-09-25 共享文案增量
 
 共享 TypeScript 文案新增 Mobile 只读视图所需的 message key，因此 Desktop 的 `vendor_files` 字节变化。固定上游基线与既有补丁重新构建 Linux `.deb` 成功；本次文件 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的 SHA-256 为 `b866d494d54a44591d5809dc907986e32af3051ac95bc6ee1930ed06f19700d2`，已写回 manifest 与追溯记录。前表的 `c2349b...` 是上一次产物，不能用来标识这次包。本次未在真实桌面会话安装，也未重跑 Playwright 全量。
+
+## 2026-09-25 Mobile 登录与连接文案增量
+
+共享 `i18n.ts` 再次变化；固定 Desktop 上游基线、既有补丁和更新后的 vendor 文件重新构建 Linux `.deb` 成功。当前文件 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 经 `sha256sum` 核对为 `723202ab17efacd6e3a271f9d7e19be03cb7dc411e1d0db9c629f85c14d07241`，manifest 与追溯记录同步。此次仅更新共享文案，未在真实桌面会话安装，也未重跑 Playwright 或原生端端到端；上文结果均是历史增量证据。

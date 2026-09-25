@@ -9716,10 +9716,10 @@ index 85c4debed72c0e78e34d11736e9fff6c59a68b90..a5f9a6eb048b72d80fe4bb055e91f0d2
                ),
 diff --git a/mobile/lib/features/kailo/kailo_async_view.dart b/mobile/lib/features/kailo/kailo_async_view.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..30bfc14518d2596e901de21dc9496be8912b7496
+index 0000000000000000000000000000000000000000..674973b8a77af67c683c196206dd8c93d76b9ad8
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_async_view.dart
-@@ -0,0 +1,105 @@
+@@ -0,0 +1,122 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -9727,6 +9727,7 @@ index 0000000000000000000000000000000000000000..30bfc14518d2596e901de21dc9496be8
 +
 +import '../../shared/kailo/kailo_api.dart';
 +import '../../shared/kailo/kailo_link.dart';
++import '../../shared/kailo/kailo_platform_text.dart';
 +import '../../shared/kailo/kailo_reason_text.dart';
 +import '../../shared/theme/theme.dart';
 +import '../../shared/widgets/buzz_loading_indicator.dart';
@@ -9749,6 +9750,7 @@ index 0000000000000000000000000000000000000000..30bfc14518d2596e901de21dc9496be8
 +
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    return value.when(
 +      skipLoadingOnRefresh: false,
 +      loading: () => const Center(child: BuzzLoadingIndicator(size: 40)),
@@ -9756,15 +9758,21 @@ index 0000000000000000000000000000000000000000..30bfc14518d2596e901de21dc9496be8
 +      error: (error, _) {
 +        if (error is KailoNotSignedIn) {
 +          return _Message(
-+            text: 'Your Kailo sign-in has ended.',
-+            action: 'Sign in again',
++            text: kailoText(
++              KailoMessageKey.nativeErrorSessionEnded,
++              locale: locale,
++            ),
++            action: kailoText(
++              KailoMessageKey.nativeErrorSignInAgain,
++              locale: locale,
++            ),
 +            onAction: () =>
 +                unawaited(ref.read(kailoLinkProvider.notifier).signOut()),
 +          );
 +        }
 +        return _Message(
-+          text: kailoErrorText(error),
-+          action: 'Retry',
++          text: kailoErrorText(error, locale: locale),
++          action: kailoText(KailoMessageKey.platformRetry, locale: locale),
 +          onAction: onRetry,
 +        );
 +      },
@@ -9773,23 +9781,32 @@ index 0000000000000000000000000000000000000000..30bfc14518d2596e901de21dc9496be8
 +}
 +
 +/// 一次管理平面调用失败的说明。
-+String kailoErrorText(Object error) {
++String kailoErrorText(Object error, {String? locale}) {
 +  if (error is KailoApiError) {
 +    final body = error.response.error;
 +    if (body != null) {
-+      return '${kailoReasonText(body.reason)} (${kailoReasonCode(body.reason)})';
++      return kailoText(
++        KailoMessageKey.platformReasonWithCode,
++        locale: locale,
++        variables: {
++          'text': kailoReasonText(body.reason, locale: locale),
++          'code': kailoReasonCode(body.reason),
++        },
++      );
 +    }
-+    return 'Kailo answered HTTP ${error.response.status}; the outcome is not '
-+        'known.';
++    return kailoText(
++      KailoMessageKey.nativeErrorHttpOutcomeUnknown,
++      locale: locale,
++      variables: {'status': error.response.status},
++    );
 +  }
 +  if (error is KailoUnavailable) {
-+    return 'Kailo could not be reached; the outcome is not known. '
-+        '${error.message}';
++    return kailoText(KailoMessageKey.nativeErrorUnavailable, locale: locale);
 +  }
 +  if (error is TypeError) {
-+    return 'Kailo answered outside the contract; the outcome is not known.';
++    return kailoText(KailoMessageKey.nativeErrorContract, locale: locale);
 +  }
-+  return 'The outcome is not known. $error';
++  return kailoText(KailoMessageKey.nativeStatusOutcomeUnknown, locale: locale);
 +}
 +
 +class _Message extends StatelessWidget {
@@ -10124,10 +10141,10 @@ index 0000000000000000000000000000000000000000..5691edfd921c130f11d07cf494e0aeb1
 +}
 diff --git a/mobile/lib/features/kailo/kailo_sign_in_page.dart b/mobile/lib/features/kailo/kailo_sign_in_page.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4e8ae038a
+index 0000000000000000000000000000000000000000..b887e6e2b9087ab2430a189cddc1d56547672906
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_sign_in_page.dart
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,284 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -10137,6 +10154,7 @@ index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4
 +import '../../shared/kailo/kailo_api.dart';
 +import '../../shared/kailo/kailo_config.dart';
 +import '../../shared/kailo/kailo_link.dart';
++import '../../shared/kailo/kailo_platform_text.dart';
 +import '../../shared/theme/theme.dart';
 +import 'kailo_status_text.dart';
 +
@@ -10149,6 +10167,7 @@ index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4
 +
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    final config = ref.watch(kailoConfigProvider);
 +    final link = ref.watch(kailoLinkProvider);
 +    final editing = useState(config == null);
@@ -10159,11 +10178,13 @@ index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4
 +          padding: const EdgeInsets.all(Grid.gutter),
 +          children: [
 +            const SizedBox(height: Grid.lg),
-+            Text('Kailo', style: context.textTheme.headlineMedium),
++            Text(
++              kailoText(KailoMessageKey.platformTitle, locale: locale),
++              style: context.textTheme.headlineMedium,
++            ),
 +            const SizedBox(height: Grid.xxs),
 +            Text(
-+              'Sign in with your organization account to join your '
-+              'workspaces.',
++              kailoText(KailoMessageKey.nativeSignInExplain, locale: locale),
 +              style: context.textTheme.bodyMedium?.copyWith(
 +                color: context.colors.onSurfaceVariant,
 +              ),
@@ -10181,7 +10202,13 @@ index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4
 +              TextButton(
 +                key: const ValueKey('kailo-edit-config'),
 +                onPressed: link.busy ? null : () => editing.value = true,
-+                child: Text('Server: ${Uri.parse(config.nativeApiUrl).host}'),
++                child: Text(
++                  kailoText(
++                    KailoMessageKey.nativeConfigServer,
++                    locale: locale,
++                    variables: {'host': Uri.parse(config.nativeApiUrl).host},
++                  ),
++                ),
 +              ),
 +            ],
 +          ],
@@ -10198,6 +10225,7 @@ index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4
 +
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    final notifier = ref.read(kailoLinkProvider.notifier);
 +    return Column(
 +      crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -10212,7 +10240,9 @@ index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4
 +                ),
 +                const SizedBox(width: Grid.twelve),
 +              ],
-+              Expanded(child: Text(kailoPhaseText(state.phase))),
++              Expanded(
++                child: Text(kailoPhaseText(state.phase, locale: locale)),
++              ),
 +            ],
 +          ),
 +          const SizedBox(height: Grid.xs),
@@ -10220,22 +10250,28 @@ index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4
 +            FilledButton(
 +              key: const ValueKey('kailo-recheck-activation'),
 +              onPressed: () => unawaited(notifier.reconcile()),
-+              child: const Text('Check again'),
++              child: Text(
++                kailoText(KailoMessageKey.nativeDeviceCheck, locale: locale),
++              ),
 +            ),
 +          OutlinedButton(
 +            key: const ValueKey('kailo-cancel-sign-in'),
 +            onPressed: notifier.cancel,
-+            child: const Text('Cancel'),
++            child: Text(
++              kailoText(KailoMessageKey.platformCancel, locale: locale),
++            ),
 +          ),
 +        ] else ...[
-+          if (kailoOutcomeText(state) case final outcome?) ...[
++          if (kailoOutcomeText(state, locale: locale) case final outcome?) ...[
 +            KailoOutcomeBanner(text: outcome),
 +            const SizedBox(height: Grid.xs),
 +          ],
 +          FilledButton(
 +            key: const ValueKey('kailo-sign-in'),
 +            onPressed: () => unawaited(notifier.signIn()),
-+            child: const Text('Sign in'),
++            child: Text(
++              kailoText(KailoMessageKey.nativeSignInStart, locale: locale),
++            ),
 +          ),
 +        ],
 +      ],
@@ -10258,10 +10294,11 @@ index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4
 +
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    final native = useTextEditingController(text: initial?.nativeApiUrl);
 +    final issuer = useTextEditingController(text: initial?.oidcIssuer);
 +    final client = useTextEditingController(text: initial?.oidcClientId);
-+    final problem = useState<String?>(null);
++    final problem = useState<KailoConfigIssue?>(null);
 +
 +    Future<void> save() async {
 +      final config = KailoConfig(
@@ -10282,21 +10319,22 @@ index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4
 +      onSaved();
 +    }
 +
-+    InputDecoration field(String label, String helper) => InputDecoration(
-+      labelText: label,
-+      helperText: helper,
-+      border: const OutlineInputBorder(),
-+    );
++    InputDecoration field(String label) =>
++        InputDecoration(labelText: label, border: const OutlineInputBorder());
 +
 +    return Column(
 +      crossAxisAlignment: CrossAxisAlignment.stretch,
 +      children: [
++        Text(kailoText(KailoMessageKey.nativeConfigExplain, locale: locale)),
++        const SizedBox(height: Grid.sm),
 +        TextField(
 +          key: const ValueKey('kailo-config-native-url'),
 +          controller: native,
 +          keyboardType: TextInputType.url,
 +          autocorrect: false,
-+          decoration: field('Kailo address', 'Provided by your administrator'),
++          decoration: field(
++            kailoText(KailoMessageKey.nativeConfigNativeApiUrl, locale: locale),
++          ),
 +        ),
 +        const SizedBox(height: Grid.xs),
 +        TextField(
@@ -10304,69 +10342,141 @@ index 0000000000000000000000000000000000000000..431dfed2748edb0726381905cc3a2cb4
 +          controller: issuer,
 +          keyboardType: TextInputType.url,
 +          autocorrect: false,
-+          decoration: field('Sign-in issuer', 'The OpenID Connect issuer URL'),
++          decoration: field(
++            kailoText(KailoMessageKey.nativeConfigOidcIssuer, locale: locale),
++          ),
 +        ),
 +        const SizedBox(height: Grid.xs),
 +        TextField(
 +          key: const ValueKey('kailo-config-client-id'),
 +          controller: client,
 +          autocorrect: false,
-+          decoration: field('Client ID', 'The native app client'),
++          decoration: field(
++            kailoText(KailoMessageKey.nativeConfigOidcClientId, locale: locale),
++          ),
 +        ),
-+        if (problem.value case final text?) ...[
++        if (problem.value case final issue?) ...[
 +          const SizedBox(height: Grid.xs),
-+          Text(text, style: TextStyle(color: context.colors.error)),
++          Text(
++            _configIssueText(issue, locale),
++            style: TextStyle(color: context.colors.error),
++          ),
 +        ],
 +        const SizedBox(height: Grid.sm),
 +        FilledButton(
 +          key: const ValueKey('kailo-config-save'),
 +          onPressed: () => unawaited(save()),
-+          child: const Text('Save'),
++          child: Text(
++            kailoText(KailoMessageKey.nativeConfigSave, locale: locale),
++          ),
 +        ),
 +        if (onCancel case final cancel?)
-+          TextButton(onPressed: cancel, child: const Text('Cancel')),
++          TextButton(
++            onPressed: cancel,
++            child: Text(
++              kailoText(KailoMessageKey.platformCancel, locale: locale),
++            ),
++          ),
 +      ],
 +    );
 +  }
 +}
++
++String _configIssueText(KailoConfigIssue issue, String locale) {
++  final (message, field) = switch (issue) {
++    KailoConfigIssue.nativeInvalidUrl => (
++      KailoMessageKey.nativeConfigInvalidUrl,
++      KailoMessageKey.nativeConfigNativeApiUrl,
++    ),
++    KailoConfigIssue.issuerInvalidUrl => (
++      KailoMessageKey.nativeConfigInvalidUrl,
++      KailoMessageKey.nativeConfigOidcIssuer,
++    ),
++    KailoConfigIssue.nativeInvalidScheme => (
++      KailoMessageKey.nativeConfigInvalidScheme,
++      KailoMessageKey.nativeConfigNativeApiUrl,
++    ),
++    KailoConfigIssue.issuerInvalidScheme => (
++      KailoMessageKey.nativeConfigInvalidScheme,
++      KailoMessageKey.nativeConfigOidcIssuer,
++    ),
++    KailoConfigIssue.nativeQueryOrFragment => (
++      KailoMessageKey.nativeConfigInvalidExtras,
++      KailoMessageKey.nativeConfigNativeApiUrl,
++    ),
++    KailoConfigIssue.issuerQueryOrFragment => (
++      KailoMessageKey.nativeConfigInvalidExtras,
++      KailoMessageKey.nativeConfigOidcIssuer,
++    ),
++    KailoConfigIssue.nativeUserInfo => (
++      KailoMessageKey.nativeConfigInvalidUserInfo,
++      KailoMessageKey.nativeConfigNativeApiUrl,
++    ),
++    KailoConfigIssue.issuerUserInfo => (
++      KailoMessageKey.nativeConfigInvalidUserInfo,
++      KailoMessageKey.nativeConfigOidcIssuer,
++    ),
++    KailoConfigIssue.clientIdRequired => (
++      KailoMessageKey.nativeConfigClientIdRequired,
++      null,
++    ),
++  };
++  return kailoText(
++    message,
++    locale: locale,
++    variables: field == null
++        ? null
++        : {'field': kailoText(field, locale: locale)},
++  );
++}
 diff --git a/mobile/lib/features/kailo/kailo_status_text.dart b/mobile/lib/features/kailo/kailo_status_text.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..05855ff0818d7c6b5ee59df0ff1b48758a4dcaa2
+index 0000000000000000000000000000000000000000..375287c1ddae1bae743e9db801ab2b96941a2b68
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_status_text.dart
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,67 @@
 +import 'package:flutter/material.dart';
 +
 +import '../../shared/kailo/kailo_link.dart';
++import '../../shared/kailo/kailo_platform_text.dart';
 +import '../../shared/kailo/kailo_reason_text.dart';
 +import '../../shared/theme/theme.dart';
 +
-+String kailoPhaseText(KailoLinkPhase phase) => switch (phase) {
-+  KailoLinkPhase.unconfigured => 'Kailo is not set up on this device.',
-+  KailoLinkPhase.signedOut => 'Signed out.',
-+  KailoLinkPhase.signingIn => 'Finish signing in in your browser…',
-+  KailoLinkPhase.registering => 'Registering this device…',
-+  KailoLinkPhase.awaitingActivation =>
-+    'Waiting for this device to be added to your workspaces…',
-+  KailoLinkPhase.fetchingCommunity => 'Connecting to your organization…',
-+  KailoLinkPhase.linked => 'Connected.',
-+  KailoLinkPhase.failed => 'Could not connect.',
-+  KailoLinkPhase.outcomeUnknown => 'The outcome is not known yet.',
-+};
++String kailoPhaseText(KailoLinkPhase phase, {String? locale}) => kailoText(
++  switch (phase) {
++    KailoLinkPhase.unconfigured => KailoMessageKey.nativeStatusUnconfigured,
++    KailoLinkPhase.signedOut => KailoMessageKey.nativeStatusSignedOut,
++    KailoLinkPhase.signingIn => KailoMessageKey.nativeSignInWaiting,
++    KailoLinkPhase.registering => KailoMessageKey.nativeDeviceRegistering,
++    KailoLinkPhase.awaitingActivation =>
++      KailoMessageKey.nativeStatusAwaitingActivation,
++    KailoLinkPhase.fetchingCommunity => KailoMessageKey.nativeCommunityLoading,
++    KailoLinkPhase.linked => KailoMessageKey.nativeStatusLinked,
++    KailoLinkPhase.failed => KailoMessageKey.nativeStatusFailed,
++    KailoLinkPhase.outcomeUnknown => KailoMessageKey.nativeStatusOutcomeUnknown,
++  },
++  locale: locale,
++);
 +
 +/// 需要让用户看到的结论；没有结论要报时为 null。
-+String? kailoOutcomeText(KailoLinkState state) {
++String? kailoOutcomeText(KailoLinkState state, {String? locale}) {
 +  switch (state.phase) {
 +    case KailoLinkPhase.failed:
 +      final error = state.error;
 +      if (error != null) {
-+        return '${kailoReasonText(error.reason)} '
-+            '(${kailoReasonCode(error.reason)})';
++        return kailoText(
++          KailoMessageKey.platformReasonWithCode,
++          locale: locale,
++          variables: {
++            'text': kailoReasonText(error.reason, locale: locale),
++            'code': kailoReasonCode(error.reason),
++          },
++        );
 +      }
-+      return '${kailoPhaseText(state.phase)} ${state.detail ?? ''}'.trim();
++      return kailoPhaseText(state.phase, locale: locale);
 +    case KailoLinkPhase.outcomeUnknown:
-+      // 结果不明：只说不明与原话，不渲染成成功或失败
-+      return '${kailoPhaseText(state.phase)} ${state.detail ?? ''}'.trim();
++      // 原始异常只作诊断证据，不向用户显示，更不把结果不明渲染为失败。
++      return kailoPhaseText(state.phase, locale: locale);
 +    default:
 +      return null;
 +  }
@@ -10861,13 +10971,14 @@ index 0000000000000000000000000000000000000000..e9ba73647a13ebbb37756e82c973ae96
 +}
 diff --git a/mobile/lib/features/kailo/kailo_unavailable_page.dart b/mobile/lib/features/kailo/kailo_unavailable_page.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..e064c1b88647e8f5906be31d5431ed0a9cf1e374
+index 0000000000000000000000000000000000000000..ef55a6481f9de7d5bbcd8376ccd48d140f644794
 --- /dev/null
 +++ b/mobile/lib/features/kailo/kailo_unavailable_page.dart
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,53 @@
 +import 'package:flutter/material.dart';
 +
 +import '../../shared/contracts/contracts.dart';
++import '../../shared/kailo/kailo_platform_text.dart';
 +import '../../shared/kailo/kailo_reason_text.dart';
 +import '../../shared/theme/theme.dart';
 +
@@ -10885,12 +10996,20 @@ index 0000000000000000000000000000000000000000..e064c1b88647e8f5906be31d5431ed0a
 +
 +  @override
 +  Widget build(BuildContext context) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    return Scaffold(
-+      appBar: AppBar(title: const Text('Not available here')),
++      appBar: AppBar(
++        title: Text(
++          kailoText(KailoMessageKey.nativeUnavailableTitle, locale: locale),
++        ),
++      ),
 +      body: ListView(
 +        padding: const EdgeInsets.all(Grid.gutter),
 +        children: [
-+          Text(kailoReasonText(reason), style: context.textTheme.bodyLarge),
++          Text(
++            kailoReasonText(reason, locale: locale),
++            style: context.textTheme.bodyLarge,
++          ),
 +          const SizedBox(height: Grid.xs),
 +          SelectableText(
 +            kailoReasonCode(reason),
@@ -14492,10 +14611,10 @@ index 0000000000000000000000000000000000000000..b661eaf438f732e17c0a2c7373b57629
 +);
 diff --git a/mobile/lib/shared/kailo/kailo_config.dart b/mobile/lib/shared/kailo/kailo_config.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..402106cf423e1f975f0520bc5dd58760f5750e37
+index 0000000000000000000000000000000000000000..cf038d9b2d8640d21dfb308913f7d9be59f14f0a
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_config.dart
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,146 @@
 +/// 部署事实：原生入口地址、IdP issuer 与原生端 client id（Kailo `DD-78`）。
 +///
 +/// 它们因部署而异，不编进产物：首次启动由用户填写（或由管理员告知后填写），保存在
@@ -14510,6 +14629,19 @@ index 0000000000000000000000000000000000000000..402106cf423e1f975f0520bc5dd58760
 +import '../theme/theme_provider.dart';
 +
 +const _prefsKey = 'kailo.config.v1';
++
++/// 不带展示文案的部署配置校验结论。界面从共享文案目录翻译它。
++enum KailoConfigIssue {
++  nativeInvalidUrl,
++  issuerInvalidUrl,
++  nativeInvalidScheme,
++  issuerInvalidScheme,
++  nativeQueryOrFragment,
++  issuerQueryOrFragment,
++  nativeUserInfo,
++  issuerUserInfo,
++  clientIdRequired,
++}
 +
 +class KailoConfig {
 +  const KailoConfig({
@@ -14528,26 +14660,31 @@ index 0000000000000000000000000000000000000000..402106cf423e1f975f0520bc5dd58760
 +  final String oidcClientId;
 +
 +  /// 配置无效时返回原因，有效时返回 null。
-+  String? validate() {
-+    for (final (name, value) in [
-+      ('Native API URL', nativeApiUrl),
-+      ('IdP issuer', oidcIssuer),
-+    ]) {
++  KailoConfigIssue? validate() {
++    for (final (native, value) in [(true, nativeApiUrl), (false, oidcIssuer)]) {
 +      final uri = Uri.tryParse(value.trim());
 +      if (uri == null || !uri.hasAuthority || uri.host.isEmpty) {
-+        return '$name is not a valid URL';
++        return native
++            ? KailoConfigIssue.nativeInvalidUrl
++            : KailoConfigIssue.issuerInvalidUrl;
 +      }
 +      if (uri.scheme != 'https' && uri.scheme != 'http') {
-+        return '$name must be an http or https URL';
++        return native
++            ? KailoConfigIssue.nativeInvalidScheme
++            : KailoConfigIssue.issuerInvalidScheme;
 +      }
 +      if (uri.hasQuery || uri.hasFragment) {
-+        return '$name must not carry a query or fragment';
++        return native
++            ? KailoConfigIssue.nativeQueryOrFragment
++            : KailoConfigIssue.issuerQueryOrFragment;
 +      }
 +      if (uri.userInfo.isNotEmpty) {
-+        return '$name must not carry user info';
++        return native
++            ? KailoConfigIssue.nativeUserInfo
++            : KailoConfigIssue.issuerUserInfo;
 +      }
 +    }
-+    if (oidcClientId.trim().isEmpty) return 'Client ID is required';
++    if (oidcClientId.trim().isEmpty) return KailoConfigIssue.clientIdRequired;
 +    return null;
 +  }
 +
@@ -14612,7 +14749,7 @@ index 0000000000000000000000000000000000000000..402106cf423e1f975f0520bc5dd58760
 +  /// 保存一份新配置。无效时抛出 [ArgumentError]，不写入。
 +  Future<void> save(KailoConfig config) async {
 +    final problem = config.validate();
-+    if (problem != null) throw ArgumentError(problem);
++    if (problem != null) throw ArgumentError(problem.name);
 +    final normalized = KailoConfig.fromJson(config.toJson())!;
 +    await ref
 +        .read(savedPrefsProvider)
@@ -14750,7 +14887,7 @@ index 0000000000000000000000000000000000000000..42bac986b51fc82e1b97b4a91630ae26
 +);
 diff --git a/mobile/lib/shared/kailo/kailo_link.dart b/mobile/lib/shared/kailo/kailo_link.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..022a220e5b20e5640eef0733234d07cf4325a8ca
+index 0000000000000000000000000000000000000000..f93f3b634eb72157a3c9127ae86b5620887c5522
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_link.dart
 @@ -0,0 +1,351 @@
@@ -14798,7 +14935,7 @@ index 0000000000000000000000000000000000000000..022a220e5b20e5640eef0733234d07cf
 +  /// Relay 连接事实已交给协作会话
 +  linked,
 +
-+  /// 以 [KailoLinkState.error] 或 [KailoLinkState.detail] 说明的确定失败
++  /// 确定失败；[KailoLinkState.error] 是可展示的契约错误，detail 仅作诊断证据
 +  failed,
 +
 +  /// 请求发出后没有得到可判定的回应：既不是成功也不是失败
@@ -14818,7 +14955,7 @@ index 0000000000000000000000000000000000000000..022a220e5b20e5640eef0733234d07cf
 +  /// BFF 按契约给出的错误体
 +  final ErrorBody? error;
 +
-+  /// 契约之外的说明（IdP 或网络的原话），只用于展示
++  /// 契约之外的说明（IdP 或网络的原话），仅作诊断证据，不进入用户界面
 +  final String? detail;
 +
 +  /// 老服务端没有提供重查间隔时只允许用户主动确认，不猜自动重查频率。
@@ -40983,16 +41120,17 @@ index fc0aaa966b7bc4a642a823430daf3cd5dda2477a..e382255f8a53ea0ed42788752101bc0e
  Widget _buildSettingsPage(BuildContext context) => const SizedBox.shrink();
 diff --git a/mobile/test/features/kailo/kailo_pages_test.dart b/mobile/test/features/kailo/kailo_pages_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..195a9a644742bb88e66c42896ec1017a8ebcc77d
+index 0000000000000000000000000000000000000000..26c374a0a7d1e70bfa03ce989e37b06cd3cd8249
 --- /dev/null
 +++ b/mobile/test/features/kailo/kailo_pages_test.dart
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,212 @@
 +import 'dart:convert';
 +
 +import 'package:buzz/features/kailo/kailo_audit_page.dart';
 +import 'package:buzz/features/kailo/kailo_devices_page.dart';
 +import 'package:buzz/features/kailo/kailo_members_page.dart';
 +import 'package:buzz/shared/kailo/kailo_api.dart';
++import 'package:buzz/shared/kailo/kailo_platform_text.dart';
 +import 'package:buzz/shared/relay/relay.dart';
 +import 'package:buzz/shared/theme/theme.dart';
 +import 'package:flutter/material.dart';
@@ -41033,7 +41171,11 @@ index 0000000000000000000000000000000000000000..195a9a644742bb88e66c42896ec1017a
 +        myPubkeyProvider.overrideWithValue(_thisDevice),
 +        ...overrides,
 +      ],
-+      child: MaterialApp(theme: AppTheme.light(), home: page),
++      child: MaterialApp(
++        locale: const Locale('en'),
++        theme: AppTheme.light(),
++        home: page,
++      ),
 +    ),
 +  );
 +  await tester.pumpAndSettle();
@@ -41135,7 +41277,10 @@ index 0000000000000000000000000000000000000000..195a9a644742bb88e66c42896ec1017a
 +      find.byKey(const ValueKey('kailo-view-error')),
 +    );
 +    expect(text.data, contains('not known'));
-+    expect(find.text('Retry'), findsOneWidget);
++    expect(
++      find.text(kailoText(KailoMessageKey.platformRetry, locale: 'en')),
++      findsOneWidget,
++    );
 +  });
 +
 +  testWidgets('audit lists only what the BFF returns for the caller', (
@@ -41189,6 +41334,65 @@ index 0000000000000000000000000000000000000000..195a9a644742bb88e66c42896ec1017a
 +    expect(find.text('Ada'), findsOneWidget);
 +    expect(find.text('ACTIVE · 2 keys'), findsOneWidget);
 +    expect(find.text('1 member'), findsOneWidget);
++  });
++}
+diff --git a/mobile/test/features/kailo/kailo_presentation_test.dart b/mobile/test/features/kailo/kailo_presentation_test.dart
+new file mode 100644
+index 0000000000000000000000000000000000000000..7f9567c5ab28eb7cde3f298b21a189292b0380d0
+--- /dev/null
++++ b/mobile/test/features/kailo/kailo_presentation_test.dart
+@@ -0,0 +1,53 @@
++import 'package:buzz/features/kailo/kailo_async_view.dart';
++import 'package:buzz/features/kailo/kailo_status_text.dart';
++import 'package:buzz/shared/kailo/kailo_api.dart';
++import 'package:buzz/shared/kailo/kailo_link.dart';
++import 'package:flutter_test/flutter_test.dart';
++
++void main() {
++  test('connection states use the shared locale catalog', () {
++    expect(
++      kailoPhaseText(KailoLinkPhase.signingIn, locale: 'zh-CN'),
++      '正在等待浏览器中的登录完成…',
++    );
++    expect(
++      kailoPhaseText(KailoLinkPhase.outcomeUnknown, locale: 'zh-CN'),
++      '结果尚不明确。',
++    );
++  });
++
++  test('diagnostic text never leaks into connection or request UI', () {
++    const privateDetail = 'private IdP response and token';
++    final failed = kailoOutcomeText(
++      const KailoLinkState(KailoLinkPhase.failed, detail: privateDetail),
++      locale: 'zh-CN',
++    );
++    final unknown = kailoOutcomeText(
++      const KailoLinkState(
++        KailoLinkPhase.outcomeUnknown,
++        detail: privateDetail,
++      ),
++      locale: 'zh-CN',
++    );
++    final unavailable = kailoErrorText(
++      const KailoUnavailable(privateDetail),
++      locale: 'zh-CN',
++    );
++    final unexpected = kailoErrorText(privateDetail, locale: 'zh-CN');
++
++    for (final text in [failed!, unknown!, unavailable, unexpected]) {
++      expect(text, isNot(contains(privateDetail)));
++    }
++    expect(unknown, '结果尚不明确。');
++    expect(unavailable, contains('结果尚不明确'));
++  });
++
++  test('response without a contract error remains outcome unknown', () {
++    final text = kailoErrorText(
++      const KailoApiError(KailoResponse(502, null)),
++      locale: 'zh-CN',
++    );
++    expect(text, contains('HTTP 502'));
++    expect(text, contains('结果尚不明确'));
 +  });
 +}
 diff --git a/mobile/test/features/kailo/kailo_tasks_page_test.dart b/mobile/test/features/kailo/kailo_tasks_page_test.dart
@@ -44411,10 +44615,10 @@ index 0000000000000000000000000000000000000000..166edf6d1288f875eec5cfc0a61e7856
 +}
 diff --git a/mobile/test/shared/kailo/kailo_config_test.dart b/mobile/test/shared/kailo/kailo_config_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..7cde3d712b4ca38f88ece5135508d8b65b34d5d8
+index 0000000000000000000000000000000000000000..5959fdb68c0c1085fa072701af0ead9686fcf0c5
 --- /dev/null
 +++ b/mobile/test/shared/kailo/kailo_config_test.dart
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,92 @@
 +import 'package:buzz/shared/kailo/kailo_config.dart';
 +import 'package:buzz/shared/theme/theme_provider.dart';
 +import 'package:flutter_test/flutter_test.dart';
@@ -44447,6 +44651,21 @@ index 0000000000000000000000000000000000000000..7cde3d712b4ca38f88ece5135508d8b6
 +    ]) {
 +      expect(bad.validate(), isNotNull, reason: bad.toJson().toString());
 +    }
++  });
++
++  test('returns typed validation issues instead of display-language text', () {
++    expect(
++      _config('ftp://k.test', 'https://idp.test', 'n').validate(),
++      KailoConfigIssue.nativeInvalidScheme,
++    );
++    expect(
++      _config('https://k.test', 'https://idp.test#f', 'n').validate(),
++      KailoConfigIssue.issuerQueryOrFragment,
++    );
++    expect(
++      _config('https://k.test', 'https://idp.test', ' ').validate(),
++      KailoConfigIssue.clientIdRequired,
++    );
 +  });
 +
 +  test('joins API paths without a double slash', () {
