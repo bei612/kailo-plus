@@ -61,6 +61,20 @@ capabilities:
   tools: []
   workflow_kinds:
   - MEMBERSHIP_REVOCATION
+- id: governance.tenant_invitation
+  exposure: end_user
+  routes:
+  - /api/v1/actions
+  - /api/v1/invitations
+  - /api/v1/invitations/redeem
+  - /api/v1/invitations/redemptions
+  actions:
+  - tenant.member.invite
+  - tenant.member.invite.revoke
+  - tenant.member.admit
+  tools: []
+  workflow_kinds:
+  - MEMBERSHIP_PROJECTION
 - id: identity.client_keys
   exposure: end_user
   routes:

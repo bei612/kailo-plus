@@ -1,0 +1,44 @@
+capability_id: governance.tenant_invitation
+title: Tenant 成员邀请的签发、撤回、兑换、admin 确认与开通，已撤权成员的恢复
+stage: S2
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-03]
+  decisions: [DD-83, DD-82, DD-47, DD-54]
+  facts: [SF-AGW-17, SF-AGW-22]
+  seams: []
+  blockers: []
+  entities: [TenantInvitation, TenantMembership, HumanIdentity, ExternalIdentity, Principal, ActionDefinition, ApprovalPolicy, ActionDecision, ActionExecution, ApprovalProjection]
+
+validation:
+  scenarios: [V-SCN-67, V-SCN-07]
+  evidence:
+    - dimension: 端到端场景
+      ref: core/verify/tenant-invitation.md
+    - dimension: 安全边界
+      ref: core/verify/tenant-invitation.md
+    - dimension: 运维手册
+      ref: docs/runbooks/RB-01-invariant-check-failure.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-core/src/invitation.rs, core/crates/kailo-core/src/external_human.rs, core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/tenant_bootstrap.rs, core/crates/kailo-core/src/bff.rs]
+  # 邀请管理页与兑换页由共享 TS 包交付（另一条线），本记录只含 BFF 端点
+  surfaces: []
+  schemas: [contracts/api/action_command.schema.json, contracts/api/action_submission.schema.json, contracts/api/issued_invitation.schema.json, contracts/api/invitation_redemption_request.schema.json, contracts/api/invitation_redemption.schema.json, contracts/api/tenant_invitation.schema.json, contracts/enums/tenant_invitation_status.schema.json, contracts/enums/reason_code.schema.json]
+  migrations: [core/migrations/20260926100000_tenant_invitation.up.sql]
+
+runtime:
+  routes: ["/api/v1/actions", "/api/v1/invitations", "/api/v1/invitations/redeem", "/api/v1/invitations/redemptions"]
+  actions: [tenant.member.invite, tenant.member.invite.revoke, tenant.member.admit]
+  workflow_kinds: [MEMBERSHIP_PROJECTION]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:24751a5558478a1e314dbeec36259044c8d06ce007612325f4c333e0f817406f
+    - name: kailo-worker
+      digest: sha256:9baba554a9c0a3e1053154472c45692dcece8ba8fac9fa518cd6247ee59c037a
+  gate: ready
