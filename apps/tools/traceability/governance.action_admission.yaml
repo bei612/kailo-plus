@@ -19,6 +19,8 @@ validation:
       ref: core/verify/governed-action.md
     - dimension: 安全边界
       ref: core/verify/governed-action.md
+    - dimension: 安全边界
+      ref: core/verify/task-terminal-observation.md
     - dimension: Workflow 重放
       ref: worker/replay-tests/testdata/approval_consumed_history.json
     - dimension: Workflow 重放

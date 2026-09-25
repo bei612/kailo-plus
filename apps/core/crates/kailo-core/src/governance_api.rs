@@ -126,6 +126,16 @@ fn observation(r: &TaskRow) -> Option<ReasonCode> {
     if r.observation_gap == Some(true) {
         return Some(ReasonCode::ProjectionDelayed);
     }
+    // WorkflowRef 已标终态却没有对应的终态 TaskProjection，不能把缺失的
+    // 派生事实当作一次完成。取得确定的 Temporal 对账修复后再展示结果。
+    if r.ref_state.as_deref() == Some("TERMINAL")
+        && !matches!(
+            r.task_status.as_deref(),
+            Some("COMPLETED" | "FAILED" | "CANCELED" | "TERMINATED" | "TIMED_OUT")
+        )
+    {
+        return Some(ReasonCode::ProjectionDelayed);
+    }
     // 业务 Workflow 超过新鲜度上界仍没有任何写回（Start 未确认或从未投影 RUNNING）
     let stale = |state: &Option<String>, stale: Option<bool>, written: bool| {
         matches!(state.as_deref(), Some("PENDING_START" | "RUNNING"))
@@ -243,6 +253,50 @@ pub async fn get_task(
         },
         Ok(None) => Refusal::Precondition(ReasonCode::TargetNotFound).respond(None),
         Err(e) => Refusal::from(e).respond(None),
+    }
+}
+
+#[cfg(test)]
+mod task_observation_tests {
+    use super::*;
+
+    fn terminal_row(task_status: Option<&str>) -> TaskRow {
+        TaskRow {
+            id: Uuid::new_v4(),
+            operation_id: Uuid::new_v4(),
+            action_key: "scope.provision".to_owned(),
+            action_version: 1,
+            workspace_id: None,
+            target_id: Uuid::new_v4(),
+            gate_state: "ALLOWED".to_owned(),
+            dispatch_state: "DISPATCHED".to_owned(),
+            reason_code: None,
+            approval_workflow_id: None,
+            temporal_workflow_id: Some("workflow".to_owned()),
+            created_at: Utc::now(),
+            approval_status: None,
+            approval_ref_state: None,
+            approval_ref_stale: None,
+            kind: Some("TENANT_LIFECYCLE".to_owned()),
+            ref_state: Some("TERMINAL".to_owned()),
+            ref_stale: Some(false),
+            task_status: task_status.map(str::to_owned),
+            waiting_reason: None,
+            observation_gap: Some(false),
+        }
+    }
+
+    #[test]
+    fn terminal_ref_requires_terminal_task_projection() {
+        assert_eq!(
+            observation(&terminal_row(None)),
+            Some(ReasonCode::ProjectionDelayed)
+        );
+        assert_eq!(
+            observation(&terminal_row(Some("RUNNING"))),
+            Some(ReasonCode::ProjectionDelayed)
+        );
+        assert_eq!(observation(&terminal_row(Some("COMPLETED"))), None);
     }
 }
 
