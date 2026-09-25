@@ -66,6 +66,8 @@ type ComponentTaskInput struct {
 	// 单调去重（06 §2：按 workflow ID 而非 run ID 聚合），新 run 的 history 从零
 	// 数起，不加上它，续跑后的投影会被当成旧事件丢掉。
 	EventBase int64 `json:"eventBase,omitempty"`
+	// 取消后的终态投影尚未落库时，continue-as-new 只续跑收尾，不重放业务步骤。
+	CancelPending bool `json:"cancelPending,omitempty"`
 }
 
 // Retry 是 Activity 的超时与重试上界，以及两轮收敛之间的等待。它们是部署
@@ -120,12 +122,26 @@ const waitingConvergence = "CONVERGENCE_PENDING"
 func converge(
 	ctx workflow.Context,
 	in ComponentTaskInput,
-	project func(generated.TaskStatus, *string) error,
-	fn func(workflow.Context) error,
+	project func(workflow.Context, generated.TaskStatus, *string) workflow.Future,
+	fn func(workflow.Context) workflow.Future,
+	result interface{},
 ) error {
 	ao := workflow.WithActivityOptions(ctx, activityOptions())
 	for {
-		err := fn(ao)
+		if temporal.IsCanceledError(ctx.Err()) {
+			return temporal.NewCanceledError()
+		}
+		future := fn(ao)
+		var err error
+		selector := workflow.NewSelector(ctx)
+		selector.AddFuture(future, func(f workflow.Future) { err = f.Get(ctx, result) })
+		selector.AddReceive(ctx.Done(), func(workflow.ReceiveChannel, bool) {
+			err = temporal.NewCanceledError()
+		})
+		selector.Select(ctx)
+		if temporal.IsCanceledError(ctx.Err()) {
+			return temporal.NewCanceledError()
+		}
 		if err == nil {
 			return nil
 		}
@@ -137,7 +153,7 @@ func converge(
 		workflow.GetLogger(ctx).Warn("本轮收敛未完成，等待下一轮", "error", err)
 		reason := waitingConvergence
 		// 等待原因写不进去不阻塞收敛本身：下一轮会再写
-		_ = project(generated.Running, &reason)
+		_ = project(ctx, generated.Running, &reason).Get(ctx, nil)
 		if err := workflow.Sleep(ctx, retry.RoundInterval); err != nil {
 			return err
 		}
@@ -159,9 +175,9 @@ func eventID(ctx workflow.Context, in ComponentTaskInput) int64 {
 // event_id 取自 history 长度（加上 continue-as-new 带入的累计）：它单调，且
 // 重放会走过同一段 history，因此在每个调用点取到同一个值——既能给 Core 做单调
 // 去重，又不破坏确定性（时钟与随机数都不行）。
-func projector(ctx workflow.Context, in ComponentTaskInput) func(generated.TaskStatus, *string) error {
-	info := workflow.GetInfo(ctx)
-	return func(status generated.TaskStatus, waiting *string) error {
+func projector(in ComponentTaskInput) func(workflow.Context, generated.TaskStatus, *string) workflow.Future {
+	return func(ctx workflow.Context, status generated.TaskStatus, waiting *string) workflow.Future {
+		info := workflow.GetInfo(ctx)
 		o := workflow.WithActivityOptions(ctx, activityOptions())
 		return workflow.ExecuteActivity(o, (*activities.CoreAPI).ProjectTaskState,
 			generated.TaskStateReport{
@@ -170,7 +186,7 @@ func projector(ctx workflow.Context, in ComponentTaskInput) func(generated.TaskS
 				EventID:       eventID(ctx, in),
 				Status:        status,
 				WaitingReason: waiting,
-			}).Get(ctx, nil)
+			})
 	}
 }
 
@@ -182,23 +198,27 @@ func projector(ctx workflow.Context, in ComponentTaskInput) func(generated.TaskS
 type task struct {
 	ctx     workflow.Context
 	in      ComponentTaskInput
-	project func(generated.TaskStatus, *string) error
+	project func(workflow.Context, generated.TaskStatus, *string) workflow.Future
 }
 
 func newTask(ctx workflow.Context, in ComponentTaskInput) *task {
-	return &task{ctx: ctx, in: in, project: projector(ctx, in)}
+	return &task{ctx: ctx, in: in, project: projector(in)}
 }
 
-func (t *task) step(fn func(workflow.Context) error) error {
-	return converge(t.ctx, t.in, t.project, fn)
+func (t *task) step(fn func(workflow.Context) workflow.Future, result interface{}) error {
+	return converge(t.ctx, t.in, t.project, fn, result)
 }
 
 func (t *task) begin() error {
-	return t.step(func(workflow.Context) error { return t.project(generated.Running, nil) })
+	return t.step(func(ctx workflow.Context) workflow.Future {
+		return t.project(ctx, generated.Running, nil)
+	}, nil)
 }
 
 func (t *task) complete() error {
-	return t.step(func(workflow.Context) error { return t.project(generated.Completed, nil) })
+	return t.step(func(ctx workflow.Context) workflow.Future {
+		return t.project(ctx, generated.Completed, nil)
+	}, nil)
 }
 
 // fail 记下失败再把原因抛出。失败路径也要留下可见状态；投影自己再失败时，
@@ -209,11 +229,34 @@ func (t *task) fail(cause error) error {
 	if errors.As(cause, &cont) {
 		return cause
 	}
-	if err := t.project(generated.Failed, nil); err != nil {
+	if temporal.IsCanceledError(t.ctx.Err()) {
+		return t.cancel()
+	}
+	if err := t.project(t.ctx, generated.Failed, nil).Get(t.ctx, nil); err != nil {
+		if temporal.IsCanceledError(t.ctx.Err()) {
+			return t.cancel()
+		}
 		workflow.GetLogger(t.ctx).Error("终态投影失败", "cause", cause, "error", err)
 		return fmt.Errorf("%w（且 FAILED 投影未写入: %v）", cause, err)
 	}
 	return cause
+}
+
+// cancel 在与已取消的业务 Context 脱离后写 CANCELED。当前激活的 kind 没有
+// ExternalExecution 或 CapacityLease 可清理；已投递的幂等投影仍以实体的
+// PROVISIONING/REVOKING 与后续 rerun 对账，不能把取消解释为外部副作用已回滚。
+func (t *task) cancel() error {
+	detached, done := workflow.NewDisconnectedContext(t.ctx)
+	defer done()
+	next := t.in
+	next.CancelPending = true
+	err := converge(detached, next, t.project, func(ctx workflow.Context) workflow.Future {
+		return t.project(ctx, generated.Canceled, nil)
+	}, nil)
+	if err != nil {
+		return err
+	}
+	return temporal.NewCanceledError()
 }
 
 // ComponentTask 执行一个 ComponentTaskWorkflow。
@@ -221,6 +264,9 @@ func (t *task) fail(cause error) error {
 // 未实现的 kind 落到 default 分支当场失败——不写一个「什么都不做就成功」的
 // 分支，那会让未实现的能力看起来像执行过了。
 func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
+	if in.CancelPending {
+		return newTask(ctx, in).cancel()
+	}
 	switch in.Kind {
 	case generated.MembershipProjection:
 		return membershipLifecycle(ctx, in, activities.Present, "ACTIVE")
@@ -276,16 +322,16 @@ func membershipLifecycle(
 			workflow.DefaultVersion, 1) == 1
 	}
 	if fullRevocation {
-		if err := t.step(func(ao workflow.Context) error {
+		if err := t.step(func(ao workflow.Context) workflow.Future {
 			return workflow.ExecuteActivity(ao, (*activities.SpiceDB).RevokeSubject,
 				activities.SubjectScope{
 					TenantID:           m.RelationObjectID,
 					SubjectPrincipalID: m.SubjectPrincipalID,
-				}).Get(ctx, nil)
-		}); err != nil {
+				})
+		}, nil); err != nil {
 			return t.fail(err)
 		}
-	} else if err := t.step(func(ao workflow.Context) error {
+	} else if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
 			activities.Relationship{
 				ResourceType: relationObject,
@@ -293,8 +339,8 @@ func membershipLifecycle(
 				Relation:     "member",
 				SubjectType:  "principal",
 				SubjectID:    m.SubjectPrincipalID,
-			}, want).Get(ctx, nil)
-	}); err != nil {
+			}, want)
+	}, nil); err != nil {
 		return t.fail(err)
 	}
 
@@ -304,21 +350,21 @@ func membershipLifecycle(
 	if want == activities.Absent {
 		presence = "ABSENT"
 	}
-	if err := t.step(func(ao workflow.Context) error {
+	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProjectBuzzRoster,
 			activities.BuzzProjectionInput{
 				Scope:             m.Scope,
 				MembershipID:      m.MembershipID,
 				MembershipVersion: m.MembershipVersion,
 				Presence:          presence,
-			}).Get(ctx, nil)
-	}); err != nil {
+			})
+	}, nil); err != nil {
 		return t.fail(err)
 	}
 
 	// 3. 两个投影都已查证，才让 Core 跃迁成员状态。
 	var out activities.TransitionOutput
-	if err := t.step(func(ao workflow.Context) error {
+	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionMembership,
 			activities.TransitionInput{
 				Scope:        m.Scope,
@@ -326,8 +372,8 @@ func membershipLifecycle(
 				FromVersion:  m.MembershipVersion,
 				ToState:      terminal,
 				WorkflowID:   workflow.GetInfo(ctx).WorkflowExecution.ID,
-			}).Get(ctx, &out)
-	}); err != nil {
+			})
+	}, &out); err != nil {
 		return t.fail(err)
 	}
 	workflow.GetLogger(ctx).Info("成员状态已跃迁", "state", out.State, "version", out.Version)
@@ -353,19 +399,19 @@ func tenantLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 	}
 
 	stepIn := activities.TenantStepInput{TenantID: s.ID, TenantVersion: s.Version}
-	if err := t.step(func(ao workflow.Context) error {
-		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProvisionTenantBuzz, stepIn).Get(ctx, nil)
-	}); err != nil {
+	if err := t.step(func(ao workflow.Context) workflow.Future {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProvisionTenantBuzz, stepIn)
+	}, nil); err != nil {
 		return t.fail(err)
 	}
-	if err := t.step(func(ao workflow.Context) error {
-		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).VerifyTenantBuzz, stepIn).Get(ctx, nil)
-	}); err != nil {
+	if err := t.step(func(ao workflow.Context) workflow.Future {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).VerifyTenantBuzz, stepIn)
+	}, nil); err != nil {
 		return t.fail(err)
 	}
 
 	var out activities.TransitionOutput
-	if err := t.step(func(ao workflow.Context) error {
+	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
 			activities.ScopeTransitionInput{
 				Kind:        "TENANT",
@@ -373,8 +419,8 @@ func tenantLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 				FromVersion: s.Version,
 				ToState:     "ACTIVE",
 				WorkflowID:  workflow.GetInfo(ctx).WorkflowExecution.ID,
-			}).Get(ctx, &out)
-	}); err != nil {
+			})
+	}, &out); err != nil {
 		return t.fail(err)
 	}
 	workflow.GetLogger(ctx).Info("Tenant 已就绪", "state", out.State, "version", out.Version)
@@ -398,26 +444,26 @@ func workspaceLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 		return t.fail(err)
 	}
 
-	if err := t.step(func(ao workflow.Context) error {
+	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
 			activities.Relationship{
 				ResourceType: "workspace", ResourceID: s.ID, Relation: "tenant",
 				SubjectType: "tenant", SubjectID: s.TenantID,
-			}, activities.Present).Get(ctx, nil)
-	}); err != nil {
+			}, activities.Present)
+	}, nil); err != nil {
 		return t.fail(err)
 	}
-	if err := t.step(func(ao workflow.Context) error {
+	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProvisionWorkspaceBuzz,
 			activities.WorkspaceStepInput{
 				WorkspaceID: s.ID, WorkspaceVersion: s.Version,
-			}).Get(ctx, nil)
-	}); err != nil {
+			})
+	}, nil); err != nil {
 		return t.fail(err)
 	}
 
 	var out activities.TransitionOutput
-	if err := t.step(func(ao workflow.Context) error {
+	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
 			activities.ScopeTransitionInput{
 				Kind:        "WORKSPACE",
@@ -425,8 +471,8 @@ func workspaceLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 				FromVersion: s.Version,
 				ToState:     "ACTIVE",
 				WorkflowID:  workflow.GetInfo(ctx).WorkflowExecution.ID,
-			}).Get(ctx, &out)
-	}); err != nil {
+			})
+	}, &out); err != nil {
 		return t.fail(err)
 	}
 	workflow.GetLogger(ctx).Info("Workspace 已就绪", "state", out.State, "version", out.Version)
@@ -450,13 +496,13 @@ func identityProjection(ctx workflow.Context, in ComponentTaskInput) error {
 	}
 
 	var out activities.IdentityProjectionOutput
-	if err := t.step(func(ao workflow.Context) error {
+	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProjectBuzzIdentity,
 			activities.IdentityProjectionInput{
 				Pubkey:         id.Pubkey,
 				BindingVersion: id.BindingVersion,
-			}).Get(ctx, &out)
-	}); err != nil {
+			})
+	}, &out); err != nil {
 		return t.fail(err)
 	}
 	workflow.GetLogger(ctx).Info("设备公钥已收敛", "pubkey", out.Pubkey, "state", out.State)
