@@ -7,12 +7,24 @@
 # 清单的解析、校验与摘要算法只在 tools/upstream_manifest.py：本脚本与
 # check.sh seam 共用它，不各算一份。
 #
-# 用法：tools/build-upstream.sh <project>
+# 用法：tools/build-upstream.sh [--source-only <目录>] <project>
 # project 对应 upstream-patches/<project>/baseline.yaml
+#
+# --source-only：按清单备好源树（取源、裁剪、打补丁、放入 vendor_files）后放到
+# <目录> 并停下，不构建。用于把清单重建出的源树与开发中的上游工作树逐文件比对。
+#
+# UPSTREAM_MIRROR：取源的替代地址（例如本机已有的上游克隆）。取的仍是清单里那个
+# commit——git 按对象哈希校验，换地址换不了内容，只省掉一次慢速的远端拉取。
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
-project="${1:?用法: tools/build-upstream.sh <project>}"
+source_only=""
+if [ "${1:-}" = "--source-only" ]; then
+  source_only="$(realpath -m "${2:?--source-only 需要目录}")"
+  shift 2
+  [ ! -e "$source_only" ] || { echo "$source_only 已存在" >&2; exit 2; }
+fi
+project="${1:?用法: tools/build-upstream.sh [--source-only <目录>] <project>}"
 manifest="upstream-patches/$project/baseline.yaml"
 [ -f "$manifest" ] || { echo "缺少 $manifest" >&2; exit 2; }
 plan=$(python3 tools/upstream_manifest.py plan "$manifest") || exit 2
@@ -22,11 +34,12 @@ export DOCKER_BUILDKIT=1
 SUDO=""; docker info >/dev/null 2>&1 || SUDO="sudo -n"
 
 src=$(mktemp -d); trap 'rm -rf "$src"' EXIT
-echo "== 取源：$url @ ${base:0:12} =="
+echo "== 取源：${UPSTREAM_MIRROR:-$url} @ ${base:0:12} =="
 git init -q "$src"
-git -C "$src" remote add origin "$url"
+git -C "$src" remote add origin "${UPSTREAM_MIRROR:-$url}"
 git -C "$src" fetch -q --depth 1 origin "$base"
 git -C "$src" checkout -q FETCH_HEAD
+[ "$(git -C "$src" rev-parse HEAD)" = "$base" ] || { echo "取到的不是 $base" >&2; exit 2; }
 
 # 构建上下文可能在子目录下（例如 buzz-web 的 web/）。默认仓库根。
 [ -d "$src/$ctx" ] || { echo "build_context $ctx 不存在于源树" >&2; exit 2; }
@@ -51,6 +64,13 @@ done
 # 在打完补丁后放进源树。放置规则只在 upstream_manifest.py 的 vendor 里（开发中的
 # 上游工作树用同一个命令），目标已存在即失败。
 python3 tools/upstream_manifest.py vendor "$manifest" "$src"
+
+if [ -n "$source_only" ]; then
+  rm -rf "$src/.git"
+  mv "$src" "$source_only"
+  echo "  源树：$source_only"
+  exit 0
+fi
 
 # 产物有两种形态。镜像：用上游自带的 Dockerfile 构建，推入 registry，摘要是
 # registry digest。安装包：上游没有打包用的 Dockerfile，清单以 build_dockerfile

@@ -1,0 +1,15 @@
+# 本文件优先于源树根的 .dockerignore（BuildKit 按 Dockerfile 同名 .dockerignore）。
+# 上游根的 .dockerignore 为 Relay 镜像而写，把 desktop/ 与 mobile/ 整个排除；
+# 安装包构建恰恰需要 desktop/。其余排除项与上游一致：构建产物、依赖目录、VCS
+# 与本地密钥不进构建上下文。
+target/
+**/target/
+node_modules/
+**/node_modules/
+.git/
+.github/
+.env
+.env.*
+*.pem
+*.key
+secrets/

@@ -4,7 +4,10 @@
 
 基线 block/buzz `779af8886caae1317b4de962082429867ab61503` 的 `mobile/`（Flutter/Dart，SF-MOB-01/02）。
 Mobile 不是组件宿主、不承载文档编辑（REQ-21）：一期交付登录、协作数据平面（被授予的 private
-Channel 里的 kind 9 消息，本机持钥直连 Relay，DD-75）与成员、本人审计、本人设备三页管理面视图。
+Channel 里的 kind 9 消息，本机持钥直连 Relay，DD-75）与成员、本人任务、待我审批、本人审计、本人
+设备五页管理面视图。任务与审批是受权只读视图（apps/02 §4「Mobile 只读」）：不渲染撤回、批准、
+拒绝入口，详情里说明到 Web/Desktop 完成；状态读法与 Web/Desktop 共用包的 `taskPhase` 逐条相同，
+结果不明与投影落后显示为等待对账。
 深链进入未交付的能力返回稳定 reason code `SURFACE_CAPABILITY_UNAVAILABLE` 并指向 Web/Desktop
 （V-SCN-65），不以内嵌 WebView 承载。
 
@@ -19,21 +22,28 @@ URI scheme 回调，IdP 登记见 `core/verify/native-identity.md`）、刷新�
 
 ## 清单可复现
 
-按本清单从基线重建源树（删除 130 条登记路径、打 `0001-kailo-mobile.patch`、放入 2 个生成物），
-与开发分支 `kailo` 的最终树逐文件比对：完全一致（2026-09-24）。
+清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `36cc1f7872e0630bf8223b19f7fc2a19d18c36e0`）。
+`UPSTREAM_MIRROR=<开发树> tools/build-upstream.sh --source-only <目录> buzz-mobile` 按本清单从基线
+重建源树（删除 130 条登记路径、打 `0001-kailo-mobile.patch`、放入 2 个生成物），与开发分支
+逐文件比对（内容与可执行位）：4966 个已跟踪文件与 2 个 vendor 文件全部一致，差异 0（2026-09-24）。
 
 ## 实测（2026-09-24，开发分支 HEAD 加 kailo 仓库当前契约生成物）
 
 | 检查 | 结果 |
 |---|---|
 | `flutter analyze` | `No issues found!` |
-| `flutter test -j 8` | `+1137 ~2: All tests passed!`（跳过的是 benchmark 与需环境变量的 e2e；上游原为 +2251 ~4，减少的均为已删功能的测试） |
+| `flutter test -j 8` | `+1141 ~2: All tests passed!`（跳过的是 benchmark 与需环境变量的 e2e；上游原为 +2251 ~4，减少的均为已删功能的测试；任务与审批视图 4 例） |
 | `flutter build apk --debug` | 成功，`app-debug.apk` |
 | `core/verify/native-e2e.sh mobile <源码树>` | `All tests passed!`：登录 → 设备登记 → ACTIVE → 取连接事实 → 直连 Relay 发 kind 9 → 自建 Channel 被拒 → 撤销后被拒（Relay 回 `restricted: channel access revoked`） |
 
 破坏核验（均已还原并复验通过）：持钥证明去掉 session 标签、把结果不明当成功 → `kailo_link_test`
 失败；去掉提及候选的成员限制 → channels_provider 测试失败；深链分发放过不可用链接 → 测试失败；
-已读写入把 409 当成功 → 测试失败；e2e 把「自建 Channel」换成普通 kind 9 → 报「设备不得自建 Channel」。
+已读写入把 409 当成功 → 测试失败；e2e 把「自建 Channel」换成普通 kind 9 → 报「设备不得自建 Channel」；
+任务状态把 `EXTERNAL_RESULT_UNKNOWN` 当作别的 code → 「结果不明与投影落后不说成功也不说失败」失败；
+Dart 契约生成物换回可选枚举取 `!` 的旧版 → 任务详情解析报 `Null check operator used on a null value`。
+
+任务与审批视图加入后（开发分支 `36cc1f787`）重跑 `native-e2e.sh mobile`：`All tests passed!`
+（撤销后 Relay 回 `restricted: channel access revoked`）。上表的 `flutter build apk --debug` 是此前的结果，本次未重跑。
 
 ## 未覆盖
 
