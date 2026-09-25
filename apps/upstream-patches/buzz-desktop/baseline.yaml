@@ -26,7 +26,7 @@ vendor_files:
   - web/packages/platform/src/react/ui.tsx:desktop/src/kailo-platform/react/ui.tsx
   - web/packages/platform/src/react/pages.tsx:desktop/src/kailo-platform/react/pages.tsx
   - web/packages/platform/src/react/NativeBootstrap.tsx:desktop/src/kailo-platform/react/NativeBootstrap.tsx
-patch_series_digest: sha256:f47beada3ede4308a51986e1084f7f867f5fb55a20c977d19ce5bed55ee0f6b3
+patch_series_digest: sha256:ec897937082cfdc7284c4a7c2047f3c438d9e252c2e85acc84db9d9d3c4208e5
 # 产物是桌面安装包而不是镜像；Kailo 版本的构建建立之前没有可登记的产物。
 artifact_digest: none
 

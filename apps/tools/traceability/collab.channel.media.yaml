@@ -35,5 +35,5 @@ release:
     - name: kailo-core
       digest: sha256:2672a6fffa8a50e3f207b5f438757c35f8fd038507b5a97a345ede433aefbc37
     - name: upstream-buzz-web
-      digest: sha256:66c394578ac062afafa630dfb773cd2618cde972fbd131ae27ccf8c7081b7259
+      digest: sha256:3215b183c1318ada27ecdfd4b913cb78889462674abdc2cfc0feb2010668980d
   gate: shipped
