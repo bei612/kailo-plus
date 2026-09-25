@@ -18,6 +18,7 @@ const { values: a } = parseArgs({
     "password-file": { type: "string" },
     "compose-file": { type: "string" },
     "retry-millis": { type: "string" },
+    fixture: { type: "string" },
     out: { type: "string" },
   },
 });
@@ -288,6 +289,86 @@ await step("设备页：列出本人登记的原生设备，未登记时如实�
   await page.getByRole("button", { name: "Devices" }).click();
   await page.getByText("No devices yet").waitFor();
   await shot("10-devices");
+});
+
+// 两条审批由夹具备好（verify_workspace --governance）：核验用户自己发起、待别人批准
+// 的一条，与别人发起、待核验用户批准的一条。
+const fixture = JSON.parse(fs.readFileSync(a.fixture, "utf8"));
+const bff = (method, url, body) =>
+  page.evaluate(
+    ([m, u, b]) =>
+      fetch(u, {
+        method: m,
+        headers: b ? { "Content-Type": "application/json" } : {},
+        body: b ? JSON.stringify(b) : undefined,
+      }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) })),
+    [method, url, body],
+  );
+const approvalPath = (wf) => `/api/v1/approvals/${encodeURIComponent(wf)}`;
+// 列表之外没有推送：看不到就按「刷新」再读，直到上界
+const refreshUntil = async (locator) => {
+  const deadline = Date.now() + bound;
+  while (!(await locator.count())) {
+    if (Date.now() > deadline) throw new Error("等待列表出现条目超时");
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.waitForTimeout(1_000);
+  }
+};
+
+await step("任务页：本人的待审批任务如实显示；撤回需确认、经 BFF，结论以服务端为准", async () => {
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  const row = page.getByRole("row").filter({ hasText: "tenant.member.revoke" });
+  await refreshUntil(row.filter({ hasText: "Waiting for approval" }));
+  await row.getByRole("button", { name: "tenant.member.revoke" }).click();
+  const detail = page.getByTestId("task-detail");
+  await detail.getByText("Waiting for approval. (WAITING_APPROVAL)").waitFor();
+  // operation 是查证入口：详情必须给出
+  if (!/[0-9a-f]{8}-[0-9a-f]{4}-/.test(await detail.innerText()))
+    throw new Error("任务详情缺 operation ID");
+  await detail.getByText("Organization admin: at least 1").waitFor();
+  await detail.getByRole("button", { name: "Withdraw request" }).click();
+  await detail.getByText("The action will not be carried out").waitFor();
+  await detail.getByRole("button", { name: "Confirm" }).click();
+  await detail.getByRole("status").filter({ hasText: "The request is now: Withdrawn." }).waitFor({ timeout: bound });
+  // 结论已确定而写回可能还没到 Core：此刻不得再给撤回（投影仍可能是未决）
+  if (await detail.getByRole("button", { name: "Withdraw request" }).count())
+    throw new Error("撤回已确定后仍给出撤回");
+  // 任务的门禁由审批写回推进：按「刷新」重读，直到投影追上（收敛上界内）
+  const withdrawn = detail.getByText("The request was withdrawn. (APPROVAL_WITHDRAWN)");
+  const deadline = Date.now() + bound;
+  while (!(await withdrawn.count())) {
+    if (Date.now() > deadline) throw new Error("撤回后任务门禁未在上界内更新");
+    await detail.getByRole("button", { name: "Refresh" }).first().click();
+    await page.waitForTimeout(1_000);
+  }
+  const task = await bff("GET", `/api/v1/tasks/${fixture.myTask}`);
+  if (task.body?.gateState !== "REVOKED" || task.body?.reason !== "APPROVAL_WITHDRAWN")
+    throw new Error(`撤回后门禁应为 REVOKED/APPROVAL_WITHDRAWN，实际 ${JSON.stringify(task)}`);
+  await shot("11a-task-withdrawn");
+});
+
+await step("审批页：待我审批可见；批准需确认、经 Temporal Update，同值幂等、冲突值拒绝", async () => {
+  await page.getByRole("button", { name: "Approvals", exact: true }).click();
+  const row = page.getByRole("row").filter({ hasText: "tenant.member.revoke" });
+  // 「待我审批」用低延迟一致性：刚写入的 admin 关系可能要等一个 quantization 窗口
+  await refreshUntil(row);
+  await row.getByRole("button", { name: "tenant.member.revoke" }).click();
+  const detail = page.getByTestId("approval-detail");
+  await detail.getByRole("button", { name: "Approve" }).click();
+  await detail.getByText("cannot be changed afterwards").waitFor();
+  await detail.getByRole("button", { name: "Confirm" }).click();
+  const recorded = detail.getByRole("status").filter({ hasText: "Your decision “Approve” is recorded" });
+  await recorded.waitFor({ timeout: bound });
+  const outcome = await recorded.innerText();
+  const path = `${approvalPath(fixture.approvalForMe)}/decision`;
+  const same = await bff("POST", path, { decision: "APPROVE" });
+  if (same.status !== 200 || same.body?.decision !== "APPROVE")
+    throw new Error(`同值重发应幂等地拿回原决定，实际 ${JSON.stringify(same)}`);
+  const conflict = await bff("POST", path, { decision: "DENY" });
+  if (conflict.status !== 409 || conflict.body?.reason !== "DUPLICATE_DECISION")
+    throw new Error(`冲突值应以 DUPLICATE_DECISION 拒绝，实际 ${JSON.stringify(conflict)}`);
+  steps.push({ name: "批准后的回应", value: outcome });
+  await shot("11b-approval-decided");
 });
 
 await step("浏览器不能自称原生端：网关移除伪造的入口标识（DD-78）", async () => {

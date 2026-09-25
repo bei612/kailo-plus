@@ -22,7 +22,7 @@ subject="$(bash core/verify/idp-subject.sh)"
 
 fifo="$(mktemp -u)"
 mkfifo "$fifo"
-(cd core && exec cargo run -q -p kailo-core --example verify_workspace -- "$subject") \
+(cd core && exec cargo run -q -p kailo-core --example verify_workspace -- "$subject" --governance) \
   <"$fifo" >"$out/workspace.json" 2>"$out/fixture.log" &
 fixture=$!
 # 持有写端：夹具读 stdin 读到 EOF 才拆除，关掉它即触发拆除
@@ -47,6 +47,7 @@ node core/verify/web-walkthrough.mjs \
   --gateway-port "$AGENTGATEWAY_PORT" --keycloak-port "$KEYCLOAK_PORT" \
   --user "$VERIFY_USER" --password-file "$local_dir/secrets/verify_user_password" \
   --compose-file "$local_dir/compose.yaml" --retry-millis "$BFF_STREAM_RETRY_MILLIS" \
+  --fixture "$out/workspace.json" \
   --out "$out"
 
 # 注销前那条会话必须在 Core 里已被撤销，而不只是网关清了 cookie（SF-AGW-21）。
@@ -59,3 +60,19 @@ state="$(PGPASSWORD="$(cat "$local_dir/secrets/core_db_password")" psql -h 127.0
   "select status from identity.platform_session where id = '$revoked'")"
 echo "注销前的会话 $revoked：$state" | tee "$out/sessions.txt"
 [ "$state" = "REVOKED" ] || { echo "注销前的会话未被撤销" >&2; exit 1; }
+
+# 页面上的两次审批控制以 Core 库为准，而不是以页面文案为准：撤回的那条经 Temporal
+# 进入 CANCELLED；批准的那条走完重新准入与派发后被消费（CONSUMED），在收敛上界内。
+field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$out/workspace.json" "$1"; }
+approval() {
+  PGPASSWORD="$(cat "$local_dir/secrets/core_db_password")" psql -h 127.0.0.1 -p "$CORE_DB_PORT" \
+    -U "$CORE_DB_USER" -d "$CORE_DB_NAME" -tA -c \
+    "select status from projection.approval_projection where workflow_id = '$1'"
+}
+withdrawn="$(approval "$(field myApproval)")"
+deadline=$((SECONDS + VERIFY_CONVERGE_BOUND_SECS))
+until [ "$(approval "$(field approvalForMe)")" = "CONSUMED" ] || [ $SECONDS -ge $deadline ]; do sleep 1; done
+approved="$(approval "$(field approvalForMe)")"
+echo "撤回的审批：$withdrawn；批准的审批：$approved" | tee "$out/approvals.txt"
+[ "$withdrawn" = "CANCELLED" ] || { echo "撤回的审批不是 CANCELLED" >&2; exit 1; }
+[ "$approved" = "CONSUMED" ] || { echo "批准的审批未在收敛上界内被消费" >&2; exit 1; }
