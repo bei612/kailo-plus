@@ -1,7 +1,8 @@
 //! 部署引导：建立一个业务 Tenant 与它的首位 Tenant admin（DD-82、ADR-11）。
 //!
-//! `.design` 没有定义 Tenant 的发起方（没有 `tenant.create` 动作），也没有邀请入口
-//! （GAP-IDN-01）。于是「第一个人」只能来自部署：运维在 Core 容器内执行
+//! `.design` 没有定义 Tenant 的发起方（没有 `tenant.create` 动作）；邀请（DD-83）要由
+//! 持有 Tenant manage 的人签发，而空 Tenant 里没有这样的人。于是「第一个人」只能来自
+//! 部署：运维在 Core 容器内执行
 //!
 //! ```text
 //! kailo-core bootstrap-tenant --slug <slug> --name <显示名> \
@@ -457,60 +458,16 @@ impl Ctx {
     /// provisioning fact：首次登录时身份解析据此找到这个人。
     async fn ensure_human(&self, args: &Args) -> Result<Uuid, String> {
         let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
-        sqlx::query(
-            "insert into identity.identity_provider (id, issuer, client_id, claim_mapping_version, status)
-             values ($1, $2, $3, 1, 'ACTIVE') on conflict (issuer, client_id) do nothing",
+        let human = crate::external_human::ensure(
+            &mut tx,
+            &self.issuer,
+            &self.client_id,
+            &args.admin_subject,
+            &args.admin_display_name,
         )
-        .bind(Uuid::new_v4())
-        .bind(&self.issuer)
-        .bind(&self.client_id)
-        .execute(&mut *tx)
         .await
-        .map_err(|e| e.to_string())?;
-        let provider: Uuid = sqlx::query_scalar(
-            "select id from identity.identity_provider where issuer = $1 and client_id = $2",
-        )
-        .bind(&self.issuer)
-        .bind(&self.client_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-        let found: Option<Uuid> = sqlx::query_scalar(
-            "select human_identity_id from identity.external_identity
-             where issuer = $1 and subject = $2 and status = 'ACTIVE'",
-        )
-        .bind(&self.issuer)
-        .bind(&args.admin_subject)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-        let human = match found {
-            Some(h) => h,
-            None => {
-                let h = Uuid::new_v4();
-                sqlx::query(
-                    "insert into identity.human_identity (id, display_name, status) values ($1, $2, 'ACTIVE')",
-                )
-                .bind(h)
-                .bind(args.admin_display_name.trim())
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-                sqlx::query(
-                    "insert into identity.external_identity (id, provider_id, issuer, subject, human_identity_id, status)
-                     values ($1, $2, $3, $4, $5, 'ACTIVE')",
-                )
-                .bind(Uuid::new_v4())
-                .bind(provider)
-                .bind(&self.issuer)
-                .bind(&args.admin_subject)
-                .bind(h)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| format!("登记外部身份: {e}"))?;
-                h
-            }
-        };
+        .map_err(|e| format!("登记外部身份: {e}"))?
+        .ok_or("该 subject 的外部身份或 HumanIdentity 已停用，引导不重建它")?;
         tx.commit().await.map_err(|e| e.to_string())?;
         Ok(human)
     }
@@ -579,9 +536,9 @@ impl Ctx {
                     .await?;
                 Ok((principal, membership))
             }
-            // 已撤权的人不由引导恢复：恢复成员属于 GAP-IDN-01 阻断的入口
+            // 已撤权的人不由引导恢复：成员的恢复只经邀请兑换与 admin 确认（DD-83）
             other => Err(format!(
-                "此人在该 Tenant 的成员关系处于 {other}，引导不恢复成员（GAP-IDN-01）"
+                "此人在该 Tenant 的成员关系处于 {other}，引导不恢复成员；恢复经邀请（DD-83）"
             )),
         }
     }

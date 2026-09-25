@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/invitation_redemption_request.schema.json",
+  "title": "InvitationRedemptionRequest",
+  "description": "POST /api/v1/invitations/redeem 的请求体（DD-83）。兑换者身份只取网关投影的 issuer/subject，不接受请求体自报。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["credential", "displayName"],
+  "properties": {
+    "credential": { "type": "string", "description": "邀请链接 fragment 里的一次性凭据" },
+    "displayName": { "type": "string", "description": "兑换者自报的显示名：只作展示，审批人据此与被邀请人对照，不参与任何判定" }
+  }
+}

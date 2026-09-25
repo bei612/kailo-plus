@@ -72,6 +72,14 @@ pub struct GovernanceConfig {
     pub page_limit: i64,
     /// 从 SpiceDB 读关系的单页条数；读取总是翻到底，它只约束单次回应的大小
     pub relationship_page: u32,
+    /// 邀请的有效期，签发时冻结进 `expires_at`（DD-83）
+    pub invitation_ttl_seconds: i64,
+    /// 邀请链接的基址（部署的 Web origin 加路径）。凭据接在 `#` 之后：fragment 不随
+    /// 请求发给任何服务端，不进网关与 BFF 的访问日志，也不进 Referer
+    pub invitation_link_base: String,
+    /// 兑换者首次出现时登记 ExternalIdentity 所属的部署 IdP（与部署引导同一对）
+    pub human_oidc_issuer: String,
+    pub human_oidc_client_id: String,
 }
 
 impl GovernanceConfig {
@@ -84,6 +92,12 @@ impl GovernanceConfig {
                 .filter(|n| *n > 0)
                 .ok_or_else(|| format!("{k} 必须是正整数"))
         };
+        let text = |k: &str| -> Result<String, String> {
+            std::env::var(k)
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .ok_or_else(|| format!("缺少 {k}"))
+        };
         let cfg = Self {
             consume_window_seconds: get("APPROVAL_CONSUME_WINDOW_SECONDS")?,
             dispatch_margin_seconds: get("APPROVAL_DISPATCH_MARGIN_SECONDS")?,
@@ -93,7 +107,17 @@ impl GovernanceConfig {
             page_limit: get("BFF_TASK_PAGE_LIMIT")?,
             relationship_page: u32::try_from(get("SPICEDB_READ_PAGE_LIMIT")?)
                 .map_err(|_| "SPICEDB_READ_PAGE_LIMIT 超出范围")?,
+            invitation_ttl_seconds: get("TENANT_INVITATION_TTL_SECONDS")?,
+            invitation_link_base: text("TENANT_INVITATION_LINK_BASE")?,
+            human_oidc_issuer: text("HUMAN_OIDC_ISSUER")?,
+            human_oidc_client_id: text("HUMAN_OIDC_CLIENT_ID")?,
         };
+        // 链接只能指向部署的 Web：没有协议就不是可点开的链接；基址自带 fragment 会让
+        // 凭据被拼进别人的 fragment 而无从读出
+        let base = &cfg.invitation_link_base;
+        if !(base.starts_with("https://") || base.starts_with("http://")) || base.contains('#') {
+            return Err("TENANT_INVITATION_LINK_BASE 必须是不含 # 的 http(s) 地址".into());
+        }
         if cfg.dispatch_margin_seconds >= cfg.consume_window_seconds {
             return Err(
                 "APPROVAL_DISPATCH_MARGIN_SECONDS 必须小于 APPROVAL_CONSUME_WINDOW_SECONDS".into(),
@@ -229,7 +253,10 @@ async fn role_template_of(
     Ok(crate::roles::template(conn, k, v).await?)
 }
 
-async fn active_definition(pool: &PgPool, key: &str) -> Result<Option<Definition>, sqlx::Error> {
+pub(crate) async fn active_definition(
+    pool: &PgPool,
+    key: &str,
+) -> Result<Option<Definition>, sqlx::Error> {
     sqlx::query_as(&format!(
         "select {DEFINITION_COLUMNS} from catalog.action_definition
          where action_key = $1 and status = 'ACTIVE'"
@@ -305,10 +332,15 @@ pub enum Semantic {
     TenantRoleRevoke,
     WorkspaceRoleGrant,
     WorkspaceRoleRevoke,
+    /// 邀请的签发与撤回（DD-83）：Core 内一次写入，SYNC，准入落定即完成
+    TenantMemberInvite,
+    TenantMemberInviteRevoke,
+    /// 兑换发起的成员开通：需要 Tenant admin 确认兑换者（DD-83）
+    TenantMemberAdmit,
 }
 
 impl Semantic {
-    fn from_key(k: &str) -> Option<Self> {
+    pub(crate) fn from_key(k: &str) -> Option<Self> {
         Some(match k {
             "workspace.create" => Self::WorkspaceCreate,
             "workspace.member.add" => Self::WorkspaceMemberAdd,
@@ -318,8 +350,26 @@ impl Semantic {
             "tenant.admin.revoke" => Self::TenantRoleRevoke,
             "workspace.admin.grant" => Self::WorkspaceRoleGrant,
             "workspace.admin.revoke" => Self::WorkspaceRoleRevoke,
+            "tenant.member.invite" => Self::TenantMemberInvite,
+            "tenant.member.invite.revoke" => Self::TenantMemberInviteRevoke,
+            "tenant.member.admit" => Self::TenantMemberAdmit,
             _ => return None,
         })
+    }
+
+    /// 能否经 BFF 语义命令发起。开通只能由兑换发起（DD-83）：它的发起者是邀请人、
+    /// 目标是兑换建立的 INVITED membership，由请求体直接提交就绕开了兑换这一事实。
+    fn bff_submittable(self) -> bool {
+        self != Self::TenantMemberAdmit
+    }
+
+    /// 在准入落定的同一事务里完成、没有外部副作用的同步动作：门禁 ALLOWED 与
+    /// 派发 DISPATCHED 同事务写入，没有「已允许未派发」的中间态
+    fn completes_in_admission(self) -> bool {
+        matches!(
+            self,
+            Self::TenantMemberInvite | Self::TenantMemberInviteRevoke
+        )
     }
 
     fn is_role(self) -> bool {
@@ -349,6 +399,7 @@ pub struct Params {
     pub principal_id: Option<Uuid>,
     pub slug: Option<String>,
     pub name: Option<String>,
+    pub invitation_id: Option<Uuid>,
 }
 
 impl Params {
@@ -359,6 +410,9 @@ impl Params {
         }
         if let Some(p) = self.principal_id {
             m.insert("principalId".into(), json!(p));
+        }
+        if let Some(i) = self.invitation_id {
+            m.insert("invitationId".into(), json!(i));
         }
         if let Some(s) = &self.slug {
             m.insert("slug".into(), json!(s));
@@ -381,6 +435,7 @@ impl Params {
             principal_id: uuid("principalId"),
             slug: text("slug"),
             name: text("name"),
+            invitation_id: uuid("invitationId"),
         })
     }
 }
@@ -409,12 +464,14 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         principal_id: uuid(&cmd.principal_id)?,
         slug: cmd.slug.clone(),
         name: cmd.name.as_ref().map(|n| n.trim().to_owned()),
+        invitation_id: uuid(&cmd.invitation_id)?,
     };
     // 每个语义要求的参数集合是闭集：多出与缺少都拒绝，不按「字段为空即忽略」猜
     let ok = match sem {
         Semantic::WorkspaceCreate => {
             p.workspace_id.is_none()
                 && p.principal_id.is_none()
+                && p.invitation_id.is_none()
                 && p.slug.as_deref().is_some_and(valid_slug)
                 && p.name.as_deref().is_some_and(|n| !n.is_empty())
         }
@@ -424,12 +481,37 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::WorkspaceRoleRevoke => {
             p.workspace_id.is_some()
                 && p.principal_id.is_some()
+                && p.invitation_id.is_none()
                 && p.slug.is_none()
                 && p.name.is_none()
         }
         Semantic::TenantMemberRevoke | Semantic::TenantRoleGrant | Semantic::TenantRoleRevoke => {
             p.workspace_id.is_none()
                 && p.principal_id.is_some()
+                && p.invitation_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+        }
+        // 被邀请人的称呼只作展示；寻址靠凭据，不靠任何身份字段（DD-83）
+        Semantic::TenantMemberInvite => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_none()
+                && p.slug.is_none()
+                && p.name.as_deref().is_some_and(|n| !n.is_empty())
+        }
+        Semantic::TenantMemberInviteRevoke => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_some()
+                && p.slug.is_none()
+                && p.name.is_none()
+        }
+        // 只由兑换在 Core 内构造（bff_submittable），这里仍按闭集核对
+        Semantic::TenantMemberAdmit => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_some()
+                && p.invitation_id.is_some()
                 && p.slug.is_none()
                 && p.name.is_none()
         }
@@ -644,6 +726,60 @@ async fn resolve_target(
                 None => Err(Refusal::Precondition(ReasonCode::TargetNotFound)),
             }
         }
+        // 新邀请的 ID 在首次准入时分配，重新判定解析到同一个
+        Semantic::TenantMemberInvite => Ok(Target {
+            id: frozen.unwrap_or_else(Uuid::new_v4),
+            version: 0,
+            workspace_id: None,
+        }),
+        Semantic::TenantMemberInviteRevoke => {
+            let row: Option<(i32, String, bool)> = sqlx::query_as(&format!(
+                "select version, state, expires_at > now() from identity.tenant_invitation
+                 where id = $1 and tenant_id = $2{for_update}"
+            ))
+            .bind(p.invitation_id)
+            .bind(tenant)
+            .fetch_optional(&mut *conn)
+            .await?;
+            let id = p
+                .invitation_id
+                .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+            match row {
+                Some((version, state, live)) => {
+                    crate::invitation::issued_or_refusal(&state, live)?;
+                    Ok(Target {
+                        id,
+                        version,
+                        workspace_id: None,
+                    })
+                }
+                None => Err(Refusal::Precondition(ReasonCode::InvitationNotFound)),
+            }
+        }
+        // 开通的目标是兑换建立的 INVITED membership，且它必须正是这份已兑换邀请
+        // 所绑定的那一条：兑换记录就是 invitation fact（.design/09 §5）
+        Semantic::TenantMemberAdmit => {
+            let row: Option<(Uuid, i32, String)> = sqlx::query_as(&format!(
+                "select tm.id, tm.version, tm.state from identity.tenant_membership tm
+                 join identity.tenant_invitation ti on ti.tenant_membership_id = tm.id
+                 where tm.tenant_id = $1 and tm.tenant_principal_id = $2
+                   and ti.id = $3 and ti.tenant_id = $1 and ti.state = 'REDEEMED'{for_update}"
+            ))
+            .bind(tenant)
+            .bind(p.principal_id)
+            .bind(p.invitation_id)
+            .fetch_optional(&mut *conn)
+            .await?;
+            match row {
+                Some((id, version, state)) if state == "INVITED" => Ok(Target {
+                    id,
+                    version,
+                    workspace_id: None,
+                }),
+                Some(_) => Err(Refusal::Conflict(ReasonCode::TargetStateConflict)),
+                None => Err(Refusal::Precondition(ReasonCode::TargetNotFound)),
+            }
+        }
     }
 }
 
@@ -844,6 +980,8 @@ impl Execution {
             reason: self.reason_code.as_deref().and_then(parse),
             approval_workflow_id: self.approval_workflow_id.clone(),
             workflow_id: self.temporal_workflow_id.clone(),
+            // 凭据不从库里来：只在签发的那一次回应里由 decide 填入
+            invitation: None,
         }
     }
 }
@@ -867,6 +1005,60 @@ async fn lock_execution(
     .bind(id)
     .fetch_one(&mut **tx)
     .await
+}
+
+/// 在调用方事务里打开一条 EVALUATING 的 ActionExecution，并写 INTENT 审计：意图
+/// 先于判定持久化，之后任何一步崩溃，这个 operation 都有迹可查。BFF 语义命令与
+/// 兑换发起的开通（DD-83）共用这一处，二者的差别只在 correlation：`None` 取本
+/// operation 自己，兑换取签发邀请的那个 operation，使一条邀请的全程可按一个 ID 查出。
+pub(crate) async fn open_execution(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Actor,
+    def: &Definition,
+    target: &Target,
+    params: &Params,
+    idempotency_key: Uuid,
+    correlation_id: Option<Uuid>,
+) -> Result<Execution, sqlx::Error> {
+    let ae_id = Uuid::new_v4();
+    let operation_id = Uuid::new_v4();
+    let hash = parameter_hash(def, target.id, params);
+    let parameters = json!({ "params": params.to_json(), "targetVersion": target.version });
+    sqlx::query(
+        "insert into admission.action_execution
+             (id, operation_id, tenant_id, workspace_id, action_key, action_version,
+              initiator_principal_id, actor_principal_id, target_id, parameter_hash,
+              parameters, idempotency_key, gate_state, dispatch_state, correlation_id)
+         values ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,'EVALUATING','NOT_DISPATCHED',$12)",
+    )
+    .bind(ae_id)
+    .bind(operation_id)
+    .bind(actor.tenant_id)
+    .bind(target.workspace_id)
+    .bind(&def.action_key)
+    .bind(def.version)
+    .bind(actor.principal_id)
+    .bind(target.id)
+    .bind(&hash)
+    .bind(&parameters)
+    .bind(idempotency_key)
+    .bind(correlation_id.unwrap_or(operation_id))
+    .execute(&mut **tx)
+    .await?;
+    let ae = lock_execution(tx, ae_id).await?;
+    audit(
+        tx,
+        &ae,
+        def,
+        "intent",
+        "INTENT",
+        "NONE",
+        "EVALUATING",
+        actor.human_identity_id,
+        json!([]),
+    )
+    .await?;
+    Ok(ae)
 }
 
 /// 审计事实。event_key 按 operation 与阶段稳定：重试不写第二条（.design/03 §8）。
@@ -1017,6 +1209,9 @@ impl Governance {
             tracing::error!(action = %def.action_key, "ActionDefinition 已登记但没有对应语义，按阻断处理");
             return Err((Refusal::Blocked(ReasonCode::CapabilityBlocked), None));
         };
+        if !sem.bff_submittable() {
+            return Err((Refusal::Blocked(ReasonCode::CapabilityBlocked), None));
+        }
         let params = parse_command(sem, cmd).map_err(|r| (r, None))?;
 
         // 幂等：同一发起者、同一键回答原 operation
@@ -1034,30 +1229,16 @@ impl Governance {
             .map_err(|r| (r, None))?;
         drop(conn);
 
-        let ae_id = Uuid::new_v4();
-        let operation_id = Uuid::new_v4();
-        let hash = parameter_hash(&def, target.id, &params);
-        let parameters = json!({ "params": params.to_json(), "targetVersion": target.version });
         let mut tx = self.pool.begin().await.map_err(|e| (e.into(), None))?;
-        let inserted = sqlx::query(
-            "insert into admission.action_execution
-                 (id, operation_id, tenant_id, workspace_id, action_key, action_version,
-                  initiator_principal_id, actor_principal_id, target_id, parameter_hash,
-                  parameters, idempotency_key, gate_state, dispatch_state, correlation_id)
-             values ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,'EVALUATING','NOT_DISPATCHED',$2)",
+        let inserted = open_execution(
+            &mut tx,
+            actor,
+            &def,
+            &target,
+            &params,
+            idempotency_key,
+            None,
         )
-        .bind(ae_id)
-        .bind(operation_id)
-        .bind(actor.tenant_id)
-        .bind(target.workspace_id)
-        .bind(&def.action_key)
-        .bind(def.version)
-        .bind(actor.principal_id)
-        .bind(target.id)
-        .bind(&hash)
-        .bind(&parameters)
-        .bind(idempotency_key)
-        .execute(&mut *tx)
         .await;
         if let Err(sqlx::Error::Database(e)) = &inserted {
             if e.is_unique_violation() {
@@ -1072,29 +1253,43 @@ impl Governance {
                 return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), None));
             }
         }
-        inserted.map_err(|e| (e.into(), None))?;
-        let ae = lock_execution(&mut tx, ae_id)
-            .await
-            .map_err(|e| (e.into(), None))?;
-        // 意图先于判定持久化：之后任何一步崩溃，这个 operation 都有迹可查
-        audit(
-            &mut tx,
-            &ae,
-            &def,
-            "intent",
-            "INTENT",
-            "NONE",
-            "EVALUATING",
-            actor.human_identity_id,
-            json!([]),
-        )
-        .await
-        .map_err(|e| (e.into(), Some(operation_id)))?;
+        let ae = inserted.map_err(|e| (e.into(), None))?;
         tx.commit()
             .await
-            .map_err(|e| (e.into(), Some(operation_id)))?;
+            .map_err(|e| (e.into(), Some(ae.operation_id)))?;
 
-        self.decide(actor, ae_id, &def, sem, &params).await
+        self.decide(actor, ae.id, &def, sem, &params).await
+    }
+
+    /// 由 Core 自己打开（不经 BFF 语义命令）的一条 EVALUATING ActionExecution 的
+    /// 判定。发起者取自 ActionExecution，重复调用只在仍 EVALUATING 时判定一次。
+    pub(crate) async fn decide_opened(
+        &self,
+        ae_id: Uuid,
+    ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
+        let ae = load_execution(&self.pool, ae_id)
+            .await
+            .map_err(|e| (e.into(), None))?
+            .ok_or((Refusal::Unavailable("ActionExecution 消失".into()), None))?;
+        let op = Some(ae.operation_id);
+        if ae.gate_state != "EVALUATING" {
+            return submission_result(&ae);
+        }
+        let def = exact_definition(&self.pool, &ae.action_key, ae.action_version)
+            .await
+            .map_err(|e| (e.into(), op))?;
+        let sem = Semantic::from_key(&def.action_key)
+            .ok_or((Refusal::Blocked(ReasonCode::CapabilityBlocked), op))?;
+        let params = ae.params().ok_or((
+            Refusal::Unavailable("ActionExecution 缺规范化参数".into()),
+            op,
+        ))?;
+        let actor = Actor {
+            tenant_id: ae.tenant_id,
+            principal_id: ae.initiator_principal_id,
+            human_identity_id: None,
+        };
+        self.decide(actor, ae.id, &def, sem, &params).await
     }
 
     async fn by_idempotency(
@@ -1252,7 +1447,7 @@ impl Governance {
             drop(tx);
             return submission_result(&ae);
         }
-        match self
+        let issued = match self
             .allow_in_tx(
                 &mut tx,
                 &ae,
@@ -1266,7 +1461,7 @@ impl Governance {
             )
             .await
         {
-            Ok(()) => {}
+            Ok(issued) => issued,
             Err(r @ (Refusal::Conflict(_) | Refusal::Precondition(_) | Refusal::Denied(_))) => {
                 drop(tx);
                 // 评估与落定之间 target 事实变了：按当时事实拒绝并留痕
@@ -1284,14 +1479,17 @@ impl Governance {
                 return Err((r, op));
             }
             Err(r) => return Err((r, op)),
-        }
+        };
         tx.commit().await.map_err(|e| (e.into(), op))?;
         self.dispatch(ae_id).await;
         let ae = load_execution(&self.pool, ae_id)
             .await
             .map_err(|e| (e.into(), op))?
             .ok_or((Refusal::Unavailable("ActionExecution 消失".into()), op))?;
-        submission_result(&ae)
+        let (status, mut submission) = submission_result(&ae)?;
+        // 明文凭据只在这里出现一次：它已随签发同事务落成摘要，之后再无来源
+        submission.invitation = issued.map(|i| i.into_contract(&self.cfg.invitation_link_base));
+        Ok((status, submission))
     }
 
     /// 把门禁从 EVALUATING/WAITING 落到一个不再推进的状态，同事务写 ActionDecision
@@ -1321,6 +1519,8 @@ impl Governance {
         if updated.rows_affected() == 0 {
             return Ok(());
         }
+        // 开通不再会派发：兑换建立的 INVITED membership 与门禁同事务终结（DD-83）
+        crate::invitation::settle_refused_admission(&mut tx, ae, def, reason).await?;
         let approval = if phase == "RECHECK" {
             "SATISFIED"
         } else {
@@ -1367,7 +1567,7 @@ impl Governance {
         approval: &str,
         eval: &Evaluation,
         human: Option<Uuid>,
-    ) -> Result<(), Refusal> {
+    ) -> Result<Option<crate::invitation::Issued>, Refusal> {
         // 会改变有效 Tenant admin 的动作先取 Tenant 行锁，其后的判定与写入都在锁内
         // （DD-82）。锁序固定为 ActionExecution → Tenant，与派发一致。
         if sem.serializes_on_tenant() && !crate::roles::lock_tenant(tx, ae.tenant_id).await? {
@@ -1393,13 +1593,17 @@ impl Governance {
         self.target_gate(&mut *tx, ae.tenant_id, def, sem, params)
             .await?;
         if def.execution_mode == "SYNC" {
-            // 同步动作没有 Workflow：门禁置 ALLOWED 后由派发在同一把锁下写 SpiceDB
+            // 同步动作没有 Workflow。角色：门禁置 ALLOWED 后由派发在同一把锁下写
+            // SpiceDB；邀请的签发与撤回只写 Core，在这同一个事务里完成并记 DISPATCHED
+            let completes = sem.completes_in_admission();
             sqlx::query(
                 "update admission.action_execution
-                 set gate_state = 'ALLOWED', reason_code = null, updated_at = now()
+                 set gate_state = 'ALLOWED', reason_code = null, updated_at = now(),
+                     dispatch_state = case when $2 then 'DISPATCHED' else dispatch_state end
                  where id = $1",
             )
             .bind(ae.id)
+            .bind(completes)
             .execute(&mut **tx)
             .await?;
             record_decision(
@@ -1429,7 +1633,39 @@ impl Governance {
                 evidence,
             )
             .await?;
-            return Ok(());
+            return match sem {
+                Semantic::TenantMemberInvite => {
+                    let label = params
+                        .name
+                        .as_deref()
+                        .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+                    let issued =
+                        crate::invitation::issue(tx, ae, label, self.cfg.invitation_ttl_seconds)
+                            .await?;
+                    self.record_local_outcome(
+                        tx,
+                        ae,
+                        def,
+                        "INVITATION_ISSUED",
+                        json!([{ "kind": "TENANT_INVITATION_ID", "value": ae.target_id }]),
+                    )
+                    .await?;
+                    Ok(Some(issued))
+                }
+                Semantic::TenantMemberInviteRevoke => {
+                    crate::invitation::revoke(tx, target.id, target.version).await?;
+                    self.record_local_outcome(
+                        tx,
+                        ae,
+                        def,
+                        "INVITATION_REVOKED",
+                        json!([{ "kind": "TENANT_INVITATION_ID", "value": target.id }]),
+                    )
+                    .await?;
+                    Ok(None)
+                }
+                _ => Ok(None),
+            };
         }
         let kind = def
             .workflow_kind
@@ -1480,6 +1716,18 @@ impl Governance {
                 .fetch_one(&mut **tx)
                 .await?
             }
+            // 确认通过且重新准入成立：INVITED→PROVISIONING，新 version 派发成员开通
+            // （DD-83、.design/09 §4「新 Tenant member」）
+            Semantic::TenantMemberAdmit => {
+                sqlx::query_scalar(
+                    "update identity.tenant_membership set state = 'PROVISIONING', version = version + 1
+                     where id = $1 and version = $2 and state = 'INVITED' returning version",
+                )
+                .bind(target.id)
+                .bind(target.version)
+                .fetch_one(&mut **tx)
+                .await?
+            }
             Semantic::TenantMemberRevoke => {
                 let v: i32 = sqlx::query_scalar(
                     "update identity.tenant_membership set state = 'REVOKING', version = version + 1
@@ -1493,11 +1741,14 @@ impl Governance {
                 kailo_identity::session::revoke_for_membership(tx, target.id).await?;
                 v
             }
-            // 角色动作是 SYNC，已在上面返回；走到这里说明目录把它登记成了别的执行方式
+            // 角色与邀请动作是 SYNC，已在上面返回；走到这里说明目录把它登记成了别的
+            // 执行方式
             Semantic::TenantRoleGrant
             | Semantic::TenantRoleRevoke
             | Semantic::WorkspaceRoleGrant
-            | Semantic::WorkspaceRoleRevoke => {
+            | Semantic::WorkspaceRoleRevoke
+            | Semantic::TenantMemberInvite
+            | Semantic::TenantMemberInviteRevoke => {
                 return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked))
             }
         };
@@ -1544,7 +1795,37 @@ impl Governance {
             evidence,
         )
         .await?;
-        Ok(())
+        Ok(None)
+    }
+}
+
+impl Governance {
+    /// 在准入事务里完成的同步动作的 DISPATCH 与 OUTCOME 审计：它们没有外部副作用，
+    /// 「派发」就是同一事务里那次 Core 写入，两条事实与门禁一起成立。
+    async fn record_local_outcome(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        ae: &Execution,
+        def: &Definition,
+        outcome: &str,
+        evidence: Value,
+    ) -> Result<(), sqlx::Error> {
+        audit(
+            tx,
+            ae,
+            def,
+            "dispatch",
+            "DISPATCH",
+            "ALLOW",
+            "DISPATCHED",
+            None,
+            evidence.clone(),
+        )
+        .await?;
+        audit(
+            tx, ae, def, "outcome", "OUTCOME", "ALLOW", outcome, None, evidence,
+        )
+        .await
     }
 }
 
@@ -1863,7 +2144,12 @@ impl Governance {
             return Ok(());
         };
         if def.execution_mode == "SYNC" {
-            return self.dispatch_role(ae_id, &def, sem).await;
+            // 在准入事务里已完成的同步动作没有可派发的东西；走到这里只可能是角色
+            return if sem.is_role() {
+                self.dispatch_role(ae_id, &def, sem).await
+            } else {
+                Ok(())
+            };
         }
         let Some(workflow_id) = ae.temporal_workflow_id.clone() else {
             return Err(Refusal::Unavailable(
@@ -1894,12 +2180,16 @@ impl Governance {
                 }
                 Semantic::WorkspaceMemberAdd
                 | Semantic::WorkspaceMemberRevoke
-                | Semantic::TenantMemberRevoke => {
+                | Semantic::TenantMemberRevoke
+                | Semantic::TenantMemberAdmit => {
                     launch_membership(
                         &self.pool,
                         &self.temporal,
                         &LifecycleRequest {
-                            scope: if sem == Semantic::TenantMemberRevoke {
+                            scope: if matches!(
+                                sem,
+                                Semantic::TenantMemberRevoke | Semantic::TenantMemberAdmit
+                            ) {
                                 MembershipScope::Tenant
                             } else {
                                 MembershipScope::Workspace
@@ -1910,11 +2200,13 @@ impl Governance {
                     )
                     .await
                 }
-                // 角色动作是 SYNC，在上面已分流；没有 Workflow 可启动
+                // 角色与邀请动作是 SYNC，在上面已分流；没有 Workflow 可启动
                 Semantic::TenantRoleGrant
                 | Semantic::TenantRoleRevoke
                 | Semantic::WorkspaceRoleGrant
-                | Semantic::WorkspaceRoleRevoke => Err(StatusCode::CONFLICT.into_response()),
+                | Semantic::WorkspaceRoleRevoke
+                | Semantic::TenantMemberInvite
+                | Semantic::TenantMemberInviteRevoke => Err(StatusCode::CONFLICT.into_response()),
             };
             match started {
                 Ok(r) if r.workflow_id == workflow_id => Ok(()),
@@ -2250,7 +2542,8 @@ impl Governance {
                 )
                 .await
             {
-                Ok(()) => {
+                // 需要审批的动作都不在准入事务里签发凭据，没有要带回的东西
+                Ok(_) => {
                     tx.commit().await?;
                     None
                 }
@@ -2591,7 +2884,7 @@ impl Governance {
             _ => None,
         };
         if let Some((to, reason)) = gate {
-            sqlx::query(
+            let closed = sqlx::query(
                 "update admission.action_execution set gate_state = $2, reason_code = $3, updated_at = now()
                  where id = $1 and gate_state = 'WAITING'",
             )
@@ -2600,6 +2893,9 @@ impl Governance {
             .bind(wire(&reason))
             .execute(&mut *tx)
             .await?;
+            if closed.rows_affected() > 0 {
+                crate::invitation::settle_refused_admission(&mut tx, &ae, &def, &reason).await?;
+            }
         }
         tx.commit().await?;
         Ok(Applied::Done {

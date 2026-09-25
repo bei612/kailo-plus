@@ -1463,6 +1463,8 @@ pub mod bootstrapped {
             );
         }
         for sql in [
+            // 邀请引用 ActionExecution 与 membership，先于二者删除（DD-83）
+            "delete from identity.tenant_invitation where tenant_id = $1",
             "delete from identity.platform_session where tenant_membership_id in
                  (select id from identity.tenant_membership where tenant_id = $1)",
             "delete from projection.workspace_buzz_binding where workspace_id in

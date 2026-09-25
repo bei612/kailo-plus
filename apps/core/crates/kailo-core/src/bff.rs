@@ -20,8 +20,8 @@ use uuid::Uuid;
 
 /// 网关投影的两条 header。名字与 `SS-AGW-OIDC` 的 `set` 目标严格一致——
 /// 改这里而不改网关配置会让整条链静默失效。
-const HEADER_ISSUER: &str = "x-kailo-oidc-issuer";
-const HEADER_SUBJECT: &str = "x-kailo-oidc-subject";
+pub(crate) const HEADER_ISSUER: &str = "x-kailo-oidc-issuer";
+pub(crate) const HEADER_SUBJECT: &str = "x-kailo-oidc-subject";
 
 /// BFF 的运行状态。
 #[derive(Clone)]
@@ -205,6 +205,20 @@ pub fn router(state: BffState) -> Router {
         .route(
             "/api/v1/approvals/{workflow_id}/withdraw",
             axum::routing::post(crate::governance_api::withdraw),
+        )
+        // Tenant 成员邀请（DD-83）。签发与撤回走上面的语义命令；这里是管理视图与
+        // 兑换。兑换与兑换进度不要求 PlatformSession：兑换者此刻还不是成员
+        .route(
+            "/api/v1/invitations",
+            get(crate::invitation::list_invitations),
+        )
+        .route(
+            "/api/v1/invitations/redeem",
+            axum::routing::post(crate::invitation::redeem),
+        )
+        .route(
+            "/api/v1/invitations/redemptions",
+            get(crate::invitation::list_redemptions),
         )
         .with_state(state)
 }

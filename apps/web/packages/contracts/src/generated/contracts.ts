@@ -110,7 +110,11 @@ export interface ActionCommand {
      */
     idempotencyKey: string;
     /**
-     * workspace.create 的显示名
+     * tenant.member.invite.revoke 的目标邀请
+     */
+    invitationId?: string;
+    /**
+     * workspace.create 的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
      */
     name?: string;
     /**
@@ -129,7 +133,7 @@ export interface ActionCommand {
 
 /**
  * POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
- * 必有；DENIED 时 reason 必有。
+ * 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
  */
 export interface ActionSubmission {
     actionExecutionId:   string;
@@ -137,6 +141,7 @@ export interface ActionSubmission {
     approvalWorkflowId?: string;
     dispatchState:       ActionDispatchState;
     gateState:           ActionGateState;
+    invitation?:         InvitationClass;
     operationId:         string;
     reason?:             ReasonCode;
     workflowId?:         string;
@@ -164,6 +169,22 @@ export enum ActionGateState {
     Expired = "EXPIRED",
     Revoked = "REVOKED",
     Waiting = "WAITING",
+}
+
+/**
+ * tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+ * 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+ */
+export interface InvitationClass {
+    /**
+     * RFC3339，UTC
+     */
+    expiresAt:    string;
+    invitationId: string;
+    /**
+     * 部署登记的链接基址 + '#' + 一次性凭据
+     */
+    link: string;
 }
 
 /**
@@ -197,6 +218,11 @@ export enum ReasonCode {
     IdentityHeaderMissing = "IDENTITY_HEADER_MISSING",
     IdentityUnknown = "IDENTITY_UNKNOWN",
     InvalidParameters = "INVALID_PARAMETERS",
+    InvitationAlreadyRedeemed = "INVITATION_ALREADY_REDEEMED",
+    InvitationExpired = "INVITATION_EXPIRED",
+    InvitationNotFound = "INVITATION_NOT_FOUND",
+    InvitationRevoked = "INVITATION_REVOKED",
+    InviteeAlreadyMember = "INVITEE_ALREADY_MEMBER",
     LastTenantAdmin = "LAST_TENANT_ADMIN",
     NativeSurfaceRequired = "NATIVE_SURFACE_REQUIRED",
     PermissionDenied = "PERMISSION_DENIED",
@@ -347,6 +373,66 @@ export interface ClientKeyStatus {
 }
 
 /**
+ * POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
+ * 的元素：兑换者自己看到的进度（DD-83）。membershipState=INVITED 且 admissionGateState=WAITING 表示等待 Tenant
+ * admin 确认；ACTIVE 即可登录该 Tenant；REVOKED 即本次邀请已终结，reason 给出原因。
+ */
+export interface InvitationRedemptionView {
+    admissionGateState: ActionGateState;
+    invitationId:       string;
+    membershipState:    TenantMembershipState;
+    reason?:            ReasonCode;
+    /**
+     * RFC3339，UTC
+     */
+    redeemedAt: string;
+    tenantId:   string;
+    tenantName: string;
+}
+
+/**
+ * TenantMembership 状态机。REVOKING 期间必须立即拒绝新动作，对账完成后才进 REVOKED（.design/10 §4）。
+ */
+export enum TenantMembershipState {
+    Active = "ACTIVE",
+    Error = "ERROR",
+    Invited = "INVITED",
+    Provisioning = "PROVISIONING",
+    Revoked = "REVOKED",
+    Revoking = "REVOKING",
+}
+
+/**
+ * POST /api/v1/invitations/redeem 的请求体（DD-83）。兑换者身份只取网关投影的 issuer/subject，不接受请求体自报。
+ */
+export interface InvitationRedemptionRequest {
+    /**
+     * 邀请链接 fragment 里的一次性凭据
+     */
+    credential: string;
+    /**
+     * 兑换者自报的显示名：只作展示，审批人据此与被邀请人对照，不参与任何判定
+     */
+    displayName: string;
+}
+
+/**
+ * tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+ * 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+ */
+export interface IssuedInvitation {
+    /**
+     * RFC3339，UTC
+     */
+    expiresAt:    string;
+    invitationId: string;
+    /**
+     * 部署登记的链接基址 + '#' + 一次性凭据
+     */
+    link: string;
+}
+
+/**
  * GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
  * communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
  */
@@ -480,6 +566,52 @@ export enum WorkflowKind {
     MembershipRevocation = "MEMBERSHIP_REVOCATION",
     TenantLifecycle = "TENANT_LIFECYCLE",
     WorkspaceLifecycle = "WORKSPACE_LIFECYCLE",
+}
+
+/**
+ * GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
+ * 的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。
+ */
+export interface TenantInvitationView {
+    admitActionExecutionId?: string;
+    approvalStatus?:         ApprovalStatus;
+    approvalWorkflowId?:     string;
+    /**
+     * RFC3339，UTC
+     */
+    createdAt: string;
+    /**
+     * RFC3339，UTC
+     */
+    expiresAt:    string;
+    invitationId: string;
+    /**
+     * 邀请人写给审批人看的称呼，不参与寻址与判定
+     */
+    inviteeLabel:       string;
+    inviterPrincipalId: string;
+    membershipId?:      string;
+    membershipState?:   TenantMembershipState;
+    /**
+     * RFC3339，UTC；只在 REDEEMED 时出现
+     */
+    redeemedAt?: string;
+    /**
+     * 兑换者自报的显示名，只作展示
+     */
+    redeemerDisplayName?: string;
+    status:               TenantInvitationStatus;
+}
+
+/**
+ * TenantInvitation 在视图中的状态（DD-83）。库里只存 ISSUED/REDEEMED/REVOKED；EXPIRED 是查询时判定：expires_at
+ * 已过的 ISSUED 邀请即 EXPIRED，没有回收作业去写它。
+ */
+export enum TenantInvitationStatus {
+    Expired = "EXPIRED",
+    Issued = "ISSUED",
+    Redeemed = "REDEEMED",
+    Revoked = "REVOKED",
 }
 
 /**

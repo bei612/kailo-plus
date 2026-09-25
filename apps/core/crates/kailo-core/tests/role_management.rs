@@ -1,11 +1,12 @@
-//! 角色管理与部署引导的端到端核验（DD-82、ADR-11、GAP-IDN-01）。
+//! 角色管理与部署引导的端到端核验（DD-82、ADR-11）。
 //!
 //! 全部走真实拓扑：部署引导在 Core 容器内执行，Tenant 与首位成员经各自的生命周期
 //! Workflow 开通；角色动作经 BFF 语义命令、fresh Check、审批与同步派发写 SpiceDB。
 //! 断言不以 BFF 的回应为据：角色事实用 zed 直接问 SpiceDB，门禁与审计查 Core 库。
 //!
-//! 夹具只写一样东西：除首位 admin 之外的成员（B、C、D）的 OIDC 侧身份与成员关系——
-//! 成员邀请受 GAP-IDN-01 阻断，产品里没有这条入口。
+//! 夹具只写一样东西：除首位 admin 之外的成员（B、C、D）的 OIDC 侧身份与成员关系。
+//! 产品里的入口是邀请（DD-83），由 `tenant_invitation.rs` 端到端核验；这里的成员只是
+//! 角色动作的对象，不走邀请以免两份核验互相牵连。
 
 use serde_json::json;
 use sqlx::PgPool;
@@ -552,7 +553,7 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World, sl
     .unwrap();
     assert!(audited >= 1, "对账删除没有留审计");
 
-    // ---- 10. GAP-IDN-01：Tenant 成员邀请没有入口 ----
+    // ---- 10. 成员建立只有邀请一条入口（DD-83）：tenant.member.add 不登记 ----
     let (st, body) = submit(
         http,
         e,
@@ -562,19 +563,4 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World, sl
     .await;
     assert_eq!(st, reqwest::StatusCode::FORBIDDEN, "{body}");
     assert_eq!(reason(&body), "CAPABILITY_BLOCKED");
-    let registered: i64 = sqlx::query_scalar(
-        "select count(*) from catalog.action_definition where action_key like 'tenant.member.add%'
-            or action_key like '%invit%'",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    assert_eq!(registered, 0, "Tenant 成员邀请不得登记（GAP-IDN-01）");
-    let invited: i64 = sqlx::query_scalar(
-        "select count(*) from identity.tenant_membership where state = 'INVITED'",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    assert_eq!(invited, 0, "INVITED 不可达（GAP-IDN-01）");
 }

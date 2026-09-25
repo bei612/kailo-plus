@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/invitation_redemption.schema.json",
+  "title": "InvitationRedemptionView",
+  "description": "POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions 的元素：兑换者自己看到的进度（DD-83）。membershipState=INVITED 且 admissionGateState=WAITING 表示等待 Tenant admin 确认；ACTIVE 即可登录该 Tenant；REVOKED 即本次邀请已终结，reason 给出原因。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invitationId", "tenantId", "tenantName", "membershipState", "admissionGateState", "redeemedAt"],
+  "properties": {
+    "invitationId": { "type": "string", "format": "uuid" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "tenantName": { "type": "string" },
+    "membershipState": { "$ref": "../enums/tenant_membership_state.schema.json" },
+    "admissionGateState": { "$ref": "../enums/action_gate_state.schema.json" },
+    "reason": { "$ref": "../enums/reason_code.schema.json" },
+    "redeemedAt": { "type": "string", "description": "RFC3339，UTC" }
+  }
+}

@@ -7,11 +7,15 @@
 //     final approvalView = approvalViewFromJson(jsonString);
 //     final clientKeyView = clientKeyViewFromJson(jsonString);
 //     final clientKeyStatus = clientKeyStatusFromJson(jsonString);
+//     final invitationRedemptionView = invitationRedemptionViewFromJson(jsonString);
+//     final invitationRedemptionRequest = invitationRedemptionRequestFromJson(jsonString);
+//     final issuedInvitation = issuedInvitationFromJson(jsonString);
 //     final nativeCommunityFacts = nativeCommunityFactsFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
 //     final platformSessionView = platformSessionViewFromJson(jsonString);
 //     final taskView = taskViewFromJson(jsonString);
+//     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
 //     final userStateVersion = userStateVersionFromJson(jsonString);
 //     final workspaceView = workspaceViewFromJson(jsonString);
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
@@ -73,6 +77,24 @@ ClientKeyStatus clientKeyStatusFromJson(String str) =>
 String clientKeyStatusToJson(ClientKeyStatus data) =>
     json.encode(data.toJson());
 
+InvitationRedemptionView invitationRedemptionViewFromJson(String str) =>
+    InvitationRedemptionView.fromJson(json.decode(str));
+
+String invitationRedemptionViewToJson(InvitationRedemptionView data) =>
+    json.encode(data.toJson());
+
+InvitationRedemptionRequest invitationRedemptionRequestFromJson(String str) =>
+    InvitationRedemptionRequest.fromJson(json.decode(str));
+
+String invitationRedemptionRequestToJson(InvitationRedemptionRequest data) =>
+    json.encode(data.toJson());
+
+IssuedInvitation issuedInvitationFromJson(String str) =>
+    IssuedInvitation.fromJson(json.decode(str));
+
+String issuedInvitationToJson(IssuedInvitation data) =>
+    json.encode(data.toJson());
+
 NativeCommunityFacts nativeCommunityFactsFromJson(String str) =>
     NativeCommunityFacts.fromJson(json.decode(str));
 
@@ -99,6 +121,12 @@ String platformSessionViewToJson(PlatformSessionView data) =>
 TaskView taskViewFromJson(String str) => TaskView.fromJson(json.decode(str));
 
 String taskViewToJson(TaskView data) => json.encode(data.toJson());
+
+TenantInvitationView tenantInvitationViewFromJson(String str) =>
+    TenantInvitationView.fromJson(json.decode(str));
+
+String tenantInvitationViewToJson(TenantInvitationView data) =>
+    json.encode(data.toJson());
 
 UserStateVersion userStateVersionFromJson(String str) =>
     UserStateVersion.fromJson(json.decode(str));
@@ -407,7 +435,10 @@ class ActionCommand {
   ///调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
   final String idempotencyKey;
 
-  ///workspace.create 的显示名
+  ///tenant.member.invite.revoke 的目标邀请
+  final String? invitationId;
+
+  ///workspace.create 的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
   final String? name;
 
   ///成员动作的目标 Principal
@@ -422,6 +453,7 @@ class ActionCommand {
   ActionCommand({
     required this.actionKey,
     required this.idempotencyKey,
+    this.invitationId,
     this.name,
     this.principalId,
     this.slug,
@@ -431,6 +463,7 @@ class ActionCommand {
   factory ActionCommand.fromJson(Map<String, dynamic> json) => ActionCommand(
     actionKey: json["actionKey"],
     idempotencyKey: json["idempotencyKey"],
+    invitationId: json["invitationId"],
     name: json["name"],
     principalId: json["principalId"],
     slug: json["slug"],
@@ -440,6 +473,7 @@ class ActionCommand {
   Map<String, dynamic> toJson() => _stripNulls({
     "actionKey": actionKey,
     "idempotencyKey": idempotencyKey,
+    "invitationId": invitationId,
     "name": name,
     "principalId": principalId,
     "slug": slug,
@@ -448,13 +482,14 @@ class ActionCommand {
 }
 
 ///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-///必有；DENIED 时 reason 必有。
+///必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
 class ActionSubmission {
   final String actionExecutionId;
   final String actionKey;
   final String? approvalWorkflowId;
   final ActionDispatchState dispatchState;
   final ActionGateState gateState;
+  final InvitationClass? invitation;
   final String operationId;
   final ReasonCode? reason;
   final String? workflowId;
@@ -465,6 +500,7 @@ class ActionSubmission {
     this.approvalWorkflowId,
     required this.dispatchState,
     required this.gateState,
+    this.invitation,
     required this.operationId,
     this.reason,
     this.workflowId,
@@ -477,6 +513,9 @@ class ActionSubmission {
         approvalWorkflowId: json["approvalWorkflowId"],
         dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
         gateState: actionGateStateValues.map[json["gateState"]]!,
+        invitation: json["invitation"] == null
+            ? null
+            : InvitationClass.fromJson(json["invitation"]),
         operationId: json["operationId"],
         reason: reasonCodeValues.map[json["reason"]]!,
         workflowId: json["workflowId"],
@@ -488,6 +527,7 @@ class ActionSubmission {
     "approvalWorkflowId": approvalWorkflowId,
     "dispatchState": actionDispatchStateValues.reverse[dispatchState],
     "gateState": actionGateStateValues.reverse[gateState],
+    "invitation": invitation?.toJson(),
     "operationId": operationId,
     "reason": reasonCodeValues.reverse[reason],
     "workflowId": workflowId,
@@ -518,6 +558,36 @@ final actionGateStateValues = EnumValues({
   "WAITING": ActionGateState.WAITING,
 });
 
+///tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+///里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+class InvitationClass {
+  ///RFC3339，UTC
+  final String expiresAt;
+  final String invitationId;
+
+  ///部署登记的链接基址 + '#' + 一次性凭据
+  final String link;
+
+  InvitationClass({
+    required this.expiresAt,
+    required this.invitationId,
+    required this.link,
+  });
+
+  factory InvitationClass.fromJson(Map<String, dynamic> json) =>
+      InvitationClass(
+        expiresAt: json["expiresAt"],
+        invitationId: json["invitationId"],
+        link: json["link"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "expiresAt": expiresAt,
+    "invitationId": invitationId,
+    "link": link,
+  });
+}
+
 ///稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
 ///字段同等对待，走兼容检查。本文件只含已被实现使用的 code。
 ///
@@ -547,6 +617,11 @@ enum ReasonCode {
   IDENTITY_HEADER_MISSING,
   IDENTITY_UNKNOWN,
   INVALID_PARAMETERS,
+  INVITATION_ALREADY_REDEEMED,
+  INVITATION_EXPIRED,
+  INVITATION_NOT_FOUND,
+  INVITATION_REVOKED,
+  INVITEE_ALREADY_MEMBER,
   LAST_TENANT_ADMIN,
   NATIVE_SURFACE_REQUIRED,
   PERMISSION_DENIED,
@@ -587,6 +662,11 @@ final reasonCodeValues = EnumValues({
   "IDENTITY_HEADER_MISSING": ReasonCode.IDENTITY_HEADER_MISSING,
   "IDENTITY_UNKNOWN": ReasonCode.IDENTITY_UNKNOWN,
   "INVALID_PARAMETERS": ReasonCode.INVALID_PARAMETERS,
+  "INVITATION_ALREADY_REDEEMED": ReasonCode.INVITATION_ALREADY_REDEEMED,
+  "INVITATION_EXPIRED": ReasonCode.INVITATION_EXPIRED,
+  "INVITATION_NOT_FOUND": ReasonCode.INVITATION_NOT_FOUND,
+  "INVITATION_REVOKED": ReasonCode.INVITATION_REVOKED,
+  "INVITEE_ALREADY_MEMBER": ReasonCode.INVITEE_ALREADY_MEMBER,
   "LAST_TENANT_ADMIN": ReasonCode.LAST_TENANT_ADMIN,
   "NATIVE_SURFACE_REQUIRED": ReasonCode.NATIVE_SURFACE_REQUIRED,
   "PERMISSION_DENIED": ReasonCode.PERMISSION_DENIED,
@@ -871,6 +951,125 @@ class ClientKeyStatus {
   });
 }
 
+///POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
+///的元素：兑换者自己看到的进度（DD-83）。membershipState=INVITED 且 admissionGateState=WAITING 表示等待 Tenant
+///admin 确认；ACTIVE 即可登录该 Tenant；REVOKED 即本次邀请已终结，reason 给出原因。
+class InvitationRedemptionView {
+  final ActionGateState admissionGateState;
+  final String invitationId;
+  final TenantMembershipState membershipState;
+  final ReasonCode? reason;
+
+  ///RFC3339，UTC
+  final String redeemedAt;
+  final String tenantId;
+  final String tenantName;
+
+  InvitationRedemptionView({
+    required this.admissionGateState,
+    required this.invitationId,
+    required this.membershipState,
+    this.reason,
+    required this.redeemedAt,
+    required this.tenantId,
+    required this.tenantName,
+  });
+
+  factory InvitationRedemptionView.fromJson(
+    Map<String, dynamic> json,
+  ) => InvitationRedemptionView(
+    admissionGateState: actionGateStateValues.map[json["admissionGateState"]]!,
+    invitationId: json["invitationId"],
+    membershipState: tenantMembershipStateValues.map[json["membershipState"]]!,
+    reason: reasonCodeValues.map[json["reason"]]!,
+    redeemedAt: json["redeemedAt"],
+    tenantId: json["tenantId"],
+    tenantName: json["tenantName"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "admissionGateState": actionGateStateValues.reverse[admissionGateState],
+    "invitationId": invitationId,
+    "membershipState": tenantMembershipStateValues.reverse[membershipState],
+    "reason": reasonCodeValues.reverse[reason],
+    "redeemedAt": redeemedAt,
+    "tenantId": tenantId,
+    "tenantName": tenantName,
+  });
+}
+
+///TenantMembership 状态机。REVOKING 期间必须立即拒绝新动作，对账完成后才进 REVOKED（.design/10 §4）。
+enum TenantMembershipState {
+  ACTIVE,
+  ERROR,
+  INVITED,
+  PROVISIONING,
+  REVOKED,
+  REVOKING,
+}
+
+final tenantMembershipStateValues = EnumValues({
+  "ACTIVE": TenantMembershipState.ACTIVE,
+  "ERROR": TenantMembershipState.ERROR,
+  "INVITED": TenantMembershipState.INVITED,
+  "PROVISIONING": TenantMembershipState.PROVISIONING,
+  "REVOKED": TenantMembershipState.REVOKED,
+  "REVOKING": TenantMembershipState.REVOKING,
+});
+
+///POST /api/v1/invitations/redeem 的请求体（DD-83）。兑换者身份只取网关投影的 issuer/subject，不接受请求体自报。
+class InvitationRedemptionRequest {
+  ///邀请链接 fragment 里的一次性凭据
+  final String credential;
+
+  ///兑换者自报的显示名：只作展示，审批人据此与被邀请人对照，不参与任何判定
+  final String displayName;
+
+  InvitationRedemptionRequest({
+    required this.credential,
+    required this.displayName,
+  });
+
+  factory InvitationRedemptionRequest.fromJson(Map<String, dynamic> json) =>
+      InvitationRedemptionRequest(
+        credential: json["credential"],
+        displayName: json["displayName"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"credential": credential, "displayName": displayName});
+}
+
+///tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+///里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+class IssuedInvitation {
+  ///RFC3339，UTC
+  final String expiresAt;
+  final String invitationId;
+
+  ///部署登记的链接基址 + '#' + 一次性凭据
+  final String link;
+
+  IssuedInvitation({
+    required this.expiresAt,
+    required this.invitationId,
+    required this.link,
+  });
+
+  factory IssuedInvitation.fromJson(Map<String, dynamic> json) =>
+      IssuedInvitation(
+        expiresAt: json["expiresAt"],
+        invitationId: json["invitationId"],
+        link: json["link"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "expiresAt": expiresAt,
+    "invitationId": invitationId,
+    "link": link,
+  });
+}
+
 ///GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
 ///communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
 class NativeCommunityFacts {
@@ -1150,6 +1349,95 @@ final workflowKindValues = EnumValues({
   "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
   "TENANT_LIFECYCLE": WorkflowKind.TENANT_LIFECYCLE,
   "WORKSPACE_LIFECYCLE": WorkflowKind.WORKSPACE_LIFECYCLE,
+});
+
+///GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
+///的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。
+class TenantInvitationView {
+  final String? admitActionExecutionId;
+  final ApprovalStatus? approvalStatus;
+  final String? approvalWorkflowId;
+
+  ///RFC3339，UTC
+  final String createdAt;
+
+  ///RFC3339，UTC
+  final String expiresAt;
+  final String invitationId;
+
+  ///邀请人写给审批人看的称呼，不参与寻址与判定
+  final String inviteeLabel;
+  final String inviterPrincipalId;
+  final String? membershipId;
+  final TenantMembershipState? membershipState;
+
+  ///RFC3339，UTC；只在 REDEEMED 时出现
+  final String? redeemedAt;
+
+  ///兑换者自报的显示名，只作展示
+  final String? redeemerDisplayName;
+  final TenantInvitationStatus status;
+
+  TenantInvitationView({
+    this.admitActionExecutionId,
+    this.approvalStatus,
+    this.approvalWorkflowId,
+    required this.createdAt,
+    required this.expiresAt,
+    required this.invitationId,
+    required this.inviteeLabel,
+    required this.inviterPrincipalId,
+    this.membershipId,
+    this.membershipState,
+    this.redeemedAt,
+    this.redeemerDisplayName,
+    required this.status,
+  });
+
+  factory TenantInvitationView.fromJson(Map<String, dynamic> json) =>
+      TenantInvitationView(
+        admitActionExecutionId: json["admitActionExecutionId"],
+        approvalStatus: approvalStatusValues.map[json["approvalStatus"]]!,
+        approvalWorkflowId: json["approvalWorkflowId"],
+        createdAt: json["createdAt"],
+        expiresAt: json["expiresAt"],
+        invitationId: json["invitationId"],
+        inviteeLabel: json["inviteeLabel"],
+        inviterPrincipalId: json["inviterPrincipalId"],
+        membershipId: json["membershipId"],
+        membershipState:
+            tenantMembershipStateValues.map[json["membershipState"]]!,
+        redeemedAt: json["redeemedAt"],
+        redeemerDisplayName: json["redeemerDisplayName"],
+        status: tenantInvitationStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "admitActionExecutionId": admitActionExecutionId,
+    "approvalStatus": approvalStatusValues.reverse[approvalStatus],
+    "approvalWorkflowId": approvalWorkflowId,
+    "createdAt": createdAt,
+    "expiresAt": expiresAt,
+    "invitationId": invitationId,
+    "inviteeLabel": inviteeLabel,
+    "inviterPrincipalId": inviterPrincipalId,
+    "membershipId": membershipId,
+    "membershipState": tenantMembershipStateValues.reverse[membershipState],
+    "redeemedAt": redeemedAt,
+    "redeemerDisplayName": redeemerDisplayName,
+    "status": tenantInvitationStatusValues.reverse[status],
+  });
+}
+
+///TenantInvitation 在视图中的状态（DD-83）。库里只存 ISSUED/REDEEMED/REVOKED；EXPIRED 是查询时判定：expires_at
+///已过的 ISSUED 邀请即 EXPIRED，没有回收作业去写它。
+enum TenantInvitationStatus { EXPIRED, ISSUED, REDEEMED, REVOKED }
+
+final tenantInvitationStatusValues = EnumValues({
+  "EXPIRED": TenantInvitationStatus.EXPIRED,
+  "ISSUED": TenantInvitationStatus.ISSUED,
+  "REDEEMED": TenantInvitationStatus.REDEEMED,
+  "REVOKED": TenantInvitationStatus.REVOKED,
 });
 
 ///CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT

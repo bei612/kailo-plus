@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/tenant_invitation_status.schema.json",
+  "title": "TenantInvitationStatus",
+  "description": "TenantInvitation 在视图中的状态（DD-83）。库里只存 ISSUED/REDEEMED/REVOKED；EXPIRED 是查询时判定：expires_at 已过的 ISSUED 邀请即 EXPIRED，没有回收作业去写它。",
+  "type": "string",
+  "enum": ["ISSUED", "EXPIRED", "REDEEMED", "REVOKED"]
+}

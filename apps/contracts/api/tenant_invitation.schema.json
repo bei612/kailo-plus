@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/tenant_invitation.schema.json",
+  "title": "TenantInvitationView",
+  "description": "GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage 的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invitationId", "inviteeLabel", "inviterPrincipalId", "status", "expiresAt", "createdAt"],
+  "properties": {
+    "invitationId": { "type": "string", "format": "uuid" },
+    "inviteeLabel": { "type": "string", "description": "邀请人写给审批人看的称呼，不参与寻址与判定" },
+    "inviterPrincipalId": { "type": "string", "format": "uuid" },
+    "status": { "$ref": "../enums/tenant_invitation_status.schema.json" },
+    "expiresAt": { "type": "string", "description": "RFC3339，UTC" },
+    "createdAt": { "type": "string", "description": "RFC3339，UTC" },
+    "redeemedAt": { "type": "string", "description": "RFC3339，UTC；只在 REDEEMED 时出现" },
+    "redeemerDisplayName": { "type": "string", "description": "兑换者自报的显示名，只作展示" },
+    "membershipId": { "type": "string", "format": "uuid" },
+    "membershipState": { "$ref": "../enums/tenant_membership_state.schema.json" },
+    "admitActionExecutionId": { "type": "string", "format": "uuid" },
+    "approvalWorkflowId": { "type": "string" },
+    "approvalStatus": { "$ref": "../enums/approval_status.schema.json" }
+  }
+}

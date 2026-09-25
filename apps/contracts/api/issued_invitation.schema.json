@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/issued_invitation.schema.json",
+  "title": "IssuedInvitation",
+  "description": "tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invitationId", "link", "expiresAt"],
+  "properties": {
+    "invitationId": { "type": "string", "format": "uuid" },
+    "link": { "type": "string", "description": "部署登记的链接基址 + '#' + 一次性凭据" },
+    "expiresAt": { "type": "string", "description": "RFC3339，UTC" }
+  }
+}

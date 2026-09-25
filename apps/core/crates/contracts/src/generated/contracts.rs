@@ -147,7 +147,11 @@ pub struct ActionCommand {
     /// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
     pub idempotency_key: String,
 
-    /// workspace.create 的显示名
+    /// tenant.member.invite.revoke 的目标邀请
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invitation_id: Option<String>,
+
+    /// workspace.create 的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
@@ -165,7 +169,7 @@ pub struct ActionCommand {
 }
 
 /// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-/// 必有；DENIED 时 reason 必有。
+/// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionSubmission {
@@ -179,6 +183,9 @@ pub struct ActionSubmission {
     pub dispatch_state: ActionDispatchState,
 
     pub gate_state: ActionGateState,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invitation: Option<InvitationClass>,
 
     pub operation_id: String,
 
@@ -225,6 +232,20 @@ pub enum ActionGateState {
 
     #[serde(rename = "WAITING")]
     Waiting,
+}
+
+/// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+/// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvitationClass {
+    /// RFC3339，UTC
+    pub expires_at: String,
+
+    pub invitation_id: String,
+
+    /// 部署登记的链接基址 + '#' + 一次性凭据
+    pub link: String,
 }
 
 /// 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
@@ -301,6 +322,21 @@ pub enum ReasonCode {
 
     #[serde(rename = "INVALID_PARAMETERS")]
     InvalidParameters,
+
+    #[serde(rename = "INVITATION_ALREADY_REDEEMED")]
+    InvitationAlreadyRedeemed,
+
+    #[serde(rename = "INVITATION_EXPIRED")]
+    InvitationExpired,
+
+    #[serde(rename = "INVITATION_NOT_FOUND")]
+    InvitationNotFound,
+
+    #[serde(rename = "INVITATION_REVOKED")]
+    InvitationRevoked,
+
+    #[serde(rename = "INVITEE_ALREADY_MEMBER")]
+    InviteeAlreadyMember,
 
     #[serde(rename = "LAST_TENANT_ADMIN")]
     LastTenantAdmin,
@@ -519,6 +555,76 @@ pub struct ClientKeyStatus {
     pub workflow_id: Option<String>,
 }
 
+/// POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
+/// 的元素：兑换者自己看到的进度（DD-83）。membershipState=INVITED 且 admissionGateState=WAITING 表示等待 Tenant
+/// admin 确认；ACTIVE 即可登录该 Tenant；REVOKED 即本次邀请已终结，reason 给出原因。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvitationRedemptionView {
+    pub admission_gate_state: ActionGateState,
+
+    pub invitation_id: String,
+
+    pub membership_state: TenantMembershipState,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<ReasonCode>,
+
+    /// RFC3339，UTC
+    pub redeemed_at: String,
+
+    pub tenant_id: String,
+
+    pub tenant_name: String,
+}
+
+/// TenantMembership 状态机。REVOKING 期间必须立即拒绝新动作，对账完成后才进 REVOKED（.design/10 §4）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TenantMembershipState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "ERROR")]
+    Error,
+
+    #[serde(rename = "INVITED")]
+    Invited,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+
+    #[serde(rename = "REVOKED")]
+    Revoked,
+
+    #[serde(rename = "REVOKING")]
+    Revoking,
+}
+
+/// POST /api/v1/invitations/redeem 的请求体（DD-83）。兑换者身份只取网关投影的 issuer/subject，不接受请求体自报。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvitationRedemptionRequest {
+    /// 邀请链接 fragment 里的一次性凭据
+    pub credential: String,
+
+    /// 兑换者自报的显示名：只作展示，审批人据此与被邀请人对照，不参与任何判定
+    pub display_name: String,
+}
+
+/// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+/// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssuedInvitation {
+    /// RFC3339，UTC
+    pub expires_at: String,
+
+    pub invitation_id: String,
+
+    /// 部署登记的链接基址 + '#' + 一次性凭据
+    pub link: String,
+}
+
 /// GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
 /// communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -711,6 +817,67 @@ pub enum WorkflowKind {
 
     #[serde(rename = "WORKSPACE_LIFECYCLE")]
     WorkspaceLifecycle,
+}
+
+/// GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
+/// 的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TenantInvitationView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub admit_action_execution_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_status: Option<ApprovalStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_workflow_id: Option<String>,
+
+    /// RFC3339，UTC
+    pub created_at: String,
+
+    /// RFC3339，UTC
+    pub expires_at: String,
+
+    pub invitation_id: String,
+
+    /// 邀请人写给审批人看的称呼，不参与寻址与判定
+    pub invitee_label: String,
+
+    pub inviter_principal_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membership_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membership_state: Option<TenantMembershipState>,
+
+    /// RFC3339，UTC；只在 REDEEMED 时出现
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redeemed_at: Option<String>,
+
+    /// 兑换者自报的显示名，只作展示
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redeemer_display_name: Option<String>,
+
+    pub status: TenantInvitationStatus,
+}
+
+/// TenantInvitation 在视图中的状态（DD-83）。库里只存 ISSUED/REDEEMED/REVOKED；EXPIRED 是查询时判定：expires_at
+/// 已过的 ISSUED 邀请即 EXPIRED，没有回收作业去写它。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TenantInvitationStatus {
+    #[serde(rename = "EXPIRED")]
+    Expired,
+
+    #[serde(rename = "ISSUED")]
+    Issued,
+
+    #[serde(rename = "REDEEMED")]
+    Redeemed,
+
+    #[serde(rename = "REVOKED")]
+    Revoked,
 }
 
 /// CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT

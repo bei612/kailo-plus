@@ -34,7 +34,12 @@
     },
     "name": {
       "type": "string",
-      "description": "workspace.create 的显示名"
+      "description": "workspace.create 的显示名；tenant.member.invite 的被邀请人称呼（只作展示）"
+    },
+    "invitationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "tenant.member.invite.revoke 的目标邀请"
     }
   }
 }

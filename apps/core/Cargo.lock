@@ -1409,6 +1409,7 @@ dependencies = [
  "chrono",
  "contracts",
  "futures-util",
+ "getrandom 0.3.4",
  "hex",
  "jsonwebtoken",
  "kailo-buzz",

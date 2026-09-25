@@ -397,6 +397,10 @@ services:
       # issuer 与 client 相同，身份解析才能在首次登录时找到这个人
       HUMAN_OIDC_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
       HUMAN_OIDC_CLIENT_ID: ${OIDC_BROWSER_CLIENT_ID:?必须显式提供，禁止硬编码}
+      # Tenant 成员邀请（DD-83）：有效期在签发时冻结进邀请；链接基址是部署的 Web
+      # 地址加 Web 端兑换页的路径，一次性凭据接在 # 之后（fragment 不发往任何服务端）
+      TENANT_INVITATION_TTL_SECONDS: ${TENANT_INVITATION_TTL_SECONDS:?必须显式提供，禁止硬编码}
+      TENANT_INVITATION_LINK_BASE: ${TENANT_INVITATION_LINK_BASE:?必须显式提供，禁止硬编码}
     env_file:
       - ./secrets/openbao-core.env
       # Core 自己的 OIDC client secret；不进 .env、不上命令行

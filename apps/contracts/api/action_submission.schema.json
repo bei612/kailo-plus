@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/action_submission.schema.json",
   "title": "ActionSubmission",
-  "description": "POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId 必有；DENIED 时 reason 必有。",
+  "description": "POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -38,6 +38,9 @@
     },
     "workflowId": {
       "type": "string"
+    },
+    "invitation": {
+      "$ref": "issued_invitation.schema.json"
     }
   }
 }

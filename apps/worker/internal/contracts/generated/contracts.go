@@ -22,6 +22,15 @@
 //    clientKeyStatus, err := UnmarshalClientKeyStatus(bytes)
 //    bytes, err = clientKeyStatus.Marshal()
 //
+//    invitationRedemptionView, err := UnmarshalInvitationRedemptionView(bytes)
+//    bytes, err = invitationRedemptionView.Marshal()
+//
+//    invitationRedemptionRequest, err := UnmarshalInvitationRedemptionRequest(bytes)
+//    bytes, err = invitationRedemptionRequest.Marshal()
+//
+//    issuedInvitation, err := UnmarshalIssuedInvitation(bytes)
+//    bytes, err = issuedInvitation.Marshal()
+//
 //    nativeCommunityFacts, err := UnmarshalNativeCommunityFacts(bytes)
 //    bytes, err = nativeCommunityFacts.Marshal()
 //
@@ -36,6 +45,9 @@
 //
 //    taskView, err := UnmarshalTaskView(bytes)
 //    bytes, err = taskView.Marshal()
+//
+//    tenantInvitationView, err := UnmarshalTenantInvitationView(bytes)
+//    bytes, err = tenantInvitationView.Marshal()
 //
 //    userStateVersion, err := UnmarshalUserStateVersion(bytes)
 //    bytes, err = userStateVersion.Marshal()
@@ -174,6 +186,36 @@ func (r *ClientKeyStatus) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalInvitationRedemptionView(data []byte) (InvitationRedemptionView, error) {
+	var r InvitationRedemptionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *InvitationRedemptionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalInvitationRedemptionRequest(data []byte) (InvitationRedemptionRequest, error) {
+	var r InvitationRedemptionRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *InvitationRedemptionRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalIssuedInvitation(data []byte) (IssuedInvitation, error) {
+	var r IssuedInvitation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *IssuedInvitation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalNativeCommunityFacts(data []byte) (NativeCommunityFacts, error) {
 	var r NativeCommunityFacts
 	err := json.Unmarshal(data, &r)
@@ -221,6 +263,16 @@ func UnmarshalTaskView(data []byte) (TaskView, error) {
 }
 
 func (r *TaskView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalTenantInvitationView(data []byte) (TenantInvitationView, error) {
+	var r TenantInvitationView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TenantInvitationView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -481,7 +533,9 @@ type ActionCommand struct {
 	ActionKey string `json:"actionKey"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
 	IdempotencyKey string `json:"idempotencyKey"`
-	// workspace.create 的显示名
+	// tenant.member.invite.revoke 的目标邀请
+	InvitationID *string `json:"invitationId,omitempty"`
+	// workspace.create 的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
 	Name *string `json:"name,omitempty"`
 	// 成员动作的目标 Principal
 	PrincipalID *string `json:"principalId,omitempty"`
@@ -492,16 +546,27 @@ type ActionCommand struct {
 }
 
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-// 必有；DENIED 时 reason 必有。
+// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
 type ActionSubmission struct {
 	ActionExecutionID  string              `json:"actionExecutionId"`
 	ActionKey          string              `json:"actionKey"`
 	ApprovalWorkflowID *string             `json:"approvalWorkflowId,omitempty"`
 	DispatchState      ActionDispatchState `json:"dispatchState"`
 	GateState          ActionGateState     `json:"gateState"`
+	Invitation         *InvitationClass    `json:"invitation,omitempty"`
 	OperationID        string              `json:"operationId"`
 	Reason             *ReasonCode         `json:"reason,omitempty"`
 	WorkflowID         *string             `json:"workflowId,omitempty"`
+}
+
+// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+type InvitationClass struct {
+	// RFC3339，UTC
+	ExpiresAt    string `json:"expiresAt"`
+	InvitationID string `json:"invitationId"`
+	// 部署登记的链接基址 + '#' + 一次性凭据
+	Link string `json:"link"`
 }
 
 // POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为
@@ -563,6 +628,38 @@ type ClientKeyStatus struct {
 	State  BuzzIdentityState `json:"state"`
 	// 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
 	WorkflowID *string `json:"workflowId,omitempty"`
+}
+
+// POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
+// 的元素：兑换者自己看到的进度（DD-83）。membershipState=INVITED 且 admissionGateState=WAITING 表示等待 Tenant
+// admin 确认；ACTIVE 即可登录该 Tenant；REVOKED 即本次邀请已终结，reason 给出原因。
+type InvitationRedemptionView struct {
+	AdmissionGateState ActionGateState       `json:"admissionGateState"`
+	InvitationID       string                `json:"invitationId"`
+	MembershipState    TenantMembershipState `json:"membershipState"`
+	Reason             *ReasonCode           `json:"reason,omitempty"`
+	// RFC3339，UTC
+	RedeemedAt string `json:"redeemedAt"`
+	TenantID   string `json:"tenantId"`
+	TenantName string `json:"tenantName"`
+}
+
+// POST /api/v1/invitations/redeem 的请求体（DD-83）。兑换者身份只取网关投影的 issuer/subject，不接受请求体自报。
+type InvitationRedemptionRequest struct {
+	// 邀请链接 fragment 里的一次性凭据
+	Credential string `json:"credential"`
+	// 兑换者自报的显示名：只作展示，审批人据此与被邀请人对照，不参与任何判定
+	DisplayName string `json:"displayName"`
+}
+
+// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+type IssuedInvitation struct {
+	// RFC3339，UTC
+	ExpiresAt    string `json:"expiresAt"`
+	InvitationID string `json:"invitationId"`
+	// 部署登记的链接基址 + '#' + 一次性凭据
+	Link string `json:"link"`
 }
 
 // GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
@@ -630,6 +727,29 @@ type TaskView struct {
 	WorkflowID    *string             `json:"workflowId,omitempty"`
 	WorkflowKind  *WorkflowKind       `json:"workflowKind,omitempty"`
 	WorkspaceID   *string             `json:"workspaceId,omitempty"`
+}
+
+// GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
+// 的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。
+type TenantInvitationView struct {
+	AdmitActionExecutionID *string         `json:"admitActionExecutionId,omitempty"`
+	ApprovalStatus         *ApprovalStatus `json:"approvalStatus,omitempty"`
+	ApprovalWorkflowID     *string         `json:"approvalWorkflowId,omitempty"`
+	// RFC3339，UTC
+	CreatedAt string `json:"createdAt"`
+	// RFC3339，UTC
+	ExpiresAt    string `json:"expiresAt"`
+	InvitationID string `json:"invitationId"`
+	// 邀请人写给审批人看的称呼，不参与寻址与判定
+	InviteeLabel       string                 `json:"inviteeLabel"`
+	InviterPrincipalID string                 `json:"inviterPrincipalId"`
+	MembershipID       *string                `json:"membershipId,omitempty"`
+	MembershipState    *TenantMembershipState `json:"membershipState,omitempty"`
+	// RFC3339，UTC；只在 REDEEMED 时出现
+	RedeemedAt *string `json:"redeemedAt,omitempty"`
+	// 兑换者自报的显示名，只作展示
+	RedeemerDisplayName *string                `json:"redeemerDisplayName,omitempty"`
+	Status              TenantInvitationStatus `json:"status"`
 }
 
 // CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT
@@ -971,6 +1091,11 @@ const (
 	IdentityHeaderMissing        ReasonCode = "IDENTITY_HEADER_MISSING"
 	IdentityUnknown              ReasonCode = "IDENTITY_UNKNOWN"
 	InvalidParameters            ReasonCode = "INVALID_PARAMETERS"
+	InvitationAlreadyRedeemed    ReasonCode = "INVITATION_ALREADY_REDEEMED"
+	InvitationExpired            ReasonCode = "INVITATION_EXPIRED"
+	InvitationNotFound           ReasonCode = "INVITATION_NOT_FOUND"
+	InvitationRevoked            ReasonCode = "INVITATION_REVOKED"
+	InviteeAlreadyMember         ReasonCode = "INVITEE_ALREADY_MEMBER"
 	LastTenantAdmin              ReasonCode = "LAST_TENANT_ADMIN"
 	NativeSurfaceRequired        ReasonCode = "NATIVE_SURFACE_REQUIRED"
 	PermissionDenied             ReasonCode = "PERMISSION_DENIED"
@@ -1035,6 +1160,18 @@ const (
 	Reconciling               BuzzIdentityState = "RECONCILING"
 )
 
+// TenantMembership 状态机。REVOKING 期间必须立即拒绝新动作，对账完成后才进 REVOKED（.design/10 §4）。
+type TenantMembershipState string
+
+const (
+	Invited                           TenantMembershipState = "INVITED"
+	TenantMembershipStateACTIVE       TenantMembershipState = "ACTIVE"
+	TenantMembershipStateERROR        TenantMembershipState = "ERROR"
+	TenantMembershipStatePROVISIONING TenantMembershipState = "PROVISIONING"
+	TenantMembershipStateREVOKED      TenantMembershipState = "REVOKED"
+	TenantMembershipStateREVOKING     TenantMembershipState = "REVOKING"
+)
+
 // AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
 // OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
 type AuditEventType string
@@ -1078,15 +1215,26 @@ const (
 	WorkspaceLifecycle     WorkflowKind = "WORKSPACE_LIFECYCLE"
 )
 
+// TenantInvitation 在视图中的状态（DD-83）。库里只存 ISSUED/REDEEMED/REVOKED；EXPIRED 是查询时判定：expires_at
+// 已过的 ISSUED 邀请即 EXPIRED，没有回收作业去写它。
+type TenantInvitationStatus string
+
+const (
+	Issued                        TenantInvitationStatus = "ISSUED"
+	Redeemed                      TenantInvitationStatus = "REDEEMED"
+	TenantInvitationStatusEXPIRED TenantInvitationStatus = "EXPIRED"
+	TenantInvitationStatusREVOKED TenantInvitationStatus = "REVOKED"
+)
+
 // WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
 type WorkspaceMembershipState string
 
 const (
-	Error                            WorkspaceMembershipState = "ERROR"
-	Provisioning                     WorkspaceMembershipState = "PROVISIONING"
-	WorkspaceMembershipStateACTIVE   WorkspaceMembershipState = "ACTIVE"
-	WorkspaceMembershipStateREVOKED  WorkspaceMembershipState = "REVOKED"
-	WorkspaceMembershipStateREVOKING WorkspaceMembershipState = "REVOKING"
+	WorkspaceMembershipStateACTIVE       WorkspaceMembershipState = "ACTIVE"
+	WorkspaceMembershipStateERROR        WorkspaceMembershipState = "ERROR"
+	WorkspaceMembershipStatePROVISIONING WorkspaceMembershipState = "PROVISIONING"
+	WorkspaceMembershipStateREVOKED      WorkspaceMembershipState = "REVOKED"
+	WorkspaceMembershipStateREVOKING     WorkspaceMembershipState = "REVOKING"
 )
 
 // ApprovalPolicy.owner_requirement（.design/03 §4）。
