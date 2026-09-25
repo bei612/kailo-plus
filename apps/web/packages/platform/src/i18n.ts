@@ -133,6 +133,18 @@ export const platformMessages = {
   "platform.confirm": { en: "Confirm", "zh-CN": "确认" },
   "platform.cancel": { en: "Cancel", "zh-CN": "取消" },
   "platform.settings.organization": { en: "Organization", "zh-CN": "组织" },
+  "platform.settings.close": { en: "Close settings", "zh-CN": "关闭设置" },
+  "platform.settings.appearance": { en: "Appearance", "zh-CN": "外观" },
+  "platform.settings.theme": { en: "Theme", "zh-CN": "主题" },
+  "platform.settings.connection": { en: "Kailo connection", "zh-CN": "Kailo 连接" },
+  "platform.settings.copyDeviceKey": { en: "Copy device public key", "zh-CN": "复制设备公钥" },
+  "platform.settings.identityUnavailable": { en: "Identity unavailable", "zh-CN": "身份不可用" },
+  "platform.settings.deviceKey": { en: "Device key", "zh-CN": "设备密钥" },
+  "platform.settings.keyCopied": { en: "Pubkey copied", "zh-CN": "公钥已复制" },
+  "platform.settings.signOutConfirm": {
+    en: "This disconnects this device from your workspaces. The device stays registered; signing in again reconnects it.",
+    "zh-CN": "这会断开本机与工作区的连接。设备仍保持登记，再次登录即可重新连接。",
+  },
   "platform.reasonWithCode": { en: "{text} ({code})", "zh-CN": "{text}（{code}）" },
 
   "tasks.none": {

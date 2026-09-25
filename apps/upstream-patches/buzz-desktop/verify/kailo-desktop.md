@@ -92,3 +92,7 @@ HEAD 与 `implementation_base_commit` 不一致即失败。
 ## 2026-09-25 成员、设备、审计文案增量
 
 Desktop 复用的 `web/packages/platform` 在成员、设备、审计状态视图中使用同一双语枚举映射；固定上游基线、原补丁与新 vendor 文件重新构建 Linux `.deb`。`dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的实测 SHA-256 为 `add870880648eea8ee77b641251b1948b3a21cddc7cb617b1390ee621f62a21a`，已写入 manifest 和当前追溯记录。本增量仍未在真实桌面会话安装，不能把构建成功当作运行验收。
+
+## 2026-09-25 Mobile 设置页共享文案增量
+
+固定 Desktop 上游基线、既有补丁与新增的共享文案文件重新构建 Linux `.deb`；当前 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的实测 SHA-256 为 `8510d2d6835849feafbefc5f208cb50a81d81a1da729f0c2ae2620cd48f30753`，已写回 manifest 与追溯记录。首次构建因磁盘余量跌至 2.4 GiB 主动取消，后台缓存回收后余量恢复至约 50 GiB；重试复用已缓存阶段并完成打包。`check.sh --full` 十项通过。本增量未在真实桌面会话安装，也未重跑 Desktop 原生端到端测试。

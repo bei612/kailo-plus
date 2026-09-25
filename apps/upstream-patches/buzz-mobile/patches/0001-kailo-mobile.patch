@@ -12332,10 +12332,10 @@ index bc9bfddc331188c51c84738b9738a2fe6944abc1..299007ef9bcde6099baf1d6e9877f144
    }
  
 diff --git a/mobile/lib/features/settings/settings_page.dart b/mobile/lib/features/settings/settings_page.dart
-index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f58111870 100644
+index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..d2110f184cc6d7def6dd67e6430ed63a1fd400fb 100644
 --- a/mobile/lib/features/settings/settings_page.dart
 +++ b/mobile/lib/features/settings/settings_page.dart
-@@ -1,70 +1,38 @@
+@@ -1,72 +1,41 @@
  import 'dart:async';
  
 -import 'package:flutter/foundation.dart';
@@ -12413,8 +12413,11 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
 -
    @override
    Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
      final packageInfoFuture = useMemoized(() => PackageInfo.fromPlatform());
-@@ -74,75 +42,6 @@ class SettingsPage extends HookConsumerWidget {
+     final packageInfo = useFuture(packageInfoFuture);
+     final topSectionHeight = frostedAppBarHeight(
+@@ -74,75 +43,6 @@ class SettingsPage extends HookConsumerWidget {
        bottomHeight: Grid.xxs,
      );
  
@@ -12490,7 +12493,31 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
      return FrostedScaffold(
        useUtilitySurfaceTheme: true,
        appBar: FrostedAppBar(
-@@ -173,38 +72,6 @@ class SettingsPage extends HookConsumerWidget {
+@@ -153,7 +53,10 @@ class SettingsPage extends HookConsumerWidget {
+             ? IosGlassNavigationButton(
+                 key: const ValueKey('settings-ios-glass-close'),
+                 icon: IosGlassNavigationIcon.close,
+-                semanticLabel: 'Close settings',
++                semanticLabel: kailoText(
++                  KailoMessageKey.platformSettingsClose,
++                  locale: locale,
++                ),
+                 onPressed: () {
+                   unawaited(HapticFeedback.lightImpact());
+                   Navigator.of(context).pop();
+@@ -164,7 +67,10 @@ class SettingsPage extends HookConsumerWidget {
+                 width: Grid.xl,
+                 height: Grid.xl,
+                 child: IconButton(
+-                  tooltip: 'Close settings',
++                  tooltip: kailoText(
++                    KailoMessageKey.platformSettingsClose,
++                    locale: locale,
++                  ),
+                   onPressed: () {
+                     unawaited(HapticFeedback.lightImpact());
+                     Navigator.of(context).pop();
+@@ -173,38 +79,6 @@ class SettingsPage extends HookConsumerWidget {
                    icon: const Icon(LucideIcons.x),
                  ),
                ),
@@ -12529,7 +12556,7 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
          bottomHeight: Grid.xxs,
          bottom: const SizedBox.expand(),
        ),
-@@ -215,12 +82,10 @@ class SettingsPage extends HookConsumerWidget {
+@@ -215,12 +89,10 @@ class SettingsPage extends HookConsumerWidget {
                padding: EdgeInsets.only(top: topSectionHeight, bottom: Grid.xs),
                children: [
                  profileHeader,
@@ -12546,7 +12573,7 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
                ],
              ),
            ),
-@@ -235,6 +100,215 @@ class SettingsPage extends HookConsumerWidget {
+@@ -235,6 +107,258 @@ class SettingsPage extends HookConsumerWidget {
    }
  }
  
@@ -12623,14 +12650,21 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
 +    final preference = ref.watch(communityThemeProvider);
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    return AppListCard(
-+      label: 'Appearance',
++      label: kailoText(
++        KailoMessageKey.platformSettingsAppearance,
++        locale: locale,
++      ),
 +      verticalPadding: Grid.twelve,
 +      children: [
 +        AppListRow(
 +          key: const ValueKey('community-theme-row'),
 +          icon: LucideIcons.palette,
-+          title: 'Theme',
++          title: kailoText(
++            KailoMessageKey.platformSettingsTheme,
++            locale: locale,
++          ),
 +          value: themeSelectionLabel(preference.theme, preference.mode),
 +          trailing: const _RowChevron(),
 +          onTap: () => Navigator.of(context).push(
@@ -12648,18 +12682,25 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
 +
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    final pubkey = ref.watch(myPubkeyProvider);
 +    final link = ref.watch(kailoLinkProvider);
 +    final outcome = kailoOutcomeText(link);
 +    return AppListCard(
-+      label: 'This device',
++      label: kailoText(
++        KailoMessageKey.platformDevicesThisDevice,
++        locale: locale,
++      ),
 +      verticalPadding: Grid.twelve,
 +      children: [
 +        if (pubkey != null) _IdentityRow(pubkey: pubkey),
 +        AppListRow(
 +          key: const ValueKey('settings-kailo-link'),
 +          icon: LucideIcons.plugZap,
-+          title: 'Kailo connection',
++          title: kailoText(
++            KailoMessageKey.platformSettingsConnection,
++            locale: locale,
++          ),
 +          subtitle: outcome ?? kailoPhaseText(link.phase),
 +          subtitleMaxLines: 4,
 +          trailing: link.busy || link.phase == KailoLinkPhase.linked
@@ -12668,7 +12709,9 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
 +                  onPressed: () => unawaited(
 +                    ref.read(kailoLinkProvider.notifier).reconcile(),
 +                  ),
-+                  child: const Text('Retry'),
++                  child: Text(
++                    kailoText(KailoMessageKey.platformRetry, locale: locale),
++                  ),
 +                ),
 +        ),
 +      ],
@@ -12683,15 +12726,27 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
 +
 +  @override
 +  Widget build(BuildContext context) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    // The full npub is the canonical copy/share form (never raw hex).
 +    final npub = fullNpub(pubkey);
 +    return Semantics(
 +      button: true,
-+      label: 'Copy device public key',
-+      value: npub ?? 'Identity unavailable',
++      label: kailoText(
++        KailoMessageKey.platformSettingsCopyDeviceKey,
++        locale: locale,
++      ),
++      value:
++          npub ??
++          kailoText(
++            KailoMessageKey.platformSettingsIdentityUnavailable,
++            locale: locale,
++          ),
 +      child: AppListRow(
 +        icon: LucideIcons.key,
-+        title: 'Device key',
++        title: kailoText(
++          KailoMessageKey.platformSettingsDeviceKey,
++          locale: locale,
++        ),
 +        subtitle: shortPubkey(pubkey),
 +        trailing: Icon(
 +          LucideIcons.copy,
@@ -12701,7 +12756,14 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
 +        onTap: npub == null
 +            ? null
 +            : () async {
-+                await copyToClipboard(context, npub, message: 'Pubkey copied');
++                await copyToClipboard(
++                  context,
++                  npub,
++                  message: kailoText(
++                    KailoMessageKey.platformSettingsKeyCopied,
++                    locale: locale,
++                  ),
++                );
 +              },
 +      ),
 +    );
@@ -12713,13 +12775,14 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
 +
 +  @override
 +  Widget build(BuildContext context, WidgetRef ref) {
++    final locale = Localizations.localeOf(context).toLanguageTag();
 +    return AppListCard(
 +      verticalPadding: Grid.twelve,
 +      children: [
 +        AppListRow(
 +          key: const ValueKey('settings-sign-out'),
 +          icon: LucideIcons.logOut,
-+          title: 'Sign out',
++          title: kailoText(KailoMessageKey.platformSignOut, locale: locale),
 +          titleColor: context.colors.error,
 +          onTap: () => _confirmSignOut(context, ref),
 +        ),
@@ -12729,18 +12792,23 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
 +}
 +
 +void _confirmSignOut(BuildContext context, WidgetRef ref) {
++  final locale = Localizations.localeOf(context).toLanguageTag();
 +  showBuzzDialog<void>(
 +    context: context,
 +    builder: (ctx) => AlertDialog(
-+      title: const Text('Sign out'),
-+      content: const Text(
-+        'This disconnects this device from your workspaces. The device stays '
-+        'registered; signing in again reconnects it.',
++      title: Text(kailoText(KailoMessageKey.platformSignOut, locale: locale)),
++      content: Text(
++        kailoText(
++          KailoMessageKey.platformSettingsSignOutConfirm,
++          locale: locale,
++        ),
 +      ),
 +      actions: [
 +        TextButton(
 +          onPressed: () => Navigator.of(ctx).pop(),
-+          child: const Text('Cancel'),
++          child: Text(
++            kailoText(KailoMessageKey.platformCancel, locale: locale),
++          ),
 +        ),
 +        FilledButton(
 +          onPressed: () async {
@@ -12752,7 +12820,9 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
 +            Navigator.of(context).popUntil((route) => route.isFirst);
 +          },
 +          style: FilledButton.styleFrom(backgroundColor: ctx.colors.error),
-+          child: const Text('Sign out'),
++          child: Text(
++            kailoText(KailoMessageKey.platformSignOut, locale: locale),
++          ),
 +        ),
 +      ],
 +    ),
@@ -12762,7 +12832,7 @@ index 24ac64bdf0ea2435238703a646d37335fdbc3b2d..0615e47fbc8f5ba8c7950f6ee700783f
  class _VersionFooter extends StatelessWidget {
    const _VersionFooter({required this.version, required this.buildNumber});
  
-@@ -260,7 +334,7 @@ class _VersionFooter extends StatelessWidget {
+@@ -260,7 +384,7 @@ class _VersionFooter extends StatelessWidget {
    }
  }
  
@@ -42030,10 +42100,10 @@ index 8e8c4f81ec603ea54c377999523096aaf2df9ab6..4a36b8c3ec13ac9b42a4918e8d05eec8
    _FakeChannelsNotifier([this.channels = const []]);
  
 diff --git a/mobile/test/features/settings/settings_page_test.dart b/mobile/test/features/settings/settings_page_test.dart
-index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129fb4d19c0 100644
+index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..2fca1122bc775e10cbc5b03e022bd5c1fb4e178d 100644
 --- a/mobile/test/features/settings/settings_page_test.dart
 +++ b/mobile/test/features/settings/settings_page_test.dart
-@@ -1,14 +1,11 @@
+@@ -1,14 +1,12 @@
 +import 'package:buzz/features/kailo/kailo_audit_page.dart';
 +import 'package:buzz/features/kailo/kailo_devices_page.dart';
 +import 'package:buzz/features/kailo/kailo_members_page.dart';
@@ -42050,10 +42120,11 @@ index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129
 -import 'package:buzz/shared/widgets/app_list_card.dart';
  import 'package:flutter/material.dart';
 -import 'package:flutter/foundation.dart';
++import 'package:flutter_localizations/flutter_localizations.dart';
  import 'package:flutter_test/flutter_test.dart';
  import 'package:hooks_riverpod/hooks_riverpod.dart';
  import 'package:package_info_plus/package_info_plus.dart';
-@@ -25,519 +22,68 @@ void main() {
+@@ -25,519 +23,94 @@ void main() {
      );
    });
  
@@ -42113,46 +42184,35 @@ index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129
 -  ) async {
 -    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
 -    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-+  Future<void> pumpSettings(WidgetTester tester) async {
-+    // 整页一屏放下，懒加载列表里的每一行都会建出来
-+    tester.view.physicalSize = const Size(800, 2000);
-+    tester.view.devicePixelRatio = 1;
-+    addTearDown(tester.view.reset);
-     SharedPreferences.setMockInitialValues({});
-     final prefs = await SharedPreferences.getInstance();
+-    SharedPreferences.setMockInitialValues({});
+-    final prefs = await SharedPreferences.getInstance();
 -    final community = Community.create(
 -      name: 'Team',
 -      relayUrl: 'wss://relay.example',
 -    ).copyWith(pushNotificationsEnabled: true);
 -
-     await tester.pumpWidget(
-       ProviderScope(
-         overrides: [
-           savedPrefsProvider.overrideWithValue(prefs),
+-    await tester.pumpWidget(
+-      ProviderScope(
+-        overrides: [
+-          savedPrefsProvider.overrideWithValue(prefs),
 -          activeCommunityProvider.overrideWith((ref) async => community),
 -          appLifecycleProvider.overrideWith(_SettingsLifecycleNotifier.new),
 -          buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
 -            () async => BuzzPushAuthorizationStatus.authorized,
 -          ),
-+          myPubkeyProvider.overrideWithValue('ab' * 32),
-+          kailoWorkspacesProvider.overrideWith((ref) async => const []),
-+          kailoOwnAuditProvider.overrideWith((ref) async => const []),
-+          kailoDevicesProvider.overrideWith((ref) async => const []),
-         ],
-         child: MaterialApp(
-           theme: AppTheme.light(),
+-        ],
+-        child: MaterialApp(
+-          theme: AppTheme.light(),
 -          home: SettingsPage(
 -            profileHeader: const SizedBox.shrink(),
 -            invitePageBuilder: (_) => const SizedBox.shrink(),
 -            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
 -          ),
-+          home: const SettingsPage(profileHeader: SizedBox.shrink()),
-         ),
-       ),
-     );
-     await tester.pumpAndSettle();
-+  }
- 
+-        ),
+-      ),
+-    );
+-    await tester.pumpAndSettle();
+-
 -    expect(
 -      find.byKey(const ValueKey('push-notifications-enabled')),
 -      findsOneWidget,
@@ -42216,41 +42276,60 @@ index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129
 -  });
 -
 -  testWidgets('shows permission lookup errors with settings recovery', (
-+  testWidgets('offers the Kailo management views and nothing undelivered', (
-     tester,
-   ) async {
+-    tester,
+-  ) async {
 -    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
 -    addTearDown(() => debugDefaultTargetPlatformOverride = null);
--    SharedPreferences.setMockInitialValues({});
--    final prefs = await SharedPreferences.getInstance();
++  Future<void> pumpSettings(
++    WidgetTester tester, {
++    Locale locale = const Locale('en'),
++  }) async {
++    // 整页一屏放下，懒加载列表里的每一行都会建出来
++    tester.view.physicalSize = const Size(800, 2000);
++    tester.view.devicePixelRatio = 1;
++    addTearDown(tester.view.reset);
+     SharedPreferences.setMockInitialValues({});
+     final prefs = await SharedPreferences.getInstance();
 -    final community = Community.create(
 -      name: 'Team',
 -      relayUrl: 'wss://relay.example',
 -    ).copyWith(pushNotificationsEnabled: true);
-+    await pumpSettings(tester);
- 
--    await tester.pumpWidget(
--      ProviderScope(
--        overrides: [
--          savedPrefsProvider.overrideWithValue(prefs),
+-
+     await tester.pumpWidget(
+       ProviderScope(
+         overrides: [
+           savedPrefsProvider.overrideWithValue(prefs),
 -          activeCommunityProvider.overrideWith((ref) async => community),
 -          appLifecycleProvider.overrideWith(_SettingsLifecycleNotifier.new),
 -          buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
 -            () async => throw StateError('authorization unavailable'),
 -          ),
--        ],
--        child: MaterialApp(
--          theme: AppTheme.light(),
++          myPubkeyProvider.overrideWithValue('ab' * 32),
++          kailoWorkspacesProvider.overrideWith((ref) async => const []),
++          kailoOwnAuditProvider.overrideWith((ref) async => const []),
++          kailoDevicesProvider.overrideWith((ref) async => const []),
+         ],
+         child: MaterialApp(
++          locale: locale,
++          supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
++          localizationsDelegates: const [
++            GlobalMaterialLocalizations.delegate,
++            GlobalWidgetsLocalizations.delegate,
++            GlobalCupertinoLocalizations.delegate,
++          ],
+           theme: AppTheme.light(),
 -          home: SettingsPage(
 -            profileHeader: const SizedBox.shrink(),
 -            invitePageBuilder: (_) => const SizedBox.shrink(),
 -            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
 -          ),
--        ),
--      ),
--    );
--    await tester.pumpAndSettle();
--
++          home: const SettingsPage(profileHeader: SizedBox.shrink()),
+         ),
+       ),
+     );
+     await tester.pumpAndSettle();
++  }
+ 
 -    expect(
 -      find.text('Enabled in Buzz; iOS permission status unavailable'),
 -      findsOneWidget,
@@ -42263,8 +42342,9 @@ index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129
 -  });
 -
 -  testWidgets('opens profile edit choices and routes photo directly', (
--    tester,
--  ) async {
++  testWidgets('offers the Kailo management views and nothing undelivered', (
+     tester,
+   ) async {
 -    SharedPreferences.setMockInitialValues({});
 -    final prefs = await SharedPreferences.getInstance();
 -
@@ -42284,7 +42364,8 @@ index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129
 -      ),
 -    );
 -    await tester.pumpAndSettle();
--
++    await pumpSettings(tester);
+ 
 -    expect(find.text('Profile'), findsNothing);
 -    await tester.tap(find.byKey(const ValueKey('settings-edit-profile')));
 -    await tester.pumpAndSettle();
@@ -42343,15 +42424,17 @@ index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129
 -    await tester.tap(find.byKey(const ValueKey('edit-profile-photo')));
 -    await tester.pumpAndSettle();
 -    expect(find.text('Profile editor destination'), findsOneWidget);
--  });
--
+   });
+ 
 -  testWidgets('opens profile text editors after dismissing the choices', (
 -    tester,
 -  ) async {
 -    SharedPreferences.setMockInitialValues({});
 -    final prefs = await SharedPreferences.getInstance();
 -    final opened = <String>[];
--
++  testWidgets('each management row opens its view', (tester) async {
++    await pumpSettings(tester);
+ 
 -    await tester.pumpWidget(
 -      ProviderScope(
 -        overrides: [savedPrefsProvider.overrideWithValue(prefs)],
@@ -42381,8 +42464,8 @@ index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129
 -    await tester.tap(find.byKey(const ValueKey('edit-profile-description')));
 -    await tester.pumpAndSettle();
 -    expect(opened, ['name', 'description']);
-   });
- 
+-  });
+-
 -  testWidgets('places Theme second in the Community section', (tester) async {
 -    SharedPreferences.setMockInitialValues({});
 -    final prefs = await SharedPreferences.getInstance();
@@ -42406,9 +42489,7 @@ index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129
 -      ),
 -    );
 -    await tester.pumpAndSettle();
-+  testWidgets('each management row opens its view', (tester) async {
-+    await pumpSettings(tester);
- 
+-
 -    expect(find.text('Theme'), findsOneWidget);
 -    expect(
 -      tester.getTopLeft(find.text('Theme')).dy,
@@ -42608,12 +42689,27 @@ index 1799d7a36dc02d3c408acbbb988b6b1d38e2e1eb..39260017b1f00cb2c382482651486129
 +      await tester.pumpAndSettle();
 +    }
    });
- }
--
+-}
+ 
 -class _SettingsLifecycleNotifier extends AppLifecycleNotifier {
 -  @override
 -  AppLifecycleState build() => AppLifecycleState.resumed;
--}
++  testWidgets(
++    'renders settings and device copy from the shared zh-CN catalog',
++    (tester) async {
++      await pumpSettings(tester, locale: const Locale('zh', 'CN'));
++
++      for (final label in ['组织', '外观', '主题', '本机', 'Kailo 连接', '设备密钥', '退出']) {
++        expect(find.text(label), findsWidgets, reason: label);
++      }
++      expect(find.text('Appearance'), findsNothing);
++      expect(find.text('Device key'), findsNothing);
++      await tester.tap(find.text('退出'));
++      await tester.pumpAndSettle();
++      expect(find.textContaining('设备仍保持登记'), findsOneWidget);
++    },
++  );
+ }
 diff --git a/mobile/test/features/settings/theme_picker_page_test.dart b/mobile/test/features/settings/theme_picker_page_test.dart
 index 3c4172ad643245756da4514a62088bd0234664ee..762863cb32c4693e867e37995fa77c6078cfaff8 100644
 --- a/mobile/test/features/settings/theme_picker_page_test.dart
