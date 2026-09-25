@@ -6,3 +6,12 @@ members = ["crates/contracts", "crates/kailo-identity", "crates/kailo-buzz", "cr
 version = "0.0.0"
 edition = "2021"
 publish = false
+
+# 本地构建（集成测试、核验夹具）的体积：完整调试信息让一次全量 debug 构建超过 40 GiB，
+# 在与其他项目共用的宿主磁盘上曾把 MinIO 挤到拒绝写入。本工作区只保留行号表——panic
+# 回溯仍定位到文件与行；依赖不带调试信息。发布镜像走 release，不受影响。
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
