@@ -156,7 +156,15 @@ describe("TasksPage", () => {
 
 describe("ApprovalsPage", () => {
   const openFirst = async (route: Route) => {
-    const m = mount((r) => (r.path === "/api/v1/approvals" ? { status: 200, body: [approval()] } : route(r)), <ApprovalsPage />);
+    const m = mount(
+      (r) =>
+        r.path === "/api/v1/approvals"
+          ? { status: 200, body: [approval()] }
+          : r.path === "/api/v1/invitations"
+            ? { status: 403, body: { class: ErrorClass.Denied, reason: ReasonCode.PermissionDenied } }
+            : route(r),
+      <ApprovalsPage />,
+    );
     const el = await m.host;
     await settle();
     await click(button(el, "tenant.member.revoke"));

@@ -853,6 +853,7 @@ vendor_files:
   - web/packages/platform/src/react/ui.tsx:desktop/src/kailo-platform/react/ui.tsx
   - web/packages/platform/src/react/pages.tsx:desktop/src/kailo-platform/react/pages.tsx
   - web/packages/platform/src/react/governance.tsx:desktop/src/kailo-platform/react/governance.tsx
+  - web/packages/platform/src/react/invitations.tsx:desktop/src/kailo-platform/react/invitations.tsx
   - web/packages/platform/src/react/NativeBootstrap.tsx:desktop/src/kailo-platform/react/NativeBootstrap.tsx
 patch_series_digest: sha256:d48581c6e1180080da534301d2aa986a94e04a709a26b3fb5ac7dc7ee80c837b
 # 产物是 Linux 桌面安装包（.deb）而不是镜像：上游没有打包用的 Dockerfile，由 Kailo 维护的

@@ -32,6 +32,7 @@ import {
 } from "../native";
 import { BffError, isOutcomeUnknown, SessionEndedError, unwrap } from "../transport";
 import { PlatformProvider, type Translate, useT } from "./context";
+import { RedemptionProgress } from "./invitations";
 import { Button, Notice } from "./ui";
 
 /** 引导完成后交给宿主的事实。 */
@@ -360,6 +361,17 @@ function StepView({ step, actions }: { step: Step; actions: Actions }) {
         </>
       );
     case "deviceRejected":
+      // 还不是（或尚未成为）任何 Tenant 的成员：多半是收到了邀请。邀请链接是浏览器入口的
+      // 地址，在浏览器里兑换；这里只显示本人的兑换进度，确认后重新确认即可登记本机。
+      if (step.reason === ReasonCode.TenantMembershipNotActive || step.reason === ReasonCode.IdentityUnknown)
+        return (
+          <>
+            <Detail>{t("redeem.nativeHint")}</Detail>
+            <RedemptionProgress onContinue={actions.register} />
+            <Button onClick={actions.register}>{t("native.device.check")}</Button>
+            <Button onClick={actions.signOut}>{t("platform.signOut")}</Button>
+          </>
+        );
       return (
         <>
           <Detail alert>

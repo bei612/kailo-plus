@@ -4,6 +4,8 @@
 // 这里不另写一份。身份由网关验证后投影给 BFF，这里没有任何可自报的身份字段。
 
 import type {
+  ActionCommand,
+  ActionSubmission,
   ApprovalControlOutcome,
   ApprovalDecision,
   ApprovalDecisionOutcome,
@@ -11,10 +13,13 @@ import type {
   ApprovalView,
   ClientKeyStatus,
   ClientKeyView,
+  InvitationRedemptionRequest,
+  InvitationRedemptionView,
   NativeCommunityFacts,
   OwnAuditEntry,
   PlatformSessionView,
   TaskView,
+  TenantInvitationView,
   WorkspaceMemberView,
   WorkspaceView,
 } from "@kailo/contracts";
@@ -87,6 +92,30 @@ export function createBffClient(transport: BffTransport) {
         path: `/api/v1/approvals/${encodeURIComponent(workflowId)}/decision`,
         body: { decision } satisfies ApprovalDecisionRequest,
       }),
+
+    /**
+     * 语义命令（Governed Action）。准入、审批与派发全在服务端；回应只说本次 operation
+     * 的门禁与派发状态，不是业务终态。幂等键由调用方为「一次意图」生成，重发用同一个。
+     */
+    submitAction: (command: ActionCommand) =>
+      call<ActionSubmission>({ method: "POST", path: "/api/v1/actions", body: command }),
+
+    /** 本 Tenant 的邀请；只对持有 Tenant manage 的人开放，其余 403（DD-83）。 */
+    invitations: () => get<TenantInvitationView[]>("/api/v1/invitations"),
+
+    /**
+     * 兑换邀请：凭据只进请求体，不进 URL。不要求 PlatformSession——兑换者此刻还不是
+     * 成员。同一人重复兑换回答原结果，因此结果不明时可以原样重发。
+     */
+    redeemInvitation: (request: InvitationRedemptionRequest) =>
+      call<InvitationRedemptionView>({
+        method: "POST",
+        path: "/api/v1/invitations/redeem",
+        body: request,
+      }),
+
+    /** 本人兑换过的邀请与进度。 */
+    redemptions: () => get<InvitationRedemptionView[]>("/api/v1/invitations/redemptions"),
 
     /** 发起者撤回仍未决的审批请求（REQUESTED/WAITING → CANCELLED）。 */
     withdraw: (workflowId: string) =>

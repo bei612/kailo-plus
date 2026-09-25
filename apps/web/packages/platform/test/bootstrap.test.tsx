@@ -131,6 +131,41 @@ describe("NativeBootstrap", () => {
     expect(listed).toBe(2);
   });
 
+  it("还不是成员（兑换了邀请、等待确认）：指向浏览器里的邀请链接并显示本人的兑换进度", async () => {
+    let active = false;
+    const invoke = fakeInvoke({
+      kailo_get_config: () => ({}),
+      kailo_status: () => ({ configured: true, signedIn: true }),
+      kailo_register_device: () =>
+        active
+          ? { status: 200, body: { pubkey: PUBKEY, state: "ACTIVE" } }
+          : { status: 403, body: { class: ErrorClass.Denied, reason: ReasonCode.TenantMembershipNotActive } },
+      kailo_api: api({
+        "GET /api/v1/invitations/redemptions": () => ({
+          status: 200,
+          body: [
+            {
+              invitationId: "inv-1",
+              tenantId: "t1",
+              tenantName: "Acme",
+              membershipState: active ? "ACTIVE" : "INVITED",
+              admissionGateState: active ? "ALLOWED" : "WAITING",
+              redeemedAt: "2026-09-25T00:00:00Z",
+            },
+          ],
+        }),
+        "GET /api/v1/native/community": () => ({ status: 200, body: facts }),
+      }),
+    });
+    const host = await mount(invoke);
+    expect(host.textContent).toContain("open your invitation link in the browser");
+    expect(host.textContent).toContain("Waiting for an admin of Acme to confirm it is you.");
+    expect(host.querySelector("[role=alert]")).toBeNull();
+    active = true;
+    await click(button(host, "Check again"));
+    expect(host.querySelector("[data-testid=app]")).not.toBeNull();
+  });
+
   it("登记没有得到回应：显示结果不明，重新确认是再登记一次", async () => {
     let attempts = 0;
     const invoke = fakeInvoke({

@@ -13,9 +13,11 @@ import {
   ActionDispatchState,
   ActionGateState,
   ApprovalStatus,
+  type InvitationRedemptionView,
   ReasonCode,
   type TaskView,
   TaskStatus,
+  TenantMembershipState,
 } from "@kailo/contracts";
 import type { PlatformMessageKey } from "./i18n";
 import type { Tone } from "./react/ui";
@@ -62,6 +64,47 @@ export function taskPhase(task: TaskView): TaskPhase {
   }
   if (task.workflowId === undefined) return phase("tasks.status.applied", "positive");
   return task.taskStatus === undefined ? phase("tasks.status.started") : terminal[task.taskStatus];
+}
+
+/**
+ * 一次意图的幂等键（UUID v4）。用 getRandomValues 而不是 randomUUID：后者只在安全
+ * 上下文（https 或 localhost）里存在，本地部署经 http 访问网关。
+ */
+export function newIdempotencyKey(): string {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = ((b[6] ?? 0) & 0x0f) | 0x40;
+  b[8] = ((b[8] ?? 0) & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+export type RedemptionPhase =
+  | { kind: "active" }
+  | { kind: "provisioning" }
+  | { kind: "waiting" }
+  | { kind: "evaluating" }
+  | { kind: "ended"; reason?: ReasonCode }
+  | { kind: "other" };
+
+/**
+ * 兑换者看到的进度（DD-83）：INVITED 且门禁 WAITING 即等待 admin 确认；REVOKED 即
+ * 这次邀请已终结（reason 给出原因）；ACTIVE 即可以进入。其余组合如实显示原状态。
+ */
+export function redemptionPhase(view: InvitationRedemptionView): RedemptionPhase {
+  switch (view.membershipState) {
+    case TenantMembershipState.Active:
+      return { kind: "active" };
+    case TenantMembershipState.Provisioning:
+      return { kind: "provisioning" };
+    case TenantMembershipState.Revoked:
+      return { kind: "ended", reason: view.reason };
+    case TenantMembershipState.Invited:
+      if (view.admissionGateState === ActionGateState.Waiting) return { kind: "waiting" };
+      if (view.admissionGateState === ActionGateState.Evaluating) return { kind: "evaluating" };
+      return { kind: "other" };
+    default:
+      return { kind: "other" };
+  }
 }
 
 /** 审批仍接受决定与撤回（.design/06 §4 的未决状态）。 */

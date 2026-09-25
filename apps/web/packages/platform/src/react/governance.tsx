@@ -27,6 +27,7 @@ import {
 } from "../i18n";
 import { type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
+import { InvitationForApproval } from "./invitations";
 import { Resource } from "./pages";
 import { Badge, Button, Cell, Notice, Table, type Tone } from "./ui";
 import { useLoad } from "./use-load";
@@ -390,6 +391,7 @@ function ApprovalPanel({
           return (
             <div className="flex flex-col gap-4">
               {role === "approver" ? <h2 className="text-sm font-medium">{a.actionKey}</h2> : null}
+              {role === "approver" ? <InvitationForApproval workflowId={a.workflowId} /> : null}
               <Facts
                 rows={[
                   [t("approvals.status"), <ApprovalStatusBadge key="s" approval={a} />],

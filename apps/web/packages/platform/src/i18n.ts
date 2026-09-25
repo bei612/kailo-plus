@@ -5,7 +5,14 @@
 // 值时这里编译不过，逼着给出说明，而不是让新值悄悄落进一个笼统的「出错了」。code
 // 本身是稳定标识，界面同时显示文案与 code（apps/06 §4）。
 
-import { ApprovalDecision, ApprovalSelector, ApprovalStatus, ReasonCode } from "@kailo/contracts";
+import {
+  ApprovalDecision,
+  ApprovalSelector,
+  ApprovalStatus,
+  ReasonCode,
+  TenantInvitationStatus,
+  TenantMembershipState,
+} from "@kailo/contracts";
 
 export type PlatformLocale = "en" | "zh-CN";
 
@@ -64,6 +71,10 @@ export const platformMessages = {
     "zh-CN": "撤销被拒绝：{reason}",
   },
 
+  "platform.notMember": {
+    en: "Your account is not a member of any organization yet. If you were invited, open your invitation link.",
+    "zh-CN": "你的账号还不是任何组织的成员。如果你收到了邀请，请打开邀请链接。",
+  },
   "platform.refresh": { en: "Refresh", "zh-CN": "刷新" },
   "platform.back": { en: "Back", "zh-CN": "返回" },
   "platform.confirm": { en: "Confirm", "zh-CN": "确认" },
@@ -151,6 +162,87 @@ export const platformMessages = {
     "zh-CN": "请求未能撤回：{reason}",
   },
 
+  "invitations.title": { en: "Invitations", "zh-CN": "邀请" },
+  "invitations.explain": {
+    en: "An invitation link lets one person ask to join this organization. After they use it, an admin confirms it is really them (in Approvals).",
+    "zh-CN": "一条邀请链接让一个人申请加入本组织。对方使用后，由管理员在「审批」中确认确实是本人。",
+  },
+  "invitations.inviteeLabel": { en: "Who is this for?", "zh-CN": "邀请谁？" },
+  "invitations.inviteeHint": {
+    en: "A name you will recognize when confirming. It is not checked.",
+    "zh-CN": "确认时你能认出的称呼，不做校验。",
+  },
+  "invitations.issue": { en: "Create invitation link", "zh-CN": "生成邀请链接" },
+  "invitations.issued": {
+    en: "Invitation link for {label} (expires {expires}). It is shown only this once — copy it now. If it is lost, withdraw this invitation and create a new one.",
+    "zh-CN": "给 {label} 的邀请链接（{expires}到期）。它只显示这一次，请立即复制；丢失即撤回并重新生成。",
+  },
+  "invitations.copy": { en: "Copy link", "zh-CN": "复制链接" },
+  "invitations.copied": { en: "Copied", "zh-CN": "已复制" },
+  "invitations.noLink": {
+    en: "The invitation exists, but its link can no longer be shown. Withdraw it and create a new one.",
+    "zh-CN": "邀请已存在，但链接无法再显示。请撤回后重新生成。",
+  },
+  "invitations.issueUnknown": {
+    en: "Whether the invitation was created is not known (operation {operation}). Refresh the list; if it appears without a link you have, withdraw it and create a new one.",
+    "zh-CN": "邀请是否已生成尚不明确（操作 {operation}）。请刷新列表；若出现了你没拿到链接的邀请，撤回后重新生成。",
+  },
+  "invitations.issueRejected": { en: "The invitation was not created: {reason}", "zh-CN": "邀请未生成：{reason}" },
+  "invitations.none": { en: "No invitations yet.", "zh-CN": "还没有邀请。" },
+  "invitations.invitee": { en: "For", "zh-CN": "邀请对象" },
+  "invitations.redeemer": { en: "Used by (self-reported)", "zh-CN": "使用者（自报）" },
+  "invitations.confirmation": { en: "Confirmation", "zh-CN": "确认" },
+  "invitations.withdraw": { en: "Withdraw", "zh-CN": "撤回" },
+  "invitations.confirmWithdraw": {
+    en: "Withdraw the invitation for {label}? Its link will stop working.",
+    "zh-CN": "撤回给 {label} 的邀请？该链接将失效。",
+  },
+  "invitations.withdrawUnknown": {
+    en: "Whether the invitation was withdrawn is not known (operation {operation}). Refresh to check.",
+    "zh-CN": "邀请是否已撤回尚不明确（操作 {operation}）。请刷新确认。",
+  },
+  "invitations.withdrawRejected": {
+    en: "The invitation was not withdrawn: {reason}",
+    "zh-CN": "邀请未撤回：{reason}",
+  },
+  "invitations.forApproval": {
+    en: "Invitation for “{label}”, used by someone who calls themselves “{name}”. Confirm it is really them before approving.",
+    "zh-CN": "给「{label}」的邀请，使用者自称「{name}」。批准前请以其他方式确认确实是本人。",
+  },
+
+  "redeem.title": { en: "Join an organization", "zh-CN": "加入组织" },
+  "redeem.explain": {
+    en: "You were sent an invitation. Tell the admin who you are; they will confirm it before you get access.",
+    "zh-CN": "你收到了一份邀请。告诉管理员你是谁，管理员确认后你才会获得访问权限。",
+  },
+  "redeem.displayName": { en: "Your name", "zh-CN": "你的名字" },
+  "redeem.submit": { en: "Use this invitation", "zh-CN": "使用邀请" },
+  "redeem.noCredential": {
+    en: "This page did not receive an invitation. If you came from an invitation link, open the link again now that you are signed in.",
+    "zh-CN": "本页没有收到邀请。如果你是从邀请链接来的，请在登录后再打开一次该链接。",
+  },
+  "redeem.unknown": {
+    en: "Whether the invitation was used is not known. Submitting again is safe.",
+    "zh-CN": "邀请是否已使用尚不明确。再次提交是安全的。",
+  },
+  "redeem.again": { en: "Submit again", "zh-CN": "再次提交" },
+  "redeem.rejected": { en: "The invitation could not be used: {reason}", "zh-CN": "邀请无法使用：{reason}" },
+  "redeem.mine": { en: "My invitations", "zh-CN": "我的邀请" },
+  "redeem.waiting": {
+    en: "Waiting for an admin of {tenant} to confirm it is you. You can close this page and come back later.",
+    "zh-CN": "等待 {tenant} 的管理员确认是你本人。你可以先关闭本页，稍后再来。",
+  },
+  "redeem.evaluating": { en: "Your request to join {tenant} is being evaluated.", "zh-CN": "加入 {tenant} 的请求正在判定。" },
+  "redeem.provisioning": { en: "Confirmed. Your access to {tenant} is being set up.", "zh-CN": "已确认，正在开通你在 {tenant} 的访问权限。" },
+  "redeem.active": { en: "You are a member of {tenant}.", "zh-CN": "你已是 {tenant} 的成员。" },
+  "redeem.ended": { en: "Your invitation to {tenant} has ended: {reason}", "zh-CN": "你加入 {tenant} 的邀请已终结：{reason}" },
+  "redeem.other": { en: "{tenant}: {state}", "zh-CN": "{tenant}：{state}" },
+  "redeem.continue": { en: "Continue", "zh-CN": "继续" },
+  "redeem.nativeHint": {
+    en: "If you were invited, open your invitation link in the browser and sign in there. Once an admin confirms it, check again here.",
+    "zh-CN": "如果你收到了邀请，请在浏览器中打开邀请链接并登录；管理员确认后，回到这里重新确认。",
+  },
+
   "native.config.title": { en: "Connect to Kailo", "zh-CN": "连接 Kailo" },
   "native.config.explain": {
     en: "Enter the addresses your administrator gave you. Nothing is filled in for you: a guessed address would receive your sign-in and device key.",
@@ -225,6 +317,22 @@ export const approvalStatusMessages = {
   [ApprovalStatus.Consumed]: { en: "Approved and carried out", "zh-CN": "已批准并执行" },
   [ApprovalStatus.Invalidated]: { en: "No longer valid", "zh-CN": "已失效" },
 } as const satisfies Record<ApprovalStatus, Message>;
+
+export const invitationStatusMessages = {
+  [TenantInvitationStatus.Issued]: { en: "Not used yet", "zh-CN": "尚未使用" },
+  [TenantInvitationStatus.Expired]: { en: "Expired", "zh-CN": "已过期" },
+  [TenantInvitationStatus.Redeemed]: { en: "Used", "zh-CN": "已使用" },
+  [TenantInvitationStatus.Revoked]: { en: "Withdrawn", "zh-CN": "已撤回" },
+} as const satisfies Record<TenantInvitationStatus, Message>;
+
+export const tenantMembershipStateMessages = {
+  [TenantMembershipState.Invited]: { en: "Awaiting confirmation", "zh-CN": "待确认" },
+  [TenantMembershipState.Provisioning]: { en: "Being set up", "zh-CN": "正在开通" },
+  [TenantMembershipState.Active]: { en: "Member", "zh-CN": "成员" },
+  [TenantMembershipState.Revoking]: { en: "Being removed", "zh-CN": "正在移除" },
+  [TenantMembershipState.Revoked]: { en: "Not a member", "zh-CN": "非成员" },
+  [TenantMembershipState.Error]: { en: "Needs attention", "zh-CN": "需要处理" },
+} as const satisfies Record<TenantMembershipState, Message>;
 
 export const approvalDecisionMessages = {
   [ApprovalDecision.Approve]: { en: "Approve", "zh-CN": "批准" },
@@ -374,6 +482,26 @@ export const reasonMessages = {
   [ReasonCode.ExternalResultUnknown]: {
     en: "The outcome is not known yet; it is being reconciled.",
     "zh-CN": "结果尚不明确，正在对账。",
+  },
+  [ReasonCode.InvitationNotFound]: {
+    en: "This invitation link is not valid. Check that you copied all of it.",
+    "zh-CN": "邀请链接无效，请确认复制完整。",
+  },
+  [ReasonCode.InvitationExpired]: {
+    en: "This invitation has expired. Ask for a new one.",
+    "zh-CN": "邀请已过期，请向邀请人索取新的邀请。",
+  },
+  [ReasonCode.InvitationRevoked]: {
+    en: "This invitation was withdrawn. Ask for a new one.",
+    "zh-CN": "邀请已被撤回，请向邀请人索取新的邀请。",
+  },
+  [ReasonCode.InvitationAlreadyRedeemed]: {
+    en: "This invitation has already been used.",
+    "zh-CN": "邀请已被使用。",
+  },
+  [ReasonCode.InviteeAlreadyMember]: {
+    en: "You are already a member of this organization.",
+    "zh-CN": "你已经是该组织的成员。",
   },
 } as const satisfies Record<ReasonCode, Message>;
 

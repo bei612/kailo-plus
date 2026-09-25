@@ -1,0 +1,242 @@
+diff --git a/web/src/app/routeTree.gen.ts b/web/src/app/routeTree.gen.ts
+index d443421..b982fe9 100644
+--- a/web/src/app/routeTree.gen.ts
++++ b/web/src/app/routeTree.gen.ts
+@@ -6,33 +6,43 @@
+ 
+ import { Route as rootRouteImport } from "./routes/root";
+ import { Route as indexRouteImport } from "./routes/index";
++import { Route as inviteRouteImport } from "./routes/invite";
+ 
+ const indexRoute = indexRouteImport.update({
+   id: "/",
+   path: "/",
+   getParentRoute: () => rootRouteImport,
+ } as any);
++const inviteRoute = inviteRouteImport.update({
++  id: "/invite",
++  path: "/invite",
++  getParentRoute: () => rootRouteImport,
++} as any);
+ 
+ export interface FileRoutesByFullPath {
+   "/": typeof indexRoute;
++  "/invite": typeof inviteRoute;
+ }
+ export interface FileRoutesByTo {
+   "/": typeof indexRoute;
++  "/invite": typeof inviteRoute;
+ }
+ export interface FileRoutesById {
+   __root__: typeof rootRouteImport;
+   "/": typeof indexRoute;
++  "/invite": typeof inviteRoute;
+ }
+ export interface FileRouteTypes {
+   fileRoutesByFullPath: FileRoutesByFullPath;
+-  fullPaths: "/";
++  fullPaths: "/" | "/invite";
+   fileRoutesByTo: FileRoutesByTo;
+-  to: "/";
+-  id: "__root__" | "/";
++  to: "/" | "/invite";
++  id: "__root__" | "/" | "/invite";
+   fileRoutesById: FileRoutesById;
+ }
+ export interface RootRouteChildren {
+   indexRoute: typeof indexRoute;
++  inviteRoute: typeof inviteRoute;
+ }
+ 
+ declare module "@tanstack/react-router" {
+@@ -44,11 +54,19 @@ declare module "@tanstack/react-router" {
+       preLoaderRoute: typeof indexRouteImport;
+       parentRoute: typeof rootRouteImport;
+     };
++    "/invite": {
++      id: "/invite";
++      path: "/invite";
++      fullPath: "/invite";
++      preLoaderRoute: typeof inviteRouteImport;
++      parentRoute: typeof rootRouteImport;
++    };
+   }
+ }
+ 
+ const rootRouteChildren: RootRouteChildren = {
+   indexRoute: indexRoute,
++  inviteRoute: inviteRoute,
+ };
+ export const routeTree = rootRouteImport
+   ._addFileChildren(rootRouteChildren)
+diff --git a/web/src/app/routes.ts b/web/src/app/routes.ts
+index 0d90f6d..2d72432 100644
+--- a/web/src/app/routes.ts
++++ b/web/src/app/routes.ts
+@@ -1,5 +1,5 @@
+-import { index, rootRoute } from "@tanstack/virtual-file-routes";
++import { index, rootRoute, route } from "@tanstack/virtual-file-routes";
+ 
+-// 一期只注册平台自身的页面。已阻断或未启用的能力不生成任何入口——
++// 一期只注册平台自身的页面（平台页与邀请兑换页）。已阻断或未启用的能力不生成任何入口——
+ // route、导航项、按钮一个都不留。留着入口再在里面报「未启用」是另一种假实现。
+-export const routes = rootRoute("root.tsx", [index("index.tsx")]);
++export const routes = rootRoute("root.tsx", [index("index.tsx"), route("/invite", "invite.tsx")]);
+diff --git a/web/src/app/routes/invite.tsx b/web/src/app/routes/invite.tsx
+new file mode 100644
+index 0000000..2f1d02a
+--- /dev/null
++++ b/web/src/app/routes/invite.tsx
+@@ -0,0 +1,7 @@
++import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
++
++// 邀请兑换页（DD-83）：`<网关浏览器入口>/app/invite#<一次性凭据>`。凭据在 fragment 里，
++// 不随任何请求发往服务端；页面读出后立即从地址栏清掉。
++export const Route = createFileRoute("/invite")({
++  component: lazyRouteComponent(() => import("@/platform/ui/InvitePage"), "InvitePage"),
++});
+diff --git a/web/src/platform/ui/InvitePage.tsx b/web/src/platform/ui/InvitePage.tsx
+new file mode 100644
+index 0000000..a03ba81
+--- /dev/null
++++ b/web/src/platform/ui/InvitePage.tsx
+@@ -0,0 +1,34 @@
++// 邀请兑换页的 Web 外壳（DD-83）。页面本身是 Kailo 共用包里的 InvitationRedeemPage。
++//
++// 凭据的纪律：只从 URL fragment 读一次（fragment 不随请求发往网关或 BFF，也不进 Referer），
++// 读完立即用 replaceState 清掉，之后只在组件内存里；不写日志、不进任何存储、不进请求 URL。
++// 兑换时它只出现在 POST 的请求体里。
++
++import { PlatformProvider } from "@kailo/platform/react/context";
++import { InvitationRedeemPage } from "@kailo/platform/react/invitations";
++import { useState } from "react";
++import { bff } from "@/platform/bff-client";
++import { getLocale } from "@/shared/i18n";
++
++function takeCredential(): string | null {
++  const credential = window.location.hash.slice(1);
++  if (!credential) return null;
++  window.history.replaceState(
++    window.history.state,
++    "",
++    window.location.pathname + window.location.search,
++  );
++  return credential;
++}
++
++export function InvitePage() {
++  const [credential] = useState(takeCredential);
++  return (
++    <PlatformProvider client={bff} locale={getLocale()}>
++      <InvitationRedeemPage
++        credential={credential}
++        onContinue={() => window.location.assign(import.meta.env.BASE_URL)}
++      />
++    </PlatformProvider>
++  );
++}
+diff --git a/web/src/platform/ui/PlatformApp.tsx b/web/src/platform/ui/PlatformApp.tsx
+index 6cde44a..c727b79 100644
+--- a/web/src/platform/ui/PlatformApp.tsx
++++ b/web/src/platform/ui/PlatformApp.tsx
+@@ -9,9 +9,10 @@
+ // 未启用的能力不在这里出现。不渲染一个点进去说「未启用」的入口——
+ // 那是把阻断项做成了可见功能。
+ 
+-import type { PlatformSessionView } from "@kailo/contracts";
++import { type PlatformSessionView, ReasonCode } from "@kailo/contracts";
+ import { PlatformProvider } from "@kailo/platform/react/context";
+ import { ApprovalsPage, TasksPage } from "@kailo/platform/react/governance";
++import { RedemptionProgress, TenantInvitations } from "@kailo/platform/react/invitations";
+ import { AuditPage, DevicesPage, MembersPane } from "@kailo/platform/react/pages";
+ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import { BellOff, Star } from "lucide-react";
+@@ -28,20 +29,43 @@ type Tab = "channel" | "members" | "tasks" | "approvals" | "devices" | "audit";
+ export function PlatformApp() {
+   const [session, setSession] = useState<PlatformSessionView | null>(null);
+   const [error, setError] = useState<string | null>(null);
++  // 已登录 IdP 但还不是成员（兑换了邀请、等待 admin 确认）：会话 403 是如实的「还不能
++  // 进」，不是故障。此时只显示本人的兑换进度（DD-83）。
++  const [notMember, setNotMember] = useState(false);
+ 
+   useEffect(() => {
+     bff
+       .session()
+       .then(setSession)
+-      .catch((e: unknown) =>
++      .catch((e: unknown) => {
++        if (
++          e instanceof BffError &&
++          (e.reason === ReasonCode.TenantMembershipNotActive ||
++            e.reason === ReasonCode.IdentityUnknown)
++        ) {
++          setNotMember(true);
++          return;
++        }
+         setError(
+           e instanceof BffError
+             ? `${t("platform.sessionUnavailable")}（${e.status}）`
+             : t("platform.sessionUnavailable"),
+-        ),
+-      );
++        );
++      });
+   }, []);
+ 
++  if (notMember)
++    return (
++      <PlatformProvider client={bff} locale={getLocale()}>
++        <div className="mx-auto flex w-full max-w-xl flex-col gap-4 p-6 text-sm">
++          <strong>{t("platform.title")}</strong>
++          <RedemptionProgress
++            emptyHint={t("platform.notMember")}
++            onContinue={() => window.location.reload()}
++          />
++        </div>
++      </PlatformProvider>
++    );
+   if (error) return <Notice text={error} />;
+   if (!session) return <Notice text={t("platform.loadingIdentity")} />;
+   return (
+@@ -101,6 +125,17 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
+ 
+   // 任务、审批、审计与设备都是「我自己的」，属于 Tenant 而不属于某个 Workspace，
+   // 因此不随 Workspace 是否存在而隐藏。
++  const workspaceBody = workspaces.isError ? (
++    <Notice text={t("platform.loadFailed")} />
++  ) : workspaces.isPending ? (
++    <Notice text={t("platform.loadingWorkspaces")} />
++  ) : !active ? (
++    <Notice text={t("platform.noWorkspace")} />
++  ) : tab === "channel" ? (
++    <ChannelPane key={active} workspaceId={active} myPrincipalId={session.tenantPrincipalId} />
++  ) : (
++    <MembersPane key={active} workspaceId={active} />
++  );
+   const body =
+     tab === "tasks" ? (
+       <TasksPage />
+@@ -110,16 +145,14 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
+       <AuditPage />
+     ) : tab === "devices" ? (
+       <DevicesPage />
+-    ) : workspaces.isError ? (
+-      <Notice text={t("platform.loadFailed")} />
+-    ) : workspaces.isPending ? (
+-      <Notice text={t("platform.loadingWorkspaces")} />
+-    ) : !active ? (
+-      <Notice text={t("platform.noWorkspace")} />
+-    ) : tab === "channel" ? (
+-      <ChannelPane key={active} workspaceId={active} myPrincipalId={session.tenantPrincipalId} />
++    ) : tab === "members" ? (
++      // 邀请属于 Tenant：只对 admin 出现（由邀请列表的 403 决定），不依赖 Workspace
++      <div className="flex flex-col gap-6">
++        {workspaceBody}
++        <TenantInvitations />
++      </div>
+     ) : (
+-      <MembersPane key={active} workspaceId={active} />
++      workspaceBody
+     );
+ 
+   return (
