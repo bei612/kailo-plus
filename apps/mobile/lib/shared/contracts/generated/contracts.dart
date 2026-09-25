@@ -989,7 +989,9 @@ class InvitationRedemptionView {
     admissionGateState: actionGateStateValues.map[json["admissionGateState"]]!,
     invitationId: json["invitationId"],
     membershipState: tenantMembershipStateValues.map[json["membershipState"]]!,
-    reason: reasonCodeValues.map[json["reason"]]!,
+    reason: json["reason"] == null
+        ? null
+        : reasonCodeValues.map[json["reason"]]!,
     redeemedAt: json["redeemedAt"],
     tenantId: json["tenantId"],
     tenantName: json["tenantName"],
@@ -1415,7 +1417,9 @@ class TenantInvitationView {
   factory TenantInvitationView.fromJson(Map<String, dynamic> json) =>
       TenantInvitationView(
         admitActionExecutionId: json["admitActionExecutionId"],
-        approvalStatus: approvalStatusValues.map[json["approvalStatus"]]!,
+        approvalStatus: json["approvalStatus"] == null
+            ? null
+            : approvalStatusValues.map[json["approvalStatus"]]!,
         approvalWorkflowId: json["approvalWorkflowId"],
         createdAt: json["createdAt"],
         expiresAt: json["expiresAt"],
@@ -1423,8 +1427,9 @@ class TenantInvitationView {
         inviteeLabel: json["inviteeLabel"],
         inviterPrincipalId: json["inviterPrincipalId"],
         membershipId: json["membershipId"],
-        membershipState:
-            tenantMembershipStateValues.map[json["membershipState"]]!,
+        membershipState: json["membershipState"] == null
+            ? null
+            : tenantMembershipStateValues.map[json["membershipState"]]!,
         redeemedAt: json["redeemedAt"],
         redeemerDisplayName: json["redeemerDisplayName"],
         status: tenantInvitationStatusValues.map[json["status"]]!,

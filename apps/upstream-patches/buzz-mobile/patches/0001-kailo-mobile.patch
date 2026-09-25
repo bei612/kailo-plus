@@ -15331,10 +15331,10 @@ index 0000000000000000000000000000000000000000..d531ad9f68dbdea4126951f27dd4c960
 +}
 diff --git a/mobile/lib/shared/kailo/kailo_reason_text.dart b/mobile/lib/shared/kailo/kailo_reason_text.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..38e072c009745f9957cdebfed7ca971f6ed0f76d
+index 0000000000000000000000000000000000000000..5da26b6e87428b890a8d451fe588ca0908731537
 --- /dev/null
 +++ b/mobile/lib/shared/kailo/kailo_reason_text.dart
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,83 @@
 +/// 契约 reason code 的界面文案。code 是稳定的判定结果，文案只是它的说明：
 +/// 界面同时显示两者，文案可以改，code 不变（apps/06-工程基线规范.md §4）。
 +///
@@ -15404,6 +15404,16 @@ index 0000000000000000000000000000000000000000..38e072c009745f9957cdebfed7ca971f
 +  ReasonCode.PROJECTION_DELAYED => 'The status shown may be out of date.',
 +  ReasonCode.EXTERNAL_RESULT_UNKNOWN =>
 +    'The outcome is not known yet; it is being reconciled.',
++  ReasonCode.INVITATION_NOT_FOUND =>
++    'This invitation link is not valid. Check that you copied all of it.',
++  ReasonCode.INVITATION_EXPIRED =>
++    'This invitation has expired. Ask for a new one.',
++  ReasonCode.INVITATION_REVOKED =>
++    'This invitation was withdrawn. Ask for a new one.',
++  ReasonCode.INVITATION_ALREADY_REDEEMED =>
++    'This invitation has already been used.',
++  ReasonCode.INVITEE_ALREADY_MEMBER =>
++    'You are already a member of this organization.',
 +};
 +
 +/// 界面上显示的稳定 code。
