@@ -383,8 +383,10 @@ function ApprovalPanel({
       {outcomeView}
       <Resource state={state} reload={reload}>
         {(a) => {
-          // 投影不可担保为当前时不给控制：先对账，再决定
-          const controllable = approvalOpen(a.status) && !a.observation && !busy;
+          // 投影不可担保为当前时不给控制：先对账，再决定。本人刚得到确定结论（决定已记录、
+          // 已撤回）时也不再给：投影可能还停在未决，那是写回尚未到达，不是还能再做一次
+          const settled = outcome !== null && outcome.kind !== "failed";
+          const controllable = approvalOpen(a.status) && !a.observation && !busy && !settled;
           return (
             <div className="flex flex-col gap-4">
               {role === "approver" ? <h2 className="text-sm font-medium">{a.actionKey}</h2> : null}

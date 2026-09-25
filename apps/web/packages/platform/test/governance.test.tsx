@@ -122,6 +122,24 @@ describe("TasksPage", () => {
     expect([...el.querySelectorAll("button")].some((b) => b.textContent === "Withdraw request")).toBe(false);
   });
 
+  it("撤回已确定而投影仍停在未决：不再给撤回，结论照旧显示", async () => {
+    const { send, host } = mount((r) => {
+      if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ approvalWorkflowId: WF })] };
+      if (r.path === "/api/v1/tasks/ae1") return { status: 200, body: task({ approvalWorkflowId: WF }) };
+      if (r.method === "POST") return { status: 200, body: { status: ApprovalStatus.Cancelled } };
+      // 写回还没到 Core：投影仍是 WAITING
+      return { status: 200, body: approval() };
+    }, <TasksPage />);
+    const el = await host;
+    await settle();
+    await click(button(el, "tenant.member.revoke"));
+    await click(button(el, "Withdraw request"));
+    await click(button(el, "Confirm"));
+    expect(el.textContent).toContain("The request is now: Withdrawn.");
+    expect([...el.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Withdraw request");
+    expect(posts(send)).toHaveLength(1);
+  });
+
   it("投影不可担保时不给控制", async () => {
     const { host } = mount((r) => {
       if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ approvalWorkflowId: WF })] };
