@@ -172,7 +172,8 @@ fn observation(r: &TaskRow) -> Option<ReasonCode> {
 fn task_view(r: TaskRow) -> Result<TaskView, Response> {
     let e = |c: &str, v: &str| {
         tracing::error!(column = c, value = v, "库中的状态值不在契约枚举内");
-        StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        Refusal::Unavailable(format!("任务投影的 {c} 状态值不在契约枚举内"))
+            .respond(Some(r.operation_id))
     };
     let observation = observation(&r);
     Ok(TaskView {
@@ -185,12 +186,28 @@ fn task_view(r: TaskRow) -> Result<TaskView, Response> {
         gate_state: parse(&r.gate_state).ok_or_else(|| e("gate_state", &r.gate_state))?,
         dispatch_state: parse(&r.dispatch_state)
             .ok_or_else(|| e("dispatch_state", &r.dispatch_state))?,
-        reason: r.reason_code.as_deref().and_then(parse),
+        reason: r
+            .reason_code
+            .as_deref()
+            .map(|v| parse(v).ok_or_else(|| e("reason_code", v)))
+            .transpose()?,
         approval_workflow_id: r.approval_workflow_id,
-        approval_status: r.approval_status.as_deref().and_then(parse),
+        approval_status: r
+            .approval_status
+            .as_deref()
+            .map(|v| parse(v).ok_or_else(|| e("approval_status", v)))
+            .transpose()?,
         workflow_id: r.temporal_workflow_id,
-        workflow_kind: r.kind.as_deref().and_then(parse),
-        task_status: r.task_status.as_deref().and_then(parse),
+        workflow_kind: r
+            .kind
+            .as_deref()
+            .map(|v| parse(v).ok_or_else(|| e("workflow_kind", v)))
+            .transpose()?,
+        task_status: r
+            .task_status
+            .as_deref()
+            .map(|v| parse(v).ok_or_else(|| e("task_status", v)))
+            .transpose()?,
         waiting_reason: r.waiting_reason,
         observation,
         created_at: rfc3339(r.created_at),
@@ -297,6 +314,36 @@ mod task_observation_tests {
             Some(ReasonCode::ProjectionDelayed)
         );
         assert_eq!(observation(&terminal_row(Some("COMPLETED"))), None);
+    }
+
+    #[test]
+    fn unknown_persisted_task_enums_do_not_become_absent_fields() {
+        let mut row = terminal_row(Some("COMPLETED"));
+        row.reason_code = Some("UNRECOGNIZED_REASON".to_owned());
+        assert_eq!(
+            task_view(row).unwrap_err().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+
+        let mut row = terminal_row(Some("COMPLETED"));
+        row.approval_status = Some("UNRECOGNIZED_APPROVAL".to_owned());
+        assert_eq!(
+            task_view(row).unwrap_err().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+
+        let mut row = terminal_row(Some("COMPLETED"));
+        row.kind = Some("UNRECOGNIZED_KIND".to_owned());
+        assert_eq!(
+            task_view(row).unwrap_err().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+
+        let row = terminal_row(Some("UNRECOGNIZED_TASK"));
+        assert_eq!(
+            task_view(row).unwrap_err().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 }
 
