@@ -48,10 +48,22 @@ use crate::workflow_reconcile;
 pub struct RerunRequest {
     /// 已终结、未完成的那条 Workflow。
     pub workflow_id: String,
-    /// 新的、已准入的 ActionExecution：它的 target 必须就是该实体。一条
+    /// 新的、已准入的 ActionExecution：它的 target 必须是原 ActionExecution。一条
     /// ActionExecution 至多驱动一个业务 Workflow（`workflow_ref` 上的唯一约束），
     /// 因此它同时是这次重跑的幂等键。
     pub action_execution_id: Uuid,
+}
+
+#[derive(sqlx::FromRow)]
+struct OriginalWorkflow {
+    kind: String,
+    tenant_id: Uuid,
+    original_action_execution_id: Uuid,
+    original_target_id: Uuid,
+    workspace_id: Option<Uuid>,
+    projection_state: String,
+    status: Option<String>,
+    run_id: Option<String>,
 }
 
 /// Workflow 以这些终态结束时，它驱动的实体没有到达目标状态，可以重跑。
@@ -96,15 +108,6 @@ impl Target {
             Target::Membership(MembershipScope::Workspace) => "identity.workspace_membership",
         }
     }
-
-    fn target_type(self) -> &'static str {
-        match self {
-            Target::Scope(ScopeKind::Tenant) => "TENANT",
-            Target::Scope(ScopeKind::Workspace) => "WORKSPACE",
-            Target::Membership(MembershipScope::Tenant) => "TENANT_MEMBERSHIP",
-            Target::Membership(MembershipScope::Workspace) => "WORKSPACE_MEMBERSHIP",
-        }
-    }
 }
 
 /// kind → 该 kind 驱动的实体停在的收敛中状态。与启动核心的判定一一对应：
@@ -132,14 +135,18 @@ pub async fn rerun_task(
         return StatusCode::BAD_REQUEST.into_response();
     };
 
-    let old = match sqlx::query!(
-        r#"select w.kind as "kind!", w.tenant_id, w.projection_state,
-                  t.status as "status?", t.run_id as "run_id?"
-           from projection.workflow_ref w
-           left join projection.task_projection t on t.workflow_id = w.workflow_id
-           where w.workflow_id = $1 and w.kind is not null"#,
-        req.workflow_id
+    let old = match sqlx::query_as::<_, OriginalWorkflow>(
+        "select w.kind, w.tenant_id, w.action_execution_id as original_action_execution_id,
+                source.target_id as original_target_id, source.workspace_id,
+                w.projection_state, t.status, t.run_id
+         from projection.workflow_ref w
+         join admission.action_execution source
+           on source.id = w.action_execution_id and source.tenant_id = w.tenant_id
+         left join projection.task_projection t on t.workflow_id = w.workflow_id
+         where w.workflow_id = $1 and w.workflow_type = $2 and w.kind is not null",
     )
+    .bind(&req.workflow_id)
+    .bind(component_task::WORKFLOW_TYPE)
     .fetch_optional(&state.pool)
     .await
     {
@@ -156,6 +163,10 @@ pub async fn rerun_task(
         tracing::warn!(workflow_id = %req.workflow_id, "workflow ID 不是固定格式");
         return StatusCode::CONFLICT.into_response();
     };
+    if entity != old.original_target_id {
+        tracing::warn!(workflow_id = %req.workflow_id, "原 ActionExecution 的 target 与 Workflow ID 不一致");
+        return StatusCode::CONFLICT.into_response();
+    }
     let target = match resolve_target(&state, &old.kind, entity).await {
         Ok(Some(t)) => t,
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
@@ -170,7 +181,7 @@ pub async fn rerun_task(
         &state.pool,
         req.action_execution_id,
         old.tenant_id,
-        entity,
+        old.original_action_execution_id,
     )
     .await
     {
@@ -178,6 +189,21 @@ pub async fn rerun_task(
         Ok(_) => return StatusCode::FORBIDDEN.into_response(),
         Err(e) => return unavailable(e),
     };
+    let same_workspace: Option<bool> = match sqlx::query_scalar(
+        "select workspace_id is not distinct from $2
+         from admission.action_execution where id = $1",
+    )
+    .bind(req.action_execution_id)
+    .bind(old.workspace_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(matched) => matched,
+        Err(e) => return unavailable(e),
+    };
+    if same_workspace != Some(true) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
 
     // 幂等：同一 ActionExecution 已驱动过一个 Workflow。是本次重跑的那个，就
     // 交回启动核心以同一 ID 收敛（结果不明时的重试走到这里）；是别的，就是
@@ -301,12 +327,12 @@ pub async fn rerun_task(
     }
 
     let entry = AuditEntry {
-        event_key: format!("task.rerun:{}:{}", req.workflow_id, req.action_execution_id),
+        event_key: format!(
+            "task.rerun:{}:{}",
+            old.original_action_execution_id, req.action_execution_id
+        ),
         tenant_id: Some(old.tenant_id),
-        workspace_id: match target {
-            Target::Scope(ScopeKind::Workspace) => Some(entity),
-            _ => None,
-        },
+        workspace_id: old.workspace_id,
         operation_id: action.operation_id,
         event_type: "DECISION",
         human_identity_id: None,
@@ -315,8 +341,8 @@ pub async fn rerun_task(
         action_key: &action.action_key,
         action_version: action.action_version,
         component_type_key: "core",
-        target_type: Some(target.target_type()),
-        target_id: Some(entity),
+        target_type: Some("ACTION_EXECUTION"),
+        target_id: Some(old.original_action_execution_id),
         parameter_hash: &action.parameter_hash,
         decision: "ALLOW",
         result_code: "RERUN_ACCEPTED",

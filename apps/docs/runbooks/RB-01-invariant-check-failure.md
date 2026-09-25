@@ -53,21 +53,21 @@
    1. 找出驱动实体当前版本、已终结而未完成的那条 Workflow（`<表>` 取 `identity.tenant`、`identity.workspace`、`identity.tenant_membership` 或 `identity.workspace_membership`）：
 
       ```sh
-      psql "$DATABASE_URL" -Atc "select w.workflow_id, w.tenant_id, t.status from projection.workflow_ref w
+      psql "$DATABASE_URL" -Atc "select w.workflow_id, w.action_execution_id, w.tenant_id, t.status from projection.workflow_ref w
         join projection.task_projection t using (workflow_id) join <表> e
           on split_part(w.workflow_id, ':', 4) = e.id::text and split_part(w.workflow_id, ':', 5) = e.version::text
         where e.id = '<实体 ID>' and w.projection_state = 'TERMINAL' and t.status <> 'COMPLETED'"
       ```
 
       没有行就不是搁浅：Workflow 还在跑（RB-03 第 1–2 步）、结果不明（RB-05 的 `UNKNOWN`）或已完成——这三种都不重跑。
-   2. 记录这次重跑的准入。Stage 1 没有产品内的 Action 准入面，平台级生命周期动作（建 Tenant 本身也是）由平台运维以 Catalog Tenant 下自己的 `SERVICE` Principal 为发起方记录准入；`target_id` 必须就是该实体（Core 核对，不符即 403）。一条 ActionExecution 只能驱动一个 Workflow，它同时是这次重跑的幂等键：
+   2. 记录这次重跑的准入。Stage 1 没有产品内的 Action 准入面，平台级生命周期动作（建 Tenant 本身也是）由平台运维以 Catalog Tenant 下自己的 `SERVICE` Principal 为发起方记录准入；`target_id` 必须是第 1 步返回的原 `action_execution_id`（Core 核对，不符即 403），不能填实体 ID。一条 ActionExecution 只能驱动一个业务 Workflow，它同时是这次重跑的幂等键：
 
       ```sh
       action=$(python3 -c 'import uuid;print(uuid.uuid4())')
       psql "$DATABASE_URL" -Atc "insert into admission.action_execution (id, operation_id, tenant_id, action_key, action_version,
         initiator_principal_id, actor_principal_id, target_id, parameter_hash, gate_state, dispatch_state, correlation_id)
         values ('$action', gen_random_uuid(), '<第 1 步的 tenant_id>', 'task.rerun', 1, '<运维 Principal>', '<运维 Principal>',
-        '<实体 ID>', '<第 1 步的 workflow ID>', 'ALLOWED', 'NOT_DISPATCHED', gen_random_uuid())"
+        '<第 1 步的原 action_execution_id>', '<第 1 步的 workflow ID>', 'ALLOWED', 'NOT_DISPATCHED', gen_random_uuid())"
       ```
 
    3. 以 Worker 的 service 身份调用重跑入口，client secret 从文件读入：
@@ -118,7 +118,7 @@
 
 2026-09-24，本地拓扑，基于 commit `62051fe` 之上的工作树（新增重跑入口 `core/crates/kailo-core/src/task_rerun.rs`）：
 
-1. **重跑搁浅实体（第 7 步）**：`bash core/verify/drill-task-rerun.sh`。在真实开通的 Tenant 下把 TenantBuzzBinding 暂置 `DISABLED` 后建立第二个 Workspace，`WORKSPACE_LIFECYCLE` 以 `ADMISSION_DENIED` 结束：`…:1 → FAILED；Workspace PROVISIONING v1`，搁浅计数 `1`。还原 binding 后按 7.1–7.4 逐条执行：定位查询返回唯一一行 `…:1|<tenant>|FAILED`；重跑 `HTTP 200` 返回 `…:2`；同键重发 `HTTP 200` 返回同一个 `…:2`、`runId` 为空（未另起执行）；另一张准入重跑同一条旧 Workflow `HTTP 409`。核验：`Workspace ACTIVE v3`，新 Workflow `TERMINAL COMPLETED`，旧 Workflow 仍是 `TERMINAL FAILED`，`RERUN_ACCEPTED` 审计 `1` 条，搁浅计数 `0`。
+1. **重跑搁浅实体（第 7 步）**：`bash core/verify/drill-task-rerun.sh`。在真实开通的 Tenant 下把 TenantBuzzBinding 暂置 `DISABLED` 后建立第二个 Workspace，`WORKSPACE_LIFECYCLE` 以 `ADMISSION_DENIED` 结束：`…:1 → FAILED；Workspace PROVISIONING v1`，搁浅计数 `1`。还原 binding 后按 7.1–7.4 逐条执行：定位查询返回唯一一行 `…:1|<原 ActionExecution ID>|<tenant>|FAILED`；重跑 `HTTP 200` 返回 `…:2`；同键重发 `HTTP 200` 返回同一个 `…:2`、`runId` 为空（未另起执行）；另一张准入重跑同一条旧 Workflow `HTTP 409`。核验：`Workspace ACTIVE v3`，新 Workflow `TERMINAL COMPLETED`，旧 Workflow 仍是 `TERMINAL FAILED`，`RERUN_ACCEPTED` 审计 `1` 条，搁浅计数 `0`。
 2. **入口的拒绝面**：`cargo test -p kailo-core --test scope_lifecycle` 的 `stranded_workspace_is_rerun_with_new_version` 覆盖终结的固定 ID 再 Start 得 `409`、准入 target 指向别的实体得 `403`、`DENIED` 的准入得 `403`、无 service 令牌得 `401`、对 `COMPLETED` 的 Workflow 重跑得 `409`。破坏核验：把准入查询的 target 条件改为不核对后重建 `core-bff`，该用例在「target 指向别的实体」一步失败（`left: 200, right: 403`）；还原后 2 项全部通过。
 3. **OpenBao audit device 的运行期观察**：从 `openbao-config.hcl` 删去 audit 块、重建 `openbao` 并解封，`openbao-init.sh` 输出 `audit device 未生效`。此时仍在运行的 `core-bff` 上跑 `cargo test -p kailo-core --test scope_lifecycle tenant_and_workspace`：Tenant 停在 `PROVISIONING`（`left: "PROVISIONING", right: "ACTIVE"`），Core 日志 6 次 `OpenBao 没有启用任何 audit device：不把 binding 推进到 ACTIVE`。随后重建 `core-bff`：`Exited (1)`，日志末行 `Error: "OpenBao 没有启用任何 audit device：取用不留痕，拒绝启动"`。还原 audit 块、重建并解封后 `audit device 已生效（声明式）`，`core-bff` `Up`，`scope_lifecycle` 2 项全部通过。
 

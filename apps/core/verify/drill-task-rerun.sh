@@ -80,16 +80,16 @@ step "2. 修复原因：还原 binding"
 PSQL "update projection.tenant_buzz_binding set state='ACTIVE' where tenant_id='$tenant'" >/dev/null
 
 step "3. RB-01 7.1 定位"
-PSQL "select w.workflow_id, w.tenant_id, t.status from projection.workflow_ref w
+PSQL "select w.workflow_id, w.action_execution_id, w.tenant_id, t.status from projection.workflow_ref w
   join projection.task_projection t using (workflow_id) join identity.workspace e
     on split_part(w.workflow_id, ':', 4) = e.id::text and split_part(w.workflow_id, ':', 5) = e.version::text
   where e.id = '$ws2' and w.projection_state = 'TERMINAL' and t.status <> 'COMPLETED'" | sed 's/^/  /'
 
 step "4. RB-01 7.2 记录准入，7.3 重跑（再以同键重发一次）"
-a2=$(admit "$ws2" task.rerun "$wf1")
+a2=$(admit "$a1" task.rerun "$wf1")
 echo "  重跑：$(call /service/v1/tasks/rerun "{\"workflowId\":\"$wf1\",\"actionExecutionId\":\"$a2\"}")"
 echo "  同键重发：$(call /service/v1/tasks/rerun "{\"workflowId\":\"$wf1\",\"actionExecutionId\":\"$a2\"}")"
-a3=$(admit "$ws2" task.rerun "$wf1")
+a3=$(admit "$a1" task.rerun "$wf1")
 echo "  另一张准入重跑同一条旧 Workflow：$(call /service/v1/tasks/rerun "{\"workflowId\":\"$wf1\",\"actionExecutionId\":\"$a3\"}")"
 
 step "5. RB-01 7.4 核验"
@@ -99,7 +99,7 @@ wait_for "select status from projection.task_projection where workflow_id='$wf2'
 echo "  Workspace $(PSQL "select state||' v'||version from identity.workspace where id='$ws2'")"
 echo "  新 $wf2 → $(PSQL "select projection_state||' '||status from projection.workflow_ref join projection.task_projection using (workflow_id) where workflow_id='$wf2'")"
 echo "  旧 $wf1 → $(PSQL "select projection_state||' '||status from projection.workflow_ref join projection.task_projection using (workflow_id) where workflow_id='$wf1'")"
-echo "  审计 RERUN_ACCEPTED 条数：$(PSQL "select count(*) from audit.audit_event where target_id='$ws2' and result_code='RERUN_ACCEPTED'")"
+echo "  审计 RERUN_ACCEPTED 条数：$(PSQL "select count(*) from audit.audit_event where target_id='$a1' and result_code='RERUN_ACCEPTED'")"
 echo "  搁浅：$(stranded)"
 
 step "6. 拆除夹具"

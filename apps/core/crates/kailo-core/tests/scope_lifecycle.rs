@@ -406,12 +406,16 @@ async fn rerun(
     (status, resp.json().await.unwrap_or(serde_json::Value::Null))
 }
 
-async fn mark_rerun_action(pool: &PgPool, id: Uuid) {
-    sqlx::query("update admission.action_execution set action_key = 'task.rerun' where id = $1")
-        .bind(id)
-        .execute(pool)
-        .await
-        .expect("重跑准入必须有重跑 action_key");
+async fn mark_rerun_action(pool: &PgPool, id: Uuid, original: Uuid) {
+    sqlx::query(
+        "update admission.action_execution
+         set action_key = 'task.rerun', target_id = $2 where id = $1",
+    )
+    .bind(id)
+    .bind(original)
+    .execute(pool)
+    .await
+    .expect("重跑准入必须有重跑 action_key");
 }
 
 /// 等某条 Workflow 的投影进入终态，返回 (projection_state, task status)。
@@ -519,16 +523,29 @@ async fn run_rerun(
         rerun(http, e, token, &failed, wrong_action).await.0,
         reqwest::StatusCode::FORBIDDEN
     );
-    // 准入必须指向该实体：为 Tenant 签发的准入不能拿来重跑 Workspace
+    // 准入必须指向原 ActionExecution：指向另一条动作的准入不能借用
     let wrong_target = seed_action(pool, tenant, initiator, tenant).await;
-    mark_rerun_action(pool, wrong_target).await;
+    mark_rerun_action(pool, wrong_target, again).await;
     assert_eq!(
         rerun(http, e, token, &failed, wrong_target).await.0,
         reqwest::StatusCode::FORBIDDEN
     );
+    let wrong_workspace = seed_action(pool, tenant, initiator, workspace).await;
+    mark_rerun_action(pool, wrong_workspace, first).await;
+    sqlx::query("update admission.action_execution set workspace_id = $2 where id = $1")
+        .bind(wrong_workspace)
+        .bind(workspace)
+        .execute(pool)
+        .await
+        .expect("设置不一致的控制动作 Workspace");
+    assert_eq!(
+        rerun(http, e, token, &failed, wrong_workspace).await.0,
+        reqwest::StatusCode::FORBIDDEN,
+        "控制动作不能借同 Tenant 的另一执行 scope"
+    );
     // 未准入的 ActionExecution 同样不行
     let denied = seed_action(pool, tenant, initiator, workspace).await;
-    mark_rerun_action(pool, denied).await;
+    mark_rerun_action(pool, denied, first).await;
     sqlx::query("update admission.action_execution set gate_state = 'DENIED' where id = $1")
         .bind(denied)
         .execute(pool)
@@ -570,7 +587,7 @@ async fn run_rerun(
     let (_, tenant_status) = wait_terminal(pool, &tenant_wf, e.converge_bound_secs).await;
     assert_eq!(tenant_status.as_deref(), Some("COMPLETED"));
     let on_completed = seed_action(pool, tenant, initiator, tenant).await;
-    mark_rerun_action(pool, on_completed).await;
+    mark_rerun_action(pool, on_completed, tenant_action).await;
     assert_eq!(
         rerun(http, e, token, &tenant_wf, on_completed).await.0,
         reqwest::StatusCode::CONFLICT
@@ -578,7 +595,24 @@ async fn run_rerun(
 
     // 4. 重跑：新 ActionExecution → 实体版本 +1 → 新 workflow ID
     let retry = seed_action(pool, tenant, initiator, workspace).await;
-    mark_rerun_action(pool, retry).await;
+    mark_rerun_action(pool, retry, first).await;
+    sqlx::query("update admission.action_execution set target_id = $2 where id = $1")
+        .bind(first)
+        .bind(tenant)
+        .execute(pool)
+        .await
+        .expect("制造原动作 target 与 Workflow ID 不一致");
+    assert_eq!(
+        rerun(http, e, token, &failed, retry).await.0,
+        reqwest::StatusCode::CONFLICT,
+        "不能从被篡改的原动作重新推导另一实体"
+    );
+    sqlx::query("update admission.action_execution set target_id = $2 where id = $1")
+        .bind(first)
+        .bind(workspace)
+        .execute(pool)
+        .await
+        .expect("还原原动作 target");
     let original_run: String =
         sqlx::query_scalar("select run_id from projection.task_projection where workflow_id = $1")
             .bind(&failed)
@@ -641,7 +675,7 @@ async fn run_rerun(
     );
     // 另一张准入重跑同一条旧 Workflow：实体已不在它冻结的版本
     let late = seed_action(pool, tenant, initiator, workspace).await;
-    mark_rerun_action(pool, late).await;
+    mark_rerun_action(pool, late, first).await;
     assert_eq!(
         rerun(http, e, token, &failed, late).await.0,
         reqwest::StatusCode::CONFLICT
@@ -678,7 +712,7 @@ async fn run_rerun(
            and evidence_refs @> $3",
     )
     .bind(tenant)
-    .bind(workspace)
+    .bind(first)
     .bind(serde_json::json!([{ "value": failed }, { "value": next }]))
     .fetch_one(pool)
     .await
