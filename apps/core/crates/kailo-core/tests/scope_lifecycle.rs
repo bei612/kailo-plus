@@ -651,6 +651,20 @@ async fn run_rerun(
     .await
     .expect("确认修复请求未启动新 Workflow");
     assert_eq!(still_one, 0);
+    // 已派发动作受数据库约束保持 ALLOWED；撤销门禁只适用于尚未派发的
+    // 独立控制动作，不能把 UNKNOWN 派发结果伪造成“未准入”。
+    let revoked = seed_action(pool, tenant, initiator, workspace).await;
+    mark_rerun_action(pool, revoked, first).await;
+    sqlx::query("update admission.action_execution set gate_state = 'REVOKED' where id = $1")
+        .bind(revoked)
+        .execute(pool)
+        .await
+        .expect("撤销未派发准入");
+    assert_eq!(
+        rerun(http, e, token, &failed, revoked).await.0,
+        reqwest::StatusCode::FORBIDDEN,
+        "未派发且已撤销的动作不能启动重跑"
+    );
     let (code, body) = rerun(http, e, token, &failed, retry).await;
     assert_eq!(code, reqwest::StatusCode::OK, "{body}");
     let next = body["workflowId"].as_str().expect("workflowId").to_owned();
@@ -663,16 +677,6 @@ async fn run_rerun(
     let (code, body) = rerun(http, e, token, &failed, retry).await;
     assert_eq!(code, reqwest::StatusCode::OK, "{body}");
     assert_eq!(body["workflowId"].as_str(), Some(next.as_str()));
-    sqlx::query("update admission.action_execution set gate_state = 'REVOKED' where id = $1")
-        .bind(retry)
-        .execute(pool)
-        .await
-        .expect("撤销旧准入");
-    assert_eq!(
-        rerun(http, e, token, &failed, retry).await.0,
-        reqwest::StatusCode::FORBIDDEN,
-        "同键重发也必须重新核对门禁"
-    );
     // 另一张准入重跑同一条旧 Workflow：实体已不在它冻结的版本
     let late = seed_action(pool, tenant, initiator, workspace).await;
     mark_rerun_action(pool, late, first).await;

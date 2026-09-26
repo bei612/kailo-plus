@@ -1,6 +1,6 @@
 //! WorkflowRef 兜底对账的端到端核验（`.design/06` §3.1、`DD-48`）。
 //!
-//! 对运行中的 Core、Temporal 与 Worker 构造七种真实情形，只从 Core 库取证：
+//! 对运行中的 Core、Temporal 与 Worker 构造九种真实情形，只从 Core 库取证：
 //!
 //! 1. Workflow 已在 Temporal 终结，而它自己的终态投影从未到达——即使此前
 //!    跨 run 累加的 event_id 高于最新 run 的 history 长度，对账仍补写终态、
@@ -13,6 +13,10 @@
 //!    无法核验的 TERMINAL；
 //! 6. 已有完整终态投影且 Temporal history 不存在——只轮转，不把它改为 UNKNOWN；
 //! 7. 同一版本的 Workflow 已终结时再启动——409，而不是「已启动」的 200。
+//! 8. 完整终态投影带有错误的非空 run ID——在 history 仍可查时按 Temporal
+//!    终态修复，不能因为字段非空就跳过核对。
+//! 9. 老 WorkflowRef 的投影近期才写回，而 Temporal 已无 history——不能
+//!    把投影时间误当执行关闭时间并降级为 UNKNOWN。
 //!
 //! 情形 1 的「漏写」是真实发生的：以 Worker 不认识的 kind 启动，Workflow 在写
 //! 任何投影之前就以不可重试错误终结。
@@ -206,20 +210,53 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
     .await;
     sqlx::query(
         "insert into projection.task_projection
-             (workflow_id, run_id, last_event_id, status)
-         values ($1, 'closed-run', 1, 'FAILED')",
+             (workflow_id, run_id, last_event_id, status, updated_at)
+         values ($1, 'closed-run', 1, 'FAILED', now() - interval '10 years')",
     )
     .bind(&healthy_terminal)
     .execute(pool)
     .await
     .expect("建完整终态投影");
 
+    let recent_projection_of_old =
+        format!("kailo:verify:{}:recent-projection-of-old-{tag}:1", f.tenant);
+    seed_ref(
+        pool,
+        f,
+        &recent_projection_of_old,
+        "TERMINAL",
+        std::time::Duration::from_secs(10 * 365 * 24 * 3600),
+    )
+    .await;
+    sqlx::query(
+        "insert into projection.task_projection
+             (workflow_id, run_id, last_event_id, status)
+         values ($1, 'closed-run', 1, 'FAILED')",
+    )
+    .bind(&recent_projection_of_old)
+    .execute(pool)
+    .await
+    .expect("建近期写回的历史终态投影");
+
+    let wrong_run = format!("kailo:verify:{}:wrong-run-{tag}:1", f.tenant);
+    seed_ref(pool, f, &wrong_run, "TERMINAL", stale).await;
+    sqlx::query(
+        "insert into projection.task_projection
+             (workflow_id, run_id, last_event_id, status)
+         values ($1, 'not-temporal-run', 1, 'FAILED')",
+    )
+    .bind(&wrong_run)
+    .execute(pool)
+    .await
+    .expect("建 run ID 错误的终态投影");
+    temporal_start(e, &wrong_run, "NOT_A_REGISTERED_KIND");
+
     // 3. retention 窗口内的 NotFound
     let unseen = format!("kailo:verify:{}:unseen-{tag}:1", f.tenant);
     seed_ref(pool, f, &unseen, "PENDING_START", stale).await;
 
-    // 等到六条都被观察过。对账每轮按「最久未观察」取一批。
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(interval * 6 + 10);
+    // 等到八条都被观察过。对账每轮按「最久未观察」取一批。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(interval * 8 + 10);
     loop {
         let observed: i64 = sqlx::query_scalar(
             "select count(*) from projection.workflow_ref
@@ -232,6 +269,8 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
             healthy_terminal.clone(),
             unseen.clone(),
             terminal_missing.clone(),
+            wrong_run.clone(),
+            recent_projection_of_old.clone(),
         ])
         .fetch_one(pool)
         .await
@@ -250,15 +289,24 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
         .fetch_optional(pool)
         .await
         .expect("读缺失终态的修复结果");
-        if observed == 6
+        let wrong_run_repaired: bool = sqlx::query_scalar(
+            "select coalesce((select run_id <> 'not-temporal-run' and observation_gap
+                              from projection.task_projection where workflow_id = $1), false)",
+        )
+        .bind(&wrong_run)
+        .fetch_one(pool)
+        .await
+        .expect("读错误 run ID 的修复结果");
+        if observed == 8
             && missed_done.as_deref() == Some("TERMINAL")
             && terminal_repaired.as_deref() == Some("FAILED")
+            && wrong_run_repaired
         {
             break;
         }
         assert!(
             std::time::Instant::now() < deadline,
-            "对账在六轮内没有观察六条 WorkflowRef（已观察 {observed}，漏写那条为 {missed_done:?}，已终态缺投影为 {terminal_repaired:?}）"
+            "对账在八轮内没有修复八条 WorkflowRef（已观察 {observed}，漏写那条为 {missed_done:?}，已终态缺投影为 {terminal_repaired:?}，错误 run ID 修复为 {wrong_run_repaired}）"
         );
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
@@ -290,6 +338,18 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
     .expect("已终态但缺失的 TaskProjection 应被补写");
     assert_eq!(terminal_status, "FAILED");
     assert!(terminal_gap, "补写仍要留下主路径漏写的观测缺口");
+
+    let (repaired_run, repaired_gap, repaired_event): (String, bool, i64) = sqlx::query_as(
+        "select run_id, observation_gap, last_event_id
+         from projection.task_projection where workflow_id = $1",
+    )
+    .bind(&wrong_run)
+    .fetch_one(pool)
+    .await
+    .expect("错误 run ID 的终态投影应已被修复");
+    assert_ne!(repaired_run, "not-temporal-run");
+    assert!(repaired_gap, "错误 run ID 的修复必须留下观测缺口");
+    assert!(repaired_event > 1, "修复必须经单调投影写入路径");
 
     let state: String = sqlx::query_scalar(
         "select projection_state from projection.workflow_ref where workflow_id = $1",
@@ -327,6 +387,14 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
         (healthy_state, healthy_status),
         ("TERMINAL".into(), "FAILED".into())
     );
+    let recently_projected_state: String = sqlx::query_scalar(
+        "select projection_state from projection.workflow_ref where workflow_id = $1",
+    )
+    .bind(&recent_projection_of_old)
+    .fetch_one(pool)
+    .await
+    .expect("读近期写回的历史终态引用");
+    assert_eq!(recently_projected_state, "TERMINAL");
 
     let state: String = sqlx::query_scalar(
         "select projection_state from projection.workflow_ref where workflow_id = $1",

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update projection.workflow_ref\n                             set run_id = coalesce(run_id, $2), projection_state = 'RUNNING',\n                                 version = version + 1\n                             where workflow_id = $1 and projection_state in ('PENDING_START', 'UNKNOWN')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "822e2cd9e2212472004e4037dcbc1c1901b5e8530dfb96285bacfc28bf054c90"
+}

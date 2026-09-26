@@ -2,9 +2,10 @@
 //!
 //! 主路径是 Workflow 自己经 `ProjectTaskState` 写回；这里只修补漏写。每一轮：
 //!
-//! 1. 取一批超过新鲜度上界仍非 TERMINAL，或虽已 TERMINAL 却缺少可用终态
-//!    TaskProjection 的 WorkflowRef，按固定 ID Describe（`DD-48`：结果不明时
-//!    只用该 ID 查）；确定关闭才经唯一写入路径修复投影并标 `observation_gap`。
+//! 1. 取一批超过新鲜度上界仍非 TERMINAL，或已 TERMINAL 但投影仍在
+//!    history 保留窗口的 WorkflowRef，按固定 ID Describe（`DD-48`：结果不明
+//!    时只用该 ID 查）；缺失或与终态不一致时经唯一写入路径修复投影，
+//!    并标 `observation_gap`。
 //!    把已在运行的 PENDING_START 推进到 RUNNING，把 NotFound 且已超出
 //!    retention 的不完整引用记为 UNKNOWN。
 //! 2. 发出收敛度量：各投影状态的非终态数与最久年龄、各实体停在非终态的数量，
@@ -198,8 +199,28 @@ async fn pass(
     .map_err(|e| e.to_string())?;
 
     for r in stale {
-        if !r.needs_repair {
-            // 健康的终态只轮转观察游标，不向 Temporal 重查已终结的历史。
+        let terminal_projection = if r.needs_repair {
+            None
+        } else {
+            // 完整的终态也可能带错 run ID。只在它最近一次写回仍落在
+            // history retention 窗口时核对；窗口外 Core 投影是保留的事实。
+            let actual: Option<(String, Option<String>, bool)> = sqlx::query_as(
+                "select status, run_id,
+                        updated_at > now() - make_interval(secs => $2::bigint)
+                 from projection.task_projection where workflow_id = $1",
+            )
+            .bind(&r.workflow_id)
+            .bind(retention_secs)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            actual
+        };
+        if terminal_projection
+            .as_ref()
+            .is_some_and(|(_, _, recent)| !recent)
+        {
+            // history 已过保留期，不能把 Describe 的 NotFound 当成损坏证明。
             sqlx::query!(
                 "update projection.workflow_ref set last_observed_at = now() where workflow_id = $1",
                 r.workflow_id
@@ -209,52 +230,129 @@ async fn pass(
             .map_err(|e| e.to_string())?;
             metrics
                 .reconciled
-                .add(1, &[KeyValue::new("outcome", "TERMINAL_INTACT")]);
+                .add(1, &[KeyValue::new("outcome", "TERMINAL_RETAINED")]);
             continue;
         }
         let outcome = match temporal.describe(&r.workflow_id).await {
             Ok(Some(o)) => match o.state {
                 ObservedState::Open => {
-                    sqlx::query!(
-                        "update projection.workflow_ref
-                         set run_id = coalesce(run_id, $2), projection_state = 'RUNNING',
-                             version = version + 1
-                         where workflow_id = $1 and projection_state in ('PENDING_START', 'UNKNOWN')",
-                        r.workflow_id,
-                        o.run_id,
-                    )
-                    .execute(pool)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                    "OPEN"
+                    let projected_terminal = if r.projection_state == "UNKNOWN" {
+                        sqlx::query_scalar::<_, bool>(
+                            "select exists(select 1 from projection.task_projection
+                             where workflow_id = $1 and status in
+                               ('COMPLETED', 'FAILED', 'CANCELED', 'TERMINATED', 'TIMED_OUT'))",
+                        )
+                        .bind(&r.workflow_id)
+                        .fetch_one(pool)
+                        .await
+                        .map_err(|e| e.to_string())?
+                    } else {
+                        false
+                    };
+                    if r.projection_state == "TERMINAL" || projected_terminal {
+                        // 投影宣称终结，但 Temporal 仍 OPEN：保留结果不明，
+                        // 直到同一执行链真正关闭后再修复。
+                        mark_unknown(pool, &r.workflow_id).await?;
+                        "TERMINAL_STILL_OPEN"
+                    } else {
+                        sqlx::query!(
+                            "update projection.workflow_ref
+                             set run_id = coalesce(run_id, $2), projection_state = 'RUNNING',
+                                 version = version + 1
+                             where workflow_id = $1 and projection_state in ('PENDING_START', 'UNKNOWN')",
+                            r.workflow_id,
+                            o.run_id,
+                        )
+                        .execute(pool)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                        "OPEN"
+                    }
                 }
                 ObservedState::Closed(status) => {
-                    patch_terminal(pool, &r.workflow_id, o.run_id, o.history_length, status)
-                        .await?;
-                    "TERMINAL_PATCHED"
+                    let saved = match terminal_projection.as_ref() {
+                        Some((saved_status, saved_run, _)) => {
+                            Some((saved_status.clone(), saved_run.clone()))
+                        }
+                        None => sqlx::query_as(
+                            "select status, run_id from projection.task_projection
+                             where workflow_id = $1",
+                        )
+                        .bind(&r.workflow_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(|e| e.to_string())?,
+                    };
+                    let closed_status = task_projection::wire(&status);
+                    if saved.as_ref().is_some_and(|(saved_status, saved_run)| {
+                        saved_status == &closed_status
+                            && saved_run.as_deref() == Some(o.run_id.as_str())
+                    }) {
+                        if r.projection_state != "TERMINAL" {
+                            // 先前查询曾不可用或观察到仍 OPEN，但主路径的终态
+                            // 投影与当前 Temporal 终态一致；恢复引用，不伪造漏写。
+                            let changed = sqlx::query(
+                                "update projection.workflow_ref w
+                                 set projection_state = 'TERMINAL',
+                                     run_id = coalesce(run_id, $2), version = version + 1
+                                 where w.workflow_id = $1 and w.projection_state <> 'TERMINAL'
+                                   and exists(select 1 from projection.task_projection t
+                                              where t.workflow_id = w.workflow_id
+                                                and t.status = $3 and t.run_id = $2)",
+                            )
+                            .bind(&r.workflow_id)
+                            .bind(&o.run_id)
+                            .bind(&closed_status)
+                            .execute(pool)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                            if changed.rows_affected() == 0 {
+                                return Err(format!(
+                                    "{} 的终态投影在引用恢复时发生并发变化",
+                                    r.workflow_id
+                                ));
+                            }
+                        }
+                        "TERMINAL_VERIFIED"
+                    } else {
+                        patch_terminal(pool, &r.workflow_id, o.run_id, o.history_length, status)
+                            .await?;
+                        "TERMINAL_PATCHED"
+                    }
                 }
                 ObservedState::Unrecognized(code) => {
                     tracing::warn!(workflow_id = %r.workflow_id, code, "Temporal 返回未知的执行状态");
+                    if r.projection_state == "TERMINAL" {
+                        mark_unknown(pool, &r.workflow_id).await?;
+                    }
                     "UNRECOGNIZED"
                 }
             },
             // NotFound 只在 retention 窗口内才可能是「未启动」（SF-TMP-07）；
             // 窗口外无法修复不完整的终态投影，也不能继续声称它可核验。
+            Ok(None)
+                if r.projection_state == "TERMINAL"
+                    && terminal_projection.is_some()
+                    && !r.within_retention =>
+            {
+                // 最近写回的投影不证明执行最近才关闭；预写引用已超过
+                // retention 时，NotFound 不能推翻 Core 持久保存的终态。
+                "TERMINAL_RETAINED"
+            }
+            Ok(None) if r.within_retention && r.projection_state == "TERMINAL" => {
+                mark_unknown(pool, &r.workflow_id).await?;
+                "TERMINAL_NOT_FOUND"
+            }
             Ok(None) if r.within_retention => "NOT_FOUND",
             Ok(None) => {
-                sqlx::query!(
-                    "update projection.workflow_ref
-                     set projection_state = 'UNKNOWN', version = version + 1
-                     where workflow_id = $1 and projection_state <> 'UNKNOWN'",
-                    r.workflow_id
-                )
-                .execute(pool)
-                .await
-                .map_err(|e| e.to_string())?;
+                mark_unknown(pool, &r.workflow_id).await?;
                 "UNKNOWN"
             }
             Err(e) => {
                 tracing::warn!(workflow_id = %r.workflow_id, error = %e, "Describe 结果不明");
+                if r.projection_state == "TERMINAL" {
+                    mark_unknown(pool, &r.workflow_id).await?;
+                }
                 "DESCRIBE_FAILED"
             }
         };
@@ -272,6 +370,19 @@ async fn pass(
 
     record_refs(pool, metrics).await?;
     record_entities(pool, metrics).await
+}
+
+async fn mark_unknown(pool: &PgPool, workflow_id: &str) -> Result<(), String> {
+    sqlx::query(
+        "update projection.workflow_ref
+         set projection_state = 'UNKNOWN', version = version + 1
+         where workflow_id = $1 and projection_state <> 'UNKNOWN'",
+    )
+    .bind(workflow_id)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Temporal 已终结而 Core 没收到终态投影：以观察到的终态经唯一写入路径落库。
