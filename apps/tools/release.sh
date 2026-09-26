@@ -41,7 +41,16 @@ find "$OUT" -type f -empty -delete
 for unit in "${UNITS[@]}"; do
   say "== $unit =="
   tag="kailo/$unit:$COMMIT"
-  $DOCKER build -q -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" >/dev/null || die "$unit 构建失败"
+  if [ -n "${BUILDX_BUILDER:-}" ]; then
+    # docker-container builder 的 cgroup 限额约束编译；--load 把镜像交给后续
+    # inspect 与 syft 使用的本地 image store。
+    $DOCKER buildx build --builder "$BUILDX_BUILDER" --load -q \
+      -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" >/dev/null \
+      || die "$unit 构建失败"
+  else
+    $DOCKER build -q -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" >/dev/null \
+      || die "$unit 构建失败"
+  fi
   digest=$($DOCKER image inspect --format '{{.Id}}' "$tag")
   pass "镜像 $digest"
 
