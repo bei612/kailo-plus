@@ -960,13 +960,269 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World) {
         &format!("principal:{}", w.d.principal),
     );
 
-    // 本次执行的审批 workflow ID：它们的 history 是 worker/replay-tests 的录制来源
+    // 已有实现的审批重跑链：原动作与重跑控制必须各自消耗一份批准。
+    approved_rerun(http, e, pool, w).await;
+
+    // 本次执行的前四条审批 workflow ID：它们的 history 是 worker/replay-tests 的录制来源
     eprintln!("审批 history：CONSUMED={wf} INVALIDATED={inv_wf} CANCELLED={wd_wf} EXPIRED={ex_wf}");
 
     // 本人任务列表合契约
     let (st, tasks) = bff(http, e, a, reqwest::Method::GET, "/api/v1/tasks", None).await;
     assert_eq!(st, reqwest::StatusCode::OK);
     common::assert_contract::<TaskView>(&tasks, "TaskView[]");
+}
+
+/// 用 Tenant 行锁把原动作的批准投影与业务派发分开：批准已由 Temporal 记录时，
+/// Worker 尚可安全停下；解锁后业务 Workflow 才开始，取消使实体留在 REVOKING。
+/// 随后从用户入口重跑，核对第二份独立批准与新 Workflow 的终态。
+async fn approved_rerun(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World) {
+    let a = w.fx.subject.as_str();
+    let (st, original) = submit(
+        http,
+        e,
+        a,
+        json!({
+            "actionKey": "tenant.member.revoke",
+            "idempotencyKey": Uuid::new_v4(),
+            "principalId": w.d.principal,
+        }),
+    )
+    .await;
+    assert_eq!(st, reqwest::StatusCode::ACCEPTED, "{original}");
+    let original_ae = Uuid::parse_str(original["actionExecutionId"].as_str().unwrap()).unwrap();
+    let original_approval = original["approvalWorkflowId"].as_str().unwrap().to_owned();
+    until(e, "原动作审批 WAITING", || async {
+        (approval_status(pool, &original_approval).await.as_deref() == Some("WAITING"))
+            .then_some(())
+    })
+    .await;
+
+    let mut hold = pool.begin().await.unwrap();
+    let _: Uuid = sqlx::query_scalar("select id from identity.tenant where id = $1 for update")
+        .bind(w.fx.tenant)
+        .fetch_one(&mut *hold)
+        .await
+        .unwrap();
+    let (st, decision) = bff(
+        http,
+        e,
+        &w.b.subject,
+        reqwest::Method::POST,
+        &format!("/api/v1/approvals/{original_approval}/decision"),
+        Some(json!({"decision":"APPROVE"})),
+    )
+    .await;
+    assert_eq!(st, reqwest::StatusCode::OK, "原动作批准失败：{decision}");
+    until(e, "原动作批准已投影", || async {
+        (approval_status(pool, &original_approval).await.as_deref() == Some("APPROVED"))
+            .then_some(())
+    })
+    .await;
+    assert_eq!(gate_of(pool, original_ae).await.0, "WAITING");
+    worker(e, "stop");
+    hold.commit().await.unwrap();
+
+    let original_workflow: String = until(e, "原动作派发到已停止的 Worker", || async {
+        if gate_of(pool, original_ae).await.1 != "DISPATCHED" {
+            return None;
+        }
+        sqlx::query_scalar::<_, Option<String>>(
+            "select temporal_workflow_id from admission.action_execution where id = $1",
+        )
+        .bind(original_ae)
+        .fetch_one(pool)
+        .await
+        .ok()
+        .flatten()
+    })
+    .await;
+    assert_eq!(
+        state_of(pool, "identity.tenant_membership", w.d.membership).await,
+        "REVOKING"
+    );
+    let cancel_key: String = until(e, "本人取得原动作取消控制", || async {
+        let (st, task) = bff(
+            http,
+            e,
+            a,
+            reqwest::Method::GET,
+            &format!("/api/v1/tasks/{original_ae}"),
+            None,
+        )
+        .await;
+        st.is_success()
+            .then(|| task["cancelActionKey"].as_str().map(str::to_owned))
+            .flatten()
+    })
+    .await;
+    assert_eq!(cancel_key, "task.cancel.tenant.member.revoke.v1");
+    let (st, cancel) = submit(
+        http,
+        e,
+        a,
+        json!({
+            "actionKey": cancel_key,
+            "idempotencyKey": Uuid::new_v4(),
+            "originalActionExecutionId": original_ae,
+        }),
+    )
+    .await;
+    assert!(st.is_success(), "取消原动作失败：{st} {cancel}");
+    let cancel_ae = Uuid::parse_str(cancel["actionExecutionId"].as_str().unwrap()).unwrap();
+    until(e, "原动作取消请求已记入 Temporal", || async {
+        (gate_of(pool, cancel_ae).await.1 == "DISPATCHED").then_some(())
+    })
+    .await;
+    worker(e, "start");
+    until(e, "原动作以 CANCELED 终结", || async {
+        let status: Option<String> = sqlx::query_scalar(
+            "select status from projection.task_projection where workflow_id = $1",
+        )
+        .bind(&original_workflow)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        (status.as_deref() == Some("CANCELED")).then_some(())
+    })
+    .await;
+    until(e, "原动作批准 CONSUMED", || async {
+        (approval_status(pool, &original_approval).await.as_deref() == Some("CONSUMED"))
+            .then_some(())
+    })
+    .await;
+    assert_eq!(
+        state_of(pool, "identity.tenant_membership", w.d.membership).await,
+        "REVOKING",
+        "取消后不能把成员撤权伪报完成"
+    );
+
+    let rerun_key: String = until(e, "本人取得需审批重跑控制", || async {
+        let (st, task) = bff(
+            http,
+            e,
+            a,
+            reqwest::Method::GET,
+            &format!("/api/v1/tasks/{original_ae}"),
+            None,
+        )
+        .await;
+        st.is_success()
+            .then(|| task["rerunActionKey"].as_str().map(str::to_owned))
+            .flatten()
+    })
+    .await;
+    assert_eq!(rerun_key, "task.rerun.tenant.member.revoke.v1");
+    let (st, rerun) = submit(
+        http,
+        e,
+        a,
+        json!({
+            "actionKey": rerun_key,
+            "idempotencyKey": Uuid::new_v4(),
+            "originalActionExecutionId": original_ae,
+        }),
+    )
+    .await;
+    assert_eq!(st, reqwest::StatusCode::ACCEPTED, "重跑应重新审批：{rerun}");
+    let rerun_ae = Uuid::parse_str(rerun["actionExecutionId"].as_str().unwrap()).unwrap();
+    let rerun_approval = rerun["approvalWorkflowId"].as_str().unwrap().to_owned();
+    assert_ne!(rerun_approval, original_approval);
+    until(e, "重跑审批 WAITING", || async {
+        (approval_status(pool, &rerun_approval).await.as_deref() == Some("WAITING")).then_some(())
+    })
+    .await;
+    let before: i64 = sqlx::query_scalar(
+        "select count(*) from projection.workflow_ref
+         where action_execution_id = $1 and workflow_type = 'ComponentTaskWorkflow'",
+    )
+    .bind(rerun_ae)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(before, 0, "批准前已经启动重跑 Workflow");
+    let (st, self_decision) = bff(
+        http,
+        e,
+        a,
+        reqwest::Method::POST,
+        &format!("/api/v1/approvals/{rerun_approval}/decision"),
+        Some(json!({"decision":"APPROVE"})),
+    )
+    .await;
+    assert_eq!(
+        st,
+        reqwest::StatusCode::FORBIDDEN,
+        "发起者自批：{self_decision}"
+    );
+    let (st, decision) = bff(
+        http,
+        e,
+        &w.b.subject,
+        reqwest::Method::POST,
+        &format!("/api/v1/approvals/{rerun_approval}/decision"),
+        Some(json!({"decision":"APPROVE"})),
+    )
+    .await;
+    assert_eq!(st, reqwest::StatusCode::OK, "重跑批准失败：{decision}");
+    let new_workflow: String = until(e, "批准后重跑派发", || async {
+        if gate_of(pool, rerun_ae).await.1 != "DISPATCHED" {
+            return None;
+        }
+        sqlx::query_scalar::<_, Option<String>>(
+            "select temporal_workflow_id from admission.action_execution where id = $1",
+        )
+        .bind(rerun_ae)
+        .fetch_one(pool)
+        .await
+        .ok()
+        .flatten()
+    })
+    .await;
+    assert_ne!(new_workflow, original_workflow);
+    until(e, "重跑审批 CONSUMED", || async {
+        (approval_status(pool, &rerun_approval).await.as_deref() == Some("CONSUMED")).then_some(())
+    })
+    .await;
+    until(e, "重跑完成 Tenant 成员撤权", || async {
+        (state_of(pool, "identity.tenant_membership", w.d.membership).await == "REVOKED")
+            .then_some(())
+    })
+    .await;
+    until(e, "新业务 Workflow COMPLETED", || async {
+        let status: Option<String> = sqlx::query_scalar(
+            "select status from projection.task_projection where workflow_id = $1",
+        )
+        .bind(&new_workflow)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        (status.as_deref() == Some("COMPLETED")).then_some(())
+    })
+    .await;
+    let new_refs: i64 = sqlx::query_scalar(
+        "select count(*) from projection.workflow_ref
+         where action_execution_id = $1 and workflow_type = 'ComponentTaskWorkflow'",
+    )
+    .bind(rerun_ae)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(new_refs, 1, "批准后的单次重跑不能生成第二条业务 Workflow");
+    let rechecks: i64 = sqlx::query_scalar(
+        "select count(*) from admission.action_decision
+         where action_execution_id = $1 and phase = 'RECHECK'
+           and authorization_decision = 'ALLOW' and approval_decision = 'SATISFIED'",
+    )
+    .bind(rerun_ae)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert!(rechecks > 0, "重跑批准后缺 fresh recheck");
+    eprintln!(
+        "审批重跑 history：ORIGINAL={original_approval} RERUN={rerun_approval}，新业务 Workflow={new_workflow}"
+    );
 }
 
 /// Temporal 上该 workflow ID 当前（最新）一次 run 的 run ID。

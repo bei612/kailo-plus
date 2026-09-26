@@ -102,6 +102,12 @@ Web 镜像 `sha256:3a23b71a80045bf337a8ee4af9c54dde1fc53cbfbba275ba39ccd4db4371d
 
 共享任务页的回归检查还做了反向验证：故意把「取消已提交」误判为「重跑已提交」，`governance.test.tsx` 的取消后可重跑断言按预期失败（1/57）；恢复原逻辑后 57/57 通过。最终 `./tools/check.sh --full` 十项全过；实际数据库迁移回退演练因未向门禁提供隔离 `DATABASE_URL` 而跳过，迁移已在当前 Core 库前进并由真实链路使用。
 
+### 需审批原任务的重跑闭环
+
+`governed_action` 在同一真实 Core/BFF、SpiceDB、Temporal、Worker 拓扑中增加 `tenant.member.revoke` 场景。测试先让原动作的 Temporal Approval 到 `APPROVED`，以夹具 Tenant 行锁阻止业务派发；停止 Worker 后解锁，原业务 Workflow 才派发。用户经 BFF 提交取消，Worker 恢复后原 Workflow 为 `CANCELED`、原审批为 `CONSUMED`、目标仍为 `REVOKING`。本人随后提交专属 `task.rerun.tenant.member.revoke.v1`，新业务 Workflow 在第二份独立 Approval 批准前不存在；发起者自批被拒，另一 Tenant admin 批准后出现 `RECHECK` 且审批为 `SATISFIED`，第二份批准 `CONSUMED`，新 Workflow 唯一并达到 `COMPLETED`，成员达到 `REVOKED`。恢复后定向集成命令退出码 0：`1 passed; 0 failed`，耗时 104.82 秒。
+
+反向核验把这次重跑请求临时指向 `task.rerun.workspace.create.v1`；Core 返回 `403 BLOCKED/CAPABILITY_BLOCKED`，验收在预期断言处失败（退出码 101，123.92 秒）。恢复正确 action key 后重新取得上述 1/1 通过。三轮集成都在 `MemoryMax=16G`、`CPUQuota=500%` 的 cgroup 内执行；只改了验收场景，没有改产品 Catalog 或运行服务配置。此证据覆盖 BFF 用户控制到 Temporal/Worker 的真实后端链，不把它冒充 Web 页面上的第二次审批操作走查，也不代表 Desktop/Mobile 验收。
+
 ## 已知边界
 
 - 「待我审批」列表用低延迟一致性：刚授予的 admin 关系可能要等 SpiceDB 的
