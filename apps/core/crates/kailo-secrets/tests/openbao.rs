@@ -138,4 +138,7 @@ async fn wrapped_delivery_and_secret_ref_boundaries() {
         ),
         "策略之外的 mount 必须读不到"
     );
+    s.revoke_current()
+        .await
+        .expect("核验用 service token 必须撤销");
 }

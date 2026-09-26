@@ -269,6 +269,17 @@ impl AppRoleSession {
         }
     }
 
+    /// Core 停止服务或引导失败时显式撤销已经换出的令牌。没有成功登录的会话无令牌可撤。
+    async fn revoke_current(&self) -> Result<(), SecretError> {
+        let token = match self.lease.read().await.as_ref() {
+            Some(lease) => Arc::clone(&lease.token),
+            None => return Ok(()),
+        };
+        self.revoke_self(token.as_str()).await?;
+        self.lease.write().await.take();
+        Ok(())
+    }
+
     /// `Ok(None)` 是登录被拒。
     async fn login(&self, secret_id: &str) -> Result<Option<LoginAuth>, SecretError> {
         let resp = self
@@ -415,6 +426,10 @@ impl SecretStore {
         self.session.keep_alive().await
     }
 
+    pub async fn revoke_current(&self) -> Result<(), SecretError> {
+        self.session.revoke_current().await
+    }
+
     /// 按 SecretRef 取出某个字段的值。
     ///
     /// 成功的判据包含**返回的版本号等于请求的版本号**：KV v2 在版本被删除时
@@ -520,6 +535,10 @@ impl AuditObserver {
 
     pub async fn keep_alive(&self) -> SecretError {
         self.session.keep_alive().await
+    }
+
+    pub async fn revoke_current(&self) -> Result<(), SecretError> {
+        self.session.revoke_current().await
     }
 
     /// 当前启用的 audit device 数。`Ok(0)` 是确定的「没有」，调用方必须 fail
@@ -645,6 +664,72 @@ mod tests {
         for (request, token) in [(&requests[4], "extra"), (&requests[5], "first")] {
             assert!(request.starts_with("PUT /v1/auth/token/revoke-self HTTP/1.1"));
             assert!(request.contains(&format!("x-vault-token: {token}")));
+            assert!(request.contains("x-vault-namespace: platform"));
+        }
+    }
+
+    #[tokio::test]
+    async fn exit_revocation_retains_token_until_confirmed() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while requests.len() < 2 && std::time::Instant::now() < deadline {
+                let (mut stream, _) = match listener.accept() {
+                    Ok(connection) => connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(error) => panic!("mock OpenBao accept: {error}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut bytes = [0u8; 4096];
+                let size = stream.read(&mut bytes).unwrap();
+                let request = String::from_utf8_lossy(&bytes[..size]).to_string();
+                let status = if requests.is_empty() {
+                    "500 Internal Server Error"
+                } else {
+                    "204 No Content"
+                };
+                let response =
+                    format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                stream.write_all(response.as_bytes()).unwrap();
+                requests.push(request);
+            }
+            requests
+        });
+        let session = AppRoleSession::new(
+            &format!("http://{addr}"),
+            "platform".to_owned(),
+            "role-id".to_owned(),
+            "probe".to_owned(),
+            "wrapped".to_owned(),
+        );
+        *session.lease.write().await = Some(Lease {
+            token: Arc::new("current".to_owned()),
+            ttl: Duration::from_secs(120),
+        });
+        assert!(matches!(
+            session.revoke_current().await,
+            Err(SecretError::RevocationUnconfirmed)
+        ));
+        assert_eq!(session.token().await.unwrap().as_str(), "current");
+        session.revoke_current().await.unwrap();
+        assert!(matches!(
+            session.token().await,
+            Err(SecretError::CredentialLost)
+        ));
+        session.revoke_current().await.unwrap();
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 2);
+        for request in requests {
+            assert!(request.starts_with("PUT /v1/auth/token/revoke-self HTTP/1.1"));
+            assert!(request.contains("x-vault-token: current"));
             assert!(request.contains("x-vault-namespace: platform"));
         }
     }

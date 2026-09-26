@@ -101,196 +101,238 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect()
         .await
         .map_err(|e| format!("OpenBao 引导凭据不可用，拒绝启动: {e}"))?;
-    audit
-        .connect()
-        .await
-        .map_err(|e| format!("OpenBao audit 观察凭据不可用，拒绝启动: {e}"))?;
-    match audit.enabled_devices().await {
-        Ok(0) => return Err("OpenBao 没有启用任何 audit device：取用不留痕，拒绝启动".into()),
-        Ok(n) => tracing::info!(devices = n, "OpenBao audit device 已启用"),
-        Err(e) => return Err(format!("读取 OpenBao audit device 清单失败，拒绝启动: {e}").into()),
-    }
-    let catalog_tenant = platform_bootstrap::ensure(
-        &pool,
-        &secrets,
-        &platform_bootstrap::BootstrapConfig::from_env()?,
-        &reqwest::Client::new(),
-    )
-    .await?;
-
-    // Service API 与 BFF 共用同一个 Temporal 客户端：两边启动的是同一种
-    // ComponentTaskWorkflow，令牌缓存也只该有一份。
-    let temporal = std::sync::Arc::new(
-        temporal::TemporalClient::from_env(oidc::TokenSource::from_env()?).await?,
-    );
-    // 兜底对账：修补漏写的 Workflow 终态投影并发出收敛度量（06 §3.1）
-    workflow_reconcile::spawn(
-        pool.clone(),
-        std::sync::Arc::clone(&temporal),
-        &opentelemetry::global::meter("kailo-core"),
-        workflow_reconcile::Config::from_env()?,
-    );
-
-    // 治理内核：准入、审批与派发（.design/05 §1）。BFF 与 service API 共用一份——
-    // 审批投影写回（service）与语义命令（BFF）推进的是同一批 ActionExecution。
-    let governance = std::sync::Arc::new(governance::Governance {
-        pool: pool.clone(),
-        temporal: std::sync::Arc::clone(&temporal),
-        spicedb: spicedb::SpiceDb::from_env(reqwest::Client::new())?,
-        cfg: governance::GovernanceConfig::from_env()?,
-    });
-    governance_reconcile::spawn(
-        std::sync::Arc::clone(&governance),
-        &opentelemetry::global::meter("kailo-core"),
-        governance_reconcile::Config::from_env()?,
-    );
-    // 角色 relationship 以成员事实为准对账，并度量没有有效 admin 的 Tenant（DD-82）
-    role_reconcile::spawn(
-        std::sync::Arc::clone(&governance),
-        &opentelemetry::global::meter("kailo-core"),
-        role_reconcile::Config::from_env()?,
-    );
-
-    let service_state = service_api::ServiceState {
-        pool: pool.clone(),
-        auth: std::sync::Arc::new(service_auth::ServiceAuth::from_env()?),
-        secrets: std::sync::Arc::clone(&secrets),
-        audit: std::sync::Arc::clone(&audit),
-        catalog_tenant,
-        secret_mount: format!(
-            "{}/{}",
-            std::env::var("OPENBAO_PLATFORM_NAMESPACE")
-                .map_err(|_| "缺少 OPENBAO_PLATFORM_NAMESPACE")?,
-            std::env::var("OPENBAO_KV_MOUNT").map_err(|_| "缺少 OPENBAO_KV_MOUNT")?
-        ),
-        secret_audience: std::env::var("OPENBAO_SERVICE_IDENTITY")
-            .map_err(|_| "缺少 OPENBAO_SERVICE_IDENTITY")?,
-        community_domain: std::env::var("BUZZ_COMMUNITY_DOMAIN")
-            .map_err(|_| "缺少 BUZZ_COMMUNITY_DOMAIN")?,
-        relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
-            .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
-        http: reqwest::Client::new(),
-        temporal: std::sync::Arc::clone(&temporal),
-        governance: std::sync::Arc::clone(&governance),
-    };
-
-    // roster 与成员事实的对账度量（07 §3）。它用 CONTROL 身份读 roster，与
-    // service API 共用同一份依赖。
-    roster_reconcile::spawn(
-        service_state.clone(),
-        &opentelemetry::global::meter("kailo-core"),
-        roster_reconcile::Config::from_env()?,
-    );
-
-    // 结果不明的消息发布按 event id 对账成确定结果（DD-81）
-    publish_reconcile::spawn(
-        service_state.clone(),
-        &opentelemetry::global::meter("kailo-core"),
-        publish_reconcile::Config::from_env()?,
-    );
-
-    let bff_state = bff::BffState {
-        pool: pool.clone(),
-        temporal,
-        governance,
-        client_key_proof_window_seconds: std::env::var("BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")
-            .map_err(|_| "缺少 BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")?
-            .parse()
-            .map_err(|_| "BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS 必须是秒数")?,
-        client_keys_per_principal: std::env::var("BFF_CLIENT_KEYS_PER_PRINCIPAL")
-            .map_err(|_| "缺少 BFF_CLIENT_KEYS_PER_PRINCIPAL")?
-            .parse()
-            .map_err(|_| "BFF_CLIENT_KEYS_PER_PRINCIPAL 必须是正整数")?,
-        client_key_recheck_millis: {
-            let value: i64 = std::env::var("BFF_CLIENT_KEY_RECHECK_MILLIS")
-                .map_err(|_| "缺少 BFF_CLIENT_KEY_RECHECK_MILLIS")?
-                .parse()
-                .map_err(|_| "BFF_CLIENT_KEY_RECHECK_MILLIS 必须是正整数毫秒数")?;
-            if !(1..=i32::MAX as i64).contains(&value) {
-                return Err("BFF_CLIENT_KEY_RECHECK_MILLIS 必须在 1..=2147483647 之间".into());
+    let outcome: Result<(), Box<dyn std::error::Error>> = async {
+        audit
+            .connect()
+            .await
+            .map_err(|e| format!("OpenBao audit 观察凭据不可用，拒绝启动: {e}"))?;
+        match audit.enabled_devices().await {
+            Ok(0) => return Err("OpenBao 没有启用任何 audit device：取用不留痕，拒绝启动".into()),
+            Ok(n) => tracing::info!(devices = n, "OpenBao audit device 已启用"),
+            Err(e) => {
+                return Err(format!("读取 OpenBao audit device 清单失败，拒绝启动: {e}").into())
             }
-            value
-        },
-        relay_native_url_template: {
-            let t = std::env::var("BUZZ_RELAY_NATIVE_URL_TEMPLATE")
-                .map_err(|_| "缺少 BUZZ_RELAY_NATIVE_URL_TEMPLATE")?;
-            // authority 必须恰好是 {host}：没有占位符就是一个固定地址，所有 Tenant
-            // 会被连到同一个 Community；占位符旁再带端口或 userinfo，客户端发出的
-            // Host 就不再是 Community host（Relay 只剥 :80/:443，其余端口属于
-            // host，SF-BUZ-41）。非默认端口写进 BUZZ_COMMUNITY_DOMAIN。
-            let rest = t
-                .strip_prefix("wss://{host}")
-                .or_else(|| t.strip_prefix("ws://{host}"));
-            if !matches!(rest, Some(r) if r.is_empty() || r.starts_with('/')) {
-                return Err("BUZZ_RELAY_NATIVE_URL_TEMPLATE 必须形如 ws[s]://{host}[/path]".into());
-            }
-            t
-        },
-        session_ttl_seconds: std::env::var("PLATFORM_SESSION_TTL_SECONDS")
-            .map_err(|_| "缺少 PLATFORM_SESSION_TTL_SECONDS")?
-            .parse()
-            .map_err(|_| "PLATFORM_SESSION_TTL_SECONDS 必须是秒数")?,
-        secrets: std::sync::Arc::clone(&secrets),
-        http: reqwest::Client::new(),
-        relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
-            .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
-        message_page_limit: std::env::var("BFF_MESSAGE_PAGE_LIMIT")
-            .map_err(|_| "缺少 BFF_MESSAGE_PAGE_LIMIT")?
-            .parse()
-            .map_err(|_| "BFF_MESSAGE_PAGE_LIMIT 必须是数字")?,
-        relay_ws_url: std::env::var("BUZZ_RELAY_WS_URL").map_err(|_| "缺少 BUZZ_RELAY_WS_URL")?,
-        stream_buffer: std::env::var("BFF_STREAM_BUFFER")
-            .map_err(|_| "缺少 BFF_STREAM_BUFFER")?
-            .parse()
-            .map_err(|_| "BFF_STREAM_BUFFER 必须是数字")?,
-        stream_auth_timeout_seconds: std::env::var("BFF_STREAM_AUTH_TIMEOUT_SECONDS")
-            .map_err(|_| "缺少 BFF_STREAM_AUTH_TIMEOUT_SECONDS")?
-            .parse()
-            .map_err(|_| "BFF_STREAM_AUTH_TIMEOUT_SECONDS 必须是秒数")?,
-        stream_readmit_seconds: std::env::var("BFF_STREAM_READMIT_SECONDS")
-            .map_err(|_| "缺少 BFF_STREAM_READMIT_SECONDS")?
-            .parse()
-            .map_err(|_| "BFF_STREAM_READMIT_SECONDS 必须是秒数")?,
-        stream_retry_millis: std::env::var("BFF_STREAM_RETRY_MILLIS")
-            .map_err(|_| "缺少 BFF_STREAM_RETRY_MILLIS")?
-            .parse()
-            .map_err(|_| "BFF_STREAM_RETRY_MILLIS 必须是毫秒数")?,
-        media_max_bytes: std::env::var("BFF_MEDIA_MAX_BYTES")
-            .map_err(|_| "缺少 BFF_MEDIA_MAX_BYTES")?
-            .parse()
-            .map_err(|_| "BFF_MEDIA_MAX_BYTES 必须是字节数")?,
-    };
-
-    let bff = tokio::net::TcpListener::bind(listen).await?;
-    let service = tokio::net::TcpListener::bind(service_listen).await?;
-    tracing::info!(bff = %listen, service = %service_listen, "listening");
-
-    let shutdown = || async {
-        let _ = tokio::signal::ctrl_c().await;
-    };
-    // 任一监听退出即整体退出：只剩半边可用会让调用方看到不一致的可用性。
-    let serve = async {
-        tokio::try_join!(
-            axum::serve(bff, bff::router(bff_state)).with_graceful_shutdown(shutdown()),
-            axum::serve(service, service_api::router(service_state))
-                .with_graceful_shutdown(shutdown()),
+        }
+        let catalog_tenant = platform_bootstrap::ensure(
+            &pool,
+            &secrets,
+            &platform_bootstrap::BootstrapConfig::from_env()?,
+            &reqwest::Client::new(),
         )
-    };
-    // service token 按 lease 续期。续期被确定拒绝（令牌被撤销或过期）时手里已没有
-    // 能重新登录的凭据：继续服务只会让每个要 secret 的动作失败，还看不出原因。
-    // 退出并说明原因，由部署重新投递引导凭据（RB-02 步骤 A/C）。
-    tokio::select! {
-        served = serve => { served?; }
-        e = secrets.keep_alive() => {
-            return Err(format!("OpenBao service token 失效，退出: {e}").into());
+        .await?;
+
+        // Service API 与 BFF 共用同一个 Temporal 客户端：两边启动的是同一种
+        // ComponentTaskWorkflow，令牌缓存也只该有一份。
+        let temporal = std::sync::Arc::new(
+            temporal::TemporalClient::from_env(oidc::TokenSource::from_env()?).await?,
+        );
+        // 兜底对账：修补漏写的 Workflow 终态投影并发出收敛度量（06 §3.1）
+        workflow_reconcile::spawn(
+            pool.clone(),
+            std::sync::Arc::clone(&temporal),
+            &opentelemetry::global::meter("kailo-core"),
+            workflow_reconcile::Config::from_env()?,
+        );
+
+        // 治理内核：准入、审批与派发（.design/05 §1）。BFF 与 service API 共用一份——
+        // 审批投影写回（service）与语义命令（BFF）推进的是同一批 ActionExecution。
+        let governance = std::sync::Arc::new(governance::Governance {
+            pool: pool.clone(),
+            temporal: std::sync::Arc::clone(&temporal),
+            spicedb: spicedb::SpiceDb::from_env(reqwest::Client::new())?,
+            cfg: governance::GovernanceConfig::from_env()?,
+        });
+        governance_reconcile::spawn(
+            std::sync::Arc::clone(&governance),
+            &opentelemetry::global::meter("kailo-core"),
+            governance_reconcile::Config::from_env()?,
+        );
+        // 角色 relationship 以成员事实为准对账，并度量没有有效 admin 的 Tenant（DD-82）
+        role_reconcile::spawn(
+            std::sync::Arc::clone(&governance),
+            &opentelemetry::global::meter("kailo-core"),
+            role_reconcile::Config::from_env()?,
+        );
+
+        let service_state = service_api::ServiceState {
+            pool: pool.clone(),
+            auth: std::sync::Arc::new(service_auth::ServiceAuth::from_env()?),
+            secrets: std::sync::Arc::clone(&secrets),
+            audit: std::sync::Arc::clone(&audit),
+            catalog_tenant,
+            secret_mount: format!(
+                "{}/{}",
+                std::env::var("OPENBAO_PLATFORM_NAMESPACE")
+                    .map_err(|_| "缺少 OPENBAO_PLATFORM_NAMESPACE")?,
+                std::env::var("OPENBAO_KV_MOUNT").map_err(|_| "缺少 OPENBAO_KV_MOUNT")?
+            ),
+            secret_audience: std::env::var("OPENBAO_SERVICE_IDENTITY")
+                .map_err(|_| "缺少 OPENBAO_SERVICE_IDENTITY")?,
+            community_domain: std::env::var("BUZZ_COMMUNITY_DOMAIN")
+                .map_err(|_| "缺少 BUZZ_COMMUNITY_DOMAIN")?,
+            relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
+                .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
+            http: reqwest::Client::new(),
+            temporal: std::sync::Arc::clone(&temporal),
+            governance: std::sync::Arc::clone(&governance),
+        };
+
+        // roster 与成员事实的对账度量（07 §3）。它用 CONTROL 身份读 roster，与
+        // service API 共用同一份依赖。
+        roster_reconcile::spawn(
+            service_state.clone(),
+            &opentelemetry::global::meter("kailo-core"),
+            roster_reconcile::Config::from_env()?,
+        );
+
+        // 结果不明的消息发布按 event id 对账成确定结果（DD-81）
+        publish_reconcile::spawn(
+            service_state.clone(),
+            &opentelemetry::global::meter("kailo-core"),
+            publish_reconcile::Config::from_env()?,
+        );
+
+        let bff_state = bff::BffState {
+            pool: pool.clone(),
+            temporal,
+            governance,
+            client_key_proof_window_seconds: std::env::var("BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")
+                .map_err(|_| "缺少 BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")?
+                .parse()
+                .map_err(|_| "BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS 必须是秒数")?,
+            client_keys_per_principal: std::env::var("BFF_CLIENT_KEYS_PER_PRINCIPAL")
+                .map_err(|_| "缺少 BFF_CLIENT_KEYS_PER_PRINCIPAL")?
+                .parse()
+                .map_err(|_| "BFF_CLIENT_KEYS_PER_PRINCIPAL 必须是正整数")?,
+            client_key_recheck_millis: {
+                let value: i64 = std::env::var("BFF_CLIENT_KEY_RECHECK_MILLIS")
+                    .map_err(|_| "缺少 BFF_CLIENT_KEY_RECHECK_MILLIS")?
+                    .parse()
+                    .map_err(|_| "BFF_CLIENT_KEY_RECHECK_MILLIS 必须是正整数毫秒数")?;
+                if !(1..=i32::MAX as i64).contains(&value) {
+                    return Err("BFF_CLIENT_KEY_RECHECK_MILLIS 必须在 1..=2147483647 之间".into());
+                }
+                value
+            },
+            relay_native_url_template: {
+                let t = std::env::var("BUZZ_RELAY_NATIVE_URL_TEMPLATE")
+                    .map_err(|_| "缺少 BUZZ_RELAY_NATIVE_URL_TEMPLATE")?;
+                // authority 必须恰好是 {host}：没有占位符就是一个固定地址，所有 Tenant
+                // 会被连到同一个 Community；占位符旁再带端口或 userinfo，客户端发出的
+                // Host 就不再是 Community host（Relay 只剥 :80/:443，其余端口属于
+                // host，SF-BUZ-41）。非默认端口写进 BUZZ_COMMUNITY_DOMAIN。
+                let rest = t
+                    .strip_prefix("wss://{host}")
+                    .or_else(|| t.strip_prefix("ws://{host}"));
+                if !matches!(rest, Some(r) if r.is_empty() || r.starts_with('/')) {
+                    return Err(
+                        "BUZZ_RELAY_NATIVE_URL_TEMPLATE 必须形如 ws[s]://{host}[/path]".into(),
+                    );
+                }
+                t
+            },
+            session_ttl_seconds: std::env::var("PLATFORM_SESSION_TTL_SECONDS")
+                .map_err(|_| "缺少 PLATFORM_SESSION_TTL_SECONDS")?
+                .parse()
+                .map_err(|_| "PLATFORM_SESSION_TTL_SECONDS 必须是秒数")?,
+            secrets: std::sync::Arc::clone(&secrets),
+            http: reqwest::Client::new(),
+            relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
+                .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
+            message_page_limit: std::env::var("BFF_MESSAGE_PAGE_LIMIT")
+                .map_err(|_| "缺少 BFF_MESSAGE_PAGE_LIMIT")?
+                .parse()
+                .map_err(|_| "BFF_MESSAGE_PAGE_LIMIT 必须是数字")?,
+            relay_ws_url: std::env::var("BUZZ_RELAY_WS_URL")
+                .map_err(|_| "缺少 BUZZ_RELAY_WS_URL")?,
+            stream_buffer: std::env::var("BFF_STREAM_BUFFER")
+                .map_err(|_| "缺少 BFF_STREAM_BUFFER")?
+                .parse()
+                .map_err(|_| "BFF_STREAM_BUFFER 必须是数字")?,
+            stream_auth_timeout_seconds: std::env::var("BFF_STREAM_AUTH_TIMEOUT_SECONDS")
+                .map_err(|_| "缺少 BFF_STREAM_AUTH_TIMEOUT_SECONDS")?
+                .parse()
+                .map_err(|_| "BFF_STREAM_AUTH_TIMEOUT_SECONDS 必须是秒数")?,
+            stream_readmit_seconds: std::env::var("BFF_STREAM_READMIT_SECONDS")
+                .map_err(|_| "缺少 BFF_STREAM_READMIT_SECONDS")?
+                .parse()
+                .map_err(|_| "BFF_STREAM_READMIT_SECONDS 必须是秒数")?,
+            stream_retry_millis: std::env::var("BFF_STREAM_RETRY_MILLIS")
+                .map_err(|_| "缺少 BFF_STREAM_RETRY_MILLIS")?
+                .parse()
+                .map_err(|_| "BFF_STREAM_RETRY_MILLIS 必须是毫秒数")?,
+            media_max_bytes: std::env::var("BFF_MEDIA_MAX_BYTES")
+                .map_err(|_| "缺少 BFF_MEDIA_MAX_BYTES")?
+                .parse()
+                .map_err(|_| "BFF_MEDIA_MAX_BYTES 必须是字节数")?,
+        };
+
+        let bff = tokio::net::TcpListener::bind(listen).await?;
+        let service = tokio::net::TcpListener::bind(service_listen).await?;
+        tracing::info!(bff = %listen, service = %service_listen, "listening");
+
+        let shutdown = || async {
+            #[cfg(unix)]
+            {
+                let mut terminate =
+                    match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    {
+                        Ok(signal) => signal,
+                        Err(error) => {
+                            tracing::error!(error = %error, "注册 SIGTERM 停机信号失败");
+                            return;
+                        }
+                    };
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {},
+                    _ = terminate.recv() => {},
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        };
+        // 任一监听退出即整体退出：只剩半边可用会让调用方看到不一致的可用性。
+        let serve = async {
+            tokio::try_join!(
+                axum::serve(bff, bff::router(bff_state)).with_graceful_shutdown(shutdown()),
+                axum::serve(service, service_api::router(service_state))
+                    .with_graceful_shutdown(shutdown()),
+            )
+        };
+        // service token 按 lease 续期。续期被确定拒绝（令牌被撤销或过期）时手里已没有
+        // 能重新登录的凭据：继续服务只会让每个要 secret 的动作失败，还看不出原因。
+        // 退出并说明原因，由部署重新投递引导凭据（RB-02 步骤 A/C）。
+        tokio::select! {
+            served = serve => { served?; }
+            e = secrets.keep_alive() => {
+                return Err(format!("OpenBao service token 失效，退出: {e}").into());
+            }
+            e = audit.keep_alive() => {
+                return Err(format!("OpenBao audit 观察 token 失效，退出: {e}").into());
+            }
         }
-        e = audit.keep_alive() => {
-            return Err(format!("OpenBao audit 观察 token 失效，退出: {e}").into());
+        // 退出前把缓冲中的指标送出去
+        if let Err(e) = meter_provider.shutdown() {
+            tracing::warn!(error = %e, "指标导出未能完成");
         }
+        Ok(())
     }
-    // 退出前把缓冲中的指标送出去
-    if let Err(e) = meter_provider.shutdown() {
-        tracing::warn!(error = %e, "指标导出未能完成");
+    .await;
+
+    // 两个 AppRole 位于不同 namespace；即使其中一个撤销失败也必须尝试另一个。
+    // connect 失败的会话没有 lease，revoke_current 对它是确定的空操作。
+    let audit_revocation = audit.revoke_current().await;
+    let secret_revocation = secrets.revoke_current().await;
+    if audit_revocation.is_err() || secret_revocation.is_err() {
+        if let Err(error) = &outcome {
+            tracing::error!(error = %error, "Core 退出前已有错误");
+        }
+        return Err(format!(
+            "OpenBao service token 撤销未确认，拒绝正常退出: audit={audit_revocation:?}, platform={secret_revocation:?}"
+        )
+        .into());
     }
-    Ok(())
+    outcome
 }
