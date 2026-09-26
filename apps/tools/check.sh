@@ -427,10 +427,24 @@ PY
 step_security() { hdr "9/10 受影响安全不变式"
   if [ ! -f deploy/local/compose.yaml ]; then skip "尚无部署描述"; return 0; fi
   python3 - <<'PY' || FAIL=1
-import glob, os, re, sys, yaml
+import glob, os, re, subprocess, sys, yaml
 d = yaml.safe_load(open("deploy/local/compose.yaml", encoding="utf-8"))
 raw = open("deploy/local/compose.yaml", encoding="utf-8").read()
 bad = []
+# GitNexus 1.6.12 只读取仓库根 ignore 规则；apps/.gitignore 对 Git 有效，
+# 但不能阻止本地凭据与 registry 数据进入代码索引。检查根规则的精确来源，
+# 不能只问 git 是否忽略（那会把嵌套规则误判为已保护索引）。
+for probe, pattern in (
+    ("deploy/local/secrets/gitnexus-ignore-probe.env", "/apps/deploy/local/secrets/"),
+    ("deploy/local/data/gitnexus-ignore-probe.dat", "/apps/deploy/local/data/"),
+):
+    result = subprocess.run(
+        ["git", "check-ignore", "-v", "--no-index", probe],
+        capture_output=True, text=True,
+    )
+    origin = result.stdout.split("\t", 1)[0].strip()
+    if result.returncode != 0 or not origin.startswith(".gitignore:") or not origin.endswith(":" + pattern):
+        bad.append(f"GitNexus 根 ignore 缺少 {pattern}：本地凭据或数据会进入索引")
 declared = set(d.get("networks") or {})
 for name, svc in (d.get("services") or {}).items():
     nets = set(svc.get("networks") or [])

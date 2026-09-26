@@ -4,3 +4,11 @@
 # 上游只读证据克隆，不进版本库
 /.references/
 /.old/
+
+# GitNexus 1.6.12 只读取仓库根的 ignore 规则；本地凭据和服务数据
+# 必须在这里排除，不能仅依赖 apps/.gitignore。
+/apps/deploy/local/secrets/
+/apps/deploy/local/data/
+/apps/deploy/local/.env
+/apps/deploy/local/.env.*
+!/apps/deploy/local/.env.example
