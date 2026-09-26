@@ -108,6 +108,14 @@ Web 镜像 `sha256:3a23b71a80045bf337a8ee4af9c54dde1fc53cbfbba275ba39ccd4db4371d
 
 反向核验把这次重跑请求临时指向 `task.rerun.workspace.create.v1`；Core 返回 `403 BLOCKED/CAPABILITY_BLOCKED`，验收在预期断言处失败（退出码 101，123.92 秒）。恢复正确 action key 后重新取得上述 1/1 通过。三轮集成都在 `MemoryMax=16G`、`CPUQuota=500%` 的 cgroup 内执行；只改了验收场景，没有改产品 Catalog 或运行服务配置。此证据覆盖 BFF 用户控制到 Temporal/Worker 的真实后端链，不把它冒充 Web 页面上的第二次审批操作走查，也不代表 Desktop/Mobile 验收。
 
+### Web 上的第二次审批走查（2026-09-26）
+
+权威为 `.design/02` DD-84、`.design/06` §9 与 `.design/16` V-SCN-68：重跑使用新控制动作和独立 Approval，旧批准不能复用，批准前不得派发新业务 Workflow。影响面仅为既有浏览器走查夹具与脚本；`Governance` 夹具增加原 ActionExecution ID 和另一管理员的测试 subject，未改产品 API、合同、数据库或 Web/Worker 代码。GitNexus 对夹具 `Governance` 报 LOW（调用链到 `prepare_governance`、`main`）；浏览器脚本文件报 UNKNOWN，已用文本核对唯一调用者 `web-walkthrough.sh`，不把零图边当作无调用。测试 actor 仅经本机 BFF 入口发送受测身份 header；真实浏览器仍经 AgentGateway、OIDC 和同源 Web 页面。Tenant 行锁与短暂停 Worker 复用后端集成已验证的顺序，脚本退出恢复 Worker、Relay、Core 并拆除夹具，不涉及旧 K8S。
+
+`systemd-run --user --scope -p MemoryMax=16G -p CPUQuota=500% -- bash core/verify/web-walkthrough.sh /volumes/data/kailo-web-approved-rerun-final-U6zCxP` 退出码 0。`summary.json` 有 30 条记录、20 个计时场景、意外 origin 与 CSP 违规均为 0。浏览器先批准原 `tenant.member.revoke`，测试 actor 在原 Workflow 仍 OPEN 时请求取消；恢复 Worker 后原任务为 `CANCELED`。测试 actor 请求专属重跑时产生不同的 Approval ID；浏览器批准第二份审批前，重跑任务 `WAITING` 且无业务 Workflow；浏览器从审批箱打开新审批并批准，随后新任务 `COMPLETED`、新批准 `CONSUMED`、新 Workflow ID 与原 ID 不同，原任务仍为 `CANCELED`。首次投影尚未生成时 BFF 对审批详情返回 `422 TARGET_NOT_FOUND`，走查只允许该确定瞬态及 `REQUESTED`，其他非 `WAITING` 结果立即失败。最终 Core 会话 `REVOKED`，原走查夹具的撤回审批 `CANCELLED`、批准审批 `CONSUMED`；`fixture.log` 确认 Workspace 已拆除，受控 Compose 的 Core/Relay/Worker 均恢复运行。
+
+灵敏度反向验证：临时把浏览器走查所要求的 `task.rerun.tenant.member.revoke.v1` 改成不存在的 action key，`/volumes/data/kailo-web-approved-rerun-negative-iITJm7/` 这次走查在新场景明确报“原动作重跑控制不符”、退出码 1；其夹具同样拆除。还原期望后，取得上述最终退出码 0。此次运行的 Web、Core、Worker 镜像 ID 分别为 `sha256:3a23b71a80045bf337a8ee4af9c54dde1fc53cbfbba275ba39ccd4db4371d61e`、`sha256:dd14002f2b99d198edbfe1b621ebe10807e5029fd1232809c2ab9fd0b3ca73aa`、`sha256:e44c62179519bd095a1aeea7f8b2a73ba260eb309d2ee04d60892b808b94e4ee`。此结果闭合 Web 审批者的第二次审批操作；请求者一侧由本机 BFF 测试 actor 驱动，同一走查的另一场景独立覆盖浏览器发起普通重跑。它不等于两个真人 Web 会话同时操作，更不代表 Desktop/Mobile 验收或整个 Stage 2 结束。
+
 ## 已知边界
 
 - 「待我审批」列表用低延迟一致性：刚授予的 admin 关系可能要等 SpiceDB 的

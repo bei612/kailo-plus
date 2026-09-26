@@ -4,7 +4,7 @@
 // 全程记录请求来源、控制台错误与 CSP 违规：Browser 只应与网关同源（DD-39），
 // 登录期间另外到达 IdP。
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -38,6 +38,7 @@ const browser = await chromium.launch({
     `--host-resolver-rules=${map(gateway, a["gateway-port"])}, ${map(idp, a["keycloak-port"])}`,
   ],
 });
+const docker = (args, options) => execFileSync("sudo", ["-n", "docker", ...args], options);
 const page = await browser.newPage();
 const origins = new Set();
 const consoleErrors = [];
@@ -137,7 +138,7 @@ await step("发送失败：草稿保留、明确报错，不假装已发出", as
 });
 
 await step("BFF 重启：状态如实离开已同步，恢复后续流并能继续收发", async () => {
-  execFileSync("docker", ["compose", "-f", a["compose-file"], "stop", "core-bff"], {
+  docker(["compose", "-f", a["compose-file"], "stop", "core-bff"], {
     stdio: "ignore",
   });
   await page.waitForFunction(
@@ -166,7 +167,7 @@ await step("BFF 重启：状态如实离开已同步，恢复后续流并能继�
 });
 
 await step("发布结果不明：Relay 不可达时显示待确认与操作号，不说成功也不说失败", async () => {
-  execFileSync("docker", ["compose", "-f", a["compose-file"], "stop", "buzz-relay"], {
+  docker(["compose", "-f", a["compose-file"], "stop", "buzz-relay"], {
     stdio: "ignore",
   });
   await input.fill(`${nonce} unknown`);
@@ -182,7 +183,7 @@ await step("发布结果不明：Relay 不可达时显示待确认与操作号�
     throw new Error("未确认的消息不得出现在列表里");
   steps.push({ name: "结果不明的提示", value: text });
   await shot("05b-publish-unknown");
-  execFileSync("docker", ["compose", "-f", a["compose-file"], "start", "buzz-relay"], {
+  docker(["compose", "-f", a["compose-file"], "start", "buzz-relay"], {
     stdio: "ignore",
   });
   await status.filter({ hasText: SYNCED }).waitFor({ timeout: bound });
@@ -311,6 +312,66 @@ const bff = (method, url, body) =>
     [method, url, body],
   );
 const approvalPath = (wf) => `/api/v1/approvals/${encodeURIComponent(wf)}`;
+// 测试夹具的另一位管理员只从本机 BFF 测试入口行动；浏览器仍经网关使用真实 OIDC 会话。
+const otherAdminBff = async (method, url, body) => {
+  const response = await fetch(`${process.env.VERIFY_BFF_URL}${url}`, {
+    method,
+    headers: {
+      "x-kailo-oidc-issuer": process.env.OIDC_ISSUER,
+      "x-kailo-oidc-subject": fixture.otherAdminSubject,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return { status: response.status, body: await response.json().catch(() => null) };
+};
+
+// 与后端 approved_rerun 用例相同：先锁 Tenant 行，让 Approval 已记录但 Core 不能
+// 立即派发业务 Workflow；停止 Worker 后才放锁，确保后续取消针对仍 OPEN 的执行。
+const holdTenantDispatch = async () => {
+  if (!/^[0-9a-f-]{36}$/i.test(fixture.tenant)) throw new Error("夹具 Tenant ID 无效");
+  const db = new URL(process.env.DATABASE_URL);
+  const child = spawn("psql", ["-X", "-qAt", "-v", "ON_ERROR_STOP=1"], {
+    env: {
+      ...process.env,
+      PGHOST: db.hostname,
+      PGPORT: db.port,
+      PGUSER: decodeURIComponent(db.username),
+      PGPASSWORD: decodeURIComponent(db.password),
+      PGDATABASE: db.pathname.slice(1),
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let output = "";
+  const acquired = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Tenant 行锁等待超时")), bound);
+    child.stdout.on("data", (chunk) => {
+      output += chunk.toString();
+      if (output.includes("TENANT_LOCK_HELD")) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    child.once("error", (error) => { clearTimeout(timer); reject(error); });
+    child.once("exit", (code) => { clearTimeout(timer); reject(new Error(`Tenant 行锁进程提前退出：${code}`)); });
+  });
+  child.stdin.write(`BEGIN;\nSELECT id FROM identity.tenant WHERE id = '${fixture.tenant}' FOR UPDATE;\n\\echo TENANT_LOCK_HELD\n`);
+  try {
+    await acquired;
+  } catch (error) {
+    child.stdin.end("ROLLBACK;\n\\q\n");
+    throw error;
+  }
+  return async () => {
+    if (child.exitCode !== null) throw new Error(`Tenant 行锁已意外释放：${child.exitCode}`);
+    const closed = new Promise((resolve, reject) => {
+      child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`Tenant 行锁提交失败：${code}`)));
+      child.once("error", reject);
+    });
+    child.stdin.end("COMMIT;\n\\q\n");
+    await closed;
+  };
+};
 // 列表之外没有推送：看不到就按「刷新」再读，直到上界
 const refreshUntil = async (locator) => {
   const deadline = Date.now() + bound;
@@ -353,6 +414,7 @@ await step("任务页：本人的待审批任务如实显示；撤回需确认�
   await shot("11a-task-withdrawn");
 });
 
+let otherOriginalWorker;
 await step("审批页：待我审批可见；批准需确认、经 Temporal Update，同值幂等、冲突值拒绝", async () => {
   await page.getByRole("button", { name: "Approvals", exact: true }).click();
   const row = page.getByRole("row").filter({ hasText: "tenant.member.revoke" });
@@ -360,31 +422,150 @@ await step("审批页：待我审批可见；批准需确认、经 Temporal Upda
   await refreshUntil(row);
   await row.getByRole("button", { name: "tenant.member.revoke" }).click();
   const detail = page.getByTestId("approval-detail");
+  const release = await holdTenantDispatch();
+  try {
+    await detail.getByRole("button", { name: "Approve" }).click();
+    await detail.getByText("cannot be changed afterwards").waitFor();
+    await detail.getByRole("button", { name: "Confirm" }).click();
+    const recorded = detail.getByRole("status").filter({ hasText: "Your decision “Approve” is recorded" });
+    await recorded.waitFor({ timeout: bound });
+    const outcome = await recorded.innerText();
+    const path = `${approvalPath(fixture.approvalForMe)}/decision`;
+    const same = await bff("POST", path, { decision: "APPROVE" });
+    if (same.status !== 200 || same.body?.decision !== "APPROVE")
+      throw new Error(`同值重发应幂等地拿回原决定，实际 ${JSON.stringify(same)}`);
+    const conflict = await bff("POST", path, { decision: "DENY" });
+    if (conflict.status !== 409 || conflict.body?.reason !== "DUPLICATE_DECISION")
+      throw new Error(`冲突值应以 DUPLICATE_DECISION 拒绝，实际 ${JSON.stringify(conflict)}`);
+    const deadline = Date.now() + bound;
+    while (true) {
+      const approval = await bff("GET", approvalPath(fixture.approvalForMe));
+      if (approval.status === 200 && approval.body?.status === "APPROVED") break;
+      if (Date.now() > deadline) throw new Error(`原批准未投影：${JSON.stringify(approval)}`);
+      await page.waitForTimeout(1_000);
+    }
+    const compose = ["compose", "-f", a["compose-file"]];
+    otherOriginalWorker = docker([...compose, "ps", "--status", "running", "-q", "worker"], {
+      encoding: "utf8",
+    }).trim();
+    if (!otherOriginalWorker) throw new Error("原审批时本地 Worker 未运行");
+    docker(["stop", otherOriginalWorker], { stdio: "ignore" });
+    steps.push({ name: "批准后的回应", value: outcome });
+    await shot("11b-approval-decided");
+  } finally {
+    await release();
+  }
+});
+
+await step("原动作取消后重跑：第二份独立审批必须在 Web 批准后才派发新 Workflow", async () => {
+  const originalPath = `/api/v1/tasks/${fixture.approvalForMeTask}`;
+  let deadline = Date.now() + bound;
+  let original;
+  while (true) {
+    original = await otherAdminBff("GET", originalPath);
+    if (original.status === 200 && original.body?.workflowId && original.body?.cancelActionKey) break;
+    if (Date.now() > deadline) throw new Error(`原动作未取得取消控制：${JSON.stringify(original)}`);
+    await page.waitForTimeout(1_000);
+  }
+  if (original.body.cancelActionKey !== "task.cancel.tenant.member.revoke.v1")
+    throw new Error(`原动作取消控制不符：${JSON.stringify(original)}`);
+  const cancel = await otherAdminBff("POST", "/api/v1/actions", {
+    actionKey: original.body.cancelActionKey,
+    idempotencyKey: crypto.randomUUID(),
+    originalActionExecutionId: fixture.approvalForMeTask,
+  });
+  if (cancel.status < 200 || cancel.status >= 300 || !cancel.body?.actionExecutionId)
+    throw new Error(`原动作取消未准入：${JSON.stringify(cancel)}`);
+  deadline = Date.now() + bound;
+  while (true) {
+    const control = await otherAdminBff("GET", `/api/v1/tasks/${cancel.body.actionExecutionId}`);
+    if (control.status === 200 && control.body?.dispatchState === "DISPATCHED") break;
+    if (Date.now() > deadline) throw new Error(`取消请求未得到 Temporal 肯定证据：${JSON.stringify(control)}`);
+    await page.waitForTimeout(1_000);
+  }
+  docker(["start", otherOriginalWorker], { stdio: "ignore" });
+  otherOriginalWorker = undefined;
+  deadline = Date.now() + bound;
+  while (true) {
+    original = await otherAdminBff("GET", originalPath);
+    if (original.status === 200 && original.body?.taskStatus === "CANCELED" && original.body?.rerunActionKey) break;
+    if (Date.now() > deadline) throw new Error(`原动作未收敛为可重跑的 CANCELED：${JSON.stringify(original)}`);
+    await page.waitForTimeout(1_000);
+  }
+  if (original.body.rerunActionKey !== "task.rerun.tenant.member.revoke.v1")
+    throw new Error(`原动作重跑控制不符：${JSON.stringify(original)}`);
+  const rerun = await otherAdminBff("POST", "/api/v1/actions", {
+    actionKey: original.body.rerunActionKey,
+    idempotencyKey: crypto.randomUUID(),
+    originalActionExecutionId: fixture.approvalForMeTask,
+  });
+  const rerunId = rerun.body?.actionExecutionId;
+  const rerunApproval = rerun.body?.approvalWorkflowId;
+  if (rerun.status !== 202 || !rerunId || !rerunApproval || rerunApproval === fixture.approvalForMe)
+    throw new Error(`重跑未产生第二份独立审批：${JSON.stringify(rerun)}`);
+  deadline = Date.now() + bound;
+  while (true) {
+    const pending = await bff("GET", approvalPath(rerunApproval));
+    if (pending.status === 200 && pending.body?.status === "WAITING") break;
+    if (!(pending.status === 200 && pending.body?.status === "REQUESTED") &&
+        !(pending.status === 422 && pending.body?.reason === "TARGET_NOT_FOUND"))
+      throw new Error(`第二份审批读取结果不符：${JSON.stringify(pending)}`);
+    if (Date.now() > deadline) throw new Error(`第二份审批未进入 WAITING：${JSON.stringify(pending)}`);
+    await page.waitForTimeout(1_000);
+  }
+  const before = await otherAdminBff("GET", `/api/v1/tasks/${rerunId}`);
+  if (before.status !== 200 || before.body?.gateState !== "WAITING" || before.body?.workflowId)
+    throw new Error(`批准前不应启动重跑业务 Workflow：${JSON.stringify(before)}`);
+
+  await page.getByTestId("approval-detail").getByRole("button", { name: "Back" }).click();
+  const row = page.getByRole("row").filter({ hasText: "task.rerun.tenant.member.revoke.v1" });
+  await refreshUntil(row);
+  await row.getByRole("button", { name: "task.rerun.tenant.member.revoke.v1" }).click();
+  const detail = page.getByTestId("approval-detail");
+  await detail.getByText(rerunApproval, { exact: true }).waitFor({ timeout: bound });
+  await detail.getByText(rerunId, { exact: true }).waitFor({ timeout: bound });
   await detail.getByRole("button", { name: "Approve" }).click();
   await detail.getByText("cannot be changed afterwards").waitFor();
   await detail.getByRole("button", { name: "Confirm" }).click();
-  const recorded = detail.getByRole("status").filter({ hasText: "Your decision “Approve” is recorded" });
-  await recorded.waitFor({ timeout: bound });
-  const outcome = await recorded.innerText();
-  const path = `${approvalPath(fixture.approvalForMe)}/decision`;
-  const same = await bff("POST", path, { decision: "APPROVE" });
-  if (same.status !== 200 || same.body?.decision !== "APPROVE")
-    throw new Error(`同值重发应幂等地拿回原决定，实际 ${JSON.stringify(same)}`);
-  const conflict = await bff("POST", path, { decision: "DENY" });
-  if (conflict.status !== 409 || conflict.body?.reason !== "DUPLICATE_DECISION")
-    throw new Error(`冲突值应以 DUPLICATE_DECISION 拒绝，实际 ${JSON.stringify(conflict)}`);
-  steps.push({ name: "批准后的回应", value: outcome });
-  await shot("11b-approval-decided");
+  await detail.getByRole("status")
+    .filter({ hasText: "Your decision “Approve” is recorded" })
+    .waitFor({ timeout: bound });
+
+  let completed;
+  deadline = Date.now() + bound;
+  while (true) {
+    completed = await otherAdminBff("GET", `/api/v1/tasks/${rerunId}`);
+    const approval = await bff("GET", approvalPath(rerunApproval));
+    if (completed.status === 200 && completed.body?.taskStatus === "COMPLETED" &&
+        approval.status === 200 && approval.body?.status === "CONSUMED") break;
+    if (Date.now() > deadline)
+      throw new Error(`批准后重跑未收敛：task=${JSON.stringify(completed)} approval=${JSON.stringify(approval)}`);
+    await page.waitForTimeout(1_000);
+  }
+  if (!completed.body.workflowId || completed.body.workflowId === original.body.workflowId)
+    throw new Error(`重跑没有新业务 Workflow：${JSON.stringify(completed)}`);
+  const unchanged = await otherAdminBff("GET", originalPath);
+  if (unchanged.status !== 200 || unchanged.body?.taskStatus !== "CANCELED" ||
+      unchanged.body?.workflowId !== original.body.workflowId)
+    throw new Error(`重跑改写了原任务历史：${JSON.stringify(unchanged)}`);
+  steps.push({ name: "第二次审批与新 Workflow", value: {
+    originalId: fixture.approvalForMeTask,
+    originalApproval: fixture.approvalForMe,
+    rerunId,
+    rerunApproval,
+    workflowId: completed.body.workflowId,
+  } });
+  await shot("11c-approved-rerun");
 });
 
 let canceledOriginalId;
 await step("本人任务取消：浏览器只提交原动作 ID，请求已接收不冒充原任务已取消", async () => {
   const compose = ["compose", "-f", a["compose-file"]];
-  const worker = execFileSync("docker", [...compose, "ps", "--status", "running", "-q", "worker"], {
+  const worker = docker([...compose, "ps", "--status", "running", "-q", "worker"], {
     encoding: "utf8",
   }).trim();
   if (!worker) throw new Error("本地 Worker 未运行");
-  execFileSync("docker", ["stop", worker], { stdio: "ignore" });
+  docker(["stop", worker], { stdio: "ignore" });
   let originalId;
   let controlId;
   try {
@@ -445,7 +626,7 @@ await step("本人任务取消：浏览器只提交原动作 ID，请求已接�
     }
     await shot("11c-cancel-request-accepted");
   } finally {
-    execFileSync("docker", ["start", worker], { stdio: "ignore" });
+    docker(["start", worker], { stdio: "ignore" });
   }
   const deadline = Date.now() + bound;
   while (true) {

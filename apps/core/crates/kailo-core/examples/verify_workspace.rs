@@ -31,6 +31,7 @@ struct Governance {
     d: LiveMember,
     /// B 发起、待核验用户决定的审批
     for_me: String,
+    for_me_task: String,
     /// 核验用户发起的动作与它的审批
     mine_task: String,
     mine: String,
@@ -79,6 +80,10 @@ async fn prepare_governance(
         common::zed_relationship(e, "touch", &tenant, "admin", &format!("principal:{p}"));
     }
     let for_me = revoke_request(http, e, &b.subject, c.principal).await?;
+    let for_me_task = for_me["actionExecutionId"]
+        .as_str()
+        .ok_or("缺 ActionExecution")?
+        .to_owned();
     let for_me = for_me["approvalWorkflowId"]
         .as_str()
         .ok_or("缺审批 ID")?
@@ -99,6 +104,7 @@ async fn prepare_governance(
         c,
         d,
         for_me,
+        for_me_task,
         mine_task,
         mine,
     })
@@ -192,6 +198,8 @@ async fn main() {
     });
     if let Some(g) = &g {
         out["approvalForMe"] = json!(g.for_me);
+        out["approvalForMeTask"] = json!(g.for_me_task);
+        out["otherAdminSubject"] = json!(g.b.subject);
         out["myTask"] = json!(g.mine_task);
         out["myApproval"] = json!(g.mine);
     }

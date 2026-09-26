@@ -19,7 +19,7 @@ mkdir -p "$out"
 
 # 浏览器的取消场景会短暂停止本地 Worker。入口要求它原本运行；任何退出
 # 路径先恢复它，再拆夹具，不能让失败走查留下停止的任务处理器。
-worker_container="$(docker compose -f "$local_dir/compose.yaml" ps --status running -q worker)"
+worker_container="$(sudo -n docker compose -f "$local_dir/compose.yaml" ps --status running -q worker)"
 [ -n "$worker_container" ] || {
   echo "本地 Worker 未运行，不能开始浏览器取消走查" >&2
   exit 1
@@ -37,7 +37,7 @@ fixture=$!
 exec 3>"$fifo"
 cleanup() {
   worker_restore_failed=0
-  docker start "$worker_container" >/dev/null || worker_restore_failed=1
+  sudo -n docker start "$worker_container" >/dev/null || worker_restore_failed=1
   exec 3>&-
   rm -f "$fifo"
   # 拆除失败必须让整次走查失败：留下的 Tenant 是脏数据，而「走查通过」会把它藏起来
@@ -75,8 +75,9 @@ state="$(PGPASSWORD="$(cat "$local_dir/secrets/core_db_password")" psql -h 127.0
 echo "注销前的会话 $revoked：$state" | tee "$out/sessions.txt"
 [ "$state" = "REVOKED" ] || { echo "注销前的会话未被撤销" >&2; exit 1; }
 
-# 页面上的两次审批控制以 Core 库为准，而不是以页面文案为准：撤回的那条经 Temporal
-# 进入 CANCELLED；批准的那条走完重新准入与派发后被消费（CONSUMED），在收敛上界内。
+# 夹具预置的两条审批以 Core 库为准，而不是以页面文案为准：撤回的那条经 Temporal
+# 进入 CANCELLED；批准的那条走完重新准入与派发后被消费（CONSUMED）。浏览器过程
+# 动态生成的第三条重跑审批在 mjs 中按独立 ID、WAITING 和 CONSUMED 核验。
 field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$out/workspace.json" "$1"; }
 approval() {
   PGPASSWORD="$(cat "$local_dir/secrets/core_db_password")" psql -h 127.0.0.1 -p "$CORE_DB_PORT" \
