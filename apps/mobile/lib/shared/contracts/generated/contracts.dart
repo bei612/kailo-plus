@@ -1403,6 +1403,9 @@ class TaskView {
   final ReasonCode? observation;
   final String operationId;
   final ReasonCode? reason;
+
+  ///仅任务详情且 Core 证明原 Workflow 已关闭、终态投影一致、原目标仍在收敛版本并完成本人和权限重查后提供；提交与派发时仍重新准入
+  final String? rerunActionKey;
   final String targetId;
   final TaskStatus? taskStatus;
   final String? waitingReason;
@@ -1423,6 +1426,7 @@ class TaskView {
     this.observation,
     required this.operationId,
     this.reason,
+    this.rerunActionKey,
     required this.targetId,
     this.taskStatus,
     this.waitingReason,
@@ -1450,6 +1454,7 @@ class TaskView {
     reason: json["reason"] == null
         ? null
         : reasonCodeValues.map[json["reason"]]!,
+    rerunActionKey: json["rerunActionKey"],
     targetId: json["targetId"],
     taskStatus: json["taskStatus"] == null
         ? null
@@ -1475,6 +1480,7 @@ class TaskView {
     "observation": reasonCodeValues.reverse[observation],
     "operationId": operationId,
     "reason": reasonCodeValues.reverse[reason],
+    "rerunActionKey": rerunActionKey,
     "targetId": targetId,
     "taskStatus": taskStatusValues.reverse[taskStatus],
     "waitingReason": waitingReason,

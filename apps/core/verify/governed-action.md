@@ -94,6 +94,14 @@ Stage 2 退出门禁「Activity heartbeat 超时不会直接复用 Capacity slot
 
 新 Web 镜像 `sha256:ec6d609d8c58652850468346cb2039c322d08cb0c00a967b39e7a7193faea770` 上的真实浏览器走查也覆盖了本人取消：临时停止原本运行的本地 Worker，创建原 `workspace.create` 任务，从任务详情提交取消控制；浏览器先看到控制 operation，而原任务在 Worker 停止期间未被伪报为 `CANCELED`。控制任务经 Temporal history 投影为 `DISPATCHED`，恢复 Worker 后原任务才显示 `CANCELED`，旧的“尚未确认取消”提示随终态消失。`core/verify/web-walkthrough.sh` 退出时恢复原 Worker 再拆夹具。走查退出码 0，17 个主场景通过，`summary.json` 有 26 条记录、CSP 违规 0；证据位于 `/volumes/data/kailo-web-cancel-zzolQL/`。人为断开 BFF/Relay 的预期 503 和拒绝操作的 409/403 仍在 `failedResponses` 中，不计为浏览器通过之外的服务健康结论。Desktop 原生端本增量未做端到端验收，用户重跑尚未接入 Governed Action。
 
+## 2026-09-26 本人任务重跑动作核验
+
+`20260926150000_task_rerun_catalog.up.sql` 为已登记的四种业务 Workflow 注册独立的重跑控制定义。控制动作以原 ActionExecution 为目标，重新走 scope、SpiceDB fresh Check 与原动作所需审批；原 Workflow 的关闭事实由 Temporal 核验，新实体版本与固定的新 Workflow ID 才被分配。同一个控制意图的重试只对账，不再启动第二个 Workflow。`governed_action` 在真实 Core、Temporal、Worker 拓扑复跑结果为 `1 passed; 0 failed`，耗时 105.22 秒；夹具拆除不再出现 IdentityProvider 外键错误。重跑审批策略已独立登记并在准入时与原策略逐字段核对，但本次真实重跑对象是无需审批的 `workspace.create`，不能把它算作重跑审批端到端证据。
+
+Web 镜像 `sha256:3a23b71a80045bf337a8ee4af9c54dde1fc53cbfbba275ba39ccd4db4371d61e` 上，真实浏览器从已取消的原任务详情提交重跑控制，打开新任务并观察 `WORKSPACE_LIFECYCLE` 完成；原任务仍保持 `CANCELED`，新 Workflow 使用实体版本 2。`core/verify/web-walkthrough.sh` 退出码 0，`summary.json` 有 28 条记录，其中 19 条有计时，CSP 违规与意外 origin 均为 0；证据位于 `/volumes/data/kailo-web-rerun-fixed-VGf2mO/`。故意断开 BFF/Relay 与拒绝操作产生的 503/409/403 仍只算预期故障注入。此结果只证明 Web，不代表 Desktop/Mobile 原生端验收或整个 Stage 2 完成。
+
+共享任务页的回归检查还做了反向验证：故意把「取消已提交」误判为「重跑已提交」，`governance.test.tsx` 的取消后可重跑断言按预期失败（1/57）；恢复原逻辑后 57/57 通过。最终 `./tools/check.sh --full` 十项全过；实际数据库迁移回退演练因未向门禁提供隔离 `DATABASE_URL` 而跳过，迁移已在当前 Core 库前进并由真实链路使用。
+
 ## 已知边界
 
 - 「待我审批」列表用低延迟一致性：刚授予的 admin 关系可能要等 SpiceDB 的

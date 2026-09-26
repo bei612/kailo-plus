@@ -72,4 +72,4 @@ trellis init --claude --codex -u "<你的名字>" --workflow native
 
 两项 SKIP 是无适用对象而非遗漏：尚无追溯记录（Stage 0 不产出用户可达能力）；十份 runbook 在生产发布前补齐（`07-运行与运维基线.md` §6）。
 
-**当前处于 Stage 2，尚未生产就绪**：Stage 1 身份与三端协作已交付；Stage 2 的 Governed Action、审批、角色、邀请及任务只读投影已有实现。本人任务取消已通过 Core、Temporal、Worker 的真实拓扑联调及当前 Web 镜像的真实浏览器走查；Desktop 新产物尚无原生会话端到端证据，重跑入口及 Stage 2 其余退出条件未闭合；Stage 3–8 未交付。以 [纵向交付路线](02-纵向交付路线.md) §1.1、§4 的端规则和退出门禁逐项验收；不得把 Core 联调或 Web 通过当作三端和全阶段通过。
+**当前处于 Stage 2，尚未生产就绪**：Stage 1 身份与三端协作已交付；Stage 2 的 Governed Action、审批、角色、邀请及任务只读投影已有实现。本人任务取消与重跑已通过 Core、Temporal、Worker 的真实拓扑联调及 Web 真实浏览器走查；Desktop/Mobile 原生会话端到端证据与 Stage 2 其余能力仍未闭合，Stage 3–8 未交付。当前优先收口 Web，再推进 Stage 2；以 [纵向交付路线](02-纵向交付路线.md) §1.1、§4 的端规则和退出门禁逐项验收，不得把 Web 通过当作三端和全阶段通过。

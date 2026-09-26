@@ -51,17 +51,17 @@ implementation:
   # Mobile 为受权只读视图（apps/02 §4），不渲染撤回与决定
   surfaces: [web, desktop, mobile]
   schemas: [contracts/api/action_command.schema.json, contracts/api/action_submission.schema.json, contracts/api/task_view.schema.json, contracts/api/approval_view.schema.json, contracts/api/approval_decision_request.schema.json, contracts/workflow/approval_input.schema.json, contracts/workflow/approval_resume.schema.json, contracts/workflow/approval_refusal.schema.json, contracts/workflow/approval_state_report.schema.json, contracts/workflow/fresh_approval_admission.schema.json, contracts/workflow/fresh_approval_admission_result.schema.json, contracts/enums/approval_status.schema.json, contracts/enums/reason_code.schema.json]
-  migrations: [core/migrations/20260924100000_governed_action.up.sql, core/migrations/20260924110000_client_key_definitions.up.sql, core/migrations/20260926120000_task_cancel_catalog.up.sql]
+  migrations: [core/migrations/20260924100000_governed_action.up.sql, core/migrations/20260924110000_client_key_definitions.up.sql, core/migrations/20260926120000_task_cancel_catalog.up.sql, core/migrations/20260926150000_task_rerun_catalog.up.sql]
 
 runtime:
   routes: ["/api/v1/actions", "/api/v1/tasks", "/api/v1/tasks/{action_execution_id}", "/api/v1/approvals", "/api/v1/approvals/{workflow_id}", "/api/v1/approvals/{workflow_id}/decision", "/api/v1/approvals/{workflow_id}/withdraw"]
-  actions: [workspace.create, workspace.member.add, workspace.member.revoke, tenant.member.revoke, identity.client_key.register, identity.client_key.revoke, task.cancel.workspace.create.v1, task.cancel.workspace.member.add.v1, task.cancel.workspace.member.revoke.v1, task.cancel.tenant.member.revoke.v1]
+  actions: [workspace.create, workspace.member.add, workspace.member.revoke, tenant.member.revoke, identity.client_key.register, identity.client_key.revoke, task.cancel.workspace.create.v1, task.cancel.workspace.member.add.v1, task.cancel.workspace.member.revoke.v1, task.cancel.tenant.member.revoke.v1, task.rerun.workspace.create.v1, task.rerun.workspace.member.add.v1, task.rerun.workspace.member.revoke.v1, task.rerun.tenant.member.revoke.v1]
   workflow_kinds: [WORKSPACE_LIFECYCLE, MEMBERSHIP_PROJECTION, MEMBERSHIP_REVOCATION, BUZZ_IDENTITY_PROJECTION]
 
 release:
   artifacts:
     - name: upstream-buzz-web
-      digest: sha256:ec6d609d8c58652850468346cb2039c322d08cb0c00a967b39e7a7193faea770
+      digest: sha256:3a23b71a80045bf337a8ee4af9c54dde1fc53cbfbba275ba39ccd4db4371d61e
     - name: kailo-core
       digest: sha256:24751a5558478a1e314dbeec36259044c8d06ce007612325f4c333e0f817406f
     - name: kailo-worker

@@ -29,18 +29,19 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::audit::{append, AuditEntry};
 use crate::component_task;
 use crate::membership_lifecycle::{
-    start_membership, start_scope, LifecycleRequest, ScopeLifecycleRequest,
+    launch_membership, launch_scope, LifecycleRequest, LifecycleResponse, ScopeLifecycleRequest,
 };
 use crate::membership_projection::MembershipScope;
 use crate::scope_state::ScopeKind;
 use crate::service_api::{authorize, unavailable, ServiceState};
 use crate::task_projection;
-use crate::temporal::{Observed, ObservedState};
+use crate::temporal::{Observed, ObservedState, TemporalClient};
 use crate::workflow_reconcile;
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +124,144 @@ fn converging_state(kind: &str) -> Option<&'static str> {
     }
 }
 
+struct Ready {
+    old: OriginalWorkflow,
+    target: Target,
+    entity: Uuid,
+    version: i32,
+    converging: &'static str,
+    next_id: String,
+}
+
+/// admission、审批后重新准入、任务详情与最终派发共用的终态证明。
+/// 派发路径才修复错误终态投影；详情读取不产生修复副作用。
+async fn preflight(
+    pool: &PgPool,
+    temporal: &TemporalClient,
+    workflow_id: &str,
+    expected: Option<(Uuid, Uuid, &str)>,
+    repair_projection: bool,
+) -> Result<Ready, Response> {
+    let old = match sqlx::query_as::<_, OriginalWorkflow>(
+        "select w.kind, w.tenant_id, w.action_execution_id as original_action_execution_id,
+                source.target_id as original_target_id, source.workspace_id,
+                w.projection_state, t.status, t.run_id
+         from projection.workflow_ref w
+         join admission.action_execution source
+           on source.id = w.action_execution_id and source.tenant_id = w.tenant_id
+         left join projection.task_projection t on t.workflow_id = w.workflow_id
+         where w.workflow_id = $1 and w.workflow_type = $2 and w.kind is not null",
+    )
+    .bind(workflow_id)
+    .bind(component_task::WORKFLOW_TYPE)
+    .fetch_optional(pool)
+    .await
+    {
+        Ok(Some(r)) => r,
+        Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
+        Err(e) => return Err(unavailable(e)),
+    };
+    if expected.is_some_and(|(tenant, original, kind)| {
+        old.tenant_id != tenant || old.original_action_execution_id != original || old.kind != kind
+    }) {
+        return Err(StatusCode::FORBIDDEN.into_response());
+    }
+    let Some(converging) = converging_state(&old.kind) else {
+        return Err(StatusCode::CONFLICT.into_response());
+    };
+    let Some((entity, version)) = parse_workflow_id(workflow_id, &old.kind, old.tenant_id) else {
+        return Err(StatusCode::CONFLICT.into_response());
+    };
+    if entity != old.original_target_id {
+        return Err(StatusCode::CONFLICT.into_response());
+    }
+    let target = match resolve_target(pool, &old.kind, entity).await {
+        Ok(Some(t)) => t,
+        Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
+        Err(e) => return Err(unavailable(e)),
+    };
+    if old.projection_state != "TERMINAL" {
+        return Err(StatusCode::CONFLICT.into_response());
+    }
+    let observed = match temporal.describe(workflow_id).await {
+        Ok(Some(observed)) => observed,
+        Ok(None) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
+        Err(e) => {
+            tracing::warn!(workflow_id, error = %e, "旧 Workflow 的 Temporal 观察失败");
+            return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+        }
+    };
+    if let Err(code) =
+        closed_execution_matches_projection(old.status.as_deref(), old.run_id.as_deref(), &observed)
+    {
+        if repair_projection {
+            if let ObservedState::Closed(status) = &observed.state {
+                if let Err(e) = workflow_reconcile::patch_terminal(
+                    pool,
+                    workflow_id,
+                    observed.run_id.clone(),
+                    observed.history_length,
+                    status.clone(),
+                )
+                .await
+                {
+                    tracing::warn!(workflow_id, error = %e, "终态投影修复失败");
+                }
+            }
+        }
+        return Err(code.into_response());
+    }
+    if !old
+        .status
+        .as_deref()
+        .is_some_and(|status| RERUNNABLE_STATUS.contains(&status))
+    {
+        return Err(StatusCode::CONFLICT.into_response());
+    }
+    let next_id =
+        component_task::workflow_id(&old.kind, old.tenant_id, &entity.to_string(), version + 1);
+    Ok(Ready {
+        old,
+        target,
+        entity,
+        version,
+        converging,
+        next_id,
+    })
+}
+
+/// 控制动作 admission 的只读目标门禁。实际版本推进仍在重跑事务里用
+/// version + converging state 的 compare-and-swap 完成。
+pub(crate) async fn eligible(
+    pool: &PgPool,
+    temporal: &TemporalClient,
+    workflow_id: &str,
+    tenant: Uuid,
+    original_id: Uuid,
+    kind: &str,
+) -> Result<(), Response> {
+    let ready = preflight(
+        pool,
+        temporal,
+        workflow_id,
+        Some((tenant, original_id, kind)),
+        false,
+    )
+    .await?;
+    let current: Option<(i32, String)> = sqlx::query_as(&format!(
+        "select version, state from {} where id = $1",
+        ready.target.table()
+    ))
+    .bind(ready.entity)
+    .fetch_optional(pool)
+    .await
+    .map_err(unavailable)?;
+    if current != Some((ready.version, ready.converging.to_owned())) {
+        return Err(StatusCode::CONFLICT.into_response());
+    }
+    Ok(())
+}
+
 pub async fn rerun_task(
     State(state): State<ServiceState>,
     headers: HeaderMap,
@@ -135,57 +274,40 @@ pub async fn rerun_task(
         return StatusCode::BAD_REQUEST.into_response();
     };
 
-    let old = match sqlx::query_as::<_, OriginalWorkflow>(
-        "select w.kind, w.tenant_id, w.action_execution_id as original_action_execution_id,
-                source.target_id as original_target_id, source.workspace_id,
-                w.projection_state, t.status, t.run_id
-         from projection.workflow_ref w
-         join admission.action_execution source
-           on source.id = w.action_execution_id and source.tenant_id = w.tenant_id
-         left join projection.task_projection t on t.workflow_id = w.workflow_id
-         where w.workflow_id = $1 and w.workflow_type = $2 and w.kind is not null",
-    )
-    .bind(&req.workflow_id)
-    .bind(component_task::WORKFLOW_TYPE)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(r)) => r,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return unavailable(e),
+    rerun(&state.pool, &state.temporal, &req, "task.rerun").await
+}
+
+/// 用户控制与部署级搁浅修复共用唯一的重跑核心。调用方先完成各自的准入，
+/// 本函数仍逐次核对确切 action key、target 和 Workflow 终态。
+pub(crate) async fn rerun(
+    pool: &PgPool,
+    temporal: &TemporalClient,
+    req: &RerunRequest,
+    expected_action_key: &str,
+) -> Response {
+    let Ready {
+        old,
+        target,
+        entity,
+        version,
+        converging,
+        next_id,
+    } = match preflight(pool, temporal, &req.workflow_id, None, true).await {
+        Ok(ready) => ready,
+        Err(response) => return response,
     };
-    let Some(converging) = converging_state(&old.kind) else {
-        tracing::warn!(kind = %old.kind, "该 kind 没有登记重跑");
-        return StatusCode::CONFLICT.into_response();
-    };
-    let Some((entity, version)) = parse_workflow_id(&req.workflow_id, &old.kind, old.tenant_id)
-    else {
-        tracing::warn!(workflow_id = %req.workflow_id, "workflow ID 不是固定格式");
-        return StatusCode::CONFLICT.into_response();
-    };
-    if entity != old.original_target_id {
-        tracing::warn!(workflow_id = %req.workflow_id, "原 ActionExecution 的 target 与 Workflow ID 不一致");
-        return StatusCode::CONFLICT.into_response();
-    }
-    let target = match resolve_target(&state, &old.kind, entity).await {
-        Ok(Some(t)) => t,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return unavailable(e),
-    };
-    let next_id =
-        component_task::workflow_id(&old.kind, old.tenant_id, &entity.to_string(), version + 1);
 
     // 每次请求（包括同键重发）先核对准入。不能借另一种已 ALLOWED 的动作，
     // 或借后来已被撤销的准入，触发这个 Workflow 的启动与收敛。
     let action = match component_task::allowed_action(
-        &state.pool,
+        pool,
         req.action_execution_id,
         old.tenant_id,
         old.original_action_execution_id,
     )
     .await
     {
-        Ok(Some(a)) if a.action_key == "task.rerun" => a,
+        Ok(Some(a)) if a.action_key == expected_action_key => a,
         Ok(_) => return StatusCode::FORBIDDEN.into_response(),
         Err(e) => return unavailable(e),
     };
@@ -195,7 +317,7 @@ pub async fn rerun_task(
     )
     .bind(req.action_execution_id)
     .bind(old.workspace_id)
-    .fetch_optional(&state.pool)
+    .fetch_optional(pool)
     .await
     {
         Ok(matched) => matched,
@@ -208,9 +330,33 @@ pub async fn rerun_task(
     // 幂等：同一 ActionExecution 已驱动过一个 Workflow。是本次重跑的那个，就
     // 交回启动核心以同一 ID 收敛（结果不明时的重试走到这里）；是别的，就是
     // 拿一张用过的准入去换第二次执行。
-    match component_task::workflow_of_action(&state.pool, req.action_execution_id).await {
+    match component_task::workflow_of_action(pool, req.action_execution_id).await {
         Ok(Some(existing)) if existing == next_id => {
-            return start(&state, target, entity, req.action_execution_id).await
+            let state: Result<Option<String>, _> = sqlx::query_scalar(
+                "select projection_state from projection.workflow_ref
+                 where workflow_id = $1 and action_execution_id = $2",
+            )
+            .bind(&next_id)
+            .bind(req.action_execution_id)
+            .fetch_optional(pool)
+            .await;
+            if matches!(state, Ok(Some(ref projection)) if projection == "TERMINAL") {
+                // 同一控制动作已经驱动过这条执行。重发仅返回它的固定引用；
+                // 业务终态仍必须从 TaskProjection 读取，不能再 Start 终结的 ID。
+                return (
+                    StatusCode::OK,
+                    Json(LifecycleResponse {
+                        workflow_id: next_id,
+                        kind: old.kind,
+                        run_id: None,
+                    }),
+                )
+                    .into_response();
+            }
+            if let Err(e) = state {
+                return unavailable(e);
+            }
+            return start(pool, temporal, target, entity, req.action_execution_id).await;
         }
         Ok(Some(existing)) => {
             tracing::warn!(action = %req.action_execution_id, existing, "ActionExecution 已驱动另一个 Workflow");
@@ -220,72 +366,7 @@ pub async fn rerun_task(
         Err(e) => return unavailable(e),
     }
 
-    // 只有已写回终态的 Workflow 才进入 Temporal 终态核对；非终态由周期对账
-    // 收敛，不能因为请求重跑就擅自推进实体版本。
-    if old.projection_state != "TERMINAL" {
-        tracing::warn!(
-            workflow_id = %req.workflow_id,
-            projection_state = %old.projection_state,
-            status = ?old.status,
-            "旧 Workflow 尚无终态投影"
-        );
-        return StatusCode::CONFLICT.into_response();
-    }
-
-    // TaskProjection 是 Workflow 写回的派生事实：它可以先于 Temporal close 落库。
-    // 因此 TERMINAL 投影只是必要条件；还要观察旧 execution 已关闭，并核对
-    // close status 与 run ID，才允许推进实体版本、分配第二条业务 Workflow。
-    let observed = match state.temporal.describe(&req.workflow_id).await {
-        Ok(Some(observed)) => observed,
-        Ok(None) => {
-            tracing::warn!(workflow_id = %req.workflow_id, "旧 Workflow 的 Temporal 终态无法查证");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-        Err(e) => {
-            tracing::warn!(workflow_id = %req.workflow_id, error = %e, "旧 Workflow 的 Temporal 观察失败");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-    };
-    if let Err(code) =
-        closed_execution_matches_projection(old.status.as_deref(), old.run_id.as_deref(), &observed)
-    {
-        // 投影已标终态但缺失、状态错误或 run ID 错误时，用本次 Describe 的
-        // 关闭事实经唯一投影写入路径修复。这个请求不分配新 Workflow；客户端
-        // 以同一 ActionExecution 重发，重新读取修复后的事实与当前准入。
-        if let ObservedState::Closed(status) = &observed.state {
-            if let Err(e) = workflow_reconcile::patch_terminal(
-                &state.pool,
-                &req.workflow_id,
-                observed.run_id.clone(),
-                observed.history_length,
-                status.clone(),
-            )
-            .await
-            {
-                tracing::warn!(workflow_id = %req.workflow_id, error = %e, "终态投影修复失败");
-            }
-        }
-        tracing::warn!(
-            workflow_id = %req.workflow_id,
-            projection_run_id = ?old.run_id,
-            temporal_run_id = %observed.run_id,
-            projection_status = ?old.status,
-            response_status = %code,
-            "旧 Workflow 未被证明已关闭且与投影一致"
-        );
-        return code.into_response();
-    }
-
-    // 完成了却仍停在收敛中状态是另一类缺陷，重跑会掩盖它。
-    if !old
-        .status
-        .as_deref()
-        .is_some_and(|s| RERUNNABLE_STATUS.contains(&s))
-    {
-        return StatusCode::CONFLICT.into_response();
-    }
-
-    let mut tx = match state.pool.begin().await {
+    let mut tx = match pool.begin().await {
         Ok(t) => t,
         Err(e) => return unavailable(e),
     };
@@ -325,6 +406,24 @@ pub async fn rerun_task(
     {
         return unavailable(e);
     }
+    let linked = sqlx::query(
+        "update admission.action_execution
+         set temporal_workflow_id = $2, dispatch_state = 'UNKNOWN',
+             reason_code = $3, updated_at = now()
+         where id = $1 and gate_state = 'ALLOWED'
+           and dispatch_state in ('NOT_DISPATCHED', 'UNKNOWN')
+           and temporal_workflow_id is null",
+    )
+    .bind(req.action_execution_id)
+    .bind(&next_id)
+    .bind("EXTERNAL_RESULT_UNKNOWN")
+    .execute(&mut *tx)
+    .await;
+    match linked {
+        Ok(done) if done.rows_affected() == 1 => {}
+        Ok(_) => return StatusCode::CONFLICT.into_response(),
+        Err(e) => return unavailable(e),
+    }
 
     let entry = AuditEntry {
         event_key: format!(
@@ -361,14 +460,21 @@ pub async fn rerun_task(
     }
     tracing::info!(rerun_of = %req.workflow_id, workflow_id = %next_id, "已受理重跑");
 
-    start(&state, target, entity, req.action_execution_id).await
+    start(pool, temporal, target, entity, req.action_execution_id).await
 }
 
-async fn start(state: &ServiceState, target: Target, entity: Uuid, action: Uuid) -> Response {
+async fn start(
+    pool: &PgPool,
+    temporal: &TemporalClient,
+    target: Target,
+    entity: Uuid,
+    action: Uuid,
+) -> Response {
     match target {
         Target::Scope(kind) => {
-            start_scope(
-                state,
+            launch_scope(
+                pool,
+                temporal,
                 &ScopeLifecycleRequest {
                     kind,
                     id: entity,
@@ -378,8 +484,9 @@ async fn start(state: &ServiceState, target: Target, entity: Uuid, action: Uuid)
             .await
         }
         Target::Membership(scope) => {
-            start_membership(
-                state,
+            launch_membership(
+                pool,
+                temporal,
                 &LifecycleRequest {
                     scope,
                     membership_id: entity,
@@ -389,6 +496,8 @@ async fn start(state: &ServiceState, target: Target, entity: Uuid, action: Uuid)
             .await
         }
     }
+    .map(|r| (StatusCode::OK, Json(r)).into_response())
+    .unwrap_or_else(|r| r)
 }
 
 /// 从固定 workflow ID 取出实体 ID 与版本，并核对前三段与 WorkflowRef 自己的
@@ -406,7 +515,7 @@ fn parse_workflow_id(id: &str, kind: &str, tenant: Uuid) -> Option<(Uuid, i32)> 
 /// 成员 kind 不区分 Tenant/Workspace 成员（`MembershipScope` 在 input 里），
 /// 因此按 ID 在两张表里找；scope kind 直接对应一张表。
 async fn resolve_target(
-    state: &ServiceState,
+    pool: &PgPool,
     kind: &str,
     entity: Uuid,
 ) -> Result<Option<Target>, sqlx::Error> {
@@ -418,7 +527,7 @@ async fn resolve_target(
                 "select 1 as one from identity.tenant_membership where id = $1",
                 entity
             )
-            .fetch_optional(&state.pool)
+            .fetch_optional(pool)
             .await?;
             if tenant.is_some() {
                 Some(Target::Membership(MembershipScope::Tenant))
@@ -427,7 +536,7 @@ async fn resolve_target(
                     "select 1 as one from identity.workspace_membership where id = $1",
                     entity
                 )
-                .fetch_optional(&state.pool)
+                .fetch_optional(pool)
                 .await?
                 .map(|_| Target::Membership(MembershipScope::Workspace))
             }

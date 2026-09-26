@@ -211,6 +211,7 @@ fn task_view(r: TaskRow) -> Result<TaskView, Response> {
         waiting_reason: r.waiting_reason,
         observation,
         cancel_action_key: None,
+        rerun_action_key: None,
         created_at: rfc3339(r.created_at),
     })
 }
@@ -271,6 +272,12 @@ pub async fn get_task(
                     Ok(key) => v.cancel_action_key = key,
                     Err(e) => {
                         tracing::warn!(task = %id, error = ?e, "任务控制可用性不可查；不提供入口");
+                    }
+                }
+                match g.available_rerun_action(actor(&ctx), id).await {
+                    Ok(key) => v.rerun_action_key = key,
+                    Err(e) => {
+                        tracing::warn!(task = %id, error = ?e, "任务重跑可用性不可查；不提供入口");
                     }
                 }
                 (StatusCode::OK, Json(v)).into_response()

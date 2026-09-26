@@ -248,6 +248,23 @@ export const platformMessages = {
     en: "Cancellation request rejected: {reason}",
     "zh-CN": "取消请求被拒绝：{reason}",
   },
+  "tasks.rerunRequest": { en: "Run again", "zh-CN": "重新运行" },
+  "tasks.confirmRerun": {
+    en: "Start a new governed run of this closed task? It receives a new action and workflow; any required approval must be granted again.",
+    "zh-CN": "为这项已结束的任务发起一次新的受治理执行？它会取得新的动作与 Workflow；原任务要求的审批必须重新完成。",
+  },
+  "tasks.rerunSubmitted": {
+    en: "Rerun control recorded under operation {operation}. Open the new task for approval and final status:",
+    "zh-CN": "重跑控制已记录为操作 {operation}。请打开新任务查看审批与最终状态：",
+  },
+  "tasks.rerunUnknown": {
+    en: "Rerun request outcome is unknown (operation {operation}). Check the control task, or resend the same intent.",
+    "zh-CN": "重跑请求结果不明（操作 {operation}）。请检查控制任务，或原样重发同一次意图。",
+  },
+  "tasks.rerunRejected": {
+    en: "Rerun request rejected: {reason}",
+    "zh-CN": "重跑请求被拒绝：{reason}",
+  },
   "tasks.status.evaluating": { en: "Being evaluated", "zh-CN": "正在判定" },
   "tasks.status.waitingApproval": { en: "Waiting for approval", "zh-CN": "等待审批" },
   "tasks.status.denied": { en: "Not allowed", "zh-CN": "未获准" },

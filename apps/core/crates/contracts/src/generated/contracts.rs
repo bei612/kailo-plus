@@ -827,6 +827,10 @@ pub struct TaskView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<ReasonCode>,
 
+    /// 仅任务详情且 Core 证明原 Workflow 已关闭、终态投影一致、原目标仍在收敛版本并完成本人和权限重查后提供；提交与派发时仍重新准入
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rerun_action_key: Option<String>,
+
     pub target_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]

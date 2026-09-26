@@ -343,6 +343,8 @@ pub enum Semantic {
     TenantMemberAdmit,
     /// DD-84：原任务的取消请求，独立 ActionExecution；不是原任务的终态。
     TaskCancel,
+    /// DD-84：原任务关闭后以新的准入、批准和 Workflow 重跑。
+    TaskRerun,
 }
 
 impl Semantic {
@@ -360,6 +362,7 @@ impl Semantic {
             "tenant.member.invite.revoke" => Self::TenantMemberInviteRevoke,
             "tenant.member.admit" => Self::TenantMemberAdmit,
             key if key.starts_with("task.cancel.") => Self::TaskCancel,
+            key if key.starts_with("task.rerun.") => Self::TaskRerun,
             _ => return None,
         })
     }
@@ -534,7 +537,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                 && p.slug.is_none()
                 && p.name.is_none()
         }
-        Semantic::TaskCancel => {
+        Semantic::TaskCancel | Semantic::TaskRerun => {
             p.workspace_id.is_none()
                 && p.principal_id.is_none()
                 && p.invitation_id.is_none()
@@ -586,12 +589,12 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
-        Semantic::TaskCancel => {
+        Semantic::TaskCancel | Semantic::TaskRerun => {
             let original_id = p
                 .original_action_execution_id
                 .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
             let (original, _) =
-                control_original(conn, tenant, initiator, def, original_id, lock).await?;
+                control_original(conn, tenant, initiator, def, sem, original_id, lock).await?;
             if frozen.is_some_and(|id| id != original.id) {
                 return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
             }
@@ -833,12 +836,12 @@ async fn control_original(
     tenant: Uuid,
     initiator: Uuid,
     control: &Definition,
+    sem: Semantic,
     original_id: Uuid,
     lock: bool,
 ) -> Result<(Execution, Definition), Refusal> {
     if control.target_type != "ACTION_EXECUTION"
         || control.execution_mode != "PROTOCOL"
-        || control.confirmation_mode != "NONE"
         || control.workflow_kind.is_some()
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
@@ -863,7 +866,12 @@ async fn control_original(
     .fetch_optional(&mut *conn)
     .await?
     .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    if control.action_key != cancel_key_for(&original)
+    let expected = match sem {
+        Semantic::TaskCancel => cancel_key_for(&original),
+        Semantic::TaskRerun => rerun_key_for(&original),
+        _ => return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
+    };
+    if control.action_key != expected
         || source.execution_mode != "TEMPORAL"
         || source.workflow_kind.is_none()
         || control.tenant_rule != source.tenant_rule
@@ -873,12 +881,56 @@ async fn control_original(
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
+    if sem == Semantic::TaskCancel {
+        if control.confirmation_mode != "NONE"
+            || control.approval_policy_id.is_some()
+            || control.approval_policy_version.is_some()
+        {
+            return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+        }
+    } else {
+        if control.confirmation_mode != source.confirmation_mode {
+            return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+        }
+        if source.confirmation_mode == "APPROVAL" {
+            let same_policy: Option<bool> = sqlx::query_scalar(
+                "select c.role_requirements = s.role_requirements
+                        and c.owner_requirement = s.owner_requirement
+                        and c.self_approval = s.self_approval
+                        and c.expires_in_seconds = s.expires_in_seconds
+                        and c.action_key = $5 and c.target_type = 'ACTION_EXECUTION'
+                        and c.id <> s.id and c.status = 'ACTIVE'
+                 from catalog.approval_policy c, catalog.approval_policy s
+                 where c.id = $1 and c.version = $2 and s.id = $3 and s.version = $4",
+            )
+            .bind(control.approval_policy_id)
+            .bind(control.approval_policy_version)
+            .bind(source.approval_policy_id)
+            .bind(source.approval_policy_version)
+            .bind(&control.action_key)
+            .fetch_optional(&mut *conn)
+            .await?;
+            if same_policy != Some(true) {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+        } else if control.approval_policy_id.is_some() || control.approval_policy_version.is_some()
+        {
+            return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+        }
+    }
     Ok((original, source))
 }
 
 fn cancel_key_for(original: &Execution) -> String {
     format!(
         "task.cancel.{}.v{}",
+        original.action_key, original.action_version
+    )
+}
+
+fn rerun_key_for(original: &Execution) -> String {
+    format!(
+        "task.rerun.{}.v{}",
         original.action_key, original.action_version
     )
 }
@@ -1106,6 +1158,84 @@ impl Governance {
         let mut conn = self.pool.acquire().await?;
         match self
             .cancel_target(
+                &mut conn,
+                actor.tenant_id,
+                actor.principal_id,
+                &def,
+                &params,
+            )
+            .await
+        {
+            Ok(_) => Ok(Some(key)),
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// 任务详情只在本人的原执行具有一致的 Temporal 关闭事实、终态投影、
+    /// 未推进的目标版本与独立控制定义时提供重跑入口。提交及派发均重新核验。
+    pub async fn available_rerun_action(
+        &self,
+        actor: Actor,
+        original_id: Uuid,
+    ) -> Result<Option<String>, Refusal> {
+        let Some(original) = load_execution(&self.pool, original_id).await? else {
+            return Ok(None);
+        };
+        if original.tenant_id != actor.tenant_id
+            || original.initiator_principal_id != actor.principal_id
+            || original.gate_state != "ALLOWED"
+        {
+            return Ok(None);
+        }
+        let key = rerun_key_for(&original);
+        let Some(def) = active_definition(&self.pool, &key).await? else {
+            return Ok(None);
+        };
+        let existing: Option<i32> = sqlx::query_scalar(
+            "select 1 from admission.action_execution
+             where tenant_id = $1 and target_id = $2 and action_key = $3
+               and gate_state in ('EVALUATING','WAITING','ALLOWED')
+               and dispatch_state <> 'ABORTED' limit 1",
+        )
+        .bind(actor.tenant_id)
+        .bind(original_id)
+        .bind(&key)
+        .fetch_optional(&self.pool)
+        .await?;
+        if existing.is_some() {
+            return Ok(None);
+        }
+        let params = Params {
+            workspace_id: None,
+            principal_id: None,
+            slug: None,
+            name: None,
+            invitation_id: None,
+            original_action_execution_id: Some(original_id),
+        };
+        let mut conn = self.pool.acquire().await?;
+        let target = match resolve_target(
+            &mut conn,
+            actor.tenant_id,
+            actor.principal_id,
+            &def,
+            Semantic::TaskRerun,
+            &params,
+            None,
+            false,
+        )
+        .await
+        {
+            Ok(target) => target,
+            Err(_) => return Ok(None),
+        };
+        drop(conn);
+        if !self.evaluate(actor, &def, &target).await?.allowed {
+            return Ok(None);
+        }
+        let mut conn = self.pool.acquire().await?;
+        match self
+            .rerun_target(
                 &mut conn,
                 actor.tenant_id,
                 actor.principal_id,
@@ -1817,9 +1947,9 @@ impl Governance {
             params,
         )
         .await?;
-        if sem == Semantic::TaskCancel {
-            // 控制动作不拥有第二个业务 WorkflowRef：它的副作用是向原 Workflow
-            // 发送取消请求。原 Workflow 与 TaskProjection 始终由 Temporal/Worker 管。
+        if matches!(sem, Semantic::TaskCancel | Semantic::TaskRerun) {
+            // 控制动作先独立完成准入；取消向原 Workflow 发请求，重跑仅在
+            // 派发前重新核实旧终态后才原子分配新的 WorkflowRef。
             sqlx::query(
                 "update admission.action_execution
                  set gate_state = 'ALLOWED', reason_code = null, updated_at = now()
@@ -2010,7 +2140,8 @@ impl Governance {
             | Semantic::WorkspaceRoleRevoke
             | Semantic::TenantMemberInvite
             | Semantic::TenantMemberInviteRevoke
-            | Semantic::TaskCancel => {
+            | Semantic::TaskCancel
+            | Semantic::TaskRerun => {
                 return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked))
             }
         };
@@ -2109,8 +2240,16 @@ impl Governance {
         let original_id = p
             .original_action_execution_id
             .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
-        let (original, source) =
-            control_original(conn, tenant, initiator, def, original_id, false).await?;
+        let (original, source) = control_original(
+            conn,
+            tenant,
+            initiator,
+            def,
+            Semantic::TaskCancel,
+            original_id,
+            false,
+        )
+        .await?;
         let workflow_id = original
             .temporal_workflow_id
             .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
@@ -2152,6 +2291,58 @@ impl Governance {
         }
     }
 
+    async fn rerun_target(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        tenant: Uuid,
+        initiator: Uuid,
+        def: &Definition,
+        p: &Params,
+    ) -> Result<String, Refusal> {
+        let original_id = p
+            .original_action_execution_id
+            .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+        let (original, source) = control_original(
+            conn,
+            tenant,
+            initiator,
+            def,
+            Semantic::TaskRerun,
+            original_id,
+            false,
+        )
+        .await?;
+        if original.gate_state != "ALLOWED" {
+            return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+        }
+        let workflow_id = original
+            .temporal_workflow_id
+            .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+        let kind = source
+            .workflow_kind
+            .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+        match crate::task_rerun::eligible(
+            &self.pool,
+            &self.temporal,
+            &workflow_id,
+            tenant,
+            original_id,
+            &kind,
+        )
+        .await
+        {
+            Ok(()) => Ok(workflow_id),
+            Err(response) => Err(match response.status() {
+                StatusCode::NOT_FOUND => Refusal::Precondition(ReasonCode::TargetNotFound),
+                StatusCode::CONFLICT => Refusal::Conflict(ReasonCode::TargetStateConflict),
+                StatusCode::SERVICE_UNAVAILABLE => {
+                    Refusal::Unavailable("原 Workflow 的关闭事实、终态投影或目标版本不可查".into())
+                }
+                _ => Refusal::Blocked(ReasonCode::CapabilityBlocked),
+            }),
+        }
+    }
+
     /// 目标在权威处的事实是否允许这次变更。角色的事实在 SpiceDB，成员的事实在
     /// Core；二者与「有效 Tenant admin 不得为空」一起在这里判定。
     ///
@@ -2168,6 +2359,10 @@ impl Governance {
     ) -> Result<(), Refusal> {
         if sem == Semantic::TaskCancel {
             self.cancel_target(conn, tenant, initiator, def, p).await?;
+            return Ok(());
+        }
+        if sem == Semantic::TaskRerun {
+            self.rerun_target(conn, tenant, initiator, def, p).await?;
             return Ok(());
         }
         let page = self.cfg.relationship_page;
@@ -2450,6 +2645,259 @@ enum CancelReceipt {
 }
 
 impl Governance {
+    async fn dispatch_rerun(&self, ae_id: Uuid, def: &Definition) -> Result<(), Refusal> {
+        let Some(initial) = load_execution(&self.pool, ae_id).await? else {
+            return Ok(());
+        };
+        if initial.gate_state != "ALLOWED"
+            || !matches!(
+                initial.dispatch_state.as_str(),
+                "NOT_DISPATCHED" | "UNKNOWN"
+            )
+        {
+            return Ok(());
+        }
+        let actor = Actor {
+            tenant_id: initial.tenant_id,
+            principal_id: initial.initiator_principal_id,
+            human_identity_id: None,
+        };
+        let target = Target {
+            id: initial.target_id,
+            version: initial
+                .frozen_target_version()
+                .ok_or_else(|| Refusal::Unavailable("重跑控制动作缺原定义版本".into()))?,
+            workspace_id: initial.workspace_id,
+        };
+        let eval = self.evaluate(actor, def, &target).await?;
+        let mut tx = self.pool.begin().await?;
+        let ae = lock_execution(&mut tx, ae_id).await?;
+        if ae.gate_state != "ALLOWED"
+            || !matches!(ae.dispatch_state.as_str(), "NOT_DISPATCHED" | "UNKNOWN")
+        {
+            return Ok(());
+        }
+        let params = ae
+            .params()
+            .ok_or_else(|| Refusal::Unavailable("重跑控制动作缺规范化参数".into()))?;
+        let checked = resolve_target(
+            &mut tx,
+            ae.tenant_id,
+            ae.initiator_principal_id,
+            def,
+            Semantic::TaskRerun,
+            &params,
+            Some(ae.target_id),
+            true,
+        )
+        .await;
+        let mut workflow_id = None;
+        let reason = if !eval.allowed {
+            Some(eval.reason.clone().unwrap_or(ReasonCode::PermissionDenied))
+        } else {
+            match checked {
+                Ok(current)
+                    if current == target
+                        && parameter_hash(def, current.id, &params) == ae.parameter_hash =>
+                {
+                    if ae.temporal_workflow_id.is_none() {
+                        match self
+                            .rerun_target(
+                                &mut tx,
+                                ae.tenant_id,
+                                ae.initiator_principal_id,
+                                def,
+                                &params,
+                            )
+                            .await
+                        {
+                            Ok(id) => workflow_id = Some(id),
+                            Err(Refusal::Unavailable(e)) => return Err(Refusal::Unavailable(e)),
+                            Err(e) => return self.abort_rerun(tx, &ae, def, &eval, e).await,
+                        }
+                    } else {
+                        let (original, _) = control_original(
+                            &mut tx,
+                            ae.tenant_id,
+                            ae.initiator_principal_id,
+                            def,
+                            Semantic::TaskRerun,
+                            ae.target_id,
+                            false,
+                        )
+                        .await?;
+                        workflow_id = original.temporal_workflow_id;
+                    }
+                    None
+                }
+                Ok(_) => Some(ReasonCode::TargetStateConflict),
+                Err(Refusal::Unavailable(e)) => return Err(Refusal::Unavailable(e)),
+                Err(e) => Some(e.reason()),
+            }
+        };
+        if let Some(reason) = reason {
+            return self
+                .abort_rerun(tx, &ae, def, &eval, Refusal::Conflict(reason))
+                .await;
+        }
+        let workflow_id = workflow_id
+            .ok_or_else(|| Refusal::Unavailable("重跑控制动作缺原 Workflow ID".into()))?;
+        record_decision(
+            &mut tx,
+            &ae.subject(),
+            "RECHECK",
+            eval.scope,
+            eval.authorization,
+            if ae.approval_workflow_id.is_some() {
+                "SATISFIED"
+            } else {
+                "NOT_REQUIRED"
+            },
+            eval.zed_token.as_deref(),
+            None,
+        )
+        .await?;
+        audit(
+            &mut tx,
+            &ae,
+            def,
+            "rerun:recheck",
+            "DECISION",
+            "ALLOW",
+            "ALLOWED",
+            None,
+            zed_evidence(eval.zed_token.as_deref()),
+        )
+        .await?;
+        tx.commit().await?;
+
+        let response = crate::task_rerun::rerun(
+            &self.pool,
+            &self.temporal,
+            &crate::task_rerun::RerunRequest {
+                workflow_id,
+                action_execution_id: ae_id,
+            },
+            &def.action_key,
+        )
+        .await;
+        let current = load_execution(&self.pool, ae_id)
+            .await?
+            .ok_or_else(|| Refusal::Unavailable("重跑控制动作在派发后丢失".into()))?;
+        let accepted =
+            response.status() == StatusCode::OK && current.temporal_workflow_id.is_some();
+        let state = if accepted {
+            "DISPATCHED"
+        } else if current.temporal_workflow_id.is_some()
+            || response.status() == StatusCode::SERVICE_UNAVAILABLE
+        {
+            "UNKNOWN"
+        } else {
+            "ABORTED"
+        };
+        let mut tx = self.pool.begin().await?;
+        let ae = lock_execution(&mut tx, ae_id).await?;
+        if ae.gate_state != "ALLOWED"
+            || !matches!(ae.dispatch_state.as_str(), "NOT_DISPATCHED" | "UNKNOWN")
+        {
+            return Ok(());
+        }
+        sqlx::query(
+            "update admission.action_execution
+             set dispatch_state = $2, reason_code = $3, updated_at = now()
+             where id = $1 and gate_state = 'ALLOWED'
+               and dispatch_state in ('NOT_DISPATCHED', 'UNKNOWN')",
+        )
+        .bind(ae_id)
+        .bind(state)
+        .bind(if state == "UNKNOWN" {
+            Some(wire(&ReasonCode::ExternalResultUnknown))
+        } else if state == "ABORTED" {
+            Some(wire(&ReasonCode::TargetStateConflict))
+        } else {
+            None
+        })
+        .execute(&mut *tx)
+        .await?;
+        audit(
+            &mut tx,
+            &ae,
+            def,
+            "rerun:dispatch",
+            "DISPATCH",
+            "ALLOW",
+            match state {
+                "DISPATCHED" => "DISPATCHED",
+                "UNKNOWN" => "DISPATCH_RESULT_UNKNOWN",
+                _ => "DISPATCH_ABORTED",
+            },
+            None,
+            json!([{ "kind": "TEMPORAL_WORKFLOW_ID", "value": ae.temporal_workflow_id }]),
+        )
+        .await?;
+        tx.commit().await?;
+        if accepted && ae.approval_workflow_id.is_some() {
+            self.consume(ae_id).await;
+        }
+        Ok(())
+    }
+
+    async fn abort_rerun(
+        &self,
+        mut tx: Transaction<'_, Postgres>,
+        ae: &Execution,
+        def: &Definition,
+        eval: &Evaluation,
+        refusal: Refusal,
+    ) -> Result<(), Refusal> {
+        let preserved = ae.temporal_workflow_id.is_some();
+        let state = if preserved { "UNKNOWN" } else { "ABORTED" };
+        let reason = if preserved {
+            ReasonCode::ExternalResultUnknown
+        } else {
+            refusal.reason()
+        };
+        sqlx::query(
+            "update admission.action_execution
+             set dispatch_state = $2, reason_code = $3, updated_at = now()
+             where id = $1 and gate_state = 'ALLOWED'",
+        )
+        .bind(ae.id)
+        .bind(state)
+        .bind(wire(&reason))
+        .execute(&mut *tx)
+        .await?;
+        record_decision(
+            &mut tx,
+            &ae.subject(),
+            "RECHECK",
+            eval.scope,
+            eval.authorization,
+            if ae.approval_workflow_id.is_some() {
+                "SATISFIED"
+            } else {
+                "NOT_REQUIRED"
+            },
+            eval.zed_token.as_deref(),
+            Some(&reason),
+        )
+        .await?;
+        audit(
+            &mut tx,
+            ae,
+            def,
+            "rerun:dispatch-aborted",
+            "DISPATCH",
+            "DENY",
+            &wire(&reason),
+            None,
+            zed_evidence(eval.zed_token.as_deref()),
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// DD-84 的控制动作走与普通 Action 相同的准入、决定和审计；派发前再做
     /// fresh Check 与原 Workflow 的 Temporal OPEN 观察。DISPATCHED 仅表示取消
     /// 请求被接受，不改写原 ActionExecution/WorkflowRef/TaskProjection。
@@ -2472,6 +2920,7 @@ impl Governance {
                 initial.tenant_id,
                 initial.initiator_principal_id,
                 def,
+                Semantic::TaskCancel,
                 initial.target_id,
                 false,
             )
@@ -2821,6 +3270,9 @@ impl Governance {
         if sem == Semantic::TaskCancel {
             return self.dispatch_cancel(ae_id, &def).await;
         }
+        if sem == Semantic::TaskRerun {
+            return self.dispatch_rerun(ae_id, &def).await;
+        }
         if def.execution_mode == "SYNC" {
             // 在准入事务里已完成的同步动作没有可派发的东西；走到这里只可能是角色
             return if sem.is_role() {
@@ -2885,7 +3337,8 @@ impl Governance {
                 | Semantic::WorkspaceRoleRevoke
                 | Semantic::TenantMemberInvite
                 | Semantic::TenantMemberInviteRevoke
-                | Semantic::TaskCancel => Err(StatusCode::CONFLICT.into_response()),
+                | Semantic::TaskCancel
+                | Semantic::TaskRerun => Err(StatusCode::CONFLICT.into_response()),
             };
             match started {
                 Ok(r) if r.workflow_id == workflow_id => Ok(()),

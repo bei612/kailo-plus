@@ -377,6 +377,7 @@ await step("审批页：待我审批可见；批准需确认、经 Temporal Upda
   await shot("11b-approval-decided");
 });
 
+let canceledOriginalId;
 await step("本人任务取消：浏览器只提交原动作 ID，请求已接收不冒充原任务已取消", async () => {
   const compose = ["compose", "-f", a["compose-file"]];
   const worker = execFileSync("docker", [...compose, "ps", "--status", "running", "-q", "worker"], {
@@ -459,7 +460,65 @@ await step("本人任务取消：浏览器只提交原动作 ID，请求已接�
   if (await detail.getByRole("status").filter({ hasText: "original task is not yet confirmed canceled" }).count())
     throw new Error("原任务已到取消终态，却仍显示尚未确认取消的旧提示");
   steps.push({ name: "取消控制与原任务", value: { originalId, controlId } });
+  canceledOriginalId = originalId;
   await shot("11d-task-canceled");
+});
+
+await step("本人任务重跑：浏览器提交独立控制，新 Workflow 完成且原历史不变", async () => {
+  const detail = page.getByTestId("task-detail");
+  const original = await bff("GET", `/api/v1/tasks/${canceledOriginalId}`);
+  if (original.status !== 200 || original.body?.taskStatus !== "CANCELED" || !original.body?.workflowId)
+    throw new Error(`重跑前原任务没有确定终态：${JSON.stringify(original)}`);
+  const rerun = detail.getByRole("button", { name: "Run again" });
+  const deadline = Date.now() + bound;
+  while (!(await rerun.count())) {
+    if (Date.now() > deadline) {
+      const current = await bff("GET", `/api/v1/tasks/${canceledOriginalId}`);
+      throw new Error(`任务详情未渲染本人重跑控制；BFF task=${JSON.stringify(current)}`);
+    }
+    await detail.getByRole("button", { name: "Refresh" }).first().click();
+    await page.waitForTimeout(1_000);
+  }
+  await rerun.click();
+  const response = page.waitForResponse(
+    (r) => r.url().endsWith("/api/v1/actions") && r.request().method() === "POST",
+  );
+  await detail.getByRole("button", { name: "Confirm" }).click();
+  const controlResponse = await response;
+  const request = controlResponse.request().postDataJSON();
+  if (request.actionKey !== "task.rerun.workspace.create.v1" ||
+      request.originalActionExecutionId !== canceledOriginalId ||
+      request.workflowId !== undefined || request.targetId !== undefined)
+    throw new Error(`浏览器重跑命令越过原动作 ID 边界：${JSON.stringify(request)}`);
+  const control = await controlResponse.json();
+  if (controlResponse.status() < 200 || controlResponse.status() >= 300 ||
+      !control.actionExecutionId || !control.operationId)
+    throw new Error(`重跑控制未准入：${controlResponse.status()} ${JSON.stringify(control)}`);
+  await detail.getByRole("status")
+    .filter({ hasText: `Rerun control recorded under operation ${control.operationId}` })
+    .waitFor({ timeout: bound });
+  let rerunTask;
+  while (true) {
+    rerunTask = await bff("GET", `/api/v1/tasks/${control.actionExecutionId}`);
+    if (rerunTask.status === 200 && rerunTask.body?.taskStatus === "COMPLETED") break;
+    if (Date.now() > deadline)
+      throw new Error(`新 Workflow 未在上界内完成：${JSON.stringify(rerunTask)}`);
+    await page.waitForTimeout(1_000);
+  }
+  if (!rerunTask.body.workflowId || rerunTask.body.workflowId === original.body.workflowId)
+    throw new Error(`重跑没有产生新的 Workflow：${JSON.stringify(rerunTask)}`);
+  const unchanged = await bff("GET", `/api/v1/tasks/${canceledOriginalId}`);
+  if (unchanged.status !== 200 || unchanged.body?.taskStatus !== "CANCELED" ||
+      unchanged.body?.workflowId !== original.body.workflowId)
+    throw new Error(`重跑改写了原任务历史：${JSON.stringify(unchanged)}`);
+  await detail.getByRole("button", { name: control.actionExecutionId }).click();
+  await detail.getByText(control.operationId, { exact: true }).waitFor({ timeout: bound });
+  steps.push({ name: "重跑控制与新 Workflow", value: {
+    originalId: canceledOriginalId,
+    controlId: control.actionExecutionId,
+    workflowId: rerunTask.body.workflowId,
+  } });
+  await shot("11e-task-rerun-completed");
 });
 
 await step("邀请：admin 签发的链接只显示一次、列表不含凭据、撤回需确认；兑换页读完 fragment 即清掉", async () => {

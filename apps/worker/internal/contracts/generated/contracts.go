@@ -788,12 +788,14 @@ type TaskView struct {
 	Observation   *ReasonCode         `json:"observation,omitempty"`
 	OperationID   string              `json:"operationId"`
 	Reason        *ReasonCode         `json:"reason,omitempty"`
-	TargetID      string              `json:"targetId"`
-	TaskStatus    *TaskStatus         `json:"taskStatus,omitempty"`
-	WaitingReason *string             `json:"waitingReason,omitempty"`
-	WorkflowID    *string             `json:"workflowId,omitempty"`
-	WorkflowKind  *WorkflowKind       `json:"workflowKind,omitempty"`
-	WorkspaceID   *string             `json:"workspaceId,omitempty"`
+	// 仅任务详情且 Core 证明原 Workflow 已关闭、终态投影一致、原目标仍在收敛版本并完成本人和权限重查后提供；提交与派发时仍重新准入
+	RerunActionKey *string       `json:"rerunActionKey,omitempty"`
+	TargetID       string        `json:"targetId"`
+	TaskStatus     *TaskStatus   `json:"taskStatus,omitempty"`
+	WaitingReason  *string       `json:"waitingReason,omitempty"`
+	WorkflowID     *string       `json:"workflowId,omitempty"`
+	WorkflowKind   *WorkflowKind `json:"workflowKind,omitempty"`
+	WorkspaceID    *string       `json:"workspaceId,omitempty"`
 }
 
 // GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage

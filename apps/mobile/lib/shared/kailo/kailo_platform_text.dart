@@ -138,6 +138,11 @@ enum KailoMessageKey {
   tasksCancelUnknown,
   tasksCancelSendAgain,
   tasksCancelRejected,
+  tasksRerunRequest,
+  tasksConfirmRerun,
+  tasksRerunSubmitted,
+  tasksRerunUnknown,
+  tasksRerunRejected,
   tasksStatusEvaluating,
   tasksStatusWaitingApproval,
   tasksStatusDenied,
@@ -519,6 +524,23 @@ const _messages = <KailoMessageKey, (String, String)>{
   KailoMessageKey.tasksCancelRejected: (
     'Cancellation request rejected: {reason}',
     '取消请求被拒绝：{reason}',
+  ),
+  KailoMessageKey.tasksRerunRequest: ('Run again', '重新运行'),
+  KailoMessageKey.tasksConfirmRerun: (
+    'Start a new governed run of this closed task? It receives a new action and workflow; any required approval must be granted again.',
+    '为这项已结束的任务发起一次新的受治理执行？它会取得新的动作与 Workflow；原任务要求的审批必须重新完成。',
+  ),
+  KailoMessageKey.tasksRerunSubmitted: (
+    'Rerun control recorded under operation {operation}. Open the new task for approval and final status:',
+    '重跑控制已记录为操作 {operation}。请打开新任务查看审批与最终状态：',
+  ),
+  KailoMessageKey.tasksRerunUnknown: (
+    'Rerun request outcome is unknown (operation {operation}). Check the control task, or resend the same intent.',
+    '重跑请求结果不明（操作 {operation}）。请检查控制任务，或原样重发同一次意图。',
+  ),
+  KailoMessageKey.tasksRerunRejected: (
+    'Rerun request rejected: {reason}',
+    '重跑请求被拒绝：{reason}',
   ),
   KailoMessageKey.tasksStatusEvaluating: ('Being evaluated', '正在判定'),
   KailoMessageKey.tasksStatusWaitingApproval: ('Waiting for approval', '等待审批'),

@@ -815,6 +815,120 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World) {
         (status.as_deref() == Some("CANCELED")).then_some(())
     })
     .await;
+
+    // ---- 11. 本人重跑：原执行终结后重新准入，新 Action 与新 Workflow ----
+    let rerun_key: String = until(e, "任务详情给出已核实的重跑控制", || async {
+        let (st, detail) = bff(
+            http,
+            e,
+            a,
+            reqwest::Method::GET,
+            &format!("/api/v1/tasks/{original_ae}"),
+            None,
+        )
+        .await;
+        (st.is_success())
+            .then(|| detail["rerunActionKey"].as_str().map(str::to_owned))
+            .flatten()
+    })
+    .await;
+    assert_eq!(rerun_key, "task.rerun.workspace.create.v1");
+    let (st, other_rerun) = submit(
+        http,
+        e,
+        &w.b.subject,
+        json!({
+            "actionKey": rerun_key,
+            "idempotencyKey": Uuid::new_v4(),
+            "originalActionExecutionId": original_ae,
+        }),
+    )
+    .await;
+    assert_eq!(
+        st,
+        reqwest::StatusCode::FORBIDDEN,
+        "他人不得重跑：{other_rerun}"
+    );
+    let rerun_cmd = json!({
+        "actionKey": "task.rerun.workspace.create.v1",
+        "idempotencyKey": Uuid::new_v4(),
+        "originalActionExecutionId": original_ae,
+    });
+    let (st, rerun_control) = submit(http, e, a, rerun_cmd.clone()).await;
+    assert!(st.is_success(), "重跑控制应重新准入：{st} {rerun_control}");
+    let rerun_ae = Uuid::parse_str(rerun_control["actionExecutionId"].as_str().unwrap()).unwrap();
+    let rerun_workflow: String = until(e, "重跑控制启动新的 Workflow", || async {
+        let (st, detail) = bff(
+            http,
+            e,
+            a,
+            reqwest::Method::GET,
+            &format!("/api/v1/tasks/{rerun_ae}"),
+            None,
+        )
+        .await;
+        (st.is_success() && detail["dispatchState"] == "DISPATCHED")
+            .then(|| detail["workflowId"].as_str().map(str::to_owned))
+            .flatten()
+    })
+    .await;
+    assert_ne!(rerun_workflow, original_workflow);
+    until(e, "新的 Workflow 完成", || async {
+        let status: Option<String> = sqlx::query_scalar(
+            "select status from projection.task_projection where workflow_id = $1",
+        )
+        .bind(&rerun_workflow)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        (status.as_deref() == Some("COMPLETED")).then_some(())
+    })
+    .await;
+    let (st, same_rerun) = submit(http, e, a, rerun_cmd).await;
+    assert!(
+        st.is_success(),
+        "同键重发须收敛到同一控制：{st} {same_rerun}"
+    );
+    assert_eq!(same_rerun["actionExecutionId"], rerun_ae.to_string());
+    let refs: i64 = sqlx::query_scalar(
+        "select count(*) from projection.workflow_ref
+         where action_execution_id = $1 and workflow_type = 'ComponentTaskWorkflow'",
+    )
+    .bind(rerun_ae)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(refs, 1, "同一重跑控制产生第二条业务 Workflow");
+    let (st, duplicate) = submit(
+        http,
+        e,
+        a,
+        json!({
+            "actionKey": "task.rerun.workspace.create.v1",
+            "idempotencyKey": Uuid::new_v4(),
+            "originalActionExecutionId": original_ae,
+        }),
+    )
+    .await;
+    assert_eq!(
+        st,
+        reqwest::StatusCode::CONFLICT,
+        "第二个重跑意图须拒绝：{duplicate}"
+    );
+    let old_status: Option<String> =
+        sqlx::query_scalar("select status from projection.task_projection where workflow_id = $1")
+            .bind(&original_workflow)
+            .fetch_optional(pool)
+            .await
+            .unwrap()
+            .flatten();
+    assert_eq!(
+        old_status.as_deref(),
+        Some("CANCELED"),
+        "旧 history 不得被重写"
+    );
+
     let d_wm: Uuid =
         sqlx::query_scalar("select target_id from admission.action_execution where id = $1")
             .bind(un_ae)

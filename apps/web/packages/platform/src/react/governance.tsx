@@ -1,8 +1,8 @@
 // 任务工作台与审批箱（.design/06 §9、apps/02 §4）：本人任务、待我审批、详情、批准/拒绝
 // 与撤回。Web 与 Desktop 渲染的是同一份组件，数据全部经 BFF。
 //
-// 只渲染服务端已开放的控制：任务取消只使用详情给出的 cancelActionKey，重跑尚无
-// 用户可达的 Governed Action；撤回与决定各有 BFF 端点。可见范围、资格与冲突都由
+// 只渲染服务端已开放的控制：取消与重跑只使用任务详情给出的控制 Action key；
+// 撤回与决定各有 BFF 端点。可见范围、资格与冲突都由
 // BFF 判定，按下之后仍以 BFF 的重新准入为准。
 //
 // 结果不明（没有回应、EXTERNAL_RESULT_UNKNOWN、PROJECTION_DELAYED）不渲染成成功或
@@ -125,7 +125,7 @@ function TaskStatusBadge({ task }: { task: TaskView }) {
 export function TasksPage() {
   const [open, setOpen] = useState<string | null>(null);
   return open ? (
-    <TaskDetail actionExecutionId={open} onBack={() => setOpen(null)} />
+    <TaskDetail key={open} actionExecutionId={open} onBack={() => setOpen(null)} onOpen={setOpen} />
   ) : (
     <TaskList onOpen={setOpen} />
   );
@@ -165,17 +165,27 @@ function TaskList({ onOpen }: { onOpen: (actionExecutionId: string) => void }) {
   );
 }
 
-function TaskDetail({ actionExecutionId, onBack }: { actionExecutionId: string; onBack: () => void }) {
+type TaskControl = "cancel" | "rerun";
+
+function TaskDetail({
+  actionExecutionId,
+  onBack,
+  onOpen,
+}: {
+  actionExecutionId: string;
+  onBack: () => void;
+  onOpen: (id: string) => void;
+}) {
   const client = useBffClient();
   const t = useT();
   const reasonText = useReasonText();
   const failureText = useFailureText();
   const [state, reload] = useLoad(`task:${actionExecutionId}`, () => client.task(actionExecutionId));
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const [cancelBusy, setCancelBusy] = useState(false);
-  const [cancelOutcome, setCancelOutcome] = useState<
-    | { kind: "submitted"; operationId: string; actionExecutionId: string }
-    | { kind: "failed"; failure: WriteFailure; actionKey: string; idempotencyKey: string }
+  const [confirmControl, setConfirmControl] = useState<TaskControl | null>(null);
+  const [controlBusy, setControlBusy] = useState(false);
+  const [controlOutcome, setControlOutcome] = useState<
+    | { kind: "submitted"; control: TaskControl; operationId: string; actionExecutionId: string }
+    | { kind: "failed"; control: TaskControl; failure: WriteFailure; actionKey: string; idempotencyKey: string }
     | null
   >(null);
   // 一个 ActionExecution 至多一个审批，其 ID 不变：取到一次即可一直用
@@ -183,26 +193,30 @@ function TaskDetail({ actionExecutionId, onBack }: { actionExecutionId: string; 
   if (state.status === "ok") approvalWorkflowId.current ??= state.data.approvalWorkflowId;
   const originalAwaitingTerminal =
     state.status !== "ok" || state.data.taskStatus === undefined || state.data.taskStatus === TaskStatus.Running;
+  const rerunHasIntent = controlOutcome?.control === "rerun" &&
+    (controlOutcome.kind === "submitted" ||
+      (controlOutcome.kind === "failed" && controlOutcome.failure.kind === "unknown"));
 
-  const cancel = async (actionKey: string, idempotencyKey: string) => {
-    setConfirmCancel(false);
-    setCancelBusy(true);
-    setCancelOutcome(null);
+  const submitControl = async (control: TaskControl, actionKey: string, idempotencyKey: string) => {
+    setConfirmControl(null);
+    setControlBusy(true);
+    setControlOutcome(null);
     try {
       const result = await client.submitAction({
         actionKey,
         idempotencyKey,
         originalActionExecutionId: actionExecutionId,
       });
-      setCancelOutcome({
+      setControlOutcome({
         kind: "submitted",
+        control,
         operationId: result.operationId,
         actionExecutionId: result.actionExecutionId,
       });
     } catch (error) {
-      setCancelOutcome({ kind: "failed", failure: writeFailure(error), actionKey, idempotencyKey });
+      setControlOutcome({ kind: "failed", control, failure: writeFailure(error), actionKey, idempotencyKey });
     } finally {
-      setCancelBusy(false);
+      setControlBusy(false);
       reload();
     }
   };
@@ -210,26 +224,36 @@ function TaskDetail({ actionExecutionId, onBack }: { actionExecutionId: string; 
   return (
     <div className="flex flex-col gap-3" data-testid="task-detail">
       <Toolbar onBack={onBack} onRefresh={reload} />
-      {cancelOutcome?.kind === "submitted" && originalAwaitingTerminal ? (
+      {controlOutcome?.kind === "submitted" &&
+      (controlOutcome.control === "rerun" || originalAwaitingTerminal) ? (
         <p role="status">
-          {t("tasks.cancelSubmitted", { operation: cancelOutcome.operationId })} {cancelOutcome.actionExecutionId}
+          {t(controlOutcome.control === "cancel" ? "tasks.cancelSubmitted" : "tasks.rerunSubmitted", {
+            operation: controlOutcome.operationId,
+          })}{" "}
+          <OpenLink onClick={() => onOpen(controlOutcome.actionExecutionId)}>
+            {controlOutcome.actionExecutionId}
+          </OpenLink>
         </p>
       ) : null}
-      {cancelOutcome?.kind === "failed" && cancelOutcome.failure.kind === "unknown" ? (
+      {controlOutcome?.kind === "failed" && controlOutcome.failure.kind === "unknown" ? (
         <div className="flex flex-col gap-2" role="alert">
-          <p>{t("tasks.cancelUnknown", { operation: cancelOutcome.failure.operationId ?? "—" })}</p>
+          <p>{t(controlOutcome.control === "cancel" ? "tasks.cancelUnknown" : "tasks.rerunUnknown", {
+            operation: controlOutcome.failure.operationId ?? "—",
+          })}</p>
           <Button
             className="w-fit"
-            disabled={cancelBusy}
-            onClick={() => void cancel(cancelOutcome.actionKey, cancelOutcome.idempotencyKey)}
+            disabled={controlBusy}
+            onClick={() => void submitControl(controlOutcome.control, controlOutcome.actionKey, controlOutcome.idempotencyKey)}
           >
             {t("tasks.cancelSendAgain")}
           </Button>
         </div>
       ) : null}
-      {cancelOutcome?.kind === "failed" && cancelOutcome.failure.kind === "rejected" ? (
+      {controlOutcome?.kind === "failed" && controlOutcome.failure.kind === "rejected" ? (
         <p className="text-destructive" role="alert">
-          {t("tasks.cancelRejected", { reason: failureText(cancelOutcome.failure) })}
+          {t(controlOutcome.control === "cancel" ? "tasks.cancelRejected" : "tasks.rerunRejected", {
+            reason: failureText(controlOutcome.failure),
+          })}
         </p>
       ) : null}
       <Resource state={state} reload={reload}>
@@ -254,16 +278,27 @@ function TaskDetail({ actionExecutionId, onBack }: { actionExecutionId: string; 
                   : undefined,
               ]}
             />
-            {confirmCancel && task.cancelActionKey ? (
+            {confirmControl === "cancel" && task.cancelActionKey ? (
               <Confirm
                 prompt={t("tasks.confirmCancel")}
-                onConfirm={() => void cancel(task.cancelActionKey!, newIdempotencyKey())}
-                onCancel={() => setConfirmCancel(false)}
+                onConfirm={() => void submitControl("cancel", task.cancelActionKey!, newIdempotencyKey())}
+                onCancel={() => setConfirmControl(null)}
               />
-            ) : task.cancelActionKey && !cancelBusy && cancelOutcome?.kind !== "submitted" &&
-              !(cancelOutcome?.kind === "failed" && cancelOutcome.failure.kind === "unknown") ? (
-              <Button className="w-fit" onClick={() => setConfirmCancel(true)}>
+            ) : task.cancelActionKey && !controlBusy && controlOutcome?.kind !== "submitted" &&
+              !(controlOutcome?.kind === "failed" && controlOutcome.failure.kind === "unknown") ? (
+              <Button className="w-fit" onClick={() => setConfirmControl("cancel")}>
                 {t("tasks.cancelRequest")}
+              </Button>
+            ) : null}
+            {confirmControl === "rerun" && task.rerunActionKey ? (
+              <Confirm
+                prompt={t("tasks.confirmRerun")}
+                onConfirm={() => void submitControl("rerun", task.rerunActionKey!, newIdempotencyKey())}
+                onCancel={() => setConfirmControl(null)}
+              />
+            ) : task.rerunActionKey && !controlBusy && !rerunHasIntent ? (
+              <Button className="w-fit" onClick={() => setConfirmControl("rerun")}>
+                {t("tasks.rerunRequest")}
               </Button>
             ) : null}
           </div>

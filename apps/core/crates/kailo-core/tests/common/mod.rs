@@ -854,7 +854,8 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
         "delete from identity.tenant where id = $1",
         "delete from identity.external_identity where human_identity_id = $2",
         "delete from identity.human_identity where id = $2",
-        "delete from identity.identity_provider where id = $3",
+        "delete from identity.identity_provider where id = $3
+             and not exists (select 1 from identity.external_identity where provider_id = $3)",
     ] {
         if let Err(err) = sqlx::query(sql)
             .bind(fx.tenant)

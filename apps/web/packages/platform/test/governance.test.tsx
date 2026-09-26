@@ -165,7 +165,7 @@ describe("TasksPage", () => {
     const { host, send } = mount((r) => {
       if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ workflowId: "workflow-1" })] };
       if (r.path === "/api/v1/tasks/ae1")
-        return { status: 200, body: task({ workflowId: "workflow-1", taskStatus: terminal ? TaskStatus.Canceled : TaskStatus.Running, cancelActionKey: terminal ? undefined : "task.cancel.workspace.create.v1" }) };
+        return { status: 200, body: task({ workflowId: "workflow-1", taskStatus: terminal ? TaskStatus.Canceled : TaskStatus.Running, cancelActionKey: terminal ? undefined : "task.cancel.workspace.create.v1", rerunActionKey: terminal ? "task.rerun.workspace.create.v1" : undefined }) };
       if (r.path === "/api/v1/actions")
         return { status: 202, body: { actionExecutionId: "cancel-ae", actionKey: "task.cancel.workspace.create.v1", operationId: "cancel-op", gateState: "ALLOWED", dispatchState: "NOT_DISPATCHED" } };
       throw new Error(`未预期 ${r.method} ${r.path}`);
@@ -189,6 +189,7 @@ describe("TasksPage", () => {
     await settle();
     expect(el.textContent).toContain("Canceled");
     expect(el.textContent).not.toContain("original task is not yet confirmed canceled");
+    expect(el.textContent).toContain("Run again");
   });
 
   it("取消提交结果不明时使用同一幂等键重发，不产生第二次意图", async () => {
@@ -216,6 +217,62 @@ describe("TasksPage", () => {
       (posts(send)[1]?.body as { idempotencyKey: string }).idempotencyKey,
     );
     expect(el.textContent).not.toContain("original task is canceled");
+  });
+
+  it("重跑只使用详情下发的控制键，独立审批在新任务里呈现", async () => {
+    const { host, send } = mount((r) => {
+      if (r.path === "/api/v1/tasks")
+        return { status: 200, body: [task({ taskStatus: TaskStatus.Failed, workflowId: "old-workflow" })] };
+      if (r.path === "/api/v1/tasks/ae1")
+        return {
+          status: 200,
+          body: task({
+            taskStatus: TaskStatus.Failed,
+            workflowId: "old-workflow",
+            rerunActionKey: "task.rerun.tenant.member.revoke.v1",
+          }),
+        };
+      if (r.path === "/api/v1/tasks/rerun-ae")
+        return {
+          status: 200,
+          body: task({
+            actionExecutionId: "rerun-ae",
+            actionKey: "task.rerun.tenant.member.revoke.v1",
+            gateState: ActionGateState.Waiting,
+            dispatchState: ActionDispatchState.NotDispatched,
+            approvalWorkflowId: WF,
+          }),
+        };
+      if (r.path === "/api/v1/actions")
+        return {
+          status: 202,
+          body: {
+            actionExecutionId: "rerun-ae",
+            actionKey: "task.rerun.tenant.member.revoke.v1",
+            operationId: "rerun-op",
+            gateState: "WAITING",
+            dispatchState: "NOT_DISPATCHED",
+          },
+        };
+      if (r.path === `/api/v1/approvals/${encodeURIComponent(WF)}`)
+        return { status: 200, body: approval({ actionExecutionId: "rerun-ae" }) };
+      throw new Error(`未预期 ${r.method} ${r.path}`);
+    }, <TasksPage />);
+    const el = await host;
+    await settle();
+    expect(el.textContent).not.toContain("Run again");
+    await click(button(el, "tenant.member.revoke"));
+    await click(button(el, "Run again"));
+    expect(posts(send)).toHaveLength(0);
+    await click(button(el, "Confirm"));
+    expect(posts(send)[0]?.body).toMatchObject({
+      actionKey: "task.rerun.tenant.member.revoke.v1",
+      originalActionExecutionId: "ae1",
+    });
+    expect(posts(send)[0]?.body).not.toHaveProperty("workflowId");
+    expect(el.textContent).toContain("new task for approval");
+    await click(button(el, "rerun-ae"));
+    expect(el.textContent).toContain("Waiting for approval");
   });
 });
 

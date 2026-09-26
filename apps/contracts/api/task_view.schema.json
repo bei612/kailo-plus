@@ -72,6 +72,10 @@
       "type": "string",
       "description": "仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入"
     },
+    "rerunActionKey": {
+      "type": "string",
+      "description": "仅任务详情且 Core 证明原 Workflow 已关闭、终态投影一致、原目标仍在收敛版本并完成本人和权限重查后提供；提交与派发时仍重新准入"
+    },
     "createdAt": {
       "type": "string",
       "description": "RFC3339，UTC"
