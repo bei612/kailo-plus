@@ -320,34 +320,70 @@ step_supply()   { hdr "7/10 secret、依赖、许可证与供应链"
        || git grep -hIE "^[+ ].*($secret)" -- 'upstream-patches/*/patches/*.patch' >/dev/null 2>&1; then
       fail "发现疑似凭据"; else pass "内置扫描无命中（未安装 gitleaks）"; fi
   fi
-  # 产物来源验证（ADR-06）：每个镜像 digest 必须同时有 SBOM 与 provenance，
-  # provenance 必须指向本仓库中真实存在的 commit。
+  # 产物来源验证（ADR-06）：同名文件不等于同一产物。核对 SBOM 单元、
+  # provenance 的 subject/digest/源码 commit，以及该 commit 的依赖锁摘要。
   if [ -d dist ] && [ -n "$(ls -A dist 2>/dev/null)" ]; then
     python3 - <<'PY' || FAIL=1
-import glob, json, os, re, subprocess, sys
+import glob, hashlib, json, os, re, subprocess, sys
 bad = []
 empty = [f for f in glob.glob("dist/*") if os.path.getsize(f) == 0]
 bad += [f"{f}: 0 字节产物" for f in empty]
-digests = {m.group(1) for f in glob.glob("dist/*")
-           if (m := re.search(r"\.([0-9a-f]{64})\.", f))}
-for dg in sorted(digests):
-    for kind in ("spdx.json", "provenance.json"):
-        if not glob.glob(f"dist/*.{dg}.{kind}"):
-            bad.append(f"{dg[:12]}: 缺 {kind}")
-for f in glob.glob("dist/*.provenance.json"):
-    if os.path.getsize(f) == 0:
+artifacts = glob.glob("dist/*.spdx.json") + glob.glob("dist/*.provenance.json")
+names = {os.path.basename(f) for f in artifacts}
+for name in sorted(names):
+    m = re.fullmatch(r"(core|worker)\.([0-9a-f]{64})\.(spdx|provenance)\.json", name)
+    if not m:
+        bad.append(f"{name}: 产物文件名不符合发布单元与 digest 规则")
         continue
-    d = json.load(open(f, encoding="utf-8"))
-    deps = d["predicate"]["buildDefinition"]["resolvedDependencies"]
-    commit = next((x["digest"]["gitCommit"] for x in deps if "gitCommit" in x.get("digest", {})), None)
-    if not commit:
-        bad.append(f"{os.path.basename(f)}: provenance 未记录源码 commit"); continue
-    if subprocess.run(["git", "cat-file", "-e", commit + "^{commit}"],
-                      capture_output=True).returncode != 0:
-        bad.append(f"{os.path.basename(f)}: commit {commit[:12]} 在本仓库中不存在")
+    unit, digest, kind = m.groups()
+    peer = f"{unit}.{digest}.{'provenance' if kind == 'spdx' else 'spdx'}.json"
+    if peer not in names:
+        bad.append(f"{name}: 缺对应 {peer}")
+    if os.path.getsize(f"dist/{name}") == 0:
+        continue
+    try:
+        with open(f"dist/{name}", encoding="utf-8") as source:
+            document = json.load(source)
+        if kind == "spdx":
+            if document.get("name") != f"kailo/{unit}" or document.get("spdxVersion") != "SPDX-2.3":
+                bad.append(f"{name}: SBOM 单元或 SPDX 版本不匹配")
+            continue
+        if document.get("subject") != [{"name": f"kailo/{unit}", "digest": {"sha256": digest}}]:
+            bad.append(f"{name}: provenance subject 与文件 digest 不匹配")
+        definition = document["predicate"]["buildDefinition"]
+        if (document.get("_type") != "https://in-toto.io/Statement/v1"
+                or document.get("predicateType") != "https://slsa.dev/provenance/v1"
+                or definition.get("buildType") != "https://kailo.local/docker-build/v1"
+                or definition.get("externalParameters") != {"dockerfile": f"{unit}/Dockerfile", "context": "apps/"}):
+            bad.append(f"{name}: provenance 构建形态不匹配")
+        dependencies = definition["resolvedDependencies"]
+        commit = next((x.get("digest", {}).get("gitCommit") for x in dependencies
+                       if x.get("digest", {}).get("gitCommit")), None)
+        lock_digest = next((x.get("digest", {}).get("sha256") for x in dependencies
+                            if x.get("name") == "dependency-locks"), None)
+        if not commit or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            bad.append(f"{name}: 源码 commit 缺失或非完整哈希")
+            continue
+        if subprocess.run(["git", "cat-file", "-e", commit + "^{commit}"],
+                          capture_output=True).returncode != 0:
+            bad.append(f"{name}: commit {commit[:12]} 在本仓库中不存在")
+            continue
+        paths = ("apps/core/Cargo.lock", "apps/mobile/pubspec.lock",
+                 "apps/pnpm-lock.yaml", "apps/worker/go.sum")
+        listed = subprocess.run(["git", "ls-tree", "-r", "--name-only", commit, "--", *paths],
+                                cwd="..", capture_output=True, text=True, check=True).stdout.splitlines()
+        blob_ids = [subprocess.run(["git", "rev-parse", f"{commit}:{path}"], cwd="..",
+                                   capture_output=True, text=True, check=True).stdout.strip()
+                    for path in listed]
+        actual_lock_digest = (hashlib.sha256("".join(blob + "\n" for blob in blob_ids).encode()).hexdigest()
+                              if blob_ids else "none")
+        if lock_digest != actual_lock_digest:
+            bad.append(f"{name}: 依赖锁摘要与源码 commit 不匹配")
+    except (KeyError, TypeError, ValueError, subprocess.CalledProcessError) as error:
+        bad.append(f"{name}: 产物元数据不可验证（{type(error).__name__}）")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
-print(f"  \033[32mPASS\033[0m {len(digests)} 个产物 digest：SBOM 与 provenance 齐备、commit 可解析")
+print(f"  \033[32mPASS\033[0m {len(names) // 2} 个产物 digest：SBOM、provenance、commit 与锁摘要一致")
 PY
   else
     skip "尚无构建产物（tools/release.sh 生成）"
