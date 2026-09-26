@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select b.normalized_host, i.private_key_secret_ref,\n                i.private_key_secret_version, i.private_key_secret_audience\n         from projection.tenant_buzz_binding b\n         join identity.buzz_identity_binding i\n           on i.tenant_id = b.tenant_id and i.principal_id = b.control_service_principal_id\n         where b.tenant_id = $1 and b.state = 'ACTIVE' and i.state = 'ACTIVE'\n           and i.custody = 'SERVER'",
+  "query": "select pubkey, private_key_secret_ref, private_key_secret_version,\n                private_key_secret_audience\n         from identity.buzz_identity_binding\n         where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN'\n           and custody = 'SERVER' and state = 'ACTIVE'",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "normalized_host",
+        "name": "pubkey",
         "type_info": "Text"
       },
       {
@@ -26,6 +26,7 @@
     ],
     "parameters": {
       "Left": [
+        "Uuid",
         "Uuid"
       ]
     },
@@ -36,5 +37,5 @@
       true
     ]
   },
-  "hash": "69f150d250477b32cee3eb4c8d542efad71fdeddaecd6d8e9313663641f1c40b"
+  "hash": "c0635fb0f7324e8ae4a82f1de270c00768a22a96bb68ed0f5a95096e5ce5746b"
 }

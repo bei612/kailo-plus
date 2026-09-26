@@ -20,6 +20,7 @@ use axum::{
 };
 use kailo_buzz::bridge::{IdentityClient, Presence, Scope};
 use kailo_buzz::operator::OperatorError;
+use kailo_secrets::SecretRef;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -57,7 +58,9 @@ pub async fn project_buzz_identity(
     };
 
     let binding = match sqlx::query!(
-        "select tenant_id, principal_id, state from identity.buzz_identity_binding
+        "select tenant_id, principal_id, state, custody, private_key_secret_ref,
+                private_key_secret_version, private_key_secret_audience
+         from identity.buzz_identity_binding
          where pubkey = $1 and version = $2 and kind = 'HUMAN'",
         req.pubkey,
         req.binding_version
@@ -72,6 +75,22 @@ pub async fn project_buzz_identity(
         }
         Err(e) => return unavailable(e),
     };
+
+    // CLIENT 私钥只在原生设备；SERVER 身份进入 roster 前必须证明钉住的 KV
+    // 版本仍可读，且读出的私钥确实派生为这条 binding 的 pubkey。
+    if binding.state == "RECONCILING" && binding.custody == "SERVER" {
+        let secret = SecretRef {
+            locator: binding.private_key_secret_ref.unwrap_or_default(),
+            version: binding.private_key_secret_version.unwrap_or_default() as u32,
+            audience: binding.private_key_secret_audience.unwrap_or_default(),
+        };
+        if let Err(e) =
+            crate::server_identity::read_bound_keys(&state.secrets, &secret, &req.pubkey).await
+        {
+            tracing::warn!(error = %e, pubkey = %req.pubkey, "SERVER 身份不可投入 roster");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    }
 
     let (control, _) = match control_client(&state, binding.tenant_id).await {
         Ok(c) => c,

@@ -12,7 +12,7 @@
 //! operator 私钥从受控投递面（挂载的文件）读入，写进 OpenBao 后只把返回的版本号
 //! 记成 SecretRef；私钥值不进数据库、不进日志（`DD-70`、`.design/03` §9）。
 
-use kailo_secrets::SecretStore;
+use kailo_secrets::{SecretRef, SecretStore};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -85,8 +85,10 @@ pub async fn ensure(
     .map_err(|e| format!("operator 私钥不可用: {e}"))?;
     let pubkey = delivered.pubkey_hex();
 
-    let existing = sqlx::query_scalar!(
-        "select pubkey from identity.relay_operator_identity
+    let existing = sqlx::query!(
+        "select pubkey, private_key_secret_ref, private_key_secret_version,
+                private_key_secret_audience
+         from identity.relay_operator_identity
          where catalog_tenant_id = $1 and state = 'ACTIVE'",
         tenant
     )
@@ -95,7 +97,17 @@ pub async fn ensure(
     .map_err(|e| format!("读 RelayOperatorIdentity 失败: {e}"))?;
     match existing {
         // 投递的就是在用的那把：引导已完成
-        Some(active) if active == pubkey => return Ok(tenant),
+        Some(active) if active.pubkey == pubkey => {
+            let reference = SecretRef {
+                locator: active.private_key_secret_ref,
+                version: active.private_key_secret_version.unwrap_or_default() as u32,
+                audience: active.private_key_secret_audience.unwrap_or_default(),
+            };
+            crate::server_identity::read_bound_keys(secrets, &reference, &pubkey)
+                .await
+                .map_err(|e| format!("在用的 RelayOperatorIdentity 私钥不可用: {e}"))?;
+            return Ok(tenant);
+        }
         // 投递了另一把：这是部署发起的轮换（`.design/09` 的 RelayOperatorIdentity
         // rotate 行），在引导路径上完成——operator key 本身就是部署引导材料。
         Some(active) => {
@@ -105,7 +117,7 @@ pub async fn ensure(
                 cfg,
                 http,
                 tenant,
-                &active,
+                &active.pubkey,
                 &delivered,
                 &secret_hex,
             )
@@ -125,6 +137,14 @@ pub async fn ensure(
         .write(&locator, "value", &secret_hex)
         .await
         .map_err(|e| format!("写 operator 私钥到 OpenBao 失败: {e}"))?;
+    let reference = SecretRef {
+        locator: locator.clone(),
+        version,
+        audience: cfg.secret_audience.clone(),
+    };
+    crate::server_identity::read_bound_keys(secrets, &reference, &pubkey)
+        .await
+        .map_err(|e| format!("新 RelayOperatorIdentity 私钥读回失败: {e}"))?;
 
     sqlx::query!(
         "insert into identity.relay_operator_identity
@@ -195,6 +215,14 @@ async fn rotate(
         .write(&locator, "value", secret_hex)
         .await
         .map_err(|e| format!("写 operator 私钥到 OpenBao 失败: {e}"))?;
+    let reference = SecretRef {
+        locator: locator.clone(),
+        version,
+        audience: cfg.secret_audience.clone(),
+    };
+    crate::server_identity::read_bound_keys(secrets, &reference, &pubkey)
+        .await
+        .map_err(|e| format!("轮换后的 RelayOperatorIdentity 私钥读回失败: {e}"))?;
 
     let mut tx = pool
         .begin()

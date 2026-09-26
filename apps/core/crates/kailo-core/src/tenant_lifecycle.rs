@@ -287,6 +287,36 @@ pub async fn verify_tenant_buzz(
 
     let digest = canonical_digest(&info);
 
+    // Community 已接受 owner pubkey 仍不足以证明 Core 持有对应私钥。CONTROL
+    // binding 与 Tenant binding 开放前，必须读回钉住的 KV 版本并核对公钥。
+    let control = match sqlx::query!(
+        "select pubkey, private_key_secret_ref, private_key_secret_version,
+                private_key_secret_audience
+         from identity.buzz_identity_binding
+         where tenant_id = $1 and principal_id = $2 and kind = 'CONTROL'
+           and custody = 'SERVER' and state in ('RECONCILING', 'ACTIVE')",
+        req.tenant_id,
+        binding.control_service_principal_id,
+    )
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Err(e) => return unavailable(e),
+    };
+    let control_ref = SecretRef {
+        locator: control.private_key_secret_ref.unwrap_or_default(),
+        version: control.private_key_secret_version.unwrap_or_default() as u32,
+        audience: control.private_key_secret_audience.unwrap_or_default(),
+    };
+    if let Err(e) =
+        crate::server_identity::read_bound_keys(&state.secrets, &control_ref, &control.pubkey).await
+    {
+        tracing::warn!(error = %e, "CONTROL 私钥不可用，Tenant binding 不开放");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
     if let Err(r) = crate::service_api::audit_gate(&state).await {
         return r;
     }
@@ -378,15 +408,17 @@ async fn load_operator(state: &ServiceState) -> Result<OperatorIdentity, Respons
         version: row.private_key_secret_version.unwrap_or_default() as u32,
         audience: row.private_key_secret_audience.unwrap_or_default(),
     };
-    let key = state.secrets.read(&secret, "value").await.map_err(|e| {
-        tracing::warn!(error = %e, "取 operator 私钥失败");
-        StatusCode::SERVICE_UNAVAILABLE.into_response()
-    })?;
+    let keys = crate::server_identity::read_bound_keys(&state.secrets, &secret, &row.pubkey)
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "取 operator 私钥失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        })?;
 
     // audience 两侧都来自同一条记录：构造时再比一次，是为了让「这把钥匙服务
     // 哪个部署」在取用点可见，而不是只在写入时校验过一次。
     OperatorIdentity::new(
-        key.expose(),
+        &keys.secret_key().to_secret_hex(),
         &row.relay_operator_api_origin,
         &row.audience,
         &row.audience,
@@ -406,7 +438,7 @@ pub async fn control_client(
     tenant_id: Uuid,
 ) -> Result<(IdentityClient, String), Response> {
     let row = sqlx::query!(
-        "select b.normalized_host, i.private_key_secret_ref,
+        "select b.normalized_host, i.pubkey, i.private_key_secret_ref,
                 i.private_key_secret_version, i.private_key_secret_audience
          from projection.tenant_buzz_binding b
          join identity.buzz_identity_binding i
@@ -425,13 +457,15 @@ pub async fn control_client(
         version: row.private_key_secret_version.unwrap_or_default() as u32,
         audience: row.private_key_secret_audience.unwrap_or_default(),
     };
-    let key = state.secrets.read(&secret, "value").await.map_err(|e| {
-        tracing::warn!(error = %e, "取 CONTROL 私钥失败");
-        StatusCode::SERVICE_UNAVAILABLE.into_response()
-    })?;
+    let keys = crate::server_identity::read_bound_keys(&state.secrets, &secret, &row.pubkey)
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "取 CONTROL 私钥失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        })?;
     let client = IdentityClient::new(
         Custody::Server,
-        key.expose(),
+        &keys.secret_key().to_secret_hex(),
         &state.relay_transport,
         &row.normalized_host,
     )

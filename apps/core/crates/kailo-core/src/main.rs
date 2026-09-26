@@ -25,6 +25,7 @@ mod role_reconcile;
 mod roles;
 mod roster_reconcile;
 mod scope_state;
+mod server_identity;
 mod server_keys;
 mod service_api;
 mod service_auth;

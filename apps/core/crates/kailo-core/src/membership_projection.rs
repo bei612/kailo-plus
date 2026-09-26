@@ -104,12 +104,18 @@ pub async fn project_buzz_roster(
 
     // 私钥只在这里出现，且只进 IdentityClient 的内存。SecretValue 不实现
     // Debug/Display，任何日志路径都拿不到它（DD-70）。
-    let key = match state.secrets.read(&plan.control_secret, "value").await {
+    let keys = match crate::server_identity::read_bound_keys(
+        &state.secrets,
+        &plan.control_secret,
+        &plan.control_pubkey,
+    )
+    .await
+    {
         Ok(v) => v,
-        Err(SecretError::AudienceMismatch) => {
+        Err(crate::server_identity::BoundKeyError::Secret(SecretError::AudienceMismatch)) => {
             return refusal_response(Refusal::Denied("CONTROL 密钥的 audience 与本服务不符"))
         }
-        Err(SecretError::VersionUnavailable) => {
+        Err(crate::server_identity::BoundKeyError::Secret(SecretError::VersionUnavailable)) => {
             return refusal_response(Refusal::Denied("CONTROL 密钥的指定版本不可读"))
         }
         Err(e) => {
@@ -120,7 +126,7 @@ pub async fn project_buzz_roster(
 
     let client = match IdentityClient::new(
         Custody::Server,
-        key.expose(),
+        &keys.secret_key().to_secret_hex(),
         &state.relay_transport,
         &plan.community_host,
     ) {
@@ -223,6 +229,7 @@ struct Plan {
     /// `None` 表示 relay 层 roster
     channel_id: Option<String>,
     target_pubkeys: Vec<String>,
+    control_pubkey: String,
     control_secret: SecretRef,
 }
 
@@ -286,7 +293,8 @@ async fn resolve(state: &ServiceState, req: &BuzzProjectionRequest) -> Result<Pl
     // CONTROL 身份：必须 SERVER 托管且 ACTIVE。CLIENT 托管说明私钥不在 Core
     // 手里，此时代签是走错了路径，必须当场失败而不是换个身份凑合（DD-75）。
     let control = sqlx::query!(
-        "select private_key_secret_ref, private_key_secret_version, private_key_secret_audience
+        "select pubkey, private_key_secret_ref, private_key_secret_version,
+                private_key_secret_audience
          from identity.buzz_identity_binding
          where tenant_id = $1 and principal_id = $2
            and kind = 'CONTROL' and custody = 'SERVER' and state = 'ACTIVE'",
@@ -349,6 +357,30 @@ async fn resolve(state: &ServiceState, req: &BuzzProjectionRequest) -> Result<Pl
     // 上**不**建——REVOKED 的身份不复活，重新授权走新 binding（.design/10 §4）。
     if req.presence == TargetPresence::Present {
         let server = ensure_human_identity(state, tenant_id, principal_id).await?;
+        let bound = sqlx::query!(
+            "select private_key_secret_ref, private_key_secret_version,
+                    private_key_secret_audience
+             from identity.buzz_identity_binding
+             where tenant_id = $1 and principal_id = $2 and pubkey = $3
+               and kind = 'HUMAN' and custody = 'SERVER'
+               and state in ('RECONCILING', 'ACTIVE')",
+            tenant_id,
+            principal_id,
+            server,
+        )
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(Blocked::Refused(Refusal::Denied(
+            "SERVER BuzzIdentityBinding 不可投入 roster",
+        )))?;
+        let secret = SecretRef {
+            locator: bound.private_key_secret_ref.unwrap_or_default(),
+            version: bound.private_key_secret_version.unwrap_or_default() as u32,
+            audience: bound.private_key_secret_audience.unwrap_or_default(),
+        };
+        crate::server_identity::read_bound_keys(&state.secrets, &secret, &server)
+            .await
+            .map_err(|e| Blocked::Unavailable(format!("SERVER 私钥不可用: {e}")))?;
         if !targets.contains(&server) {
             targets.push(server);
         }
@@ -382,6 +414,7 @@ async fn resolve(state: &ServiceState, req: &BuzzProjectionRequest) -> Result<Pl
         community_host: binding.normalized_host,
         channel_id,
         target_pubkeys: targets,
+        control_pubkey: control.pubkey,
         control_secret,
     })
 }

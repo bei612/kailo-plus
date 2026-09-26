@@ -109,3 +109,50 @@ Core 在首次平台 AppRole 登录成功后，把后续 audit 登录、audit de
 Docker 的停服信号是 SIGTERM。Core 增加该信号的优雅退出处理后，第二个镜像 manifest 为 `sha256:ef5f05b21f16ea367b2a0ccb5faaa760b91b3bae09b64221b1149645b1677411`。对运行中容器发送 SIGTERM 前，OpenBao audit 的 `auth/token/revoke-self` 记录数为 8；容器退出码 0 后记录数为 12，新增的两组 request/response 均无 error。随后 `start-core.sh` 重新投递一次性凭据并恢复 Core；同一镜像运行中，`/healthz` 返回 HTTP 200。SIGKILL、OpenBao 不可达和容器在撤销中途崩溃仍没有确认撤销的证据，只能依赖短 TTL 与审计对账。
 
 最终 `./tools/check.sh --full` 十组通过；其中实际迁移演练因本次未传隔离 `DATABASE_URL` 为 SKIP，独立隔离库实演证据见 `task-terminal-repair.md`。
+
+## SERVER Buzz 身份的钉版私钥与 pubkey 一致性（2026-09-26）
+
+权威为 `.design/02` 的 `DD-70/72/75/77`、`.design/03` §2 与 §9。此前 signer
+只证明 `SecretRef` 指定版本可读，没有证明该私钥属于 binding 登记的 pubkey：
+错误引用到另一条可读 KV 版本时，Core 会以另一身份代签。`read_bound_keys` 现在在
+Core signer 内读取精确版本、解析 Nostr 私钥并核对派生 pubkey；不匹配、版本不可读、
+audience 不符或私钥不可解析都拒绝，不回退 latest 或另一条身份。它只返回内存中的
+`nostr::Keys`，不新增 secret 数据权威、数据库列、API 字段或 Workflow kind。
+
+取用点覆盖 Web HUMAN 的消息查询/发布、媒体与订阅，Tenant CONTROL 的 roster
+投影及其他管理签名，以及部署级 operator 的 Community 创建签名。SERVER HUMAN
+在进入 roster 与 `ACTIVE` 前、CONTROL 在 Tenant binding 开放前、operator 在
+引导或轮换的身份行推进前，均对登记的 SecretRef 做同一查证。CLIENT 身份私钥在
+Desktop/Mobile 本机，不进入此 Core signer；已 `REVOKING` 的 SERVER binding
+仍不能被 Web 取用。失败归于 `apps/06` §4 的 `PRECONDITION`，当前服务/BFF
+路径返回 HTTP 503，不把失败伪装成成功或外部结果 `UNKNOWN`；已生效的旧
+binding 不在读取失败时自动改写状态，待 secret 修复后重新取用。
+
+GitNexus 索引为 `/volumes/kailo` 的 `c4d9e41`：`actor_keys` 报 `CRITICAL`，
+直接调用者是消息发布/查询、媒体上传/读取和订阅；`project_buzz_roster` 报
+`UNKNOWN`，源码 `service_api.rs` 的路由引用补齐了图谱未解析的调用边。
+变更只收紧这些入口的签名条件，不改变原生端路径。没有修改 `.references` 或旧
+K8S。
+
+真实本地拓扑的 `server_keys` 集成用例先将 ACTIVE HUMAN 的 SecretRef 暂时错指
+向同 Tenant CONTROL 的可读版本：BFF 发布得到 503；将同一 binding 调至
+`RECONCILING` 后，身份投影得到 503 且状态不变；恢复原 SecretRef 与状态后，
+Web 以 HUMAN 身份成功发布，后续原有 revoke→reprovision 链继续通过。该破坏
+对象是实际数据库 binding，不是 mock 的密钥解析；用例收尾清除临时 Workspace。
+
+构建前检查没有并行 Cargo/Go/前端构建；可用内存约 23 GiB。SQLx 查询快照在
+`MemoryMax=20G`、`CPUQuota=800%` 的 cgroup 中重生，`cargo sqlx prepare
+--workspace` 退出 0；以本地 Core 数据库执行 `cargo sqlx prepare --check
+--workspace` 再次退出 0；`server_keys` 编译与 1/1 真实集成通过。Core 本地镜像在
+受限 BuildKit 下构建并以一次性凭据恢复服务，运行镜像 manifest 为
+`sha256:0193a220e71d9f4b11c292d322b48237a0bf97bd3656f4d86615ca98e8e3e6d1`。
+`core/verify/run-integration.sh` 在 `MemoryMax=16G`、`CPUQuota=800%` 的
+cgroup 中退出 0；其中 Relay 故障演练和 Approval continue-as-new 仍由该套件
+标为 ignored，不能计入通过。随后 `./tools/check.sh --full` 在
+`MemoryMax=16G`、`CPUQuota=600%` 的 cgroup 中十组通过；因未提供隔离
+`DATABASE_URL`，本次实际迁移前进/回退演练为 SKIP，先前独立隔离库实演见
+`task-terminal-repair.md`。
+
+这项验证只闭合已启用 Buzz SERVER 身份的「指定版本可读且公钥匹配」条件，不是
+完整 SecretRef 生命周期：服务凭据的轮换顺序、旧版本销毁条件与其他组件消费端
+投递仍按 `apps/02` §4 单独验收。

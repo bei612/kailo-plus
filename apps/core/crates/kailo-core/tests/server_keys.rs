@@ -123,8 +123,9 @@ async fn run(
 ) {
     use futures_util::StreamExt;
 
-    let (old, locator, old_version): (String, String, i32) = sqlx::query_as(
-        "select pubkey, private_key_secret_ref, private_key_secret_version
+    let (old, locator, old_version, old_audience): (String, String, i32, String) = sqlx::query_as(
+        "select pubkey, private_key_secret_ref, private_key_secret_version,
+                private_key_secret_audience
          from identity.buzz_identity_binding
          where principal_id = $1 and custody = 'SERVER' and state = 'ACTIVE'",
     )
@@ -137,14 +138,85 @@ async fn run(
 
     // ---- 拒绝面 ----
     // CONTROL 不经此入口：GAP-BUZ-01
-    let (control, control_principal): (String, Uuid) = sqlx::query_as(
-        "select pubkey, principal_id from identity.buzz_identity_binding
+    let (control, control_principal, control_ref, control_version, control_audience): (
+        String,
+        Uuid,
+        String,
+        i32,
+        String,
+    ) = sqlx::query_as(
+        "select pubkey, principal_id, private_key_secret_ref,
+                private_key_secret_version, private_key_secret_audience
+         from identity.buzz_identity_binding
          where tenant_id = $1 and kind = 'CONTROL' and state = 'ACTIVE'",
     )
     .bind(fx.tenant)
     .fetch_one(pool)
     .await
     .expect("CONTROL binding");
+
+    // 一个 ACTIVE HUMAN binding 若错指向 CONTROL 私钥，BFF 绝不能以 CONTROL
+    // 身份替用户发布。错绑只改夹具行，恢复后再继续真实轮换链。
+    sqlx::query(
+        "update identity.buzz_identity_binding
+         set private_key_secret_ref = $2, private_key_secret_version = $3,
+             private_key_secret_audience = $4
+         where pubkey = $1",
+    )
+    .bind(&old)
+    .bind(&control_ref)
+    .bind(control_version)
+    .bind(&control_audience)
+    .execute(pool)
+    .await
+    .expect("注入错绑 SecretRef");
+    let (status, _) = bff_publish(http, e, fx, "wrong identity secret").await;
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+
+    // 同一错绑在 RECONCILING 时也不能把 pubkey 投入 roster 或宣布 ACTIVE。
+    let reconciling_version: i32 = sqlx::query_scalar(
+        "update identity.buzz_identity_binding
+         set state = 'RECONCILING', version = version + 1
+         where pubkey = $1 returning version",
+    )
+    .bind(&old)
+    .fetch_one(pool)
+    .await
+    .expect("注入待投影状态");
+    let (status, _) = call(
+        http,
+        e,
+        token,
+        "/service/v1/identity-projections/buzz",
+        serde_json::json!({ "pubkey": old, "bindingVersion": reconciling_version }),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        wait_binding(pool, &old, "RECONCILING", 0).await,
+        "RECONCILING"
+    );
+    sqlx::query(
+        "update identity.buzz_identity_binding
+         set state = 'ACTIVE', version = version + 1,
+             private_key_secret_ref = $2, private_key_secret_version = $3,
+             private_key_secret_audience = $4
+         where pubkey = $1",
+    )
+    .bind(&old)
+    .bind(&locator)
+    .bind(old_version)
+    .bind(&old_audience)
+    .execute(pool)
+    .await
+    .expect("恢复原 HUMAN SecretRef");
+    let (status, body) = bff_publish(http, e, fx, "after binding restore").await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "恢复后应能以 HUMAN 发言：{body}"
+    );
+
     let a = seed_action(pool, fx, control_principal).await;
     let (status, _) = call(
         http,

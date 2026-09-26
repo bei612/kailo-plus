@@ -537,7 +537,7 @@ pub async fn actor_keys(state: &BffState, ctx: &ExecutionContext) -> Result<nost
     // 那些私钥不在 Core 手里，也就不在这里的候选之内。每人至多一条非 REVOKED
     // 的 SERVER binding，由库里的部分唯一索引保证。
     let row = sqlx::query!(
-        "select private_key_secret_ref, private_key_secret_version,
+        "select pubkey, private_key_secret_ref, private_key_secret_version,
                 private_key_secret_audience
          from identity.buzz_identity_binding
          where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN'
@@ -561,13 +561,10 @@ pub async fn actor_keys(state: &BffState, ctx: &ExecutionContext) -> Result<nost
         version: row.private_key_secret_version.unwrap_or_default() as u32,
         audience: row.private_key_secret_audience.unwrap_or_default(),
     };
-    let key = state.secrets.read(&secret, "value").await.map_err(|e| {
-        tracing::warn!(error = %e, "取 HUMAN 私钥失败");
-        StatusCode::SERVICE_UNAVAILABLE.into_response()
-    })?;
-
-    nostr::Keys::parse(key.expose()).map_err(|_| {
-        tracing::warn!(principal = %ctx.tenant_principal_id, "HUMAN 私钥不可解析");
+    crate::server_identity::read_bound_keys(&state.secrets, &secret, &row.pubkey)
+        .await
+        .map_err(|e| {
+        tracing::warn!(error = %e, principal = %ctx.tenant_principal_id, "HUMAN 私钥不匹配或不可用");
         StatusCode::SERVICE_UNAVAILABLE.into_response()
     })
 }
