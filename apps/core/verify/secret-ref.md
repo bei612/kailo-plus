@@ -267,3 +267,30 @@ schema 迁移）。
 本刀只防止已启用 HUMAN/operator 的新写入在同一路径触发自动淘汰；没有执行
 operator 再轮换的真实动态演练，也没有实现旧版本销毁、孤儿路径收敛、服务
 凭据轮换顺序或未来组件消费端投递。故不把 Stage 2 SecretRef 生命周期标记完成。
+
+## operator 独立 KV locator 的动态轮换（2026-09-26）
+
+权威为 `DD-70`、`SS-BUZ-OPERATOR`、`.design/03` §9 与 `.design/09` 的
+`RelayOperatorIdentity rotate`。在起点提交
+`51948ecb053b6bb74bb40a58d02af07a94c9b199` 的本地 Compose 拓扑中，
+`drill-operator-rotation.sh` 将旧 `152b75… v2 kv2` 切换为新
+`d68c53… v3 kv1`，两个 SecretRef locator 不同。Relay 仍加载旧 allow-list
+时故意启动 Core：operator 只读探针得到 403，Core 退出，数据库仍是旧行。
+新旧公钥并列进入 Relay 后，Core 经 `start-core.sh` 现取一次性引导凭据启动，
+日志记录 `RelayOperatorIdentity 已轮换`；数据库新行 `ACTIVE`，审计
+`relay_operator.rotate=ROTATED`（2026-09-26 20:31:12 UTC）。
+
+窗口内对两把私钥运行 `operator_probe`，均返回 `ACCEPTED`；新 key 上的
+`cargo test -q -p kailo-core --test scope_lifecycle tenant_and_workspace`
+通过 1/1。随后将旧公钥先移为 `.closing` 而不销毁，重新派生配置并仅重建
+本地 Relay；`/_readiness` 与 BFF `/healthz` 均为 HTTP 200，派生 allow-list
+不含旧 pubkey，实际探针分别为 `ACCEPTED d68c53…` 与
+`REJECTED 403 152b75…`。确定两项结果后删除本地退役公钥与私钥文件，
+没有触碰旧 OpenBao KV 路径；旧 KV 仍须按 `.design/03` §9 的终态证据处理。
+
+演练脚本首次运行在轮换已成功后退出 1：它只扫描 Core 日志最后五行的
+`listening`，而启动后的其他日志将该行挤出窗口；当时 Core `/healthz` 已为
+200。脚本改为等待 BFF 健康端点，并把关闭窗口后的旧 key 断言修正为
+实际输出 `REJECTED 403 <pubkey>`，不再把脚本误报记成 Core 失败。
+这次真实链只闭合 operator 的新 locator、Relay 重叠与撤旧验收；
+旧版本销毁、孤儿 KV 路径收敛、其他组件消费端投递与服务凭据轮换顺序仍未闭合。
