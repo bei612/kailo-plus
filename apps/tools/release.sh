@@ -30,7 +30,9 @@ die()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; exit 1; }
 COMMIT=$(git rev-parse HEAD)
 BUILD_CONTEXT=$(mktemp -d)
 trap 'rm -r -- "$BUILD_CONTEXT"' EXIT
-git archive --format=tar "$COMMIT:apps" .dockerignore core worker | tar -xf - -C "$BUILD_CONTEXT" \
+# 从仓库根执行 archive；若从 apps/ 子目录执行，Git 会再附加 apps/ 前缀，
+# 对 HEAD:apps 内的相对路径产生不存在的 pathspec。
+git -C .. archive --format=tar "$COMMIT:apps" .dockerignore core worker | tar -xf - -C "$BUILD_CONTEXT" \
   || die "无法从固定 commit 导出构建上下文"
 
 mkdir -p "$OUT"
