@@ -186,3 +186,40 @@ GitNexus `kailo-plus` 索引固定 `ebb9da387d68031d687c006dc512a8f3ff278e41`，
 没有制造双 Core 抢注的端到端竞态；因此不把并发分支标作已动态演练。KV 写入成功
 但数据库登记失败仍会留下未被绑定的版本，本改动只消除“冲突后误报启动成功”，
 不冒充完整 SecretRef 生命周期。
+
+## operator 启动时的 Relay 准入与部署配置查证（2026-09-26）
+
+依据 `SS-BUZ-OPERATOR`、`DD-70/72` 与 `.design/03` §2：Catalog Tenant 的
+`RelayOperatorIdentity` 必须对应当前部署的 audience/origin，且 Relay 此刻接受
+该公钥。此前同公钥冷启动只查定版私钥，未对 Relay 的 allow-list 做只读探针；
+首次登记在探针前就会写 OpenBao。`platform_bootstrap::ensure` 现在对已有身份先
+比较库中 audience/origin 与部署投递，对同公钥验证定版私钥后调用上游 operator
+只读 availability 探针；轮换沿用原有写前探针；首次登记也在写 KV 之前调用探针。
+并发登记后的 ACTIVE 回读额外比较 audience/origin。探针拒绝或传输结果不明时
+Core 不进入 serving，不把它当成「已接受」；首次登记的该失败路径不写新 KV 版本。
+Relay 后续变更 allow-list 仍由实际 operator 请求拒绝，启动探针不代替调用时校验。
+
+GitNexus 仓库为 `kailo-plus`、工作树 `/volumes/kailo`、索引
+`77f1f61e657896ba68b4486402b4237253890db4`；`ensure` 的 upstream impact 为
+`LOW`，直接调用者仅 Core `main`，但它位于服务启动的认证前置链，按安全关键路径
+复核。实现不改 schema、API、Workflow、三端或上游补丁；旧数据库行不迁移，
+配置不匹配的旧行会明确阻止 Core 启动，由部署核对原始身份事实。
+
+资源检查时无并行编译、可用内存约 26 GiB、系统盘可用约 49 GiB；Core 镜像在
+24 GiB/10 CPU 的 `kailo-core-limited-20260925` BuildKit 中构建，外层为
+`MemoryMax=2G`、`CPUQuota=200%`。新镜像 manifest 是
+`sha256:937c7ed2f5ec478ca4d8a7475a1751339b25f1e91bd55399b5a4317e8fbe9695`；
+一次性凭据重新投递后 `core-bff` 运行，`/healthz` 为 HTTP 200。当前 operator
+公钥的只读探针返回 `ACCEPTED`，以本地非 operator 的 Relay key 调同一探针返回
+`REJECTED 403`。此处故意更换探针的签名对象，确认拒绝面真实生效，未改动 Relay
+allow-list 或旧 K8S。新镜像上的真实 `scope_lifecycle::
+tenant_and_workspace_lifecycle_converge` 通过 1/1，Tenant 建立得到 Community，
+Workspace 建立得到 Channel；该用例按既有 teardown 清理夹具。
+
+`./tools/check.sh --full` 在 16 GiB/600% cgroup 中十组通过；没有隔离
+`DATABASE_URL`，当次实际迁移前进/回退为 SKIP。在线 `cargo sqlx prepare --workspace`
+清理一份不再使用的旧查询快照，随后 `cargo sqlx prepare --check --workspace` 退出 0。
+这次没有直接演练「当前 ACTIVE key 被撤出 allow-list 后重启 Core」或双 Core 抢注；
+已证明的是同一探针的接受/拒绝、现有身份正常冷启动与真实建 Tenant 链，不将其
+扩大表述为所有并发或 Relay 重配置场景均通过。完整 SecretRef 轮换与旧版本销毁
+仍是独立 Stage 2 门禁。

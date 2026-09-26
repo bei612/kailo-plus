@@ -87,7 +87,7 @@ pub async fn ensure(
 
     let existing = sqlx::query!(
         "select pubkey, private_key_secret_ref, private_key_secret_version,
-                private_key_secret_audience
+                private_key_secret_audience, audience, relay_operator_api_origin
          from identity.relay_operator_identity
          where catalog_tenant_id = $1 and state = 'ACTIVE'",
         tenant
@@ -95,9 +95,15 @@ pub async fn ensure(
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("读 RelayOperatorIdentity 失败: {e}"))?;
-    match existing {
-        // 投递的就是在用的那把：引导已完成
-        Some(active) if active.pubkey == pubkey => {
+    if let Some(active) = existing {
+        if active.audience != cfg.operator_audience
+            || active.relay_operator_api_origin != cfg.operator_api_origin
+        {
+            return Err("在用的 RelayOperatorIdentity 与部署 audience/origin 不一致".to_owned());
+        }
+
+        // 投递的就是在用的那把：私钥和 Relay 当前准入仍须重新查证。
+        if active.pubkey == pubkey {
             let reference = SecretRef {
                 locator: active.private_key_secret_ref,
                 version: active.private_key_secret_version.unwrap_or_default() as u32,
@@ -106,26 +112,35 @@ pub async fn ensure(
             crate::server_identity::read_bound_keys(secrets, &reference, &pubkey)
                 .await
                 .map_err(|e| format!("在用的 RelayOperatorIdentity 私钥不可用: {e}"))?;
+            delivered
+                .probe(http)
+                .await
+                .map_err(|e| format!("在用的 RelayOperatorIdentity 未被 Relay 接受: {e}"))?;
             return Ok(tenant);
         }
+
         // 投递了另一把：这是部署发起的轮换（`.design/09` 的 RelayOperatorIdentity
         // rotate 行），在引导路径上完成——operator key 本身就是部署引导材料。
-        Some(active) => {
-            rotate(
-                pool,
-                secrets,
-                cfg,
-                http,
-                tenant,
-                &active.pubkey,
-                &delivered,
-                &secret_hex,
-            )
-            .await?;
-            return Ok(tenant);
-        }
-        None => {}
+        rotate(
+            pool,
+            secrets,
+            cfg,
+            http,
+            tenant,
+            &active.pubkey,
+            &delivered,
+            &secret_hex,
+        )
+        .await?;
+        return Ok(tenant);
     }
+
+    // 首次登记前先查证 Relay 的实际 allow-list；拒绝或响应不明时既不写 KV，
+    // 也不建立看似 ACTIVE 却无法创建 Community 的身份。
+    delivered
+        .probe(http)
+        .await
+        .map_err(|e| format!("首次投递的 RelayOperatorIdentity 未被 Relay 接受: {e}"))?;
 
     // 私钥只在这一段内存里出现，随后被写进 OpenBao；落库的只有 locator、
     // 版本与 audience。
@@ -169,7 +184,7 @@ pub async fn ensure(
     // 不同公钥或不可读的定版私钥都拒绝进入 serving 状态。
     let active = sqlx::query!(
         "select pubkey, private_key_secret_ref, private_key_secret_version,
-                private_key_secret_audience
+                private_key_secret_audience, audience, relay_operator_api_origin
          from identity.relay_operator_identity
          where catalog_tenant_id = $1 and state = 'ACTIVE'",
         tenant
@@ -183,6 +198,11 @@ pub async fn ensure(
             "RelayOperatorIdentity 并发登记了另一把公钥 {}，投递公钥 {pubkey} 未生效",
             active.pubkey
         ));
+    }
+    if active.audience != cfg.operator_audience
+        || active.relay_operator_api_origin != cfg.operator_api_origin
+    {
+        return Err("生效的 RelayOperatorIdentity 与部署 audience/origin 不一致".to_owned());
     }
     let active_ref = SecretRef {
         locator: active.private_key_secret_ref,
