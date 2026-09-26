@@ -31,6 +31,8 @@
 
 同版 `./tools/check.sh --full` 十组通过；其中实际数据库迁移前进／回退因未给隔离 `DATABASE_URL` 明确跳过，配对回退脚本检查通过。受限 cgroup 的 `core/verify/run-integration.sh` 首轮在旧有 `scope_lifecycle` 夹具中失败：夹具把已派发且 `dispatch_state=UNKNOWN` 的动作直接改为 `gate_state=REVOKED`，违反从初始迁移起存在的 `dispatch_requires_allowed` 约束。修正夹具后，未派发的独立控制动作撤权得到 `FORBIDDEN`，已派发动作仍验证同键幂等；定向 1/1 通过。完整真实集成套件第二轮退出码 0，覆盖 Core、Worker、OpenBao、Buzz、SpiceDB 与 Temporal；明确标记为 ignored 的故障演练没有冒充已运行。
 
+2026-09-26 后续补验：在本地 PostgreSQL 新建 `kailo_verify_gate_20260926_01` 隔离库，先确认库名不存在且不等于业务库 `kailo_core`；对隔离库应用全部 20 个迁移后，把仅指向该库的 `DATABASE_URL` 传入 `./tools/check.sh --full`。整套门禁退出码 0；第 4 组实际执行前进、回退、再前进并通过，33 个命名约束与 `contracts/enums/` 逐值相等。命令在 `MemoryMax=16G`、`CPUQuota=500%` 的 cgroup 内执行，结束陷阱删除该隔离库；事后查询确认临时库数量为 0，业务库 `kailo_core` 仍可连接。此次只证明当前迁移序列在空白隔离库上的全量前进和最新一步的回退、再前进，不把它当作已在生产数据或所有历史版本上演练回退。
+
 ## 尚未闭合的范围
 
 Temporal history 已过保留期的完整投影不能再从上游反向验真，仍以 Core 保存的派生事实保留，不把无法获得的历史伪装为新观察。`observation_gap=true` 继续使任务页显示 `PROJECTION_DELAYED`。周期核查的吞吐上界由 `WORKFLOW_RECONCILE_BATCH` 与轮转间隔限制，生产规模下的积压与时延尚无容量实测；本项不宣称整个 Stage 2 退出门禁完成。
