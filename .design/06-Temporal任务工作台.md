@@ -192,7 +192,7 @@ TaskProjection 字段以 `03` 为权威，最小包含 Tenant/Workspace、workfl
 
 Web 只提供 `signal/update/cancel/rerun`。所有命令是 Governed Action 并 fresh Check；`rerun` 创建新 ActionExecution/Workflow，不改写旧 history。普通用户不进 temporal-ui。
 
-一期任务取消与重跑只对已登记专属控制 ActionDefinition 的原动作开放（DD-84）。请求只给原 ActionExecution ID，BFF 不接受客户端自报 Workflow ID；控制 ActionExecution 的 target 是原动作 ID，原 target 与执行 scope 由 Core 读取原动作确定。取消在派发前重查本人身份、原权限、WorkflowRef 与 Temporal 运行事实，向固定原 Workflow ID 发送 `RequestCancelWorkflowExecution`；RPC 成功只记请求已接受，不显示已取消，响应不明进入 UNKNOWN 并对账。重跑在派发前重新核对原动作的审批要求、Temporal 关闭事实与终态投影、目标版本及收敛状态，新批准和新 Workflow 均属于新控制动作。控制可用性由 BFF 从当前权威事实给出，客户端隐藏按钮不能代替提交时的重新准入；Mobile 保持只读（REQ-21）。
+一期任务取消与重跑只对已登记专属控制 ActionDefinition 的原动作开放（DD-84）。请求只给原 ActionExecution ID，BFF 不接受客户端自报 Workflow ID；控制 ActionExecution 的 target 是原动作 ID，原 target 与执行 scope 由 Core 读取原动作确定。取消在派发前重查本人身份、原权限、WorkflowRef 与 Temporal 运行事实；向固定原 Workflow ID 发送 `RequestCancelWorkflowExecution` 前先冻结首次 run ID 与 UNKNOWN 意图。RPC 成功也会是目标已结束或已有取消请求的 no-op；只有沿固定执行链在 history 中查到匹配控制 ID 的取消事件，才能把控制动作记为请求已记录，且不得显示原任务已取消。缺事件、查询失败或响应不明均不能证明请求未发出，保持 UNKNOWN。原执行仍 OPEN 且首次 run ID 未变时才以同一控制 ID 重试；原执行已关闭而无肯定证据时保持 UNKNOWN 并按 RB-07 告警。重跑在派发前重新核对原动作的审批要求、Temporal 关闭事实与终态投影、目标版本及收敛状态，新批准和新 Workflow 均属于新控制动作。控制可用性由 BFF 从当前权威事实给出，客户端隐藏按钮不能代替提交时的重新准入；Mobile 保持只读（REQ-21）。
 
 任务列表、审批箱、详情、waiting reason、状态、错误、进度、用量与控制确认都是 `BUZZ_NATIVE` surface：主题实时继承 Buzz ThemeProvider/CSS variables；状态码、reason code 和错误分类以参数进入 Buzz `MessageKey/t`，不直接把 Temporal/组件英文错误当界面文案。Tenant/Workspace、权限和结果暴露仍由 BFF 决定，主题/i18n 不改变工作流状态（REQ-08、SF-WEB-03、DD-36）。
 
