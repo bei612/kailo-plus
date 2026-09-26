@@ -314,19 +314,27 @@ async fn run(
     );
 
     // CONTROL 身份：SERVER 托管、三列 SecretRef 俱全、已 ACTIVE
-    let control = sqlx::query_as::<_, (String, String, Option<i32>, Option<String>)>(
-        "select custody, state, private_key_secret_version, private_key_secret_audience
+    let control =
+        sqlx::query_as::<_, (String, String, Option<i32>, Option<String>, String, String)>(
+            "select custody, state, private_key_secret_version, private_key_secret_audience,
+                pubkey, private_key_secret_ref
          from identity.buzz_identity_binding where tenant_id = $1 and kind = 'CONTROL'",
-    )
-    .bind(tenant)
-    .fetch_one(pool)
-    .await
-    .expect("CONTROL binding 应存在");
+        )
+        .bind(tenant)
+        .fetch_one(pool)
+        .await
+        .expect("CONTROL binding 应存在");
     assert_eq!(control.0, "SERVER");
     assert_eq!(control.1, "ACTIVE");
     assert!(
         control.2.is_some() && control.3.is_some(),
         "SecretRef 三元组必须齐备"
+    );
+    assert!(
+        control
+            .5
+            .ends_with(&format!("/buzz-control/{tenant}/{}", control.4)),
+        "CONTROL 每把公钥必须独占 KV 路径"
     );
 
     // ---- WORKSPACE_LIFECYCLE ----

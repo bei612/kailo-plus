@@ -108,7 +108,13 @@ pub async fn provision_tenant_buzz(
     let (control_principal, control_pubkey) = match control_principal {
         Some(principal) => {
             let keys = Keys::generate();
-            let locator = format!("{}/buzz-control/{}", state.secret_mount, req.tenant_id);
+            let pubkey = keys.public_key().to_hex();
+            // 首次建 Tenant 的投影可重试；每把新 key 独占路径，避免重试写入同一
+            // KV 路径时由 max_versions 淘汰仍需保留的旧 generation。
+            let locator = format!(
+                "{}/buzz-control/{}/{}",
+                state.secret_mount, req.tenant_id, pubkey
+            );
             let version = match state
                 .secrets
                 .write(&locator, "value", &keys.secret_key().to_secret_hex())
@@ -120,7 +126,6 @@ pub async fn provision_tenant_buzz(
                     return StatusCode::SERVICE_UNAVAILABLE.into_response();
                 }
             };
-            let pubkey = keys.public_key().to_hex();
             if let Err(e) = sqlx::query!(
                 "insert into identity.buzz_identity_binding
                      (tenant_id, principal_id, pubkey, custody, private_key_secret_ref,

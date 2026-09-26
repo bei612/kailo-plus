@@ -294,3 +294,36 @@ operator 再轮换的真实动态演练，也没有实现旧版本销毁、孤�
 实际输出 `REJECTED 403 <pubkey>`，不再把脚本误报记成 Core 失败。
 这次真实链只闭合 operator 的新 locator、Relay 重叠与撤旧验收；
 旧版本销毁、孤儿 KV 路径收敛、其他组件消费端投递与服务凭据轮换顺序仍未闭合。
+
+## Tenant CONTROL 新密钥的 KV 路径隔离（2026-09-26）
+
+权威为 `DD-70/72` 与 `.design/03` §9。OpenBao 固定基线的
+`KeyMetadata.AddVersion` 对同一路径执行 `max_versions` 淘汰；此前
+`tenant_lifecycle::provision_tenant_buzz` 每次生成新 CONTROL 公私钥，却总写入
+`buzz-control/<tenant>`。Tenant 投影重试会在同一路径累加版本，与旧 generation
+仍需保持可读的合同冲突。现将新写入路径固定为
+`buzz-control/<tenant>/<新公钥>`，保留 OpenBao 返回的 version 与原 audience；
+读取仍使用 binding 中的 locator/version/audience。已有 CONTROL 行不迁移，
+没有 schema、API、Workflow、三端或上游补丁变化。此变更只阻止新的 CONTROL
+写入因共用路径触发自动淘汰，不解决写 KV 后落库失败留下的孤儿路径。
+
+GitNexus 对 `provision_tenant_buzz` 的调用影响报告为 `UNKNOWN`、零可解析调用者；
+源码检索确认 `service_api.rs` 将其注册为 Tenant 建立的服务路由，真实
+`scope_lifecycle` 用例调用该路由。图谱零调用者不被当作无影响的证据。构建前
+无并发编译、可用内存约 26 GiB，系统盘可用 42 GiB；Core 在 24 GiB/10 CPU
+的 `kailo-core-limited-20260925` BuildKit 内编译，外层受
+`MemoryMax=16G`、`CPUQuota=600%` 约束。新镜像 manifest 为
+`sha256:b3c3cc438165c70ce3251a589fcc96a47bfc16e2541551a4b3d1d8fd6f649083`；
+`start-core.sh` 重新投递一次性引导凭据后，本地 `kailo-local` 的 BFF
+`/healthz` 返回成功。
+
+检查在实现后增加。部署旧 Core 时，受限 cgroup 内运行
+`cargo test -q -p kailo-core --test scope_lifecycle tenant_and_workspace_lifecycle_converge`
+退出 101，断言明确报出 `CONTROL 每把公钥必须独占 KV 路径`，夹具清理完成；
+切换新 Core 后同一真实用例 1/1 通过。随后
+`core/verify/run-integration.sh` 在 16 GiB/600% cgroup 下退出 0：
+Core/Worker 全套集成通过，包含 `scope_lifecycle` 2/2、Web 传输 8/8、
+ServerKey、角色、邀请、Governed Action 与 Workflow 对账；两项需停启共享服务
+的专门演练按测试声明保持 ignored。此次没有验证 CONTROL key 的轮换或销毁：
+它们仍受 `GAP-BUZ-01` 阻断。孤儿 KV 路径、旧版本终态处置与其他消费端投递
+仍是 Stage 2 SecretRef 生命周期缺口。
