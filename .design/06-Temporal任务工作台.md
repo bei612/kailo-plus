@@ -62,7 +62,7 @@ Workflow 运行中不得换 Tenant、Workspace、Resource、binding kind/ID/gene
 
 Temporal 不向 Core 推送状态，Nexus 又按 DD-10 排除，因此投影必须由 Workflow 自己写回：每个 Workflow 在每次对外可见的状态跃迁与终结前调用 `ProjectTaskState` Activity，把 `(workflow_id, run_id, event_id, status, waiting_reason, progress, refs…)` 幂等 upsert 进 Core，按 `event_id` 单调去重；该 Activity 的重试策略把 4xx 类错误列入 `NonRetryableErrorTypes`。Workflow 未完成最后一次投影即不视为 terminal。
 
-Core 另有一个按 `KailoTenantId` 的 `ListWorkflowExecutions` 对账作业修补漏写，它是兜底而非主路径；工作台因此有确定的新鲜度上界，投影落后时显示 `PROJECTION_DELAYED` 而不是伪造完成。
+Core 以已预写的 WorkflowRef 为有界轮转清单，按每条引用的固定 workflow ID 调 Describe/History 修补漏写的 TaskProjection；这是兜底而非主路径（SF-TMP-07、DD-48）。普通任务不得以 `ListWorkflowExecutions` 的空结果证明 Workflow 未启动：该 API 读取 Visibility，而 Describe 读取 History（SF-TMP-12）。工作台以最近一次权威观测判断投影是否落后；观测超时或缺失时显示 `PROJECTION_DELAYED`，不得伪造完成。未预写 WorkflowRef 的 Schedule run 按下文的单独合同回填。
 
 Core 在 Temporal Start 前持久化唯一 WorkflowRef 与固定 workflow ID。workflow ID 一律取 `kailo:<kind>:<tenant_id>:<primary_entity_id>:<entity_version>`，使"不分配第二个业务 workflow ID"可被机械校验。
 
