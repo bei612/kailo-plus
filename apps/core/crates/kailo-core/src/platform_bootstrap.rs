@@ -144,10 +144,7 @@ pub async fn ensure(
 
     // 私钥只在这一段内存里出现，随后被写进 OpenBao；落库的只有 locator、
     // 版本与 audience。
-    let locator = format!(
-        "{}/relay-operator/{}",
-        cfg.secret_mount, cfg.operator_audience
-    );
+    let locator = operator_locator(cfg, &pubkey);
     let version = secrets
         .write(&locator, "value", &secret_hex)
         .await
@@ -236,7 +233,7 @@ pub async fn ensure(
 ///    里写审计。CAS 不中说明另一个 Core 实例已经切过：不覆盖它。
 ///
 /// operator key 只签 operator 面的 NIP-98、不产生 Buzz event，没有需要保留的
-/// roster 或历史 binding；旧 KV 版本留在 OpenBao 里，由运维按 RB-02 处置。
+/// roster 或历史 binding；旧 KV 路径留在 OpenBao 里，由运维按 RB-02 处置。
 #[allow(clippy::too_many_arguments)]
 async fn rotate(
     pool: &PgPool,
@@ -256,10 +253,7 @@ async fn rotate(
         )
     })?;
 
-    let locator = format!(
-        "{}/relay-operator/{}",
-        cfg.secret_mount, cfg.operator_audience
-    );
+    let locator = operator_locator(cfg, &pubkey);
     let version = secrets
         .write(&locator, "value", secret_hex)
         .await
@@ -339,4 +333,15 @@ async fn rotate(
         "RelayOperatorIdentity 已轮换"
     );
     Ok(())
+}
+
+/// 每次投递占用独立 KV 路径；即使部署日后轮换回同一公钥，OpenBao 的
+/// max_versions 也不会在写入时自动淘汰仍被旧执行钉住的版本。
+fn operator_locator(cfg: &BootstrapConfig, pubkey: &str) -> String {
+    format!(
+        "{}/relay-operator/{}/{pubkey}/{}",
+        cfg.secret_mount,
+        cfg.operator_audience,
+        Uuid::new_v4()
+    )
 }

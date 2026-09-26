@@ -8,8 +8,8 @@
 //!    已建立的 BFF 流在再准入周期内关闭（`stream`）。随后 Workflow 把该 pubkey 移出
 //!    relay 与全部 Channel roster，查证后 `REVOKED`。旧 binding 留作历史，审计据它
 //!    解析已发布的 event。
-//! 2. **重建**：此人没有非 `REVOKED` 的 SERVER binding 时，生成新私钥写入同一
-//!    locator 的新 KV 版本，建新 binding（`RECONCILING`），Workflow 投入 relay 与此人
+//! 2. **重建**：此人没有非 `REVOKED` 的 SERVER binding 时，生成新私钥写入独立
+//!    locator 的 KV 版本，建新 binding（`RECONCILING`），Workflow 投入 relay 与此人
 //!    全部 ACTIVE Channel 后 `ACTIVE`——「重开」。
 //!
 //! 先撤后建不是偏好：每人至多一条非 `REVOKED` 的 SERVER binding（`DD-77`，库里的
@@ -210,7 +210,8 @@ pub async fn provision_server_key(
         Err(r) => return r,
     };
 
-    // 新私钥写同一 locator 的新 KV 版本，旧版本留给审计解析已发布的 event。
+    // 新私钥写独立 locator 的 KV 版本；旧 binding 的 pubkey 留给已发布 event 的
+    // 作者归因，旧私钥按 SecretRef 生命周期另行处置。
     // 这一步是外部副作用，不在事务里；它幂等——已有非 REVOKED binding 即返回它。
     let pubkey = match ensure_human_identity(&state, tenant_id, req.principal_id).await {
         Ok(p) => p,

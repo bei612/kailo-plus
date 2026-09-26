@@ -60,16 +60,16 @@ root token 调用的写法见 `deploy/local/openbao-init.sh` 的 `run_bao`：令
 
 1. 记录准入：与 RB-01 第 7.2 步同一条语句，`target_id` 是该身份的 Principal，`action_key` 分别为 `identity.key_revoke` 与 `identity.key_provision`，每个动作一条 ActionExecution。
 2. revoke：`POST $CORE_SERVICE_URL/service/v1/identities/server-keys/revoke`，body `{"pubkey":"<旧 pubkey>","actionExecutionId":"<id>"}`。`200` 时 binding 已是 `REVOKING`：Core 立即停签（Web 发言 `403`），已建立的 BFF 流在 `BFF_STREAM_READMIT_SECONDS` 内以 `identity-revoked` 关闭（Relay 先移出 roster 时是 Relay 自己关订阅）。Workflow 移出 relay 与全部 Channel roster 后 binding `REVOKED`。`409` 是该身份不是 Web 托管的 HUMAN（CLIENT 走步骤 D，CONTROL 见 GAP-BUZ-01）或不在 `ACTIVE/RECONCILING`；`503` 以同一 `actionExecutionId` 重发。只需要紧急撤销时到此为止。
-3. 重建：binding `REVOKED` 后 `POST $CORE_SERVICE_URL/service/v1/identities/server-keys/provision`，body `{"principalId":"<Principal>","actionExecutionId":"<另一条 id>"}`。Core 生成新私钥写入同一 locator 的新 KV 版本，新 binding 投入 relay 与此人全部 ACTIVE Channel 后 `ACTIVE`。仍有非 `REVOKED` 的 SERVER binding 时回 `409`：每人至多一条（`DD-77`），先撤后建。
-4. 核验：新 pubkey 与旧不同，SecretRef 同 locator、版本 +1；Web 发言恢复且作者是新 pubkey；持旧私钥直连 Relay 发布被拒；`audit.audit_event` 各有一条 `identity.key_revoke=REVOKING` 与 `identity.key_provision=RECONCILING`。用户需要刷新页面：流在撤销时已关闭，重连会得到 `403` 直到重建完成。
+3. 重建：binding `REVOKED` 后 `POST $CORE_SERVICE_URL/service/v1/identities/server-keys/provision`，body `{"principalId":"<Principal>","actionExecutionId":"<另一条 id>"}`。Core 生成新私钥写入以新 pubkey 区分的独立 KV 路径，新 binding 投入 relay 与此人全部 ACTIVE Channel 后 `ACTIVE`。仍有非 `REVOKED` 的 SERVER binding 时回 `409`：每人至多一条（`DD-77`），先撤后建。
+4. 核验：新 pubkey 与旧不同，两个 SecretRef 的 locator 不同、版本号均明确且可读；Web 发言恢复且作者是新 pubkey；持旧私钥直连 Relay 发布被拒；`audit.audit_event` 各有一条 `identity.key_revoke=REVOKING` 与 `identity.key_provision=RECONCILING`。用户需要刷新页面：流在撤销时已关闭，重连会得到 `403` 直到重建完成。旧 KV 路径仍须按 `.design/03` §9 的终态证据收敛后销毁，不把 roster 撤销冒充 secret 销毁。
 
 **F. 轮换 RelayOperatorIdentity**（部署动作，不经 Workflow；`.design/09` 的 RelayOperatorIdentity rotate 行）：
 
 1. 退役旧 key：`mv secrets/relay_operator_pubkey secrets/relay_operator_pubkey.retiring`，私钥同样改名为 `.retiring`。
 2. `bash bootstrap.sh`：生成新密钥对，`buzz-relay.env` 的 `RELAY_OPERATOR_PUBKEYS` 为「新,旧」并列，`core-service.env` 投递新私钥。
-3. `docker compose up -d --force-recreate buzz-relay`，待 `/_readiness` 为 200 后按步骤 A 用 `./start-core.sh` 现取一次性 OpenBao 引导凭据并重建 Core；不要直接 `docker compose restart/up core-bff` 复用已消费的 wrapping token。Core 对首次登记、在用身份及轮换都以投递 key 签只读 operator 请求；被 Relay 拒绝或结果不明即拒绝启动。轮换分支在写 OpenBao 前查证新 key，未获准时库与 OpenBao 均不变；查证通过后写新 KV 版本，以旧 pubkey 为 CAS 原地推进 identity，写 `relay_operator.rotate=ROTATED` 审计，日志 `RelayOperatorIdentity 已轮换`。在用身份的部署 audience/origin 与登记值不一致也拒绝启动，不能靠换签名 URL 静默迁移。
-4. 核验新 key 被接受：`cargo run -p kailo-core --example operator_probe -- ../deploy/local/secrets/relay_operator_private_key`（在 `core/` 下）输出 `ACCEPTED`，且能建立 Tenant（`cargo test -p kailo-core --test scope_lifecycle tenant_and_workspace`）。
-5. 关闭窗口：删除 `secrets/relay_operator_pubkey.retiring`，`bash bootstrap.sh`，重建 `buzz-relay`。以同一探针对 `.retiring` 私钥得到 `REJECTED 403`，再删除该私钥文件。OpenBao 里的旧 KV 版本保留（第 2 条）。
+3. `docker compose up -d --force-recreate buzz-relay`，待 `/_readiness` 为 200 后按步骤 A 用 `./start-core.sh` 现取一次性 OpenBao 引导凭据并重建 Core；不要直接 `docker compose restart/up core-bff` 复用已消费的 wrapping token。Core 对首次登记、在用身份及轮换都以投递 key 签只读 operator 请求；被 Relay 拒绝或结果不明即拒绝启动。轮换分支在写 OpenBao 前查证新 key，未获准时库与 OpenBao 均不变；查证通过后写入独立 KV 路径的定版 SecretRef，以旧 pubkey 为 CAS 原地推进 identity，写 `relay_operator.rotate=ROTATED` 审计，日志 `RelayOperatorIdentity 已轮换`。在用身份的部署 audience/origin 与登记值不一致也拒绝启动，不能靠换签名 URL 静默迁移。
+4. 核验新 key 被接受：`cargo run -p kailo-core --example operator_probe -- ../deploy/local/secrets/relay_operator_private_key`（在 `core/` 下）输出 `ACCEPTED`，且能建立 Tenant（`cargo test -p kailo-core --test scope_lifecycle tenant_and_workspace`）。同时比较轮换前后 Core 登记的 SecretRef：两个 locator 必须不同，版本号均为 OpenBao 返回的具体版本。
+5. 关闭窗口：删除 `secrets/relay_operator_pubkey.retiring`，`bash bootstrap.sh`，重建 `buzz-relay`。以同一探针对 `.retiring` 私钥得到 `REJECTED 403`，再删除该私钥文件。旧 SecretRef 所指的 KV 路径暂保留；只有满足 `.design/03` §9 的旧 generation 终态条件后才销毁。
 
 ## 不可执行的动作
 

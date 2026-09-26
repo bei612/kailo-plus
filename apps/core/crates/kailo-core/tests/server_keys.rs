@@ -5,7 +5,7 @@
 //! - revoke 的第一句就停签：BFF 代签发布立即被拒，已建立的流在再准入周期内以
 //!   `identity-revoked` 关闭；
 //! - 旧 pubkey 移出 roster 后，持有旧私钥（KV 旧版本仍在）直连 Relay 发布被拒；
-//! - 重建写同一 locator 的新 KV 版本，新 pubkey 进入 relay 与 Channel roster 后
+//! - 重建写独立 locator 的 KV 版本，新 pubkey 进入 relay 与 Channel roster 后
 //!   ACTIVE，Web 发言恢复且作者是新 pubkey；
 //! - CONTROL 身份不经此入口（GAP-BUZ-01），重建必须先撤后建（DD-77）。
 
@@ -375,10 +375,14 @@ async fn run(
     .await
     .expect("应已建立新的 Web 托管身份");
     assert_ne!(new, old, "换私钥必然换 pubkey");
-    assert_eq!(new_locator, locator, "同一 locator 的新 KV 版本");
+    assert_ne!(
+        new_locator, locator,
+        "新身份必须写独立 KV 路径，避免版本上限淘汰旧引用"
+    );
+    assert!(new_locator.ends_with(&format!("/{new}")));
     assert!(
-        new_version > old_version,
-        "新版本 {new_version} 应大于 {old_version}"
+        new_version > 0 && old_version > 0,
+        "两个 binding 都必须钉住具体版本"
     );
     assert_eq!(
         wait_binding(pool, &new, "ACTIVE", e.converge_bound_secs).await,

@@ -223,3 +223,47 @@ Workspace 建立得到 Channel；该用例按既有 teardown 清理夹具。
 已证明的是同一探针的接受/拒绝、现有身份正常冷启动与真实建 Tenant 链，不将其
 扩大表述为所有并发或 Relay 重配置场景均通过。完整 SecretRef 轮换与旧版本销毁
 仍是独立 Stage 2 门禁。
+
+## 已启用 Buzz 身份的 KV 版本上限隔离（2026-09-26）
+
+依据 `DD-70/72`、`.design/03` §9：旧 SecretRef 在固定旧 generation 的执行终态
+前必须保持可读。OpenBao 固定基线
+`735723da5628148f232497a48a35a137b6512103` 的
+`openbao/internal/builtin/logical/kv/path_data.go::KeyMetadata.AddVersion` 在同一
+KV 路径新增版本达到 `max_versions` 时删除最旧版本；两级配置都为零时使用
+`backend.go::defaultMaxVersions = 10`。本地 mount 明确设置了 1000，但这仍是
+有限上界。此前 Web 托管 HUMAN 重建反复写
+`buzz-human/<tenant>/<principal>`，operator 轮换反复写同一 audience 路径；
+上游自动淘汰不检查 Core 的旧 generation 是否终态。当前数据库中 HUMAN
+托管引用只有 1 条、最高 KV 版本为 1，不存在本地已越过上限的旧引用。
+
+现在每次 HUMAN 新公钥占一个独立 KV 路径；operator 每次投递也占一个独立
+路径，即使日后切回相同公钥也不重用它。两者仍保存 OpenBao 返回的具体版本，
+读端只按绑定行中的 locator/version/audience 取值。旧行无迁移、API/Workflow/
+四端契约无变化；已发布旧 Core 读取新行时同样只读登记的 locator，不依赖路径
+形状。失败面仍是 fail closed：新路径写入成功但数据库冲突时会留下孤儿 KV
+路径；它不能被误认为 ACTIVE，也不能在没有权威引用核查时删除。
+
+GitNexus 绑定 `kailo-plus`（`/volumes/kailo`），索引
+`118272845340b48220eae8b535d0ad7ba5a9720f`：
+`ensure_human_identity` 有两条直接调用链（成员 roster 投影、Web 托管 key 重建），
+`platform_bootstrap::ensure` 的直接调用者为 Core `main`，`rotate` 由 `ensure`
+调用；图谱均报 LOW。它们是密钥与启动安全关键路径，因此还以源码引用检索和
+真实集成核对，不把图谱风险等级当作验收结论。
+
+构建前检查无并行编译，内存可用约 22 GiB、系统盘可用 42 GiB；Core 镜像在
+受限 `kailo-core-limited-20260925` BuildKit 中构建，外层
+`MemoryMax=2G`、`CPUQuota=200%`，manifest 为
+`sha256:9cf9c4d158c4db9d1a49df70affd03032f2802ffcf4cca8995ee98b44f73e678`。
+`start-core.sh` 重新投递一次性引导凭据后容器使用该镜像，BFF `/healthz`
+返回 HTTP 200。受限 cgroup 中 `cargo test -p kailo-core --test server_keys`
+在真实 OpenBao/Relay/Temporal/Core 拓扑通过 1/1：旧身份撤销、新独立 locator
+与新 pubkey、旧钥匙直连被拒、新身份发言恢复全部成立。把「新旧 locator
+必须不同」断言故意反转为相同后，同一用例退出 101 且输出实际不同的两条路径；
+还原后再跑通过 1/1。`./tools/check.sh --full` 在 16 GiB/600% cgroup 中十组
+通过；当次未传隔离 `DATABASE_URL`，实际迁移前进/回退演练为 SKIP（本改动无
+schema 迁移）。
+
+本刀只防止已启用 HUMAN/operator 的新写入在同一路径触发自动淘汰；没有执行
+operator 再轮换的真实动态演练，也没有实现旧版本销毁、孤儿路径收敛、服务
+凭据轮换顺序或未来组件消费端投递。故不把 Stage 2 SecretRef 生命周期标记完成。
