@@ -28,6 +28,22 @@
 这只闭合写入 CAS 与本地 mount 前置条件；SecretRef 的轮换顺序、旧版本处置和
 各消费端投递仍属 Stage 2 的完整生命周期验收，不能由本用例替代。
 
+### 启用 CAS 后的集成夹具收口
+
+本地 Core 已经由 `start-core.sh` 重新构建并以一次性凭据启动，运行镜像为
+`sha256:0005b86608c05c616e631edf881f03a22b4d261ca2a6d36c2edb181242912322`，
+`/healthz` 返回 200。首次 `core/verify/run-integration.sh` 在
+`membership_lifecycle` 的共用夹具 `put_secret` 处退出 101；定向复现稳定返回
+OpenBao HTTP 400。该夹具直接 POST 到已要求 CAS 的 mount，却仍发送无 CAS 的
+旧请求，不是 Core 的 `SecretStore::write` 回归。GitNexus 对 `put_secret` 的影响为
+UNKNOWN，文本核对实际调用者只有 `membership_lifecycle` 与
+`membership_projection` 两个集成用例。两者均为本次新建的 Community host，
+因此夹具使用 `cas=0`，由 OpenBao 原子证明目标不存在，不覆盖已有版本。
+定向 `membership_lifecycle` 从 HTTP 400、退出 101 变为 1/1 通过；重新运行
+整个 `core/verify/run-integration.sh` 在 `MemoryMax=16G`、`CPUQuota=500%` 的
+cgroup 中退出 0。脚本明确 ignored 的 Relay 故障演练及 Approval
+continue-as-new 演练未计入本次结果。
+
 ## 值出不去，是类型挡住的
 
 `SecretValue` 不实现 `Debug`/`Display`/`Serialize`，取用必须显式调 `expose()`。

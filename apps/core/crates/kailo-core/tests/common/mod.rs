@@ -134,20 +134,25 @@ pub async fn worker_token(http: &reqwest::Client, e: &Env) -> String {
 ///
 /// 用与 Core 同策略（`kailo-core`）的核验令牌写：策略给了 `create/update`，这也
 /// 顺带证明那条策略确实给出这些能力，而不是写在文件里没生效。
+/// 调用方的 Community host 每次新建，因此路径必须不存在；CAS 0 由 OpenBao
+/// 原子证明这一点，不在测试夹具中覆盖既有 secret。
 pub async fn put_secret(http: &reqwest::Client, e: &Env, path: &str, value: &str) -> u32 {
     let token = e.bao_token.as_str();
 
-    let written: serde_json::Value = http
+    let response = http
         .post(format!("{}/v1/{}/data/{path}", e.bao_addr, e.bao_mount))
         .header("X-Vault-Namespace", &e.bao_namespace)
         .header("X-Vault-Token", token)
-        .json(&serde_json::json!({"data": {"value": value}}))
+        .json(&serde_json::json!({"data": {"value": value}, "options": {"cas": 0}}))
         .send()
         .await
-        .expect("写 KV")
-        .json()
-        .await
-        .expect("解析写入响应");
+        .expect("写 KV");
+    assert!(
+        response.status().is_success(),
+        "写 KV HTTP {}",
+        response.status()
+    );
+    let written: serde_json::Value = response.json().await.expect("解析写入响应");
     written["data"]["version"].as_u64().expect("version") as u32
 }
 
