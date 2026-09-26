@@ -61,6 +61,9 @@ func TestComponentTaskReplay(t *testing.T) {
 		// GetVersion「tenant-revocation-all-relations」门控；上面两份撤权 history
 		// 录于门控之前，守住的是旧路径仍可重放
 		"testdata/component_task_revocation_all_relations_history.json",
+		// 当前 Worker 的真实 MEMBERSHIP_PROJECTION 终态；与早期录制的 history
+		// 同时回归，分别覆盖同版本与升级版本重放。
+		"testdata/component_task_20260926_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.ComponentTask,
@@ -99,6 +102,8 @@ func TestApprovalReplay(t *testing.T) {
 		"testdata/approval_can_1_waiting_history.json",
 		"testdata/approval_can_2_approved_history.json",
 		"testdata/approval_can_3_consumed_history.json",
+		// 当前 Worker 的真实 Approval 终态，覆盖当前命令序列的同版本重放。
+		"testdata/approval_20260926_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.Approval,
