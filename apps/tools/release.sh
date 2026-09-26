@@ -24,9 +24,14 @@ say()  { printf '%s\n' "$*"; }
 pass() { printf '  \033[32mOK\033[0m   %s\n' "$*"; }
 die()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; exit 1; }
 
-# 工作树必须干净：脏树构建出的镜像无法追溯到任何 commit
-git diff --quiet && git diff --cached --quiet || die "工作树有未提交改动，构建产物无法追溯到 commit"
+# 不接受未跟踪源码；Dockerfile 的 COPY worker 会把它一同放进构建上下文。
+# 实际构建输入另从固定 commit 导出，避免被 ignored 文件或构建期间的工作树变化污染。
+[ -z "$(git status --porcelain --untracked-files=all)" ] || die "工作树有未提交改动，构建产物无法追溯到 commit"
 COMMIT=$(git rev-parse HEAD)
+BUILD_CONTEXT=$(mktemp -d)
+trap 'rm -r -- "$BUILD_CONTEXT"' EXIT
+git archive --format=tar "$COMMIT:apps" .dockerignore core worker | tar -xf - -C "$BUILD_CONTEXT" \
+  || die "无法从固定 commit 导出构建上下文"
 
 mkdir -p "$OUT"
 # 清掉历史失败留下的空产物：0 字节的 SBOM 或 provenance 会被误认为有效
@@ -36,7 +41,7 @@ find "$OUT" -type f -empty -delete
 for unit in "${UNITS[@]}"; do
   say "== $unit =="
   tag="kailo/$unit:$COMMIT"
-  $DOCKER build -q -f "$unit/Dockerfile" -t "$tag" . >/dev/null || die "$unit 构建失败"
+  $DOCKER build -q -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" >/dev/null || die "$unit 构建失败"
   digest=$($DOCKER image inspect --format '{{.Id}}' "$tag")
   pass "镜像 $digest"
 
