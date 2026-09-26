@@ -164,6 +164,35 @@ pub async fn ensure(
     .await
     .map_err(|e| format!("登记 RelayOperatorIdentity 失败: {e}"))?;
 
+    // 并发引导时另一实例可能先插入，ON CONFLICT DO NOTHING 不代表这把新
+    // 投递的 key 已经成为部署的 operator。只以库中实际生效的 ACTIVE 行为准；
+    // 不同公钥或不可读的定版私钥都拒绝进入 serving 状态。
+    let active = sqlx::query!(
+        "select pubkey, private_key_secret_ref, private_key_secret_version,
+                private_key_secret_audience
+         from identity.relay_operator_identity
+         where catalog_tenant_id = $1 and state = 'ACTIVE'",
+        tenant
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("回读 RelayOperatorIdentity 失败: {e}"))?
+    .ok_or_else(|| "RelayOperatorIdentity 未成为 ACTIVE，不启动 Core".to_owned())?;
+    if active.pubkey != pubkey {
+        return Err(format!(
+            "RelayOperatorIdentity 并发登记了另一把公钥 {}，投递公钥 {pubkey} 未生效",
+            active.pubkey
+        ));
+    }
+    let active_ref = SecretRef {
+        locator: active.private_key_secret_ref,
+        version: active.private_key_secret_version.unwrap_or_default() as u32,
+        audience: active.private_key_secret_audience.unwrap_or_default(),
+    };
+    crate::server_identity::read_bound_keys(secrets, &active_ref, &pubkey)
+        .await
+        .map_err(|e| format!("生效的 RelayOperatorIdentity 私钥不可用: {e}"))?;
+
     tracing::info!(
         catalog_tenant = %tenant,
         pubkey,

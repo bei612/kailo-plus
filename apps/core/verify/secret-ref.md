@@ -156,3 +156,33 @@ cgroup 中退出 0；其中 Relay 故障演练和 Approval continue-as-new 仍�
 这项验证只闭合已启用 Buzz SERVER 身份的「指定版本可读且公钥匹配」条件，不是
 完整 SecretRef 生命周期：服务凭据的轮换顺序、旧版本销毁条件与其他组件消费端
 投递仍按 `apps/02` §4 单独验收。
+
+## operator 首次引导的并发登记回读（2026-09-26）
+
+依据 `SS-BUZ-OPERATOR`、`DD-70/72` 与 `.design/03` §2：部署投递的 operator
+公钥必须与 Core 实际登记并可取用的身份一致。`platform_bootstrap::ensure` 原先在
+首次建立身份时写 KV、执行 `ON CONFLICT DO NOTHING` 后直接返回成功；另一 Core
+实例若在前置查询与插入之间先登记了不同公钥，后启动者会把未生效的投递误报为
+引导成功。现在插入后回读唯一的 `ACTIVE` 行，核对其公钥与本次投递一致，并从
+该行的定版 SecretRef 再次核对私钥派生公钥；任一条件不成立即拒绝进入 serving。
+不改变 Tenant、Workflow、客户端合同或 Relay 投影；同一公钥的并发登记只接受
+库中实际生效且可读的版本。
+
+GitNexus `kailo-plus` 索引固定 `ebb9da387d68031d687c006dc512a8f3ff278e41`，
+对 `platform_bootstrap::ensure` 的 upstream impact 为 `LOW`、直接调用者 Core
+`main` 一处；因该函数是启动认证前置，按安全关键路径评审，没有以图谱 LOW
+代替源码与运行核对。构建前确认没有并行编译，根盘可用 57 GiB、内存可用约
+26 GiB；BuildKit `kailo-core-limited-20260925` 实际限额为 24 GiB/10 CPU，
+外层 `MemoryMax=2G`、`CPUQuota=200%`。新本地 Core 镜像 manifest 为
+`sha256:e4133277104ba015f897e059ed3c7a45f77f5fcd877379c15bda11354f99d159`；
+`start-core.sh` 重新投递一次性凭据并重建 `core-bff` 后 `/healthz` 返回 200。
+既有 operator probe 返回 `ACCEPTED`，pubkey
+`152b7584d2067169e32262a206318a9ea97e8727c65f7a0c4b17dd51acfca416`
+与 Core 库中唯一 `ACTIVE` 的 `RelayOperatorIdentity` 公钥相同、定版为 2。
+
+`cargo sqlx prepare --check --workspace` 对本地 Core 数据库退出 0；
+`./tools/check.sh --full` 在 16 GiB/500% cgroup 内十组通过，实际迁移前进/回退
+因未传隔离 `DATABASE_URL` 为 SKIP。此次运行核对覆盖现存身份的正常冷启动，
+没有制造双 Core 抢注的端到端竞态；因此不把并发分支标作已动态演练。KV 写入成功
+但数据库登记失败仍会留下未被绑定的版本，本改动只消除“冲突后误报启动成功”，
+不冒充完整 SecretRef 生命周期。
