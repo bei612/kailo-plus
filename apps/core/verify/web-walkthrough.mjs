@@ -377,6 +377,91 @@ await step("审批页：待我审批可见；批准需确认、经 Temporal Upda
   await shot("11b-approval-decided");
 });
 
+await step("本人任务取消：浏览器只提交原动作 ID，请求已接收不冒充原任务已取消", async () => {
+  const compose = ["compose", "-f", a["compose-file"]];
+  const worker = execFileSync("docker", [...compose, "ps", "--status", "running", "-q", "worker"], {
+    encoding: "utf8",
+  }).trim();
+  if (!worker) throw new Error("本地 Worker 未运行");
+  execFileSync("docker", ["stop", worker], { stdio: "ignore" });
+  let originalId;
+  let controlId;
+  try {
+    const original = await bff("POST", "/api/v1/actions", {
+      actionKey: "workspace.create",
+      idempotencyKey: crypto.randomUUID(),
+      slug: `cancel-${Date.now()}`,
+      name: "Browser cancellation check",
+    });
+    if (original.status < 200 || original.status >= 300 || !original.body?.actionExecutionId || !original.body?.operationId)
+      throw new Error(`原任务未准入：${JSON.stringify(original)}`);
+    originalId = original.body.actionExecutionId;
+
+    await page.getByRole("button", { name: "Tasks", exact: true }).click();
+    const tasks = await bff("GET", "/api/v1/tasks");
+    const index = Array.isArray(tasks.body)
+      ? tasks.body.findIndex((task) => task.actionExecutionId === originalId)
+      : -1;
+    if (tasks.status !== 200 || index < 0)
+      throw new Error(`原任务不在本人任务列表：${JSON.stringify(tasks)}`);
+    await page.getByRole("button", { name: "Refresh" }).click();
+    const row = page.getByRole("table").getByRole("row").nth(index + 1);
+    await row.getByRole("button", { name: "workspace.create" }).waitFor({ timeout: bound });
+    await row.getByRole("button", { name: "workspace.create" }).click();
+    const detail = page.getByTestId("task-detail");
+    await detail.getByText(original.body.operationId, { exact: true }).waitFor({ timeout: bound });
+    const cancel = detail.getByRole("button", { name: "Request cancellation" });
+    const deadline = Date.now() + bound;
+    while (!(await cancel.count())) {
+      if (Date.now() > deadline) throw new Error("BFF 未在上界内给出本人任务取消控制");
+      await detail.getByRole("button", { name: "Refresh" }).first().click();
+      await page.waitForTimeout(1_000);
+    }
+    await cancel.click();
+    await detail.getByText("A submitted request is not a canceled task", { exact: false }).waitFor();
+    const response = page.waitForResponse(
+      (r) => r.url().endsWith("/api/v1/actions") && r.request().method() === "POST",
+    );
+    await detail.getByRole("button", { name: "Confirm" }).click();
+    const controlResponse = await response;
+    const control = await controlResponse.json();
+    if (controlResponse.status() < 200 || controlResponse.status() >= 300 || !control.actionExecutionId || !control.operationId)
+      throw new Error(`取消控制未准入：${controlResponse.status()} ${JSON.stringify(control)}`);
+    controlId = control.actionExecutionId;
+    await detail.getByRole("status")
+      .filter({ hasText: `Cancellation control recorded under operation ${control.operationId}` })
+      .waitFor({ timeout: bound });
+    const before = await bff("GET", `/api/v1/tasks/${originalId}`);
+    if (before.body?.taskStatus === "CANCELED")
+      throw new Error("Worker 尚未运行，原任务却已被显示为取消终态");
+    const controlDeadline = Date.now() + bound;
+    while (true) {
+      const state = await bff("GET", `/api/v1/tasks/${controlId}`);
+      if (state.status === 200 && state.body?.dispatchState === "DISPATCHED") break;
+      if (Date.now() > controlDeadline)
+        throw new Error(`取消请求未得到 Temporal history 肯定证据：${JSON.stringify(state)}`);
+      await page.waitForTimeout(1_000);
+    }
+    await shot("11c-cancel-request-accepted");
+  } finally {
+    execFileSync("docker", ["start", worker], { stdio: "ignore" });
+  }
+  const deadline = Date.now() + bound;
+  while (true) {
+    const state = await bff("GET", `/api/v1/tasks/${originalId}`);
+    if (state.status === 200 && state.body?.taskStatus === "CANCELED") break;
+    if (Date.now() > deadline) throw new Error(`原任务未由 Worker 收敛为 CANCELED：${JSON.stringify(state)}`);
+    await page.waitForTimeout(1_000);
+  }
+  const detail = page.getByTestId("task-detail");
+  await detail.getByRole("button", { name: "Refresh" }).first().click();
+  await detail.getByText("Canceled", { exact: true }).waitFor({ timeout: bound });
+  if (await detail.getByRole("status").filter({ hasText: "original task is not yet confirmed canceled" }).count())
+    throw new Error("原任务已到取消终态，却仍显示尚未确认取消的旧提示");
+  steps.push({ name: "取消控制与原任务", value: { originalId, controlId } });
+  await shot("11d-task-canceled");
+});
+
 await step("邀请：admin 签发的链接只显示一次、列表不含凭据、撤回需确认；兑换页读完 fragment 即清掉", async () => {
   await page.getByRole("button", { name: "Members", exact: true }).click();
   const section = page.getByTestId("tenant-invitations");

@@ -856,11 +856,11 @@ vendor_files:
   - web/packages/platform/src/react/invitations.tsx:desktop/src/kailo-platform/react/invitations.tsx
   - web/packages/platform/src/react/roles.tsx:desktop/src/kailo-platform/react/roles.tsx
   - web/packages/platform/src/react/NativeBootstrap.tsx:desktop/src/kailo-platform/react/NativeBootstrap.tsx
-patch_series_digest: sha256:b2c68d61f8c42266c9ed51795f97f895cf4d0be9eeef6cbe4d4e569a9d5fd66f
+patch_series_digest: sha256:ce88d9d1c58ffc7f1e0de50ced7f8e0aebd495358a96d651c834a10c36c6b667
 # 产物是 Linux 桌面安装包（.deb）而不是镜像：上游没有打包用的 Dockerfile，由 Kailo 维护的
 # 构建文件产出，artifact_digest 记安装包字节的 SHA-256（06 §2）。
 build_dockerfile: upstream-patches/buzz-desktop/packaging/Dockerfile
-artifact_digest: sha256:d4ce55cdad81e8dc07e3c4c0d64b80208bc28bd6256c478e998a26ea36ab163e
+artifact_digest: sha256:345cd7a86da3f9ca0bfeaa224f9695c3f8b09e9d5845e5c7b2a2f276f0f5b640
 
 source_facts: [SF-DSK-01, SF-DSK-02, SF-MOB-02]
 source_seams: []

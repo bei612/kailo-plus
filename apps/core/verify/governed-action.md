@@ -92,6 +92,8 @@ Stage 2 退出门禁「Activity heartbeat 超时不会直接复用 Capacity slot
 
 `20260926120000_task_cancel_catalog.up.sql` 只为四个已登记的业务 Workflow 动作注册取消控制定义，保留各自 Tenant/Workspace 与 SpiceDB 权限合同。`governed_action` 在真实 Core、Temporal、Worker 拓扑中验证：控制动作按原 ActionExecution 定位，首次 run ID 在调用前冻结；控制动作的 `DISPATCHED` 只由匹配控制 ID 的 Temporal history 事件证明；同键重试从同一 history 对账，新键重复取消被拒；Worker 恢复后原任务投影进入 `CANCELED`。测试结果为 `1 passed; 0 failed`，耗时 116.25 秒。首次运行因部署中的 Worker 镜像早于取消终态投影修正而在该投影处超时；重建并替换 Worker 后复跑通过。夹具拆除时曾先尝试删除仍被额外成员引用的 IdentityProvider，日志出现一次外键错误；后续 `teardown_members` 收尾，本次夹具 Tenant 与 ActionExecution 残留计数均为 0。该日志顺序问题未作为业务能力修复。取消请求记录不等于原任务已经终止，工作台须继续读取原 Workflow 的终态证据。
 
+新 Web 镜像 `sha256:ec6d609d8c58652850468346cb2039c322d08cb0c00a967b39e7a7193faea770` 上的真实浏览器走查也覆盖了本人取消：临时停止原本运行的本地 Worker，创建原 `workspace.create` 任务，从任务详情提交取消控制；浏览器先看到控制 operation，而原任务在 Worker 停止期间未被伪报为 `CANCELED`。控制任务经 Temporal history 投影为 `DISPATCHED`，恢复 Worker 后原任务才显示 `CANCELED`，旧的“尚未确认取消”提示随终态消失。`core/verify/web-walkthrough.sh` 退出时恢复原 Worker 再拆夹具。走查退出码 0，17 个主场景通过，`summary.json` 有 26 条记录、CSP 违规 0；证据位于 `/volumes/data/kailo-web-cancel-zzolQL/`。人为断开 BFF/Relay 的预期 503 和拒绝操作的 409/403 仍在 `failedResponses` 中，不计为浏览器通过之外的服务健康结论。Desktop 原生端本增量未做端到端验收，用户重跑尚未接入 Governed Action。
+
 ## 已知边界
 
 - 「待我审批」列表用低延迟一致性：刚授予的 admin 关系可能要等 SpiceDB 的

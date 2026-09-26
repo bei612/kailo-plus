@@ -17,6 +17,14 @@ cd "$(dirname "$0")/../.."
 out="$(realpath -m "${1:?用法: web-walkthrough.sh <证据输出目录>}")"
 mkdir -p "$out"
 
+# 浏览器的取消场景会短暂停止本地 Worker。入口要求它原本运行；任何退出
+# 路径先恢复它，再拆夹具，不能让失败走查留下停止的任务处理器。
+worker_container="$(docker compose -f "$local_dir/compose.yaml" ps --status running -q worker)"
+[ -n "$worker_container" ] || {
+  echo "本地 Worker 未运行，不能开始浏览器取消走查" >&2
+  exit 1
+}
+
 # 核验用户的 subject 由 IdP 签发
 subject="$(bash core/verify/idp-subject.sh)"
 
@@ -28,11 +36,17 @@ fixture=$!
 # 持有写端：夹具读 stdin 读到 EOF 才拆除，关掉它即触发拆除
 exec 3>"$fifo"
 cleanup() {
+  worker_restore_failed=0
+  docker start "$worker_container" >/dev/null || worker_restore_failed=1
   exec 3>&-
   rm -f "$fifo"
   # 拆除失败必须让整次走查失败：留下的 Tenant 是脏数据，而「走查通过」会把它藏起来
   if ! wait "$fixture"; then
     echo "夹具拆除失败，见 $out/fixture.log" >&2
+    exit 1
+  fi
+  if [ "$worker_restore_failed" -ne 0 ]; then
+    echo "本地 Worker 未恢复，须人工检查" >&2
     exit 1
   fi
 }

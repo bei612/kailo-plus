@@ -161,10 +161,11 @@ describe("TasksPage", () => {
   });
 
   it("只在详情取得 BFF 控制键后显示取消；提交的是原动作 ID，不是 Workflow ID", async () => {
+    let terminal = false;
     const { host, send } = mount((r) => {
       if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ workflowId: "workflow-1" })] };
       if (r.path === "/api/v1/tasks/ae1")
-        return { status: 200, body: task({ workflowId: "workflow-1", cancelActionKey: "task.cancel.workspace.create.v1" }) };
+        return { status: 200, body: task({ workflowId: "workflow-1", taskStatus: terminal ? TaskStatus.Canceled : TaskStatus.Running, cancelActionKey: terminal ? undefined : "task.cancel.workspace.create.v1" }) };
       if (r.path === "/api/v1/actions")
         return { status: 202, body: { actionExecutionId: "cancel-ae", actionKey: "task.cancel.workspace.create.v1", operationId: "cancel-op", gateState: "ALLOWED", dispatchState: "NOT_DISPATCHED" } };
       throw new Error(`未预期 ${r.method} ${r.path}`);
@@ -183,6 +184,11 @@ describe("TasksPage", () => {
     });
     expect(posts(send)[0]?.body).not.toHaveProperty("workflowId");
     expect(el.textContent).toContain("original task is not yet confirmed canceled");
+    terminal = true;
+    await click(button(el, "Refresh"));
+    await settle();
+    expect(el.textContent).toContain("Canceled");
+    expect(el.textContent).not.toContain("original task is not yet confirmed canceled");
   });
 
   it("取消提交结果不明时使用同一幂等键重发，不产生第二次意图", async () => {

@@ -14,6 +14,7 @@ import {
   ApprovalStatus,
   type ApprovalView,
   ReasonCode,
+  TaskStatus,
   type TaskView,
 } from "@kailo/contracts";
 import { type ReactNode, useRef, useState } from "react";
@@ -180,6 +181,8 @@ function TaskDetail({ actionExecutionId, onBack }: { actionExecutionId: string; 
   // 一个 ActionExecution 至多一个审批，其 ID 不变：取到一次即可一直用
   const approvalWorkflowId = useRef<string | undefined>(undefined);
   if (state.status === "ok") approvalWorkflowId.current ??= state.data.approvalWorkflowId;
+  const originalAwaitingTerminal =
+    state.status !== "ok" || state.data.taskStatus === undefined || state.data.taskStatus === TaskStatus.Running;
 
   const cancel = async (actionKey: string, idempotencyKey: string) => {
     setConfirmCancel(false);
@@ -207,7 +210,7 @@ function TaskDetail({ actionExecutionId, onBack }: { actionExecutionId: string; 
   return (
     <div className="flex flex-col gap-3" data-testid="task-detail">
       <Toolbar onBack={onBack} onRefresh={reload} />
-      {cancelOutcome?.kind === "submitted" ? (
+      {cancelOutcome?.kind === "submitted" && originalAwaitingTerminal ? (
         <p role="status">
           {t("tasks.cancelSubmitted", { operation: cancelOutcome.operationId })} {cancelOutcome.actionExecutionId}
         </p>
