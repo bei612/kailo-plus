@@ -456,6 +456,9 @@ class ActionCommand {
   ///workspace.create 的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
   final String? name;
 
+  ///任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
+  final String? originalActionExecutionId;
+
   ///成员动作的目标 Principal
   final String? principalId;
 
@@ -470,6 +473,7 @@ class ActionCommand {
     required this.idempotencyKey,
     this.invitationId,
     this.name,
+    this.originalActionExecutionId,
     this.principalId,
     this.slug,
     this.workspaceId,
@@ -480,6 +484,7 @@ class ActionCommand {
     idempotencyKey: json["idempotencyKey"],
     invitationId: json["invitationId"],
     name: json["name"],
+    originalActionExecutionId: json["originalActionExecutionId"],
     principalId: json["principalId"],
     slug: json["slug"],
     workspaceId: json["workspaceId"],
@@ -490,6 +495,7 @@ class ActionCommand {
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
     "name": name,
+    "originalActionExecutionId": originalActionExecutionId,
     "principalId": principalId,
     "slug": slug,
     "workspaceId": workspaceId,
@@ -1387,6 +1393,9 @@ class TaskView {
   final ApprovalStatus? approvalStatus;
   final String? approvalWorkflowId;
 
+  ///仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入
+  final String? cancelActionKey;
+
   ///RFC3339，UTC
   final String createdAt;
   final ActionDispatchState dispatchState;
@@ -1407,6 +1416,7 @@ class TaskView {
     required this.actionVersion,
     this.approvalStatus,
     this.approvalWorkflowId,
+    this.cancelActionKey,
     required this.createdAt,
     required this.dispatchState,
     required this.gateState,
@@ -1429,6 +1439,7 @@ class TaskView {
         ? null
         : approvalStatusValues.map[json["approvalStatus"]]!,
     approvalWorkflowId: json["approvalWorkflowId"],
+    cancelActionKey: json["cancelActionKey"],
     createdAt: json["createdAt"],
     dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
     gateState: actionGateStateValues.map[json["gateState"]]!,
@@ -1457,6 +1468,7 @@ class TaskView {
     "actionVersion": actionVersion,
     "approvalStatus": approvalStatusValues.reverse[approvalStatus],
     "approvalWorkflowId": approvalWorkflowId,
+    "cancelActionKey": cancelActionKey,
     "createdAt": createdAt,
     "dispatchState": actionDispatchStateValues.reverse[dispatchState],
     "gateState": actionGateStateValues.reverse[gateState],

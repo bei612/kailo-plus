@@ -155,6 +155,10 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
+    /// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_action_execution_id: Option<String>,
+
     /// 成员动作的目标 Principal
     #[serde(skip_serializing_if = "Option::is_none")]
     pub principal_id: Option<String>,
@@ -803,6 +807,10 @@ pub struct TaskView {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_workflow_id: Option<String>,
+
+    /// 仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancel_action_key: Option<String>,
 
     /// RFC3339，UTC
     pub created_at: String,

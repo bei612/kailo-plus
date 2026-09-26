@@ -118,6 +118,10 @@ export interface ActionCommand {
      */
     name?: string;
     /**
+     * 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
+     */
+    originalActionExecutionId?: string;
+    /**
      * 成员动作的目标 Principal
      */
     principalId?: string;
@@ -576,6 +580,10 @@ export interface TaskView {
     actionVersion:       number;
     approvalStatus?:     ApprovalStatus;
     approvalWorkflowId?: string;
+    /**
+     * 仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入
+     */
+    cancelActionKey?: string;
     /**
      * RFC3339，UTC
      */

@@ -68,6 +68,10 @@
     "observation": {
       "$ref": "../enums/reason_code.schema.json"
     },
+    "cancelActionKey": {
+      "type": "string",
+      "description": "仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入"
+    },
     "createdAt": {
       "type": "string",
       "description": "RFC3339，UTC"

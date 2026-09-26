@@ -40,6 +40,11 @@
       "type": "string",
       "format": "uuid",
       "description": "tenant.member.invite.revoke 的目标邀请"
+    },
+    "originalActionExecutionId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析"
     }
   }
 }

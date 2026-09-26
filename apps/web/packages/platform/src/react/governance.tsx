@@ -1,9 +1,9 @@
 // 任务工作台与审批箱（.design/06 §9、apps/02 §4）：本人任务、待我审批、详情、批准/拒绝
 // 与撤回。Web 与 Desktop 渲染的是同一份组件，数据全部经 BFF。
 //
-// 只渲染服务端已开放的控制：任务的取消与重跑在 Core 目录里还没有登记为 Governed
-// Action，因此这里没有它们的入口；撤回与决定各有 BFF 端点。可见范围、资格与冲突都由
-// BFF 判定，这里不预判——按钮是否出现只看审批是否仍未决，按下之后以 BFF 的回答为准。
+// 只渲染服务端已开放的控制：任务取消只使用详情给出的 cancelActionKey，重跑尚无
+// 用户可达的 Governed Action；撤回与决定各有 BFF 端点。可见范围、资格与冲突都由
+// BFF 判定，按下之后仍以 BFF 的重新准入为准。
 //
 // 结果不明（没有回应、EXTERNAL_RESULT_UNKNOWN、PROJECTION_DELAYED）不渲染成成功或
 // 失败：显示「等待对账」并给出 operation 作为查证入口。
@@ -18,7 +18,7 @@ import {
 } from "@kailo/contracts";
 import { type ReactNode, useRef, useState } from "react";
 import { relativeTime } from "../format";
-import { approvalOpen, taskPhase } from "../governance";
+import { approvalOpen, newIdempotencyKey, taskPhase } from "../governance";
 import {
   approvalDecisionMessages,
   approvalSelectorMessages,
@@ -168,13 +168,67 @@ function TaskDetail({ actionExecutionId, onBack }: { actionExecutionId: string; 
   const client = useBffClient();
   const t = useT();
   const reasonText = useReasonText();
+  const failureText = useFailureText();
   const [state, reload] = useLoad(`task:${actionExecutionId}`, () => client.task(actionExecutionId));
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelOutcome, setCancelOutcome] = useState<
+    | { kind: "submitted"; operationId: string; actionExecutionId: string }
+    | { kind: "failed"; failure: WriteFailure; actionKey: string; idempotencyKey: string }
+    | null
+  >(null);
   // 一个 ActionExecution 至多一个审批，其 ID 不变：取到一次即可一直用
   const approvalWorkflowId = useRef<string | undefined>(undefined);
   if (state.status === "ok") approvalWorkflowId.current ??= state.data.approvalWorkflowId;
+
+  const cancel = async (actionKey: string, idempotencyKey: string) => {
+    setConfirmCancel(false);
+    setCancelBusy(true);
+    setCancelOutcome(null);
+    try {
+      const result = await client.submitAction({
+        actionKey,
+        idempotencyKey,
+        originalActionExecutionId: actionExecutionId,
+      });
+      setCancelOutcome({
+        kind: "submitted",
+        operationId: result.operationId,
+        actionExecutionId: result.actionExecutionId,
+      });
+    } catch (error) {
+      setCancelOutcome({ kind: "failed", failure: writeFailure(error), actionKey, idempotencyKey });
+    } finally {
+      setCancelBusy(false);
+      reload();
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3" data-testid="task-detail">
       <Toolbar onBack={onBack} onRefresh={reload} />
+      {cancelOutcome?.kind === "submitted" ? (
+        <p role="status">
+          {t("tasks.cancelSubmitted", { operation: cancelOutcome.operationId })} {cancelOutcome.actionExecutionId}
+        </p>
+      ) : null}
+      {cancelOutcome?.kind === "failed" && cancelOutcome.failure.kind === "unknown" ? (
+        <div className="flex flex-col gap-2" role="alert">
+          <p>{t("tasks.cancelUnknown", { operation: cancelOutcome.failure.operationId ?? "—" })}</p>
+          <Button
+            className="w-fit"
+            disabled={cancelBusy}
+            onClick={() => void cancel(cancelOutcome.actionKey, cancelOutcome.idempotencyKey)}
+          >
+            {t("tasks.cancelSendAgain")}
+          </Button>
+        </div>
+      ) : null}
+      {cancelOutcome?.kind === "failed" && cancelOutcome.failure.kind === "rejected" ? (
+        <p className="text-destructive" role="alert">
+          {t("tasks.cancelRejected", { reason: failureText(cancelOutcome.failure) })}
+        </p>
+      ) : null}
       <Resource state={state} reload={reload}>
         {(task) => (
           <div className="flex flex-col gap-4">
@@ -197,6 +251,18 @@ function TaskDetail({ actionExecutionId, onBack }: { actionExecutionId: string; 
                   : undefined,
               ]}
             />
+            {confirmCancel && task.cancelActionKey ? (
+              <Confirm
+                prompt={t("tasks.confirmCancel")}
+                onConfirm={() => void cancel(task.cancelActionKey!, newIdempotencyKey())}
+                onCancel={() => setConfirmCancel(false)}
+              />
+            ) : task.cancelActionKey && !cancelBusy && cancelOutcome?.kind !== "submitted" &&
+              !(cancelOutcome?.kind === "failed" && cancelOutcome.failure.kind === "unknown") ? (
+              <Button className="w-fit" onClick={() => setConfirmCancel(true)}>
+                {t("tasks.cancelRequest")}
+              </Button>
+            ) : null}
           </div>
         )}
       </Resource>

@@ -62,7 +62,12 @@ export function taskPhase(task: TaskView): TaskPhase {
     case ActionDispatchState.Dispatched:
       break;
   }
-  if (task.workflowId === undefined) return phase("tasks.status.applied", "positive");
+  if (task.workflowId === undefined) {
+    // Temporal 接受取消请求不等于原 Workflow 已终结；控制动作不能显示「已生效」。
+    if (task.actionKey.startsWith("task.cancel."))
+      return phase("tasks.status.cancelRequestAccepted");
+    return phase("tasks.status.applied", "positive");
+  }
   return task.taskStatus === undefined ? phase("tasks.status.started") : terminal[task.taskStatus];
 }
 

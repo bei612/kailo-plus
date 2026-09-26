@@ -88,6 +88,10 @@ Stage 2 退出门禁「Activity heartbeat 超时不会直接复用 Capacity slot
 | 关掉续跑 | 录制的 `approval_can_1_waiting_history.json` 报 `TMPRL1100`（多出 StartTimer） |
 | 无条件续跑（不看门控与建议） | 门控前录制的 `approval_consumed_history.json` 报 `TMPRL1100` |
 
+## 2026-09-26 本人任务取消动作核验
+
+`20260926120000_task_cancel_catalog.up.sql` 只为四个已登记的业务 Workflow 动作注册取消控制定义，保留各自 Tenant/Workspace 与 SpiceDB 权限合同。`governed_action` 在真实 Core、Temporal、Worker 拓扑中验证：控制动作按原 ActionExecution 定位，首次 run ID 在调用前冻结；控制动作的 `DISPATCHED` 只由匹配控制 ID 的 Temporal history 事件证明；同键重试从同一 history 对账，新键重复取消被拒；Worker 恢复后原任务投影进入 `CANCELED`。测试结果为 `1 passed; 0 failed`，耗时 116.25 秒。首次运行因部署中的 Worker 镜像早于取消终态投影修正而在该投影处超时；重建并替换 Worker 后复跑通过。夹具拆除时曾先尝试删除仍被额外成员引用的 IdentityProvider，日志出现一次外键错误；后续 `teardown_members` 收尾，本次夹具 Tenant 与 ActionExecution 残留计数均为 0。该日志顺序问题未作为业务能力修复。取消请求记录不等于原任务已经终止，工作台须继续读取原 Workflow 的终态证据。
+
 ## 已知边界
 
 - 「待我审批」列表用低延迟一致性：刚授予的 admin 关系可能要等 SpiceDB 的

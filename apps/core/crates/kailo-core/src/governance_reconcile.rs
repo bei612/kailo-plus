@@ -65,7 +65,7 @@ pub fn spawn(g: Arc<Governance>, meter: &Meter, cfg: Config) {
         oldest_age: meter
             .u64_gauge("kailo.action_execution.oldest_open_age")
             .with_unit("s")
-            .with_description("最久一条未决 ActionExecution 距上次推进的时间")
+            .with_description("最久一条未决 ActionExecution 的未收敛时间；UNKNOWN 从创建时计")
             .build(),
         driven: meter
             .u64_counter("kailo.governance_reconcile.driven")
@@ -133,7 +133,9 @@ async fn pass(g: &Governance, metrics: &Metrics, batch: i64) -> Result<(), Strin
 
     let rows: Vec<(String, String, i64, i64)> = sqlx::query_as(
         "select gate_state, dispatch_state, count(*),
-                coalesce(extract(epoch from now() - min(updated_at))::bigint, 0)
+                coalesce(extract(epoch from now() - min(
+                    case when dispatch_state = 'UNKNOWN' then created_at else updated_at end
+                ))::bigint, 0)
          from admission.action_execution
          where gate_state in ('EVALUATING', 'WAITING')
             or (gate_state = 'ALLOWED' and dispatch_state <> 'DISPATCHED' and dispatch_state <> 'ABORTED')

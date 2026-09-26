@@ -210,6 +210,7 @@ fn task_view(r: TaskRow) -> Result<TaskView, Response> {
             .transpose()?,
         waiting_reason: r.waiting_reason,
         observation,
+        cancel_action_key: None,
         created_at: rfc3339(r.created_at),
     })
 }
@@ -265,7 +266,15 @@ pub async fn get_task(
         .await;
     match row {
         Ok(Some(r)) => match task_view(r) {
-            Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+            Ok(mut v) => {
+                match g.available_cancel_action(actor(&ctx), id).await {
+                    Ok(key) => v.cancel_action_key = key,
+                    Err(e) => {
+                        tracing::warn!(task = %id, error = ?e, "任务控制可用性不可查；不提供入口");
+                    }
+                }
+                (StatusCode::OK, Json(v)).into_response()
+            }
             Err(resp) => resp,
         },
         Ok(None) => Refusal::Precondition(ReasonCode::TargetNotFound).respond(None),

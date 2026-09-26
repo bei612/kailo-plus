@@ -230,6 +230,24 @@ export const platformMessages = {
   "tasks.waitingReason": { en: "Waiting for", "zh-CN": "正在等待" },
   "tasks.reason": { en: "Reason", "zh-CN": "原因" },
   "tasks.approval": { en: "Approval", "zh-CN": "审批" },
+  "tasks.cancelRequest": { en: "Request cancellation", "zh-CN": "请求取消" },
+  "tasks.confirmCancel": {
+    en: "Request cancellation of this running task? A submitted request is not a canceled task; wait for its final status.",
+    "zh-CN": "请求取消这项运行中的任务？请求已提交不等于任务已取消，仍须等待最终状态。",
+  },
+  "tasks.cancelSubmitted": {
+    en: "Cancellation control recorded under operation {operation}; the original task is not yet confirmed canceled.",
+    "zh-CN": "取消控制已记录为操作 {operation}；原任务尚未确认取消。",
+  },
+  "tasks.cancelUnknown": {
+    en: "Cancellation request outcome is unknown (operation {operation}). Check the control task, or resend the same intent.",
+    "zh-CN": "取消请求结果不明（操作 {operation}）。请检查控制任务，或原样重发同一次意图。",
+  },
+  "tasks.cancelSendAgain": { en: "Resend same request", "zh-CN": "重发同一次请求" },
+  "tasks.cancelRejected": {
+    en: "Cancellation request rejected: {reason}",
+    "zh-CN": "取消请求被拒绝：{reason}",
+  },
   "tasks.status.evaluating": { en: "Being evaluated", "zh-CN": "正在判定" },
   "tasks.status.waitingApproval": { en: "Waiting for approval", "zh-CN": "等待审批" },
   "tasks.status.denied": { en: "Not allowed", "zh-CN": "未获准" },
@@ -239,6 +257,10 @@ export const platformMessages = {
   "tasks.status.aborted": { en: "Stopped before it took effect", "zh-CN": "生效前已中止" },
   "tasks.status.started": { en: "Started", "zh-CN": "已开始" },
   "tasks.status.applied": { en: "Applied", "zh-CN": "已生效" },
+  "tasks.status.cancelRequestAccepted": {
+    en: "Cancellation request accepted; awaiting task outcome",
+    "zh-CN": "取消请求已接收，等待任务终态",
+  },
   "tasks.status.running": { en: "Running", "zh-CN": "进行中" },
   "tasks.status.completed": { en: "Completed", "zh-CN": "已完成" },
   "tasks.status.failed": { en: "Failed", "zh-CN": "失败" },

@@ -475,6 +475,7 @@ impl Governance {
             slug: None,
             name: None,
             invitation_id: Some(m.id),
+            original_action_execution_id: None,
         };
         let admit = match open_execution(
             &mut tx,

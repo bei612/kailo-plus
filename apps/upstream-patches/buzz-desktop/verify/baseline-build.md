@@ -37,3 +37,7 @@ NIP-44 私聊（上游的 DM）、项目管理（Projects）、个人日历（Re
 上游只有四项在 preview 开关后（workflows、projects、pulse、forum），开关只能隐藏入口而不能让入口
 不存在；其余是一等功能。因此 Kailo 版本以 patch 移除全部入口——路由、导航与菜单项、发起它们的
 对话框与动作、Tauri 命令、设置开关与打包的 sidecar——再按可达性删除因此不可达的代码。
+
+## 2026-09-26 任务取消入口增量
+
+从固定 `779af8886caae1317b4de962082429867ab61503` 重放登记的裁剪、补丁与共享平台包，受限 BuildKit 构建 Linux `.deb` 成功；`dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 摘要为 `sha256:d4ce55cdad81e8dc07e3c4c0d64b80208bc28bd6256c478e998a26ea36ab163e`，`baseline.yaml` 已同步。`check.sh --full` 的共享 TypeScript 类型与测试、四侧契约检查通过。此项只证明 Linux 安装包可构建；未在本增量重跑 Desktop 原生端端到端操作，亦无 macOS/Windows 安装包证据。

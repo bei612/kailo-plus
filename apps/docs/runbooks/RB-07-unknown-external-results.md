@@ -14,12 +14,14 @@
 | Buzz Relay：operator 建 Community | (host, owner) | 同一请求重发：同 owner 幂等成功，不同 owner 被拒 | `TENANT_LIFECYCLE` 的重试 |
 | SpiceDB：relationship 写入 | relationship 本身 | `FullyConsistent` 读回 | 发起它的 Workflow（Converge 以读回判定） |
 | Temporal：Workflow Start | 固定 workflow ID `kailo:<kind>:<tenant>:<entity>:<version>` | 按该 ID Describe | 发起方以同一 ID 重试；兜底 `workflow_reconcile`（RB-05） |
+| Temporal：任务取消请求 | 控制 ActionExecution ID 是固定 `RequestId` 与 `Reason`；首次 run ID 在 RPC 前冻结 | 固定执行链的 History，匹配 `WorkflowExecutionCancelRequested.Cause` 与 Core identity | `governance_reconcile` 先取肯定证据；无事件时仅在原执行仍 OPEN 且首次 run 未变时重发同一请求。原执行已关闭而无肯定证据保持 UNKNOWN，由 Core 值班负责人按操作号处理 |
 | OpenBao：KV v2 写入 | 无（每次写产生新版本） | 写入响应中的版本号 | 结果不明即当作未写：重试产生新版本，binding 只钉响应里拿到的版本；多出的版本不被引用 |
 
 ## 触发信号
 
 - API 响应 `class = UNKNOWN`（`PUBLISH_RESULT_UNKNOWN`），界面显示「发送结果待确认」与操作号；
 - `kailo.publish.unsettled`、`kailo.workflow_ref.nonterminal{projection_state="UNKNOWN"}` 或 `kailo.workflow_ref.reconciled{outcome="NOT_FOUND"}` 上升；
+- `kailo.action_execution.oldest_open_age{state="ALLOWED/UNKNOWN"}` 持续增长；该状态按 ActionExecution 创建时刻计龄，周期重试不会清零；
 - Workflow 投影 `CONVERGENCE_PENDING` 持续（roster 或 SpiceDB 结果不明）；
 - Core 日志「发布结果不明」「Start 结果不明」「Describe 结果不明」。
 
@@ -34,8 +36,9 @@
 1. **消息发布**：取操作号，按 RB-06 的 SQL 看结论。窗口内等待；超出窗口加一个周期仍无结论时按 RB-06 第 2 步定位。结论为 `NOT_DELIVERED` 时告知用户重新发送（同一个幂等键此时允许重新发送）；为 `ACCEPTED` 时消息已在频道里。
 2. **roster 与 SpiceDB**：不需要针对单个调用的动作。恢复组件可达，Workflow 下一轮以查询判定并继续（RB-03）。
 3. **Workflow Start**：发起方以同一入口、同一 ActionExecution 重试，Core 以同一 workflow ID 调 Start；已存在即视为已启动（`DD-48`）。兜底对账会把 Start 结果不明的 `PENDING_START` 观察成 `RUNNING` 或按 retention 判定（RB-05）。
-4. **Channel 与 Community 建立**：由 Tenant/Workspace 生命周期 Workflow 的重试收敛；不需要人工动作。
-5. **OpenBao 写入**：确认引用它的 binding 钉的是响应中的版本；多出的版本在 `max_versions` 内自然淘汰（`07` §1）。
+4. **任务取消**：按操作号查控制 ActionExecution 的原动作 ID、冻结的 `cancel_first_run_id` 与审计证据；在 Temporal 同一执行链的 History 查 Cause 等于该控制 ID 且 Identity 为 `kailo-core` 的取消请求事件。查到则按已接受请求处理，原 Workflow 的终态仍单独看 TaskProjection；查不到、history 已过 retention 或依赖不可达都不能判定为未发出。原执行仍 OPEN 时恢复 Core 对账；已关闭而没有肯定证据时保持 UNKNOWN，登记操作号、原 Workflow ID、首次 run ID、最近核查时间、值班负责人及下一次核查时间，不直接改库、不再发送取消请求。只有找到肯定证据或通过正式纠错决策记录确定结论，才能关闭登记。
+5. **Channel 与 Community 建立**：由 Tenant/Workspace 生命周期 Workflow 的重试收敛；不需要人工动作。
+6. **OpenBao 写入**：确认引用它的 binding 钉的是响应中的版本；多出的版本在 `max_versions` 内自然淘汰（`07` §1）。
 
 ## 不可执行的动作
 

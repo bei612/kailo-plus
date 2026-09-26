@@ -76,6 +76,10 @@ Dart 契约生成物换回可选枚举取 `!` 的旧版 → 任务详情解析�
 
 受控开发树 HEAD `be858936a860da2773e7fda096e7c2896236004d`：任务、审批、审计与设备视图使用共享目录生成的相对或绝对时间文案；成员与密钥计数使用同源复数规则。导出补丁为 1695411 字节。固定基线重放后，4967 个已跟踪源码路径及 4 个 vendor 文件逐项比对差异 0。Mobile 整树 `flutter analyze` 无问题；全量 `flutter test` 为 `+1156 ~2: All tests passed!`。故意改坏 Dart 生成文案后，`gen-platform-i18n.py --check` 按预期失败，恢复后重新通过。本增量未生成 APK、未做真实设备端到端或 iOS 验收，不能复用前述旧产物的结论。
 
+## 2026-09-26 任务取消契约增量
+
+从固定 `779af8886caae1317b4de962082429867ab61503` 重放 130 项裁剪、`0001-kailo-mobile.patch` 和四份本仓库生成物成功；重建源码的 `flutter analyze` 为 `No issues found!`，`flutter test -j 8` 为 `+1156 ~2: All other tests passed!`。`baseline.yaml` 的补丁集合摘要已更新为 `sha256:62c558207887fa21baae2b3ec932ac9baa51d98986c3cb5893f1553a58340b99`，`artifact_digest` 仍为 `none`。Mobile 的任务和审批面仍只读；本次未产出 APK、未做设备端到端验收，源码通过不代表安装包交付。
+
 ## 未覆盖
 
 - iOS 未构建、未核验：需要 macOS/Xcode。iOS 原生侧仍有 Huddle 音频、推送扩展、年龄信号等上游

@@ -9,7 +9,7 @@
 //! `WorkflowService::start_workflow_execution` 这条按类型名启动的原始接口，
 //! 而不是需要 `HasWorkflowDefinition` 的类型化包装。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use temporalio_client::{tonic, Client, ClientOptions, ConnectionOptions, Url};
 use temporalio_common::protos::temporal::api::common::v1::{
@@ -18,9 +18,11 @@ use temporalio_common::protos::temporal::api::common::v1::{
 use temporalio_common::protos::temporal::api::enums::v1::{
     WorkflowExecutionStatus, WorkflowIdConflictPolicy, WorkflowIdReusePolicy,
 };
+use temporalio_common::protos::temporal::api::history::v1::history_event::Attributes;
 use temporalio_common::protos::temporal::api::taskqueue::v1::TaskQueue;
 use temporalio_common::protos::temporal::api::workflowservice::v1::{
-    DescribeNamespaceRequest, DescribeWorkflowExecutionRequest, StartWorkflowExecutionRequest,
+    DescribeNamespaceRequest, DescribeWorkflowExecutionRequest, GetWorkflowExecutionHistoryRequest,
+    RequestCancelWorkflowExecutionRequest, StartWorkflowExecutionRequest,
 };
 
 use crate::oidc::TokenSource;
@@ -55,6 +57,9 @@ pub enum Started {
 /// Describe 观察到的一个 execution。
 pub struct Observed {
     pub run_id: String,
+    /// Server 给出的 execution chain 首次 run；用于 cancel 跨 continue-as-new
+    /// 定位同一链，不能用当前 run ID 冒充。
+    pub first_run_id: String,
     pub history_length: i64,
     pub state: ObservedState,
 }
@@ -189,6 +194,172 @@ impl TemporalClient {
         }
     }
 
+    /// 向已观察为 OPEN 的固定 workflow ID 请求取消。run ID 留空让 Temporal
+    /// 选择该 ID 的当前 run：Describe 与请求之间发生 continue-as-new 时，固定旧
+    /// run ID 会得到「旧 run 已结束」的 no-op 成功，漏掉仍在运行的新 run。
+    /// RPC 成功也会是目标已终结或已有取消请求的 no-op；只有同一控制 ID
+    /// 的 history 事件才证明本次请求已记录，更不代表 Workflow 已取消
+    /// （SF-TMP-01/11、DD-84）。
+    /// request_id 固定取控制 ActionExecution ID，同一动作重试不产生新请求身份。
+    pub async fn request_cancel(
+        &self,
+        workflow_id: &str,
+        first_run_id: &str,
+        action_execution_id: uuid::Uuid,
+    ) -> Result<(), TemporalError> {
+        if first_run_id.is_empty() {
+            return Err(TemporalError::Encode("Temporal 首次 run ID 为空".into()));
+        }
+        self.refresh_token().await?;
+        let request = RequestCancelWorkflowExecutionRequest {
+            namespace: self.namespace.clone(),
+            workflow_execution: Some(WorkflowExecution {
+                workflow_id: workflow_id.to_owned(),
+                run_id: String::new(),
+            }),
+            identity: IDENTITY.to_owned(),
+            request_id: action_execution_id.to_string(),
+            // Server 在最新 run 上校验同一 execution chain。若原链已结束，
+            // 即便同 workflow ID 被外部重用，也不能取消另一条链。
+            first_execution_run_id: first_run_id.to_owned(),
+            reason: action_execution_id.to_string(),
+            ..Default::default()
+        };
+        match self
+            .with_auth_retry(|mut svc| {
+                let request = request.clone();
+                async move {
+                    svc.request_cancel_workflow_execution(tonic::Request::new(request))
+                        .await
+                }
+            })
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(status)
+                if matches!(
+                    status.code(),
+                    tonic::Code::InvalidArgument
+                        | tonic::Code::PermissionDenied
+                        | tonic::Code::NotFound
+                        | tonic::Code::FailedPrecondition
+                ) =>
+            {
+                Err(TemporalError::Rejected(status.message().to_owned()))
+            }
+            Err(status) => Err(TemporalError::Unknown(format!(
+                "{}: {}",
+                status.code(),
+                status.message()
+            ))),
+        }
+    }
+
+    /// 只认 Temporal history 中由本控制 ActionExecution 留下的取消请求事件。
+    /// 从冻结的首次 run 顺着 continue-as-new/retry 链逐页查；查不到不是「未发出」：
+    /// Server 对已取消请求和已终结 execution 会成功 no-op，二者均不写新事件。
+    /// history 过期、分页异常或原始事件不可解码时也绝不推断为成功。
+    pub async fn cancel_request_recorded(
+        &self,
+        workflow_id: &str,
+        first_run_id: &str,
+        action_execution_id: uuid::Uuid,
+    ) -> Result<bool, TemporalError> {
+        if first_run_id.is_empty() {
+            return Err(TemporalError::Encode("取消请求缺冻结的首次 run ID".into()));
+        }
+        self.refresh_token().await?;
+        let mut run_id = first_run_id.to_owned();
+        let mut visited_runs = HashSet::new();
+        loop {
+            if !visited_runs.insert(run_id.clone()) {
+                return Err(TemporalError::Unknown(
+                    "Temporal execution 链出现循环".into(),
+                ));
+            }
+            let mut page_token = Vec::new();
+            let mut visited_pages = HashSet::new();
+            let mut next_run = None;
+            loop {
+                let request = GetWorkflowExecutionHistoryRequest {
+                    namespace: self.namespace.clone(),
+                    execution: Some(WorkflowExecution {
+                        workflow_id: workflow_id.to_owned(),
+                        run_id: run_id.clone(),
+                    }),
+                    next_page_token: page_token.clone(),
+                    ..Default::default()
+                };
+                let response = self
+                    .with_auth_retry(|mut svc| {
+                        let request = request.clone();
+                        async move {
+                            svc.get_workflow_execution_history(tonic::Request::new(request))
+                                .await
+                        }
+                    })
+                    .await
+                    .map_err(|e| TemporalError::Unknown(format!("读取取消 history 失败: {e}")))?;
+                if !response.raw_history.is_empty() {
+                    return Err(TemporalError::Unknown(
+                        "取消 history 只返回未经解码的事件".into(),
+                    ));
+                }
+                let history = response
+                    .history
+                    .ok_or_else(|| TemporalError::Unknown("取消 history 响应缺事件集".into()))?;
+                if history.events.is_empty() && page_token.is_empty() {
+                    return Err(TemporalError::Unknown("取消 history 首次查询为空".into()));
+                }
+                for event in history.events {
+                    match event.attributes {
+                        Some(Attributes::WorkflowExecutionCancelRequestedEventAttributes(a))
+                            if a.cause == action_execution_id.to_string()
+                                && a.identity == IDENTITY =>
+                        {
+                            return Ok(true);
+                        }
+                        Some(Attributes::WorkflowExecutionContinuedAsNewEventAttributes(a)) => {
+                            next_run = Some(a.new_execution_run_id);
+                        }
+                        Some(Attributes::WorkflowExecutionFailedEventAttributes(a))
+                            if !a.new_execution_run_id.is_empty() =>
+                        {
+                            next_run = Some(a.new_execution_run_id);
+                        }
+                        Some(Attributes::WorkflowExecutionTimedOutEventAttributes(a))
+                            if !a.new_execution_run_id.is_empty() =>
+                        {
+                            next_run = Some(a.new_execution_run_id);
+                        }
+                        Some(Attributes::WorkflowExecutionCompletedEventAttributes(a))
+                            if !a.new_execution_run_id.is_empty() =>
+                        {
+                            next_run = Some(a.new_execution_run_id);
+                        }
+                        _ => {}
+                    }
+                }
+                if response.next_page_token.is_empty() {
+                    break;
+                }
+                if !visited_pages.insert(response.next_page_token.clone()) {
+                    return Err(TemporalError::Unknown("取消 history 分页游标循环".into()));
+                }
+                page_token = response.next_page_token;
+            }
+            match next_run {
+                Some(next) if !next.is_empty() => run_id = next,
+                Some(_) => {
+                    return Err(TemporalError::Unknown(
+                        "Temporal execution 链的下一 run ID 为空".into(),
+                    ));
+                }
+                None => return Ok(false),
+            }
+        }
+    }
+
     /// 执行一次调用；对端以认证失败拒绝时丢弃缓存令牌、重取后再试一次。
     ///
     /// IdP 轮换签名密钥后，缓存里那张令牌永远不会再被接受；不这样做，Core 会一直
@@ -281,6 +452,7 @@ impl TemporalClient {
         };
         Ok(Some(Observed {
             run_id: info.execution.map(|e| e.run_id).unwrap_or_default(),
+            first_run_id: info.first_run_id,
             history_length: info.history_length,
             state,
         }))

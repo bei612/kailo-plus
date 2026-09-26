@@ -563,6 +563,8 @@ type ActionCommand struct {
 	InvitationID *string `json:"invitationId,omitempty"`
 	// workspace.create 的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
 	Name *string `json:"name,omitempty"`
+	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
+	OriginalActionExecutionID *string `json:"originalActionExecutionId,omitempty"`
 	// 成员动作的目标 Principal
 	PrincipalID *string `json:"principalId,omitempty"`
 	// workspace.create 的 slug
@@ -777,6 +779,8 @@ type TaskView struct {
 	ActionVersion      int64           `json:"actionVersion"`
 	ApprovalStatus     *ApprovalStatus `json:"approvalStatus,omitempty"`
 	ApprovalWorkflowID *string         `json:"approvalWorkflowId,omitempty"`
+	// 仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入
+	CancelActionKey *string `json:"cancelActionKey,omitempty"`
 	// RFC3339，UTC
 	CreatedAt     string              `json:"createdAt"`
 	DispatchState ActionDispatchState `json:"dispatchState"`

@@ -43,6 +43,10 @@ capabilities:
   - tenant.member.revoke
   - identity.client_key.register
   - identity.client_key.revoke
+  - task.cancel.workspace.create.v1
+  - task.cancel.workspace.member.add.v1
+  - task.cancel.workspace.member.revoke.v1
+  - task.cancel.tenant.member.revoke.v1
   tools: []
   workflow_kinds:
   - WORKSPACE_LIFECYCLE

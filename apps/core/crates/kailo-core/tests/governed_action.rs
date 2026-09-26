@@ -680,7 +680,141 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World) {
         task.get("taskStatus").is_none(),
         "Worker 没跑却出现了任务状态：{task}"
     );
+
+    // ---- 10. 本人取消：独立 Governed Action，只受理请求，原任务等 Worker 收尾 ----
+    let cancel_source = json!({
+        "actionKey": "workspace.create",
+        "idempotencyKey": Uuid::new_v4(),
+        "slug": format!("cancel-{}", &Uuid::new_v4().to_string()[..8]),
+        "name": "取消核验"
+    });
+    let (st, original) = submit(http, e, a, cancel_source).await;
+    assert!(st.is_success(), "原任务应已准入：{st} {original}");
+    let original_ae = Uuid::parse_str(original["actionExecutionId"].as_str().unwrap()).unwrap();
+    let original_workflow = original["workflowId"].as_str().unwrap().to_owned();
+    let control_key: String = until(e, "任务详情提供本人可用的取消控制", || async {
+        let (st, detail) = bff(
+            http,
+            e,
+            a,
+            reqwest::Method::GET,
+            &format!("/api/v1/tasks/{original_ae}"),
+            None,
+        )
+        .await;
+        if !st.is_success() {
+            return None;
+        }
+        detail["cancelActionKey"].as_str().map(str::to_owned)
+    })
+    .await;
+    assert_eq!(control_key, "task.cancel.workspace.create.v1");
+    let (st, another_person) = bff(
+        http,
+        e,
+        &w.b.subject,
+        reqwest::Method::GET,
+        &format!("/api/v1/tasks/{original_ae}"),
+        None,
+    )
+    .await;
+    assert!(!st.is_success(), "他人不能取得控制键：{another_person}");
+    let cancel_cmd = json!({
+        "actionKey": control_key,
+        "idempotencyKey": Uuid::new_v4(),
+        "originalActionExecutionId": original_ae
+    });
+    let (st, control) = submit(http, e, a, cancel_cmd.clone()).await;
+    assert!(st.is_success(), "取消控制应已准入：{st} {control}");
+    let control_ae = control["actionExecutionId"].as_str().unwrap();
+    until(e, "Temporal 接受取消请求", || async {
+        let (st, detail) = bff(
+            http,
+            e,
+            a,
+            reqwest::Method::GET,
+            &format!("/api/v1/tasks/{control_ae}"),
+            None,
+        )
+        .await;
+        (st.is_success() && detail["dispatchState"] == "DISPATCHED").then_some(())
+    })
+    .await;
+    let frozen_first_run: Option<String> = sqlx::query_scalar(
+        "select cancel_first_run_id from admission.action_execution where id = $1",
+    )
+    .bind(Uuid::parse_str(control_ae).unwrap())
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert!(
+        frozen_first_run.as_ref().is_some_and(|run| !run.is_empty()),
+        "取消 RPC 前须冻结 execution chain 的首次 run ID"
+    );
+    assert!(
+        sqlx::query_scalar::<_, Option<String>>(
+            "select status from projection.task_projection where workflow_id = $1"
+        )
+        .bind(&original_workflow)
+        .fetch_optional(pool)
+        .await
+        .unwrap()
+        .flatten()
+        .as_deref()
+            != Some("CANCELED"),
+        "请求被接受不得在 Worker 收尾前伪造原任务终态"
+    );
+    // 模拟 RPC 已被 Temporal 接受、Core 尚未保存答复时崩溃：只破坏控制
+    // ActionExecution 的派发投影，同键重试必须从同一链 history 的 Cause 复原。
+    let corrupted = sqlx::query(
+        "update admission.action_execution
+         set dispatch_state = 'UNKNOWN', reason_code = 'EXTERNAL_RESULT_UNKNOWN'
+         where id = $1 and dispatch_state = 'DISPATCHED'",
+    )
+    .bind(Uuid::parse_str(control_ae).unwrap())
+    .execute(pool)
+    .await
+    .unwrap();
+    assert_eq!(corrupted.rows_affected(), 1, "故障注入必须命中控制动作");
+    let (st, same_intent) = submit(http, e, a, cancel_cmd).await;
+    assert!(
+        st.is_success(),
+        "同一幂等键须回答原控制动作：{st} {same_intent}"
+    );
+    assert_eq!(same_intent["actionExecutionId"], control_ae);
+    assert_eq!(
+        same_intent["dispatchState"], "DISPATCHED",
+        "同链 history 的取消事件必须收敛丢失的 RPC 答复：{same_intent}"
+    );
+    let (st, duplicate) = submit(
+        http,
+        e,
+        a,
+        json!({
+            "actionKey": "task.cancel.workspace.create.v1",
+            "idempotencyKey": Uuid::new_v4(),
+            "originalActionExecutionId": original_ae
+        }),
+    )
+    .await;
+    assert_eq!(
+        st,
+        reqwest::StatusCode::CONFLICT,
+        "第二个取消意图须拒绝：{duplicate}"
+    );
     worker(e, "start");
+    until(e, "原 Workflow 由 Worker 以 CANCELED 收尾", || async {
+        let status: Option<String> = sqlx::query_scalar(
+            "select status from projection.task_projection where workflow_id = $1",
+        )
+        .bind(&original_workflow)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        (status.as_deref() == Some("CANCELED")).then_some(())
+    })
+    .await;
     let d_wm: Uuid =
         sqlx::query_scalar("select target_id from admission.action_execution where id = $1")
             .bind(un_ae)

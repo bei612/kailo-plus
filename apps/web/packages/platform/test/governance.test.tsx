@@ -78,6 +78,13 @@ describe("taskPhase", () => {
     expect(taskPhase(task({ gateState: ActionGateState.Waiting })).label).toBe("tasks.status.waitingApproval");
     expect(taskPhase(task({ gateState: ActionGateState.Denied })).tone).toBe("negative");
   });
+
+  it("取消控制的派发成功只表示请求被接收，不说原任务已取消", () => {
+    expect(taskPhase(task({ actionKey: "task.cancel.workspace.create.v1" }))).toEqual({
+      label: "tasks.status.cancelRequestAccepted",
+      tone: "neutral",
+    });
+  });
 });
 
 describe("TasksPage", () => {
@@ -151,6 +158,58 @@ describe("TasksPage", () => {
     await click(button(el, "tenant.member.revoke"));
     expect(el.textContent).toContain("Status may be out of date");
     expect([...el.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Withdraw request");
+  });
+
+  it("只在详情取得 BFF 控制键后显示取消；提交的是原动作 ID，不是 Workflow ID", async () => {
+    const { host, send } = mount((r) => {
+      if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ workflowId: "workflow-1" })] };
+      if (r.path === "/api/v1/tasks/ae1")
+        return { status: 200, body: task({ workflowId: "workflow-1", cancelActionKey: "task.cancel.workspace.create.v1" }) };
+      if (r.path === "/api/v1/actions")
+        return { status: 202, body: { actionExecutionId: "cancel-ae", actionKey: "task.cancel.workspace.create.v1", operationId: "cancel-op", gateState: "ALLOWED", dispatchState: "NOT_DISPATCHED" } };
+      throw new Error(`未预期 ${r.method} ${r.path}`);
+    }, <TasksPage />);
+    const el = await host;
+    await settle();
+    expect(el.textContent).not.toContain("Request cancellation");
+    await click(button(el, "tenant.member.revoke"));
+    await click(button(el, "Request cancellation"));
+    expect(posts(send)).toHaveLength(0);
+    await click(button(el, "Confirm"));
+    expect(posts(send)).toHaveLength(1);
+    expect(posts(send)[0]?.body).toMatchObject({
+      actionKey: "task.cancel.workspace.create.v1",
+      originalActionExecutionId: "ae1",
+    });
+    expect(posts(send)[0]?.body).not.toHaveProperty("workflowId");
+    expect(el.textContent).toContain("original task is not yet confirmed canceled");
+  });
+
+  it("取消提交结果不明时使用同一幂等键重发，不产生第二次意图", async () => {
+    let writes = 0;
+    const { host, send } = mount((r) => {
+      if (r.path === "/api/v1/tasks") return { status: 200, body: [task()] };
+      if (r.path === "/api/v1/tasks/ae1")
+        return { status: 200, body: task({ cancelActionKey: writes === 0 ? "task.cancel.workspace.create.v1" : undefined }) };
+      if (r.path === "/api/v1/actions") {
+        writes += 1;
+        if (writes === 1) throw new TransportError("connection lost");
+        return { status: 202, body: { actionExecutionId: "cancel-ae", actionKey: "task.cancel.workspace.create.v1", operationId: "cancel-op", gateState: "ALLOWED", dispatchState: "UNKNOWN" } };
+      }
+      throw new Error(`未预期 ${r.method} ${r.path}`);
+    }, <TasksPage />);
+    const el = await host;
+    await settle();
+    await click(button(el, "tenant.member.revoke"));
+    await click(button(el, "Request cancellation"));
+    await click(button(el, "Confirm"));
+    expect(el.textContent).toContain("outcome is unknown");
+    await click(button(el, "Resend same request"));
+    expect(posts(send)).toHaveLength(2);
+    expect((posts(send)[0]?.body as { idempotencyKey: string }).idempotencyKey).toBe(
+      (posts(send)[1]?.body as { idempotencyKey: string }).idempotencyKey,
+    );
+    expect(el.textContent).not.toContain("original task is canceled");
   });
 });
 

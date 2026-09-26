@@ -444,6 +444,7 @@ mod tests {
     fn rerun_requires_matching_temporal_close_not_just_terminal_projection() {
         let mut observed = Observed {
             run_id: "run-1".into(),
+            first_run_id: "run-1".into(),
             history_length: 1,
             state: ObservedState::Open,
         };
