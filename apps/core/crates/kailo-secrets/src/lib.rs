@@ -26,6 +26,8 @@ pub enum SecretError {
     AudienceMismatch,
     #[error("指定版本不存在或不可读")]
     VersionUnavailable,
+    #[error("OpenBao 拒绝 KV v2 写入，当前版本已变化或请求无效")]
+    WriteRejected,
     #[error("凭据被拒或路径不在策略内")]
     Refused,
     #[error("OpenBao 不可达: {0}")]
@@ -393,6 +395,14 @@ struct KvMetadata {
 struct KvWriteResponse {
     data: KvMetadata,
 }
+#[derive(Deserialize)]
+struct KvCurrentMetadataResponse {
+    data: KvCurrentMetadata,
+}
+#[derive(Deserialize)]
+struct KvCurrentMetadata {
+    current_version: u32,
+}
 
 impl SecretStore {
     /// 配置都不接受默认值：缺任一项即拒绝构造。回落到某个猜测的地址或身份，会让
@@ -474,22 +484,46 @@ impl SecretStore {
     ///
     /// 返回的是 KV v2 给的版本号，不是本地推算的。调用方把它连同 locator 与
     /// audience 一起存成 SecretRef——推算出来的版本号在并发写入下会指向别人的值。
+    /// 写入前读取当前 metadata，并把版本作为 CAS 条件交给 OpenBao 原子判定；
+    /// 不存在的路径使用协议规定的 cas=0。并发修改时拒绝本次写入，不猜测新版本。
     pub async fn write(&self, locator: &str, field: &str, value: &str) -> Result<u32, SecretError> {
         let (namespace, mount, path) = split_locator(locator)?;
         let token = self.session.token().await?;
+        let metadata = self
+            .session
+            .http
+            .get(format!("{}/v1/{mount}/metadata/{path}", self.session.addr))
+            .header("X-Vault-Namespace", &namespace)
+            .header("X-Vault-Token", token.as_str())
+            .send()
+            .await?;
+        let current_version = match metadata.status().as_u16() {
+            200 => {
+                metadata
+                    .json::<KvCurrentMetadataResponse>()
+                    .await
+                    .map_err(|_| SecretError::Malformed)?
+                    .data
+                    .current_version
+            }
+            404 => 0,
+            401 | 403 => return Err(SecretError::Refused),
+            _ => return Err(SecretError::Malformed),
+        };
         let resp = self
             .session
             .http
             .post(format!("{}/v1/{mount}/data/{path}", self.session.addr))
-            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Namespace", &namespace)
             .header("X-Vault-Token", token.as_str())
-            .json(&serde_json::json!({ "data": { field: value } }))
+            .json(&serde_json::json!({ "data": { field: value }, "options": { "cas": current_version } }))
             .send()
             .await?;
         match resp.status().as_u16() {
             200 => Ok(resp.json::<KvWriteResponse>().await?.data.version),
             401 | 403 => Err(SecretError::Refused),
-            _ => Err(SecretError::VersionUnavailable),
+            400 => Err(SecretError::WriteRejected),
+            _ => Err(SecretError::Malformed),
         }
     }
 }

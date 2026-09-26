@@ -125,8 +125,11 @@ ns secrets list -format=json 2>/dev/null | grep -q "\"${OPENBAO_KV_MOUNT}/\"" \
 # 失效。实测过：verify 路径写到第 18 版时，最旧可读版本已是第 9 版。
 #
 # 因此显式设定保留数，并把它登记为部署前置不变式（07 §1）。
+# cas_required 是运行期 mount 开关；写入必须携带当前版本 CAS，不能静默覆盖 head。
 : "${OPENBAO_KV_MAX_VERSIONS:?缺少 .env 中的 OPENBAO_KV_MAX_VERSIONS}"
-ns write "${OPENBAO_KV_MOUNT}/config" max_versions="$OPENBAO_KV_MAX_VERSIONS" >/dev/null
+ns write "${OPENBAO_KV_MOUNT}/config" max_versions="$OPENBAO_KV_MAX_VERSIONS" cas_required=true >/dev/null
+ns read -field=cas_required "${OPENBAO_KV_MOUNT}/config" | grep -qx true \
+  || { printf 'OpenBao KV v2 cas_required 未生效\n' >&2; exit 1; }
 ns auth list -format=json 2>/dev/null | grep -q '"approle/"' \
   || ns auth enable approle >/dev/null
 

@@ -100,6 +100,18 @@ async fn wrapped_delivery_and_secret_ref_boundaries() {
     assert_eq!(v1.expose(), "v1");
     assert_eq!(v2.expose(), "v2");
 
+    // 真实 mount 要求 CAS；这条写入只有 SecretStore 带上当前版本才会成功。
+    let n3 = s
+        .write(&locator(), "value", "v3")
+        .await
+        .expect("KV v2 写入必须携带当前版本 CAS");
+    assert!(n3 > n2, "OpenBao 应返回新版本号");
+    let v3 = s
+        .read(&at(locator(), n3, identity()), "value")
+        .await
+        .expect("新写入的固定版本应可读");
+    assert_eq!(v3.expose(), "v3");
+
     // audience 不符即拒，且在发出任何网络请求之前就拒：「先取回来再判断」意味
     // 着值已经进过内存与日志缓冲。
     assert!(

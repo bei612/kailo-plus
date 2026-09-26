@@ -25,9 +25,16 @@ ns() {
 # 不假设它们是 1 和 2：KV v2 会按 max_versions 裁掉旧版本，同一路径反复写之后
 # 最旧可读版本会往后移。断言「版本 1 可读」在跑够次数后必然失败，而那看起来
 # 像 SecretRef 解析坏了——实际是版本已被裁掉（见 core/verify/secret-ref.md）。
-v1=$(ns kv put -format=json "${OPENBAO_KV_MOUNT}/verify/secret-ref" value=v1 \
+secret_path="${OPENBAO_KV_MOUNT}/verify/secret-ref"
+if metadata=$(ns kv metadata get -format=json "$secret_path" 2>/dev/null); then
+  current_version=$(printf '%s' "$metadata" | python3 -c 'import json,sys;print(json.load(sys.stdin)["data"]["current_version"])')
+else
+  # 首次写入用 KV v2 的 cas=0；权限或依赖失败时后续写入仍会被 OpenBao 拒绝。
+  current_version=0
+fi
+v1=$(ns kv put -cas="$current_version" -format=json "$secret_path" value=v1 \
      | python3 -c 'import json,sys;print(json.load(sys.stdin)["data"]["version"])')
-v2=$(ns kv put -format=json "${OPENBAO_KV_MOUNT}/verify/secret-ref" value=v2 \
+v2=$(ns kv put -cas="$v1" -format=json "$secret_path" value=v2 \
      | python3 -c 'import json,sys;print(json.load(sys.stdin)["data"]["version"])')
 printf 'VERIFY_SECRET_VERSION_V1=%s\nVERIFY_SECRET_VERSION_V2=%s\n' "$v1" "$v2"
 

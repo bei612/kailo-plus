@@ -420,8 +420,15 @@ for df in sorted(glob.glob("**/Dockerfile", recursive=True)):
         # scratch 是保留的空基础镜像，不从任何 registry 拉取，没有可固定的 digest
         if m and "@sha256:" not in m.group(1) and not m.group(1).startswith("$") and m.group(1) != "scratch":
             bad.append(f"{df}:{n}: 基础镜像未按 digest 引用（{m.group(1)}）")
-# OpenBao 的部署前置不变式（07 §1）中可由部署描述校验的两条
+# OpenBao 的部署前置不变式（07 §1）中可由部署描述校验的条目
 bao_cfg = "deploy/local/openbao-config.hcl"
+bao_init = "deploy/local/openbao-init.sh"
+if os.path.exists(bao_init):
+    init = open(bao_init, encoding="utf-8").read()
+    if not re.search(r'ns write "\$\{OPENBAO_KV_MOUNT\}/config"[^\n]*\bcas_required=true\b', init):
+        bad.append("openbao-init.sh: KV v2 mount 未启用 cas_required=true（DD-70）")
+    if not re.search(r'ns read -field=cas_required "\$\{OPENBAO_KV_MOUNT\}/config"', init):
+        bad.append("openbao-init.sh: 缺少 cas_required 运行期回读校验（DD-70）")
 if os.path.exists(bao_cfg):
     lines = [l for l in open(bao_cfg, encoding="utf-8").read().split("\n")
              if not l.strip().startswith("#")]

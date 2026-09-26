@@ -8,6 +8,26 @@
 夹具：`core/verify/seed-secret-ref.sh`（写两个版本；只有一个版本时
 「取到的正是请求的那个版本」这条断言恒真，等于没验）。
 
+## KV v2 写入 CAS 核验（2026-09-26）
+
+权威为 `.design/02` 的 `SF-OBA-03`、`DD-70` 与 `.design/03` §9。GitNexus 对
+`SecretStore::write` 报 LOW，但接收者类型未解析的调用不能据此忽略；文本复核了
+`platform_bootstrap` 两处、`tenant_lifecycle` 与 `membership_projection` 各一处写入。
+本次只改统一写入封装、现有本地 OpenBao mount 初始化、核验夹具和既有安全门禁；
+不改数据库、契约、Workflow 或三端入口。CAS 冲突及未知回应均拒绝写入，不把
+结果不明当成版本成功，也不引入第二份 secret 权威。
+
+`openbao-init.sh` 已将 mount 运行期配置为 `cas_required=true` 并回读确认；在本地
+运行该脚本退出 0。`SecretStore::write` 先读路径 metadata 的 `current_version`，
+不存在时用 CAS 0，再由 OpenBao 在写入时原子检查版本；只接受 OpenBao 返回的版本号。
+真实 OpenBao 用例用同一枚受限 service token 写第三版并按该版本读回，1/1 通过。
+临时从写请求移除 `options.cas` 后，同一用例得到 `WriteRejected`、退出 101；恢复后
+重跑 1/1 通过。临时把部署脚本写成 `cas_required=false` 时，`check.sh security`
+明确报错并退出 1；恢复后通过。两处破坏均已还原。
+
+这只闭合写入 CAS 与本地 mount 前置条件；SecretRef 的轮换顺序、旧版本处置和
+各消费端投递仍属 Stage 2 的完整生命周期验收，不能由本用例替代。
+
 ## 值出不去，是类型挡住的
 
 `SecretValue` 不实现 `Debug`/`Display`/`Serialize`，取用必须显式调 `expose()`。
