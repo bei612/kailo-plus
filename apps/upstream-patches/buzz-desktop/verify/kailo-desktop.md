@@ -103,4 +103,8 @@ Desktop 复用的 `web/packages/platform` 在成员、设备、审计状态视�
 
 ## 2026-09-25 平台时间文案增量
 
-Desktop 共用的 `web/packages/platform` 采用同源相对时间阈值、双语文案与复数选择。固定 Desktop 上游基线、既有补丁和新 vendor 文件重新构建 Linux `.deb`；当前 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 实测 SHA-256 为 `9a31a28a97e47c7b5252089c4626491bf74ac7f0e48591b700c24ed96818dfe0`，manifest 与追溯记录已同步。共享包定时钟测试 53/53 通过；本增量仍未在真实桌面会话安装，也未重跑 Desktop 原生端到端测试，不能以 Web 走查替代桌面验收。
+Desktop 共用的 `web/packages/platform` 采用同源相对时间阈值、双语文案与复数选择。固定 Desktop 上游基线、既有补丁和新 vendor 文件重新构建 Linux `.deb`；当次 `dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 实测 SHA-256 为 `9a31a28a97e47c7b5252089c4626491bf74ac7f0e48591b700c24ed96818dfe0`，manifest 与追溯记录已同步。共享包定时钟测试 53/53 通过；本增量仍未在真实桌面会话安装，也未重跑 Desktop 原生端到端测试，不能以 Web 走查替代桌面验收。
+
+## 2026-09-26 角色页共享文案增量
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 基线、既有补丁与更新后的 `web/packages/platform/src/react/roles.tsx` 重新构建 Linux `.deb`。受限 BuildKit 构建成功，`dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的 SHA-256 为 `bb01ca84d44c65957030e3f32eb590db3f93b2f7a6a19d65d1b90f44694ce284`；manifest 和角色管理追溯记录已同步。此包尚未在真实 Linux 桌面会话安装，不能据此声称 Desktop 端到端验收完成。

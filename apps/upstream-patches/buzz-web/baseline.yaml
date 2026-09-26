@@ -14,7 +14,7 @@ base_divergence: none
 #
 # 改动以 patch series 形式保存而不是把 130 个源文件搬进本仓库：上游仍在演进，
 # 搬进来之后每次升级都变成手工比对，而 patch 能在新 commit 上直接重放并暴露冲突。
-patch_series: [0001-bff-transport-and-platform-pages.patch, 0002-stream-reopen-after-http-error.patch, 0003-platform-contracts-generated-types.patch, 0004-shared-platform-package.patch, 0005-tasks-and-approvals-navigation.patch, 0006-tenant-invitations.patch, 0007-role-management.patch]
+patch_series: [0001-bff-transport-and-platform-pages.patch, 0002-stream-reopen-after-http-error.patch, 0003-platform-contracts-generated-types.patch, 0004-shared-platform-package.patch, 0005-tasks-and-approvals-navigation.patch, 0006-tenant-invitations.patch, 0007-role-management.patch, 0008-chat-relative-time.patch]
 # BFF 请求与回应的类型取自 contracts 的 TypeScript 生成物（ADR-02/03）；BFF 客户端、
 # 成员/邀请/审计/设备/任务/审批页、邀请兑换页与文案取自 Kailo 自有的共用包 web/packages/platform——Desktop 用的是
 # 同一份（ADR-09）。补丁只 import 它们，构建时从本仓库放进源树；补丁里不带副本，
@@ -34,14 +34,14 @@ vendor_files:
   - web/packages/platform/src/react/governance.tsx:web/src/kailo-platform/react/governance.tsx
   - web/packages/platform/src/react/invitations.tsx:web/src/kailo-platform/react/invitations.tsx
   - web/packages/platform/src/react/roles.tsx:web/src/kailo-platform/react/roles.tsx
-patch_series_digest: sha256:610516221bc904906d77e21293413dbf61e2b3dfd8f93317595a4226d434c47d
-artifact_digest: sha256:fa44081a56a7962cc1e8caf93eb344ab60492e51144f48dfe8933a46579fedfd
+patch_series_digest: sha256:4925ab920c755b34c580764dc09ef738280156056915bdf18dc1fb5d3a9d84a7
+artifact_digest: sha256:01b2397fde9e680c00e44072565d11f7fe8410049442a5ea2a40bda29b846c8a
 
 # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
 build_context: web
 
 source_facts: [SF-WEB-01, SF-WEB-04, SF-WEB-05, SF-WEB-06, SF-WEB-07]
-source_seams: [SS-WEB-RELAY, SS-WEB-01]
+source_seams: [SS-WEB-RELAY, SS-WEB-01, SS-WEB-PRESENTATION]
 compatibility_evidence: [upstream-patches/buzz-web/verify/baseline-build.md, upstream-patches/buzz-web/verify/web-surface.md]
 owner: team-platform
-last_reverified: 2026-09-24
+last_reverified: 2026-09-26

@@ -173,7 +173,7 @@ export function RoleMembers({ workspaceId }: { workspaceId?: string }) {
                       {m.canGrantTenantAdmin ? button(m, "tenant.admin.grant", t("roles.grant")) : null}
                       {m.canRevokeTenantAdmin ? button(m, "tenant.admin.revoke", t("roles.revoke")) : null}
                       {m.lastTenantAdmin ? (
-                        <span className="ml-2 text-xs text-muted-foreground" title="LAST_TENANT_ADMIN">
+                        <span className="ml-2 text-xs text-muted-foreground">
                           <Button disabled>{t("roles.revoke")}</Button> {t("roles.lastAdmin")}
                         </span>
                       ) : null}

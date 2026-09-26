@@ -82,10 +82,19 @@ if [ -z "$dockerfile" ]; then
   # 上游普遍把版本与 revision 作为构建参数注入二进制，并在构建末尾自检——
   # 例如 agentgateway 在 version 为 "unknown" 时直接让构建失败。
   # 取值用 manifest 里的 commit，产物因此天然可追溯到它。
-  $SUDO docker build -q \
-    --build-arg "VERSION=${base:0:12}" \
-    --build-arg "GIT_REVISION=$base" \
-    -t "$tag" "$src/$ctx" >/dev/null
+  if [ -n "${BUILDX_BUILDER:-}" ]; then
+    # docker-container builder 的缓存不等于本地 Docker image store；后续 tag/push
+    # 需要明确 --load。builder 容器本身承担 CPU/内存限额。
+    $SUDO docker buildx build --builder "$BUILDX_BUILDER" --load -q \
+      --build-arg "VERSION=${base:0:12}" \
+      --build-arg "GIT_REVISION=$base" \
+      -t "$tag" "$src/$ctx" >/dev/null
+  else
+    $SUDO docker build -q \
+      --build-arg "VERSION=${base:0:12}" \
+      --build-arg "GIT_REVISION=$base" \
+      -t "$tag" "$src/$ctx" >/dev/null
+  fi
   # 推入本地 registry：自建产物只有 image ID，必须先入 registry 才能按 digest
   # 引用（ADR-06）。REGISTRY 由调用方给出，接入托管 registry 后只改这一个值。
   registry="${REGISTRY:?需要 REGISTRY，例如 127.0.0.1:55000}"
@@ -97,8 +106,13 @@ if [ -z "$dockerfile" ]; then
 else
   echo "== 构建 $project 安装包 =="
   staged=$(mktemp -d)
-  $SUDO docker build --progress=plain -f "$(realpath "$dockerfile")" \
-    --output "type=local,dest=$staged" "$src/$ctx"
+  if [ -n "${BUILDX_BUILDER:-}" ]; then
+    $SUDO docker buildx build --builder "$BUILDX_BUILDER" --progress=plain \
+      -f "$(realpath "$dockerfile")" --output "type=local,dest=$staged" "$src/$ctx"
+  else
+    $SUDO docker build --progress=plain -f "$(realpath "$dockerfile")" \
+      --output "type=local,dest=$staged" "$src/$ctx"
+  fi
   mapfile -t bundles < <(find "$staged" -maxdepth 1 -type f)
   [ "${#bundles[@]}" -eq 1 ] || { echo "构建应恰好产出 1 个安装包，得到 ${#bundles[@]} 个" >&2; exit 1; }
   digest="sha256:$(sha256sum "${bundles[0]}" | cut -d' ' -f1)"

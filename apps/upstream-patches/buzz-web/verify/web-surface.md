@@ -135,6 +135,38 @@ Digest 记在 `upstream-patches/buzz-web/baseline.yaml`；2026-09-25 浏览器�
 
 ## 复现
 
+### 2026-09-25：原生聊天时间接入共用目录
+
+- 权威与状态：`REQ-08`、`SS-WEB-PRESENTATION` 和 `apps/AGENTS.md` 规则 12
+  要求协作面与管理面共用 locale、message key、阈值和复数语义；这是 Web
+  宿主的适配，不改变 Buzz Relay 的时间戳事实。
+- 影响与兼容：GitNexus `kailo-plus@8643dc7` 对共享
+  `apps/web/packages/platform/src/format.ts::relativeTime` 报 `CRITICAL`，
+  5 个直接调用者、8 条页面流程；本次没有改该函数。上游开发树的
+  `web/src/shared/lib/relative-time.ts::relativeTime` 在索引中为 `UNKNOWN`，
+  全文检索确认仅被 `ChannelPane` 调用。新增补丁只让这一个入口消费共用函数；
+  无 API、数据库、Workflow 或四语言契约变化。Desktop/Mobile 的聊天时间仍
+  由各自的原生格式器渲染，本增量不声称三端整体同源。
+- 副作用与异常：Unix 秒转换后使用同一浏览器 locale；无效或超出 JS Date
+  可表示范围的值显示共用目录中的“时间不可用”，不抛错中断频道。
+  该显示转换不提交动作、不改变授权、审计或消息正文。未来时间由共用目录
+  的 `future` 文案表达，不冒充过去时间。
+- 交付验证：`0008-chat-relative-time.patch` 在固定
+  `a6766c482533d028582d0efcfd3740769f86217c` 基线和 0001–0007 后重放成功；
+  对 `.references/buzz-web` 上该 commit 的 `git grep` 确认
+  `web/src/shared/i18n/index.ts::getLocale/t` 仍在，`git ls-tree` 确认
+  `ThemeProvider.tsx`、`globals.css` 与 i18n 文件仍在；
+  重建源树的聊天格式器、定时钟测试与角色页同开发树逐字节相同。
+  源树 `npm run check` 与 `npm run typecheck` 均退出 0，定向 Vitest 4 文件/14 测试通过。
+  故意把英文昨天改成“1 day ago”时该测试以实际值不符失败，恢复后通过。
+  16 GiB、5 CPU 的独立 BuildKit builder 构建镜像
+  `sha256:01b2397fde9e680c00e44072565d11f7fe8410049442a5ea2a40bda29b846c8a`；
+  本地容器健康。2026-09-26 该镜像上的真实浏览器走查退出码 0，
+  `summary.json` 记录 24 个步骤、无 CSP 违规，含登录、消息、附件、
+  BFF 重启后续流、任务、审批、邀请与注销；证据在
+  `/tmp/kailo-web-chat-time-walk-final-20260926`。走查验证聊天渲染路径，
+  中英文时间边界由定时钟测试验证，未把走查说成逐语言边界验收。
+
 2026-09-25 共享文案增量：固定基线与既有补丁、更新后的 `i18n.ts` 重新构建并推入本地 registry，镜像 digest 为 `sha256:c64a5d818eec7c517d987ef84cb9394c4e60abf7625d117121873376c65d4426`；manifest、部署 compose 与追溯记录均已同步。此次未重跑浏览器走查，前述走查仍是上一增量的证据。
 
 2026-09-25 Mobile 登录与连接文案增量：再次以固定 Web 基线、既有补丁及更新后的共享 `i18n.ts` 构建并推入本地 registry，镜像 digest 为 `sha256:728181887ab9000b07edb6548d7a9b2ceaf6729a598b02674594d3a889eb6db5`；manifest、部署 compose 与追溯记录已同步。此次变更没有改 Web 页面调用逻辑，也未重跑浏览器走查；前述浏览器结果仍属历史增量。

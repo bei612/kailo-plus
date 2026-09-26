@@ -1,0 +1,65 @@
+diff --git a/web/src/shared/lib/relative-time.ts b/web/src/shared/lib/relative-time.ts
+index 86726a2..9d9df99 100644
+--- a/web/src/shared/lib/relative-time.ts
++++ b/web/src/shared/lib/relative-time.ts
+@@ -1,15 +1,14 @@
+-import { getLocale } from "@/shared/i18n";
++import { relativeTime as platformRelativeTime } from "@kailo/platform/format";
++import { translate } from "@kailo/platform/i18n";
++import { getLocale } from "@/shared/i18n";
+ 
+-/** Format a Unix timestamp (seconds) using the browser-selected application locale. */
++/** Chat and management use the same locale, thresholds and message catalog. */
+ export function relativeTime(unix: number): string {
+-  const seconds = Math.round(unix - Date.now() / 1_000);
+-  const formatter = new Intl.RelativeTimeFormat(getLocale(), { numeric: "auto" });
+-  if (Math.abs(seconds) < 60) return formatter.format(seconds, "second");
+-  const minutes = Math.round(seconds / 60);
+-  if (Math.abs(minutes) < 60) return formatter.format(minutes, "minute");
+-  const hours = Math.round(minutes / 60);
+-  if (Math.abs(hours) < 24) return formatter.format(hours, "hour");
+-  const days = Math.round(hours / 24);
+-  if (Math.abs(days) < 30) return formatter.format(days, "day");
+-  return formatter.format(Math.round(days / 30), "month");
++  const milliseconds = unix * 1_000;
++  const locale = getLocale();
++  const date = new Date(milliseconds);
++  if (!Number.isFinite(date.getTime())) {
++    return translate(locale, "platform.time.unavailable");
++  }
++  return platformRelativeTime(locale, date.toISOString());
+ }
+diff --git a/web/src/shared/lib/relative-time.test.ts b/web/src/shared/lib/relative-time.test.ts
+new file mode 100644
+--- /dev/null
++++ b/web/src/shared/lib/relative-time.test.ts
+@@ -0,0 +1,29 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { relativeTime } from "@/shared/lib/relative-time";
++
++afterEach(() => {
++  vi.useRealTimers();
++  vi.unstubAllGlobals();
++});
++
++describe("chat relativeTime", () => {
++  it("uses the platform time catalog and unit thresholds in both locales", () => {
++    vi.useFakeTimers();
++    vi.setSystemTime(new Date("2026-09-25T12:00:00Z"));
++    const now = Date.now() / 1_000;
++
++    vi.stubGlobal("navigator", { language: "en-US", languages: ["en-US"] });
++    expect(relativeTime(now - 60)).toBe("1 minute ago");
++    expect(relativeTime(now - 86_400)).toBe("yesterday");
++
++    vi.stubGlobal("navigator", { language: "zh-CN", languages: ["zh-CN"] });
++    expect(relativeTime(now - 60)).toBe("1 分钟前");
++    expect(relativeTime(now + 86_400)).toBe("明天");
++  });
++
++  it("does not render malformed timestamps as a fabricated time", () => {
++    vi.stubGlobal("navigator", { language: "zh-CN", languages: ["zh-CN"] });
++    expect(relativeTime(Number.NaN)).toBe("时间不可用");
++    expect(relativeTime(Number.POSITIVE_INFINITY)).toBe("时间不可用");
++  });
++});

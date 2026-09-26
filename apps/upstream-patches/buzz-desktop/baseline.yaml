@@ -856,14 +856,14 @@ vendor_files:
   - web/packages/platform/src/react/invitations.tsx:desktop/src/kailo-platform/react/invitations.tsx
   - web/packages/platform/src/react/roles.tsx:desktop/src/kailo-platform/react/roles.tsx
   - web/packages/platform/src/react/NativeBootstrap.tsx:desktop/src/kailo-platform/react/NativeBootstrap.tsx
-patch_series_digest: sha256:929367ee9e3e33ca00ec1fee6e36b2aa54ee167461c176a4970bc12269fbcfa7
+patch_series_digest: sha256:642bc2dd24e17cdd708f6f974a602ab99fae1e8120ebcfe95672c695181217d7
 # 产物是 Linux 桌面安装包（.deb）而不是镜像：上游没有打包用的 Dockerfile，由 Kailo 维护的
 # 构建文件产出，artifact_digest 记安装包字节的 SHA-256（06 §2）。
 build_dockerfile: upstream-patches/buzz-desktop/packaging/Dockerfile
-artifact_digest: sha256:9a31a28a97e47c7b5252089c4626491bf74ac7f0e48591b700c24ed96818dfe0
+artifact_digest: sha256:bb01ca84d44c65957030e3f32eb590db3f93b2f7a6a19d65d1b90f44694ce284
 
 source_facts: [SF-DSK-01, SF-DSK-02, SF-MOB-02]
 source_seams: []
 compatibility_evidence: [upstream-patches/buzz-desktop/verify/baseline-build.md, upstream-patches/buzz-desktop/verify/kailo-desktop.md]
 owner: team-platform
-last_reverified: 2026-09-25
+last_reverified: 2026-09-26
