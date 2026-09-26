@@ -22,6 +22,7 @@
 - 例行轮换周期到达；
 - 凭据出现在不该出现的地方：日志、链路属性、工单、命令行历史、镜像层、版本库；
 - OpenBao audit 日志出现非预期的取用或登录（`/openbao/data/audit.log` 中不属于 Core 或 Worker 的 `auth/approle/login`）；
+- Core 启动日志出现 `引导失败后 service token 撤销未确认`：至少一枚启动期间签发的令牌缺少确定撤销结果，Core 已拒绝 serving，但不能据此推断 OpenBao 侧令牌失效；
 - 设备丢失或员工离职时本人或管理员报告。
 
 ## 判定依据
@@ -29,6 +30,7 @@
 1. 泄漏范围按凭据类别判定，取上表对应行。怀疑即按泄漏处理：凭据是否被使用无法从外部证伪。
 2. 泄漏的是 Web 托管的 HUMAN 私钥时执行步骤 E；operator 私钥执行步骤 F；CONTROL 私钥按「不可执行的动作」第 1 条处理。
 3. 是否需要回收已签发令牌：凭据落入的位置是否可被他人读取。只是例行轮换时不回收。
+4. 启动自检报 `RevocationUnconfirmed` 时按仍有有效令牌处置：进入维护窗口，执行步骤 C 对受影响 namespace 的 AppRole 登录 lease 做前缀撤销，再核对 role 的 `secret_id_num_uses=1`，按步骤 A 重新投递；前缀撤销会同时影响该 namespace 的其他在用 AppRole 令牌，不能当作无扰动的单 token 操作。
 
 ## 可执行步骤
 

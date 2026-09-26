@@ -39,6 +39,8 @@ pub enum SecretError {
     /// secret_id 在一次登录后仍能再登录：role 没有配成单次使用。
     #[error("引导 secret_id 可重复登录：role 必须配置 secret_id_num_uses=1")]
     SecretIdReusable,
+    #[error("引导失败后 service token 撤销未确认，必须处置该凭据")]
+    RevocationUnconfirmed,
     /// 内存里的 service token 已不可用（被撤销或过期），且没有可重新登录的凭据。
     #[error("service token 已失效，需要部署重新投递引导凭据")]
     CredentialLost,
@@ -209,6 +211,26 @@ impl AppRoleSession {
             .login(&secret_id)
             .await?
             .ok_or(SecretError::LoginFailed)?;
+        // 4. 自检：同一 secret_id 必须已经不能登录。能登录说明 role 没配成单次
+        //    使用，泄漏的 secret_id 可以无限换 token——拒绝启动。校验完成前
+        //    不把首个 token 放进可供 Core 使用的 lease；任何拒绝分支先撤销它。
+        let verified = async {
+            if !auth.renewable || auth.lease_duration == 0 {
+                return Err(SecretError::Malformed);
+            }
+            match self.login(&secret_id).await? {
+                None => Ok(()),
+                Some(extra) => {
+                    self.revoke_self(&extra.client_token).await?;
+                    Err(SecretError::SecretIdReusable)
+                }
+            }
+        }
+        .await;
+        if let Err(reason) = verified {
+            self.revoke_self(&auth.client_token).await?;
+            return Err(reason);
+        }
         tracing::info!(
             namespace = %self.namespace,
             role = %self.role_name,
@@ -216,29 +238,35 @@ impl AppRoleSession {
             ttl = auth.lease_duration,
             "OpenBao 引导凭据已换成 service token"
         );
-        if !auth.renewable || auth.lease_duration == 0 {
-            return Err(SecretError::Malformed);
-        }
         *self.lease.write().await = Some(Lease {
             token: Arc::new(auth.client_token),
             ttl: Duration::from_secs(auth.lease_duration),
         });
-
-        // 4. 自检：同一 secret_id 必须已经不能登录。能登录说明 role 没配成单次
-        //    使用，泄漏的 secret_id 可以无限换 token——拒绝启动。多出来的那个
-        //    token 立即撤销，不留在 OpenBao 里。
-        if let Some(extra) = self.login(&secret_id).await? {
-            let _ = self
-                .with_namespace(
-                    self.http
-                        .post(format!("{}/v1/auth/token/revoke-self", self.addr)),
-                )
-                .header("X-Vault-Token", &extra.client_token)
-                .send()
-                .await;
-            return Err(SecretError::SecretIdReusable);
-        }
         Ok(())
+    }
+
+    async fn revoke_self(&self, token: &str) -> Result<(), SecretError> {
+        let result = self
+            .with_namespace(
+                self.http
+                    .put(format!("{}/v1/auth/token/revoke-self", self.addr)),
+            )
+            .header("X-Vault-Token", token)
+            .send()
+            .await;
+        match result {
+            Ok(response) if response.status().is_success() => Ok(()),
+            Ok(response) => {
+                tracing::error!(namespace = %self.namespace, role = %self.role_name,
+                    status = %response.status(), "OpenBao service token 撤销未确认");
+                Err(SecretError::RevocationUnconfirmed)
+            }
+            Err(error) => {
+                tracing::error!(namespace = %self.namespace, role = %self.role_name,
+                    error = %error, "OpenBao service token 撤销未确认");
+                Err(SecretError::RevocationUnconfirmed)
+            }
+        }
     }
 
     /// `Ok(None)` 是登录被拒。
@@ -535,6 +563,8 @@ fn split_locator(locator: &str) -> Result<(String, String, String), SecretError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
 
     #[test]
     fn locator_must_have_three_parts() {
@@ -552,5 +582,70 @@ mod tests {
             (ns.as_str(), mount.as_str(), path.as_str()),
             ("platform", "kv", "buzz/control/t-1")
         );
+    }
+
+    #[tokio::test]
+    async fn reusable_secret_id_revokes_both_issued_tokens() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let replies = [
+                r#"{"data":{"creation_path":"auth/approle/role/probe/secret-id"}}"#,
+                r#"{"data":{"secret_id":"reusable"}}"#,
+                r#"{"auth":{"client_token":"first","accessor":"first-accessor","lease_duration":120,"renewable":true}}"#,
+                r#"{"auth":{"client_token":"extra","accessor":"extra-accessor","lease_duration":120,"renewable":true}}"#,
+                "",
+                "",
+            ];
+            let mut requests = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while requests.len() < replies.len() && std::time::Instant::now() < deadline {
+                let (mut stream, _) = match listener.accept() {
+                    Ok(connection) => connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(error) => panic!("mock OpenBao accept: {error}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut bytes = [0u8; 4096];
+                let size = stream.read(&mut bytes).unwrap();
+                let request = String::from_utf8_lossy(&bytes[..size]).to_string();
+                let body = replies[requests.len()];
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+                requests.push(request);
+            }
+            requests
+        });
+        let session = AppRoleSession::new(
+            &format!("http://{addr}"),
+            "platform".to_owned(),
+            "role-id".to_owned(),
+            "probe".to_owned(),
+            "wrapped".to_owned(),
+        );
+        assert!(matches!(
+            session.connect().await,
+            Err(SecretError::SecretIdReusable)
+        ));
+        assert!(matches!(
+            session.token().await,
+            Err(SecretError::CredentialLost)
+        ));
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 6, "拒绝启动前必须撤销两枚 service token");
+        for (request, token) in [(&requests[4], "extra"), (&requests[5], "first")] {
+            assert!(request.starts_with("PUT /v1/auth/token/revoke-self HTTP/1.1"));
+            assert!(request.contains(&format!("x-vault-token: {token}")));
+            assert!(request.contains("x-vault-namespace: platform"));
+        }
     }
 }

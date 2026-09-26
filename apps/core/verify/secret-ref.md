@@ -53,3 +53,9 @@ Core 的策略只给登记 mount 的 `create/update/read`（data）与 `read/lis
 显式扩策略，而不是一开始就把能力留在那里。
 
 AppRole 换取的 token 是短 TTL（20 分钟，上限 1 小时），Core 不持有长期凭据。
+
+## 引导自检失败后的令牌回收（2026-09-26）
+
+`AppRoleSession::connect` 在首次登录后、单次使用自检成功前不再发布 service token 到内存 lease。若 role 错配导致同一 `secret_id` 第二次仍可登录，先以各自的 token 调 OpenBao `PUT auth/token/revoke-self` 撤销额外与首次签发的两枚令牌，再以 `SecretIdReusable` 拒绝启动；首次响应缺少 renewable/有效 lease、或自检请求失败时，同样尝试撤销首次令牌。撤销失败不被吞掉：返回 `RevocationUnconfirmed`，Core 不进入 serving，运维按 RB-02 步骤 C 处置，不能把“请求已发出”当作“令牌已撤销”。
+
+定向 `cargo test -p kailo-secrets reusable_secret_id_revokes_both_issued_tokens`：1/1 通过，模拟可重复登录时观察到两次独立撤销请求和空 lease。临时移除首次令牌撤销后，同一用例以“收到 5 次请求，应为 6 次”失败（退出码 101）；恢复后 1/1 通过。真实 OpenBao 的正常单次投递路径由 `seed-secret-ref.sh` 加 `cargo test -p kailo-secrets --test openbao` 再验，1/1 通过。反向用例验证的是撤销请求与 fail-closed，不把 mock HTTP 200 冒充真实 OpenBao 已撤销的网络证据。
