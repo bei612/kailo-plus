@@ -327,3 +327,21 @@ ServerKey、角色、邀请、Governed Action 与 Workflow 对账；两项需停
 的专门演练按测试声明保持 ignored。此次没有验证 CONTROL key 的轮换或销毁：
 它们仍受 `GAP-BUZ-01` 阻断。孤儿 KV 路径、旧版本终态处置与其他消费端投递
 仍是 Stage 2 SecretRef 生命周期缺口。
+
+## Tenant namespace 归属核验（2026-09-26）
+
+`DD-70/72` 与 `.design/03` §9 把平台凭据放在 `platform/`、Tenant 的
+HUMAN/CONTROL 私钥放在各自 `tenants/<tenant_id>` OpenBao namespace。
+当前 `openbao-init.sh` 只建立 `OPENBAO_PLATFORM_NAMESPACE` 的 KV mount 与
+`kailo-core` AppRole；`main.rs` 把该 namespace/mount 作为
+`ServiceState.secret_mount`，`membership_projection::ensure_human_identity` 和
+`tenant_lifecycle::provision_tenant_buzz` 由此形成 `platform/kv/buzz-*` locator。
+固定部署的 root namespace 执行只读 `bao namespace list -format=json` 实得
+`["platform/"]`；Core 源码与本地引导脚本没有创建 `tenants/<tenant_id>` 的路径。
+所以“路径中含 Tenant ID”不等于设计规定的 Tenant namespace 与独立 mount/policy/token。
+
+这是 Stage 1 的 OpenBao 最小面退出缺口，不因当前签名、roster 或集成用例通过而
+自动闭合。现有 ACTIVE 绑定仍按其已存 locator/version/audience 读取；直接把
+新写入改指向尚不存在的 Tenant namespace 会使新 Tenant 建立失败。
+后续必须同时解决 Tenant namespace/mount/policy/token 的创建与重启后的取用、
+旧 `platform/kv` 引用的兼容迁移、以及失败时的对账，才能改变写入位置。
