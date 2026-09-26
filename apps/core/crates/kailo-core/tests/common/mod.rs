@@ -1112,28 +1112,63 @@ pub async fn live_scope(pool: &PgPool, fx: &LiveWorkspace) -> (String, String) {
 pub async fn read_secret_version(
     http: &reqwest::Client,
     e: &Env,
+    tenant: Uuid,
     locator: &str,
     version: i32,
 ) -> String {
-    let token = e.bao_token.as_str();
-    // locator = <namespace>/<mount>/<path>
-    let mut parts = locator.splitn(3, '/');
-    let (ns, mount, path) = (
-        parts.next().expect("namespace"),
-        parts.next().expect("mount"),
-        parts.next().expect("path"),
-    );
-    let read: serde_json::Value = http
-        .get(format!("{}/v1/{mount}/data/{path}", e.bao_addr))
+    let parent =
+        std::env::var("OPENBAO_TENANT_PARENT_NAMESPACE").expect("核验需要 Tenant namespace 根");
+    let namespace = format!("{parent}/{tenant}");
+    let prefix = format!("{namespace}/{}/", e.bao_mount);
+    let path = locator
+        .strip_prefix(&prefix)
+        .filter(|path| !path.is_empty())
+        .expect("SecretRef 必须属于被核验的 Tenant KV");
+
+    // platform/ 核验令牌不得跨 Tenant。由本地夹具的 root 凭据在目标 namespace
+    // 签一枚仅带该 namespace kailo-core policy 的短期令牌；root 值只读入内存。
+    let root_file =
+        std::env::var("VERIFY_OPENBAO_ROOT_TOKEN_FILE").expect("核验需要 root 凭据文件路径");
+    let root_file = std::fs::read_to_string(root_file).expect("读取本地核验凭据文件");
+    let root_file: serde_json::Value =
+        serde_json::from_str(&root_file).expect("解析本地核验凭据文件");
+    let root_token = root_file["root_token"].as_str().expect("root_token");
+    let role_name =
+        std::env::var("OPENBAO_TENANT_CORE_ROLE_NAME").expect("核验需要 Tenant Core policy 名");
+    let ttl = std::env::var("OPENBAO_SECRET_ID_TTL").expect("核验需要短期令牌 TTL");
+    let issued = http
+        .post(format!("{}/v1/auth/token/create", e.bao_addr))
+        .header("X-Vault-Namespace", &namespace)
+        .header("X-Vault-Token", root_token)
+        .json(&serde_json::json!({"policies": [role_name], "ttl": ttl}))
+        .send()
+        .await
+        .expect("签发 Tenant 核验令牌");
+    assert!(issued.status().is_success(), "签发 Tenant 核验令牌失败");
+    let issued: serde_json::Value = issued.json().await.expect("解析令牌响应");
+    let token = issued["auth"]["client_token"]
+        .as_str()
+        .expect("client_token");
+
+    let read = http
+        .get(format!("{}/v1/{}/data/{path}", e.bao_addr, e.bao_mount))
         .query(&[("version", version.to_string())])
-        .header("X-Vault-Namespace", ns)
+        .header("X-Vault-Namespace", &namespace)
+        .header("X-Vault-Token", token)
+        .send()
+        .await;
+    // 先撤销再解析读取结果：读取失败也不把核验令牌留到 TTL 到期。
+    let revoked = http
+        .put(format!("{}/v1/auth/token/revoke-self", e.bao_addr))
+        .header("X-Vault-Namespace", &namespace)
         .header("X-Vault-Token", token)
         .send()
         .await
-        .expect("读 KV")
-        .json()
-        .await
-        .expect("解析读取响应");
+        .expect("撤销 Tenant 核验令牌");
+    assert!(revoked.status().is_success(), "Tenant 核验令牌撤销未确认");
+    let read = read.expect("读 Tenant KV");
+    assert!(read.status().is_success(), "读 Tenant KV 失败");
+    let read: serde_json::Value = read.json().await.expect("解析读取响应");
     read["data"]["data"]["value"]
         .as_str()
         .expect("KV 值")

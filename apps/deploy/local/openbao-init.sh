@@ -102,12 +102,22 @@ fi
 #
 # SecretRef 的 locator 形如 <namespace>/<mount>/<path>（.design/03 §9），
 # 这三段在此建立。namespace 是真实隔离边界：mount entry、policy store 与
-# token store 都按 namespace 分区（SF-OBA-02），因此按 Tenant 分区的 secret
-# 以后加新 namespace 即可，不改这里的形状。
+# token store 都按 namespace 分区（SF-OBA-02）；下文同时建立 tenants/ 父
+# namespace，业务 Tenant 由 Core 在该父 namespace 下建立独立子 namespace。
 #
 # 名字取自 .env，不写死：mount 名是 locator 的一段，属于配置而非常量。
 : "${OPENBAO_PLATFORM_NAMESPACE:?缺少 .env 中的 OPENBAO_PLATFORM_NAMESPACE}"
+: "${OPENBAO_TENANT_PARENT_NAMESPACE:?缺少 .env 中的 OPENBAO_TENANT_PARENT_NAMESPACE}"
 : "${OPENBAO_KV_MOUNT:?缺少 .env 中的 OPENBAO_KV_MOUNT}"
+: "${OPENBAO_TENANT_CORE_ROLE_NAME:?缺少 .env 中的 OPENBAO_TENANT_CORE_ROLE_NAME}"
+: "${OPENBAO_TENANT_PROVISIONER_ROLE_NAME:?缺少 .env 中的 OPENBAO_TENANT_PROVISIONER_ROLE_NAME}"
+: "${OPENBAO_TENANT_VERIFY_ROLE_NAME:?缺少 .env 中的 OPENBAO_TENANT_VERIFY_ROLE_NAME}"
+for segment in "$OPENBAO_PLATFORM_NAMESPACE" "$OPENBAO_TENANT_PARENT_NAMESPACE" "$OPENBAO_KV_MOUNT" \
+  "$OPENBAO_TENANT_CORE_ROLE_NAME" "$OPENBAO_TENANT_PROVISIONER_ROLE_NAME" "$OPENBAO_TENANT_VERIFY_ROLE_NAME"; do
+  [[ "$segment" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "OpenBao namespace、mount 与 role 名必须是单一路径段" >&2; exit 2; }
+done
+[ "$OPENBAO_TENANT_PARENT_NAMESPACE" = tenants ] || { echo "DD-70 固定 Tenant namespace 根为 tenants" >&2; exit 2; }
+[ "$OPENBAO_PLATFORM_NAMESPACE" != "$OPENBAO_TENANT_PARENT_NAMESPACE" ] || { echo "平台与 Tenant namespace 根不能相同" >&2; exit 2; }
 
 ns() { printf '%s\n' "$root_token" | run_bao "$OPENBAO_PLATFORM_NAMESPACE" "$@"; }
 # 带正文的调用：令牌之后接调用方的 stdin
@@ -164,6 +174,50 @@ role_opts=(secret_id_num_uses=1 "secret_id_ttl=$OPENBAO_SECRET_ID_TTL"
            "token_period=$OPENBAO_TOKEN_PERIOD" token_ttl=0 token_max_ttl=0)
 
 ns write auth/approle/role/kailo-core token_policies=kailo-core "${role_opts[@]}" >/dev/null
+
+# Tenant namespace 由 Core 的受限 provisioner 凭据建立。这个 token 只具备
+# 子 namespace、KV mount、AppRole/policy 的配置权；它没有任一 Tenant 的
+# KV data/metadata 权限。实际私钥取用必须再换取该 Tenant namespace 内的
+# kailo-core service token（DD-70/72），不能拿此父 token 跨 Tenant 读值。
+tenant_parent() { printf '%s\n' "$root_token" | run_bao "$OPENBAO_TENANT_PARENT_NAMESPACE" "$@"; }
+tenant_parent_stdin() { { printf '%s\n' "$root_token"; cat; } | run_bao "$OPENBAO_TENANT_PARENT_NAMESPACE" "$@"; }
+root namespace list 2>/dev/null | grep -qx "${OPENBAO_TENANT_PARENT_NAMESPACE}/" \
+  || root namespace create "$OPENBAO_TENANT_PARENT_NAMESPACE" >/dev/null
+tenant_parent auth list -format=json 2>/dev/null | grep -q '"approle/"' \
+  || tenant_parent auth enable approle >/dev/null
+tenant_parent_stdin policy write kailo-tenant-provisioner - <<POLICY >/dev/null
+path "sys/namespaces/*" {
+  capabilities = ["create", "update", "read", "sudo"]
+}
+path "+/sys/mounts/${OPENBAO_KV_MOUNT}" {
+  capabilities = ["create", "update", "read", "sudo"]
+}
+path "+/${OPENBAO_KV_MOUNT}/config" {
+  capabilities = ["create", "update", "read"]
+}
+path "+/sys/auth/approle" {
+  capabilities = ["create", "update", "read", "sudo"]
+}
+path "+/sys/policies/acl/${OPENBAO_TENANT_CORE_ROLE_NAME}" {
+  capabilities = ["create", "update", "read"]
+}
+path "+/auth/approle/role/${OPENBAO_TENANT_CORE_ROLE_NAME}" {
+  capabilities = ["create", "update", "read"]
+}
+path "+/auth/approle/role/${OPENBAO_TENANT_CORE_ROLE_NAME}/role-id" {
+  capabilities = ["read"]
+}
+path "+/auth/approle/role/${OPENBAO_TENANT_CORE_ROLE_NAME}/secret-id" {
+  capabilities = ["create", "update"]
+}
+POLICY
+tenant_parent write "auth/approle/role/${OPENBAO_TENANT_PROVISIONER_ROLE_NAME}" \
+  token_policies=kailo-tenant-provisioner "${role_opts[@]}" >/dev/null
+# 宿主集成验证只使用相同窄策略、无 CIDR 限制的一次性 role；不进入部署描述。
+tenant_parent write "auth/approle/role/${OPENBAO_TENANT_VERIFY_ROLE_NAME}" \
+  token_policies=kailo-tenant-provisioner secret_id_num_uses=1 \
+  "secret_id_ttl=$OPENBAO_SECRET_ID_TTL" "token_period=$OPENBAO_TOKEN_PERIOD" \
+  token_ttl=0 token_max_ttl=0 >/dev/null
 
 # ---- root namespace：Core 只读 audit 清单的 AppRole ----
 #

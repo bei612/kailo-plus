@@ -84,6 +84,13 @@ pub async fn provision_tenant_buzz(
         Err(e) => return unavailable(e),
     };
 
+    // DD-70/72：在任何 CONTROL 私钥生成与写入前，先收敛该 Tenant 的真实
+    // OpenBao namespace、KV mount、policy 与 AppRole。失败不能退回 platform/kv。
+    if let Err(error) = state.secrets.ensure_tenant(req.tenant_id).await {
+        tracing::warn!(error = %error, tenant_id = %req.tenant_id, "Tenant secret namespace 未就绪");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
     // CONTROL Principal：Tenant 的协议 owner，不是业务 actor（`DD-03`）。
     let control_principal = match sqlx::query_scalar!(
         "insert into identity.principal (id, tenant_id, kind, status)
@@ -111,10 +118,9 @@ pub async fn provision_tenant_buzz(
             let pubkey = keys.public_key().to_hex();
             // 首次建 Tenant 的投影可重试；每把新 key 独占路径，避免重试写入同一
             // KV 路径时由 max_versions 淘汰仍需保留的旧 generation。
-            let locator = format!(
-                "{}/buzz-control/{}/{}",
-                state.secret_mount, req.tenant_id, pubkey
-            );
+            let locator = state
+                .secrets
+                .tenant_locator(req.tenant_id, &format!("buzz-control/{pubkey}"));
             let version = match state
                 .secrets
                 .write(&locator, "value", &keys.secret_key().to_secret_hex())

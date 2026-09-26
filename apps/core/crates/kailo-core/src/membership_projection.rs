@@ -460,15 +460,20 @@ pub(crate) async fn ensure_human_identity(
         return Ok(pubkey);
     }
 
+    state
+        .secrets
+        .ensure_tenant(tenant_id)
+        .await
+        .map_err(|e| Blocked::Unavailable(format!("Tenant secret namespace 未就绪：{e}")))?;
+
     let keys = nostr::Keys::generate();
     let pubkey = keys.public_key().to_hex();
     // 一把新公钥占用一个 KV 路径：OpenBao 的 max_versions 会在同一路径的
     // 版本数到顶时自动淘汰最旧版本，不能让它先于固定旧 generation 的执行终态
     // 销毁仍被引用的私钥。已存 binding 的 locator 不变，读端始终按库中引用取用。
-    let locator = format!(
-        "{}/buzz-human/{tenant_id}/{principal_id}/{pubkey}",
-        state.secret_mount
-    );
+    let locator = state
+        .secrets
+        .tenant_locator(tenant_id, &format!("buzz-human/{principal_id}/{pubkey}"));
     let version = state
         .secrets
         .write(&locator, "value", &keys.secret_key().to_secret_hex())

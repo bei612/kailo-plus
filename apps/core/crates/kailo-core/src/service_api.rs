@@ -34,7 +34,6 @@ pub struct ServiceState {
     /// Platform Catalog Tenant：RelayOperatorIdentity 挂在它下面（.design/09 第 3 步）
     pub catalog_tenant: uuid::Uuid,
     /// SecretRef locator 的前缀 `<namespace>/<mount>`
-    pub secret_mount: String,
     /// 允许取用 secret 的 service identity
     pub secret_audience: String,
     /// Community host 的域部分。host 是签名权威（SF-BUZ-32），必须稳定可推导

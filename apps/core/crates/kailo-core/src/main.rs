@@ -161,12 +161,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             secrets: std::sync::Arc::clone(&secrets),
             audit: std::sync::Arc::clone(&audit),
             catalog_tenant,
-            secret_mount: format!(
-                "{}/{}",
-                std::env::var("OPENBAO_PLATFORM_NAMESPACE")
-                    .map_err(|_| "缺少 OPENBAO_PLATFORM_NAMESPACE")?,
-                std::env::var("OPENBAO_KV_MOUNT").map_err(|_| "缺少 OPENBAO_KV_MOUNT")?
-            ),
             secret_audience: std::env::var("OPENBAO_SERVICE_IDENTITY")
                 .map_err(|_| "缺少 OPENBAO_SERVICE_IDENTITY")?,
             community_domain: std::env::var("BUZZ_COMMUNITY_DOMAIN")

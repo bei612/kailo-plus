@@ -22,6 +22,10 @@ OPENBAO_VERIFY_TOKEN="$(python3 -c 'import json;print(json.load(open("'"$local_d
       token create -policy=kailo-core -ttl="$OPENBAO_TOKEN_PERIOD" -format=json \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth"]["client_token"])')"
 export OPENBAO_VERIFY_TOKEN
+# 仅本地集成夹具使用：Core 的 Tenant 私钥在子 namespace，platform/ 核验令牌
+# 正确地没有跨 namespace 读取权。夹具按需从此文件在目标子 namespace 签发
+# 短期 kailo-core policy 令牌，读取后立即 revoke-self；不把 root token 放进环境。
+export VERIFY_OPENBAO_ROOT_TOKEN_FILE="$(pwd)/$local_dir/secrets/openbao_init.json"
 
 export KAILO_INTEGRATION=1
 export DATABASE_URL="${CORE_DATABASE_URL/@core-db:5432/@127.0.0.1:${CORE_DB_PORT}}"
@@ -37,6 +41,9 @@ export OIDC_TOKEN_HOST="${OIDC_ISSUER#*://}"; OIDC_TOKEN_HOST="${OIDC_TOKEN_HOST
 export WORKER_CLIENT_SECRET="$(cat "$local_dir/secrets/kailo_worker_client_secret")"
 export RELAY_OPERATOR_PRIVATE_KEY="$(cat "$local_dir/secrets/relay_operator_private_key")"
 export VERIFY_SECRET_LOCATOR="${OPENBAO_PLATFORM_NAMESPACE}/${OPENBAO_KV_MOUNT}/verify/secret-ref"
+project=$(python3 -c 'import re,io;print(re.search(r"^name: (\S+)", io.open("deploy/local/compose.yaml",encoding="utf-8").read(), re.M).group(1))')
+export OPENBAO_TENANT_CORE_BOUND_CIDRS="$(sudo -n docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
+[ -n "$OPENBAO_TENANT_CORE_BOUND_CIDRS" ] || { echo "取不到 app 网络子网，拒绝核验 Tenant AppRole" >&2; return 2; }
 export VERIFY_DOCKER_NETWORK=kailo-local_component
 export VERIFY_ZED_ENV_FILE="$(pwd)/$local_dir/secrets/zed.env"
 export VERIFY_SPICEDB_ENDPOINT=spicedb:50051

@@ -318,7 +318,7 @@ async fn run(
     );
     // 持有旧私钥的人直连 Relay：该 pubkey 已不在 roster 上
     let (host, channel) = common::live_scope(pool, fx).await;
-    let old_secret = common::read_secret_version(http, e, &locator, old_version).await;
+    let old_secret = common::read_secret_version(http, e, fx.tenant, &locator, old_version).await;
     let as_holder = IdentityClient::new(Custody::Server, &old_secret, &e.relay_origin, &host)
         .expect("旧私钥客户端");
     let published = as_holder

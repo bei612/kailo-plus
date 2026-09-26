@@ -10,13 +10,19 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../deploy/local"
 . ./.env
-: "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_KV_MOUNT:?}"
+: "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_TENANT_PARENT_NAMESPACE:?}" \
+  "${OPENBAO_TENANT_VERIFY_ROLE_NAME:?}" "${OPENBAO_KV_MOUNT:?}"
 
 root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
 # 令牌经 stdin 进入容器，不上命令行（与 openbao-init.sh 同一做法）
 ns() {
   printf '%s\n' "$root_token" | sudo -n docker compose --env-file .env -f compose.yaml exec -T \
     -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_NAMESPACE="$OPENBAO_PLATFORM_NAMESPACE" openbao \
+    sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"' bao "$@"
+}
+tenant_parent() {
+  printf '%s\n' "$root_token" | sudo -n docker compose --env-file .env -f compose.yaml exec -T \
+    -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_NAMESPACE="$OPENBAO_TENANT_PARENT_NAMESPACE" openbao \
     sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"' bao "$@"
 }
 
@@ -45,4 +51,11 @@ printf 'VERIFY_SECRET_VERSION_V1=%s\nVERIFY_SECRET_VERSION_V2=%s\n' "$v1" "$v2"
 printf 'OPENBAO_ROLE_ID=%s\n' "$(ns read -field=role_id auth/approle/role/kailo-verify/role-id)"
 printf 'OPENBAO_ROLE_NAME=kailo-verify\n'
 printf 'OPENBAO_WRAPPED_SECRET_ID=%s\n' "$(ns write -wrap-ttl="$OPENBAO_SECRET_ID_WRAP_TTL" -f -format=json auth/approle/role/kailo-verify/secret-id \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["wrap_info"]["token"])')"
+
+# SecretStore 在取用平台 KV 前也必须验证 Tenant provisioner 已取得一次性凭据。
+# 宿主集成用的 role 与 Core provisioner 同策略，但不带容器网络 CIDR 限制。
+printf 'OPENBAO_TENANT_ROLE_ID=%s\n' "$(tenant_parent read -field=role_id "auth/approle/role/${OPENBAO_TENANT_VERIFY_ROLE_NAME}/role-id")"
+printf 'OPENBAO_TENANT_ROLE_NAME=%s\n' "$OPENBAO_TENANT_VERIFY_ROLE_NAME"
+printf 'OPENBAO_TENANT_WRAPPED_SECRET_ID=%s\n' "$(tenant_parent write -wrap-ttl="$OPENBAO_SECRET_ID_WRAP_TTL" -f -format=json "auth/approle/role/${OPENBAO_TENANT_VERIFY_ROLE_NAME}/secret-id" \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["wrap_info"]["token"])')"

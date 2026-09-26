@@ -334,7 +334,12 @@ services:
       # 由 openbao-init.sh 生成并被 gitignore；不进 .env、不上命令行。
       OPENBAO_ADDR: ${OPENBAO_ADDR:?必须显式提供，禁止硬编码}
       OPENBAO_PLATFORM_NAMESPACE: ${OPENBAO_PLATFORM_NAMESPACE:?必须显式提供，禁止硬编码}
+      OPENBAO_TENANT_PARENT_NAMESPACE: ${OPENBAO_TENANT_PARENT_NAMESPACE:?必须显式提供，禁止硬编码}
       OPENBAO_KV_MOUNT: ${OPENBAO_KV_MOUNT:?必须显式提供，禁止硬编码}
+      OPENBAO_KV_MAX_VERSIONS: ${OPENBAO_KV_MAX_VERSIONS:?必须显式提供，禁止硬编码}
+      OPENBAO_TENANT_CORE_ROLE_NAME: ${OPENBAO_TENANT_CORE_ROLE_NAME:?必须显式提供，禁止硬编码}
+      OPENBAO_SECRET_ID_TTL: ${OPENBAO_SECRET_ID_TTL:?必须显式提供，禁止硬编码}
+      OPENBAO_TOKEN_PERIOD: ${OPENBAO_TOKEN_PERIOD:?必须显式提供，禁止硬编码}
       # SecretRef 的 audience 必须等于它，否则拒绝取用
       OPENBAO_SERVICE_IDENTITY: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
       # Relay 的网络地址。与 Community host 不是一回事：后者参与 NIP-98

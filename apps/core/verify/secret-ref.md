@@ -328,7 +328,7 @@ ServerKey、角色、邀请、Governed Action 与 Workflow 对账；两项需停
 它们仍受 `GAP-BUZ-01` 阻断。孤儿 KV 路径、旧版本终态处置与其他消费端投递
 仍是 Stage 2 SecretRef 生命周期缺口。
 
-## Tenant namespace 归属核验（2026-09-26）
+## Tenant namespace 归属缺口的原始核验（2026-09-26 21:19 UTC）
 
 `DD-70/72` 与 `.design/03` §9 把平台凭据放在 `platform/`、Tenant 的
 HUMAN/CONTROL 私钥放在各自 `tenants/<tenant_id>` OpenBao namespace。
@@ -345,3 +345,61 @@ HUMAN/CONTROL 私钥放在各自 `tenants/<tenant_id>` OpenBao namespace。
 新写入改指向尚不存在的 Tenant namespace 会使新 Tenant 建立失败。
 后续必须同时解决 Tenant namespace/mount/policy/token 的创建与重启后的取用、
 旧 `platform/kv` 引用的兼容迁移、以及失败时的对账，才能改变写入位置。
+
+## Tenant namespace 新写入与 ACL 联调（2026-09-26 22:24 UTC）
+
+此节更新上一节的**当前状态**，不改写当时的缺口证据。`DD-70/72`、
+`.design/03` §9 是权威：部署建立 `platform/` 与 `tenants/` 父 namespace；
+Core 以一次性 wrapped AppRole 凭据取得父级 provisioner token。Tenant 生命周期
+用固定 Tenant UUID 在父级创建子 namespace，随后在子级配置并回读 KV v2 mount、
+`cas_required`、`max_versions`、AppRole、最小 policy 与 role。父级 token 只有
+配置权，不读子级 KV；Core 再用子级单次 secret-id 换取该 Tenant 的 token。
+HUMAN/CONTROL 新写入只生成 `tenants/<tenant_id>/kv/buzz-*` locator；已存的
+`platform/kv` SecretRef 继续按原 locator/version/audience 读取，不把它静默
+改指向新路径。
+
+GitNexus 对 `split_locator` 给出 CRITICAL、14 个受影响符号、13 条过程，涉及
+Web 代签、成员与 Tenant 生命周期；旧 locator 兼容因此保留。OpenBao@
+`735723da5628148f232497a48a35a137b6512103` 的
+`openbao/internal/vault/logical_system.go::handleReadMount` 与
+`::handleReadAuth` 在资源不存在时返回 `logical.ErrorResponse`，实测 HTTP 400，
+而不是通用 404。Core 只把这两种完整错误文本认作可创建事实；其余 400、
+401/403 与不可解析回应均拒绝，不把权限失败变成“缺失则创建”。
+
+受限 BuildKit（24 GiB/10 CPU）构建的新 Core manifest 为
+`sha256:d7457cde64c5535adc1050f76567a95da9d349327134d8550ee363f044c87954`；
+部署重投三个一次性引导凭据后，BFF `/healthz` 为 200。真实
+`scope_lifecycle::tenant_and_workspace_lifecycle_converge` 1/1 通过；
+`core/verify/run-integration.sh` 在 16 GiB/500% cgroup 中最终退出 0，包含
+SecretRef 真实 OpenBao 用例、Core/Worker、Tenant/Workspace 生命周期、
+Web transport 8/8 与 ServerKey revoke/reprovision。首次全套运行在
+`server_keys` 失败：夹具用 `splitn(3)` 错解两级 namespace，且持有无权读取
+Tenant KV 的 `platform/` 核验令牌；改为按 Tenant UUID 解析、按需签短期子级
+`kailo-core` policy 令牌、读取后确认撤销，定向 1/1 与全套复跑均通过。
+
+独立 ACL 探针使用两个**真实存在**的测试子 namespace 与 KV 路径：Tenant A
+token 读 A 为 HTTP 200、读 B 为 403；`tenants/` 父级 provisioner token
+读 A 为 403；两枚探针令牌的 `revoke-self` 均为 204。只读 KV metadata
+显示所查旧版本未销毁，证明首次 `server_keys` 失败不是旧版本丢失。
+
+上述结果证明新建 Tenant 的最小隔离链，不等于 Stage 1/2 退出。旧
+`platform/kv` 活跃引用仍需受治理地迁移并处置旧版本；生产规模下 namespace
+数量、会话缓存与续期负载尚未验证。完整 SecretRef 轮换、
+旧版本销毁与其他消费端投递仍属 Stage 2 缺口。
+
+### 本地集成夹具的 namespace 清理与恢复（2026-09-26 22:39 UTC）
+
+清理前只读核对：OpenBao 的 `tenants/` 下有 29 个子 namespace，Core
+`identity.tenant` 有 2 行，两组 UUID 的交集为空。为避免删除仍被 Core
+会话缓存持有的 namespace，先停止本地 Compose 的 `core-bff`；逐个按已
+核对的 29 个 UUID 调用 `bao namespace delete`，随后 `namespace list` 返回
+`No namespaces found`，证明异步删除已从目录收敛。所删 namespace 中的
+本地测试密钥不可恢复；未触碰数据库中两个有效 Tenant，也未操作旧 K8S。
+Core 用 24 GiB/10 CPU 的受限 BuildKit 重建，镜像 manifest 为
+`sha256:2e3811d57ffe807174f9c908e7493de21e9aaacaa8528174c4e9ccf0603b527c`；
+`start-core.sh` 重投三个一次性引导凭据后，容器 `running`，BFF
+`/healthz` 为 HTTP 200。此前本批改动的 `check-docs.sh` 七组、
+`check.sh --full` 十组均退出 0；全量门禁因未给隔离 `DATABASE_URL`
+明确跳过实际迁移前进/回退，本批没有 schema 变更。本次手工清理不替代
+集成夹具今后的自动收敛，也不证明生产 Tenant 销毁能力；后者仍受
+`GAP-LCM-01` 阻断。

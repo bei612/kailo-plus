@@ -12,11 +12,13 @@
 //! token 已被消费、过期或来路不对，都按泄漏处理并拒绝启动；运行中续期被确定拒绝
 //! （令牌被撤销），同样 fail closed，由部署重新投递。
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Deserialize;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, Mutex, OnceCell, RwLock};
+use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SecretError {
@@ -48,6 +50,8 @@ pub enum SecretError {
     CredentialLost,
     #[error("OpenBao 的回应不可解析")]
     Malformed,
+    #[error("Tenant namespace 的 OpenBao 配置未收敛")]
+    TenantNamespaceNotReady,
 }
 
 /// 一条 SecretRef。字段与 `.design/03` §9 的定义一一对应。
@@ -108,8 +112,8 @@ struct Lease {
 
 /// 一个 AppRole 登录会话：某个 namespace 下的 role 与它换来的 service token。
 ///
-/// Core 有两个：平台 namespace 下取用 secret 的那个，与 root namespace 下只读
-/// audit 表的那个（`AuditObserver`）。投递、登录与续期只写这一份。
+/// Core 的 platform、Tenant provisioner、Tenant 子 namespace 与 root audit
+/// 观察会话共用这套投递、登录、续期和撤销逻辑。
 struct AppRoleSession {
     addr: String,
     /// AppRole 挂载所在的 namespace；空串是 root namespace（不带请求头）
@@ -118,7 +122,7 @@ struct AppRoleSession {
     /// wrapping token 的创建路径必须是它：`auth/approle/role/<name>/secret-id`
     role_name: String,
     /// 一次性的 wrapping token。connect 之后即为 None。
-    wrapped: tokio::sync::Mutex<Option<String>>,
+    wrapped: Mutex<Option<String>>,
     http: reqwest::Client,
     lease: RwLock<Option<Lease>>,
 }
@@ -129,14 +133,14 @@ impl AppRoleSession {
         namespace: String,
         role_id: String,
         role_name: String,
-        wrapped: String,
+        wrapped: Option<String>,
     ) -> Self {
         Self {
             addr: addr.trim_end_matches('/').to_owned(),
             namespace,
             role_id,
             role_name,
-            wrapped: tokio::sync::Mutex::new(Some(wrapped)),
+            wrapped: Mutex::new(wrapped),
             http: reqwest::Client::new(),
             lease: RwLock::new(None),
         }
@@ -208,19 +212,24 @@ impl AppRoleSession {
             .data
             .secret_id;
 
-        // 3. 登录
+        self.connect_secret_id(&secret_id).await
+    }
+
+    /// provisioner 在进程内生成的 Tenant AppRole secret_id 不经过部署投递；
+    /// 同样只允许登录一次，并沿用与 wrapped 引导相同的 lease 自检和失败撤销。
+    async fn connect_secret_id(&self, secret_id: &str) -> Result<(), SecretError> {
         let auth = self
-            .login(&secret_id)
+            .login(secret_id)
             .await?
             .ok_or(SecretError::LoginFailed)?;
-        // 4. 自检：同一 secret_id 必须已经不能登录。能登录说明 role 没配成单次
+        // 自检：同一 secret_id 必须已经不能登录。能登录说明 role 没配成单次
         //    使用，泄漏的 secret_id 可以无限换 token——拒绝启动。校验完成前
         //    不把首个 token 放进可供 Core 使用的 lease；任何拒绝分支先撤销它。
         let verified = async {
             if !auth.renewable || auth.lease_duration == 0 {
                 return Err(SecretError::Malformed);
             }
-            match self.login(&secret_id).await? {
+            match self.login(secret_id).await? {
                 None => Ok(()),
                 Some(extra) => {
                     self.revoke_self(&extra.client_token).await?;
@@ -372,10 +381,28 @@ fn delivered(prefix: &str) -> Result<(String, String, String), String> {
 }
 
 pub struct SecretStore {
+    /// 只用于 platform/ 下的部署级凭据（例如 Relay operator）。
     session: AppRoleSession,
+    /// tenants/ 下的配置凭据；policy 只有 namespace/mount/auth/role 配置权，
+    /// 不含任一子 namespace 的 KV data/metadata 权限。
+    provisioner: AppRoleSession,
+    tenant: TenantConfig,
+    tenant_sessions: Mutex<HashMap<Uuid, Arc<OnceCell<Arc<AppRoleSession>>>>>,
+    tenant_failure_tx: mpsc::UnboundedSender<()>,
+    tenant_failure_rx: Mutex<mpsc::UnboundedReceiver<()>>,
     /// 本服务的身份。SecretRef 的 audience 必须等于它，否则拒绝取用——
     /// 同一把 secret 不得被用于它不该服务的调用方（`DD-70`）。
     identity: String,
+}
+
+struct TenantConfig {
+    parent: String,
+    mount: String,
+    role_name: String,
+    max_versions: u32,
+    secret_id_ttl: String,
+    token_period: String,
+    core_bound_cidrs: String,
 }
 
 #[derive(Deserialize)]
@@ -404,6 +431,38 @@ struct KvCurrentMetadata {
     current_version: u32,
 }
 
+#[derive(Deserialize)]
+struct TenantNamespaceResponse {
+    data: TenantNamespaceData,
+}
+
+#[derive(Deserialize)]
+struct TenantNamespaceData {
+    path: String,
+    tainted: bool,
+    locked: bool,
+}
+
+#[derive(Deserialize)]
+struct RoleIdResponse {
+    data: RoleIdData,
+}
+
+#[derive(Deserialize)]
+struct RoleIdData {
+    role_id: String,
+}
+
+#[derive(Deserialize)]
+struct SecretIdResponse {
+    data: SecretIdData,
+}
+
+#[derive(Deserialize)]
+struct SecretIdData {
+    secret_id: String,
+}
+
 impl SecretStore {
     /// 配置都不接受默认值：缺任一项即拒绝构造。回落到某个猜测的地址或身份，会让
     /// 「取不到 secret 就 fail closed」退化成「取到了别人的 secret」。
@@ -412,32 +471,443 @@ impl SecretStore {
     pub fn from_env() -> Result<Self, String> {
         let get = |k: &str| std::env::var(k).map_err(|_| format!("缺少 {k}"));
         let (role_id, role_name, wrapped) = delivered("OPENBAO")?;
-        // AppRole 挂在平台 namespace 下；取用的 secret 可能在别的 namespace，
-        // 二者是不同的请求头值，不能混用。
+        let (tenant_role_id, tenant_role_name, tenant_wrapped) = delivered("OPENBAO_TENANT")?;
+        let addr = get("OPENBAO_ADDR")?;
+        let tenant_parent = get("OPENBAO_TENANT_PARENT_NAMESPACE")?;
+        if tenant_parent != "tenants" {
+            return Err("DD-70 固定 Tenant namespace 根为 tenants".into());
+        }
+        let mount = get("OPENBAO_KV_MOUNT")?;
+        let tenant_core_role = get("OPENBAO_TENANT_CORE_ROLE_NAME")?;
+        if ![&mount, &tenant_core_role].iter().all(|s| {
+            !s.is_empty()
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        }) {
+            return Err("OpenBao mount 与 role 名必须是单一路径段".into());
+        }
+        let max_versions: u32 = get("OPENBAO_KV_MAX_VERSIONS")?
+            .parse()
+            .map_err(|_| "OPENBAO_KV_MAX_VERSIONS 必须是正整数")?;
+        if max_versions == 0 {
+            return Err("OPENBAO_KV_MAX_VERSIONS 必须大于零".into());
+        }
+        let (tenant_failure_tx, tenant_failure_rx) = mpsc::unbounded_channel();
         Ok(Self {
             session: AppRoleSession::new(
-                &get("OPENBAO_ADDR")?,
+                &addr,
                 get("OPENBAO_PLATFORM_NAMESPACE")?,
                 role_id,
                 role_name,
-                wrapped,
+                Some(wrapped),
             ),
+            provisioner: AppRoleSession::new(
+                &addr,
+                tenant_parent.clone(),
+                tenant_role_id,
+                tenant_role_name,
+                Some(tenant_wrapped),
+            ),
+            tenant: TenantConfig {
+                parent: tenant_parent,
+                mount,
+                role_name: tenant_core_role,
+                max_versions,
+                secret_id_ttl: get("OPENBAO_SECRET_ID_TTL")?,
+                token_period: get("OPENBAO_TOKEN_PERIOD")?,
+                core_bound_cidrs: get("OPENBAO_TENANT_CORE_BOUND_CIDRS")?,
+            },
+            tenant_sessions: Mutex::new(HashMap::new()),
+            tenant_failure_tx,
+            tenant_failure_rx: Mutex::new(tenant_failure_rx),
             identity: get("OPENBAO_SERVICE_IDENTITY")?,
         })
     }
 
     /// 消费投递的 wrapping token，换出 service token。
     pub async fn connect(&self) -> Result<(), SecretError> {
-        self.session.connect().await
+        self.session.connect().await?;
+        if let Err(error) = self.provisioner.connect().await {
+            // main 在 connect 返回错误后尚未进入统一收尾段；已取得的平台 token
+            // 必须在此撤销，不能把它留到 TTL 到期而仍声称安全退出。
+            self.session.revoke_current().await?;
+            return Err(error);
+        }
+        Ok(())
     }
 
     /// 持续续期 service token，只在失效时返回原因。调用方据此 fail closed。
     pub async fn keep_alive(&self) -> SecretError {
-        self.session.keep_alive().await
+        let mut failures = self.tenant_failure_rx.lock().await;
+        tokio::select! {
+            e = self.session.keep_alive() => e,
+            e = self.provisioner.keep_alive() => e,
+            _ = failures.recv() => SecretError::CredentialLost,
+        }
     }
 
     pub async fn revoke_current(&self) -> Result<(), SecretError> {
-        self.session.revoke_current().await
+        let sessions: Vec<_> = self
+            .tenant_sessions
+            .lock()
+            .await
+            .values()
+            .filter_map(|cell| cell.get().cloned())
+            .collect();
+        let mut failure = None;
+        for session in sessions {
+            if let Err(error) = session.revoke_current().await {
+                failure.get_or_insert(error);
+            }
+        }
+        if let Err(error) = self.provisioner.revoke_current().await {
+            failure.get_or_insert(error);
+        }
+        if let Err(error) = self.session.revoke_current().await {
+            failure.get_or_insert(error);
+        }
+        failure.map_or(Ok(()), Err)
+    }
+
+    /// SecretRef 的 Tenant namespace 是设计固定的两级路径；UUID 类型阻止调用方
+    /// 把任意 namespace 名或路径段注入 OpenBao 管理 API。
+    pub fn tenant_locator(&self, tenant_id: Uuid, path: &str) -> String {
+        format!(
+            "{}/{}/{}/{}",
+            self.tenant.parent, tenant_id, self.tenant.mount, path
+        )
+    }
+
+    async fn tenant_admin(
+        &self,
+        namespace: &str,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<serde_json::Value>,
+    ) -> Result<reqwest::Response, SecretError> {
+        let token = self.provisioner.token().await?;
+        let request = self
+            .provisioner
+            .http
+            .request(method, format!("{}/v1/{path}", self.provisioner.addr))
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token.as_str());
+        let request = match body {
+            Some(body) => request.json(&body),
+            None => request,
+        };
+        Ok(request.send().await?)
+    }
+
+    fn admin_result(response: reqwest::Response) -> Result<reqwest::Response, SecretError> {
+        match response.status().as_u16() {
+            200 | 204 => Ok(response),
+            401 | 403 => Err(SecretError::Refused),
+            _ => Err(SecretError::TenantNamespaceNotReady),
+        }
+    }
+
+    async fn admin_absent(
+        response: reqwest::Response,
+        exact_missing_error: &str,
+    ) -> Result<bool, SecretError> {
+        match response.status().as_u16() {
+            // handleReadMount 与 handleReadAuth 的空结果是 logical.ErrorResponse，
+            // HTTP 层返回 400。只有源码固定的完整错误才能触发创建。
+            400 => {
+                let body: serde_json::Value =
+                    response.json().await.map_err(|_| SecretError::Malformed)?;
+                if body.get("errors") == Some(&serde_json::json!([exact_missing_error])) {
+                    Ok(true)
+                } else {
+                    Err(SecretError::TenantNamespaceNotReady)
+                }
+            }
+            404 => Ok(true),
+            _ => Self::admin_result(response).map(|_| false),
+        }
+    }
+
+    /// TENANT_LIFECYCLE 的第一项外部投影：建立真实的 tenants/<Tenant ID>
+    /// namespace，并在其中配置独立 KV mount、最小 KV policy 与 AppRole。
+    /// 中途失败留下的 namespace 由同一固定 Tenant ID 的下一次 Activity 重试
+    /// 收敛；不把私钥写回 platform/ 作为降级路径。
+    pub async fn ensure_tenant(&self, tenant_id: Uuid) -> Result<(), SecretError> {
+        let child = format!("{}/{}", self.tenant.parent, tenant_id);
+        let ns_path = format!("sys/namespaces/{tenant_id}");
+        let mut namespace = self
+            .tenant_admin(&self.tenant.parent, reqwest::Method::GET, &ns_path, None)
+            .await?;
+        if namespace.status().as_u16() == 404 {
+            let create = self
+                .tenant_admin(
+                    &self.tenant.parent,
+                    reqwest::Method::POST,
+                    &ns_path,
+                    Some(serde_json::json!({})),
+                )
+                .await?;
+            // 另一个 Core 同时建成时只接受随后可读且路径相符的事实。
+            if !create.status().is_success() && create.status().as_u16() != 400 {
+                return Err(SecretError::TenantNamespaceNotReady);
+            }
+            namespace = self
+                .tenant_admin(&self.tenant.parent, reqwest::Method::GET, &ns_path, None)
+                .await?;
+        }
+        let namespace = Self::admin_result(namespace)?
+            .json::<TenantNamespaceResponse>()
+            .await
+            .map_err(|_| SecretError::Malformed)?
+            .data;
+        if namespace.path != format!("{child}/") || namespace.tainted || namespace.locked {
+            return Err(SecretError::TenantNamespaceNotReady);
+        }
+
+        let mount_path = format!("sys/mounts/{}", self.tenant.mount);
+        let mount = self
+            .tenant_admin(&child, reqwest::Method::GET, &mount_path, None)
+            .await?;
+        let mount_missing = Self::admin_absent(
+            mount,
+            &format!("No secret engine mount at {}/", self.tenant.mount),
+        )
+        .await?;
+        if mount_missing {
+            let create = self
+                .tenant_admin(
+                    &child,
+                    reqwest::Method::POST,
+                    &mount_path,
+                    Some(serde_json::json!({"type":"kv","options":{"version":"2"}})),
+                )
+                .await?;
+            if !create.status().is_success() && create.status().as_u16() != 400 {
+                return Err(SecretError::TenantNamespaceNotReady);
+            }
+        }
+        let mount: serde_json::Value = Self::admin_result(
+            self.tenant_admin(&child, reqwest::Method::GET, &mount_path, None)
+                .await?,
+        )?
+        .json()
+        .await
+        .map_err(|_| SecretError::Malformed)?;
+        if mount.pointer("/data/type").and_then(|v| v.as_str()) != Some("kv")
+            || mount
+                .pointer("/data/options/version")
+                .and_then(|v| v.as_str())
+                != Some("2")
+        {
+            return Err(SecretError::TenantNamespaceNotReady);
+        }
+
+        let kv_config_path = format!("{}/config", self.tenant.mount);
+        let config: serde_json::Value = Self::admin_result(
+            self.tenant_admin(&child, reqwest::Method::GET, &kv_config_path, None)
+                .await?,
+        )?
+        .json()
+        .await
+        .map_err(|_| SecretError::Malformed)?;
+        let existing_max = config
+            .pointer("/data/max_versions")
+            .and_then(|v| v.as_u64())
+            .ok_or(SecretError::Malformed)?;
+        let retained_max = existing_max.max(u64::from(self.tenant.max_versions));
+        Self::admin_result(
+            self.tenant_admin(
+                &child,
+                reqwest::Method::POST,
+                &kv_config_path,
+                Some(serde_json::json!({"max_versions":retained_max,"cas_required":true})),
+            )
+            .await?,
+        )?;
+        let config: serde_json::Value = Self::admin_result(
+            self.tenant_admin(&child, reqwest::Method::GET, &kv_config_path, None)
+                .await?,
+        )?
+        .json()
+        .await
+        .map_err(|_| SecretError::Malformed)?;
+        if config
+            .pointer("/data/cas_required")
+            .and_then(|v| v.as_bool())
+            != Some(true)
+            || config
+                .pointer("/data/max_versions")
+                .and_then(|v| v.as_u64())
+                != Some(retained_max)
+        {
+            return Err(SecretError::TenantNamespaceNotReady);
+        }
+
+        let auth_path = "sys/auth/approle";
+        let auth = self
+            .tenant_admin(&child, reqwest::Method::GET, auth_path, None)
+            .await?;
+        if Self::admin_absent(auth, "No auth engine at approle/").await? {
+            let create = self
+                .tenant_admin(
+                    &child,
+                    reqwest::Method::POST,
+                    auth_path,
+                    Some(serde_json::json!({"type":"approle"})),
+                )
+                .await?;
+            if !create.status().is_success() && create.status().as_u16() != 400 {
+                return Err(SecretError::TenantNamespaceNotReady);
+            }
+        }
+        let auth: serde_json::Value = Self::admin_result(
+            self.tenant_admin(&child, reqwest::Method::GET, auth_path, None)
+                .await?,
+        )?
+        .json()
+        .await
+        .map_err(|_| SecretError::Malformed)?;
+        if auth.pointer("/data/type").and_then(|v| v.as_str()) != Some("approle") {
+            return Err(SecretError::TenantNamespaceNotReady);
+        }
+
+        let policy = format!(
+            "path \"{mount}/data/*\" {{ capabilities = [\"create\", \"update\", \"read\"] }}\n\
+             path \"{mount}/metadata/*\" {{ capabilities = [\"read\", \"list\"] }}\n",
+            mount = self.tenant.mount
+        );
+        let policy_path = format!("sys/policies/acl/{}", self.tenant.role_name);
+        Self::admin_result(
+            self.tenant_admin(
+                &child,
+                reqwest::Method::PUT,
+                &policy_path,
+                Some(serde_json::json!({"policy":policy})),
+            )
+            .await?,
+        )?;
+        let stored_policy: serde_json::Value = Self::admin_result(
+            self.tenant_admin(&child, reqwest::Method::GET, &policy_path, None)
+                .await?,
+        )?
+        .json()
+        .await
+        .map_err(|_| SecretError::Malformed)?;
+        if stored_policy
+            .pointer("/data/policy")
+            .and_then(|v| v.as_str())
+            != Some(policy.as_str())
+        {
+            return Err(SecretError::TenantNamespaceNotReady);
+        }
+
+        let role_path = format!("auth/approle/role/{}", self.tenant.role_name);
+        Self::admin_result(
+            self.tenant_admin(
+                &child,
+                reqwest::Method::POST,
+                &role_path,
+                Some(serde_json::json!({
+                    "token_policies": [self.tenant.role_name],
+                    "secret_id_num_uses": 1,
+                    "secret_id_ttl": self.tenant.secret_id_ttl,
+                    "secret_id_bound_cidrs": self.tenant.core_bound_cidrs,
+                    "token_bound_cidrs": self.tenant.core_bound_cidrs,
+                    "token_period": self.tenant.token_period,
+                    "token_ttl": 0,
+                    "token_max_ttl": 0
+                })),
+            )
+            .await?,
+        )?;
+        let role: serde_json::Value = Self::admin_result(
+            self.tenant_admin(&child, reqwest::Method::GET, &role_path, None)
+                .await?,
+        )?
+        .json()
+        .await
+        .map_err(|_| SecretError::Malformed)?;
+        if role
+            .pointer("/data/secret_id_num_uses")
+            .and_then(|v| v.as_u64())
+            != Some(1)
+            || role
+                .pointer("/data/token_policies")
+                .and_then(|v| v.as_array())
+                .map(|v| v.as_slice())
+                != Some([serde_json::Value::String(self.tenant.role_name.clone())].as_slice())
+        {
+            return Err(SecretError::TenantNamespaceNotReady);
+        }
+        Ok(())
+    }
+
+    async fn tenant_session(&self, tenant_id: Uuid) -> Result<Arc<AppRoleSession>, SecretError> {
+        let cell = {
+            self.tenant_sessions
+                .lock()
+                .await
+                .entry(tenant_id)
+                .or_insert_with(|| Arc::new(OnceCell::new()))
+                .clone()
+        };
+        cell.get_or_try_init(|| async {
+            let child = format!("{}/{}", self.tenant.parent, tenant_id);
+            let role_id_path = format!("auth/approle/role/{}/role-id", self.tenant.role_name);
+            let role_id = Self::admin_result(
+                self.tenant_admin(&child, reqwest::Method::GET, &role_id_path, None)
+                    .await?,
+            )?
+            .json::<RoleIdResponse>()
+            .await
+            .map_err(|_| SecretError::Malformed)?
+            .data
+            .role_id;
+            let secret_id_path = format!("auth/approle/role/{}/secret-id", self.tenant.role_name);
+            let secret_id = Self::admin_result(
+                self.tenant_admin(
+                    &child,
+                    reqwest::Method::POST,
+                    &secret_id_path,
+                    Some(serde_json::json!({})),
+                )
+                .await?,
+            )?
+            .json::<SecretIdResponse>()
+            .await
+            .map_err(|_| SecretError::Malformed)?
+            .data
+            .secret_id;
+            let session = Arc::new(AppRoleSession::new(
+                &self.provisioner.addr,
+                child,
+                role_id,
+                self.tenant.role_name.clone(),
+                None,
+            ));
+            session.connect_secret_id(&secret_id).await?;
+            let watched = Arc::clone(&session);
+            let failed = self.tenant_failure_tx.clone();
+            tokio::spawn(async move {
+                let _ = watched.keep_alive().await;
+                let _ = failed.send(());
+            });
+            Ok(session)
+        })
+        .await
+        .map(Arc::clone)
+    }
+
+    async fn token_for_namespace(&self, namespace: &str) -> Result<Arc<String>, SecretError> {
+        if namespace == self.session.namespace {
+            return self.session.token().await;
+        }
+        let tenant_id = namespace
+            .strip_prefix(&format!("{}/", self.tenant.parent))
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .filter(|id| namespace == format!("{}/{}", self.tenant.parent, id))
+            .ok_or(SecretError::Refused)?;
+        self.tenant_session(tenant_id).await?.token().await
     }
 
     /// 按 SecretRef 取出某个字段的值。
@@ -449,7 +919,7 @@ impl SecretStore {
             return Err(SecretError::AudienceMismatch);
         }
         let (namespace, mount, path) = split_locator(&r.locator)?;
-        let token = self.session.token().await?;
+        let token = self.token_for_namespace(&namespace).await?;
         let resp = self
             .session
             .http
@@ -488,7 +958,7 @@ impl SecretStore {
     /// 不存在的路径使用协议规定的 cas=0。并发修改时拒绝本次写入，不猜测新版本。
     pub async fn write(&self, locator: &str, field: &str, value: &str) -> Result<u32, SecretError> {
         let (namespace, mount, path) = split_locator(locator)?;
-        let token = self.session.token().await?;
+        let token = self.token_for_namespace(&namespace).await?;
         let metadata = self
             .session
             .http
@@ -558,7 +1028,7 @@ impl AuditObserver {
                 String::new(),
                 role_id,
                 role_name,
-                wrapped,
+                Some(wrapped),
             ),
         })
     }
@@ -599,18 +1069,32 @@ impl AuditObserver {
     }
 }
 
-/// locator 必须恰好三段。多一段少一段都不做兼容解析——猜错一段就是去另一个
-/// namespace 或另一个 mount 取值，而那不会报错，只会悄悄拿到别的东西。
+/// platform/ 的 locator 是 namespace/mount/path；Tenant namespace 固定为
+/// tenants/<UUID>，所以它是 tenants/<UUID>/mount/path。不能用 splitn(3)
+/// 把 UUID 误认成 mount，否则会向父 namespace 发出错误的请求。
 fn split_locator(locator: &str) -> Result<(String, String, String), SecretError> {
-    let mut parts = locator.splitn(3, '/');
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(ns), Some(mount), Some(path))
-            if !ns.is_empty() && !mount.is_empty() && !path.is_empty() =>
-        {
-            Ok((ns.to_owned(), mount.to_owned(), path.to_owned()))
-        }
-        _ => Err(SecretError::LocatorMalformed(locator.to_owned())),
+    let (namespace, tail) = if let Some(rest) = locator.strip_prefix("tenants/") {
+        let (id, tail) = rest
+            .split_once('/')
+            .ok_or_else(|| SecretError::LocatorMalformed(locator.to_owned()))?;
+        let id = Uuid::parse_str(id)
+            .ok()
+            .filter(|uuid| uuid.to_string() == id)
+            .ok_or_else(|| SecretError::LocatorMalformed(locator.to_owned()))?;
+        (format!("tenants/{id}"), tail)
+    } else {
+        let (namespace, tail) = locator
+            .split_once('/')
+            .ok_or_else(|| SecretError::LocatorMalformed(locator.to_owned()))?;
+        (namespace.to_owned(), tail)
+    };
+    let (mount, path) = tail
+        .split_once('/')
+        .ok_or_else(|| SecretError::LocatorMalformed(locator.to_owned()))?;
+    if namespace.is_empty() || mount.is_empty() || path.is_empty() {
+        return Err(SecretError::LocatorMalformed(locator.to_owned()));
     }
+    Ok((namespace, mount.to_owned(), path.to_owned()))
 }
 
 #[cfg(test)]
@@ -683,7 +1167,7 @@ mod tests {
             "platform".to_owned(),
             "role-id".to_owned(),
             "probe".to_owned(),
-            "wrapped".to_owned(),
+            Some("wrapped".to_owned()),
         );
         assert!(matches!(
             session.connect().await,
@@ -742,7 +1226,7 @@ mod tests {
             "platform".to_owned(),
             "role-id".to_owned(),
             "probe".to_owned(),
-            "wrapped".to_owned(),
+            Some("wrapped".to_owned()),
         );
         *session.lease.write().await = Some(Lease {
             token: Arc::new("current".to_owned()),

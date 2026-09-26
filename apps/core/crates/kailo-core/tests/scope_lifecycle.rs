@@ -330,11 +330,10 @@ async fn run(
         control.2.is_some() && control.3.is_some(),
         "SecretRef 三元组必须齐备"
     );
-    assert!(
-        control
-            .5
-            .ends_with(&format!("/buzz-control/{tenant}/{}", control.4)),
-        "CONTROL 每把公钥必须独占 KV 路径"
+    assert_eq!(
+        control.5,
+        format!("tenants/{tenant}/kv/buzz-control/{}", control.4),
+        "CONTROL 每把公钥必须落在该 Tenant namespace 的独立 KV 路径"
     );
 
     // ---- WORKSPACE_LIFECYCLE ----

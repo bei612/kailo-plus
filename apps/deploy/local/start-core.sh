@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 启动（或重建）core-bff：先现取两个 wrapped secret_id，再立即重建容器（DD-70）。
+# 启动（或重建）core-bff：现取三个 wrapped secret_id，再立即重建容器（DD-70）。
 #
 # Core 的引导凭据以 response wrapping 一次性投递：wrapping token 只能 unwrap 一次、
 # 在 OPENBAO_SECRET_ID_WRAP_TTL 内有效，unwrap 出的 secret_id 只能登录一次。因此
@@ -13,7 +13,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 . ./.env
-: "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_SECRET_ID_WRAP_TTL:?缺少 .env 中的 OPENBAO_SECRET_ID_WRAP_TTL}"
+: "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_TENANT_PARENT_NAMESPACE:?}" \
+  "${OPENBAO_TENANT_PROVISIONER_ROLE_NAME:?}" \
+  "${OPENBAO_SECRET_ID_WRAP_TTL:?缺少 .env 中的 OPENBAO_SECRET_ID_WRAP_TTL}"
+project=$(python3 -c 'import re,io;print(re.search(r"^name: (\S+)", io.open("compose.yaml",encoding="utf-8").read(), re.M).group(1))')
+app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
+[ -n "$app_cidr" ] || { echo "取不到 ${project}_app 网络子网，拒绝创建 Tenant AppRole" >&2; exit 2; }
 
 # sudo 只保留受控构建器选择，避免 Core 镜像构建落到无 cgroup 限额的默认 builder。
 compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "$@"; }
@@ -41,9 +46,13 @@ trap 'rm -f "$tmp"' EXIT
   printf 'OPENBAO_WRAPPED_SECRET_ID=%s\n' "$(wrapped "$OPENBAO_PLATFORM_NAMESPACE" kailo-core)"
   printf 'OPENBAO_AUDIT_ROLE_ID=%s\n' "$(run_bao "" read -field=role_id auth/approle/role/kailo-core-audit/role-id)"
   printf 'OPENBAO_AUDIT_ROLE_NAME=kailo-core-audit\n'
-  printf 'OPENBAO_AUDIT_WRAPPED_SECRET_ID=%s\n' "$(wrapped "" kailo-core-audit)"; } > "$tmp"
-# 六行都非空才落位：半份投递会让 Core 以「缺少某项」退出，却看不出是投递失败
-[ "$(grep -c '=.\+' "$tmp")" = 6 ] || { echo "投递不完整，未改动 secrets/openbao-core.env" >&2; exit 2; }
+  printf 'OPENBAO_AUDIT_WRAPPED_SECRET_ID=%s\n' "$(wrapped "" kailo-core-audit)"
+  printf 'OPENBAO_TENANT_ROLE_ID=%s\n' "$(run_bao "$OPENBAO_TENANT_PARENT_NAMESPACE" read -field=role_id "auth/approle/role/${OPENBAO_TENANT_PROVISIONER_ROLE_NAME}/role-id")"
+  printf 'OPENBAO_TENANT_ROLE_NAME=%s\n' "$OPENBAO_TENANT_PROVISIONER_ROLE_NAME"
+  printf 'OPENBAO_TENANT_WRAPPED_SECRET_ID=%s\n' "$(wrapped "$OPENBAO_TENANT_PARENT_NAMESPACE" "$OPENBAO_TENANT_PROVISIONER_ROLE_NAME")"
+  printf 'OPENBAO_TENANT_CORE_BOUND_CIDRS=%s\n' "$app_cidr"; } > "$tmp"
+# 十行都非空才落位：半份投递会让 Core 以「缺少某项」退出，却看不出是投递失败
+[ "$(grep -c '=.\+' "$tmp")" = 10 ] || { echo "投递不完整，未改动 secrets/openbao-core.env" >&2; exit 2; }
 mv "$tmp" secrets/openbao-core.env
 trap - EXIT
 
