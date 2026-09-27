@@ -500,3 +500,30 @@ GitNexus 对 `SecretStore` impl 的 upstream impact 返回 `risk: UNKNOWN`
 且未解析调用者；文本检索在 Tenant lifecycle、membership projection、
 Web transport、identity projection 和 operator bootstrap 均找到取用点，
 故不能把图谱的零调用者解释为低风险。
+
+### 确定性 operator locator 的响应丢失收敛（2026-09-27）
+
+本次只处理已按 pubkey 固定 locator 的部署级 Relay operator 写入，
+不开放 `SECRET_REF_REHOME` 动作，也不变更业务 Tenant 的旧引用。
+`SecretStore::write_once` 对不存在路径执行 KV v2 `cas=0` 首次写入，
+对已存在路径只读取钉定版本并核对原值；值不同即拒绝。
+`platform_bootstrap::ensure/rotate` 改用该调用，避免首次写入已生效但
+HTTP 回应丢失后，重启或重试把同一意图追加为下一 KV 版本。
+原 `write` 的追加新版本语义及 Tenant/成员投影调用保持不变。
+
+GitNexus 对 `platform_bootstrap::ensure/rotate` 的 upstream impact 为
+`LOW`，调用链通向 Core `main`；对 `SecretStore` impl 返回 `UNKNOWN`，
+已用源码检索确认其他调用方。此次没有 schema、API、Workflow 或三端改动；
+任何 transport 失败仍向调用方返回错误，不能把它当成写入成功。
+
+`cargo test -p kailo-secrets` 的五项单测均通过；真实 OpenBao 集成用例
+在未设置 `KAILO_INTEGRATION=1` 时按自身门禁跳过，不能计入真实服务验收。
+新增单测模拟 OpenBao 写入后断开连接：第一次得到 transport 错误，
+同一 locator 重试读回版本 1，不发第二次 POST；不同值重用该路径被拒。
+故意把“仅当当前版本为 0 才写”改成“版本小于等于 1 也写”，
+该用例退出码 101；还原后全量门禁通过。`./tools/check.sh --full`
+在 16 GiB/500% cgroup 内退出 0，十组通过；其中没有隔离
+`DATABASE_URL`，实际数据库迁移前进/回退为 SKIP。
+
+这只验证确定性写入的本地行为，不证明新 Core 镜像已部署，
+也不证明 `DD-85` 的受治理归位、旧 generation 终态或旧版本销毁已闭合。

@@ -146,7 +146,7 @@ pub async fn ensure(
     // 版本与 audience。
     let locator = operator_locator(cfg, &pubkey);
     let version = secrets
-        .write(&locator, "value", &secret_hex)
+        .write_once(&locator, "value", &secret_hex)
         .await
         .map_err(|e| format!("写 operator 私钥到 OpenBao 失败: {e}"))?;
     let reference = SecretRef {
@@ -255,7 +255,7 @@ async fn rotate(
 
     let locator = operator_locator(cfg, &pubkey);
     let version = secrets
-        .write(&locator, "value", secret_hex)
+        .write_once(&locator, "value", secret_hex)
         .await
         .map_err(|e| format!("写 operator 私钥到 OpenBao 失败: {e}"))?;
     let reference = SecretRef {

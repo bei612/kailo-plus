@@ -959,33 +959,113 @@ impl SecretStore {
     pub async fn write(&self, locator: &str, field: &str, value: &str) -> Result<u32, SecretError> {
         let (namespace, mount, path) = split_locator(locator)?;
         let token = self.token_for_namespace(&namespace).await?;
+        let current_version = self
+            .current_version(&namespace, &mount, &path, token.as_str())
+            .await?;
+        self.write_with_cas(
+            (&namespace, &mount, &path),
+            token.as_str(),
+            field,
+            value,
+            current_version,
+        )
+        .await
+    }
+
+    /// 确定性 locator 的单次写入。响应丢失后重试只读回已存在的钉定版本并核对
+    /// 原值，不把一次意图追加成下一个版本。已存在的不同值一律拒绝。调用方须先
+    /// 持久冻结 locator；DD-85 的新目标还须校验返回的版本恰为 1。
+    pub async fn write_once(
+        &self,
+        locator: &str,
+        field: &str,
+        value: &str,
+    ) -> Result<u32, SecretError> {
+        let (namespace, mount, path) = split_locator(locator)?;
+        let token = self.token_for_namespace(&namespace).await?;
+        let current = self
+            .current_version(&namespace, &mount, &path, token.as_str())
+            .await?;
+        if current == 0 {
+            match self
+                .write_with_cas((&namespace, &mount, &path), token.as_str(), field, value, 0)
+                .await
+            {
+                Ok(1) => {}
+                Ok(_) => return Err(SecretError::Malformed),
+                // 另一调用方先写成功：只读回并比对，不再次写入。
+                Err(SecretError::WriteRejected) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        let observed = if current == 0 {
+            self.current_version(&namespace, &mount, &path, token.as_str())
+                .await?
+        } else {
+            current
+        };
+        if observed == 0 {
+            return Err(SecretError::VersionUnavailable);
+        }
+        let existing = self
+            .read(
+                &SecretRef {
+                    locator: locator.to_owned(),
+                    version: observed,
+                    audience: self.identity.clone(),
+                },
+                field,
+            )
+            .await?;
+        if existing.expose() != value {
+            return Err(SecretError::WriteRejected);
+        }
+        Ok(observed)
+    }
+
+    async fn current_version(
+        &self,
+        namespace: &str,
+        mount: &str,
+        path: &str,
+        token: &str,
+    ) -> Result<u32, SecretError> {
         let metadata = self
             .session
             .http
             .get(format!("{}/v1/{mount}/metadata/{path}", self.session.addr))
-            .header("X-Vault-Namespace", &namespace)
-            .header("X-Vault-Token", token.as_str())
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token)
             .send()
             .await?;
-        let current_version = match metadata.status().as_u16() {
-            200 => {
-                metadata
-                    .json::<KvCurrentMetadataResponse>()
-                    .await
-                    .map_err(|_| SecretError::Malformed)?
-                    .data
-                    .current_version
-            }
-            404 => 0,
-            401 | 403 => return Err(SecretError::Refused),
-            _ => return Err(SecretError::Malformed),
-        };
+        match metadata.status().as_u16() {
+            200 => Ok(metadata
+                .json::<KvCurrentMetadataResponse>()
+                .await
+                .map_err(|_| SecretError::Malformed)?
+                .data
+                .current_version),
+            404 => Ok(0),
+            401 | 403 => Err(SecretError::Refused),
+            _ => Err(SecretError::Malformed),
+        }
+    }
+
+    async fn write_with_cas(
+        &self,
+        location: (&str, &str, &str),
+        token: &str,
+        field: &str,
+        value: &str,
+        current_version: u32,
+    ) -> Result<u32, SecretError> {
+        let (namespace, mount, path) = location;
         let resp = self
             .session
             .http
             .post(format!("{}/v1/{mount}/data/{path}", self.session.addr))
-            .header("X-Vault-Namespace", &namespace)
-            .header("X-Vault-Token", token.as_str())
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token)
             .json(&serde_json::json!({ "data": { field: value }, "options": { "cas": current_version } }))
             .send()
             .await?;
@@ -1119,6 +1199,120 @@ mod tests {
             (ns.as_str(), mount.as_str(), path.as_str()),
             ("platform", "kv", "buzz/control/t-1")
         );
+    }
+
+    #[tokio::test]
+    async fn deterministic_write_recovers_lost_response_without_appending_version() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let replies = [
+                ("404 Not Found", ""),
+                ("", ""), // OpenBao 持久写入后，响应在传输途中丢失。
+                ("200 OK", r#"{"data":{"current_version":1}}"#),
+                (
+                    "200 OK",
+                    r#"{"data":{"data":{"value":"same-key"},"metadata":{"version":1}}}"#,
+                ),
+                ("200 OK", r#"{"data":{"current_version":1}}"#),
+                (
+                    "200 OK",
+                    r#"{"data":{"data":{"value":"same-key"},"metadata":{"version":1}}}"#,
+                ),
+            ];
+            let mut requests = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while requests.len() < replies.len() && std::time::Instant::now() < deadline {
+                let (mut stream, _) = match listener.accept() {
+                    Ok(connection) => connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(error) => panic!("mock OpenBao accept: {error}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut bytes = [0u8; 4096];
+                let size = stream.read(&mut bytes).unwrap();
+                requests.push(String::from_utf8_lossy(&bytes[..size]).to_string());
+                let (status, body) = replies[requests.len() - 1];
+                if status.is_empty() {
+                    continue;
+                }
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+            requests
+        });
+
+        let (tenant_failure_tx, tenant_failure_rx) = mpsc::unbounded_channel();
+        let store = SecretStore {
+            session: AppRoleSession::new(
+                &format!("http://{addr}"),
+                "platform".to_owned(),
+                "role".to_owned(),
+                "role".to_owned(),
+                None,
+            ),
+            provisioner: AppRoleSession::new(
+                &format!("http://{addr}"),
+                "tenants".to_owned(),
+                "role".to_owned(),
+                "role".to_owned(),
+                None,
+            ),
+            tenant: TenantConfig {
+                parent: "tenants".to_owned(),
+                mount: "kv".to_owned(),
+                role_name: "role".to_owned(),
+                max_versions: 10,
+                secret_id_ttl: String::new(),
+                token_period: String::new(),
+                core_bound_cidrs: String::new(),
+            },
+            tenant_sessions: Mutex::new(HashMap::new()),
+            tenant_failure_tx,
+            tenant_failure_rx: Mutex::new(tenant_failure_rx),
+            identity: "core".to_owned(),
+        };
+        *store.session.lease.write().await = Some(Lease {
+            token: Arc::new("service".to_owned()),
+            ttl: Duration::from_secs(120),
+        });
+
+        let locator = "platform/kv/operator/probe";
+        assert!(matches!(
+            store.write_once(locator, "value", "same-key").await,
+            Err(SecretError::Transport(_))
+        ));
+        assert_eq!(
+            store
+                .write_once(locator, "value", "same-key")
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(matches!(
+            store.write_once(locator, "value", "different-key").await,
+            Err(SecretError::WriteRejected)
+        ));
+
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 6);
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.starts_with("POST "))
+                .count(),
+            1
+        );
+        assert!(requests[1].contains("\"cas\":0"));
     }
 
     #[tokio::test]
