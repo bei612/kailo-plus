@@ -450,3 +450,41 @@ binding 指向该目标版本。受 12 GiB/400% cgroup 限制的定向集成测�
 复核精确路径后，删除了仅属于该测试 Tenant 的 OpenBao 子 namespace，
 其中测试密钥不可恢复。未注入真实网络响应丢失，也未覆盖执行中撤权、
 旧消费者和发布暴露；`V-SCN-69` 与 Stage 2 正式退出仍未闭合。
+
+## 旧执行未终态时保留旧版本（2026-09-27）
+
+权威为 `DD-85`、`V-SCN-69` 与 `03` 的 SecretRef 归位状态机。
+只扩展上一节的独立 Tenant 集成夹具：在 Core 对账器派发前，插入一条
+`EVALUATING/NOT_DISPATCHED` 的同 Tenant 测试动作，目标与归位动作
+不同，不产生 native 副作用。切换到 `SWITCHED` 时，查询冻结的
+`old_generation_consumer_refs` 确认该动作在清单内。趁它未终态，
+主动调用既有 service API 尝试退役，得到 HTTP 503；OpenBao
+metadata 显示旧 KV 版本 `destroyed=false`。把测试动作确定转为
+`DENIED` 后，同一 Temporal Workflow 收敛到 `RETIRED`、
+`WorkflowRef=TERMINAL`、`TaskProjection=COMPLETED`，Temporal CLI
+返回 `WORKFLOW_EXECUTION_STATUS_COMPLETED`；旧版本回读为
+`destroyed=true`，新目标仍只有 KV v2 版本 1。
+
+修改前 GitNexus 对集成测试函数给出 `risk: UNKNOWN`；其调用由
+`core/verify/run-integration.sh` 的 Cargo 集成测试入口及源码检索
+确认，未把图谱的零调用当作安全结论。影响只限夹具断言和本记录，
+无产品数据库迁移、API、Workflow、三端入口或上游 patch 变化；
+能力继续 `exposure: none`。旧动作未终态、目标缺失和结果不明均不
+转成成功或第二次写入；超时或外部不可查证时测试保留夹具供对账。
+受 8 GiB/400% cgroup 限制的定向 `cargo check` 退出 0；受
+12 GiB/400% cgroup 限制的真实集成测试 1/1 通过，耗时 22.31 秒。
+主动制造的旧动作未终态分支得到 503 与 `destroyed=false`，故该
+检查确实能区分“未销毁”与“已完成”。
+
+测试 Tenant `967e7d64-c404-4629-a87d-a74537a88dfe` 的 Core 四张
+关键表停服前后均为 `0|0|0|0`。精确确认 OpenBao 路径后，仅离线
+删除其子 namespace，并从父目录查证消失；其中测试密钥不可恢复。
+本地 Core 经 `start-core.sh` 重投一次性凭据，受限 BuildKit 生成的运行
+镜像为 `sha256:356169c431f9352599a12a208e383b80f8a4ae03553561b8d34840df3790dfc0`，
+BFF `/healthz` 返回 HTTP 200。
+系统盘压力下另以 `uv cache clean` 清除
+`/volumes/data/kailo/cache/uv` 的 107531 个可重建缓存文件
+（7.5 GiB），未碰旧 K8S、业务卷或其他 namespace。
+本夹具模拟的是尚在准入中的动作，不是正在读取旧私钥的真实并发
+消费者；真实写入响应丢失、执行中撤权、销毁响应丢失的端到端链与
+生产规模积压仍无本轮证据，`V-SCN-69` 和 Stage 2 不因此关闭。

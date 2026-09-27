@@ -176,6 +176,27 @@ async fn copy_unknown_observes_only_the_frozen_target() {
     let written: Value = written.json().await.expect("解析目标写入结果");
     assert_eq!(written["data"]["version"], 1);
 
+    // 冻结清单必须保留同 Tenant 尚在准入中的旧执行；它没有外部副作用，
+    // 但在确定终态前不能永久销毁旧版本。夹具目标与归位目标不同。
+    let pending_consumer = Uuid::new_v4();
+    sqlx::query(
+        "insert into admission.action_execution
+         (id, operation_id, tenant_id, action_key, action_version,
+          initiator_principal_id, actor_principal_id, target_id, parameter_hash,
+          gate_state, dispatch_state, correlation_id)
+         values ($1,$2,$3,'verify.old_generation.consumer',1,$4,$4,$5,
+                 'old-generation-guard','EVALUATING','NOT_DISPATCHED',$6)",
+    )
+    .bind(pending_consumer)
+    .bind(Uuid::new_v4())
+    .bind(fx.tenant)
+    .bind(fx.principal)
+    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4())
+    .execute(&pool)
+    .await
+    .expect("冻结一条尚未终态的旧执行");
+
     // 让 Core 原有对账器从冻结的 ALLOWED/PENDING_START 事实派发固定 ID。
     // 不直接调用 Temporal CLI 启动；这同时核验 Core 的 dispatch、Worker
     // Activity 和 TaskProjection，且不绕过仍关闭的用户入口。
@@ -193,6 +214,63 @@ async fn copy_unknown_observes_only_the_frozen_target() {
     .execute(&pool)
     .await
     .expect("触发既有 Core 对账派发");
+    let switched_deadline = std::time::Instant::now() + Duration::from_secs(e.converge_bound_secs);
+    loop {
+        let (rehome, consumers): (String, Value) = sqlx::query_as(
+            "select state, old_generation_consumer_refs
+             from admission.secret_ref_rehome where id = $1",
+        )
+        .bind(action)
+        .fetch_one(&pool)
+        .await
+        .expect("读取切换与旧消费者清单");
+        if rehome == "SWITCHED" {
+            assert!(
+                consumers
+                    .as_array()
+                    .expect("冻结清单须为数组")
+                    .iter()
+                    .any(|item| item["actionExecutionId"] == pending_consumer.to_string()),
+                "未冻结旧 generation 的在途动作"
+            );
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < switched_deadline,
+            "归位未切换：state={rehome}; 保留 Tenant {}",
+            fx.tenant
+        );
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    let blocked = advance().await.expect("旧执行未终态时尝试退役");
+    assert_eq!(blocked.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    let old_metadata: Value = http
+        .get(format!("{}/v1/{}/metadata/{path}", e.bao_addr, e.bao_mount))
+        .header("X-Vault-Namespace", &e.bao_namespace)
+        .header("X-Vault-Token", root)
+        .send()
+        .await
+        .expect("旧执行未终态时回读旧 KV")
+        .error_for_status()
+        .expect("旧 KV metadata 可读")
+        .json()
+        .await
+        .expect("解析旧 KV metadata");
+    assert_eq!(
+        old_metadata.pointer(&format!("/data/versions/{old_version}/destroyed")),
+        Some(&Value::Bool(false)),
+        "旧执行未终态时禁止销毁旧私钥版本"
+    );
+    let released = sqlx::query(
+        "update admission.action_execution
+         set gate_state = 'DENIED', updated_at = now()
+         where id = $1 and gate_state = 'EVALUATING'",
+    )
+    .bind(pending_consumer)
+    .execute(&pool)
+    .await
+    .expect("将旧执行转为确定的拒绝终态");
+    assert_eq!(released.rows_affected(), 1, "旧执行只能终结一次");
     let deadline = std::time::Instant::now() + Duration::from_secs(e.converge_bound_secs);
     loop {
         let (rehome, dispatch, projection, task): (String, String, String, Option<String>) =
@@ -295,6 +373,24 @@ async fn copy_unknown_observes_only_the_frozen_target() {
     assert_eq!(current_pubkey, pubkey);
     assert_eq!(locator, target_locator);
     assert_eq!(version, 1);
+
+    let old_metadata: Value = http
+        .get(format!("{}/v1/{}/metadata/{path}", e.bao_addr, e.bao_mount))
+        .header("X-Vault-Namespace", &e.bao_namespace)
+        .header("X-Vault-Token", root)
+        .send()
+        .await
+        .expect("终态后回读旧 KV")
+        .error_for_status()
+        .expect("旧 KV metadata 可读")
+        .json()
+        .await
+        .expect("解析旧 KV metadata");
+    assert_eq!(
+        old_metadata.pointer(&format!("/data/versions/{old_version}/destroyed")),
+        Some(&Value::Bool(true)),
+        "旧执行终态后须查证旧版本已销毁"
+    );
 
     sqlx::query("delete from admission.secret_ref_rehome where id = $1")
         .bind(action)
