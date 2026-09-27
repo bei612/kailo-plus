@@ -176,15 +176,93 @@ async fn copy_unknown_observes_only_the_frozen_target() {
     let written: Value = written.json().await.expect("解析目标写入结果");
     assert_eq!(written["data"]["version"], 1);
 
-    for expected in ["COPIED", "SWITCHED", "RETIRED", "RETIRED"] {
-        let response = advance().await.expect("按固定引用继续对账");
+    // 让 Core 原有对账器从冻结的 ALLOWED/PENDING_START 事实派发固定 ID。
+    // 不直接调用 Temporal CLI 启动；这同时核验 Core 的 dispatch、Worker
+    // Activity 和 TaskProjection，且不绕过仍关闭的用户入口。
+    let stale_after: i64 = std::env::var("ADMISSION_EVALUATION_TIMEOUT_SECONDS")
+        .expect("准入对账超时配置")
+        .parse()
+        .expect("准入对账超时须为秒数");
+    sqlx::query(
+        "update admission.action_execution
+         set updated_at = now() - make_interval(secs => $2::bigint)
+         where id = $1",
+    )
+    .bind(action)
+    .bind(stale_after.checked_add(1).expect("对账超时上界"))
+    .execute(&pool)
+    .await
+    .expect("触发既有 Core 对账派发");
+    let deadline = std::time::Instant::now() + Duration::from_secs(e.converge_bound_secs);
+    loop {
+        let (rehome, dispatch, projection, task): (String, String, String, Option<String>) =
+            sqlx::query_as(
+                "select r.state, ae.dispatch_state, w.projection_state, tp.status
+                 from admission.secret_ref_rehome r
+                 join admission.action_execution ae on ae.id = r.action_execution_id
+                 join projection.workflow_ref w on w.workflow_id = r.workflow_id
+                 left join projection.task_projection tp on tp.workflow_id = w.workflow_id
+                 where r.id = $1",
+            )
+            .bind(action)
+            .fetch_one(&pool)
+            .await
+            .expect("读取归位 Workflow 状态");
+        if rehome == "RETIRED"
+            && dispatch == "DISPATCHED"
+            && projection == "TERMINAL"
+            && task.as_deref() == Some("COMPLETED")
+        {
+            break;
+        }
         assert!(
-            response.status().is_success(),
-            "归位轮次返回 {}",
-            response.status()
+            std::time::Instant::now() < deadline,
+            "归位未收敛：rehome={rehome}, dispatch={dispatch}, projection={projection}, task={task:?}; 保留 Tenant {}",
+            fx.tenant
         );
-        let body: Value = response.json().await.expect("解析归位轮次状态");
-        assert_eq!(body["state"], expected);
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    let config = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("缺少 {name}"));
+    loop {
+        let described = std::process::Command::new("sudo")
+            .args([
+                "-n",
+                "docker",
+                "run",
+                "--rm",
+                "--network",
+                &e.docker_network,
+                &config("VERIFY_TEMPORAL_ADMIN_IMAGE"),
+                "temporal",
+                "workflow",
+                "describe",
+                "--address",
+                &config("VERIFY_TEMPORAL_INTERNAL_ADDRESS"),
+                "--namespace",
+                &config("TEMPORAL_NAMESPACE"),
+                "--workflow-id",
+                &workflow,
+                "--output",
+                "json",
+            ])
+            .output()
+            .expect("查询归位 Temporal execution");
+        assert!(
+            described.status.success(),
+            "Temporal describe 失败：{}",
+            String::from_utf8_lossy(&described.stderr)
+        );
+        let described: Value =
+            serde_json::from_slice(&described.stdout).expect("解析 Temporal describe");
+        if described["workflowExecutionInfo"]["status"] == "WORKFLOW_EXECUTION_STATUS_COMPLETED" {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "归位 TaskProjection 已完成，但 Temporal execution 未关闭；保留 Tenant {}",
+            fx.tenant
+        );
+        tokio::time::sleep(Duration::from_millis(400)).await;
     }
     let target_metadata: Value = http
         .get(format!(

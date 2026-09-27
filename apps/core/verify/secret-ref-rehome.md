@@ -428,3 +428,25 @@ Compose Core，复核 OpenBao 子 namespace 的路径精确等于本次 Tenant�
 证明的是 Core/OpenBao service-path 的固定目标观察，未注入真实网络
 响应丢失，也未启动归位 Temporal Workflow；`V-SCN-69` 的完整
 Temporal/撤权/旧消费者故障链及发布暴露仍未闭合。
+
+## `COPY_UNKNOWN` 经 Core 对账器派发的 Temporal 恢复链（2026-09-27）
+
+在上一节同一测试夹具上，目标 KV v2 `cas:0` 写入后不再由测试直接推进
+`COPIED → SWITCHED → RETIRED`。测试仅将已冻结的
+`ActionExecution.updated_at` 移到部署配置的准入对账时限之外，由 Core
+现有对账器派发固定 Workflow ID。真实 Worker Activity 调用 Core 归位
+service API，随后查询数据库并核对 `SecretRefRehome=RETIRED`、
+`ActionExecution.dispatch_state=DISPATCHED`、`WorkflowRef=TERMINAL` 与
+`TaskProjection=COMPLETED`；另由 Temporal CLI 查询同一 Workflow ID，
+确认 execution 状态为 `WORKFLOW_EXECUTION_STATUS_COMPLETED`。
+OpenBao 目标 KV metadata 的 `current_version` 仍为 1，原 pubkey 未变，
+binding 指向该目标版本。受 12 GiB/400% cgroup 限制的定向集成测试
+1/1 通过，耗时 32.43 秒；受 8 GiB/400% cgroup 限制的定向
+`cargo check` 退出 0。
+
+本刀只改变已有集成测试的后半段；产品状态机、数据库、API、Workflow
+与用户入口均未改。首次目标缺失的 HTTP 503/COPY_UNKNOWN 反向检查仍在。
+测试 Tenant 的 Core 四张关键表清理后均为 `0|0|0|0`；停本地 Core、
+复核精确路径后，删除了仅属于该测试 Tenant 的 OpenBao 子 namespace，
+其中测试密钥不可恢复。未注入真实网络响应丢失，也未覆盖执行中撤权、
+旧消费者和发布暴露；`V-SCN-69` 与 Stage 2 正式退出仍未闭合。
