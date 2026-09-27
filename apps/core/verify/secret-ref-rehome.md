@@ -394,3 +394,37 @@ Core 在 16 GiB/5 CPU 的受限 BuildKit 与 16 GiB/500% 外层 cgroup
 BFF `/healthz` 返回 HTTP 200。本轮未制造真实 OpenBao 已提交写入而
 响应悬停的网络故障，也未验证 Core/Temporal 的完整归位恢复；
 `V-SCN-69`、归位能力暴露和 Stage 2 正式退出仍未闭合。
+
+## `COPY_UNKNOWN` 固定目标恢复的真实服务链（2026-09-27）
+
+权威仍是 `DD-85`、`.design/03` §9 与 `V-SCN-69`。本刀只增加既有
+`secret_ref_rehome` 集成测试的故障夹具，不改产品状态机、API、数据库、
+Workflow 或客户端。GitNexus 对新增测试函数的影响判定为 `UNKNOWN`；
+全仓检索确认该测试文件由 Core 集成测试入口调用，实际 service route
+与 Worker Activity 均已存在。归位能力仍为 `exposure: none`，用户
+入口未开放。
+
+在真实 Core、PostgreSQL、SpiceDB 与 OpenBao 上建立独立 Tenant，事务
+冻结 `ActionExecution`、`WorkflowRef` 和 `COPY_UNKNOWN`，但不伪造
+Temporal 已运行证据。首次调用 Core 的归位 service API 时，目标
+KV 不存在：返回 HTTP 503，数据库仍为 `COPY_UNKNOWN`。这是对
+“目标缺失不得被当作成功或重新进入写路径”的反向故障检查。随后测试
+夹具对冻结的 Tenant 目标仅写入一次 KV v2 `cas:0`，模拟外部写入已
+提交而响应丢失；同一 service API 后续观察并推进
+`COPIED → SWITCHED → RETIRED`，重复调用保持 `RETIRED`。目标
+metadata 的 `current_version` 仍为 1，identity pubkey 未变，binding
+指向该目标版本。受 12 GiB/400% cgroup 限制的定向集成测试退出 0，
+`cargo test -p kailo-core --test secret_ref_rehome
+copy_unknown_observes_only_the_frozen_target -- --nocapture` 1/1 通过，
+耗时 14.65 秒；受 8 GiB/400% cgroup 限制的定向 `cargo check` 退出 0。
+
+测试结束后 Core 的该 Tenant 四张关键表均为 `0|0|0|0`；先停本地
+Compose Core，复核 OpenBao 子 namespace 的路径精确等于本次 Tenant，
+再只删除这一处可重建的测试 namespace。OpenBao 父目录已确认不再
+列出该 UUID；该 namespace 内的测试密钥不可恢复。Core 通过
+`start-core.sh` 重投一次性凭据后运行镜像
+`sha256:857c5082eb6bfc0e6ff2c3d58dc7d3e5e015be61a10f7c55a63b4176b38a64d4`，
+`/healthz` 返回 HTTP 200。这里
+证明的是 Core/OpenBao service-path 的固定目标观察，未注入真实网络
+响应丢失，也未启动归位 Temporal Workflow；`V-SCN-69` 的完整
+Temporal/撤权/旧消费者故障链及发布暴露仍未闭合。
