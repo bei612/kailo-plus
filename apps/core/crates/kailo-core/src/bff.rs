@@ -8,7 +8,7 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, MethodRouter},
     Json, Router,
 };
 use contracts::{ErrorBody, ErrorClass, PlatformSessionView};
@@ -126,108 +126,127 @@ pub fn db_enum<T: serde::de::DeserializeOwned>(column: &str, value: &str) -> Res
     })
 }
 
+/// 所有用户可达业务路由都由同一份生成目录准入；healthz 不是业务能力。
+trait ExposedRoute {
+    fn exposed_route(self, path: &'static str, method: MethodRouter<BffState>) -> Self;
+}
+
+impl ExposedRoute for Router<BffState> {
+    fn exposed_route(self, path: &'static str, method: MethodRouter<BffState>) -> Self {
+        if crate::capability_registry::route_exposed(path) {
+            self.route(path, method)
+        } else {
+            self
+        }
+    }
+}
+
 pub fn router(state: BffState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
-        .route("/api/v1/session", get(current_session))
+        .exposed_route("/api/v1/session", get(current_session))
         // SS-WEB-RELAY：Browser 只发类型化语义命令，不发 raw event、不发任意 filter
-        .route(
+        .exposed_route(
             "/api/v1/workspaces/{workspace_id}/messages",
             get(crate::web_transport::query_messages).post(crate::web_transport::publish_message),
         )
         // 收藏/静音/已读：Core 是唯一权威，三端共用（DD-40）
         // 注销：必须在调用网关 logout **之前**。网关的 logout 是短路的，
         // 请求根本不到后端（SF-AGW-21），Core 无从得知注销发生过。
-        .route("/api/v1/logout", axum::routing::post(logout))
+        .exposed_route("/api/v1/logout", axum::routing::post(logout))
         // SS-WEB-01 的三个内置管理页所需的只读视图
-        .route(
+        .exposed_route(
             "/api/v1/workspaces",
             get(crate::platform_views::list_workspaces),
         )
-        .route(
+        .exposed_route(
             "/api/v1/workspaces/{workspace_id}/members",
             get(crate::platform_views::list_members),
         )
-        .route(
+        .exposed_route(
             "/api/v1/role-members",
             get(crate::platform_views::list_role_members),
         )
-        .route(
+        .exposed_route(
             "/api/v1/role-workspaces",
             get(crate::platform_views::list_role_workspaces),
         )
-        .route("/api/v1/audit", get(crate::platform_views::list_own_audit))
+        .exposed_route(
+            "/api/v1/identity/legacy-secret-refs",
+            get(crate::secret_ref_rehome::list_eligible),
+        )
+        .exposed_route("/api/v1/audit", get(crate::platform_views::list_own_audit))
         // 原生设备公钥（DD-77/79）：登记只对原生入口开放，查看与撤销两端都开放
-        .route(
+        .exposed_route(
             crate::client_keys::REGISTER_PATH,
             get(crate::client_keys::list).post(crate::client_keys::register),
         )
-        .route(
+        .exposed_route(
             "/api/v1/identity/client-keys/{pubkey}",
             axum::routing::delete(crate::client_keys::revoke),
         )
         // 原生端的 Community 连接事实（DD-75/78）；Web 拿不到
-        .route("/api/v1/native/community", get(crate::native::community))
-        .route("/api/v1/user-state", get(crate::user_state::get_user_state))
-        .route(
+        .exposed_route("/api/v1/native/community", get(crate::native::community))
+        .exposed_route("/api/v1/user-state", get(crate::user_state::get_user_state))
+        .exposed_route(
             "/api/v1/user-state/workspaces/{workspace_id}",
             axum::routing::put(crate::user_state::put_workspace_preference),
         )
         // 媒体也经 BFF 代签读写（DD-39）；上界在 BFF 侧先行设定
-        .route(
+        .exposed_route(
             "/api/v1/workspaces/{workspace_id}/media",
             axum::routing::post(crate::web_transport::upload_media),
         )
-        .route(
+        .exposed_route(
             "/api/v1/workspaces/{workspace_id}/media/{sha256}",
             get(crate::web_transport::fetch_media),
         )
-        .route(
+        .exposed_route(
             "/api/v1/workspaces/{workspace_id}/stream",
             get(crate::stream::open_stream),
         )
-        .route(
+        .exposed_route(
             "/api/v1/user-state/read",
             axum::routing::put(crate::user_state::put_read_mark),
         )
         // 治理内核：语义命令、本人任务、待我审批与审批决定（.design/06 §9）。
         // 审批状态只经 Temporal Update 推进，这里没有改投影的端点（DD-47）
-        .route(
+        .exposed_route(
             "/api/v1/actions",
             axum::routing::post(crate::governance_api::submit_action),
         )
-        .route("/api/v1/tasks", get(crate::governance_api::list_tasks))
-        .route(
+        .exposed_route("/api/v1/tasks", get(crate::governance_api::list_tasks))
+        .exposed_route(
             "/api/v1/tasks/{action_execution_id}",
             get(crate::governance_api::get_task),
         )
-        .route(
+        .exposed_route(
             "/api/v1/approvals",
             get(crate::governance_api::list_pending_approvals),
         )
-        .route(
+        .exposed_route(
             "/api/v1/approvals/{workflow_id}",
             get(crate::governance_api::get_approval),
         )
-        .route(
+        .exposed_route(
             "/api/v1/approvals/{workflow_id}/decision",
             axum::routing::post(crate::governance_api::decide),
         )
-        .route(
+        .exposed_route(
             "/api/v1/approvals/{workflow_id}/withdraw",
             axum::routing::post(crate::governance_api::withdraw),
         )
         // Tenant 成员邀请（DD-83）。签发与撤回走上面的语义命令；这里是管理视图与
         // 兑换。兑换与兑换进度不要求 PlatformSession：兑换者此刻还不是成员
-        .route(
+        .exposed_route(
             "/api/v1/invitations",
             get(crate::invitation::list_invitations),
         )
-        .route(
+        .exposed_route(
             "/api/v1/invitations/redeem",
             axum::routing::post(crate::invitation::redeem),
         )
-        .route(
+        .exposed_route(
             "/api/v1/invitations/redemptions",
             get(crate::invitation::list_redemptions),
         )

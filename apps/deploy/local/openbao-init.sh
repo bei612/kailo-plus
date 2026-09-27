@@ -143,15 +143,21 @@ ns read -field=cas_required "${OPENBAO_KV_MOUNT}/config" | grep -qx true \
 ns auth list -format=json 2>/dev/null | grep -q '"approle/"' \
   || ns auth enable approle >/dev/null
 
-# Core 的策略：只读写自己要用的 KV 路径，不给 delete/destroy。
-# secret 的撤销是受治理动作，不是运维旁路（.design/03 §9）——真要撤销时
-# 显式扩策略，而不是一开始就把能力留在那里等人用。
+# Core 的 platform 策略：只给遗留 Buzz 身份版本的 destroy 路径；调用者仍须
+# 经过 DD-85 的治理冻结、旧 generation 终态查证与版本 metadata 回读。
+# operator、其他 secret 与 Tenant 子 namespace 没有此能力。
 ns_stdin policy write kailo-core - <<POLICY >/dev/null
 path "${OPENBAO_KV_MOUNT}/data/*" {
   capabilities = ["create", "update", "read"]
 }
 path "${OPENBAO_KV_MOUNT}/metadata/*" {
   capabilities = ["read", "list"]
+}
+path "${OPENBAO_KV_MOUNT}/destroy/buzz-human/*" {
+  capabilities = ["update"]
+}
+path "${OPENBAO_KV_MOUNT}/destroy/buzz-control/*" {
+  capabilities = ["update"]
 }
 POLICY
 

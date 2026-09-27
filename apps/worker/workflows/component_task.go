@@ -56,12 +56,22 @@ type IdentityTarget struct {
 	BindingVersion int32  `json:"bindingVersion"`
 }
 
+// SecretRefRehomeTarget 只冻结可公开的引用，不把 SecretRef locator 或值送入 history。
+type SecretRefRehomeTarget struct {
+	ActionExecutionID      string `json:"actionExecutionId"`
+	RehomeID               string `json:"rehomeId"`
+	TenantID               string `json:"tenantId"`
+	Pubkey                 string `json:"pubkey"`
+	ExpectedBindingVersion int32  `json:"expectedBindingVersion"`
+}
+
 // ComponentTaskInput 是 ComponentTaskWorkflow 的统一输入。
 type ComponentTaskInput struct {
 	Kind       generated.WorkflowKind `json:"kind"`
 	Membership *MembershipTarget      `json:"membership,omitempty"`
 	Scope      *ScopeTarget           `json:"scope,omitempty"`
 	Identity   *IdentityTarget        `json:"identity,omitempty"`
+	Rehome     *SecretRefRehomeTarget `json:"rehome,omitempty"`
 	// continue-as-new 时带入的 history 长度累计。投影的 event_id 按 workflow ID
 	// 单调去重（06 §2：按 workflow ID 而非 run ID 聚合），新 run 的 history 从零
 	// 数起，不加上它，续跑后的投影会被当成旧事件丢掉。
@@ -278,9 +288,52 @@ func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 		return workspaceLifecycle(ctx, in)
 	case generated.BuzzIdentityProjection:
 		return identityProjection(ctx, in)
+	case generated.SecretRefRehome:
+		return secretRefRehome(ctx, in)
 	default:
 		return temporal.NewNonRetryableApplicationError(
 			"kind 尚未实现", activities.ErrTypeRejected, nil)
+	}
+}
+
+func secretRefRehome(ctx workflow.Context, in ComponentTaskInput) error {
+	r := in.Rehome
+	if r == nil || r.ActionExecutionID == "" || r.RehomeID == "" || r.TenantID == "" ||
+		r.Pubkey == "" || r.ExpectedBindingVersion <= 0 {
+		return temporal.NewNonRetryableApplicationError(
+			"SECRET_REF_REHOME 缺少冻结的目标", activities.ErrTypeRejected, nil)
+	}
+	t := newTask(ctx, in)
+	if err := t.begin(); err != nil {
+		return t.fail(err)
+	}
+	for {
+		var out activities.SecretRefRehomeResult
+		if err := t.step(func(ao workflow.Context) workflow.Future {
+			return workflow.ExecuteActivity(ao, (*activities.CoreAPI).AdvanceSecretRefRehome,
+				activities.SecretRefRehomeStep{
+					ActionExecutionID:      r.ActionExecutionID,
+					RehomeID:               r.RehomeID,
+					TenantID:               r.TenantID,
+					Pubkey:                 r.Pubkey,
+					ExpectedBindingVersion: r.ExpectedBindingVersion,
+					WorkflowID:             workflow.GetInfo(ctx).WorkflowExecution.ID,
+				})
+		}, &out); err != nil {
+			return t.fail(err)
+		}
+		switch out.State {
+		case "COPIED", "SWITCHED":
+			continue
+		case "RETIRED":
+			if err := t.complete(); err != nil {
+				return t.fail(err)
+			}
+			return nil
+		default:
+			return t.fail(temporal.NewNonRetryableApplicationError(
+				"SECRET_REF_REHOME 回传未知状态", activities.ErrTypeRejected, nil))
+		}
 	}
 }
 

@@ -11,8 +11,9 @@
 | WorkflowRef 与 TaskProjection | Temporal execution | `workflow_reconcile`：超过新鲜度上界仍非终态的 WorkflowRef 按固定 ID Describe，补写漏掉的终态并标 `observation_gap`，NotFound 按 retention 判定 | `kailo.workflow_ref.nonterminal{projection_state}`、`kailo.workflow_ref.oldest_age{projection_state}`、`kailo.workflow_ref.reconciled{outcome}`、`kailo.entity.nonterminal{entity,state}`、`kailo.entity.stranded{entity}`、`kailo.workflow_reconcile.passes{outcome}` |
 | Buzz relay 与 Channel roster | Relay | `roster_reconcile`：以各 Tenant 的 CONTROL 身份读 roster，与已落定的成员事实比对；只度量、不修复 | `kailo.roster.drift{scope,direction}`、`kailo.roster.reconciled{scope,outcome}` |
 | ActionExecution 门禁/派发与 ApprovalProjection | Core（门禁）、Temporal（审批） | `governance_reconcile`：只取有一步可做的非终态动作——EVALUATING 超时置 EXPIRED、已允许未派发按预写 ID 重新驱动、APPROVED 待重新准入、consume/invalidate 按固定 Update ID 重发、审批 Workflow 已终结而投影未终结时门禁置 EXPIRED | `kailo.action_execution.open{state=<gate>/<dispatch>}`、`kailo.action_execution.oldest_open_age{state}`、`kailo.governance_reconcile.driven{stage}`、`kailo.governance_reconcile.passes{outcome}` |
+| 遗留身份 SecretRef 归位 | Core 的 `admission.secret_ref_rehome` 引用与 OpenBao 钉定版本 | `SECRET_REF_REHOME` Workflow 按固定 ID 重试查证；`governance_reconcile` 只度量超时并发运维告警，不替它执行外部副作用 | `kailo.secret_ref_rehome.open{state}`、`kailo.secret_ref_rehome.oldest_open_age{state}`、`kailo.secret_ref_rehome.overdue{state}` |
 
-周期与上界由 `WORKFLOW_RECONCILE_INTERVAL_SECONDS`、`WORKFLOW_PROJECTION_FRESHNESS_SECONDS`、`WORKFLOW_RECONCILE_BATCH`、`ROSTER_RECONCILE_INTERVAL_SECONDS`、`GOVERNANCE_RECONCILE_INTERVAL_SECONDS`、`GOVERNANCE_RECONCILE_BATCH`、`ADMISSION_EVALUATION_TIMEOUT_SECONDS` 给出。SpiceDB relationship 是成员投影的另一执行点，目前只在每次建立与撤权时由 Workflow 以 `FullyConsistent` 读回查证，没有周期对账。
+周期与上界由 `WORKFLOW_RECONCILE_INTERVAL_SECONDS`、`WORKFLOW_PROJECTION_FRESHNESS_SECONDS`、`WORKFLOW_RECONCILE_BATCH`、`ROSTER_RECONCILE_INTERVAL_SECONDS`、`GOVERNANCE_RECONCILE_INTERVAL_SECONDS`、`GOVERNANCE_RECONCILE_BATCH`、`ADMISSION_EVALUATION_TIMEOUT_SECONDS`、`SECRET_REF_REHOME_ALERT_AFTER_SECONDS` 给出。SpiceDB relationship 是成员投影的另一执行点，目前只在每次建立与撤权时由 Workflow 以 `FullyConsistent` 读回查证，没有周期对账。
 
 ## 触发信号
 
@@ -24,6 +25,7 @@
 - `kailo.action_execution.oldest_open_age` 超过 `ADMISSION_EVALUATION_TIMEOUT_SECONDS` 加两个治理对账周期（`WAITING` 除外：它以审批策略的 `expires_in` 为界）；
 - `kailo.governance_reconcile.driven{stage}` 出现 `APPROVAL_LOST`、`FAILED`，或 `DISPATCH_REDRIVEN`/`CONSUME_RESENT` 在同一批动作上持续出现；
 - Core 审计出现 `event_type=RECONCILIATION`、`result_code=APPROVAL_CONSUME_WINDOW_CLOSED`（已派发而批准拒绝 consume）。
+- `kailo.secret_ref_rehome.overdue{state}` 非零：从归位记录创建时起计龄，周期重试不清零；按 RB-07 的 DD-85 步骤处理，不把 `COPY_UNKNOWN` 当成确定失败。
 
 ## 判定依据
 

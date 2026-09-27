@@ -71,6 +71,7 @@ const step = async (name, fn) => {
     const shown = await page.getByRole("status").allInnerTexts().catch(() => []);
     console.error(`✗ ${name}\n  URL: ${page.url()}\n  status: ${JSON.stringify(shown)}`);
     console.error(`  console errors: ${JSON.stringify(consoleErrors.slice(-10), null, 2)}`);
+    console.error(`  failed responses: ${JSON.stringify(failedResponses.slice(-20), null, 2)}`);
     throw e;
   }
   steps.push({ name, ms: Date.now() - started });
@@ -282,6 +283,9 @@ await step("成员页：本人状态使用本地化文案，协议身份按上�
   await roles.getByText("Administrator roles").waitFor();
   await roles.getByText("Tenant admin", { exact: true }).first().waitFor();
   await roles.getByRole("button", { name: "Grant" }).first().waitFor();
+  const legacyRefs = page.getByTestId("legacy-secret-ref-management");
+  await legacyRefs.getByText("Legacy identity keys").waitFor();
+  await legacyRefs.getByText("No legacy identity references on this page.").waitFor();
   await shot("08-members");
 });
 

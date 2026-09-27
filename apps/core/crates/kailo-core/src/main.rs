@@ -5,6 +5,7 @@
 
 mod audit;
 mod bff;
+mod capability_registry;
 mod client_keys;
 mod component_task;
 mod external_human;
@@ -25,6 +26,7 @@ mod role_reconcile;
 mod roles;
 mod roster_reconcile;
 mod scope_state;
+mod secret_ref_rehome;
 mod server_identity;
 mod server_keys;
 mod service_api;
@@ -141,6 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             pool: pool.clone(),
             temporal: std::sync::Arc::clone(&temporal),
             spicedb: spicedb::SpiceDb::from_env(reqwest::Client::new())?,
+            secrets: std::sync::Arc::clone(&secrets),
             cfg: governance::GovernanceConfig::from_env()?,
         });
         governance_reconcile::spawn(

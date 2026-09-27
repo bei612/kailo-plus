@@ -10,6 +10,7 @@
 //     final invitationRedemptionView = invitationRedemptionViewFromJson(jsonString);
 //     final invitationRedemptionRequest = invitationRedemptionRequestFromJson(jsonString);
 //     final issuedInvitation = issuedInvitationFromJson(jsonString);
+//     final legacySecretRefPage = legacySecretRefPageFromJson(jsonString);
 //     final nativeCommunityFacts = nativeCommunityFactsFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
@@ -95,6 +96,12 @@ IssuedInvitation issuedInvitationFromJson(String str) =>
     IssuedInvitation.fromJson(json.decode(str));
 
 String issuedInvitationToJson(IssuedInvitation data) =>
+    json.encode(data.toJson());
+
+LegacySecretRefPage legacySecretRefPageFromJson(String str) =>
+    LegacySecretRefPage.fromJson(json.decode(str));
+
+String legacySecretRefPageToJson(LegacySecretRefPage data) =>
     json.encode(data.toJson());
 
 NativeCommunityFacts nativeCommunityFactsFromJson(String str) =>
@@ -408,7 +415,7 @@ class Nested {
 
 class Variant {
   final String? fileDigest;
-  final Kind kind;
+  final VariantKind kind;
   final String? messageBody;
   final int? taskAttempt;
 
@@ -421,31 +428,34 @@ class Variant {
 
   factory Variant.fromJson(Map<String, dynamic> json) => Variant(
     fileDigest: json["fileDigest"],
-    kind: kindValues.map[json["kind"]]!,
+    kind: variantKindValues.map[json["kind"]]!,
     messageBody: json["messageBody"],
     taskAttempt: json["taskAttempt"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "fileDigest": fileDigest,
-    "kind": kindValues.reverse[kind],
+    "kind": variantKindValues.reverse[kind],
     "messageBody": messageBody,
     "taskAttempt": taskAttempt,
   });
 }
 
-enum Kind { FILE, MESSAGE, TASK }
+enum VariantKind { FILE, MESSAGE, TASK }
 
-final kindValues = EnumValues({
-  "FILE": Kind.FILE,
-  "MESSAGE": Kind.MESSAGE,
-  "TASK": Kind.TASK,
+final variantKindValues = EnumValues({
+  "FILE": VariantKind.FILE,
+  "MESSAGE": VariantKind.MESSAGE,
+  "TASK": VariantKind.TASK,
 });
 
 ///POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
 ///actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
 class ActionCommand {
   final String actionKey;
+
+  ///EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
+  final bool? explicitConfirmation;
 
   ///调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
   final String idempotencyKey;
@@ -470,6 +480,7 @@ class ActionCommand {
 
   ActionCommand({
     required this.actionKey,
+    this.explicitConfirmation,
     required this.idempotencyKey,
     this.invitationId,
     this.name,
@@ -481,6 +492,7 @@ class ActionCommand {
 
   factory ActionCommand.fromJson(Map<String, dynamic> json) => ActionCommand(
     actionKey: json["actionKey"],
+    explicitConfirmation: json["explicitConfirmation"],
     idempotencyKey: json["idempotencyKey"],
     invitationId: json["invitationId"],
     name: json["name"],
@@ -492,6 +504,7 @@ class ActionCommand {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "actionKey": actionKey,
+    "explicitConfirmation": explicitConfirmation,
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
     "name": name,
@@ -1109,6 +1122,61 @@ class IssuedInvitation {
   });
 }
 
+///GET /api/v1/identity/legacy-secret-refs 的有界视图。只列当前 Tenant 中可发起 DD-85 归位的 SERVER
+///binding，不暴露 locator、版本或私钥。
+class LegacySecretRefPage {
+  final List<LegacySecretRefBinding> bindings;
+  final String? nextCursor;
+
+  LegacySecretRefPage({required this.bindings, this.nextCursor});
+
+  factory LegacySecretRefPage.fromJson(Map<String, dynamic> json) =>
+      LegacySecretRefPage(
+        bindings: List<LegacySecretRefBinding>.from(
+          json["bindings"].map((x) => LegacySecretRefBinding.fromJson(x)),
+        ),
+        nextCursor: json["nextCursor"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindings": List<dynamic>.from(bindings.map((x) => x.toJson())),
+    "nextCursor": nextCursor,
+  });
+}
+
+///业务 Tenant 的旧 SERVER 身份引用；仅给有 tenant manage 权限的人展示。
+class LegacySecretRefBinding {
+  final BindingKind kind;
+  final String principalId;
+  final String pubkey;
+
+  LegacySecretRefBinding({
+    required this.kind,
+    required this.principalId,
+    required this.pubkey,
+  });
+
+  factory LegacySecretRefBinding.fromJson(Map<String, dynamic> json) =>
+      LegacySecretRefBinding(
+        kind: bindingKindValues.map[json["kind"]]!,
+        principalId: json["principalId"],
+        pubkey: json["pubkey"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": bindingKindValues.reverse[kind],
+    "principalId": principalId,
+    "pubkey": pubkey,
+  });
+}
+
+enum BindingKind { CONTROL, HUMAN }
+
+final bindingKindValues = EnumValues({
+  "CONTROL": BindingKind.CONTROL,
+  "HUMAN": BindingKind.HUMAN,
+});
+
 ///GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
 ///communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
 class NativeCommunityFacts {
@@ -1510,6 +1578,7 @@ enum WorkflowKind {
   BUZZ_IDENTITY_PROJECTION,
   MEMBERSHIP_PROJECTION,
   MEMBERSHIP_REVOCATION,
+  SECRET_REF_REHOME,
   TENANT_LIFECYCLE,
   WORKSPACE_LIFECYCLE,
 }
@@ -1518,6 +1587,7 @@ final workflowKindValues = EnumValues({
   "BUZZ_IDENTITY_PROJECTION": WorkflowKind.BUZZ_IDENTITY_PROJECTION,
   "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
   "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
+  "SECRET_REF_REHOME": WorkflowKind.SECRET_REF_REHOME,
   "TENANT_LIFECYCLE": WorkflowKind.TENANT_LIFECYCLE,
   "WORKSPACE_LIFECYCLE": WorkflowKind.WORKSPACE_LIFECYCLE,
 });

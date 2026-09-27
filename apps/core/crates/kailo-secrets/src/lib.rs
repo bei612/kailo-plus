@@ -578,6 +578,100 @@ impl SecretStore {
         )
     }
 
+    /// DD-85 的旧引用只能是该业务 Tenant 在部署级 namespace 下的 Buzz 身份路径。
+    /// 不能把任意 platform secret 借归位动作搬走或永久销毁。
+    pub fn is_legacy_identity_locator(&self, tenant_id: Uuid, locator: &str) -> bool {
+        let Ok((namespace, mount, path)) = split_locator(locator) else {
+            return false;
+        };
+        if namespace != self.session.namespace || mount != self.tenant.mount {
+            return false;
+        }
+        let control = format!("buzz-control/{tenant_id}");
+        let human = format!("buzz-human/{tenant_id}/");
+        let suffix = path
+            .strip_prefix(&format!("{control}/"))
+            .or_else(|| path.strip_prefix(&human));
+        path == control
+            || suffix.is_some_and(|tail| {
+                !tail.is_empty()
+                    && tail
+                        .split('/')
+                        .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+            })
+    }
+
+    /// 只读取 KV metadata 的 current_version。目标确定性 locator 在响应丢失后只
+    /// 能经此观察，不自动追加新版本。
+    pub async fn observed_version(&self, locator: &str) -> Result<u32, SecretError> {
+        let (namespace, mount, path) = split_locator(locator)?;
+        let token = self.token_for_namespace(&namespace).await?;
+        self.current_version(&namespace, &mount, &path, token.as_str())
+            .await
+    }
+
+    /// OpenBao KV v2 的永久 destroy；仅允许 DD-85 已由 Core 治理状态机冻结的
+    /// 遗留 Buzz 身份版本。调用后仍须用 metadata 中的 destroyed=true 查证。
+    pub async fn destroy_legacy_identity_version(
+        &self,
+        tenant_id: Uuid,
+        locator: &str,
+        version: u32,
+    ) -> Result<(), SecretError> {
+        if version == 0 || !self.is_legacy_identity_locator(tenant_id, locator) {
+            return Err(SecretError::Refused);
+        }
+        let (namespace, mount, path) = split_locator(locator)?;
+        let token = self.token_for_namespace(&namespace).await?;
+        let response = self
+            .session
+            .http
+            .post(format!("{}/v1/{mount}/destroy/{path}", self.session.addr))
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token.as_str())
+            .json(&serde_json::json!({ "versions": [version] }))
+            .send()
+            .await?;
+        match response.status().as_u16() {
+            200 | 204 => Ok(()),
+            401 | 403 => Err(SecretError::Refused),
+            _ => Err(SecretError::Malformed),
+        }
+    }
+
+    /// 只有 metadata 仍保留该版本且 destroyed=true，才把旧引用记为 REVOKED。
+    /// 路径不存在、回应缺字段或 OpenBao 不可用都不是销毁证据。
+    pub async fn version_destroyed(
+        &self,
+        tenant_id: Uuid,
+        locator: &str,
+        version: u32,
+    ) -> Result<bool, SecretError> {
+        if version == 0 || !self.is_legacy_identity_locator(tenant_id, locator) {
+            return Err(SecretError::Refused);
+        }
+        let (namespace, mount, path) = split_locator(locator)?;
+        let token = self.token_for_namespace(&namespace).await?;
+        let response = self
+            .session
+            .http
+            .get(format!("{}/v1/{mount}/metadata/{path}", self.session.addr))
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token.as_str())
+            .send()
+            .await?;
+        match response.status().as_u16() {
+            200 => {
+                let body: serde_json::Value = response.json().await?;
+                body.pointer(&format!("/data/versions/{version}/destroyed"))
+                    .and_then(serde_json::Value::as_bool)
+                    .ok_or(SecretError::Malformed)
+            }
+            401 | 403 => Err(SecretError::Refused),
+            _ => Err(SecretError::VersionUnavailable),
+        }
+    }
+
     async fn tenant_admin(
         &self,
         namespace: &str,
@@ -1183,6 +1277,39 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
+    fn fake_store(addr: &str) -> SecretStore {
+        let (tenant_failure_tx, tenant_failure_rx) = mpsc::unbounded_channel();
+        SecretStore {
+            session: AppRoleSession::new(
+                addr,
+                "platform".to_owned(),
+                "role".to_owned(),
+                "role".to_owned(),
+                None,
+            ),
+            provisioner: AppRoleSession::new(
+                addr,
+                "tenants".to_owned(),
+                "role".to_owned(),
+                "role".to_owned(),
+                None,
+            ),
+            tenant: TenantConfig {
+                parent: "tenants".to_owned(),
+                mount: "kv".to_owned(),
+                role_name: "role".to_owned(),
+                max_versions: 10,
+                secret_id_ttl: String::new(),
+                token_period: String::new(),
+                core_bound_cidrs: String::new(),
+            },
+            tenant_sessions: Mutex::new(HashMap::new()),
+            tenant_failure_tx,
+            tenant_failure_rx: Mutex::new(tenant_failure_rx),
+            identity: "core".to_owned(),
+        }
+    }
+
     #[test]
     fn locator_must_have_three_parts() {
         assert!(split_locator("platform/kv/buzz/control").is_ok());
@@ -1251,36 +1378,7 @@ mod tests {
             requests
         });
 
-        let (tenant_failure_tx, tenant_failure_rx) = mpsc::unbounded_channel();
-        let store = SecretStore {
-            session: AppRoleSession::new(
-                &format!("http://{addr}"),
-                "platform".to_owned(),
-                "role".to_owned(),
-                "role".to_owned(),
-                None,
-            ),
-            provisioner: AppRoleSession::new(
-                &format!("http://{addr}"),
-                "tenants".to_owned(),
-                "role".to_owned(),
-                "role".to_owned(),
-                None,
-            ),
-            tenant: TenantConfig {
-                parent: "tenants".to_owned(),
-                mount: "kv".to_owned(),
-                role_name: "role".to_owned(),
-                max_versions: 10,
-                secret_id_ttl: String::new(),
-                token_period: String::new(),
-                core_bound_cidrs: String::new(),
-            },
-            tenant_sessions: Mutex::new(HashMap::new()),
-            tenant_failure_tx,
-            tenant_failure_rx: Mutex::new(tenant_failure_rx),
-            identity: "core".to_owned(),
-        };
+        let store = fake_store(&format!("http://{addr}"));
         *store.session.lease.write().await = Some(Lease {
             token: Arc::new("service".to_owned()),
             ttl: Duration::from_secs(120),
@@ -1313,6 +1411,84 @@ mod tests {
             1
         );
         assert!(requests[1].contains("\"cas\":0"));
+    }
+
+    #[tokio::test]
+    async fn lost_destroy_response_can_be_resolved_by_metadata() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let replies = [
+                (
+                    "200 OK",
+                    r#"{"data":{"versions":{"1":{"destroyed":false}}}}"#,
+                ),
+                ("", ""), // 服务端已销毁版本，HTTP 响应在传输途中丢失。
+                (
+                    "200 OK",
+                    r#"{"data":{"versions":{"1":{"destroyed":true}}}}"#,
+                ),
+            ];
+            let mut requests = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while requests.len() < replies.len() && std::time::Instant::now() < deadline {
+                let (mut stream, _) = match listener.accept() {
+                    Ok(connection) => connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(error) => panic!("mock OpenBao accept: {error}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut bytes = [0u8; 4096];
+                let size = stream.read(&mut bytes).unwrap();
+                requests.push(String::from_utf8_lossy(&bytes[..size]).to_string());
+                let (status, body) = replies[requests.len() - 1];
+                if status.is_empty() {
+                    continue;
+                }
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+            requests
+        });
+
+        let store = fake_store(&format!("http://{addr}"));
+        *store.session.lease.write().await = Some(Lease {
+            token: Arc::new("service".to_owned()),
+            ttl: Duration::from_secs(120),
+        });
+        let tenant = Uuid::nil();
+        let locator = format!("platform/kv/buzz-human/{tenant}/probe");
+        assert!(!store.version_destroyed(tenant, &locator, 1).await.unwrap());
+        assert!(matches!(
+            store
+                .destroy_legacy_identity_version(tenant, &locator, 1)
+                .await,
+            Err(SecretError::Transport(_))
+        ));
+        assert!(store.version_destroyed(tenant, &locator, 1).await.unwrap());
+
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 3, "单次销毁调用之后仍可读取 metadata");
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.starts_with("POST "))
+                .count(),
+            1,
+            "该次销毁调用只发出一个 POST"
+        );
+        assert!(requests[0].contains("/metadata/buzz-human/"));
+        assert!(requests[1].contains("/destroy/buzz-human/"));
+        assert!(requests[2].contains("/metadata/buzz-human/"));
     }
 
     #[tokio::test]

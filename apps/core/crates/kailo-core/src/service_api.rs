@@ -112,6 +112,10 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/approvals/admission",
             post(crate::governance_api::fresh_approval_admission),
         )
+        .route(
+            "/service/v1/secret-ref-rehomes/advance",
+            post(crate::secret_ref_rehome::advance),
+        )
         .with_state(state)
 }
 
@@ -154,20 +158,19 @@ async fn project_task_state(
     }
 }
 
-/// binding 推进到 ACTIVE 之前的 audit 前置（`DD-70`「任一 binding 的 ACTIVE 判据
-/// 包含该部署 audit device 清单非空」）。
+/// OpenBao 托管身份切换及旧版本永久销毁前的 audit 前置（DD-70）。
 ///
 /// 为空或读不到都回 503：这是部署前置不成立，修好之前 Workflow 按轮等待而不是
-/// 失败——实体不因一次运维事故而搁浅，也绝不在留不下痕迹时变成 ACTIVE。
+/// 失败——实体不因一次运维事故而搁浅，也绝不在留不下痕迹时变更密钥状态。
 pub(crate) async fn audit_gate(state: &ServiceState) -> Result<(), Response> {
     match state.audit.enabled_devices().await {
         Ok(n) if n > 0 => Ok(()),
         Ok(_) => {
-            tracing::error!("OpenBao 没有启用任何 audit device：不把 binding 推进到 ACTIVE");
+            tracing::error!("OpenBao 没有启用任何 audit device：拒绝密钥状态变更");
             Err(StatusCode::SERVICE_UNAVAILABLE.into_response())
         }
         Err(e) => {
-            tracing::warn!(error = %e, "读不到 OpenBao audit device 清单：不把 binding 推进到 ACTIVE");
+            tracing::warn!(error = %e, "读不到 OpenBao audit device 清单：拒绝密钥状态变更");
             Err(StatusCode::SERVICE_UNAVAILABLE.into_response())
         }
     }

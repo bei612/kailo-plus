@@ -1,7 +1,7 @@
 // DD-82：角色关系只从 BFF fresh 视图读取，授予/撤销仍经同一条 Governed Action。
 // Web 与 Desktop 共用；Mobile 只读成员视图，不装载本管理面。
 
-import type { RoleMemberView } from "@kailo/contracts";
+import { BindingKind, type LegacySecretRefBinding, type RoleMemberView } from "@kailo/contracts";
 import { useState } from "react";
 import { newIdempotencyKey } from "../governance";
 import { BffError, type WriteFailure, writeFailure } from "../transport";
@@ -203,6 +203,127 @@ export function RoleMembers({ workspaceId }: { workspaceId?: string }) {
               ) : null}
             </div>
           </>
+      ) : null}
+    </section>
+  );
+}
+
+type RehomeIntent = { binding: LegacySecretRefBinding; idempotencyKey: string };
+
+/** DD-85：当前 Tenant 的管理者显式确认后，只提交受治理动作；不触碰私钥。 */
+export function LegacySecretRefManagement() {
+  const client = useBffClient();
+  const t = useT();
+  const failureText = useFailureText();
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const [pageIndex, setPageIndex] = useState(0);
+  const cursor = cursors[pageIndex];
+  const [state, reload] = useLoad(`legacy-secret-refs:${cursor ?? "first"}`, () =>
+    client.legacySecretRefs(cursor),
+  );
+  const [intent, setIntent] = useState<RehomeIntent | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<
+    | { kind: "submitted"; execution: string }
+    | { kind: "failed"; failure: WriteFailure }
+    | null
+  >(null);
+
+  // 无权或未进入发布注册表时都不渲染入口；其余错误保持可见且可重试。
+  if (state.status === "error" && state.error instanceof BffError
+    && (state.error.status === 403 || state.error.status === 404))
+    return null;
+  if (state.status === "pending") return null;
+
+  const submit = async () => {
+    if (!intent || busy) return;
+    setBusy(true);
+    setOutcome(null);
+    try {
+      const result = await client.submitAction({
+        actionKey: "identity.secret_ref.rehome",
+        idempotencyKey: intent.idempotencyKey,
+        principalId: intent.binding.principalId,
+        explicitConfirmation: true,
+      });
+      setOutcome({ kind: "submitted", execution: result.actionExecutionId });
+      setIntent(null);
+      reload();
+    } catch (error) {
+      const failure = writeFailure(error);
+      setOutcome({ kind: "failed", failure });
+      if (failure.kind !== "unknown") setIntent(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const page = state.status === "ok" ? state.data : null;
+  if (page && (!Array.isArray(page.bindings)
+    || !page.bindings.every((binding) => binding && typeof binding.principalId === "string"
+      && typeof binding.pubkey === "string"
+      && (binding.kind === BindingKind.Human || binding.kind === BindingKind.Control))
+    || (page.nextCursor !== undefined && !/^[0-9a-fA-F]{64}$/.test(page.nextCursor))))
+    return <Notice role="alert">{t("platform.loadFailed")}</Notice>;
+
+  return (
+    <section className="flex flex-col gap-3" data-testid="legacy-secret-ref-management">
+      <h2 className="text-sm font-medium">{t("secretRehome.title")}</h2>
+      <p className="text-sm text-muted-foreground">{t("secretRehome.explain")}</p>
+      <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
+      {outcome ? (
+        <p role="alert">
+          {outcome.kind === "submitted"
+            ? t("secretRehome.submitted", { execution: outcome.execution })
+            : outcome.failure.kind === "unknown"
+              ? t("secretRehome.unknown", { operation: outcome.failure.operationId ?? "—" })
+              : t("secretRehome.rejected", { reason: failureText(outcome.failure) })}
+        </p>
+      ) : null}
+      {intent ? (
+        <div className="flex flex-col gap-2 rounded-md border p-3" role="group">
+          <p>{t("secretRehome.confirm", { pubkey: intent.binding.pubkey })}</p>
+          <div className="flex gap-2">
+            <Button disabled={busy} onClick={() => void submit()}>{t("platform.confirm")}</Button>
+            <Button disabled={busy} onClick={() => { setIntent(null); setOutcome(null); }}>
+              {t("platform.cancel")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {state.status === "error" ? (
+        <Notice role="alert">
+          {t("platform.loadFailed")}
+          <Button onClick={reload}>{t("platform.retry")}</Button>
+        </Notice>
+      ) : page ? (
+        <>
+          {page.bindings.length === 0 ? <Notice>{t("secretRehome.none")}</Notice> : (
+            <Table head={[t("secretRehome.kind"), t("secretRehome.pubkey"), t("platform.action")]}>
+              {page.bindings.map((binding) => (
+                <tr key={binding.pubkey}>
+                  <Cell>{binding.kind}</Cell>
+                  <Cell mono>{binding.pubkey}</Cell>
+                  <Cell>
+                    <Button disabled={busy || intent !== null} onClick={() => {
+                      setOutcome(null);
+                      setIntent({ binding, idempotencyKey: newIdempotencyKey() });
+                    }}>
+                      {t("secretRehome.move")}
+                    </Button>
+                  </Cell>
+                </tr>
+              ))}
+            </Table>
+          )}
+          <div className="flex gap-2">
+            {pageIndex > 0 ? <Button onClick={() => setPageIndex(pageIndex - 1)}>{t("roles.previous")}</Button> : null}
+            {page.nextCursor ? <Button onClick={() => {
+              setCursors((old) => [...old.slice(0, pageIndex + 1), page.nextCursor]);
+              setPageIndex(pageIndex + 1);
+            }}>{t("roles.next")}</Button> : null}
+          </div>
+        </>
       ) : null}
     </section>
   );

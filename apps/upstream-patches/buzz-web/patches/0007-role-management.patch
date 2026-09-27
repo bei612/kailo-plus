@@ -6,15 +6,16 @@ index c727b79..1aaf2b7 100644
  import { ApprovalsPage, TasksPage } from "@kailo/platform/react/governance";
  import { RedemptionProgress, TenantInvitations } from "@kailo/platform/react/invitations";
  import { AuditPage, DevicesPage, MembersPane } from "@kailo/platform/react/pages";
-+import { RoleManagement } from "@kailo/platform/react/roles";
++import { LegacySecretRefManagement, RoleManagement } from "@kailo/platform/react/roles";
  import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
  import { BellOff, Star } from "lucide-react";
  import { useCallback, useEffect, useState } from "react";
-@@ -149,6 +150,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
+@@ -149,6 +150,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
        // 邀请属于 Tenant：只对 admin 出现（由邀请列表的 403 决定），不依赖 Workspace
        <div className="flex flex-col gap-6">
          {workspaceBody}
 +        <RoleManagement />
++        <LegacySecretRefManagement />
          <TenantInvitations />
        </div>
      ) : (

@@ -229,3 +229,26 @@ func (c *CoreAPI) FreshApprovalAdmission(
 	err := c.post(ctx, "/service/v1/approvals/admission", in, &out)
 	return out, err
 }
+
+// SecretRefRehomeStep 只传冻结的 ID 与 binding generation；locator、版本和私钥
+// 都只从 Core 的写前事实读取，绝不进入 Temporal history。
+type SecretRefRehomeStep struct {
+	ActionExecutionID      string `json:"actionExecutionId"`
+	RehomeID               string `json:"rehomeId"`
+	TenantID               string `json:"tenantId"`
+	Pubkey                 string `json:"pubkey"`
+	ExpectedBindingVersion int32  `json:"expectedBindingVersion"`
+	WorkflowID             string `json:"workflowId"`
+}
+
+type SecretRefRehomeResult struct {
+	State string `json:"state"`
+}
+
+func (c *CoreAPI) AdvanceSecretRefRehome(
+	ctx context.Context, in SecretRefRehomeStep,
+) (SecretRefRehomeResult, error) {
+	var out SecretRefRehomeResult
+	err := c.post(ctx, "/service/v1/secret-ref-rehomes/advance", in, &out)
+	return out, err
+}

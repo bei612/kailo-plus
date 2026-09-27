@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { AuditPage, DevicesPage, WorkspaceMembersPage } from "../src/react/pages";
 import { PlatformProvider } from "../src/react/context";
-import { RoleManagement, RoleMembers } from "../src/react/roles";
+import { LegacySecretRefManagement, RoleManagement, RoleMembers } from "../src/react/roles";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { TransportError } from "../src/transport";
 import { button, click, render, settle } from "./render";
@@ -114,6 +114,66 @@ describe("WorkspaceMembersPage", () => {
     await settle();
     expect(host.querySelector("select")).toBeNull();
     expect(host.textContent).toContain("no workspace");
+  });
+});
+
+describe("LegacySecretRefManagement", () => {
+  const binding = {
+    principalId: "00000000-0000-0000-0000-000000000009",
+    pubkey: "a".repeat(64),
+    kind: "HUMAN",
+  };
+
+  it("无 Tenant manage 时入口不出现；读失败不伪装为空列表", async () => {
+    const denied = await mount(transport(() => ({ status: 403, body: {} })), <LegacySecretRefManagement />);
+    await settle();
+    expect(denied.querySelector("[data-testid=legacy-secret-ref-management]")).toBeNull();
+    const unpublished = await mount(transport(() => ({ status: 404, body: {} })), <LegacySecretRefManagement />);
+    await settle();
+    expect(unpublished.querySelector("[data-testid=legacy-secret-ref-management]")).toBeNull();
+    const down = await mount(transport(() => ({ status: 503, body: {} })), <LegacySecretRefManagement />);
+    await settle();
+    expect(down.textContent).toContain("the result is unknown");
+    expect(down.textContent).not.toContain("No legacy identity references");
+  });
+
+  it("显式确认后经语义命令提交；结果不明重试复用同一幂等键", async () => {
+    let posts = 0;
+    const t = transport((r) => {
+      if (r.method === "GET") return { status: 200, body: { bindings: [binding] } };
+      posts += 1;
+      if (posts === 1) throw new TransportError("reply lost");
+      return {
+        status: 200,
+        body: {
+          actionKey: "identity.secret_ref.rehome",
+          actionExecutionId: "execution-9",
+          operationId: "operation-9",
+          gateState: "ALLOWED",
+          dispatchState: "DISPATCHED",
+        },
+      };
+    });
+    const host = await mount(t, <LegacySecretRefManagement />);
+    await settle();
+    await click(button(host, "Move reference"));
+    expect(t.send.mock.calls.filter(([r]) => r.method === "POST")).toHaveLength(0);
+    expect(host.textContent).toContain(binding.pubkey);
+    await click(button(host, "Confirm"));
+    expect(host.textContent).toContain("outcome unknown");
+    await click(button(host, "Confirm"));
+    const submitted = t.send.mock.calls
+      .map(([r]) => r)
+      .filter((r) => r.method === "POST");
+    expect(submitted).toHaveLength(2);
+    expect(submitted[0]?.body).toEqual(expect.objectContaining({
+      actionKey: "identity.secret_ref.rehome",
+      principalId: binding.principalId,
+      explicitConfirmation: true,
+    }));
+    expect((submitted[0]?.body as { idempotencyKey: string }).idempotencyKey)
+      .toBe((submitted[1]?.body as { idempotencyKey: string }).idempotencyKey);
+    expect(host.textContent).toContain("Check Tasks for the final result");
   });
 });
 

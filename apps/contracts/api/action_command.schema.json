@@ -45,6 +45,10 @@
       "type": "string",
       "format": "uuid",
       "description": "任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析"
+    },
+    "explicitConfirmation": {
+      "type": "boolean",
+      "description": "EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带"
     }
   }
 }

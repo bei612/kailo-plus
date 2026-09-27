@@ -95,6 +95,17 @@ capabilities:
   tools: []
   workflow_kinds:
   - BUZZ_IDENTITY_PROJECTION
+- id: identity.secret_ref_rehome
+  exposure: none
+  routes:
+  - /api/v1/identity/legacy-secret-refs
+  - /api/v1/actions
+  - /service/v1/secret-ref-rehomes/advance
+  actions:
+  - identity.secret_ref.rehome
+  tools: []
+  workflow_kinds:
+  - SECRET_REF_REHOME
 - id: lifecycle.tenant_workspace_membership
   exposure: internal
   routes: []

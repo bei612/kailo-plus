@@ -34,6 +34,7 @@ use contracts::{
     ApprovalStatus, ApprovalWorkflowInput, ErrorBody, ErrorClass, FreshApprovalAdmissionRequest,
     FreshApprovalAdmissionResult, ReasonCode,
 };
+use kailo_secrets::SecretStore;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -134,6 +135,7 @@ pub struct Governance {
     pub pool: PgPool,
     pub temporal: std::sync::Arc<TemporalClient>,
     pub spicedb: SpiceDb,
+    pub secrets: std::sync::Arc<SecretStore>,
     pub cfg: GovernanceConfig,
 }
 
@@ -345,6 +347,8 @@ pub enum Semantic {
     TaskCancel,
     /// DD-84：原任务关闭后以新的准入、批准和 Workflow 重跑。
     TaskRerun,
+    /// DD-85：旧平台 namespace 中的同一私钥归位，不更换 Buzz pubkey。
+    SecretRefRehome,
 }
 
 impl Semantic {
@@ -363,6 +367,7 @@ impl Semantic {
             "tenant.member.admit" => Self::TenantMemberAdmit,
             key if key.starts_with("task.cancel.") => Self::TaskCancel,
             key if key.starts_with("task.rerun.") => Self::TaskRerun,
+            "identity.secret_ref.rehome" => Self::SecretRefRehome,
             _ => return None,
         })
     }
@@ -411,6 +416,7 @@ pub struct Params {
     pub name: Option<String>,
     pub invitation_id: Option<Uuid>,
     pub original_action_execution_id: Option<Uuid>,
+    pub explicit_confirmation: Option<bool>,
 }
 
 impl Params {
@@ -427,6 +433,9 @@ impl Params {
         }
         if let Some(id) = self.original_action_execution_id {
             m.insert("originalActionExecutionId".into(), json!(id));
+        }
+        if let Some(confirmed) = self.explicit_confirmation {
+            m.insert("explicitConfirmation".into(), json!(confirmed));
         }
         if let Some(s) = &self.slug {
             m.insert("slug".into(), json!(s));
@@ -451,6 +460,7 @@ impl Params {
             name: text("name"),
             invitation_id: uuid("invitationId"),
             original_action_execution_id: uuid("originalActionExecutionId"),
+            explicit_confirmation: v.get("explicitConfirmation").and_then(Value::as_bool),
         })
     }
 }
@@ -468,6 +478,9 @@ pub(crate) fn valid_slug(s: &str) -> bool {
 
 fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params, Refusal> {
     let bad = || Refusal::Precondition(ReasonCode::InvalidParameters);
+    if sem != Semantic::SecretRefRehome && cmd.explicit_confirmation.is_some() {
+        return Err(bad());
+    }
     let uuid = |s: &Option<String>| -> Result<Option<Uuid>, Refusal> {
         s.as_deref()
             .map(Uuid::parse_str)
@@ -481,9 +494,19 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         name: cmd.name.as_ref().map(|n| n.trim().to_owned()),
         invitation_id: uuid(&cmd.invitation_id)?,
         original_action_execution_id: uuid(&cmd.original_action_execution_id)?,
+        explicit_confirmation: cmd.explicit_confirmation,
     };
     // 每个语义要求的参数集合是闭集：多出与缺少都拒绝，不按「字段为空即忽略」猜
     let ok = match sem {
+        Semantic::SecretRefRehome => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_some()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.explicit_confirmation == Some(true)
+        }
         Semantic::WorkspaceCreate => {
             p.workspace_id.is_none()
                 && p.principal_id.is_none()
@@ -589,6 +612,29 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::SecretRefRehome => {
+            let principal = p
+                .principal_id
+                .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+            let version: Option<i32> = sqlx::query_scalar(&format!(
+                "select version from identity.buzz_identity_binding
+                 where tenant_id = $1 and principal_id = $2 and custody = 'SERVER'
+                   and kind in ('HUMAN','CONTROL') and state = 'ACTIVE'{for_update}"
+            ))
+            .bind(tenant)
+            .bind(principal)
+            .fetch_optional(&mut *conn)
+            .await?;
+            match version {
+                Some(version) if frozen.is_none_or(|id| id == principal) => Ok(Target {
+                    id: principal,
+                    version,
+                    workspace_id: None,
+                }),
+                Some(_) => Err(Refusal::Conflict(ReasonCode::TargetStateConflict)),
+                None => Err(Refusal::Precondition(ReasonCode::TargetNotFound)),
+            }
+        }
         Semantic::TaskCancel | Semantic::TaskRerun => {
             let original_id = p
                 .original_action_execution_id
@@ -1134,6 +1180,7 @@ impl Governance {
             name: None,
             invitation_id: None,
             original_action_execution_id: Some(original_id),
+            explicit_confirmation: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -1212,6 +1259,7 @@ impl Governance {
             name: None,
             invitation_id: None,
             original_action_execution_id: Some(original_id),
+            explicit_confirmation: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -1526,6 +1574,11 @@ impl Governance {
         actor: Actor,
         cmd: &contracts::ActionCommand,
     ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
+        // Catalog 中仍 ACTIVE 的旧定义也不能绕开发布 exposure。目录缺失或为
+        // none/internal 时先阻断，不解析参数、target 或幂等键。
+        if !crate::capability_registry::action_exposed(&cmd.action_key) {
+            return Err((Refusal::Blocked(ReasonCode::CapabilityBlocked), None));
+        }
         let Ok(idempotency_key) = Uuid::parse_str(&cmd.idempotency_key) else {
             return Err((Refusal::Precondition(ReasonCode::InvalidParameters), None));
         };
@@ -1780,9 +1833,14 @@ impl Governance {
         if def.confirmation_mode == "APPROVAL" {
             return self.request_approval(actor, &ae, def, &eval).await;
         }
-        // EXPLICIT 确认需要一个预览—确认两段式的入口，本切片的定义都不使用它；
-        // 登记了也不能静默当成 NONE
-        if def.confirmation_mode != "NONE" {
+        // 确认位是本次 ActionExecution 的冻结参数；未持久记录确认的动作不能
+        // 仅因目录写了 EXPLICIT 就按 NONE 放行。
+        if def.confirmation_mode == "EXPLICIT"
+            && !(sem == Semantic::SecretRefRehome && params.explicit_confirmation == Some(true))
+        {
+            return Err((Refusal::Precondition(ReasonCode::InvalidParameters), op));
+        }
+        if !matches!(def.confirmation_mode.as_str(), "NONE" | "EXPLICIT") {
             return Err((Refusal::Blocked(ReasonCode::CapabilityBlocked), op));
         }
 
@@ -2063,6 +2121,7 @@ impl Governance {
             .as_deref()
             .ok_or_else(|| Refusal::Unavailable("TEMPORAL 定义缺 workflow_kind".into()))?;
         let version: i32 = match sem {
+            Semantic::SecretRefRehome => 1,
             Semantic::WorkspaceCreate => {
                 sqlx::query_scalar(
                     "insert into identity.workspace (id, tenant_id, slug, name, state)
@@ -2145,10 +2204,21 @@ impl Governance {
                 return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked))
             }
         };
+        // 一条归位 ActionExecution 一条独立目标 locator；不能以 Principal 版本作
+        // workflow ID，否则一次确定失败后的新治理动作会撞上旧 ID。
+        let workflow_entity = if sem == Semantic::SecretRefRehome {
+            ae.id
+        } else {
+            target.id
+        };
         let workflow_id =
-            component_task::workflow_id(kind, ae.tenant_id, &target.id.to_string(), version);
+            component_task::workflow_id(kind, ae.tenant_id, &workflow_entity.to_string(), version);
         component_task::prewrite(tx, &workflow_id, kind, ae.tenant_id, ae.operation_id, ae.id)
             .await?;
+        if sem == Semantic::SecretRefRehome {
+            crate::secret_ref_rehome::prewrite(&self.secrets, tx, ae, &workflow_id, target.version)
+                .await?;
+        }
         sqlx::query(
             "update admission.action_execution
              set gate_state = 'ALLOWED', temporal_workflow_id = $2, reason_code = null, updated_at = now()
@@ -2357,6 +2427,9 @@ impl Governance {
         sem: Semantic,
         p: &Params,
     ) -> Result<(), Refusal> {
+        if sem == Semantic::SecretRefRehome {
+            return crate::secret_ref_rehome::target_gate(&self.secrets, conn, tenant, p).await;
+        }
         if sem == Semantic::TaskCancel {
             self.cancel_target(conn, tenant, initiator, def, p).await?;
             return Ok(());
@@ -3327,6 +3400,16 @@ impl Governance {
                             membership_id: ae.target_id,
                             action_execution_id: ae.id,
                         },
+                    )
+                    .await
+                }
+                Semantic::SecretRefRehome => {
+                    crate::secret_ref_rehome::start(
+                        &self.pool,
+                        &self.temporal,
+                        ae.id,
+                        ae.tenant_id,
+                        &workflow_id,
                     )
                     .await
                 }

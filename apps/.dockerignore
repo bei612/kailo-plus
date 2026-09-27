@@ -9,5 +9,6 @@
 !core/Cargo.lock
 !core/crates
 !core/.sqlx
+!tools/registry/capabilities.yaml
 !worker
 **/target

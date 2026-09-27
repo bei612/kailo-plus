@@ -31,6 +31,9 @@
 //    issuedInvitation, err := UnmarshalIssuedInvitation(bytes)
 //    bytes, err = issuedInvitation.Marshal()
 //
+//    legacySecretRefPage, err := UnmarshalLegacySecretRefPage(bytes)
+//    bytes, err = legacySecretRefPage.Marshal()
+//
 //    nativeCommunityFacts, err := UnmarshalNativeCommunityFacts(bytes)
 //    bytes, err = nativeCommunityFacts.Marshal()
 //
@@ -219,6 +222,16 @@ func UnmarshalIssuedInvitation(data []byte) (IssuedInvitation, error) {
 }
 
 func (r *IssuedInvitation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalLegacySecretRefPage(data []byte) (LegacySecretRefPage, error) {
+	var r LegacySecretRefPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *LegacySecretRefPage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -547,16 +560,18 @@ type Nested struct {
 }
 
 type Variant struct {
-	FileDigest  *string `json:"fileDigest,omitempty"`
-	Kind        Kind    `json:"kind"`
-	MessageBody *string `json:"messageBody,omitempty"`
-	TaskAttempt *int64  `json:"taskAttempt,omitempty"`
+	FileDigest  *string     `json:"fileDigest,omitempty"`
+	Kind        VariantKind `json:"kind"`
+	MessageBody *string     `json:"messageBody,omitempty"`
+	TaskAttempt *int64      `json:"taskAttempt,omitempty"`
 }
 
 // POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
 // actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
 type ActionCommand struct {
 	ActionKey string `json:"actionKey"`
+	// EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
+	ExplicitConfirmation *bool `json:"explicitConfirmation,omitempty"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
 	IdempotencyKey string `json:"idempotencyKey"`
 	// tenant.member.invite.revoke 的目标邀请
@@ -690,6 +705,20 @@ type IssuedInvitation struct {
 	InvitationID string `json:"invitationId"`
 	// 部署登记的链接基址 + '#' + 一次性凭据
 	Link string `json:"link"`
+}
+
+// GET /api/v1/identity/legacy-secret-refs 的有界视图。只列当前 Tenant 中可发起 DD-85 归位的 SERVER
+// binding，不暴露 locator、版本或私钥。
+type LegacySecretRefPage struct {
+	Bindings   []LegacySecretRefBinding `json:"bindings"`
+	NextCursor *string                  `json:"nextCursor,omitempty"`
+}
+
+// 业务 Tenant 的旧 SERVER 身份引用；仅给有 tenant manage 权限的人展示。
+type LegacySecretRefBinding struct {
+	Kind        BindingKind `json:"kind"`
+	PrincipalID string      `json:"principalId"`
+	Pubkey      string      `json:"pubkey"`
 }
 
 // GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
@@ -1097,12 +1126,12 @@ const (
 	Precondition      ErrorClass = "PRECONDITION"
 )
 
-type Kind string
+type VariantKind string
 
 const (
-	File    Kind = "FILE"
-	Message Kind = "MESSAGE"
-	Task    Kind = "TASK"
+	File    VariantKind = "FILE"
+	Message VariantKind = "MESSAGE"
+	Task    VariantKind = "TASK"
 )
 
 // ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
@@ -1241,6 +1270,13 @@ const (
 	TenantMembershipStateREVOKING     TenantMembershipState = "REVOKING"
 )
 
+type BindingKind string
+
+const (
+	Control BindingKind = "CONTROL"
+	Human   BindingKind = "HUMAN"
+)
+
 // AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
 // OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
 type AuditEventType string
@@ -1280,6 +1316,7 @@ const (
 	BuzzIdentityProjection WorkflowKind = "BUZZ_IDENTITY_PROJECTION"
 	MembershipProjection   WorkflowKind = "MEMBERSHIP_PROJECTION"
 	MembershipRevocation   WorkflowKind = "MEMBERSHIP_REVOCATION"
+	SecretRefRehome        WorkflowKind = "SECRET_REF_REHOME"
 	TenantLifecycle        WorkflowKind = "TENANT_LIFECYCLE"
 	WorkspaceLifecycle     WorkflowKind = "WORKSPACE_LIFECYCLE"
 )

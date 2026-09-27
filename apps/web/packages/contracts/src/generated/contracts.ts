@@ -88,12 +88,12 @@ export interface Nested {
 
 export interface Variant {
     fileDigest?:  string;
-    kind:         Kind;
+    kind:         VariantKind;
     messageBody?: string;
     taskAttempt?: number;
 }
 
-export enum Kind {
+export enum VariantKind {
     File = "FILE",
     Message = "MESSAGE",
     Task = "TASK",
@@ -105,6 +105,10 @@ export enum Kind {
  */
 export interface ActionCommand {
     actionKey: string;
+    /**
+     * EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
+     */
+    explicitConfirmation?: boolean;
     /**
      * 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
      */
@@ -441,6 +445,29 @@ export interface IssuedInvitation {
 }
 
 /**
+ * GET /api/v1/identity/legacy-secret-refs 的有界视图。只列当前 Tenant 中可发起 DD-85 归位的 SERVER
+ * binding，不暴露 locator、版本或私钥。
+ */
+export interface LegacySecretRefPage {
+    bindings:    LegacySecretRefBinding[];
+    nextCursor?: string;
+}
+
+/**
+ * 业务 Tenant 的旧 SERVER 身份引用；仅给有 tenant manage 权限的人展示。
+ */
+export interface LegacySecretRefBinding {
+    kind:        BindingKind;
+    principalId: string;
+    pubkey:      string;
+}
+
+export enum BindingKind {
+    Control = "CONTROL",
+    Human = "HUMAN",
+}
+
+/**
  * GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
  * communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
  */
@@ -627,6 +654,7 @@ export enum WorkflowKind {
     BuzzIdentityProjection = "BUZZ_IDENTITY_PROJECTION",
     MembershipProjection = "MEMBERSHIP_PROJECTION",
     MembershipRevocation = "MEMBERSHIP_REVOCATION",
+    SecretRefRehome = "SECRET_REF_REHOME",
     TenantLifecycle = "TENANT_LIFECYCLE",
     WorkspaceLifecycle = "WORKSPACE_LIFECYCLE",
 }

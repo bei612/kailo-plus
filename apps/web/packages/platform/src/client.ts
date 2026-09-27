@@ -15,6 +15,7 @@ import type {
   ClientKeyView,
   InvitationRedemptionRequest,
   InvitationRedemptionView,
+  LegacySecretRefPage,
   NativeCommunityFacts,
   OwnAuditEntry,
   PlatformSessionView,
@@ -65,6 +66,12 @@ export function createBffClient(transport: BffTransport) {
     /** 有界的角色管理 Workspace 选择；它不等于可进入频道的 Workspace 列表。 */
     roleWorkspaces: (offset?: number) =>
       get<RoleWorkspacePage>(`/api/v1/role-workspaces${offset ? `?offset=${offset}` : ""}`),
+
+    /** DD-85：只列当前 Tenant 可归位的旧 SERVER 身份，不返回 SecretRef 或密钥。 */
+    legacySecretRefs: (cursor?: string) =>
+      get<LegacySecretRefPage>(
+        `/api/v1/identity/legacy-secret-refs${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+      ),
 
     /** 基础审计页只看自己的动作；聚合视图需要 audit permission，属于后续阶段。 */
     ownAudit: () => get<OwnAuditEntry[]>("/api/v1/audit"),

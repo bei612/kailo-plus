@@ -87,6 +87,7 @@ func main() {
 	w.RegisterActivity(core.TransitionScope)
 	w.RegisterActivity(core.ProjectApprovalState)
 	w.RegisterActivity(core.FreshApprovalAdmission)
+	w.RegisterActivity(core.AdvanceSecretRefRehome)
 
 	if err := w.Run(worker.InterruptCh()); err != nil {
 		log.Fatalf("worker 退出: %v", err)

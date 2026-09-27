@@ -130,6 +130,28 @@ export const platformMessages = {
   },
   "roles.next": { en: "Next page", "zh-CN": "下一页" },
   "roles.previous": { en: "Previous page", "zh-CN": "上一页" },
+  "secretRehome.title": { en: "Legacy identity keys", "zh-CN": "旧身份密钥归位" },
+  "secretRehome.explain": {
+    en: "Move the existing key reference into this tenant's vault. The public identity and channel history stay unchanged.",
+    "zh-CN": "将现有密钥引用归入本租户的密钥库；公钥身份和频道历史不变。",
+  },
+  "secretRehome.none": { en: "No legacy identity references on this page.", "zh-CN": "本页没有旧身份引用。" },
+  "secretRehome.kind": { en: "Identity kind", "zh-CN": "身份类型" },
+  "secretRehome.pubkey": { en: "Public key", "zh-CN": "公钥" },
+  "secretRehome.move": { en: "Move reference", "zh-CN": "归位引用" },
+  "secretRehome.confirm": {
+    en: "Move the key reference for {pubkey}? This does not rotate the key. Confirm explicitly; the final result is shown in Tasks.",
+    "zh-CN": "归位公钥 {pubkey} 的密钥引用？这不会轮换密钥。请明确确认；最终结果在任务页查看。",
+  },
+  "secretRehome.submitted": {
+    en: "Migration submitted (execution {execution}). Check Tasks for the final result.",
+    "zh-CN": "归位任务已提交（执行 {execution}）。请到任务页确认最终结果。",
+  },
+  "secretRehome.unknown": {
+    en: "Submission outcome unknown (operation {operation}). Check Tasks or retry the same intent; no new key will be created.",
+    "zh-CN": "提交结果不明（操作 {operation}）。请查看任务或重试同一意图；不会生成新的幂等键。",
+  },
+  "secretRehome.rejected": { en: "Migration rejected: {reason}", "zh-CN": "归位被拒绝：{reason}" },
   "platform.devices.none": {
     en: "No devices yet. Sign in to Kailo Desktop or Mobile to add one.",
     "zh-CN": "还没有设备。在 Kailo Desktop 或 Mobile 上登录即可添加。",

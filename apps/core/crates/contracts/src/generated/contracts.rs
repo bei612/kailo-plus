@@ -116,7 +116,7 @@ pub struct Variant {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_digest: Option<String>,
 
-    pub kind: Kind,
+    pub kind: VariantKind,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_body: Option<String>,
@@ -126,7 +126,7 @@ pub struct Variant {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Kind {
+pub enum VariantKind {
     #[serde(rename = "FILE")]
     File,
 
@@ -143,6 +143,10 @@ pub enum Kind {
 #[serde(rename_all = "camelCase")]
 pub struct ActionCommand {
     pub action_key: String,
+
+    /// EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub explicit_confirmation: Option<bool>,
 
     /// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
     pub idempotency_key: String,
@@ -633,6 +637,37 @@ pub struct IssuedInvitation {
     pub link: String,
 }
 
+/// GET /api/v1/identity/legacy-secret-refs 的有界视图。只列当前 Tenant 中可发起 DD-85 归位的 SERVER
+/// binding，不暴露 locator、版本或私钥。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacySecretRefPage {
+    pub bindings: Vec<LegacySecretRefBinding>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// 业务 Tenant 的旧 SERVER 身份引用；仅给有 tenant manage 权限的人展示。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacySecretRefBinding {
+    pub kind: BindingKind,
+
+    pub principal_id: String,
+
+    pub pubkey: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum BindingKind {
+    #[serde(rename = "CONTROL")]
+    Control,
+
+    #[serde(rename = "HUMAN")]
+    Human,
+}
+
 /// GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
 /// communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -882,6 +917,9 @@ pub enum WorkflowKind {
 
     #[serde(rename = "MEMBERSHIP_REVOCATION")]
     MembershipRevocation,
+
+    #[serde(rename = "SECRET_REF_REHOME")]
+    SecretRefRehome,
 
     #[serde(rename = "TENANT_LIFECYCLE")]
     TenantLifecycle,

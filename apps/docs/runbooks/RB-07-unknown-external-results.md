@@ -16,6 +16,7 @@
 | Temporal：Workflow Start | 固定 workflow ID `kailo:<kind>:<tenant>:<entity>:<version>` | 按该 ID Describe | 发起方以同一 ID 重试；兜底 `workflow_reconcile`（RB-05） |
 | Temporal：任务取消请求 | 控制 ActionExecution ID 是固定 `RequestId` 与 `Reason`；首次 run ID 在 RPC 前冻结 | 固定执行链的 History，匹配 `WorkflowExecutionCancelRequested.Cause` 与 Core identity | `governance_reconcile` 先取肯定证据；无事件时仅在原执行仍 OPEN 且首次 run 未变时重发同一请求。原执行已关闭而无肯定证据保持 UNKNOWN，由 Core 值班负责人按操作号处理 |
 | OpenBao：KV v2 写入 | 无（每次写产生新版本） | 写入响应中的版本号 | 结果不明即当作未写：重试产生新版本，binding 只钉响应里拿到的版本；多出的版本不被引用 |
+| OpenBao：业务 Tenant 遗留身份 SecretRef 归位（DD-85） | ActionExecution ID 导出的独立目标 locator，KV v2 `cas=0` 首次写入 | 只读目标 metadata 的版本 1，再读钉定版本并核对派生 pubkey | `SECRET_REF_REHOME` Workflow 的 `COPY_UNKNOWN` 只查目标；不可查证时保留旧 binding 与运维告警，不追加新版本 |
 
 ## 触发信号
 
@@ -24,6 +25,7 @@
 - `kailo.action_execution.oldest_open_age{state="ALLOWED/UNKNOWN"}` 持续增长；该状态按 ActionExecution 创建时刻计龄，周期重试不会清零；
 - Workflow 投影 `CONVERGENCE_PENDING` 持续（roster 或 SpiceDB 结果不明）；
 - Core 日志「发布结果不明」「Start 结果不明」「Describe 结果不明」。
+- `kailo.secret_ref_rehome.overdue{state}` 非零，或 Core 日志「SecretRef 归位超过对账期限」。
 
 ## 判定依据
 
@@ -38,7 +40,8 @@
 3. **Workflow Start**：发起方以同一入口、同一 ActionExecution 重试，Core 以同一 workflow ID 调 Start；已存在即视为已启动（`DD-48`）。兜底对账会把 Start 结果不明的 `PENDING_START` 观察成 `RUNNING` 或按 retention 判定（RB-05）。
 4. **任务取消**：按操作号查控制 ActionExecution 的原动作 ID、冻结的 `cancel_first_run_id` 与审计证据；在 Temporal 同一执行链的 History 查 Cause 等于该控制 ID 且 Identity 为 `kailo-core` 的取消请求事件。查到则按已接受请求处理，原 Workflow 的终态仍单独看 TaskProjection；查不到、history 已过 retention 或依赖不可达都不能判定为未发出。原执行仍 OPEN 时恢复 Core 对账；已关闭而没有肯定证据时保持 UNKNOWN，登记操作号、原 Workflow ID、首次 run ID、最近核查时间、值班负责人及下一次核查时间，不直接改库、不再发送取消请求。只有找到肯定证据或通过正式纠错决策记录确定结论，才能关闭登记。
 5. **Channel 与 Community 建立**：由 Tenant/Workspace 生命周期 Workflow 的重试收敛；不需要人工动作。
-6. **OpenBao 写入**：确认引用它的 binding 钉的是响应中的版本；多出的版本在 `max_versions` 内自然淘汰（`07` §1）。
+6. **普通 OpenBao 写入**：确认引用它的 binding 钉的是响应中的版本；此规则不适用于 DD-85 的身份归位，不能拿它覆盖下一步。
+7. **DD-85 身份归位**：以操作号在 `admission.secret_ref_rehome` 查询 `state`、`workflow_id`、`target_locator`、原 binding 版本与冻结旧消费者引用；只向有权限的值班人员展示 locator，不输出 secret。`COPY_UNKNOWN` 只用目标 metadata 与版本 1 的派生公钥判定；目标读不到或版本不符时保持原状态并登记责任人与下次核查时间，不重写、不改库。`COPIED` 检查发起者是否仍有 Tenant manage、目标版本是否可读；`SWITCHED` 按冻结清单逐项检查 ActionExecution 与 Temporal 终态，不能以 Core 投影单独证明终态。修复依赖可达性后由同一固定 Workflow 继续；只有旧版本的 OpenBao metadata 明确标 `destroyed=true`，才可把这次归位视为 `RETIRED`。
 
 ## 不可执行的动作
 

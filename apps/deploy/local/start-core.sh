@@ -12,6 +12,7 @@
 # 投递在 Core 启动前就已过期。
 set -euo pipefail
 cd "$(dirname "$0")"
+(cd ../.. && python3 tools/gen-registry.py --check)
 . ./.env
 : "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_TENANT_PARENT_NAMESPACE:?}" \
   "${OPENBAO_TENANT_PROVISIONER_ROLE_NAME:?}" \

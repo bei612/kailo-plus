@@ -83,10 +83,22 @@ def main() -> int:
             print(f"    {b}", file=sys.stderr)
         return 1
 
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, "w", encoding="utf-8") as fh:
-        fh.write("# 生成物，不手工编辑。由 tools/gen-registry.py 从 tools/traceability/ 生成。\n")
-        yaml.safe_dump({"capabilities": caps}, fh, allow_unicode=True, sort_keys=False)
+    expected = (
+        "# 生成物，不手工编辑。由 tools/gen-registry.py 从 tools/traceability/ 生成。\n"
+        + yaml.safe_dump({"capabilities": caps}, allow_unicode=True, sort_keys=False)
+    )
+    if sys.argv[1:] == ["--check"]:
+        actual = open(OUT, encoding="utf-8").read() if os.path.exists(OUT) else None
+        if actual != expected:
+            print(f"    {OUT} 与追溯记录不一致；先生成并入库，再构建", file=sys.stderr)
+            return 1
+    elif not sys.argv[1:]:
+        os.makedirs(os.path.dirname(OUT), exist_ok=True)
+        with open(OUT, "w", encoding="utf-8") as fh:
+            fh.write(expected)
+    else:
+        print("用法: tools/gen-registry.py [--check]", file=sys.stderr)
+        return 2
     print(f"    {len(caps)} 条能力，{len(kinds)} 个封闭 workflow kind 参与校验")
     return 0
 

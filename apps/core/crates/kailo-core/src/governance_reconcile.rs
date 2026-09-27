@@ -21,6 +21,7 @@ use crate::governance::Governance;
 pub struct Config {
     pub interval: Duration,
     pub batch: i64,
+    pub secret_ref_rehome_alert_after: Duration,
 }
 
 impl Config {
@@ -37,6 +38,9 @@ impl Config {
             interval: Duration::from_secs(get("GOVERNANCE_RECONCILE_INTERVAL_SECONDS")?),
             batch: i64::try_from(get("GOVERNANCE_RECONCILE_BATCH")?)
                 .map_err(|_| "GOVERNANCE_RECONCILE_BATCH 超出范围".to_owned())?,
+            secret_ref_rehome_alert_after: Duration::from_secs(get(
+                "SECRET_REF_REHOME_ALERT_AFTER_SECONDS",
+            )?),
         })
     }
 }
@@ -46,6 +50,9 @@ struct Metrics {
     oldest_age: Gauge<u64>,
     driven: Counter<u64>,
     passes: Counter<u64>,
+    rehome_open: Gauge<u64>,
+    rehome_oldest_age: Gauge<u64>,
+    rehome_overdue: Gauge<u64>,
 }
 
 /// 非终态的门禁/派发组合。每轮都记一次，没有行的记 0：告警不能停在旧值上。
@@ -75,13 +82,33 @@ pub fn spawn(g: Arc<Governance>, meter: &Meter, cfg: Config) {
             .u64_counter("kailo.governance_reconcile.passes")
             .with_description("对账轮次，按是否完成区分")
             .build(),
+        rehome_open: meter
+            .u64_gauge("kailo.secret_ref_rehome.open")
+            .with_description("按状态统计未终态 SecretRef 归位数量")
+            .build(),
+        rehome_oldest_age: meter
+            .u64_gauge("kailo.secret_ref_rehome.oldest_open_age")
+            .with_unit("s")
+            .with_description("按状态统计最老一条未终态归位的持续秒数")
+            .build(),
+        rehome_overdue: meter
+            .u64_gauge("kailo.secret_ref_rehome.overdue")
+            .with_description("超过部署登记对账期限的 SecretRef 归位数量")
+            .build(),
     };
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(cfg.interval);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tick.tick().await;
-            let outcome = match pass(&g, &metrics, cfg.batch).await {
+            let outcome = match pass(
+                &g,
+                &metrics,
+                cfg.batch,
+                cfg.secret_ref_rehome_alert_after.as_secs(),
+            )
+            .await
+            {
                 Ok(()) => "COMPLETED",
                 Err(e) => {
                     tracing::warn!(error = %e, "治理对账本轮未完成");
@@ -93,7 +120,12 @@ pub fn spawn(g: Arc<Governance>, meter: &Meter, cfg: Config) {
     });
 }
 
-async fn pass(g: &Governance, metrics: &Metrics, batch: i64) -> Result<(), String> {
+async fn pass(
+    g: &Governance,
+    metrics: &Metrics,
+    batch: i64,
+    rehome_alert_after_secs: u64,
+) -> Result<(), String> {
     // 只取此刻确有一步可做的行：正常等待审批中的 WAITING 不进批次，否则它们
     // 会永远排在最前，把真正要处理的挤出去。
     let ids: Vec<Uuid> = sqlx::query_scalar(
@@ -155,6 +187,32 @@ async fn pass(g: &Governance, metrics: &Metrics, batch: i64) -> Result<(), Strin
         let attrs = [KeyValue::new("state", format!("{gate}/{dispatch}"))];
         metrics.open.record(n.max(0) as u64, &attrs);
         metrics.oldest_age.record(age.max(0) as u64, &attrs);
+    }
+    let rows: Vec<(String, i64, i64, i64)> = sqlx::query_as(
+        "select state, count(*)::bigint,
+                coalesce(extract(epoch from now() - min(created_at))::bigint, 0),
+                count(*) filter (where created_at < now() - make_interval(secs => $1::bigint))::bigint
+         from admission.secret_ref_rehome
+         where state not in ('RETIRED','FAILED')
+         group by state",
+    )
+    .bind(i64::try_from(rehome_alert_after_secs).map_err(|e| e.to_string())?)
+    .fetch_all(&g.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    for state in ["INTENT", "COPY_UNKNOWN", "COPIED", "SWITCHED"] {
+        let (open, age, overdue) = rows
+            .iter()
+            .find(|row| row.0 == state)
+            .map(|row| (row.1, row.2, row.3))
+            .unwrap_or((0, 0, 0));
+        let attrs = [KeyValue::new("state", state)];
+        metrics.rehome_open.record(open.max(0) as u64, &attrs);
+        metrics.rehome_oldest_age.record(age.max(0) as u64, &attrs);
+        metrics.rehome_overdue.record(overdue.max(0) as u64, &attrs);
+        if overdue > 0 {
+            tracing::warn!(state, overdue, "SecretRef 归位超过对账期限，需运维对账");
+        }
     }
     Ok(())
 }

@@ -301,10 +301,10 @@ else:
     print(f"  \033[32mPASS\033[0m {len(files)} 条追溯记录通过 06 §1 的六条硬规则")
 PY
   # 06 §3：注册表由追溯记录生成，并执行四个构建期拒绝条件
-  if DESIGN="${DESIGN:-../.design}" python3 tools/gen-registry.py; then
-    pass "能力注册表已生成，四个构建期拒绝条件全部通过"
+  if DESIGN="${DESIGN:-../.design}" python3 tools/gen-registry.py --check; then
+    pass "能力注册表与追溯记录一致，四个构建期拒绝条件全部通过"
   else
-    fail "能力注册表生成被拒绝，见上"
+    fail "能力注册表漂移或校验被拒绝，见上"
   fi
   return 0
 }

@@ -392,6 +392,7 @@ services:
       ADMISSION_EVALUATION_TIMEOUT_SECONDS: ${ADMISSION_EVALUATION_TIMEOUT_SECONDS:?必须显式提供，禁止硬编码}
       GOVERNANCE_RECONCILE_INTERVAL_SECONDS: ${GOVERNANCE_RECONCILE_INTERVAL_SECONDS:?必须显式提供，禁止硬编码}
       GOVERNANCE_RECONCILE_BATCH: ${GOVERNANCE_RECONCILE_BATCH:?必须显式提供，禁止硬编码}
+      SECRET_REF_REHOME_ALERT_AFTER_SECONDS: ${SECRET_REF_REHOME_ALERT_AFTER_SECONDS:?必须显式提供，禁止硬编码}
       # 任务列表与待我审批列表的单页上界（07 §5）
       BFF_TASK_PAGE_LIMIT: ${BFF_TASK_PAGE_LIMIT:?必须显式提供，禁止硬编码}
       BFF_ROLE_MEMBER_PAGE_LIMIT: ${BFF_ROLE_MEMBER_PAGE_LIMIT:?必须显式提供，禁止硬编码}
@@ -475,7 +476,7 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:3a23b71a80045bf337a8ee4af9c54dde1fc53cbfbba275ba39ccd4db4371d61e
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:96b423034be8a238fcd244d2a54f7ca5325e273e5c7571164294eb866582c109
     networks: [app]
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 
