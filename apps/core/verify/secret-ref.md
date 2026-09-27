@@ -403,3 +403,28 @@ Core 用 24 GiB/10 CPU 的受限 BuildKit 重建，镜像 manifest 为
 明确跳过实际迁移前进/回退，本批没有 schema 变更。本次手工清理不替代
 集成夹具今后的自动收敛，也不证明生产 Tenant 销毁能力；后者仍受
 `GAP-LCM-01` 阻断。
+
+### 测试 namespace 在线删除的失败证据（2026-09-27）
+
+曾尝试在集成测试删除 `identity.tenant` 行后，立即删除对应的 OpenBao 子
+namespace。这个顺序不成立：Core 仍缓存该 Tenant 的 AppRole service token，
+`SecretStore::tenant_session` 为它启动的续期任务仍在运行。子 namespace 删除后，
+续期返回 HTTP 404，`SecretStore::keep_alive` 把失败送到 Core 的全局失效分支，
+Core 按现有 fail-closed 合同退出；随后 `run-integration.sh` 的 Web transport
+八项都因本地 BFF 连接被拒而失败，不能报作通过。Core 退出时对已消失
+namespace 的 `revoke-self` 也得到 404，日志明确记为撤销未确认。
+
+故障核对：失败前治理、成员、角色、Tenant/Workspace、密钥与邀请的真实用例
+依次通过；2026-09-27 00:00:17 UTC 的 Core 日志记录多枚 Tenant token 撤销
+未确认，容器随后退出。曾为验证清理断言故意把父 namespace 改成 `invalid`
+的单项核验，在 2026-09-26 23:43:12 UTC 创建测试子 namespace 后于清理断言
+处失败；OpenBao audit 无对应删除请求。该 UUID 在 Core Tenant 表中不存在，
+精确 lookup 为 `tenants/<该 UUID>/`，故仅删除此测试残留；lookup 随后返回
+`Namespace not found`。在线删除的测试夹具改动未提交，已按原文件恢复。
+
+恢复核验：用 `deploy/local/start-core.sh` 重新投递三份一次性引导凭据并在
+受限构建器中重建本地 Core；BFF `/healthz` 为 HTTP 200。OpenBao 的
+`tenants/` 子目录列表为空，Core `identity.tenant` 仍有两个有效 Tenant。
+这不构成完整集成通过的证据：上述八项失败发生在恢复之前，本次尚未重新
+运行完整集成。夹具 namespace 的清理只能在 Core 不再持有该子级 service
+token 时执行；不得以放宽 Core 的 token 失效全局退出规则来掩盖在线删除。
