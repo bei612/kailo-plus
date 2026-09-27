@@ -164,8 +164,16 @@ Core 单元检查确认生成注册表对归位路由和动作均返回未开放
 Web 回归检查确认 403/404 不呈现管理面板。
 最终 `./tools/check.sh --full` 在 16 GiB/500% cgroup 内十组退出 0；
 本轮未提供隔离 `DATABASE_URL`，实际迁移前进/回退为 SKIP，配对脚本
-检查通过。新镜像尚未替换本地运行中的旧 Core，不能把源码与镜像证据
-冒充在线部署验收。
+检查通过。随后在仅用于本项目的 `kailo-local` Docker Compose 中重建
+Core，运行镜像 ID 为
+`sha256:d5ea7a37fba389321d26e819cdde8035a4315153bc3579bd860dc70537cba780`；
+BFF `/healthz` 返回 200。使用已有本地测试身份，`/api/v1/session`
+返回 200，未开放的 SecretRef 列表返回 404，归位 Action 返回 403
+与 `CAPABILITY_BLOCKED`；同一幂等键在 `admission.action_execution`
+中的记录数为 0。Web 静态容器也已切换到固定摘要
+`sha256:96b423034be8a238fcd244d2a54f7ca5325e273e5c7571164294eb866582c109`
+且保持 healthy。以上是本地在线拒绝链证据，不是浏览器页面验收，
+也不覆盖 `V-SCN-69` 的故障分支或生产发布验收。
 
 ## 旧版本销毁前的 audit 再检查（2026-09-27 07:00 UTC）
 
