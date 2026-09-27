@@ -17,6 +17,7 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 | Workspace 建立/暂停/恢复 | `ComponentTaskWorkflow(kind=WORKSPACE_LIFECYCLE)`，input 固定 Workspace ID/version 和 Buzz/SpiceDB projection refs；暂停/恢复固定映射 Channel archive/unarchive，不注册 delete |
 | Tenant/Workspace 成员建立/撤权 | `ComponentTaskWorkflow(kind=MEMBERSHIP_PROJECTION\|MEMBERSHIP_REVOCATION)`，input 固定 `TENANT\|WORKSPACE` target type、membership ID/version 和 SpiceDB/Buzz projection refs |
 | 原生设备公钥登记/撤销；Web 托管 HUMAN 身份的 key revoke 与重建 | `ComponentTaskWorkflow(kind=BUZZ_IDENTITY_PROJECTION)`，input 固定 pubkey 与 binding version；方向由 binding 状态决定（`RECONCILING` 投入、`REVOKING` 移出），覆盖 relay roster 与该 Principal 全部 ACTIVE Workspace 的 Channel roster（DD-79）；只接受 `kind=HUMAN` 的 binding，CONTROL 轮换受 GAP-BUZ-01 阻断（`09` 的 key revoke/rotate 行） |
+| 遗留业务 Tenant 私钥的 SecretRef 归位 | `ComponentTaskWorkflow(kind=SECRET_REF_REHOME)`，input 固定 ActionExecution ID、SecretRefRehome ID、Tenant、pubkey 与原 binding version；Activity 仅从已冻结旧版本读取、向该 Tenant 独立目标 locator 写入一次并回读，随后以 CAS 切 binding generation、按旧 generation 终态证据退役原版本。写入结果不明只查证目标 locator，不自动重写；不改变公钥或 Relay roster（DD-85） |
 | ComponentRelease 登记/批准/撤销 | `ComponentTaskWorkflow(kind=COMPONENT_RELEASE)`，input 固定 source commit、manifest/API range、全部合同与 artifact digest；审批决定仍由 ApprovalWorkflow 承接 |
 | PlatformProviderBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=PLATFORM_PROVIDER`、port、binding、old/new release、old/new generation 与 provider projection refs |
 | ApplicationBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=APPLICATION`、binding、old/new release、old/new generation、native scope 与全部投影 refs |
@@ -95,7 +96,7 @@ Codex MCP approval seam 在工具调用前暂停：`SERVER_CODEX` 固定启用 `
 
 `MATERIALIZATION` 是 `ComponentTaskWorkflow` 的受控 kind，不是第四种顶层 Workflow。它复用同一套审批、授权重检、capacity/quota、ExternalExecution、取消、审计和工作台投影。
 
-`RESOURCE_EXPORT`、`RESOURCE_IMPORT`、`TENANT_LIFECYCLE`、`WORKSPACE_LIFECYCLE`、`MEMBERSHIP_PROJECTION`、`MEMBERSHIP_REVOCATION`、`COMPONENT_RELEASE`、`COMPONENT_BINDING`、`COMPONENT_DISABLE`、`DOCUMENT_RECONCILE`、`AGENT_INSTALLATION` 和 `MODEL_PUBLISH` 都只是 `ComponentTaskWorkflow` kind，不增加顶层 Workflow 引擎或新工作台。
+`RESOURCE_EXPORT`、`RESOURCE_IMPORT`、`TENANT_LIFECYCLE`、`WORKSPACE_LIFECYCLE`、`MEMBERSHIP_PROJECTION`、`MEMBERSHIP_REVOCATION`、`SECRET_REF_REHOME`、`COMPONENT_RELEASE`、`COMPONENT_BINDING`、`COMPONENT_DISABLE`、`DOCUMENT_RECONCILE`、`AGENT_INSTALLATION` 和 `MODEL_PUBLISH` 都只是 `ComponentTaskWorkflow` kind，不增加顶层 Workflow 引擎或新工作台。
 
 ### 5.1 Activity 选项纪律
 
