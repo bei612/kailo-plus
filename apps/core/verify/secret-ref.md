@@ -527,3 +527,27 @@ GitNexus 对 `platform_bootstrap::ensure/rotate` 的 upstream impact 为
 
 这只验证确定性写入的本地行为，不证明新 Core 镜像已部署，
 也不证明 `DD-85` 的受治理归位、旧 generation 终态或旧版本销毁已闭合。
+
+### 真实 OpenBao 对确定性重试的查证（2026-09-27）
+
+在本地 `kailo-local` OpenBao 上，先于一次性凭据投递完成
+`cargo test -p kailo-secrets --no-run`，再由现有
+`integration-env.sh` 与 `seed-secret-ref.sh` 提供核验身份及 KV v2
+夹具；`KAILO_INTEGRATION=1 cargo test -p kailo-secrets --test openbao`
+退出 0，真实用例 1/1 通过。该用例在原有 CAS 写入 `v3` 后，
+用 `write_once` 对同一路径同值重试，返回的版本仍为 `v3` 的版本号；
+不同值被 `WriteRejected` 拒绝。没有创建新的 Tenant namespace，
+也没有取用业务身份私钥。
+
+此证据覆盖真实 OpenBao 的已存在路径与版本不追加行为；
+HTTP 写入响应丢失的分支仍由前述可破坏的本地协议夹具验证。
+随后仅重建本地 Compose 的 `core-bff`：受限 BuildKit 容器上限为
+24 GiB 内存与 10 核，外层命令运行在 2 GiB/200% cgroup；镜像
+`sha256:547cdb4ccd9329675e8fa54b32ea866bb20c99f9efccc661e04a017fcdf67c93`
+构建并重建容器后，`/healthz` 返回 HTTP 200。启动日志同时报告
+4 条待对账 Action 的派发失败（`no rows returned by a query that expected to
+return at least one row`）与 1 个 Tenant 缺有效 admin。只读 SQL 对账表明
+前四条均为测试夹具写入的 `verify.provision`，且没有匹配版本的
+`catalog.action_definition`；不据此删除任何业务数据。健康检查不证明
+这些存量状态已收敛。此次没有运行 `SECRET_REF_REHOME`，业务 Tenant
+归位与旧版本销毁仍未启用，也不把本地镜像当作发布产物。

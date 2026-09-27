@@ -111,6 +111,17 @@ async fn wrapped_delivery_and_secret_ref_boundaries() {
         .await
         .expect("新写入的固定版本应可读");
     assert_eq!(v3.expose(), "v3");
+    assert_eq!(
+        s.write_once(&locator(), "value", "v3")
+            .await
+            .expect("相同值的确定性重试应回读已有版本"),
+        n3,
+        "确定性重试不能把同一意图追加成新版本"
+    );
+    assert!(matches!(
+        s.write_once(&locator(), "value", "different").await,
+        Err(SecretError::WriteRejected)
+    ));
 
     // audience 不符即拒，且在发出任何网络请求之前就拒：「先取回来再判断」意味
     // 着值已经进过内存与日志缓冲。
