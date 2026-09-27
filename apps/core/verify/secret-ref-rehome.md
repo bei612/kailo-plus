@@ -1,6 +1,6 @@
 # DD-85 遗留身份 SecretRef 归位核验
 
-2026-09-27，开发中的工作树；本记录不表示能力已发布或 `V-SCN-69` 已闭合。
+2026-09-27，开发中；本记录不表示能力已发布或 `V-SCN-69` 已闭合。
 
 ## 归位发起者的 Tenant 归属闭合（2026-09-27）
 
@@ -174,6 +174,51 @@ BFF `/healthz` 返回 200。使用已有本地测试身份，`/api/v1/session`
 `sha256:96b423034be8a238fcd244d2a54f7ca5325e273e5c7571164294eb866582c109`
 且保持 healthy。以上是本地在线拒绝链证据，不是浏览器页面验收，
 也不覆盖 `V-SCN-69` 的故障分支或生产发布验收。
+
+## 未开放入口的真实浏览器复验与夹具收敛（2026-09-27）
+
+权威为 DD-85、V-SCN-69 与能力注册表中
+`identity.secret_ref_rehome: exposure: none`；本次只改现有 Web 走查的
+预期和异常退出清理，不改产品 API、schema、Workflow 或客户端产物。
+GitNexus 对两个走查脚本文件均返回 `UNKNOWN`，全仓文本检索确认浏览器
+脚本由 `web-walkthrough.sh` 唯一调用。旧走查仍要求未发布的归位面板
+出现，会把 BFF 404、Web 隐藏入口的正确行为判为失败；现要求浏览器
+实际收到列表 404 且面板不可见。脚本中途停止本地 Core 或 Relay 后失败
+时，shell 收尾先恢复二者及 Worker，再关闭夹具 stdin 并等待拆除结果；
+Core 只经 `start-core.sh` 重新投递一次性凭据，不直接 `docker start`。
+
+在固定 Web 镜像
+`sha256:96b423034be8a238fcd244d2a54f7ca5325e273e5c7571164294eb866582c109`
+上，受 16 GiB/500% cgroup 和独立受限 BuildKit 约束的完整浏览器走查
+退出 0：`summary.json` 有 20 个计时场景、30 条记录，未开放列表的
+GET 404 出现两次，意外 origin 与 CSP 违规均为 0；登录、消息、
+BFF/Relay 故障恢复、成员、审计、审批、任务取消/重跑、邀请、注销均通过。
+注销前会话为 `REVOKED`，夹具预置审批分别为 `CANCELLED` 与
+`CONSUMED`。证据在
+`/volumes/data/kailo-web-exposure-bjop5u/summary.json`、`08-members.png`
+和 `fixture.log`。故障注入期间的 503、受拒动作的 403/409/422 仍
+只按各自原因解释，不算服务一直健康。
+
+脚本退出后 Core/Relay/Worker/Web 均运行，BFF `/healthz` 为 200；
+`fixture.log` 显示 Workspace 已拆除，夹具清理断言确认 Tenant 不在
+Core 数据库。只读核对发现该测试 Tenant 的 OpenBao 子 namespace 仍在；
+为避免持有其 service token 的 Core 在线续期失败，先停止本地 Compose
+Core，再核对该 Tenant 在 `identity.tenant`、`identity.principal`、
+`identity.buzz_identity_binding`、`admission.secret_ref_rehome` 均为 0，
+`bao namespace lookup` 精确指向本次测试 UUID，才删除这一个子 namespace。
+删除请求获确认，后续 `namespace list` 已无此项；其他 13 项未动。
+该测试 namespace 中的密钥不可恢复。Core 经 `start-core.sh` 在
+16 GiB/500% cgroup 与受限 BuildKit 内重建并重投一次性凭据，运行
+镜像 ID 为
+`sha256:3939194b6bb145f5a8371b42564183d4aaf04950b104b4fc4166aa88a3eb6462`，
+BFF `/healthz` 返回 200。浏览器夹具的 OpenBao namespace 仍需离线
+人工清理；本次不把手工收敛说成夹具已自动收敛。
+
+共享 Web 包 6 个文件、59 个用例通过。为验证隐藏入口检查确实能报错，
+曾临时把该用例的 404 改成 200 空列表，同一检查退出 1，明确报告
+未开放管理面板被渲染；恢复后 59/59 通过，临时改动未提交。
+这些证据闭合最新 Web 镜像的未开放入口观察，不覆盖归位真实写入的
+响应丢失、撤权、旧消费者与销毁结果不明故障分支，也不代替原生端验收。
 
 ## 旧版本销毁前的 audit 再检查（2026-09-27 07:00 UTC）
 

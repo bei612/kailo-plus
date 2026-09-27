@@ -37,6 +37,14 @@ fixture=$!
 exec 3>"$fifo"
 cleanup() {
   worker_restore_failed=0
+  relay_restore_failed=0
+  core_restore_failed=0
+  if [ -z "$(sudo -n docker compose -f "$local_dir/compose.yaml" ps --status running -q buzz-relay)" ]; then
+    sudo -n docker compose -f "$local_dir/compose.yaml" start buzz-relay >/dev/null || relay_restore_failed=1
+  fi
+  if [ -z "$(sudo -n docker compose -f "$local_dir/compose.yaml" ps --status running -q core-bff)" ]; then
+    bash "$local_dir/start-core.sh" >/dev/null || core_restore_failed=1
+  fi
   sudo -n docker start "$worker_container" >/dev/null || worker_restore_failed=1
   exec 3>&-
   rm -f "$fifo"
@@ -47,6 +55,10 @@ cleanup() {
   fi
   if [ "$worker_restore_failed" -ne 0 ]; then
     echo "本地 Worker 未恢复，须人工检查" >&2
+    exit 1
+  fi
+  if [ "$relay_restore_failed" -ne 0 ] || [ "$core_restore_failed" -ne 0 ]; then
+    echo "本地 Core 或 Relay 未恢复，须人工检查" >&2
     exit 1
   fi
 }

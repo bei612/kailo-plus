@@ -274,6 +274,10 @@ await step("已读：频道同步且页面可见时，已读位置推进到最�
 });
 
 await step("成员页：本人状态使用本地化文案，协议身份按上游统一形式缩写", async () => {
+  const unpublished = page.waitForResponse((r) =>
+    r.request().method() === "GET"
+      && new URL(r.url()).pathname === "/api/v1/identity/legacy-secret-refs",
+  );
   await page.getByRole("button", { name: "Members" }).click();
   const row = page.getByRole("row").filter({
     has: page.getByRole("cell", { name: "Member", exact: true }),
@@ -283,9 +287,12 @@ await step("成员页：本人状态使用本地化文案，协议身份按上�
   await roles.getByText("Administrator roles").waitFor();
   await roles.getByText("Tenant admin", { exact: true }).first().waitFor();
   await roles.getByRole("button", { name: "Grant" }).first().waitFor();
+  const response = await unpublished;
+  if (response.status() !== 404)
+    throw new Error(`未开放的 SecretRef 列表应返回 404，实际 ${response.status()}`);
   const legacyRefs = page.getByTestId("legacy-secret-ref-management");
-  await legacyRefs.getByText("Legacy identity keys").waitFor();
-  await legacyRefs.getByText("No legacy identity references on this page.").waitFor();
+  await legacyRefs.waitFor({ state: "hidden" });
+  if (await legacyRefs.count()) throw new Error("未开放的 SecretRef 管理入口不得出现");
   await shot("08-members");
 });
 

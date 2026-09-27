@@ -133,6 +133,13 @@ ACTIVE HUMAN 候选人与持有 Workspace `manage` 的工作区；不以频道�
 Digest 记在 `upstream-patches/buzz-web/baseline.yaml`；2026-09-25 浏览器走查的成员页
 确实加载了角色区、既有 admin 标记与授予入口。
 
+2026-09-27 当前固定镜像
+`sha256:96b423034be8a238fcd244d2a54f7ca5325e273e5c7571164294eb866582c109`
+上的完整浏览器走查退出 0，20 个计时场景、30 条记录、意外来源与
+CSP 违规均为 0。归位能力仍为 `exposure: none`：成员页实际请求收到
+404，`LegacySecretRefManagement` 不渲染。证据与本地测试 namespace
+的离线清理见[归位核验](../../../core/verify/secret-ref-rehome.md)。
+
 ## 复现
 
 ### 2026-09-25：原生聊天时间接入共用目录
