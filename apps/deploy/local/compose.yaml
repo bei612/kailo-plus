@@ -333,6 +333,7 @@ services:
       # SecretRef 解析（DD-70）。role_id/secret_id 经 env_file 投递，
       # 由 openbao-init.sh 生成并被 gitignore；不进 .env、不上命令行。
       OPENBAO_ADDR: ${OPENBAO_ADDR:?必须显式提供，禁止硬编码}
+      OPENBAO_HTTP_TIMEOUT_SECONDS: ${OPENBAO_HTTP_TIMEOUT_SECONDS:?必须显式提供，禁止硬编码}
       OPENBAO_PLATFORM_NAMESPACE: ${OPENBAO_PLATFORM_NAMESPACE:?必须显式提供，禁止硬编码}
       OPENBAO_TENANT_PARENT_NAMESPACE: ${OPENBAO_TENANT_PARENT_NAMESPACE:?必须显式提供，禁止硬编码}
       OPENBAO_KV_MOUNT: ${OPENBAO_KV_MOUNT:?必须显式提供，禁止硬编码}

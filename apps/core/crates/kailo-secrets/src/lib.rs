@@ -127,6 +127,20 @@ struct AppRoleSession {
     lease: RwLock<Option<Lease>>,
 }
 
+fn bounded_openbao_client() -> Result<reqwest::Client, String> {
+    let seconds: u64 = std::env::var("OPENBAO_HTTP_TIMEOUT_SECONDS")
+        .map_err(|_| "缺少 OPENBAO_HTTP_TIMEOUT_SECONDS".to_owned())?
+        .parse()
+        .map_err(|_| "OPENBAO_HTTP_TIMEOUT_SECONDS 必须是正整数".to_owned())?;
+    if seconds == 0 {
+        return Err("OPENBAO_HTTP_TIMEOUT_SECONDS 必须大于零".to_owned());
+    }
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(seconds))
+        .build()
+        .map_err(|error| format!("构造有界 OpenBao HTTP 客户端失败: {error}"))
+}
+
 impl AppRoleSession {
     fn new(
         addr: &str,
@@ -134,6 +148,7 @@ impl AppRoleSession {
         role_id: String,
         role_name: String,
         wrapped: Option<String>,
+        http: reqwest::Client,
     ) -> Self {
         Self {
             addr: addr.trim_end_matches('/').to_owned(),
@@ -141,7 +156,7 @@ impl AppRoleSession {
             role_id,
             role_name,
             wrapped: Mutex::new(wrapped),
-            http: reqwest::Client::new(),
+            http,
             lease: RwLock::new(None),
         }
     }
@@ -472,6 +487,7 @@ impl SecretStore {
         let get = |k: &str| std::env::var(k).map_err(|_| format!("缺少 {k}"));
         let (role_id, role_name, wrapped) = delivered("OPENBAO")?;
         let (tenant_role_id, tenant_role_name, tenant_wrapped) = delivered("OPENBAO_TENANT")?;
+        let http = bounded_openbao_client()?;
         let addr = get("OPENBAO_ADDR")?;
         let tenant_parent = get("OPENBAO_TENANT_PARENT_NAMESPACE")?;
         if tenant_parent != "tenants" {
@@ -500,6 +516,7 @@ impl SecretStore {
                 role_id,
                 role_name,
                 Some(wrapped),
+                http.clone(),
             ),
             provisioner: AppRoleSession::new(
                 &addr,
@@ -507,6 +524,7 @@ impl SecretStore {
                 tenant_role_id,
                 tenant_role_name,
                 Some(tenant_wrapped),
+                http,
             ),
             tenant: TenantConfig {
                 parent: tenant_parent,
@@ -978,6 +996,7 @@ impl SecretStore {
                 role_id,
                 self.tenant.role_name.clone(),
                 None,
+                self.provisioner.http.clone(),
             ));
             session.connect_secret_id(&secret_id).await?;
             let watched = Arc::clone(&session);
@@ -1203,6 +1222,7 @@ impl AuditObserver {
                 role_id,
                 role_name,
                 Some(wrapped),
+                bounded_openbao_client()?,
             ),
         })
     }
@@ -1286,6 +1306,7 @@ mod tests {
                 "role".to_owned(),
                 "role".to_owned(),
                 None,
+                reqwest::Client::new(),
             ),
             provisioner: AppRoleSession::new(
                 addr,
@@ -1293,6 +1314,7 @@ mod tests {
                 "role".to_owned(),
                 "role".to_owned(),
                 None,
+                reqwest::Client::new(),
             ),
             tenant: TenantConfig {
                 parent: "tenants".to_owned(),
@@ -1308,6 +1330,33 @@ mod tests {
             tenant_failure_rx: Mutex::new(tenant_failure_rx),
             identity: "core".to_owned(),
         }
+    }
+
+    #[tokio::test]
+    async fn bounded_session_returns_transport_error_when_openbao_stalls() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("监听假 OpenBao");
+        let addr = listener.local_addr().expect("假 OpenBao 地址");
+        let server = std::thread::spawn(move || {
+            let (_stream, _) = listener.accept().expect("接收 OpenBao 请求");
+            std::thread::sleep(Duration::from_millis(250));
+        });
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_millis(30))
+            .build()
+            .expect("有界客户端");
+        let session = AppRoleSession::new(
+            &format!("http://{addr}"),
+            "platform".to_owned(),
+            "role-id".to_owned(),
+            "probe".to_owned(),
+            None,
+            http,
+        );
+        assert!(matches!(
+            session.login("one-use-secret").await,
+            Err(SecretError::Transport(error)) if error.is_timeout()
+        ));
+        server.join().expect("假 OpenBao 收尾");
     }
 
     #[test]
@@ -1538,6 +1587,7 @@ mod tests {
             "role-id".to_owned(),
             "probe".to_owned(),
             Some("wrapped".to_owned()),
+            reqwest::Client::new(),
         );
         assert!(matches!(
             session.connect().await,
@@ -1597,6 +1647,7 @@ mod tests {
             "role-id".to_owned(),
             "probe".to_owned(),
             Some("wrapped".to_owned()),
+            reqwest::Client::new(),
         );
         *session.lease.write().await = Some(Lease {
             token: Arc::new("current".to_owned()),

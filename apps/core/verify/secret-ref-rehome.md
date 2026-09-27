@@ -363,3 +363,34 @@ Core，仍尝试恢复。旧 K8S 和其他 namespace 均不在目标集合。
 门禁不会把活跃 Tenant 误判成夹具垃圾。本次删除的仅是可重建的
 测试子 namespace，其中测试密钥不可恢复；其他历史夹具残留不在
 本次自动清理范围。该证据也不代替 `V-SCN-69` 的归位故障链。
+
+## OpenBao 请求悬停的有界返回（2026-09-27 20:08 UTC）
+
+`DD-48/85` 要求写入结果不明时由固定目标查证，不能盲写第二个版本。
+原 `AppRoleSession::new` 使用没有请求时限的 `reqwest::Client::new()`；
+OpenBao 接受请求但不结束响应时，Core 的归位 Activity 无法返回 503，
+`COPY_UNKNOWN` 的下一轮观察也进不来。本次在现有 SecretStore 构造处
+加入必填且正数的 `OPENBAO_HTTP_TIMEOUT_SECONDS`，由同一有界客户端
+供 platform、provisioner 和 Tenant 子会话使用；audit 观察者独立构造
+同样的有界客户端。超时归入原有 `SecretError::Transport`，归位逻辑
+不新增写路径，不把它判断为未写入。部署配置中的时限应短于 Worker
+Activity 的 StartToClose 期限；本地环境配为 5 秒，Worker 当前为
+30 秒。业务源码没有固定秒数，缺失或零值时 Core 拒绝启动。
+
+编辑前 GitNexus 对 `AppRoleSession::new` 报 CRITICAL，22 个符号、
+28 条受影响流程，包含身份投影、Web 传输、归位及 audit 会话；
+已核对四类生产构造点和测试夹具的全部调用。受 8 GiB/400% cgroup
+限制的 `kailo-secrets` 单元检查 7/7 通过，其中悬停服务不会响应，
+有界登录返回 `Transport` 且 `error.is_timeout()` 为真。故意把测试
+时限改到超过假服务的悬停时间，同一检查退出 101；恢复后 7/7。
+`./tools/check-docs.sh` 七组通过；受 16 GiB/500% cgroup 限制的
+`./tools/check.sh --full` 十组通过，其中隔离库未提供，实际迁移演练
+明确 SKIP。`docker compose config --quiet` 退出 0。
+
+Core 在 16 GiB/5 CPU 的受限 BuildKit 与 16 GiB/500% 外层 cgroup
+下重新构建并通过 `start-core.sh` 投递新的单次 OpenBao 凭据；本地
+`kailo-local-core-bff-1` 运行镜像 ID 为
+`sha256:320441b2bdefbda1571bb7013475cb63f3a187f33d035c3db2b062969a583712`，
+BFF `/healthz` 返回 HTTP 200。本轮未制造真实 OpenBao 已提交写入而
+响应悬停的网络故障，也未验证 Core/Temporal 的完整归位恢复；
+`V-SCN-69`、归位能力暴露和 Stage 2 正式退出仍未闭合。
