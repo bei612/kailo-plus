@@ -81,7 +81,15 @@ pub async fn revoke_server_key(
         return StatusCode::CONFLICT.into_response();
     }
 
-    if let Some(r) = resume(&state, req.action_execution_id, binding.tenant_id).await {
+    if let Some(r) = resume(
+        &state,
+        req.action_execution_id,
+        binding.tenant_id,
+        binding.principal_id,
+        Some(&req.pubkey),
+    )
+    .await
+    {
         return r;
     }
     if !matches!(binding.state.as_str(), "ACTIVE" | "RECONCILING") {
@@ -177,7 +185,15 @@ pub async fn provision_server_key(
         }
         Err(e) => return unavailable(e),
     };
-    if let Some(r) = resume(&state, req.action_execution_id, tenant_id).await {
+    if let Some(r) = resume(
+        &state,
+        req.action_execution_id,
+        tenant_id,
+        req.principal_id,
+        None,
+    )
+    .await
+    {
         return r;
     }
     // 仍有非 REVOKED 的 SERVER binding：旧的还没撤完，或已经重建过。先撤后建。
@@ -269,9 +285,15 @@ pub async fn provision_server_key(
     start(&state, tenant_id, &pubkey, version, req.action_execution_id).await
 }
 
-/// 同一 ActionExecution 已驱动过 Workflow：以它的固定 ID 收敛（Start 结果不明
-/// 后的重试走到这里）。`None` 表示这张准入还没用过。
-async fn resume(state: &ServiceState, action: Uuid, tenant_id: Uuid) -> Option<Response> {
+/// 同一 ActionExecution 已驱动过 Workflow：运行中以固定 ID 收敛；已终结时只
+/// 返回原引用，不再向 Temporal Start 终结的 ID。`None` 表示这张准入还没用过。
+async fn resume(
+    state: &ServiceState,
+    action: Uuid,
+    tenant_id: Uuid,
+    principal_id: Uuid,
+    expected_pubkey: Option<&str>,
+) -> Option<Response> {
     let existing = match component_task::workflow_of_action(&state.pool, action).await {
         Ok(Some(w)) => w,
         Ok(None) => return None,
@@ -281,9 +303,48 @@ async fn resume(state: &ServiceState, action: Uuid, tenant_id: Uuid) -> Option<R
     let parts: Vec<&str> = existing.split(':').collect();
     match parts.as_slice() {
         ["kailo", k, t, pubkey, version] if *k == KIND && *t == tenant_id.to_string() => {
-            match version.parse() {
-                Ok(v) => Some(start(state, tenant_id, pubkey, v, action).await),
-                Err(_) => Some(StatusCode::CONFLICT.into_response()),
+            if expected_pubkey.is_some_and(|expected| expected != *pubkey) {
+                return Some(StatusCode::CONFLICT.into_response());
+            }
+            let Ok(version) = version.parse::<i32>() else {
+                return Some(StatusCode::CONFLICT.into_response());
+            };
+            // 重发也要重新核对旧准入仍为 ALLOWED、目标 Principal 与历史 binding
+            // 归属；否则借别人的同 Tenant ActionExecution 取回或推进投影。
+            let projection: Result<Option<String>, _> = sqlx::query_scalar(
+                "select w.projection_state from projection.workflow_ref w
+                 join admission.action_execution ae on ae.id = w.action_execution_id
+                 join identity.buzz_identity_binding b on b.pubkey = $4
+                 where w.workflow_id = $1 and w.action_execution_id = $2
+                   and w.tenant_id = $3 and w.workflow_type = $6 and w.kind = $7
+                   and ae.tenant_id = $3 and ae.target_id = $5 and ae.gate_state = 'ALLOWED'
+                   and b.tenant_id = $3 and b.principal_id = $5
+                   and b.kind = 'HUMAN' and b.custody = 'SERVER'",
+            )
+            .bind(&existing)
+            .bind(action)
+            .bind(tenant_id)
+            .bind(pubkey)
+            .bind(principal_id)
+            .bind(component_task::WORKFLOW_TYPE)
+            .bind(KIND)
+            .fetch_optional(&state.pool)
+            .await;
+            match projection {
+                Ok(Some(state)) if state == "TERMINAL" => Some(
+                    (
+                        StatusCode::OK,
+                        Json(LifecycleResponse {
+                            workflow_id: existing,
+                            kind: KIND.to_owned(),
+                            run_id: None,
+                        }),
+                    )
+                        .into_response(),
+                ),
+                Ok(Some(_)) => Some(start(state, tenant_id, pubkey, version, action).await),
+                Ok(None) => Some(StatusCode::CONFLICT.into_response()),
+                Err(e) => Some(unavailable(e)),
             }
         }
         _ => {

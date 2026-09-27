@@ -316,6 +316,32 @@ async fn run(
         wait_binding(pool, &old, "REVOKED", e.converge_bound_secs).await,
         "REVOKED"
     );
+    common::until(e, "撤钥 Workflow 终态", || async {
+        let state: Option<String> = sqlx::query_scalar(
+            "select projection_state from projection.workflow_ref where workflow_id = $1",
+        )
+        .bind(body["workflowId"].as_str().unwrap())
+        .fetch_optional(pool)
+        .await
+        .unwrap();
+        (state.as_deref() == Some("TERMINAL")).then_some(())
+    })
+    .await;
+    let (status, completed_retry) = call(
+        http,
+        e,
+        token,
+        "/service/v1/identities/server-keys/revoke",
+        serde_json::json!({ "pubkey": old, "actionExecutionId": revoke }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "终态重发只交回引用：{completed_retry}"
+    );
+    assert_eq!(completed_retry["workflowId"], body["workflowId"]);
+    assert!(completed_retry["runId"].is_null(), "终态重发不新建 run");
     // 持有旧私钥的人直连 Relay：该 pubkey 已不在 roster 上
     let (host, channel) = common::live_scope(pool, fx).await;
     let old_secret = common::read_secret_version(http, e, fx.tenant, &locator, old_version).await;
@@ -388,6 +414,32 @@ async fn run(
         wait_binding(pool, &new, "ACTIVE", e.converge_bound_secs).await,
         "ACTIVE"
     );
+    common::until(e, "重建 Workflow 终态", || async {
+        let state: Option<String> = sqlx::query_scalar(
+            "select projection_state from projection.workflow_ref where workflow_id = $1",
+        )
+        .bind(body["workflowId"].as_str().unwrap())
+        .fetch_optional(pool)
+        .await
+        .unwrap();
+        (state.as_deref() == Some("TERMINAL")).then_some(())
+    })
+    .await;
+    let (status, completed_retry) = call(
+        http,
+        e,
+        token,
+        "/service/v1/identities/server-keys/provision",
+        serde_json::json!({ "principalId": fx.principal, "actionExecutionId": provision }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "终态重发只交回引用：{completed_retry}"
+    );
+    assert_eq!(completed_retry["workflowId"], body["workflowId"]);
+    assert!(completed_retry["runId"].is_null(), "终态重发不新建 run");
 
     let (status, body) = bff_publish(http, e, fx, "after rotation").await;
     assert_eq!(status, reqwest::StatusCode::OK, "重建后应恢复发言：{body}");

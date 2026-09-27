@@ -84,6 +84,31 @@ roster 上的钥匙（`core/crates/kailo-core/src/identity_projection.rs`）。
 撤权方向移出全部非 REVOKED 的钥匙。Web 取签名密钥时只取 SERVER 那一把——多把之后再按「第一行」
 取，可能取到设备的公钥而让 Web 发布被拒。
 
+## Web 托管身份的终态重发（2026-09-27）
+
+`server_keys::resume` 对已经驱动过 `BUZZ_IDENTITY_PROJECTION` 的同一
+`ActionExecution`，先核对原准入仍为 `ALLOWED`、Tenant、目标 HUMAN Principal、
+SERVER binding 和 WorkflowRef 归属。原 WorkflowRef 已 `TERMINAL` 时只返回固定
+Workflow ID（`runId=null`），不再次 Start 已终结的 ID；返回引用不表示业务成功，
+终态仍以 TaskProjection/Temporal 事实为准（DD-48、DD-77）。撤销请求中附带的
+pubkey 还必须与原 Workflow ID 冻结的 pubkey 相同。
+
+本地 Core 镜像在 `kailo-core-limited-20260925` BuildKit（16 GiB、5 CPU）与
+外层 2 GiB、1 CPU cgroup 中重建，manifest 为
+`sha256:5f49214d987d0fd3cd9b8d3e69df85c7cdb352edcbe2404433e3da4352c52558`；
+`start-core.sh` 重投一次性凭据后 `/healthz` 返回 200。真实 Core、Temporal、
+Relay、OpenBao 链路的 `cargo test -p kailo-core --test server_keys` 在
+12 GiB、4 CPU cgroup 中通过 1/1：撤钥与重建各自在 WorkflowRef 终结后重发，
+均返回原 ID、空 run ID，旧钥匙仍被 Relay 拒绝，新钥匙仍可发言。临时把首个
+终态重发断言改为期望 409，同一测试以实际 200、退出码 101 失败；恢复断言后
+再次通过 1/1。`cargo check -p kailo-core --all-targets` 在 8 GiB、4 CPU cgroup
+中退出 0；没有 schema、API 或 Workflow input 变更。
+
+这只闭合内部 service API 的终态幂等重发。测试通过直接插入的夹具
+`ActionExecution` 驱动托管身份 revoke/provision；用户可达的两条 Governed Action、
+以及已失败 `BUZZ_IDENTITY_PROJECTION` 的受权重跑入口仍未交付，不能把本段证据
+当成托管身份轮换的完整产品验收。
+
 ## 门禁
 
 `tools/check.sh security` 对每个 listener 判定：恰好挂一种认证（`oidc` 或 `jwtAuth`）；OIDC 必须
