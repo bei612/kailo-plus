@@ -428,3 +428,33 @@ namespace 的 `revoke-self` 也得到 404，日志明确记为撤销未确认。
 这不构成完整集成通过的证据：上述八项失败发生在恢复之前，本次尚未重新
 运行完整集成。夹具 namespace 的清理只能在 Core 不再持有该子级 service
 token 时执行；不得以放宽 Core 的 token 失效全局退出规则来掩盖在线删除。
+
+### 恢复原始夹具后的完整复验与离线清理（2026-09-27 00:23 UTC）
+
+运行前 `git status` 干净、BFF `/healthz` 为 HTTP 200，OpenBao `tenants/`
+列表为空，Core 数据库有两个有效 Tenant；未运行其他 Cargo/Rust 构建。
+在 `MemoryMax=16G`、`CPUQuota=500%` 的 cgroup 内运行未修改的
+`core/verify/run-integration.sh`，退出码 **0**。SecretRef 的 OpenBao 用例、
+Buzz bridge/operator、治理、成员、角色、Tenant/Workspace、托管密钥、邀请、
+Workflow 终态对账及 Go Worker 套件通过；上次失败的 `web_transport` 八项
+全部通过。显式标记为 ignored 的 Relay 故障与 Approval continue-as-new
+演练不计入此次通过范围。上次失败确由在线删除测试 namespace 导致，
+不是原始夹具下持续存在的 Web transport 回归。
+
+本次运行后 OpenBao `tenants/` 列出 17 个新子 namespace；运行前为空，
+且其 UUID 与数据库中两个有效 Tenant UUID 均不相交。先停止**本地 Compose**
+的 `core-bff`，再一次性核对 Core 已退出、待删集合仍精确等于这 17 个 UUID、
+且与有效 Tenant 不相交。仅对这 17 个明确 UUID 调用 `bao namespace delete`；
+各项返回 `Namespace deletion scheduled`，随后 `namespace list -format=json`
+返回 `{}`（CLI 对空列表退出码 2）。测试夹具中的密钥已不可恢复；没有删除
+两个有效 Tenant 的数据库记录，没有操作旧 K8S。第一次删除命令因 shell
+引号错误退出 2，发生在调用 `bao namespace delete` 之前；修正引号并以只读
+`namespace lookup` 核对目标后才执行删除。
+
+重新检查内存、CPU、磁盘与受限 BuildKit 后，以 `start-core.sh` 重投三份
+一次性引导凭据并恢复 Core；构建与启动在 16 GiB/500% cgroup 内，
+BuildKit 自身限额为 24 GiB/10 CPU。最终 `core-bff` 为 Up、BFF
+`/healthz` 为 HTTP 200、`tenants/` 仍为空。此项闭合的是本次真实集成
+复验与安全的**离线人工夹具清理**；`run-integration.sh` 本身仍不自动收敛
+测试 namespace。旧 `platform/kv` 活跃引用迁移、完整 SecretRef 生命周期、
+生产规模会话与续期负载以及 Stage 1/2 退出门禁仍未闭合。
