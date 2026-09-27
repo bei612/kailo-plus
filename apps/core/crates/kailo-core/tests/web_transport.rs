@@ -501,6 +501,61 @@ async fn read_sse(
     Ok(frames)
 }
 
+async fn assert_open_stream_closes_after_membership_revocation(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    fx: &common::LiveWorkspace,
+    path: &str,
+) {
+    use futures_util::StreamExt;
+    let response = http
+        .get(format!("{}{path}", e.bff_url))
+        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
+        .header("x-kailo-oidc-subject", &fx.subject)
+        .send()
+        .await
+        .expect("打开待撤权的流");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let mut body = response.bytes_stream();
+    let mut buffer = String::new();
+    let mut revoked = false;
+    let deadline = tokio::time::Instant::now()
+        + tokio::time::Duration::from_secs(e.stream_readmit_seconds + e.converge_bound_secs);
+    while tokio::time::Instant::now() < deadline {
+        let Ok(Some(Ok(chunk))) = tokio::time::timeout_at(deadline, body.next()).await else {
+            break;
+        };
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(end) = buffer.find("\n\n") {
+            let frame = buffer[..end].to_owned();
+            buffer = buffer[end + 2..].to_owned();
+            if frame.lines().any(|line| line.trim() == "event: live") && !revoked {
+                sqlx::query(
+                    "update identity.workspace_membership set state = 'REVOKING' where id = $1",
+                )
+                .bind(fx.workspace_membership)
+                .execute(pool)
+                .await
+                .expect("置 REVOKING");
+                revoked = true;
+            }
+            if frame.lines().any(|line| line.trim() == "event: closed") {
+                assert!(revoked, "流在撤权前关闭：{frame}");
+                assert!(
+                    frame
+                        .lines()
+                        .any(|line| line.trim() == "data: scope-revoked"),
+                    "已建立的流应因 Workspace 撤权关闭：{frame}"
+                );
+                return;
+            }
+        }
+    }
+    assert!(revoked, "流未达到 live 状态，不能验证在途撤权");
+    panic!("Workspace 已撤权，既有流仍未在再准入上界内关闭");
+}
+
 async fn run_stream(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWorkspace) {
     // 先发一条，snapshot 才有内容可验
     let msg_path = format!("/api/v1/workspaces/{}/messages", fx.workspace);
@@ -577,12 +632,8 @@ async fn run_stream(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
         "服务端必须给出自己的 generation，不回显调用方的"
     );
 
-    // 撤权后：流建不起来
-    sqlx::query("update identity.workspace_membership set state = 'REVOKING' where id = $1")
-        .bind(fx.workspace_membership)
-        .execute(pool)
-        .await
-        .expect("置 REVOKING");
+    // 撤权前已建立的流必须主动关闭；撤权后新流也建不起来。
+    assert_open_stream_closes_after_membership_revocation(http, e, pool, fx, &path).await;
     match read_sse(http, e, &fx.subject, &path, None).await {
         Err(status) => assert_eq!(status, reqwest::StatusCode::FORBIDDEN, "撤权后开流必须被拒"),
         Ok(f) => panic!("撤权后不应开得起流，却拿到 {f:?}"),

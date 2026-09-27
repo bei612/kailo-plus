@@ -18,6 +18,8 @@ pub enum IdentityError {
     Unknown,
     #[error("TenantMembership 不是 ACTIVE")]
     MembershipNotActive,
+    #[error("TenantMembership 对应的 Principal 不是同 Tenant 的 active HUMAN")]
+    PrincipalNotActive,
     /// 同一个人在多个 Tenant 各有一条 ACTIVE membership。`.design/03` 允许这种
     /// 情形，但没有定义登录时如何选定 Tenant；一期也没有选择入口。在那之前
     /// 只能拒绝——任取一个就是「回退默认租户」。
@@ -32,7 +34,10 @@ impl IdentityError {
     pub fn class(&self) -> ErrorClass {
         match self {
             // 身份不成立是拒绝，不是前置条件不满足——修配置不会让它通过
-            Self::HeaderMissing | Self::Unknown | Self::MembershipNotActive => ErrorClass::Denied,
+            Self::HeaderMissing
+            | Self::Unknown
+            | Self::MembershipNotActive
+            | Self::PrincipalNotActive => ErrorClass::Denied,
             // 能力未开放，不是身份不成立：修配置或重试都不会让它通过
             Self::TenantSelectionUnavailable => ErrorClass::Blocked,
             // 依赖不可用：这次没法判定，不是拒绝——写成拒绝会把可恢复故障记成
@@ -47,6 +52,7 @@ impl IdentityError {
             Self::HeaderMissing => ReasonCode::IdentityHeaderMissing,
             Self::Unknown => ReasonCode::IdentityUnknown,
             Self::MembershipNotActive => ReasonCode::TenantMembershipNotActive,
+            Self::PrincipalNotActive => ReasonCode::ScopeGuardFailed,
             Self::TenantSelectionUnavailable => ReasonCode::TenantSelectionNotAvailable,
             Self::Unavailable(_) => ReasonCode::DependencyUnavailable,
         }
@@ -70,7 +76,8 @@ pub async fn resolve(
     };
 
     // 一次查询走完 ExternalIdentity → HumanIdentity → TenantMembership → Principal。
-    // 只接受两侧都 ACTIVE 的身份：停用的身份不得取得任何执行上下文。
+    // 只接受 ExternalIdentity、HumanIdentity、TenantMembership 与同 Tenant
+    // HUMAN Principal 全部 ACTIVE 的身份：停用或错绑的身份不得取得执行上下文。
     //
     // 取回此人的**全部** membership 再判定，而不是取第一行：一个人可以在多个
     // Tenant 各有一条 membership（`.design/03`），行序由数据库决定，取第一行
@@ -81,10 +88,17 @@ pub async fn resolve(
                tm.tenant_id    as tenant_id,
                tm.tenant_principal_id as tenant_principal_id,
                hi.id           as human_identity_id,
-               tm.state        as membership_state
+               tm.state        as membership_state,
+               coalesce(
+                   p.tenant_id = tm.tenant_id
+                   and p.kind = 'HUMAN'
+                   and p.status = 'ACTIVE',
+                   false
+               ) as "principal_valid!"
         from identity.external_identity ei
         join identity.human_identity hi on hi.id = ei.human_identity_id
         join identity.tenant_membership tm on tm.human_identity_id = hi.id
+        left join identity.principal p on p.id = tm.tenant_principal_id
         where ei.issuer = $1 and ei.subject = $2
           and ei.status = 'ACTIVE' and hi.status = 'ACTIVE'
         "#,
@@ -104,6 +118,9 @@ pub async fn resolve(
         // 有 membership 但没有一条 ACTIVE：与「不认识此人」是两回事
         (None, _) => return Err(IdentityError::MembershipNotActive),
     };
+    if !row.principal_valid {
+        return Err(IdentityError::PrincipalNotActive);
+    }
 
     Ok(ResolvedIdentity {
         human_identity_id: row.human_identity_id.to_string(),

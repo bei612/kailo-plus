@@ -107,8 +107,15 @@ pub async fn revoke_one(pool: &PgPool, session_id: Uuid) -> Result<bool, sqlx::E
 /// （`.design/03` §4.1 要求撤销对 stream 同样生效）。
 pub async fn is_live(pool: &PgPool, session_id: Uuid) -> Result<bool, sqlx::Error> {
     Ok(sqlx::query_scalar!(
-        "select 1 from identity.platform_session
-         where id = $1 and status = 'ACTIVE' and expires_at > now()",
+        "select 1 from identity.platform_session s
+         join identity.human_identity h on h.id = s.human_identity_id
+         join identity.tenant_membership tm
+           on tm.id = s.tenant_membership_id and tm.human_identity_id = h.id
+         join identity.principal p
+           on p.id = tm.tenant_principal_id and p.tenant_id = tm.tenant_id
+         where s.id = $1 and s.status = 'ACTIVE' and s.expires_at > now()
+           and h.status = 'ACTIVE' and tm.state = 'ACTIVE'
+           and p.kind = 'HUMAN' and p.status = 'ACTIVE'",
         session_id
     )
     .fetch_optional(pool)

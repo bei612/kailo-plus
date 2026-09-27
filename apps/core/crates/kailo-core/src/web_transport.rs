@@ -486,6 +486,8 @@ pub async fn admit_workspace(
     let row = sqlx::query!(
         "select b.channel_id, t.normalized_host, wm.version
          from identity.workspace w
+         join identity.tenant tenant
+           on tenant.id = w.tenant_id and tenant.state = 'ACTIVE'
          join identity.workspace_membership wm
            on wm.workspace_id = w.id and wm.tenant_principal_id = $2 and wm.state = 'ACTIVE'
          join projection.workspace_buzz_binding b
@@ -504,7 +506,7 @@ pub async fn admit_workspace(
         StatusCode::SERVICE_UNAVAILABLE.into_response()
     })?;
 
-    // 一次查询同时要求：Workspace 属于该 Tenant 且 ACTIVE、该 HUMAN 有 active
+    // 一次查询同时要求：Tenant 与 Workspace 都 ACTIVE、Workspace 属于该 Tenant、该 HUMAN 有 active
     // WorkspaceMembership、两侧 Buzz binding 都 ACTIVE。任一不成立都返回同一个
     // 拒绝——分别报错会把「这个 Workspace 存在但你没权限」和「不存在」区分开，
     // 那本身就是一条可枚举的信息。

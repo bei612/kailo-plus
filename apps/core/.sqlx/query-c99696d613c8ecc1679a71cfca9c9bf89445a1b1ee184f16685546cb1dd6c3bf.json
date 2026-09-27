@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select 1 from identity.platform_session s\n         join identity.human_identity h on h.id = s.human_identity_id\n         join identity.tenant_membership tm\n           on tm.id = s.tenant_membership_id and tm.human_identity_id = h.id\n         join identity.principal p\n           on p.id = tm.tenant_principal_id and p.tenant_id = tm.tenant_id\n         where s.id = $1 and s.status = 'ACTIVE' and s.expires_at > now()\n           and h.status = 'ACTIVE' and tm.state = 'ACTIVE'\n           and p.kind = 'HUMAN' and p.status = 'ACTIVE'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "?column?",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c99696d613c8ecc1679a71cfca9c9bf89445a1b1ee184f16685546cb1dd6c3bf"
+}

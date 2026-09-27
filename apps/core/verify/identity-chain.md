@@ -113,3 +113,45 @@ PlatformSession 并关闭 BFF stream。
 再准入查不动数据库时关流并给 `readmission-unavailable` 而不是 `session-revoked`：
 前者是结果不明，客户端应当重连；后者是确定的撤销，客户端不该重连。把两者混为
 一谈会让一次数据库抖动表现成"你被登出了"。
+
+## Principal 与 TenantMembership 同租户核验（2026-09-27）
+
+本节是本地开发环境的证据，不表示生产环境已发布。
+`.design/03` §2 要求 HUMAN Principal 为同 Tenant 的 active 身份；原解析查询
+只检查 ExternalIdentity、HumanIdentity 与 TenantMembership，未检查 Principal。
+`20260927110000_tenant_principal_scope` 为 Membership 的
+`(tenant_principal_id, tenant_id)` 增加到 Principal `(id, tenant_id)` 的复合外键；
+解析仍逐次核对 Principal 的 Tenant、kind 与 status，不把数据库约束当作状态检查。
+
+业务库的只读前置查询中，现存跨 Tenant Membership/Principal 行数为 `0`；
+已在备份后向 `kailo-local` 开发库应用新迁移。
+独立核验库 `kailo_rehome_verify_20260927` 应用新迁移成功；
+`KAILO_INTEGRATION=1 cargo test -p kailo-core --test identity_principal_scope`
+在 8 GiB/400% cgroup 下退出 `0`，`1 passed`：正常 HUMAN 身份可解析；
+Principal `DISABLED` 或改为 `AGENT` 时解析与既有 Session 再准入均拒绝；
+跨 Tenant Membership 插入被
+PostgreSQL 外键以 `23503` 拒绝。临时移除解析的 Principal 检查后，
+同一用例以「停用 Principal 仍能取得执行身份」退出 `101`；恢复源码后重新运行
+退出 `0`。夹具按精确 UUID 清理，未修改业务库身份行。
+
+受 16 GiB/500% cgroup 限制的 `./tools/check.sh --full` 最终十组全部通过，
+包含迁移前进、回退、再前进。此前一次全量运行的 `cargo test` 步骤返回失败，
+门禁隐藏了原始诊断；随后同环境的原始 `cargo test` 退出 `0`，再次全量运行也退出
+`0`。这次波动尚无可归因的失败日志，不能据此宣称测试完全无间歇性。
+
+## 已建立事件流的 Workspace 撤权（2026-09-27）
+
+原 `Readmission` 只复查 Session 与 signer；已打开的 SSE 在
+WorkspaceMembership 撤权后仍继续接收事件。现在每次再准入同时复查 Tenant、
+Workspace、WorkspaceMembership 与两侧 Buzz binding，若 scope 的版本、Channel
+或 Community host 改变也关闭旧订阅。依赖查询失败发
+`readmission-unavailable`，不伪装成已撤权。
+
+新 Core 已在受限构建器内完成 release build，并由 `start-core.sh` 重建本地
+`kailo-local-core-bff-1`。真实连接的 `stream_delivers_snapshot_and_generation`
+用例先收到 `live`，随后把该成员置为 `REVOKING`，在再准入上界内收到
+`closed`／`scope-revoked`；新建同 scope 的连接也被拒绝。用例退出 `0`，
+`1 passed`。将断言临时改成不可能的关闭原因后，同一用例退出 `101`，实际帧为
+`event: closed`、`data: scope-revoked`；恢复断言后再次退出 `0`、`1 passed`。
+完成上述改动后，受 16 GiB/500% cgroup 限制的 `./tools/check.sh --full`
+重新运行，十组全部通过，最终退出码 `0`。

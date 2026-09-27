@@ -32,8 +32,8 @@ use kailo_buzz::stream::{subscribe, Frame};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::bff::{resolve_execution_context, BffState};
-use crate::web_transport::{actor_keys, admit_workspace};
+use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
+use crate::web_transport::{actor_keys, admit_workspace, WorkspaceScope};
 
 /// 打开一条 Workspace 事件流。
 pub async fn open_stream(
@@ -115,16 +115,19 @@ pub async fn open_stream(
         }
     };
 
+    let every = std::time::Duration::from_secs(state.stream_readmit_seconds);
     Sse::new(frames(
         generation,
         retry,
         snapshot,
         sub,
         Readmission {
-            pool: state.pool.clone(),
-            session_id: ctx.session_id,
+            state,
+            ctx,
+            workspace_id,
+            scope,
             signer,
-            every: std::time::Duration::from_secs(state.stream_readmit_seconds),
+            every,
         },
     ))
     .keep_alive(KeepAlive::default())
@@ -154,8 +157,10 @@ fn upstream_unavailable(retry: std::time::Duration) -> Response {
 /// 间隔是**撤权对已建立流生效的上界**，因此是部署登记值而不是常量——它和
 /// roster 对账间隔一样，是一个必须被说出来的时间窗，不是实现细节。
 struct Readmission {
-    pool: sqlx::PgPool,
-    session_id: Uuid,
+    state: BffState,
+    ctx: ExecutionContext,
+    workspace_id: Uuid,
+    scope: WorkspaceScope,
     /// 订阅所用 NIP-42 会话的 pubkey。它不再是 ACTIVE 即关流：key revoke 的
     /// 「关已知连接」一步（`.design/09`），与会话撤销是两件事。
     signer: String,
@@ -165,15 +170,32 @@ struct Readmission {
 impl Readmission {
     /// `Ok(Some(reason))` 是该关流的原因；`Ok(None)` 是仍然准入。
     async fn check(&self) -> Result<Option<&'static str>, sqlx::Error> {
-        if !kailo_identity::session::is_live(&self.pool, self.session_id).await? {
+        if !kailo_identity::session::is_live(&self.state.pool, self.ctx.session_id).await? {
             return Ok(Some("session-revoked"));
+        }
+        let current = match admit_workspace(&self.state, &self.ctx, self.workspace_id).await {
+            Ok(scope) => scope,
+            Err(response) if response.status().is_server_error() => {
+                return Ok(Some("readmission-unavailable"));
+            }
+            Err(_) => return Ok(Some("scope-revoked")),
+        };
+        if current.version != self.scope.version
+            || current.channel_id != self.scope.channel_id
+            || current.community_host != self.scope.community_host
+        {
+            return Ok(Some("scope-changed"));
         }
         let signer_active = sqlx::query_scalar!(
             r#"select exists (select 1 from identity.buzz_identity_binding
-                              where pubkey = $1 and state = 'ACTIVE') as "ok!""#,
-            self.signer
+                              where pubkey = $1 and tenant_id = $2 and principal_id = $3
+                                and custody = 'SERVER' and kind = 'HUMAN'
+                                and state = 'ACTIVE') as "ok!""#,
+            self.signer,
+            self.ctx.tenant_id,
+            self.ctx.tenant_principal_id,
         )
-        .fetch_one(&self.pool)
+        .fetch_one(&self.state.pool)
         .await?;
         Ok((!signer_active).then_some("identity-revoked"))
     }
@@ -222,8 +244,8 @@ fn frames(
                 _ = tick.tick() => {
                     match readmit.check().await {
                         Ok(None) => continue,
-                        // 会话没了（注销或撤权），或订阅所用的身份被撤销。关流并
-                        // 说明原因——客户端据此知道不该原样重连。
+                        // 会话、scope、binding 不再匹配时关流；准入查询不可用则
+                        // 报结果不明，客户端按既有 retry 规则重开，不沿用旧订阅。
                         Ok(Some(reason)) => {
                             yield Ok(Event::default().event("closed").data(reason));
                             break;

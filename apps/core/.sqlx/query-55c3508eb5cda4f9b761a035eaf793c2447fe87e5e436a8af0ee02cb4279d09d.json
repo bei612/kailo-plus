@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select exists (select 1 from identity.buzz_identity_binding\n                              where pubkey = $1 and tenant_id = $2 and principal_id = $3\n                                and custody = 'SERVER' and kind = 'HUMAN'\n                                and state = 'ACTIVE') as \"ok!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "55c3508eb5cda4f9b761a035eaf793c2447fe87e5e436a8af0ee02cb4279d09d"
+}
