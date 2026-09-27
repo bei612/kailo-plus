@@ -147,6 +147,8 @@ async fn seed_tenant(pool: &PgPool, e: &Env) -> (Uuid, Uuid) {
         .fetch_one(pool)
         .await
         .expect("Catalog Tenant 应由平台引导建立");
+    let tenant = Uuid::new_v4();
+    common::record_tenant_namespace_fixture(tenant).expect("登记测试 Tenant namespace");
     let initiator = Uuid::new_v4();
     sqlx::query(
         "insert into identity.principal (id, tenant_id, kind, status)
@@ -158,7 +160,6 @@ async fn seed_tenant(pool: &PgPool, e: &Env) -> (Uuid, Uuid) {
     .await
     .expect("建发起方 Principal");
 
-    let tenant = Uuid::new_v4();
     let slug = format!("t{}", &tenant.to_string()[..8]);
     sqlx::query(
         "insert into identity.tenant (id, slug, name, state) values ($1, $2, $2, 'PROVISIONING')",

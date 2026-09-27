@@ -223,6 +223,7 @@ pub async fn seed_tenant_fixture(
         member_principal: Uuid::new_v4(),
         membership: Uuid::new_v4(),
     };
+    record_tenant_namespace_fixture(f.tenant).expect("登记测试 Tenant namespace");
     let human = Uuid::new_v4();
     sqlx::query(
         "insert into identity.tenant (id, slug, name, state) values ($1, $2, $2, 'ACTIVE')",
@@ -543,6 +544,7 @@ pub async fn provision_live_workspace_for(
         workspace_membership: Uuid::new_v4(),
         provider: Uuid::new_v4(),
     };
+    record_tenant_namespace_fixture(fx.tenant)?;
     match provision_steps(http, e, pool, token, &mut fx).await {
         Ok(()) => Ok(fx),
         Err(msg) => {
@@ -550,6 +552,34 @@ pub async fn provision_live_workspace_for(
             teardown_live_workspace(e, pool, &fx).await;
             Err(msg)
         }
+    }
+}
+
+/// 全套集成核验按本次运行的 UUID 离线收敛 OpenBao 测试 namespace。先登记
+/// 再产生外部副作用，开通中途失败也不会漏掉目标；单独运行的测试不使用该清单。
+pub fn record_tenant_namespace_fixture(tenant: Uuid) -> Result<(), String> {
+    let Some(dir) = std::env::var_os("KAILO_INTEGRATION_NAMESPACE_LEDGER") else {
+        return Ok(());
+    };
+    let path = std::path::PathBuf::from(dir).join(tenant.to_string());
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+    {
+        Ok(_) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            let file_type = path
+                .symlink_metadata()
+                .map_err(|e| format!("核实测试 Tenant namespace {} 清单失败：{e}", tenant))?
+                .file_type();
+            if file_type.is_file() {
+                Ok(())
+            } else {
+                Err(format!("测试 Tenant namespace {} 清单不是普通文件", tenant))
+            }
+        }
+        Err(err) => Err(format!("登记测试 Tenant namespace {} 失败：{err}", tenant)),
     }
 }
 
@@ -1374,6 +1404,11 @@ pub mod bootstrapped {
             .rev()
             .find_map(|l| serde_json::from_str::<Value>(l).ok())
             .unwrap_or(Value::Null);
+        if let Some(tenant) = body["tenantId"].as_str() {
+            let tenant = Uuid::parse_str(tenant).expect("引导返回合法 Tenant ID");
+            super::record_tenant_namespace_fixture(tenant)
+                .expect("登记引导创建的测试 Tenant namespace");
+        }
         if body.is_null() {
             eprintln!(
                 "引导输出：{stdout}\n{}",

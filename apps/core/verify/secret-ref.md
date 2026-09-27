@@ -551,3 +551,30 @@ return at least one row`）与 1 个 Tenant 缺有效 admin。只读 SQL 对账�
 `catalog.action_definition`；不据此删除任何业务数据。健康检查不证明
 这些存量状态已收敛。此次没有运行 `SECRET_REF_REHOME`，业务 Tenant
 归位与旧版本销毁仍未启用，也不把本地镜像当作发布产物。
+
+### 全套集成夹具的离线 namespace 收敛（2026-09-27）
+
+`run-integration.sh` 本轮把测试 Tenant UUID 登记在独立清单；进入 EXIT
+trap 时先拒绝运行前已存在的 UUID，核对 Core 的 Tenant、Principal、Buzz
+binding 与 SecretRef rehome 引用，再精确核对 OpenBao 子 namespace 路径。
+仅在停止本地 Compose Core
+之后删除清单内仍存在的测试 namespace，随后重投一次性凭据并恢复 Core；
+运行前后的完整子 namespace 集合必须相等，否则整轮失败并保留清单。
+部署引导重试对同一 Tenant 的重复登记是幂等的。
+
+首次复验通过了 Rust/Go 全量用例，但发现四个本轮新建的子 namespace
+未走原有夹具登记。只读核对其 Core 四类引用均为零、OpenBao 路径均精确
+匹配后，停止本地 Compose Core，仅离线删除这四个 UUID，并在受限
+BuildKit 与 cgroup 中恢复 Core。随后将部署引导及直接建 Tenant 的共用
+夹具纳入登记，再运行完整 `run-integration.sh`：退出码 0，本轮 19 个
+测试 namespace 离线收敛；运行前后集合均为原有 16 个，BFF `/healthz`
+独立复核为 HTTP 200。故意在集合检查的输入中额外注入一个名称时，
+检查退出 1 并报告差异；还原输入后退出 0。`check.sh --full` 十组退出
+0，其中未提供隔离 `DATABASE_URL`，实际数据库迁移演练为 SKIP。
+审查时另发现停止 Core 的命令失败后容器已停的路径未触发恢复；将恢复标记
+提前到停止命令前，并用隔离的命令桩让停止返回错误，确认整轮退出 1 且
+调用恢复分支，不触碰真实容器。把登记 UUID 故意放进运行前集合时，
+清理在数据库查证、OpenBao lookup 与停机之前退出 1。
+
+原有 16 个子 namespace 不属于本轮登记清单，未删除，也不据此声称
+生产 Tenant 销毁已闭合；本轮删除的四个测试 namespace 中的密钥不可恢复。
