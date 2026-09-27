@@ -331,3 +331,35 @@ SKIP，配对回退脚本检查通过。
 metadata；没有证明 Core `retire`、Temporal Activity 重试、
 `SWITCHED → RETIRED` 投影或真实 OpenBao 的响应丢失闭环。
 `V-SCN-69` 与发布暴露闸门仍未闭合，本开发工作树不能据此发布。
+
+## 浏览器夹具的 OpenBao 子 namespace 收敛（2026-09-27）
+
+`.design/03` §9 的 Tenant secret 隔离、`DD-85` 与本文件记录的在线
+删除故障共同决定清理顺序：浏览器夹具拆除 Core/SpiceDB 记录后，
+不能在 Core 仍持有该 Tenant 的 AppRole session 时删除子 namespace。
+此前 `web-walkthrough.sh` 在退出时只恢复本地 Core/Relay/Worker 并等
+夹具拆库，因此每次成功走查都留下一个 OpenBao 测试 namespace。
+本次只修改现有浏览器走查脚本的退出路径，不新增产品 Tenant 删除入口、
+数据库迁移、API、Workflow 或组件权威；GitNexus 对 shell 文件判
+`UNKNOWN`，全仓检索确认浏览器脚本只由该 wrapper 调用，其他文档
+只引用其命令。脚本从本次 `workspace.json` 解析规范 UUID，要求
+`identity.tenant`、`identity.principal`、`identity.buzz_identity_binding`、
+`admission.secret_ref_rehome` 的该 Tenant 行数均为零，并由 OpenBao
+`namespace lookup` 核对精确父路径；随后只停止本地 Compose
+`core-bff`，重复数据库和路径核验，才请求删除这个子 namespace。
+父目录不再列出该 UUID 才算清理成立，Core 始终用 `start-core.sh`
+重新投递一次性凭据。任何核验失败都拒绝删除并让走查失败；若已停
+Core，仍尝试恢复。旧 K8S 和其他 namespace 均不在目标集合。
+
+受 16 GiB/500% cgroup 与 16 GiB/5 CPU BuildKit 约束的真实浏览器
+走查退出 0；证据目录为
+`/volumes/data/kailo-web-namespace-53jLC7/`。`summary.json` 有
+20 个计时场景、30 条记录、0 个意外 origin、0 个 CSP 违规；会话
+`REVOKED`，夹具审批分别为 `CANCELLED` 与 `CONSUMED`。脚本报告
+本次测试 Tenant 的子 namespace 已离线清理，之后又独立查询 Core
+四张表均为 `0|0|0|0`、OpenBao 父目录不含该 UUID、BFF `/healthz`
+为 HTTP 200，Core/Relay/Worker/Web 均在运行。反向验证以库中仍
+存在的 ACTIVE Tenant 调用相同零引用门禁，结果为拒绝；这说明该
+门禁不会把活跃 Tenant 误判成夹具垃圾。本次删除的仅是可重建的
+测试子 namespace，其中测试密钥不可恢复；其他历史夹具残留不在
+本次自动清理范围。该证据也不代替 `V-SCN-69` 的归位故障链。

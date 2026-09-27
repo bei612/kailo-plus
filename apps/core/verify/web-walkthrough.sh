@@ -36,6 +36,7 @@ fixture=$!
 # 持有写端：夹具读 stdin 读到 EOF 才拆除，关掉它即触发拆除
 exec 3>"$fifo"
 cleanup() {
+  trap - EXIT
   worker_restore_failed=0
   relay_restore_failed=0
   core_restore_failed=0
@@ -61,8 +62,83 @@ cleanup() {
     echo "本地 Core 或 Relay 未恢复，须人工检查" >&2
     exit 1
   fi
+
+  # 夹具的数据库与 roster 已拆除，但 Core 缓存的 Tenant AppRole token 仍会续期。
+  # 只能在精确核对本次 UUID 且停掉本地 Core 后删除该测试子 namespace。
+  core_stopped_for_cleanup=0
+  namespace_cleanup_failed=0
+  if [ -s "$out/workspace.json" ] && ! cleanup_fixture_namespace; then
+    namespace_cleanup_failed=1
+  fi
+  if [ "$core_stopped_for_cleanup" -eq 1 ]; then
+    bash "$local_dir/start-core.sh" >/dev/null || core_restore_failed=1
+  fi
+  if [ "$namespace_cleanup_failed" -ne 0 ] || [ "$core_restore_failed" -ne 0 ]; then
+    echo "测试 Tenant 的 OpenBao namespace 未确认清理或本地 Core 未恢复，须人工检查" >&2
+    exit 1
+  fi
 }
 trap cleanup EXIT
+
+fixture_tenant_absent() {
+  local tenant=$1 counts
+  counts="$(PGPASSWORD="$(cat "$local_dir/secrets/core_db_password")" \
+    psql -h 127.0.0.1 -p "$CORE_DB_PORT" -U "$CORE_DB_USER" -d "$CORE_DB_NAME" \
+      -v ON_ERROR_STOP=1 -tA -c \
+      "select (select count(*) from identity.tenant where id = '$tenant'),
+              (select count(*) from identity.principal where tenant_id = '$tenant'),
+              (select count(*) from identity.buzz_identity_binding where tenant_id = '$tenant'),
+              (select count(*) from admission.secret_ref_rehome where tenant_id = '$tenant')" \
+      | tr -d '[:space:]')" || return 1
+  [ "$counts" = "0|0|0|0" ]
+}
+
+bao_tenant_parent() {
+  printf '%s\n' "$root_token" | sudo -n docker compose --env-file "$local_dir/.env" \
+    -f "$local_dir/compose.yaml" exec -T \
+    -e BAO_NAMESPACE="$OPENBAO_TENANT_PARENT_NAMESPACE" openbao \
+    sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"' bao "$@"
+}
+
+cleanup_fixture_namespace() {
+  local tenant root_token lookup listing deadline
+  tenant="$(python3 -c 'import json,sys,uuid; value=json.load(open(sys.argv[1]))["tenant"]; parsed=uuid.UUID(value); assert str(parsed)==value; print(value)' "$out/workspace.json")" || return 1
+  fixture_tenant_absent "$tenant" || {
+    echo "测试 Tenant $tenant 仍有 Core 引用，拒绝删除 OpenBao namespace" >&2
+    return 1
+  }
+  root_token="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "$local_dir/secrets/openbao_init.json")" || return 1
+  lookup="$(bao_tenant_parent namespace lookup -format=json "$tenant")" || return 1
+  printf '%s\n' "$lookup" | jq -e --arg path "${OPENBAO_TENANT_PARENT_NAMESPACE%/}/$tenant/" \
+    '.path == $path' >/dev/null || {
+      echo "测试 Tenant $tenant 的 OpenBao 路径不符，拒绝删除" >&2
+      return 1
+    }
+  sudo -n docker compose -f "$local_dir/compose.yaml" stop core-bff >/dev/null || return 1
+  core_stopped_for_cleanup=1
+  [ -z "$(sudo -n docker compose -f "$local_dir/compose.yaml" ps --status running -q core-bff)" ] || return 1
+  fixture_tenant_absent "$tenant" || return 1
+  lookup="$(bao_tenant_parent namespace lookup -format=json "$tenant")" || return 1
+  printf '%s\n' "$lookup" | jq -e --arg path "${OPENBAO_TENANT_PARENT_NAMESPACE%/}/$tenant/" \
+    '.path == $path' >/dev/null || return 1
+  bao_tenant_parent namespace delete "$tenant" >/dev/null || return 1
+  deadline=$((SECONDS + VERIFY_CONVERGE_BOUND_SECS))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if listing="$(bao_tenant_parent namespace list -format=json 2>&1)"; then
+      :
+    elif [ "$listing" != '{}' ]; then
+      return 1
+    fi
+    if printf '%s\n' "$listing" | jq -e --arg tenant "$tenant" \
+      '(type == "array" and all(.[]; rtrimstr("/") != $tenant)) or (type == "object" and length == 0)' >/dev/null; then
+      echo "测试 Tenant $tenant 的 OpenBao 子 namespace 已离线清理"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "测试 Tenant $tenant 的 OpenBao 子 namespace 删除未在收敛上界内得到目录证据" >&2
+  return 1
+}
 
 while kill -0 "$fixture" 2>/dev/null && [ ! -s "$out/workspace.json" ]; do sleep 1; done
 [ -s "$out/workspace.json" ] || { cat "$out/fixture.log" >&2; exit 1; }
