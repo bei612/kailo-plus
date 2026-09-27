@@ -458,3 +458,45 @@ BuildKit 自身限额为 24 GiB/10 CPU。最终 `core-bff` 为 Up、BFF
 复验与安全的**离线人工夹具清理**；`run-integration.sh` 本身仍不自动收敛
 测试 namespace。旧 `platform/kv` 活跃引用迁移、完整 SecretRef 生命周期、
 生产规模会话与续期负载以及 Stage 1/2 退出门禁仍未闭合。
+
+### 旧身份 SecretRef 迁移前的只读盘点（2026-09-27 00:39 UTC）
+
+在提交 `d84300cad2df48d4d59abea28825fbe14b9c3ac4` 的本地拓扑上，
+只读查询 `identity.buzz_identity_binding` 中 `state='ACTIVE'` 且 locator
+以 `platform/kv/` 开头的行，得到 `CONTROL|ACTIVE|1` 与
+`HUMAN|ACTIVE|1`，两行属于同一个业务 Tenant。另有部署级
+`RelayOperatorIdentity` 使用 `platform/kv`，按 `DD-70` 应保持平台归属，
+不在这次业务 Tenant 迁移范围内。查询只输出种类、状态和计数，未取私钥。
+
+同一 Tenant 的本地 `admission.action_execution` 与
+`projection.workflow_ref` 联查得到四条
+`ALLOWED|NOT_DISPATCHED|TERMINAL`；这只说明当前数据库中这些引用的
+Workflow 投影已终结，不证明所有旧 generation 消费者都已终结，更不能作为
+销毁旧 KV 版本的充分证据。当前 `catalog.action_definition` 有 21 条
+`ACTIVE`，其中 action key 匹配 `%secret%` 或 `identity.key_%` 的为零。
+本地数据库没有名称含 `secret` 的业务表；迁移脚本中也没有持久
+`SecretRef` 版本状态表。`identity.buzz_identity_binding` 仅保存现用的
+locator/version/audience 三元组与 binding version。
+
+这使“直接更新两条 locator”不符合 `.design/03` §9：旧 SecretRef 将失去
+`SUPERSEDED` 保留与旧 generation 终态对账的持久依据，也没有本次受治理
+写入的准入与审计。现有 `server_keys` 的 HUMAN revoke/provision 会更换
+pubkey，不能代替同一私钥的跨 namespace 迁移；CONTROL 的密钥轮换又受
+`GAP-BUZ-01` 阻断。`SecretStore::read` 与 `write` 已支持按定版版本读取和
+对 Tenant namespace 做 CAS 写入，`server_identity::read_bound_keys`
+可核对复制后的私钥确实派生出原 pubkey，但它们不是完整迁移事务。
+
+下一刀需把**同一 pubkey 的 SecretRef 重新归位**与**更换私钥/pubkey**
+明确分开：以前者为受治理动作持久记录新旧 locator/version、写前意图、
+读回与 pubkey 校验、binding CAS 切换、审计以及旧 generation 的终态留存；
+结果不明时按同一动作对账，不盲目再写新 KV 版本。未形成这条闭环前，
+保留兼容读取，既不改两条活跃数据库引用，也不 `destroy` 旧 KV 版本。
+
+复核入口：`core/migrations/20260922181510_identity_stage1.up.sql`、
+`20260922234500_secret_ref_columns.up.sql`、`kailo-secrets/src/lib.rs`
+的 `SecretStore::tenant_locator/read/write`、`kailo-core/src/server_keys.rs`
+的 HUMAN revoke/provision，以及 `.design/02` 的 `DD-70/72`、`.design/03` §9。
+GitNexus 对 `SecretStore` impl 的 upstream impact 返回 `risk: UNKNOWN`
+且未解析调用者；文本检索在 Tenant lifecycle、membership projection、
+Web transport、identity projection 和 operator bootstrap 均找到取用点，
+故不能把图谱的零调用者解释为低风险。
