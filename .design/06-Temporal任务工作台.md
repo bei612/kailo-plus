@@ -7,11 +7,11 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 | 动作 | 处理 |
 |---|---|
 | 无副作用读取、普通 Buzz event、同请求简单 CRUD | 不创建 Workflow |
-| ONLYOFFICE 正常 WOPI open/Check/Get/Put | `PROTOCOL` Action + DocumentSession；不为 iframe loading/dirty/close 创建 Workflow |
+| `SOURCE_BOUND_PROTOCOL` surface 的正常协议会话（打开、读取、保存） | `PROTOCOL` Action + ProtocolSession；不为 surface loading/dirty/close 创建 Workflow |
 | Approval | `ApprovalWorkflow` |
 | Agent turn/invocation | `AgentTaskWorkflow`，input 固定 Installation、AgentVersion 与 projection generation |
-| native async task、长时/多步/跨服务、timer/signal/cancel、UNKNOWN 对账（含文档 WOPI PutFile 结果不明） | `ComponentTaskWorkflow` |
-| 跨 Resource 增量物化 | `ComponentTaskWorkflow(kind=MATERIALIZATION)`，周期触发由 Temporal Schedule 承接 |
+| native async task、长时/多步/跨服务、timer/signal/cancel、UNKNOWN 对账 | `ComponentTaskWorkflow` |
+| 跨服务数据获取 | 不建平台 Workflow 或 Schedule；接收方按 DD-89 经授权自行拉取，平台只治理授权 Governed Action 与显式 Tool 读写 |
 | Resource 导出/导入 | 源、目标 Tenant 分别建立 `ComponentTaskWorkflow(kind=RESOURCE_EXPORT\|RESOURCE_IMPORT)`；不存在跨 Tenant Workflow input |
 | Tenant 建立/暂停/恢复/销毁 | `ComponentTaskWorkflow(kind=TENANT_LIFECYCLE)`；销毁 input 固定 TenantLifecycleSnapshot 与各组件 ExternalExecution |
 | Workspace 建立/暂停/恢复 | `ComponentTaskWorkflow(kind=WORKSPACE_LIFECYCLE)`，input 固定 Workspace ID/version 和 Buzz/SpiceDB projection refs；暂停/恢复固定映射 Channel archive/unarchive，不注册 delete |
@@ -22,9 +22,9 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 | PlatformProviderBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=PLATFORM_PROVIDER`、port、binding、old/new release、old/new generation 与 provider projection refs |
 | ApplicationBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=APPLICATION`、binding、old/new release、old/new generation、native scope 与全部投影 refs |
 | 两类 Binding 停用 | `ComponentTaskWorkflow(kind=COMPONENT_DISABLE)`，input 固定 binding kind/ID/version 和受影响 refs |
-| 文档保存结果不明的对账 | `ComponentTaskWorkflow(kind=DOCUMENT_RECONCILE)`，input 固定 DocumentSession ID/version、FileReference（含 `base_revision`）、WOPI correlation 与 Cells binding refs |
+| 协议会话结果不明的对账 | `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，input 固定 ProtocolSession ref（ID/version）、实现 binding refs、base revision 与 native correlation；查证手段由该 binding 的能力契约/Adapter 登记 |
 | AgentInstallation 建立/升级/停用的多投影收敛 | `ComponentTaskWorkflow(kind=AGENT_INSTALLATION)`，input 固定 Installation ID/version、exact AgentVersion、projection generation、AgentPrincipal/BuzzIdentity、SpiceDB 与 Channel roster refs |
-| SemanticModelVersion 发布/下线的 runtime 与 MCP target 收敛 | `ComponentTaskWorkflow(kind=MODEL_PUBLISH)`，input 固定 SemanticModel Resource/version、`mdl_digest`、profile SecretRef 与 Gateway MCP target refs |
+| 业务能力实现登记的 Resource 版本发布/下线的 runtime 与 MCP target 收敛 | `ComponentTaskWorkflow(kind=CAPABILITY_VERSION_PUBLISH)`，input 固定 Resource 版本、artifact digest、实现 binding refs、SecretRef 与 Gateway MCP target refs |
 
 “贯穿全局”指需要等待、恢复、控制和审批的生命周期统一由 Temporal 承接，不把每次 API/Check/聊天机械包装成 Workflow（DD-09）。
 
@@ -32,7 +32,7 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 
 - Server 提供 Start/Signal/Update/Cancel/Poll/Respond 和 Activity heartbeat/completion（SF-TMP-01）。
 - Server 不执行应用 Workflow 逻辑；Application Worker 必须 Poll Workflow Task 并 Respond（SF-TMP-02）。
-- Activity 可调用 Cells/WeKnora/Wren/Codex/DocumentServer 等外部 service，但“外部 service”不能取代 Worker。DocumentServer 正常 WOPI 协议不经 Worker；只有已登记的持久转换、审批或 UNKNOWN reconcile 进入 Workflow。
+- Activity 可调用 Codex 与业务能力实现的 remote adapter 等外部 service，但“外部 service”不能取代 Worker。`SOURCE_BOUND_PROTOCOL` 正常协议会话不经 Worker；只有已登记的持久转换、审批或 UNKNOWN reconcile 进入 Workflow。
 - 当前 Nexus dispatcher 拒绝 External target，一期不使用 Nexus 规避 Worker（SF-TMP-03，DD-10）。
 - 周期任务使用 Temporal Schedule 的 Create/Update/Patch/Delete/List 与暂停/恢复，不在 Core 另建 cron 状态机（SF-TMP-05）。
 - Application Worker 使用 `.references` 中的 `temporal-sdk-go v1.48.0`（Kailo 独立选定；Server `go.mod` 依赖 `v1.44.0`，SF-TMP-04），不指定其他 SDK，不手写 Poll/Respond 协议。两者经 gRPC 互通，以真实连通性及录制 history 重放验证兼容，不从版本号推断。确定性契约固定：时间与并发只用 `workflow.Now/Sleep/NewTimer/NewSelector/Go`，派生值经 `MutableSideEffect` 固化，行为变更以 `GetVersion` changeID 门控，发布前对录制 history 用 `WorkflowReplayer` 回归，重放失败即阻断发布；`WorkflowPanicPolicy` 固定 `BlockWorkflow`（SF-TSDK-02/08、SF-TMP-08、DD-69）。本文全部 Workflow 类型为 `DESIGN_DEFINED`；Worker 实现并通过回归前不得 active。
@@ -45,7 +45,7 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 - Browser、AgentGateway 和应用组件没有 Temporal 凭据。Core/Worker 在 Start/Signal/Update/Cancel 前用当前 ExecutionContext 做 Action Admission。
 - history 只保存 ID、version、parameter hash、状态与受限 reference；正文、Secret、完整 prompt/response、SQL 和敏感结果不进 history。
 - history 是**运行期**生命周期权威，不是永久档案：namespace retention 到期后整个 execution 被删除。因此 Approval/Task 的终态、决定人、决定时间与 evidence refs 必须在 Workflow 终结前由 Activity 幂等写入 Core（键 `workflow_id + decision event id`）；retention 值在部署时固定并作为运行前提登记。retention 之后 Core 投影是唯一可查事实，且仍不接受直接改状态。
-- 单个 workflow 的 history 事件数、总字节与 pending Activity 数都有 Server 上限。按清单 fan-out 的 kind（`TENANT_LIFECYCLE`、`MATERIALIZATION`、`AgentTaskWorkflow` 等）必须分批：每批 pending Activity 有固定上界，批次结束检查 `GetContinueAsNewSuggested()`/`GetCurrentHistoryLength()`，为真则用 `workflow.NewContinueAsNewError` 携带（snapshot ID、已完成游标、冻结 input）继续。continue-as-new 保留同一 workflow ID，WorkflowRef 与 TaskProjection 按 workflow ID 而非 run ID 聚合。
+- 单个 workflow 的 history 事件数、总字节与 pending Activity 数都有 Server 上限。按清单 fan-out 的 kind（`TENANT_LIFECYCLE`、`COMPONENT_DISABLE`、`AgentTaskWorkflow` 等）必须分批：每批 pending Activity 有固定上界，批次结束检查 `GetContinueAsNewSuggested()`/`GetCurrentHistoryLength()`，为真则用 `workflow.NewContinueAsNewError` 携带（snapshot ID、已完成游标、冻结 input）继续。continue-as-new 保留同一 workflow ID，WorkflowRef 与 TaskProjection 按 workflow ID 而非 run ID 聚合。
 
 ```text
 workflow_type/version, workflow_id/run_id
@@ -92,15 +92,13 @@ Codex MCP approval seam 在工具调用前暂停：`SERVER_CODEX` 固定启用 `
 | `AgentTaskWorkflow` | Codex turn、tool child action、usage、cancel、Buzz reply |
 | `ComponentTaskWorkflow` | 组件异步/多步动作与 ExternalExecution |
 
-业务差异由 ActionDefinition、Workflow input 和 Driver 表达，不建 Knowledge/Drive/GenBI 等只转发一次 API 的浅 Workflow。AgentTaskWorkflow 始终固定触发时的 AgentVersion 与 projection generation；Installation 升级不修改运行中 history。Child Agent 只在有独立生命周期、独立频道回复或脱离 parent turn 继续时建立新 AgentTaskWorkflow。
+业务差异由 ActionDefinition、Workflow input 和 Adapter 表达，不为某个能力类别或产品建只转发一次 API 的浅 Workflow。AgentTaskWorkflow 始终固定触发时的 AgentVersion 与 projection generation；Installation 升级不修改运行中 history。Child Agent 只在有独立生命周期、独立频道回复或脱离 parent turn 继续时建立新 AgentTaskWorkflow。
 
-`MATERIALIZATION` 是 `ComponentTaskWorkflow` 的受控 kind，不是第四种顶层 Workflow。它复用同一套审批、授权重检、capacity/quota、ExternalExecution、取消、审计和工作台投影。
-
-`RESOURCE_EXPORT`、`RESOURCE_IMPORT`、`TENANT_LIFECYCLE`、`WORKSPACE_LIFECYCLE`、`MEMBERSHIP_PROJECTION`、`MEMBERSHIP_REVOCATION`、`SECRET_REF_REHOME`、`COMPONENT_RELEASE`、`COMPONENT_BINDING`、`COMPONENT_DISABLE`、`DOCUMENT_RECONCILE`、`AGENT_INSTALLATION` 和 `MODEL_PUBLISH` 都只是 `ComponentTaskWorkflow` kind，不增加顶层 Workflow 引擎或新工作台。
+`ComponentTaskWorkflow` kind 只允许两类（DD-90）：平台生命周期类 `RESOURCE_EXPORT`、`RESOURCE_IMPORT`、`TENANT_LIFECYCLE`、`WORKSPACE_LIFECYCLE`、`MEMBERSHIP_PROJECTION`、`MEMBERSHIP_REVOCATION`、`BUZZ_IDENTITY_PROJECTION`、`SECRET_REF_REHOME`、`AGENT_INSTALLATION`；通用组件类 `COMPONENT_RELEASE`、`COMPONENT_BINDING`、`COMPONENT_DISABLE`、`PROTOCOL_SESSION_RECONCILE`、`CAPABILITY_VERSION_PUBLISH`。它们都不增加顶层 Workflow 引擎或新工作台；任何 kind 都不以某个业务能力服务的存在为前提，也不以产品命名。`DOCUMENT_RECONCILE`、`MODEL_PUBLISH`、`MATERIALIZATION` 已撤销。
 
 ### 5.1 Activity 选项纪律
 
-SDK 要求每个 Activity 至少设置 `ScheduleToCloseTimeout` 或 `StartToCloseTimeout`，而 Server 默认重试策略是无限次。因此每类 Activity 必须显式固定：`StartToCloseTimeout`、`ScheduleToCloseTimeout`、`RetryPolicy{MaximumAttempts, NonRetryableErrorTypes}`；所有长时 `observe` 型 Activity（Cells job、WeKnora parse、CocoIndex run）必须设 `HeartbeatTimeout` 并周期 `RecordHeartbeat`，用 `HeartbeatDetails` 保存 native 游标以便 worker 重启后续跑。
+SDK 要求每个 Activity 至少设置 `ScheduleToCloseTimeout` 或 `StartToCloseTimeout`，而 Server 默认重试策略是无限次。因此每类 Activity 必须显式固定：`StartToCloseTimeout`、`ScheduleToCloseTimeout`、`RetryPolicy{MaximumAttempts, NonRetryableErrorTypes}`；所有长时 `observe` 型 Activity（组件 native task 的观察）必须设 `HeartbeatTimeout` 并周期 `RecordHeartbeat`，用 `HeartbeatDetails` 保存 native 游标以便 worker 重启后续跑。
 
 任何"结果不明"的外部 dispatch 必须返回 `NonRetryableApplicationError`（类型固定为 `UNKNOWN_EXTERNAL_RESULT`），否则默认重试会把它自动重放——这与 ExternalExecution 的"无 native ref 不自动重放"直接冲突。对账是另一个 Activity，按 ExternalExecution 的 idempotency key 发起。`ADMISSION_DENIED`、`BINDING_FAIL_CLOSED` 同样列入 `NonRetryableErrorTypes`。
 
@@ -115,32 +113,16 @@ cancel(native_execution_ref)
   → accepted | unsupported | current_state
 ```
 
-- Temporal 不替换 native task：Cells job 依源码查询/控制（SF-CEL-01/02），WeKnora parse 依源码持久 cancelled 并 best-effort 取消 Asynq（SF-WEK-03）。
-- native status 原样保留，平台 status 由固定 Driver version 映射。`accepted` 只是取消请求被接受，不是终止事实。
-- Wren 没有通用 native cancel（SF-WRN-04）；其 ExternalExecution 固定 `UNSUPPORTED`。Workflow 只停止等待并丢弃迟到结果，不终止共享 runtime，不声称数据库 query 已取消。
+- Temporal 不替换 native task：cancel/observe/heartbeat 能力由能力契约与 manifest 声明，并由一致性套件验证；Workflow 只使用已声明且验证通过的能力（DD-88）。
+- native status 原样保留，平台 status 由固定 Adapter/release version 映射。`accepted` 只是取消请求被接受，不是终止事实。
+- 声明不支持 native cancel 的实现，其 ExternalExecution 取消结果固定 `UNSUPPORTED`。Workflow 只停止等待并丢弃迟到结果，不终止共享 runtime，不声称 native 执行已取消。
 - callback/observer 核对 binding、native ref、event identity/sequence 和 scope；重放/乱序不重复推进或计量。
 - 每次真实 native 副作用在 dispatch 前建立 ExternalExecution，冻结 Tenant/Workspace、binding version、request digest 与稳定 idempotency key。响应不明时允许 `native_id=NONE` 并进入 `UNKNOWN`；只有 ActionDefinition 已登记的 native query/dedupe seam 能补回 native ref 或证明未发生，不能因无 ID 自动重放（DD-48）。
-- ONLYOFFICE WOPI PutFile 是 DocumentSession 协议操作，不是 native task。Cells 已接受 PutFile evidence 且 NodeVersions 确认新 head revision 才在原 Action 内终结；PutFile 只返回 LastModifiedTime，写入或 revision 结果不明才创建 `ComponentTaskWorkflow(kind=DOCUMENT_RECONCILE)`，固定 session/node/base revision 并查询 Cells，不重新触发 DocumentServer 保存（SF-CEL-06/07、DD-31）。
+- `SOURCE_BOUND_PROTOCOL` 的保存是 ProtocolSession 协议操作，不是 native task。能力契约登记的结果证据被接受且确认新 revision 才在原 Action 内终结；写入或 revision 结果不明才创建 `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，固定 session ref、实现 binding refs、base revision 与 correlation，按该 binding 的能力契约/Adapter 登记的查证手段对账，不重新触发组件保存。内置参考实现的查证方式见 `18`。
 
-## 7. 增量物化生命周期
+## 7. 跨 Tenant 转移与 Tenant 生命周期
 
-```text
-SCHEDULED → ADMITTED → RUNNING_COCOINDEX
-          → WAITING_NATIVE → RECONCILING
-          → SUCCEEDED | FAILED | CANCELLED | UNKNOWN
-```
-
-- 一个 active MaterializationBinding 对应一个 Temporal Schedule；每次触发创建新的 `ComponentTaskWorkflow(kind=MATERIALIZATION)`，固定 binding ID/version、source/target IDs 与 pipeline version。Schedule 重叠策略固定为不并发运行同一 binding；手动 catch-up 也走同一准入。
-- Worker Activity 先做 fresh scope/SpiceDB/owner/binding/capacity/quota 检查，再分派到固定 `coco_environment_ref/coco_app_name` 的 Rust runner，后者调用 `App::update_with_options(UpdateOptions { full_reprocess:false, live:false, ... })`。CocoIndex 没有 scheduler/API server，SDK 也不保证稳定 `db_path`（缺省静默回落 `./coco_state`），稳定绝对路径是 Core runner 义务（SF-CIX-01/04）；该分派链为 `DESIGN_DEFINED`（Activity 内调用 runner，SF-TSDK-04、DD-69）；实现前不声称 CocoIndex 与 Worker 同进程。
-- keyed source snapshot、revision 和 delete semantics 来自注册的 IncrementalContract；CocoIndex 记录逐项 previous/desired/pending/owner/generation 并执行 reconcile（SF-CIX-02/03）。Core 只接收 run 摘要与 refs，不复制逐项 memo。
-- Cells 文件正文以受权下载流读取；目标只调用 WeKnora 公开上传、删除、reparse API，不直接写 WeKnora 数据库、向量库或 Neo4j。WeKnora 服务层已有保留 Knowledge ID 的 `ReplaceKnowledgeFile`，但固定源码没有暴露 HTTP route；更关键的是一期 item 按 `(file_hash, file_type)` 归并，同一 target 可代表多个同内容 Cells node，不能以单 node 变化原位改写共享 Knowledge（SF-WEK-07/11、SS-WEK-MATERIALIZATION）。因此目标动作仍固定为“创建新 Knowledge 并等待 ready，成功后删除旧 Knowledge”，以 WeKnora hash 去重作为 create 的事实幂等；转换期间旧版本继续服务，失败不提前删除旧版本。`duplicate_` 且携带既有 Knowledge 的 409 视为幂等命中；其它 409 由 sink 返回错误并保留 pending，不能吞错写成已应用（SF-WEK-07/11、SF-CIX-03/06）。
-- WeKnora parse/reparse 是 ExternalExecution：Activity 保存 knowledge/task ref 后观察 native 状态。取消时先停止新的 CocoIndex action，再请求 WeKnora best-effort cancel；只有 native 对账确认 terminal 后才把已启动项标终止。
-- 完成条件是 CocoIndex run 已 reconcile（判据为 `update_with_options` 返回 Ok **且**各组件 `num_errors == 0`；引擎对孤儿删除失败只记日志并保留 tombstone，`update` 仍返回 Ok，因此不得把 Ok 单独当作 reconcile 完成，SF-CIX-06）、所有本次 required native execution terminal、CapacityLease 已释放、ActionDefinition 登记的 native usage 与 durable Gateway usage 已形成 UsageEvent、OpenMeter 已可按 ID/source 查到该 event 的 `stored_at`、AuditEvent 已落账（`validation_errors` 是读时重算值，只作配置告警，不作完成判据）。同一 sink 的合并 batch 失败时，引擎只沿 component 边界二分隔离；成功 sibling 可已提交，Workflow 不得把该批次解释为整体回滚，仍以各 component 结果和 `num_errors` 收敛（SF-CIX-08）。该条件只闭合本次用量事件，不等待 invoice finalized。涉及模型 meter 而 SS-AGW-USAGE 未闭合，或 OpenMeter API 的 SS-OMT-AUTH 未闭合时，该 Workflow 不得 active；任一外部结果不明进入 `UNKNOWN`，由同 binding 的对账动作收敛，不能直接显示成功（SF-OMT-07、DD-51）。
-- `PAUSED` 通过 Governed Action 暂停 Temporal Schedule，只阻止后续 run；清除目标副本是单独的 owner 审批动作，进入 `DELETING`，不得把 pause/cancel 当 delete。
-
-## 8. 跨 Tenant 转移与 Tenant 生命周期
-
-### 8.1 两段 export/import
+### 7.1 两段 export/import
 
 ```text
 source Tenant session
@@ -159,7 +141,7 @@ target Tenant session
 - 指定的目标 owner 不是 importer 时，该 active HUMAN 在创建前批准；创建后的 relationship 只在目标 Tenant 内生成。源对象后续变更/删除不推进目标对象，目标对象也不回写源 Tenant。
 - 未同时登记导出格式、导入 API、稳定 digest 和失败/删除语义的 ResourceType 不暴露 export/import Action。这两个 Workflow 为 `DESIGN_DEFINED`（DD-69）；ResourceType 未登记格式时仍不暴露 Action。
 
-### 8.2 Tenant 暂停、恢复与销毁
+### 7.2 Tenant 暂停、恢复与销毁
 
 ```text
 ACTIVE → SUSPENDING → SUSPENDED → RESTORING → ACTIVE
@@ -174,9 +156,9 @@ ACTIVE → SUSPENDING → SUSPENDED → RESTORING → ACTIVE
 5. 第一个不可逆 native delete 调用前可 cancel 回 `SUSPENDED`。`irreversible_dispatch_started=TRUE` 后不提供 restore 动作；只允许 rerun/reconcile 继续未结束的删除。
 6. `DELETED` 只在全部 registered native delete terminal、relationship/roster/route 撤销已对账、usage 已结算且 AuditEvent/tombstone 已持久时成立。删除 Workflow 不删 AuditEvent、UsageEvent、WorkflowRef 或 retained native evidence。
 
-当前只定义上述销毁合同，不开放销毁能力：GAP-LCM-01 使全部 active ResourceType 的 native delete/terminal 集合不成立。因此当前 Tenant delete Action 不注册，不存在从 `SUSPENDED` 进入 `DELETING` 的可执行转换。
+业务能力实现不阻断 Tenant 销毁（DD-91）：声明了删除能力的实现执行其 native 删除子流程，声明 `retain_on_tenant_delete` 的实现只撤 binding 与凭据、保留审计并登记待人工处置；GAP-LCM-01 只作用于实现自身的删除能力声明。某个已声明删除能力的子流程失败或结果不明时，该子流程按 fail closed 持续对账，其他子流程照常推进；Tenant 只在全部子流程到达 terminal、或平台管理员以经审计的 Governed Action 把该 binding 改记为保留原生数据后，才进入 `DELETED`。Tenant delete Action 的注册只取决于本节平台核心销毁链（Core 事实、SpiceDB relationship、Buzz Community、OpenBao Tenant namespace、OpenMeter 数据）按合同实现并通过验证；此前 Catalog 不注册该 Action，不存在从 `SUSPENDED` 进入 `DELETING` 的可执行转换。
 
-### 8.3 Workspace 暂停与恢复
+### 7.3 Workspace 暂停与恢复
 
 ```text
 ACTIVE → SUSPENDING → SUSPENDED → RESTORING → ACTIVE
@@ -187,7 +169,7 @@ ACTIVE → SUSPENDING → SUSPENDED → RESTORING → ACTIVE
 
 Workspace 成员撤权不执行业务数据删除；它只使 WorkspaceMembership 进入 `REVOKING`，先 fail closed，再撤 SpiceDB workspace relationship 和 Buzz Channel roster，对账后 `REVOKED`。Tenant 成员撤权先撤 PlatformSession/全部 Workspace scope，再完成 owner 转移、SpiceDB tenant relationship 和 Buzz relay roster 撤销；有 active Resource/Asset owner 引用时不得 `REVOKED`，Tenant 销毁 Workflow 除外。恢复访问必须建立新 membership version 并重走建立对账，不把旧 relationship 缓存改回 allow（DD-45）。
 
-## 9. 任务工作台投影
+## 8. 任务工作台投影
 
 TaskProjection 字段以 `03` 为权威，最小包含 Tenant/Workspace、workflow type/version/kind、发起者/actor、Resource、workflow/run/parent、status/progress/waiting reason、ExternalExecution、Approval、Usage、Asset、audit refs、trace/native observation refs 和 observation gap 状态。
 

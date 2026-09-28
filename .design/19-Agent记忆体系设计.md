@@ -1,6 +1,6 @@
 # Agent 记忆体系设计
 
-本文定义 Agent 如何保存协作历史、恢复运行会话、携带跨 Session 长期记忆以及消费企业知识。实体字段以 `03` 为权威，Agent 配置与安装以 `17` 为权威，运行安全以 `12` 为权威。
+本文定义 Agent 如何保存协作历史、恢复运行会话、携带跨 Session 长期记忆，以及记忆体系与外部知识源的边界。记忆只由平台核心四层承担，零业务能力 binding 时完整可用（DD-92）。实体字段以 `03` 为权威，Agent 配置与安装以 `17` 为权威，运行安全以 `12` 为权威。
 
 ## 1. 源码边界与唯一权威
 
@@ -8,9 +8,9 @@ Buzz 已定义 NIP-AE Agent Engrams：Agent 签名的 `kind:30174` addressable e
 
 Codex app-server 已提供持久 ThreadStore/Rollout，可用 thread ID 恢复并分页读取 turn/item（SF-COD-09）。Codex 还有默认关闭的自动 Memory Pipeline，它会从 rollout 抽取记忆并产生 runtime-local 的全局文件工作区（SF-COD-10）。一期不启用该 Pipeline，避免它与 NIP-AE 形成两个长期记忆权威（DD-65）。
 
-WeKnora 也已提供原生个人 Memory，它以 tenant+caller subject 持久化、能后台抽取会话并注入 WeKnora chat pipeline，但存储 scope 不含 Kailo AgentInstallation。一期只使用 WeKnora enterprise knowledge，不启用该 Memory 路由、抽取与 prompt 注入（SF-WEK-16、DD-65）。
+业务能力服务自带的 memory、会话抽取或 prompt 注入，其存储 scope 不含 Kailo AgentInstallation。这些能力一律固定关闭，不进入 Agent 上下文，也不成为第二记忆权威（DD-65/92）；内置参考实现的具体关闭项见 `08`。
 
-## 2. 五层记忆模型
+## 2. 四层记忆模型
 
 | 层 | 保存内容 | 唯一权威 | 作用域 | 读取方式 |
 |---|---|---|---|---|
@@ -18,9 +18,10 @@ WeKnora 也已提供原生个人 Memory，它以 tenant+caller subject 持久化
 | Runtime Session History | 一次 AgentSession 内的 turn/item、tool result 和 rollout | Codex ThreadStore/Rollout | 一个 `runtime_thread_id` | `thread/resume` 与分页 history API |
 | Agent Core Memory | 每个新 Session 都需要看见的最小长期状态 | Buzz Relay NIP-AE `core` head | AgentInstallation 的 `(agent, counterparty)` pair | 新 Session 创建前读取一次并固定 event ID |
 | Agent Cold Memory | 按 topic 分割的长期细节 | Buzz Relay NIP-AE `mem/*` head | 同上 | 通过受治理 memory tool 按 slug 读取；不全量注入 |
-| Enterprise Knowledge | 可共享文档、chunk、引用与可选图谱 | WeKnora | KnowledgeBase Resource/Asset | 按 KnowledgeBase `consume` 授权检索 |
 
-一条信息只能按其职责进入一个权威：聊天事实不自动升格为长期记忆，Codex rollout 不自动合并进 NIP-AE，WeKnora 知识不复制到 `mem/*`。Agent 使用企业知识后，只有在受治理的 memory Action 中主动存储的简短衍生结论才进入 `mem/*`，且不替代原 KnowledgeBase citation。
+企业知识不是记忆层。它是可选的 `KNOWLEDGE` 能力：由该 Workspace active 的知识能力实现管理，Agent 只经 `APPLICATION` 来源 Tool 按 `consume` 授权访问；没有知识能力 binding 时该工具 effective 为 `NO_PROVIDER`，四层记忆不受影响，实现也可在类别内替换（DD-88/92）。
+
+一条信息只能按其职责进入一个权威：聊天事实不自动升格为长期记忆，Codex rollout 不自动合并进 NIP-AE，任何知识能力实现的内容不复制到 `mem/*`。Agent 使用外部知识后，只有在受治理的 memory Action 中主动存储的简短衍生结论才进入 `mem/*`，该结论保留指向来源的 citation ContentReference，不替代原知识源。
 
 ## 3. Tenant、Workspace、身份与 owner
 
@@ -135,7 +136,7 @@ Relay 线程上下文和 Codex Session 历史不重复全量注入：Relay 只�
 | 生产 NIP-AE 读写 | `ADAPTER_REQUIRED: SS-BUZ-ENGRAM` | Agent/CONTROL Nostr 私钥按 DD-72 托管于 OpenBao；服务端 engram adapter 复用 `buzz-core::engram` |
 | Agent 修改 core 的持久审批 | `DESIGN_DEFINED` | ApprovalWorkflow 由 DD-69 的 Application Worker 承接 |
 | Codex 自动 Memory Pipeline | `EXCLUDED` | SF-COD-10、DD-65；防止第二长期记忆权威 |
-| WeKnora 原生个人 Memory | `EXCLUDED` | SF-WEK-16、DD-65；其 tenant+caller scope 与 Kailo AgentInstallation memory namespace 不同 |
-| OpenViking/独立向量记忆服务 | `EXCLUDED` | REQ-20、紧凑性；NIP-AE 承担 Agent 长期记忆，WeKnora 承担企业知识 |
+| 任何业务能力服务的原生 memory、会话抽取与 prompt 注入 | `EXCLUDED`（固定关闭） | DD-65/92；其 scope 与 Kailo AgentInstallation memory namespace 不同，不进入 Agent 上下文 |
+| OpenViking/独立向量记忆服务 | `EXCLUDED` | REQ-20、紧凑性；NIP-AE 承担 Agent 长期记忆，企业知识按 DD-92 是可选的 `KNOWLEDGE` 能力而非记忆层 |
 
 Buzz 本地 `buzz-agent::Session.history` 与 handoff summary 不进入一期记忆链：源码证明它们是 `LOCAL_ACP` 的进程内历史且无 `session/load`，而一期运行时是 `SERVER_CODEX`（SF-BUZ-21）。

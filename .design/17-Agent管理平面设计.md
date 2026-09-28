@@ -37,7 +37,7 @@ Tenant
 - Workspace 安装确定版本，不安装“latest”。发布新版本不会改变任何 Installation。
 - 一期 Workspace 与 Buzz Channel 一对一，因此 ChannelAgentBinding 不再创建新 scope；它只控制 mention/manual-assignment 触发。
 - 一个 Installation 只有一个 AgentPrincipal 和一个独立 Buzz pubkey。跨 Workspace 复用同一 Definition 时建立不同 Installation/Principal，不共享权限、委托、会话、额度或运行状态。
-- Skill 与 Tool 是独立受治理 Resource；AgentVersion 只声明期望版本/工具，Workspace Installation 再决定是否绑定。
+- Skill 与 Tool 是独立受治理 Resource；AgentVersion 只声明期望 Skill 版本与能力需求（契约键与版本），Workspace Installation 再把需求绑定到该 Workspace 内 active 实现的 Tool（DD-92）。
 
 ## 3. Agent Version 管理内容
 
@@ -49,7 +49,7 @@ Tenant
 | 运行时 | RuntimeProfile key、turn limits、parallelism | runtime slot、host credential、进程权限 |
 | 模型 | 一个 `llm_route` Resource 引用、模型参数边界 | provider URL/key、最终 route authorization、费用权限 |
 | Skill | 精确 SkillVersion Asset 引用 | Skill owner 授权、artifact materialization、工具授权 |
-| 工具 | Tool Resource 声明集合 | ToolBinding、Resource permission、Delegation、Approval |
+| 工具 | 能力需求集合：`PLATFORM_NATIVE` 工具键，或 `APPLICATION` 能力契约键 + 版本（如 `knowledge.search@v1`），不引用产品或实现 | 由哪个实现提供、ToolBinding、Resource permission、Delegation、Approval |
 | 触发 | mention/manual-assignment 默认值 | Workspace 是否安装、Channel 是否启用 |
 | 记忆 | core write mode、cold write mode | 记忆正文、NIP-AE key/counterparty、HUMAN owner、当前 head |
 
@@ -65,7 +65,7 @@ Core 对每个 Installation 生成一份可解释的静态运行投影，不让 
 AgentVersion requested
 ∩ active Workspace Installation
 ∩ ChannelAgentBinding
-∩ SkillVersion/ToolBinding/LLM Route binding
+∩ SkillVersion/ToolBinding（Workspace 内解析到 active 实现的 Tool）/LLM Route binding
 ∩ AgentPrincipal SpiceDB discover/consume/execute
 ∩ AgentGateway projection
 ∩ RuntimeProfile capability
@@ -95,6 +95,7 @@ AgentRuntimeProjection effective
 | Reason | 确定含义 |
 |---|---|
 | `NOT_BOUND` | Version 声明了资源，但 Workspace/Installation 未绑定 |
+| `NO_PROVIDER` | Version 声明了 `APPLICATION` 能力需求，但该 Workspace 对应能力类别没有 active ApplicationBinding，或 active 实现不提供该契约键与版本 |
 | `NO_PERMISSION` | 当前 Principal 对目标缺规范 permission |
 | `NO_DELEGATION` | Agent 动作缺有效用户委托或不在 scope |
 | `WAITING_APPROVAL` | 参数固定的 ApprovalWorkflow 尚未终结 |
@@ -157,7 +158,7 @@ select exact PUBLISHED version + Workspace
 → create AgentPrincipal/BuzzIdentity binding
 → bind AGENT identity to Tenant CONTROL identity as AgentMemoryBinding
 → establish SpiceDB workspace relationship + Buzz Channel roster
-→ establish Channel/Tool/Skill/Model bindings
+→ establish Channel/Tool/Skill/Model bindings（能力需求解析到 active 实现；无实现记 NO_PROVIDER）
 → governance admission
 → build PENDING projection
 → reconcile Gateway/skill/runtime
@@ -165,6 +166,8 @@ select exact PUBLISHED version + Workspace
 ```
 
 SpiceDB workspace relationship 投影及 fresh `discover` Check、Buzz Channel roster、active ChannelAgentBinding、AgentMemoryBinding 与 runtime generation 任一未闭合时，Installation 保持 `PROVISIONING/ERROR`，菜单可显示管理错误，但 Channel 不发现、不触发。AgentPrincipal 不建立 HUMAN WorkspaceMembership；Installation 是其 Workspace 归属事实（DD-50/66）。
+
+ToolBinding 与业务能力服务都不是 Installation `ACTIVE` 的前提：零 ToolBinding、零业务能力服务时，Installation 仍可 `ACTIVE`，以平台原生工具、四层记忆与 Buzz 协作正常参与频道；未解析的能力需求只在 Capabilities 矩阵中显示 `NO_PROVIDER`。Workspace 之后启用对应能力实现时，按新 projection generation 重新解析，不修改 AgentVersion（DD-92）。
 
 ### 升级与回滚
 
@@ -227,7 +230,7 @@ Core AgentRuntimeProjection
 - Version retire：禁止新安装；现存 Installation 继续固定旧版本，直到显式升级、回滚或停用。
 - Installation disable：先停 discovery/trigger，再撤 Tool/Skill/LLM projection，取消等待动作并按真实能力 drain/cancel runtime；不删除 Definition、历史 Invocation、Usage 或 Audit。
 - Definition disable：阻止其全部新安装/升级，并对各 Installation 执行同一停用收敛；不跨 Workspace 合并状态。
-- Skill/Tool/LLM Route 撤销：effective matrix 立即给出确定 reason；受影响 projection 重建。Skill 缺工具依赖时只禁用该 skill/tool 路径，不自动扩大权限或切换替代工具。
+- Skill/Tool/LLM Route 撤销：effective matrix 立即给出确定 reason；受影响 projection 重建。能力实现停用或切换时，依赖其契约键的工具在新 generation 中为 `NO_PROVIDER` 或解析到新 active 实现。Skill 缺工具依赖时只禁用该 skill/tool 路径，不自动扩大权限或切换替代工具。
 - projection 超时：状态为 `ERROR/PROJECTION_FAILED`，不得以旧配置响应新触发；运行中旧 Invocation 仍按撤权规则做副作用 fresh check。
 - runtime 回应成功但 Buzz reply 发布失败：Invocation 不标成功；保留 runtime outcome 与 reply failure evidence，由原 operation 对账，不能另建无关联回复。
 - core 读取失败：区分 `ABSENT` 与 `UNREADABLE`，后者不注入 onboarding 也不覆盖写；已建 Session 不因新 head 静默改变。
@@ -235,7 +238,7 @@ Core AgentRuntimeProjection
 
 ## 11. 明确排除
 
-- AgentRegistry、AgentTeams、WeKnora Agent/skill/sandbox 不承担一期 Agent 管理或 runtime 权威。
+- AgentRegistry、AgentTeams 与任何业务能力服务自带的 Agent、skill、sandbox 或 memory 都不承担一期 Agent 管理、runtime 或记忆权威（DD-92）。
 - AgentGateway 不保存 Agent Definition、owner、Delegation、Approval、Quota 或 Audit 权威。
 - Buzz Persona pack 不是平台授权包；其 MCP、skill、env 字段不能绕过 Catalog/RuntimeProfile。
 - 一期 Web 不提供 local ACP、browser shell、computer-use、Desktop credential 或 arbitrary runtime/plugin upload。

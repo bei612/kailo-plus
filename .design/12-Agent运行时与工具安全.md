@@ -35,10 +35,13 @@ Codex `Feature::MemoryTool` 一期固定关闭；其 rollout 抽取与 `$CODEX_H
 
 ## 3. 工具发现不等于授权
 
+工具来源固定两类（DD-92）：`PLATFORM_NATIVE`（记忆、Buzz 消息、任务、审批等平台核心工具，不依赖任何 ApplicationBinding）与 `APPLICATION`（业务能力实现按能力契约键暴露的工具，经 MCP 与 AgentGateway ExtMcp PEP）。
+
 ```text
-AgentVersion declared tools
+AgentVersion declared capability requirements (contract key + version)
 ∩ Catalog ToolDefinition
-∩ active ApplicationBinding/Resource
+∩ PLATFORM_NATIVE: platform tool enabled
+  | APPLICATION: Workspace 内该类别 active ApplicationBinding 的实现 Tool + Resource
 ∩ ChannelAgentBinding
 ∩ ToolBinding
 ∩ SpiceDB discover/consume
@@ -47,11 +50,19 @@ AgentVersion declared tools
 → Codex enabled_tools
 ```
 
+`APPLICATION` 需求在 Workspace 内没有 active 实现时，该工具 effective 为 `NO_PROVIDER`，不进入投影，Installation 仍可 `ACTIVE`；`PLATFORM_NATIVE` 工具的可用性不受任何业务能力 binding 影响。
+
 Tool 出现只证明可请求，不证明某个参数/目标可执行。真正调用前仍做 parameter normalization、SpiceDB、Delegation、Approval、Capacity、Quota 和 exposure 准入。Codex `enabled_tools/disabled_tools` 只是前置收窄层（SF-COD-02）。
 
 SkillVersion 也不授予工具：Codex skill metadata 可声明 tool dependencies（SF-COD-07），但只有依赖工具同时进入上述交集时 skill 才有效；否则 EffectiveAgentConfig 返回确定 reason。Skill artifact 只能从 Installation 专属只读 root 被发现，不能借 skill 内容引入任意 MCP、shell 或 credential。
 
-WeKnora 的普通检索与 `query_knowledge_graph` 都投影为同一 KnowledgeBase Resource 下的 consume tools（SF-WEK-05），不因工具名不同绕过 KB permission/result exposure。WeKnora 自身不是 MCP server（仓库内的 MCP 代码是它作为 client 调用外部的实现），因此这两个 tool 的传输固定为：Kailo 的 WeKnora remote adapter 托管一个 Streamable HTTP MCP endpoint 并注册为 AgentGateway 的 MCP target，形态与 Wren 相同，从而 ExtMcp 的请求/响应两相 PEP 对它同样生效；adapter 内部以已授权 scope 调用 WeKnora 的 hybrid-search 与 knowledge 读取 REST 接口。禁止让 consume tool 绕开 AgentGateway 直接由 Core 调 adapter——那样 exposure 过滤就没有执行点。Wren 每个 SemanticModel version 是一个固定 Streamable HTTP MCP target，经 AgentGateway 路由；Tool 参数只能选择已授权 SemanticModel Resource，不能把 project/profile/connector secret 作为参数（SF-WRN-01、DD-12）。Materialization tool 只接受已存在 binding ID 和受限动作：run/pause/resume/purge 分别映射不同 ActionDefinition；Agent 不能临时指定任意 Cells root、WeKnora KB 或 pipeline code。
+业务能力工具按能力类别统一遵守以下条款，内置参考实现（知识检索、数据查询等）的具体映射见 `08`：
+
+- 传输固定为 Streamable HTTP MCP，并注册为 AgentGateway 的 MCP target；实现自身不是 MCP server 时，由其 remote adapter 托管 MCP endpoint。ExtMcp 的请求/响应两相 PEP 对每个业务能力工具同样生效。
+- 同一能力契约下的多个工具投影到同一目标 Resource 的对应契约 permission（如 `consume`），不因工具名不同绕过 Resource permission 或 result exposure。
+- Tool 参数只能引用已授权的 Resource/Asset 或 ContentReference，不接受 native project、profile、连接器 secret、存储根路径或 pipeline 代码作为参数（DD-12）。
+- 禁止让业务能力工具绕开 AgentGateway 而由 Core 直接调 adapter；那样 exposure 过滤就没有执行点。Core 自身调用 adapter 只用于 Web/BFF 的 Governed Action，不作为 Agent 工具通道。
+- 跨服务数据获取的授权（DD-89 的 `reader` 关系与凭据投递）只作为受审批的 Governed Action 暴露；Agent 不能临时指定来源、目标或同步逻辑。
 
 ## 4. MCP 调用链
 
@@ -106,7 +117,7 @@ ConfigResourceStore 能以 SQLite/Postgres 保存 MCP/LLM/traffic/UI resources�
 - runtime 内短命子任务归父 AgentInvocation；只有独立频道回复、独立生命周期或脱离父 turn 继续的子 Agent 才创建新 AgentInvocation/AgentTaskWorkflow。
 - 一个触发以 `(tenant_id, source_event_id, installation_resource_id)` 幂等；Relay 持久 event 是恢复起点，不从 ACP 内存 queue 恢复（SF-BUZ-07/08）。
 - Relay event 是 Invocation 触发/协作对账起点；已建 AgentSession 的运行会话则以 `runtime_thread_id` 恢复 Codex durable thread，不从 Relay 重放合成一份新 rollout（SF-COD-09）。
-- Agent 发起的知识物化、模型发布、quota adjustment 等高风险动作保持 initiating HUMAN、Delegation 与 endpoint owner 审批；Agent 不能成为 approval approver 或通过连续 tool calls拆分规避 parameter hash。
+- Agent 发起的 ActionDefinition `confirmation_mode=APPROVAL` 的动作（如跨服务读取授权、能力版本发布、quota adjustment）保持 initiating HUMAN、Delegation 与 endpoint owner 审批；Agent 不能成为 approval approver 或通过连续 tool calls拆分规避 parameter hash。
 
 ## 7. 阻断与排除
 
@@ -118,4 +129,5 @@ ConfigResourceStore 能以 SQLite/Postgres 保存 MCP/LLM/traffic/UI resources�
 | NIP-AE Agent/CONTROL 私钥托管 | OpenBao KV v2 + Core signer（DD-72）；transit 无 secp256k1，签名不在 OpenBao 内完成 |
 | Agent 修改 core | Temporal ApprovalWorkflow（DD-68/69） |
 | Codex 自动 Memory Pipeline、OpenViking | 一期 `EXCLUDED`；NIP-AE 是唯一 Agent 长期记忆权威 |
+| 任何业务能力服务自带的 Agent、skill、sandbox、memory、会话抽取或 prompt 注入 | 固定关闭，不承担平台 Agent runtime、工具或记忆职责，不进入 Agent 上下文（DD-92） |
 | 桌面 computer-use、微信、游戏、host shell（`thread/shellCommand`、`process/spawn`、`command/exec`） | 一期 `EXCLUDED` |
