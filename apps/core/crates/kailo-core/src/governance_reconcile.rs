@@ -5,9 +5,9 @@
 //! 非终态 ActionExecution，交给 `Governance::drive` 做它此刻该做的那一步。drive
 //! 只看持久化事实，按固定 workflow ID 与固定 Update ID 行事，重复执行无害。
 //!
-//! 每个新状态的终结上界因此是确定的：EVALUATING 与「已允许未派发」在
-//! `ADMISSION_EVALUATION_TIMEOUT_SECONDS` 加一个对账周期内被处理；WAITING 以审批
-//! 策略的 `expires_in` 为界（Workflow 的 timer）；APPROVED 以 consume 窗口为界。
+//! 选批按上次尝试时间轮转；一条持续失败的意图不能长期占住批次。对账失败仍保持
+//! 原业务状态并发出度量，不把外部结果不明误判为成功或失败。`tenant.bootstrap` 由
+//! 部署引导命令按固定 Workflow ID 收敛，不交给普通 ActionDefinition 派发器。
 
 use std::time::Duration;
 
@@ -59,6 +59,7 @@ struct Metrics {
     provision_oldest_age: Gauge<u64>,
     provision_overdue: Gauge<u64>,
     provision_orphan_unknown: Gauge<u64>,
+    bootstrap_overdue: Gauge<u64>,
 }
 
 /// 非终态的门禁/派发组合。每轮都记一次，没有行的记 0：告警不能停在旧值上。
@@ -118,6 +119,10 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
             .u64_gauge("kailo.server_key_provision.orphan_unknown")
             .with_description("旧版结果不明、无写入意图且无身份投影固定 WorkflowRef 的动作")
             .build(),
+        bootstrap_overdue: meter
+            .u64_gauge("kailo.tenant_bootstrap.overdue")
+            .with_description("超过准入对账上界仍未由部署引导命令确认派发的动作")
+            .build(),
     };
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(cfg.interval);
@@ -153,10 +158,12 @@ async fn pass(
     // 只取此刻确有一步可做的行：正常等待审批中的 WAITING 不进批次，否则它们
     // 会永远排在最前，把真正要处理的挤出去。
     let ids: Vec<Uuid> = sqlx::query_scalar(
-        "select ae.id from admission.action_execution ae
+        "with selected as (
+         select ae.id from admission.action_execution ae
          left join projection.approval_projection ap on ap.workflow_id = ae.approval_workflow_id
          left join projection.workflow_ref aw on aw.workflow_id = ae.approval_workflow_id
-         where not (ae.action_key = $3 and ae.gate_state = 'ALLOWED'
+         where ae.action_key <> $4
+           and not (ae.action_key = $3 and ae.gate_state = 'ALLOWED'
                     and ae.dispatch_state = 'UNKNOWN')
            and ((ae.gate_state = 'EVALUATING'
                 and ae.updated_at < now() - make_interval(secs => $2::bigint))
@@ -170,12 +177,17 @@ async fn pass(
                 and ae.updated_at < now() - make_interval(secs => $2::bigint))
             -- 已派发而批准尚未被消费、已撤销而批准尚未失效：重发固定 ID 的 Update
             or (ae.gate_state in ('ALLOWED', 'REVOKED') and ap.status = 'APPROVED'))
-         order by ae.updated_at
-         limit $1",
+         order by coalesce(ae.reconcile_last_attempt_at, ae.updated_at), ae.id
+         limit $1 for update of ae skip locked
+         )
+         update admission.action_execution ae
+            set reconcile_last_attempt_at = now()
+           from selected where ae.id = selected.id returning ae.id",
     )
     .bind(batch)
     .bind(g.cfg.evaluation_timeout_seconds)
     .bind(server_keys::PROVISION_ACTION)
+    .bind(crate::tenant_bootstrap::ACTION_KEY)
     .fetch_all(&g.pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -191,12 +203,19 @@ async fn pass(
     }
 
     let provision_ids: Vec<Uuid> = sqlx::query_scalar(
-        "select i.action_execution_id from admission.server_key_provision_intent i
+        "with selected as (
+         select i.action_execution_id from admission.server_key_provision_intent i
          join admission.action_execution ae on ae.id = i.action_execution_id
          where ae.gate_state = 'ALLOWED' and ae.dispatch_state = 'UNKNOWN'
            and i.source_membership_id is null
            and i.created_at < now() - make_interval(secs => $2::bigint)
-         order by i.created_at limit $1",
+         order by coalesce(i.reconcile_last_attempt_at, i.created_at), i.action_execution_id
+         limit $1 for update of i skip locked
+         )
+         update admission.server_key_provision_intent i
+            set reconcile_last_attempt_at = now()
+           from selected where i.action_execution_id = selected.action_execution_id
+         returning i.action_execution_id",
     )
     .bind(batch)
     .bind(g.cfg.evaluation_timeout_seconds)
@@ -208,7 +227,8 @@ async fn pass(
         metrics.driven.add(1, &[KeyValue::new("stage", step)]);
     }
     let legacy_ids: Vec<Uuid> = sqlx::query_scalar(
-        "select ae.id from admission.action_execution ae
+        "with selected as (
+         select ae.id from admission.action_execution ae
          join projection.workflow_ref w on w.action_execution_id = ae.id
          where ae.action_key = $3 and ae.gate_state = 'ALLOWED'
            and ae.dispatch_state in ('NOT_DISPATCHED','UNKNOWN')
@@ -216,7 +236,12 @@ async fn pass(
            and not exists (select 1 from admission.server_key_provision_intent i
                            where i.action_execution_id = ae.id)
            and ae.updated_at < now() - make_interval(secs => $2::bigint)
-         order by ae.updated_at limit $1",
+         order by coalesce(ae.reconcile_last_attempt_at, ae.updated_at), ae.id
+         limit $1 for update of ae skip locked
+         )
+         update admission.action_execution ae
+            set reconcile_last_attempt_at = now()
+           from selected where ae.id = selected.id returning ae.id",
     )
     .bind(batch)
     .bind(g.cfg.evaluation_timeout_seconds)
@@ -230,12 +255,19 @@ async fn pass(
         metrics.driven.add(1, &[KeyValue::new("stage", step)]);
     }
     let membership_key_ids: Vec<Uuid> = sqlx::query_scalar(
-        "select i.action_execution_id from admission.server_key_provision_intent i
+        "with selected as (
+         select i.action_execution_id from admission.server_key_provision_intent i
          join admission.action_execution ae on ae.id = i.action_execution_id
          where ae.gate_state = 'ALLOWED' and i.finished_at is null
            and i.source_membership_id is not null
            and i.created_at < now() - make_interval(secs => $2::bigint)
-         order by i.created_at limit $1",
+         order by coalesce(i.reconcile_last_attempt_at, i.created_at), i.action_execution_id
+         limit $1 for update of i skip locked
+         )
+         update admission.server_key_provision_intent i
+            set reconcile_last_attempt_at = now()
+           from selected where i.action_execution_id = selected.action_execution_id
+         returning i.action_execution_id",
     )
     .bind(batch)
     .bind(g.cfg.evaluation_timeout_seconds)
@@ -335,6 +367,26 @@ async fn pass(
         tracing::warn!(
             orphan_unknown,
             "旧版托管身份结果不明且无固定 WorkflowRef；隔离并禁止补写私钥"
+        );
+    }
+    let bootstrap_overdue: i64 = sqlx::query_scalar(
+        "select count(*)::bigint from admission.action_execution
+         where action_key = $1 and gate_state = 'ALLOWED'
+           and dispatch_state = 'NOT_DISPATCHED'
+           and updated_at < now() - make_interval(secs => $2::bigint)",
+    )
+    .bind(crate::tenant_bootstrap::ACTION_KEY)
+    .bind(g.cfg.evaluation_timeout_seconds)
+    .fetch_one(&g.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    metrics
+        .bootstrap_overdue
+        .record(bootstrap_overdue.max(0) as u64, &[]);
+    if bootstrap_overdue > 0 {
+        tracing::warn!(
+            bootstrap_overdue,
+            "部署引导派发未确认，需按固定 Workflow ID 重跑引导命令对账"
         );
     }
     Ok(())

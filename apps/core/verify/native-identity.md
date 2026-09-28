@@ -177,6 +177,46 @@ OpenBao 调用前的撤权仍可留下 metadata 版本 0 的开放意图。单�
 销毁/终结动作与实际演练证据前，不能手工删意图、换 locator 或宣称成功。这是
 Catalog HUMAN 开通与用户可达托管身份重建的**生产阻断**，两入口不得作为已闭合能力放行。
 
+## 治理对账选批纠偏（2026-09-28）
+
+依据 `.design/06` §3.1、`DD-48`、`DD-82` 与 `V-SCN-38`：Core 已预写的动作按原
+ActionExecution 和固定 Workflow ID 收敛；结果不明不能靠新动作或新密钥路径重放。
+GitNexus 刷新索引后，`governance_reconcile::pass` 的 upstream impact 为 LOW，影响
+`spawn` 和 Core `main`；`spawn`、`repair_legacy_catalog` 也是 LOW。
+`tenant_bootstrap::ACTION_KEY` 的图风险为 UNKNOWN，文本检索确认它只被该模块的
+引导记录与审计引用，故仅将同一常量开放给对账筛选。变更面是 Core 的四个选批查询、
+两个只承载轮转时间的可空数据库列与一条部署引导逾期度量；没有新 API、Workflow、
+契约字段或三端入口。旧 Core 忽略新增列，可在前进迁移后继续运行；回退迁移只在
+新 Core 已停止或回退到旧版后执行，否则新 Core 查询将因缺列失败并停止本轮对账。
+
+原选批按不可变的最老 `created_at`/`updated_at` 取固定 `LIMIT`：持续返回
+`PRECONDITION` 或 `PENDING` 的老记录可让其他 Tenant 的健康动作永久得不到机会。
+现在按 `coalesce(reconcile_last_attempt_at, 原时间)` 轮转，选中时以行锁和
+`SKIP LOCKED` 原子写入尝试时间，不改变业务 `updated_at`、gate/dispatch 状态或
+外部结果。旧的失败项仍在队列内，后续轮次继续核查；持续积压由原有 open/overdue
+度量暴露。部署引导 `tenant.bootstrap` 没有普通 ActionDefinition，只由引导命令
+沿已冻结 Workflow ID 重试；通用派发器排除它，并以
+`kailo.tenant_bootstrap.overdue` 单列告警，绝不把该记录当作成功。旧 Catalog 修复
+仅检查当前存在的身份、成员、ActionExecution、SpiceDB 与 Buzz 投影；删除了五张
+当前迁移未创建的组件表的预建检查。
+
+异常边界沿用原准入与业务状态：`DENIED`/`BLOCKED` 不因轮转开放入口；
+`PRECONDITION` 修复前保留未决；`LIMIT` 只影响处理速率，队列仍轮转；
+`CONFLICT` 保持原幂等/版本判据；`UNKNOWN` 只按原固定引用查证，既不判成功也不
+盲目重放。空队列记录零度量；并发 Core 副本在选批事务内跳过已锁行，提交后若重选
+同一行仍须沿原固定 ID 幂等协议；进程在标记尝试后崩溃，
+该行在其他候选之后再次进入队列；租户暂停、撤权、密钥版本异常由原驱动器重新准入
+并保持原拒绝/待对账结论。轮转时间不是第二份 ActionExecution 权威。
+
+独立库 `kailo_verify_governance_fairness_20260928` 完整应用 25 个迁移，最新迁移
+回退、再前进均退出码 0；四个完整选批 SQL 在该库 PREPARE/EXECUTE 成功。
+回滚事务中的 `batch=1` 样本，两次通用选批得到不同动作且均不是最老的
+`tenant.bootstrap`；两条 OpenBao 写入意图也在两轮各被选中一次。故意把选择恢复为
+旧 `created_at` 顺序，公平性断言按预期报错且 `psql` 退出码为 3；恢复后通过。
+`cargo test -p kailo-core --no-run` 在 12 GiB/400% cgroup 中退出码 0。
+这些证据覆盖 SQL 轮转和编译，不代表真实 Core/Temporal/OpenBao 故障链已闭合；
+本文件前述孤儿版本的受治理清理仍是生产阻断。
+
 ## 门禁
 
 `tools/check.sh security` 对每个 listener 判定：恰好挂一种认证（`oidc` 或 `jwtAuth`）；OIDC 必须

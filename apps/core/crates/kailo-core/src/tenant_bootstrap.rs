@@ -43,7 +43,7 @@ use crate::temporal::TemporalClient;
 /// 部署引导这一 ServicePrincipal 的 audience。它是平台内一个固定身份的名字，
 /// 不是部署取值：审计按它归因，换名字就断了历史。
 const AUDIENCE: &str = "kailo-deployment-bootstrap";
-const ACTION_KEY: &str = "tenant.bootstrap";
+pub(crate) const ACTION_KEY: &str = "tenant.bootstrap";
 /// 轮询生命周期推进的间隔。等待的上界由运维以 `--wait-seconds` 给出。
 const POLL: Duration = Duration::from_secs(1);
 
@@ -595,29 +595,6 @@ impl Ctx {
             .map_err(|e| format!("核对 Catalog admin 关系失败: {e}"))?;
         if !admin.is_empty() {
             return Err("旧 Catalog 已有 admin 关系，拒绝修复".into());
-        }
-        for table in [
-            "catalog.component_definition",
-            "catalog.component_package",
-            "catalog.component_release",
-            "projection.platform_provider_binding",
-            "projection.application_binding",
-        ] {
-            let exists: Option<String> = sqlx::query_scalar("select to_regclass($1)::text")
-                .bind(table)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-            if let Some(name) = exists {
-                let occupied: bool =
-                    sqlx::query_scalar(&format!("select exists(select 1 from {name})"))
-                        .fetch_one(&mut *tx)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                if occupied {
-                    return Err(format!("{table} 已有组件数据，拒绝修复"));
-                }
-            }
         }
         let params = hex::encode(Sha256::digest(
             json!({ "catalogTenantId": catalog, "repair": "legacy-active-without-buzz" })
