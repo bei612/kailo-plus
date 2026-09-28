@@ -10,7 +10,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
-STEPS=(lint verify contract migrate replay trace supply seam security docs)
+# 步骤编号对应 03 §5，执行顺序按依赖：迁移演练先于验证——演练结束时演练库处于最新
+# 迁移，第 2 步中读取 DATABASE_URL 的测试依赖这一状态；单独运行 verify 时须自备已迁移的库。
+STEPS=(lint contract migrate verify replay trace supply seam security docs)
 FAIL=0
 
 hdr()  { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
@@ -27,18 +29,11 @@ step_lint() {
   local ran=0
   if populated core && have cargo; then
     ran=1
-    # sqlx 离线数据必须与查询同步：否则编译期 SQL 校验会在没有库的环境里
-    # 悄悄用过期快照通过。与 contracts 生成物同一套「入库 + 校验同步」模式。
-    if [ -n "${DATABASE_URL:-}" ] && have sqlx; then
-      if (cd core && cargo sqlx prepare --check --workspace >/dev/null 2>&1); then
-        pass "sqlx 离线数据与查询同步"
-      else
-        fail "sqlx 离线数据过期，在 core/ 下运行 cargo sqlx prepare --workspace 后提交"
-      fi
-    fi
     cargo fmt --manifest-path core/Cargo.toml --all --check >/dev/null 2>&1 \
       && pass "cargo fmt" || fail "cargo fmt"
-    cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings >/dev/null 2>&1 \
+    # 编译一律用入库的 sqlx 离线数据，与镜像构建（core/Dockerfile）同一输入；离线数据与
+    # 查询是否同步由第 4 步在演练库迁移到最新之后核对，不在空库上在线编译。
+    SQLX_OFFLINE=true cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings >/dev/null 2>&1 \
       && pass "cargo clippy" || fail "cargo clippy"
   fi
   if populated worker && have go; then
@@ -65,7 +60,7 @@ step_lint() {
 step_verify()   { hdr "2/10 受影响范围的验证"
   local ran=0
   if populated core && have cargo; then ran=1
-    cargo test --manifest-path core/Cargo.toml >/dev/null 2>&1 && pass "cargo test" || fail "cargo test"; fi
+    SQLX_OFFLINE=true cargo test --manifest-path core/Cargo.toml >/dev/null 2>&1 && pass "cargo test" || fail "cargo test"; fi
   if populated worker && have go; then ran=1
     (cd worker && go test ./... >/dev/null 2>&1) && pass "go test" || fail "go test"; fi
   if populated web/packages && have pnpm; then ran=1
@@ -158,6 +153,13 @@ step_migrate()  { hdr "4/10 数据迁移前进与回退演练"
     pass "前进、回退、再前进三步演练通过"
   else
     fail "迁移演练失败"; return 0
+  fi
+  # 演练库此刻处于最新迁移：核对入库的 sqlx 离线数据与查询同步。否则编译期 SQL 校验
+  # 会在没有库的环境里悄悄用过期快照通过。与 contracts 生成物同一套「入库 + 校验同步」。
+  if (cd core && cargo sqlx prepare --check --workspace >/dev/null 2>&1); then
+    pass "sqlx 离线数据与迁移后的库和查询同步"
+  else
+    fail "sqlx 离线数据过期，在 core/ 下对已迁移的演练库运行 cargo sqlx prepare --workspace 后提交"
   fi
 
   # 枚举漂移：迁移里的 CHECK 取值是时间点快照，contracts/enums/ 是当前权威。
@@ -638,6 +640,19 @@ for name, svc in (d.get("services") or {}).items():
     img = svc.get("image")
     if img and "@sha256:" not in img:
         bad.append(f"{name}: image 未按 digest 引用（{img}）")
+# DD-93：私有数据网络 `<owner>-data` 只接纳名为 `<owner>` 或 `<owner>-*` 的服务，
+# 且至多一个成员同时接入其他网络——那是所有者运行体，数据存储本身不出网，
+# 其他服务在网络层到不了别人的数据。
+for net in sorted(n for n in declared if n.endswith("-data")):
+    owner = net[: -len("-data")]
+    members = {name: set(svc.get("networks") or []) for name, svc in (d.get("services") or {}).items()
+               if net in set(svc.get("networks") or [])}
+    for name in sorted(members):
+        if name != owner and not name.startswith(owner + "-"):
+            bad.append(f"{name}: 接入了 {owner} 的私有数据网络 {net}")
+    bridging = sorted(name for name, nets in members.items() if nets - {net})
+    if len(bridging) > 1:
+        bad.append(f"{net}: {', '.join(bridging)} 都同时接入其他网络，数据存储对共享网络可达")
 # 同一条规则延伸到本仓库自建镜像的基础镜像：compose 按 digest 引用了产物，
 # 产物的 FROM 却跟着可变 tag 走，两次构建就不是同一份输入（ADR-06）。
 for df in sorted(glob.glob("**/Dockerfile", recursive=True)):
@@ -831,7 +846,7 @@ for m in re.finditer(r"^\s+-\s+\"?(?:[\d.]+:)?(\d{2,5}):(\d{2,5})\"?\s*$", raw, 
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
 zed_note = "；SpiceDB schema 与 .design/03 §5 逐字相等" if os.path.exists(zed_path) else ""
-print(f"  \033[32mPASS\033[0m {len(d.get('services') or {})} 个服务：network 显式、边界不越层、镜像按 digest、无端口字面量、公共配置单源投影{zed_note}")
+print(f"  \033[32mPASS\033[0m {len(d.get('services') or {})} 个服务：network 显式、边界不越层、私有数据网络按所有者隔离、镜像按 digest、无端口字面量、公共配置单源投影{zed_note}")
 PY
   return 0
 }
