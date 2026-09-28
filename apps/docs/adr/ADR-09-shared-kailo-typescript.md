@@ -55,11 +55,12 @@ Desktop 接入 Kailo 时若照抄一份，两端对同一个 `UNKNOWN`、同一�
 
 `.design` 不在本 ADR 中修改。`apps` 层把 `.design/04` §163、`.design/07` §108、`.design/18` §166 中的
 「共用同一 TypeScript 主体 / 同一实现」解释为：**Kailo 为两端新增的 TypeScript（平台页、BFF 客户端、
-将来的 Component Host 宿主与 `OfficeDocumentSurface`）只写一份，经 `vendor_files` 进入两端**；对各自上游
+将来的 Component Host 宿主与 `ProtocolDocumentSurface`）只写一份，经 `vendor_files` 进入两端**；对各自上游
 已有 UI 的改造（例如 Component Host 需要的 WorkspaceShell 提炼、route 与导航接入）按两棵树分别做成补丁。
-由此，`SS-WEB-COMPONENT-HOST` 只证明了 buzz-web 一侧的改造面；Desktop 一侧在 Component Host 进入实施时须在
-block/buzz `desktop/` 上另行取证，不能以「共用主体」为由沿用 Web 的证据。这一差异应在下一次 `.design` 修订
-时回写到 `SF-MOB-02` 的适用范围。
+由此，`SS-WEB-COMPONENT-HOST` 只证明了 buzz-web 一侧的改造面；Desktop 一侧不能以「共用主体」为由沿用 Web 的证据。
+（2026-09-28 按 DD-74 修订）这一差异已回写 `.design`：Desktop 的改造面由 `SS-DSK-COMPONENT-HOST` 在 block/buzz
+`desktop/` 上取证，`DD-74` 固定两端为两个代码库、只共享 Kailo 平台包与契约生成物，Desktop 受 `SF-DSK-03` 约束不执行
+`REMOTE_MODULE`；`.design` 相应段落已不再使用「共用同一 TypeScript 主体」的表述，surface 改名为 `ProtocolDocumentSurface`。
 
 ## 放弃的做法
 
