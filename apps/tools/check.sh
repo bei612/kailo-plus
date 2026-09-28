@@ -230,11 +230,40 @@ known = {
     "blockers":     set(re.findall(r"^\| (GAP-[A-Z]+-\d+) \|", t02, re.M)),
     "entities":     set(re.findall(r"^([A-Z][A-Za-z]+)\(", t03, re.M)),
 }
+# 覆盖矩阵的归属标签 → 追溯记录的 stage 取值（apps/06 §1、02 §1.0）：Stage N → SN，
+# 平台一期收口 → PC，能力扩展 EXT-* → EXT-*，作废 → VOID（记录不得引用作废决策）
+def stage_key(label):
+    label = label.strip()
+    m = re.match(r"Stage (\d)", label)
+    if m:
+        return "S" + m.group(1)
+    if label.startswith("平台一期收口"):
+        return "PC"
+    m = re.match(r"能力扩展 (EXT-[A-Z]+)", label)
+    if m:
+        return m.group(1)
+    if label.startswith("作废"):
+        return "VOID"
+    return None
 stage_of = {}
 for line in cov.split("\n"):
-    m = re.match(r"\| (Stage \d)[^|]*\| `(DD-\d+)`", line)
-    if m:
-        stage_of[m.group(2)] = m.group(1).replace("Stage ", "S")
+    m = re.match(r"\| ([^|]+)\| `(DD-\d+)`", line)
+    if m and stage_key(m.group(1)):
+        stage_of[m.group(2)] = stage_key(m.group(1))
+valid_stages = {"S0", "S1", "S2", "S3", "S4", "S5", "PC", "EXT-FILE", "EXT-KNOW", "EXT-DATA"}
+
+# 业务能力参考实现的产品名只取自 .design/08 §9.1「内置参考实现」表的 Component 列：
+# 契约键、能力 id、动作、工具与契约枚举值都不得含实现产品名（DD-88、apps/06 §1）
+t08 = open(glob.glob(f"{d}/08-*.md")[0], encoding="utf-8").read()
+ref_table = t08.split("内置参考实现（", 1)[1].split("\n\n", 2)[1] if "内置参考实现（" in t08 else ""
+product_tokens = set()
+for row in ref_table.split("\n")[2:]:
+    cells = row.split("|")
+    if len(cells) > 2:
+        product_tokens |= {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9]{2,}", cells[1])}
+def product_hits(value):
+    parts = set(re.split(r"[^a-z0-9]+", str(value).lower()))
+    return sorted(parts & product_tokens)
 
 files = sorted(glob.glob("tools/traceability/*.yaml"))
 bad = []
@@ -266,11 +295,23 @@ for f in files:
         ref = e.get("ref")
         if ref and not os.path.exists(ref):
             bad.append(f"{cid}: 证据指向不存在的 {ref}")
-    # 规则 5：stage 必须与覆盖矩阵对所含决策的归属一致
+    # 规则 5：stage 取值合法，且与覆盖矩阵对所含决策的归属一致；不得引用作废决策
+    if r.get("stage") and r["stage"] not in valid_stages:
+        bad.append(f"{cid}: stage={r['stage']} 不是 apps/06 §1 的合法取值")
     for dd in design.get("decisions") or []:
         want = stage_of.get(dd)
-        if want and r.get("stage") and r["stage"] != want:
+        if want == "VOID":
+            bad.append(f"{cid}: 引用了已作废的 {dd}")
+        elif want and r.get("stage") and r["stage"] != want:
             bad.append(f"{cid}: stage={r['stage']} 与覆盖矩阵对 {dd} 的归属 {want} 不一致")
+    # 规则 7：能力 id、动作与工具不含业务能力实现的产品名
+    rt = r.get("runtime") or {}
+    for label, values in (("capability_id", [cid]),
+                          ("runtime.actions", rt.get("actions") or []),
+                          ("runtime.tools", rt.get("tools") or [])):
+        for v in values:
+            if product_hits(v):
+                bad.append(f"{cid}: {label} 的 {v} 含实现产品名 {product_hits(v)}")
     # 规则 6：exposure 高于 none 时 release.artifacts 必须有 digest
     arts = ((r.get("release") or {}).get("artifacts")) or []
     if exposure and exposure != "none":
@@ -293,12 +334,18 @@ for f in files:
             unit = name[len("kailo-"):]
             if not os.path.exists(f"dist/{unit}.{dg.removeprefix('sha256:')}.spdx.json"):
                 bad.append(f"{cid}: 产物 {name} 的 digest 在 dist/ 中没有对应的发布产物")
+# 规则 7（契约侧）：契约枚举值同样不含实现产品名
+import json
+for ef in sorted(glob.glob("contracts/enums/*.schema.json")):
+    for v in (json.load(open(ef, encoding="utf-8")).get("enum") or []):
+        if product_hits(v):
+            bad.append(f"{ef}: 枚举值 {v} 含实现产品名 {product_hits(v)}")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
 if not files:
     print("  \033[90mSKIP\033[0m 尚无追溯记录")
 else:
-    print(f"  \033[32mPASS\033[0m {len(files)} 条追溯记录通过 06 §1 的六条硬规则")
+    print(f"  \033[32mPASS\033[0m {len(files)} 条追溯记录通过 06 §1 的七条硬规则")
 PY
   # 06 §3：注册表由追溯记录生成，并执行四个构建期拒绝条件
   if DESIGN="${DESIGN:-../.design}" python3 tools/gen-registry.py --check; then
