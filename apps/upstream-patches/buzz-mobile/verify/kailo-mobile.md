@@ -80,6 +80,10 @@ Dart 契约生成物换回可选枚举取 `!` 的旧版 → 任务详情解析�
 
 从固定 `779af8886caae1317b4de962082429867ab61503` 重放 130 项裁剪、`0001-kailo-mobile.patch` 和四份本仓库生成物成功；重建源码的 `flutter analyze` 为 `No issues found!`，`flutter test -j 8` 为 `+1156 ~2: All other tests passed!`。`baseline.yaml` 的补丁集合摘要已更新为 `sha256:62c558207887fa21baae2b3ec932ac9baa51d98986c3cb5893f1553a58340b99`，`artifact_digest` 仍为 `none`。Mobile 的任务和审批面仍只读；本次未产出 APK、未做设备端到端验收，源码通过不代表安装包交付。
 
+## 2026-09-28 补丁合并与共享文案同步
+
+`d1c1a1a` 把共享文案 `platform.settings.connection` 的中文由「Kailo 连接」改为「服务器连接」，但补丁内设置页测试仍断言旧文案，本次重放源树实测 `flutter test` 有 1 例失败。开发树 `/tmp/mob` 并入原 `0002-chat-time-i18n.patch` 为独立提交，修正该断言后以 `export` 导出为唯一的 `0001-kailo-mobile.patch`（HEAD `f84c81cc8241e53e5d35ed5dde57c491d4ec32b2`，130 项删除路径，1704137 字节）。开发树 `flutter analyze` 为 `No issues found!`，`flutter test -j 8` 为 `+1156 ~2: All tests passed!`；按新清单 `--source-only` 重放的源树与开发树 HEAD 加 4 个 vendor 文件逐文件比对无差异。本轮共享文案新增的创建 Workspace 键只进入生成物，Mobile 不渲染创建入口；`artifact_digest` 仍为 none。
+
 ## 未覆盖
 
 - iOS 未构建、未核验：需要 macOS/Xcode。iOS 原生侧仍有 Huddle 音频、推送扩展、年龄信号等上游

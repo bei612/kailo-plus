@@ -774,8 +774,10 @@ type RoleMemberView struct {
 }
 
 // GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage
-// permission。只供角色管理选择，不等于可进入频道。
+// permission，并附当前可用的 Workspace 创建动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。
 type RoleWorkspacePage struct {
+	// 当前 Principal 经 fresh Tenant create 检查可见的动作 key；目录未开放或无权时省略
+	CreateActionKey *CreateActionKey `json:"createActionKey,omitempty"`
 	// 下一页的 Core 索引偏移；不暴露无权 Workspace 的 ID，缺省即读完
 	NextOffset *int64              `json:"nextOffset,omitempty"`
 	Workspaces []RoleWorkspaceView `json:"workspaces"`
@@ -1292,6 +1294,12 @@ const (
 	Reconciliation AuditEventType = "RECONCILIATION"
 	Revocation     AuditEventType = "REVOCATION"
 	Session        AuditEventType = "SESSION"
+)
+
+type CreateActionKey string
+
+const (
+	WorkspaceCreate CreateActionKey = "workspace.create"
 )
 
 // TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close

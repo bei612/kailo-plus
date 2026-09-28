@@ -2,11 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/role_workspace_page.schema.json",
   "title": "RoleWorkspacePage",
-  "description": "GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage permission。只供角色管理选择，不等于可进入频道。",
+  "description": "GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage permission，并附当前可用的 Workspace 创建动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。",
   "type": "object",
   "additionalProperties": false,
   "required": ["workspaces"],
   "properties": {
+    "createActionKey": { "type": "string", "const": "workspace.create", "description": "当前 Principal 经 fresh Tenant create 检查可见的动作 key；目录未开放或无权时省略" },
     "workspaces": {
       "type": "array",
       "items": {

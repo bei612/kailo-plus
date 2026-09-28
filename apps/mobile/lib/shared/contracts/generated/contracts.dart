@@ -1372,16 +1372,26 @@ class RoleMemberView {
 }
 
 ///GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage
-///permission。只供角色管理选择，不等于可进入频道。
+///permission，并附当前可用的 Workspace 创建动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。
 class RoleWorkspacePage {
+  ///当前 Principal 经 fresh Tenant create 检查可见的动作 key；目录未开放或无权时省略
+  final CreateActionKey? createActionKey;
+
   ///下一页的 Core 索引偏移；不暴露无权 Workspace 的 ID，缺省即读完
   final int? nextOffset;
   final List<RoleWorkspaceView> workspaces;
 
-  RoleWorkspacePage({this.nextOffset, required this.workspaces});
+  RoleWorkspacePage({
+    this.createActionKey,
+    this.nextOffset,
+    required this.workspaces,
+  });
 
   factory RoleWorkspacePage.fromJson(Map<String, dynamic> json) =>
       RoleWorkspacePage(
+        createActionKey: json["createActionKey"] == null
+            ? null
+            : createActionKeyValues.map[json["createActionKey"]]!,
         nextOffset: json["nextOffset"],
         workspaces: List<RoleWorkspaceView>.from(
           json["workspaces"].map((x) => RoleWorkspaceView.fromJson(x)),
@@ -1389,10 +1399,17 @@ class RoleWorkspacePage {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "createActionKey": createActionKeyValues.reverse[createActionKey],
     "nextOffset": nextOffset,
     "workspaces": List<dynamic>.from(workspaces.map((x) => x.toJson())),
   });
 }
+
+enum CreateActionKey { WORKSPACE_CREATE }
+
+final createActionKeyValues = EnumValues({
+  "workspace.create": CreateActionKey.WORKSPACE_CREATE,
+});
 
 class RoleWorkspaceView {
   final String id;

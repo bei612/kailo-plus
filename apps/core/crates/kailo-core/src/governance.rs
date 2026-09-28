@@ -1139,6 +1139,42 @@ impl Governance {
         })
     }
 
+    /// Workspace 创建入口的一次性可用性提示；提交时仍由 submit 重新准入。
+    /// 新 Workspace 尚不存在，权限对象只能是当前 Tenant 的 create，不能以
+    /// tenant manage 代替，否则只持 creator 关系的人会被错误隐藏。
+    pub async fn available_workspace_create_action(
+        &self,
+        actor: Actor,
+    ) -> Result<Option<contracts::CreateActionKey>, Refusal> {
+        const KEY: &str = "workspace.create";
+        if !crate::capability_registry::action_exposed(KEY) {
+            return Ok(None);
+        }
+        let Some(def) = active_definition(&self.pool, KEY).await? else {
+            return Ok(None);
+        };
+        if def.target_type != "WORKSPACE"
+            || def.tenant_rule != "SESSION_TENANT"
+            || def.workspace_rule != "TENANT_ONLY"
+            || def.permission_object_type != "tenant"
+            || def.permission != "create"
+            || def.execution_mode != "TEMPORAL"
+            || def.workflow_kind.as_deref() != Some("WORKSPACE_LIFECYCLE")
+        {
+            return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+        }
+        let target = Target {
+            id: actor.tenant_id,
+            version: 0,
+            workspace_id: None,
+        };
+        Ok(self
+            .evaluate(actor, &def, &target)
+            .await?
+            .allowed
+            .then_some(contracts::CreateActionKey::WorkspaceCreate))
+    }
+
     /// 任务详情的一次性可用性投影；不是授权票据。按钮仅在这里取得 active
     /// 控制定义、本人 scope、fresh Check 与 Temporal OPEN 事实时显示，提交/派发
     /// 仍重复所有检查（DD-84）。列表不为每行发起外部 Describe。

@@ -10,19 +10,24 @@ export type Loaded<T> =
 
 /**
  * 调用 `load` 并跟踪其结果。`key` 变化即重新读取；`reload` 手动重读。
+ * 返回值只属于当前 key 与刷新轮次：切换后的首次渲染也不能显示上一请求的数据。
  * 过期的回应（key 已变或组件已卸载）被丢弃，不会覆盖较新的结果。
  */
 export function useLoad<T>(key: string, load: () => Promise<T>): [Loaded<T>, () => void] {
-  const [state, setState] = useState<Loaded<T>>({ status: "pending" });
   const [round, setRound] = useState(0);
+  const [result, setResult] = useState<{
+    key: string;
+    round: number;
+    state: Loaded<T>;
+  } | null>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: 只按 key 与 round 重读；load 每次渲染都是新函数
   useEffect(() => {
     let current = true;
-    setState({ status: "pending" });
+    setResult({ key, round, state: { status: "pending" } });
     load().then(
-      (data) => current && setState({ status: "ok", data }),
-      (error: unknown) => current && setState({ status: "error", error }),
+      (data) => current && setResult({ key, round, state: { status: "ok", data } }),
+      (error: unknown) => current && setResult({ key, round, state: { status: "error", error } }),
     );
     return () => {
       current = false;
@@ -30,5 +35,8 @@ export function useLoad<T>(key: string, load: () => Promise<T>): [Loaded<T>, () 
   }, [key, round]);
 
   const reload = useCallback(() => setRound((n) => n + 1), []);
+  const state: Loaded<T> = result?.key === key && result.round === round
+    ? result.state
+    : { status: "pending" };
   return [state, reload];
 }

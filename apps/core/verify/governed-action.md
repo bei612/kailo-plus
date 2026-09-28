@@ -134,6 +134,14 @@ Web 镜像 `sha256:3a23b71a80045bf337a8ee4af9c54dde1fc53cbfbba275ba39ccd4db4371d
 
 首次专项用例未出现控制键，是本地数据库尚未应用新 Catalog 迁移；应用后原用例通过。直接以 `KAILO_INTEGRATION=1` 跑整个 Cargo workspace 会让 OpenBao 一次性凭据用例缺 `OPENBAO_ROLE_ID`，不属于产品链路结论；正式入口先即时投递凭据再运行该用例，已通过。本轮没有对 CLIENT 身份重跑做浏览器点击走查，也没有 Desktop/Mobile 端到端验收；SERVER HUMAN 管理密钥动作仍须闭合 OpenBao 写入与 WorkflowRef 预写之间的结果不明风险，才能进入用户 Catalog。
 
+## 2026-09-28 Web 创建 Workspace 在途可见核验
+
+角色页读取 `RoleWorkspacePage.createActionKey`（Core 以只读准入判定、Tenant `create` 走 FullyConsistent Check），有该键才渲染创建表单；在途的 `workspace.create` 由本人任务列表（`/api/v1/tasks`，`admission.action_execution` 权威）中 `taskPhase` 为中性的条目列出，读取失败显示不可用并要求先到任务页确认，不假定没有在途请求。
+
+新 Web 镜像 `sha256:37be2e799141107be68eab9fc06d580f26614359d1dee2453cb8b9d869488fa4`、经 `start-core.sh` 重建的 Core 与重建的 Worker 上，以核验用户在真实浏览器经网关登录：暂停本地 Worker 后从表单提交，页面显示「已登记、未确认完成」与 operation；此时执行记录为 `ALLOWED/DISPATCHED`，Workspace 为 `PROVISIONING`。整页刷新后本地幂等键随之消失，表单上方仍列出该 operation，状态为「已开始」。恢复 Worker 后 Workspace 在收敛上界内进入 `ACTIVE`，Buzz binding 1 条；再次刷新后在途列表消失，新 Workspace 出现在成员页选择器中。按本动作既有语义，创建者不自动成为 Workspace 成员，Channel 页因此仍无可进入的 Workspace。浏览中唯一的失败响应是 `legacy-secret-refs` 的 404：该路由未进入发布注册表，组件按设计不渲染。
+
+本轮没有完成完整 Web 走查：`web-walkthrough.sh` 的夹具在准备阶段被 `TENANT_SELECTION_NOT_AVAILABLE` 拒绝，原因见 `apps/07` §2。
+
 ## 已知边界
 
 - 「待我审批」列表用低延迟一致性：刚授予的 admin 关系可能要等 SpiceDB 的

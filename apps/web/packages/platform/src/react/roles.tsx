@@ -1,11 +1,11 @@
 // DD-82：角色关系只从 BFF fresh 视图读取，授予/撤销仍经同一条 Governed Action。
 // Web 与 Desktop 共用；Mobile 只读成员视图，不装载本管理面。
 
-import { BindingKind, type LegacySecretRefBinding, type RoleMemberView } from "@kailo/contracts";
-import { useState } from "react";
-import { newIdempotencyKey } from "../governance";
-import { BffError, type WriteFailure, writeFailure } from "../transport";
-import { useBffClient, useFailureText, useT } from "./context";
+import { ActionDispatchState, ActionGateState, BindingKind, CreateActionKey, type ActionCommand, type ActionSubmission, type LegacySecretRefBinding, type RoleMemberView } from "@kailo/contracts";
+import { useRef, useState } from "react";
+import { newIdempotencyKey, taskPhase } from "../governance";
+import { BffError, TransportError, type WriteFailure, writeFailure } from "../transport";
+import { useBffClient, useFailureText, useReasonText, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
 
@@ -24,23 +24,24 @@ export function RoleManagement() {
   const [state, reload] = useLoad(`role-workspaces:${offset}`, () => client.roleWorkspaces(offset));
   const [chosen, setChosen] = useState<string | null>(null);
 
-  if (state.status === "pending") return null;
-  if (state.status === "error")
-    return (
-      <Notice role="alert">
-        {t("platform.loadFailed")}
-        <Button onClick={reload}>{t("platform.retry")}</Button>
-      </Notice>
-    );
-  const page = state.data;
-  if (!page || !Array.isArray(page.workspaces)
-    || !page.workspaces.every((w) => w && typeof w.id === "string" && typeof w.name === "string")
-    || (page.nextOffset !== undefined && (!Number.isSafeInteger(page.nextOffset) || page.nextOffset <= offset)))
-    return <Notice role="alert">{t("platform.loadFailed")}</Notice>;
-  const active = page.workspaces.find((w) => w.id === chosen)?.id ?? page.workspaces[0]?.id;
-  const nextOffset = page.nextOffset;
+  const data = state.status === "ok" ? state.data : null;
+  const page = data && Array.isArray(data.workspaces)
+    && data.workspaces.every((w) => w && typeof w.id === "string" && typeof w.name === "string")
+    && (data.createActionKey === undefined || data.createActionKey === CreateActionKey.WorkspaceCreate)
+    && (data.nextOffset === undefined || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset))
+    ? data : null;
+  const active = page?.workspaces.find((w) => w.id === chosen)?.id ?? page?.workspaces[0]?.id;
+  const nextOffset = page?.nextOffset;
   return (
     <div className="flex flex-col gap-3" data-testid="role-management">
+      {/* 创建意图不属于列表页；刷新、分页或读取失败不能卸载它、丢掉幂等键。 */}
+      <CreateWorkspace actionKey={page?.createActionKey} />
+      <Button className="w-fit" disabled={state.status === "pending"} onClick={reload}>
+        {t("platform.refresh")}
+      </Button>
+      {state.status === "pending" ? <p role="status">{t("platform.loading")}</p> : !page ? (
+        <Notice role="alert">{t("platform.loadFailed")}</Notice>
+      ) : <>
       {page.workspaces.length > 0 ? (
         <select
           aria-label={t("platform.workspace")}
@@ -68,7 +69,112 @@ export function RoleManagement() {
           </Button>
         ) : null}
       </div>
+      </>}
     </div>
+  );
+}
+
+/** 沿用已登记的 workspace.create；受理回应不代表 Channel/权限投影已完成。 */
+function CreateWorkspace({ actionKey }: { actionKey?: CreateActionKey }) {
+  const client = useBffClient();
+  const t = useT();
+  const failureText = useFailureText();
+  const reasonText = useReasonText();
+  const inFlight = useRef(false);
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [command, setCommand] = useState<ActionCommand | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<WriteFailure | null>(null);
+  const [submission, setSubmission] = useState<ActionSubmission | null>(null);
+  const locked = !actionKey || busy || command !== null;
+  // 页面刷新或离开后本地幂等键不复存在；服务端按本人列出的 ActionExecution 才是意图的
+  // 权威。尚无结论（taskPhase 中性）的 workspace.create 在此列出，避免用户以为请求丢了
+  // 而盲目再发一笔；同名标识的重复创建由 Core 的唯一约束以冲突拒绝。
+  const [openTasks, reloadOpenTasks] = useLoad("workspace-create-in-flight", () => client.tasks());
+  const pendingCreates = openTasks.status === "ok" && Array.isArray(openTasks.data)
+    ? openTasks.data.filter((task) => task.actionKey === CreateActionKey.WorkspaceCreate
+      && taskPhase(task).tone === "neutral")
+    : [];
+
+  if (!actionKey && !command && !submission && pendingCreates.length === 0 && openTasks.status !== "error")
+    return null;
+
+  const submit = async () => {
+    if (!actionKey || inFlight.current || (!command && (!name.trim() || !slug.trim()))) return;
+    const intent = command ?? { actionKey, idempotencyKey: newIdempotencyKey(), name: name.trim(), slug: slug.trim() };
+    inFlight.current = true;
+    setCommand(intent);
+    setBusy(true);
+    setFailure(null);
+    setSubmission(null);
+    try {
+      const result = await client.submitAction(intent);
+      if (!result || result.actionKey !== intent.actionKey
+        || typeof result.actionExecutionId !== "string" || !result.actionExecutionId
+        || typeof result.operationId !== "string" || !result.operationId
+        || !Object.values(ActionGateState).includes(result.gateState)
+        || !Object.values(ActionDispatchState).includes(result.dispatchState))
+        throw new TransportError(t("platform.loadFailed"));
+      setSubmission(result);
+      // 已取得服务端操作引用，后续终态由任务页读取。清空输入，不把旧意图再发一笔。
+      setCommand(null);
+      setName("");
+      setSlug("");
+    } catch (error) {
+      const failed = writeFailure(error);
+      setFailure(failed);
+      // 结果不明保留原命令与幂等键；明确拒绝才允许修正输入重新提交。
+      if (failed.kind !== "unknown") setCommand(null);
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+      reloadOpenTasks();
+    }
+  };
+
+  return (
+    <form className="flex flex-col gap-3 rounded-md border p-3" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+      <h2 className="text-sm font-medium">{t("workspace.create.title")}</h2>
+      <label className="flex flex-col gap-1 text-sm">
+        {t("workspace.create.name")}
+        <input required disabled={locked} value={name} onChange={(event) => setName(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2 text-sm" />
+      </label>
+      <label className="flex flex-col gap-1 text-sm">
+        {t("workspace.create.slug")}
+        <input required disabled={locked} value={slug} onChange={(event) => setSlug(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2 text-sm" />
+        <span className="text-xs text-muted-foreground">{t("workspace.create.slugHint")}</span>
+      </label>
+      {submission ? (
+        <div role="status" className="break-words text-sm">
+          <p>{t("workspace.create.recorded", { execution: submission.actionExecutionId, operation: submission.operationId, gate: submission.gateState, dispatch: submission.dispatchState })}</p>
+          {submission.reason ? <p>{reasonText(submission.reason)}</p> : null}
+        </div>
+      ) : null}
+        <Button type="submit" className="w-fit" disabled={!actionKey || busy || (!command && (!name.trim() || !slug.trim()))}>
+          {busy ? t("platform.loading") : command ? t("workspace.create.retry") : t("workspace.create.title")}
+        </Button>
+      {openTasks.status === "error" ? (
+        <Notice role="alert">
+          {t("workspace.create.inFlightUnavailable")}
+          <Button onClick={reloadOpenTasks}>{t("platform.retry")}</Button>
+        </Notice>
+      ) : pendingCreates.length > 0 ? (
+        <div role="status" className="flex flex-col gap-1 text-sm">
+          <p className="font-medium">{t("workspace.create.inFlight")}</p>
+          {pendingCreates.map((task) => (
+            <p key={task.actionExecutionId} className="break-words">
+              {t("workspace.create.inFlightItem", { status: t(taskPhase(task).label), operation: task.operationId })}
+            </p>
+          ))}
+        </div>
+      ) : null}
+      {failure ? <p role="alert" className="text-sm">
+        {failure.kind === "unknown"
+          ? t("workspace.create.unknown", { operation: failure.operationId ?? "—" })
+          : t("roles.rejected", { reason: failureText(failure) })}
+      </p> : null}
+    </form>
   );
 }
 

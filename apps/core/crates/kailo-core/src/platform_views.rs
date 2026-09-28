@@ -23,6 +23,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::bff::{db_enum, resolve_execution_context, BffState};
+use crate::governance::Actor;
 use crate::spicedb::{Consistency, RelationshipFilter};
 
 /// 我在当前 Tenant 里能进的 Workspace。
@@ -215,11 +216,24 @@ pub async fn list_role_workspaces(
             name,
         })
         .collect();
+    let create_action_key = match state
+        .governance
+        .available_workspace_create_action(Actor {
+            tenant_id: ctx.tenant_id,
+            principal_id: ctx.tenant_principal_id,
+            human_identity_id: Some(ctx.human_identity_id),
+        })
+        .await
+    {
+        Ok(key) => key,
+        Err(e) => return e.respond(None),
+    };
     (
         StatusCode::OK,
         Json(RoleWorkspacePage {
             workspaces,
             next_offset,
+            create_action_key,
         }),
     )
         .into_response()

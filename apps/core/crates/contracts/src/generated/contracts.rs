@@ -785,15 +785,25 @@ pub struct RoleMemberView {
 }
 
 /// GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage
-/// permission。只供角色管理选择，不等于可进入频道。
+/// permission，并附当前可用的 Workspace 创建动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleWorkspacePage {
+    /// 当前 Principal 经 fresh Tenant create 检查可见的动作 key；目录未开放或无权时省略
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create_action_key: Option<CreateActionKey>,
+
     /// 下一页的 Core 索引偏移；不暴露无权 Workspace 的 ID，缺省即读完
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_offset: Option<i64>,
 
     pub workspaces: Vec<RoleWorkspaceView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum CreateActionKey {
+    #[serde(rename = "workspace.create")]
+    WorkspaceCreate,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

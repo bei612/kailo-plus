@@ -47,6 +47,31 @@ export const platformMessages = {
   "platform.title": { en: "Platform", "zh-CN": "平台" },
   "platform.workspace": { en: "Workspace", "zh-CN": "工作区" },
   "platform.workspaces": { en: "Workspaces", "zh-CN": "工作区" },
+  "workspace.create.title": { en: "Create workspace", "zh-CN": "创建工作区" },
+  "workspace.create.name": { en: "Workspace name", "zh-CN": "工作区名称" },
+  "workspace.create.slug": { en: "Workspace identifier", "zh-CN": "工作区标识" },
+  "workspace.create.slugHint": {
+    en: "Use lowercase English letters, digits and hyphens; start with a letter or digit.",
+    "zh-CN": "使用小写英文字母、数字和连字符，以字母或数字开头。",
+  },
+  "workspace.create.recorded": {
+    en: "Request recorded, not confirmed complete. Check Tasks for the outcome, then refresh your workspace list. Execution: {execution}; operation: {operation}; admission: {gate}; dispatch: {dispatch}.",
+    "zh-CN": "请求已登记，不代表创建完成。请到任务页查看结果，完成后刷新工作区列表。执行：{execution}；操作：{operation}；准入：{gate}；派发：{dispatch}。",
+  },
+  "workspace.create.unknown": {
+    en: "The result is unknown. Retry only this same request; do not start a new creation. Operation: {operation}.",
+    "zh-CN": "结果不明。只能重查原请求，不要另发一笔创建。操作：{operation}。",
+  },
+  "workspace.create.retry": { en: "Retry same request", "zh-CN": "重查原请求" },
+  "workspace.create.inFlight": { en: "Creations still in progress", "zh-CN": "进行中的创建" },
+  "workspace.create.inFlightItem": {
+    en: "{status} · operation {operation}",
+    "zh-CN": "{status} · 操作 {operation}",
+  },
+  "workspace.create.inFlightUnavailable": {
+    en: "Could not check creations in progress. Check Tasks before creating again.",
+    "zh-CN": "无法读取进行中的创建。再次创建前请先到任务页确认。",
+  },
   "platform.tab.members": { en: "Members", "zh-CN": "成员" },
   "platform.tab.audit": { en: "Audit", "zh-CN": "审计" },
   "platform.tab.devices": { en: "Devices", "zh-CN": "设备" },
