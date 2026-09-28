@@ -96,9 +96,8 @@ fi
 ./bootstrap.sh
 compose config --quiet
 compose up -d --wait core-db
-core_db_password=$(<secrets/core_db_password)
-host_database_url="postgres://${CORE_DB_USER}:${core_db_password}@127.0.0.1:${CORE_DB_PORT}/${CORE_DB_NAME}"
-unset core_db_password
+. ./database-url.sh
+host_database_url="$(core_database_url "127.0.0.1:${CORE_DB_PORT}")"
 DATABASE_URL="$host_database_url" sqlx migrate run --source ../../core/migrations
 unset host_database_url
 
@@ -114,6 +113,7 @@ done
 
 # Compose 自己等待 health 与依赖任务；namespace/schema 作业还要查终态。
 compose up -d --wait keycloak temporal spicedb buzz-relay
+./bootstrap.sh --sync-browser-client
 export VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE="$PWD/secrets/keycloak_admin_password"
 subject=$(../../core/verify/idp-subject.sh "$BOOTSTRAP_USER") || {
   echo '找不到首位管理员 IdP 用户；已有旧 realm 的本地环境须显式 --fresh 重建' >&2; exit 2;

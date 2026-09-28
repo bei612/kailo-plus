@@ -12,6 +12,7 @@ cd "$(dirname "$0")"
   "${OIDC_HOST:?缺少 OIDC_HOST}" "${BUZZ_RELAY_HOST:?缺少 BUZZ_RELAY_HOST}" \
   "${BUZZ_RELAY_PORT:?缺少 BUZZ_RELAY_PORT}" "${AGENTGATEWAY_PORT:?缺少 AGENTGATEWAY_PORT}" \
   "${KEYCLOAK_PORT:?缺少 KEYCLOAK_PORT}" \
+  "${CORE_DB_PORT:?缺少 CORE_DB_PORT}" \
   "${CORE_DB_USER:?缺少 CORE_DB_USER}" "${CORE_DB_NAME:?缺少 CORE_DB_NAME}"
 # 本地拓扑导入 Keycloak realm；issuer 的 realm 必须与导入对象完全相同。
 # PUBLIC_ORIGIN 是浏览器入口的唯一根地址，回调与邀请页均从它派生。
@@ -19,10 +20,15 @@ OIDC_ISSUER="$OIDC_ISSUER" OIDC_REALM="$OIDC_REALM" PUBLIC_ORIGIN="$PUBLIC_ORIGI
 PUBLIC_HOST="$PUBLIC_HOST" OIDC_HOST="$OIDC_HOST" BUZZ_RELAY_HOST="$BUZZ_RELAY_HOST" \
 BUZZ_RELAY_PORT="$BUZZ_RELAY_PORT" AGENTGATEWAY_PORT="$AGENTGATEWAY_PORT" \
 KEYCLOAK_PORT="$KEYCLOAK_PORT" CORE_DB_USER="$CORE_DB_USER" CORE_DB_NAME="$CORE_DB_NAME" \
+CORE_DB_PORT="$CORE_DB_PORT" \
+PLATFORM_DISPLAY_NAME="${PLATFORM_DISPLAY_NAME:-}" \
 python3 - <<'PYCONFIG'
 import os
 import re
 from urllib.parse import urlsplit
+
+if not os.environ["PLATFORM_DISPLAY_NAME"].strip():
+    raise SystemExit("PLATFORM_DISPLAY_NAME 不能为空或仅含空白")
 
 def invalid_chars(raw):
     return any(c.isspace() or ord(c) < 0x20 or c in (chr(92), chr(34), chr(39)) for c in raw)
@@ -72,11 +78,65 @@ for name, expected_path, host_name, port_name in (
         raise SystemExit(f"{name} 的 scheme、authority、host 或 path 与本地拓扑不符")
 host("BUZZ_RELAY_HOST")
 checked_port("BUZZ_RELAY_PORT")
+checked_port("CORE_DB_PORT")
 for name in ("CORE_DB_USER", "CORE_DB_NAME"):
     if not re.fullmatch(r"[A-Za-z0-9_-]+", os.environ[name]):
         raise SystemExit(f"{name} 不适合 PostgreSQL URL")
 PYCONFIG
 if [ "${1:-}" = '--validate-config' ] && [ "$#" -eq 1 ]; then
+  exit 0
+fi
+# 持久化 realm 不会再次导入 JSON。只同步已有浏览器客户端的回调，不重建用户、
+# client 或 credential；HTTP 结果不明时退出失败，重跑先读当前值再收敛。
+if [ "${1:-}" = '--sync-browser-client' ] && [ "$#" -eq 1 ]; then
+  python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
+    "${OIDC_BROWSER_CLIENT_ID:?}" "$PUBLIC_ORIGIN" "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" <<'PYSYNC'
+import json
+import pathlib
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+port, realm, admin, client_id, origin, timeout = sys.argv[1:]
+timeout = int(timeout)
+if timeout <= 0:
+    raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
+base = "http://127.0.0.1:" + port
+desired = {"redirectUris": [origin + "/oauth/callback"], "webOrigins": ["+"]}
+try:
+    password = pathlib.Path("secrets/keycloak_admin_password").read_text().strip()
+    login = urllib.parse.urlencode({"grant_type": "password", "client_id": "admin-cli",
+                                   "username": admin, "password": password}).encode()
+    with urllib.request.urlopen(base + "/realms/master/protocol/openid-connect/token",
+                                login, timeout=timeout) as response:
+        token = json.load(response)["access_token"]
+
+    def request(path, body=None):
+        req = urllib.request.Request(base + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            method="PUT" if body is not None else "GET",
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.load(response) if body is None else None
+
+    clients_path = "/admin/realms/" + urllib.parse.quote(realm, safe="") + "/clients"
+    clients = request(clients_path + "?" + urllib.parse.urlencode({"clientId": client_id}))
+    if len(clients) != 1 or clients[0].get("clientId") != client_id:
+        raise SystemExit("浏览器客户端不存在或不唯一，拒绝创建替代身份")
+    path = clients_path + "/" + urllib.parse.quote(clients[0]["id"], safe="")
+    current = request(path)
+    changed = any(current.get(key) != value for key, value in desired.items())
+    if changed:
+        # 只发送这两项，其他 client 属性、protocol mapper 与 secret 均不投递。
+        request(path, desired)
+    confirmed = request(path)
+    if any(confirmed.get(key) != value for key, value in desired.items()):
+        raise SystemExit("浏览器客户端回调回读不一致，初始化未完成")
+    print("浏览器客户端回调已同步并查证" if changed else "浏览器客户端回调已一致，无需更新")
+except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+    raise SystemExit("浏览器客户端同步未完成；修复 IdP 连接或配置后重跑查证，不重建 realm") from None
+PYSYNC
   exit 0
 fi
 [ "$#" -eq 0 ] || { echo 'bootstrap.sh 不接受该参数' >&2; exit 2; }
@@ -116,15 +176,11 @@ gen_hex() {
 gen core_db_password
 # Compose 会在启动单个 registry 服务时解析其它服务的 env_file，因此该投递文件
 # 必须在首次 compose 调用之前存在；它由唯一的 DB 输入与已有 secret 派生。
-core_db_password=$(<secrets/core_db_password)
-if ! [[ "$core_db_password" =~ ^[A-Za-z0-9_=-]+$ ]]; then
-  echo 'Core 数据库密码不适合 PostgreSQL URL，拒绝生成连接串' >&2
-  exit 2
-fi
-printf 'DATABASE_URL=postgres://%s:%s@core-db:5432/%s\n' \
-  "$CORE_DB_USER" "$core_db_password" "$CORE_DB_NAME" > secrets/core-db-url.env
+. ./database-url.sh
+core_database_dsn="$(core_database_url core-db:5432)"
+printf 'DATABASE_URL=%s\n' "$core_database_dsn" > secrets/core-db-url.env
 chmod 600 secrets/core-db-url.env
-unset core_db_password
+unset core_database_dsn
 printf '  已生成：secrets/core-db-url.env\n'
 gen buzz_db_password
 gen buzz_objects_root_password

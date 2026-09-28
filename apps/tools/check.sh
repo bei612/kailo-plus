@@ -428,6 +428,67 @@ step_security() { hdr "9/10 受影响安全不变式"
   if [ ! -f deploy/local/compose.yaml ]; then skip "尚无部署描述"; return 0; fi
   python3 - <<'PY' || FAIL=1
 import glob, os, re, subprocess, sys, yaml
+import pathlib, shlex, tempfile
+from urllib.parse import unquote, urlsplit
+
+# 配置校验与连接串编码直接运行生产脚本，夹具不读取部署 .env 或真实凭据。
+bootstrap = pathlib.Path("deploy/local/bootstrap.sh").read_text(encoding="utf-8")
+initializer = pathlib.Path("deploy/local/init-local.sh").read_text(encoding="utf-8")
+prechecks = list(re.finditer(r"^\./bootstrap\.sh --validate-config$", initializer, re.M))
+destructive = list(re.finditer(r"^\s*(?:compose down --volumes|sudo -n rm -rf)\b", initializer, re.M))
+if len(prechecks) != 1 or not destructive or any(item.start() < prechecks[0].start() for item in destructive):
+    raise SystemExit("FAIL init-local 必须在删除前调用同一配置预检")
+sync_calls = list(re.finditer(r"^\./bootstrap\.sh --sync-browser-client$", initializer, re.M))
+idp_ready = re.search(r"^compose up -d --wait keycloak temporal spicedb buzz-relay$", initializer, re.M)
+core_start = re.search(r"^\./start-core\.sh$", initializer, re.M)
+if (len(sync_calls) != 1 or not idp_ready or not core_start
+        or not idp_ready.end() < sync_calls[0].start() < core_start.start()):
+    raise SystemExit("FAIL 浏览器回调同步必须在 IdP 就绪后、Core 启动前执行")
+fixture_env = {
+    "PLATFORM_DISPLAY_NAME": '协作 < & "',
+    "PUBLIC_HOST": "platform.example.test", "AGENTGATEWAY_PORT": "18080",
+    "PUBLIC_ORIGIN": "http://platform.example.test:18080",
+    "OIDC_HOST": "identity.example.test", "KEYCLOAK_PORT": "18081",
+    "OIDC_REALM": "enterprise", "OIDC_ISSUER": "http://identity.example.test:18081/realms/enterprise",
+    "BUZZ_RELAY_HOST": "relay.example.test", "BUZZ_RELAY_PORT": "18082",
+    "CORE_DB_USER": "platform", "CORE_DB_NAME": "platform", "CORE_DB_PORT": "18083",
+}
+with tempfile.TemporaryDirectory(prefix="kailo-config-check-") as directory:
+    root = pathlib.Path(directory)
+    bootstrap_file = root / "bootstrap.sh"
+    bootstrap_file.write_text(bootstrap, encoding="utf-8")
+    cases = [({}, 0)]
+    cases += [({"PLATFORM_DISPLAY_NAME": value}, 1) for value in ("", " \t ", "\u3000")]
+    cases += [({"CORE_DB_PORT": value}, 1) for value in ("bad", "0", "65536")]
+    for override, expected in cases:
+        (root / ".env").write_text("".join(key + "=" + shlex.quote(value) + "\n"
+                                          for key, value in {**fixture_env, **override}.items()),
+                                   encoding="utf-8")
+        result = subprocess.run(["bash", str(bootstrap_file), "--validate-config"], capture_output=True)
+        if result.returncode != expected or set(p.name for p in root.iterdir()) != {".env", "bootstrap.sh"}:
+            raise SystemExit("FAIL bootstrap 预检必须无副作用地接受有效配置并拒绝空展示名或无效数据库端口")
+    helper = root / "database-url.sh"
+    helper.write_bytes(pathlib.Path("deploy/local/database-url.sh").read_bytes())
+    (root / "secrets").mkdir()
+    for password in ("fixture-safe", "fixture+/=@:%?#", "夹具口令 / +", ""):
+        (root / "secrets/core_db_password").write_text(password, encoding="utf-8")
+        for authority in ("core-db:5432", "127.0.0.1:18083"):
+            result = subprocess.run(["bash", "-c", '. "$1"; core_database_url "$2"',
+                                     "config-check", str(helper), authority],
+                                    env={**os.environ, **fixture_env}, capture_output=True, text=True)
+            if not password:
+                if result.returncode == 0:
+                    raise SystemExit("FAIL 空数据库密码未拒绝")
+                continue
+            parsed = urlsplit(result.stdout.strip())
+            if (result.returncode != 0 or unquote(parsed.username or "") != fixture_env["CORE_DB_USER"]
+                    or unquote(parsed.password or "") != password
+                    or parsed.netloc.rsplit("@", 1)[-1] != authority
+                    or unquote(parsed.path) != "/" + fixture_env["CORE_DB_NAME"]
+                    or parsed.query or parsed.fragment):
+                raise SystemExit("FAIL Core 数据库连接串编码与共享输入不一致")
+print("  \033[32mPASS\033[0m 初始化展示名校验；部署与宿主共用数据库 URL 编码，保留特殊字符口令")
+
 class UniqueKeysLoader(yaml.SafeLoader):
     pass
 
