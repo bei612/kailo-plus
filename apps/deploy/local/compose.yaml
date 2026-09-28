@@ -219,7 +219,7 @@ services:
     command:
       - |
         set -eu
-        mc alias set obj http://buzz-objects:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        # alias obj 由 env_file 中的 MC_HOST_obj 声明，凭据不出现在命令行
         mc mb --ignore-existing "obj/$$BUZZ_S3_BUCKET"
         echo "bucket $$BUZZ_S3_BUCKET 就绪"
     restart: "no"
@@ -658,8 +658,10 @@ services:
       KC_HEALTH_ENABLED: "true"
     secrets: [keycloak_admin_password]
     volumes:
+      # 持久卷挂在镜像已有且属 keycloak 用户的 data 目录：空卷首次挂载时继承该属主，
+      # H2 在其中的 h2/ 子目录；挂到镜像里不存在的路径时新卷根属 root，Keycloak 无法写入。
+      - keycloak-data:/opt/keycloak/data
       - ./secrets/keycloak-import:/opt/keycloak/data/import:ro
-      - keycloak-data:/opt/keycloak/data/h2
     # 口令从 secret 挂载读入后导出：Keycloak 不支持 _FILE 变体，
     # 直接写进 environment 会让它出现在 compose 与 .env 里。
     entrypoint: ["/bin/bash", "-c"]

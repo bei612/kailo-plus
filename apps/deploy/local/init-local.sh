@@ -71,13 +71,13 @@ available_kib=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
 }
 compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "$@"; }
 
-# 旧拓扑把 Keycloak 的 H2 放在容器层。直接重建该容器会换掉所有 subject，
-# Core 却仍保留旧 ExternalIdentity；拒绝把这种环境伪装成无损升级。
+# 旧拓扑把 Keycloak 的 H2 放在容器层或挂在别的路径。直接重建该容器会换掉所有
+# subject，Core 却仍保留旧 ExternalIdentity；拒绝把这种环境伪装成无损升级。
 if ! "$fresh"; then
   keycloak_container=$(compose ps -q keycloak)
   if [ -n "$keycloak_container" ] && ! sudo -n docker inspect "$keycloak_container" \
       --format '{{range .Mounts}}{{.Destination}}{{println}}{{end}}' \
-      | grep -Fxq '/opt/keycloak/data/h2'; then
+      | grep -Fxq '/opt/keycloak/data'; then
     echo '旧 Keycloak 容器没有持久数据卷；保留现有数据并停止，确认可删除后显式 --fresh 重建' >&2
     exit 2
   fi

@@ -376,7 +376,13 @@ printf '  已生成：secrets/zed.env\n'
 # 对象存储自身的凭据；与 Relay 侧同源，保持单一真值。
 { printf 'MINIO_ROOT_USER=%s\n' "${BUZZ_OBJECTS_USER:?}"
   printf 'MINIO_ROOT_PASSWORD='; cat secrets/buzz_objects_root_password; printf '\n'
-  printf 'BUZZ_S3_BUCKET=%s\n' "${BUZZ_S3_BUCKET:?}"; } > secrets/buzz-objects.env
+  printf 'BUZZ_S3_BUCKET=%s\n' "${BUZZ_S3_BUCKET:?}"
+  # mc 的 alias 由环境变量声明，凭据不上命令行（进程列表可见；以 `-` 开头的随机口令
+  # 还会被当成选项）。mc 原样使用 userinfo、不做百分号解码，因此只接受 URL 安全字符，
+  # 其他字符直接拒绝；与上方同一份凭据派生。
+  printf 'MC_HOST_obj='
+  python3 -c 'import re, sys; user, secret = sys.argv[1], open(sys.argv[2]).read().strip(); ok = re.compile(r"[A-Za-z0-9._~=-]+"); (ok.fullmatch(user) and ok.fullmatch(secret)) or sys.exit("对象存储用户或口令含 URL 不安全字符，mc 无法原样使用"); print("http://%s:%s@buzz-objects:9000" % (user, secret))' \
+    "${BUZZ_OBJECTS_USER:?}" secrets/buzz_objects_root_password; } > secrets/buzz-objects.env
 chmod 600 secrets/buzz-objects.env
 printf '  已生成：secrets/buzz-objects.env\n'
 chmod 600 secrets/buzz-relay.env
