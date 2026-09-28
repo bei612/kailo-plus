@@ -129,7 +129,8 @@ pub async fn project_buzz_identity(
     }
 }
 
-/// 投入：relay roster，再逐个 ACTIVE Workspace 的 Channel roster。
+/// 投入：relay roster，再逐个未暂停 Workspace 的 Channel roster（暂停中与已暂停的
+/// 由恢复重建收敛，DD-97）。
 async fn admit(
     state: &ServiceState,
     control: &IdentityClient,
@@ -213,6 +214,8 @@ async fn retire(
     tenant_id: Uuid,
     req: &IdentityProjectionRequest,
 ) -> Result<String, Response> {
+    // 不按 Workspace 状态筛：暂停中的 Channel 在清空之后已无该 pubkey，按缺席查证
+    // 先读 roster 即成立、不发 9001，不会卡在已归档的 Channel 上（DD-97）
     let channels = sqlx::query_scalar!(
         "select b.channel_id from projection.workspace_buzz_binding b
          join identity.workspace w on w.id = b.workspace_id
@@ -298,31 +301,38 @@ async fn channel_still_admissible(
     let Ok(channel_id) = channel.parse::<Uuid>() else {
         return Ok(false);
     };
-    sqlx::query_scalar!(
-        r#"select exists (
+    // Workspace 在投入期间进入暂停，同样把刚投入的移出：暂停的清空可能已经做完
+    sqlx::query_scalar(
+        "select exists (
              select 1 from projection.workspace_buzz_binding b
              join identity.workspace_membership wm on wm.workspace_id = b.workspace_id
+             join identity.workspace w on w.id = b.workspace_id
              where b.channel_id = $1 and b.state = 'ACTIVE'
-               and wm.tenant_principal_id = $2 and wm.state = 'ACTIVE') as "ok!""#,
-        channel_id,
-        principal_id
+               and w.state not in ('SUSPENDING', 'SUSPENDED')
+               and wm.tenant_principal_id = $2 and wm.state = 'ACTIVE')",
     )
+    .bind(channel_id)
+    .bind(principal_id)
     .fetch_one(&state.pool)
     .await
     .map_err(unavailable)
 }
 
-/// 此人 ACTIVE 成员关系所在、且 Channel 绑定 ACTIVE 的全部 Channel。
+/// 此人 ACTIVE 成员关系所在、Channel 绑定 ACTIVE 的全部 Channel，跳过暂停中与
+/// 已暂停的 Workspace：它们的 roster 已清空或将被清空，由恢复时的重建补上（DD-97）。
+/// 恢复中的照常投入——解档之前 9000 被拒即按结果不明重试。
 async fn active_channels(
     state: &ServiceState,
     principal_id: Uuid,
 ) -> Result<Vec<String>, Response> {
-    Ok(sqlx::query_scalar!(
+    Ok(sqlx::query_scalar::<_, Uuid>(
         "select b.channel_id from projection.workspace_buzz_binding b
          join identity.workspace_membership wm on wm.workspace_id = b.workspace_id
-         where wm.tenant_principal_id = $1 and wm.state = 'ACTIVE' and b.state = 'ACTIVE'",
-        principal_id
+         join identity.workspace w on w.id = b.workspace_id
+         where wm.tenant_principal_id = $1 and wm.state = 'ACTIVE' and b.state = 'ACTIVE'
+           and w.state not in ('SUSPENDING', 'SUSPENDED')",
     )
+    .bind(principal_id)
     .fetch_all(&state.pool)
     .await
     .map_err(unavailable)?

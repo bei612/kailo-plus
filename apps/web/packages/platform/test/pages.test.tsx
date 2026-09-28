@@ -85,7 +85,7 @@ describe("WorkspaceMembersPage", () => {
       r.path === "/api/v1/workspaces"
         ? { status: 200, body: [{ id: "w1", name: "Ops", slug: "ops" }] }
         : r.path.startsWith("/api/v1/role-workspaces")
-          ? { status: 200, body: { workspaces: [{ id: "w1", name: "Ops" }] } }
+          ? { status: 200, body: { workspaces: [{ id: "w1", name: "Ops", state: "ACTIVE" }] } }
         : r.path.startsWith("/api/v1/role-members")
           ? { status: 403, body: {} }
         : {
@@ -257,7 +257,7 @@ describe("RoleMembers", () => {
   it("Workspace 管理员即使不是频道成员，也能从独立管理列表选中 Workspace", async () => {
     const t = transport((r) =>
       r.path.startsWith("/api/v1/role-workspaces")
-        ? { status: 200, body: { workspaces: [{ id: "w-admin", name: "Managed only" }] } }
+        ? { status: 200, body: { workspaces: [{ id: "w-admin", name: "Managed only", state: "ACTIVE" }] } }
         : { status: 200, body: { members: [{
           ...members[1],
           canGrantTenantAdmin: false,
@@ -271,6 +271,141 @@ describe("RoleMembers", () => {
       method: "GET", path: "/api/v1/role-members?workspaceId=w-admin",
     });
     expect(button(host, "Grant").disabled).toBe(false);
+    // 没有给出动作键就不渲染暂停/恢复入口
+    expect(host.querySelector("[data-testid=workspace-lifecycle]")).toBeNull();
+  });
+});
+
+describe("Workspace 暂停与恢复", () => {
+  const recorded = (actionKey: string) => ({
+    status: 202,
+    body: { operationId: "op-9", actionExecutionId: "ae-9", actionKey, gateState: "ALLOWED", dispatchState: "DISPATCHED" },
+  });
+  const roleRoutes = (workspace: Record<string, unknown>, action: (r: BffRequest) => BffReply) =>
+    transport((r) =>
+      r.path.startsWith("/api/v1/role-workspaces")
+        ? { status: 200, body: { workspaces: [workspace] } }
+        : r.path === "/api/v1/actions"
+          ? action(r)
+          : r.path.startsWith("/api/v1/role-members")
+            ? { status: 200, body: { members: [] } }
+            : { status: 200, body: [] },
+    );
+
+  it("只在给出暂停键时提供入口；受理回应只说已登记，不说成功", async () => {
+    const t = roleRoutes(
+      { id: "w-1", name: "Ops", state: "ACTIVE", lifecycleActionKey: "workspace.suspend" },
+      () => recorded("workspace.suspend"),
+    );
+    const host = await mount(t, <RoleManagement />);
+    await settle();
+    expect(host.querySelector("[data-testid=workspace-state]")?.textContent).toContain("Active");
+    await click(button(host, "Suspend"));
+    expect(host.textContent).toContain("Suspend workspace Ops?");
+    await click(button(host, "Confirm"));
+    const post = t.send.mock.calls.map(([r]) => r).find((r) => r.path === "/api/v1/actions");
+    expect(post?.body).toMatchObject({ actionKey: "workspace.suspend", workspaceId: "w-1" });
+    expect(Object.keys(post?.body ?? {}).sort()).toEqual(["actionKey", "idempotencyKey", "workspaceId"]);
+    const status = host.querySelector("[data-testid=workspace-lifecycle] [role=status]")?.textContent ?? "";
+    expect(status).toContain("Request recorded");
+    expect(status).toContain("op-9");
+    expect(status).not.toMatch(/succe/i);
+  });
+
+  it("结果不明时保留原幂等键重查，不另发一笔也不能取消", async () => {
+    let calls = 0;
+    const t = roleRoutes(
+      { id: "w-1", name: "Ops", state: "ACTIVE", lifecycleActionKey: "workspace.suspend" },
+      () => {
+        calls++;
+        return calls === 1
+          ? { status: 503, body: { class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable, operationId: "op-u" } }
+          : recorded("workspace.suspend");
+      },
+    );
+    const host = await mount(t, <RoleManagement />);
+    await settle();
+    await click(button(host, "Suspend"));
+    await click(button(host, "Confirm"));
+    expect(host.querySelector("[data-testid=workspace-lifecycle] [role=alert]")?.textContent).toContain("op-u");
+    expect([...host.querySelectorAll("[data-testid=workspace-lifecycle] button")].map((b) => b.textContent))
+      .not.toContain("Cancel");
+    await click(button(host, "Retry same request"));
+    const posts = t.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
+    expect(posts).toHaveLength(2);
+    expect((posts[1]?.body as { idempotencyKey: string }).idempotencyKey)
+      .toBe((posts[0]?.body as { idempotencyKey: string }).idempotencyKey);
+    expect(host.textContent).toContain("Request recorded");
+  });
+
+  it("已暂停的 Workspace 显示状态与恢复入口，角色视图退回 Tenant 级", async () => {
+    const t = roleRoutes(
+      { id: "w-2", name: "Paused", state: "SUSPENDED", lifecycleActionKey: "workspace.restore" },
+      () => recorded("workspace.restore"),
+    );
+    const host = await mount(t, <RoleManagement />, "zh-CN");
+    await settle();
+    expect(host.querySelector("[data-testid=workspace-state]")?.textContent).toContain("已暂停");
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/role-members" });
+    expect(t.send).not.toHaveBeenCalledWith({ method: "GET", path: "/api/v1/role-members?workspaceId=w-2" });
+    await click(button(host, "恢复"));
+    expect(host.textContent).toContain("恢复工作区 Paused？");
+  });
+
+  it("派发中止显示原因并放下意图；未派发按结果不明保留原幂等键", async () => {
+    const aborted = roleRoutes(
+      { id: "w-1", name: "Ops", state: "ACTIVE", lifecycleActionKey: "workspace.suspend" },
+      () => ({ status: 202, body: { operationId: "op-a", actionExecutionId: "ae-a", actionKey: "workspace.suspend",
+        gateState: "ALLOWED", dispatchState: "ABORTED" } }),
+    );
+    const host = await mount(aborted, <RoleManagement />);
+    await settle();
+    await click(button(host, "Suspend"));
+    await click(button(host, "Confirm"));
+    const alert = host.querySelector("[data-testid=workspace-lifecycle] [role=alert]")?.textContent ?? "";
+    expect(alert).toContain("not carried out");
+    expect(alert).toContain("ABORTED");
+    expect(alert).toContain("op-a");
+    expect(host.textContent).not.toContain("Retry same request");
+
+    let calls = 0;
+    const pending = roleRoutes(
+      { id: "w-1", name: "Ops", state: "ACTIVE", lifecycleActionKey: "workspace.suspend" },
+      () => {
+        calls++;
+        return calls === 1
+          ? { status: 202, body: { operationId: "op-p", actionExecutionId: "ae-p", actionKey: "workspace.suspend",
+            gateState: "ALLOWED", dispatchState: "UNKNOWN" } }
+          : recorded("workspace.suspend");
+      },
+    );
+    const again = await mount(pending, <RoleManagement />);
+    await settle();
+    await click(button(again, "Suspend"));
+    await click(button(again, "Confirm"));
+    expect(again.querySelector("[data-testid=workspace-lifecycle] [role=alert]")?.textContent).toContain("op-p");
+    expect(again.textContent).not.toContain("Request recorded");
+    await click(button(again, "Retry same request"));
+    const posts = pending.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
+    expect((posts[1]?.body as { idempotencyKey: string }).idempotencyKey)
+      .toBe((posts[0]?.body as { idempotencyKey: string }).idempotencyKey);
+    expect(again.textContent).toContain("Request recorded");
+  });
+
+  it("选中非 ACTIVE Workspace 时显式标注当前作用域为整个组织", async () => {
+    const t = roleRoutes({ id: "w-4", name: "Broken", state: "ERROR", lifecycleActionKey: "workspace.suspend" },
+      () => recorded("workspace.suspend"));
+    const host = await mount(t, <RoleManagement />);
+    await settle();
+    expect(host.querySelector("[data-testid=role-scope-tenant]")?.textContent).toContain("whole organization");
+    expect(button(host, "Suspend").disabled).toBe(false);
+  });
+
+  it("状态不合契约时显示读取失败", async () => {
+    const t = roleRoutes({ id: "w-3", name: "Odd", state: "DELETED" }, () => recorded("workspace.suspend"));
+    const host = await mount(t, <RoleManagement />);
+    await settle();
+    expect(host.textContent).toContain("result is unknown");
   });
 });
 

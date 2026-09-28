@@ -34,8 +34,8 @@ vendor_files:
   - web/packages/platform/src/react/governance.tsx:web/src/kailo-platform/react/governance.tsx
   - web/packages/platform/src/react/invitations.tsx:web/src/kailo-platform/react/invitations.tsx
   - web/packages/platform/src/react/roles.tsx:web/src/kailo-platform/react/roles.tsx
-patch_series_digest: sha256:aaccd8d309f14d0ff8682af3dde036c5ae76ac1b025521db8ee3f9cf64079b40
-artifact_digest: sha256:c45c7ecf93bc8babc48c94696426a06c4e21b22ed2a6a8a769465b70d5249040
+patch_series_digest: sha256:c1ae0cdc8963a7c15040ac8879420e2ff3112b21c9f303e8cae512e3a7797af6
+artifact_digest: sha256:2e1255397f501586cc22c5aeba2fcc93cddd47ff79b88fd6b012e891e710ce14
 
 # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
 build_context: web

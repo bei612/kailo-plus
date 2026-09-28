@@ -1629,8 +1629,9 @@ class RoleMemberView {
   });
 }
 
-///GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage
-///permission，并附当前可用的 Workspace 创建动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。
+///GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 Workspace 持有 fresh manage
+///permission（ACTIVE、暂停中、已暂停、恢复中，以及已有协作面 binding 的 ERROR，各带当前状态），并附当前可用的 Workspace
+///创建、暂停与恢复动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。
 class RoleWorkspacePage {
   ///当前 Principal 经 fresh Tenant create 检查可见的动作 key；目录未开放或无权时省略
   final CreateActionKey? createActionKey;
@@ -1671,15 +1672,70 @@ final createActionKeyValues = EnumValues({
 
 class RoleWorkspaceView {
   final String id;
+
+  ///当前 Principal 经 fresh Tenant manage 检查、按该 Workspace 当前状态可发起的暂停（ACTIVE 或
+  ///ERROR）或恢复（SUSPENDED）动作 key；目录未开放、无权、处于收敛中或本页提示判定失败时省略
+  final WorkspaceLifecycleActionKey? lifecycleActionKey;
   final String name;
+  final WorkspaceState state;
 
-  RoleWorkspaceView({required this.id, required this.name});
+  RoleWorkspaceView({
+    required this.id,
+    this.lifecycleActionKey,
+    required this.name,
+    required this.state,
+  });
 
-  factory RoleWorkspaceView.fromJson(Map<String, dynamic> json) =>
-      RoleWorkspaceView(id: json["id"], name: json["name"]);
+  factory RoleWorkspaceView.fromJson(
+    Map<String, dynamic> json,
+  ) => RoleWorkspaceView(
+    id: json["id"],
+    lifecycleActionKey: json["lifecycleActionKey"] == null
+        ? null
+        : workspaceLifecycleActionKeyValues.map[json["lifecycleActionKey"]]!,
+    name: json["name"],
+    state: workspaceStateValues.map[json["state"]]!,
+  );
 
-  Map<String, dynamic> toJson() => _stripNulls({"id": id, "name": name});
+  Map<String, dynamic> toJson() => _stripNulls({
+    "id": id,
+    "lifecycleActionKey":
+        workspaceLifecycleActionKeyValues.reverse[lifecycleActionKey],
+    "name": name,
+    "state": workspaceStateValues.reverse[state],
+  });
 }
+
+///当前 Principal 经 fresh Tenant manage 检查、按该 Workspace 当前状态可发起的暂停（ACTIVE 或
+///ERROR）或恢复（SUSPENDED）动作 key；目录未开放、无权、处于收敛中或本页提示判定失败时省略
+///
+///Workspace 暂停与恢复的 ActionDefinition key（.design/06 §7.3）。两者都从 Tenant scope 发起；当前不登记
+///Workspace delete（DD-46）。
+enum WorkspaceLifecycleActionKey { WORKSPACE_RESTORE, WORKSPACE_SUSPEND }
+
+final workspaceLifecycleActionKeyValues = EnumValues({
+  "workspace.restore": WorkspaceLifecycleActionKey.WORKSPACE_RESTORE,
+  "workspace.suspend": WorkspaceLifecycleActionKey.WORKSPACE_SUSPEND,
+});
+
+///Workspace 状态机。权威定义见 .design/03-领域模型与权限模型.md。
+enum WorkspaceState {
+  ACTIVE,
+  ERROR,
+  PROVISIONING,
+  RESTORING,
+  SUSPENDED,
+  SUSPENDING,
+}
+
+final workspaceStateValues = EnumValues({
+  "ACTIVE": WorkspaceState.ACTIVE,
+  "ERROR": WorkspaceState.ERROR,
+  "PROVISIONING": WorkspaceState.PROVISIONING,
+  "RESTORING": WorkspaceState.RESTORING,
+  "SUSPENDED": WorkspaceState.SUSPENDED,
+  "SUSPENDING": WorkspaceState.SUSPENDING,
+});
 
 ///GET /api/v1/session 的回应：已解析的执行身份与本次 PlatformSession。原生端以 platformSessionId
 ///绑定设备持钥证明（DD-79）。

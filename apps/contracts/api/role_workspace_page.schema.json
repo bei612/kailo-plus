@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/role_workspace_page.schema.json",
   "title": "RoleWorkspacePage",
-  "description": "GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage permission，并附当前可用的 Workspace 创建动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。",
+  "description": "GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 Workspace 持有 fresh manage permission（ACTIVE、暂停中、已暂停、恢复中，以及已有协作面 binding 的 ERROR，各带当前状态），并附当前可用的 Workspace 创建、暂停与恢复动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。",
   "type": "object",
   "additionalProperties": false,
   "required": ["workspaces"],
@@ -14,10 +14,12 @@
         "title": "RoleWorkspaceView",
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "name"],
+        "required": ["id", "name", "state"],
         "properties": {
           "id": { "type": "string", "format": "uuid" },
-          "name": { "type": "string" }
+          "name": { "type": "string" },
+          "state": { "$ref": "../enums/workspace_state.schema.json" },
+          "lifecycleActionKey": { "$ref": "../enums/workspace_lifecycle_action_key.schema.json", "description": "当前 Principal 经 fresh Tenant manage 检查、按该 Workspace 当前状态可发起的暂停（ACTIVE 或 ERROR）或恢复（SUSPENDED）动作 key；目录未开放、无权、处于收敛中或本页提示判定失败时省略" }
         }
       }
     },

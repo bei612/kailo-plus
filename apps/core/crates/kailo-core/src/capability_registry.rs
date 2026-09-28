@@ -61,6 +61,9 @@ mod tests {
     fn generated_registry_closes_unreleased_user_entries() {
         assert!(route_exposed("/api/v1/session"));
         assert!(action_exposed("workspace.create"));
+        assert!(action_exposed("workspace.suspend"));
+        assert!(action_exposed("workspace.restore"));
+        assert!(!action_exposed("workspace.delete"));
         assert!(!route_exposed("/api/v1/identity/legacy-secret-refs"));
         assert!(!action_exposed("identity.secret_ref.rehome"));
         assert!(!action_exposed("tenant.delete"));

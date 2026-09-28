@@ -1,0 +1,47 @@
+capability_id: lifecycle.workspace_suspension
+title: Workspace 暂停与恢复从 Tenant scope 发起，暂停先在 Core fail closed、再清空 Channel roster 并 archive，恢复解档并按 Core 事实重建 roster 后才重新开放
+stage: S2
+status: in_progress
+exposure: tenant_admin
+
+design:
+  requirements: [V-REQ-02, V-REQ-03]
+  # DD-46 在覆盖矩阵归 Stage 1，按规则 5 不在此列出（见 05 §7 本能力行的说明）
+  decisions: [DD-54, DD-97]
+  facts: [SF-BUZ-15]
+  seams: []
+  blockers: []
+  entities: [Workspace, WorkspaceBuzzBinding, ActionDefinition, ActionExecution, WorkflowRef, TaskProjection]
+
+validation:
+  scenarios: [V-SCN-36]
+  evidence:
+    - dimension: 领域规则
+      ref: core/verify/scope-suspension.md
+    - dimension: 安全边界
+      ref: core/verify/scope-suspension.md
+    - dimension: 端到端场景
+      ref: core/crates/kailo-core/tests/workspace_suspension.rs
+    - dimension: 呈现
+      ref: core/verify/scope-suspension.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/membership_lifecycle.rs, core/crates/kailo-core/src/tenant_lifecycle.rs, core/crates/kailo-core/src/task_rerun.rs, core/crates/kailo-core/src/platform_views.rs, core/crates/kailo-core/src/roster_reconcile.rs, core/crates/kailo-core/src/identity_projection.rs, core/crates/kailo-buzz/src/bridge.rs, worker/workflows/component_task.go, worker/workflows/workspace_suspension_test.go, worker/activities/core_api.go, web/packages/platform/src/react/roles.tsx, web/packages/platform/src/i18n.ts]
+  # 管理入口由 Web 与 Desktop 共用的 TS 包交付；Mobile 不提供此写入口
+  surfaces: [web, desktop]
+  schemas: [contracts/api/role_workspace_page.schema.json, contracts/enums/workspace_state.schema.json, contracts/enums/workspace_lifecycle_action_key.schema.json]
+  migrations: [core/migrations/20260928140000_workspace_suspension.up.sql]
+
+runtime:
+  routes: ["/api/v1/actions", "/api/v1/role-workspaces", "/service/v1/workspaces/channel-archive", "/service/v1/workspaces/channel-roster"]
+  actions: [workspace.suspend, workspace.restore]
+  workflow_kinds: [WORKSPACE_LIFECYCLE]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:2672a6fffa8a50e3f207b5f438757c35f8fd038507b5a97a345ede433aefbc37
+    - name: upstream-buzz-web
+      digest: sha256:2e1255397f501586cc22c5aeba2fcc93cddd47ff79b88fd6b012e891e710ce14
+  gate: ready

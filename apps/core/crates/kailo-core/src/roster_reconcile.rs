@@ -113,28 +113,32 @@ async fn pass(state: &ServiceState, metrics: &Metrics) -> Result<(), String> {
                     .add(1, &[KeyValue::new("outcome", "ROSTER_UNREADABLE")]);
             }
         }
-        let workspaces = sqlx::query!(
-            "select b.workspace_id, b.channel_id from projection.workspace_buzz_binding b
+        // 暂停中与已暂停 Workspace 的 Channel 期望只剩 CONTROL（DD-97）；其余按成员事实
+        let workspaces: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+            "select b.workspace_id, b.channel_id, w.state from projection.workspace_buzz_binding b
              join identity.workspace w on w.id = b.workspace_id
              where w.tenant_id = $1 and b.state = 'ACTIVE'",
-            tenant
         )
+        .bind(tenant)
         .fetch_all(&state.pool)
         .await
         .map_err(|e| e.to_string())?;
-        for ws in workspaces {
-            match compare_channel(state, &control, tenant, ws.workspace_id, ws.channel_id).await {
+        for (workspace_id, channel_id, ws_state) in workspaces {
+            let suspended = matches!(ws_state.as_str(), "SUSPENDING" | "SUSPENDED");
+            match compare_channel(state, &control, tenant, workspace_id, channel_id, suspended)
+                .await
+            {
                 Ok(d) => {
                     record(metrics, "channel", &d);
                     channel.missing += d.missing;
                     channel.unexpected += d.unexpected;
                     if d.missing + d.unexpected > 0 {
-                        tracing::warn!(workspace = %ws.workspace_id, missing = d.missing,
+                        tracing::warn!(workspace = %workspace_id, missing = d.missing,
                             unexpected = d.unexpected, "Channel roster 与成员事实不一致");
                     }
                 }
                 Err(e) => {
-                    tracing::info!(workspace = %ws.workspace_id, error = %e, "Channel roster 读取失败");
+                    tracing::info!(workspace = %workspace_id, error = %e, "Channel roster 读取失败");
                     metrics
                         .scopes
                         .add(1, &[KeyValue::new("outcome", "ROSTER_UNREADABLE")]);
@@ -233,13 +237,16 @@ async fn compare_relay(
     Ok(diff(&roster, &settled, &unsettled))
 }
 
-async fn compare_channel(
-    state: &ServiceState,
-    control: &IdentityClient,
+/// 一个 Workspace 的 Channel roster「应在」的集合：CONTROL（Channel 的建立者与
+/// owner），加上该 Workspace 全部 ACTIVE WorkspaceMembership 对应 Principal 的全部
+/// ACTIVE Buzz 身份（其 TenantMembership 也须 ACTIVE）。对账度量与恢复时的 roster
+/// 重建（DD-97）共用这一处，两边不会各自理解「应在」。
+pub(crate) async fn settled_channel_roster(
+    pool: &sqlx::PgPool,
+    control_pubkey: String,
     tenant: Uuid,
     workspace: Uuid,
-    channel: Uuid,
-) -> Result<Drift, String> {
+) -> Result<HashSet<String>, sqlx::Error> {
     let mut settled: HashSet<String> = sqlx::query_scalar!(
         "select b.pubkey from identity.buzz_identity_binding b
          join identity.workspace_membership wm on wm.tenant_principal_id = b.principal_id
@@ -250,14 +257,22 @@ async fn compare_channel(
         tenant,
         workspace
     )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| e.to_string())?
+    .fetch_all(pool)
+    .await?
     .into_iter()
     .collect();
-    // CONTROL 建立了该 Channel，是它的 owner
-    settled.insert(control.pubkey_hex());
-    let unsettled: HashSet<String> = sqlx::query_scalar!(
+    settled.insert(control_pubkey);
+    Ok(settled)
+}
+
+/// 仍在收敛中的钥匙：binding 或相应成员关系处于建立或撤权途中。它们在 roster 上
+/// 或不在都是那条 Workflow 的中间态，度量与恢复重建都不替它们下结论。
+pub(crate) async fn unsettled_channel_roster(
+    pool: &sqlx::PgPool,
+    tenant: Uuid,
+    workspace: Uuid,
+) -> Result<HashSet<String>, sqlx::Error> {
+    Ok(sqlx::query_scalar!(
         "select b.pubkey from identity.buzz_identity_binding b
          left join identity.workspace_membership wm
            on wm.tenant_principal_id = b.principal_id and wm.workspace_id = $2
@@ -270,11 +285,34 @@ async fn compare_channel(
         tenant,
         workspace
     )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| e.to_string())?
+    .fetch_all(pool)
+    .await?
     .into_iter()
-    .collect();
+    .collect())
+}
+
+/// `suspended` 为真（Workspace `SUSPENDING`/`SUSPENDED`）时，期望集合只有 CONTROL：
+/// 暂停按设计把 roster 清空（DD-97），此时任何其他成员都是不应在。
+async fn compare_channel(
+    state: &ServiceState,
+    control: &IdentityClient,
+    tenant: Uuid,
+    workspace: Uuid,
+    channel: Uuid,
+    suspended: bool,
+) -> Result<Drift, String> {
+    let (settled, unsettled) = if suspended {
+        (HashSet::from([control.pubkey_hex()]), HashSet::new())
+    } else {
+        (
+            settled_channel_roster(&state.pool, control.pubkey_hex(), tenant, workspace)
+                .await
+                .map_err(|e| e.to_string())?,
+            unsettled_channel_roster(&state.pool, tenant, workspace)
+                .await
+                .map_err(|e| e.to_string())?,
+        )
+    };
     let channel = channel.to_string();
     let roster: HashSet<String> = control
         .roster(&state.http, Scope::Channel(&channel))

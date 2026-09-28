@@ -39,6 +39,7 @@ use crate::audit::{append, AuditEntry};
 use crate::component_task;
 use crate::membership_lifecycle::{
     launch_membership, launch_scope, LifecycleRequest, LifecycleResponse, ScopeLifecycleRequest,
+    ScopeOperation,
 };
 use crate::membership_projection::MembershipScope;
 use crate::scope_state::ScopeKind;
@@ -135,13 +136,18 @@ impl Entity {
     }
 }
 
-/// kind 与原动作方向 → 该实体停在的收敛中状态。scope 只有建立链，
-/// 成员按 kind 区分建立与撤权，身份投影按原 action key 区分登记与撤销。
+/// kind 与原动作方向 → 该实体停在的收敛中状态。scope 只重跑建立链：Workspace
+/// 暂停与恢复（`workspace.suspend`/`workspace.restore`）同属 WORKSPACE_LIFECYCLE，
+/// 但未登记重跑控制定义（DD-84），这里按原 action key 显式不给收敛中状态，使它们
+/// 的终态 Workflow 不会被当作建立链以 PROVISIONING 重跑。成员按 kind 区分建立与
+/// 撤权，身份投影按原 action key 区分登记与撤销。
 fn converging_state(kind: &str, action_key: &str) -> Option<&'static str> {
     match kind {
-        "TENANT_LIFECYCLE" | "WORKSPACE_LIFECYCLE" | "MEMBERSHIP_PROJECTION" => {
-            Some("PROVISIONING")
-        }
+        "WORKSPACE_LIFECYCLE" => match action_key {
+            "workspace.suspend" | "workspace.restore" => None,
+            _ => Some("PROVISIONING"),
+        },
+        "TENANT_LIFECYCLE" | "MEMBERSHIP_PROJECTION" => Some("PROVISIONING"),
         "MEMBERSHIP_REVOCATION" => Some("REVOKING"),
         "BUZZ_IDENTITY_PROJECTION" => match action_key {
             "identity.client_key.register" | "identity.key_provision" => Some("RECONCILING"),
@@ -559,6 +565,8 @@ async fn start(pool: &PgPool, temporal: &TemporalClient, ready: &Ready, action: 
                     kind,
                     id: *id,
                     action_execution_id: action,
+                    // converging_state 只为 scope 的建立链给出收敛中状态
+                    operation: ScopeOperation::Provision,
                 },
             )
             .await
@@ -808,6 +816,17 @@ mod tests {
             None,
             "另一种动作不能借身份投影的终态重跑"
         );
+        assert_eq!(
+            converging_state("WORKSPACE_LIFECYCLE", "workspace.create"),
+            Some("PROVISIONING")
+        );
+        for action in ["workspace.suspend", "workspace.restore"] {
+            assert_eq!(
+                converging_state("WORKSPACE_LIFECYCLE", action),
+                None,
+                "暂停与恢复未开放重跑，不能被当作建立链重跑"
+            );
+        }
         let tenant = Uuid::new_v4();
         let pubkey = "a".repeat(64);
         let id = component_task::workflow_id("BUZZ_IDENTITY_PROJECTION", tenant, &pubkey, 5);

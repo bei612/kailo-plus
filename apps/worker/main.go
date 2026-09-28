@@ -84,6 +84,8 @@ func main() {
 	w.RegisterActivity(core.ProvisionTenantBuzz)
 	w.RegisterActivity(core.VerifyTenantBuzz)
 	w.RegisterActivity(core.ProvisionWorkspaceBuzz)
+	w.RegisterActivity(core.ConvergeWorkspaceChannelArchive)
+	w.RegisterActivity(core.ConvergeWorkspaceChannelRoster)
 	w.RegisterActivity(core.TransitionScope)
 	w.RegisterActivity(core.ProjectApprovalState)
 	w.RegisterActivity(core.FreshApprovalAdmission)

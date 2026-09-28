@@ -195,6 +195,45 @@ func (c *CoreAPI) ProvisionWorkspaceBuzz(ctx context.Context, in WorkspaceStepIn
 	return c.post(ctx, "/service/v1/workspaces/buzz-provision", in, nil)
 }
 
+// WorkspaceArchiveInput 是 Workspace 暂停/恢复时 Channel 归档与解档的载荷。
+// workspace 版本是 Workflow input 冻结的那个：Core 只在 Workspace 仍停在该版本的
+// SUSPENDING（归档）或 RESTORING（解档）时动作。
+type WorkspaceArchiveInput struct {
+	WorkspaceID      string `json:"workspaceId"`
+	WorkspaceVersion int32  `json:"workspaceVersion"`
+	Archived         bool   `json:"archived"`
+}
+
+// ConvergeWorkspaceChannelArchive 请 Core 把 Workspace 的 Channel 收敛到归档或解档，
+// 以回读的 discovery 为准（SF-BUZ-15）。409 表示 Workspace 已不在该版本的收敛中
+// 状态，属于确定的拒绝；回读未达目标回 503，结果不明，按重试上界继续。
+func (c *CoreAPI) ConvergeWorkspaceChannelArchive(ctx context.Context, in WorkspaceArchiveInput) error {
+	return c.post(ctx, "/service/v1/workspaces/channel-archive", in, nil)
+}
+
+// Channel roster 收敛的两种模式，与 Core 的 RosterMode 逐字相同（DD-97）。
+const (
+	// 暂停：归档前把 roster 清空为只剩 CONTROL
+	RosterClear = "CLEAR"
+	// 恢复：解档后按 Core 事实重建
+	RosterRebuild = "REBUILD"
+)
+
+// WorkspaceRosterInput 是 Workspace 暂停/恢复时 Channel roster 清空与重建的载荷。
+// 版本语义同 WorkspaceArchiveInput：CLEAR 要求 SUSPENDING、REBUILD 要求 RESTORING。
+type WorkspaceRosterInput struct {
+	WorkspaceID      string `json:"workspaceId"`
+	WorkspaceVersion int32  `json:"workspaceVersion"`
+	Mode             string `json:"mode"`
+}
+
+// ConvergeWorkspaceChannelRoster 请 Core 把 Workspace 的 Channel roster 收敛到 CLEAR
+// 或 REBUILD 的目标集合，以回读的 kind 39002 为准。409 表示 Workspace 已不在该版本的
+// 收敛中状态或 binding 不是 ACTIVE，属于确定的拒绝；未收敛回 503，按重试上界继续。
+func (c *CoreAPI) ConvergeWorkspaceChannelRoster(ctx context.Context, in WorkspaceRosterInput) error {
+	return c.post(ctx, "/service/v1/workspaces/channel-roster", in, nil)
+}
+
 // ScopeTransitionInput 是 Tenant/Workspace 自身状态的跃迁载荷。
 // 与成员状态跃迁分开：两者是不同的状态机（scope 有 SUSPENDING/RESTORING）。
 type ScopeTransitionInput struct {

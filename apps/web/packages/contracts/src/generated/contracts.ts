@@ -678,8 +678,9 @@ export interface RoleMemberView {
 }
 
 /**
- * GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 ACTIVE Workspace 持有 fresh manage
- * permission，并附当前可用的 Workspace 创建动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。
+ * GET /api/v1/role-workspaces 的有界回应：当前 Principal 对哪些 Workspace 持有 fresh manage
+ * permission（ACTIVE、暂停中、已暂停、恢复中，以及已有协作面 binding 的 ERROR，各带当前状态），并附当前可用的 Workspace
+ * 创建、暂停与恢复动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。
  */
 export interface RoleWorkspacePage {
     /**
@@ -698,8 +699,38 @@ export enum CreateActionKey {
 }
 
 export interface RoleWorkspaceView {
-    id:   string;
-    name: string;
+    id: string;
+    /**
+     * 当前 Principal 经 fresh Tenant manage 检查、按该 Workspace 当前状态可发起的暂停（ACTIVE 或
+     * ERROR）或恢复（SUSPENDED）动作 key；目录未开放、无权、处于收敛中或本页提示判定失败时省略
+     */
+    lifecycleActionKey?: WorkspaceLifecycleActionKey;
+    name:                string;
+    state:               WorkspaceState;
+}
+
+/**
+ * 当前 Principal 经 fresh Tenant manage 检查、按该 Workspace 当前状态可发起的暂停（ACTIVE 或
+ * ERROR）或恢复（SUSPENDED）动作 key；目录未开放、无权、处于收敛中或本页提示判定失败时省略
+ *
+ * Workspace 暂停与恢复的 ActionDefinition key（.design/06 §7.3）。两者都从 Tenant scope 发起；当前不登记
+ * Workspace delete（DD-46）。
+ */
+export enum WorkspaceLifecycleActionKey {
+    WorkspaceRestore = "workspace.restore",
+    WorkspaceSuspend = "workspace.suspend",
+}
+
+/**
+ * Workspace 状态机。权威定义见 .design/03-领域模型与权限模型.md。
+ */
+export enum WorkspaceState {
+    Active = "ACTIVE",
+    Error = "ERROR",
+    Provisioning = "PROVISIONING",
+    Restoring = "RESTORING",
+    Suspended = "SUSPENDED",
+    Suspending = "SUSPENDING",
 }
 
 /**

@@ -64,6 +64,10 @@ func TestComponentTaskReplay(t *testing.T) {
 		// 当前 Worker 的真实 MEMBERSHIP_PROJECTION 终态；与早期录制的 history
 		// 同时回归，分别覆盖同版本与升级版本重放。
 		"testdata/component_task_20260926_history.json",
+		// Workspace 暂停与恢复（DD-46/97）：清空 roster → 归档 → SUSPENDED，
+		// 以及对账归属 → 解档 → 重建 roster → ACTIVE 的真实终态
+		"testdata/component_task_workspace_suspend_history.json",
+		"testdata/component_task_workspace_restore_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.ComponentTask,

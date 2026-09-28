@@ -65,6 +65,37 @@ pub struct ScopeTarget {
     pub version: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_id: Option<String>,
+    /// 建立链不写此字段：已录制与在途的建立 history 的 input 逐字不变，Worker 以
+    /// 字段缺省识别建立。暂停与恢复显式写出（`.design/06` §7.3）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<ScopeOperation>,
+}
+
+/// scope 生命周期 Workflow 执行的那一段状态机。调用方声明意图，Core 再核对实体
+/// 此刻正停在该意图的收敛中状态——两者不一致即拒绝，不按当前状态替调用方猜。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum ScopeOperation {
+    #[default]
+    Provision,
+    Suspend,
+    Restore,
+}
+
+impl ScopeOperation {
+    /// 启动该段 Workflow 时实体必须停在的收敛中状态。
+    pub fn converging_state(self) -> &'static str {
+        match self {
+            Self::Provision => "PROVISIONING",
+            Self::Suspend => "SUSPENDING",
+            Self::Restore => "RESTORING",
+        }
+    }
+
+    /// Workflow input 里的取值；建立链为 `None`，保持原 input 形状。
+    fn input_field(self) -> Option<Self> {
+        (self != Self::Provision).then_some(self)
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -234,12 +265,16 @@ pub struct ScopeLifecycleRequest {
     pub kind: crate::scope_state::ScopeKind,
     pub id: Uuid,
     pub action_execution_id: Uuid,
+    /// 缺省为建立链：既有调用方的请求体不变。
+    #[serde(default)]
+    pub operation: ScopeOperation,
 }
 
 /// 启动 `TENANT_LIFECYCLE` 或 `WORKSPACE_LIFECYCLE`。
 ///
-/// 与成员那条同形：状态决定这是不是该起 Workflow（只有 `PROVISIONING` 能起
-/// 建立链），ActionExecution 提供准入依据，WorkflowRef 先于 Start 落库。
+/// 与成员那条同形：实体的收敛中状态必须与请求的段一致（建立 `PROVISIONING`、
+/// 暂停 `SUSPENDING`、恢复 `RESTORING`），ActionExecution 提供准入依据，
+/// WorkflowRef 先于 Start 落库。
 ///
 /// 不复用成员那个端点：两者的 target 解析、状态机与 Workflow input 形状都不同，
 /// 合并后只会得到一个内部按 kind 分叉三次的函数。
@@ -300,10 +335,17 @@ pub(crate) async fn launch_scope(
         }
     };
 
-    // Stage 1 只注册建立链。暂停/恢复有各自的入口与 input，不能靠同一个端点
-    // 按当前状态猜——猜错就是对一个运行中的 Tenant 执行建立。
-    if scope_state != "PROVISIONING" {
-        tracing::warn!(state = %scope_state, "scope 不在 PROVISIONING，不启动建立链");
+    // 调用方声明的段与实体此刻的收敛中状态必须一致：不按当前状态猜，猜错就是
+    // 对一个运行中的 scope 执行建立。Tenant 暂停/恢复尚未登记（DD-96 随其动作
+    // 交付），Tenant 只接受建立链。
+    if req.kind == crate::scope_state::ScopeKind::Tenant
+        && req.operation != ScopeOperation::Provision
+    {
+        tracing::warn!(operation = ?req.operation, "Tenant 只启动建立链");
+        return Err(StatusCode::CONFLICT.into_response());
+    }
+    if scope_state != req.operation.converging_state() {
+        tracing::warn!(state = %scope_state, operation = ?req.operation, "scope 不在该段的收敛中状态，不启动");
         return Err(StatusCode::CONFLICT.into_response());
     }
 
@@ -334,6 +376,7 @@ pub(crate) async fn launch_scope(
                     crate::scope_state::ScopeKind::Workspace => Some(tenant_id.to_string()),
                     crate::scope_state::ScopeKind::Tenant => None,
                 },
+                operation: req.operation.input_field(),
             },
         },
     };
@@ -354,5 +397,63 @@ pub(crate) async fn launch_scope(
             run_id,
         }),
         Err(r) => Err(r),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ScopeEnvelope, ScopeOperation, ScopeTarget};
+    use crate::component_task::ComponentTaskInput;
+
+    fn input(operation: ScopeOperation) -> serde_json::Value {
+        serde_json::to_value(ComponentTaskInput {
+            kind: "WORKSPACE_LIFECYCLE".to_owned(),
+            target: ScopeEnvelope {
+                scope: ScopeTarget {
+                    id: "w".to_owned(),
+                    version: 3,
+                    tenant_id: Some("t".to_owned()),
+                    operation: operation.input_field(),
+                },
+            },
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn provision_input_keeps_recorded_shape() {
+        assert_eq!(
+            input(ScopeOperation::Provision),
+            serde_json::json!({
+                "kind": "WORKSPACE_LIFECYCLE",
+                "scope": { "id": "w", "version": 3, "tenantId": "t" }
+            }),
+            "建立链的 input 必须与已录制 history 逐字相同"
+        );
+    }
+
+    #[test]
+    fn suspend_and_restore_name_their_segment() {
+        assert_eq!(
+            input(ScopeOperation::Suspend)["scope"]["operation"],
+            "SUSPEND"
+        );
+        assert_eq!(
+            input(ScopeOperation::Restore)["scope"]["operation"],
+            "RESTORE"
+        );
+        assert_eq!(ScopeOperation::Suspend.converging_state(), "SUSPENDING");
+        assert_eq!(ScopeOperation::Restore.converging_state(), "RESTORING");
+    }
+
+    #[test]
+    fn service_request_without_operation_is_provision() {
+        let req: super::ScopeLifecycleRequest = serde_json::from_value(serde_json::json!({
+            "kind": "WORKSPACE",
+            "id": "00000000-0000-0000-0000-000000000001",
+            "actionExecutionId": "00000000-0000-0000-0000-000000000002"
+        }))
+        .unwrap();
+        assert_eq!(req.operation, ScopeOperation::Provision);
     }
 }

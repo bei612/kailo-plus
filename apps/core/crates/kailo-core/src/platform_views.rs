@@ -23,7 +23,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::bff::{db_enum, resolve_execution_context, BffState};
-use crate::governance::Actor;
+use crate::governance::{Actor, WorkspaceLifecycleOffer};
 use crate::spicedb::{Consistency, RelationshipFilter};
 
 /// 我在当前 Tenant 里能进的 Workspace。
@@ -146,6 +146,15 @@ pub struct RoleWorkspaceQuery {
 /// 管理角色的 Workspace 选择与频道准入是两个不同的集合：角色持有者未必有
 /// WorkspaceMembership。先从 Core 的 Tenant 索引有界分页，再对本页做 SpiceDB
 /// CheckBulkPermissions；游标只暴露偏移，不泄露无权 Workspace 的 ID。
+///
+/// 暂停中、已暂停、恢复中与 ERROR 的 Workspace 也在此列出并带当前状态：暂停与
+/// 恢复只能从这里（Tenant scope）发起，被暂停的 Workspace 自身 scope 不可进入
+/// （`.design/06` §7.3）。ERROR 只列已有 Buzz binding 的——暂停或恢复失败留下的，
+/// 可从这里重新暂停；建立失败没有 binding 的 ERROR 与建立中的都不列，它们没有可在
+/// 此发起的动作。本人可进入的 Workspace 列表（`list_workspaces`）仍只列 ACTIVE。
+///
+/// 生命周期动作键是只读提示：目录形状不符或依赖判定失败时本页不给任何生命周期键，
+/// 页面其余部分照常返回，提交仍由 Core 重新准入。
 pub async fn list_role_workspaces(
     State(state): State<BffState>,
     Query(query): Query<RoleWorkspaceQuery>,
@@ -163,10 +172,13 @@ pub async fn list_role_workspaces(
     let Some(fetch_limit) = page.checked_add(1) else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
-    let mut rows: Vec<(Uuid, String)> = match sqlx::query_as(
-        "select id, name from identity.workspace
-         where tenant_id = $1 and state = 'ACTIVE'
-         order by id limit $2 offset $3",
+    let mut rows: Vec<(Uuid, String, String)> = match sqlx::query_as(
+        "select w.id, w.name, w.state from identity.workspace w
+         where w.tenant_id = $1
+           and (w.state in ('ACTIVE', 'SUSPENDING', 'SUSPENDED', 'RESTORING')
+                or (w.state = 'ERROR' and exists (
+                      select 1 from projection.workspace_buzz_binding b where b.workspace_id = w.id)))
+         order by w.id limit $2 offset $3",
     )
     .bind(ctx.tenant_id)
     .bind(fetch_limit)
@@ -190,7 +202,7 @@ pub async fn list_role_workspaces(
     } else {
         None
     };
-    let ids: Vec<String> = rows.iter().map(|(id, _)| id.to_string()).collect();
+    let ids: Vec<String> = rows.iter().map(|(id, _, _)| id.to_string()).collect();
     let allowed = match state
         .governance
         .spicedb
@@ -208,21 +220,42 @@ pub async fn list_role_workspaces(
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-    let workspaces = rows
-        .into_iter()
-        .filter(|(id, _)| allowed.contains(&id.to_string()))
-        .map(|(id, name)| RoleWorkspaceView {
+    let actor = Actor {
+        tenant_id: ctx.tenant_id,
+        principal_id: ctx.tenant_principal_id,
+        human_identity_id: Some(ctx.human_identity_id),
+    };
+    let lifecycle = match state
+        .governance
+        .available_workspace_lifecycle_actions(actor)
+        .await
+    {
+        Ok(offer) => offer,
+        Err(e) => {
+            tracing::warn!(refusal = ?e, "Workspace 生命周期动作提示判定失败，本页不给生命周期键");
+            WorkspaceLifecycleOffer::default()
+        }
+    };
+    let mut workspaces = Vec::with_capacity(rows.len());
+    for (id, name, ws_state) in rows {
+        if !allowed.contains(&id.to_string()) {
+            continue;
+        }
+        let lifecycle_action_key = lifecycle.for_state(&ws_state);
+        let ws_state = match db_enum("workspace.state", &ws_state) {
+            Ok(s) => s,
+            Err(r) => return r,
+        };
+        workspaces.push(RoleWorkspaceView {
             id: id.to_string(),
             name,
-        })
-        .collect();
+            state: ws_state,
+            lifecycle_action_key,
+        });
+    }
     let create_action_key = match state
         .governance
-        .available_workspace_create_action(Actor {
-            tenant_id: ctx.tenant_id,
-            principal_id: ctx.tenant_principal_id,
-            human_identity_id: Some(ctx.human_identity_id),
-        })
+        .available_workspace_create_action(actor)
         .await
     {
         Ok(key) => key,

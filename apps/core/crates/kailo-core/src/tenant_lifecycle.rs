@@ -16,12 +16,13 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use kailo_buzz::bridge::{Custody, IdentityClient, Scope};
+use kailo_buzz::bridge::{Custody, IdentityClient, Presence, Scope};
 use kailo_buzz::operator::OperatorIdentity;
 use kailo_secrets::SecretRef;
 use nostr::Keys;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::service_api::{authorize, unavailable, ServiceState};
@@ -611,4 +612,321 @@ pub async fn provision_workspace_buzz(
         }),
     )
         .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceArchiveRequest {
+    pub workspace_id: Uuid,
+    pub workspace_version: i32,
+    pub archived: bool,
+}
+
+/// 把 Workspace 的 Channel 收敛到归档或解档（`.design/06` §7.3、SF-BUZ-15）。
+///
+/// 只在对应的收敛中状态动作：归档要求 `SUSPENDING`，解档要求 `RESTORING`，且版本
+/// 与调用方持有的一致——旧 Workflow 的重试不能改动已被新动作接管的 Workspace。
+/// Resource、Asset、owner 与 relationship 都不动；Channel 只是停用，不删除。roster 的
+/// 清空与重建在另一个端点（`converge_workspace_channel_roster`，DD-97）。
+/// 判据是回读的 discovery：读不到目标状态回 503，交给 Workflow 按结果不明重试。
+pub async fn converge_workspace_channel_archive(
+    State(state): State<ServiceState>,
+    headers: HeaderMap,
+    body: Result<Json<WorkspaceArchiveRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if let Err(e) = authorize(&state, &headers).await {
+        return e;
+    }
+    let Ok(Json(req)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let converging = if req.archived {
+        "SUSPENDING"
+    } else {
+        "RESTORING"
+    };
+    let (tenant_id, channel_id) =
+        match converging_channel(&state, req.workspace_id, req.workspace_version, converging).await
+        {
+            Ok(r) => r,
+            Err(r) => return r,
+        };
+    let (control, _) = match control_client(&state, tenant_id).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    match control
+        .converge_channel_archived(&state.http, &channel_id.to_string(), req.archived)
+        .await
+    {
+        Ok(true) => StatusCode::OK.into_response(),
+        Ok(false) => {
+            tracing::warn!(workspace = %req.workspace_id, archived = req.archived, "Channel 归档状态回读未达目标");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "收敛 Channel 归档状态失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+/// 收敛中 Workspace 的 Tenant 与 Channel：Workspace 须停在调用方持有的版本与给定的
+/// 收敛中状态，且 WorkspaceBuzzBinding 为 ACTIVE。任一不成立回 409——旧 Workflow 的
+/// 重试不能改动已被新动作接管、或协作面本身未就绪的 Workspace。
+async fn converging_channel(
+    state: &ServiceState,
+    workspace_id: Uuid,
+    workspace_version: i32,
+    converging: &str,
+) -> Result<(Uuid, Uuid), Response> {
+    match sqlx::query_as::<_, (Uuid, Uuid)>(
+        "select w.tenant_id, b.channel_id from identity.workspace w
+         join projection.workspace_buzz_binding b on b.workspace_id = w.id
+         where w.id = $1 and w.version = $2 and w.state = $3 and b.state = 'ACTIVE'",
+    )
+    .bind(workspace_id)
+    .bind(workspace_version)
+    .bind(converging)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(r)) => Ok(r),
+        Ok(None) => Err(StatusCode::CONFLICT.into_response()),
+        Err(e) => Err(unavailable(e)),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum RosterMode {
+    /// 暂停：归档前把 roster 清空为只剩 CONTROL
+    Clear,
+    /// 恢复：解档后按 Core 事实重建
+    Rebuild,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceRosterRequest {
+    pub workspace_id: Uuid,
+    pub workspace_version: i32,
+    pub mode: RosterMode,
+}
+
+/// 暂停与恢复时 Channel roster 的清空与重建（DD-97、`.design/06` §7.3）。
+///
+/// 归档不驱逐已建立的订阅、读取也不查归档状态，roster 原样保留时原生端仍可读。
+/// 因此 `CLEAR`（要求 `SUSPENDING`）把 roster 收敛到只剩 CONTROL；`REBUILD`（要求
+/// `RESTORING`）收敛到 CONTROL 加该 Workspace 全部 ACTIVE 成员的全部 ACTIVE Buzz
+/// 身份——与 roster 对账度量同一个「应在」集合（`roster_reconcile::settled_channel_roster`）；
+/// 仍在建立或撤权途中的钥匙留给各自的投影 Workflow。AGENT 身份的 ChannelAgentBinding
+/// 随 Stage 5 交付，届时并入期望集合。多余的逐个 9001 移出、缺少的逐个 9000 加入，
+/// 每一步以回读的 39002 为判据。
+///
+/// 收敛后再按当前事实重算一次期望集合并回读比对：重建期间成员或设备被撤、
+/// 期望集合变了，就回 503 让 Workflow 重试，而不是把旧快照当成结论。
+pub async fn converge_workspace_channel_roster(
+    State(state): State<ServiceState>,
+    headers: HeaderMap,
+    body: Result<Json<WorkspaceRosterRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if let Err(e) = authorize(&state, &headers).await {
+        return e;
+    }
+    let Ok(Json(req)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let converging = match req.mode {
+        RosterMode::Clear => "SUSPENDING",
+        RosterMode::Rebuild => "RESTORING",
+    };
+    let (tenant_id, channel_id) =
+        match converging_channel(&state, req.workspace_id, req.workspace_version, converging).await
+        {
+            Ok(r) => r,
+            Err(r) => return r,
+        };
+    let (control, _) = match control_client(&state, tenant_id).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    let control_pubkey = control.pubkey_hex();
+    // (应在, 收敛中)。CLEAR 只认回读到的 roster：除 CONTROL 外一概移出，不按 Core
+    // 集合去删——Core 之外混进 roster 的钥匙同样必须清掉。REBUILD 不替仍在建立或
+    // 撤权途中的钥匙下结论：它们由各自的投影 Workflow 收敛（与对账度量同一口径）。
+    let expected = || async {
+        match req.mode {
+            RosterMode::Clear => Ok((HashSet::from([control_pubkey.clone()]), HashSet::new())),
+            RosterMode::Rebuild => {
+                let pool = &state.pool;
+                let settled = crate::roster_reconcile::settled_channel_roster(
+                    pool,
+                    control_pubkey.clone(),
+                    tenant_id,
+                    req.workspace_id,
+                )
+                .await
+                .map_err(unavailable)?;
+                let unsettled = crate::roster_reconcile::unsettled_channel_roster(
+                    pool,
+                    tenant_id,
+                    req.workspace_id,
+                )
+                .await
+                .map_err(unavailable)?;
+                Ok((settled, unsettled))
+            }
+        }
+    };
+    let (want, tolerated) = match expected().await {
+        Ok(w) => w,
+        Err(r) => return r,
+    };
+    let channel = channel_id.to_string();
+    let scope = Scope::Channel(&channel);
+    let current = match read_roster(&state, &control, scope).await {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
+    let plan = roster_plan(&current, &want, &tolerated, &control_pubkey);
+    for (pubkey, presence) in &plan {
+        if let Err(e) = control
+            .converge(&state.http, scope, pubkey, *presence)
+            .await
+        {
+            tracing::info!(workspace = %req.workspace_id, error = %e, "Channel roster 未收敛，等待重试");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    }
+    // 收敛期间成员或设备的事实可能已变：按当前事实重算，再与回读比对
+    let (want, tolerated) = match expected().await {
+        Ok(w) => w,
+        Err(r) => return r,
+    };
+    let after = match read_roster(&state, &control, scope).await {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
+    if roster_settled(&after, &want, &tolerated, &control_pubkey) {
+        StatusCode::OK.into_response()
+    } else {
+        tracing::warn!(workspace = %req.workspace_id, mode = ?req.mode, "Channel roster 回读与期望不一致");
+        StatusCode::SERVICE_UNAVAILABLE.into_response()
+    }
+}
+
+/// 把回读到的 roster 收敛到期望集合所需的变更：多余的移出、缺少的加入。CONTROL
+/// 是 Channel 的 owner，不移出也不由自己加入；`tolerated`（仍在建立或撤权途中的钥匙）
+/// 两个方向都不动。先移出再加入。
+fn roster_plan(
+    current: &HashSet<String>,
+    want: &HashSet<String>,
+    tolerated: &HashSet<String>,
+    control: &str,
+) -> Vec<(String, Presence)> {
+    let mut plan: Vec<(String, Presence)> = current
+        .iter()
+        .filter(|k| !want.contains(*k) && !tolerated.contains(*k) && *k != control)
+        .map(|k| (k.clone(), Presence::Absent))
+        .collect();
+    plan.extend(
+        want.iter()
+            .filter(|k| !current.contains(*k) && *k != control)
+            .map(|k| (k.clone(), Presence::Present)),
+    );
+    plan
+}
+
+/// 回读的 roster 与期望在 CONTROL 与 `tolerated` 之外逐一相等。
+fn roster_settled(
+    after: &HashSet<String>,
+    want: &HashSet<String>,
+    tolerated: &HashSet<String>,
+    control: &str,
+) -> bool {
+    let decided = |set: &HashSet<String>| {
+        set.iter()
+            .filter(|k| *k != control && !tolerated.contains(*k))
+            .cloned()
+            .collect::<HashSet<_>>()
+    };
+    decided(after) == decided(want)
+}
+
+async fn read_roster(
+    state: &ServiceState,
+    control: &IdentityClient,
+    scope: Scope<'_>,
+) -> Result<HashSet<String>, Response> {
+    control
+        .roster(&state.http, scope)
+        .await
+        .map(|r| r.into_iter().map(|e| e.pubkey).collect())
+        .map_err(|e| {
+            tracing::info!(error = %e, "Channel roster 读取失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        })
+}
+
+#[cfg(test)]
+mod roster_tests {
+    use super::{roster_plan, roster_settled};
+    use kailo_buzz::bridge::Presence;
+    use std::collections::HashSet;
+
+    fn set(keys: &[&str]) -> HashSet<String> {
+        keys.iter().map(|k| (*k).to_owned()).collect()
+    }
+
+    #[test]
+    fn clear_removes_every_member_read_back_except_control() {
+        // CLEAR 的期望只有 CONTROL：Core 之外混进 roster 的钥匙同样移出
+        let plan = roster_plan(&set(&["c", "a", "stray"]), &set(&["c"]), &set(&[]), "c");
+        assert!(plan.iter().all(|(_, p)| *p == Presence::Absent));
+        let removed: HashSet<String> = plan.into_iter().map(|(k, _)| k).collect();
+        assert_eq!(removed, set(&["a", "stray"]));
+        assert!(roster_settled(&set(&["c"]), &set(&["c"]), &set(&[]), "c"));
+        assert!(!roster_settled(
+            &set(&["c", "a"]),
+            &set(&["c"]),
+            &set(&[]),
+            "c"
+        ));
+    }
+
+    #[test]
+    fn rebuild_adds_missing_removes_extra_and_leaves_in_flight_keys() {
+        let plan = roster_plan(
+            &set(&["c", "old", "pending"]),
+            &set(&["c", "a", "b"]),
+            &set(&["pending"]),
+            "c",
+        );
+        let mut got: Vec<(String, bool)> = plan
+            .into_iter()
+            .map(|(k, p)| (k, p == Presence::Present))
+            .collect();
+        got.sort();
+        assert_eq!(
+            got,
+            vec![
+                ("a".to_owned(), true),
+                ("b".to_owned(), true),
+                ("old".to_owned(), false)
+            ]
+        );
+        assert!(roster_settled(
+            &set(&["c", "a", "b", "pending"]),
+            &set(&["c", "a", "b"]),
+            &set(&["pending"]),
+            "c"
+        ));
+        assert!(!roster_settled(
+            &set(&["c", "a"]),
+            &set(&["c", "a", "b"]),
+            &set(&[]),
+            "c"
+        ));
+    }
 }

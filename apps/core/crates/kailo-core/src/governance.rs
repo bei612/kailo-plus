@@ -45,7 +45,7 @@ use uuid::Uuid;
 use crate::audit::{append, AuditEntry};
 use crate::component_task::{self, Launch};
 use crate::membership_lifecycle::{
-    launch_membership, launch_scope, LifecycleRequest, ScopeLifecycleRequest,
+    launch_membership, launch_scope, LifecycleRequest, ScopeLifecycleRequest, ScopeOperation,
 };
 use crate::membership_projection::MembershipScope;
 use crate::scope_state::ScopeKind;
@@ -332,6 +332,10 @@ async fn exact_policy(pool: &PgPool, id: Uuid, version: i32) -> Result<Policy, R
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Semantic {
     WorkspaceCreate,
+    /// Workspace 暂停与恢复（`.design/06` §7.3、DD-46）：从 Tenant scope 指向
+    /// Workspace，准入落定即置 SUSPENDING/RESTORING，由 WORKSPACE_LIFECYCLE 收敛。
+    WorkspaceSuspend,
+    WorkspaceRestore,
     WorkspaceMemberAdd,
     WorkspaceMemberRevoke,
     TenantMemberRevoke,
@@ -357,6 +361,8 @@ impl Semantic {
     pub(crate) fn from_key(k: &str) -> Option<Self> {
         Some(match k {
             "workspace.create" => Self::WorkspaceCreate,
+            "workspace.suspend" => Self::WorkspaceSuspend,
+            "workspace.restore" => Self::WorkspaceRestore,
             "workspace.member.add" => Self::WorkspaceMemberAdd,
             "workspace.member.revoke" => Self::WorkspaceMemberRevoke,
             "tenant.member.revoke" => Self::TenantMemberRevoke,
@@ -406,6 +412,20 @@ impl Semantic {
     /// 会改变「有效 Tenant admin」集合的动作在 Tenant 行锁下判定与写入（DD-82）。
     fn serializes_on_tenant(self) -> bool {
         self.is_role() || self == Self::TenantMemberRevoke
+    }
+
+    /// Workspace 生命周期的一段：它接受的起始状态、准入落定时置入的收敛中状态，
+    /// 以及派发时声明给启动核心的段。建立链的 Workspace 行在准入时新建，不在此列。
+    /// 暂停也接受 `ERROR`：暂停或恢复失败后的 Workspace 由再次暂停收敛
+    /// （`.design/03` 状态机的 `ERROR → SUSPENDING`），恢复只从 `SUSPENDED` 起步。
+    fn workspace_segment(self) -> Option<(&'static [&'static str], &'static str, ScopeOperation)> {
+        match self {
+            Self::WorkspaceSuspend => {
+                Some((&["ACTIVE", "ERROR"], "SUSPENDING", ScopeOperation::Suspend))
+            }
+            Self::WorkspaceRestore => Some((&["SUSPENDED"], "RESTORING", ScopeOperation::Restore)),
+            _ => None,
+        }
     }
 }
 
@@ -517,6 +537,15 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                 && p.slug.as_deref().is_some_and(valid_slug)
                 && p.name.as_deref().is_some_and(|n| !n.is_empty())
         }
+        // 暂停与恢复只指向一个 Workspace；它不是执行 Workspace（TENANT_ONLY）
+        Semantic::WorkspaceSuspend | Semantic::WorkspaceRestore => {
+            p.workspace_id.is_some()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+        }
         Semantic::WorkspaceMemberAdd
         | Semantic::WorkspaceMemberRevoke
         | Semantic::WorkspaceRoleGrant
@@ -597,6 +626,29 @@ pub struct Target {
     pub id: Uuid,
     pub version: i32,
     pub workspace_id: Option<Uuid>,
+}
+
+/// 调用方此刻可发起的 Workspace 生命周期动作（只读提示，提交时重新准入）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WorkspaceLifecycleOffer {
+    suspend: bool,
+    restore: bool,
+}
+
+impl WorkspaceLifecycleOffer {
+    /// 暂停只对 ACTIVE 与 ERROR、恢复只对 SUSPENDED 给出，与各自准入接受的起始状态
+    /// 相同；收敛中的 Workspace 不给任何动作。
+    pub fn for_state(self, state: &str) -> Option<contracts::WorkspaceLifecycleActionKey> {
+        match state {
+            "ACTIVE" | "ERROR" if self.suspend => {
+                Some(contracts::WorkspaceLifecycleActionKey::WorkspaceSuspend)
+            }
+            "SUSPENDED" if self.restore => {
+                Some(contracts::WorkspaceLifecycleActionKey::WorkspaceRestore)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// 按当前事实解析 target。`frozen` 是已准入动作冻结的 target ID：新建类动作的
@@ -733,6 +785,47 @@ async fn resolve_target(
                 version: 0,
                 workspace_id: None,
             })
+        }
+        Semantic::WorkspaceSuspend | Semantic::WorkspaceRestore => {
+            // 从 Tenant scope 指向 Workspace（.design/03 §2）：执行 scope 没有
+            // Workspace，权限对象是所属 Tenant。目录把它登记成别的形状即与语义不一致
+            if def.target_type != "WORKSPACE"
+                || def.workspace_rule != "TENANT_ONLY"
+                || def.permission_object_type != "tenant"
+                || def.execution_mode != "TEMPORAL"
+                || def.workflow_kind.as_deref() != Some("WORKSPACE_LIFECYCLE")
+            {
+                tracing::error!(action = %def.action_key, "Workspace 生命周期动作的目录形状与语义不一致");
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            let Some((from, _, _)) = sem.workspace_segment() else {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            };
+            let ws = p
+                .workspace_id
+                .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+            // 跨 Tenant 的 ID 与不存在是同一个回答
+            let row: Option<(i32, String)> = sqlx::query_as(&format!(
+                "select version, state from identity.workspace
+                 where id = $1 and tenant_id = $2{for_update}"
+            ))
+            .bind(ws)
+            .bind(tenant)
+            .fetch_optional(&mut *conn)
+            .await?;
+            match row {
+                Some((version, state))
+                    if from.contains(&state.as_str()) && frozen.is_none_or(|id| id == ws) =>
+                {
+                    Ok(Target {
+                        id: ws,
+                        version,
+                        workspace_id: None,
+                    })
+                }
+                Some(_) => Err(Refusal::Conflict(ReasonCode::TargetStateConflict)),
+                None => Err(Refusal::Precondition(ReasonCode::TargetNotFound)),
+            }
         }
         Semantic::WorkspaceMemberAdd | Semantic::WorkspaceMemberRevoke => {
             let (ws, principal) = (p.workspace_id, p.principal_id);
@@ -1063,6 +1156,28 @@ impl Governance {
             }
         }
 
+        // Workspace scoped 动作先要求执行 Workspace 属于该 Tenant 且 ACTIVE（DD-46、
+        // `.design/03` §2）：SUSPENDING/SUSPENDED/RESTORING 期间，成员、角色与任务
+        // 控制等 Workspace scope 的新动作一律在 permission Check 之前拒绝
+        if def.workspace_rule == "WORKSPACE_REQUIRED" {
+            let ws_active: Option<i32> = sqlx::query_scalar(
+                "select 1 from identity.workspace
+                 where id = $1 and tenant_id = $2 and state = 'ACTIVE'",
+            )
+            .bind(target.workspace_id)
+            .bind(actor.tenant_id)
+            .fetch_optional(&self.pool)
+            .await?;
+            if ws_active.is_none() {
+                return Ok(deny(
+                    "DENY",
+                    "NOT_APPLICABLE",
+                    None,
+                    ReasonCode::ScopeGuardFailed,
+                ));
+            }
+        }
+
         let object_id = match def.permission_object_type.as_str() {
             "tenant" => actor.tenant_id,
             "workspace" => match target.workspace_id {
@@ -1175,6 +1290,50 @@ impl Governance {
             .await?
             .allowed
             .then_some(contracts::CreateActionKey::WorkspaceCreate))
+    }
+
+    /// Workspace 暂停/恢复入口的一次性可用性提示；不是授权票据，提交时仍由
+    /// submit 重新准入。两个动作都在所属 Tenant 上检查 manage（从 Tenant scope
+    /// 发起，`.design/03` §2），因此每页各判定一次，再由各 Workspace 的当前状态
+    /// 决定给出哪一个（`WorkspaceLifecycleOffer::for_state`）。
+    pub async fn available_workspace_lifecycle_actions(
+        &self,
+        actor: Actor,
+    ) -> Result<WorkspaceLifecycleOffer, Refusal> {
+        let mut offer = WorkspaceLifecycleOffer::default();
+        for sem in [Semantic::WorkspaceSuspend, Semantic::WorkspaceRestore] {
+            let key = match sem {
+                Semantic::WorkspaceSuspend => "workspace.suspend",
+                _ => "workspace.restore",
+            };
+            if !crate::capability_registry::action_exposed(key) {
+                continue;
+            }
+            let Some(def) = active_definition(&self.pool, key).await? else {
+                continue;
+            };
+            if def.target_type != "WORKSPACE"
+                || def.tenant_rule != "SESSION_TENANT"
+                || def.workspace_rule != "TENANT_ONLY"
+                || def.permission_object_type != "tenant"
+                || def.permission != "manage"
+                || def.execution_mode != "TEMPORAL"
+                || def.workflow_kind.as_deref() != Some("WORKSPACE_LIFECYCLE")
+            {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            let target = Target {
+                id: actor.tenant_id,
+                version: 0,
+                workspace_id: None,
+            };
+            let allowed = self.evaluate(actor, &def, &target).await?.allowed;
+            match sem {
+                Semantic::WorkspaceSuspend => offer.suspend = allowed,
+                _ => offer.restore = allowed,
+            }
+        }
+        Ok(offer)
     }
 
     /// 任务详情的一次性可用性投影；不是授权票据。按钮仅在这里取得 active
@@ -2174,6 +2333,25 @@ impl Governance {
                 .bind(&params.name)
                 .fetch_one(&mut **tx)
                 .await?
+            }
+            // 先关门再收敛：SUSPENDING 即使该 Workspace scope fail closed，Workflow
+            // 随后才 archive Channel（.design/06 §7.3）。条件更新只在状态与版本都未
+            // 变时成立，不成立即按目标事实已变拒绝
+            Semantic::WorkspaceSuspend | Semantic::WorkspaceRestore => {
+                let Some((from, to, _)) = sem.workspace_segment() else {
+                    return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+                };
+                let advanced: Option<i32> = sqlx::query_scalar(
+                    "update identity.workspace set state = $3, version = version + 1
+                     where id = $1 and version = $2 and state = any($4) returning version",
+                )
+                .bind(target.id)
+                .bind(target.version)
+                .bind(to)
+                .bind(from)
+                .fetch_optional(&mut **tx)
+                .await?;
+                advanced.ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?
             }
             Semantic::WorkspaceMemberAdd if target.version == 0 => {
                 sqlx::query_scalar(
@@ -3423,7 +3601,9 @@ impl Governance {
             Ok(())
         } else {
             let started = match sem {
-                Semantic::WorkspaceCreate => {
+                Semantic::WorkspaceCreate
+                | Semantic::WorkspaceSuspend
+                | Semantic::WorkspaceRestore => {
                     launch_scope(
                         &self.pool,
                         &self.temporal,
@@ -3431,6 +3611,9 @@ impl Governance {
                             kind: ScopeKind::Workspace,
                             id: ae.target_id,
                             action_execution_id: ae.id,
+                            operation: sem
+                                .workspace_segment()
+                                .map_or(ScopeOperation::Provision, |(_, _, op)| op),
                         },
                     )
                     .await
@@ -3507,6 +3690,21 @@ impl Governance {
         .execute(&mut *tx)
         .await?;
         if updated.rows_affected() > 0 {
+            // Workspace 生命周期段不会再有 Workflow 把它带出 SUSPENDING/RESTORING：与
+            // 中止同事务置 ERROR（version+1），留下确定状态，管理员可从 ERROR 重新暂停
+            if state == "ABORTED" {
+                if let Some((_, converging, _)) = sem.workspace_segment() {
+                    sqlx::query(
+                        "update identity.workspace set state = 'ERROR', version = version + 1
+                         where id = $1 and tenant_id = $2 and state = $3",
+                    )
+                    .bind(ae.target_id)
+                    .bind(ae.tenant_id)
+                    .bind(converging)
+                    .execute(&mut *tx)
+                    .await?;
+                }
+            }
             audit(
                 &mut tx,
                 &ae,

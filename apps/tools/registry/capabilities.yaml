@@ -126,6 +126,19 @@ capabilities:
   - WORKSPACE_LIFECYCLE
   - MEMBERSHIP_PROJECTION
   - MEMBERSHIP_REVOCATION
+- id: lifecycle.workspace_suspension
+  exposure: tenant_admin
+  routes:
+  - /api/v1/actions
+  - /api/v1/role-workspaces
+  - /service/v1/workspaces/channel-archive
+  - /service/v1/workspaces/channel-roster
+  actions:
+  - workspace.suspend
+  - workspace.restore
+  tools: []
+  workflow_kinds:
+  - WORKSPACE_LIFECYCLE
 - id: platform.pages
   exposure: end_user
   routes:

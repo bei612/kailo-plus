@@ -18,6 +18,7 @@ import {
   TenantInvitationStatus,
   TenantMembershipState,
   WorkspaceMembershipState,
+  WorkspaceState,
 } from "@kailo/contracts";
 
 export type PlatformLocale = "en" | "zh-CN";
@@ -75,6 +76,30 @@ export const platformMessages = {
     en: "Could not check creations in progress. Check Tasks before creating again.",
     "zh-CN": "无法读取进行中的创建。再次创建前请先到任务页确认。",
   },
+  "workspace.lifecycle.suspend": { en: "Suspend", "zh-CN": "暂停" },
+  "workspace.lifecycle.restore": { en: "Restore", "zh-CN": "恢复" },
+  "workspace.lifecycle.confirmSuspend": {
+    en: "Suspend workspace {name}? Members cannot enter it until it is restored; its content, owners and permissions are kept. The final result is shown in Tasks.",
+    "zh-CN": "暂停工作区 {name}？恢复前成员无法进入，其中的内容、所有者与权限都保留。最终结果请到任务页查看。",
+  },
+  "workspace.lifecycle.confirmRestore": {
+    en: "Restore workspace {name}? It reopens only after reconciliation completes. The final result is shown in Tasks.",
+    "zh-CN": "恢复工作区 {name}？对账完成后才重新开放。最终结果请到任务页查看。",
+  },
+  "workspace.lifecycle.recorded": {
+    en: "Request recorded; this does not mean it has finished. Check Tasks for the result. Operation: {operation}.",
+    "zh-CN": "请求已登记，不代表已完成。请到任务页查看结果。操作：{operation}。",
+  },
+  "workspace.lifecycle.unknown": {
+    en: "Result unknown. Only re-check the same request; do not submit another. Operation: {operation}.",
+    "zh-CN": "结果不明。只能重查原请求，不要另发一笔。操作：{operation}。",
+  },
+  "workspace.lifecycle.aborted": {
+    en: "Request recorded but not carried out ({reason}). Operation: {operation}.",
+    "zh-CN": "请求已登记但未执行（{reason}）。操作：{operation}。",
+  },
+  "workspace.lifecycle.rejected": { en: "Request rejected: {reason}", "zh-CN": "请求被拒绝：{reason}" },
+  "workspace.lifecycle.retry": { en: "Retry same request", "zh-CN": "重查原请求" },
   "platform.tab.members": { en: "Members", "zh-CN": "成员" },
   "platform.tab.audit": { en: "Audit", "zh-CN": "审计" },
   "platform.tab.devices": { en: "Devices", "zh-CN": "设备" },
@@ -218,6 +243,10 @@ export const platformMessages = {
   "roles.confirm": {
     en: "Submit {action} for {member}? The final result is shown in Tasks.",
     "zh-CN": "为 {member} 提交 {action}？最终结果请到任务页查看。",
+  },
+  "roles.scopeTenantOnly": {
+    en: "Current scope: whole organization. Workspace {name} is not active, so its roles cannot be managed now.",
+    "zh-CN": "当前作用域：整个组织。工作区 {name} 未处于正常状态，暂不能管理其角色。",
   },
   "roles.next": { en: "Next page", "zh-CN": "下一页" },
   "roles.previous": { en: "Previous page", "zh-CN": "上一页" },
@@ -682,6 +711,15 @@ export const workspaceMembershipStateMessages = {
   [WorkspaceMembershipState.Revoked]: { en: "Not a member", "zh-CN": "非成员" },
   [WorkspaceMembershipState.Error]: { en: "Needs attention", "zh-CN": "需要处理" },
 } as const satisfies Record<WorkspaceMembershipState, Message>;
+
+export const workspaceStateMessages = {
+  [WorkspaceState.Provisioning]: { en: "Being set up", "zh-CN": "正在建立" },
+  [WorkspaceState.Active]: { en: "Active", "zh-CN": "正常" },
+  [WorkspaceState.Suspending]: { en: "Being suspended", "zh-CN": "正在暂停" },
+  [WorkspaceState.Suspended]: { en: "Suspended", "zh-CN": "已暂停" },
+  [WorkspaceState.Restoring]: { en: "Being restored", "zh-CN": "正在恢复" },
+  [WorkspaceState.Error]: { en: "Needs attention", "zh-CN": "需要处理" },
+} as const satisfies Record<WorkspaceState, Message>;
 
 export const buzzIdentityStateMessages = {
   [BuzzIdentityState.PendingSecret]: { en: "Preparing key", "zh-CN": "正在准备密钥" },

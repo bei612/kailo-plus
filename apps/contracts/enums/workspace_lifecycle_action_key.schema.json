@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/workspace_lifecycle_action_key.schema.json",
+  "title": "WorkspaceLifecycleActionKey",
+  "description": "Workspace 暂停与恢复的 ActionDefinition key（.design/06 §7.3）。两者都从 Tenant scope 发起；当前不登记 Workspace delete（DD-46）。",
+  "type": "string",
+  "enum": ["workspace.suspend", "workspace.restore"]
+}

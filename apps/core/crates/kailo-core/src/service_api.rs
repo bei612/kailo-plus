@@ -75,6 +75,16 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/workspaces/buzz-provision",
             post(crate::tenant_lifecycle::provision_workspace_buzz),
         )
+        // Workspace 暂停/恢复：Channel 归档与解档（`.design/06` §7.3）
+        .route(
+            "/service/v1/workspaces/channel-archive",
+            post(crate::tenant_lifecycle::converge_workspace_channel_archive),
+        )
+        // Workspace 暂停/恢复：Channel roster 清空与重建（DD-97）
+        .route(
+            "/service/v1/workspaces/channel-roster",
+            post(crate::tenant_lifecycle::converge_workspace_channel_roster),
+        )
         // 原生设备公钥的 roster 投影（DD-79）
         .route(
             "/service/v1/identity-projections/buzz",

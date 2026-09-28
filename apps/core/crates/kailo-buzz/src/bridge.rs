@@ -25,6 +25,8 @@ const KIND_CHANNEL_REMOVE_USER: u16 = 9001;
 const KIND_CHANNEL_MEMBERS: u16 = 39002;
 const KIND_CHANNEL_MESSAGE: u16 = 9;
 const KIND_CHANNEL_CREATE: u16 = 9007;
+const KIND_CHANNEL_EDIT_METADATA: u16 = 9002;
+const KIND_CHANNEL_METADATA: u16 = 39000;
 
 /// roster 的两个层级。Tenant 成员投影到 relay roster，Workspace 成员投影到
 /// 所属 Channel 的 roster（`DD-45`）。
@@ -378,6 +380,55 @@ impl IdentityClient {
         // 会让全部 roster 投影失败，属于部署前提。
         let accepted = self.publish(http, kind, "", &tags).await?;
         Self::accepted_event_id(&accepted).map(|_| ())
+    }
+
+    /// 把 Channel 的可逆停用状态收敛到 `archived`（SF-BUZ-15：kind 9002 带
+    /// `["archived", "true"|"false"]`，只有 Channel owner/admin 可发，CONTROL 是创建者）。
+    ///
+    /// 成功判据是回读的 kind 39000 discovery，不是 Relay 是否接受：已归档的 Channel
+    /// 会拒绝再次归档，而状态副作用失败时事件仍可能被接受。因此先读、已是目标状态
+    /// 即不再发送；发送后以回读结果为准，读不到目标状态交给调用方按结果不明重试。
+    pub async fn converge_channel_archived(
+        &self,
+        http: &reqwest::Client,
+        channel_id: &str,
+        archived: bool,
+    ) -> Result<bool, OperatorError> {
+        if self.channel_archived(http, channel_id).await? == Some(archived) {
+            return Ok(true);
+        }
+        let tag = |k: &str, v: &str| vec![k.to_owned(), v.to_owned()];
+        let value = if archived { "true" } else { "false" };
+        let tags = [tag("h", channel_id), tag("archived", value)];
+        self.publish(http, KIND_CHANNEL_EDIT_METADATA, "", &tags)
+            .await?;
+        Ok(self.channel_archived(http, channel_id).await? == Some(archived))
+    }
+
+    /// 从 kind 39000 discovery 读 Channel 是否已归档。读不到该 Channel 的 discovery
+    /// 时返回 `None`：不存在与未归档不是一回事。
+    pub async fn channel_archived(
+        &self,
+        http: &reqwest::Client,
+        channel_id: &str,
+    ) -> Result<Option<bool>, OperatorError> {
+        let filter =
+            serde_json::json!({ "kinds": [KIND_CHANNEL_METADATA], "#d": [channel_id], "limit": 1 });
+        let page = self.query(http, &[filter]).await?;
+        let Some(event) = page.as_array().and_then(|a| a.first()) else {
+            return Ok(None);
+        };
+        let archived = event
+            .get("tags")
+            .and_then(|t| t.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|t| t.as_array())
+            .any(|t| {
+                t.first().and_then(|v| v.as_str()) == Some("archived")
+                    && t.get(1).and_then(|v| v.as_str()) == Some("true")
+            });
+        Ok(Some(archived))
     }
 
     /// 以该身份查询历史。filter 由调用方给出，BFF 不接受 Browser 提交的

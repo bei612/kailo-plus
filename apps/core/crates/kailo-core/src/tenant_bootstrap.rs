@@ -35,7 +35,7 @@ use uuid::Uuid;
 
 use crate::audit::{append, AuditEntry};
 use crate::membership_lifecycle::{
-    launch_membership, launch_scope, LifecycleRequest, ScopeLifecycleRequest,
+    launch_membership, launch_scope, LifecycleRequest, ScopeLifecycleRequest, ScopeOperation,
 };
 use crate::membership_projection::MembershipScope;
 use crate::scope_state::ScopeKind;
@@ -734,6 +734,7 @@ impl Ctx {
                         kind: ScopeKind::Tenant,
                         id: tenant,
                         action_execution_id: ae,
+                        operation: ScopeOperation::Provision,
                     },
                 )
                 .await;

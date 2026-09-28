@@ -490,7 +490,7 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:c45c7ecf93bc8babc48c94696426a06c4e21b22ed2a6a8a769465b70d5249040
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:2e1255397f501586cc22c5aeba2fcc93cddd47ff79b88fd6b012e891e710ce14
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
