@@ -47,6 +47,19 @@ enum KailoMessageKey {
   platformTimePastMonthOther,
   platformTimeFutureMonthOne,
   platformTimeFutureMonthOther,
+  chatTimeToday,
+  chatTimeYesterday,
+  chatTimeJustNow,
+  chatTimeAt,
+  chatTimeWeekdayDate,
+  chatTimeOn,
+  chatTimeLastReply,
+  chatThreadReplyCountOne,
+  chatThreadReplyCountOther,
+  chatThreadUnreadCount,
+  chatThreadView,
+  chatThreadAriaOpen,
+  chatThreadAriaOpenLast,
   platformType,
   platformAction,
   platformResult,
@@ -365,6 +378,28 @@ const _messages = <KailoMessageKey, (String, String)>{
   KailoMessageKey.platformTimeFutureMonthOther: (
     'in {count} months',
     '{count} 个月后',
+  ),
+  KailoMessageKey.chatTimeToday: ('Today', '今天'),
+  KailoMessageKey.chatTimeYesterday: ('Yesterday', '昨天'),
+  KailoMessageKey.chatTimeJustNow: ('just now', '刚刚'),
+  KailoMessageKey.chatTimeAt: ('{day} at {time}', '{day} {time}'),
+  KailoMessageKey.chatTimeWeekdayDate: (
+    '{weekday}, {date}',
+    '{weekday}，{date}',
+  ),
+  KailoMessageKey.chatTimeOn: ('on {date}', '{date}'),
+  KailoMessageKey.chatTimeLastReply: ('last reply {time}', '上次回复{time}'),
+  KailoMessageKey.chatThreadReplyCountOne: ('{count} reply', '{count} 条回复'),
+  KailoMessageKey.chatThreadReplyCountOther: ('{count} replies', '{count} 条回复'),
+  KailoMessageKey.chatThreadUnreadCount: ('{count} new', '新增 {count} 条'),
+  KailoMessageKey.chatThreadView: ('View thread', '查看话题'),
+  KailoMessageKey.chatThreadAriaOpen: (
+    'View thread with {replies}',
+    '查看有{replies}的话题',
+  ),
+  KailoMessageKey.chatThreadAriaOpenLast: (
+    'View thread with {replies}, {lastReply}',
+    '查看有{replies}的话题，{lastReply}',
   ),
   KailoMessageKey.platformType: ('Type', '类型'),
   KailoMessageKey.platformAction: ('Action', '动作'),
@@ -1090,6 +1125,12 @@ String _kailoLanguage(String? locale) =>
     (locale ?? Platform.localeName).toLowerCase().startsWith('zh')
     ? 'zh-CN'
     : 'en';
+
+const kailoCalendarWeekdayBandDays = 7;
+const kailoTimeSecondsDay = 86400;
+
+String kailoIntlLocale({String? locale}) =>
+    _kailoLanguage(locale) == 'zh-CN' ? 'zh_CN' : 'en_US';
 
 const _kailoPluralOneLocales = <String>{'en'};
 

@@ -25,14 +25,24 @@ void main() {
   });
 
   test('every platform key has en and zh-CN renderings', () {
+    // 参数型文案也要用有效参数检查，否则纯参数模板会被误判为空翻译。
+    const sampleVariables = <String, Object>{'date': 'sample'};
     for (final key in KailoMessageKey.values) {
-      expect(kailoText(key, locale: 'en'), isNotEmpty);
-      expect(kailoText(key, locale: 'zh-CN'), isNotEmpty);
+      expect(
+        kailoText(key, locale: 'en', variables: sampleVariables),
+        isNotEmpty,
+      );
+      expect(
+        kailoText(key, locale: 'zh-CN', variables: sampleVariables),
+        isNotEmpty,
+      );
     }
     expect(
-      kailoText(KailoMessageKey.approvalsRequirement,
-          locale: 'zh-Hant',
-          variables: {'selector': '组织管理员', 'count': 2}),
+      kailoText(
+        KailoMessageKey.approvalsRequirement,
+        locale: 'zh-Hant',
+        variables: {'selector': '组织管理员', 'count': 2},
+      ),
       '组织管理员：至少 2 人',
     );
   });
@@ -45,7 +55,10 @@ void main() {
       expect(kailoTenantInvitationStatusText(status, locale: 'en'), isNotEmpty);
     }
     for (final state in TenantMembershipState.values) {
-      expect(kailoTenantMembershipStateText(state, locale: 'zh-CN'), isNotEmpty);
+      expect(
+        kailoTenantMembershipStateText(state, locale: 'zh-CN'),
+        isNotEmpty,
+      );
     }
     for (final decision in ApprovalDecision.values) {
       expect(kailoApprovalDecisionText(decision, locale: 'en'), isNotEmpty);

@@ -18,12 +18,14 @@ use temporalio_common::protos::temporal::api::common::v1::{
 use temporalio_common::protos::temporal::api::enums::v1::{
     WorkflowExecutionStatus, WorkflowIdConflictPolicy, WorkflowIdReusePolicy,
 };
+use temporalio_common::protos::temporal::api::errordetails::v1::WorkflowExecutionAlreadyStartedFailure;
 use temporalio_common::protos::temporal::api::history::v1::history_event::Attributes;
 use temporalio_common::protos::temporal::api::taskqueue::v1::TaskQueue;
 use temporalio_common::protos::temporal::api::workflowservice::v1::{
     DescribeNamespaceRequest, DescribeWorkflowExecutionRequest, GetWorkflowExecutionHistoryRequest,
     RequestCancelWorkflowExecutionRequest, StartWorkflowExecutionRequest,
 };
+use temporalio_common::protos::utilities::decode_status_detail;
 
 use crate::oidc::TokenSource;
 
@@ -51,7 +53,7 @@ pub enum Started {
     ///
     /// 这不是失败：该错误恰好证明目标状态已经成立，重试 Start 只会再撞一次。
     /// 不换 ID 重试——换 ID 就是分配了第二个业务 workflow ID（`DD-48`）。
-    AlreadyStarted,
+    AlreadyStarted { run_id: String },
 }
 
 /// Describe 观察到的一个 execution。
@@ -165,14 +167,15 @@ impl TemporalClient {
             })
             .await;
         match result {
-            Ok(resp) => Ok(Started::Created {
+            Ok(resp) if !resp.run_id.is_empty() => Ok(Started::Created {
                 run_id: resp.run_id,
             }),
+            Ok(_) => Err(TemporalError::Unknown("Start 回应缺少 run ID".into())),
             Err(status) => {
                 // AlreadyExists 就是「同一 ID 的 execution 已存在」。把它当成功
                 // 而不是失败：它恰好证明目标状态成立。
                 if status.code() == tonic::Code::AlreadyExists {
-                    return Ok(Started::AlreadyStarted);
+                    return already_started(&status);
                 }
                 // 其余按可重试与否分开：InvalidArgument 一类重试多少次都一样，
                 // 而超时与不可用是结果不明——此时只能用同一 ID 去 Describe，
@@ -616,6 +619,17 @@ impl TemporalClient {
     }
 }
 
+fn already_started(status: &tonic::Status) -> Result<Started, TemporalError> {
+    match decode_status_detail::<WorkflowExecutionAlreadyStartedFailure>(status.details()) {
+        Some(detail) if !detail.run_id.is_empty() => Ok(Started::AlreadyStarted {
+            run_id: detail.run_id,
+        }),
+        _ => Err(TemporalError::Unknown(
+            "WorkflowExecutionAlreadyStarted 缺少可核验的 run ID".into(),
+        )),
+    }
+}
+
 /// Update 的确定结论。
 pub enum UpdateOutcome {
     /// handler 执行完毕并返回的值
@@ -647,4 +661,51 @@ fn raw_json_payload(data: Vec<u8>) -> Payload {
 
 fn json_payload(value: &str) -> Payload {
     raw_json_payload(serde_json::to_vec(value).unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use temporalio_common::protos::{
+        google::rpc::Status as RpcStatus,
+        utilities::{encode_status_details, pack_any},
+    };
+
+    fn already_exists_with_run(run_id: &str) -> tonic::Status {
+        let detail = WorkflowExecutionAlreadyStartedFailure {
+            run_id: run_id.to_owned(),
+            ..Default::default()
+        };
+        let rpc = RpcStatus {
+            code: tonic::Code::AlreadyExists as i32,
+            details: vec![pack_any(
+                "type.googleapis.com/temporal.api.errordetails.v1.WorkflowExecutionAlreadyStartedFailure"
+                    .to_owned(),
+                &detail,
+            )
+            .expect("编码 Temporal 错误详情")],
+            ..Default::default()
+        };
+        tonic::Status::with_details(
+            tonic::Code::AlreadyExists,
+            "already started",
+            encode_status_details(&rpc).into(),
+        )
+    }
+
+    #[test]
+    fn already_started_requires_original_run_id() {
+        assert!(matches!(
+            already_started(&already_exists_with_run("original-run")),
+            Ok(Started::AlreadyStarted { run_id }) if run_id == "original-run"
+        ));
+        assert!(matches!(
+            already_started(&already_exists_with_run("")),
+            Err(TemporalError::Unknown(_))
+        ));
+        assert!(matches!(
+            already_started(&tonic::Status::already_exists("no details")),
+            Err(TemporalError::Unknown(_))
+        ));
+    }
 }

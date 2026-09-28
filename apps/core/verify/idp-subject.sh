@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# 打印核验用户在 IdP 里的 subject。经 admin API 按用户名取回；口令从文件读入
+# 打印指定用户在 IdP 里的 subject；省略参数时使用走查用户。经 admin API 按用户名取回；口令从文件读入
 # 进程内存，不进命令行、不进环境变量。由调用方先 source integration-env.sh。
 set -euo pipefail
+user="${1:-$VERIFY_USER}"
 python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "$KEYCLOAK_ADMIN_USER" \
-  "$VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE" "$VERIFY_USER" <<'PY'
+  "$VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE" "$user" <<'PY'
 import json, sys, urllib.parse, urllib.request
 port, realm, admin, pw_file, user = sys.argv[1:]
 base = f"http://127.0.0.1:{port}"

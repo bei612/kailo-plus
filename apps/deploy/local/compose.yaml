@@ -18,6 +18,7 @@ volumes:
   buzz-db-data:
   temporal-db-data:
   spicedb-db-data:
+  keycloak-data:
 
 services:
   core-db:
@@ -477,7 +478,7 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:96b423034be8a238fcd244d2a54f7ca5325e273e5c7571164294eb866582c109
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:8b8490721764c7e850296ed70642f0dac51e1b6322390659a32d9f04211333d1
     networks: [app]
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 
@@ -644,6 +645,7 @@ services:
     secrets: [keycloak_admin_password]
     volumes:
       - ./secrets/keycloak-import:/opt/keycloak/data/import:ro
+      - keycloak-data:/opt/keycloak/data/h2
     # 口令从 secret 挂载读入后导出：Keycloak 不支持 _FILE 变体，
     # 直接写进 environment 会让它出现在 compose 与 .env 里。
     entrypoint: ["/bin/bash", "-c"]

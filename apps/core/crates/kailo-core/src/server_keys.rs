@@ -271,7 +271,8 @@ async fn prewrite_secret_intent(
            and (ae.dispatch_state = 'NOT_DISPATCHED'
                 or (ae.dispatch_state = 'UNKNOWN' and exists (
                     select 1 from admission.server_key_provision_intent i
-                    where i.action_execution_id = ae.id and i.finished_at is null)))
+                    where i.action_execution_id = ae.id and i.finished_at is null
+                      and i.fenced_at is null)))
            and p.kind = 'HUMAN' and p.status = 'ACTIVE'
            and p.tenant_id = ae.tenant_id and tm.tenant_id = ae.tenant_id
            and tm.state = 'ACTIVE' and t.state = 'ACTIVE'
@@ -298,7 +299,7 @@ async fn prewrite_secret_intent(
                 or (dispatch_state = 'UNKNOWN' and exists (
                     select 1 from admission.server_key_provision_intent i
                     where i.action_execution_id = ae.id
-                      and i.finished_at is null)))",
+                      and i.finished_at is null and i.fenced_at is null)))",
     )
     .bind(action_id)
     .bind(tenant_id)
@@ -345,8 +346,9 @@ async fn prewrite_secret_intent(
         }
         Err(e) => return Err(unavailable(e)),
     }
-    let frozen: Option<(Uuid, Uuid, String, bool)> = sqlx::query_as(
-        "select tenant_id, principal_id, target_locator, finished_at is not null
+    let frozen: Option<(Uuid, Uuid, String, bool, bool)> = sqlx::query_as(
+        "select tenant_id, principal_id, target_locator,
+                finished_at is not null, fenced_at is not null
          from admission.server_key_provision_intent
          where action_execution_id = $1 and source_membership_id is null",
     )
@@ -354,7 +356,7 @@ async fn prewrite_secret_intent(
     .fetch_optional(&mut *tx)
     .await
     .map_err(unavailable)?;
-    if !matches!(frozen, Some((t, p, ref l, false)) if t == tenant_id && p == principal_id && *l == locator)
+    if !matches!(frozen, Some((t, p, ref l, false, false)) if t == tenant_id && p == principal_id && *l == locator)
     {
         return Err(StatusCode::CONFLICT.into_response());
     }
@@ -416,16 +418,13 @@ async fn provision_admitted(
         Ok(locator) => locator,
         Err(r) => return resume_provision_or(state, tenant_id, principal_id, action_id, r).await,
     };
-    if !prewrite_admissible(state, tenant_id, principal_id, action_id, false, false).await {
-        // 撤权已开始：不产生新的 OpenBao 副作用。意图保留供对账和超期告警。
-        return resume_provision_or(
-            state,
-            tenant_id,
-            principal_id,
-            action_id,
-            StatusCode::CONFLICT.into_response(),
-        )
-        .await;
+    match prewrite_admissible(state, tenant_id, principal_id, action_id, false, false).await {
+        Ok(true) => {}
+        Ok(false) => {
+            // 撤权已开始：不产生新的 OpenBao 副作用。原意图由后台封堵与销毁。
+            return StatusCode::CONFLICT.into_response();
+        }
+        Err(error) => return unavailable(error),
     }
     let pubkey = match read_or_write_provision_key(state, &locator).await {
         Ok(pubkey) => pubkey,
@@ -470,8 +469,8 @@ async fn provision_admitted(
     if still_allowed.is_none() {
         return StatusCode::CONFLICT.into_response();
     }
-    let frozen: Option<(String, bool)> = match sqlx::query_as(
-        "select target_locator, finished_at is not null
+    let frozen: Option<(String, bool, bool)> = match sqlx::query_as(
+        "select target_locator, finished_at is not null, fenced_at is not null
          from admission.server_key_provision_intent
          where action_execution_id = $1 and tenant_id = $2 and principal_id = $3
            and source_membership_id is null for update",
@@ -485,7 +484,7 @@ async fn provision_admitted(
         Ok(v) => v,
         Err(e) => return unavailable(e),
     };
-    if !matches!(frozen, Some((ref l, false)) if *l == locator) {
+    if !matches!(frozen, Some((ref l, false, false)) if *l == locator) {
         drop(tx);
         return resume_provision_or(
             state,
@@ -551,7 +550,7 @@ async fn provision_admitted(
     let finished = sqlx::query(
         "update admission.server_key_provision_intent set finished_at = now()
          where action_execution_id = $1 and source_membership_id is null
-           and finished_at is null",
+           and finished_at is null and fenced_at is null",
     )
     .bind(action_id)
     .execute(&mut *tx)
@@ -588,15 +587,18 @@ async fn prewrite_admissible(
     action_id: Uuid,
     allow_dispatched: bool,
     allow_legacy_without_intent: bool,
-) -> bool {
-    match sqlx::query_scalar::<_, i32>(
+) -> Result<bool, sqlx::Error> {
+    let allowed = sqlx::query_scalar::<_, i32>(
         "select 1 from admission.action_execution ae
          join identity.principal p on p.id = ae.target_id
          join identity.tenant_membership tm on tm.tenant_principal_id = p.id
          join identity.tenant t on t.id = ae.tenant_id
          where ae.id = $1 and ae.tenant_id = $2 and ae.target_id = $3
            and ae.action_key = $4 and ae.gate_state = 'ALLOWED'
-           and (ae.dispatch_state = 'UNKNOWN' or ($5 and ae.dispatch_state = 'DISPATCHED')
+           and ((ae.dispatch_state = 'UNKNOWN' and exists (
+                    select 1 from admission.server_key_provision_intent i
+                    where i.action_execution_id = ae.id and i.fenced_at is null))
+                or ($5 and ae.dispatch_state = 'DISPATCHED')
                 or ($6 and ae.dispatch_state = 'NOT_DISPATCHED' and not exists (
                     select 1 from admission.server_key_provision_intent i
                     where i.action_execution_id = ae.id)))
@@ -617,15 +619,295 @@ async fn prewrite_admissible(
     .bind(allow_dispatched)
     .bind(allow_legacy_without_intent)
     .fetch_optional(&state.pool)
+    .await?;
+    Ok(allowed.is_some())
+}
+
+#[derive(sqlx::FromRow)]
+struct ProvisionAuditContext {
+    operation_id: Uuid,
+    workspace_id: Option<Uuid>,
+    initiator_principal_id: Uuid,
+    actor_principal_id: Uuid,
+    target_id: Uuid,
+    parameter_hash: String,
+    correlation_id: Uuid,
+    action_version: i32,
+    action_key: String,
+    component_type_key: String,
+    target_type: String,
+    result_exposure: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct FrozenProvisionIntent {
+    target_locator: String,
+    finished: bool,
+    destroyed: bool,
+    direct: bool,
+}
+
+/// DD-86：两个建钥入口共用这一条补偿链。先在原动作和 Principal 锁下持久
+/// fence，再与在途 CAS 争夺版本 1；没有 metadata 销毁证明时绝不终结意图。
+pub(crate) async fn fence_and_destroy_provision_intent(
+    state: &ServiceState,
+    action_id: Uuid,
+) -> &'static str {
+    let snapshot: Option<(Uuid, Uuid, String)> = match sqlx::query_as(
+        "select tenant_id, principal_id, target_locator
+         from admission.server_key_provision_intent where action_execution_id = $1",
+    )
+    .bind(action_id)
+    .fetch_optional(&state.pool)
     .await
     {
-        Ok(Some(_)) => true,
-        Ok(None) => false,
-        Err(e) => {
-            tracing::warn!(action = %action_id, error = %e, "重建前置事实不可用");
-            false
+        Ok(row) => row,
+        Err(error) => {
+            tracing::warn!(action = %action_id, error = %error, "读取建钥意图失败");
+            return "FAILED";
+        }
+    };
+    let Some((tenant_id, principal_id, locator)) = snapshot else {
+        return "GONE";
+    };
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return "FAILED",
+    };
+    let owner: Result<Option<i32>, _> = sqlx::query_scalar(
+        "select 1 from admission.action_execution ae
+         join identity.principal p on p.id = $3 and p.tenant_id = ae.tenant_id
+         where ae.id = $1 and ae.tenant_id = $2
+         for update of ae,p",
+    )
+    .bind(action_id)
+    .bind(tenant_id)
+    .bind(principal_id)
+    .fetch_optional(&mut *tx)
+    .await;
+    if !matches!(owner, Ok(Some(_))) {
+        return "CONFLICT";
+    }
+    let frozen: Result<Option<FrozenProvisionIntent>, _> = sqlx::query_as(
+        "select target_locator, finished_at is not null as finished,
+                destroyed_at is not null as destroyed,
+                source_membership_id is null as direct
+         from admission.server_key_provision_intent
+         where action_execution_id = $1 and tenant_id = $2 and principal_id = $3
+         for update",
+    )
+    .bind(action_id)
+    .bind(tenant_id)
+    .bind(principal_id)
+    .fetch_optional(&mut *tx)
+    .await;
+    let FrozenProvisionIntent {
+        target_locator: stored,
+        finished,
+        destroyed,
+        direct,
+    } = match frozen {
+        Ok(Some(row)) => row,
+        _ => return "FAILED",
+    };
+    if stored != locator {
+        return "CONFLICT";
+    }
+    if finished {
+        return if destroyed { "CONVERGED" } else { "CONFLICT" };
+    }
+    let referenced: Result<bool, _> = sqlx::query_scalar(
+        "select exists (select 1 from identity.buzz_identity_binding
+                        where private_key_secret_ref = $1)",
+    )
+    .bind(&locator)
+    .fetch_one(&mut *tx)
+    .await;
+    if !matches!(referenced, Ok(false)) {
+        return "CONFLICT";
+    }
+    let workflow: Result<bool, _> = sqlx::query_scalar(
+        "select exists (select 1 from projection.workflow_ref
+                        where action_execution_id = $1 and kind = $2)",
+    )
+    .bind(action_id)
+    .bind(KIND)
+    .fetch_one(&mut *tx)
+    .await;
+    if !matches!(workflow, Ok(false)) {
+        return "CONFLICT";
+    }
+    if sqlx::query(
+        "update admission.server_key_provision_intent
+         set fenced_at = coalesce(fenced_at, now())
+         where action_execution_id = $1 and finished_at is null",
+    )
+    .bind(action_id)
+    .execute(&mut *tx)
+    .await
+    .is_err()
+        || tx.commit().await.is_err()
+    {
+        return "FAILED";
+    }
+
+    // DELETING/DELETED 的 namespace 不得被补偿逻辑重新创建；其意图保留告警。
+    let tenant_state: Result<Option<String>, _> =
+        sqlx::query_scalar("select state from identity.tenant where id = $1")
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await;
+    let Ok(Some(tenant_state)) = tenant_state else {
+        return "PENDING";
+    };
+    if matches!(tenant_state.as_str(), "DELETING" | "DELETED") {
+        return "PENDING";
+    }
+    if state.secrets.ensure_tenant(tenant_id).await.is_err() {
+        tracing::warn!(action = %action_id, "孤儿密钥的 Tenant OpenBao 策略未就绪");
+        return "PENDING";
+    }
+    let referenced: Result<bool, _> = sqlx::query_scalar(
+        "select exists (select 1 from identity.buzz_identity_binding
+                        where private_key_secret_ref = $1)",
+    )
+    .bind(&locator)
+    .fetch_one(&state.pool)
+    .await;
+    if !matches!(referenced, Ok(false)) {
+        return "CONFLICT";
+    }
+    if state
+        .secrets
+        .destroy_unbound_server_human_provision(tenant_id, action_id, &locator)
+        .await
+        .is_err()
+    {
+        tracing::warn!(action = %action_id, "孤儿密钥版本 1 销毁未取得 metadata 证明");
+        return "PENDING";
+    }
+
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return "FAILED",
+    };
+    let owner: Result<Option<i32>, _> = sqlx::query_scalar(
+        "select 1 from admission.action_execution ae
+         join identity.principal p on p.id = $3 and p.tenant_id = ae.tenant_id
+         where ae.id = $1 and ae.tenant_id = $2
+         for update of ae,p",
+    )
+    .bind(action_id)
+    .bind(tenant_id)
+    .bind(principal_id)
+    .fetch_optional(&mut *tx)
+    .await;
+    if !matches!(owner, Ok(Some(_))) {
+        return "FAILED";
+    }
+    let still_fenced: Result<Option<String>, _> = sqlx::query_scalar(
+        "select target_locator from admission.server_key_provision_intent
+         where action_execution_id = $1 and tenant_id = $2 and principal_id = $3
+           and fenced_at is not null and destroyed_at is null and finished_at is null
+         for update",
+    )
+    .bind(action_id)
+    .bind(tenant_id)
+    .bind(principal_id)
+    .fetch_optional(&mut *tx)
+    .await;
+    if !matches!(still_fenced, Ok(Some(ref path)) if *path == locator) {
+        return "CONFLICT";
+    }
+    let referenced: Result<bool, _> = sqlx::query_scalar(
+        "select exists (select 1 from identity.buzz_identity_binding
+                        where private_key_secret_ref = $1)",
+    )
+    .bind(&locator)
+    .fetch_one(&mut *tx)
+    .await;
+    if !matches!(referenced, Ok(false)) {
+        return "CONFLICT";
+    }
+    let context: ProvisionAuditContext = match sqlx::query_as(
+        "select ae.operation_id, ae.workspace_id, ae.initiator_principal_id,
+                ae.actor_principal_id, ae.target_id, ae.parameter_hash,
+                ae.correlation_id, ae.action_version, ae.action_key,
+                d.component_type_key, d.target_type, d.result_exposure
+         from admission.action_execution ae
+         join catalog.action_definition d
+           on d.action_key = ae.action_key and d.version = ae.action_version
+         where ae.id = $1 and ae.tenant_id = $2",
+    )
+    .bind(action_id)
+    .bind(tenant_id)
+    .fetch_one(&mut *tx)
+    .await
+    {
+        Ok(context) => context,
+        Err(_) => return "FAILED",
+    };
+    let changed = sqlx::query(
+        "update admission.server_key_provision_intent
+         set destroyed_at = now(), finished_at = now()
+         where action_execution_id = $1 and fenced_at is not null
+           and finished_at is null and destroyed_at is null",
+    )
+    .bind(action_id)
+    .execute(&mut *tx)
+    .await;
+    if !matches!(changed, Ok(ref result) if result.rows_affected() == 1) {
+        return "FAILED";
+    }
+    if direct {
+        let aborted = sqlx::query(
+            "update admission.action_execution
+             set dispatch_state = 'ABORTED', reason_code = 'TARGET_STATE_CONFLICT',
+                 updated_at = now()
+             where id = $1 and gate_state = 'ALLOWED' and dispatch_state = 'UNKNOWN'",
+        )
+        .bind(action_id)
+        .execute(&mut *tx)
+        .await;
+        if !matches!(aborted, Ok(ref result) if result.rows_affected() == 1) {
+            return "FAILED";
         }
     }
+    if append(
+        &mut tx,
+        AuditEntry {
+            event_key: format!("{}:server-human-orphan-destroyed", context.operation_id),
+            tenant_id: Some(tenant_id),
+            workspace_id: context.workspace_id,
+            operation_id: context.operation_id,
+            event_type: "RECONCILIATION",
+            human_identity_id: None,
+            initiator_principal_id: Some(context.initiator_principal_id),
+            actor_principal_id: Some(context.actor_principal_id),
+            action_key: &context.action_key,
+            action_version: context.action_version,
+            component_type_key: &context.component_type_key,
+            target_type: Some(&context.target_type),
+            target_id: Some(context.target_id),
+            parameter_hash: &context.parameter_hash,
+            decision: "ALLOW",
+            result_code: "DESTROYED",
+            result_exposure: &context.result_exposure,
+            evidence_refs: serde_json::json!([{
+                "kind": "ACTION_EXECUTION_ID", "value": action_id
+            }]),
+            correlation_id: context.correlation_id,
+        },
+    )
+    .await
+    .is_err()
+    {
+        return "FAILED";
+    }
+    if tx.commit().await.is_err() {
+        return "FAILED";
+    }
+    "CONVERGED"
 }
 
 /// 现有治理对账器重驱动唯一持久意图；不接受请求方替换 locator/pubkey。
@@ -633,8 +915,9 @@ pub(crate) async fn reconcile_provision_intent(
     state: &ServiceState,
     action_id: Uuid,
 ) -> &'static str {
-    let row: Option<(Uuid, Uuid, bool)> = match sqlx::query_as(
-        "select tenant_id, principal_id, finished_at is not null
+    let row: Option<(Uuid, Uuid, bool, bool, bool)> = match sqlx::query_as(
+        "select tenant_id, principal_id, finished_at is not null,
+                fenced_at is not null, destroyed_at is not null
          from admission.server_key_provision_intent
          where action_execution_id = $1 and source_membership_id is null",
     )
@@ -648,11 +931,14 @@ pub(crate) async fn reconcile_provision_intent(
             return "FAILED";
         }
     };
-    let Some((tenant_id, principal_id, finished)) = row else {
+    let Some((tenant_id, principal_id, finished, fenced, destroyed)) = row else {
         return "GONE";
     };
-    if !prewrite_admissible(state, tenant_id, principal_id, action_id, false, false).await {
-        return "PRECONDITION";
+    if finished && destroyed {
+        return "CONVERGED";
+    }
+    if fenced {
+        return fence_and_destroy_provision_intent(state, action_id).await;
     }
     if finished {
         return match resume(
@@ -668,6 +954,14 @@ pub(crate) async fn reconcile_provision_intent(
             Some(response) if response.status().is_success() => "REDRIVEN",
             _ => "PENDING",
         };
+    }
+    match prewrite_admissible(state, tenant_id, principal_id, action_id, false, false).await {
+        Ok(true) => {}
+        Ok(false) => return fence_and_destroy_provision_intent(state, action_id).await,
+        Err(error) => {
+            tracing::warn!(action = %action_id, error = %error, "托管身份准入事实不可用");
+            return "FAILED";
+        }
     }
     let action = match admit(state, &action_id, tenant_id, principal_id, PROVISION_ACTION).await {
         Ok(action) => action,
@@ -874,8 +1168,8 @@ async fn resume(
     } else {
         false
     };
-    if expected_action_key == PROVISION_ACTION
-        && !prewrite_admissible(
+    if expected_action_key == PROVISION_ACTION {
+        match prewrite_admissible(
             state,
             tenant_id,
             principal_id,
@@ -884,8 +1178,11 @@ async fn resume(
             legacy_without_intent,
         )
         .await
-    {
-        return Some(StatusCode::CONFLICT.into_response());
+        {
+            Ok(true) => {}
+            Ok(false) => return Some(StatusCode::CONFLICT.into_response()),
+            Err(error) => return Some(unavailable(error)),
+        }
     }
     // 固定 ID 的后两段就是冻结的 pubkey 与 binding 版本
     let parts: Vec<&str> = existing.split(':').collect();

@@ -125,6 +125,30 @@ async fn membership_projects_to_relay_roster_and_revokes() {
     )
     .await;
 
+    // 投影只接受已准入且预写 WorkflowRef 的成员版本（DD-48）。此夹具直接
+    // 建成员事实，不走 lifecycle API，因此在调用投影前补齐同一条执行意图。
+    let action = common::allowed_action(&pool, f.tenant, f.control_principal, f.membership)
+        .await
+        .expect("建成员投影动作");
+    let workflow_id = format!(
+        "kailo:MEMBERSHIP_PROJECTION:{}:{}:1",
+        f.tenant, f.membership
+    );
+    sqlx::query(
+        "insert into projection.workflow_ref
+             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
+              operation_id, action_execution_id, projection_state)
+         select $1, 'ComponentTaskWorkflow', 1, 'MEMBERSHIP_PROJECTION', $2,
+                ae.operation_id, ae.id, 'PENDING_START'
+         from admission.action_execution ae where ae.id = $3",
+    )
+    .bind(&workflow_id)
+    .bind(f.tenant)
+    .bind(action)
+    .execute(&pool)
+    .await
+    .expect("预写成员投影 WorkflowRef");
+
     // 断言体单独跑：断言失败会 panic，写在这里的清理就跑不到，夹具会留在库里。
     // 留下的 SERVER binding 还会让下一次迁移演练失败（新列为空、三元组约束
     // 不成立）——测试残留会变成门禁故障。捕获 panic 后先清理再重抛。

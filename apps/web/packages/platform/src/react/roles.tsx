@@ -9,7 +9,7 @@ import { useBffClient, useFailureText, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
 
-type Change = { key: string; principal: RoleMemberView };
+type Change = { key: string; principal: RoleMemberView; idempotencyKey: string };
 type Outcome =
   | { kind: "submitted"; action: string; execution: string }
   | { kind: "failed"; failure: WriteFailure };
@@ -93,22 +93,25 @@ export function RoleMembers({ workspaceId }: { workspaceId?: string }) {
   if (state.status === "pending") return null;
 
   const submit = async () => {
-    if (!confirming) return;
-    const { key, principal } = confirming;
-    setConfirming(null);
+    if (!confirming || busy) return;
+    const { key, principal, idempotencyKey } = confirming;
     setBusy(true);
     setOutcome(null);
     try {
       const result = await client.submitAction({
         actionKey: key,
-        idempotencyKey: newIdempotencyKey(),
+        idempotencyKey,
         principalId: principal.principalId,
         ...(key.startsWith("workspace.") ? { workspaceId } : {}),
       });
       setSubmittedFor(principal.principalId);
       setOutcome({ kind: "submitted", action: key, execution: result.actionExecutionId });
+      setConfirming(null);
     } catch (error) {
-      setOutcome({ kind: "failed", failure: writeFailure(error) });
+      const failure = writeFailure(error);
+      setOutcome({ kind: "failed", failure });
+      // 回应丢失时保留原意图与键；只有确定拒绝才能放弃这次意图。
+      if (failure.kind !== "unknown") setConfirming(null);
     } finally {
       setBusy(false);
       reload();
@@ -117,8 +120,8 @@ export function RoleMembers({ workspaceId }: { workspaceId?: string }) {
 
   const button = (member: RoleMemberView, key: string, label: string) => (
     <Button
-      disabled={busy || submittedFor === member.principalId}
-      onClick={() => setConfirming({ key, principal: member })}
+      disabled={busy || confirming !== null || submittedFor === member.principalId}
+      onClick={() => setConfirming({ key, principal: member, idempotencyKey: newIdempotencyKey() })}
     >
       {label}
     </Button>
@@ -152,7 +155,9 @@ export function RoleMembers({ workspaceId }: { workspaceId?: string }) {
           <p>{t("roles.confirm", { action: confirming.key, member: confirming.principal.displayName })}</p>
           <div className="flex gap-2">
             <Button disabled={busy} onClick={() => void submit()}>{t("platform.confirm")}</Button>
-            <Button onClick={() => setConfirming(null)}>{t("platform.cancel")}</Button>
+            {outcome?.kind === "failed" && outcome.failure.kind === "unknown" ? null : (
+              <Button onClick={() => setConfirming(null)}>{t("platform.cancel")}</Button>
+            )}
           </div>
         </div>
       ) : null}

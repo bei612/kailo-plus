@@ -205,9 +205,7 @@ async fn pass(
     let provision_ids: Vec<Uuid> = sqlx::query_scalar(
         "with selected as (
          select i.action_execution_id from admission.server_key_provision_intent i
-         join admission.action_execution ae on ae.id = i.action_execution_id
-         where ae.gate_state = 'ALLOWED' and ae.dispatch_state = 'UNKNOWN'
-           and i.source_membership_id is null
+         where i.finished_at is null and i.source_membership_id is null
            and i.created_at < now() - make_interval(secs => $2::bigint)
          order by coalesce(i.reconcile_last_attempt_at, i.created_at), i.action_execution_id
          limit $1 for update of i skip locked
@@ -257,9 +255,7 @@ async fn pass(
     let membership_key_ids: Vec<Uuid> = sqlx::query_scalar(
         "with selected as (
          select i.action_execution_id from admission.server_key_provision_intent i
-         join admission.action_execution ae on ae.id = i.action_execution_id
-         where ae.gate_state = 'ALLOWED' and i.finished_at is null
-           and i.source_membership_id is not null
+         where i.finished_at is null and i.source_membership_id is not null
            and i.created_at < now() - make_interval(secs => $2::bigint)
          order by coalesce(i.reconcile_last_attempt_at, i.created_at), i.action_execution_id
          limit $1 for update of i skip locked

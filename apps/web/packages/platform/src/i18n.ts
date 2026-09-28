@@ -32,6 +32,9 @@ export const platformPluralOneLocales = ["en"] as const;
 // “昨天/明天/上个月/下个月”是日历特例，不依赖语言的语法复数类别。
 export const platformSpecialRelativeUnits = ["day", "month"] as const;
 
+// 频道日期分组与近期线程摘要共享同一个日历日带；Dart 从这里生成该阈值。
+export const platformCalendarWeekdayBandDays = 7 as const;
+
 export function platformPluralForm(locale: PlatformLocale, count: number): "one" | "other" {
   return platformPluralOneLocales.some((candidate) => candidate === locale) && count === 1
     ? "one"
@@ -92,6 +95,25 @@ export const platformMessages = {
   "platform.time.past.month.other": { en: "{count} months ago", "zh-CN": "{count} 个月前" },
   "platform.time.future.month.one": { en: "next month", "zh-CN": "下个月" },
   "platform.time.future.month.other": { en: "in {count} months", "zh-CN": "{count} 个月后" },
+  "chat.time.today": { en: "Today", "zh-CN": "今天" },
+  "chat.time.yesterday": { en: "Yesterday", "zh-CN": "昨天" },
+  "chat.time.justNow": { en: "just now", "zh-CN": "刚刚" },
+  "chat.time.at": { en: "{day} at {time}", "zh-CN": "{day} {time}" },
+  "chat.time.weekdayDate": { en: "{weekday}, {date}", "zh-CN": "{weekday}，{date}" },
+  "chat.time.on": { en: "on {date}", "zh-CN": "{date}" },
+  "chat.time.lastReply": { en: "last reply {time}", "zh-CN": "上次回复{time}" },
+  "chat.thread.replyCount.one": { en: "{count} reply", "zh-CN": "{count} 条回复" },
+  "chat.thread.replyCount.other": { en: "{count} replies", "zh-CN": "{count} 条回复" },
+  "chat.thread.unreadCount": { en: "{count} new", "zh-CN": "新增 {count} 条" },
+  "chat.thread.view": { en: "View thread", "zh-CN": "查看话题" },
+  "chat.thread.aria.open": {
+    en: "View thread with {replies}",
+    "zh-CN": "查看有{replies}的话题",
+  },
+  "chat.thread.aria.openLast": {
+    en: "View thread with {replies}, {lastReply}",
+    "zh-CN": "查看有{replies}的话题，{lastReply}",
+  },
   "platform.type": { en: "Type", "zh-CN": "类型" },
   "platform.action": { en: "Action", "zh-CN": "动作" },
   "platform.result": { en: "Result", "zh-CN": "结果" },

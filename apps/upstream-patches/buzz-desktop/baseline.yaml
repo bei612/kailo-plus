@@ -835,7 +835,7 @@ remove_paths:
   - scripts/test-oss-desktop-promotion.sh
   - scripts/test-signed-canary-contract.sh
   - scripts/verify-desktop-release-merge.sh
-patch_series: [0001-kailo-desktop.patch]
+patch_series: [0001-kailo-desktop.patch, 0002-chat-time-i18n.patch]
 # Kailo 自有的 TypeScript 只有一份（ADR-09）：BFF 客户端、平台页、原生登录引导与文案
 # 在 web/packages/platform，与 Buzz Web 放入的是同一批文件；传输换成经 Tauri
 # `kailo_api` 的实现（native.ts）。类型取自 contracts 的生成物。构建时放进源树，
@@ -856,11 +856,11 @@ vendor_files:
   - web/packages/platform/src/react/invitations.tsx:desktop/src/kailo-platform/react/invitations.tsx
   - web/packages/platform/src/react/roles.tsx:desktop/src/kailo-platform/react/roles.tsx
   - web/packages/platform/src/react/NativeBootstrap.tsx:desktop/src/kailo-platform/react/NativeBootstrap.tsx
-patch_series_digest: sha256:996dd91f330ebfeacdcd56c84199489a9dc1290408eddea0d84e47de574530dd
+patch_series_digest: sha256:9706623905804d046c775a7bddbaa0cffe899f4658a04bd54f9712702a68011e
 # 产物是 Linux 桌面安装包（.deb）而不是镜像：上游没有打包用的 Dockerfile，由 Kailo 维护的
 # 构建文件产出，artifact_digest 记安装包字节的 SHA-256（06 §2）。
 build_dockerfile: upstream-patches/buzz-desktop/packaging/Dockerfile
-artifact_digest: sha256:8e14dcedcd80dacbcd23d2e990bd59f97db72ac90cffd4581c13f3fb1638e33c
+artifact_digest: sha256:d148321792c131494d2049e6dbfe8d6b4b73bd8e3f72ecefafe4cc28edf74ad5
 
 source_facts: [SF-DSK-01, SF-DSK-02, SF-MOB-02]
 source_seams: []

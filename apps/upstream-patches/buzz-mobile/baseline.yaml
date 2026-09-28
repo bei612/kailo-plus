@@ -141,14 +141,14 @@ remove_paths:
   - mobile/test/shared/security
   - mobile/test/shared/theme/community_theme_sync_test.dart
   - mobile/test/shared/widgets/masked_avatar_badge_test.dart
-patch_series: [0001-kailo-mobile.patch]
+patch_series: [0001-kailo-mobile.patch, 0002-chat-time-i18n.patch]
 # Kailo 契约的 Dart 生成物由本仓库放入，补丁只引用（ADR-02/03）
 vendor_files:
   - mobile/lib/shared/contracts/contracts.dart:mobile/lib/shared/contracts/contracts.dart
   - mobile/lib/shared/contracts/generated/contracts.dart:mobile/lib/shared/contracts/generated/contracts.dart
   - mobile/lib/shared/kailo/kailo_reason_text.dart:mobile/lib/shared/kailo/kailo_reason_text.dart
   - mobile/lib/shared/kailo/kailo_platform_text.dart:mobile/lib/shared/kailo/kailo_platform_text.dart
-patch_series_digest: sha256:26b6da2b4872c96dddaf9363915ae5724ac87f0d433f7d044a6f9a34db7b0526
+patch_series_digest: sha256:d6cdec450761149be704b3ad93a87f8a77cb35caf35393bc538a9f79cc494668
 # 产物是移动端安装包而不是镜像；Kailo 版本的构建流水线建立之前没有可登记的产物。
 artifact_digest: none
 

@@ -259,7 +259,10 @@ async fn pass(
                             "update projection.workflow_ref
                              set run_id = coalesce(run_id, $2), projection_state = 'RUNNING',
                                  version = version + 1
-                             where workflow_id = $1 and projection_state in ('PENDING_START', 'UNKNOWN')",
+                             where workflow_id = $1
+                               and (projection_state in ('PENDING_START', 'UNKNOWN')
+                                    or (projection_state = 'RUNNING' and run_id is null))
+                               and (run_id is null or run_id = $2)",
                             r.workflow_id,
                             o.run_id,
                         )

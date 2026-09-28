@@ -1,0 +1,355 @@
+diff --git a/desktop/src/features/messages/lib/dateFormatters.test.mjs b/desktop/src/features/messages/lib/dateFormatters.test.mjs
+index 138851b..0654a34 100644
+--- a/desktop/src/features/messages/lib/dateFormatters.test.mjs
++++ b/desktop/src/features/messages/lib/dateFormatters.test.mjs
+@@ -49,7 +49,7 @@ test("formatThreadSummaryLastReplyTime expands relative units", () => {
+   );
+   assert.equal(
+     formatThreadSummaryLastReplyTime(now - 86_400, now),
+-    "1 day ago",
++    "yesterday",
+   );
+   assert.equal(
+     formatThreadSummaryLastReplyTime(now - 345_600, now),
+diff --git a/desktop/src/features/messages/lib/dateFormatters.ts b/desktop/src/features/messages/lib/dateFormatters.ts
+index f752bdf..68f73a3 100644
+--- a/desktop/src/features/messages/lib/dateFormatters.ts
++++ b/desktop/src/features/messages/lib/dateFormatters.ts
+@@ -17,30 +17,36 @@
+  * scrolls away while the messages under it stay on screen.
+  */
+ 
+-const TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
+-  hour: "numeric",
+-  minute: "2-digit",
+-});
++import {
++  platformCalendarWeekdayBandDays,
++  platformTimeSeconds,
++  resolveLocale,
++  translate,
++  type PlatformLocale,
++} from "@kailo/platform/i18n";
++import { relativeTime } from "@kailo/platform/format";
+ 
+-const DAY_PERIOD_SUFFIX_RE = /[\s\u00a0\u202f]*(?:AM|PM)$/i;
++function createFormatters(locale: PlatformLocale) {
++  return {
++    time: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }),
++    fullDateTime: new Intl.DateTimeFormat(locale, {
++      weekday: "long", year: "numeric", month: "long", day: "numeric",
++      hour: "numeric", minute: "2-digit",
++    }),
++    shortMonthDay: new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }),
++  };
++}
+ 
+-const FULL_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
+-  weekday: "long",
+-  year: "numeric",
+-  month: "long",
+-  day: "numeric",
+-  hour: "numeric",
+-  minute: "2-digit",
+-});
++const FORMATTERS = {
++  en: createFormatters("en"),
++  "zh-CN": createFormatters("zh-CN"),
++} satisfies Record<PlatformLocale, ReturnType<typeof createFormatters>>;
+ 
+-const SHORT_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+-  month: "short",
+-  day: "numeric",
+-});
++const DAY_PERIOD_SUFFIX_RE = /[\s\u00a0\u202f]*(?:AM|PM)$/i;
+ 
+ /** Short clock time, e.g. "2:34 PM". */
+ export function formatTime(unixSeconds: number): string {
+-  return TIME_FORMATTER.format(new Date(unixSeconds * 1_000));
++  return FORMATTERS[resolveLocale()].time.format(new Date(unixSeconds * 1_000));
+ }
+ 
+ /** Short clock time with the AM/PM marker removed, e.g. "2:34". */
+@@ -50,7 +56,7 @@ export function formatTimeWithoutDayPeriod(time: string): string {
+ 
+ /** Full date + time for tooltips, e.g. "Wednesday, April 2, 2026 at 2:34 PM". */
+ export function formatFullDateTime(unixSeconds: number): string {
+-  return FULL_DATE_TIME_FORMATTER.format(new Date(unixSeconds * 1_000));
++  return FORMATTERS[resolveLocale()].fullDateTime.format(new Date(unixSeconds * 1_000));
+ }
+ 
+ /** True when two unix-second timestamps fall on the same calendar day (local time). */
+@@ -72,7 +78,7 @@ export function startOfLocalDaySeconds(unixSeconds: number): number {
+ 
+ /** Short month + day, e.g. "May 19". No ordinal suffix, per the writing standard. */
+ export function formatShortMonthDay(unixSeconds: number): string {
+-  return SHORT_MONTH_DAY_FORMATTER.format(new Date(unixSeconds * 1_000));
++  return FORMATTERS[resolveLocale()].shortMonthDay.format(new Date(unixSeconds * 1_000));
+ }
+ 
+ /**
+@@ -84,13 +90,14 @@ export function formatThreadSummaryLastReplyTime(
+   nowSeconds = Date.now() / 1_000,
+ ): string {
+   const diff = Math.max(0, nowSeconds - unixSeconds);
++  const locale = resolveLocale();
+ 
+-  if (diff < 60) return "just now";
+-  if (diff < 3_600) return formatAgo(Math.floor(diff / 60), "minute");
+-  if (diff < 86_400) return formatAgo(Math.floor(diff / 3_600), "hour");
+-  if (diff < 604_800) return formatAgo(Math.floor(diff / 86_400), "day");
++  if (diff < platformTimeSeconds.minute) return translate(locale, "chat.time.justNow");
++  if (diff < platformCalendarWeekdayBandDays * platformTimeSeconds.day) {
++    return relativeTime(locale, new Date(unixSeconds * 1_000).toISOString(), nowSeconds * 1_000);
++  }
+ 
+-  return `on ${formatShortMonthDay(unixSeconds)}`;
++  return translate(locale, "chat.time.on", { date: formatShortMonthDay(unixSeconds) });
+ }
+ 
+ function isSameDayDate(a: Date, b: Date): boolean {
+@@ -100,7 +107,3 @@ function isSameDayDate(a: Date, b: Date): boolean {
+     a.getDate() === b.getDate()
+   );
+ }
+-
+-function formatAgo(value: number, unit: string): string {
+-  return `${value} ${unit}${value === 1 ? "" : "s"} ago`;
+-}
+diff --git a/desktop/src/features/messages/ui/MessageThreadSummaryRow.tsx b/desktop/src/features/messages/ui/MessageThreadSummaryRow.tsx
+index ab403d8..d2be3db 100644
+--- a/desktop/src/features/messages/ui/MessageThreadSummaryRow.tsx
++++ b/desktop/src/features/messages/ui/MessageThreadSummaryRow.tsx
+@@ -1,4 +1,5 @@
+ import * as React from "react";
++import { platformPluralForm, resolveLocale, translate } from "@kailo/platform/i18n";
+ 
+ import type {
+   TimelineThreadSummary,
+@@ -115,10 +116,20 @@ export function MessageThreadSummaryRow({
+   const surfaceInsetStart = `calc(${contentPaddingStart} - ${threadReplyLength(
+     THREAD_SUMMARY_SURFACE_AVATAR_INSET_REM,
+   )})`;
+-  const replyLabel = summary.replyCount === 1 ? "reply" : "replies";
+-  const summaryAriaLabel = summary.lastReplyAt
+-    ? `View thread with ${summary.replyCount} ${replyLabel}, last reply ${formatThreadSummaryLastReplyTime(summary.lastReplyAt)}`
+-    : `View thread with ${summary.replyCount} ${replyLabel}`;
++  const locale = resolveLocale();
++  const replies = translate(
++    locale,
++    `chat.thread.replyCount.${platformPluralForm(locale, summary.replyCount)}`,
++    { count: summary.replyCount },
++  );
++  const lastReply = summary.lastReplyAt
++    ? translate(locale, "chat.time.lastReply", {
++        time: formatThreadSummaryLastReplyTime(summary.lastReplyAt),
++      })
++    : null;
++  const summaryAriaLabel = lastReply
++    ? translate(locale, "chat.thread.aria.openLast", { replies, lastReply })
++    : translate(locale, "chat.thread.aria.open", { replies });
+   const guideDepths = depthGuideDepths
+     ? [...depthGuideDepths]
+     : Array.from({ length: Math.max(0, depth - 1) }, (_, index) => index + 1);
+@@ -264,11 +275,11 @@ export function MessageThreadSummaryRow({
+         <div className="relative z-10 min-w-0">
+           <div>
+             <span className="font-medium transition-colors group-hover:text-foreground">
+-              {summary.replyCount} {replyLabel}
++              {replies}
+             </span>
+             {unreadCount != null && unreadCount > 0 ? (
+               <span className="ml-1" data-testid="thread-unread-badge">
+-                ({unreadCount} new)
++                ({translate(locale, "chat.thread.unreadCount", { count: unreadCount })})
+               </span>
+             ) : null}
+             {summary.lastReplyAt ? (
+@@ -281,14 +292,13 @@ export function MessageThreadSummaryRow({
+                     className="col-start-1 row-start-1 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0"
+                     data-testid="message-thread-summary-last-reply"
+                   >
+-                    last reply{" "}
+-                    {formatThreadSummaryLastReplyTime(summary.lastReplyAt)}
++                    {lastReply}
+                   </span>
+                   <span
+                     className="col-start-1 row-start-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                     data-testid="message-thread-summary-hover-action"
+                   >
+-                    View thread
++                    {translate(locale, "chat.thread.view")}
+                   </span>
+                 </span>
+               </>
+diff --git a/desktop/src/shared/lib/datetime.ts b/desktop/src/shared/lib/datetime.ts
+index cd5a11f..23b7fb2 100644
+--- a/desktop/src/shared/lib/datetime.ts
++++ b/desktop/src/shared/lib/datetime.ts
+@@ -11,44 +11,34 @@
+  * deliberate deviation noted on `formatDayGroupLabel`.
+  */
+ 
+-const WEEKDAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+-  weekday: "long",
+-});
+-
+-const WEEKDAY_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+-  weekday: "long",
+-  month: "long",
+-  day: "numeric",
+-});
+-
+-const MONTH_DAY_YEAR_FORMATTER = new Intl.DateTimeFormat("en-US", {
+-  month: "long",
+-  day: "numeric",
+-  year: "numeric",
+-});
+-
+-const SHORT_WEEKDAY_SHORT_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat(
+-  "en-US",
+-  {
+-    weekday: "short",
+-    month: "short",
+-    day: "numeric",
+-  },
+-);
+-
+-const SHORT_MONTH_DAY_YEAR_FORMATTER = new Intl.DateTimeFormat("en-US", {
+-  month: "short",
+-  day: "numeric",
+-  year: "numeric",
+-});
+-
+-const TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
+-  hour: "numeric",
+-  minute: "2-digit",
+-});
++import {
++  platformCalendarWeekdayBandDays,
++  resolveLocale,
++  translate,
++  type PlatformLocale,
++} from "@kailo/platform/i18n";
++
++function createFormatters(locale: PlatformLocale) {
++  return {
++    weekday: new Intl.DateTimeFormat(locale, { weekday: "long" }),
++    monthDay: new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }),
++    monthDayYear: new Intl.DateTimeFormat(locale, {
++      month: "long", day: "numeric", year: "numeric",
++    }),
++    shortWeekdayMonthDay: new Intl.DateTimeFormat(locale, {
++      weekday: "short", month: "short", day: "numeric",
++    }),
++    shortMonthDayYear: new Intl.DateTimeFormat(locale, {
++      month: "short", day: "numeric", year: "numeric",
++    }),
++    time: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }),
++  };
++}
+ 
+-/** Days in a week, past which the weekday name stops being unambiguous. */
+-const WEEKDAY_BAND_DAYS = 7;
++const FORMATTERS = {
++  en: createFormatters("en"),
++  "zh-CN": createFormatters("zh-CN"),
++} satisfies Record<PlatformLocale, ReturnType<typeof createFormatters>>;
+ 
+ /**
+  * Label for a group of items that share a calendar day — a chat day divider or
+@@ -86,19 +76,24 @@ export function formatDayGroupLabel(
+   const date = new Date(unixSeconds * 1_000);
+   const now = new Date(nowSeconds * 1_000);
+   const dayDiff = calendarDaysBetween(now, date);
++  const locale = resolveLocale();
++  const formatters = FORMATTERS[locale];
+ 
+-  if (dayDiff === 0) return "Today";
+-  if (dayDiff === 1) return "Yesterday";
++  if (dayDiff === 0) return translate(locale, "chat.time.today");
++  if (dayDiff === 1) return translate(locale, "chat.time.yesterday");
+   // Bounded below as well as above: a timestamp in the future (clock skew, or a
+   // relay ahead of this machine) must not be labelled with a weekday that reads
+   // as the recent past.
+-  if (dayDiff > 1 && dayDiff < WEEKDAY_BAND_DAYS) {
+-    return WEEKDAY_FORMATTER.format(date);
++  if (dayDiff > 1 && dayDiff < platformCalendarWeekdayBandDays) {
++    return formatters.weekday.format(date);
+   }
+ 
+   return date.getFullYear() === now.getFullYear()
+-    ? WEEKDAY_MONTH_DAY_FORMATTER.format(date)
+-    : MONTH_DAY_YEAR_FORMATTER.format(date);
++    ? translate(locale, "chat.time.weekdayDate", {
++        weekday: formatters.weekday.format(date),
++        date: formatters.monthDay.format(date),
++      })
++    : formatters.monthDayYear.format(date);
+ }
+ 
+ /**
+@@ -139,23 +134,25 @@ export function formatItemTimestamp(
+   const date = new Date(unixSeconds * 1_000);
+   const now = new Date(nowSeconds * 1_000);
+   const dayDiff = calendarDaysBetween(now, date);
+-  const time = TIME_FORMATTER.format(date);
++  const locale = resolveLocale();
++  const formatters = FORMATTERS[locale];
++  const time = formatters.time.format(date);
+ 
+   if (dayDiff === 0) return time;
+ 
+   let dayLabel: string;
+   if (dayDiff === 1) {
+-    dayLabel = "Yesterday";
+-  } else if (dayDiff > 1 && dayDiff < WEEKDAY_BAND_DAYS) {
+-    dayLabel = WEEKDAY_FORMATTER.format(date);
++    dayLabel = translate(locale, "chat.time.yesterday");
++  } else if (dayDiff > 1 && dayDiff < platformCalendarWeekdayBandDays) {
++    dayLabel = formatters.weekday.format(date);
+   } else {
+     dayLabel =
+       date.getFullYear() === now.getFullYear()
+-        ? SHORT_WEEKDAY_SHORT_MONTH_DAY_FORMATTER.format(date)
+-        : SHORT_MONTH_DAY_YEAR_FORMATTER.format(date);
++        ? formatters.shortWeekdayMonthDay.format(date)
++        : formatters.shortMonthDayYear.format(date);
+   }
+ 
+-  return withTime ? `${dayLabel} at ${time}` : dayLabel;
++  return withTime ? translate(locale, "chat.time.at", { day: dayLabel, time }) : dayLabel;
+ }
+ 
+ /** Local midnight of the calendar day containing `date`. */
+diff --git a/desktop/test-loader-hooks.mjs b/desktop/test-loader-hooks.mjs
+index 1fa7536..58410cf 100644
+--- a/desktop/test-loader-hooks.mjs
++++ b/desktop/test-loader-hooks.mjs
+@@ -80,6 +80,15 @@ export function resolve(specifier, context, nextResolve) {
+       url: `${STUB_URL_PREFIX}${specifier}`,
+     };
+   }
++  if (specifier === "@kailo/contracts") {
++    return nextResolve(toFileSpecifier(`${srcRoot}/kailo-contracts.gen.ts`), context);
++  }
++  if (specifier.startsWith("@kailo/platform/")) {
++    const resolved = resolveSourcePath(
++      `${srcRoot}/kailo-platform/${specifier.slice("@kailo/platform/".length)}`,
++    );
++    return nextResolve(toFileSpecifier(resolved ?? specifier), context);
++  }
+   if (specifier.startsWith("@/")) {
+     const stripped = specifier.slice(2);
+     // Preserve explicit extensions (.mjs, .js, .json, .ts, etc.). The bundler
+@@ -155,7 +164,9 @@ export async function load(url, context, nextLoad) {
+     };
+   }
+ 
+-  if (url.endsWith(".tsx")) {
++  // The shared generated contract contains enums. Node's strip-only TypeScript
++  // loader cannot lower them, so transpile both TS and TSX source consistently.
++  if (url.endsWith(".ts") || url.endsWith(".tsx")) {
+     const source = fs.readFileSync(fileURLToPath(url), "utf8");
+     const transpiled = ts.transpileModule(source, {
+       compilerOptions: {

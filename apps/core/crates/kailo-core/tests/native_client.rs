@@ -78,21 +78,30 @@ fn proof(keys: &Keys, url: &str, method: &str, session: &str, at: Timestamp) -> 
 
 #[tokio::test]
 async fn native_device_key_is_admitted_by_relay_then_revoked() {
-    let (Some(e), Some(n)) = (common::env(), common::native_env()) else {
+    let (Some(e), Some(mut n)) = (common::env(), common::native_env()) else {
         return;
     };
     let http = reqwest::Client::new();
     let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
     let token = common::worker_token(&http, &e).await;
-    let subject = common::idp_subject(&http, &n).await;
+    let subject = common::create_native_idp_user(&http, &mut n).await;
     let fx = match common::provision_live_workspace_for(&http, &e, &pool, &token, &subject).await {
         Ok(f) => f,
-        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+        Err(msg) => {
+            common::delete_native_idp_user(&http, &n, &subject).await;
+            panic!("准备真实 Workspace 失败: {msg}");
+        }
     };
     let outcome = std::panic::AssertUnwindSafe(run(&http, &e, &n, &pool, &fx))
         .catch_unwind()
         .await;
-    common::teardown_live_workspace(&e, &pool, &fx).await;
+    let teardown = std::panic::AssertUnwindSafe(common::teardown_live_workspace(&e, &pool, &fx))
+        .catch_unwind()
+        .await;
+    common::delete_native_idp_user(&http, &n, &subject).await;
+    if let Err(panic) = teardown {
+        std::panic::resume_unwind(panic);
+    }
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);
     }

@@ -75,6 +75,18 @@ pub(crate) enum Blocked {
     Unavailable(String),
 }
 
+#[derive(sqlx::FromRow)]
+struct MemberKeyIntent {
+    tenant_id: Uuid,
+    principal_id: Uuid,
+    source_membership_id: Uuid,
+    source_membership_version: i32,
+    source_membership_scope: String,
+    finished: bool,
+    fenced: bool,
+    target_locator: String,
+}
+
 impl From<sqlx::Error> for Blocked {
     fn from(e: sqlx::Error) -> Self {
         Self::Unavailable(e.to_string())
@@ -553,8 +565,8 @@ pub(crate) async fn ensure_human_identity(
         }
         Err(e) => return Err(Blocked::from(e)),
     }
-    let frozen: Option<(String, bool)> = sqlx::query_as(
-        "select target_locator, finished_at is not null
+    let frozen: Option<(String, bool, bool)> = sqlx::query_as(
+        "select target_locator, finished_at is not null, fenced_at is not null
          from admission.server_key_provision_intent
          where action_execution_id = $1 and tenant_id = $2 and principal_id = $3
            and source_membership_id = $4 and source_membership_version = $5
@@ -568,7 +580,7 @@ pub(crate) async fn ensure_human_identity(
     .bind(scope)
     .fetch_optional(&mut *tx)
     .await?;
-    if !matches!(frozen, Some((ref l, false)) if *l == locator) {
+    if !matches!(frozen, Some((ref l, false, false)) if *l == locator) {
         return Err(Blocked::Refused(Refusal::Denied(
             "成员私钥写入意图与冻结来源不一致",
         )));
@@ -609,7 +621,8 @@ pub(crate) async fn ensure_human_identity(
         "select target_locator from admission.server_key_provision_intent
          where action_execution_id = $1 and tenant_id = $2 and principal_id = $3
            and source_membership_id = $4 and source_membership_version = $5
-           and source_membership_scope = $6 and finished_at is null for update",
+           and source_membership_scope = $6 and finished_at is null
+           and fenced_at is null for update",
     )
     .bind(action_id)
     .bind(tenant_id)
@@ -646,13 +659,18 @@ pub(crate) async fn ensure_human_identity(
         }
         Err(e) => return Err(Blocked::from(e)),
     }
-    sqlx::query(
+    let finished = sqlx::query(
         "update admission.server_key_provision_intent set finished_at = now()
-         where action_execution_id = $1 and finished_at is null",
+         where action_execution_id = $1 and finished_at is null and fenced_at is null",
     )
     .bind(action_id)
     .execute(&mut *tx)
     .await?;
+    if finished.rows_affected() != 1 {
+        return Err(Blocked::Unavailable(
+            "成员私钥写入意图未能与 binding 同事务终结".into(),
+        ));
+    }
     tx.commit().await?;
     Ok(pubkey)
 }
@@ -709,10 +727,11 @@ pub(crate) async fn reconcile_member_key_intent(
     state: &ServiceState,
     action_id: Uuid,
 ) -> &'static str {
-    let row: Option<(Uuid, Uuid, Uuid, i32, String, bool, String)> = match sqlx::query_as(
+    let row: Option<MemberKeyIntent> = match sqlx::query_as(
         "select tenant_id, principal_id, source_membership_id,
                 source_membership_version, source_membership_scope,
-                finished_at is not null, target_locator
+                finished_at is not null as finished,
+                fenced_at is not null as fenced, target_locator
          from admission.server_key_provision_intent
          where action_execution_id = $1 and source_membership_id is not null",
     )
@@ -726,11 +745,24 @@ pub(crate) async fn reconcile_member_key_intent(
             return "FAILED";
         }
     };
-    let Some((tenant, principal, membership_id, version, scope, finished, locator)) = row else {
+    let Some(MemberKeyIntent {
+        tenant_id: tenant,
+        principal_id: principal,
+        source_membership_id: membership_id,
+        source_membership_version: version,
+        source_membership_scope: scope,
+        finished,
+        fenced,
+        target_locator: locator,
+    }) = row
+    else {
         return "GONE";
     };
     if finished {
         return "CONVERGED";
+    }
+    if fenced {
+        return crate::server_keys::fence_and_destroy_provision_intent(state, action_id).await;
     }
     let existing: Result<Option<String>, _> = sqlx::query_scalar(
         "select private_key_secret_ref from identity.buzz_identity_binding
@@ -742,7 +774,10 @@ pub(crate) async fn reconcile_member_key_intent(
     .fetch_optional(&state.pool)
     .await;
     match existing {
-        Ok(Some(bound)) if bound != locator => return "CONFLICT",
+        Ok(Some(bound)) if bound != locator => {
+            return crate::server_keys::fence_and_destroy_provision_intent(state, action_id).await;
+        }
+        Ok(Some(_)) => return "CONFLICT",
         Ok(_) => {}
         Err(e) => {
             tracing::warn!(action = %action_id, error = %e, "核对成员私钥 binding 失败");
@@ -775,7 +810,9 @@ pub(crate) async fn reconcile_member_key_intent(
                 "PENDING"
             }
         }
-        Err(Blocked::Refused(_)) => "PRECONDITION",
+        Err(Blocked::Refused(_)) => {
+            crate::server_keys::fence_and_destroy_provision_intent(state, action_id).await
+        }
         Err(Blocked::Unavailable(e)) => {
             tracing::warn!(action = %action_id, error = %e, "成员私钥意图仍待对账");
             "PENDING"

@@ -78,6 +78,7 @@ else
   printf '  已存在，保留：RelayOperatorIdentity 密钥对\n'
 fi
 gen verify_user_password
+gen bootstrap_user_password
 
 # Keycloak 的 realm 定义入库，但客户端密钥不入库：把占位符替换成本机生成的值，
 # 渲染到 gitignore 的目录后挂载。入库文件始终只有占位符。
@@ -98,11 +99,22 @@ mkdir -p secrets/keycloak-import
 # 渲染在进程内完成：secret 从文件读入内存，不经命令行——`sed "s|…|$(cat …)|"`
 # 会把每个 client secret 与核验口令都摆进进程表，任何能 ps 的人都看得见。
 : "${VERIFY_USER:?bootstrap 需要 .env 中的 VERIFY_USER}"
+: "${BOOTSTRAP_USER:?bootstrap 需要 .env 中的 BOOTSTRAP_USER}"
+[ "$BOOTSTRAP_USER" != "$VERIFY_USER" ] || {
+  echo 'BOOTSTRAP_USER 与 VERIFY_USER 必须不同：一期不能在登录时选择 Tenant' >&2; exit 2;
+}
 : "${OIDC_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_REDIRECT_URI}"
+: "${OIDC_REALM:?bootstrap 需要 .env 中的 OIDC_REALM}"
+: "${OIDC_SERVICE_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_SERVICE_CLIENT_ID}"
+: "${OIDC_WORKER_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_WORKER_CLIENT_ID}"
+: "${OIDC_BROWSER_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_BROWSER_CLIENT_ID}"
 : "${OIDC_NATIVE_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_NATIVE_CLIENT_ID}"
 : "${OIDC_NATIVE_AUDIENCE:?bootstrap 需要 .env 中的 OIDC_NATIVE_AUDIENCE}"
 : "${OIDC_NATIVE_MOBILE_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_NATIVE_MOBILE_REDIRECT_URI}"
 TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" VERIFY_USER="$VERIFY_USER" \
+BOOTSTRAP_USER="$BOOTSTRAP_USER" \
+OIDC_REALM="$OIDC_REALM" OIDC_SERVICE_CLIENT_ID="$OIDC_SERVICE_CLIENT_ID" \
+OIDC_WORKER_CLIENT_ID="$OIDC_WORKER_CLIENT_ID" OIDC_BROWSER_CLIENT_ID="$OIDC_BROWSER_CLIENT_ID" \
 OIDC_REDIRECT_URI="$OIDC_REDIRECT_URI" OIDC_NATIVE_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
 OIDC_NATIVE_AUDIENCE="$OIDC_NATIVE_AUDIENCE" \
 OIDC_NATIVE_MOBILE_REDIRECT_URI="$OIDC_NATIVE_MOBILE_REDIRECT_URI" python3 - <<'RENDER'
@@ -112,8 +124,10 @@ from_file = {
     "__KAILO_WORKER_CLIENT_SECRET__": "secrets/kailo_worker_client_secret",
     "__BROWSER_CLIENT_SECRET__": "secrets/browser_client_secret",
     "__VERIFY_USER_PASSWORD__": "secrets/verify_user_password",
+    "__BOOTSTRAP_USER_PASSWORD__": "secrets/bootstrap_user_password",
 }
-from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "OIDC_REDIRECT_URI",
+from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "OIDC_REALM",
+            "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_REDIRECT_URI",
             "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI"]
 text = open("keycloak/kailo-realm.json", encoding="utf-8").read()
 for placeholder, path in from_file.items():

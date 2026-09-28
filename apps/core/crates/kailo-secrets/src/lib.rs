@@ -690,6 +690,106 @@ impl SecretStore {
         }
     }
 
+    /// DD-86：只处理该 ActionExecution 的 SERVER HUMAN 初建路径。CAS 版本 0
+    /// 与仍在途的原写入竞争；无论哪一方赢，只允许销毁版本 1，且以 metadata 为终态证据。
+    pub async fn destroy_unbound_server_human_provision(
+        &self,
+        tenant_id: Uuid,
+        action_id: Uuid,
+        locator: &str,
+    ) -> Result<(), SecretError> {
+        if locator != self.tenant_locator(tenant_id, &format!("buzz-human/provision/{action_id}")) {
+            return Err(SecretError::Refused);
+        }
+        let (namespace, mount, path) = split_locator(locator)?;
+        let token = self.token_for_namespace(&namespace).await?;
+        let observed = self
+            .current_version(&namespace, &mount, &path, token.as_str())
+            .await?;
+        if observed == 0 {
+            match self
+                .write_with_cas(
+                    (&namespace, &mount, &path),
+                    token.as_str(),
+                    "fence",
+                    "true",
+                    0,
+                )
+                .await
+            {
+                Ok(1) | Err(SecretError::WriteRejected) | Err(SecretError::Transport(_)) => {}
+                Ok(_) => return Err(SecretError::Malformed),
+                Err(error) => return Err(error),
+            }
+        }
+        if self
+            .provision_version_one_destroyed(&namespace, &mount, &path, token.as_str())
+            .await?
+        {
+            return Ok(());
+        }
+        let result = self
+            .session
+            .http
+            .post(format!("{}/v1/{mount}/destroy/{path}", self.session.addr))
+            .header("X-Vault-Namespace", &namespace)
+            .header("X-Vault-Token", token.as_str())
+            .json(&serde_json::json!({ "versions": [1] }))
+            .send()
+            .await;
+        // 丢失回应仍以 metadata 查证；没有肯定证据就把错误交给原意图继续对账。
+        let outcome = match result {
+            Ok(response) if matches!(response.status().as_u16(), 200 | 204) => Ok(()),
+            Ok(response) if matches!(response.status().as_u16(), 401 | 403) => {
+                Err(SecretError::Refused)
+            }
+            Ok(_) => Err(SecretError::Malformed),
+            Err(error) => Err(SecretError::Transport(error)),
+        };
+        if self
+            .provision_version_one_destroyed(&namespace, &mount, &path, token.as_str())
+            .await?
+        {
+            Ok(())
+        } else {
+            outcome.and(Err(SecretError::VersionUnavailable))
+        }
+    }
+
+    async fn provision_version_one_destroyed(
+        &self,
+        namespace: &str,
+        mount: &str,
+        path: &str,
+        token: &str,
+    ) -> Result<bool, SecretError> {
+        let response = self
+            .session
+            .http
+            .get(format!("{}/v1/{mount}/metadata/{path}", self.session.addr))
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token)
+            .send()
+            .await?;
+        match response.status().as_u16() {
+            200 => {
+                let body: serde_json::Value = response.json().await?;
+                if body
+                    .pointer("/data/current_version")
+                    .and_then(|v| v.as_u64())
+                    != Some(1)
+                {
+                    return Err(SecretError::VersionUnavailable);
+                }
+                body.pointer("/data/versions/1/destroyed")
+                    .and_then(|v| v.as_bool())
+                    .ok_or(SecretError::Malformed)
+            }
+            401 | 403 => Err(SecretError::Refused),
+            _ => Err(SecretError::VersionUnavailable),
+        }
+    }
+
     async fn tenant_admin(
         &self,
         namespace: &str,
@@ -885,7 +985,8 @@ impl SecretStore {
 
         let policy = format!(
             "path \"{mount}/data/*\" {{ capabilities = [\"create\", \"update\", \"read\"] }}\n\
-             path \"{mount}/metadata/*\" {{ capabilities = [\"read\", \"list\"] }}\n",
+             path \"{mount}/metadata/*\" {{ capabilities = [\"read\", \"list\"] }}\n\
+             path \"{mount}/destroy/buzz-human/provision/*\" {{ capabilities = [\"update\"] }}\n",
             mount = self.tenant.mount
         );
         let policy_path = format!("sys/policies/acl/{}", self.tenant.role_name);
@@ -1332,6 +1433,26 @@ mod tests {
         }
     }
 
+    async fn fake_tenant_store(addr: &str, tenant_id: Uuid) -> SecretStore {
+        let store = fake_store(addr);
+        let session = Arc::new(AppRoleSession::new(
+            addr,
+            format!("tenants/{tenant_id}"),
+            "role".to_owned(),
+            "role".to_owned(),
+            None,
+            reqwest::Client::new(),
+        ));
+        *session.lease.write().await = Some(Lease {
+            token: Arc::new("service".to_owned()),
+            ttl: Duration::from_secs(120),
+        });
+        let cell = Arc::new(OnceCell::new());
+        assert!(cell.set(session).is_ok());
+        store.tenant_sessions.lock().await.insert(tenant_id, cell);
+        store
+    }
+
     #[tokio::test]
     async fn bounded_session_returns_transport_error_when_openbao_stalls() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).expect("监听假 OpenBao");
@@ -1538,6 +1659,96 @@ mod tests {
         assert!(requests[0].contains("/metadata/buzz-human/"));
         assert!(requests[1].contains("/destroy/buzz-human/"));
         assert!(requests[2].contains("/metadata/buzz-human/"));
+    }
+
+    #[tokio::test]
+    async fn orphan_provision_fence_races_original_write_and_proves_destroyed_metadata() {
+        for original_write_wins in [false, true] {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let addr = listener.local_addr().unwrap();
+            let server = std::thread::spawn(move || {
+                let marker = if original_write_wins {
+                    ("400 Bad Request", r#"{"errors":["cas mismatch"]}"#)
+                } else {
+                    ("200 OK", r#"{"data":{"version":1}}"#)
+                };
+                let destroy = if original_write_wins {
+                    ("", "") // OpenBao 已销毁，回应在传输途中丢失。
+                } else {
+                    ("204 No Content", "")
+                };
+                let replies = [
+                    ("404 Not Found", ""),
+                    marker,
+                    (
+                        "200 OK",
+                        r#"{"data":{"current_version":1,"versions":{"1":{"destroyed":false}}}}"#,
+                    ),
+                    destroy,
+                    (
+                        "200 OK",
+                        r#"{"data":{"current_version":1,"versions":{"1":{"destroyed":true}}}}"#,
+                    ),
+                ];
+                let mut requests = Vec::new();
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                while requests.len() < replies.len() && std::time::Instant::now() < deadline {
+                    let (mut stream, _) = match listener.accept() {
+                        Ok(connection) => connection,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(10));
+                            continue;
+                        }
+                        Err(error) => panic!("mock OpenBao accept: {error}"),
+                    };
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut bytes = [0u8; 4096];
+                    let size = stream.read(&mut bytes).unwrap();
+                    requests.push(String::from_utf8_lossy(&bytes[..size]).to_string());
+                    let (status, body) = replies[requests.len() - 1];
+                    if status.is_empty() {
+                        continue;
+                    }
+                    let response = format!(
+                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    stream.write_all(response.as_bytes()).unwrap();
+                }
+                requests
+            });
+            let tenant = Uuid::nil();
+            let action = Uuid::max();
+            let store = fake_tenant_store(&format!("http://{addr}"), tenant).await;
+            let locator = store.tenant_locator(tenant, &format!("buzz-human/provision/{action}"));
+            store
+                .destroy_unbound_server_human_provision(tenant, action, &locator)
+                .await
+                .unwrap();
+            let requests = server.join().unwrap();
+            assert_eq!(requests.len(), 5);
+            assert!(requests[1].starts_with("POST /v1/kv/data/buzz-human/provision/"));
+            assert!(requests[1].contains("\"cas\":0"));
+            assert!(requests[3].starts_with("POST /v1/kv/destroy/buzz-human/provision/"));
+            assert!(requests[3].contains("\"versions\":[1]"));
+        }
+    }
+
+    #[tokio::test]
+    async fn orphan_provision_refuses_different_locator_before_any_openbao_call() {
+        let tenant = Uuid::nil();
+        let action = Uuid::max();
+        let store = fake_store("");
+        let other = store.tenant_locator(tenant, "buzz-human/provision/other");
+        assert!(matches!(
+            store
+                .destroy_unbound_server_human_provision(tenant, action, &other)
+                .await,
+            Err(SecretError::Refused)
+        ));
     }
 
     #[tokio::test]

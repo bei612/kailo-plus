@@ -111,7 +111,7 @@ def platform_catalog() -> tuple[list[tuple[str, str, str]], dict[str, list[tuple
 
 def presentation_rules(
     messages: list[tuple[str, str, str]],
-) -> tuple[dict[str, int], list[str], list[str]]:
+) -> tuple[dict[str, int], list[str], list[str], int]:
     source = SOURCE.read_text()
     seconds_body = block(source, "export const platformTimeSeconds = {", "} as const;")
     seconds_entries = re.findall(r"\b(minute|hour|day|month):\s*(\d+),", seconds_body)
@@ -145,7 +145,19 @@ def presentation_rules(
     )
     if not required <= keys:
         raise ValueError(f"platform relative-time messages missing: {sorted(required - keys)}")
-    return seconds, plural_locales, special_units
+    weekday_match = re.search(r"export const platformCalendarWeekdayBandDays = (\d+) as const;", source)
+    if weekday_match is None:
+        raise ValueError("platformCalendarWeekdayBandDays not found")
+    weekday_band_days = int(weekday_match.group(1))
+    if weekday_band_days < 2:
+        raise ValueError("platformCalendarWeekdayBandDays must be at least two days")
+    chat_required = {
+        "chat.time.today", "chat.time.yesterday", "chat.time.justNow",
+        "chat.time.at", "chat.time.weekdayDate", "chat.time.on", "chat.time.lastReply",
+    }
+    if not chat_required <= keys:
+        raise ValueError(f"chat time messages missing: {sorted(chat_required - keys)}")
+    return seconds, plural_locales, special_units, weekday_band_days
 
 
 def dart_string(value: str) -> str:
@@ -193,7 +205,7 @@ def render_platform(
     messages: list[tuple[str, str, str]],
     groups: dict[str, list[tuple[str, str, str]]],
 ) -> str:
-    seconds, plural_locales, special_units = presentation_rules(messages)
+    seconds, plural_locales, special_units, weekday_band_days = presentation_rules(messages)
     keys = [dart_key(key) for key, _, _ in messages]
     if len(set(keys)) != len(keys):
         raise ValueError("platform message keys collide after Dart conversion")
@@ -244,6 +256,12 @@ def render_platform(
         [
             "String _kailoLanguage(String? locale) =>",
             "    (locale ?? Platform.localeName).toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';",
+            "",
+            f"const kailoCalendarWeekdayBandDays = {weekday_band_days};",
+            f"const kailoTimeSecondsDay = {seconds['day']};",
+            "",
+            "String kailoIntlLocale({String? locale}) =>",
+            "    _kailoLanguage(locale) == 'zh-CN' ? 'zh_CN' : 'en_US';",
             "",
             "const _kailoPluralOneLocales = <String>{",
         ]

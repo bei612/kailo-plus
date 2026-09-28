@@ -43,3 +43,7 @@ NIP-44 私聊（上游的 DM）、项目管理（Projects）、个人日历（Re
 从固定 `779af8886caae1317b4de962082429867ab61503` 重放登记的裁剪、补丁与共享平台包，受限 BuildKit 构建 Linux `.deb` 成功；`dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 摘要为 `sha256:d4ce55cdad81e8dc07e3c4c0d64b80208bc28bd6256c478e998a26ea36ab163e`，`baseline.yaml` 已同步。`check.sh --full` 的共享 TypeScript 类型与测试、四侧契约检查通过。此项只证明 Linux 安装包可构建；未在本增量重跑 Desktop 原生端端到端操作，亦无 macOS/Windows 安装包证据。
 
 2026-09-26 取消终态展示修正后，从同一固定基线重放并以受限 BuildKit 重建 Linux `.deb`，`dist/buzz-desktop/Buzz_0.5.23_amd64.deb` SHA-256 为 `345cd7a86da3f9ca0bfeaa224f9695c3f8b09e9d5845e5c7b2a2f276f0f5b640`，`baseline.yaml` 与追溯清单已同步。共享平台包 56 项测试通过；本增量仍无 Desktop 原生会话端到端或 macOS/Windows 产物证据。
+
+## 2026-09-28 聊天时间文案增量
+
+从固定 `779af8886caae1317b4de962082429867ab61503` 重放两条补丁（含 `0002-chat-time-i18n.patch`）与共享平台包，使用内存 16 GiB、CPU 配额 400% 的 BuildKit 构建 Linux `.deb` 成功。`dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的实测 SHA-256 为 `d148321792c131494d2049e6dbfe8d6b4b73bd8e3f72ecefafe4cc28edf74ad5`；`baseline.yaml` 的 `patch_series_digest` 与 `artifact_digest` 已由构建工具按实际输入和产物写回，`check.sh seam` 与 `check.sh trace` 均通过。本次构建只证明 Linux 安装包与补丁重放；未验证原生会话端到端行为，也未产出 macOS/Windows 安装包。

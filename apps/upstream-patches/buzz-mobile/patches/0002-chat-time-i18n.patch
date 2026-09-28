@@ -1,0 +1,232 @@
+diff --git a/mobile/lib/features/channels/channel_detail_page.dart b/mobile/lib/features/channels/channel_detail_page.dart
+index 808f951..e53223b 100644
+--- a/mobile/lib/features/channels/channel_detail_page.dart
++++ b/mobile/lib/features/channels/channel_detail_page.dart
+@@ -32,6 +32,7 @@ import 'unread_badge/observed_unread_event.dart';
+ import 'compose_bar.dart';
+ import 'composer_dock_size_reporter.dart';
+ import 'date_formatters.dart';
++import '../../shared/kailo/kailo_platform_text.dart';
+ import 'day_divider.dart';
+ import 'ime_metrics_settle_observer.dart';
+ import 'jump_to_latest_button.dart';
+diff --git a/mobile/lib/features/channels/channel_detail_page/system_rows.dart b/mobile/lib/features/channels/channel_detail_page/system_rows.dart
+index af6f629..f4fde09 100644
+--- a/mobile/lib/features/channels/channel_detail_page/system_rows.dart
++++ b/mobile/lib/features/channels/channel_detail_page/system_rows.dart
+@@ -470,8 +470,12 @@ class _ThreadSummaryRow extends ConsumerWidget {
+                 TextSpan(
+                   children: [
+                     TextSpan(
+-                      text:
+-                          '${summary.replyCount} ${summary.replyCount == 1 ? 'reply' : 'replies'}',
++                      text: kailoText(
++                        kailoPluralOne(summary.replyCount)
++                            ? KailoMessageKey.chatThreadReplyCountOne
++                            : KailoMessageKey.chatThreadReplyCountOther,
++                        variables: {'count': summary.replyCount},
++                      ),
+                       style: replyPreviewTextStyle.copyWith(
+                         color: context.colors.primary,
+                       ),
+@@ -486,8 +490,14 @@ class _ThreadSummaryRow extends ConsumerWidget {
+                         ),
+                       ),
+                       TextSpan(
+-                        text:
+-                            'last reply ${formatThreadSummaryLastReplyTime(lastReplyAt)}',
++                        text: kailoText(
++                          KailoMessageKey.chatTimeLastReply,
++                          variables: {
++                            'time': formatThreadSummaryLastReplyTime(
++                              lastReplyAt,
++                            ),
++                          },
++                        ),
+                         style: replyPreviewTextStyle.copyWith(
+                           color: context.colors.onSurfaceVariant,
+                         ),
+diff --git a/mobile/lib/main.dart b/mobile/lib/main.dart
+--- a/mobile/lib/main.dart
++++ b/mobile/lib/main.dart
+@@ -1,5 +1,6 @@
+ import 'package:flutter/material.dart';
+ import 'package:hooks_riverpod/hooks_riverpod.dart';
++import 'package:intl/date_symbol_data_local.dart';
+ import 'package:shared_preferences/shared_preferences.dart';
+ 
+ import 'app.dart';
+@@ -7,5 +8,6 @@ import 'shared/theme/theme_provider.dart';
+ 
+ Future<void> main() async {
+   WidgetsFlutterBinding.ensureInitialized();
++  await initializeDateFormatting();
+ 
+   // Pre-load preferences so the first frame uses the saved theme/accent.
+diff --git a/mobile/lib/features/channels/date_formatters.dart b/mobile/lib/features/channels/date_formatters.dart
+index e67154a..92d4d81 100644
+--- a/mobile/lib/features/channels/date_formatters.dart
++++ b/mobile/lib/features/channels/date_formatters.dart
+@@ -1,17 +1,16 @@
+ import 'package:flutter/foundation.dart';
+ import 'package:intl/intl.dart';
+ 
++import '../../shared/kailo/kailo_platform_text.dart';
++
+ // Re-export shortPubkey so existing callers continue to compile.
+ export '../../shared/utils/string_utils.dart' show shortPubkey;
+ 
+-final _weekdayFormat = DateFormat('EEEE');
+-final _weekdayMonthDayFormat = DateFormat('EEEE, MMMM d');
+-final _monthDayYearFormat = DateFormat('MMMM d, y');
+-final _shortMonthDayFormat = DateFormat('MMM d');
+-final _messageTimeFormat = DateFormat('h:mm a', 'en_US');
+-
+-/// Days in a week, past which the weekday name stops being unambiguous.
+-const _weekdayBandDays = 7;
++final _weekdayFormat = DateFormat('EEEE', kailoIntlLocale());
++final _monthDayFormat = DateFormat.MMMMd(kailoIntlLocale());
++final _monthDayYearFormat = DateFormat.yMMMMd(kailoIntlLocale());
++final _shortMonthDayFormat = DateFormat.MMMd(kailoIntlLocale());
++final _messageTimeFormat = DateFormat.jm(kailoIntlLocale());
+ 
+ /// Label for a day divider: "Today", "Yesterday", "Monday",
+ /// "Tuesday, March 31", or "March 31, 2025".
+@@ -44,17 +43,23 @@ String formatDayHeading(int unixSeconds, {@visibleForTesting DateTime? now}) {
+   now ??= DateTime.now();
+   final dayDiff = _calendarDaysBetween(now, date);
+ 
+-  if (dayDiff == 0) return 'Today';
+-  if (dayDiff == 1) return 'Yesterday';
++  if (dayDiff == 0) return kailoText(KailoMessageKey.chatTimeToday);
++  if (dayDiff == 1) return kailoText(KailoMessageKey.chatTimeYesterday);
+   // Bounded below as well as above: a timestamp in the future (clock skew, or a
+   // relay ahead of this device) must not be labelled with a weekday that reads
+   // as the recent past.
+-  if (dayDiff > 1 && dayDiff < _weekdayBandDays) {
++  if (dayDiff > 1 && dayDiff < kailoCalendarWeekdayBandDays) {
+     return _weekdayFormat.format(date);
+   }
+ 
+   return date.year == now.year
+-      ? _weekdayMonthDayFormat.format(date)
++      ? kailoText(
++          KailoMessageKey.chatTimeWeekdayDate,
++          variables: {
++            'weekday': _weekdayFormat.format(date),
++            'date': _monthDayFormat.format(date),
++          },
++        )
+       : _monthDayYearFormat.format(date);
+ }
+ 
+@@ -82,18 +87,12 @@ bool isSameDay(int a, int b) {
+ /// Returns a compact relative time string like "just now", "5m ago", "3h ago",
+ /// "2d ago", or a short date for older timestamps.
+ String relativeTime(int unixSeconds) {
+-  final now = DateTime.now();
+-  final time = DateTime.fromMillisecondsSinceEpoch(
+-    unixSeconds * 1000,
+-    isUtc: true,
+-  ).toLocal();
+-  final diff = now.difference(time);
+-
+-  if (diff.inMinutes < 1) return 'just now';
+-  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+-  if (diff.inHours < 24) return '${diff.inHours}h ago';
+-  if (diff.inDays < 7) return '${diff.inDays}d ago';
+-  return '${time.month}/${time.day}/${time.year}';
++  return kailoRelativeTime(
++    DateTime.fromMillisecondsSinceEpoch(
++      unixSeconds * 1000,
++      isUtc: true,
++    ).toIso8601String(),
++  );
+ }
+ 
+ /// Returns desktop-parity thread activity copy such as "just now",
+@@ -106,22 +105,28 @@ String formatThreadSummaryLastReplyTime(
+   var diff = nowSeconds - unixSeconds;
+   if (diff < 0) diff = 0;
+ 
+-  if (diff < 60) return 'just now';
+-  if (diff < 3600) return _formatAgo(diff ~/ 60, 'minute');
+-  if (diff < 86400) return _formatAgo(diff ~/ 3600, 'hour');
+-  if (diff < 604800) return _formatAgo(diff ~/ 86400, 'day');
++  if (diff < 60) return kailoText(KailoMessageKey.chatTimeJustNow);
++  if (diff < kailoCalendarWeekdayBandDays * kailoTimeSecondsDay) {
++    return kailoRelativeTime(
++      DateTime.fromMillisecondsSinceEpoch(
++        unixSeconds * 1000,
++        isUtc: true,
++      ).toIso8601String(),
++      now: DateTime.fromMillisecondsSinceEpoch(nowSeconds * 1000),
++    );
++  }
+ 
+   final date = DateTime.fromMillisecondsSinceEpoch(
+     unixSeconds * 1000,
+     isUtc: true,
+   ).toLocal();
+   // No ordinal suffix, per the writing standard.
+-  return 'on ${_shortMonthDayFormat.format(date)}';
++  return kailoText(
++    KailoMessageKey.chatTimeOn,
++    variables: {'date': _shortMonthDayFormat.format(date)},
++  );
+ }
+ 
+-String _formatAgo(int value, String unit) =>
+-    '$value $unit${value == 1 ? '' : 's'} ago';
+-
+ /// Desktop-parity message clock time, e.g. "2:34 PM".
+ ///
+ /// Deliberately clock-only at every band, unlike desktop's message header,
+diff --git a/mobile/lib/features/channels/thread_detail_page.dart b/mobile/lib/features/channels/thread_detail_page.dart
+index f49c802..0d93d81 100644
+--- a/mobile/lib/features/channels/thread_detail_page.dart
++++ b/mobile/lib/features/channels/thread_detail_page.dart
+@@ -25,6 +25,7 @@ import 'channels_provider.dart';
+ import 'compose_bar.dart';
+ import 'composer_dock_size_reporter.dart';
+ import 'date_formatters.dart';
++import '../../shared/kailo/kailo_platform_text.dart';
+ import 'day_divider.dart';
+ import 'ime_metrics_settle_observer.dart';
+ import 'initial_thread_tail_settle.dart';
+diff --git a/mobile/lib/features/channels/thread_detail_page/nested_thread_summary_row.dart b/mobile/lib/features/channels/thread_detail_page/nested_thread_summary_row.dart
+index 1dcf40f..025ff55 100644
+--- a/mobile/lib/features/channels/thread_detail_page/nested_thread_summary_row.dart
++++ b/mobile/lib/features/channels/thread_detail_page/nested_thread_summary_row.dart
+@@ -76,8 +76,12 @@ class _NestedThreadSummaryRow extends ConsumerWidget {
+                 TextSpan(
+                   children: [
+                     TextSpan(
+-                      text:
+-                          '${summary.replyCount} ${summary.replyCount == 1 ? 'reply' : 'replies'}',
++                      text: kailoText(
++                        kailoPluralOne(summary.replyCount)
++                            ? KailoMessageKey.chatThreadReplyCountOne
++                            : KailoMessageKey.chatThreadReplyCountOther,
++                        variables: {'count': summary.replyCount},
++                      ),
+                       style: replyPreviewTextStyle.copyWith(
+                         color: context.colors.primary,
+                       ),
+@@ -92,8 +96,14 @@ class _NestedThreadSummaryRow extends ConsumerWidget {
+                         ),
+                       ),
+                       TextSpan(
+-                        text:
+-                            'last reply ${formatThreadSummaryLastReplyTime(lastReplyAt)}',
++                        text: kailoText(
++                          KailoMessageKey.chatTimeLastReply,
++                          variables: {
++                            'time': formatThreadSummaryLastReplyTime(
++                              lastReplyAt,
++                            ),
++                          },
++                        ),
+                         style: replyPreviewTextStyle.copyWith(
+                           color: context.colors.onSurfaceVariant,
+                         ),

@@ -351,6 +351,45 @@ async fn run(
     .expect("建 Workspace");
 
     let action = seed_action(pool, tenant, initiator, workspace).await;
+    let version: i32 = sqlx::query_scalar("select version from identity.workspace where id = $1")
+        .bind(workspace)
+        .fetch_one(pool)
+        .await
+        .expect("读 Workspace 冻结版本");
+    let workflow_id = format!("kailo:WORKSPACE_LIFECYCLE:{tenant}:{workspace}:{version}");
+    sqlx::query(
+        "insert into projection.workflow_ref
+             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
+              operation_id, action_execution_id, projection_state, created_at)
+         select $1, 'ComponentTaskWorkflow', 1, 'WORKSPACE_LIFECYCLE', $2,
+                ae.operation_id, ae.id, 'PENDING_START',
+                now() - make_interval(secs => $3::bigint)
+         from admission.action_execution ae where ae.id = $4",
+    )
+    .bind(&workflow_id)
+    .bind(tenant)
+    .bind(10_i64 * 365 * 24 * 3600)
+    .bind(action)
+    .execute(pool)
+    .await
+    .expect("预写过 retention 的 WorkflowRef");
+    assert_eq!(
+        start_scope(http, e, token, "WORKSPACE", workspace, action).await,
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "已超出 retention 的 NotFound 不能重新 Start"
+    );
+    let run_id: Option<String> =
+        sqlx::query_scalar("select run_id from projection.workflow_ref where workflow_id = $1")
+            .bind(&workflow_id)
+            .fetch_one(pool)
+            .await
+            .expect("读未启动的 WorkflowRef");
+    assert!(run_id.is_none(), "被拒的过期重试不能回填伪造 run ID");
+    sqlx::query("update projection.workflow_ref set created_at = now() where workflow_id = $1")
+        .bind(&workflow_id)
+        .execute(pool)
+        .await
+        .expect("把夹具恢复到 retention 内");
     assert_eq!(
         start_scope(http, e, token, "WORKSPACE", workspace, action).await,
         reqwest::StatusCode::OK,

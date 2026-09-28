@@ -427,6 +427,8 @@ pub struct LiveWorkspace {
     pub workspace: Uuid,
     pub principal: Uuid,
     pub human: Uuid,
+    /// 真实 IdP 用户可已由部署引导登记；清理夹具时不得删除其全局身份。
+    pub owns_human: bool,
     pub subject: String,
     pub workspace_membership: Uuid,
     pub provider: Uuid,
@@ -541,6 +543,7 @@ pub async fn provision_live_workspace_for(
         workspace: Uuid::new_v4(),
         principal: Uuid::new_v4(),
         human: Uuid::new_v4(),
+        owns_human: true,
         subject: subject.to_owned(),
         workspace_membership: Uuid::new_v4(),
         provider: Uuid::new_v4(),
@@ -649,27 +652,49 @@ async fn provision_steps(
     .await?;
 
     // OIDC 侧身份：Stage 1 不注册登录开户，这三张表由夹具写
-    let human = fx.human;
     let subject = fx.subject.clone();
-    sqlx::query("insert into identity.human_identity (id, display_name, status) values ($1,'verify','ACTIVE')")
-        .bind(human).execute(pool).await.map_err(|e| e.to_string())?;
-    sqlx::query("insert into identity.identity_provider (id, issuer, client_id, claim_mapping_version, status)
-                 values ($1,$2,$3,1,'ACTIVE') on conflict (issuer, client_id) do nothing")
-        .bind(fx.provider).bind(&e.oidc_issuer).bind(&subject)
-        .execute(pool).await.map_err(|e| e.to_string())?;
-    let provider: Uuid = sqlx::query_scalar(
-        "select id from identity.identity_provider where issuer=$1 and client_id=$2",
+    let existing: Option<(Uuid, Uuid, String, String, String)> = sqlx::query_as(
+        "select ei.human_identity_id, ei.provider_id, ei.status, hi.status, ip.status
+         from identity.external_identity ei
+         join identity.human_identity hi on hi.id = ei.human_identity_id
+         join identity.identity_provider ip on ip.id = ei.provider_id
+         where ei.issuer = $1 and ei.subject = $2",
     )
     .bind(&e.oidc_issuer)
     .bind(&subject)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await
     .map_err(|e| e.to_string())?;
-    fx.provider = provider;
-    sqlx::query("insert into identity.external_identity (id, provider_id, issuer, subject, human_identity_id, status)
-                 values ($1,$2,$3,$4,$5,'ACTIVE')")
-        .bind(Uuid::new_v4()).bind(provider).bind(&e.oidc_issuer).bind(&subject).bind(human)
-        .execute(pool).await.map_err(|e| e.to_string())?;
+    if let Some((human, provider, external_state, human_state, provider_state)) = existing {
+        if external_state != "ACTIVE" || human_state != "ACTIVE" || provider_state != "ACTIVE" {
+            return Err("真实 IdP 用户的既有身份未激活".to_owned());
+        }
+        fx.human = human;
+        fx.provider = provider;
+        fx.owns_human = false;
+    } else {
+        let human = fx.human;
+        sqlx::query("insert into identity.human_identity (id, display_name, status) values ($1,'verify','ACTIVE')")
+            .bind(human).execute(pool).await.map_err(|e| e.to_string())?;
+        sqlx::query("insert into identity.identity_provider (id, issuer, client_id, claim_mapping_version, status)
+                     values ($1,$2,$3,1,'ACTIVE') on conflict (issuer, client_id) do nothing")
+            .bind(fx.provider).bind(&e.oidc_issuer).bind(&subject)
+            .execute(pool).await.map_err(|e| e.to_string())?;
+        let provider: Uuid = sqlx::query_scalar(
+            "select id from identity.identity_provider where issuer=$1 and client_id=$2",
+        )
+        .bind(&e.oidc_issuer)
+        .bind(&subject)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        fx.provider = provider;
+        sqlx::query("insert into identity.external_identity (id, provider_id, issuer, subject, human_identity_id, status)
+                     values ($1,$2,$3,$4,$5,'ACTIVE')")
+            .bind(Uuid::new_v4()).bind(provider).bind(&e.oidc_issuer).bind(&subject).bind(human)
+            .execute(pool).await.map_err(|e| e.to_string())?;
+    }
+    let human = fx.human;
 
     // Tenant 成员
     let principal = fx.principal;
@@ -863,7 +888,6 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
             .output();
     }
     for sql in [
-        "delete from identity.platform_session where human_identity_id = $2",
         // 夹具 Tenant 里其他成员的会话（add_tenant_member 开通的人经 BFF 建立过会话）
         "delete from identity.platform_session where tenant_membership_id in
              (select id from identity.tenant_membership where tenant_id = $1)",
@@ -889,19 +913,34 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
              (select id from identity.principal where tenant_id = $1)",
         "delete from identity.principal where tenant_id = $1",
         "delete from identity.tenant where id = $1",
-        "delete from identity.external_identity where human_identity_id = $2",
-        "delete from identity.human_identity where id = $2",
-        "delete from identity.identity_provider where id = $3
-             and not exists (select 1 from identity.external_identity where provider_id = $3)",
     ] {
         if let Err(err) = sqlx::query(sql)
             .bind(fx.tenant)
             .bind(fx.human)
-            .bind(fx.provider)
             .execute(pool)
             .await
         {
             eprintln!("夹具清理失败：{sql}\n  {err}");
+        }
+    }
+    if fx.owns_human {
+        for sql in [
+            "delete from identity.external_identity where human_identity_id = $1",
+            "delete from identity.human_identity where id = $1",
+        ] {
+            if let Err(err) = sqlx::query(sql).bind(fx.human).execute(pool).await {
+                eprintln!("夹具身份清理失败：{sql}\n  {err}");
+            }
+        }
+        if let Err(err) = sqlx::query(
+            "delete from identity.identity_provider where id = $1
+             and not exists (select 1 from identity.external_identity where provider_id = $1)",
+        )
+        .bind(fx.provider)
+        .execute(pool)
+        .await
+        {
+            eprintln!("夹具 IdentityProvider 清理失败：{err}");
         }
     }
     if let Err(err) = sqlx::query("delete from identity.principal where id = $1")
@@ -941,6 +980,8 @@ pub struct NativeEnv {
     pub native_client_id: String,
     pub user: String,
     pub user_password_file: String,
+    /// 原生端集成核验的临时 IdP 用户口令只在进程内存中存活。
+    pub user_password_override: Option<String>,
     pub admin_user: String,
     pub admin_password_file: String,
     pub proof_window_secs: u64,
@@ -960,6 +1001,7 @@ pub fn native_env() -> Option<NativeEnv> {
         native_client_id: v("OIDC_NATIVE_CLIENT_ID")?,
         user: v("VERIFY_USER")?,
         user_password_file: v("VERIFY_USER_PASSWORD_FILE")?,
+        user_password_override: None,
         admin_user: v("KEYCLOAK_ADMIN_USER")?,
         admin_password_file: v("VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE")?,
         proof_window_secs: v("BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS")?.parse().ok()?,
@@ -974,8 +1016,7 @@ fn read_secret(path: &str) -> String {
         .to_owned()
 }
 
-/// IdP 为核验用户签发的 subject。它由 IdP 决定，夹具编造不出来。
-pub async fn idp_subject(http: &reqwest::Client, n: &NativeEnv) -> String {
+async fn idp_admin_token(http: &reqwest::Client, n: &NativeEnv) -> String {
     let token: serde_json::Value = http
         .post(format!(
             "{}/realms/master/protocol/openid-connect/token",
@@ -993,10 +1034,19 @@ pub async fn idp_subject(http: &reqwest::Client, n: &NativeEnv) -> String {
         .json()
         .await
         .expect("管理令牌 JSON");
+    token["access_token"]
+        .as_str()
+        .expect("IdP 管理 access_token")
+        .to_owned()
+}
+
+/// IdP 为核验用户签发的 subject。它由 IdP 决定，夹具编造不出来。
+pub async fn idp_subject(http: &reqwest::Client, n: &NativeEnv) -> String {
+    let admin_token = idp_admin_token(http, n).await;
     let users: Vec<serde_json::Value> = http
         .get(format!("{}/admin/realms/{}/users", n.keycloak_url, n.realm))
         .query(&[("username", n.user.as_str()), ("exact", "true")])
-        .bearer_auth(token["access_token"].as_str().expect("access_token"))
+        .bearer_auth(admin_token)
         .send()
         .await
         .expect("查 IdP 用户")
@@ -1005,6 +1055,53 @@ pub async fn idp_subject(http: &reqwest::Client, n: &NativeEnv) -> String {
         .expect("IdP 用户 JSON");
     assert_eq!(users.len(), 1, "用户名 {} 应恰好对应 1 个 IdP 用户", n.user);
     users[0]["id"].as_str().expect("id").to_owned()
+}
+
+/// 原生端 E2E 必须使用未加入其他 Tenant 的真实 IdP 用户；一期不提供 Tenant 选择。
+pub async fn create_native_idp_user(http: &reqwest::Client, n: &mut NativeEnv) -> String {
+    n.user = format!("verify-native-{}", Uuid::new_v4());
+    let password = format!("{}{}{}", Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let admin_token = idp_admin_token(http, n).await;
+    let response = http
+        .post(format!("{}/admin/realms/{}/users", n.keycloak_url, n.realm))
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({
+            "username": n.user.as_str(),
+            "enabled": true,
+            "emailVerified": true,
+            "email": format!("{}@kailo.local", n.user),
+            "firstName": "Native",
+            "lastName": "Verifier",
+            "credentials": [{"type":"password", "value":password.as_str(), "temporary":false}]
+        }))
+        .send()
+        .await
+        .expect("创建原生端核验用户");
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::CREATED,
+        "创建原生端核验用户"
+    );
+    n.user_password_override = Some(password);
+    idp_subject(http, n).await
+}
+
+pub async fn delete_native_idp_user(http: &reqwest::Client, n: &NativeEnv, subject: &str) {
+    let admin_token = idp_admin_token(http, n).await;
+    let response = http
+        .delete(format!(
+            "{}/admin/realms/{}/users/{subject}",
+            n.keycloak_url, n.realm
+        ))
+        .bearer_auth(admin_token)
+        .send()
+        .await
+        .expect("删除原生端核验用户");
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::NO_CONTENT,
+        "删除原生端核验用户"
+    );
 }
 
 /// 像原生应用那样取访问令牌：RFC 8252 授权码 + PKCE，本机回环 redirect。
@@ -1033,6 +1130,10 @@ pub async fn native_access_token(n: &NativeEnv) -> String {
         )
     };
     let mut cookies: Vec<String> = Vec::new();
+    let user_password = n
+        .user_password_override
+        .clone()
+        .unwrap_or_else(|| read_secret(&n.user_password_file));
     let mut keep = |resp: &reqwest::Response| {
         for c in resp.headers().get_all(reqwest::header::SET_COOKIE) {
             if let Some(pair) = c.to_str().ok().and_then(|s| s.split(';').next()) {
@@ -1072,7 +1173,7 @@ pub async fn native_access_token(n: &NativeEnv) -> String {
         .header(reqwest::header::COOKIE, cookies.join("; "))
         .form(&[
             ("username", n.user.as_str()),
-            ("password", read_secret(&n.user_password_file).as_str()),
+            ("password", user_password.as_str()),
         ])
         .send()
         .await

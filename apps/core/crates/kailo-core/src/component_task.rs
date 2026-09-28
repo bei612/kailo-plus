@@ -15,7 +15,7 @@ use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::temporal::{Started, TemporalClient, TemporalError};
+use crate::temporal::{Observed, ObservedState, Started, TemporalClient, TemporalError};
 
 /// Worker 注册的 Workflow 类型名。两侧必须逐字相同，否则 Start 成功但没有
 /// 任何 Worker 认领，表现为「启动了却永远不动」。
@@ -38,8 +38,8 @@ pub fn workflow_id(kind: &str, tenant_id: Uuid, entity: &str, version: i32) -> S
 
 /// 启动一条 ComponentTaskWorkflow。
 ///
-/// `Ok(Some(run_id))` 是本次创建了 execution；`Ok(None)` 是同一 ID 的 execution
-/// 已存在——那恰好证明目标状态成立，不是失败。`Err` 已映射为 HTTP 响应：
+/// `Ok(Some(run_id))` 表示 Temporal 确认了本次创建或同 ID 的既有 execution；
+/// `Ok(None)` 表示 Describe 已观察到既有 execution，终态由对账投影。`Err` 已映射为 HTTP 响应：
 /// 被拒是确定的冲突，其余是结果不明，调用方只能用同一 ID 收敛，不换 ID 重试。
 pub async fn start<T: Serialize>(
     pool: &PgPool,
@@ -114,22 +114,86 @@ pub(crate) async fn start_typed(
         return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
     }
 
-    // 同一版本的 execution 已经终结：再 Start 只会撞上 REJECT_DUPLICATE，
-    // Server 答「已存在」，而调用方会把它读成「已启动」——实际什么也没在跑。
-    // 终结的结果已在 TaskProjection 里；要重做就是新的事实版本与新的 ID。
-    match sqlx::query_scalar!(
-        "select projection_state from projection.workflow_ref where workflow_id = $1",
-        workflow_id
-    )
-    .fetch_one(pool)
-    .await
+    // 预写引用在重试时仍是同一行。不能仅凭同 ID 就接受另一条动作的引用；
+    // 更不能对 UNKNOWN 直接再 Start：history 过 retention 后已没有去重证据。
+    let reference: (String, Option<String>, String, Option<String>, Uuid, Uuid) =
+        match sqlx::query_as(
+            "select projection_state, run_id, workflow_type, kind, tenant_id, action_execution_id
+             from projection.workflow_ref where workflow_id = $1",
+        )
+        .bind(workflow_id)
+        .fetch_one(pool)
+        .await
+        {
+            Ok(reference) => reference,
+            Err(e) => {
+                tracing::warn!(error = %e, workflow_id, "读取 WorkflowRef 失败");
+                return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+            }
+        };
+    let (state, run_id, stored_type, stored_kind, stored_tenant, stored_action) = reference;
+    if stored_type != workflow_type
+        || stored_kind.as_deref() != kind
+        || stored_tenant != tenant_id
+        || stored_action != action_execution_id
     {
-        Ok(state) if state == "TERMINAL" => return Err(StatusCode::CONFLICT.into_response()),
-        Ok(_) => {}
+        tracing::error!(workflow_id, "WorkflowRef 与本次动作的冻结身份不一致");
+        return Err(StatusCode::CONFLICT.into_response());
+    }
+    if state == "TERMINAL" {
+        return Err(StatusCode::CONFLICT.into_response());
+    }
+    if !matches!(state.as_str(), "PENDING_START" | "RUNNING" | "UNKNOWN") {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+
+    // 重试先向 history 权威核实。已观察到的 execution 无论 OPEN/CLOSED 都不能
+    // 再 Start；CLOSED 的终态由 workflow_reconcile 修补，不在启动面伪造。
+    match temporal.describe(workflow_id).await {
+        Ok(Some(observed)) => return observed_existing(pool, workflow_id, observed).await,
+        Ok(None) => {}
         Err(e) => {
-            tracing::warn!(error = %e, workflow_id, "读取 WorkflowRef 失败");
+            tracing::warn!(error = %e, workflow_id, "Describe 结果不明，禁止重新 Start");
             return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
         }
+    }
+
+    // RUNNING 或已有 run ID 是此前观察到 execution 的持久证据；NotFound 不能
+    // 推翻它。其余引用也只在 retention 内、且没有任何投影证明执行发生过时重试。
+    if state == "RUNNING" || run_id.is_some() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    let retention = match temporal.retention().await {
+        Ok(retention) => i64::try_from(retention.as_secs()).unwrap_or(i64::MAX),
+        Err(e) => {
+            tracing::warn!(error = %e, workflow_id, "无法确认 Temporal retention");
+            return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+        }
+    };
+    let safe_to_start: bool = match sqlx::query_scalar(
+        "select w.created_at > now() - make_interval(secs => $2::bigint)
+                and not exists(select 1 from projection.task_projection t
+                               where t.workflow_id = w.workflow_id)
+                and not exists(select 1 from projection.approval_projection a
+                               where a.workflow_id = w.workflow_id)
+         from projection.workflow_ref w where w.workflow_id = $1
+           and w.projection_state in ('PENDING_START', 'UNKNOWN') and w.run_id is null",
+    )
+    .bind(workflow_id)
+    .bind(retention)
+    .fetch_optional(pool)
+    .await
+    {
+        Ok(Some(safe)) => safe,
+        Ok(None) => false,
+        Err(e) => {
+            tracing::warn!(error = %e, workflow_id, "核对 WorkflowRef retention 失败");
+            return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+        }
+    };
+    if !safe_to_start {
+        tracing::warn!(workflow_id, "Workflow 旧执行无法排除，禁止重新 Start");
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
     }
 
     let tenant = tenant_id.to_string();
@@ -143,13 +207,14 @@ pub(crate) async fn start_typed(
         .await
     {
         Ok(Started::Created { run_id }) => {
-            mark_running(pool, workflow_id, Some(&run_id)).await;
+            mark_running(pool, workflow_id, &run_id).await;
             Ok(Some(run_id))
         }
-        // run ID 只从 observation 回填，这里不编一个（`.design/03` §6）。
-        Ok(Started::AlreadyStarted) => {
-            mark_running(pool, workflow_id, None).await;
-            Ok(None)
+        // Temporal 的已存在错误携带原 execution 的 run ID；不以一次额外 Describe
+        // 的时序竞争覆盖这条已确认事实。终态由 workflow_reconcile 对账。
+        Ok(Started::AlreadyStarted { run_id }) => {
+            mark_running(pool, workflow_id, &run_id).await;
+            Ok(Some(run_id))
         }
         Err(e @ TemporalError::Rejected(_)) => {
             tracing::warn!(error = %e, "Start 被拒绝");
@@ -164,18 +229,42 @@ pub(crate) async fn start_typed(
     }
 }
 
+async fn observed_existing(
+    pool: &PgPool,
+    workflow_id: &str,
+    observed: Observed,
+) -> Result<Option<String>, Response> {
+    if observed.run_id.is_empty() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    match observed.state {
+        ObservedState::Open => {
+            mark_running(pool, workflow_id, &observed.run_id).await;
+            Ok(None)
+        }
+        ObservedState::Closed(_) => Ok(None),
+        ObservedState::Unrecognized(code) => {
+            tracing::warn!(workflow_id, code, "Temporal 执行状态不可识别");
+            Err(StatusCode::SERVICE_UNAVAILABLE.into_response())
+        }
+    }
+}
+
 /// 回填 run ID 并把投影状态推进到 RUNNING。
 ///
 /// 失败只记日志：execution 已经起来了，这里再报错会让调用方以为没启动而重试，
 /// 那比投影落后更糟。兜底由 `workflow_reconcile` 的对账作业承担（06 §3.1）。
-async fn mark_running(pool: &PgPool, workflow_id: &str, run_id: Option<&str>) {
-    if let Err(e) = sqlx::query!(
+async fn mark_running(pool: &PgPool, workflow_id: &str, run_id: &str) {
+    if let Err(e) = sqlx::query(
         "update projection.workflow_ref
-         set run_id = coalesce($2, run_id), projection_state = 'RUNNING', version = version + 1
-         where workflow_id = $1 and projection_state = 'PENDING_START'",
-        workflow_id,
-        run_id,
+         set run_id = coalesce(run_id, $2), projection_state = 'RUNNING', version = version + 1
+         where workflow_id = $1
+           and (projection_state in ('PENDING_START', 'UNKNOWN')
+                or (projection_state = 'RUNNING' and run_id is null))
+           and (run_id is null or run_id = $2)",
     )
+    .bind(workflow_id)
+    .bind(run_id)
     .execute(pool)
     .await
     {
