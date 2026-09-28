@@ -165,7 +165,7 @@ ACTIVE → SUSPENDING → SUSPENDED → RESTORING → ACTIVE
                  \→ ERROR          \→ ERROR
 ```
 
-`SUSPENDING` 在 Core 先使 Workspace scope fail closed，关闭 BFF stream、Agent trigger、Tool/menu discovery 和该 Workspace 的 Temporal Schedule；Workflow 随后 archive Buzz Channel 并查证 Buzz/SpiceDB/binding 投影。Resource、Asset、owner 与 relationships 全部保留。`RESTORING` 从 Tenant scope 发起，依次对账 binding、membership、SpiceDB、Channel unarchive 与 Schedule，全部一致后才 `ACTIVE`。Buzz 的 DELETE_GROUP 只软删除 Channel/discovery，不覆盖平台 Resource/Asset/binding/owner，当前不注册 Workspace delete Action（SF-BUZ-15、DD-46）。
+`SUSPENDING` 在 Core 先使 Workspace scope fail closed，关闭 BFF stream、Agent trigger、Tool/menu discovery 和该 Workspace 的 Temporal Schedule；Workflow 随后查证 binding，把 Channel roster 清空为只剩 CONTROL 再 archive Buzz Channel，使原生端的读写一并关闭（DD-97）。Resource、Asset、owner 与 relationships 全部保留。`RESTORING` 从 Tenant scope 发起，依次对账 binding、SpiceDB、Channel unarchive、按 Core 事实重建 Channel roster（ACTIVE 成员与 Agent 的 ACTIVE 身份，DD-97）与 Schedule，全部一致后才 `ACTIVE`。Buzz 的 DELETE_GROUP 只软删除 Channel/discovery，不覆盖平台 Resource/Asset/binding/owner，当前不注册 Workspace delete Action（SF-BUZ-15、DD-46）。
 
 Workspace 成员撤权不执行业务数据删除；它只使 WorkspaceMembership 进入 `REVOKING`，先 fail closed，再撤 SpiceDB workspace relationship 和 Buzz Channel roster，对账后 `REVOKED`。Tenant 成员撤权先撤 PlatformSession/全部 Workspace scope，再完成 owner 转移、SpiceDB tenant relationship 和 Buzz relay roster 撤销；有 active Resource/Asset owner 引用时不得 `REVOKED`，Tenant 销毁 Workflow 除外。恢复访问必须建立新 membership version 并重走建立对账，不把旧 relationship 缓存改回 allow（DD-45）。
 
