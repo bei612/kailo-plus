@@ -109,6 +109,26 @@ Relay、OpenBao 链路的 `cargo test -p kailo-core --test server_keys` 在
 以及已失败 `BUZZ_IDENTITY_PROJECTION` 的受权重跑入口仍未交付，不能把本段证据
 当成托管身份轮换的完整产品验收。
 
+## Web 托管身份的动作类型隔离（2026-09-28）
+
+内部 revoke/provision service 入口现在分别要求已准入 `ActionExecution.action_key`
+精确为 `identity.key_revoke` / `identity.key_provision`；首次执行和
+同键重发都核对动作类型、Tenant、目标 Principal 与 WorkflowRef 归属。此前仅核对
+`ALLOWED`、Tenant 与目标 Principal，另一种已准入动作能借此入口触发密钥副作用。
+
+本地新 Core 镜像经受限 BuildKit（16 GiB、5 CPU）重建后，
+`core/verify/run-integration.sh` 在外层 16 GiB、5 CPU cgroup 内退出 0：
+真实 `server_keys` 用例 1/1，携重建动作请求撤销得到 403 且旧 binding 保持
+`ACTIVE`；携撤销动作请求重建得到 403；随后各以正确动作分别撤销、重建，
+原 Workflow 终态重发仍只返回固定引用。错误动作对象就是反向破坏探针，
+恢复为正确动作后完整链路继续通过。全套 Rust/Go 集成核验结束后，本轮 19 个
+测试 Tenant 的 OpenBao namespace 离线清理，前后集合一致，本地 Core 恢复健康。
+`tools/check.sh --full` 十组通过；未提供隔离 `DATABASE_URL`，迁移实演为 SKIP。
+
+这仍是内部 service 边界的证据：测试夹具直接插入准入记录，尚未证明两条
+ActionDefinition、BFF 提交入口、Web 交互和搁浅投影受权重跑。不得据此关闭
+Stage 1/2 的托管身份轮换验收。
+
 ## 门禁
 
 `tools/check.sh security` 对每个 listener 判定：恰好挂一种认证（`oidc` 或 `jwtAuth`）；OIDC 必须

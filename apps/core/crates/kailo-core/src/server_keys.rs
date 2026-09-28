@@ -35,6 +35,9 @@ use crate::membership_lifecycle::LifecycleResponse;
 use crate::membership_projection::{ensure_human_identity, Blocked, Refusal};
 use crate::service_api::{authorize, unavailable, ServiceState};
 
+const REVOKE_ACTION: &str = "identity.key_revoke";
+const PROVISION_ACTION: &str = "identity.key_provision";
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RevokeRequest {
@@ -87,6 +90,7 @@ pub async fn revoke_server_key(
         binding.tenant_id,
         binding.principal_id,
         Some(&req.pubkey),
+        REVOKE_ACTION,
     )
     .await
     {
@@ -101,6 +105,7 @@ pub async fn revoke_server_key(
         &req.action_execution_id,
         binding.tenant_id,
         binding.principal_id,
+        REVOKE_ACTION,
     )
     .await
     {
@@ -191,6 +196,7 @@ pub async fn provision_server_key(
         tenant_id,
         req.principal_id,
         None,
+        PROVISION_ACTION,
     )
     .await
     {
@@ -219,6 +225,7 @@ pub async fn provision_server_key(
         &req.action_execution_id,
         tenant_id,
         req.principal_id,
+        PROVISION_ACTION,
     )
     .await
     {
@@ -293,6 +300,7 @@ async fn resume(
     tenant_id: Uuid,
     principal_id: Uuid,
     expected_pubkey: Option<&str>,
+    expected_action_key: &str,
 ) -> Option<Response> {
     let existing = match component_task::workflow_of_action(&state.pool, action).await {
         Ok(Some(w)) => w,
@@ -318,6 +326,7 @@ async fn resume(
                  where w.workflow_id = $1 and w.action_execution_id = $2
                    and w.tenant_id = $3 and w.workflow_type = $6 and w.kind = $7
                    and ae.tenant_id = $3 and ae.target_id = $5 and ae.gate_state = 'ALLOWED'
+                   and ae.action_key = $8
                    and b.tenant_id = $3 and b.principal_id = $5
                    and b.kind = 'HUMAN' and b.custody = 'SERVER'",
             )
@@ -328,6 +337,7 @@ async fn resume(
             .bind(principal_id)
             .bind(component_task::WORKFLOW_TYPE)
             .bind(KIND)
+            .bind(expected_action_key)
             .fetch_optional(&state.pool)
             .await;
             match projection {
@@ -359,11 +369,12 @@ async fn admit(
     action: &Uuid,
     tenant_id: Uuid,
     principal_id: Uuid,
+    expected_action_key: &str,
 ) -> Result<AllowedAction, Response> {
     match component_task::allowed_action(&state.pool, *action, tenant_id, principal_id).await {
-        Ok(Some(a)) => Ok(a),
-        Ok(None) => {
-            tracing::warn!(action = %action, "ActionExecution 不存在、未准入或 target 不是该 Principal");
+        Ok(Some(a)) if a.action_key == expected_action_key => Ok(a),
+        Ok(Some(_)) | Ok(None) => {
+            tracing::warn!(action = %action, expected_action_key, "ActionExecution 不存在、动作不符、未准入或 target 不是该 Principal");
             Err(StatusCode::FORBIDDEN.into_response())
         }
         Err(e) => Err(unavailable(e)),

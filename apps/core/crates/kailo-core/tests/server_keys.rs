@@ -39,20 +39,26 @@ async fn bff_publish(
     (status, resp.json().await.unwrap_or(serde_json::Value::Null))
 }
 
-async fn seed_action(pool: &PgPool, fx: &common::LiveWorkspace, target: Uuid) -> Uuid {
+async fn seed_action(
+    pool: &PgPool,
+    fx: &common::LiveWorkspace,
+    target: Uuid,
+    action_key: &str,
+) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
         "insert into admission.action_execution
              (id, operation_id, tenant_id, action_key, action_version,
               initiator_principal_id, actor_principal_id, target_id, parameter_hash,
               gate_state, dispatch_state, correlation_id)
-         values ($1, gen_random_uuid(), $2, 'identity.key_rotate', 1, $3, $3, $4, 'verify',
+         values ($1, gen_random_uuid(), $2, $5, 1, $3, $3, $4, 'verify',
                  'ALLOWED', 'NOT_DISPATCHED', gen_random_uuid())",
     )
     .bind(id)
     .bind(fx.tenant)
     .bind(fx.initiator)
     .bind(target)
+    .bind(action_key)
     .execute(pool)
     .await
     .expect("建 ActionExecution");
@@ -217,7 +223,7 @@ async fn run(
         "恢复后应能以 HUMAN 发言：{body}"
     );
 
-    let a = seed_action(pool, fx, control_principal).await;
+    let a = seed_action(pool, fx, control_principal, "identity.key_revoke").await;
     let (status, _) = call(
         http,
         e,
@@ -232,7 +238,7 @@ async fn run(
         "CONTROL 轮换受 GAP-BUZ-01 阻断"
     );
     // 先撤后建：仍有 ACTIVE 的 SERVER 身份时不重建
-    let a = seed_action(pool, fx, fx.principal).await;
+    let a = seed_action(pool, fx, fx.principal, "identity.key_provision").await;
     let (status, _) = call(
         http,
         e,
@@ -243,7 +249,7 @@ async fn run(
     .await;
     assert_eq!(status, reqwest::StatusCode::CONFLICT, "DD-77：先撤后建");
     // 准入的 target 必须是该 Principal
-    let wrong = seed_action(pool, fx, fx.workspace).await;
+    let wrong = seed_action(pool, fx, fx.workspace, "identity.key_revoke").await;
     let (status, _) = call(
         http,
         e,
@@ -253,6 +259,19 @@ async fn run(
     )
     .await;
     assert_eq!(status, reqwest::StatusCode::FORBIDDEN);
+
+    // 已准入但语义不同的动作也不能借来撤销 Web 托管身份。
+    let wrong_action = seed_action(pool, fx, fx.principal, "identity.key_provision").await;
+    let (status, _) = call(
+        http,
+        e,
+        token,
+        "/service/v1/identities/server-keys/revoke",
+        serde_json::json!({ "pubkey": old, "actionExecutionId": wrong_action }),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::FORBIDDEN);
+    assert_eq!(wait_binding(pool, &old, "ACTIVE", 0).await, "ACTIVE");
 
     // ---- revoke ----
     let stream = http
@@ -268,7 +287,7 @@ async fn run(
     assert!(stream.status().is_success(), "流应开得起来");
     let mut stream = stream.bytes_stream();
 
-    let revoke = seed_action(pool, fx, fx.principal).await;
+    let revoke = seed_action(pool, fx, fx.principal, "identity.key_revoke").await;
     let (status, body) = call(
         http,
         e,
@@ -367,7 +386,17 @@ async fn run(
     );
 
     // ---- 重建 ----
-    let provision = seed_action(pool, fx, fx.principal).await;
+    let wrong_action = seed_action(pool, fx, fx.principal, "identity.key_revoke").await;
+    let (status, _) = call(
+        http,
+        e,
+        token,
+        "/service/v1/identities/server-keys/provision",
+        serde_json::json!({ "principalId": fx.principal, "actionExecutionId": wrong_action }),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::FORBIDDEN);
+    let provision = seed_action(pool, fx, fx.principal, "identity.key_provision").await;
     let (status, body) = call(
         http,
         e,
@@ -470,7 +499,8 @@ async fn run(
     // 两次决定各一条审计，指向各自的 pubkey
     let audited: i64 = sqlx::query_scalar(
         "select count(*) from audit.audit_event
-         where tenant_id = $1 and target_id = $2 and action_key = 'identity.key_rotate'
+         where tenant_id = $1 and target_id = $2
+           and action_key in ('identity.key_revoke', 'identity.key_provision')
            and result_code in ('REVOKING', 'RECONCILING')",
     )
     .bind(fx.tenant)
