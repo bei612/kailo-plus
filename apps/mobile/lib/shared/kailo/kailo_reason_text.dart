@@ -21,14 +21,14 @@ String kailoReasonText(ReasonCode reason, {String? locale}) {
       ReasonCode.CLIENT_KEY_ALREADY_BOUND => '这把设备密钥已被撤销或属于他人。',
       ReasonCode.CLIENT_KEY_LIMIT_REACHED => '你登记的设备已达上限，请先撤销一台。',
       ReasonCode.CLIENT_KEY_NOT_FOUND => '该设备未登记在你名下。',
-      ReasonCode.CLIENT_KEY_PROOF_INVALID => 'Kailo 未接受本机的密钥证明。',
+      ReasonCode.CLIENT_KEY_PROOF_INVALID => '服务器未接受本机的密钥证明。',
       ReasonCode.DEPENDENCY_UNAVAILABLE => '所依赖的服务暂不可用。',
       ReasonCode.DISPATCH_RESULT_UNKNOWN => '是否已生效尚不明确。',
       ReasonCode.DUPLICATE_DECISION => '你已记录了不同的决定，决定不能更改。',
       ReasonCode.EXTERNAL_RESULT_UNKNOWN => '结果尚不明确，正在对账。',
       ReasonCode.IDEMPOTENCY_KEY_REUSED => '同一请求此前已以不同内容提交过。',
-      ReasonCode.IDENTITY_HEADER_MISSING => 'Kailo 无法识别这个账号。',
-      ReasonCode.IDENTITY_UNKNOWN => 'Kailo 无法识别这个账号。',
+      ReasonCode.IDENTITY_HEADER_MISSING => '无法识别这个账号。',
+      ReasonCode.IDENTITY_UNKNOWN => '无法识别这个账号。',
       ReasonCode.INVALID_PARAMETERS => '请求不完整或格式不正确。',
       ReasonCode.INVITATION_ALREADY_REDEEMED => '邀请已被使用。',
       ReasonCode.INVITATION_EXPIRED => '邀请已过期，请向邀请人索取新的邀请。',
@@ -36,17 +36,15 @@ String kailoReasonText(ReasonCode reason, {String? locale}) {
       ReasonCode.INVITATION_REVOKED => '邀请已被撤回，请向邀请人索取新的邀请。',
       ReasonCode.INVITEE_ALREADY_MEMBER => '你已经是该组织的成员。',
       ReasonCode.LAST_TENANT_ADMIN => '这会让组织失去最后一位管理员。',
-      ReasonCode.NATIVE_SURFACE_REQUIRED =>
-        '这一步只能在 Kailo Desktop 或 Mobile 上完成。',
+      ReasonCode.NATIVE_SURFACE_REQUIRED => '这一步只能在桌面端或移动端完成。',
       ReasonCode.PERMISSION_DENIED => '你没有执行此操作的权限。',
       ReasonCode.PROJECTION_DELAYED => '显示的状态可能尚未更新。',
       ReasonCode.PUBLISH_REJECTED => '消息被拒绝。',
       ReasonCode.PUBLISH_RESULT_UNKNOWN => '消息是否送达尚不明确。',
       ReasonCode.SCOPE_GUARD_FAILED => '超出了你所属的组织或工作区范围。',
       ReasonCode.SELF_APPROVAL_DENIED => '不能审批自己发起的请求。',
-      ReasonCode.SESSION_NOT_ACTIVE => '你的 Kailo 会话已失效。',
-      ReasonCode.SURFACE_CAPABILITY_UNAVAILABLE =>
-        '此处不提供该功能，请在 Kailo Web 或 Desktop 上继续。',
+      ReasonCode.SESSION_NOT_ACTIVE => '你的会话已失效。',
+      ReasonCode.SURFACE_CAPABILITY_UNAVAILABLE => '此处不提供该功能，请在网页端或桌面端继续。',
       ReasonCode.TARGET_NOT_FOUND => '对象已不存在，或你无权查看。',
       ReasonCode.TARGET_STATE_CONFLICT => '对象当前的状态不允许此操作。',
       ReasonCode.TENANT_MEMBERSHIP_NOT_ACTIVE => '你在该组织的成员资格未生效。',
@@ -78,7 +76,7 @@ String kailoReasonText(ReasonCode reason, {String? locale}) {
       'You have registered the maximum number of devices. Revoke one first.',
     ReasonCode.CLIENT_KEY_NOT_FOUND => 'That device is not registered to you.',
     ReasonCode.CLIENT_KEY_PROOF_INVALID =>
-      'Kailo did not accept this device\'s key proof.',
+      'The server did not accept this device\'s key proof.',
     ReasonCode.DEPENDENCY_UNAVAILABLE =>
       'A service this depends on is unavailable.',
     ReasonCode.DISPATCH_RESULT_UNKNOWN =>
@@ -89,9 +87,8 @@ String kailoReasonText(ReasonCode reason, {String? locale}) {
       'The outcome is not known yet; it is being reconciled.',
     ReasonCode.IDEMPOTENCY_KEY_REUSED =>
       'This request was already sent with different details.',
-    ReasonCode.IDENTITY_HEADER_MISSING =>
-      'Kailo does not recognize this account.',
-    ReasonCode.IDENTITY_UNKNOWN => 'Kailo does not recognize this account.',
+    ReasonCode.IDENTITY_HEADER_MISSING => 'This account is not recognized.',
+    ReasonCode.IDENTITY_UNKNOWN => 'This account is not recognized.',
     ReasonCode.INVALID_PARAMETERS => 'The request was incomplete or malformed.',
     ReasonCode.INVITATION_ALREADY_REDEEMED =>
       'This invitation has already been used.',
@@ -106,7 +103,7 @@ String kailoReasonText(ReasonCode reason, {String? locale}) {
     ReasonCode.LAST_TENANT_ADMIN =>
       'The organization would be left without an admin.',
     ReasonCode.NATIVE_SURFACE_REQUIRED =>
-      'This must be done in Kailo Desktop or Mobile.',
+      'This must be done in the desktop or mobile app.',
     ReasonCode.PERMISSION_DENIED => 'You do not have permission to do this.',
     ReasonCode.PROJECTION_DELAYED => 'The status shown may be out of date.',
     ReasonCode.PUBLISH_REJECTED => 'The message was rejected.',
@@ -115,9 +112,9 @@ String kailoReasonText(ReasonCode reason, {String? locale}) {
     ReasonCode.SCOPE_GUARD_FAILED =>
       'This is outside the organization or workspace you belong to.',
     ReasonCode.SELF_APPROVAL_DENIED => 'You cannot approve your own request.',
-    ReasonCode.SESSION_NOT_ACTIVE => 'Your Kailo session is no longer active.',
+    ReasonCode.SESSION_NOT_ACTIVE => 'Your session is no longer active.',
     ReasonCode.SURFACE_CAPABILITY_UNAVAILABLE =>
-      'This is not available here. Continue in Kailo on the web or desktop.',
+      'This is not available here. Continue in the web or desktop app.',
     ReasonCode.TARGET_NOT_FOUND => 'It no longer exists, or you cannot see it.',
     ReasonCode.TARGET_STATE_CONFLICT =>
       'Its current state does not allow this.',

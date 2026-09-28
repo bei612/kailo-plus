@@ -289,7 +289,7 @@ enum KailoMessageKey {
 }
 
 const _messages = <KailoMessageKey, (String, String)>{
-  KailoMessageKey.platformTitle: ('Kailo', 'Kailo'),
+  KailoMessageKey.platformTitle: ('Platform', '平台'),
   KailoMessageKey.platformWorkspace: ('Workspace', '工作区'),
   KailoMessageKey.platformWorkspaces: ('Workspaces', '工作区'),
   KailoMessageKey.platformTabMembers: ('Members', '成员'),
@@ -474,8 +474,8 @@ const _messages = <KailoMessageKey, (String, String)>{
     '归位被拒绝：{reason}',
   ),
   KailoMessageKey.platformDevicesNone: (
-    'No devices yet. Sign in to Kailo Desktop or Mobile to add one.',
-    '还没有设备。在 Kailo Desktop 或 Mobile 上登录即可添加。',
+    'No devices yet. Sign in on a desktop or mobile device to add one.',
+    '还没有设备。在桌面端或移动端登录即可添加。',
   ),
   KailoMessageKey.platformDevicesExplain: (
     'Each device holds its own key. Revoking one stops only that device.',
@@ -550,7 +550,7 @@ const _messages = <KailoMessageKey, (String, String)>{
     '第 {index} 个主题，共 {count} 个',
   ),
   KailoMessageKey.platformThemeCommunitySample: ('Community', '社区'),
-  KailoMessageKey.platformSettingsConnection: ('Kailo connection', 'Kailo 连接'),
+  KailoMessageKey.platformSettingsConnection: ('Server connection', '服务器连接'),
   KailoMessageKey.platformSettingsCopyDeviceKey: (
     'Copy device public key',
     '复制设备公钥',
@@ -657,8 +657,8 @@ const _messages = <KailoMessageKey, (String, String)>{
   ),
   KailoMessageKey.approvalsPendingTitle: ('Waiting for my approval', '等待我审批'),
   KailoMessageKey.approvalsMobileReadOnly: (
-    'To approve, deny or withdraw, open Kailo on the web or desktop.',
-    '请在 Kailo Web 或 Desktop 上批准、拒绝或撤回。',
+    'To approve, deny or withdraw, use the web or desktop app.',
+    '请在网页端或桌面端批准、拒绝或撤回。',
   ),
   KailoMessageKey.approvalsExpiresAt: ('Expires {time}', '{time} 到期'),
   KailoMessageKey.approvalsStatus: ('Approval state', '审批状态'),
@@ -807,15 +807,12 @@ const _messages = <KailoMessageKey, (String, String)>{
     'If you were invited, open your invitation link in the browser and sign in there. Once an admin confirms it, check again here.',
     '如果你收到了邀请，请在浏览器中打开邀请链接并登录；管理员确认后，回到这里重新确认。',
   ),
-  KailoMessageKey.nativeConfigTitle: ('Connect to Kailo', '连接 Kailo'),
+  KailoMessageKey.nativeConfigTitle: ('Connect to your server', '连接服务器'),
   KailoMessageKey.nativeConfigExplain: (
     'Enter the addresses your administrator gave you. Nothing is filled in for you: a guessed address would receive your sign-in and device key.',
     '填写管理员提供的地址。这里不预填任何值：猜测的地址会拿到你的登录与设备密钥。',
   ),
-  KailoMessageKey.nativeConfigNativeApiUrl: (
-    'Kailo native entry URL',
-    'Kailo 原生入口地址',
-  ),
+  KailoMessageKey.nativeConfigNativeApiUrl: ('Native entry URL', '原生入口地址'),
   KailoMessageKey.nativeConfigOidcIssuer: (
     'Sign-in issuer (OIDC)',
     '登录 issuer（OIDC）',
@@ -849,7 +846,7 @@ const _messages = <KailoMessageKey, (String, String)>{
     'These settings were not accepted: {message}',
     '设置未被接受：{message}',
   ),
-  KailoMessageKey.nativeSignInTitle: ('Sign in to Kailo', '登录 Kailo'),
+  KailoMessageKey.nativeSignInTitle: ('Sign in', '登录'),
   KailoMessageKey.nativeSignInExplain: (
     'Sign-in opens in your system browser. Come back here when it is done.',
     '登录会在系统浏览器中打开，完成后回到这里。',
@@ -865,8 +862,8 @@ const _messages = <KailoMessageKey, (String, String)>{
     '登录未完成：{message}',
   ),
   KailoMessageKey.nativeStatusUnconfigured: (
-    'Kailo is not set up on this device.',
-    '本机尚未配置 Kailo。',
+    'The server is not set up on this device.',
+    '本机尚未配置服务器连接。',
   ),
   KailoMessageKey.nativeStatusSignedOut: ('Signed out.', '已退出登录。'),
   KailoMessageKey.nativeStatusAwaitingActivation: (
@@ -880,20 +877,20 @@ const _messages = <KailoMessageKey, (String, String)>{
     '结果尚不明确。',
   ),
   KailoMessageKey.nativeErrorHttpOutcomeUnknown: (
-    'Kailo answered HTTP {status}; the outcome is not known.',
-    'Kailo 返回 HTTP {status}；结果尚不明确。',
+    'The server answered HTTP {status}; the outcome is not known.',
+    '服务器返回 HTTP {status}；结果尚不明确。',
   ),
   KailoMessageKey.nativeErrorUnavailable: (
-    'Kailo could not be reached; the outcome is not known.',
-    '无法连接 Kailo；结果尚不明确。',
+    'The server could not be reached; the outcome is not known.',
+    '无法连接服务器；结果尚不明确。',
   ),
   KailoMessageKey.nativeErrorContract: (
-    'Kailo answered outside the contract; the outcome is not known.',
-    'Kailo 的响应不符合契约；结果尚不明确。',
+    'The server answered outside the contract; the outcome is not known.',
+    '服务器的响应不符合契约；结果尚不明确。',
   ),
   KailoMessageKey.nativeErrorSessionEnded: (
-    'Your Kailo sign-in has ended.',
-    '你的 Kailo 登录已失效。',
+    'Your sign-in has ended.',
+    '你的登录已失效。',
   ),
   KailoMessageKey.nativeErrorSignInAgain: ('Sign in again', '重新登录'),
   KailoMessageKey.nativeUnavailableTitle: ('Not available here', '此处不可用'),

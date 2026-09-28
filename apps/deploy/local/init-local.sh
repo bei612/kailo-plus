@@ -30,7 +30,6 @@ set +a
 : "${VERIFY_TENANT_SLUG:?缺少 VERIFY_TENANT_SLUG}"
 : "${VERIFY_TENANT_NAME:?缺少 VERIFY_TENANT_NAME}"
 : "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?缺少 VERIFY_BOOTSTRAP_WAIT_SECONDS}"
-: "${CORE_DATABASE_URL:?缺少 CORE_DATABASE_URL}"
 : "${CORE_DB_PORT:?缺少 CORE_DB_PORT}"
 : "${BUILDX_BUILDER:?必须选择有 cgroup CPU/内存限额的 BuildKit builder}"
 [[ "$VERIFY_BOOTSTRAP_WAIT_SECONDS" =~ ^[1-9][0-9]*$ ]] || {
@@ -39,6 +38,9 @@ set +a
 for tool in sudo docker sqlx python3 curl; do
   command -v "$tool" >/dev/null || { echo "缺少 $tool" >&2; exit 2; }
 done
+# --fresh 的不可逆删除之前验证同一份部署输入。bootstrap 的校验模式不生成密钥、
+# 不启动容器；正常启动时它还会再次校验，避免单独调用 bootstrap 绕开前提。
+./bootstrap.sh --validate-config
 project=$(sed -n 's/^name: //p' compose.yaml)
 [ "$project" = kailo-local ] || { echo 'Compose 项目名不是 kailo-local，拒绝操作' >&2; exit 2; }
 
@@ -94,11 +96,11 @@ fi
 ./bootstrap.sh
 compose config --quiet
 compose up -d --wait core-db
-host_database_url="${CORE_DATABASE_URL/@core-db:5432/@127.0.0.1:${CORE_DB_PORT}}"
-[ "$host_database_url" != "$CORE_DATABASE_URL" ] || {
-  echo 'CORE_DATABASE_URL 不指向 Compose 的 core-db:5432，拒绝猜测迁移目标' >&2; exit 2;
-}
+core_db_password=$(<secrets/core_db_password)
+host_database_url="postgres://${CORE_DB_USER}:${core_db_password}@127.0.0.1:${CORE_DB_PORT}/${CORE_DB_NAME}"
+unset core_db_password
 DATABASE_URL="$host_database_url" sqlx migrate run --source ../../core/migrations
+unset host_database_url
 
 compose up -d openbao
 deadline=$(( $(date +%s) + VERIFY_BOOTSTRAP_WAIT_SECONDS ))

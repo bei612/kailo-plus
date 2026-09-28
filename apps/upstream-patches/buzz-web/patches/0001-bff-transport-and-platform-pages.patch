@@ -2,7 +2,7 @@ diff --git a/web/Caddyfile b/web/Caddyfile
 index 4c238ad..258678a 100644
 --- a/web/Caddyfile
 +++ b/web/Caddyfile
-@@ -6,21 +6,34 @@
+@@ -6,21 +6,42 @@
  :8080 {
  	encode zstd gzip
  
@@ -39,24 +39,41 @@ index 4c238ad..258678a 100644
 +	@document not path /app/assets/*
 +	header @document Cache-Control "no-store"
 +
++	@manifest path /app/manifest.webmanifest
++	header @manifest Content-Type "application/manifest+json"
++
++	# Template only trusted static HTML and the manifest. JavaScript/media are never evaluated.
++	templates /app/* {
++		mime text/html application/manifest+json
++	}
++
  	handle /app {
  		redir * /app/ 308
  	}
+diff --git a/web/Dockerfile b/web/Dockerfile
+--- a/web/Dockerfile
++++ b/web/Dockerfile
+@@ -14,2 +14,4 @@
+ RUN setcap -r /usr/bin/caddy
++# A deployment without a display name must never serve an unlabeled or stale UI.
++ENTRYPOINT ["/bin/sh", "-ec", "case \"${PLATFORM_DISPLAY_NAME:-}\" in *[![:space:]]*) ;; *) echo 'PLATFORM_DISPLAY_NAME is required' >&2; exit 1;; esac; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"]
+ COPY Caddyfile /etc/caddy/Caddyfile
 diff --git a/web/index.html b/web/index.html
 index 1d1a48e..0e753a7 100644
 --- a/web/index.html
 +++ b/web/index.html
-@@ -4,11 +4,11 @@
+@@ -4,11 +4,12 @@
      <meta charset="UTF-8" />
      <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
      <meta name="theme-color" content="#e6e6b6" />
 -    <meta name="description" content="Buzz private relay web client" />
-+    <meta name="description" content="Kailo — enterprise collaboration for people and agents" />
++    <meta name="description" content='{{env "PLATFORM_DISPLAY_NAME" | html}} — enterprise collaboration for people and agents' />
++    <meta name="platform-display-name" content='{{env "PLATFORM_DISPLAY_NAME" | html}}' />
      <link rel="icon" type="image/png" sizes="168x168" href="%BASE_URL%app-icon.png" />
      <link rel="apple-touch-icon" href="%BASE_URL%app-icon.png" />
      <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
 -    <title>Buzz Web</title>
-+    <title>Kailo</title>
++    <title>{{env "PLATFORM_DISPLAY_NAME" | html}}</title>
    </head>
  
    <body>
@@ -1464,8 +1481,8 @@ index 4e45b5d..9c039d5 100644
 -  "name": "Buzz Web",
 -  "short_name": "Buzz",
 -  "description": "Private collaboration on your Buzz relay",
-+  "name": "Kailo",
-+  "short_name": "Kailo",
++  "name": {{env "PLATFORM_DISPLAY_NAME" | toJson}},
++  "short_name": {{env "PLATFORM_DISPLAY_NAME" | toJson}},
 +  "description": "Enterprise collaboration for people and agents",
    "start_url": "./",
    "scope": "./",

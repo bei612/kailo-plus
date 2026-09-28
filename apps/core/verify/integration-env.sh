@@ -28,7 +28,10 @@ export OPENBAO_VERIFY_TOKEN
 export VERIFY_OPENBAO_ROOT_TOKEN_FILE="$(pwd)/$local_dir/secrets/openbao_init.json"
 
 export KAILO_INTEGRATION=1
-export DATABASE_URL="${CORE_DATABASE_URL/@core-db:5432/@127.0.0.1:${CORE_DB_PORT}}"
+export RELAY_OPERATOR_API_ORIGIN="http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}"
+core_db_password=$(<"$local_dir/secrets/core_db_password")
+export DATABASE_URL="postgres://${CORE_DB_USER}:${core_db_password}@127.0.0.1:${CORE_DB_PORT}/${CORE_DB_NAME}"
+unset core_db_password
 export OPENBAO_ADDR="http://127.0.0.1:${OPENBAO_PORT}"
 export OPENBAO_SERVICE_IDENTITY="${OIDC_SERVICE_CLIENT_ID}"
 export SPICEDB_ENDPOINT="127.0.0.1:${SPICEDB_PORT}"

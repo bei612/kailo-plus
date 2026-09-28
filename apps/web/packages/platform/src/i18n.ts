@@ -44,7 +44,7 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
-  "platform.title": { en: "Kailo", "zh-CN": "Kailo" },
+  "platform.title": { en: "Platform", "zh-CN": "平台" },
   "platform.workspace": { en: "Workspace", "zh-CN": "工作区" },
   "platform.workspaces": { en: "Workspaces", "zh-CN": "工作区" },
   "platform.tab.members": { en: "Members", "zh-CN": "成员" },
@@ -175,8 +175,8 @@ export const platformMessages = {
   },
   "secretRehome.rejected": { en: "Migration rejected: {reason}", "zh-CN": "归位被拒绝：{reason}" },
   "platform.devices.none": {
-    en: "No devices yet. Sign in to Kailo Desktop or Mobile to add one.",
-    "zh-CN": "还没有设备。在 Kailo Desktop 或 Mobile 上登录即可添加。",
+    en: "No devices yet. Sign in on a desktop or mobile device to add one.",
+    "zh-CN": "还没有设备。在桌面端或移动端登录即可添加。",
   },
   "platform.devices.explain": {
     en: "Each device holds its own key. Revoking one stops only that device.",
@@ -249,7 +249,7 @@ export const platformMessages = {
   },
   "platform.theme.scrubber": { en: "Theme {index} of {count}", "zh-CN": "第 {index} 个主题，共 {count} 个" },
   "platform.theme.communitySample": { en: "Community", "zh-CN": "社区" },
-  "platform.settings.connection": { en: "Kailo connection", "zh-CN": "Kailo 连接" },
+  "platform.settings.connection": { en: "Server connection", "zh-CN": "服务器连接" },
   "platform.settings.copyDeviceKey": { en: "Copy device public key", "zh-CN": "复制设备公钥" },
   "platform.settings.identityUnavailable": { en: "Identity unavailable", "zh-CN": "身份不可用" },
   "platform.settings.deviceKey": { en: "Device key", "zh-CN": "设备密钥" },
@@ -343,8 +343,8 @@ export const platformMessages = {
   },
   "approvals.pendingTitle": { en: "Waiting for my approval", "zh-CN": "等待我审批" },
   "approvals.mobileReadOnly": {
-    en: "To approve, deny or withdraw, open Kailo on the web or desktop.",
-    "zh-CN": "请在 Kailo Web 或 Desktop 上批准、拒绝或撤回。",
+    en: "To approve, deny or withdraw, use the web or desktop app.",
+    "zh-CN": "请在网页端或桌面端批准、拒绝或撤回。",
   },
   "approvals.expiresAt": { en: "Expires {time}", "zh-CN": "{time} 到期" },
   "approvals.status": { en: "Approval state", "zh-CN": "审批状态" },
@@ -469,12 +469,12 @@ export const platformMessages = {
     "zh-CN": "如果你收到了邀请，请在浏览器中打开邀请链接并登录；管理员确认后，回到这里重新确认。",
   },
 
-  "native.config.title": { en: "Connect to Kailo", "zh-CN": "连接 Kailo" },
+  "native.config.title": { en: "Connect to your server", "zh-CN": "连接服务器" },
   "native.config.explain": {
     en: "Enter the addresses your administrator gave you. Nothing is filled in for you: a guessed address would receive your sign-in and device key.",
     "zh-CN": "填写管理员提供的地址。这里不预填任何值：猜测的地址会拿到你的登录与设备密钥。",
   },
-  "native.config.nativeApiUrl": { en: "Kailo native entry URL", "zh-CN": "Kailo 原生入口地址" },
+  "native.config.nativeApiUrl": { en: "Native entry URL", "zh-CN": "原生入口地址" },
   "native.config.oidcIssuer": { en: "Sign-in issuer (OIDC)", "zh-CN": "登录 issuer（OIDC）" },
   "native.config.oidcClientId": { en: "Client ID", "zh-CN": "客户端 ID" },
   "native.config.server": { en: "Server: {host}", "zh-CN": "服务器：{host}" },
@@ -500,7 +500,7 @@ export const platformMessages = {
     en: "These settings were not accepted: {message}",
     "zh-CN": "设置未被接受：{message}",
   },
-  "native.signIn.title": { en: "Sign in to Kailo", "zh-CN": "登录 Kailo" },
+  "native.signIn.title": { en: "Sign in", "zh-CN": "登录" },
   "native.signIn.explain": {
     en: "Sign-in opens in your system browser. Come back here when it is done.",
     "zh-CN": "登录会在系统浏览器中打开，完成后回到这里。",
@@ -513,7 +513,7 @@ export const platformMessages = {
   "native.signIn.cancel": { en: "Cancel", "zh-CN": "取消" },
   "native.signIn.failed": { en: "Sign-in did not complete: {message}", "zh-CN": "登录未完成：{message}" },
   "native.status.unconfigured": {
-    en: "Kailo is not set up on this device.", "zh-CN": "本机尚未配置 Kailo。",
+    en: "The server is not set up on this device.", "zh-CN": "本机尚未配置服务器连接。",
   },
   "native.status.signedOut": { en: "Signed out.", "zh-CN": "已退出登录。" },
   "native.status.awaitingActivation": {
@@ -526,19 +526,19 @@ export const platformMessages = {
     en: "The outcome is not known yet.", "zh-CN": "结果尚不明确。",
   },
   "native.error.httpOutcomeUnknown": {
-    en: "Kailo answered HTTP {status}; the outcome is not known.",
-    "zh-CN": "Kailo 返回 HTTP {status}；结果尚不明确。",
+    en: "The server answered HTTP {status}; the outcome is not known.",
+    "zh-CN": "服务器返回 HTTP {status}；结果尚不明确。",
   },
   "native.error.unavailable": {
-    en: "Kailo could not be reached; the outcome is not known.",
-    "zh-CN": "无法连接 Kailo；结果尚不明确。",
+    en: "The server could not be reached; the outcome is not known.",
+    "zh-CN": "无法连接服务器；结果尚不明确。",
   },
   "native.error.contract": {
-    en: "Kailo answered outside the contract; the outcome is not known.",
-    "zh-CN": "Kailo 的响应不符合契约；结果尚不明确。",
+    en: "The server answered outside the contract; the outcome is not known.",
+    "zh-CN": "服务器的响应不符合契约；结果尚不明确。",
   },
   "native.error.sessionEnded": {
-    en: "Your Kailo sign-in has ended.", "zh-CN": "你的 Kailo 登录已失效。",
+    en: "Your sign-in has ended.", "zh-CN": "你的登录已失效。",
   },
   "native.error.signInAgain": { en: "Sign in again", "zh-CN": "重新登录" },
   "native.unavailable.title": { en: "Not available here", "zh-CN": "此处不可用" },
@@ -649,32 +649,32 @@ export const approvalSelectorMessages = {
 /** reason code 的说明（apps/06 §4）。分类由错误体给出，这里只解释「为什么」。 */
 export const reasonMessages = {
   [ReasonCode.IdentityHeaderMissing]: {
-    en: "Kailo does not recognize this account.",
-    "zh-CN": "Kailo 无法识别这个账号。",
+    en: "This account is not recognized.",
+    "zh-CN": "无法识别这个账号。",
   },
   [ReasonCode.IdentityUnknown]: {
-    en: "Kailo does not recognize this account.",
-    "zh-CN": "Kailo 无法识别这个账号。",
+    en: "This account is not recognized.",
+    "zh-CN": "无法识别这个账号。",
   },
   [ReasonCode.TenantMembershipNotActive]: {
     en: "Your membership in this organization is not active.",
     "zh-CN": "你在该组织的成员资格未生效。",
   },
   [ReasonCode.SessionNotActive]: {
-    en: "Your Kailo session is no longer active.",
-    "zh-CN": "你的 Kailo 会话已失效。",
+    en: "Your session is no longer active.",
+    "zh-CN": "你的会话已失效。",
   },
   [ReasonCode.TenantSelectionNotAvailable]: {
     en: "Your account belongs to more than one organization, which cannot be chosen between yet.",
     "zh-CN": "你的账号属于多个组织，目前还不能在其间选择。",
   },
   [ReasonCode.NativeSurfaceRequired]: {
-    en: "This must be done in Kailo Desktop or Mobile.",
-    "zh-CN": "这一步只能在 Kailo Desktop 或 Mobile 上完成。",
+    en: "This must be done in the desktop or mobile app.",
+    "zh-CN": "这一步只能在桌面端或移动端完成。",
   },
   [ReasonCode.ClientKeyProofInvalid]: {
-    en: "Kailo did not accept this device's key proof.",
-    "zh-CN": "Kailo 未接受本机的密钥证明。",
+    en: "The server did not accept this device's key proof.",
+    "zh-CN": "服务器未接受本机的密钥证明。",
   },
   [ReasonCode.ClientKeyLimitReached]: {
     en: "You have registered the maximum number of devices. Revoke one first.",
@@ -698,8 +698,8 @@ export const reasonMessages = {
     "zh-CN": "消息是否送达尚不明确。",
   },
   [ReasonCode.SurfaceCapabilityUnavailable]: {
-    en: "This is not available here. Continue in Kailo on the web or desktop.",
-    "zh-CN": "此处不提供该功能，请在 Kailo Web 或 Desktop 上继续。",
+    en: "This is not available here. Continue in the web or desktop app.",
+    "zh-CN": "此处不提供该功能，请在网页端或桌面端继续。",
   },
   [ReasonCode.CapabilityBlocked]: {
     en: "This capability is not available.",

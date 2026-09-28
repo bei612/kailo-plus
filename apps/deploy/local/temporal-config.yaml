@@ -22,7 +22,7 @@ persistence:
     default:
       sql:
         pluginName: postgres12
-        databaseName: temporal
+        databaseName: '{{ env "TEMPORAL_DB_NAME" }}'
         connectAddr: "temporal-db:5432"
         connectProtocol: tcp
         user: "{{ env "POSTGRES_USER" }}"
@@ -33,7 +33,7 @@ persistence:
     visibility:
       sql:
         pluginName: postgres12
-        databaseName: temporal_visibility
+        databaseName: '{{ env "TEMPORAL_VISIBILITY_DB_NAME" }}'
         connectAddr: "temporal-db:5432"
         connectProtocol: tcp
         user: "{{ env "POSTGRES_USER" }}"

@@ -5,6 +5,84 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+[ -s .env ] || { echo '缺少 deploy/local/.env' >&2; exit 2; }
+. ./.env
+: "${OIDC_ISSUER:?缺少 OIDC_ISSUER}" "${OIDC_REALM:?缺少 OIDC_REALM}" \
+  "${PUBLIC_ORIGIN:?缺少 PUBLIC_ORIGIN}" "${PUBLIC_HOST:?缺少 PUBLIC_HOST}" \
+  "${OIDC_HOST:?缺少 OIDC_HOST}" "${BUZZ_RELAY_HOST:?缺少 BUZZ_RELAY_HOST}" \
+  "${BUZZ_RELAY_PORT:?缺少 BUZZ_RELAY_PORT}" "${AGENTGATEWAY_PORT:?缺少 AGENTGATEWAY_PORT}" \
+  "${KEYCLOAK_PORT:?缺少 KEYCLOAK_PORT}" \
+  "${CORE_DB_USER:?缺少 CORE_DB_USER}" "${CORE_DB_NAME:?缺少 CORE_DB_NAME}"
+# 本地拓扑导入 Keycloak realm；issuer 的 realm 必须与导入对象完全相同。
+# PUBLIC_ORIGIN 是浏览器入口的唯一根地址，回调与邀请页均从它派生。
+OIDC_ISSUER="$OIDC_ISSUER" OIDC_REALM="$OIDC_REALM" PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
+PUBLIC_HOST="$PUBLIC_HOST" OIDC_HOST="$OIDC_HOST" BUZZ_RELAY_HOST="$BUZZ_RELAY_HOST" \
+BUZZ_RELAY_PORT="$BUZZ_RELAY_PORT" AGENTGATEWAY_PORT="$AGENTGATEWAY_PORT" \
+KEYCLOAK_PORT="$KEYCLOAK_PORT" CORE_DB_USER="$CORE_DB_USER" CORE_DB_NAME="$CORE_DB_NAME" \
+python3 - <<'PYCONFIG'
+import os
+import re
+from urllib.parse import urlsplit
+
+def invalid_chars(raw):
+    return any(c.isspace() or ord(c) < 0x20 or c in (chr(92), chr(34), chr(39)) for c in raw)
+
+def host(name):
+    raw = os.environ[name]
+    if invalid_chars(raw):
+        raise SystemExit(f"{name} 含无效字符")
+    try:
+        value = urlsplit("http://" + raw)
+        port = value.port
+    except ValueError:
+        raise SystemExit(f"{name} 不是有效主机名") from None
+    if (not value.hostname or value.netloc != raw or port is not None
+            or value.path or value.query or value.fragment or value.username):
+        raise SystemExit(f"{name} 必须是单一主机名，不含端口、路径或凭据")
+    return value.hostname
+
+def checked_port(name):
+    raw = os.environ[name]
+    try:
+        port = int(raw)
+    except ValueError:
+        raise SystemExit(f"{name} 必须是有效端口") from None
+    if not 1 <= port <= 65535 or str(port) != raw:
+        raise SystemExit(f"{name} 必须是 1..65535 的十进制端口")
+    return port
+
+realm = os.environ["OIDC_REALM"]
+if not realm or invalid_chars(realm) or any(c in realm for c in "/?#%"):
+    raise SystemExit("OIDC_REALM 必须是单个 URL path segment")
+for name, expected_path, host_name, port_name in (
+        ("OIDC_ISSUER", "/realms/" + realm, "OIDC_HOST", "KEYCLOAK_PORT"),
+        ("PUBLIC_ORIGIN", "", "PUBLIC_HOST", "AGENTGATEWAY_PORT")):
+    raw = os.environ[name]
+    if invalid_chars(raw):
+        raise SystemExit(f"{name} 含无效字符")
+    try:
+        value = urlsplit(raw)
+        port = value.port
+    except ValueError:
+        raise SystemExit(f"{name} 不是有效 URL") from None
+    if (value.scheme != "http" or not value.hostname
+            or value.username or value.password or value.query or value.fragment
+            or value.path != expected_path or port != checked_port(port_name)
+            or value.hostname != host(host_name)):
+        raise SystemExit(f"{name} 的 scheme、authority、host 或 path 与本地拓扑不符")
+host("BUZZ_RELAY_HOST")
+checked_port("BUZZ_RELAY_PORT")
+for name in ("CORE_DB_USER", "CORE_DB_NAME"):
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", os.environ[name]):
+        raise SystemExit(f"{name} 不适合 PostgreSQL URL")
+PYCONFIG
+if [ "${1:-}" = '--validate-config' ] && [ "$#" -eq 1 ]; then
+  exit 0
+fi
+[ "$#" -eq 0 ] || { echo 'bootstrap.sh 不接受该参数' >&2; exit 2; }
+OIDC_REDIRECT_URI="${PUBLIC_ORIGIN}/oauth/callback"
+RELAY_OPERATOR_API_ORIGIN="http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}"
+
 mkdir -p secrets
 umask 077
 
@@ -36,6 +114,18 @@ gen_hex() {
 }
 
 gen core_db_password
+# Compose 会在启动单个 registry 服务时解析其它服务的 env_file，因此该投递文件
+# 必须在首次 compose 调用之前存在；它由唯一的 DB 输入与已有 secret 派生。
+core_db_password=$(<secrets/core_db_password)
+if ! [[ "$core_db_password" =~ ^[A-Za-z0-9_=-]+$ ]]; then
+  echo 'Core 数据库密码不适合 PostgreSQL URL，拒绝生成连接串' >&2
+  exit 2
+fi
+printf 'DATABASE_URL=postgres://%s:%s@core-db:5432/%s\n' \
+  "$CORE_DB_USER" "$core_db_password" "$CORE_DB_NAME" > secrets/core-db-url.env
+chmod 600 secrets/core-db-url.env
+unset core_db_password
+printf '  已生成：secrets/core-db-url.env\n'
 gen buzz_db_password
 gen buzz_objects_root_password
 gen keycloak_admin_password
@@ -54,19 +144,23 @@ gen_hex buzz_relay_private_key
 # RelayOperatorIdentity 的密钥对：Relay 在 BUZZ_REQUIRE_RELAY_MEMBERSHIP=true
 # 时要求 RELAY_OWNER_PUBKEY，而 Core 用对应私钥创建 Community（SS-BUZ-OPERATOR）。
 # 用上游自带的 generate-key 生成，不自己实现 secp256k1 派生。
+mkdir -p data/registry
 if [ ! -s secrets/relay_operator_pubkey ] || [ ! -s secrets/relay_operator_private_key ]; then
   # 取 Relay 服务实际运行的镜像（补丁构建，按 digest 存于本地 registry），
   # 而不是另写一个镜像名：两处脱节时生成密钥的与运行的就不是同一份二进制。
-  relay_image=$(python3 - <<'PYIMG'
-import re
-env = dict(l.split("=", 1) for l in open(".env", encoding="utf-8").read().splitlines()
-           if "=" in l and not l.lstrip().startswith("#"))
-t = open("compose.yaml", encoding="utf-8").read()
-svc = t.split("\n  buzz-relay:\n", 1)[1]
-img = re.search(r"^    image: (\S+)", svc, re.M).group(1)
-print(re.sub(r"\$\{(\w+)(?::\?[^}]*)?\}", lambda m: env[m.group(1)], img))
-PYIMG
-)
+  # 由 Compose 自己解析同一份 .env 与 image 字段；手写 dotenv 解析器读到
+  # ${HOST} 这类派生值时只会得到未展开的字符串，不能拿来启动容器。
+  # --images 在目标服务与依赖上解析镜像，不要求此时尚未生成的其它 env_file；
+  # --format json 会扫描全模型并在首次生成 operator key 前因那些文件缺失而失败。
+  relay_image=$(sudo -n docker compose --env-file .env -f compose.yaml \
+    config --no-env-resolution --images buzz-relay \
+    | REGISTRY_HOST="$REGISTRY_HOST" python3 -c '
+import os, sys
+prefix = os.environ["REGISTRY_HOST"] + "/upstream-buzz@sha256:"
+images = {line.strip() for line in sys.stdin if line.strip().startswith(prefix)}
+if len(images) != 1:
+    raise SystemExit("Compose 未提供唯一的 Buzz Relay 定版镜像")
+print(next(iter(images)))')
   sudo -n docker compose --env-file .env -f compose.yaml up -d registry >/dev/null
   kp=$(sudo -n docker run --rm --entrypoint /usr/local/bin/buzz-admin \
         "$relay_image" generate-key 2>/dev/null | grep -E "^(Public|Secret) key:")
@@ -94,7 +188,6 @@ printf '  已就绪：data/openbao（uid 100）\n'
 mkdir -p secrets/keycloak-import
 # namespace 名来自 .env，不写死在 realm 定义里：Temporal 的 default claim mapper
 # 按 "<namespace>:<role>" 解析 permissions，namespace 写错即全部调用被拒。
-[ -f .env ] && . ./.env
 : "${TEMPORAL_NAMESPACE:?bootstrap 需要 .env 中的 TEMPORAL_NAMESPACE}"
 # 渲染在进程内完成：secret 从文件读入内存，不经命令行——`sed "s|…|$(cat …)|"`
 # 会把每个 client secret 与核验口令都摆进进程表，任何能 ps 的人都看得见。
@@ -103,7 +196,7 @@ mkdir -p secrets/keycloak-import
 [ "$BOOTSTRAP_USER" != "$VERIFY_USER" ] || {
   echo 'BOOTSTRAP_USER 与 VERIFY_USER 必须不同：一期不能在登录时选择 Tenant' >&2; exit 2;
 }
-: "${OIDC_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_REDIRECT_URI}"
+: "${OIDC_REDIRECT_URI:?bootstrap 需要从 PUBLIC_ORIGIN 派生的 OIDC_REDIRECT_URI}"
 : "${OIDC_REALM:?bootstrap 需要 .env 中的 OIDC_REALM}"
 : "${OIDC_SERVICE_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_SERVICE_CLIENT_ID}"
 : "${OIDC_WORKER_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_WORKER_CLIENT_ID}"
@@ -118,6 +211,7 @@ OIDC_WORKER_CLIENT_ID="$OIDC_WORKER_CLIENT_ID" OIDC_BROWSER_CLIENT_ID="$OIDC_BRO
 OIDC_REDIRECT_URI="$OIDC_REDIRECT_URI" OIDC_NATIVE_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
 OIDC_NATIVE_AUDIENCE="$OIDC_NATIVE_AUDIENCE" \
 OIDC_NATIVE_MOBILE_REDIRECT_URI="$OIDC_NATIVE_MOBILE_REDIRECT_URI" python3 - <<'RENDER'
+import json
 import os
 from_file = {
     "__KAILO_CORE_CLIENT_SECRET__": "secrets/kailo_core_client_secret",
@@ -129,18 +223,31 @@ from_file = {
 from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "OIDC_REALM",
             "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_REDIRECT_URI",
             "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI"]
-text = open("keycloak/kailo-realm.json", encoding="utf-8").read()
+with open("keycloak/kailo-realm.json", encoding="utf-8") as fh:
+    document = json.load(fh)
+substitutions = {}
 for placeholder, path in from_file.items():
-    text = text.replace(placeholder, open(path, encoding="utf-8").read().strip())
+    with open(path, encoding="utf-8") as fh:
+        substitutions[placeholder] = fh.read().strip()
 for name in from_env:
-    text = text.replace(f"__{name}__", os.environ[name])
+    substitutions[f"__{name}__"] = os.environ[name]
 import re
-left = sorted(set(re.findall(r"__[A-Z][A-Z_]*__", text)))
+token = re.compile(r"__[A-Z][A-Z_]*__")
+def replace(node):
+    if isinstance(node, str):
+        return token.sub(lambda match: substitutions.get(match.group(), match.group()), node)
+    if isinstance(node, list):
+        return [replace(item) for item in node]
+    if isinstance(node, dict):
+        return {key: replace(value) for key, value in node.items()}
+    return node
+document = replace(document)
+left = sorted(set(token.findall(json.dumps(document))))
 if left:
     raise SystemExit(f"realm 模板里还有未替换的占位符：{left}")
 fd = os.open("secrets/keycloak-import/kailo-realm.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 with os.fdopen(fd, "w", encoding="utf-8") as fh:
-    fh.write(text)
+    json.dump(document, fh, ensure_ascii=False)
 RENDER
 chmod 600 secrets/keycloak-import/kailo-realm.json
 printf '  已渲染：secrets/keycloak-import/kailo-realm.json\n'

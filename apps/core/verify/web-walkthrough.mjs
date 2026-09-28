@@ -26,7 +26,7 @@ for (const [k, v] of Object.entries(a)) if (!v) throw new Error(`缺少 --${k}`)
 
 // 浏览器按部署里的名字访问网关与 IdP（OIDC redirect 与 issuer 都是这两个名字），
 // 解析到本机发布端口。两个名字取自调用方已载入的 OIDC 配置，不另写一份。
-const gateway = new URL(process.env.OIDC_REDIRECT_URI).origin;
+const gateway = new URL(process.env.PUBLIC_ORIGIN).origin;
 const idp = new URL(process.env.OIDC_ISSUER).origin;
 const map = (origin, port) => {
   const u = new URL(origin);
@@ -728,7 +728,7 @@ await step("邀请：admin 签发的链接只显示一次、列表不含凭据�
   // 链接必须落在 Web 的兑换页：网关只把 /app 前缀交给 Web，其余到 BFF
   const target = new URL(link);
   if (target.origin !== gateway || target.pathname !== "/app/invite")
-    throw new Error(`邀请链接不在 Web 兑换页（${gateway}/app/invite），实际 ${target.origin}${target.pathname}——检查 TENANT_INVITATION_LINK_BASE`);
+    throw new Error(`邀请链接不在 Web 兑换页（${gateway}/app/invite），实际 ${target.origin}${target.pathname}——检查 PUBLIC_ORIGIN 的邀请链接投影`);
   const row = section.getByRole("row").filter({ hasText: label });
   await row.waitFor({ timeout: bound });
   if ((await section.getByRole("table").innerText()).includes(credential)) throw new Error("邀请列表里出现了凭据");

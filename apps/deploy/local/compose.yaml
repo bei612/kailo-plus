@@ -83,6 +83,8 @@ services:
       SQL_HOST: temporal-db
       SQL_PORT: "5432"
       SQL_USER: ${TEMPORAL_DB_USER:?必须显式提供，禁止硬编码}
+      SQL_DATABASE: ${TEMPORAL_DB_NAME:?必须显式提供，禁止硬编码}
+      VISIBILITY_DATABASE: ${TEMPORAL_DB_NAME:?必须显式提供，禁止硬编码}_visibility
       SQL_PASSWORD_FILE: /run/secrets/temporal_db_password
     secrets: [temporal_db_password]
     entrypoint: ["/bin/sh", "-c"]
@@ -90,12 +92,12 @@ services:
       - |
         set -e
         export SQL_PASSWORD="$$(cat /run/secrets/temporal_db_password)"
-        temporal-sql-tool --database "$${SQL_DATABASE:-temporal}" create-database || true
-        SQL_DATABASE=temporal temporal-sql-tool setup-schema -v 0.0
-        SQL_DATABASE=temporal temporal-sql-tool update-schema -d /etc/temporal/schema/postgresql/v12/temporal/versioned
-        temporal-sql-tool --database temporal_visibility create-database || true
-        SQL_DATABASE=temporal_visibility temporal-sql-tool setup-schema -v 0.0
-        SQL_DATABASE=temporal_visibility temporal-sql-tool update-schema -d /etc/temporal/schema/postgresql/v12/visibility/versioned
+        temporal-sql-tool --database "$$SQL_DATABASE" create-database || true
+        temporal-sql-tool setup-schema -v 0.0
+        temporal-sql-tool update-schema -d /etc/temporal/schema/postgresql/v12/temporal/versioned
+        SQL_DATABASE="$$VISIBILITY_DATABASE" temporal-sql-tool --database "$$VISIBILITY_DATABASE" create-database || true
+        SQL_DATABASE="$$VISIBILITY_DATABASE" temporal-sql-tool setup-schema -v 0.0
+        SQL_DATABASE="$$VISIBILITY_DATABASE" temporal-sql-tool update-schema -d /etc/temporal/schema/postgresql/v12/visibility/versioned
     restart: "no"
 
   temporal:
@@ -109,7 +111,9 @@ services:
     environment:
       POSTGRES_USER: ${TEMPORAL_DB_USER:?必须显式提供，禁止硬编码}
       TEMPORAL_ENVIRONMENT: local
-      OIDC_JWKS_URI: ${OIDC_JWKS_URI:?必须显式提供，禁止硬编码}
+      TEMPORAL_DB_NAME: ${TEMPORAL_DB_NAME:?必须显式提供，禁止硬编码}
+      TEMPORAL_VISIBILITY_DB_NAME: ${TEMPORAL_DB_NAME:?必须显式提供，禁止硬编码}_visibility
+      OIDC_JWKS_URI: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}/protocol/openid-connect/certs
     secrets: [temporal_db_password]
     configs:
       - source: temporal_dynamic_config
@@ -238,9 +242,9 @@ services:
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz@sha256:01927d9475e8690087780f9b08194b08eb10bb0aa758d5aad45b76afd0bcbf46
     networks:
       component:
-        aliases: [buzz-relay.kailo.local]
+        aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
       app:
-        aliases: [buzz-relay.kailo.local]
+        aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
     depends_on:
       buzz-schema: { condition: service_completed_successfully }
       buzz-objects-init: { condition: service_completed_successfully }
@@ -290,7 +294,6 @@ services:
       temporal: { condition: service_healthy }
       keycloak: { condition: service_healthy }
     environment:
-      DATABASE_URL: ${CORE_DATABASE_URL:?必须显式提供，禁止硬编码}
       BFF_LISTEN: ${BFF_BIND_ADDR:?必须显式提供，禁止硬编码}:${BFF_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       # PlatformSession 有效期。部署事实：不同部署对「多久重新过一次 OIDC」
       # 的要求不同，写死会让这件事变成改代码才能调。
@@ -299,7 +302,7 @@ services:
       # 放行的值——上界在 BFF 侧先行设定（07 §5）。
       BFF_MESSAGE_PAGE_LIMIT: ${BFF_MESSAGE_PAGE_LIMIT:?必须显式提供，禁止硬编码}
       # 实时订阅走 NIP-42 WebSocket 会话；Community host 另从 binding 取
-      BUZZ_RELAY_WS_URL: ${BUZZ_RELAY_WS_URL:?必须显式提供，禁止硬编码}
+      BUZZ_RELAY_WS_URL: ws://${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}
       # 单条流的缓冲帧数。满了对上游形成背压而不是丢帧
       BFF_STREAM_BUFFER: ${BFF_STREAM_BUFFER:?必须显式提供，禁止硬编码}
       # 连上 Relay 后等 NIP-42 challenge 的上界；超时即以可处理的失败结束该流
@@ -327,7 +330,7 @@ services:
       # 同端口的服务面等于对任何已登录用户开放。
       SERVICE_LISTEN: ${SERVICE_BIND_ADDR:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       SERVICE_OIDC_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
-      SERVICE_OIDC_JWKS_URI: ${OIDC_JWKS_URI:?必须显式提供，禁止硬编码}
+      SERVICE_OIDC_JWKS_URI: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}/protocol/openid-connect/certs
       # 「这张票是开给 Core 的」与「是谁来敲的」是两件事，两条都要核。
       SERVICE_OIDC_AUDIENCE: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
       SERVICE_CALLER_CLIENT_ID: ${OIDC_WORKER_CLIENT_ID:?必须显式提供，禁止硬编码}
@@ -346,20 +349,20 @@ services:
       OPENBAO_SERVICE_IDENTITY: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
       # Relay 的网络地址。与 Community host 不是一回事：后者参与 NIP-98
       # 签名并作为 Host 头，前者只用于建立连接（SF-BUZ-32）。
-      BUZZ_RELAY_TRANSPORT: ${BUZZ_RELAY_TRANSPORT:?必须显式提供，禁止硬编码}
+      BUZZ_RELAY_TRANSPORT: http://${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}
       # Core 在 Start 前持久化 WorkflowRef，再以固定 ID 启动（DD-48）。
       # namespace 写错即全部调用被拒：Temporal 的 default claim mapper 按
       # "<namespace>:<role>" 解析 permissions（SF-TMP-06）。
-      TEMPORAL_TARGET_URL: ${TEMPORAL_TARGET_URL:?必须显式提供，禁止硬编码}
+      TEMPORAL_TARGET_URL: http://${TEMPORAL_ADDRESS:?必须显式提供，禁止硬编码}
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:?必须显式提供，禁止硬编码}
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:?必须显式提供，禁止硬编码}
-      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:?必须显式提供，禁止硬编码}
+      OIDC_TOKEN_URL: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}/protocol/openid-connect/token
       OIDC_SERVICE_CLIENT_ID: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
       # 平台引导（.design/09 第 3 步）：Catalog Tenant 与 RelayOperatorIdentity。
       # operator 私钥经 secret 挂载读入，写进 OpenBao 后只留 locator 与版本。
       PLATFORM_CATALOG_TENANT_SLUG: ${PLATFORM_CATALOG_TENANT_SLUG:?必须显式提供，禁止硬编码}
       RELAY_OPERATOR_AUDIENCE: ${RELAY_OPERATOR_AUDIENCE:?必须显式提供，禁止硬编码}
-      RELAY_OPERATOR_API_ORIGIN: ${RELAY_OPERATOR_API_ORIGIN:?必须显式提供，禁止硬编码}
+      RELAY_OPERATOR_API_ORIGIN: http://${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}
       # Community host = <tenant slug>.<domain>。host 是 NIP-98 的签名权威
       # （SF-BUZ-32），必须稳定可推导。
       BUZZ_COMMUNITY_DOMAIN: ${BUZZ_COMMUNITY_DOMAIN:?必须显式提供，禁止硬编码}
@@ -411,8 +414,9 @@ services:
       # Tenant 成员邀请（DD-83）：有效期在签发时冻结进邀请；链接基址是部署的 Web
       # 地址加 Web 端兑换页的路径，一次性凭据接在 # 之后（fragment 不发往任何服务端）
       TENANT_INVITATION_TTL_SECONDS: ${TENANT_INVITATION_TTL_SECONDS:?必须显式提供，禁止硬编码}
-      TENANT_INVITATION_LINK_BASE: ${TENANT_INVITATION_LINK_BASE:?必须显式提供，禁止硬编码}
+      TENANT_INVITATION_LINK_BASE: ${PUBLIC_ORIGIN:?必须显式提供，禁止硬编码}/app/invite
     env_file:
+      - ./secrets/core-db-url.env
       - ./secrets/openbao-core.env
       # Core 自己的 OIDC client secret；不进 .env、不上命令行
       - ./secrets/core-service.env
@@ -446,9 +450,9 @@ services:
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:?必须显式提供，禁止硬编码}
       # 令牌按需取并在到期前复用：本部署签发 900 秒，持静态令牌只是把失败
       # 推迟到第一次续期之后。
-      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:?必须显式提供，禁止硬编码}
+      OIDC_TOKEN_URL: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}/protocol/openid-connect/token
       OIDC_WORKER_CLIENT_ID: ${OIDC_WORKER_CLIENT_ID:?必须显式提供，禁止硬编码}
-      CORE_SERVICE_URL: ${CORE_SERVICE_URL:?必须显式提供，禁止硬编码}
+      CORE_SERVICE_URL: http://core-bff:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       SPICEDB_ENDPOINT: ${SPICEDB_ENDPOINT:?必须显式提供，禁止硬编码}
       SPICEDB_INSECURE: "true"
       # 每个 Activity 显式固定两个超时与重试上界（.design/06 §5.1）。上界约束的是
@@ -478,8 +482,10 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:8b8490721764c7e850296ed70642f0dac51e1b6322390659a32d9f04211333d1
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:437deaeb332906148154cb2fb2da581094ee836e6dcce03f8cbd02ba8e5b15cf
     networks: [app]
+    environment:
+      PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 
   # AgentGateway 是 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。
@@ -494,9 +500,9 @@ services:
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。
     networks:
       edge:
-        aliases: [gateway.kailo.local]
+        aliases: ["${PUBLIC_HOST:?必须显式提供，禁止硬编码}"]
       app:
-        aliases: [gateway.kailo.local]
+        aliases: ["${PUBLIC_HOST:?必须显式提供，禁止硬编码}"]
     depends_on:
       keycloak: { condition: service_healthy }
       # 网关起来就该能服务 /app；web 未就绪时先失败，好过把 404 当成「页面没写」
@@ -504,7 +510,7 @@ services:
     environment:
       OIDC_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
       OIDC_BROWSER_CLIENT_ID: ${OIDC_BROWSER_CLIENT_ID:?必须显式提供，禁止硬编码}
-      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:?必须显式提供，禁止硬编码}
+      OIDC_REDIRECT_URI: ${PUBLIC_ORIGIN:?必须显式提供，禁止硬编码}/oauth/callback
       # 端口只在 BFF_CONTAINER_PORT 一处取值：写两遍迟早有一天只改一处
       BFF_UPSTREAM: ${BFF_SERVICE_NAME:?必须显式提供，禁止硬编码}:${BFF_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       # WEB_CONTAINER_PORT 是镜像事实：buzz-web 的 Caddyfile 监听该端口。
@@ -513,7 +519,7 @@ services:
       WEB_UPSTREAM: ${WEB_SERVICE_NAME:?必须显式提供，禁止硬编码}:${WEB_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       # 原生端入口（DD-78）：Bearer 令牌的签发者、受众与验签公钥来源
       OIDC_NATIVE_AUDIENCE: ${OIDC_NATIVE_AUDIENCE:?必须显式提供，禁止硬编码}
-      OIDC_JWKS_URI: ${OIDC_JWKS_URI:?必须显式提供，禁止硬编码}
+      OIDC_JWKS_URI: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}/protocol/openid-connect/certs
     env_file:
       # 浏览器客户端密钥由网关持有，浏览器不持有。文件在 gitignore 的 secrets/ 下。
       - ./secrets/browser-client.env
@@ -632,11 +638,11 @@ services:
     # 本地也应保持同一形状，否则接缝在本地验不了。
     networks:
       edge:
-        aliases: [keycloak.kailo.local]
+        aliases: ["${OIDC_HOST:?必须显式提供，禁止硬编码}"]
       app:
-        aliases: [keycloak.kailo.local]
+        aliases: ["${OIDC_HOST:?必须显式提供，禁止硬编码}"]
       component:
-        aliases: [keycloak.kailo.local]
+        aliases: ["${OIDC_HOST:?必须显式提供，禁止硬编码}"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?必须显式提供，禁止硬编码}
       KC_HTTP_ENABLED: "true"

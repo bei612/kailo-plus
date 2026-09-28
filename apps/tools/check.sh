@@ -428,9 +428,79 @@ step_security() { hdr "9/10 受影响安全不变式"
   if [ ! -f deploy/local/compose.yaml ]; then skip "尚无部署描述"; return 0; fi
   python3 - <<'PY' || FAIL=1
 import glob, os, re, subprocess, sys, yaml
-d = yaml.safe_load(open("deploy/local/compose.yaml", encoding="utf-8"))
+class UniqueKeysLoader(yaml.SafeLoader):
+    pass
+
+def unique_mapping(loader, node, deep=False):
+    keys = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in keys:
+            raise SystemExit(f"FAIL compose.yaml: 重复配置键 {key}（第 {key_node.start_mark.line + 1} 行）")
+        keys.add(key)
+    return loader.construct_mapping(node, deep=deep)
+
+UniqueKeysLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
+d = yaml.load(open("deploy/local/compose.yaml", encoding="utf-8"), Loader=UniqueKeysLoader)
 raw = open("deploy/local/compose.yaml", encoding="utf-8").read()
 bad = []
+# 同一部署事实只维护一次；这里校验消费者投影，不读取真实 .env 或任何 secret。
+# 去掉必填提示文案后比较表达式，提示文字变化不影响语义。
+projections = {
+    ("buzz-web", "PLATFORM_DISPLAY_NAME"): "${PLATFORM_DISPLAY_NAME}",
+    ("agentgateway", "OIDC_REDIRECT_URI"): "${PUBLIC_ORIGIN}/oauth/callback",
+    ("core-bff", "TENANT_INVITATION_LINK_BASE"): "${PUBLIC_ORIGIN}/app/invite",
+    ("agentgateway", "OIDC_JWKS_URI"): "${OIDC_ISSUER}/protocol/openid-connect/certs",
+    ("temporal", "OIDC_JWKS_URI"): "${OIDC_ISSUER}/protocol/openid-connect/certs",
+    ("core-bff", "SERVICE_OIDC_JWKS_URI"): "${OIDC_ISSUER}/protocol/openid-connect/certs",
+    ("core-bff", "OIDC_TOKEN_URL"): "${OIDC_ISSUER}/protocol/openid-connect/token",
+    ("worker", "OIDC_TOKEN_URL"): "${OIDC_ISSUER}/protocol/openid-connect/token",
+    ("core-bff", "TEMPORAL_TARGET_URL"): "http://${TEMPORAL_ADDRESS}",
+    ("worker", "TEMPORAL_ADDRESS"): "${TEMPORAL_ADDRESS}",
+    ("worker", "CORE_SERVICE_URL"): "http://core-bff:${SERVICE_CONTAINER_PORT}",
+    ("core-bff", "BUZZ_RELAY_WS_URL"): "ws://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}",
+    ("core-bff", "BUZZ_RELAY_TRANSPORT"): "http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}",
+    ("core-bff", "RELAY_OPERATOR_API_ORIGIN"): "http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}",
+    ("temporal-db", "POSTGRES_DB"): "${TEMPORAL_DB_NAME}",
+    ("temporal-schema", "SQL_DATABASE"): "${TEMPORAL_DB_NAME}",
+    ("temporal-schema", "VISIBILITY_DATABASE"): "${TEMPORAL_DB_NAME}_visibility",
+    ("temporal", "TEMPORAL_DB_NAME"): "${TEMPORAL_DB_NAME}",
+    ("temporal", "TEMPORAL_VISIBILITY_DB_NAME"): "${TEMPORAL_DB_NAME}_visibility",
+}
+for (service, key), expected in projections.items():
+    value = (d.get("services", {}).get(service, {}).get("environment") or {}).get(key, "")
+    actual = re.sub(r"\$\{(\w+):\?[^}]*\}", r"${\1}", str(value))
+    if actual != expected:
+        bad.append(f"{service}.{key}: 必须从公共配置派生，不得独立维护")
+sample = open("deploy/local/.env.example", encoding="utf-8").read()
+sample_keys = set(re.findall(r"^([A-Z][A-Z_0-9]*)=", sample, re.M))
+for key, expression in {
+    "PUBLIC_ORIGIN": "http://${PUBLIC_HOST}:${AGENTGATEWAY_PORT}",
+    "OIDC_ISSUER": "http://${OIDC_HOST}:${KEYCLOAK_PORT}/realms/${OIDC_REALM}",
+}.items():
+    if f"{key}={expression}" not in sample.splitlines():
+        bad.append(f".env.example: {key} 必须保留本地拓扑派生表达式，不得重新手填")
+for service, host_key, networks in (
+    ("buzz-relay", "BUZZ_RELAY_HOST", ("component", "app")),
+    ("agentgateway", "PUBLIC_HOST", ("edge", "app")),
+    ("keycloak", "OIDC_HOST", ("edge", "app", "component")),
+):
+    for network in networks:
+        aliases = d["services"][service]["networks"][network].get("aliases", [])
+        aliases = [re.sub(r"\$\{(\w+):\?[^}]*\}", r"${\1}", str(value)) for value in aliases]
+        if aliases != ["${" + host_key + "}"]:
+            bad.append(f"{service}.{network}: DNS alias 必须取自公共主机名输入 {host_key}")
+retired = {"OIDC_JWKS_URI", "OIDC_TOKEN_URL", "OIDC_REDIRECT_URI",
+           "TENANT_INVITATION_LINK_BASE", "TEMPORAL_TARGET_URL", "CORE_SERVICE_URL", "CORE_DATABASE_URL",
+           "BUZZ_RELAY_WS_URL", "BUZZ_RELAY_TRANSPORT", "RELAY_OPERATOR_API_ORIGIN"}
+for key in sorted(sample_keys & retired):
+    bad.append(f".env.example: {key} 是派生值，不得恢复为独立输入")
+sources = {key for value in projections.values() for key in re.findall(r"\$\{(\w+)\}", value)}
+for key in sorted(sources - sample_keys):
+    bad.append(f".env.example: 缺少公共输入 {key}")
+core_config = d.get("services", {}).get("core-bff", {})
+if "DATABASE_URL" in (core_config.get("environment") or {}) or "./secrets/core-db-url.env" not in (core_config.get("env_file") or []):
+    bad.append("core-bff: DATABASE_URL 只能由数据库同源凭据生成的受控 env_file 投递")
 # GitNexus 1.6.12 只读取仓库根 ignore 规则；apps/.gitignore 对 Git 有效，
 # 但不能阻止本地凭据与 registry 数据进入代码索引。检查根规则的精确来源，
 # 不能只问 git 是否忽略（那会把嵌套规则误判为已保护索引）。
@@ -653,7 +723,7 @@ for m in re.finditer(r"^\s+-\s+\"?(?:[\d.]+:)?(\d{2,5}):(\d{2,5})\"?\s*$", raw, 
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
 zed_note = "；SpiceDB schema 与 .design/03 §5 逐字相等" if os.path.exists(zed_path) else ""
-print(f"  \033[32mPASS\033[0m {len(d.get('services') or {})} 个服务：network 显式、边界不越层、镜像按 digest、无端口字面量{zed_note}")
+print(f"  \033[32mPASS\033[0m {len(d.get('services') or {})} 个服务：network 显式、边界不越层、镜像按 digest、无端口字面量、公共配置单源投影{zed_note}")
 PY
   return 0
 }

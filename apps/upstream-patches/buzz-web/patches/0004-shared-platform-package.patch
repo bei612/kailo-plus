@@ -587,7 +587,8 @@ index 20a638d..103427e 100644
 +  ...platformMessages,
    "message.attachmentImage": { en: "Attachment image", "zh-CN": "附件图片" },
    "message.imageFailed": { en: "Image failed to load", "zh-CN": "图片加载失败" },
-   "app.title": { en: "Kailo", "zh-CN": "Kailo" },
+-  "app.title": { en: "Kailo", "zh-CN": "Kailo" },
++  "app.title": { en: "Platform", "zh-CN": "平台" },
 -  "platform.title": { en: "Kailo", "zh-CN": "Kailo" },
 -  "platform.workspace": { en: "Workspace", "zh-CN": "工作区" },
    "platform.tab.channel": { en: "Channel", "zh-CN": "频道" },
@@ -652,6 +653,16 @@ index 20a638d..103427e 100644
    "error.attachmentImagePrepare": {
      en: "We couldn't prepare this image for upload.",
      "zh-CN": "无法处理此图片以上传。",
+@@ -111,4 +78,9 @@
+ export function t(key: MessageKey, variables: Record<string, string | number> = {}): string {
++  if (key === "app.title" || key === "platform.title") {
++    const name = document.querySelector<HTMLMetaElement>('meta[name="platform-display-name"]')?.content.trim();
++    if (!name) throw new Error("PLATFORM_DISPLAY_NAME is missing");
++    return name;
++  }
+   const template = messages[key][getLocale()];
+   return template.replace(/\{(\w+)\}/g, (_, name: string) => String(variables[name] ?? ""));
+ }
 diff --git a/web/src/shared/styles/globals.css b/web/src/shared/styles/globals.css
 index 24e7998..614ccfe 100644
 --- a/web/src/shared/styles/globals.css
