@@ -11,6 +11,9 @@ import {
   ApprovalStatus,
   AuditEventType,
   BuzzIdentityState,
+  EvidenceAuthority,
+  EvidenceKind,
+  EvidenceUnavailableReason,
   ReasonCode,
   TenantInvitationStatus,
   TenantMembershipState,
@@ -144,6 +147,47 @@ export const platformMessages = {
   "platform.result": { en: "Result", "zh-CN": "结果" },
   "platform.audit.none": { en: "No actions recorded yet.", "zh-CN": "还没有记录到动作。" },
   "platform.audit.myTitle": { en: "My activity log", "zh-CN": "我的活动记录" },
+  "platform.audit.scope.title": { en: "Scope audit", "zh-CN": "范围审计" },
+  "platform.audit.scope.explain": {
+    en: "Events in the organization or one workspace. Evidence shows only its kind; open an item to look up its ID.",
+    "zh-CN": "组织或单个工作区内的审计事件。证据只列种类，点开一项才查询其 ID。",
+  },
+  "platform.audit.scope.select": { en: "Audit scope", "zh-CN": "审计范围" },
+  "platform.audit.scope.tenant": { en: "Whole organization", "zh-CN": "整个组织" },
+  "platform.audit.scope.tenantDenied": {
+    en: "You do not have audit permission for the whole organization. Choose a workspace.",
+    "zh-CN": "你没有整个组织的审计权限，可选择一个工作区。",
+  },
+  "platform.audit.scope.chooseWorkspace": { en: "Choose a workspace", "zh-CN": "选择工作区" },
+  "platform.audit.scope.workspacesFailed": {
+    en: "Couldn't load workspaces — the list is unknown.",
+    "zh-CN": "未能载入工作区列表，结果不明。",
+  },
+  "platform.audit.scope.denied": {
+    en: "You do not have audit permission for this scope.",
+    "zh-CN": "你没有该范围的审计权限。",
+  },
+  "platform.audit.scope.none": {
+    en: "No events recorded in this scope.",
+    "zh-CN": "该范围内还没有审计事件。",
+  },
+  "platform.audit.scope.loadMore": { en: "Load more", "zh-CN": "加载更多" },
+  "platform.audit.scope.evidence": { en: "Evidence", "zh-CN": "证据" },
+  "platform.audit.scope.tenantLevel": { en: "Organization", "zh-CN": "组织" },
+  "platform.audit.scope.unrecognizedKind": {
+    en: "Unrecognized evidence",
+    "zh-CN": "无法识别的证据",
+  },
+  "platform.audit.scope.restricted": { en: "Restricted", "zh-CN": "受限" },
+  "platform.audit.scope.version": { en: "version {version}", "zh-CN": "版本 {version}" },
+  "platform.audit.scope.unavailable": {
+    en: "Unavailable: {reason}",
+    "zh-CN": "不可用：{reason}",
+  },
+  "platform.audit.scope.unavailableUnknown": {
+    en: "This evidence is unavailable.",
+    "zh-CN": "该证据不可用。",
+  },
   "platform.members.none": {
     en: "This workspace has no members.",
     "zh-CN": "该工作区没有成员。",
@@ -659,6 +703,50 @@ export const auditEventTypeMessages = {
   [AuditEventType.Reconciliation]: { en: "Reconciliation", "zh-CN": "对账" },
   [AuditEventType.Access]: { en: "Access", "zh-CN": "访问" },
 } as const satisfies Record<AuditEventType, Message>;
+
+export const evidenceKindMessages = {
+  [EvidenceKind.ActionExecutionID]: { en: "Action execution", "zh-CN": "动作执行" },
+  [EvidenceKind.AdmitActionExecutionID]: { en: "Admitting action execution", "zh-CN": "准入动作执行" },
+  [EvidenceKind.ApprovalPolicy]: { en: "Approval policy", "zh-CN": "审批策略" },
+  [EvidenceKind.ApprovalWorkflowID]: { en: "Approval workflow", "zh-CN": "审批流程" },
+  [EvidenceKind.BuzzEventID]: { en: "Buzz event", "zh-CN": "Buzz 事件" },
+  [EvidenceKind.BuzzPubkey]: { en: "Buzz public key", "zh-CN": "Buzz 公钥" },
+  [EvidenceKind.DeploymentBootstrap]: { en: "Deployment bootstrap", "zh-CN": "部署初始化" },
+  [EvidenceKind.ExternalSubjectSha256]: { en: "External account fingerprint", "zh-CN": "外部账号指纹" },
+  [EvidenceKind.OriginalActionExecutionID]: { en: "Original action execution", "zh-CN": "原动作执行" },
+  [EvidenceKind.PlatformSessionID]: { en: "Platform session", "zh-CN": "平台会话" },
+  [EvidenceKind.SecretRefRehomeID]: { en: "Key reference move", "zh-CN": "密钥引用归位" },
+  [EvidenceKind.SpicedbRelationship]: { en: "Permission relationship", "zh-CN": "权限关系" },
+  [EvidenceKind.SpicedbZedtoken]: { en: "Permission snapshot", "zh-CN": "权限快照" },
+  [EvidenceKind.TemporalFirstRunID]: { en: "First workflow run", "zh-CN": "流程首次运行" },
+  [EvidenceKind.TemporalRunID]: { en: "Workflow run", "zh-CN": "流程运行" },
+  [EvidenceKind.TemporalWorkflowID]: { en: "Workflow", "zh-CN": "流程" },
+  [EvidenceKind.TenantInvitationID]: { en: "Organization invitation", "zh-CN": "组织邀请" },
+  [EvidenceKind.TenantMembershipID]: { en: "Organization membership", "zh-CN": "组织成员资格" },
+} as const satisfies Record<EvidenceKind, Message>;
+
+export const evidenceAuthorityMessages = {
+  [EvidenceAuthority.Core]: { en: "Kailo Core", "zh-CN": "Kailo Core" },
+  [EvidenceAuthority.Buzz]: { en: "Buzz", "zh-CN": "Buzz" },
+  [EvidenceAuthority.Oidc]: { en: "Sign-in provider", "zh-CN": "登录身份源" },
+  [EvidenceAuthority.Spicedb]: { en: "Permission service", "zh-CN": "权限服务" },
+  [EvidenceAuthority.Temporal]: { en: "Workflow engine", "zh-CN": "流程引擎" },
+} as const satisfies Record<EvidenceAuthority, Message>;
+
+export const evidenceUnavailableReasonMessages = {
+  [EvidenceUnavailableReason.NotFound]: {
+    en: "the original record no longer exists",
+    "zh-CN": "原记录已不存在",
+  },
+  [EvidenceUnavailableReason.Restricted]: {
+    en: "restricted evidence you are not authorized to view",
+    "zh-CN": "受限证据，你无权查看",
+  },
+  [EvidenceUnavailableReason.Unrecognized]: {
+    en: "the evidence kind is not recognized",
+    "zh-CN": "证据种类无法识别",
+  },
+} as const satisfies Record<EvidenceUnavailableReason, Message>;
 
 export const approvalDecisionMessages = {
   [ApprovalDecision.Approve]: { en: "Approve", "zh-CN": "批准" },

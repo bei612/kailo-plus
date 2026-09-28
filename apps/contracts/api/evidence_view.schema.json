@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/evidence_view.schema.json",
+  "title": "EvidenceView",
+  "description": "GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh 授权；Core 自有证据另核对原对象仍存在。不可用时不回任何 ref 内容。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "available"
+  ],
+  "properties": {
+    "available": {
+      "type": "boolean"
+    },
+    "unavailableReason": {
+      "$ref": "../enums/evidence_unavailable_reason.schema.json"
+    },
+    "kind": {
+      "$ref": "../enums/evidence_kind.schema.json"
+    },
+    "authority": {
+      "$ref": "../enums/evidence_authority.schema.json"
+    },
+    "sensitivity": {
+      "$ref": "../enums/evidence_sensitivity.schema.json"
+    },
+    "stableId": {
+      "type": "string",
+      "description": "权威源中的稳定 ID；仅 available 为 true 时出现"
+    },
+    "version": {
+      "type": "integer",
+      "description": "该 ID 的版本；证据未登记版本时缺省"
+    }
+  }
+}

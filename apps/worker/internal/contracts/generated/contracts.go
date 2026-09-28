@@ -16,11 +16,17 @@
 //    approvalView, err := UnmarshalApprovalView(bytes)
 //    bytes, err = approvalView.Marshal()
 //
+//    auditEventPage, err := UnmarshalAuditEventPage(bytes)
+//    bytes, err = auditEventPage.Marshal()
+//
 //    clientKeyView, err := UnmarshalClientKeyView(bytes)
 //    bytes, err = clientKeyView.Marshal()
 //
 //    clientKeyStatus, err := UnmarshalClientKeyStatus(bytes)
 //    bytes, err = clientKeyStatus.Marshal()
+//
+//    evidenceView, err := UnmarshalEvidenceView(bytes)
+//    bytes, err = evidenceView.Marshal()
 //
 //    invitationRedemptionView, err := UnmarshalInvitationRedemptionView(bytes)
 //    bytes, err = invitationRedemptionView.Marshal()
@@ -175,6 +181,16 @@ func (r *ApprovalView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAuditEventPage(data []byte) (AuditEventPage, error) {
+	var r AuditEventPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AuditEventPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalClientKeyView(data []byte) (ClientKeyView, error) {
 	var r ClientKeyView
 	err := json.Unmarshal(data, &r)
@@ -192,6 +208,16 @@ func UnmarshalClientKeyStatus(data []byte) (ClientKeyStatus, error) {
 }
 
 func (r *ClientKeyStatus) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalEvidenceView(data []byte) (EvidenceView, error) {
+	var r EvidenceView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *EvidenceView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -656,6 +682,37 @@ type RoleRequirementElement struct {
 	Selector    ApprovalSelector `json:"selector"`
 }
 
+// GET /api/v1/audit/events 的有界回应：当前 Tenant（或其中一个 Workspace）范围内的审计事件，调用方须对该范围持有 audit
+// permission，每次 fresh Check。证据只列种类，不含稳定 ID；稳定 ID 经单条解引用在同一授权下取得（.design/03 §14）。
+type AuditEventPage struct {
+	Events []AuditEventView `json:"events"`
+	// 下一页首项之前的事件 ID；缺省即已经读完
+	NextCursor *string `json:"nextCursor,omitempty"`
+}
+
+type AuditEventView struct {
+	ActionKey            string              `json:"actionKey"`
+	ActorPrincipalID     *string             `json:"actorPrincipalId,omitempty"`
+	Decision             string              `json:"decision"`
+	EventType            AuditEventType      `json:"eventType"`
+	Evidence             []AuditEvidenceSlot `json:"evidence"`
+	ID                   string              `json:"id"`
+	InitiatorPrincipalID *string             `json:"initiatorPrincipalId,omitempty"`
+	// RFC3339
+	OccurredAt  string  `json:"occurredAt"`
+	ResultCode  string  `json:"resultCode"`
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+type AuditEvidenceSlot struct {
+	Authority *EvidenceAuthority `json:"authority,omitempty"`
+	// 证据在该事件中的位置，解引用时使用
+	Index int64 `json:"index"`
+	// 存量种类不可识别时缺省
+	Kind        *EvidenceKind        `json:"kind,omitempty"`
+	Sensitivity *EvidenceSensitivity `json:"sensitivity,omitempty"`
+}
+
 // GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
 type ClientKeyView struct {
 	// RFC3339
@@ -673,6 +730,20 @@ type ClientKeyStatus struct {
 	State              BuzzIdentityState `json:"state"`
 	// 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
 	WorkflowID *string `json:"workflowId,omitempty"`
+}
+
+// GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
+// 授权；Core 自有证据另核对原对象仍存在。不可用时不回任何 ref 内容。
+type EvidenceView struct {
+	Authority   *EvidenceAuthority   `json:"authority,omitempty"`
+	Available   bool                 `json:"available"`
+	Kind        *EvidenceKind        `json:"kind,omitempty"`
+	Sensitivity *EvidenceSensitivity `json:"sensitivity,omitempty"`
+	// 权威源中的稳定 ID；仅 available 为 true 时出现
+	StableID          *string                    `json:"stableId,omitempty"`
+	UnavailableReason *EvidenceUnavailableReason `json:"unavailableReason,omitempty"`
+	// 该 ID 的版本；证据未登记版本时缺省
+	Version *int64 `json:"version,omitempty"`
 }
 
 // POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
@@ -1249,6 +1320,70 @@ const (
 	Requested             ApprovalStatus = "REQUESTED"
 )
 
+// AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
+// OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
+type AuditEventType string
+
+const (
+	Access         AuditEventType = "ACCESS"
+	Approval       AuditEventType = "APPROVAL"
+	Authentication AuditEventType = "AUTHENTICATION"
+	Decision       AuditEventType = "DECISION"
+	Dispatch       AuditEventType = "DISPATCH"
+	Intent         AuditEventType = "INTENT"
+	Outcome        AuditEventType = "OUTCOME"
+	Reconciliation AuditEventType = "RECONCILIATION"
+	Revocation     AuditEventType = "REVOCATION"
+	Session        AuditEventType = "SESSION"
+)
+
+// EvidenceRef 所指证据的源码权威。
+type EvidenceAuthority string
+
+const (
+	Buzz     EvidenceAuthority = "BUZZ"
+	Core     EvidenceAuthority = "CORE"
+	Oidc     EvidenceAuthority = "OIDC"
+	Spicedb  EvidenceAuthority = "SPICEDB"
+	Temporal EvidenceAuthority = "TEMPORAL"
+)
+
+// 存量种类不可识别时缺省
+//
+// AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带
+// version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。
+type EvidenceKind string
+
+const (
+	ActionExecutionID         EvidenceKind = "ACTION_EXECUTION_ID"
+	AdmitActionExecutionID    EvidenceKind = "ADMIT_ACTION_EXECUTION_ID"
+	ApprovalPolicy            EvidenceKind = "APPROVAL_POLICY"
+	ApprovalWorkflowID        EvidenceKind = "APPROVAL_WORKFLOW_ID"
+	BuzzEventID               EvidenceKind = "BUZZ_EVENT_ID"
+	BuzzPubkey                EvidenceKind = "BUZZ_PUBKEY"
+	DeploymentBootstrap       EvidenceKind = "DEPLOYMENT_BOOTSTRAP"
+	ExternalSubjectSha256     EvidenceKind = "EXTERNAL_SUBJECT_SHA256"
+	OriginalActionExecutionID EvidenceKind = "ORIGINAL_ACTION_EXECUTION_ID"
+	PlatformSessionID         EvidenceKind = "PLATFORM_SESSION_ID"
+	SecretRefRehomeID         EvidenceKind = "SECRET_REF_REHOME_ID"
+	SpicedbRelationship       EvidenceKind = "SPICEDB_RELATIONSHIP"
+	SpicedbZedtoken           EvidenceKind = "SPICEDB_ZEDTOKEN"
+	TemporalFirstRunID        EvidenceKind = "TEMPORAL_FIRST_RUN_ID"
+	TemporalRunID             EvidenceKind = "TEMPORAL_RUN_ID"
+	TemporalWorkflowID        EvidenceKind = "TEMPORAL_WORKFLOW_ID"
+	TenantInvitationID        EvidenceKind = "TENANT_INVITATION_ID"
+	TenantMembershipID        EvidenceKind = "TENANT_MEMBERSHIP_ID"
+)
+
+// EvidenceRef 的敏感级别。SUMMARY 在当前 audit permission 下可解引用；RESTRICTED 还需 ResultExposure
+// 授权，在其交付前一律不可用（fail closed）。
+type EvidenceSensitivity string
+
+const (
+	EvidenceSensitivityRESTRICTED EvidenceSensitivity = "RESTRICTED"
+	Summary                       EvidenceSensitivity = "SUMMARY"
+)
+
 // BuzzIdentityBinding 状态机。custody=CLIENT 时跳过 PENDING_SECRET，自 RECONCILING 起始。
 type BuzzIdentityState string
 
@@ -1258,6 +1393,15 @@ const (
 	BuzzIdentityStateREVOKING BuzzIdentityState = "REVOKING"
 	PendingSecret             BuzzIdentityState = "PENDING_SECRET"
 	Reconciling               BuzzIdentityState = "RECONCILING"
+)
+
+// 解引用只显示不可用时的原因：原证据已不存在、敏感级别未获授权、存量种类不可识别。
+type EvidenceUnavailableReason string
+
+const (
+	EvidenceUnavailableReasonRESTRICTED EvidenceUnavailableReason = "RESTRICTED"
+	NotFound                            EvidenceUnavailableReason = "NOT_FOUND"
+	Unrecognized                        EvidenceUnavailableReason = "UNRECOGNIZED"
 )
 
 // TenantMembership 状态机。REVOKING 期间必须立即拒绝新动作，对账完成后才进 REVOKED（.design/10 §4）。
@@ -1277,23 +1421,6 @@ type BindingKind string
 const (
 	Control BindingKind = "CONTROL"
 	Human   BindingKind = "HUMAN"
-)
-
-// AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
-// OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
-type AuditEventType string
-
-const (
-	Access         AuditEventType = "ACCESS"
-	Approval       AuditEventType = "APPROVAL"
-	Authentication AuditEventType = "AUTHENTICATION"
-	Decision       AuditEventType = "DECISION"
-	Dispatch       AuditEventType = "DISPATCH"
-	Intent         AuditEventType = "INTENT"
-	Outcome        AuditEventType = "OUTCOME"
-	Reconciliation AuditEventType = "RECONCILIATION"
-	Revocation     AuditEventType = "REVOCATION"
-	Session        AuditEventType = "SESSION"
 )
 
 type CreateActionKey string

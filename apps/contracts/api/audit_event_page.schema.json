@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/audit_event_page.schema.json",
+  "title": "AuditEventPage",
+  "description": "GET /api/v1/audit/events 的有界回应：当前 Tenant（或其中一个 Workspace）范围内的审计事件，调用方须对该范围持有 audit permission，每次 fresh Check。证据只列种类，不含稳定 ID；稳定 ID 经单条解引用在同一授权下取得（.design/03 §14）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "events"
+  ],
+  "properties": {
+    "events": {
+      "type": "array",
+      "items": {
+        "title": "AuditEventView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "occurredAt",
+          "eventType",
+          "actionKey",
+          "decision",
+          "resultCode",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occurredAt": {
+            "type": "string",
+            "description": "RFC3339"
+          },
+          "eventType": {
+            "$ref": "../enums/audit_event_type.schema.json"
+          },
+          "actionKey": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "resultCode": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "initiatorPrincipalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "actorPrincipalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "title": "AuditEvidenceSlot",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "index"
+              ],
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "证据在该事件中的位置，解引用时使用"
+                },
+                "kind": {
+                  "$ref": "../enums/evidence_kind.schema.json",
+                  "description": "存量种类不可识别时缺省"
+                },
+                "authority": {
+                  "$ref": "../enums/evidence_authority.schema.json"
+                },
+                "sensitivity": {
+                  "$ref": "../enums/evidence_sensitivity.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "nextCursor": {
+      "type": "string",
+      "format": "uuid",
+      "description": "下一页首项之前的事件 ID；缺省即已经读完"
+    }
+  }
+}

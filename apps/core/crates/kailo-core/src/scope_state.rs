@@ -8,12 +8,14 @@
 //! 两者共享的规则在这里同样成立，并且是同样的理由：跃迁必须指向已登记的
 //! `WorkflowRef`、带乐观并发版本、状态机判定与更新在同一条 UPDATE 里完成。
 
+use crate::audit::Evidence;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use contracts::EvidenceKind;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -179,10 +181,10 @@ pub async fn transition_scope(
                 decision: "ALLOW",
                 result_code: &new_state,
                 result_exposure: "NONE",
-                evidence_refs: serde_json::json!([{
-                    "kind": "TEMPORAL_WORKFLOW_ID",
-                    "value": req.workflow_id,
-                }]),
+                evidence_refs: vec![Evidence::new(
+                    EvidenceKind::TemporalWorkflowId,
+                    req.workflow_id,
+                )],
                 correlation_id: wf_operation,
             };
             if let Err(e) = append(&mut tx, entry).await {

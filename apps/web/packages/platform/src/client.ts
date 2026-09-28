@@ -11,8 +11,10 @@ import type {
   ApprovalDecisionOutcome,
   ApprovalDecisionRequest,
   ApprovalView,
+  AuditEventPage,
   ClientKeyStatus,
   ClientKeyView,
+  EvidenceView,
   InvitationRedemptionRequest,
   InvitationRedemptionView,
   LegacySecretRefPage,
@@ -73,8 +75,26 @@ export function createBffClient(transport: BffTransport) {
         `/api/v1/identity/legacy-secret-refs${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
       ),
 
-    /** 基础审计页只看自己的动作；聚合视图需要 audit permission，属于后续阶段。 */
+    /** 基础审计页只看自己的动作；范围视图见 auditEvents。 */
     ownAudit: () => get<OwnAuditEntry[]>("/api/v1/audit"),
+
+    /**
+     * 范围审计：当前 Tenant（或其中一个 Workspace）的事件，调用方须对该范围持有 audit
+     * permission（无权 403，判定不明 503）。证据只给槽位，稳定 ID 经 auditEvidence 取。
+     */
+    auditEvents: (workspaceId?: string, cursor?: string) => {
+      const query = new URLSearchParams();
+      if (workspaceId) query.set("workspaceId", workspaceId);
+      if (cursor) query.set("cursor", cursor);
+      const suffix = query.size > 0 ? `?${query}` : "";
+      return get<AuditEventPage>(`/api/v1/audit/events${suffix}`);
+    },
+
+    /** 单条证据解引用：每次 fresh 授权；不可用时只有原因，没有任何 ref 内容。 */
+    auditEvidence: (eventId: string, index: number) =>
+      get<EvidenceView>(
+        `/api/v1/audit/events/${encodeURIComponent(eventId)}/evidence/${encodeURIComponent(String(index))}`,
+      ),
 
     /** 本人的原生设备。登记只能在设备上完成；查看与撤销在任一端都可以。 */
     clientKeys: () => get<ClientKeyView[]>("/api/v1/identity/client-keys"),

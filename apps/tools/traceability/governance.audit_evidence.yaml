@@ -1,0 +1,41 @@
+capability_id: governance.audit_evidence
+title: Tenant/Workspace 范围审计与 EvidenceRef 按当前权限解引用
+stage: S2
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-03, V-REQ-06]
+  decisions: []
+  facts: []
+  seams: []
+  blockers: []
+  entities: [AuditEvent, EvidenceRef]
+
+validation:
+  scenarios: [V-SCN-43]
+  evidence:
+    - dimension: 领域规则
+      ref: core/verify/audit.md
+    - dimension: 合同一致
+      ref: core/verify/audit.md
+    - dimension: 呈现
+      ref: core/verify/audit.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-core/src/audit.rs, core/crates/kailo-core/src/audit_views.rs, core/crates/kailo-core/src/bff.rs, web/packages/platform/src/react/pages.tsx, web/packages/platform/src/client.ts]
+  surfaces: [web, desktop]
+  schemas: [contracts/api/audit_event_page.schema.json, contracts/api/evidence_view.schema.json, contracts/enums/evidence_kind.schema.json, contracts/enums/evidence_authority.schema.json, contracts/enums/evidence_sensitivity.schema.json, contracts/enums/evidence_unavailable_reason.schema.json]
+  migrations: []
+
+runtime:
+  routes: ["/api/v1/audit/events", "/api/v1/audit/events/{event_id}/evidence/{index}"]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:2672a6fffa8a50e3f207b5f438757c35f8fd038507b5a97a345ede433aefbc37
+    - name: upstream-buzz-web
+      digest: sha256:c45c7ecf93bc8babc48c94696426a06c4e21b22ed2a6a8a769465b70d5249040
+  gate: ready

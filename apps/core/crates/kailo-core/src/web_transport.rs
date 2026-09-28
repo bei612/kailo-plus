@@ -15,12 +15,14 @@
 //! 反过来做——先签名再查 scope——就会在 Relay 上留下一条本不该存在的事件，
 //! 而事件发出去就收不回来了。
 
+use crate::audit::Evidence;
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use contracts::EvidenceKind;
 use contracts::{ErrorBody, ErrorClass, ReasonCode};
 use kailo_buzz::bridge::{Custody, Delivery, IdentityClient};
 use kailo_secrets::SecretRef;
@@ -265,10 +267,10 @@ pub async fn publish_message(
             decision: "ALLOW",
             result_code,
             result_exposure: "NONE",
-            evidence_refs: serde_json::json!([
-                { "kind": "BUZZ_EVENT_ID", "value": event_id },
-                { "kind": "PLATFORM_SESSION_ID", "value": ctx.session_id },
-            ]),
+            evidence_refs: vec![
+                Evidence::new(EvidenceKind::BuzzEventId, &event_id),
+                Evidence::new(EvidenceKind::PlatformSessionId, ctx.session_id),
+            ],
             correlation_id: operation_id,
         }
     };

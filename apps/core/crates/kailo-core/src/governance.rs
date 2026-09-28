@@ -20,6 +20,8 @@
 //! 以 `consume_window` 为上界；ALLOWED 而未派发由对账作业按同一 workflow ID 重新
 //! 驱动，结果不明停在 UNKNOWN 直到 Temporal 给出观察（`governance_reconcile`）。
 
+use crate::audit::Evidence;
+use contracts::EvidenceKind;
 use std::time::Duration;
 
 use axum::{
@@ -1470,7 +1472,7 @@ pub(crate) async fn open_execution(
         "NONE",
         "EVALUATING",
         actor.human_identity_id,
-        json!([]),
+        Vec::new(),
     )
     .await?;
     Ok(ae)
@@ -1487,7 +1489,7 @@ async fn audit(
     decision: &str,
     result_code: &str,
     human: Option<Uuid>,
-    evidence: Value,
+    evidence: Vec<Evidence>,
 ) -> Result<(), sqlx::Error> {
     append(
         tx,
@@ -2103,8 +2105,8 @@ impl Governance {
             )
             .await?;
             let mut evidence = zed_evidence(eval.zed_token.as_deref());
-            if let (Some(arr), Some(a)) = (evidence.as_array_mut(), &ae.approval_workflow_id) {
-                arr.push(json!({ "kind": "APPROVAL_WORKFLOW_ID", "value": a }));
+            if let Some(a) = &ae.approval_workflow_id {
+                evidence.push(Evidence::new(EvidenceKind::ApprovalWorkflowId, a));
             }
             audit(
                 tx,
@@ -2132,7 +2134,10 @@ impl Governance {
                         ae,
                         def,
                         "INVITATION_ISSUED",
-                        json!([{ "kind": "TENANT_INVITATION_ID", "value": ae.target_id }]),
+                        vec![Evidence::new(
+                            EvidenceKind::TenantInvitationId,
+                            ae.target_id,
+                        )],
                     )
                     .await?;
                     Ok(Some(issued))
@@ -2144,7 +2149,7 @@ impl Governance {
                         ae,
                         def,
                         "INVITATION_REVOKED",
-                        json!([{ "kind": "TENANT_INVITATION_ID", "value": target.id }]),
+                        vec![Evidence::new(EvidenceKind::TenantInvitationId, target.id)],
                     )
                     .await?;
                     Ok(None)
@@ -2276,10 +2281,10 @@ impl Governance {
         )
         .await?;
         let mut evidence = zed_evidence(eval.zed_token.as_deref());
-        if let Some(arr) = evidence.as_array_mut() {
-            arr.push(json!({ "kind": "TEMPORAL_WORKFLOW_ID", "value": workflow_id }));
+        {
+            evidence.push(Evidence::new(EvidenceKind::TemporalWorkflowId, workflow_id));
             if let Some(a) = &ae.approval_workflow_id {
-                arr.push(json!({ "kind": "APPROVAL_WORKFLOW_ID", "value": a }));
+                evidence.push(Evidence::new(EvidenceKind::ApprovalWorkflowId, a));
             }
         }
         audit(
@@ -2307,7 +2312,7 @@ impl Governance {
         ae: &Execution,
         def: &Definition,
         outcome: &str,
-        evidence: Value,
+        evidence: Vec<Evidence>,
     ) -> Result<(), sqlx::Error> {
         audit(
             tx,
@@ -2657,11 +2662,14 @@ impl Governance {
         .execute(&mut *tx)
         .await?;
         let mut evidence = zed_evidence(token.as_deref());
-        if let Some(arr) = evidence.as_array_mut() {
-            for r in &rels {
-                arr.push(json!({ "kind": "SPICEDB_RELATIONSHIP", "value": format!(
-                    "{}:{}#{}@principal:{}", r.object_type, r.object_id, r.relation, r.subject_principal) }));
-            }
+        for r in &rels {
+            evidence.push(Evidence::new(
+                EvidenceKind::SpicedbRelationship,
+                format!(
+                    "{}:{}#{}@principal:{}",
+                    r.object_type, r.object_id, r.relation, r.subject_principal
+                ),
+            ));
         }
         let decision = if state == "ABORTED" { "DENY" } else { "ALLOW" };
         let result = reason
@@ -2708,10 +2716,10 @@ impl Governance {
     }
 }
 
-fn zed_evidence(token: Option<&str>) -> Value {
+fn zed_evidence(token: Option<&str>) -> Vec<Evidence> {
     match token {
-        Some(t) if !t.is_empty() => json!([{ "kind": "SPICEDB_ZEDTOKEN", "value": t }]),
-        _ => json!([]),
+        Some(t) if !t.is_empty() => vec![Evidence::new(EvidenceKind::SpicedbZedtoken, t)],
+        _ => Vec::new(),
     }
 }
 
@@ -2941,7 +2949,10 @@ impl Governance {
                 _ => "DISPATCH_ABORTED",
             },
             None,
-            json!([{ "kind": "TEMPORAL_WORKFLOW_ID", "value": ae.temporal_workflow_id }]),
+            ae.temporal_workflow_id
+                .iter()
+                .map(|w| Evidence::new(EvidenceKind::TemporalWorkflowId, w))
+                .collect(),
         )
         .await?;
         tx.commit().await?;
@@ -3210,14 +3221,17 @@ impl Governance {
         };
         if updated > 0 || dispatch_target.is_some() {
             let mut evidence = zed_evidence(eval.zed_token.as_deref());
-            if let Some(items) = evidence.as_array_mut() {
-                items
-                    .push(json!({ "kind": "ORIGINAL_ACTION_EXECUTION_ID", "value": ae.target_id }));
-                if let Some((workflow_id, run_id, first_run_id)) = dispatch_target.as_ref() {
-                    items.push(json!({ "kind": "TEMPORAL_WORKFLOW_ID", "value": workflow_id }));
-                    items.push(json!({ "kind": "TEMPORAL_RUN_ID", "value": run_id }));
-                    items.push(json!({ "kind": "TEMPORAL_FIRST_RUN_ID", "value": first_run_id }));
-                }
+            evidence.push(Evidence::new(
+                EvidenceKind::OriginalActionExecutionId,
+                ae.target_id,
+            ));
+            if let Some((workflow_id, run_id, first_run_id)) = dispatch_target.as_ref() {
+                evidence.push(Evidence::new(EvidenceKind::TemporalWorkflowId, workflow_id));
+                evidence.push(Evidence::new(EvidenceKind::TemporalRunId, run_id));
+                evidence.push(Evidence::new(
+                    EvidenceKind::TemporalFirstRunId,
+                    first_run_id,
+                ));
             }
             let (stage, decision, result) = if dispatch_target.is_some() {
                 ("cancel:intent", "ALLOW", "CANCEL_REQUEST_PENDING")
@@ -3320,13 +3334,17 @@ impl Governance {
         .execute(&mut *tx)
         .await?;
         let mut evidence = zed_evidence(None);
-        if let Some(items) = evidence.as_array_mut() {
-            items.push(json!({ "kind": "ORIGINAL_ACTION_EXECUTION_ID", "value": ae.target_id }));
-            items.push(json!({ "kind": "TEMPORAL_WORKFLOW_ID", "value": workflow_id }));
-            items.push(json!({ "kind": "TEMPORAL_FIRST_RUN_ID", "value": first_run_id }));
-            if let Some(run_id) = observed_run_id {
-                items.push(json!({ "kind": "TEMPORAL_RUN_ID", "value": run_id }));
-            }
+        evidence.push(Evidence::new(
+            EvidenceKind::OriginalActionExecutionId,
+            ae.target_id,
+        ));
+        evidence.push(Evidence::new(EvidenceKind::TemporalWorkflowId, workflow_id));
+        evidence.push(Evidence::new(
+            EvidenceKind::TemporalFirstRunId,
+            first_run_id,
+        ));
+        if let Some(run_id) = observed_run_id {
+            evidence.push(Evidence::new(EvidenceKind::TemporalRunId, run_id));
         }
         let (stage, event_type) = match receipt {
             CancelReceipt::History => ("cancel:history-reconciled", "RECONCILIATION"),
@@ -3498,7 +3516,7 @@ impl Governance {
                 "ALLOW",
                 result,
                 None,
-                json!([{ "kind": "TEMPORAL_WORKFLOW_ID", "value": workflow_id }]),
+                vec![Evidence::new(EvidenceKind::TemporalWorkflowId, workflow_id)],
             )
             .await?;
         }
@@ -3604,10 +3622,12 @@ impl Governance {
         .await
         .map_err(|e| (e.into(), op))?;
         let mut evidence = zed_evidence(eval.zed_token.as_deref());
-        if let Some(arr) = evidence.as_array_mut() {
-            arr.push(json!({ "kind": "APPROVAL_WORKFLOW_ID", "value": workflow_id }));
-            arr.push(json!({ "kind": "APPROVAL_POLICY", "value": format!("{}@{}", policy.id, policy.version) }));
-        }
+        evidence.push(Evidence::new(EvidenceKind::ApprovalWorkflowId, workflow_id));
+        evidence.push(Evidence::versioned(
+            EvidenceKind::ApprovalPolicy,
+            policy.id,
+            i64::from(policy.version),
+        ));
         audit(
             &mut tx,
             ae,
@@ -3863,7 +3883,10 @@ impl Governance {
                 "NONE",
                 &wire(&ReasonCode::ApprovalConsumeWindowClosed),
                 None,
-                json!([{ "kind": "APPROVAL_WORKFLOW_ID", "value": ae.approval_workflow_id }]),
+                ae.approval_workflow_id
+                    .iter()
+                    .map(|w| Evidence::new(EvidenceKind::ApprovalWorkflowId, w))
+                    .collect(),
             )
             .await?;
             tx.commit().await
@@ -4097,10 +4120,10 @@ impl Governance {
                     decision: &wire(&d.decision),
                     result_code: &wire(&d.decision),
                     result_exposure: &def.result_exposure,
-                    evidence_refs: json!([
-                        { "kind": "APPROVAL_WORKFLOW_ID", "value": report.workflow_id },
-                        { "kind": "TEMPORAL_RUN_ID", "value": report.run_id },
-                    ]),
+                    evidence_refs: vec![
+                        Evidence::new(EvidenceKind::ApprovalWorkflowId, &report.workflow_id),
+                        Evidence::new(EvidenceKind::TemporalRunId, &report.run_id),
+                    ],
                     correlation_id: ae.correlation_id,
                 },
             )
@@ -4115,10 +4138,10 @@ impl Governance {
             "NONE",
             &status,
             None,
-            json!([
-                { "kind": "APPROVAL_WORKFLOW_ID", "value": report.workflow_id },
-                { "kind": "TEMPORAL_RUN_ID", "value": report.run_id },
-            ]),
+            vec![
+                Evidence::new(EvidenceKind::ApprovalWorkflowId, &report.workflow_id),
+                Evidence::new(EvidenceKind::TemporalRunId, &report.run_id),
+            ],
         )
         .await?;
 
@@ -4249,9 +4272,10 @@ impl Governance {
             .map(wire)
             .unwrap_or_else(|| "ADMITTED".into());
         let mut evidence = zed_evidence(zed.as_deref());
-        if let Some(arr) = evidence.as_array_mut() {
-            arr.push(json!({ "kind": "APPROVAL_WORKFLOW_ID", "value": req.approval_workflow_id }));
-        }
+        evidence.push(Evidence::new(
+            EvidenceKind::ApprovalWorkflowId,
+            &req.approval_workflow_id,
+        ));
         append(
             &mut tx,
             AuditEntry {

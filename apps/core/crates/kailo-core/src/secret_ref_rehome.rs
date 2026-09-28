@@ -5,12 +5,14 @@
 //! Temporal 和 Core 的终态证据齐备后才永久销毁。未知结果只留在任务工作台等待
 //! 同一固定 Workflow ID 的对账，绝不回退到 platform/ 写入。
 
+use crate::audit::Evidence;
 use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use contracts::EvidenceKind;
 use contracts::{BindingKind, LegacySecretRefBinding, LegacySecretRefPage, ReasonCode};
 use kailo_secrets::{SecretRef, SecretStore};
 use nostr::Keys;
@@ -911,7 +913,7 @@ async fn audit(
             decision: "ALLOW",
             result_code: result,
             result_exposure: &a.result_exposure,
-            evidence_refs: json!([{ "kind": "SECRET_REF_REHOME_ID", "value": r.id }]),
+            evidence_refs: vec![Evidence::new(EvidenceKind::SecretRefRehomeId, r.id)],
             correlation_id: a.correlation_id,
         },
     )

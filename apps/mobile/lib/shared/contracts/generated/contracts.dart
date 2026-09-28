@@ -5,8 +5,10 @@
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
 //     final approvalDecisionRequest = approvalDecisionRequestFromJson(jsonString);
 //     final approvalView = approvalViewFromJson(jsonString);
+//     final auditEventPage = auditEventPageFromJson(jsonString);
 //     final clientKeyView = clientKeyViewFromJson(jsonString);
 //     final clientKeyStatus = clientKeyStatusFromJson(jsonString);
+//     final evidenceView = evidenceViewFromJson(jsonString);
 //     final invitationRedemptionView = invitationRedemptionViewFromJson(jsonString);
 //     final invitationRedemptionRequest = invitationRedemptionRequestFromJson(jsonString);
 //     final issuedInvitation = issuedInvitationFromJson(jsonString);
@@ -69,6 +71,11 @@ ApprovalView approvalViewFromJson(String str) =>
 
 String approvalViewToJson(ApprovalView data) => json.encode(data.toJson());
 
+AuditEventPage auditEventPageFromJson(String str) =>
+    AuditEventPage.fromJson(json.decode(str));
+
+String auditEventPageToJson(AuditEventPage data) => json.encode(data.toJson());
+
 ClientKeyView clientKeyViewFromJson(String str) =>
     ClientKeyView.fromJson(json.decode(str));
 
@@ -79,6 +86,11 @@ ClientKeyStatus clientKeyStatusFromJson(String str) =>
 
 String clientKeyStatusToJson(ClientKeyStatus data) =>
     json.encode(data.toJson());
+
+EvidenceView evidenceViewFromJson(String str) =>
+    EvidenceView.fromJson(json.decode(str));
+
+String evidenceViewToJson(EvidenceView data) => json.encode(data.toJson());
 
 InvitationRedemptionView invitationRedemptionViewFromJson(String str) =>
     InvitationRedemptionView.fromJson(json.decode(str));
@@ -923,6 +935,218 @@ final approvalStatusValues = EnumValues({
   "WAITING": ApprovalStatus.WAITING,
 });
 
+///GET /api/v1/audit/events 的有界回应：当前 Tenant（或其中一个 Workspace）范围内的审计事件，调用方须对该范围持有 audit
+///permission，每次 fresh Check。证据只列种类，不含稳定 ID；稳定 ID 经单条解引用在同一授权下取得（.design/03 §14）。
+class AuditEventPage {
+  final List<AuditEventView> events;
+
+  ///下一页首项之前的事件 ID；缺省即已经读完
+  final String? nextCursor;
+
+  AuditEventPage({required this.events, this.nextCursor});
+
+  factory AuditEventPage.fromJson(Map<String, dynamic> json) => AuditEventPage(
+    events: List<AuditEventView>.from(
+      json["events"].map((x) => AuditEventView.fromJson(x)),
+    ),
+    nextCursor: json["nextCursor"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "events": List<dynamic>.from(events.map((x) => x.toJson())),
+    "nextCursor": nextCursor,
+  });
+}
+
+class AuditEventView {
+  final String actionKey;
+  final String? actorPrincipalId;
+  final String decision;
+  final AuditEventType eventType;
+  final List<AuditEvidenceSlot> evidence;
+  final String id;
+  final String? initiatorPrincipalId;
+
+  ///RFC3339
+  final String occurredAt;
+  final String resultCode;
+  final String? workspaceId;
+
+  AuditEventView({
+    required this.actionKey,
+    this.actorPrincipalId,
+    required this.decision,
+    required this.eventType,
+    required this.evidence,
+    required this.id,
+    this.initiatorPrincipalId,
+    required this.occurredAt,
+    required this.resultCode,
+    this.workspaceId,
+  });
+
+  factory AuditEventView.fromJson(Map<String, dynamic> json) => AuditEventView(
+    actionKey: json["actionKey"],
+    actorPrincipalId: json["actorPrincipalId"],
+    decision: json["decision"],
+    eventType: auditEventTypeValues.map[json["eventType"]]!,
+    evidence: List<AuditEvidenceSlot>.from(
+      json["evidence"].map((x) => AuditEvidenceSlot.fromJson(x)),
+    ),
+    id: json["id"],
+    initiatorPrincipalId: json["initiatorPrincipalId"],
+    occurredAt: json["occurredAt"],
+    resultCode: json["resultCode"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actorPrincipalId": actorPrincipalId,
+    "decision": decision,
+    "eventType": auditEventTypeValues.reverse[eventType],
+    "evidence": List<dynamic>.from(evidence.map((x) => x.toJson())),
+    "id": id,
+    "initiatorPrincipalId": initiatorPrincipalId,
+    "occurredAt": occurredAt,
+    "resultCode": resultCode,
+    "workspaceId": workspaceId,
+  });
+}
+
+///AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
+///OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
+enum AuditEventType {
+  ACCESS,
+  APPROVAL,
+  AUTHENTICATION,
+  DECISION,
+  DISPATCH,
+  INTENT,
+  OUTCOME,
+  RECONCILIATION,
+  REVOCATION,
+  SESSION,
+}
+
+final auditEventTypeValues = EnumValues({
+  "ACCESS": AuditEventType.ACCESS,
+  "APPROVAL": AuditEventType.APPROVAL,
+  "AUTHENTICATION": AuditEventType.AUTHENTICATION,
+  "DECISION": AuditEventType.DECISION,
+  "DISPATCH": AuditEventType.DISPATCH,
+  "INTENT": AuditEventType.INTENT,
+  "OUTCOME": AuditEventType.OUTCOME,
+  "RECONCILIATION": AuditEventType.RECONCILIATION,
+  "REVOCATION": AuditEventType.REVOCATION,
+  "SESSION": AuditEventType.SESSION,
+});
+
+class AuditEvidenceSlot {
+  final EvidenceAuthority? authority;
+
+  ///证据在该事件中的位置，解引用时使用
+  final int index;
+
+  ///存量种类不可识别时缺省
+  final EvidenceKind? kind;
+  final EvidenceSensitivity? sensitivity;
+
+  AuditEvidenceSlot({
+    this.authority,
+    required this.index,
+    this.kind,
+    this.sensitivity,
+  });
+
+  factory AuditEvidenceSlot.fromJson(Map<String, dynamic> json) =>
+      AuditEvidenceSlot(
+        authority: json["authority"] == null
+            ? null
+            : evidenceAuthorityValues.map[json["authority"]]!,
+        index: json["index"],
+        kind: json["kind"] == null
+            ? null
+            : evidenceKindValues.map[json["kind"]]!,
+        sensitivity: json["sensitivity"] == null
+            ? null
+            : evidenceSensitivityValues.map[json["sensitivity"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "authority": evidenceAuthorityValues.reverse[authority],
+    "index": index,
+    "kind": evidenceKindValues.reverse[kind],
+    "sensitivity": evidenceSensitivityValues.reverse[sensitivity],
+  });
+}
+
+///EvidenceRef 所指证据的源码权威。
+enum EvidenceAuthority { BUZZ, CORE, OIDC, SPICEDB, TEMPORAL }
+
+final evidenceAuthorityValues = EnumValues({
+  "BUZZ": EvidenceAuthority.BUZZ,
+  "CORE": EvidenceAuthority.CORE,
+  "OIDC": EvidenceAuthority.OIDC,
+  "SPICEDB": EvidenceAuthority.SPICEDB,
+  "TEMPORAL": EvidenceAuthority.TEMPORAL,
+});
+
+///存量种类不可识别时缺省
+///
+///AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带
+///version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。
+enum EvidenceKind {
+  ACTION_EXECUTION_ID,
+  ADMIT_ACTION_EXECUTION_ID,
+  APPROVAL_POLICY,
+  APPROVAL_WORKFLOW_ID,
+  BUZZ_EVENT_ID,
+  BUZZ_PUBKEY,
+  DEPLOYMENT_BOOTSTRAP,
+  EXTERNAL_SUBJECT_SHA256,
+  ORIGINAL_ACTION_EXECUTION_ID,
+  PLATFORM_SESSION_ID,
+  SECRET_REF_REHOME_ID,
+  SPICEDB_RELATIONSHIP,
+  SPICEDB_ZEDTOKEN,
+  TEMPORAL_FIRST_RUN_ID,
+  TEMPORAL_RUN_ID,
+  TEMPORAL_WORKFLOW_ID,
+  TENANT_INVITATION_ID,
+  TENANT_MEMBERSHIP_ID,
+}
+
+final evidenceKindValues = EnumValues({
+  "ACTION_EXECUTION_ID": EvidenceKind.ACTION_EXECUTION_ID,
+  "ADMIT_ACTION_EXECUTION_ID": EvidenceKind.ADMIT_ACTION_EXECUTION_ID,
+  "APPROVAL_POLICY": EvidenceKind.APPROVAL_POLICY,
+  "APPROVAL_WORKFLOW_ID": EvidenceKind.APPROVAL_WORKFLOW_ID,
+  "BUZZ_EVENT_ID": EvidenceKind.BUZZ_EVENT_ID,
+  "BUZZ_PUBKEY": EvidenceKind.BUZZ_PUBKEY,
+  "DEPLOYMENT_BOOTSTRAP": EvidenceKind.DEPLOYMENT_BOOTSTRAP,
+  "EXTERNAL_SUBJECT_SHA256": EvidenceKind.EXTERNAL_SUBJECT_SHA256,
+  "ORIGINAL_ACTION_EXECUTION_ID": EvidenceKind.ORIGINAL_ACTION_EXECUTION_ID,
+  "PLATFORM_SESSION_ID": EvidenceKind.PLATFORM_SESSION_ID,
+  "SECRET_REF_REHOME_ID": EvidenceKind.SECRET_REF_REHOME_ID,
+  "SPICEDB_RELATIONSHIP": EvidenceKind.SPICEDB_RELATIONSHIP,
+  "SPICEDB_ZEDTOKEN": EvidenceKind.SPICEDB_ZEDTOKEN,
+  "TEMPORAL_FIRST_RUN_ID": EvidenceKind.TEMPORAL_FIRST_RUN_ID,
+  "TEMPORAL_RUN_ID": EvidenceKind.TEMPORAL_RUN_ID,
+  "TEMPORAL_WORKFLOW_ID": EvidenceKind.TEMPORAL_WORKFLOW_ID,
+  "TENANT_INVITATION_ID": EvidenceKind.TENANT_INVITATION_ID,
+  "TENANT_MEMBERSHIP_ID": EvidenceKind.TENANT_MEMBERSHIP_ID,
+});
+
+///EvidenceRef 的敏感级别。SUMMARY 在当前 audit permission 下可解引用；RESTRICTED 还需 ResultExposure
+///授权，在其交付前一律不可用（fail closed）。
+enum EvidenceSensitivity { RESTRICTED, SUMMARY }
+
+final evidenceSensitivityValues = EnumValues({
+  "RESTRICTED": EvidenceSensitivity.RESTRICTED,
+  "SUMMARY": EvidenceSensitivity.SUMMARY,
+});
+
 ///GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
 class ClientKeyView {
   ///RFC3339
@@ -1000,6 +1224,68 @@ class ClientKeyStatus {
     "workflowId": workflowId,
   });
 }
+
+///GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
+///授权；Core 自有证据另核对原对象仍存在。不可用时不回任何 ref 内容。
+class EvidenceView {
+  final EvidenceAuthority? authority;
+  final bool available;
+  final EvidenceKind? kind;
+  final EvidenceSensitivity? sensitivity;
+
+  ///权威源中的稳定 ID；仅 available 为 true 时出现
+  final String? stableId;
+  final EvidenceUnavailableReason? unavailableReason;
+
+  ///该 ID 的版本；证据未登记版本时缺省
+  final int? version;
+
+  EvidenceView({
+    this.authority,
+    required this.available,
+    this.kind,
+    this.sensitivity,
+    this.stableId,
+    this.unavailableReason,
+    this.version,
+  });
+
+  factory EvidenceView.fromJson(Map<String, dynamic> json) => EvidenceView(
+    authority: json["authority"] == null
+        ? null
+        : evidenceAuthorityValues.map[json["authority"]]!,
+    available: json["available"],
+    kind: json["kind"] == null ? null : evidenceKindValues.map[json["kind"]]!,
+    sensitivity: json["sensitivity"] == null
+        ? null
+        : evidenceSensitivityValues.map[json["sensitivity"]]!,
+    stableId: json["stableId"],
+    unavailableReason: json["unavailableReason"] == null
+        ? null
+        : evidenceUnavailableReasonValues.map[json["unavailableReason"]]!,
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "authority": evidenceAuthorityValues.reverse[authority],
+    "available": available,
+    "kind": evidenceKindValues.reverse[kind],
+    "sensitivity": evidenceSensitivityValues.reverse[sensitivity],
+    "stableId": stableId,
+    "unavailableReason":
+        evidenceUnavailableReasonValues.reverse[unavailableReason],
+    "version": version,
+  });
+}
+
+///解引用只显示不可用时的原因：原证据已不存在、敏感级别未获授权、存量种类不可识别。
+enum EvidenceUnavailableReason { NOT_FOUND, RESTRICTED, UNRECOGNIZED }
+
+final evidenceUnavailableReasonValues = EnumValues({
+  "NOT_FOUND": EvidenceUnavailableReason.NOT_FOUND,
+  "RESTRICTED": EvidenceUnavailableReason.RESTRICTED,
+  "UNRECOGNIZED": EvidenceUnavailableReason.UNRECOGNIZED,
+});
 
 ///POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
 ///的元素：兑换者自己看到的进度（DD-83）。membershipState=INVITED 且 admissionGateState=WAITING 表示等待 Tenant
@@ -1238,34 +1524,6 @@ class OwnAuditEntry {
     "workspaceId": workspaceId,
   });
 }
-
-///AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
-///OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
-enum AuditEventType {
-  ACCESS,
-  APPROVAL,
-  AUTHENTICATION,
-  DECISION,
-  DISPATCH,
-  INTENT,
-  OUTCOME,
-  RECONCILIATION,
-  REVOCATION,
-  SESSION,
-}
-
-final auditEventTypeValues = EnumValues({
-  "ACCESS": AuditEventType.ACCESS,
-  "APPROVAL": AuditEventType.APPROVAL,
-  "AUTHENTICATION": AuditEventType.AUTHENTICATION,
-  "DECISION": AuditEventType.DECISION,
-  "DISPATCH": AuditEventType.DISPATCH,
-  "INTENT": AuditEventType.INTENT,
-  "OUTCOME": AuditEventType.OUTCOME,
-  "RECONCILIATION": AuditEventType.RECONCILIATION,
-  "REVOCATION": AuditEventType.REVOCATION,
-  "SESSION": AuditEventType.SESSION,
-});
 
 ///PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
 ///msg:<Buzz event id>；version 是读到的 CollaborationUserState 版本，不符即 409。

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/evidence_kind.schema.json",
+  "title": "EvidenceKind",
+  "description": "AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带 version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。",
+  "type": "string",
+  "enum": [
+    "TEMPORAL_WORKFLOW_ID",
+    "TEMPORAL_RUN_ID",
+    "TEMPORAL_FIRST_RUN_ID",
+    "APPROVAL_WORKFLOW_ID",
+    "APPROVAL_POLICY",
+    "SPICEDB_ZEDTOKEN",
+    "SPICEDB_RELATIONSHIP",
+    "BUZZ_EVENT_ID",
+    "BUZZ_PUBKEY",
+    "PLATFORM_SESSION_ID",
+    "ACTION_EXECUTION_ID",
+    "ADMIT_ACTION_EXECUTION_ID",
+    "ORIGINAL_ACTION_EXECUTION_ID",
+    "TENANT_INVITATION_ID",
+    "TENANT_MEMBERSHIP_ID",
+    "SECRET_REF_REHOME_ID",
+    "EXTERNAL_SUBJECT_SHA256",
+    "DEPLOYMENT_BOOTSTRAP"
+  ]
+}

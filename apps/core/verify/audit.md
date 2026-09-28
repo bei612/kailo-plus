@@ -44,12 +44,14 @@ ERROR:  audit.audit_event 是追加式审计事实，不接受 DELETE 操作
 ## 认证边界留痕（`DD-52/54`）
 
 `tenant_id=NONE` 只允许在「网关已验过 OIDC、Core 还没解析出可用 TenantMembership」
-那段边界上出现。实测两种拒绝都留了痕：
+那段边界上出现，并须以 HumanIdentity 或外部 subject 摘要归因（DD-52）：
 
-| 请求 | `result_code` | evidence |
+| 请求 | `result_code` | 审计 |
 |---|---|---|
-| 不带任何身份 header | `IDENTITY_HEADER_MISSING` | `IDENTITY_HEADER_MISSING` |
-| 伪造 issuer 与 subject | `IDENTITY_UNKNOWN` | `EXTERNAL_SUBJECT_SHA256` |
+| 伪造 issuer 与 subject | `IDENTITY_UNKNOWN` | 留痕，evidence 为 `EXTERNAL_SUBJECT_SHA256` |
+| 不带任何身份 header | `IDENTITY_HEADER_MISSING` | 请求照样 `403`，不写审计：没有可摘要的 subject，也没有 HumanIdentity，按 DD-52 不构成可成立的审计事实；Core 记一条带原因码的 warn 日志（网关未投影身份 header 是 `SS-AGW-OIDC` 链路上的基础设施信号） |
+
+本次修改之前，实现为缺 header 的拒绝写入一条种类为 `IDENTITY_HEADER_MISSING` 的占位 evidence 以通过 `auth_boundary_has_no_principal` 约束；审计表只追加，这些存量行保留，解引用时按不可识别种类显示不可用。
 
 摘要的三条性质都验了：
 
@@ -64,6 +66,18 @@ ERROR:  audit.audit_event 是追加式审计事实，不接受 DELETE 操作
 审计写失败只记日志、不改变响应：请求已经被正确拒绝，再因为审计写不进去返回另一个
 错误，会把一次正确的拒绝变成一次看起来像故障的响应。缺口由 `07` §3 的审计缺口
 度量兜底。
+
+## 范围审计与 EvidenceRef 解引用（V-SCN-43、DD-52）
+
+EvidenceRef 的种类收敛为契约封闭枚举 `evidence_kind`；权威源与敏感级别由种类唯一确定（Core `audit::describe`），全部写入方经类型化构造写入，序列化形状仍为 `{kind, value[, version]}`——审计表只追加，存量不能改写，新旧条目因此是同一种形状。存量中不在枚举内的种类（`TENANT_MEMBERSHIP_STATE`、`TENANT_MEMBERSHIP_VERSION`、`SECRET_VERSION`、`IDENTITY_HEADER_MISSING`）与值缺失的条目解释为不可识别，不猜测含义；写入方不再产生它们：成员状态并为带 version 的成员 ID 引用，运营者密钥的 KV 版本并入新公钥引用的 version，审批策略版本改用 version 字段（存量 `<id>@<version>` 仍按同一条策略核对），`Option` 为空时不再写入 `value: null` 条目。`publish_reconcile` 只把可识别条目带入结果审计，不可识别条目留在 DISPATCH 原行并计 `EVIDENCE_PARTIAL`，不阻止结算。
+
+`GET /api/v1/audit/events` 读当前 Tenant（或所给 Workspace，须属于当前 Tenant）范围内的事件，调用方须对该范围持有 `audit`，每次 FullyConsistent 判定；列表只给证据种类、权威与敏感级别，不给稳定 ID。`GET /api/v1/audit/events/{id}/evidence/{index}` 按事件自己的 scope 重新授权（Workspace 事件查该 Workspace 的 `audit`，其中含 Tenant 的 `audit`）；`RESTRICTED`（外部 subject 摘要、平台会话）在 ResultExposure 交付前一律不可用；Core 自有证据核对原对象仍在当前 Tenant；外部权威（Temporal、SpiceDB、Buzz、OIDC）的证据只是其权威源的稳定 ID，这里不代它们判定存在性；判定失败回 503。
+
+2026-09-28 实测（`--fresh` 后的本地拓扑，`core/verify/run-integration.sh` 退出 0，29 批；其中 `tests/audit_evidence.rs` 1/1）：普通成员读 Tenant 范围 `403`；授予 Tenant `auditor` 后 `200`，列表合 `AuditEventPage` 契约且不含 `stableId`；游标之后的页不含游标本身；不属于本 Tenant 的 Workspace 作范围 `403`；Tenant auditor 解引用 Workspace 事件可用；`TEMPORAL_WORKFLOW_ID` 解引用回库中同一稳定 ID；外部 subject 摘要 `RESTRICTED`、存量 `TENANT_MEMBERSHIP_STATE` 为 `UNRECOGNIZED`、不存在的 `ACTION_EXECUTION_ID` 为 `NOT_FOUND`，三者都不回任何 ref 内容，越界位置 `404`；审批策略的 version 字段、存量 `<id>@<version>` 两种形状都可用，版本不存在为不可用；别的 Tenant 的事件 `404`；撤销 `auditor` 后列表与解引用立即 `403`；Workspace auditor 只读到该 Workspace 的事件，读 Tenant 范围与解引用 Tenant 级事件均 `403`。
+
+破坏核验：去掉 `RESTRICTED` 拦截后重建 Core 重跑同一入口，用例在外部 subject 摘要一步失败（回应带出 `stableId`，`available=true`），还原后重建复跑 29 批全绿。本次提交前在该版本上以管理员身份在真实浏览器进入审计页：范围审计区块列出事件，点开一条 Workflow 证据经解引用显示 Temporal 权威与稳定 ID，全程无失败响应与页面错误。前端 `pnpm -r test` 64/64，覆盖无权不渲染、仅有 Workspace 权限时可改选 Workspace、判定不明显示可重试、解引用 403 与不可用证据不显示任何 ref 内容。
+
+未覆盖：`tenant_id` 为空的认证边界事件没有租户范围可授权，这两个端点不返回它们；ResultExposure 与目标组件 binding 对解引用的授权在其交付后接入，在此之前 `RESTRICTED` 一律不可用；Mobile 不提供范围审计。
 
 ## 生命周期跃迁留痕
 

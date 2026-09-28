@@ -48,6 +48,7 @@ from audit.audit_event where operation_id = '<operation id>' order by occurred_a
    - `CONTROL_UNREADABLE`：该 Tenant 的 CONTROL SecretRef 不可读，按 RB-02 处理；
    - `WRITE_FAILED`：对账已查到结论但写不进审计，恢复数据库写入后下一轮重写（`event_key` 唯一，重写不会重复）；
    - `EVIDENCE_MISSING`：DISPATCH 缺 event id，按缺陷升级。
+   - `EVIDENCE_PARTIAL`：DISPATCH 带有不可识别种类的存量证据；结果仍照常结算，不可识别条目只留在 DISPATCH 原行。持续出现说明仍有写入方产出契约外的证据种类，按缺陷升级。
 3. **认证拒绝审计缺失**：日志中的「认证拒绝审计未写入」只说明这次拒绝没有留痕，拒绝本身已生效。记录时间窗与原因（数据库不可写），作为事件报告附件；不补录。
 4. **疑似越过 BFF 的消息**：确认发布者公钥是否为某人的设备公钥（`identity.buzz_identity_binding` 中 `custody = 'CLIENT'`）。是则属设计内；不是则按 RB-05 第 5 步（roster `unexpected`）处理。
 

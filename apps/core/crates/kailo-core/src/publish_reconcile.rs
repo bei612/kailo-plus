@@ -16,6 +16,7 @@
 //! delete），被删的只有核验夹具；它们的 CONTROL 身份已随之删除，查询无从
 //! 发起，算进待对账只会让度量永远不归零。
 
+use crate::audit::Evidence;
 use std::time::Duration;
 
 use opentelemetry::metrics::{Counter, Gauge, Meter};
@@ -102,7 +103,7 @@ struct Pending {
     initiator_principal_id: Option<Uuid>,
     actor_principal_id: Option<Uuid>,
     target_id: Option<Uuid>,
-    evidence_refs: serde_json::Value,
+    evidence_refs: Vec<Evidence>,
     event_id: String,
     settled_window_passed: bool,
 }
@@ -145,6 +146,20 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
                 .add(1, &[KeyValue::new("outcome", "EVIDENCE_MISSING")]);
             continue;
         };
+        // DISPATCH 的证据原样带到结果审计；任何一条不可识别就同样当作记录被写坏
+        // DISPATCH 的证据带到结果审计。不可识别的存量条目留在 DISPATCH 原行里，
+        // 不带过去也不阻止结算——否则这一行永远等不到结果，还会占住后续批次
+        let items = r
+            .evidence_refs
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let evidence_refs: Vec<Evidence> = items.iter().filter_map(Evidence::parse).collect();
+        if evidence_refs.len() != items.len() {
+            metrics
+                .reconciled
+                .add(1, &[KeyValue::new("outcome", "EVIDENCE_PARTIAL")]);
+        }
         let p = Pending {
             operation_id: r.operation_id,
             tenant_id: r.tenant_id,
@@ -153,7 +168,7 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
             initiator_principal_id: r.initiator_principal_id,
             actor_principal_id: r.actor_principal_id,
             target_id: r.target_id,
-            evidence_refs: r.evidence_refs,
+            evidence_refs,
             event_id,
             settled_window_passed: r.settled,
         };

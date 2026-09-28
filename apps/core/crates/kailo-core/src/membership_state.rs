@@ -17,12 +17,14 @@
 //! 的撤权链）；Resource/Asset 在本 Stage 尚未存在，因此当前没有可引用的对象。
 //! 这里不写一个恒为真的检查冒充它——那会在 Resource 出现时悄悄放行。
 
+use crate::audit::Evidence;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use contracts::EvidenceKind;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -263,10 +265,10 @@ fn membership_audit<'a>(
         result_code: new_state,
         result_exposure: "NONE",
         // Workflow 是这次跃迁的责任链起点，记它的 ID 就能顺回整条投影链
-        evidence_refs: serde_json::json!([{
-            "kind": "TEMPORAL_WORKFLOW_ID",
-            "value": req.workflow_id,
-        }]),
+        evidence_refs: vec![Evidence::new(
+            EvidenceKind::TemporalWorkflowId,
+            &req.workflow_id,
+        )],
         correlation_id: operation_id,
     }
 }

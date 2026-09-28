@@ -59,6 +59,14 @@ capabilities:
   - MEMBERSHIP_PROJECTION
   - MEMBERSHIP_REVOCATION
   - BUZZ_IDENTITY_PROJECTION
+- id: governance.audit_evidence
+  exposure: end_user
+  routes:
+  - /api/v1/audit/events
+  - /api/v1/audit/events/{event_id}/evidence/{index}
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: governance.role_management
   exposure: end_user
   routes:

@@ -11,9 +11,100 @@
 //! 不写进审计的东西由 `.design/03` §9 固定：Secret、正文、完整 prompt/response、
 //! 原始 SQL、结果行、工具 raw body。本模块不提供任何承载它们的字段。
 
+use contracts::{EvidenceAuthority, EvidenceKind, EvidenceSensitivity};
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
+
+/// 一条 EvidenceRef（`.design/03` §14）：种类加权威源中的稳定 ID，可带 version。
+///
+/// 权威源、证据类型与敏感级别由种类唯一确定（[`describe`]），不随条目存储。
+/// 序列化形状是 `{kind, value[, version]}`：审计表只追加，存量不能改写，新旧条目
+/// 因此必须是同一种形状。不保存 payload、临时 URL、token 或 SecretRef locator。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Evidence {
+    pub kind: EvidenceKind,
+    pub value: String,
+    pub version: Option<i64>,
+}
+
+impl Evidence {
+    pub fn new(kind: EvidenceKind, value: impl ToString) -> Self {
+        Self {
+            kind,
+            value: value.to_string(),
+            version: None,
+        }
+    }
+
+    pub fn versioned(kind: EvidenceKind, value: impl ToString, version: i64) -> Self {
+        Self {
+            version: Some(version),
+            ..Self::new(kind, value)
+        }
+    }
+
+    fn to_json(&self) -> Value {
+        let mut v = serde_json::json!({ "kind": self.kind, "value": self.value });
+        if let Some(version) = self.version {
+            v["version"] = version.into();
+        }
+        v
+    }
+
+    /// 读回一条存量条目。种类不在封闭枚举内、value 不是非空字符串或 version 不是
+    /// 整数时返回 `None`：调用方把它当作不可识别，不猜测含义。
+    pub fn parse(v: &Value) -> Option<Self> {
+        let kind: EvidenceKind = serde_json::from_value(v.get("kind")?.clone()).ok()?;
+        let value = v
+            .get("value")?
+            .as_str()
+            .filter(|s| !s.is_empty())?
+            .to_owned();
+        let version = match v.get("version") {
+            None => None,
+            Some(n) => Some(n.as_i64()?),
+        };
+        Some(Self {
+            kind,
+            value,
+            version,
+        })
+    }
+}
+
+/// 证据种类的固定描述：权威源与敏感级别。一处定义，写入与解引用共用。
+///
+/// RESTRICTED 是可回指到人的材料（外部 subject 摘要、平台会话）：解引用还需要
+/// ResultExposure 授权，在其交付前一律不可用。
+pub fn describe(kind: &EvidenceKind) -> (EvidenceAuthority, EvidenceSensitivity) {
+    use EvidenceAuthority as A;
+    use EvidenceKind as K;
+    use EvidenceSensitivity as S;
+    match kind {
+        K::TemporalWorkflowId
+        | K::TemporalRunId
+        | K::TemporalFirstRunId
+        | K::ApprovalWorkflowId => (A::Temporal, S::Summary),
+        K::SpicedbZedtoken | K::SpicedbRelationship => (A::Spicedb, S::Summary),
+        K::BuzzEventId | K::BuzzPubkey => (A::Buzz, S::Summary),
+        K::ExternalSubjectSha256 => (A::Oidc, S::Restricted),
+        K::PlatformSessionId => (A::Core, S::Restricted),
+        K::ApprovalPolicy
+        | K::ActionExecutionId
+        | K::AdmitActionExecutionId
+        | K::OriginalActionExecutionId
+        | K::TenantInvitationId
+        | K::TenantMembershipId
+        | K::SecretRefRehomeId
+        | K::DeploymentBootstrap => (A::Core, S::Summary),
+    }
+}
+
+/// 写入审计表的证据数组。
+pub fn evidence_json(refs: &[Evidence]) -> Value {
+    Value::Array(refs.iter().map(Evidence::to_json).collect())
+}
 
 /// 一条待写入的审计事实。
 pub struct AuditEntry<'a> {
@@ -35,8 +126,8 @@ pub struct AuditEntry<'a> {
     pub decision: &'a str,
     pub result_code: &'a str,
     pub result_exposure: &'a str,
-    /// 只放源码权威里的稳定 ID、version/digest 与敏感级别。
-    pub evidence_refs: Value,
+    /// 只放源码权威里的稳定 ID 与 version；敏感级别由种类确定。
+    pub evidence_refs: Vec<Evidence>,
     pub correlation_id: Uuid,
 }
 
@@ -76,7 +167,7 @@ pub async fn append(
     .bind(e.decision)
     .bind(e.result_code)
     .bind(e.result_exposure)
-    .bind(&e.evidence_refs)
+    .bind(evidence_json(&e.evidence_refs))
     .bind(e.correlation_id)
     .execute(&mut **tx)
     .await
@@ -88,15 +179,15 @@ pub async fn append(
 /// OIDC callback 之后、Core 解析出 TenantMembership 之前那段边界上没有 Principal
 /// 可记，但审计记录必须能指回某个人（`DD-52/54`）。原样记 subject 会把外部身份
 /// 标识散进审计表——它在很多 IdP 上是邮箱或可反查的账号名。这里只记 sha256。
-pub fn subject_evidence(issuer: &str, subject: &str) -> Value {
+pub fn subject_evidence(issuer: &str, subject: &str) -> Evidence {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     // issuer 参与摘要：不同 IdP 的同名 subject 不是同一个人
     h.update(issuer.as_bytes());
     h.update([0u8]);
     h.update(subject.as_bytes());
-    serde_json::json!([{
-        "kind": "EXTERNAL_SUBJECT_SHA256",
-        "value": hex::encode(h.finalize()),
-    }])
+    Evidence::new(
+        EvidenceKind::ExternalSubjectSha256,
+        hex::encode(h.finalize()),
+    )
 }

@@ -176,6 +176,15 @@ pub fn router(state: BffState) -> Router {
             get(crate::secret_ref_rehome::list_eligible),
         )
         .exposed_route("/api/v1/audit", get(crate::platform_views::list_own_audit))
+        // 范围审计与证据解引用：每次按 scope 的 audit permission fresh 授权（DD-52）
+        .exposed_route(
+            "/api/v1/audit/events",
+            get(crate::audit_views::list_scope_audit),
+        )
+        .exposed_route(
+            "/api/v1/audit/events/{event_id}/evidence/{index}",
+            get(crate::audit_views::dereference_evidence),
+        )
         // 原生设备公钥（DD-77/79）：登记只对原生入口开放，查看与撤销两端都开放
         .exposed_route(
             crate::client_keys::REGISTER_PATH,
@@ -337,12 +346,18 @@ async fn record_denied_authentication(
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_else(|| "SESSION_NOT_ACTIVE".to_owned());
 
-    // header 缺失时没有可摘要的 subject。此时用固定占位 evidence：这段边界要求
-    // 「human_identity 或不可逆 subject hash 至少有一个」，而「没带任何身份
-    // header」本身就是需要留痕的事实。
+    // `tenant_id=NONE` 的认证事件必须以 HumanIdentity 或外部 subject 摘要归因
+    // （DD-52）。header 缺失时两者都没有，这不是一条可成立的审计事实：请求照样拒绝，
+    // 只记日志（网关未投影身份 header 是 SS-AGW-OIDC 链路上的基础设施信号），
+    // 不以占位 evidence 凑出归因。
     let evidence = match (issuer, subject) {
-        (Some(i), Some(s)) if !i.is_empty() && !s.is_empty() => audit::subject_evidence(i, s),
-        _ => serde_json::json!([{ "kind": "IDENTITY_HEADER_MISSING" }]),
+        (Some(i), Some(s)) if !i.is_empty() && !s.is_empty() => {
+            vec![audit::subject_evidence(i, s)]
+        }
+        _ => {
+            tracing::warn!(reason = %code, "缺少身份 header 的请求已拒绝；无可归因主体，不写审计");
+            return;
+        }
     };
 
     // operation_id 在这段边界上没有上游来源：请求还没进入任何 Governed Action。

@@ -23,12 +23,14 @@
 //! 仍非 TERMINAL 时拒绝——那时旧执行可能仍在推进，另起一条就是对同一事实的
 //! 第二个业务 Workflow（`DD-48`）。
 
+use crate::audit::Evidence;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use contracts::EvidenceKind;
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -530,10 +532,10 @@ pub(crate) async fn rerun(
         decision: "ALLOW",
         result_code: "RERUN_ACCEPTED",
         result_exposure: "NONE",
-        evidence_refs: serde_json::json!([
-            { "kind": "TEMPORAL_WORKFLOW_ID", "value": req.workflow_id },
-            { "kind": "TEMPORAL_WORKFLOW_ID", "value": next_id },
-        ]),
+        evidence_refs: vec![
+            Evidence::new(EvidenceKind::TemporalWorkflowId, &req.workflow_id),
+            Evidence::new(EvidenceKind::TemporalWorkflowId, next_id),
+        ],
         correlation_id: action.correlation_id,
     };
     if let Err(e) = append(&mut tx, entry).await {

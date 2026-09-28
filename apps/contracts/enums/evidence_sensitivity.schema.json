@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/evidence_sensitivity.schema.json",
+  "title": "EvidenceSensitivity",
+  "description": "EvidenceRef 的敏感级别。SUMMARY 在当前 audit permission 下可解引用；RESTRICTED 还需 ResultExposure 授权，在其交付前一律不可用（fail closed）。",
+  "type": "string",
+  "enum": [
+    "SUMMARY",
+    "RESTRICTED"
+  ]
+}

@@ -12,6 +12,8 @@
 //! operator 私钥从受控投递面（挂载的文件）读入，写进 OpenBao 后只把返回的版本号
 //! 记成 SecretRef；私钥值不进数据库、不进日志（`DD-70`、`.design/03` §9）。
 
+use crate::audit::Evidence;
+use contracts::EvidenceKind;
 use kailo_secrets::{SecretRef, SecretStore};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -302,11 +304,15 @@ async fn rotate(
             decision: "ALLOW",
             result_code: "ROTATED",
             result_exposure: "NONE",
-            evidence_refs: serde_json::json!([
-                { "kind": "BUZZ_PUBKEY", "value": active },
-                { "kind": "BUZZ_PUBKEY", "value": pubkey },
-                { "kind": "SECRET_VERSION", "value": version },
-            ]),
+            // 新私钥的 KV 版本记在新公钥这条引用上：版本只对它指向的那把钥匙有意义
+            evidence_refs: vec![
+                Evidence::new(EvidenceKind::BuzzPubkey, active),
+                Evidence::versioned(
+                    EvidenceKind::BuzzPubkey,
+                    pubkey.as_str(),
+                    i64::from(version),
+                ),
+            ],
             correlation_id: operation,
         },
     )

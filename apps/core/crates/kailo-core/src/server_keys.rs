@@ -19,12 +19,14 @@
 //! 只接受 `kind=HUMAN`、`custody=SERVER`：原生设备的 CLIENT 身份由其本人经
 //! `client_keys` 撤销；CONTROL 的轮换受 GAP-BUZ-01 阻断，在这里被拒绝。
 
+use crate::audit::Evidence;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use contracts::EvidenceKind;
 use kailo_secrets::{SecretError, SecretRef};
 use nostr::Keys;
 use serde::Deserialize;
@@ -904,9 +906,7 @@ pub(crate) async fn fence_and_destroy_provision_intent(
             decision: "ALLOW",
             result_code: "DESTROYED",
             result_exposure: &context.result_exposure,
-            evidence_refs: serde_json::json!([{
-                "kind": "ACTION_EXECUTION_ID", "value": action_id
-            }]),
+            evidence_refs: vec![Evidence::new(EvidenceKind::ActionExecutionId, action_id)],
             correlation_id: context.correlation_id,
         },
     )
@@ -1377,10 +1377,10 @@ async fn record(
             decision: "ALLOW",
             result_code,
             result_exposure: "NONE",
-            evidence_refs: serde_json::json!([
-                { "kind": "BUZZ_PUBKEY", "value": pubkey },
-                { "kind": "TEMPORAL_WORKFLOW_ID", "value": workflow_id },
-            ]),
+            evidence_refs: vec![
+                Evidence::new(EvidenceKind::BuzzPubkey, pubkey),
+                Evidence::new(EvidenceKind::TemporalWorkflowId, workflow_id),
+            ],
             correlation_id: action.correlation_id,
         },
     )

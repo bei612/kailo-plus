@@ -8,12 +8,14 @@
 //! 以该私钥签名的 NIP-98 持钥证明，证明绑定调用方当前 PlatformSession。查看与
 //! 撤销两端都开放：设备丢了，应当能在任一端把它撤掉。
 
+use crate::audit::Evidence;
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use contracts::EvidenceKind;
 use contracts::{
     BuzzIdentityState, ClientKeyStatus, ClientKeyView, ErrorBody, ErrorClass, ReasonCode,
 };
@@ -503,11 +505,11 @@ async fn record_action(
             decision: "ALLOW",
             result_code: "ACCEPTED",
             result_exposure: "NONE",
-            evidence_refs: serde_json::json!([
-                { "kind": "BUZZ_PUBKEY", "value": pubkey },
-                { "kind": "PLATFORM_SESSION_ID", "value": ctx.session_id },
-                { "kind": "SPICEDB_ZEDTOKEN", "value": admitted.zed_token },
-            ]),
+            evidence_refs: vec![
+                Evidence::new(EvidenceKind::BuzzPubkey, pubkey),
+                Evidence::new(EvidenceKind::PlatformSessionId, ctx.session_id),
+                Evidence::new(EvidenceKind::SpicedbZedtoken, &admitted.zed_token),
+            ],
             correlation_id: operation,
         },
     )

@@ -9,13 +9,14 @@
 //! 它还度量一件修不了的事：有效 Tenant admin 为空的 Tenant。平台内无人能恢复它
 //! （DD-82），唯一出路是部署引导的 0→1；度量让它在被人撞上之前先被看见。
 
+use crate::audit::Evidence;
+use contracts::EvidenceKind;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use opentelemetry::metrics::{Counter, Gauge, Meter};
 use opentelemetry::KeyValue;
-use serde_json::json;
 use uuid::Uuid;
 
 use crate::audit::{append, AuditEntry};
@@ -236,10 +237,10 @@ async fn remove(g: &Governance, rel: &Relationship, tenant: Option<Uuid>) -> Res
             decision: "DENY",
             result_code: "ROLE_REMOVED",
             result_exposure: "NONE",
-            evidence_refs: json!([
-                { "kind": "SPICEDB_RELATIONSHIP", "value": value },
-                { "kind": "SPICEDB_ZEDTOKEN", "value": token },
-            ]),
+            evidence_refs: vec![
+                Evidence::new(EvidenceKind::SpicedbRelationship, &value),
+                Evidence::new(EvidenceKind::SpicedbZedtoken, token),
+            ],
             correlation_id: operation,
         },
     )

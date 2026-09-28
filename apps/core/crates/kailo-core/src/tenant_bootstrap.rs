@@ -24,6 +24,8 @@
 //!
 //! 可重入：任一步中断后以同一参数重跑，从停下的地方继续。
 
+use crate::audit::Evidence;
+use contracts::EvidenceKind;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -809,10 +811,14 @@ impl Ctx {
                 "ALLOW",
                 "DISPATCHED",
             );
-            e.evidence_refs = json!([
-                { "kind": "DEPLOYMENT_BOOTSTRAP", "value": AUDIENCE },
-                { "kind": "TEMPORAL_WORKFLOW_ID", "value": workflow },
-            ]);
+            e.evidence_refs =
+                std::iter::once(Evidence::new(EvidenceKind::DeploymentBootstrap, AUDIENCE))
+                    .chain(
+                        workflow
+                            .iter()
+                            .map(|w| Evidence::new(EvidenceKind::TemporalWorkflowId, w)),
+                    )
+                    .collect();
             append(&mut tx, e).await.map_err(|e| e.to_string())?;
         }
         tx.commit().await.map_err(|e| e.to_string())
@@ -988,11 +994,17 @@ impl Ctx {
                 "ALLOW",
                 result,
             );
-            e.evidence_refs = json!([
-                { "kind": "DEPLOYMENT_BOOTSTRAP", "value": AUDIENCE },
-                { "kind": "SPICEDB_ZEDTOKEN", "value": token },
-                { "kind": "SPICEDB_RELATIONSHIP", "value": format!("tenant:{tenant}#{}@principal:{principal}", crate::roles::TENANT_MANAGE_RELATION) },
-            ]);
+            e.evidence_refs = vec![
+                Evidence::new(EvidenceKind::DeploymentBootstrap, AUDIENCE),
+                Evidence::new(EvidenceKind::SpicedbZedtoken, &token),
+                Evidence::new(
+                    EvidenceKind::SpicedbRelationship,
+                    format!(
+                        "tenant:{tenant}#{}@principal:{principal}",
+                        crate::roles::TENANT_MANAGE_RELATION
+                    ),
+                ),
+            ];
             append(&mut tx, e).await.map_err(|e| e.to_string())?;
         }
         tx.commit().await.map_err(|e| e.to_string())?;
@@ -1035,7 +1047,7 @@ fn entry<'a>(
         decision,
         result_code: result,
         result_exposure: "NONE",
-        evidence_refs: json!([{ "kind": "DEPLOYMENT_BOOTSTRAP", "value": AUDIENCE }]),
+        evidence_refs: vec![Evidence::new(EvidenceKind::DeploymentBootstrap, AUDIENCE)],
         correlation_id: tenant,
     }
 }

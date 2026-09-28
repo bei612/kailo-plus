@@ -17,6 +17,7 @@
 //! 语句里判定，列表把过期的 ISSUED 显示为 EXPIRED。没有回收作业，因此也没有「作业
 //! 落后时过期凭据仍可兑换」的窗口。
 
+use crate::audit::Evidence;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -24,11 +25,11 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
+use contracts::EvidenceKind;
 use contracts::{
     ActionGateState, InvitationClass, InvitationRedemptionRequest, InvitationRedemptionView,
     ReasonCode, TenantInvitationStatus, TenantInvitationView, TenantMembershipState,
 };
-use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -188,10 +189,11 @@ pub(crate) async fn settle_refused_admission(
             decision: "DENY",
             result_code: &wire(reason),
             result_exposure: &def.result_exposure,
-            evidence_refs: json!([
-                { "kind": "TENANT_MEMBERSHIP_STATE", "value": "REVOKED" },
-                { "kind": "TENANT_MEMBERSHIP_VERSION", "value": version },
-            ]),
+            evidence_refs: vec![Evidence::versioned(
+                EvidenceKind::TenantMembershipId,
+                ae.target_id,
+                i64::from(version),
+            )],
             correlation_id: ae.correlation_id,
         },
     )
@@ -268,7 +270,7 @@ async fn record_refused(
         decision: "DENY",
         result_code: &code,
         result_exposure: "NONE",
-        evidence_refs: subject_evidence(issuer, subject),
+        evidence_refs: vec![subject_evidence(issuer, subject)],
         correlation_id: operation_id,
     };
     let run = async {
@@ -512,11 +514,12 @@ impl Governance {
             Err(e) => return Err((e.into(), Some(m), Some(human))),
         }
 
-        let mut evidence = subject_evidence(issuer, subject);
-        if let Some(arr) = evidence.as_array_mut() {
-            arr.push(json!({ "kind": "ADMIT_ACTION_EXECUTION_ID", "value": admit.id }));
-            arr.push(json!({ "kind": "TENANT_MEMBERSHIP_ID", "value": membership }));
-        }
+        let mut evidence = vec![subject_evidence(issuer, subject)];
+        evidence.push(Evidence::new(
+            EvidenceKind::AdmitActionExecutionId,
+            admit.id,
+        ));
+        evidence.push(Evidence::new(EvidenceKind::TenantMembershipId, membership));
         let audited = append(
             &mut tx,
             AuditEntry {

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/evidence_authority.schema.json",
+  "title": "EvidenceAuthority",
+  "description": "EvidenceRef 所指证据的源码权威。",
+  "type": "string",
+  "enum": [
+    "CORE",
+    "TEMPORAL",
+    "SPICEDB",
+    "BUZZ",
+    "OIDC"
+  ]
+}

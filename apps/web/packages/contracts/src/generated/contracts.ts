@@ -345,6 +345,111 @@ export enum ApprovalStatus {
 }
 
 /**
+ * GET /api/v1/audit/events 的有界回应：当前 Tenant（或其中一个 Workspace）范围内的审计事件，调用方须对该范围持有 audit
+ * permission，每次 fresh Check。证据只列种类，不含稳定 ID；稳定 ID 经单条解引用在同一授权下取得（.design/03 §14）。
+ */
+export interface AuditEventPage {
+    events: AuditEventView[];
+    /**
+     * 下一页首项之前的事件 ID；缺省即已经读完
+     */
+    nextCursor?: string;
+}
+
+export interface AuditEventView {
+    actionKey:             string;
+    actorPrincipalId?:     string;
+    decision:              string;
+    eventType:             AuditEventType;
+    evidence:              AuditEvidenceSlot[];
+    id:                    string;
+    initiatorPrincipalId?: string;
+    /**
+     * RFC3339
+     */
+    occurredAt:   string;
+    resultCode:   string;
+    workspaceId?: string;
+}
+
+/**
+ * AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
+ * OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
+ */
+export enum AuditEventType {
+    Access = "ACCESS",
+    Approval = "APPROVAL",
+    Authentication = "AUTHENTICATION",
+    Decision = "DECISION",
+    Dispatch = "DISPATCH",
+    Intent = "INTENT",
+    Outcome = "OUTCOME",
+    Reconciliation = "RECONCILIATION",
+    Revocation = "REVOCATION",
+    Session = "SESSION",
+}
+
+export interface AuditEvidenceSlot {
+    authority?: EvidenceAuthority;
+    /**
+     * 证据在该事件中的位置，解引用时使用
+     */
+    index: number;
+    /**
+     * 存量种类不可识别时缺省
+     */
+    kind?:        EvidenceKind;
+    sensitivity?: EvidenceSensitivity;
+}
+
+/**
+ * EvidenceRef 所指证据的源码权威。
+ */
+export enum EvidenceAuthority {
+    Buzz = "BUZZ",
+    Core = "CORE",
+    Oidc = "OIDC",
+    Spicedb = "SPICEDB",
+    Temporal = "TEMPORAL",
+}
+
+/**
+ * 存量种类不可识别时缺省
+ *
+ * AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带
+ * version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。
+ */
+export enum EvidenceKind {
+    ActionExecutionID = "ACTION_EXECUTION_ID",
+    AdmitActionExecutionID = "ADMIT_ACTION_EXECUTION_ID",
+    ApprovalPolicy = "APPROVAL_POLICY",
+    ApprovalWorkflowID = "APPROVAL_WORKFLOW_ID",
+    BuzzEventID = "BUZZ_EVENT_ID",
+    BuzzPubkey = "BUZZ_PUBKEY",
+    DeploymentBootstrap = "DEPLOYMENT_BOOTSTRAP",
+    ExternalSubjectSha256 = "EXTERNAL_SUBJECT_SHA256",
+    OriginalActionExecutionID = "ORIGINAL_ACTION_EXECUTION_ID",
+    PlatformSessionID = "PLATFORM_SESSION_ID",
+    SecretRefRehomeID = "SECRET_REF_REHOME_ID",
+    SpicedbRelationship = "SPICEDB_RELATIONSHIP",
+    SpicedbZedtoken = "SPICEDB_ZEDTOKEN",
+    TemporalFirstRunID = "TEMPORAL_FIRST_RUN_ID",
+    TemporalRunID = "TEMPORAL_RUN_ID",
+    TemporalWorkflowID = "TEMPORAL_WORKFLOW_ID",
+    TenantInvitationID = "TENANT_INVITATION_ID",
+    TenantMembershipID = "TENANT_MEMBERSHIP_ID",
+}
+
+/**
+ * EvidenceRef 的敏感级别。SUMMARY 在当前 audit permission 下可解引用；RESTRICTED 还需 ResultExposure
+ * 授权，在其交付前一律不可用（fail closed）。
+ */
+export enum EvidenceSensitivity {
+    Restricted = "RESTRICTED",
+    Summary = "SUMMARY",
+}
+
+/**
  * GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
  */
 export interface ClientKeyView {
@@ -382,6 +487,35 @@ export interface ClientKeyStatus {
      * 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
      */
     workflowId?: string;
+}
+
+/**
+ * GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
+ * 授权；Core 自有证据另核对原对象仍存在。不可用时不回任何 ref 内容。
+ */
+export interface EvidenceView {
+    authority?:   EvidenceAuthority;
+    available:    boolean;
+    kind?:        EvidenceKind;
+    sensitivity?: EvidenceSensitivity;
+    /**
+     * 权威源中的稳定 ID；仅 available 为 true 时出现
+     */
+    stableId?:          string;
+    unavailableReason?: EvidenceUnavailableReason;
+    /**
+     * 该 ID 的版本；证据未登记版本时缺省
+     */
+    version?: number;
+}
+
+/**
+ * 解引用只显示不可用时的原因：原证据已不存在、敏感级别未获授权、存量种类不可识别。
+ */
+export enum EvidenceUnavailableReason {
+    NotFound = "NOT_FOUND",
+    Restricted = "RESTRICTED",
+    Unrecognized = "UNRECOGNIZED",
 }
 
 /**
@@ -498,23 +632,6 @@ export interface OwnAuditEntry {
      * 动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
      */
     workspaceId?: string;
-}
-
-/**
- * AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
- * OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
- */
-export enum AuditEventType {
-    Access = "ACCESS",
-    Approval = "APPROVAL",
-    Authentication = "AUTHENTICATION",
-    Decision = "DECISION",
-    Dispatch = "DISPATCH",
-    Intent = "INTENT",
-    Outcome = "OUTCOME",
-    Reconciliation = "RECONCILIATION",
-    Revocation = "REVOCATION",
-    Session = "SESSION",
 }
 
 /**

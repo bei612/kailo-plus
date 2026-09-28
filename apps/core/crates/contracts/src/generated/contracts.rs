@@ -521,6 +521,189 @@ pub enum ApprovalStatus {
     Waiting,
 }
 
+/// GET /api/v1/audit/events 的有界回应：当前 Tenant（或其中一个 Workspace）范围内的审计事件，调用方须对该范围持有 audit
+/// permission，每次 fresh Check。证据只列种类，不含稳定 ID；稳定 ID 经单条解引用在同一授权下取得（.design/03 §14）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditEventPage {
+    pub events: Vec<AuditEventView>,
+
+    /// 下一页首项之前的事件 ID；缺省即已经读完
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditEventView {
+    pub action_key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor_principal_id: Option<String>,
+
+    pub decision: String,
+
+    pub event_type: AuditEventType,
+
+    pub evidence: Vec<AuditEvidenceSlot>,
+
+    pub id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initiator_principal_id: Option<String>,
+
+    /// RFC3339
+    pub occurred_at: String,
+
+    pub result_code: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
+/// OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AuditEventType {
+    #[serde(rename = "ACCESS")]
+    Access,
+
+    #[serde(rename = "APPROVAL")]
+    Approval,
+
+    #[serde(rename = "AUTHENTICATION")]
+    Authentication,
+
+    #[serde(rename = "DECISION")]
+    Decision,
+
+    #[serde(rename = "DISPATCH")]
+    Dispatch,
+
+    #[serde(rename = "INTENT")]
+    Intent,
+
+    #[serde(rename = "OUTCOME")]
+    Outcome,
+
+    #[serde(rename = "RECONCILIATION")]
+    Reconciliation,
+
+    #[serde(rename = "REVOCATION")]
+    Revocation,
+
+    #[serde(rename = "SESSION")]
+    Session,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AuditEvidenceSlot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authority: Option<EvidenceAuthority>,
+
+    /// 证据在该事件中的位置，解引用时使用
+    pub index: i64,
+
+    /// 存量种类不可识别时缺省
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<EvidenceKind>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sensitivity: Option<EvidenceSensitivity>,
+}
+
+/// EvidenceRef 所指证据的源码权威。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EvidenceAuthority {
+    #[serde(rename = "BUZZ")]
+    Buzz,
+
+    #[serde(rename = "CORE")]
+    Core,
+
+    #[serde(rename = "OIDC")]
+    Oidc,
+
+    #[serde(rename = "SPICEDB")]
+    Spicedb,
+
+    #[serde(rename = "TEMPORAL")]
+    Temporal,
+}
+
+/// 存量种类不可识别时缺省
+///
+/// AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带
+/// version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum EvidenceKind {
+    #[serde(rename = "ACTION_EXECUTION_ID")]
+    ActionExecutionId,
+
+    #[serde(rename = "ADMIT_ACTION_EXECUTION_ID")]
+    AdmitActionExecutionId,
+
+    #[serde(rename = "APPROVAL_POLICY")]
+    ApprovalPolicy,
+
+    #[serde(rename = "APPROVAL_WORKFLOW_ID")]
+    ApprovalWorkflowId,
+
+    #[serde(rename = "BUZZ_EVENT_ID")]
+    BuzzEventId,
+
+    #[serde(rename = "BUZZ_PUBKEY")]
+    BuzzPubkey,
+
+    #[serde(rename = "DEPLOYMENT_BOOTSTRAP")]
+    DeploymentBootstrap,
+
+    #[serde(rename = "EXTERNAL_SUBJECT_SHA256")]
+    ExternalSubjectSha256,
+
+    #[serde(rename = "ORIGINAL_ACTION_EXECUTION_ID")]
+    OriginalActionExecutionId,
+
+    #[serde(rename = "PLATFORM_SESSION_ID")]
+    PlatformSessionId,
+
+    #[serde(rename = "SECRET_REF_REHOME_ID")]
+    SecretRefRehomeId,
+
+    #[serde(rename = "SPICEDB_RELATIONSHIP")]
+    SpicedbRelationship,
+
+    #[serde(rename = "SPICEDB_ZEDTOKEN")]
+    SpicedbZedtoken,
+
+    #[serde(rename = "TEMPORAL_FIRST_RUN_ID")]
+    TemporalFirstRunId,
+
+    #[serde(rename = "TEMPORAL_RUN_ID")]
+    TemporalRunId,
+
+    #[serde(rename = "TEMPORAL_WORKFLOW_ID")]
+    TemporalWorkflowId,
+
+    #[serde(rename = "TENANT_INVITATION_ID")]
+    TenantInvitationId,
+
+    #[serde(rename = "TENANT_MEMBERSHIP_ID")]
+    TenantMembershipId,
+}
+
+/// EvidenceRef 的敏感级别。SUMMARY 在当前 audit permission 下可解引用；RESTRICTED 还需 ResultExposure
+/// 授权，在其交付前一律不可用（fail closed）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EvidenceSensitivity {
+    #[serde(rename = "RESTRICTED")]
+    Restricted,
+
+    #[serde(rename = "SUMMARY")]
+    Summary,
+}
+
 /// GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -565,6 +748,46 @@ pub struct ClientKeyStatus {
     /// 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workflow_id: Option<String>,
+}
+
+/// GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
+/// 授权；Core 自有证据另核对原对象仍存在。不可用时不回任何 ref 内容。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authority: Option<EvidenceAuthority>,
+
+    pub available: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<EvidenceKind>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sensitivity: Option<EvidenceSensitivity>,
+
+    /// 权威源中的稳定 ID；仅 available 为 true 时出现
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stable_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<EvidenceUnavailableReason>,
+
+    /// 该 ID 的版本；证据未登记版本时缺省
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<i64>,
+}
+
+/// 解引用只显示不可用时的原因：原证据已不存在、敏感级别未获授权、存量种类不可识别。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum EvidenceUnavailableReason {
+    #[serde(rename = "NOT_FOUND")]
+    NotFound,
+
+    Restricted,
+
+    Unrecognized,
 }
 
 /// POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
@@ -698,41 +921,6 @@ pub struct OwnAuditEntry {
     /// 动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
-}
-
-/// AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
-/// OIDC callback 之后、Core 尚未解析出可用 TenantMembership 的那段边界（DD-52/54）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum AuditEventType {
-    #[serde(rename = "ACCESS")]
-    Access,
-
-    #[serde(rename = "APPROVAL")]
-    Approval,
-
-    #[serde(rename = "AUTHENTICATION")]
-    Authentication,
-
-    #[serde(rename = "DECISION")]
-    Decision,
-
-    #[serde(rename = "DISPATCH")]
-    Dispatch,
-
-    #[serde(rename = "INTENT")]
-    Intent,
-
-    #[serde(rename = "OUTCOME")]
-    Outcome,
-
-    #[serde(rename = "RECONCILIATION")]
-    Reconciliation,
-
-    #[serde(rename = "REVOCATION")]
-    Revocation,
-
-    #[serde(rename = "SESSION")]
-    Session,
 }
 
 /// PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
