@@ -18,13 +18,13 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 | Tenant/Workspace 成员建立/撤权 | `ComponentTaskWorkflow(kind=MEMBERSHIP_PROJECTION\|MEMBERSHIP_REVOCATION)`，input 固定 `TENANT\|WORKSPACE` target type、membership ID/version 和 SpiceDB/Buzz projection refs |
 | 原生设备公钥登记/撤销；Web 托管 HUMAN 身份的 key revoke 与重建 | `ComponentTaskWorkflow(kind=BUZZ_IDENTITY_PROJECTION)`，input 固定 pubkey 与 binding version；方向由 binding 状态决定（`RECONCILING` 投入、`REVOKING` 移出），覆盖 relay roster 与该 Principal 全部 ACTIVE Workspace 的 Channel roster（DD-79）；只接受 `kind=HUMAN` 的 binding，CONTROL 轮换受 GAP-BUZ-01 阻断（`09` 的 key revoke/rotate 行） |
 | 遗留业务 Tenant 私钥的 SecretRef 归位 | `ComponentTaskWorkflow(kind=SECRET_REF_REHOME)`，input 固定 ActionExecution ID、SecretRefRehome ID、Tenant、pubkey 与原 binding version；Activity 仅从已冻结旧版本读取、向该 Tenant 独立目标 locator 写入一次并回读，随后以 CAS 切 binding generation、按旧 generation 终态证据退役原版本。写入结果不明只查证目标 locator，不自动重写；不改变公钥或 Relay roster（DD-85） |
-| ComponentRelease 登记/批准/撤销 | `ComponentTaskWorkflow(kind=COMPONENT_RELEASE)`，input 固定 source commit、manifest/API range、全部合同与 artifact digest；审批决定仍由 ApprovalWorkflow 承接 |
+| ComponentRelease 登记/批准/撤销 | `ComponentTaskWorkflow(kind=COMPONENT_RELEASE)`，input 固定按 `admission_path` 取证的来源标识（`BUILTIN_REFERENCE` 为 source commit，`EXTERNAL` 为 vendor、artifact version 与 artifact digest，DD-94(1)）、manifest/API range、全部合同与 artifact digest；审批决定仍由 ApprovalWorkflow 承接 |
 | PlatformProviderBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=PLATFORM_PROVIDER`、port、binding、old/new release、old/new generation 与 provider projection refs |
 | ApplicationBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=APPLICATION`、binding、old/new release、old/new generation、native scope 与全部投影 refs；类别内换成另一实现是新 binding 的建立加旧 binding 的 `COMPONENT_DISABLE`，不是同一 binding 的 generation 切换（DD-88） |
 | 两类 Binding 停用 | `ComponentTaskWorkflow(kind=COMPONENT_DISABLE)`，input 固定 binding kind/ID/version 和受影响 refs |
 | 协议会话结果不明的对账 | `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，input 固定 ProtocolSession ref（ID/version）、实现 binding refs、base revision 与 native correlation；查证手段为该 binding 经 Adapter Protocol `query_revision` 提供的 revision 查询（DD-90） |
 | AgentInstallation 建立/升级/停用的多投影收敛 | `ComponentTaskWorkflow(kind=AGENT_INSTALLATION)`，input 固定 Installation ID/version、exact AgentVersion、projection generation、AgentPrincipal/BuzzIdentity、SpiceDB 与 Channel roster refs |
-| 业务能力实现登记的 Resource 版本发布/下线的 runtime 与 MCP target 收敛 | `ComponentTaskWorkflow(kind=CAPABILITY_VERSION_PUBLISH)`，input 固定 Resource 版本、artifact digest、实现 binding refs、SecretRef 与 Gateway MCP target refs |
+| 业务能力实现登记的 Resource 版本发布/下线的运行时收敛 | `ComponentTaskWorkflow(kind=CAPABILITY_VERSION_PUBLISH)`，只适用于在 release 中声明 `versioned_model=SUPPORTED` 的实现（DD-90）；input 固定 Resource 版本、artifact digest、实现 binding refs、SecretRef 与该版本的运行时与工具端点 refs |
 
 “贯穿全局”指需要等待、恢复、控制和审批的生命周期统一由 Temporal 承接，不把每次 API/Check/聊天机械包装成 Workflow（DD-09）。
 

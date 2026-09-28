@@ -60,7 +60,7 @@ SkillVersion 也不授予工具：Codex skill metadata 可声明 tool dependenci
 
 业务能力工具按能力类别统一遵守以下条款，内置参考实现（知识检索、数据查询等）的具体映射见 `08`：
 
-- 传输固定为 Streamable HTTP MCP，并注册为 AgentGateway 的 MCP target；实现自身不是 MCP server 时，由其 remote adapter 托管 MCP endpoint。ExtMcp 的请求/响应两相 PEP 对每个业务能力工具同样生效。
+- 传输固定为 Streamable HTTP MCP，并注册为 AgentGateway 的 MCP target；MCP target 只指向平台运维域内的运行体：自托管实现可以自身作为 MCP server 直接注册，实现自身不是 MCP server 时由其 remote adapter 托管 MCP endpoint；`VENDOR_MANAGED` 实现的 MCP target 必须由其 adapter 托管，AgentGateway 不直连供应商端点，供应商凭据只投递到 adapter（DD-94(5)）。ExtMcp 的请求/响应两相 PEP 对每个业务能力工具同样生效。
 - 同一能力契约下的多个工具投影到同一目标 Resource 的对应契约 permission（如 `consume`），不因工具名不同绕过 Resource permission 或 result exposure。
 - Tool 参数只能引用已授权的 Resource/Asset 或 ContentReference，不接受 native project、profile、连接器 secret、存储根路径或 pipeline 代码作为参数（DD-12）。
 - 禁止让业务能力工具绕开 AgentGateway 而由 Core 直接调 adapter；那样 exposure 过滤就没有执行点。Core 自身调用 adapter 只用于 Web/BFF 的 Governed Action，不作为 Agent 工具通道。
@@ -93,7 +93,7 @@ Codex 侧不存在逐次调用的 header 钩子：MCP client 的 Authorization �
 1. **会话级 bearer**。Core 为每个 AgentSession 签发短期 JWT，claims 固定 `(tenant_id, workspace_id, installation_resource_id, agent_principal_id, projection_generation, aud=<gateway MCP audience>, exp)`，经 `thread/start`/`thread/resume` 的 `config` 覆写逐 thread 注入内存（不写 `config.toml`、不进磁盘），需要更换时用 MCP 配置 reload 重新下发。它只回答"这是哪个 Installation 的哪个会话"，不含 operation、参数 hash 或 exposure。
 2. **PEP 侧逐次裁决**。`CheckRequest` 已经携带 method、目标 backend、**原始 JSON-RPC params** 与过滤后的 headers，因此参数规范化与 hash 由 PEP 自己计算（`03` 本来就要求 PEP 重算而不信任来方 hash），operation/action execution 由会话 bearer 加 Core 侧按 `(session, tool, params)` 的查询解析，随后在 PEP 内完成 fresh SpiceDB/Delegation/Approval/exposure 准入。裁决结果经 `McpRequestResult.metadata` 下发给后续 filter 与 request log，供 usage/audit 归因。
 
-ActionToken 的封闭 claims 形态保持不变，但适用范围收窄为 **Core/Worker 逐请求签发**的那些跳：Core/Worker→remote adapter，以及服务读取边上由 Core 签发、接收方持往来源实现契约端点的读取令牌（`07` §8.2）。Core 不直接调用任何业务能力实现的 native API。
+ActionToken 的封闭 claims 形态保持不变，但适用范围收窄为 **Core/Worker 逐请求签发**的那些跳：Core/Worker→remote adapter，以及服务读取边上由 Core 签发、接收方持往来源实现契约端点的读取令牌（`07` §8.2）。两类跳的接收 PEP 都是业务能力实现在平台运维域内的 adapter 运行体（外部与 SaaS 实现也不例外），验签公钥与 AgentGateway 同样经 OpenBao Agent 投递；以 `PROTOCOL_PEER` 接入的实现不接收 ActionToken，不能作为服务读取边的来源方（DD-94）。Core 不直接调用任何业务能力实现的 native API。
 
 ActionToken 在其适用的跳上采用 `03` 的封闭 claims：精确 audience、Tenant/Workspace、actor/initiating HUMAN/Agent、Delegation version、action/version、target、operation、参数 hash、exposure、最小 ZedToken 与短 expiry。ExtMcp 是可实现校验/改参/header 注入与结果过滤的源码接缝，不把此平台 PEP 误写成 AgentGateway 上游现成功能（SS-AGW-PEP、DD-49）。
 
