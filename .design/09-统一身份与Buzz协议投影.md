@@ -47,7 +47,7 @@ ServicePrincipal 只承担机器调用和审计归因，不能成为 Resource/As
 - `ACTIVE` 要求 Core 事实、SpiceDB relationship 与 Relay roster 查询结果一致。只发出 admin event 而未查证不得 active。
 - Relay roster 只有在部署开启 `require_relay_membership` 时才是门禁：默认关闭时 `check_relay_membership` 直接返回 open relay，所有已认证调用方一律放行，roster 行只是展示事实（SF-BUZ-26）。因此 `TenantBuzzBinding` 进入 `ACTIVE` 的前置条件包含 Core 已校验并记录该部署 `require_relay_membership=true` 且 `allow_nip_oa_auth=false`（后者允许不在 roster 中的 pubkey 凭 owner attestation 通行）。两项任一不满足时，撤权只能依赖 Core `REVOKING` 与 SpiceDB，Relay 侧不得登记为门禁。
 - TenantMembership/WorkspaceMembership 都是 Core 成员事实，不从 relay/Channel roster 反向推断平台成员。撤权时先 `REVOKING` 并关闭相应 BFF session/stream/Admission，再撤 SpiceDB 和 Buzz 投影；投影失败保持 fail closed，对账闭合后才 `REVOKED`。TenantMembership 还必须在非 Tenant 销毁场景下完成 Resource/Asset owner 转移（DD-41/45）。
-- Community 创建为 `ADAPTER_REQUIRED`（SS-BUZ-OPERATOR）：`TENANT_LIFECYCLE` 取得 Platform Catalog Tenant 的 active RelayOperatorIdentity，签名目标必须精确等于登记的 `relay_operator_api_origin + /operator/communities`，由上游 replay guard 验证。创建成功后 Relay-level roster 用 Tenant CONTROL 的 9030/9031/9032，Channel roster 用 9000/9001（SF-BUZ-04/05/06）。
+- Community 创建为 `ADAPTER_REQUIRED`（SS-BUZ-OPERATOR）：`TENANT_LIFECYCLE` 取得 Platform Catalog Tenant 的 active RelayOperatorIdentity，签名目标必须精确等于登记的 `relay_operator_api_origin` 加登记的 operator route（创建与列出为 `/operator/communities`，Tenant 暂停与恢复为 `/operator/communities/archive`、`/operator/communities/unarchive`，DD-96），由上游 replay guard 验证，重试时重新签名。创建成功后 Relay-level roster 用 Tenant CONTROL 的 9030/9031/9032，Channel roster 用 9000/9001（SF-BUZ-04/05/06）。
 - `BUZZ_PUBKEY_ALLOWLIST=false` 是一期固定部署值，以 `relay_members` 为 Relay 准入表。若某部署选择开启 allowlist，BuzzIdentityBinding 的 `RECONCILING` 必须先写入并查证该 pubkey 的 allowlist 行，不能直接转 `ACTIVE`（SF-BUZ-27）。
 - 投影不一致时 Core fail closed：隐藏 scope、关闭 stream、拒绝新写入，不以 Relay 局部成功推断平台权限。
 
@@ -79,7 +79,7 @@ Web 采用服务端托管的唯一理由是浏览器没有安全的持钥方式�
 - 令牌校验后从请求中移除，不转发给 BFF（SF-AGW-24）；
 - 额外投影一条 `x-kailo-client-surface=native`，浏览器 listener 无条件移除同名 header。BFF 据此区分只对原生端开放的入口，而不是信任客户端自报。
 
-BFF 在两条 listener 之后是同一个服务，身份解析、PlatformSession、准入与审计完全相同；原生端不因持有 Nostr 私钥而获得任何额外的管理面权限。
+BFF 在两条 listener 之后是同一个服务，身份解析、PlatformSession（含 DD-96 的 `access_mode`）、准入与审计完全相同；原生端不因持有 Nostr 私钥而获得任何额外的管理面权限。
 
 原生设备首次加入某 Tenant 时，在本机生成密钥对并向 BFF 登记公钥（DD-79）：
 

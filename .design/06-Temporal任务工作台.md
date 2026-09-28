@@ -149,9 +149,9 @@ ACTIVE → SUSPENDING → SUSPENDED → RESTORING → ACTIVE
                                       └→ ERROR/UNKNOWN → reconcile
 ```
 
-1. `SUSPENDING` 首先停新 Action、stream、Agent trigger、Schedule、组件投影与 Resource/Asset 创建，再冻结 TenantLifecycleSnapshot。
-2. `SUSPENDED` 不发 native delete；因而可经新 Governed Action 进入 `RESTORING`，重做 secret/binding、SpiceDB、Buzz roster、Gateway route 和组件 scope 对账，全部一致后才 `ACTIVE`。
-3. 进入 `DELETING` 前，Tenant admin 批准销毁意图；snapshot 内每个不同 active HUMAN owner 对自己负责的 Resource/Asset ID+version digest 批准。相同 owner 的多个对象可合并一个 digest 决策，但不能省略任一不同 owner。
+1. `SUSPENDING` 由平台 Catalog scope 的 Governed Action 置位（DD-96），首先停新 Action、stream、Agent trigger、Schedule、组件投影与 Resource/Asset 创建，再经 operator API 归档该 Tenant 的 Buzz Community 以断开全部连接（SF-BUZ-43）。
+2. `SUSPENDED` 不发 native delete；因而可经新的 Catalog scope Governed Action 进入 `RESTORING`，重做 secret/binding、SpiceDB、Buzz roster、Gateway route 和组件 scope 对账，全部一致后解档 Community 并回读 host 可解析，才 `ACTIVE`。
+3. Tenant delete 由 Tenant admin 经受限会话从 `SUSPENDED` 发起（DD-96），准入时冻结 TenantLifecycleSnapshot；进入 `DELETING` 前，Tenant admin 批准销毁意图；snapshot 内每个不同 active HUMAN owner 对自己负责的 Resource/Asset ID+version digest 批准。相同 owner 的多个对象可合并一个 digest 决策，但不能省略任一不同 owner。
 4. 冻结 snapshot 时为平台核心销毁链与 snapshot 中每个 ApplicationBinding 各建立一条 TenantDeleteSubprocess（`03` §4）。平台核心销毁链（`PLATFORM_CORE_CHAIN`）删除平台核心自有 ResourceType 与 Core 事实，不适用保留。已声明删除能力的实现（`NATIVE_DELETE`）的每个 delete 调用使用稳定 `(tenant_lifecycle_snapshot_id, component_binding_id, native_ref)` 幂等键并登记 ExternalExecution；返回不明、取消未证实或对账未闭合时该子流程停在 `UNKNOWN` 并 fail closed 持续对账，其他子流程照常推进。声明 `retain_on_tenant_delete` 的实现（`RETAIN_ON_TENANT_DELETE`）不发 native delete，只撤 binding、撤凭据、保留审计并登记待人工处置，子流程进入 `RETAINED_DECLARED`。停在 `UNKNOWN` 的 `NATIVE_DELETE` 子流程只能由该业务 Tenant 的 admin 经 owner 审批的 Governed Action 处置为 `RETAINED_BY_DECISION`；处置不改写 binding 或 release 的声明字段，处置与理由进入审计。任一子流程未到终态时不把 Tenant 标为 `DELETED`。
 5. 第一个不可逆 native delete 调用前可 cancel 回 `SUSPENDED`。`irreversible_dispatch_started=TRUE` 后不提供 restore 动作；只允许 rerun/reconcile 继续未结束的删除。
 6. `DELETED` 只在全部 TenantDeleteSubprocess 到达终态（`DELETED/RETAINED_DECLARED/RETAINED_BY_DECISION`）、relationship/roster/route 撤销已对账、usage 已结算且 AuditEvent/tombstone 已持久时成立。删除 Workflow 不删 AuditEvent、UsageEvent、WorkflowRef 或 retained native evidence。
