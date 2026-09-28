@@ -9,7 +9,6 @@
 //! `ADMISSION_EVALUATION_TIMEOUT_SECONDS` 加一个对账周期内被处理；WAITING 以审批
 //! 策略的 `expires_in` 为界（Workflow 的 timer）；APPROVED 以 consume 窗口为界。
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use opentelemetry::metrics::{Counter, Gauge, Meter};
@@ -17,6 +16,9 @@ use opentelemetry::KeyValue;
 use uuid::Uuid;
 
 use crate::governance::Governance;
+use crate::membership_projection;
+use crate::server_keys;
+use crate::service_api::ServiceState;
 
 pub struct Config {
     pub interval: Duration,
@@ -53,6 +55,10 @@ struct Metrics {
     rehome_open: Gauge<u64>,
     rehome_oldest_age: Gauge<u64>,
     rehome_overdue: Gauge<u64>,
+    provision_open: Gauge<u64>,
+    provision_oldest_age: Gauge<u64>,
+    provision_overdue: Gauge<u64>,
+    provision_orphan_unknown: Gauge<u64>,
 }
 
 /// 非终态的门禁/派发组合。每轮都记一次，没有行的记 0：告警不能停在旧值上。
@@ -63,7 +69,7 @@ const OPEN_STATES: &[(&str, &str)] = &[
     ("ALLOWED", "UNKNOWN"),
 ];
 
-pub fn spawn(g: Arc<Governance>, meter: &Meter, cfg: Config) {
+pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
     let metrics = Metrics {
         open: meter
             .u64_gauge("kailo.action_execution.open")
@@ -95,6 +101,23 @@ pub fn spawn(g: Arc<Governance>, meter: &Meter, cfg: Config) {
             .u64_gauge("kailo.secret_ref_rehome.overdue")
             .with_description("超过部署登记对账期限的 SecretRef 归位数量")
             .build(),
+        provision_open: meter
+            .u64_gauge("kailo.server_key_provision.open")
+            .with_description("未收敛的 SERVER HUMAN OpenBao 写入意图")
+            .build(),
+        provision_oldest_age: meter
+            .u64_gauge("kailo.server_key_provision.oldest_open_age")
+            .with_unit("s")
+            .with_description("最老未收敛 SERVER HUMAN 写入意图年龄")
+            .build(),
+        provision_overdue: meter
+            .u64_gauge("kailo.server_key_provision.overdue")
+            .with_description("超出准入对账上界的 SERVER HUMAN 写入意图")
+            .build(),
+        provision_orphan_unknown: meter
+            .u64_gauge("kailo.server_key_provision.orphan_unknown")
+            .with_description("旧版结果不明、无写入意图且无身份投影固定 WorkflowRef 的动作")
+            .build(),
     };
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(cfg.interval);
@@ -102,7 +125,7 @@ pub fn spawn(g: Arc<Governance>, meter: &Meter, cfg: Config) {
         loop {
             tick.tick().await;
             let outcome = match pass(
-                &g,
+                &state,
                 &metrics,
                 cfg.batch,
                 cfg.secret_ref_rehome_alert_after.as_secs(),
@@ -121,18 +144,21 @@ pub fn spawn(g: Arc<Governance>, meter: &Meter, cfg: Config) {
 }
 
 async fn pass(
-    g: &Governance,
+    state: &ServiceState,
     metrics: &Metrics,
     batch: i64,
     rehome_alert_after_secs: u64,
 ) -> Result<(), String> {
+    let g: &Governance = &state.governance;
     // 只取此刻确有一步可做的行：正常等待审批中的 WAITING 不进批次，否则它们
     // 会永远排在最前，把真正要处理的挤出去。
     let ids: Vec<Uuid> = sqlx::query_scalar(
         "select ae.id from admission.action_execution ae
          left join projection.approval_projection ap on ap.workflow_id = ae.approval_workflow_id
          left join projection.workflow_ref aw on aw.workflow_id = ae.approval_workflow_id
-         where (ae.gate_state = 'EVALUATING'
+         where not (ae.action_key = $3 and ae.gate_state = 'ALLOWED'
+                    and ae.dispatch_state = 'UNKNOWN')
+           and ((ae.gate_state = 'EVALUATING'
                 and ae.updated_at < now() - make_interval(secs => $2::bigint))
             or (ae.gate_state = 'WAITING' and (
                    ap.status = 'APPROVED'
@@ -143,12 +169,13 @@ async fn pass(
             or (ae.gate_state = 'ALLOWED' and ae.dispatch_state in ('NOT_DISPATCHED', 'UNKNOWN')
                 and ae.updated_at < now() - make_interval(secs => $2::bigint))
             -- 已派发而批准尚未被消费、已撤销而批准尚未失效：重发固定 ID 的 Update
-            or (ae.gate_state in ('ALLOWED', 'REVOKED') and ap.status = 'APPROVED')
+            or (ae.gate_state in ('ALLOWED', 'REVOKED') and ap.status = 'APPROVED'))
          order by ae.updated_at
          limit $1",
     )
     .bind(batch)
     .bind(g.cfg.evaluation_timeout_seconds)
+    .bind(server_keys::PROVISION_ACTION)
     .fetch_all(&g.pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -160,6 +187,63 @@ async fn pass(
                 "FAILED"
             }
         };
+        metrics.driven.add(1, &[KeyValue::new("stage", step)]);
+    }
+
+    let provision_ids: Vec<Uuid> = sqlx::query_scalar(
+        "select i.action_execution_id from admission.server_key_provision_intent i
+         join admission.action_execution ae on ae.id = i.action_execution_id
+         where ae.gate_state = 'ALLOWED' and ae.dispatch_state = 'UNKNOWN'
+           and i.source_membership_id is null
+           and i.created_at < now() - make_interval(secs => $2::bigint)
+         order by i.created_at limit $1",
+    )
+    .bind(batch)
+    .bind(g.cfg.evaluation_timeout_seconds)
+    .fetch_all(&g.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    for id in provision_ids {
+        let step = server_keys::reconcile_provision_intent(state, id).await;
+        metrics.driven.add(1, &[KeyValue::new("stage", step)]);
+    }
+    let legacy_ids: Vec<Uuid> = sqlx::query_scalar(
+        "select ae.id from admission.action_execution ae
+         join projection.workflow_ref w on w.action_execution_id = ae.id
+         where ae.action_key = $3 and ae.gate_state = 'ALLOWED'
+           and ae.dispatch_state in ('NOT_DISPATCHED','UNKNOWN')
+           and w.kind = $4
+           and not exists (select 1 from admission.server_key_provision_intent i
+                           where i.action_execution_id = ae.id)
+           and ae.updated_at < now() - make_interval(secs => $2::bigint)
+         order by ae.updated_at limit $1",
+    )
+    .bind(batch)
+    .bind(g.cfg.evaluation_timeout_seconds)
+    .bind(server_keys::PROVISION_ACTION)
+    .bind(crate::client_keys::KIND)
+    .fetch_all(&g.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    for id in legacy_ids {
+        let step = server_keys::reconcile_legacy_provision(state, id).await;
+        metrics.driven.add(1, &[KeyValue::new("stage", step)]);
+    }
+    let membership_key_ids: Vec<Uuid> = sqlx::query_scalar(
+        "select i.action_execution_id from admission.server_key_provision_intent i
+         join admission.action_execution ae on ae.id = i.action_execution_id
+         where ae.gate_state = 'ALLOWED' and i.finished_at is null
+           and i.source_membership_id is not null
+           and i.created_at < now() - make_interval(secs => $2::bigint)
+         order by i.created_at limit $1",
+    )
+    .bind(batch)
+    .bind(g.cfg.evaluation_timeout_seconds)
+    .fetch_all(&g.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    for id in membership_key_ids {
+        let step = membership_projection::reconcile_member_key_intent(state, id).await;
         metrics.driven.add(1, &[KeyValue::new("stage", step)]);
     }
 
@@ -213,6 +297,45 @@ async fn pass(
         if overdue > 0 {
             tracing::warn!(state, overdue, "SecretRef 归位超过对账期限，需运维对账");
         }
+    }
+    let (open, age, overdue): (i64, i64, i64) = sqlx::query_as(
+        "select count(*)::bigint,
+                coalesce(extract(epoch from now() - min(created_at))::bigint, 0),
+                count(*) filter (where created_at < now() - make_interval(secs => $1::bigint))::bigint
+         from admission.server_key_provision_intent where finished_at is null",
+    )
+    .bind(g.cfg.evaluation_timeout_seconds)
+    .fetch_one(&g.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    metrics.provision_open.record(open.max(0) as u64, &[]);
+    metrics.provision_oldest_age.record(age.max(0) as u64, &[]);
+    metrics.provision_overdue.record(overdue.max(0) as u64, &[]);
+    if overdue > 0 {
+        tracing::warn!(overdue, "托管身份写入意图超过治理对账上界，需运维核查");
+    }
+    let orphan_unknown: i64 = sqlx::query_scalar(
+        "select count(*)::bigint from admission.action_execution ae
+         where ae.action_key = $1 and ae.gate_state = 'ALLOWED'
+           and ae.dispatch_state = 'UNKNOWN'
+           and not exists (select 1 from admission.server_key_provision_intent i
+                           where i.action_execution_id = ae.id)
+           and not exists (select 1 from projection.workflow_ref w
+                           where w.action_execution_id = ae.id and w.kind = $2)",
+    )
+    .bind(server_keys::PROVISION_ACTION)
+    .bind(crate::client_keys::KIND)
+    .fetch_one(&g.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    metrics
+        .provision_orphan_unknown
+        .record(orphan_unknown.max(0) as u64, &[]);
+    if orphan_unknown > 0 {
+        tracing::warn!(
+            orphan_unknown,
+            "旧版托管身份结果不明且无固定 WorkflowRef；隔离并禁止补写私钥"
+        );
     }
     Ok(())
 }

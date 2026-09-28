@@ -356,7 +356,7 @@ async fn resolve(state: &ServiceState, req: &BuzzProjectionRequest) -> Result<Pl
     // Buzz Web 的 HUMAN 是 SERVER 托管（DD-75），建立方向上没有就现建；撤权方向
     // 上**不**建——REVOKED 的身份不复活，重新授权走新 binding（.design/10 §4）。
     if req.presence == TargetPresence::Present {
-        let server = ensure_human_identity(state, tenant_id, principal_id).await?;
+        let server = ensure_human_identity(state, tenant_id, principal_id, req).await?;
         let bound = sqlx::query!(
             "select private_key_secret_ref, private_key_secret_version,
                     private_key_secret_audience
@@ -444,6 +444,7 @@ pub(crate) async fn ensure_human_identity(
     state: &ServiceState,
     tenant_id: Uuid,
     principal_id: Uuid,
+    req: &BuzzProjectionRequest,
 ) -> Result<String, Blocked> {
     // 已有就用已有的：每人至多一条非 REVOKED 的 SERVER binding（DD-77）。
     // 先查再建，免得每次投影都往 OpenBao 写一把用不上的私钥。
@@ -460,60 +461,324 @@ pub(crate) async fn ensure_human_identity(
         return Ok(pubkey);
     }
 
+    // 成员投影的 WorkflowRef 是本次 key 建立的已准入意图。由冻结的成员版本
+    // 推导 Workflow ID，不让请求方替换 ActionExecution 或 KV locator。
+    let kind = "MEMBERSHIP_PROJECTION";
+    let workflow_id = crate::component_task::workflow_id(
+        kind,
+        tenant_id,
+        &req.membership_id.to_string(),
+        req.membership_version,
+    );
+    let action_id: Uuid = sqlx::query_scalar(
+        "select w.action_execution_id from projection.workflow_ref w
+         join admission.action_execution ae on ae.id = w.action_execution_id
+         where w.workflow_id = $1 and w.kind = $2 and w.tenant_id = $3
+           and ae.tenant_id = $3 and ae.target_id = $4 and ae.gate_state = 'ALLOWED'
+           and ae.dispatch_state <> 'ABORTED'",
+    )
+    .bind(&workflow_id)
+    .bind(kind)
+    .bind(tenant_id)
+    .bind(req.membership_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(Blocked::Refused(Refusal::Denied(
+        "成员投影没有匹配的已准入 WorkflowRef",
+    )))?;
+    let locator = state
+        .secrets
+        .tenant_locator(tenant_id, &format!("buzz-human/provision/{action_id}"));
+    let scope = match req.scope {
+        MembershipScope::Tenant => "TENANT",
+        MembershipScope::Workspace => "WORKSPACE",
+    };
+
+    let mut tx = state.pool.begin().await?;
+    // 两个入口先锁自己的准入，再锁同一 Principal；只有胜者能冻结一个未完成意图。
+    let action: Option<i32> = sqlx::query_scalar(
+        "select 1 from admission.action_execution ae
+         join projection.workflow_ref w on w.action_execution_id = ae.id
+         where ae.id = $1 and ae.tenant_id = $2 and ae.target_id = $3
+           and ae.gate_state = 'ALLOWED' and ae.dispatch_state <> 'ABORTED'
+           and w.workflow_id = $4 and w.kind = 'MEMBERSHIP_PROJECTION'
+         for update of ae",
+    )
+    .bind(action_id)
+    .bind(tenant_id)
+    .bind(req.membership_id)
+    .bind(&workflow_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if action.is_none() {
+        return Err(Blocked::Refused(Refusal::Denied("成员投影准入已失效")));
+    }
+    member_source_admissible(&mut tx, tenant_id, principal_id, req).await?;
+    let binding: Option<i32> = sqlx::query_scalar(
+        "select 1 from identity.buzz_identity_binding
+         where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN'
+           and custody = 'SERVER' and state <> 'REVOKED'",
+    )
+    .bind(tenant_id)
+    .bind(principal_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if binding.is_some() {
+        return Err(Blocked::Unavailable(
+            "SERVER HUMAN binding 已由并发入口建立，按新事实重试".into(),
+        ));
+    }
+    let inserted = sqlx::query(
+        "insert into admission.server_key_provision_intent
+             (action_execution_id, tenant_id, principal_id, target_locator,
+              source_membership_id, source_membership_version, source_membership_scope)
+         values ($1,$2,$3,$4,$5,$6,$7)
+         on conflict (action_execution_id) do nothing",
+    )
+    .bind(action_id)
+    .bind(tenant_id)
+    .bind(principal_id)
+    .bind(&locator)
+    .bind(req.membership_id)
+    .bind(req.membership_version)
+    .bind(scope)
+    .execute(&mut *tx)
+    .await;
+    match inserted {
+        Ok(_) => {}
+        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
+            return Err(Blocked::Unavailable(
+                "另一条 SERVER HUMAN 创建意图尚未收敛".into(),
+            ));
+        }
+        Err(e) => return Err(Blocked::from(e)),
+    }
+    let frozen: Option<(String, bool)> = sqlx::query_as(
+        "select target_locator, finished_at is not null
+         from admission.server_key_provision_intent
+         where action_execution_id = $1 and tenant_id = $2 and principal_id = $3
+           and source_membership_id = $4 and source_membership_version = $5
+           and source_membership_scope = $6",
+    )
+    .bind(action_id)
+    .bind(tenant_id)
+    .bind(principal_id)
+    .bind(req.membership_id)
+    .bind(req.membership_version)
+    .bind(scope)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if !matches!(frozen, Some((ref l, false)) if *l == locator) {
+        return Err(Blocked::Refused(Refusal::Denied(
+            "成员私钥写入意图与冻结来源不一致",
+        )));
+    }
+    tx.commit().await?;
+
     state
         .secrets
         .ensure_tenant(tenant_id)
         .await
         .map_err(|e| Blocked::Unavailable(format!("Tenant secret namespace 未就绪：{e}")))?;
 
-    let keys = nostr::Keys::generate();
-    let pubkey = keys.public_key().to_hex();
-    // 一把新公钥占用一个 KV 路径：OpenBao 的 max_versions 会在同一路径的
-    // 版本数到顶时自动淘汰最旧版本，不能让它先于固定旧 generation 的执行终态
-    // 销毁仍被引用的私钥。已存 binding 的 locator 不变，读端始终按库中引用取用。
-    let locator = state
-        .secrets
-        .tenant_locator(tenant_id, &format!("buzz-human/{principal_id}/{pubkey}"));
-    let version = state
-        .secrets
-        .write(&locator, "value", &keys.secret_key().to_secret_hex())
+    let pubkey = crate::server_keys::read_or_write_provision_key(state, &locator)
         .await
-        .map_err(|e| match e {
-            // locator 与 audience 是配置：重试多少次都一样
-            SecretError::LocatorMalformed(_) | SecretError::AudienceMismatch => {
-                tracing::warn!(error = %e, "写 HUMAN 私钥被拒");
-                Blocked::Refused(Refusal::Denied("HUMAN 私钥无法托管"))
-            }
-            _ => Blocked::Unavailable(format!("写 HUMAN 私钥：{e}")),
-        })?;
-
-    sqlx::query!(
+        .map_err(|e| Blocked::Unavailable(format!("成员私钥写入或读回未确认：{e}")))?;
+    let mut tx = state.pool.begin().await?;
+    let action: Option<i32> = sqlx::query_scalar(
+        "select 1 from admission.action_execution ae
+         join projection.workflow_ref w on w.action_execution_id = ae.id
+         where ae.id = $1 and ae.tenant_id = $2 and ae.target_id = $3
+           and ae.gate_state = 'ALLOWED' and ae.dispatch_state <> 'ABORTED'
+           and w.workflow_id = $4 and w.kind = 'MEMBERSHIP_PROJECTION'
+         for update of ae",
+    )
+    .bind(action_id)
+    .bind(tenant_id)
+    .bind(req.membership_id)
+    .bind(&workflow_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if action.is_none() {
+        return Err(Blocked::Refused(Refusal::Denied(
+            "私钥写入后成员投影准入已失效",
+        )));
+    }
+    member_source_admissible(&mut tx, tenant_id, principal_id, req).await?;
+    let frozen: Option<String> = sqlx::query_scalar(
+        "select target_locator from admission.server_key_provision_intent
+         where action_execution_id = $1 and tenant_id = $2 and principal_id = $3
+           and source_membership_id = $4 and source_membership_version = $5
+           and source_membership_scope = $6 and finished_at is null for update",
+    )
+    .bind(action_id)
+    .bind(tenant_id)
+    .bind(principal_id)
+    .bind(req.membership_id)
+    .bind(req.membership_version)
+    .bind(scope)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if frozen.as_deref() != Some(locator.as_str()) {
+        return Err(Blocked::Unavailable(
+            "成员私钥写入意图已由并发执行收敛，按新事实重试".into(),
+        ));
+    }
+    let inserted = sqlx::query(
         "insert into identity.buzz_identity_binding
              (tenant_id, principal_id, pubkey, custody, private_key_secret_ref,
               private_key_secret_version, private_key_secret_audience, kind, state)
-         values ($1, $2, $3, 'SERVER', $4, $5, $6, 'HUMAN', 'RECONCILING')
-         on conflict (tenant_id, principal_id)
-             where custody = 'SERVER' and state <> 'REVOKED' do nothing",
-        tenant_id,
-        principal_id,
-        pubkey,
-        locator,
-        version as i32,
-        state.secret_audience,
+         values ($1,$2,$3,'SERVER',$4,1,$5,'HUMAN','RECONCILING')",
     )
-    .execute(&state.pool)
+    .bind(tenant_id)
+    .bind(principal_id)
+    .bind(&pubkey)
+    .bind(&locator)
+    .bind(&state.secret_audience)
+    .execute(&mut *tx)
+    .await;
+    match inserted {
+        Ok(_) => {}
+        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
+            return Err(Blocked::Unavailable(
+                "SERVER HUMAN binding 已由并发入口建立，按新事实重试".into(),
+            ));
+        }
+        Err(e) => return Err(Blocked::from(e)),
+    }
+    sqlx::query(
+        "update admission.server_key_provision_intent set finished_at = now()
+         where action_execution_id = $1 and finished_at is null",
+    )
+    .bind(action_id)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
+    Ok(pubkey)
+}
 
-    // 并发下另一个请求可能先插入了。回读实际生效的那条，不用本地生成的值——
-    // 用错 pubkey 会把 roster 投影投到一个谁也不持有的身份上。
-    sqlx::query_scalar!(
-        "select pubkey from identity.buzz_identity_binding
-         where tenant_id = $1 and principal_id = $2
-           and custody = 'SERVER' and state <> 'REVOKED'",
-        tenant_id,
-        principal_id
+/// 初建时 Tenant 成员还处于 PROVISIONING；Workspace 初建则要求 Tenant 成员 ACTIVE。
+/// 锁定来源成员与 Principal 后再建立 binding，撤权不能在最后一次判定和提交间穿过。
+async fn member_source_admissible(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    principal_id: Uuid,
+    req: &BuzzProjectionRequest,
+) -> Result<(), Blocked> {
+    let sql = match req.scope {
+        MembershipScope::Tenant => {
+            "select 1 from identity.tenant_membership m
+             join identity.principal p on p.id = m.tenant_principal_id
+             join identity.tenant t on t.id = m.tenant_id
+             where m.id = $1 and m.version = $2 and m.state = 'PROVISIONING'
+               and m.tenant_id = $3 and m.tenant_principal_id = $4
+               and p.tenant_id = $3 and p.kind = 'HUMAN' and p.status = 'ACTIVE'
+               and t.state = 'ACTIVE' for update of m,p,t"
+        }
+        MembershipScope::Workspace => {
+            "select 1 from identity.workspace_membership m
+             join identity.workspace w on w.id = m.workspace_id
+             join identity.tenant_membership tm on tm.tenant_principal_id = m.tenant_principal_id
+             join identity.principal p on p.id = m.tenant_principal_id
+             join identity.tenant t on t.id = w.tenant_id
+             where m.id = $1 and m.version = $2 and m.state = 'PROVISIONING'
+               and w.tenant_id = $3 and m.tenant_principal_id = $4
+               and tm.tenant_id = $3 and tm.state = 'ACTIVE'
+               and p.tenant_id = $3 and p.kind = 'HUMAN' and p.status = 'ACTIVE'
+               and t.state = 'ACTIVE' for update of m,p,tm,t"
+        }
+    };
+    let allowed: Option<i32> = sqlx::query_scalar(sql)
+        .bind(req.membership_id)
+        .bind(req.membership_version)
+        .bind(tenant_id)
+        .bind(principal_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+    if allowed.is_some() {
+        Ok(())
+    } else {
+        Err(Blocked::Refused(Refusal::Denied(
+            "成员版本、状态或 Tenant 状态不允许建立 SERVER HUMAN 身份",
+        )))
+    }
+}
+
+/// 复用现有治理对账周期重驱已冻结的成员初建意图；不另起 Workflow 或挑选新 locator。
+pub(crate) async fn reconcile_member_key_intent(
+    state: &ServiceState,
+    action_id: Uuid,
+) -> &'static str {
+    let row: Option<(Uuid, Uuid, Uuid, i32, String, bool, String)> = match sqlx::query_as(
+        "select tenant_id, principal_id, source_membership_id,
+                source_membership_version, source_membership_scope,
+                finished_at is not null, target_locator
+         from admission.server_key_provision_intent
+         where action_execution_id = $1 and source_membership_id is not null",
     )
-    .fetch_one(&state.pool)
+    .bind(action_id)
+    .fetch_optional(&state.pool)
     .await
-    .map_err(Blocked::from)
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::warn!(action = %action_id, error = %e, "读取成员私钥意图失败");
+            return "FAILED";
+        }
+    };
+    let Some((tenant, principal, membership_id, version, scope, finished, locator)) = row else {
+        return "GONE";
+    };
+    if finished {
+        return "CONVERGED";
+    }
+    let existing: Result<Option<String>, _> = sqlx::query_scalar(
+        "select private_key_secret_ref from identity.buzz_identity_binding
+         where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN'
+           and custody = 'SERVER' and state <> 'REVOKED'",
+    )
+    .bind(tenant)
+    .bind(principal)
+    .fetch_optional(&state.pool)
+    .await;
+    match existing {
+        Ok(Some(bound)) if bound != locator => return "CONFLICT",
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!(action = %action_id, error = %e, "核对成员私钥 binding 失败");
+            return "FAILED";
+        }
+    }
+    let scope = match scope.as_str() {
+        "TENANT" => MembershipScope::Tenant,
+        "WORKSPACE" => MembershipScope::Workspace,
+        _ => return "CONFLICT",
+    };
+    let req = BuzzProjectionRequest {
+        scope,
+        membership_id,
+        membership_version: version,
+        presence: TargetPresence::Present,
+    };
+    match ensure_human_identity(state, tenant, principal, &req).await {
+        Ok(_) => {
+            let converged: Result<bool, _> = sqlx::query_scalar(
+                "select finished_at is not null from admission.server_key_provision_intent
+                 where action_execution_id = $1",
+            )
+            .bind(action_id)
+            .fetch_one(&state.pool)
+            .await;
+            if matches!(converged, Ok(true)) {
+                "REDRIVEN"
+            } else {
+                "PENDING"
+            }
+        }
+        Err(Blocked::Refused(_)) => "PRECONDITION",
+        Err(Blocked::Unavailable(e)) => {
+            tracing::warn!(action = %action_id, error = %e, "成员私钥意图仍待对账");
+            "PENDING"
+        }
+    }
 }

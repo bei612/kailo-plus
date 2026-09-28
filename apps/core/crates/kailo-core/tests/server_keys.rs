@@ -139,6 +139,20 @@ async fn run(
     .fetch_one(pool)
     .await
     .expect("夹具应已有 ACTIVE 的 Web 托管身份");
+    let initial: (String, bool) = sqlx::query_as(
+        "select target_locator, finished_at is not null
+         from admission.server_key_provision_intent
+         where tenant_id = $1 and principal_id = $2
+           and source_membership_id is not null",
+    )
+    .bind(fx.tenant)
+    .bind(fx.principal)
+    .fetch_one(pool)
+    .await
+    .expect("初建 HUMAN 必须在写 OpenBao 前冻结成员 Workflow 意图");
+    assert_eq!(initial.0, locator);
+    assert!(initial.1, "初建 binding 与意图须原子收敛");
+    assert_eq!(old_version, 1, "初建 HUMAN 只接受 KV 版本 1");
     let (status, body) = bff_publish(http, e, fx, "before rotation").await;
     assert_eq!(status, reqwest::StatusCode::OK, "轮换前应能发言：{body}");
 
@@ -396,6 +410,29 @@ async fn run(
     )
     .await;
     assert_eq!(status, reqwest::StatusCode::FORBIDDEN);
+    let untracked = seed_action(pool, fx, fx.principal, "identity.key_provision").await;
+    sqlx::query("update admission.action_execution set dispatch_state = 'UNKNOWN' where id = $1")
+        .bind(untracked)
+        .execute(pool)
+        .await
+        .expect("模拟旧版结果不明但无固定 WorkflowRef 的动作");
+    let (status, _) = call(
+        http,
+        e,
+        token,
+        "/service/v1/identities/server-keys/provision",
+        serde_json::json!({ "principalId": fx.principal, "actionExecutionId": untracked }),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::CONFLICT);
+    let untracked_intents: i64 = sqlx::query_scalar(
+        "select count(*) from admission.server_key_provision_intent where action_execution_id = $1",
+    )
+    .bind(untracked)
+    .fetch_one(pool)
+    .await
+    .expect("结果不明动作的意图行数");
+    assert_eq!(untracked_intents, 0, "无固定证据时不得补造写入意图");
     let provision = seed_action(pool, fx, fx.principal, "identity.key_provision").await;
     let (status, body) = call(
         http,
@@ -434,10 +471,28 @@ async fn run(
         new_locator, locator,
         "新身份必须写独立 KV 路径，避免版本上限淘汰旧引用"
     );
-    assert!(new_locator.ends_with(&format!("/{new}")));
-    assert!(
-        new_version > 0 && old_version > 0,
-        "两个 binding 都必须钉住具体版本"
+    assert!(new_locator.ends_with(&format!("/buzz-human/provision/{provision}")));
+    assert_eq!(new_version, 1, "一次重建只接受 KV 版本 1");
+    assert!(old_version > 0, "旧 binding 必须钉住具体版本");
+    let intent: (String, bool) = sqlx::query_as(
+        "select target_locator, finished_at is not null
+         from admission.server_key_provision_intent where action_execution_id = $1",
+    )
+    .bind(provision)
+    .fetch_one(pool)
+    .await
+    .expect("重建意图须先于 OpenBao 写入落库");
+    assert_eq!(intent.0, new_locator);
+    assert!(intent.1, "WorkflowRef 与 binding 提交后意图须收敛");
+    let written_key =
+        common::read_secret_version(http, e, fx.tenant, &new_locator, new_version).await;
+    assert_eq!(
+        nostr::Keys::parse(&written_key)
+            .expect("钉定的私钥可解析")
+            .public_key()
+            .to_hex(),
+        new,
+        "binding pubkey 必须从写入后读回的私钥推导"
     );
     assert_eq!(
         wait_binding(pool, &new, "ACTIVE", e.converge_bound_secs).await,
@@ -469,6 +524,7 @@ async fn run(
     );
     assert_eq!(completed_retry["workflowId"], body["workflowId"]);
     assert!(completed_retry["runId"].is_null(), "终态重发不新建 run");
+    let provision_workflow_id = body["workflowId"].clone();
 
     let (status, body) = bff_publish(http, e, fx, "after rotation").await;
     assert_eq!(status, reqwest::StatusCode::OK, "重建后应恢复发言：{body}");
@@ -509,4 +565,49 @@ async fn run(
     .await
     .expect("读审计");
     assert_eq!(audited, 2, "revoke 与重建各一条，重发不复制");
+
+    // 模拟升级前已经原子保存 binding + WorkflowRef、却仍为 NOT_DISPATCHED 的
+    // 历史 Action。新版本只能恢复原引用，不能为同一准入另写私钥或意图。
+    sqlx::query("delete from admission.server_key_provision_intent where action_execution_id = $1")
+        .bind(provision)
+        .execute(pool)
+        .await
+        .expect("移除测试夹具的新式意图以模拟旧版数据");
+    sqlx::query(
+        "update admission.action_execution set dispatch_state = 'NOT_DISPATCHED',
+                reason_code = null where id = $1",
+    )
+    .bind(provision)
+    .execute(pool)
+    .await
+    .expect("冻结旧版未派发状态");
+    let (status, legacy_retry) = call(
+        http,
+        e,
+        token,
+        "/service/v1/identities/server-keys/provision",
+        serde_json::json!({ "principalId": fx.principal, "actionExecutionId": provision }),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "旧版同键重发应恢复原引用");
+    assert_eq!(legacy_retry["workflowId"], provision_workflow_id);
+    assert!(
+        legacy_retry["runId"].is_null(),
+        "旧版已终态 Workflow 不重启"
+    );
+    let dispatch: String =
+        sqlx::query_scalar("select dispatch_state from admission.action_execution where id = $1")
+            .bind(provision)
+            .fetch_one(pool)
+            .await
+            .expect("读取旧版 Action 派发状态");
+    assert_eq!(dispatch, "DISPATCHED");
+    let new_intents: i64 = sqlx::query_scalar(
+        "select count(*) from admission.server_key_provision_intent where action_execution_id = $1",
+    )
+    .bind(provision)
+    .fetch_one(pool)
+    .await
+    .expect("读取意图行数");
+    assert_eq!(new_intents, 0, "旧版恢复不得补造新的 OpenBao 写入意图");
 }

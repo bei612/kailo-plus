@@ -146,11 +146,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             secrets: std::sync::Arc::clone(&secrets),
             cfg: governance::GovernanceConfig::from_env()?,
         });
-        governance_reconcile::spawn(
-            std::sync::Arc::clone(&governance),
-            &opentelemetry::global::meter("kailo-core"),
-            governance_reconcile::Config::from_env()?,
-        );
         // 角色 relationship 以成员事实为准对账，并度量没有有效 admin 的 Tenant（DD-82）
         role_reconcile::spawn(
             std::sync::Arc::clone(&governance),
@@ -174,6 +169,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             temporal: std::sync::Arc::clone(&temporal),
             governance: std::sync::Arc::clone(&governance),
         };
+        // 同一治理对账器也持有 service 依赖，以恢复 OpenBao 写入结果不明的
+        // SERVER HUMAN 意图；不另建一个无权威的轮询入口。
+        governance_reconcile::spawn(
+            service_state.clone(),
+            &opentelemetry::global::meter("kailo-core"),
+            governance_reconcile::Config::from_env()?,
+        );
 
         // roster 与成员事实的对账度量（07 §3）。它用 CONTROL 身份读 roster，与
         // service API 共用同一份依赖。

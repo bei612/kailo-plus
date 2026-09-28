@@ -129,6 +129,54 @@ Relay、OpenBao 链路的 `cargo test -p kailo-core --test server_keys` 在
 ActionDefinition、BFF 提交入口、Web 交互和搁浅投影受权重跑。不得据此关闭
 Stage 1/2 的托管身份轮换验收。
 
+## SERVER HUMAN 私钥写入意图的隔离核验（2026-09-28）
+
+首次 `MEMBERSHIP_PROJECTION` 建钥与 `identity.key_provision` 重建共用
+`admission.server_key_provision_intent`：先按 ActionExecution 冻结 Tenant 内唯一 KV locator，
+同一 Principal 的未完成意图由部分唯一索引互斥；再以 KV v2 `cas=0` 写入，读回版本 1
+推导公钥，最后把 binding 与意图结束标记原子提交。重建路径同一事务预写
+`BUZZ_IDENTITY_PROJECTION` WorkflowRef；成员初建的 `MEMBERSHIP_PROJECTION` WorkflowRef
+在建钥前已存在。意图只追踪“私钥写入到持久绑定”，不代表 roster 已收敛或 binding 已
+`ACTIVE`；后两项仍由对应 WorkflowRef、Activity 和既有投影对账负责。
+
+定向验证结果：受限 `cargo check -p kailo-core --all-targets` 与
+`cargo test -p kailo-core --test server_keys --no-run` 均退出 0；
+`kailo-secrets::deterministic_write_recovers_lost_response_without_appending_version`
+在模拟 OpenBao 已落盘但响应丢失时通过 1/1，确认只发一次 POST、以已存在版本 1
+恢复、不同值被拒绝。隔离数据库 `kailo_server_key_verify_20260928` 完整应用 24 个迁移，
+最新迁移回退后再前进成功；事务内确认同一 Principal 第二条未结束意图被唯一索引拒绝、
+非法成员来源形状被 CHECK 拒绝、已结束意图释放互斥约束、未结束意图阻止删除其
+ActionExecution，事务回滚后意图行数为 0。隔离数据库与共享 `kailo_core` 不互用。
+
+共享 Core 未重启，故本段**不证明**真实 HTTP/Workflow 下的同 Action 并发重放、两入口
+竞争、成员撤权或 Tenant 暂停恰在 OpenBao 写入期间、KV 版本异常，以及写入成功但 DB
+提交失败后的周期重驱。上述链路仍须用新 Core 镜像、真实 Temporal/Worker/OpenBao
+和定向故障注入核验；编译与数据库约束不能替代这些终态证据。
+
+升级兼容追加核验：固定 WorkflowRef 与原 SERVER binding 均存在的旧版
+`identity.key_provision` Action，即使仍为 `ALLOWED/NOT_DISPATCHED`，也只按原引用恢复；
+binding 的 SecretRef 需读回原私钥并匹配 pubkey，最终派发状态须在同一事务内锁定
+ActionExecution、目标与发起人成员、Tenant 和原 binding 后转换。对
+`ALLOWED/UNKNOWN` 且无 intent、无身份投影固定 WorkflowRef 的历史行，入口拒绝补写 OpenBao，
+治理对账单列 `kailo.server_key_provision.orphan_unknown` 告警。在独立数据库
+`kailo_server_key_legacy_verify_20260928` 上，24 个迁移应用后用回滚事务构造旧
+WorkflowRef/binding：原引用查证得到 1 行、锁定条件返回 `NOT_DISPATCHED`；无引用
+UNKNOWN 的写前 UPDATE 影响 0 行且告警查询得到 1 行；成员置 `REVOKING` 后锁定
+条件返回 0 行。事务回滚后业务表均为 0 行，最新迁移 down 通过，隔离库已删除。
+这只证明 SQL 形态与约束，不代替旧数据经真实 Core/Temporal/OpenBao 的端到端重放。
+
+更重要的是：成员撤权、Tenant 暂停或另一条历史 binding 胜出若发生在 KV 版本 1
+写入之后、binding 提交之前，当前对账器保留未完成意图并以
+`kailo.server_key_provision.overdue` 度量和日志告警；它不会盲删已写入的 secret，也
+没有经过治理且经 OpenBao metadata 查证的孤儿版本销毁入口。
+预写事务现已在 UNKNOWN/intent 落库前锁定并核验目标、发起人成员与 Tenant；但事务提交后、
+OpenBao 调用前的撤权仍可留下 metadata 版本 0 的开放意图。单次观察到版本 0 不能作为
+清除依据：并发或在途的写入仍可随后落盘，须有受治理的终结和实际故障演练。平台值班者
+可只读查询 `admission.server_key_provision_intent` 中 `finished_at is null` 的行，以冻结 locator
+核对该 Tenant 的 KV metadata、ActionExecution 与 binding/WorkflowRef；在缺少受治理的
+销毁/终结动作与实际演练证据前，不能手工删意图、换 locator 或宣称成功。这是
+Catalog HUMAN 开通与用户可达托管身份重建的**生产阻断**，两入口不得作为已闭合能力放行。
+
 ## 门禁
 
 `tools/check.sh security` 对每个 listener 判定：恰好挂一种认证（`oidc` 或 `jwtAuth`）；OIDC 必须
