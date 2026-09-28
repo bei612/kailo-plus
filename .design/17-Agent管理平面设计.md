@@ -65,7 +65,7 @@ Core 对每个 Installation 生成一份可解释的静态运行投影，不让 
 AgentVersion requested
 ∩ active Workspace Installation
 ∩ ChannelAgentBinding
-∩ SkillVersion/ToolBinding（Workspace 内解析到 active 实现的 Tool）/LLM Route binding
+∩ SkillVersion/ToolBinding（解析到该类别 active 实现的 Tool：Workspace 级 binding 优先，其次 Tenant 级）/LLM Route binding
 ∩ AgentPrincipal SpiceDB discover/consume/execute
 ∩ AgentGateway projection
 ∩ RuntimeProfile capability
@@ -95,7 +95,7 @@ AgentRuntimeProjection effective
 | Reason | 确定含义 |
 |---|---|
 | `NOT_BOUND` | Version 声明了资源，但 Workspace/Installation 未绑定 |
-| `NO_PROVIDER` | Version 声明了 `APPLICATION` 能力需求，但该 Workspace 对应能力类别没有 active ApplicationBinding，或 active 实现不提供该契约键与版本 |
+| `NO_PROVIDER` | Version 声明了 `APPLICATION` 能力需求，但该 Workspace 对应能力类别既无 Workspace 级也无 Tenant 级 active ApplicationBinding，或 active 实现不提供该契约键与版本 |
 | `NO_PERMISSION` | 当前 Principal 对目标缺规范 permission |
 | `NO_DELEGATION` | Agent 动作缺有效用户委托或不在 scope |
 | `WAITING_APPROVAL` | 参数固定的 ApprovalWorkflow 尚未终结 |
@@ -111,7 +111,7 @@ Reason 只解释结果，不替代 ActionDecision。运行时只收到 effective
 
 ## 5. RuntimeProfile 与一期 Codex 投影
 
-RuntimeProfile 是平台随版本发布的能力合同：
+RuntimeProfile 是平台随版本发布的能力合同。Codex 是平台核心的 Agent runtime，强集成、不可替换；其他取值只保留类型标识，不构成可替换承诺（DD-26）：
 
 | Profile | 一期状态 | 能力边界 |
 |---|---|---|
@@ -158,7 +158,7 @@ select exact PUBLISHED version + Workspace
 → create AgentPrincipal/BuzzIdentity binding
 → bind AGENT identity to Tenant CONTROL identity as AgentMemoryBinding
 → establish SpiceDB workspace relationship + Buzz Channel roster
-→ establish Channel/Tool/Skill/Model bindings（能力需求解析到 active 实现；无实现记 NO_PROVIDER）
+→ establish Channel/Tool/Skill/Model bindings（能力需求按 Workspace 级优先、其次 Tenant 级解析到 active 实现；无实现记 NO_PROVIDER）
 → governance admission
 → build PENDING projection
 → reconcile Gateway/skill/runtime
@@ -230,7 +230,7 @@ Core AgentRuntimeProjection
 - Version retire：禁止新安装；现存 Installation 继续固定旧版本，直到显式升级、回滚或停用。
 - Installation disable：先停 discovery/trigger，再撤 Tool/Skill/LLM projection，取消等待动作并按真实能力 drain/cancel runtime；不删除 Definition、历史 Invocation、Usage 或 Audit。
 - Definition disable：阻止其全部新安装/升级，并对各 Installation 执行同一停用收敛；不跨 Workspace 合并状态。
-- Skill/Tool/LLM Route 撤销：effective matrix 立即给出确定 reason；受影响 projection 重建。能力实现停用或切换时，依赖其契约键的工具在新 generation 中为 `NO_PROVIDER` 或解析到新 active 实现。Skill 缺工具依赖时只禁用该 skill/tool 路径，不自动扩大权限或切换替代工具。
+- Skill/Tool/LLM Route 撤销：effective matrix 立即给出确定 reason；受影响 projection 重建。能力实现停用时，依赖其契约键的工具在新 generation 中为 `NO_PROVIDER`（该 Workspace 无其他可解析实现）或 `DISABLED`。类别内切换实现是新建 binding、旧 binding 转 `DISABLED` 只读保留：指向旧 binding Tool 的 ToolBinding 失效并按契约键重绑到新 binding 的 Tool，以旧 Resource 或旧 Tool 为 target 的 DelegationScope 失效、须由 grantor 重新授予，重绑后生成新 projection generation，AgentVersion 不重发（DD-88/92）。Skill 缺工具依赖时只禁用该 skill/tool 路径，不自动扩大权限或切换替代工具。
 - projection 超时：状态为 `ERROR/PROJECTION_FAILED`，不得以旧配置响应新触发；运行中旧 Invocation 仍按撤权规则做副作用 fresh check。
 - runtime 回应成功但 Buzz reply 发布失败：Invocation 不标成功；保留 runtime outcome 与 reply failure evidence，由原 operation 对账，不能另建无关联回复。
 - core 读取失败：区分 `ABSENT` 与 `UNREADABLE`，后者不注入 onboarding 也不覆盖写；已建 Session 不因新 head 静默改变。

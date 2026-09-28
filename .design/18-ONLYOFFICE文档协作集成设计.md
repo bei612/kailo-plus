@@ -2,11 +2,11 @@
 
 本文是内置 `FILE_STORAGE` + `DOCUMENT_EDITING` 参考实现文档：说明一期内置的“文件存储与在线编辑”能力组件如何实现这两类能力契约（`07` §2.4）。Cells 与 ONLYOFFICE DocumentServer 作为一个能力组件部署单元交付，release 声明 `implements[FILE_STORAGE@v1, DOCUMENT_EDITING@v1]`，对平台是一个 ApplicationBinding；二者之间的 WOPI 是该组件内部集成，不是平台级连接（DD-90）。该组件可被按同一能力契约准入的外部实现替换；外部文件存储可自带或不带编辑能力。本文不给平台新增实体、权限、Workflow kind、端口或门禁：SS-CEL-WOPI、SS-OFF-WOPI 等接缝只是本实现的 binding 激活门禁，不是平台门禁（DD-91）。
 
-本文定义本实现在承载 WebView 运行时的两端（Buzz Web、Buzz Desktop）中查看、编辑和协作的协议边界。Buzz Mobile 不承载 editor surface，按 REQ-07/21 只提供受权只读视图，本文的 launch/iframe/postMessage 约束对它不适用。Workspace 没有 active `DOCUMENT_EDITING` 实现时，`FILE_STORAGE` 文件只显示元数据与受权下载（REQ-07）。实体以 `03` 为准，组件合同以 `07` 为准，八维治理以 `05` 为准；源码事实与安全约束作为本参考实现的约束保留。
+本文定义本实现在承载 WebView 运行时的两端（Buzz Web、Buzz Desktop）中查看、编辑和协作的协议边界。Buzz Mobile 不承载 editor surface，按 REQ-07/21 只提供受权只读视图，本文的 launch/iframe/postMessage 约束对它不适用。文件所属的 `FILE_STORAGE` binding 未同时启用 `DOCUMENT_EDITING` 时，该文件只显示元数据与受权下载（REQ-07、DD-90）。实体以 `03` 为准，组件合同以 `07` 为准，八维治理以 `05` 为准；源码事实与安全约束作为本参考实现的约束保留。
 
 ## 1. 固定结论
 
-`DERIVED_DESIGN DD-30/31/32/90`：在本能力组件内，ONLYOFFICE 部分实现 `DOCUMENT_EDITING`，作用于 `FILE_STORAGE` 的 ContentReference，不是文件仓库、ResourceType 或第二资产目录。文件字节、node UUID 和版本仍由 Cells（本组件的 `FILE_STORAGE` 部分）权威；DocumentServer 只运行 WOPI client 与协同编辑会话。
+`DERIVED_DESIGN DD-30/31/32/90`：在本能力组件内，ONLYOFFICE 部分实现 `DOCUMENT_EDITING`，只作用于同一 ApplicationBinding 中 Cells 部分所实现 `FILE_STORAGE` 的 ContentReference（v1 不跨实现读写文件字节），不是文件仓库、ResourceType 或第二资产目录。文件字节、node UUID 和版本仍由 Cells（本组件的 `FILE_STORAGE` 部分）权威；DocumentServer 只运行 WOPI client 与协同编辑会话。
 
 本实现的编辑协议唯一采用原生 WOPI：DocumentServer 通过 Cells 的 CheckFileInfo、GetFile、PutFile 直接读写文件。平台不再建立普通 Docs API `document.url + callbackUrl`、session-read、callback result 下载和二次 Cells PutFile 桥。
 
@@ -74,7 +74,8 @@ ContentReference
 → Core 解析 Tenant/Workspace/本组件 binding/Resource 或 Asset
 → fresh read/update Check + quota/capacity/admission
 → ProtocolSession
-→ Core 以 Cells INSTANCE_SERVICE 调 /auth/token/document(Path, ClientID=ProtocolSession.id)
+→ Core 经 Adapter Protocol 请求本组件 adapter
+→ adapter 以本组件 binding 的 Cells INSTANCE_SERVICE 申请文档会话令牌：/auth/token/document(Path, ClientID=ProtocolSession.id)
 → 从 active Tenant DocumentServer discovery 选择 file extension + mode action
 → action query 固定 wopisrc + usid + thm + ui/lang + dchat
 → 承载端以 POST form 在固定 origin iframe 打开 action_url
@@ -90,7 +91,7 @@ ContentReference
 - action URL 从 fixed-origin discovery 的 extension/mode action 解析，不以用户字符串选择 DocumentServer host（SF-OFF-03）。
 - standard WOPI POST 决定浏览器必须携带 node-scoped `access_token`。设计不虚构“token 从不进入浏览器”；它只能存在于当次 form POST，禁止进入 Buzz event、URL query、Audit 正文或持久前端状态。
 - VIEW 检查 `read`，EDIT 检查 `update`。requested EDIT 在 admission 或 Cells CheckFileInfo 任一层不满足时只能收窄为 VIEW，不能扩大。
-- ContentReference 的 `native_revision` 不可忽略：历史 revision 只允许 VIEW；EDIT admission 要求该 revision 在 fresh NodeVersions 中仍为 head。任何入口都不能把固定审批/citation revision 静默换成 latest。
+- ContentReference 的 `native_revision` 不可忽略：历史 revision 只允许 VIEW；EDIT admission 要求该 revision 经 `query_revision`（本实现以 fresh Cells NodeVersions 应答）查证仍为 head。任何入口都不能把固定审批/citation revision 静默换成 latest。
 
 ## 5. Cells 的窄 WOPI 治理适配
 
@@ -98,18 +99,18 @@ ContentReference
 
 ### 5.1 Session token 与撤权
 
-Cells 当前 `DocumentAccessTokenRequest.ClientID` 未被 handler 使用；PAT user 取当前 Cells request claims，`r/rw` 仅按 node readonly 决定，而内部 PAT 已有 `RevocationKey`、expiry 与按 revocation key 撤销能力（SF-CEL-07/11）。因此直接以 Core service credential 调用会错误地把服务身份投影成 editor user，也不能表达平台 `update` 决策。合同固定为：
+Cells 当前 `DocumentAccessTokenRequest.ClientID` 未被 handler 使用；PAT user 取当前 Cells request claims，`r/rw` 仅按 node readonly 决定，而内部 PAT 已有 `RevocationKey`、expiry 与按 revocation key 撤销能力（SF-CEL-07/11）。因此直接以服务凭据调用会错误地把服务身份投影成 editor user，也不能表达平台 `update` 决策。合同固定为：
 
-- `/auth/token/document` 只接受已认证 Core INSTANCE_SERVICE；`ClientID` 必须解析到同 Tenant/binding/node 的 active ProtocolSession。Cells 从该 session 的 fresh Core PEP 结果取得 Platform Human ID/display name 与 admitted mode，不信任 Browser 字段，也不沿用 Core service claims 作为 editor user。
+- `/auth/token/document` 只接受本组件 adapter 以其 binding 的 Cells INSTANCE_SERVICE 发起的已认证调用；Core 不直接调用 Cells native API，只经 Adapter Protocol 发起。`ClientID` 必须解析到同 Tenant/binding/node 的 active ProtocolSession。Cells 从该 session 的 fresh Core PEP（`pep_check`）结果取得 Platform Human ID/display name 与 admitted mode，不信任 Browser 字段，也不沿用服务 claims 作为 editor user。
 - Cells 把 `ClientID` 写入 PAT `RevocationKey`，把已解析 Platform Human 投影为 PAT user；VIEW 只生成 `r`，只有 fresh `update` 允许且 node 可写的 EDIT 才生成 `rw`。
 - session 已确认正常结束、到期或撤权时按 `ProtocolSession.id` 撤销；iframe `UI_Close` 本身不证明服务端保存/会话终结，dirty 或 save outcome 未明时保留至受控 expiry/reconcile，避免截断 DocumentServer 的最终 PutFile。新 Check/Get/Put 由现有 JWT verifier 与 WOPI PEP 共同拒绝。
-- token 生命周期不超过 ProtocolSession；不使用默认滑动刷新把 session 延长到平台 expiry 之后。
+- token 生命周期不超过 ProtocolSession；不使用默认滑动刷新把 session 延长到平台 expiry 之后。ProtocolSession 在 `expires_at` 前未到达终态时按 `03` §3 处理：未出现写入迹象的会话转 `EXPIRED`；已有写入迹象（`DIRTY` 或已有未确认的 PutFile 记录）的会话转 `UNKNOWN`，经 `PROTOCOL_SESSION_RECONCILE` 以 `query_revision`（本实现以 Cells NodeVersions 应答）对账（DD-90）。
 
 ### 5.2 每请求授权
 
 现有 `gateway/wopi/handler.go::auth` 是所有三条 route 的共同入口（SF-CEL-05、SS-CEL-WOPI）。适配后它在既有 JWT 校验之外增加两件事：按 URL 中的 node UUID 校验 PAT 的 node scope（固定源码从不做此校验，SF-CEL-12），以及按 `X-WOPI-SessionId` 解析 ProtocolSession 并以受认证的 Cells→Core PEP 调用对同一 Tenant、Workspace、binding、node、actor 做 fresh Check。
 
-Cells→Core 是 `09` ServicePrincipal 表中“业务能力实现 → Core PEP”入站 service 边在本实现中的实例，方向与 Core→Cells 相反，必须单独登记：调用方身份为本组件 Tenant binding 的 Cells INSTANCE_SERVICE（凭据按 DD-70/71 托管），audience 固定为 Core PEP 受众。本实现经 Adapter Protocol 固定的请求为 `{protocol_session_id, native_object_ref(node_uuid), native_operation(wopi_operation), binding_id}`，响应为 `{decision, platform_human_id, display_name, admitted_mode, min_zed_token}`；平台只认 binding、ProtocolSession 与目标 ContentReference，不理解 WOPI 语义。该调用继承父 operation，不新建 Action/Workflow/Quota（`01` 的既有动作内 RPC 规则）。PEP 不可达或超时一律拒绝，不回退到 token-only 判定：
+Cells→Core 是 `09` ServicePrincipal 表中“业务能力实现 → Core PEP”入站 service 边在本实现中的实例，方向与 Core→adapter→Cells 相反，必须单独登记：调用方身份为本组件 Tenant binding 的 Cells INSTANCE_SERVICE（凭据按 DD-70/71 托管），audience 固定为 Core PEP 受众。它就是 `07` §5.2 的入站操作 `pep_check`；本实现经 Adapter Protocol 固定的请求为 `{protocol_session_id, native_object_ref(node_uuid), native_operation(wopi_operation), binding_id}`，响应为 `{decision, platform_human_id, display_name, admitted_mode, min_zed_token}`；平台只认 binding、ProtocolSession 与目标 ContentReference，不理解 WOPI 语义。该调用继承父 operation，不新建 Action/Workflow/Quota（`01` 的既有动作内 RPC 规则）。PEP 不可达或超时一律拒绝，不回退到 token-only 判定：
 
 | WOPI operation | 平台 permission |
 |---|---|
@@ -117,7 +118,7 @@ Cells→Core 是 `09` ServicePrincipal 表中“业务能力实现 → Core PEP�
 | GetFile | `read` |
 | PutFile | `update` |
 
-Cells 当前 WOPI auth 只校验 query access token 的 JWT 签名与非空 `claims.Name`（SF-CEL-05/12）；PAT 中的 `node:<uuid>:r|rw` scope 在固定源码中**从不被任何 handler 读取**，为节点 A 签发的 PAT 能通过节点 B 的 WOPI 路径。因此"按 node 收窄"本身就是 SS-CEL-WOPI 必须新增的内容，不是既有行为；在该适配闭合前，document PAT 只能视为"证明调用方是某个已认证会话"，既不代替 SpiceDB permission，也不代替 node 绑定。Core→Cells 与 Cells→Core service credential 按 DD-70/71 托管于 OpenBao 并经 Agent template 投递；credential 投影未对账前编辑 surface 不得 active。session、token scope、node 或 binding 任一不一致即拒绝，不能回退默认 Tenant/Workspace。
+Cells 当前 WOPI auth 只校验 query access token 的 JWT 签名与非空 `claims.Name`（SF-CEL-05/12）；PAT 中的 `node:<uuid>:r|rw` scope 在固定源码中**从不被任何 handler 读取**，为节点 A 签发的 PAT 能通过节点 B 的 WOPI 路径。因此"按 node 收窄"本身就是 SS-CEL-WOPI 必须新增的内容，不是既有行为；在该适配闭合前，document PAT 只能视为"证明调用方是某个已认证会话"，既不代替 SpiceDB permission，也不代替 node 绑定。adapter→Cells 与 Cells→Core service credential 按 DD-70/71 托管于 OpenBao 并经 Agent template 投递；credential 投影未对账前编辑 surface 不得 active。session、token scope、node 或 binding 任一不一致即拒绝，不能回退默认 Tenant/Workspace。
 
 上述 PEP、PAT node scope 与 `update` 检查必须在 `uploadStream` 读取请求体或调用 Cells writer 之前全部完成。固定源码的 `uploadStream` 自身没有授权检查且会产生部分写入；任何把 PEP 放到写流之后的实现都不满足 SS-CEL-WOPI（SF-CEL-15）。
 
@@ -149,7 +150,7 @@ DocumentServer 发送 `X-LOOL-WOPI-Timestamp`，Cells 当前只读 `X-COOL-WOPI-
 
 DocumentServer 只在恢复出的 `wopiParams.LastModifiedTime` 非空时发送 header，该值靠 PutFile 响应生成的 modified marker 刷新（SF-OFF-09）。编辑 surface 只有在这条 marker→callback→next PutFile 链已对账时才启用 timestamp header；否则第一次保存后的后续自动保存会持续用旧值并进入 409。该 check+write 仍不是原子 CAS。
 
-PutFile 接缝同时记录 `X-WOPI-SessionId`、`X-WOPI-CorrelationId`、`X-WOPI-Editors`、node UUID、base mtime、write result 和 bytes。PutFile 200 只返回 LastModifiedTime，故 `SAVED` 还要由 Cells NodeVersions 观察新 head VersionId。500 且已写入字节大于零固定进入 `UNKNOWN` 并强制以 NodeVersions 对账，不当作干净失败；零字节拒绝、timestamp 409 与其它结果分别按明确 evidence 收敛（SF-CEL-06/07/15）。
+PutFile 接缝同时记录 `X-WOPI-SessionId`、`X-WOPI-CorrelationId`、`X-WOPI-Editors`、node UUID、base mtime、write result 和 bytes。PutFile 200 只返回 LastModifiedTime，故 `SAVED` 还要由 Cells NodeVersions 观察新 head VersionId。500 且已写入字节大于零固定进入 `UNKNOWN` 并强制经 `query_revision`（Cells NodeVersions）对账，不当作干净失败；零字节拒绝、timestamp 409 与其它结果分别按明确 evidence 收敛（SF-CEL-06/07/15）。
 
 ### 5.5 DocumentServer export 权限投影
 
@@ -206,7 +207,7 @@ WOPI page 能以 `PostMessageOrigin` 限制父窗消息，缺失时退回 `*`（
 | `KNOWLEDGE` citation | 由知识实现回链的 source ContentReference（内置 WeKnora 从受权 Knowledge.Metadata 重建，`13` §5） | 默认 VIEW |
 | Audit/操作时间线 | evidence 中的固定 revision | 只对具备 `read` 的用户开放 |
 
-所有入口按能力类别复用同一个通用 `SOURCE_BOUND_PROTOCOL` surface，不按来源产品分支。Workspace 没有 active `DOCUMENT_EDITING` 实现时，各入口只显示元数据与受权下载；审批附件、任务产物与聊天引用在没有 `FILE_STORAGE` 实现时退回 Relay media（DD-90）。Buzz event、审批、任务和 citation 不存 access token、action URL、iframe config 或 DocumentServer cache key。
+所有入口按能力类别复用同一个通用 `SOURCE_BOUND_PROTOCOL` surface，不按来源产品分支。文件所属 binding 未同时启用 `DOCUMENT_EDITING` 时，各入口只显示元数据与受权下载；所属 binding 已 `DISABLED` 时 ContentReference 解析为不可用（DD-88）；审批附件、任务产物与聊天引用在没有 `FILE_STORAGE` 实现时退回 Relay media（DD-90）。Buzz event、审批、任务和 citation 不存 access token、action URL、iframe config 或 DocumentServer cache key。
 
 ## 8. 八维贯穿
 

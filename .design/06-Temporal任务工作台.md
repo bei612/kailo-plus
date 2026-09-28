@@ -20,9 +20,9 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 | 遗留业务 Tenant 私钥的 SecretRef 归位 | `ComponentTaskWorkflow(kind=SECRET_REF_REHOME)`，input 固定 ActionExecution ID、SecretRefRehome ID、Tenant、pubkey 与原 binding version；Activity 仅从已冻结旧版本读取、向该 Tenant 独立目标 locator 写入一次并回读，随后以 CAS 切 binding generation、按旧 generation 终态证据退役原版本。写入结果不明只查证目标 locator，不自动重写；不改变公钥或 Relay roster（DD-85） |
 | ComponentRelease 登记/批准/撤销 | `ComponentTaskWorkflow(kind=COMPONENT_RELEASE)`，input 固定 source commit、manifest/API range、全部合同与 artifact digest；审批决定仍由 ApprovalWorkflow 承接 |
 | PlatformProviderBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=PLATFORM_PROVIDER`、port、binding、old/new release、old/new generation 与 provider projection refs |
-| ApplicationBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=APPLICATION`、binding、old/new release、old/new generation、native scope 与全部投影 refs |
+| ApplicationBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=APPLICATION`、binding、old/new release、old/new generation、native scope 与全部投影 refs；类别内换成另一实现是新 binding 的建立加旧 binding 的 `COMPONENT_DISABLE`，不是同一 binding 的 generation 切换（DD-88） |
 | 两类 Binding 停用 | `ComponentTaskWorkflow(kind=COMPONENT_DISABLE)`，input 固定 binding kind/ID/version 和受影响 refs |
-| 协议会话结果不明的对账 | `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，input 固定 ProtocolSession ref（ID/version）、实现 binding refs、base revision 与 native correlation；查证手段由该 binding 的能力契约/Adapter 登记 |
+| 协议会话结果不明的对账 | `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，input 固定 ProtocolSession ref（ID/version）、实现 binding refs、base revision 与 native correlation；查证手段为该 binding 经 Adapter Protocol `query_revision` 提供的 revision 查询（DD-90） |
 | AgentInstallation 建立/升级/停用的多投影收敛 | `ComponentTaskWorkflow(kind=AGENT_INSTALLATION)`，input 固定 Installation ID/version、exact AgentVersion、projection generation、AgentPrincipal/BuzzIdentity、SpiceDB 与 Channel roster refs |
 | 业务能力实现登记的 Resource 版本发布/下线的 runtime 与 MCP target 收敛 | `ComponentTaskWorkflow(kind=CAPABILITY_VERSION_PUBLISH)`，input 固定 Resource 版本、artifact digest、实现 binding refs、SecretRef 与 Gateway MCP target refs |
 
@@ -152,11 +152,11 @@ ACTIVE → SUSPENDING → SUSPENDED → RESTORING → ACTIVE
 1. `SUSPENDING` 首先停新 Action、stream、Agent trigger、Schedule、组件投影与 Resource/Asset 创建，再冻结 TenantLifecycleSnapshot。
 2. `SUSPENDED` 不发 native delete；因而可经新 Governed Action 进入 `RESTORING`，重做 secret/binding、SpiceDB、Buzz roster、Gateway route 和组件 scope 对账，全部一致后才 `ACTIVE`。
 3. 进入 `DELETING` 前，Tenant admin 批准销毁意图；snapshot 内每个不同 active HUMAN owner 对自己负责的 Resource/Asset ID+version digest 批准。相同 owner 的多个对象可合并一个 digest 决策，但不能省略任一不同 owner。
-4. 每个组件 delete 调用使用稳定 `(tenant_lifecycle_snapshot_id, component_binding_id, native_ref)` 幂等键并登记 ExternalExecution。组件不支持 delete、返回不明、取消未证实或对账未闭合时停在 `ERROR/UNKNOWN`，不把 Tenant 标为 `DELETED`。
+4. 冻结 snapshot 时为平台核心销毁链与 snapshot 中每个 ApplicationBinding 各建立一条 TenantDeleteSubprocess（`03` §4）。平台核心销毁链（`PLATFORM_CORE_CHAIN`）删除平台核心自有 ResourceType 与 Core 事实，不适用保留。已声明删除能力的实现（`NATIVE_DELETE`）的每个 delete 调用使用稳定 `(tenant_lifecycle_snapshot_id, component_binding_id, native_ref)` 幂等键并登记 ExternalExecution；返回不明、取消未证实或对账未闭合时该子流程停在 `UNKNOWN` 并 fail closed 持续对账，其他子流程照常推进。声明 `retain_on_tenant_delete` 的实现（`RETAIN_ON_TENANT_DELETE`）不发 native delete，只撤 binding、撤凭据、保留审计并登记待人工处置，子流程进入 `RETAINED_DECLARED`。停在 `UNKNOWN` 的 `NATIVE_DELETE` 子流程只能由该业务 Tenant 的 admin 经 owner 审批的 Governed Action 处置为 `RETAINED_BY_DECISION`；处置不改写 binding 或 release 的声明字段，处置与理由进入审计。任一子流程未到终态时不把 Tenant 标为 `DELETED`。
 5. 第一个不可逆 native delete 调用前可 cancel 回 `SUSPENDED`。`irreversible_dispatch_started=TRUE` 后不提供 restore 动作；只允许 rerun/reconcile 继续未结束的删除。
-6. `DELETED` 只在全部 registered native delete terminal、relationship/roster/route 撤销已对账、usage 已结算且 AuditEvent/tombstone 已持久时成立。删除 Workflow 不删 AuditEvent、UsageEvent、WorkflowRef 或 retained native evidence。
+6. `DELETED` 只在全部 TenantDeleteSubprocess 到达终态（`DELETED/RETAINED_DECLARED/RETAINED_BY_DECISION`）、relationship/roster/route 撤销已对账、usage 已结算且 AuditEvent/tombstone 已持久时成立。删除 Workflow 不删 AuditEvent、UsageEvent、WorkflowRef 或 retained native evidence。
 
-业务能力实现不阻断 Tenant 销毁（DD-91）：声明了删除能力的实现执行其 native 删除子流程，声明 `retain_on_tenant_delete` 的实现只撤 binding 与凭据、保留审计并登记待人工处置；GAP-LCM-01 只作用于实现自身的删除能力声明。某个已声明删除能力的子流程失败或结果不明时，该子流程按 fail closed 持续对账，其他子流程照常推进；Tenant 只在全部子流程到达 terminal、或平台管理员以经审计的 Governed Action 把该 binding 改记为保留原生数据后，才进入 `DELETED`。Tenant delete Action 的注册只取决于本节平台核心销毁链（Core 事实、SpiceDB relationship、Buzz Community、OpenBao Tenant namespace、OpenMeter 数据）按合同实现并通过验证；此前 Catalog 不注册该 Action，不存在从 `SUSPENDED` 进入 `DELETING` 的可执行转换。
+业务能力实现不阻断 Tenant 销毁（DD-91）：声明了删除能力的实现执行其 native 删除子流程，声明 `retain_on_tenant_delete` 的实现只撤 binding 与凭据、保留审计并登记待人工处置；GAP-LCM-01 只作用于实现自身的删除能力声明。某个已声明删除能力的子流程失败或结果不明时，该子流程按 fail closed 持续对账，其他子流程照常推进；Tenant 只在全部子流程到达终态、或该业务 Tenant 的 admin 经 owner 审批的 Governed Action 把停在 `UNKNOWN` 的子流程处置为 `RETAINED_BY_DECISION`（不改写 binding 的声明字段，处置与理由进入审计）后，才进入 `DELETED`。Tenant delete Action 的注册只取决于本节平台核心销毁链（Core 事实与平台核心自有 ResourceType、SpiceDB relationship、Buzz Community、OpenBao Tenant namespace、OpenMeter 数据）按合同实现并通过验证，业务能力实现的删除缺口不阻断注册；此前 Catalog 不注册该 Action，不存在从 `SUSPENDED` 进入 `DELETING` 的可执行转换。
 
 ### 7.3 Workspace 暂停与恢复
 

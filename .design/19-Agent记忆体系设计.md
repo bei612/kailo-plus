@@ -19,9 +19,9 @@ Codex app-server 已提供持久 ThreadStore/Rollout，可用 thread ID 恢复�
 | Agent Core Memory | 每个新 Session 都需要看见的最小长期状态 | Buzz Relay NIP-AE `core` head | AgentInstallation 的 `(agent, counterparty)` pair | 新 Session 创建前读取一次并固定 event ID |
 | Agent Cold Memory | 按 topic 分割的长期细节 | Buzz Relay NIP-AE `mem/*` head | 同上 | 通过受治理 memory tool 按 slug 读取；不全量注入 |
 
-企业知识不是记忆层。它是可选的 `KNOWLEDGE` 能力：由该 Workspace active 的知识能力实现管理，Agent 只经 `APPLICATION` 来源 Tool 按 `consume` 授权访问；没有知识能力 binding 时该工具 effective 为 `NO_PROVIDER`，四层记忆不受影响，实现也可在类别内替换（DD-88/92）。
+企业知识不是记忆层。它是可选的 `KNOWLEDGE` 能力：由该 Workspace 解析到的 active 知识能力实现管理（Workspace 级 binding 优先，其次 Tenant 级），Agent 只经 `APPLICATION` 来源 Tool 按 `consume` 授权访问；没有知识能力 binding 时该工具 effective 为 `NO_PROVIDER`，四层记忆不受影响，实现也可在类别内替换（DD-88/92）。
 
-一条信息只能按其职责进入一个权威：聊天事实不自动升格为长期记忆，Codex rollout 不自动合并进 NIP-AE，任何知识能力实现的内容不复制到 `mem/*`。Agent 使用外部知识后，只有在受治理的 memory Action 中主动存储的简短衍生结论才进入 `mem/*`，该结论保留指向来源的 citation ContentReference，不替代原知识源。
+一条信息只能按其职责进入一个权威：聊天事实不自动升格为长期记忆，Codex rollout 不自动合并进 NIP-AE，任何知识能力实现的内容不复制到 `mem/*`。Agent 使用外部知识后，只有在受治理的 memory Action 中主动存储的简短衍生结论才进入 `mem/*`，该结论保留指向来源的 citation ContentReference，不替代原知识源。知识或文件能力在类别内切换实现后（新 binding、旧 binding 转 `DISABLED` 只读保留），`mem/*` 中既有 citation 保留原值、不改写也不迁移，解析为不可用，不报成功或失败；记忆条目本身不受影响（DD-88）。
 
 ## 3. Tenant、Workspace、身份与 owner
 

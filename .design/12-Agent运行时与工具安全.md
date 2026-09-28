@@ -2,7 +2,7 @@
 
 ## 1. 运行边界
 
-Agent Definition、Version、Installation、RuntimeProfile 与 EffectiveAgentConfig 以 `03`、`17` 为权威。本文件只约束一期 `SERVER_CODEX` 执行面；它不把 Codex 固化为长期唯一 runtime（DD-26）。
+Agent Definition、Version、Installation、RuntimeProfile 与 EffectiveAgentConfig 以 `03`、`17` 为权威。本文件只约束一期 `SERVER_CODEX` 执行面。Codex 是平台核心的 Agent runtime，强集成、不可替换；RuntimeProfile 的其他取值只保留类型标识，不构成可替换承诺（DD-26/87）。
 
 Codex app-server 提供 stdio thread/turn 协议、MCP approval 和 response usage（SF-COD-01/02、SS-COD-APP），但它的 `thread/shellCommand` 和 `process/spawn` 是 host 无沙箱通道（SF-COD-04）。因此一期运行单元固定为：
 
@@ -38,10 +38,12 @@ Codex `Feature::MemoryTool` 一期固定关闭；其 rollout 抽取与 `$CODEX_H
 工具来源固定两类（DD-92）：`PLATFORM_NATIVE`（记忆、Buzz 消息、任务、审批等平台核心工具，不依赖任何 ApplicationBinding）与 `APPLICATION`（业务能力实现按能力契约键暴露的工具，经 MCP 与 AgentGateway ExtMcp PEP）。
 
 ```text
-AgentVersion declared capability requirements (contract key + version)
-∩ Catalog ToolDefinition
-∩ PLATFORM_NATIVE: platform tool enabled
-  | APPLICATION: Workspace 内该类别 active ApplicationBinding 的实现 Tool + Resource
+AgentVersion requested tools
+  ├─ PLATFORM_NATIVE: declared_tool_resource_ids[]
+  │    ∩ Catalog ToolDefinition(source=PLATFORM_NATIVE) ∩ platform tool enabled
+  └─ APPLICATION: capability_requirements[] (contract key + version)
+       → 该类别 active ApplicationBinding（Workspace 级优先，其次 Tenant 级）
+       → 该 binding 登记的 ToolDefinition + Resource
 ∩ ChannelAgentBinding
 ∩ ToolBinding
 ∩ SpiceDB discover/consume
@@ -50,7 +52,7 @@ AgentVersion declared capability requirements (contract key + version)
 → Codex enabled_tools
 ```
 
-`APPLICATION` 需求在 Workspace 内没有 active 实现时，该工具 effective 为 `NO_PROVIDER`，不进入投影，Installation 仍可 `ACTIVE`；`PLATFORM_NATIVE` 工具的可用性不受任何业务能力 binding 影响。
+起点与 `03` §7 一致：AgentVersion 的 `declared_tool_resource_ids[]` 只引用 `PLATFORM_NATIVE` 工具；`APPLICATION` 工具只经 `capability_requirements[]` 由 ToolBinding 解析，不引用具体实现的 Tool Resource。`APPLICATION` 需求在 Workspace 内（Workspace 级与 Tenant 级 binding 均）没有 active 实现时，该工具 effective 为 `NO_PROVIDER`，不进入投影，Installation 仍可 `ACTIVE`；`PLATFORM_NATIVE` 工具的可用性不受任何业务能力 binding 影响。
 
 Tool 出现只证明可请求，不证明某个参数/目标可执行。真正调用前仍做 parameter normalization、SpiceDB、Delegation、Approval、Capacity、Quota 和 exposure 准入。Codex `enabled_tools/disabled_tools` 只是前置收窄层（SF-COD-02）。
 
@@ -62,7 +64,7 @@ SkillVersion 也不授予工具：Codex skill metadata 可声明 tool dependenci
 - 同一能力契约下的多个工具投影到同一目标 Resource 的对应契约 permission（如 `consume`），不因工具名不同绕过 Resource permission 或 result exposure。
 - Tool 参数只能引用已授权的 Resource/Asset 或 ContentReference，不接受 native project、profile、连接器 secret、存储根路径或 pipeline 代码作为参数（DD-12）。
 - 禁止让业务能力工具绕开 AgentGateway 而由 Core 直接调 adapter；那样 exposure 过滤就没有执行点。Core 自身调用 adapter 只用于 Web/BFF 的 Governed Action，不作为 Agent 工具通道。
-- 跨服务数据获取的授权（DD-89 的 `reader` 关系与凭据投递）只作为受审批的 Governed Action 暴露；Agent 不能临时指定来源、目标或同步逻辑。
+- 跨服务数据获取的授权（DD-89 为接收方 binding 的 ServicePrincipal 写入来源 Resource 的 `reader` 关系）只作为受审批的 Governed Action 暴露：Agent 可在 Delegation 范围内发起该授权，按 §6 经审批后执行，来源与目标由该动作的 parameter hash 固定；Agent 不能在授权之外临时指定来源、目标或同步逻辑。每批读取由接收方 binding 经服务读取边自行申请，不是 Agent 工具。暂停导入、撤销读取授权、停用 binding 与删除派生内容不得合并为一个 tool 或复用 action key（`07` §8.2）。
 
 ## 4. MCP 调用链
 
@@ -91,7 +93,7 @@ Codex 侧不存在逐次调用的 header 钩子：MCP client 的 Authorization �
 1. **会话级 bearer**。Core 为每个 AgentSession 签发短期 JWT，claims 固定 `(tenant_id, workspace_id, installation_resource_id, agent_principal_id, projection_generation, aud=<gateway MCP audience>, exp)`，经 `thread/start`/`thread/resume` 的 `config` 覆写逐 thread 注入内存（不写 `config.toml`、不进磁盘），需要更换时用 MCP 配置 reload 重新下发。它只回答"这是哪个 Installation 的哪个会话"，不含 operation、参数 hash 或 exposure。
 2. **PEP 侧逐次裁决**。`CheckRequest` 已经携带 method、目标 backend、**原始 JSON-RPC params** 与过滤后的 headers，因此参数规范化与 hash 由 PEP 自己计算（`03` 本来就要求 PEP 重算而不信任来方 hash），operation/action execution 由会话 bearer 加 Core 侧按 `(session, tool, params)` 的查询解析，随后在 PEP 内完成 fresh SpiceDB/Delegation/Approval/exposure 准入。裁决结果经 `McpRequestResult.metadata` 下发给后续 filter 与 request log，供 usage/audit 归因。
 
-ActionToken 的封闭 claims 形态保持不变，但适用范围收窄为 **Core/Worker 作为调用方**的那些跳（Core→remote adapter、Core→组件 native API），那里 Core 能逐请求签发。
+ActionToken 的封闭 claims 形态保持不变，但适用范围收窄为 **Core/Worker 逐请求签发**的那些跳：Core/Worker→remote adapter，以及服务读取边上由 Core 签发、接收方持往来源实现契约端点的读取令牌（`07` §8.2）。Core 不直接调用任何业务能力实现的 native API。
 
 ActionToken 在其适用的跳上采用 `03` 的封闭 claims：精确 audience、Tenant/Workspace、actor/initiating HUMAN/Agent、Delegation version、action/version、target、operation、参数 hash、exposure、最小 ZedToken 与短 expiry。ExtMcp 是可实现校验/改参/header 注入与结果过滤的源码接缝，不把此平台 PEP 误写成 AgentGateway 上游现成功能（SS-AGW-PEP、DD-49）。
 
@@ -117,7 +119,7 @@ ConfigResourceStore 能以 SQLite/Postgres 保存 MCP/LLM/traffic/UI resources�
 - runtime 内短命子任务归父 AgentInvocation；只有独立频道回复、独立生命周期或脱离父 turn 继续的子 Agent 才创建新 AgentInvocation/AgentTaskWorkflow。
 - 一个触发以 `(tenant_id, source_event_id, installation_resource_id)` 幂等；Relay 持久 event 是恢复起点，不从 ACP 内存 queue 恢复（SF-BUZ-07/08）。
 - Relay event 是 Invocation 触发/协作对账起点；已建 AgentSession 的运行会话则以 `runtime_thread_id` 恢复 Codex durable thread，不从 Relay 重放合成一份新 rollout（SF-COD-09）。
-- Agent 发起的 ActionDefinition `confirmation_mode=APPROVAL` 的动作（如跨服务读取授权、能力版本发布、quota adjustment）保持 initiating HUMAN、Delegation 与 endpoint owner 审批；Agent 不能成为 approval approver 或通过连续 tool calls拆分规避 parameter hash。
+- Agent 发起的 ActionDefinition `confirmation_mode=APPROVAL` 的动作（如 §3 的跨服务读取授权、能力版本发布、quota adjustment）保持 initiating HUMAN、Delegation 与 endpoint owner 审批；Agent 不能成为 approval approver 或通过连续 tool calls拆分规避 parameter hash。
 
 ## 7. 阻断与排除
 
