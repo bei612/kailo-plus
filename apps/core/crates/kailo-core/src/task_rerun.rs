@@ -2,7 +2,8 @@
 //!
 //! 生命周期 Workflow 以确定的拒绝结束（`FAILED`，或兜底对账观察到的
 //! `CANCELED/TERMINATED/TIMED_OUT`）时，它驱动的实体仍停在收敛中状态
-//! （`PROVISIONING`/`REVOKING`），并计入 `kailo.entity.stranded`。那条 Workflow
+//! （scope/member 为 `PROVISIONING`/`REVOKING`，身份 binding 还包括
+//! `RECONCILING`），并计入 `kailo.entity.stranded`。那条 Workflow
 //! 的固定 ID 已经 TERMINAL，同 ID 再 Start 只会撞上 `REJECT_DUPLICATE`
 //! （`component_task::start` 因此回 409）。设计给出的出路只有一条：
 //!
@@ -15,8 +16,8 @@
 //!
 //! 本模块只做重跑独有的三件事：判定旧 Workflow 确实可重跑、在同一事务里推进
 //! 版本并预写新 WorkflowRef 与审计、然后把启动交给原来的启动核心
-//! （`membership_lifecycle::start_scope/start_membership`）。准入依据、kind 判定、
-//! Start 三项策略都在那里，这里不另写一份。
+//! （scope/member 走 `membership_lifecycle`，身份投影走 `component_task`）。
+//! 准入、投影与 Worker 执行仍沿原链路，不建立第二条任务权威。
 //!
 //! **结果不明不重跑**：WorkflowRef 为 `UNKNOWN`（NotFound 且超出 retention）或
 //! 仍非 TERMINAL 时拒绝——那时旧执行可能仍在推进，另起一条就是对同一事实的
@@ -60,6 +61,7 @@ struct OriginalWorkflow {
     kind: String,
     tenant_id: Uuid,
     original_action_execution_id: Uuid,
+    original_action_key: String,
     original_target_id: Uuid,
     workspace_id: Option<Uuid>,
     projection_state: String,
@@ -98,6 +100,10 @@ fn closed_execution_matches_projection(
 enum Target {
     Scope(ScopeKind),
     Membership(MembershipScope),
+    Identity {
+        principal: Uuid,
+        custody: &'static str,
+    },
 }
 
 impl Target {
@@ -107,19 +113,39 @@ impl Target {
             Target::Scope(ScopeKind::Workspace) => "identity.workspace",
             Target::Membership(MembershipScope::Tenant) => "identity.tenant_membership",
             Target::Membership(MembershipScope::Workspace) => "identity.workspace_membership",
+            Target::Identity { .. } => "identity.buzz_identity_binding",
         }
     }
 }
 
-/// kind → 该 kind 驱动的实体停在的收敛中状态。与启动核心的判定一一对应：
-/// scope 只有建立链（`PROVISIONING`），成员按状态区分建立（`PROVISIONING`）
-/// 与撤权（`REVOKING`）。
-fn converging_state(kind: &str) -> Option<&'static str> {
+#[derive(Clone)]
+enum Entity {
+    Id(Uuid),
+    Pubkey(String),
+}
+
+impl Entity {
+    fn workflow_segment(&self) -> String {
+        match self {
+            Self::Id(id) => id.to_string(),
+            Self::Pubkey(pubkey) => pubkey.clone(),
+        }
+    }
+}
+
+/// kind 与原动作方向 → 该实体停在的收敛中状态。scope 只有建立链，
+/// 成员按 kind 区分建立与撤权，身份投影按原 action key 区分登记与撤销。
+fn converging_state(kind: &str, action_key: &str) -> Option<&'static str> {
     match kind {
         "TENANT_LIFECYCLE" | "WORKSPACE_LIFECYCLE" | "MEMBERSHIP_PROJECTION" => {
             Some("PROVISIONING")
         }
         "MEMBERSHIP_REVOCATION" => Some("REVOKING"),
+        "BUZZ_IDENTITY_PROJECTION" => match action_key {
+            "identity.client_key.register" | "identity.key_provision" => Some("RECONCILING"),
+            "identity.client_key.revoke" | "identity.key_revoke" => Some("REVOKING"),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -127,7 +153,7 @@ fn converging_state(kind: &str) -> Option<&'static str> {
 struct Ready {
     old: OriginalWorkflow,
     target: Target,
-    entity: Uuid,
+    entity: Entity,
     version: i32,
     converging: &'static str,
     next_id: String,
@@ -144,7 +170,8 @@ async fn preflight(
 ) -> Result<Ready, Response> {
     let old = match sqlx::query_as::<_, OriginalWorkflow>(
         "select w.kind, w.tenant_id, w.action_execution_id as original_action_execution_id,
-                source.target_id as original_target_id, source.workspace_id,
+                source.action_key as original_action_key, source.target_id as original_target_id,
+                source.workspace_id,
                 w.projection_state, t.status, t.run_id
          from projection.workflow_ref w
          join admission.action_execution source
@@ -166,16 +193,31 @@ async fn preflight(
     }) {
         return Err(StatusCode::FORBIDDEN.into_response());
     }
-    let Some(converging) = converging_state(&old.kind) else {
+    let Some(converging) = converging_state(&old.kind, &old.original_action_key) else {
         return Err(StatusCode::CONFLICT.into_response());
     };
-    let Some((entity, version)) = parse_workflow_id(workflow_id, &old.kind, old.tenant_id) else {
+    let Some((segment, version)) = parse_workflow_id(workflow_id, &old.kind, old.tenant_id) else {
         return Err(StatusCode::CONFLICT.into_response());
     };
-    if entity != old.original_target_id {
-        return Err(StatusCode::CONFLICT.into_response());
-    }
-    let target = match resolve_target(pool, &old.kind, entity).await {
+    let entity = if old.kind == "BUZZ_IDENTITY_PROJECTION" {
+        if segment.len() != 64
+            || !segment
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
+            return Err(StatusCode::CONFLICT.into_response());
+        }
+        Entity::Pubkey(segment)
+    } else {
+        let Ok(id) = Uuid::parse_str(&segment) else {
+            return Err(StatusCode::CONFLICT.into_response());
+        };
+        if id != old.original_target_id {
+            return Err(StatusCode::CONFLICT.into_response());
+        }
+        Entity::Id(id)
+    };
+    let target = match resolve_target(pool, &old, &entity).await {
         Ok(Some(t)) => t,
         Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
         Err(e) => return Err(unavailable(e)),
@@ -218,8 +260,12 @@ async fn preflight(
     {
         return Err(StatusCode::CONFLICT.into_response());
     }
-    let next_id =
-        component_task::workflow_id(&old.kind, old.tenant_id, &entity.to_string(), version + 1);
+    let next_id = component_task::workflow_id(
+        &old.kind,
+        old.tenant_id,
+        &entity.workflow_segment(),
+        version + 1,
+    );
     Ok(Ready {
         old,
         target,
@@ -248,13 +294,31 @@ pub(crate) async fn eligible(
         false,
     )
     .await?;
-    let current: Option<(i32, String)> = sqlx::query_as(&format!(
-        "select version, state from {} where id = $1",
-        ready.target.table()
-    ))
-    .bind(ready.entity)
-    .fetch_optional(pool)
-    .await
+    let current: Option<(i32, String)> = match (ready.target, &ready.entity) {
+        (Target::Scope(_) | Target::Membership(_), Entity::Id(id)) => {
+            sqlx::query_as(&format!(
+                "select version, state from {} where id = $1",
+                ready.target.table()
+            ))
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+        }
+        (Target::Identity { principal, custody }, Entity::Pubkey(pubkey)) => {
+            sqlx::query_as(
+                "select version, state from identity.buzz_identity_binding
+                 where pubkey = $1 and tenant_id = $2 and principal_id = $3
+                   and kind = 'HUMAN' and custody = $4",
+            )
+            .bind(pubkey)
+            .bind(ready.old.tenant_id)
+            .bind(principal)
+            .bind(custody)
+            .fetch_optional(pool)
+            .await
+        }
+        _ => return Err(StatusCode::CONFLICT.into_response()),
+    }
     .map_err(unavailable)?;
     if current != Some((ready.version, ready.converging.to_owned())) {
         return Err(StatusCode::CONFLICT.into_response());
@@ -285,17 +349,16 @@ pub(crate) async fn rerun(
     req: &RerunRequest,
     expected_action_key: &str,
 ) -> Response {
-    let Ready {
-        old,
-        target,
-        entity,
-        version,
-        converging,
-        next_id,
-    } = match preflight(pool, temporal, &req.workflow_id, None, true).await {
+    let ready = match preflight(pool, temporal, &req.workflow_id, None, true).await {
         Ok(ready) => ready,
         Err(response) => return response,
     };
+    let old = &ready.old;
+    let target = ready.target;
+    let entity = &ready.entity;
+    let version = ready.version;
+    let converging = ready.converging;
+    let next_id = &ready.next_id;
 
     // 每次请求（包括同键重发）先核对准入。不能借另一种已 ALLOWED 的动作，
     // 或借后来已被撤销的准入，触发这个 Workflow 的启动与收敛。
@@ -331,12 +394,12 @@ pub(crate) async fn rerun(
     // 交回启动核心以同一 ID 收敛（结果不明时的重试走到这里）；是别的，就是
     // 拿一张用过的准入去换第二次执行。
     match component_task::workflow_of_action(pool, req.action_execution_id).await {
-        Ok(Some(existing)) if existing == next_id => {
+        Ok(Some(existing)) if existing == *next_id => {
             let state: Result<Option<String>, _> = sqlx::query_scalar(
                 "select projection_state from projection.workflow_ref
                  where workflow_id = $1 and action_execution_id = $2",
             )
-            .bind(&next_id)
+            .bind(next_id)
             .bind(req.action_execution_id)
             .fetch_optional(pool)
             .await;
@@ -346,8 +409,8 @@ pub(crate) async fn rerun(
                 return (
                     StatusCode::OK,
                     Json(LifecycleResponse {
-                        workflow_id: next_id,
-                        kind: old.kind,
+                        workflow_id: next_id.clone(),
+                        kind: old.kind.clone(),
                         run_id: None,
                     }),
                 )
@@ -356,7 +419,7 @@ pub(crate) async fn rerun(
             if let Err(e) = state {
                 return unavailable(e);
             }
-            return start(pool, temporal, target, entity, req.action_execution_id).await;
+            return start(pool, temporal, &ready, req.action_execution_id).await;
         }
         Ok(Some(existing)) => {
             tracing::warn!(action = %req.action_execution_id, existing, "ActionExecution 已驱动另一个 Workflow");
@@ -372,20 +435,41 @@ pub(crate) async fn rerun(
     };
     // 版本推进带乐观并发：实体仍在旧 Workflow 冻结的那个版本、仍在收敛中状态。
     // 两次重跑并发到达时只有一次推进成功，另一次在这里得到 409。
-    let bumped: Result<Option<i32>, sqlx::Error> = sqlx::query_scalar(&format!(
-        "update {} set version = version + 1
-         where id = $1 and version = $2 and state = $3 returning version",
-        target.table()
-    ))
-    .bind(entity)
-    .bind(version)
-    .bind(converging)
-    .fetch_optional(&mut *tx)
-    .await;
+    let bumped: Result<Option<i32>, sqlx::Error> = match (target, entity) {
+        (Target::Scope(_) | Target::Membership(_), Entity::Id(id)) => {
+            sqlx::query_scalar(&format!(
+                "update {} set version = version + 1
+             where id = $1 and version = $2 and state = $3 returning version",
+                target.table()
+            ))
+            .bind(id)
+            .bind(version)
+            .bind(converging)
+            .fetch_optional(&mut *tx)
+            .await
+        }
+        (Target::Identity { principal, custody }, Entity::Pubkey(pubkey)) => {
+            sqlx::query_scalar(
+                "update identity.buzz_identity_binding set version = version + 1
+                 where pubkey = $1 and version = $2 and state = $3
+                   and tenant_id = $4 and principal_id = $5
+                   and kind = 'HUMAN' and custody = $6 returning version",
+            )
+            .bind(pubkey)
+            .bind(version)
+            .bind(converging)
+            .bind(old.tenant_id)
+            .bind(principal)
+            .bind(custody)
+            .fetch_optional(&mut *tx)
+            .await
+        }
+        _ => return StatusCode::CONFLICT.into_response(),
+    };
     match bumped {
         Ok(Some(v)) if v == version + 1 => {}
         Ok(_) => {
-            tracing::warn!(entity = %entity, version, "实体已不在旧 Workflow 冻结的版本或收敛中状态");
+            tracing::warn!(entity = %entity.workflow_segment(), version, "实体已不在旧 Workflow 冻结的版本或收敛中状态");
             return StatusCode::CONFLICT.into_response();
         }
         Err(e) => return unavailable(e),
@@ -396,7 +480,7 @@ pub(crate) async fn rerun(
     // 得到一个既不搁浅（新版本没有终结的 Workflow）又没有 Workflow 的实体。
     if let Err(e) = component_task::prewrite(
         &mut tx,
-        &next_id,
+        next_id,
         &old.kind,
         old.tenant_id,
         action.operation_id,
@@ -415,7 +499,7 @@ pub(crate) async fn rerun(
            and temporal_workflow_id is null",
     )
     .bind(req.action_execution_id)
-    .bind(&next_id)
+    .bind(next_id)
     .bind("EXTERNAL_RESULT_UNKNOWN")
     .execute(&mut *tx)
     .await;
@@ -460,53 +544,110 @@ pub(crate) async fn rerun(
     }
     tracing::info!(rerun_of = %req.workflow_id, workflow_id = %next_id, "已受理重跑");
 
-    start(pool, temporal, target, entity, req.action_execution_id).await
+    start(pool, temporal, &ready, req.action_execution_id).await
 }
 
-async fn start(
-    pool: &PgPool,
-    temporal: &TemporalClient,
-    target: Target,
-    entity: Uuid,
-    action: Uuid,
-) -> Response {
-    match target {
-        Target::Scope(kind) => {
+async fn start(pool: &PgPool, temporal: &TemporalClient, ready: &Ready, action: Uuid) -> Response {
+    let launched = match (ready.target, &ready.entity) {
+        (Target::Scope(kind), Entity::Id(id)) => {
             launch_scope(
                 pool,
                 temporal,
                 &ScopeLifecycleRequest {
                     kind,
-                    id: entity,
+                    id: *id,
                     action_execution_id: action,
                 },
             )
             .await
         }
-        Target::Membership(scope) => {
+        (Target::Membership(scope), Entity::Id(id)) => {
             launch_membership(
                 pool,
                 temporal,
                 &LifecycleRequest {
                     scope,
-                    membership_id: entity,
+                    membership_id: *id,
                     action_execution_id: action,
                 },
             )
             .await
         }
-    }
-    .map(|r| (StatusCode::OK, Json(r)).into_response())
-    .unwrap_or_else(|r| r)
+        (Target::Identity { principal, custody }, Entity::Pubkey(pubkey)) => {
+            let row: Option<i32> = match sqlx::query_scalar(
+                "select version from identity.buzz_identity_binding
+                 where pubkey = $1 and tenant_id = $2 and principal_id = $3
+                   and kind = 'HUMAN' and custody = $4 and state = $5",
+            )
+            .bind(pubkey)
+            .bind(ready.old.tenant_id)
+            .bind(principal)
+            .bind(custody)
+            .bind(ready.converging)
+            .fetch_optional(pool)
+            .await
+            {
+                Ok(row) => row,
+                Err(e) => return unavailable(e),
+            };
+            let Some(version) = row else {
+                return StatusCode::CONFLICT.into_response();
+            };
+            let workflow_id = component_task::workflow_id(
+                crate::client_keys::KIND,
+                ready.old.tenant_id,
+                pubkey,
+                version,
+            );
+            if workflow_id != ready.next_id {
+                return StatusCode::CONFLICT.into_response();
+            }
+            let input = component_task::ComponentTaskInput {
+                kind: crate::client_keys::KIND.to_owned(),
+                target: crate::client_keys::IdentityEnvelope {
+                    identity: crate::client_keys::IdentityTarget {
+                        pubkey: pubkey.clone(),
+                        binding_version: version,
+                    },
+                },
+            };
+            return match component_task::start(
+                pool,
+                temporal,
+                &workflow_id,
+                ready.old.tenant_id,
+                action,
+                &input,
+            )
+            .await
+            {
+                Ok(run_id) => (
+                    StatusCode::OK,
+                    Json(LifecycleResponse {
+                        workflow_id,
+                        kind: crate::client_keys::KIND.to_owned(),
+                        run_id,
+                    }),
+                )
+                    .into_response(),
+                Err(response) => response,
+            };
+        }
+        _ => return StatusCode::CONFLICT.into_response(),
+    };
+    launched
+        .map(|r| (StatusCode::OK, Json(r)).into_response())
+        .unwrap_or_else(|r| r)
 }
 
 /// 从固定 workflow ID 取出实体 ID 与版本，并核对前三段与 WorkflowRef 自己的
 /// kind、Tenant 一致——不一致说明这不是按固定格式建的 ID，不按它推断任何事。
-fn parse_workflow_id(id: &str, kind: &str, tenant: Uuid) -> Option<(Uuid, i32)> {
+fn parse_workflow_id(id: &str, kind: &str, tenant: Uuid) -> Option<(String, i32)> {
     let parts: Vec<&str> = id.split(':').collect();
     match parts.as_slice() {
         ["kailo", k, t, entity, version] if *k == kind && *t == tenant.to_string() => {
-            Some((Uuid::parse_str(entity).ok()?, version.parse().ok()?))
+            let version = version.parse::<i32>().ok()?;
+            (version > 0 && version < i32::MAX).then(|| (entity.to_string(), version))
         }
         _ => None,
     }
@@ -516,16 +657,41 @@ fn parse_workflow_id(id: &str, kind: &str, tenant: Uuid) -> Option<(Uuid, i32)> 
 /// 因此按 ID 在两张表里找；scope kind 直接对应一张表。
 async fn resolve_target(
     pool: &PgPool,
-    kind: &str,
-    entity: Uuid,
+    old: &OriginalWorkflow,
+    entity: &Entity,
 ) -> Result<Option<Target>, sqlx::Error> {
-    Ok(match kind {
+    let Entity::Id(id) = entity else {
+        let Entity::Pubkey(pubkey) = entity else {
+            unreachable!()
+        };
+        let expected_custody = match old.original_action_key.as_str() {
+            "identity.client_key.register" | "identity.client_key.revoke" => "CLIENT",
+            "identity.key_provision" | "identity.key_revoke" => "SERVER",
+            _ => return Ok(None),
+        };
+        let owned: Option<i32> = sqlx::query_scalar(
+            "select 1 from identity.buzz_identity_binding
+             where pubkey = $1 and tenant_id = $2 and principal_id = $3
+               and kind = 'HUMAN' and custody = $4",
+        )
+        .bind(pubkey)
+        .bind(old.tenant_id)
+        .bind(old.original_target_id)
+        .bind(expected_custody)
+        .fetch_optional(pool)
+        .await?;
+        return Ok(owned.map(|_| Target::Identity {
+            principal: old.original_target_id,
+            custody: expected_custody,
+        }));
+    };
+    Ok(match old.kind.as_str() {
         "TENANT_LIFECYCLE" => Some(Target::Scope(ScopeKind::Tenant)),
         "WORKSPACE_LIFECYCLE" => Some(Target::Scope(ScopeKind::Workspace)),
         _ => {
             let tenant = sqlx::query_scalar!(
                 "select 1 as one from identity.tenant_membership where id = $1",
-                entity
+                id
             )
             .fetch_optional(pool)
             .await?;
@@ -534,7 +700,7 @@ async fn resolve_target(
             } else {
                 sqlx::query_scalar!(
                     "select 1 as one from identity.workspace_membership where id = $1",
-                    entity
+                    id
                 )
                 .fetch_optional(pool)
                 .await?
@@ -599,7 +765,7 @@ mod tests {
         let id = component_task::workflow_id("TENANT_LIFECYCLE", tenant, &entity.to_string(), 3);
         assert_eq!(
             parse_workflow_id(&id, "TENANT_LIFECYCLE", tenant),
-            Some((entity, 3))
+            Some((entity.to_string(), 3))
         );
         // kind 或 Tenant 与 WorkflowRef 不符即不解析
         assert_eq!(parse_workflow_id(&id, "WORKSPACE_LIFECYCLE", tenant), None);
@@ -610,6 +776,42 @@ mod tests {
         assert_eq!(
             parse_workflow_id("kailo:TENANT_LIFECYCLE:x", "TENANT_LIFECYCLE", tenant),
             None
+        );
+        for version in [
+            0.to_string(),
+            (-1).to_string(),
+            i32::MAX.to_string(),
+            (i64::from(i32::MAX) + 1).to_string(),
+        ] {
+            let id = format!("kailo:TENANT_LIFECYCLE:{tenant}:{entity}:{version}");
+            assert_eq!(parse_workflow_id(&id, "TENANT_LIFECYCLE", tenant), None);
+        }
+    }
+
+    #[test]
+    fn identity_rerun_direction_is_fixed_by_original_action() {
+        for (action, state) in [
+            ("identity.client_key.register", "RECONCILING"),
+            ("identity.client_key.revoke", "REVOKING"),
+            ("identity.key_provision", "RECONCILING"),
+            ("identity.key_revoke", "REVOKING"),
+        ] {
+            assert_eq!(
+                converging_state("BUZZ_IDENTITY_PROJECTION", action),
+                Some(state)
+            );
+        }
+        assert_eq!(
+            converging_state("BUZZ_IDENTITY_PROJECTION", "tenant.member.revoke"),
+            None,
+            "另一种动作不能借身份投影的终态重跑"
+        );
+        let tenant = Uuid::new_v4();
+        let pubkey = "a".repeat(64);
+        let id = component_task::workflow_id("BUZZ_IDENTITY_PROJECTION", tenant, &pubkey, 5);
+        assert_eq!(
+            parse_workflow_id(&id, "BUZZ_IDENTITY_PROJECTION", tenant),
+            Some((pubkey, 5))
         );
     }
 }

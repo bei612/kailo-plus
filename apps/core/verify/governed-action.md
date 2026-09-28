@@ -124,6 +124,16 @@ Web 镜像 `sha256:3a23b71a80045bf337a8ee4af9c54dde1fc53cbfbba275ba39ccd4db4371d
 
 灵敏度反向验证：临时把浏览器走查所要求的 `task.rerun.tenant.member.revoke.v1` 改成不存在的 action key，`/volumes/data/kailo-web-approved-rerun-negative-iITJm7/` 这次走查在新场景明确报“原动作重跑控制不符”、退出码 1；其夹具同样拆除。还原期望后，取得上述最终退出码 0。此次运行的 Web、Core、Worker 镜像 ID 分别为 `sha256:3a23b71a80045bf337a8ee4af9c54dde1fc53cbfbba275ba39ccd4db4371d61e`、`sha256:dd14002f2b99d198edbfe1b621ebe10807e5029fd1232809c2ab9fd0b3ca73aa`、`sha256:e44c62179519bd095a1aeea7f8b2a73ba260eb309d2ee04d60892b808b94e4ee`。此结果闭合 Web 审批者的第二次审批操作；请求者一侧由本机 BFF 测试 actor 驱动，同一走查的另一场景独立覆盖浏览器发起普通重跑。它不等于两个真人 Web 会话同时操作，更不代表 Desktop/Mobile 验收或整个 Stage 2 结束。
 
+## 2026-09-28 CLIENT 身份投影重跑核验
+
+依据 `.design/02` DD-84、`.design/06` §9 与 `.design/09` §4，原身份投影的 Temporal 终态与 TaskProjection 必须匹配，重跑才以原 ActionExecution 为目标重新准入，推进 binding 版本并分配新 Workflow ID。改动落在既有 `task_rerun` 核心、两条 Catalog 控制定义与其追溯记录；没有新增任务引擎、审批权威或 Web 专有路径。原 Workflow ID 的实体段在身份投影中是 64 位小写公钥，而原动作 target 是 Principal UUID；旧解析器只接受 UUID，因此不能重跑身份投影。本轮按原 action key 锁定投入或撤销方向，只为 `identity.client_key.register/revoke` 的 CLIENT HUMAN binding 发布控制定义，SERVER 密钥控制仍不在 Catalog 中。
+
+影响面由 GitNexus 先查 `preflight`、`eligible`、`rerun`、`start`、`parse_workflow_id` 与 `resolve_target`，包含任务详情、Governed Action 准入与派发；`start` 为 HIGH 风险，版本解析器为 CRITICAL，未把零调用或不完整图边当作安全证明。准入时验证原发起者、原动作版本、同一 Tenant/Workspace、binding 的 Principal/custody/kind 与 fresh SpiceDB Check；版本解析拒绝零、负数和 `i32::MAX`，避免下一版溢出。派发时用版本及收敛中状态 CAS，旧终态不一致或 Temporal 观察不明返回拒绝，不分配第二条业务 Workflow。同一控制 ActionExecution 重发只对账原新 Workflow；不同控制键不能跨登记/撤销方向借权。异常收口按 `apps/06` §4：权限与 scope 错配为确定拒绝，版本竞争为冲突，外部终态或投影证据缺失为结果不明，重复投递走幂等对账；不会把结果不明渲染成成功。
+
+本地先应用 `20260928100000_identity_rerun_catalog`，再以真实 Temporal/Worker/Relay 跑 `identity_rerun.rs`：登记与撤销各 1 条通过。夹具把旧 Workflow 输入冻结为错误版本，得到真实 `FAILED`；任务详情只给原发起者相应控制键，错误方向返回 `403` 且版本不动，正确方向产生新 Workflow 与 `RECHECK` 决定，最终 binding 分别为 `ACTIVE`、`REVOKED`，版本均为 3。临时把撤销映射改错，专项单元检查准确失败；恢复后通过。正式 `core/verify/run-integration.sh` 退出 0，含新两例，清理本轮 21 个测试 Tenant OpenBao namespace，Core 重启后 BFF `/healthz` 返回 200。`./tools/check.sh --full` 在真实数据库可用、但不打开集成开关的环境下 10 组全绿，迁移前进、回退、再前进均实际执行。
+
+首次专项用例未出现控制键，是本地数据库尚未应用新 Catalog 迁移；应用后原用例通过。直接以 `KAILO_INTEGRATION=1` 跑整个 Cargo workspace 会让 OpenBao 一次性凭据用例缺 `OPENBAO_ROLE_ID`，不属于产品链路结论；正式入口先即时投递凭据再运行该用例，已通过。本轮没有对 CLIENT 身份重跑做浏览器点击走查，也没有 Desktop/Mobile 端到端验收；SERVER HUMAN 管理密钥动作仍须闭合 OpenBao 写入与 WorkflowRef 预写之间的结果不明风险，才能进入用户 Catalog。
+
 ## 已知边界
 
 - 「待我审批」列表用低延迟一致性：刚授予的 admin 关系可能要等 SpiceDB 的
