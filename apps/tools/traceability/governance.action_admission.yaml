@@ -13,7 +13,7 @@ design:
   entities: [ActionDefinition, BusinessObservabilityPolicy, ApprovalPolicy, ActionDecision, ActionExecution, ApprovalProjection, WorkflowRef, TaskProjection]
 
 validation:
-  scenarios: [V-SCN-07, V-SCN-31, V-SCN-32, V-SCN-34, V-SCN-35, V-SCN-37, V-SCN-38, V-SCN-68]
+  scenarios: [V-SCN-07, V-SCN-32, V-SCN-34, V-SCN-35, V-SCN-37, V-SCN-38, V-SCN-68]
   evidence:
     - dimension: 端到端场景
       ref: core/verify/governed-action.md

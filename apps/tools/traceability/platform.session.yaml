@@ -13,7 +13,7 @@ design:
   entities: [HumanIdentity, ExternalIdentity, PlatformSession, TenantMembership]
 
 validation:
-  scenarios: [V-SCN-02, V-SCN-13, V-SCN-43]
+  scenarios: [V-SCN-02, V-SCN-13]
   evidence:
     - dimension: 上游接缝
       ref: upstream-patches/agentgateway/verify/oidc-header-projection.md
