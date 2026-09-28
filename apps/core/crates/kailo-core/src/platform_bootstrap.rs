@@ -59,19 +59,11 @@ pub async fn ensure(
     cfg: &BootstrapConfig,
     http: &reqwest::Client,
 ) -> Result<Uuid, String> {
-    // Catalog Tenant 直接是 ACTIVE：它不经 TENANT_LIFECYCLE，也没有协作面——
-    // 它只承载平台自己的 binding 与凭据（`.design/09` 第 3 步）。
-    let tenant: Uuid = sqlx::query_scalar!(
-        "insert into identity.tenant (id, slug, name, state)
-         values ($1, $2, $2, 'ACTIVE')
-         on conflict (slug) do update set slug = excluded.slug
-         returning id",
-        Uuid::new_v4(),
-        cfg.catalog_tenant_slug,
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("建立 Catalog Tenant 失败: {e}"))?;
+    // Catalog 也须经正常 TENANT_LIFECYCLE 才成为 ACTIVE。初建的 scope、部署
+    // 引导 Principal、ActionExecution 和审计在同一事务内预写；重复启动不改变状态。
+    // 已存在的历史 ACTIVE Catalog 缺协作面时，只能走显式 repair 命令，不能在
+    // Core 启动时悄悄把它降回 PROVISIONING。
+    let tenant = crate::tenant_bootstrap::ensure_catalog(pool, &cfg.catalog_tenant_slug).await?;
 
     // 投递的私钥决定部署此刻要用的 operator 身份；公钥由它派生，不从配置里
     // 再要一份——两处各存一份必然有一天对不上。

@@ -1,4 +1,5 @@
-//! 部署引导：建立一个业务 Tenant 与它的首位 Tenant admin（DD-82、ADR-11）。
+//! 部署引导：建立一个 Tenant（含 Platform Catalog Tenant）与首位 admin
+//! （DD-82、ADR-11）。
 //!
 //! `.design` 没有定义 Tenant 的发起方（没有 `tenant.create` 动作）；邀请（DD-83）要由
 //! 持有 Tenant manage 的人签发，而空 Tenant 里没有这样的人。于是「第一个人」只能来自
@@ -8,6 +9,9 @@
 //! kailo-core bootstrap-tenant --slug <slug> --name <显示名> \
 //!     --admin-subject <IdP subject> --admin-display-name <显示名> --wait-seconds <秒>
 //! ```
+//!
+//! 仅旧版 Catalog 被错误地标为 ACTIVE 而没有协作面时，运维显式加
+//! `--repair-catalog-id <已核对的 Catalog UUID>`；正常 Tenant 不接受此参数。
 //!
 //! 它不是网络入口：只有能在 Core 容器里执行命令的人（即已掌握部署的人）能调用，
 //! 因此不开任何新的认证面。它也不是后门，约束写在 DD-82：
@@ -24,7 +28,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{postgres::PgPoolOptions, PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::audit::{append, AuditEntry};
@@ -33,7 +37,7 @@ use crate::membership_lifecycle::{
 };
 use crate::membership_projection::MembershipScope;
 use crate::scope_state::ScopeKind;
-use crate::spicedb::{SpiceDb, Write};
+use crate::spicedb::{RelationshipFilter, SpiceDb, Write};
 use crate::temporal::TemporalClient;
 
 /// 部署引导这一 ServicePrincipal 的 audience。它是平台内一个固定身份的名字，
@@ -49,11 +53,14 @@ pub struct Args {
     pub admin_subject: String,
     pub admin_display_name: String,
     pub wait: Duration,
+    /// 旧版把 Catalog 直接置为 ACTIVE 却没有协作面。只在显式指定其确切 ID 时
+    /// 允许执行一次历史错误数据修复；普通 bootstrap 永不改变既有 ACTIVE Tenant。
+    pub repair_catalog_id: Option<Uuid>,
 }
 
 impl Args {
-    /// 参数全部必填，不接受默认值：猜一个 slug 或 subject 就是替运维决定谁掌管
-    /// 一个 Tenant。
+    /// 引导参数全部必填；唯一可选的是旧 Catalog 显式修复标记。猜一个 slug
+    /// 或 subject 就是替运维决定谁掌管一个 Tenant。
     pub fn parse(argv: &[String]) -> Result<Self, String> {
         let get = |flag: &str| -> Result<String, String> {
             let i = argv
@@ -74,6 +81,18 @@ impl Args {
             admin_subject: get("--admin-subject")?,
             admin_display_name: get("--admin-display-name")?,
             wait: Duration::from_secs(wait),
+            repair_catalog_id: argv
+                .iter()
+                .position(|a| a == "--repair-catalog-id")
+                .map(|i| {
+                    argv.get(i + 1)
+                        .ok_or("--repair-catalog-id 缺值")
+                        .and_then(|v| {
+                            Uuid::parse_str(v).map_err(|_| "--repair-catalog-id 必须是 UUID")
+                        })
+                        .map_err(str::to_owned)
+                })
+                .transpose()?,
         })
     }
 }
@@ -106,6 +125,240 @@ fn env(k: &str) -> Result<String, String> {
         .ok_or_else(|| format!("缺少 {k}"))
 }
 
+/// 平台启动时只建立引导意图，不提前宣称 Catalog ACTIVE。首次插入和意图
+/// 同事务；已有行原样返回，历史错误数据只由显式运维命令修复。
+pub(crate) async fn ensure_catalog(pool: &PgPool, slug: &str) -> Result<Uuid, String> {
+    if !crate::governance::valid_slug(slug) {
+        return Err("Platform Catalog Tenant slug 不合法".into());
+    }
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let created: Option<Uuid> = sqlx::query_scalar(
+        "insert into identity.tenant (id, slug, name, state)
+         values ($1, $2, $2, 'PROVISIONING')
+         on conflict (slug) do nothing returning id",
+    )
+    .bind(Uuid::new_v4())
+    .bind(slug)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| format!("建立 Catalog Tenant 失败: {e}"))?;
+    let tenant = match created {
+        Some(tenant) => {
+            let initiator = deployment_principal(&mut tx, tenant).await?;
+            let params = hex::encode(Sha256::digest(
+                json!({ "slug": slug, "source": "platform.bootstrap" })
+                    .to_string()
+                    .as_bytes(),
+            ));
+            record_bootstrap(&mut tx, tenant, initiator, "TENANT", tenant, &params).await?;
+            tenant
+        }
+        None => sqlx::query_scalar("select id from identity.tenant where slug = $1")
+            .bind(slug)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| format!("读取 Catalog Tenant 失败: {e}"))?,
+    };
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(tenant)
+}
+
+async fn deployment_principal(
+    tx: &mut Transaction<'_, Postgres>,
+    catalog: Uuid,
+) -> Result<Uuid, String> {
+    // 同一个 audience 只有一个部署主体；并发启动/引导在这把表锁后串行。
+    sqlx::query("lock table identity.service_principal in share row exclusive mode")
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    let found: Option<(Uuid, Uuid, String, String)> = sqlx::query_as(
+        "select sp.principal_id, p.tenant_id, p.kind, p.status
+         from identity.service_principal sp
+         join identity.principal p on p.id = sp.principal_id
+         where sp.audience = $1",
+    )
+    .bind(AUDIENCE)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    if let Some((id, tenant, kind, status)) = found {
+        if tenant != catalog || kind != "SERVICE" || status != "ACTIVE" {
+            return Err("部署引导 Principal 不属于 active Catalog service 身份".into());
+        }
+        return Ok(id);
+    }
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "insert into identity.principal (id, tenant_id, kind, status)
+         values ($1, $2, 'SERVICE', 'ACTIVE')",
+    )
+    .bind(id)
+    .bind(catalog)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    sqlx::query("insert into identity.service_principal (principal_id, audience) values ($1, $2)")
+        .bind(id)
+        .bind(AUDIENCE)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+async fn record_bootstrap(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant: Uuid,
+    initiator: Uuid,
+    target_type: &str,
+    target: Uuid,
+    params: &str,
+) -> Result<Uuid, String> {
+    let ae = Uuid::new_v4();
+    let operation = Uuid::new_v4();
+    sqlx::query(
+        "insert into admission.action_execution
+             (id, operation_id, tenant_id, action_key, action_version,
+              initiator_principal_id, actor_principal_id, target_id, parameter_hash,
+              gate_state, dispatch_state, correlation_id)
+         values ($1, $2, $3, $4, 1, $5, $5, $6, $7, 'ALLOWED', 'NOT_DISPATCHED', $3)",
+    )
+    .bind(ae)
+    .bind(operation)
+    .bind(tenant)
+    .bind(ACTION_KEY)
+    .bind(initiator)
+    .bind(target)
+    .bind(params)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    for (stage, event_type, result) in [
+        ("intent", "INTENT", "EVALUATING"),
+        ("decision", "DECISION", "ALLOWED"),
+    ] {
+        append(
+            tx,
+            entry(
+                operation,
+                stage,
+                event_type,
+                tenant,
+                initiator,
+                target_type,
+                target,
+                params,
+                "ALLOW",
+                result,
+            ),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(ae)
+}
+
+/// Platform Catalog 的首位 admin 必须使用独立 subject。业务 Tenant 之间的
+/// 多成员关系仍由 `.design/03` §2 的 Tenant 选择规则处理；这里只隔离 Catalog。
+async fn has_cross_scope_membership(
+    conn: &mut PgConnection,
+    issuer: &str,
+    subject: &str,
+    catalog: Uuid,
+    target_is_catalog: bool,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "select exists (
+           select 1 from identity.external_identity ei
+           join identity.tenant_membership tm on tm.human_identity_id = ei.human_identity_id
+           where ei.issuer = $1 and ei.subject = $2
+             and (($3 and tm.tenant_id <> $4) or (not $3 and tm.tenant_id = $4))
+         )",
+    )
+    .bind(issuer)
+    .bind(subject)
+    .bind(target_is_catalog)
+    .bind(catalog)
+    .fetch_one(conn)
+    .await
+}
+
+/// 先在同一 subject 串行点重验 Catalog 排他，再建立 Principal、Membership 与
+/// 引导意图。事务外预检仅用于早拒绝，不能代替这次最终判定。
+#[allow(clippy::too_many_arguments)]
+async fn prepare_bootstrap_membership(
+    pool: &PgPool,
+    issuer: &str,
+    catalog_slug: &str,
+    subject: &str,
+    tenant: Uuid,
+    human: Uuid,
+    initiator: Uuid,
+    params: &str,
+) -> Result<(Uuid, Uuid, String), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    crate::external_human::lock_subject(&mut tx, issuer, subject)
+        .await
+        .map_err(|e| format!("锁定引导 subject 失败: {e}"))?;
+    if crate::external_human::find(&mut tx, issuer, subject)
+        .await
+        .map_err(|e| format!("重验引导 subject 失败: {e}"))?
+        != Some((human, true))
+    {
+        return Err("引导 subject 不再对应 active HumanIdentity".into());
+    }
+    let catalog: Uuid = sqlx::query_scalar("select id from identity.tenant where slug = $1")
+        .bind(catalog_slug)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| format!("读取 Catalog Tenant 失败: {e}"))?;
+    if has_cross_scope_membership(&mut tx, issuer, subject, catalog, tenant == catalog)
+        .await
+        .map_err(|e| format!("重验引导 admin subject 失败: {e}"))?
+    {
+        return Err("Catalog admin 的 OIDC subject 不得绑定业务 Tenant，业务 admin 也不得使用已绑定 Catalog 的 subject".into());
+    }
+    let found: Option<(Uuid, Uuid, String)> = sqlx::query_as(
+        "select id, tenant_principal_id, state from identity.tenant_membership
+         where tenant_id = $1 and human_identity_id = $2",
+    )
+    .bind(tenant)
+    .bind(human)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    let result = match found {
+        Some((m, p, s)) => (m, p, s),
+        None => {
+            let (m, p) = (Uuid::new_v4(), Uuid::new_v4());
+            sqlx::query(
+                "insert into identity.principal (id, tenant_id, kind, status) values ($1, $2, 'HUMAN', 'ACTIVE')",
+            )
+            .bind(p)
+            .bind(tenant)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+            sqlx::query(
+                "insert into identity.tenant_membership (id, tenant_id, human_identity_id, tenant_principal_id, state)
+                 values ($1, $2, $3, $4, 'PROVISIONING')",
+            )
+            .bind(m)
+            .bind(tenant)
+            .bind(human)
+            .bind(p)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+            record_bootstrap(&mut tx, tenant, initiator, "TENANT_MEMBERSHIP", m, params).await?;
+            (m, p, "PROVISIONING".to_owned())
+        }
+    };
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
 pub async fn run(args: Args) -> Result<Outcome, String> {
     if !crate::governance::valid_slug(&args.slug) || args.name.trim().is_empty() {
         return Err("slug 只接受小写字母、数字与连字符，显示名不能为空".into());
@@ -131,7 +384,13 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
         pool,
     };
     let deadline = Instant::now() + args.wait;
+    ctx.assert_bootstrap_subject_exclusive(&args.slug, &args.admin_subject)
+        .await?;
     let initiator = ctx.bootstrap_principal().await?;
+    if let Some(expected) = args.repair_catalog_id {
+        ctx.repair_legacy_catalog(&args, expected, initiator)
+            .await?;
+    }
     let params = hex::encode(Sha256::digest(
         json!({ "slug": args.slug, "adminSubject": args.admin_subject })
             .to_string()
@@ -185,7 +444,7 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
     // 3. 首位成员：登记其外部身份（provisioning fact），经 MEMBERSHIP_PROJECTION 开通
     let human = ctx.ensure_human(&args).await?;
     let (principal, membership) = ctx
-        .ensure_membership(tenant, human, initiator, &params)
+        .ensure_membership(tenant, human, &args.admin_subject, initiator, &params)
         .await?;
     if !ctx
         .wait_state("identity.tenant_membership", membership, deadline)
@@ -204,6 +463,203 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
 }
 
 impl Ctx {
+    async fn assert_bootstrap_subject_exclusive(
+        &self,
+        target_slug: &str,
+        subject: &str,
+    ) -> Result<(), String> {
+        let catalog: Uuid = sqlx::query_scalar("select id from identity.tenant where slug = $1")
+            .bind(&self.catalog_slug)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| format!("读取 Catalog Tenant 失败: {e}"))?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+        let other = has_cross_scope_membership(
+            &mut conn,
+            &self.issuer,
+            subject,
+            catalog,
+            target_slug == self.catalog_slug,
+        )
+        .await
+        .map_err(|e| format!("核对引导 admin subject 失败: {e}"))?;
+        if other {
+            return Err("Catalog admin 的 OIDC subject 不得绑定业务 Tenant，业务 admin 也不得使用已绑定 Catalog 的 subject".into());
+        }
+        Ok(())
+    }
+
+    /// 旧版启动已把 Catalog 置为 ACTIVE，却没有 Community/CONTROL。只响应显式
+    /// 指定确切 ID 的运维命令，在行锁和严格空集检查后修复错误数据；不把该操作
+    /// 加进正常 Tenant 状态机，也不允许任何业务 Tenant 借用它。
+    async fn repair_legacy_catalog(
+        &self,
+        args: &Args,
+        expected: Uuid,
+        initiator: Uuid,
+    ) -> Result<(), String> {
+        if args.slug != self.catalog_slug {
+            return Err("--repair-catalog-id 仅接受 Platform Catalog Tenant 的 slug".into());
+        }
+        let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
+        let found: Option<(Uuid, String)> =
+            sqlx::query_as("select id, state from identity.tenant where slug = $1 for update")
+                .bind(&self.catalog_slug)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        let (catalog, state) = found.ok_or("Catalog Tenant 不存在")?;
+        if catalog != expected {
+            return Err("Catalog Tenant ID 与运维显式确认的 ID 不一致".into());
+        }
+        if state == "PROVISIONING" {
+            let intent: bool = sqlx::query_scalar(
+                "select exists(select 1 from admission.action_execution
+                 where tenant_id = $1 and target_id = $1 and action_key = $2
+                   and gate_state = 'ALLOWED')",
+            )
+            .bind(catalog)
+            .bind(ACTION_KEY)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+            if !intent {
+                return Err("Catalog PROVISIONING 但缺引导意图，拒绝接管".into());
+            }
+            return Ok(());
+        }
+        if state != "ACTIVE" {
+            return Err(format!("Catalog Tenant 处于 {state}，修复拒绝改变状态"));
+        }
+        let binding: Option<String> = sqlx::query_scalar(
+            "select state from projection.tenant_buzz_binding where tenant_id = $1",
+        )
+        .bind(catalog)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        if let Some(state) = binding {
+            // 幂等重跑只接受完整 ACTIVE 协作面；中间态与 ACTIVE Tenant 的组合
+            // 是不一致数据，不能当成修复已经结束。
+            let control_ready: bool = sqlx::query_scalar(
+                "select exists (
+                   select 1 from projection.tenant_buzz_binding b
+                   join identity.buzz_identity_binding i
+                     on i.tenant_id = b.tenant_id
+                    and i.principal_id = b.control_service_principal_id
+                   where b.tenant_id = $1 and b.state = 'ACTIVE'
+                     and i.kind = 'CONTROL' and i.state = 'ACTIVE'
+                 )",
+            )
+            .bind(catalog)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+            if state == "ACTIVE" && control_ready {
+                return Ok(());
+            }
+            return Err("旧 Catalog 已有未完成的协作面投影，拒绝再次修复".into());
+        }
+        let populated: bool = sqlx::query_scalar(
+            "select exists(select 1 from identity.buzz_identity_binding where tenant_id = $1)
+                 or exists(select 1 from identity.tenant_membership where tenant_id = $1)
+                 or exists(select 1 from identity.workspace where tenant_id = $1)
+                 or exists(select 1 from identity.tenant_invitation where tenant_id = $1)
+                 or exists(select 1 from identity.principal
+                           where tenant_id = $1 and kind <> 'SERVICE')
+                 or exists(select 1 from admission.action_execution
+                           where tenant_id = $1)",
+        )
+        .bind(catalog)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        if populated {
+            return Err(
+                "旧 Catalog 已有成员、身份、Workspace、邀请或 ActionExecution，拒绝修复".into(),
+            );
+        }
+        let catalog_object = catalog.to_string();
+        let admin = self
+            .spicedb
+            .read(
+                &RelationshipFilter {
+                    object_type: "tenant",
+                    object_id: Some(&catalog_object),
+                    relation: Some(crate::roles::TENANT_MANAGE_RELATION),
+                    subject_principal: None,
+                },
+                self.page,
+            )
+            .await
+            .map_err(|e| format!("核对 Catalog admin 关系失败: {e}"))?;
+        if !admin.is_empty() {
+            return Err("旧 Catalog 已有 admin 关系，拒绝修复".into());
+        }
+        for table in [
+            "catalog.component_definition",
+            "catalog.component_package",
+            "catalog.component_release",
+            "projection.platform_provider_binding",
+            "projection.application_binding",
+        ] {
+            let exists: Option<String> = sqlx::query_scalar("select to_regclass($1)::text")
+                .bind(table)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+            if let Some(name) = exists {
+                let occupied: bool =
+                    sqlx::query_scalar(&format!("select exists(select 1 from {name})"))
+                        .fetch_one(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                if occupied {
+                    return Err(format!("{table} 已有组件数据，拒绝修复"));
+                }
+            }
+        }
+        let params = hex::encode(Sha256::digest(
+            json!({ "catalogTenantId": catalog, "repair": "legacy-active-without-buzz" })
+                .to_string()
+                .as_bytes(),
+        ));
+        let ae = record_bootstrap(&mut tx, catalog, initiator, "TENANT", catalog, &params).await?;
+        let operation: Uuid =
+            sqlx::query_scalar("select operation_id from admission.action_execution where id = $1")
+                .bind(ae)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        sqlx::query(
+            "update identity.tenant set state = 'PROVISIONING', version = version + 1
+             where id = $1 and state = 'ACTIVE'",
+        )
+        .bind(catalog)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        append(
+            &mut tx,
+            entry(
+                operation,
+                "historical_repair",
+                "OUTCOME",
+                catalog,
+                initiator,
+                "TENANT",
+                catalog,
+                &params,
+                "ALLOW",
+                "LEGACY_CATALOG_REPAIR",
+            ),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        tx.commit().await.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     async fn bootstrap_principal(&self) -> Result<Uuid, String> {
         let catalog: Uuid = sqlx::query_scalar("select id from identity.tenant where slug = $1")
             .bind(&self.catalog_slug)
@@ -212,42 +668,7 @@ impl Ctx {
             .map_err(|e| e.to_string())?
             .ok_or("Catalog Tenant 不存在：Core 尚未完成平台引导")?;
         let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
-        // 并发的两次引导争同一个 audience：表锁让它们先后执行，后到的读到先到的那一行
-        sqlx::query("lock table identity.service_principal in share row exclusive mode")
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-        let found: Option<Uuid> = sqlx::query_scalar(
-            "select principal_id from identity.service_principal where audience = $1",
-        )
-        .bind(AUDIENCE)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-        let id = match found {
-            Some(id) => id,
-            None => {
-                let id = Uuid::new_v4();
-                sqlx::query(
-                    "insert into identity.principal (id, tenant_id, kind, status)
-                     values ($1, $2, 'SERVICE', 'ACTIVE')",
-                )
-                .bind(id)
-                .bind(catalog)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-                sqlx::query(
-                    "insert into identity.service_principal (principal_id, audience) values ($1, $2)",
-                )
-                .bind(id)
-                .bind(AUDIENCE)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-                id
-            }
-        };
+        let id = deployment_principal(&mut tx, catalog).await?;
         tx.commit().await.map_err(|e| e.to_string())?;
         Ok(id)
     }
@@ -264,48 +685,7 @@ impl Ctx {
         target: Uuid,
         params: &str,
     ) -> Result<Uuid, String> {
-        let ae = Uuid::new_v4();
-        let operation = Uuid::new_v4();
-        sqlx::query(
-            "insert into admission.action_execution
-                 (id, operation_id, tenant_id, action_key, action_version,
-                  initiator_principal_id, actor_principal_id, target_id, parameter_hash,
-                  gate_state, dispatch_state, correlation_id)
-             values ($1, $2, $3, $4, 1, $5, $5, $6, $7, 'ALLOWED', 'NOT_DISPATCHED', $3)",
-        )
-        .bind(ae)
-        .bind(operation)
-        .bind(tenant)
-        .bind(ACTION_KEY)
-        .bind(initiator)
-        .bind(target)
-        .bind(params)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| e.to_string())?;
-        for (stage, event_type, result) in [
-            ("intent", "INTENT", "EVALUATING"),
-            ("decision", "DECISION", "ALLOWED"),
-        ] {
-            append(
-                tx,
-                entry(
-                    operation,
-                    stage,
-                    event_type,
-                    tenant,
-                    initiator,
-                    target_type,
-                    target,
-                    params,
-                    "ALLOW",
-                    result,
-                ),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-        }
-        Ok(ae)
+        record_bootstrap(tx, tenant, initiator, target_type, target, params).await
     }
 
     async fn ensure_tenant(
@@ -341,7 +721,31 @@ impl Ctx {
             }
         };
         match state.as_str() {
-            "ACTIVE" => Ok(tenant),
+            "ACTIVE" => {
+                if args.slug == self.catalog_slug {
+                    let ready: bool = sqlx::query_scalar(
+                        "select exists (
+                           select 1 from projection.tenant_buzz_binding b
+                           join identity.buzz_identity_binding i
+                             on i.tenant_id = b.tenant_id
+                            and i.principal_id = b.control_service_principal_id
+                           where b.tenant_id = $1 and b.state = 'ACTIVE'
+                             and i.kind = 'CONTROL' and i.state = 'ACTIVE'
+                         )",
+                    )
+                    .bind(tenant)
+                    .fetch_one(&self.pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                    if !ready {
+                        return Err(
+                            "Catalog Tenant ACTIVE 但协作面未查证；须显式修复，不能引导 admin"
+                                .into(),
+                        );
+                    }
+                }
+                Ok(tenant)
+            }
             "PROVISIONING" => {
                 let ae = self.step_execution(tenant, tenant).await?;
                 let started = launch_scope(
@@ -476,48 +880,21 @@ impl Ctx {
         &self,
         tenant: Uuid,
         human: Uuid,
+        subject: &str,
         initiator: Uuid,
         params: &str,
     ) -> Result<(Uuid, Uuid), String> {
-        let found: Option<(Uuid, Uuid, String)> = sqlx::query_as(
-            "select id, tenant_principal_id, state from identity.tenant_membership
-             where tenant_id = $1 and human_identity_id = $2",
+        let (membership, principal, state) = prepare_bootstrap_membership(
+            &self.pool,
+            &self.issuer,
+            &self.catalog_slug,
+            subject,
+            tenant,
+            human,
+            initiator,
+            params,
         )
-        .bind(tenant)
-        .bind(human)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
-        let (membership, principal, state) = match found {
-            Some((m, p, s)) => (m, p, s),
-            None => {
-                let (m, p) = (Uuid::new_v4(), Uuid::new_v4());
-                let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
-                sqlx::query(
-                    "insert into identity.principal (id, tenant_id, kind, status) values ($1, $2, 'HUMAN', 'ACTIVE')",
-                )
-                .bind(p)
-                .bind(tenant)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-                sqlx::query(
-                    "insert into identity.tenant_membership (id, tenant_id, human_identity_id, tenant_principal_id, state)
-                     values ($1, $2, $3, $4, 'PROVISIONING')",
-                )
-                .bind(m)
-                .bind(tenant)
-                .bind(human)
-                .bind(p)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-                self.record(&mut tx, tenant, initiator, "TENANT_MEMBERSHIP", m, params)
-                    .await?;
-                tx.commit().await.map_err(|e| e.to_string())?;
-                (m, p, "PROVISIONING".to_owned())
-            }
-        };
+        .await?;
         match state.as_str() {
             "ACTIVE" => Ok((principal, membership)),
             "PROVISIONING" => {
@@ -683,5 +1060,254 @@ fn entry<'a>(
         result_exposure: "NONE",
         evidence_refs: json!([{ "kind": "DEPLOYMENT_BOOTSTRAP", "value": AUDIENCE }]),
         correlation_id: tenant,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn isolated_pool() -> PgPool {
+        let expected =
+            std::env::var("KAILO_ISOLATED_TEST_DB_NAME").expect("显式指定隔离核验库名称");
+        let url =
+            std::env::var("KAILO_ISOLATED_TEST_DATABASE_URL").expect("显式指定隔离核验库 URL");
+        let pool = PgPool::connect(&url).await.expect("连接隔离核验库");
+        let actual: String = sqlx::query_scalar("select current_database()")
+            .fetch_one(&pool)
+            .await
+            .expect("读取当前数据库");
+        assert_eq!(actual, expected, "禁止对非指定隔离库写入");
+        let business = std::env::var("CORE_DB_NAME").expect("必须提供业务库名称作为防误写比较");
+        assert_ne!(actual, business, "禁止把业务库当作隔离核验库");
+        pool
+    }
+
+    async fn test_human(pool: &PgPool, issuer: &str, client_id: &str, subject: &str) -> Uuid {
+        let mut tx = pool.begin().await.unwrap();
+        let human = crate::external_human::ensure(&mut tx, issuer, client_id, subject, subject)
+            .await
+            .unwrap()
+            .unwrap();
+        tx.commit().await.unwrap();
+        human
+    }
+
+    fn base_args() -> Vec<String> {
+        [
+            "--slug",
+            "kailo-catalog",
+            "--name",
+            "Catalog",
+            "--admin-subject",
+            "platform-admin",
+            "--admin-display-name",
+            "Platform Admin",
+            "--wait-seconds",
+            "0",
+        ]
+        .map(str::to_owned)
+        .to_vec()
+    }
+
+    #[test]
+    fn catalog_repair_requires_exact_uuid_argument() {
+        let args = base_args();
+        assert!(Args::parse(&args).unwrap().repair_catalog_id.is_none());
+
+        let mut args = args;
+        args.extend(["--repair-catalog-id".to_owned(), "not-a-uuid".to_owned()]);
+        assert_eq!(
+            Args::parse(&args).err().as_deref(),
+            Some("--repair-catalog-id 必须是 UUID")
+        );
+
+        *args.last_mut().unwrap() = Uuid::nil().to_string();
+        assert_eq!(
+            Args::parse(&args).unwrap().repair_catalog_id,
+            Some(Uuid::nil())
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "需显式指定全新且独立的 PostgreSQL 核验库"]
+    async fn catalog_prewrite_and_admin_subject_exclusivity() {
+        let pool = isolated_pool().await;
+        let slug = format!("catalog-{}", Uuid::new_v4().simple());
+        let catalog = ensure_catalog(&pool, &slug).await.expect("初建 Catalog");
+        assert_eq!(
+            ensure_catalog(&pool, &slug).await.expect("重复启动"),
+            catalog
+        );
+        let state: String = sqlx::query_scalar("select state from identity.tenant where id = $1")
+            .bind(catalog)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(state, "PROVISIONING");
+        let (execution, operation, initiator): (Uuid, Uuid, Uuid) = sqlx::query_as(
+            "select id, operation_id, initiator_principal_id
+             from admission.action_execution
+             where tenant_id = $1 and target_id = $1 and action_key = $2",
+        )
+        .bind(catalog)
+        .bind(ACTION_KEY)
+        .fetch_one(&pool)
+        .await
+        .expect("生命周期启动前的准入事实");
+        assert_ne!(execution, Uuid::nil());
+        let subject: (Uuid, String, String) = sqlx::query_as(
+            "select p.tenant_id, p.kind, p.status from identity.principal p where p.id = $1",
+        )
+        .bind(initiator)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(subject, (catalog, "SERVICE".into(), "ACTIVE".into()));
+        let audit: (i64, i64) = sqlx::query_as(
+            "select count(*), count(distinct event_type)
+             from audit.audit_event where tenant_id = $1 and operation_id = $2",
+        )
+        .bind(catalog)
+        .bind(operation)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit, (2, 2), "只能有一组 INTENT/DECISION");
+
+        let business = Uuid::new_v4();
+        sqlx::query(
+            "insert into identity.tenant (id, slug, name, state) values ($1, $2, '隔离验证', 'ACTIVE')",
+        )
+        .bind(business)
+        .bind(format!("business-{}", Uuid::new_v4().simple()))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let issuer = std::env::var("HUMAN_OIDC_ISSUER").unwrap();
+        let client_id = std::env::var("HUMAN_OIDC_CLIENT_ID").unwrap();
+        let catalog_subject = format!("catalog-admin-{}", Uuid::new_v4());
+        let catalog_human = test_human(&pool, &issuer, &client_id, &catalog_subject).await;
+        let first = prepare_bootstrap_membership(
+            &pool,
+            &issuer,
+            &slug,
+            &catalog_subject,
+            catalog,
+            catalog_human,
+            initiator,
+            "catalog-admin-test",
+        )
+        .await
+        .expect("Catalog subject 首次建立成员");
+        assert_eq!(first.2, "PROVISIONING");
+        assert_eq!(
+            prepare_bootstrap_membership(
+                &pool,
+                &issuer,
+                &slug,
+                &catalog_subject,
+                catalog,
+                catalog_human,
+                initiator,
+                "catalog-admin-test",
+            )
+            .await
+            .expect("同 Tenant 幂等重试"),
+            first
+        );
+        assert!(
+            prepare_bootstrap_membership(
+                &pool,
+                &issuer,
+                &slug,
+                &catalog_subject,
+                business,
+                catalog_human,
+                initiator,
+                "business-admin-test",
+            )
+            .await
+            .is_err(),
+            "Catalog 已绑定 subject 不能再成为业务 Tenant bootstrap admin"
+        );
+
+        let business_subject = format!("business-admin-{}", Uuid::new_v4());
+        let business_human = test_human(&pool, &issuer, &client_id, &business_subject).await;
+        prepare_bootstrap_membership(
+            &pool,
+            &issuer,
+            &slug,
+            &business_subject,
+            business,
+            business_human,
+            initiator,
+            "business-admin-test",
+        )
+        .await
+        .expect("业务 subject 首次建立成员");
+        assert!(
+            prepare_bootstrap_membership(
+                &pool,
+                &issuer,
+                &slug,
+                &business_subject,
+                catalog,
+                business_human,
+                initiator,
+                "catalog-admin-test",
+            )
+            .await
+            .is_err(),
+            "业务已绑定 subject 不能再成为 Catalog bootstrap admin"
+        );
+
+        let racing_subject = format!("racing-admin-{}", Uuid::new_v4());
+        let racing_human = test_human(&pool, &issuer, &client_id, &racing_subject).await;
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(
+            !has_cross_scope_membership(&mut conn, &issuer, &racing_subject, catalog, true)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !has_cross_scope_membership(&mut conn, &issuer, &racing_subject, catalog, false)
+                .await
+                .unwrap()
+        );
+        drop(conn);
+        let (catalog_result, business_result) = tokio::join!(
+            prepare_bootstrap_membership(
+                &pool,
+                &issuer,
+                &slug,
+                &racing_subject,
+                catalog,
+                racing_human,
+                initiator,
+                "racing-admin-test",
+            ),
+            prepare_bootstrap_membership(
+                &pool,
+                &issuer,
+                &slug,
+                &racing_subject,
+                business,
+                racing_human,
+                initiator,
+                "racing-admin-test",
+            )
+        );
+        assert_ne!(catalog_result.is_ok(), business_result.is_ok());
+        let (memberships, principals): (i64, i64) = sqlx::query_as(
+            "select (select count(*) from identity.tenant_membership where human_identity_id = $1),
+                    (select count(*) from identity.principal where id in
+                       (select tenant_principal_id from identity.tenant_membership where human_identity_id = $1))",
+        )
+        .bind(racing_human)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!((memberships, principals), (1, 1));
     }
 }
