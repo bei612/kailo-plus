@@ -701,6 +701,26 @@ impl SecretStore {
         if locator != self.tenant_locator(tenant_id, &format!("buzz-human/provision/{action_id}")) {
             return Err(SecretError::Refused);
         }
+        self.destroy_unreferenced_version_one(locator).await
+    }
+
+    /// DD-85：已复制但切换被确定拒绝的归位目标。locator 由归位 ID 唯一确定，
+    /// 从未被任何 binding 引用；与 DD-86 同一收敛——只销毁版本 1 并以 metadata 为证。
+    pub async fn destroy_unbound_rehome_copy(
+        &self,
+        tenant_id: Uuid,
+        rehome_id: Uuid,
+        locator: &str,
+    ) -> Result<(), SecretError> {
+        if locator != self.tenant_locator(tenant_id, &format!("buzz-ref-rehome/{rehome_id}")) {
+            return Err(SecretError::Refused);
+        }
+        self.destroy_unreferenced_version_one(locator).await
+    }
+
+    /// 调用方已证明该 locator 专属于一条未形成 binding 的写入意图。CAS 版本 0
+    /// 与仍在途的原写入竞争；无论哪一方赢，只允许销毁版本 1。
+    async fn destroy_unreferenced_version_one(&self, locator: &str) -> Result<(), SecretError> {
         let (namespace, mount, path) = split_locator(locator)?;
         let token = self.token_for_namespace(&namespace).await?;
         let observed = self
@@ -723,7 +743,7 @@ impl SecretStore {
             }
         }
         if self
-            .provision_version_one_destroyed(&namespace, &mount, &path, token.as_str())
+            .unreferenced_version_one_destroyed(&namespace, &mount, &path, token.as_str())
             .await?
         {
             return Ok(());
@@ -747,7 +767,7 @@ impl SecretStore {
             Err(error) => Err(SecretError::Transport(error)),
         };
         if self
-            .provision_version_one_destroyed(&namespace, &mount, &path, token.as_str())
+            .unreferenced_version_one_destroyed(&namespace, &mount, &path, token.as_str())
             .await?
         {
             Ok(())
@@ -756,7 +776,7 @@ impl SecretStore {
         }
     }
 
-    async fn provision_version_one_destroyed(
+    async fn unreferenced_version_one_destroyed(
         &self,
         namespace: &str,
         mount: &str,
@@ -986,7 +1006,8 @@ impl SecretStore {
         let policy = format!(
             "path \"{mount}/data/*\" {{ capabilities = [\"create\", \"update\", \"read\"] }}\n\
              path \"{mount}/metadata/*\" {{ capabilities = [\"read\", \"list\"] }}\n\
-             path \"{mount}/destroy/buzz-human/provision/*\" {{ capabilities = [\"update\"] }}\n",
+             path \"{mount}/destroy/buzz-human/provision/*\" {{ capabilities = [\"update\"] }}\n\
+             path \"{mount}/destroy/buzz-ref-rehome/*\" {{ capabilities = [\"update\"] }}\n",
             mount = self.tenant.mount
         );
         let policy_path = format!("sys/policies/acl/{}", self.tenant.role_name);
@@ -1746,6 +1767,20 @@ mod tests {
         assert!(matches!(
             store
                 .destroy_unbound_server_human_provision(tenant, action, &other)
+                .await,
+            Err(SecretError::Refused)
+        ));
+    }
+
+    #[tokio::test]
+    async fn rehome_copy_refuses_another_rehome_locator_before_any_openbao_call() {
+        let tenant = Uuid::nil();
+        let rehome = Uuid::max();
+        let store = fake_store("");
+        let other = store.tenant_locator(tenant, &format!("buzz-human/provision/{rehome}"));
+        assert!(matches!(
+            store
+                .destroy_unbound_rehome_copy(tenant, rehome, &other)
                 .await,
             Err(SecretError::Refused)
         ));

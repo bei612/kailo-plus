@@ -381,7 +381,9 @@ async fn load(state: &ServiceState, req: &StepRequest) -> Result<Rehome, Respons
             .secrets
             .is_legacy_identity_locator(r.tenant_id, &r.old_locator)
         || match r.state.as_str() {
-            "INTENT" | "COPY_UNKNOWN" | "FAILED" => r.new_ref_version.is_some(),
+            "INTENT" | "COPY_UNKNOWN" => r.new_ref_version.is_some(),
+            // 复制后被拒的 FAILED 保留已销毁的目标版本号，作为 DISCARDED 的证据。
+            "FAILED" => !matches!(r.new_ref_version, None | Some(1)),
             "COPIED" | "SWITCHED" | "RETIRED" => r.new_ref_version != Some(1),
             _ => true,
         }
@@ -574,7 +576,7 @@ async fn mark_failed(state: &ServiceState, r: &Rehome) -> Result<(), Response> {
 /// roster、历史 event 均不变。旧消费者清单与切换同事务冻结。
 async fn cutover(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
     if !actor_still_authorized(state, r).await? {
-        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+        return discard_copy(state, r).await;
     }
     audit_gate(state).await?;
     observe_target_without_transition(state, r).await?;
@@ -599,7 +601,9 @@ async fn cutover(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
         || generation != r.expected_binding_version
         || binding_state != "ACTIVE"
     {
-        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+        // binding 已偏离冻结值：这次归位不可能再切换，不重新冻结。
+        tx.rollback().await.map_err(unavailable)?;
+        return discard_copy(state, r).await;
     }
     let active_projection: Option<i32> = sqlx::query_scalar(
         "select 1 from projection.workflow_ref w
@@ -679,6 +683,57 @@ async fn cutover(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
     audit(&mut tx, r, "cutover", "RECONCILIATION", "SWITCHED").await?;
     tx.commit().await.map_err(unavailable)?;
     Ok("SWITCHED".into())
+}
+
+/// DD-85：COPIED 之后切换被确定拒绝。目标 locator 从未被 binding 引用，销毁其
+/// 版本 1 并经 metadata 查证后才终结为 FAILED；销毁不明保持 COPIED 由同一
+/// Workflow 继续对账，绝不留下一份无人引用的私钥副本而宣告失败。
+async fn discard_copy(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
+    audit_gate(state).await?;
+    // 早于该策略开通的 Tenant namespace 没有目标路径的 destroy 能力；先收敛策略。
+    state
+        .secrets
+        .ensure_tenant(r.tenant_id)
+        .await
+        .map_err(|e| {
+            tracing::warn!(rehome = %r.id, error = %e, "归位副本的 Tenant OpenBao 策略未就绪");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        })?;
+    let referenced: bool = sqlx::query_scalar(
+        "select exists (select 1 from identity.buzz_identity_binding
+                        where private_key_secret_ref = $1)",
+    )
+    .bind(&r.target_locator)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(unavailable)?;
+    if referenced {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    state
+        .secrets
+        .destroy_unbound_rehome_copy(r.tenant_id, r.id, &r.target_locator)
+        .await
+        .map_err(|e| {
+            tracing::warn!(rehome = %r.id, error = %e, "归位副本销毁未得到查证");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        })?;
+    let mut tx = state.pool.begin().await.map_err(unavailable)?;
+    let updated = sqlx::query(
+        "update admission.secret_ref_rehome
+         set state = 'FAILED', new_ref_status = 'DISCARDED', updated_at = now()
+         where id = $1 and state = 'COPIED' and new_ref_version = 1",
+    )
+    .bind(r.id)
+    .execute(&mut *tx)
+    .await
+    .map_err(unavailable)?;
+    if updated.rows_affected() != 1 {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    audit(&mut tx, r, "copy-discarded", "OUTCOME", "FAILED").await?;
+    tx.commit().await.map_err(unavailable)?;
+    Err(StatusCode::CONFLICT.into_response())
 }
 
 async fn observe_target_without_transition(

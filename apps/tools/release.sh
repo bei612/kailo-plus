@@ -32,7 +32,9 @@ BUILD_CONTEXT=$(mktemp -d)
 trap 'rm -r -- "$BUILD_CONTEXT"' EXIT
 # 从仓库根执行 archive；若从 apps/ 子目录执行，Git 会再附加 apps/ 前缀，
 # 对 HEAD:apps 内的相对路径产生不存在的 pathspec。
-git -C .. archive --format=tar "$COMMIT:apps" .dockerignore core worker | tar -xf - -C "$BUILD_CONTEXT" \
+# 导出集合与 .dockerignore 的 allowlist 同步：Core 编译期内嵌生成的能力注册表。
+git -C .. archive --format=tar "$COMMIT:apps" .dockerignore core worker \
+  tools/registry/capabilities.yaml | tar -xf - -C "$BUILD_CONTEXT" \
   || die "无法从固定 commit 导出构建上下文"
 
 mkdir -p "$OUT"

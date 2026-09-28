@@ -106,7 +106,7 @@ capabilities:
   workflow_kinds:
   - BUZZ_IDENTITY_PROJECTION
 - id: identity.secret_ref_rehome
-  exposure: none
+  exposure: tenant_admin
   routes:
   - /api/v1/identity/legacy-secret-refs
   - /api/v1/actions

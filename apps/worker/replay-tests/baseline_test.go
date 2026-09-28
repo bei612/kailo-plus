@@ -72,6 +72,9 @@ func TestComponentTaskReplay(t *testing.T) {
 		// 解档前对账绑定 → 解档 → 解档后收敛 roster → ACTIVE 的真实终态
 		"testdata/component_task_tenant_suspend_history.json",
 		"testdata/component_task_tenant_restore_history.json",
+		// SecretRef 归位（DD-85）：COPIED → SWITCHED → RETIRED 经真实 Tenant
+		// admin 入口准入后的完整终态
+		"testdata/component_task_secret_ref_rehome_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.ComponentTask,

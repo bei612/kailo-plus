@@ -1,6 +1,6 @@
 # DD-85 遗留身份 SecretRef 归位核验
 
-2026-09-27，开发中；本记录不表示能力已发布或 `V-SCN-69` 已闭合。
+2026-09-27 起开发；2026-09-28 补齐复制后被拒的收敛并开放为 `tenant_admin`，见文末“复制后被拒与开放”。
 
 ## 归位发起者的 Tenant 归属闭合（2026-09-27）
 
@@ -488,3 +488,54 @@ BFF `/healthz` 返回 HTTP 200。
 本夹具模拟的是尚在准入中的动作，不是正在读取旧私钥的真实并发
 消费者；真实写入响应丢失、执行中撤权、销毁响应丢失的端到端链与
 生产规模积压仍无本轮证据，`V-SCN-69` 和 Stage 2 不因此关闭。
+
+## 复制后被拒与开放（2026-09-28）
+
+缺陷：`COPIED` 之后若发起者失去新鲜 `manage`，或 binding 已被其他身份路径
+推进 generation，原实现只回 503，Workflow 无限重试，该 Tenant namespace
+里留下一份无人引用的私钥副本。`.design/02` DD-85、`03` §9、`06`、`16`
+V-SCN-69 已写定唯一处置：这两类确定拒绝销毁目标 locator 版本 1，metadata
+确认 `destroyed=true` 后才 `FAILED`、新 ref `DISCARDED`，binding 保持原 ref；
+销毁不明保持 `COPIED` 由同一 Workflow 对账并告警。投影在途、权限判定不可得、
+审计不可用仍只是暂缓。
+
+实现：`kailo-secrets` 把 DD-86 的“CAS 0 争版本 1 → destroy → metadata 查证”
+抽为共用私有函数，新增只接受 `buzz-ref-rehome/<rehome_id>` 的入口；Tenant
+namespace 策略增加该前缀的 destroy。Core `discard_copy` 先过审计门、收敛
+Tenant 策略（早于本策略的 namespace 没有该能力）、确认没有任何 binding
+引用目标 locator，再销毁并在同一事务写 `FAILED/DISCARDED` 与
+`copy-discarded` 审计。迁移 `20260928160000` 扩展 `new_ref_status` 与两条
+状态约束；回滚遇到 `DISCARDED` 行时拒绝，不改写审计事实。能力
+`identity.secret_ref_rehome` 开放为 `tenant_admin`，注册表单元断言与走查
+“成员页”一步同步反转为“可见入口、列表如实为空”。
+
+证据（本地拓扑，受限 BuildKit）：
+
+- 第一次全套集成中新用例 `copied_then_rejected_destroys_the_unreferenced_copy`
+  失败：Core 日志“归位副本销毁未得到查证：凭据被拒或路径不在策略内”，行保持
+  `COPIED`，fail closed 生效；据此补上策略与收敛。修复后的 Core 对这条真实
+  遗留行（Tenant `53941c2e-c5e1-45b6-a09e-da1b0129ecce`，其 namespace 策略早于
+  本次变更）直接调用 service API：HTTP 409，行为 `FAILED|DISCARDED|1`。
+- `core/verify/run-integration.sh` 退出 0，31 批 `test result: ok`，含
+  `copied_then_rejected_destroys_the_unreferenced_copy`（binding 推进与发起者
+  撤权两种拒绝各一轮：409、`FAILED/DISCARDED/1`、目标版本 1 `destroyed=true`
+  且 `current_version=1`、binding 仍为原 ref、一条 `copy-discarded` 审计、终态
+  重放 409）、`copy_unknown_observes_only_the_frozen_target` 与已开放路径的
+  `legacy_server_secret_ref_is_blocked_until_exposed_then_rehomes`。
+- 破坏核验：把 binding 偏离分支改回 503 不销毁并重新部署 Core，定向运行该
+  用例在 “binding-moved: 复制后被拒应为确定失败” 处失败（503≠409）；源码还原
+  后重新部署。
+- replay：从真实已完成的 `kailo:SECRET_REF_REHOME:37b043e8-…:8dfe4b6c-…:1`
+  导出 `component_task_secret_ref_rehome_history.json`（3 次 Advance：COPIED、
+  SWITCHED、RETIRED），加入 `TestComponentTaskReplay`；在归位循环里插入一个
+  `workflow.Sleep` 后 replay 报 TMPRL1100，还原后通过。
+- `web-walkthrough.sh` 20/20 通过。
+- 集成脚本修正：失败用例保留自己的夹具时，原清理立即返回，本轮其他已拆除夹具
+  的 namespace 全部泄漏（本次泄漏 12 个）。现只保留仍被 Core 引用的那个 Tenant
+  的 namespace 与登记，其余照常离线清理，退出码仍为失败。泄漏的 12 个已按同一
+  检查（Core 四表计数为 0、路径精确匹配）停服后离线删除。
+
+遗留：上述 `53941c2e-…` 与破坏核验保留的 `c8652adc-768c-455f-8c63-2396bc02bc19`
+两个失败夹具 Tenant 仍在 Core 与 OpenBao 中，按“失败保留夹具供排查”纪律未在线
+删除，待离线拆除。
+

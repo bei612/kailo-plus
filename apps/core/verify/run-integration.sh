@@ -52,8 +52,8 @@ namespace_path_matches() {
 }
 
 cleanup_fixture_namespaces() {
-  local marker tenant listing deadline
-  local -a markers=() targets=()
+  local marker tenant listing deadline retained=0
+  local -a markers=() targets=() cleared=()
   shopt -s nullglob
   markers=("$namespace_ledger"/*)
   [ "${#markers[@]}" -gt 0 ] || return 0
@@ -67,10 +67,14 @@ cleanup_fixture_namespaces() {
       echo "测试 Tenant $tenant 在运行前已存在，拒绝删除 namespace" >&2
       return 1
     fi
+    # 失败用例按约定保留夹具供排查；只保留它自己的 namespace 与登记，
+    # 不连带阻断本轮其他已拆除夹具的清理。
     fixture_tenant_absent "$tenant" || {
-      echo "测试 Tenant $tenant 仍有 Core 引用，拒绝删除 namespace" >&2
-      return 1
+      echo "测试 Tenant $tenant 仍有 Core 引用，保留其 namespace 与登记" >&2
+      retained=1
+      continue
     }
+    cleared+=("$marker")
     if printf '%s\n' "$listing" | jq -e --arg tenant "$tenant" \
       'type == "array" and any(.[]; rtrimstr("/") == $tenant)' >/dev/null; then
       namespace_path_matches "$tenant" || return 1
@@ -78,8 +82,8 @@ cleanup_fixture_namespaces() {
     fi
   done
   if [ "${#targets[@]}" -eq 0 ]; then
-    for marker in "${markers[@]}"; do rm -- "$marker" || return 1; done
-    return 0
+    for marker in "${cleared[@]}"; do rm -- "$marker" || return 1; done
+    return "$retained"
   fi
 
   core_stopped_for_cleanup=1
@@ -100,8 +104,9 @@ cleanup_fixture_namespaces() {
     done
     [ "$SECONDS" -lt "$deadline" ] || return 1
   done
-  for marker in "${markers[@]}"; do rm -- "$marker" || return 1; done
+  for marker in "${cleared[@]}"; do rm -- "$marker" || return 1; done
   echo "本轮 ${#targets[@]} 个测试 Tenant OpenBao namespace 已离线收敛"
+  return "$retained"
 }
 
 finish() {

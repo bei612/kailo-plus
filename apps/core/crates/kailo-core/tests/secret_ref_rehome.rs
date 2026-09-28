@@ -748,3 +748,267 @@ async fn purge_test_legacy_metadata(
         "夹具旧 KV metadata 清理失败"
     );
 }
+
+/// DD-85：复制已查证（COPIED）后切换被确定拒绝——binding 已偏离冻结的
+/// generation，或发起者不再有新鲜 `manage`——必须销毁目标版本 1 并以
+/// metadata 查证后才 FAILED；binding 保持原 ref，不留未引用的私钥副本。
+#[tokio::test]
+async fn copied_then_rejected_destroys_the_unreferenced_copy() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+    let fx = common::provision_live_workspace(&http, &e, &pool, &token)
+        .await
+        .expect("开通独立归位夹具");
+    let path = format!("buzz-human/{}/{}", fx.tenant, Uuid::new_v4());
+    let parent = std::env::var("OPENBAO_TENANT_PARENT_NAMESPACE").expect("Tenant namespace 根");
+    let child = format!("{parent}/{}", fx.tenant);
+    let credentials = std::fs::read_to_string(
+        std::env::var("VERIFY_OPENBAO_ROOT_TOKEN_FILE").expect("核验凭据路径"),
+    )
+    .expect("读取核验凭据");
+    let credentials: Value = serde_json::from_str(&credentials).expect("解析核验凭据");
+    let root = credentials["root_token"]
+        .as_str()
+        .expect("核验 root token")
+        .to_owned();
+
+    let (pubkey, tenant_locator, tenant_version, audience, generation): (
+        String,
+        String,
+        i32,
+        String,
+        i32,
+    ) = sqlx::query_as(
+        "select pubkey, private_key_secret_ref, private_key_secret_version,
+                private_key_secret_audience, version
+         from identity.buzz_identity_binding
+         where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN'
+           and custody = 'SERVER' and state = 'ACTIVE'",
+    )
+    .bind(fx.tenant)
+    .bind(fx.principal)
+    .fetch_one(&pool)
+    .await
+    .expect("夹具 HUMAN binding");
+    let key =
+        common::read_secret_version(&http, &e, fx.tenant, &tenant_locator, tenant_version).await;
+    let old_version =
+        i32::try_from(common::put_secret(&http, &e, &path, &key).await).expect("旧 KV 版本");
+    let old_locator = format!("{}/{}/{path}", e.bao_namespace, e.bao_mount);
+    let mut frozen_generation: i32 = sqlx::query_scalar(
+        "update identity.buzz_identity_binding
+         set private_key_secret_ref = $2, private_key_secret_version = $3,
+             version = version + 1
+         where pubkey = $1 and tenant_id = $4 and version = $5
+         returning version",
+    )
+    .bind(&pubkey)
+    .bind(&old_locator)
+    .bind(old_version)
+    .bind(fx.tenant)
+    .bind(generation)
+    .fetch_one(&pool)
+    .await
+    .expect("只改夹具 SecretRef");
+    common::zed_relationship(
+        &e,
+        "touch",
+        &format!("tenant:{}", fx.tenant),
+        "admin",
+        &format!("principal:{}", fx.principal),
+    );
+
+    for rejection in ["binding-moved", "actor-revoked"] {
+        let action = Uuid::new_v4();
+        let operation = Uuid::new_v4();
+        let workflow = format!("kailo:SECRET_REF_REHOME:{}:{action}:1", fx.tenant);
+        let target_path = format!("buzz-ref-rehome/{action}");
+        let target_locator = format!("{child}/{}/{}", e.bao_mount, target_path);
+        // 与上一用例同样只构造写入意图之后的持久事实；该动作不派发 Workflow，
+        // 由测试直接驱动服务面，避免与对账器并发推进同一行。
+        let mut tx = pool.begin().await.expect("冻结归位夹具事务");
+        sqlx::query(
+            "insert into admission.action_execution
+             (id, operation_id, tenant_id, action_key, action_version,
+              initiator_principal_id, actor_principal_id, target_id, parameter_hash,
+              temporal_workflow_id, gate_state, dispatch_state, correlation_id)
+             values ($1,$2,$3,'identity.secret_ref.rehome',1,$4,$4,$4,
+                     $5,$6,'ALLOWED','DISPATCHED',$7)",
+        )
+        .bind(action)
+        .bind(operation)
+        .bind(fx.tenant)
+        .bind(fx.principal)
+        .bind(format!("copied-then-{rejection}"))
+        .bind(&workflow)
+        .bind(Uuid::new_v4())
+        .execute(&mut *tx)
+        .await
+        .expect("写入夹具 ActionExecution");
+        sqlx::query(
+            "insert into projection.workflow_ref
+             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
+              operation_id, action_execution_id, projection_state)
+             values ($1,'ComponentTaskWorkflow',1,'SECRET_REF_REHOME',$2,$3,$4,'PENDING_START')",
+        )
+        .bind(&workflow)
+        .bind(fx.tenant)
+        .bind(operation)
+        .bind(action)
+        .execute(&mut *tx)
+        .await
+        .expect("写入夹具 WorkflowRef");
+        sqlx::query(
+            "insert into admission.secret_ref_rehome
+             (id, action_execution_id, workflow_id, tenant_id, identity_pubkey,
+              expected_binding_version, old_locator, old_version, old_audience,
+              target_locator, old_ref_status, new_ref_status, state)
+             values ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,'ACTIVE','NONE','COPY_UNKNOWN')",
+        )
+        .bind(action)
+        .bind(&workflow)
+        .bind(fx.tenant)
+        .bind(&pubkey)
+        .bind(frozen_generation)
+        .bind(&old_locator)
+        .bind(old_version)
+        .bind(&audience)
+        .bind(&target_locator)
+        .execute(&mut *tx)
+        .await
+        .expect("写入夹具 COPY_UNKNOWN");
+        tx.commit().await.expect("提交写前事实");
+
+        let written = http
+            .post(format!(
+                "{}/v1/{}/data/{target_path}",
+                e.bao_addr, e.bao_mount
+            ))
+            .header("X-Vault-Namespace", &child)
+            .header("X-Vault-Token", &root)
+            .json(&json!({"data":{"value":key},"options":{"cas":0}}))
+            .send()
+            .await
+            .expect("模拟已发生但响应丢失的目标写入");
+        assert!(written.status().is_success(), "目标首次写入必须成功");
+
+        let step = json!({
+            "actionExecutionId": action,
+            "rehomeId": action,
+            "tenantId": fx.tenant,
+            "pubkey": pubkey,
+            "expectedBindingVersion": frozen_generation,
+            "workflowId": workflow
+        });
+        let advance = || {
+            http.post(format!(
+                "{}/service/v1/secret-ref-rehomes/advance",
+                e.service_url
+            ))
+            .bearer_auth(&token)
+            .json(&step)
+            .send()
+        };
+        let copied = advance().await.expect("查证目标副本");
+        assert!(copied.status().is_success(), "{rejection}: 查证副本应成功");
+        let copied: Value = copied.json().await.expect("解析查证结果");
+        assert_eq!(copied["state"], "COPIED", "{rejection}");
+
+        match rejection {
+            "binding-moved" => {
+                frozen_generation = sqlx::query_scalar(
+                    "update identity.buzz_identity_binding set version = version + 1
+                     where pubkey = $1 and tenant_id = $2 returning version",
+                )
+                .bind(&pubkey)
+                .bind(fx.tenant)
+                .fetch_one(&pool)
+                .await
+                .expect("另一条身份路径推进 generation");
+            }
+            _ => common::zed_relationship(
+                &e,
+                "delete",
+                &format!("tenant:{}", fx.tenant),
+                "admin",
+                &format!("principal:{}", fx.principal),
+            ),
+        }
+
+        let rejected = advance().await.expect("切换被确定拒绝");
+        assert_eq!(
+            rejected.status(),
+            reqwest::StatusCode::CONFLICT,
+            "{rejection}: 复制后被拒应为确定失败"
+        );
+        let (state, new_status, new_version): (String, String, Option<i32>) = sqlx::query_as(
+            "select state, new_ref_status, new_ref_version
+             from admission.secret_ref_rehome where id = $1",
+        )
+        .bind(action)
+        .fetch_one(&pool)
+        .await
+        .expect("读取归位终态");
+        assert_eq!(
+            (state.as_str(), new_status.as_str(), new_version),
+            ("FAILED", "DISCARDED", Some(1)),
+            "{rejection}"
+        );
+        let target_metadata: Value = http
+            .get(format!(
+                "{}/v1/{}/metadata/{target_path}",
+                e.bao_addr, e.bao_mount
+            ))
+            .header("X-Vault-Namespace", &child)
+            .header("X-Vault-Token", &root)
+            .send()
+            .await
+            .expect("回读目标 metadata")
+            .error_for_status()
+            .expect("目标 metadata 可读")
+            .json()
+            .await
+            .expect("解析目标 metadata");
+        assert_eq!(
+            target_metadata.pointer("/data/versions/1/destroyed"),
+            Some(&Value::Bool(true)),
+            "{rejection}: 未引用的目标副本必须已销毁"
+        );
+        assert_eq!(target_metadata["data"]["current_version"], 1);
+        let (locator, version): (String, i32) = sqlx::query_as(
+            "select private_key_secret_ref, private_key_secret_version
+             from identity.buzz_identity_binding where pubkey = $1 and tenant_id = $2",
+        )
+        .bind(&pubkey)
+        .bind(fx.tenant)
+        .fetch_one(&pool)
+        .await
+        .expect("被拒后的 binding");
+        assert_eq!(
+            (locator.as_str(), version),
+            (old_locator.as_str(), old_version),
+            "{rejection}: binding 必须保持原 ref"
+        );
+        let discarded: i64 = sqlx::query_scalar(
+            "select count(*) from audit.audit_event
+             where operation_id = $1 and event_key like '%:copy-discarded'",
+        )
+        .bind(operation)
+        .fetch_one(&pool)
+        .await
+        .expect("读取丢弃审计");
+        assert_eq!(discarded, 1, "{rejection}: 丢弃须有一条审计");
+        let again = advance().await.expect("终态后重放");
+        assert_eq!(again.status(), reqwest::StatusCode::CONFLICT, "{rejection}");
+    }
+
+    sqlx::query("delete from admission.secret_ref_rehome where tenant_id = $1")
+        .bind(fx.tenant)
+        .execute(&pool)
+        .await
+        .expect("清理归位夹具行");
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    purge_test_legacy_metadata(&http, &e, fx.tenant, &path).await;
+}
