@@ -38,7 +38,8 @@ ADR-03 要求四门语言由同一 schema 生成。四个生成器支持的构�
 | `enums/` | 全部封闭枚举与 reason code，单点定义 |
 | `domain/` | `.design/03` 的实体与状态 |
 | `api/` | BFF query / semantic command / stream |
-| `adapter/` | Adapter Protocol |
+| `adapter/` | Adapter Protocol（与能力类别无关的线协议层） |
+| `adapter/<category>.vN/` | 能力契约 schema：`<category>` 为 `file_storage`、`document_editing`、`knowledge`、`data_query`，`vN` 为契约版本。按 `.design/07` §2.4 的 v1 契约键固定参数/结果 schema、错误映射与到 SpiceDB permission 的映射，是该契约与其一致性套件的唯一权威；契约键增删或语义变化只以新版本目录发布（`DD-88`）。schema 文件随 Stage 3 的能力模型实现建立 |
 | `component-host/` | Component manifest 与 Host API |
 | `workflow/` | Workflow input、Update/Signal、projection、ExternalExecution |
 
@@ -47,3 +48,5 @@ ADR-03 要求四门语言由同一 schema 生成。四个生成器支持的构�
 改 schema 后运行 `tools/check.sh contracts`：重新生成四侧、比对工作树无 diff、跑 canary 与 round-trip、与上一个已发布版本做兼容比对。生成物入库，改动在 PR 中可见。
 
 新增枚举值对读取端是破坏性的，除非读取端已实现未知值降级；四侧的降级形态见 ADR-03。
+
+能力契约 schema 与其他目录遵守同一子集与生成规则；契约键、`type_key` 与枚举值不得含实现产品名，实现来源只记在 `component_type_key`（`DD-88`）。

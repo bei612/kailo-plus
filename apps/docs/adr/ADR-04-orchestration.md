@@ -8,7 +8,7 @@
 
 `07-运行与运维基线.md` §2 的目标是让任一工程师在一台机器上跑通一条纵向切片，而不是复刻生产拓扑，并明写「本地可以简化副本数与持久化，不可以简化边界」。要保留的边界来自 `01-工程结构与模块边界.md` §8：Browser 只到达公开入口，BFF 只接受身份投影，管理面不可直达。
 
-`07` §1 的部署前置不变式在本地同样生效，其中若干条是编排层的职责——例如 AgentGateway 的 admin router 不得暴露给 Browser、Agent 或 Tenant admin（`SS-AGW-ADMIN`），Wren 的 runtime 必须位于只有 AgentGateway 可达的网络边界内（`SF-WRN-06`），DocumentServer 的 `ipfilter` 必须精确允许该 Tenant 的 Cells host（`SF-OFF-10`）。这些都要求编排层能表达网络隔离，而不只是把容器跑起来。
+`07` §1 的部署前置不变式在本地同样生效，其中若干条是编排层的职责——例如 AgentGateway 的 admin router 不得暴露给 Browser、Agent 或 Tenant admin（`SS-AGW-ADMIN`），每个服务的数据库只在自己的私有数据网络内可达（`DD-93`），业务能力实现的 MCP runtime 只对 AgentGateway 可达（参考实例 `SF-WRN-06`）。这些都要求编排层能表达网络隔离，而不只是把容器跑起来。
 
 `00-实施总纲.md` §6 把编排方式列为 ADR 门禁项，且路线上没有任何 Stage 依赖 Kubernetes 特性。
 

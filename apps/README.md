@@ -31,7 +31,9 @@
 - 一期同时交付 Buzz Web、Buzz Desktop、Buzz Mobile 三端；它们是仅有的用户入口，能力按 `REQ-21` 分级。
 - Platform Core/BFF 是单一模块化 Rust 服务，共享业务事务边界。
 - Application Worker 是同仓库、独立部署的 Go 进程，使用 Temporal Go SDK `v1.48.0`；该版本是 Kailo 的选择，与 Server 内部依赖版本无关（`SF-TMP-04`）。
-- 平台级能力通过固定 Platform Port Client 接入；应用级组件通过 Remote Adapter、Embedded Driver 或已证明的 Protocol Peer 接入。
+- Kailo 分平台核心与业务能力服务两层（`DD-87`）：平台核心强集成、不可替换，零业务能力 binding 时即是完整产品；文件存储、文档编辑、知识与数据查询是可缺席、可替换的业务能力，按能力类别与版本化能力契约接入（`DD-88`），内置的 Cells+ONLYOFFICE、WeKnora、Wren 只是参考实现。
+- 平台级能力通过固定 Platform Port Client 或平台自身已编译的 driver 接入；业务能力服务只通过 Remote Adapter 或平台与该服务之间的标准协议接入，各自独立数据库与凭据（`DD-58`、`DD-93`）。
+- 交付路线分平台核心链（Stage 0–5 与平台一期收口）与三个可选、互不依赖的能力扩展；一期生产总门禁只含平台核心（`DD-91`）。
 - `.references` 是只读上游证据与差异来源，不是实现目录，不在其中开发、构建或打补丁。
 - `BLOCKED` 能力不进入路由、菜单、Action、Tool、Workflow 或发布清单。
 - `ADAPTER_REQUIRED` 能力只有在对应 `SS-*` 接缝实现、验证并形成可追溯构建产物后才能启用。
@@ -78,4 +80,4 @@ trellis init --claude --codex -u "<你的名字>" --workflow native
 
 两项 SKIP 是无适用对象而非遗漏：尚无追溯记录（Stage 0 不产出用户可达能力）；十份 runbook 在生产发布前补齐（`07-运行与运维基线.md` §6）。
 
-**当前正在开发 Stage 2，尚未生产就绪**：Stage 1 的身份与协作主链已有实现，但不能宣称其退出门禁全部闭合。`DD-70/72` 要求的 `tenants/<tenant_id>` OpenBao namespace、独立 KV/AppRole/policy/token 已在本地真实生命周期与跨 Tenant 拒绝探针中验证；旧 `platform/kv` SecretRef 的兼容读取保留，迁移及旧版本处置尚未完成，见 [SecretRef 核验](core/verify/secret-ref.md)。Stage 2 的 Governed Action、审批、角色、邀请及任务只读投影已有实现；本人任务取消与重跑已通过 Core、Temporal、Worker 的真实拓扑联调及 Web 真实浏览器走查。Desktop/Mobile 原生会话端到端证据与 Stage 2 其余能力仍未闭合，Stage 3–8 未交付。当前优先收口 Web，再推进 Stage 2；以 [纵向交付路线](02-纵向交付路线.md) §1.1、§3–4 的端规则和退出门禁逐项验收，不得把 Web 通过当作三端和全阶段通过。
+**当前正在开发 Stage 2，尚未生产就绪**：Stage 1 的身份与协作主链已有实现，但不能宣称其退出门禁全部闭合。`DD-70/72` 要求的 `tenants/<tenant_id>` OpenBao namespace、独立 KV/AppRole/policy/token 已在本地真实生命周期与跨 Tenant 拒绝探针中验证；旧 `platform/kv` SecretRef 的兼容读取保留，迁移及旧版本处置尚未完成，见 [SecretRef 核验](core/verify/secret-ref.md)。Stage 2 的 Governed Action、审批、角色、邀请及任务只读投影已有实现；本人任务取消与重跑已通过 Core、Temporal、Worker 的真实拓扑联调及 Web 真实浏览器走查。Desktop/Mobile 原生会话端到端证据与 Stage 2 其余能力仍未闭合，Stage 3–5、平台一期收口与三个能力扩展未交付。当前优先收口 Web，再推进 Stage 2；以 [纵向交付路线](02-纵向交付路线.md) §1.1、§3–4 的端规则和退出门禁逐项验收，不得把 Web 通过当作三端和全阶段通过。
