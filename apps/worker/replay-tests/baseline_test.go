@@ -68,6 +68,10 @@ func TestComponentTaskReplay(t *testing.T) {
 		// 以及对账归属 → 解档 → 重建 roster → ACTIVE 的真实终态
 		"testdata/component_task_workspace_suspend_history.json",
 		"testdata/component_task_workspace_restore_history.json",
+		// 业务 Tenant 暂停与恢复（DD-96）：归档 Community → SUSPENDED，以及
+		// 解档前对账绑定 → 解档 → 解档后收敛 roster → ACTIVE 的真实终态
+		"testdata/component_task_tenant_suspend_history.json",
+		"testdata/component_task_tenant_restore_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.ComponentTask,

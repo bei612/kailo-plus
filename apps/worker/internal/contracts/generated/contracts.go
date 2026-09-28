@@ -46,6 +46,9 @@
 //    ownAuditEntry, err := UnmarshalOwnAuditEntry(bytes)
 //    bytes, err = ownAuditEntry.Marshal()
 //
+//    platformTenantPage, err := UnmarshalPlatformTenantPage(bytes)
+//    bytes, err = platformTenantPage.Marshal()
+//
 //    readMarkRequest, err := UnmarshalReadMarkRequest(bytes)
 //    bytes, err = readMarkRequest.Marshal()
 //
@@ -278,6 +281,16 @@ func UnmarshalOwnAuditEntry(data []byte) (OwnAuditEntry, error) {
 }
 
 func (r *OwnAuditEntry) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPlatformTenantPage(data []byte) (PlatformTenantPage, error) {
+	var r PlatformTenantPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PlatformTenantPage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -610,6 +623,8 @@ type ActionCommand struct {
 	PrincipalID *string `json:"principalId,omitempty"`
 	// workspace.create 的 slug
 	Slug *string `json:"slug,omitempty"`
+	// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
+	TenantID *string `json:"tenantId,omitempty"`
 	// Workspace 内动作的执行 Workspace
 	WorkspaceID *string `json:"workspaceId,omitempty"`
 }
@@ -811,6 +826,24 @@ type OwnAuditEntry struct {
 	ResultCode string `json:"resultCode"`
 	// 动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
 	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// GET /api/v1/platform/tenants 的有界回应：只对 Platform Catalog Tenant 中持有 fresh Catalog manage
+// 的会话开放，列出业务 Tenant 及其当前状态与可发起的暂停/恢复动作提示（DD-96）。动作提交仍由 Core 重新准入。
+type PlatformTenantPage struct {
+	// 下一页的 Core 索引偏移，缺省即读完
+	NextOffset *int64               `json:"nextOffset,omitempty"`
+	Tenants    []PlatformTenantView `json:"tenants"`
+}
+
+type PlatformTenantView struct {
+	ID string `json:"id"`
+	// 按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作
+	// key；目录未开放、处于收敛中或本页提示判定失败时省略
+	LifecycleActionKey *TenantLifecycleActionKey `json:"lifecycleActionKey,omitempty"`
+	Name               string                    `json:"name"`
+	Slug               string                    `json:"slug"`
+	State              TenantState               `json:"state"`
 }
 
 // PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
@@ -1285,6 +1318,7 @@ const (
 	TargetNotFound               ReasonCode = "TARGET_NOT_FOUND"
 	TargetStateConflict          ReasonCode = "TARGET_STATE_CONFLICT"
 	TenantMembershipNotActive    ReasonCode = "TENANT_MEMBERSHIP_NOT_ACTIVE"
+	TenantNotActive              ReasonCode = "TENANT_NOT_ACTIVE"
 	TenantSelectionNotAvailable  ReasonCode = "TENANT_SELECTION_NOT_AVAILABLE"
 	WaitingApproval              ReasonCode = "WAITING_APPROVAL"
 )
@@ -1428,6 +1462,33 @@ const (
 	Human   BindingKind = "HUMAN"
 )
 
+// 按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作
+// key；目录未开放、处于收敛中或本页提示判定失败时省略
+//
+// 业务 Tenant 暂停与恢复的 ActionDefinition key（DD-96）。两者都由 Platform Catalog Tenant 的
+// platform-admin 发起；Tenant delete 随 Stage 3 注册，不在此列。
+type TenantLifecycleActionKey string
+
+const (
+	TenantRestore TenantLifecycleActionKey = "tenant.restore"
+	TenantSuspend TenantLifecycleActionKey = "tenant.suspend"
+)
+
+// Tenant 状态机。权威定义见 .design/03-领域模型与权限模型.md。DELETING/DELETED 因 GAP-LCM-01
+// 开放而不注册入口，但状态本身保留以承载已有记录。
+type TenantState string
+
+const (
+	Deleted                 TenantState = "DELETED"
+	Deleting                TenantState = "DELETING"
+	TenantStateACTIVE       TenantState = "ACTIVE"
+	TenantStateERROR        TenantState = "ERROR"
+	TenantStatePROVISIONING TenantState = "PROVISIONING"
+	TenantStateRESTORING    TenantState = "RESTORING"
+	TenantStateSUSPENDED    TenantState = "SUSPENDED"
+	TenantStateSUSPENDING   TenantState = "SUSPENDING"
+)
+
 type CreateActionKey string
 
 const (
@@ -1450,12 +1511,12 @@ const (
 type WorkspaceState string
 
 const (
-	Restoring                  WorkspaceState = "RESTORING"
-	Suspended                  WorkspaceState = "SUSPENDED"
-	Suspending                 WorkspaceState = "SUSPENDING"
 	WorkspaceStateACTIVE       WorkspaceState = "ACTIVE"
 	WorkspaceStateERROR        WorkspaceState = "ERROR"
 	WorkspaceStatePROVISIONING WorkspaceState = "PROVISIONING"
+	WorkspaceStateRESTORING    WorkspaceState = "RESTORING"
+	WorkspaceStateSUSPENDED    WorkspaceState = "SUSPENDED"
+	WorkspaceStateSUSPENDING   WorkspaceState = "SUSPENDING"
 )
 
 // TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close

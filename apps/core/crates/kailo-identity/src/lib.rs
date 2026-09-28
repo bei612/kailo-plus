@@ -20,6 +20,11 @@ pub enum IdentityError {
     MembershipNotActive,
     #[error("TenantMembership 对应的 Principal 不是同 Tenant 的 active HUMAN")]
     PrincipalNotActive,
+    /// 所属 Tenant 不是 ACTIVE（暂停中、已暂停、恢复中或 ERROR）。DD-96(3)：自
+    /// `SUSPENDING` 起该 Tenant 成员的全部 BFF 请求在身份解析即被拒；受限会话随
+    /// Tenant delete 在 Stage 3 注册，此前暂停中的 Tenant 不开放任何入口。
+    #[error("所属 Tenant 不是 ACTIVE")]
+    TenantNotActive,
     /// 同一个人在多个 Tenant 各有一条 ACTIVE membership。`.design/03` 允许这种
     /// 情形，但没有定义登录时如何选定 Tenant；一期也没有选择入口。在那之前
     /// 只能拒绝——任取一个就是「回退默认租户」。
@@ -37,7 +42,8 @@ impl IdentityError {
             Self::HeaderMissing
             | Self::Unknown
             | Self::MembershipNotActive
-            | Self::PrincipalNotActive => ErrorClass::Denied,
+            | Self::PrincipalNotActive
+            | Self::TenantNotActive => ErrorClass::Denied,
             // 能力未开放，不是身份不成立：修配置或重试都不会让它通过
             Self::TenantSelectionUnavailable => ErrorClass::Blocked,
             // 依赖不可用：这次没法判定，不是拒绝——写成拒绝会把可恢复故障记成
@@ -53,6 +59,7 @@ impl IdentityError {
             Self::Unknown => ReasonCode::IdentityUnknown,
             Self::MembershipNotActive => ReasonCode::TenantMembershipNotActive,
             Self::PrincipalNotActive => ReasonCode::ScopeGuardFailed,
+            Self::TenantNotActive => ReasonCode::TenantNotActive,
             Self::TenantSelectionUnavailable => ReasonCode::TenantSelectionNotAvailable,
             Self::Unavailable(_) => ReasonCode::DependencyUnavailable,
         }
@@ -121,6 +128,9 @@ pub async fn resolve(
     if !row.principal_valid {
         return Err(IdentityError::PrincipalNotActive);
     }
+    if !tenant_active(pool, row.tenant_id).await? {
+        return Err(IdentityError::TenantNotActive);
+    }
 
     Ok(ResolvedIdentity {
         human_identity_id: row.human_identity_id.to_string(),
@@ -129,4 +139,20 @@ pub async fn resolve(
         tenant_principal_id: row.tenant_principal_id.to_string(),
         current_workspace_id: None,
     })
+}
+
+/// 该 Tenant 此刻是否 ACTIVE。身份解析与会话存活判定共用这一处：请求路径与已建立
+/// 的 stream 对 Tenant 暂停（DD-96(3)）必须给出同一个答案。
+pub(crate) async fn tenant_active(
+    pool: &PgPool,
+    tenant_id: uuid::Uuid,
+) -> Result<bool, sqlx::Error> {
+    Ok(
+        sqlx::query_scalar::<_, String>("select state from identity.tenant where id = $1")
+            .bind(tenant_id)
+            .fetch_optional(pool)
+            .await?
+            .as_deref()
+            == Some("ACTIVE"),
+    )
 }

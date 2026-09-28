@@ -134,6 +134,10 @@ export interface ActionCommand {
      */
     slug?: string;
     /**
+     * tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
+     */
+    tenantId?: string;
+    /**
      * Workspace 内动作的执行 Workspace
      */
     workspaceId?: string;
@@ -244,6 +248,7 @@ export enum ReasonCode {
     TargetNotFound = "TARGET_NOT_FOUND",
     TargetStateConflict = "TARGET_STATE_CONFLICT",
     TenantMembershipNotActive = "TENANT_MEMBERSHIP_NOT_ACTIVE",
+    TenantNotActive = "TENANT_NOT_ACTIVE",
     TenantSelectionNotAvailable = "TENANT_SELECTION_NOT_AVAILABLE",
     WaitingApproval = "WAITING_APPROVAL",
 }
@@ -632,6 +637,57 @@ export interface OwnAuditEntry {
      * 动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
      */
     workspaceId?: string;
+}
+
+/**
+ * GET /api/v1/platform/tenants 的有界回应：只对 Platform Catalog Tenant 中持有 fresh Catalog manage
+ * 的会话开放，列出业务 Tenant 及其当前状态与可发起的暂停/恢复动作提示（DD-96）。动作提交仍由 Core 重新准入。
+ */
+export interface PlatformTenantPage {
+    /**
+     * 下一页的 Core 索引偏移，缺省即读完
+     */
+    nextOffset?: number;
+    tenants:     PlatformTenantView[];
+}
+
+export interface PlatformTenantView {
+    id: string;
+    /**
+     * 按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作
+     * key；目录未开放、处于收敛中或本页提示判定失败时省略
+     */
+    lifecycleActionKey?: TenantLifecycleActionKey;
+    name:                string;
+    slug:                string;
+    state:               TenantState;
+}
+
+/**
+ * 按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作
+ * key；目录未开放、处于收敛中或本页提示判定失败时省略
+ *
+ * 业务 Tenant 暂停与恢复的 ActionDefinition key（DD-96）。两者都由 Platform Catalog Tenant 的
+ * platform-admin 发起；Tenant delete 随 Stage 3 注册，不在此列。
+ */
+export enum TenantLifecycleActionKey {
+    TenantRestore = "tenant.restore",
+    TenantSuspend = "tenant.suspend",
+}
+
+/**
+ * Tenant 状态机。权威定义见 .design/03-领域模型与权限模型.md。DELETING/DELETED 因 GAP-LCM-01
+ * 开放而不注册入口，但状态本身保留以承载已有记录。
+ */
+export enum TenantState {
+    Active = "ACTIVE",
+    Deleted = "DELETED",
+    Deleting = "DELETING",
+    Error = "ERROR",
+    Provisioning = "PROVISIONING",
+    Restoring = "RESTORING",
+    Suspended = "SUSPENDED",
+    Suspending = "SUSPENDING",
 }
 
 /**

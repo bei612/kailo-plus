@@ -16,14 +16,14 @@ use axum::{
     Json,
 };
 use contracts::{
-    OwnAuditEntry, RoleMemberPage, RoleMemberView, RoleWorkspacePage, RoleWorkspaceView,
-    WorkspaceMemberView, WorkspaceView,
+    OwnAuditEntry, PlatformTenantPage, PlatformTenantView, RoleMemberPage, RoleMemberView,
+    RoleWorkspacePage, RoleWorkspaceView, WorkspaceMemberView, WorkspaceView,
 };
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::bff::{db_enum, resolve_execution_context, BffState};
-use crate::governance::{Actor, WorkspaceLifecycleOffer};
+use crate::governance::{Actor, TenantLifecycleOffer, WorkspaceLifecycleOffer};
 use crate::spicedb::{Consistency, RelationshipFilter};
 
 /// 我在当前 Tenant 里能进的 Workspace。
@@ -267,6 +267,138 @@ pub async fn list_role_workspaces(
             workspaces,
             next_offset,
             create_action_key,
+        }),
+    )
+        .into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformTenantQuery {
+    offset: Option<i64>,
+}
+
+/// Platform Catalog 的业务 Tenant 管理视图（DD-96）。
+///
+/// 只对 Catalog 会话、且在 Catalog Tenant 上 fresh `manage` 为真的人开放，其余 403：
+/// 业务 Tenant 的清单本身就是平台管理面的事实。有界分页与角色管理 Workspace 列表
+/// 同一写法（偏移游标、多取一行判断是否还有下一页）。暂停/恢复的动作键是只读提示：
+/// 判定失败时本页不给任何生命周期键，页面其余部分照常返回。
+pub async fn list_platform_tenants(
+    State(state): State<BffState>,
+    Query(query): Query<PlatformTenantQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    let offset = query.offset.unwrap_or(0);
+    if offset < 0 {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let is_catalog = match state.pool.acquire().await {
+        Ok(mut conn) => {
+            crate::platform_bootstrap::is_catalog_tenant(&mut conn, ctx.tenant_id).await
+        }
+        Err(e) => Err(e),
+    };
+    match is_catalog {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::FORBIDDEN.into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "Catalog 会话判定失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    }
+    match state
+        .governance
+        .spicedb
+        .check(
+            "tenant",
+            &ctx.tenant_id.to_string(),
+            "manage",
+            &ctx.tenant_principal_id.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+    {
+        Ok(c) if c.allowed => {}
+        Ok(_) => return StatusCode::FORBIDDEN.into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "Catalog manage 判定失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    }
+    let page = state.governance.cfg.role_member_page_limit;
+    let Some(fetch_limit) = page.checked_add(1) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let mut rows: Vec<(Uuid, String, String, String, bool)> = match sqlx::query_as(
+        "select t.id, t.name, t.slug, t.state,
+                exists (select 1 from projection.tenant_buzz_binding b
+                        where b.tenant_id = t.id and b.state = 'ACTIVE')
+         from identity.tenant t
+         where t.id <> $1
+         order by t.id limit $2 offset $3",
+    )
+    .bind(ctx.tenant_id)
+    .bind(fetch_limit)
+    .bind(offset)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(error = %e, "列业务 Tenant 失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let more = rows.len() as i64 > page;
+    rows.truncate(page as usize);
+    let next_offset = if more {
+        match offset.checked_add(rows.len() as i64) {
+            Some(next) => Some(next),
+            None => return StatusCode::BAD_REQUEST.into_response(),
+        }
+    } else {
+        None
+    };
+    let offer = match state
+        .governance
+        .available_tenant_lifecycle_actions(Actor {
+            tenant_id: ctx.tenant_id,
+            principal_id: ctx.tenant_principal_id,
+            human_identity_id: Some(ctx.human_identity_id),
+        })
+        .await
+    {
+        Ok(offer) => offer,
+        Err(e) => {
+            tracing::warn!(refusal = ?e, "Tenant 生命周期动作提示判定失败，本页不给生命周期键");
+            TenantLifecycleOffer::default()
+        }
+    };
+    let mut tenants = Vec::with_capacity(rows.len());
+    for (id, name, slug, tenant_state, has_binding) in rows {
+        let lifecycle_action_key = offer.for_state(&tenant_state, has_binding);
+        let tenant_state = match db_enum("tenant.state", &tenant_state) {
+            Ok(s) => s,
+            Err(r) => return r,
+        };
+        tenants.push(PlatformTenantView {
+            id: id.to_string(),
+            name,
+            slug,
+            state: tenant_state,
+            lifecycle_action_key,
+        });
+    }
+    (
+        StatusCode::OK,
+        Json(PlatformTenantPage {
+            tenants,
+            next_offset,
         }),
     )
         .into_response()

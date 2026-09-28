@@ -21,6 +21,7 @@ import type {
   NativeCommunityFacts,
   OwnAuditEntry,
   PlatformSessionView,
+  PlatformTenantPage,
   RoleMemberPage,
   RoleWorkspacePage,
   TaskView,
@@ -68,6 +69,10 @@ export function createBffClient(transport: BffTransport) {
     /** 有界的角色管理 Workspace 选择；它不等于可进入频道的 Workspace 列表。 */
     roleWorkspaces: (offset?: number) =>
       get<RoleWorkspacePage>(`/api/v1/role-workspaces${offset ? `?offset=${offset}` : ""}`),
+
+    /** DD-96：Platform Catalog 会话的业务 Tenant 管理视图；非 Catalog 或无权即 403。 */
+    platformTenants: (offset?: number) =>
+      get<PlatformTenantPage>(`/api/v1/platform/tenants${offset ? `?offset=${offset}` : ""}`),
 
     /** DD-85：只列当前 Tenant 可归位的旧 SERVER 身份，不返回 SecretRef 或密钥。 */
     legacySecretRefs: (cursor?: string) =>

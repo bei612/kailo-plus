@@ -336,6 +336,10 @@ pub enum Semantic {
     /// Workspace，准入落定即置 SUSPENDING/RESTORING，由 WORKSPACE_LIFECYCLE 收敛。
     WorkspaceSuspend,
     WorkspaceRestore,
+    /// 业务 Tenant 的暂停与恢复（DD-96）：在 Platform Catalog Tenant 中执行、指向
+    /// 业务 Tenant；业务侧由它自己的 TENANT_LIFECYCLE operation 承接。
+    TenantSuspend,
+    TenantRestore,
     WorkspaceMemberAdd,
     WorkspaceMemberRevoke,
     TenantMemberRevoke,
@@ -363,6 +367,8 @@ impl Semantic {
             "workspace.create" => Self::WorkspaceCreate,
             "workspace.suspend" => Self::WorkspaceSuspend,
             "workspace.restore" => Self::WorkspaceRestore,
+            "tenant.suspend" => Self::TenantSuspend,
+            "tenant.restore" => Self::TenantRestore,
             "workspace.member.add" => Self::WorkspaceMemberAdd,
             "workspace.member.revoke" => Self::WorkspaceMemberRevoke,
             "tenant.member.revoke" => Self::TenantMemberRevoke,
@@ -418,6 +424,26 @@ impl Semantic {
     /// 以及派发时声明给启动核心的段。建立链的 Workspace 行在准入时新建，不在此列。
     /// 暂停也接受 `ERROR`：暂停或恢复失败后的 Workspace 由再次暂停收敛
     /// （`.design/03` 状态机的 `ERROR → SUSPENDING`），恢复只从 `SUSPENDED` 起步。
+    /// 业务 Tenant 生命周期的一段：可接受的起始状态、准入落定时置入的收敛中状态，
+    /// 以及派发时声明给启动核心的段。
+    fn tenant_segment(self) -> Option<(&'static [&'static str], &'static str, ScopeOperation)> {
+        match self {
+            Self::TenantSuspend => {
+                Some((&["ACTIVE", "ERROR"], "SUSPENDING", ScopeOperation::Suspend))
+            }
+            Self::TenantRestore => Some((&["SUSPENDED"], "RESTORING", ScopeOperation::Restore)),
+            _ => None,
+        }
+    }
+
+    /// 由用户在目标详情上显式确认、确认位冻结在参数里的语义（`confirmation_mode=EXPLICIT`）。
+    fn takes_explicit_confirmation(self) -> bool {
+        matches!(
+            self,
+            Self::SecretRefRehome | Self::TenantSuspend | Self::TenantRestore
+        )
+    }
+
     fn workspace_segment(self) -> Option<(&'static [&'static str], &'static str, ScopeOperation)> {
         match self {
             Self::WorkspaceSuspend => {
@@ -433,6 +459,8 @@ impl Semantic {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Params {
     pub workspace_id: Option<Uuid>,
+    /// 业务 Tenant 暂停与恢复的目标（DD-96）；其他语义一律为空
+    pub tenant_id: Option<Uuid>,
     pub principal_id: Option<Uuid>,
     pub slug: Option<String>,
     pub name: Option<String>,
@@ -446,6 +474,9 @@ impl Params {
         let mut m = serde_json::Map::new();
         if let Some(w) = self.workspace_id {
             m.insert("workspaceId".into(), json!(w));
+        }
+        if let Some(t) = self.tenant_id {
+            m.insert("tenantId".into(), json!(t));
         }
         if let Some(p) = self.principal_id {
             m.insert("principalId".into(), json!(p));
@@ -477,6 +508,7 @@ impl Params {
         let text = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
         Some(Self {
             workspace_id: uuid("workspaceId"),
+            tenant_id: uuid("tenantId"),
             principal_id: uuid("principalId"),
             slug: text("slug"),
             name: text("name"),
@@ -500,7 +532,7 @@ pub(crate) fn valid_slug(s: &str) -> bool {
 
 fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params, Refusal> {
     let bad = || Refusal::Precondition(ReasonCode::InvalidParameters);
-    if sem != Semantic::SecretRefRehome && cmd.explicit_confirmation.is_some() {
+    if !sem.takes_explicit_confirmation() && cmd.explicit_confirmation.is_some() {
         return Err(bad());
     }
     let uuid = |s: &Option<String>| -> Result<Option<Uuid>, Refusal> {
@@ -511,6 +543,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
     };
     let p = Params {
         workspace_id: uuid(&cmd.workspace_id)?,
+        tenant_id: uuid(&cmd.tenant_id)?,
         principal_id: uuid(&cmd.principal_id)?,
         slug: cmd.slug.clone(),
         name: cmd.name.as_ref().map(|n| n.trim().to_owned()),
@@ -518,8 +551,22 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         original_action_execution_id: uuid(&cmd.original_action_execution_id)?,
         explicit_confirmation: cmd.explicit_confirmation,
     };
+    // tenantId 只属于业务 Tenant 的暂停与恢复
+    if sem.tenant_segment().is_none() && p.tenant_id.is_some() {
+        return Err(bad());
+    }
     // 每个语义要求的参数集合是闭集：多出与缺少都拒绝，不按「字段为空即忽略」猜
     let ok = match sem {
+        Semantic::TenantSuspend | Semantic::TenantRestore => {
+            p.tenant_id.is_some()
+                && p.workspace_id.is_none()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.explicit_confirmation == Some(true)
+        }
         Semantic::SecretRefRehome => {
             p.workspace_id.is_none()
                 && p.principal_id.is_some()
@@ -626,6 +673,33 @@ pub struct Target {
     pub id: Uuid,
     pub version: i32,
     pub workspace_id: Option<Uuid>,
+}
+
+/// Platform Catalog 会话此刻可发起的业务 Tenant 生命周期动作（只读提示，提交时
+/// 重新准入）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TenantLifecycleOffer {
+    suspend: bool,
+    restore: bool,
+}
+
+impl TenantLifecycleOffer {
+    /// 暂停对 ACTIVE、以及协作面 binding 为 ACTIVE 的 ERROR（暂停或恢复失败留下的）给出；
+    /// 恢复只对 SUSPENDED 给出；收敛中与建立失败没有 binding 的不给。
+    pub fn for_state(
+        self,
+        state: &str,
+        has_binding: bool,
+    ) -> Option<contracts::TenantLifecycleActionKey> {
+        match state {
+            "ACTIVE" if self.suspend => Some(contracts::TenantLifecycleActionKey::TenantSuspend),
+            "ERROR" if self.suspend && has_binding => {
+                Some(contracts::TenantLifecycleActionKey::TenantSuspend)
+            }
+            "SUSPENDED" if self.restore => Some(contracts::TenantLifecycleActionKey::TenantRestore),
+            _ => None,
+        }
+    }
 }
 
 /// 调用方此刻可发起的 Workspace 生命周期动作（只读提示，提交时重新准入）。
@@ -785,6 +859,58 @@ async fn resolve_target(
                 version: 0,
                 workspace_id: None,
             })
+        }
+        Semantic::TenantSuspend | Semantic::TenantRestore => {
+            // DD-96(1)：只在 Platform Catalog Tenant 的会话中执行，Check 对象是 Catalog
+            // 的 manage；目录形状与语义不一致即阻断
+            if def.target_type != "TENANT"
+                || def.tenant_rule != "SESSION_TENANT"
+                || def.workspace_rule != "TENANT_ONLY"
+                || def.permission_object_type != "tenant"
+                || def.permission != "manage"
+                || def.confirmation_mode != "EXPLICIT"
+                || def.execution_mode != "TEMPORAL"
+                || def.workflow_kind.as_deref() != Some("TENANT_LIFECYCLE")
+            {
+                tracing::error!(action = %def.action_key, "Tenant 生命周期动作的目录形状与语义不一致");
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            if !crate::platform_bootstrap::is_catalog_tenant(&mut *conn, tenant).await? {
+                return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+            let Some((from, _, _)) = sem.tenant_segment() else {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            };
+            let target = p
+                .tenant_id
+                .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+            // 目标只能是业务 Tenant：Catalog 不暂停自己。从 ERROR 起步的暂停还要求协作面
+            // binding ACTIVE——建立失败而没有 Community 的 ERROR 无可归档（与入口提示一致）
+            let row: Option<(i32, String, bool)> = sqlx::query_as(&format!(
+                "select t.version, t.state,
+                        exists (select 1 from projection.tenant_buzz_binding b
+                                where b.tenant_id = t.id and b.state = 'ACTIVE')
+                 from identity.tenant t where t.id = $1 and t.id <> $2{for_update}"
+            ))
+            .bind(target)
+            .bind(tenant)
+            .fetch_optional(&mut *conn)
+            .await?;
+            match row {
+                Some((version, state, bound))
+                    if from.contains(&state.as_str())
+                        && (state != "ERROR" || bound)
+                        && frozen.is_none_or(|id| id == target) =>
+                {
+                    Ok(Target {
+                        id: target,
+                        version,
+                        workspace_id: None,
+                    })
+                }
+                Some(_) => Err(Refusal::Conflict(ReasonCode::TargetStateConflict)),
+                None => Err(Refusal::Precondition(ReasonCode::TargetNotFound)),
+            }
         }
         Semantic::WorkspaceSuspend | Semantic::WorkspaceRestore => {
             // 从 Tenant scope 指向 Workspace（.design/03 §2）：执行 scope 没有
@@ -1336,6 +1462,46 @@ impl Governance {
         Ok(offer)
     }
 
+    /// 业务 Tenant 暂停/恢复入口的一次性可用性提示（DD-96）：目录开放、定义形状与
+    /// Catalog Tenant 上的 fresh `manage`。调用方须先确认会话属于 Catalog。
+    pub async fn available_tenant_lifecycle_actions(
+        &self,
+        actor: Actor,
+    ) -> Result<TenantLifecycleOffer, Refusal> {
+        let mut offer = TenantLifecycleOffer::default();
+        for (key, suspend) in [("tenant.suspend", true), ("tenant.restore", false)] {
+            if !crate::capability_registry::action_exposed(key) {
+                continue;
+            }
+            let Some(def) = active_definition(&self.pool, key).await? else {
+                continue;
+            };
+            if def.target_type != "TENANT"
+                || def.tenant_rule != "SESSION_TENANT"
+                || def.workspace_rule != "TENANT_ONLY"
+                || def.permission_object_type != "tenant"
+                || def.permission != "manage"
+                || def.confirmation_mode != "EXPLICIT"
+                || def.execution_mode != "TEMPORAL"
+                || def.workflow_kind.as_deref() != Some("TENANT_LIFECYCLE")
+            {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            let target = Target {
+                id: actor.tenant_id,
+                version: 0,
+                workspace_id: None,
+            };
+            let allowed = self.evaluate(actor, &def, &target).await?.allowed;
+            if suspend {
+                offer.suspend = allowed;
+            } else {
+                offer.restore = allowed;
+            }
+        }
+        Ok(offer)
+    }
+
     /// 任务详情的一次性可用性投影；不是授权票据。按钮仅在这里取得 active
     /// 控制定义、本人 scope、fresh Check 与 Temporal OPEN 事实时显示，提交/派发
     /// 仍重复所有检查（DD-84）。列表不为每行发起外部 Describe。
@@ -1372,6 +1538,7 @@ impl Governance {
         }
         let params = Params {
             workspace_id: None,
+            tenant_id: None,
             principal_id: None,
             slug: None,
             name: None,
@@ -1451,6 +1618,7 @@ impl Governance {
         }
         let params = Params {
             workspace_id: None,
+            tenant_id: None,
             principal_id: None,
             slug: None,
             name: None,
@@ -2033,7 +2201,7 @@ impl Governance {
         // 确认位是本次 ActionExecution 的冻结参数；未持久记录确认的动作不能
         // 仅因目录写了 EXPLICIT 就按 NONE 放行。
         if def.confirmation_mode == "EXPLICIT"
-            && !(sem == Semantic::SecretRefRehome && params.explicit_confirmation == Some(true))
+            && !(sem.takes_explicit_confirmation() && params.explicit_confirmation == Some(true))
         {
             return Err((Refusal::Precondition(ReasonCode::InvalidParameters), op));
         }
@@ -2320,6 +2488,13 @@ impl Governance {
             .workflow_kind
             .as_deref()
             .ok_or_else(|| Refusal::Unavailable("TEMPORAL 定义缺 workflow_kind".into()))?;
+        if sem.tenant_segment().is_some() {
+            return self
+                .allow_tenant_lifecycle(
+                    tx, ae, def, sem, &target, kind, phase, approval, eval, human,
+                )
+                .await;
+        }
         let version: i32 = match sem {
             Semantic::SecretRefRehome => 1,
             Semantic::WorkspaceCreate => {
@@ -2419,7 +2594,10 @@ impl Governance {
             | Semantic::TenantMemberInvite
             | Semantic::TenantMemberInviteRevoke
             | Semantic::TaskCancel
-            | Semantic::TaskRerun => {
+            | Semantic::TaskRerun
+            // 业务 Tenant 生命周期在上面单独落定
+            | Semantic::TenantSuspend
+            | Semantic::TenantRestore => {
                 return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked))
             }
         };
@@ -2482,6 +2660,267 @@ impl Governance {
 }
 
 impl Governance {
+    /// 业务 Tenant 暂停与恢复的准入落定（DD-96(2)(3)、`.design/03` §6 TENANT_ONLY 的
+    /// 唯一例外）。
+    ///
+    /// 同一事务里：把**业务** Tenant 置 SUSPENDING/RESTORING 并 version+1——这是 Core
+    /// 中唯一允许的跨 Tenant 写，只对这两个语义开放；为业务 Tenant 建立它自己的承接
+    /// 执行（独立 operation、ALLOWED、以业务 Tenant 为 tenant）、预写它的
+    /// `TENANT_LIFECYCLE` WorkflowRef 并写业务侧审计，审计以 `ACTION_EXECUTION_ID`
+    /// 引用发起它的 Catalog ActionExecution；Catalog 执行只记下同一 workflow ID，两侧
+    /// 不共享 operation。不在业务 Tenant 中建立任何 Catalog Principal 的 relationship。
+    #[allow(clippy::too_many_arguments)]
+    async fn allow_tenant_lifecycle(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        ae: &Execution,
+        def: &Definition,
+        sem: Semantic,
+        target: &Target,
+        kind: &str,
+        phase: &str,
+        approval: &str,
+        eval: &Evaluation,
+        human: Option<Uuid>,
+    ) -> Result<Option<crate::invitation::Issued>, Refusal> {
+        let Some((from, to, _)) = sem.tenant_segment() else {
+            return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+        };
+        let business = target.id;
+        let version: i32 = sqlx::query_scalar::<_, i32>(
+            "update identity.tenant set state = $3, version = version + 1
+             where id = $1 and version = $2 and state = any($4) and id <> $5
+             returning version",
+        )
+        .bind(business)
+        .bind(target.version)
+        .bind(to)
+        .bind(from)
+        .bind(ae.tenant_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+        let workflow_id =
+            component_task::workflow_id(kind, business, &business.to_string(), version);
+
+        let lifecycle_id = Uuid::new_v4();
+        let lifecycle_operation = Uuid::new_v4();
+        sqlx::query(
+            "insert into admission.action_execution
+                 (id, operation_id, tenant_id, action_key, action_version,
+                  initiator_principal_id, actor_principal_id, target_id, parameter_hash,
+                  temporal_workflow_id, gate_state, dispatch_state, correlation_id)
+             values ($1, $2, $3, $4, $5, $6, $7, $3, $8, $9, 'ALLOWED', 'NOT_DISPATCHED', $2)",
+        )
+        .bind(lifecycle_id)
+        .bind(lifecycle_operation)
+        .bind(business)
+        .bind(&ae.action_key)
+        .bind(ae.action_version)
+        .bind(ae.initiator_principal_id)
+        .bind(ae.actor_principal_id)
+        .bind(&ae.parameter_hash)
+        .bind(&workflow_id)
+        .execute(&mut **tx)
+        .await?;
+        let lifecycle = lock_execution(tx, lifecycle_id).await?;
+        component_task::prewrite(
+            tx,
+            &workflow_id,
+            kind,
+            business,
+            lifecycle_operation,
+            lifecycle_id,
+        )
+        .await?;
+        audit(
+            tx,
+            &lifecycle,
+            def,
+            "lifecycle:accepted",
+            "DECISION",
+            "ALLOW",
+            "ALLOWED",
+            None,
+            vec![
+                Evidence::new(EvidenceKind::ActionExecutionId, ae.id),
+                Evidence::new(EvidenceKind::TemporalWorkflowId, &workflow_id),
+            ],
+        )
+        .await?;
+
+        sqlx::query(
+            "update admission.action_execution
+             set gate_state = 'ALLOWED', temporal_workflow_id = $2, reason_code = null, updated_at = now()
+             where id = $1",
+        )
+        .bind(ae.id)
+        .bind(&workflow_id)
+        .execute(&mut **tx)
+        .await?;
+        record_decision(
+            tx,
+            &ae.subject(),
+            phase,
+            eval.scope,
+            eval.authorization,
+            approval,
+            eval.zed_token.as_deref(),
+            None,
+        )
+        .await?;
+        let mut evidence = zed_evidence(eval.zed_token.as_deref());
+        evidence.push(Evidence::new(
+            EvidenceKind::TemporalWorkflowId,
+            &workflow_id,
+        ));
+        evidence.push(Evidence::new(EvidenceKind::ActionExecutionId, lifecycle_id));
+        audit(
+            tx,
+            ae,
+            def,
+            &format!("{}:decision", phase.to_lowercase()),
+            "DECISION",
+            "ALLOW",
+            "ALLOWED",
+            human,
+            evidence,
+        )
+        .await?;
+        Ok(None)
+    }
+
+    /// 业务 Tenant 生命周期的派发。Catalog 执行与业务侧承接执行指向同一 workflow ID；
+    /// 无论对账作业先驱动哪一条，都以 WorkflowRef 的归属（业务侧承接执行）启动，并把
+    /// 两条的派发状态一起落定、两侧各写审计。确定中止时同一事务把业务 Tenant 从
+    /// 收敛中状态置 ERROR：不会再有 Workflow 把它带出来。
+    async fn dispatch_tenant_lifecycle(
+        &self,
+        ae: &Execution,
+        def: &Definition,
+        sem: Semantic,
+    ) -> Result<(), Refusal> {
+        let Some((_, converging, operation)) = sem.tenant_segment() else {
+            return Ok(());
+        };
+        let Some(workflow_id) = ae.temporal_workflow_id.clone() else {
+            return Err(Refusal::Unavailable(
+                "ALLOWED 而没有预写 workflow ID".into(),
+            ));
+        };
+        let Some((lifecycle_id, business, ref_state)) = sqlx::query_as::<_, (Uuid, Uuid, String)>(
+            "select action_execution_id, tenant_id, projection_state
+                 from projection.workflow_ref where workflow_id = $1",
+        )
+        .bind(&workflow_id)
+        .fetch_optional(&self.pool)
+        .await?
+        else {
+            return Err(Refusal::Unavailable(
+                "业务 Tenant 的 WorkflowRef 缺失".into(),
+            ));
+        };
+        let pair: Vec<Execution> = sqlx::query_as(&format!(
+            "select {EXECUTION_COLUMNS} from admission.action_execution
+             where temporal_workflow_id = $1 and action_key = $2 and action_version = $3
+               and gate_state = 'ALLOWED'"
+        ))
+        .bind(&workflow_id)
+        .bind(&def.action_key)
+        .bind(def.version)
+        .fetch_all(&self.pool)
+        .await?;
+        let Some(catalog_id) = pair.iter().find(|e| e.tenant_id != business).map(|e| e.id) else {
+            return Err(Refusal::Unavailable(
+                "缺发起它的 Catalog ActionExecution".into(),
+            ));
+        };
+        if pair
+            .iter()
+            .all(|e| matches!(e.dispatch_state.as_str(), "DISPATCHED" | "ABORTED"))
+        {
+            return Ok(());
+        }
+        let outcome = if matches!(ref_state.as_str(), "RUNNING" | "TERMINAL") {
+            Ok(())
+        } else {
+            match launch_scope(
+                &self.pool,
+                &self.temporal,
+                &ScopeLifecycleRequest {
+                    kind: ScopeKind::Tenant,
+                    id: business,
+                    action_execution_id: lifecycle_id,
+                    operation,
+                },
+            )
+            .await
+            {
+                Ok(r) if r.workflow_id == workflow_id => Ok(()),
+                Ok(r) => {
+                    tracing::error!(expected = %workflow_id, got = %r.workflow_id, "派发的 workflow ID 与预写的不一致");
+                    Err(StatusCode::CONFLICT)
+                }
+                Err(resp) => Err(resp.status()),
+            }
+        };
+        let (state, stage, result) = match outcome {
+            Ok(()) => ("DISPATCHED", "dispatch", "DISPATCHED"),
+            Err(StatusCode::SERVICE_UNAVAILABLE) => {
+                ("UNKNOWN", "dispatch-unknown", "DISPATCH_RESULT_UNKNOWN")
+            }
+            Err(_) => ("ABORTED", "dispatch-aborted", "DISPATCH_ABORTED"),
+        };
+        let mut tx = self.pool.begin().await?;
+        let mut settled = false;
+        for e in &pair {
+            let updated = sqlx::query(
+                "update admission.action_execution set dispatch_state = $2, updated_at = now()
+                 where id = $1 and gate_state = 'ALLOWED' and dispatch_state in ('NOT_DISPATCHED', 'UNKNOWN')",
+            )
+            .bind(e.id)
+            .bind(state)
+            .execute(&mut *tx)
+            .await?;
+            if updated.rows_affected() == 0 {
+                continue;
+            }
+            settled = true;
+            let other = if e.id == lifecycle_id {
+                catalog_id
+            } else {
+                lifecycle_id
+            };
+            audit(
+                &mut tx,
+                e,
+                def,
+                stage,
+                "DISPATCH",
+                "ALLOW",
+                result,
+                None,
+                vec![
+                    Evidence::new(EvidenceKind::TemporalWorkflowId, &workflow_id),
+                    Evidence::new(EvidenceKind::ActionExecutionId, other),
+                ],
+            )
+            .await?;
+        }
+        if settled && state == "ABORTED" {
+            sqlx::query(
+                "update identity.tenant set state = 'ERROR', version = version + 1
+                 where id = $1 and state = $2",
+            )
+            .bind(business)
+            .bind(converging)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// 在准入事务里完成的同步动作的 DISPATCH 与 OUTCOME 审计：它们没有外部副作用，
     /// 「派发」就是同一事务里那次 Core 写入，两条事实与门禁一起成立。
     async fn record_local_outcome(
@@ -3578,6 +4017,9 @@ impl Governance {
         if sem == Semantic::TaskRerun {
             return self.dispatch_rerun(ae_id, &def).await;
         }
+        if sem.tenant_segment().is_some() {
+            return self.dispatch_tenant_lifecycle(&ae, &def, sem).await;
+        }
         if def.execution_mode == "SYNC" {
             // 在准入事务里已完成的同步动作没有可派发的东西；走到这里只可能是角色
             return if sem.is_role() {
@@ -3658,7 +4100,10 @@ impl Governance {
                 | Semantic::TenantMemberInvite
                 | Semantic::TenantMemberInviteRevoke
                 | Semantic::TaskCancel
-                | Semantic::TaskRerun => Err(StatusCode::CONFLICT.into_response()),
+                | Semantic::TaskRerun
+                // 业务 Tenant 生命周期由 dispatch_tenant_lifecycle 派发
+                | Semantic::TenantSuspend
+                | Semantic::TenantRestore => Err(StatusCode::CONFLICT.into_response()),
             };
             match started {
                 Ok(r) if r.workflow_id == workflow_id => Ok(()),

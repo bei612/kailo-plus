@@ -15,6 +15,7 @@ import {
   EvidenceKind,
   EvidenceUnavailableReason,
   ReasonCode,
+  TenantState,
   TenantInvitationStatus,
   TenantMembershipState,
   WorkspaceMembershipState,
@@ -100,6 +101,20 @@ export const platformMessages = {
   },
   "workspace.lifecycle.rejected": { en: "Request rejected: {reason}", "zh-CN": "请求被拒绝：{reason}" },
   "workspace.lifecycle.retry": { en: "Retry same request", "zh-CN": "重查原请求" },
+  "tenants.title": { en: "Organizations", "zh-CN": "组织" },
+  "tenants.none": { en: "No organizations on this page.", "zh-CN": "本页没有组织。" },
+  "tenants.name": { en: "Organization", "zh-CN": "组织" },
+  "tenants.slug": { en: "Identifier", "zh-CN": "标识" },
+  "tenants.suspend": { en: "Suspend", "zh-CN": "暂停" },
+  "tenants.restore": { en: "Restore", "zh-CN": "恢复" },
+  "tenants.confirmSuspend": {
+    en: "Suspend organization {name} ({slug})? All its members lose access at once and every connection to its collaboration space is closed; its content, owners, permissions and keys are kept. The final result is shown in Tasks.",
+    "zh-CN": "暂停组织 {name}（{slug}）？其全部成员立即失去访问，协作空间的全部连接被断开；内容、所有者、权限与密钥都保留。最终结果请到任务页查看。",
+  },
+  "tenants.confirmRestore": {
+    en: "Restore organization {name} ({slug})? It reopens only after reconciliation completes. The final result is shown in Tasks.",
+    "zh-CN": "恢复组织 {name}（{slug}）？对账完成后才重新开放。最终结果请到任务页查看。",
+  },
   "platform.tab.members": { en: "Members", "zh-CN": "成员" },
   "platform.tab.audit": { en: "Audit", "zh-CN": "审计" },
   "platform.tab.devices": { en: "Devices", "zh-CN": "设备" },
@@ -721,6 +736,17 @@ export const workspaceStateMessages = {
   [WorkspaceState.Error]: { en: "Needs attention", "zh-CN": "需要处理" },
 } as const satisfies Record<WorkspaceState, Message>;
 
+export const tenantStateMessages = {
+  [TenantState.Provisioning]: { en: "Being set up", "zh-CN": "正在建立" },
+  [TenantState.Active]: { en: "Active", "zh-CN": "正常" },
+  [TenantState.Suspending]: { en: "Being suspended", "zh-CN": "正在暂停" },
+  [TenantState.Suspended]: { en: "Suspended", "zh-CN": "已暂停" },
+  [TenantState.Restoring]: { en: "Being restored", "zh-CN": "正在恢复" },
+  [TenantState.Deleting]: { en: "Being deleted", "zh-CN": "正在删除" },
+  [TenantState.Deleted]: { en: "Deleted", "zh-CN": "已删除" },
+  [TenantState.Error]: { en: "Needs attention", "zh-CN": "需要处理" },
+} as const satisfies Record<TenantState, Message>;
+
 export const buzzIdentityStateMessages = {
   [BuzzIdentityState.PendingSecret]: { en: "Preparing key", "zh-CN": "正在准备密钥" },
   [BuzzIdentityState.Reconciling]: { en: "Being added", "zh-CN": "正在接入" },
@@ -810,6 +836,10 @@ export const reasonMessages = {
   [ReasonCode.TenantMembershipNotActive]: {
     en: "Your membership in this organization is not active.",
     "zh-CN": "你在该组织的成员资格未生效。",
+  },
+  [ReasonCode.TenantNotActive]: {
+    en: "This organization is suspended or not available right now.",
+    "zh-CN": "该组织已暂停或当前不可用。",
   },
   [ReasonCode.SessionNotActive]: {
     en: "Your session is no longer active.",

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/platform_tenant_page.schema.json",
+  "title": "PlatformTenantPage",
+  "description": "GET /api/v1/platform/tenants 的有界回应：只对 Platform Catalog Tenant 中持有 fresh Catalog manage 的会话开放，列出业务 Tenant 及其当前状态与可发起的暂停/恢复动作提示（DD-96）。动作提交仍由 Core 重新准入。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenants"],
+  "properties": {
+    "tenants": {
+      "type": "array",
+      "items": {
+        "title": "PlatformTenantView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "slug", "state"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "state": { "$ref": "../enums/tenant_state.schema.json" },
+          "lifecycleActionKey": { "$ref": "../enums/tenant_lifecycle_action_key.schema.json", "description": "按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作 key；目录未开放、处于收敛中或本页提示判定失败时省略" }
+        }
+      }
+    },
+    "nextOffset": { "type": "integer", "minimum": 0, "description": "下一页的 Core 索引偏移，缺省即读完" }
+  }
+}

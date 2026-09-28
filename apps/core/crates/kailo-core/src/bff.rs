@@ -171,6 +171,11 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/role-workspaces",
             get(crate::platform_views::list_role_workspaces),
         )
+        // DD-96：业务 Tenant 的暂停与恢复只由 Platform Catalog 会话管理
+        .exposed_route(
+            "/api/v1/platform/tenants",
+            get(crate::platform_views::list_platform_tenants),
+        )
         .exposed_route(
             "/api/v1/identity/legacy-secret-refs",
             get(crate::secret_ref_rehome::list_eligible),

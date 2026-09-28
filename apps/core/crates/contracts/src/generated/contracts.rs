@@ -171,6 +171,10 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
 
+    /// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant_id: Option<String>,
+
     /// Workspace 内动作的执行 Workspace
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
@@ -384,6 +388,9 @@ pub enum ReasonCode {
 
     #[serde(rename = "TENANT_MEMBERSHIP_NOT_ACTIVE")]
     TenantMembershipNotActive,
+
+    #[serde(rename = "TENANT_NOT_ACTIVE")]
+    TenantNotActive,
 
     #[serde(rename = "TENANT_SELECTION_NOT_AVAILABLE")]
     TenantSelectionNotAvailable,
@@ -921,6 +928,78 @@ pub struct OwnAuditEntry {
     /// 动作所在的 Workspace；Tenant 级动作（设备公钥登记、认证等）缺省
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+}
+
+/// GET /api/v1/platform/tenants 的有界回应：只对 Platform Catalog Tenant 中持有 fresh Catalog manage
+/// 的会话开放，列出业务 Tenant 及其当前状态与可发起的暂停/恢复动作提示（DD-96）。动作提交仍由 Core 重新准入。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformTenantPage {
+    /// 下一页的 Core 索引偏移，缺省即读完
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub tenants: Vec<PlatformTenantView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformTenantView {
+    pub id: String,
+
+    /// 按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作
+    /// key；目录未开放、处于收敛中或本页提示判定失败时省略
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lifecycle_action_key: Option<TenantLifecycleActionKey>,
+
+    pub name: String,
+
+    pub slug: String,
+
+    pub state: TenantState,
+}
+
+/// 按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作
+/// key；目录未开放、处于收敛中或本页提示判定失败时省略
+///
+/// 业务 Tenant 暂停与恢复的 ActionDefinition key（DD-96）。两者都由 Platform Catalog Tenant 的
+/// platform-admin 发起；Tenant delete 随 Stage 3 注册，不在此列。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TenantLifecycleActionKey {
+    #[serde(rename = "tenant.restore")]
+    TenantRestore,
+
+    #[serde(rename = "tenant.suspend")]
+    TenantSuspend,
+}
+
+/// Tenant 状态机。权威定义见 .design/03-领域模型与权限模型.md。DELETING/DELETED 因 GAP-LCM-01
+/// 开放而不注册入口，但状态本身保留以承载已有记录。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TenantState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DELETED")]
+    Deleted,
+
+    #[serde(rename = "DELETING")]
+    Deleting,
+
+    #[serde(rename = "ERROR")]
+    Error,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+
+    #[serde(rename = "RESTORING")]
+    Restoring,
+
+    #[serde(rename = "SUSPENDED")]
+    Suspended,
+
+    #[serde(rename = "SUSPENDING")]
+    Suspending,
 }
 
 /// PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或

@@ -30,6 +30,7 @@ import { useBffClient, useFailureText, useLocale, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { type Loaded, useLoad } from "./use-load";
 import { LegacySecretRefManagement, RoleManagement } from "./roles";
+import { PlatformTenantManagement } from "./tenants";
 
 /** 按读取状态渲染：载入中、结果不明（可重试）、或数据。 */
 export function Resource<T>({
@@ -129,6 +130,7 @@ export function WorkspaceMembersPage() {
       </Resource>
       <RoleManagement />
       <LegacySecretRefManagement />
+      <PlatformTenantManagement />
     </div>
   );
 }

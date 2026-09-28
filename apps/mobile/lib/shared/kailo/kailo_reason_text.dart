@@ -48,6 +48,7 @@ String kailoReasonText(ReasonCode reason, {String? locale}) {
       ReasonCode.TARGET_NOT_FOUND => '对象已不存在，或你无权查看。',
       ReasonCode.TARGET_STATE_CONFLICT => '对象当前的状态不允许此操作。',
       ReasonCode.TENANT_MEMBERSHIP_NOT_ACTIVE => '你在该组织的成员资格未生效。',
+      ReasonCode.TENANT_NOT_ACTIVE => '该组织已暂停或当前不可用。',
       ReasonCode.TENANT_SELECTION_NOT_AVAILABLE => '你的账号属于多个组织，目前还不能在其间选择。',
       ReasonCode.WAITING_APPROVAL => '正在等待审批。',
     };
@@ -120,6 +121,8 @@ String kailoReasonText(ReasonCode reason, {String? locale}) {
       'Its current state does not allow this.',
     ReasonCode.TENANT_MEMBERSHIP_NOT_ACTIVE =>
       'Your membership in this organization is not active.',
+    ReasonCode.TENANT_NOT_ACTIVE =>
+      'This organization is suspended or not available right now.',
     ReasonCode.TENANT_SELECTION_NOT_AVAILABLE =>
       'Your account belongs to more than one organization, which cannot be chosen between yet.',
     ReasonCode.WAITING_APPROVAL => 'Waiting for approval.',

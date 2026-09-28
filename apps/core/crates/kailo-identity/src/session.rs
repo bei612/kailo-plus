@@ -106,6 +106,19 @@ pub async fn revoke_one(pool: &PgPool, session_id: Uuid) -> Result<bool, sqlx::E
 /// 下一个请求立刻生效；而一条已经建立的流不会再经过那条路径，必须自己回头看
 /// （`.design/03` §4.1 要求撤销对 stream 同样生效）。
 pub async fn is_live(pool: &PgPool, session_id: Uuid) -> Result<bool, sqlx::Error> {
+    // 所属 Tenant 暂停（DD-96(3)）同样使会话失效：已建立的 stream 在再准入时关闭
+    let tenant: Option<Uuid> = sqlx::query_scalar(
+        "select tm.tenant_id from identity.platform_session s
+         join identity.tenant_membership tm on tm.id = s.tenant_membership_id
+         where s.id = $1",
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await?;
+    match tenant {
+        Some(t) if crate::tenant_active(pool, t).await? => {}
+        _ => return Ok(false),
+    }
     Ok(sqlx::query_scalar!(
         "select 1 from identity.platform_session s
          join identity.human_identity h on h.id = s.human_identity_id

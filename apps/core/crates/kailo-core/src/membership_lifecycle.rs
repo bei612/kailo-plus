@@ -336,14 +336,8 @@ pub(crate) async fn launch_scope(
     };
 
     // 调用方声明的段与实体此刻的收敛中状态必须一致：不按当前状态猜，猜错就是
-    // 对一个运行中的 scope 执行建立。Tenant 暂停/恢复尚未登记（DD-96 随其动作
-    // 交付），Tenant 只接受建立链。
-    if req.kind == crate::scope_state::ScopeKind::Tenant
-        && req.operation != ScopeOperation::Provision
-    {
-        tracing::warn!(operation = ?req.operation, "Tenant 只启动建立链");
-        return Err(StatusCode::CONFLICT.into_response());
-    }
+    // 对一个运行中的 scope 执行建立。Tenant 与 Workspace 都有暂停与恢复两段
+    // （DD-96、`.design/06` §7.2 §7.3）。
     if scope_state != req.operation.converging_state() {
         tracing::warn!(state = %scope_state, operation = ?req.operation, "scope 不在该段的收敛中状态，不启动");
         return Err(StatusCode::CONFLICT.into_response());

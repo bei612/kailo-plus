@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/tenant_lifecycle_action_key.schema.json",
+  "title": "TenantLifecycleActionKey",
+  "description": "业务 Tenant 暂停与恢复的 ActionDefinition key（DD-96）。两者都由 Platform Catalog Tenant 的 platform-admin 发起；Tenant delete 随 Stage 3 注册，不在此列。",
+  "type": "string",
+  "enum": ["tenant.suspend", "tenant.restore"]
+}

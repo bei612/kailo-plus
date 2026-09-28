@@ -234,6 +234,43 @@ func (c *CoreAPI) ConvergeWorkspaceChannelRoster(ctx context.Context, in Workspa
 	return c.post(ctx, "/service/v1/workspaces/channel-roster", in, nil)
 }
 
+// TenantArchiveInput 是业务 Tenant 暂停/恢复时 Community 归档与解档的载荷（DD-96）。
+// 版本是 Workflow input 冻结的那个：Core 只在 Tenant 仍停在该版本的 SUSPENDING
+// （归档）或 RESTORING（解档）时动作。
+type TenantArchiveInput struct {
+	TenantID      string `json:"tenantId"`
+	TenantVersion int32  `json:"tenantVersion"`
+	Archived      bool   `json:"archived"`
+}
+
+// ConvergeTenantCommunityArchive 请 Core 以 RelayOperatorIdentity 把该 Tenant 的 Community
+// 收敛到归档或解档，以 operator 列表回读的 archived_at 为准。409 是确定拒绝；503
+// （断开传播未完成、回读未达目标）按重试上界继续。
+func (c *CoreAPI) ConvergeTenantCommunityArchive(ctx context.Context, in TenantArchiveInput) error {
+	return c.post(ctx, "/service/v1/tenants/community-archive", in, nil)
+}
+
+// 业务 Tenant 恢复对账的两段，与 Core 的 RestorePhase 逐字相同。
+const (
+	// 解档之前：secret/binding 与 SpiceDB
+	RestoreBindings = "BINDINGS"
+	// 解档之后：relay roster
+	RestoreRoster = "ROSTER"
+)
+
+// TenantRestoreInput 是业务 Tenant 恢复对账的载荷，要求 RESTORING。
+type TenantRestoreInput struct {
+	TenantID      string `json:"tenantId"`
+	TenantVersion int32  `json:"tenantVersion"`
+	Phase         string `json:"phase"`
+}
+
+// ReconcileTenantRestore 请 Core 执行恢复对账的一段。409 是确定拒绝；503 是未一致，
+// 按重试上界继续。
+func (c *CoreAPI) ReconcileTenantRestore(ctx context.Context, in TenantRestoreInput) error {
+	return c.post(ctx, "/service/v1/tenants/restore-reconcile", in, nil)
+}
+
 // ScopeTransitionInput 是 Tenant/Workspace 自身状态的跃迁载荷。
 // 与成员状态跃迁分开：两者是不同的状态机（scope 有 SUSPENDING/RESTORING）。
 type ScopeTransitionInput struct {

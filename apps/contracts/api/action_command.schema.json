@@ -23,6 +23,11 @@
       "format": "uuid",
       "description": "Workspace 内动作的执行 Workspace"
     },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）"
+    },
     "principalId": {
       "type": "string",
       "format": "uuid",

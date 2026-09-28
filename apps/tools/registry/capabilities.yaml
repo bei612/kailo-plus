@@ -116,6 +116,19 @@ capabilities:
   tools: []
   workflow_kinds:
   - SECRET_REF_REHOME
+- id: lifecycle.tenant_suspension
+  exposure: tenant_admin
+  routes:
+  - /api/v1/actions
+  - /api/v1/platform/tenants
+  - /service/v1/tenants/community-archive
+  - /service/v1/tenants/restore-reconcile
+  actions:
+  - tenant.suspend
+  - tenant.restore
+  tools: []
+  workflow_kinds:
+  - TENANT_LIFECYCLE
 - id: lifecycle.tenant_workspace_membership
   exposure: internal
   routes: []

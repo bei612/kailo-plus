@@ -79,8 +79,12 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
 }
 
 async fn pass(state: &ServiceState, metrics: &Metrics) -> Result<(), String> {
-    let tenants = sqlx::query_scalar!(
-        "select tenant_id from projection.tenant_buzz_binding where state = 'ACTIVE'"
+    // 已暂停的 Tenant 其 Community 已归档、host 不再解析（DD-96、SF-BUZ-43）：roster
+    // 读不到是设计结果，不是读取失败；它们的 roster 在恢复时按成员事实收敛
+    let tenants: Vec<Uuid> = sqlx::query_scalar(
+        "select b.tenant_id from projection.tenant_buzz_binding b
+         join identity.tenant t on t.id = b.tenant_id
+         where b.state = 'ACTIVE' and t.state <> 'SUSPENDED'",
     )
     .fetch_all(&state.pool)
     .await
@@ -193,11 +197,14 @@ fn diff(roster: &HashSet<String>, settled: &HashSet<String>, unsettled: &HashSet
     }
 }
 
-async fn compare_relay(
-    state: &ServiceState,
-    control: &IdentityClient,
+/// relay roster「应在」的集合：CONTROL（Community owner，恒在），加上该 Tenant 全部
+/// ACTIVE TenantMembership 对应 Principal 的全部 ACTIVE Buzz 身份。对账度量与 Tenant
+/// 恢复时的 relay roster 收敛（DD-96(4)）共用这一处。
+pub(crate) async fn settled_relay_roster(
+    pool: &sqlx::PgPool,
+    control_pubkey: String,
     tenant: Uuid,
-) -> Result<Drift, String> {
+) -> Result<HashSet<String>, sqlx::Error> {
     // 已落定：成员关系 ACTIVE 且 binding ACTIVE；CONTROL 是 Community owner，恒在
     let mut settled: HashSet<String> = sqlx::query_scalar!(
         "select b.pubkey from identity.buzz_identity_binding b
@@ -207,13 +214,20 @@ async fn compare_relay(
            and b.state = 'ACTIVE' and m.state = 'ACTIVE'",
         tenant
     )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| e.to_string())?
+    .fetch_all(pool)
+    .await?
     .into_iter()
     .collect();
-    settled.insert(control.pubkey_hex());
-    let unsettled: HashSet<String> = sqlx::query_scalar!(
+    settled.insert(control_pubkey);
+    Ok(settled)
+}
+
+/// relay 上仍在收敛中的钥匙：binding 或 TenantMembership 处于建立或撤权途中。
+pub(crate) async fn unsettled_relay_roster(
+    pool: &sqlx::PgPool,
+    tenant: Uuid,
+) -> Result<HashSet<String>, sqlx::Error> {
+    Ok(sqlx::query_scalar!(
         "select b.pubkey from identity.buzz_identity_binding b
          left join identity.tenant_membership m
            on m.tenant_principal_id = b.principal_id and m.tenant_id = b.tenant_id
@@ -222,11 +236,23 @@ async fn compare_relay(
                 or m.state in ('INVITED', 'PROVISIONING', 'REVOKING'))",
         tenant
     )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| e.to_string())?
+    .fetch_all(pool)
+    .await?
     .into_iter()
-    .collect();
+    .collect())
+}
+
+async fn compare_relay(
+    state: &ServiceState,
+    control: &IdentityClient,
+    tenant: Uuid,
+) -> Result<Drift, String> {
+    let settled = settled_relay_roster(&state.pool, control.pubkey_hex(), tenant)
+        .await
+        .map_err(|e| e.to_string())?;
+    let unsettled = unsettled_relay_roster(&state.pool, tenant)
+        .await
+        .map_err(|e| e.to_string())?;
     let roster: HashSet<String> = control
         .roster(&state.http, Scope::Relay)
         .await

@@ -1,0 +1,48 @@
+capability_id: lifecycle.tenant_suspension
+title: 业务 Tenant 的暂停与恢复由 Platform Catalog 发起，暂停在身份解析即拒绝其成员并归档 Community，恢复全量对账、解档并回读后才重新开放
+stage: S2
+status: in_progress
+exposure: tenant_admin
+
+design:
+  requirements: [V-REQ-03, V-REQ-10]
+  decisions: [DD-96, DD-54]
+  facts: [SF-BUZ-43]
+  seams: [SS-BUZ-OPERATOR]
+  blockers: []
+  entities: [Tenant, TenantBuzzBinding, RelayOperatorIdentity, PlatformSession, ActionDefinition, ActionExecution, WorkflowRef, TaskProjection, AuditEvent]
+
+validation:
+  scenarios: [V-SCN-31]
+  evidence:
+    - dimension: 上游接缝
+      ref: upstream-patches/buzz/verify/operator-provisioning.md
+    - dimension: 领域规则
+      ref: core/verify/tenant-suspension.md
+    - dimension: 安全边界
+      ref: core/verify/tenant-suspension.md
+    - dimension: 端到端场景
+      ref: core/crates/kailo-core/tests/tenant_suspension.rs
+    - dimension: 呈现
+      ref: core/verify/tenant-suspension.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/tenant_lifecycle.rs, core/crates/kailo-core/src/membership_lifecycle.rs, core/crates/kailo-core/src/platform_views.rs, core/crates/kailo-core/src/platform_bootstrap.rs, core/crates/kailo-core/src/roster_reconcile.rs, core/crates/kailo-core/src/task_rerun.rs, core/crates/kailo-identity/src/lib.rs, core/crates/kailo-identity/src/session.rs, core/crates/kailo-buzz/src/operator.rs, worker/workflows/component_task.go, worker/workflows/tenant_suspension_test.go, worker/activities/core_api.go, web/packages/platform/src/react/tenants.tsx, web/packages/platform/src/i18n.ts, web/packages/platform/src/client.ts]
+  # 管理入口由 Web 与 Desktop 共用的 TS 包交付，只对 Catalog 会话开放；Mobile 不提供
+  surfaces: [web, desktop]
+  schemas: [contracts/api/action_command.schema.json, contracts/api/platform_tenant_page.schema.json, contracts/enums/tenant_state.schema.json, contracts/enums/tenant_lifecycle_action_key.schema.json, contracts/enums/reason_code.schema.json]
+  migrations: [core/migrations/20260928150000_tenant_suspension.up.sql]
+
+runtime:
+  routes: ["/api/v1/actions", "/api/v1/platform/tenants", "/service/v1/tenants/community-archive", "/service/v1/tenants/restore-reconcile"]
+  actions: [tenant.suspend, tenant.restore]
+  workflow_kinds: [TENANT_LIFECYCLE]
+
+release:
+  artifacts:
+    - name: kailo-core
+      digest: sha256:2672a6fffa8a50e3f207b5f438757c35f8fd038507b5a97a345ede433aefbc37
+    - name: upstream-buzz-web
+      digest: sha256:cb1baee20ae884dda35b2117480b66e95b769fb203ea74a457b9fcc578737919
+  gate: ready

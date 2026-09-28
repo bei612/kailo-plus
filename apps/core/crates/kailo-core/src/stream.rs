@@ -170,6 +170,9 @@ struct Readmission {
 impl Readmission {
     /// `Ok(Some(reason))` 是该关流的原因；`Ok(None)` 是仍然准入。
     async fn check(&self) -> Result<Option<&'static str>, sqlx::Error> {
+        // `session-revoked` 的含义是「此会话确定不可继续，客户端必须停止重连」：会话被撤销
+        // 与所属 Tenant 非 ACTIVE（DD-96(3)，is_live 一并判定）都属此类，再连只会被拒。
+        // 具体原因由之后请求的 reason code（TENANT_NOT_ACTIVE 等）表达，关流帧不再细分
         if !kailo_identity::session::is_live(&self.state.pool, self.ctx.session_id).await? {
             return Ok(Some("session-revoked"));
         }

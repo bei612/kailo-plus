@@ -147,7 +147,12 @@ fn converging_state(kind: &str, action_key: &str) -> Option<&'static str> {
             "workspace.suspend" | "workspace.restore" => None,
             _ => Some("PROVISIONING"),
         },
-        "TENANT_LIFECYCLE" | "MEMBERSHIP_PROJECTION" => Some("PROVISIONING"),
+        // 业务 Tenant 的暂停与恢复同样未登记重跑控制定义（DD-84、DD-96）
+        "TENANT_LIFECYCLE" => match action_key {
+            "tenant.suspend" | "tenant.restore" => None,
+            _ => Some("PROVISIONING"),
+        },
+        "MEMBERSHIP_PROJECTION" => Some("PROVISIONING"),
         "MEMBERSHIP_REVOCATION" => Some("REVOKING"),
         "BUZZ_IDENTITY_PROJECTION" => match action_key {
             "identity.client_key.register" | "identity.key_provision" => Some("RECONCILING"),
@@ -818,6 +823,13 @@ mod tests {
         );
         assert_eq!(
             converging_state("WORKSPACE_LIFECYCLE", "workspace.create"),
+            Some("PROVISIONING")
+        );
+        for action in ["tenant.suspend", "tenant.restore"] {
+            assert_eq!(converging_state("TENANT_LIFECYCLE", action), None);
+        }
+        assert_eq!(
+            converging_state("TENANT_LIFECYCLE", "tenant.bootstrap"),
             Some("PROVISIONING")
         );
         for action in ["workspace.suspend", "workspace.restore"] {

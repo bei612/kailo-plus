@@ -473,6 +473,7 @@ impl Governance {
         };
         let params = Params {
             workspace_id: None,
+            tenant_id: None,
             principal_id: Some(principal),
             slug: None,
             name: None,

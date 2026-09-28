@@ -64,6 +64,9 @@ mod tests {
         assert!(action_exposed("workspace.suspend"));
         assert!(action_exposed("workspace.restore"));
         assert!(!action_exposed("workspace.delete"));
+        assert!(action_exposed("tenant.suspend"));
+        assert!(action_exposed("tenant.restore"));
+        assert!(route_exposed("/api/v1/platform/tenants"));
         assert!(!route_exposed("/api/v1/identity/legacy-secret-refs"));
         assert!(!action_exposed("identity.secret_ref.rehome"));
         assert!(!action_exposed("tenant.delete"));

@@ -343,3 +343,18 @@ fn operator_locator(cfg: &BootstrapConfig, pubkey: &str) -> String {
         Uuid::new_v4()
     )
 }
+
+/// 该 Tenant 是否本部署的 Platform Catalog Tenant。权威是引导时建立的
+/// RelayOperatorIdentity：它以 `catalog_tenant_id` 为主键归属 Catalog（`.design/03`
+/// §2），每个部署只有一个。业务 Tenant 的暂停与恢复只在 Catalog 会话中准入（DD-96）。
+pub(crate) async fn is_catalog_tenant(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "select exists (select 1 from identity.relay_operator_identity where catalog_tenant_id = $1)",
+    )
+    .bind(tenant)
+    .fetch_one(conn)
+    .await
+}

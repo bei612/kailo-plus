@@ -17,7 +17,7 @@ use axum::{
     Json,
 };
 use kailo_buzz::bridge::{Custody, IdentityClient, Presence, Scope};
-use kailo_buzz::operator::OperatorIdentity;
+use kailo_buzz::operator::{OperatorError, OperatorIdentity};
 use kailo_secrets::SecretRef;
 use nostr::Keys;
 use serde::{Deserialize, Serialize};
@@ -301,32 +301,10 @@ pub async fn verify_tenant_buzz(
 
     // Community 已接受 owner pubkey 仍不足以证明 Core 持有对应私钥。CONTROL
     // binding 与 Tenant binding 开放前，必须读回钉住的 KV 版本并核对公钥。
-    let control = match sqlx::query!(
-        "select pubkey, private_key_secret_ref, private_key_secret_version,
-                private_key_secret_audience
-         from identity.buzz_identity_binding
-         where tenant_id = $1 and principal_id = $2 and kind = 'CONTROL'
-           and custody = 'SERVER' and state in ('RECONCILING', 'ACTIVE')",
-        req.tenant_id,
-        binding.control_service_principal_id,
-    )
-    .fetch_optional(&state.pool)
-    .await
+    if let Err(r) =
+        verify_control_secret(&state, req.tenant_id, binding.control_service_principal_id).await
     {
-        Ok(Some(row)) => row,
-        Ok(None) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-        Err(e) => return unavailable(e),
-    };
-    let control_ref = SecretRef {
-        locator: control.private_key_secret_ref.unwrap_or_default(),
-        version: control.private_key_secret_version.unwrap_or_default() as u32,
-        audience: control.private_key_secret_audience.unwrap_or_default(),
-    };
-    if let Err(e) =
-        crate::server_identity::read_bound_keys(&state.secrets, &control_ref, &control.pubkey).await
-    {
-        tracing::warn!(error = %e, "CONTROL 私钥不可用，Tenant binding 不开放");
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        return r;
     }
 
     if let Err(r) = crate::service_api::audit_gate(&state).await {
@@ -373,6 +351,44 @@ pub async fn verify_tenant_buzz(
         }),
     )
         .into_response()
+}
+
+/// CONTROL 私钥可读回且与 binding 记录的公钥一致：读回钉住的 KV 版本并核对公钥。
+/// Tenant 建立的查证（`verify_tenant_buzz`）与恢复的对账（`restore_reconcile`）共用。
+async fn verify_control_secret(
+    state: &ServiceState,
+    tenant_id: Uuid,
+    control_principal: Uuid,
+) -> Result<(), Response> {
+    let control = match sqlx::query!(
+        "select pubkey, private_key_secret_ref, private_key_secret_version,
+                private_key_secret_audience
+         from identity.buzz_identity_binding
+         where tenant_id = $1 and principal_id = $2 and kind = 'CONTROL'
+           and custody = 'SERVER' and state in ('RECONCILING', 'ACTIVE')",
+        tenant_id,
+        control_principal,
+    )
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
+        Err(e) => return Err(unavailable(e)),
+    };
+    let control_ref = SecretRef {
+        locator: control.private_key_secret_ref.unwrap_or_default(),
+        version: control.private_key_secret_version.unwrap_or_default() as u32,
+        audience: control.private_key_secret_audience.unwrap_or_default(),
+    };
+    if let Err(e) =
+        crate::server_identity::read_bound_keys(&state.secrets, &control_ref, &control.pubkey).await
+    {
+        tracing::warn!(error = %e, "CONTROL 私钥不可用，Tenant binding 不开放");
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+
+    Ok(())
 }
 
 /// `.design/03` §8 的全局 digest 规则：结构化对象按 canonical JSON
@@ -751,12 +767,43 @@ pub async fn converge_workspace_channel_roster(
         Ok(c) => c,
         Err(r) => return r,
     };
+    match converge_channel_roster(
+        &state,
+        &control,
+        tenant_id,
+        req.workspace_id,
+        channel_id,
+        req.mode,
+    )
+    .await
+    {
+        Ok(true) => StatusCode::OK.into_response(),
+        Ok(false) => {
+            tracing::warn!(workspace = %req.workspace_id, mode = ?req.mode, "Channel roster 未与期望一致");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+        Err(r) => r,
+    }
+}
+
+/// 把一个 Workspace 的 Channel roster 收敛到 CLEAR 或 REBUILD 的目标集合（DD-97）。
+/// Workspace 暂停/恢复与 Tenant 恢复的 roster 段共用这一处。
+///
+/// (应在, 收敛中)。CLEAR 只认回读到的 roster：除 CONTROL 外一概移出，不按 Core 集合
+/// 去删——Core 之外混进 roster 的钥匙同样必须清掉。REBUILD 不替仍在建立或撤权途中的
+/// 钥匙下结论：它们由各自的投影 Workflow 收敛（与对账度量同一口径）。收敛后按当前
+/// 事实重算期望并与回读比对；未收敛或不一致回 `Ok(false)`。
+async fn converge_channel_roster(
+    state: &ServiceState,
+    control: &IdentityClient,
+    tenant_id: Uuid,
+    workspace_id: Uuid,
+    channel_id: Uuid,
+    mode: RosterMode,
+) -> Result<bool, Response> {
     let control_pubkey = control.pubkey_hex();
-    // (应在, 收敛中)。CLEAR 只认回读到的 roster：除 CONTROL 外一概移出，不按 Core
-    // 集合去删——Core 之外混进 roster 的钥匙同样必须清掉。REBUILD 不替仍在建立或
-    // 撤权途中的钥匙下结论：它们由各自的投影 Workflow 收敛（与对账度量同一口径）。
     let expected = || async {
-        match req.mode {
+        match mode {
             RosterMode::Clear => Ok((HashSet::from([control_pubkey.clone()]), HashSet::new())),
             RosterMode::Rebuild => {
                 let pool = &state.pool;
@@ -764,56 +811,37 @@ pub async fn converge_workspace_channel_roster(
                     pool,
                     control_pubkey.clone(),
                     tenant_id,
-                    req.workspace_id,
+                    workspace_id,
                 )
                 .await
                 .map_err(unavailable)?;
                 let unsettled = crate::roster_reconcile::unsettled_channel_roster(
                     pool,
                     tenant_id,
-                    req.workspace_id,
+                    workspace_id,
                 )
                 .await
                 .map_err(unavailable)?;
-                Ok((settled, unsettled))
+                Ok::<_, Response>((settled, unsettled))
             }
         }
     };
-    let (want, tolerated) = match expected().await {
-        Ok(w) => w,
-        Err(r) => return r,
-    };
+    let (want, tolerated) = expected().await?;
     let channel = channel_id.to_string();
     let scope = Scope::Channel(&channel);
-    let current = match read_roster(&state, &control, scope).await {
-        Ok(r) => r,
-        Err(r) => return r,
-    };
-    let plan = roster_plan(&current, &want, &tolerated, &control_pubkey);
-    for (pubkey, presence) in &plan {
+    let current = read_roster(state, control, scope).await?;
+    for (pubkey, presence) in &roster_plan(&current, &want, &tolerated, &control_pubkey) {
         if let Err(e) = control
             .converge(&state.http, scope, pubkey, *presence)
             .await
         {
-            tracing::info!(workspace = %req.workspace_id, error = %e, "Channel roster 未收敛，等待重试");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            tracing::info!(workspace = %workspace_id, error = %e, "Channel roster 未收敛，等待重试");
+            return Ok(false);
         }
     }
-    // 收敛期间成员或设备的事实可能已变：按当前事实重算，再与回读比对
-    let (want, tolerated) = match expected().await {
-        Ok(w) => w,
-        Err(r) => return r,
-    };
-    let after = match read_roster(&state, &control, scope).await {
-        Ok(r) => r,
-        Err(r) => return r,
-    };
-    if roster_settled(&after, &want, &tolerated, &control_pubkey) {
-        StatusCode::OK.into_response()
-    } else {
-        tracing::warn!(workspace = %req.workspace_id, mode = ?req.mode, "Channel roster 回读与期望不一致");
-        StatusCode::SERVICE_UNAVAILABLE.into_response()
-    }
+    let (want, tolerated) = expected().await?;
+    let after = read_roster(state, control, scope).await?;
+    Ok(roster_settled(&after, &want, &tolerated, &control_pubkey))
 }
 
 /// 把回读到的 roster 收敛到期望集合所需的变更：多余的移出、缺少的加入。CONTROL
@@ -929,4 +957,324 @@ mod roster_tests {
             "c"
         ));
     }
+}
+
+// ---- 业务 Tenant 的暂停与恢复（DD-96、`.design/06` §7.2 第 1–2 步） ----
+
+/// 收敛中 Tenant 的协作面事实：Community host 与 CONTROL（Community owner）的 pubkey
+/// 与 Principal。Tenant 须停在调用方持有的版本与给定的收敛中状态之一，TenantBuzzBinding
+/// 与 CONTROL binding 都须 ACTIVE；任一不成立回 409——旧 Workflow 的重试不能改动已被
+/// 新动作接管的 Tenant。
+async fn converging_tenant(
+    state: &ServiceState,
+    tenant_id: Uuid,
+    tenant_version: i32,
+    converging: &[&str],
+) -> Result<(String, String, Uuid), Response> {
+    match sqlx::query_as::<_, (String, String, Uuid)>(
+        "select b.normalized_host, i.pubkey, b.control_service_principal_id
+         from identity.tenant t
+         join projection.tenant_buzz_binding b on b.tenant_id = t.id
+         join identity.buzz_identity_binding i
+           on i.tenant_id = b.tenant_id and i.principal_id = b.control_service_principal_id
+         where t.id = $1 and t.version = $2 and t.state = any($3)
+           and b.state = 'ACTIVE' and i.kind = 'CONTROL' and i.state = 'ACTIVE'",
+    )
+    .bind(tenant_id)
+    .bind(tenant_version)
+    .bind(converging)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(r)) => Ok(r),
+        Ok(None) => Err(StatusCode::CONFLICT.into_response()),
+        Err(e) => Err(unavailable(e)),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TenantArchiveRequest {
+    pub tenant_id: Uuid,
+    pub tenant_version: i32,
+    pub archived: bool,
+}
+
+/// 以 RelayOperatorIdentity 把业务 Tenant 的 Buzz Community 收敛到归档或解档
+/// （DD-96(3)(4)、SF-BUZ-43、SS-BUZ-OPERATOR）。
+///
+/// 归档要求 `SUSPENDING`，或 `RESTORING`（恢复在解档之后失败时的补偿归档）；解档要求
+/// `RESTORING`。两者都要求版本一致、协作面 binding 与 CONTROL binding ACTIVE。owner
+/// 断言取该 Tenant 的 CONTROL pubkey，目标是它的 Community host；operator 只签名，
+/// 每次请求重新签名。
+///
+/// 归档每次都重发（上游对已归档的 host 以 COALESCE 保留原 `archived_at`，重发幂等）：
+/// 上游的 200 才表示集群内连接已断开，503 表示 `archived_at` 已落库而断开传播未完成、
+/// 上游要求重发——此时回 503 交给 Workflow 重试，不以回读代替。只有上游 200 且
+/// `GET /operator/communities` 回读该 host 的 `archived_at` 非空才回 200。
+///
+/// 解档没有断开传播：先回读，已解档即不再发送；发送后以回读 `archived_at` 为空为准。
+///
+/// owner 或 host 对不上（404）等确定拒绝回 409；其余结果不明回 503。
+pub async fn converge_tenant_community_archive(
+    State(state): State<ServiceState>,
+    headers: HeaderMap,
+    body: Result<Json<TenantArchiveRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if let Err(e) = authorize(&state, &headers).await {
+        return e;
+    }
+    let Ok(Json(req)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let converging: &[&str] = if req.archived {
+        &["SUSPENDING", "RESTORING"]
+    } else {
+        &["RESTORING"]
+    };
+    let (host, owner, _) =
+        match converging_tenant(&state, req.tenant_id, req.tenant_version, converging).await {
+            Ok(r) => r,
+            Err(r) => return r,
+        };
+    let operator = match load_operator(&state).await {
+        Ok(o) => o,
+        Err(r) => return r,
+    };
+    if !req.archived {
+        match community_archived(&state, &operator, &owner, &host).await {
+            Ok(Some(false)) => return StatusCode::OK.into_response(),
+            Ok(_) => {}
+            Err(r) => return r,
+        }
+    }
+    let sent = if req.archived {
+        operator.archive_community(&state.http, &host, &owner).await
+    } else {
+        operator
+            .unarchive_community(&state.http, &host, &owner)
+            .await
+    };
+    match sent {
+        Ok(_) => {}
+        Err(OperatorError::Rejected { status, body })
+            if (400..500).contains(&status) && status != 401 =>
+        {
+            tracing::warn!(tenant = %req.tenant_id, status, body = %body, "operator 确定拒绝归档状态变更");
+            return StatusCode::CONFLICT.into_response();
+        }
+        // 含上游 503（归档已落库、断开传播未完成）：按上游要求重发
+        Err(e) => {
+            tracing::warn!(tenant = %req.tenant_id, error = %e, "operator 归档状态变更未完成或结果不明");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    }
+    match community_archived(&state, &operator, &owner, &host).await {
+        Ok(Some(now)) if now == req.archived => StatusCode::OK.into_response(),
+        Ok(_) => {
+            tracing::warn!(tenant = %req.tenant_id, archived = req.archived, "Community 归档状态回读未达目标");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+        Err(r) => r,
+    }
+}
+
+/// 回读该 owner 名下 host 的归档状态。列表里没有这个 host 回 `None`：不存在与未归档
+/// 不是一回事。
+async fn community_archived(
+    state: &ServiceState,
+    operator: &OperatorIdentity,
+    owner: &str,
+    host: &str,
+) -> Result<Option<bool>, Response> {
+    let rows = operator
+        .list_owned_communities(&state.http, owner)
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "operator 列表回读失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        })?;
+    Ok(rows
+        .iter()
+        .find(|c| c.host.eq_ignore_ascii_case(host))
+        .map(|c| c.archived_at.is_some()))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum RestorePhase {
+    /// 解档之前：secret/binding 与 SpiceDB
+    Bindings,
+    /// 解档之后：relay roster（已归档的 host 不解析，roster 读写都要求已解档）
+    Roster,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TenantRestoreRequest {
+    pub tenant_id: Uuid,
+    pub tenant_version: i32,
+    pub phase: RestorePhase,
+}
+
+/// 业务 Tenant 恢复的对账（DD-96(4)、`.design/06` §7.2 第 2 步），要求 `RESTORING`。
+///
+/// - `BINDINGS`：TenantBuzzBinding 与 CONTROL binding ACTIVE，CONTROL 私钥可读回并与
+///   公钥一致（与建立时的查证同一实现）；每个 ACTIVE TenantMembership 的 SpiceDB
+///   `tenant#member` 关系存在——以幂等 TOUCH 收敛，再以 FullyConsistent 读回查证。
+/// - `ROSTER`：relay roster 收敛到 CONTROL 加全部 ACTIVE TenantMembership 对应 Principal
+///   的全部 ACTIVE Buzz 身份（与 roster 对账度量同一个「应在」集合）；随后各 Workspace
+///   的 Channel roster 按 DD-97 同一期望集合收敛：ACTIVE 的按成员事实重建，其余只剩
+///   CONTROL。仍在建立或撤权途中的钥匙留给各自的投影 Workflow。roster 的读写都经
+///   Community host，因此本段成功也是 host 已重新解析的证明。
+///
+/// Gateway route 与组件 scope 在 Stage 2 没有适用对象：本端点不做也不声称做了。
+/// 不解档任何 Workspace、不改动 Workspace 状态。全部一致才 200，否则 503。
+pub async fn restore_reconcile(
+    State(state): State<ServiceState>,
+    headers: HeaderMap,
+    body: Result<Json<TenantRestoreRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if let Err(e) = authorize(&state, &headers).await {
+        return e;
+    }
+    let Ok(Json(req)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let (_, _, control_principal) =
+        match converging_tenant(&state, req.tenant_id, req.tenant_version, &["RESTORING"]).await {
+            Ok(r) => r,
+            Err(r) => return r,
+        };
+    let converged = match req.phase {
+        RestorePhase::Bindings => {
+            if let Err(r) = verify_control_secret(&state, req.tenant_id, control_principal).await {
+                return r;
+            }
+            reconcile_tenant_relationships(&state, req.tenant_id).await
+        }
+        RestorePhase::Roster => reconcile_relay_roster(&state, req.tenant_id).await,
+    };
+    match converged {
+        Ok(true) => StatusCode::OK.into_response(),
+        Ok(false) => {
+            tracing::warn!(tenant = %req.tenant_id, phase = ?req.phase, "Tenant 恢复对账未一致");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+        Err(r) => r,
+    }
+}
+
+/// 每个 ACTIVE TenantMembership 的 `tenant#member` 关系：TOUCH 收敛（幂等），再读回
+/// 查证全部在场。写入分批，批大小取 SpiceDB 读页上界这一既有部署事实。
+async fn reconcile_tenant_relationships(
+    state: &ServiceState,
+    tenant_id: Uuid,
+) -> Result<bool, Response> {
+    let members: Vec<Uuid> = sqlx::query_scalar(
+        "select tenant_principal_id from identity.tenant_membership
+         where tenant_id = $1 and state = 'ACTIVE'",
+    )
+    .bind(tenant_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(unavailable)?;
+    let spicedb = &state.governance.spicedb;
+    let page = state.governance.cfg.relationship_page;
+    let object = tenant_id.to_string();
+    let relationship = |principal: &Uuid| crate::spicedb::Relationship {
+        object_type: "tenant".to_owned(),
+        object_id: object.clone(),
+        relation: "member".to_owned(),
+        subject_principal: principal.to_string(),
+    };
+    for chunk in members.chunks(page.max(1) as usize) {
+        let updates: Vec<_> = chunk
+            .iter()
+            .map(|m| (crate::spicedb::Write::Touch, relationship(m)))
+            .collect();
+        if let Err(e) = spicedb.write(&updates).await {
+            tracing::warn!(error = %e, "SpiceDB tenant 成员关系收敛结果不明");
+            return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+        }
+    }
+    let present: HashSet<String> = spicedb
+        .read(
+            &crate::spicedb::RelationshipFilter {
+                object_type: "tenant",
+                object_id: Some(&object),
+                relation: Some("member"),
+                subject_principal: None,
+            },
+            page,
+        )
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "SpiceDB tenant 成员关系读回失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        })?
+        .into_iter()
+        .map(|r| r.subject_principal)
+        .collect();
+    Ok(members.iter().all(|m| present.contains(&m.to_string())))
+}
+
+/// relay roster 按 Core 事实收敛：多余的移出、缺少的加入，收敛后按当前事实重算并与
+/// 回读比对。
+async fn reconcile_relay_roster(state: &ServiceState, tenant_id: Uuid) -> Result<bool, Response> {
+    let (control, _) = control_client(state, tenant_id).await?;
+    let control_pubkey = control.pubkey_hex();
+    let expected = || async {
+        let settled = crate::roster_reconcile::settled_relay_roster(
+            &state.pool,
+            control_pubkey.clone(),
+            tenant_id,
+        )
+        .await
+        .map_err(unavailable)?;
+        let unsettled = crate::roster_reconcile::unsettled_relay_roster(&state.pool, tenant_id)
+            .await
+            .map_err(unavailable)?;
+        Ok::<_, Response>((settled, unsettled))
+    };
+    let (want, tolerated) = expected().await?;
+    let current = read_roster(state, &control, Scope::Relay).await?;
+    for (pubkey, presence) in &roster_plan(&current, &want, &tolerated, &control_pubkey) {
+        if let Err(e) = control
+            .converge(&state.http, Scope::Relay, pubkey, *presence)
+            .await
+        {
+            tracing::info!(tenant = %tenant_id, error = %e, "relay roster 未收敛，等待重试");
+            return Ok(false);
+        }
+    }
+    let (want, tolerated) = expected().await?;
+    let after = read_roster(state, &control, Scope::Relay).await?;
+    if !roster_settled(&after, &want, &tolerated, &control_pubkey) {
+        return Ok(false);
+    }
+    // 各 Workspace 的 Channel roster 按 DD-97 同一期望集合收敛：ACTIVE 的按成员事实重建，
+    // 其余（暂停中、已暂停、恢复中等）期望只剩 CONTROL。不解档、不改动任何 Workspace 状态
+    let channels: Vec<(Uuid, String, Uuid)> = sqlx::query_as(
+        "select w.id, w.state, b.channel_id from identity.workspace w
+         join projection.workspace_buzz_binding b on b.workspace_id = w.id
+         where w.tenant_id = $1 and b.state = 'ACTIVE'",
+    )
+    .bind(tenant_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(unavailable)?;
+    for (workspace_id, ws_state, channel_id) in channels {
+        let mode = if ws_state == "ACTIVE" {
+            RosterMode::Rebuild
+        } else {
+            RosterMode::Clear
+        };
+        if !converge_channel_roster(state, &control, tenant_id, workspace_id, channel_id, mode)
+            .await?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }

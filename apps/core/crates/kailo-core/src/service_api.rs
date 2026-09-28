@@ -80,6 +80,15 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/workspaces/channel-archive",
             post(crate::tenant_lifecycle::converge_workspace_channel_archive),
         )
+        // 业务 Tenant 暂停/恢复：Community 归档与解档、恢复对账（DD-96）
+        .route(
+            "/service/v1/tenants/community-archive",
+            post(crate::tenant_lifecycle::converge_tenant_community_archive),
+        )
+        .route(
+            "/service/v1/tenants/restore-reconcile",
+            post(crate::tenant_lifecycle::restore_reconcile),
+        )
         // Workspace 暂停/恢复：Channel roster 清空与重建（DD-97）
         .route(
             "/service/v1/workspaces/channel-roster",

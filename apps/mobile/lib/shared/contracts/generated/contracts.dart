@@ -15,6 +15,7 @@
 //     final legacySecretRefPage = legacySecretRefPageFromJson(jsonString);
 //     final nativeCommunityFacts = nativeCommunityFactsFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
+//     final platformTenantPage = platformTenantPageFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
 //     final roleMemberPage = roleMemberPageFromJson(jsonString);
 //     final roleWorkspacePage = roleWorkspacePageFromJson(jsonString);
@@ -126,6 +127,12 @@ OwnAuditEntry ownAuditEntryFromJson(String str) =>
     OwnAuditEntry.fromJson(json.decode(str));
 
 String ownAuditEntryToJson(OwnAuditEntry data) => json.encode(data.toJson());
+
+PlatformTenantPage platformTenantPageFromJson(String str) =>
+    PlatformTenantPage.fromJson(json.decode(str));
+
+String platformTenantPageToJson(PlatformTenantPage data) =>
+    json.encode(data.toJson());
 
 ReadMarkRequest readMarkRequestFromJson(String str) =>
     ReadMarkRequest.fromJson(json.decode(str));
@@ -487,6 +494,9 @@ class ActionCommand {
   ///workspace.create 的 slug
   final String? slug;
 
+  ///tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
+  final String? tenantId;
+
   ///Workspace 内动作的执行 Workspace
   final String? workspaceId;
 
@@ -499,6 +509,7 @@ class ActionCommand {
     this.originalActionExecutionId,
     this.principalId,
     this.slug,
+    this.tenantId,
     this.workspaceId,
   });
 
@@ -511,6 +522,7 @@ class ActionCommand {
     originalActionExecutionId: json["originalActionExecutionId"],
     principalId: json["principalId"],
     slug: json["slug"],
+    tenantId: json["tenantId"],
     workspaceId: json["workspaceId"],
   );
 
@@ -523,6 +535,7 @@ class ActionCommand {
     "originalActionExecutionId": originalActionExecutionId,
     "principalId": principalId,
     "slug": slug,
+    "tenantId": tenantId,
     "workspaceId": workspaceId,
   });
 }
@@ -683,6 +696,7 @@ enum ReasonCode {
   TARGET_NOT_FOUND,
   TARGET_STATE_CONFLICT,
   TENANT_MEMBERSHIP_NOT_ACTIVE,
+  TENANT_NOT_ACTIVE,
   TENANT_SELECTION_NOT_AVAILABLE,
   WAITING_APPROVAL,
 }
@@ -728,6 +742,7 @@ final reasonCodeValues = EnumValues({
   "TARGET_NOT_FOUND": ReasonCode.TARGET_NOT_FOUND,
   "TARGET_STATE_CONFLICT": ReasonCode.TARGET_STATE_CONFLICT,
   "TENANT_MEMBERSHIP_NOT_ACTIVE": ReasonCode.TENANT_MEMBERSHIP_NOT_ACTIVE,
+  "TENANT_NOT_ACTIVE": ReasonCode.TENANT_NOT_ACTIVE,
   "TENANT_SELECTION_NOT_AVAILABLE": ReasonCode.TENANT_SELECTION_NOT_AVAILABLE,
   "WAITING_APPROVAL": ReasonCode.WAITING_APPROVAL,
 });
@@ -1524,6 +1539,104 @@ class OwnAuditEntry {
     "workspaceId": workspaceId,
   });
 }
+
+///GET /api/v1/platform/tenants 的有界回应：只对 Platform Catalog Tenant 中持有 fresh Catalog manage
+///的会话开放，列出业务 Tenant 及其当前状态与可发起的暂停/恢复动作提示（DD-96）。动作提交仍由 Core 重新准入。
+class PlatformTenantPage {
+  ///下一页的 Core 索引偏移，缺省即读完
+  final int? nextOffset;
+  final List<PlatformTenantView> tenants;
+
+  PlatformTenantPage({this.nextOffset, required this.tenants});
+
+  factory PlatformTenantPage.fromJson(Map<String, dynamic> json) =>
+      PlatformTenantPage(
+        nextOffset: json["nextOffset"],
+        tenants: List<PlatformTenantView>.from(
+          json["tenants"].map((x) => PlatformTenantView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nextOffset": nextOffset,
+    "tenants": List<dynamic>.from(tenants.map((x) => x.toJson())),
+  });
+}
+
+class PlatformTenantView {
+  final String id;
+
+  ///按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作
+  ///key；目录未开放、处于收敛中或本页提示判定失败时省略
+  final TenantLifecycleActionKey? lifecycleActionKey;
+  final String name;
+  final String slug;
+  final TenantState state;
+
+  PlatformTenantView({
+    required this.id,
+    this.lifecycleActionKey,
+    required this.name,
+    required this.slug,
+    required this.state,
+  });
+
+  factory PlatformTenantView.fromJson(Map<String, dynamic> json) =>
+      PlatformTenantView(
+        id: json["id"],
+        lifecycleActionKey: json["lifecycleActionKey"] == null
+            ? null
+            : tenantLifecycleActionKeyValues.map[json["lifecycleActionKey"]]!,
+        name: json["name"],
+        slug: json["slug"],
+        state: tenantStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "id": id,
+    "lifecycleActionKey":
+        tenantLifecycleActionKeyValues.reverse[lifecycleActionKey],
+    "name": name,
+    "slug": slug,
+    "state": tenantStateValues.reverse[state],
+  });
+}
+
+///按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作
+///key；目录未开放、处于收敛中或本页提示判定失败时省略
+///
+///业务 Tenant 暂停与恢复的 ActionDefinition key（DD-96）。两者都由 Platform Catalog Tenant 的
+///platform-admin 发起；Tenant delete 随 Stage 3 注册，不在此列。
+enum TenantLifecycleActionKey { TENANT_RESTORE, TENANT_SUSPEND }
+
+final tenantLifecycleActionKeyValues = EnumValues({
+  "tenant.restore": TenantLifecycleActionKey.TENANT_RESTORE,
+  "tenant.suspend": TenantLifecycleActionKey.TENANT_SUSPEND,
+});
+
+///Tenant 状态机。权威定义见 .design/03-领域模型与权限模型.md。DELETING/DELETED 因 GAP-LCM-01
+///开放而不注册入口，但状态本身保留以承载已有记录。
+enum TenantState {
+  ACTIVE,
+  DELETED,
+  DELETING,
+  ERROR,
+  PROVISIONING,
+  RESTORING,
+  SUSPENDED,
+  SUSPENDING,
+}
+
+final tenantStateValues = EnumValues({
+  "ACTIVE": TenantState.ACTIVE,
+  "DELETED": TenantState.DELETED,
+  "DELETING": TenantState.DELETING,
+  "ERROR": TenantState.ERROR,
+  "PROVISIONING": TenantState.PROVISIONING,
+  "RESTORING": TenantState.RESTORING,
+  "SUSPENDED": TenantState.SUSPENDED,
+  "SUSPENDING": TenantState.SUSPENDING,
+});
 
 ///PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
 ///msg:<Buzz event id>；version 是读到的 CollaborationUserState 版本，不符即 409。

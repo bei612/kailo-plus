@@ -17,6 +17,8 @@ use url::Url;
 const PROVISION_PATH: &str = "/operator/communities";
 /// 同上，`archive_community` 的签名路径。
 const ARCHIVE_PATH: &str = "/operator/communities/archive";
+/// 同上，`unarchive_community` 的签名路径（SF-BUZ-43）。
+const UNARCHIVE_PATH: &str = "/operator/communities/unarchive";
 /// 同上，`community_availability` 的签名路径。它是 operator 面唯一只读、
 /// 不产生任何副作用的端点，用来查证「Relay 接受这把 operator key」。
 const AVAILABILITY_PATH: &str = "/operator/communities/availability";
@@ -44,6 +46,13 @@ pub enum OperatorError {
     /// 调用方必须当作可重试失败，绝不能据此把成员置为 active。
     #[error("roster 未收敛: {0}")]
     NotConverged(String),
+}
+
+/// `GET /operator/communities` 的一行：host 与归档时刻（未归档为 `None`）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnedCommunity {
+    pub host: String,
+    pub archived_at: Option<String>,
 }
 
 /// 取用密钥前先校验 audience：同一把 operator key 不得被用于它不该服务的部署。
@@ -153,6 +162,73 @@ impl OperatorIdentity {
             &serde_json::json!({ "host": host, "owner_pubkey": owner_pubkey }),
         )
         .await
+    }
+
+    /// 解档 Community（SF-BUZ-43）：清除 `archived_at`，host 重新可解析。同一 owner
+    /// 重发幂等；owner 不符回 404。只用于 Tenant 恢复（DD-96）。
+    pub async fn unarchive_community(
+        &self,
+        http: &reqwest::Client,
+        host: &str,
+        owner_pubkey: &str,
+    ) -> Result<serde_json::Value, OperatorError> {
+        self.post_json(
+            http,
+            UNARCHIVE_PATH,
+            &serde_json::json!({ "host": host, "owner_pubkey": owner_pubkey }),
+        )
+        .await
+    }
+
+    /// 列出 `owner_pubkey` 名下的 Community 及其 `archived_at`（SF-BUZ-43 的回读面）。
+    ///
+    /// 签名 URL 含查询串：上游以 origin + path + `?` + 原始查询串校验 NIP-98 的 `u`。
+    /// 每次调用都重新签名（新 nonce），replay guard 不接受重放。
+    pub async fn list_owned_communities(
+        &self,
+        http: &reqwest::Client,
+        owner_pubkey: &str,
+    ) -> Result<Vec<OwnedCommunity>, OperatorError> {
+        let mut url = self.api_origin.join(PROVISION_PATH)?;
+        url.query_pairs_mut()
+            .append_pair("owner_pubkey", owner_pubkey);
+        let header = self.nip98_header("GET", url.as_str(), &[])?;
+        let resp = http.get(url).header("Authorization", header).send().await?;
+        let status = resp.status();
+        let text = resp.text().await?;
+        if !status.is_success() {
+            return Err(OperatorError::Rejected {
+                status: status.as_u16(),
+                body: text.chars().take(200).collect(),
+            });
+        }
+        let v: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| OperatorError::Sign(e.to_string()))?;
+        v.get("communities")
+            .and_then(|c| c.as_array())
+            .ok_or_else(|| OperatorError::Sign("operator 列表缺 communities".to_owned()))?
+            .iter()
+            .map(|row| {
+                let host = row
+                    .get("host")
+                    .and_then(|h| h.as_str())
+                    .ok_or_else(|| OperatorError::Sign("operator 列表行缺 host".to_owned()))?;
+                // 缺字段与 null 不是一回事：缺字段说明回应不合合同，不当作「未归档」
+                let archived_at = match row.get("archived_at") {
+                    Some(serde_json::Value::Null) => None,
+                    Some(serde_json::Value::String(t)) => Some(t.clone()),
+                    _ => {
+                        return Err(OperatorError::Sign(
+                            "operator 列表行的 archived_at 不合合同".to_owned(),
+                        ))
+                    }
+                };
+                Ok(OwnedCommunity {
+                    host: host.to_owned(),
+                    archived_at,
+                })
+            })
+            .collect()
     }
 
     /// 以这把 key 签一次只读的 operator 请求，查证 Relay 当前接受它。

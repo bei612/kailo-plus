@@ -455,6 +455,16 @@ func tenantLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 		return temporal.NewNonRetryableApplicationError(
 			"TENANT_LIFECYCLE 缺少冻结的 scope 输入", activities.ErrTypeRejected, nil)
 	}
+	switch s.Operation {
+	case "":
+	case scopeOperationSuspend:
+		return tenantSuspend(ctx, in)
+	case scopeOperationRestore:
+		return tenantRestore(ctx, in)
+	default:
+		return temporal.NewNonRetryableApplicationError(
+			"TENANT_LIFECYCLE 的 operation 未实现", activities.ErrTypeRejected, nil)
+	}
 	t := newTask(ctx, in)
 	if err := t.begin(); err != nil {
 		return t.fail(err)
@@ -562,7 +572,7 @@ func workspaceSuspend(ctx workflow.Context, in ComponentTaskInput) error {
 	s := in.Scope
 	t := newTask(ctx, in)
 	if err := t.begin(); err != nil {
-		return failWorkspace(ctx, t, s, err)
+		return failScope(ctx, t, scopeWorkspace, s, err)
 	}
 	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ConvergeWorkspaceChannelRoster,
@@ -570,7 +580,7 @@ func workspaceSuspend(ctx workflow.Context, in ComponentTaskInput) error {
 				WorkspaceID: s.ID, WorkspaceVersion: s.Version, Mode: activities.RosterClear,
 			})
 	}, nil); err != nil {
-		return failWorkspace(ctx, t, s, err)
+		return failScope(ctx, t, scopeWorkspace, s, err)
 	}
 	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ConvergeWorkspaceChannelArchive,
@@ -578,9 +588,9 @@ func workspaceSuspend(ctx workflow.Context, in ComponentTaskInput) error {
 				WorkspaceID: s.ID, WorkspaceVersion: s.Version, Archived: true,
 			})
 	}, nil); err != nil {
-		return failWorkspace(ctx, t, s, err)
+		return failScope(ctx, t, scopeWorkspace, s, err)
 	}
-	return transitionWorkspace(ctx, t, s, "SUSPENDED")
+	return transitionScope(ctx, t, scopeWorkspace, s, "SUSPENDED")
 }
 
 // workspaceRestore 把一个已在 Core 置为 RESTORING 的 Workspace 收敛回 ACTIVE。
@@ -593,7 +603,7 @@ func workspaceRestore(ctx workflow.Context, in ComponentTaskInput) error {
 	s := in.Scope
 	t := newTask(ctx, in)
 	if err := t.begin(); err != nil {
-		return failWorkspace(ctx, t, s, err)
+		return failScope(ctx, t, scopeWorkspace, s, err)
 	}
 	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
@@ -602,7 +612,7 @@ func workspaceRestore(ctx workflow.Context, in ComponentTaskInput) error {
 				SubjectType: "tenant", SubjectID: s.TenantID,
 			}, activities.Present)
 	}, nil); err != nil {
-		return failWorkspace(ctx, t, s, err)
+		return failScope(ctx, t, scopeWorkspace, s, err)
 	}
 	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ConvergeWorkspaceChannelArchive,
@@ -610,7 +620,7 @@ func workspaceRestore(ctx workflow.Context, in ComponentTaskInput) error {
 				WorkspaceID: s.ID, WorkspaceVersion: s.Version, Archived: false,
 			})
 	}, nil); err != nil {
-		return failWorkspace(ctx, t, s, err)
+		return failScope(ctx, t, scopeWorkspace, s, err)
 	}
 	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ConvergeWorkspaceChannelRoster,
@@ -618,16 +628,22 @@ func workspaceRestore(ctx workflow.Context, in ComponentTaskInput) error {
 				WorkspaceID: s.ID, WorkspaceVersion: s.Version, Mode: activities.RosterRebuild,
 			})
 	}, nil); err != nil {
-		return failWorkspace(ctx, t, s, err)
+		return failScope(ctx, t, scopeWorkspace, s, err)
 	}
-	return transitionWorkspace(ctx, t, s, "ACTIVE")
+	return transitionScope(ctx, t, scopeWorkspace, s, "ACTIVE")
 }
 
-// failWorkspace 让不可再收敛的暂停或恢复留下确定状态：Core 把 Workspace 从
+// TransitionScope 的 Kind 取值。
+const (
+	scopeTenant    = "TENANT"
+	scopeWorkspace = "WORKSPACE"
+)
+
+// failScope 让不可再收敛的暂停或恢复留下确定状态：Core 把 Tenant 或 Workspace 从
 // SUSPENDING/RESTORING 跃迁到 ERROR（.design/03 状态机），管理员可从 ERROR 重新
 // 暂停、暂停到位后再恢复。取消与 continue-as-new 不在此改写实体状态；跃迁本身失败
-// 时两个错误一并上报，不吞掉任何一个。
-func failWorkspace(ctx workflow.Context, t *task, s *ScopeTarget, cause error) error {
+// 时两个错误一并上报，不吞掉任何一个，也不再重试跃迁。
+func failScope(ctx workflow.Context, t *task, kind string, s *ScopeTarget, cause error) error {
 	var cont *workflow.ContinueAsNewError
 	if errors.As(cause, &cont) || temporal.IsCanceledError(ctx.Err()) {
 		return t.fail(cause)
@@ -635,36 +651,123 @@ func failWorkspace(ctx workflow.Context, t *task, s *ScopeTarget, cause error) e
 	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
 			activities.ScopeTransitionInput{
-				Kind:        "WORKSPACE",
+				Kind:        kind,
 				ID:          s.ID,
 				FromVersion: s.Version,
 				ToState:     "ERROR",
 				WorkflowID:  workflow.GetInfo(ctx).WorkflowExecution.ID,
 			})
 	}, nil); err != nil {
-		return t.fail(fmt.Errorf("%w（且 Workspace 未能跃迁 ERROR: %v）", cause, err))
+		return t.fail(fmt.Errorf("%w（且 %s 未能跃迁 ERROR: %v）", cause, kind, err))
 	}
 	return t.fail(cause)
 }
 
-// transitionWorkspace 在全部投影查证后让 Core 跃迁 Workspace 状态，并写终态投影。
-func transitionWorkspace(ctx workflow.Context, t *task, s *ScopeTarget, to string) error {
+// transitionScope 在全部投影查证后让 Core 跃迁 Tenant 或 Workspace 状态，并写终态投影。
+func transitionScope(ctx workflow.Context, t *task, kind string, s *ScopeTarget, to string) error {
 	var out activities.TransitionOutput
 	if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
 			activities.ScopeTransitionInput{
-				Kind:        "WORKSPACE",
+				Kind:        kind,
 				ID:          s.ID,
 				FromVersion: s.Version,
 				ToState:     to,
 				WorkflowID:  workflow.GetInfo(ctx).WorkflowExecution.ID,
 			})
 	}, &out); err != nil {
-		// 跃迁本身被拒也留下确定状态：failWorkspace 只再试一次 ERROR 跃迁，那一次
+		// 跃迁本身被拒也留下确定状态：failScope 只再试一次 ERROR 跃迁，那一次
 		// 失败只上报，不再回到这里
-		return failWorkspace(ctx, t, s, err)
+		return failScope(ctx, t, kind, s, err)
 	}
-	workflow.GetLogger(ctx).Info("Workspace 状态已跃迁", "state", out.State, "version", out.Version)
+	workflow.GetLogger(ctx).Info("scope 状态已跃迁", "kind", kind, "state", out.State, "version", out.Version)
+	return t.complete()
+}
+
+// tenantSuspend 把一个已在 Core 置为 SUSPENDING 的业务 Tenant 收敛到 SUSPENDED
+// （DD-96(3)、.design/06 §7.2 第 1 步）。
+//
+// Core 在准入落定时已拒绝该 Tenant 成员的全部 BFF 请求；这里关闭原生端直连：以
+// RelayOperatorIdentity 归档该 Tenant 的 Community，断开全部连接并使其 host 不再
+// 解析，由 Core 以 operator 列表回读 archived_at 查证后才跃迁。SpiceDB relationship、
+// roster、binding 与私钥全部保留。
+func tenantSuspend(ctx workflow.Context, in ComponentTaskInput) error {
+	s := in.Scope
+	t := newTask(ctx, in)
+	if err := t.begin(); err != nil {
+		return failScope(ctx, t, scopeTenant, s, err)
+	}
+	if err := t.step(func(ao workflow.Context) workflow.Future {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ConvergeTenantCommunityArchive,
+			activities.TenantArchiveInput{TenantID: s.ID, TenantVersion: s.Version, Archived: true})
+	}, nil); err != nil {
+		return failScope(ctx, t, scopeTenant, s, err)
+	}
+	return transitionScope(ctx, t, scopeTenant, s, "SUSPENDED")
+}
+
+// tenantRestore 把一个已在 Core 置为 RESTORING 的业务 Tenant 收敛回 ACTIVE
+// （DD-96(4)、.design/06 §7.2 第 2 步）。
+//
+// 解档前先对账不依赖 Community host 的部分（secret/binding、SpiceDB），再解档；
+// relay roster 与各 Workspace 的 Channel roster 的读写都经 Community host，而已归档的
+// host 不解析（SF-BUZ-43），因此它们在解档之后对账。host 重新可解析的证明是：解档
+// 回读的 archived_at 为空，且 ROSTER 段经该 host 成功读写 roster。全部一致才跃迁 ACTIVE。
+//
+// 解档之后任一步失败，Community 已经对原生端开放：先补偿归档并以其成功为准，再置
+// ERROR；补偿归档本身失败时仍置 ERROR，并把两个错误一并上报。
+func tenantRestore(ctx workflow.Context, in ComponentTaskInput) error {
+	s := in.Scope
+	t := newTask(ctx, in)
+	if err := t.begin(); err != nil {
+		return failScope(ctx, t, scopeTenant, s, err)
+	}
+	reconcile := func(phase string) error {
+		return t.step(func(ao workflow.Context) workflow.Future {
+			return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ReconcileTenantRestore,
+				activities.TenantRestoreInput{TenantID: s.ID, TenantVersion: s.Version, Phase: phase})
+		}, nil)
+	}
+	archive := func(archived bool) error {
+		return t.step(func(ao workflow.Context) workflow.Future {
+			return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ConvergeTenantCommunityArchive,
+				activities.TenantArchiveInput{TenantID: s.ID, TenantVersion: s.Version, Archived: archived})
+		}, nil)
+	}
+	afterUnarchive := func(cause error) error {
+		var cont *workflow.ContinueAsNewError
+		if errors.As(cause, &cont) || temporal.IsCanceledError(ctx.Err()) {
+			return t.fail(cause)
+		}
+		if err := archive(true); err != nil {
+			return failScope(ctx, t, scopeTenant, s,
+				fmt.Errorf("%w（且解档后的补偿归档未完成: %v）", cause, err))
+		}
+		return failScope(ctx, t, scopeTenant, s, cause)
+	}
+	if err := reconcile(activities.RestoreBindings); err != nil {
+		return failScope(ctx, t, scopeTenant, s, err)
+	}
+	if err := archive(false); err != nil {
+		return failScope(ctx, t, scopeTenant, s, err)
+	}
+	if err := reconcile(activities.RestoreRoster); err != nil {
+		return afterUnarchive(err)
+	}
+	var out activities.TransitionOutput
+	if err := t.step(func(ao workflow.Context) workflow.Future {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionScope,
+			activities.ScopeTransitionInput{
+				Kind:        scopeTenant,
+				ID:          s.ID,
+				FromVersion: s.Version,
+				ToState:     "ACTIVE",
+				WorkflowID:  workflow.GetInfo(ctx).WorkflowExecution.ID,
+			})
+	}, &out); err != nil {
+		return afterUnarchive(err)
+	}
+	workflow.GetLogger(ctx).Info("scope 状态已跃迁", "kind", scopeTenant, "state", out.State, "version", out.Version)
 	return t.complete()
 }
 
