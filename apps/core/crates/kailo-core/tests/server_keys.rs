@@ -39,9 +39,13 @@ async fn bff_publish(
     (status, resp.json().await.unwrap_or(serde_json::Value::Null))
 }
 
+/// 已准入的 ActionExecution。发起方须按动作语义给出：建钥是授予可签名身份，
+/// Core 在写入 OpenBao 前后都要求发起方仍是同 Tenant 的 ACTIVE 成员，因此由本人发起；
+/// 撤销是收回，只做通用准入。
 async fn seed_action(
     pool: &PgPool,
     fx: &common::LiveWorkspace,
+    initiator: Uuid,
     target: Uuid,
     action_key: &str,
 ) -> Uuid {
@@ -56,7 +60,7 @@ async fn seed_action(
     )
     .bind(id)
     .bind(fx.tenant)
-    .bind(fx.initiator)
+    .bind(initiator)
     .bind(target)
     .bind(action_key)
     .execute(pool)
@@ -237,7 +241,14 @@ async fn run(
         "恢复后应能以 HUMAN 发言：{body}"
     );
 
-    let a = seed_action(pool, fx, control_principal, "identity.key_revoke").await;
+    let a = seed_action(
+        pool,
+        fx,
+        fx.initiator,
+        control_principal,
+        "identity.key_revoke",
+    )
+    .await;
     let (status, _) = call(
         http,
         e,
@@ -252,7 +263,14 @@ async fn run(
         "CONTROL 轮换受 GAP-BUZ-01 阻断"
     );
     // 先撤后建：仍有 ACTIVE 的 SERVER 身份时不重建
-    let a = seed_action(pool, fx, fx.principal, "identity.key_provision").await;
+    let a = seed_action(
+        pool,
+        fx,
+        fx.principal,
+        fx.principal,
+        "identity.key_provision",
+    )
+    .await;
     let (status, _) = call(
         http,
         e,
@@ -263,7 +281,7 @@ async fn run(
     .await;
     assert_eq!(status, reqwest::StatusCode::CONFLICT, "DD-77：先撤后建");
     // 准入的 target 必须是该 Principal
-    let wrong = seed_action(pool, fx, fx.workspace, "identity.key_revoke").await;
+    let wrong = seed_action(pool, fx, fx.initiator, fx.workspace, "identity.key_revoke").await;
     let (status, _) = call(
         http,
         e,
@@ -275,7 +293,14 @@ async fn run(
     assert_eq!(status, reqwest::StatusCode::FORBIDDEN);
 
     // 已准入但语义不同的动作也不能借来撤销 Web 托管身份。
-    let wrong_action = seed_action(pool, fx, fx.principal, "identity.key_provision").await;
+    let wrong_action = seed_action(
+        pool,
+        fx,
+        fx.principal,
+        fx.principal,
+        "identity.key_provision",
+    )
+    .await;
     let (status, _) = call(
         http,
         e,
@@ -301,7 +326,7 @@ async fn run(
     assert!(stream.status().is_success(), "流应开得起来");
     let mut stream = stream.bytes_stream();
 
-    let revoke = seed_action(pool, fx, fx.principal, "identity.key_revoke").await;
+    let revoke = seed_action(pool, fx, fx.initiator, fx.principal, "identity.key_revoke").await;
     let (status, body) = call(
         http,
         e,
@@ -400,7 +425,8 @@ async fn run(
     );
 
     // ---- 重建 ----
-    let wrong_action = seed_action(pool, fx, fx.principal, "identity.key_revoke").await;
+    let wrong_action =
+        seed_action(pool, fx, fx.initiator, fx.principal, "identity.key_revoke").await;
     let (status, _) = call(
         http,
         e,
@@ -410,7 +436,14 @@ async fn run(
     )
     .await;
     assert_eq!(status, reqwest::StatusCode::FORBIDDEN);
-    let untracked = seed_action(pool, fx, fx.principal, "identity.key_provision").await;
+    let untracked = seed_action(
+        pool,
+        fx,
+        fx.principal,
+        fx.principal,
+        "identity.key_provision",
+    )
+    .await;
     sqlx::query("update admission.action_execution set dispatch_state = 'UNKNOWN' where id = $1")
         .bind(untracked)
         .execute(pool)
@@ -433,7 +466,40 @@ async fn run(
     .await
     .expect("结果不明动作的意图行数");
     assert_eq!(untracked_intents, 0, "无固定证据时不得补造写入意图");
-    let provision = seed_action(pool, fx, fx.principal, "identity.key_provision").await;
+    // 建钥是授予：发起方不是本 Tenant 的 ACTIVE 成员时，写 OpenBao 前即拒绝且不留意图
+    let outsider = seed_action(
+        pool,
+        fx,
+        fx.initiator,
+        fx.principal,
+        "identity.key_provision",
+    )
+    .await;
+    let (status, _) = call(
+        http,
+        e,
+        token,
+        "/service/v1/identities/server-keys/provision",
+        serde_json::json!({ "principalId": fx.principal, "actionExecutionId": outsider }),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::CONFLICT);
+    let outsider_intents: i64 = sqlx::query_scalar(
+        "select count(*) from admission.server_key_provision_intent where action_execution_id = $1",
+    )
+    .bind(outsider)
+    .fetch_one(pool)
+    .await
+    .expect("非成员发起的建钥意图行数");
+    assert_eq!(outsider_intents, 0, "非成员发起的建钥不得落写入意图");
+    let provision = seed_action(
+        pool,
+        fx,
+        fx.principal,
+        fx.principal,
+        "identity.key_provision",
+    )
+    .await;
     let (status, body) = call(
         http,
         e,

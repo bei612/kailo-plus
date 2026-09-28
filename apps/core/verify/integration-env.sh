@@ -67,6 +67,11 @@ t=io.open("deploy/local/compose.yaml",encoding="utf-8").read()
 svc=t.split("\n  temporal-namespace:\n",1)[1].split("\n  spicedb-schema:",1)[0]
 print("export VERIFY_TEMPORAL_ADMIN_IMAGE=" + re.search(r"image: (\S+)", svc).group(1))
 print("export VERIFY_TEMPORAL_INTERNAL_ADDRESS=" + re.search(r"TEMPORAL_ADDRESS: (\S+)", svc).group(1))')"
+# 邀请链接基址只在 compose 里由 PUBLIC_ORIGIN 派生一次；核验取 compose 解析后
+# 投递给 core-bff 的同一个值，不在这里重复派生规则
+export TENANT_INVITATION_LINK_BASE="$(sudo -n docker compose --env-file "$local_dir/.env" \
+  -f "$local_dir/compose.yaml" config --format json \
+  | jq -er '.services["core-bff"].environment.TENANT_INVITATION_LINK_BASE')"
 # 原生端（DD-78）：经网关原生入口、以 PKCE 取得的 Bearer 调用。核验像原生应用
 # 一样登录 IdP，口令从文件读入进程，不进环境变量。
 export VERIFY_NATIVE_URL="http://127.0.0.1:${AGENTGATEWAY_NATIVE_PORT}"

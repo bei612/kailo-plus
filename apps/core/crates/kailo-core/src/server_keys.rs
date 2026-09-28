@@ -288,6 +288,7 @@ async fn prewrite_secret_intent(
     .await
     .map_err(unavailable)?;
     if still_allowed.is_none() {
+        tracing::warn!(action = %action_id, "建钥写入前准入事实已不成立");
         return Err(StatusCode::CONFLICT.into_response());
     }
     let changed = sqlx::query(
@@ -310,6 +311,7 @@ async fn prewrite_secret_intent(
     .map_err(unavailable)?
     .rows_affected();
     if changed != 1 {
+        tracing::warn!(action = %action_id, "建钥动作未能转入待证实状态");
         return Err(StatusCode::CONFLICT.into_response());
     }
     // 两条 SERVER HUMAN 创建入口共用 Principal 行锁与未完成意图唯一约束。
@@ -325,6 +327,7 @@ async fn prewrite_secret_intent(
     .await
     .map_err(unavailable)?;
     if binding.is_some() {
+        tracing::warn!(action = %action_id, "写入前已有未撤销的 Web 托管身份");
         return Err(StatusCode::CONFLICT.into_response());
     }
     let inserted = sqlx::query(
@@ -342,6 +345,7 @@ async fn prewrite_secret_intent(
     match inserted {
         Ok(_) => {}
         Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
+            tracing::warn!(action = %action_id, "此人已有另一条未结束的建钥意图");
             return Err(StatusCode::CONFLICT.into_response());
         }
         Err(e) => return Err(unavailable(e)),
@@ -358,6 +362,7 @@ async fn prewrite_secret_intent(
     .map_err(unavailable)?;
     if !matches!(frozen, Some((t, p, ref l, false, false)) if t == tenant_id && p == principal_id && *l == locator)
     {
+        tracing::warn!(action = %action_id, "建钥意图已存在但与本次冻结目标不符或已终结");
         return Err(StatusCode::CONFLICT.into_response());
     }
     tx.commit().await.map_err(unavailable)?;
@@ -467,6 +472,7 @@ async fn provision_admitted(
         Err(e) => return unavailable(e),
     };
     if still_allowed.is_none() {
+        tracing::warn!(action = %action_id, "私钥写入后准入事实已不成立，不建立可签名身份");
         return StatusCode::CONFLICT.into_response();
     }
     let frozen: Option<(String, bool, bool)> = match sqlx::query_as(
@@ -509,6 +515,7 @@ async fn provision_admitted(
         Err(e) => return unavailable(e),
     };
     if existing.is_some() {
+        tracing::warn!(action = %action_id, "投影前已有未撤销的 Web 托管身份");
         return StatusCode::CONFLICT.into_response();
     }
     let inserted = sqlx::query(
@@ -527,7 +534,8 @@ async fn provision_admitted(
     match inserted {
         Ok(_) => {}
         Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
-            return StatusCode::CONFLICT.into_response()
+            tracing::warn!(action = %action_id, "Web 托管身份 binding 已由并发入口建立");
+            return StatusCode::CONFLICT.into_response();
         }
         Err(e) => return unavailable(e),
     }
@@ -557,7 +565,10 @@ async fn provision_admitted(
     .await;
     match finished {
         Ok(result) if result.rows_affected() == 1 => {}
-        Ok(_) => return StatusCode::CONFLICT.into_response(),
+        Ok(_) => {
+            tracing::warn!(action = %action_id, "建钥意图未能与 binding 同事务终结");
+            return StatusCode::CONFLICT.into_response();
+        }
         Err(e) => return unavailable(e),
     }
     if let Err(e) = tx.commit().await {
