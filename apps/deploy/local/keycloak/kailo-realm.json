@@ -153,6 +153,21 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "username": "__PLATFORM_ADMIN_USER__",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "platform-admin@kailo.local",
+      "firstName": "Platform",
+      "lastName": "Administrator",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__PLATFORM_ADMIN_USER_PASSWORD__",
+          "temporary": false
+        }
+      ]
     }
   ]
 }

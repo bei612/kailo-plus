@@ -493,6 +493,14 @@ core_start = re.search(r"^\./start-core\.sh$", initializer, re.M)
 if (len(sync_calls) != 1 or not idp_ready or not core_start
         or not idp_ready.end() < sync_calls[0].start() < core_start.start()):
     raise SystemExit("FAIL 浏览器回调同步必须在 IdP 就绪后、Core 启动前执行")
+ensure_calls = list(re.finditer(r"^\./bootstrap\.sh --ensure-platform-admin$", initializer, re.M))
+platform_subject = re.search(r'^platform_subject=\$\(\.\./\.\./core/verify/idp-subject\.sh "\$PLATFORM_ADMIN_USER"\)', initializer, re.M)
+tenant_boot = re.search(r'--slug "\$VERIFY_TENANT_SLUG"', initializer)
+catalog_boot = re.search(r'--slug "\$PLATFORM_CATALOG_TENANT_SLUG"[^\n]*\\\n\s*--admin-subject "\$platform_subject"', initializer)
+if (len(ensure_calls) != 1 or not platform_subject or not tenant_boot or not catalog_boot
+        or not idp_ready.end() < ensure_calls[0].start() < platform_subject.start() < core_start.start()
+        or not core_start.start() < tenant_boot.start() < catalog_boot.start()):
+    raise SystemExit("FAIL 平台管理员须在 IdP 就绪后补齐、取 subject，并在业务 Tenant 之后引导 Catalog")
 fixture_env = {
     "PLATFORM_DISPLAY_NAME": '协作 < & "',
     "PUBLIC_HOST": "platform.example.test", "AGENTGATEWAY_PORT": "18080",
@@ -501,6 +509,7 @@ fixture_env = {
     "OIDC_REALM": "enterprise", "OIDC_ISSUER": "http://identity.example.test:18081/realms/enterprise",
     "BUZZ_RELAY_HOST": "relay.example.test", "BUZZ_RELAY_PORT": "18082",
     "CORE_DB_USER": "platform", "CORE_DB_NAME": "platform", "CORE_DB_PORT": "18083",
+    "VERIFY_USER": "walker", "BOOTSTRAP_USER": "founder", "PLATFORM_ADMIN_USER": "operator",
 }
 with tempfile.TemporaryDirectory(prefix="kailo-config-check-") as directory:
     root = pathlib.Path(directory)
@@ -509,13 +518,18 @@ with tempfile.TemporaryDirectory(prefix="kailo-config-check-") as directory:
     cases = [({}, 0)]
     cases += [({"PLATFORM_DISPLAY_NAME": value}, 1) for value in ("", " \t ", "\u3000")]
     cases += [({"CORE_DB_PORT": value}, 1) for value in ("bad", "0", "65536")]
+    # 三个 IdP 用户缺任一或两两重复（用户名不区分大小写）都在生成凭据前拒绝。
+    cases += [({"PLATFORM_ADMIN_USER": None}, 1), ({"PLATFORM_ADMIN_USER": ""}, 1),
+              ({"PLATFORM_ADMIN_USER": "walker"}, 2), ({"PLATFORM_ADMIN_USER": "Founder"}, 2),
+              ({"BOOTSTRAP_USER": "walker"}, 2)]
     for override, expected in cases:
+        merged = {key: value for key, value in {**fixture_env, **override}.items() if value is not None}
         (root / ".env").write_text("".join(key + "=" + shlex.quote(value) + "\n"
-                                          for key, value in {**fixture_env, **override}.items()),
+                                          for key, value in merged.items()),
                                    encoding="utf-8")
         result = subprocess.run(["bash", str(bootstrap_file), "--validate-config"], capture_output=True)
         if result.returncode != expected or set(p.name for p in root.iterdir()) != {".env", "bootstrap.sh"}:
-            raise SystemExit("FAIL bootstrap 预检必须无副作用地接受有效配置并拒绝空展示名或无效数据库端口")
+            raise SystemExit(f"FAIL bootstrap 预检必须无副作用地接受有效配置并拒绝空展示名、无效数据库端口、缺失或重复的 IdP 用户：{override}")
     helper = root / "database-url.sh"
     helper.write_bytes(pathlib.Path("deploy/local/database-url.sh").read_bytes())
     (root / "secrets").mkdir()
@@ -536,7 +550,7 @@ with tempfile.TemporaryDirectory(prefix="kailo-config-check-") as directory:
                     or unquote(parsed.path) != "/" + fixture_env["CORE_DB_NAME"]
                     or parsed.query or parsed.fragment):
                 raise SystemExit("FAIL Core 数据库连接串编码与共享输入不一致")
-print("  \033[32mPASS\033[0m 初始化展示名校验；部署与宿主共用数据库 URL 编码，保留特殊字符口令")
+print("  \033[32mPASS\033[0m 初始化展示名与三个 IdP 用户互斥校验；平台管理员在 IdP 就绪后补齐、业务 Tenant 后引导 Catalog；部署与宿主共用数据库 URL 编码，保留特殊字符口令")
 
 class UniqueKeysLoader(yaml.SafeLoader):
     pass

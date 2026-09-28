@@ -83,6 +83,17 @@ for name in ("CORE_DB_USER", "CORE_DB_NAME"):
     if not re.fullmatch(r"[A-Za-z0-9_-]+", os.environ[name]):
         raise SystemExit(f"{name} 不适合 PostgreSQL URL")
 PYCONFIG
+# 三个 IdP 用户各自只属于一个 Tenant：一期同一 HumanIdentity 在多个 Tenant 有
+# ACTIVE membership 时登录被拒（TENANT_SELECTION_NOT_AVAILABLE），Catalog admin 也
+# 不得绑定业务 Tenant（DD-96）。Keycloak 用户名不区分大小写，按小写比较。
+: "${VERIFY_USER:?缺少 VERIFY_USER}" "${BOOTSTRAP_USER:?缺少 BOOTSTRAP_USER}" \
+  "${PLATFORM_ADMIN_USER:?缺少 PLATFORM_ADMIN_USER}"
+[ "${BOOTSTRAP_USER,,}" != "${VERIFY_USER,,}" ] \
+  && [ "${PLATFORM_ADMIN_USER,,}" != "${VERIFY_USER,,}" ] \
+  && [ "${PLATFORM_ADMIN_USER,,}" != "${BOOTSTRAP_USER,,}" ] || {
+  echo 'BOOTSTRAP_USER、VERIFY_USER 与 PLATFORM_ADMIN_USER 必须两两不同：一期不能在登录时选择 Tenant，Catalog admin 不得绑定业务 Tenant' >&2
+  exit 2
+}
 if [ "${1:-}" = '--validate-config' ] && [ "$#" -eq 1 ]; then
   exit 0
 fi
@@ -137,6 +148,79 @@ try:
 except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
     raise SystemExit("浏览器客户端同步未完成；修复 IdP 连接或配置后重跑查证，不重建 realm") from None
 PYSYNC
+  exit 0
+fi
+# 持久化 realm 同样不会因导入文件新增平台管理员。只按用户名补齐这一个用户：
+# 恰好 0 个则按 realm 模板中的同一条定义创建，恰好 1 个不改动，多于 1 个拒绝；
+# 其他用户、client、角色与 mapper 不读不写。口令只从文件读入进程内存并放进请求体。
+if [ "${1:-}" = '--ensure-platform-admin' ] && [ "$#" -eq 1 ]; then
+  python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
+    "$PLATFORM_ADMIN_USER" "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" <<'PYADMIN'
+import copy
+import json
+import pathlib
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+port, realm, admin, username, timeout = sys.argv[1:]
+timeout = int(timeout)
+if timeout <= 0:
+    raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
+base = "http://127.0.0.1:" + port
+users_path = "/admin/realms/" + urllib.parse.quote(realm, safe="") + "/users"
+lookup = users_path + "?" + urllib.parse.urlencode({"exact": "true", "username": username})
+try:
+    template = json.loads(pathlib.Path("keycloak/kailo-realm.json").read_text(encoding="utf-8"))
+    entries = [u for u in template.get("users", []) if u.get("username") == "__PLATFORM_ADMIN_USER__"]
+    if len(entries) != 1:
+        raise SystemExit("realm 模板中平台管理员定义不存在或不唯一")
+    secret_file = pathlib.Path("secrets/platform_admin_password")
+    if not secret_file.is_file() or not secret_file.read_text().strip():
+        raise SystemExit("缺少 secrets/platform_admin_password；先运行 bootstrap.sh 生成")
+    password = pathlib.Path("secrets/keycloak_admin_password").read_text().strip()
+    login = urllib.parse.urlencode({"grant_type": "password", "client_id": "admin-cli",
+                                   "username": admin, "password": password}).encode()
+    with urllib.request.urlopen(base + "/realms/master/protocol/openid-connect/token",
+                                login, timeout=timeout) as response:
+        token = json.load(response)["access_token"]
+
+    def request(path, body=None):
+        req = urllib.request.Request(base + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            method="POST" if body is not None else "GET",
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.load(response) if body is None else None
+
+    found = request(lookup)
+    if len(found) > 1:
+        raise SystemExit("平台管理员用户名对应多个 IdP 用户，拒绝选择")
+    created = not found
+    if created:
+        user = copy.deepcopy(entries[0])
+        user["username"] = username
+        user["credentials"] = [{"type": "password", "temporary": False,
+                                "value": secret_file.read_text().strip()}]
+        if re.search(r"__[A-Z][A-Z_]*__", json.dumps(user)):
+            raise SystemExit("平台管理员定义中还有未替换的占位符")
+        try:
+            request(users_path, user)
+        except urllib.error.HTTPError as error:
+            # 409 表示同名用户已被并发建立；由下面的回读判定是否恰好一个。
+            if error.code != 409:
+                raise
+    confirmed = request(lookup)
+    if len(confirmed) != 1:
+        raise SystemExit("平台管理员回读不是恰好 1 个 IdP 用户，初始化未完成")
+    if not confirmed[0].get("enabled"):
+        raise SystemExit("平台管理员 IdP 用户已停用；入口不重新启用它")
+    print("平台管理员 IdP 用户已创建并查证" if created else "平台管理员 IdP 用户已存在，未改动")
+except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+    raise SystemExit("平台管理员补齐未完成；修复 IdP 连接或配置后重跑查证，不重建 realm") from None
+PYADMIN
   exit 0
 fi
 [ "$#" -eq 0 ] || { echo 'bootstrap.sh 不接受该参数' >&2; exit 2; }
@@ -229,6 +313,7 @@ else
 fi
 gen verify_user_password
 gen bootstrap_user_password
+gen platform_admin_password
 
 # Keycloak 的 realm 定义入库，但客户端密钥不入库：把占位符替换成本机生成的值，
 # 渲染到 gitignore 的目录后挂载。入库文件始终只有占位符。
@@ -247,11 +332,6 @@ mkdir -p secrets/keycloak-import
 : "${TEMPORAL_NAMESPACE:?bootstrap 需要 .env 中的 TEMPORAL_NAMESPACE}"
 # 渲染在进程内完成：secret 从文件读入内存，不经命令行——`sed "s|…|$(cat …)|"`
 # 会把每个 client secret 与核验口令都摆进进程表，任何能 ps 的人都看得见。
-: "${VERIFY_USER:?bootstrap 需要 .env 中的 VERIFY_USER}"
-: "${BOOTSTRAP_USER:?bootstrap 需要 .env 中的 BOOTSTRAP_USER}"
-[ "$BOOTSTRAP_USER" != "$VERIFY_USER" ] || {
-  echo 'BOOTSTRAP_USER 与 VERIFY_USER 必须不同：一期不能在登录时选择 Tenant' >&2; exit 2;
-}
 : "${OIDC_REDIRECT_URI:?bootstrap 需要从 PUBLIC_ORIGIN 派生的 OIDC_REDIRECT_URI}"
 : "${OIDC_REALM:?bootstrap 需要 .env 中的 OIDC_REALM}"
 : "${OIDC_SERVICE_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_SERVICE_CLIENT_ID}"
@@ -261,7 +341,7 @@ mkdir -p secrets/keycloak-import
 : "${OIDC_NATIVE_AUDIENCE:?bootstrap 需要 .env 中的 OIDC_NATIVE_AUDIENCE}"
 : "${OIDC_NATIVE_MOBILE_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_NATIVE_MOBILE_REDIRECT_URI}"
 TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" VERIFY_USER="$VERIFY_USER" \
-BOOTSTRAP_USER="$BOOTSTRAP_USER" \
+BOOTSTRAP_USER="$BOOTSTRAP_USER" PLATFORM_ADMIN_USER="$PLATFORM_ADMIN_USER" \
 OIDC_REALM="$OIDC_REALM" OIDC_SERVICE_CLIENT_ID="$OIDC_SERVICE_CLIENT_ID" \
 OIDC_WORKER_CLIENT_ID="$OIDC_WORKER_CLIENT_ID" OIDC_BROWSER_CLIENT_ID="$OIDC_BROWSER_CLIENT_ID" \
 OIDC_REDIRECT_URI="$OIDC_REDIRECT_URI" OIDC_NATIVE_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
@@ -275,8 +355,9 @@ from_file = {
     "__BROWSER_CLIENT_SECRET__": "secrets/browser_client_secret",
     "__VERIFY_USER_PASSWORD__": "secrets/verify_user_password",
     "__BOOTSTRAP_USER_PASSWORD__": "secrets/bootstrap_user_password",
+    "__PLATFORM_ADMIN_USER_PASSWORD__": "secrets/platform_admin_password",
 }
-from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "OIDC_REALM",
+from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "PLATFORM_ADMIN_USER", "OIDC_REALM",
             "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_REDIRECT_URI",
             "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI"]
 with open("keycloak/kailo-realm.json", encoding="utf-8") as fh:

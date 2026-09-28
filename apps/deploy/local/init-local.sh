@@ -24,9 +24,14 @@ set -a
 set +a
 : "${VERIFY_USER:?缺少 VERIFY_USER}"
 : "${BOOTSTRAP_USER:?缺少 BOOTSTRAP_USER}"
-[ "$BOOTSTRAP_USER" != "$VERIFY_USER" ] || {
-  echo 'BOOTSTRAP_USER 与 VERIFY_USER 必须不同：一期不能在登录时选择 Tenant' >&2; exit 2;
+: "${PLATFORM_ADMIN_USER:?缺少 PLATFORM_ADMIN_USER}"
+[ "${BOOTSTRAP_USER,,}" != "${VERIFY_USER,,}" ] \
+  && [ "${PLATFORM_ADMIN_USER,,}" != "${VERIFY_USER,,}" ] \
+  && [ "${PLATFORM_ADMIN_USER,,}" != "${BOOTSTRAP_USER,,}" ] || {
+  echo 'BOOTSTRAP_USER、VERIFY_USER 与 PLATFORM_ADMIN_USER 必须两两不同：一期不能在登录时选择 Tenant，Catalog admin 不得绑定业务 Tenant' >&2
+  exit 2
 }
+: "${PLATFORM_CATALOG_TENANT_SLUG:?缺少 PLATFORM_CATALOG_TENANT_SLUG}"
 : "${VERIFY_TENANT_SLUG:?缺少 VERIFY_TENANT_SLUG}"
 : "${VERIFY_TENANT_NAME:?缺少 VERIFY_TENANT_NAME}"
 : "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?缺少 VERIFY_BOOTSTRAP_WAIT_SECONDS}"
@@ -114,11 +119,17 @@ done
 # Compose 自己等待 health 与依赖任务；namespace/schema 作业还要查终态。
 compose up -d --wait keycloak temporal spicedb buzz-relay
 ./bootstrap.sh --sync-browser-client
+./bootstrap.sh --ensure-platform-admin
 export VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE="$PWD/secrets/keycloak_admin_password"
 subject=$(../../core/verify/idp-subject.sh "$BOOTSTRAP_USER") || {
   echo '找不到首位管理员 IdP 用户；已有旧 realm 的本地环境须显式 --fresh 重建' >&2; exit 2;
 }
 [ -n "$subject" ] || { echo '首位管理员没有唯一 OIDC subject' >&2; exit 2; }
+# 构建前取平台管理员 subject，IdP 侧缺人时不白等一次构建。
+platform_subject=$(../../core/verify/idp-subject.sh "$PLATFORM_ADMIN_USER") || {
+  echo '找不到平台管理员 IdP 用户' >&2; exit 2;
+}
+[ -n "$platform_subject" ] || { echo '平台管理员没有唯一 OIDC subject' >&2; exit 2; }
 compose run --rm --no-deps temporal-namespace
 compose run --rm --no-deps spicedb-schema
 
@@ -131,4 +142,11 @@ compose exec -T core-bff /usr/local/bin/kailo-core bootstrap-tenant \
   --slug "$VERIFY_TENANT_SLUG" --name "$VERIFY_TENANT_NAME" \
   --admin-subject "$subject" --admin-display-name "$BOOTSTRAP_USER" \
   --wait-seconds "$VERIFY_BOOTSTRAP_WAIT_SECONDS"
-echo 'kailo-local 已就绪；首位管理员为 BOOTSTRAP_USER，走查用户为 VERIFY_USER；两份口令分别存于 secrets/。'
+# Platform Catalog Tenant 由 Core 启动时以 PROVISIONING 与引导意图建立，名称即 slug；
+# 此处经同一引导命令推进其生命周期并建立首位 admin（DD-96 的暂停/恢复发起者）。
+# --name 只在 Tenant 不存在时使用，Catalog 此时必已存在，故传入与库中一致的 slug。
+compose exec -T core-bff /usr/local/bin/kailo-core bootstrap-tenant \
+  --slug "$PLATFORM_CATALOG_TENANT_SLUG" --name "$PLATFORM_CATALOG_TENANT_SLUG" \
+  --admin-subject "$platform_subject" --admin-display-name "$PLATFORM_ADMIN_USER" \
+  --wait-seconds "$VERIFY_BOOTSTRAP_WAIT_SECONDS"
+echo 'kailo-local 已就绪；业务 Tenant 首位管理员为 BOOTSTRAP_USER，平台管理员为 PLATFORM_ADMIN_USER，走查用户为 VERIFY_USER；三份口令分别存于 secrets/。'
