@@ -68,7 +68,7 @@ Web 采用服务端托管的唯一理由是浏览器没有安全的持钥方式�
 由此固定三条边界：
 
 - **协作数据平面的准入执行点是 Relay，不是 Core。** Relay 依自身源码顺序校验 signer、scope、membership 和 kind（`SF-BUZ-03/07`），`require_relay_membership=true` 是它成立的前提（`SF-BUZ-26`）。上游的 NIP-29 权限比 Kailo 宽（`SF-BUZ-37`）：非成员可读写非 private Channel，成员可自建 Channel、自加入与加人。因此还需 `SS-BUZ-GOVERNANCE` 让 Relay 只接受 CONTROL 签发的管理类事件，并以 private 建立 Workspace Channel（`DD-80`）——否则原生端可以绕开 Workspace 成员关系。原生端本地签名后直接发布，Core 不在这条路径上，因此不得声称对原生端消息做过发布前 admission。Web 的「发布前 fresh admission」来自 Core 代签，是 Web 的附加能力，不是三端共同承诺。
-- **管理平面三端一律经 BFF。** 审批、云盘、知识库、智能问数、Agent、工具、额度、计费、审计与全部 Governed Action 都走 BFF over HTTPS，身份来自 OIDC 投影，与持钥方式无关。原生端不得以持有 Nostr 私钥为由绕过任一管理平面准入。
+- **管理平面三端一律经 BFF。** 审批、Agent、工具、额度、计费、审计、业务能力服务的管理面（存在 active binding 时）与全部 Governed Action 都走 BFF over HTTPS，身份来自 OIDC 投影，与持钥方式无关。原生端不得以持有 Nostr 私钥为由绕过任一管理平面准入。
 - **撤权收敛不依赖持钥方。** 按 `10-授权审批与撤权一致性.md` §4，执行点是 SpiceDB relationship 与 Buzz relay/Channel roster；roster 移除后 Relay 拒绝该 pubkey，与私钥在谁手里无关。`secret_ref` 为空的 binding 不适用密钥轮换流程中依赖 Core 停止签名的步骤，其等价收敛手段是 roster 移除加已知连接关闭。
 
 ### 原生端的认证入口与设备公钥登记
@@ -88,7 +88,7 @@ BFF 在两条 listener 之后是同一个服务，身份解析、PlatformSession
 3. Core 校验签名与上述字段后建立 `custody=CLIENT`、`RECONCILING` 的 binding，启动 `BUZZ_IDENTITY_PROJECTION` 把该 pubkey 投入 relay roster 与此人全部 ACTIVE Workspace 的 Channel roster；全部查证后置 `ACTIVE`。超过设备上界是 `LIMIT` 类的确定拒绝。
 4. 撤销一台设备：binding 进入 `REVOKING`，同一 kind 把该 pubkey 从全部 roster 移出后置 `REVOKED`。成员撤权则由 `MEMBERSHIP_REVOCATION` 移出此人的全部 pubkey。
 
-Buzz Desktop 的登记握手同时上报该包编入 CSP 的 editor origin 集合（按部署构建，未编入时为空集；上报值与 CSP 由同一构建输入同时生成），BFF 把它记为该设备的已生效集合，与部署级 editor origin 许可集合求交得到该端有效集合，只用于决定编辑入口显示可打开还是确定状态；它不授予任何权限，也不替代 Core 对 DocumentLaunchDescriptor 的 origin 校验（DD-95、SF-DSK-03）。Buzz Mobile 不承载编辑 surface，不上报该集合。
+Buzz Desktop 的 editor origin 有效集合就是 BFF 运行时下发的部署级许可集合，由独立 editor 窗口的导航钩子执行，不再编入安装包（DD-104、SS-DSK-EDITOR-WINDOW）；它只决定编辑入口显示可打开还是确定状态，不授予任何权限，也不替代 Core 对 DocumentLaunchDescriptor 的 origin 校验（DD-95）。Buzz Mobile 不承载编辑 surface，不上报该集合。
 
 ### 人类/Agent 正常 event（Buzz Web 路径）
 
@@ -101,7 +101,7 @@ Buzz Desktop 的登记握手同时上报该包编入 CSP 的 editor origin 集�
 5. Relay 依自身源码顺序校验 signer、scope、membership 和 kind，再持久/fan-out（SF-BUZ-03/07）。
 6. event ID 成为 operation outcome/audit evidence。
 
-`RelayActionSink` 不在这条路径；它生成 Relay-self 签名、author `p` tag 与 `buzz:workflow=true`（SF-BUZ-09）。普通 `p` tag 仍是 mention，不作业务 actor 凭据。
+`RelayActionSink` 不在这条路径；它生成 Relay-self 签名、author `p` tag 与 `buzz:workflow=true`（SF-BUZ-09），且在 Kailo 部署中随 Buzz 自带 workflow 一起不装配（DD-106）。普通 `p` tag 仍是 mention，不作业务 actor 凭据。
 
 ### 读取与 Agent 触发
 

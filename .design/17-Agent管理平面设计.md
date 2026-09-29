@@ -35,7 +35,7 @@ Tenant
 
 - Agent 在 Tenant 定义，避免每个 Workspace 复制 Persona；Definition 的稳定身份与已发布行为版本分离。
 - Workspace 安装确定版本，不安装“latest”。发布新版本不会改变任何 Installation。
-- 一期 Workspace 与 Buzz Channel 一对一，因此 ChannelAgentBinding 不再创建新 scope；它只控制 mention/manual-assignment 触发。
+- 一期 Workspace 与 Buzz Channel 一对一，因此 ChannelAgentBinding 不再创建新 scope；它只控制 mention/manual-assignment 触发。用户定义的自动化（频道消息、@提及、定时或 webhook 触发，REQ-23）是另一条触发路径：它指定一个 AgentInstallation 作执行者，经 Governed Action `automation.run` 与 `AgentTaskWorkflow` 执行，不经 ChannelAgentBinding 扩大触发面，也不使用 Buzz 自带 workflow（DD-106/107）。
 - 一个 Installation 只有一个 AgentPrincipal 和一个独立 Buzz pubkey。跨 Workspace 复用同一 Definition 时建立不同 Installation/Principal，不共享权限、委托、会话、额度或运行状态。
 - Skill 与 Tool 是独立受治理 Resource；AgentVersion 只声明期望 Skill 版本与能力需求（契约键与版本），Workspace Installation 再把需求绑定到该 Workspace 内 active 实现的 Tool（DD-92）。
 
@@ -126,7 +126,7 @@ RuntimeProfile 是平台随版本发布的能力合同。Codex 是平台核心�
 - model provider 只指向已授权 AgentGateway Responses route（SF-COD-05、SF-AGW-04）。
 - MCP 只含有效 ToolBinding 交集，使用 `enabled_tools/disabled_tools`、timeout 与 approval mode 再收窄（SF-COD-08）。
 - SkillVersion artifact 以 digest 验证后进入 Installation 专属只读 root；Core 用 `skills/extraRoots/set` 与 `skills/list(force_reload)` 核对发现结果。`skills/config/write` 只改变 Codex 本地启用投影，不改变 Platform Resource/permission（SF-COD-07）。
-- Codex thread 固定为非 ephemeral 并持久回填 AgentSession `runtime_thread_id`；新 Session 从 AgentMemoryBinding 读取一次 NIP-AE core 并固定 event ID。Codex MemoryTool 固定关闭，不建第二长期记忆投影（SF-COD-09/10、DD-65/67）。
+- Codex thread 固定为非 ephemeral 并持久回填 AgentSession `runtime_thread_id`；新 Session 从 AgentMemoryBinding 读取一次 NIP-AE core 并固定 event ID。Codex MemoryTool（平台核心 runtime 的一期配置）固定关闭，不建第二长期记忆投影（SF-COD-09/10、DD-65/67）。
 
 Buzz Persona 的 `skills` 当前未接执行（SF-BUZ-12），因此一期不声称“写入 Buzz Persona skills 即完成安装”。Buzz Persona 是行为语义来源，Codex skill root 才是 `SERVER_CODEX` 执行投影。
 

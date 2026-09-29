@@ -8,7 +8,7 @@ Buzz 已定义 NIP-AE Agent Engrams：Agent 签名的 `kind:30174` addressable e
 
 Codex app-server 已提供持久 ThreadStore/Rollout，可用 thread ID 恢复并分页读取 turn/item（SF-COD-09）。Codex 还有默认关闭的自动 Memory Pipeline，它会从 rollout 抽取记忆并产生 runtime-local 的全局文件工作区（SF-COD-10）。一期不启用该 Pipeline，避免它与 NIP-AE 形成两个长期记忆权威（DD-65）。
 
-业务能力服务自带的 memory、会话抽取或 prompt 注入，其存储 scope 不含 Kailo AgentInstallation。这些能力一律固定关闭，不进入 Agent 上下文，也不成为第二记忆权威（DD-65/92）；内置参考实现的具体关闭项见 `08`。
+业务能力服务自带的 memory、会话抽取或 prompt 注入，其存储 scope 不含 Kailo AgentInstallation。平台不把这些能力纳入 Agent 上下文或用户入口，它们不成为第二记忆权威；服务内部是否启用由该服务自行决定，平台不作规定（DD-65/92）；内置参考实现的 release 自身选择的关闭项见 `08`。
 
 ## 2. 四层记忆模型
 
@@ -136,7 +136,7 @@ Relay 线程上下文和 Codex Session 历史不重复全量注入：Relay 只�
 | 生产 NIP-AE 读写 | `ADAPTER_REQUIRED: SS-BUZ-ENGRAM` | Agent/CONTROL Nostr 私钥按 DD-72 托管于 OpenBao；服务端 engram adapter 复用 `buzz-core::engram` |
 | Agent 修改 core 的持久审批 | `DESIGN_DEFINED` | ApprovalWorkflow 由 DD-69 的 Application Worker 承接 |
 | Codex 自动 Memory Pipeline | `EXCLUDED` | SF-COD-10、DD-65；防止第二长期记忆权威 |
-| 任何业务能力服务的原生 memory、会话抽取与 prompt 注入 | `EXCLUDED`（固定关闭） | DD-65/92；其 scope 与 Kailo AgentInstallation memory namespace 不同，不进入 Agent 上下文 |
+| 任何业务能力服务的原生 memory、会话抽取与 prompt 注入 | `EXCLUDED`（不纳入 Agent 上下文或用户入口；服务内部是否启用不作规定） | DD-65/92；其 scope 与 Kailo AgentInstallation memory namespace 不同，不进入 Agent 上下文 |
 | OpenViking/独立向量记忆服务 | `EXCLUDED` | REQ-20、紧凑性；NIP-AE 承担 Agent 长期记忆，企业知识按 DD-92 是可选的 `KNOWLEDGE` 能力而非记忆层 |
 
 Buzz 本地 `buzz-agent::Session.history` 与 handoff summary 不进入一期记忆链：源码证明它们是 `LOCAL_ACP` 的进程内历史且无 `session/load`，而一期运行时是 `SERVER_CODEX`（SF-BUZ-21）。

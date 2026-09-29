@@ -35,7 +35,7 @@ Codex `Feature::MemoryTool` 一期固定关闭；其 rollout 抽取与 `$CODEX_H
 
 ## 3. 工具发现不等于授权
 
-工具来源固定两类（DD-92）：`PLATFORM_NATIVE`（记忆、Buzz 消息、任务、审批等平台核心工具，不依赖任何 ApplicationBinding）与 `APPLICATION`（业务能力实现按能力契约键暴露的工具，经 MCP 与 AgentGateway ExtMcp PEP）。
+工具来源固定两类（DD-92）：`PLATFORM_NATIVE`（记忆、Buzz 消息、任务、审批等平台核心工具，不依赖任何 ApplicationBinding）与 `APPLICATION`（业务能力实现按能力契约键暴露的工具）。两类工具都经 MCP 与 AgentGateway ExtMcp PEP，传输不同只在 MCP target 的来源。
 
 ```text
 AgentVersion requested tools
@@ -57,6 +57,13 @@ AgentVersion requested tools
 Tool 出现只证明可请求，不证明某个参数/目标可执行。真正调用前仍做 parameter normalization、SpiceDB、Delegation、Approval、Capacity、Quota 和 exposure 准入。Codex `enabled_tools/disabled_tools` 只是前置收窄层（SF-COD-02）。
 
 SkillVersion 也不授予工具：Codex skill metadata 可声明 tool dependencies（SF-COD-07），但只有依赖工具同时进入上述交集时 skill 才有效；否则 EffectiveAgentConfig 返回确定 reason。Skill artifact 只能从 Installation 专属只读 root 被发现，不能借 skill 内容引入任意 MCP、shell 或 credential。
+
+`PLATFORM_NATIVE` 工具的传输固定为（DD-105）：
+
+- 由 Core 自托管的 Streamable HTTP MCP 端点提供，端点位于 Core 的私有服务网络，由 Core 经 SS-AGW-ADMIN 登记为 AgentGateway 的 MCP target；Codex 只经 AgentGateway 调用，Agent 与 Codex 不能直连该端点。
+- 与 `APPLICATION` 工具走同一条会话级 bearer 与 ExtMcp 两相 PEP（§4）：参数规范化、fresh SpiceDB/Delegation/Approval/Quota 准入与 `CheckResponse` exposure 过滤同样生效。
+- 不需要 ApplicationBinding、adapter、Adapter Protocol 或 ActionToken：Core 端点只接受 PEP 注入的平台裁决 header（固定的 AgentGateway service 身份与该次 operation ref），据此在 Core 内执行对应 Governed Action；缺 header、身份不符或该 operation 未处于准入通过的状态时拒绝。
+- 零业务能力 binding 时它们完整可用，是 V-SCN-71 中 `PLATFORM_NATIVE` 工具的执行路径。
 
 业务能力工具按能力类别统一遵守以下条款，内置参考实现（知识检索、数据查询等）的具体映射见 `08`：
 
@@ -131,5 +138,5 @@ ConfigResourceStore 能以 SQLite/Postgres 保存 MCP/LLM/traffic/UI resources�
 | NIP-AE Agent/CONTROL 私钥托管 | OpenBao KV v2 + Core signer（DD-72）；transit 无 secp256k1，签名不在 OpenBao 内完成 |
 | Agent 修改 core | Temporal ApprovalWorkflow（DD-68/69） |
 | Codex 自动 Memory Pipeline、OpenViking | 一期 `EXCLUDED`；NIP-AE 是唯一 Agent 长期记忆权威 |
-| 任何业务能力服务自带的 Agent、skill、sandbox、memory、会话抽取或 prompt 注入 | 固定关闭，不承担平台 Agent runtime、工具或记忆职责，不进入 Agent 上下文（DD-92） |
+| 任何业务能力服务自带的 Agent、skill、sandbox、memory、会话抽取或 prompt 注入 | 平台不把它们纳入 Agent 上下文或用户入口，不承担平台 Agent runtime、工具或记忆职责；不规定服务内部是否启用（DD-92） |
 | 桌面 computer-use、微信、游戏、host shell（`thread/shellCommand`、`process/spawn`、`command/exec`） | 一期 `EXCLUDED` |

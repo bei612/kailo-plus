@@ -10,6 +10,8 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 | `SOURCE_BOUND_PROTOCOL` surface 的正常协议会话（打开、读取、保存） | `PROTOCOL` Action + ProtocolSession；不为 surface loading/dirty/close 创建 Workflow |
 | Approval | `ApprovalWorkflow` |
 | Agent turn/invocation | `AgentTaskWorkflow`，input 固定 Installation、AgentVersion 与 projection generation |
+| 自动化运行（REQ-23） | Governed Action `automation.run` + `AgentTaskWorkflow`，input 另固定 AutomationVersion 与触发源；审批关卡是其 child `ApprovalWorkflow`，`SCHEDULE` 触发由 Temporal Schedule 启动该 Workflow；不新增 kind（§9、DD-107） |
+| Buzz Relay 自带 workflow | 在 Kailo 部署中关闭（DD-106），不作为 Workflow、Approval 或定时权威 |
 | native async task、长时/多步/跨服务、timer/signal/cancel、UNKNOWN 对账 | `ComponentTaskWorkflow` |
 | 跨服务数据获取 | 不建平台 Workflow 或 Schedule；接收方按 DD-89 经授权自行拉取，平台只治理授权 Governed Action 与显式 Tool 读写 |
 | Resource 导出/导入 | 源、目标 Tenant 分别建立 `ComponentTaskWorkflow(kind=RESOURCE_EXPORT\|RESOURCE_IMPORT)`；不存在跨 Tenant Workflow input |
@@ -21,6 +23,7 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 | ComponentRelease 登记/批准/撤销 | `ComponentTaskWorkflow(kind=COMPONENT_RELEASE)`，input 固定按 `admission_path` 取证的来源标识（`BUILTIN_REFERENCE` 为 source commit，`EXTERNAL` 为 vendor、artifact version 与 artifact digest，DD-94(1)）、manifest/API range、全部合同与 artifact digest；审批决定仍由 ApprovalWorkflow 承接 |
 | PlatformProviderBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=PLATFORM_PROVIDER`、port、binding、old/new release、old/new generation 与 provider projection refs |
 | ApplicationBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=APPLICATION`、binding、old/new release、old/new generation、native scope 与全部投影 refs；类别内换成另一实现是新 binding 的建立加旧 binding 的 `COMPONENT_DISABLE`，不是同一 binding 的 generation 切换（DD-88） |
+| 应用 Resource 首次创建（`resource.create`） | `ComponentTaskWorkflow(kind=RESOURCE_PROVISION)`，input 固定 Resource ID/version、type_key、ApplicationBinding ID/version、release 与 generation；先写 SpiceDB relationship，再以 Resource ID 为幂等键经 Adapter Protocol `resolve_native_scope(mode=CREATE)` 创建或取回 native 对象；结果不明只以同一 Resource ref 调 `mode=LOOKUP` 对账，不以 `CREATE` 重放、不换幂等键（DD-98） |
 | 两类 Binding 停用 | `ComponentTaskWorkflow(kind=COMPONENT_DISABLE)`，input 固定 binding kind/ID/version 和受影响 refs |
 | 协议会话结果不明的对账 | `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，input 固定 ProtocolSession ref（ID/version）、实现 binding refs、base revision 与 native correlation；查证手段为该 binding 经 Adapter Protocol `query_revision` 提供的 revision 查询（DD-90） |
 | AgentInstallation 建立/升级/停用的多投影收敛 | `ComponentTaskWorkflow(kind=AGENT_INSTALLATION)`，input 固定 Installation ID/version、exact AgentVersion、projection generation、AgentPrincipal/BuzzIdentity、SpiceDB 与 Channel roster refs |
@@ -89,12 +92,12 @@ Codex MCP approval seam 在工具调用前暂停：`SERVER_CODEX` 固定启用 `
 | 类型 | 责任 |
 |---|---|
 | `ApprovalWorkflow` | admission/step approval |
-| `AgentTaskWorkflow` | Codex turn、tool child action、usage、cancel、Buzz reply |
+| `AgentTaskWorkflow` | Codex turn、tool child action、usage、cancel、Buzz reply；自动化运行的 Agent 回合或模板消息（§9） |
 | `ComponentTaskWorkflow` | 组件异步/多步动作与 ExternalExecution |
 
 业务差异由 ActionDefinition、Workflow input 和 Adapter 表达，不为某个能力类别或产品建只转发一次 API 的浅 Workflow。AgentTaskWorkflow 始终固定触发时的 AgentVersion 与 projection generation；Installation 升级不修改运行中 history。Child Agent 只在有独立生命周期、独立频道回复或脱离 parent turn 继续时建立新 AgentTaskWorkflow。
 
-`ComponentTaskWorkflow` kind 只允许两类（DD-90）：平台生命周期类 `RESOURCE_EXPORT`、`RESOURCE_IMPORT`、`TENANT_LIFECYCLE`、`WORKSPACE_LIFECYCLE`、`MEMBERSHIP_PROJECTION`、`MEMBERSHIP_REVOCATION`、`BUZZ_IDENTITY_PROJECTION`、`SECRET_REF_REHOME`、`AGENT_INSTALLATION`；通用组件类 `COMPONENT_RELEASE`、`COMPONENT_BINDING`、`COMPONENT_DISABLE`、`PROTOCOL_SESSION_RECONCILE`、`CAPABILITY_VERSION_PUBLISH`。它们都不增加顶层 Workflow 引擎或新工作台；任何 kind 都不以某个业务能力服务的存在为前提，也不以产品命名。`DOCUMENT_RECONCILE`、`MODEL_PUBLISH`、`MATERIALIZATION` 已撤销。
+`ComponentTaskWorkflow` kind 只允许两类（DD-90）：平台生命周期类 `RESOURCE_EXPORT`、`RESOURCE_IMPORT`、`TENANT_LIFECYCLE`、`WORKSPACE_LIFECYCLE`、`MEMBERSHIP_PROJECTION`、`MEMBERSHIP_REVOCATION`、`BUZZ_IDENTITY_PROJECTION`、`SECRET_REF_REHOME`、`AGENT_INSTALLATION`；通用组件类 `COMPONENT_RELEASE`、`COMPONENT_BINDING`、`COMPONENT_DISABLE`、`RESOURCE_PROVISION`（DD-98）、`PROTOCOL_SESSION_RECONCILE`、`CAPABILITY_VERSION_PUBLISH`。它们都不增加顶层 Workflow 引擎或新工作台；任何 kind 都不以某个业务能力服务的存在为前提，也不以产品命名。`DOCUMENT_RECONCILE`、`MODEL_PUBLISH`、`MATERIALIZATION` 已撤销。
 
 ### 5.1 Activity 选项纪律
 
@@ -156,7 +159,7 @@ ACTIVE → SUSPENDING → SUSPENDED → RESTORING → ACTIVE
 5. 第一个不可逆 native delete 调用前可 cancel 回 `SUSPENDED`。`irreversible_dispatch_started=TRUE` 后不提供 restore 动作；只允许 rerun/reconcile 继续未结束的删除。
 6. `DELETED` 只在全部 TenantDeleteSubprocess 到达终态（`DELETED/RETAINED_DECLARED/RETAINED_BY_DECISION`）、relationship/roster/route 撤销已对账、usage 已结算且 AuditEvent/tombstone 已持久时成立。删除 Workflow 不删 AuditEvent、UsageEvent、WorkflowRef 或 retained native evidence。
 
-业务能力实现不阻断 Tenant 销毁（DD-91）：声明了删除能力的实现执行其 native 删除子流程，声明 `retain_on_tenant_delete` 的实现只撤 binding 与凭据、保留审计并登记待人工处置；GAP-LCM-01 只作用于实现自身的删除能力声明。某个已声明删除能力的子流程失败或结果不明时，该子流程按 fail closed 持续对账，其他子流程照常推进；Tenant 只在全部子流程到达终态、或该业务 Tenant 的 admin 经 owner 审批的 Governed Action 把停在 `UNKNOWN` 的子流程处置为 `RETAINED_BY_DECISION`（不改写 binding 的声明字段，处置与理由进入审计）后，才进入 `DELETED`。Tenant delete Action 的注册只取决于本节平台核心销毁链（Core 事实与平台核心自有 ResourceType、SpiceDB relationship、Buzz Community、OpenBao Tenant namespace、OpenMeter 数据）按合同实现并通过验证，业务能力实现的删除缺口不阻断注册；此前 Catalog 不注册该 Action，不存在从 `SUSPENDED` 进入 `DELETING` 的可执行转换。
+业务能力实现不阻断 Tenant 销毁（DD-91）：声明了删除能力的实现执行其 native 删除子流程，声明 `retain_on_tenant_delete` 的实现只撤 binding 与凭据、保留审计并登记待人工处置；GAP-LCM-01 只作用于实现自身的删除能力声明。某个已声明删除能力的子流程失败或结果不明时，该子流程按 fail closed 持续对账，其他子流程照常推进；Tenant 只在全部子流程到达终态、或该业务 Tenant 的 admin 经 owner 审批的 Governed Action 把停在 `UNKNOWN` 的子流程处置为 `RETAINED_BY_DECISION`（不改写 binding 的声明字段，处置与理由进入审计）后，才进入 `DELETED`。Tenant delete Action 的注册按平台事实增量成立（DD-99）：平台核心销毁链由按平台事实类别登记的销毁处理器组成（Core 事实与平台核心自有 ResourceType、SpiceDB relationship、Buzz Community 与 roster、OpenBao Tenant namespace、OpenMeter Customer 数据、AgentGateway 投影），注册时已存在的每个类别都有经验证的处理器即可注册，之后新增的类别必须与其处理器同一构建登记；snapshot 中出现当前构建没有处理器的类别时 delete 准入拒绝，准入后才出现缺失时 `PLATFORM_CORE_CHAIN` 停在 `UNKNOWN` 并 fail closed。业务能力实现的删除缺口不阻断注册；注册前 Catalog 不登记该 Action，不存在从 `SUSPENDED` 进入 `DELETING` 的可执行转换。
 
 ### 7.3 Workspace 暂停与恢复
 
@@ -180,3 +183,23 @@ Web 只提供 `signal/update/cancel/rerun`。所有命令是 Governed Action 并
 任务列表、审批箱、详情、waiting reason、状态、错误、进度、用量与控制确认都是 `BUZZ_NATIVE` surface：主题实时继承 Buzz ThemeProvider/CSS variables；状态码、reason code 和错误分类以参数进入 Buzz `MessageKey/t`，不直接把 Temporal/组件英文错误当界面文案。Tenant/Workspace、权限和结果暴露仍由 BFF 决定，主题/i18n 不改变工作流状态（REQ-08、SF-WEB-03、DD-36）。
 
 只有 Temporal terminal、ExternalExecution 对账、required usage/audit 均已记录时，产品才显示任务完成。Projection 落后不改变控制事实。
+
+## 9. 自动化
+
+用户可见的自动化（REQ-23）由本工作台承接，Buzz Relay 自带的 workflow 在 Kailo 部署中关闭（DD-106）。实体以 `03` §7 的 AutomationDefinition/AutomationVersion 为准，动作登记见 `05` §2.9。
+
+```text
+trigger（HUMAN 消息 / @提及 / Temporal Schedule / webhook）
+→ automation.run admission（owner 为 initiator，执行 Installation 的 AgentPrincipal 为 actor，Delegation fresh）
+→ AgentTaskWorkflow(input: AutomationVersion, Installation, AgentVersion, projection generation, trigger_source_id)
+→ [child ApprovalWorkflow：版本固定的 ApprovalPolicy]
+→ AGENT_TURN：Codex 回合 | POST_MESSAGE：以 Installation 的 Buzz 身份发布模板消息
+→ 回帖到触发 Thread 或 Workspace Channel + usage/audit/TaskProjection
+```
+
+- 消息与 @提及触发复用 Agent 触发的 Relay 持久事件与 IngressCheckpoint（DD-04）；只有 HUMAN 身份发布的事件参与匹配，AGENT 与 CONTROL 身份的事件（含自动化自己的回帖）不匹配，因此不形成自触发循环。
+- 消息与 webhook 触发由 Core 先写 ActionExecution 与 WorkflowRef，workflow ID 为 `kailo:automation_run:<tenant_id>:<automation_resource_id>:<trigger_source_id>`，再按 §3.1 的 Start 纪律启动。
+- `SCHEDULE` 触发使用 Temporal Schedule（SF-TMP-05），overlap 固定 `SKIP`，action 直接启动 `AgentTaskWorkflow`；run 的 workflow ID 由 scheduler 组成，其首个 Activity 调 Core 完成 `automation.run` 准入并按 §3.1 的 Schedule 例外回填 ActionExecution 与 WorkflowRef，准入拒绝时 Workflow 以拒绝原因终结、不产生副作用。Schedule 只在 AutomationDefinition `ENABLED` 时存在，`PAUSED` 时暂停，`DISABLED`、Workspace 暂停与 Tenant 暂停或销毁时按各自流程暂停或删除（§7.2、§7.3）。
+- `WEBHOOK` 触发经 AgentGateway 公开路由进入 BFF：校验 HMAC-SHA256 签名（覆盖时间戳与正文）、5 分钟时间窗与 delivery ID 去重后才建立 ActionExecution；签名不符直接拒绝并只计入度量。正文作为不可信触发内容进入模板上下文，不能携带 Tenant、Workspace、Principal 或权限。
+- 审批关卡是 step approval：child ActionExecution 与 child ApprovalWorkflow 在第一个副作用之前，父 Workflow 等待结果；拒绝或过期时该次运行以对应原因终结。
+- 每次运行在准入时 fresh 检查 owner、执行 Installation、Delegation、Workspace 状态与 Quota；`AGENT_TURN` 经 CapacityLease 取得 Codex slot，其余同普通 Agent 回合。运行进入任务工作台，与其他 Workflow 同一投影、控制与观测规则。
