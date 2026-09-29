@@ -61,7 +61,7 @@ NIP-AE 内容是 Agent 自身保存的上下文，不是 system policy、develop
 1. Core 从触发 event 解析 Tenant、Workspace、Installation 和精确 AgentVersion/projection generation。
 2. Core 验证 Installation、AgentMemoryBinding 与两个 Buzz identity 同 Tenant 且 ACTIVE。
 3. 新 AgentSession 在创建非 ephemeral Codex thread 前读取 NIP-AE `core`。成功时固定 `core_memory_event_id`；确认不存在时固定 `NONE + ABSENT`；传输/验签/解密/解析/超时时固定 `NONE + UNREADABLE`。Kailo 的 Session scope 是 `03` 设计定义的 `(workspace_id, root_event_id)`，与 Buzz ACP 默认的 `channel` SessionPolicy 不同（SF-BUZ-24）；core 读取次数与 `agent_memory_read_count` 计量按 Kailo scope 发生，不沿用 Buzz 默认。
-4. 有效 core 以 `turn/start.additionalContext` 的保留 source key `kailo.agent-memory.core` 作为明确分隔的外部 memory context 进入首个 turn，不写入 AgentVersion `developer_instructions`。`ABSENT` 注入固定 bootstrap context，要求 Agent 先向当前 HUMAN 了解自身 identity/goals，core 写入仍经 memory Action 与审批。`UNREADABLE` 不注入“无记忆”提示，也不触发覆盖写（SF-COD-16）。
+4. 有效 core 以 `turn/start.additionalContext` 的保留 source key `platform.agent-memory.core` 作为明确分隔的外部 memory context 进入首个 turn，不写入 AgentVersion `developer_instructions`。`ABSENT` 注入固定 bootstrap context，要求 Agent 先向当前 HUMAN 了解自身 identity/goals，core 写入仍经 memory Action 与审批。`UNREADABLE` 不注入“无记忆”提示，也不触发覆盖写（SF-COD-16）。
 5. 活跃 Session 始终使用固定的 core event，不中途刷新。core 更新只影响之后创建的 Session。
 6. 进程重启时用 `runtime_thread_id` 调用 Codex `thread/resume`；不从 Relay 消息重建已持久的 Codex rollout，也不从内存 ACP queue 恢复。
 

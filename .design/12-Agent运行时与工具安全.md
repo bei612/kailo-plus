@@ -29,7 +29,7 @@ Codex `ModelProviderInfo` 支持 custom `base_url + WireApi::Responses`（SF-COD
 
 `SERVER_CODEX` 不使用 Buzz ACP 进程内 queue/history 作恢复权威。AgentSession 必须创建非 ephemeral Codex thread，并持久保存 `runtime_thread_id`；进程恢复用 `thread/resume`，历史读取用 `thread/turns/list`/`thread/items/list`（SF-COD-09）。Relay 仍是 Channel/Thread/DM 协作事实权威，只为当前触发提供受界 thread/DM 上下文；普通顶层 Channel 消息不虚构全频道 prompt 历史（SF-BUZ-07/20）。
 
-跨 Session 长期记忆只使用 AgentInstallation 的 Buzz NIP-AE `core + mem/*`，具体分层、binding、Action、prompt 优先级与错误语义以 `19` 为准。新 Session 创建前读一次 core并固定 event ID，活跃 Session 不中途刷新；冷记忆只经 memory tool 按需读取。core 以 `turn/start.additionalContext` 的保留 source key `kailo.agent-memory.core` 注入，绝不占用 `developer_instructions`；后者只承载不可变 AgentVersion instructions。记忆不修改 AgentRuntimeProjection、permission、Delegation、Approval 或 Quota（SF-COD-09/16、DD-65/67）。
+跨 Session 长期记忆只使用 AgentInstallation 的 Buzz NIP-AE `core + mem/*`，具体分层、binding、Action、prompt 优先级与错误语义以 `19` 为准。新 Session 创建前读一次 core并固定 event ID，活跃 Session 不中途刷新；冷记忆只经 memory tool 按需读取。core 以 `turn/start.additionalContext` 的保留 source key `platform.agent-memory.core` 注入，绝不占用 `developer_instructions`；后者只承载不可变 AgentVersion instructions。记忆不修改 AgentRuntimeProjection、permission、Delegation、Approval 或 Quota（SF-COD-09/16、DD-65/67）。
 
 Codex `Feature::MemoryTool` 一期固定关闭；其 rollout 抽取与 `$CODEX_HOME/memories` 合并不进入 Kailo 长期记忆链（SF-COD-10、DD-65）。
 

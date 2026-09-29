@@ -43,7 +43,7 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 
 ## 3. Namespace、身份与 history
 
-- 一个 application namespace 承载所有 Tenant 的业务/Approval Workflow；不用 per-Tenant namespace 制造额外管理面。自定义 Search Attribute 固定只登记三个 Keyword：`KailoTenantId`、`KailoWorkspaceId`、`KailoWorkflowKind`，经 `AddSearchAttributes` 在 namespace 上一次性注册。SQL 标准可见性下全部自定义 Keyword 共用固定数量的预分配列，超出即 `InvalidArgument`；单值与整表另有大小上限。其余投影字段只存在 Core TaskProjection，不做 Search Attribute。
+- 一个 application namespace 承载所有 Tenant 的业务/Approval Workflow；不用 per-Tenant namespace 制造额外管理面。自定义 Search Attribute 固定只登记三个 Keyword：`PlatformTenantId`、`PlatformWorkspaceId`、`PlatformWorkflowKind`，经 `AddSearchAttributes` 在 namespace 上一次性注册；名称前缀 `Platform` 是协议常量，不随部署显示名变化（DD-111）。此前以旧名 `KailoTenantId`、`KailoWorkspaceId`、`KailoWorkflowKind` 注册的三个 SA 在一次性迁移窗口内只读不写：按 SA 列举时新旧两组都查，窗口关闭后不再查询，注册保留在 namespace 中（apps ADR-17）。SQL 标准可见性下全部自定义 Keyword 共用固定数量的预分配列，超出即 `InvalidArgument`；单值与整表另有大小上限。其余投影字段只存在 Core TaskProjection，不做 Search Attribute。
 - Search Attribute 不是 Tenant 隔离边界：同 namespace 内任何持 Temporal 凭据者都能跨 Tenant 查询。隔离仍由 Core/BFF 的 scope guard 承担，Temporal 凭据只发给 Core/Worker。
 - Browser、AgentGateway 和应用组件没有 Temporal 凭据。Core/Worker 在 Start/Signal/Update/Cancel 前用当前 ExecutionContext 做 Action Admission。
 - history 只保存 ID、version、parameter hash、状态与受限 reference；正文、Secret、完整 prompt/response、SQL 和敏感结果不进 history。
@@ -68,7 +68,7 @@ Temporal 不向 Core 推送状态，Nexus 又按 DD-10 排除，因此投影必�
 
 Core 以已预写的 WorkflowRef 为有界轮转清单，按每条引用的固定 workflow ID 调 Describe/History 修补漏写的 TaskProjection；这是兜底而非主路径（SF-TMP-07、DD-48）。普通任务不得以 `ListWorkflowExecutions` 的空结果证明 Workflow 未启动：该 API 读取 Visibility，而 Describe 读取 History（SF-TMP-12）。工作台以最近一次权威观测判断投影是否落后；观测超时或缺失时显示 `PROJECTION_DELAYED`，不得伪造完成。未预写 WorkflowRef 的 Schedule run 按下文的单独合同回填。
 
-Core 在 Temporal Start 前持久化唯一 WorkflowRef 与固定 workflow ID。workflow ID 一律取 `kailo:<kind>:<tenant_id>:<primary_entity_id>:<entity_version>`，使"不分配第二个业务 workflow ID"可被机械校验。
+Core 在 Temporal Start 前持久化唯一 WorkflowRef 与固定 workflow ID。workflow ID 一律取 `platform:<kind>:<tenant_id>:<primary_entity_id>:<entity_version>`，使"不分配第二个业务 workflow ID"可被机械校验；前缀 `platform` 是协议常量，不随部署显示名变化（DD-111）。此前以旧前缀 `kailo:` 预写的 WorkflowRef 不改写主键，在一次性迁移窗口内按原 ID 继续对账到终态；窗口在旧前缀 WorkflowRef 全部终态且超过 namespace retention、按旧名 SA 查询无结果时关闭，此后只接受 `platform:` 前缀（apps ADR-17）。
 
 至多一次启动不能依赖 Server 的 request-ID 去重：SDK 每次 Start 都填新的 `RequestId`，而 `SignalWithStart` 一类 API 默认 `AllowDuplicate`（SF-TSDK-10）。因此 Start 固定携带 `WorkflowIDReusePolicy=REJECT_DUPLICATE`、`WorkflowIDConflictPolicy=FAIL`、`WorkflowExecutionErrorWhenAlreadyStarted=true`，收到 `WorkflowExecutionAlreadyStarted` 即视为已启动成功并回填 run ID，不再 Describe。
 
@@ -198,7 +198,7 @@ trigger（HUMAN 消息 / @提及 / Temporal Schedule / webhook）
 ```
 
 - 消息与 @提及触发复用 Agent 触发的 Relay 持久事件与 IngressCheckpoint（DD-04）；只有 HUMAN 身份发布的事件参与匹配，AGENT 与 CONTROL 身份的事件（含自动化自己的回帖）不匹配，因此不形成自触发循环。
-- 消息与 webhook 触发由 Core 先写 ActionExecution 与 WorkflowRef，workflow ID 为 `kailo:automation_run:<tenant_id>:<automation_resource_id>:<trigger_source_id>`，再按 §3.1 的 Start 纪律启动。
+- 消息与 webhook 触发由 Core 先写 ActionExecution 与 WorkflowRef，workflow ID 为 `platform:automation_run:<tenant_id>:<automation_resource_id>:<trigger_source_id>`，再按 §3.1 的 Start 纪律启动。
 - `SCHEDULE` 触发使用 Temporal Schedule（SF-TMP-05），overlap 固定 `SKIP`，action 直接启动 `AgentTaskWorkflow`；run 的 workflow ID 由 scheduler 组成，其首个 Activity 调 Core 完成 `automation.run` 准入并按 §3.1 的 Schedule 例外回填 ActionExecution 与 WorkflowRef，准入拒绝时 Workflow 以拒绝原因终结、不产生副作用。Schedule 只在 AutomationDefinition `ENABLED` 时存在，`PAUSED` 时暂停，`DISABLED`、Workspace 暂停与 Tenant 暂停或销毁时按各自流程暂停或删除（§7.2、§7.3）。
 - `WEBHOOK` 触发经 AgentGateway 公开路由进入 BFF：校验 HMAC-SHA256 签名（覆盖时间戳与正文）、5 分钟时间窗与 delivery ID 去重后才建立 ActionExecution；签名不符直接拒绝并只计入度量。正文作为不可信触发内容进入模板上下文，不能携带 Tenant、Workspace、Principal 或权限。
 - 审批关卡是 step approval：child ActionExecution 与 child ApprovalWorkflow 在第一个副作用之前，父 Workflow 等待结果；拒绝或过期时该次运行以对应原因终结。
