@@ -21,8 +21,8 @@ jobs:
       core-db:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: kailo_core_ci
-          POSTGRES_USER: kailo
+          POSTGRES_DB: platform_core_ci
+          POSTGRES_USER: platform
           POSTGRES_PASSWORD: ${{ secrets.CI_CORE_DB_PASSWORD }}
         ports: ['5432:5432']
         options: >-
@@ -30,7 +30,7 @@ jobs:
           --health-timeout 5s --health-retries 20
 
     env:
-      DATABASE_URL: postgres://kailo:${{ secrets.CI_CORE_DB_PASSWORD }}@127.0.0.1:5432/kailo_core_ci
+      DATABASE_URL: postgres://platform:${{ secrets.CI_CORE_DB_PASSWORD }}@127.0.0.1:5432/platform_core_ci
 
     steps:
       - uses: actions/checkout@v4
