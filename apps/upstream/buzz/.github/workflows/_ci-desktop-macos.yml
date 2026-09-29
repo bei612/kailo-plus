@@ -1,0 +1,56 @@
+name: CI / Desktop macOS
+on:
+  workflow_call:
+    inputs:
+      rust:
+        required: true
+        type: boolean
+      desktop:
+        required: true
+        type: boolean
+      desktop_rust:
+        required: true
+        type: boolean
+    outputs:
+      desktop_macos_result:
+        value: ${{ jobs.results.outputs.desktop_macos_result }}
+
+env:
+  CARGO_TERM_COLOR: always
+  BUZZ_TEST_POSTGRES_PASSWORD: buzz_dev
+  PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+
+jobs:
+  desktop-build-macos:
+    name: Desktop Build (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    if: github.event_name == 'push' || inputs.desktop || inputs.desktop_rust || inputs.rust
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: desktop/src-tauri
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - name: Install desktop dependencies
+        run: just desktop-install-ci
+      - name: Build Tauri app
+        run: cd desktop && pnpm tauri build
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "10.15"
+          CMAKE_OSX_DEPLOYMENT_TARGET: "10.15"
+
+  results:
+    name: Results
+    if: ${{ always() }}
+    needs: [desktop-build-macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      desktop_macos_result: ${{ needs.desktop-build-macos.result }}
+    steps:
+      - run: echo "Captured Desktop Build (macOS) result"

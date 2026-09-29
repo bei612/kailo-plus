@@ -311,6 +311,33 @@ async fn run(
         zed.is_some_and(|z| !z.is_empty()),
         "登记的准入没有 fresh Check 的 ZedToken"
     );
+    // 直接启动链也记派发结果：公钥 ACTIVE 之后，这条 ActionExecution 不能还停在
+    // NOT_DISPATCHED，任务页也就不会把一次跑完的登记显示成「尚未开始」
+    let (register_ae, dispatch): (uuid::Uuid, String) = sqlx::query_as(
+        "select id, dispatch_state from admission.action_execution
+         where temporal_workflow_id = $1 and action_key = 'identity.client_key.register'",
+    )
+    .bind(body["workflowId"].as_str().unwrap())
+    .fetch_one(pool)
+    .await
+    .expect("读登记的 ActionExecution");
+    assert_eq!(dispatch, "DISPATCHED", "登记完成后派发状态仍未推进");
+    let (status, task) = native(
+        http,
+        n,
+        &access,
+        reqwest::Method::GET,
+        &format!("/api/v1/tasks/{register_ae}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{task}");
+    common::assert_contract::<contracts::TaskView>(&task, "GET 登记任务");
+    assert_eq!(task["gateState"], "ALLOWED", "{task}");
+    assert_eq!(
+        task["dispatchState"], "DISPATCHED",
+        "任务视图不得把已完成的登记显示为尚未派发：{task}"
+    );
 
     // 同一设备重复登记：幂等，不起第二条 Workflow
     let (status, body) = native(

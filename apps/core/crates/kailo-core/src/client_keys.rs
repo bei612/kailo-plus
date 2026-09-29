@@ -26,13 +26,22 @@ use uuid::Uuid;
 use crate::audit::{append, AuditEntry};
 use crate::bff::{db_enum, resolve_execution_context, BffState, ExecutionContext};
 use crate::component_task::{self, ComponentTaskInput};
-use crate::governance::{record_owned_decision, Actor, DecisionSubject, OwnedAdmission};
+use crate::governance::{
+    record_direct_launch, record_owned_decision, Actor, AuditClass, DecisionSubject, OwnedAdmission,
+};
 
 /// 登记端点的路径。持钥证明的 `u` 必须指向它：证明只对这一个动作有效。
 pub const REGISTER_PATH: &str = "/api/v1/identity/client-keys";
 /// NIP-98 HTTP Auth 事件
 const NIP98_KIND: u16 = 27235;
 pub(crate) const KIND: &str = "BUZZ_IDENTITY_PROJECTION";
+/// 身份动作（设备公钥与托管身份）的审计分类：目标是持有该身份的 Principal，
+/// 与 `identity.client_key.*` 的 ActionDefinition 一致。
+pub(crate) const AUDIT_CLASS: AuditClass<'static> = AuditClass {
+    component_type_key: "buzz",
+    target_type: "PRINCIPAL",
+    result_exposure: "NONE",
+};
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
@@ -498,13 +507,13 @@ async fn record_action(
             actor_principal_id: Some(ctx.tenant_principal_id),
             action_key,
             action_version: admitted.version,
-            component_type_key: "buzz",
-            target_type: Some("PRINCIPAL"),
+            component_type_key: AUDIT_CLASS.component_type_key,
+            target_type: Some(AUDIT_CLASS.target_type),
             target_id: Some(ctx.tenant_principal_id),
             parameter_hash,
             decision: "ALLOW",
             result_code: "ACCEPTED",
-            result_exposure: "NONE",
+            result_exposure: AUDIT_CLASS.result_exposure,
             evidence_refs: vec![
                 Evidence::new(EvidenceKind::BuzzPubkey, pubkey),
                 Evidence::new(EvidenceKind::PlatformSessionId, ctx.session_id),
@@ -535,7 +544,7 @@ async fn start(
             },
         },
     };
-    match component_task::start(
+    let response = match component_task::start(
         &state.pool,
         &state.temporal,
         &workflow_id,
@@ -556,7 +565,9 @@ async fn start(
         )
             .into_response(),
         Err(r) => r,
-    }
+    };
+    // 结果不明仍回 503，客户端以同一 ID 重试经 resume 收敛
+    record_direct_launch(&state.pool, action, AUDIT_CLASS, response).await
 }
 
 /// 以原来那条 ActionExecution 重新驱动同一个固定 workflow ID。

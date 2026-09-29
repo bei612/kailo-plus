@@ -1,0 +1,36 @@
+# 来源记录，格式见 apps/06-工程基线规范.md §2。字段含义冲突时以该节为准。
+# 本目录之外的整棵树是上游固定 commit 的完整源码，Kailo 的改动直接在树里；与上游原样的差异由
+# `tools/upstream_manifest.py diff <项目>` 给出（kailo/ 是 Kailo 自有目录，不在其中）。
+project: agentgateway
+upstream_url: https://github.com/agentgateway/agentgateway
+
+# .design/02 §1 固定基线。该 commit 在 v1.6.0-alpha.1 之后 65 个提交，没有任何 tag 包含它，
+# 因此没有官方镜像。不退回 v1.6.0-alpha.1：SS-AGW-OIDC 的 logout 同步半边依赖
+# crates/agentgateway/src/http/oidc/browser.rs::handle_logout，而该文件在 v1.6.0-alpha.1 上不存在。
+# 退回发布版会让 Stage 1 退出门禁里的「logout 端到端通过」失去源码基础，因此从固定 commit
+# 自行构建，evidence 与 implementation base 保持相等。
+evidence_commit: 1f7ebbf87cbdbe9517f6f181221879d04dc50692
+implementation_base_commit: 1f7ebbf87cbdbe9517f6f181221879d04dc50692
+base_divergence: none
+
+# Kailo 改动：admin router 整体只接受 Core 的 client_credentials JWT（SS-AGW-ADMIN），见
+# kailo/verify/admin-authentication.md；完成请求的 LLM 记录与 request log 同事务进入 durable usage
+# outbox，写库失败保留重试而不清批次，并经已认证的 admin 接口按游标读取（SS-AGW-USAGE），见
+# kailo/verify/durable-usage.md。后者的读取接口依赖前者的认证。
+
+artifacts:
+  # 2026-09-29 迁入本树后以 build-upstream.sh 构建得 3c566e22…，含上述两处改动。运行拓扑
+  # （deploy/local/compose.yaml）与追溯记录已改为引用它，并带上 kailo/verify 两份文档的「部署前提」
+  # （adminAuthentication、日志库与 agentgateway-data 网络）；迁入前的 e1ddf6cb… 是基准 commit 未改动
+  # 时的构建，不含 admin 认证与 durable usage，不得再进入运行拓扑。
+  - name: upstream-agentgateway
+    kind: image
+    build_context: .
+    source_digest: sha256:d97e6e379f42ba14b8f4302f2b13be350ce1f0989528d581659b900ed9113f35
+    artifact_digest: sha256:f2d99d6829b2e5299cc636d505d66998478918a43b4e91eb4093f0b06ab3ae5c
+
+source_facts: [SF-AGW-02, SF-AGW-06, SF-AGW-09, SF-AGW-10, SF-AGW-11, SF-AGW-16, SF-AGW-17, SF-AGW-20]
+source_seams: [SS-AGW-OIDC, SS-AGW-PEP, SS-AGW-ADMIN, SS-AGW-USAGE]
+compatibility_evidence: [upstream/agentgateway/kailo/verify/oidc-header-projection.md, upstream/agentgateway/kailo/verify/admin-authentication.md, upstream/agentgateway/kailo/verify/durable-usage.md, upstream/agentgateway/kailo/verify/llm-instruction-role.md]
+owner: team-platform
+last_reverified: 2026-09-29

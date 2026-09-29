@@ -16,13 +16,13 @@ validation:
   scenarios: [V-SCN-28]
   evidence:
     - dimension: 上游接缝
-      ref: upstream-patches/buzz-web/verify/web-surface.md
+      ref: upstream/buzz-web/kailo/verify/web-surface.md
     - dimension: 端到端场景
-      ref: upstream-patches/buzz-web/verify/web-surface.md
+      ref: upstream/buzz-web/kailo/verify/web-surface.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/web_transport.rs, core/crates/kailo-buzz/src/bridge.rs, upstream-patches/buzz-web]
+  paths: [core/crates/kailo-core/src/web_transport.rs, core/crates/kailo-buzz/src/bridge.rs, upstream/buzz-web]
   surfaces: [web]
   schemas: []
   migrations: []

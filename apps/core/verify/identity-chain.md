@@ -54,7 +54,7 @@ HTTP 200
 `TENANT_LIFECYCLE`/`WORKSPACE_LIFECYCLE`/`MEMBERSHIP_PROJECTION` Workflow，
 只有 OIDC subject 取自 IdP 里真能登录的核验用户。经网关的整条链由
 `core/verify/web-walkthrough.sh` 在真实浏览器里重跑（见
-`upstream-patches/buzz-web/verify/web-surface.md`）。
+`upstream/buzz-web/kailo/verify/web-surface.md`）。
 
 ## PlatformSession（2026-09-23）
 

@@ -16,7 +16,7 @@ validation:
   scenarios: [V-SCN-03, V-SCN-32, V-SCN-34, V-SCN-35]
   evidence:
     - dimension: 上游接缝
-      ref: upstream-patches/buzz/verify/operator-provisioning.md
+      ref: upstream/buzz/kailo/verify/operator-provisioning.md
     - dimension: 组件集成
       ref: core/verify/membership-lifecycle.md
     - dimension: 安全边界
@@ -24,11 +24,11 @@ validation:
     - dimension: 端到端场景
       ref: core/verify/task-terminal-repair.md
     - dimension: 安全边界
-      ref: upstream-patches/buzz/verify/governance.md
+      ref: upstream/buzz/kailo/verify/governance.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/membership_lifecycle.rs, core/crates/kailo-core/src/tenant_lifecycle.rs, core/crates/kailo-core/src/task_rerun.rs, worker/workflows, upstream-patches/buzz]
+  paths: [core/crates/kailo-core/src/membership_lifecycle.rs, core/crates/kailo-core/src/tenant_lifecycle.rs, core/crates/kailo-core/src/task_rerun.rs, worker/workflows, upstream/buzz/crates/buzz-relay]
   surfaces: []
   schemas: [contracts/enums/workflow_kind.schema.json]
   migrations: [core/migrations/20260922214500_orchestration_stage1.up.sql, core/migrations/20260922230000_buzz_bindings_stage1.up.sql]

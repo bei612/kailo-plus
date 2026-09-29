@@ -19,12 +19,14 @@ networks:
   temporal-data:
   buzz-data:
   spicedb-data:
+  agentgateway-data:
 
 volumes:
   core-db-data:
   buzz-db-data:
   temporal-db-data:
   spicedb-db-data:
+  agentgateway-db-data:
   keycloak-data:
 
 services:
@@ -243,7 +245,7 @@ services:
   #   BUZZ_ALLOW_NIP_OA_AUTH 开启后，不在 roster 中的 pubkey 可凭 owner
   #   attestation 以 ViaOwner 通过。原生端本机持钥直连 Relay，Core 不在其
   #   发布路径上，roster 校验是协作数据平面唯一的准入执行点（SF-BUZ-26、DD-75）。
-  # 镜像是打过 SS-BUZ-GOVERNANCE 补丁的构建（upstream-patches/buzz），不是上游
+  # 镜像是带 SS-BUZ-GOVERNANCE 改动的 Kailo 构建（upstream/buzz），不是上游
   # 发布镜像：上游的 NIP-29 权限比 Kailo 宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz@sha256:6f08c2a299e2b4789377672976ba6ede3050eeace9ce67c5452710b52aaa6d48
@@ -480,15 +482,15 @@ services:
       - ./secrets/worker.env
 
   # Web 面：三端共用 TypeScript 主体的浏览器那一份（DD-74）。
-  # 镜像由 tools/build-upstream.sh 从固定 commit 加 patch series 构建——
-  # patch 把浏览器直连 Relay 与本地 signer 整体移除（SS-WEB-RELAY），
+  # 镜像由 tools/build-upstream.sh 从 upstream/buzz-web 构建——固定 commit 的源码加 Kailo 改动：
+  # 把浏览器直连 Relay 与本地 signer 整体移除（SS-WEB-RELAY），
   # 并换成经 BFF 的传输与平台页面（SS-WEB-01）。
   #
   # 它只是静态资源服务：没有后端逻辑、不持任何 secret、不连数据库。
   # 因此只进 app 网络、不进 edge——对外只有 AgentGateway 一个入口，
   # 绕过网关就等于绕过 OIDC。
   buzz-web:
-    # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
+    # digest 与 upstream/buzz-web/kailo/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
     image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:272eda1135ca6b78d51da47c5e0074756bc50c776686756eace8a1141a3f0953
     networks: [app]
@@ -497,22 +499,28 @@ services:
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 
   # AgentGateway 是 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。
-  # 镜像由 tools/build-upstream.sh 从 .design/02 §1 的固定 commit 构建——
+  # 镜像由 tools/build-upstream.sh 从 upstream/agentgateway（.design/02 §1 的固定 commit）构建——
   # 该 commit 在 v1.6.0-alpha.1 之后且无 tag 包含它，发布镜像缺少
   # http/oidc/browser.rs，而 SS-AGW-OIDC 的 logout 半边依赖其中的 handle_logout。
   agentgateway:
-    # digest 与 upstream-patches/agentgateway/baseline.yaml 的 artifact_digest
+    # digest 与 upstream/agentgateway/kailo/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-agentgateway@sha256:e1ddf6cbf61ae4b85aaea5c1ec7755e48275918f0e9f31dc6433b72533687071
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-agentgateway@sha256:f2d99d6829b2e5299cc636d505d66998478918a43b4e91eb4093f0b06ab3ae5c
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
-    # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。
+    # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
+    # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个
+    # admin 请求都必须带 Core client 的令牌（config.adminAuthentication）。
+    # agentgateway-data 是它自己的私有数据网络，只为到达 request log / usage outbox 库。
     networks:
       edge:
         aliases: ["${PUBLIC_HOST:?必须显式提供，禁止硬编码}"]
       app:
         aliases: ["${PUBLIC_HOST:?必须显式提供，禁止硬编码}"]
+      agentgateway-data: {}
     depends_on:
       keycloak: { condition: service_healthy }
+      # 配了日志库时网关启动即迁移并连接，库不可用则拒绝启动
+      agentgateway-db: { condition: service_healthy }
       # 网关起来就该能服务 /app；web 未就绪时先失败，好过把 404 当成「页面没写」
       buzz-web: { condition: service_healthy }
     environment:
@@ -523,14 +531,20 @@ services:
       BFF_UPSTREAM: ${BFF_SERVICE_NAME:?必须显式提供，禁止硬编码}:${BFF_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       # WEB_CONTAINER_PORT 是镜像事实：buzz-web 的 Caddyfile 监听该端口。
       # 它与 BFF_CONTAINER_PORT 不同——后者由 Core 从 env 读，前者烧在镜像里，
-      # 改它必须连着改 patch 并重建。
+      # 改它必须连着改 upstream/buzz-web 并重建。
       WEB_UPSTREAM: ${WEB_SERVICE_NAME:?必须显式提供，禁止硬编码}:${WEB_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       # 原生端入口（DD-78）：Bearer 令牌的签发者、受众与验签公钥来源
       OIDC_NATIVE_AUDIENCE: ${OIDC_NATIVE_AUDIENCE:?必须显式提供，禁止硬编码}
       OIDC_JWKS_URI: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}/protocol/openid-connect/certs
+      # 管理面只接受这个 client 的 client_credentials 令牌（azp 精确匹配），且令牌须带该 audience。
+      # 该 client 就是 Core 自己的 service client，不另设身份。
+      AGENTGATEWAY_ADMIN_CLIENT_ID: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
+      AGENTGATEWAY_ADMIN_AUDIENCE: ${AGENTGATEWAY_ADMIN_AUDIENCE:?必须显式提供，禁止硬编码}
     env_file:
       # 浏览器客户端密钥由网关持有，浏览器不持有。文件在 gitignore 的 secrets/ 下。
       - ./secrets/browser-client.env
+      # 日志库连接串（含口令），由 bootstrap.sh 从 agentgateway_db_password 派生
+      - ./secrets/agentgateway-db.env
     configs:
       - source: agentgateway_config
         target: /etc/agentgateway/config.yaml
@@ -539,6 +553,24 @@ services:
       - "127.0.0.1:${AGENTGATEWAY_PORT:?必须显式提供，禁止硬编码}:8080"
       # 原生端入口。容器端口是网关配置里 native bind 的端口
       - "127.0.0.1:${AGENTGATEWAY_NATIVE_PORT:?必须显式提供，禁止硬编码}:8091"
+
+  # AgentGateway 的 request log 与 durable usage outbox 库（SS-AGW-USAGE）。只在
+  # agentgateway-data：除网关外没有服务能到达它；Core 只经已认证的 admin 接口读游标。
+  agentgateway-db:
+    image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    networks: [agentgateway-data]
+    environment:
+      POSTGRES_DB: ${AGENTGATEWAY_DB_NAME:?必须显式提供，禁止硬编码}
+      POSTGRES_USER: ${AGENTGATEWAY_DB_USER:?必须显式提供，禁止硬编码}
+      POSTGRES_PASSWORD_FILE: /run/secrets/agentgateway_db_password
+    secrets: [agentgateway_db_password]
+    volumes:
+      - agentgateway-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
   # OpenBao 是 secret 的版本、取用、轮换与撤销权威（DD-70）。
   # 不用 server -dev：那是内存 storage 加固定 root token，07 §1 明确禁止它
@@ -742,6 +774,8 @@ services:
 secrets:
   buzz_db_password:
     file: ./secrets/buzz_db_password
+  agentgateway_db_password:
+    file: ./secrets/agentgateway_db_password
   keycloak_admin_password:
     file: ./secrets/keycloak_admin_password
   temporal_db_password:

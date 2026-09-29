@@ -267,6 +267,12 @@ def product_hits(value):
     parts = set(re.split(r"[^a-z0-9]+", str(value).lower()))
     return sorted(parts & product_tokens)
 
+# 上游产物的登记处：upstream/<树>/kailo/upstream.yaml 的 artifacts（产物名 -> (记录, digest)）
+upstream_artifacts = {}
+for mf in sorted(glob.glob("upstream/*/kailo/upstream.yaml")):
+    for a in (yaml.safe_load(open(mf, encoding="utf-8")) or {}).get("artifacts") or []:
+        upstream_artifacts[a.get("name")] = (mf, str(a.get("artifact_digest") or "none"))
+
 files = sorted(glob.glob("tools/traceability/*.yaml"))
 bad = []
 for f in files:
@@ -325,13 +331,11 @@ for f in files:
     for a in arts:
         name, dg = a.get("name") or "", str(a.get("digest") or "")
         if name.startswith("upstream-"):
-            mf = f"upstream-patches/{name[len('upstream-'):]}/baseline.yaml"
-            m = re.search(r"^artifact_digest:\s*(\S+)", open(mf, encoding="utf-8").read(), re.M) \
-                if os.path.exists(mf) else None
-            if not m:
-                bad.append(f"{cid}: 产物 {name} 找不到 {mf}")
-            elif dg != m.group(1):
-                bad.append(f"{cid}: 产物 {name} 的 digest 与 {mf} 的 artifact_digest 不一致")
+            got = upstream_artifacts.get(name)
+            if not got:
+                bad.append(f"{cid}: 产物 {name} 未登记在任何 upstream/*/kailo/upstream.yaml")
+            elif dg != got[1]:
+                bad.append(f"{cid}: 产物 {name} 的 digest 与 {got[0]} 的 artifact_digest 不一致")
         elif name.startswith("kailo-"):
             unit = name[len("kailo-"):]
             if not os.path.exists(f"dist/{unit}.{dg.removeprefix('sha256:')}.spdx.json"):
@@ -362,12 +366,22 @@ step_supply()   { hdr "7/10 secret、依赖、许可证与供应链"
   if have gitleaks; then
     gitleaks detect --no-banner -q >/dev/null 2>&1 && pass "gitleaks 无命中" || fail "gitleaks 命中"
   else
-    # 兜底：仓库内明显的私钥/令牌形态。上游补丁里以 `-` 开头的是被删掉的上游原文（例如
-    # 上游测试桩里的假 nsec），不是本仓库交付的内容；补丁只扫新增行与上下文行。
+    # 兜底：仓库内明显的私钥/令牌形态。upstream/ 下的上游原样（例如上游测试夹具里的假
+    # 私钥、假 nsec）不是本仓库交付的内容；那里只扫 Kailo 新增或改写的行——与上游原样的
+    # 差异由 upstream_manifest.py 按基准 commit 只读求出，基准取不到即失败。
     local secret='BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|nsec1[a-z0-9]{20,}|xox[baprs]-'
-    if git grep -nIE "$secret" -- . ':(exclude)upstream-patches/*/patches/*.patch' >/dev/null 2>&1 \
-       || git grep -hIE "^[+ ].*($secret)" -- 'upstream-patches/*/patches/*.patch' >/dev/null 2>&1; then
+    local added tree
+    added=$(mktemp)
+    for tree in upstream/*/; do
+      tree=$(basename "$tree")
+      [ -f "upstream/$tree/kailo/upstream.yaml" ] || continue
+      python3 tools/upstream_manifest.py added-lines "$tree" >>"$added" \
+        || { fail "取不到 upstream/$tree 的上游基准，Kailo 改动无法扫描"; }
+    done
+    if git grep -nIE "$secret" -- . ':(exclude)upstream/' >/dev/null 2>&1 \
+       || grep -qE "$secret" "$added"; then
       fail "发现疑似凭据"; else pass "内置扫描无命中（未安装 gitleaks）"; fi
+    rm -f "$added"
   fi
   # 产物来源验证（ADR-06）：同名文件不等于同一产物。核对 SBOM 单元、
   # provenance 的 subject/digest/源码 commit，以及该 commit 的依赖锁摘要。
@@ -441,21 +455,32 @@ PY
 }
 
 step_seam()     { hdr "8/10 上游 seam diff"
-  if ! populated upstream-patches; then skip "尚无上游进入运行拓扑"; return 0; fi
+  if ! ls upstream/*/kailo/upstream.yaml >/dev/null 2>&1; then skip "尚无上游进入运行拓扑"; return 0; fi
   DESIGN="${DESIGN:-../.design}" python3 - <<'PY' || FAIL=1
 import glob, os, re, sys
 sys.path.insert(0, "tools")
-# 清单结构、补丁登记与摘要由 upstream_manifest 判定——与 build-upstream.sh 同一份
+# 记录结构、源码摘要与基准解析由 upstream_manifest 判定——与 build-upstream.sh 同一份
 import upstream_manifest as um
 d = os.environ["DESIGN"]
 t02 = open(glob.glob(f"{d}/02-*.md")[0], encoding="utf-8").read()
 known = set(re.findall(r"^\| ((?:SF|SS)-[A-Z]+-[A-Z0-9-]+) \|", t02, re.M))
 hexes = set(re.findall(r"\b[0-9a-f]{40}\b", t02))
-bad, n = [], 0
-for f in sorted(glob.glob("upstream-patches/*/baseline.yaml")):
+bad, notes, n, arts = [], [], 0, 0
+for tree, f in um.records().items():
     n += 1
     m = um.load(f)
+    # 结构、删除路径、vendor 目标，以及每个已登记产物「由当前源码构建」（source_digest 重算一致）
     bad += [f"{f}: {b}" for b in um.problems(f, m)]
+    # 基准 commit 必须可解析：.references 的对象库或上游远端里真的有它
+    if re.fullmatch(r"[0-9a-f]{40}", str(m.get("implementation_base_commit"))):
+        try:
+            um.upstream_repo(f, m)
+        except SystemExit as e:
+            bad.append(str(e))
+    for a in m.get("artifacts") or []:
+        arts += a.get("artifact_digest") not in (None, "none")
+        if a.get("blocked"):
+            notes.append(f"{a['name']} 阻断：{a['blocked']}")
     # 设计追溯：证据 commit 与引用的 SF/SS 必须在 .design/02 解析得到
     if str(m.get("evidence_commit")) not in hexes:
         bad.append(f"{f}: evidence_commit 未出现在 .design/02，无法追溯")
@@ -466,9 +491,11 @@ for f in sorted(glob.glob("upstream-patches/*/baseline.yaml")):
         q = ref[5:] if ref.startswith("apps/") else ref
         if not os.path.exists(q):
             bad.append(f"{f}: compatibility_evidence 指向不存在的 {ref}")
+for x in notes:
+    print(f"  \033[33mNOTE\033[0m {x}")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
-print(f"  \033[32mPASS\033[0m {n} 份 baseline manifest：commit 可追溯、设计引用闭合、证据可达、patch 与摘要一致")
+print(f"  \033[32mPASS\033[0m {n} 份来源记录：基准可解析、设计引用闭合、证据可达、{arts} 个产物由当前源码构建")
 PY
   return 0
 }
@@ -509,6 +536,7 @@ fixture_env = {
     "OIDC_REALM": "enterprise", "OIDC_ISSUER": "http://identity.example.test:18081/realms/enterprise",
     "BUZZ_RELAY_HOST": "relay.example.test", "BUZZ_RELAY_PORT": "18082",
     "CORE_DB_USER": "platform", "CORE_DB_NAME": "platform", "CORE_DB_PORT": "18083",
+    "AGENTGATEWAY_DB_USER": "gateway", "AGENTGATEWAY_DB_NAME": "gateway",
     "VERIFY_USER": "walker", "BOOTSTRAP_USER": "founder", "PLATFORM_ADMIN_USER": "operator",
 }
 with tempfile.TemporaryDirectory(prefix="kailo-config-check-") as directory:
@@ -669,8 +697,15 @@ for net in sorted(n for n in declared if n.endswith("-data")):
         bad.append(f"{net}: {', '.join(bridging)} 都同时接入其他网络，数据存储对共享网络可达")
 # 同一条规则延伸到本仓库自建镜像的基础镜像：compose 按 digest 引用了产物，
 # 产物的 FROM 却跟着可变 tag 走，两次构建就不是同一份输入（ADR-06）。
-for df in sorted(glob.glob("**/Dockerfile", recursive=True)):
-    if "/node_modules/" in df or df.startswith("target/"):
+# upstream/ 下的上游源码只查 Kailo 维护的构建文件（来源记录的 build_dockerfile）：上游自带的
+# Dockerfile（示例、基准测试、CI）是上游原样，与迁入前一样不在这条规则里。
+kailo_built = []
+for mf in sorted(glob.glob("upstream/*/kailo/upstream.yaml")):
+    for a in (yaml.safe_load(open(mf, encoding="utf-8")) or {}).get("artifacts") or []:
+        if a.get("build_dockerfile"):
+            kailo_built.append(os.path.join(os.path.dirname(os.path.dirname(mf)), a["build_dockerfile"]))
+for df in sorted(set(glob.glob("**/Dockerfile", recursive=True)) | set(kailo_built)):
+    if "/node_modules/" in df or df.startswith("target/") or (df.startswith("upstream/") and df not in kailo_built):
         continue
     for n, line in enumerate(open(df, encoding="utf-8"), 1):
         m = re.match(r"\s*FROM\s+(\S+)", line, re.I)
@@ -701,18 +736,17 @@ if os.path.exists(bao_cfg):
         if "openbao" in (spec.get("image") or "") and "-dev" in " ".join(spec.get("command") or []):
             bad.append(f"{svc}: 使用了 server -dev，07 §1 禁止它进入任何 active 拓扑")
 
-# 自建上游的 digest 必须与其 baseline manifest 一致：compose 与 manifest
-# 各写一份，两处脱节就意味着跑的不是被登记的那个产物。
-for mf in glob.glob("upstream-patches/*/baseline.yaml"):
-    proj = mf.split("/")[1]
-    m = re.search(r"^artifact_digest:\s*(\S+)", open(mf, encoding="utf-8").read(), re.M)
-    if not m or m.group(1) == "none":
-        continue
-    want = m.group(1)
-    for svc, spec in (d.get("services") or {}).items():
-        img = spec.get("image") or ""
-        if f"upstream-{proj}@" in img and not img.endswith(want):
-            bad.append(f"{svc}: 镜像 digest 与 {mf} 的 artifact_digest 不一致")
+# 自建上游的 digest 必须与其来源记录一致：compose 与记录各写一份，两处脱节就意味着
+# 跑的不是被登记的那个产物。
+for mf in sorted(glob.glob("upstream/*/kailo/upstream.yaml")):
+    for a in (yaml.safe_load(open(mf, encoding="utf-8")) or {}).get("artifacts") or []:
+        want, name = str(a.get("artifact_digest") or "none"), a.get("name")
+        if want == "none":
+            continue
+        for svc, spec in (d.get("services") or {}).items():
+            img = spec.get("image") or ""
+            if f"/{name}@" in img and not img.endswith(want):
+                bad.append(f"{svc}: 镜像 digest 与 {mf} 中 {name} 的 artifact_digest 不一致")
 
 # Buzz Relay 的三个「缺省即关闭」开关（07 §1、SF-BUZ-26/30）。
 # 原生端本机持钥直连 Relay，Core 不在其发布路径上，roster 校验是协作
@@ -740,15 +774,15 @@ for svc, spec in (d.get("services") or {}).items():
         bad.append(f"{svc}: 未设定 BUZZ_MEMBER_EVENT_KINDS，Relay 以上游行为运行，"
                    "含 Buzz 自带 workflow（SF-BUZ-37、SF-BUZ-45、DD-106）")
 
-# 该开关只存在于打过补丁的构建里，上游镜像会静默忽略它。跑 Buzz 二进制的
-# 服务（Relay 本身，以及以 buzz-admin 建 schema 的一次性服务）都必须用补丁
+# 该开关只存在于 Kailo 的构建里，上游镜像会静默忽略它。跑 Buzz 二进制的
+# 服务（Relay 本身，以及以 buzz-admin 建 schema 的一次性服务）都必须用 Kailo
 # 构建：同一套二进制混用两个来源，schema 与服务就可能不是同一份代码。
 for svc, spec in (d.get("services") or {}).items():
     env = spec.get("environment") or {}
     entry = " ".join(spec.get("entrypoint") or []) if isinstance(spec.get("entrypoint"), list) else str(spec.get("entrypoint") or "")
     runs_buzz = (isinstance(env, dict) and "BUZZ_BIND_ADDR" in env) or "/buzz-" in entry
     if runs_buzz and "upstream-buzz@" not in str(spec.get("image") or ""):
-        bad.append(f"{svc}: 未运行 upstream-patches/buzz 的补丁构建，SS-BUZ-GOVERNANCE 不生效")
+        bad.append(f"{svc}: 未运行 upstream/buzz 的 Kailo 构建，SS-BUZ-GOVERNANCE 不生效")
 
 # SS-AGW-OIDC：身份 header 投影的硬约束。
 #

@@ -1,0 +1,704 @@
+import { expect, test } from "@playwright/test";
+
+import { installMockBridge } from "../helpers/bridge";
+
+async function getTimelineMetrics(page: import("@playwright/test").Page) {
+  return page.getByTestId("message-timeline").evaluate((element) => {
+    const timeline = element as HTMLDivElement;
+
+    return {
+      clientHeight: timeline.clientHeight,
+      scrollHeight: timeline.scrollHeight,
+      scrollTop: timeline.scrollTop,
+      distanceFromBottom:
+        timeline.scrollHeight - timeline.clientHeight - timeline.scrollTop,
+    };
+  });
+}
+
+async function ensureTimelineScrollable(
+  page: import("@playwright/test").Page,
+  prefix: string,
+) {
+  const input = page.getByTestId("message-input");
+  const sendButton = page.getByTestId("send-message");
+
+  for (let index = 0; index < 24; index += 1) {
+    const metrics = await getTimelineMetrics(page);
+    if (metrics.scrollHeight > metrics.clientHeight + 160) {
+      return;
+    }
+
+    const message = `${prefix} seed ${index}`;
+
+    await input.fill(message);
+    await sendButton.click();
+    await expect(page.getByTestId("message-timeline")).toContainText(message);
+  }
+
+  const metrics = await getTimelineMetrics(page);
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight + 160);
+}
+
+async function focusSidebarSearchWithShortcut(
+  page: import("@playwright/test").Page,
+) {
+  const openSearchButton = page.getByTestId("open-search");
+
+  await expect(openSearchButton).toBeVisible();
+  await page.evaluate(() => {
+    const isMac = /mac|iphone|ipad|ipod/i.test(navigator.platform);
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        code: "KeyK",
+        ctrlKey: !isMac,
+        key: "k",
+        metaKey: isMac,
+      }),
+    );
+  });
+  await expect(page.getByTestId("search-results")).toBeVisible();
+  await expect(page.getByTestId("search-dialog-input")).toBeFocused();
+}
+
+async function expectHomeView(page: import("@playwright/test").Page) {
+  await expect(page.getByTestId("home-inbox-list")).toBeVisible();
+}
+
+test.beforeEach(async ({ page }) => {
+  await installMockBridge(page);
+});
+
+test("opens a mocked channel from the inbox feed", async ({ page }) => {
+  const inboxList = page.getByTestId("home-inbox-list");
+
+  await page.goto("/");
+
+  await expectHomeView(page);
+  await expect(inboxList).toContainText("Please review the release checklist.");
+
+  const releaseRow = page.getByTestId("home-inbox-item-mock-feed-mention");
+  await releaseRow.hover();
+  await releaseRow.getByRole("button", { name: "Open in channel" }).click();
+
+  await expect(page).toHaveURL(
+    /#\/channels\/9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50\?messageId=mock-feed-mention$/,
+  );
+  await expect(page.getByTestId("chat-title")).toHaveText("general");
+});
+
+test("inbox feed renders resolved author labels", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByTestId("home-inbox-list")).toContainText("alice");
+  await expect(page.getByTestId("home-inbox-list")).not.toContainText("You");
+});
+
+test("opens sidebar search with the shortcut and loads the exact result", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await focusSidebarSearchWithShortcut(page);
+
+  await page.getByTestId("search-dialog-input").fill("shipped");
+  await expect(page.getByTestId("search-results")).toContainText(
+    "Engineering shipped the desktop build.",
+  );
+
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(
+    /#\/channels\/1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9\?messageId=mock-engineering-shipped$/,
+  );
+  await expect(page.getByTestId("chat-title")).toHaveText("engineering");
+  await expect(page.getByTestId("message-timeline")).toContainText(
+    "Engineering shipped the desktop build.",
+  );
+});
+
+test("highlights the query in search results and the opened message", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("channel-engineering").click();
+  await page.keyboard.press("ControlOrMeta+f");
+  await page.getByTestId("search-dialog-input").fill("SHIPPED");
+
+  const result = page.getByTestId("search-result-mock-engineering-shipped");
+  await expect(result).toBeVisible();
+  await expect(result.locator("mark")).toHaveText("shipped");
+  await expect(result.locator("mark")).toHaveClass(/bg-yellow-300/);
+
+  await result.click();
+
+  const message = page
+    .getByTestId("message-timeline")
+    .locator('[data-message-id="mock-engineering-shipped"]');
+  await expect(message).toBeVisible();
+  await expect(message.locator('[data-search-match="true"]')).toHaveText(
+    "shipped",
+  );
+});
+
+test("ordinary same-channel activation clears a prior search highlight", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("channel-engineering").click();
+  await page.keyboard.press("ControlOrMeta+f");
+  await page.getByTestId("search-dialog-input").fill("shipped");
+  await page.getByTestId("search-result-mock-engineering-shipped").click();
+
+  const message = page
+    .getByTestId("message-timeline")
+    .locator('[data-message-id="mock-engineering-shipped"]');
+  await expect(message.locator('[data-search-match="true"]')).toHaveText(
+    "shipped",
+  );
+  await expect(page).toHaveURL(
+    /#\/channels\/1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9(?:\?thread=mock-engineering-shipped)?$/,
+  );
+
+  await page.getByTestId("channel-engineering").click();
+
+  await expect(message.locator('[data-search-match="true"]')).toHaveCount(0);
+});
+
+test("ordinary rendered channel link clears a prior search highlight", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await page.keyboard.press("ControlOrMeta+f");
+  await page.getByTestId("search-dialog-input").fill("welcome");
+  await page.getByTestId("search-result-mock-general-welcome").click();
+
+  const message = page
+    .getByTestId("message-timeline")
+    .locator('[data-message-id="mock-general-welcome"]');
+  await expect(message.locator('[data-search-match="true"]')).toHaveText(
+    "Welcome",
+  );
+
+  await message.locator('[data-channel-link=""]').click();
+
+  await expect(message.locator('[data-search-match="true"]')).toHaveCount(0);
+});
+
+test("does not expose stale search results with a newly typed query", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("channel-engineering").click();
+  await page.keyboard.press("ControlOrMeta+f");
+  const input = page.getByTestId("search-dialog-input");
+  await input.fill("shipped");
+  await expect(
+    page.getByTestId("search-result-mock-engineering-shipped"),
+  ).toBeVisible();
+
+  await input.fill("mentions");
+  await expect(
+    page.getByTestId("search-result-mock-engineering-shipped"),
+  ).toHaveCount(0);
+});
+
+test("opens channel matches from search", async ({ page }) => {
+  await page.goto("/");
+
+  await focusSidebarSearchWithShortcut(page);
+
+  await page.getByTestId("search-dialog-input").fill("engineering");
+  const results = page.getByTestId("search-results");
+
+  await expect(results).toContainText("engineering");
+  await expect(results).toContainText("Engineering discussions");
+  // Only channels the user is a member of are searchable: Kailo channels are
+  // Workspaces, and there is no browse-and-join path for the others.
+  await expect(results).not.toContainText(
+    "Design system and UX discussions with engineering partners",
+  );
+  await expect(
+    results.locator('[data-testid^="search-result-channel-"]').first(),
+  ).toHaveAttribute(
+    "data-testid",
+    "search-result-channel-1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9",
+  );
+
+  await expect(
+    results.getByTestId(
+      "search-result-channel-1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9",
+    ),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(
+    /#\/channels\/1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9$/,
+  );
+  await expect(page.getByTestId("chat-title")).toHaveText("engineering");
+});
+
+test("global search offers an optional current-channel scope", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("general");
+  await expect(page).toHaveURL(
+    /#\/channels\/9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50$/,
+  );
+
+  await focusSidebarSearchWithShortcut(page);
+
+  const scopeControl = page.getByTestId("search-current-channel-control");
+  const input = page.getByTestId("search-dialog-input");
+  await expect
+    .poll(() =>
+      scopeControl
+        .getByTestId("search-current-scope-label")
+        .evaluate((element) => element.textContent),
+    )
+    .toBe("Search in #general");
+  await expect(scopeControl).toContainText("Search in");
+  await expect(scopeControl).toContainText("#general");
+  await expect(scopeControl).toContainText("Search messages in this channel");
+  await expect(page.getByTestId("search-dialog-input-row")).toHaveCSS(
+    "border-bottom-width",
+    "1px",
+  );
+  await expect(scopeControl.locator("..")).toHaveCSS(
+    "border-bottom-width",
+    "0px",
+  );
+  await expect(scopeControl.locator("..")).toHaveCSS("padding-top", "14px");
+  await expect(scopeControl.locator("..")).toHaveCSS("padding-bottom", "14px");
+  const [controlBox, dialogBox] = await Promise.all([
+    scopeControl.boundingBox(),
+    page.getByTestId("search-results").boundingBox(),
+  ]);
+  expect(controlBox).not.toBeNull();
+  expect(dialogBox).not.toBeNull();
+  expect(controlBox?.width ?? 0).toBeGreaterThan((dialogBox?.width ?? 0) * 0.9);
+  expect(controlBox?.width ?? 0).toBeLessThan(dialogBox?.width ?? 0);
+  await expect(scopeControl).toHaveAttribute("aria-selected", "true");
+  const firstRecentResult = page.locator(".search-result-row").first();
+  await input.press("ArrowDown");
+  await expect(firstRecentResult).toHaveAttribute("aria-selected", "true");
+  await input.press("ArrowUp");
+  await expect(scopeControl).toHaveAttribute("aria-selected", "true");
+  await input.press("Enter");
+
+  const scopeChip = page.getByTestId("search-channel-scope-chip");
+  await expect(scopeChip).toHaveText(/#general/);
+  await expect(input).toBeFocused();
+  await input.fill("w");
+  const relevantHeader = page.getByText("Most relevant", { exact: true });
+  const firstScopedResult = page
+    .locator('[data-search-section="messages"] .search-result-row')
+    .first();
+  await expect(page.getByText("Welcome to general")).toBeVisible();
+  await expect(page.getByText(/Searching messages in/)).toHaveCount(0);
+  await expect(relevantHeader).toBeVisible();
+  await expect(firstScopedResult).toBeVisible();
+  const contentStart = (element: HTMLElement) => {
+    const styles = window.getComputedStyle(element);
+    return (
+      element.getBoundingClientRect().left +
+      Number.parseFloat(styles.paddingLeft)
+    );
+  };
+  const [inputStart, headerStart, resultStart] = await Promise.all([
+    page.getByTestId("search-dialog-input-row").evaluate(contentStart),
+    relevantHeader.evaluate(contentStart),
+    firstScopedResult.evaluate(contentStart),
+  ]);
+  expect(Math.abs(inputStart - headerStart)).toBeLessThanOrEqual(1);
+  expect(Math.abs(inputStart - resultStart)).toBeLessThanOrEqual(1);
+
+  await input.fill("x");
+  await expect(page.getByTestId("search-results")).toContainText(
+    "No messages for x in #general.",
+  );
+
+  await scopeChip.click();
+  await expect(scopeChip).toHaveCount(0);
+  await expect(input).toBeFocused();
+  await input.fill("shipped");
+  await expect(page.getByTestId("search-results")).toContainText(
+    "Engineering shipped the desktop build.",
+  );
+});
+
+test("channel find shortcut opens unified search with scope selected", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await expect(page).toHaveURL(
+    /#\/channels\/9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50$/,
+  );
+
+  await page.keyboard.press("ControlOrMeta+f");
+
+  await expect(page.getByTestId("search-results")).toBeVisible();
+  await expect(page.getByTestId("search-channel-scope-chip")).toHaveText(
+    /#general/,
+  );
+  await expect(page.getByTestId("search-current-channel-control")).toHaveCount(
+    0,
+  );
+  await expect(page.getByTestId("search-dialog-input")).toBeFocused();
+});
+
+test("global search omits channel scoping when no channel is active", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expectHomeView(page);
+
+  await focusSidebarSearchWithShortcut(page);
+
+  await expect(page.getByTestId("search-current-channel-control")).toHaveCount(
+    0,
+  );
+  await expect(page.getByTestId("search-channel-scope-chip")).toHaveCount(0);
+});
+
+test("global one-character search does not query the relay", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await focusSidebarSearchWithShortcut(page);
+
+  await page.getByTestId("search-dialog-input").fill("x");
+  await page.waitForTimeout(400);
+
+  const messageSearchCalls = await page.evaluate(() => {
+    const calls =
+      (
+        window as Window & {
+          __BUZZ_E2E_COMMAND_LOG__?: Array<{ command: string }>;
+        }
+      ).__BUZZ_E2E_COMMAND_LOG__ ?? [];
+    return calls.filter((entry) => entry.command === "search_messages").length;
+  });
+  expect(messageSearchCalls).toBe(0);
+});
+
+test("global search tolerates small channel and people typos", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await focusSidebarSearchWithShortcut(page);
+
+  const input = page.getByTestId("search-dialog-input");
+  const results = page.getByTestId("search-results");
+  await input.fill("engneering");
+  await expect(results).toContainText("Engineering discussions");
+
+  await input.fill("alcie");
+  await expect(results).toContainText("alice");
+});
+
+test("global search exposes a larger scrollable result window", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("channel-deep-history").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("deep-history");
+  await expect(
+    page.locator('[data-message-id^="mock-deep-history-"]').first(),
+  ).toBeVisible();
+
+  await focusSidebarSearchWithShortcut(page);
+  await page.getByTestId("search-dialog-input").fill("deep history message");
+
+  const resultRows = page.locator(
+    '[data-search-section="messages"] .search-result-row',
+  );
+  await expect(resultRows).toHaveCount(40);
+  const resultList = page.getByTestId("search-results-list");
+  await expect(resultList).toBeVisible();
+  const scopeControl = page.getByTestId("search-current-channel-control");
+  await expect(
+    resultList.getByTestId("search-current-channel-control"),
+  ).toBeVisible();
+  const dimensions = await resultList.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.clientHeight);
+  await resultList.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(scopeControl).not.toBeInViewport();
+  await resultList.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+
+  for (let index = 0; index < 14; index += 1) {
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(resultRows.nth(13)).toHaveAttribute("aria-selected", "true");
+  await expect(resultRows.nth(13)).toBeInViewport();
+});
+
+test("closes sidebar search with Escape", async ({ page }) => {
+  await page.goto("/");
+
+  await focusSidebarSearchWithShortcut(page);
+  await page.getByTestId("search-dialog-input").fill("shipped");
+
+  await page.keyboard.press("Escape");
+
+  await expect(page.getByTestId("search-results")).toHaveCount(0);
+  await expect(page.getByTestId("open-search")).toBeFocused();
+});
+
+test("search shortcut opens search without disturbing the collapsed sidebar", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await expect(page.getByTestId("open-search")).toBeVisible();
+
+  const sidebarRoot = page.locator('[data-side="left"][data-state]');
+  await expect(sidebarRoot).toHaveAttribute("data-state", "expanded");
+
+  // Collapse the sidebar; its pinned-header search slides off-screen.
+  await page
+    .getByRole("button", { name: "Toggle Sidebar", exact: true })
+    .click();
+  await expect(sidebarRoot).toHaveAttribute("data-state", "collapsed");
+
+  await page.evaluate(() => {
+    const isMac = /mac|iphone|ipad|ipod/i.test(navigator.platform);
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        code: "KeyK",
+        ctrlKey: !isMac,
+        key: "k",
+        metaKey: isMac,
+      }),
+    );
+  });
+
+  // Search opens in its portal dialog; the sidebar must not react.
+  await expect(page.getByTestId("search-dialog-input")).toBeFocused();
+  await expect(sidebarRoot).toHaveAttribute("data-state", "collapsed");
+});
+
+test("search results use your resolved profile label instead of You", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await focusSidebarSearchWithShortcut(page);
+
+  await page.getByTestId("search-dialog-input").fill("welcome");
+  const results = page.getByTestId("search-results");
+
+  await expect(results).toContainText("Welcome to #general");
+  await expect(results).toContainText("npub1mock...");
+  await expect(results).not.toContainText("You");
+});
+
+test("replaces the channel pane when switching channels", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByTestId("channel-general").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("general");
+  await expect(page.getByTestId("message-timeline")).toContainText(
+    "Welcome to general",
+  );
+
+  await page.getByTestId("channel-random").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("random");
+  await expect(page.getByTestId("message-channel-intro")).toBeVisible();
+  await expect(page.getByTestId("message-channel-intro")).toContainText(
+    "This is the beginning of the regular channel.",
+  );
+  await expect(page.getByTestId("message-timeline")).not.toContainText(
+    "Welcome to general",
+  );
+  await expect(page.getByTestId("message-timeline")).toHaveCount(1);
+  await expect(page.getByTestId("message-timeline-day-divider")).toHaveCount(0);
+
+  await page.getByTestId("channel-engineering").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("engineering");
+  await expect(page.getByTestId("message-channel-intro")).toBeVisible();
+  await expect(page.getByTestId("message-timeline")).toHaveCount(1);
+  await expect(page.getByTestId("message-timeline-day-divider")).toHaveCount(0);
+});
+
+test("sends a mocked channel message", async ({ page }) => {
+  const message = `Smoke message ${Date.now()}`;
+
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("general");
+  await page.getByTestId("message-input").fill(message);
+  await page.getByTestId("send-message").click();
+
+  await expect(page.getByTestId("message-timeline")).toContainText(message);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const row = Array.from(
+          document.querySelectorAll<HTMLElement>("[data-message-id]"),
+        ).at(-1);
+        const composer = document.querySelector<HTMLElement>(
+          '[data-testid="message-composer"]',
+        );
+        if (!row || !composer) return Number.NEGATIVE_INFINITY;
+        return (
+          composer.getBoundingClientRect().top -
+          row.getBoundingClientRect().bottom
+        );
+      }),
+    )
+    .toBeGreaterThanOrEqual(0);
+});
+
+test("supports multiline drafts with Ctrl+Enter and sends with Enter", async ({
+  page,
+}) => {
+  const firstLine = `Shortcut smoke line one ${Date.now()}`;
+  const restOfLines = [
+    "Shortcut smoke line two",
+    "Shortcut smoke line three",
+    "Shortcut smoke line four",
+    "Shortcut smoke line five",
+  ];
+  const input = page.getByTestId("message-input");
+
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("general");
+  await expect(
+    page.getByRole("button", { name: "Send message" }),
+  ).toBeVisible();
+  const initialInputHeight = await input.evaluate(
+    (element) => (element as HTMLElement).clientHeight,
+  );
+  expect(initialInputHeight).toBeLessThan(40);
+  await input.fill(firstLine);
+  for (const line of restOfLines) {
+    await input.press("Shift+Enter");
+    await input.pressSequentially(line);
+  }
+  for (const line of [firstLine, ...restOfLines]) {
+    await expect(input).toContainText(line);
+  }
+  const expandedInputHeight = await input.evaluate(
+    (element) => (element as HTMLElement).clientHeight,
+  );
+  expect(expandedInputHeight).toBeLessThanOrEqual(130);
+  await expect(page.getByTestId("message-timeline")).not.toContainText(
+    firstLine,
+  );
+  await input.press("Enter");
+
+  await expect(page.getByTestId("message-timeline")).toContainText(firstLine);
+  await expect(page.getByTestId("message-timeline")).toContainText(
+    restOfLines[restOfLines.length - 1],
+  );
+});
+
+test("does not shift the timeline when the composer grows", async ({
+  page,
+}) => {
+  const input = page.getByTestId("message-input");
+  const prefix = `Composer growth ${Date.now()}`;
+
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("general");
+
+  await ensureTimelineScrollable(page, prefix);
+  await page.waitForTimeout(400);
+  await page.getByTestId("message-timeline").evaluate((element) => {
+    const timeline = element as HTMLDivElement;
+    // The raw position assignment sets up detached history, while wheel is the
+    // same ownership signal a real reader produces before composer reflow.
+    timeline.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+    timeline.scrollTop = 0;
+    timeline.dispatchEvent(new Event("scroll"));
+  });
+  await expect
+    .poll(async () => (await getTimelineMetrics(page)).distanceFromBottom)
+    .toBeGreaterThan(160);
+  const before = await getTimelineMetrics(page);
+
+  await input.fill("Composer growth line one");
+  await input.press("Shift+Enter");
+  await input.pressSequentially("Composer growth line two");
+  await input.press("Shift+Enter");
+  await input.pressSequentially("Composer growth line three");
+  await input.press("Shift+Enter");
+  await input.pressSequentially("Composer growth line four");
+
+  await page.waitForTimeout(1200);
+
+  const after = await getTimelineMetrics(page);
+  expect(after.clientHeight).toBeLessThanOrEqual(before.clientHeight);
+  expect(Math.abs(after.scrollTop - before.scrollTop)).toBeLessThanOrEqual(2);
+  expect(after.distanceFromBottom).toBeGreaterThan(160);
+});
+
+test("lifts Jump to latest when the composer grows", async ({ page }) => {
+  const input = page.getByTestId("message-input");
+
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("general");
+
+  await ensureTimelineScrollable(page, `Jump pill growth ${Date.now()}`);
+  await page.waitForTimeout(400);
+  const timeline = page.getByTestId("message-timeline");
+  await timeline.evaluate((element) => {
+    element.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  const jumpToLatest = page.getByTestId("message-scroll-to-latest");
+  const composer = page.getByTestId("message-composer");
+  await expect(jumpToLatest).toBeVisible();
+  const initialPillBox = await jumpToLatest.boundingBox();
+  const initialComposerBox = await composer.boundingBox();
+
+  await input.fill(
+    [
+      "Composer growth line one",
+      "Composer growth line two",
+      "Composer growth line three",
+      "Composer growth line four",
+    ].join("\n"),
+  );
+
+  await expect
+    .poll(async () => (await composer.boundingBox())?.height ?? 0)
+    .toBeGreaterThan((initialComposerBox?.height ?? 0) + 40);
+  await page.waitForTimeout(250);
+
+  const expandedPillBox = await jumpToLatest.boundingBox();
+  const expandedComposerBox = await composer.boundingBox();
+  expect(initialPillBox).not.toBeNull();
+  expect(initialComposerBox).not.toBeNull();
+  expect(expandedPillBox).not.toBeNull();
+  expect(expandedComposerBox).not.toBeNull();
+
+  const composerGrowth =
+    (expandedComposerBox?.height ?? 0) - (initialComposerBox?.height ?? 0);
+  const pillLift = (initialPillBox?.y ?? 0) - (expandedPillBox?.y ?? 0);
+  expect(pillLift).toBeGreaterThanOrEqual(composerGrowth - 2);
+  expect(
+    (expandedPillBox?.y ?? 0) + (expandedPillBox?.height ?? 0),
+  ).toBeLessThanOrEqual(expandedComposerBox?.y ?? 0);
+});

@@ -24,13 +24,13 @@ validation:
     - dimension: 运维手册
       ref: docs/runbooks/RB-01-invariant-check-failure.md
     - dimension: 呈现
-      ref: upstream-patches/buzz-web/verify/web-surface.md
+      ref: upstream/buzz-web/kailo/verify/web-surface.md
     - dimension: 呈现
-      ref: upstream-patches/buzz-desktop/verify/kailo-desktop.md
+      ref: upstream/buzz/kailo/verify/kailo-desktop.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/roles.rs, core/crates/kailo-core/src/role_reconcile.rs, core/crates/kailo-core/src/tenant_bootstrap.rs, core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/platform_views.rs, core/crates/kailo-core/src/spicedb.rs, worker/activities/spicedb.go, worker/workflows/component_task.go, web/packages/platform/src/react/roles.tsx, upstream-patches/buzz-web/patches/0007-role-management.patch, docs/adr/ADR-11-tenant-bootstrap-and-role-writes.md]
+  paths: [core/crates/kailo-core/src/roles.rs, core/crates/kailo-core/src/role_reconcile.rs, core/crates/kailo-core/src/tenant_bootstrap.rs, core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/platform_views.rs, core/crates/kailo-core/src/spicedb.rs, worker/activities/spicedb.go, worker/workflows/component_task.go, web/packages/platform/src/react/roles.tsx, upstream/buzz-web/web/src/platform/ui/PlatformApp.tsx, docs/adr/ADR-11-tenant-bootstrap-and-role-writes.md]
   # 管理页由共享 TS 包交付；Mobile 只读普通成员页，不提供角色编辑
   surfaces: [web, desktop]
   schemas: [contracts/api/action_command.schema.json, contracts/api/role_member_page.schema.json, contracts/api/role_workspace_page.schema.json, contracts/enums/reason_code.schema.json]

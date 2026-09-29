@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en" data-buzz-sidebar>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#e6e6b6" />
+    <meta name="description" content='{{env "PLATFORM_DISPLAY_NAME" | html}} — enterprise collaboration for people and agents' />
+    <meta name="platform-display-name" content='{{env "PLATFORM_DISPLAY_NAME" | html}}' />
+    <link rel="icon" type="image/png" sizes="168x168" href="%BASE_URL%app-icon.png" />
+    <link rel="apple-touch-icon" href="%BASE_URL%app-icon.png" />
+    <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
+    <title>{{env "PLATFORM_DISPLAY_NAME" | html}}</title>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

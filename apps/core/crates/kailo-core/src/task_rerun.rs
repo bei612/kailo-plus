@@ -37,6 +37,7 @@ use uuid::Uuid;
 
 use crate::audit::{append, AuditEntry};
 use crate::component_task;
+use crate::governance::{record_direct_launch, AuditClass};
 use crate::membership_lifecycle::{
     launch_membership, launch_scope, LifecycleRequest, LifecycleResponse, ScopeLifecycleRequest,
     ScopeOperation,
@@ -47,6 +48,9 @@ use crate::service_api::{authorize, unavailable, ServiceState};
 use crate::task_projection;
 use crate::temporal::{Observed, ObservedState, TemporalClient};
 use crate::workflow_reconcile;
+
+/// 重跑动作的目标是原 ActionExecution。
+const AUDIT_CLASS: AuditClass<'static> = AuditClass::core("ACTION_EXECUTION");
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -351,7 +355,10 @@ pub async fn rerun_task(
         return StatusCode::BAD_REQUEST.into_response();
     };
 
-    rerun(&state.pool, &state.temporal, &req, "task.rerun").await
+    // 治理的重跑控制动作经 governance 的 dispatch_rerun 记录派发；这里是 service
+    // 入口，由自己把启动回应记为该 ActionExecution 的派发结果
+    let response = rerun(&state.pool, &state.temporal, &req, "task.rerun").await;
+    record_direct_launch(&state.pool, req.action_execution_id, AUDIT_CLASS, response).await
 }
 
 /// 用户控制与部署级搁浅修复共用唯一的重跑核心。调用方先完成各自的准入，
@@ -536,13 +543,13 @@ pub(crate) async fn rerun(
         actor_principal_id: Some(action.actor_principal_id),
         action_key: &action.action_key,
         action_version: action.action_version,
-        component_type_key: "core",
-        target_type: Some("ACTION_EXECUTION"),
+        component_type_key: AUDIT_CLASS.component_type_key,
+        target_type: Some(AUDIT_CLASS.target_type),
         target_id: Some(old.original_action_execution_id),
         parameter_hash: &action.parameter_hash,
         decision: "ALLOW",
         result_code: "RERUN_ACCEPTED",
-        result_exposure: "NONE",
+        result_exposure: AUDIT_CLASS.result_exposure,
         evidence_refs: vec![
             Evidence::new(EvidenceKind::TemporalWorkflowId, &req.workflow_id),
             Evidence::new(EvidenceKind::TemporalWorkflowId, next_id),

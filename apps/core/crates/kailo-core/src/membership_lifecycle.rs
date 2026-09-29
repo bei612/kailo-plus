@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::component_task::{self, ComponentTaskInput};
+use crate::governance::{record_direct_launch, AuditClass};
 use crate::membership_projection::MembershipScope;
 use crate::service_api::{authorize, unavailable, ServiceState};
 use crate::temporal::TemporalClient;
@@ -137,16 +138,23 @@ pub async fn start_membership_lifecycle(
     start_membership(&state, &req).await
 }
 
-/// 成员生命周期的启动核心。handler 与重跑入口（`task_rerun`）共用它：重跑
-/// 不另写一份「按状态选 kind、核准入、落 WorkflowRef、Start」，两份迟早分叉。
-/// service API 形态的外壳：把启动结论写成 HTTP 回应。
+/// service API 形态的外壳：把启动结论写成 HTTP 回应，并记为该 ActionExecution
+/// 的派发结果。治理派发、部署引导与重跑直接调 `launch_membership`，由它们各自记录。
 pub(crate) async fn start_membership(state: &ServiceState, req: &LifecycleRequest) -> Response {
-    match launch_membership(&state.pool, &state.temporal, req).await {
+    let response = match launch_membership(&state.pool, &state.temporal, req).await {
         Ok(r) => (StatusCode::OK, Json(r)).into_response(),
         Err(r) => r,
-    }
+    };
+    let class = AuditClass::core(match req.scope {
+        MembershipScope::Tenant => "TENANT_MEMBERSHIP",
+        MembershipScope::Workspace => "WORKSPACE_MEMBERSHIP",
+    });
+    record_direct_launch(&state.pool, req.action_execution_id, class, response).await
 }
 
+/// 成员生命周期的启动核心。handler、治理派发、部署引导与重跑入口（`task_rerun`）
+/// 共用它：重跑不另写一份「按状态选 kind、核准入、落 WorkflowRef、Start」，两份
+/// 迟早分叉。
 pub(crate) async fn launch_membership(
     pool: &PgPool,
     temporal: &TemporalClient,
@@ -348,15 +356,22 @@ pub async fn start_scope_lifecycle(
     start_scope(&state, &req).await
 }
 
-/// scope 生命周期的启动核心，与 `start_membership` 同理由供重跑入口共用。
-/// service API 形态的外壳：把启动结论写成 HTTP 回应。
+/// service API 形态的外壳：把启动结论写成 HTTP 回应，并记为该 ActionExecution
+/// 的派发结果（同 `start_membership`）。
 pub(crate) async fn start_scope(state: &ServiceState, req: &ScopeLifecycleRequest) -> Response {
-    match launch_scope(&state.pool, &state.temporal, req).await {
+    let response = match launch_scope(&state.pool, &state.temporal, req).await {
         Ok(r) => (StatusCode::OK, Json(r)).into_response(),
         Err(r) => r,
-    }
+    };
+    let class = AuditClass::core(match req.kind {
+        crate::scope_state::ScopeKind::Tenant => "TENANT",
+        crate::scope_state::ScopeKind::Workspace => "WORKSPACE",
+    });
+    record_direct_launch(&state.pool, req.action_execution_id, class, response).await
 }
 
+/// scope 生命周期的启动核心，与 `launch_membership` 同理由供治理派发、部署引导与
+/// 重跑入口共用。
 pub(crate) async fn launch_scope(
     pool: &PgPool,
     temporal: &TemporalClient,

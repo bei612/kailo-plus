@@ -1,0 +1,12 @@
+# 上游源码树（ADR-06、04-上游适配与升级.md）：取舍以各树自己的 .gitignore 为准。
+# apps/.gitignore 是为 Kailo 自有代码写的——密钥形态的文件名、本机工具目录——而上游
+# 源码里这些名字是被跟踪的测试夹具与仓库配置，不能因为落在 apps/ 下就被悄悄漏掉。
+# 构建输出（target/、node_modules/、dist/ 等）不在此放开，仍按 apps/.gitignore 与各树
+# 自己的规则排除。
+!*.pem
+!*.key
+!.env.*
+!.claude/
+!.codex/
+!.agents/
+!.vscode/

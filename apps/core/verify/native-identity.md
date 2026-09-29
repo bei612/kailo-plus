@@ -62,7 +62,7 @@ RFC 8252 登录 IdP、在本机生成设备密钥、自己签名直连 Relay。D
 自建 Channel、自加入别的 Workspace、读写非成员 Channel。Relay 以 `SS-BUZ-GOVERNANCE`
 只接受成员发布 `BUZZ_MEMBER_EVENT_KINDS` 里的 kind，其余只收 Tenant CONTROL 签发，
 Channel 一律 private（`DD-80`）。上面的生命周期里，已登记的设备能直连发消息，但自建
-Channel 被 Relay 拒绝。逐项核验见 `upstream-patches/buzz/verify/governance.md`。
+Channel 被 Relay 拒绝。逐项核验见 `upstream/buzz/kailo/verify/governance.md`。
 
 ## 与撤权并发时不留下已撤销的钥匙
 

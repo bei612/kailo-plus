@@ -33,8 +33,9 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::audit::{append, AuditEntry};
-use crate::client_keys::{IdentityEnvelope, IdentityTarget, KIND};
+use crate::client_keys::{IdentityEnvelope, IdentityTarget, AUDIT_CLASS, KIND};
 use crate::component_task::{self, AllowedAction, ComponentTaskInput};
+use crate::governance::{record_direct_launch, record_dispatch};
 use crate::membership_lifecycle::LifecycleResponse;
 use crate::service_api::{authorize, unavailable, ServiceState};
 
@@ -155,7 +156,7 @@ pub async fn revoke_server_key(
         return unavailable(e);
     }
     tracing::info!(pubkey = %req.pubkey, workflow_id, "Web 托管身份已停签，开始移出 roster");
-    start(
+    start_revoke(
         &state,
         binding.tenant_id,
         &req.pubkey,
@@ -1130,18 +1131,10 @@ async fn mark_provision_dispatched(
         return Err(StatusCode::CONFLICT.into_response());
     };
     if dispatch != "DISPATCHED" {
-        let changed = sqlx::query(
-            "update admission.action_execution set dispatch_state = 'DISPATCHED',
-                    reason_code = null, updated_at = now()
-             where id = $1 and gate_state = 'ALLOWED' and dispatch_state = $2",
-        )
-        .bind(action_id)
-        .bind(dispatch)
-        .execute(&mut *tx)
-        .await
-        .map_err(unavailable)?
-        .rows_affected();
-        if changed != 1 {
+        let recorded = record_dispatch(&mut tx, action_id, AUDIT_CLASS, Ok(()), Vec::new())
+            .await
+            .map_err(unavailable)?;
+        if !recorded.settled {
             return Err(StatusCode::CONFLICT.into_response());
         }
     }
@@ -1266,31 +1259,33 @@ async fn resume(
                         }
                     }
                     if projection_state == "TERMINAL" {
-                        if expected_action_key == PROVISION_ACTION {
-                            if let Err(r) = mark_provision_dispatched(
-                                state,
-                                tenant_id,
-                                principal_id,
-                                pubkey,
-                                action,
-                                legacy_without_intent,
-                            )
-                            .await
-                            {
-                                return Some(r);
-                            }
-                        }
-                        Some(
-                            (
-                                StatusCode::OK,
-                                Json(LifecycleResponse {
-                                    workflow_id: existing,
-                                    kind: KIND.to_owned(),
-                                    run_id: None,
-                                }),
-                            )
-                                .into_response(),
+                        let fixed = (
+                            StatusCode::OK,
+                            Json(LifecycleResponse {
+                                workflow_id: existing.clone(),
+                                kind: KIND.to_owned(),
+                                run_id: None,
+                            }),
                         )
+                            .into_response();
+                        if expected_action_key != PROVISION_ACTION {
+                            return Some(
+                                record_direct_launch(&state.pool, action, AUDIT_CLASS, fixed).await,
+                            );
+                        }
+                        if let Err(r) = mark_provision_dispatched(
+                            state,
+                            tenant_id,
+                            principal_id,
+                            pubkey,
+                            action,
+                            legacy_without_intent,
+                        )
+                        .await
+                        {
+                            return Some(r);
+                        }
+                        Some(fixed)
                     } else if expected_action_key == PROVISION_ACTION {
                         Some(
                             launch_provision(
@@ -1305,7 +1300,7 @@ async fn resume(
                             .await,
                         )
                     } else {
-                        Some(start(state, tenant_id, pubkey, version, action).await)
+                        Some(start_revoke(state, tenant_id, pubkey, version, action).await)
                     }
                 }
                 Ok(None) => Some(StatusCode::CONFLICT.into_response()),
@@ -1370,13 +1365,13 @@ async fn record(
             actor_principal_id: Some(action.actor_principal_id),
             action_key: &action.action_key,
             action_version: action.action_version,
-            component_type_key: "buzz",
-            target_type: Some("PRINCIPAL"),
+            component_type_key: AUDIT_CLASS.component_type_key,
+            target_type: Some(AUDIT_CLASS.target_type),
             target_id: Some(principal_id),
             parameter_hash: &action.parameter_hash,
             decision: "ALLOW",
             result_code,
-            result_exposure: "NONE",
+            result_exposure: AUDIT_CLASS.result_exposure,
             evidence_refs: vec![
                 Evidence::new(EvidenceKind::BuzzPubkey, pubkey),
                 Evidence::new(EvidenceKind::TemporalWorkflowId, workflow_id),
@@ -1385,6 +1380,18 @@ async fn record(
         },
     )
     .await
+}
+
+/// 撤销没有建钥那样的持久意图与收尾查证：启动的回应就是派发结果。
+async fn start_revoke(
+    state: &ServiceState,
+    tenant_id: Uuid,
+    pubkey: &str,
+    version: i32,
+    action: Uuid,
+) -> Response {
+    let response = start(state, tenant_id, pubkey, version, action).await;
+    record_direct_launch(&state.pool, action, AUDIT_CLASS, response).await
 }
 
 async fn start(

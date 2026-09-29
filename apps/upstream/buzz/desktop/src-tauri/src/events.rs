@@ -1,0 +1,156 @@
+//! Signed-event builders for desktop write operations.
+//!
+//! Mirrors the buzz-sdk builder patterns but uses nostr 0.37 API
+//! (the desktop is excluded from the workspace which pins nostr 0.36).
+//!
+//! Mental model:
+//!   caller params → build_*() → EventBuilder → submit_event() signs + POSTs
+//!
+//! Each function validates inputs and returns a nostr::EventBuilder.
+//! Signing and submission happen in relay::submit_event.
+use nostr::{EventBuilder, EventId, Kind, Tag};
+use uuid::Uuid;
+
+mod message_tags;
+
+use message_tags::{
+    append_client_tags, append_sent_from_thread_tag, emoji_tags, imeta_tags, mention_reference_tags,
+};
+// ── Constants ────────────────────────────────────────────────────────────────
+
+/// Maximum content size — matches buzz-sdk (64 KiB).
+const MAX_CONTENT_BYTES: usize = 64 * 1024;
+
+/// Maximum mention count — matches buzz-sdk.
+const MAX_MENTIONS: usize = 50;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+fn tag(parts: Vec<&str>) -> Result<Tag, String> {
+    Tag::parse(parts).map_err(|e| format!("invalid tag: {e}"))
+}
+
+fn check_content(content: &str) -> Result<(), String> {
+    if content.len() > MAX_CONTENT_BYTES {
+        return Err(format!(
+            "content exceeds maximum size of {} bytes (got {})",
+            MAX_CONTENT_BYTES,
+            content.len()
+        ));
+    }
+    Ok(())
+}
+
+/// NIP-10 thread reference.
+pub struct ThreadRef {
+    pub root_event_id: EventId,
+    pub parent_event_id: EventId,
+}
+
+fn thread_tags(tr: &ThreadRef) -> Result<Vec<Tag>, String> {
+    let root = tr.root_event_id.to_hex();
+    let parent = tr.parent_event_id.to_hex();
+    if root == parent {
+        Ok(vec![tag(vec!["e", &root, "", "reply"])?])
+    } else {
+        Ok(vec![
+            tag(vec!["e", &root, "", "root"])?,
+            tag(vec!["e", &parent, "", "reply"])?,
+        ])
+    }
+}
+
+fn mention_tags(mentions: &[&str]) -> Result<Vec<Tag>, String> {
+    if mentions.len() > MAX_MENTIONS {
+        return Err(format!("too many mentions (max {MAX_MENTIONS})"));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut tags = Vec::new();
+    for &hex in mentions {
+        check_pubkey(hex)?;
+        let lower = hex.to_ascii_lowercase();
+        if seen.insert(lower.clone()) {
+            tags.push(tag(vec!["p", &lower])?);
+        }
+    }
+    Ok(tags)
+}
+
+/// Validate a hex pubkey is exactly 64 hex characters.
+fn check_pubkey(pubkey: &str) -> Result<(), String> {
+    if pubkey.len() != 64 || !pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!(
+            "pubkey must be a 64-character hex string (got {} chars)",
+            pubkey.len()
+        ));
+    }
+    Ok(())
+}
+
+// ── Messages ─────────────────────────────────────────────────────────────────
+
+/// Kind 9 — stream message.
+#[allow(clippy::too_many_arguments)]
+pub fn build_message(
+    channel_id: Uuid,
+    content: &str,
+    thread_ref: Option<&ThreadRef>,
+    mentions: &[&str],
+    media_tags: &[Vec<String>],
+    custom_emoji_tags: &[Vec<String>],
+    mention_ref_tags: &[Vec<String>],
+    link_preview_tags: &[Vec<String>],
+    sent_from_thread_tag: Option<&[String]>,
+    relay_base: &str,
+) -> Result<EventBuilder, String> {
+    build_message_with_client_tags(
+        channel_id,
+        content,
+        thread_ref,
+        mentions,
+        media_tags,
+        custom_emoji_tags,
+        mention_ref_tags,
+        link_preview_tags,
+        sent_from_thread_tag,
+        relay_base,
+        &[],
+    )
+}
+
+/// Kind 9 — stream message with internal client marker tags.
+///
+/// This is intentionally narrower than arbitrary extra tags: callers can add
+/// only `["client", ...]` tags, which are useful for idempotency markers but
+/// cannot forge channel/thread/mention metadata.
+#[allow(clippy::too_many_arguments)]
+pub fn build_message_with_client_tags(
+    channel_id: Uuid,
+    content: &str,
+    thread_ref: Option<&ThreadRef>,
+    mentions: &[&str],
+    media_tags: &[Vec<String>],
+    custom_emoji_tags: &[Vec<String>],
+    mention_ref_tags: &[Vec<String>],
+    link_preview_tags: &[Vec<String>],
+    sent_from_thread_tag: Option<&[String]>,
+    relay_base: &str,
+    client_tags: &[Vec<String>],
+) -> Result<EventBuilder, String> {
+    if sent_from_thread_tag.is_some() && thread_ref.is_some() {
+        return Err("sent-from-thread provenance requires a top-level message".into());
+    }
+    check_content(content)?;
+    let mut tags = vec![tag(vec!["h", &channel_id.to_string()])?];
+    if let Some(tr) = thread_ref {
+        tags.extend(thread_tags(tr)?);
+    }
+    tags.extend(mention_tags(mentions)?);
+    imeta_tags(media_tags, &mut tags)?;
+    emoji_tags(custom_emoji_tags, &mut tags)?;
+    mention_reference_tags(mention_ref_tags, &mut tags)?;
+    crate::link_preview_tags::append(link_preview_tags, relay_base, &mut tags)?;
+    append_sent_from_thread_tag(sent_from_thread_tag, &mut tags)?;
+    append_client_tags(client_tags, &mut tags)?;
+    Ok(EventBuilder::new(Kind::Custom(9), content).tags(tags))
+}

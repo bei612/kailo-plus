@@ -1,0 +1,25 @@
+import type {
+  Channel,
+  Identity,
+  Profile,
+  RelayEvent,
+} from "@/shared/api/types";
+
+export type ChannelScreenProps = {
+  activeChannel: Channel | null;
+  /**
+   * When non-null, the main channel composer auto-submits once on mount after
+   * loading the draft identified by this key. The route component clears the
+   * `?autoSend` search param after the submit fires so back-navigation does
+   * not re-trigger. Value must match the composer's `effectiveDraftKey`.
+   */
+  autoSendDraftKey: string | null;
+  currentIdentity?: Identity;
+  currentProfile?: Profile;
+  targetMessageEvents: RelayEvent[];
+  targetMessageId: string | null;
+  /** Exact clicked result id, retained after route target cleanup. */
+  targetSearchMessageId?: string;
+  /** Search text to highlight within the opened result message. */
+  targetSearchQuery?: string;
+};

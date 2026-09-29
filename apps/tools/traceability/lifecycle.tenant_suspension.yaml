@@ -16,7 +16,7 @@ validation:
   scenarios: [V-SCN-31]
   evidence:
     - dimension: 上游接缝
-      ref: upstream-patches/buzz/verify/operator-provisioning.md
+      ref: upstream/buzz/kailo/verify/operator-provisioning.md
     - dimension: 领域规则
       ref: core/verify/tenant-suspension.md
     - dimension: 安全边界

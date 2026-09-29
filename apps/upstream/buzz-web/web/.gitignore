@@ -1,0 +1,17 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+playwright-report
+test-results
+
+# Kailo contracts 生成物：构建时由 Kailo 放入，不入库（ADR-02/03）
+src/platform/contracts.gen.ts
+# Kailo 共用平台包：构建时由 Kailo 放入，不入库（ADR-09）
+src/kailo-platform/

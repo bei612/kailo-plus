@@ -1,0 +1,126 @@
+import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+
+import '../../shared/deeplink/deep_link.dart';
+import '../../shared/deeplink/pending_deep_link_provider.dart';
+import '../kailo/kailo_unavailable_page.dart';
+import 'channel.dart';
+import 'channel_detail_page.dart';
+import 'channels_provider.dart';
+
+/// Routes pending `buzz://message` deep links into the channel view, and
+/// links to capabilities this app does not deliver to a page that says so.
+///
+/// Wraps the authenticated home subtree. Whenever a parsed link is parked in
+/// [pendingDeepLinkProvider] and the channel list is available, this pushes
+/// the target [ChannelDetailPage] on the enclosing [Navigator]. Links are
+/// held (not dropped) while channels are still loading, so cold-start links
+/// dispatch as soon as the first channel fetch completes.
+typedef DeepLinkDestinationBuilder =
+    Widget Function(Channel channel, BuzzDeepLink link);
+
+class DeepLinkDispatcher extends ConsumerStatefulWidget {
+  final Widget child;
+  final DeepLinkDestinationBuilder? destinationBuilder;
+  final bool dispatchMessageLinks;
+
+  const DeepLinkDispatcher({
+    super.key,
+    required this.child,
+    this.destinationBuilder,
+    this.dispatchMessageLinks = true,
+  });
+
+  @override
+  ConsumerState<DeepLinkDispatcher> createState() => _DeepLinkDispatcherState();
+}
+
+class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _maybeDispatch(ref.read(pendingDeepLinkProvider));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Re-evaluate dispatch when either a new link arrives or channels load.
+    ref.listen<BuzzDeepLink?>(pendingDeepLinkProvider, (_, link) {
+      _maybeDispatch(link);
+    });
+    if (widget.dispatchMessageLinks) {
+      ref.listen<AsyncValue<List<Channel>>>(channelsProvider, (_, _) {
+        _maybeDispatch(ref.read(pendingDeepLinkProvider));
+      });
+    }
+
+    return widget.child;
+  }
+
+  void _maybeDispatch(BuzzDeepLink? link) {
+    if (link == null) return;
+    if (link is UnavailableOnMobileDeepLink) {
+      // 未交付的能力：给出稳定 reason code 并指向 Web/桌面端（V-SCN-65），
+      // 登录与否都一样
+      ref.read(pendingDeepLinkProvider.notifier).consume();
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => KailoUnavailablePage(uri: link.uri),
+        ),
+      );
+      return;
+    }
+    if (!widget.dispatchMessageLinks) return;
+    _dispatchNavigableLink(link);
+  }
+
+  void _dispatchNavigableLink(BuzzDeepLink link) {
+    final channelId = switch (link) {
+      MessageDeepLink(:final channelId) => channelId,
+      ChannelDeepLink(:final channelId) => channelId,
+      _ => throw StateError('unsupported navigable deep link: $link'),
+    };
+    final channels = ref.read(channelsProvider).asData?.value;
+    // Channels not loaded yet — keep the link parked; the channelsProvider
+    // listener re-attempts once data arrives.
+    if (channels == null) return;
+
+    final channel = channels
+        .where((c) => c.id == channelId)
+        .cast<Channel?>()
+        .firstOrNull;
+    if (channel == null) {
+      ref.read(pendingDeepLinkProvider.notifier).consume();
+      debugPrint(
+        'deep-link: channel $channelId not found in workspace; dropping link',
+      );
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text('Channel not found in this workspace')),
+      );
+      return;
+    }
+    if (!context.mounted) return;
+
+    _pushChannel(channel, link);
+    ref.read(pendingDeepLinkProvider.notifier).consume();
+  }
+
+  void _pushChannel(Channel channel, BuzzDeepLink link) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            widget.destinationBuilder?.call(channel, link) ??
+            ChannelDetailPage(
+              channel: channel,
+              initialMessageId: link is MessageDeepLink ? link.messageId : null,
+              initialThreadRootId: link is MessageDeepLink
+                  ? link.threadRootId
+                  : null,
+            ),
+      ),
+    );
+  }
+}

@@ -1,0 +1,238 @@
+import * as React from "react";
+
+import type { Channel } from "@/shared/api/types";
+import { cn } from "@/shared/lib/cn";
+import { setLocalStorageItemWithRecovery } from "@/shared/lib/localStorageQuota";
+import {
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuItem,
+} from "@/shared/ui/sidebar";
+import { Skeleton } from "@/shared/ui/skeleton";
+
+const SIDEBAR_SKELETON_CACHE_PREFIX = "buzz-sidebar-skeleton-shape.v1";
+const sidebarLoadingWidthClasses = [
+  "w-14",
+  "w-16",
+  "w-20",
+  "w-24",
+  "w-28",
+  "w-32",
+] as const;
+
+type SidebarLoadingWidthClass = (typeof sidebarLoadingWidthClasses)[number];
+
+type SidebarLoadingRowShape = {
+  key: string;
+  unread?: boolean;
+  widthClass: SidebarLoadingWidthClass;
+};
+
+type SidebarLoadingShape = {
+  channels: SidebarLoadingRowShape[];
+};
+
+type SidebarLoadingCachePayload = SidebarLoadingShape & {
+  updatedAt: number;
+  version: 1;
+};
+
+const fallbackSidebarLoadingShape: SidebarLoadingShape = {
+  channels: [
+    { key: "design", widthClass: "w-20" },
+    { key: "engineering", widthClass: "w-28" },
+    { key: "general", widthClass: "w-20" },
+  ],
+};
+
+function isSidebarLoadingWidthClass(
+  value: unknown,
+): value is SidebarLoadingWidthClass {
+  return sidebarLoadingWidthClasses.includes(value as SidebarLoadingWidthClass);
+}
+
+function parseSidebarLoadingRows(
+  rows: unknown,
+  maxRows: number,
+): SidebarLoadingRowShape[] {
+  if (!Array.isArray(rows)) return [];
+
+  return rows
+    .slice(0, maxRows)
+    .filter((row: unknown): row is SidebarLoadingRowShape => {
+      if (typeof row !== "object" || row === null) return false;
+      const record = row as Record<string, unknown>;
+      return (
+        typeof record.key === "string" &&
+        isSidebarLoadingWidthClass(record.widthClass) &&
+        (record.unread === undefined || typeof record.unread === "boolean")
+      );
+    });
+}
+
+function parseSidebarLoadingShape(value: unknown): SidebarLoadingShape | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (record.version !== 1) return null;
+
+  const shape = {
+    channels: parseSidebarLoadingRows(record.channels, 3),
+  };
+
+  return hasSidebarLoadingRows(shape) ? shape : null;
+}
+
+function hasSidebarLoadingRows(shape: SidebarLoadingShape) {
+  return shape.channels.length > 0;
+}
+
+function sidebarSkeletonCacheKey(
+  communityId: string | null | undefined,
+  pubkey: string | undefined,
+) {
+  if (!communityId) return null;
+  return `${SIDEBAR_SKELETON_CACHE_PREFIX}:${communityId}:${pubkey ?? "anonymous"}`;
+}
+
+function readSidebarLoadingShape(
+  cacheKey: string | null,
+): SidebarLoadingShape | null {
+  if (!cacheKey || typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(cacheKey);
+    return raw ? parseSidebarLoadingShape(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSidebarLoadingShape(
+  cacheKey: string | null,
+  shape: SidebarLoadingShape,
+) {
+  if (
+    !cacheKey ||
+    !hasSidebarLoadingRows(shape) ||
+    typeof window === "undefined"
+  ) {
+    return;
+  }
+
+  const payload: SidebarLoadingCachePayload = {
+    channels: shape.channels.slice(0, 3),
+    updatedAt: Date.now(),
+    version: 1,
+  };
+
+  try {
+    setLocalStorageItemWithRecovery(cacheKey, JSON.stringify(payload));
+  } catch {
+    // localStorage can be unavailable or full in embedded webviews.
+  }
+}
+
+function sidebarWidthClassForText(text: string): SidebarLoadingWidthClass {
+  const length = text.trim().length;
+  if (length >= 20) return "w-32";
+  if (length >= 14) return "w-28";
+  if (length >= 10) return "w-24";
+  if (length >= 6) return "w-20";
+  return "w-16";
+}
+
+function createSidebarLoadingShape(
+  streamChannels: Channel[],
+): SidebarLoadingShape {
+  return {
+    channels: streamChannels.slice(0, 3).map((channel) => ({
+      key: channel.id,
+      widthClass: sidebarWidthClassForText(channel.name),
+    })),
+  };
+}
+
+export function useSidebarLoadingShape({
+  activeCommunityId,
+  isLoading,
+  currentPubkey,
+  streamChannels,
+}: {
+  activeCommunityId: string | null | undefined;
+  isLoading: boolean;
+  currentPubkey?: string;
+  streamChannels: Channel[];
+}) {
+  const cacheKey = React.useMemo(
+    () => sidebarSkeletonCacheKey(activeCommunityId, currentPubkey),
+    [activeCommunityId, currentPubkey],
+  );
+  const liveShape = React.useMemo(
+    () => createSidebarLoadingShape(streamChannels),
+    [streamChannels],
+  );
+  const cachedShape = React.useMemo(
+    () => readSidebarLoadingShape(cacheKey),
+    [cacheKey],
+  );
+
+  React.useEffect(() => {
+    if (isLoading || !hasSidebarLoadingRows(liveShape)) return;
+    writeSidebarLoadingShape(cacheKey, liveShape);
+  }, [cacheKey, isLoading, liveShape]);
+
+  if (hasSidebarLoadingRows(liveShape)) return liveShape;
+  return cachedShape ?? fallbackSidebarLoadingShape;
+}
+
+function SidebarLoadingRow({ widthClass }: { widthClass: string }) {
+  return (
+    <SidebarMenuItem>
+      <div className="flex h-8 items-center gap-2 rounded-md px-2">
+        <Skeleton className="h-4 w-4 shrink-0 rounded-sm" />
+        <Skeleton className={cn("h-4 min-w-0", widthClass)} />
+      </div>
+    </SidebarMenuItem>
+  );
+}
+
+function SidebarLoadingSection({
+  children,
+  titleWidthClass,
+}: {
+  children: React.ReactNode;
+  titleWidthClass: string;
+}) {
+  return (
+    <SidebarGroup>
+      <div className="group/sidebar-section relative">
+        <SidebarGroupLabel asChild>
+          <div className="flex h-7 w-fit max-w-[calc(100%-3rem)] items-center gap-1">
+            <Skeleton className={cn("h-3.5", titleWidthClass)} />
+          </div>
+        </SidebarGroupLabel>
+      </div>
+      <SidebarGroupContent>
+        <SidebarMenu>{children}</SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
+export function SidebarLoadingContent({
+  shape,
+}: {
+  shape: SidebarLoadingShape;
+}) {
+  return (
+    <div data-testid="sidebar-loading">
+      <SidebarLoadingSection titleWidthClass="w-16">
+        {shape.channels.map((row) => (
+          <SidebarLoadingRow key={row.key} widthClass={row.widthClass} />
+        ))}
+      </SidebarLoadingSection>
+    </div>
+  );
+}

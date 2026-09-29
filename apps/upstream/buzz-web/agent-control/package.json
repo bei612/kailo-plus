@@ -1,0 +1,16 @@
+{
+  "name": "buzz-agent-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "nostr-tools": "^2.24.1"
+  }
+}

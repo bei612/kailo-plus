@@ -16,19 +16,19 @@ validation:
   scenarios: [V-SCN-01, V-SCN-28]
   evidence:
     - dimension: 上游接缝
-      ref: upstream-patches/buzz/verify/server-client.md
+      ref: upstream/buzz/kailo/verify/server-client.md
     - dimension: 上游接缝
-      ref: upstream-patches/buzz/verify/web-relay-core.md
+      ref: upstream/buzz/kailo/verify/web-relay-core.md
     - dimension: 端到端场景
-      ref: upstream-patches/buzz-web/verify/web-surface.md
+      ref: upstream/buzz-web/kailo/verify/web-surface.md
     - dimension: 故障与恢复
-      ref: upstream-patches/buzz-web/verify/web-surface.md
+      ref: upstream/buzz-web/kailo/verify/web-surface.md
     - dimension: 故障与恢复
       ref: docs/runbooks/RB-07-unknown-external-results.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/web_transport.rs, core/crates/kailo-core/src/stream.rs, core/crates/kailo-core/src/publish_reconcile.rs, core/crates/kailo-buzz, upstream-patches/buzz-web]
+  paths: [core/crates/kailo-core/src/web_transport.rs, core/crates/kailo-core/src/stream.rs, core/crates/kailo-core/src/publish_reconcile.rs, core/crates/kailo-buzz, upstream/buzz-web]
   surfaces: [web]
   schemas: []
   migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql]

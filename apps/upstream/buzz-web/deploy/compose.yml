@@ -1,0 +1,34 @@
+name: buzz-web
+
+services:
+  web:
+    build:
+      context: ../web
+      args:
+        VITE_BASE_PATH: /app/
+    image: buzz-web:0.1.0
+    restart: unless-stopped
+    ports:
+      - "${BUZZ_WEB_BIND_ADDRESS:-127.0.0.1}:${BUZZ_WEB_PORT:-3001}:8080"
+    volumes:
+      - ./config.json:/srv/app/config.json:ro
+    read_only: true
+    tmpfs:
+      - /config:size=1m,mode=0700
+      - /data:size=1m,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/app/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - web
+
+networks:
+  web:
+    name: buzz-web-net

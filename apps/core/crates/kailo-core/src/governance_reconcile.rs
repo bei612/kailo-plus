@@ -368,7 +368,7 @@ async fn pass(
     let bootstrap_overdue: i64 = sqlx::query_scalar(
         "select count(*)::bigint from admission.action_execution
          where action_key = $1 and gate_state = 'ALLOWED'
-           and dispatch_state = 'NOT_DISPATCHED'
+           and dispatch_state in ('NOT_DISPATCHED', 'UNKNOWN')
            and updated_at < now() - make_interval(secs => $2::bigint)",
     )
     .bind(crate::tenant_bootstrap::ACTION_KEY)

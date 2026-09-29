@@ -1,0 +1,20 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+
+# Temporary and backup files
+node_modules/
+*.bak
+*.bak-*
+*.tmp
+*.swp

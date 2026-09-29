@@ -16,13 +16,13 @@ validation:
   scenarios: []
   evidence:
     - dimension: 上游接缝
-      ref: upstream-patches/buzz-web/verify/web-surface.md
+      ref: upstream/buzz-web/kailo/verify/web-surface.md
     - dimension: 呈现
-      ref: upstream-patches/buzz-web/verify/web-surface.md
+      ref: upstream/buzz-web/kailo/verify/web-surface.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/platform_views.rs, web/packages/platform, upstream-patches/buzz-web]
+  paths: [core/crates/kailo-core/src/platform_views.rs, web/packages/platform, upstream/buzz-web]
   surfaces: [web]
   schemas: [contracts/api/workspace.schema.json, contracts/api/workspace_member.schema.json, contracts/api/own_audit_entry.schema.json]
   migrations: []

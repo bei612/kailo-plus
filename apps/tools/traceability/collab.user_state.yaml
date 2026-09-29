@@ -16,13 +16,13 @@ validation:
   scenarios: [V-SCN-29]
   evidence:
     - dimension: 领域规则
-      ref: upstream-patches/buzz-web/verify/web-surface.md
+      ref: upstream/buzz-web/kailo/verify/web-surface.md
     - dimension: 端到端场景
-      ref: upstream-patches/buzz-web/verify/web-surface.md
+      ref: upstream/buzz-web/kailo/verify/web-surface.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/user_state.rs, upstream-patches/buzz-web]
+  paths: [core/crates/kailo-core/src/user_state.rs, upstream/buzz-web]
   surfaces: [web]
   schemas: [contracts/api/read_mark.schema.json, contracts/api/workspace_preference.schema.json, contracts/api/user_state_version.schema.json]
   migrations: [core/migrations/20260923020000_collaboration_user_state.up.sql]

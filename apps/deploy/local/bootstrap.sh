@@ -13,7 +13,8 @@ cd "$(dirname "$0")"
   "${BUZZ_RELAY_PORT:?缺少 BUZZ_RELAY_PORT}" "${AGENTGATEWAY_PORT:?缺少 AGENTGATEWAY_PORT}" \
   "${KEYCLOAK_PORT:?缺少 KEYCLOAK_PORT}" \
   "${CORE_DB_PORT:?缺少 CORE_DB_PORT}" \
-  "${CORE_DB_USER:?缺少 CORE_DB_USER}" "${CORE_DB_NAME:?缺少 CORE_DB_NAME}"
+  "${CORE_DB_USER:?缺少 CORE_DB_USER}" "${CORE_DB_NAME:?缺少 CORE_DB_NAME}" \
+  "${AGENTGATEWAY_DB_USER:?缺少 AGENTGATEWAY_DB_USER}" "${AGENTGATEWAY_DB_NAME:?缺少 AGENTGATEWAY_DB_NAME}"
 # 本地拓扑导入 Keycloak realm；issuer 的 realm 必须与导入对象完全相同。
 # PUBLIC_ORIGIN 是浏览器入口的唯一根地址，回调与邀请页均从它派生。
 OIDC_ISSUER="$OIDC_ISSUER" OIDC_REALM="$OIDC_REALM" PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
@@ -21,6 +22,7 @@ PUBLIC_HOST="$PUBLIC_HOST" OIDC_HOST="$OIDC_HOST" BUZZ_RELAY_HOST="$BUZZ_RELAY_H
 BUZZ_RELAY_PORT="$BUZZ_RELAY_PORT" AGENTGATEWAY_PORT="$AGENTGATEWAY_PORT" \
 KEYCLOAK_PORT="$KEYCLOAK_PORT" CORE_DB_USER="$CORE_DB_USER" CORE_DB_NAME="$CORE_DB_NAME" \
 CORE_DB_PORT="$CORE_DB_PORT" \
+AGENTGATEWAY_DB_USER="$AGENTGATEWAY_DB_USER" AGENTGATEWAY_DB_NAME="$AGENTGATEWAY_DB_NAME" \
 PLATFORM_DISPLAY_NAME="${PLATFORM_DISPLAY_NAME:-}" \
 python3 - <<'PYCONFIG'
 import os
@@ -79,7 +81,7 @@ for name, expected_path, host_name, port_name in (
 host("BUZZ_RELAY_HOST")
 checked_port("BUZZ_RELAY_PORT")
 checked_port("CORE_DB_PORT")
-for name in ("CORE_DB_USER", "CORE_DB_NAME"):
+for name in ("CORE_DB_USER", "CORE_DB_NAME", "AGENTGATEWAY_DB_USER", "AGENTGATEWAY_DB_NAME"):
     if not re.fullmatch(r"[A-Za-z0-9_-]+", os.environ[name]):
         raise SystemExit(f"{name} 不适合 PostgreSQL URL")
 PYCONFIG
@@ -223,6 +225,75 @@ except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
 PYADMIN
   exit 0
 fi
+# 持久化 realm 同样不会因导入文件给已有 client 增加 protocol mapper。只收敛 Core 服务
+# client 上网关管理面 audience 这一个 mapper：定义取自本次渲染的导入文件（与首次导入同源），
+# 恰好 0 个则创建，恰好 1 个且与定义一致不改动，其余情形拒绝；其他 mapper 与 secret 不读不写。
+if [ "${1:-}" = '--ensure-service-audience' ] && [ "$#" -eq 1 ]; then
+  python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
+    "${OIDC_SERVICE_CLIENT_ID:?}" "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" <<'PYAUD'
+import json
+import pathlib
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+port, realm, admin, client_id, timeout = sys.argv[1:]
+timeout = int(timeout)
+if timeout <= 0:
+    raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
+MAPPER = "agentgateway-admin-audience"
+base = "http://127.0.0.1:" + port
+try:
+    rendered = json.loads(pathlib.Path("secrets/keycloak-import/kailo-realm.json").read_text(encoding="utf-8"))
+    wanted = [m for c in rendered.get("clients", []) if c.get("clientId") == client_id
+              for m in c.get("protocolMappers", []) if m.get("name") == MAPPER]
+    if len(wanted) != 1:
+        raise SystemExit("渲染后的 realm 中 Core 服务 client 的网关 audience mapper 不唯一")
+    wanted = wanted[0]
+    password = pathlib.Path("secrets/keycloak_admin_password").read_text().strip()
+    login = urllib.parse.urlencode({"grant_type": "password", "client_id": "admin-cli",
+                                   "username": admin, "password": password}).encode()
+    with urllib.request.urlopen(base + "/realms/master/protocol/openid-connect/token",
+                                login, timeout=timeout) as response:
+        token = json.load(response)["access_token"]
+
+    def request(path, body=None):
+        req = urllib.request.Request(base + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            method="POST" if body is not None else "GET",
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.load(response) if body is None else None
+
+    clients_path = "/admin/realms/" + urllib.parse.quote(realm, safe="") + "/clients"
+    clients = request(clients_path + "?" + urllib.parse.urlencode({"clientId": client_id}))
+    if len(clients) != 1 or clients[0].get("clientId") != client_id:
+        raise SystemExit("Core 服务 client 不存在或不唯一，拒绝创建替代身份")
+    mappers_path = clients_path + "/" + urllib.parse.quote(clients[0]["id"], safe="") + "/protocol-mappers/models"
+
+    def matching():
+        return [m for m in request(mappers_path) if m.get("name") == MAPPER]
+
+    def same(m):
+        return (m.get("protocolMapper") == wanted["protocolMapper"]
+                and all(m.get("config", {}).get(k) == v for k, v in wanted["config"].items()))
+
+    current = matching()
+    if len(current) > 1 or (current and not same(current[0])):
+        raise SystemExit("已有同名 mapper 与定义不一致或不唯一，拒绝覆盖；人工核对后处置")
+    created = not current
+    if created:
+        request(mappers_path, wanted)
+    confirmed = matching()
+    if len(confirmed) != 1 or not same(confirmed[0]):
+        raise SystemExit("网关 audience mapper 回读不一致，初始化未完成")
+    print("网关管理面 audience mapper 已创建并查证" if created else "网关管理面 audience mapper 已一致，无需更新")
+except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+    raise SystemExit("网关 audience mapper 同步未完成；修复 IdP 连接或配置后重跑查证，不重建 realm") from None
+PYAUD
+  exit 0
+fi
 [ "$#" -eq 0 ] || { echo 'bootstrap.sh 不接受该参数' >&2; exit 2; }
 OIDC_REDIRECT_URI="${PUBLIC_ORIGIN}/oauth/callback"
 RELAY_OPERATOR_API_ORIGIN="http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}"
@@ -266,6 +337,13 @@ printf 'DATABASE_URL=%s\n' "$core_database_dsn" > secrets/core-db-url.env
 chmod 600 secrets/core-db-url.env
 unset core_database_dsn
 printf '  已生成：secrets/core-db-url.env\n'
+# AgentGateway 的 request log / usage outbox 库（SS-AGW-USAGE）。连接串在网关配置里以
+# ${AGENTGATEWAY_LOG_DATABASE_URL} 展开；与 core-db-url.env 同理须在首次 compose 调用前存在。
+gen agentgateway_db_password
+{ printf 'AGENTGATEWAY_LOG_DATABASE_URL=postgres://%s:%s@agentgateway-db:5432/%s\n' \
+    "$AGENTGATEWAY_DB_USER" "$(cat secrets/agentgateway_db_password)" "$AGENTGATEWAY_DB_NAME"; } > secrets/agentgateway-db.env
+chmod 600 secrets/agentgateway-db.env
+printf '  已生成：secrets/agentgateway-db.env\n'
 gen buzz_db_password
 gen buzz_objects_root_password
 gen keycloak_admin_password
@@ -340,12 +418,14 @@ mkdir -p secrets/keycloak-import
 : "${OIDC_NATIVE_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_NATIVE_CLIENT_ID}"
 : "${OIDC_NATIVE_AUDIENCE:?bootstrap 需要 .env 中的 OIDC_NATIVE_AUDIENCE}"
 : "${OIDC_NATIVE_MOBILE_REDIRECT_URI:?bootstrap 需要 .env 中的 OIDC_NATIVE_MOBILE_REDIRECT_URI}"
+# Core 的 service client 令牌带此 audience 才被 AgentGateway 管理面接受（SS-AGW-ADMIN）。
+: "${AGENTGATEWAY_ADMIN_AUDIENCE:?bootstrap 需要 .env 中的 AGENTGATEWAY_ADMIN_AUDIENCE}"
 TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" VERIFY_USER="$VERIFY_USER" \
 BOOTSTRAP_USER="$BOOTSTRAP_USER" PLATFORM_ADMIN_USER="$PLATFORM_ADMIN_USER" \
 OIDC_REALM="$OIDC_REALM" OIDC_SERVICE_CLIENT_ID="$OIDC_SERVICE_CLIENT_ID" \
 OIDC_WORKER_CLIENT_ID="$OIDC_WORKER_CLIENT_ID" OIDC_BROWSER_CLIENT_ID="$OIDC_BROWSER_CLIENT_ID" \
 OIDC_REDIRECT_URI="$OIDC_REDIRECT_URI" OIDC_NATIVE_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
-OIDC_NATIVE_AUDIENCE="$OIDC_NATIVE_AUDIENCE" \
+OIDC_NATIVE_AUDIENCE="$OIDC_NATIVE_AUDIENCE" AGENTGATEWAY_ADMIN_AUDIENCE="$AGENTGATEWAY_ADMIN_AUDIENCE" \
 OIDC_NATIVE_MOBILE_REDIRECT_URI="$OIDC_NATIVE_MOBILE_REDIRECT_URI" python3 - <<'RENDER'
 import json
 import os
@@ -359,7 +439,8 @@ from_file = {
 }
 from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "PLATFORM_ADMIN_USER", "OIDC_REALM",
             "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_REDIRECT_URI",
-            "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI"]
+            "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI",
+            "AGENTGATEWAY_ADMIN_AUDIENCE"]
 with open("keycloak/kailo-realm.json", encoding="utf-8") as fh:
     document = json.load(fh)
 substitutions = {}

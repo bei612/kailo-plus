@@ -1,0 +1,133 @@
+part of '../channel_detail_page.dart';
+
+class _ReadOnlyNotice extends StatelessWidget {
+  final Channel channel;
+
+  const _ReadOnlyNotice({required this.channel});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.only(
+        left: Grid.gutter,
+        right: Grid.gutter,
+        top: Grid.xxs,
+        bottom: MediaQuery.viewPaddingOf(context).bottom + Grid.xxs,
+      ),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: context.colors.outlineVariant)),
+        color: context.colors.surface,
+      ),
+      child: Text(
+        channel.isArchived
+            ? 'This channel is archived and read-only.'
+            : 'You are not a member of this channel.',
+        style: context.textTheme.bodySmall?.copyWith(
+          color: context.colors.onSurfaceVariant,
+        ),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+}
+
+class _MessageTimelineSkeleton extends StatelessWidget {
+  final double appBarTitleContentHeight;
+  final SessionStatus status;
+
+  const _MessageTimelineSkeleton({
+    required this.appBarTitleContentHeight,
+    required this.status,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final semanticsLabel = switch (status) {
+      SessionStatus.connecting => 'Connecting',
+      SessionStatus.reconnecting => 'Reconnecting',
+      SessionStatus.connected || SessionStatus.disconnected => 'Loading',
+    };
+    return Semantics(
+      key: const Key('channel-detail-connection-skeleton'),
+      liveRegion: true,
+      label: semanticsLabel,
+      child: ExcludeSemantics(
+        child: ListView.separated(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            Grid.gutter,
+            frostedAppBarHeight(
+                  context,
+                  titleContentHeight: appBarTitleContentHeight,
+                ) +
+                Grid.xs,
+            Grid.gutter,
+            Grid.xs,
+          ),
+          itemCount: 4,
+          separatorBuilder: (_, _) => const SizedBox(height: Grid.xs),
+          itemBuilder: (_, index) => _MessageSkeletonRow(index: index),
+        ),
+      ),
+    );
+  }
+}
+
+class _MessageSkeletonRow extends StatelessWidget {
+  final int index;
+
+  const _MessageSkeletonRow({required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    const authorWidths = <double>[112, 96, 128, 80];
+    const lineWidths = <List<double>>[
+      [280, 224],
+      [272, 184],
+      [232],
+      [288, 216],
+    ];
+    final availableWidth = MediaQuery.sizeOf(context).width - 88;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SkeletonBar(
+          width: 36,
+          height: 36,
+          borderRadius: BorderRadius.circular(Radii.full),
+        ),
+        const SizedBox(width: Grid.xxs),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  SkeletonBar(width: authorWidths[index], height: 15),
+                  const SizedBox(width: Grid.xxs),
+                  const SkeletonBar(width: 40, height: 12),
+                ],
+              ),
+              const SizedBox(height: Grid.half),
+              for (final width in lineWidths[index]) ...[
+                SkeletonBar(width: min(width, availableWidth), height: 16),
+                const SizedBox(height: Grid.half),
+              ],
+              const Row(
+                children: [
+                  SkeletonBar(width: 32, height: 16),
+                  SizedBox(width: Grid.xs),
+                  SkeletonBar(width: 32, height: 16),
+                  SizedBox(width: Grid.xs),
+                  SkeletonBar(width: 32, height: 16),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}

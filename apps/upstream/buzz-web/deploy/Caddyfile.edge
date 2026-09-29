@@ -1,0 +1,29 @@
+{
+	# TLS terminates at the external ALB. Keep this proxy HTTP-only and avoid an
+	# administrative listener on the production host.
+	auto_https off
+	admin off
+}
+
+:3000 {
+	@app path /app /app/*
+	@pairing path /pair
+
+	handle @app {
+		reverse_proxy {$BUZZ_WEB_UPSTREAM:host.docker.internal:3001} {
+			header_up Host {http.request.host}
+		}
+	}
+
+	handle @pairing {
+		reverse_proxy pairing:5000 {
+			header_up Host {http.request.host}
+		}
+	}
+
+	handle {
+		reverse_proxy relay:3000 {
+			header_up Host {http.request.host}
+		}
+	}
+}

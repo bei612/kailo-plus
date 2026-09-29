@@ -22,7 +22,7 @@ validation:
     - dimension: 安全边界
       ref: docs/runbooks/RB-02-secret-rotation-and-revocation.md
     - dimension: 端到端场景
-      ref: upstream-patches/buzz-web/verify/web-surface.md
+      ref: upstream/buzz-web/kailo/verify/web-surface.md
     - dimension: Workflow 重放
       ref: worker/replay-tests/testdata/component_task_identity_register_history.json
 
@@ -30,7 +30,7 @@ implementation:
   owners: [team-platform]
   # server_keys 与 platform_bootstrap 是共享身份投影的内部调用方；本条 shipped
   # 只覆盖 runtime.routes 中的客户端公钥入口，不声明用户可达的托管身份轮换。
-  paths: [core/crates/kailo-core/src/client_keys.rs, core/crates/kailo-core/src/identity_projection.rs, core/crates/kailo-core/src/membership_projection.rs, core/crates/kailo-core/src/server_keys.rs, core/crates/kailo-core/src/platform_bootstrap.rs, core/crates/kailo-core/src/stream.rs, worker/workflows/component_task.go, deploy/local/agentgateway-config.yaml, web/packages/platform, upstream-patches/buzz-web]
+  paths: [core/crates/kailo-core/src/client_keys.rs, core/crates/kailo-core/src/identity_projection.rs, core/crates/kailo-core/src/membership_projection.rs, core/crates/kailo-core/src/server_keys.rs, core/crates/kailo-core/src/platform_bootstrap.rs, core/crates/kailo-core/src/stream.rs, worker/workflows/component_task.go, deploy/local/agentgateway-config.yaml, web/packages/platform, upstream/buzz-web]
   surfaces: [web]
   schemas: [contracts/enums/workflow_kind.schema.json, contracts/enums/reason_code.schema.json, contracts/api/client_key.schema.json, contracts/api/client_key_status.schema.json, contracts/api/native_community.schema.json]
   migrations: [core/migrations/20260923040000_buzz_identity_multi_binding.up.sql, core/migrations/20260923050000_workflow_kind_buzz_identity.up.sql, core/migrations/20260928100000_identity_rerun_catalog.up.sql]
@@ -46,7 +46,7 @@ release:
     - name: kailo-worker
       digest: sha256:a7d4677019ad31761630b563c98149b3bc234eb26fce25f36cf6a1c736be96f7
     - name: upstream-agentgateway
-      digest: sha256:e1ddf6cbf61ae4b85aaea5c1ec7755e48275918f0e9f31dc6433b72533687071
+      digest: sha256:f2d99d6829b2e5299cc636d505d66998478918a43b4e91eb4093f0b06ab3ae5c
     - name: upstream-buzz-web
       digest: sha256:272eda1135ca6b78d51da47c5e0074756bc50c776686756eace8a1141a3f0953
   gate: shipped

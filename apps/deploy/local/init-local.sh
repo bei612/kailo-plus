@@ -120,6 +120,7 @@ done
 compose up -d --wait keycloak temporal spicedb buzz-relay
 ./bootstrap.sh --sync-browser-client
 ./bootstrap.sh --ensure-platform-admin
+./bootstrap.sh --ensure-service-audience
 export VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE="$PWD/secrets/keycloak_admin_password"
 subject=$(../../core/verify/idp-subject.sh "$BOOTSTRAP_USER") || {
   echo '找不到首位管理员 IdP 用户；已有旧 realm 的本地环境须显式 --fresh 重建' >&2; exit 2;

@@ -1,0 +1,60 @@
+{
+	auto_https off
+	admin off
+}
+
+:8080 {
+	encode zstd gzip
+
+	# connect-src 只留 'self'：Browser 只与同源的网关入口通信（DD-39）。
+	# 移除浏览器直连 Relay 之后 https:/wss: 没有任何合法用途，留着等于给
+	# 「代码回归成直连」留一条没人发现的出口；现在 CSP 会当场挡住。
+	# img-src/media-src 同理不放 https:：媒体经 BFF 同源读取，任意外域图片
+	# 只剩一种用途——被当作追踪像素或外带通道。
+	header {
+		-Server
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; frame-src 'self' blob:; img-src 'self' blob: data:; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+		# 不能是 no-referrer：在该策略下浏览器把非 CORS POST 的 Origin 序列化为
+		# "null"，而网关 logout 要求 Origin 等于网关自身来源才放行（SF-AGW-21），
+		# 结果是「退出」永远被判 CSRF 失败。same-origin 对同源请求带上真实
+		# Origin，对跨域（包括 IdP）仍然什么都不发。
+		Referrer-Policy "same-origin"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+
+	@versionedAssets path /app/assets/*
+	header @versionedAssets Cache-Control "public, max-age=31536000, immutable"
+
+	# 其余一律不缓存，尤其是 index.html。它没有 Cache-Control 时浏览器按启发式
+	# 缓存它：注销后再打开 /app/ 直接从缓存拿到页面，请求根本到不了网关，
+	# 网关也就没有机会把人带去重新登录——页面随后对每个 API 调用都拿到
+	# 「会话已结束」，陷入反复重载。
+	@document not path /app/assets/*
+	header @document Cache-Control "no-store"
+
+	@manifest path /app/manifest.webmanifest
+	header @manifest Content-Type "application/manifest+json"
+
+	# Template only trusted static HTML and the manifest. JavaScript/media are never evaluated.
+	templates /app/* {
+		mime text/html application/manifest+json
+	}
+
+	handle /app {
+		redir * /app/ 308
+	}
+
+	handle /app/healthz {
+		respond "ok" 200
+	}
+
+	handle /app/* {
+		root * /srv
+		try_files {path} /app/index.html
+		file_server
+	}
+
+	respond 404
+}

@@ -1,0 +1,123 @@
+# 来源记录，格式见 apps/06-工程基线规范.md §2。字段含义冲突时以该节为准。
+# 本目录之外的整棵树是上游固定 commit 的完整源码，Kailo 的改动直接在树里；与上游原样的差异由
+# `tools/upstream_manifest.py diff <项目>` 给出（kailo/ 是 Kailo 自有目录，不在其中）。
+project: buzz-web
+upstream_url: https://github.com/hardy4yooz/buzz-web.git
+
+# .design/02 §1 固定基线。三端各有自己的上游主体（DD-74）：Web 是 buzz-web，Desktop 与
+# Mobile 分别是 block/buzz 的 desktop/（Tauri）与 mobile/（Dart），见 upstream/buzz。
+# 这个上游必须改：SS-WEB-RELAY 要求整体移除浏览器直连 Relay 与本地 signer，SS-WEB-01 要求在
+# 构建期静态 route/navigation 里加入平台页面，两者都不是配置能表达的。
+evidence_commit: a6766c482533d028582d0efcfd3740769f86217c
+implementation_base_commit: a6766c482533d028582d0efcfd3740769f86217c
+base_divergence: none
+
+# 整块删除的上游路径（浏览器直连 Relay、本地 signer 与一期不交付的页面，SS-WEB-RELAY）。
+# 与实际一致由 `upstream_manifest.py diff buzz-web --check` 核对。
+remove_paths:
+  - web/playwright.config.ts
+  - web/playwright.live.config.ts
+  - web/public/config.json
+  - web/src/app/routes/invite.$code.tsx
+  - web/src/app/routes/repos.$repoId.blob.$.tsx
+  - web/src/app/routes/repos.$repoId.tsx
+  - web/src/app/routes/repos.tsx
+  - web/src/features/agents
+  - web/src/features/chat/lib/channel-discovery.test.ts
+  - web/src/features/chat/lib/channel-discovery.ts
+  - web/src/features/chat/lib/chat-model.test.ts
+  - web/src/features/chat/lib/chat-model.ts
+  - web/src/features/chat/lib/chat-types.ts
+  - web/src/features/chat/lib/composer-mentions.test.ts
+  - web/src/features/chat/lib/composer-mentions.ts
+  - web/src/features/chat/lib/connection-state.ts
+  - web/src/features/chat/lib/conversation-drafts.test.ts
+  - web/src/features/chat/lib/conversation-drafts.ts
+  - web/src/features/chat/lib/session-events.ts
+  - web/src/features/chat/lib/use-buzz-session.ts
+  - web/src/features/chat/lib/use-relay-user-state.test.ts
+  - web/src/features/chat/lib/use-relay-user-state.ts
+  - web/src/features/chat/lib/use-session-mutations.ts
+  - web/src/features/chat/lib/workspace-shortcuts.test.ts
+  - web/src/features/chat/lib/workspace-shortcuts.ts
+  - web/src/features/chat/ui/AppDialogs.tsx
+  - web/src/features/chat/ui/AppNavigation.tsx
+  - web/src/features/chat/ui/AuthenticatedRoute.tsx
+  - web/src/features/chat/ui/Avatar.tsx
+  - web/src/features/chat/ui/BuzzWebApp.tsx
+  - web/src/features/chat/ui/ChannelBrowserDialog.tsx
+  - web/src/features/chat/ui/ChannelDetailsPanel.tsx
+  - web/src/features/chat/ui/ChannelHeaderActions.tsx
+  - web/src/features/chat/ui/IdentityGate.tsx
+  - web/src/features/chat/ui/LeftPanelSizing.tsx
+  - web/src/features/chat/ui/MemberPanel.tsx
+  - web/src/features/chat/ui/MentionAutocomplete.tsx
+  - web/src/features/chat/ui/MessageComposer.tsx
+  - web/src/features/chat/ui/MessageDialogs.tsx
+  - web/src/features/chat/ui/MessageList.test.ts
+  - web/src/features/chat/ui/MessageList.tsx
+  - web/src/features/chat/ui/NewDmView.tsx
+  - web/src/features/chat/ui/SettingsDialog.tsx
+  - web/src/features/chat/ui/SystemMessageRow.tsx
+  - web/src/features/chat/ui/ThreadPanel.tsx
+  - web/src/features/chat/ui/WorkspaceToolPanel.tsx
+  - web/src/features/community
+  - web/src/features/inbox
+  - web/src/features/invite
+  - web/src/features/repos
+  - web/src/shared/api
+  - web/src/shared/config
+  - web/src/shared/features
+  - web/src/shared/lib/buzz-download.ts
+  - web/src/shared/lib/identity-backup.ts
+  - web/src/shared/lib/identity-vault.ts
+  - web/src/shared/lib/nip98.ts
+  - web/src/shared/lib/nostr-client.ts
+  - web/src/shared/lib/nostr-signer.test.ts
+  - web/src/shared/lib/nostr-signer.ts
+  - web/src/shared/lib/pubkey.test.ts
+  - web/src/shared/lib/use-nip07-availability.ts
+  - web/src/shared/theme/ThemeToggle.tsx
+  - web/src/shared/ui/card.tsx
+  - web/src/shared/ui/resizable-panel.tsx
+  - web/src/shared/ui/right-panel-sizing.tsx
+  - web/tests
+
+# BFF 请求与回应的类型取自 contracts 的 TypeScript 生成物（ADR-02/03）；BFF 客户端、成员/邀请/
+# 审计/设备/任务/审批页、邀请兑换页与文案取自 Kailo 自有的共用包 web/packages/platform——Desktop
+# 用的是同一份（ADR-09）。构建时放进树；树里不带副本（web/.gitignore 忽略这些目标），这些源改了
+# 就必须重建。
+vendor_files:
+  - web/packages/contracts/src/generated/contracts.ts:web/src/platform/contracts.gen.ts
+  - web/packages/platform/src/transport.ts:web/src/kailo-platform/transport.ts
+  - web/packages/platform/src/client.ts:web/src/kailo-platform/client.ts
+  - web/packages/platform/src/web-fetch.ts:web/src/kailo-platform/web-fetch.ts
+  - web/packages/platform/src/i18n.ts:web/src/kailo-platform/i18n.ts
+  - web/packages/platform/src/format.ts:web/src/kailo-platform/format.ts
+  - web/packages/platform/src/governance.ts:web/src/kailo-platform/governance.ts
+  - web/packages/platform/src/react/context.tsx:web/src/kailo-platform/react/context.tsx
+  - web/packages/platform/src/react/use-load.ts:web/src/kailo-platform/react/use-load.ts
+  - web/packages/platform/src/react/ui.tsx:web/src/kailo-platform/react/ui.tsx
+  - web/packages/platform/src/react/pages.tsx:web/src/kailo-platform/react/pages.tsx
+  - web/packages/platform/src/react/governance.tsx:web/src/kailo-platform/react/governance.tsx
+  - web/packages/platform/src/react/invitations.tsx:web/src/kailo-platform/react/invitations.tsx
+  - web/packages/platform/src/react/roles.tsx:web/src/kailo-platform/react/roles.tsx
+  - web/packages/platform/src/react/tenants.tsx:web/src/kailo-platform/react/tenants.tsx
+
+artifacts:
+  # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
+  # 2026-09-29 迁入本树后以 build-upstream.sh 重建得 sha256:150fffd6…；与登记的 272eda11… 逐层
+  # 比对，全部层的文件内容相同，只有文件时间戳与镜像 created 时间不同（构建不是逐字节可复现的）。
+  # 登记值保持运行拓扑正在使用的 272eda11…，它由与本树等价的源码构建。
+  - name: upstream-buzz-web
+    kind: image
+    build_context: web
+    source_include: [web/]
+    source_digest: sha256:24a193ea3af3ab0eed77721abc1d085762c8bfb7e8eaf387852fe0ed25e20afc
+    artifact_digest: sha256:272eda1135ca6b78d51da47c5e0074756bc50c776686756eace8a1141a3f0953
+
+source_facts: [SF-WEB-01, SF-WEB-04, SF-WEB-05, SF-WEB-06, SF-WEB-07]
+source_seams: [SS-WEB-RELAY, SS-WEB-01, SS-WEB-PRESENTATION]
+compatibility_evidence: [upstream/buzz-web/kailo/verify/baseline-build.md, upstream/buzz-web/kailo/verify/web-surface.md]
+owner: team-platform
+last_reverified: 2026-09-29

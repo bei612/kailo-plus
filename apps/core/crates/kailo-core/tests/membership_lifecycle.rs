@@ -205,18 +205,10 @@ async fn membership_lifecycle_converges_both_directions() {
     )
     .await;
 
-    let outcome = std::panic::AssertUnwindSafe(run(
-        &http,
-        &e,
-        &pool,
-        &token,
-        &f,
-        &control,
-        &member_hex,
-        &host,
-    ))
-    .catch_unwind()
-    .await;
+    let outcome =
+        std::panic::AssertUnwindSafe(run(&http, &e, &pool, &token, &f, &control, &member, &host))
+            .catch_unwind()
+            .await;
     // 清理跨三个系统：Core 库、SpiceDB、Relay roster。断言中途失败时前两者
     // 都可能已经写入，只清 Core 会把授权面的残留留给下一次运行。
     let ws_object = workspace_object(&pool, &f).await;
@@ -283,9 +275,11 @@ async fn run(
     token: &str,
     f: &Fixture,
     control: &Keys,
-    member_hex: &str,
+    member: &Keys,
     host: &str,
 ) {
+    let member_hex = member.public_key().to_hex();
+    let member_hex = member_hex.as_str();
     let reader = IdentityClient::new(
         Custody::Server,
         &control.secret_key().to_secret_hex(),
@@ -382,6 +376,21 @@ async fn run(
         ch_roster.iter().any(|r| r.pubkey == member_hex),
         "ACTIVE 后 Channel roster 必须有该 pubkey，实际 {ch_roster:?}"
     );
+    // 成员已登记的设备（CLIENT 托管，私钥只在这台设备上）直连 Relay 发布：
+    // 撤权前放行，下面撤权后的拒绝才能归因于撤权本身。这里用 Server 托管标记
+    // 构造客户端，是因为测试进程在扮演原生端自己签名（同 native_client）。
+    let device = IdentityClient::new(
+        Custody::Server,
+        &member.secret_key().to_secret_hex(),
+        &e.relay_origin,
+        host,
+    )
+    .expect("成员设备客户端");
+    let channel = channel_uuid.to_string();
+    device
+        .publish_channel_message(http, &channel, "before workspace revocation", &[])
+        .await
+        .expect("撤权前成员设备应能直连 Relay 发布");
 
     // ---- Workspace 撤权的准入面（V-SCN-35）----
     //
@@ -447,6 +456,24 @@ async fn run(
     assert!(
         !ch_roster.iter().any(|r| r.pubkey == member_hex),
         "REVOKED 后 Channel roster 不应再有该 pubkey，实际 {ch_roster:?}"
+    );
+    // 准入的执行点是 Relay 的 roster（DD-75）：撤权后同一台设备直连发布必须被拒
+    let published = device
+        .publish(
+            http,
+            9,
+            "after workspace revocation",
+            &[vec!["h".to_owned(), channel.clone()]],
+        )
+        .await;
+    let refused = match &published {
+        Ok(v) => v["accepted"] == false,
+        Err(kailo_buzz::operator::OperatorError::Rejected { .. }) => true,
+        Err(_) => false,
+    };
+    assert!(
+        refused,
+        "Workspace 撤权后成员设备直连发布必须被 Relay 拒绝：{published:?}"
     );
     // Workspace 撤权撤掉此人在该 Workspace 上的全部关系，含角色（DD-82）；撤权
     // 之后，他原有的 workspace admin 也不能再放行。

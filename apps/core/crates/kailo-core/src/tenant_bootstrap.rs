@@ -34,6 +34,7 @@ use sqlx::{postgres::PgPoolOptions, PgConnection, PgPool, Postgres, Transaction}
 use uuid::Uuid;
 
 use crate::audit::{append, AuditEntry};
+use crate::governance::{record_dispatch, AuditClass, Dispatch};
 use crate::membership_lifecycle::{
     launch_membership, launch_scope, LifecycleRequest, ScopeLifecycleRequest, ScopeOperation,
 };
@@ -738,7 +739,7 @@ impl Ctx {
                     },
                 )
                 .await;
-                self.dispatched(ae, started.map(|_| ()).map_err(|r| r.status()))
+                self.dispatched(ae, "TENANT", started.map(|_| ()).map_err(|r| r.status()))
                     .await?;
                 Ok(tenant)
             }
@@ -762,67 +763,34 @@ impl Ctx {
         .ok_or_else(|| format!("{target} 缺引导的 ActionExecution：它不是由引导建立的，引导不接管"))
     }
 
-    /// 启动结论写回 ActionExecution。Start 结果不明时保持 NOT_DISPATCHED，重跑
-    /// 以同一 workflow ID 收敛（DD-48）。
+    /// 启动结论经统一的派发记录写回 ActionExecution。结果不明记 UNKNOWN、确定的
+    /// 拒绝记 ABORTED，二者都让引导停下：重跑以同一 workflow ID 收敛（DD-48）。
     async fn dispatched(
         &self,
         ae: Uuid,
+        target_type: &str,
         started: Result<(), axum::http::StatusCode>,
     ) -> Result<(), String> {
-        match started {
-            Ok(()) | Err(axum::http::StatusCode::CONFLICT) => {}
-            Err(s) => {
-                return Err(format!(
-                    "生命周期 Workflow 启动未确认（HTTP {s}），重跑以继续"
-                ))
-            }
-        }
         let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
-        let row: Option<(Uuid, Uuid, Uuid, Uuid, String)> = sqlx::query_as(
-            "update admission.action_execution set dispatch_state = 'DISPATCHED', updated_at = now()
-             where id = $1 and dispatch_state <> 'DISPATCHED'
-             returning operation_id, tenant_id, initiator_principal_id, target_id, parameter_hash",
+        let recorded = record_dispatch(
+            &mut tx,
+            ae,
+            AuditClass::core(target_type),
+            started,
+            vec![Evidence::new(EvidenceKind::DeploymentBootstrap, AUDIENCE)],
         )
-        .bind(ae)
-        .fetch_optional(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-        if let Some((operation, tenant, initiator, target, params)) = row {
-            let workflow: Option<String> = sqlx::query_scalar(
-                "select workflow_id from projection.workflow_ref where action_execution_id = $1",
-            )
-            .bind(ae)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-            let target_type = if target == tenant {
-                "TENANT"
-            } else {
-                "TENANT_MEMBERSHIP"
-            };
-            let mut e = entry(
-                operation,
-                "dispatch",
-                "DISPATCH",
-                tenant,
-                initiator,
-                target_type,
-                target,
-                &params,
-                "ALLOW",
-                "DISPATCHED",
-            );
-            e.evidence_refs =
-                std::iter::once(Evidence::new(EvidenceKind::DeploymentBootstrap, AUDIENCE))
-                    .chain(
-                        workflow
-                            .iter()
-                            .map(|w| Evidence::new(EvidenceKind::TemporalWorkflowId, w)),
-                    )
-                    .collect();
-            append(&mut tx, e).await.map_err(|e| e.to_string())?;
+        tx.commit().await.map_err(|e| e.to_string())?;
+        match recorded.outcome {
+            Dispatch::Dispatched => Ok(()),
+            Dispatch::Unknown => {
+                Err("生命周期 Workflow 启动结果不明，重跑以同一 workflow ID 收敛".into())
+            }
+            Dispatch::Aborted => Err(format!(
+                "生命周期 Workflow 启动被确定拒绝（{started:?}），派发已中止"
+            )),
         }
-        tx.commit().await.map_err(|e| e.to_string())
     }
 
     async fn wait_state(&self, table: &str, id: Uuid, deadline: Instant) -> Result<bool, String> {
@@ -893,8 +861,12 @@ impl Ctx {
                     },
                 )
                 .await;
-                self.dispatched(ae, started.map(|_| ()).map_err(|r| r.status()))
-                    .await?;
+                self.dispatched(
+                    ae,
+                    "TENANT_MEMBERSHIP",
+                    started.map(|_| ()).map_err(|r| r.status()),
+                )
+                .await?;
                 Ok((principal, membership))
             }
             // 已撤权的人不由引导恢复：成员的恢复只经邀请兑换与 admin 确认（DD-83）
@@ -966,11 +938,25 @@ impl Ctx {
             )
             .await
             .map_err(|e| format!("写 admin 关系结果不明，重跑以收敛: {e}"))?;
-        sqlx::query(
-            "update admission.action_execution set dispatch_state = 'DISPATCHED' where id = $1",
+        let evidence = vec![
+            Evidence::new(EvidenceKind::DeploymentBootstrap, AUDIENCE),
+            Evidence::new(EvidenceKind::SpicedbZedtoken, &token),
+            Evidence::new(
+                EvidenceKind::SpicedbRelationship,
+                format!(
+                    "tenant:{tenant}#{}@principal:{principal}",
+                    crate::roles::TENANT_MANAGE_RELATION
+                ),
+            ),
+        ];
+        // 同步写入：「派发」就是这次已确认的 SpiceDB 写，与 OUTCOME 同事务成立
+        record_dispatch(
+            &mut tx,
+            ae,
+            AuditClass::core("TENANT_ROLE"),
+            Ok(()),
+            evidence.clone(),
         )
-        .bind(ae)
-        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
         let operation: Uuid =
@@ -979,35 +965,20 @@ impl Ctx {
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
-        for (stage, event_type, result) in [
-            ("dispatch", "DISPATCH", "DISPATCHED"),
-            ("outcome", "OUTCOME", "ROLE_GRANTED"),
-        ] {
-            let mut e = entry(
-                operation,
-                stage,
-                event_type,
-                tenant,
-                initiator,
-                "TENANT_ROLE",
-                target,
-                params,
-                "ALLOW",
-                result,
-            );
-            e.evidence_refs = vec![
-                Evidence::new(EvidenceKind::DeploymentBootstrap, AUDIENCE),
-                Evidence::new(EvidenceKind::SpicedbZedtoken, &token),
-                Evidence::new(
-                    EvidenceKind::SpicedbRelationship,
-                    format!(
-                        "tenant:{tenant}#{}@principal:{principal}",
-                        crate::roles::TENANT_MANAGE_RELATION
-                    ),
-                ),
-            ];
-            append(&mut tx, e).await.map_err(|e| e.to_string())?;
-        }
+        let mut e = entry(
+            operation,
+            "outcome",
+            "OUTCOME",
+            tenant,
+            initiator,
+            "TENANT_ROLE",
+            target,
+            params,
+            "ALLOW",
+            "ROLE_GRANTED",
+        );
+        e.evidence_refs = evidence;
+        append(&mut tx, e).await.map_err(|e| e.to_string())?;
         tx.commit().await.map_err(|e| e.to_string())?;
         Ok(Outcome {
             tenant_id: tenant,
@@ -1030,6 +1001,7 @@ fn entry<'a>(
     decision: &'a str,
     result: &'a str,
 ) -> AuditEntry<'a> {
+    let class = AuditClass::core(target_type);
     AuditEntry {
         event_key: format!("{operation}:{stage}"),
         tenant_id: Some(tenant),
@@ -1041,13 +1013,13 @@ fn entry<'a>(
         actor_principal_id: Some(initiator),
         action_key: ACTION_KEY,
         action_version: 1,
-        component_type_key: "core",
-        target_type: Some(target_type),
+        component_type_key: class.component_type_key,
+        target_type: Some(class.target_type),
         target_id: Some(target),
         parameter_hash: params,
         decision,
         result_code: result,
-        result_exposure: "NONE",
+        result_exposure: class.result_exposure,
         evidence_refs: vec![Evidence::new(EvidenceKind::DeploymentBootstrap, AUDIENCE)],
         correlation_id: tenant,
     }

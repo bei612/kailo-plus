@@ -243,6 +243,37 @@ pub struct Definition {
     pub role_template_version: Option<i32>,
 }
 
+impl Definition {
+    pub(crate) fn audit_class(&self) -> AuditClass<'_> {
+        AuditClass {
+            component_type_key: &self.component_type_key,
+            target_type: &self.target_type,
+            result_exposure: &self.result_exposure,
+        }
+    }
+}
+
+/// 一条 ActionExecution 的审计在 ActionExecution 行之外还需要的三项分类：组件、
+/// 目标类型与结果暴露面。有 ActionDefinition 的动作取自定义；没有定义的入口
+/// （部署引导、托管身份、重跑的 service 入口）由入口按它所驱动的目标声明。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AuditClass<'a> {
+    pub component_type_key: &'a str,
+    pub target_type: &'a str,
+    pub result_exposure: &'a str,
+}
+
+impl<'a> AuditClass<'a> {
+    /// Core 自身目标（scope、成员、ActionExecution）的动作：结果不外露。
+    pub(crate) const fn core(target_type: &'a str) -> Self {
+        Self {
+            component_type_key: "core",
+            target_type,
+            result_exposure: "NONE",
+        }
+    }
+}
+
 const DEFINITION_COLUMNS: &str =
     "action_key, version, component_type_key, target_type, tenant_rule, workspace_rule,
      permission, permission_object_type, confirmation_mode, approval_policy_id,
@@ -1842,6 +1873,32 @@ async fn audit(
     human: Option<Uuid>,
     evidence: Vec<Evidence>,
 ) -> Result<(), sqlx::Error> {
+    audit_as(
+        tx,
+        ae,
+        def.audit_class(),
+        stage,
+        event_type,
+        decision,
+        result_code,
+        human,
+        evidence,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn audit_as(
+    tx: &mut Transaction<'_, Postgres>,
+    ae: &Execution,
+    class: AuditClass<'_>,
+    stage: &str,
+    event_type: &str,
+    decision: &str,
+    result_code: &str,
+    human: Option<Uuid>,
+    evidence: Vec<Evidence>,
+) -> Result<(), sqlx::Error> {
     append(
         tx,
         AuditEntry {
@@ -1856,18 +1913,178 @@ async fn audit(
             actor_principal_id: Some(ae.actor_principal_id),
             action_key: &ae.action_key,
             action_version: ae.action_version,
-            component_type_key: &def.component_type_key,
-            target_type: Some(&def.target_type),
+            component_type_key: class.component_type_key,
+            target_type: Some(class.target_type),
             target_id: Some(ae.target_id),
             parameter_hash: &ae.parameter_hash,
             decision,
             result_code,
-            result_exposure: &def.result_exposure,
+            result_exposure: class.result_exposure,
             evidence_refs: evidence,
             correlation_id: ae.correlation_id,
         },
     )
     .await
+}
+
+/// 一次启动（或同步写入）之后 ActionExecution 的派发结论（`.design/06` §3.1、
+/// `apps/06` §4）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Dispatch {
+    /// 已派发：本次启动被确认，或 WorkflowRef 已有执行证据
+    Dispatched,
+    /// 结果不明（启动回 503）：只能以同一 workflow ID 收敛，不得渲染为成功或失败
+    Unknown,
+    /// 确定的拒绝：本次派发中止
+    Aborted,
+}
+
+impl Dispatch {
+    /// `executed` 是持久证据：业务 WorkflowRef 已有 run ID 或已 RUNNING/TERMINAL。
+    /// 它优先于本次回应——同 ID 的执行已经发生过，重试撞上的 409/503 不改变这一点。
+    fn of(started: Result<(), StatusCode>, executed: bool) -> Self {
+        match started {
+            _ if executed => Self::Dispatched,
+            Ok(()) => Self::Dispatched,
+            Err(StatusCode::SERVICE_UNAVAILABLE) => Self::Unknown,
+            Err(_) => Self::Aborted,
+        }
+    }
+
+    /// (dispatch_state, 审计阶段, 审计 result_code, reason_code)
+    fn facts(self) -> (&'static str, &'static str, &'static str, Option<ReasonCode>) {
+        match self {
+            Self::Dispatched => ("DISPATCHED", "dispatch", "DISPATCHED", None),
+            Self::Unknown => (
+                "UNKNOWN",
+                "dispatch-unknown",
+                "DISPATCH_RESULT_UNKNOWN",
+                Some(ReasonCode::ExternalResultUnknown),
+            ),
+            Self::Aborted => (
+                "ABORTED",
+                "dispatch-aborted",
+                "DISPATCH_ABORTED",
+                Some(ReasonCode::TargetStateConflict),
+            ),
+        }
+    }
+}
+
+/// [`record_dispatch`] 的结论。`settled` 为真表示本次调用推进了 dispatch_state
+/// 并追加了 DISPATCH 审计；为假表示该行已不在 NOT_DISPATCHED/UNKNOWN（或不是
+/// ALLOWED），什么都没写。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Recorded {
+    pub outcome: Dispatch,
+    pub settled: bool,
+}
+
+/// 按启动结果记录派发结果：写 `dispatch_state` 并追加 DISPATCH 审计。生命周期
+/// Workflow 的治理派发、部署引导、托管身份与各直接启动入口都经这里，「结果不明
+/// 映射 UNKNOWN、确定冲突映射 ABORTED」只有一份实现。控制动作（取消、重跑）与
+/// 同步角色动作的派发有各自的收敛规则（冻结意图、原任务的 history），不经这里。
+///
+/// 只推进 ALLOWED 且仍为 NOT_DISPATCHED/UNKNOWN 的行；与审计同在调用方事务里，
+/// 更新与审计要么都成立要么都不成立。审计 event_key 按 operation 与阶段稳定，
+/// UNKNOWN 的重试不写第二条。evidence 以该动作的 workflow ID 打头，其后是调用方的
+/// 附加证据。
+pub(crate) async fn record_dispatch(
+    tx: &mut Transaction<'_, Postgres>,
+    action_execution_id: Uuid,
+    class: AuditClass<'_>,
+    started: Result<(), StatusCode>,
+    extra_evidence: Vec<Evidence>,
+) -> Result<Recorded, sqlx::Error> {
+    let row: Option<(Option<String>, bool)> = sqlx::query_as(
+        "select coalesce(ae.temporal_workflow_id,
+                         (select w.workflow_id from projection.workflow_ref w
+                          where w.action_execution_id = ae.id and w.workflow_type = $2)),
+                exists (select 1 from projection.workflow_ref w
+                        where w.workflow_type = $2
+                          and (w.action_execution_id = ae.id
+                               or w.workflow_id = ae.temporal_workflow_id)
+                          and (w.run_id is not null
+                               or w.projection_state in ('RUNNING', 'TERMINAL')))
+         from admission.action_execution ae where ae.id = $1 for update",
+    )
+    .bind(action_execution_id)
+    .bind(component_task::WORKFLOW_TYPE)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let (workflow_id, executed) = row.unwrap_or((None, false));
+    let outcome = Dispatch::of(started, executed);
+    let (state, stage, result, reason) = outcome.facts();
+    let updated: Option<Execution> = sqlx::query_as(&format!(
+        "update admission.action_execution
+         set dispatch_state = $2, reason_code = $3, updated_at = now()
+         where id = $1 and gate_state = 'ALLOWED'
+           and dispatch_state in ('NOT_DISPATCHED', 'UNKNOWN')
+         returning {EXECUTION_COLUMNS}"
+    ))
+    .bind(action_execution_id)
+    .bind(state)
+    .bind(reason.as_ref().map(wire))
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(ae) = updated else {
+        return Ok(Recorded {
+            outcome,
+            settled: false,
+        });
+    };
+    let evidence = workflow_id
+        .into_iter()
+        .map(|w| Evidence::new(EvidenceKind::TemporalWorkflowId, w))
+        .chain(extra_evidence)
+        .collect();
+    audit_as(
+        tx, &ae, class, stage, "DISPATCH", "ALLOW", result, None, evidence,
+    )
+    .await?;
+    Ok(Recorded {
+        outcome,
+        settled: true,
+    })
+}
+
+/// 不经治理派发的直接启动入口（设备公钥、托管身份撤销、service API 的生命周期
+/// 与重跑入口）的外壳：把本次启动的回应记为派发结果，然后原样交回回应。
+///
+/// 只记已进入启动的 ActionExecution——它已有归属自己的业务 WorkflowRef。没有时，
+/// 回应是入口在启动之前的拒绝（未准入、目标不符、实体不在可启动状态），不是
+/// 派发结果；拿一张不属于这次请求的准入来的错配请求，也就不能把它中止。
+/// 记录本身失败回 503：客户端以同一 ID 重试收敛，重试会再记一次。
+pub(crate) async fn record_direct_launch(
+    pool: &PgPool,
+    action_execution_id: Uuid,
+    class: AuditClass<'_>,
+    response: Response,
+) -> Response {
+    let status = response.status();
+    let started = if status.is_success() {
+        Ok(())
+    } else {
+        Err(status)
+    };
+    let recorded = async {
+        if component_task::workflow_of_action(pool, action_execution_id)
+            .await?
+            .is_none()
+        {
+            return Ok(());
+        }
+        let mut tx = pool.begin().await?;
+        record_dispatch(&mut tx, action_execution_id, class, started, Vec::new()).await?;
+        tx.commit().await
+    };
+    match recorded.await {
+        Ok(()) => response,
+        Err(e) => {
+            tracing::warn!(action = %action_execution_id, error = %e, "记录派发结果失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2904,50 +3121,25 @@ impl Governance {
                 Err(resp) => Err(resp.status()),
             }
         };
-        let (state, stage, result) = match outcome {
-            Ok(()) => ("DISPATCHED", "dispatch", "DISPATCHED"),
-            Err(StatusCode::SERVICE_UNAVAILABLE) => {
-                ("UNKNOWN", "dispatch-unknown", "DISPATCH_RESULT_UNKNOWN")
-            }
-            Err(_) => ("ABORTED", "dispatch-aborted", "DISPATCH_ABORTED"),
-        };
         let mut tx = self.pool.begin().await?;
-        let mut settled = false;
+        let mut aborted = false;
         for e in &pair {
-            let updated = sqlx::query(
-                "update admission.action_execution set dispatch_state = $2, updated_at = now()
-                 where id = $1 and gate_state = 'ALLOWED' and dispatch_state in ('NOT_DISPATCHED', 'UNKNOWN')",
-            )
-            .bind(e.id)
-            .bind(state)
-            .execute(&mut *tx)
-            .await?;
-            if updated.rows_affected() == 0 {
-                continue;
-            }
-            settled = true;
             let other = if e.id == lifecycle_id {
                 catalog_id
             } else {
                 lifecycle_id
             };
-            audit(
+            let recorded = record_dispatch(
                 &mut tx,
-                e,
-                def,
-                stage,
-                "DISPATCH",
-                "ALLOW",
-                result,
-                None,
-                vec![
-                    Evidence::new(EvidenceKind::TemporalWorkflowId, &workflow_id),
-                    Evidence::new(EvidenceKind::ActionExecutionId, other),
-                ],
+                e.id,
+                def.audit_class(),
+                outcome,
+                vec![Evidence::new(EvidenceKind::ActionExecutionId, other)],
             )
             .await?;
+            aborted |= recorded.settled && recorded.outcome == Dispatch::Aborted;
         }
-        if settled && state == "ABORTED" {
+        if aborted {
             sqlx::query(
                 "update identity.tenant set state = 'ERROR', version = version + 1
                  where id = $1 and state = $2",
@@ -4156,55 +4348,28 @@ impl Governance {
                 Err(resp) => Err(resp.status()),
             }
         };
-        let (state, stage, result) = match outcome {
-            Ok(()) => ("DISPATCHED", "dispatch", "DISPATCHED"),
-            // 结果不明：只可能用同一 ID 收敛
-            Err(StatusCode::SERVICE_UNAVAILABLE) => {
-                ("UNKNOWN", "dispatch-unknown", "DISPATCH_RESULT_UNKNOWN")
-            }
-            // 确定的拒绝（被 Temporal 拒绝、实体已不在可启动状态）：本次派发中止
-            Err(_) => ("ABORTED", "dispatch-aborted", "DISPATCH_ABORTED"),
-        };
+        // 结果不明只可能用同一 ID 收敛；确定的拒绝（被 Temporal 拒绝、实体已不在
+        // 可启动状态）中止本次派发
         let mut tx = self.pool.begin().await?;
-        let updated = sqlx::query(
-            "update admission.action_execution set dispatch_state = $2, updated_at = now()
-             where id = $1 and gate_state = 'ALLOWED' and dispatch_state in ('NOT_DISPATCHED', 'UNKNOWN')",
-        )
-        .bind(ae.id)
-        .bind(state)
-        .execute(&mut *tx)
-        .await?;
-        if updated.rows_affected() > 0 {
-            // Workspace 生命周期段不会再有 Workflow 把它带出 SUSPENDING/RESTORING：与
-            // 中止同事务置 ERROR（version+1），留下确定状态，管理员可从 ERROR 重新暂停
-            if state == "ABORTED" {
-                if let Some((_, converging, _)) = sem.workspace_segment() {
-                    sqlx::query(
-                        "update identity.workspace set state = 'ERROR', version = version + 1
-                         where id = $1 and tenant_id = $2 and state = $3",
-                    )
-                    .bind(ae.target_id)
-                    .bind(ae.tenant_id)
-                    .bind(converging)
-                    .execute(&mut *tx)
-                    .await?;
-                }
+        let recorded =
+            record_dispatch(&mut tx, ae.id, def.audit_class(), outcome, Vec::new()).await?;
+        // Workspace 生命周期段不会再有 Workflow 把它带出 SUSPENDING/RESTORING：与
+        // 中止同事务置 ERROR（version+1），留下确定状态，管理员可从 ERROR 重新暂停
+        if recorded.settled && recorded.outcome == Dispatch::Aborted {
+            if let Some((_, converging, _)) = sem.workspace_segment() {
+                sqlx::query(
+                    "update identity.workspace set state = 'ERROR', version = version + 1
+                     where id = $1 and tenant_id = $2 and state = $3",
+                )
+                .bind(ae.target_id)
+                .bind(ae.tenant_id)
+                .bind(converging)
+                .execute(&mut *tx)
+                .await?;
             }
-            audit(
-                &mut tx,
-                &ae,
-                &def,
-                stage,
-                "DISPATCH",
-                "ALLOW",
-                result,
-                None,
-                vec![Evidence::new(EvidenceKind::TemporalWorkflowId, workflow_id)],
-            )
-            .await?;
         }
         tx.commit().await?;
-        if state == "DISPATCHED" && ae.approval_workflow_id.is_some() {
+        if recorded.outcome == Dispatch::Dispatched && ae.approval_workflow_id.is_some() {
             self.consume(ae.id).await;
         }
         Ok(())
@@ -5187,4 +5352,27 @@ pub async fn record_owned_decision(
         None,
     )
     .await
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::{Dispatch, StatusCode};
+
+    #[test]
+    fn launch_result_maps_to_dispatch_outcome() {
+        assert_eq!(Dispatch::of(Ok(()), false), Dispatch::Dispatched);
+        assert_eq!(
+            Dispatch::of(Err(StatusCode::SERVICE_UNAVAILABLE), false),
+            Dispatch::Unknown,
+            "结果不明不得记成成功或失败"
+        );
+        assert_eq!(
+            Dispatch::of(Err(StatusCode::CONFLICT), false),
+            Dispatch::Aborted
+        );
+        // 执行证据优先：同 ID 的执行已经发生过，重试撞上的 409/503 不改变它
+        for status in [StatusCode::CONFLICT, StatusCode::SERVICE_UNAVAILABLE] {
+            assert_eq!(Dispatch::of(Err(status), true), Dispatch::Dispatched);
+        }
+    }
 }
