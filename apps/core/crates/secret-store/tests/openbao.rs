@@ -22,7 +22,7 @@ use secret_store::{SecretError, SecretRef, SecretStore};
 /// `http://openbao:8200` 去连，然后以一堆看不懂的失败收场。显式开关让
 /// 「跳过」有确定含义：没开，而不是某个变量恰好没设。
 fn enabled() -> bool {
-    std::env::var("KAILO_INTEGRATION").as_deref() == Ok("1")
+    std::env::var("PLATFORM_INTEGRATION").as_deref() == Ok("1")
 }
 
 fn identity() -> String {

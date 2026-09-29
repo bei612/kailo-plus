@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('round-trips the connection facts and the device secret', () {
     final community = Community.create(
-      name: 't1.kailo.test:8443',
-      relayUrl: 'wss://t1.kailo.test:8443',
+      name: 't1.platform.test:8443',
+      relayUrl: 'wss://t1.platform.test:8443',
       pubkey: 'ab' * 32,
       nsec: 'nsec1test',
     );

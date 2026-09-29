@@ -41,7 +41,7 @@ func TestStartOnceConvergesToSameRun(t *testing.T) {
 	}
 	defer c.Close()
 
-	const queue = "kailo-start-once"
+	const queue = "platform-start-once"
 	w := worker.New(c, queue, worker.Options{})
 	w.RegisterWorkflowWithOptions(workflows.Baseline,
 		workflow.RegisterOptions{Name: workflows.BaselineKind})
@@ -56,7 +56,7 @@ func TestStartOnceConvergesToSameRun(t *testing.T) {
 	start := workflows.StartOptions(generated.WorkflowKind(generated.MembershipProjection),
 		queue, tenant, entity, 1)
 
-	want := "kailo:MEMBERSHIP_PROJECTION:" + tenant + ":" + entity + ":1"
+	want := "platform:MEMBERSHIP_PROJECTION:" + tenant + ":" + entity + ":1"
 	if start.ID != want {
 		t.Fatalf("workflow ID 为 %q，期望 %q", start.ID, want)
 	}

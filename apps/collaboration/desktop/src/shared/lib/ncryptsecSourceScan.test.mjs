@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-// Structural tripwire: the device key never leaves this machine (Kailo DD-79),
+// Structural tripwire: the device key never leaves this machine (DD-79),
 // so the frontend has no NIP-49 backup, export or import path at all. Any file
 // in `desktop/src` touching `ncryptsec` is a regression toward an egress path
 // for the device key and must be reviewed.

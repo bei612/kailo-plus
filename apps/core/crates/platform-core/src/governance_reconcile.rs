@@ -73,54 +73,54 @@ const OPEN_STATES: &[(&str, &str)] = &[
 pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
     let metrics = Metrics {
         open: meter
-            .u64_gauge("kailo.action_execution.open")
+            .u64_gauge("platform.action_execution.open")
             .with_description("门禁未决或已允许未派发的 ActionExecution 数")
             .build(),
         oldest_age: meter
-            .u64_gauge("kailo.action_execution.oldest_open_age")
+            .u64_gauge("platform.action_execution.oldest_open_age")
             .with_unit("s")
             .with_description("最久一条未决 ActionExecution 的未收敛时间；UNKNOWN 从创建时计")
             .build(),
         driven: meter
-            .u64_counter("kailo.governance_reconcile.driven")
+            .u64_counter("platform.governance_reconcile.driven")
             .with_description("对账作业对单条 ActionExecution 执行的步骤")
             .build(),
         passes: meter
-            .u64_counter("kailo.governance_reconcile.passes")
+            .u64_counter("platform.governance_reconcile.passes")
             .with_description("对账轮次，按是否完成区分")
             .build(),
         rehome_open: meter
-            .u64_gauge("kailo.secret_ref_rehome.open")
+            .u64_gauge("platform.secret_ref_rehome.open")
             .with_description("按状态统计未终态 SecretRef 归位数量")
             .build(),
         rehome_oldest_age: meter
-            .u64_gauge("kailo.secret_ref_rehome.oldest_open_age")
+            .u64_gauge("platform.secret_ref_rehome.oldest_open_age")
             .with_unit("s")
             .with_description("按状态统计最老一条未终态归位的持续秒数")
             .build(),
         rehome_overdue: meter
-            .u64_gauge("kailo.secret_ref_rehome.overdue")
+            .u64_gauge("platform.secret_ref_rehome.overdue")
             .with_description("超过部署登记对账期限的 SecretRef 归位数量")
             .build(),
         provision_open: meter
-            .u64_gauge("kailo.server_key_provision.open")
+            .u64_gauge("platform.server_key_provision.open")
             .with_description("未收敛的 SERVER HUMAN OpenBao 写入意图")
             .build(),
         provision_oldest_age: meter
-            .u64_gauge("kailo.server_key_provision.oldest_open_age")
+            .u64_gauge("platform.server_key_provision.oldest_open_age")
             .with_unit("s")
             .with_description("最老未收敛 SERVER HUMAN 写入意图年龄")
             .build(),
         provision_overdue: meter
-            .u64_gauge("kailo.server_key_provision.overdue")
+            .u64_gauge("platform.server_key_provision.overdue")
             .with_description("超出准入对账上界的 SERVER HUMAN 写入意图")
             .build(),
         provision_orphan_unknown: meter
-            .u64_gauge("kailo.server_key_provision.orphan_unknown")
+            .u64_gauge("platform.server_key_provision.orphan_unknown")
             .with_description("旧版结果不明、无写入意图且无身份投影固定 WorkflowRef 的动作")
             .build(),
         bootstrap_overdue: meter
-            .u64_gauge("kailo.tenant_bootstrap.overdue")
+            .u64_gauge("platform.tenant_bootstrap.overdue")
             .with_description("超过准入对账上界仍未由部署引导命令确认派发的动作")
             .build(),
     };

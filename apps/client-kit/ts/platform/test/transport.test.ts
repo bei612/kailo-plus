@@ -1,4 +1,4 @@
-// 两个传输实现：Web 同源 fetch、Desktop 经 kailo_api。两者对同一次调用必须给出同一
+// 两个传输实现：Web 同源 fetch、Desktop 经 platform_api。两者对同一次调用必须给出同一
 // 解读（错误体、会话结束、没有回应），差别只在请求怎么送出去。
 
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
@@ -89,19 +89,19 @@ describe("web-fetch", () => {
 });
 
 describe("desktop-invoke", () => {
-  it("每个请求都经 kailo_api 交给 Rust 侧，前端不直连 BFF", async () => {
+  it("每个请求都经 platform_api 交给 Rust 侧，前端不直连 BFF", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
     const invoke = vi.fn(async () => ({ status: 202, body: { pubkey: "ab", state: "REVOKING" } }));
     const client = createBffClient(createInvokeTransport(invoke, { onSessionEnded: () => {} }));
     await expect(client.revokeClientKey("ab")).resolves.toEqual({ pubkey: "ab", state: "REVOKING" });
     await client.nativeCommunity();
-    expect(invoke).toHaveBeenNthCalledWith(1, "kailo_api", {
+    expect(invoke).toHaveBeenNthCalledWith(1, "platform_api", {
       method: "DELETE",
       path: "/api/v1/identity/client-keys/ab",
       body: null,
     });
-    expect(invoke).toHaveBeenNthCalledWith(2, "kailo_api", {
+    expect(invoke).toHaveBeenNthCalledWith(2, "platform_api", {
       method: "GET",
       path: "/api/v1/native/community",
       body: null,
@@ -120,12 +120,12 @@ describe("desktop-invoke", () => {
     expect(isOutcomeUnknown(e)).toBe(false);
   });
 
-  it("KAILO_NOT_SIGNED_IN 是会话结束；其余命令失败是没有回应", async () => {
+  it("PLATFORM_NOT_SIGNED_IN 是会话结束；其余命令失败是没有回应", async () => {
     const onSessionEnded = vi.fn();
     const signedOut = createBffClient(
       createInvokeTransport(
         async () => {
-          throw "KAILO_NOT_SIGNED_IN";
+          throw "PLATFORM_NOT_SIGNED_IN";
         },
         { onSessionEnded },
       ),
@@ -136,7 +136,7 @@ describe("desktop-invoke", () => {
     const unreachable = createBffClient(
       createInvokeTransport(
         async () => {
-          throw "Kailo 服务不可达：connection refused";
+          throw "平台服务不可达：connection refused";
         },
         { onSessionEnded },
       ),
@@ -149,7 +149,7 @@ describe("desktop-invoke", () => {
 
   it("原生命令名与参数只在这里写一次", async () => {
     const invoke = vi.fn(async (command: string) =>
-      command === "kailo_register_device" ? { status: 202, body: null } : null,
+      command === "platform_register_device" ? { status: 202, body: null } : null,
     );
     const host = createNativeHost(invoke, { onSessionEnded: () => {} });
     const config = { nativeApiUrl: "https://k.example", oidcIssuer: "https://i.example", oidcClientId: "c" };
@@ -157,9 +157,9 @@ describe("desktop-invoke", () => {
     await expect(host.registerDevice()).resolves.toEqual({ status: 202, body: undefined });
     await host.cancelSignIn();
     expect(invoke.mock.calls).toEqual([
-      ["kailo_set_config", { config }],
-      ["kailo_register_device", undefined],
-      ["kailo_cancel_sign_in", undefined],
+      ["platform_set_config", { config }],
+      ["platform_register_device", undefined],
+      ["platform_cancel_sign_in", undefined],
     ]);
   });
 });

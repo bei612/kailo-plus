@@ -44,7 +44,7 @@
           }
         }
       ],
-      "secret": "__KAILO_CORE_CLIENT_SECRET__"
+      "secret": "__CORE_CLIENT_SECRET__"
     },
     {
       "clientId": "__OIDC_WORKER_CLIENT_ID__",
@@ -85,7 +85,7 @@
           }
         }
       ],
-      "secret": "__KAILO_WORKER_CLIENT_SECRET__"
+      "secret": "__WORKER_CLIENT_SECRET__"
     },
     {
       "clientId": "__OIDC_BROWSER_CLIENT_ID__",
@@ -105,7 +105,7 @@
     },
     {
       "clientId": "__OIDC_NATIVE_CLIENT_ID__",
-      "name": "Kailo Desktop/Mobile",
+      "name": "Desktop/Mobile 原生客户端",
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,
@@ -121,7 +121,7 @@
       },
       "protocolMappers": [
         {
-          "name": "kailo-native-audience",
+          "name": "native-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
@@ -139,7 +139,7 @@
       "username": "__VERIFY_USER__",
       "enabled": true,
       "emailVerified": true,
-      "email": "verify@kailo.local",
+      "email": "verify@platform.test",
       "firstName": "Seam",
       "lastName": "Verifier",
       "credentials": [
@@ -154,7 +154,7 @@
       "username": "__BOOTSTRAP_USER__",
       "enabled": true,
       "emailVerified": true,
-      "email": "bootstrap@kailo.local",
+      "email": "bootstrap@platform.test",
       "firstName": "Local",
       "lastName": "Administrator",
       "credentials": [
@@ -169,7 +169,7 @@
       "username": "__PLATFORM_ADMIN_USER__",
       "enabled": true,
       "emailVerified": true,
-      "email": "platform-admin@kailo.local",
+      "email": "platform-admin@platform.test",
       "firstName": "Platform",
       "lastName": "Administrator",
       "credentials": [

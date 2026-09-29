@@ -9,25 +9,25 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
 
 String appearanceModeLabel(ThemeMode mode, {String? locale}) =>
-    kailoText(switch (mode) {
-      ThemeMode.light => KailoMessageKey.platformThemeModeLight,
-      ThemeMode.dark => KailoMessageKey.platformThemeModeDark,
-      ThemeMode.system => KailoMessageKey.platformThemeModeSystem,
+    platformText(switch (mode) {
+      ThemeMode.light => PlatformMessageKey.platformThemeModeLight,
+      ThemeMode.dark => PlatformMessageKey.platformThemeModeDark,
+      ThemeMode.system => PlatformMessageKey.platformThemeModeSystem,
     }, locale: locale);
 
 String accentColorLabel(int index, {String? locale}) =>
-    kailoText(switch (accentColors[index].name) {
-      'Neutral' => KailoMessageKey.platformThemeAccentNeutral,
-      'Blue' => KailoMessageKey.platformThemeAccentBlue,
-      'Cyan' => KailoMessageKey.platformThemeAccentCyan,
-      'Green' => KailoMessageKey.platformThemeAccentGreen,
-      'Orange' => KailoMessageKey.platformThemeAccentOrange,
-      'Red' => KailoMessageKey.platformThemeAccentRed,
-      'Pink' => KailoMessageKey.platformThemeAccentPink,
-      'Lilac' => KailoMessageKey.platformThemeAccentLilac,
-      'Purple' => KailoMessageKey.platformThemeAccentPurple,
-      'Indigo' => KailoMessageKey.platformThemeAccentIndigo,
-      _ => KailoMessageKey.platformThemeAccentColor,
+    platformText(switch (accentColors[index].name) {
+      'Neutral' => PlatformMessageKey.platformThemeAccentNeutral,
+      'Blue' => PlatformMessageKey.platformThemeAccentBlue,
+      'Cyan' => PlatformMessageKey.platformThemeAccentCyan,
+      'Green' => PlatformMessageKey.platformThemeAccentGreen,
+      'Orange' => PlatformMessageKey.platformThemeAccentOrange,
+      'Red' => PlatformMessageKey.platformThemeAccentRed,
+      'Pink' => PlatformMessageKey.platformThemeAccentPink,
+      'Lilac' => PlatformMessageKey.platformThemeAccentLilac,
+      'Purple' => PlatformMessageKey.platformThemeAccentPurple,
+      'Indigo' => PlatformMessageKey.platformThemeAccentIndigo,
+      _ => PlatformMessageKey.platformThemeAccentColor,
     }, locale: locale);
 
 Future<void> showAccentColorPickerSheet({
@@ -37,8 +37,8 @@ Future<void> showAccentColorPickerSheet({
   required ValueChanged<int> onSelected,
 }) => showBuzzModalBottomSheet<void>(
   context: context,
-  title: kailoText(
-    KailoMessageKey.platformThemeAccentColor,
+  title: platformText(
+    PlatformMessageKey.platformThemeAccentColor,
     locale: Localizations.localeOf(context).toLanguageTag(),
   ),
   showDragHandle: true,

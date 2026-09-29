@@ -19,11 +19,11 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use url::Url;
 
-use super::config::KailoConfig;
+use super::config::PlatformConfig;
 
 /// 回调页。只告诉用户可以回到应用，不回显任何参数。
-const CALLBACK_HTML: &str = "<!doctype html><meta charset=utf-8><title>Kailo</title>\
-<p>登录已完成，可以回到 Kailo 桌面端了。</p><p>Sign-in complete. You can return to Kailo.</p>";
+const CALLBACK_HTML: &str = "<!doctype html><meta charset=utf-8><title>登录已完成 · Sign-in complete</title>\
+<p>登录已完成，可以回到桌面端了。</p><p>Sign-in complete. You can return to the desktop app.</p>";
 
 /// 令牌请求的失败分两种，对调用方意义相反：IdP 明确拒绝（刷新令牌过期或被撤销，
 /// 只能重新登录）与 IdP 暂不可达（稍后再试，不能因此丢掉凭据）。
@@ -76,7 +76,7 @@ fn pkce() -> Result<(String, String), String> {
     Ok((verifier, challenge))
 }
 
-async fn discover(http: &reqwest::Client, cfg: &KailoConfig) -> Result<Discovery, OidcError> {
+async fn discover(http: &reqwest::Client, cfg: &PlatformConfig) -> Result<Discovery, OidcError> {
     let url = format!(
         "{}/.well-known/openid-configuration",
         cfg.oidc_issuer.trim_end_matches('/')
@@ -127,7 +127,7 @@ async fn callback(
 pub(crate) async fn sign_in(
     open: impl FnOnce(&str) -> Result<(), String>,
     http: &reqwest::Client,
-    cfg: &KailoConfig,
+    cfg: &PlatformConfig,
     pending: &PendingLogin,
 ) -> Result<TokenResponse, String> {
     let endpoints = discover(http, cfg).await.map_err(|e| e.to_string())?;
@@ -204,7 +204,7 @@ pub(crate) async fn sign_in(
 /// 以刷新令牌换新的访问令牌。
 pub(crate) async fn refresh(
     http: &reqwest::Client,
-    cfg: &KailoConfig,
+    cfg: &PlatformConfig,
     refresh_token: &str,
 ) -> Result<TokenResponse, OidcError> {
     let endpoints = discover(http, cfg).await?;

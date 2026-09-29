@@ -193,6 +193,14 @@ def problems(path, m, check_digest=True):
                 bad.append(f"{name}: inputs 登记的 {p} 不存在")
         if bdf and not _under(str(bdf), incl):
             bad.append(f"{name}: build_dockerfile 不在 inputs 内，改它不会让产物失效")
+        build_args = _list(a, "build_args")
+        for x in build_args:
+            if not re.fullmatch(r"[A-Z][A-Z0-9_]*", str(x)):
+                bad.append(f"{name}: build_args 只登记变量名（大写字母、数字、下划线），得到 {x!r}")
+        if len(set(build_args)) != len(build_args):
+            bad.append(f"{name}: build_args 有重复项")
+        if set(build_args) & set(_list(a, "build_secrets")):
+            bad.append(f"{name}: 同一变量不能既是 build_args 又是 build_secrets")
         art, src = str(a.get("artifact_digest") or ""), str(a.get("source_digest") or "")
         if art == "none":
             if src != "none":
@@ -211,7 +219,7 @@ def problems(path, m, check_digest=True):
 
 def _cache_repo(ref_tree):
     base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-    return os.path.join(base, "kailo", "upstream", f"{ref_tree}.git")
+    return os.path.join(base, "platform", "upstream", f"{ref_tree}.git")
 
 
 def _reference_dir(m):
@@ -259,7 +267,7 @@ class _Index:
     def __init__(self, path, m):
         self.tree = tree_of(path)
         self.repo = upstream_repo(path, m)
-        self.file = os.path.join(self.repo, f"kailo-index-{os.getpid()}")
+        self.file = os.path.join(self.repo, f"upstream-index-{os.getpid()}")
         self.env = dict(os.environ, GIT_DIR=self.repo, GIT_WORK_TREE=os.path.abspath(self.tree),
                         GIT_INDEX_FILE=self.file)
         files = [f[len(self.tree) + 1:] for f in source_files(self.tree)
@@ -504,6 +512,7 @@ def plan(name):
     print(f"ctx={q(str(art['build_context']))}")
     print(f"dockerfile={q(str(art.get('build_dockerfile') or ''))}")
     print("secrets=(" + " ".join(q(x) for x in _list(art, "build_secrets")) + ")")
+    print("build_args=(" + " ".join(q(x) for x in _list(art, "build_args")) + ")")
     print(f"blocked={q(str(art.get('blocked') or ''))}")
 
 

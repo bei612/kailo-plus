@@ -192,7 +192,7 @@ fn parse_message_deep_link(url: &Url) -> Option<serde_json::Value> {
 
 /// Handle an incoming `buzz://` deep link URL.
 ///
-/// Supports only in-app navigation: the community is the one Kailo resolved
+/// Supports only in-app navigation: the community is the one the platform resolved
 /// for this sign-in, so there are no connect/add-community links.
 /// - `buzz://channel?…` / `buzz://message?…` — emit `deep-link-channel` / `deep-link-message`
 pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {

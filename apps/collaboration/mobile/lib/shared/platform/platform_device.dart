@@ -1,4 +1,4 @@
-/// 本机设备身份与其公钥登记（Kailo `DD-77`、`DD-79`）。
+/// 本机设备身份与其公钥登记（`DD-77`、`DD-79`）。
 ///
 /// 每台原生设备有自己的一把 Nostr 密钥，私钥只在本机系统安全存储里，协作数据平面
 /// 以它签名直连 Relay（`DD-75`）。登记时以同一把私钥签一份绑定当前
@@ -14,7 +14,7 @@ import 'platform_api.dart';
 import 'platform_config.dart';
 
 /// 设备登记端点。持钥证明的 `u` 标签必须指向它。
-const kailoRegisterPath = '/api/v1/identity/client-keys';
+const platformRegisterPath = '/api/v1/identity/client-keys';
 
 /// NIP-98 HTTP Auth 事件
 const _nip98Kind = 27235;
@@ -31,7 +31,7 @@ class SecureDeviceKeyStore implements DeviceKeyStore {
   SecureDeviceKeyStore({FlutterSecureStorage? secure})
     : _secure = secure ?? const FlutterSecureStorage();
 
-  static const _key = 'kailo_device_nsec';
+  static const _key = 'platform_device_nsec';
   final FlutterSecureStorage _secure;
 
   @override
@@ -57,14 +57,14 @@ Future<nostr.Keys> ensureDeviceKeys(DeviceKeyStore store) async {
 /// 以 [keys] 登记设备公钥：取当前会话、以该私钥签持钥证明、提交。
 ///
 /// 返回 BFF 的原样回应；取会话失败时返回那次回应，不继续签名。
-Future<KailoResponse> registerDeviceKey(
-  KailoSession session,
-  KailoConfig config,
+Future<PlatformResponse> registerDeviceKey(
+  NativeSession session,
+  PlatformConfig config,
   nostr.Keys keys,
 ) async {
   final current = await session.send(
     config,
-    KailoMethod.get,
+    PlatformMethod.get,
     '/api/v1/session',
   );
   if (current.status != 200) return current;
@@ -75,7 +75,7 @@ Future<KailoResponse> registerDeviceKey(
     kind: _nip98Kind,
     content: '',
     tags: [
-      ['u', config.apiUri(kailoRegisterPath).toString()],
+      ['u', config.apiUri(platformRegisterPath).toString()],
       ['method', 'POST'],
       ['session', view.platformSessionId],
     ],
@@ -83,23 +83,23 @@ Future<KailoResponse> registerDeviceKey(
   );
   return session.send(
     config,
-    KailoMethod.post,
-    kailoRegisterPath,
+    PlatformMethod.post,
+    platformRegisterPath,
     body: {'proof': proof.toMap()},
   );
 }
 
 /// 本人登记过且未撤销的设备。
 Future<List<ClientKeyView>> listDeviceKeys(
-  KailoSession session,
-  KailoConfig config,
+  NativeSession session,
+  PlatformConfig config,
 ) async {
   final response = await session.send(
     config,
-    KailoMethod.get,
-    kailoRegisterPath,
+    PlatformMethod.get,
+    platformRegisterPath,
   );
-  if (response.status != 200) throw KailoApiError(response);
+  if (response.status != 200) throw PlatformApiError(response);
   return [
     for (final item in response.body! as List<dynamic>)
       ClientKeyView.fromJson(item as Map<String, dynamic>),
@@ -107,11 +107,15 @@ Future<List<ClientKeyView>> listDeviceKeys(
 }
 
 /// 撤销本人的一台设备。只移出这一把公钥，此人的其他设备与 Web 不受影响。
-Future<KailoResponse> revokeDeviceKey(
-  KailoSession session,
-  KailoConfig config,
+Future<PlatformResponse> revokeDeviceKey(
+  NativeSession session,
+  PlatformConfig config,
   String pubkey,
-) => session.send(config, KailoMethod.delete, '$kailoRegisterPath/$pubkey');
+) => session.send(
+  config,
+  PlatformMethod.delete,
+  '$platformRegisterPath/$pubkey',
+);
 
 final deviceKeyStoreProvider = Provider<DeviceKeyStore>(
   (ref) => SecureDeviceKeyStore(),

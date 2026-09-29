@@ -1,8 +1,8 @@
-// Desktop 端：经 Tauri 命令进入 Rust 侧的 Kailo 层（DD-75/78/79、ADR-09）。
+// Desktop 端：经 Tauri 命令进入 Rust 侧的平台层（DD-75/78/79、ADR-09）。
 //
-// 令牌只在 Rust 侧：前端既看不到访问令牌也看不到刷新令牌，只能让 `kailo_api` 代发
+// 令牌只在 Rust 侧：前端既看不到访问令牌也看不到刷新令牌，只能让 `platform_api` 代发
 // `/api/v1/` 下的请求，拿回状态码与正文。设备私钥同样不出 Rust——持钥证明由
-// `kailo_register_device` 在那一侧签名。这里不直连 BFF：出现一个 fetch 就等于令牌
+// `platform_register_device` 在那一侧签名。这里不直连 BFF：出现一个 fetch 就等于令牌
 // 必须交到前端手里。
 //
 // 本模块不依赖 `@tauri-apps/api`：宿主把自己的 `invoke` 传进来，命令名与参数只在
@@ -18,11 +18,11 @@ import {
 
 export type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 
-/** Rust 侧 `kailo_api` 在需要重新登录时给出的错误（刷新令牌被拒、已注销）。 */
-const NOT_SIGNED_IN = "KAILO_NOT_SIGNED_IN";
+/** Rust 侧 `platform_api` 在需要重新登录时给出的错误（刷新令牌被拒、已注销）。 */
+const NOT_SIGNED_IN = "PLATFORM_NOT_SIGNED_IN";
 
 /**
- * 本机保存的部署事实（Rust 侧 `KailoConfig`，应用配置目录的 `kailo.json`）。它因
+ * 本机保存的部署事实（Rust 侧 `PlatformConfig`，应用配置目录的 `platform.json`）。它因
  * 部署而异，由用户填写或管理员预置；缺任一项即未配置，不回退到任何默认地址。
  */
 export type NativeConfig = {
@@ -68,7 +68,7 @@ export function createInvokeTransport(
     async send(request: BffRequest) {
       try {
         return toReply(
-          await invoke("kailo_api", {
+          await invoke("platform_api", {
             method: request.method,
             path: request.path,
             body: request.body ?? null,
@@ -108,12 +108,12 @@ export function createNativeHost(
     }
   };
   return {
-    getConfig: () => run<NativeConfig | null>("kailo_get_config"),
-    setConfig: (config) => run<void>("kailo_set_config", { config }),
-    status: () => run<NativeStatus>("kailo_status"),
-    signIn: () => run<void>("kailo_sign_in"),
-    cancelSignIn: () => run<void>("kailo_cancel_sign_in"),
-    signOut: () => run<void>("kailo_sign_out"),
-    registerDevice: async () => toReply(await run<ApiResponse>("kailo_register_device")),
+    getConfig: () => run<NativeConfig | null>("platform_get_config"),
+    setConfig: (config) => run<void>("platform_set_config", { config }),
+    status: () => run<NativeStatus>("platform_status"),
+    signIn: () => run<void>("platform_sign_in"),
+    cancelSignIn: () => run<void>("platform_cancel_sign_in"),
+    signOut: () => run<void>("platform_sign_out"),
+    registerDevice: async () => toReply(await run<ApiResponse>("platform_register_device")),
   };
 }

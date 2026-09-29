@@ -10,78 +10,102 @@ import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import 'platform_async_view.dart';
 
-// 任务与审批的只读视图（Kailo apps/02 §4：Mobile 为受权只读视图；REQ-21）。
+// 任务与审批的只读视图（apps/02 §4：Mobile 为受权只读视图；REQ-21）。
 //
 // 这里没有撤回、批准或拒绝：Mobile 不渲染这些控制的入口，只在详情里说明去
-// Web/Desktop 完成。状态的读法与 Web/Desktop 共用包（Kailo
-// `web/packages/platform/src/governance.ts` 的 taskPhase）逐条相同：结果不明与投影
+// Web/Desktop 完成。状态的读法与 Web/Desktop 共用包（
+// `client-kit/ts/platform/src/governance.ts` 的 taskPhase）逐条相同：结果不明与投影
 // 落后一律显示「等待对账」，不说成功也不说失败；只有 Workflow 终态 COMPLETED 才是
 // 完成，没有 Workflow 的同步动作以 DISPATCHED 为终态。
 
 /// 一项任务此刻的读法。
-String kailoTaskPhase(TaskView task, {String? locale}) {
+String platformTaskPhase(TaskView task, {String? locale}) {
   switch (task.observation) {
     case ReasonCode.EXTERNAL_RESULT_UNKNOWN:
-      return kailoText(KailoMessageKey.tasksStatusUnknown, locale: locale);
+      return platformText(
+        PlatformMessageKey.tasksStatusUnknown,
+        locale: locale,
+      );
     case null:
       break;
     default:
-      return kailoText(KailoMessageKey.tasksStatusDelayed, locale: locale);
+      return platformText(
+        PlatformMessageKey.tasksStatusDelayed,
+        locale: locale,
+      );
   }
   switch (task.gateState) {
     case ActionGateState.EVALUATING:
-      return kailoText(KailoMessageKey.tasksStatusEvaluating, locale: locale);
+      return platformText(
+        PlatformMessageKey.tasksStatusEvaluating,
+        locale: locale,
+      );
     case ActionGateState.WAITING:
-      return kailoText(
-        KailoMessageKey.tasksStatusWaitingApproval,
+      return platformText(
+        PlatformMessageKey.tasksStatusWaitingApproval,
         locale: locale,
       );
     case ActionGateState.DENIED:
-      return kailoText(KailoMessageKey.tasksStatusDenied, locale: locale);
+      return platformText(PlatformMessageKey.tasksStatusDenied, locale: locale);
     case ActionGateState.REVOKED:
-      return kailoText(KailoMessageKey.tasksStatusRevoked, locale: locale);
+      return platformText(
+        PlatformMessageKey.tasksStatusRevoked,
+        locale: locale,
+      );
     case ActionGateState.EXPIRED:
-      return kailoText(KailoMessageKey.tasksStatusExpired, locale: locale);
+      return platformText(
+        PlatformMessageKey.tasksStatusExpired,
+        locale: locale,
+      );
     case ActionGateState.ALLOWED:
       break;
   }
   switch (task.dispatchState) {
     case ActionDispatchState.NOT_DISPATCHED:
-      return kailoText(KailoMessageKey.tasksStatusNotStarted, locale: locale);
+      return platformText(
+        PlatformMessageKey.tasksStatusNotStarted,
+        locale: locale,
+      );
     case ActionDispatchState.ABORTED:
-      return kailoText(KailoMessageKey.tasksStatusAborted, locale: locale);
+      return platformText(
+        PlatformMessageKey.tasksStatusAborted,
+        locale: locale,
+      );
     case ActionDispatchState.UNKNOWN:
-      return kailoText(KailoMessageKey.tasksStatusUnknown, locale: locale);
+      return platformText(
+        PlatformMessageKey.tasksStatusUnknown,
+        locale: locale,
+      );
     case ActionDispatchState.DISPATCHED:
       break;
   }
   if (task.workflowId == null) {
-    return kailoText(KailoMessageKey.tasksStatusApplied, locale: locale);
+    return platformText(PlatformMessageKey.tasksStatusApplied, locale: locale);
   }
   return switch (task.taskStatus) {
-    null => kailoText(KailoMessageKey.tasksStatusStarted, locale: locale),
-    TaskStatus.RUNNING => kailoText(
-      KailoMessageKey.tasksStatusRunning,
+    null => platformText(PlatformMessageKey.tasksStatusStarted, locale: locale),
+    TaskStatus.RUNNING => platformText(
+      PlatformMessageKey.tasksStatusRunning,
       locale: locale,
     ),
-    TaskStatus.COMPLETED => kailoText(
-      KailoMessageKey.tasksStatusCompleted,
+    TaskStatus.COMPLETED => platformText(
+      PlatformMessageKey.tasksStatusCompleted,
       locale: locale,
     ),
-    TaskStatus.FAILED => kailoText(
-      KailoMessageKey.tasksStatusFailed,
+    TaskStatus.FAILED => platformText(
+      PlatformMessageKey.tasksStatusFailed,
       locale: locale,
     ),
-    TaskStatus.CANCELED => kailoText(
-      KailoMessageKey.tasksStatusCanceled,
+    TaskStatus.CANCELED => platformText(
+      PlatformMessageKey.tasksStatusCanceled,
       locale: locale,
     ),
-    TaskStatus.TERMINATED => kailoText(
-      KailoMessageKey.tasksStatusTerminated,
+    TaskStatus.TERMINATED => platformText(
+      PlatformMessageKey.tasksStatusTerminated,
       locale: locale,
     ),
-    TaskStatus.TIMED_OUT => kailoText(
-      KailoMessageKey.tasksStatusTimedOut,
+    TaskStatus.TIMED_OUT => platformText(
+      PlatformMessageKey.tasksStatusTimedOut,
       locale: locale,
     ),
   };
@@ -89,45 +113,47 @@ String kailoTaskPhase(TaskView task, {String? locale}) {
 
 String _approvalPhase(ApprovalView approval, String locale) =>
     switch (approval.observation) {
-      null => kailoApprovalStatusText(approval.status, locale: locale),
-      ReasonCode.EXTERNAL_RESULT_UNKNOWN => kailoText(
-        KailoMessageKey.tasksStatusUnknown,
+      null => platformApprovalStatusText(approval.status, locale: locale),
+      ReasonCode.EXTERNAL_RESULT_UNKNOWN => platformText(
+        PlatformMessageKey.tasksStatusUnknown,
         locale: locale,
       ),
-      _ => kailoText(KailoMessageKey.tasksStatusDelayed, locale: locale),
+      _ => platformText(PlatformMessageKey.tasksStatusDelayed, locale: locale),
     };
 
-String _reason(ReasonCode code, String locale) => kailoText(
-  KailoMessageKey.platformReasonWithCode,
+String _reason(ReasonCode code, String locale) => platformText(
+  PlatformMessageKey.platformReasonWithCode,
   locale: locale,
   variables: {
-    'text': kailoReasonText(code, locale: locale),
-    'code': kailoReasonCode(code),
+    'text': platformReasonText(code, locale: locale),
+    'code': platformReasonCode(code),
   },
 );
 
 /// 本人发起的受治理动作。
-class KailoTasksPage extends ConsumerWidget {
-  const KailoTasksPage({super.key});
+class PlatformTasksPage extends ConsumerWidget {
+  const PlatformTasksPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = Localizations.localeOf(context).toLanguageTag();
     return Scaffold(
       appBar: AppBar(
-        title: Text(kailoText(KailoMessageKey.tasksMyTitle, locale: locale)),
+        title: Text(
+          platformText(PlatformMessageKey.tasksMyTitle, locale: locale),
+        ),
       ),
-      body: KailoAsyncView(
-        value: ref.watch(kailoTasksProvider),
-        onRetry: () => ref.invalidate(kailoTasksProvider),
+      body: PlatformAsyncView(
+        value: ref.watch(platformTasksProvider),
+        onRetry: () => ref.invalidate(platformTasksProvider),
         builder: (context, tasks) => tasks.isEmpty
             ? Center(
                 child: Text(
-                  kailoText(KailoMessageKey.tasksNone, locale: locale),
+                  platformText(PlatformMessageKey.tasksNone, locale: locale),
                 ),
               )
             : RefreshIndicator(
-                onRefresh: () => ref.refresh(kailoTasksProvider.future),
+                onRefresh: () => ref.refresh(platformTasksProvider.future),
                 child: ListView(
                   children: [
                     AppListCard(
@@ -135,15 +161,15 @@ class KailoTasksPage extends ConsumerWidget {
                         for (final task in tasks)
                           AppListRow(
                             key: ValueKey(
-                              'kailo-task-${task.actionExecutionId}',
+                              'platform-task-${task.actionExecutionId}',
                             ),
                             title: task.actionKey,
                             subtitle:
-                                '${kailoTaskPhase(task, locale: locale)}\n${kailoRelativeTime(task.createdAt, locale: locale)}',
+                                '${platformTaskPhase(task, locale: locale)}\n${platformRelativeTime(task.createdAt, locale: locale)}',
                             subtitleMaxLines: 3,
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute<void>(
-                                builder: (_) => KailoTaskDetailPage(
+                                builder: (_) => PlatformTaskDetailPage(
                                   actionExecutionId: task.actionExecutionId,
                                 ),
                               ),
@@ -159,20 +185,22 @@ class KailoTasksPage extends ConsumerWidget {
   }
 }
 
-class KailoTaskDetailPage extends ConsumerWidget {
-  const KailoTaskDetailPage({super.key, required this.actionExecutionId});
+class PlatformTaskDetailPage extends ConsumerWidget {
+  const PlatformTaskDetailPage({super.key, required this.actionExecutionId});
 
   final String actionExecutionId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = Localizations.localeOf(context).toLanguageTag();
-    final provider = kailoTaskProvider(actionExecutionId);
+    final provider = platformTaskProvider(actionExecutionId);
     return Scaffold(
       appBar: AppBar(
-        title: Text(kailoText(KailoMessageKey.tasksTitle, locale: locale)),
+        title: Text(
+          platformText(PlatformMessageKey.tasksTitle, locale: locale),
+        ),
       ),
-      body: KailoAsyncView(
+      body: PlatformAsyncView(
         value: ref.watch(provider),
         onRetry: () => ref.invalidate(provider),
         builder: (context, task) => ListView(
@@ -181,47 +209,65 @@ class KailoTaskDetailPage extends ConsumerWidget {
               label: task.actionKey,
               children: [
                 _Fact(
-                  kailoText(KailoMessageKey.platformState, locale: locale),
-                  kailoTaskPhase(task, locale: locale),
-                  id: 'kailo-task-state',
+                  platformText(
+                    PlatformMessageKey.platformState,
+                    locale: locale,
+                  ),
+                  platformTaskPhase(task, locale: locale),
+                  id: 'platform-task-state',
                 ),
                 if (task.observation case final code?)
                   _Fact(
-                    kailoText(KailoMessageKey.tasksReason, locale: locale),
+                    platformText(
+                      PlatformMessageKey.tasksReason,
+                      locale: locale,
+                    ),
                     _reason(code, locale),
                   ),
                 if (task.reason case final code?)
                   _Fact(
-                    kailoText(KailoMessageKey.tasksReason, locale: locale),
+                    platformText(
+                      PlatformMessageKey.tasksReason,
+                      locale: locale,
+                    ),
                     _reason(code, locale),
                   ),
                 if (task.waitingReason case final waiting?)
                   _Fact(
-                    kailoText(
-                      KailoMessageKey.tasksWaitingReason,
+                    platformText(
+                      PlatformMessageKey.tasksWaitingReason,
                       locale: locale,
                     ),
                     waiting,
                   ),
                 _Fact(
-                  kailoText(KailoMessageKey.tasksCreated, locale: locale),
-                  kailoAbsoluteTime(task.createdAt, locale: locale),
+                  platformText(PlatformMessageKey.tasksCreated, locale: locale),
+                  platformAbsoluteTime(task.createdAt, locale: locale),
                 ),
                 _Fact(
-                  kailoText(KailoMessageKey.tasksOperation, locale: locale),
+                  platformText(
+                    PlatformMessageKey.tasksOperation,
+                    locale: locale,
+                  ),
                   task.operationId,
                 ),
                 _Fact(
-                  kailoText(KailoMessageKey.tasksExecution, locale: locale),
+                  platformText(
+                    PlatformMessageKey.tasksExecution,
+                    locale: locale,
+                  ),
                   task.actionExecutionId,
                 ),
                 _Fact(
-                  kailoText(KailoMessageKey.tasksTarget, locale: locale),
+                  platformText(PlatformMessageKey.tasksTarget, locale: locale),
                   task.targetId,
                 ),
                 if (task.workflowId case final workflow?)
                   _Fact(
-                    kailoText(KailoMessageKey.tasksWorkflow, locale: locale),
+                    platformText(
+                      PlatformMessageKey.tasksWorkflow,
+                      locale: locale,
+                    ),
                     workflow,
                   ),
               ],
@@ -236,8 +282,8 @@ class KailoTaskDetailPage extends ConsumerWidget {
 }
 
 /// 待我审批。
-class KailoApprovalsPage extends ConsumerWidget {
-  const KailoApprovalsPage({super.key});
+class PlatformApprovalsPage extends ConsumerWidget {
+  const PlatformApprovalsPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -245,26 +291,32 @@ class KailoApprovalsPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          kailoText(KailoMessageKey.approvalsPendingTitle, locale: locale),
+          platformText(
+            PlatformMessageKey.approvalsPendingTitle,
+            locale: locale,
+          ),
         ),
       ),
-      body: KailoAsyncView(
-        value: ref.watch(kailoPendingApprovalsProvider),
-        onRetry: () => ref.invalidate(kailoPendingApprovalsProvider),
+      body: PlatformAsyncView(
+        value: ref.watch(platformPendingApprovalsProvider),
+        onRetry: () => ref.invalidate(platformPendingApprovalsProvider),
         builder: (context, approvals) => approvals.isEmpty
             ? Center(
                 child: Text(
-                  kailoText(KailoMessageKey.approvalsNone, locale: locale),
+                  platformText(
+                    PlatformMessageKey.approvalsNone,
+                    locale: locale,
+                  ),
                 ),
               )
             : RefreshIndicator(
                 onRefresh: () =>
-                    ref.refresh(kailoPendingApprovalsProvider.future),
+                    ref.refresh(platformPendingApprovalsProvider.future),
                 child: ListView(
                   children: [
                     _Explain(
-                      kailoText(
-                        KailoMessageKey.approvalsMobileReadOnly,
+                      platformText(
+                        PlatformMessageKey.approvalsMobileReadOnly,
                         locale: locale,
                       ),
                     ),
@@ -273,14 +325,14 @@ class KailoApprovalsPage extends ConsumerWidget {
                         for (final approval in approvals)
                           AppListRow(
                             key: ValueKey(
-                              'kailo-approval-${approval.workflowId}',
+                              'platform-approval-${approval.workflowId}',
                             ),
                             title: approval.actionKey,
                             subtitle:
-                                '${_approvalPhase(approval, locale)}\n${kailoText(
-                                  KailoMessageKey.approvalsExpiresAt,
+                                '${_approvalPhase(approval, locale)}\n${platformText(
+                                  PlatformMessageKey.approvalsExpiresAt,
                                   locale: locale,
-                                  variables: {'time': kailoRelativeTime(approval.expiresAt, locale: locale)},
+                                  variables: {'time': platformRelativeTime(approval.expiresAt, locale: locale)},
                                 )}',
                             subtitleMaxLines: 3,
                             onTap: () => Navigator.of(context).push(
@@ -288,8 +340,8 @@ class KailoApprovalsPage extends ConsumerWidget {
                                 builder: (_) => Scaffold(
                                   appBar: AppBar(
                                     title: Text(
-                                      kailoText(
-                                        KailoMessageKey.tasksApproval,
+                                      platformText(
+                                        PlatformMessageKey.tasksApproval,
                                         locale: locale,
                                       ),
                                     ),
@@ -324,55 +376,67 @@ class _ApprovalFacts extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = Localizations.localeOf(context).toLanguageTag();
-    final provider = kailoApprovalProvider(workflowId);
-    return KailoAsyncView(
+    final provider = platformApprovalProvider(workflowId);
+    return PlatformAsyncView(
       value: ref.watch(provider),
       onRetry: () => ref.invalidate(provider),
       builder: (context, approval) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AppListCard(
-            label: kailoText(KailoMessageKey.tasksApproval, locale: locale),
+            label: platformText(
+              PlatformMessageKey.tasksApproval,
+              locale: locale,
+            ),
             children: [
               _Fact(
-                kailoText(KailoMessageKey.approvalsStatus, locale: locale),
+                platformText(
+                  PlatformMessageKey.approvalsStatus,
+                  locale: locale,
+                ),
                 _approvalPhase(approval, locale),
-                id: 'kailo-approval-state',
+                id: 'platform-approval-state',
               ),
               if (approval.observation case final code?)
                 _Fact(
-                  kailoText(KailoMessageKey.tasksReason, locale: locale),
+                  platformText(PlatformMessageKey.tasksReason, locale: locale),
                   _reason(code, locale),
                 ),
               if (approval.reason case final code?)
                 _Fact(
-                  kailoText(KailoMessageKey.tasksReason, locale: locale),
+                  platformText(PlatformMessageKey.tasksReason, locale: locale),
                   _reason(code, locale),
                 ),
               _Fact(
-                kailoText(KailoMessageKey.approvalsExpires, locale: locale),
-                kailoAbsoluteTime(approval.expiresAt, locale: locale),
+                platformText(
+                  PlatformMessageKey.approvalsExpires,
+                  locale: locale,
+                ),
+                platformAbsoluteTime(approval.expiresAt, locale: locale),
               ),
               _Fact(
-                kailoText(KailoMessageKey.tasksTarget, locale: locale),
+                platformText(PlatformMessageKey.tasksTarget, locale: locale),
                 '${approval.targetType} ${approval.targetId}',
               ),
               _Fact(
-                kailoText(KailoMessageKey.approvalsInitiator, locale: locale),
+                platformText(
+                  PlatformMessageKey.approvalsInitiator,
+                  locale: locale,
+                ),
                 approval.initiatorPrincipalId,
               ),
               _Fact(
-                kailoText(
-                  KailoMessageKey.approvalsRequirements,
+                platformText(
+                  PlatformMessageKey.approvalsRequirements,
                   locale: locale,
                 ),
                 approval.roleRequirements
                     .map(
-                      (r) => kailoText(
-                        KailoMessageKey.approvalsRequirement,
+                      (r) => platformText(
+                        PlatformMessageKey.approvalsRequirement,
                         locale: locale,
                         variables: {
-                          'selector': kailoApprovalSelectorText(
+                          'selector': platformApprovalSelectorText(
                             r.selector,
                             locale: locale,
                           ),
@@ -383,33 +447,33 @@ class _ApprovalFacts extends ConsumerWidget {
                     .join('; '),
               ),
               _Fact(
-                kailoText(KailoMessageKey.tasksWorkflow, locale: locale),
+                platformText(PlatformMessageKey.tasksWorkflow, locale: locale),
                 approval.workflowId,
               ),
             ],
           ),
           AppListCard(
-            label: kailoText(
-              KailoMessageKey.approvalsDecisions,
+            label: platformText(
+              PlatformMessageKey.approvalsDecisions,
               locale: locale,
             ),
             children: [
               if (approval.decisions.isEmpty)
                 AppListRow(
-                  title: kailoText(
-                    KailoMessageKey.approvalsNoDecisions,
+                  title: platformText(
+                    PlatformMessageKey.approvalsNoDecisions,
                     locale: locale,
                   ),
                 )
               else
                 for (final d in approval.decisions)
                   AppListRow(
-                    title: kailoApprovalDecisionText(
+                    title: platformApprovalDecisionText(
                       d.decision,
                       locale: locale,
                     ),
                     subtitle:
-                        '${d.approverPrincipalId}\n${kailoAbsoluteTime(d.decidedAt, locale: locale)}',
+                        '${d.approverPrincipalId}\n${platformAbsoluteTime(d.decidedAt, locale: locale)}',
                     subtitleMaxLines: 3,
                   ),
             ],
@@ -417,8 +481,8 @@ class _ApprovalFacts extends ConsumerWidget {
           if (approval.status == ApprovalStatus.REQUESTED ||
               approval.status == ApprovalStatus.WAITING)
             _Explain(
-              kailoText(
-                KailoMessageKey.approvalsMobileReadOnly,
+              platformText(
+                PlatformMessageKey.approvalsMobileReadOnly,
                 locale: locale,
               ),
             ),
@@ -456,7 +520,7 @@ class _Explain extends StatelessWidget {
     padding: const EdgeInsets.all(Grid.gutter),
     child: Text(
       text,
-      key: const ValueKey('kailo-decide-elsewhere'),
+      key: const ValueKey('platform-decide-elsewhere'),
       style: context.textTheme.bodyMedium,
     ),
   );

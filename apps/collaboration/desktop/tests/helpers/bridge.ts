@@ -185,11 +185,11 @@ type MockBridgeOptions = {
   /** When true, `get_identity` returns `locked: true` (keyring-locked screen). */
   identityLocked?: boolean;
   /**
-   * The Rust-side Kailo layer (kailo_* commands). Omitted = a configured,
-   * signed-in device whose key is ACTIVE; see KailoMockOptions in
+   * The Rust-side platform layer (platform_* commands). Omitted = a configured,
+   * signed-in device whose key is ACTIVE; see PlatformMockOptions in
    * src/testing/e2eBridge.ts.
    */
-  kailo?: KailoMockOptions;
+  platform?: PlatformMockOptions;
   /** Pending channel/message links that arrived before AppShell mounted. */
   pendingNavigationDeepLinks?: Array<{
     id: string;
@@ -208,9 +208,9 @@ type BridgeOptions = {
   user?: keyof typeof TEST_IDENTITIES;
 };
 
-type KailoReply = { status: number; body: unknown };
+type PlatformReply = { status: number; body: unknown };
 
-export type KailoMockOptions = {
+export type PlatformMockOptions = {
   /** `null` = not configured yet. */
   config?: {
     nativeApiUrl: string;
@@ -219,20 +219,20 @@ export type KailoMockOptions = {
   } | null;
   signedIn?: boolean;
   setConfigError?: string;
-  /** `hold` keeps `kailo_sign_in` pending until cancelled. */
+  /** `hold` keeps `platform_sign_in` pending until cancelled. */
   signIn?: "succeed" | "hold" | { error: string };
-  /** Successive `kailo_register_device` outcomes; the last one repeats. */
-  register?: Array<KailoReply | { error: string }>;
+  /** Successive `platform_register_device` outcomes; the last one repeats. */
+  register?: Array<PlatformReply | { error: string }>;
   /** Successive states of this device in the client-keys list. */
   deviceStates?: string[];
   otherDevices?: Array<{ pubkey: string; state: string; createdAt: string }>;
-  community?: KailoReply;
-  revoke?: KailoReply;
+  community?: PlatformReply;
+  revoke?: PlatformReply;
   workspaces?: Array<{ id: string; name: string; slug: string }>;
   members?: unknown[];
   audit?: unknown[];
   /** Any other BFF route, keyed `"METHOD /api/v1/…"`; the last reply repeats. */
-  routes?: Record<string, KailoReply[]>;
+  routes?: Record<string, PlatformReply[]>;
 };
 
 // The relay HTTP/WS URLs follow BUZZ_E2E_RELAY_URL (same env var seed.ts reads),

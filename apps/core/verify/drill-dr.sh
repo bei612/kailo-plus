@@ -14,7 +14,7 @@ LOCAL=deploy/local
 DC() { sudo -n docker compose --env-file "$LOCAL/.env" -f "$LOCAL/compose.yaml" "$@"; }
 PSQL() { psql "$DATABASE_URL" -Atc "$1"; }
 step() { printf '\n== %s（%s）\n' "$1" "$(date -u +%T)"; }
-backup=$(mktemp -d /tmp/kailo-dr.XXXXXX)
+backup=$(mktemp -d /tmp/platform-dr.XXXXXX)
 # 备份只在恢复核验通过后删除。任何一步失败都保留它——那时它是唯一的数据来源
 # （首次演练正是因为失败时删除了备份，本地数据只能重新引导）。
 finish() {
@@ -38,12 +38,12 @@ ws=$(python3 -c 'import json;print(json.load(open("/tmp/rbdr.fixture"))["workspa
 tenant=$(python3 -c 'import json;print(json.load(open("/tmp/rbdr.fixture"))["tenant"])')
 publish() {
   curl -s -o /tmp/rbdr.body -w '%{http_code}' -X POST "$VERIFY_BFF_URL/api/v1/workspaces/$ws/messages" \
-    -H "x-kailo-oidc-issuer: $OIDC_ISSUER" -H "x-kailo-oidc-subject: $subject" \
+    -H "x-platform-oidc-issuer: $OIDC_ISSUER" -H "x-platform-oidc-subject: $subject" \
     -H 'Content-Type: application/json' -H "Idempotency-Key: $(python3 -c 'import uuid;print(uuid.uuid4())')" -d "{\"content\":\"$1\"}"
 }
 history_has() {
   curl -s "$VERIFY_BFF_URL/api/v1/workspaces/$ws/messages" \
-    -H "x-kailo-oidc-issuer: $OIDC_ISSUER" -H "x-kailo-oidc-subject: $subject" | grep -c "$1" || true
+    -H "x-platform-oidc-issuer: $OIDC_ISSUER" -H "x-platform-oidc-subject: $subject" | grep -c "$1" || true
 }
 code=$(publish "before disaster")
 event=$(python3 -c 'import json;print(json.load(open("/tmp/rbdr.body"))["eventId"])')
@@ -71,7 +71,7 @@ bash "$LOCAL/dr-backup.sh" "$backup" | tail -9
 
 step "2. 灾难：删除全部数据卷与数据目录"
 DC down >/dev/null 2>&1
-for v in core-db-data buzz-db-data temporal-db-data spicedb-db-data; do sudo -n docker volume rm "kailo-local_$v" >/dev/null; done
+for v in core-db-data buzz-db-data temporal-db-data spicedb-db-data; do sudo -n docker volume rm "${VERIFY_COMPOSE_PROJECT}_$v" >/dev/null; done
 sudo -n find "$LOCAL/data/secret-store" "$LOCAL/data/collab-objects" -mindepth 1 -delete
 echo "  已删除：4 个数据卷、OpenBao 与 MinIO 的数据目录、IdP 容器"
 
@@ -83,7 +83,7 @@ failed=0
 expect() { # 名称 实际 期望
   if [ "$2" = "$3" ]; then echo "  ✓ $1：$2"; else echo "  ✗ $1：得到 $2，应为 $3"; failed=1; fi
 }
-for _ in $(seq 1 60); do curl -sf -o /dev/null "$VERIFY_BFF_URL/api/v1/session" -H "x-kailo-oidc-issuer: $OIDC_ISSUER" -H "x-kailo-oidc-subject: $subject" && break; sleep 2; done
+for _ in $(seq 1 60); do curl -sf -o /dev/null "$VERIFY_BFF_URL/api/v1/session" -H "x-platform-oidc-issuer: $OIDC_ISSUER" -H "x-platform-oidc-subject: $subject" && break; sleep 2; done
 expect "计数（审计/Tenant/WorkflowRef/BuzzIdentityBinding）" "$(counts)" "$before"
 expect "网关在运行的实例" "$(DC ps --format '{{.Service}}' | grep -cx agentgateway || true)" 0
 expect "灾难前的消息仍在 Relay 上" "$([ "$(history_has "$event")" -ge 1 ] && echo 是 || echo 否)" 是
@@ -91,9 +91,10 @@ expect "恢复后发布（Core 从恢复的 OpenBao 取私钥代签）" "$(publi
 expect "SpiceDB 中 workspace→tenant 归属" "$(sudo -n docker run --rm --network "$VERIFY_DOCKER_NETWORK" --env-file "$VERIFY_ZED_ENV_FILE" \
   -e "ZED_ENDPOINT=$VERIFY_SPICEDB_ENDPOINT" -e ZED_INSECURE=true "$VERIFY_ZED_IMAGE" \
   relationship read "workspace:$ws" tenant --consistency-full 2>/dev/null | grep -c "tenant:$tenant" || true)" 1
+# ADR-17 迁移窗口：按 SA 列举时新旧两组都查；窗口关闭时删去 KailoTenantId 分支
 completed=$(sudo -n docker run --rm --network "$VERIFY_DOCKER_NETWORK" "$VERIFY_TEMPORAL_ADMIN_IMAGE" \
   temporal --address "$VERIFY_TEMPORAL_INTERNAL_ADDRESS" --namespace "$TEMPORAL_NAMESPACE" \
-  workflow count --query "KailoTenantId='$tenant' AND ExecutionStatus='Completed'" 2>/dev/null | grep -oE '[0-9]+' | head -1)
+  workflow count --query "(PlatformTenantId='$tenant' OR KailoTenantId='$tenant') AND ExecutionStatus='Completed'" 2>/dev/null | grep -oE '[0-9]+' | head -1)
 expect "Temporal 中该 Tenant 的已完成 Workflow 仍可查" "$([ "${completed:-0}" -ge 1 ] && echo 是 || echo 否)" 是
 expect "IdP 用户 ID 未变（Core 的 ExternalIdentity 仍对得上）" "$(kc_user_id)" "$idp_before"
 t0=$(date -u +%Y-%m-%dT%H:%M:%SZ)

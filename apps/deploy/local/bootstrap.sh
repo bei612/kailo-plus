@@ -99,11 +99,11 @@ PYCONFIG
 if [ "${1:-}" = '--validate-config' ] && [ "$#" -eq 1 ]; then
   exit 0
 fi
-# 持久化 realm 不会再次导入 JSON。只同步已有浏览器客户端的回调，不重建用户、
-# client 或 credential；HTTP 结果不明时退出失败，重跑先读当前值再收敛。
-if [ "${1:-}" = '--sync-browser-client' ] && [ "$#" -eq 1 ]; then
+# 持久化 realm 不会再次导入 JSON。只收敛已有浏览器与原生客户端的回调：期望值取自本次渲染的导入文件
+# （与首次导入同源），不重建用户、client 或 credential；HTTP 结果不明时退出失败，重跑先读当前值再收敛。
+if [ "${1:-}" = '--sync-client-redirects' ] && [ "$#" -eq 1 ]; then
   python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
-    "${OIDC_BROWSER_CLIENT_ID:?}" "$PUBLIC_ORIGIN" "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" <<'PYSYNC'
+    "${OIDC_BROWSER_CLIENT_ID:?}" "${OIDC_NATIVE_CLIENT_ID:?}" "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" <<'PYSYNC'
 import json
 import pathlib
 import sys
@@ -111,13 +111,25 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-port, realm, admin, client_id, origin, timeout = sys.argv[1:]
+port, realm, admin, browser_id, native_id, timeout = sys.argv[1:]
 timeout = int(timeout)
 if timeout <= 0:
     raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
 base = "http://127.0.0.1:" + port
-desired = {"redirectUris": [origin + "/oauth/callback"], "webOrigins": ["+"]}
+KEYS = ("redirectUris", "webOrigins")
+
+
+def same(current, desired):
+    # Keycloak 把回调与来源当作集合保存，返回顺序不保证与导入顺序一致。
+    return all(sorted(current.get(k) or []) == sorted(v) for k, v in desired.items())
 try:
+    rendered = json.loads(pathlib.Path("secrets/idp-import/realm.json").read_text(encoding="utf-8"))
+    wanted = {}
+    for client_id in (browser_id, native_id):
+        entries = [c for c in rendered.get("clients", []) if c.get("clientId") == client_id]
+        if len(entries) != 1:
+            raise SystemExit(f"渲染后的 realm 中客户端 {client_id} 不唯一")
+        wanted[client_id] = {k: entries[0][k] for k in KEYS if k in entries[0]}
     password = pathlib.Path("secrets/keycloak_admin_password").read_text().strip()
     login = urllib.parse.urlencode({"grant_type": "password", "client_id": "admin-cli",
                                    "username": admin, "password": password}).encode()
@@ -134,21 +146,22 @@ try:
             return json.load(response) if body is None else None
 
     clients_path = "/admin/realms/" + urllib.parse.quote(realm, safe="") + "/clients"
-    clients = request(clients_path + "?" + urllib.parse.urlencode({"clientId": client_id}))
-    if len(clients) != 1 or clients[0].get("clientId") != client_id:
-        raise SystemExit("浏览器客户端不存在或不唯一，拒绝创建替代身份")
-    path = clients_path + "/" + urllib.parse.quote(clients[0]["id"], safe="")
-    current = request(path)
-    changed = any(current.get(key) != value for key, value in desired.items())
-    if changed:
-        # 只发送这两项，其他 client 属性、protocol mapper 与 secret 均不投递。
-        request(path, desired)
-    confirmed = request(path)
-    if any(confirmed.get(key) != value for key, value in desired.items()):
-        raise SystemExit("浏览器客户端回调回读不一致，初始化未完成")
-    print("浏览器客户端回调已同步并查证" if changed else "浏览器客户端回调已一致，无需更新")
+    for client_id, desired in wanted.items():
+        clients = request(clients_path + "?" + urllib.parse.urlencode({"clientId": client_id}))
+        if len(clients) != 1 or clients[0].get("clientId") != client_id:
+            raise SystemExit(f"客户端 {client_id} 不存在或不唯一，拒绝创建替代身份")
+        path = clients_path + "/" + urllib.parse.quote(clients[0]["id"], safe="")
+        current = request(path)
+        changed = not same(current, desired)
+        if changed:
+            # 只发送回调相关字段，其他 client 属性、protocol mapper 与 secret 均不投递。
+            request(path, desired)
+        confirmed = request(path)
+        if not same(confirmed, desired):
+            raise SystemExit(f"客户端 {client_id} 回调回读不一致，初始化未完成")
+        print(f"客户端 {client_id} 回调已同步并查证" if changed else f"客户端 {client_id} 回调已一致，无需更新")
 except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
-    raise SystemExit("浏览器客户端同步未完成；修复 IdP 连接或配置后重跑查证，不重建 realm") from None
+    raise SystemExit("客户端回调同步未完成；修复 IdP 连接或配置后重跑查证，不重建 realm") from None
 PYSYNC
   exit 0
 fi
@@ -351,8 +364,8 @@ gen temporal_db_password
 gen spicedb_preshared_key
 gen spicedb_db_password
 
-gen kailo_core_client_secret
-gen kailo_worker_client_secret
+gen core_client_secret
+gen worker_client_secret
 gen browser_client_secret
 gen_hex oidc_cookie_secret
 # Relay 自身的 Nostr 身份，32 字节十六进制。它与 RelayOperatorIdentity 的密钥
@@ -430,8 +443,8 @@ OIDC_NATIVE_MOBILE_REDIRECT_URI="$OIDC_NATIVE_MOBILE_REDIRECT_URI" python3 - <<'
 import json
 import os
 from_file = {
-    "__KAILO_CORE_CLIENT_SECRET__": "secrets/kailo_core_client_secret",
-    "__KAILO_WORKER_CLIENT_SECRET__": "secrets/kailo_worker_client_secret",
+    "__CORE_CLIENT_SECRET__": "secrets/core_client_secret",
+    "__WORKER_CLIENT_SECRET__": "secrets/worker_client_secret",
     "__BROWSER_CLIENT_SECRET__": "secrets/browser_client_secret",
     "__VERIFY_USER_PASSWORD__": "secrets/verify_user_password",
     "__BOOTSTRAP_USER_PASSWORD__": "secrets/bootstrap_user_password",
@@ -513,14 +526,14 @@ printf '  已生成：secrets/spicedb.env\n'
 # 文件 bind mount 进去，uid/gid/mode 全部被忽略。宿主上这些文件是 0600 属主
 # 为当前用户，而 core 镜像以 uid 10001 运行，因此读不到。同一原因下
 # SpiceDB 也走 env_file（它是 distroless）。
-{ printf 'OIDC_SERVICE_CLIENT_SECRET='; cat secrets/kailo_core_client_secret; printf '\n'
+{ printf 'OIDC_SERVICE_CLIENT_SECRET='; cat secrets/core_client_secret; printf '\n'
   printf 'RELAY_OPERATOR_PRIVATE_KEY='; cat secrets/relay_operator_private_key; printf '\n'; } > secrets/core-service.env
 chmod 600 secrets/core-service.env
 printf '  已生成：secrets/core-service.env\n'
 
 # Worker 的两把凭据：自己的 OIDC client secret 与 SpiceDB 的 PSK。
 # 与上面的原始 secret 同源，保持单一真值。
-{ printf 'OIDC_WORKER_CLIENT_SECRET='; cat secrets/kailo_worker_client_secret; printf '\n'
+{ printf 'OIDC_WORKER_CLIENT_SECRET='; cat secrets/worker_client_secret; printf '\n'
   printf 'SPICEDB_GRPC_PRESHARED_KEY='; cat secrets/spicedb_preshared_key; printf '\n'; } > secrets/worker.env
 chmod 600 secrets/worker.env
 printf '  已生成：secrets/worker.env\n'

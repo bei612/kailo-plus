@@ -68,7 +68,7 @@ pub fn target_id(t: &RoleTemplate, object_id: Uuid, principal: Uuid) -> Uuid {
     Uuid::new_v5(
         &Uuid::NAMESPACE_URL,
         format!(
-            "urn:kailo:role:{}:{}:{}:{}",
+            "urn:platform:role:{}:{}:{}:{}",
             t.object_type, object_id, t.role_key, principal
         )
         .as_bytes(),

@@ -1,7 +1,7 @@
 //! Core 到 Temporal 的 Start 面（`.design/06` §3.1、`DD-48`）。
 //!
 //! Core 在 Start 之前持久化唯一 `WorkflowRef`，workflow ID 固定为
-//! `kailo:<kind>:<tenant_id>:<primary_entity_id>:<entity_version>`——这让
+//! `platform:<kind>:<tenant_id>:<primary_entity_id>:<entity_version>`——这让
 //! 「不分配第二个业务 workflow ID」可被机械校验，而不是靠调用方自觉。
 //!
 //! 用官方 Rust 客户端（`temporalio/sdk-rust` 的 `temporalio-client`）走 gRPC。
@@ -31,7 +31,7 @@ use crate::oidc::TokenSource;
 
 /// 调用方标识。它出现在 Temporal 的 history 与 task 归属里，用来分辨
 /// 「谁启动的」——Core 与 Worker 必须不同，否则运维面看不出区别。
-const IDENTITY: &str = "kailo-core";
+const IDENTITY: &str = "platform-core";
 
 #[derive(Debug, thiserror::Error)]
 pub enum TemporalError {
@@ -75,9 +75,10 @@ pub enum ObservedState {
     Unrecognized(i32),
 }
 
-/// 本 namespace 固定登记的三个 Keyword Search Attribute（`.design/06` §2）。
-pub const SA_TENANT: &str = "KailoTenantId";
-pub const SA_KIND: &str = "KailoWorkflowKind";
+/// 本 namespace 固定登记的三个 Keyword Search Attribute（`.design/06` §3）。Core 在 Start
+/// 时写其中两个；ADR-17 迁移窗口内旧名 SA 只读不写，Core 不按 SA 列举，不需要旧名常量。
+pub const SA_TENANT: &str = "PlatformTenantId";
+pub const SA_KIND: &str = "PlatformWorkflowKind";
 
 pub struct TemporalClient {
     client: Client,

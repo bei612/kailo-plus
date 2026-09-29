@@ -173,7 +173,7 @@ def render(rows: list[tuple[str, str, str]]) -> str:
         "",
         "import '../contracts/contracts.dart';",
         "",
-        "String kailoReasonText(ReasonCode reason, {String? locale}) {",
+        "String platformReasonText(ReasonCode reason, {String? locale}) {",
         "  final language = (locale ?? Platform.localeName)",
         "      .toLowerCase();",
         "  if (language.startsWith('zh')) {",
@@ -187,7 +187,7 @@ def render(rows: list[tuple[str, str, str]]) -> str:
             "  };",
             "}",
             "",
-            "String kailoReasonCode(ReasonCode reason) => reasonCodeValues.reverse[reason]!;",
+            "String platformReasonCode(ReasonCode reason) => reasonCodeValues.reverse[reason]!;",
             "",
         ]
     )
@@ -216,19 +216,19 @@ def render_platform(
         "",
         "import '../contracts/contracts.dart';",
         "",
-        "enum KailoMessageKey {",
+        "enum PlatformMessageKey {",
     ]
     lines.extend(f"  {key}," for key in keys)
-    lines.extend(["}", "", "const _messages = <KailoMessageKey, (String, String)>{"])
+    lines.extend(["}", "", "const _messages = <PlatformMessageKey, (String, String)>{"])
     lines.extend(
-        f"  KailoMessageKey.{dart_key(key)}: ({dart_string(en)}, {dart_string(zh)}),"
+        f"  PlatformMessageKey.{dart_key(key)}: ({dart_string(en)}, {dart_string(zh)}),"
         for key, en, zh in messages
     )
     lines.extend(
         [
             "};",
             "",
-            "String kailoText(KailoMessageKey key, {String? locale, Map<String, Object>? variables}) {",
+            "String platformText(PlatformMessageKey key, {String? locale, Map<String, Object>? variables}) {",
             "  final language = (locale ?? Platform.localeName).toLowerCase();",
             "  final pair = _messages[key]!;",
             "  final template = language.startsWith('zh') ? pair.$2 : pair.$1;",
@@ -241,7 +241,7 @@ def render_platform(
     for enum, rows in groups.items():
         lines.extend(
             [
-                f"String kailo{enum}Text({enum} value, {{String? locale}}) {{",
+                f"String platform{enum}Text({enum} value, {{String? locale}}) {{",
                 "  final language = (locale ?? Platform.localeName).toLowerCase();",
                 "  if (language.startsWith('zh')) {",
                 "    return switch (value) {",
@@ -254,16 +254,16 @@ def render_platform(
 
     lines.extend(
         [
-            "String _kailoLanguage(String? locale) =>",
+            "String _platformLanguage(String? locale) =>",
             "    (locale ?? Platform.localeName).toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';",
             "",
-            f"const kailoCalendarWeekdayBandDays = {weekday_band_days};",
-            f"const kailoTimeSecondsDay = {seconds['day']};",
+            f"const platformCalendarWeekdayBandDays = {weekday_band_days};",
+            f"const platformTimeSecondsDay = {seconds['day']};",
             "",
-            "String kailoIntlLocale({String? locale}) =>",
-            "    _kailoLanguage(locale) == 'zh-CN' ? 'zh_CN' : 'en_US';",
+            "String platformIntlLocale({String? locale}) =>",
+            "    _platformLanguage(locale) == 'zh-CN' ? 'zh_CN' : 'en_US';",
             "",
-            "const _kailoPluralOneLocales = <String>{",
+            "const _platformPluralOneLocales = <String>{",
         ]
     )
     lines.extend(f"  {dart_string(locale)}," for locale in plural_locales)
@@ -271,10 +271,10 @@ def render_platform(
         [
             "};",
             "",
-            "bool kailoPluralOne(int count, {String? locale}) =>",
-            "    count == 1 && _kailoPluralOneLocales.contains(_kailoLanguage(locale));",
+            "bool platformPluralOne(int count, {String? locale}) =>",
+            "    count == 1 && _platformPluralOneLocales.contains(_platformLanguage(locale));",
             "",
-            "const _kailoSpecialRelativeUnits = <String>{",
+            "const _platformSpecialRelativeUnits = <String>{",
         ]
     )
     lines.extend(f"  {dart_string(unit)}," for unit in special_units)
@@ -282,13 +282,13 @@ def render_platform(
         [
             "};",
             "",
-            "String kailoAbsoluteTime(String rfc3339, {String? locale}) {",
+            "String platformAbsoluteTime(String rfc3339, {String? locale}) {",
             "  final at = DateTime.tryParse(rfc3339);",
             "  if (at == null) {",
-            "    return kailoText(KailoMessageKey.platformTimeUnavailable, locale: locale);",
+            "    return platformText(PlatformMessageKey.platformTimeUnavailable, locale: locale);",
             "  }",
             "  final local = at.toLocal();",
-            "  return kailoText(KailoMessageKey.platformTimeAbsolute, locale: locale, variables: {",
+            "  return platformText(PlatformMessageKey.platformTimeAbsolute, locale: locale, variables: {",
             "    'year': local.year,",
             "    'month': local.month,",
             "    'day': local.day,",
@@ -297,15 +297,15 @@ def render_platform(
             "  });",
             "}",
             "",
-            "String kailoRelativeTime(String rfc3339, {String? locale, DateTime? now}) {",
+            "String platformRelativeTime(String rfc3339, {String? locale, DateTime? now}) {",
             "  final at = DateTime.tryParse(rfc3339);",
             "  if (at == null) {",
-            "    return kailoText(KailoMessageKey.platformTimeUnavailable, locale: locale);",
+            "    return platformText(PlatformMessageKey.platformTimeUnavailable, locale: locale);",
             "  }",
             "  final current = now ?? DateTime.now();",
             "  final elapsed = ((at.millisecondsSinceEpoch - current.millisecondsSinceEpoch).abs() / 1000).round();",
             "  if (elapsed == 0) {",
-            "    return kailoText(KailoMessageKey.platformTimeNow, locale: locale);",
+            "    return platformText(PlatformMessageKey.platformTimeNow, locale: locale);",
             "  }",
             "  var unit = 'second';",
             "  var count = elapsed;",
@@ -323,9 +323,9 @@ def render_platform(
     lines.extend(
         [
             "  final direction = at.isAfter(current) ? 'future' : 'past';",
-            "  final form = count == 1 && _kailoSpecialRelativeUnits.contains(unit)",
+            "  final form = count == 1 && _platformSpecialRelativeUnits.contains(unit)",
             "      ? 'one'",
-            "      : (kailoPluralOne(count, locale: locale) ? 'one' : 'other');",
+            "      : (platformPluralOne(count, locale: locale) ? 'one' : 'other');",
             "  final key = switch ('$direction.$unit.$form') {",
         ]
     )
@@ -333,12 +333,12 @@ def render_platform(
         for unit in ("second", "minute", "hour", "day", "month"):
             for form in ("one", "other"):
                 key = f"platform.time.{direction}.{unit}.{form}"
-                lines.append(f"    '{direction}.{unit}.{form}' => KailoMessageKey.{dart_key(key)},")
+                lines.append(f"    '{direction}.{unit}.{form}' => PlatformMessageKey.{dart_key(key)},")
     lines.extend(
         [
-            "    _ => KailoMessageKey.platformTimeUnavailable,",
+            "    _ => PlatformMessageKey.platformTimeUnavailable,",
             "  };",
-            "  return kailoText(key, locale: locale, variables: {'count': count});",
+            "  return platformText(key, locale: locale, variables: {'count': count});",
             "}",
             "",
         ]

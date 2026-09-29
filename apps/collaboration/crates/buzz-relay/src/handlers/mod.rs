@@ -14,7 +14,7 @@ pub mod community_provisioning;
 pub mod count;
 /// EVENT handler — WS dispatcher → ingest pipeline → fan-out.
 pub mod event;
-/// Kailo: owner-governed communities (SS-BUZ-GOVERNANCE).
+/// Platform: owner-governed communities (SS-BUZ-GOVERNANCE).
 pub mod governance;
 /// NIP-IA identity archive request handler (kinds 9035–9036).
 pub mod identity_archive;

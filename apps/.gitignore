@@ -42,7 +42,7 @@ coverage/
 # Python 字节码缓存（tools/upstream_manifest.py 被 check.sh 导入时生成）
 __pycache__/
 
-# 二开项目（ADR-16）：取舍以各树自己的 .gitignore 为准。上面为 Kailo 自有代码写的密钥形态文件名、
+# 二开项目（ADR-16）：取舍以各树自己的 .gitignore 为准。上面为平台自有代码写的密钥形态文件名、
 # 本机工具目录在上游源码里是被跟踪的测试夹具与仓库配置，不能因为落在 apps/ 下就被悄悄漏掉；
 # 构建输出（target/、node_modules/、dist/ 等）不在此放开。
 !/collaboration/**/*.pem

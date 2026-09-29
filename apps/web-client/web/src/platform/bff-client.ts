@@ -1,10 +1,10 @@
-// Kailo BFF 传输（DD-39、SS-WEB-RELAY）。
+// 平台 BFF 传输（DD-39、SS-WEB-RELAY）。
 //
 // Browser 只发类型化的语义命令。它不接收 Relay URL、不接收 Nostr 私钥，
 // 不生成 NIP-42/NIP-98/NIP-44，也不提交 raw signed event 或任意 Relay filter。
 // 身份由 AgentGateway 验证后投影给 BFF，浏览器这一侧没有任何可自报的身份字段。
 //
-// 与 Desktop 共用的部分——传输接缝、错误解读、会话/成员/审计/设备端点——在 Kailo
+// 与 Desktop 共用的部分——传输接缝、错误解读、会话/成员/审计/设备端点——在平台
 // 的共用包里（@client-kit/platform，构建时放入源树，ADR-09），这里只接上 Web 的同源
 // fetch 传输，并补上只有 Web 才有的调用：频道流、经 BFF 代签的发布与媒体、已读与
 // Workspace 偏好、网关退出。
@@ -72,7 +72,7 @@ export async function signOut(): Promise<void> {
 /**
  * 发布一条消息。只给正文——身份、签名、频道归属都由 BFF 决定。`idempotencyKey`
  * 标识「这一次发送意图」：结果不明之后重发必须带同一个键，BFF 据此回答原操作的
- * 结论而不是再发一条（Kailo DD-81）。
+ * 结论而不是再发一条（DD-81）。
  */
 export async function publishMessage(
   workspaceId: string,

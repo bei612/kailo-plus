@@ -34,7 +34,7 @@
 |---|---|---|
 | `requirements.toml` | `/etc/codex/requirements.toml` | system requirements：管理员强制，优先于 CODEX_HOME 配置和 `thread/start` 覆写（`config/src/loader/mod.rs::system_requirements_toml_file`） |
 | `config.toml` | `/etc/codex/config.toml` | system 配置层（`SYSTEM_CONFIG_TOML_FILE_UNIX`） |
-| `environments.toml` | `/usr/share/kailo/codex/environments.toml` | Core 在 spawn 前原样写入每个 Installation 的 `CODEX_HOME/environments.toml` |
+| `environments.toml` | `/usr/share/platform/codex/environments.toml` | Core 在 spawn 前原样写入每个 Installation 的 `CODEX_HOME/environments.toml` |
 
 逐项核验。实测做法：在私有 mount namespace 里把 `/etc/codex` overlay 成上表内容，以普通用户身份经 stdio 驱动 debug 版 `codex-app-server`。
 

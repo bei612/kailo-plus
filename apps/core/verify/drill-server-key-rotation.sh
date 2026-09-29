@@ -44,7 +44,7 @@ old=$(PSQL "select pubkey from identity.buzz_identity_binding where principal_id
 echo "  principal $principal，Web 托管 pubkey $old"
 
 token=$(curl -sf -H "Host: $OIDC_TOKEN_HOST" "$OIDC_TOKEN_URL" --data-urlencode grant_type=client_credentials \
-  --data-urlencode client_id="$OIDC_WORKER_CLIENT_ID" --data-urlencode "client_secret@deploy/local/secrets/kailo_worker_client_secret" \
+  --data-urlencode client_id="$OIDC_WORKER_CLIENT_ID" --data-urlencode "client_secret@deploy/local/secrets/worker_client_secret" \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
 admit() { # runbook 步骤 E 第 1 步的同一条语句
   local a; a=$(python3 -c 'import uuid;print(uuid.uuid4())')
@@ -55,14 +55,14 @@ admit() { # runbook 步骤 E 第 1 步的同一条语句
 }
 call() { curl -s -w ' HTTP %{http_code}' -H "Authorization: Bearer $token" -H 'Content-Type: application/json' "$CORE_SERVICE_URL$1" -d "$2"; }
 publish() {
-  curl -s -o /dev/null -w '%{http_code}' -H "x-kailo-oidc-issuer: $OIDC_ISSUER" -H "x-kailo-oidc-subject: $subject" \
+  curl -s -o /dev/null -w '%{http_code}' -H "x-platform-oidc-issuer: $OIDC_ISSUER" -H "x-platform-oidc-subject: $subject" \
     -H "idempotency-key: $(python3 -c 'import uuid;print(uuid.uuid4())')" -H 'Content-Type: application/json' \
     "$VERIFY_BFF_URL/api/v1/workspaces/$workspace/messages" -d "{\"content\":\"$1\"}"
 }
 echo "  轮换前发言：HTTP $(publish before)"
 
 step "1. 建立一条 BFF 流，停掉 Worker（撤销 Workflow 无法推进）"
-curl -sN -H "x-kailo-oidc-issuer: $OIDC_ISSUER" -H "x-kailo-oidc-subject: $subject" \
+curl -sN -H "x-platform-oidc-issuer: $OIDC_ISSUER" -H "x-platform-oidc-subject: $subject" \
   "$VERIFY_BFF_URL/api/v1/workspaces/$workspace/stream" >/tmp/rbkey.stream 2>/dev/null &
 stream_pid=$!
 sleep 2

@@ -665,7 +665,7 @@ pub struct AppState {
     pub media_upload_semaphore: Arc<Semaphore>,
 
     /// Workflow engine for background processing. `None` when the relay
-    /// governs its communities (Kailo DD-106): the engine is never built, so
+    /// governs its communities (DD-106): the engine is never built, so
     /// no action sink, cron loop or event trigger exists.
     pub workflow_engine: Option<Arc<WorkflowEngine>>,
     /// Relay signing keypair — used to sign system messages (kind 40099).

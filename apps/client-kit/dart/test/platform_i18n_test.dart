@@ -7,19 +7,19 @@ import 'package:client_kit/shared/platform/reason_text.dart';
 void main() {
   test('every contract reason has both supported locale renderings', () {
     for (final reason in ReasonCode.values) {
-      expect(kailoReasonText(reason, locale: 'en'), isNotEmpty);
-      expect(kailoReasonText(reason, locale: 'zh-CN'), isNotEmpty);
-      expect(kailoReasonCode(reason), isNotEmpty);
+      expect(platformReasonText(reason, locale: 'en'), isNotEmpty);
+      expect(platformReasonText(reason, locale: 'zh-CN'), isNotEmpty);
+      expect(platformReasonCode(reason), isNotEmpty);
     }
   });
 
   test('Mobile resolves zh variants like the shared TypeScript surface', () {
     expect(
-      kailoReasonText(ReasonCode.DISPATCH_RESULT_UNKNOWN, locale: 'zh-Hant'),
+      platformReasonText(ReasonCode.DISPATCH_RESULT_UNKNOWN, locale: 'zh-Hant'),
       '是否已生效尚不明确。',
     );
     expect(
-      kailoReasonText(ReasonCode.DISPATCH_RESULT_UNKNOWN, locale: 'fr-FR'),
+      platformReasonText(ReasonCode.DISPATCH_RESULT_UNKNOWN, locale: 'fr-FR'),
       'Whether it took effect is not known yet.',
     );
   });
@@ -27,19 +27,19 @@ void main() {
   test('every platform key has en and zh-CN renderings', () {
     // 参数型文案也要用有效参数检查，否则纯参数模板会被误判为空翻译。
     const sampleVariables = <String, Object>{'date': 'sample'};
-    for (final key in KailoMessageKey.values) {
+    for (final key in PlatformMessageKey.values) {
       expect(
-        kailoText(key, locale: 'en', variables: sampleVariables),
+        platformText(key, locale: 'en', variables: sampleVariables),
         isNotEmpty,
       );
       expect(
-        kailoText(key, locale: 'zh-CN', variables: sampleVariables),
+        platformText(key, locale: 'zh-CN', variables: sampleVariables),
         isNotEmpty,
       );
     }
     expect(
-      kailoText(
-        KailoMessageKey.approvalsRequirement,
+      platformText(
+        PlatformMessageKey.approvalsRequirement,
         locale: 'zh-Hant',
         variables: {'selector': '组织管理员', 'count': 2},
       ),
@@ -49,22 +49,28 @@ void main() {
 
   test('contract enum labels use the same catalog as Web and Desktop', () {
     for (final status in ApprovalStatus.values) {
-      expect(kailoApprovalStatusText(status, locale: 'zh-CN'), isNotEmpty);
+      expect(platformApprovalStatusText(status, locale: 'zh-CN'), isNotEmpty);
     }
     for (final status in TenantInvitationStatus.values) {
-      expect(kailoTenantInvitationStatusText(status, locale: 'en'), isNotEmpty);
+      expect(
+        platformTenantInvitationStatusText(status, locale: 'en'),
+        isNotEmpty,
+      );
     }
     for (final state in TenantMembershipState.values) {
       expect(
-        kailoTenantMembershipStateText(state, locale: 'zh-CN'),
+        platformTenantMembershipStateText(state, locale: 'zh-CN'),
         isNotEmpty,
       );
     }
     for (final decision in ApprovalDecision.values) {
-      expect(kailoApprovalDecisionText(decision, locale: 'en'), isNotEmpty);
+      expect(platformApprovalDecisionText(decision, locale: 'en'), isNotEmpty);
     }
     for (final selector in ApprovalSelector.values) {
-      expect(kailoApprovalSelectorText(selector, locale: 'zh-CN'), isNotEmpty);
+      expect(
+        platformApprovalSelectorText(selector, locale: 'zh-CN'),
+        isNotEmpty,
+      );
     }
   });
 }

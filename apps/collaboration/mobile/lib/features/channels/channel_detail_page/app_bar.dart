@@ -34,7 +34,7 @@ class _ChannelAppBarTitle extends ConsumerWidget {
     // 人数按人算，不按 Relay roster 上的公钥算：一个人可能有 Web 与多台设备
     // 的公钥（DD-77）
     final memberCount = ref
-        .watch(kailoWorkspaceMembersProvider(channel.id))
+        .watch(platformWorkspaceMembersProvider(channel.id))
         .value
         ?.length;
     final memberLabel = memberCount == null

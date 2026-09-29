@@ -20,12 +20,14 @@ use uuid::Uuid;
 
 /// 网关投影的两条 header。名字与 `SS-AGW-OIDC` 的 `set` 目标严格一致——
 /// 改这里而不改网关配置会让整条链静默失效。
-pub(crate) const HEADER_ISSUER: &str = "x-kailo-oidc-issuer";
-pub(crate) const HEADER_SUBJECT: &str = "x-kailo-oidc-subject";
+pub(crate) const HEADER_ISSUER: &str = "x-platform-oidc-issuer";
+pub(crate) const HEADER_SUBJECT: &str = "x-platform-oidc-subject";
 
 /// BFF 的运行状态。
 #[derive(Clone)]
 pub struct BffState {
+    /// 部署配置下发的公开平台信息（DD-111），启动时校验，运行期不变
+    pub platform_info: std::sync::Arc<contracts::PlatformInfo>,
     pub pool: PgPool,
     /// 设备公钥登记等用户动作要启动 ComponentTaskWorkflow（DD-79）
     pub temporal: std::sync::Arc<crate::temporal::TemporalClient>,
@@ -145,6 +147,8 @@ pub fn router(state: BffState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .exposed_route("/api/v1/session", get(current_session))
+        // 公开平台信息（DD-111）：不解析身份，三端据此显示部署的产品名
+        .exposed_route("/api/v1/platform-info", get(crate::platform_info::get))
         // SS-WEB-RELAY：Browser 只发类型化语义命令，不发 raw event、不发任意 filter
         .exposed_route(
             "/api/v1/workspaces/{workspace_id}/messages",
@@ -432,7 +436,7 @@ fn error_response(e: IdentityError) -> Response {
 
 /// 撤销调用方自己的 PlatformSession。
 ///
-/// `SS-AGW-OIDC` 把注销分成两半：网关清本地 cookie，Kailo 在同一条成功路径上
+/// `SS-AGW-OIDC` 把注销分成两半：网关清本地 cookie，平台在同一条成功路径上
 /// 撤销 Core 会话并关闭 stream。顺序不能反——网关的 logout 是短路的，请求不到
 /// 后端（`SF-AGW-21`），先调它就再也没机会告诉 Core。
 ///

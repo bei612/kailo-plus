@@ -481,7 +481,7 @@ void main() {
     expect(snapshot.height, 2048);
   });
 
-  group('Kailo Mobile message actions', () {
+  group('Mobile message actions', () {
     testWidgets('offer no reactions, edits, deletions or reminders', (
       tester,
     ) async {

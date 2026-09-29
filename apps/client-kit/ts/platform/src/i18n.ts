@@ -618,6 +618,7 @@ export const platformMessages = {
     "zh-CN": "设置未被接受：{message}",
   },
   "native.signIn.title": { en: "Sign in", "zh-CN": "登录" },
+  "native.signIn.titleNamed": { en: "Sign in to {name}", "zh-CN": "登录{name}" },
   "native.signIn.explain": {
     en: "Sign-in opens in your system browser. Come back here when it is done.",
     "zh-CN": "登录会在系统浏览器中打开，完成后回到这里。",
@@ -794,7 +795,7 @@ export const evidenceKindMessages = {
 } as const satisfies Record<EvidenceKind, Message>;
 
 export const evidenceAuthorityMessages = {
-  [EvidenceAuthority.Core]: { en: "Kailo Core", "zh-CN": "Kailo Core" },
+  [EvidenceAuthority.Core]: { en: "Platform core", "zh-CN": "平台核心" },
   [EvidenceAuthority.Buzz]: { en: "Buzz", "zh-CN": "Buzz" },
   [EvidenceAuthority.Oidc]: { en: "Sign-in provider", "zh-CN": "登录身份源" },
   [EvidenceAuthority.Spicedb]: { en: "Permission service", "zh-CN": "权限服务" },

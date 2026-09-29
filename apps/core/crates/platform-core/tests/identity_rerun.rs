@@ -99,7 +99,7 @@ async fn run(
     let pubkey = Keys::generate().public_key().to_hex();
     let original = Uuid::new_v4();
     let operation = Uuid::new_v4();
-    let old_workflow = format!("kailo:BUZZ_IDENTITY_PROJECTION:{}:{pubkey}:1", fx.tenant);
+    let old_workflow = format!("platform:BUZZ_IDENTITY_PROJECTION:{}:{pubkey}:1", fx.tenant);
     let mut tx = pool.begin().await.expect("开始夹具事务");
     sqlx::query(
         "insert into identity.buzz_identity_binding
@@ -220,7 +220,7 @@ async fn run(
     assert!(status.is_success(), "重跑准入失败：{status} {rerun}");
     let rerun_id = Uuid::parse_str(rerun["actionExecutionId"].as_str().expect("重跑动作 ID"))
         .expect("重跑动作 UUID");
-    let new_workflow = format!("kailo:BUZZ_IDENTITY_PROJECTION:{}:{pubkey}:2", fx.tenant);
+    let new_workflow = format!("platform:BUZZ_IDENTITY_PROJECTION:{}:{pubkey}:2", fx.tenant);
     until(e, "新身份 Workflow 完成", || async {
         let row: Option<(String, String, i32)> = sqlx::query_as(
             "select t.status, b.state, b.version

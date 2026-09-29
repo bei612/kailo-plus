@@ -59,7 +59,7 @@ describe("MessageContent", () => {
     expect(html).toContain('data-protected-image-frame="true"');
     expect(html).toContain("aspect-ratio:1080 / 1920");
     expect(html).toContain("width:min(100%, 144px)");
-    // Kailo：媒体按 imeta 的 hash 经 BFF 同源读取，不指向 Relay
+    // 平台：媒体按 imeta 的 hash 经 BFF 同源读取，不指向 Relay
     expect(html).toContain(`src="/api/v1/workspaces/${WORKSPACE}/media/${SHA}"`);
     expect(html).not.toContain(`src="${IMAGE_URL}"`);
   });

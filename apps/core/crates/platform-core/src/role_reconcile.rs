@@ -50,15 +50,15 @@ struct Metrics {
 pub fn spawn(g: Arc<Governance>, meter: &Meter, cfg: Config) {
     let metrics = Metrics {
         removed: meter
-            .u64_counter("kailo.role_reconcile.removed")
+            .u64_counter("platform.role_reconcile.removed")
             .with_description("按成员事实删除的残留角色 relationship")
             .build(),
         headless: meter
-            .u64_gauge("kailo.tenant.without_effective_admin")
+            .u64_gauge("platform.tenant.without_effective_admin")
             .with_description("有效 Tenant admin 为空的 ACTIVE Tenant 数（DD-82）")
             .build(),
         passes: meter
-            .u64_counter("kailo.role_reconcile.passes")
+            .u64_counter("platform.role_reconcile.passes")
             .with_description("角色对账轮次，按是否完成区分")
             .build(),
     };
@@ -214,7 +214,7 @@ async fn remove(g: &Governance, rel: &Relationship, tenant: Option<Uuid>) -> Res
     };
     let operation = Uuid::new_v5(
         &Uuid::NAMESPACE_URL,
-        format!("urn:kailo:role-reconcile:{value}:{token}").as_bytes(),
+        format!("urn:platform:role-reconcile:{value}:{token}").as_bytes(),
     );
     let mut tx = g.pool.begin().await.map_err(|e| e.to_string())?;
     append(

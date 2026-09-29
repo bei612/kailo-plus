@@ -20,8 +20,8 @@ void main() {
     addTearDown(container.dispose);
     await container.read(authProvider.future);
 
-    final first = _community('t1.kailo.test');
-    final second = _community('t1.kailo.test:8443');
+    final first = _community('t1.platform.test');
+    final second = _community('t1.platform.test:8443');
     await container
         .read(authProvider.notifier)
         .authenticateWithCommunity(first);
@@ -46,7 +46,7 @@ void main() {
     await container.read(authProvider.future);
     await container
         .read(authProvider.notifier)
-        .authenticateWithCommunity(_community('t1.kailo.test'));
+        .authenticateWithCommunity(_community('t1.platform.test'));
 
     await container.read(authProvider.notifier).signOut();
 

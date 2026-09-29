@@ -196,7 +196,7 @@ describe("InvitationRedeemPage", () => {
 
 describe("审批详情里的邀请", () => {
   it("确认兑换的审批带出邀请称呼与兑换者自报名", async () => {
-    const wf = "kailo:APPROVAL:t1:ae-admit:1";
+    const wf = "platform:APPROVAL:t1:ae-admit:1";
     const approval = {
       workflowId: wf,
       actionExecutionId: "ae-admit",

@@ -29,7 +29,7 @@ for _ in $(seq 1 180); do [ -s /tmp/rbaudit.fixture ] && break; sleep 1; done
 ws=$(python3 -c 'import json;print(json.load(open("/tmp/rbaudit.fixture"))["workspace"])')
 bff() {
   curl -s -o /tmp/rbaudit.body -w '%{http_code}' -X "$1" "$VERIFY_BFF_URL/api/v1/workspaces/$ws/messages" \
-    -H "x-kailo-oidc-issuer: $OIDC_ISSUER" -H "x-kailo-oidc-subject: $subject" \
+    -H "x-platform-oidc-issuer: $OIDC_ISSUER" -H "x-platform-oidc-subject: $subject" \
     ${2:+-H 'Content-Type: application/json' -H "Idempotency-Key: $(python3 -c 'import uuid;print(uuid.uuid4())')" -d "$2"}
 }
 in_history() { bff GET >/dev/null; grep -c "$1" /tmp/rbaudit.body || true; }

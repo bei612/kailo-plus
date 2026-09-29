@@ -28,8 +28,8 @@ async fn bff_publish(
             "{}/api/v1/workspaces/{}/messages",
             e.bff_url, fx.workspace
         ))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", &fx.subject)
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", &fx.subject)
         .header("idempotency-key", Uuid::new_v4().to_string())
         .json(&serde_json::json!({ "content": content }))
         .send()
@@ -318,8 +318,8 @@ async fn run(
             "{}/api/v1/workspaces/{}/stream",
             e.bff_url, fx.workspace
         ))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", &fx.subject)
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", &fx.subject)
         .send()
         .await
         .expect("开流");
@@ -600,8 +600,8 @@ async fn run(
             "{}/api/v1/workspaces/{}/messages",
             e.bff_url, fx.workspace
         ))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", &fx.subject)
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", &fx.subject)
         .send()
         .await
         .expect("读历史")

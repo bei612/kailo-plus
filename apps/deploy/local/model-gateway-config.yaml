@@ -8,7 +8,7 @@
 # 四条来自 SS-AGW-OIDC 的硬约束，改动前先读该接缝：
 #   1. OIDC 在 route transformation 之前运行，因此 transformation 可读 jwt.*
 #   2. 只用两条 set 投影固定 issuer 与 subject，二者不得进入 remove 列表
-#   3. 其它 x-kailo-* 身份 header 先移除——Browser 自报的一律不可信
+#   3. 其它 x-platform-* 身份 header 与旧前缀 x-kailo-* header 先移除——Browser 自报的一律不可信
 #   4. set 求值失败会删除目标 header；BFF 以缺失即拒绝保持 fail closed
 #
 # 禁止投影 raw token 与任何角色 claim：授权在 Core 重做，网关不是授权权威。
@@ -75,7 +75,7 @@ binds:
         #
         # 落点只能是本地路径，而 listener 级 OIDC 之下没有公开页可落：浏览器
         # 会经 IdP 重新走一次登录。IdP 自身的会话还在时，这一次不会要求口令
-        # ——那是 IdP 的会话，不是 Kailo 的；Kailo 一侧的 PlatformSession 与
+        # ——那是 IdP 的会话，不是平台的；平台一侧的 PlatformSession 与
         # 网关 cookie 都已失效，重新进入是一次新的登录、新的会话（.design/09）。
         logout:
           path: /logout
@@ -87,27 +87,36 @@ binds:
           # `proxy-authorization` 必须在列：AgentGateway 故意不把它当作
           # hop-by-hop header 清理，好让 forward-proxy 的认证策略读到它
           # （SF-AGW-20）。反向代理 route 因此会把调用方提交的代理凭据原样
-          # 转给 upstream。DD-73 要求 Kailo 的每条 route 在 dispatch 前
+          # 转给 upstream。DD-73 要求平台的每条 route 在 dispatch 前
           # 无条件删除它——这里是那条要求的唯一执行点。
           #
-          # 两个投影目标 x-kailo-oidc-issuer / x-kailo-oidc-subject 刻意
+          # 两个投影目标 x-platform-oidc-issuer / x-platform-oidc-subject 刻意
           # 不在此列表中——接缝明确禁止。它们由下面的 set 无条件覆盖，
           # 而 CEL 求值得不到值时 apply_header 走 (Header(k), None) 分支
           # 直接删除该 header。因此 set 本身已保证「要么是已验证的值，
           # 要么不存在」；再列进 remove 只会引入删掉正确值的风险。
           #
-          # x-kailo-client-surface 只由原生 listener 投影（DD-78）。浏览器能
+          # x-platform-client-surface 只由原生 listener 投影（DD-78）。浏览器能
           # 自报它，就能打开只对原生端开放的入口（设备公钥登记）。
           remove:
           - proxy-authorization
+          - x-platform-human-identity
+          - x-platform-tenant
+          - x-platform-workspace
+          - x-platform-principal
+          - x-platform-client-surface
+          # ADR-17 之前的旧前缀身份 header 一律清理，且永久保留：清理没有代价，
+          # 删掉这几行就重开「外来旧名 header 被某个仍认旧名的读者采信」的伪造入口。
+          - x-kailo-oidc-issuer
+          - x-kailo-oidc-subject
+          - x-kailo-client-surface
           - x-kailo-human-identity
           - x-kailo-tenant
           - x-kailo-workspace
           - x-kailo-principal
-          - x-kailo-client-surface
           set:
-            x-kailo-oidc-issuer: jwt.iss
-            x-kailo-oidc-subject: jwt.sub
+            x-platform-oidc-issuer: jwt.iss
+            x-platform-oidc-subject: jwt.sub
 
     routes:
     # Web 面。镜像里的 Caddy 只 handle `/app*`，其余一律 404，因此前缀
@@ -158,14 +167,23 @@ binds:
           # 覆盖，客户端自报的同名 header 不会留下来。
           remove:
           - proxy-authorization
+          - x-platform-human-identity
+          - x-platform-tenant
+          - x-platform-workspace
+          - x-platform-principal
+          # ADR-17 之前的旧前缀身份 header 一律清理，且永久保留：清理没有代价，
+          # 删掉这几行就重开「外来旧名 header 被某个仍认旧名的读者采信」的伪造入口。
+          - x-kailo-oidc-issuer
+          - x-kailo-oidc-subject
+          - x-kailo-client-surface
           - x-kailo-human-identity
           - x-kailo-tenant
           - x-kailo-workspace
           - x-kailo-principal
           set:
-            x-kailo-oidc-issuer: jwt.iss
-            x-kailo-oidc-subject: jwt.sub
-            x-kailo-client-surface: '"native"'
+            x-platform-oidc-issuer: jwt.iss
+            x-platform-oidc-subject: jwt.sub
+            x-platform-client-surface: '"native"'
     routes:
     # 原生端只有管理平面经 BFF（DD-75）；Web 静态资源与 OIDC 回调都不在这里
     - name: bff-native

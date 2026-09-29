@@ -159,7 +159,7 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
 
     // 1. 漏写的终态。已有较大的 event_id 模拟 continue-as-new 前多个 run
     // 的累计长度；Describe 的最新 run history 长度不能直接覆盖它。
-    let missed = format!("kailo:verify:{}:missed-{tag}:1", f.tenant);
+    let missed = format!("platform:verify:{}:missed-{tag}:1", f.tenant);
     seed_ref(pool, f, &missed, "RUNNING", stale).await;
     let previous_event_id = 1_000_000_i64;
     sqlx::query(
@@ -176,12 +176,12 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
     temporal_start(e, &missed, "NOT_A_REGISTERED_KIND");
 
     // 4. Ref 已终结但派生 TaskProjection 缺失，不能被非终态过滤器漏掉。
-    let terminal_missing = format!("kailo:verify:{}:terminal-missing-{tag}:1", f.tenant);
+    let terminal_missing = format!("platform:verify:{}:terminal-missing-{tag}:1", f.tenant);
     seed_ref(pool, f, &terminal_missing, "TERMINAL", stale).await;
     temporal_start(e, &terminal_missing, "NOT_A_REGISTERED_KIND");
 
     // 2. 超出 retention 的 NotFound。十年一定在任何 retention 之外
-    let expired = format!("kailo:verify:{}:expired-{tag}:1", f.tenant);
+    let expired = format!("platform:verify:{}:expired-{tag}:1", f.tenant);
     seed_ref(
         pool,
         f,
@@ -190,7 +190,7 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
         std::time::Duration::from_secs(10 * 365 * 24 * 3600),
     )
     .await;
-    let expired_terminal = format!("kailo:verify:{}:expired-terminal-{tag}:1", f.tenant);
+    let expired_terminal = format!("platform:verify:{}:expired-terminal-{tag}:1", f.tenant);
     seed_ref(
         pool,
         f,
@@ -199,7 +199,7 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
         std::time::Duration::from_secs(10 * 365 * 24 * 3600),
     )
     .await;
-    let healthy_terminal = format!("kailo:verify:{}:healthy-terminal-{tag}:1", f.tenant);
+    let healthy_terminal = format!("platform:verify:{}:healthy-terminal-{tag}:1", f.tenant);
     seed_ref(
         pool,
         f,
@@ -218,8 +218,10 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
     .await
     .expect("建完整终态投影");
 
-    let recent_projection_of_old =
-        format!("kailo:verify:{}:recent-projection-of-old-{tag}:1", f.tenant);
+    let recent_projection_of_old = format!(
+        "platform:verify:{}:recent-projection-of-old-{tag}:1",
+        f.tenant
+    );
     seed_ref(
         pool,
         f,
@@ -238,7 +240,7 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
     .await
     .expect("建近期写回的历史终态投影");
 
-    let wrong_run = format!("kailo:verify:{}:wrong-run-{tag}:1", f.tenant);
+    let wrong_run = format!("platform:verify:{}:wrong-run-{tag}:1", f.tenant);
     seed_ref(pool, f, &wrong_run, "TERMINAL", stale).await;
     sqlx::query(
         "insert into projection.task_projection
@@ -252,7 +254,7 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
     temporal_start(e, &wrong_run, "NOT_A_REGISTERED_KIND");
 
     // 3. retention 窗口内的 NotFound
-    let unseen = format!("kailo:verify:{}:unseen-{tag}:1", f.tenant);
+    let unseen = format!("platform:verify:{}:unseen-{tag}:1", f.tenant);
     seed_ref(pool, f, &unseen, "PENDING_START", stale).await;
 
     // 等到八条都被观察过。对账每轮按「最久未观察」取一批。
@@ -416,7 +418,7 @@ async fn run(e: &Env, pool: &PgPool, f: &common::Fixture) {
             .await
             .expect("读成员版本");
     let finished = format!(
-        "kailo:MEMBERSHIP_PROJECTION:{}:{}:{version}",
+        "platform:MEMBERSHIP_PROJECTION:{}:{}:{version}",
         f.tenant, f.membership
     );
     seed_ref(pool, f, &finished, "TERMINAL", std::time::Duration::ZERO).await;

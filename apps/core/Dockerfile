@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS runtime
 # 以非 root 运行：Core 不需要任何特权
-RUN useradd --system --uid 10001 --no-create-home kailo
+RUN useradd --system --uid 10001 --no-create-home platform
 COPY --from=builder /build/apps/core/target/release/platform-core /usr/local/bin/platform-core
 USER 10001
 ENTRYPOINT ["/usr/local/bin/platform-core"]

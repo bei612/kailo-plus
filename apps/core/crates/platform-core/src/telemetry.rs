@@ -9,7 +9,7 @@ use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::Resource;
 
 /// 发布单元名，出现在每条信号的 resource 上。它是身份不是配置。
-const SERVICE_NAME: &str = "kailo-core";
+const SERVICE_NAME: &str = "platform-core";
 
 /// 以 `OTEL_EXPORTER_OTLP_ENDPOINT` 建立指标导出。缺失即拒绝启动：没有导出
 /// 的进程照样能跑，而投影落后与对账缺口就只剩没人看的日志（ADR-05「应用侧的

@@ -48,7 +48,7 @@ async fn provision_is_idempotent_for_same_owner_and_rejects_a_different_owner() 
     let http = reqwest::Client::new();
 
     let host = format!(
-        "t{}.kailo.local",
+        "t{}.platform.test",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -123,7 +123,7 @@ async fn signature_over_wrong_origin_is_rejected() {
     .expect("构造 operator 身份");
     let http = reqwest::Client::new();
     let err = id
-        .provision_community(&http, "x.kailo.local", &id.pubkey_hex())
+        .provision_community(&http, "x.platform.test", &id.pubkey_hex())
         .await
         .expect_err("错误 origin 必须失败");
     assert!(

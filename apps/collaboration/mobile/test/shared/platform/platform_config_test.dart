@@ -4,8 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-KailoConfig _config(String native, String issuer, String client) =>
-    KailoConfig(nativeApiUrl: native, oidcIssuer: issuer, oidcClientId: client);
+PlatformConfig _config(String native, String issuer, String client) =>
+    PlatformConfig(
+      nativeApiUrl: native,
+      oidcIssuer: issuer,
+      oidcClientId: client,
+    );
 
 void main() {
   test('accepts http(s) origins and a client id', () {
@@ -35,15 +39,15 @@ void main() {
   test('returns typed validation issues instead of display-language text', () {
     expect(
       _config('ftp://k.test', 'https://idp.test', 'n').validate(),
-      KailoConfigIssue.nativeInvalidScheme,
+      PlatformConfigIssue.nativeInvalidScheme,
     );
     expect(
       _config('https://k.test', 'https://idp.test#f', 'n').validate(),
-      KailoConfigIssue.issuerQueryOrFragment,
+      PlatformConfigIssue.issuerQueryOrFragment,
     );
     expect(
       _config('https://k.test', 'https://idp.test', ' ').validate(),
-      KailoConfigIssue.clientIdRequired,
+      PlatformConfigIssue.clientIdRequired,
     );
   });
 
@@ -67,19 +71,19 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    expect(container.read(kailoConfigProvider), isNull);
+    expect(container.read(platformConfigProvider), isNull);
     await expectLater(
       container
-          .read(kailoConfigProvider.notifier)
+          .read(platformConfigProvider.notifier)
           .save(_config('ftp://k.test', 'https://idp.test', 'n')),
       throwsArgumentError,
     );
-    expect(container.read(kailoConfigProvider), isNull);
+    expect(container.read(platformConfigProvider), isNull);
 
     final good = _config(' https://k.test ', 'https://idp.test', ' n ');
-    await container.read(kailoConfigProvider.notifier).save(good);
+    await container.read(platformConfigProvider.notifier).save(good);
     expect(
-      container.read(kailoConfigProvider),
+      container.read(platformConfigProvider),
       _config('https://k.test', 'https://idp.test', 'n'),
     );
 
@@ -87,6 +91,9 @@ void main() {
       overrides: [savedPrefsProvider.overrideWithValue(prefs)],
     );
     addTearDown(reloaded.dispose);
-    expect(reloaded.read(kailoConfigProvider)?.nativeApiUrl, 'https://k.test');
+    expect(
+      reloaded.read(platformConfigProvider)?.nativeApiUrl,
+      'https://k.test',
+    );
   });
 }

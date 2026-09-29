@@ -1,6 +1,6 @@
 //! Core 的 service identity 令牌。
 //!
-//! Core 以 `kailo-core` 这个 OIDC client 的 client_credentials 取令牌，用于连
+//! Core 以部署配置 `OIDC_SERVICE_CLIENT_ID` 指定的 OIDC client 的 client_credentials 取令牌，用于连
 //! Temporal（permissions 声明携带 `"<namespace>:<role>"`，`SF-TMP-06`）。
 //! 令牌会过期——本部署签发 900 秒；长期运行的进程持一张静态令牌，只是把失败
 //! 推迟到第一次续期之后，而那时通常已经没人在看日志了。

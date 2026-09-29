@@ -52,6 +52,18 @@ if (worktreeAppName != null && !worktreeAppName.matches(Regex("""[A-Za-z0-9._() 
             "parentheses, got: " + worktreeAppName,
     )
 }
+// 发布包的应用名是部署配置（DD-111）：由发布配置在打包时以 PLATFORM_DISPLAY_NAME 注入，
+// 源码里不写应用名；release 构建缺失即失败（见文末 taskGraph 检查），不回退默认名。
+val platformDisplayName =
+    providers.environmentVariable("PLATFORM_DISPLAY_NAME").orNull?.trim()?.takeIf { it.isNotEmpty() }
+
+// Android 字符串资源的转义：反斜杠、引号与撇号要转义，开头的 @ 与 ? 会被当成资源引用。
+fun androidStringResource(value: String): String {
+    val escaped =
+        value.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"")
+    return if (escaped.startsWith("@") || escaped.startsWith("?")) "\\" + escaped else escaped
+}
+
 val worktreeIdSuffix =
     worktreeProps.getProperty("applicationIdSuffix")?.takeIf { it.isNotBlank() }
 val debugIdSuffix =
@@ -151,6 +163,9 @@ android {
             if (hasUploadSigning) {
                 signingConfig = signingConfigs.getByName("upload")
             }
+            if (platformDisplayName != null) {
+                resValue("string", "app_name", androidStringResource(platformDisplayName))
+            }
         }
     }
 }
@@ -168,6 +183,12 @@ dependencies {
 gradle.taskGraph.whenReady {
     val buildsRelease = allTasks.any { task ->
         task.project == project && task.name in setOf("assembleRelease", "bundleRelease")
+    }
+    if (buildsRelease && platformDisplayName == null) {
+        throw GradleException(
+            "Release builds require PLATFORM_DISPLAY_NAME (the deployment's display name, DD-111); " +
+                "it is injected by the release configuration and never defaults.",
+        )
     }
     if (buildsRelease && externalReleaseSigning) {
         // External signing: the unsigned bundle goes to the central APK

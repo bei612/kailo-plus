@@ -1,4 +1,4 @@
-// Kailo：媒体改经 BFF 读取（DD-39、SS-WEB-RELAY）。
+// 平台：媒体改经 BFF 读取（DD-39、SS-WEB-RELAY）。
 //
 // 上游用 NIP-98 签名直接向 Relay 取图，Browser 现在没有 signer，也不认识 Relay。
 // 这里按消息的 NIP-92 imeta 把正文里的媒体地址对应到 sha256，再从 BFF 取：

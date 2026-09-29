@@ -53,7 +53,7 @@ global:
   authorization:
     # 令牌由 OIDC 提供方签发（.design/01 §2：OIDC 是可替换认证契约，
     # Keycloak 只是默认选项）。Temporal 只验签并从 permissions 声明取角色，
-    # 它不认识 Kailo 的 Tenant/Workspace/Resource（SF-TMP-06）。
+    # 它不认识平台的 Tenant/Workspace/Resource（SF-TMP-06）。
     jwtKeyProvider:
       keySourceURIs:
         - '{{ env "OIDC_JWKS_URI" }}'

@@ -517,7 +517,7 @@ async fn dispatch_persistent_event_inner(
         .await;
     }
 
-    // Kailo (DD-106): a governed relay builds no workflow engine, so a
+    // Platform (DD-106): a governed relay builds no workflow engine, so a
     // persisted event triggers nothing.
     let Some(workflow_engine) = state.workflow_engine.as_ref() else {
         return matches.len();
@@ -682,7 +682,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
         return;
     }
 
-    // Kailo (SS-BUZ-GOVERNANCE): ephemeral kinds and observer frames never
+    // Platform (SS-BUZ-GOVERNANCE): ephemeral kinds and observer frames never
     // reach ingest, so the kind gate runs here for them as well. The author
     // is the authenticated key (gift wraps are not a member kind).
     if let Err(e) =

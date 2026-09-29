@@ -14,8 +14,8 @@ import (
 // source 过 .env 再跑门禁，就会让本该跳过的用例拿着网内地址去连。
 func client(t *testing.T) *SpiceDB {
 	t.Helper()
-	if os.Getenv("KAILO_INTEGRATION") != "1" {
-		t.Skip("未开启 KAILO_INTEGRATION，跳过集成核验")
+	if os.Getenv("PLATFORM_INTEGRATION") != "1" {
+		t.Skip("未开启 PLATFORM_INTEGRATION，跳过集成核验")
 	}
 	s, err := NewSpiceDBFromEnv()
 	if err != nil {

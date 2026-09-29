@@ -40,7 +40,7 @@ class CommunityThemePreference {
 
 /// 本机的外观偏好。
 ///
-/// 主题与语言属于每端各自解析的 Frontend Presentation Context（Kailo `.design/01`
+/// 主题与语言属于每端各自解析的 Frontend Presentation Context（`.design/01`
 /// §3）；一期不经 Relay 同步 NIP-44 加密的用户状态（`DD-40`），因此只存在本机。
 class CommunityThemeStorage {
   static const _modeKey = 'buzz_theme_mode';

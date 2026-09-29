@@ -110,8 +110,8 @@ class _ThemePreviewExperience extends HookConsumerWidget {
         showBottomDivider: false,
         leading: _ThemePreviewCloseButton(onPressed: close),
         title: Text(
-          kailoText(
-            KailoMessageKey.platformSettingsTheme,
+          platformText(
+            PlatformMessageKey.platformSettingsTheme,
             locale: Localizations.localeOf(context).toLanguageTag(),
           ),
         ),
@@ -203,8 +203,8 @@ class _ThemePreviewExperience extends HookConsumerWidget {
                                 key: const ValueKey(
                                   'theme-preview-accent-action-button',
                                 ),
-                                semanticLabel: kailoText(
-                                  KailoMessageKey.platformThemeAccentColor,
+                                semanticLabel: platformText(
+                                  PlatformMessageKey.platformThemeAccentColor,
                                   locale: Localizations.localeOf(
                                     context,
                                   ).toLanguageTag(),
@@ -390,8 +390,8 @@ class _ThemeDevicePairPreview extends StatelessWidget {
         _PreviewDeviceFrame(
           key: ValueKey('theme-full-home-${theme.name}'),
           theme: previewTheme,
-          semanticLabel: kailoText(
-            KailoMessageKey.platformThemeHomePreview,
+          semanticLabel: platformText(
+            PlatformMessageKey.platformThemeHomePreview,
             locale: Localizations.localeOf(context).toLanguageTag(),
           ),
           child: const _FigmaHomeScreen(),
@@ -400,8 +400,8 @@ class _ThemeDevicePairPreview extends StatelessWidget {
         _PreviewDeviceFrame(
           key: ValueKey('theme-full-chat-${theme.name}'),
           theme: previewTheme,
-          semanticLabel: kailoText(
-            KailoMessageKey.platformThemeChatPreview,
+          semanticLabel: platformText(
+            PlatformMessageKey.platformThemeChatPreview,
             locale: Localizations.localeOf(context).toLanguageTag(),
           ),
           child: const _FigmaChatScreen(),
@@ -422,8 +422,8 @@ class _ThemePreviewCloseButton extends StatelessWidget {
       return IosGlassNavigationButton(
         key: const ValueKey('theme-preview-close'),
         icon: IosGlassNavigationIcon.close,
-        semanticLabel: kailoText(
-          KailoMessageKey.platformThemeClosePreview,
+        semanticLabel: platformText(
+          PlatformMessageKey.platformThemeClosePreview,
           locale: Localizations.localeOf(context).toLanguageTag(),
         ),
         onPressed: onPressed,
@@ -436,8 +436,8 @@ class _ThemePreviewCloseButton extends StatelessWidget {
       dimension: 44,
       child: IconButton(
         key: const ValueKey('theme-preview-close'),
-        tooltip: kailoText(
-          KailoMessageKey.platformThemeClosePreview,
+        tooltip: platformText(
+          PlatformMessageKey.platformThemeClosePreview,
           locale: Localizations.localeOf(context).toLanguageTag(),
         ),
         onPressed: onPressed,
@@ -466,8 +466,8 @@ class _ThemePreviewSetButton extends StatelessWidget {
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       return IosGlassNavigationAction(
         key: const ValueKey('theme-preview-set'),
-        label: kailoText(
-          KailoMessageKey.platformThemeApply,
+        label: platformText(
+          PlatformMessageKey.platformThemeApply,
           locale: Localizations.localeOf(context).toLanguageTag(),
         ),
         width: 64,
@@ -489,8 +489,8 @@ class _ThemePreviewSetButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: Grid.xs),
             child: Center(
               child: Text(
-                kailoText(
-                  KailoMessageKey.platformThemeApply,
+                platformText(
+                  PlatformMessageKey.platformThemeApply,
                   locale: Localizations.localeOf(context).toLanguageTag(),
                 ),
                 style: context.textTheme.labelLarge?.copyWith(
@@ -590,8 +590,8 @@ class _AppearanceCycleAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context).toLanguageTag();
-    final semanticLabel = kailoText(
-      KailoMessageKey.platformThemeAppearanceCycle,
+    final semanticLabel = platformText(
+      PlatformMessageKey.platformThemeAppearanceCycle,
       locale: locale,
       variables: {'mode': appearanceModeLabel(mode, locale: locale)},
     );
@@ -674,8 +674,8 @@ class _ThemeScrubber extends StatelessWidget {
     }
 
     return Semantics(
-      label: kailoText(
-        KailoMessageKey.platformThemeScrubber,
+      label: platformText(
+        PlatformMessageKey.platformThemeScrubber,
         locale: Localizations.localeOf(context).toLanguageTag(),
         variables: {'index': selected + 1, 'count': count},
       ),

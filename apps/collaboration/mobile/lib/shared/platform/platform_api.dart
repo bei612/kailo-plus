@@ -1,4 +1,4 @@
-/// 令牌的持有与管理平面调用（Kailo `DD-78`）。
+/// 令牌的持有与管理平面调用（`DD-78`）。
 ///
 /// 刷新令牌存系统安全存储（Keychain / Android Keystore 支撑的
 /// `flutter_secure_storage`，与设备身份同一处），访问令牌只在内存。不按到期时间
@@ -18,7 +18,7 @@ import 'platform_config.dart';
 import 'platform_oidc.dart';
 
 /// 可经本模块调用的 BFF 路径前缀。其余一概不发。
-const kailoApiPrefix = '/api/v1/';
+const platformApiPrefix = '/api/v1/';
 
 /// 刷新令牌的存放处。应用里是系统安全存储；无界面的端到端核验里是内存。
 abstract interface class RefreshTokenStore {
@@ -32,7 +32,7 @@ class SecureRefreshTokenStore implements RefreshTokenStore {
   SecureRefreshTokenStore({FlutterSecureStorage? secure})
     : _secure = secure ?? const FlutterSecureStorage();
 
-  static const _key = 'kailo_refresh_token';
+  static const _key = 'platform_refresh_token';
   final FlutterSecureStorage _secure;
 
   @override
@@ -45,17 +45,17 @@ class SecureRefreshTokenStore implements RefreshTokenStore {
   Future<void> delete() => _secure.delete(key: _key);
 }
 
-/// 本机没有可用的 Kailo 登录：从未登录、已注销，或 IdP 拒绝了刷新令牌。
-class KailoNotSignedIn implements Exception {
-  const KailoNotSignedIn();
+/// 本机没有可用的平台登录：从未登录、已注销，或 IdP 拒绝了刷新令牌。
+class PlatformNotSignedIn implements Exception {
+  const PlatformNotSignedIn();
 
   @override
-  String toString() => 'Sign in to Kailo again';
+  String toString() => 'Sign in again';
 }
 
-/// Kailo 服务暂时不可达：请求没有得到任何回应，结果不明。
-class KailoUnavailable implements Exception {
-  const KailoUnavailable(this.message);
+/// 平台服务暂时不可达：请求没有得到任何回应，结果不明。
+class PlatformUnavailable implements Exception {
+  const PlatformUnavailable(this.message);
   final String message;
 
   @override
@@ -63,8 +63,8 @@ class KailoUnavailable implements Exception {
 }
 
 /// BFF 的一次回应。错误体按契约解读，不在这里重新解释。
-class KailoResponse {
-  const KailoResponse(this.status, this.body);
+class PlatformResponse {
+  const PlatformResponse(this.status, this.body);
 
   final int status;
 
@@ -89,9 +89,9 @@ class KailoResponse {
 }
 
 /// BFF 回了非预期的状态。[response] 的错误体按契约解读。
-class KailoApiError implements Exception {
-  const KailoApiError(this.response);
-  final KailoResponse response;
+class PlatformApiError implements Exception {
+  const PlatformApiError(this.response);
+  final PlatformResponse response;
 
   @override
   String toString() {
@@ -102,10 +102,10 @@ class KailoApiError implements Exception {
   }
 }
 
-enum KailoMethod { get, post, put, delete }
+enum PlatformMethod { get, post, put, delete }
 
-class KailoSession {
-  KailoSession({
+class NativeSession {
+  NativeSession({
     required http.Client client,
     required RefreshTokenStore refreshStore,
   }) : _client = client,
@@ -136,23 +136,23 @@ class KailoSession {
     await _refreshStore.delete();
   }
 
-  Future<String> _refresh(KailoConfig config) {
+  Future<String> _refresh(PlatformConfig config) {
     // 并发的 401 共用同一次刷新：刷新令牌可能是一次性的，两次并发刷新会让
     // 后一次因令牌已被消费而被判为需要重新登录
     return _refreshing ??= () async {
       try {
         final refreshToken = await _refreshStore.load();
-        if (refreshToken == null) throw const KailoNotSignedIn();
+        if (refreshToken == null) throw const PlatformNotSignedIn();
         final OidcTokens tokens;
         try {
           tokens = await refreshOidcTokens(_client, config, refreshToken);
         } on OidcRejected {
           // 刷新令牌被 IdP 拒绝（过期、撤销、会话已结束）：只能重新登录
           await discardCredentials();
-          throw const KailoNotSignedIn();
+          throw const PlatformNotSignedIn();
         } on OidcUnavailable catch (error) {
           // IdP 暂不可达：凭据留着，稍后再试
-          throw KailoUnavailable(error.message);
+          throw PlatformUnavailable(error.message);
         }
         await adopt(tokens);
         return tokens.accessToken;
@@ -163,17 +163,17 @@ class KailoSession {
   }
 
   /// 以 Bearer 调用一个 BFF 路径。401 时刷新一次并重试一次。
-  Future<KailoResponse> send(
-    KailoConfig config,
-    KailoMethod method,
+  Future<PlatformResponse> send(
+    PlatformConfig config,
+    PlatformMethod method,
     String path, {
     Object? body,
   }) async {
-    if (!path.startsWith(kailoApiPrefix) || path.contains('..')) {
+    if (!path.startsWith(platformApiPrefix) || path.contains('..')) {
       throw ArgumentError.value(
         path,
         'path',
-        'only paths under $kailoApiPrefix are sent',
+        'only paths under $platformApiPrefix are sent',
       );
     }
     final uri = config.apiUri(path);
@@ -190,7 +190,7 @@ class KailoSession {
       try {
         response = await http.Response.fromStream(await _client.send(request));
       } on Exception catch (error) {
-        throw KailoUnavailable('Kailo is unreachable: $error');
+        throw PlatformUnavailable('The platform is unreachable: $error');
       }
       if (response.statusCode == 401) {
         if (attempt == 0) {
@@ -198,11 +198,11 @@ class KailoSession {
           continue;
         }
         await discardCredentials();
-        throw const KailoNotSignedIn();
+        throw const PlatformNotSignedIn();
       }
-      return KailoResponse(response.statusCode, _decode(response));
+      return PlatformResponse(response.statusCode, _decode(response));
     }
-    throw const KailoNotSignedIn();
+    throw const PlatformNotSignedIn();
   }
 
   static Object? _decode(http.Response response) {
@@ -215,15 +215,15 @@ class KailoSession {
   }
 }
 
-final kailoHttpClientProvider = Provider<http.Client>((ref) {
+final platformHttpClientProvider = Provider<http.Client>((ref) {
   final client = http.Client();
   ref.onDispose(client.close);
   return client;
 });
 
-final kailoSessionProvider = Provider<KailoSession>(
-  (ref) => KailoSession(
-    client: ref.watch(kailoHttpClientProvider),
+final nativeSessionProvider = Provider<NativeSession>(
+  (ref) => NativeSession(
+    client: ref.watch(platformHttpClientProvider),
     refreshStore: SecureRefreshTokenStore(),
   ),
 );

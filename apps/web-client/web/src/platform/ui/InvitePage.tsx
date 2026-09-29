@@ -1,4 +1,4 @@
-// 邀请兑换页的 Web 外壳（DD-83）。页面本身是 Kailo 共用包里的 InvitationRedeemPage。
+// 邀请兑换页的 Web 外壳（DD-83）。页面本身是共用平台包里的 InvitationRedeemPage。
 //
 // 凭据的纪律：只从 URL fragment 读一次（fragment 不随请求发往网关或 BFF，也不进 Referer），
 // 读完立即用 replaceState 清掉，之后只在组件内存里；不写日志、不进任何存储、不进请求 URL。

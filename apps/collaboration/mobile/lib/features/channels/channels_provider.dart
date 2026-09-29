@@ -29,7 +29,7 @@ const _authoredRootIdsPrefix = 'buzz-thread-authored.v1';
 /// Membership loading resolves kind:39002 events tagged `#p:<my-pubkey>`,
 /// then fetches kind:39000 metadata for those channel ids.
 ///
-/// Kailo 的 Channel 一律 private，由 Core 建立并维护 roster（`DD-80`）：列表只
+/// 平台的 Channel 一律 private，由 Core 建立并维护 roster（`DD-80`）：列表只
 /// 来自本人所在的 roster，没有公开目录可浏览。
 /// Live updates are layered on top via chunked subscriptions on the `#h` tag
 /// for any visible channel event kind. Chunks stay within the relay's explicit

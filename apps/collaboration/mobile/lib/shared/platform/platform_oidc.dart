@@ -20,7 +20,7 @@ import 'platform_config.dart';
 
 /// 私有 URI scheme 回调地址。scheme 同时登记在 Android 的 intent-filter 与 iOS 的
 /// `CFBundleURLTypes` 里，并须作为原生端 client 的 redirect URI 登记在 IdP。
-const kailoRedirectUri = 'xyz.block.buzz.mobile:/kailo/oauth2redirect';
+const platformRedirectUri = 'xyz.block.buzz.mobile:/platform/oauth2redirect';
 
 /// 令牌请求的失败分两种，对调用方意义相反：IdP 明确拒绝（刷新令牌过期或被撤销，
 /// 只能重新登录）与 IdP 暂不可达（稍后再试，不能因此丢掉凭据）。
@@ -61,7 +61,7 @@ class OidcEndpoints {
 
 Future<OidcEndpoints> discoverOidc(
   http.Client client,
-  KailoConfig config,
+  PlatformConfig config,
 ) async {
   final http.Response response;
   try {
@@ -130,7 +130,7 @@ class AuthorizationRequest {
 
   static Future<AuthorizationRequest> start(
     http.Client client,
-    KailoConfig config, {
+    PlatformConfig config, {
     required String redirectUri,
   }) async {
     final endpoints = await discoverOidc(client, config);
@@ -168,7 +168,7 @@ class AuthorizationRequest {
   /// 以回调里的授权码换取令牌。
   Future<OidcTokens> complete(
     http.Client client,
-    KailoConfig config,
+    PlatformConfig config,
     Uri callback,
   ) async {
     final code = callback.queryParameters['code'];
@@ -196,7 +196,7 @@ class AuthorizationRequest {
 /// ——PKCE、state、换取令牌——两者走同一份代码。[cancelled] 完成即放弃等待。
 Future<OidcTokens> signInWithAuthorizationCode({
   required http.Client client,
-  required KailoConfig config,
+  required PlatformConfig config,
   required String redirectUri,
   required Future<void> Function(Uri authorizeUri) open,
   required Stream<Uri> callbacks,
@@ -230,7 +230,7 @@ Future<OidcTokens> signInWithAuthorizationCode({
 /// 以刷新令牌换新的访问令牌。
 Future<OidcTokens> refreshOidcTokens(
   http.Client client,
-  KailoConfig config,
+  PlatformConfig config,
   String refreshToken,
 ) async {
   final endpoints = await discoverOidc(client, config);

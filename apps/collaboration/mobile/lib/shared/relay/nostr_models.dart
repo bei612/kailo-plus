@@ -26,7 +26,7 @@ abstract final class EventKind {
   ];
 
   /// Event kinds that represent channel activity (messages, edits,
-  /// deletions, system events). Kailo 一期只读取消息与其修订、删除和系统事件：
+  /// deletions, system events). 一期只读取消息与其修订、删除和系统事件：
   /// 表情回应、huddle、forum 与 agent job 不在移动端交付。
   static const channelEventKinds = [
     deletion, // 5

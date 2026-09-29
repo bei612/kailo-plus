@@ -53,7 +53,7 @@ function configureDevE2eBridgeFromUrl() {
     return;
   }
 
-  // The mock bridge answers the Kailo commands as an already-configured,
+  // The mock bridge answers the platform commands as an already-configured,
   // signed-in device whose key is ACTIVE, so the app boots straight into the
   // community (see testing/e2eBridge.ts).
   const e2eWindow = window as E2eWindow;

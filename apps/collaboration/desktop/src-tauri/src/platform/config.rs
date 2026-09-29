@@ -1,6 +1,6 @@
 //! 部署事实：原生入口地址、IdP issuer 与原生端 client id。
 //!
-//! 它们因部署而异，不编进产物：保存在应用配置目录的 `kailo.json`，由首次启动
+//! 它们因部署而异，不编进产物：保存在应用配置目录的 `platform.json`，由首次启动
 //! 时填写或由管理员预置。缺任一项即视为未配置，不回退到任何默认地址——猜一个
 //! 地址就是把登录与设备密钥交给了一个未经确认的服务。
 
@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use url::Url;
 
-const FILE: &str = "kailo.json";
+const FILE: &str = "platform.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct KailoConfig {
-    /// 网关原生入口的根地址，例如 `https://kailo.example.com:8091`
+pub(crate) struct PlatformConfig {
+    /// 网关原生入口的根地址，例如 `https://platform.example.com:8091`
     pub native_api_url: String,
     /// IdP 的 issuer，discovery 文档取自 `{issuer}/.well-known/openid-configuration`
     pub oidc_issuer: String,
@@ -21,7 +21,7 @@ pub(crate) struct KailoConfig {
     pub oidc_client_id: String,
 }
 
-impl KailoConfig {
+impl PlatformConfig {
     pub(crate) fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             ("原生入口地址", &self.native_api_url),
@@ -58,11 +58,11 @@ fn path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
         .join(FILE))
 }
 
-pub(crate) fn load(app: &tauri::AppHandle) -> Result<Option<KailoConfig>, String> {
+pub(crate) fn load(app: &tauri::AppHandle) -> Result<Option<PlatformConfig>, String> {
     let path = path(app)?;
     match std::fs::read_to_string(&path) {
         Ok(raw) => {
-            let cfg: KailoConfig =
+            let cfg: PlatformConfig =
                 serde_json::from_str(&raw).map_err(|e| format!("{} 无法解析：{e}", path.display()))?;
             cfg.validate()?;
             Ok(Some(cfg))
@@ -72,7 +72,7 @@ pub(crate) fn load(app: &tauri::AppHandle) -> Result<Option<KailoConfig>, String
     }
 }
 
-pub(crate) fn save(app: &tauri::AppHandle, cfg: &KailoConfig) -> Result<(), String> {
+pub(crate) fn save(app: &tauri::AppHandle, cfg: &PlatformConfig) -> Result<(), String> {
     cfg.validate()?;
     let path = path(app)?;
     if let Some(dir) = path.parent() {
@@ -86,8 +86,8 @@ pub(crate) fn save(app: &tauri::AppHandle, cfg: &KailoConfig) -> Result<(), Stri
 mod tests {
     use super::*;
 
-    fn cfg(native: &str, issuer: &str, client: &str) -> KailoConfig {
-        KailoConfig {
+    fn cfg(native: &str, issuer: &str, client: &str) -> PlatformConfig {
+        PlatformConfig {
             native_api_url: native.to_owned(),
             oidc_issuer: issuer.to_owned(),
             oidc_client_id: client.to_owned(),

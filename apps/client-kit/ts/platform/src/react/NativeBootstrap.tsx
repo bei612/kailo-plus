@@ -1,4 +1,4 @@
-// 原生端（Desktop）进入 Kailo 的引导（DD-75/78/79）。
+// 原生端（Desktop）进入平台的引导（DD-75/78/79、DD-111）。
 //
 // 未配置 → 填写部署事实（原生入口、IdP issuer、client id；不预填、不猜）→ 以系统
 // 浏览器登录（可取消）→ 以本机设备私钥登记公钥，等到 ACTIVE → 取 Community 连接
@@ -6,6 +6,10 @@
 // 结果不明永远不渲染成成功或失败，只给出「重新确认」。
 //
 // 令牌与私钥都不经过这里：命令由 Rust 侧执行（native.ts）。
+//
+// 显示名（DD-111）：选定服务器并登录之前没有可读的部署，只显示中性文案；登录后经原生入口
+// 读取 BFF 的公开平台信息，按服务器缓存，之后在该服务器的登录页也显示缓存值。换服务器即换
+// 缓存键，不会把上一台服务器的名字带过来。
 
 import {
   BuzzIdentityState,
@@ -41,6 +45,8 @@ export type NativeSession = {
   /** 本机设备公钥（hex），取自登记回应 */
   devicePubkey: string;
   client: BffClient;
+  /** 部署的显示名（DD-111）；本次与此前都没读到时为 null，宿主只显示中性文案 */
+  displayName: string | null;
   /** 注销：撤销平台会话并丢弃本机令牌，回到登录 */
   signOut: () => Promise<void>;
 };
@@ -60,6 +66,15 @@ type Step =
   | { kind: "connecting"; pubkey: string; facts: NativeCommunityFacts }
   | { kind: "connectFailed"; pubkey: string; facts: NativeCommunityFacts; message: string }
   | { kind: "ready"; pubkey: string; facts: NativeCommunityFacts };
+
+/** 显示名按服务器（原生入口地址）缓存；键只由服务器决定，换服务器不会串名。 */
+const displayNameKey = (config: NativeConfig) => `platform.display-name:${config.nativeApiUrl}`;
+
+function cachedDisplayName(config: NativeConfig | null): string | null {
+  if (!config?.nativeApiUrl) return null;
+  const value = window.localStorage.getItem(displayNameKey(config))?.trim();
+  return value ? value : null;
+}
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -83,6 +98,9 @@ export function NativeBootstrap({
   children: (session: NativeSession) => ReactNode;
 }) {
   const [step, setStep] = useState<Step>({ kind: "loading" });
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  // 当前服务器的配置：显示名缓存以它的原生入口地址为键
+  const configRef = useRef<NativeConfig | null>(null);
   // 登录被取消后，那次 signIn 的 reject 不是失败，不显示
   const cancelled = useRef(false);
   // 自动重查与用户手动重查共用一条请求，不能并发叠加。
@@ -100,9 +118,25 @@ export function NativeBootstrap({
     };
   }, [invoke, onSessionEnded]);
 
+  // 已登录：读部署的显示名并按服务器缓存。它只影响显示，读不到时保留此前的缓存值，
+  // 不阻断连接，也不猜一个名字。
+  const refreshDisplayName = useCallback(async () => {
+    const config = configRef.current;
+    let name: string;
+    try {
+      name = (await client.platformInfo()).displayName.trim();
+    } catch {
+      return;
+    }
+    if (!name || configRef.current !== config) return;
+    if (config?.nativeApiUrl) window.localStorage.setItem(displayNameKey(config), name);
+    setDisplayName(name);
+  }, [client]);
+
   const fetchCommunity = useCallback(
     async (pubkey: string) => {
       setStep({ kind: "community", pubkey });
+      void refreshDisplayName();
       let facts: NativeCommunityFacts;
       try {
         facts = await client.nativeCommunity();
@@ -123,7 +157,7 @@ export function NativeBootstrap({
         setStep({ kind: "connectFailed", pubkey, facts, message: message(e) });
       }
     },
-    [client],
+    [client, refreshDisplayName],
   );
 
   const register = useCallback(async () => {
@@ -206,6 +240,8 @@ export function NativeBootstrap({
     setStep({ kind: "loading" });
     try {
       const [config, status] = await Promise.all([host.getConfig(), host.status()]);
+      configRef.current = config;
+      setDisplayName(cachedDisplayName(config));
       if (!config) setStep({ kind: "config", initial: null });
       else if (!status.signedIn) setStep({ kind: "signIn" });
       else await register();
@@ -253,6 +289,8 @@ export function NativeBootstrap({
       setStep({ kind: "config", initial: config, rejected: message(e) });
       return;
     }
+    configRef.current = config;
+    setDisplayName(cachedDisplayName(config));
     const status = await host.status().catch(() => null);
     if (status?.signedIn) await register();
     else setStep({ kind: "signIn" });
@@ -266,8 +304,9 @@ export function NativeBootstrap({
   // 同一次连接只给出同一个会话对象：宿主可以放心以它为依赖
   const ready = step.kind === "ready" ? step : null;
   const session = useMemo<NativeSession | null>(
-    () => (ready ? { facts: ready.facts, devicePubkey: ready.pubkey, client, signOut } : null),
-    [ready, client, signOut],
+    () =>
+      ready ? { facts: ready.facts, devicePubkey: ready.pubkey, client, displayName, signOut } : null,
+    [ready, client, displayName, signOut],
   );
 
   return (
@@ -278,6 +317,7 @@ export function NativeBootstrap({
         <Screen>
           <StepView
             step={step}
+            displayName={displayName}
             actions={{
               retryLoad: () => void start(),
               saveConfig,
@@ -311,7 +351,7 @@ type Actions = {
 function Screen({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground">
-      <div className="flex w-full max-w-md flex-col gap-4" data-testid="kailo-bootstrap">
+      <div className="flex w-full max-w-md flex-col gap-4" data-testid="platform-bootstrap">
         {children}
       </div>
     </div>
@@ -330,8 +370,19 @@ function Detail({ children, alert }: { children: ReactNode; alert?: boolean }) {
   );
 }
 
-function StepView({ step, actions }: { step: Step; actions: Actions }) {
+function StepView({
+  step,
+  displayName,
+  actions,
+}: {
+  step: Step;
+  displayName: string | null;
+  actions: Actions;
+}) {
   const t = useT();
+  const signInTitle = displayName
+    ? t("native.signIn.titleNamed", { name: displayName })
+    : t("native.signIn.title");
   switch (step.kind) {
     case "loading":
     case "ready":
@@ -348,7 +399,7 @@ function StepView({ step, actions }: { step: Step; actions: Actions }) {
     case "signIn":
       return (
         <>
-          <Title>{t("native.signIn.title")}</Title>
+          <Title>{signInTitle}</Title>
           <Detail>{t("native.signIn.explain")}</Detail>
           {step.failed ? <Detail alert>{t("native.signIn.failed", { message: step.failed })}</Detail> : null}
           <Button onClick={actions.signIn}>{t("native.signIn.start")}</Button>
@@ -358,7 +409,7 @@ function StepView({ step, actions }: { step: Step; actions: Actions }) {
     case "signingIn":
       return (
         <>
-          <Title>{t("native.signIn.title")}</Title>
+          <Title>{signInTitle}</Title>
           <Detail>{t("native.signIn.waiting")}</Detail>
           <Button onClick={actions.cancelSignIn}>{t("native.signIn.cancel")}</Button>
         </>

@@ -16,7 +16,7 @@ ui = false
 
 storage "raft" {
   path    = "/openbao/data"
-  node_id = "kailo-local"
+  node_id = "platform-local"
 }
 
 listener "tcp" {

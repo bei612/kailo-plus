@@ -14,8 +14,8 @@ import '../../shared/widgets/buzz_loading_indicator.dart';
 ///
 /// 错误按来源分开说：BFF 按契约拒绝时显示 reason code 与说明；没有得到可判定的
 /// 回应时只说「不明」，不当作成功或失败；登录失效时给出重新登录的入口。
-class KailoAsyncView<T> extends ConsumerWidget {
-  const KailoAsyncView({
+class PlatformAsyncView<T> extends ConsumerWidget {
+  const PlatformAsyncView({
     super.key,
     required this.value,
     required this.onRetry,
@@ -34,23 +34,26 @@ class KailoAsyncView<T> extends ConsumerWidget {
       loading: () => const Center(child: BuzzLoadingIndicator(size: 40)),
       data: (data) => builder(context, data),
       error: (error, _) {
-        if (error is KailoNotSignedIn) {
+        if (error is PlatformNotSignedIn) {
           return _Message(
-            text: kailoText(
-              KailoMessageKey.nativeErrorSessionEnded,
+            text: platformText(
+              PlatformMessageKey.nativeErrorSessionEnded,
               locale: locale,
             ),
-            action: kailoText(
-              KailoMessageKey.nativeErrorSignInAgain,
+            action: platformText(
+              PlatformMessageKey.nativeErrorSignInAgain,
               locale: locale,
             ),
             onAction: () =>
-                unawaited(ref.read(kailoLinkProvider.notifier).signOut()),
+                unawaited(ref.read(platformLinkProvider.notifier).signOut()),
           );
         }
         return _Message(
-          text: kailoErrorText(error, locale: locale),
-          action: kailoText(KailoMessageKey.platformRetry, locale: locale),
+          text: platformErrorText(error, locale: locale),
+          action: platformText(
+            PlatformMessageKey.platformRetry,
+            locale: locale,
+          ),
           onAction: onRetry,
         );
       },
@@ -59,32 +62,38 @@ class KailoAsyncView<T> extends ConsumerWidget {
 }
 
 /// 一次管理平面调用失败的说明。
-String kailoErrorText(Object error, {String? locale}) {
-  if (error is KailoApiError) {
+String platformErrorText(Object error, {String? locale}) {
+  if (error is PlatformApiError) {
     final body = error.response.error;
     if (body != null) {
-      return kailoText(
-        KailoMessageKey.platformReasonWithCode,
+      return platformText(
+        PlatformMessageKey.platformReasonWithCode,
         locale: locale,
         variables: {
-          'text': kailoReasonText(body.reason, locale: locale),
-          'code': kailoReasonCode(body.reason),
+          'text': platformReasonText(body.reason, locale: locale),
+          'code': platformReasonCode(body.reason),
         },
       );
     }
-    return kailoText(
-      KailoMessageKey.nativeErrorHttpOutcomeUnknown,
+    return platformText(
+      PlatformMessageKey.nativeErrorHttpOutcomeUnknown,
       locale: locale,
       variables: {'status': error.response.status},
     );
   }
-  if (error is KailoUnavailable) {
-    return kailoText(KailoMessageKey.nativeErrorUnavailable, locale: locale);
+  if (error is PlatformUnavailable) {
+    return platformText(
+      PlatformMessageKey.nativeErrorUnavailable,
+      locale: locale,
+    );
   }
   if (error is TypeError) {
-    return kailoText(KailoMessageKey.nativeErrorContract, locale: locale);
+    return platformText(PlatformMessageKey.nativeErrorContract, locale: locale);
   }
-  return kailoText(KailoMessageKey.nativeStatusOutcomeUnknown, locale: locale);
+  return platformText(
+    PlatformMessageKey.nativeStatusOutcomeUnknown,
+    locale: locale,
+  );
 }
 
 class _Message extends StatelessWidget {
@@ -108,7 +117,7 @@ class _Message extends StatelessWidget {
           children: [
             Text(
               text,
-              key: const ValueKey('kailo-view-error'),
+              key: const ValueKey('platform-view-error'),
               textAlign: TextAlign.center,
               style: context.textTheme.bodyMedium,
             ),

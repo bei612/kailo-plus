@@ -166,8 +166,8 @@ async fn main() {
         .find(|a| !a.starts_with("--"))
         .expect("用法: verify_workspace <IdP 签发的 OIDC subject> [--governance]")
         .clone();
-    let e =
-        common::env().expect("KAILO_INTEGRATION 未开启：先 source core/verify/integration-env.sh");
+    let e = common::env()
+        .expect("PLATFORM_INTEGRATION 未开启：先 source core/verify/integration-env.sh");
     let http = reqwest::Client::new();
     let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
     let token = common::worker_token(&http, &e).await;

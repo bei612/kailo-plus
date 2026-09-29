@@ -6,11 +6,11 @@ import 'package:client_kit/shared/platform/platform_text.dart';
 // Re-export shortPubkey so existing callers continue to compile.
 export '../../shared/utils/string_utils.dart' show shortPubkey;
 
-final _weekdayFormat = DateFormat('EEEE', kailoIntlLocale());
-final _monthDayFormat = DateFormat.MMMMd(kailoIntlLocale());
-final _monthDayYearFormat = DateFormat.yMMMMd(kailoIntlLocale());
-final _shortMonthDayFormat = DateFormat.MMMd(kailoIntlLocale());
-final _messageTimeFormat = DateFormat.jm(kailoIntlLocale());
+final _weekdayFormat = DateFormat('EEEE', platformIntlLocale());
+final _monthDayFormat = DateFormat.MMMMd(platformIntlLocale());
+final _monthDayYearFormat = DateFormat.yMMMMd(platformIntlLocale());
+final _shortMonthDayFormat = DateFormat.MMMd(platformIntlLocale());
+final _messageTimeFormat = DateFormat.jm(platformIntlLocale());
 
 /// Label for a day divider: "Today", "Yesterday", "Monday",
 /// "Tuesday, March 31", or "March 31, 2025".
@@ -43,18 +43,18 @@ String formatDayHeading(int unixSeconds, {@visibleForTesting DateTime? now}) {
   now ??= DateTime.now();
   final dayDiff = _calendarDaysBetween(now, date);
 
-  if (dayDiff == 0) return kailoText(KailoMessageKey.chatTimeToday);
-  if (dayDiff == 1) return kailoText(KailoMessageKey.chatTimeYesterday);
+  if (dayDiff == 0) return platformText(PlatformMessageKey.chatTimeToday);
+  if (dayDiff == 1) return platformText(PlatformMessageKey.chatTimeYesterday);
   // Bounded below as well as above: a timestamp in the future (clock skew, or a
   // relay ahead of this device) must not be labelled with a weekday that reads
   // as the recent past.
-  if (dayDiff > 1 && dayDiff < kailoCalendarWeekdayBandDays) {
+  if (dayDiff > 1 && dayDiff < platformCalendarWeekdayBandDays) {
     return _weekdayFormat.format(date);
   }
 
   return date.year == now.year
-      ? kailoText(
-          KailoMessageKey.chatTimeWeekdayDate,
+      ? platformText(
+          PlatformMessageKey.chatTimeWeekdayDate,
           variables: {
             'weekday': _weekdayFormat.format(date),
             'date': _monthDayFormat.format(date),
@@ -87,7 +87,7 @@ bool isSameDay(int a, int b) {
 /// Returns a compact relative time string like "just now", "5m ago", "3h ago",
 /// "2d ago", or a short date for older timestamps.
 String relativeTime(int unixSeconds) {
-  return kailoRelativeTime(
+  return platformRelativeTime(
     DateTime.fromMillisecondsSinceEpoch(
       unixSeconds * 1000,
       isUtc: true,
@@ -105,9 +105,9 @@ String formatThreadSummaryLastReplyTime(
   var diff = nowSeconds - unixSeconds;
   if (diff < 0) diff = 0;
 
-  if (diff < 60) return kailoText(KailoMessageKey.chatTimeJustNow);
-  if (diff < kailoCalendarWeekdayBandDays * kailoTimeSecondsDay) {
-    return kailoRelativeTime(
+  if (diff < 60) return platformText(PlatformMessageKey.chatTimeJustNow);
+  if (diff < platformCalendarWeekdayBandDays * platformTimeSecondsDay) {
+    return platformRelativeTime(
       DateTime.fromMillisecondsSinceEpoch(
         unixSeconds * 1000,
         isUtc: true,
@@ -121,8 +121,8 @@ String formatThreadSummaryLastReplyTime(
     isUtc: true,
   ).toLocal();
   // No ordinal suffix, per the writing standard.
-  return kailoText(
-    KailoMessageKey.chatTimeOn,
+  return platformText(
+    PlatformMessageKey.chatTimeOn,
     variables: {'date': _shortMonthDayFormat.format(date)},
   );
 }

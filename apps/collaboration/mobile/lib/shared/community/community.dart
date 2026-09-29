@@ -5,7 +5,7 @@ const _sentinel = Object();
 
 /// 本机连接的 Buzz Community。
 ///
-/// Kailo 里它由登录后取得的连接事实建立（Kailo `DD-75`）：[relayUrl] 是 BFF 给出的
+/// 平台里它由登录后取得的连接事实建立（`DD-75`）：[relayUrl] 是 BFF 给出的
 /// Relay 地址，[nsec] 是本机设备私钥。Community 与 Tenant 一一对应（`DD-01`）。
 class Community {
   final String id;

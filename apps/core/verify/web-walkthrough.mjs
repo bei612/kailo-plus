@@ -329,8 +329,8 @@ const otherAdminBff = async (method, url, body) => {
   const response = await fetch(`${process.env.VERIFY_BFF_URL}${url}`, {
     method,
     headers: {
-      "x-kailo-oidc-issuer": process.env.OIDC_ISSUER,
-      "x-kailo-oidc-subject": fixture.otherAdminSubject,
+      "x-platform-oidc-issuer": process.env.OIDC_ISSUER,
+      "x-platform-oidc-subject": fixture.otherAdminSubject,
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -768,7 +768,7 @@ await step("浏览器不能自称原生端：网关移除伪造的入口标识�
   const reply = await page.evaluate(() =>
     fetch("/api/v1/identity/client-keys", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-kailo-client-surface": "native" },
+      headers: { "Content-Type": "application/json", "x-platform-client-surface": "native" },
       body: JSON.stringify({ proof: {} }),
     }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) })),
   );
@@ -789,7 +789,7 @@ await step("注销：撤掉 Core 会话与网关 cookie；再次进入是一次�
   if (!before.platformSessionId || !cookieBefore) throw new Error("注销前应有会话与网关 cookie");
 
   // 注销后浏览器经 IdP 回到 /app/。IdP 自己的会话若还在，这一程不要求口令
-  // （SF-AGW-23、.design/09）——那不是 Kailo 的会话，下面要证明的是 Kailo 侧
+  // （SF-AGW-23、.design/09）——那不是平台的会话，下面要证明的是平台侧
   // 旧会话已失效、旧 cookie 已清除，重新进入得到的是新会话。
   // 离开平台页后要么停在 IdP 登录页，要么被 IdP 的存活会话直接放回来——
   // 那是 IdP 自己的策略，这里两种都接受。必须等一次真实的导航提交之后再

@@ -187,7 +187,7 @@ void _buildMessageLinkTests() {
       );
     });
   });
-  group('links to capabilities Kailo Mobile does not deliver', () {
+  group('links to capabilities the mobile client does not deliver', () {
     test('parse to UnavailableOnMobileDeepLink carrying the link', () {
       for (final raw in [
         'buzz://pr?id=${'cd' * 32}&owner=${'ab' * 32}&d=repo',

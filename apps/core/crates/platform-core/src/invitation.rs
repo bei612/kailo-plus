@@ -242,8 +242,8 @@ fn refusal_audit_failures() -> &'static opentelemetry::metrics::Counter<u64> {
     static COUNTER: std::sync::OnceLock<opentelemetry::metrics::Counter<u64>> =
         std::sync::OnceLock::new();
     COUNTER.get_or_init(|| {
-        opentelemetry::global::meter("kailo-core")
-            .u64_counter("kailo.invitation.refusal_audit_failed")
+        opentelemetry::global::meter("platform-core")
+            .u64_counter("platform.invitation.refusal_audit_failed")
             .with_description("邀请兑换被拒而留痕审计未写入的次数")
             .build()
     })

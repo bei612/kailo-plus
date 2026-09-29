@@ -503,7 +503,7 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         "Search service ready (Postgres FTS)"
     );
 
-    // Kailo (DD-106): a governed relay builds no workflow engine.
+    // Platform (DD-106): a governed relay builds no workflow engine.
     let workflow_engine = (!buzz_relay::handlers::governance::governs(&config)).then(|| {
         let workflow_config = buzz_workflow::WorkflowConfig::default();
         Arc::new(WorkflowEngine::new(db.clone(), workflow_config))
@@ -1092,7 +1092,7 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     }
 
     let router = build_router(Arc::clone(&state));
-    // Kailo (DD-106): refuse to start unless the governed relay's workflow
+    // Platform (DD-106): refuse to start unless the governed relay's workflow
     // engine, workflow kinds and workflow routes are all confirmed off.
     buzz_relay::handlers::governance::verify_workflows_disabled(&state, &router)
         .await

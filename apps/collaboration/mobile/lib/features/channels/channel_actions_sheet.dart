@@ -13,7 +13,7 @@ import 'channels_provider.dart';
 
 /// Opens the mobile channel actions sheet.
 ///
-/// Kailo Mobile 只提供读取面的动作：已读/未读、成员名单、复制。建 Channel、
+/// 移动端只提供读取面的动作：已读/未读、成员名单、复制。建 Channel、
 /// 加人、改名、静音、收藏、离开、归档与删除都不在移动端交付，入口一律不生成。
 Future<void> showChannelActionsSheet({
   required BuildContext context,
@@ -112,7 +112,7 @@ class ChannelActionsSheet extends ConsumerWidget {
                   close();
                   navigator.push(
                     MaterialPageRoute<void>(
-                      builder: (_) => KailoMembersPage(
+                      builder: (_) => PlatformMembersPage(
                         workspaceId: channel.id,
                         title: channel.name,
                       ),

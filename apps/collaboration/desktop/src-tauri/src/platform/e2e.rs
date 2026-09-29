@@ -1,12 +1,12 @@
-//! 桌面端 Kailo 接入的端到端核验，对运行中的 Kailo 本地拓扑执行。
+//! 桌面端平台接入的端到端核验，对运行中的平台本地拓扑执行。
 //!
 //! 走的是应用自己的代码：登录（PKCE、state、回环回调、换令牌）、设备登记、
 //! Community 连接事实、以设备私钥经 Relay 读写（`relay::query_relay_at_with_keys`
 //! 与 `relay::submit_event_at_with_keys`，即桌面端发消息的那条路径）。唯一的替身
 //! 是浏览器：一个按 IdP 登录表单作答的模拟浏览器，代替用户在系统浏览器里的操作。
 //!
-//! 需要一个真实 Workspace（其成员是 `KAILO_E2E_USER`），由
-//! Kailo 仓库的 `core/verify/desktop-e2e.sh` 准备并传入环境变量后以
+//! 需要一个真实 Workspace（其成员是 `PLATFORM_E2E_USER`），由
+//! 本仓库的 `core/verify/desktop-e2e.sh` 准备并传入环境变量后以
 //! `cargo test --lib platform::e2e -- --ignored` 运行。
 
 use std::time::{Duration, Instant};
@@ -14,9 +14,9 @@ use std::time::{Duration, Instant};
 use nostr::{Keys, Tag};
 use reqwest::Method;
 
-use super::api::{KailoSession, RefreshStore};
+use super::api::{NativeSession, RefreshStore};
 use super::commands::register_device;
-use super::config::KailoConfig;
+use super::config::PlatformConfig;
 use super::oidc;
 
 struct MemoryStore(std::sync::Mutex<Option<String>>);
@@ -78,9 +78,9 @@ async fn browse(authorize: String, user: String, password: String) {
 }
 
 async fn wait_device(
-    session: &KailoSession,
+    session: &NativeSession,
     http: &reqwest::Client,
-    cfg: &KailoConfig,
+    cfg: &PlatformConfig,
     pubkey: &str,
     want: Option<&str>,
     bound: Duration,
@@ -110,22 +110,22 @@ async fn wait_device(
 }
 
 #[tokio::test]
-#[ignore = "端到端核验：需要运行中的 Kailo 本地拓扑与真实 Workspace，见模块说明"]
+#[ignore = "端到端核验：需要运行中的本地拓扑与真实 Workspace，见模块说明"]
 async fn desktop_signs_in_registers_device_and_publishes_through_relay() {
-    let cfg = KailoConfig {
-        native_api_url: env("KAILO_E2E_NATIVE_URL"),
-        oidc_issuer: env("KAILO_E2E_OIDC_ISSUER"),
-        oidc_client_id: env("KAILO_E2E_CLIENT_ID"),
+    let cfg = PlatformConfig {
+        native_api_url: env("PLATFORM_E2E_NATIVE_URL"),
+        oidc_issuer: env("PLATFORM_E2E_OIDC_ISSUER"),
+        oidc_client_id: env("PLATFORM_E2E_CLIENT_ID"),
     };
-    let user = env("KAILO_E2E_USER");
-    let password = std::fs::read_to_string(env("KAILO_E2E_PASSWORD_FILE"))
+    let user = env("PLATFORM_E2E_USER");
+    let password = std::fs::read_to_string(env("PLATFORM_E2E_PASSWORD_FILE"))
         .expect("读口令文件")
         .trim()
         .to_owned();
-    let bound = Duration::from_secs(env("KAILO_E2E_CONVERGE_SECS").parse().expect("秒数"));
+    let bound = Duration::from_secs(env("PLATFORM_E2E_CONVERGE_SECS").parse().expect("秒数"));
     let state = crate::app_state::build_app_state();
     let http = state.http_client.clone();
-    let session = KailoSession::with_store(Box::new(MemoryStore(Default::default())));
+    let session = NativeSession::with_store(Box::new(MemoryStore(Default::default())));
 
     // 1. RFC 8252 登录
     let open = |url: &str| {
@@ -177,7 +177,7 @@ async fn desktop_signs_in_registers_device_and_publishes_through_relay() {
     let channel_id: uuid::Uuid = channel.parse().expect("Channel id");
     let builder = crate::events::build_message(
         channel_id,
-        "from kailo desktop",
+        "from platform desktop",
         None,
         &[],
         &[],
@@ -192,7 +192,7 @@ async fn desktop_signs_in_registers_device_and_publishes_through_relay() {
         .await
         .expect("设备直连 Relay 发消息应被接受");
 
-    // 5. 直连不等于能治理：自建 Channel 被 Relay 拒绝（Kailo DD-80）
+    // 5. 直连不等于能治理：自建 Channel 被 Relay 拒绝（DD-80）
     let rogue = nostr::EventBuilder::new(nostr::Kind::Custom(9007), "").tags(vec![
         Tag::parse(["h", &uuid::Uuid::new_v4().to_string()]).expect("h"),
         Tag::parse(["name", "rogue"]).expect("name"),

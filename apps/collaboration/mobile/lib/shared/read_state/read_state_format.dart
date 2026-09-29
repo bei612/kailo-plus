@@ -1,7 +1,7 @@
 /// 已读上下文的键。
 ///
 /// Channel 的已读位置以 Channel id 为键，单条消息以 `msg:<event id>` 为键——这两种
-/// 是 Core 的 CollaborationUserState 接受的全部形式（Kailo `DD-40`、`.design/03` §4）。
+/// 是 Core 的 CollaborationUserState 接受的全部形式（`DD-40`、`.design/03` §4）。
 /// Thread 的已读位置以 `thread:<root id>` 为键，只留在本机。
 library;
 

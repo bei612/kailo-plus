@@ -2,7 +2,7 @@
 #
 # 变量名与产品侧同名，但值换成本机发布端口：部署里 OPENBAO_ADDR 是
 # http://openbao:8200、SPICEDB_ENDPOINT 是 spicedb:50051，都只在容器网络内可达。
-# KAILO_INTEGRATION 是显式开关——谁 source 过 deploy/local/.env 再跑门禁，
+# PLATFORM_INTEGRATION 是显式开关——谁 source 过 deploy/local/.env 再跑门禁，
 # 没有它就会让本该跳过的用例拿着网内地址去连。
 #
 # 调用方须位于 apps 根目录。
@@ -13,21 +13,21 @@ set -a
 . "$local_dir/.env"
 set +a
 # Core 的引导凭据是一次性投递（start-core.sh），核验不碰它。核验读写 KV 用一枚
-# 现签的、与 Core 同策略（kailo-core）的令牌：它证明的仍是「那条策略给出的能力」，
+# 现签的、与 Core 同策略（platform-core）的令牌：它证明的仍是「那条策略给出的能力」，
 # 有效期取部署登记的令牌周期。root token 经 stdin 进入容器，不上命令行。
 OPENBAO_VERIFY_TOKEN="$(python3 -c 'import json;print(json.load(open("'"$local_dir"'/secrets/openbao_init.json"))["root_token"])' \
   | sudo -n docker compose --env-file "$local_dir/.env" -f "$local_dir/compose.yaml" exec -T \
       -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_NAMESPACE="$OPENBAO_PLATFORM_NAMESPACE" openbao \
       sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"' bao \
-      token create -policy=kailo-core -ttl="$OPENBAO_TOKEN_PERIOD" -format=json \
+      token create -policy=platform-core -ttl="$OPENBAO_TOKEN_PERIOD" -format=json \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth"]["client_token"])')"
 export OPENBAO_VERIFY_TOKEN
 # 仅本地集成夹具使用：Core 的 Tenant 私钥在子 namespace，platform/ 核验令牌
 # 正确地没有跨 namespace 读取权。夹具按需从此文件在目标子 namespace 签发
-# 短期 kailo-core policy 令牌，读取后立即 revoke-self；不把 root token 放进环境。
+# 短期 platform-core policy 令牌，读取后立即 revoke-self；不把 root token 放进环境。
 export VERIFY_OPENBAO_ROOT_TOKEN_FILE="$(pwd)/$local_dir/secrets/openbao_init.json"
 
-export KAILO_INTEGRATION=1
+export PLATFORM_INTEGRATION=1
 export RELAY_OPERATOR_API_ORIGIN="http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}"
 . "$local_dir/database-url.sh"
 DATABASE_URL="$(core_database_url "127.0.0.1:${CORE_DB_PORT}")" || return 2
@@ -41,13 +41,15 @@ export CORE_SERVICE_URL="http://127.0.0.1:${SERVICE_PORT}"
 export OIDC_TOKEN_URL="http://127.0.0.1:${KEYCLOAK_PORT}/realms/${OIDC_REALM}/protocol/openid-connect/token"
 # Keycloak 按请求 Host 推导 issuer；令牌里的 iss 必须逐字符等于 Core 配置的那个
 export OIDC_TOKEN_HOST="${OIDC_ISSUER#*://}"; OIDC_TOKEN_HOST="${OIDC_TOKEN_HOST%%/realms/*}"
-export WORKER_CLIENT_SECRET="$(cat "$local_dir/secrets/kailo_worker_client_secret")"
+export WORKER_CLIENT_SECRET="$(cat "$local_dir/secrets/worker_client_secret")"
 export RELAY_OPERATOR_PRIVATE_KEY="$(cat "$local_dir/secrets/relay_operator_private_key")"
 export VERIFY_SECRET_LOCATOR="${OPENBAO_PLATFORM_NAMESPACE}/${OPENBAO_KV_MOUNT}/verify/secret-ref"
 project=$(python3 -c 'import re,io;print(re.search(r"^name: (\S+)", io.open("deploy/local/compose.yaml",encoding="utf-8").read(), re.M).group(1))')
 export OPENBAO_TENANT_CORE_BOUND_CIDRS="$(sudo -n docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
 [ -n "$OPENBAO_TENANT_CORE_BOUND_CIDRS" ] || { echo "取不到 app 网络子网，拒绝核验 Tenant AppRole" >&2; return 2; }
-export VERIFY_DOCKER_NETWORK=kailo-local_component
+# 本地拓扑的 Compose 项目名只在 compose.yaml 的 name 里写一次，容器与网络名都由它派生
+export VERIFY_COMPOSE_PROJECT="$project"
+export VERIFY_DOCKER_NETWORK="${project}_component"
 export VERIFY_ZED_ENV_FILE="$(pwd)/$local_dir/secrets/zed.env"
 export VERIFY_SPICEDB_ENDPOINT=spicedb:50051
 # Catalog Tenant 的 slug：核验要按它找到平台引导建立的那个 Tenant

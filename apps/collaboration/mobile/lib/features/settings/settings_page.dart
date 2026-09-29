@@ -53,8 +53,8 @@ class SettingsPage extends HookConsumerWidget {
             ? IosGlassNavigationButton(
                 key: const ValueKey('settings-ios-glass-close'),
                 icon: IosGlassNavigationIcon.close,
-                semanticLabel: kailoText(
-                  KailoMessageKey.platformSettingsClose,
+                semanticLabel: platformText(
+                  PlatformMessageKey.platformSettingsClose,
                   locale: locale,
                 ),
                 onPressed: () {
@@ -67,8 +67,8 @@ class SettingsPage extends HookConsumerWidget {
                 width: Grid.xl,
                 height: Grid.xl,
                 child: IconButton(
-                  tooltip: kailoText(
-                    KailoMessageKey.platformSettingsClose,
+                  tooltip: platformText(
+                    PlatformMessageKey.platformSettingsClose,
                     locale: locale,
                   ),
                   onPressed: () {
@@ -107,7 +107,7 @@ class SettingsPage extends HookConsumerWidget {
   }
 }
 
-/// 管理平面的只读视图（Kailo `REQ-21`）。
+/// 管理平面的只读视图（`REQ-21`）。
 class _OrganizationSection extends StatelessWidget {
   const _OrganizationSection();
 
@@ -119,55 +119,58 @@ class _OrganizationSection extends StatelessWidget {
     ).push(MaterialPageRoute<void>(builder: (_) => page));
 
     return AppListCard(
-      label: kailoText(
-        KailoMessageKey.platformSettingsOrganization,
+      label: platformText(
+        PlatformMessageKey.platformSettingsOrganization,
         locale: locale,
       ),
       verticalPadding: Grid.twelve,
       children: [
         AppListRow(
-          key: const ValueKey('settings-kailo-members'),
+          key: const ValueKey('settings-platform-members'),
           icon: LucideIcons.users,
-          title: kailoText(KailoMessageKey.platformTabMembers, locale: locale),
+          title: platformText(
+            PlatformMessageKey.platformTabMembers,
+            locale: locale,
+          ),
           trailing: const _RowChevron(),
-          onTap: () => open(const KailoWorkspacesPage()),
+          onTap: () => open(const PlatformWorkspacesPage()),
         ),
         AppListRow(
-          key: const ValueKey('settings-kailo-tasks'),
+          key: const ValueKey('settings-platform-tasks'),
           icon: LucideIcons.listChecks,
-          title: kailoText(KailoMessageKey.tasksMyTitle, locale: locale),
+          title: platformText(PlatformMessageKey.tasksMyTitle, locale: locale),
           trailing: const _RowChevron(),
-          onTap: () => open(const KailoTasksPage()),
+          onTap: () => open(const PlatformTasksPage()),
         ),
         AppListRow(
-          key: const ValueKey('settings-kailo-approvals'),
+          key: const ValueKey('settings-platform-approvals'),
           icon: LucideIcons.clipboardCheck,
-          title: kailoText(
-            KailoMessageKey.approvalsPendingTitle,
+          title: platformText(
+            PlatformMessageKey.approvalsPendingTitle,
             locale: locale,
           ),
           trailing: const _RowChevron(),
-          onTap: () => open(const KailoApprovalsPage()),
+          onTap: () => open(const PlatformApprovalsPage()),
         ),
         AppListRow(
-          key: const ValueKey('settings-kailo-audit'),
+          key: const ValueKey('settings-platform-audit'),
           icon: LucideIcons.scrollText,
-          title: kailoText(
-            KailoMessageKey.platformAuditMyTitle,
+          title: platformText(
+            PlatformMessageKey.platformAuditMyTitle,
             locale: locale,
           ),
           trailing: const _RowChevron(),
-          onTap: () => open(const KailoAuditPage()),
+          onTap: () => open(const PlatformAuditPage()),
         ),
         AppListRow(
-          key: const ValueKey('settings-kailo-devices'),
+          key: const ValueKey('settings-platform-devices'),
           icon: LucideIcons.smartphone,
-          title: kailoText(
-            KailoMessageKey.platformDevicesMyTitle,
+          title: platformText(
+            PlatformMessageKey.platformDevicesMyTitle,
             locale: locale,
           ),
           trailing: const _RowChevron(),
-          onTap: () => open(const KailoDevicesPage()),
+          onTap: () => open(const PlatformDevicesPage()),
         ),
       ],
     );
@@ -182,8 +185,8 @@ class _AppearanceSection extends ConsumerWidget {
     final preference = ref.watch(communityThemeProvider);
     final locale = Localizations.localeOf(context).toLanguageTag();
     return AppListCard(
-      label: kailoText(
-        KailoMessageKey.platformSettingsAppearance,
+      label: platformText(
+        PlatformMessageKey.platformSettingsAppearance,
         locale: locale,
       ),
       verticalPadding: Grid.twelve,
@@ -191,8 +194,8 @@ class _AppearanceSection extends ConsumerWidget {
         AppListRow(
           key: const ValueKey('community-theme-row'),
           icon: LucideIcons.palette,
-          title: kailoText(
-            KailoMessageKey.platformSettingsTheme,
+          title: platformText(
+            PlatformMessageKey.platformSettingsTheme,
             locale: locale,
           ),
           value: themeSelectionLabel(preference.theme, preference.mode),
@@ -206,7 +209,7 @@ class _AppearanceSection extends ConsumerWidget {
   }
 }
 
-/// 本机设备身份与它和 Kailo 的连接状态。
+/// 本机设备身份与它和平台的连接状态。
 class _DeviceSection extends ConsumerWidget {
   const _DeviceSection();
 
@@ -214,33 +217,36 @@ class _DeviceSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = Localizations.localeOf(context).toLanguageTag();
     final pubkey = ref.watch(myPubkeyProvider);
-    final link = ref.watch(kailoLinkProvider);
-    final outcome = kailoOutcomeText(link);
+    final link = ref.watch(platformLinkProvider);
+    final outcome = platformOutcomeText(link);
     return AppListCard(
-      label: kailoText(
-        KailoMessageKey.platformDevicesThisDevice,
+      label: platformText(
+        PlatformMessageKey.platformDevicesThisDevice,
         locale: locale,
       ),
       verticalPadding: Grid.twelve,
       children: [
         if (pubkey != null) _IdentityRow(pubkey: pubkey),
         AppListRow(
-          key: const ValueKey('settings-kailo-link'),
+          key: const ValueKey('settings-platform-link'),
           icon: LucideIcons.plugZap,
-          title: kailoText(
-            KailoMessageKey.platformSettingsConnection,
+          title: platformText(
+            PlatformMessageKey.platformSettingsConnection,
             locale: locale,
           ),
-          subtitle: outcome ?? kailoPhaseText(link.phase),
+          subtitle: outcome ?? platformPhaseText(link.phase),
           subtitleMaxLines: 4,
-          trailing: link.busy || link.phase == KailoLinkPhase.linked
+          trailing: link.busy || link.phase == PlatformLinkPhase.linked
               ? null
               : TextButton(
                   onPressed: () => unawaited(
-                    ref.read(kailoLinkProvider.notifier).reconcile(),
+                    ref.read(platformLinkProvider.notifier).reconcile(),
                   ),
                   child: Text(
-                    kailoText(KailoMessageKey.platformRetry, locale: locale),
+                    platformText(
+                      PlatformMessageKey.platformRetry,
+                      locale: locale,
+                    ),
                   ),
                 ),
         ),
@@ -261,20 +267,20 @@ class _IdentityRow extends StatelessWidget {
     final npub = fullNpub(pubkey);
     return Semantics(
       button: true,
-      label: kailoText(
-        KailoMessageKey.platformSettingsCopyDeviceKey,
+      label: platformText(
+        PlatformMessageKey.platformSettingsCopyDeviceKey,
         locale: locale,
       ),
       value:
           npub ??
-          kailoText(
-            KailoMessageKey.platformSettingsIdentityUnavailable,
+          platformText(
+            PlatformMessageKey.platformSettingsIdentityUnavailable,
             locale: locale,
           ),
       child: AppListRow(
         icon: LucideIcons.key,
-        title: kailoText(
-          KailoMessageKey.platformSettingsDeviceKey,
+        title: platformText(
+          PlatformMessageKey.platformSettingsDeviceKey,
           locale: locale,
         ),
         subtitle: shortPubkey(pubkey),
@@ -289,8 +295,8 @@ class _IdentityRow extends StatelessWidget {
                 await copyToClipboard(
                   context,
                   npub,
-                  message: kailoText(
-                    KailoMessageKey.platformSettingsKeyCopied,
+                  message: platformText(
+                    PlatformMessageKey.platformSettingsKeyCopied,
                     locale: locale,
                   ),
                 );
@@ -312,7 +318,10 @@ class _SignOutSection extends ConsumerWidget {
         AppListRow(
           key: const ValueKey('settings-sign-out'),
           icon: LucideIcons.logOut,
-          title: kailoText(KailoMessageKey.platformSignOut, locale: locale),
+          title: platformText(
+            PlatformMessageKey.platformSignOut,
+            locale: locale,
+          ),
           titleColor: context.colors.error,
           onTap: () => _confirmSignOut(context, ref),
         ),
@@ -326,10 +335,12 @@ void _confirmSignOut(BuildContext context, WidgetRef ref) {
   showBuzzDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text(kailoText(KailoMessageKey.platformSignOut, locale: locale)),
+      title: Text(
+        platformText(PlatformMessageKey.platformSignOut, locale: locale),
+      ),
       content: Text(
-        kailoText(
-          KailoMessageKey.platformSettingsSignOutConfirm,
+        platformText(
+          PlatformMessageKey.platformSettingsSignOutConfirm,
           locale: locale,
         ),
       ),
@@ -337,13 +348,13 @@ void _confirmSignOut(BuildContext context, WidgetRef ref) {
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(),
           child: Text(
-            kailoText(KailoMessageKey.platformCancel, locale: locale),
+            platformText(PlatformMessageKey.platformCancel, locale: locale),
           ),
         ),
         FilledButton(
           onPressed: () async {
             Navigator.of(ctx).pop(); // close dialog
-            await ref.read(kailoLinkProvider.notifier).signOut();
+            await ref.read(platformLinkProvider.notifier).signOut();
             if (!context.mounted) return;
             // Pop all pushed routes back to root so MaterialApp.home rebuilds
             // to the sign-in page when auth state changes.
@@ -351,7 +362,7 @@ void _confirmSignOut(BuildContext context, WidgetRef ref) {
           },
           style: FilledButton.styleFrom(backgroundColor: ctx.colors.error),
           child: Text(
-            kailoText(KailoMessageKey.platformSignOut, locale: locale),
+            platformText(PlatformMessageKey.platformSignOut, locale: locale),
           ),
         ),
       ],

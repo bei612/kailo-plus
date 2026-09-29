@@ -28,7 +28,8 @@ ARG EXTRA_CA_CERTS=
 ARG NPM_REGISTRY=
 
 # ─── Stage 1: cargo-chef base ───────────────────────────────────────────────
-FROM rust:${RUST_VERSION}-${DEBIAN_VERSION} AS chef
+# Kailo：基础镜像按 digest 固定（ADR-16 第 8 条），原 tag rust:${RUST_VERSION}-${DEBIAN_VERSION}（即 rust:1.95-bookworm），2026-09-29 解析取值
+FROM rust:1.95-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1 AS chef
 # Trust an optional corporate-proxy CA before any network fetch (no-op if unset).
 ARG EXTRA_CA_CERTS
 COPY --chmod=0644 ${EXTRA_CA_CERTS:-Dockerfile} /tmp/extra-ca/src
@@ -89,7 +90,8 @@ RUN strip target/release/buzz-relay \
 # ─── Stage 4: web bundle (pnpm + vite) ──────────────────────────────────────
 # Independent of the Rust layers so a CSS change doesn't bust Rust cache and
 # vice versa.
-FROM node:${NODE_VERSION}-${DEBIAN_VERSION}-slim AS web-builder
+# Kailo：基础镜像按 digest 固定（ADR-16 第 8 条），原 tag node:${NODE_VERSION}-${DEBIAN_VERSION}-slim（即 node:24-bookworm-slim），2026-09-29 解析取值
+FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS web-builder
 WORKDIR /build
 # Trust an optional corporate-proxy CA so corepack + pnpm can fetch over an
 # intercepting TLS gateway (no-op if EXTRA_CA_CERTS is unset).
@@ -127,7 +129,8 @@ COPY admin-web/ admin-web/
 RUN pnpm -C web build && pnpm -C admin-web build
 
 # ─── Stage 5: shared runtime ────────────────────────────────────────────────
-FROM debian:${DEBIAN_VERSION}-slim AS runtime-base
+# Kailo：基础镜像按 digest 固定（ADR-16 第 8 条），原 tag debian:${DEBIAN_VERSION}-slim（即 debian:bookworm-slim），2026-09-29 解析取值
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS runtime-base
 
 # OCI annotations: required for GHCR to auto-link the image to this repo and
 # inherit its visibility. org.opencontainers.image.source is the load-bearing

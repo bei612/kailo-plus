@@ -49,8 +49,8 @@ async fn browser(
 ) -> (reqwest::StatusCode, serde_json::Value) {
     let mut req = http
         .request(method, format!("{}{path}", e.bff_url))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", subject);
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", subject);
     if let Some(b) = body {
         // 每次调用是一次新的发送意图：带新的幂等键（发布端点要求它，DD-81）
         req = req

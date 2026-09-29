@@ -22,8 +22,8 @@ import (
 )
 
 func TestBaselineRunsAgainstRealServer(t *testing.T) {
-	if os.Getenv("KAILO_INTEGRATION") != "1" {
-		t.Skip("未开启 KAILO_INTEGRATION，跳过连通性验证")
+	if os.Getenv("PLATFORM_INTEGRATION") != "1" {
+		t.Skip("未开启 PLATFORM_INTEGRATION，跳过连通性验证")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -47,7 +47,7 @@ func TestBaselineRunsAgainstRealServer(t *testing.T) {
 	}
 	defer c.Close()
 
-	const queue = "kailo-verify"
+	const queue = "platform-verify"
 	w := worker.New(c, queue, worker.Options{})
 	w.RegisterWorkflowWithOptions(workflows.Baseline,
 		workflow.RegisterOptions{Name: workflows.BaselineKind})
@@ -57,7 +57,7 @@ func TestBaselineRunsAgainstRealServer(t *testing.T) {
 	defer w.Stop()
 
 	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID:        "kailo-verify-baseline",
+		ID:        "platform-verify-baseline",
 		TaskQueue: queue,
 	}, workflows.BaselineKind)
 	if err != nil {

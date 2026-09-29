@@ -1,6 +1,6 @@
 //! 只对原生端开放的入口（DD-78）。
 //!
-//! 请求是否来自原生端，只看网关投影的 `x-kailo-client-surface`：原生 listener 把
+//! 请求是否来自原生端，只看网关投影的 `x-platform-client-surface`：原生 listener 把
 //! 它无条件设为 `native`，浏览器 listener 无条件移除它。客户端自报的同名 header
 //! 在两条路上都到不了这里。
 
@@ -14,7 +14,7 @@ use contracts::{ErrorBody, ErrorClass, NativeCommunityFacts, ReasonCode};
 
 use crate::bff::{resolve_execution_context, BffState};
 
-const HEADER_CLIENT_SURFACE: &str = "x-kailo-client-surface";
+const HEADER_CLIENT_SURFACE: &str = "x-platform-client-surface";
 
 /// 请求不是经原生 listener 到达的，就拒绝。
 #[allow(clippy::result_large_err)]

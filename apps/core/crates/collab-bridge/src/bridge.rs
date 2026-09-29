@@ -118,7 +118,7 @@ impl IdentityClient {
     /// 以该身份建立 id 为 `channel_id` 的 Channel（NIP-29 kind 9007 带 `h`）。
     ///
     /// 一个 Workspace 绑定一个 Channel（`DD-01`）。创建者成为该 Channel 的
-    /// owner（`SF-BUZ-05`），而 Kailo Community 只接受 owner 建 Channel
+    /// owner（`SF-BUZ-05`），而平台的 Community 只接受 owner 建 Channel
     /// （`DD-80`），因此调用方必须是该 Tenant 的 CONTROL 身份。
     ///
     /// id 由调用方给出，重发同一个 id 由 Relay 判为已存在而不另建（`SF-BUZ-38`

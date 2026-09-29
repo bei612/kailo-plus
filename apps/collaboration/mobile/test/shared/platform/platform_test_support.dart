@@ -6,10 +6,10 @@ import 'package:buzz/shared/platform/platform_device.dart';
 import 'package:http/http.dart' as http;
 
 /// 测试用部署配置。地址只是测试夹具，不是任何默认值。
-const testKailoConfig = KailoConfig(
-  nativeApiUrl: 'https://kailo.test:8443',
-  oidcIssuer: 'https://idp.test/realms/kailo',
-  oidcClientId: 'kailo-native',
+const testPlatformConfig = PlatformConfig(
+  nativeApiUrl: 'https://platform.test:8443',
+  oidcIssuer: 'https://idp.test/realms/platform',
+  oidcClientId: 'platform-native',
 );
 
 class MemoryRefreshStore implements RefreshTokenStore {
@@ -54,8 +54,8 @@ http.Response? oidcRoutes(http.Request request, {required String refreshed}) {
   final path = request.url.path;
   if (path.endsWith('/.well-known/openid-configuration')) {
     return jsonResponse({
-      'authorization_endpoint': 'https://idp.test/realms/kailo/auth',
-      'token_endpoint': 'https://idp.test/realms/kailo/token',
+      'authorization_endpoint': 'https://idp.test/realms/platform/auth',
+      'token_endpoint': 'https://idp.test/realms/platform/token',
     });
   }
   if (path.endsWith('/token')) {

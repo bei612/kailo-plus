@@ -1,4 +1,4 @@
-/// 已读位置经 BFF 写入 Core 的 CollaborationUserState（Kailo `DD-40`）。
+/// 已读位置经 BFF 写入 Core 的 CollaborationUserState（`DD-40`）。
 ///
 /// 三端共用这一份权威：Buzz Web 经浏览器入口、原生端经原生入口，都是同一个
 /// `/api/v1/user-state`。写入带乐观版本：版本不符（409）说明别的端刚写过，回读后
@@ -12,25 +12,25 @@ import '../read_state/read_state_time.dart';
 import 'platform_api.dart';
 import 'platform_config.dart';
 
-class KailoReadStateRemote implements ReadStateRemote {
-  KailoReadStateRemote({
-    required KailoSession session,
-    required KailoConfig config,
+class PlatformReadStateRemote implements ReadStateRemote {
+  PlatformReadStateRemote({
+    required NativeSession session,
+    required PlatformConfig config,
   }) : _session = session,
        _config = config;
 
-  final KailoSession _session;
-  final KailoConfig _config;
+  final NativeSession _session;
+  final PlatformConfig _config;
   int? _version;
 
   @override
   Future<Map<String, int>> fetch() async {
     final response = await _session.send(
       _config,
-      KailoMethod.get,
+      PlatformMethod.get,
       '/api/v1/user-state',
     );
-    if (response.status != 200) throw KailoApiError(response);
+    if (response.status != 200) throw PlatformApiError(response);
     // readContexts 是以上下文键为键的映射，契约的可用子集表达不了任意键的对象，
     // 这里只取它的键值，其余字段不解读
     final body = response.body! as Map<String, dynamic>;
@@ -74,7 +74,7 @@ class KailoReadStateRemote implements ReadStateRemote {
     final version = _version!;
     final response = await _session.send(
       _config,
-      KailoMethod.put,
+      PlatformMethod.put,
       '/api/v1/user-state/read',
       body: ReadMarkRequest(
         contextKey: key,
@@ -83,7 +83,7 @@ class KailoReadStateRemote implements ReadStateRemote {
       ).toJson(),
     );
     if (response.status == 409) return false;
-    if (response.status != 200) throw KailoApiError(response);
+    if (response.status != 200) throw PlatformApiError(response);
     _version = UserStateVersion.fromJson(
       response.body! as Map<String, dynamic>,
     ).version;

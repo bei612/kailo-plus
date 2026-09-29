@@ -274,7 +274,7 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &LiveWorkspace)
 
     // ---- 4c. 外部权威逐种查证：Temporal 中不存在的 workflow/run 回 404，
     //      没有查证接口或无法绑定 workflow 的只回 UNVERIFIABLE，都不回 ref 内容 ----
-    let missing_workflow = format!("kailo:verify:{}:{}:1", fx.tenant, Uuid::new_v4());
+    let missing_workflow = format!("platform:verify:{}:{}:1", fx.tenant, Uuid::new_v4());
     let missing_run = Uuid::new_v4().to_string();
     let zed_token = "GhUKEzE3MjcwMDAwMDAwMDAwMDAwMDA=";
     let temporal = append_event(

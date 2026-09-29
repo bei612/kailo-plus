@@ -6,8 +6,8 @@
 /// are missing or empty make the link invalid — the caller never sees a
 /// half-formed target.
 ///
-/// Kailo Mobile 只交付 Channel 与消息两种目标。其余 `buzz://` 链接指向的能力不在
-/// 移动端交付（Kailo `REQ-21`、`V-SCN-65`）：解析为 [UnavailableOnMobileDeepLink]，
+/// 移动端只交付 Channel 与消息两种目标。其余 `buzz://` 链接指向的能力不在
+/// 移动端交付（`REQ-21`、`V-SCN-65`）：解析为 [UnavailableOnMobileDeepLink]，
 /// 由界面给出稳定 reason code 并指向 Web 或桌面端，不静默丢弃，也不以内嵌
 /// WebView 代替。
 library;

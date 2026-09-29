@@ -12,7 +12,7 @@ implementation_base_commit: 7498521d288b9b3b96ffba4eedf089d8d6e06a84
 base_divergence: none
 
 # SS-COD-TRACE：模型请求的 header 只合并静态 http_headers 与 env_http_headers，上游不在该链上
-# 注入 W3C trace context。Kailo 在 codex-rs/model-provider-info/src/lib.rs::
+# 注入 W3C trace context。平台在 codex-rs/model-provider-info/src/lib.rs::
 # ModelProviderInfo::build_header_map 末尾以 codex_otel::inject_span_w3c_trace_headers(Span::current())
 # 注入 traceparent/tracestate；当前 span 是 turn 下的模型请求 span，其根的 parent 是 Core 在
 # JSON-RPC 请求 `trace` 字段里带来的 operation trace（app-server/src/app_server_tracing.rs::

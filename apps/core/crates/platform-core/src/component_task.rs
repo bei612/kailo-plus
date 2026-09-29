@@ -30,10 +30,33 @@ pub struct ComponentTaskInput<T> {
     pub target: T,
 }
 
-/// 固定 workflow ID：`kailo:<kind>:<tenant_id>:<primary_entity_id>:<entity_version>`。
+/// 固定 workflow ID 的前缀段。它是协议常量，不随部署显示名变化（`.design/06` §3.1、DD-111）。
+pub const WORKFLOW_ID_PREFIX: &str = "platform";
+/// ADR-17 一次性迁移窗口内仍按原 ID 对账的旧前缀：只解析、不再用于新 Start。
+/// 窗口在旧前缀 WorkflowRef 全部终态且超过 namespace retention、按旧名 Search
+/// Attribute 查询无结果时关闭，届时删除本常量与 [`split_workflow_id`] 里的旧分支。
+const LEGACY_WORKFLOW_ID_PREFIX: &str = "kailo";
+
+/// 固定 workflow ID：`platform:<kind>:<tenant_id>:<primary_entity_id>:<entity_version>`。
 /// 同一事实的同一版本永远映射到同一个 ID，结果不明时只能用它收敛（DD-48）。
 pub fn workflow_id(kind: &str, tenant_id: Uuid, entity: &str, version: i32) -> String {
-    format!("kailo:{kind}:{tenant_id}:{entity}:{version}")
+    format!("{WORKFLOW_ID_PREFIX}:{kind}:{tenant_id}:{entity}:{version}")
+}
+
+/// 按固定格式拆出 `(kind, tenant_id, primary_entity_id, entity_version)` 四段原文。
+///
+/// 前缀只接受 [`WORKFLOW_ID_PREFIX`] 与迁移窗口内的旧前缀；段数不是五或前缀不认识时
+/// 返回 `None`——调用方据此拒绝按它推断任何事，而不是猜。
+pub fn split_workflow_id(id: &str) -> Option<[&str; 4]> {
+    let parts: Vec<&str> = id.split(':').collect();
+    match parts.as_slice() {
+        [prefix, kind, tenant, entity, version]
+            if *prefix == WORKFLOW_ID_PREFIX || *prefix == LEGACY_WORKFLOW_ID_PREFIX =>
+        {
+            Some([kind, tenant, entity, version])
+        }
+        _ => None,
+    }
 }
 
 /// 启动一条 ComponentTaskWorkflow。

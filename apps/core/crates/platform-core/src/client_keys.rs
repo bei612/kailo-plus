@@ -4,7 +4,7 @@
 //! 那些私钥，只登记公钥并把它投影进 roster——Relay 据 roster 放行或拒绝。
 //!
 //! 登记只对原生端开放：请求必须来自原生 listener（网关投影
-//! `x-kailo-client-surface=native`，浏览器 listener 无条件移除该 header），并附
+//! `x-platform-client-surface=native`，浏览器 listener 无条件移除该 header），并附
 //! 以该私钥签名的 NIP-98 持钥证明，证明绑定调用方当前 PlatformSession。查看与
 //! 撤销两端都开放：设备丢了，应当能在任一端把它撤掉。
 

@@ -7,7 +7,7 @@ import '../../shared/theme/theme.dart';
 /// Matches desktop's sidebar profile card, whose avatar is 32px.
 const _defaultAvatarSize = 32.0;
 
-/// 本人头像：Kailo 显示名的首字母。
+/// 本人头像：平台显示名的首字母。
 class ProfileAvatar extends ConsumerWidget {
   final VoidCallback? onTap;
 
@@ -18,7 +18,11 @@ class ProfileAvatar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final name = ref.watch(kailoSessionViewProvider).value?.displayName.trim();
+    final name = ref
+        .watch(platformSessionViewProvider)
+        .value
+        ?.displayName
+        .trim();
     final initial = name == null || name.isEmpty
         ? '?'
         : name.characters.first.toUpperCase();

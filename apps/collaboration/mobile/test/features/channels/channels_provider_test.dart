@@ -1232,7 +1232,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
         when filter.kinds.length == 1 &&
             filter.kinds.single == 39000 &&
             !filter.tags.containsKey('#d')) {
-      // Kailo 没有公开 Channel 目录（DD-80）：记下来，测试断言它从不发生
+      // 平台没有公开 Channel 目录（DD-80）：记下来，测试断言它从不发生
       directoryQueryFilters.add(filter);
       return const [];
     }

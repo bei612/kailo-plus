@@ -179,23 +179,23 @@ type E2eConfig = {
     // When true, `get_identity` returns `locked: true`. Drives the
     // keyring-locked screen.
     identityLocked?: boolean;
-    /** Kailo platform commands (kailo_*); see KailoMockOptions. */
-    kailo?: KailoMockOptions;
+    /** Platform commands (platform_*); see PlatformMockOptions. */
+    platform?: PlatformMockOptions;
   };
   relayHttpUrl?: string;
   relayWsUrl?: string;
   identity?: TestIdentity;
 };
 
-type KailoReply = { status: number; body: unknown };
+type PlatformReply = { status: number; body: unknown };
 
 /**
- * The Rust-side Kailo layer (desktop/src-tauri/src/kailo) as the frontend sees
- * it: configuration, sign-in, device registration and `kailo_api`. Defaults
+ * The Rust-side platform layer (desktop/src-tauri/src/platform) as the frontend sees
+ * it: configuration, sign-in, device registration and `platform_api`. Defaults
  * describe a configured, signed-in device whose key is ACTIVE, so specs that
- * are not about the Kailo bootstrap boot straight into the community.
+ * are not about the platform bootstrap boot straight into the community.
  */
-type KailoMockOptions = {
+type PlatformMockOptions = {
   /** `null` = not configured yet. */
   config?: {
     nativeApiUrl: string;
@@ -203,20 +203,20 @@ type KailoMockOptions = {
     oidcClientId: string;
   } | null;
   signedIn?: boolean;
-  /** Rejection message for `kailo_set_config` (Rust-side validation). */
+  /** Rejection message for `platform_set_config` (Rust-side validation). */
   setConfigError?: string;
-  /** `hold` keeps `kailo_sign_in` pending until `kailo_cancel_sign_in`. */
+  /** `hold` keeps `platform_sign_in` pending until `platform_cancel_sign_in`. */
   signIn?: "succeed" | "hold" | { error: string };
-  /** Successive `kailo_register_device` outcomes; the last one repeats. */
-  register?: Array<KailoReply | { error: string }>;
+  /** Successive `platform_register_device` outcomes; the last one repeats. */
+  register?: Array<PlatformReply | { error: string }>;
   /** Successive states of this device in `GET /api/v1/identity/client-keys`. */
   deviceStates?: string[];
   /** Other devices of this person listed next to this one. */
   otherDevices?: Array<{ pubkey: string; state: string; createdAt: string }>;
   /** Reply to `GET /api/v1/native/community`; default points at the relay. */
-  community?: KailoReply;
+  community?: PlatformReply;
   /** Reply to `DELETE /api/v1/identity/client-keys/{pubkey}`. */
-  revoke?: KailoReply;
+  revoke?: PlatformReply;
   workspaces?: Array<{ id: string; name: string; slug: string }>;
   members?: unknown[];
   audit?: unknown[];
@@ -224,7 +224,7 @@ type KailoMockOptions = {
    * Any other BFF route, keyed `"METHOD /api/v1/…"` (path as sent, i.e.
    * percent-encoded). Successive replies per route; the last one repeats.
    */
-  routes?: Record<string, KailoReply[]>;
+  routes?: Record<string, PlatformReply[]>;
 };
 
 type RawBlobDescriptor = {
@@ -2124,14 +2124,14 @@ function recordMockMessage(channelId: string, event: RelayEvent) {
 }
 
 // Mocked Rust-side pending deep-link queue (see desktop/src-tauri/src/deep_link.rs).
-const KAILO_MOCK_CONFIG = {
-  nativeApiUrl: "https://kailo.e2e.test:8091",
-  oidcIssuer: "https://idp.e2e.test/realms/kailo",
-  oidcClientId: "kailo-native",
+const PLATFORM_MOCK_CONFIG = {
+  nativeApiUrl: "https://platform.e2e.test:8091",
+  oidcIssuer: "https://idp.e2e.test/realms/platform",
+  oidcClientId: "platform-native",
 };
 
-const kailoMock = {
-  config: null as KailoMockOptions["config"],
+const platformMock = {
+  config: null as PlatformMockOptions["config"],
   signedIn: false,
   pendingSignIn: null as ((error?: string) => void) | null,
   registerCalls: 0,
@@ -2140,31 +2140,31 @@ const kailoMock = {
   routeCalls: new Map<string, number>(),
 };
 
-function resetKailoMock(config: E2eConfig | null) {
-  const options = config?.mock?.kailo;
-  kailoMock.config =
-    options?.config === undefined ? KAILO_MOCK_CONFIG : options.config;
-  kailoMock.signedIn = options?.signedIn ?? true;
-  kailoMock.pendingSignIn = null;
-  kailoMock.registerCalls = 0;
-  kailoMock.deviceStateReads = 0;
-  kailoMock.revokedPubkeys = new Set();
-  kailoMock.routeCalls = new Map();
+function resetPlatformMock(config: E2eConfig | null) {
+  const options = config?.mock?.platform;
+  platformMock.config =
+    options?.config === undefined ? PLATFORM_MOCK_CONFIG : options.config;
+  platformMock.signedIn = options?.signedIn ?? true;
+  platformMock.pendingSignIn = null;
+  platformMock.registerCalls = 0;
+  platformMock.deviceStateReads = 0;
+  platformMock.revokedPubkeys = new Set();
+  platformMock.routeCalls = new Map();
 }
 
-function kailoError(status: number, reason: string): KailoReply {
+function platformError(status: number, reason: string): PlatformReply {
   return { status, body: { class: "PRECONDITION", reason } };
 }
 
-function handleKailoApi(
+function handlePlatformApi(
   request: { method: string; path: string },
   config: E2eConfig | undefined,
   devicePubkey: string,
-): KailoReply {
-  if (!kailoMock.signedIn) {
-    throw "KAILO_NOT_SIGNED_IN";
+): PlatformReply {
+  if (!platformMock.signedIn) {
+    throw "PLATFORM_NOT_SIGNED_IN";
   }
-  const options = config?.mock?.kailo;
+  const options = config?.mock?.platform;
   const key = `${request.method} ${request.path}`;
   if (key === "GET /api/v1/native/community") {
     return (
@@ -2180,15 +2180,15 @@ function handleKailoApi(
   if (key === "GET /api/v1/identity/client-keys") {
     const states = options?.deviceStates ?? ["ACTIVE"];
     const state =
-      states[Math.min(kailoMock.deviceStateReads, states.length - 1)];
-    kailoMock.deviceStateReads += 1;
+      states[Math.min(platformMock.deviceStateReads, states.length - 1)];
+    platformMock.deviceStateReads += 1;
     const devices = [
       { pubkey: devicePubkey, state, createdAt: new Date().toISOString() },
       ...(options?.otherDevices ?? []),
     ];
     return {
       status: 200,
-      body: devices.filter((d) => !kailoMock.revokedPubkeys.has(d.pubkey)),
+      body: devices.filter((d) => !platformMock.revokedPubkeys.has(d.pubkey)),
     };
   }
   const revoke = request.path.match(/^\/api\/v1\/identity\/client-keys\/(.+)$/);
@@ -2198,7 +2198,7 @@ function handleKailoApi(
       status: 202,
       body: { pubkey, state: "REVOKING", workflowId: `wf-${pubkey}` },
     };
-    if (reply.status < 300) kailoMock.revokedPubkeys.add(pubkey);
+    if (reply.status < 300) platformMock.revokedPubkeys.add(pubkey);
     return reply;
   }
   if (key === "GET /api/v1/workspaces") {
@@ -2233,9 +2233,9 @@ function handleKailoApi(
   }
   const replies = options?.routes?.[key];
   if (replies?.length) {
-    const calls = kailoMock.routeCalls.get(key) ?? 0;
-    kailoMock.routeCalls.set(key, calls + 1);
-    return replies[Math.min(calls, replies.length - 1)] as KailoReply;
+    const calls = platformMock.routeCalls.get(key) ?? 0;
+    platformMock.routeCalls.set(key, calls + 1);
+    return replies[Math.min(calls, replies.length - 1)] as PlatformReply;
   }
   // 缺省的核验用户不是 Tenant admin：邀请列表与 BFF 一样回 403
   if (key === "GET /api/v1/invitations") {
@@ -2244,71 +2244,71 @@ function handleKailoApi(
       body: { class: "DENIED", reason: "PERMISSION_DENIED" },
     };
   }
-  return kailoError(404, "E2E_UNMOCKED_ROUTE");
+  return platformError(404, "E2E_UNMOCKED_ROUTE");
 }
 
-async function handleKailoCommand(
+async function handlePlatformCommand(
   command: string,
   payload: unknown,
   config: E2eConfig | undefined,
   devicePubkey: string,
 ): Promise<unknown> {
-  const options = config?.mock?.kailo;
+  const options = config?.mock?.platform;
   switch (command) {
-    case "kailo_get_config":
-      return kailoMock.config;
-    case "kailo_set_config": {
+    case "platform_get_config":
+      return platformMock.config;
+    case "platform_set_config": {
       if (options?.setConfigError) throw options.setConfigError;
-      kailoMock.config = (
-        payload as { config: typeof KAILO_MOCK_CONFIG }
+      platformMock.config = (
+        payload as { config: typeof PLATFORM_MOCK_CONFIG }
       ).config;
       return null;
     }
-    case "kailo_status":
+    case "platform_status":
       return {
-        configured: kailoMock.config !== null,
-        signedIn: kailoMock.signedIn,
+        configured: platformMock.config !== null,
+        signedIn: platformMock.signedIn,
       };
-    case "kailo_sign_in": {
+    case "platform_sign_in": {
       const mode = options?.signIn ?? "succeed";
       if (mode === "hold") {
         await new Promise<void>((resolve, reject) => {
-          kailoMock.pendingSignIn = (error) =>
+          platformMock.pendingSignIn = (error) =>
             error ? reject(error) : resolve();
         });
       } else if (typeof mode === "object") {
         throw mode.error;
       }
-      kailoMock.signedIn = true;
+      platformMock.signedIn = true;
       return null;
     }
-    case "kailo_cancel_sign_in":
-      kailoMock.pendingSignIn?.("登录已取消");
-      kailoMock.pendingSignIn = null;
+    case "platform_cancel_sign_in":
+      platformMock.pendingSignIn?.("登录已取消");
+      platformMock.pendingSignIn = null;
       return null;
-    case "kailo_sign_out":
-      kailoMock.signedIn = false;
+    case "platform_sign_out":
+      platformMock.signedIn = false;
       return null;
-    case "kailo_register_device": {
-      if (!kailoMock.signedIn) throw "KAILO_NOT_SIGNED_IN";
+    case "platform_register_device": {
+      if (!platformMock.signedIn) throw "PLATFORM_NOT_SIGNED_IN";
       const replies = options?.register ?? [
         { status: 200, body: { pubkey: devicePubkey, state: "ACTIVE" } },
       ];
       const reply =
-        replies[Math.min(kailoMock.registerCalls, replies.length - 1)];
-      kailoMock.registerCalls += 1;
+        replies[Math.min(platformMock.registerCalls, replies.length - 1)];
+      platformMock.registerCalls += 1;
       if (!reply) throw "E2E: no register reply";
       if ("error" in reply) throw reply.error;
       return reply;
     }
-    case "kailo_api":
-      return handleKailoApi(
+    case "platform_api":
+      return handlePlatformApi(
         payload as { method: string; path: string },
         config,
         devicePubkey,
       );
   }
-  throw new Error(`E2E: unhandled Kailo command ${command}`);
+  throw new Error(`E2E: unhandled platform command ${command}`);
 }
 
 let mockPendingNavigationDeepLinks: Array<{
@@ -4560,7 +4560,7 @@ export function maybeInstallE2eTauriMocks() {
   window.__BUZZ_E2E_USERS_BATCH_PENDING__ = () => heldUsersBatchReleases.length;
   seedMockSearchProfiles(config);
   resetMockObservedUnread();
-  resetKailoMock(config);
+  resetPlatformMock(config);
   resetMockPendingNavigationDeepLinks(config);
   mockWebsocketSendMutexWedged = false;
   if (config.mock?.windowLabel) {
@@ -4802,8 +4802,8 @@ export function maybeInstallE2eTauriMocks() {
     });
     window.__BUZZ_E2E_COMMAND_LOG__?.push({ command, payload });
 
-    if (command.startsWith("kailo_")) {
-      return handleKailoCommand(
+    if (command.startsWith("platform_")) {
+      return handlePlatformCommand(
         command,
         payload,
         activeConfig,

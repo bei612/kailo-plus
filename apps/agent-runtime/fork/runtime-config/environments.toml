@@ -1,4 +1,4 @@
-# Kailo SERVER_CODEX 的 environment 清单：Core 在 spawn 前把本文件原样写入每个
+# 平台 SERVER_CODEX 的 environment 清单：Core 在 spawn 前把本文件原样写入每个
 # Installation 的 CODEX_HOME/environments.toml（.design/12 §1、DD-15）。
 #
 # 必须显式写出：CODEX_HOME 下没有 environments.toml 时，Codex 回退到

@@ -16,7 +16,7 @@ import { ApprovalsPage, TasksPage } from "../src/react/governance";
 import { type BffReply, type BffRequest, TransportError } from "../src/transport";
 import { button, click, render, settle } from "./render";
 
-const WF = "kailo:APPROVAL:t1:ae1:1";
+const WF = "platform:APPROVAL:t1:ae1:1";
 
 const task = (over: Partial<TaskView> = {}): TaskView => ({
   operationId: "op-1",

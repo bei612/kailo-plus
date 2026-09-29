@@ -50,7 +50,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     return const AuthState(status: AuthStatus.unauthenticated);
   }
 
-  /// Connects to [community], replacing the stored one. Kailo keeps exactly
+  /// Connects to [community], replacing the stored one. The platform keeps exactly
   /// one community on the device: the Tenant this login resolved to.
   /// Writes to storage directly to avoid circular dependency with community
   /// providers.

@@ -314,7 +314,7 @@ fn inventory_scan_catches_new_unlisted_file() {
 
 /// Source allowlist: NIP-49 material appears only in the egress guard itself.
 /// The app has no key backup, export, or import (the device key never leaves
-/// this machine, Kailo DD-79), so anything else touching ncryptsec or the
+/// this machine, DD-79), so anything else touching ncryptsec or the
 /// nip49 codec is structural drift.
 #[test]
 fn ncryptsec_handling_is_confined_to_allowlisted_files() {

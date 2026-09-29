@@ -144,7 +144,7 @@ pub fn run() {
             });
         })
         .manage(build_app_state())
-        .manage(platform::api::KailoSession::default())
+        .manage(platform::api::NativeSession::default())
         .manage(ClipboardState::new())
         .manage(PendingNavigationDeepLinks::default())
         .manage(observed_unread::ObservedUnreadStore::default())
@@ -186,14 +186,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            platform::commands::kailo_get_config,
-            platform::commands::kailo_set_config,
-            platform::commands::kailo_status,
-            platform::commands::kailo_sign_in,
-            platform::commands::kailo_cancel_sign_in,
-            platform::commands::kailo_sign_out,
-            platform::commands::kailo_api,
-            platform::commands::kailo_register_device,
+            platform::commands::platform_get_config,
+            platform::commands::platform_set_config,
+            platform::commands::platform_status,
+            platform::commands::platform_sign_in,
+            platform::commands::platform_cancel_sign_in,
+            platform::commands::platform_sign_out,
+            platform::commands::platform_api,
+            platform::commands::platform_register_device,
             acknowledge_pending_navigation_deep_link,
             apply_workspace,
             cancel_link_preview_metadata,

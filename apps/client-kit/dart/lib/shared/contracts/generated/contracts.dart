@@ -15,6 +15,7 @@
 //     final legacySecretRefPage = legacySecretRefPageFromJson(jsonString);
 //     final nativeCommunityFacts = nativeCommunityFactsFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
+//     final platformInfo = platformInfoFromJson(jsonString);
 //     final platformTenantPage = platformTenantPageFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
 //     final roleMemberPage = roleMemberPageFromJson(jsonString);
@@ -127,6 +128,11 @@ OwnAuditEntry ownAuditEntryFromJson(String str) =>
     OwnAuditEntry.fromJson(json.decode(str));
 
 String ownAuditEntryToJson(OwnAuditEntry data) => json.encode(data.toJson());
+
+PlatformInfo platformInfoFromJson(String str) =>
+    PlatformInfo.fromJson(json.decode(str));
+
+String platformInfoToJson(PlatformInfo data) => json.encode(data.toJson());
 
 PlatformTenantPage platformTenantPageFromJson(String str) =>
     PlatformTenantPage.fromJson(json.decode(str));
@@ -1547,6 +1553,20 @@ class OwnAuditEntry {
   });
 }
 
+///GET /api/v1/platform-info 的回应（DD-111）：只含公开展示字段，不依赖 PlatformSession
+///与身份解析，仍在网关入口的认证之后。displayName 取自部署配置 PLATFORM_DISPLAY_NAME，是界面上产品名的唯一来源。
+class PlatformInfo {
+  ///部署的显示名，去除首尾空白后非空
+  final String displayName;
+
+  PlatformInfo({required this.displayName});
+
+  factory PlatformInfo.fromJson(Map<String, dynamic> json) =>
+      PlatformInfo(displayName: json["displayName"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"displayName": displayName});
+}
+
 ///GET /api/v1/platform/tenants 的有界回应：只对 Platform Catalog Tenant 中持有 fresh Catalog manage
 ///的会话开放，列出业务 Tenant 及其当前状态与可发起的暂停/恢复动作提示（DD-96）。动作提交仍由 Core 重新准入。
 class PlatformTenantPage {
@@ -2336,7 +2356,8 @@ class TaskStateReport {
 }
 
 ///Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
-///kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
+///platform:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>（前缀是协议常量，不随部署显示名变化；ADR-17
+///迁移窗口内的存量引用仍为旧前缀），使「不分配第二个业务 workflow ID」可被机械校验。
 class WorkflowRef {
   ///RFC3339；Describe 返回 NotFound 时用它判断是否仍在 retention 窗口内
   final String createdAt;

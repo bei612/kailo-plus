@@ -60,6 +60,7 @@ mod tests {
     #[test]
     fn generated_registry_closes_unreleased_user_entries() {
         assert!(route_exposed("/api/v1/session"));
+        assert!(route_exposed("/api/v1/platform-info"));
         assert!(action_exposed("workspace.create"));
         assert!(action_exposed("workspace.suspend"));
         assert!(action_exposed("workspace.restore"));

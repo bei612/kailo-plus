@@ -41,7 +41,9 @@ void main() {
 
     container
         .read(pendingDeepLinkProvider.notifier)
-        .open(Uri.parse('xyz.block.buzz.mobile:/kailo/oauth2redirect?code=c'));
+        .open(
+          Uri.parse('xyz.block.buzz.mobile:/platform/oauth2redirect?code=c'),
+        );
 
     expect(container.read(pendingDeepLinkProvider), isNull);
   });

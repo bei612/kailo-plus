@@ -6,23 +6,26 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/platform/platform_api.dart';
 import '../../shared/platform/platform_config.dart';
+import '../../shared/platform/platform_display_name.dart';
 import '../../shared/platform/platform_link.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import '../../shared/theme/theme.dart';
 import 'platform_status_text.dart';
 
-/// 未登录时的首页：部署配置与企业账号登录（Kailo `DD-78`）。
+/// 未登录时的首页：部署配置与企业账号登录（`DD-78`、`DD-111`）。
 ///
 /// 登录在系统浏览器里完成；这一页只显示进度与结论。结论不明时显示「不明」，
 /// 不当作成功或失败。
-class KailoSignInPage extends HookConsumerWidget {
-  const KailoSignInPage({super.key});
+class PlatformSignInPage extends HookConsumerWidget {
+  const PlatformSignInPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = Localizations.localeOf(context).toLanguageTag();
-    final config = ref.watch(kailoConfigProvider);
-    final link = ref.watch(kailoLinkProvider);
+    final config = ref.watch(platformConfigProvider);
+    final link = ref.watch(platformLinkProvider);
+    // 部署显示名（DD-111）：只有该服务器此前登录后读到过才有，否则是中性标题
+    final displayName = ref.watch(platformDisplayNameProvider);
     final editing = useState(config == null);
 
     return Scaffold(
@@ -32,19 +35,31 @@ class KailoSignInPage extends HookConsumerWidget {
           children: [
             const SizedBox(height: Grid.lg),
             Text(
-              kailoText(KailoMessageKey.platformTitle, locale: locale),
+              displayName == null
+                  ? platformText(
+                      PlatformMessageKey.platformTitle,
+                      locale: locale,
+                    )
+                  : platformText(
+                      PlatformMessageKey.nativeSignInTitleNamed,
+                      locale: locale,
+                      variables: {'name': displayName},
+                    ),
               style: context.textTheme.headlineMedium,
             ),
             const SizedBox(height: Grid.xxs),
             Text(
-              kailoText(KailoMessageKey.nativeSignInExplain, locale: locale),
+              platformText(
+                PlatformMessageKey.nativeSignInExplain,
+                locale: locale,
+              ),
               style: context.textTheme.bodyMedium?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: Grid.md),
             if (editing.value || config == null)
-              KailoConfigForm(
+              PlatformConfigForm(
                 initial: config,
                 onSaved: () => editing.value = false,
                 onCancel: config == null ? null : () => editing.value = false,
@@ -53,11 +68,11 @@ class KailoSignInPage extends HookConsumerWidget {
               _SignInControls(state: link),
               const SizedBox(height: Grid.sm),
               TextButton(
-                key: const ValueKey('kailo-edit-config'),
+                key: const ValueKey('platform-edit-config'),
                 onPressed: link.busy ? null : () => editing.value = true,
                 child: Text(
-                  kailoText(
-                    KailoMessageKey.nativeConfigServer,
+                  platformText(
+                    PlatformMessageKey.nativeConfigServer,
                     locale: locale,
                     variables: {'host': Uri.parse(config.nativeApiUrl).host},
                   ),
@@ -74,12 +89,12 @@ class KailoSignInPage extends HookConsumerWidget {
 class _SignInControls extends ConsumerWidget {
   const _SignInControls({required this.state});
 
-  final KailoLinkState state;
+  final PlatformLinkState state;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = Localizations.localeOf(context).toLanguageTag();
-    final notifier = ref.read(kailoLinkProvider.notifier);
+    final notifier = ref.read(platformLinkProvider.notifier);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -94,36 +109,43 @@ class _SignInControls extends ConsumerWidget {
                 const SizedBox(width: Grid.twelve),
               ],
               Expanded(
-                child: Text(kailoPhaseText(state.phase, locale: locale)),
+                child: Text(platformPhaseText(state.phase, locale: locale)),
               ),
             ],
           ),
           const SizedBox(height: Grid.xs),
           if (state.manualRecheck)
             FilledButton(
-              key: const ValueKey('kailo-recheck-activation'),
+              key: const ValueKey('platform-recheck-activation'),
               onPressed: () => unawaited(notifier.reconcile()),
               child: Text(
-                kailoText(KailoMessageKey.nativeDeviceCheck, locale: locale),
+                platformText(
+                  PlatformMessageKey.nativeDeviceCheck,
+                  locale: locale,
+                ),
               ),
             ),
           OutlinedButton(
-            key: const ValueKey('kailo-cancel-sign-in'),
+            key: const ValueKey('platform-cancel-sign-in'),
             onPressed: notifier.cancel,
             child: Text(
-              kailoText(KailoMessageKey.platformCancel, locale: locale),
+              platformText(PlatformMessageKey.platformCancel, locale: locale),
             ),
           ),
         ] else ...[
-          if (kailoOutcomeText(state, locale: locale) case final outcome?) ...[
-            KailoOutcomeBanner(text: outcome),
+          if (platformOutcomeText(state, locale: locale)
+              case final outcome?) ...[
+            PlatformOutcomeBanner(text: outcome),
             const SizedBox(height: Grid.xs),
           ],
           FilledButton(
-            key: const ValueKey('kailo-sign-in'),
+            key: const ValueKey('platform-sign-in'),
             onPressed: () => unawaited(notifier.signIn()),
             child: Text(
-              kailoText(KailoMessageKey.nativeSignInStart, locale: locale),
+              platformText(
+                PlatformMessageKey.nativeSignInStart,
+                locale: locale,
+              ),
             ),
           ),
         ],
@@ -133,15 +155,15 @@ class _SignInControls extends ConsumerWidget {
 }
 
 /// 部署配置表单。三项都来自部署方，不预填任何地址。
-class KailoConfigForm extends HookConsumerWidget {
-  const KailoConfigForm({
+class PlatformConfigForm extends HookConsumerWidget {
+  const PlatformConfigForm({
     super.key,
     required this.initial,
     required this.onSaved,
     this.onCancel,
   });
 
-  final KailoConfig? initial;
+  final PlatformConfig? initial;
   final VoidCallback onSaved;
   final VoidCallback? onCancel;
 
@@ -151,10 +173,10 @@ class KailoConfigForm extends HookConsumerWidget {
     final native = useTextEditingController(text: initial?.nativeApiUrl);
     final issuer = useTextEditingController(text: initial?.oidcIssuer);
     final client = useTextEditingController(text: initial?.oidcClientId);
-    final problem = useState<KailoConfigIssue?>(null);
+    final problem = useState<PlatformConfigIssue?>(null);
 
     Future<void> save() async {
-      final config = KailoConfig(
+      final config = PlatformConfig(
         nativeApiUrl: native.text,
         oidcIssuer: issuer.text,
         oidcClientId: client.text,
@@ -166,9 +188,9 @@ class KailoConfigForm extends HookConsumerWidget {
       }
       if (config != initial) {
         // 换了部署：旧部署签发的令牌不属于新的 IdP，不带过去
-        await ref.read(kailoSessionProvider).discardCredentials();
+        await ref.read(nativeSessionProvider).discardCredentials();
       }
-      await ref.read(kailoConfigProvider.notifier).save(config);
+      await ref.read(platformConfigProvider.notifier).save(config);
       onSaved();
     }
 
@@ -178,34 +200,45 @@ class KailoConfigForm extends HookConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(kailoText(KailoMessageKey.nativeConfigExplain, locale: locale)),
+        Text(
+          platformText(PlatformMessageKey.nativeConfigExplain, locale: locale),
+        ),
         const SizedBox(height: Grid.sm),
         TextField(
-          key: const ValueKey('kailo-config-native-url'),
+          key: const ValueKey('platform-config-native-url'),
           controller: native,
           keyboardType: TextInputType.url,
           autocorrect: false,
           decoration: field(
-            kailoText(KailoMessageKey.nativeConfigNativeApiUrl, locale: locale),
+            platformText(
+              PlatformMessageKey.nativeConfigNativeApiUrl,
+              locale: locale,
+            ),
           ),
         ),
         const SizedBox(height: Grid.xs),
         TextField(
-          key: const ValueKey('kailo-config-issuer'),
+          key: const ValueKey('platform-config-issuer'),
           controller: issuer,
           keyboardType: TextInputType.url,
           autocorrect: false,
           decoration: field(
-            kailoText(KailoMessageKey.nativeConfigOidcIssuer, locale: locale),
+            platformText(
+              PlatformMessageKey.nativeConfigOidcIssuer,
+              locale: locale,
+            ),
           ),
         ),
         const SizedBox(height: Grid.xs),
         TextField(
-          key: const ValueKey('kailo-config-client-id'),
+          key: const ValueKey('platform-config-client-id'),
           controller: client,
           autocorrect: false,
           decoration: field(
-            kailoText(KailoMessageKey.nativeConfigOidcClientId, locale: locale),
+            platformText(
+              PlatformMessageKey.nativeConfigOidcClientId,
+              locale: locale,
+            ),
           ),
         ),
         if (problem.value case final issue?) ...[
@@ -217,17 +250,17 @@ class KailoConfigForm extends HookConsumerWidget {
         ],
         const SizedBox(height: Grid.sm),
         FilledButton(
-          key: const ValueKey('kailo-config-save'),
+          key: const ValueKey('platform-config-save'),
           onPressed: () => unawaited(save()),
           child: Text(
-            kailoText(KailoMessageKey.nativeConfigSave, locale: locale),
+            platformText(PlatformMessageKey.nativeConfigSave, locale: locale),
           ),
         ),
         if (onCancel case final cancel?)
           TextButton(
             onPressed: cancel,
             child: Text(
-              kailoText(KailoMessageKey.platformCancel, locale: locale),
+              platformText(PlatformMessageKey.platformCancel, locale: locale),
             ),
           ),
       ],
@@ -235,50 +268,50 @@ class KailoConfigForm extends HookConsumerWidget {
   }
 }
 
-String _configIssueText(KailoConfigIssue issue, String locale) {
+String _configIssueText(PlatformConfigIssue issue, String locale) {
   final (message, field) = switch (issue) {
-    KailoConfigIssue.nativeInvalidUrl => (
-      KailoMessageKey.nativeConfigInvalidUrl,
-      KailoMessageKey.nativeConfigNativeApiUrl,
+    PlatformConfigIssue.nativeInvalidUrl => (
+      PlatformMessageKey.nativeConfigInvalidUrl,
+      PlatformMessageKey.nativeConfigNativeApiUrl,
     ),
-    KailoConfigIssue.issuerInvalidUrl => (
-      KailoMessageKey.nativeConfigInvalidUrl,
-      KailoMessageKey.nativeConfigOidcIssuer,
+    PlatformConfigIssue.issuerInvalidUrl => (
+      PlatformMessageKey.nativeConfigInvalidUrl,
+      PlatformMessageKey.nativeConfigOidcIssuer,
     ),
-    KailoConfigIssue.nativeInvalidScheme => (
-      KailoMessageKey.nativeConfigInvalidScheme,
-      KailoMessageKey.nativeConfigNativeApiUrl,
+    PlatformConfigIssue.nativeInvalidScheme => (
+      PlatformMessageKey.nativeConfigInvalidScheme,
+      PlatformMessageKey.nativeConfigNativeApiUrl,
     ),
-    KailoConfigIssue.issuerInvalidScheme => (
-      KailoMessageKey.nativeConfigInvalidScheme,
-      KailoMessageKey.nativeConfigOidcIssuer,
+    PlatformConfigIssue.issuerInvalidScheme => (
+      PlatformMessageKey.nativeConfigInvalidScheme,
+      PlatformMessageKey.nativeConfigOidcIssuer,
     ),
-    KailoConfigIssue.nativeQueryOrFragment => (
-      KailoMessageKey.nativeConfigInvalidExtras,
-      KailoMessageKey.nativeConfigNativeApiUrl,
+    PlatformConfigIssue.nativeQueryOrFragment => (
+      PlatformMessageKey.nativeConfigInvalidExtras,
+      PlatformMessageKey.nativeConfigNativeApiUrl,
     ),
-    KailoConfigIssue.issuerQueryOrFragment => (
-      KailoMessageKey.nativeConfigInvalidExtras,
-      KailoMessageKey.nativeConfigOidcIssuer,
+    PlatformConfigIssue.issuerQueryOrFragment => (
+      PlatformMessageKey.nativeConfigInvalidExtras,
+      PlatformMessageKey.nativeConfigOidcIssuer,
     ),
-    KailoConfigIssue.nativeUserInfo => (
-      KailoMessageKey.nativeConfigInvalidUserInfo,
-      KailoMessageKey.nativeConfigNativeApiUrl,
+    PlatformConfigIssue.nativeUserInfo => (
+      PlatformMessageKey.nativeConfigInvalidUserInfo,
+      PlatformMessageKey.nativeConfigNativeApiUrl,
     ),
-    KailoConfigIssue.issuerUserInfo => (
-      KailoMessageKey.nativeConfigInvalidUserInfo,
-      KailoMessageKey.nativeConfigOidcIssuer,
+    PlatformConfigIssue.issuerUserInfo => (
+      PlatformMessageKey.nativeConfigInvalidUserInfo,
+      PlatformMessageKey.nativeConfigOidcIssuer,
     ),
-    KailoConfigIssue.clientIdRequired => (
-      KailoMessageKey.nativeConfigClientIdRequired,
+    PlatformConfigIssue.clientIdRequired => (
+      PlatformMessageKey.nativeConfigClientIdRequired,
       null,
     ),
   };
-  return kailoText(
+  return platformText(
     message,
     locale: locale,
     variables: field == null
         ? null
-        : {'field': kailoText(field, locale: locale)},
+        : {'field': platformText(field, locale: locale)},
   );
 }

@@ -356,7 +356,7 @@ async fn run(
         .fetch_one(pool)
         .await
         .expect("读 Workspace 冻结版本");
-    let workflow_id = format!("kailo:WORKSPACE_LIFECYCLE:{tenant}:{workspace}:{version}");
+    let workflow_id = format!("platform:WORKSPACE_LIFECYCLE:{tenant}:{workspace}:{version}");
     sqlx::query(
         "insert into projection.workflow_ref
              (workflow_id, workflow_type, workflow_version, kind, tenant_id,
@@ -497,7 +497,7 @@ async fn workflow_of(pool: &PgPool, action: Uuid) -> String {
 
 /// Workspace 在其 Tenant 就绪前被建立：WORKSPACE_LIFECYCLE 取不到 ACTIVE 的
 /// CONTROL 身份，被确定拒绝而 FAILED，Workspace 停在 PROVISIONING——正是
-/// `kailo.entity.stranded` 计数的那种搁浅。Tenant 就绪后经重跑入口以新版本与
+/// `platform.entity.stranded` 计数的那种搁浅。Tenant 就绪后经重跑入口以新版本与
 /// 新 workflow ID 收敛到 ACTIVE。
 #[tokio::test]
 async fn stranded_workspace_is_rerun_with_new_version() {

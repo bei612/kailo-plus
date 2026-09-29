@@ -38,7 +38,7 @@ final _messageActionBackdropFilter = ImageFilter.blur(
   sigmaY: _messageActionBackdropBlurSigma,
 );
 
-/// Kailo Mobile 在 Channel 里只发布消息（kind 9）：表情回应、编辑、删除与提醒都
+/// 移动端在 Channel 里只发布消息（kind 9）：表情回应、编辑、删除与提醒都
 /// 不交付（`DD-80` 只放行已交付能力所需的 kind），这里不生成它们的入口。
 ///
 /// Presents the actions for [message] as an anchored popover when both

@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn identity_requires_an_active_human_principal_in_the_same_tenant() {
-    if std::env::var("KAILO_INTEGRATION").as_deref() != Ok("1") {
+    if std::env::var("PLATFORM_INTEGRATION").as_deref() != Ok("1") {
         return;
     }
     let database_url = std::env::var("DATABASE_URL").expect("隔离核验库 DATABASE_URL");

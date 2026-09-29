@@ -56,8 +56,8 @@ void main() {
     expect(appearanceModeLabel(ThemeMode.dark, locale: 'zh-CN'), '深色');
     expect(appearanceModeLabel(ThemeMode.system, locale: 'zh-CN'), '跟随系统');
     expect(
-      kailoText(
-        KailoMessageKey.platformThemeAppearanceCycle,
+      platformText(
+        PlatformMessageKey.platformThemeAppearanceCycle,
         locale: 'zh-CN',
         variables: {
           'mode': appearanceModeLabel(ThemeMode.light, locale: 'zh-CN'),
@@ -66,8 +66,8 @@ void main() {
       '浅色外观。双击切换。',
     );
     expect(
-      kailoText(
-        KailoMessageKey.platformThemeScrubber,
+      platformText(
+        PlatformMessageKey.platformThemeScrubber,
         locale: 'zh-CN',
         variables: {'index': 2, 'count': 7},
       ),

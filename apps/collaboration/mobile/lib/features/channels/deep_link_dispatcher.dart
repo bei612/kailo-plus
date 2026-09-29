@@ -68,7 +68,7 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
       ref.read(pendingDeepLinkProvider.notifier).consume();
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => KailoUnavailablePage(uri: link.uri),
+          builder: (_) => PlatformUnavailablePage(uri: link.uri),
         ),
       );
       return;

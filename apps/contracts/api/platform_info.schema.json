@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/platform_info.schema.json",
+  "title": "PlatformInfo",
+  "description": "GET /api/v1/platform-info 的回应（DD-111）：只含公开展示字段，不依赖 PlatformSession 与身份解析，仍在网关入口的认证之后。displayName 取自部署配置 PLATFORM_DISPLAY_NAME，是界面上产品名的唯一来源。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["displayName"],
+  "properties": {
+    "displayName": { "type": "string", "description": "部署的显示名，去除首尾空白后非空" }
+  }
+}

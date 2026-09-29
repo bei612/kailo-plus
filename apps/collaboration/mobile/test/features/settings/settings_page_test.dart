@@ -38,9 +38,9 @@ void main() {
         overrides: [
           savedPrefsProvider.overrideWithValue(prefs),
           myPubkeyProvider.overrideWithValue('ab' * 32),
-          kailoWorkspacesProvider.overrideWith((ref) async => const []),
-          kailoOwnAuditProvider.overrideWith((ref) async => const []),
-          kailoDevicesProvider.overrideWith((ref) async => const []),
+          platformWorkspacesProvider.overrideWith((ref) async => const []),
+          platformOwnAuditProvider.overrideWith((ref) async => const []),
+          platformDevicesProvider.overrideWith((ref) async => const []),
         ],
         child: MaterialApp(
           locale: locale,
@@ -58,7 +58,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('offers the Kailo management views and nothing undelivered', (
+  testWidgets('offers the platform management views and nothing undelivered', (
     tester,
   ) async {
     await pumpSettings(tester);
@@ -86,9 +86,9 @@ void main() {
     await pumpSettings(tester);
 
     for (final (label, page) in <(String, Type)>[
-      ('Members', KailoWorkspacesPage),
-      ('My activity log', KailoAuditPage),
-      ('My devices', KailoDevicesPage),
+      ('Members', PlatformWorkspacesPage),
+      ('My activity log', PlatformAuditPage),
+      ('My devices', PlatformDevicesPage),
     ]) {
       await tester.tap(find.text(label));
       await tester.pumpAndSettle();

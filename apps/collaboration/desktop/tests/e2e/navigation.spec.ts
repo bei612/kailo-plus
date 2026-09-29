@@ -272,7 +272,7 @@ test("Buzz channel and message permalinks render as chips in the composer", asyn
   await page.getByTestId("channel-general").click();
   await expect(page.getByTestId("chat-title")).toHaveText("general");
 
-  // Kailo 一期只有频道与消息两种 Buzz 链接；repo/PR/issue 实体链接已随功能删除。
+  // 一期只有频道与消息两种 Buzz 链接；repo/PR/issue 实体链接已随功能删除。
   const channelId = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
   const links = [
     `buzz://message?channel=${channelId}&id=mock-general-welcome`,

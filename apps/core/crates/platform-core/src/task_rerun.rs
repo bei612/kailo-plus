@@ -3,13 +3,13 @@
 //! 生命周期 Workflow 以确定的拒绝结束（`FAILED`，或兜底对账观察到的
 //! `CANCELED/TERMINATED/TIMED_OUT`）时，它驱动的实体仍停在收敛中状态
 //! （scope/member 为 `PROVISIONING`/`REVOKING`，身份 binding 还包括
-//! `RECONCILING`），并计入 `kailo.entity.stranded`。那条 Workflow
+//! `RECONCILING`），并计入 `platform.entity.stranded`。那条 Workflow
 //! 的固定 ID 已经 TERMINAL，同 ID 再 Start 只会撞上 `REJECT_DUPLICATE`
 //! （`component_task::start` 因此回 409）。设计给出的出路只有一条：
 //!
 //! - `rerun` 创建**新的** ActionExecution 与**新的** Workflow，不改写旧 history
 //!   （`.design/06` §9）；
-//! - 新 Workflow 的 ID 由新的实体版本决定（`kailo:<kind>:<tenant>:<entity>:<version>`，
+//! - 新 Workflow 的 ID 由新的实体版本决定（`platform:<kind>:<tenant>:<entity>:<version>`，
 //!   `.design/06` §3.1），所以重跑就是「实体版本 +1、状态不变、以新版本重走
 //!   同一条建立/撤权链」——与 `DD-45`「恢复访问必须建立新 membership version 并
 //!   重走建立对账」同形。
@@ -665,9 +665,8 @@ async fn start(pool: &PgPool, temporal: &TemporalClient, ready: &Ready, action: 
 /// 从固定 workflow ID 取出实体 ID 与版本，并核对前三段与 WorkflowRef 自己的
 /// kind、Tenant 一致——不一致说明这不是按固定格式建的 ID，不按它推断任何事。
 fn parse_workflow_id(id: &str, kind: &str, tenant: Uuid) -> Option<(String, i32)> {
-    let parts: Vec<&str> = id.split(':').collect();
-    match parts.as_slice() {
-        ["kailo", k, t, entity, version] if *k == kind && *t == tenant.to_string() => {
+    match component_task::split_workflow_id(id) {
+        Some([k, t, entity, version]) if k == kind && t == tenant.to_string() => {
             let version = version.parse::<i32>().ok()?;
             (version > 0 && version < i32::MAX).then(|| (entity.to_string(), version))
         }
@@ -796,7 +795,24 @@ mod tests {
             None
         );
         assert_eq!(
-            parse_workflow_id("kailo:TENANT_LIFECYCLE:x", "TENANT_LIFECYCLE", tenant),
+            parse_workflow_id("platform:TENANT_LIFECYCLE:x", "TENANT_LIFECYCLE", tenant),
+            None
+        );
+        // ADR-17 迁移窗口：旧前缀的存量 WorkflowRef 仍按原 ID 解析；不认识的前缀不解析
+        assert_eq!(
+            parse_workflow_id(
+                &format!("kailo:TENANT_LIFECYCLE:{tenant}:{entity}:3"),
+                "TENANT_LIFECYCLE",
+                tenant
+            ),
+            Some((entity.to_string(), 3))
+        );
+        assert_eq!(
+            parse_workflow_id(
+                &format!("other:TENANT_LIFECYCLE:{tenant}:{entity}:3"),
+                "TENANT_LIFECYCLE",
+                tenant
+            ),
             None
         );
         for version in [
@@ -805,7 +821,7 @@ mod tests {
             i32::MAX.to_string(),
             (i64::from(i32::MAX) + 1).to_string(),
         ] {
-            let id = format!("kailo:TENANT_LIFECYCLE:{tenant}:{entity}:{version}");
+            let id = format!("platform:TENANT_LIFECYCLE:{tenant}:{entity}:{version}");
             assert_eq!(parse_workflow_id(&id, "TENANT_LIFECYCLE", tenant), None);
         }
     }

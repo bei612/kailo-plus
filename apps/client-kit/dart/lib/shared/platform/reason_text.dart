@@ -4,7 +4,7 @@ import 'dart:io' show Platform;
 
 import '../contracts/contracts.dart';
 
-String kailoReasonText(ReasonCode reason, {String? locale}) {
+String platformReasonText(ReasonCode reason, {String? locale}) {
   final language = (locale ?? Platform.localeName).toLowerCase();
   if (language.startsWith('zh')) {
     return switch (reason) {
@@ -129,4 +129,5 @@ String kailoReasonText(ReasonCode reason, {String? locale}) {
   };
 }
 
-String kailoReasonCode(ReasonCode reason) => reasonCodeValues.reverse[reason]!;
+String platformReasonCode(ReasonCode reason) =>
+    reasonCodeValues.reverse[reason]!;

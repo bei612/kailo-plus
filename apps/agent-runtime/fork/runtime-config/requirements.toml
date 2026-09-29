@@ -1,4 +1,4 @@
-# Kailo SERVER_CODEX 的管理员强制约束（.design/12 §1、§2、§4；DD-15/65）。
+# 平台 SERVER_CODEX 的管理员强制约束（.design/12 §1、§2、§4；DD-15/65）。
 # 镜像内放到 /etc/codex/requirements.toml：这是 Codex 的 system requirements 层
 # （codex-rs/config/src/loader/mod.rs::system_requirements_toml_file），优先于
 # CODEX_HOME/config.toml 与 thread/start 的 config 覆写；与这里冲突的显式设置

@@ -7,7 +7,7 @@ import '../../shared/utils/string_utils.dart';
 import 'channel.dart';
 import 'channels_provider.dart';
 
-/// Channel 的读取面。Kailo 里 Channel 与 roster 只由 Core 经 Tenant CONTROL 变更
+/// Channel 的读取面。平台里 Channel 与 roster 只由 Core 经 Tenant CONTROL 变更
 /// （`DD-80`）：成员不建 Channel、不加人、不改元数据、不发表情回应，这些写入口
 /// 在移动端一律不存在。
 

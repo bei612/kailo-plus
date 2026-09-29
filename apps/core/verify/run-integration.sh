@@ -138,7 +138,7 @@ finish() {
 }
 namespace_before="$(namespace_list | jq -ce 'if type == "array" then map(rtrimstr("/")) | sort else [] end')"
 namespace_ledger="$(mktemp -d)"
-export KAILO_INTEGRATION_NAMESPACE_LEDGER="$namespace_ledger"
+export PLATFORM_INTEGRATION_NAMESPACE_LEDGER="$namespace_ledger"
 trap finish EXIT
 
 # 先编译：夹具投递的 wrapping token 只在 OPENBAO_SECRET_ID_WRAP_TTL 内有效，
@@ -154,4 +154,4 @@ export VERIFY_SECRET_VERSION_V1 VERIFY_SECRET_VERSION_V2 \
 (cd core && cargo test --workspace --exclude secret-store)
 # Go 侧同理
 # -count=1 关掉缓存：集成核验的结论取决于外部系统当下的状态，缓存命中等于没跑
-(cd worker && KAILO_INTEGRATION=1 go test -count=1 ./...)
+(cd worker && PLATFORM_INTEGRATION=1 go test -count=1 ./...)

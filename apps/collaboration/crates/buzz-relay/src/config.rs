@@ -209,7 +209,7 @@ pub struct Config {
     /// are permitted regardless of auth method (API token, NIP-42).
     pub require_relay_membership: bool,
 
-    /// Kailo (SS-BUZ-GOVERNANCE): event kinds a non-owner may publish. When
+    /// Platform (SS-BUZ-GOVERNANCE): event kinds a non-owner may publish. When
     /// set, every other kind is accepted only from the community owner, and
     /// channel access is decided by the channel roster alone — an `open`
     /// channel no longer admits non-members. `None` (env unset) keeps the

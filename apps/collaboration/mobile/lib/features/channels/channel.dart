@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 const Object _sentinel = Object();
 
 /// 本人所在的一个 Channel，取自 Relay 的 kind:39000 元数据与 kind:39002 roster。
-/// Kailo 的 Channel 由 Core 建立、一律 private（`DD-80`）。
+/// 平台的 Channel 由 Core 建立、一律 private（`DD-80`）。
 @immutable
 class Channel {
   final String id;

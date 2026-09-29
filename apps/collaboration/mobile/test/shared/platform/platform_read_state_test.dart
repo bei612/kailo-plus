@@ -42,14 +42,14 @@ class _UserState {
   }
 }
 
-KailoReadStateRemote _remote(_UserState core) {
+PlatformReadStateRemote _remote(_UserState core) {
   final client = MockClient(core.call);
-  return KailoReadStateRemote(
-    session: KailoSession(
+  return PlatformReadStateRemote(
+    session: NativeSession(
       client: client,
       refreshStore: MemoryRefreshStore()..value = 'r',
     ),
-    config: testKailoConfig,
+    config: testPlatformConfig,
   );
 }
 
@@ -115,17 +115,17 @@ void main() {
       if (request.method == 'PUT') return jsonResponse(null, 403);
       return core.call(request);
     });
-    final remote = KailoReadStateRemote(
-      session: KailoSession(
+    final remote = PlatformReadStateRemote(
+      session: NativeSession(
         client: client,
         refreshStore: MemoryRefreshStore()..value = 'r',
       ),
-      config: testKailoConfig,
+      config: testPlatformConfig,
     );
 
     await expectLater(
       remote.publish({_channel: 1}),
-      throwsA(isA<KailoApiError>()),
+      throwsA(isA<PlatformApiError>()),
     );
   });
 }

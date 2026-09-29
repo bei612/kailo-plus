@@ -167,7 +167,7 @@ async fn membership_lifecycle_converges_both_directions() {
     let member = Keys::generate();
     let member_hex = member.public_key().to_hex();
     let host = format!(
-        "l{}.kailo.local",
+        "l{}.platform.test",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

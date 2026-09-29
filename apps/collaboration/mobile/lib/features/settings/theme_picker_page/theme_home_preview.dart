@@ -43,8 +43,8 @@ class _ThemeHomePreview extends StatelessWidget {
             _PreviewDeviceFrame(
               key: const ValueKey('theme-home-device-preview'),
               theme: previewTheme,
-              semanticLabel: kailoText(
-                KailoMessageKey.platformThemeHomePreview,
+              semanticLabel: platformText(
+                PlatformMessageKey.platformThemeHomePreview,
                 locale: Localizations.localeOf(context).toLanguageTag(),
               ),
               child: const _FigmaHomeScreen(),
@@ -53,8 +53,8 @@ class _ThemeHomePreview extends StatelessWidget {
             _PreviewDeviceFrame(
               key: const ValueKey('theme-chat-device-preview'),
               theme: previewTheme,
-              semanticLabel: kailoText(
-                KailoMessageKey.platformThemeChatPreview,
+              semanticLabel: platformText(
+                PlatformMessageKey.platformThemeChatPreview,
                 locale: Localizations.localeOf(context).toLanguageTag(),
               ),
               child: const _FigmaChatScreen(),
@@ -198,8 +198,8 @@ class _FigmaHomeScreen extends ConsumerWidget {
                     constraints: const BoxConstraints(maxWidth: 210),
                     child: Text(
                       communityName == null || communityName.isEmpty
-                          ? kailoText(
-                              KailoMessageKey.platformThemeCommunitySample,
+                          ? platformText(
+                              PlatformMessageKey.platformThemeCommunitySample,
                               locale: Localizations.localeOf(
                                 context,
                               ).toLanguageTag(),

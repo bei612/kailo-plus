@@ -20,7 +20,7 @@ mkdir -p "$out"
 . core/verify/integration-env.sh
 
 # 运行中的 Temporal 实际挂载的那份动态配置（compose 非 swarm 的 configs 是 bind mount）
-cfg=$(sudo -n docker inspect kailo-local-temporal-1 | python3 -c '
+cfg=$(sudo -n docker inspect "${VERIFY_COMPOSE_PROJECT}-temporal-1" | python3 -c '
 import json,sys
 for m in json.load(sys.stdin)[0]["Mounts"]:
     if m["Destination"].endswith("/dynamicconfig/local.yaml"):

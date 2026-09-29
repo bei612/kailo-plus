@@ -37,14 +37,16 @@ void main() {
     Uri? authorize;
     final tokens = await signInWithAuthorizationCode(
       client: client,
-      config: testKailoConfig,
-      redirectUri: kailoRedirectUri,
+      config: testPlatformConfig,
+      redirectUri: platformRedirectUri,
       open: (uri) async {
         authorize = uri;
         final state = uri.queryParameters['state']!;
         // 别人的回调（state 不符）不被消费
-        callbacks.add(Uri.parse('$kailoRedirectUri?code=forged&state=other'));
-        callbacks.add(Uri.parse('$kailoRedirectUri?code=c-1&state=$state'));
+        callbacks.add(
+          Uri.parse('$platformRedirectUri?code=forged&state=other'),
+        );
+        callbacks.add(Uri.parse('$platformRedirectUri?code=c-1&state=$state'));
       },
       callbacks: callbacks.stream,
       cancelled: Completer<void>().future,
@@ -52,15 +54,15 @@ void main() {
 
     final query = authorize!.queryParameters;
     expect(query['response_type'], 'code');
-    expect(query['client_id'], 'kailo-native');
-    expect(query['redirect_uri'], kailoRedirectUri);
+    expect(query['client_id'], 'platform-native');
+    expect(query['redirect_uri'], platformRedirectUri);
     expect(query['code_challenge_method'], 'S256');
     expect(tokens.accessToken, 'access-1');
     expect(tokens.refreshToken, 'refresh-1');
     final form = tokenForms.single;
     expect(form['grant_type'], 'authorization_code');
     expect(form['code'], 'c-1');
-    expect(form['redirect_uri'], kailoRedirectUri);
+    expect(form['redirect_uri'], platformRedirectUri);
     expect(pkceChallenge(form['code_verifier']!), query['code_challenge']);
   });
 
@@ -75,8 +77,8 @@ void main() {
       final cancel = Completer<void>();
       final result = signInWithAuthorizationCode(
         client: client,
-        config: testKailoConfig,
-        redirectUri: kailoRedirectUri,
+        config: testPlatformConfig,
+        redirectUri: platformRedirectUri,
         open: (_) async => cancel.complete(),
         callbacks: const Stream.empty(),
         cancelled: cancel.future,
@@ -95,7 +97,7 @@ void main() {
         return oidcRoutes(request, refreshed: 'x')!;
       });
       try {
-        await refreshOidcTokens(client, testKailoConfig, 'r');
+        await refreshOidcTokens(client, testPlatformConfig, 'r');
         return 'no error';
       } on OidcFailure catch (e) {
         return e;
@@ -109,7 +111,7 @@ void main() {
   test('an unreachable IdP is unavailability, not rejection', () async {
     final client = MockClient((_) async => throw http.ClientException('down'));
     await expectLater(
-      refreshOidcTokens(client, testKailoConfig, 'r'),
+      refreshOidcTokens(client, testPlatformConfig, 'r'),
       throwsA(isA<OidcUnavailable>()),
     );
   });

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 原生端（Buzz Desktop / Buzz Mobile）的 Kailo 接入端到端核验：以该端自己的代码登录
+# 原生端（Buzz Desktop / Buzz Mobile）的平台接入端到端核验：以该端自己的代码登录
 # IdP、登记设备公钥、取 Community 连接事实、以设备私钥直连 Relay 发消息，并核验治理
 # 与撤销。两端走同一个夹具与同一组环境变量，只在最后跑各自的测试。
 #
@@ -7,15 +7,15 @@
 # 那个真能登录的核验用户。Community host 在本机没有 DNS：演练期间在 /etc/hosts
 # 临时加一行，结束时删除。
 #
-# 用法（apps 根目录）：core/verify/native-e2e.sh <desktop|mobile> <已接入 Kailo 的 buzz 源码树>
+# 用法（apps 根目录）：core/verify/native-e2e.sh <desktop|mobile> <已接入平台的协作底座源码树>
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . core/verify/integration-env.sh
 surface="${1:?用法: native-e2e.sh <desktop|mobile> <buzz 源码树>}"
 src="$(realpath "${2:?用法: native-e2e.sh <desktop|mobile> <buzz 源码树>}")"
 case "$surface" in
-  desktop) dir="$src/desktop/src-tauri"; run=(cargo test --lib kailo::e2e -- --ignored --nocapture) ;;
-  mobile)  dir="$src/mobile";            run=(flutter test test/kailo_e2e --reporter expanded) ;;
+  desktop) dir="$src/desktop/src-tauri"; run=(cargo test --lib platform::e2e -- --ignored --nocapture) ;;
+  mobile)  dir="$src/mobile";            run=(flutter test test/platform_e2e --reporter expanded) ;;
   *) echo "未知的端：$surface（desktop 或 mobile）" >&2; exit 2 ;;
 esac
 [ -d "$dir" ] || { echo "$src 里没有 $surface 端（$dir）" >&2; exit 2; }
@@ -52,11 +52,11 @@ echo "127.0.0.1 $name" | sudo -n tee -a /etc/hosts >/dev/null
 echo "Workspace $workspace 已开通，Community $host"
 
 cd "$dir"
-KAILO_E2E_NATIVE_URL="$VERIFY_NATIVE_URL" \
-KAILO_E2E_OIDC_ISSUER="$OIDC_ISSUER" \
-KAILO_E2E_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
-KAILO_E2E_USER="$VERIFY_USER" \
-KAILO_E2E_PASSWORD_FILE="$VERIFY_USER_PASSWORD_FILE" \
-KAILO_E2E_WORKSPACE="$workspace" \
-KAILO_E2E_CONVERGE_SECS="$VERIFY_CONVERGE_BOUND_SECS" \
+PLATFORM_E2E_NATIVE_URL="$VERIFY_NATIVE_URL" \
+PLATFORM_E2E_OIDC_ISSUER="$OIDC_ISSUER" \
+PLATFORM_E2E_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
+PLATFORM_E2E_USER="$VERIFY_USER" \
+PLATFORM_E2E_PASSWORD_FILE="$VERIFY_USER_PASSWORD_FILE" \
+PLATFORM_E2E_WORKSPACE="$workspace" \
+PLATFORM_E2E_CONVERGE_SECS="$VERIFY_CONVERGE_BOUND_SECS" \
   "${run[@]}"

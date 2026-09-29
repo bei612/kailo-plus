@@ -9,8 +9,8 @@ import '../../shared/widgets/app_list_card.dart';
 import 'platform_async_view.dart';
 
 /// 本人能进的 Workspace；点进去看成员。
-class KailoWorkspacesPage extends ConsumerWidget {
-  const KailoWorkspacesPage({super.key});
+class PlatformWorkspacesPage extends ConsumerWidget {
+  const PlatformWorkspacesPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -18,17 +18,17 @@ class KailoWorkspacesPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          kailoText(KailoMessageKey.platformTabMembers, locale: locale),
+          platformText(PlatformMessageKey.platformTabMembers, locale: locale),
         ),
       ),
-      body: KailoAsyncView(
-        value: ref.watch(kailoWorkspacesProvider),
-        onRetry: () => ref.invalidate(kailoWorkspacesProvider),
+      body: PlatformAsyncView(
+        value: ref.watch(platformWorkspacesProvider),
+        onRetry: () => ref.invalidate(platformWorkspacesProvider),
         builder: (context, workspaces) => workspaces.isEmpty
             ? Center(
                 child: Text(
-                  kailoText(
-                    KailoMessageKey.platformNoWorkspace,
+                  platformText(
+                    PlatformMessageKey.platformNoWorkspace,
                     locale: locale,
                   ),
                 ),
@@ -36,19 +36,19 @@ class KailoWorkspacesPage extends ConsumerWidget {
             : ListView(
                 children: [
                   AppListCard(
-                    label: kailoText(
-                      KailoMessageKey.platformWorkspaces,
+                    label: platformText(
+                      PlatformMessageKey.platformWorkspaces,
                       locale: locale,
                     ),
                     children: [
                       for (final workspace in workspaces)
                         AppListRow(
-                          key: ValueKey('kailo-workspace-${workspace.id}'),
+                          key: ValueKey('platform-workspace-${workspace.id}'),
                           title: workspace.name,
                           subtitle: workspace.slug,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => KailoMembersPage(
+                              builder: (_) => PlatformMembersPage(
                                 workspaceId: workspace.id,
                                 title: workspace.name,
                               ),
@@ -66,8 +66,8 @@ class KailoWorkspacesPage extends ConsumerWidget {
 
 /// 一个 Workspace 的成员，按人聚合（`DD-77`）。Channel 的成员视图也是它：
 /// Workspace id 就是 Channel id。
-class KailoMembersPage extends ConsumerWidget {
-  const KailoMembersPage({
+class PlatformMembersPage extends ConsumerWidget {
+  const PlatformMembersPage({
     super.key,
     required this.workspaceId,
     required this.title,
@@ -79,26 +79,26 @@ class KailoMembersPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = Localizations.localeOf(context).toLanguageTag();
-    final provider = kailoWorkspaceMembersProvider(workspaceId);
+    final provider = platformWorkspaceMembersProvider(workspaceId);
     return Scaffold(
       appBar: AppBar(title: Text(title)),
-      body: KailoAsyncView(
+      body: PlatformAsyncView(
         value: ref.watch(provider),
         onRetry: () => ref.invalidate(provider),
         builder: (context, members) => ListView(
           children: [
             AppListCard(
-              label: kailoText(
-                kailoPluralOne(members.length, locale: locale)
-                    ? KailoMessageKey.platformMembersCountOne
-                    : KailoMessageKey.platformMembersCountOther,
+              label: platformText(
+                platformPluralOne(members.length, locale: locale)
+                    ? PlatformMessageKey.platformMembersCountOne
+                    : PlatformMessageKey.platformMembersCountOther,
                 locale: locale,
                 variables: {'count': members.length},
               ),
               children: [
                 for (final member in members)
                   AppListRow(
-                    key: ValueKey('kailo-member-${member.principalId}'),
+                    key: ValueKey('platform-member-${member.principalId}'),
                     title: member.displayName,
                     subtitle: _memberSubtitle(member, locale),
                   ),
@@ -112,12 +112,15 @@ class KailoMembersPage extends ConsumerWidget {
 }
 
 String _memberSubtitle(WorkspaceMemberView member, String locale) {
-  final state = kailoWorkspaceMembershipStateText(member.state, locale: locale);
+  final state = platformWorkspaceMembershipStateText(
+    member.state,
+    locale: locale,
+  );
   final keys = member.pubkeys.length;
-  final count = kailoText(
-    kailoPluralOne(keys, locale: locale)
-        ? KailoMessageKey.platformMembersKeyCountOne
-        : KailoMessageKey.platformMembersKeyCountOther,
+  final count = platformText(
+    platformPluralOne(keys, locale: locale)
+        ? PlatformMessageKey.platformMembersKeyCountOne
+        : PlatformMessageKey.platformMembersKeyCountOther,
     locale: locale,
     variables: {'count': keys},
   );

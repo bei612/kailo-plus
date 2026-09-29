@@ -31,9 +31,18 @@ COPY collaboration/ ./
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none \
     && cd desktop/src-tauri && rustup toolchain install
 RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install --frozen-lockfile
+# 安装包显示名是部署配置（DD-111）：由发布配置在打包时以构建参数注入（记录的 build_args），
+# 源码里的 tauri.conf.json 保持上游原样。去掉首尾空白后为空、或含 Tauri productName
+# 不允许的字符时拒绝构建，不回退任何默认名。
+ARG PLATFORM_DISPLAY_NAME
+RUN node -e ' \
+      const name = (process.env.PLATFORM_DISPLAY_NAME || "").trim(); \
+      if (!name || /[\/\\:*?"<>|\u0000-\u001f]/.test(name)) { \
+        console.error("PLATFORM_DISPLAY_NAME 缺失、为空或含不允许的字符"); process.exit(1); } \
+      require("fs").writeFileSync("/tmp/release-config.json", JSON.stringify({ productName: name }));'
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/collaboration/desktop/src-tauri/target,sharing=locked \
-    cd desktop && pnpm tauri build --bundles deb \
+    cd desktop && pnpm tauri build --bundles deb --config /tmp/release-config.json \
     && mkdir -p /out \
     && cp src-tauri/target/release/bundle/deb/*.deb /out/
 

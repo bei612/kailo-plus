@@ -2070,7 +2070,7 @@ pub async fn workflow_webhook(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
-    // Kailo (DD-106): a governed relay does not route here; without an engine
+    // Platform (DD-106): a governed relay does not route here; without an engine
     // there is nothing to run.
     let Some(engine) = state.workflow_engine.clone() else {
         return Err(not_found("workflow not found"));

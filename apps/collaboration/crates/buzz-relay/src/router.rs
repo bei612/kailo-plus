@@ -129,7 +129,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/huddle/{channel_id}/audio",
             get(audio::handler::ws_audio_handler),
         );
-    // Kailo (DD-106): a governed relay runs no workflows, so their read and
+    // Platform (DD-106): a governed relay runs no workflows, so their read and
     // webhook-trigger routes do not exist.
     if !crate::handlers::governance::is_governed(&state) {
         api_router = api_router

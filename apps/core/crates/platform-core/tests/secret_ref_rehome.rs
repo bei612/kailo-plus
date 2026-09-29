@@ -23,7 +23,7 @@ async fn copy_unknown_observes_only_the_frozen_target() {
     let path = format!("buzz-human/{}/{}", fx.tenant, Uuid::new_v4());
     let action = Uuid::new_v4();
     let operation = Uuid::new_v4();
-    let workflow = format!("kailo:SECRET_REF_REHOME:{}:{action}:1", fx.tenant);
+    let workflow = format!("platform:SECRET_REF_REHOME:{}:{action}:1", fx.tenant);
     let target_path = format!("buzz-ref-rehome/{action}");
     let parent = std::env::var("OPENBAO_TENANT_PARENT_NAMESPACE").expect("Tenant namespace 根");
     let child = format!("{parent}/{}", fx.tenant);
@@ -823,7 +823,7 @@ async fn copied_then_rejected_destroys_the_unreferenced_copy() {
     for rejection in ["binding-moved", "actor-revoked"] {
         let action = Uuid::new_v4();
         let operation = Uuid::new_v4();
-        let workflow = format!("kailo:SECRET_REF_REHOME:{}:{action}:1", fx.tenant);
+        let workflow = format!("platform:SECRET_REF_REHOME:{}:{action}:1", fx.tenant);
         let target_path = format!("buzz-ref-rehome/{action}");
         let target_locator = format!("{child}/{}/{}", e.bao_mount, target_path);
         // 与上一用例同样只构造写入意图之后的持久事实；该动作不派发 Workflow，

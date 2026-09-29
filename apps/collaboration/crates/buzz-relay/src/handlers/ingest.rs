@@ -757,7 +757,7 @@ pub(crate) async fn check_channel_membership(
         Ok(false) => {}
         Err(e) => return Err(format!("error: database error: {e}")),
     }
-    // Kailo (SS-BUZ-GOVERNANCE): the roster is the only admission.
+    // Platform (SS-BUZ-GOVERNANCE): the roster is the only admission.
     if super::governance::is_governed(state) {
         return Err("restricted: not a channel member".to_string());
     }
@@ -2235,7 +2235,7 @@ async fn ingest_event_inner(
     }
     let event = std::sync::Arc::try_unwrap(event).unwrap_or_else(|arc| (*arc).clone());
 
-    // Kailo (SS-BUZ-GOVERNANCE): after the signature is verified. Workflow
+    // Platform (SS-BUZ-GOVERNANCE): after the signature is verified. Workflow
     // events first: they are refused from the owner too (DD-106), and a kind:5
     // addressing a workflow must not reach handle_a_tag_deletion.
     super::governance::check_workflow_event(state, kind_u32, &event)?;

@@ -14,7 +14,7 @@ import (
 )
 
 // serviceName 是发布单元名，出现在每条信号的 resource 上。它是身份不是配置。
-const serviceName = "kailo-worker"
+const serviceName = "platform-worker"
 
 // initMetrics 以 OTLP 导出 Temporal SDK 的指标（ADR-05：应用侧只依赖 OTLP，
 // 后端选择不进代码）。Activity 的尝试次数、失败与调度延迟都由 SDK 自己发出，

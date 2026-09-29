@@ -320,7 +320,7 @@ void _reportSendCancelledByCommunitySwitch(ScaffoldMessengerState? messenger) {
 
 /// Mentioned identities that aren't in the channel.
 ///
-/// Kailo 的 Channel roster 只由 Core 变更（`DD-80`）：成员不能把别人加进
+/// 平台的 Channel roster 只由 Core 变更（`DD-80`）：成员不能把别人加进
 /// Channel，因此这里不提供「邀请」，只把非成员降为引用标签——名字照常显示，
 /// 但不去通知一个不在 Channel 里的人。
 Future<List<String>> _nonMemberMentionPubkeys(

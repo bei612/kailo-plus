@@ -17,6 +17,9 @@ COPY client-kit/dart/ /src/client-kit/dart/
 COPY collaboration/mobile/ /src/collaboration/mobile/
 WORKDIR /src/collaboration/mobile
 RUN flutter pub get --enforce-lockfile
+# 应用名是部署配置（DD-111）：由发布配置以构建参数注入（记录的 build_args），release 构建
+# 缺失即失败（android/app/build.gradle.kts）；源码里不写应用名。
+ARG PLATFORM_DISPLAY_NAME
 RUN --mount=type=secret,id=BUZZ_ANDROID_UPLOAD_KEYSTORE,target=/run/secrets/upload-keystore.jks,required=true \
     --mount=type=secret,id=BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD,required=true \
     --mount=type=secret,id=BUZZ_ANDROID_UPLOAD_KEY_ALIAS,required=true \
@@ -25,6 +28,7 @@ RUN --mount=type=secret,id=BUZZ_ANDROID_UPLOAD_KEYSTORE,target=/run/secrets/uplo
     BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD="$(cat /run/secrets/BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD)" \
     BUZZ_ANDROID_UPLOAD_KEY_ALIAS="$(cat /run/secrets/BUZZ_ANDROID_UPLOAD_KEY_ALIAS)" \
     BUZZ_ANDROID_UPLOAD_KEY_PASSWORD="$(cat /run/secrets/BUZZ_ANDROID_UPLOAD_KEY_PASSWORD)" \
+    PLATFORM_DISPLAY_NAME="$PLATFORM_DISPLAY_NAME" \
     flutter build apk --release --no-pub \
     && mkdir -p /out \
     && cp build/app/outputs/flutter-apk/app-release.apk /out/buzz-mobile_release.apk

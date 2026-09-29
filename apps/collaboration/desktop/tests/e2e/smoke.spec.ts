@@ -216,7 +216,7 @@ test("opens channel matches from search", async ({ page }) => {
 
   await expect(results).toContainText("engineering");
   await expect(results).toContainText("Engineering discussions");
-  // Only channels the user is a member of are searchable: Kailo channels are
+  // Only channels the user is a member of are searchable: platform channels are
   // Workspaces, and there is no browse-and-join path for the others.
   await expect(results).not.toContainText(
     "Design system and UX discussions with engineering partners",

@@ -146,7 +146,7 @@ function CommunityQueryProvider({
 
 /**
  * The collaboration app for the one community this sign-in connected to. It
- * mounts only after the Kailo bootstrap applied that community to the Rust
+ * mounts only after the platform bootstrap applied that community to the Rust
  * side, so nothing here ever talks to a relay the session did not resolve.
  */
 function CommunityApp({ devicePubkey }: { devicePubkey: string }) {

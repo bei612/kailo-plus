@@ -44,7 +44,7 @@ find "$OUT" -type f -empty -delete
 
 for unit in "${UNITS[@]}"; do
   say "== $unit =="
-  tag="kailo/$unit:$COMMIT"
+  tag="platform/$unit:$COMMIT"
   if [ -n "${BUILDX_BUILDER:-}" ]; then
     # docker-container builder 的 cgroup 限额约束编译；--load 把镜像交给后续
     # inspect 与 syft 使用的本地 image store。
@@ -80,11 +80,11 @@ remote = subprocess.run(["git","config","--get","remote.origin.url"],
                         capture_output=True, text=True).stdout.strip() or "none"
 json.dump({
     "_type": "https://in-toto.io/Statement/v1",
-    "subject": [{"name": f"kailo/{unit}", "digest": {"sha256": digest.removeprefix("sha256:")}}],
+    "subject": [{"name": f"platform/{unit}", "digest": {"sha256": digest.removeprefix("sha256:")}}],
     "predicateType": "https://slsa.dev/provenance/v1",
     "predicate": {
         "buildDefinition": {
-            "buildType": "https://kailo.local/docker-build/v1",
+            "buildType": "https://platform.local/docker-build/v1",
             "externalParameters": {"dockerfile": f"{unit}/Dockerfile", "context": "apps/"},
             "resolvedDependencies": [
                 {"uri": remote, "digest": {"gitCommit": commit}},
@@ -92,7 +92,7 @@ json.dump({
             ],
         },
         "runDetails": {
-            "builder": {"id": os.environ.get("KAILO_BUILDER_ID", "local")},
+            "builder": {"id": os.environ.get("PLATFORM_BUILDER_ID", "local")},
         },
     },
 }, open(out, "w"), ensure_ascii=False, indent=2)

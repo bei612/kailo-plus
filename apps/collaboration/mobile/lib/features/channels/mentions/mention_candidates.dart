@@ -25,7 +25,7 @@ String? formatOwnerLabel(
 /// Assemble the mention candidate list: channel members first-class, then the
 /// given user-search results.
 ///
-/// Kailo 不提供非成员 Agent 与全员目录作为提及候选：Channel roster 由 Core 管理
+/// 平台不提供非成员 Agent 与全员目录作为提及候选：Channel roster 由 Core 管理
 /// （`DD-80`），提及非成员只会降为引用标签，Agent 调用也不在一期移动端交付。
 /// Mirrors desktop's `useMentions` candidate assembly (minus personas and
 /// managed agents, which live in the desktop app's local store; the

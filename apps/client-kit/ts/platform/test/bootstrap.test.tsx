@@ -38,32 +38,32 @@ describe("NativeBootstrap", () => {
   it("未配置：空表单，不预填任何地址；保存后进入登录", async () => {
     let saved: NativeConfig | null = null;
     const invoke = fakeInvoke({
-      kailo_get_config: () => saved,
-      kailo_status: () => ({ configured: saved !== null, signedIn: false }),
-      kailo_set_config: (args) => {
+      platform_get_config: () => saved,
+      platform_status: () => ({ configured: saved !== null, signedIn: false }),
+      platform_set_config: (args) => {
         saved = args?.config as NativeConfig;
       },
     });
     const host = await mount(invoke);
     const inputs = [...host.querySelectorAll("input")];
     expect(inputs.map((i) => i.value)).toEqual(["", "", ""]);
-    await type(inputs[0] as HTMLInputElement, "https://kailo.example:8091");
+    await type(inputs[0] as HTMLInputElement, "https://platform.example:8091");
     await type(inputs[1] as HTMLInputElement, "https://idp.example/realms/k");
-    await type(inputs[2] as HTMLInputElement, "kailo-native");
+    await type(inputs[2] as HTMLInputElement, "platform-native");
     await click(button(host, "Save and continue"));
     expect(saved).toEqual({
-      nativeApiUrl: "https://kailo.example:8091",
+      nativeApiUrl: "https://platform.example:8091",
       oidcIssuer: "https://idp.example/realms/k",
-      oidcClientId: "kailo-native",
+      oidcClientId: "platform-native",
     });
     expect(button(host, "Sign in")).toBeTruthy();
   });
 
   it("配置被 Rust 侧拒绝时如实显示原因并保留输入", async () => {
     const invoke = fakeInvoke({
-      kailo_get_config: () => null,
-      kailo_status: () => ({ configured: false, signedIn: false }),
-      kailo_set_config: () => {
+      platform_get_config: () => null,
+      platform_status: () => ({ configured: false, signedIn: false }),
+      platform_set_config: () => {
         throw "原生入口地址必须是 http 或 https 地址";
       },
     });
@@ -78,19 +78,19 @@ describe("NativeBootstrap", () => {
   it("登录可取消：取消不是失败", async () => {
     let reject: (e: unknown) => void = () => {};
     const invoke = fakeInvoke({
-      kailo_get_config: () => ({}),
-      kailo_status: () => ({ configured: true, signedIn: false }),
-      kailo_sign_in: () =>
+      platform_get_config: () => ({}),
+      platform_status: () => ({ configured: true, signedIn: false }),
+      platform_sign_in: () =>
         new Promise((_, r) => {
           reject = r;
         }),
-      kailo_cancel_sign_in: () => reject("登录已取消"),
+      platform_cancel_sign_in: () => reject("登录已取消"),
     });
     const host = await mount(invoke);
     await click(button(host, "Sign in"));
     expect(host.textContent).toContain("Waiting for sign-in");
     await click(button(host, "Cancel"));
-    expect(invoke).toHaveBeenCalledWith("kailo_cancel_sign_in", undefined);
+    expect(invoke).toHaveBeenCalledWith("platform_cancel_sign_in", undefined);
     expect(host.querySelector("[role=alert]")).toBeNull();
     expect(button(host, "Sign in")).toBeTruthy();
   });
@@ -100,16 +100,16 @@ describe("NativeBootstrap", () => {
     let signedIn = false;
     const connect = vi.fn(async () => {});
     const invoke = fakeInvoke({
-      kailo_get_config: () => ({}),
-      kailo_status: () => ({ configured: true, signedIn }),
-      kailo_sign_in: () => {
+      platform_get_config: () => ({}),
+      platform_status: () => ({ configured: true, signedIn }),
+      platform_sign_in: () => {
         signedIn = true;
       },
-      kailo_register_device: () => ({
+      platform_register_device: () => ({
         status: 202,
         body: { pubkey: PUBKEY, state: "RECONCILING", workflowId: "wf", recheckAfterMillis: 5 },
       }),
-      kailo_api: api({
+      platform_api: api({
         "GET /api/v1/identity/client-keys": () => {
           listed += 1;
           return { status: 200, body: [{ pubkey: PUBKEY, state: listed < 2 ? "RECONCILING" : "ACTIVE", createdAt: "2026-09-24T00:00:00Z" }] };
@@ -132,13 +132,13 @@ describe("NativeBootstrap", () => {
   it("老服务端没有重查间隔时不猜测、不后台敲 BFF，仍可手动确认", async () => {
     let listed = 0;
     const invoke = fakeInvoke({
-      kailo_get_config: () => ({}),
-      kailo_status: () => ({ configured: true, signedIn: true }),
-      kailo_register_device: () => ({
+      platform_get_config: () => ({}),
+      platform_status: () => ({ configured: true, signedIn: true }),
+      platform_register_device: () => ({
         status: 202,
         body: { pubkey: PUBKEY, state: "RECONCILING", workflowId: "wf" },
       }),
-      kailo_api: api({
+      platform_api: api({
         "GET /api/v1/identity/client-keys": () => {
           listed += 1;
           return {
@@ -160,13 +160,13 @@ describe("NativeBootstrap", () => {
   it("还不是成员（兑换了邀请、等待确认）：指向浏览器里的邀请链接并显示本人的兑换进度", async () => {
     let active = false;
     const invoke = fakeInvoke({
-      kailo_get_config: () => ({}),
-      kailo_status: () => ({ configured: true, signedIn: true }),
-      kailo_register_device: () =>
+      platform_get_config: () => ({}),
+      platform_status: () => ({ configured: true, signedIn: true }),
+      platform_register_device: () =>
         active
           ? { status: 200, body: { pubkey: PUBKEY, state: "ACTIVE" } }
           : { status: 403, body: { class: ErrorClass.Denied, reason: ReasonCode.TenantMembershipNotActive } },
-      kailo_api: api({
+      platform_api: api({
         "GET /api/v1/invitations/redemptions": () => ({
           status: 200,
           body: [
@@ -195,14 +195,14 @@ describe("NativeBootstrap", () => {
   it("登记没有得到回应：显示结果不明，重新确认是再登记一次", async () => {
     let attempts = 0;
     const invoke = fakeInvoke({
-      kailo_get_config: () => ({}),
-      kailo_status: () => ({ configured: true, signedIn: true }),
-      kailo_register_device: () => {
+      platform_get_config: () => ({}),
+      platform_status: () => ({ configured: true, signedIn: true }),
+      platform_register_device: () => {
         attempts += 1;
-        if (attempts === 1) throw "Kailo 服务不可达：timed out";
+        if (attempts === 1) throw "平台服务不可达：timed out";
         return { status: 200, body: { pubkey: PUBKEY, state: "ACTIVE" } };
       },
-      kailo_api: api({ "GET /api/v1/native/community": () => ({ status: 200, body: facts }) }),
+      platform_api: api({ "GET /api/v1/native/community": () => ({ status: 200, body: facts }) }),
     });
     const host = await mount(invoke);
     expect(host.textContent).toContain("result is unknown");
@@ -214,9 +214,9 @@ describe("NativeBootstrap", () => {
 
   it("BFF 明说 UNKNOWN 同样是结果不明，并给出 operationId", async () => {
     const invoke = fakeInvoke({
-      kailo_get_config: () => ({}),
-      kailo_status: () => ({ configured: true, signedIn: true }),
-      kailo_register_device: () => ({
+      platform_get_config: () => ({}),
+      platform_status: () => ({ configured: true, signedIn: true }),
+      platform_register_device: () => ({
         status: 503,
         body: { class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable, operationId: "op-9" },
       }),
@@ -227,9 +227,9 @@ describe("NativeBootstrap", () => {
 
   it("已撤销的本机公钥不复活：显示撤销，不进入应用", async () => {
     const invoke = fakeInvoke({
-      kailo_get_config: () => ({}),
-      kailo_status: () => ({ configured: true, signedIn: true }),
-      kailo_register_device: () => ({
+      platform_get_config: () => ({}),
+      platform_status: () => ({ configured: true, signedIn: true }),
+      platform_register_device: () => ({
         status: 409,
         body: { class: ErrorClass.Conflict, reason: ReasonCode.ClientKeyAlreadyBound },
       }),
@@ -241,10 +241,10 @@ describe("NativeBootstrap", () => {
 
   it("会话在途中结束（刷新令牌被拒）回到登录", async () => {
     const invoke = fakeInvoke({
-      kailo_get_config: () => ({}),
-      kailo_status: () => ({ configured: true, signedIn: true }),
-      kailo_register_device: () => {
-        throw "KAILO_NOT_SIGNED_IN";
+      platform_get_config: () => ({}),
+      platform_status: () => ({ configured: true, signedIn: true }),
+      platform_register_device: () => {
+        throw "PLATFORM_NOT_SIGNED_IN";
       },
     });
     const host = await mount(invoke);
@@ -254,10 +254,10 @@ describe("NativeBootstrap", () => {
   it("连接事实取不到或连接失败：不进入应用，可重试", async () => {
     let connectFails = true;
     const invoke = fakeInvoke({
-      kailo_get_config: () => ({}),
-      kailo_status: () => ({ configured: true, signedIn: true }),
-      kailo_register_device: () => ({ status: 200, body: { pubkey: PUBKEY, state: "ACTIVE" } }),
-      kailo_api: api({ "GET /api/v1/native/community": () => ({ status: 200, body: facts }) }),
+      platform_get_config: () => ({}),
+      platform_status: () => ({ configured: true, signedIn: true }),
+      platform_register_device: () => ({ status: 200, body: { pubkey: PUBKEY, state: "ACTIVE" } }),
+      platform_api: api({ "GET /api/v1/native/community": () => ({ status: 200, body: facts }) }),
     });
     const connect = vi.fn(async () => {
       if (connectFails) throw new Error("invalid relay");
@@ -269,13 +269,61 @@ describe("NativeBootstrap", () => {
     expect(host.querySelector("[data-testid=app]")).not.toBeNull();
   });
 
-  it("注销经 kailo_sign_out，然后回到登录", async () => {
+  it("显示名（DD-111）：登录前只有中性文案；登录后取自 BFF、按服务器缓存，换服务器不串名", async () => {
+    window.localStorage.clear();
+    const server = { nativeApiUrl: "https://a.example:8091", oidcIssuer: "https://i", oidcClientId: "c" };
+    let config: NativeConfig = server;
+    let signedIn = true;
     const invoke = fakeInvoke({
-      kailo_get_config: () => ({}),
-      kailo_status: () => ({ configured: true, signedIn: true }),
-      kailo_register_device: () => ({ status: 200, body: { pubkey: PUBKEY, state: "ACTIVE" } }),
-      kailo_api: api({ "GET /api/v1/native/community": () => ({ status: 200, body: facts }) }),
-      kailo_sign_out: () => null,
+      platform_get_config: () => config,
+      platform_status: () => ({ configured: true, signedIn }),
+      platform_register_device: () => ({ status: 200, body: { pubkey: PUBKEY, state: "ACTIVE" } }),
+      platform_api: api({
+        "GET /api/v1/native/community": () => ({ status: 200, body: facts }),
+        "GET /api/v1/platform-info": () => ({ status: 200, body: { displayName: "  协作平台  " } }),
+      }),
+      platform_sign_out: () => {
+        signedIn = false;
+      },
+      platform_set_config: (args) => {
+        config = args?.config as NativeConfig;
+      },
+    });
+    const seen: (string | null)[] = [];
+    const host = await render(
+      <NativeBootstrap invoke={invoke} connect={async () => {}} locale="en">
+        {(s) => {
+          seen.push(s.displayName);
+          return (
+            <button type="button" onClick={() => void s.signOut()}>
+              out
+            </button>
+          );
+        }}
+      </NativeBootstrap>,
+    );
+    await settle();
+    expect(seen.at(-1)).toBe("协作平台");
+    expect(window.localStorage.getItem("platform.display-name:https://a.example:8091")).toBe("协作平台");
+    await click(button(host, "out"));
+    // 重新启动（新的引导实例、未登录）：同一服务器的登录页显示缓存值
+    const again = await mount(invoke);
+    expect(again.querySelector("h1")?.textContent).toBe("Sign in to 协作平台");
+    // 换一台没有缓存的服务器：回到中性文案
+    await click(button(again, "Change connection settings"));
+    const inputs = [...again.querySelectorAll("input")] as HTMLInputElement[];
+    await type(inputs[0] as HTMLInputElement, "https://b.example:8091");
+    await click(button(again, "Save and continue"));
+    expect(again.querySelector("h1")?.textContent).toBe("Sign in");
+  });
+
+  it("注销经 platform_sign_out，然后回到登录", async () => {
+    const invoke = fakeInvoke({
+      platform_get_config: () => ({}),
+      platform_status: () => ({ configured: true, signedIn: true }),
+      platform_register_device: () => ({ status: 200, body: { pubkey: PUBKEY, state: "ACTIVE" } }),
+      platform_api: api({ "GET /api/v1/native/community": () => ({ status: 200, body: facts }) }),
+      platform_sign_out: () => null,
     });
     const host = await render(
       <NativeBootstrap invoke={invoke} connect={async () => {}} locale="en">
@@ -288,7 +336,7 @@ describe("NativeBootstrap", () => {
     );
     await settle();
     await click(button(host, "out"));
-    expect(invoke).toHaveBeenCalledWith("kailo_sign_out", undefined);
+    expect(invoke).toHaveBeenCalledWith("platform_sign_out", undefined);
     expect(button(host, "Sign in")).toBeTruthy();
   });
 });

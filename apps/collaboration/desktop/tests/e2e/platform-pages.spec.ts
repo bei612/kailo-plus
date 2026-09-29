@@ -2,14 +2,14 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { installMockBridge } from "../helpers/bridge";
 
-// Kailo platform pages on Desktop: the same components Buzz Web renders
-// (Kailo shared package), reached from the sidebar, with every request going
-// through the Rust-side `kailo_api` command.
+// Platform pages on Desktop: the same components Buzz Web renders
+// (the shared platform package), reached from the sidebar, with every request going
+// through the Rust-side `platform_api` command.
 
 const DEVICE_PUBKEY = "deadbeef".repeat(8);
 const OTHER_DEVICE = "0123abcd".repeat(8);
 
-async function kailoPaths(page: Page): Promise<string[]> {
+async function platformPaths(page: Page): Promise<string[]> {
   return page.evaluate(() =>
     (
       (
@@ -21,7 +21,7 @@ async function kailoPaths(page: Page): Promise<string[]> {
         }
       ).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? []
     )
-      .filter((entry) => entry.command === "kailo_api")
+      .filter((entry) => entry.command === "platform_api")
       .map((entry) => {
         const { method, path } = entry.payload as {
           method: string;
@@ -32,11 +32,11 @@ async function kailoPaths(page: Page): Promise<string[]> {
   );
 }
 
-test("members, own audit and own devices are in the navigation and load through kailo_api", async ({
+test("members, own audit and own devices are in the navigation and load through platform_api", async ({
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       workspaces: [{ id: "ws-1", name: "Operations", slug: "ops" }],
       members: [
         {
@@ -79,7 +79,7 @@ test("members, own audit and own devices are in the navigation and load through 
     "This device",
   );
 
-  expect(await kailoPaths(page)).toEqual(
+  expect(await platformPaths(page)).toEqual(
     expect.arrayContaining([
       "GET /api/v1/workspaces",
       "GET /api/v1/workspaces/ws-1/members",
@@ -93,7 +93,7 @@ test("revoking another device goes through the BFF and the list is re-read", asy
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       otherDevices: [
         {
           pubkey: OTHER_DEVICE,
@@ -111,7 +111,7 @@ test("revoking another device goes through the BFF and the list is re-read", asy
 
   await expect(other).toHaveCount(0);
   await expect(devices.getByRole("row", { name: /This device/ })).toBeVisible();
-  expect(await kailoPaths(page)).toContain(
+  expect(await platformPaths(page)).toContain(
     `DELETE /api/v1/identity/client-keys/${OTHER_DEVICE}`,
   );
 });
@@ -120,7 +120,7 @@ test("a revocation without a definite answer is shown as unknown", async ({
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       otherDevices: [
         {
           pubkey: OTHER_DEVICE,
@@ -151,7 +151,7 @@ test("a revocation without a definite answer is shown as unknown", async ({
   await expect(alert).not.toContainText("rejected");
 });
 
-test("sign out revokes the session through kailo_sign_out and returns to sign-in", async ({
+test("sign out revokes the session through platform_sign_out and returns to sign-in", async ({
   page,
 }) => {
   await installMockBridge(page);
@@ -172,10 +172,10 @@ test("sign out revokes the session through kailo_sign_out and returns to sign-in
       ).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? []
     ).map((entry) => entry.command),
   );
-  expect(commands).toContain("kailo_sign_out");
+  expect(commands).toContain("platform_sign_out");
 });
 
-const APPROVAL_WF = "kailo:APPROVAL:t-1:ae-1:1";
+const APPROVAL_WF = "platform:APPROVAL:t-1:ae-1:1";
 const APPROVAL_PATH = `/api/v1/approvals/${encodeURIComponent(APPROVAL_WF)}`;
 
 const waitingTask = {
@@ -205,7 +205,7 @@ const waitingApproval = {
   roleRequirements: [{ selector: "TENANT_ADMIN", minDistinct: 1 }],
 };
 
-async function kailoCalls(page: Page) {
+async function platformCalls(page: Page) {
   return page.evaluate(() =>
     (
       (
@@ -217,7 +217,7 @@ async function kailoCalls(page: Page) {
         }
       ).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? []
     )
-      .filter((entry) => entry.command === "kailo_api")
+      .filter((entry) => entry.command === "platform_api")
       .map(
         (entry) =>
           entry.payload as { method: string; path: string; body: unknown },
@@ -229,7 +229,7 @@ test("my tasks: list, detail with the approval, and withdrawing through the BFF"
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       routes: {
         "GET /api/v1/tasks": [{ status: 200, body: [waitingTask] }],
         "GET /api/v1/tasks/ae-1": [
@@ -278,7 +278,7 @@ test("my tasks: list, detail with the approval, and withdrawing through the BFF"
     tasks.getByRole("button", { name: "Withdraw request" }),
   ).toHaveCount(0);
   expect(
-    (await kailoCalls(page)).filter((call) => call.method === "POST"),
+    (await platformCalls(page)).filter((call) => call.method === "POST"),
   ).toEqual([expect.objectContaining({ path: `${APPROVAL_PATH}/withdraw` })]);
 });
 
@@ -286,7 +286,7 @@ test("approvals: a decision is confirmed first, and an unknown answer is never s
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       routes: {
         "GET /api/v1/approvals": [{ status: 200, body: [waitingApproval] }],
         [`GET ${APPROVAL_PATH}`]: [{ status: 200, body: waitingApproval }],
@@ -319,7 +319,7 @@ test("approvals: a decision is confirmed first, and an unknown answer is never s
   await approvals.getByRole("button", { name: "Approve" }).click();
   await expect(approvals).toContainText("cannot be changed afterwards");
   expect(
-    (await kailoCalls(page)).filter((call) => call.method === "POST"),
+    (await platformCalls(page)).filter((call) => call.method === "POST"),
   ).toHaveLength(0);
   await approvals.getByRole("button", { name: "Confirm" }).click();
 
@@ -335,7 +335,7 @@ test("approvals: a decision is confirmed first, and an unknown answer is never s
     "Your decision “Approve” is recorded",
   );
   expect(
-    (await kailoCalls(page))
+    (await platformCalls(page))
       .filter((call) => call.method === "POST")
       .map((call) => call.body),
   ).toEqual([{ decision: "APPROVE" }, { decision: "APPROVE" }]);
@@ -365,7 +365,7 @@ test("invitations: an admin issues a link that is shown once, and withdraws it",
     expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
   };
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       routes: {
         "GET /api/v1/invitations": [
           { status: 200, body: [] },
@@ -422,7 +422,7 @@ test("invitations: an admin issues a link that is shown once, and withdraws it",
     section.getByRole("row", { name: /Grace from Ops/ }),
   ).toContainText("Withdrawn");
 
-  const posts = (await kailoCalls(page)).filter(
+  const posts = (await platformCalls(page)).filter(
     (call) => call.method === "POST",
   );
   expect(posts.map((call) => call.body)).toEqual([

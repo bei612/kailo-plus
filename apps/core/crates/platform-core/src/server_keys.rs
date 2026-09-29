@@ -1189,10 +1189,9 @@ async fn resume(
         }
     }
     // 固定 ID 的后两段就是冻结的 pubkey 与 binding 版本
-    let parts: Vec<&str> = existing.split(':').collect();
-    match parts.as_slice() {
-        ["kailo", k, t, pubkey, version] if *k == KIND && *t == tenant_id.to_string() => {
-            if expected_pubkey.is_some_and(|expected| expected != *pubkey) {
+    match component_task::split_workflow_id(&existing) {
+        Some([k, t, pubkey, version]) if k == KIND && t == tenant_id.to_string() => {
+            if expected_pubkey.is_some_and(|expected| expected != pubkey) {
                 return Some(StatusCode::CONFLICT.into_response());
             }
             let Ok(version) = version.parse::<i32>() else {

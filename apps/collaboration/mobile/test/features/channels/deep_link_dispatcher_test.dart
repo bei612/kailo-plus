@@ -149,7 +149,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // V-SCN-65：不打开目标、不内嵌 WebView，给出稳定 reason code
-        expect(find.byType(KailoUnavailablePage), findsOneWidget);
+        expect(find.byType(PlatformUnavailablePage), findsOneWidget);
         expect(find.text('SURFACE_CAPABILITY_UNAVAILABLE'), findsOneWidget);
         expect(find.text(link.uri.toString()), findsOneWidget);
         expect(pending.consumeCalls, 1);

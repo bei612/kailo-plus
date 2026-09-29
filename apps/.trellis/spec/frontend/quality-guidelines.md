@@ -6,8 +6,8 @@ These are conventions observed in Kailo's current Web, Desktop, and Mobile platf
 
 - Web and Desktop consume the same TypeScript package at `client-kit/ts/platform`. Platform text, relative-time thresholds, calendar exceptions, and English/Chinese plural selection live in `client-kit/ts/platform/src/i18n.ts`.
 - `tools/gen-platform-i18n.py` projects that source into `client-kit/dart/lib/shared/platform/platform_text.dart`. The Mobile client in `collaboration/mobile` depends on the `client_kit` Dart package by Flutter `path:` dependency (ADR-16); do not hand-edit the generated file.
-- Kailo management views use `relativeTime` in TypeScript or `kailoRelativeTime` in Dart for compact timestamps. Mobile evidence/detail rows use `kailoAbsoluteTime`. Invalid timestamps render the shared `platform.time.unavailable` message, not a raw parser error.
-- Count wording uses `platformPluralForm` in TypeScript and generated `kailoPluralOne` in Dart. Calendar exceptions such as yesterday and tomorrow are independent of grammatical plural category.
+- Kailo management views use `relativeTime` in TypeScript or `platformRelativeTime` in Dart for compact timestamps. Mobile evidence/detail rows use `platformAbsoluteTime`. Invalid timestamps render the shared `platform.time.unavailable` message, not a raw parser error.
+- Count wording uses `platformPluralForm` in TypeScript and generated `platformPluralOne` in Dart. Calendar exceptions such as yesterday and tomorrow are independent of grammatical plural category.
 - Both locales, past and future timestamps, unit boundaries, zero, invalid input, and plural forms have executable examples in `client-kit/ts/platform/test/format.test.ts` and the Mobile test `collaboration/mobile/test/features/platform/platform_time_test.dart`.
 
 ## Change checks

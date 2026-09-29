@@ -21,6 +21,7 @@ mod membership_state;
 mod native;
 mod oidc;
 mod platform_bootstrap;
+mod platform_info;
 mod platform_views;
 mod publish_reconcile;
 mod role_reconcile;
@@ -71,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let meter_provider = telemetry::init()?;
 
     // 配置一律显式提供：缺任一项拒绝启动，不回退默认值（GOAL 的硬编码红线）
+    let platform_info = std::sync::Arc::new(platform_info::from_env()?);
     let database_url = std::env::var("DATABASE_URL").map_err(|_| "缺少 DATABASE_URL")?;
     let listen: SocketAddr = std::env::var("BFF_LISTEN")
         .map_err(|_| "缺少 BFF_LISTEN")?
@@ -124,6 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &reqwest::Client::new(),
         )
         .await?;
+        converge_tenant_namespaces(&pool, &secrets).await?;
 
         // Service API 与 BFF 共用同一个 Temporal 客户端：两边启动的是同一种
         // ComponentTaskWorkflow，令牌缓存也只该有一份。
@@ -134,7 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         workflow_reconcile::spawn(
             pool.clone(),
             std::sync::Arc::clone(&temporal),
-            &opentelemetry::global::meter("kailo-core"),
+            &opentelemetry::global::meter("platform-core"),
             workflow_reconcile::Config::from_env()?,
         );
 
@@ -150,7 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 角色 relationship 以成员事实为准对账，并度量没有有效 admin 的 Tenant（DD-82）
         role_reconcile::spawn(
             std::sync::Arc::clone(&governance),
-            &opentelemetry::global::meter("kailo-core"),
+            &opentelemetry::global::meter("platform-core"),
             role_reconcile::Config::from_env()?,
         );
 
@@ -174,7 +177,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // SERVER HUMAN 意图；不另建一个无权威的轮询入口。
         governance_reconcile::spawn(
             service_state.clone(),
-            &opentelemetry::global::meter("kailo-core"),
+            &opentelemetry::global::meter("platform-core"),
             governance_reconcile::Config::from_env()?,
         );
 
@@ -182,18 +185,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // service API 共用同一份依赖。
         roster_reconcile::spawn(
             service_state.clone(),
-            &opentelemetry::global::meter("kailo-core"),
+            &opentelemetry::global::meter("platform-core"),
             roster_reconcile::Config::from_env()?,
         );
 
         // 结果不明的消息发布按 event id 对账成确定结果（DD-81）
         publish_reconcile::spawn(
             service_state.clone(),
-            &opentelemetry::global::meter("kailo-core"),
+            &opentelemetry::global::meter("platform-core"),
             publish_reconcile::Config::from_env()?,
         );
 
         let bff_state = bff::BffState {
+            platform_info,
             pool: pool.clone(),
             temporal,
             governance,
@@ -336,4 +340,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     outcome
+}
+
+/// Tenant 子 namespace 的 Core AppRole 按启动时投递的 app 网段绑定（DD-70）。网段随部署变化时，
+/// 已有 Tenant 的角色只有在其业务流程恰好调用 `ensure_tenant` 时才会重写，其余取用全部失败且无人
+/// 察觉。因此在服务前对每个未删除的 Tenant 收敛一次：幂等写入并回读。单个 Tenant 失败不阻止其他
+/// Tenant 服务，它的取用继续 fail closed，并记日志与度量；下次启动或业务流程再次调用时继续收敛。
+async fn converge_tenant_namespaces(
+    pool: &sqlx::PgPool,
+    secrets: &secret_store::SecretStore,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let tenants: Vec<uuid::Uuid> =
+        sqlx::query_scalar("select id from identity.tenant where state <> 'DELETED'")
+            .fetch_all(pool)
+            .await?;
+    let failed = opentelemetry::global::meter("platform-core")
+        .u64_gauge("platform.secret_store.tenant_converge_failed")
+        .with_description("启动时 Tenant 子 namespace 收敛失败的数量")
+        .build();
+    let mut failures = 0u64;
+    for tenant in &tenants {
+        if let Err(e) = secrets.ensure_tenant(*tenant).await {
+            failures += 1;
+            tracing::error!(%tenant, error = %e, "Tenant 子 namespace 收敛失败，其密钥取用保持拒绝");
+        }
+    }
+    failed.record(failures, &[]);
+    tracing::info!(
+        tenants = tenants.len(),
+        failures,
+        "Tenant 子 namespace 已按当前部署收敛"
+    );
+    Ok(())
 }

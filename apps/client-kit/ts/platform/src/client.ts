@@ -1,4 +1,4 @@
-// Kailo BFF 管理平面客户端（DD-39、DD-77/79、SS-WEB-01），Web 与 Desktop 共用。
+// 平台 BFF 管理平面客户端（DD-39、DD-77/79、SS-WEB-01），Web 与 Desktop 共用。
 //
 // 请求与回应的形状取自 contracts 的生成物（ADR-02/03）：已在 contracts 定义的形状
 // 这里不另写一份。身份由网关验证后投影给 BFF，这里没有任何可自报的身份字段。
@@ -20,6 +20,7 @@ import type {
   LegacySecretRefPage,
   NativeCommunityFacts,
   OwnAuditEntry,
+  PlatformInfo,
   PlatformSessionView,
   PlatformTenantPage,
   RoleMemberPage,
@@ -40,6 +41,9 @@ export function createBffClient(transport: BffTransport) {
 
   return {
     transport,
+
+    /** 部署的公开平台信息（DD-111）：界面上的产品名只取自这里，不写在客户端里。 */
+    platformInfo: () => get<PlatformInfo>("/api/v1/platform-info"),
 
     /** 当前会话。撤权后下一次调用即 403——会话不由客户端持有，不需要它主动丢弃。 */
     session: () => get<PlatformSessionView>("/api/v1/session"),

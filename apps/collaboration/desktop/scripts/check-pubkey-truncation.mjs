@@ -33,9 +33,6 @@ await runPubkeyTruncationCheck({
   allowedFiles: new Set([
     // The canonical helper itself.
     "src/shared/lib/pubkey.ts",
-    // Kailo 共用平台包的同名工具（Kailo ADR-09 放入，Web 与 Desktop 共用）：它不能
-    // import 宿主的 shared/lib，规则与上面的 truncatePubkey 相同。
-    "src/kailo-platform/format.ts",
     // E2E mock bridge fabricates ids/nsecs from pubkeys; nothing here is a
     // user-facing identity display.
     "src/testing/e2eBridge.ts",

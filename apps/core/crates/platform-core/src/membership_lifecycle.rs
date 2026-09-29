@@ -6,7 +6,7 @@
 //!    撤权走 `REVOKING`。撤权先置 `REVOKING` 再投影是设计固定的顺序
 //!    （`.design/09` 第 5 步）：先关门再收敛，反过来会在收敛期间继续放行。
 //! 2. 在 Start 之前持久化唯一 `WorkflowRef`，workflow ID 固定为
-//!    `kailo:<kind>:<tenant_id>:<primary_entity_id>:<entity_version>`。
+//!    `platform:<kind>:<tenant_id>:<primary_entity_id>:<entity_version>`。
 //! 3. 以 reuse/conflict 三项策略至多一次启动，并回填 run ID。
 //!
 //! 它**不做准入判定**。谁可以邀请或撤销一个成员，是 ActionExecution 的门禁

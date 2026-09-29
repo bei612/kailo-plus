@@ -1,8 +1,8 @@
 // BFF 管理平面的传输接缝（ADR-09）。
 //
-// Kailo 自有的 TypeScript 只有一份，Web 与 Desktop 只在「一次请求怎么送到 BFF」上
+// 平台自有的 TypeScript 只有一份，Web 与 Desktop 只在「一次请求怎么送到 BFF」上
 // 不同：Web 同源 fetch、会话由网关 cookie 承载（web-fetch.ts）；Desktop 经 Tauri 的
-// `kailo_api` 命令、令牌只在 Rust 侧（native.ts）。两个都是真实实现，因此这里只定义
+// `platform_api` 命令、令牌只在 Rust 侧（native.ts）。两个都是真实实现，因此这里只定义
 // 两者共同的最小形状，其余（错误解读、各端点的路径与类型）都在 client.ts 里只写一次。
 
 import { type ErrorBody, ErrorClass } from "@client-kit/contracts";

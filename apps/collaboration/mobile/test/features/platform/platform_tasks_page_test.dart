@@ -13,7 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/platform/platform_test_support.dart';
 
-const _workflow = 'kailo:APPROVAL:t1:ae1:1';
+const _workflow = 'platform:APPROVAL:t1:ae1:1';
 
 Map<String, dynamic> _task([Map<String, dynamic> over = const {}]) => {
   'operationId': 'op-1',
@@ -51,7 +51,7 @@ Future<List<String>> _pump(
 }) async {
   final seen = <String>[];
   SharedPreferences.setMockInitialValues({
-    'kailo.config.v1': jsonEncode(testKailoConfig.toJson()),
+    'platform.config.v1': jsonEncode(testPlatformConfig.toJson()),
   });
   final prefs = await SharedPreferences.getInstance();
   final client = MockClient((request) async {
@@ -66,9 +66,9 @@ Future<List<String>> _pump(
     ProviderScope(
       overrides: [
         savedPrefsProvider.overrideWithValue(prefs),
-        kailoHttpClientProvider.overrideWithValue(client),
-        kailoSessionProvider.overrideWithValue(
-          KailoSession(
+        platformHttpClientProvider.overrideWithValue(client),
+        nativeSessionProvider.overrideWithValue(
+          NativeSession(
             client: client,
             refreshStore: MemoryRefreshStore()..value = 'refresh-1',
           ),
@@ -95,7 +95,7 @@ void main() {
   test('结果不明与投影落后不说成功也不说失败；只有 COMPLETED 才是完成', () {
     TaskView t(Map<String, dynamic> over) => TaskView.fromJson(_task(over));
     expect(
-      kailoTaskPhase(
+      platformTaskPhase(
         t({
           'workflowId': 'w',
           'taskStatus': 'COMPLETED',
@@ -105,7 +105,7 @@ void main() {
       startsWith('Outcome not known yet'),
     );
     expect(
-      kailoTaskPhase(
+      platformTaskPhase(
         t({
           'workflowId': 'w',
           'taskStatus': 'FAILED',
@@ -114,19 +114,22 @@ void main() {
       ),
       startsWith('Status may be out of date'),
     );
-    expect(kailoTaskPhase(t({'workflowId': 'w'})), 'Started');
+    expect(platformTaskPhase(t({'workflowId': 'w'})), 'Started');
     expect(
-      kailoTaskPhase(t({'workflowId': 'w', 'taskStatus': 'COMPLETED'})),
+      platformTaskPhase(t({'workflowId': 'w', 'taskStatus': 'COMPLETED'})),
       'Completed',
     );
-    expect(kailoTaskPhase(t({})), 'Applied');
-    expect(kailoTaskPhase(t({'gateState': 'WAITING'})), 'Waiting for approval');
+    expect(platformTaskPhase(t({})), 'Applied');
+    expect(
+      platformTaskPhase(t({'gateState': 'WAITING'})),
+      'Waiting for approval',
+    );
   });
 
   testWidgets('tasks: list → detail with its approval; read-only', (
     tester,
   ) async {
-    final seen = await _pump(tester, const KailoTasksPage(), {
+    final seen = await _pump(tester, const PlatformTasksPage(), {
       'GET /api/v1/tasks': () => [
         _task({
           'gateState': 'WAITING',
@@ -145,7 +148,7 @@ void main() {
     });
 
     expect(find.textContaining('Waiting for approval'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('kailo-task-ae1')));
+    await tester.tap(find.byKey(const ValueKey('platform-task-ae1')));
     await tester.pumpAndSettle();
 
     expect(find.text('op-1'), findsOneWidget);
@@ -155,7 +158,7 @@ void main() {
     );
     expect(find.text('Organization admin: at least 1'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('kailo-decide-elsewhere')),
+      find.byKey(const ValueKey('platform-decide-elsewhere')),
       findsOneWidget,
     );
     // 只读：没有任何写请求，也没有控制按钮
@@ -167,7 +170,7 @@ void main() {
   testWidgets(
     'approvals: pending list, and a delayed projection is not a verdict',
     (tester) async {
-      await _pump(tester, const KailoApprovalsPage(), {
+      await _pump(tester, const PlatformApprovalsPage(), {
         'GET /api/v1/approvals': () => [
           _approval({'observation': 'PROJECTION_DELAYED'}),
         ],
@@ -176,7 +179,9 @@ void main() {
       });
 
       expect(find.textContaining('Status may be out of date'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('kailo-approval-$_workflow')));
+      await tester.tap(
+        find.byKey(const ValueKey('platform-approval-$_workflow')),
+      );
       await tester.pumpAndSettle();
       expect(
         find.text('The status shown may be out of date. (PROJECTION_DELAYED)'),
@@ -187,18 +192,18 @@ void main() {
   );
 
   testWidgets('a failed read is not an empty list', (tester) async {
-    await _pump(tester, const KailoTasksPage(), {});
+    await _pump(tester, const PlatformTasksPage(), {});
     expect(
       find.text('You have not started any governed action yet.'),
       findsNothing,
     );
-    expect(find.byKey(const ValueKey('kailo-view-error')), findsOneWidget);
+    expect(find.byKey(const ValueKey('platform-view-error')), findsOneWidget);
   });
 
   testWidgets('task and approval read-only text follows zh-CN locale', (
     tester,
   ) async {
-    await _pump(tester, const KailoTasksPage(), {
+    await _pump(tester, const PlatformTasksPage(), {
       'GET /api/v1/tasks': () => [
         _task({'gateState': 'WAITING'}),
       ],
@@ -207,7 +212,7 @@ void main() {
 
     expect(find.text('我的任务'), findsOneWidget);
     expect(find.textContaining('等待审批'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('kailo-task-ae1')));
+    await tester.tap(find.byKey(const ValueKey('platform-task-ae1')));
     await tester.pumpAndSettle();
     expect(find.text('任务'), findsOneWidget);
     expect(find.text('状态'), findsOneWidget);

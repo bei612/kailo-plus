@@ -13,7 +13,7 @@
 //!
 //! 按 Core 预写的 WorkflowRef 逐个 Describe，而不是按 Search Attribute 列举：
 //! Describe 是强一致的，列举读的是最终一致的 visibility。只有 Schedule 触发的
-//! run 没有预写的 WorkflowRef，需要按 `KailoTenantId` 列举回填；一期没有
+//! run 没有预写的 WorkflowRef，需要按 `PlatformTenantId` 列举回填；一期没有
 //! Schedule，因此没有这条路径的适用对象（ADR-08）。
 //!
 //! 这里**不重新启动**任何 Workflow：WorkflowRef 不保存冻结输入，重启只能由
@@ -106,28 +106,28 @@ impl Metrics {
     fn new(meter: &Meter) -> Self {
         Self {
             nonterminal: meter
-                .u64_gauge("kailo.workflow_ref.nonterminal")
+                .u64_gauge("platform.workflow_ref.nonterminal")
                 .with_description("非 TERMINAL 的 WorkflowRef 数")
                 .build(),
             oldest_age: meter
-                .u64_gauge("kailo.workflow_ref.oldest_age")
+                .u64_gauge("platform.workflow_ref.oldest_age")
                 .with_unit("s")
                 .with_description("最久一条非 TERMINAL WorkflowRef 的年龄，即投影落后的上界")
                 .build(),
             reconciled: meter
-                .u64_counter("kailo.workflow_ref.reconciled")
+                .u64_counter("platform.workflow_ref.reconciled")
                 .with_description("兜底对账对单条 WorkflowRef 的观察结果")
                 .build(),
             entity_nonterminal: meter
-                .u64_gauge("kailo.entity.nonterminal")
+                .u64_gauge("platform.entity.nonterminal")
                 .with_description("停在收敛中状态的实体数")
                 .build(),
             entity_stranded: meter
-                .u64_gauge("kailo.entity.stranded")
+                .u64_gauge("platform.entity.stranded")
                 .with_description("仍在收敛中、而驱动其当前版本的 Workflow 已终结的实体数")
                 .build(),
             passes: meter
-                .u64_counter("kailo.workflow_reconcile.passes")
+                .u64_counter("platform.workflow_reconcile.passes")
                 .with_description("对账轮次，按是否完成区分")
                 .build(),
         }

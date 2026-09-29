@@ -31,7 +31,7 @@ Future<void> _pump(
   Locale locale = const Locale('en'),
 }) async {
   SharedPreferences.setMockInitialValues({
-    'kailo.config.v1': jsonEncode(testKailoConfig.toJson()),
+    'platform.config.v1': jsonEncode(testPlatformConfig.toJson()),
   });
   final prefs = await SharedPreferences.getInstance();
   final client = MockClient(bff);
@@ -40,9 +40,9 @@ Future<void> _pump(
     ProviderScope(
       overrides: [
         savedPrefsProvider.overrideWithValue(prefs),
-        kailoHttpClientProvider.overrideWithValue(client),
-        kailoSessionProvider.overrideWithValue(
-          KailoSession(client: client, refreshStore: store),
+        platformHttpClientProvider.overrideWithValue(client),
+        nativeSessionProvider.overrideWithValue(
+          NativeSession(client: client, refreshStore: store),
         ),
         myPubkeyProvider.overrideWithValue(_thisDevice),
         ...overrides,
@@ -81,7 +81,7 @@ void main() {
     var revoked = <String>[];
     await _pump(
       tester,
-      const KailoDevicesPage(),
+      const PlatformDevicesPage(),
       _bff({
         'GET /api/v1/identity/client-keys': (_) => jsonResponse([
           for (final pk in [_thisDevice, _otherDevice])
@@ -103,18 +103,20 @@ void main() {
     );
 
     expect(find.textContaining('(This device)'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('kailo-revoke-$_otherDevice')));
+    await tester.tap(
+      find.byKey(const ValueKey('platform-revoke-$_otherDevice')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Revoke'));
     await tester.pumpAndSettle();
 
     expect(find.text('Device status: Being removed.'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('kailo-device-$_otherDevice')),
+      find.byKey(const ValueKey('platform-device-$_otherDevice')),
       findsNothing,
     );
     expect(
-      find.byKey(const ValueKey('kailo-device-$_thisDevice')),
+      find.byKey(const ValueKey('platform-device-$_thisDevice')),
       findsOneWidget,
     );
   });
@@ -124,7 +126,7 @@ void main() {
   ) async {
     await _pump(
       tester,
-      const KailoDevicesPage(),
+      const PlatformDevicesPage(),
       _bff({
         'GET /api/v1/identity/client-keys': (_) => jsonResponse([
           {
@@ -138,7 +140,9 @@ void main() {
       }),
     );
 
-    await tester.tap(find.byKey(const ValueKey('kailo-revoke-$_otherDevice')));
+    await tester.tap(
+      find.byKey(const ValueKey('platform-revoke-$_otherDevice')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Revoke'));
     await tester.pumpAndSettle();
@@ -146,31 +150,32 @@ void main() {
     expect(find.textContaining('(CLIENT_KEY_NOT_FOUND)'), findsOneWidget);
   });
 
-  testWidgets('views say "not known" when Kailo answers outside the contract', (
-    tester,
-  ) async {
-    await _pump(
-      tester,
-      const KailoAuditPage(),
-      _bff({'GET /api/v1/audit': (_) => jsonResponse(null, 502)}),
-    );
+  testWidgets(
+    'views say "not known" when the platform answers outside the contract',
+    (tester) async {
+      await _pump(
+        tester,
+        const PlatformAuditPage(),
+        _bff({'GET /api/v1/audit': (_) => jsonResponse(null, 502)}),
+      );
 
-    final text = tester.widget<Text>(
-      find.byKey(const ValueKey('kailo-view-error')),
-    );
-    expect(text.data, contains('not known'));
-    expect(
-      find.text(kailoText(KailoMessageKey.platformRetry, locale: 'en')),
-      findsOneWidget,
-    );
-  });
+      final text = tester.widget<Text>(
+        find.byKey(const ValueKey('platform-view-error')),
+      );
+      expect(text.data, contains('not known'));
+      expect(
+        find.text(platformText(PlatformMessageKey.platformRetry, locale: 'en')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('audit lists only what the BFF returns for the caller', (
     tester,
   ) async {
     await _pump(
       tester,
-      const KailoAuditPage(),
+      const PlatformAuditPage(),
       _bff({
         'GET /api/v1/audit': (_) => jsonResponse([
           {
@@ -194,7 +199,7 @@ void main() {
     const workspace = '11111111-1111-4111-8111-111111111111';
     await _pump(
       tester,
-      const KailoWorkspacesPage(),
+      const PlatformWorkspacesPage(),
       _bff({
         'GET /api/v1/workspaces': (_) => jsonResponse([
           {'id': workspace, 'slug': 'design', 'name': 'Design'},
@@ -223,7 +228,7 @@ void main() {
   ) async {
     await _pump(
       tester,
-      const KailoDevicesPage(),
+      const PlatformDevicesPage(),
       _bff({
         'GET /api/v1/identity/client-keys': (_) => jsonResponse([
           {
@@ -244,7 +249,7 @@ void main() {
   testWidgets('Chinese audit page translates its event type', (tester) async {
     await _pump(
       tester,
-      const KailoAuditPage(),
+      const PlatformAuditPage(),
       _bff({
         'GET /api/v1/audit': (_) => jsonResponse([
           {
@@ -269,7 +274,7 @@ void main() {
     const workspace = '11111111-1111-4111-8111-111111111111';
     await _pump(
       tester,
-      const KailoWorkspacesPage(),
+      const PlatformWorkspacesPage(),
       _bff({
         'GET /api/v1/workspaces': (_) => jsonResponse([
           {'id': workspace, 'slug': 'design', 'name': 'Design'},

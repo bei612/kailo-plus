@@ -42,7 +42,7 @@ async fn invitations_are_redeemed_once_confirmed_by_an_admin_and_always_terminat
     let tenant = Uuid::parse_str(out["tenantId"].as_str().unwrap()).unwrap();
     let a_principal = Uuid::parse_str(out["adminPrincipalId"].as_str().unwrap()).unwrap();
     let initiator: Uuid = sqlx::query_scalar(
-        "select principal_id from identity.service_principal where audience = 'kailo-deployment-bootstrap'",
+        "select principal_id from identity.service_principal where audience = 'platform-deployment-bootstrap'",
     )
     .fetch_one(&pool)
     .await

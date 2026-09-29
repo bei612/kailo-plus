@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Kailo 本地拓扑的一次性入口：复用现有密钥、schema、Core 和 Tenant 引导脚本。
-# 无参数补齐现有环境；--fresh --confirm-delete=kailo-local 仅清空本 Compose 项目。
+# 本地拓扑的一次性入口：复用现有密钥、schema、Core 和 Tenant 引导脚本。
+# 无参数补齐现有环境；--fresh --confirm-delete=platform-local 仅清空本 Compose 项目。
 set -euo pipefail
 cd "$(dirname "$0")"
 
 usage() {
-  echo '用法：./init-local.sh [--fresh --confirm-delete=kailo-local]' >&2
+  echo '用法：./init-local.sh [--fresh --confirm-delete=platform-local]' >&2
   exit 2
 }
 
@@ -13,7 +13,7 @@ fresh=false
 case "${1:-}" in
   '') [ "$#" -eq 0 ] || usage ;;
   --fresh)
-    [ "$#" -eq 2 ] && [ "$2" = '--confirm-delete=kailo-local' ] || usage
+    [ "$#" -eq 2 ] && [ "$2" = '--confirm-delete=platform-local' ] || usage
     fresh=true ;;
   *) usage ;;
 esac
@@ -47,7 +47,7 @@ done
 # 不启动容器；正常启动时它还会再次校验，避免单独调用 bootstrap 绕开前提。
 ./bootstrap.sh --validate-config
 project=$(sed -n 's/^name: //p' compose.yaml)
-[ "$project" = kailo-local ] || { echo 'Compose 项目名不是 kailo-local，拒绝操作' >&2; exit 2; }
+[ "$project" = platform-local ] || { echo 'Compose 项目名不是 platform-local，拒绝操作' >&2; exit 2; }
 
 # 构建前检查现有编译任务与主机压力。真正的编译限额由 builder 容器 cgroup 执行；
 # 只在宿主包一层 scope 不能约束 Docker daemon 中的构建进程。
@@ -89,7 +89,7 @@ if ! "$fresh"; then
 fi
 
 if "$fresh"; then
-  echo '清空 kailo-local 容器和五个数据库卷，并清空本地 OpenBao、Buzz 对象和凭据。'
+  echo '清空 platform-local 容器和五个数据库卷，并清空本地 OpenBao、Buzz 对象和凭据。'
   echo '此操作不可恢复；保留 .env 和 data/registry 中的固定版本镜像。'
   for path in data secrets data/secret-store data/collab-objects; do
     [ ! -L "$path" ] || { echo "拒绝删除符号链接：$path" >&2; exit 2; }
@@ -118,7 +118,7 @@ done
 
 # Compose 自己等待 health 与依赖任务；namespace/schema 作业还要查终态。
 compose up -d --wait keycloak temporal spicedb buzz-relay
-./bootstrap.sh --sync-browser-client
+./bootstrap.sh --sync-client-redirects
 ./bootstrap.sh --ensure-platform-admin
 ./bootstrap.sh --ensure-service-audience
 export VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE="$PWD/secrets/keycloak_admin_password"
@@ -150,4 +150,4 @@ compose exec -T core-bff /usr/local/bin/platform-core bootstrap-tenant \
   --slug "$PLATFORM_CATALOG_TENANT_SLUG" --name "$PLATFORM_CATALOG_TENANT_SLUG" \
   --admin-subject "$platform_subject" --admin-display-name "$PLATFORM_ADMIN_USER" \
   --wait-seconds "$VERIFY_BOOTSTRAP_WAIT_SECONDS"
-echo 'kailo-local 已就绪；业务 Tenant 首位管理员为 BOOTSTRAP_USER，平台管理员为 PLATFORM_ADMIN_USER，走查用户为 VERIFY_USER；三份口令分别存于 secrets/。'
+echo 'platform-local 已就绪；业务 Tenant 首位管理员为 BOOTSTRAP_USER，平台管理员为 PLATFORM_ADMIN_USER，走查用户为 VERIFY_USER；三份口令分别存于 secrets/。'

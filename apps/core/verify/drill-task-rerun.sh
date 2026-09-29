@@ -44,7 +44,7 @@ initiator=$(PSQL "select initiator_principal_id from admission.action_execution 
 echo "  tenant $tenant，运维 Principal $initiator"
 
 token=$(curl -sf -H "Host: $OIDC_TOKEN_HOST" "$OIDC_TOKEN_URL" --data-urlencode grant_type=client_credentials \
-  --data-urlencode client_id="$OIDC_WORKER_CLIENT_ID" --data-urlencode "client_secret@deploy/local/secrets/kailo_worker_client_secret" \
+  --data-urlencode client_id="$OIDC_WORKER_CLIENT_ID" --data-urlencode "client_secret@deploy/local/secrets/worker_client_secret" \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
 admit() { # <target> → 新 ActionExecution ID（runbook 第 7.2 步的同一条语句）
   local a; a=$(python3 -c 'import uuid;print(uuid.uuid4())')
@@ -58,7 +58,7 @@ call() { # <path> <json>
     "$CORE_SERVICE_URL$1" -d "$2"
 }
 
-# 与 workflow_reconcile 计 kailo.entity.stranded 同一判据：收敛中状态，且驱动当前版本的 Workflow 已终结
+# 与 workflow_reconcile 计 platform.entity.stranded 同一判据：收敛中状态，且驱动当前版本的 Workflow 已终结
 stranded() {
   PSQL "select count(*) from identity.workspace e where e.id='$ws2' and e.state='PROVISIONING' and exists (
     select 1 from projection.workflow_ref w where w.projection_state='TERMINAL'

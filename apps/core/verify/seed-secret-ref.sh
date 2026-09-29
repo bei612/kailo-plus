@@ -44,13 +44,13 @@ v2=$(ns kv put -cas="$v1" -format=json "$secret_path" value=v2 \
      | python3 -c 'import json,sys;print(json.load(sys.stdin)["data"]["version"])')
 printf 'VERIFY_SECRET_VERSION_V1=%s\nVERIFY_SECRET_VERSION_V2=%s\n' "$v1" "$v2"
 
-# SecretStore 的真实投递路径：kailo-verify 与 kailo-core 同策略、同样单次使用并以
+# SecretStore 的真实投递路径：platform-verify 与 platform-core 同策略、同样单次使用并以
 # response wrapping 投递，只是不绑 CIDR——核验跑在宿主上（secret-store-init.sh）。
 # wrapping token 在 OPENBAO_SECRET_ID_WRAP_TTL 内由 secret-store 的核验消费。
 : "${OPENBAO_SECRET_ID_WRAP_TTL:?}"
-printf 'OPENBAO_ROLE_ID=%s\n' "$(ns read -field=role_id auth/approle/role/kailo-verify/role-id)"
-printf 'OPENBAO_ROLE_NAME=kailo-verify\n'
-printf 'OPENBAO_WRAPPED_SECRET_ID=%s\n' "$(ns write -wrap-ttl="$OPENBAO_SECRET_ID_WRAP_TTL" -f -format=json auth/approle/role/kailo-verify/secret-id \
+printf 'OPENBAO_ROLE_ID=%s\n' "$(ns read -field=role_id auth/approle/role/platform-verify/role-id)"
+printf 'OPENBAO_ROLE_NAME=platform-verify\n'
+printf 'OPENBAO_WRAPPED_SECRET_ID=%s\n' "$(ns write -wrap-ttl="$OPENBAO_SECRET_ID_WRAP_TTL" -f -format=json auth/approle/role/platform-verify/secret-id \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["wrap_info"]["token"])')"
 
 # SecretStore 在取用平台 KV 前也必须验证 Tenant provisioner 已取得一次性凭据。

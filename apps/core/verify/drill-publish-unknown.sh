@@ -38,7 +38,7 @@ ws=$(python3 -c 'import json;print(json.load(open("/tmp/rbunk.fixture"))["worksp
 step "1. 停 Relay 后发布"
 DC stop buzz-relay >/dev/null 2>&1
 code=$(curl -s -o /tmp/rbunk.body -w '%{http_code}' -X POST "$VERIFY_BFF_URL/api/v1/workspaces/$ws/messages" \
-  -H "x-kailo-oidc-issuer: $OIDC_ISSUER" -H "x-kailo-oidc-subject: $subject" \
+  -H "x-platform-oidc-issuer: $OIDC_ISSUER" -H "x-platform-oidc-subject: $subject" \
   -H 'Content-Type: application/json' -H "Idempotency-Key: $(python3 -c 'import uuid;print(uuid.uuid4())')" -d '{"content":"drill unknown"}')
 echo "  发布：HTTP $code $(cat /tmp/rbunk.body)"
 op=$(python3 -c 'import json;print(json.load(open("/tmp/rbunk.body"))["operationId"])')

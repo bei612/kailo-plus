@@ -23,7 +23,7 @@ result
 
 # editor
 .vscode/
-# Kailo：上游用 git add -f 跟踪了 .vscode/ 下三个文件；源码随 Kailo 仓库提交时靠这一行保留它们
+# 本仓库：上游用 git add -f 跟踪了 .vscode/ 下三个文件；源码随本仓库提交时靠这一行保留它们
 !.vscode/
 .idea/
 .history/

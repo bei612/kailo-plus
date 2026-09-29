@@ -84,7 +84,7 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     if (pubkey == null) {
       return const ReadStateState.inert();
     }
-    final config = ref.watch(kailoConfigProvider);
+    final config = ref.watch(platformConfigProvider);
 
     final prefs = ref.read(savedPrefsProvider);
     late final ReadStateManager manager;
@@ -94,8 +94,8 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
       // 权威副本在 Core（DD-40）；没有部署配置时只有本机缓存
       remote: config == null
           ? null
-          : KailoReadStateRemote(
-              session: ref.read(kailoSessionProvider),
+          : PlatformReadStateRemote(
+              session: ref.read(nativeSessionProvider),
               config: config,
             ),
       onChanged: () => _emitManagerState(manager),

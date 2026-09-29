@@ -2,9 +2,9 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { installMockBridge } from "../helpers/bridge";
 
-// Kailo bootstrap on Desktop (Kailo DD-75/78/79): configure → sign in through
+// platform bootstrap on Desktop (DD-75/78/79): configure → sign in through
 // the system browser → register this device's key until ACTIVE → fetch the
-// community's connection facts → connect with apply_workspace. The kailo_*
+// community's connection facts → connect with apply_workspace. The platform_*
 // commands are answered by the e2e bridge exactly as the Rust layer would.
 
 const DEVICE_PUBKEY = "deadbeef".repeat(8);
@@ -25,39 +25,39 @@ async function log(page: Page): Promise<Logged[]> {
   );
 }
 
-const bootstrap = (page: Page) => page.getByTestId("kailo-bootstrap");
+const bootstrap = (page: Page) => page.getByTestId("platform-bootstrap");
 
 test("an unconfigured device asks for the deployment facts, with nothing prefilled", async ({
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: { config: null, signedIn: false },
+    platform: { config: null, signedIn: false },
   });
   await page.goto("/");
 
   await expect(
-    bootstrap(page).getByRole("heading", { name: "Connect to Kailo" }),
+    bootstrap(page).getByRole("heading", { name: "Connect to your server" }),
   ).toBeVisible();
-  const url = page.getByLabel("Kailo native entry URL");
+  const url = page.getByLabel("Native entry URL");
   const issuer = page.getByLabel("Sign-in issuer (OIDC)");
   const client = page.getByLabel("Client ID");
   for (const field of [url, issuer, client])
     await expect(field).toHaveValue("");
 
-  await url.fill("https://kailo.example.com:8091");
-  await issuer.fill("https://idp.example.com/realms/kailo");
-  await client.fill("kailo-native");
+  await url.fill("https://platform.example.com:8091");
+  await issuer.fill("https://idp.example.com/realms/platform");
+  await client.fill("platform-native");
   await page.getByRole("button", { name: "Save and continue" }).click();
 
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
   expect(
-    (await log(page)).find((entry) => entry.command === "kailo_set_config")
+    (await log(page)).find((entry) => entry.command === "platform_set_config")
       ?.payload,
   ).toEqual({
     config: {
-      nativeApiUrl: "https://kailo.example.com:8091",
-      oidcIssuer: "https://idp.example.com/realms/kailo",
-      oidcClientId: "kailo-native",
+      nativeApiUrl: "https://platform.example.com:8091",
+      oidcIssuer: "https://idp.example.com/realms/platform",
+      oidcClientId: "platform-native",
     },
   });
 });
@@ -66,7 +66,7 @@ test("settings rejected by the Rust side stay on the form with the reason", asyn
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       config: null,
       signedIn: false,
       setConfigError: "原生入口地址必须是 http 或 https 地址",
@@ -74,7 +74,7 @@ test("settings rejected by the Rust side stay on the form with the reason", asyn
   });
   await page.goto("/");
 
-  await page.getByLabel("Kailo native entry URL").fill("https://x.example");
+  await page.getByLabel("Native entry URL").fill("https://x.example");
   await page.getByLabel("Sign-in issuer (OIDC)").fill("https://i.example");
   await page.getByLabel("Client ID").fill("c");
   await page.getByRole("button", { name: "Save and continue" }).click();
@@ -82,7 +82,7 @@ test("settings rejected by the Rust side stay on the form with the reason", asyn
   await expect(bootstrap(page).getByRole("alert")).toContainText(
     "http 或 https",
   );
-  await expect(page.getByLabel("Kailo native entry URL")).toHaveValue(
+  await expect(page.getByLabel("Native entry URL")).toHaveValue(
     "https://x.example",
   );
 });
@@ -91,7 +91,7 @@ test("sign-in can be cancelled, and cancelling is not a failure", async ({
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: { signedIn: false, signIn: "hold" },
+    platform: { signedIn: false, signIn: "hold" },
   });
   await page.goto("/");
 
@@ -104,15 +104,15 @@ test("sign-in can be cancelled, and cancelling is not a failure", async ({
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
   await expect(bootstrap(page).getByRole("alert")).toHaveCount(0);
   expect((await log(page)).map((entry) => entry.command)).toContain(
-    "kailo_cancel_sign_in",
+    "platform_cancel_sign_in",
   );
 });
 
-test("sign-in → registration RECONCILING → ACTIVE → connects to the community Kailo names", async ({
+test("sign-in → registration RECONCILING → ACTIVE → connects to the community the platform names", async ({
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       signedIn: false,
       register: [
         {
@@ -143,18 +143,18 @@ test("sign-in → registration RECONCILING → ACTIVE → connects to the commun
   expect(
     entries.filter(
       (entry) =>
-        entry.command === "kailo_api" &&
+        entry.command === "platform_api" &&
         (entry.payload as { path: string }).path ===
           "/api/v1/identity/client-keys",
     ),
   ).toHaveLength(2);
   const commands = entries.map((entry) => entry.command);
-  expect(commands).toContain("kailo_sign_in");
-  expect(commands).toContain("kailo_register_device");
+  expect(commands).toContain("platform_sign_in");
+  expect(commands).toContain("platform_register_device");
   // The management plane goes through the Rust side only.
   expect(
     entries
-      .filter((entry) => entry.command === "kailo_api")
+      .filter((entry) => entry.command === "platform_api")
       .map((entry) => (entry.payload as { path: string }).path),
   ).toEqual(
     expect.arrayContaining([
@@ -167,7 +167,7 @@ test("sign-in → registration RECONCILING → ACTIVE → connects to the commun
   const applied = entries.find((entry) => entry.command === "apply_workspace");
   expect(applied?.payload).toEqual({ relayUrl: "ws://localhost:3000" });
   expect(commands.indexOf("apply_workspace")).toBeGreaterThan(
-    commands.lastIndexOf("kailo_api"),
+    commands.lastIndexOf("platform_api"),
   );
 });
 
@@ -175,9 +175,9 @@ test("a registration without an answer is shown as unknown, never as success or 
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       register: [
-        { error: "Kailo 服务不可达：operation timed out" },
+        { error: "平台服务不可达：operation timed out" },
         { status: 200, body: { pubkey: DEVICE_PUBKEY, state: "ACTIVE" } },
       ],
     },
@@ -198,7 +198,7 @@ test("a revoked device key is not revived and the app does not open", async ({
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       register: [
         {
           status: 409,
@@ -222,7 +222,7 @@ test("missing connection facts keep the app closed and can be retried", async ({
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: {
+    platform: {
       community: {
         status: 403,
         body: { class: "DENIED", reason: "NATIVE_SURFACE_REQUIRED" },
@@ -242,7 +242,7 @@ test("an expired session returns to sign-in instead of failing", async ({
   page,
 }) => {
   await installMockBridge(page, {
-    kailo: { register: [{ error: "KAILO_NOT_SIGNED_IN" }] },
+    platform: { register: [{ error: "PLATFORM_NOT_SIGNED_IN" }] },
   });
   await page.goto("/");
 

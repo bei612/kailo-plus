@@ -1266,8 +1266,9 @@ fn temporal_run(e: &Env, workflow_id: &str) -> String {
 /// 停或起 Worker 容器。Worker 由本切片独占重建。
 fn worker(e: &Env, op: &str) {
     let _ = e;
+    let project = std::env::var("VERIFY_COMPOSE_PROJECT").expect("缺少 VERIFY_COMPOSE_PROJECT");
     let out = std::process::Command::new("sudo")
-        .args(["-n", "docker", op, "kailo-local-worker-1"])
+        .args(["-n", "docker", op, &format!("{project}-worker-1")])
         .output()
         .expect("运行 docker");
     assert!(

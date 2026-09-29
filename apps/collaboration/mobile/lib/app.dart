@@ -34,10 +34,10 @@ class App extends HookConsumerWidget {
     final schemeName = communityTheme.theme;
     final authState = ref.watch(authProvider);
 
-    // 启动时与 Kailo 核对一次：凭据仍在就刷新设备登记与 Relay 连接事实，
+    // 启动时与平台核对一次：凭据仍在就刷新设备登记与 Relay 连接事实，
     // 凭据已不在就撤掉残留的协作连接。
     useEffect(() {
-      unawaited(ref.read(kailoLinkProvider.notifier).reconcile());
+      unawaited(ref.read(platformLinkProvider.notifier).reconcile());
       return null;
     }, const []);
 
@@ -112,14 +112,14 @@ class App extends HookConsumerWidget {
           AppMarkdownTheme(child: child ?? const SizedBox.shrink()),
       home: authState.when(
         loading: () => const _SplashScreen(),
-        error: (_, _) => const KailoSignInPage(),
+        error: (_, _) => const PlatformSignInPage(),
         data: (state) => switch (state.status) {
           AuthStatus.authenticated => const DeepLinkDispatcher(
             child: HomePage(settingsPageBuilder: _buildSettingsPage),
           ),
           _ => const DeepLinkDispatcher(
             dispatchMessageLinks: false,
-            child: KailoSignInPage(),
+            child: PlatformSignInPage(),
           ),
         },
       ),

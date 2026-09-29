@@ -1,12 +1,12 @@
-// Buzz Mobile 的 Kailo 接入端到端核验，对运行中的 Kailo 本地拓扑执行。
+// Buzz Mobile 的平台接入端到端核验，对运行中的平台本地拓扑执行。
 //
-// 走的是应用自己的代码：KailoLinkNotifier 登录（PKCE、state、换令牌）、设备登记
+// 走的是应用自己的代码：PlatformLinkNotifier 登录（PKCE、state、换令牌）、设备登记
 // 与等待 ACTIVE、取 Community 连接事实并交给协作会话；随后由上游的 relay 会话以
 // 设备私钥直连 Relay（NIP-42），用 channelsProvider 读出所在 Channel，用
 // sendMessageProvider 发消息。唯一的替身是浏览器：一个按 IdP 登录表单作答的模拟
 // 浏览器，代替用户在系统浏览器里的操作。
 //
-// 需要一个真实 Workspace（其成员是 KAILO_E2E_USER），由 Kailo 仓库的
+// 需要一个真实 Workspace（其成员是 PLATFORM_E2E_USER），由本仓库的
 // core/verify/mobile-e2e.sh 准备并传入环境变量；没有这些变量时整组跳过。
 library;
 
@@ -72,30 +72,28 @@ Future<T> _within<T>(Future<T> future, Duration bound, String what) =>
     future.timeout(bound, onTimeout: () => fail('$what 未在 $bound 内完成'));
 
 void main() {
-  final native = _env('KAILO_E2E_NATIVE_URL');
-  final skip = native == null
-      ? '端到端核验：需要运行中的 Kailo 本地拓扑与真实 Workspace，见文件头'
-      : null;
+  final native = _env('PLATFORM_E2E_NATIVE_URL');
+  final skip = native == null ? '端到端核验：需要运行中的本地拓扑与真实 Workspace，见文件头' : null;
 
   test(
     'mobile signs in, registers its device, and publishes through the relay',
     () async {
-      final config = KailoConfig(
+      final config = PlatformConfig(
         nativeApiUrl: native!,
-        oidcIssuer: _env('KAILO_E2E_OIDC_ISSUER')!,
-        oidcClientId: _env('KAILO_E2E_CLIENT_ID')!,
+        oidcIssuer: _env('PLATFORM_E2E_OIDC_ISSUER')!,
+        oidcClientId: _env('PLATFORM_E2E_CLIENT_ID')!,
       );
-      final user = _env('KAILO_E2E_USER')!;
+      final user = _env('PLATFORM_E2E_USER')!;
       final password = File(
-        _env('KAILO_E2E_PASSWORD_FILE')!,
+        _env('PLATFORM_E2E_PASSWORD_FILE')!,
       ).readAsStringSync().trim();
-      final workspace = _env('KAILO_E2E_WORKSPACE')!;
+      final workspace = _env('PLATFORM_E2E_WORKSPACE')!;
       final bound = Duration(
-        seconds: int.parse(_env('KAILO_E2E_CONVERGE_SECS')!),
+        seconds: int.parse(_env('PLATFORM_E2E_CONVERGE_SECS')!),
       );
 
       SharedPreferences.setMockInitialValues({
-        'kailo.config.v1': jsonEncode(config.toJson()),
+        'platform.config.v1': jsonEncode(config.toJson()),
       });
       final prefs = await SharedPreferences.getInstance();
       final callbacks = StreamController<Uri>.broadcast();
@@ -105,17 +103,17 @@ void main() {
         overrides: [
           savedPrefsProvider.overrideWithValue(prefs),
           deviceKeyStoreProvider.overrideWithValue(keys),
-          kailoSessionProvider.overrideWith(
-            (ref) => KailoSession(
-              client: ref.watch(kailoHttpClientProvider),
+          nativeSessionProvider.overrideWith(
+            (ref) => NativeSession(
+              client: ref.watch(platformHttpClientProvider),
               refreshStore: MemoryRefreshStore(),
             ),
           ),
           communityStorageProvider.overrideWithValue(
             CommunityStorage(secure: FakeSecureStorage()),
           ),
-          kailoBrowserProvider.overrideWithValue(
-            KailoBrowser(
+          platformBrowserProvider.overrideWithValue(
+            PlatformBrowser(
               // 本地 IdP 为原生 client 登记的是回环地址；redirect 只是 IdP 送回
               // 浏览器的去处，其余 PKCE 与换令牌走的是应用同一份代码
               redirectUri: 'http://127.0.0.1:1/callback',
@@ -127,15 +125,15 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
-      final link = container.read(kailoLinkProvider.notifier);
-      final session = container.read(kailoSessionProvider);
+      final link = container.read(platformLinkProvider.notifier);
+      final session = container.read(nativeSessionProvider);
 
       // 1. 登录 → 设备登记 → ACTIVE → Community 连接事实 → 协作会话
       await _within(link.signIn(), bound, '登录与设备登记');
-      final linked = container.read(kailoLinkProvider);
+      final linked = container.read(platformLinkProvider);
       expect(
         linked.phase,
-        KailoLinkPhase.linked,
+        PlatformLinkPhase.linked,
         reason: '${linked.error?.reason} ${linked.detail}',
       );
       final device = nostr.Keys(keys.nsec!);
@@ -167,7 +165,7 @@ void main() {
       expect(channels.map((c) => c.id), contains(workspace));
 
       // 4. 以设备私钥发一条消息：Relay 接受
-      final text = 'from kailo mobile ${const Uuid().v4()}';
+      final text = 'from platform mobile ${const Uuid().v4()}';
       await _within(
         container
             .read(sendMessageProvider)

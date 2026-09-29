@@ -8,13 +8,13 @@ use reqwest::Method;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use super::config::KailoConfig;
+use super::config::PlatformConfig;
 use super::oidc::{self, OidcError, PendingLogin, TokenResponse};
 use crate::app_state::keyring_service;
 use crate::secret_store::SecretStore;
 
 /// keyring 中刷新令牌的条目名
-const REFRESH_KEY: &str = "kailo-refresh-token";
+const REFRESH_KEY: &str = "platform-refresh-token";
 
 /// 前端可经本模块调用的 BFF 路径前缀。其余一概不代发。
 const API_PREFIX: &str = "/api/v1/";
@@ -42,13 +42,13 @@ impl RefreshStore for KeyringStore {
     }
 }
 
-pub(crate) struct KailoSession {
+pub(crate) struct NativeSession {
     access: Mutex<Option<String>>,
     refresh: Box<dyn RefreshStore>,
     pub(crate) pending: PendingLogin,
 }
 
-impl Default for KailoSession {
+impl Default for NativeSession {
     fn default() -> Self {
         Self::with_store(Box::new(KeyringStore))
     }
@@ -64,13 +64,13 @@ pub(crate) struct ApiResponse {
 }
 
 /// 前端据此判断是否要回到登录页。
-pub(crate) const NOT_SIGNED_IN: &str = "KAILO_NOT_SIGNED_IN";
+pub(crate) const NOT_SIGNED_IN: &str = "PLATFORM_NOT_SIGNED_IN";
 
 fn store() -> &'static SecretStore {
     SecretStore::shared(keyring_service())
 }
 
-impl KailoSession {
+impl NativeSession {
     pub(crate) fn with_store(refresh: Box<dyn RefreshStore>) -> Self {
         Self {
             access: Mutex::new(None),
@@ -99,7 +99,7 @@ impl KailoSession {
         self.refresh.delete()
     }
 
-    async fn refresh(&self, http: &reqwest::Client, cfg: &KailoConfig) -> Result<String, String> {
+    async fn refresh(&self, http: &reqwest::Client, cfg: &PlatformConfig) -> Result<String, String> {
         let Some(refresh_token) = self.refresh.load()? else {
             return Err(NOT_SIGNED_IN.to_owned());
         };
@@ -123,7 +123,7 @@ impl KailoSession {
     pub(crate) async fn call(
         &self,
         http: &reqwest::Client,
-        cfg: &KailoConfig,
+        cfg: &PlatformConfig,
         method: Method,
         path: &str,
         body: Option<&serde_json::Value>,
@@ -145,7 +145,7 @@ impl KailoSession {
             let resp = req
                 .send()
                 .await
-                .map_err(|e| format!("Kailo 服务不可达：{e}"))?;
+                .map_err(|e| format!("平台服务不可达：{e}"))?;
             let status = resp.status();
             if status == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
                 token = self.refresh(http, cfg).await?;

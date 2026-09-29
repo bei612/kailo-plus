@@ -20,14 +20,14 @@ void main() {
           : jsonResponse(null, 401);
     });
     final store = MemoryRefreshStore()..value = 'refresh-1';
-    final session = KailoSession(client: client, refreshStore: store);
+    final session = NativeSession(client: client, refreshStore: store);
     await session.adopt(
       const OidcTokens(accessToken: 'access-1', refreshToken: 'refresh-1'),
     );
 
     final response = await session.send(
-      testKailoConfig,
-      KailoMethod.get,
+      testPlatformConfig,
+      PlatformMethod.get,
       '/api/v1/session',
     );
 
@@ -42,11 +42,11 @@ void main() {
           jsonResponse(null, 401);
     });
     final store = MemoryRefreshStore()..value = 'refresh-1';
-    final session = KailoSession(client: client, refreshStore: store);
+    final session = NativeSession(client: client, refreshStore: store);
 
     await expectLater(
-      session.send(testKailoConfig, KailoMethod.get, '/api/v1/session'),
-      throwsA(isA<KailoNotSignedIn>()),
+      session.send(testPlatformConfig, PlatformMethod.get, '/api/v1/session'),
+      throwsA(isA<PlatformNotSignedIn>()),
     );
     expect(store.value, isNull);
   });
@@ -59,23 +59,23 @@ void main() {
       return jsonResponse(null, 401);
     });
     final store = MemoryRefreshStore()..value = 'refresh-1';
-    final session = KailoSession(client: client, refreshStore: store);
+    final session = NativeSession(client: client, refreshStore: store);
 
     await expectLater(
-      session.send(testKailoConfig, KailoMethod.get, '/api/v1/session'),
-      throwsA(isA<KailoUnavailable>()),
+      session.send(testPlatformConfig, PlatformMethod.get, '/api/v1/session'),
+      throwsA(isA<PlatformUnavailable>()),
     );
     expect(store.value, 'refresh-1');
   });
 
   test('only /api/v1/ paths are sent', () async {
-    final session = KailoSession(
+    final session = NativeSession(
       client: MockClient((_) async => fail('must not send')),
       refreshStore: MemoryRefreshStore()..value = 'r',
     );
     for (final path in ['/admin', '/api/v1/../admin', 'https://evil/api/v1/']) {
       await expectLater(
-        session.send(testKailoConfig, KailoMethod.get, path),
+        session.send(testPlatformConfig, PlatformMethod.get, path),
         throwsArgumentError,
       );
     }
@@ -83,7 +83,7 @@ void main() {
 
   test('error bodies are read through the contract, unknown ones are not', () {
     expect(
-      KailoResponse(
+      PlatformResponse(
         403,
         errorBody('DENIED', 'CLIENT_KEY_PROOF_INVALID'),
       ).error?.reason,
@@ -91,9 +91,9 @@ void main() {
     );
     // 本端不认识的 reason code：不猜，交给调用方当作结果不明
     expect(
-      KailoResponse(403, errorBody('DENIED', 'SOMETHING_NEW')).error,
+      PlatformResponse(403, errorBody('DENIED', 'SOMETHING_NEW')).error,
       isNull,
     );
-    expect(const KailoResponse(502, null).error, isNull);
+    expect(const PlatformResponse(502, null).error, isNull);
   });
 }

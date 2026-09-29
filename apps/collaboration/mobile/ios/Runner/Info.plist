@@ -42,7 +42,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.buzz.kailo.oauth</string>
+			<string>com.buzz.platform.oauth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>xyz.block.buzz.mobile</string>

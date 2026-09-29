@@ -1,6 +1,6 @@
-//! Kailo (SS-BUZ-GOVERNANCE): owner-governed communities.
+//! Platform (SS-BUZ-GOVERNANCE): owner-governed communities.
 //!
-//! In a Kailo community the owner is the tenant's control identity, and
+//! In a platform community the owner is the tenant's control identity, and
 //! channels, rosters and every other piece of shared structure change only
 //! through it. Members hold their own keys and reach the relay directly, so
 //! the relay itself must refuse what the community's governance does not
@@ -10,7 +10,7 @@
 //! are both decided by the channel roster. Huddle audio, which archives the
 //! channel it ran in when the last peer leaves, is not served.
 //!
-//! The relay's own workflow engine is off as well (DD-106): Kailo's workflows
+//! The relay's own workflow engine is off as well (DD-106): the platform's workflows
 //! run elsewhere, and this one would otherwise run for every community with
 //! the owner, a cron loop, member messages and a bare webhook secret as its
 //! triggers. No engine is built, so there is no action sink, cron loop or

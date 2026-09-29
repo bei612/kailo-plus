@@ -189,7 +189,7 @@ void exactMentionTests() {
       }
       await tester.tap(find.byIcon(LucideIcons.arrowUp));
       await tester.pumpAndSettle();
-      // Kailo：成员不能把人加进 Channel（DD-80），非成员提及直接降为引用标签，
+      // 平台：成员不能把人加进 Channel（DD-80），非成员提及直接降为引用标签，
       // 不再弹出「邀请」对话框
       expect(find.textContaining('is not in this channel'), findsNothing);
       final messages = events.where(

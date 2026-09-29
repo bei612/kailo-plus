@@ -87,7 +87,7 @@ pub async fn ws_audio_handler(
         }
     };
 
-    // Kailo (SS-BUZ-GOVERNANCE): huddles are not a capability of governed
+    // Platform (SS-BUZ-GOVERNANCE): huddles are not a capability of governed
     // communities, and leaving the last peer archives the channel it ran in.
     if crate::handlers::governance::is_governed(&state) {
         return (StatusCode::NOT_FOUND, "relay: huddle audio is not served").into_response();

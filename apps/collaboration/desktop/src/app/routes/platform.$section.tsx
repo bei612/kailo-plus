@@ -13,7 +13,7 @@ import {
   PLATFORM_SECTION_LABEL,
   type PlatformSection,
 } from "@/features/platform/platformSections";
-import { useKailoSession } from "@/features/platform/activeCommunity";
+import { useNativeSession } from "@/features/platform/activeCommunity";
 
 export const Route = createFileRoute("/platform/$section")({
   params: {
@@ -27,8 +27,8 @@ export const Route = createFileRoute("/platform/$section")({
 });
 
 /**
- * Kailo 平台页：与 Buzz Web 渲染的是同一份组件（Kailo 共用包，ADR-09），数据经
- * Rust 侧的 `kailo_api` 到 BFF。本机设备在设备页里被标出。
+ * 平台页：与 Buzz Web 渲染的是同一份组件（共用包，ADR-09），数据经
+ * Rust 侧的 `platform_api` 到 BFF。本机设备在设备页里被标出。
  */
 function PlatformRouteComponent() {
   const { section } = Route.useParams();
@@ -36,7 +36,7 @@ function PlatformRouteComponent() {
 }
 
 function PlatformScreen({ section }: { section: PlatformSection }) {
-  const session = useKailoSession();
+  const session = useNativeSession();
   return (
     <div
       className="flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-6 pt-14"

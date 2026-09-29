@@ -10,9 +10,9 @@ COPY worker/go.mod worker/go.sum ./
 RUN go mod download
 COPY worker ./
 # 静态链接，使 runtime 层无需 libc
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/kailo-worker .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/platform-worker .
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS runtime
-COPY --from=builder /out/kailo-worker /usr/local/bin/kailo-worker
+COPY --from=builder /out/platform-worker /usr/local/bin/platform-worker
 USER nonroot:nonroot
-ENTRYPOINT ["/usr/local/bin/kailo-worker"]
+ENTRYPOINT ["/usr/local/bin/platform-worker"]

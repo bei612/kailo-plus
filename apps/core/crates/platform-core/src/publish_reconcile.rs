@@ -70,16 +70,16 @@ struct Metrics {
 pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
     let metrics = Metrics {
         unsettled: meter
-            .u64_gauge("kailo.publish.unsettled")
+            .u64_gauge("platform.publish.unsettled")
             .with_description("已 DISPATCH 而没有确定结果的消息发布数")
             .build(),
         oldest_age: meter
-            .u64_gauge("kailo.publish.unsettled_oldest_age")
+            .u64_gauge("platform.publish.unsettled_oldest_age")
             .with_unit("s")
             .with_description("最久一条未确定结果的发布的年龄")
             .build(),
         reconciled: meter
-            .u64_counter("kailo.publish.reconciled")
+            .u64_counter("platform.publish.reconciled")
             .with_description("对未确定结果的发布的一次对账观察")
             .build(),
     };

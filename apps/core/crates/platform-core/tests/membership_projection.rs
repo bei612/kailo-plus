@@ -85,7 +85,7 @@ async fn membership_projects_to_relay_roster_and_revokes() {
     let member = Keys::generate();
     let member_hex = member.public_key().to_hex();
     let host = format!(
-        "m{}.kailo.local",
+        "m{}.platform.test",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -131,7 +131,7 @@ async fn membership_projects_to_relay_roster_and_revokes() {
         .await
         .expect("建成员投影动作");
     let workflow_id = format!(
-        "kailo:MEMBERSHIP_PROJECTION:{}:{}:1",
+        "platform:MEMBERSHIP_PROJECTION:{}:{}:1",
         f.tenant, f.membership
     );
     sqlx::query(

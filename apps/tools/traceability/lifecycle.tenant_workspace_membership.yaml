@@ -43,5 +43,5 @@ release:
     - name: worker
       digest: sha256:9e7d3a6d48b1d0281974db4806a307d44f3f30b72348c76a1bb3c18707bfd46c
     - name: collaboration-relay
-      digest: sha256:e4c34134935bc6259d4fdc07182ff9ac9b637a2106d41e188b26fd7be5a385b8
+      digest: sha256:a6405922db615e2ada34048a9ea3dbe65037fab3f8a4b22b19e39f4ec33ae977
   gate: shipped

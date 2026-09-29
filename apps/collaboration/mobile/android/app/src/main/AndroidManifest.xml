@@ -46,7 +46,7 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="buzz"/>
             </intent-filter>
-            <!-- Kailo 登录回调（RFC 8252 §7.1 私有 URI scheme）。app_links 把它交给
+            <!-- 平台登录回调（RFC 8252 §7.1 私有 URI scheme）。app_links 把它交给
                  登录流程；PKCE 使抢注同一 scheme 的应用拿不到令牌。 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>

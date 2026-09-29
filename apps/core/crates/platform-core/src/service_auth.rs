@@ -6,7 +6,7 @@
 //! 打到成员状态的写入口；因此服务面自带监听端口、自带认证。
 //!
 //! 认证用 `apps/01` §9 要求的「最小 service identity」：Worker 持自己的
-//! OIDC client（`kailo-worker`）以 client_credentials 取令牌，Core 验签并
+//! OIDC client（部署配置 `OIDC_WORKER_CLIENT_ID`）以 client_credentials 取令牌，Core 验签并
 //! 逐条核对 issuer、audience、授权方与有效期。五项任一不成立即拒绝。
 
 use std::sync::Arc;

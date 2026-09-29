@@ -3,8 +3,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { installMockBridge } from "../helpers/bridge";
 
 // The device key is generated and kept by the Rust side (OS keyring); the
-// frontend never imports, exports or backs it up (Kailo DD-79). These specs
-// cover the only three states that stop the app before the Kailo bootstrap.
+// frontend never imports, exports or backs it up (DD-79). These specs
+// cover the only three states that stop the app before the platform bootstrap.
 
 async function commands(page: Page): Promise<string[]> {
   return page.evaluate(() =>
@@ -41,13 +41,13 @@ test("a lost device key offers a new key, then requires a relaunch", async ({
   await page.goto("/");
 
   await expect(page.getByTestId("device-key-lost")).toBeVisible();
-  await expect(page.getByTestId("kailo-bootstrap")).toHaveCount(0);
+  await expect(page.getByTestId("platform-bootstrap")).toHaveCount(0);
   await page.getByTestId("use-new-device-key").click();
 
   await expect(page.getByTestId("relaunch-required")).toBeVisible();
   expect(await commands(page)).toContain("persist_current_identity");
-  // Registration waits for the relaunch: nothing reached Kailo yet.
-  expect(await commands(page)).not.toContain("kailo_register_device");
+  // Registration waits for the relaunch: nothing reached the platform yet.
+  expect(await commands(page)).not.toContain("platform_register_device");
 });
 
 test("a locked keyring only offers a relaunch", async ({ page }) => {
@@ -55,7 +55,7 @@ test("a locked keyring only offers a relaunch", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByTestId("keyring-locked")).toBeVisible();
-  await expect(page.getByTestId("kailo-bootstrap")).toHaveCount(0);
+  await expect(page.getByTestId("platform-bootstrap")).toHaveCount(0);
   await expect(page.getByRole("button")).toHaveCount(1);
   await page.getByTestId("relaunch-app").click();
 

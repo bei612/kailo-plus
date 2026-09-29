@@ -5,55 +5,57 @@ import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:client_kit/shared/platform/reason_text.dart';
 import '../../shared/theme/theme.dart';
 
-String kailoPhaseText(KailoLinkPhase phase, {String? locale}) => kailoText(
-  switch (phase) {
-    KailoLinkPhase.unconfigured => KailoMessageKey.nativeStatusUnconfigured,
-    KailoLinkPhase.signedOut => KailoMessageKey.nativeStatusSignedOut,
-    KailoLinkPhase.signingIn => KailoMessageKey.nativeSignInWaiting,
-    KailoLinkPhase.registering => KailoMessageKey.nativeDeviceRegistering,
-    KailoLinkPhase.awaitingActivation =>
-      KailoMessageKey.nativeStatusAwaitingActivation,
-    KailoLinkPhase.fetchingCommunity => KailoMessageKey.nativeCommunityLoading,
-    KailoLinkPhase.linked => KailoMessageKey.nativeStatusLinked,
-    KailoLinkPhase.failed => KailoMessageKey.nativeStatusFailed,
-    KailoLinkPhase.outcomeUnknown => KailoMessageKey.nativeStatusOutcomeUnknown,
-  },
-  locale: locale,
-);
+String platformPhaseText(
+  PlatformLinkPhase phase, {
+  String? locale,
+}) => platformText(switch (phase) {
+  PlatformLinkPhase.unconfigured => PlatformMessageKey.nativeStatusUnconfigured,
+  PlatformLinkPhase.signedOut => PlatformMessageKey.nativeStatusSignedOut,
+  PlatformLinkPhase.signingIn => PlatformMessageKey.nativeSignInWaiting,
+  PlatformLinkPhase.registering => PlatformMessageKey.nativeDeviceRegistering,
+  PlatformLinkPhase.awaitingActivation =>
+    PlatformMessageKey.nativeStatusAwaitingActivation,
+  PlatformLinkPhase.fetchingCommunity =>
+    PlatformMessageKey.nativeCommunityLoading,
+  PlatformLinkPhase.linked => PlatformMessageKey.nativeStatusLinked,
+  PlatformLinkPhase.failed => PlatformMessageKey.nativeStatusFailed,
+  PlatformLinkPhase.outcomeUnknown =>
+    PlatformMessageKey.nativeStatusOutcomeUnknown,
+}, locale: locale);
 
 /// 需要让用户看到的结论；没有结论要报时为 null。
-String? kailoOutcomeText(KailoLinkState state, {String? locale}) {
+String? platformOutcomeText(PlatformLinkState state, {String? locale}) {
   switch (state.phase) {
-    case KailoLinkPhase.failed:
+    case PlatformLinkPhase.failed:
       final error = state.error;
       if (error != null) {
-        return kailoText(
-          KailoMessageKey.platformReasonWithCode,
+        return platformText(
+          PlatformMessageKey.platformReasonWithCode,
           locale: locale,
           variables: {
-            'text': kailoReasonText(error.reason, locale: locale),
-            'code': kailoReasonCode(error.reason),
+            'text': platformReasonText(error.reason, locale: locale),
+            'code': platformReasonCode(error.reason),
           },
         );
       }
-      return kailoPhaseText(state.phase, locale: locale);
-    case KailoLinkPhase.outcomeUnknown:
+      return platformPhaseText(state.phase, locale: locale);
+    case PlatformLinkPhase.outcomeUnknown:
       // 原始异常只作诊断证据，不向用户显示，更不把结果不明渲染为失败。
-      return kailoPhaseText(state.phase, locale: locale);
+      return platformPhaseText(state.phase, locale: locale);
     default:
       return null;
   }
 }
 
-class KailoOutcomeBanner extends StatelessWidget {
-  const KailoOutcomeBanner({super.key, required this.text});
+class PlatformOutcomeBanner extends StatelessWidget {
+  const PlatformOutcomeBanner({super.key, required this.text});
 
   final String text;
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      key: const ValueKey('kailo-outcome'),
+      key: const ValueKey('platform-outcome'),
       decoration: BoxDecoration(
         color: context.colors.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(Radii.md),

@@ -8,12 +8,17 @@ import (
 	"go.temporal.io/sdk/worker"
 )
 
+// legacyBaselineKind 是 ADR-17 之前基线 Workflow 注册的类型名。下面这份 history 录于改名之前，
+// 类型名写在 history 里，重放时只能按原名注册；它只在重放里出现，Worker 不再以它注册。
+// 以 workflows.BaselineKind 新录制的基线 history 入库时，连同这份旧夹具与本常量一起删除（ADR-17）。
+const legacyBaselineKind = "KAILO_BASELINE"
+
 // TestBaselineReplay 对应 00-实施总纲.md Stage 0 退出条件「空 Workflow history 可 replay」。
 // history 为最小完整事件序列，随代码入库；Workflow 行为变化必须先让本测试通过。
 func TestBaselineReplay(t *testing.T) {
 	r := worker.NewWorkflowReplayer()
 	r.RegisterWorkflowWithOptions(workflows.Baseline,
-		workflowRegisterOptions(workflows.BaselineKind))
+		workflowRegisterOptions(legacyBaselineKind))
 	if err := r.ReplayWorkflowHistoryFromJSONFile(nil, "testdata/baseline_history.json"); err != nil {
 		t.Fatalf("replay 失败: %v", err)
 	}
@@ -75,12 +80,18 @@ func TestComponentTaskReplay(t *testing.T) {
 		// SecretRef 归位（DD-85）：COPIED → SWITCHED → RETIRED 经真实 Tenant
 		// admin 入口准入后的完整终态
 		"testdata/component_task_secret_ref_rehome_history.json",
+		// ADR-17 改名之后录制：platform: 前缀与新 Search Attribute 下的真实执行
+		"testdata/component_task_platform_tenant_suspend_history.json",
+		"testdata/component_task_platform_tenant_restore_history.json",
+		"testdata/component_task_platform_workspace_suspend_history.json",
+		"testdata/component_task_platform_workspace_restore_history.json",
+		"testdata/component_task_platform_projection_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.ComponentTask,
 			workflowRegisterOptions(workflows.ComponentTaskKind))
 		if err := r.ReplayWorkflowHistoryFromJSONFile(nil, f); err != nil {
-			t.Fatalf("%s replay 失败: %v", f, err)
+			t.Errorf("%s replay 失败: %v", f, err)
 		}
 	}
 }
@@ -115,12 +126,14 @@ func TestApprovalReplay(t *testing.T) {
 		"testdata/approval_can_3_consumed_history.json",
 		// 当前 Worker 的真实 Approval 终态，覆盖当前命令序列的同版本重放。
 		"testdata/approval_20260926_history.json",
+		// ADR-17 改名之后录制
+		"testdata/approval_platform_history.json",
 	} {
 		r := worker.NewWorkflowReplayer()
 		r.RegisterWorkflowWithOptions(workflows.Approval,
 			workflowRegisterOptions(workflows.ApprovalKind))
 		if err := r.ReplayWorkflowHistoryFromJSONFile(nil, f); err != nil {
-			t.Fatalf("%s replay 失败: %v", f, err)
+			t.Errorf("%s replay 失败: %v", f, err)
 		}
 	}
 }

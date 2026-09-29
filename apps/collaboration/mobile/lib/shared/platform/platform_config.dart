@@ -1,4 +1,4 @@
-/// 部署事实：原生入口地址、IdP issuer 与原生端 client id（Kailo `DD-78`）。
+/// 部署事实：原生入口地址、IdP issuer 与原生端 client id（`DD-78`）。
 ///
 /// 它们因部署而异，不编进产物：首次启动由用户填写（或由管理员告知后填写），保存在
 /// 本机偏好里。缺任一项即视为未配置，不回退到任何默认地址——猜一个地址就是把登录
@@ -11,10 +11,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../theme/theme_provider.dart';
 
-const _prefsKey = 'kailo.config.v1';
+const _prefsKey = 'platform.config.v1';
 
 /// 不带展示文案的部署配置校验结论。界面从共享文案目录翻译它。
-enum KailoConfigIssue {
+enum PlatformConfigIssue {
   nativeInvalidUrl,
   issuerInvalidUrl,
   nativeInvalidScheme,
@@ -26,14 +26,14 @@ enum KailoConfigIssue {
   clientIdRequired,
 }
 
-class KailoConfig {
-  const KailoConfig({
+class PlatformConfig {
+  const PlatformConfig({
     required this.nativeApiUrl,
     required this.oidcIssuer,
     required this.oidcClientId,
   });
 
-  /// 网关原生入口的根地址，例如 `https://kailo.example.com:8091`
+  /// 网关原生入口的根地址，例如 `https://platform.example.com:8091`
   final String nativeApiUrl;
 
   /// IdP 的 issuer；discovery 文档取自 `{issuer}/.well-known/openid-configuration`
@@ -43,31 +43,33 @@ class KailoConfig {
   final String oidcClientId;
 
   /// 配置无效时返回原因，有效时返回 null。
-  KailoConfigIssue? validate() {
+  PlatformConfigIssue? validate() {
     for (final (native, value) in [(true, nativeApiUrl), (false, oidcIssuer)]) {
       final uri = Uri.tryParse(value.trim());
       if (uri == null || !uri.hasAuthority || uri.host.isEmpty) {
         return native
-            ? KailoConfigIssue.nativeInvalidUrl
-            : KailoConfigIssue.issuerInvalidUrl;
+            ? PlatformConfigIssue.nativeInvalidUrl
+            : PlatformConfigIssue.issuerInvalidUrl;
       }
       if (uri.scheme != 'https' && uri.scheme != 'http') {
         return native
-            ? KailoConfigIssue.nativeInvalidScheme
-            : KailoConfigIssue.issuerInvalidScheme;
+            ? PlatformConfigIssue.nativeInvalidScheme
+            : PlatformConfigIssue.issuerInvalidScheme;
       }
       if (uri.hasQuery || uri.hasFragment) {
         return native
-            ? KailoConfigIssue.nativeQueryOrFragment
-            : KailoConfigIssue.issuerQueryOrFragment;
+            ? PlatformConfigIssue.nativeQueryOrFragment
+            : PlatformConfigIssue.issuerQueryOrFragment;
       }
       if (uri.userInfo.isNotEmpty) {
         return native
-            ? KailoConfigIssue.nativeUserInfo
-            : KailoConfigIssue.issuerUserInfo;
+            ? PlatformConfigIssue.nativeUserInfo
+            : PlatformConfigIssue.issuerUserInfo;
       }
     }
-    if (oidcClientId.trim().isEmpty) return KailoConfigIssue.clientIdRequired;
+    if (oidcClientId.trim().isEmpty) {
+      return PlatformConfigIssue.clientIdRequired;
+    }
     return null;
   }
 
@@ -89,7 +91,7 @@ class KailoConfig {
     'oidcClientId': oidcClientId.trim(),
   };
 
-  static KailoConfig? fromJson(Object? json) {
+  static PlatformConfig? fromJson(Object? json) {
     if (json is! Map<String, dynamic>) return null;
     final native = json['nativeApiUrl'];
     final issuer = json['oidcIssuer'];
@@ -97,7 +99,7 @@ class KailoConfig {
     if (native is! String || issuer is! String || client is! String) {
       return null;
     }
-    final config = KailoConfig(
+    final config = PlatformConfig(
       nativeApiUrl: native,
       oidcIssuer: issuer,
       oidcClientId: client,
@@ -107,7 +109,7 @@ class KailoConfig {
 
   @override
   bool operator ==(Object other) =>
-      other is KailoConfig &&
+      other is PlatformConfig &&
       other.nativeApiUrl == nativeApiUrl &&
       other.oidcIssuer == oidcIssuer &&
       other.oidcClientId == oidcClientId;
@@ -116,24 +118,24 @@ class KailoConfig {
   int get hashCode => Object.hash(nativeApiUrl, oidcIssuer, oidcClientId);
 }
 
-/// 本机保存的 Kailo 部署配置；未配置或保存的内容无效时为 null。
-class KailoConfigNotifier extends Notifier<KailoConfig?> {
+/// 本机保存的平台部署配置；未配置或保存的内容无效时为 null。
+class PlatformConfigNotifier extends Notifier<PlatformConfig?> {
   @override
-  KailoConfig? build() {
+  PlatformConfig? build() {
     final raw = ref.read(savedPrefsProvider).getString(_prefsKey);
     if (raw == null) return null;
     try {
-      return KailoConfig.fromJson(jsonDecode(raw));
+      return PlatformConfig.fromJson(jsonDecode(raw));
     } on FormatException {
       return null;
     }
   }
 
   /// 保存一份新配置。无效时抛出 [ArgumentError]，不写入。
-  Future<void> save(KailoConfig config) async {
+  Future<void> save(PlatformConfig config) async {
     final problem = config.validate();
     if (problem != null) throw ArgumentError(problem.name);
-    final normalized = KailoConfig.fromJson(config.toJson())!;
+    final normalized = PlatformConfig.fromJson(config.toJson())!;
     await ref
         .read(savedPrefsProvider)
         .setString(_prefsKey, jsonEncode(normalized.toJson()));
@@ -141,6 +143,7 @@ class KailoConfigNotifier extends Notifier<KailoConfig?> {
   }
 }
 
-final kailoConfigProvider = NotifierProvider<KailoConfigNotifier, KailoConfig?>(
-  KailoConfigNotifier.new,
-);
+final platformConfigProvider =
+    NotifierProvider<PlatformConfigNotifier, PlatformConfig?>(
+      PlatformConfigNotifier.new,
+    );

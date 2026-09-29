@@ -19,8 +19,8 @@ import 'platform_async_view.dart';
 
 /// 本人登记的原生设备，可撤销（`DD-77`、`DD-79`）。撤销只移出那一把公钥：
 /// 此人的其他设备与 Web 不受影响；Relay 随后拒绝那台设备。
-class KailoDevicesPage extends ConsumerWidget {
-  const KailoDevicesPage({super.key});
+class PlatformDevicesPage extends ConsumerWidget {
+  const PlatformDevicesPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -29,30 +29,33 @@ class KailoDevicesPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          kailoText(KailoMessageKey.platformDevicesMyTitle, locale: locale),
+          platformText(
+            PlatformMessageKey.platformDevicesMyTitle,
+            locale: locale,
+          ),
         ),
       ),
-      body: KailoAsyncView(
-        value: ref.watch(kailoDevicesProvider),
-        onRetry: () => ref.invalidate(kailoDevicesProvider),
+      body: PlatformAsyncView(
+        value: ref.watch(platformDevicesProvider),
+        onRetry: () => ref.invalidate(platformDevicesProvider),
         builder: (context, devices) => ListView(
           children: [
             AppListCard(
-              label: kailoText(
-                KailoMessageKey.platformDevicesRegistered,
+              label: platformText(
+                PlatformMessageKey.platformDevicesRegistered,
                 locale: locale,
               ),
               children: [
                 for (final device in devices)
                   AppListRow(
-                    key: ValueKey('kailo-device-${device.pubkey}'),
+                    key: ValueKey('platform-device-${device.pubkey}'),
                     title: device.pubkey.toLowerCase() == thisDevice
-                        ? '${shortPubkey(device.pubkey)} (${kailoText(KailoMessageKey.platformDevicesThisDevice, locale: locale)})'
+                        ? '${shortPubkey(device.pubkey)} (${platformText(PlatformMessageKey.platformDevicesThisDevice, locale: locale)})'
                         : shortPubkey(device.pubkey),
                     subtitle: _deviceSubtitle(device, locale),
                     trailing: device.state == BuzzIdentityState.ACTIVE
                         ? TextButton(
-                            key: ValueKey('kailo-revoke-${device.pubkey}'),
+                            key: ValueKey('platform-revoke-${device.pubkey}'),
                             onPressed: () => unawaited(
                               _revoke(
                                 context,
@@ -63,8 +66,8 @@ class KailoDevicesPage extends ConsumerWidget {
                               ),
                             ),
                             child: Text(
-                              kailoText(
-                                KailoMessageKey.platformDevicesRevoke,
+                              platformText(
+                                PlatformMessageKey.platformDevicesRevoke,
                                 locale: locale,
                               ),
                             ),
@@ -81,13 +84,13 @@ class KailoDevicesPage extends ConsumerWidget {
 }
 
 String _deviceSubtitle(ClientKeyView device, String locale) {
-  final state = kailoBuzzIdentityStateText(device.state, locale: locale);
-  return kailoText(
-    KailoMessageKey.platformDevicesRegisteredAt,
+  final state = platformBuzzIdentityStateText(device.state, locale: locale);
+  return platformText(
+    PlatformMessageKey.platformDevicesRegisteredAt,
     locale: locale,
     variables: {
       'state': state,
-      'time': kailoAbsoluteTime(device.createdAt, locale: locale),
+      'time': platformAbsoluteTime(device.createdAt, locale: locale),
     },
   );
 }
@@ -103,13 +106,16 @@ Future<void> _revoke(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(
-        kailoText(KailoMessageKey.platformDevicesRevokeTitle, locale: locale),
+        platformText(
+          PlatformMessageKey.platformDevicesRevokeTitle,
+          locale: locale,
+        ),
       ),
       content: Text(
-        kailoText(
+        platformText(
           isThisDevice
-              ? KailoMessageKey.platformDevicesRevokeThisConfirm
-              : KailoMessageKey.platformDevicesRevokeOtherConfirm,
+              ? PlatformMessageKey.platformDevicesRevokeThisConfirm
+              : PlatformMessageKey.platformDevicesRevokeOtherConfirm,
           locale: locale,
         ),
       ),
@@ -117,26 +123,29 @@ Future<void> _revoke(
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
           child: Text(
-            kailoText(KailoMessageKey.platformCancel, locale: locale),
+            platformText(PlatformMessageKey.platformCancel, locale: locale),
           ),
         ),
         FilledButton(
           onPressed: () => Navigator.of(ctx).pop(true),
           child: Text(
-            kailoText(KailoMessageKey.platformDevicesRevoke, locale: locale),
+            platformText(
+              PlatformMessageKey.platformDevicesRevoke,
+              locale: locale,
+            ),
           ),
         ),
       ],
     ),
   );
   if (confirmed != true) return;
-  final config = ref.read(kailoConfigProvider);
+  final config = ref.read(platformConfigProvider);
   if (config == null) return;
 
   String message;
   try {
     final response = await revokeDeviceKey(
-      ref.read(kailoSessionProvider),
+      ref.read(nativeSessionProvider),
       config,
       pubkey,
     );
@@ -144,27 +153,27 @@ Future<void> _revoke(
       final status = ClientKeyStatus.fromJson(
         response.body! as Map<String, dynamic>,
       );
-      message = kailoText(
-        KailoMessageKey.platformDevicesStateAfterRevoke,
+      message = platformText(
+        PlatformMessageKey.platformDevicesStateAfterRevoke,
         locale: locale,
         variables: {
-          'state': kailoBuzzIdentityStateText(status.state, locale: locale),
+          'state': platformBuzzIdentityStateText(status.state, locale: locale),
         },
       );
       if (isThisDevice) {
-        await ref.read(kailoLinkProvider.notifier).forgetRevokedDevice();
+        await ref.read(platformLinkProvider.notifier).forgetRevokedDevice();
         return;
       }
     } else {
-      message = kailoErrorText(KailoApiError(response), locale: locale);
+      message = platformErrorText(PlatformApiError(response), locale: locale);
     }
-  } on KailoNotSignedIn {
-    await ref.read(kailoLinkProvider.notifier).signOut();
+  } on PlatformNotSignedIn {
+    await ref.read(platformLinkProvider.notifier).signOut();
     return;
   } on Object catch (error) {
-    message = kailoErrorText(error, locale: locale);
+    message = platformErrorText(error, locale: locale);
   }
-  ref.invalidate(kailoDevicesProvider);
+  ref.invalidate(platformDevicesProvider);
   if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 }

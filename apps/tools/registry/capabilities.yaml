@@ -167,6 +167,7 @@ capabilities:
   routes:
   - /app/
   - /api/v1/session
+  - /api/v1/platform-info
   - /api/v1/logout
   actions: []
   tools: []

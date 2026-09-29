@@ -35,8 +35,8 @@ void main() {
   }) {
     return ProviderScope(
       overrides: [
-        // The avatar reads the Kailo session; keep it off the network.
-        kailoSessionViewProvider.overrideWith(
+        // The avatar reads the platform session; keep it off the network.
+        platformSessionViewProvider.overrideWith(
           (ref) => Future.value(_sessionView),
         ),
         communityIconProvider.overrideWith((ref, relayUrl) async {

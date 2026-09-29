@@ -2,7 +2,7 @@ import { platformMessages } from "@client-kit/platform/i18n";
 
 export type AppLocale = "en" | "zh-CN";
 
-// 平台页（成员、审计、设备）与共用外壳的文案由 Kailo 共用包定义（ADR-09），并入这里
+// 平台页（成员、审计、设备）与共用外壳的文案由共用平台包定义（ADR-09），并入这里
 // 而不在本表另写一份：同一个 key 只有一个来源。
 const messages = {
   ...platformMessages,

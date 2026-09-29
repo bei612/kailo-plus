@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.11
 ARG BUILDER=base
 
-FROM docker.io/library/node:24.17.0-bookworm AS node
+# Kailo：基础镜像按 digest 固定（ADR-16 第 8 条），原 tag docker.io/library/node:24.17.0-bookworm，2026-09-29 解析取值
+FROM docker.io/library/node:24.17.0-bookworm@sha256:733e1c06ada118ed9f6133a31aa1290be6929664026fb28821500437c61f2c6f AS node
 
 WORKDIR /app
 
@@ -15,7 +16,8 @@ RUN --mount=type=cache,id=agentgateway-ui-pnpm,target=/pnpm/store \
 
 RUN pnpm build
 
-FROM docker.io/library/rust:1.98.0-trixie AS musl-builder
+# Kailo：基础镜像按 digest 固定（ADR-16 第 8 条），原 tag docker.io/library/rust:1.98.0-trixie，2026-09-29 解析取值
+FROM docker.io/library/rust:1.98.0-trixie@sha256:620dbcd124499c59e2406d3741574b5c5838cf9eb9656f0c3a03948f79b02959 AS musl-builder
 
 ARG TARGETARCH
 
@@ -37,7 +39,8 @@ else
 fi
 EOF
 
-FROM docker.io/library/rust:1.98.0-trixie AS base-builder
+# Kailo：基础镜像按 digest 固定（ADR-16 第 8 条），原 tag docker.io/library/rust:1.98.0-trixie，2026-09-29 解析取值
+FROM docker.io/library/rust:1.98.0-trixie@sha256:620dbcd124499c59e2406d3741574b5c5838cf9eb9656f0c3a03948f79b02959 AS base-builder
 
 ARG TARGETARCH
 
@@ -97,7 +100,8 @@ if /out/agentgateway --version | grep -q '"version": "unknown"'; then
 fi
 EOF
 
-FROM cgr.dev/chainguard/glibc-dynamic AS runner
+# Kailo：基础镜像按 digest 固定（ADR-16 第 8 条），原 tag cgr.dev/chainguard/glibc-dynamic（latest），2026-09-29 解析取值
+FROM cgr.dev/chainguard/glibc-dynamic@sha256:05353305142a1ae7c1e27d2cdd09df1650874db3e4c004b3cb2f6dd794e7320f AS runner
 
 ARG TARGETARCH
 

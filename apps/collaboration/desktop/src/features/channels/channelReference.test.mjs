@@ -212,7 +212,7 @@ before(async () => {
   const { ActiveCommunityProvider } = await import(
     "@/features/platform/activeCommunity.tsx"
   );
-  // The Kailo session this test runs under: one community, as resolved by
+  // The platform session this test runs under: one community, as resolved by
   // the bootstrap (`GET /api/v1/native/community`).
   const session = {
     facts: { communityHost: COMMUNITY.id, relayUrl: COMMUNITY.relayUrl },

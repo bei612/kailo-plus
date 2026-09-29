@@ -13,10 +13,10 @@ use futures_util::FutureExt;
 use nostr::Keys;
 use std::panic::AssertUnwindSafe;
 
-/// 集成核验要显式开启（`KAILO_INTEGRATION=1`）：这些变量名与产品侧同名，
+/// 集成核验要显式开启（`PLATFORM_INTEGRATION=1`）：这些变量名与产品侧同名，
 /// source 过 `.env` 的 shell 会让本该跳过的用例拿着网内地址去连。
 fn env() -> Option<(String, String, String)> {
-    if std::env::var("KAILO_INTEGRATION").as_deref() != Ok("1") {
+    if std::env::var("PLATFORM_INTEGRATION").as_deref() != Ok("1") {
         return None;
     }
     let v = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
@@ -38,7 +38,7 @@ async fn provision(
     let op = OperatorIdentity::new(op_key, origin, audience, audience).expect("operator 身份");
     let control = Keys::generate();
     let host = format!(
-        "{prefix}{}.kailo.local",
+        "{prefix}{}.platform.test",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -67,7 +67,7 @@ fn client_custody_identity_is_never_signed_by_core() {
         Custody::Client,
         &keys.secret_key().to_secret_hex(),
         "http://unused.invalid",
-        "unused.kailo.local",
+        "unused.platform.test",
     )
     .unwrap_err();
     assert!(
@@ -182,9 +182,9 @@ where
     }
 }
 
-/// Kailo Community 的治理由 Relay 执行（`SS-BUZ-GOVERNANCE`、`DD-80`）。
+/// 平台 Community 的治理由 Relay 执行（`SS-BUZ-GOVERNANCE`、`DD-80`）。
 ///
-/// 原生端持钥直连 Relay，Core 不在其路径上。上游的 NIP-29 权限比 Kailo 宽
+/// 原生端持钥直连 Relay，Core 不在其路径上。上游的 NIP-29 权限比平台宽
 /// （`SF-BUZ-37`）：成员能自建 Channel、自加入、读写非 private Channel。这里
 /// 以一个**在 roster 上**的成员逐项尝试，每项都必须被拒且理由指向治理规则——
 /// 被别的原因拒掉证明不了治理生效。

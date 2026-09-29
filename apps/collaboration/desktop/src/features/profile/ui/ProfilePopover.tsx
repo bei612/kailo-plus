@@ -16,7 +16,7 @@ interface ProfilePopoverProps {
   // Used when auxiliary triggers (avatar) live alongside the primary
   // PopoverTrigger and toggle the popover via controlled `open`.
   triggerContainerRef?: React.RefObject<HTMLElement | null>;
-  // Kailo sign-out: revokes the platform session, then drops this device's
+  // Platform sign-out: revokes the platform session, then drops this device's
   // tokens (the device key itself stays registered).
   onSignOut: () => void;
 }

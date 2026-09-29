@@ -10,7 +10,7 @@ import "go.temporal.io/sdk/workflow"
 // BaselineKind 是 Stage 0 的基线 Workflow 类型名。
 // 它不承载业务语义，只用于证明 Worker 注册、执行与 history replay 链路成立。
 // 正式 kind 见 .design/06 的封闭 ComponentTaskWorkflow kind 列表。
-const BaselineKind = "KAILO_BASELINE"
+const BaselineKind = "PLATFORM_BASELINE"
 
 // Baseline 立即返回。改变它的行为必须按 06-工程基线规范.md §5 以 GetVersion
 // changeID 门控，并通过录制 history 的 replay 回归。

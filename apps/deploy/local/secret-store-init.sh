@@ -146,7 +146,7 @@ ns auth list -format=json 2>/dev/null | grep -q '"approle/"' \
 # Core 的 platform 策略：只给遗留 Buzz 身份版本的 destroy 路径；调用者仍须
 # 经过 DD-85 的治理冻结、旧 generation 终态查证与版本 metadata 回读。
 # operator、其他 secret 与 Tenant 子 namespace 没有此能力。
-ns_stdin policy write kailo-core - <<POLICY >/dev/null
+ns_stdin policy write platform-core - <<POLICY >/dev/null
 path "${OPENBAO_KV_MOUNT}/data/*" {
   capabilities = ["create", "update", "read"]
 }
@@ -179,19 +179,19 @@ role_opts=(secret_id_num_uses=1 "secret_id_ttl=$OPENBAO_SECRET_ID_TTL"
            "secret_id_bound_cidrs=$app_cidr" "token_bound_cidrs=$app_cidr"
            "token_period=$OPENBAO_TOKEN_PERIOD" token_ttl=0 token_max_ttl=0)
 
-ns write auth/approle/role/kailo-core token_policies=kailo-core "${role_opts[@]}" >/dev/null
+ns write auth/approle/role/platform-core token_policies=platform-core "${role_opts[@]}" >/dev/null
 
 # Tenant namespace 由 Core 的受限 provisioner 凭据建立。这个 token 只具备
 # 子 namespace、KV mount、AppRole/policy 的配置权；它没有任一 Tenant 的
 # KV data/metadata 权限。实际私钥取用必须再换取该 Tenant namespace 内的
-# kailo-core service token（DD-70/72），不能拿此父 token 跨 Tenant 读值。
+# platform-core service token（DD-70/72），不能拿此父 token 跨 Tenant 读值。
 tenant_parent() { printf '%s\n' "$root_token" | run_bao "$OPENBAO_TENANT_PARENT_NAMESPACE" "$@"; }
 tenant_parent_stdin() { { printf '%s\n' "$root_token"; cat; } | run_bao "$OPENBAO_TENANT_PARENT_NAMESPACE" "$@"; }
 root namespace list 2>/dev/null | grep -qx "${OPENBAO_TENANT_PARENT_NAMESPACE}/" \
   || root namespace create "$OPENBAO_TENANT_PARENT_NAMESPACE" >/dev/null
 tenant_parent auth list -format=json 2>/dev/null | grep -q '"approle/"' \
   || tenant_parent auth enable approle >/dev/null
-tenant_parent_stdin policy write kailo-tenant-provisioner - <<POLICY >/dev/null
+tenant_parent_stdin policy write platform-tenant-provisioner - <<POLICY >/dev/null
 path "sys/namespaces/*" {
   capabilities = ["create", "update", "read", "sudo"]
 }
@@ -218,10 +218,10 @@ path "+/auth/approle/role/${OPENBAO_TENANT_CORE_ROLE_NAME}/secret-id" {
 }
 POLICY
 tenant_parent write "auth/approle/role/${OPENBAO_TENANT_PROVISIONER_ROLE_NAME}" \
-  token_policies=kailo-tenant-provisioner "${role_opts[@]}" >/dev/null
+  token_policies=platform-tenant-provisioner "${role_opts[@]}" >/dev/null
 # 宿主集成验证只使用相同窄策略、无 CIDR 限制的一次性 role；不进入部署描述。
 tenant_parent write "auth/approle/role/${OPENBAO_TENANT_VERIFY_ROLE_NAME}" \
-  token_policies=kailo-tenant-provisioner secret_id_num_uses=1 \
+  token_policies=platform-tenant-provisioner secret_id_num_uses=1 \
   "secret_id_ttl=$OPENBAO_SECRET_ID_TTL" "token_period=$OPENBAO_TOKEN_PERIOD" \
   token_ttl=0 token_max_ttl=0 >/dev/null
 
@@ -235,34 +235,20 @@ tenant_parent write "auth/approle/role/${OPENBAO_TENANT_VERIFY_ROLE_NAME}" \
 root auth list -format=json 2>/dev/null | grep -q '"approle/"' \
   || root auth enable approle >/dev/null
 root_stdin() { { printf '%s\n' "$root_token"; cat; } | run_bao "" "$@"; }
-root_stdin policy write kailo-core-audit - <<'POLICY' >/dev/null
+root_stdin policy write platform-core-audit - <<'POLICY' >/dev/null
 path "sys/audit" {
   capabilities = ["read", "sudo"]
 }
 POLICY
-root write auth/approle/role/kailo-core-audit token_policies=kailo-core-audit "${role_opts[@]}" >/dev/null
+root write auth/approle/role/platform-core-audit token_policies=platform-core-audit "${role_opts[@]}" >/dev/null
 
 # ---- 本地核验用的 role（只在本地拓扑）----
 #
 # 集成核验要走 SecretStore 真实的 unwrap→登录→单次自检路径，但它跑在宿主上，
-# 不在 app 网络里，kailo-core 的 CIDR 绑定会（正确地）拒绝它。因此另设一个同
+# 不在 app 网络里，platform-core 的 CIDR 绑定会（正确地）拒绝它。因此另设一个同
 # 策略、同样单次使用与 wrapping 投递、只是不绑 CIDR 的 role，由
 # core/verify/seed-secret-ref.sh 在每次核验前现取。部署描述里没有它。
-ns write auth/approle/role/kailo-verify token_policies=kailo-core secret_id_num_uses=1 \
+ns write auth/approle/role/platform-verify token_policies=platform-core secret_id_num_uses=1 \
   "secret_id_ttl=$OPENBAO_SECRET_ID_TTL" "token_period=$OPENBAO_TOKEN_PERIOD" token_ttl=0 token_max_ttl=0 >/dev/null
-
-# 旧形态的迁移：此前 secret_id 以明文文件投递且不限次。那些 secret_id 在 role
-# 改配置后仍按其创建时的 num_uses 有效，必须显式销毁，文件随之删除。
-for pair in "kailo-core:secrets/openbao_core_secret_id:ns" "kailo-core-audit:secrets/openbao_core_audit_secret_id:root"; do
-  IFS=: read -r role file where <<<"$pair"
-  [ -s "$file" ] || continue
-  if [ "$where" = ns ]; then
-    { printf '%s\n' "$root_token"; cat "$file"; } | run_bao "$OPENBAO_PLATFORM_NAMESPACE" write "auth/approle/role/$role/secret-id/destroy" secret_id=- >/dev/null
-  else
-    { printf '%s\n' "$root_token"; cat "$file"; } | run_bao "" write "auth/approle/role/$role/secret-id/destroy" secret_id=- >/dev/null
-  fi
-  rm -f "$file"
-  printf '  已销毁并删除明文投递的 %s secret_id\n' "$role"
-done
 
 printf 'OpenBao 就绪。启动 Core 用 ./start-core.sh（现取 wrapped secret_id）。root token 在 secrets/openbao_init.json，不要外传。\n'

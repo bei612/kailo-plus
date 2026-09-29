@@ -66,7 +66,7 @@ test("message action rail copies the same canonical thread link as More", async 
     .evaluateAll((buttons) =>
       buttons.map((button) => button.getAttribute("aria-label")),
     );
-  // Kailo 一期原生端只发 kind 9：反应（及其分隔线）已随之移除，动作栏只剩
+  // 一期原生端只发 kind 9：反应（及其分隔线）已随之移除，动作栏只剩
   // 回复、复制链接与更多。
   expect(orderedActionNames).toEqual(["Reply", "Copy link", "More actions"]);
 

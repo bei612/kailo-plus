@@ -55,7 +55,7 @@ use crate::temporal::{ObservedState, TemporalClient, TemporalError, UpdateOutcom
 /// Worker 注册的审批 Workflow 类型名，两侧逐字相同。
 pub const APPROVAL_WORKFLOW_TYPE: &str = "ApprovalWorkflow";
 /// 审批 workflow ID 的类型段。它不是 ComponentTaskWorkflow 的 kind，只占
-/// `kailo:<kind>:<tenant>:<entity>:<version>` 的第二段，使 ID 仍可机械校验。
+/// `platform:<kind>:<tenant>:<entity>:<version>` 的第二段，使 ID 仍可机械校验。
 const APPROVAL_ID_SEGMENT: &str = "APPROVAL";
 
 pub struct GovernanceConfig {

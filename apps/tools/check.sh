@@ -394,6 +394,21 @@ empty = [f for f in glob.glob("dist/*") if os.path.getsize(f) == 0]
 bad += [f"{f}: 0 字节产物" for f in empty]
 artifacts = glob.glob("dist/*.spdx.json") + glob.glob("dist/*.provenance.json")
 names = {os.path.basename(f) for f in artifacts}
+
+def release_form(provenance):
+    """(镜像名前缀, buildType)：取自 provenance 所记源码 commit 上的 tools/release.sh。"""
+    try:
+        with open(provenance, encoding="utf-8") as source:
+            deps = json.load(source)["predicate"]["buildDefinition"]["resolvedDependencies"]
+        commit = next(x["digest"]["gitCommit"] for x in deps if x.get("digest", {}).get("gitCommit"))
+        script = subprocess.run(["git", "show", f"{commit}:apps/tools/release.sh"], cwd="..",
+                                capture_output=True, text=True, check=True).stdout
+    except (OSError, KeyError, TypeError, ValueError, StopIteration, subprocess.CalledProcessError):
+        return None
+    image = re.search(r'^\s*tag="([a-z0-9-]+)/\$unit:\$COMMIT"', script, re.M)
+    build_type = re.search(r'"buildType": "([^"]+)"', script)
+    return (image.group(1), build_type.group(1)) if image and build_type else None
+
 for name in sorted(names):
     m = re.fullmatch(r"(core|worker)\.([0-9a-f]{64})\.(spdx|provenance)\.json", name)
     if not m:
@@ -408,16 +423,23 @@ for name in sorted(names):
     try:
         with open(f"dist/{name}", encoding="utf-8") as source:
             document = json.load(source)
+        # 镜像名与 buildType 以生成该产物的那一版 release.sh 为准（ADR-17 改过一次名）：
+        # 旧产物如实记录旧名，新产物必须是新名，都不靠兼容分支放行。
+        form = release_form(f"dist/{unit}.{digest}.provenance.json")
+        if form is None:
+            bad.append(f"{name}: 取不到生成它的 release.sh，构建形态无从核对")
+            continue
+        image, build_type = form
         if kind == "spdx":
-            if document.get("name") != f"kailo/{unit}" or document.get("spdxVersion") != "SPDX-2.3":
+            if document.get("name") != f"{image}/{unit}" or document.get("spdxVersion") != "SPDX-2.3":
                 bad.append(f"{name}: SBOM 单元或 SPDX 版本不匹配")
             continue
-        if document.get("subject") != [{"name": f"kailo/{unit}", "digest": {"sha256": digest}}]:
+        if document.get("subject") != [{"name": f"{image}/{unit}", "digest": {"sha256": digest}}]:
             bad.append(f"{name}: provenance subject 与文件 digest 不匹配")
         definition = document["predicate"]["buildDefinition"]
         if (document.get("_type") != "https://in-toto.io/Statement/v1"
                 or document.get("predicateType") != "https://slsa.dev/provenance/v1"
-                or definition.get("buildType") != "https://kailo.local/docker-build/v1"
+                or definition.get("buildType") != build_type
                 or definition.get("externalParameters") != {"dockerfile": f"{unit}/Dockerfile", "context": "apps/"}):
             bad.append(f"{name}: provenance 构建形态不匹配")
         dependencies = definition["resolvedDependencies"]
@@ -523,12 +545,12 @@ prechecks = list(re.finditer(r"^\./bootstrap\.sh --validate-config$", initialize
 destructive = list(re.finditer(r"^\s*(?:compose down --volumes|sudo -n rm -rf)\b", initializer, re.M))
 if len(prechecks) != 1 or not destructive or any(item.start() < prechecks[0].start() for item in destructive):
     raise SystemExit("FAIL init-local 必须在删除前调用同一配置预检")
-sync_calls = list(re.finditer(r"^\./bootstrap\.sh --sync-browser-client$", initializer, re.M))
+sync_calls = list(re.finditer(r"^\./bootstrap\.sh --sync-client-redirects$", initializer, re.M))
 idp_ready = re.search(r"^compose up -d --wait keycloak temporal spicedb buzz-relay$", initializer, re.M)
 core_start = re.search(r"^\./start-core\.sh$", initializer, re.M)
 if (len(sync_calls) != 1 or not idp_ready or not core_start
         or not idp_ready.end() < sync_calls[0].start() < core_start.start()):
-    raise SystemExit("FAIL 浏览器回调同步必须在 IdP 就绪后、Core 启动前执行")
+    raise SystemExit("FAIL 客户端回调同步必须在 IdP 就绪后、Core 启动前执行")
 ensure_calls = list(re.finditer(r"^\./bootstrap\.sh --ensure-platform-admin$", initializer, re.M))
 platform_subject = re.search(r'^platform_subject=\$\(\.\./\.\./core/verify/idp-subject\.sh "\$PLATFORM_ADMIN_USER"\)', initializer, re.M)
 tenant_boot = re.search(r'--slug "\$VERIFY_TENANT_SLUG"', initializer)
@@ -548,7 +570,7 @@ fixture_env = {
     "AGENTGATEWAY_DB_USER": "gateway", "AGENTGATEWAY_DB_NAME": "gateway",
     "VERIFY_USER": "walker", "BOOTSTRAP_USER": "founder", "PLATFORM_ADMIN_USER": "operator",
 }
-with tempfile.TemporaryDirectory(prefix="kailo-config-check-") as directory:
+with tempfile.TemporaryDirectory(prefix="platform-config-check-") as directory:
     root = pathlib.Path(directory)
     bootstrap_file = root / "bootstrap.sh"
     bootstrap_file.write_text(bootstrap, encoding="utf-8")
@@ -609,6 +631,7 @@ bad = []
 # 去掉必填提示文案后比较表达式，提示文字变化不影响语义。
 projections = {
     ("buzz-web", "PLATFORM_DISPLAY_NAME"): "${PLATFORM_DISPLAY_NAME}",
+    ("core-bff", "PLATFORM_DISPLAY_NAME"): "${PLATFORM_DISPLAY_NAME}",
     ("agentgateway", "OIDC_REDIRECT_URI"): "${PUBLIC_ORIGIN}/oauth/callback",
     ("core-bff", "TENANT_INVITATION_LINK_BASE"): "${PUBLIC_ORIGIN}/app/invite",
     ("agentgateway", "OIDC_JWKS_URI"): "${OIDC_ISSUER}/protocol/openid-connect/certs",
@@ -706,24 +729,34 @@ for net in sorted(n for n in declared if n.endswith("-data")):
         bad.append(f"{net}: {', '.join(bridging)} 都同时接入其他网络，数据存储对共享网络可达")
 # 同一条规则延伸到本仓库自建镜像的基础镜像：compose 按 digest 引用了产物，
 # 产物的 FROM 却跟着可变 tag 走，两次构建就不是同一份输入（ADR-06）。
-# 二开项目里只查本仓库维护的构建文件（fork/packaging/ 下、被来源记录的 build_dockerfile
-# 使用的）：上游自带的 Dockerfile（含 Relay、网关直接沿用的那份，以及示例、基准测试、CI）是
-# 上游原样，与迁入前一样不在这条规则里。
+# 二开项目里查每个产物在来源记录中登记的 build_dockerfile，不以所在目录区分（ADR-16 第 8 条）：
+# 产物直接沿用的上游构建文件（Relay、网关）与 fork/packaging/ 下的一样由本仓库维护。
+# 二开树里其余 Dockerfile（上游示例、基准测试、CI）不是产物的构建文件，不在这条规则里。
 forks, fork_built = [], []
 for mf in sorted(glob.glob("*/fork/upstream.yaml")):
     forks.append(mf.split("/")[0] + "/")
     for a in (yaml.safe_load(open(mf, encoding="utf-8")) or {}).get("artifacts") or []:
-        if "/fork/packaging/" in str(a.get("build_dockerfile") or ""):
+        if a.get("build_dockerfile"):
             fork_built.append(a["build_dockerfile"])
 for df in sorted(set(glob.glob("**/Dockerfile", recursive=True)) | set(fork_built)):
     if "/node_modules/" in df or "/target/" in df or df.startswith("target/") \
             or (any(df.startswith(t) for t in forks) and df not in fork_built):
         continue
+    if not os.path.isfile(df):
+        bad.append(f"{df}: 来源记录登记的 build_dockerfile 不存在")
+        continue
+    stages = set()
     for n, line in enumerate(open(df, encoding="utf-8"), 1):
-        m = re.match(r"\s*FROM\s+(\S+)", line, re.I)
+        m = re.match(r"\s*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?", line, re.I)
+        if not m:
+            continue
+        # 引用本文件前面阶段名的 FROM 不拉取镜像，其基础镜像已在那个阶段上检查
         # scratch 是保留的空基础镜像，不从任何 registry 拉取，没有可固定的 digest
-        if m and "@sha256:" not in m.group(1) and not m.group(1).startswith("$") and m.group(1) != "scratch":
+        if "@sha256:" not in m.group(1) and not m.group(1).startswith("$") \
+                and m.group(1) != "scratch" and m.group(1).lower() not in stages:
             bad.append(f"{df}:{n}: 基础镜像未按 digest 引用（{m.group(1)}）")
+        if m.group(2):
+            stages.add(m.group(2).lower())
 # OpenBao 的部署前置不变式（07 §1）中可由部署描述校验的条目
 bao_cfg = "deploy/local/secret-store-config.hcl"
 bao_init = "deploy/local/secret-store-init.sh"
@@ -786,8 +819,8 @@ for svc, spec in (d.get("services") or {}).items():
         bad.append(f"{svc}: 未设定 BUZZ_MEMBER_EVENT_KINDS，Relay 以上游行为运行，"
                    "含 Buzz 自带 workflow（SF-BUZ-37、SF-BUZ-45、DD-106）")
 
-# 该开关只存在于 Kailo 的构建里，上游镜像会静默忽略它。跑 Buzz 二进制的
-# 服务（Relay 本身，以及以 buzz-admin 建 schema 的一次性服务）都必须用 Kailo
+# 该开关只存在于本仓库的构建里，上游镜像会静默忽略它。跑 Buzz 二进制的
+# 服务（Relay 本身，以及以 buzz-admin 建 schema 的一次性服务）都必须用本仓库
 # 构建：同一套二进制混用两个来源，schema 与服务就可能不是同一份代码。
 for svc, spec in (d.get("services") or {}).items():
     env = spec.get("environment") or {}
@@ -805,10 +838,14 @@ for svc, spec in (d.get("services") or {}).items():
 agw_cfg = "deploy/local/model-gateway-config.yaml"
 if os.path.exists(agw_cfg):
     agw = yaml.safe_load(open(agw_cfg, encoding="utf-8"))
-    PROJECTED = {"x-kailo-oidc-issuer", "x-kailo-oidc-subject"}
+    PROJECTED = {"x-platform-oidc-issuer", "x-platform-oidc-subject"}
     # 原生入口标识（DD-78）：只许原生 listener 投影，且值固定；浏览器 listener
     # 必须移除它，否则浏览器自报就能打开只对原生端开放的入口
-    SURFACE = "x-kailo-client-surface"
+    SURFACE = "x-platform-client-surface"
+    # ADR-17：此前使用的旧前缀身份 header 在每个入口都必须移除，永久保留——外来的
+    # 旧名 header 一旦被放行，任何仍认旧名的读者都会把它当成网关投影
+    LEGACY = {"x-kailo-oidc-issuer", "x-kailo-oidc-subject", "x-kailo-client-surface",
+              "x-kailo-human-identity", "x-kailo-tenant", "x-kailo-workspace", "x-kailo-principal"}
     FORBIDDEN_SOURCES = ("jwt.rawToken", "jwt.raw_token", "jwt.roles", "jwt.groups",
                          "jwt.realm_access", "jwt.resource_access")
     # DD-73：AgentGateway 故意不把它当 hop-by-hop 清理（SF-AGW-20），
@@ -874,6 +911,8 @@ if os.path.exists(agw_cfg):
                     bad.append(f"{where}: 投影了 {h}，该入口只允许 {sorted(allowed_sets)}")
                 for h in PROJECTED - sets:
                     bad.append(f"{where}: 缺少对 {h} 的 set，BFF 会因缺失而全部拒绝")
+                for h in sorted(LEGACY - removes):
+                    bad.append(f"{where}: 未移除旧前缀身份 header {h}（ADR-17，清理规则永久保留）")
                 for h in MUST_REMOVE - removes:
                     bad.append(f"{where}: 未删除 {h}，会把调用方的代理凭据转给 upstream（DD-73、SF-AGW-20）")
                 if jwt:

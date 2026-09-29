@@ -5,7 +5,7 @@
 # 视同边界变更，按 AGENTS.md 评审。本文件只含 Stage 0 已接入的服务；
 # 上游组件随各自 Stage 加入，届时一并声明其 network 归属。
 
-name: kailo-local
+name: platform-local
 
 networks:
   edge:       # 仅公开入口可达
@@ -229,7 +229,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:e4c34134935bc6259d4fdc07182ff9ac9b637a2106d41e188b26fd7be5a385b8
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:a6405922db615e2ada34048a9ea3dbe65037fab3f8a4b22b19e39f4ec33ae977
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -246,9 +246,9 @@ services:
   #   attestation 以 ViaOwner 通过。原生端本机持钥直连 Relay，Core 不在其
   #   发布路径上，roster 校验是协作数据平面唯一的准入执行点（SF-BUZ-26、DD-75）。
   # 镜像是带 SS-BUZ-GOVERNANCE 改动的本仓库构建（collaboration/），不是上游
-  # 发布镜像：上游的 NIP-29 权限比 Kailo 宽且无开关可收紧（SF-BUZ-37）。
+  # 发布镜像：上游的 NIP-29 权限比平台宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:e4c34134935bc6259d4fdc07182ff9ac9b637a2106d41e188b26fd7be5a385b8
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:a6405922db615e2ada34048a9ea3dbe65037fab3f8a4b22b19e39f4ec33ae977
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
@@ -327,6 +327,8 @@ services:
       BFF_MEDIA_MAX_BYTES: ${BFF_MEDIA_MAX_BYTES:?必须显式提供，禁止硬编码}
       # 设备持钥证明允许的时钟偏差：截获的证明最多还能用这么久（DD-79）
       BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS: ${BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
+      # 部署显示名（DD-111）：BFF 的公开平台信息与 Web 静态入口投影自同一个值；缺失即拒绝启动
+      PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
       # 每人可同时登记的原生设备上界（DD-77）
       BFF_CLIENT_KEYS_PER_PRINCIPAL: ${BFF_CLIENT_KEYS_PER_PRINCIPAL:?必须显式提供，禁止硬编码}
       # 设备投影仍在收敛时，原生端按服务端给出的间隔重查，不在客户端写死
@@ -482,7 +484,7 @@ services:
       - ./secrets/worker.env
 
   # Web 面：三端共用 TypeScript 主体的浏览器那一份（DD-74）。
-  # 镜像由 tools/build-upstream.sh 从 web-client 构建——固定 commit 的源码加 Kailo 改动：
+  # 镜像由 tools/build-upstream.sh 从 web-client 构建——固定 commit 的源码加本仓库改动：
   # 把浏览器直连 Relay 与本地 signer 整体移除（SS-WEB-RELAY），
   # 并换成经 BFF 的传输与平台页面（SS-WEB-01）。
   #
@@ -492,7 +494,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:b9a953fae79ef7ec528fc460560815efc0b9f141f205565e2530480bb70c22b9
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:6fbd6c35a357b738ead8c4a3b91c49fdfce4e0b48fe6f35ffc3d493c9cb5e480
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
@@ -505,7 +507,7 @@ services:
   agentgateway:
     # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:174afd82900f32c8e144b98ca929e7aa0164996f522b371eef9ae14cee0883c7
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:6b8a47a36ab1d090fb9b1924e8e946dafb45b937f02507c36b2bf2e493d746be
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个
@@ -635,9 +637,13 @@ services:
           sleep 2
         done
         [ "$$visible" = yes ] || { echo "namespace $$NAMESPACE 在超时内不可见" >&2; exit 1; }
-        # 固定登记三个 Keyword Search Attribute（.design/06 §2）。逐个判定已存在
+        # 固定登记三个 Keyword Search Attribute（.design/06 §3）。逐个判定已存在
         # 再建：重复创建会报错，而它是幂等的运行前提。
-        for sa in KailoTenantId KailoWorkspaceId KailoWorkflowKind; do
+        # ADR-17 迁移窗口内另登记三个旧名：它们只读不写，让「按 SA 列举新旧两组」在
+        # 新建的 namespace 上同样成立；窗口关闭时从这里删去旧名三项，已有 namespace
+        # 里的旧名注册原样保留、不再写入。
+        for sa in PlatformTenantId PlatformWorkspaceId PlatformWorkflowKind \
+                  KailoTenantId KailoWorkspaceId KailoWorkflowKind; do
           if temporal operator search-attribute list --namespace "$$NAMESPACE" | grep -qw "$$sa"; then
             echo "search attribute $$sa 已存在"
           else

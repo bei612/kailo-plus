@@ -56,13 +56,13 @@ struct Drift {
 pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
     let metrics = Metrics {
         drift: meter
-            .u64_gauge("kailo.roster.drift")
+            .u64_gauge("platform.roster.drift")
             .with_description(
                 "roster 与 Core 已落定成员事实的差：missing 为应在而不在，unexpected 为不应在而在",
             )
             .build(),
         scopes: meter
-            .u64_counter("kailo.roster.reconciled")
+            .u64_counter("platform.roster.reconciled")
             .with_description("逐个 roster 的对账结果")
             .build(),
     };

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/workflow.schema.json",
   "title": "WorkflowRef",
-  "description": "Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取 kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。",
+  "description": "Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取 platform:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>（前缀是协议常量，不随部署显示名变化；ADR-17 迁移窗口内的存量引用仍为旧前缀），使「不分配第二个业务 workflow ID」可被机械校验。",
   "type": "object",
   "additionalProperties": false,
   "required": ["workflowId", "kind", "tenantId", "primaryEntityId", "entityVersion", "createdAt"],

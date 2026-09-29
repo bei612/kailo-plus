@@ -33,7 +33,7 @@ import {
 import { AppSidebar } from "@/features/sidebar/ui/AppSidebar";
 import {
   useActiveCommunity,
-  useKailoSession,
+  useNativeSession,
 } from "@/features/platform/activeCommunity";
 import { requestFocusedThreadClose } from "@/features/channels/focusedThreadCloseRequest";
 import { useChannelMutes } from "@/features/sidebar/lib/useChannelMutes";
@@ -55,7 +55,7 @@ export function AppShell() {
   useTauriWindowDrag();
   useWebviewScrollBoundaryLock();
   const activeCommunity = useActiveCommunity();
-  const kailoSession = useKailoSession();
+  const nativeSession = useNativeSession();
   const [searchFocusRequest, setSearchFocusRequest] = React.useState(0);
   const [scopeSearchFocusRequest, setScopeSearchFocusRequest] =
     React.useState(0);
@@ -438,7 +438,7 @@ export function AppShell() {
                       onSignOut={() => {
                         // 回到首页再退出：下次登录不停留在上一个会话的页面上
                         void goHome({ replace: true }).then(() =>
-                          kailoSession.signOut(),
+                          nativeSession.signOut(),
                         );
                       }}
                       onSelectSettings={handleOpenSettings}

@@ -140,7 +140,7 @@ Widget _buildTestable({
   Future<Map<String, String>> Function()? loadAgentOwners,
   UserCacheNotifier? userCacheNotifier,
   List<ChannelMember> members = const [],
-  List<WorkspaceMemberView>? kailoMembers,
+  List<WorkspaceMemberView>? platformMembers,
   Channel? channel,
   List<Channel>? channels,
   _FakeChannelsNotifier? channelsNotifier,
@@ -189,10 +189,10 @@ Widget _buildTestable({
       channelMembersProvider(_channelId).overrideWith(
         (ref) async => loadMembers != null ? loadMembers() : members,
       ),
-      if (kailoMembers != null)
-        kailoWorkspaceMembersProvider(
+      if (platformMembers != null)
+        platformWorkspaceMembersProvider(
           _channelId,
-        ).overrideWith((ref) async => kailoMembers),
+        ).overrideWith((ref) async => platformMembers),
       if (!watchChannelMembershipUpdates)
         channelBotPubkeysProvider(_channelId).overrideWith(
           (ref) async => loadChannelBotPubkeys?.call() ?? const <String>{},
@@ -3887,8 +3887,8 @@ void main() {
       await tester.pumpWidget(
         _buildTestable(
           messages: [],
-          // 人数取自 Kailo 成员名单，按人计：一人两把公钥仍算一人（DD-77）
-          kailoMembers: List.generate(
+          // 人数取自平台成员名单，按人计：一人两把公钥仍算一人（DD-77）
+          platformMembers: List.generate(
             5,
             (index) => WorkspaceMemberView(
               principalId: '00000000-0000-4000-8000-00000000000$index',
@@ -3991,7 +3991,7 @@ void main() {
       expect(find.byTooltip('View members'), findsNothing);
       expect(find.byTooltip('Channel actions'), findsOneWidget);
 
-      // 点频道名看成员：数据来自 Kailo BFF 的成员视图
+      // 点频道名看成员：数据来自平台 BFF 的成员视图
       await tester.tap(
         find.byKey(const ValueKey('channel-header-settings-trigger')),
       );

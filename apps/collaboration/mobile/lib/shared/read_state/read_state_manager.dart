@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'read_state_format.dart';
 import 'read_state_storage.dart';
 
-/// 已读位置的权威副本。Kailo 里是 Core 的 CollaborationUserState（`DD-40`）：
+/// 已读位置的权威副本。平台里是 Core 的 CollaborationUserState（`DD-40`）：
 /// 三端读写同一份，不经 Relay 的 NIP-78 事件——Relay 也不接受成员发布它们
 /// （`DD-80`）。
 abstract interface class ReadStateRemote {

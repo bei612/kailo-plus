@@ -125,7 +125,7 @@ async fn approval_continues_as_new_without_losing_decisions() {
     .await
     .unwrap();
     let initiator: Uuid = sqlx::query_scalar(
-        "select principal_id from identity.service_principal where audience = 'kailo-deployment-bootstrap'",
+        "select principal_id from identity.service_principal where audience = 'platform-deployment-bootstrap'",
     )
     .fetch_one(&pool)
     .await

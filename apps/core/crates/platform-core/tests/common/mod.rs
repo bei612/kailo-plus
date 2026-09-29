@@ -46,6 +46,7 @@ pub struct Env {
     /// 配置的那个，否则验签通过也会因 issuer 不符被拒。本机走发布端口连接，
     /// 因此必须显式带上网内的 Host——与 Relay 的 Community host 同一形状。
     pub token_host: String,
+    pub worker_client_id: String,
     pub worker_secret: String,
     pub database_url: String,
     pub bao_addr: String,
@@ -74,10 +75,10 @@ pub struct Env {
     pub stream_retry_millis: u64,
 }
 
-/// 集成核验要显式开启（`KAILO_INTEGRATION=1`），不按「某个环境变量碰巧存在」
+/// 集成核验要显式开启（`PLATFORM_INTEGRATION=1`），不按「某个环境变量碰巧存在」
 /// 来判断——那些变量名与产品侧同名，而部署里它们指向网内地址。
 pub fn env() -> Option<Env> {
-    if std::env::var("KAILO_INTEGRATION").as_deref() != Ok("1") {
+    if std::env::var("PLATFORM_INTEGRATION").as_deref() != Ok("1") {
         return None;
     }
     let v = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
@@ -85,6 +86,7 @@ pub fn env() -> Option<Env> {
         service_url: v("CORE_SERVICE_URL")?,
         token_url: v("OIDC_TOKEN_URL")?,
         token_host: v("OIDC_TOKEN_HOST")?,
+        worker_client_id: v("OIDC_WORKER_CLIENT_ID")?,
         worker_secret: v("WORKER_CLIENT_SECRET")?,
         database_url: v("DATABASE_URL")?,
         bao_addr: v("OPENBAO_ADDR")?,
@@ -115,7 +117,7 @@ pub async fn worker_token(http: &reqwest::Client, e: &Env) -> String {
         .header(reqwest::header::HOST, &e.token_host)
         .form(&[
             ("grant_type", "client_credentials"),
-            ("client_id", "kailo-worker"),
+            ("client_id", e.worker_client_id.as_str()),
             ("client_secret", &e.worker_secret),
         ])
         .send()
@@ -132,7 +134,7 @@ pub async fn worker_token(http: &reqwest::Client, e: &Env) -> String {
 
 /// 把 CONTROL 私钥写进 OpenBao 的 KV v2，返回版本号。
 ///
-/// 用与 Core 同策略（`kailo-core`）的核验令牌写：策略给了 `create/update`，这也
+/// 用与 Core 同策略（平台 namespace 的 `platform-core`）的核验令牌写：策略给了 `create/update`，这也
 /// 顺带证明那条策略确实给出这些能力，而不是写在文件里没生效。
 /// 调用方的 Community host 每次新建，因此路径必须不存在；CAS 0 由 OpenBao
 /// 原子证明这一点，不在测试夹具中覆盖既有 secret。
@@ -562,7 +564,7 @@ pub async fn provision_live_workspace_for(
 /// 全套集成核验按本次运行的 UUID 离线收敛 OpenBao 测试 namespace。先登记
 /// 再产生外部副作用，开通中途失败也不会漏掉目标；单独运行的测试不使用该清单。
 pub fn record_tenant_namespace_fixture(tenant: Uuid) -> Result<(), String> {
-    let Some(dir) = std::env::var_os("KAILO_INTEGRATION_NAMESPACE_LEDGER") else {
+    let Some(dir) = std::env::var_os("PLATFORM_INTEGRATION_NAMESPACE_LEDGER") else {
         return Ok(());
     };
     let path = std::path::PathBuf::from(dir).join(tenant.to_string());
@@ -989,7 +991,7 @@ pub struct NativeEnv {
 }
 
 pub fn native_env() -> Option<NativeEnv> {
-    if std::env::var("KAILO_INTEGRATION").as_deref() != Ok("1") {
+    if std::env::var("PLATFORM_INTEGRATION").as_deref() != Ok("1") {
         return None;
     }
     let v = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
@@ -1069,7 +1071,7 @@ pub async fn create_native_idp_user(http: &reqwest::Client, n: &mut NativeEnv) -
             "username": n.user.as_str(),
             "enabled": true,
             "emailVerified": true,
-            "email": format!("{}@kailo.local", n.user),
+            "email": format!("{}@platform.test", n.user),
             "firstName": "Native",
             "lastName": "Verifier",
             "credentials": [{"type":"password", "value":password.as_str(), "temporary":false}]
@@ -1259,7 +1261,7 @@ pub async fn read_secret_version(
         .expect("SecretRef 必须属于被核验的 Tenant KV");
 
     // platform/ 核验令牌不得跨 Tenant。由本地夹具的 root 凭据在目标 namespace
-    // 签一枚仅带该 namespace kailo-core policy 的短期令牌；root 值只读入内存。
+    // 签一枚仅带该 namespace Tenant Core policy 的短期令牌；root 值只读入内存。
     let root_file =
         std::env::var("VERIFY_OPENBAO_ROOT_TOKEN_FILE").expect("核验需要 root 凭据文件路径");
     let root_file = std::fs::read_to_string(root_file).expect("读取本地核验凭据文件");
@@ -1367,8 +1369,8 @@ pub mod bff_kit {
     ) -> (reqwest::StatusCode, Value) {
         let mut req = http
             .request(method, format!("{}{path}", e.bff_url))
-            .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-            .header("x-kailo-oidc-subject", subject);
+            .header("x-platform-oidc-issuer", &e.oidc_issuer)
+            .header("x-platform-oidc-subject", subject);
         if let Some(b) = body {
             req = req.json(&b);
         }

@@ -1,4 +1,4 @@
-// Kailo 平台页（SS-WEB-01）：成员、本人审计、本人设备。Web 与 Desktop 渲染的是同
+// 平台页（SS-WEB-01）：成员、本人审计、本人设备。Web 与 Desktop 渲染的是同
 // 一份组件，数据全部经 BFF（传输由宿主经 PlatformProvider 给出）。这里没有 Relay
 // 地址、没有 signer、没有 Nostr filter。
 //

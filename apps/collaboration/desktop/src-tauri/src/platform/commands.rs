@@ -1,4 +1,4 @@
-//! 前端可调用的 Kailo 命令。令牌不出 Rust：前端只拿到 BFF 回应的状态码与正文。
+//! 前端可调用的平台命令。令牌不出 Rust：前端只拿到 BFF 回应的状态码与正文。
 
 use nostr::{EventBuilder, Kind, Tag};
 use reqwest::Method;
@@ -6,52 +6,52 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
-use super::api::{ApiResponse, KailoSession};
-use super::config::{self, KailoConfig};
+use super::api::{ApiResponse, NativeSession};
+use super::config::{self, PlatformConfig};
 use super::oidc;
 use crate::app_state::AppState;
 
-/// 设备登记端点（Kailo `DD-79`）。持钥证明的 `u` 标签必须指向它。
+/// 设备登记端点（`DD-79`）。持钥证明的 `u` 标签必须指向它。
 const REGISTER_PATH: &str = "/api/v1/identity/client-keys";
 
-fn require_config(app: &AppHandle) -> Result<KailoConfig, String> {
-    config::load(app)?.ok_or_else(|| "尚未配置 Kailo 服务".to_owned())
+fn require_config(app: &AppHandle) -> Result<PlatformConfig, String> {
+    config::load(app)?.ok_or_else(|| "尚未配置平台服务".to_owned())
 }
 
 #[tauri::command]
-pub(crate) fn kailo_get_config(app: AppHandle) -> Result<Option<KailoConfig>, String> {
+pub(crate) fn platform_get_config(app: AppHandle) -> Result<Option<PlatformConfig>, String> {
     config::load(&app)
 }
 
 #[tauri::command]
-pub(crate) fn kailo_set_config(app: AppHandle, config: KailoConfig) -> Result<(), String> {
+pub(crate) fn platform_set_config(app: AppHandle, config: PlatformConfig) -> Result<(), String> {
     config::save(&app, &config)
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct KailoStatus {
+pub(crate) struct PlatformStatus {
     configured: bool,
     /// keyring 中有刷新令牌。它是否仍被 IdP 接受，要到下一次调用才知道。
     signed_in: bool,
 }
 
 #[tauri::command]
-pub(crate) fn kailo_status(
+pub(crate) fn platform_status(
     app: AppHandle,
-    session: State<'_, KailoSession>,
-) -> Result<KailoStatus, String> {
-    Ok(KailoStatus {
+    session: State<'_, NativeSession>,
+) -> Result<PlatformStatus, String> {
+    Ok(PlatformStatus {
         configured: config::load(&app)?.is_some(),
         signed_in: session.has_credentials()?,
     })
 }
 
 #[tauri::command]
-pub(crate) async fn kailo_sign_in(
+pub(crate) async fn platform_sign_in(
     app: AppHandle,
     state: State<'_, AppState>,
-    session: State<'_, KailoSession>,
+    session: State<'_, NativeSession>,
 ) -> Result<(), String> {
     let cfg = require_config(&app)?;
     let open = |url: &str| {
@@ -64,7 +64,7 @@ pub(crate) async fn kailo_sign_in(
 }
 
 #[tauri::command]
-pub(crate) fn kailo_cancel_sign_in(session: State<'_, KailoSession>) -> Result<(), String> {
+pub(crate) fn platform_cancel_sign_in(session: State<'_, NativeSession>) -> Result<(), String> {
     if let Some(cancel) = session.pending.0.lock().map_err(|e| e.to_string())?.take() {
         let _ = cancel.send(());
     }
@@ -74,17 +74,17 @@ pub(crate) fn kailo_cancel_sign_in(session: State<'_, KailoSession>) -> Result<(
 /// 注销：先撤销 Core 的 PlatformSession，再丢弃本机令牌。撤销失败不阻止丢弃
 /// 本机令牌——本机不再持有它才是用户要的结果；Core 侧会话按其有效期过期。
 #[tauri::command]
-pub(crate) async fn kailo_sign_out(
+pub(crate) async fn platform_sign_out(
     app: AppHandle,
     state: State<'_, AppState>,
-    session: State<'_, KailoSession>,
+    session: State<'_, NativeSession>,
 ) -> Result<(), String> {
     if let Ok(cfg) = require_config(&app) {
         if let Err(e) = session
             .call(&state.http_client, &cfg, Method::POST, "/api/v1/logout", None)
             .await
         {
-            eprintln!("kailo: logout 未到达 Core：{e}");
+            eprintln!("platform: logout 未到达 Core：{e}");
         }
     }
     session.sign_out().await
@@ -92,10 +92,10 @@ pub(crate) async fn kailo_sign_out(
 
 /// 代发一次管理平面请求。只接受 `/api/v1/` 下的路径与常用方法。
 #[tauri::command]
-pub(crate) async fn kailo_api(
+pub(crate) async fn platform_api(
     app: AppHandle,
     state: State<'_, AppState>,
-    session: State<'_, KailoSession>,
+    session: State<'_, NativeSession>,
     method: String,
     path: String,
     body: Option<serde_json::Value>,
@@ -118,10 +118,10 @@ pub(crate) async fn kailo_api(
 /// 持钥证明绑定当前 PlatformSession：截获的证明不能在别人的会话里重放。设备私钥
 /// 就是本应用在 OS keyring 中的身份密钥，证明在 Rust 侧签名，私钥不出进程。
 #[tauri::command]
-pub(crate) async fn kailo_register_device(
+pub(crate) async fn platform_register_device(
     app: AppHandle,
     state: State<'_, AppState>,
-    session: State<'_, KailoSession>,
+    session: State<'_, NativeSession>,
 ) -> Result<ApiResponse, String> {
     let cfg = require_config(&app)?;
     let keys = state.signing_keys()?;
@@ -130,9 +130,9 @@ pub(crate) async fn kailo_register_device(
 
 /// 登记一把设备公钥：取当前会话、以该私钥签持钥证明、提交。
 pub(crate) async fn register_device(
-    session: &KailoSession,
+    session: &NativeSession,
     http: &reqwest::Client,
-    cfg: &KailoConfig,
+    cfg: &PlatformConfig,
     keys: &nostr::Keys,
 ) -> Result<ApiResponse, String> {
     let current = session

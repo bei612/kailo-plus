@@ -29,8 +29,8 @@ async fn bff(
 ) -> (reqwest::StatusCode, serde_json::Value) {
     let mut req = http
         .request(method, format!("{}{path}", e.bff_url))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", subject);
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", subject);
     if let Some(b) = body {
         // 每次调用是一次新的发送意图：带新的幂等键（发布端点要求它，DD-81）
         req = req
@@ -446,8 +446,8 @@ async fn read_sse(
     use futures_util::StreamExt;
     let mut req = http
         .get(format!("{}{path}", e.bff_url))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", subject);
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", subject);
     if let Some(id) = last_event_id {
         req = req.header("last-event-id", id);
     }
@@ -511,8 +511,8 @@ async fn assert_open_stream_closes_after_membership_revocation(
     use futures_util::StreamExt;
     let response = http
         .get(format!("{}{path}", e.bff_url))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", &fx.subject)
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", &fx.subject)
         .send()
         .await
         .expect("打开待撤权的流");
@@ -640,7 +640,7 @@ async fn run_stream(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
     }
 }
 
-/// 注销（`SS-AGW-OIDC` 的 Kailo 半边）。
+/// 注销（`SS-AGW-OIDC` 的平台半边）。
 ///
 /// 网关的 logout 是短路的，请求根本不到后端（`SF-AGW-21`），因此 Core 只能靠
 /// Browser 先调这里。验两件事：注销撤掉会话且幂等；已建立的流在登记的上界内
@@ -693,8 +693,8 @@ async fn run_logout(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
             "{}/api/v1/workspaces/{}/stream",
             e.bff_url, fx.workspace
         ))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", &fx.subject)
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", &fx.subject)
         .send()
         .await
         .expect("开流");
@@ -784,12 +784,12 @@ async fn media_round_trips_through_bff() {
 
 async fn run_media(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWorkspace) {
     let base = format!("{}/api/v1/workspaces/{}/media", e.bff_url, fx.workspace);
-    let payload = b"kailo media probe".to_vec();
+    let payload = b"platform media probe".to_vec();
 
     let resp = http
         .post(&base)
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", &fx.subject)
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", &fx.subject)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(payload.clone())
         .send()
@@ -803,8 +803,8 @@ async fn run_media(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::
     // 取回的必须逐字节等于上传的：Core 只是代签与转发，不该改动内容
     let resp = http
         .get(format!("{base}/{sha256}"))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", &fx.subject)
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", &fx.subject)
         .send()
         .await
         .expect("取回");
@@ -818,8 +818,8 @@ async fn run_media(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::
     // sha256 形状不对：不把路径段交给调用方拼
     let resp = http
         .get(format!("{base}/../../etc/passwd"))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", &fx.subject)
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", &fx.subject)
         .send()
         .await
         .expect("非法路径");
@@ -839,8 +839,8 @@ async fn run_media(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::
         .expect("置 REVOKING");
     let resp = http
         .post(&base)
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", &fx.subject)
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", &fx.subject)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(payload)
         .send()
@@ -863,8 +863,8 @@ async fn run_media_message(http: &reqwest::Client, e: &Env, fx: &common::LiveWor
     let png = hex::decode(PNG_1X1).expect("PNG 常量");
     let resp = http
         .post(format!("{base}/media"))
-        .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-        .header("x-kailo-oidc-subject", &fx.subject)
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", &fx.subject)
         .header(reqwest::header::CONTENT_TYPE, "image/png")
         .body(png)
         .send()
@@ -878,8 +878,8 @@ async fn run_media_message(http: &reqwest::Client, e: &Env, fx: &common::LiveWor
         let req = http
             .post(format!("{base}/messages"))
             .header("idempotency-key", Uuid::new_v4().to_string())
-            .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-            .header("x-kailo-oidc-subject", &fx.subject)
+            .header("x-platform-oidc-issuer", &e.oidc_issuer)
+            .header("x-platform-oidc-subject", &fx.subject)
             .json(&serde_json::json!({"content": "with media", "attachments": [attachment]}));
         async move { req.send().await.expect("发布") }
     };
@@ -1201,8 +1201,8 @@ async fn run_resend(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
     let send = |idem: Option<&str>| {
         let mut req = http
             .post(&path)
-            .header("x-kailo-oidc-issuer", &e.oidc_issuer)
-            .header("x-kailo-oidc-subject", &fx.subject)
+            .header("x-platform-oidc-issuer", &e.oidc_issuer)
+            .header("x-platform-oidc-subject", &fx.subject)
             .json(&serde_json::json!({ "content": content }));
         if let Some(k) = idem {
             req = req.header("idempotency-key", k);

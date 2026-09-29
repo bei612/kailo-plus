@@ -37,7 +37,7 @@ PSQL "update identity.workspace_membership set state='REVOKING', version=version
 action=$(python3 -c 'import uuid;print(uuid.uuid4())')
 PSQL "insert into admission.action_execution (id, operation_id, tenant_id, action_key, action_version, initiator_principal_id, actor_principal_id, target_id, parameter_hash, gate_state, dispatch_state, correlation_id) values ('$action', gen_random_uuid(), '$tenant', 'drill.revoke', 1, '$initiator', '$initiator', '$wm', 'drill', 'ALLOWED', 'NOT_DISPATCHED', gen_random_uuid())" >/dev/null
 token=$(curl -sf -H "Host: $OIDC_TOKEN_HOST" "$OIDC_TOKEN_URL" --data-urlencode grant_type=client_credentials \
-  --data-urlencode client_id="$OIDC_WORKER_CLIENT_ID" --data-urlencode "client_secret@deploy/local/secrets/kailo_worker_client_secret" \
+  --data-urlencode client_id="$OIDC_WORKER_CLIENT_ID" --data-urlencode "client_secret@deploy/local/secrets/worker_client_secret" \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
 curl -sf -o /dev/null -w '  启动撤权 HTTP %{http_code}\n' -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
   "$CORE_SERVICE_URL/service/v1/memberships/lifecycle" \

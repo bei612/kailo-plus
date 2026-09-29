@@ -76,10 +76,10 @@ class _NestedThreadSummaryRow extends ConsumerWidget {
                 TextSpan(
                   children: [
                     TextSpan(
-                      text: kailoText(
-                        kailoPluralOne(summary.replyCount)
-                            ? KailoMessageKey.chatThreadReplyCountOne
-                            : KailoMessageKey.chatThreadReplyCountOther,
+                      text: platformText(
+                        platformPluralOne(summary.replyCount)
+                            ? PlatformMessageKey.chatThreadReplyCountOne
+                            : PlatformMessageKey.chatThreadReplyCountOther,
                         variables: {'count': summary.replyCount},
                       ),
                       style: replyPreviewTextStyle.copyWith(
@@ -96,8 +96,8 @@ class _NestedThreadSummaryRow extends ConsumerWidget {
                         ),
                       ),
                       TextSpan(
-                        text: kailoText(
-                          KailoMessageKey.chatTimeLastReply,
+                        text: platformText(
+                          PlatformMessageKey.chatTimeLastReply,
                           variables: {
                             'time': formatThreadSummaryLastReplyTime(
                               lastReplyAt,

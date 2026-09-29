@@ -13,7 +13,7 @@ cd "$(dirname "$0")"
 . ./.env
 : "${KEYCLOAK_PORT:?}" "${OIDC_REALM:?}" "${OIDC_SERVICE_CLIENT_ID:?}"
 
-secret_file=secrets/kailo_core_client_secret
+secret_file=secrets/core_client_secret
 [ -s "$secret_file" ] || { echo "缺少 $secret_file，先跑 ./bootstrap.sh" >&2; exit 2; }
 
 curl -sSf -X POST \

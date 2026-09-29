@@ -933,6 +933,15 @@ pub struct OwnAuditEntry {
     pub workspace_id: Option<String>,
 }
 
+/// GET /api/v1/platform-info 的回应（DD-111）：只含公开展示字段，不依赖 PlatformSession
+/// 与身份解析，仍在网关入口的认证之后。displayName 取自部署配置 PLATFORM_DISPLAY_NAME，是界面上产品名的唯一来源。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformInfo {
+    /// 部署的显示名，去除首尾空白后非空
+    pub display_name: String,
+}
+
 /// GET /api/v1/platform/tenants 的有界回应：只对 Platform Catalog Tenant 中持有 fresh Catalog manage
 /// 的会话开放，列出业务 Tenant 及其当前状态与可发起的暂停/恢复动作提示（DD-96）。动作提交仍由 Core 重新准入。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1429,7 +1438,8 @@ pub struct TaskStateReport {
 }
 
 /// Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
-/// kailo:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>，使「不分配第二个业务 workflow ID」可被机械校验。
+/// platform:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>（前缀是协议常量，不随部署显示名变化；ADR-17
+/// 迁移窗口内的存量引用仍为旧前缀），使「不分配第二个业务 workflow ID」可被机械校验。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowRef {

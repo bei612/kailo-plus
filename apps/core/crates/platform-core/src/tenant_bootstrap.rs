@@ -45,7 +45,7 @@ use crate::temporal::TemporalClient;
 
 /// 部署引导这一 ServicePrincipal 的 audience。它是平台内一个固定身份的名字，
 /// 不是部署取值：审计按它归因，换名字就断了历史。
-const AUDIENCE: &str = "kailo-deployment-bootstrap";
+const AUDIENCE: &str = "platform-deployment-bootstrap";
 pub(crate) const ACTION_KEY: &str = "tenant.bootstrap";
 /// 轮询生命周期推进的间隔。等待的上界由运维以 `--wait-seconds` 给出。
 const POLL: Duration = Duration::from_secs(1);
@@ -1031,9 +1031,9 @@ mod tests {
 
     async fn isolated_pool() -> PgPool {
         let expected =
-            std::env::var("KAILO_ISOLATED_TEST_DB_NAME").expect("显式指定隔离核验库名称");
+            std::env::var("PLATFORM_ISOLATED_TEST_DB_NAME").expect("显式指定隔离核验库名称");
         let url =
-            std::env::var("KAILO_ISOLATED_TEST_DATABASE_URL").expect("显式指定隔离核验库 URL");
+            std::env::var("PLATFORM_ISOLATED_TEST_DATABASE_URL").expect("显式指定隔离核验库 URL");
         let pool = PgPool::connect(&url).await.expect("连接隔离核验库");
         let actual: String = sqlx::query_scalar("select current_database()")
             .fetch_one(&pool)
@@ -1058,7 +1058,7 @@ mod tests {
     fn base_args() -> Vec<String> {
         [
             "--slug",
-            "kailo-catalog",
+            "platform-catalog",
             "--name",
             "Catalog",
             "--admin-subject",
