@@ -21,7 +21,7 @@ AgentInstallation
 
 Core 不调用 `command/exec`、`process/spawn`、`thread/shellCommand` 三个 host RPC，不挂载用户主机目录，不继承平台运维 credential。源码表明模型 exec 工具只在有 environment 且其它开关允许时注册，而 `apply_patch`/`view_image` 主要受 environment 存在性控制；关闭 `unified_exec`、`shell_tool` 或 `shell_type` 均不能代替无 environment（SF-COD-03/11/12）。因此 DD-15 的承重条件是 Installation 的 CODEX_HOME 配置根本不存在 local environment；`thread/start.environments=[]` 与 Core 从不发送可覆盖当前及后续 turn 的 `turn/start.environments` 是纵深防御。resume 没有 environments 字段。Core client 在 `initialize` 固定声明 experimental API 以发送 thread/start 空数组（SF-COD-03/12）。
 
-Codex `ModelProviderInfo` 支持 custom `base_url + WireApi::Responses`（SF-COD-05），AgentGateway 支持 OpenAI Responses route、模型 authorization/rate-limit 与配置数据库后的 request log（SF-AGW-04/06/07）。因此 AgentInstallation 的模型 provider 固定指向已授权 `llm_route`；提供方类型与兼容声明只是该 `llm_route` 的 AgentGateway 配置，更换提供方不改 Codex、Core 或客户端（DD-110、SS-AGW-PROVIDER-COMPAT）；不允许 Agent/prompt 改 provider base URL、provider credential 或 gateway identity。每次 turn 先检查 `llm_route:execute`。原始 request log 只作观测；actual token/cost 只有 SS-AGW-USAGE 闭合后的 durable Gateway usage 才可结算（SF-AGW-09、DD-17/21）。
+Codex `ModelProviderInfo` 支持 custom `base_url + WireApi::Responses`（SF-COD-05），AgentGateway 支持 OpenAI Responses route、模型 authorization/rate-limit 与配置数据库后的 request log（SF-AGW-04/06/07）。因此 AgentInstallation 的模型 provider 固定指向已授权 `llm_route`；提供方类型与兼容声明只是该 `llm_route` 的 AgentGateway 配置，更换提供方不改 Codex、Core 或客户端（DD-110、SF-AGW-25）；不允许 Agent/prompt 改 provider base URL、provider credential 或 gateway identity。每次 turn 先检查 `llm_route:execute`。原始 request log 只作观测；actual token/cost 只有 SS-AGW-USAGE 闭合后的 durable Gateway usage 才可结算（SF-AGW-09、DD-17/21）。
 
 平台不宣称 Codex 自身实现了 Tenant sandbox；租户隔离依赖每 Installation 进程/状态边界、无 host capability 与窄 MCP allow-list 同时成立。
 
