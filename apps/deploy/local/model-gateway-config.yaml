@@ -131,6 +131,12 @@ binds:
           pathPrefix: /app
       backends:
       - host: ${WEB_UPSTREAM}
+      # DD-112：跨源伪造防护只由网关 csrf 策略执行（SF-AGW-26），只能按 route 配置；浏览器入口的
+      # 每条 route 都必须有，额外可信来源只有部署的 PUBLIC_ORIGIN，由 check.sh security 核对。
+      policies:
+        csrf:
+          additionalOrigins:
+          - ${PUBLIC_ORIGIN}
 
     # 其余全部归 BFF：`/api/v1/*` 的平台面，以及 OIDC 自己的
     # `/oauth/callback`（它由 listener 级 policy 短路处理，不会真打到 BFF）。
@@ -140,6 +146,12 @@ binds:
           pathPrefix: /
       backends:
       - host: ${BFF_UPSTREAM}
+      # DD-112：跨源伪造防护只由网关 csrf 策略执行（SF-AGW-26），只能按 route 配置；浏览器入口的
+      # 每条 route 都必须有，额外可信来源只有部署的 PUBLIC_ORIGIN，由 check.sh security 核对。
+      policies:
+        csrf:
+          additionalOrigins:
+          - ${PUBLIC_ORIGIN}
 
 # 原生端入口（DD-78）：Desktop/Mobile 按 RFC 8252 以授权码 + PKCE 取得访问令牌，
 # 以 Bearer 调用。与浏览器入口是两个 bind 而不是同一 listener 上的两套认证：

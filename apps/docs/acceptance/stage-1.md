@@ -21,7 +21,7 @@
 
 | 接缝 | 状态 | 证据 | 缺口 |
 |---|---|---|---|
-| `SS-AGW-OIDC` | 部分成立 | `model-gateway/fork/verify/oidc-header-projection.md` L31–48（无会话 302、伪造 header 到达后端 0 次、有会话只穿过 issuer/subject）；`core/verify/identity-chain.md` L6–17（直连 BFF 缺 header 403 `IDENTITY_HEADER_MISSING`、伪造 403 `IDENTITY_UNKNOWN`）、L84–102（logout 200、SSE `closed: session-revoked`）；`core/verify/native-identity.md` L13–22 | cookie 前缀/大小与 CORS fail-closed 没有核验记录 |
+| `SS-AGW-OIDC` | 部分成立 | `model-gateway/fork/verify/oidc-header-projection.md` L31–48（无会话 302、伪造 header 到达后端 0 次、有会话只穿过 issuer/subject）；`core/verify/identity-chain.md` L6–17（直连 BFF 缺 header 403 `IDENTITY_HEADER_MISSING`、伪造 403 `IDENTITY_UNKNOWN`）、L84–102（logout 200、SSE `closed: session-revoked`）；`core/verify/native-identity.md` L13–22 | cookie 与 CORS 由 `core/verify/oidc-edge.md`（2026-09-29）核验：前缀、HttpOnly、`SameSite=Lax`、值 1764 字节、TTL 受 ID token 约束、预检无 `Access-Control-Allow-*` 均符合；超过 3800 字节只有源码证据；该核验发现不读 JSON 的 POST 可被同站跨源页面触发，据此新增 `DD-112`/`V-SCN-85`，网关 `csrf` 尚未配置 |
 | `SS-WEB-RELAY` | 成立 | `collaboration/fork/verify/web-relay-core.md` L25–32、L96–103、L148–149（2026-09-23）；`web-client/fork/verify/web-surface.md` L23–24（构建产物中 `wss://`、`ws://`、`nsec1`、`relayUrl` 0 次）、L60（走查只有网关与 IdP 两个 origin、CSP 违规 0） | — |
 | `SS-BUZ-SERVER-CLIENT` | 部分成立 | `collaboration/fork/verify/server-client.md` L15–21（CLIENT 身份不代签、roster 外 pubkey 被拒、roster 内返回 event id）、L41–53（roster 投影重复收敛） | 「按 (principal, active session) 复用 NIP-42 会话」与「固定 NIP-11 上界与限流预算」没有核验记录 |
 | `SS-WEB-01` | 成立 | `web-client/fork/verify/web-surface.md` 走查 L16、L51–52；Desktop `collaboration/fork/verify/desktop-client.md` L8、L127–129；Mobile（只读）`collaboration/fork/verify/mobile-client.md` L143–147、L248–249 | — |
@@ -47,6 +47,7 @@ GAP：`GAP-BUZ-01` 仍存在，入口拒绝行为已由测试断言；`GAP-IDN-0
 | `V-SCN-63` | `identity.client_keys` | `native-identity.md` L42–57；`desktop-client.md` L61、L126；`mobile-client.md` L174、L247 | Desktop、Mobile | 通过 |
 | `V-SCN-64` | `identity.client_keys` | `native-identity.md` L54–55；2026-09-25 源码树 `native-e2e.sh desktop`/`mobile` 各 1 passed（含撤销后被拒） | Desktop、Mobile | 源码树通过；安装包层未观察到 Relay 拒绝（§6） |
 | `V-SCN-70` | 无 | 迁移 `20260928130000_server_key_provision_fence`；`native-identity.md` L151–154 明写不证明写入期间撤权、暂停与竞争，L168–178 登记「没有经过治理且经 OpenBao metadata 查证的孤儿版本销毁入口」为**生产阻断** | — | **未闭合** |
+| `V-SCN-85` | 无 | `oidc-edge.md` §3 实测跨源 `POST /api/v1/logout` 返回 200 并撤销会话，即缺口本身 | Web | **未闭合**：浏览器 route 尚未配置 `csrf`（`DD-112`） |
 | `V-SCN-84` | 无独立记录，证据挂在 `lifecycle.tenant_workspace_membership` 的 `governance.md` | 见 §2 `SS-BUZ-GOVERNANCE` | Relay | 通过，运行期一项证据不足 |
 
 代码与 artifact：七条 S1 追溯记录的 `release.artifacts` 登记 `core` `sha256:7e9b800d…`、`web-client` `sha256:b9a953fa…`、`model-gateway` `sha256:174afd82…`、`collaboration-relay` `sha256:e4c34134…`（提交 `9566ac0` 登记；core 的构建与 SBOM/provenance 见 `core/verify/release-artifacts.md`「2026-09-29」段，二开产物由重构后的树重建，摘要与来源记录一致由 `seam` 核对）。Desktop 安装包 `desktop-client` `sha256:14e4cc9c…` 登记在 S2 记录中；Mobile 发布产物登记为阻断（见 §8）。
@@ -105,7 +106,7 @@ GAP：`GAP-BUZ-01` 仍存在，入口拒绝行为已由测试断言；`GAP-IDN-0
 ## 关闭前必须补齐
 
 1. `SS-WEB-PRESENTATION`：三端主题语义、locale 与 message key 同源的接缝证据（含 ThemeProvider/CSS variables 复用），并登记进追溯记录的 `seams`。
-2. `SS-AGW-OIDC`：cookie 前缀/大小与 CORS fail-closed 的核验记录。
+2. `SS-AGW-OIDC` 与 `V-SCN-85`：按 `DD-112` 在浏览器 listener 每条 route 配置 `csrf`，并实测同站跨源的 logout、审批撤回与媒体上传被 403 拒绝、本源照常；cookie 与 CORS 已有 `oidc-edge.md`。
 3. `SS-BUZ-SERVER-CLIENT`：NIP-42 会话复用与 NIP-11 上界、限流预算的核验记录。
 4. Desktop 与 Mobile 各自的 logout 与断线恢复端到端证据；安装包上撤权后发布被 Relay 拒绝的观察。
 5. `V-SCN-70`：受治理的孤儿版本销毁/终结入口，以及写入期间撤权、暂停、竞争的故障注入演练。

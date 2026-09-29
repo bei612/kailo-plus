@@ -529,6 +529,8 @@ services:
       OIDC_ISSUER: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}
       OIDC_BROWSER_CLIENT_ID: ${OIDC_BROWSER_CLIENT_ID:?必须显式提供，禁止硬编码}
       OIDC_REDIRECT_URI: ${PUBLIC_ORIGIN:?必须显式提供，禁止硬编码}/oauth/callback
+      # DD-112：浏览器入口 csrf 策略唯一的额外可信来源（TLS 终结在网关之前时 Origin 与请求地址不一致）
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?必须显式提供，禁止硬编码}
       # 端口只在 BFF_CONTAINER_PORT 一处取值：写两遍迟早有一天只改一处
       BFF_UPSTREAM: ${BFF_SERVICE_NAME:?必须显式提供，禁止硬编码}:${BFF_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       # WEB_CONTAINER_PORT 是镜像事实：buzz-web 的 Caddyfile 监听该端口。

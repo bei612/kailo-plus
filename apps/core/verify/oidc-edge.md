@@ -132,3 +132,23 @@ set-cookie: agw_oidc_t_ee32d8ac206f2fbc.<事务id>=<redacted>; HttpOnly; SameSit
    可选处置（留给设计决定）：在浏览器 listener 上启用网关的 `csrf` policy，或让 BFF 对非 GET 请求要求同源
    `Origin`/`Sec-Fetch-Site`。
 3. **cookie 超限不带分类、没有单测（低）。** 见第 2 节。
+
+## DD-112 落地：网关 csrf 策略（2026-09-29）
+
+配置：`deploy/local/model-gateway-config.yaml` 浏览器入口的 `web`、`bff` 两条 route 各配
+`policies.csrf.additionalOrigins: [${PUBLIC_ORIGIN}]`；compose 为网关投递 `PUBLIC_ORIGIN`；原生入口（Bearer）不配。
+`tools/check.sh security` 核对浏览器入口每条 route 都有且只有这一个额外来源。破坏核验：删掉 `web` route 的
+来源后 security 报“浏览器入口的 route 必须配置 csrf，additionalOrigins 只能是 [${PUBLIC_ORIGIN}]（DD-112）”，还原后通过。
+
+实测（重建网关后，经 IdP 真实登录取得会话 cookie，向 `POST /api/v1/actions` 发 `text/plain` 简单请求，
+只改变来源头）：
+
+| 请求 | 结果 |
+|---|---|
+| `Origin: PUBLIC_ORIGIN`、`Sec-Fetch-Site: same-origin` | 422 `PRECONDITION/INVALID_PARAMETERS`（到达 BFF，请求体故意无效） |
+| `Sec-Fetch-Site: same-site`（同站其他子域 Origin） | 403 `CSRF validation failed`，未到达 BFF |
+| `Sec-Fetch-Site: cross-site` | 403 `CSRF validation failed` |
+| 无 `Sec-Fetch-Site`、Origin 与请求地址不符 | 403 `CSRF validation failed` |
+| 两者都无 | 422（上游对非浏览器客户端放行；浏览器的跨源 POST 必带 Origin，不构成缺口） |
+
+结论：此前记录的“同站跨源页面可触发不读 JSON 的 POST”在网关层关闭；本源浏览器请求照常（Web 走查另行复验）。

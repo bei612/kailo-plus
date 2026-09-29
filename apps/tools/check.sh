@@ -890,6 +890,14 @@ if os.path.exists(agw_cfg):
                 if rp.get("oidc") or rp.get("jwtAuth"):
                     bad.append(f"agentgateway {lis_name}/{route.get('name') or '?'}: "
                                f"route 内联认证，会与 listener 级认证互不相认（SF-AGW-22）")
+                # DD-112：浏览器入口靠 cookie 会话，跨源伪造防护只由网关 csrf 策略执行，而它只能按
+                # route 配置（SF-AGW-26）——漏配一条 route 就是一条可被同站跨源页面触发的写入口。
+                # 额外可信来源只有部署的 PUBLIC_ORIGIN；原生入口是 Bearer，不配。
+                if oidc:
+                    extra = ((rp.get("csrf") or {}).get("additionalOrigins"))
+                    if extra != ["${PUBLIC_ORIGIN}"]:
+                        bad.append(f"agentgateway {lis_name}/{route.get('name') or '?'}: 浏览器入口的 route 必须配置 "
+                                   f"csrf，additionalOrigins 只能是 [${{PUBLIC_ORIGIN}}]（DD-112），实际 {extra!r}")
 
             # 每条 route 实际生效的 transformation：listener 级优先，退回 route 级。
             # gateway 阶段先于选路执行，所以这样算出的就是请求真正经过的那一份。
