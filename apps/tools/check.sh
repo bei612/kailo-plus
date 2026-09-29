@@ -252,7 +252,7 @@ for line in cov.split("\n"):
     m = re.match(r"\| ([^|]+)\| `(DD-\d+)`", line)
     if m and stage_key(m.group(1)):
         stage_of[m.group(2)] = stage_key(m.group(1))
-valid_stages = {"S0", "S1", "S2", "S3", "S4", "S5", "PC", "EXT-FILE", "EXT-KNOW", "EXT-DATA"}
+valid_stages = {"S0", "S1", "S2", "S3", "S4", "S5", "PC", "EXT-BASE", "EXT-FILE", "EXT-KNOW", "EXT-DATA"}
 
 # 业务能力参考实现的产品名只取自 .design/08 §9.1「内置参考实现」表的 Component 列：
 # 契约键、能力 id、动作、工具与契约枚举值都不得含实现产品名（DD-88、apps/06 §1）

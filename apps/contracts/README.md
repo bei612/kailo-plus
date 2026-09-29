@@ -39,7 +39,7 @@ ADR-03 要求四门语言由同一 schema 生成。四个生成器支持的构�
 | `domain/` | `.design/03` 的实体与状态 |
 | `api/` | BFF query / semantic command / stream |
 | `adapter/` | Adapter Protocol（与能力类别无关的线协议层） |
-| `adapter/<category>.vN/` | 能力契约 schema：`<category>` 为 `file_storage`、`document_editing`、`knowledge`、`data_query`，`vN` 为契约版本。按 `.design/07` §2.4 的 v1 契约键固定参数/结果 schema、错误映射与到 SpiceDB permission 的映射，是该契约与其一致性套件的唯一权威；契约键增删或语义变化只以新版本目录发布（`DD-88`）。schema 文件随 Stage 3 的能力模型实现建立 |
+| `adapter/<category>.vN/` | 能力契约 schema：`<category>` 为 Catalog 登记的能力类别键，预置 `file_storage`、`knowledge`、`data_query`（`DD-102`、`DD-103`），`vN` 为契约版本。按 `.design/07` §2.4 的 v1 契约键固定参数/结果 schema、错误映射与到 SpiceDB permission 的映射，是该契约与其一致性套件的唯一权威；契约键增删或语义变化只以新版本目录发布（`DD-88`）。schema 文件随 `EXT-BASE` 的能力模型实现建立 |
 | `component-host/` | Component manifest 与 Host API |
 | `workflow/` | Workflow input、Update/Signal、projection、ExternalExecution |
 
