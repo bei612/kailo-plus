@@ -29,7 +29,7 @@ Tenant 与成员的建立必须走既有生命周期 Workflow（`DD-01`、`DD-45
 
 ### 引导的形态
 
-- **Core 容器内的一次性子命令**（`kailo-core bootstrap-tenant`）：只有能在 Core 容器内
+- **Core 容器内的一次性子命令**（`platform-core bootstrap-tenant`）：只有能在 Core 容器内
   执行命令的人能调用，而这个人已掌握部署（库、secret、镜像），不产生新的权限面。
   不取 OpenBao 的一次性投递、不监听端口。可重入，中断后以同一参数重跑。
 - **启动时读部署配置自动引导**：同样只有部署者能改，但 Core 的启动路径本已承担一次性
@@ -52,7 +52,7 @@ Tenant 与成员的建立必须走既有生命周期 Workflow（`DD-01`、`DD-45
 1. 部署引导为 Core 容器内的一次性子命令：
 
    ```sh
-   docker compose --env-file .env -f compose.yaml exec -T core-bff kailo-core bootstrap-tenant \
+   docker compose --env-file .env -f compose.yaml exec -T core-bff platform-core bootstrap-tenant \
      --slug <slug> --name <显示名> --admin-subject <IdP subject> \
      --admin-display-name <显示名> --wait-seconds <秒>
    ```
@@ -72,7 +72,7 @@ Tenant 与成员的建立必须走既有生命周期 Workflow（`DD-01`、`DD-45
    大于 0 时，部署者以一位现有成员的 subject 执行引导即可 0→1；它不能动已有 admin 的
    Tenant。
 
-2. Core 经 ADR-10 的同一条 HTTP gateway 写与读关系（`core/crates/kailo-core/src/spicedb.rs`
+2. Core 经 ADR-10 的同一条 HTTP gateway 写与读关系（`core/crates/platform-core/src/spicedb.rs`
    的 `write`/`read`）。读取以 `fullyConsistent` 翻页读到底（`SPICEDB_READ_PAGE_LIMIT` 只
    约束单页），流中出现 error 行或满页无游标都按结果不明处理。写入非 2xx 按结果不明，
    以同一意图重发（TOUCH/DELETE 幂等）。

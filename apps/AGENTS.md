@@ -25,7 +25,7 @@
 15. 不把 HTTP `200/202`、消息已投递、cancel accepted、Workflow 投影已写入当作业务终态；终态证据以 `.design` 对应组件合同为准。
 16. 不把本地环境、内网、CORS、前端隐藏、默认配置或约定俗成当作认证授权边界。
 17. 每个发布产物必须记录源 commit、依赖锁、上游基线、实现的 `SS-*`、适用协议版本、schema 版本与 artifact digest。
-18. 上游升级先走 `04-上游适配与升级.md`，不得直接覆盖 fork、patch 或生成手册。
+18. 上游升级先走 `04-上游适配与升级.md`：每次开工先运行 `tools/upstream_manifest.py status` 了解 `.references` 的上游变化；二开项目以 `upstream_manifest.py sync` 三方合并吸收上游变化，不得用上游新版本整体覆盖树而丢掉 Kailo 改动，也不得覆盖生成手册；与上游原样的差异由 `upstream_manifest.py diff` 求出。二开项目按功能命名目录、内部保持上游原样命名，不做补丁、不在构建时拷贝（ADR-15、ADR-16）。
 19. 修改 `.design` 与实现代码必须分开提交和复核；设计变更先于实现变更。
 20. 完成声明前必须实际运行任务范围内的格式、静态检查、验证与追溯检查，并报告原始结果。不得以"应该没问题"替代实际执行。
 21. 平台核心不得依赖任何业务能力服务（文件存储、文档编辑、知识、数据查询）的存在：平台实体、流程、Workflow kind、门禁与发布不引用具体实现；业务能力只按能力类别与版本化能力契约接入，经 Remote Adapter 或标准协议集成，各自独立数据库与凭据；内置实现只是参考实现，其接缝缺口只阻断自身 release 与 binding（`.design` 架构原则、`DD-87`–`DD-95`）。
@@ -43,4 +43,4 @@
 - schema/API/Workflow compatibility 影响；
 - 已运行的验证及结果；
 - 新增或解除的发布门禁；
-- 对上游 patch、fork 或 artifact digest 的影响。
+- 对上游源码树改动（`upstream_manifest.py diff`）或 artifact digest 的影响。

@@ -27,7 +27,7 @@
 # 迁移中没有 generation 列或 component binding 表
 grep -rliE 'generation[[:space:]]+(integer|bigint|int)|component_runtime_projection|application_binding|platform_provider_binding' core/migrations/*.up.sql
 # Core 没有切换 generation 的写路径
-grep -rnE 'projection_generation|runtime_projection' core/crates/kailo-core/src
+grep -rnE 'projection_generation|runtime_projection' core/crates/platform-core/src
 ```
 
 两条命令都没有输出。任一有输出，即本 runbook 需要按新实现补齐。

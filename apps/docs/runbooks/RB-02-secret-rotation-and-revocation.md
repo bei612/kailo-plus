@@ -38,19 +38,19 @@
 
 1. 记下在用令牌的 accessor：`docker compose logs core-bff | grep 'OpenBao 引导凭据已换成 service token'`，两行分别是 `kailo-core` 与 `kailo-core-audit`。accessor 只能查询与撤销令牌，不能用来取 secret。
 2. `./start-core.sh`：现取两个 wrapped `secret_id`（`OPENBAO_SECRET_ID_WRAP_TTL` 内有效），写 `secrets/openbao-core.env` 后立即重建 `core-bff`。Core 核对 wrapping token 的创建路径、unwrap、登录，并自检同一 `secret_id` 已不能再登录。
-3. 确认：`core-bff` 为 `Up`，日志有两行新的 `OpenBao 引导凭据已换成 service token`；一次需要 Core 代签的动作成功（`cargo test -p kailo-core --test web_transport`）。
+3. 确认：`core-bff` 为 `Up`，日志有两行新的 `OpenBao 引导凭据已换成 service token`；一次需要 Core 代签的动作成功（`cargo test -p platform-core --test web_transport`）。
 4. 撤销旧令牌：以 root token 对平台 namespace 执行 `write auth/token/revoke-accessor accessor=<第 1 步 kailo-core 的值>`，root namespace 对 `kailo-core-audit` 的值同样执行。
 
 `docker compose restart/start core-bff` 不是重启 Core 的方式：它拿着已被消费的投递启动，日志末行 `wrapping token 不可用，按泄漏处理`，进程退出。任何重启都经 `start-core.sh`。重建依赖 Core 的其他服务（worker、agentgateway 等）时一律带 `--no-deps`：不带时 compose 会连带重建 `core-bff`，同样拿着已消费的投递启动而退出（2026-09-24 实际发生：`up -d --build worker` 后 `core-bff` `Exited (1)`，经 `start-core.sh` 恢复）。
 
-root token 调用的写法见 `deploy/local/openbao-init.sh` 的 `run_bao`：令牌作为 stdin 第一行进入容器，不进 `-e`、不进参数。
+root token 调用的写法见 `deploy/local/secret-store-init.sh` 的 `run_bao`：令牌作为 stdin 第一行进入容器，不进 `-e`、不进参数。
 
 **B. 轮换服务 OIDC client secret**（以 Worker 为例，其余同形）：
 
 1. 以 IdP 管理员身份（口令经 `--data-urlencode password@secrets/keycloak_admin_password` 从文件读入）调 `POST /admin/realms/<realm>/clients/<client uuid>/client-secret`，响应里的新值直接写入 `secrets/kailo_worker_client_secret`。旧值此刻即失效。
 2. `bash bootstrap.sh` 重新派生 `secrets/worker.env` 与 realm 渲染——**只替换密钥文件而不重新派生，运行中的服务与下次导入的 realm 会各持一个值**。
 3. `docker compose up -d --force-recreate worker`。
-4. 核验：新值换取令牌 HTTP 200，旧值 HTTP 401；一条真实 Workflow 跑完（`cargo test -p kailo-core --test membership_lifecycle`）。
+4. 核验：新值换取令牌 HTTP 200，旧值 HTTP 401；一条真实 Workflow 跑完（`cargo test -p platform-core --test membership_lifecycle`）。
 
 **C. 回收已签发的 OpenBao 令牌**：以 root token 对平台 namespace 执行 `bao lease revoke -prefix auth/approle/login`（即 `sys/leases/revoke-prefix/auth/approle/login`，`DD-70` 的 `RevokePrefix`），root namespace 同样执行一次。Core 没有能重新登录的凭据：下一次续期（至多 `OPENBAO_TOKEN_PERIOD` 的一半之后）被拒即退出，日志末行 `OpenBao service token 失效，退出`；在此之前取 secret 已得到 403，代签全部 fail closed。随后按步骤 A 第 2 步重新投递并启动。
 
@@ -68,7 +68,7 @@ root token 调用的写法见 `deploy/local/openbao-init.sh` 的 `run_bao`：令
 1. 退役旧 key：`mv secrets/relay_operator_pubkey secrets/relay_operator_pubkey.retiring`，私钥同样改名为 `.retiring`。
 2. `bash bootstrap.sh`：生成新密钥对，`buzz-relay.env` 的 `RELAY_OPERATOR_PUBKEYS` 为「新,旧」并列，`core-service.env` 投递新私钥。
 3. `docker compose up -d --force-recreate buzz-relay`，待 `/_readiness` 为 200 后按步骤 A 用 `./start-core.sh` 现取一次性 OpenBao 引导凭据并重建 Core；不要直接 `docker compose restart/up core-bff` 复用已消费的 wrapping token。Core 对首次登记、在用身份及轮换都以投递 key 签只读 operator 请求；被 Relay 拒绝或结果不明即拒绝启动。轮换分支在写 OpenBao 前查证新 key，未获准时库与 OpenBao 均不变；查证通过后写入独立 KV 路径的定版 SecretRef，以旧 pubkey 为 CAS 原地推进 identity，写 `relay_operator.rotate=ROTATED` 审计，日志 `RelayOperatorIdentity 已轮换`。在用身份的部署 audience/origin 与登记值不一致也拒绝启动，不能靠换签名 URL 静默迁移。
-4. 核验新 key 被接受：`cargo run -p kailo-core --example operator_probe -- ../deploy/local/secrets/relay_operator_private_key`（在 `core/` 下）输出 `ACCEPTED`，且能建立 Tenant（`cargo test -p kailo-core --test scope_lifecycle tenant_and_workspace`）。同时比较轮换前后 Core 登记的 SecretRef：两个 locator 必须不同，版本号均为 OpenBao 返回的具体版本。
+4. 核验新 key 被接受：`cargo run -p platform-core --example operator_probe -- ../deploy/local/secrets/relay_operator_private_key`（在 `core/` 下）输出 `ACCEPTED`，且能建立 Tenant（`cargo test -p platform-core --test scope_lifecycle tenant_and_workspace`）。同时比较轮换前后 Core 登记的 SecretRef：两个 locator 必须不同，版本号均为 OpenBao 返回的具体版本。
 5. 关闭窗口：先把 `secrets/relay_operator_pubkey.retiring` 改名为 `.closing`，不销毁退役私钥；运行 `bash bootstrap.sh` 并只重建 `buzz-relay`。待 `/_readiness` 为 200，确认派生的 allow-list 不含旧 pubkey，再以同一探针核验新私钥 `ACCEPTED`、退役私钥 `REJECTED 403`。若 Relay 重建或探针失败，保留退役私钥，将 `.closing` 公钥改回 `.retiring`，重新派生并重建 Relay，恢复并列窗口后查因；不得把新 key 的结果不明视为轮换成功。两项探针均确定后，才删除 `.closing` 公钥和退役私钥文件。旧 SecretRef 所指的 KV 路径暂保留；只有满足 `.design/03` §9 的旧 generation 终态条件后才销毁。
 
 ## 不可执行的动作
@@ -97,12 +97,12 @@ root token 调用的写法见 `deploy/local/openbao-init.sh` 的 `run_bao`：令
 3. **派生文件的教训是演练中真实撞到的**：此前一次只还原了 operator 密钥文件而没有重新派生，Relay 重建后读到另一把公钥，Core 建 Community 全部 `403 not a relay operator`。`bootstrap.sh` 重新派生后恢复。步骤 B 第 2 步的警告由此而来。
 4. **设备撤销（步骤 D）**：`native_client` 用例撤销已登记设备后，该设备直连 Relay 发布被拒，同一人的 Web 身份照常发布（`core/verify/native-identity.md`）。
 5. **回收令牌（步骤 C）**：执行 revoke-prefix 后立即让 Core 代签一次（`web_transport` 的发布用例通过）。OpenBao audit 日志依次记录 `17:34:39 sys/leases/revoke-prefix/auth/approle/login` 与 `17:34:41 auth/approle/login`——Core 的旧令牌被回收，它以新 `secret_id` 重新登录。
-6. 演练前把 `openbao-init.sh` 与 `seed-secret-ref.sh` 中 root token 与解封分片经 `docker -e` 或参数传递的写法全部改为 stdin；以封存 OpenBao 后重跑 `openbao-init.sh` 核验解封路径（`sealed: True` → `sealed: False`）。
+6. 演练前把 `secret-store-init.sh` 与 `seed-secret-ref.sh` 中 root token 与解封分片经 `docker -e` 或参数传递的写法全部改为 stdin；以封存 OpenBao 后重跑 `secret-store-init.sh` 核验解封路径（`sealed: True` → `sealed: False`）。
 
 2026-09-24，本地拓扑，基于 commit `62051fe` 之上的工作树：
 
-1. **Web 托管 HUMAN 身份（步骤 E）**：`bash core/verify/drill-server-key-rotation.sh`。revoke 期间停掉 Worker，roster 移除无法推进：revoke `HTTP 200` 后 binding `REVOKING`、此刻发言 `HTTP 403`，已建立的流关闭帧 `data: identity-revoked`——此时关流的只有 Core 的再准入。恢复 Worker 后旧 pubkey `REVOKED`；重建 `HTTP 200`，同键重发返回同一 workflow ID、`runId` 为空；新 pubkey 与旧不同，SecretRef `platform/kv/buzz-human/<tenant>/<principal> v1 → v2`，轮换后发言 `HTTP 200`，审计 `identity.key_revoke=REVOKING, identity.key_provision=RECONCILING`。破坏核验：把再准入对签名身份的检查短路后重建 `core-bff`，同一演练的关闭帧为空；还原后恢复。`cargo test -p kailo-core --test server_keys` 另证持旧私钥直连 Relay 发布被拒、新消息作者是新 pubkey、对 CONTROL 回 `409`；破坏核验：去掉 `kind=HUMAN` 条件后该用例在 CONTROL 一步失败（`left: 200, right: 409`），还原后通过。
+1. **Web 托管 HUMAN 身份（步骤 E）**：`bash core/verify/drill-server-key-rotation.sh`。revoke 期间停掉 Worker，roster 移除无法推进：revoke `HTTP 200` 后 binding `REVOKING`、此刻发言 `HTTP 403`，已建立的流关闭帧 `data: identity-revoked`——此时关流的只有 Core 的再准入。恢复 Worker 后旧 pubkey `REVOKED`；重建 `HTTP 200`，同键重发返回同一 workflow ID、`runId` 为空；新 pubkey 与旧不同，SecretRef `platform/kv/buzz-human/<tenant>/<principal> v1 → v2`，轮换后发言 `HTTP 200`，审计 `identity.key_revoke=REVOKING, identity.key_provision=RECONCILING`。破坏核验：把再准入对签名身份的检查短路后重建 `core-bff`，同一演练的关闭帧为空；还原后恢复。`cargo test -p platform-core --test server_keys` 另证持旧私钥直连 Relay 发布被拒、新消息作者是新 pubkey、对 CONTROL 回 `409`；破坏核验：去掉 `kind=HUMAN` 条件后该用例在 CONTROL 一步失败（`left: 200, right: 409`），还原后通过。
 2. **RelayOperatorIdentity（步骤 F）**：`bash core/verify/drill-operator-rotation.sh`，真实轮换了本地拓扑的 operator key。破坏核验在第 1 步：Relay 仍是旧 allow-list 时启动 Core，日志末行 `新投递的 operator key 152b75… 未被 Relay 接受（Relay 拒绝: HTTP 403 …not a relay operator）`，进程退出，库中身份仍是 `b4e994… v1 kv1`。重建 Relay 后 Core 启动并轮换：`152b75… v2 kv2`，审计 `ROTATED` 带新旧两个 pubkey 与 KV 版本 2；窗口内新旧 key 均 `ACCEPTED`；以新 key 建 Tenant 通过；关闭窗口后新 key `ACCEPTED`、旧 key `REJECTED 403`。
-3. **引导凭据改为 response wrapping（步骤 A、C）**：`openbao-init.sh` 把 `kailo-core` 与 `kailo-core-audit` 改为 `secret_id_num_uses=1`、`secret_id_ttl=120`、`secret_id_bound_cidrs`/`token_bound_cidrs=172.18.0.0/16`（取自 `kailo-local_app` 网络）、`token_period=1200`，并销毁、删除两份明文投递的旧 `secret_id`。`start-core.sh` 后日志两行 `OpenBao 引导凭据已换成 service token`（`platform/kailo-core`、`root/kailo-core-audit`，`ttl=1200`）。四个破坏核验：`docker compose restart core-bff` 得 `Exited (1)`，末行 `wrapping token 不可用，按泄漏处理: lookup HTTP 400（已被消费或已过期）`；投递换成 `kailo-verify` 签出的 wrapping token，末行 `创建路径是 auth/approle/role/kailo-verify/secret-id，不是 auth/approle/role/kailo-core/secret-id`；把 role 改回 `secret_id_num_uses=0` 后启动，末行 `引导 secret_id 可重复登录：role 必须配置 secret_id_num_uses=1`；把 `token_period` 临时设为 60s、启动后以 accessor 撤销令牌（14:09:36），`core-bff` 在下一次续期时 `Exited (1)`，末行 `OpenBao service token 失效，退出`。未撤销时同样 60s 周期的 Core 运行 95 秒后仍 `Up`，`server_keys` 用例通过（续期生效）。`openbao-init.sh` 与 `start-core.sh` 还原后 `Up`。
+3. **引导凭据改为 response wrapping（步骤 A、C）**：`secret-store-init.sh` 把 `kailo-core` 与 `kailo-core-audit` 改为 `secret_id_num_uses=1`、`secret_id_ttl=120`、`secret_id_bound_cidrs`/`token_bound_cidrs=172.18.0.0/16`（取自 `kailo-local_app` 网络）、`token_period=1200`，并销毁、删除两份明文投递的旧 `secret_id`。`start-core.sh` 后日志两行 `OpenBao 引导凭据已换成 service token`（`platform/kailo-core`、`root/kailo-core-audit`，`ttl=1200`）。四个破坏核验：`docker compose restart core-bff` 得 `Exited (1)`，末行 `wrapping token 不可用，按泄漏处理: lookup HTTP 400（已被消费或已过期）`；投递换成 `kailo-verify` 签出的 wrapping token，末行 `创建路径是 auth/approle/role/kailo-verify/secret-id，不是 auth/approle/role/kailo-core/secret-id`；把 role 改回 `secret_id_num_uses=0` 后启动，末行 `引导 secret_id 可重复登录：role 必须配置 secret_id_num_uses=1`；把 `token_period` 临时设为 60s、启动后以 accessor 撤销令牌（14:09:36），`core-bff` 在下一次续期时 `Exited (1)`，末行 `OpenBao service token 失效，退出`。未撤销时同样 60s 周期的 Core 运行 95 秒后仍 `Up`，`server_keys` 用例通过（续期生效）。`secret-store-init.sh` 与 `start-core.sh` 还原后 `Up`。
 
 2026-09-26，本地拓扑，起点提交 `51948ecb053b6bb74bb40a58d02af07a94c9b199`：再次执行步骤 F，旧 `152b75… v2 kv2`、新 `d68c53… v3 kv1`。Relay 未载入新 allow-list 时，Core 因 operator 请求 403 拒绝启动且数据库仍是旧行；并列窗口重建 Relay 后，Core 以新的独立 KV locator 轮换，`audit.audit_event` 记 `relay_operator.rotate=ROTATED`（20:31:12 UTC）。新旧私钥探针在窗口内都返回 `ACCEPTED`；以新 key 运行 `scope_lifecycle::tenant_and_workspace` 通过 1/1。首次演练脚本在此处因只检查 Core 日志最后五行而误报未就绪：Core 已监听且 `/healthz` 为 200；脚本已改查健康端点。关闭窗口时先移旧公钥为 `.closing`，重新派生与只重建 Relay；新 key `ACCEPTED`、旧 key `REJECTED 403`，Relay 与 BFF 健康，之后删除两份本地退役 key 文件。探针实际输出不含 `Forbidden` 字样，脚本断言已按 `REJECTED 403 <pubkey>` 修正。旧 OpenBao KV 路径未销毁；此演练不证明完整 SecretRef 生命周期或生产环境的旧 generation 终态收敛。

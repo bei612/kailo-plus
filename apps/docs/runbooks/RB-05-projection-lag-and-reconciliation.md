@@ -89,6 +89,6 @@
 
 2026-09-23，本地拓扑：
 
-1. **Workflow 投影漏写**（`core/crates/kailo-core/tests/workflow_reconcile.rs`，随 `run-integration.sh` 运行）：以 Worker 不认识的 kind 启动一个 execution，它在写任何投影前终结；对账在三轮内把 WorkflowRef 置 `TERMINAL`、TaskProjection 补写 `FAILED` 且 `observation_gap = true`。同时核验 NotFound 超出 retention 记 `UNKNOWN`、窗口内不改状态、已终结版本再启动回 409。去掉补写的 gap 标记、去掉 409 判定，各跑一次均当场失败，还原后通过。
+1. **Workflow 投影漏写**（`core/crates/platform-core/tests/workflow_reconcile.rs`，随 `run-integration.sh` 运行）：以 Worker 不认识的 kind 启动一个 execution，它在写任何投影前终结；对账在三轮内把 WorkflowRef 置 `TERMINAL`、TaskProjection 补写 `FAILED` 且 `observation_gap = true`。同时核验 NotFound 超出 retention 记 `UNKNOWN`、窗口内不改状态、已终结版本再启动回 409。去掉补写的 gap 标记、去掉 409 判定，各跑一次均当场失败，还原后通过。
 2. **roster 漂移**（`core/verify/drill-roster-drift.sh`）：开通真实 Workspace，两轮对账没有关于它的不一致日志；把成员事实直接改为 `REVOKED`（不经 Workflow，模拟 Core 缺陷），下一轮报出 `Channel roster 与成员事实不一致 missing=0 unexpected=1`；还原为 `ACTIVE` 后两轮不再报。同一窗口内 relay 维度没有误报。
 3. 度量实到 Collector：`kailo.workflow_ref.*`、`kailo.entity.*`、`kailo.roster.*` 与 Temporal SDK 的 `temporal_workflow_task_execution_failed`，标签经 Collector 允许清单保留。

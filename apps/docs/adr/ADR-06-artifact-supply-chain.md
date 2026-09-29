@@ -1,6 +1,6 @@
 # ADR-06：artifact registry、签名、SBOM 与 provenance
 
-- 状态：已接受
+- 状态：已接受；「上游 patch 的可验证性」一条与「不改变的事」中上游引入方式的表述已被 [ADR-15](ADR-15-vendored-upstream-sources.md) 取代（2026-09-29）
 - 日期：2026-09-22
 - 决策者：Kailo 实施工程负责人
 
@@ -26,14 +26,14 @@
 - **签名**：`cosign` 对每个镜像 digest 签名，**在出现共享 registry 时启用**。当前无共享 registry、无第二参与方、单机构建，本地密钥对的人工管理成本换不到任何可验证收益，因此 Stage 0 只做 digest、SBOM 与 provenance 三项（`00-实施总纲.md` Stage 0 第 7 项的字面要求）。接入托管 registry 并具备 GitHub OIDC 身份后直接启用 keyless 签名，跳过本地密钥阶段。签名启用后，部署前校验签名，验签失败拒绝启动。
 - **SBOM**：`syft` 为每个镜像生成 SPDX 格式 SBOM，作为 OCI referrer 附到镜像 digest 上。依赖与许可证清单由 SBOM 派生，不单独维护第二份。
 - **provenance**：构建时生成 SLSA provenance 断言，至少记录源码 commit、依赖锁文件的摘要、构建参数与构建者身份，同样作为 referrer 附到 digest。
-- **上游 patch 的可验证性**：`06-工程基线规范.md` §2 的 `patch_series_digest` 由 patch 文件内容的规范化摘要计算，写入 provenance 断言。构建上游镜像时重新计算并比对，不一致即失败。这把「`evidence_commit` 与 `implementation_base_commit` 关系已声明」从文档记录升级为构建期检查。
+- **上游产物的可验证性**（2026-09-29 被 ADR-15 取代，原为按 `patch_series_digest` 核对补丁字节）：需要修改或自建的上游以固定 commit 的完整源码放在按功能命名的二开项目目录（ADR-16），`06-工程基线规范.md` §2 的来源记录为每个产物登记按其输入范围计算的 `source_digest` 与 `artifact_digest`，二者由 `tools/build-upstream.sh` 在构建后一次写回。`check.sh seam` 重算 `source_digest`，与记录不符即失败——门禁断言的是「登记的产物由当前源码构建」。`evidence_commit` 与 `implementation_base_commit` 的关系仍由同一门禁判定。
 - **客户端发布单元按端分离**：Buzz Web 是 OCI 镜像，按 digest 引用、改 digest 即回退。Buzz Desktop 与 Buzz Mobile 是平台分发产物（桌面安装包、应用商店包），其回退是发布新版本而非更换 digest，因此这两端各自维护一条带平台签名的发布链，且必须登记「当前最低可用版本」以便在缺陷版本流出后强制升级。三者共用同一 `contracts/` 版本号与同一份 provenance 格式。
 - **Buzz Desktop 的编译 feature 进 provenance**：`system-keyring` 等影响安全边界的 Cargo feature 必须写入 provenance 断言并在发布前校验，依据是 `SF-DSK-02`——该 feature 关闭时 nsec 回落为 `0o600` 明文文件，且这是编译期开关，运行时无法纠正。
 - **secret 扫描**：提交与构建两个时点各扫描一次，命中即失败。扫描范围含 `contracts/`、compose 文件与 ADR 目录。
 
 ## 后果
 
-正面：每个 digest 都能回答「谁构建的、从哪个 commit、依赖是什么、上游打了哪些 patch」；工具全部独立于托管平台，接入远端不需重新设计；SBOM 是依赖与许可证清单的唯一来源，不会分叉。
+正面：每个 digest 都能回答「谁构建的、从哪个 commit、依赖是什么、上游改了什么」；工具全部独立于托管平台，接入远端不需重新设计；SBOM 是依赖与许可证清单的唯一来源，不会分叉。
 
 负面：本地阶段的签名密钥需要人工管理，直到接入 OIDC 身份为止；每次构建多出签名、SBOM 与 provenance 三步，构建时间上升；按 digest 引用意味着每次升级都要改引用处；两个原生端的回退受平台审核时延约束，与服务端回退不同步，缺陷响应必须依赖「最低可用版本」而非回滚。
 
@@ -45,4 +45,4 @@
 
 ## 不改变的事
 
-本 ADR 不改变 `.design` 的任何权威划分与能力状态。它不放宽 `04-上游适配与升级.md` 对固定 commit 与接缝登记的任何要求，也不使 `.references` 成为构建来源——上游仍以 artifact 或镜像引入。
+本 ADR 不改变 `.design` 的任何权威划分与能力状态。它不放宽 `04-上游适配与升级.md` 对固定 commit 与接缝登记的任何要求，也不使 `.references` 成为构建来源。上游的引入方式以 [ADR-15](ADR-15-vendored-upstream-sources.md) 为准：原样使用的上游以按 digest 固定的官方镜像引入，需要修改或自建的上游从本仓库按功能命名的二开项目构建（ADR-16）。

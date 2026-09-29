@@ -44,7 +44,7 @@
    - compose 条款：改 `deploy/local/compose.yaml`（或部署描述）中对应的值，使其等于 `07` §1 的要求；
    - 缺失变量：补到 `.env`；若是 secret，补到 `deploy/local/secrets/` 并由 `bootstrap.sh` 生成，不写进 `.env`、不上命令行；
    - Relay 成员准入：确认 `BUZZ_REQUIRE_RELAY_MEMBERSHIP: "true"` 且 `secrets/buzz-relay.env` 中有 relay 私钥；
-   - OpenBao audit device：`openbao-config.hcl` 的 `audit "file" "file/"` 块恢复后重建 `openbao` 并执行 `openbao-init.sh`（解封并核验 `audit device 已生效`），再重建 `core-bff`。已在等待的 Workflow 下一轮自行继续，不需要重跑。
+   - OpenBao audit device：`secret-store-config.hcl` 的 `audit "file" "file/"` 块恢复后重建 `openbao` 并执行 `secret-store-init.sh`（解封并核验 `audit device 已生效`），再重建 `core-bff`。已在等待的 Workflow 下一轮自行继续，不需要重跑。
 3. 重新执行 `tools/check.sh security`，直到 `全部通过`。
 4. 重建受影响的服务：`docker compose --env-file .env -f compose.yaml up -d <服务>`。
 5. 进程类失败：确认 `docker compose ps` 为 `Up`，且日志没有再次出现同一行。
@@ -85,7 +85,7 @@
 8. **Tenant 没有有效 admin**（`DD-82`、ADR-11）。先查清为什么变空：`audit.audit_event` 中该 Tenant 最近的 `ROLE_REVOKED`、`ROLE_REMOVED` 与成员 `REVOKED` 记录，以及 SpiceDB 上 `tenant:<id>#admin` 的现状。旁路改动须按 RB-02/RB-03 处置后再恢复。恢复只有一条路：以该 Tenant 的一位 `ACTIVE` 成员的 IdP subject 执行部署引导，它只在有效 admin 为空时写入一位（0→1）：
 
    ```sh
-   docker compose --env-file .env -f compose.yaml exec -T core-bff kailo-core bootstrap-tenant \
+   docker compose --env-file .env -f compose.yaml exec -T core-bff platform-core bootstrap-tenant \
      --slug <tenant slug> --name <显示名> --admin-subject <IdP subject> \
      --admin-display-name <显示名> --wait-seconds <秒>
    ```
@@ -116,11 +116,11 @@
 2. **启动**：把 `.env` 的 `BUZZ_RELAY_NATIVE_URL_TEMPLATE` 改为不含 `{host}` 的固定地址并重建 `core-bff`，容器 `Exited (1)`；还原后 `Up`。2026-09-24 该检查收紧为整个 authority 必须恰好是 `{host}` 后复演：以 `ws://{host}:8090` 启动 `core-bff`，日志末行 `Error: "BUZZ_RELAY_NATIVE_URL_TEMPLATE 必须形如 ws[s]://{host}[/path]"`，进程退出。
 3. **激活前观察**：Relay 以 `BUZZ_REQUIRE_RELAY_MEMBERSHIP=false` 重建后，`/info` 的 `supported_nips` 不含 `43`；还原并重建后含 `43`。这正是 Tenant 激活时 Core 读取并据以拒绝的那个值（`tenant_lifecycle.rs` 的 verify）。
 
-2026-09-24，本地拓扑，基于 commit `62051fe` 之上的工作树（新增重跑入口 `core/crates/kailo-core/src/task_rerun.rs`）：
+2026-09-24，本地拓扑，基于 commit `62051fe` 之上的工作树（新增重跑入口 `core/crates/platform-core/src/task_rerun.rs`）：
 
 1. **重跑搁浅实体（第 7 步）**：`bash core/verify/drill-task-rerun.sh`。在真实开通的 Tenant 下把 TenantBuzzBinding 暂置 `DISABLED` 后建立第二个 Workspace，`WORKSPACE_LIFECYCLE` 以 `ADMISSION_DENIED` 结束：`…:1 → FAILED；Workspace PROVISIONING v1`，搁浅计数 `1`。还原 binding 后按 7.1–7.4 逐条执行：定位查询返回唯一一行 `…:1|<原 ActionExecution ID>|<tenant>|FAILED`；重跑 `HTTP 200` 返回 `…:2`；同键重发 `HTTP 200` 返回同一个 `…:2`、`runId` 为空（未另起执行）；另一张准入重跑同一条旧 Workflow `HTTP 409`。核验：`Workspace ACTIVE v3`，新 Workflow `TERMINAL COMPLETED`，旧 Workflow 仍是 `TERMINAL FAILED`，`RERUN_ACCEPTED` 审计 `1` 条，搁浅计数 `0`。
-2. **入口的拒绝面**：`cargo test -p kailo-core --test scope_lifecycle` 的 `stranded_workspace_is_rerun_with_new_version` 覆盖终结的固定 ID 再 Start 得 `409`、准入 target 指向别的实体得 `403`、`DENIED` 的准入得 `403`、无 service 令牌得 `401`、对 `COMPLETED` 的 Workflow 重跑得 `409`。破坏核验：把准入查询的 target 条件改为不核对后重建 `core-bff`，该用例在「target 指向别的实体」一步失败（`left: 200, right: 403`）；还原后 2 项全部通过。
-3. **OpenBao audit device 的运行期观察**：从 `openbao-config.hcl` 删去 audit 块、重建 `openbao` 并解封，`openbao-init.sh` 输出 `audit device 未生效`。此时仍在运行的 `core-bff` 上跑 `cargo test -p kailo-core --test scope_lifecycle tenant_and_workspace`：Tenant 停在 `PROVISIONING`（`left: "PROVISIONING", right: "ACTIVE"`），Core 日志 6 次 `OpenBao 没有启用任何 audit device：不把 binding 推进到 ACTIVE`。随后重建 `core-bff`：`Exited (1)`，日志末行 `Error: "OpenBao 没有启用任何 audit device：取用不留痕，拒绝启动"`。还原 audit 块、重建并解封后 `audit device 已生效（声明式）`，`core-bff` `Up`，`scope_lifecycle` 2 项全部通过。
+2. **入口的拒绝面**：`cargo test -p platform-core --test scope_lifecycle` 的 `stranded_workspace_is_rerun_with_new_version` 覆盖终结的固定 ID 再 Start 得 `409`、准入 target 指向别的实体得 `403`、`DENIED` 的准入得 `403`、无 service 令牌得 `401`、对 `COMPLETED` 的 Workflow 重跑得 `409`。破坏核验：把准入查询的 target 条件改为不核对后重建 `core-bff`，该用例在「target 指向别的实体」一步失败（`left: 200, right: 403`）；还原后 2 项全部通过。
+3. **OpenBao audit device 的运行期观察**：从 `secret-store-config.hcl` 删去 audit 块、重建 `openbao` 并解封，`secret-store-init.sh` 输出 `audit device 未生效`。此时仍在运行的 `core-bff` 上跑 `cargo test -p platform-core --test scope_lifecycle tenant_and_workspace`：Tenant 停在 `PROVISIONING`（`left: "PROVISIONING", right: "ACTIVE"`），Core 日志 6 次 `OpenBao 没有启用任何 audit device：不把 binding 推进到 ACTIVE`。随后重建 `core-bff`：`Exited (1)`，日志末行 `Error: "OpenBao 没有启用任何 audit device：取用不留痕，拒绝启动"`。还原 audit 块、重建并解封后 `audit device 已生效（声明式）`，`core-bff` `Up`，`scope_lifecycle` 2 项全部通过。
 
 2026-09-24，本地拓扑，基于 commit `6ada92e` 之上的工作树：
 

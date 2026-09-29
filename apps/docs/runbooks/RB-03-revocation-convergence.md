@@ -63,7 +63,7 @@ where w.workflow_id = '<id>';
 
 ## 演练记录
 
-2026-09-23，本地拓扑，演练工具 `core/crates/kailo-core/tests/drill_revocation_outage.rs`（`cargo test -p kailo-core --test drill_revocation_outage -- --ignored --nocapture`）。演练时把 Worker 的一轮缩短为 `SCHEDULE_TO_CLOSE=30`、`MAX_ATTEMPTS=5`、`ROUND_INTERVAL=15`，演练后还原为 600/20/60：
+2026-09-23，本地拓扑，演练工具 `core/crates/platform-core/tests/drill_revocation_outage.rs`（`cargo test -p platform-core --test drill_revocation_outage -- --ignored --nocapture`）。演练时把 Worker 的一轮缩短为 `SCHEDULE_TO_CLOSE=30`、`MAX_ATTEMPTS=5`、`ROUND_INTERVAL=15`，演练后还原为 600/20/60：
 
 1. 建立一个真实 Workspace 与成员（ACTIVE，已在 Channel roster 上），**停掉 Relay**，置 `REVOKING` 并启动 `MEMBERSHIP_REVOCATION`。
 2. 16 秒后工作台投影出现 `CONVERGENCE_PENDING`；此时成员 `REVOKING`、任务 `RUNNING`——一轮耗尽没有让 Workflow 失败。

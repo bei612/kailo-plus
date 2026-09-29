@@ -1,40 +1,40 @@
 # RB-09 上游升级中止与基线还原
 
-`07-运行与运维基线.md` §6 第 9 项。升级流程以 `04-上游适配与升级.md` 与 `ADR-06` 为准：上游以固定 commit 加 patch series 构建，产物按 digest 引用，manifest 记录 `implementation_base_commit`、`patch_series_digest` 与 `artifact_digest`。
+`07-运行与运维基线.md` §6 第 9 项。升级流程以 `04-上游适配与升级.md` §4.4、`ADR-06`、`ADR-15` 与 `ADR-16` 为准：需要修改或自建的上游是按功能命名的二开项目，固定 commit 的完整源码在项目目录里，Kailo 改动直接在树里，上游变化以 `tools/upstream_manifest.py sync` 三方合并进树，产物由 `tools/build-upstream.sh` 构建并按 digest 引用；来源记录 `<项目>/fork/upstream.yaml` 记录 `implementation_base_commit` 与每个产物的 `source_digest`、`artifact_digest`。
 
 ## 适用范围
 
-当前拓扑中由本仓库构建或按 digest 引用的上游：`upstream-patches/` 下的 `buzz`（Relay 与 `buzz-admin`）、`buzz-web`、`agentgateway`、`temporal-sdk-go`，以及 compose 中按 digest 引用的其余上游镜像（Temporal、SpiceDB、OpenBao、Keycloak、Postgres、MinIO、Redis、OTel Collector）。
+当前拓扑中由本仓库构建或按 digest 引用的上游：二开项目 `collaboration`（Relay 与 `buzz-admin` 镜像）、`web-client`、`model-gateway`、`agent-runtime`，以 Go module 引用的 `temporal-sdk-go`（来源记录 `worker/fork/upstream.yaml`，版本锁在 `worker/go.mod`），以及 compose 中按 digest 引用的其余官方镜像（Temporal、SpiceDB、OpenBao、Keycloak、Postgres、MinIO、Redis、OTel Collector）。Desktop 安装包与 Mobile release APK 同在 `collaboration`，但它们是平台分发产物，回退是发布新版本（`ADR-06` 客户端发布单元按端分离），不按本 runbook 还原 digest。
 
-一次升级改变的是三处：manifest（commit、patch、两个 digest）、compose 的镜像 digest、`tools/traceability/` 中引用该产物的追溯记录。还原就是把这三处还原到升级前的提交，并按旧 digest 重新部署——**不重新构建**：旧 digest 在 registry 里，重新构建得到的是另一个产物。
+一次升级改变的是三处：二开项目目录（三方合并后的源码与来源记录中的基准 commit、两个摘要），以及随之同步的 `.design/02` §1 固定 commit、compose 的镜像 digest、`tools/traceability/` 中引用该产物的追溯记录。还原就是把这三处还原到升级前的提交，并按旧 digest 重新部署——**不重新构建**：旧 digest 在 registry 里，重新构建得到的是另一个产物。
 
 ## 触发信号
 
 - 候选版本在升级验证中失败：`tools/check.sh --full`、`core/verify/run-integration.sh`、`core/verify/web-walkthrough.sh` 任一不通过；
 - 候选版本上线后出现回归：本系列其他 runbook 的触发信号在升级之后首次出现；
-- `tools/check.sh seam` 报 patch 目录与 `patch_series_digest` 不一致，或 `security` 报 digest 与 manifest 不一致（升级只做了一半）。
+- `tools/check.sh seam` 报「产物不是由当前源码构建」（树改了而 `source_digest` 没随重建写回），或 `security` 报 compose 的 digest 与来源记录不一致（升级只做了一半）。
 
 ## 判定依据
 
-1. 以升级前后的提交比对三处（manifest、compose、追溯记录），确认候选改了什么。
+1. 以升级前后的提交比对三处（源码树与来源记录、compose、追溯记录），确认候选改了什么；树内的 Kailo 改动以 `tools/upstream_manifest.py diff <项目> --stat` 在两个提交上分别求出后比较。
 2. **门禁通过不等于行为正确。** `security` 与 `seam` 核对的是配置与摘要的一致性；一个丢掉了治理检查的候选，只要三处写得一致，这两步照样通过。行为只能由集成核验与走查证明——升级的放行判据必须包含它们。
 3. 失败出现在候选引入的路径上，即判定为候选的回归，中止升级。
 
 ## 可执行步骤
 
-1. **记录基线**：升级开始前记下当前提交与各产物 digest（`grep artifact_digest upstream-patches/*/baseline.yaml`）；确认这些 digest 在 registry 中可拉取。
-2. **候选验证**（升级流程本身）：`tools/build-upstream.sh <project>` 构建并写回 manifest，更新 compose 与追溯记录中的 digest，部署候选，然后依次跑 `tools/check.sh --full`、`core/verify/run-integration.sh`、`core/verify/web-walkthrough.sh`。
-3. **中止**：任一失败即中止。把 manifest、patch 目录、compose 与追溯记录还原到升级前的提交（`git checkout <基线提交> -- upstream-patches/<project> deploy/local/compose.yaml tools/traceability`，或放弃未提交的改动）。
+1. **记录基线**：升级开始前记下当前提交与各产物 digest（`grep -n artifact_digest */fork/upstream.yaml`）；确认这些 digest 在 registry 中可拉取。
+2. **候选验证**（升级流程本身，在隔离分支上）：以 `tools/upstream_manifest.py sync <项目>` 按 `04` §4.4 三方合并进树，`tools/build-upstream.sh <产物>` 构建并写回来源记录，更新 compose 与追溯记录中的 digest，部署候选，然后依次跑 `tools/check.sh --full`、`core/verify/run-integration.sh`、`core/verify/web-walkthrough.sh`。
+3. **中止**：任一失败即中止。把源码树（含来源记录）、compose 与追溯记录还原到升级前的提交（`git restore --source=<基线提交> --staged --worktree -- <项目> deploy/local/compose.yaml tools/traceability`；`.design/02` 已随升级改动时一并还原，或切回基线分支）；`git status --short <项目>` 不得留下候选新增的未跟踪文件——它们会进入 `source_digest`。
 4. **按旧 digest 重新部署**：`docker compose up -d <受影响的服务>`。compose 按 digest 引用，拉取的就是基线产物；不加 `--build`。
-5. **核验还原**：`tools/check.sh security` 与 `seam` 通过；运行中的镜像 digest 等于 manifest 的 `artifact_digest`；重新跑第 2 步中失败的那一项，确认通过。
-6. 候选的补丁工作树（例如 `/tmp/relay`）回到基线 commit，候选产物留在 registry 中供事后分析，不在 compose 中引用。
+5. **核验还原**：`tools/check.sh security` 与 `seam` 通过（`seam` 通过即树与基线登记的 `source_digest` 一致）；运行中的镜像 digest 等于来源记录的 `artifact_digest`；重新跑第 2 步中失败的那一项，确认通过。
+6. 候选分支保留供事后分析，候选产物留在 registry 中，不在 compose 中引用。
 
 ## 不可执行的动作
 
 1. 不以「门禁通过」放行上游候选：见判定依据第 2 条。
-2. 不在中止时从源码重新构建基线：重新构建的是另一份产物，digest 对不上 manifest，也不是经过核验的那一份（`ADR-06`）。
-3. 不只还原 compose 而保留新 manifest（或反之）：`security` 会报 digest 不一致，且追溯记录会指向没有在运行的产物。
-4. 不在候选与基线之间「挑着合」补丁：中止就是整体回到基线，修好的候选重新走完整个第 2 步。
+2. 不在中止时从源码重新构建基线：重新构建的是另一份产物，digest 对不上来源记录，也不是经过核验的那一份（`ADR-06`）。
+3. 不只还原 compose 而保留新的源码树与来源记录（或反之）：`security` 会报 digest 不一致，且追溯记录会指向没有在运行的产物。
+4. 不在候选与基线之间「挑着合」树内改动：中止就是整体回到基线，修好的候选重新走完整个第 2 步。
 
 ## 完成判据
 
@@ -44,7 +44,7 @@
 
 ## 演练记录
 
-2026-09-23，本地拓扑，以 Relay（`upstream-patches/buzz`）为对象：
+2026-09-23，本地拓扑，以 Relay 为对象。演练时上游仍以 patch series 维护（当时的 `upstream-patches/buzz`，manifest 为 `baseline.yaml`），以下按当时的记录保留原文；2026-09-29 起对应二开项目 `collaboration`（ADR-15、ADR-16），步骤与判据不变：
 
 1. **记录基线**：`artifact_digest` 为 `sha256:01927d94…`，manifest、patch 目录与 compose 复制留存。
 2. **候选**：在补丁工作树上做一次「rebase 时丢掉了治理检查」的修订（`ingest.rs` 中 `governance::check_event_kind` 的调用被删掉），`tools/build-upstream.sh buzz` 构建出 `sha256:36d1d973…` 并写回 manifest，compose 两处 digest 同步更新后部署。

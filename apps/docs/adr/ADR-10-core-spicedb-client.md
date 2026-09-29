@@ -38,7 +38,7 @@ authorization」相反。
 
 ## 决策
 
-**Core 经 SpiceDB 的 HTTP gateway 调 `CheckPermission`**（`core/crates/kailo-core/src/spicedb.rs`）。
+**Core 经 SpiceDB 的 HTTP gateway 调 `CheckPermission`**（`core/crates/platform-core/src/spicedb.rs`）。
 
 - 只用 Check 一个方法。一致性取值按 `.design/10` §1：准入、重新准入、审批者资格用
   `fullyConsistent`；「待我审批」列表用 `minimizeLatency`，点击动作仍 fresh Check。

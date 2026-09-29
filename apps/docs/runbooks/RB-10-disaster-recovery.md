@@ -58,7 +58,7 @@ SpiceDB 不能按 SQL 转储恢复：它的 revision 是 Postgres 事务 id，�
 2. 不按 SQL 转储恢复 SpiceDB（`SF-SPZ-06`）。
 3. 不把恢复后出现的 `UNKNOWN`、搁浅或漂移「清理掉」——它们按 RB-03、RB-05、RB-07 处置；不删除任何历史 Action、Workflow、Audit 或外部执行记录（`07` §4）。
 4. 不在恢复成功被核验之前删除备份：那时它是唯一的数据来源。
-5. 不以 `openbao-init.sh` 初始化一个新的空 OpenBao 来「恢复」：那会生成新的解封分片与 root token 并丢掉全部 secret 版本，所有 SecretRef 不可读。
+5. 不以 `secret-store-init.sh` 初始化一个新的空 OpenBao 来「恢复」：那会生成新的解封分片与 root token 并丢掉全部 secret 版本，所有 SecretRef 不可读。
 
 ## 完成判据
 
@@ -70,6 +70,6 @@ SpiceDB 不能按 SQL 转储恢复：它的 revision 是 Postgres 事务 id，�
 
 2026-09-23，本地拓扑，`core/verify/drill-dr.sh`：
 
-1. **第一次演练失败，环境重建**：OpenBao 的状态探测把 `bao status` 在封存时的非零退出码混进了输出，恢复在第一步超时；同时演练脚本在失败时删除了备份目录——本地数据只能从头引导重建（全部是核验夹具与平台引导数据，可重建）。由此确定两条：状态探测先取输出再解析；**备份只在恢复核验通过后删除**（「不可执行的动作」第 4 条）。重建时又撞出两处全新部署才会出现的缺陷，均已修正：compose 要求 `secrets/openbao-core.env` 存在而写它的正是 `openbao-init.sh`（`bootstrap.sh` 先放空文件）；新建的 Temporal namespace 在缓存刷新前不可见，Search Attribute 登记失败（初始化任务改为等待其可见）。
+1. **第一次演练失败，环境重建**：OpenBao 的状态探测把 `bao status` 在封存时的非零退出码混进了输出，恢复在第一步超时；同时演练脚本在失败时删除了备份目录——本地数据只能从头引导重建（全部是核验夹具与平台引导数据，可重建）。由此确定两条：状态探测先取输出再解析；**备份只在恢复核验通过后删除**（「不可执行的动作」第 4 条）。重建时又撞出两处全新部署才会出现的缺陷，均已修正：compose 要求 `secrets/openbao-core.env` 存在而写它的正是 `secret-store-init.sh`（`bootstrap.sh` 先放空文件）；新建的 Temporal namespace 在缓存刷新前不可见，Search Attribute 登记失败（初始化任务改为等待其可见）。
 2. **第二次演练，8 项核验中 SpiceDB 一项失败**：SpiceDB 按 `pg_dumpall` 恢复后关系全部不可见，新写入因事务表冲突而中止（`SF-SPZ-06`）。入口保持关闭，备份保留。SpiceDB 的备份与恢复改为 `zed backup create/restore`。
 3. **第三次演练通过**：备份 7 个权威 → 删除 4 个数据卷、OpenBao 与 MinIO 数据目录与 IdP 容器 → 按顺序恢复（SpiceDB 经批量导入恢复 3 条关系）→ 入口关闭时 8 项核验全部通过：计数 `72/2/4/2` 前后一致、灾难前的消息仍在 Relay 上、恢复后代签发布 HTTP 200、SpiceDB 归属关系 1 条、Temporal 已完成 Workflow 可查、IdP 用户 ID 不变、两个对账周期内 roster 零不一致 → 开放入口。随后 `run-integration.sh` 全过、浏览器走查 14/14。

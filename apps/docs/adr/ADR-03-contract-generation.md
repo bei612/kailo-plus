@@ -26,7 +26,7 @@ Worker 还有一条独有约束：`06` §5 要求 Workflow 的任何变更都必
 
 **生成物入库**，由统一检查入口校验同步。
 
-- **生成方向**：`contracts/**/*.schema.json` 生成四个目标——Rust（`core/crates/contracts/src/generated/`）、Go（`worker/internal/contracts/generated/`）、TypeScript（`web/packages/contracts/src/generated/`，Buzz Web 与 Buzz Desktop 共用）、Dart（`mobile/lib/shared/contracts/generated/`）。生成目录只由生成器写入，文件头声明不得手工编辑。adapter 若使用第五门语言，按同一方式新增生成目标，不得手写类型。
+- **生成方向**：`contracts/**/*.schema.json` 生成四个目标——Rust（`core/crates/contracts/src/generated/`）、Go（`worker/internal/contracts/generated/`）、TypeScript（`client-kit/ts/contracts/src/generated/`，Web 与 Desktop 客户端共用）、Dart（`client-kit/dart/lib/shared/contracts/generated/`）（2026-09-29 按 ADR-16 更新目录）。生成目录只由生成器写入，文件头声明不得手工编辑。adapter 若使用第五门语言，按同一方式新增生成目标，不得手写类型。
 - **Core 与 Worker 同源于 schema**：Worker 是 Go 进程，无法与 Core 共享 Rust 类型。二者的同源性由「同一份 schema、同一次生成、同一个版本号」保证，并由下面的 round-trip 与同步校验证明。Workflow 与 Activity 的输入输出类型只从生成目录取得，Worker 侧禁止手写与 Core 对应的结构体。
 - **封闭枚举的降级**：每个来自 `contracts/enums/` 的枚举一律生成带兜底分支的类型。
   - Rust：`#[non_exhaustive]` 枚举加 `Unknown(String)` 变体，缺失分支由编译器拒绝。
