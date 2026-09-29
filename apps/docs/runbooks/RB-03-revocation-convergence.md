@@ -16,15 +16,15 @@
 
 ## 触发信号
 
-- `kailo.entity.nonterminal{state="REVOKING"}`（`entity` 为 `tenant_membership`、`workspace_membership`、`buzz_identity_binding`）持续不降；
-- `kailo.entity.stranded` 对上述任一实体大于 0；
+- `platform.entity.nonterminal{state="REVOKING"}`（`entity` 为 `tenant_membership`、`workspace_membership`、`buzz_identity_binding`）持续不降；
+- `platform.entity.stranded` 对上述任一实体大于 0；
 - 工作台投影 `projection.task_projection.waiting_reason = 'CONVERGENCE_PENDING'`：一轮 Activity 重试已耗尽，Workflow 在等下一轮；
-- `kailo.workflow_ref.oldest_age{projection_state="RUNNING"}` 超过一轮的时长（`WORKER_ACTIVITY_SCHEDULE_TO_CLOSE_SECONDS` 加 `WORKER_CONVERGE_ROUND_INTERVAL_SECONDS`）；
+- `platform.workflow_ref.oldest_age{projection_state="RUNNING"}` 超过一轮的时长（`WORKER_ACTIVITY_SCHEDULE_TO_CLOSE_SECONDS` 加 `WORKER_CONVERGE_ROUND_INTERVAL_SECONDS`）；
 - Worker 日志「本轮收敛未完成，等待下一轮」。
 
 ## 判定依据
 
-取该实体当前版本的 Workflow（ID 为 `kailo:<kind>:<tenant>:<entity>:<version>`，`DD-48`）：
+取该实体当前版本的 Workflow（ID 为 `platform:<kind>:<tenant>:<entity>:<version>`，`DD-48`；ADR-17 迁移窗口内此前启动的存量仍是旧前缀 `kailo:`，以 `projection.workflow_ref` 记录的原 ID 为准）：
 
 ```sql
 select w.projection_state, t.status, t.waiting_reason, t.observation_gap
@@ -59,7 +59,7 @@ where w.workflow_id = '<id>';
 
 - 实体为 `REVOKED`，其 Workflow `TERMINAL` 且 `COMPLETED`；
 - 执行点已查证：该 pubkey 不在 relay 或 Channel roster 上（`IdentityClient::roster`），SpiceDB 上没有对应 relationship（`zed relationship read --consistency-full`）；
-- `kailo.entity.nonterminal{state="REVOKING"}` 与 `kailo.entity.stranded` 回到事件前的读数。
+- `platform.entity.nonterminal{state="REVOKING"}` 与 `platform.entity.stranded` 回到事件前的读数。
 
 ## 演练记录
 

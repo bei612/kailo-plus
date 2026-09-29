@@ -37,8 +37,8 @@ Desktop 接入 Kailo 时若照抄一份，两端对同一个 `UNKNOWN`、同一�
   不依赖任一上游的组件库；外观只用两端 Tailwind 主题都有的语义类名。包内有 typecheck 与单元测试。
 - 两端只在「一次请求怎么送到 BFF」上不同，这是两个真实实现，所以抽一个最小接口 `BffTransport`：
   - Web：`web-fetch.ts`，同源 fetch，会话由网关 cookie 承载，`401`/`opaqueredirect` 即会话结束；
-  - Desktop：`native.ts`，经 Tauri 命令 `kailo_api` 进入 Rust 侧，令牌只在 Rust 侧；
-    `KAILO_NOT_SIGNED_IN` 即会话结束。原生命令名与参数也只在这里写一次。
+  - Desktop：`native.ts`，经 Tauri 命令 `platform_api` 进入 Rust 侧，令牌只在 Rust 侧；
+    `PLATFORM_NOT_SIGNED_IN` 即会话结束。原生命令名与参数也只在这里写一次。
   两个实现都放在包内：它们共用同一套错误解读与测试，放进各自上游树只会多出一份需要对齐的代码。
 - 两个二开项目以本地路径依赖直接引用这两个包（`web-client` 用 npm、`collaboration/desktop` 用 pnpm，均为
   `file:`/`link:`），以 `@client-kit/platform/*`、`@client-kit/contracts` 导入；开发、测试与构建引用的是同一份源，

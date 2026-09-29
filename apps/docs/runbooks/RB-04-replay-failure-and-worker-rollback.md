@@ -4,7 +4,7 @@
 
 ## 适用范围
 
-当前拓扑的 Application Worker（`worker/`，注册 `ComponentTaskWorkflow` 与 `KAILO_BASELINE`），及其在 Temporal 上的全部在途 execution。
+当前拓扑的 Application Worker（`worker/`，注册 `ComponentTaskWorkflow` 与 `PLATFORM_BASELINE`），及其在 Temporal 上的全部在途 execution。
 
 replay 失败有两个发现位置：
 
@@ -20,7 +20,7 @@ replay 失败有两个发现位置：
 - `tools/check.sh replay` 或 `--full` 的第 5 步 `FAIL`；
 - Worker 日志出现 `TMPRL1100` 或 `Workflow panic`；
 - Temporal SDK 指标 `temporal_workflow_task_execution_failed` 上升（经 OTLP 到 Collector）；
-- `kailo.workflow_ref.oldest_age{projection_state="RUNNING"}` 在依赖都可达时仍持续增长。
+- `platform.workflow_ref.oldest_age{projection_state="RUNNING"}` 在依赖都可达时仍持续增长。
 
 ## 判定依据
 
@@ -45,7 +45,7 @@ replay 失败有两个发现位置：
      workflow show --workflow-id <id> -o json > worker/replay-tests/testdata/<name>.json
    ```
 
-   需要找执行时可按 `KailoWorkflowKind`、`KailoTenantId` 列举（`workflow list --query`）。
+   需要找执行时可按 `PlatformWorkflowKind`、`PlatformTenantId` 列举（`workflow list --query`）；ADR-17 迁移窗口内以 `OR` 同时查旧名 `KailoWorkflowKind`、`KailoTenantId`，窗口关闭后删去旧名。
 
 ## 不可执行的动作
 

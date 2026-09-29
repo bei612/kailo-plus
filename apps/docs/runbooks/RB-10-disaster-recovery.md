@@ -44,10 +44,10 @@ SpiceDB 不能按 SQL 转储恢复：它的 revision 是 Postgres 事务 id，�
    - 备份前发出的消息在 Relay 上可读；
    - 一次新的代签发布成功（Core 从恢复的 OpenBao 取私钥）；
    - SpiceDB 中已知关系存在（`zed relationship read --consistency-full`）；
-   - Temporal 中已完成的 Workflow 可按 `KailoTenantId` 查到；
+   - Temporal 中已完成的 Workflow 可按 `PlatformTenantId` 查到（ADR-17 迁移窗口内同时查旧名 `KailoTenantId`，见 `core/verify/drill-dr.sh`）；
    - IdP 用户 ID 与备份前一致（否则 Core 的 ExternalIdentity 对不上，所有人都无法登录）；
    - 两个 roster 对账周期内没有「roster 与成员事实不一致」；
-   - `kailo.workflow_ref.*` 与 `kailo.publish.unsettled` 没有新增的 `UNKNOWN`。
+   - `platform.workflow_ref.*` 与 `platform.publish.unsettled` 没有新增的 `UNKNOWN`。
 5. **开放入口**：`docker compose up -d agentgateway`。
 6. **验收**：`core/verify/run-integration.sh` 与 `core/verify/web-walkthrough.sh` 通过。
 7. 确认恢复成立后，按保留策略处理本次使用的备份。

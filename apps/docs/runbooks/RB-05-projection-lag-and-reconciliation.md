@@ -8,24 +8,24 @@
 
 | 投影 | 权威 | 对账作业 | 度量 |
 |---|---|---|---|
-| WorkflowRef 与 TaskProjection | Temporal execution | `workflow_reconcile`：超过新鲜度上界仍非终态的 WorkflowRef 按固定 ID Describe，补写漏掉的终态并标 `observation_gap`，NotFound 按 retention 判定 | `kailo.workflow_ref.nonterminal{projection_state}`、`kailo.workflow_ref.oldest_age{projection_state}`、`kailo.workflow_ref.reconciled{outcome}`、`kailo.entity.nonterminal{entity,state}`、`kailo.entity.stranded{entity}`、`kailo.workflow_reconcile.passes{outcome}` |
-| Buzz relay 与 Channel roster | Relay | `roster_reconcile`：以各 Tenant 的 CONTROL 身份读 roster，与已落定的成员事实比对；只度量、不修复 | `kailo.roster.drift{scope,direction}`、`kailo.roster.reconciled{scope,outcome}` |
-| ActionExecution 门禁/派发与 ApprovalProjection | Core（门禁）、Temporal（审批） | `governance_reconcile`：只取有一步可做的非终态动作——EVALUATING 超时置 EXPIRED、已允许未派发按预写 ID 重新驱动、APPROVED 待重新准入、consume/invalidate 按固定 Update ID 重发、审批 Workflow 已终结而投影未终结时门禁置 EXPIRED | `kailo.action_execution.open{state=<gate>/<dispatch>}`、`kailo.action_execution.oldest_open_age{state}`、`kailo.governance_reconcile.driven{stage}`、`kailo.governance_reconcile.passes{outcome}` |
-| 遗留身份 SecretRef 归位 | Core 的 `admission.secret_ref_rehome` 引用与 OpenBao 钉定版本 | `SECRET_REF_REHOME` Workflow 按固定 ID 重试查证；`governance_reconcile` 只度量超时并发运维告警，不替它执行外部副作用 | `kailo.secret_ref_rehome.open{state}`、`kailo.secret_ref_rehome.oldest_open_age{state}`、`kailo.secret_ref_rehome.overdue{state}` |
+| WorkflowRef 与 TaskProjection | Temporal execution | `workflow_reconcile`：超过新鲜度上界仍非终态的 WorkflowRef 按固定 ID Describe，补写漏掉的终态并标 `observation_gap`，NotFound 按 retention 判定 | `platform.workflow_ref.nonterminal{projection_state}`、`platform.workflow_ref.oldest_age{projection_state}`、`platform.workflow_ref.reconciled{outcome}`、`platform.entity.nonterminal{entity,state}`、`platform.entity.stranded{entity}`、`platform.workflow_reconcile.passes{outcome}` |
+| Buzz relay 与 Channel roster | Relay | `roster_reconcile`：以各 Tenant 的 CONTROL 身份读 roster，与已落定的成员事实比对；只度量、不修复 | `platform.roster.drift{scope,direction}`、`platform.roster.reconciled{scope,outcome}` |
+| ActionExecution 门禁/派发与 ApprovalProjection | Core（门禁）、Temporal（审批） | `governance_reconcile`：只取有一步可做的非终态动作——EVALUATING 超时置 EXPIRED、已允许未派发按预写 ID 重新驱动、APPROVED 待重新准入、consume/invalidate 按固定 Update ID 重发、审批 Workflow 已终结而投影未终结时门禁置 EXPIRED | `platform.action_execution.open{state=<gate>/<dispatch>}`、`platform.action_execution.oldest_open_age{state}`、`platform.governance_reconcile.driven{stage}`、`platform.governance_reconcile.passes{outcome}` |
+| 遗留身份 SecretRef 归位 | Core 的 `admission.secret_ref_rehome` 引用与 OpenBao 钉定版本 | `SECRET_REF_REHOME` Workflow 按固定 ID 重试查证；`governance_reconcile` 只度量超时并发运维告警，不替它执行外部副作用 | `platform.secret_ref_rehome.open{state}`、`platform.secret_ref_rehome.oldest_open_age{state}`、`platform.secret_ref_rehome.overdue{state}` |
 
 周期与上界由 `WORKFLOW_RECONCILE_INTERVAL_SECONDS`、`WORKFLOW_PROJECTION_FRESHNESS_SECONDS`、`WORKFLOW_RECONCILE_BATCH`、`ROSTER_RECONCILE_INTERVAL_SECONDS`、`GOVERNANCE_RECONCILE_INTERVAL_SECONDS`、`GOVERNANCE_RECONCILE_BATCH`、`ADMISSION_EVALUATION_TIMEOUT_SECONDS`、`SECRET_REF_REHOME_ALERT_AFTER_SECONDS` 给出。SpiceDB relationship 是成员投影的另一执行点，目前只在每次建立与撤权时由 Workflow 以 `FullyConsistent` 读回查证，没有周期对账。
 
 ## 触发信号
 
-- `kailo.workflow_ref.oldest_age` 超过新鲜度上界加一个对账周期；
-- `kailo.workflow_ref.reconciled{outcome}` 出现 `TERMINAL_PATCHED`（漏写被补）、`UNKNOWN`、`UNRECOGNIZED` 或 `DESCRIBE_FAILED`；
-- `kailo.workflow_reconcile.passes{outcome="FAILED"}` 连续出现；
-- `kailo.roster.drift` 任一值大于 0，或 Core 日志 `relay roster 与成员事实不一致` / `Channel roster 与成员事实不一致`（带 Tenant 或 Workspace ID 与 missing、unexpected 计数）；
-- `kailo.roster.reconciled{outcome="ROSTER_UNREADABLE"|"CONTROL_UNREADABLE"}` 持续出现。
-- `kailo.action_execution.oldest_open_age` 超过 `ADMISSION_EVALUATION_TIMEOUT_SECONDS` 加两个治理对账周期（`WAITING` 除外：它以审批策略的 `expires_in` 为界）；
-- `kailo.governance_reconcile.driven{stage}` 出现 `APPROVAL_LOST`、`FAILED`，或 `DISPATCH_REDRIVEN`/`CONSUME_RESENT` 在同一批动作上持续出现；
+- `platform.workflow_ref.oldest_age` 超过新鲜度上界加一个对账周期；
+- `platform.workflow_ref.reconciled{outcome}` 出现 `TERMINAL_PATCHED`（漏写被补）、`UNKNOWN`、`UNRECOGNIZED` 或 `DESCRIBE_FAILED`；
+- `platform.workflow_reconcile.passes{outcome="FAILED"}` 连续出现；
+- `platform.roster.drift` 任一值大于 0，或 Core 日志 `relay roster 与成员事实不一致` / `Channel roster 与成员事实不一致`（带 Tenant 或 Workspace ID 与 missing、unexpected 计数）；
+- `platform.roster.reconciled{outcome="ROSTER_UNREADABLE"|"CONTROL_UNREADABLE"}` 持续出现。
+- `platform.action_execution.oldest_open_age` 超过 `ADMISSION_EVALUATION_TIMEOUT_SECONDS` 加两个治理对账周期（`WAITING` 除外：它以审批策略的 `expires_in` 为界）；
+- `platform.governance_reconcile.driven{stage}` 出现 `APPROVAL_LOST`、`FAILED`，或 `DISPATCH_REDRIVEN`/`CONSUME_RESENT` 在同一批动作上持续出现；
 - Core 审计出现 `event_type=RECONCILIATION`、`result_code=APPROVAL_CONSUME_WINDOW_CLOSED`（已派发而批准拒绝 consume）。
-- `kailo.secret_ref_rehome.overdue{state}` 非零：从归位记录创建时起计龄，周期重试不清零；按 RB-07 的 DD-85 步骤处理，不把 `COPY_UNKNOWN` 当成确定失败。
+- `platform.secret_ref_rehome.overdue{state}` 非零：从归位记录创建时起计龄，周期重试不清零；按 RB-07 的 DD-85 步骤处理，不把 `COPY_UNKNOWN` 当成确定失败。
 
 ## 判定依据
 
@@ -50,7 +50,7 @@
 
 ## 可执行步骤
 
-1. **`TERMINAL_PATCHED`**：确认实体已到终态（`kailo.entity.stranded` 未增加）。找出写回为何没到达：Worker 日志中该 workflow 最后一次 `ProjectTaskState` 的失败，常见为 Core 在那段时间不可达。不需要其他动作。
+1. **`TERMINAL_PATCHED`**：确认实体已到终态（`platform.entity.stranded` 未增加）。找出写回为何没到达：Worker 日志中该 workflow 最后一次 `ProjectTaskState` 的失败，常见为 Core 在那段时间不可达。不需要其他动作。
 2. **`NOT_FOUND` 持续**：由发起方以同一入口重试（同一 ActionExecution、同一 workflow ID），见 RB-03 第 3 步。
 3. **`UNKNOWN`**：记录 workflow ID，按实体判断影响：若实体仍在收敛中且搁浅，按 RB-03 第 4 步升级。不重新 Start 同一 ID。
 4. **`DESCRIBE_FAILED` 或 passes `FAILED`**：Core 到 Temporal 的连接或令牌问题。查 Core 日志「Describe 结果不明」「WorkflowRef 对账本轮未完成」，恢复连接后下一轮自动继续。
@@ -59,7 +59,7 @@
    2. 若成员事实是撤销（`REVOKED`）而 roster 仍在：撤权投影没有执行或执行后被逆转。按 P1 升级给实施工程负责人，附 Tenant/Workspace ID、成员 ID 与该成员撤权 Workflow 的 ID 与终态；
    3. 若公钥不属于任何 binding：roster 被越过治理写入，同时检查 Relay 的补丁构建与 `BUZZ_MEMBER_EVENT_KINDS` 是否生效（RB-01）。
 6. **roster `missing`**：该成员的建立投影没有执行或被逆转。对照该成员的建立 Workflow 终态；若 Workflow `COMPLETED` 而 roster 仍缺，按缺陷升级。
-7. 修复后，下一轮对账的 `kailo.roster.drift` 回到 0 即为闭合。
+7. 修复后，下一轮对账的 `platform.roster.drift` 回到 0 即为闭合。
 8. **受治理动作停在非终态**：按 `stage` 判断。`DISPATCH_REDRIVEN` 持续：以该动作的
    `temporal_workflow_id` 查 WorkflowRef 与 Temporal，Start 反复不明时按 RB-03 查
    Core 到 Temporal 的连接；不换 workflow ID、不手工改 `dispatch_state`（`DD-48`）。
@@ -81,8 +81,8 @@
 
 ## 完成判据
 
-- `kailo.workflow_ref.oldest_age` 回到新鲜度上界加一个周期以内，或超出部分都已按上表归类并有处置；
-- `kailo.roster.drift` 全部为 0，或非零部分已按 P1/缺陷升级登记；
+- `platform.workflow_ref.oldest_age` 回到新鲜度上界加一个周期以内，或超出部分都已按上表归类并有处置；
+- `platform.roster.drift` 全部为 0，或非零部分已按 P1/缺陷升级登记；
 - 连续两轮对账 `passes{outcome="COMPLETED"}`。
 
 ## 演练记录
@@ -91,4 +91,4 @@
 
 1. **Workflow 投影漏写**（`core/crates/platform-core/tests/workflow_reconcile.rs`，随 `run-integration.sh` 运行）：以 Worker 不认识的 kind 启动一个 execution，它在写任何投影前终结；对账在三轮内把 WorkflowRef 置 `TERMINAL`、TaskProjection 补写 `FAILED` 且 `observation_gap = true`。同时核验 NotFound 超出 retention 记 `UNKNOWN`、窗口内不改状态、已终结版本再启动回 409。去掉补写的 gap 标记、去掉 409 判定，各跑一次均当场失败，还原后通过。
 2. **roster 漂移**（`core/verify/drill-roster-drift.sh`）：开通真实 Workspace，两轮对账没有关于它的不一致日志；把成员事实直接改为 `REVOKED`（不经 Workflow，模拟 Core 缺陷），下一轮报出 `Channel roster 与成员事实不一致 missing=0 unexpected=1`；还原为 `ACTIVE` 后两轮不再报。同一窗口内 relay 维度没有误报。
-3. 度量实到 Collector：`kailo.workflow_ref.*`、`kailo.entity.*`、`kailo.roster.*` 与 Temporal SDK 的 `temporal_workflow_task_execution_failed`，标签经 Collector 允许清单保留。
+3. 度量实到 Collector：`platform.workflow_ref.*`、`platform.entity.*`、`platform.roster.*` 与 Temporal SDK 的 `temporal_workflow_task_execution_failed`，标签经 Collector 允许清单保留。

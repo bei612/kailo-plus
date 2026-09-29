@@ -34,7 +34,7 @@ Component SDK 与示例组件（`DD-76`、`DD-101`），三者必须对同一条
 
 ## 决策
 
-1. **编码与路径。** v1 为 HTTP/1.1 上的 JSON：每个逻辑操作一个 `POST /kailo-adapter/v1/<operation>`，
+1. **编码与路径。** v1 为 HTTP/1.1 上的 JSON：每个逻辑操作一个 `POST /platform-adapter/v1/<operation>`，
    `<operation>` 取 `.design/07` §5.2 的操作名。请求与回应对象的 schema 放在
    `contracts/adapter/protocol.v1/`，按 `contracts/README.md` 的子集编写，由四侧生成；能力契约
    schema 仍在 `contracts/adapter/<category>.v1/`，由 `execute` 的参数与结果引用。

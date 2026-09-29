@@ -58,7 +58,7 @@ Tenant 与成员的建立必须走既有生命周期 Workflow（`DD-01`、`DD-45
    ```
 
    - 发起方是 Catalog Tenant 下的 SERVICE Principal（`identity.service_principal`，
-     audience `kailo-deployment-bootstrap`），每一步的 ActionExecution 与 AuditEvent 都归到
+     audience `platform-deployment-bootstrap`），每一步的 ActionExecution 与 AuditEvent 都归到
      它，关联 ID 取 Tenant ID；
    - Tenant 以 `PROVISIONING` 建立并经 `TENANT_LIFECYCLE` 开通；首位成员的外部身份登记在
      部署 IdP（`HUMAN_OIDC_ISSUER`/`HUMAN_OIDC_CLIENT_ID`，即浏览器登录所用的那一对）下，
@@ -68,7 +68,7 @@ Tenant 与成员的建立必须走既有生命周期 Workflow（`DD-01`、`DD-45
      周期未在 `--wait-seconds` 内完成时以退出码 3（`PENDING`）返回，重跑继续；
    - 已撤权的人不由引导恢复：成员恢复只经邀请（`DD-83`）。
 
-   同一形态兼作「有效 admin 为空」时的恢复手段：`kailo.tenant.without_effective_admin`
+   同一形态兼作「有效 admin 为空」时的恢复手段：`platform.tenant.without_effective_admin`
    大于 0 时，部署者以一位现有成员的 subject 执行引导即可 0→1；它不能动已有 admin 的
    Tenant。
 

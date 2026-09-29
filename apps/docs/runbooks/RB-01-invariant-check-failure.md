@@ -19,9 +19,9 @@
 
 - `tools/check.sh --full` 或 `tools/check.sh security` 输出 `FAIL`；
 - `docker compose ps -a` 中 `core-bff` 或 `worker` 为 `Exited (1)`；
-- 指标 `kailo.entity.stranded{entity="tenant"}` 大于 0，或 `kailo.entity.nonterminal{entity="tenant",state="PROVISIONING"}` 持续不降；
+- 指标 `platform.entity.stranded{entity="tenant"}` 大于 0，或 `platform.entity.nonterminal{entity="tenant",state="PROVISIONING"}` 持续不降；
 - Core 日志出现 `实体搁浅`，或 Worker 日志中 `VerifyTenantBuzz` 以 `ADMISSION_DENIED` 结束；
-- 指标 `kailo.tenant.without_effective_admin` 大于 0，或 Core 日志出现 `Tenant 没有有效 admin`（`DD-82` 的「有效 Tenant admin 不得为空」被打破：平台内的撤销路径都拒绝这一步，出现即是旁路改动 SpiceDB 或成员状态）。
+- 指标 `platform.tenant.without_effective_admin` 大于 0，或 Core 日志出现 `Tenant 没有有效 admin`（`DD-82` 的「有效 Tenant admin 不得为空」被打破：平台内的撤销路径都拒绝这一步，出现即是旁路改动 SpiceDB 或成员状态）。
 
 ## 判定依据
 
@@ -48,7 +48,7 @@
 3. 重新执行 `tools/check.sh security`，直到 `全部通过`。
 4. 重建受影响的服务：`docker compose --env-file .env -f compose.yaml up -d <服务>`。
 5. 进程类失败：确认 `docker compose ps` 为 `Up`，且日志没有再次出现同一行。
-6. Tenant 激活类失败：重做第 3 步的 NIP-11 观察，得到 `True`。已经 `FAILED` 的那次 `TENANT_LIFECYCLE` 不会自己恢复：该 Tenant 停在 `PROVISIONING`，不获得任何协作能力（fail closed），它计入 `kailo.entity.stranded`。原因修复后按第 7 步重跑。
+6. Tenant 激活类失败：重做第 3 步的 NIP-11 观察，得到 `True`。已经 `FAILED` 的那次 `TENANT_LIFECYCLE` 不会自己恢复：该 Tenant 停在 `PROVISIONING`，不获得任何协作能力（fail closed），它计入 `platform.entity.stranded`。原因修复后按第 7 步重跑。
 7. **重跑搁浅实体**（Tenant、Workspace、Tenant/Workspace 成员通用；RB-03 的撤权搁浅同样走这里）。重跑创建新的 ActionExecution 与新的 Workflow，不改写旧 history（`.design/06` §9）；新 workflow ID 由实体版本 +1 得到（`.design/06` §3.1、`DD-48`），实体状态不变。在 `apps` 目录下 `. core/verify/integration-env.sh` 后执行：
    1. 找出驱动实体当前版本、已终结而未完成的那条 Workflow（`<表>` 取 `identity.tenant`、`identity.workspace`、`identity.tenant_membership` 或 `identity.workspace_membership`）：
 
@@ -74,14 +74,14 @@
 
       ```sh
       token=$(curl -sf -H "Host: $OIDC_TOKEN_HOST" "$OIDC_TOKEN_URL" --data-urlencode grant_type=client_credentials \
-        --data-urlencode client_id="$OIDC_WORKER_CLIENT_ID" --data-urlencode "client_secret@deploy/local/secrets/kailo_worker_client_secret" \
+        --data-urlencode client_id="$OIDC_WORKER_CLIENT_ID" --data-urlencode "client_secret@deploy/local/secrets/worker_client_secret" \
         | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
       curl -s -w ' HTTP %{http_code}\n' -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
         "$CORE_SERVICE_URL/service/v1/tasks/rerun" -d "{\"workflowId\":\"<第 1 步的 workflow ID>\",\"actionExecutionId\":\"$action\"}"
       ```
 
       `200` 返回新的 `workflowId`；`409` 是旧 Workflow 不在可重跑的终态，或实体已不在它冻结的版本（有人先重跑过，回第 1 步重新定位）；`403` 是准入不成立；`503` 是结果不明，以**同一个** `actionExecutionId` 重发——同键重发回答同一个新 Workflow，不会第二次推进版本。
-   4. 核验：实体到达目标状态（`ACTIVE` 或 `REVOKED`），新 Workflow `TERMINAL` 且 `COMPLETED`，旧 Workflow 仍是原来的终态；`audit.audit_event` 有一条 `result_code='RERUN_ACCEPTED'`，`evidence_refs` 同时指向新旧两个 workflow ID；`kailo.entity.stranded` 回落。
+   4. 核验：实体到达目标状态（`ACTIVE` 或 `REVOKED`），新 Workflow `TERMINAL` 且 `COMPLETED`，旧 Workflow 仍是原来的终态；`audit.audit_event` 有一条 `result_code='RERUN_ACCEPTED'`，`evidence_refs` 同时指向新旧两个 workflow ID；`platform.entity.stranded` 回落。
 8. **Tenant 没有有效 admin**（`DD-82`、ADR-11）。先查清为什么变空：`audit.audit_event` 中该 Tenant 最近的 `ROLE_REVOKED`、`ROLE_REMOVED` 与成员 `REVOKED` 记录，以及 SpiceDB 上 `tenant:<id>#admin` 的现状。旁路改动须按 RB-02/RB-03 处置后再恢复。恢复只有一条路：以该 Tenant 的一位 `ACTIVE` 成员的 IdP subject 执行部署引导，它只在有效 admin 为空时写入一位（0→1）：
 
    ```sh
@@ -105,8 +105,8 @@
 - `tools/check.sh security` 输出 `全部通过`；
 - 相关容器 `Up`，日志中没有同一条启动失败；
 - 对每个在服务的 Community host，NIP-11 `supported_nips` 含 `43`；
-- `kailo.entity.stranded{entity="tenant"}` 为 0：搁浅的 Tenant 已按第 7 步重跑并收敛；
-- `kailo.tenant.without_effective_admin` 为 0。
+- `platform.entity.stranded{entity="tenant"}` 为 0：搁浅的 Tenant 已按第 7 步重跑并收敛；
+- `platform.tenant.without_effective_admin` 为 0。
 
 ## 演练记录
 

@@ -16,8 +16,8 @@
 
 ## 触发信号
 
-- `kailo.publish.unsettled` 大于 0 且 `kailo.publish.unsettled_oldest_age` 超过 `PUBLISH_RESULT_SETTLE_SECONDS` 加一个对账周期；
-- `kailo.publish.reconciled{outcome}` 出现 `QUERY_FAILED`、`CONTROL_UNREADABLE`、`WRITE_FAILED` 或 `EVIDENCE_MISSING`；
+- `platform.publish.unsettled` 大于 0 且 `platform.publish.unsettled_oldest_age` 超过 `PUBLISH_RESULT_SETTLE_SECONDS` 加一个对账周期；
+- `platform.publish.reconciled{outcome}` 出现 `QUERY_FAILED`、`CONTROL_UNREADABLE`、`WRITE_FAILED` 或 `EVIDENCE_MISSING`；
 - Core 日志「发布前审计未写入，不发送」（发布因审计不可写而被拒）、「发布结果审计未写入，留给对账」、「认证拒绝审计未写入」「认证拒绝审计未提交」；
 - 用户在界面上看到「发送结果待确认」及操作号。
 
@@ -35,7 +35,7 @@ from audit.audit_event where operation_id = '<operation id>' order by occurred_a
 | DISPATCH → OUTCOME | 完整 |
 | DISPATCH → RECONCILIATION `ACCEPTED` / `NOT_DELIVERED` | 结果不明已由对账收敛；结论来自 Relay 的实际查询 |
 | 只有 DISPATCH，年龄在 settle 窗口内 | 正在等待，不是缺口 |
-| 只有 DISPATCH，年龄超出窗口加一个周期 | 对账没能结论：看 `kailo.publish.reconciled` 的 outcome 找原因 |
+| 只有 DISPATCH，年龄超出窗口加一个周期 | 对账没能结论：看 `platform.publish.reconciled` 的 outcome 找原因 |
 | 没有任何审计，而消息在 Relay 上存在 | 越过 BFF 写入（原生端直连发布不经 Core，属设计内，见下）或缺陷 |
 
 原生端设备以自己的私钥直连 Relay 发布（`DD-75`），Core 不在路径上，这类消息**没有也不应有** Core 的发布审计；它们以设备公钥归属到本人（成员页的公钥列表）。
@@ -61,7 +61,7 @@ from audit.audit_event where operation_id = '<operation id>' order by occurred_a
 
 ## 完成判据
 
-- `kailo.publish.unsettled` 中不存在超出 settle 窗口加一个周期的条目；
+- `platform.publish.unsettled` 中不存在超出 settle 窗口加一个周期的条目；
 - 每个被调查的 operation 要么有 OUTCOME，要么有 RECONCILIATION，要么在窗口内等待；
 - 认证拒绝审计的缺失时间窗已记入事件报告。
 

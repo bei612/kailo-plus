@@ -1,6 +1,6 @@
-# ADR-17：内部标识去掉产品名——中性固定前缀加一次性兼容窗口（草案）
+# ADR-17：内部标识去掉产品名——中性固定前缀加一次性兼容窗口
 
-- 状态：提议（草案，待设计变更先行后接受）
+- 状态：已接受（设计变更先行：`.design/02` DD-111 与 SS-AGW-OIDC、`03`、`04`、`06` §3 与 §3.1、`07`、`09`、`12`、`16`、`18`、`19` 已改为中性名）
 - 日期：2026-09-29
 - 决策者：Kailo 实施工程负责人
 
@@ -74,3 +74,67 @@ Search Attribute 的类型不变。
 - 设计变更评审认定某类标识是对外公开协议的一部分、改名需要协议版本号（例如 Adapter Protocol 升为 v2）：该类别按协议
   版本规则处理，不走本 ADR 的窗口；
 - Temporal 的 SA 注册或 visibility 后端不支持新旧 SA 并存查询：改为窗口内只写新 SA、旧 Workflow 仅按 WorkflowRef 对账。
+
+## 实施（2026-09-29）
+
+标识常量只在一处定义，其余引用它：workflow ID 前缀为 Core 的 `component_task::WORKFLOW_ID_PREFIX`（拆分只经
+`split_workflow_id`）与 Worker 的 `workflows.WorkflowID`；SA 为 Core 的 `temporal::SA_TENANT`/`SA_KIND`；身份 header 为
+Core 的 `bff::HEADER_*`、`native::HEADER_CLIENT_SURFACE` 与网关配置，由 `tools/check.sh security` 逐条核对；派生名字空间为
+`roles::target_id` 与 `role_reconcile` 的 `urn:platform:*`。未落地的对外协议面（Adapter 路径、组件属性、编辑器窗口
+label、记忆 source key、用量 CloudEvent source）只存在于设计与 ADR-12，随设计改名，实现时直接使用新名。
+
+范围内另有几项同类标识一并改名（无存量或随部署迁移）：Tauri 命令 `platform_*` 与 `PLATFORM_NOT_SIGNED_IN`、原生端本机
+存储键（Desktop 配置文件 `platform.json` 与刷新令牌键、Mobile 的 `platform.config.v1`、设备私钥与刷新令牌键——本机旧值不迁移，
+升级后重新填写服务器并登录）、Mobile 登录回调 `xyz.block.buzz.mobile:/platform/oauth2redirect`、Core 与 Worker 的
+OTel 服务名与 Temporal identity（`platform-core`、`platform-worker`）、Worker 二进制名、基线 Workflow 类型名
+`PLATFORM_BASELINE`、部署引导 ServicePrincipal 的 audience（迁移 `20260929120000_neutral_internal_identifiers` 就地改写，
+principal ID 不变，审计归因不断）、容器用户与 Codex 固定配置路径 `/usr/share/platform/codex`、`release.sh` 的镜像名与
+provenance buildType（`check.sh supply` 按产物所记 commit 上的 `release.sh` 核对，旧产物如实保留旧名）、本地密钥文件名
+`core_client_secret`/`worker_client_secret`。Compose 服务名不在范围内，不变；`.env` 中的取值（realm、client ID、Tenant
+子 namespace 的角色名、task queue 等）是部署配置，不由本 ADR 改写。
+
+兼容窗口的执行点：
+
+- Workflow ID：`split_workflow_id` 接受新旧两个前缀，`task_rerun` 与 `server_keys` 经它解析；新 Start 只经
+  `workflow_id` 生成新前缀。
+- SA：本地 namespace 初始化（`compose.yaml` 的 `temporal-namespace`）登记新旧六个 Keyword，新 Start 只写新名；按 SA
+  列举的只有 `core/verify/drill-dr.sh` 与 RB-04、RB-10，均以 `OR` 同查两组。Core 不按 SA 列举。
+- 派生 ID：迁移 `20260929120000` 在仍有在途角色动作（`tenant.admin.*`、`workspace.admin.*`、`tenant.bootstrap` 处于
+  `EVALUATING`/`WAITING`，或已允许未派发）时失败，部署停在旧版本；role reconcile 的 operation ID 每轮现算、不落盘，
+  停机切换即无在途。
+- Replay：旧夹具原样保留；基线 history 录于改名之前，重放以原类型名 `KAILO_BASELINE` 注册（仅在重放测试中）。
+- Header：两个网关入口都移除七个旧名 `x-kailo-*`，`check.sh security` 核对，永久保留。
+
+窗口关闭的判定（两项都为 0）：
+
+```sql
+select count(*) from projection.workflow_ref
+ where workflow_id like 'kailo:%' and projection_state <> 'TERMINAL';
+```
+
+```text
+temporal workflow count --namespace <ns> --query "KailoTenantId IS NOT NULL OR KailoWorkflowKind IS NOT NULL"
+```
+
+第二项为 0 说明旧前缀的 execution 已超过 namespace retention 被删除。关闭时删除：`component_task.rs` 的
+`LEGACY_WORKFLOW_ID_PREFIX` 分支与 `task_rerun` 中对应的测试断言、`compose.yaml` 中旧名 SA 的登记、`drill-dr.sh`、RB-04、
+RB-10 与 ADR-08 的旧名查询；新录制的基线与各 kind 的 history 入库后，删除旧夹具与重放测试中的 `legacyBaselineKind`。
+
+本地拓扑的迁移（不 `--fresh` 时，按序执行；`--fresh` 重建则全部不需要）：
+
+1. 迁移前确认无在途角色动作（见上），停 `core-bff` 与 `worker`。
+2. Compose 项目名改为 `platform-local`：先以旧项目名 `docker compose -p kailo-local down`（不带 `--volumes`），再把六个
+   命名卷逐个复制到 `platform-local_<卷名>`（`docker volume create` 后以一次性容器 `cp -a`），确认后删除旧卷。
+3. OpenBao raft 的 `node_id` 改为 `platform-local`：单节点 raft 的成员表记着旧 ID，首次以新 ID 启动前在
+   `data/secret-store/raft/peers.json` 写入 `[{"id":"platform-local","address":"openbao:8201","non_voter":false}]`
+   做一次成员恢复；解封后以 `secret-store-init.sh` 写入新的 `platform-core`、`platform-core-audit`、
+   `platform-tenant-provisioner`、`platform-verify` 策略与角色。
+4. 本地密钥文件改名：`secrets/kailo_core_client_secret` → `core_client_secret`、`kailo_worker_client_secret` →
+   `worker_client_secret`（值不变，IdP 中的 client secret 因此不变）；重跑 `bootstrap.sh` 生成 env 文件。
+5. IdP：`.env` 的 `OIDC_NATIVE_MOBILE_REDIRECT_URI` 改为 `…:/platform/oauth2redirect`，重跑 `bootstrap.sh` 渲染导入文件后执行
+   `bootstrap.sh --sync-client-redirects`，由它把浏览器与原生客户端的回调收敛到渲染值并回读查证；realm、client ID 不变。
+6. 以 `start-core.sh` 启动新 Core（迁移随之执行）与新 Worker，确认正常后删除 OpenBao 平台 namespace 的 `kailo-core`、
+   `kailo-verify`，Tenant 父 namespace 的 `kailo-tenant-provisioner`，root namespace 的 `kailo-core-audit` 策略与角色。
+已有 Tenant 子 namespace 的 Core 角色按新 app 网段收敛由 Core 启动时自动完成（对每个未删除 Tenant 调用 `ensure_tenant`），
+   不需要手工步骤；结果见 `core/verify/neutral-identifiers-migration.md`。
+7. 网关配置热加载（运行期开关）；告警与看板按新指标名 `platform.*` 切换，旧时间序列不迁移。
