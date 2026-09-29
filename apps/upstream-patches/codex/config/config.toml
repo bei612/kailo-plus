@@ -1,0 +1,6 @@
+# Kailo SERVER_CODEX 的 system 配置层，镜像内放到 /etc/codex/config.toml
+# （codex-rs/config/src/loader/mod.rs::SYSTEM_CONFIG_TOML_FILE_UNIX）。
+# 取值必须落在 requirements.toml 允许的范围内；逐 Installation 的字段由 Core
+# 写入 CODEX_HOME/config.toml。
+approval_policy = "on-request"
+approvals_reviewer = "user"

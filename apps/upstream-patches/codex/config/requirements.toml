@@ -1,0 +1,31 @@
+# Kailo SERVER_CODEX 的管理员强制约束（.design/12 §1、§2、§4；DD-15/65）。
+# 镜像内放到 /etc/codex/requirements.toml：这是 Codex 的 system requirements 层
+# （codex-rs/config/src/loader/mod.rs::system_requirements_toml_file），优先于
+# CODEX_HOME/config.toml 与 thread/start 的 config 覆写；与这里冲突的显式设置
+# 会让配置加载失败（core/src/config/managed_features.rs::validate_pinned_features），
+# 而不是被悄悄接受。
+#
+# 这里只放对所有 Installation 相同的约束。逐 Installation 的 sqlite_home、
+# model provider、MCP server 与 otel exporter 由 Core 写入该 Installation 的
+# CODEX_HOME/config.toml。
+
+# MCP 审批必须能到达 host：Never 会让需要审批的 MCP 调用被直接拒绝或在
+# 无沙箱 permission profile 下自动放行（codex-mcp/src/mcp/mod.rs::
+# mcp_permission_prompt_is_auto_approved），两者都绕开 Temporal 审批（SS-COD-APP）。
+allowed_approval_policies = ["on-request"]
+# 审批只交给 host（Core → Temporal ApprovalWorkflow），不交给 Codex 的 auto_review 子 Agent。
+allowed_approvals_reviewers = ["user"]
+# 不允许以 login shell 执行（纵深防御；承重封堵是无 local environment）。
+allow_login_shell = false
+# remote control 会把 app-server 连到上游后端，Installation 只受 Core 经 stdio 控制。
+allow_remote_control = false
+check_for_update_on_startup = false
+
+[features]
+# SS-COD-APP：MCP 审批走 mcpServer/elicitation/request；关闭时回退到
+# requestUserInput，那条路径不进入一期平台协议（.design/12 §4）。
+tool_call_mcp_elicitation = true
+# SF-COD-10、DD-65：Codex 自动 Memory Pipeline 一期关闭。
+memories = false
+# 纵深防御（DD-15）：模型 shell 工具。承重封堵是 environments.toml 不含 local environment。
+shell_tool = false

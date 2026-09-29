@@ -1,0 +1,15 @@
+# Kailo SERVER_CODEX 的 environment 清单：Core 在 spawn 前把本文件原样写入每个
+# Installation 的 CODEX_HOME/environments.toml（.design/12 §1、DD-15）。
+#
+# 必须显式写出：CODEX_HOME 下没有 environments.toml 时，Codex 回退到
+# CODEX_EXEC_SERVER_URL 的旧行为，未设置即包含 local environment
+# （codex-rs/exec-server/src/environment_toml.rs::environment_provider_from_codex_home、
+# environment_provider.rs::DefaultEnvironmentProvider::snapshot_inner）。
+# include_local 缺省也是 true（environment_toml.rs::TomlEnvironmentProvider::new_with_config_dir）。
+#
+# 无 local environment 时：模型 shell/exec、apply_patch、view_image 不注册
+# （core/src/tools/spec_plan.rs::add_shell_tools/add_core_utility_tools），
+# command/exec、process/spawn、thread/shellCommand 与 fs/* 返回
+# 「local environment is not configured」。
+include_local = false
+default = "none"

@@ -1,0 +1,129 @@
+diff --git a/codex-rs/Cargo.lock b/codex-rs/Cargo.lock
+index bb6d5e4066517dfbef5875cfed863a5162185244..7862baba47d88c5c00a4725488ee5ebf346e3ebf 100644
+--- a/codex-rs/Cargo.lock
++++ b/codex-rs/Cargo.lock
+@@ -4069,16 +4069,22 @@ name = "codex-model-provider-info"
+ version = "0.0.0"
+ dependencies = [
+  "codex-api",
++ "codex-otel",
+  "codex-protocol",
+  "codex-utils-absolute-path",
+  "codex-utils-redacted-string",
+  "http 1.4.0",
+  "maplit",
++ "opentelemetry",
++ "opentelemetry_sdk",
+  "pretty_assertions",
+  "schemars 0.8.22",
+  "serde",
+  "tempfile",
+  "toml 0.9.11+spec-1.1.0",
++ "tracing",
++ "tracing-opentelemetry",
++ "tracing-subscriber",
+ ]
+ 
+ [[package]]
+diff --git a/codex-rs/model-provider-info/Cargo.toml b/codex-rs/model-provider-info/Cargo.toml
+index 827dd8744b54ffcaa98673c0c262f5265b717ebf..9b0760b057b90a6a52f3ef14e34f25e4dc92014b 100644
+--- a/codex-rs/model-provider-info/Cargo.toml
++++ b/codex-rs/model-provider-info/Cargo.toml
+@@ -14,15 +14,21 @@ workspace = true
+ 
+ [dependencies]
+ codex-api = { workspace = true }
++codex-otel = { workspace = true }
+ codex-protocol = { workspace = true }
+ codex-utils-redacted-string = { workspace = true }
+ http = { workspace = true }
+ schemars = { workspace = true }
+ serde = { workspace = true, features = ["derive"] }
++tracing = { workspace = true }
+ 
+ [dev-dependencies]
+ codex-utils-absolute-path = { workspace = true }
+ maplit = { workspace = true }
++opentelemetry = { workspace = true }
++opentelemetry_sdk = { workspace = true }
+ pretty_assertions = { workspace = true }
+ tempfile = { workspace = true }
+ toml = { workspace = true }
++tracing-opentelemetry = { workspace = true }
++tracing-subscriber = { workspace = true }
+diff --git a/codex-rs/model-provider-info/src/lib.rs b/codex-rs/model-provider-info/src/lib.rs
+index 7fa9ab956e192f299225a99e4bf623956b4de898..7432d599c05ca47a2614c244a22fb9b1e685af2c 100644
+--- a/codex-rs/model-provider-info/src/lib.rs
++++ b/codex-rs/model-provider-info/src/lib.rs
+@@ -394,6 +394,12 @@ other non-default provider fields are not supported"
+             }
+         }
+ 
++        // Model requests are built inside the turn's span, whose parent is the
++        // W3C trace carried by the app-server request that started the turn.
++        // Propagating it lets the model gateway correlate each request with the
++        // host operation that caused it.
++        codex_otel::inject_span_w3c_trace_headers(&tracing::Span::current(), &mut headers);
++
+         Ok(headers)
+     }
+ 
+diff --git a/codex-rs/model-provider-info/src/model_provider_info_tests.rs b/codex-rs/model-provider-info/src/model_provider_info_tests.rs
+index 641942703d19fab2cd7b1fdac28fb59570e11bff..c8bc396d4539311f46c901a38688fa95fabda040 100644
+--- a/codex-rs/model-provider-info/src/model_provider_info_tests.rs
++++ b/codex-rs/model-provider-info/src/model_provider_info_tests.rs
+@@ -810,3 +810,54 @@ refresh_interval_ms = 0
+     assert_eq!(auth.refresh_interval_ms, 0);
+     assert_eq!(auth.refresh_interval(), None);
+ }
++
++#[test]
++fn test_api_provider_propagates_host_trace_context() {
++    use opentelemetry::trace::TracerProvider as _;
++    use tracing_subscriber::prelude::*;
++
++    let tracer_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
++    let subscriber = tracing_subscriber::registry().with(
++        tracing_opentelemetry::layer().with_tracer(tracer_provider.tracer("model-provider-test")),
++    );
++    let _guard = subscriber.set_default();
++    tracing::callsite::rebuild_interest_cache();
++
++    let host_trace_id = "4bf92f3577b34da6a3ce929d0e0e4736";
++    let host_traceparent = format!("00-{host_trace_id}-00f067aa0ba902b7-01");
++    let span = tracing::info_span!("model_request");
++    assert!(codex_otel::set_parent_from_w3c_trace_context(
++        &span,
++        &codex_protocol::protocol::W3cTraceContext {
++            traceparent: Some(host_traceparent.clone()),
++            tracestate: None,
++        },
++    ));
++    let _entered = span.enter();
++
++    let info = ModelProviderInfo {
++        http_headers: Some(maplit::hashmap! {
++            "x-provider-header".to_string() => "preserved".into(),
++        }),
++        ..ModelProviderInfo::create_openai_provider(/*base_url*/ None)
++    };
++    let headers = info
++        .to_api_provider(/*auth_mode*/ None)
++        .expect("provider should resolve")
++        .headers;
++
++    let traceparent = headers
++        .get("traceparent")
++        .expect("model request should carry traceparent")
++        .to_str()
++        .expect("traceparent should be ASCII");
++    let parts: Vec<&str> = traceparent.split('-').collect();
++    assert_eq!(parts.len(), 4);
++    assert_eq!(parts[0], "00");
++    assert_eq!(parts[1], host_trace_id);
++    assert_ne!(traceparent, host_traceparent);
++    assert_eq!(
++        headers.get("x-provider-header"),
++        Some(&HeaderValue::from_static("preserved"))
++    );
++}
