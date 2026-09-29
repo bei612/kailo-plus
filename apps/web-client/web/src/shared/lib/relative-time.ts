@@ -1,5 +1,5 @@
-import { relativeTime as platformRelativeTime } from "@kailo/platform/format";
-import { translate } from "@kailo/platform/i18n";
+import { relativeTime as platformRelativeTime } from "@client-kit/platform/format";
+import { translate } from "@client-kit/platform/i18n";
 import { getLocale } from "@/shared/i18n";
 
 /** Chat and management use the same locale, thresholds and message catalog. */

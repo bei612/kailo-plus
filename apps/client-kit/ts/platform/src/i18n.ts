@@ -20,7 +20,7 @@ import {
   TenantMembershipState,
   WorkspaceMembershipState,
   WorkspaceState,
-} from "@kailo/contracts";
+} from "@client-kit/contracts";
 
 export type PlatformLocale = "en" | "zh-CN";
 

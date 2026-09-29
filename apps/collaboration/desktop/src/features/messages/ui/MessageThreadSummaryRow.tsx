@@ -1,5 +1,5 @@
 import * as React from "react";
-import { platformPluralForm, resolveLocale, translate } from "@kailo/platform/i18n";
+import { platformPluralForm, resolveLocale, translate } from "@client-kit/platform/i18n";
 
 import type {
   TimelineThreadSummary,

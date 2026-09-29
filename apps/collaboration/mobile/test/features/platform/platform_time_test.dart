@@ -1,4 +1,4 @@
-import 'package:buzz/shared/kailo/kailo_platform_text.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

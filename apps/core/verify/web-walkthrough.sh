@@ -30,7 +30,7 @@ subject="$(bash core/verify/idp-subject.sh)"
 
 fifo="$(mktemp -u)"
 mkfifo "$fifo"
-(cd core && exec cargo run -q -p kailo-core --example verify_workspace -- "$subject" --governance) \
+(cd core && exec cargo run -q -p platform-core --example verify_workspace -- "$subject" --governance) \
   <"$fifo" >"$out/workspace.json" 2>"$out/fixture.log" &
 fixture=$!
 # 持有写端：夹具读 stdin 读到 EOF 才拆除，关掉它即触发拆除

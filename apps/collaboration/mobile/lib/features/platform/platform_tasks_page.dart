@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import '../../shared/contracts/contracts.dart';
-import '../../shared/kailo/kailo_platform_text.dart';
-import '../../shared/kailo/kailo_reason_text.dart';
-import '../../shared/kailo/kailo_views.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
+import 'package:client_kit/shared/platform/reason_text.dart';
+import '../../shared/platform/platform_views.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
-import 'kailo_async_view.dart';
+import 'platform_async_view.dart';
 
 // 任务与审批的只读视图（Kailo apps/02 §4：Mobile 为受权只读视图；REQ-21）。
 //

@@ -14,9 +14,9 @@
 //!
 //! 没有任何一条断言以「Core 返回了 200」为据。
 
+use collab_bridge::bridge::{Custody, IdentityClient, Scope};
+use collab_bridge::operator::OperatorIdentity;
 use futures_util::FutureExt;
-use kailo_buzz::bridge::{Custody, IdentityClient, Scope};
-use kailo_buzz::operator::OperatorIdentity;
 use nostr::Keys;
 use sqlx::PgPool;
 use std::process::Command;
@@ -468,7 +468,7 @@ async fn run(
         .await;
     let refused = match &published {
         Ok(v) => v["accepted"] == false,
-        Err(kailo_buzz::operator::OperatorError::Rejected { .. }) => true,
+        Err(collab_bridge::operator::OperatorError::Rejected { .. }) => true,
         Err(_) => false,
     };
     assert!(

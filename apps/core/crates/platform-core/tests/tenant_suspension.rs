@@ -9,8 +9,8 @@
 //! 上经真实 MEMBERSHIP_PROJECTION 开通的成员，再写 Catalog 的 admin relationship；拆除时
 //! 经真实 MEMBERSHIP_REVOCATION 撤掉它的全部关系与 relay roster，再删行。
 
-use kailo_buzz::bridge::{Custody, IdentityClient};
-use kailo_buzz::operator::{OperatorError, OperatorIdentity};
+use collab_bridge::bridge::{Custody, IdentityClient};
+use collab_bridge::operator::{OperatorError, OperatorIdentity};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;

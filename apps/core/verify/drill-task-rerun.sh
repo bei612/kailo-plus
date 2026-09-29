@@ -23,7 +23,7 @@ wait_for() { # <SQL> <期望值>
 step "0. 开通真实 Workspace（夹具保持到 stdin 关闭）"
 touch /tmp/rbrerun.hold
 { while [ -e /tmp/rbrerun.hold ]; do sleep 1; done; } | \
-  (cd core && cargo run -q -p kailo-core --example verify_workspace -- "rerun-$(date +%s)") \
+  (cd core && cargo run -q -p platform-core --example verify_workspace -- "rerun-$(date +%s)") \
   >/tmp/rbrerun.fixture 2>/tmp/rbrerun.fixture.err &
 fixture_pid=$!
 ws2=""

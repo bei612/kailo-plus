@@ -1,4 +1,4 @@
-import { platformMessages } from "@kailo/platform/i18n";
+import { platformMessages } from "@client-kit/platform/i18n";
 
 export type AppLocale = "en" | "zh-CN";
 

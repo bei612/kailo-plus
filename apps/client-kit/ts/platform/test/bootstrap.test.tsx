@@ -1,4 +1,4 @@
-import { ErrorClass, ReasonCode } from "@kailo/contracts";
+import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { Invoke, NativeConfig } from "../src/native";
 import { NativeBootstrap } from "../src/react/NativeBootstrap";

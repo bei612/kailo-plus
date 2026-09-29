@@ -5,7 +5,7 @@
 // `kailo_api` 命令、令牌只在 Rust 侧（native.ts）。两个都是真实实现，因此这里只定义
 // 两者共同的最小形状，其余（错误解读、各端点的路径与类型）都在 client.ts 里只写一次。
 
-import { type ErrorBody, ErrorClass } from "@kailo/contracts";
+import { type ErrorBody, ErrorClass } from "@client-kit/contracts";
 
 export type BffMethod = "GET" | "POST" | "PUT" | "DELETE";
 

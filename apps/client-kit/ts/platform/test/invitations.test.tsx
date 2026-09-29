@@ -5,7 +5,7 @@ import {
   type InvitationRedemptionView,
   ReasonCode,
   TenantMembershipState,
-} from "@kailo/contracts";
+} from "@client-kit/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { newIdempotencyKey, redemptionPhase } from "../src/governance";

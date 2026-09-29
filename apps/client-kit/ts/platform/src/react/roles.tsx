@@ -1,7 +1,7 @@
 // DD-82：角色关系只从 BFF fresh 视图读取，授予/撤销仍经同一条 Governed Action。
 // Web 与 Desktop 共用；Mobile 只读成员视图，不装载本管理面。
 
-import { ActionDispatchState, ActionGateState, BindingKind, CreateActionKey, WorkspaceLifecycleActionKey, WorkspaceState, type ActionCommand, type ActionSubmission, type LegacySecretRefBinding, type RoleMemberView, type RoleWorkspaceView } from "@kailo/contracts";
+import { ActionDispatchState, ActionGateState, BindingKind, CreateActionKey, WorkspaceLifecycleActionKey, WorkspaceState, type ActionCommand, type ActionSubmission, type LegacySecretRefBinding, type RoleMemberView, type RoleWorkspaceView } from "@client-kit/contracts";
 import { useRef, useState } from "react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { enumLabel, workspaceStateMessages } from "../i18n";

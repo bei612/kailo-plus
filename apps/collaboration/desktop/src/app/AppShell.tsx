@@ -34,7 +34,7 @@ import { AppSidebar } from "@/features/sidebar/ui/AppSidebar";
 import {
   useActiveCommunity,
   useKailoSession,
-} from "@/features/kailo/activeCommunity";
+} from "@/features/platform/activeCommunity";
 import { requestFocusedThreadClose } from "@/features/channels/focusedThreadCloseRequest";
 import { useChannelMutes } from "@/features/sidebar/lib/useChannelMutes";
 import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";

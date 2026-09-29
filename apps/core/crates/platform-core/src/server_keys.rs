@@ -27,8 +27,8 @@ use axum::{
     Json,
 };
 use contracts::EvidenceKind;
-use kailo_secrets::{SecretError, SecretRef};
 use nostr::Keys;
+use secret_store::{SecretError, SecretRef};
 use serde::Deserialize;
 use uuid::Uuid;
 

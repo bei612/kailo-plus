@@ -202,7 +202,7 @@ services:
       - ./secrets/buzz-objects.env
     command: ["server", "/data"]
     volumes:
-      - ./data/buzz-objects:/data
+      - ./data/collab-objects:/data
     healthcheck:
       test: ["CMD-SHELL", "mc ready local || exit 1"]
       interval: 5s
@@ -229,7 +229,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz@sha256:6f08c2a299e2b4789377672976ba6ede3050eeace9ce67c5452710b52aaa6d48
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:e4c34134935bc6259d4fdc07182ff9ac9b637a2106d41e188b26fd7be5a385b8
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -245,10 +245,10 @@ services:
   #   BUZZ_ALLOW_NIP_OA_AUTH 开启后，不在 roster 中的 pubkey 可凭 owner
   #   attestation 以 ViaOwner 通过。原生端本机持钥直连 Relay，Core 不在其
   #   发布路径上，roster 校验是协作数据平面唯一的准入执行点（SF-BUZ-26、DD-75）。
-  # 镜像是带 SS-BUZ-GOVERNANCE 改动的 Kailo 构建（upstream/buzz），不是上游
+  # 镜像是带 SS-BUZ-GOVERNANCE 改动的本仓库构建（collaboration/），不是上游
   # 发布镜像：上游的 NIP-29 权限比 Kailo 宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz@sha256:6f08c2a299e2b4789377672976ba6ede3050eeace9ce67c5452710b52aaa6d48
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:e4c34134935bc6259d4fdc07182ff9ac9b637a2106d41e188b26fd7be5a385b8
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
@@ -345,7 +345,7 @@ services:
       SERVICE_OIDC_AUDIENCE: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
       SERVICE_CALLER_CLIENT_ID: ${OIDC_WORKER_CLIENT_ID:?必须显式提供，禁止硬编码}
       # SecretRef 解析（DD-70）。role_id/secret_id 经 env_file 投递，
-      # 由 openbao-init.sh 生成并被 gitignore；不进 .env、不上命令行。
+      # 由 secret-store-init.sh 生成并被 gitignore；不进 .env、不上命令行。
       OPENBAO_ADDR: ${OPENBAO_ADDR:?必须显式提供，禁止硬编码}
       OPENBAO_HTTP_TIMEOUT_SECONDS: ${OPENBAO_HTTP_TIMEOUT_SECONDS:?必须显式提供，禁止硬编码}
       OPENBAO_PLATFORM_NAMESPACE: ${OPENBAO_PLATFORM_NAMESPACE:?必须显式提供，禁止硬编码}
@@ -482,7 +482,7 @@ services:
       - ./secrets/worker.env
 
   # Web 面：三端共用 TypeScript 主体的浏览器那一份（DD-74）。
-  # 镜像由 tools/build-upstream.sh 从 upstream/buzz-web 构建——固定 commit 的源码加 Kailo 改动：
+  # 镜像由 tools/build-upstream.sh 从 web-client 构建——固定 commit 的源码加 Kailo 改动：
   # 把浏览器直连 Relay 与本地 signer 整体移除（SS-WEB-RELAY），
   # 并换成经 BFF 的传输与平台页面（SS-WEB-01）。
   #
@@ -490,22 +490,22 @@ services:
   # 因此只进 app 网络、不进 edge——对外只有 AgentGateway 一个入口，
   # 绕过网关就等于绕过 OIDC。
   buzz-web:
-    # digest 与 upstream/buzz-web/kailo/upstream.yaml 的 artifact_digest
+    # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:272eda1135ca6b78d51da47c5e0074756bc50c776686756eace8a1141a3f0953
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:b9a953fae79ef7ec528fc460560815efc0b9f141f205565e2530480bb70c22b9
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 
   # AgentGateway 是 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。
-  # 镜像由 tools/build-upstream.sh 从 upstream/agentgateway（.design/02 §1 的固定 commit）构建——
+  # 镜像由 tools/build-upstream.sh 从 model-gateway（.design/02 §1 的固定 commit）构建——
   # 该 commit 在 v1.6.0-alpha.1 之后且无 tag 包含它，发布镜像缺少
   # http/oidc/browser.rs，而 SS-AGW-OIDC 的 logout 半边依赖其中的 handle_logout。
   agentgateway:
-    # digest 与 upstream/agentgateway/kailo/upstream.yaml 的 artifact_digest
+    # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-agentgateway@sha256:f2d99d6829b2e5299cc636d505d66998478918a43b4e91eb4093f0b06ab3ae5c
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:174afd82900f32c8e144b98ca929e7aa0164996f522b371eef9ae14cee0883c7
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个
@@ -531,7 +531,7 @@ services:
       BFF_UPSTREAM: ${BFF_SERVICE_NAME:?必须显式提供，禁止硬编码}:${BFF_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       # WEB_CONTAINER_PORT 是镜像事实：buzz-web 的 Caddyfile 监听该端口。
       # 它与 BFF_CONTAINER_PORT 不同——后者由 Core 从 env 读，前者烧在镜像里，
-      # 改它必须连着改 upstream/buzz-web 并重建。
+      # 改它必须连着改 web-client 并重建。
       WEB_UPSTREAM: ${WEB_SERVICE_NAME:?必须显式提供，禁止硬编码}:${WEB_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       # 原生端入口（DD-78）：Bearer 令牌的签发者、受众与验签公钥来源
       OIDC_NATIVE_AUDIENCE: ${OIDC_NATIVE_AUDIENCE:?必须显式提供，禁止硬编码}
@@ -586,7 +586,7 @@ services:
       - source: openbao_config
         target: /openbao/config/config.hcl
     volumes:
-      - ./data/openbao:/openbao/data
+      - ./data/secret-store:/openbao/data
     # 具名卷由 Docker 以 root 创建，而镜像以 uid 100 运行；不改成 root 运行，
     # 而是让卷归属进程自身的 uid，保持最小权限。
     user: "100:1000"
@@ -693,7 +693,7 @@ services:
       # 持久卷挂在镜像已有且属 keycloak 用户的 data 目录：空卷首次挂载时继承该属主，
       # H2 在其中的 h2/ 子目录；挂到镜像里不存在的路径时新卷根属 root，Keycloak 无法写入。
       - keycloak-data:/opt/keycloak/data
-      - ./secrets/keycloak-import:/opt/keycloak/data/import:ro
+      - ./secrets/idp-import:/opt/keycloak/data/import:ro
     # 口令从 secret 挂载读入后导出：Keycloak 不支持 _FILE 变体，
     # 直接写进 environment 会让它出现在 compose 与 .env 里。
     entrypoint: ["/bin/bash", "-c"]
@@ -789,14 +789,14 @@ secrets:
 
 configs:
   spicedb_schema:
-    file: ./spicedb/schema.zed
+    file: ./authorization/schema.zed
   agentgateway_config:
-    file: ./agentgateway-config.yaml
+    file: ./model-gateway-config.yaml
   openbao_config:
-    file: ./openbao-config.hcl
+    file: ./secret-store-config.hcl
   otel_config:
-    file: ./otel-collector.yaml
+    file: ./telemetry-collector.yaml
   temporal_dynamic_config:
-    file: ./temporal-dynamicconfig.yaml
+    file: ./workflow-engine-dynamicconfig.yaml
   temporal_config:
-    file: ./temporal-config.yaml
+    file: ./workflow-engine-config.yaml

@@ -150,8 +150,8 @@ export VERIFY_SECRET_VERSION_V1 VERIFY_SECRET_VERSION_V2 \
   OPENBAO_ROLE_ID OPENBAO_ROLE_NAME OPENBAO_WRAPPED_SECRET_ID \
   OPENBAO_TENANT_ROLE_ID OPENBAO_TENANT_ROLE_NAME OPENBAO_TENANT_WRAPPED_SECRET_ID
 # 消费 wrapping token 的核验紧接着投递跑，其余用例在后
-(cd core && cargo test -p kailo-secrets)
-(cd core && cargo test --workspace --exclude kailo-secrets)
+(cd core && cargo test -p secret-store)
+(cd core && cargo test --workspace --exclude secret-store)
 # Go 侧同理
 # -count=1 关掉缓存：集成核验的结论取决于外部系统当下的状态，缓存命中等于没跑
 (cd worker && KAILO_INTEGRATION=1 go test -count=1 ./...)

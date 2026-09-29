@@ -7,8 +7,11 @@
     "skipLibCheck": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@kailo/contracts": ["./src/kailo-contracts.gen.ts"],
-      "@kailo/platform/*": ["./src/kailo-platform/*"]
+      // client-kit 以本地路径依赖（link:）接入（ADR-16）。pnpm 的布局要求按真实路径解析，
+      // 共用包里的裸依赖因此显式指回本项目，与 Vite 的 dedupe 同义：只有一份 React
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "@client-kit/contracts": ["./node_modules/@client-kit/contracts/src/index.ts"]
     },
 
     /* Bundler mode */

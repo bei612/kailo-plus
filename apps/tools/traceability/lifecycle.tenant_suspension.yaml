@@ -16,19 +16,19 @@ validation:
   scenarios: [V-SCN-31]
   evidence:
     - dimension: 上游接缝
-      ref: upstream/buzz/kailo/verify/operator-provisioning.md
+      ref: collaboration/fork/verify/operator-provisioning.md
     - dimension: 领域规则
       ref: core/verify/tenant-suspension.md
     - dimension: 安全边界
       ref: core/verify/tenant-suspension.md
     - dimension: 端到端场景
-      ref: core/crates/kailo-core/tests/tenant_suspension.rs
+      ref: core/crates/platform-core/tests/tenant_suspension.rs
     - dimension: 呈现
       ref: core/verify/tenant-suspension.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/governance.rs, core/crates/kailo-core/src/tenant_lifecycle.rs, core/crates/kailo-core/src/membership_lifecycle.rs, core/crates/kailo-core/src/platform_views.rs, core/crates/kailo-core/src/platform_bootstrap.rs, core/crates/kailo-core/src/roster_reconcile.rs, core/crates/kailo-core/src/task_rerun.rs, core/crates/kailo-identity/src/lib.rs, core/crates/kailo-identity/src/session.rs, core/crates/kailo-buzz/src/operator.rs, worker/workflows/component_task.go, worker/workflows/tenant_suspension_test.go, worker/activities/core_api.go, web/packages/platform/src/react/tenants.tsx, web/packages/platform/src/i18n.ts, web/packages/platform/src/client.ts]
+  paths: [core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/tenant_lifecycle.rs, core/crates/platform-core/src/membership_lifecycle.rs, core/crates/platform-core/src/platform_views.rs, core/crates/platform-core/src/platform_bootstrap.rs, core/crates/platform-core/src/roster_reconcile.rs, core/crates/platform-core/src/task_rerun.rs, core/crates/identity/src/lib.rs, core/crates/identity/src/session.rs, core/crates/collab-bridge/src/operator.rs, worker/workflows/component_task.go, worker/workflows/tenant_suspension_test.go, worker/activities/core_api.go, client-kit/ts/platform/src/react/tenants.tsx, client-kit/ts/platform/src/i18n.ts, client-kit/ts/platform/src/client.ts]
   # 管理入口由 Web 与 Desktop 共用的 TS 包交付，只对 Catalog 会话开放；Mobile 不提供
   surfaces: [web, desktop]
   schemas: [contracts/api/action_command.schema.json, contracts/api/platform_tenant_page.schema.json, contracts/enums/tenant_state.schema.json, contracts/enums/tenant_lifecycle_action_key.schema.json, contracts/enums/reason_code.schema.json]
@@ -41,10 +41,10 @@ runtime:
 
 release:
   artifacts:
-    - name: kailo-core
+    - name: core
       digest: sha256:6121c07a431a7edebfb44224409b86967f72ee20fa7c031961a53ef75136aca6
-    - name: kailo-worker
+    - name: worker
       digest: sha256:a7d4677019ad31761630b563c98149b3bc234eb26fce25f36cf6a1c736be96f7
-    - name: upstream-buzz-web
-      digest: sha256:272eda1135ca6b78d51da47c5e0074756bc50c776686756eace8a1141a3f0953
+    - name: web-client
+      digest: sha256:b9a953fae79ef7ec528fc460560815efc0b9f141f205565e2530480bb70c22b9
   gate: ready

@@ -3,7 +3,7 @@ package workflows
 import (
 	"fmt"
 
-	"github.com/kailo/apps/worker/internal/contracts/generated"
+	"apps/worker/internal/contracts/generated"
 )
 
 // WorkflowID 生成 .design/06 固定的业务 workflow ID：

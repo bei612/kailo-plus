@@ -7,7 +7,7 @@
 //! 输出一行 `ACCEPTED` 或 `REJECTED <HTTP 状态>`；传输失败以非零码退出，
 //! 不把它读成任何一种结论。
 
-use kailo_buzz::operator::{OperatorError, OperatorIdentity};
+use collab_bridge::operator::{OperatorError, OperatorIdentity};
 
 #[tokio::main]
 async fn main() {

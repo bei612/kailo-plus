@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { useActiveCommunity } from "@/features/kailo/activeCommunity";
+import { useActiveCommunity } from "@/features/platform/activeCommunity";
 import {
   usersBatchEntryKey,
   type UsersBatchEntry,

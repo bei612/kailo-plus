@@ -13,7 +13,7 @@
 //! 而 `expect_err` 要求 `T: Debug`。编译器因此挡住了「把 secret 值打进测试
 //! 输出」这条路——连测试代码都没有这个口子。
 
-use kailo_secrets::{SecretError, SecretRef, SecretStore};
+use secret_store::{SecretError, SecretRef, SecretStore};
 
 /// 集成核验要显式开启，不按「某个环境变量碰巧存在」来判断。
 ///

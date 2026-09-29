@@ -17,7 +17,7 @@ step() { printf '\n== %s（%s）\n' "$1" "$(date -u +%T)"; }
 step "0. 开通真实 Workspace（夹具保持到 stdin 关闭）"
 touch /tmp/rb04.hold
 { while [ -e /tmp/rb04.hold ]; do sleep 1; done; } | \
-  (cd core && cargo run -q -p kailo-core --example verify_workspace -- "rb04-$(date +%s)") >/tmp/rb04.fixture 2>/tmp/rb04.fixture.err &
+  (cd core && cargo run -q -p platform-core --example verify_workspace -- "rb04-$(date +%s)") >/tmp/rb04.fixture 2>/tmp/rb04.fixture.err &
 fixture_pid=$!
 for _ in $(seq 1 180); do [ -s /tmp/rb04.fixture ] && break; sleep 1; done
 ws=$(python3 -c 'import json;print(json.load(open("/tmp/rb04.fixture"))["workspace"])')

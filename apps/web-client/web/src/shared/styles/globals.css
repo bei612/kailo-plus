@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @config "../../../tailwind.config.js";
 /* Kailo 共用平台包放在被忽略的目录里，Tailwind 不自动扫描，显式登记（ADR-09） */
-@source "../../kailo-platform";
+@source "../../../node_modules/@client-kit/platform/src";
 
 @layer base {
   :root {

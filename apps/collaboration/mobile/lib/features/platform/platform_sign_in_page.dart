@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import '../../shared/kailo/kailo_api.dart';
-import '../../shared/kailo/kailo_config.dart';
-import '../../shared/kailo/kailo_link.dart';
-import '../../shared/kailo/kailo_platform_text.dart';
+import '../../shared/platform/platform_api.dart';
+import '../../shared/platform/platform_config.dart';
+import '../../shared/platform/platform_link.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import '../../shared/theme/theme.dart';
-import 'kailo_status_text.dart';
+import 'platform_status_text.dart';
 
 /// 未登录时的首页：部署配置与企业账号登录（Kailo `DD-78`）。
 ///

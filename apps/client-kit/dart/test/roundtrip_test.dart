@@ -5,13 +5,13 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:kailo_mobile/shared/contracts/contracts.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
   test('canary round-trip 保留每个字段', () {
     // 相对包根定位样例，不依赖调用时的工作目录
-    final file = File('../contracts/samples/canary.sample.json');
+    final file = File('../../contracts/samples/canary.sample.json');
     final raw = file.readAsStringSync();
     final original = jsonDecode(raw);
 

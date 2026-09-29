@@ -206,9 +206,7 @@ pub async fn transition_membership(
             let revoked_sessions = if matches!(req.scope, MembershipScope::Tenant)
                 && matches!(new_state.as_str(), "REVOKING" | "REVOKED")
             {
-                match kailo_identity::session::revoke_for_membership(&mut tx, req.membership_id)
-                    .await
-                {
+                match identity::session::revoke_for_membership(&mut tx, req.membership_id).await {
                     Ok(n) => n,
                     Err(e) => return unavailable(e),
                 }

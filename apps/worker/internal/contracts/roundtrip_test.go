@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/kailo/apps/worker/internal/contracts/generated"
+	"apps/worker/internal/contracts/generated"
 )
 
 func TestCanaryRoundtripPreservesEveryField(t *testing.T) {

@@ -1,4 +1,4 @@
-import 'package:buzz/shared/kailo/kailo_config.dart';
+import 'package:buzz/shared/platform/platform_config.dart';
 import 'package:buzz/shared/theme/theme_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

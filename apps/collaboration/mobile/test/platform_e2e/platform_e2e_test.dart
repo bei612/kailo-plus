@@ -17,10 +17,10 @@ import 'dart:io';
 import 'package:buzz/features/channels/channels_provider.dart';
 import 'package:buzz/features/channels/send_message_provider.dart';
 import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/kailo/kailo_api.dart';
-import 'package:buzz/shared/kailo/kailo_config.dart';
-import 'package:buzz/shared/kailo/kailo_device.dart';
-import 'package:buzz/shared/kailo/kailo_link.dart';
+import 'package:buzz/shared/platform/platform_api.dart';
+import 'package:buzz/shared/platform/platform_config.dart';
+import 'package:buzz/shared/platform/platform_device.dart';
+import 'package:buzz/shared/platform/platform_link.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,7 +30,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../shared/community/community_storage_test.dart';
-import '../shared/kailo/kailo_test_support.dart';
+import '../shared/platform/platform_test_support.dart';
 
 String? _env(String name) => Platform.environment[name];
 

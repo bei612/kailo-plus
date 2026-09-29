@@ -417,6 +417,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "collab-bridge"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "contracts",
+ "futures-util",
+ "hex",
+ "nostr",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1271,6 +1291,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "identity"
+version = "0.0.0"
+dependencies = [
+ "contracts",
+ "sqlx",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
 name = "idna"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1377,84 +1407,6 @@ dependencies = [
  "serde",
  "serde_json",
  "simple_asn1",
-]
-
-[[package]]
-name = "kailo-buzz"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "contracts",
- "futures-util",
- "hex",
- "nostr",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "kailo-core"
-version = "0.0.0"
-dependencies = [
- "async-stream",
- "axum",
- "base64 0.22.1",
- "chrono",
- "contracts",
- "futures-util",
- "getrandom 0.3.4",
- "hex",
- "jsonwebtoken",
- "kailo-buzz",
- "kailo-identity",
- "kailo-secrets",
- "nostr",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "sqlx",
- "temporalio-client",
- "temporalio-common",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "kailo-identity"
-version = "0.0.0"
-dependencies = [
- "contracts",
- "sqlx",
- "thiserror 2.0.20",
- "uuid",
-]
-
-[[package]]
-name = "kailo-secrets"
-version = "0.0.0"
-dependencies = [
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -2041,6 +1993,41 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
+name = "platform-core"
+version = "0.0.0"
+dependencies = [
+ "async-stream",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "collab-bridge",
+ "contracts",
+ "futures-util",
+ "getrandom 0.3.4",
+ "hex",
+ "identity",
+ "jsonwebtoken",
+ "nostr",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "reqwest 0.12.28",
+ "secret-store",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "sqlx",
+ "temporalio-client",
+ "temporalio-common",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
 
 [[package]]
 name = "poly1305"
@@ -2738,6 +2725,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4387882333d3aa8cb20530a17c69a3752e97837832f34f6dccc760e715001d9"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "secret-store"
+version = "0.0.0"
+dependencies = [
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

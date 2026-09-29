@@ -23,7 +23,7 @@ drift_logged_since() {
 step "0. 开通真实 Workspace"
 touch /tmp/rbdrift.hold
 { while [ -e /tmp/rbdrift.hold ]; do sleep 1; done; } | \
-  (cd core && cargo run -q -p kailo-core --example verify_workspace -- "drift-$(date +%s)") \
+  (cd core && cargo run -q -p platform-core --example verify_workspace -- "drift-$(date +%s)") \
   >/tmp/rbdrift.fixture 2>/tmp/rbdrift.fixture.err &
 fixture_pid=$!
 cleanup() { rm -f /tmp/rbdrift.hold; wait "$fixture_pid" || true; tail -1 /tmp/rbdrift.fixture.err; rm -f /tmp/rbdrift.fixture /tmp/rbdrift.fixture.err; }

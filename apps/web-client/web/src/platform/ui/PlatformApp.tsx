@@ -3,18 +3,18 @@
 // 一期的内置管理页：登录状态、Tenant/Workspace 选择、频道、成员、任务、审批、基础审计、设备。
 // 全部数据经 BFF；这个文件里没有 Relay 地址、没有 signer、没有 Nostr filter。
 //
-// 成员、审计、设备、任务、审批五页是 Kailo 与 Desktop 共用的同一份组件（@kailo/platform，
+// 成员、审计、设备、任务、审批五页是 Kailo 与 Desktop 共用的同一份组件（@client-kit/platform，
 // ADR-09），这里只提供 Web 的外壳：Workspace 选择、收藏/静音、频道与退出。
 //
 // 未启用的能力不在这里出现。不渲染一个点进去说「未启用」的入口——
 // 那是把阻断项做成了可见功能。
 
-import { type PlatformSessionView, ReasonCode } from "@kailo/contracts";
-import { PlatformProvider } from "@kailo/platform/react/context";
-import { ApprovalsPage, TasksPage } from "@kailo/platform/react/governance";
-import { RedemptionProgress, TenantInvitations } from "@kailo/platform/react/invitations";
-import { AuditPage, DevicesPage, MembersPane } from "@kailo/platform/react/pages";
-import { LegacySecretRefManagement, RoleManagement } from "@kailo/platform/react/roles";
+import { type PlatformSessionView, ReasonCode } from "@client-kit/contracts";
+import { PlatformProvider } from "@client-kit/platform/react/context";
+import { ApprovalsPage, TasksPage } from "@client-kit/platform/react/governance";
+import { RedemptionProgress, TenantInvitations } from "@client-kit/platform/react/invitations";
+import { AuditPage, DevicesPage, MembersPane } from "@client-kit/platform/react/pages";
+import { LegacySecretRefManagement, RoleManagement } from "@client-kit/platform/react/roles";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BellOff, Star } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";

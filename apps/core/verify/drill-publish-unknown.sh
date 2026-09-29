@@ -22,7 +22,7 @@ step "0. 开通真实 Workspace"
 subject="unknown-$(date +%s)"
 touch /tmp/rbunk.hold
 { while [ -e /tmp/rbunk.hold ]; do sleep 1; done; } | \
-  (cd core && cargo run -q -p kailo-core --example verify_workspace -- "$subject") \
+  (cd core && cargo run -q -p platform-core --example verify_workspace -- "$subject") \
   >/tmp/rbunk.fixture 2>/tmp/rbunk.fixture.err &
 fixture_pid=$!
 cleanup() {

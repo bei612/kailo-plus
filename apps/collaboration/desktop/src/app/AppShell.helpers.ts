@@ -5,7 +5,7 @@ import type { SearchHit } from "@/shared/api/types";
 import {
   isPlatformSection,
   type PlatformSection,
-} from "@/features/kailo/platformSections";
+} from "@/features/platform/platformSections";
 
 export type AppView = "home" | "channel" | "platform";
 

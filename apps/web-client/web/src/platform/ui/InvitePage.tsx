@@ -4,8 +4,8 @@
 // 读完立即用 replaceState 清掉，之后只在组件内存里；不写日志、不进任何存储、不进请求 URL。
 // 兑换时它只出现在 POST 的请求体里。
 
-import { PlatformProvider } from "@kailo/platform/react/context";
-import { InvitationRedeemPage } from "@kailo/platform/react/invitations";
+import { PlatformProvider } from "@client-kit/platform/react/context";
+import { InvitationRedeemPage } from "@client-kit/platform/react/invitations";
 import { useState } from "react";
 import { bff } from "@/platform/bff-client";
 import { getLocale } from "@/shared/i18n";

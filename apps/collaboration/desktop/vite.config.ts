@@ -22,12 +22,12 @@ export default defineConfig(async () => {
       react(),
     ],
     resolve: {
-      // Kailo 放入源树的共用包与 contracts 生成物（Kailo ADR-09），以包名引用
       alias: {
-        "@kailo/contracts": "/src/kailo-contracts.gen.ts",
-        "@kailo/platform": "/src/kailo-platform",
         "@": "/src",
       },
+      // client-kit 以本地路径依赖（link:）接入（ADR-16）。pnpm 的布局要求按真实路径解析，
+      // 共用包里的裸依赖因此以本项目为起点解析：只打包一份 React
+      dedupe: ["react", "react-dom", "@client-kit/contracts"],
     },
 
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

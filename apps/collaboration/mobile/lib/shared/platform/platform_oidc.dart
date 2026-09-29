@@ -16,7 +16,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:pointycastle/digests/sha256.dart';
 
-import 'kailo_config.dart';
+import 'platform_config.dart';
 
 /// 私有 URI scheme 回调地址。scheme 同时登记在 Android 的 intent-filter 与 iOS 的
 /// `CFBundleURLTypes` 里，并须作为原生端 client 的 redirect URI 登记在 IdP。

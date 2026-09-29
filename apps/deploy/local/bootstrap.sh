@@ -175,7 +175,7 @@ base = "http://127.0.0.1:" + port
 users_path = "/admin/realms/" + urllib.parse.quote(realm, safe="") + "/users"
 lookup = users_path + "?" + urllib.parse.urlencode({"exact": "true", "username": username})
 try:
-    template = json.loads(pathlib.Path("keycloak/kailo-realm.json").read_text(encoding="utf-8"))
+    template = json.loads(pathlib.Path("identity-provider/realm.json").read_text(encoding="utf-8"))
     entries = [u for u in template.get("users", []) if u.get("username") == "__PLATFORM_ADMIN_USER__"]
     if len(entries) != 1:
         raise SystemExit("realm 模板中平台管理员定义不存在或不唯一")
@@ -245,7 +245,7 @@ if timeout <= 0:
 MAPPER = "agentgateway-admin-audience"
 base = "http://127.0.0.1:" + port
 try:
-    rendered = json.loads(pathlib.Path("secrets/keycloak-import/kailo-realm.json").read_text(encoding="utf-8"))
+    rendered = json.loads(pathlib.Path("secrets/idp-import/realm.json").read_text(encoding="utf-8"))
     wanted = [m for c in rendered.get("clients", []) if c.get("clientId") == client_id
               for m in c.get("protocolMappers", []) if m.get("name") == MAPPER]
     if len(wanted) != 1:
@@ -374,7 +374,7 @@ if [ ! -s secrets/relay_operator_pubkey ] || [ ! -s secrets/relay_operator_priva
     config --no-env-resolution --images buzz-relay \
     | REGISTRY_HOST="$REGISTRY_HOST" python3 -c '
 import os, sys
-prefix = os.environ["REGISTRY_HOST"] + "/upstream-buzz@sha256:"
+prefix = os.environ["REGISTRY_HOST"] + "/collaboration-relay@sha256:"
 images = {line.strip() for line in sys.stdin if line.strip().startswith(prefix)}
 if len(images) != 1:
     raise SystemExit("Compose 未提供唯一的 Buzz Relay 定版镜像")
@@ -397,14 +397,14 @@ gen platform_admin_password
 # 渲染到 gitignore 的目录后挂载。入库文件始终只有占位符。
 # OpenBao 的 raft 数据目录：镜像以 uid 100 运行，具名卷由 Docker 以 root 创建
 # 会导致写入被拒。用绑定挂载并在此设好属主，避免新克隆需要手工 chown。
-mkdir -p data/openbao data/registry data/buzz-objects
-if [ "$(stat -c %u data/openbao)" != "100" ]; then
-  sudo -n chown 100:1000 data/openbao 2>/dev/null || {
-    printf '  需要一次 sudo 设置 data/openbao 属主为 100:1000\n' >&2; exit 2; }
+mkdir -p data/secret-store data/registry data/collab-objects
+if [ "$(stat -c %u data/secret-store)" != "100" ]; then
+  sudo -n chown 100:1000 data/secret-store 2>/dev/null || {
+    printf '  需要一次 sudo 设置 data/secret-store 属主为 100:1000\n' >&2; exit 2; }
 fi
-printf '  已就绪：data/openbao（uid 100）\n'
+printf '  已就绪：data/secret-store（uid 100）\n'
 
-mkdir -p secrets/keycloak-import
+mkdir -p secrets/idp-import
 # namespace 名来自 .env，不写死在 realm 定义里：Temporal 的 default claim mapper
 # 按 "<namespace>:<role>" 解析 permissions，namespace 写错即全部调用被拒。
 : "${TEMPORAL_NAMESPACE:?bootstrap 需要 .env 中的 TEMPORAL_NAMESPACE}"
@@ -441,7 +441,7 @@ from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "PLATFORM_ADM
             "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_REDIRECT_URI",
             "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI",
             "AGENTGATEWAY_ADMIN_AUDIENCE"]
-with open("keycloak/kailo-realm.json", encoding="utf-8") as fh:
+with open("identity-provider/realm.json", encoding="utf-8") as fh:
     document = json.load(fh)
 substitutions = {}
 for placeholder, path in from_file.items():
@@ -463,12 +463,12 @@ document = replace(document)
 left = sorted(set(token.findall(json.dumps(document))))
 if left:
     raise SystemExit(f"realm 模板里还有未替换的占位符：{left}")
-fd = os.open("secrets/keycloak-import/kailo-realm.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+fd = os.open("secrets/idp-import/realm.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 with os.fdopen(fd, "w", encoding="utf-8") as fh:
     json.dump(document, fh, ensure_ascii=False)
 RENDER
-chmod 600 secrets/keycloak-import/kailo-realm.json
-printf '  已渲染：secrets/keycloak-import/kailo-realm.json\n'
+chmod 600 secrets/idp-import/realm.json
+printf '  已渲染：secrets/idp-import/realm.json\n'
 
 # 网关以环境变量读取浏览器客户端密钥；与上面的 secret 同源，保持单一真值。
 { printf 'OIDC_BROWSER_CLIENT_SECRET='; cat secrets/browser_client_secret; printf '\n';
@@ -561,4 +561,4 @@ fi
 [ -e secrets/openbao-core.env ] || { : > secrets/openbao-core.env; chmod 600 secrets/openbao-core.env; }
 
 printf '\n就绪。启动：docker compose --env-file .env -f compose.yaml up -d，\n'
-printf '随后 ./openbao-init.sh（解封与 role），再 ./start-core.sh（投递引导凭据并启动 Core）\n'
+printf '随后 ./secret-store-init.sh（解封与 role），再 ./start-core.sh（投递引导凭据并启动 Core）\n'

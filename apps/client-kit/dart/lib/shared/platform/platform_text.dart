@@ -1,4 +1,4 @@
-// Generated from web/packages/platform/src/i18n.ts by tools/gen-platform-i18n.py.
+// Generated from client-kit/ts/platform/src/i18n.ts by tools/gen-platform-i18n.py.
 // Do not edit. Message keys and translations have one TypeScript source.
 import 'dart:io' show Platform;
 

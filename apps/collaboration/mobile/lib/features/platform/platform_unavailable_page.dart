@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../shared/contracts/contracts.dart';
-import '../../shared/kailo/kailo_platform_text.dart';
-import '../../shared/kailo/kailo_reason_text.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
+import 'package:client_kit/shared/platform/reason_text.dart';
 import '../../shared/theme/theme.dart';
 
 /// 深链接指向移动端不交付的能力时的去处（Kailo `REQ-21`、`V-SCN-65`）。

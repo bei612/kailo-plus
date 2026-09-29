@@ -5,9 +5,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../relay/relay.dart';
 import '../theme/theme_provider.dart';
-import '../kailo/kailo_api.dart';
-import '../kailo/kailo_config.dart';
-import '../kailo/kailo_read_state.dart';
+import '../platform/platform_api.dart';
+import '../platform/platform_config.dart';
+import '../platform/platform_read_state.dart';
 import 'read_state_manager.dart';
 
 class ReadStateState {

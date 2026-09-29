@@ -66,6 +66,12 @@ importers:
 
   desktop:
     dependencies:
+      '@client-kit/contracts':
+        specifier: link:../../client-kit/ts/contracts
+        version: link:../../client-kit/ts/contracts
+      '@client-kit/platform':
+        specifier: link:../../client-kit/ts/platform
+        version: link:../../client-kit/ts/platform
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

@@ -9,7 +9,7 @@ import {
   TenantState,
   type ActionCommand,
   type PlatformTenantView,
-} from "@kailo/contracts";
+} from "@client-kit/contracts";
 import { useRef, useState } from "react";
 import { newIdempotencyKey } from "../governance";
 import { enumLabel, tenantStateMessages } from "../i18n";

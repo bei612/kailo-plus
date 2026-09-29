@@ -29,7 +29,7 @@ import {
   resolveUserLabelPlaceholderData,
   writeCachedUserLabels,
 } from "@/features/profile/lib/userLabelStorage";
-import { useActiveCommunity } from "@/features/kailo/activeCommunity";
+import { useActiveCommunity } from "@/features/platform/activeCommunity";
 
 export const profileQueryKey = ["profile"] as const;
 

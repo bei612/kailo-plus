@@ -1,19 +1,19 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
-import { translate, resolveLocale } from "@kailo/platform/i18n";
-import { ApprovalsPage, TasksPage } from "@kailo/platform/react/governance";
-import { TenantInvitations } from "@kailo/platform/react/invitations";
+import { translate, resolveLocale } from "@client-kit/platform/i18n";
+import { ApprovalsPage, TasksPage } from "@client-kit/platform/react/governance";
+import { TenantInvitations } from "@client-kit/platform/react/invitations";
 import {
   AuditPage,
   DevicesPage,
   WorkspaceMembersPage,
-} from "@kailo/platform/react/pages";
+} from "@client-kit/platform/react/pages";
 
 import {
   isPlatformSection,
   PLATFORM_SECTION_LABEL,
   type PlatformSection,
-} from "@/features/kailo/platformSections";
-import { useKailoSession } from "@/features/kailo/activeCommunity";
+} from "@/features/platform/platformSections";
+import { useKailoSession } from "@/features/platform/activeCommunity";
 
 export const Route = createFileRoute("/platform/$section")({
   params: {

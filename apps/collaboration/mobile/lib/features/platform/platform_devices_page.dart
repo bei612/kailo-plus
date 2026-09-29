@@ -3,19 +3,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import '../../shared/contracts/contracts.dart';
-import '../../shared/kailo/kailo_api.dart';
-import '../../shared/kailo/kailo_config.dart';
-import '../../shared/kailo/kailo_device.dart';
-import '../../shared/kailo/kailo_link.dart';
-import '../../shared/kailo/kailo_platform_text.dart';
-import '../../shared/kailo/kailo_views.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
+import '../../shared/platform/platform_api.dart';
+import '../../shared/platform/platform_config.dart';
+import '../../shared/platform/platform_device.dart';
+import '../../shared/platform/platform_link.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
+import '../../shared/platform/platform_views.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/utils/string_utils.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import '../../shared/widgets/modal_presentation.dart';
-import 'kailo_async_view.dart';
+import 'platform_async_view.dart';
 
 /// 本人登记的原生设备，可撤销（`DD-77`、`DD-79`）。撤销只移出那一把公钥：
 /// 此人的其他设备与 Web 不受影响；Relay 随后拒绝那台设备。

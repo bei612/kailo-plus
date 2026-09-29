@@ -1,12 +1,12 @@
 import 'dart:convert';
 
-import 'package:buzz/shared/kailo/kailo_api.dart';
-import 'package:buzz/shared/kailo/kailo_read_state.dart';
+import 'package:buzz/shared/platform/platform_api.dart';
+import 'package:buzz/shared/platform/platform_read_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'kailo_test_support.dart';
+import 'platform_test_support.dart';
 
 const _channel = '11111111-2222-4333-8444-555555555555';
 

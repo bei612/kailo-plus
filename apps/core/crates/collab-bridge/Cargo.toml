@@ -1,5 +1,5 @@
 [package]
-name = "kailo-buzz"
+name = "collab-bridge"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

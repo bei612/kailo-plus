@@ -5,12 +5,12 @@
 /// 只在本机仍更新时重写一次。
 library;
 
-import '../contracts/contracts.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
 import '../read_state/read_state_format.dart';
 import '../read_state/read_state_manager.dart';
 import '../read_state/read_state_time.dart';
-import 'kailo_api.dart';
-import 'kailo_config.dart';
+import 'platform_api.dart';
+import 'platform_config.dart';
 
 class KailoReadStateRemote implements ReadStateRemote {
   KailoReadStateRemote({

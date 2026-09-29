@@ -14,8 +14,8 @@ CHECK=0
 declare -A OUT=(
   [rs]="core/crates/contracts/src/generated/contracts.rs"
   [go]="worker/internal/contracts/generated/contracts.go"
-  [ts]="web/packages/contracts/src/generated/contracts.ts"
-  [dart]="mobile/lib/shared/contracts/generated/contracts.dart"
+  [ts]="client-kit/ts/contracts/src/generated/contracts.ts"
+  [dart]="client-kit/dart/lib/shared/contracts/generated/contracts.dart"
 )
 declare -A EXTRA=(
   # skip-serializing-none / omit-empty：可选字段缺省时必须省略而不是写 null，

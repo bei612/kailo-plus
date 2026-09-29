@@ -1,15 +1,20 @@
-# 本文件优先于源树根的 .dockerignore（BuildKit 按 Dockerfile 同名 .dockerignore）。
-# 上游根的 .dockerignore 为 Relay 镜像而写，把 desktop/ 与 mobile/ 整个排除；
-# 安装包构建恰恰需要 desktop/。其余排除项与上游一致：构建产物、依赖目录、VCS
-# 与本地密钥不进构建上下文。
-target/
+# 本文件优先于源码树根的 .dockerignore（BuildKit 按 Dockerfile 同名 .dockerignore）。
+# 构建上下文是 apps/（ADR-16）：只放入 collaboration/ 与它以 link: 引用的 client-kit/ts。
+# 上游根的 .dockerignore 为 Relay 镜像而写，把 desktop/ 与 mobile/ 整个排除；安装包构建
+# 恰恰需要 desktop/。构建产物、依赖目录、VCS 与本地密钥不进构建上下文。
+*
+!collaboration/
+!client-kit/ts/contracts/
+!client-kit/ts/platform/
+collaboration/mobile/
+collaboration/fork/verify/
 **/target/
-node_modules/
 **/node_modules/
-.git/
-.github/
-.env
-.env.*
-*.pem
-*.key
-secrets/
+**/dist/
+**/.git/
+collaboration/.github/
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/secrets/

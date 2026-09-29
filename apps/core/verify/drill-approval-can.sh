@@ -28,7 +28,7 @@ for m in json.load(sys.stdin)[0]["Mounts"]:
 [ -f "$cfg" ] || { echo "找不到 Temporal 挂载的动态配置" >&2; exit 2; }
 poll=$(python3 -c '
 import re,io
-t=io.open("deploy/local/temporal-config.yaml",encoding="utf-8").read()
+t=io.open("deploy/local/workflow-engine-config.yaml",encoding="utf-8").read()
 print(int(re.search(r"pollInterval:\s*(\d+)s", t).group(1)))')
 backup=$(mktemp)
 cp "$cfg" "$backup"
@@ -47,4 +47,4 @@ echo "续跑阈值临时压到 $threshold 个事件，等待 Temporal 重新加�
 sleep $((poll + 2))
 
 export VERIFY_DRILL_HISTORY_DIR="$out"
-(cd core && cargo test -q -p kailo-core --test drill_approval_continue_as_new -- --ignored --nocapture)
+(cd core && cargo test -q -p platform-core --test drill_approval_continue_as_new -- --ignored --nocapture)

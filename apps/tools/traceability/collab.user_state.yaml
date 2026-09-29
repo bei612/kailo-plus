@@ -16,13 +16,13 @@ validation:
   scenarios: [V-SCN-29]
   evidence:
     - dimension: 领域规则
-      ref: upstream/buzz-web/kailo/verify/web-surface.md
+      ref: web-client/fork/verify/web-surface.md
     - dimension: 端到端场景
-      ref: upstream/buzz-web/kailo/verify/web-surface.md
+      ref: web-client/fork/verify/web-surface.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/user_state.rs, upstream/buzz-web]
+  paths: [core/crates/platform-core/src/user_state.rs, web-client]
   surfaces: [web]
   schemas: [contracts/api/read_mark.schema.json, contracts/api/workspace_preference.schema.json, contracts/api/user_state_version.schema.json]
   migrations: [core/migrations/20260923020000_collaboration_user_state.up.sql]
@@ -32,8 +32,8 @@ runtime:
 
 release:
   artifacts:
-    - name: kailo-core
+    - name: core
       digest: sha256:6121c07a431a7edebfb44224409b86967f72ee20fa7c031961a53ef75136aca6
-    - name: upstream-buzz-web
-      digest: sha256:272eda1135ca6b78d51da47c5e0074756bc50c776686756eace8a1141a3f0953
+    - name: web-client
+      digest: sha256:b9a953fae79ef7ec528fc460560815efc0b9f141f205565e2530480bb70c22b9
   gate: shipped

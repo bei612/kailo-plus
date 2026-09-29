@@ -7,7 +7,7 @@ import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/read_state/read_state_time.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
-import '../kailo/kailo_members_page.dart';
+import '../platform/platform_members_page.dart';
 import 'channel.dart';
 import 'channels_provider.dart';
 

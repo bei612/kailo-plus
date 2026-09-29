@@ -1,19 +1,21 @@
 # 来源记录，格式见 apps/06-工程基线规范.md §2。字段含义冲突时以该节为准。
-# 本目录之外的整棵树是上游固定 commit 的完整源码，Kailo 的改动直接在树里；与上游原样的差异由
-# `tools/upstream_manifest.py diff <项目>` 给出（kailo/ 是 Kailo 自有目录，不在其中）。
-project: buzz-web
+# 本目录（fork/）之外的整棵树是上游固定 commit 的完整源码，本仓库的改动直接在树里；与上游原样的
+# 差异由 `tools/upstream_manifest.py diff <项目>` 给出，上游的新变化由 `status` 提示、`sync` 合并
+# （ADR-16）。产物字段里的路径一律相对 apps/。
+project: web-client
+reference_tree: buzz-web
 upstream_url: https://github.com/hardy4yooz/buzz-web.git
 
-# .design/02 §1 固定基线。三端各有自己的上游主体（DD-74）：Web 是 buzz-web，Desktop 与
-# Mobile 分别是 block/buzz 的 desktop/（Tauri）与 mobile/（Dart），见 upstream/buzz。
-# 这个上游必须改：SS-WEB-RELAY 要求整体移除浏览器直连 Relay 与本地 signer，SS-WEB-01 要求在
-# 构建期静态 route/navigation 里加入平台页面，两者都不是配置能表达的。
+# .design/02 §1 固定基线。三端各有自己的上游主体（DD-74）：Web 客户端是独立仓库，Desktop 与
+# Mobile 客户端在 collaboration/ 的 desktop/（Tauri）与 mobile/（Dart）。这个上游必须改：
+# SS-WEB-RELAY 要求整体移除浏览器直连 Relay 与本地 signer，SS-WEB-01 要求在构建期静态
+# route/navigation 里加入平台页面，两者都不是配置能表达的。
 evidence_commit: a6766c482533d028582d0efcfd3740769f86217c
 implementation_base_commit: a6766c482533d028582d0efcfd3740769f86217c
 base_divergence: none
 
 # 整块删除的上游路径（浏览器直连 Relay、本地 signer 与一期不交付的页面，SS-WEB-RELAY）。
-# 与实际一致由 `upstream_manifest.py diff buzz-web --check` 核对。
+# 与实际一致由 `upstream_manifest.py diff web-client --check` 核对。
 remove_paths:
   - web/playwright.config.ts
   - web/playwright.live.config.ts
@@ -83,41 +85,20 @@ remove_paths:
   - web/src/shared/ui/right-panel-sizing.tsx
   - web/tests
 
-# BFF 请求与回应的类型取自 contracts 的 TypeScript 生成物（ADR-02/03）；BFF 客户端、成员/邀请/
-# 审计/设备/任务/审批页、邀请兑换页与文案取自 Kailo 自有的共用包 web/packages/platform——Desktop
-# 用的是同一份（ADR-09）。构建时放进树；树里不带副本（web/.gitignore 忽略这些目标），这些源改了
-# 就必须重建。
-vendor_files:
-  - web/packages/contracts/src/generated/contracts.ts:web/src/platform/contracts.gen.ts
-  - web/packages/platform/src/transport.ts:web/src/kailo-platform/transport.ts
-  - web/packages/platform/src/client.ts:web/src/kailo-platform/client.ts
-  - web/packages/platform/src/web-fetch.ts:web/src/kailo-platform/web-fetch.ts
-  - web/packages/platform/src/i18n.ts:web/src/kailo-platform/i18n.ts
-  - web/packages/platform/src/format.ts:web/src/kailo-platform/format.ts
-  - web/packages/platform/src/governance.ts:web/src/kailo-platform/governance.ts
-  - web/packages/platform/src/react/context.tsx:web/src/kailo-platform/react/context.tsx
-  - web/packages/platform/src/react/use-load.ts:web/src/kailo-platform/react/use-load.ts
-  - web/packages/platform/src/react/ui.tsx:web/src/kailo-platform/react/ui.tsx
-  - web/packages/platform/src/react/pages.tsx:web/src/kailo-platform/react/pages.tsx
-  - web/packages/platform/src/react/governance.tsx:web/src/kailo-platform/react/governance.tsx
-  - web/packages/platform/src/react/invitations.tsx:web/src/kailo-platform/react/invitations.tsx
-  - web/packages/platform/src/react/roles.tsx:web/src/kailo-platform/react/roles.tsx
-  - web/packages/platform/src/react/tenants.tsx:web/src/kailo-platform/react/tenants.tsx
-
+# BFF 请求与回应的类型、BFF 客户端与平台页取自 client-kit/ts（ADR-02/03、ADR-09），以 npm
+# file: 依赖引用；Desktop 用的是同一份。它们在 inputs 里，改了即要求重建。
 artifacts:
-  # Dockerfile 与构建上下文都在 web/ 子目录下，不在仓库根。
-  # 2026-09-29 迁入本树后以 build-upstream.sh 重建得 sha256:150fffd6…；与登记的 272eda11… 逐层
-  # 比对，全部层的文件内容相同，只有文件时间戳与镜像 created 时间不同（构建不是逐字节可复现的）。
-  # 登记值保持运行拓扑正在使用的 272eda11…，它由与本树等价的源码构建。
-  - name: upstream-buzz-web
+  # 构建上下文是 apps/：Dockerfile 在 web/ 下，同时放入 client-kit/ts（见同名 .dockerignore）。
+  - name: web-client
     kind: image
-    build_context: web
-    source_include: [web/]
-    source_digest: sha256:24a193ea3af3ab0eed77721abc1d085762c8bfb7e8eaf387852fe0ed25e20afc
-    artifact_digest: sha256:272eda1135ca6b78d51da47c5e0074756bc50c776686756eace8a1141a3f0953
+    build_context: .
+    build_dockerfile: web-client/web/Dockerfile
+    inputs: [web-client/web/, client-kit/ts/contracts/, client-kit/ts/platform/]
+    source_digest: sha256:05be82014c2d3e3a22ddaf1e5632b70e2b38554d97d2007ebe0f16c0990e0d11
+    artifact_digest: sha256:b9a953fae79ef7ec528fc460560815efc0b9f141f205565e2530480bb70c22b9
 
 source_facts: [SF-WEB-01, SF-WEB-04, SF-WEB-05, SF-WEB-06, SF-WEB-07]
 source_seams: [SS-WEB-RELAY, SS-WEB-01, SS-WEB-PRESENTATION]
-compatibility_evidence: [upstream/buzz-web/kailo/verify/baseline-build.md, upstream/buzz-web/kailo/verify/web-surface.md]
+compatibility_evidence: [web-client/fork/verify/baseline-build.md, web-client/fork/verify/web-surface.md]
 owner: team-platform
 last_reverified: 2026-09-29

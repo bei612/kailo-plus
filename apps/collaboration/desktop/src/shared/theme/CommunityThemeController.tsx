@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { useActiveCommunity } from "@/features/kailo/activeCommunity";
+import { useActiveCommunity } from "@/features/platform/activeCommunity";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import {
   communityThemeApplyExpectation,

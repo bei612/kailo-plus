@@ -14,8 +14,8 @@ use axum::{
 };
 use contracts::EvidenceKind;
 use contracts::{BindingKind, LegacySecretRefBinding, LegacySecretRefPage, ReasonCode};
-use kailo_secrets::{SecretRef, SecretStore};
 use nostr::Keys;
+use secret_store::{SecretRef, SecretStore};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -462,7 +462,7 @@ async fn copy_once(state: &ServiceState, r: &Rehome) -> Result<String, Response>
     };
     let secret = match state.secrets.read(&reference, "value").await {
         Ok(value) => value,
-        Err(kailo_secrets::SecretError::AudienceMismatch) => {
+        Err(secret_store::SecretError::AudienceMismatch) => {
             mark_failed(state, r).await?;
             return Err(StatusCode::CONFLICT.into_response());
         }

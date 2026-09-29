@@ -16,7 +16,7 @@ import {
   ReasonCode,
   TaskStatus,
   type TaskView,
-} from "@kailo/contracts";
+} from "@client-kit/contracts";
 import { type ReactNode, useRef, useState } from "react";
 import { relativeTime } from "../format";
 import { approvalOpen, newIdempotencyKey, taskPhase } from "../governance";

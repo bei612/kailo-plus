@@ -16,10 +16,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use kailo_buzz::bridge::{Custody, IdentityClient, Presence, Scope};
-use kailo_buzz::operator::{OperatorError, OperatorIdentity};
-use kailo_secrets::SecretRef;
+use collab_bridge::bridge::{Custody, IdentityClient, Presence, Scope};
+use collab_bridge::operator::{OperatorError, OperatorIdentity};
 use nostr::Keys;
+use secret_store::SecretRef;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -900,7 +900,7 @@ async fn read_roster(
 #[cfg(test)]
 mod roster_tests {
     use super::{roster_plan, roster_settled};
-    use kailo_buzz::bridge::Presence;
+    use collab_bridge::bridge::Presence;
     use std::collections::HashSet;
 
     fn set(keys: &[&str]) -> HashSet<String> {

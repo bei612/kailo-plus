@@ -27,8 +27,8 @@ use axum::{
         IntoResponse, Response,
     },
 };
+use collab_bridge::stream::{subscribe, Frame};
 use futures_util::stream::Stream;
-use kailo_buzz::stream::{subscribe, Frame};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -173,7 +173,7 @@ impl Readmission {
         // `session-revoked` 的含义是「此会话确定不可继续，客户端必须停止重连」：会话被撤销
         // 与所属 Tenant 非 ACTIVE（DD-96(3)，is_live 一并判定）都属此类，再连只会被拒。
         // 具体原因由之后请求的 reason code（TENANT_NOT_ACTIVE 等）表达，关流帧不再细分
-        if !kailo_identity::session::is_live(&self.state.pool, self.ctx.session_id).await? {
+        if !identity::session::is_live(&self.state.pool, self.ctx.session_id).await? {
             return Ok(Some("session-revoked"));
         }
         let current = match admit_workspace(&self.state, &self.ctx, self.workspace_id).await {
@@ -218,7 +218,7 @@ fn frames(
     generation: String,
     retry: std::time::Duration,
     snapshot: Option<serde_json::Value>,
-    mut sub: kailo_buzz::stream::Subscription,
+    mut sub: collab_bridge::stream::Subscription,
     readmit: Readmission,
 ) -> impl Stream<Item = Result<Event, Infallible>> {
     async_stream::stream! {

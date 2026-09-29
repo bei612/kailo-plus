@@ -25,7 +25,7 @@ import 'channels_provider.dart';
 import 'compose_bar.dart';
 import 'composer_dock_size_reporter.dart';
 import 'date_formatters.dart';
-import '../../shared/kailo/kailo_platform_text.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'day_divider.dart';
 import 'ime_metrics_settle_observer.dart';
 import 'initial_thread_tail_settle.dart';

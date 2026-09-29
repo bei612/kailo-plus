@@ -1,8 +1,26 @@
 {
-  "name": "@kailo/platform",
+  "name": "@client-kit/platform",
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./client": "./src/client.ts",
+    "./format": "./src/format.ts",
+    "./governance": "./src/governance.ts",
+    "./i18n": "./src/i18n.ts",
+    "./native": "./src/native.ts",
+    "./react/NativeBootstrap": "./src/react/NativeBootstrap.tsx",
+    "./react/context": "./src/react/context.tsx",
+    "./react/governance": "./src/react/governance.tsx",
+    "./react/invitations": "./src/react/invitations.tsx",
+    "./react/pages": "./src/react/pages.tsx",
+    "./react/roles": "./src/react/roles.tsx",
+    "./react/tenants": "./src/react/tenants.tsx",
+    "./react/ui": "./src/react/ui.tsx",
+    "./react/use-load": "./src/react/use-load.ts",
+    "./transport": "./src/transport.ts",
+    "./web-fetch": "./src/web-fetch.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsc --noEmit -p tsconfig.test.json && vitest run"
@@ -11,7 +29,7 @@
     "react": "^19.1.0"
   },
   "devDependencies": {
-    "@kailo/contracts": "workspace:*",
+    "@client-kit/contracts": "workspace:*",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "jsdom": "^27.4.0",

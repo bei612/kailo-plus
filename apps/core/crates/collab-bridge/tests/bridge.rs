@@ -7,9 +7,9 @@
 //! - roster 投影面（`DD-41`/`DD-45`）：加入与撤权重复执行都收敛；做不成时
 //!   给出结果不明而不是成功。
 
+use collab_bridge::bridge::{Custody, IdentityClient, Presence, Scope};
+use collab_bridge::operator::{OperatorError, OperatorIdentity};
 use futures_util::FutureExt;
-use kailo_buzz::bridge::{Custody, IdentityClient, Presence, Scope};
-use kailo_buzz::operator::{OperatorError, OperatorIdentity};
 use nostr::Keys;
 use std::panic::AssertUnwindSafe;
 

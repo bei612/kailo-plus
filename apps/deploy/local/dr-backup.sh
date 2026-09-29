@@ -47,7 +47,7 @@ sudo -n docker run --rm --network "$component_net" --env-file secrets/zed.env \
 
 step "MinIO（Relay 媒体）：停写后复制数据目录"
 DC stop buzz-objects >/dev/null 2>&1
-sudo -n tar -C data -cf - buzz-objects > "$out/buzz-objects.tar"
+sudo -n tar -C data -cf - collab-objects > "$out/buzz-objects.tar"
 DC start buzz-objects >/dev/null 2>&1
 
 step "IdP：停写后复制数据目录"

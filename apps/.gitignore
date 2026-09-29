@@ -33,11 +33,43 @@ coverage/
 /worker/bin/
 
 # Dart / Flutter
-/mobile/.dart_tool/
-/mobile/pubspec.lock
+/client-kit/dart/.dart_tool/
+/client-kit/dart/pubspec.lock
 
 # 发布产物（由 tools/release.sh 生成，可追溯性来自 provenance）
 /dist/
 
 # Python 字节码缓存（tools/upstream_manifest.py 被 check.sh 导入时生成）
 __pycache__/
+
+# 二开项目（ADR-16）：取舍以各树自己的 .gitignore 为准。上面为 Kailo 自有代码写的密钥形态文件名、
+# 本机工具目录在上游源码里是被跟踪的测试夹具与仓库配置，不能因为落在 apps/ 下就被悄悄漏掉；
+# 构建输出（target/、node_modules/、dist/ 等）不在此放开。
+!/collaboration/**/*.pem
+!/collaboration/**/*.key
+!/collaboration/**/.env.*
+!/collaboration/**/.claude/
+!/collaboration/**/.codex/
+!/collaboration/**/.agents/
+!/collaboration/**/.vscode/
+!/web-client/**/*.pem
+!/web-client/**/*.key
+!/web-client/**/.env.*
+!/web-client/**/.claude/
+!/web-client/**/.codex/
+!/web-client/**/.agents/
+!/web-client/**/.vscode/
+!/model-gateway/**/*.pem
+!/model-gateway/**/*.key
+!/model-gateway/**/.env.*
+!/model-gateway/**/.claude/
+!/model-gateway/**/.codex/
+!/model-gateway/**/.agents/
+!/model-gateway/**/.vscode/
+!/agent-runtime/**/*.pem
+!/agent-runtime/**/*.key
+!/agent-runtime/**/.env.*
+!/agent-runtime/**/.claude/
+!/agent-runtime/**/.codex/
+!/agent-runtime/**/.agents/
+!/agent-runtime/**/.vscode/

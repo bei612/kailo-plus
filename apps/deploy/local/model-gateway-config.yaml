@@ -19,7 +19,7 @@ config:
   # 监听容器内全部地址以便 Core 经 app 网络到达；端口不发布到宿主（compose.yaml）。
   # 网络位置只是纵深防御：每个请求都必须带 Core 自有 OIDC client 的 client_credentials
   # 令牌——验签、iss、aud、exp 与 azp 逐项核对。缺 adminAuthentication 时补丁构建拒绝全部
-  # admin 请求，不存在无认证模式（upstream/agentgateway/kailo/verify/admin-authentication.md）。
+  # admin 请求，不存在无认证模式（model-gateway/fork/verify/admin-authentication.md）。
   adminAddr: 0.0.0.0:15000
   adminAuthentication:
     issuer: ${OIDC_ISSUER}

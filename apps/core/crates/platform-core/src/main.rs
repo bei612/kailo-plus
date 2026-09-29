@@ -94,11 +94,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()?;
     // 平台引导先于监听：没有 operator 身份就永远创建不了任何 Tenant，
     // 此时「起来但做不了事」比拒绝启动更糟——前者要等到第一次建 Tenant 才暴露。
-    let secrets = std::sync::Arc::new(kailo_secrets::SecretStore::from_env()?);
+    let secrets = std::sync::Arc::new(secret_store::SecretStore::from_env()?);
     // OpenBao 的 audit fail-closed 只在至少一个 device 启用时成立（SF-OBA-06）。
     // 零 device 时一切取用照常通过、不留痕，因此在取用任何 secret 之前实际读一次
     // 清单：为空或读不到都拒绝启动（DD-70「拒绝进入 serving 状态」）。
-    let audit = std::sync::Arc::new(kailo_secrets::AuditObserver::from_env()?);
+    let audit = std::sync::Arc::new(secret_store::AuditObserver::from_env()?);
     // 引导凭据以 response wrapping 一次性投递（DD-70）：这里消费它们换出 service
     // token。wrapping token 已被消费、过期或来路不对都按泄漏处理，拒绝启动。
     secrets

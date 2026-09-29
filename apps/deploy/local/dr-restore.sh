@@ -35,8 +35,8 @@ wait_healthy() {
 }
 
 step "1. OpenBao：新节点初始化 → 强制恢复快照 → 以原分片解封"
-mkdir -p data/openbao
-sudo -n chown 100:1000 data/openbao
+mkdir -p data/secret-store
+sudo -n chown 100:1000 data/secret-store
 DC up -d openbao >/dev/null 2>&1
 wait_bao sealed
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
@@ -50,8 +50,8 @@ wait_bao active
   | DC exec -T -e BAO_ADDR=http://127.0.0.1:8200 openbao \
       sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; cat > /tmp/dr.snap; bao operator raft snapshot restore -force /tmp/dr.snap; rc=$?; rm -f /tmp/dr.snap; exit $rc'
 rm -f "$tmp/fresh.json"
-# 恢复后 barrier 换回快照里的那一套：以原分片解封（openbao-init.sh 幂等地解封并核验 audit）
-bash openbao-init.sh >/dev/null
+# 恢复后 barrier 换回快照里的那一套：以原分片解封（secret-store-init.sh 幂等地解封并核验 audit）
+bash secret-store-init.sh >/dev/null
 wait_bao active
 echo "  OpenBao：$(bao_status)"
 
@@ -87,7 +87,8 @@ sudo -n docker run --rm -u "$(id -u)" --network "$component_net" --env-file secr
   "$zed_image" backup restore /backup/spicedb.zedbackup
 step "MinIO（Relay 媒体）"
 mkdir -p data
-sudo -n tar -C data -xf "$in/buzz-objects.tar"
+# 归档内的目录名随版本不同（旧备份为 buzz-objects/），恢复一律落到 data/collab-objects
+sudo -n tar -C data --transform 's#^buzz-objects#collab-objects#' -xf "$in/buzz-objects.tar"
 step "IdP"
 DC create keycloak >/dev/null 2>&1
 kc=$(DC ps -a -q keycloak)

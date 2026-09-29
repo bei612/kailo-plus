@@ -30,7 +30,7 @@ step "0. 留下可核验的状态"
 subject="dr-$(date +%s)"
 touch /tmp/rbdr.hold
 { while [ -e /tmp/rbdr.hold ]; do sleep 1; done; } | \
-  (cd core && cargo run -q -p kailo-core --example verify_workspace -- "$subject") \
+  (cd core && cargo run -q -p platform-core --example verify_workspace -- "$subject") \
   >/tmp/rbdr.fixture 2>/tmp/rbdr.fixture.err &
 fixture_pid=$!
 for _ in $(seq 1 180); do [ -s /tmp/rbdr.fixture ] && break; sleep 1; done
@@ -72,7 +72,7 @@ bash "$LOCAL/dr-backup.sh" "$backup" | tail -9
 step "2. 灾难：删除全部数据卷与数据目录"
 DC down >/dev/null 2>&1
 for v in core-db-data buzz-db-data temporal-db-data spicedb-db-data; do sudo -n docker volume rm "kailo-local_$v" >/dev/null; done
-sudo -n find "$LOCAL/data/openbao" "$LOCAL/data/buzz-objects" -mindepth 1 -delete
+sudo -n find "$LOCAL/data/secret-store" "$LOCAL/data/collab-objects" -mindepth 1 -delete
 echo "  已删除：4 个数据卷、OpenBao 与 MinIO 的数据目录、IdP 容器"
 
 step "3. 按顺序恢复（入口保持关闭）"

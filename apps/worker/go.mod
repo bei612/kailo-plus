@@ -1,4 +1,4 @@
-module github.com/kailo/apps/worker
+module apps/worker
 
 go 1.25.8
 

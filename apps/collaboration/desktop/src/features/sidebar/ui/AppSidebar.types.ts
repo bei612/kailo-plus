@@ -1,5 +1,5 @@
-import type { Community } from "@/features/kailo/activeCommunity";
-import type { PlatformSection } from "@/features/kailo/platformSections";
+import type { Community } from "@/features/platform/activeCommunity";
+import type { PlatformSection } from "@/features/platform/platformSections";
 import type { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
 import type { Channel, Profile, SearchHit } from "@/shared/api/types";
 

@@ -18,9 +18,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use kailo_buzz::bridge::{IdentityClient, Presence, Scope};
-use kailo_buzz::operator::OperatorError;
-use kailo_secrets::SecretRef;
+use collab_bridge::bridge::{IdentityClient, Presence, Scope};
+use collab_bridge::operator::OperatorError;
+use secret_store::SecretRef;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

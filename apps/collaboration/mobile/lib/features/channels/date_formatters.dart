@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
-import '../../shared/kailo/kailo_platform_text.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 
 // Re-export shortPubkey so existing callers continue to compile.
 export '../../shared/utils/string_utils.dart' show shortPubkey;

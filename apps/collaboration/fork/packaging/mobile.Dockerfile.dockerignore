@@ -1,15 +1,17 @@
 # 本文件优先于源码树根的 .dockerignore（BuildKit 按 Dockerfile 同名 .dockerignore）。
-# 上游根的 .dockerignore 为 Relay 镜像而写，把 mobile/ 整个排除；安装包构建恰恰需要它。
+# 构建上下文是 apps/（ADR-16）：只放入 collaboration/mobile/ 与它以 path: 引用的 client-kit/dart。
 # 构建产物、依赖缓存、VCS 与本地密钥不进构建上下文。
+*
+!collaboration/mobile/
+!client-kit/dart/
 **/build/
 **/.dart_tool/
 **/node_modules/
-**/target/
-.git/
-.env
-.env.*
-*.pem
-*.key
-*.jks
-*.keystore
-secrets/
+**/.git/
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.jks
+**/*.keystore
+**/secrets/

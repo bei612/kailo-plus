@@ -11,7 +11,7 @@
 
 - `tools/release.sh` 的 SBOM 生成失败后留下 0 字节 `*.spdx.json`，供应链检查
   一度把它当成已生成。
-- `deploy/local/openbao-init.sh` 的 `bao operator init` 失败后留下 0 字节
+- `deploy/local/secret-store-init.sh` 的 `bao operator init` 失败后留下 0 字节
   `openbao_init.json`，**解封分片永久丢失**，raft 数据不可解，只能清库重来。
 
 写法：

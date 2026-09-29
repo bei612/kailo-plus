@@ -16,7 +16,7 @@ import {
   resolveLocale,
   translate,
   type PlatformLocale,
-} from "@kailo/platform/i18n";
+} from "@client-kit/platform/i18n";
 
 function createFormatters(locale: PlatformLocale) {
   return {

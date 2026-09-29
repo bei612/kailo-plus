@@ -24,7 +24,7 @@ subject="$(bash core/verify/idp-subject.sh)"
 work="$(mktemp -d)"
 fifo="$work/hold"
 mkfifo "$fifo"
-(cd core && exec cargo run -q -p kailo-core --example verify_workspace -- "$subject") \
+(cd core && exec cargo run -q -p platform-core --example verify_workspace -- "$subject") \
   <"$fifo" >"$work/workspace.json" 2>"$work/fixture.log" &
 fixture=$!
 exec 3>"$fifo"

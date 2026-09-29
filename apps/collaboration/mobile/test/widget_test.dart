@@ -1,7 +1,7 @@
 import 'package:buzz/app.dart';
-import 'package:buzz/features/kailo/kailo_sign_in_page.dart';
+import 'package:buzz/features/platform/platform_sign_in_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/kailo/kailo_api.dart';
+import 'package:buzz/shared/platform/platform_api.dart';
 import 'package:buzz/shared/theme/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,7 +9,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'shared/kailo/kailo_test_support.dart';
+import 'shared/platform/platform_test_support.dart';
 
 void main() {
   testWidgets('an unconfigured device asks for the Kailo deployment first', (

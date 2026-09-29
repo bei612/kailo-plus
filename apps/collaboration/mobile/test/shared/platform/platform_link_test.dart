@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/kailo/kailo_api.dart';
-import 'package:buzz/shared/kailo/kailo_config.dart';
-import 'package:buzz/shared/kailo/kailo_device.dart';
-import 'package:buzz/shared/kailo/kailo_link.dart';
-import 'package:buzz/shared/kailo/kailo_oidc.dart';
+import 'package:buzz/shared/platform/platform_api.dart';
+import 'package:buzz/shared/platform/platform_config.dart';
+import 'package:buzz/shared/platform/platform_device.dart';
+import 'package:buzz/shared/platform/platform_link.dart';
+import 'package:buzz/shared/platform/platform_oidc.dart';
 import 'package:buzz/shared/theme/theme_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -16,7 +16,7 @@ import 'package:nostr/nostr.dart' as nostr;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../community/community_storage_test.dart';
-import 'kailo_test_support.dart';
+import 'platform_test_support.dart';
 
 /// 模拟 BFF：记录收到的请求，按脚本回答设备登记。
 class _Bff {

@@ -24,8 +24,8 @@ export default defineConfig({
       testMatch: [
         "**/smoke.spec.ts",
         "**/device-key.spec.ts",
-        "**/kailo-bootstrap.spec.ts",
-        "**/kailo-platform.spec.ts",
+        "**/platform-bootstrap.spec.ts",
+        "**/platform-pages.spec.ts",
         "**/tooltip-semantics.spec.ts",
         "**/navigation.spec.ts",
         "**/channels.spec.ts",

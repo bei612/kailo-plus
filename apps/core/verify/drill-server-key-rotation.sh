@@ -25,7 +25,7 @@ step "0. 开通真实 Workspace（夹具保持到 stdin 关闭）"
 subject="key-$(date +%s)"
 touch /tmp/rbkey.hold
 { while [ -e /tmp/rbkey.hold ]; do sleep 1; done; } | \
-  (cd core && cargo run -q -p kailo-core --example verify_workspace -- "$subject") \
+  (cd core && cargo run -q -p platform-core --example verify_workspace -- "$subject") \
   >/tmp/rbkey.fixture 2>/tmp/rbkey.fixture.err &
 fixture_pid=$!
 stream_pid=""

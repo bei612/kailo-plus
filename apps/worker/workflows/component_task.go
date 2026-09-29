@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kailo/apps/worker/activities"
-	"github.com/kailo/apps/worker/internal/contracts/generated"
+	"apps/worker/activities"
+	"apps/worker/internal/contracts/generated"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )

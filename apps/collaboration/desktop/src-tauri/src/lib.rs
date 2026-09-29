@@ -9,7 +9,7 @@ mod egress_guard;
 mod events;
 mod identity_storage;
 mod initial_window;
-mod kailo;
+mod platform;
 mod link_preview_tags;
 mod linux_media;
 #[cfg(target_os = "macos")]
@@ -144,7 +144,7 @@ pub fn run() {
             });
         })
         .manage(build_app_state())
-        .manage(kailo::api::KailoSession::default())
+        .manage(platform::api::KailoSession::default())
         .manage(ClipboardState::new())
         .manage(PendingNavigationDeepLinks::default())
         .manage(observed_unread::ObservedUnreadStore::default())
@@ -186,14 +186,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            kailo::commands::kailo_get_config,
-            kailo::commands::kailo_set_config,
-            kailo::commands::kailo_status,
-            kailo::commands::kailo_sign_in,
-            kailo::commands::kailo_cancel_sign_in,
-            kailo::commands::kailo_sign_out,
-            kailo::commands::kailo_api,
-            kailo::commands::kailo_register_device,
+            platform::commands::kailo_get_config,
+            platform::commands::kailo_set_config,
+            platform::commands::kailo_status,
+            platform::commands::kailo_sign_in,
+            platform::commands::kailo_cancel_sign_in,
+            platform::commands::kailo_sign_out,
+            platform::commands::kailo_api,
+            platform::commands::kailo_register_device,
             acknowledge_pending_navigation_deep_link,
             apply_workspace,
             cancel_link_preview_metadata,

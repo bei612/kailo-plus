@@ -16,19 +16,19 @@ validation:
   scenarios: [V-SCN-01, V-SCN-28]
   evidence:
     - dimension: 上游接缝
-      ref: upstream/buzz/kailo/verify/server-client.md
+      ref: collaboration/fork/verify/server-client.md
     - dimension: 上游接缝
-      ref: upstream/buzz/kailo/verify/web-relay-core.md
+      ref: collaboration/fork/verify/web-relay-core.md
     - dimension: 端到端场景
-      ref: upstream/buzz-web/kailo/verify/web-surface.md
+      ref: web-client/fork/verify/web-surface.md
     - dimension: 故障与恢复
-      ref: upstream/buzz-web/kailo/verify/web-surface.md
+      ref: web-client/fork/verify/web-surface.md
     - dimension: 故障与恢复
       ref: docs/runbooks/RB-07-unknown-external-results.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/kailo-core/src/web_transport.rs, core/crates/kailo-core/src/stream.rs, core/crates/kailo-core/src/publish_reconcile.rs, core/crates/kailo-buzz, upstream/buzz-web]
+  paths: [core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/stream.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/collab-bridge, web-client]
   surfaces: [web]
   schemas: []
   migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql]
@@ -39,10 +39,10 @@ runtime:
 
 release:
   artifacts:
-    - name: kailo-core
+    - name: core
       digest: sha256:6121c07a431a7edebfb44224409b86967f72ee20fa7c031961a53ef75136aca6
-    - name: upstream-buzz-web
-      digest: sha256:272eda1135ca6b78d51da47c5e0074756bc50c776686756eace8a1141a3f0953
-    - name: upstream-buzz
-      digest: sha256:6f08c2a299e2b4789377672976ba6ede3050eeace9ce67c5452710b52aaa6d48
+    - name: web-client
+      digest: sha256:b9a953fae79ef7ec528fc460560815efc0b9f141f205565e2530480bb70c22b9
+    - name: collaboration-relay
+      digest: sha256:e4c34134935bc6259d4fdc07182ff9ac9b637a2106d41e188b26fd7be5a385b8
   gate: shipped

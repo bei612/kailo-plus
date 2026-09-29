@@ -28,7 +28,7 @@ import type {
   TenantInvitationView,
   WorkspaceMemberView,
   WorkspaceView,
-} from "@kailo/contracts";
+} from "@client-kit/contracts";
 import { type BffRequest, type BffTransport, unwrap } from "./transport";
 
 export type BffClient = ReturnType<typeof createBffClient>;

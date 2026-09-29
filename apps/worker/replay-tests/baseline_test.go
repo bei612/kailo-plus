@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kailo/apps/worker/workflows"
+	"apps/worker/workflows"
 	"go.temporal.io/sdk/worker"
 )
 
@@ -90,7 +90,7 @@ func TestComponentTaskReplay(t *testing.T) {
 // 四份各对应一个终态，命令序列互不相同：CONSUMED 走「资格被拒的决定 → 合格决定
 // → APPROVED → consume」，INVALIDATED 走「APPROVED → Core 重新准入拒绝 →
 // invalidate」，CANCELLED 走 withdraw，EXPIRED 走过期 timer。录自
-// core/crates/kailo-core/tests/governed_action.rs 在本地拓扑上的真实执行
+// core/crates/platform-core/tests/governed_action.rs 在本地拓扑上的真实执行
 // （workflow ID 由该测试打印），不是手工构造的事件序列。
 //
 // Validator 在重放时整段跳过（SF-TSDK-09），因此这里守住的是 handler 与主协程

@@ -14,7 +14,7 @@ cd "$(dirname "$0")/../../deploy/local"
   "${OPENBAO_TENANT_VERIFY_ROLE_NAME:?}" "${OPENBAO_KV_MOUNT:?}"
 
 root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
-# 令牌经 stdin 进入容器，不上命令行（与 openbao-init.sh 同一做法）
+# 令牌经 stdin 进入容器，不上命令行（与 secret-store-init.sh 同一做法）
 ns() {
   printf '%s\n' "$root_token" | sudo -n docker compose --env-file .env -f compose.yaml exec -T \
     -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_NAMESPACE="$OPENBAO_PLATFORM_NAMESPACE" openbao \
@@ -45,8 +45,8 @@ v2=$(ns kv put -cas="$v1" -format=json "$secret_path" value=v2 \
 printf 'VERIFY_SECRET_VERSION_V1=%s\nVERIFY_SECRET_VERSION_V2=%s\n' "$v1" "$v2"
 
 # SecretStore 的真实投递路径：kailo-verify 与 kailo-core 同策略、同样单次使用并以
-# response wrapping 投递，只是不绑 CIDR——核验跑在宿主上（openbao-init.sh）。
-# wrapping token 在 OPENBAO_SECRET_ID_WRAP_TTL 内由 kailo-secrets 的核验消费。
+# response wrapping 投递，只是不绑 CIDR——核验跑在宿主上（secret-store-init.sh）。
+# wrapping token 在 OPENBAO_SECRET_ID_WRAP_TTL 内由 secret-store 的核验消费。
 : "${OPENBAO_SECRET_ID_WRAP_TTL:?}"
 printf 'OPENBAO_ROLE_ID=%s\n' "$(ns read -field=role_id auth/approle/role/kailo-verify/role-id)"
 printf 'OPENBAO_ROLE_NAME=kailo-verify\n'

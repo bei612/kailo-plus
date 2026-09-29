@@ -12,7 +12,7 @@ import {
   type ClientKeyStatus,
   type NativeCommunityFacts,
   ReasonCode,
-} from "@kailo/contracts";
+} from "@client-kit/contracts";
 import {
   type FormEvent,
   type ReactNode,

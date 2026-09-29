@@ -15,7 +15,7 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use kailo_buzz::bridge::{IdentityClient, Scope};
+use collab_bridge::bridge::{IdentityClient, Scope};
 use opentelemetry::metrics::{Counter, Gauge, Meter};
 use opentelemetry::KeyValue;
 use uuid::Uuid;

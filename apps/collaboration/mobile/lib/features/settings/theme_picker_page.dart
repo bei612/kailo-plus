@@ -9,7 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/community/community_icon_provider.dart';
 import '../../shared/community/community_provider.dart';
-import '../../shared/kailo/kailo_platform_text.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/frosted_app_bar.dart';

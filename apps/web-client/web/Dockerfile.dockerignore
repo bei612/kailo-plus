@@ -1,0 +1,11 @@
+# 构建上下文是 apps/（ADR-16）；BuildKit 按 Dockerfile 同名 .dockerignore 取舍，优先于 web/.dockerignore。
+# 只放入本镜像的输入：Web 客户端与它以本地路径依赖引用的 client-kit/ts。
+*
+!web-client/web/
+!client-kit/ts/contracts/
+!client-kit/ts/platform/
+**/node_modules
+web-client/web/dist
+web-client/web/playwright-report
+web-client/web/test-results
+**/.DS_Store

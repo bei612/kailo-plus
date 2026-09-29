@@ -7,6 +7,9 @@ environment:
   sdk: ^3.11.4
 
 dependencies:
+  # 契约绑定与平台文案以本地路径依赖接入（ADR-16）
+  client_kit:
+    path: ../../client-kit/dart
   flutter:
     sdk: flutter
   flutter_localizations:

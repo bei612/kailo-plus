@@ -1,4 +1,4 @@
-import { translate, resolveLocale } from "@kailo/platform/i18n";
+import { translate, resolveLocale } from "@client-kit/platform/i18n";
 import {
   ClipboardCheck,
   History,
@@ -23,7 +23,7 @@ import {
   PLATFORM_SECTION_LABEL,
   PLATFORM_SECTIONS,
   type PlatformSection,
-} from "@/features/kailo/platformSections";
+} from "@/features/platform/platformSections";
 
 type SidebarSelectedView = "home" | "channel" | "platform";
 

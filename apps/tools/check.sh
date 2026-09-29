@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 统一检查入口（ADR-07）。本地与 CI 调用同一命令、同一步骤集。
-# 十个子步骤对应 03-验证发布与验收门禁.md §5 的十项合并门禁。
+# 十个门禁子步骤对应 03-验证发布与验收门禁.md §5 的十项合并门禁；另有 status 一步只提示上游变化（ADR-16），不计入门禁。
 # 无适用对象的步骤输出 SKIP 并通过——它在首次出现适用对象时自动生效，不被注释掉。
 #
 # 用法：
@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.." || exit 2
 
 # 步骤编号对应 03 §5，执行顺序按依赖：迁移演练先于验证——演练结束时演练库处于最新
 # 迁移，第 2 步中读取 DATABASE_URL 的测试依赖这一状态；单独运行 verify 时须自备已迁移的库。
-STEPS=(lint contract migrate verify replay trace supply seam security docs)
+STEPS=(status lint contract migrate verify replay trace supply seam security docs)
 FAIL=0
 
 hdr()  { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
@@ -41,16 +41,16 @@ step_lint() {
     (cd worker && gofmt -l . | grep -q . ) && fail "gofmt 有未格式化文件" || pass "gofmt"
     (cd worker && go vet ./... >/dev/null 2>&1) && pass "go vet" || fail "go vet"
   fi
-  if populated web/packages && have pnpm; then
+  if populated client-kit/ts && have pnpm; then
     ran=1
     pnpm -r typecheck >/dev/null 2>&1 && pass "tsc --noEmit" || fail "tsc --noEmit"
   fi
-  if populated mobile/lib; then
+  if populated client-kit/dart/lib; then
     if have dart; then
       ran=1
-      (cd mobile && dart analyze >/dev/null 2>&1) && pass "dart analyze" || fail "dart analyze"
+      (cd client-kit/dart && dart analyze >/dev/null 2>&1) && pass "dart analyze" || fail "dart analyze"
     else
-      fail "mobile/ 有 Dart 源码但本机无 dart 工具链，该侧无法校验"
+      fail "client-kit/dart 有 Dart 源码但本机无 dart 工具链，该侧无法校验"
     fi
   fi
   [ "$ran" -eq 0 ] && skip "尚无源码"
@@ -63,10 +63,10 @@ step_verify()   { hdr "2/10 受影响范围的验证"
     SQLX_OFFLINE=true cargo test --manifest-path core/Cargo.toml >/dev/null 2>&1 && pass "cargo test" || fail "cargo test"; fi
   if populated worker && have go; then ran=1
     (cd worker && go test ./... >/dev/null 2>&1) && pass "go test" || fail "go test"; fi
-  if populated web/packages && have pnpm; then ran=1
+  if populated client-kit/ts && have pnpm; then ran=1
     pnpm -r test >/dev/null 2>&1 && pass "node --test（TypeScript）" || fail "node --test（TypeScript）"; fi
-  if populated mobile/test && have dart; then ran=1
-    (cd mobile && dart test >/dev/null 2>&1) && pass "dart test" || fail "dart test"; fi
+  if populated client-kit/dart/test && have dart; then ran=1
+    (cd client-kit/dart && dart test >/dev/null 2>&1) && pass "dart test" || fail "dart test"; fi
   [ "$ran" -eq 0 ] && skip "尚无可验证范围"
   return 0
 }
@@ -267,9 +267,9 @@ def product_hits(value):
     parts = set(re.split(r"[^a-z0-9]+", str(value).lower()))
     return sorted(parts & product_tokens)
 
-# 上游产物的登记处：upstream/<树>/kailo/upstream.yaml 的 artifacts（产物名 -> (记录, digest)）
+# 二开项目产物的登记处：<项目>/fork/upstream.yaml 的 artifacts（产物名 -> (记录, digest)）
 upstream_artifacts = {}
-for mf in sorted(glob.glob("upstream/*/kailo/upstream.yaml")):
+for mf in sorted(glob.glob("*/fork/upstream.yaml")):
     for a in (yaml.safe_load(open(mf, encoding="utf-8")) or {}).get("artifacts") or []:
         upstream_artifacts[a.get("name")] = (mf, str(a.get("artifact_digest") or "none"))
 
@@ -330,16 +330,16 @@ for f in files:
     # 东西脱节——重建镜像之后最容易出现，而且没有任何其他检查会发现。
     for a in arts:
         name, dg = a.get("name") or "", str(a.get("digest") or "")
-        if name.startswith("upstream-"):
-            got = upstream_artifacts.get(name)
-            if not got:
-                bad.append(f"{cid}: 产物 {name} 未登记在任何 upstream/*/kailo/upstream.yaml")
-            elif dg != got[1]:
+        got = upstream_artifacts.get(name)
+        if got:
+            if dg != got[1]:
                 bad.append(f"{cid}: 产物 {name} 的 digest 与 {got[0]} 的 artifact_digest 不一致")
-        elif name.startswith("kailo-"):
-            unit = name[len("kailo-"):]
-            if not os.path.exists(f"dist/{unit}.{dg.removeprefix('sha256:')}.spdx.json"):
+        elif name in ("core", "worker"):
+            # 自建发布单元（tools/release.sh）：dist/<单元>.<digest>.spdx.json
+            if not os.path.exists(f"dist/{name}.{dg.removeprefix('sha256:')}.spdx.json"):
                 bad.append(f"{cid}: 产物 {name} 的 digest 在 dist/ 中没有对应的发布产物")
+        else:
+            bad.append(f"{cid}: 产物 {name} 既不是 */fork/upstream.yaml 登记的产物，也不是自建单元 core/worker")
 # 规则 7（契约侧）：契约枚举值同样不含实现产品名
 import json
 for ef in sorted(glob.glob("contracts/enums/*.schema.json")):
@@ -366,19 +366,20 @@ step_supply()   { hdr "7/10 secret、依赖、许可证与供应链"
   if have gitleaks; then
     gitleaks detect --no-banner -q >/dev/null 2>&1 && pass "gitleaks 无命中" || fail "gitleaks 命中"
   else
-    # 兜底：仓库内明显的私钥/令牌形态。upstream/ 下的上游原样（例如上游测试夹具里的假
-    # 私钥、假 nsec）不是本仓库交付的内容；那里只扫 Kailo 新增或改写的行——与上游原样的
+    # 兜底：仓库内明显的私钥/令牌形态。二开项目里的上游原样（例如上游测试夹具里的假
+    # 私钥、假 nsec）不是本仓库交付的内容；那里只扫本仓库新增或改写的行——与上游原样的
     # 差异由 upstream_manifest.py 按基准 commit 只读求出，基准取不到即失败。
     local secret='BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|nsec1[a-z0-9]{20,}|xox[baprs]-'
-    local added tree
+    local added mf tree excludes=()
     added=$(mktemp)
-    for tree in upstream/*/; do
-      tree=$(basename "$tree")
-      [ -f "upstream/$tree/kailo/upstream.yaml" ] || continue
+    for mf in */fork/upstream.yaml; do
+      tree=${mf%%/*}
+      grep -q '^module:' "$mf" && continue
+      excludes+=(":(exclude)$tree/")
       python3 tools/upstream_manifest.py added-lines "$tree" >>"$added" \
-        || { fail "取不到 upstream/$tree 的上游基准，Kailo 改动无法扫描"; }
+        || { fail "取不到 $tree 的上游基准，本仓库改动无法扫描"; }
     done
-    if git grep -nIE "$secret" -- . ':(exclude)upstream/' >/dev/null 2>&1 \
+    if git grep -nIE "$secret" -- . "${excludes[@]}" >/dev/null 2>&1 \
        || grep -qE "$secret" "$added"; then
       fail "发现疑似凭据"; else pass "内置扫描无命中（未安装 gitleaks）"; fi
     rm -f "$added"
@@ -431,7 +432,7 @@ for name in sorted(names):
                           capture_output=True).returncode != 0:
             bad.append(f"{name}: commit {commit[:12]} 在本仓库中不存在")
             continue
-        paths = ("apps/core/Cargo.lock", "apps/mobile/pubspec.lock",
+        paths = ("apps/core/Cargo.lock", "apps/client-kit/dart/pubspec.lock",
                  "apps/pnpm-lock.yaml", "apps/worker/go.sum")
         listed = subprocess.run(["git", "ls-tree", "-r", "--name-only", commit, "--", *paths],
                                 cwd="..", capture_output=True, text=True, check=True).stdout.splitlines()
@@ -455,7 +456,7 @@ PY
 }
 
 step_seam()     { hdr "8/10 上游 seam diff"
-  if ! ls upstream/*/kailo/upstream.yaml >/dev/null 2>&1; then skip "尚无上游进入运行拓扑"; return 0; fi
+  if ! ls */fork/upstream.yaml >/dev/null 2>&1; then skip "尚无上游进入运行拓扑"; return 0; fi
   DESIGN="${DESIGN:-../.design}" python3 - <<'PY' || FAIL=1
 import glob, os, re, sys
 sys.path.insert(0, "tools")
@@ -497,6 +498,14 @@ if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
 print(f"  \033[32mPASS\033[0m {n} 份来源记录：基准可解析、设计引用闭合、证据可达、{arts} 个产物由当前源码构建")
 PY
+  return 0
+}
+
+step_status()   { hdr "上游变化提示（ADR-16，只提示，不计入门禁）"
+  # .references 的 HEAD、UPDATE_TASKS.json 与更新记录对比各二开项目的基准 commit。是否升级由
+  # 04 的影响分类决定：有新提交不等于失败，这一步永远不置 FAIL。
+  if ! ls */fork/upstream.yaml >/dev/null 2>&1; then skip "尚无来源记录"; return 0; fi
+  python3 tools/upstream_manifest.py status 2>&1 | sed 's/^/  /' || true
   return 0
 }
 
@@ -697,15 +706,18 @@ for net in sorted(n for n in declared if n.endswith("-data")):
         bad.append(f"{net}: {', '.join(bridging)} 都同时接入其他网络，数据存储对共享网络可达")
 # 同一条规则延伸到本仓库自建镜像的基础镜像：compose 按 digest 引用了产物，
 # 产物的 FROM 却跟着可变 tag 走，两次构建就不是同一份输入（ADR-06）。
-# upstream/ 下的上游源码只查 Kailo 维护的构建文件（来源记录的 build_dockerfile）：上游自带的
-# Dockerfile（示例、基准测试、CI）是上游原样，与迁入前一样不在这条规则里。
-kailo_built = []
-for mf in sorted(glob.glob("upstream/*/kailo/upstream.yaml")):
+# 二开项目里只查本仓库维护的构建文件（fork/packaging/ 下、被来源记录的 build_dockerfile
+# 使用的）：上游自带的 Dockerfile（含 Relay、网关直接沿用的那份，以及示例、基准测试、CI）是
+# 上游原样，与迁入前一样不在这条规则里。
+forks, fork_built = [], []
+for mf in sorted(glob.glob("*/fork/upstream.yaml")):
+    forks.append(mf.split("/")[0] + "/")
     for a in (yaml.safe_load(open(mf, encoding="utf-8")) or {}).get("artifacts") or []:
-        if a.get("build_dockerfile"):
-            kailo_built.append(os.path.join(os.path.dirname(os.path.dirname(mf)), a["build_dockerfile"]))
-for df in sorted(set(glob.glob("**/Dockerfile", recursive=True)) | set(kailo_built)):
-    if "/node_modules/" in df or df.startswith("target/") or (df.startswith("upstream/") and df not in kailo_built):
+        if "/fork/packaging/" in str(a.get("build_dockerfile") or ""):
+            fork_built.append(a["build_dockerfile"])
+for df in sorted(set(glob.glob("**/Dockerfile", recursive=True)) | set(fork_built)):
+    if "/node_modules/" in df or "/target/" in df or df.startswith("target/") \
+            or (any(df.startswith(t) for t in forks) and df not in fork_built):
         continue
     for n, line in enumerate(open(df, encoding="utf-8"), 1):
         m = re.match(r"\s*FROM\s+(\S+)", line, re.I)
@@ -713,32 +725,32 @@ for df in sorted(set(glob.glob("**/Dockerfile", recursive=True)) | set(kailo_bui
         if m and "@sha256:" not in m.group(1) and not m.group(1).startswith("$") and m.group(1) != "scratch":
             bad.append(f"{df}:{n}: 基础镜像未按 digest 引用（{m.group(1)}）")
 # OpenBao 的部署前置不变式（07 §1）中可由部署描述校验的条目
-bao_cfg = "deploy/local/openbao-config.hcl"
-bao_init = "deploy/local/openbao-init.sh"
+bao_cfg = "deploy/local/secret-store-config.hcl"
+bao_init = "deploy/local/secret-store-init.sh"
 if os.path.exists(bao_init):
     init = open(bao_init, encoding="utf-8").read()
     if not re.search(r'ns write "\$\{OPENBAO_KV_MOUNT\}/config"[^\n]*\bcas_required=true\b', init):
-        bad.append("openbao-init.sh: KV v2 mount 未启用 cas_required=true（DD-70）")
+        bad.append("secret-store-init.sh: KV v2 mount 未启用 cas_required=true（DD-70）")
     if not re.search(r'ns read -field=cas_required "\$\{OPENBAO_KV_MOUNT\}/config"', init):
-        bad.append("openbao-init.sh: 缺少 cas_required 运行期回读校验（DD-70）")
+        bad.append("secret-store-init.sh: 缺少 cas_required 运行期回读校验（DD-70）")
 if os.path.exists(bao_cfg):
     lines = [l for l in open(bao_cfg, encoding="utf-8").read().split("\n")
              if not l.strip().startswith("#")]
     body = "\n".join(lines)
     # 上游已移除 mlock：出现该键且为 false 时进程直接拒绝启动（SF-OBA-10）
     if "disable_mlock" in body:
-        bad.append("openbao-config.hcl: 出现 disable_mlock，上游已移除该支持（SF-OBA-10）")
+        bad.append("secret-store-config.hcl: 出现 disable_mlock，上游已移除该支持（SF-OBA-10）")
     # 零 audit device 时 audit broker 的 fail-closed 分支被短路（SF-OBA-06）；
     # 该版本只接受声明式配置，且必须给满 type 与 path 两个块标签（SF-OBA-11）
     if not re.search(r'^\s*audit\s+"[^"]+"\s+"[^"]+"\s*\{', body, re.M):
-        bad.append("openbao-config.hcl: 缺少带 type 与 path 两个标签的 audit 块（SF-OBA-06/11）")
+        bad.append("secret-store-config.hcl: 缺少带 type 与 path 两个标签的 audit 块（SF-OBA-06/11）")
     for svc, spec in (d.get("services") or {}).items():
         if "openbao" in (spec.get("image") or "") and "-dev" in " ".join(spec.get("command") or []):
             bad.append(f"{svc}: 使用了 server -dev，07 §1 禁止它进入任何 active 拓扑")
 
 # 自建上游的 digest 必须与其来源记录一致：compose 与记录各写一份，两处脱节就意味着
 # 跑的不是被登记的那个产物。
-for mf in sorted(glob.glob("upstream/*/kailo/upstream.yaml")):
+for mf in sorted(glob.glob("*/fork/upstream.yaml")):
     for a in (yaml.safe_load(open(mf, encoding="utf-8")) or {}).get("artifacts") or []:
         want, name = str(a.get("artifact_digest") or "none"), a.get("name")
         if want == "none":
@@ -781,8 +793,8 @@ for svc, spec in (d.get("services") or {}).items():
     env = spec.get("environment") or {}
     entry = " ".join(spec.get("entrypoint") or []) if isinstance(spec.get("entrypoint"), list) else str(spec.get("entrypoint") or "")
     runs_buzz = (isinstance(env, dict) and "BUZZ_BIND_ADDR" in env) or "/buzz-" in entry
-    if runs_buzz and "upstream-buzz@" not in str(spec.get("image") or ""):
-        bad.append(f"{svc}: 未运行 upstream/buzz 的 Kailo 构建，SS-BUZ-GOVERNANCE 不生效")
+    if runs_buzz and "/collaboration-relay@" not in str(spec.get("image") or ""):
+        bad.append(f"{svc}: 未运行 collaboration/ 的本仓库构建，SS-BUZ-GOVERNANCE 不生效")
 
 # SS-AGW-OIDC：身份 header 投影的硬约束。
 #
@@ -790,7 +802,7 @@ for svc, spec in (d.get("services") or {}).items():
 # 而 gateway 阶段先于选路执行（SF-AGW-22）。因此这里对**每条 route**算出
 # 它实际生效的那份 transformation——listener 级优先，退回 route 级——
 # 再逐条判定。没有任何一条能落在检查之外。
-agw_cfg = "deploy/local/agentgateway-config.yaml"
+agw_cfg = "deploy/local/model-gateway-config.yaml"
 if os.path.exists(agw_cfg):
     agw = yaml.safe_load(open(agw_cfg, encoding="utf-8"))
     PROJECTED = {"x-kailo-oidc-issuer", "x-kailo-oidc-subject"}
@@ -878,7 +890,7 @@ if os.path.exists(agw_cfg):
 
 # SpiceDB 是访问允许/拒绝的权威（03 §1），部署的 schema 必须与 .design/03 §5
 # 的固定 schema 逐字相等。漂移不会让任何调用报错，只会静默改变授权判定。
-zed_path = "deploy/local/spicedb/schema.zed"
+zed_path = "deploy/local/authorization/schema.zed"
 design_03 = os.path.join(os.environ.get("DESIGN", "../.design"), "03-领域模型与权限模型.md")
 if os.path.exists(zed_path):
     if not os.path.exists(design_03):

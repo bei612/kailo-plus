@@ -23,8 +23,8 @@ import {
   resolveLocale,
   translate,
   type PlatformLocale,
-} from "@kailo/platform/i18n";
-import { relativeTime } from "@kailo/platform/format";
+} from "@client-kit/platform/i18n";
+import { relativeTime } from "@client-kit/platform/format";
 
 function createFormatters(locale: PlatformLocale) {
   return {

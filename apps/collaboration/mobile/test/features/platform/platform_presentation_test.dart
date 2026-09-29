@@ -1,7 +1,7 @@
-import 'package:buzz/features/kailo/kailo_async_view.dart';
-import 'package:buzz/features/kailo/kailo_status_text.dart';
-import 'package:buzz/shared/kailo/kailo_api.dart';
-import 'package:buzz/shared/kailo/kailo_link.dart';
+import 'package:buzz/features/platform/platform_async_view.dart';
+import 'package:buzz/features/platform/platform_status_text.dart';
+import 'package:buzz/shared/platform/platform_api.dart';
+import 'package:buzz/shared/platform/platform_link.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

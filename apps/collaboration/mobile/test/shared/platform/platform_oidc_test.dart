@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:buzz/shared/kailo/kailo_oidc.dart';
+import 'package:buzz/shared/platform/platform_oidc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:pointycastle/digests/sha256.dart';
 
-import 'kailo_test_support.dart';
+import 'platform_test_support.dart';
 
 void main() {
   test('PKCE challenge is the S256 of the verifier and never repeats', () {

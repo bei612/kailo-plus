@@ -341,7 +341,7 @@ pub async fn retire_relay_community(e: &Env, pool: &PgPool, tenant: Uuid) -> Res
     let Some((host, owner)) = row else {
         return Ok(());
     };
-    let operator = kailo_buzz::operator::OperatorIdentity::new(
+    let operator = collab_bridge::operator::OperatorIdentity::new(
         &e.operator_key,
         &e.relay_origin,
         &e.operator_audience,
@@ -352,7 +352,7 @@ pub async fn retire_relay_community(e: &Env, pool: &PgPool, tenant: Uuid) -> Res
         .archive_community(&reqwest::Client::new(), &host, &owner)
         .await
     {
-        Ok(_) | Err(kailo_buzz::operator::OperatorError::Rejected { status: 404, .. }) => Ok(()),
+        Ok(_) | Err(collab_bridge::operator::OperatorError::Rejected { status: 404, .. }) => Ok(()),
         Err(err) => Err(format!("归档夹具 Community {host} 失败：{err}")),
     }
 }
@@ -1485,7 +1485,7 @@ pub mod bootstrapped {
                 "exec",
                 "-T",
                 "core-bff",
-                "kailo-core",
+                "platform-core",
                 "bootstrap-tenant",
                 "--slug",
                 slug,

@@ -7,12 +7,12 @@ library;
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../auth/auth.dart';
-import '../contracts/contracts.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
 import '../profile/user_cache_provider.dart';
 import '../profile/user_profile.dart';
-import 'kailo_api.dart';
-import 'kailo_config.dart';
-import 'kailo_device.dart';
+import 'platform_api.dart';
+import 'platform_config.dart';
+import 'platform_device.dart';
 
 /// 管理面视图失败时不自动重试：BFF 的拒绝是确定结论，重试不会改变它；不可达时
 /// 由用户在界面上点「重试」。自动重试只会在后台反复敲 BFF。

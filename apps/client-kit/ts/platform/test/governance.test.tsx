@@ -7,7 +7,7 @@ import {
   type ApprovalView,
   type TaskView,
   TaskStatus,
-} from "@kailo/contracts";
+} from "@client-kit/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { taskPhase } from "../src/governance";

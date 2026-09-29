@@ -1,22 +1,24 @@
 # 来源记录，格式见 apps/06-工程基线规范.md §2。字段含义冲突时以该节为准。
-# 本目录之外的整棵树是上游固定 commit 的完整源码，Kailo 的改动直接在树里；与上游原样的差异由
-# `tools/upstream_manifest.py diff <项目>` 给出（kailo/ 是 Kailo 自有目录，不在其中）。
-project: buzz
+# 本目录（fork/）之外的整棵树是上游固定 commit 的完整源码，本仓库的改动直接在树里；与上游原样的
+# 差异由 `tools/upstream_manifest.py diff <项目>` 给出，上游的新变化由 `status` 提示、`sync` 合并
+# （ADR-16）。产物字段里的路径一律相对 apps/。
+project: collaboration
+reference_tree: buzz
 upstream_url: https://github.com/block/buzz
 
-# 一棵树、三个交付面（DD-74）：Relay（crates/，含 buzz-admin）、Desktop（desktop/，Tauri）与
-# Mobile（mobile/，Flutter）同在 block/buzz 这个 monorepo，基准 commit 相同。
-# Relay：Kailo Community 的治理要求 Relay 只接受 owner（Tenant CONTROL）签发的管理类事件
+# 协作底座：一棵树、三个交付面（DD-74）。Relay（crates/，含 buzz-admin）、Desktop 客户端
+# （desktop/，Tauri）与 Mobile 客户端（mobile/，Flutter）同在上游这个 monorepo，基准 commit 相同。
+# Relay：Community 的治理要求 Relay 只接受 owner（Tenant CONTROL）签发的管理类事件
 # （SS-BUZ-GOVERNANCE、DD-80），上游没有这个开关（SF-BUZ-37）；同一开关设定时 Relay 还关闭
-# Buzz 自带 workflow（DD-106、SF-BUZ-45）。因此不能用上游发布的镜像，由本树构建。
+# 上游自带 workflow（DD-106、SF-BUZ-45）。因此不能用上游发布的镜像，由本树构建。
 evidence_commit: 779af8886caae1317b4de962082429867ab61503
 implementation_base_commit: 779af8886caae1317b4de962082429867ab61503
 base_divergence: none
 
 # 一期不交付而整块删除的上游代码（Desktop：Agent、Workflow、Huddle、Projects、DM、Terminal、
-# 发布链路与 sidecar 等，见 kailo/verify/baseline-build.md 与 kailo-desktop.md；Mobile：Agent、
-# Workflow、Huddle、自建 Channel/DM、推送、年龄门禁等，见 kailo-mobile.md；REQ-21、V-SCN-65）。
-# 与实际一致由 `upstream_manifest.py diff buzz --check` 核对。
+# 发布链路与 sidecar 等，见 fork/verify/baseline-build.md 与 desktop-client.md；Mobile：Agent、
+# Workflow、Huddle、自建 Channel/DM、推送、年龄门禁等，见 mobile-client.md；REQ-21、V-SCN-65）。
+# 与实际一致由 `upstream_manifest.py diff collaboration --check` 核对。
 remove_paths:
   - .github/workflows/desktop-release-cache-proof.yml
   - .github/workflows/desktop-release-candidate.yml
@@ -970,63 +972,39 @@ remove_paths:
   - scripts/test-signed-canary-contract.sh
   - scripts/verify-desktop-release-merge.sh
 
-# Kailo 自有的 TypeScript 只有一份（ADR-09）：BFF 客户端、平台页、原生登录引导与文案在
-# web/packages/platform，与 Buzz Web 放入的是同一批文件；Desktop 的传输是经 Tauri `kailo_api`
-# 的实现（native.ts）。Mobile 取 contracts 的 Dart 生成物与共享平台文案（ADR-02/03）。
-# 构建时放进树；树只引用、不携带副本（desktop/、mobile/ 的 .gitignore 忽略这些目标）。
-vendor_files:
-  - web/packages/contracts/src/generated/contracts.ts:desktop/src/kailo-contracts.gen.ts
-  - web/packages/platform/src/transport.ts:desktop/src/kailo-platform/transport.ts
-  - web/packages/platform/src/client.ts:desktop/src/kailo-platform/client.ts
-  - web/packages/platform/src/native.ts:desktop/src/kailo-platform/native.ts
-  - web/packages/platform/src/i18n.ts:desktop/src/kailo-platform/i18n.ts
-  - web/packages/platform/src/format.ts:desktop/src/kailo-platform/format.ts
-  - web/packages/platform/src/governance.ts:desktop/src/kailo-platform/governance.ts
-  - web/packages/platform/src/react/context.tsx:desktop/src/kailo-platform/react/context.tsx
-  - web/packages/platform/src/react/use-load.ts:desktop/src/kailo-platform/react/use-load.ts
-  - web/packages/platform/src/react/ui.tsx:desktop/src/kailo-platform/react/ui.tsx
-  - web/packages/platform/src/react/pages.tsx:desktop/src/kailo-platform/react/pages.tsx
-  - web/packages/platform/src/react/governance.tsx:desktop/src/kailo-platform/react/governance.tsx
-  - web/packages/platform/src/react/invitations.tsx:desktop/src/kailo-platform/react/invitations.tsx
-  - web/packages/platform/src/react/roles.tsx:desktop/src/kailo-platform/react/roles.tsx
-  - web/packages/platform/src/react/tenants.tsx:desktop/src/kailo-platform/react/tenants.tsx
-  - web/packages/platform/src/react/NativeBootstrap.tsx:desktop/src/kailo-platform/react/NativeBootstrap.tsx
-  - mobile/lib/shared/contracts/contracts.dart:mobile/lib/shared/contracts/contracts.dart
-  - mobile/lib/shared/contracts/generated/contracts.dart:mobile/lib/shared/contracts/generated/contracts.dart
-  - mobile/lib/shared/kailo/kailo_reason_text.dart:mobile/lib/shared/kailo/kailo_reason_text.dart
-  - mobile/lib/shared/kailo/kailo_platform_text.dart:mobile/lib/shared/kailo/kailo_platform_text.dart
-
+# Desktop 以 link: 依赖引用 client-kit/ts（BFF 客户端、平台页、原生登录引导与文案，ADR-09），传输是
+# 经 Tauri `kailo_api` 的实现（native.ts）；Mobile 以 Flutter path: 依赖引用 client-kit/dart（契约
+# Dart 生成物与平台文案，ADR-02/03）。两者都在各自产物的 inputs 里，改了即要求重建。
 artifacts:
   # Relay 与 buzz-admin 镜像：上游根 Dockerfile，其 .dockerignore 整个排除 desktop/ 与 mobile/。
-  # 2026-09-29 三份清单合成本树后以 build-upstream.sh 重建得 sha256:e88cbfdd…（index，内含
-  # amd64 manifest sha256:8a2670b0…）；与登记的 6f08c2a2… 逐层展开比对，根文件系统只有 apt/dpkg
-  # 日志与 ldconfig 缓存（安装时间）不同，三个二进制与 Web 静态资源逐字节相同。登记值保持运行
-  # 拓扑正在使用的 6f08c2a2…。
-  - name: upstream-buzz
+  - name: collaboration-relay
     kind: image
-    build_context: .
-    source_exclude: [desktop/, mobile/, kailo/packaging/]
-    source_digest: sha256:76c1e6aea2a7194f325c6dfd7767492d4867f7c70bfea7ddeb68b3916341b162
-    artifact_digest: sha256:6f08c2a299e2b4789377672976ba6ede3050eeace9ce67c5452710b52aaa6d48
-  # Linux 桌面安装包（.deb）：上游没有打包用的 Dockerfile，由 Kailo 维护的构建文件产出，
+    build_context: collaboration
+    build_dockerfile: collaboration/Dockerfile
+    inputs: [collaboration/]
+    exclude: [collaboration/desktop/, collaboration/mobile/, collaboration/fork/packaging/]
+    source_digest: sha256:7ef6315f34f9b508dd30a8908425d80d7654286eaa690281a83d80da4841e3a1
+    artifact_digest: sha256:e4c34134935bc6259d4fdc07182ff9ac9b637a2106d41e188b26fd7be5a385b8
+  # Linux 桌面安装包（.deb）：上游没有打包用的 Dockerfile，由本仓库维护的构建文件产出，
   # artifact_digest 记安装包字节的 SHA-256（06 §2）。mobile/ 与 crates/buzz-relay/ 不是它的输入：
   # desktop/src-tauri 不在根 Cargo workspace 内，其 Cargo.lock 不含 buzz-relay；pnpm workspace
   # 只有 desktop、web、admin-web。
-  - name: upstream-buzz-desktop
+  - name: desktop-client
     kind: bundle
     build_context: .
-    build_dockerfile: kailo/packaging/desktop.Dockerfile
-    source_exclude: [mobile/, crates/buzz-relay/, kailo/packaging/mobile.Dockerfile, kailo/packaging/mobile.Dockerfile.dockerignore]
-    source_digest: sha256:09290373404fa82ee76e76c9101fcbad75275e3a907c046d2f117bcb19bf0342
-    artifact_digest: sha256:6ad17a43284f6060703ed36b8205c077d864f53500a93dcc52a1f684e9289615
+    build_dockerfile: collaboration/fork/packaging/desktop.Dockerfile
+    inputs: [collaboration/, client-kit/ts/contracts/, client-kit/ts/platform/]
+    exclude: [collaboration/mobile/, collaboration/crates/buzz-relay/, collaboration/fork/packaging/mobile.Dockerfile, collaboration/fork/packaging/mobile.Dockerfile.dockerignore]
+    source_digest: sha256:3efa0b250a8e5806b7caccc8437e5f6d844561bd895ef4c3b9468c8f4a13fa9d
+    artifact_digest: sha256:14e4cc9ce31d2a676a45af0d9ae21925b53f868bc616ad8416b5166708ac740d
   # Android release APK（ADR-06 客户端发布单元按端分离：应用商店包，带平台签名）。
   # 阻断：release 签名所需的 upload keystore 未提供。上游 release 构建缺 keystore 即失败，
   # 不以 debug 证书冒充 release；profile/debug APK 只是测试构建，不登记为发布产物。
-  - name: upstream-buzz-mobile
+  - name: mobile-client
     kind: bundle
     build_context: .
-    build_dockerfile: kailo/packaging/mobile.Dockerfile
-    source_include: [mobile/, kailo/packaging/mobile.Dockerfile, kailo/packaging/mobile.Dockerfile.dockerignore]
+    build_dockerfile: collaboration/fork/packaging/mobile.Dockerfile
+    inputs: [collaboration/mobile/, client-kit/dart/, collaboration/fork/packaging/mobile.Dockerfile, collaboration/fork/packaging/mobile.Dockerfile.dockerignore]
     build_secrets: [BUZZ_ANDROID_UPLOAD_KEYSTORE, BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD, BUZZ_ANDROID_UPLOAD_KEY_ALIAS, BUZZ_ANDROID_UPLOAD_KEY_PASSWORD]
     blocked: release 签名 upload keystore 未提供（ADR-06 按端分离的 Mobile 发布链）
     source_digest: none
@@ -1034,6 +1012,6 @@ artifacts:
 
 source_facts: [SF-BUZ-26, SF-BUZ-30, SF-BUZ-31, SF-BUZ-32, SF-BUZ-33, SF-BUZ-37, SF-BUZ-38, SF-BUZ-39, SF-BUZ-45, SF-DSK-01, SF-DSK-02, SF-MOB-02, SF-MOB-01]
 source_seams: [SS-BUZ-OPERATOR, SS-BUZ-SERVER-CLIENT, SS-BUZ-GOVERNANCE]
-compatibility_evidence: [upstream/buzz/kailo/verify/operator-provisioning.md, upstream/buzz/kailo/verify/server-client.md, upstream/buzz/kailo/verify/governance.md, upstream/buzz/kailo/verify/baseline-build.md, upstream/buzz/kailo/verify/kailo-desktop.md, upstream/buzz/kailo/verify/kailo-mobile.md]
+compatibility_evidence: [collaboration/fork/verify/operator-provisioning.md, collaboration/fork/verify/server-client.md, collaboration/fork/verify/governance.md, collaboration/fork/verify/baseline-build.md, collaboration/fork/verify/desktop-client.md, collaboration/fork/verify/mobile-client.md]
 owner: team-platform
 last_reverified: 2026-09-29

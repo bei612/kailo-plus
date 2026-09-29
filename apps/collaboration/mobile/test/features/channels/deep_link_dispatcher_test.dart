@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
 import 'package:buzz/features/channels/deep_link_dispatcher.dart';
-import 'package:buzz/features/kailo/kailo_unavailable_page.dart';
+import 'package:buzz/features/platform/platform_unavailable_page.dart';
 import 'package:buzz/shared/deeplink/deep_link.dart';
 import 'package:buzz/shared/deeplink/pending_deep_link_provider.dart';
 import 'package:flutter/material.dart';

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kailo/apps/worker/internal/contracts/generated"
+	"apps/worker/internal/contracts/generated"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/workflow"
 )

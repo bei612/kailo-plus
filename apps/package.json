@@ -1,5 +1,5 @@
 {
-  "name": "kailo-apps",
+  "name": "apps-workspace",
   "private": true,
   "packageManager": "pnpm@10.33.4",
   "scripts": {

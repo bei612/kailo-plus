@@ -7,7 +7,7 @@
 //!
 //! 需要一个真实 Workspace（其成员是 `KAILO_E2E_USER`），由
 //! Kailo 仓库的 `core/verify/desktop-e2e.sh` 准备并传入环境变量后以
-//! `cargo test --lib kailo::e2e -- --ignored` 运行。
+//! `cargo test --lib platform::e2e -- --ignored` 运行。
 
 use std::time::{Duration, Instant};
 

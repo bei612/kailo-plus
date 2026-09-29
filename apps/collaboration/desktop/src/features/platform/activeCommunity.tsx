@@ -4,7 +4,7 @@
 // /api/v1/native/community`），不由用户添加、切换或离开。连接事实与会话只在引导
 // 完成后存在，因此这里的值在 Provider 之内总是确定的。
 import { createContext, type ReactNode, useContext, useMemo } from "react";
-import type { NativeSession } from "@kailo/platform/react/NativeBootstrap";
+import type { NativeSession } from "@client-kit/platform/react/NativeBootstrap";
 
 export type Community = {
   /** Community host（Relay 按连接的 Host 绑定 Community） */

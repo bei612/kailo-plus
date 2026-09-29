@@ -9,7 +9,7 @@ import {
 import type { SearchHighlightNavigation } from "@/app/navigation/searchHighlightNavigation";
 import { openSearchHitWithNavigation } from "@/app/navigation/searchHitNavigation";
 import type { SearchHit } from "@/shared/api/types";
-import type { PlatformSection } from "@/features/kailo/platformSections";
+import type { PlatformSection } from "@/features/platform/platformSections";
 
 type NavigationBehavior = {
   force?: boolean;

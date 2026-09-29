@@ -3,7 +3,7 @@ import * as React from "react";
 import { useSelfProfileCache } from "@/features/profile/hooks";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { ProfilePopover } from "@/features/profile/ui/ProfilePopover";
-import type { Community } from "@/features/kailo/activeCommunity";
+import type { Community } from "@/features/platform/activeCommunity";
 import type { Profile } from "@/shared/api/types";
 
 type SidebarProfileCardProps = {

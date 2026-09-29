@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/kailo/apps/worker/internal/oidc"
+	"apps/worker/internal/oidc"
 	"go.temporal.io/sdk/client"
 )
 

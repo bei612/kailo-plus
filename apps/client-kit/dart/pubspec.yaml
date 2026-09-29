@@ -1,5 +1,5 @@
-name: kailo_mobile
-description: Buzz Mobile 的 Kailo 契约绑定与应用代码（Flutter/Dart）。
+name: client_kit
+description: Mobile 客户端共用的 Dart 包：契约绑定与平台文案（ADR-16）。
 publish_to: none
 version: 0.0.0
 

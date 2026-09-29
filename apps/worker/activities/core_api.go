@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/kailo/apps/worker/internal/contracts/generated"
-	"github.com/kailo/apps/worker/internal/oidc"
+	"apps/worker/internal/contracts/generated"
+	"apps/worker/internal/oidc"
 	"go.temporal.io/sdk/temporal"
 )
 

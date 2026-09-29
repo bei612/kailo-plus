@@ -14,7 +14,7 @@ DC() { sudo -n docker compose --env-file deploy/local/.env -f deploy/local/compo
 PSQL() { psql "$DATABASE_URL" -Atc "$1"; }
 step() { printf '\n== %s（%s）\n' "$1" "$(date -u +%T)"; }
 S=deploy/local/secrets
-probe() { (cd core && cargo run -q -p kailo-core --example operator_probe -- "../$1"); }
+probe() { (cd core && cargo run -q -p platform-core --example operator_probe -- "../$1"); }
 row() { PSQL "select pubkey||' v'||version||' kv'||private_key_secret_version from identity.relay_operator_identity where state='ACTIVE'"; }
 core_up() {
   # 引导凭据是一次性投递（DD-70）：每次启动都经 start-core.sh 现取
@@ -83,7 +83,7 @@ echo "  新 key：$new_probe"
 echo "  旧 key（窗口内）：$old_probe"
 
 step "3. 以新 key 建一个 Tenant（scope_lifecycle）"
-(cd core && cargo test -q -p kailo-core --test scope_lifecycle tenant_and_workspace 2>&1 | grep -E "test result")
+(cd core && cargo test -q -p platform-core --test scope_lifecycle tenant_and_workspace 2>&1 | grep -E "test result")
 
 step "4. 关闭窗口：移除退役 pubkey，重建 Relay"
 # 先移走而不销毁；若重建或探针失败，旧公钥还能移回并恢复并列窗口。

@@ -1,14 +1,14 @@
 [package]
-name = "kailo-core"
+name = "platform-core"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
 [dependencies]
 contracts = { path = "../contracts" }
-kailo-identity = { path = "../kailo-identity" }
-kailo-buzz = { path = "../kailo-buzz" }
-kailo-secrets = { path = "../kailo-secrets" }
+identity = { path = "../identity" }
+collab-bridge = { path = "../collab-bridge" }
+secret-store = { path = "../secret-store" }
 async-stream = "0.3"
 axum = { version = "0.8", features = ["macros"] }
 futures-util = "0.3"

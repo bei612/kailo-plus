@@ -9,9 +9,9 @@
 //! 钥匙。撤权仍然成立，因为执行点是 roster 而不是「平台停止签名」
 //! （`DD-75`、`.design/10` §4）。
 
+use collab_bridge::bridge::{Custody, IdentityClient, Scope};
+use collab_bridge::operator::OperatorIdentity;
 use futures_util::FutureExt;
-use kailo_buzz::bridge::{Custody, IdentityClient, Scope};
-use kailo_buzz::operator::OperatorIdentity;
 use nostr::Keys;
 use sqlx::PgPool;
 

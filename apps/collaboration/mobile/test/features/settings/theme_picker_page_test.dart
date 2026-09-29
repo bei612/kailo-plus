@@ -1,6 +1,6 @@
 import 'package:buzz/features/settings/theme_picker_page.dart';
 import 'package:buzz/features/settings/theme_option_sheets.dart';
-import 'package:buzz/shared/kailo/kailo_platform_text.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';

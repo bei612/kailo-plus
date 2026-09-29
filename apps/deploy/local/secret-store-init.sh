@@ -87,13 +87,13 @@ print("yes" if not d.get("sealed", True) and d.get("ha_mode") != "standby" else 
 done
 [ "${ok:-no}" = "yes" ] || { echo "OpenBao 在超时内未进入可写状态" >&2; exit 2; }
 
-# audit device 由 openbao-config.hcl 声明式配置，不经 API 启用——该版本
+# audit device 由 secret-store-config.hcl 声明式配置，不经 API 启用——该版本
 # 直接拒绝 API 创建（SF-OBA-11）。此处只核验它确实生效：零 device 时
 # audit broker 的 fail-closed 分支被短路，取用不留痕（SF-OBA-06）。
 if root audit list 2>/dev/null | grep -q 'file'; then
   echo "audit device 已生效（声明式）"
 else
-  echo "audit device 未生效：检查 openbao-config.hcl 的 audit 块" >&2
+  echo "audit device 未生效：检查 secret-store-config.hcl 的 audit 块" >&2
   exit 2
 fi
 

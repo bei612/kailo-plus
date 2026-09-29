@@ -1,8 +1,8 @@
-import 'package:buzz/features/kailo/kailo_audit_page.dart';
-import 'package:buzz/features/kailo/kailo_devices_page.dart';
-import 'package:buzz/features/kailo/kailo_members_page.dart';
+import 'package:buzz/features/platform/platform_audit_page.dart';
+import 'package:buzz/features/platform/platform_devices_page.dart';
+import 'package:buzz/features/platform/platform_members_page.dart';
 import 'package:buzz/features/settings/settings_page.dart';
-import 'package:buzz/shared/kailo/kailo_views.dart';
+import 'package:buzz/shared/platform/platform_views.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';

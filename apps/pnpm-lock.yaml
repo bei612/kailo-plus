@@ -12,7 +12,7 @@ importers:
         specifier: 1.63.0
         version: 1.63.0
 
-  web/packages/contracts:
+  client-kit/ts/contracts:
     devDependencies:
       '@types/node':
         specifier: ^24.9.2
@@ -21,9 +21,9 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  web/packages/platform:
+  client-kit/ts/platform:
     devDependencies:
-      '@kailo/contracts':
+      '@client-kit/contracts':
         specifier: workspace:*
         version: link:../contracts
       '@types/react':

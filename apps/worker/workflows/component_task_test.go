@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kailo/apps/worker/activities"
-	"github.com/kailo/apps/worker/internal/contracts/generated"
+	"apps/worker/activities"
+	"apps/worker/internal/contracts/generated"
 	"github.com/stretchr/testify/mock"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"

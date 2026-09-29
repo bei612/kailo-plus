@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kailo/apps/worker/activities"
-	"github.com/kailo/apps/worker/internal/contracts/generated"
+	"apps/worker/activities"
+	"apps/worker/internal/contracts/generated"
 	"github.com/stretchr/testify/mock"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
@@ -18,7 +18,7 @@ import (
 // 审批状态机的确定性核验。用 Temporal 的测试环境（时间可跳跃）而不是真实
 // Server：过期与 consume 截止是小时级 timer，只有跳时才能在测试里走到。真实
 // Server 上的端到端链路（准入 → 审批 → 重新准入 → dispatch → CONSUMED）由
-// core/crates/kailo-core/tests/governed_action.rs 核验。
+// core/crates/platform-core/tests/governed_action.rs 核验。
 
 const (
 	initiator = "11111111-1111-1111-1111-111111111111"

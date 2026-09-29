@@ -1,7 +1,7 @@
 # Codex app-server（Kailo SERVER_CODEX runtime）的运行镜像（DD-26、ADR-06）。
 #
-# 构建上下文是 upstream/codex 源码树（Kailo 的改动直接在树里）：tools/build-upstream.sh
-# 按 kailo/upstream.yaml 备好后交给本文件；固定配置是树里的 kailo/codex/。
+# 构建上下文是 agent-runtime/ 源码树（本仓库的改动直接在树里）：tools/build-upstream.sh
+# 按 fork/upstream.yaml 备好后交给本文件；固定配置是树里的 fork/runtime-config/。
 # 上游没有 app-server 的 Dockerfile（只有 .github/workflows/Dockerfile.bazel 这个 CI
 # 镜像），因此由 Kailo 维护。
 #
@@ -29,10 +29,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 RUN useradd --system --uid 10001 --no-create-home kailo
 COPY --from=builder /src/codex-rs/target/release/codex-app-server /usr/local/bin/codex-app-server
 # 管理员强制约束与 system 配置层（Codex 固定从 /etc/codex 读取）
-COPY kailo/codex/requirements.toml /etc/codex/requirements.toml
-COPY kailo/codex/config.toml /etc/codex/config.toml
+COPY fork/runtime-config/requirements.toml /etc/codex/requirements.toml
+COPY fork/runtime-config/config.toml /etc/codex/config.toml
 # 每个 Installation 的 CODEX_HOME/environments.toml 由 Core 从这里原样写入
-COPY kailo/codex/environments.toml /usr/share/kailo/codex/environments.toml
+COPY fork/runtime-config/environments.toml /usr/share/kailo/codex/environments.toml
 # CODEX_HOME 缺 environments.toml 时的回退路径同样不含 local environment
 # （codex-rs/exec-server/src/environment_provider.rs::normalize_exec_server_url）
 ENV CODEX_EXEC_SERVER_URL=none

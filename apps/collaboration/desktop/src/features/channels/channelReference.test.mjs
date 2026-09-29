@@ -210,7 +210,7 @@ before(async () => {
     "@tanstack/react-query"
   ));
   const { ActiveCommunityProvider } = await import(
-    "@/features/kailo/activeCommunity.tsx"
+    "@/features/platform/activeCommunity.tsx"
   );
   // The Kailo session this test runs under: one community, as resolved by
   // the bootstrap (`GET /api/v1/native/community`).

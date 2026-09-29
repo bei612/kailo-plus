@@ -1,11 +1,11 @@
-import 'package:buzz/shared/contracts/contracts.dart';
-import 'package:buzz/shared/kailo/kailo_api.dart';
-import 'package:buzz/shared/kailo/kailo_oidc.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
+import 'package:buzz/shared/platform/platform_api.dart';
+import 'package:buzz/shared/platform/platform_oidc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'kailo_test_support.dart';
+import 'platform_test_support.dart';
 
 void main() {
   test('refreshes once on 401 and retries once with the new token', () async {

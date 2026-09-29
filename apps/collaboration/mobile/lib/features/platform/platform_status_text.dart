@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../shared/kailo/kailo_link.dart';
-import '../../shared/kailo/kailo_platform_text.dart';
-import '../../shared/kailo/kailo_reason_text.dart';
+import '../../shared/platform/platform_link.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
+import 'package:client_kit/shared/platform/reason_text.dart';
 import '../../shared/theme/theme.dart';
 
 String kailoPhaseText(KailoLinkPhase phase, {String? locale}) => kailoText(

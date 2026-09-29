@@ -1,8 +1,8 @@
 import 'package:test/test.dart';
 
-import '../lib/shared/contracts/contracts.dart';
-import '../lib/shared/kailo/kailo_platform_text.dart';
-import '../lib/shared/kailo/kailo_reason_text.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
+import 'package:client_kit/shared/platform/reason_text.dart';
 
 void main() {
   test('every contract reason has both supported locale renderings', () {

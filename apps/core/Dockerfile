@@ -15,11 +15,11 @@ COPY tools/registry/capabilities.yaml /build/apps/tools/registry/capabilities.ya
 # 离线编译：镜像构建时没有数据库，用入库的 sqlx 查询快照做编译期 SQL 校验
 ENV SQLX_OFFLINE=true
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo build --release --locked --bin kailo-core
+    cargo build --release --locked --bin platform-core
 
 FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS runtime
 # 以非 root 运行：Core 不需要任何特权
 RUN useradd --system --uid 10001 --no-create-home kailo
-COPY --from=builder /build/apps/core/target/release/kailo-core /usr/local/bin/kailo-core
+COPY --from=builder /build/apps/core/target/release/platform-core /usr/local/bin/platform-core
 USER 10001
-ENTRYPOINT ["/usr/local/bin/kailo-core"]
+ENTRYPOINT ["/usr/local/bin/platform-core"]

@@ -47,8 +47,3 @@ app.*.map.json
 # Local environment config (contains keys)
 .env.json
 
-# Kailo 契约的 Dart 生成物：构建时由 kailo 仓库经 vendor_files 放入（apps/06 §2），不在补丁里带副本
-/lib/shared/contracts/contracts.dart
-/lib/shared/contracts/generated/
-/lib/shared/kailo/kailo_reason_text.dart
-/lib/shared/kailo/kailo_platform_text.dart

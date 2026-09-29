@@ -11,7 +11,7 @@ import type { GetChannelsPayload } from "@/shared/api/tauriChannels";
 import { mergeConcurrentChannelRecency } from "@/features/channels/lib/channelRecencyMerge";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
-import { useActiveCommunity } from "@/features/kailo/activeCommunity";
+import { useActiveCommunity } from "@/features/platform/activeCommunity";
 import {
   inspectChannelSnapshot,
   type ChannelSnapshot,

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import '../../shared/kailo/kailo_views.dart';
+import '../../shared/platform/platform_views.dart';
 import '../../shared/theme/theme.dart';
 
 /// Matches desktop's sidebar profile card, whose avatar is 32px.

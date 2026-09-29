@@ -6,7 +6,7 @@
 //! 部署：运维在 Core 容器内执行
 //!
 //! ```text
-//! kailo-core bootstrap-tenant --slug <slug> --name <显示名> \
+//! platform-core bootstrap-tenant --slug <slug> --name <显示名> \
 //!     --admin-subject <IdP subject> --admin-display-name <显示名> --wait-seconds <秒>
 //! ```
 //!

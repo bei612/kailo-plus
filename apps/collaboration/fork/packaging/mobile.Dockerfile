@@ -1,7 +1,7 @@
-# Buzz Mobile（Kailo 版）的 Android release 安装包构建（DD-74、ADR-06「客户端发布单元按端分离」）。
+# Mobile 客户端的 Android release 安装包构建（DD-74、ADR-06「客户端发布单元按端分离」）。
 #
-# 构建上下文是 upstream/buzz 源码树：tools/build-upstream.sh 按 kailo/upstream.yaml 把
-# vendor_files（contracts 的 Dart 生成物与共享平台文案）放入后交给本文件。只用到 mobile/。
+# 构建上下文是 apps/（ADR-16）：collaboration/mobile/ 与它以 Flutter path: 依赖引用的
+# client-kit/dart（契约 Dart 生成物与平台文案），保持与仓库里相同的相对位置。
 # 产物是 release APK 而不是镜像：最后一个阶段只含安装包，调用方以 `--output type=local`
 # 取出，摘要记安装包字节的 SHA-256。
 #
@@ -13,9 +13,9 @@
 # 工具链以源码树为准：Flutter 3.41.7 取自 bin/.flutter-3.41.7.pkg（上游 Hermit 的固定版本）。
 
 FROM ghcr.io/cirruslabs/flutter:3.41.7@sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3 AS build
-WORKDIR /src
-COPY mobile/ mobile/
-WORKDIR /src/mobile
+COPY client-kit/dart/ /src/client-kit/dart/
+COPY collaboration/mobile/ /src/collaboration/mobile/
+WORKDIR /src/collaboration/mobile
 RUN flutter pub get --enforce-lockfile
 RUN --mount=type=secret,id=BUZZ_ANDROID_UPLOAD_KEYSTORE,target=/run/secrets/upload-keystore.jks,required=true \
     --mount=type=secret,id=BUZZ_ANDROID_UPLOAD_KEYSTORE_PASSWORD,required=true \

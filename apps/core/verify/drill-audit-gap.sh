@@ -16,7 +16,7 @@ step "0. 开通真实 Workspace"
 subject="auditgap-$(date +%s)"
 touch /tmp/rbaudit.hold
 { while [ -e /tmp/rbaudit.hold ]; do sleep 1; done; } | \
-  (cd core && cargo run -q -p kailo-core --example verify_workspace -- "$subject") \
+  (cd core && cargo run -q -p platform-core --example verify_workspace -- "$subject") \
   >/tmp/rbaudit.fixture 2>/tmp/rbaudit.fixture.err &
 fixture_pid=$!
 cleanup() {

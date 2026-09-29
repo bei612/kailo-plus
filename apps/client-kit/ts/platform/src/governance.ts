@@ -18,7 +18,7 @@ import {
   type TaskView,
   TaskStatus,
   TenantMembershipState,
-} from "@kailo/contracts";
+} from "@client-kit/contracts";
 import type { PlatformMessageKey } from "./i18n";
 import type { Tone } from "./react/ui";
 

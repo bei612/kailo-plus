@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:buzz/shared/kailo/kailo_api.dart';
-import 'package:buzz/shared/kailo/kailo_config.dart';
-import 'package:buzz/shared/kailo/kailo_device.dart';
+import 'package:buzz/shared/platform/platform_api.dart';
+import 'package:buzz/shared/platform/platform_config.dart';
+import 'package:buzz/shared/platform/platform_device.dart';
 import 'package:http/http.dart' as http;
 
 /// 测试用部署配置。地址只是测试夹具，不是任何默认值。

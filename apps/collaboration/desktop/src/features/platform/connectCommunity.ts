@@ -1,6 +1,6 @@
 // 以 Kailo 给出的连接事实连 Relay：沿用桌面端既有的 `apply_workspace`（Relay 地址 +
 // keyring 中的设备私钥），不另开一条连接路径。
-import type { NativeCommunityFacts } from "@kailo/contracts";
+import type { NativeCommunityFacts } from "@client-kit/contracts";
 
 import { clearSearchHitEventCache } from "@/app/navigation/searchHitEventCache";
 import { resetAudioMediaLoadScheduler } from "@/features/messages/lib/audioMediaLoadScheduler";

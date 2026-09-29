@@ -13,7 +13,7 @@ import {
   type EvidenceView,
   WorkspaceMembershipState,
   type WorkspaceView,
-} from "@kailo/contracts";
+} from "@client-kit/contracts";
 import { type ReactNode, useState } from "react";
 import { truncatePubkey, relativeTime } from "../format";
 import {

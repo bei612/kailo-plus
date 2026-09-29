@@ -1,6 +1,6 @@
 //! `.design/03` §2：ACTIVE membership 不得把停用或跨 Tenant 的 Principal 解析成会话身份。
 
-use kailo_identity::{resolve, session, IdentityError};
+use identity::{resolve, session, IdentityError};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 

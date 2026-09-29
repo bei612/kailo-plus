@@ -5,7 +5,7 @@
 //! Channel（Core 以回读的 kind 39000 查证）→ 跃迁 SUSPENDED/ACTIVE。
 //! 夹具只写 OIDC 侧身份与首位 Tenant admin 关系。
 
-use kailo_buzz::bridge::{Custody, IdentityClient, Scope};
+use collab_bridge::bridge::{Custody, IdentityClient, Scope};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -226,7 +226,7 @@ async fn scenarios(
         .await;
     let refused = match &published {
         Ok(v) => v["accepted"] == false,
-        Err(kailo_buzz::operator::OperatorError::Rejected { .. }) => true,
+        Err(collab_bridge::operator::OperatorError::Rejected { .. }) => true,
         Err(_) => false,
     };
     assert!(refused, "归档期间直连发布必须被 Relay 拒绝：{published:?}");

@@ -5,7 +5,7 @@
 // 身份由 AgentGateway 验证后投影给 BFF，浏览器这一侧没有任何可自报的身份字段。
 //
 // 与 Desktop 共用的部分——传输接缝、错误解读、会话/成员/审计/设备端点——在 Kailo
-// 的共用包里（@kailo/platform，构建时放入源树，ADR-09），这里只接上 Web 的同源
+// 的共用包里（@client-kit/platform，构建时放入源树，ADR-09），这里只接上 Web 的同源
 // fetch 传输，并补上只有 Web 才有的调用：频道流、经 BFF 代签的发布与媒体、已读与
 // Workspace 偏好、网关退出。
 
@@ -13,12 +13,12 @@ import type {
   ReadMarkRequest,
   UserStateVersion,
   WorkspacePreferenceRequest,
-} from "@kailo/contracts";
-import { createBffClient } from "@kailo/platform/client";
-import { type BffRequest, unwrap } from "@kailo/platform/transport";
-import { createFetchTransport } from "@kailo/platform/web-fetch";
+} from "@client-kit/contracts";
+import { createBffClient } from "@client-kit/platform/client";
+import { type BffRequest, unwrap } from "@client-kit/platform/transport";
+import { createFetchTransport } from "@client-kit/platform/web-fetch";
 
-export { BffError } from "@kailo/platform/transport";
+export { BffError } from "@client-kit/platform/transport";
 
 /**
  * 网关会话已不在：浏览器只能经一次顶层导航重新登录，由网关带去 IdP。

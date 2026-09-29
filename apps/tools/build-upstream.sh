@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# 从 upstream/<树>/ 的源码构建上游产物（ADR-06、04-上游适配与升级.md）。
+# 从二开项目的源码构建产物（ADR-06、ADR-16、04-上游适配与升级.md）。
 #
-# 源码就在本仓库：上游固定 commit 的完整源码加 Kailo 的改动，直接在树里改、随仓库提交。
-# 本脚本不取源、不裁剪、不打补丁；它把树里可见的源码（按仓库忽略规则，构建输出与依赖
-# 目录不进来）与 vendor_files 放进临时目录后构建，并把源码摘要与产物摘要写回来源记录。
+# 源码就在本仓库：二开项目（collaboration/、web-client/、model-gateway/、agent-runtime/）是上游
+# 固定 commit 的完整源码加本仓库的改动，共用代码 client-kit/ 以本地路径依赖直接引用。本脚本
+# 不取源、不打补丁、不拷贝；它把产物的 inputs（按仓库忽略规则可见的文件，保持相对 apps/ 的位置）
+# 放进临时目录后构建，并把源码摘要与产物摘要写回来源记录。
 #
 # 记录的解析、校验、放置与摘要算法只在 tools/upstream_manifest.py：本脚本与
 # check.sh seam 共用它，不各算一份。
 #
 # 用法：tools/build-upstream.sh <产物>
-# 产物是来源记录 upstream/*/kailo/upstream.yaml 里 artifacts 的短名（upstream-<产物>），
-# 例如 buzz（Relay 镜像）、buzz-desktop、buzz-mobile、buzz-web、codex、agentgateway。
+# 产物是来源记录 */fork/upstream.yaml 里 artifacts 的 name：collaboration-relay、desktop-client、
+# mobile-client、web-client、model-gateway、agent-runtime。
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
@@ -40,15 +41,14 @@ SUDO=""; docker info >/dev/null 2>&1 || SUDO="sudo -n"
 
 echo "== 源码：$tree（基准 ${base:0:12}） =="
 python3 tools/upstream_manifest.py stage "$project" "$src"
-[ -d "$src/$ctx" ] || { echo "build_context $ctx 不存在于源码" >&2; exit 2; }
-dockerfile_args=()
-[ -z "$dockerfile" ] || dockerfile_args=(-f "$src/$dockerfile")
+[ -d "$src/$ctx" ] || { echo "build_context $ctx 不存在于构建输入" >&2; exit 2; }
+dockerfile_args=(-f "$src/$dockerfile")
 
 # 产物有两种形态。镜像：推入 registry，摘要是 registry digest。安装包：记录以
 # build_dockerfile 指向 Kailo 维护的构建文件，其最后一个阶段只含安装包；以
 # --output 取出，摘要是安装包字节的 SHA-256。
 if [ "$kind" = image ]; then
-  tag="kailo/$artifact:$base"
+  tag="local/$artifact:$base"
   echo "== 构建 $tag =="
   # 上游普遍把版本与 revision 作为构建参数注入二进制，并在构建末尾自检——
   # 例如 agentgateway 在 version 为 "unknown" 时直接让构建失败。
@@ -89,7 +89,7 @@ else
   mapfile -t bundles < <(find "$staged" -maxdepth 1 -type f)
   [ "${#bundles[@]}" -eq 1 ] || { echo "构建应恰好产出 1 个安装包，得到 ${#bundles[@]} 个" >&2; exit 1; }
   digest="sha256:$(sha256sum "${bundles[0]}" | cut -d' ' -f1)"
-  out="dist/${artifact#upstream-}"
+  out="dist/$artifact"
   mkdir -p "$out"
   $SUDO install -m 0644 -o "$(id -u)" -g "$(id -g)" "${bundles[0]}" "$out/"
   $SUDO rm -rf "$staged"

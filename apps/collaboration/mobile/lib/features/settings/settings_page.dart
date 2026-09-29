@@ -8,8 +8,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../shared/clipboard_utils.dart';
-import '../../shared/kailo/kailo_link.dart';
-import '../../shared/kailo/kailo_platform_text.dart';
+import '../../shared/platform/platform_link.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/utils/string_utils.dart';
 import '../../shared/theme/theme.dart';
@@ -19,11 +19,11 @@ import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/modal_presentation.dart';
-import '../kailo/kailo_audit_page.dart';
-import '../kailo/kailo_devices_page.dart';
-import '../kailo/kailo_members_page.dart';
-import '../kailo/kailo_status_text.dart';
-import '../kailo/kailo_tasks_page.dart';
+import '../platform/platform_audit_page.dart';
+import '../platform/platform_devices_page.dart';
+import '../platform/platform_members_page.dart';
+import '../platform/platform_status_text.dart';
+import '../platform/platform_tasks_page.dart';
 import 'theme_picker_page.dart';
 
 class SettingsPage extends HookConsumerWidget {

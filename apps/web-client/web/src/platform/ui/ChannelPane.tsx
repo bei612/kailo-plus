@@ -3,8 +3,8 @@
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
 // signer——签名由 BFF 以本人身份代做。
 
-import { ReasonCode } from "@kailo/contracts";
-import { isOutcomeUnknown } from "@kailo/platform/transport";
+import { ReasonCode } from "@client-kit/contracts";
+import { isOutcomeUnknown } from "@client-kit/platform/transport";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

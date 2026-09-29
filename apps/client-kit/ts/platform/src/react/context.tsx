@@ -3,7 +3,7 @@
 
 import { createContext, type ReactNode, useCallback, useContext } from "react";
 import type { BffClient } from "../client";
-import type { ReasonCode } from "@kailo/contracts";
+import type { ReasonCode } from "@client-kit/contracts";
 import type { WriteFailure } from "../transport";
 import {
   enumLabel,

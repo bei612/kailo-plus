@@ -4,7 +4,7 @@
 //! 执行（`docs/runbooks/RB-03-revocation-convergence.md`）：
 //!
 //! ```sh
-//! cargo test -p kailo-core --test drill_revocation_outage -- --ignored --nocapture
+//! cargo test -p platform-core --test drill_revocation_outage -- --ignored --nocapture
 //! ```
 //!
 //! 演练前把 Worker 的一轮缩短（`WORKER_ACTIVITY_SCHEDULE_TO_CLOSE_SECONDS`、

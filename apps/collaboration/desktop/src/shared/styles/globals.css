@@ -21,7 +21,7 @@
 
 @config "../../../tailwind.config.js";
 /* Kailo 共用平台包放在被忽略的目录里，Tailwind 不自动扫描，显式登记（Kailo ADR-09） */
-@source "../../kailo-platform";
+@source "../../../node_modules/@client-kit/platform/src";
 
 /* Tailwind v4 gates `hover:` behind `@media (hover: hover)`. Some Windows
    hosts answer that query `false` even with a mouse attached — WebView2 here

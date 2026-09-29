@@ -3,7 +3,7 @@
 //! 未提供 `RELAY_OPERATOR_API_ORIGIN` 与密钥时跳过：这是接缝核验，
 //! 没有可达的 Relay 时它没有适用对象。
 
-use kailo_buzz::operator::{OperatorError, OperatorIdentity};
+use collab_bridge::operator::{OperatorError, OperatorIdentity};
 use nostr::Keys;
 
 /// 每次核验用一对新密钥充当 Tenant CONTROL 身份。

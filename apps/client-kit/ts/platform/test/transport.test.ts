@@ -1,7 +1,7 @@
 // 两个传输实现：Web 同源 fetch、Desktop 经 kailo_api。两者对同一次调用必须给出同一
 // 解读（错误体、会话结束、没有回应），差别只在请求怎么送出去。
 
-import { ErrorClass, ReasonCode } from "@kailo/contracts";
+import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { createInvokeTransport, createNativeHost } from "../src/native";

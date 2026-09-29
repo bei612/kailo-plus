@@ -9,9 +9,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
-import '../contracts/contracts.dart';
-import 'kailo_api.dart';
-import 'kailo_config.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
+import 'platform_api.dart';
+import 'platform_config.dart';
 
 /// 设备登记端点。持钥证明的 `u` 标签必须指向它。
 const kailoRegisterPath = '/api/v1/identity/client-keys';

@@ -1,31 +1,35 @@
-"""上游源码树与来源记录的唯一解析、校验与摘要算法（06 §2、ADR-06、04-上游适配与升级.md）。
+"""二开项目来源记录的唯一解析、校验、摘要、差异与同步算法（06 §2、ADR-06、ADR-16）。
 
-Kailo 要改或自行构建的上游，把固定 commit 的完整源码放在 upstream/<树>/，直接在里面改、
-随仓库提交（不带上游 .git 历史）。每棵树的 kailo/ 目录是 Kailo 自有的文件：
-  kailo/upstream.yaml   来源记录：上游仓库、基准 commit、删除路径、vendor_files、产物与摘要
-  kailo/verify/         接缝证据
-  kailo/packaging/      上游没有而由 Kailo 维护的构建文件
-只以 Go module 引用、不改也不自行构建的上游（temporal-sdk-go）只有来源记录，没有源码。
+二开项目是 apps/ 下按功能命名的目录（collaboration/、web-client/、model-gateway/、agent-runtime/），
+目录内是上游固定 commit 的完整源码，改动直接在树里。每个二开项目的 fork/ 子目录是本仓库自有的文件：
+  fork/upstream.yaml   来源记录：上游仓库、.references 目录、基准 commit、删除路径、产物与摘要
+  fork/verify/         接缝证据
+  fork/packaging/      上游没有而由本仓库维护的构建文件
+只以 Go module 引用、不改也不自行构建的上游（工作流 SDK）只有来源记录：worker/fork/upstream.yaml。
+共用代码（client-kit/）以本地路径依赖被二开项目直接引用，没有构建时拷贝。
 
-`tools/build-upstream.sh` 按它备好构建输入、写回摘要；`tools/check.sh seam`/`supply` 按它复核。
-两边共用这一份：摘要算法或字段含义只在这里定义。设计追溯（SF/SS 引用、证据路径）只有门禁需要，
-留在门禁。
+`tools/build-upstream.sh` 按它备好构建输入、写回摘要；`tools/check.sh` 的 seam/supply/status 按它复核。
+两边共用这一份：摘要算法或字段含义只在这里定义。设计追溯（SF/SS 引用、证据路径）只在门禁里。
 
-命令行（<项目> 是产物短名，例如 buzz-desktop，或树名，例如 buzz）：
+所有路径相对 apps/。命令行（<项目> 是目录名，例如 collaboration；<产物> 是 artifacts 的 name）：
   diff <项目> [--stat|--name-status|--check]
-        以只读方式取上游原样（.references/<树> 的对象库，没有时从 upstream_url 取），
-        与 upstream/<树> 比较，输出 Kailo 改动（kailo/ 目录不在其中）。--check 只核对
-        记录里的 remove_paths 与实际整块删除的路径一致。
-  added-lines <项目>   Kailo 在该树里新增或改写的行（供 check.sh supply 做凭据扫描）
+        以只读方式取上游原样（.references/<reference_tree> 的对象库，没有时从 upstream_url 取），
+        与二开树比较，输出本仓库的改动（fork/ 不在其中）。--check 核对 remove_paths 与实际一致。
+  added-lines <项目>   本仓库在该树里新增或改写的行（供 check.sh supply 做凭据扫描）
+  status [<项目>]      .references 的 HEAD、UPDATE_TASKS.json 与更新记录对比基准 commit：上游新提交、
+                       涉及文件、其中本仓库也改过的文件。只提示，恒以 0 退出（ADR-16 第 5 条）
+  sync <项目> [--to <commit>] [--into <目录>]
+                       以基准 commit 为共同祖先，二开树当前内容为一方、上游新 commit（默认
+                       .references 的 HEAD）为另一方三方合并，结果写进二开树（--into 时写进该目录里
+                       的一份树副本）；冲突按 git 标准标记留在文件里，不提交、不改来源记录
   plan <产物>          构建所需字段，输出可 eval 的 shell 赋值
-  stage <产物> <目录>   把参与构建的源码（按仓库的忽略规则）与 vendor_files 放进空目录
+  stage <产物> <目录>   把产物的输入（按仓库忽略规则可见的文件）放进空目录，保持 apps/ 相对路径
   record <产物> <artifact_digest>
                        写回该产物的 source_digest（按当前源码算）与 artifact_digest
-  vendor <项目>        把 vendor_files 放进 upstream/<树> 本身，供在树里直接开发、测试；
-                       只覆盖该树 .gitignore 已忽略的目标——被忽略才说明树里不携带副本
 """
 
 import hashlib
+import json
 import os
 import re
 import shlex
@@ -35,10 +39,7 @@ import sys
 
 import yaml
 
-ROOT = "upstream"
-RECORD = "kailo/upstream.yaml"
-# 不参与构建、不进源码摘要的 Kailo 自有文件：记录本身（其中有摘要）与证据文档
-NOT_SOURCE = (RECORD, "kailo/verify/")
+RECORD_GLOB = "fork/upstream.yaml"
 REFERENCES = os.path.join("..", ".references")
 
 
@@ -50,14 +51,19 @@ def _list(m, key):
     return [str(x) for x in (m.get(key) or [])]
 
 
+def _not_source(rel):
+    """不参与构建、不进源码摘要的本仓库文件：来源记录本身（其中有摘要）与证据文档。"""
+    parts = rel.split("/")
+    return len(parts) >= 3 and parts[1] == "fork" and (parts[2] == "upstream.yaml" or parts[2] == "verify")
+
+
 def records():
-    """全部来源记录：{树名: 记录路径}。"""
+    """全部来源记录：{项目目录: 记录路径}。"""
     out = {}
-    if os.path.isdir(ROOT):
-        for tree in sorted(os.listdir(ROOT)):
-            path = os.path.join(ROOT, tree, RECORD)
-            if os.path.isfile(path):
-                out[tree] = path
+    for d in sorted(os.listdir(".")):
+        path = os.path.join(d, RECORD_GLOB)
+        if os.path.isfile(path):
+            out[d] = path
     return out
 
 
@@ -71,72 +77,57 @@ def tree_of(path):
 
 
 def resolve(name):
-    """产物短名或树名 -> (记录路径, 记录, 产物或 None)。"""
-    for tree, path in records().items():
+    """产物名或项目目录名 -> (记录路径, 记录, 产物或 None)。"""
+    recs = records()
+    for path in recs.values():
         m = load(path)
         for a in m.get("artifacts") or []:
-            if a.get("name") == f"upstream-{name}":
+            if a.get("name") == name:
                 return path, m, a
-    path = records().get(name)
+    path = recs.get(name)
     if not path:
-        sys.exit(f"找不到 {name}：既不是 {ROOT}/*/{RECORD} 登记的产物 upstream-{name}，也不是树名")
+        sys.exit(f"找不到 {name}：既不是登记的产物，也不是带 {RECORD_GLOB} 的项目目录")
     m = load(path)
     arts = m.get("artifacts") or []
     return path, m, (arts[0] if len(arts) == 1 else None)
 
 
-def vendor_pairs(m):
-    """vendor_files 的每一项是「本仓库相对源:树内相对目标」。"""
-    return [tuple(x.partition(":")[::2]) for x in _list(m, "vendor_files")]
-
-
-def source_files(tree):
-    """树内的源码文件（相对树根）：按 Kailo 仓库的忽略规则可见、且实际存在的文件。
+def source_files(*prefixes):
+    """前缀下的源码文件（相对 apps/）：按仓库忽略规则可见、且实际存在的文件。
 
     与仓库将要提交的集合同一口径：已跟踪的加未跟踪但未被忽略的。构建输出与依赖目录
     （target/、node_modules/ ……）由忽略规则排除，因此不会进构建，也不会进摘要。
     """
-    raw = _run("git", "-C", tree, "ls-files", "-co", "--exclude-standard", "-z", "--", ".")
-    out = set()
-    for rel in raw.decode().split("\0"):
-        if rel and os.path.lexists(os.path.join(tree, rel)) and not any(
-                rel == x or rel.startswith(x) for x in NOT_SOURCE):
-            out.add(rel)
-    return sorted(out)
+    raw = _run("git", "ls-files", "-co", "--exclude-standard", "-z", "--", *prefixes)
+    return sorted({rel for rel in raw.decode().split("\0")
+                   if rel and os.path.lexists(rel) and not _not_source(rel)})
 
 
-def _excluded(rel, prefixes):
+def _under(rel, prefixes):
     return any(rel == p.rstrip("/") or rel.startswith(p.rstrip("/") + "/") for p in prefixes)
 
 
-def source_digest(path, m, art):
-    """该产物的源码摘要：范围内每个文件的路径、类型与字节，加上落在范围内的 vendor_files
-    （目标路径与本仓库源字节），以及决定构建方式的字段。
+def source_digest(art):
+    """该产物的源码摘要：inputs 内、exclude 外每个文件的路径、类型与字节，以及决定构建方式的字段。
 
-    source_include/source_exclude 声明该产物的输入范围（例如 Relay 镜像的上游 .dockerignore
-    整个排除 desktop/ 与 mobile/，Mobile 安装包只取 mobile/）；范围外的改动不要求重建它。
+    inputs 是产物的输入范围（二开树的相关部分与它以本地路径依赖引用的 client-kit）；exclude
+    声明其中对该产物没有输入作用的路径（例如 Relay 镜像的上游 .dockerignore 整个排除 desktop/
+    与 mobile/）。范围外的改动不要求重建这个产物。
     """
-    tree = tree_of(path)
-    incl, excl = _list(art, "source_include"), _list(art, "source_exclude")
-    out = lambda rel: (incl and not _excluded(rel, incl)) or _excluded(rel, excl)
+    incl, excl = _list(art, "inputs"), _list(art, "exclude")
     h = hashlib.sha256()
-    for key in ("kind", "build_context", "build_dockerfile", "source_include", "source_exclude"):
+    for key in ("kind", "build_context", "build_dockerfile", "inputs", "exclude"):
         h.update(f"{key}={art.get(key) or ''}\0".encode())
-    for rel in source_files(tree):
-        if out(rel):
+    for rel in source_files(*incl):
+        if _under(rel, excl):
             continue
-        full = os.path.join(tree, rel)
-        if os.path.islink(full):
-            h.update(b"l\0" + rel.encode() + b"\0" + os.readlink(full).encode() + b"\0")
+        if os.path.islink(rel):
+            h.update(b"l\0" + rel.encode() + b"\0" + os.readlink(rel).encode() + b"\0")
         else:
-            mode = b"x" if os.access(full, os.X_OK) else b"f"
-            with open(full, "rb") as f:
+            mode = b"x" if os.access(rel, os.X_OK) else b"f"
+            with open(rel, "rb") as f:
                 data = f.read()
             h.update(mode + b"\0" + rel.encode() + b"\0" + str(len(data)).encode() + b"\0" + data)
-    for src, dst in vendor_pairs(m):
-        if not out(dst) and os.path.isfile(src):
-            with open(src, "rb") as f:
-                h.update(b"\0vendor_file\0" + dst.encode() + b"\0" + f.read())
     return "sha256:" + h.hexdigest()
 
 
@@ -151,24 +142,23 @@ def problems(path, m, check_digest=True):
     # 06 §2 的硬规则：两者不同而声明 none，设计证据会被更高版本悄悄覆盖
     if ev and ib and ev != ib and str(m.get("base_divergence")) == "none":
         bad.append("evidence_commit 与 implementation_base_commit 不同，但 base_divergence 声明为 none")
-    if m.get("project") != os.path.basename(tree):
-        bad.append(f"project 为 {m.get('project')}，应与目录名 {os.path.basename(tree)} 一致")
-    for gone in ("patch_series", "patch_series_digest"):
+    if not m.get("reference_tree"):
+        bad.append("缺少 reference_tree：.references 下对应的上游目录名")
+    for gone in ("patch_series", "patch_series_digest", "vendor_files"):
         if gone in m:
-            bad.append(f"{gone} 已废弃：改动直接在源码树里，审查与升级用 upstream_manifest.py diff")
+            bad.append(f"{gone} 已废弃（ADR-16）：改动直接在树里，共用代码以本地路径依赖引用")
     module = m.get("module")
-    has_source = any(not f.startswith("kailo/") for f in source_files(tree))
     if module:
-        # 只以 Go module 引用的上游：没有源码树、没有自建产物
-        if has_source or m.get("artifacts"):
-            bad.append("登记了 module 却带有源码或产物：以 module 引用的上游不在本仓库构建")
+        # 只以 Go module 引用的上游：没有二开树、没有自建产物
+        if m.get("artifacts") or m.get("remove_paths"):
+            bad.append("登记了 module 却带有产物或删除路径：以 module 引用的上游不在本仓库构建")
         mod, _, ver = str(module).partition("@")
-        gomod = os.path.join("worker", "go.mod")
+        gomod = os.path.join(tree, "go.mod")
         if not os.path.isfile(gomod) or not re.search(rf"^\s*{re.escape(mod)}\s+{re.escape(ver)}\s*$",
                                                       open(gomod, encoding="utf-8").read(), re.M):
             bad.append(f"module {module} 未出现在 {gomod}")
         return bad
-    if not has_source:
+    if not any(not f.startswith(f"{tree}/fork/") for f in source_files(tree)):
         bad.append(f"{tree} 没有上游源码")
     removed = _list(m, "remove_paths")
     for x in removed:
@@ -178,43 +168,39 @@ def problems(path, m, check_digest=True):
             bad.append(f"remove_paths 登记的 {x} 仍在源码树里")
     if len(set(removed)) != len(removed):
         bad.append("remove_paths 有重复项")
-    # vendor_files：本仓库的权威源在构建时放进树，树里不携带副本（ADR-02/03、ADR-09）
-    missing = False
-    for raw in _list(m, "vendor_files"):
-        src, sep, dst = raw.partition(":")
-        if not sep or not src or not dst or any(q.startswith("/") or ".." in q.split("/") for q in (src, dst)):
-            bad.append(f"vendor_files 只接受「本仓库相对源:树内相对目标」：{raw}")
-            missing = True
-        elif not os.path.isfile(src):
-            bad.append(f"vendor_files 的源 {src} 不存在")
-            missing = True
-        elif subprocess.run(["git", "-C", tree, "check-ignore", "-q", "--", dst]).returncode != 0:
-            bad.append(f"vendor_files 的目标 {dst} 未被忽略：树里会提交一份副本")
     names = set()
     for a in m.get("artifacts") or []:
         name = str(a.get("name") or "")
-        if not name.startswith("upstream-") or name in names:
-            bad.append(f"产物名 {name!r} 必须以 upstream- 开头且不重复")
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", name) or name in names:
+            bad.append(f"产物名 {name!r} 须为小写短横线命名且不重复")
         names.add(name)
         kind = a.get("kind")
         if kind not in ("image", "bundle"):
             bad.append(f"{name}: kind 为 {kind}，只能是 image 或 bundle")
-        ctx = str(a.get("build_context") or ".")
-        if not os.path.isdir(os.path.join(tree, ctx)):
-            bad.append(f"{name}: build_context {ctx} 不存在于源码树")
+        ctx = str(a.get("build_context") or "")
+        if not ctx or not os.path.isdir(ctx):
+            bad.append(f"{name}: build_context {ctx!r} 不存在（相对 apps/）")
         bdf = a.get("build_dockerfile")
-        if kind == "bundle" and not bdf:
-            bad.append(f"{name}: 安装包产物必须登记 build_dockerfile（其最后阶段只含安装包）")
-        if bdf and not os.path.isfile(os.path.join(tree, str(bdf))):
+        if not bdf:
+            bad.append(f"{name}: 必须登记 build_dockerfile（相对 apps/；安装包产物的最后阶段只含安装包）")
+        if bdf and not os.path.isfile(str(bdf)):
             bad.append(f"{name}: build_dockerfile 指向不存在的 {bdf}")
+        incl = _list(a, "inputs")
+        if not incl or not any(_under(p, [tree]) for p in incl):
+            bad.append(f"{name}: inputs 必须包含 {tree}/ 下的路径")
+        for p in incl:
+            if not os.path.exists(p):
+                bad.append(f"{name}: inputs 登记的 {p} 不存在")
+        if bdf and not _under(str(bdf), incl):
+            bad.append(f"{name}: build_dockerfile 不在 inputs 内，改它不会让产物失效")
         art, src = str(a.get("artifact_digest") or ""), str(a.get("source_digest") or "")
         if art == "none":
             if src != "none":
                 bad.append(f"{name}: artifact_digest 为 none 时 source_digest 也必须为 none")
         elif not re.fullmatch(r"sha256:[0-9a-f]{64}", art) or not re.fullmatch(r"sha256:[0-9a-f]{64}", src):
             bad.append(f"{name}: artifact_digest 与 source_digest 须为 sha256:<64 位>，或同为 none")
-        elif check_digest and not missing:
-            want = source_digest(path, m, a)
+        elif check_digest:
+            want = source_digest(a)
             if src != want:
                 bad.append(f"{name}: artifact 不是由当前源码构建——source_digest 记为 {src}，"
                            f"当前源码为 {want}；改了源码就必须用 tools/build-upstream.sh 重建并写回")
@@ -223,63 +209,79 @@ def problems(path, m, check_digest=True):
 
 # ---- 上游原样（只读） -------------------------------------------------------
 
-def _cache_repo(tree_name):
+def _cache_repo(ref_tree):
     base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-    return os.path.join(base, "kailo", "upstream", f"{tree_name}.git")
+    return os.path.join(base, "kailo", "upstream", f"{ref_tree}.git")
 
 
-def upstream_repo(path, m):
-    """一个能解析基准 commit 的 git 对象库。
+def _reference_dir(m):
+    return os.path.join(REFERENCES, str(m.get("reference_tree")))
 
-    首选 .references/<树>：只借用它的对象（alternates），不在其中写入或构建。没有时从
-    upstream_url 按 commit 浅取到本机缓存。取不到即失败：基准不可解析，就无从证明
-    源码树是在哪个上游版本上改的。
+
+def upstream_repo(path, m, want=None):
+    """一个能解析 want（缺省为基准 commit）的 git 对象库。
+
+    首选 .references/<reference_tree>：只借用它的对象（alternates），不在其中写入、检出或构建。
+    没有时从 upstream_url 按 commit 浅取到本机缓存。取不到即失败：基准不可解析，就无从证明
+    二开树是在哪个上游版本上改的。
     """
-    tree_name = os.path.basename(tree_of(path))
-    base = str(m.get("implementation_base_commit"))
-    repo = _cache_repo(tree_name)
+    want = want or str(m.get("implementation_base_commit"))
+    repo = _cache_repo(str(m.get("reference_tree")))
     if not os.path.isdir(repo):
         os.makedirs(os.path.dirname(repo), exist_ok=True)
         _run("git", "init", "-q", "--bare", repo)
-    has = lambda: subprocess.run(["git", "-C", repo, "cat-file", "-e", base + "^{commit}"],
+    has = lambda: subprocess.run(["git", "-C", repo, "cat-file", "-e", want + "^{commit}"],
                                  capture_output=True).returncode == 0
     if has():
         return repo
-    ref = os.path.join(REFERENCES, tree_name)
-    objects = _run("git", "-C", ref, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip() \
+    ref = _reference_dir(m)
+    common = _run("git", "-C", ref, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip() \
         if os.path.isdir(ref) else ""
-    if objects:
+    if common:
         alt = os.path.join(repo, "objects", "info", "alternates")
         with open(alt, "a+", encoding="utf-8") as f:
             f.seek(0)
-            want = os.path.join(objects, "objects")
-            if want not in f.read().split("\n"):
-                f.write(want + "\n")
+            objects = os.path.join(common, "objects")
+            if objects not in f.read().split("\n"):
+                f.write(objects + "\n")
         if has():
             return repo
-    subprocess.run(["git", "-C", repo, "fetch", "-q", "--depth", "1", str(m["upstream_url"]), base],
+    subprocess.run(["git", "-C", repo, "fetch", "-q", "--depth", "1", str(m["upstream_url"]), want],
                    capture_output=True)
     if not has():
-        sys.exit(f"{path}: 基准 commit {base} 既不在 {ref}，也无法从 {m['upstream_url']} 取得")
+        sys.exit(f"{path}: commit {want} 既不在 {ref}，也无法从 {m['upstream_url']} 取得")
     return repo
 
 
-def _kailo_index(path, m):
-    """把当前源码（kailo/ 之外）写进一个临时 index，返回 (repo, 环境)。"""
-    tree = tree_of(path)
-    repo = upstream_repo(path, m)
-    index = os.path.join(repo, f"kailo-index-{os.getpid()}")
-    env = dict(os.environ, GIT_DIR=repo, GIT_WORK_TREE=os.path.abspath(tree), GIT_INDEX_FILE=index)
-    files = [f for f in source_files(tree) if not f.startswith("kailo/")]
-    # -f：可见与否以 Kailo 仓库的规则为准（source_files 已判定），不再套一遍树自己的规则
-    subprocess.run(["git", "add", "-f", "--pathspec-from-file=-", "--pathspec-file-nul"],
-                   input="\0".join(files).encode(), env=env, check=True, capture_output=True,
-                   cwd=os.path.abspath(tree))
-    return repo, env, index
+class _Index:
+    """二开树当前内容（fork/ 之外）的临时 index，挂在上游对象库上。"""
+
+    def __init__(self, path, m):
+        self.tree = tree_of(path)
+        self.repo = upstream_repo(path, m)
+        self.file = os.path.join(self.repo, f"kailo-index-{os.getpid()}")
+        self.env = dict(os.environ, GIT_DIR=self.repo, GIT_WORK_TREE=os.path.abspath(self.tree),
+                        GIT_INDEX_FILE=self.file)
+        files = [f[len(self.tree) + 1:] for f in source_files(self.tree)
+                 if not f.startswith(f"{self.tree}/fork/")]
+        # -f：可见与否以本仓库的规则为准（source_files 已判定），不再套一遍树自己的规则
+        subprocess.run(["git", "add", "-f", "--pathspec-from-file=-", "--pathspec-file-nul"],
+                       input="\0".join(files).encode(), env=self.env, check=True, capture_output=True,
+                       cwd=os.path.abspath(self.tree))
+
+    def git(self, *args, **kw):
+        return _run("git", "-c", "core.quotepath=off", *args, env=self.env, **kw)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        if os.path.exists(self.file):
+            os.remove(self.file)
 
 
-def _removed(repo, env, base):
-    ls = lambda *a: set(_run("git", *a, env=env).decode().split("\0")) - {""}
+def _removed(ix, base):
+    ls = lambda *a: set(ix.git(*a).decode().split("\0")) - {""}
     before = ls("ls-tree", "-r", "-z", "--name-only", base)
     after = ls("ls-files", "-z")
     kept_dirs = {"/".join(p.split("/")[:i]) for p in after for i in range(1, p.count("/") + 1)}
@@ -294,17 +296,21 @@ def _removed(repo, env, base):
     return sorted(out)
 
 
-def diff(name, mode=""):
+def _source_record(name):
     path, m, _ = resolve(name)
     if m.get("module"):
-        sys.exit(f"{path}: 以 module {m['module']} 引用，本仓库没有它的源码树")
+        sys.exit(f"{path}: 以 module {m['module']} 引用，本仓库没有它的二开树")
+    return path, m
+
+
+def diff(name, mode=""):
+    path, m = _source_record(name)
     base = str(m["implementation_base_commit"])
-    repo, env, index = _kailo_index(path, m)
-    try:
-        if _run("git", "ls-tree", "--name-only", base, "kailo", env=env).strip():
-            sys.exit(f"上游在 {base[:12]} 有自己的 kailo/，与 Kailo 自有目录冲突")
+    with _Index(path, m) as ix:
+        if ix.git("ls-tree", "--name-only", base, "fork").strip():
+            sys.exit(f"上游在 {base[:12]} 有自己的 fork/，与本仓库自有目录冲突")
         if mode == "--check":
-            got, want = _removed(repo, env, base), sorted(_list(m, "remove_paths"))
+            got, want = _removed(ix, base), sorted(_list(m, "remove_paths"))
             if got != want:
                 for x in sorted(set(got) - set(want)):
                     print(f"  整块删除但未登记：{x}")
@@ -318,23 +324,17 @@ def diff(name, mode=""):
             sys.exit(__doc__)
         sys.stdout.flush()
         subprocess.run(["git", "-c", "core.quotepath=off", "diff", "--cached", "-M", *extra, base],
-                       env=env, check=True)
-    finally:
-        os.remove(index) if os.path.exists(index) else None
+                       env=ix.env, check=True)
 
 
 def added_lines(name):
-    """Kailo 在树里新增或改写的行，逐行输出为「路径:内容」。删除的上游原文不算交付内容。"""
+    """本仓库在树里新增或改写的行，逐行输出为「路径:内容」。删除的上游原文不算交付内容。"""
     path, m, _ = resolve(name)
     if m.get("module"):
         return
     base = str(m["implementation_base_commit"])
-    _, env, index = _kailo_index(path, m)
-    try:
-        out = _run("git", "-c", "core.quotepath=off", "diff", "--cached", "-U0", "--no-renames",
-                   "--text", base, env=env).decode(errors="replace")
-    finally:
-        os.remove(index) if os.path.exists(index) else None
+    with _Index(path, m) as ix:
+        out = ix.git("diff", "--cached", "-U0", "--no-renames", "--text", base).decode(errors="replace")
     cur = ""
     for line in out.split("\n"):
         if line.startswith("+++ "):
@@ -343,13 +343,155 @@ def added_lines(name):
             print(f"{tree_of(path)}/{cur}:{line[1:]}")
 
 
+# ---- 上游变化：status 与 sync（ADR-16 第 5、6 条） ------------------------------
+
+def _reference_head(m):
+    ref = _reference_dir(m)
+    if not os.path.isdir(ref):
+        return None
+    return _run("git", "-C", ref, "rev-parse", "HEAD").decode().strip()
+
+
+def _update_task(m):
+    """.references/UPDATE_TASKS.json 里该上游的待办更新（参考仓库管理器生成，只读）。"""
+    p = os.path.join(REFERENCES, "UPDATE_TASKS.json")
+    if not os.path.isfile(p):
+        return None
+    try:
+        tasks = json.load(open(p, encoding="utf-8")).get("tasks") or []
+    except ValueError:
+        return None
+    name = str(m.get("reference_tree"))
+    for t in tasks:
+        if (t.get("project") or {}).get("name") == name:
+            return t
+    return None
+
+
+def _last_update_entry(m):
+    p = os.path.join(REFERENCES, f"{m.get('reference_tree')}更新记录.md")
+    if not os.path.isfile(p):
+        return None
+    heads = re.findall(r"^## (.+)$", open(p, encoding="utf-8").read(), re.M)
+    return heads[-1] if heads else None
+
+
+def status(only=None):
+    """每个来源记录：.references 的 HEAD 相对基准 commit 的新提交与涉及文件，以及其中本仓库改过的文件。"""
+    for tree, path in records().items():
+        if only and only not in (tree, os.path.basename(tree)):
+            continue
+        m = load(path)
+        base = str(m.get("implementation_base_commit"))
+        head = _reference_head(m)
+        task = _update_task(m)
+        entry = _last_update_entry(m)
+        label = f"{tree}（.references/{m.get('reference_tree')}）"
+        if head is None:
+            print(f"  {label}: .references 中没有该上游，无法比较")
+            continue
+        notes = []
+        if task:
+            rng = (task.get("git") or {}).get("range")
+            notes.append(f"UPDATE_TASKS 待办 {rng}")
+        if entry:
+            notes.append(f"最近更新记录：{entry[:80]}")
+        suffix = ("；" + "；".join(notes)) if notes else ""
+        if head == base:
+            print(f"  {label}: 无新提交（HEAD 即基准 {base[:12]}）{suffix}")
+            continue
+        repo = upstream_repo(path, m, head)
+        upstream_repo(path, m)
+        env = dict(os.environ, GIT_DIR=repo)
+        is_desc = subprocess.run(["git", "merge-base", "--is-ancestor", base, head], env=env).returncode == 0
+        commits = _run("git", "rev-list", "--count", f"{base}..{head}", env=env).decode().strip()
+        files = [f for f in _run("git", "-c", "core.quotepath=off", "diff", "--name-only", base, head,
+                                 env=env).decode().split("\n") if f]
+        print(f"  {label}: 上游 HEAD {head[:12]} 相对基准 {base[:12]} "
+              f"{'领先' if is_desc else '分叉'} {commits} 个提交，涉及 {len(files)} 个文件{suffix}")
+        if m.get("module"):
+            continue
+        with _Index(path, m) as ix:
+            ours = set(f for f in ix.git("diff", "--cached", "--name-only", "--no-renames", base)
+                       .decode().split("\n") if f)
+        both = sorted(set(files) & ours)
+        print(f"    其中本仓库也改过 {len(both)} 个（合并时可能冲突）：" + ("、".join(both[:20]) or "无")
+              + ("……" if len(both) > 20 else ""))
+
+
+def sync(name, to=None, into=None):
+    """三方合并：共同祖先 = 基准 commit，一方 = 二开树当前内容，另一方 = 上游新 commit。
+
+    用 git 自己的合并算法（merge-tree）：结果与 git merge 一致，冲突以标准标记留在文件里。
+    只写工作文件，不提交、不改来源记录——合并后按 04 §4.2–§4.4 重验，再同步 .design/02 §1 与
+    来源记录的两个 commit（设计先行，分开提交）。
+    """
+    path, m = _source_record(name)
+    base = str(m["implementation_base_commit"])
+    target = to or _reference_head(m)
+    if not target:
+        sys.exit(f"{path}: 没有 --to，且 .references/{m.get('reference_tree')} 不存在")
+    repo = upstream_repo(path, m, target)
+    upstream_repo(path, m)
+    target = _run("git", "--git-dir", repo, "rev-parse", target + "^{commit}").decode().strip()
+    if target == base:
+        print(f"  {name}: 目标即基准 {base[:12]}，无需合并")
+        return
+    with _Index(path, m) as ix:
+        ours_tree = ix.git("write-tree").decode().strip()
+        # 当前树做成一个以基准为父的临时 commit（只进缓存对象库），供 merge-tree 做三方合并
+        ours = _run("git", "commit-tree", ours_tree, "-p", base, "-m", "current tree",
+                    env=dict(ix.env, GIT_AUTHOR_NAME="sync", GIT_AUTHOR_EMAIL="sync@localhost",
+                             GIT_COMMITTER_NAME="sync", GIT_COMMITTER_EMAIL="sync@localhost")).decode().strip()
+        r = subprocess.run(["git", "-c", "core.quotepath=off", "merge-tree", "--write-tree", "--name-only",
+                            "--merge-base", base, ours, target], env=ix.env, capture_output=True, text=True)
+        if r.returncode not in (0, 1):
+            sys.exit(r.stderr)
+        lines = r.stdout.split("\n")
+        merged = lines[0].strip()
+        conflicted, i = [], 1
+        while i < len(lines) and lines[i]:
+            conflicted.append(lines[i])
+            i += 1
+        messages = [l for l in lines[i + 1:] if l]
+        out_dir = into or ix.tree
+        changes = [l.split("\t") for l in ix.git("diff", "--name-status", "--no-renames", ours_tree, merged)
+                   .decode().split("\n") if l]
+        for status_, rel in changes:
+            dst = os.path.join(out_dir, rel)
+            if status_ == "D":
+                if os.path.lexists(dst):
+                    os.remove(dst)
+                continue
+            mode, _, obj = ix.git("ls-tree", merged, "--", rel).decode().split("\t")[0].split(" ")
+            os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+            if os.path.lexists(dst):
+                os.remove(dst)
+            data = ix.git("cat-file", "blob", obj)
+            if mode == "120000":
+                os.symlink(data.decode(), dst)
+            else:
+                with open(dst, "wb") as f:
+                    f.write(data)
+                os.chmod(dst, 0o755 if mode == "100755" else 0o644)
+    print(f"  {name}: 基准 {base[:12]} → {target[:12]}，写入 {out_dir}：{len(changes)} 个文件变化，"
+          f"{len(conflicted)} 个冲突")
+    for c in conflicted:
+        print(f"    冲突：{c}")
+    for msg in messages:
+        print(f"    {msg}")
+    if conflicted:
+        print("  冲突以 <<<<<<< / ======= / >>>>>>> 标记留在文件里；解决后按 04 §4.2–§4.4 重验，"
+              "再更新 .design/02 §1 与来源记录的两个 commit")
+
+
 # ---- 构建 --------------------------------------------------------------------
 
 def plan(name):
     path, m, art = resolve(name)
     if art is None:
         sys.exit(f"{name} 不是登记的产物；可用：" + ", ".join(
-            a["name"][len("upstream-"):] for p in records().values() for a in load(p).get("artifacts") or []))
+            a["name"] for p in records().values() for a in load(p).get("artifacts") or []))
     bad = problems(path, m, check_digest=False)
     if bad:
         sys.exit("\n".join(f"{path}: {b}" for b in bad))
@@ -359,57 +501,31 @@ def plan(name):
     print(f"artifact={q(art['name'])}")
     print(f"kind={q(str(art['kind']))}")
     print(f"base={q(str(m['implementation_base_commit']))}")
-    print(f"ctx={q(str(art.get('build_context') or '.'))}")
+    print(f"ctx={q(str(art['build_context']))}")
     print(f"dockerfile={q(str(art.get('build_dockerfile') or ''))}")
     print("secrets=(" + " ".join(q(x) for x in _list(art, "build_secrets")) + ")")
     print(f"blocked={q(str(art.get('blocked') or ''))}")
 
 
-def _place(m, tree, refresh):
-    for src, dst in vendor_pairs(m):
-        target = os.path.join(tree, dst)
-        if os.path.lexists(target) and not refresh:
-            sys.exit(f"vendor_files 的目标 {dst} 已存在于源码里")
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        shutil.copyfile(src, target)
-
-
 def stage(name, dest):
-    """构建输入 = 源码树里可见的文件 + vendor_files，与 source_digest 的口径一致。"""
-    path, m, _ = resolve(name)
+    """构建输入 = inputs 下按仓库忽略规则可见的文件，保持相对 apps/ 的位置——本地路径依赖
+    （file:/link:/path:）在构建里与仓库里指向同一处。"""
+    _, _, art = resolve(name)
     if os.path.exists(dest) and os.listdir(dest):
         sys.exit(f"{dest} 不是空目录")
-    tree = tree_of(path)
-    for rel in source_files(tree):
-        src, dst = os.path.join(tree, rel), os.path.join(dest, rel)
+    for rel in source_files(*_list(art, "inputs")):
+        dst = os.path.join(dest, rel)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
-        if os.path.islink(src):
-            os.symlink(os.readlink(src), dst)
+        if os.path.islink(rel):
+            os.symlink(os.readlink(rel), dst)
         else:
-            shutil.copy2(src, dst)
-    _place(m, dest, refresh=False)
-
-
-def vendor(name):
-    """vendor_files 放进 upstream/<树> 本身，供在树里直接开发与测试。
-
-    目标必须被树的 .gitignore 忽略：vendor 源是唯一权威（ADR-02、ADR-09），树里只在工作
-    目录里有一份不入库的拷贝。
-    """
-    path, m, _ = resolve(name)
-    tree = tree_of(path)
-    bad = [b for b in problems(path, m, check_digest=False) if "vendor_files" in b]
-    if bad:
-        sys.exit("\n".join(f"{path}: {b}" for b in bad))
-    _place(m, tree, refresh=True)
-    for src, dst in vendor_pairs(m):
-        print(f"  放入 {src} -> {tree}/{dst}")
+            shutil.copy2(rel, dst)
 
 
 def record(name, artifact):
     """只替换该产物块里的两行：记录里的注释是给人读的，不经 YAML 重写。"""
     path, m, art = resolve(name)
-    digest = source_digest(path, m, art) if artifact != "none" else "none"
+    digest = source_digest(art) if artifact != "none" else "none"
     lines = open(path, encoding="utf-8").read().split("\n")
     start = next((i for i, l in enumerate(lines) if re.fullmatch(rf"  - name: {re.escape(art['name'])}\s*", l)), None)
     if start is None:
@@ -430,18 +546,27 @@ def record(name, artifact):
 
 if __name__ == "__main__":
     a = sys.argv[1:]
+    # 目录参数按调用处解析，其余路径一律相对 apps/
+    a = [os.path.abspath(x) if i > 0 and a[i - 1] in ("--into",) or (a[:1] == ["stage"] and i == 2) else x
+         for i, x in enumerate(a)]
+    os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
     cmd = a[0] if a else ""
     if cmd == "diff" and len(a) in (2, 3):
         diff(a[1], a[2] if len(a) == 3 else "")
     elif cmd == "added-lines" and len(a) == 2:
         added_lines(a[1])
+    elif cmd == "status" and len(a) in (1, 2):
+        status(a[1] if len(a) == 2 else None)
+    elif cmd == "sync" and len(a) >= 2:
+        opts = dict(zip(a[2::2], a[3::2]))
+        if set(opts) - {"--to", "--into"} or len(a[2:]) % 2:
+            sys.exit(__doc__)
+        sync(a[1], opts.get("--to"), opts.get("--into"))
     elif cmd == "plan" and len(a) == 2:
         plan(a[1])
     elif cmd == "stage" and len(a) == 3:
         stage(a[1], a[2])
     elif cmd == "record" and len(a) == 3:
         record(a[1], a[2])
-    elif cmd == "vendor" and len(a) == 2:
-        vendor(a[1])
     else:
         sys.exit(__doc__)

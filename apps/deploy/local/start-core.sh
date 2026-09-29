@@ -24,7 +24,7 @@ app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IP
 # sudo 只保留受控构建器选择，避免 Core 镜像构建落到无 cgroup 限额的默认 builder。
 compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "$@"; }
 root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
-# 令牌经 stdin 进入容器，不上命令行（与 openbao-init.sh 的 run_bao 同一做法）
+# 令牌经 stdin 进入容器，不上命令行（与 secret-store-init.sh 的 run_bao 同一做法）
 run_bao() {
   local nsv=$1; shift
   local env=(-e BAO_ADDR=http://127.0.0.1:8200)

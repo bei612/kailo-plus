@@ -8,7 +8,7 @@ import {
   useStableArrayShallow,
   useStableMap,
 } from "@/shared/hooks/useStableReference";
-import { useActiveCommunity } from "@/features/kailo/activeCommunity";
+import { useActiveCommunity } from "@/features/platform/activeCommunity";
 import {
   canFetchChannelsForIdentity,
   channelsQueryKey,

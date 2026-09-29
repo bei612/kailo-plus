@@ -1,10 +1,10 @@
 import 'dart:convert';
 
-import 'package:buzz/features/kailo/kailo_audit_page.dart';
-import 'package:buzz/features/kailo/kailo_devices_page.dart';
-import 'package:buzz/features/kailo/kailo_members_page.dart';
-import 'package:buzz/shared/kailo/kailo_api.dart';
-import 'package:buzz/shared/kailo/kailo_platform_text.dart';
+import 'package:buzz/features/platform/platform_audit_page.dart';
+import 'package:buzz/features/platform/platform_devices_page.dart';
+import 'package:buzz/features/platform/platform_members_page.dart';
+import 'package:buzz/shared/platform/platform_api.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
@@ -16,7 +16,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../shared/kailo/kailo_test_support.dart';
+import '../../shared/platform/platform_test_support.dart';
 
 const _thisDevice =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';

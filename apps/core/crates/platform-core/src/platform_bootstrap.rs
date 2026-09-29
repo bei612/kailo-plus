@@ -14,7 +14,7 @@
 
 use crate::audit::Evidence;
 use contracts::EvidenceKind;
-use kailo_secrets::{SecretRef, SecretStore};
+use secret_store::{SecretRef, SecretStore};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -70,7 +70,7 @@ pub async fn ensure(
     // 投递的私钥决定部署此刻要用的 operator 身份；公钥由它派生，不从配置里
     // 再要一份——两处各存一份必然有一天对不上。
     let secret_hex = cfg.operator_key.trim().to_owned();
-    let delivered = kailo_buzz::operator::OperatorIdentity::new(
+    let delivered = collab_bridge::operator::OperatorIdentity::new(
         &secret_hex,
         &cfg.operator_api_origin,
         &cfg.operator_audience,
@@ -236,7 +236,7 @@ async fn rotate(
     http: &reqwest::Client,
     tenant: Uuid,
     active: &str,
-    delivered: &kailo_buzz::operator::OperatorIdentity,
+    delivered: &collab_bridge::operator::OperatorIdentity,
     secret_hex: &str,
 ) -> Result<(), String> {
     let pubkey = delivered.pubkey_hex();

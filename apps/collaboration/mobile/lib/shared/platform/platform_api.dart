@@ -13,9 +13,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 
-import '../contracts/contracts.dart';
-import 'kailo_config.dart';
-import 'kailo_oidc.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
+import 'platform_config.dart';
+import 'platform_oidc.dart';
 
 /// 可经本模块调用的 BFF 路径前缀。其余一概不发。
 const kailoApiPrefix = '/api/v1/';

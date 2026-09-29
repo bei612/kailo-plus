@@ -19,7 +19,7 @@ use axum::{
 use serde::Serialize;
 use sqlx::PgPool;
 
-use kailo_secrets::SecretStore;
+use secret_store::SecretStore;
 
 use crate::service_auth::{ServiceAuth, ServiceAuthError};
 
@@ -30,7 +30,7 @@ pub struct ServiceState {
     pub secrets: Arc<SecretStore>,
     /// 部署 audit device 清单的观察者。任一 binding 推进到 ACTIVE 之前都要它
     /// 给出非空（DD-70），见 `audit_gate`。
-    pub audit: Arc<kailo_secrets::AuditObserver>,
+    pub audit: Arc<secret_store::AuditObserver>,
     /// Platform Catalog Tenant：RelayOperatorIdentity 挂在它下面（.design/09 第 3 步）
     pub catalog_tenant: uuid::Uuid,
     /// SecretRef locator 的前缀 `<namespace>/<mount>`

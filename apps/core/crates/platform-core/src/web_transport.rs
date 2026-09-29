@@ -22,10 +22,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use collab_bridge::bridge::{Custody, Delivery, IdentityClient};
 use contracts::EvidenceKind;
 use contracts::{ErrorBody, ErrorClass, ReasonCode};
-use kailo_buzz::bridge::{Custody, Delivery, IdentityClient};
-use kailo_secrets::SecretRef;
+use secret_store::SecretRef;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

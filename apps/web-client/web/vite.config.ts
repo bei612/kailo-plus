@@ -18,12 +18,13 @@ export default defineConfig({
     react(),
   ],
   resolve: {
-    // Kailo 放入源树的共用包与 contracts 生成物（ADR-09），以包名引用
     alias: {
-      "@kailo/contracts": "/src/platform/contracts.gen.ts",
-      "@kailo/platform": "/src/kailo-platform",
       "@": "/src",
     },
+    // client-kit 以本地路径依赖接入（ADR-16）：按 node_modules 里的链接路径解析，共用包
+    // 里的 react 与本项目是同一份；dedupe 兜底，任何路径都只打包一份 React
+    preserveSymlinks: true,
+    dedupe: ["react", "react-dom"],
   },
   server: {
     port: parseInt(process.env.VITE_PORT || "5173", 10),

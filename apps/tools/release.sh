@@ -69,7 +69,7 @@ for unit in "${UNITS[@]}"; do
   pass "SBOM $(basename "$sbom")"
 
   # 依赖锁的摘要进 provenance：换了锁文件就换了产物来源
-  locks=$(git ls-files 'core/Cargo.lock' 'worker/go.sum' 'pnpm-lock.yaml' 'mobile/pubspec.lock' 2>/dev/null || true)
+  locks=$(git ls-files 'core/Cargo.lock' 'worker/go.sum' 'pnpm-lock.yaml' 'client-kit/dart/pubspec.lock' 2>/dev/null || true)
   lock_digest=$( [ -n "$locks" ] && git hash-object $locks | sha256sum | cut -d' ' -f1 || echo none )
 
   prov="$OUT/$unit.${digest#sha256:}.provenance.json"

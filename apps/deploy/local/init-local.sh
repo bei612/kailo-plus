@@ -91,11 +91,11 @@ fi
 if "$fresh"; then
   echo '清空 kailo-local 容器和五个数据库卷，并清空本地 OpenBao、Buzz 对象和凭据。'
   echo '此操作不可恢复；保留 .env 和 data/registry 中的固定版本镜像。'
-  for path in data secrets data/openbao data/buzz-objects; do
+  for path in data secrets data/secret-store data/collab-objects; do
     [ ! -L "$path" ] || { echo "拒绝删除符号链接：$path" >&2; exit 2; }
   done
   compose down --volumes
-  sudo -n rm -rf -- "$PWD/secrets" "$PWD/data/openbao" "$PWD/data/buzz-objects"
+  sudo -n rm -rf -- "$PWD/secrets" "$PWD/data/secret-store" "$PWD/data/collab-objects"
 fi
 
 ./bootstrap.sh
@@ -114,7 +114,7 @@ while :; do
   [ "$(date +%s)" -lt "$deadline" ] || { echo 'OpenBao 启动超时' >&2; exit 2; }
   sleep 1
 done
-./openbao-init.sh
+./secret-store-init.sh
 
 # Compose 自己等待 health 与依赖任务；namespace/schema 作业还要查终态。
 compose up -d --wait keycloak temporal spicedb buzz-relay
@@ -139,14 +139,14 @@ compose build worker
 compose up -d --no-deps --no-build worker buzz-web agentgateway otel-collector
 curl -fsS "http://127.0.0.1:${BFF_PORT:?缺少 BFF_PORT}/healthz" >/dev/null
 
-compose exec -T core-bff /usr/local/bin/kailo-core bootstrap-tenant \
+compose exec -T core-bff /usr/local/bin/platform-core bootstrap-tenant \
   --slug "$VERIFY_TENANT_SLUG" --name "$VERIFY_TENANT_NAME" \
   --admin-subject "$subject" --admin-display-name "$BOOTSTRAP_USER" \
   --wait-seconds "$VERIFY_BOOTSTRAP_WAIT_SECONDS"
 # Platform Catalog Tenant 由 Core 启动时以 PROVISIONING 与引导意图建立，名称即 slug；
 # 此处经同一引导命令推进其生命周期并建立首位 admin（DD-96 的暂停/恢复发起者）。
 # --name 只在 Tenant 不存在时使用，Catalog 此时必已存在，故传入与库中一致的 slug。
-compose exec -T core-bff /usr/local/bin/kailo-core bootstrap-tenant \
+compose exec -T core-bff /usr/local/bin/platform-core bootstrap-tenant \
   --slug "$PLATFORM_CATALOG_TENANT_SLUG" --name "$PLATFORM_CATALOG_TENANT_SLUG" \
   --admin-subject "$platform_subject" --admin-display-name "$PLATFORM_ADMIN_USER" \
   --wait-seconds "$VERIFY_BOOTSTRAP_WAIT_SECONDS"

@@ -7,8 +7,6 @@ analyzer:
     invalid_use_of_visible_for_overriding_member: ignore
   exclude:
     - build/**
-    # 由 Kailo 的 tools/gen.sh 从 contracts/ 生成，不手工编辑
-    - lib/shared/contracts/generated/**
     - android/**
     - ios/**
     - web/**

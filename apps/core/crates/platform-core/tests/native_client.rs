@@ -5,8 +5,8 @@
 //! 自己的私钥**直连 Relay** 发消息；撤销设备后 Relay 拒绝它——准入的执行点是
 //! Relay 的 roster，不是 Core 停止签名（DD-75）。
 
+use collab_bridge::bridge::{Custody, IdentityClient};
 use futures_util::FutureExt;
-use kailo_buzz::bridge::{Custody, IdentityClient};
 use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
 use sqlx::PgPool;
 
@@ -439,7 +439,7 @@ async fn run(
 
     // 能直连不等于能治理：设备自建 Channel 必须被 Relay 拒绝，否则原生端就
     // 能在 Workspace 之外造出协作空间（SS-BUZ-GOVERNANCE、DD-80）。逐项的
-    // 治理核验在 kailo-buzz 的 members_cannot_govern_the_community。
+    // 治理核验在 collab-bridge 的 members_cannot_govern_the_community。
     let rogue = uuid::Uuid::new_v4().to_string();
     let tag = |k: &str, v: &str| vec![k.to_owned(), v.to_owned()];
     let created = as_device
@@ -456,7 +456,7 @@ async fn run(
         .await;
     let refused = match &created {
         Ok(v) => v["accepted"] == false,
-        Err(kailo_buzz::operator::OperatorError::Rejected { .. }) => true,
+        Err(collab_bridge::operator::OperatorError::Rejected { .. }) => true,
         Err(_) => false,
     };
     assert!(refused, "设备不得自建 Channel：{created:?}");

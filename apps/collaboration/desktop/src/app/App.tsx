@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
-import { NativeBootstrap } from "@kailo/platform/react/NativeBootstrap";
+import { NativeBootstrap } from "@client-kit/platform/react/NativeBootstrap";
 import { type ReactNode, useEffect, useLayoutEffect, useState } from "react";
 
 import { router } from "@/app/router";
@@ -13,9 +13,9 @@ import { useCloseWindowShortcut } from "@/app/useCloseWindowShortcut";
 import {
   ActiveCommunityProvider,
   useActiveCommunity,
-} from "@/features/kailo/activeCommunity";
-import { connectCommunity } from "@/features/kailo/connectCommunity";
-import { DeviceIdentityGate } from "@/features/kailo/DeviceIdentityGate";
+} from "@/features/platform/activeCommunity";
+import { connectCommunity } from "@/features/platform/connectCommunity";
+import { DeviceIdentityGate } from "@/features/platform/DeviceIdentityGate";
 import { createBuzzQueryClient } from "@/shared/api/queryClient";
 import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
 import { cn } from "@/shared/lib/cn";

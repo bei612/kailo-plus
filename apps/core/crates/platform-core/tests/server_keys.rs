@@ -9,8 +9,8 @@
 //!   ACTIVE，Web 发言恢复且作者是新 pubkey；
 //! - CONTROL 身份不经此入口（GAP-BUZ-01），重建必须先撤后建（DD-77）。
 
+use collab_bridge::bridge::{Custody, IdentityClient};
 use futures_util::FutureExt;
-use kailo_buzz::bridge::{Custody, IdentityClient};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -416,7 +416,7 @@ async fn run(
     // Relay 的判定是拒绝（accepted=false 或 4xx），而不是传输失败——后者证明不了任何事
     let refused = match &published {
         Ok(v) => v["accepted"] == false,
-        Err(kailo_buzz::operator::OperatorError::Rejected { .. }) => true,
+        Err(collab_bridge::operator::OperatorError::Rejected { .. }) => true,
         Err(_) => false,
     };
     assert!(

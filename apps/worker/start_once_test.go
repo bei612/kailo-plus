@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kailo/apps/worker/internal/contracts/generated"
-	"github.com/kailo/apps/worker/internal/oidc"
-	"github.com/kailo/apps/worker/workflows"
+	"apps/worker/internal/contracts/generated"
+	"apps/worker/internal/oidc"
+	"apps/worker/workflows"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"

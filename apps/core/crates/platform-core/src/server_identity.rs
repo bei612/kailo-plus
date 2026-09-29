@@ -3,8 +3,8 @@
 //! SecretRef 可读并不证明它属于 binding 中登记的 pubkey：同一 KV locator 的
 //! 其他版本、错误的引用或配置漂移都不能让 Core 以另一身份代签。
 
-use kailo_secrets::{SecretError, SecretRef, SecretStore};
 use nostr::Keys;
+use secret_store::{SecretError, SecretRef, SecretStore};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BoundKeyError {

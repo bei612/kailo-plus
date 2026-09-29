@@ -14,7 +14,7 @@ use axum::{
 use contracts::{ErrorBody, ErrorClass, PlatformSessionView};
 
 use crate::audit;
-use kailo_identity::{resolve, session, IdentityError};
+use identity::{resolve, session, IdentityError};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -44,7 +44,7 @@ pub struct BffState {
     /// PlatformSession 的有效期。它是部署事实，不是常量——不同部署对「多久要
     /// 重新过一次 OIDC」的要求不同。
     pub session_ttl_seconds: i64,
-    pub secrets: std::sync::Arc<kailo_secrets::SecretStore>,
+    pub secrets: std::sync::Arc<secret_store::SecretStore>,
     pub http: reqwest::Client,
     /// Relay 的网络地址；Community host 另从 binding 取（SF-BUZ-32）
     pub relay_transport: String,

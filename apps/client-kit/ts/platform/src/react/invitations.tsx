@@ -13,7 +13,7 @@ import {
   type IssuedInvitation,
   TenantInvitationStatus,
   type TenantInvitationView,
-} from "@kailo/contracts";
+} from "@client-kit/contracts";
 import { type FormEvent, useRef, useState } from "react";
 import { relativeTime } from "../format";
 import { newIdempotencyKey, redemptionPhase } from "../governance";

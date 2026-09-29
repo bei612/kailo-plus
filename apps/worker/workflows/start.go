@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/kailo/apps/worker/internal/contracts/generated"
+	"apps/worker/internal/contracts/generated"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"

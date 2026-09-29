@@ -36,7 +36,7 @@ use contracts::{
     ApprovalStatus, ApprovalWorkflowInput, ErrorBody, ErrorClass, FreshApprovalAdmissionRequest,
     FreshApprovalAdmissionResult, ReasonCode,
 };
-use kailo_secrets::SecretStore;
+use secret_store::SecretStore;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -2823,7 +2823,7 @@ impl Governance {
                 .fetch_one(&mut **tx)
                 .await?;
                 // 进入 REVOKING 即撤会话，与状态变化同事务（.design/03 §2）
-                kailo_identity::session::revoke_for_membership(tx, target.id).await?;
+                identity::session::revoke_for_membership(tx, target.id).await?;
                 // 此人在本 Tenant 的每个未撤 WorkspaceMembership 一并进入 REVOKING，
                 // 由同一条撤权 Workflow 收敛到 REVOKED（.design/10 §5）。留着不动，
                 // 按邀请恢复会沿用同一 Principal，让旧的 ACTIVE 投影随之复活。
