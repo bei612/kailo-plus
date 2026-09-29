@@ -39,9 +39,9 @@ runtime:
 release:
   artifacts:
     - name: core
-      digest: sha256:7e9b800d79e791b003ca10b1091e98b24b1756a56afa94b360ee631a792ae8c2
+      digest: sha256:a52669b7227a79bd0b382e093f91ed197f48985d29fc2ca8ad3766cae84cb2f2
     - name: worker
-      digest: sha256:9e7d3a6d48b1d0281974db4806a307d44f3f30b72348c76a1bb3c18707bfd46c
+      digest: sha256:8a05f23aa9f41393d626742c5503a7e4cbe9740c92da6aec35151c7b594f4301
     - name: collaboration-relay
       digest: sha256:a6405922db615e2ada34048a9ea3dbe65037fab3f8a4b22b19e39f4ec33ae977
   gate: shipped
