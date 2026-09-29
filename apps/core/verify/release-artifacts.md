@@ -1,4 +1,4 @@
-# Core/Worker 发布产物核验（2026-09-26）
+# Core/Worker 发布产物核验（2026-09-26，2026-09-29 追加）
 
 对应 `ADR-06`、`00-实施总纲.md` Stage 0 第 7/8 项与
 `03-验证发布与验收门禁.md` §5。本记录只证明本机固定提交的两个自建发布单元；
@@ -38,6 +38,27 @@ worker image sha256:7abd2c5501e90f849134d6db357b7447f97f187e24fb04e9ec8d534c7d3e
 SBOM、provenance、commit 与锁摘要一致。分别把本次 Core provenance 的锁摘要
 首位和 subject digest 首位改错，检查均退出 1，明确报告对应不匹配；恢复两个
 字段后再次退出 0。`dist/` 不入 Git，原样产物留在本机供复核。
+
+## 2026-09-29：功能目录重构后的发布单元
+
+- 源：`tools/release.sh` 从提交 `076681d`（ADR-16 目录重构）的 `apps/` 构建。provenance 中的
+  `gitCommit` 为 `dae9abd5954a05019ea5ab89e3e4050d8da94341`，该提交只改仓库根的 `AGENTS.md` 与
+  `CLAUDE.md`，`git diff --quiet 076681d dae9abd -- apps` 退出 0，两者的 `apps/` 树相同。
+- 产物（产物名按 ADR-16 改为 `core`、`worker`）：
+
+```text
+core   sha256:7e9b800d79e791b003ca10b1091e98b24b1756a56afa94b360ee631a792ae8c2
+worker sha256:9e7d3a6d48b1d0281974db4806a307d44f3f30b72348c76a1bb3c18707bfd46c
+```
+
+- `dist/` 下各有 SPDX SBOM 与 provenance（`core.<digest>.spdx.json`、`core.<digest>.provenance.json`，
+  worker 同）；provenance 的 `subject[0].digest.sha256` 与文件名一致，`externalParameters` 为
+  `dockerfile: core/Dockerfile`（worker 为 `worker/Dockerfile`）、`context: apps/`，依赖锁摘要为
+  `7fb91d1a70c935f857e07bdec20bd68de5983f71abd2fcfb0acafb65a6a77b77`。
+- 14 份追溯记录的 `release.artifacts` 改登记这两个 digest（提交 `9566ac0`）；随后
+  `tools/check.sh trace`、`seam`、`supply` 通过（同一提交说明）。
+- 本段不含对这两个 digest 的破坏核验与回滚演练；重构后的行为回归见
+  `core/verify/functional-layout-regression.md`。
 
 ## 未被本记录证明的边界
 
