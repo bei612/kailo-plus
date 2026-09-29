@@ -288,3 +288,55 @@ func TestWithdraw(t *testing.T) {
 		t.Fatalf("撤回之后不应有决定: %+v", rec.last())
 	}
 }
+
+// V-SCN-37：多个角色要求各自满足 min_distinct。同一 HUMAN 可在多个要求中计数，
+// 但只产生一个决定；第一位满足两种角色的批准不足以让 TENANT_ADMIN×2 成立。
+func TestMultiRoleRequirementsCountDistinctApprovers(t *testing.T) {
+	approverC := "99999999-9999-9999-9999-999999999999"
+	env, rec, in := setup(t, func(r generated.FreshApprovalAdmissionRequest) generated.FreshApprovalAdmissionResult {
+		switch r.ApproverPrincipalID {
+		case approverA:
+			return generated.FreshApprovalAdmissionResult{Admitted: true,
+				SatisfiedSelectors: []generated.ApprovalSelector{generated.TenantAdmin, generated.WorkspaceAdmin}}
+		case approverB:
+			return generated.FreshApprovalAdmissionResult{Admitted: true,
+				SatisfiedSelectors: []generated.ApprovalSelector{generated.WorkspaceAdmin}}
+		default:
+			return admitted(r)
+		}
+	})
+	in.RoleRequirements = []generated.RoleRequirementElement{
+		{Selector: generated.TenantAdmin, MinDistinct: 2},
+		{Selector: generated.WorkspaceAdmin, MinDistinct: 1},
+	}
+	var a, again, b, c updateResult
+	decideAt(env, time.Minute, approverA, generated.Approve, &a)
+	// 同一人换一个 Update ID 再批：仍只算一个决定，不能凑出第二位 TENANT_ADMIN
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow(UpdateDecide, "wf:"+approverA+":again", again.callbacks(),
+			generated.ApprovalDecisionUpdate{ApproverPrincipalID: approverA, Decision: generated.Approve})
+	}, 90*time.Second)
+	// 只满足 WORKSPACE_ADMIN 的第二人也不够
+	decideAt(env, 2*time.Minute, approverB, generated.Approve, &b)
+	decideAt(env, 3*time.Minute, approverC, generated.Approve, &c)
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow(UpdateConsume, in.ActionExecutionID+":consume", (&updateResult{}).callbacks())
+	}, 4*time.Minute)
+	env.ExecuteWorkflow(ApprovalKind, in)
+
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatalf("workflow 失败: %v", err)
+	}
+	if s := a.outcome.(generated.ApprovalDecisionOutcome).Status; s != generated.ApprovalStatusWAITING {
+		t.Fatalf("单人满足两种角色不应批准，状态 %v", s)
+	}
+	if s := b.outcome.(generated.ApprovalDecisionOutcome).Status; s != generated.ApprovalStatusWAITING {
+		t.Fatalf("第二位只满足 WORKSPACE_ADMIN 不应批准，状态 %v", s)
+	}
+	if s := c.outcome.(generated.ApprovalDecisionOutcome).Status; s != generated.Approved {
+		t.Fatalf("第二位不同的 TENANT_ADMIN 批准后应 APPROVED，状态 %v", s)
+	}
+	if rec.last().Status != generated.Consumed || len(rec.last().Decisions) != 3 {
+		t.Fatalf("应有三个不同决定并被消费: %+v", rec.last())
+	}
+}

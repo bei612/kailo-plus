@@ -1241,7 +1241,8 @@ class ClientKeyStatus {
 }
 
 ///GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
-///授权；Core 自有证据另核对原对象仍存在。不可用时不回任何 ref 内容。
+///授权；每种证据另向其权威源查证原对象仍存在：明确不存在回 404（正文为 NOT_FOUND 的不可用视图），权威源不提供查证接口为 UNVERIFIABLE，权威源不可达回
+///503。不可用时不回任何 ref 内容。
 class EvidenceView {
   final EvidenceAuthority? authority;
   final bool available;
@@ -1293,13 +1294,19 @@ class EvidenceView {
   });
 }
 
-///解引用只显示不可用时的原因：原证据已不存在、敏感级别未获授权、存量种类不可识别。
-enum EvidenceUnavailableReason { NOT_FOUND, RESTRICTED, UNRECOGNIZED }
+///解引用只显示不可用时的原因：原证据已不存在（HTTP 404）、敏感级别未获授权、存量种类不可识别、权威源无法按该 ID 查证其仍存在。
+enum EvidenceUnavailableReason {
+  NOT_FOUND,
+  RESTRICTED,
+  UNRECOGNIZED,
+  UNVERIFIABLE,
+}
 
 final evidenceUnavailableReasonValues = EnumValues({
   "NOT_FOUND": EvidenceUnavailableReason.NOT_FOUND,
   "RESTRICTED": EvidenceUnavailableReason.RESTRICTED,
   "UNRECOGNIZED": EvidenceUnavailableReason.UNRECOGNIZED,
+  "UNVERIFIABLE": EvidenceUnavailableReason.UNVERIFIABLE,
 });
 
 ///POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions

@@ -719,6 +719,9 @@ for mf in glob.glob("upstream-patches/*/baseline.yaml"):
 # 数据平面唯一的准入执行点——这三项写错等于整条协作面无准入。
 for svc, spec in (d.get("services") or {}).items():
     env = spec.get("environment") or {}
+    # 列表写法（- KEY=VALUE）与映射写法同义，不能因为写法不同就落在检查之外
+    if isinstance(env, list):
+        env = dict((e.split("=", 1) + [None])[:2] for e in map(str, env))
     if not isinstance(env, dict) or "BUZZ_BIND_ADDR" not in env:
         continue
     for key, want in (("BUZZ_REQUIRE_RELAY_MEMBERSHIP", "true"),
@@ -727,11 +730,15 @@ for svc, spec in (d.get("services") or {}).items():
         got = str(env.get(key, "")).strip().lower()
         if got != want:
             bad.append(f"{svc}: {key} 为 {got or '未设置'}，必须显式为 {want}")
-    # SS-BUZ-GOVERNANCE（DD-80）：未设定即上游行为——成员可自建 Channel、
-    # 自加入、读写非 private Channel。空值是合法的收紧（成员什么都不能发），
-    # 因此只要求显式出现，不要求非空。
-    if "BUZZ_MEMBER_EVENT_KINDS" not in env:
-        bad.append(f"{svc}: 未设定 BUZZ_MEMBER_EVENT_KINDS，Relay 以上游行为运行（SF-BUZ-37）")
+    # SS-BUZ-GOVERNANCE（DD-80、DD-106）：未设定即上游行为——成员可自建
+    # Channel、自加入、读写非 private Channel，且 Buzz 自带 workflow 引擎照常
+    # 运行（cron、kind:9 触发、/hooks/{id}），成为 Temporal 之外的第二个工作流
+    # 权威。空值是合法的收紧（成员什么都不能发），因此只要求显式赋值，不要求
+    # 非空；只写键不给值（映射里的 null、列表里不带 =）表示从宿主环境透传，
+    # 宿主没有它时容器里就没有，同样不算设定。
+    if env.get("BUZZ_MEMBER_EVENT_KINDS") is None:
+        bad.append(f"{svc}: 未设定 BUZZ_MEMBER_EVENT_KINDS，Relay 以上游行为运行，"
+                   "含 Buzz 自带 workflow（SF-BUZ-37、SF-BUZ-45、DD-106）")
 
 # 该开关只存在于打过补丁的构建里，上游镜像会静默忽略它。跑 Buzz 二进制的
 # 服务（Relay 本身，以及以 buzz-admin 建 schema 的一次性服务）都必须用补丁

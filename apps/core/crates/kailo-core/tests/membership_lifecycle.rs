@@ -219,15 +219,28 @@ async fn membership_lifecycle_converges_both_directions() {
     .await;
     // 清理跨三个系统：Core 库、SpiceDB、Relay roster。断言中途失败时前两者
     // 都可能已经写入，只清 Core 会把授权面的残留留给下一次运行。
+    let ws_object = workspace_object(&pool, &f).await;
+    // BFF 调用建立的会话与夹具绑定的 OIDC 身份不挂在 Tenant 下，先按成员清掉
+    for sql in [
+        "delete from identity.platform_session where tenant_membership_id in
+             (select id from identity.tenant_membership where tenant_id = $1)",
+        "delete from identity.external_identity where human_identity_id in
+             (select human_identity_id from identity.tenant_membership where tenant_id = $1)",
+    ] {
+        if let Err(err) = sqlx::query(sql).bind(f.tenant).execute(&pool).await {
+            eprintln!("夹具清理失败：{sql}\n  {err}");
+        }
+    }
     common::cleanup(&e, &pool, &f).await;
-    for object in [
-        format!("tenant:{}", f.tenant),
-        workspace_object(&pool, &f).await,
+    for (object, relation) in [
+        (format!("tenant:{}", f.tenant), "member"),
+        (ws_object.clone(), "member"),
+        (ws_object, "admin"),
     ] {
         spicedb_delete(
             &e,
             &object,
-            "member",
+            relation,
             &format!("principal:{}", f.member_principal),
         );
     }
@@ -370,6 +383,21 @@ async fn run(
         "ACTIVE 后 Channel roster 必须有该 pubkey，实际 {ch_roster:?}"
     );
 
+    // ---- Workspace 撤权的准入面（V-SCN-35）----
+    //
+    // 该成员同时持有此 Workspace 的 admin：DD-82 的角色是 relationship，这里以 zed
+    // 直接注入，代表撤权之前已授予的角色。另建一位 ACTIVE Tenant 成员作为
+    // workspace.member.add 的对象，让请求走到 scope guard 而不是停在目标解析。
+    let member_subject = format!("ml-{}", &Uuid::new_v4().to_string()[..8]);
+    bind_oidc_subject(pool, e, f, &member_subject).await;
+    let other = seed_active_tenant_member(pool, f).await;
+    let ws_object = format!("workspace:{workspace}");
+    common::zed_relationship(e, "touch", &ws_object, "admin", &subject);
+    let add_other = || {
+        serde_json::json!({"actionKey":"workspace.member.add","idempotencyKey":Uuid::new_v4(),
+            "workspaceId":workspace,"principalId":other})
+    };
+
     // Workspace 撤权：同一条链反向
     sqlx::query(
         "update identity.workspace_membership set state = 'REVOKING', version = version + 1
@@ -379,6 +407,20 @@ async fn run(
     .execute(pool)
     .await
     .expect("置 Workspace 成员 REVOKING");
+
+    // REVOKING 一成立、投影尚未开始收敛，准入就必须拒绝：workspace#admin 仍在
+    // SpiceDB 里，fresh workspace manage 为真，也不能替撤权中的成员放行。
+    assert!(
+        spicedb_has(e, &ws_object, "admin", &subject),
+        "前提：撤权收敛前 workspace#admin 仍在"
+    );
+    let (st, body) = common::submit(http, e, &member_subject, add_other()).await;
+    assert_eq!(
+        st,
+        reqwest::StatusCode::FORBIDDEN,
+        "REVOKING 的 Workspace 成员凭 workspace admin 仍被放行：{body}"
+    );
+    assert_eq!(common::reason(&body), "SCOPE_GUARD_FAILED", "{body}");
     let ws_action = seed_action_for(pool, f, "workspace.membership.revoke", ws_membership).await;
     assert_eq!(
         start_lifecycle(http, e, token, "WORKSPACE", ws_membership, ws_action).await,
@@ -406,6 +448,19 @@ async fn run(
         !ch_roster.iter().any(|r| r.pubkey == member_hex),
         "REVOKED 后 Channel roster 不应再有该 pubkey，实际 {ch_roster:?}"
     );
+    // Workspace 撤权撤掉此人在该 Workspace 上的全部关系，含角色（DD-82）；撤权
+    // 之后，他原有的 workspace admin 也不能再放行。
+    assert!(
+        !spicedb_has(e, &ws_object, "admin", &subject),
+        "REVOKED 后 SpiceDB 不应再有 workspace#admin"
+    );
+    let (st, body) = common::submit(http, e, &member_subject, add_other()).await;
+    assert_eq!(
+        st,
+        reqwest::StatusCode::FORBIDDEN,
+        "已撤的 Workspace 成员仍被放行：{body}"
+    );
+    assert_eq!(common::reason(&body), "SCOPE_GUARD_FAILED", "{body}");
 
     // ---- 撤权 ----
     //
@@ -452,6 +507,63 @@ async fn run(
     .await
     .expect("读任务投影");
     assert_eq!(status, "COMPLETED", "撤权 Workflow 的终态应已投影");
+}
+
+/// 给夹具成员绑定一个 OIDC subject，使它能经与网关投影相同的两条 header 调 BFF。
+/// Stage 1 不注册登录开户，OIDC 侧的外部身份只能由夹具写（同 `bootstrapped::add_member`）。
+async fn bind_oidc_subject(pool: &PgPool, e: &Env, f: &Fixture, subject: &str) {
+    let provider: Uuid =
+        sqlx::query_scalar("select id from identity.identity_provider where issuer = $1 limit 1")
+            .bind(&e.oidc_issuer)
+            .fetch_one(pool)
+            .await
+            .expect("部署 IdP");
+    sqlx::query(
+        "insert into identity.external_identity (id, provider_id, issuer, subject, human_identity_id, status)
+         select $1, $2, $3, $4, human_identity_id, 'ACTIVE'
+         from identity.tenant_membership where id = $5",
+    )
+    .bind(Uuid::new_v4())
+    .bind(provider)
+    .bind(&e.oidc_issuer)
+    .bind(subject)
+    .bind(f.membership)
+    .execute(pool)
+    .await
+    .expect("绑定 OIDC subject");
+}
+
+/// 同 Tenant 的另一位 ACTIVE HUMAN 成员，只作 Workspace 动作的对象，不经投影。
+async fn seed_active_tenant_member(pool: &PgPool, f: &Fixture) -> Uuid {
+    let (human, principal) = (Uuid::new_v4(), Uuid::new_v4());
+    sqlx::query(
+        "insert into identity.human_identity (id, display_name, status) values ($1, 'verify', 'ACTIVE')",
+    )
+    .bind(human)
+    .execute(pool)
+    .await
+    .expect("建 HumanIdentity");
+    sqlx::query(
+        "insert into identity.principal (id, tenant_id, kind, status) values ($1, $2, 'HUMAN', 'ACTIVE')",
+    )
+    .bind(principal)
+    .bind(f.tenant)
+    .execute(pool)
+    .await
+    .expect("建 Principal");
+    sqlx::query(
+        "insert into identity.tenant_membership
+             (id, tenant_id, human_identity_id, tenant_principal_id, state)
+         values ($1, $2, $3, $4, 'ACTIVE')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(f.tenant)
+    .bind(human)
+    .bind(principal)
+    .execute(pool)
+    .await
+    .expect("建 TenantMembership");
+    principal
 }
 
 /// 取该 Tenant 的 Workspace 关系客体，供清理用。

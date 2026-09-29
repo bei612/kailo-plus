@@ -138,6 +138,35 @@ pub async fn transition_membership(
         Ok(t) => t,
         Err(e) => return unavailable(e),
     };
+    // Tenant 成员进入 REVOKED 之前，他在本 Tenant 的 WorkspaceMembership 必须都已
+    // 收敛出去（`.design/10` §5）：还有建立中、ACTIVE 或撤权中的，就说明 Channel
+    // roster 尚未查证撤出，此时宣布 REVOKED 会让按邀请恢复的同一 Principal 带着
+    // 旧的 Workspace 投影回来。Tenant 已不在 ACTIVE，Workspace 成员加入的准入已
+    // 关门，因此这次判定与随后的 UPDATE 之间不会再长出新的成员关系。
+    if matches!(req.scope, MembershipScope::Tenant) && req.to_state == "REVOKED" {
+        let pending: Result<Option<i32>, _> = sqlx::query_scalar(
+            "select 1 from identity.tenant_membership tm
+             join identity.workspace w on w.tenant_id = tm.tenant_id
+             join identity.workspace_membership wm
+               on wm.workspace_id = w.id and wm.tenant_principal_id = tm.tenant_principal_id
+             where tm.id = $1 and wm.state in ('PROVISIONING', 'ACTIVE', 'REVOKING')
+             limit 1",
+        )
+        .bind(req.membership_id)
+        .fetch_optional(&mut *tx)
+        .await;
+        match pending {
+            Ok(None) => {}
+            Ok(Some(_)) => {
+                tracing::warn!(
+                    membership = %req.membership_id,
+                    "Tenant 成员仍有未收敛的 WorkspaceMembership，不进入 REVOKED"
+                );
+                return StatusCode::CONFLICT.into_response();
+            }
+            Err(e) => return unavailable(e),
+        }
+    }
     let updated = match req.scope {
         MembershipScope::Tenant => sqlx::query!(
             "update identity.tenant_membership

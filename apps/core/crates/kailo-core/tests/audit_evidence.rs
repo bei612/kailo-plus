@@ -4,6 +4,9 @@
 //! 直接写 SpiceDB，BFF 以网关投影的身份 header 调用。三类不可用证据（RESTRICTED、
 //! 存量不可识别种类、Core 原对象不存在）由夹具向只追加的审计表追加事件构造——
 //! 其余用例同样给夹具 Tenant 留下审计行，审计表不可删改。
+//!
+//! 外部权威的证据同样逐种查证：Temporal workflow 按 ID Describe，明确不存在回 404；
+//! 没有查证接口的种类（ZedToken 等）只回 UNVERIFIABLE，不默认可用。
 
 use futures_util::FutureExt;
 use reqwest::Method;
@@ -146,12 +149,23 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &LiveWorkspace)
         "不属于本 Tenant 的 Workspace 不得作为范围"
     );
 
+    // 夹具开通在 Temporal 中留下的真实 workflow：可用性由 Temporal Describe 查证
+    let live_workflow: String = sqlx::query_scalar(
+        "select e ->> 'value' from audit.audit_event, jsonb_array_elements(evidence_refs) e
+         where tenant_id = $1 and e ->> 'kind' = 'TEMPORAL_WORKFLOW_ID'
+         order by occurred_at limit 1",
+    )
+    .bind(fx.tenant)
+    .fetch_one(pool)
+    .await
+    .expect("夹具开通应留下 TEMPORAL_WORKFLOW_ID 证据");
+
     // ---- 2d. Tenant auditor 经 tenant->audit 可解引用 Workspace 事件 ----
     let tenant_view_of_ws = append_event(
         pool,
         fx,
         Some(fx.workspace),
-        json!([{ "kind": "TEMPORAL_WORKFLOW_ID", "value": format!("verify:{}", Uuid::new_v4()) }]),
+        json!([{ "kind": "TEMPORAL_WORKFLOW_ID", "value": live_workflow }]),
     )
     .await;
     let (st, view) = deref(http, e, fx, tenant_view_of_ws, 0).await;
@@ -208,9 +222,13 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &LiveWorkspace)
         ]),
     )
     .await;
-    for (index, reason) in [(0, "RESTRICTED"), (1, "UNRECOGNIZED"), (2, "NOT_FOUND")] {
+    for (index, status, reason) in [
+        (0, reqwest::StatusCode::OK, "RESTRICTED"),
+        (1, reqwest::StatusCode::OK, "UNRECOGNIZED"),
+        (2, reqwest::StatusCode::NOT_FOUND, "NOT_FOUND"),
+    ] {
         let (st, view) = deref(http, e, fx, crafted, index).await;
-        assert_eq!(st, reqwest::StatusCode::OK, "{view}");
+        assert_eq!(st, status, "{view}");
         assert_eq!(view["available"], false, "{view}");
         assert_eq!(view["unavailableReason"], reason, "{view}");
         assert!(
@@ -244,10 +262,68 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &LiveWorkspace)
         ]),
     )
     .await;
-    for (index, available) in [(0, true), (1, true), (2, false)] {
+    for (index, status, available) in [
+        (0, reqwest::StatusCode::OK, true),
+        (1, reqwest::StatusCode::OK, true),
+        (2, reqwest::StatusCode::NOT_FOUND, false),
+    ] {
         let (st, view) = deref(http, e, fx, policies, index).await;
-        assert_eq!(st, reqwest::StatusCode::OK, "{view}");
+        assert_eq!(st, status, "{view}");
         assert_eq!(view["available"], available, "{view}");
+    }
+
+    // ---- 4c. 外部权威逐种查证：Temporal 中不存在的 workflow/run 回 404，
+    //      没有查证接口或无法绑定 workflow 的只回 UNVERIFIABLE，都不回 ref 内容 ----
+    let missing_workflow = format!("kailo:verify:{}:{}:1", fx.tenant, Uuid::new_v4());
+    let missing_run = Uuid::new_v4().to_string();
+    let zed_token = "GhUKEzE3MjcwMDAwMDAwMDAwMDAwMDA=";
+    let temporal = append_event(
+        pool,
+        fx,
+        None,
+        json!([
+            { "kind": "TEMPORAL_WORKFLOW_ID", "value": missing_workflow },
+            { "kind": "TEMPORAL_RUN_ID", "value": missing_run },
+        ]),
+    )
+    .await;
+    let unbound = append_event(
+        pool,
+        fx,
+        None,
+        json!([
+            { "kind": "TEMPORAL_RUN_ID", "value": missing_run },
+            { "kind": "SPICEDB_ZEDTOKEN", "value": zed_token },
+        ]),
+    )
+    .await;
+    for (event, index, status, reason) in [
+        (temporal, 0, reqwest::StatusCode::NOT_FOUND, "NOT_FOUND"),
+        (temporal, 1, reqwest::StatusCode::NOT_FOUND, "NOT_FOUND"),
+        (unbound, 0, reqwest::StatusCode::OK, "UNVERIFIABLE"),
+        (unbound, 1, reqwest::StatusCode::OK, "UNVERIFIABLE"),
+    ] {
+        let (st, view) = deref(http, e, fx, event, index).await;
+        assert_eq!(st, status, "{view}");
+        common::assert_contract::<contracts::EvidenceView>(&view, "EvidenceView");
+        assert_eq!(view["available"], false, "{view}");
+        assert_eq!(view["unavailableReason"], reason, "{view}");
+        assert_eq!(
+            view["authority"],
+            if index == 1 && event == unbound {
+                "SPICEDB"
+            } else {
+                "TEMPORAL"
+            }
+        );
+        let text = view.to_string();
+        assert!(
+            view.get("stableId").is_none()
+                && !text.contains(&missing_workflow)
+                && !text.contains(&missing_run)
+                && !text.contains(zed_token),
+            "不可用时不得回 ref 内容：{view}"
+        );
     }
 
     // ---- 5. 别的 Tenant 的事件：与不存在同样 404 ----
@@ -286,7 +362,7 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &LiveWorkspace)
         pool,
         fx,
         Some(fx.workspace),
-        json!([{ "kind": "TEMPORAL_WORKFLOW_ID", "value": format!("verify:{}", Uuid::new_v4()) }]),
+        json!([{ "kind": "TEMPORAL_WORKFLOW_ID", "value": live_workflow }]),
     )
     .await;
     let (st, page) = bff(

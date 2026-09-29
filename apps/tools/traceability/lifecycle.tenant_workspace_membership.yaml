@@ -43,5 +43,5 @@ release:
     - name: kailo-worker
       digest: sha256:a7d4677019ad31761630b563c98149b3bc234eb26fce25f36cf6a1c736be96f7
     - name: upstream-buzz
-      digest: sha256:01927d9475e8690087780f9b08194b08eb10bb0aa758d5aad45b76afd0bcbf46
+      digest: sha256:6f08c2a299e2b4789377672976ba6ede3050eeace9ce67c5452710b52aaa6d48
   gate: shipped

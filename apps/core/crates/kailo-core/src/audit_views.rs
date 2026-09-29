@@ -5,8 +5,9 @@
 //! 每次请求都以 FullyConsistent 重新判定——刚被撤掉 auditor 的人不能再读到。
 //!
 //! 列表只给证据种类，不给稳定 ID。稳定 ID 经单条解引用取得，每次解引用都按该
-//! 事件自己的 scope 重新授权；原证据已不存在、敏感级别未获授权或存量种类不可识别时
-//! 只回不可用，不回退展示 ref 内容。
+//! 事件自己的 scope 重新授权，并向该种类的权威源查证原对象仍在：明确不存在回 404，
+//! 敏感级别未获授权、存量种类不可识别或权威源无从查证时回 200 的不可用视图，权威源
+//! 不可达回 503。不可用时不回退展示 ref 内容。
 
 use axum::{
     extract::{Path, Query, State},
@@ -232,60 +233,186 @@ fn unavailable(reason: EvidenceUnavailableReason, e: Option<&Evidence>) -> Evide
     }
 }
 
-/// Core 自有证据的原对象是否仍在当前 Tenant 中。外部权威（Temporal、SpiceDB、Buzz、
-/// OIDC）的证据只是其权威源中的稳定 ID，这里不代它们判定存在性。
-async fn core_evidence_exists(
+/// 一条证据在其权威源中的存在性结论。
+#[derive(Debug, PartialEq, Eq)]
+enum Existence {
+    /// 权威源确认原对象仍在
+    Present,
+    /// 权威源明确答复原对象不存在（含已删除、已超出 retention）
+    Absent,
+    /// 权威源没有可供 BFF 按该 ID 查证存在性的接口，或该 ID 无法绑定到可查的对象。
+    /// 不能证实存在就不展示，也不说成「不存在」
+    Unverifiable,
+}
+
+/// 查证失败的原因；它是结果不明，调用方回 503，不当成存在或不存在。
+#[derive(Debug, thiserror::Error)]
+enum ExistenceError {
+    #[error("Core 库: {0}")]
+    Db(#[from] sqlx::Error),
+    #[error("Temporal: {0}")]
+    Temporal(#[from] crate::temporal::TemporalError),
+    #[error("SpiceDB: {0}")]
+    SpiceDb(#[from] crate::spicedb::SpiceDbError),
+}
+
+/// 同一事件中 run ID 所属的 workflow ID：事件内 workflow 种类的证据恰好只指向一个
+/// workflow 时才能绑定；没有或不止一个时 run ID 无从定位。
+fn sibling_workflow(refs: &Value) -> Option<String> {
+    let mut found: Option<String> = None;
+    for e in refs.as_array()?.iter().filter_map(Evidence::parse) {
+        if matches!(
+            e.kind,
+            EvidenceKind::TemporalWorkflowId | EvidenceKind::ApprovalWorkflowId
+        ) {
+            match &found {
+                None => found = Some(e.value),
+                Some(w) if *w == e.value => {}
+                Some(_) => return None,
+            }
+        }
+    }
+    found
+}
+
+/// `SPICEDB_RELATIONSHIP` 的值：`<type>:<id>#<relation>@principal:<subject>`。
+fn parse_relationship(value: &str) -> Option<crate::spicedb::Relationship> {
+    let (object, subject) = value.split_once('@')?;
+    let (object, relation) = object.split_once('#')?;
+    let (object_type, object_id) = object.split_once(':')?;
+    let subject_principal = subject.strip_prefix("principal:")?;
+    [object_type, object_id, relation, subject_principal]
+        .iter()
+        .all(|p| !p.is_empty())
+        .then(|| crate::spicedb::Relationship {
+            object_type: object_type.to_owned(),
+            object_id: object_id.to_owned(),
+            relation: relation.to_owned(),
+            subject_principal: subject_principal.to_owned(),
+        })
+}
+
+/// 按证据种类向其权威源查证原对象是否仍在（DD-52、V-SCN-43）。
+///
+/// - Core 表：按 ID（与版本）查当前 Tenant 的行；
+/// - Temporal：workflow 种类按固定 ID Describe；run 种类经同事件的 workflow ID
+///   Describe，只在其当前 run 或首次 run 与之相等时确认存在；
+/// - SpiceDB 关系：FullyConsistent 读该条关系；
+/// - SpiceDB ZedToken 是 revision 而非可查对象，Buzz 事件与公钥在 BFF 路径上没有
+///   按 ID 的查证接口：一律 [`Existence::Unverifiable`]。
+///
+/// match 不设通配分支：新增种类必须在这里给出结论，不会默认成可用。
+async fn evidence_existence(
     state: &BffState,
     tenant_id: Uuid,
+    refs: &Value,
     e: &Evidence,
-) -> Result<bool, sqlx::Error> {
-    // 审批策略属平台 Catalog，按 (id, version) 核对；存量把版本写在值里（`<id>@<version>`），
-    // 新写入用 version 字段，两种形状指向同一条策略
-    if e.kind == EvidenceKind::ApprovalPolicy {
-        let (id, version) = match (e.value.split_once('@'), e.version) {
-            (Some((id, v)), None) => (id, v.parse::<i32>().ok()),
-            (None, Some(v)) => (e.value.as_str(), i32::try_from(v).ok()),
-            _ => return Ok(false),
-        };
-        let (Ok(id), Some(version)) = (Uuid::parse_str(id), version) else {
-            return Ok(false);
-        };
-        return sqlx::query_scalar::<_, i32>(
-            "select 1 from catalog.approval_policy where id = $1 and version = $2",
-        )
-        .bind(id)
-        .bind(version)
-        .fetch_optional(&state.pool)
-        .await
-        .map(|row| row.is_some());
-    }
+) -> Result<Existence, ExistenceError> {
+    use EvidenceKind as K;
+    let present = |found: bool| {
+        if found {
+            Existence::Present
+        } else {
+            Existence::Absent
+        }
+    };
     let sql = match e.kind {
-        EvidenceKind::ActionExecutionId
-        | EvidenceKind::AdmitActionExecutionId
-        | EvidenceKind::OriginalActionExecutionId => {
+        // 审批策略属平台 Catalog，按 (id, version) 核对；存量把版本写在值里
+        // （`<id>@<version>`），新写入用 version 字段，两种形状指向同一条策略
+        K::ApprovalPolicy => {
+            let (id, version) = match (e.value.split_once('@'), e.version) {
+                (Some((id, v)), None) => (id, v.parse::<i32>().ok()),
+                (None, Some(v)) => (e.value.as_str(), i32::try_from(v).ok()),
+                _ => return Ok(Existence::Absent),
+            };
+            let (Ok(id), Some(version)) = (Uuid::parse_str(id), version) else {
+                return Ok(Existence::Absent);
+            };
+            let row = sqlx::query_scalar::<_, i32>(
+                "select 1 from catalog.approval_policy where id = $1 and version = $2",
+            )
+            .bind(id)
+            .bind(version)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(row.is_some()));
+        }
+        // 部署引导证据的值是该部署服务主体的 audience，它属于 Catalog 而非当前 Tenant
+        K::DeploymentBootstrap => {
+            let row = sqlx::query_scalar::<_, i32>(
+                "select 1 from identity.service_principal where audience = $1",
+            )
+            .bind(&e.value)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(row.is_some()));
+        }
+        K::TemporalWorkflowId | K::ApprovalWorkflowId => {
+            return Ok(present(state.temporal.describe(&e.value).await?.is_some()));
+        }
+        K::TemporalRunId | K::TemporalFirstRunId => {
+            let Some(workflow_id) = sibling_workflow(refs) else {
+                return Ok(Existence::Unverifiable);
+            };
+            // workflow 已不存在时其任何 run 都不在：更早的 run 只会更早超出 retention
+            return Ok(match state.temporal.describe(&workflow_id).await? {
+                None => Existence::Absent,
+                Some(o) if o.run_id == e.value || o.first_run_id == e.value => Existence::Present,
+                // Describe 只看最新一次 run；链中更早的 run 或复用 ID 之前的 execution
+                // 可能仍在，也可能不在，这里不猜
+                Some(_) => Existence::Unverifiable,
+            });
+        }
+        K::SpicedbRelationship => {
+            let Some(rel) = parse_relationship(&e.value) else {
+                return Ok(Existence::Absent);
+            };
+            let found = state
+                .governance
+                .spicedb
+                .read(
+                    &crate::spicedb::RelationshipFilter {
+                        object_type: &rel.object_type,
+                        object_id: Some(&rel.object_id),
+                        relation: Some(&rel.relation),
+                        subject_principal: Some(&rel.subject_principal),
+                    },
+                    RELATIONSHIP_READ_PAGE,
+                )
+                .await?;
+            return Ok(present(found.contains(&rel)));
+        }
+        K::SpicedbZedtoken
+        | K::BuzzEventId
+        | K::BuzzPubkey
+        | K::ExternalSubjectSha256
+        | K::PlatformSessionId => return Ok(Existence::Unverifiable),
+        K::ActionExecutionId | K::AdmitActionExecutionId | K::OriginalActionExecutionId => {
             "select 1 from admission.action_execution where id = $1 and tenant_id = $2"
         }
-        EvidenceKind::TenantInvitationId => {
+        K::TenantInvitationId => {
             "select 1 from identity.tenant_invitation where id = $1 and tenant_id = $2"
         }
-        EvidenceKind::TenantMembershipId => {
+        K::TenantMembershipId => {
             "select 1 from identity.tenant_membership where id = $1 and tenant_id = $2"
         }
-        EvidenceKind::SecretRefRehomeId => {
+        K::SecretRefRehomeId => {
             "select 1 from admission.secret_ref_rehome where id = $1 and tenant_id = $2"
         }
-        _ => return Ok(true),
     };
     let Ok(id) = Uuid::parse_str(&e.value) else {
-        return Ok(false);
+        return Ok(Existence::Absent);
     };
-    sqlx::query_scalar::<_, i32>(sql)
+    let row = sqlx::query_scalar::<_, i32>(sql)
         .bind(id)
         .bind(tenant_id)
         .fetch_optional(&state.pool)
-        .await
-        .map(|row| row.is_some())
+        .await?;
+    Ok(present(row.is_some()))
 }
+
+/// 读一条完全限定的关系：至多一行，页大小只需让「读满一页」不成立。
+const RELATIONSHIP_READ_PAGE: u32 = 2;
 
 /// `GET /api/v1/audit/events/{id}/evidence/{index}`：单条证据的解引用。
 pub async fn dereference_evidence(
@@ -335,17 +462,28 @@ pub async fn dereference_evidence(
         ))
         .into_response();
     }
-    match core_evidence_exists(&state, ctx.tenant_id, &evidence).await {
-        Ok(true) => {}
-        Ok(false) => {
+    match evidence_existence(&state, ctx.tenant_id, &refs, &evidence).await {
+        Ok(Existence::Present) => {}
+        // 原证据明确不存在：404，正文仍是只含原因的不可用视图
+        Ok(Existence::Absent) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(unavailable(
+                    EvidenceUnavailableReason::NotFound,
+                    Some(&evidence),
+                )),
+            )
+                .into_response()
+        }
+        Ok(Existence::Unverifiable) => {
             return Json(unavailable(
-                EvidenceUnavailableReason::NotFound,
+                EvidenceUnavailableReason::Unverifiable,
                 Some(&evidence),
             ))
             .into_response()
         }
         Err(e) => {
-            tracing::warn!(error = %e, "核对证据原对象失败");
+            tracing::warn!(error = %e, kind = ?evidence.kind, "核对证据原对象失败");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     }
@@ -359,4 +497,64 @@ pub async fn dereference_evidence(
         version: evidence.version,
     })
     .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn run_id_binds_only_to_a_single_workflow_in_the_same_event() {
+        let one = json!([
+            { "kind": "TEMPORAL_WORKFLOW_ID", "value": "wf-1" },
+            { "kind": "TEMPORAL_RUN_ID", "value": "run-1" },
+        ]);
+        assert_eq!(sibling_workflow(&one).as_deref(), Some("wf-1"));
+        let approval = json!([
+            { "kind": "APPROVAL_WORKFLOW_ID", "value": "ap-1" },
+            { "kind": "TEMPORAL_RUN_ID", "value": "run-1" },
+        ]);
+        assert_eq!(sibling_workflow(&approval).as_deref(), Some("ap-1"));
+        let repeated = json!([
+            { "kind": "TEMPORAL_WORKFLOW_ID", "value": "wf-1" },
+            { "kind": "APPROVAL_WORKFLOW_ID", "value": "wf-1" },
+        ]);
+        assert_eq!(sibling_workflow(&repeated).as_deref(), Some("wf-1"));
+        let two = json!([
+            { "kind": "TEMPORAL_WORKFLOW_ID", "value": "wf-1" },
+            { "kind": "APPROVAL_WORKFLOW_ID", "value": "ap-1" },
+            { "kind": "TEMPORAL_RUN_ID", "value": "run-1" },
+        ]);
+        assert_eq!(
+            sibling_workflow(&two),
+            None,
+            "两个 workflow 时 run 无从定位"
+        );
+        let none = json!([{ "kind": "TEMPORAL_RUN_ID", "value": "run-1" }]);
+        assert_eq!(sibling_workflow(&none), None);
+    }
+
+    #[test]
+    fn relationship_evidence_parses_only_the_written_shape() {
+        let rel = parse_relationship("tenant:t-1#manage@principal:p-1").expect("规范形状");
+        assert_eq!(
+            (
+                rel.object_type.as_str(),
+                rel.object_id.as_str(),
+                rel.relation.as_str(),
+                rel.subject_principal.as_str()
+            ),
+            ("tenant", "t-1", "manage", "p-1")
+        );
+        for bad in [
+            "tenant:t-1#manage@tenant:t-2",
+            "tenant:t-1@principal:p-1",
+            "tenant#manage@principal:p-1",
+            "tenant:#manage@principal:p-1",
+            "tenant:t-1#manage@principal:",
+        ] {
+            assert!(parse_relationship(bad).is_none(), "{bad}");
+        }
+    }
 }

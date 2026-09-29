@@ -668,6 +668,132 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World) {
     })
     .await;
 
+    // ---- 12b. Tenant 撤权连带 WorkspaceMembership；按邀请恢复不复活旧投影
+    //          （.design/10 §5、V-SCN-34）----
+    //
+    // B 先加入一个 Workspace；Tenant 撤权收敛后，他的 WorkspaceMembership 必须随之
+    // REVOKED、workspace 关系一并撤掉。恢复沿用同一 Principal，但 Workspace 成员
+    // 关系要重新授权才有，不能随 Tenant 成员一起回来。
+    let ws_slug = format!("w{}", &Uuid::new_v4().to_string()[..8]);
+    let (st, body) = submit(
+        http,
+        e,
+        a,
+        json!({"actionKey":"workspace.create","idempotencyKey":Uuid::new_v4(),"slug":ws_slug,"name":"撤权核验"}),
+    )
+    .await;
+    assert!(st.is_success(), "{body}");
+    let ws_ae = Uuid::parse_str(body["actionExecutionId"].as_str().unwrap()).unwrap();
+    let ws: Uuid =
+        sqlx::query_scalar("select target_id from admission.action_execution where id = $1")
+            .bind(ws_ae)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    until(e, "Workspace ACTIVE", || async {
+        (state_of(pool, "identity.workspace", ws).await == "ACTIVE").then_some(())
+    })
+    .await;
+    let ws_obj = format!("workspace:{ws}");
+    let (st, body) = submit(
+        http,
+        e,
+        a,
+        json!({"actionKey":"workspace.member.add","idempotencyKey":Uuid::new_v4(),"workspaceId":ws,"principalId":b_principal}),
+    )
+    .await;
+    assert!(st.is_success(), "{body}");
+    let b_ws_membership: Uuid = sqlx::query_scalar(
+        "select id from identity.workspace_membership where workspace_id = $1 and tenant_principal_id = $2",
+    )
+    .bind(ws)
+    .bind(b_principal)
+    .fetch_one(pool)
+    .await
+    .expect("B 的 WorkspaceMembership");
+    until(e, "B 的 WorkspaceMembership ACTIVE", || async {
+        (state_of(pool, "identity.workspace_membership", b_ws_membership).await == "ACTIVE")
+            .then_some(())
+    })
+    .await;
+    assert!(common::zed_has(e, &ws_obj, "member", &subj(b_principal)));
+
+    // 撤 B 的 TenantMembership：A 发起，C（临时授 admin）批准——职责分离只约束发起者
+    let (st, body) = submit(
+        http,
+        e,
+        a,
+        json!({"actionKey":"tenant.member.revoke","idempotencyKey":Uuid::new_v4(),"principalId":b_principal}),
+    )
+    .await;
+    assert_eq!(st, reqwest::StatusCode::ACCEPTED, "{body}");
+    let revoke_wf = body["approvalWorkflowId"].as_str().unwrap().to_owned();
+    until(e, "撤权审批 WAITING", || async {
+        (approval_status(pool, &revoke_wf).await.as_deref() == Some("WAITING")).then_some(())
+    })
+    .await;
+    c_admin();
+    let (st, body) = decide(http, e, &w.c.subject, &revoke_wf, "APPROVE").await;
+    assert_eq!(st, reqwest::StatusCode::OK, "{body}");
+    until(e, "B 的 TenantMembership REVOKED", || async {
+        (state_of(pool, "identity.tenant_membership", b_membership).await == "REVOKED")
+            .then_some(())
+    })
+    .await;
+    c_plain();
+    assert_eq!(
+        state_of(pool, "identity.workspace_membership", b_ws_membership).await,
+        "REVOKED",
+        "Tenant 撤权没有连带收敛 WorkspaceMembership"
+    );
+    assert!(
+        !common::zed_has(e, &ws_obj, "member", &subj(b_principal)),
+        "Tenant 撤权后 workspace#member 仍在"
+    );
+
+    // 恢复：再邀请、B 兑换、A 确认 → 同一 membership 回到 ACTIVE
+    let (inv_b2, cred_b2, _) = invite(http, e, a, "Bob back").await;
+    credentials.push(cred_b2.clone());
+    let (st, body) = redeem(http, e, &b_subject, &cred_b2, "Bob").await;
+    assert_eq!(st, reqwest::StatusCode::OK, "{body}");
+    let (b2_membership, b2_admit, b2_principal) = redemption_of(pool, inv_b2).await;
+    assert_eq!(b2_membership, b_membership, "恢复应复用原 membership");
+    assert_eq!(b2_principal, b_principal, "恢复应沿用原 Principal");
+    let wf_b2 = approval_of(pool, b2_admit).await;
+    until(e, "恢复审批 WAITING", || async {
+        (approval_status(pool, &wf_b2).await.as_deref() == Some("WAITING")).then_some(())
+    })
+    .await;
+    let (st, body) = decide(http, e, a, &wf_b2, "APPROVE").await;
+    assert_eq!(st, reqwest::StatusCode::OK, "{body}");
+    until(e, "B 恢复为 ACTIVE", || async {
+        (state_of(pool, "identity.tenant_membership", b_membership).await == "ACTIVE").then_some(())
+    })
+    .await;
+    assert_eq!(
+        state_of(pool, "identity.workspace_membership", b_ws_membership).await,
+        "REVOKED",
+        "按邀请恢复复活了旧的 WorkspaceMembership"
+    );
+    assert!(
+        !common::zed_has(e, &ws_obj, "member", &subj(b_principal)),
+        "恢复后 workspace#member 不应存在"
+    );
+    let (st, list) = bff(
+        http,
+        e,
+        &b_subject,
+        reqwest::Method::GET,
+        "/api/v1/workspaces",
+        None,
+    )
+    .await;
+    assert_eq!(st, reqwest::StatusCode::OK, "{list}");
+    assert!(
+        !list.to_string().contains(&ws.to_string()),
+        "恢复后的 B 仍能看到旧 Workspace：{list}"
+    );
+
     // ---- 13. 凭据不进库、审计或日志 ----
     for cred in &credentials {
         let leaks: i64 = sqlx::query_scalar(

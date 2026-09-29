@@ -21,6 +21,13 @@ const ComponentTaskKind = "ComponentTaskWorkflow"
 // GetVersion 的 changeID。一经发布即不可改名、不可复用：已录制的 history 里记着它。
 const changeTenantRevocationAllRelations = "tenant-revocation-all-relations"
 
+// Tenant 撤权连带收敛该成员的 WorkspaceMembership（.design/10 §5）。
+const changeTenantRevocationWorkspaceMemberships = "tenant-revocation-workspace-memberships"
+
+// Workspace 撤权撤掉该 Principal 在这个 Workspace 上的全部关系，含 workspace#admin
+// （DD-82、.design/10 §5）。
+const changeWorkspaceRevocationAllRelations = "workspace-revocation-all-relations"
+
 // MembershipTarget 是 Workflow 的冻结输入（DD-45）。
 //
 // 每个字段都是冻结值：Workflow 运行中不得更换 Tenant、Workspace、target type
@@ -34,6 +41,16 @@ type MembershipTarget struct {
 	SubjectPrincipalID string `json:"subjectPrincipalId"`
 	// 关系客体的 ID：Scope=TENANT 时是 tenant_id，=WORKSPACE 时是 workspace_id
 	RelationObjectID string `json:"relationObjectId"`
+	// 只有 Tenant 撤权才有：Core 在启动时冻结的、此人仍在 REVOKING 的
+	// WorkspaceMembership。它们随同这条链撤 Channel roster 并推进到 REVOKED。
+	WorkspaceMemberships []WorkspaceMembershipRef `json:"workspaceMemberships,omitempty"`
+}
+
+// WorkspaceMembershipRef 是 Tenant 撤权连带收敛的一个 WorkspaceMembership。
+type WorkspaceMembershipRef struct {
+	MembershipID      string `json:"membershipId"`
+	MembershipVersion int32  `json:"membershipVersion"`
+	WorkspaceID       string `json:"workspaceId"`
 }
 
 // ScopeTarget 是 Tenant/Workspace 生命周期的冻结输入。
@@ -378,18 +395,33 @@ func membershipLifecycle(
 	// Tenant 撤权撤掉该 Principal 在本 Tenant 的全部 tenant/workspace 关系，不只是
 	// member：角色（DD-82）也是 relationship，只撤 member 会让失权者仍持有 admin。
 	// 行为变化以 GetVersion 门控：在途与已录制的旧 history 走原来那一步。
-	fullRevocation := false
-	if m.Scope == "TENANT" && want == activities.Absent {
-		fullRevocation = workflow.GetVersion(ctx, changeTenantRevocationAllRelations,
-			workflow.DefaultVersion, 1) == 1
-	}
-	if fullRevocation {
-		if err := t.step(func(ao workflow.Context) workflow.Future {
-			return workflow.ExecuteActivity(ao, (*activities.SpiceDB).RevokeSubject,
-				activities.SubjectScope{
+	// Workspace 撤权同理：成员关系之外，此人在该 Workspace 上的角色也是
+	// relationship，只撤 member 会让已撤成员凭 workspace#admin 继续得到 manage。
+	var revokeScope *activities.SubjectScope
+	if want == activities.Absent {
+		switch m.Scope {
+		case "TENANT":
+			if workflow.GetVersion(ctx, changeTenantRevocationAllRelations,
+				workflow.DefaultVersion, 1) == 1 {
+				revokeScope = &activities.SubjectScope{
 					TenantID:           m.RelationObjectID,
 					SubjectPrincipalID: m.SubjectPrincipalID,
-				})
+				}
+			}
+		case "WORKSPACE":
+			if workflow.GetVersion(ctx, changeWorkspaceRevocationAllRelations,
+				workflow.DefaultVersion, 1) == 1 {
+				revokeScope = &activities.SubjectScope{
+					WorkspaceID:        m.RelationObjectID,
+					SubjectPrincipalID: m.SubjectPrincipalID,
+				}
+			}
+		}
+	}
+	if revokeScope != nil {
+		scope := *revokeScope
+		if err := t.step(func(ao workflow.Context) workflow.Future {
+			return workflow.ExecuteActivity(ao, (*activities.SpiceDB).RevokeSubject, scope)
 		}, nil); err != nil {
 			return t.fail(err)
 		}
@@ -404,6 +436,20 @@ func membershipLifecycle(
 			}, want)
 	}, nil); err != nil {
 		return t.fail(err)
+	}
+
+	// 1b. Tenant 撤权连带的 WorkspaceMembership：SpiceDB 关系已由上一步按主体
+	//     全部撤掉并查证；这里逐个撤 Channel roster，查证后推进到 REVOKED。必须在
+	//     Tenant 层 roster 之前：那一步会把此人的 BuzzIdentityBinding 置 REVOKED，
+	//     之后就找不到要从 Channel 移出的钥匙了。
+	if revokeScope != nil && m.Scope == "TENANT" &&
+		workflow.GetVersion(ctx, changeTenantRevocationWorkspaceMemberships,
+			workflow.DefaultVersion, 1) == 1 {
+		for _, wm := range m.WorkspaceMemberships {
+			if err := revokeWorkspaceMembership(ctx, t, wm); err != nil {
+				return t.fail(err)
+			}
+		}
 	}
 
 	// 2. Buzz roster：协作数据平面的准入执行点。签名在 Core，因为 CONTROL
@@ -442,6 +488,39 @@ func membershipLifecycle(
 
 	// 终态投影失败就不算 terminal（06 §3.1）：工作台上看不到的完成不是完成。
 	return t.complete()
+}
+
+// revokeWorkspaceMembership 把 Tenant 撤权连带的一个 WorkspaceMembership 从 Channel
+// roster 撤出并查证，再让 Core 把它从 REVOKING 推进到 REVOKED。顺序与成员链相同：
+// 投影查证在前，状态跃迁在后。
+func revokeWorkspaceMembership(ctx workflow.Context, t *task, wm WorkspaceMembershipRef) error {
+	if err := t.step(func(ao workflow.Context) workflow.Future {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ProjectBuzzRoster,
+			activities.BuzzProjectionInput{
+				Scope:             "WORKSPACE",
+				MembershipID:      wm.MembershipID,
+				MembershipVersion: wm.MembershipVersion,
+				Presence:          "ABSENT",
+			})
+	}, nil); err != nil {
+		return err
+	}
+	var out activities.TransitionOutput
+	if err := t.step(func(ao workflow.Context) workflow.Future {
+		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).TransitionMembership,
+			activities.TransitionInput{
+				Scope:        "WORKSPACE",
+				MembershipID: wm.MembershipID,
+				FromVersion:  wm.MembershipVersion,
+				ToState:      "REVOKED",
+				WorkflowID:   workflow.GetInfo(ctx).WorkflowExecution.ID,
+			})
+	}, &out); err != nil {
+		return err
+	}
+	workflow.GetLogger(ctx).Info("连带的 Workspace 成员已撤", "workspace", wm.WorkspaceID,
+		"state", out.State, "version", out.Version)
+	return nil
 }
 
 // tenantLifecycle 建立一个 Tenant 的协作面（`.design/09` 第 3 步）。

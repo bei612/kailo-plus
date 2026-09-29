@@ -515,7 +515,12 @@ async fn copy_once(state: &ServiceState, r: &Rehome) -> Result<String, Response>
     {
         Ok(1) => observe_copy(state, r).await,
         // 返回值不是 1、网络失联或写拒绝，均不能假定目标可读；下一轮只查证。
-        _ => Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
+        // 滞留的 COPY_UNKNOWN 由对账器按状态计数并在超期时告警。
+        other => {
+            tracing::warn!(rehome = %r.id, result = ?other.map_err(|e| e.to_string()),
+                "归位目标写入结果不明，保持 COPY_UNKNOWN 只查证");
+            Err(StatusCode::SERVICE_UNAVAILABLE.into_response())
+        }
     }
 }
 
@@ -578,6 +583,23 @@ async fn cutover(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
     if !actor_still_authorized(state, r).await? {
         return discard_copy(state, r).await;
     }
+    // 偏离冻结值是单调事实（generation 只增）。先于目标查证判定：丢弃已销毁
+    // 目标但未提交 FAILED 的一轮，下一轮不能卡在对已销毁版本的查证上。
+    let current: Option<(String, i32, String, i32, String)> = sqlx::query_as(
+        "select private_key_secret_ref, private_key_secret_version,
+                private_key_secret_audience, version, state
+         from identity.buzz_identity_binding where pubkey = $1 and tenant_id = $2",
+    )
+    .bind(&r.identity_pubkey)
+    .bind(r.tenant_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(unavailable)?;
+    if let Some(current) = current.as_ref() {
+        if !binding_matches_frozen(current, r) {
+            return discard_copy(state, r).await;
+        }
+    }
     audit_gate(state).await?;
     observe_target_without_transition(state, r).await?;
     let mut tx = state.pool.begin().await.map_err(unavailable)?;
@@ -592,15 +614,10 @@ async fn cutover(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
     .fetch_optional(&mut *tx)
     .await
     .map_err(unavailable)?;
-    let Some((locator, version, audience, generation, binding_state)) = locked else {
+    let Some(locked) = locked else {
         return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
     };
-    if locator != r.old_locator
-        || version != r.old_version
-        || audience != r.old_audience
-        || generation != r.expected_binding_version
-        || binding_state != "ACTIVE"
-    {
+    if !binding_matches_frozen(&locked, r) {
         // binding 已偏离冻结值：这次归位不可能再切换，不重新冻结。
         tx.rollback().await.map_err(unavailable)?;
         return discard_copy(state, r).await;
@@ -683,6 +700,15 @@ async fn cutover(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
     audit(&mut tx, r, "cutover", "RECONCILIATION", "SWITCHED").await?;
     tx.commit().await.map_err(unavailable)?;
     Ok("SWITCHED".into())
+}
+
+fn binding_matches_frozen(binding: &(String, i32, String, i32, String), r: &Rehome) -> bool {
+    let (locator, version, audience, generation, state) = binding;
+    *locator == r.old_locator
+        && *version == r.old_version
+        && *audience == r.old_audience
+        && *generation == r.expected_binding_version
+        && state == "ACTIVE"
 }
 
 /// DD-85：COPIED 之后切换被确定拒绝。目标 locator 从未被 binding 引用，销毁其

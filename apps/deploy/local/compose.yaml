@@ -227,7 +227,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz@sha256:01927d9475e8690087780f9b08194b08eb10bb0aa758d5aad45b76afd0bcbf46
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz@sha256:6f08c2a299e2b4789377672976ba6ede3050eeace9ce67c5452710b52aaa6d48
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -246,7 +246,7 @@ services:
   # 镜像是打过 SS-BUZ-GOVERNANCE 补丁的构建（upstream-patches/buzz），不是上游
   # 发布镜像：上游的 NIP-29 权限比 Kailo 宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz@sha256:01927d9475e8690087780f9b08194b08eb10bb0aa758d5aad45b76afd0bcbf46
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz@sha256:6f08c2a299e2b4789377672976ba6ede3050eeace9ce67c5452710b52aaa6d48
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
@@ -490,7 +490,7 @@ services:
   buzz-web:
     # digest 与 upstream-patches/buzz-web/baseline.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:cb1baee20ae884dda35b2117480b66e95b769fb203ea74a457b9fcc578737919
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/upstream-buzz-web@sha256:272eda1135ca6b78d51da47c5e0074756bc50c776686756eace8a1141a3f0953
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}

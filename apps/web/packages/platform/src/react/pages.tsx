@@ -180,6 +180,7 @@ export function AuditPage() {
 }
 
 const isForbidden = (error: unknown) => error instanceof BffError && error.status === 403;
+const isNotFound = (error: unknown) => error instanceof BffError && error.status === 404;
 
 /** 200 回应也要合契约才用；缺字段的页当作读取失败，不当作「没有事件」。 */
 function isAuditEventPage(page: unknown): page is AuditEventPage {
@@ -436,14 +437,23 @@ function EvidenceDetail({ eventId, index }: { eventId: string; index: number }) 
   );
   if (state.status === "pending")
     return <span role="status" className="text-xs text-muted-foreground">{t("platform.loading")}</span>;
-  if (state.status === "error")
-    return isForbidden(state.error) ? (
-      <span role="alert" className="text-xs">{t("platform.audit.scope.denied")}</span>
-    ) : (
+  if (state.status === "error") {
+    if (isForbidden(state.error))
+      return <span role="alert" className="text-xs">{t("platform.audit.scope.denied")}</span>;
+    // 404 是确定结论：原证据（或事件、位置）已不存在，重试不会改变它，只显示不可用。
+    // 503 与网络错误是结果不明，才给重试。
+    if (isNotFound(state.error))
+      return (
+        <span className="text-xs text-muted-foreground" data-testid="evidence-unavailable">
+          {t("platform.audit.scope.notFound")}
+        </span>
+      );
+    return (
       <span role="alert" className="text-xs">
         {t("platform.loadFailed")} <Button onClick={reload}>{t("platform.retry")}</Button>
       </span>
     );
+  }
   const view: Partial<EvidenceView> = state.data && typeof state.data === "object" ? state.data : {};
   if (view.available === true && typeof view.stableId === "string") {
     return (

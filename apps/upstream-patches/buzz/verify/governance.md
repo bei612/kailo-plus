@@ -1,7 +1,8 @@
 # SS-BUZ-GOVERNANCE 接缝证据
 
-对应 `SF-BUZ-37`、`SF-BUZ-38`、`DD-80`。补丁：`patches/0001-owner-governed-communities.patch`，
-基于 `779af8886caae1317b4de962082429867ab61503`，由 `tools/build-upstream.sh buzz` 构建。
+对应 `SF-BUZ-37`、`SF-BUZ-38`、`SF-BUZ-45`、`DD-80`、`DD-106`。补丁：`patches/0001-owner-governed-communities.patch`
+与 `patches/0002-governed-relay-workflows-off.patch`，基于 `779af8886caae1317b4de962082429867ab61503`，由
+`tools/build-upstream.sh buzz` 构建。
 
 ## 为什么必须改上游
 
@@ -34,6 +35,24 @@ Kailo 宽，且 `RelayConfig` 没有收紧它的开关（`SF-BUZ-37`）。对一
 
 未设定时补丁不改变任何行为。空值合法，表示成员什么都不能发。
 
+### 同一开关关闭 Buzz 自带 workflow（0002，DD-106）
+
+上游的 workflow 引擎在每次启动时无条件装配（`SF-BUZ-45`）：只挡成员发布命令 kind 不够，Community
+owner 仍可定义与触发，cron 循环、成员 kind:9 触发 `message_posted` 与只凭 secret 的 `POST /hooks/{id}`
+都可达。开关设定时：
+
+| 面 | 行为 | 实现 |
+|---|---|---|
+| 引擎 | 不构造 `WorkflowEngine`，因而没有 `RelayActionSink`、cron 循环，持久化事件不调用 `on_event` | `AppState.workflow_engine` 改为 `Option`；`main.rs` 只在未治理时构造、挂 sink、起 cron；`event.rs::dispatch_persistent_event_inner` 无引擎即返回；命令执行器与 webhook 处理器无引擎即拒绝 |
+| ingest | 30620、46020、46030、46031 与 `a` 标签指向 30620 的 kind:5 一律拒绝：`relay workflows are disabled in this community`，owner 也一样 | `governance::check_workflow_event`，在 `ingest_event_inner` 验签之后、owner 判定之前，因此早于命令分支与 `handle_a_tag_deletion` |
+| HTTP | `/workflows/{id}/runs`、`/workflows/{id}/runs/{run_id}/approvals`、`/hooks/{id}` 不注册 | `router.rs::build_router` 只在未治理时挂这三条 |
+| 启动自检 | 三项逐项确认，任一不成立 Relay 退出、不监听 | `governance::verify_workflows_disabled`，`main.rs` 在 `build_router` 之后、绑定端口之前调用 |
+
+启动自检对要上线的那个 router 发探针：用路由不接受的方法（`GET /hooks/…`、`POST /workflows/…`），已注册
+答 405、未注册答 404，结果不依赖处理器或数据库。探针以 loopback 来源发出：未匹配的请求会经过内部 git
+policy 路由的 localhost-only 层，非 loopback 来源一律得到 403——这是上游对所有未注册路径的行为，因此从
+容器外探 `/hooks/{id}` 看到的是 403，与探任一不存在的路径相同，从容器内（loopback）看到的是 404。
+
 Kailo 的取值是已交付能力所需的 kind。一期只有 `9`：Channel 消息，附件以 `imeta` 随消息发出。
 列表每多一个 kind，就多开放一种成员可发布的协作能力，因此它随 `apps/05` §7 的能力分配一起变更。
 
@@ -61,6 +80,16 @@ Kailo 的取值是已交付能力所需的 kind。一期只有 `9`：Channel 消
 `core/crates/kailo-core/tests/native_client.rs` 在真实拓扑上补一项：已登记的原生设备能直连
 Relay 发消息，但自建 Channel 被拒。
 
+`crates/buzz-relay/src/handlers/governance.rs` 的单元测试（在补丁源树里跑，Postgres 与 Redis 不可达也成立）：
+
+| 测试 | 断言 |
+|---|---|
+| `governed_relay_refuses_every_workflow_event` | 四个命令 kind 与删除 30620 的 kind:5 被拒；删除 30023 的 kind:5 与 kind:9 放行到后续检查 |
+| `governed_relay_serves_no_workflow_route` | 三条路由都 404 |
+| `governed_relay_without_engine_refuses_workflow_commands` | 无引擎时命令执行器拒绝 |
+| `ungoverned_relay_keeps_upstream_workflows` | 未设定开关时上游行为不变；探针在已注册时得到 405，证明它能区分 |
+| `self_check_passes_only_when_all_three_are_off` | 全部关闭时通过；构造了引擎、或 router 带 workflow 路由，自检各自失败并指出哪一项 |
+
 ## Core 侧的配合
 
 - Channel 以 private 建立，id 取 Workspace id（kind 9007 带 `h`）。Channel 在 Community 内
@@ -75,10 +104,13 @@ Relay 发消息，但自建 Channel 被拒。
 
 ## 门禁
 
-`tools/check.sh security` 要求两件事：Relay 显式设定 `BUZZ_MEMBER_EVENT_KINDS`；每个跑 Buzz
+`tools/check.sh security` 要求两件事：Relay 显式给 `BUZZ_MEMBER_EVENT_KINDS` 赋值（只写键不给值等于从宿主透传，
+宿主没有时容器里就没有，不算设定；`environment` 用列表写法时同样检查）；每个跑 Buzz
 二进制的服务都用 `upstream-buzz@` 的补丁构建，包括以 `buzz-admin` 建 schema 的一次性服务。
 分别破坏了三处——删掉开关、Relay 换回上游镜像、buzz-schema 换回上游镜像——每次都报出
-对应服务，还原后逐字节一致。
+对应服务，还原后逐字节一致。DD-106 之后又破坏了三处：删掉开关、只写键不给值、把 Relay 的 `environment`
+改成列表写法并删掉开关，每次都报出 `buzz-relay`；列表写法且带开关时通过；旧规则在列表写法下放过了缺开关的
+配置。还原后 compose 逐字节一致。
 
 ## 仍按 Tenant 而不是 Workspace 隔离的
 

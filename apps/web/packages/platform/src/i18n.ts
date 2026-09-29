@@ -224,6 +224,10 @@ export const platformMessages = {
     en: "Unavailable: {reason}",
     "zh-CN": "不可用：{reason}",
   },
+  "platform.audit.scope.notFound": {
+    en: "Unavailable: the original record no longer exists.",
+    "zh-CN": "不可用：原记录已不存在。",
+  },
   "platform.audit.scope.unavailableUnknown": {
     en: "This evidence is unavailable.",
     "zh-CN": "该证据不可用。",
@@ -809,6 +813,10 @@ export const evidenceUnavailableReasonMessages = {
   [EvidenceUnavailableReason.Unrecognized]: {
     en: "the evidence kind is not recognized",
     "zh-CN": "证据种类无法识别",
+  },
+  [EvidenceUnavailableReason.Unverifiable]: {
+    en: "its source cannot confirm that it still exists",
+    "zh-CN": "权威源无法核实其仍存在",
   },
 } as const satisfies Record<EvidenceUnavailableReason, Message>;
 

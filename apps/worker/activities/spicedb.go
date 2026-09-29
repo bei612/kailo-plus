@@ -123,9 +123,13 @@ func (s *SpiceDB) Converge(ctx context.Context, rel Relationship, want Presence)
 // SubjectScope 是一个 Tenant Principal 在固定 schema 上可能出现的全部关系的范围：
 // 该 Tenant 上的关系，以及任何 Workspace 上的关系。Principal 只属于一个 Tenant
 // （.design/03 §2），因此它在 workspace 上的关系必然都属于这个 Tenant。
+//
+// WorkspaceID 非空时范围收窄为该 Workspace 上的关系（Workspace 成员撤权）；为空时
+// 是 Tenant 撤权的全部范围。两者只取其一。
 type SubjectScope struct {
 	TenantID           string
 	SubjectPrincipalID string
+	WorkspaceID        string `json:",omitempty"`
 }
 
 // RevokeSubject 撤掉一个 Principal 在其 Tenant 内的全部 tenant/workspace 关系——成员
@@ -136,8 +140,8 @@ type SubjectScope struct {
 // 逐条删就会漏掉以后新增的角色。按主体过滤删除不依赖清单，且 DELETE 对不存在的
 // 关系不报错，重试与重放都安全。
 func (s *SpiceDB) RevokeSubject(ctx context.Context, scope SubjectScope) error {
-	if scope.TenantID == "" || scope.SubjectPrincipalID == "" {
-		return fmt.Errorf("撤主体关系缺 Tenant 或主体")
+	if scope.SubjectPrincipalID == "" || (scope.TenantID == "") == (scope.WorkspaceID == "") {
+		return fmt.Errorf("撤主体关系须有主体，且 Tenant 与 Workspace 恰给其一")
 	}
 	filters := scope.filters()
 	for _, f := range filters {
@@ -159,6 +163,11 @@ func (s *SpiceDB) RevokeSubject(ctx context.Context, scope SubjectScope) error {
 
 func (sc SubjectScope) filters() []*v1.RelationshipFilter {
 	subject := &v1.SubjectFilter{SubjectType: "principal", OptionalSubjectId: sc.SubjectPrincipalID}
+	if sc.WorkspaceID != "" {
+		return []*v1.RelationshipFilter{
+			{ResourceType: "workspace", OptionalResourceId: sc.WorkspaceID, OptionalSubjectFilter: subject},
+		}
+	}
 	return []*v1.RelationshipFilter{
 		{ResourceType: "tenant", OptionalResourceId: sc.TenantID, OptionalSubjectFilter: subject},
 		{ResourceType: "workspace", OptionalSubjectFilter: subject},

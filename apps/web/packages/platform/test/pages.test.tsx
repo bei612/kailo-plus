@@ -566,6 +566,78 @@ describe("AuditPage 范围审计", () => {
     expect(section.textContent).not.toContain("leak-me");
   });
 
+  it("原证据不存在（404）只显示不可用、不给重试；503 才显示载入失败并可重试", async () => {
+    let evidence503 = true;
+    const t = transport((r) => {
+      if (r.path === "/api/v1/audit") return { status: 200, body: [] };
+      if (r.path === "/api/v1/workspaces") return { status: 200, body: workspaces };
+      if (r.path === "/api/v1/audit/events")
+        return {
+          status: 200,
+          body: {
+            events: [event("e-1", {
+              evidence: [
+                { index: 0, kind: "TEMPORAL_WORKFLOW_ID", authority: "TEMPORAL", sensitivity: "SUMMARY" },
+                { index: 1, kind: "TEMPORAL_RUN_ID", authority: "TEMPORAL", sensitivity: "SUMMARY" },
+                { index: 2, kind: "SPICEDB_ZEDTOKEN", authority: "SPICEDB", sensitivity: "SUMMARY" },
+              ],
+            })],
+          },
+        };
+      if (r.path === "/api/v1/audit/events/e-1/evidence/0")
+        // 即使 404 正文违约带了 ref，也不能显示
+        return { status: 404, body: { available: false, unavailableReason: "NOT_FOUND", stableId: "leak-me" } };
+      if (r.path === "/api/v1/audit/events/e-1/evidence/1")
+        return evidence503
+          ? { status: 503, body: { class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable } }
+          : { status: 200, body: { available: true, kind: "TEMPORAL_RUN_ID", authority: "TEMPORAL", sensitivity: "SUMMARY", stableId: "run-7" } };
+      if (r.path === "/api/v1/audit/events/e-1/evidence/2")
+        return { status: 200, body: { available: false, unavailableReason: "UNVERIFIABLE" } };
+      return forbidden;
+    });
+    const host = await mount(t, <AuditPage />);
+    await settle();
+    const section = host.querySelector("[data-testid=scoped-audit]") as HTMLElement;
+
+    await click(button(section, "Workflow"));
+    const notFound = section.querySelector("[data-testid=evidence-unavailable]") as HTMLElement;
+    expect(notFound.textContent).toBe("Unavailable: the original record no longer exists.");
+    expect(section.textContent).not.toContain("Couldn't load this");
+    expect(section.textContent).not.toContain("Try again");
+    expect(section.textContent).not.toContain("leak-me");
+
+    await click(button(section, "Workflow run"));
+    expect(section.textContent).toContain("Couldn't load this — the result is unknown.");
+    expect(section.querySelector("[data-testid=evidence-available]")).toBeNull();
+    evidence503 = false;
+    await click(button(section, "Try again"));
+    expect(section.textContent).toContain("run-7");
+    expect(section.textContent).not.toContain("Couldn't load this");
+
+    await click(button(section, "Permission snapshot"));
+    expect(section.textContent).toContain("Unavailable: its source cannot confirm that it still exists");
+  });
+
+  it("404 在中文界面同样显示不可用", async () => {
+    const t = transport((r) => {
+      if (r.path === "/api/v1/audit") return { status: 200, body: [] };
+      if (r.path === "/api/v1/workspaces") return { status: 200, body: workspaces };
+      if (r.path === "/api/v1/audit/events")
+        return {
+          status: 200,
+          body: { events: [event("e-1", { evidence: [{ index: 0, kind: "TEMPORAL_WORKFLOW_ID", authority: "TEMPORAL", sensitivity: "SUMMARY" }] })] },
+        };
+      if (r.path === "/api/v1/audit/events/e-1/evidence/0") return { status: 404, body: null };
+      return forbidden;
+    });
+    const host = await mount(t, <AuditPage />, "zh-CN");
+    await settle();
+    const section = host.querySelector("[data-testid=scoped-audit]") as HTMLElement;
+    await click(button(section, "流程"));
+    expect(section.textContent).toContain("不可用：原记录已不存在。");
+    expect(section.textContent).not.toContain("重试");
+  });
+
   it("按 nextCursor 加载更多；选择 Workspace 按该范围读取", async () => {
     const t = transport((r) => {
       if (r.path === "/api/v1/audit") return { status: 200, body: [] };

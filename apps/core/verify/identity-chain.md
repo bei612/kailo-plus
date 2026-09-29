@@ -155,3 +155,30 @@ Workspace、WorkspaceMembership 与两侧 Buzz binding，若 scope 的版本、C
 `event: closed`、`data: scope-revoked`；恢复断言后再次退出 `0`、`1 passed`。
 完成上述改动后，受 16 GiB/500% cgroup 限制的 `./tools/check.sh --full`
 重新运行，十组全部通过，最终退出码 `0`。
+
+## 撤权后残留的 Workspace admin 与 WorkspaceMembership 复活（2026-09-29，V-SCN-34/35）
+
+Stage 2 独立复核发现两处与 `.design/10` §5 矛盾：Workspace 成员撤权只撤 `member` 关系，其
+`workspace#admin` 仍使 `workspace manage` 为真，准入在成员非 ACTIVE 时凭它放行；Tenant 成员撤权不
+处理其 WorkspaceMembership，按邀请恢复沿用同一 Principal 时旧的 ACTIVE 投影随之复活。
+
+修正：准入在该人有过但当前非 ACTIVE 的成员关系时只接受 fresh Tenant `manage`（从未加入的 Workspace
+admin 仍按 `03` §2、DD-50 以 `workspace manage` 放行）；撤 Workspace 成员时删除此人在该 Workspace 上的
+全部关系（GetVersion 门控）；Tenant 成员进入 `REVOKING` 的同一事务把其全部未撤 WorkspaceMembership
+推进到 `REVOKING`，由同一撤权 Workflow 先 SpiceDB、再各 Channel roster、再 relay roster 收敛到
+`REVOKED`；尚有非终态 WorkspaceMembership 时 Tenant 成员不得进入 `REVOKED`。迁移
+`20260929100000` 只把存量数据往拒绝方向推。
+
+证据（本地拓扑）：`core/verify/run-integration.sh` 退出 0、31 批 `test result: ok`，含
+`membership_lifecycle_converges_both_directions`（持有 `workspace#admin` 的成员进入 `REVOKING` 即被拒
+`SCOPE_GUARD_FAILED`，`REVOKED` 后 admin 关系已删、仍被拒）与
+`invitations_are_redeemed_once_confirmed_by_an_admin_and_always_terminate`（Tenant 撤权后
+WorkspaceMembership 连带 `REVOKED`、`workspace#member` 已删；按邀请恢复后仍为 `REVOKED`、SpiceDB 无该
+关系、`/api/v1/workspaces` 不可见）；Worker 单元 `TestTenantRevocationConvergesWorkspaceMembershipsFirst`、
+`TestWorkspaceRevocationRevokesAllRelationsOnWorkspace` 通过。
+
+破坏核验：把非 ACTIVE 分支改回凭 `workspace manage` 放行、并让 Tenant 撤权不再推进 WorkspaceMembership，
+重建 Core 后定向运行：前者在“REVOKING 的 Workspace 成员凭 workspace admin 仍被放行”处失败（200≠403），
+后者在“等待超时：B 的 TenantMembership REVOKED”处失败；还原并重建后全套 31 批通过。两次失败保留的夹具
+Tenant `060e8796-960c-4450-b2ca-1a3aff4bd1e1`、`b5ca5ffa-a034-46d5-b862-88963d03706a` 待受治理的
+`tenant.delete` 落地后删除。

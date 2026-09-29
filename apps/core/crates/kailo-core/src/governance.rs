@@ -1341,22 +1341,46 @@ impl Governance {
             .await
             .map_err(|e| Refusal::Unavailable(e.to_string()))?;
 
-        // Workspace scope：active WorkspaceMembership，或 fresh workspace manage
-        // （.design/10 §5）。本切片的 Workspace 动作检查的正是 workspace manage，
-        // 因此 Check 为真即满足；为假时还要看成员关系，二者择一不满足即 scope 拒绝。
+        // Workspace scope（.design/03 §2、.design/10 §5）：HUMAN 要求 active
+        // WorkspaceMembership。没有 ACTIVE 成员关系时：
+        // - 此人在该 Workspace 有过成员关系（PROVISIONING/REVOKING/REVOKED/ERROR）：
+        //   只剩 Tenant admin 一种例外，判据是 fresh tenant manage。workspace manage
+        //   也由 workspace#admin 给出，以它为据会让撤权中或撤权后的成员凭残留的
+        //   Workspace admin 继续放行——REVOKING 必须立即拒绝（DD-41、V-SCN-35）。
+        // - 从未加入：fresh workspace manage 为真即满足（`03` §2），即由 DD-82 授予、
+        //   不要求先加入 Workspace 的 Workspace admin。
+        // 本切片 Workspace 动作检查的正是 workspace manage，Check 为假时不设例外。
         if def.workspace_rule == "WORKSPACE_REQUIRED" {
-            let member: Option<i32> = sqlx::query_scalar(
-                "select 1 from identity.workspace_membership
-                 where workspace_id = $1 and tenant_principal_id = $2 and state = 'ACTIVE'",
+            let membership: Option<String> = sqlx::query_scalar(
+                "select state from identity.workspace_membership
+                 where workspace_id = $1 and tenant_principal_id = $2",
             )
             .bind(target.workspace_id)
             .bind(actor.principal_id)
             .fetch_optional(&self.pool)
             .await?;
-            let manage = def.permission == "manage"
+            let workspace_manage = def.permission == "manage"
                 && def.permission_object_type == "workspace"
                 && checked.allowed;
-            if member.is_none() && !manage {
+            let admitted = match membership.as_deref() {
+                Some("ACTIVE") => true,
+                None => workspace_manage,
+                Some(_) if workspace_manage => {
+                    self.spicedb
+                        .check(
+                            "tenant",
+                            &actor.tenant_id.to_string(),
+                            "manage",
+                            &actor.principal_id.to_string(),
+                            Consistency::FullyConsistent,
+                        )
+                        .await
+                        .map_err(|e| Refusal::Unavailable(e.to_string()))?
+                        .allowed
+                }
+                Some(_) => false,
+            };
+            if !admitted {
                 return Ok(deny(
                     "DENY",
                     "NOT_APPLICABLE",
@@ -2583,6 +2607,22 @@ impl Governance {
                 .await?;
                 // 进入 REVOKING 即撤会话，与状态变化同事务（.design/03 §2）
                 kailo_identity::session::revoke_for_membership(tx, target.id).await?;
+                // 此人在本 Tenant 的每个未撤 WorkspaceMembership 一并进入 REVOKING，
+                // 由同一条撤权 Workflow 收敛到 REVOKED（.design/10 §5）。留着不动，
+                // 按邀请恢复会沿用同一 Principal，让旧的 ACTIVE 投影随之复活。
+                // 已在 REVOKING 的也推进版本：它自己的撤权 Workflow 随之以版本冲突
+                // 终止，收敛只归这一条，不让两条链争同一次跃迁。
+                sqlx::query(
+                    "update identity.workspace_membership wm
+                     set state = 'REVOKING', version = wm.version + 1
+                     from identity.tenant_membership tm, identity.workspace w
+                     where tm.id = $1 and w.id = wm.workspace_id and w.tenant_id = tm.tenant_id
+                       and wm.tenant_principal_id = tm.tenant_principal_id
+                       and wm.state in ('PROVISIONING', 'ACTIVE', 'REVOKING', 'ERROR')",
+                )
+                .bind(target.id)
+                .execute(&mut **tx)
+                .await?;
                 v
             }
             // 角色与邀请动作是 SYNC，已在上面返回；走到这里说明目录把它登记成了别的

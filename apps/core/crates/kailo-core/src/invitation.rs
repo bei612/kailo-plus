@@ -235,9 +235,23 @@ struct Redeemed {
     admit: Uuid,
 }
 
+/// 兑换拒绝留痕写入失败的次数，按拒绝是否已对上邀请区分。拒绝本身已经成立，
+/// 写失败不改变回应；但审计缺口必须可被度量与告警，只打日志等于没人看见。
+/// 首次使用时从全局 MeterProvider 取：它在服务启动时已安装（`telemetry`）。
+fn refusal_audit_failures() -> &'static opentelemetry::metrics::Counter<u64> {
+    static COUNTER: std::sync::OnceLock<opentelemetry::metrics::Counter<u64>> =
+        std::sync::OnceLock::new();
+    COUNTER.get_or_init(|| {
+        opentelemetry::global::meter("kailo-core")
+            .u64_counter("kailo.invitation.refusal_audit_failed")
+            .with_description("邀请兑换被拒而留痕审计未写入的次数")
+            .build()
+    })
+}
+
 /// 兑换被拒的留痕。凭据没有对上任何邀请时不知道 Tenant，只能记在 OIDC 之后、成员
 /// 解析之前的那段边界上（AUTHENTICATION，tenant 为空，DD-52/54）；对上了就记在该
-/// Tenant 的邀请名下。写失败只记日志：请求本身已被拒。
+/// Tenant 的邀请名下。写失败记日志并计数：请求本身已被拒。
 async fn record_refused(
     g: &Governance,
     issuer: &str,
@@ -280,6 +294,17 @@ async fn record_refused(
     };
     if let Err(e) = run.await {
         tracing::warn!(error = %e, "兑换拒绝的审计未写入");
+        refusal_audit_failures().add(
+            1,
+            &[opentelemetry::KeyValue::new(
+                "event_type",
+                if matched.is_some() {
+                    "DECISION"
+                } else {
+                    "AUTHENTICATION"
+                },
+            )],
+        );
     }
 }
 

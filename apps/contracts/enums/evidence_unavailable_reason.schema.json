@@ -2,11 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "enums/evidence_unavailable_reason.schema.json",
   "title": "EvidenceUnavailableReason",
-  "description": "解引用只显示不可用时的原因：原证据已不存在、敏感级别未获授权、存量种类不可识别。",
+  "description": "解引用只显示不可用时的原因：原证据已不存在（HTTP 404）、敏感级别未获授权、存量种类不可识别、权威源无法按该 ID 查证其仍存在。",
   "type": "string",
   "enum": [
     "NOT_FOUND",
     "RESTRICTED",
-    "UNRECOGNIZED"
+    "UNRECOGNIZED",
+    "UNVERIFIABLE"
   ]
 }

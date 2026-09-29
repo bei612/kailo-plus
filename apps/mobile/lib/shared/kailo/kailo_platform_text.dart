@@ -108,6 +108,7 @@ enum KailoMessageKey {
   platformAuditScopeRestricted,
   platformAuditScopeVersion,
   platformAuditScopeUnavailable,
+  platformAuditScopeNotFound,
   platformAuditScopeUnavailableUnknown,
   platformMembersNone,
   platformMembersCountOne,
@@ -562,6 +563,10 @@ const _messages = <KailoMessageKey, (String, String)>{
   KailoMessageKey.platformAuditScopeUnavailable: (
     'Unavailable: {reason}',
     '不可用：{reason}',
+  ),
+  KailoMessageKey.platformAuditScopeNotFound: (
+    'Unavailable: the original record no longer exists.',
+    '不可用：原记录已不存在。',
   ),
   KailoMessageKey.platformAuditScopeUnavailableUnknown: (
     'This evidence is unavailable.',

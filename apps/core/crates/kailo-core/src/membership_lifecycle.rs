@@ -106,6 +106,21 @@ pub struct MembershipTarget {
     membership_version: i32,
     subject_principal_id: String,
     relation_object_id: String,
+    /// 只有 Tenant 撤权才有：此人在本 Tenant 仍在 REVOKING 的 WorkspaceMembership，
+    /// 由同一条撤权链逐个撤 Channel roster 并推进到 REVOKED（`.design/10` §5）。
+    /// 为空时不写出，其余 input 的形状与已录制 history 逐字相同。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    workspace_memberships: Vec<WorkspaceMembershipRef>,
+}
+
+/// Tenant 撤权连带收敛的一个 WorkspaceMembership。版本是启动时读到的那个：
+/// 跃迁以它做乐观并发，中途被别的动作改过即冲突，不覆盖。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMembershipRef {
+    membership_id: String,
+    membership_version: i32,
+    workspace_id: String,
 }
 
 pub async fn start_membership_lifecycle(
@@ -173,6 +188,19 @@ pub(crate) async fn launch_membership(
         Err(e) => return Err(unavailable(e)),
     }
 
+    // Tenant 撤权连带的 WorkspaceMembership 在启动时冻结进 input：governance 在
+    // Tenant 成员进入 REVOKING 的同一事务里已把它们置为 REVOKING。重跑时重新读取，
+    // 上一轮已推进到 REVOKED 的不再出现。
+    let workspace_memberships =
+        if kind == "MEMBERSHIP_REVOCATION" && req.scope == MembershipScope::Tenant {
+            match revoking_workspace_memberships(pool, tenant_id, principal_id).await {
+                Ok(v) => v,
+                Err(e) => return Err(unavailable(e)),
+            }
+        } else {
+            Vec::new()
+        };
+
     let workflow_id =
         component_task::workflow_id(kind, tenant_id, &req.membership_id.to_string(), version);
     let input = ComponentTaskInput {
@@ -187,6 +215,7 @@ pub(crate) async fn launch_membership(
                 membership_version: version,
                 subject_principal_id: principal_id.to_string(),
                 relation_object_id: object_id.to_string(),
+                workspace_memberships,
             },
         },
     };
@@ -211,6 +240,33 @@ pub(crate) async fn launch_membership(
 }
 
 type Loaded = (Uuid, Uuid, Uuid, i32, String);
+
+/// 此人在该 Tenant 下处于 REVOKING 的全部 WorkspaceMembership。
+async fn revoking_workspace_memberships(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    principal_id: Uuid,
+) -> Result<Vec<WorkspaceMembershipRef>, sqlx::Error> {
+    let rows: Vec<(Uuid, i32, Uuid)> = sqlx::query_as(
+        "select wm.id, wm.version, wm.workspace_id
+         from identity.workspace_membership wm
+         join identity.workspace w on w.id = wm.workspace_id
+         where w.tenant_id = $1 and wm.tenant_principal_id = $2 and wm.state = 'REVOKING'
+         order by wm.id",
+    )
+    .bind(tenant_id)
+    .bind(principal_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, version, ws)| WorkspaceMembershipRef {
+            membership_id: id.to_string(),
+            membership_version: version,
+            workspace_id: ws.to_string(),
+        })
+        .collect())
+}
 
 /// `Err(Some(resp))` 是确定的拒绝，`Err(None)` 是依赖不可用。
 async fn load(pool: &PgPool, req: &LifecycleRequest) -> Result<Loaded, Option<Response>> {
