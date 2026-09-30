@@ -1,3 +1,4 @@
+import { resolveLocale, translate } from "@client-kit/platform/i18n";
 import { FileText, Lock, Pencil, Send, Trash2 } from "lucide-react";
 import * as React from "react";
 
@@ -24,6 +25,7 @@ import {
 import { getEventById } from "@/shared/api/tauri";
 import type { Channel } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
+import { formatItemTimestamp } from "@/shared/lib/datetime";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -61,13 +63,6 @@ const UNKNOWN_DRAFT_SOURCE: DraftSource = {
   label: UNKNOWN_CHANNEL_LABEL,
 };
 
-const draftTimeFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
 function parseDraftTime(value: string): number {
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
@@ -76,8 +71,8 @@ function parseDraftTime(value: string): number {
 export function formatDraftCreatedAt(draft: DraftState): string {
   const time = parseDraftTime(draft.createdAt);
   return time === 0
-    ? "Unknown time"
-    : draftTimeFormatter.format(new Date(time));
+    ? translate(resolveLocale(), "platform.time.unavailable")
+    : formatItemTimestamp(time / 1_000, { withTime: true });
 }
 
 function getOriginalDraftKey(draftKey: string): string {

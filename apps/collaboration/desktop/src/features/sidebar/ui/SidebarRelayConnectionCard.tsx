@@ -1,4 +1,5 @@
 import { Check, CloudOff } from "lucide-react";
+import { resolveLocale, translate } from "@client-kit/platform/i18n";
 
 import {
   SidebarCompactActionCard,
@@ -60,16 +61,20 @@ export function SidebarRelayConnectionCompactCard({
   surface,
   testId = "sidebar-relay-unreachable-compact",
 }: SidebarRelayConnectionCardProps) {
+  const locale = resolveLocale();
   const reconnectTitle = isWaitingOnReconnectHook
-    ? "Waiting to reconnect"
-    : "Connecting";
+    ? translate(locale, "native.relay.waiting")
+    : translate(locale, "native.relay.connecting");
   const reconnectDescription = isWaitingOnReconnectHook
-    ? "Complete any prompts opened by the reconnect helper to continue."
-    : "Reconnecting";
+    ? translate(locale, "native.relay.helperPrompt")
+    : translate(locale, "native.relay.reconnecting");
 
   return (
     <SidebarCompactActionCard
-      actionAriaLabel={isConnected ? "Connected" : "Connect to relay"}
+      actionAriaLabel={translate(
+        locale,
+        isConnected ? "native.relay.connected" : "native.relay.connect",
+      )}
       actionDisabled={isActionDisabled || isReconnectPending || isConnected}
       actionTestId={actionTestId}
       description={
@@ -77,10 +82,10 @@ export function SidebarRelayConnectionCompactCard({
           ? undefined
           : isReconnectPending
             ? reconnectDescription
-            : "Click to connect"
+            : translate(locale, "native.relay.clickToConnect")
       }
       dismissClassName={dismissClassName}
-      dismissLabel="Dismiss relay notification"
+      dismissLabel={translate(locale, "native.relay.dismissNotification")}
       iconKey={
         isConnected ? "connected" : isReconnectPending ? "pending" : "idle"
       }
@@ -101,10 +106,10 @@ export function SidebarRelayConnectionCompactCard({
       testId={testId}
       title={
         isConnected
-          ? "Connected"
+          ? translate(locale, "native.relay.connected")
           : isReconnectPending
             ? reconnectTitle
-            : "Can't reach the relay"
+            : translate(locale, "native.relay.unreachable")
       }
       tone={isConnected ? "success" : "neutral"}
     />

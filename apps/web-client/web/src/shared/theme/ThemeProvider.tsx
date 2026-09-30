@@ -1,6 +1,7 @@
+import { type PlatformThemeMode, platformThemeModeKeys } from "@client-kit/platform/i18n";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 
-type Theme = "light" | "dark" | "system";
+type Theme = PlatformThemeMode;
 
 type ThemeContextValue = {
   theme: Theme;
@@ -16,7 +17,7 @@ function getSystemDark(): boolean {
 
 function getInitialTheme(): Theme {
   const stored = window.localStorage.getItem("buzz-web-theme");
-  if (stored === "light" || stored === "dark" || stored === "system") return stored;
+  if (stored && Object.keys(platformThemeModeKeys).includes(stored)) return stored as Theme;
   const previewTheme = import.meta.env.DEV
     ? new URLSearchParams(window.location.search).get("previewTheme")
     : null;

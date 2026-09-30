@@ -160,6 +160,23 @@ def presentation_rules(
     return seconds, plural_locales, special_units, weekday_band_days
 
 
+def theme_modes(messages: list[tuple[str, str, str]]) -> dict[str, str]:
+    source = SOURCE.read_text()
+    match = re.search(
+        r"export const platformThemeModeKeys = (\{.*?\}) as const satisfies", source, re.S
+    )
+    if match is None:
+        raise ValueError("platformThemeModeKeys not found")
+    modes = json.loads(match.group(1))
+    if list(modes) != ["light", "dark", "system"]:
+        raise ValueError("platformThemeModeKeys must be exactly light, dark, system (DD-53)")
+    keys = {key for key, _, _ in messages}
+    missing = sorted(set(modes.values()) - keys)
+    if missing:
+        raise ValueError(f"theme mode messages missing: {missing}")
+    return modes
+
+
 def dart_string(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace("'", "\\'").replace("$", "\\$")
     return "'" + escaped.replace("\n", "\\n") + "'"
@@ -252,6 +269,20 @@ def render_platform(
         lines.extend(f"    {enum}.{name} => {dart_string(en)}," for name, en, _ in rows)
         lines.extend(["  };", "}", ""])
 
+    modes = theme_modes(messages)
+    lines.append("enum PlatformThemeMode {")
+    lines.extend(f"  {mode}," for mode in modes)
+    lines.extend(
+        [
+            "}",
+            "",
+            "PlatformMessageKey platformThemeModeKey(PlatformThemeMode mode) => switch (mode) {",
+        ]
+    )
+    lines.extend(
+        f"  PlatformThemeMode.{mode} => PlatformMessageKey.{dart_key(key)}," for mode, key in modes.items()
+    )
+    lines.extend(["};", ""])
     lines.extend(
         [
             "String _platformLanguage(String? locale) =>",

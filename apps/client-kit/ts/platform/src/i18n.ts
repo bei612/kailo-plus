@@ -40,6 +40,17 @@ export const platformSpecialRelativeUnits = ["day", "month"] as const;
 // 频道日期分组与近期线程摘要共享同一个日历日带；Dart 从这里生成该阈值。
 export const platformCalendarWeekdayBandDays = 7 as const;
 
+// 主题模式集合与各模式的文案 key：三端宿主的主题偏好只在这三种之间取值（DD-53），主题本身
+// 归宿主（Web/Desktop 的 ThemeProvider 与根 CSS variables，Mobile 的 Flutter Theme），平台页只用
+// 宿主主题的语义色。本段须是合法 JSON，Dart 生成物由 tools/gen-platform-i18n.py 从这里投影。
+export const platformThemeModeKeys = {
+  "light": "platform.theme.modeLight",
+  "dark": "platform.theme.modeDark",
+  "system": "platform.theme.modeSystem"
+} as const satisfies Record<string, PlatformMessageKey>;
+
+export type PlatformThemeMode = keyof typeof platformThemeModeKeys;
+
 export function platformPluralForm(locale: PlatformLocale, count: number): "one" | "other" {
   return platformPluralOneLocales.some((candidate) => candidate === locale) && count === 1
     ? "one"
@@ -639,6 +650,20 @@ export const platformMessages = {
     "zh-CN": "正在等待本机加入你的工作区…",
   },
   "native.status.linked": { en: "Connected.", "zh-CN": "已连接。" },
+  "native.relay.connected": { en: "Connected", "zh-CN": "已连接" },
+  "native.relay.waiting": { en: "Waiting to reconnect", "zh-CN": "等待重新连接" },
+  "native.relay.connecting": { en: "Connecting", "zh-CN": "正在连接" },
+  "native.relay.helperPrompt": {
+    en: "Complete any prompts opened by the reconnect helper to continue.",
+    "zh-CN": "请完成重新连接助手打开的提示以继续。",
+  },
+  "native.relay.reconnecting": { en: "Reconnecting", "zh-CN": "正在重新连接" },
+  "native.relay.connect": { en: "Connect to relay", "zh-CN": "连接 Relay" },
+  "native.relay.clickToConnect": { en: "Click to connect", "zh-CN": "点击连接" },
+  "native.relay.dismissNotification": {
+    en: "Dismiss relay notification", "zh-CN": "关闭 Relay 通知",
+  },
+  "native.relay.unreachable": { en: "Can't reach the relay", "zh-CN": "无法连接 Relay" },
   "native.status.failed": { en: "Could not connect.", "zh-CN": "未能连接。" },
   "native.status.outcomeUnknown": {
     en: "The outcome is not known yet.", "zh-CN": "结果尚不明确。",

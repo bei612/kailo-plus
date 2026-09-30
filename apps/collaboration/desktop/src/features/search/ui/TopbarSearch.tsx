@@ -1,3 +1,5 @@
+import { relativeTime } from "@client-kit/platform/format";
+import { resolveLocale } from "@client-kit/platform/i18n";
 import { Search } from "lucide-react";
 import * as React from "react";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
@@ -56,27 +58,10 @@ type SearchHitContextLabel = {
   text: string;
 };
 function formatRelativeTime(unixSeconds: number) {
-  const diff = Math.floor(Date.now() / 1_000) - unixSeconds;
-  if (diff < 60) {
-    return "just now";
-  }
-
-  if (diff < 60 * 60) {
-    return `${Math.floor(diff / 60)}m ago`;
-  }
-
-  if (diff < 60 * 60 * 24) {
-    return `${Math.floor(diff / (60 * 60))}h ago`;
-  }
-
-  if (diff < 60 * 60 * 24 * 7) {
-    return `${Math.floor(diff / (60 * 60 * 24))}d ago`;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  }).format(new Date(unixSeconds * 1_000));
+  return relativeTime(
+    resolveLocale(),
+    new Date(unixSeconds * 1_000).toJSON() ?? "",
+  );
 }
 
 function getChannelActivityTime(channel: Channel) {

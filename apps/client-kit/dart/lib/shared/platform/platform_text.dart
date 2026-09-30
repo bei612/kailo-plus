@@ -316,6 +316,15 @@ enum PlatformMessageKey {
   nativeStatusSignedOut,
   nativeStatusAwaitingActivation,
   nativeStatusLinked,
+  nativeRelayConnected,
+  nativeRelayWaiting,
+  nativeRelayConnecting,
+  nativeRelayHelperPrompt,
+  nativeRelayReconnecting,
+  nativeRelayConnect,
+  nativeRelayClickToConnect,
+  nativeRelayDismissNotification,
+  nativeRelayUnreachable,
   nativeStatusFailed,
   nativeStatusOutcomeUnknown,
   nativeErrorHttpOutcomeUnknown,
@@ -1094,6 +1103,24 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '正在等待本机加入你的工作区…',
   ),
   PlatformMessageKey.nativeStatusLinked: ('Connected.', '已连接。'),
+  PlatformMessageKey.nativeRelayConnected: ('Connected', '已连接'),
+  PlatformMessageKey.nativeRelayWaiting: ('Waiting to reconnect', '等待重新连接'),
+  PlatformMessageKey.nativeRelayConnecting: ('Connecting', '正在连接'),
+  PlatformMessageKey.nativeRelayHelperPrompt: (
+    'Complete any prompts opened by the reconnect helper to continue.',
+    '请完成重新连接助手打开的提示以继续。',
+  ),
+  PlatformMessageKey.nativeRelayReconnecting: ('Reconnecting', '正在重新连接'),
+  PlatformMessageKey.nativeRelayConnect: ('Connect to relay', '连接 Relay'),
+  PlatformMessageKey.nativeRelayClickToConnect: ('Click to connect', '点击连接'),
+  PlatformMessageKey.nativeRelayDismissNotification: (
+    'Dismiss relay notification',
+    '关闭 Relay 通知',
+  ),
+  PlatformMessageKey.nativeRelayUnreachable: (
+    'Can\'t reach the relay',
+    '无法连接 Relay',
+  ),
   PlatformMessageKey.nativeStatusFailed: ('Could not connect.', '未能连接。'),
   PlatformMessageKey.nativeStatusOutcomeUnknown: (
     'The outcome is not known yet.',
@@ -1343,6 +1370,15 @@ String platformApprovalSelectorText(ApprovalSelector value, {String? locale}) {
     ApprovalSelector.RESOURCE_APPROVER => 'Resource approver',
   };
 }
+
+enum PlatformThemeMode { light, dark, system }
+
+PlatformMessageKey platformThemeModeKey(PlatformThemeMode mode) =>
+    switch (mode) {
+      PlatformThemeMode.light => PlatformMessageKey.platformThemeModeLight,
+      PlatformThemeMode.dark => PlatformMessageKey.platformThemeModeDark,
+      PlatformThemeMode.system => PlatformMessageKey.platformThemeModeSystem,
+    };
 
 String _platformLanguage(String? locale) =>
     (locale ?? Platform.localeName).toLowerCase().startsWith('zh')
