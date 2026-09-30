@@ -93,7 +93,7 @@ GAP：`GAP-BUZ-01` 仍存在，入口拒绝行为已由测试断言；`GAP-IDN-0
 - 原生端设备登记任务曾显示「Allowed, not started yet」而设备已 ACTIVE（`desktop-client.md` L135、`mobile-client.md` L121 的 2026-09-29 观察）：**已闭合**。`ccb0a36` 由 `record_dispatch` 统一记录派发结果、迁移 `20260929110000_dispatch_state_backfill` 回填存量，`tests/native_client.rs` 断言登记后 `dispatchState` 为 `DISPATCHED`；重构后反转 `record_direct_launch` 判断的破坏核验在该断言处失败，还原后 31 批通过（`core/verify/functional-layout-regression.md`）。修复后未在安装包上重新观察。
 - Mobile release 签名缺 upload keystore：`collaboration/fork/upstream.yaml` 的 `mobile-client` 产物登记为 `blocked`；现有 APK 为 Debug 证书的 profile 构建，不是发布产物。
 - iOS、macOS 与 Windows 安装包无构建环境，未构建；Desktop 只有 Linux `.deb`，未做代码签名。
-- 产品显示名按 `DD-111` 的三端下发已在源码实现（BFF `GET /api/v1/platform-info`、Web 静态入口注入、原生端登录后读取并按服务器缓存、安装包显示名由 `build_args` 注入，见 `07-运行与运维基线.md`），尚无部署后的真实拓扑走查，`desktop-client` 需按新源码重建。
+- 产品显示名按 `DD-111` 的下发链已接入（BFF `GET /api/v1/platform-info`、Web 静态入口注入、原生端登录后读取并按服务器缓存、安装包显示名由 `build_args` 注入，见 `07-运行与运维基线.md`）。2026-09-30 另修正 Mobile 窗口标题/启动读屏与 Desktop 两条外观说明的四处硬编码，复用既有名称与共享目录；Mobile 单文件分析/三项回归、Desktop 整体 typecheck/单文件格式、TS 88 与 Dart 7 项均通过，见 `functional-layout-regression.md`「原生显示名与外观说明收口」。这些检查不证明真机名称刷新、换服或安装包运行；当前 Web 常规走查未逐个更换部署名称，不据此声称三端显示名完整验收。
 - 内部标识去掉产品名的迁移（ADR-17）尚在进行，不影响本 Stage 的行为证据，但其落地会改动 workflow ID 前缀与 Search Attribute，届时需重跑 replay 与集成。
 - 失败保留的四个夹具 Tenant（`53941c2e…`、`c8652adc…`、`060e8796…`、`b5ca5ffa…`，出处 `core/verify/secret-ref-rehome.md` L517、L538–540 与 `identity-chain.md` L182–184）仍在本地 Core 与 OpenBao 中，待 Stage 3 的 `tenant.delete` 删除。
 

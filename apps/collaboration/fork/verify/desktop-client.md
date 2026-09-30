@@ -135,3 +135,23 @@ Relay 侧的证据有两项：roster 已把该公钥移除，Relay 库中没有�
 另外观察到一处不一致：`identity.client_key.register` 任务显示「Allowed, not started yet」，但设备已经 ACTIVE，
 与 Mobile 上看到的现象相同。截图在 `/volumes/data/kailo/tmp/native-evidence/`（`desktop-*.png`），
 夹具已拆除，宿主机 hosts 已恢复。
+
+## 外观说明使用部署显示名（2026-09-30）
+
+`SettingsPanels.tsx::ThemeSettingsCard` 的两段说明以共享 `{name}` 参数消费既有
+NativeSession 的显示名，无值时使用共享中性标题；外观与主题标题复用已有文案 key。
+同文件已有的三种主题模式文案使用共享目录，主题处理器、偏好存储、布局和样式
+标识不变。两条新说明只有 TypeScript 一份定义，Dart 由原生成器投影。
+
+按 ADR-18 原命令刷新 kit 副本后，单文件 Biome format/check 与整体 typecheck
+均退出 0；五份 package/lock 摘要前后严格相等。日志为
+`/volumes/data/kailo/tmp/codex-desktop-theme-settings-check-20260930.log`。
+本节类型与格式检查不是原生运行验收，不证明新显示名在安装包内刷新或换服。
+
+原构建入口单次完成安装包，退出 0、5 分 5.481 秒；当前 source 为
+`sha256:5f85180ee19ece3230e627438d07125674c5c4cb22ffa090dc17216486a8674e`，
+`dist/desktop-client/Kailo_0.5.23_amd64.deb` 实存 SHA 与登记均为
+`sha256:4ce222a33e4e96db6ef58ea5af1f47e8b56c18d58f1083a9c0f7ad45739abf60`。
+日志为 `/volumes/data/kailo/tmp/codex-native-name-desktop-artifact-root-20260930.log`；
+前两次执行包装失败保留于同目录，未据其报告构建完成。该包未安装或启动，来自
+完整工作树的产物不作为选定源码提交的发布证明，能力状态与三端验收结论不变。

@@ -353,6 +353,14 @@ export const platformMessages = {
   "platform.settings.close": { en: "Close settings", "zh-CN": "关闭设置" },
   "platform.settings.appearance": { en: "Appearance", "zh-CN": "外观" },
   "platform.settings.theme": { en: "Theme", "zh-CN": "主题" },
+  "platform.theme.appearanceDescription": {
+    en: "Choose how {name} looks and feels.",
+    "zh-CN": "选择{name}的界面外观。",
+  },
+  "platform.theme.styleDescription": {
+    en: "Choose the colors used throughout {name}.",
+    "zh-CN": "选择{name}使用的配色。",
+  },
   "platform.theme.modeLight": { en: "Light", "zh-CN": "浅色" },
   "platform.theme.modeDark": { en: "Dark", "zh-CN": "深色" },
   "platform.theme.modeSystem": { en: "System", "zh-CN": "跟随系统" },

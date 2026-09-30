@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
+  platformThemeModeKeys,
+  resolveLocale,
+  translate,
+  type PlatformThemeMode,
+} from "@client-kit/platform/i18n";
+import {
   BellRing,
   ChevronDown,
   Keyboard,
@@ -15,6 +21,7 @@ import type {
   NotificationSettings,
 } from "@/features/notifications/hooks";
 import type { SoundName, SoundSlot } from "@/features/notifications/lib/sound";
+import { useNativeSession } from "@/features/platform/activeCommunity";
 import { cn } from "@/shared/lib/cn";
 import { isBuzzTheme, useTheme } from "@/shared/theme/ThemeProvider";
 import {
@@ -268,12 +275,10 @@ function SingleThemeTile({
   );
 }
 
-type AppearanceMode = "system" | "light" | "dark";
-
 const APPEARANCE_MODE_OPTIONS = [
-  { mode: "system" as const, label: "System", Icon: SunMoon },
-  { mode: "light" as const, label: "Light", Icon: Sun },
-  { mode: "dark" as const, label: "Dark", Icon: Moon },
+  { mode: "system" as const, Icon: SunMoon },
+  { mode: "light" as const, Icon: Sun },
+  { mode: "dark" as const, Icon: Moon },
 ] as const;
 
 // Reveal/hide motion for the accent picker: a small translate + opacity fade.
@@ -289,6 +294,9 @@ const ACCENT_PICKER_TRANSITION = {
 };
 
 function ThemeSettingsCard() {
+  const locale = resolveLocale();
+  const { displayName } = useNativeSession();
+  const name = displayName ?? translate(locale, "platform.title");
   const {
     setTheme,
     selectedThemeName,
@@ -311,13 +319,14 @@ function ThemeSettingsCard() {
   const { pairedLight, lightOnly, darkOnly } = useThemeCategories();
 
   // Determine the active mode from current state
-  const activeMode: AppearanceMode = followSystem
+  const activeMode: PlatformThemeMode = followSystem
     ? "system"
     : isDark
       ? "dark"
       : "light";
 
-  const [selectedMode, setSelectedMode] = useState<AppearanceMode>(activeMode);
+  const [selectedMode, setSelectedMode] =
+    useState<PlatformThemeMode>(activeMode);
   const [themeStyleExpanded, setThemeStyleExpanded] = useState(false);
 
   const getVars = (name: SyntaxThemeName) =>
@@ -340,7 +349,7 @@ function ThemeSettingsCard() {
     return [...pairedDark, ...darkOnly];
   }, [pairedLight, darkOnly]);
 
-  const handleModeSelect = (mode: AppearanceMode) => {
+  const handleModeSelect = (mode: PlatformThemeMode) => {
     setSelectedMode(mode);
     if (mode === "system") {
       setFollowSystem(true);
@@ -500,12 +509,17 @@ function ThemeSettingsCard() {
       data-testid="settings-theme"
     >
       <SettingsSectionHeader
-        title="Appearance"
-        description="Choose how Buzz looks and feels."
+        title={translate(locale, "platform.settings.appearance")}
+        description={translate(locale, "platform.theme.appearanceDescription", {
+          name,
+        })}
       />
 
       <SettingsOptionGroupList>
-        <SettingsOptionGroup data-testid="appearance-theme-card" title="Theme">
+        <SettingsOptionGroup
+          data-testid="appearance-theme-card"
+          title={translate(locale, "platform.settings.theme")}
+        >
           <SettingsOptionRow data-testid="appearance-color-mode-row">
             <div className="min-w-0">
               <p className="text-sm font-medium">Color mode</p>
@@ -521,9 +535,9 @@ function ThemeSettingsCard() {
               legend="Color mode"
               onValueChange={handleModeSelect}
               optionTestIdPrefix="appearance-mode"
-              options={APPEARANCE_MODE_OPTIONS.map(({ mode, label, Icon }) => ({
+              options={APPEARANCE_MODE_OPTIONS.map(({ mode, Icon }) => ({
                 value: mode,
-                label,
+                label: translate(locale, platformThemeModeKeys[mode]),
                 Icon,
               }))}
               testId="appearance-color-mode-control"
@@ -538,7 +552,7 @@ function ThemeSettingsCard() {
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Choose the colors used throughout Buzz.
+                {translate(locale, "platform.theme.styleDescription", { name })}
               </p>
             </div>
             <button

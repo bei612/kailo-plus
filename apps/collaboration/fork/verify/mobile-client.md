@@ -129,3 +129,16 @@ Tenant admin 经 BFF 提交需要核验用户审批的 `tenant.member.revoke`。
   代码，Dart 侧已不调用；删除与验证要在具备 Xcode 的环境里完成。
 - Mobile 没有登记的打包构建文件，清单的 `artifact_digest` 目前记的是 buzz-relay 镜像的摘要（见上节）。
   上节的 APK 用 debug 证书签名，没有做 release 签名。
+
+## 标题与启动读屏显示名修正（2026-09-30）
+
+`lib/app.dart` 的窗口标题复用已有 `platformDisplayNameProvider`，没有可读名称时
+显示共享中性标题；启动读屏使用共享加载文案，不再写产品名。标题回调与启动界面
+均使用 MaterialApp 已解析的 locale，未新增 key、Provider、配置或 BFF 请求。
+认证、Relay、主题、动画及启动对账保持原行为。
+
+受限 cgroup 内单文件格式检查、`flutter analyze --no-pub lib/app.dart`、已有
+widget/indicator 三项回归均退出 0；检查日志为
+`/volumes/data/kailo/tmp/codex-mobile-display-checks-20260930.log`，13.750 秒。
+未改测试、未安装或升级依赖、未构建 APK，不把这三项回归写成真机名称刷新、换服、
+实际读屏或当前安装包的验收。Mobile release 签名仍为原阻断。

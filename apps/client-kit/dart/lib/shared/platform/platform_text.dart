@@ -162,6 +162,8 @@ enum PlatformMessageKey {
   platformSettingsClose,
   platformSettingsAppearance,
   platformSettingsTheme,
+  platformThemeAppearanceDescription,
+  platformThemeStyleDescription,
   platformThemeModeLight,
   platformThemeModeDark,
   platformThemeModeSystem,
@@ -730,6 +732,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformSettingsClose: ('Close settings', '关闭设置'),
   PlatformMessageKey.platformSettingsAppearance: ('Appearance', '外观'),
   PlatformMessageKey.platformSettingsTheme: ('Theme', '主题'),
+  PlatformMessageKey.platformThemeAppearanceDescription: (
+    'Choose how {name} looks and feels.',
+    '选择{name}的界面外观。',
+  ),
+  PlatformMessageKey.platformThemeStyleDescription: (
+    'Choose the colors used throughout {name}.',
+    '选择{name}使用的配色。',
+  ),
   PlatformMessageKey.platformThemeModeLight: ('Light', '浅色'),
   PlatformMessageKey.platformThemeModeDark: ('Dark', '深色'),
   PlatformMessageKey.platformThemeModeSystem: ('System', '跟随系统'),

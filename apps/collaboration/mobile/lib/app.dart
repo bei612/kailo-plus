@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_badge_plus/app_badge_plus.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -15,6 +16,7 @@ import 'features/profile/settings_profile_header.dart';
 import 'features/settings/settings_page.dart';
 import 'shared/auth/auth.dart';
 import 'shared/deeplink/pending_deep_link_provider.dart';
+import 'shared/platform/platform_display_name.dart';
 import 'shared/platform/platform_link.dart';
 import 'shared/relay/relay.dart';
 import 'shared/theme/theme.dart';
@@ -33,6 +35,7 @@ class App extends HookConsumerWidget {
     );
     final schemeName = communityTheme.theme;
     final authState = ref.watch(authProvider);
+    final displayName = ref.watch(platformDisplayNameProvider);
 
     // 启动时与平台核对一次：凭据仍在就刷新设备登记与 Relay 连接事实，
     // 凭据已不在就撤掉残留的协作连接。
@@ -98,7 +101,12 @@ class App extends HookConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       navigatorObservers: [voiceNoteRouteObserver],
-      title: 'Buzz',
+      onGenerateTitle: (context) =>
+          displayName ??
+          platformText(
+            PlatformMessageKey.platformTitle,
+            locale: Localizations.localeOf(context).toLanguageTag(),
+          ),
       theme: AppTheme.light(
         colorScheme: lightScheme,
         topSectionGradient: buzzLightGradient,
@@ -135,9 +143,15 @@ class _SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: Center(
-        child: BuzzLoadingIndicator(size: 56, semanticLabel: 'Starting Buzz'),
+        child: BuzzLoadingIndicator(
+          size: 56,
+          semanticLabel: platformText(
+            PlatformMessageKey.platformLoading,
+            locale: Localizations.localeOf(context).toLanguageTag(),
+          ),
+        ),
       ),
     );
   }
