@@ -89,7 +89,7 @@ if ! "$fresh"; then
 fi
 
 if "$fresh"; then
-  echo '清空 platform-local 容器和五个数据库卷，并清空本地 OpenBao、Buzz 对象和凭据。'
+  echo '清空 platform-local 容器和六个数据库卷，并清空本地 OpenBao、Buzz 对象和凭据。'
   echo '此操作不可恢复；保留 .env 和 data/registry 中的固定版本镜像。'
   for path in data secrets data/secret-store data/collab-objects; do
     [ ! -L "$path" ] || { echo "拒绝删除符号链接：$path" >&2; exit 2; }
@@ -136,7 +136,7 @@ compose run --rm --no-deps spicedb-schema
 
 ./start-core.sh
 compose build worker
-compose up -d --no-deps --no-build worker buzz-web agentgateway otel-collector
+compose up -d --wait --no-build worker buzz-web agentgateway otel-collector
 curl -fsS "http://127.0.0.1:${BFF_PORT:?缺少 BFF_PORT}/healthz" >/dev/null
 
 compose exec -T core-bff /usr/local/bin/platform-core bootstrap-tenant \
