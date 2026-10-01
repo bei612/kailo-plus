@@ -22,7 +22,7 @@
 |---|---|---|
 | 产品与架构合同 | 术语、实体、权限、状态、源码事实、接缝、阻断项 | [`.design`](../.design/README.md) |
 | 工程实施合同 | 仓库边界、交付顺序、质量门禁、升级流程、设计覆盖与工件格式 | 本目录 |
-| 可执行事实 | 代码、迁移、API schema、验证记录、构建锁文件、发布清单 | 后续在本目录建立的工程文件 |
+| 可执行事实 | 代码、迁移、API schema、验证记录、构建锁文件、发布清单 | 本目录现有工程文件 |
 
 发生冲突时，产品语义服从 `.design`；工程实现不得以代码现状反向改写设计。设计需要变化时，先按 `.design/AGENTS.md` 的证据纪律完成设计变更，再修改实现与测试。
 
@@ -38,9 +38,28 @@
 - `BLOCKED` 能力不进入路由、菜单、Action、Tool、Workflow 或发布清单。
 - `ADAPTER_REQUIRED` 能力只有在对应 `SS-*` 接缝实现、验证并形成可追溯构建产物后才能启用。
 
+`apps/` 是唯一开发工程根，也是独立 Git 仓库根；`core/`、`worker/`、`contracts/`、`tools/` 等直接位于仓库顶层，远端沿用 `bei612/kailo-plus`。原提交与 tag 保留原路径，不重写历史。外层目录、上游证据和工具缓存不是开发项目；设计版本、历史路径与 CI/hook 边界见 [ADR-07](docs/adr/ADR-07-ci-and-branch-protection.md)。
+
+新克隆须同时准备相邻的 `.design` 权威与只读 `.references` 证据；本工程不包含它们的正文。CI 从 [.github/workflows/check.yml](.github/workflows/check.yml) 的 `DESIGN_COMMIT` 读取保留历史中的固定设计版本。设计变更单独复核与提交，随后更新该版本，不以缺少设计目录为由跳过门禁。安装本仓库的共享 pre-push 入口：
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## 检查
 
-修改本目录任何文档后运行：
+`tools/check.sh` 是本地、CI 与 pre-push 的唯一门禁入口；宿主调用只负责启动资源受限的检查容器，不在宿主运行项目 Cargo、Go、Node 或 Dart。检查镜像定义在 [`tools/check.Dockerfile`](tools/check.Dockerfile)，按配方摘要查找，实际执行记录不可变 image ID。
+
+执行配置提供 `TMPDIR`、`CHECK_CPUS`、`CHECK_MEMORY`、`CHECK_NETWORK` 和 `CHECK_CACHE_ROOT`；两个目录必须可写且实际位于 `/volumes/data`。镜像首次构建还需要已有受限 `BUILDX_BUILDER`，由共用 [`container-safety.sh`](tools/container-safety.sh) 核对实际 BuildKit CPU、内存、swap 与数据缓存；不退回默认 builder，不降低 Cargo 并行度。完整规则与 CI 仓库变量见 [运行与运维基线](07-运行与运维基线.md) §2.1。
+
+配置就绪后，全部门禁或单步检查使用：
+
+```bash
+tools/check.sh --full
+tools/check.sh contract
+```
+
+修改本目录任何文档后至少运行同一检查容器的文档快路径：
 
 ```bash
 tools/check-docs.sh            # 默认读取 ../.design
@@ -57,10 +76,11 @@ tools/check-docs.sh /path/to/.design
 
 ## 工具链
 
-本目录的工作流工具状态（`.trellis/` 下除 `spec/` 外的内容、`.claude/`、`.codex/`、`.agents/`）不进版本库，新克隆后自行重建：
+项目工具链只来自检查与发布镜像，不另装宿主 SDK。Trellis 与 GitNexus 是协作、源码检索工具，不是项目编译入口；使用当前环境已核验的 runner，不能把它们的工具缓存作为项目源码或发布输入。
+
+本目录的工作流工具状态（`.trellis/` 下除 `spec/` 外的内容、`.claude/`、`.codex/`、`.agents/`）不进版本库，新克隆后用已有 Trellis 工具初始化：
 
 ```bash
-npm install -g @mindfoldhq/trellis@latest
 trellis init --claude --codex -u "<你的名字>" --workflow native
 ```
 
@@ -68,16 +88,16 @@ trellis init --claude --codex -u "<你的名字>" --workflow native
 
 `.trellis/spec/` 是唯一入库的 Trellis 目录。它是从**已有代码**提炼的编码约定知识库（函数签名、字段、边界行为），提炼时机在任务完成之后，用于后续会话自动注入上下文；它不是先于实现的规格，与 `.design` 的产品合同是两回事。入库的原因是这些约定属于工程资产，必须随仓库分发并进入 code review，而不是只存在于某台机器上。
 
-其中 `backend/` 与 `frontend/` 下的文件当前是空模板，随首批代码落地后逐步填写；`guides/` 由 Trellis 模板提供，升级工具会覆写它，产生的差异按普通改动评审。仍然成立的约束：进入 `.design` 或本目录实施文档的结论以那两处为准，`spec/` 只记录代码层面的约定，不得在其中重新定义产品语义或能力状态。
+其中 [backend/quality-guidelines.md](.trellis/spec/backend/quality-guidelines.md) 与 [frontend/quality-guidelines.md](.trellis/spec/frontend/quality-guidelines.md) 已记录真实工程约定，其余模板不能据此称为已补齐。`guides/` 由 Trellis 模板提供，升级产生的差异按普通改动评审，不把自动稿覆盖当作知识库更新完成。进入 `.design` 或本目录实施文档的结论以那两处为准，`spec/` 只记录代码层面的约定，不得在其中重新定义产品语义或能力状态。
 
-代码检索与影响分析使用 GitNexus（`gitnexus analyze` 建索引）。
+代码检索与影响分析使用 GitNexus；源码根、Git 归属、凭据和运行数据排除、索引 freshness、编辑前 impact 与提交前 detect 的约束见 [AGENTS.md](AGENTS.md)「代码检索与影响门禁」。当前独立 Git 不依赖父仓库；根核对失败时停止工程操作，不能把外层索引或缓存安装树当作本工程的完整审查证据。
 
 ## 当前阶段
 
-**Stage 0 已完成**：十项退出条件全部达成，`tools/check.sh --full` 退出码 0（21 项通过、2 项无适用对象）。
+**Stage 0 历史基线验收**：当时十项退出条件记录为达成，`tools/check.sh --full` 退出码 0（21 项通过、2 项无适用对象）。这是基线时点的结果，不是当前工作树、全部业务能力或生产发布的验收结论。
 
 已就位：四门语言的契约生成与 round-trip（Rust/Go/TypeScript/Dart）、Core 的六个模块 schema 与可回滚迁移、Temporal Worker 的 history replay 回归、四层 network 的本地拓扑、追溯记录与能力注册表的校验器、上游 baseline manifest 校验、发布单元与 SBOM/provenance、CI 与 pre-push 钩子（同一入口）。
 
-两项 SKIP 是无适用对象而非遗漏：尚无追溯记录（Stage 0 不产出用户可达能力）；十份 runbook 在生产发布前补齐（`07-运行与运维基线.md` §6）。
+当时两项 SKIP 是无适用对象而非遗漏：Stage 0 尚无用户可达能力的追溯记录，runbook 当时按 `07-运行与运维基线.md` §6 的适用性判定。当前已有生产路径的追溯记录；现阶段是否通过须读取实际记录与本轮门禁，不能继续沿用 Stage 0 的零记录判断。
 
 **当前正在开发 Stage 2，尚未生产就绪**：Stage 1 的身份与协作主链已有实现，但不能宣称其退出门禁全部闭合。`DD-70/72` 要求的 `tenants/<tenant_id>` OpenBao namespace、独立 KV/AppRole/policy/token 已在本地真实生命周期与跨 Tenant 拒绝探针中验证；旧 `platform/kv` SecretRef 的兼容读取保留，迁移及旧版本处置尚未完成，见 [SecretRef 核验](core/verify/secret-ref.md)。Stage 2 的 Governed Action、审批、角色、邀请及任务只读投影已有实现；本人任务取消与重跑已通过 Core、Temporal、Worker 的真实拓扑联调及 Web 真实浏览器走查。Desktop/Mobile 原生会话端到端证据与 Stage 2 其余能力仍未闭合，Stage 3–5、平台一期收口与三个能力扩展未交付。当前优先收口 Web，再推进 Stage 2；以 [纵向交付路线](02-纵向交付路线.md) §1.1、§3–4 的端规则和退出门禁逐项验收，不得把 Web 通过当作三端和全阶段通过。

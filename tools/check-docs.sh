@@ -6,6 +6,10 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 2
 DESIGN="${1:-../.design}"
+if [ ! -f /.dockerenv ]; then
+  export DESIGN
+  exec bash tools/check.sh --docs-only
+fi
 FAIL=0
 
 say()  { printf '%s\n' "$*"; }

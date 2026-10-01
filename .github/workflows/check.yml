@@ -1,5 +1,4 @@
-# 门禁只在 apps/tools/check.sh 里定义（ADR-07）。本工作流只负责调用它，
-# 不在 YAML 中写任何门禁逻辑——两处行为出现差异即为缺陷。
+# The implementation repository root owns the shared local/CI gate (ADR-07).
 name: check
 
 on:
@@ -14,9 +13,11 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Checkout directory name, not an apps/ subtree inside this repository.
+        working-directory: apps
 
-    # 迁移演练需要真实 Postgres。版本与 deploy/local/compose.yaml 保持一致；
-    # 两处漂移会让「本地通过 CI 不通过」变成环境问题而非变更问题。
     services:
       core-db:
         image: postgres:16-alpine
@@ -31,33 +32,97 @@ jobs:
 
     env:
       DATABASE_URL: postgres://platform:${{ secrets.CI_CORE_DB_PASSWORD }}@127.0.0.1:5432/platform_core_ci
+      CHECK_SOURCE_REF: ${{ github.sha }}
+      TMPDIR: ${{ vars.TMPDIR }}
+      CHECK_CPUS: ${{ vars.CHECK_CPUS }}
+      CHECK_MEMORY: ${{ vars.CHECK_MEMORY }}
+      CHECK_NETWORK: ${{ vars.CHECK_NETWORK }}
+      CHECK_CACHE_ROOT: ${{ vars.CHECK_CACHE_ROOT }}
+      # These are CI execution inputs, not a second set of application settings.
+      CI_BUILDKIT_CPU_QUOTA: ${{ vars.CI_BUILDKIT_CPU_QUOTA }}
+      CI_BUILDKIT_CPU_PERIOD: ${{ vars.CI_BUILDKIT_CPU_PERIOD }}
+      CI_BUILDKIT_MEMORY: ${{ vars.CI_BUILDKIT_MEMORY }}
+      CI_BUILDKIT_CACHE_ROOT: ${{ vars.CI_BUILDKIT_CACHE_ROOT }}
+      BUILDX_BUILDER: kailo-check-${{ github.run_id }}-${{ github.run_attempt }}
+      # Frozen authority from the preserved pre-layout history, not a second
+      # design copy under the code root. Advance only with reviewed design.
+      DESIGN_COMMIT: ee4c79683453b0cdc45ca5a0668338b6f977c17c
 
     steps:
       - uses: actions/checkout@v4
-
-      # 版本从 worker/go.mod 的 go 指令读，不在这里重复写死：下界由依赖中
-      # 最高的那个决定，会随依赖变动上移。给低了 Go 会静默下载并切换工具链，
-      # 使 CI 实际使用的编译器版本不可控（ADR-07）。
-      - uses: actions/setup-go@v5
         with:
-          go-version-file: apps/worker/go.mod
+          fetch-depth: 0
+          path: apps
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Read the pinned design authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../.design
+          git archive "${DESIGN_COMMIT}:.design" | tar -x -C ../.design
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - uses: dart-lang/setup-dart@v1
-        with:
-          sdk: '3.9.4'
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: sqlx-cli
+      - name: Prepare the bounded CI builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${TMPDIR:?Repository variable TMPDIR is required}"
+          : "${CHECK_CPUS:?Repository variable CHECK_CPUS is required}"
+          : "${CHECK_MEMORY:?Repository variable CHECK_MEMORY is required}"
+          : "${CHECK_NETWORK:?Repository variable CHECK_NETWORK is required}"
+          : "${CHECK_CACHE_ROOT:?Repository variable CHECK_CACHE_ROOT is required}"
+          : "${CI_BUILDKIT_CACHE_ROOT:?Repository variable CI_BUILDKIT_CACHE_ROOT is required}"
+          for value in CI_BUILDKIT_CPU_QUOTA CI_BUILDKIT_CPU_PERIOD CI_BUILDKIT_MEMORY; do
+            [[ "${!value:-}" =~ ^[1-9][0-9]*$ ]] || {
+              echo "$value must be a positive integer (memory in bytes)" >&2; exit 2;
+            }
+          done
+          for path in "$TMPDIR" "$CHECK_CACHE_ROOT" "$CI_BUILDKIT_CACHE_ROOT"; do
+            path=$(realpath -m -- "$path")
+            case "$path" in /volumes/data/*) ;; *) echo 'CI data paths must be under /volumes/data' >&2; exit 2 ;; esac
+            if [ ! -d "$path" ]; then
+              sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" -- "$path"
+            fi
+            [ -w "$path" ] || { echo "CI data directory is not writable: $path" >&2; exit 2; }
+          done
+          source tools/container-safety.sh
+          container_safety_init
+          container_resource_preflight
+          cache=$(container_require_data_path "$CI_BUILDKIT_CACHE_ROOT")
+          volume="buildx_buildkit_${BUILDX_BUILDER}0_state"
+          if "${CONTAINER_DOCKER[@]}" buildx inspect "$BUILDX_BUILDER" >/dev/null 2>&1 \
+            || "${CONTAINER_DOCKER[@]}" volume inspect "$volume" >/dev/null 2>&1; then
+            echo 'CI private builder or volume already exists; refusing to reuse unrelated resources' >&2
+            exit 2
+          fi
+          "${CONTAINER_DOCKER[@]}" volume create --driver local --opt type=none --opt o=bind --opt "device=$cache" "$volume"
+          printf 'CI_BUILDKIT_VOLUME_CREATED=%s\n' "$volume" >> "$GITHUB_ENV"
+          "${CONTAINER_DOCKER[@]}" buildx create --name "$BUILDX_BUILDER" --node "${BUILDX_BUILDER}0" \
+            --driver docker-container --driver-opt "cpu-quota=$CI_BUILDKIT_CPU_QUOTA" \
+            --driver-opt "cpu-period=$CI_BUILDKIT_CPU_PERIOD" --driver-opt "memory=$CI_BUILDKIT_MEMORY" \
+            --driver-opt "memory-swap=$CI_BUILDKIT_MEMORY" --bootstrap
+          container_require_limited_builder
+          actual=$("${CONTAINER_DOCKER[@]}" inspect "buildx_buildkit_${BUILDX_BUILDER}0" \
+            --format '{{.HostConfig.CpuQuota}} {{.HostConfig.CpuPeriod}} {{.HostConfig.Memory}} {{.HostConfig.MemorySwap}}')
+          [ "$actual" = "$CI_BUILDKIT_CPU_QUOTA $CI_BUILDKIT_CPU_PERIOD $CI_BUILDKIT_MEMORY $CI_BUILDKIT_MEMORY" ] || {
+            echo 'CI actual BuildKit limits differ from execution configuration' >&2; exit 2;
+          }
 
       - name: tools/check.sh --full
-        working-directory: apps
         run: ./tools/check.sh --full
+
+      - name: Remove this job's private builder
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -f tools/container-safety.sh ] && [ -d "${TMPDIR:-}" ] || exit 0
+          volume="buildx_buildkit_${BUILDX_BUILDER}0_state"
+          [ "${CI_BUILDKIT_VOLUME_CREATED:-}" = "$volume" ] || exit 0
+          source tools/container-safety.sh
+          container_safety_init
+          if "${CONTAINER_DOCKER[@]}" buildx inspect "$BUILDX_BUILDER" >/dev/null 2>&1; then
+            "${CONTAINER_DOCKER[@]}" buildx rm "$BUILDX_BUILDER"
+          fi
+          if "${CONTAINER_DOCKER[@]}" volume inspect "$volume" >/dev/null 2>&1; then
+            "${CONTAINER_DOCKER[@]}" volume rm "$volume"
+          fi

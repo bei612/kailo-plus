@@ -15,10 +15,8 @@ UNITS=(core worker)
 OUT=dist
 # 用 BuildKit 构建：Dockerfile 里的 cache mount 依赖它，且它是现代 Docker 的默认构建器
 export DOCKER_BUILDKIT=1
-# 本机若未把当前用户加入 docker 组，退回 sudo；syft 需要与 docker 同等权限
-SUDO=""
-docker info >/dev/null 2>&1 || SUDO="sudo -n"
-DOCKER="$SUDO docker"
+. tools/container-safety.sh
+container_safety_init
 
 say()  { printf '%s\n' "$*"; }
 pass() { printf '  \033[32mOK\033[0m   %s\n' "$*"; }
@@ -28,12 +26,13 @@ die()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; exit 1; }
 # 实际构建输入另从固定 commit 导出，避免被 ignored 文件或构建期间的工作树变化污染。
 [ -z "$(git status --porcelain --untracked-files=all)" ] || die "工作树有未提交改动，构建产物无法追溯到 commit"
 COMMIT=$(git rev-parse HEAD)
+container_resource_preflight
+container_require_limited_builder
 BUILD_CONTEXT=$(mktemp -d)
 trap 'rm -r -- "$BUILD_CONTEXT"' EXIT
-# 从仓库根执行 archive；若从 apps/ 子目录执行，Git 会再附加 apps/ 前缀，
-# 对 HEAD:apps 内的相对路径产生不存在的 pathspec。
+# 本独立仓库的根就是构建根，不向父目录查找历史外层仓库。
 # 导出集合与 .dockerignore 的 allowlist 同步：Core 编译期内嵌生成的能力注册表。
-git -C .. archive --format=tar "$COMMIT:apps" .dockerignore core worker \
+git archive --format=tar "$COMMIT" .dockerignore core worker \
   tools/registry/capabilities.yaml | tar -xf - -C "$BUILD_CONTEXT" \
   || die "无法从固定 commit 导出构建上下文"
 
@@ -45,23 +44,21 @@ find "$OUT" -type f -empty -delete
 for unit in "${UNITS[@]}"; do
   say "== $unit =="
   tag="platform/$unit:$COMMIT"
-  if [ -n "${BUILDX_BUILDER:-}" ]; then
-    # docker-container builder 的 cgroup 限额约束编译；--load 把镜像交给后续
-    # inspect 与 syft 使用的本地 image store。
-    $DOCKER buildx build --builder "$BUILDX_BUILDER" --load -q \
-      -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" >/dev/null \
-      || die "$unit 构建失败"
-  else
-    $DOCKER build -q -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" >/dev/null \
-      || die "$unit 构建失败"
-  fi
-  digest=$($DOCKER image inspect --format '{{.Id}}' "$tag")
+  container_resource_preflight
+  container_require_limited_builder
+  build_log=$(mktemp "$TMPDIR/release-$unit.XXXXXX.log")
+  say "构建日志：$build_log"
+  # 校验与执行使用同一 Docker 身份；服务端限额约束真正的编译进程。
+  "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --load --progress=plain \
+    -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" 2>&1 | tee "$build_log" \
+    || die "$unit 构建失败"
+  digest=$("${CONTAINER_DOCKER[@]}" image inspect --format '{{.Id}}' "$tag")
   pass "镜像 $digest"
 
   sbom="$OUT/$unit.${digest#sha256:}.spdx.json"
   # 先写临时文件，成功才落位：失败时不留下 0 字节产物冒充 SBOM
   tmp_sbom=$(mktemp)
-  if $SUDO env "PATH=$PATH" syft "docker:$tag" -o spdx-json > "$tmp_sbom"; then
+  if "${CONTAINER_PRIVILEGE[@]}" env "PATH=$PATH" syft "docker:$tag" -o spdx-json > "$tmp_sbom"; then
     mv "$tmp_sbom" "$sbom"
   else
     rm -f "$tmp_sbom"; die "$unit SBOM 生成失败"
@@ -85,7 +82,7 @@ json.dump({
     "predicate": {
         "buildDefinition": {
             "buildType": "https://platform.local/docker-build/v1",
-            "externalParameters": {"dockerfile": f"{unit}/Dockerfile", "context": "apps/"},
+            "externalParameters": {"dockerfile": f"{unit}/Dockerfile", "context": "."},
             "resolvedDependencies": [
                 {"uri": remote, "digest": {"gitCommit": commit}},
                 {"name": "dependency-locks", "digest": {"sha256": lock_digest}},

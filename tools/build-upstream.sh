@@ -16,6 +16,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
 project="${1:?用法: tools/build-upstream.sh <产物>}"
+. tools/container-safety.sh
+container_safety_init
+container_resource_preflight
+container_require_limited_builder
 plan=$(python3 tools/upstream_manifest.py plan "$project") || exit 2
 eval "$plan"
 
@@ -49,12 +53,15 @@ for a in "${build_args[@]}"; do
 done
 
 export DOCKER_BUILDKIT=1
-SUDO=""; docker info >/dev/null 2>&1 || SUDO="sudo -n"
 
 echo "== 源码：$tree（基准 ${base:0:12}） =="
 python3 tools/upstream_manifest.py stage "$project" "$src"
 [ -d "$src/$ctx" ] || { echo "build_context $ctx 不存在于构建输入" >&2; exit 2; }
 dockerfile_args=(-f "$src/$dockerfile")
+container_resource_preflight
+container_require_limited_builder
+build_log=$(mktemp "$TMPDIR/build-$artifact.XXXXXX.log")
+echo "构建日志：$build_log"
 
 # 产物有两种形态。镜像：推入 registry，摘要是 registry digest。安装包：记录以
 # build_dockerfile 指向本仓库维护的构建文件，其最后一个阶段只含安装包；以
@@ -65,46 +72,33 @@ if [ "$kind" = image ]; then
   # 上游普遍把版本与 revision 作为构建参数注入二进制，并在构建末尾自检——
   # 例如 agentgateway 在 version 为 "unknown" 时直接让构建失败。
   # 取值用基准 commit，产物因此可追溯到它；本仓库改动由写回的 source_digest 追溯。
-  if [ -n "${BUILDX_BUILDER:-}" ]; then
-    # docker-container builder 的缓存不等于本地 Docker image store；后续 tag/push
-    # 需要明确 --load。builder 容器本身承担 CPU/内存限额。
-    $SUDO docker buildx build --builder "$BUILDX_BUILDER" --load -q \
-      "${dockerfile_args[@]}" "${secret_args[@]}" "${arg_args[@]}" \
-      --build-arg "VERSION=${base:0:12}" \
-      --build-arg "GIT_REVISION=$base" \
-      -t "$tag" "$src/$ctx" >/dev/null
-  else
-    $SUDO docker build -q \
-      "${dockerfile_args[@]}" "${secret_args[@]}" "${arg_args[@]}" \
-      --build-arg "VERSION=${base:0:12}" \
-      --build-arg "GIT_REVISION=$base" \
-      -t "$tag" "$src/$ctx" >/dev/null
-  fi
+  # --load 将 builder 产物交给同一 daemon 的本地 image store。
+  "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --load --progress=plain \
+    "${dockerfile_args[@]}" "${secret_args[@]}" "${arg_args[@]}" \
+    --build-arg "VERSION=${base:0:12}" \
+    --build-arg "GIT_REVISION=$base" \
+    -t "$tag" "$src/$ctx" 2>&1 | tee "$build_log"
   # 推入本地 registry：自建产物只有 image ID，必须先入 registry 才能按 digest
   # 引用（ADR-06）。REGISTRY 由调用方给出，接入托管 registry 后只改这一个值。
   registry="${REGISTRY:?需要 REGISTRY，例如 127.0.0.1:55000}"
   remote="$registry/$artifact:${base:0:12}"
-  $SUDO docker tag "$tag" "$remote"
-  $SUDO docker push -q "$remote" >/dev/null
-  digest=$($SUDO docker inspect --format '{{index .RepoDigests 0}}' "$remote" | sed 's/.*@//')
+  "${CONTAINER_DOCKER[@]}" tag "$tag" "$remote"
+  "${CONTAINER_DOCKER[@]}" push -q "$remote" >/dev/null
+  digest=$("${CONTAINER_DOCKER[@]}" inspect --format '{{index .RepoDigests 0}}' "$remote" | sed 's/.*@//')
   echo "  $remote@$digest"
 else
   echo "== 构建 $artifact 安装包 =="
   staged=$(mktemp -d)
-  if [ -n "${BUILDX_BUILDER:-}" ]; then
-    $SUDO docker buildx build --builder "$BUILDX_BUILDER" --progress=plain \
-      "${dockerfile_args[@]}" "${secret_args[@]}" "${arg_args[@]}" --output "type=local,dest=$staged" "$src/$ctx"
-  else
-    $SUDO docker build --progress=plain "${dockerfile_args[@]}" "${secret_args[@]}" "${arg_args[@]}" \
-      --output "type=local,dest=$staged" "$src/$ctx"
-  fi
+  "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --progress=plain \
+    "${dockerfile_args[@]}" "${secret_args[@]}" "${arg_args[@]}" --output "type=local,dest=$staged" "$src/$ctx" \
+    2>&1 | tee "$build_log"
   mapfile -t bundles < <(find "$staged" -maxdepth 1 -type f)
   [ "${#bundles[@]}" -eq 1 ] || { echo "构建应恰好产出 1 个安装包，得到 ${#bundles[@]} 个" >&2; exit 1; }
   digest="sha256:$(sha256sum "${bundles[0]}" | cut -d' ' -f1)"
   out="dist/$artifact"
   mkdir -p "$out"
-  $SUDO install -m 0644 -o "$(id -u)" -g "$(id -g)" "${bundles[0]}" "$out/"
-  $SUDO rm -rf "$staged"
+  "${CONTAINER_PRIVILEGE[@]}" install -m 0644 -o "$(id -u)" -g "$(id -g)" "${bundles[0]}" "$out/"
+  "${CONTAINER_PRIVILEGE[@]}" rm -rf "$staged"
   echo "  $out/$(basename "${bundles[0]}") $digest"
 fi
 

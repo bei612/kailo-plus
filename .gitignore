@@ -1,14 +1,85 @@
+# Local secrets and overrides
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+# Credentials and runtime stores are excluded at the implementation Git root.
+/deploy/local/secrets/
+/deploy/local/data/
+/deploy/local/.env
+/deploy/local/.env.*
+!/deploy/local/.env.example
+
+# Dependency and build output
+node_modules/
+target/
+build/
+dist/
+coverage/
+*.log
+
+# Local tool state
+.cache/
+.tmp/
+.idea/
+.vscode/
 .DS_Store
-*.tmp
+.gitnexus/
 
-# 上游只读证据克隆，不进版本库
-/.references/
-/.old/
+# Raw development session export, not a distributable source artifact.
+/2026-09-30-025311-this-session-is-being-continued-from-a-previous-c.txt
 
-# GitNexus 1.6.12 只读取仓库根的 ignore 规则；本地凭据和服务数据
-# 必须在这里排除，不能仅依赖 apps/.gitignore。
-/apps/deploy/local/secrets/
-/apps/deploy/local/data/
-/apps/deploy/local/.env
-/apps/deploy/local/.env.*
-!/apps/deploy/local/.env.example
+# Trellis 工作流（本机工具状态，不进版本库）
+# 由 `trellis init` 生成；重建方式见 README「工具链」
+# 例外 .trellis/spec/：从代码提炼的编码约定知识库，是工程资产，随仓库分发
+.trellis/*
+!.trellis/spec/
+.claude/
+.codex/
+.agents/
+
+# Go
+/worker/bin/
+
+# Dart / Flutter
+/client-kit/dart/.dart_tool/
+/client-kit/dart/pubspec.lock
+
+# 发布产物（由 tools/release.sh 生成，可追溯性来自 provenance）
+/dist/
+
+# Python 字节码缓存（tools/upstream_manifest.py 被 check.sh 导入时生成）
+__pycache__/
+
+# 二开项目（ADR-16）：取舍以各树自己的 .gitignore 为准。上面为平台自有代码写的密钥形态文件名、
+# 本机工具目录在上游源码里是被跟踪的测试夹具与仓库配置，不能因为落在 apps/ 下就被悄悄漏掉；
+# 构建输出（target/、node_modules/、dist/ 等）不在此放开。
+!/collaboration/**/*.pem
+!/collaboration/**/*.key
+!/collaboration/**/.env.*
+!/collaboration/**/.claude/
+!/collaboration/**/.codex/
+!/collaboration/**/.agents/
+!/collaboration/**/.vscode/
+!/web-client/**/*.pem
+!/web-client/**/*.key
+!/web-client/**/.env.*
+!/web-client/**/.claude/
+!/web-client/**/.codex/
+!/web-client/**/.agents/
+!/web-client/**/.vscode/
+!/model-gateway/**/*.pem
+!/model-gateway/**/*.key
+!/model-gateway/**/.env.*
+!/model-gateway/**/.claude/
+!/model-gateway/**/.codex/
+!/model-gateway/**/.agents/
+!/model-gateway/**/.vscode/
+!/agent-runtime/**/*.pem
+!/agent-runtime/**/*.key
+!/agent-runtime/**/.env.*
+!/agent-runtime/**/.claude/
+!/agent-runtime/**/.codex/
+!/agent-runtime/**/.agents/
+!/agent-runtime/**/.vscode/

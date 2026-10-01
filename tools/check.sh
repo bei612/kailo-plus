@@ -4,7 +4,7 @@
 # 无适用对象的步骤输出 SKIP 并通过——它在首次出现适用对象时自动生效，不被注释掉。
 #
 # 用法：
-#   tools/check.sh              # 按变更范围选择步骤
+#   tools/check.sh              # 全部步骤
 #   tools/check.sh --full       # 全部步骤
 #   tools/check.sh <step>       # 单步，step 见下方 STEPS
 set -uo pipefail
@@ -23,6 +23,116 @@ fail() { printf '  \033[31mFAIL\033[0m %s\n' "$*"; FAIL=1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 # 目录存在且含至少一个非隐藏条目
 populated() { [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null | grep -v '^\.')" ]; }
+
+# Host invocation is only a launcher. No project toolchain is run on the host.
+run_in_check_container() (
+  set -euo pipefail
+  source tools/container-safety.sh
+  container_safety_init
+  container_resource_preflight
+  : "${CHECK_CPUS:?执行配置必须提供 CHECK_CPUS}"
+  : "${CHECK_MEMORY:?执行配置必须提供 CHECK_MEMORY}"
+  : "${CHECK_NETWORK:?执行配置必须提供 CHECK_NETWORK}"
+  : "${CHECK_CACHE_ROOT:?执行配置必须提供 CHECK_CACHE_ROOT}"
+  mkdir -p -- "$CHECK_CACHE_ROOT"
+  cache=$(container_require_data_path "$CHECK_CACHE_ROOT")
+  workspace=$(mktemp -d)
+  container_id=
+  trap 'if [ -n "$container_id" ]; then "${CONTAINER_DOCKER[@]}" rm -f "$container_id" >/dev/null 2>&1 || true; fi; rm -r -- "$workspace"' EXIT
+  mkdir -p "$workspace/apps" "$workspace/.design" "$workspace/image" "$workspace/tmp"
+
+  # Export actual source, never ignored credentials/data, caches or session files.
+  # An explicit ref checks the tree being published, not unrelated dirty work.
+  if [ -n "${CHECK_SOURCE_REF:-}" ]; then
+    tree=$(git rev-parse --verify "${CHECK_SOURCE_REF}^{tree}")
+    git archive "$tree" | tar -xf - -C "$workspace/apps"
+    design_commit=$(python3 - "$workspace/apps/.github/workflows/check.yml" <<'PY'
+import re, sys, yaml
+with open(sys.argv[1], encoding="utf-8") as source:
+    pin = yaml.safe_load(source)["jobs"]["check"]["env"]["DESIGN_COMMIT"]
+if not isinstance(pin, str) or not re.fullmatch(r"[0-9a-f]{40}", pin):
+    sys.exit("拒绝检查：发布树的 DESIGN_COMMIT 不是完整 commit")
+print(pin)
+PY
+    )
+    git archive "${design_commit}:.design" | tar -xf - -C "$workspace/.design"
+    design="$workspace/.design"
+  else
+    git ls-files -z --cached --others --exclude-standard | \
+      while IFS= read -r -d '' path; do
+        if [ -e "$path" ] || [ -L "$path" ]; then printf '%s\0' "$path"; fi
+      done | tar --null --verbatim-files-from -T - -cf - | tar -xf - -C "$workspace/apps"
+    design=$(realpath -e -- "${DESIGN:-${2:-../.design}}")
+  fi
+  [ -f "$workspace/apps/tools/check.Dockerfile" ] || {
+    echo '拒绝检查：实际源码树没有检查镜像定义' >&2; exit 2;
+  }
+  recipe="$workspace/apps/tools/check.Dockerfile"
+  recipe_digest=$(sha256sum "$recipe" | cut -d' ' -f1)
+  image_tag="local/kailo-check:$recipe_digest"
+  image=$("${CONTAINER_DOCKER[@]}" image inspect --format '{{.Id}}' "$image_tag" 2>/dev/null || true)
+  if [ -z "$image" ]; then
+    container_require_limited_builder
+    tar -C "$workspace/apps/tools" -cf - check.Dockerfile | tar -xf - -C "$workspace/image"
+    build_log=$(mktemp --suffix=.check-image.log)
+    "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --load \
+      --progress=plain -f "$workspace/image/check.Dockerfile" -t "$image_tag" "$workspace/image" \
+      2>&1 | tee "$build_log"
+    image=$("${CONTAINER_DOCKER[@]}" image inspect --format '{{.Id}}' "$image_tag")
+  fi
+  printf '检查镜像（不可变 image ID）：%s；配方 SHA-256：%s\n' "$image" "$recipe_digest"
+  mkdir -p "$cache/home" "$cache/cargo-registry" "$cache/cargo-git"
+  mounts=(
+    --mount "type=bind,src=$workspace/apps,dst=/workspace/apps"
+    --mount "type=bind,src=$(git rev-parse --absolute-git-dir),dst=/workspace/apps/.git,readonly"
+    --mount "type=bind,src=$design,dst=/workspace/.design,readonly"
+    --mount "type=bind,src=$cache,dst=/cache"
+    --mount "type=bind,src=$workspace/tmp,dst=/tmp"
+    --mount "type=bind,src=$cache/cargo-registry,dst=/usr/local/cargo/registry"
+    --mount "type=bind,src=$cache/cargo-git,dst=/usr/local/cargo/git"
+  )
+  for optional in .references dist; do
+    if [ "$optional" = .references ]; then location=../.references; destination=/workspace/.references
+    else location=dist; destination=/workspace/apps/dist; fi
+    if [ -d "$location" ]; then
+      mounts+=(--mount "type=bind,src=$(realpath -e -- "$location"),dst=$destination,readonly")
+    fi
+  done
+  container_id=$("${CONTAINER_DOCKER[@]}" create --pull=never \
+    --cpus "$CHECK_CPUS" --memory "$CHECK_MEMORY" --memory-swap "$CHECK_MEMORY" \
+    --user "$(id -u):$(id -g)" --network "$CHECK_NETWORK" \
+    "${mounts[@]}" --workdir /workspace/apps \
+    --env HOME=/cache/home --env TMPDIR=/tmp --env XDG_CACHE_HOME=/cache/xdg \
+    --env CARGO_TARGET_DIR=/cache/rust-target --env GOCACHE=/cache/go-build \
+    --env GOMODCACHE=/cache/go-mod --env PUB_CACHE=/cache/pub \
+    --env npm_config_cache=/cache/npm --env DESIGN=/workspace/.design \
+    --env DATABASE_URL --env CARGO_BUILD_JOBS \
+    "$image" bash tools/check.sh "$@")
+  container_verify_limits "$container_id"
+  log=$(mktemp --suffix=.check.log)
+  printf '本次检查日志：%s\n' "$log"
+  "${CONTAINER_DOCKER[@]}" start -a "$container_id" 2>&1 | tee "$log"
+  exit "$("${CONTAINER_DOCKER[@]}" wait "$container_id")"
+)
+
+prepare_check_dependencies() {
+  for tool in cargo rustfmt go node npm npx dart python3 git; do
+    have "$tool" || { echo "拒绝检查：镜像缺少工具链 $tool" >&2; return 2; }
+  done
+  cargo --version; go version; node --version; dart --version
+  local manager tooling
+  manager=$(node -p 'require("./package.json").packageManager') || return 2
+  [[ "$manager" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+    echo '拒绝检查：package.json 的 packageManager 不是固定 pnpm 版本' >&2; return 2;
+  }
+  tooling="$HOME/tooling/$manager"
+  if [ ! -x "$tooling/node_modules/.bin/pnpm" ]; then
+    npm install --prefix "$tooling" --no-audit --no-fund "$manager" || return 2
+  fi
+  export PATH="$tooling/node_modules/.bin:$PATH"
+  pnpm install --frozen-lockfile || return 2
+  (cd client-kit/dart && dart pub get) || return 2
+}
 
 step_lint() {
   hdr "1/10 格式与静态检查"
@@ -97,23 +207,37 @@ step_contract() { hdr "3/10 contract compatibility"
 import json, os, subprocess, sys
 tag = os.environ["LAST_TAG"]
 def at(rev, path):
-    r = subprocess.run(["git", "show", f"{rev}:{path}"], capture_output=True, text=True)
-    return json.loads(r.stdout) if r.returncode == 0 else None
+    r = subprocess.run(["git", "show", f"{rev}:{path}"],
+                       capture_output=True, text=True, check=True)
+    return json.loads(r.stdout)
 
-# --full-name 取仓库根相对路径：git show <rev>:<path> 只认这种形式，
-# 而工作树读取要用相对当前目录的路径，两者不可混用。
+# 历史 tag 保留当时的树形；目录迁移不得把读不到旧路径当成新增 schema。
+roots = subprocess.run(["git", "ls-tree", "-d", "--name-only", tag, "--",
+                        "contracts", "apps/contracts"],
+                       capture_output=True, text=True, check=True).stdout.splitlines()
+if len(roots) != 1:
+    print(f"  FAIL {tag} 的 contracts 根无法唯一解析：{roots}")
+    sys.exit(1)
+old_root = roots[0]
+old_paths = set(subprocess.run(["git", "ls-tree", "-r", "--name-only", tag, "--", old_root],
+                               capture_output=True, text=True, check=True).stdout.splitlines())
 files = subprocess.run(["git", "ls-files", "--full-name", "contracts"],
-                       capture_output=True, text=True).stdout.split()
+                       capture_output=True, text=True, check=True).stdout.splitlines()
 schemas = [f for f in files if f.endswith(".schema.json")]
-prefix = subprocess.run(["git", "rev-parse", "--show-prefix"],
-                        capture_output=True, text=True).stdout.strip()
 breaking = []
+matched = 0
 for f in schemas:
-    old = at(tag, f)
-    if old is None:
-        continue  # 新增 schema 是向后兼容变更
-    local = f[len(prefix):] if prefix and f.startswith(prefix) else f
-    new = json.load(open(local, encoding="utf-8"))
+    historical = old_root + f[len("contracts"):]
+    if historical not in old_paths:
+        continue  # 确认历史树中没有此 schema，才是新增
+    try:
+        old = at(tag, historical)
+        with open(f, encoding="utf-8") as source:
+            new = json.load(source)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        print(f"  FAIL {tag}:{historical} 与 {f} 无法比对（{type(error).__name__}）")
+        sys.exit(1)
+    matched += 1
     # 删除字段、把可选改必填、删除枚举值，都是破坏性变更
     for k in (old.get("properties") or {}):
         if k not in (new.get("properties") or {}):
@@ -128,7 +252,7 @@ if breaking:
     print(f"  \033[31mFAIL\033[0m 相对 {tag} 的破坏性变更，必须新版本号：")
     [print("   ", b) for b in breaking]
     sys.exit(1)
-print(f"  \033[32mPASS\033[0m 相对 {tag} 无破坏性变更（{len(schemas)} 个 schema）")
+print(f"  \033[32mPASS\033[0m 相对 {tag} 无破坏性变更（{len(schemas)} 个 schema，匹配 {matched} 个历史 schema）")
 PY
   return 0
 }
@@ -396,18 +520,27 @@ artifacts = glob.glob("dist/*.spdx.json") + glob.glob("dist/*.provenance.json")
 names = {os.path.basename(f) for f in artifacts}
 
 def release_form(provenance):
-    """(镜像名前缀, buildType)：取自 provenance 所记源码 commit 上的 tools/release.sh。"""
+    """构建形态与历史根：只取 provenance 所记 commit 的真实 release.sh。"""
     try:
         with open(provenance, encoding="utf-8") as source:
             deps = json.load(source)["predicate"]["buildDefinition"]["resolvedDependencies"]
         commit = next(x["digest"]["gitCommit"] for x in deps if x.get("digest", {}).get("gitCommit"))
-        script = subprocess.run(["git", "show", f"{commit}:apps/tools/release.sh"], cwd="..",
+        if not re.fullmatch(r"[0-9a-f]{40}", commit):
+            return None
+        paths = subprocess.run(["git", "ls-tree", "-r", "--name-only", commit, "--",
+                                "tools/release.sh", "apps/tools/release.sh"],
+                               capture_output=True, text=True, check=True).stdout.splitlines()
+        if len(paths) != 1:
+            return None
+        root = paths[0].removesuffix("tools/release.sh")
+        script = subprocess.run(["git", "show", f"{commit}:{paths[0]}"],
                                 capture_output=True, text=True, check=True).stdout
     except (OSError, KeyError, TypeError, ValueError, StopIteration, subprocess.CalledProcessError):
         return None
     image = re.search(r'^\s*tag="([a-z0-9-]+)/\$unit:\$COMMIT"', script, re.M)
     build_type = re.search(r'"buildType": "([^"]+)"', script)
-    return (image.group(1), build_type.group(1)) if image and build_type else None
+    context = re.search(r'"externalParameters":\s*\{[^\n]*"context":\s*"([^"]+)"', script)
+    return (image.group(1), build_type.group(1), context.group(1), root) if image and build_type and context else None
 
 for name in sorted(names):
     m = re.fullmatch(r"(core|worker)\.([0-9a-f]{64})\.(spdx|provenance)\.json", name)
@@ -429,7 +562,7 @@ for name in sorted(names):
         if form is None:
             bad.append(f"{name}: 取不到生成它的 release.sh，构建形态无从核对")
             continue
-        image, build_type = form
+        image, build_type, context, root = form
         if kind == "spdx":
             if document.get("name") != f"{image}/{unit}" or document.get("spdxVersion") != "SPDX-2.3":
                 bad.append(f"{name}: SBOM 单元或 SPDX 版本不匹配")
@@ -440,7 +573,7 @@ for name in sorted(names):
         if (document.get("_type") != "https://in-toto.io/Statement/v1"
                 or document.get("predicateType") != "https://slsa.dev/provenance/v1"
                 or definition.get("buildType") != build_type
-                or definition.get("externalParameters") != {"dockerfile": f"{unit}/Dockerfile", "context": "apps/"}):
+                or definition.get("externalParameters") != {"dockerfile": f"{unit}/Dockerfile", "context": context}):
             bad.append(f"{name}: provenance 构建形态不匹配")
         dependencies = definition["resolvedDependencies"]
         commit = next((x.get("digest", {}).get("gitCommit") for x in dependencies
@@ -454,11 +587,11 @@ for name in sorted(names):
                           capture_output=True).returncode != 0:
             bad.append(f"{name}: commit {commit[:12]} 在本仓库中不存在")
             continue
-        paths = ("apps/core/Cargo.lock", "apps/client-kit/dart/pubspec.lock",
-                 "apps/pnpm-lock.yaml", "apps/worker/go.sum")
+        paths = tuple(root + path for path in ("core/Cargo.lock", "client-kit/dart/pubspec.lock",
+                                               "pnpm-lock.yaml", "worker/go.sum"))
         listed = subprocess.run(["git", "ls-tree", "-r", "--name-only", commit, "--", *paths],
-                                cwd="..", capture_output=True, text=True, check=True).stdout.splitlines()
-        blob_ids = [subprocess.run(["git", "rev-parse", f"{commit}:{path}"], cwd="..",
+                                capture_output=True, text=True, check=True).stdout.splitlines()
+        blob_ids = [subprocess.run(["git", "rev-parse", f"{commit}:{path}"],
                                    capture_output=True, text=True, check=True).stdout.strip()
                     for path in listed]
         actual_lock_digest = (hashlib.sha256("".join(blob + "\n" for blob in blob_ids).encode()).hexdigest()
@@ -685,12 +818,11 @@ for key in sorted(sources - sample_keys):
 core_config = d.get("services", {}).get("core-bff", {})
 if "DATABASE_URL" in (core_config.get("environment") or {}) or "./secrets/core-db-url.env" not in (core_config.get("env_file") or []):
     bad.append("core-bff: DATABASE_URL 只能由数据库同源凭据生成的受控 env_file 投递")
-# GitNexus 1.6.12 只读取仓库根 ignore 规则；apps/.gitignore 对 Git 有效，
-# 但不能阻止本地凭据与 registry 数据进入代码索引。检查根规则的精确来源，
-# 不能只问 git 是否忽略（那会把嵌套规则误判为已保护索引）。
+# apps 是独立仓库根；凭据和数据的排除必须来自本仓库根 .gitignore，
+# 不能依赖父仓库或仅覆盖单一扩展名的嵌套规则。
 for probe, pattern in (
-    ("deploy/local/secrets/gitnexus-ignore-probe.env", "/apps/deploy/local/secrets/"),
-    ("deploy/local/data/gitnexus-ignore-probe.dat", "/apps/deploy/local/data/"),
+    ("deploy/local/secrets/gitnexus-ignore-probe.env", "/deploy/local/secrets/"),
+    ("deploy/local/data/gitnexus-ignore-probe.dat", "/deploy/local/data/"),
 ):
     result = subprocess.run(
         ["git", "check-ignore", "-v", "--no-index", probe],
@@ -978,6 +1110,14 @@ step_docs()     { hdr "10/10 文档、runbook 与 release note 同步"
 }
 
 main() {
+  if [ ! -f /.dockerenv ]; then
+    run_in_check_container "$@"
+    exit "$?"
+  fi
+  if [ "${1:-}" = --docs-only ]; then
+    exec bash tools/check-docs.sh "${DESIGN:-../.design}"
+  fi
+  prepare_check_dependencies || exit 2
   local want=("${STEPS[@]}")
   case "${1:-}" in
     --full|"") ;;
