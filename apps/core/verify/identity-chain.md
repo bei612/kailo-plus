@@ -182,3 +182,70 @@ WorkspaceMembership 连带 `REVOKED`、`workspace#member` 已删；按邀请恢�
 后者在“等待超时：B 的 TenantMembership REVOKED”处失败；还原并重建后全套 31 批通过。两次失败保留的夹具
 Tenant `060e8796-960c-4450-b2ca-1a3aff4bd1e1`、`b5ca5ffa-a034-46d5-b862-88963d03706a` 待受治理的
 `tenant.delete` 落地后删除。
+
+## 同一成员的并发会话簿记（2026-09-30，DD-112）
+
+原 `identity::session::ensure` 对 active 会话先查后插，两次查询不在同一事务，
+数据库也没有该成员 active 会话的唯一约束。串行登录的历史核验不能证明并发首写
+幂等；两个 Core 副本同时读到空结果时均能插入。这是既有会话合同的缺陷，不新增
+登录、换钥或会话管理能力。
+
+修正复用已有 TenantMembership 行：在事务内按 HumanIdentity 与 Membership ID
+取得仍为 `ACTIVE` 的成员行锁，再查找或创建会话并提交。成员撤权的两条生产调用
+（`membership_state::transition_membership` 与 `governance::allow_in_tx`）都先更新
+TenantMembership，再在同一事务调用 `revoke_for_membership`；会话路径保持同样的
+成员行、会话行锁序。撤权先提交时，会话创建不能越过新的成员状态；会话先提交时，
+撤权随后撤销它。锁只覆盖本地数据库操作，不跨 SpiceDB 或 Relay 调用。
+
+`ensure` 的 Rust 错误类型改用已有 `IdentityError`，两处 BFF 调用直接保留该类型。
+锁后成员已非 ACTIVE 是 `DENIED / TENANT_MEMBERSHIP_NOT_ACTIVE`；实际数据库故障
+仍为 `PRECONDITION / DEPENDENCY_UNAVAILABLE`。成功响应、入参、部署 TTL、状态枚举、
+数据库 schema、四语言契约与 Workflow history 不变；不补写旧数据或另立会话权威。
+
+最新源码在 6 GiB MemoryMax、400% CPU 的 cgroup 内运行 `cargo fmt --all --check`、
+`SQLX_OFFLINE=true cargo clippy --all-targets -- -D warnings` 与现有 Core workspace
+`cargo test`，退出 `0`，用时 1 分 33.199 秒。完整原始日志：
+`/volumes/data/kailo/tmp/codex-session-final-check-20260930.log`。
+该次未设置 `PLATFORM_INTEGRATION=1`，带此开关的身份及真实服务用例提前返回，
+不能据其 `ok` 行宣称并发登录、撤权竞态或新 Core 容器已实际验收。
+本记录不关闭 Stage 1 或生产发布门禁。
+
+随后直接调用当前源码编译出的 `identity::session::ensure`，对现有开发库中一位
+已有 ACTIVE 成员且尚无 live 会话的真实用户同时发起 32 次调用：全部成功，
+返回的不同会话 ID 数为 `1`，提交后的 live 会话行数为 `1`，随后再次调用仍复用
+该 ID。没有建立新身份、Tenant、成员关系或夹具，没有撤销用户或删除会话；只产生
+该生产函数本来就负责的会话簿记。一次性调用程序位于仓库外
+`/volumes/data/kailo/tmp/session-existing-user.dYAZKS`，复用现有 Core target 与
+Cargo cache，在 6 GiB/400% cgroup 内退出 `0`，用时 10.131 秒；原始日志：
+`/volumes/data/kailo/tmp/codex-session-existing-user-20260930.log`。
+这证明当前库上的并发首写与后续复用，不证明撤权竞态的实跑、OIDC 浏览器链或
+正在运行的旧 Core 镜像已带上该修正。
+
+## 新 Core 的实际运行核对（2026-10-01 UTC）
+
+随后使用既有 `deploy/local/start-core.sh` 构建并重建开发环境 Core：构建完成后
+才领取新的 OpenBao wrapping 投递，没有复用已消费的凭据或直接 restart。
+命令退出 `0`；容器镜像 ID 为
+`sha256:8da30c70e4a62bfd0fa652642416c3f0d0390a79a677eb884a46f7e8f2ef8862`，
+启动时间为 `2026-10-01T00:22:05.249660251Z`，实际 `/healthz` 为 HTTP `200`。
+构建日志为 `/volumes/data/kailo/tmp/codex-session-core-deploy-20260930.log`；
+容器与健康证据为 `/volumes/data/kailo/tmp/codex-session-core-runtime-20261001.log`。
+
+沿用现有 Web 走查的 Playwright 登录方式，对部署中的既有管理员执行真实
+Gateway → IdP → Web 登录，然后由同一浏览器并发读取 32 次 `/api/v1/session`。
+实际结果：32 次全部 HTTP `200`，每条均有有效 `platformSessionId`，不同 ID 数为
+`1`，随后再次读取仍复用该 ID。没有新建身份、Tenant、成员或夹具，也没有撤权、
+发送消息或执行删除。一次性调用位于仓库外
+`/volumes/data/kailo/tmp/codex-session-existing-browser-20261001.mjs`，
+在 2 GiB/200% cgroup 内退出 `0`、耗时 3.373 秒；原始日志为
+`/volumes/data/kailo/tmp/codex-session-existing-browser-final-20261001.log`。
+
+首轮一次性调用误把 Rust 字段 `platform_session_id` 当成 JSON 字段，
+因此在 32 次 HTTP `200` 后以“字段缺失”退出 `1`；它没有把 undefined 当作一个
+有效会话通过。按既有 `contracts/api/session.schema.json` 的 `platformSessionId`
+修正调用后通过，没有改变产品响应；首轮失败日志保留为
+`/volumes/data/kailo/tmp/codex-session-existing-browser-20261001.log`。
+
+此 Core 镜像来自当前完整开发工作树，不是选定源码提交的生产发布证明；
+运行核对证明新 Core 的真实登录与并发会话复用，不证明撤权竞态、原生端签名包、
+Tenant 删除或 Stage 1/2 的全部退出条件。本批未关闭这些门禁。

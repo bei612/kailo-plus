@@ -106,7 +106,7 @@ pub async fn resolve_execution_context(
     };
     let s = session::ensure(&state.pool, human, membership, state.session_ttl_seconds)
         .await
-        .map_err(|e| error_response(IdentityError::Unavailable(e)))?;
+        .map_err(error_response)?;
     Ok(ExecutionContext {
         human_identity_id: human,
         tenant_id: tenant,
@@ -322,7 +322,7 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
                     .into_response(),
                 // 会话建不起来就没有执行上下文可用——fail closed，不返回一个
                 // 没有会话的身份让调用方以为可以继续
-                Err(e) => error_response(IdentityError::Unavailable(e)),
+                Err(e) => error_response(e),
             }
         }
         Err(e) => {

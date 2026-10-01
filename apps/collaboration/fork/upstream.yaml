@@ -1013,8 +1013,8 @@ artifacts:
     source_digest: none
     artifact_digest: none
 
-source_facts: [SF-BUZ-26, SF-BUZ-30, SF-BUZ-31, SF-BUZ-32, SF-BUZ-33, SF-BUZ-37, SF-BUZ-38, SF-BUZ-39, SF-BUZ-45, SF-DSK-01, SF-DSK-02, SF-MOB-02, SF-MOB-01]
-source_seams: [SS-BUZ-OPERATOR, SS-BUZ-SERVER-CLIENT, SS-BUZ-GOVERNANCE]
+source_facts: [SF-BUZ-26, SF-BUZ-30, SF-BUZ-31, SF-BUZ-32, SF-BUZ-33, SF-BUZ-37, SF-BUZ-38, SF-BUZ-39, SF-BUZ-45, SF-BUZ-46, SF-DSK-01, SF-DSK-02, SF-MOB-02, SF-MOB-01]
+source_seams: [SS-BUZ-OPERATOR, SS-BUZ-SERVER-CLIENT, SS-BUZ-GOVERNANCE, SS-BUZ-COMMUNITY-DELETE]
 compatibility_evidence: [collaboration/fork/verify/operator-provisioning.md, collaboration/fork/verify/server-client.md, collaboration/fork/verify/governance.md, collaboration/fork/verify/baseline-build.md, collaboration/fork/verify/desktop-client.md, collaboration/fork/verify/mobile-client.md]
 owner: team-platform
-last_reverified: 2026-09-29
+last_reverified: 2026-09-30

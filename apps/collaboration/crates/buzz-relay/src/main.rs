@@ -1381,6 +1381,21 @@ async fn serve(
 ) -> anyhow::Result<()> {
     let config = &state.config;
 
+    let deletion_shutdown = CancellationToken::new();
+    let deletion_service = match config.deletion_bind_addr {
+        Some(addr) => {
+            let listener = tokio::net::TcpListener::bind(addr).await.map_err(|error| {
+                anyhow::anyhow!("Failed to bind private deletion executor: {error}")
+            })?;
+            let (router, executor) = buzz_relay::deletion_executor::build_router(
+                Arc::clone(&state),
+                deletion_shutdown.clone(),
+            );
+            Some((listener, router, executor))
+        }
+        None => None,
+    };
+
     let health_listener = tokio::net::TcpListener::bind(("0.0.0.0", config.health_port))
         .await
         .map_err(|e| anyhow::anyhow!("Failed to bind health port {}: {e}", config.health_port))?;
@@ -1394,6 +1409,9 @@ async fn serve(
     let drain_conn_manager = Arc::clone(&state.conn_manager);
     let drain_jitter_ms = state.config.drain_jitter_ms;
     let tx = shutdown_tx.clone();
+    let deletion_failure = CancellationToken::new();
+    let private_failure_shutdown = deletion_failure.clone();
+    let deletion_engine_shutdown = deletion_shutdown.clone();
     // TODO(coverage): `serve`'s shutdown wiring has no automated test. The
     // jittered drain helper (`ConnectionManager::drain_all_jittered`) is
     // covered in `state.rs`, but coverage of the helper is not coverage of
@@ -1422,8 +1440,12 @@ async fn serve(
     // observed `true`. This keeps the test off real ports and off wall-clock
     // sleeps. Not implemented here. This comment records the plan only.
     let shutdown_handle = tokio::spawn(async move {
-        shutdown_signal().await;
+        tokio::select! {
+            _ = shutdown_signal() => {},
+            _ = private_failure_shutdown.cancelled() => {},
+        }
         shutdown_state.begin_shutdown();
+        deletion_engine_shutdown.cancel();
         info!("Shutdown signal received — readiness now returns 503");
         // 5s grace: let K8s stop routing new traffic before we close listeners.
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -1454,6 +1476,25 @@ async fn serve(
             "Signalled restart close to all live WebSocket connections"
         );
         hard_shutdown_abort
+    });
+
+    let deletion_handle = deletion_service.map(|(listener, router, executor)| {
+        let mut private_rx = shutdown_tx.subscribe();
+        tokio::spawn(async move {
+            let result = axum::serve(listener, router)
+                .with_graceful_shutdown(async move {
+                    private_rx.changed().await.ok();
+                })
+                .await;
+            if result.is_err() {
+                deletion_failure.cancel();
+            }
+            // Disconnected HTTP callers do not own the engine futures. Drain
+            // their task tracker before the relay runtime can be dropped.
+            executor.shutdown().await;
+            result
+                .map_err(|error| anyhow::anyhow!("Private deletion executor server error: {error}"))
+        })
     });
 
     let tcp_listener = tokio::net::TcpListener::bind(&config.bind_addr)
@@ -1504,6 +1545,11 @@ async fn serve(
         let hard_shutdown = shutdown_handle
             .await
             .map_err(|e| anyhow::anyhow!("Shutdown task failed: {e}"))?;
+        if let Some(handle) = deletion_handle {
+            handle.await.map_err(|error| {
+                anyhow::anyhow!("Private deletion executor task failed: {error}")
+            })??;
+        }
         uds_handle.abort();
         hard_shutdown.abort();
         return Ok(());
@@ -1529,6 +1575,11 @@ async fn serve(
     let hard_shutdown = shutdown_handle
         .await
         .map_err(|e| anyhow::anyhow!("Shutdown task failed: {e}"))?;
+    if let Some(handle) = deletion_handle {
+        handle
+            .await
+            .map_err(|error| anyhow::anyhow!("Private deletion executor task failed: {error}"))??;
+    }
     hard_shutdown.abort();
     Ok(())
 }

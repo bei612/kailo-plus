@@ -19,6 +19,8 @@ pub mod config;
 pub mod conformance;
 /// WebSocket connection lifecycle and state.
 pub mod connection;
+/// Private deployment-operator listener for the native community deletion engine.
+pub mod deletion_executor;
 /// Relay error types.
 pub mod error;
 /// WebSocket message handlers for NIP-01 client commands.

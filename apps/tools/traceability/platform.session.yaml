@@ -6,7 +6,7 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-01, V-REQ-08]
-  decisions: [DD-02, DD-73, DD-111]
+  decisions: [DD-02, DD-73, DD-111, DD-112]
   facts: [SF-AGW-17, SF-AGW-18, SF-AGW-20, SF-AGW-21, SF-AGW-22, SF-AGW-23]
   seams: [SS-AGW-OIDC]
   blockers: []

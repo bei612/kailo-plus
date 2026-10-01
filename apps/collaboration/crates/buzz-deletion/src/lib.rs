@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use buzz_db::deletion::{
-    ClaimedDeletion, DeletionRequest, DeletionStage, DeletionStore, FrozenInventory,
-    KeyStreamDigest, LeaseToken, PrefixManifest, StorageManifest, StorageManifestEntry,
-    DEFAULT_LEASE_DURATION,
+    ClaimedDeletion, DeletionInspection, DeletionRequest, DeletionStage, DeletionStore,
+    FrozenInventory, KeyStreamDigest, LeaseToken, PrefixManifest, StorageManifest,
+    StorageManifestEntry, DEFAULT_LEASE_DURATION,
 };
 use buzz_db::{Db, DbConfig};
 use buzz_media::{
@@ -22,6 +22,7 @@ use buzz_media::{
 use clap::Subcommand;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
 /// Fleet-wide object cap for one observational taxonomy sweep.
@@ -319,6 +320,165 @@ struct Services {
     store: DeletionStore,
     media: Arc<MediaStorage>,
     redis: deadpool_redis::Pool,
+}
+
+/// Structured access to the existing deletion engine within the Buzz owner.
+///
+/// The HTTP owner shares its database, object store, and Redis clients here;
+/// neither credentials nor a second deletion engine cross the service boundary.
+/// A disconnected HTTP caller cannot drop an engine future and orphan its
+/// heartbeat: executions belong to this process-lifetime task tracker.
+#[derive(Clone)]
+pub struct DeletionExecutor {
+    services: Services,
+    shutdown: CancellationToken,
+    tasks: TaskTracker,
+}
+
+impl DeletionExecutor {
+    /// Reuse clients already owned by the relay process.
+    pub fn new(
+        db: &Db,
+        media: Arc<MediaStorage>,
+        redis: deadpool_redis::Pool,
+        shutdown: CancellationToken,
+    ) -> Self {
+        Self {
+            services: Services {
+                store: store(db),
+                media,
+                redis,
+            },
+            shutdown,
+            tasks: TaskTracker::new(),
+        }
+    }
+
+    /// Submit only an archived community and freeze the original native inventory.
+    /// Existing non-aborted requests are observations, never replacements.
+    pub async fn submit(
+        &self,
+        host: &str,
+        requested_by: &str,
+        reason: Option<&str>,
+    ) -> Result<DeletionRequest> {
+        let request = self
+            .services
+            .store
+            .submit_archived(host, requested_by, reason)
+            .await?;
+        if request.stage != DeletionStage::Submitted
+            || request.requested_by != requested_by
+            || request.blocked_reason.is_some()
+        {
+            return Ok(request);
+        }
+        let inventory = build_inventory(&self.services, &request).await?;
+        Ok(self
+            .services
+            .store
+            .freeze_inventory(request.id, &inventory)
+            .await?)
+    }
+
+    /// Observe every non-aborted request for one exact host, including blocked ones.
+    pub async fn list(&self, host: &str) -> Result<Vec<DeletionRequest>> {
+        Ok(self.services.store.list_for_host(host).await?)
+    }
+
+    /// Read the upstream request, approval and checkpoints as structured evidence.
+    pub async fn inspect(&self, request_id: Uuid) -> Result<DeletionInspection> {
+        Ok(self.services.store.inspect(request_id).await?)
+    }
+
+    /// Bind approval to the exact submitted digest and ActionExecution identity.
+    ///
+    /// Native database triggers make frozen inventories and approval evidence
+    /// immutable at every stage. Repeating an identical approval observes that
+    /// evidence without rewinding the request or changing the CLI's transaction.
+    pub async fn approve(
+        &self,
+        request_id: Uuid,
+        expected_inventory_digest: &str,
+        approved_by: &str,
+    ) -> Result<DeletionRequest> {
+        let inspection = self.inspect(request_id).await?;
+        if inspection.request.stage == DeletionStage::Aborted
+            || inspection.request.inventory_digest.as_deref() != Some(expected_inventory_digest)
+        {
+            return Err(buzz_db::DbError::DeletionSafety(
+                "approval does not match the frozen non-aborted request".to_owned(),
+            )
+            .into());
+        }
+        validate_frozen_inventory(&inspection.request)?;
+        if let Some(approval) = &inspection.approval {
+            if approval.inventory_digest == expected_inventory_digest
+                && approval.approved_by == approved_by
+            {
+                return Ok(inspection.request);
+            }
+            return Err(buzz_db::DbError::DeletionSafety(
+                "request is already approved by a different execution".to_owned(),
+            )
+            .into());
+        }
+        match self
+            .services
+            .store
+            .approve(request_id, approved_by, None)
+            .await
+        {
+            Ok(request) => Ok(request),
+            Err(error) => {
+                // Another identical caller may have committed while this caller
+                // waited for the original approval transaction's row lock.
+                let observed = self.inspect(request_id).await?;
+                if observed.request.stage != DeletionStage::Aborted
+                    && observed.approval.as_ref().is_some_and(|approval| {
+                        approval.inventory_digest == expected_inventory_digest
+                            && approval.approved_by == approved_by
+                    })
+                {
+                    Ok(observed.request)
+                } else {
+                    Err(error.into())
+                }
+            }
+        }
+    }
+
+    /// Execute the native stage machine, then return its durable inspection.
+    /// HTTP disconnect only drops the join handle, not the tracked execution.
+    pub async fn run(&self, request_id: Uuid) -> Result<DeletionInspection> {
+        let services = self.services.clone();
+        let shutdown = self.shutdown.clone();
+        // Native heartbeat rows identify one run, not an HTTP listener. Runs
+        // for different communities must not overwrite each other's liveness.
+        let executor_id = Uuid::new_v4().to_string();
+        self.tasks
+            .spawn(async move {
+                if !shutdown.is_cancelled() {
+                    if let Some(claim) = services
+                        .store
+                        .claim_specific(request_id, &executor_id, DEFAULT_LEASE_DURATION)
+                        .await?
+                    {
+                        execute_claim(&services, LoopMode::Run, claim, &shutdown).await?;
+                    }
+                }
+                Ok::<_, anyhow::Error>(services.store.inspect(request_id).await?)
+            })
+            .await
+            .context("deletion executor task failed")?
+    }
+
+    /// Drain process-owned runs on relay shutdown; not a business abort operation.
+    pub async fn shutdown(&self) {
+        self.shutdown.cancel();
+        self.tasks.close();
+        self.tasks.wait().await;
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

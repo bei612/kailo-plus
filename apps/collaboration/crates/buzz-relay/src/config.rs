@@ -279,6 +279,12 @@ pub struct Config {
     /// skipped — a typo must not silently disable an operator.
     pub relay_operator_pubkeys: Vec<String>,
 
+    /// Optional private deletion-executor listener, never merged into the
+    /// public relay router. Set `BUZZ_DELETION_BIND_ADDR` explicitly and keep
+    /// this listener inside the Buzz service network without a host publish.
+    /// Signatures still use the one configured operator API origin.
+    pub deletion_bind_addr: Option<SocketAddr>,
+
     /// Allow NIP-OA owner attestation for relay membership.
     ///
     /// When `true` and `require_relay_membership` is also `true`, agents
@@ -816,6 +822,24 @@ impl Config {
             );
         }
 
+        let deletion_bind_addr = match std::env::var("BUZZ_DELETION_BIND_ADDR") {
+            Ok(raw) => Some(parse_bind_addr(raw.trim())?),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(std::env::VarError::NotUnicode(_)) => {
+                return Err(ConfigError::InvalidValue(
+                    "BUZZ_DELETION_BIND_ADDR must be valid Unicode".to_owned(),
+                ));
+            }
+        };
+        if deletion_bind_addr.is_some()
+            && (relay_operator_api_origin.is_none() || relay_operator_pubkeys.is_empty())
+        {
+            return Err(ConfigError::InvalidValue(
+                "private deletion executor requires operator origin and pubkey allowlist"
+                    .to_owned(),
+            ));
+        }
+
         let auth = buzz_auth::AuthConfig {
             rate_limits: rate_limit_config_from_env()?,
         };
@@ -850,6 +874,14 @@ impl Config {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(9102);
+
+        if deletion_bind_addr.is_some_and(|addr| {
+            [bind_addr.port(), health_port, metrics_port].contains(&addr.port())
+        }) {
+            return Err(ConfigError::InvalidValue(
+                "private deletion executor must use a separate listener port".to_owned(),
+            ));
+        }
 
         let s3_addressing_style = match std::env::var("BUZZ_S3_ADDRESSING_STYLE") {
             Ok(value) => value.parse().map_err(ConfigError::InvalidValue)?,
@@ -1268,6 +1300,7 @@ impl Config {
             relay_owner_pubkey,
             relay_operator_api_origin,
             relay_operator_pubkeys,
+            deletion_bind_addr,
             allow_nip_oa_auth,
             klipy,
             media,

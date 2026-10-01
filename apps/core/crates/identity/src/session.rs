@@ -31,7 +31,25 @@ pub async fn ensure(
     human_identity_id: Uuid,
     tenant_membership_id: Uuid,
     ttl_seconds: i64,
-) -> Result<PlatformSession, sqlx::Error> {
+) -> Result<PlatformSession, crate::IdentityError> {
+    // 同一 membership 的请求在其已有行上串行化：只把查找与插入放进事务
+    // 仍会让两个副本同时读到空结果、各插入一条。锁不跨网络调用，也不改变
+    // 会话的入参、TTL 或授权判定（DD-112 的幂等会话簿记）。
+    let mut tx = pool.begin().await?;
+    let membership = sqlx::query_scalar::<_, Uuid>(
+        "select id from identity.tenant_membership
+         where id = $1 and human_identity_id = $2 and state = 'ACTIVE' for update",
+    )
+    .bind(tenant_membership_id)
+    .bind(human_identity_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    // 解析身份以后、取得锁以前，成员已被撤权：不能在撤会话事务之后
+    // 再建一条 ACTIVE 会话，也不能把确定的失权报成依赖故障。
+    if membership.is_none() {
+        return Err(crate::IdentityError::MembershipNotActive);
+    }
+
     if let Some(row) = sqlx::query!(
         "select id, current_workspace_id from identity.platform_session
          where human_identity_id = $1 and tenant_membership_id = $2
@@ -39,9 +57,10 @@ pub async fn ensure(
         human_identity_id,
         tenant_membership_id
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?
     {
+        tx.commit().await?;
         return Ok(PlatformSession {
             id: row.id,
             current_workspace_id: row.current_workspace_id,
@@ -58,8 +77,9 @@ pub async fn ensure(
         tenant_membership_id,
         ttl_seconds as f64,
     )
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(PlatformSession {
         id: row.id,
         current_workspace_id: row.current_workspace_id,

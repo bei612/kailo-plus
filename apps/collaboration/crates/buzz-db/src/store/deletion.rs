@@ -703,6 +703,32 @@ impl DeletionStore {
         requested_by: &str,
         reason: Option<&str>,
     ) -> Result<DeletionRequest> {
+        self.submit_with_archive_requirement(community_host, requested_by, reason, false)
+            .await
+    }
+
+    /// Submit an archived community, or observe its existing non-aborted request.
+    ///
+    /// The archive check and request insertion share the target row lock. The
+    /// operator service never unarchives, retargets, or replaces an existing
+    /// request; retries after submission must reuse its durable native identity.
+    pub async fn submit_archived(
+        &self,
+        community_host: &str,
+        requested_by: &str,
+        reason: Option<&str>,
+    ) -> Result<DeletionRequest> {
+        self.submit_with_archive_requirement(community_host, requested_by, reason, true)
+            .await
+    }
+
+    async fn submit_with_archive_requirement(
+        &self,
+        community_host: &str,
+        requested_by: &str,
+        reason: Option<&str>,
+        require_archived: bool,
+    ) -> Result<DeletionRequest> {
         let row = sqlx::query(
             r#"
             WITH target AS (
@@ -711,6 +737,8 @@ impl DeletionStore {
                 WHERE lower(host) = lower($1)
                   AND deletion_state = 'active'
                   AND deleted_at IS NULL
+                  AND (NOT $4 OR archived_at IS NOT NULL)
+                FOR UPDATE
             ), inserted AS (
                 INSERT INTO community_deletion_requests
                     (community_id, community_host, requested_by, reason)
@@ -723,8 +751,8 @@ impl DeletionStore {
             SELECT request.*
             FROM community_deletion_requests request
             JOIN target ON target.id = request.community_id
-            WHERE request.stage = 'submitted'
-              AND request.requested_by = $2
+            WHERE request.stage <> 'aborted'
+              AND ($4 OR (request.stage = 'submitted' AND request.requested_by = $2))
               AND NOT EXISTS (SELECT 1 FROM inserted)
             LIMIT 1
             "#,
@@ -732,6 +760,7 @@ impl DeletionStore {
         .bind(community_host)
         .bind(requested_by)
         .bind(reason)
+        .bind(require_archived)
         .fetch_optional(&self.pool)
         .await?;
         match row {
@@ -740,6 +769,21 @@ impl DeletionStore {
                 "community {community_host:?} is missing, already requested, fenced, or tombstoned"
             ))),
         }
+    }
+
+    /// Observe the non-aborted request for an exact community host.
+    ///
+    /// Host uniqueness and the active-community request index bound this to at
+    /// most one row, without filtering a truncated deployment-global listing.
+    pub async fn list_for_host(&self, community_host: &str) -> Result<Vec<DeletionRequest>> {
+        let rows = sqlx::query(
+            "SELECT * FROM community_deletion_requests \
+             WHERE lower(community_host) = lower($1) AND stage <> 'aborted'",
+        )
+        .bind(community_host)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(row_to_request).collect()
     }
 
     /// List requests newest first with a hard bound.
