@@ -1,0 +1,149 @@
+package service
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/payment"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased"
+	usagebasedrun "github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased/service/run"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+type recordRunPaymentsInput struct {
+	Lines    billing.StandardLines
+	Invoice  billing.StandardInvoice
+	RecordFn func(ctx context.Context, stateMachine StateMachine, line billing.StandardLine, invoice billing.StandardInvoice) error
+}
+
+func (i recordRunPaymentsInput) Validate() error {
+	if len(i.Lines) == 0 {
+		return fmt.Errorf("lines are required")
+	}
+
+	if i.Invoice.ID == "" {
+		return fmt.Errorf("invoice is required")
+	}
+
+	if i.RecordFn == nil {
+		return fmt.Errorf("recordFn is required")
+	}
+
+	return nil
+}
+
+func (e *LineEngine) recordRunPayments(ctx context.Context, input recordRunPaymentsInput) error {
+	if err := input.Validate(); err != nil {
+		return fmt.Errorf("validating record run payments input: %w", err)
+	}
+
+	for _, stdLine := range input.Lines {
+		stateMachine, err := e.newStateMachineForStandardLine(ctx, stdLine)
+		if err != nil {
+			return err
+		}
+
+		if err := input.RecordFn(ctx, stateMachine, *stdLine, input.Invoice); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (e *LineEngine) recordPaymentAuthorized(ctx context.Context, stateMachine StateMachine, line billing.StandardLine, invoice billing.StandardInvoice) error {
+	charge := stateMachine.GetCharge()
+
+	run, err := getRunForLine(charge, line.ID)
+	if err != nil {
+		return err
+	}
+
+	_, err = e.service.runs.BookInvoicedPaymentAuthorized(ctx, usagebasedrun.BookInvoicedPaymentAuthorizedInput{
+		Charge:  charge,
+		Run:     run,
+		Invoice: invoice,
+		Line:    line,
+	})
+	if err != nil {
+		return fmt.Errorf("authorize invoice payment for charge[%s]: %w", charge.ID, err)
+	}
+
+	return nil
+}
+
+func (e *LineEngine) recordPaymentSettled(ctx context.Context, stateMachine StateMachine, line billing.StandardLine, invoice billing.StandardInvoice) error {
+	charge := stateMachine.GetCharge()
+
+	run, err := getRunForLine(charge, line.ID)
+	if err != nil {
+		return err
+	}
+
+	result, err := e.service.runs.SettleInvoicedPayment(ctx, usagebasedrun.SettleInvoicedPaymentInput{
+		Charge:  charge,
+		Run:     run,
+		Invoice: invoice,
+		Line:    line,
+	})
+	if err != nil {
+		return fmt.Errorf("settle invoice payment for charge[%s]: %w", charge.ID, err)
+	}
+
+	if err := charge.Realizations.SetRealizationRun(result.Run); err != nil {
+		return fmt.Errorf("update realization run: %w", err)
+	}
+
+	advancementStateMachine, err := e.service.newStateMachineForCharge(ctx, charge)
+	if err != nil {
+		return fmt.Errorf("new state machine: %w", err)
+	}
+
+	if err := advancementStateMachine.AdvanceUntilStable(ctx); err != nil {
+		return fmt.Errorf("advancing charge[%s] after payment settlement: %w", charge.ID, err)
+	}
+
+	return nil
+}
+
+func areAllRealizationRunsSettled(charge usagebased.Charge) (bool, error) {
+	hasFinalRealization := false
+
+	for _, run := range charge.Realizations {
+		if run.IsVoidedBillingHistory() {
+			continue
+		}
+
+		// Zero-fiat-amount overages bypass invoice issuance, they are removed from the
+		// invoice, thus we can consider them settled.
+		fiatOverage, err := calculateFiatOverageForRun(charge, run)
+		if err != nil {
+			return false, fmt.Errorf("calculating fiat overage for realization run[%s]: %w", run.ID.ID, err)
+		}
+		if isFinalRunInPeriod(charge, timeutil.ClosedPeriod{
+			From: charge.Intent.GetEffectiveServicePeriod().From,
+			To:   run.ServicePeriodTo,
+		}) && (run.InvoiceUsage != nil || fiatOverage.ShouldOmitInvoiceLine) {
+			hasFinalRealization = true
+		}
+
+		if fiatOverage.ShouldOmitInvoiceLine {
+			continue
+		}
+
+		if run.InvoiceUsage == nil {
+			continue
+		}
+
+		if run.NoFiatTransactionRequired {
+			continue
+		}
+
+		if run.Payment == nil || run.Payment.Status != payment.StatusSettled {
+			return false, nil
+		}
+	}
+
+	return hasFinalRealization, nil
+}

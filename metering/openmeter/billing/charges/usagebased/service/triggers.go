@@ -1,0 +1,360 @@
+package service
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/openmeter/subscription/validators/itemreference"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/framework/transaction"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+func (s *service) AdvanceCharge(ctx context.Context, input usagebased.AdvanceChargeInput) (meta.TriggerPatchResult[usagebased.Charge], error) {
+	if err := input.Validate(); err != nil {
+		return meta.TriggerPatchResult[usagebased.Charge]{}, fmt.Errorf("validate: %w", err)
+	}
+
+	var result meta.TriggerPatchResult[usagebased.Charge]
+	charge, err := s.withLockedCharge(ctx, input.ChargeID, func(ctx context.Context, charge usagebased.Charge) (*usagebased.Charge, error) {
+		stateMachine, err := s.newStateMachineForChargeWithHints(ctx, charge, input)
+		if err != nil {
+			return nil, fmt.Errorf("new state machine: %w", err)
+		}
+
+		canAdvance, err := stateMachine.CanFire(ctx, meta.TriggerNext)
+		if err != nil {
+			return nil, fmt.Errorf("charge state trigger failed with: %w", err)
+		}
+		if !canAdvance {
+			return nil, nil
+		}
+
+		invoicePatches, err := stateMachine.AdvanceUntilInvoicePatchesOrStable(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error advance the invoice patches: %w", err)
+		}
+		canAdvance, err = stateMachine.CanFire(ctx, meta.TriggerNext)
+		if err != nil {
+			return nil, fmt.Errorf("check next transition: %w", err)
+		}
+
+		charge = stateMachine.GetCharge()
+		result.InvoicePatches = invoicePatches
+		result.CanAdvance = canAdvance
+
+		return &charge, nil
+	})
+	if err != nil {
+		return meta.TriggerPatchResult[usagebased.Charge]{}, err
+	}
+
+	result.Charge = charge
+
+	return result, nil
+}
+
+func (s *service) TriggerPatch(ctx context.Context, chargeID meta.ChargeID, patch meta.Patch) (meta.TriggerPatchResult[usagebased.Charge], error) {
+	if err := patch.Validate(); err != nil {
+		return meta.TriggerPatchResult[usagebased.Charge]{}, fmt.Errorf("patch: %w", err)
+	}
+
+	if err := chargeID.Validate(); err != nil {
+		return meta.TriggerPatchResult[usagebased.Charge]{}, fmt.Errorf("chargeID: %w", err)
+	}
+
+	var result meta.TriggerPatchResult[usagebased.Charge]
+
+	charge, err := s.withLockedCharge(ctx, chargeID, func(ctx context.Context, charge usagebased.Charge) (*usagebased.Charge, error) {
+		if patch.Op() == meta.PatchTypeUpdateSubscriptionReference {
+			if err := s.updateSubscriptionReference(ctx, &charge, patch); err != nil {
+				return nil, err
+			}
+
+			return &charge, nil
+		}
+
+		if patch.Op() == meta.PatchTypeClearOverride && !charge.Intent.HasOverrideLayer() {
+			// Clearing an absent override is intentionally idempotent. Return while
+			// holding the charge lock without activating a lifecycle state machine:
+			// a terminal charge may not otherwise accept the clear trigger.
+			return &charge, nil
+		}
+
+		chargeWithUpdatedBase, err := applyBaseIntentPatchForOverriddenCharge(charge, patch)
+		if err != nil {
+			return nil, err
+		}
+
+		if chargeWithUpdatedBase != nil {
+			// Hidden base/source intent changes are subscription reconciliation,
+			// not customer-facing lifecycle events. Persist the source intent and
+			// skip the state machine because the active override owns lifecycle
+			// state and hidden targets are rejected there.
+			updatedChargeBase, err := s.adapter.UpdateCharge(ctx, chargeWithUpdatedBase.ChargeBase)
+			if err != nil {
+				return nil, fmt.Errorf("updating usage based charge[%s] base intent: %w", chargeWithUpdatedBase.ID, err)
+			}
+
+			chargeWithUpdatedBase.ChargeBase = updatedChargeBase
+
+			return chargeWithUpdatedBase, nil
+		}
+
+		stateMachine, err := s.newStateMachineForCharge(ctx, charge)
+		if err != nil {
+			return nil, fmt.Errorf("new state machine: %w", err)
+		}
+
+		invoicePatches, err := stateMachine.FireAndAdvanceUntilInvoicePatchesOrStable(ctx, patch.Trigger(), patch)
+		if err != nil {
+			return nil, err
+		}
+		canAdvance, err := stateMachine.CanFire(ctx, meta.TriggerNext)
+		if err != nil {
+			return nil, fmt.Errorf("check next transition: %w", err)
+		}
+
+		charge = stateMachine.GetCharge()
+		result.InvoicePatches = invoicePatches
+		result.CanAdvance = canAdvance
+
+		return &charge, nil
+	})
+	if err != nil {
+		return meta.TriggerPatchResult[usagebased.Charge]{}, err
+	}
+
+	result.Charge = charge
+
+	return result, nil
+}
+
+func applyBaseIntentPatchForOverriddenCharge(charge usagebased.Charge, patch meta.Patch) (*usagebased.Charge, error) {
+	target, err := patch.GetTargetLayer(charge.Intent)
+	if err != nil {
+		return nil, fmt.Errorf("getting patch target layer: %w", err)
+	}
+
+	if target != meta.ChangeTargetBase || !charge.Intent.HasOverrideLayer() {
+		return nil, nil
+	}
+
+	switch patch := patch.(type) {
+	case meta.PatchDelete:
+		if err := charge.Intent.Mutate(meta.ChangeTargetBase, func(fields *usagebased.IntentMutableFields) error {
+			deletedAt := clock.Now()
+			fields.IntentDeletedAt = &deletedAt
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("mutating base intent for %s patch: %w", patch.Op(), err)
+		}
+
+		return &charge, nil
+	case meta.PatchShrink:
+		if err := mutateBaseIntentPeriodForOverriddenCharge(&charge, patch); err != nil {
+			return nil, err
+		}
+
+		return &charge, nil
+	case meta.PatchExtend:
+		if err := mutateBaseIntentPeriodForOverriddenCharge(&charge, patch); err != nil {
+			return nil, err
+		}
+
+		return &charge, nil
+	}
+
+	return nil, nil
+}
+
+func (s *service) updateSubscriptionReference(ctx context.Context, charge *usagebased.Charge, patch meta.Patch) error {
+	subscriptionReferencePatch, ok := patch.(meta.PatchUpdateSubscriptionReference)
+	if !ok {
+		return fmt.Errorf("expected %s patch, got %T", meta.PatchTypeUpdateSubscriptionReference, patch)
+	}
+
+	current := charge.Intent.GetSubscription()
+	if current == nil {
+		return models.NewGenericPreConditionFailedError(fmt.Errorf("charge[%s] is not associated with a subscription", charge.ID))
+	}
+
+	updated, err := subscriptionReferencePatch.Apply(*current)
+	if err != nil {
+		return fmt.Errorf("patch: %w", err)
+	}
+
+	if err := s.itemReferenceValidator.ValidateItemReference(ctx, itemreference.ValidateInput{
+		Namespace:      charge.Namespace,
+		SubscriptionID: updated.SubscriptionID,
+		PhaseID:        updated.PhaseID,
+		ItemID:         updated.ItemID,
+	}); err != nil {
+		return fmt.Errorf("validate subscription reference: %w", err)
+	}
+
+	if err := s.adapter.UpdateSubscriptionReference(ctx, meta.UpdateSubscriptionReferenceInput{
+		ChargeID: charge.GetChargeID(),
+		Target:   updated,
+	}); err != nil {
+		return fmt.Errorf("update subscription reference: %w", err)
+	}
+
+	lineReferenceInput := billing.SetLineSubscriptionReferenceByChargeIDInput{
+		Namespace:      charge.Namespace,
+		ChargeID:       charge.ID,
+		SubscriptionID: updated.SubscriptionID,
+		PhaseID:        updated.PhaseID,
+		ItemID:         updated.ItemID,
+	}
+
+	if err := s.lineSubscriptionReferenceService.SetGatheringLineSubscriptionReferenceByChargeID(ctx, lineReferenceInput); err != nil {
+		return fmt.Errorf("set gathering line subscription reference: %w", err)
+	}
+
+	if err := s.lineSubscriptionReferenceService.SetStandardLineSubscriptionReferenceByChargeID(ctx, lineReferenceInput); err != nil {
+		return fmt.Errorf("set standard line subscription reference: %w", err)
+	}
+
+	if *current != updated {
+		baseIntent := charge.Intent.GetBaseIntent()
+		baseIntent.Subscription = &updated
+		charge.Intent = usagebased.NewOverridableIntent(baseIntent, charge.Intent.GetOverrideLayerMutableFields())
+	}
+
+	return nil
+}
+
+func mutateBaseIntentPeriodForOverriddenCharge(charge *usagebased.Charge, patch periodPatch) error {
+	if err := charge.Intent.Mutate(meta.ChangeTargetBase, func(fields *usagebased.IntentMutableFields) error {
+		if err := patch.ValidateWith(fields.IntentMutableFields); err != nil {
+			return fmt.Errorf("validate %s patch: %w", patch.Op(), err)
+		}
+
+		fields.ServicePeriod.To = patch.GetNewServicePeriodTo()
+		fields.FullServicePeriod.To = patch.GetNewFullServicePeriodTo()
+		fields.BillingPeriod.To = patch.GetNewBillingPeriodTo()
+		fields.InvoiceAt = patch.GetNewInvoiceAt()
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("mutating base intent for %s patch: %w", patch.Op(), err)
+	}
+
+	return nil
+}
+
+func (s *service) newStateMachine(config StateMachineConfig) (StateMachine, error) {
+	switch config.Charge.Intent.GetSettlementMode() {
+	case productcatalog.CreditOnlySettlementMode:
+		stateMachine, err := NewCreditsOnlyStateMachine(config)
+		if err != nil {
+			return nil, err
+		}
+
+		return stateMachine, nil
+	case productcatalog.CreditThenInvoiceSettlementMode:
+		stateMachine, err := NewCreditThenInvoiceStateMachine(config)
+		if err != nil {
+			return nil, err
+		}
+
+		return stateMachine, nil
+	default:
+		return nil, models.NewGenericNotImplementedError(
+			fmt.Errorf("unsupported settlement mode %s for usage based charge %s", config.Charge.Intent.GetSettlementMode(), config.Charge.ID),
+		)
+	}
+}
+
+func (s *service) newStateMachineForCharge(ctx context.Context, charge usagebased.Charge) (StateMachine, error) {
+	return s.newStateMachineForChargeWithHints(ctx, charge, usagebased.AdvanceChargeInput{})
+}
+
+func (s *service) newStateMachineForChargeWithHints(ctx context.Context, charge usagebased.Charge, hints usagebased.AdvanceChargeInput) (StateMachine, error) {
+	stateMachineConfig, err := s.getStateMachineConfigForChargeWithHints(ctx, charge, hints)
+	if err != nil {
+		return nil, fmt.Errorf("get state machine config: %w", err)
+	}
+
+	stateMachine, err := s.newStateMachine(stateMachineConfig)
+	if err != nil {
+		return nil, fmt.Errorf("new state machine: %w", err)
+	}
+
+	return stateMachine, nil
+}
+
+// getStateMachineConfigForCharge resolves omitted state-machine dependencies
+// from their owning services.
+func (s *service) getStateMachineConfigForCharge(ctx context.Context, charge usagebased.Charge) (StateMachineConfig, error) {
+	return s.getStateMachineConfigForChargeWithHints(ctx, charge, usagebased.AdvanceChargeInput{})
+}
+
+// getStateMachineConfigForChargeWithHints resolves omitted state-machine dependencies
+// while treating supplied advancement hints as authoritative snapshots.
+func (s *service) getStateMachineConfigForChargeWithHints(ctx context.Context, charge usagebased.Charge, hints usagebased.AdvanceChargeInput) (StateMachineConfig, error) {
+	customerOverride, hasCustomerOverrideHint := hints.CustomerOverride.Get()
+	if !hasCustomerOverrideHint {
+		var err error
+		customerOverride, err = s.customerOverrideService.GetCustomerOverride(ctx, billing.GetCustomerOverrideInput{
+			Customer: customer.CustomerID{
+				Namespace: charge.Namespace,
+				ID:        charge.Intent.GetCustomerID(),
+			},
+			Expand: billing.CustomerOverrideExpand{
+				Customer: true,
+			},
+		})
+		if err != nil {
+			return StateMachineConfig{}, fmt.Errorf("get customer override: %w", err)
+		}
+	}
+
+	featureMeters, hasFeatureMetersHint := hints.FeatureMeters.Get()
+	if !hasFeatureMetersHint {
+		featureMeters = s.featureMeterResolver.ResolveLazy(ctx, charge.Namespace, charge)
+	}
+
+	currency := charge.Intent.GetCurrency()
+
+	return StateMachineConfig{
+		Charge:             charge,
+		Adapter:            s.adapter,
+		Rater:              s.rater,
+		Runs:               s.runs,
+		CustomerOverride:   customerOverride,
+		FeatureMeters:      featureMeters,
+		CurrencyCalculator: currency,
+		CostBasisResolver:  s.costbasisResolver,
+	}, nil
+}
+
+func (s *service) withLockedCharge(ctx context.Context, chargeID meta.ChargeID, fn func(ctx context.Context, charge usagebased.Charge) (*usagebased.Charge, error)) (*usagebased.Charge, error) {
+	return transaction.Run(ctx, s.adapter, func(ctx context.Context) (*usagebased.Charge, error) {
+		key, err := charges.NewLockKeyForCharge(chargeID)
+		if err != nil {
+			return nil, fmt.Errorf("get charge lock key: %w", err)
+		}
+
+		if err := s.locker.LockForTX(ctx, key); err != nil {
+			return nil, fmt.Errorf("lock charge: %w", err)
+		}
+
+		charge, err := s.adapter.GetByID(ctx, usagebased.GetByIDInput{
+			ChargeID: chargeID,
+			Expands:  meta.Expands{meta.ExpandRealizations},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("get charge: %w", err)
+		}
+
+		return fn(ctx, charge)
+	})
+}

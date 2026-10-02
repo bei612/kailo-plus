@@ -1,0 +1,193 @@
+package targetstate
+
+import (
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/openmeter/subscription"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+type StateItem struct {
+	SubscriptionItemWithPeriods
+
+	Currency                     currencies.Currency
+	Subscription                 subscription.Subscription
+	SubscriptionEndProrationMode billing.SubscriptionEndProrationMode
+}
+
+// IsBillable returns true if the item is billable (e.g. we can create a gathering line for it even if it's value is 0 or create a charge for it)
+//
+// Note: GetExpectedLine might return nil in other cases, e.g. we don't want to create a flat fee line when pro-rating is in effect and the service period
+// and the currency rounding results in a 0 amount.
+func (r StateItem) IsBillable() bool {
+	// If the rate card has no price, it is not billable
+	price := r.Spec.RateCard.AsMeta().Price
+	if price == nil {
+		return false
+	}
+
+	// If the subscription item is an arrears item billed once at the end of the phase (flat fee only), it is not billable until
+	// the phase has an activeTo time set.
+	if price := r.Spec.RateCard.AsMeta().Price; price != nil && price.GetPaymentTerm() == productcatalog.InArrearsPaymentTerm {
+		if r.FullServicePeriod.Duration() == time.Duration(0) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (r StateItem) GetServicePeriod() timeutil.ClosedPeriod {
+	return r.ServicePeriod
+}
+
+func (r StateItem) GetExpectedLine() (*billing.GatheringLine, error) {
+	if !r.Currency.IsFiat() {
+		return nil, fmt.Errorf("billing line currency must be fiat: %s", r.Currency.GetCode())
+	}
+
+	line := billing.GatheringLine{
+		GatheringLineBase: billing.GatheringLineBase{
+			ManagedResource: models.NewManagedResource(models.ManagedResourceInput{
+				Namespace:   r.Subscription.Namespace,
+				Name:        r.Spec.RateCard.AsMeta().Name,
+				Description: r.Spec.RateCard.AsMeta().Description,
+			}),
+			ManagedBy:              billing.SubscriptionManagedLine,
+			Currency:               currencyx.FiatCode(r.Currency.GetCode()),
+			ChildUniqueReferenceID: &r.UniqueID,
+			TaxConfig:              r.Spec.RateCard.AsMeta().TaxConfig,
+			ServicePeriod:          r.GetServicePeriod(),
+			InvoiceAt:              r.GetInvoiceAt(),
+			RateCardDiscounts:      billing.DiscountsFromProductCatalog(r.Spec.RateCard.AsMeta().Discounts),
+			Subscription: &billing.SubscriptionReference{
+				SubscriptionID: r.Subscription.ID,
+				PhaseID:        r.PhaseID,
+				ItemID:         r.SubscriptionItem.ID,
+				BillingPeriod: timeutil.ClosedPeriod{
+					From: r.BillingPeriod.From,
+					To:   r.BillingPeriod.To,
+				},
+			},
+		},
+	}
+
+	price := r.Spec.RateCard.AsMeta().Price
+	if price != nil && price.GetPaymentTerm() == productcatalog.InArrearsPaymentTerm {
+		if r.FullServicePeriod.Duration() == time.Duration(0) {
+			return nil, nil
+		}
+	}
+
+	if price == nil {
+		return nil, fmt.Errorf("price must be defined for usage based price")
+	}
+
+	var featureKey string
+	feature := r.SubscriptionItem.RateCard.AsMeta().Feature
+	if feature != nil {
+		if err := feature.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid feature reference for billing line: %w", err)
+		}
+
+		if feature.Key == nil {
+			return nil, errors.New("feature key is required for billing line")
+		}
+
+		featureKey = *feature.Key
+	}
+
+	switch price.Type() {
+	case productcatalog.FlatPriceType:
+		price, err := price.AsFlat()
+		if err != nil {
+			return nil, fmt.Errorf("converting price to flat: %w", err)
+		}
+
+		perUnitAmount := r.Currency.RoundToPrecision(price.Amount)
+		if !r.ServicePeriod.IsEmpty() && r.shouldProrate() {
+			perUnitAmount = r.Currency.RoundToPrecision(price.Amount.Mul(r.PeriodPercentage()))
+		}
+
+		if perUnitAmount.IsZero() {
+			return nil, nil
+		}
+
+		line.Price = lo.FromPtr(productcatalog.NewPriceFrom(productcatalog.FlatPrice{
+			Amount:      perUnitAmount,
+			PaymentTerm: price.PaymentTerm,
+		}))
+		line.FeatureKey = featureKey
+	default:
+		if feature == nil {
+			return nil, errors.New("feature is required for usage-based price")
+		}
+
+		if r.SubscriptionItem.RateCard.AsMeta().Price == nil {
+			return nil, fmt.Errorf("price must be defined for usage based price")
+		}
+
+		line.Price = lo.FromPtr(r.SubscriptionItem.RateCard.AsMeta().Price)
+		line.FeatureKey = featureKey
+
+		// Snapshot the rate card's unit_config onto the gathering line so the legacy
+		// line-engine path converts raw metered quantity into billed units at rating,
+		// mirroring the charges reconciler that copies it onto the charge intent. Only
+		// usage-based prices carry it; the flat-fee branch above never does (authoring
+		// forbids unit_config on flat prices).
+		if unitConfig := r.SubscriptionItem.RateCard.AsMeta().UnitConfig; unitConfig != nil {
+			line.UnitConfig = lo.ToPtr(unitConfig.Clone())
+		}
+	}
+
+	return &line, nil
+}
+
+func (r StateItem) shouldProrate() bool {
+	if !r.Subscription.ProRatingConfig.Enabled {
+		return false
+	}
+
+	if r.SubscriptionItem.RateCard.AsMeta().Price.Type() != productcatalog.FlatPriceType {
+		return false
+	}
+
+	switch r.SubscriptionEndProrationMode {
+	case billing.SubscriptionEndProrationModeBillFullPeriod:
+		if r.Subscription.ActiveTo != nil && !r.Subscription.ActiveTo.After(r.ServicePeriod.To) {
+			return false
+		}
+	case billing.SubscriptionEndProrationModeBillActualPeriod:
+	}
+
+	switch r.Subscription.ProRatingConfig.Mode {
+	case productcatalog.ProRatingModeProratePrices:
+		return true
+	default:
+		return false
+	}
+}
+
+var ErrExpectedLineIsEmpty = errors.New("expected line is empty")
+
+func (r StateItem) GetExpectedLineOrErr() (billing.GatheringLine, error) {
+	line, err := r.GetExpectedLine()
+	if err != nil {
+		return billing.GatheringLine{}, err
+	}
+
+	if line == nil {
+		return billing.GatheringLine{}, fmt.Errorf("%w [child_unique_id: %s]", ErrExpectedLineIsEmpty, r.UniqueID)
+	}
+
+	return *line, nil
+}

@@ -152,6 +152,12 @@ capabilities:
   tools: []
   workflow_kinds:
   - WORKSPACE_LIFECYCLE
+- id: metering.core_authentication
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: platform.pages
   exposure: end_user
   routes:

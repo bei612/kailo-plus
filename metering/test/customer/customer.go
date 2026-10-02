@@ -1,0 +1,1206 @@
+package customer
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/oklog/ulid/v2"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/openmeter/entitlement"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/feature"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/plan"
+	plansubscriptionservice "github.com/openmeterio/openmeter/openmeter/productcatalog/subscription/service"
+	"github.com/openmeterio/openmeter/openmeter/streaming"
+	"github.com/openmeterio/openmeter/openmeter/subscription"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/filter"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+	"github.com/openmeterio/openmeter/pkg/sortx"
+)
+
+var (
+	TestKey                = "test-customer"
+	TestName               = "Test Customer"
+	TestPrimaryEmail       = "test@openmeter.io"
+	TestCurrency           = currencyx.Code("USD")
+	TestAddressCountry     = models.CountryCode("US")
+	TestAddressCity        = "San Francisco"
+	TestAddressState       = "CA"
+	TestAddressPostalCode  = "94105"
+	TestAddressLine1       = "123 Main St"
+	TestAddressLine2       = "Apt 1"
+	TestAddressPhoneNumber = "123-456-7890"
+	TestAddress            = models.Address{
+		Country:     &TestAddressCountry,
+		City:        &TestAddressCity,
+		Line1:       &TestAddressLine1,
+		Line2:       &TestAddressLine2,
+		PostalCode:  &TestAddressPostalCode,
+		PhoneNumber: &TestAddressPhoneNumber,
+	}
+	TestSubjectKeys = []string{"subject-0"}
+)
+
+type CustomerHandlerTestSuite struct {
+	Env TestEnv
+
+	namespace string
+}
+
+// setupNamespace can be used to set up an independent namespace for testing, it contains a single
+// feature and rule with a channel. For more complex scenarios, additional setup might be required.
+func (s *CustomerHandlerTestSuite) setupNamespace(t *testing.T) {
+	t.Helper()
+
+	s.namespace = ulid.Make().String()
+}
+
+// TestCreate tests the creation of a customer
+func (s *CustomerHandlerTestSuite) TestCreate(ctx context.Context, t *testing.T) {
+	s.setupNamespace(t)
+
+	service := s.Env.Customer()
+
+	// Create a createdCustomer
+	createdCustomer, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Key:            lo.ToPtr(TestKey),
+			Name:           TestName,
+			PrimaryEmail:   &TestPrimaryEmail,
+			Currency:       &TestCurrency,
+			BillingAddress: &TestAddress,
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: TestSubjectKeys,
+			},
+			Metadata: &models.Metadata{
+				"foo": "bar",
+			},
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+
+	require.NotNil(t, createdCustomer, "Customer must not be nil")
+	require.Equal(t, s.namespace, createdCustomer.Namespace, "Customer namespace must match")
+	require.NotNil(t, createdCustomer.ID, "Customer ID must not be nil")
+	require.Equal(t, &TestKey, createdCustomer.Key, "Customer key must match")
+	require.Equal(t, TestName, createdCustomer.Name, "Customer name must match")
+	require.Equal(t, &TestPrimaryEmail, createdCustomer.PrimaryEmail, "Customer primary email must match")
+	require.Equal(t, &TestCurrency, createdCustomer.Currency, "Customer currency must match")
+	require.Equal(t, &TestAddressCountry, createdCustomer.BillingAddress.Country, "Customer billing address country must match")
+	require.Equal(t, &TestAddressCity, createdCustomer.BillingAddress.City, "Customer billing address city must match")
+	require.Equal(t, &TestAddressLine1, createdCustomer.BillingAddress.Line1, "Customer billing address line1 must match")
+	require.Equal(t, &TestAddressLine2, createdCustomer.BillingAddress.Line2, "Customer billing address line2 must match")
+	require.Equal(t, &TestAddressPostalCode, createdCustomer.BillingAddress.PostalCode, "Customer billing address postal code must match")
+	require.Equal(t, &TestAddressPhoneNumber, createdCustomer.BillingAddress.PhoneNumber, "Customer billing address phone number must match")
+	require.Equal(t, TestSubjectKeys, createdCustomer.UsageAttribution.SubjectKeys, "Customer usage attribution subject keys must match")
+	require.Equal(t, &models.Metadata{"foo": "bar"}, createdCustomer.Metadata, "Customer metadata must match")
+
+	// Test subjects are created
+	t.Run("Should create subjects alongside customer", func(t *testing.T) {
+		for _, subjectKey := range TestSubjectKeys {
+			subject, err := s.Env.Subject().GetByKey(ctx, models.NamespacedKey{
+				Namespace: s.namespace,
+				Key:       subjectKey,
+			})
+
+			require.NoError(t, err, "Getting subject must not return error")
+			require.NotNil(t, subject, "Subject must not be nil")
+			require.Equal(t, subjectKey, subject.Key, "Subject key must match")
+		}
+	})
+
+	// Test key conflicts
+	t.Run("Should return conflict error if subject keys conflict", func(t *testing.T) {
+		_, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+			Namespace: s.namespace,
+			CustomerMutate: customer.CustomerMutate{
+				Name: TestName,
+				UsageAttribution: &customer.CustomerUsageAttribution{
+					SubjectKeys: TestSubjectKeys,
+				},
+			},
+		})
+
+		require.True(
+			t,
+			customer.IsSubjectKeyConflictError(err),
+			"Creating a customer with same subject keys must return conflict error",
+		)
+	})
+
+	// Test key overlaps with id
+	t.Run("Should return conflict error if key overlaps with id", func(t *testing.T) {
+		_, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+			Namespace: s.namespace,
+			CustomerMutate: customer.CustomerMutate{
+				Key:  lo.ToPtr(createdCustomer.ID), // Overlaps with id of existing customer
+				Name: TestName,
+				UsageAttribution: &customer.CustomerUsageAttribution{
+					SubjectKeys: []string{"subject-1"},
+				},
+			},
+		})
+
+		require.True(
+			t,
+			models.IsGenericConflictError(err),
+			"Creating a customer with a key that overlaps with id must return conflict error",
+		)
+	})
+
+	// Test key overlaps with subject
+	t.Run("Should return conflict error if key overlaps with subject", func(t *testing.T) {
+		_, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+			Namespace: s.namespace,
+			CustomerMutate: customer.CustomerMutate{
+				Key:  lo.ToPtr(TestSubjectKeys[0]), // Overlaps with subject of existing customer
+				Name: TestName,
+				UsageAttribution: &customer.CustomerUsageAttribution{
+					SubjectKeys: []string{"subject-1"},
+				},
+			},
+		})
+
+		require.True(
+			t,
+			models.IsGenericConflictError(err),
+			"Creating a customer with a key that overlaps with subject must return conflict error",
+		)
+	})
+
+	// Test creating a customer without subjects
+	t.Run("Should allow creation without subject keys", func(t *testing.T) {
+		customerWithoutSubjects, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+			Namespace: s.namespace,
+			CustomerMutate: customer.CustomerMutate{
+				Key:  lo.ToPtr("customer-no-subjects"),
+				Name: "Customer Without Subjects",
+				UsageAttribution: &customer.CustomerUsageAttribution{
+					SubjectKeys: []string{},
+				},
+			},
+		})
+
+		require.NoError(t, err, "Creating customer without subject keys must not return error")
+		require.NotNil(t, customerWithoutSubjects, "Customer without subjects must not be nil")
+		// UsageAttribution is nil when there are no subject keys
+		require.Nil(t, customerWithoutSubjects.UsageAttribution, "Customer usage attribution must be nil when no subject keys")
+	})
+}
+
+func (s *CustomerHandlerTestSuite) TestCreateSameKeyAndSubjectAcrossNamespaces(ctx context.Context, t *testing.T) {
+	service := s.Env.Customer()
+	namespaceA := ulid.Make().String()
+	namespaceB := ulid.Make().String()
+	const sharedKey = "turip-test"
+
+	// Given a customer whose key and usage-attribution subject are identical in namespace A.
+	createdCustomerA, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: namespaceA,
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr(sharedKey),
+			Name: "Customer A",
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: []string{sharedKey},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, namespaceA, createdCustomerA.Namespace)
+
+	// When another customer uses the same key and subject in namespace B, then namespace isolation allows it.
+	createdCustomerB, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: namespaceB,
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr(sharedKey),
+			Name: "Customer B",
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: []string{sharedKey},
+			},
+		},
+	})
+	require.NoError(t, err, "customer keys and subjects must be unique within a namespace, not across namespaces")
+	require.Equal(t, namespaceB, createdCustomerB.Namespace)
+}
+
+// TestUpdate tests the updating of a customer
+func (s *CustomerHandlerTestSuite) TestUpdate(ctx context.Context, t *testing.T) {
+	s.setupNamespace(t)
+
+	service := s.Env.Customer()
+
+	// Create a customer with mandatory fields
+	originalCustomer, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Name: TestName,
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: TestSubjectKeys,
+			},
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+	require.NotNil(t, originalCustomer, "Customer must not be nil")
+	require.Equal(t, TestName, originalCustomer.Name, "Customer name must match")
+	require.Equal(t, TestSubjectKeys, originalCustomer.UsageAttribution.SubjectKeys, "Customer usage attribution subject keys must match")
+
+	newName := "New Name"
+	newSubjectKeys := []string{"subject-new"}
+
+	// Update the customer with new fields
+	updatedCustomer, err := service.UpdateCustomer(ctx, customer.UpdateCustomerInput{
+		CustomerID: customer.CustomerID{
+			Namespace: s.namespace,
+			ID:        originalCustomer.ID,
+		},
+		CustomerMutate: customer.CustomerMutate{
+			Name:           newName,
+			PrimaryEmail:   &TestPrimaryEmail,
+			Currency:       &TestCurrency,
+			BillingAddress: &TestAddress,
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: newSubjectKeys,
+			},
+			Metadata: &models.Metadata{
+				"foo": "bar",
+			},
+		},
+	})
+
+	require.NoError(t, err, "Updating customer must not return error")
+	require.NotNil(t, updatedCustomer, "Customer must not be nil")
+	require.Equal(t, s.namespace, updatedCustomer.Namespace, "Customer namespace must match")
+	require.Equal(t, originalCustomer.ID, updatedCustomer.ID, "Customer ID must match")
+	require.Equal(t, newName, updatedCustomer.Name, "Customer name must match")
+	require.Equal(t, newSubjectKeys, updatedCustomer.UsageAttribution.SubjectKeys, "Customer usage attribution subject keys must match")
+	require.Equal(t, &TestPrimaryEmail, updatedCustomer.PrimaryEmail, "Customer primary email must match")
+	require.Equal(t, &TestCurrency, updatedCustomer.Currency, "Customer currency must match")
+	require.Equal(t, &TestAddressCountry, updatedCustomer.BillingAddress.Country, "Customer billing address country must match")
+	require.Equal(t, &TestAddressCity, updatedCustomer.BillingAddress.City, "Customer billing address city must match")
+	require.Equal(t, &TestAddressLine1, updatedCustomer.BillingAddress.Line1, "Customer billing address line1 must match")
+	require.Equal(t, &TestAddressLine2, updatedCustomer.BillingAddress.Line2, "Customer billing address line2 must match")
+	require.Equal(t, &TestAddressPostalCode, updatedCustomer.BillingAddress.PostalCode, "Customer billing address postal code must match")
+	require.Equal(t, &TestAddressPhoneNumber, updatedCustomer.BillingAddress.PhoneNumber, "Customer billing address phone number must match")
+	require.Equal(t, &models.Metadata{"foo": "bar"}, updatedCustomer.Metadata, "Customer metadata must match")
+
+	// Test subjects are created appropriately
+	t.Run("Should create subjects alongside customer", func(t *testing.T) {
+		for _, subjectKey := range newSubjectKeys {
+			subject, err := s.Env.Subject().GetByKey(ctx, models.NamespacedKey{
+				Namespace: s.namespace,
+				Key:       subjectKey,
+			})
+
+			require.NoError(t, err, "Getting subject must not return error")
+			require.NotNil(t, subject, "Subject must not be nil")
+			require.Equal(t, subjectKey, subject.Key, "Subject key must match")
+		}
+	})
+
+	// Test that old subjects are not deleted just left dangling
+	t.Run("Should not delete old subjects", func(t *testing.T) {
+		for _, subjectKey := range originalCustomer.UsageAttribution.SubjectKeys {
+			subject, err := s.Env.Subject().GetByKey(ctx, models.NamespacedKey{
+				Namespace: s.namespace,
+				Key:       subjectKey,
+			})
+
+			require.NoError(t, err, "Getting subject must not return error")
+			require.NotNil(t, subject, "Subject must not be nil")
+			require.Equal(t, subjectKey, subject.Key, "Subject key must match")
+		}
+	})
+
+	// Create another customer with a different key and subject key to test conflicts
+	otherCustomerKey := "other-customer-key"
+	otherCustomerSubjectKey := "other-subject-key"
+
+	_, err = service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr(otherCustomerKey),
+			Name: TestName,
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: []string{otherCustomerSubjectKey},
+			},
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+
+	// Test key overlaps with existing customer's key
+	_, err = service.UpdateCustomer(ctx, customer.UpdateCustomerInput{
+		CustomerID: customer.CustomerID{
+			Namespace: s.namespace,
+			ID:        originalCustomer.ID,
+		},
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr(otherCustomerKey), // Overlaps with key of existing customer
+			Name: TestName,
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: TestSubjectKeys,
+			},
+		},
+	})
+
+	require.True(
+		t,
+		models.IsGenericConflictError(err),
+		"Updating a customer with a key that overlaps with key must return conflict error",
+	)
+
+	// Test key overlaps with existing customer's subject
+	_, err = service.UpdateCustomer(ctx, customer.UpdateCustomerInput{
+		CustomerID: customer.CustomerID{
+			Namespace: s.namespace,
+			ID:        originalCustomer.ID,
+		},
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr(otherCustomerSubjectKey), // Overlaps with subject of existing customer
+			Name: TestName,
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: TestSubjectKeys,
+			},
+		},
+	})
+
+	require.True(
+		t,
+		models.IsGenericConflictError(err),
+		"Updating a customer with a key that overlaps with subject must return conflict error",
+	)
+}
+
+// If a customer has a subscription, UsageAttributions cannot be updated
+func (s *CustomerHandlerTestSuite) TestUpdateWithSubscriptionPresent(ctx context.Context, t *testing.T) {
+	s.setupNamespace(t)
+
+	cService := s.Env.Customer()
+	sService := s.Env.Subscription()
+
+	// Create a customer with mandatory fields
+	originalCustomer, err := cService.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Name: TestName,
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: TestSubjectKeys,
+			},
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+	require.NotNil(t, originalCustomer, "Customer must not be nil")
+	require.Equal(t, TestName, originalCustomer.Name, "Customer name must match")
+	require.Equal(t, TestSubjectKeys, originalCustomer.UsageAttribution.SubjectKeys, "Customer usage attribution subject keys must match")
+
+	emptyExamplePlan := plan.CreatePlanInput{
+		NamespacedModel: models.NamespacedModel{
+			Namespace: s.namespace,
+		},
+		Plan: productcatalog.Plan{
+			PlanMeta: productcatalog.PlanMeta{
+				Name:           "Empty Plan",
+				Currency:       currencies.NewCurrencyReference(currencyx.Code("USD")),
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+				ProRatingConfig: productcatalog.ProRatingConfig{
+					Enabled: true,
+					Mode:    productcatalog.ProRatingModeProratePrices,
+				},
+			},
+			Phases: []productcatalog.Phase{
+				{
+					PhaseMeta: productcatalog.PhaseMeta{
+						Key:  "empty-phase",
+						Name: "Empty Phase",
+					},
+					RateCards: []productcatalog.RateCard{
+						&productcatalog.FlatFeeRateCard{
+							RateCardMeta: productcatalog.RateCardMeta{
+								Key:  "empty-rate-card",
+								Name: "Empty Rate Card",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Let's create a subscription for the customer
+	p, err := plansubscriptionservice.PlanFromPlanInput(emptyExamplePlan)
+	require.Nil(t, err)
+
+	now := clock.Now()
+
+	spec, err := subscription.NewSpecFromPlan(p, subscription.CreateSubscriptionCustomerInput{
+		CustomerId:      originalCustomer.ID,
+		Name:            "Test Subscription",
+		InvoiceCurrency: currencyx.Code("USD"),
+		ActiveFrom:      now,
+		BillingAnchor:   now,
+	})
+	require.Nil(t, err)
+
+	clock.SetTime(clock.Now().Add(1 * time.Minute))
+
+	_, err = sService.Create(ctx, s.namespace, spec)
+	require.Nil(t, err)
+
+	// Update the customer with new UsageAttribution
+	newName := "New Name"
+	newSubjectKeys := []string{"subject-1"}
+
+	_, err = cService.UpdateCustomer(ctx, customer.UpdateCustomerInput{
+		CustomerID: customer.CustomerID{
+			Namespace: s.namespace,
+			ID:        originalCustomer.ID,
+		},
+		CustomerMutate: customer.CustomerMutate{
+			Name:           newName,
+			PrimaryEmail:   &TestPrimaryEmail,
+			Currency:       &TestCurrency,
+			BillingAddress: &TestAddress,
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: newSubjectKeys,
+			},
+		},
+	})
+
+	require.True(t, models.IsGenericValidationError(err), "Updating customer UsageAttribution with subscription must return validation error, got %T", err)
+
+	// Update the customer but not the UsageAttribution
+	updatedCustomer, err := cService.UpdateCustomer(ctx, customer.UpdateCustomerInput{
+		CustomerID: customer.CustomerID{
+			Namespace: s.namespace,
+			ID:        originalCustomer.ID,
+		},
+		CustomerMutate: customer.CustomerMutate{
+			Name:             newName,
+			PrimaryEmail:     &TestPrimaryEmail,
+			Currency:         &TestCurrency,
+			BillingAddress:   &TestAddress,
+			UsageAttribution: originalCustomer.UsageAttribution,
+		},
+	})
+
+	require.NoError(t, err, "Updating customer must not return error")
+	require.NotNil(t, updatedCustomer, "Customer must not be nil")
+	require.Equal(t, s.namespace, updatedCustomer.Namespace, "Customer namespace must match")
+	require.Equal(t, originalCustomer.ID, updatedCustomer.ID, "Customer ID must match")
+	require.Equal(t, newName, updatedCustomer.Name, "Customer name must match")
+	require.Equal(t, originalCustomer.UsageAttribution.SubjectKeys, updatedCustomer.UsageAttribution.SubjectKeys, "Customer usage attribution subject keys must match")
+	require.Equal(t, &TestPrimaryEmail, updatedCustomer.PrimaryEmail, "Customer primary email must match")
+	require.Equal(t, &TestCurrency, updatedCustomer.Currency, "Customer currency must match")
+	require.Equal(t, &TestAddressCountry, updatedCustomer.BillingAddress.Country, "Customer billing address country must match")
+	require.Equal(t, &TestAddressCity, updatedCustomer.BillingAddress.City, "Customer billing address city must match")
+	require.Equal(t, &TestAddressLine1, updatedCustomer.BillingAddress.Line1, "Customer billing address line1 must match")
+	require.Equal(t, &TestAddressLine2, updatedCustomer.BillingAddress.Line2, "Customer billing address line2 must match")
+	require.Equal(t, &TestAddressPostalCode, updatedCustomer.BillingAddress.PostalCode, "Customer billing address postal code must match")
+	require.Equal(t, &TestAddressPhoneNumber, updatedCustomer.BillingAddress.PhoneNumber, "Customer billing address phone number must match")
+}
+
+// TestList tests the listing of customers
+func (s *CustomerHandlerTestSuite) TestList(ctx context.Context, t *testing.T) {
+	s.setupNamespace(t)
+
+	service := s.Env.Customer()
+
+	// Create a customer 1
+	createCustomer1, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr("customer-1"),
+			Name: "Customer 1",
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: []string{"subject-1"},
+			},
+			PrimaryEmail: lo.ToPtr("customer-1@test.com"),
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+
+	// Create a customer 2
+	createCustomer2, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Name: "Customer 2",
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: []string{"subject-2"},
+			},
+			PrimaryEmail: lo.ToPtr("customer-2@test.com"),
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+
+	// Create a customer 3 in a different namespace
+	differentNamespace := ulid.Make().String()
+
+	_, err = service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: differentNamespace,
+		CustomerMutate: customer.CustomerMutate{
+			Name: "Customer 3",
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: []string{"subject-3"},
+			},
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+
+	page := pagination.Page{PageNumber: 1, PageSize: 10}
+
+	// List customers
+	list, err := service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace: s.namespace,
+		Page:      page,
+	})
+
+	require.NoError(t, err, "Listing customers must not return error")
+	require.Equal(t, 2, list.TotalCount, "Customers total count must be 1")
+	require.Equal(t, 1, list.Page.PageNumber, "Customers page must be 0")
+	require.Len(t, list.Items, 2, "Customers must have a single item")
+	require.Equal(t, s.namespace, list.Items[0].Namespace, "Customer namespace must match")
+	require.Equal(t, createCustomer1.ID, list.Items[0].ID, "Customer ID must match")
+	require.Equal(t, "Customer 1", list.Items[0].Name, "Customer name must match")
+	require.Equal(t, []string{"subject-1"}, list.Items[0].UsageAttribution.SubjectKeys, "Customer usage attribution subject keys must match")
+	require.Equal(t, s.namespace, list.Items[1].Namespace, "Customer namespace must match")
+	require.Equal(t, createCustomer2.ID, list.Items[1].ID, "Customer ID must match")
+	require.Equal(t, "Customer 2", list.Items[1].Name, "Customer name must match")
+	require.Equal(t, []string{"subject-2"}, list.Items[1].UsageAttribution.SubjectKeys, "Customer usage attribution subject keys must match")
+
+	// List customers with key filter (contains, partial match)
+	list, err = service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace: s.namespace,
+		Page:      page,
+		Key:       &filter.FilterString{Contains: lo.ToPtr("customer-1")},
+	})
+
+	require.NoError(t, err, "Listing customers with key filter must not return error")
+	require.Equal(t, 1, list.TotalCount, "Customers total count must be 1")
+	require.Equal(t, createCustomer1.ID, list.Items[0].ID, "Customer ID must match")
+
+	// List customers with name filter (exact match via eq)
+	list, err = service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace: s.namespace,
+		Page:      page,
+		Name:      &filter.FilterString{Eq: &createCustomer2.Name},
+	})
+
+	require.NoError(t, err, "Listing customers with name filter must not return error")
+	require.Equal(t, 1, list.TotalCount, "Customers total count must be 1")
+	require.Equal(t, createCustomer2.ID, list.Items[0].ID, "Customer ID must match")
+
+	// List customers with partial name filter (contains)
+	list, err = service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace: s.namespace,
+		Page:      page,
+		Name:      &filter.FilterString{Contains: lo.ToPtr("2")},
+	})
+
+	require.NoError(t, err, "Listing customers with partial name filter must not return error")
+	require.Equal(t, 1, list.TotalCount, "Customers total count must be 1")
+	require.Equal(t, createCustomer2.ID, list.Items[0].ID, "Customer ID must match")
+
+	// List customers with primary email filter (exact match via eq)
+	list, err = service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace:    s.namespace,
+		Page:         page,
+		PrimaryEmail: &filter.FilterString{Eq: createCustomer2.PrimaryEmail},
+	})
+
+	require.NoError(t, err, "Listing customers with primary email filter must not return error")
+	require.Equal(t, 1, list.TotalCount, "Customers total count must be 1")
+	require.Equal(t, createCustomer2.ID, list.Items[0].ID, "Customer ID must match")
+
+	// List customers with name filter (ne — exclude the matching customer)
+	list, err = service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace: s.namespace,
+		Page:      page,
+		Name:      &filter.FilterString{Ne: &createCustomer1.Name},
+	})
+
+	require.NoError(t, err, "Listing customers with name ne filter must not return error")
+	require.Equal(t, 1, list.TotalCount, "ne filter must return the non-matching customer")
+	require.Equal(t, createCustomer2.ID, list.Items[0].ID, "ne filter must return customer 2")
+
+	// List customers with ncontains filter (partial non-match)
+	list, err = service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace: s.namespace,
+		Page:      page,
+		Name:      &filter.FilterString{Ncontains: lo.ToPtr("2")},
+	})
+
+	require.NoError(t, err, "Listing customers with ncontains filter must not return error")
+	require.Equal(t, 1, list.TotalCount, "ncontains filter must exclude matching customer")
+	require.Equal(t, createCustomer1.ID, list.Items[0].ID, "ncontains filter must return customer 1")
+
+	// List customers with In (oeq) filter on PrimaryEmail (both customers have
+	// emails, and unlike Key, both emails are guaranteed non-nil).
+	list, err = service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace: s.namespace,
+		Page:      page,
+		PrimaryEmail: &filter.FilterString{In: &[]string{
+			*createCustomer1.PrimaryEmail,
+			*createCustomer2.PrimaryEmail,
+		}},
+	})
+
+	require.NoError(t, err, "Listing customers with primary email In filter must not return error")
+	require.Equal(t, 2, list.TotalCount, "In filter must return both customers")
+
+	// List customers with Exists=true on PrimaryEmail (both customers have an email)
+	list, err = service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace:    s.namespace,
+		Page:         page,
+		PrimaryEmail: &filter.FilterString{Exists: lo.ToPtr(true)},
+	})
+
+	require.NoError(t, err, "Listing customers with Exists filter must not return error")
+	require.Equal(t, 2, list.TotalCount, "Exists=true must return customers with a non-null email")
+
+	// List customers with And combining a lower and upper bound on Name (range).
+	// This mirrors the shape that the api/v3 converter produces from
+	// filter[name][gte]=Customer 1&filter[name][lte]=Customer 2 after splitting
+	// the range into an $and.
+	list, err = service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace: s.namespace,
+		Page:      page,
+		Name: &filter.FilterString{
+			And: &[]filter.FilterString{
+				{Gte: lo.ToPtr("Customer 1")},
+				{Lte: lo.ToPtr("Customer 2")},
+			},
+		},
+	})
+
+	require.NoError(t, err, "Listing customers with And range filter must not return error")
+	require.Equal(t, 2, list.TotalCount, "And range must include both customers")
+
+	// Order by name descending
+	list, err = service.ListCustomers(ctx, customer.ListCustomersInput{
+		Namespace: s.namespace,
+		Page:      page,
+		OrderBy:   "name",
+		Order:     sortx.OrderDesc,
+	})
+
+	require.NoError(t, err, "Listing customers with order by name must not return error")
+	require.Equal(t, 2, list.TotalCount, "Customers total count must be 1")
+	require.Equal(t, 1, list.Page.PageNumber, "Customers page must be 0")
+	require.Equal(t, createCustomer2.ID, list.Items[0].ID, "Customer 2 must be first in order")
+	require.Equal(t, createCustomer1.ID, list.Items[1].ID, "Customer 1 must be second in order")
+}
+
+// TestListBillingProfileFilter tests that the billing_profile_id filter operates
+// on the customer's effective billing profile — i.e. customers without an
+// explicit override are matched when the filtered id is the namespace default.
+func (s *CustomerHandlerTestSuite) TestListBillingProfileFilter(ctx context.Context, t *testing.T) {
+	s.setupNamespace(t)
+
+	customerService := s.Env.Customer()
+	billingService := s.Env.Billing()
+
+	sandboxApp := s.installSandboxApp(t, s.namespace)
+	defaultProfile := s.createDefaultProfile(t, sandboxApp, s.namespace)
+
+	pinnedInput := minimalCreateProfileInputTemplate(sandboxApp.GetID())
+	pinnedInput.Namespace = s.namespace
+	pinnedInput.Default = false
+	pinnedInput.Name = "Pinned Profile"
+	pinnedProfile, err := billingService.CreateProfile(ctx, pinnedInput)
+	require.NoError(t, err, "creating pinned profile must not fail")
+
+	// noOverride: relies on the namespace default profile.
+	noOverride, err := customerService.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr("no-override"),
+			Name: "No Override",
+		},
+	})
+	require.NoError(t, err)
+
+	// overrideNullProfile: has an override row with billing_profile_id IS NULL,
+	// which also resolves to the namespace default profile.
+	overrideNullProfile, err := customerService.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr("override-null-profile"),
+			Name: "Override Null Profile",
+		},
+	})
+	require.NoError(t, err)
+	_, err = billingService.UpsertCustomerOverride(ctx, billing.UpsertCustomerOverrideInput{
+		Namespace:  s.namespace,
+		CustomerID: overrideNullProfile.ID,
+		Collection: billing.CollectionOverrideConfig{
+			Interval: lo.ToPtr(datetime.MustParseDuration(t, "PT1H")),
+		},
+	})
+	require.NoError(t, err, "upserting customer override without profile id must not fail")
+
+	// overrideDefault: has an override pointing explicitly at the default profile.
+	overrideDefault, err := customerService.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr("override-default"),
+			Name: "Override Default",
+		},
+	})
+	require.NoError(t, err)
+	_, err = billingService.UpsertCustomerOverride(ctx, billing.UpsertCustomerOverrideInput{
+		Namespace:  s.namespace,
+		CustomerID: overrideDefault.ID,
+		ProfileID:  defaultProfile.ID,
+	})
+	require.NoError(t, err, "upserting customer override pinned to default must not fail")
+
+	// overridePinned: has an override pointing at the non-default pinned profile.
+	overridePinned, err := customerService.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr("override-pinned"),
+			Name: "Override Pinned",
+		},
+	})
+	require.NoError(t, err)
+	_, err = billingService.UpsertCustomerOverride(ctx, billing.UpsertCustomerOverrideInput{
+		Namespace:  s.namespace,
+		CustomerID: overridePinned.ID,
+		ProfileID:  pinnedProfile.ID,
+	})
+	require.NoError(t, err, "upserting customer override pinned to non-default must not fail")
+
+	// overrideSoftDeleted: had an override pinned to the non-default profile,
+	// then deleted. The soft-deleted row must not affect the effective profile,
+	// so the customer falls back to the namespace default.
+	overrideSoftDeleted, err := customerService.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr("override-soft-deleted"),
+			Name: "Override Soft Deleted",
+		},
+	})
+	require.NoError(t, err)
+	_, err = billingService.UpsertCustomerOverride(ctx, billing.UpsertCustomerOverrideInput{
+		Namespace:  s.namespace,
+		CustomerID: overrideSoftDeleted.ID,
+		ProfileID:  pinnedProfile.ID,
+	})
+	require.NoError(t, err)
+	require.NoError(t, billingService.DeleteCustomerOverride(ctx, billing.DeleteCustomerOverrideInput{
+		Customer: customer.CustomerID{Namespace: s.namespace, ID: overrideSoftDeleted.ID},
+	}), "deleting customer override must not fail")
+
+	page := pagination.Page{PageNumber: 1, PageSize: 50}
+	idsOf := func(items []customer.Customer) []string {
+		ids := make([]string, 0, len(items))
+		for _, c := range items {
+			ids = append(ids, c.ID)
+		}
+		return ids
+	}
+
+	// eq default covers the bug: customers with no override, with override
+	// pinned to default, with override.billing_profile_id IS NULL, and with a
+	// soft-deleted override all resolve to the default profile and must match.
+	t.Run("eq default", func(t *testing.T) {
+		list, err := customerService.ListCustomers(ctx, customer.ListCustomersInput{
+			Namespace:        s.namespace,
+			Page:             page,
+			BillingProfileID: &filter.FilterULID{FilterString: filter.FilterString{Eq: &defaultProfile.ID}},
+		})
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{
+			noOverride.ID,
+			overrideNullProfile.ID,
+			overrideDefault.ID,
+			overrideSoftDeleted.ID,
+		}, idsOf(list.Items))
+	})
+
+	// eq pinned guards against over-matching from the default branch — only
+	// customers with an explicit live override pointing at the pinned profile
+	// should match.
+	t.Run("eq pinned", func(t *testing.T) {
+		list, err := customerService.ListCustomers(ctx, customer.ListCustomersInput{
+			Namespace:        s.namespace,
+			Page:             page,
+			BillingProfileID: &filter.FilterULID{FilterString: filter.FilterString{Eq: &pinnedProfile.ID}},
+		})
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{overridePinned.ID}, idsOf(list.Items))
+	})
+}
+
+// TestListCustomerUsageAttributions tests the listing of customer usage attributions
+func (s *CustomerHandlerTestSuite) TestListCustomerUsageAttributions(ctx context.Context, t *testing.T) {
+	s.setupNamespace(t)
+
+	service := s.Env.Customer()
+
+	// Create a customer 1
+	createCustomer1, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Key:  lo.ToPtr("customer-1"),
+			Name: "Customer 1",
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: []string{"customer-1-subject-1", "customer-1-subject-2"},
+			},
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+
+	// Create a customer 2
+	createCustomer2, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Name: "Customer 2",
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: []string{"customer-2-subject-1"},
+			},
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+
+	page := pagination.Page{PageNumber: 1, PageSize: 10}
+
+	list, err := service.ListCustomerUsageAttributions(ctx, customer.ListCustomerUsageAttributionsInput{
+		Namespace: s.namespace,
+		Page:      page,
+	})
+
+	require.NoError(t, err, "Listing customer usage attributions must not return error")
+	require.Equal(t, 2, list.TotalCount, "Customer usage attributions total count must be 2")
+	require.Equal(t, 1, list.Page.PageNumber, "Customer usage attributions page must be 0")
+	require.Equal(t, createCustomer1.ID, list.Items[0].ID, "Customer 1 must be first in order")
+	require.Equal(t, createCustomer2.ID, list.Items[1].ID, "Customer 2 must be second in order")
+
+	expectedItems := []streaming.CustomerUsageAttribution{
+		streaming.NewCustomerUsageAttribution(
+			createCustomer1.ID,
+			createCustomer1.Key,
+			[]string{"customer-1-subject-1", "customer-1-subject-2"},
+		),
+		streaming.NewCustomerUsageAttribution(
+			createCustomer2.ID,
+			createCustomer2.Key,
+			[]string{"customer-2-subject-1"},
+		),
+	}
+
+	require.Equal(t, expectedItems, list.Items, "Customer usage attributions must match")
+}
+
+// TestGet tests the getting of a customer by ID
+func (s *CustomerHandlerTestSuite) TestGet(ctx context.Context, t *testing.T) {
+	s.setupNamespace(t)
+
+	service := s.Env.Customer()
+
+	// Create a customer
+	createdCustomer, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Name: TestName,
+			Key:  lo.ToPtr(TestKey),
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: TestSubjectKeys,
+			},
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+	require.NotNil(t, createdCustomer, "Customer must not be nil")
+
+	// Get the customer by ID
+	cus, err := service.GetCustomer(ctx, customer.GetCustomerInput{
+		CustomerID: &customer.CustomerID{
+			Namespace: s.namespace,
+			ID:        createdCustomer.ID,
+		},
+	})
+
+	require.NoError(t, err, "Fetching customer must not return error")
+	require.NotNil(t, cus, "Customer must not be nil")
+	require.Equal(t, s.namespace, cus.Namespace, "Customer namespace must match")
+	require.NotNil(t, cus.ID, "Customer ID must not be nil")
+	require.Equal(t, createdCustomer.ID, cus.ID, "Customer ID must match")
+	require.Equal(t, TestName, cus.Name, "Customer name must match")
+	require.Equal(t, TestSubjectKeys, cus.UsageAttribution.SubjectKeys, "Customer usage attribution subject keys must match")
+
+	// Get the customer by key
+	cus, err = service.GetCustomer(ctx, customer.GetCustomerInput{
+		CustomerKey: &customer.CustomerKey{
+			Namespace: s.namespace,
+			Key:       TestKey,
+		},
+	})
+
+	require.NoError(t, err, "Fetching customer must not return error")
+	require.NotNil(t, cus, "Customer must not be nil")
+	require.Equal(t, createdCustomer.ID, cus.ID, "Customer ID must match")
+	require.Equal(t, s.namespace, cus.Namespace, "Customer namespace must match")
+
+	// Get the customer by idOrKey
+	cus, err = service.GetCustomer(ctx, customer.GetCustomerInput{
+		CustomerIDOrKey: &customer.CustomerIDOrKey{
+			IDOrKey:   createdCustomer.ID,
+			Namespace: s.namespace,
+		},
+	})
+
+	require.NoError(t, err, "Fetching customer must not return error")
+	require.NotNil(t, cus, "Customer must not be nil")
+	require.Equal(t, createdCustomer.ID, cus.ID, "Customer ID must match")
+	require.Equal(t, s.namespace, cus.Namespace, "Customer namespace must match")
+
+	// Test not found
+	_, err = service.GetCustomer(ctx, customer.GetCustomerInput{
+		CustomerKey: &customer.CustomerKey{
+			Namespace: s.namespace,
+			Key:       "non-existent-key",
+		},
+	})
+
+	require.True(t, models.IsGenericNotFoundError(err), "Fetching non-existent customer must return not found error")
+}
+
+// TestGetByUsageAttribution tests the getting of a customer by usage attribution
+func (s *CustomerHandlerTestSuite) TestGetByUsageAttribution(ctx context.Context, t *testing.T) {
+	s.setupNamespace(t)
+
+	service := s.Env.Customer()
+
+	// Create a customer
+	createdCustomer, err := service.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Name: TestName,
+			Key:  lo.ToPtr(TestKey),
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: TestSubjectKeys,
+			},
+		},
+	})
+
+	require.NoError(t, err, "Creating customer must not return error")
+	require.NotNil(t, createdCustomer, "Customer must not be nil")
+
+	// Get the customer by usage attribution
+	cus, err := service.GetCustomerByUsageAttribution(ctx, customer.GetCustomerByUsageAttributionInput{
+		Namespace: s.namespace,
+		Key:       TestSubjectKeys[0],
+	})
+
+	require.NoError(t, err, "Fetching customer must not return error")
+	require.NotNil(t, cus, "Customer must not be nil")
+	require.Equal(t, s.namespace, cus.Namespace, "Customer namespace must match")
+	require.Equal(t, createdCustomer.ID, cus.ID, "Customer ID must match")
+
+	// Get the customer by key
+	cus, err = service.GetCustomerByUsageAttribution(ctx, customer.GetCustomerByUsageAttributionInput{
+		Namespace: s.namespace,
+		Key:       TestKey,
+	})
+
+	require.NoError(t, err, "Fetching customer must not return error")
+	require.NotNil(t, cus, "Customer must not be nil")
+	require.Equal(t, s.namespace, cus.Namespace, "Customer namespace must match")
+	require.Equal(t, createdCustomer.ID, cus.ID, "Customer ID must match")
+
+	// Get the customer by key
+	cus, err = service.GetCustomerByUsageAttribution(ctx, customer.GetCustomerByUsageAttributionInput{
+		Namespace: s.namespace,
+		Key:       TestKey,
+	})
+
+	require.NoError(t, err, "Fetching customer must not return error")
+	require.NotNil(t, cus, "Customer must not be nil")
+	require.Equal(t, s.namespace, cus.Namespace, "Customer namespace must match")
+	require.Equal(t, createdCustomer.ID, cus.ID, "Customer ID must match")
+
+	// Get the customer by usage attribution with a non-existent subject key
+	_, err = service.GetCustomerByUsageAttribution(ctx, customer.GetCustomerByUsageAttributionInput{
+		Namespace: s.namespace,
+		Key:       "non-existent-subject-key",
+	})
+
+	require.True(t, models.IsGenericNotFoundError(err), "Fetching customer with non-existent subject key must return not found error")
+}
+
+// TestDelete tests the deletion of a customer
+func (s *CustomerHandlerTestSuite) TestDelete(ctx context.Context, t *testing.T) {
+	s.setupNamespace(t)
+
+	custService := s.Env.Customer()
+	subService := s.Env.Subscription()
+
+	// Create a customer
+	input := customer.CreateCustomerInput{
+		Namespace: s.namespace,
+		CustomerMutate: customer.CustomerMutate{
+			Name: TestName,
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: TestSubjectKeys,
+			},
+		},
+	}
+	originalCustomer, err := custService.CreateCustomer(ctx, input)
+
+	require.NoError(t, err, "Creating customer must not return error")
+	require.NotNil(t, originalCustomer, "Customer must not be nil")
+
+	customerId := customer.CustomerID{
+		Namespace: s.namespace,
+		ID:        originalCustomer.ID,
+	}
+
+	// Let's create a subscription for the customer
+	emptyExamplePlan := plan.CreatePlanInput{
+		NamespacedModel: models.NamespacedModel{
+			Namespace: s.namespace,
+		},
+		Plan: productcatalog.Plan{
+			PlanMeta: productcatalog.PlanMeta{
+				Name:           "Empty Plan",
+				Currency:       currencies.NewCurrencyReference(currencyx.Code("USD")),
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+				ProRatingConfig: productcatalog.ProRatingConfig{
+					Enabled: true,
+					Mode:    productcatalog.ProRatingModeProratePrices,
+				},
+			},
+			Phases: []productcatalog.Phase{
+				{
+					PhaseMeta: productcatalog.PhaseMeta{
+						Key:  "empty-phase",
+						Name: "Empty Phase",
+					},
+					RateCards: []productcatalog.RateCard{
+						&productcatalog.FlatFeeRateCard{
+							RateCardMeta: productcatalog.RateCardMeta{
+								Key:  "empty-rate-card",
+								Name: "Empty Rate Card",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	p, err := plansubscriptionservice.PlanFromPlanInput(emptyExamplePlan)
+	require.Nil(t, err)
+
+	now := clock.Now()
+
+	spec, err := subscription.NewSpecFromPlan(p, subscription.CreateSubscriptionCustomerInput{
+		CustomerId:      originalCustomer.ID,
+		Name:            "Test Subscription",
+		InvoiceCurrency: currencyx.Code("USD"),
+		ActiveFrom:      now,
+		BillingAnchor:   now,
+	})
+	require.Nil(t, err)
+
+	clock.SetTime(clock.Now().Add(1 * time.Minute))
+
+	sub, err := subService.Create(ctx, s.namespace, spec)
+	require.Nil(t, err)
+
+	// Delete the customer with active subscription should return validation error
+	require.Equal(t, sub.CustomerId, customerId.ID, "Subscription customer ID must match")
+	err = custService.DeleteCustomer(ctx, customerId)
+
+	require.ErrorAs(t, err, lo.ToPtr(&models.GenericValidationError{}), "Deleting customer with active subscription must return validation error, got %T", err)
+	require.EqualError(t, err, fmt.Sprintf("validation error: customer %s still have active subscriptions, please cancel them before deleting the customer", customerId.ID), "Deleting customer with active subscription must return error")
+
+	// Now let's delete the subscription
+	_, err = subService.Cancel(ctx, sub.NamespacedID, subscription.Timing{
+		Enum: lo.ToPtr(subscription.TimingImmediate),
+	})
+	require.NoError(t, err, "Canceling subscription must not return error")
+
+	clock.SetTime(clock.Now().Add(1 * time.Minute))
+
+	// Delete the customer again
+	err = custService.DeleteCustomer(ctx, customerId)
+
+	require.NoError(t, err, "Deleting customer must not return error")
+
+	// Get the customer
+	getCustomer, err := custService.GetCustomer(ctx, customer.GetCustomerInput{
+		CustomerID: &customerId,
+	})
+
+	require.NoError(t, err, "Getting a deleted customer must not return error")
+	require.NotNil(t, getCustomer.DeletedAt, "DeletedAt must not be nil")
+
+	// Delete the customer by id again should not return an error
+	err = custService.DeleteCustomer(ctx, customerId)
+	require.NoError(t, err, "Deleting customer by id must not return an error")
+
+	// Should allow to create a customer with the same subject keys
+	createdCustomer, err := custService.CreateCustomer(ctx, input)
+	require.NoError(t, err, "Creating a customer with the same subject keys must not return error")
+	require.NotNil(t, createdCustomer, "Created customer must not be nil")
+
+	// Delete the customer with active entitlement should return validation error
+	entitlementService := s.Env.Entitlement()
+	featureService := s.Env.Feature()
+
+	feature, err := featureService.CreateFeature(ctx, feature.CreateFeatureInputs{
+		Namespace: s.namespace,
+		Key:       "test-feature",
+		Name:      "Test Feature",
+	})
+	require.NoError(t, err, "Creating feature must not return error")
+	require.NotNil(t, feature, "Feature must not be nil")
+
+	entitlement, err := entitlementService.CreateEntitlement(ctx, entitlement.CreateEntitlementInputs{
+		Namespace:        s.namespace,
+		FeatureID:        lo.ToPtr(feature.ID),
+		EntitlementType:  entitlement.EntitlementTypeBoolean,
+		UsageAttribution: createdCustomer.GetUsageAttribution(),
+	}, nil)
+	require.NoError(t, err, "Creating entitlement must not return error")
+	require.NotNil(t, entitlement, "Entitlement must not be nil")
+
+	err = custService.DeleteCustomer(ctx, createdCustomer.GetID())
+	require.ErrorAs(t, err, lo.ToPtr(&models.GenericValidationError{}), "Deleting customer with active entitlement must return validation error, got %T", err)
+	require.EqualError(
+		t,
+		err,
+		fmt.Sprintf("validation error: conflict error: customer %s still has active entitlements, please remove them before deleting the customer", createdCustomer.ID),
+		"Deleting customer with active entitlement must return error",
+	)
+
+	// Delete the entitlement
+	err = entitlementService.DeleteEntitlement(ctx, s.namespace, entitlement.ID, clock.Now())
+	require.NoError(t, err, "Deleting entitlement must not return error")
+
+	// Deleting the customer is now allowed
+	err = custService.DeleteCustomer(ctx, createdCustomer.GetID())
+	require.NoError(t, err, "Deleting customer must not return error")
+}

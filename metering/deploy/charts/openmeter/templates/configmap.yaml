@@ -1,0 +1,67 @@
+{{- define "openmeter.helmValuesConfig" -}}
+{{/* Overwrite kafka config if self-hosted kafka is used */}}
+{{- if .Values.kafka.enabled -}}
+ingest:
+  kafka:
+    broker: {{ include "openmeter.componentName" (list . "kafka") }}-controller-headless:9092
+sink:
+  kafka:
+    brokers: {{ include "openmeter.componentName" (list . "kafka") }}-controller-headless:9092
+{{- end }}
+
+{{/* Overwrite clickhouse config if self-hosted clickhouse is used */}}
+{{- if .Values.clickhouse.enabled -}}
+aggregation:
+  clickhouse:
+    address: clickhouse-{{ include "openmeter.fullname" . }}:9000
+    username: default
+    password: ""
+    database: default
+{{- end }}
+
+{{/* Overwrite postgres config if self-hosted postgres is used */}}
+{{- if .Values.postgresql.enabled -}}
+postgres:
+  autoMigrate: migration
+  url: postgres://application:application@{{ include "openmeter.fullname" . }}-postgres:5432/application
+{{- end }}
+
+{{/* Overwrite svix config if self-hosted svix is used */}}
+{{- if .Values.svix.enabled -}}
+svix:
+  apiKey: {{ .Values.svix.signedJwt }}
+  serverURL: http://{{ include "openmeter.componentName" (list . "svix" ) }}:{{ .Values.svix.service.port }}
+  debug: true
+{{- end }}
+
+{{- end }}
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openmeter.fullname" . }}
+  labels:
+    {{- include "openmeter.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- $config := .Values.config -}}
+    {{- $valuesConfig := fromYaml (include "openmeter.helmValuesConfig" .) -}}
+    {{- $cfg := mergeOverwrite $config $valuesConfig -}}
+
+
+    {{ $cfg | toYaml | nindent 4 }}
+
+{{- if ne (len .Values.caRootCertificates) 0 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ca-certificates
+  labels:
+    {{- include "openmeter.labels" . | nindent 4 }}
+data:
+  {{- range $ca, $cert := .Values.caRootCertificates }}
+  {{- cat $ca ".crt" | nospace | lower | nindent 2 }}: |
+    {{- $cert | nindent 4 }}
+  {{- end }}
+{{- end }}

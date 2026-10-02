@@ -1,0 +1,528 @@
+package usagebased
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/alpacahq/alpacadecimal"
+	"github.com/samber/lo"
+	"github.com/samber/mo"
+
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/creditrealization"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/invoicedusage"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/payment"
+	"github.com/openmeterio/openmeter/openmeter/billing/models/totals"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+type RealizationRunType string
+
+const (
+	RealizationRunTypeFinalRealization                  RealizationRunType = "final_realization"
+	RealizationRunTypePartialInvoice                    RealizationRunType = "partial_invoice"
+	RealizationRunTypeInvalidDueToUnsupportedCreditNote RealizationRunType = "invalid_due_to_unsupported_credit_note"
+)
+
+func (t RealizationRunType) Values() []string {
+	return []string{
+		string(RealizationRunTypeFinalRealization),
+		string(RealizationRunTypePartialInvoice),
+		string(RealizationRunTypeInvalidDueToUnsupportedCreditNote),
+	}
+}
+
+func (t RealizationRunType) Validate() error {
+	if !slices.Contains(t.Values(), string(t)) {
+		return models.NewGenericValidationError(fmt.Errorf("invalid realization run type: %s", t))
+	}
+	return nil
+}
+
+// IsVoidedBillingHistory reports whether this run type is audit-only billing
+// history that should not participate in future billing calculations.
+func (t RealizationRunType) IsVoidedBillingHistory() bool {
+	return t == RealizationRunTypeInvalidDueToUnsupportedCreditNote
+}
+
+type RealizationRunID models.NamespacedID
+
+func (i RealizationRunID) Validate() error {
+	return models.NamespacedID(i).Validate()
+}
+
+const (
+	CurrentRealizationRunSchemaLevel = 2
+)
+
+// BillingMeteredQuantity maps a cumulative charge run quantity to the quantity
+// semantics expected by billing.StandardLine. RealizationRun.MeteredQuantity is
+// cumulative from the charge service-period start to the run's ServicePeriodTo,
+// while standard invoice lines need the current line-period quantity plus the
+// quantity already represented by earlier billed lines.
+type BillingMeteredQuantity struct {
+	// PreLinePeriod is the cumulative quantity already represented by earlier
+	// billed runs.
+	PreLinePeriod alpacadecimal.Decimal
+	// LinePeriod is the quantity represented by the current standard invoice
+	// line.
+	LinePeriod alpacadecimal.Decimal
+}
+
+type CreateRealizationRunInput struct {
+	FeatureID                 string                `json:"featureId"`
+	Type                      RealizationRunType    `json:"type"`
+	StoredAtLT                time.Time             `json:"storedAtLT"`
+	ServicePeriodTo           time.Time             `json:"servicePeriodTo"`
+	LineID                    *string               `json:"lineId,omitempty"`
+	InvoiceID                 *string               `json:"invoiceId,omitempty"`
+	MeteredQuantity           alpacadecimal.Decimal `json:"meteredQuantity"`
+	Totals                    totals.Totals         `json:"totals"`
+	NoFiatTransactionRequired bool                  `json:"noFiatTransactionRequired"`
+}
+
+func (r CreateRealizationRunInput) Normalized() CreateRealizationRunInput {
+	r.StoredAtLT = meta.NormalizeTimestamp(r.StoredAtLT)
+	r.ServicePeriodTo = meta.NormalizeTimestamp(r.ServicePeriodTo)
+
+	return r
+}
+
+func (r CreateRealizationRunInput) Validate() error {
+	var errs []error
+
+	if err := r.Type.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("type: %w", err))
+	}
+
+	if r.Type == RealizationRunTypeInvalidDueToUnsupportedCreditNote {
+		errs = append(errs, fmt.Errorf("type cannot be %s when creating a realization run", RealizationRunTypeInvalidDueToUnsupportedCreditNote))
+	}
+
+	if r.FeatureID == "" {
+		errs = append(errs, fmt.Errorf("feature id must be set"))
+	}
+
+	if r.StoredAtLT.IsZero() {
+		errs = append(errs, fmt.Errorf("stored at lt must be set"))
+	}
+
+	if r.MeteredQuantity.IsNegative() {
+		errs = append(errs, fmt.Errorf("metered quantity must be zero or positive"))
+	}
+
+	if err := r.Totals.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("totals: %w", err))
+	}
+
+	if r.ServicePeriodTo.IsZero() {
+		errs = append(errs, fmt.Errorf("service period to must be set"))
+	}
+
+	if r.LineID != nil && *r.LineID == "" {
+		errs = append(errs, fmt.Errorf("line id must be non-empty"))
+	}
+
+	if r.InvoiceID != nil && *r.InvoiceID == "" {
+		errs = append(errs, fmt.Errorf("invoice id must be non-empty"))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type UpdateRealizationRunInput struct {
+	ID RealizationRunID
+
+	Type                                 mo.Option[RealizationRunType]    `json:"type"`
+	StoredAtLT                           mo.Option[time.Time]             `json:"storedAtLT"`
+	DeletedAt                            mo.Option[*time.Time]            `json:"deletedAt,omitempty"`
+	LineID                               mo.Option[*string]               `json:"lineId,omitempty"`
+	MeteredQuantity                      mo.Option[alpacadecimal.Decimal] `json:"meteredQuantity"`
+	Totals                               mo.Option[totals.Totals]         `json:"totals"`
+	NoFiatTransactionRequired            mo.Option[bool]                  `json:"noFiatTransactionRequired"`
+	Immutable                            mo.Option[bool]                  `json:"immutable"`
+	FiatOverageCreditAllocationCompleted mo.Option[bool]                  `json:"fiatOverageCreditAllocationCompleted"`
+}
+
+func (r UpdateRealizationRunInput) Normalized() UpdateRealizationRunInput {
+	if r.StoredAtLT.IsPresent() {
+		storedAtLT := r.StoredAtLT.OrEmpty()
+		r.StoredAtLT = mo.Some(meta.NormalizeTimestamp(storedAtLT))
+	}
+
+	return r
+}
+
+func (r UpdateRealizationRunInput) Validate() error {
+	var errs []error
+
+	if err := r.ID.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("namespaced id: %w", err))
+	}
+
+	if r.Type.IsPresent() {
+		if err := r.Type.OrEmpty().Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("type: %w", err))
+		}
+	}
+
+	if r.StoredAtLT.IsPresent() && r.StoredAtLT.OrEmpty().IsZero() {
+		errs = append(errs, fmt.Errorf("stored at lt must be non-zero when set"))
+	}
+
+	if r.DeletedAt.IsPresent() {
+		deletedAt := r.DeletedAt.OrEmpty()
+		if deletedAt != nil && deletedAt.IsZero() {
+			errs = append(errs, fmt.Errorf("deleted at must be non-zero when set"))
+		}
+	}
+
+	if r.LineID.IsPresent() {
+		lineID := r.LineID.OrEmpty()
+		if lineID != nil && *lineID == "" {
+			errs = append(errs, fmt.Errorf("line id must be non-empty"))
+		}
+	}
+
+	if r.MeteredQuantity.IsPresent() && r.MeteredQuantity.OrEmpty().IsNegative() {
+		errs = append(errs, fmt.Errorf("metered quantity must be zero or positive"))
+	}
+
+	if r.Totals.IsPresent() {
+		if err := r.Totals.OrEmpty().Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("totals: %w", err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type RealizationRunBase struct {
+	ID RealizationRunID
+	models.ManagedModel
+
+	FeatureID string  `json:"featureId"`
+	LineID    *string `json:"lineId,omitempty"`
+	InvoiceID *string `json:"invoiceId,omitempty"`
+
+	Type        RealizationRunType `json:"type"`
+	InitialType RealizationRunType `json:"initialType"`
+	StoredAtLT  time.Time          `json:"storedAtLT"`
+	// ServicePeriodTo is the end of the service period for the realization run.
+	ServicePeriodTo time.Time `json:"servicePeriodTo"`
+	// PriorRunID identifies the preceding non-voided realization run. It is nil
+	// for the first run.
+	PriorRunID *RealizationRunID `json:"priorRunId,omitempty"`
+	// MeteredQuantity is the metered quantity for time IN [intent.servicePeriod.from, servicePeriodTo) capped by stored_at < StoredAtLT.
+	MeteredQuantity alpacadecimal.Decimal `json:"meteredQuantity"`
+	// Totals includes credit allocations and excludes taxes.
+	Totals                    totals.Totals `json:"totals"`
+	NoFiatTransactionRequired bool          `json:"noFiatTransactionRequired"`
+	// Immutable means the backing invoice crossed the external issuance boundary.
+	Immutable bool `json:"immutable"`
+	// FiatOverageCreditAllocationCompleted distinguishes a successful
+	// zero-allocation result from pending allocation.
+	FiatOverageCreditAllocationCompleted bool `json:"fiatOverageCreditAllocationCompleted"`
+	// DetailedLinesIncludeCreditAllocations describes if credit allocation is applied to the detailed lines.
+	// Credits-only: always false
+	// Credit-then-invoice:
+	// - true, for all runs (even when 0 credits were allocated)
+	// - legacy runs have false, as previously we didn't store credit allocations on detailed lines
+	DetailedLinesIncludeCreditAllocations bool `json:"detailedLinesIncludeCreditAllocations"`
+}
+
+func (r RealizationRunBase) Normalized() RealizationRunBase {
+	r.StoredAtLT = meta.NormalizeTimestamp(r.StoredAtLT)
+	r.ServicePeriodTo = meta.NormalizeTimestamp(r.ServicePeriodTo)
+
+	return r
+}
+
+func (r RealizationRunBase) Validate() error {
+	var errs []error
+
+	if err := r.ID.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("namespaced id: %w", err))
+	}
+
+	if err := r.ManagedModel.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("managed model: %w", err))
+	}
+
+	if r.FeatureID == "" {
+		errs = append(errs, fmt.Errorf("feature id must be set"))
+	}
+
+	if r.LineID != nil && *r.LineID == "" {
+		errs = append(errs, fmt.Errorf("line id must be non-empty"))
+	}
+
+	if r.InvoiceID != nil && *r.InvoiceID == "" {
+		errs = append(errs, fmt.Errorf("invoice id must be non-empty"))
+	}
+
+	if err := r.Type.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("type: %w", err))
+	}
+
+	if err := r.InitialType.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("initial type: %w", err))
+	}
+
+	if r.InitialType == RealizationRunTypeInvalidDueToUnsupportedCreditNote {
+		errs = append(errs, fmt.Errorf("initial type cannot be %s", RealizationRunTypeInvalidDueToUnsupportedCreditNote))
+	}
+
+	if r.StoredAtLT.IsZero() {
+		errs = append(errs, fmt.Errorf("stored at lt must be set"))
+	}
+
+	if r.MeteredQuantity.IsNegative() {
+		errs = append(errs, fmt.Errorf("metered quantity must be zero or positive"))
+	}
+
+	if err := r.Totals.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("totals: %w", err))
+	}
+
+	if r.ServicePeriodTo.IsZero() {
+		errs = append(errs, fmt.Errorf("service period to must be set"))
+	}
+
+	if r.PriorRunID != nil {
+		if err := r.PriorRunID.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("prior run id: %w", err))
+		}
+
+		if r.PriorRunID.Namespace != r.ID.Namespace {
+			errs = append(errs, fmt.Errorf("prior run namespace must match run namespace"))
+		}
+
+		if *r.PriorRunID == r.ID {
+			errs = append(errs, fmt.Errorf("prior run id cannot reference the run itself"))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type RealizationRun struct {
+	RealizationRunBase
+
+	// Realizations
+	CreditsAllocated              creditrealization.Realizations `json:"creditsAllocated"`
+	FiatOverageCreditRealizations creditrealization.Realizations `json:"fiatOverageCreditRealizations"`
+	InvoiceUsage                  *invoicedusage.AccruedUsage    `json:"invoicedUsage"`
+	Payment                       *payment.Invoiced              `json:"payment"`
+	// DetailedLines excludes taxes. Credit-then-invoice runs include credit
+	// allocations, while credits-only runs retain their gross rated details.
+	DetailedLines mo.Option[DetailedLines] `json:"detailedLines,omitzero"`
+}
+
+func (r RealizationRun) Validate() error {
+	var errs []error
+
+	if err := r.RealizationRunBase.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("realization run: %w", err))
+	}
+
+	if err := r.CreditsAllocated.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("credits allocated: %w", err))
+	}
+
+	if err := r.FiatOverageCreditRealizations.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("fiat overage credit realizations: %w", err))
+	}
+
+	if r.InvoiceUsage != nil {
+		if err := r.InvoiceUsage.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("invoice usage: %w", err))
+		}
+	}
+
+	if r.Payment != nil {
+		if err := r.Payment.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("payment: %w", err))
+		}
+	}
+
+	if r.DetailedLines.IsPresent() {
+		if err := r.DetailedLines.OrEmpty().Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("detailed lines: %w", err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+// IsVoidedBillingHistory reports whether this run must be ignored as billing
+// history. Deleted runs were already cleaned up through billing; unsupported
+// credit-note runs are retained for audit even though the invoice line should
+// have been removed once prorating/credit-note support exists.
+func (r RealizationRun) IsVoidedBillingHistory() bool {
+	// Unsupported-credit-note runs are kept for audit because the invoice line
+	// could not be deleted without prorating/credit-note support, but future
+	// rating and balance calculations must not count them as billing history.
+	if r.Type.IsVoidedBillingHistory() {
+		return true
+	}
+
+	// Deleted realizations were already cleaned up through billing and no
+	// longer represent invoice or ledger history.
+	return r.DeletedAt != nil
+}
+
+type RealizationRuns []RealizationRun
+
+func (r RealizationRuns) MapToBillingMeteredQuantity(currentRun RealizationRun) (BillingMeteredQuantity, error) {
+	preLinePeriod := alpacadecimal.Zero
+	if currentRun.PriorRunID != nil {
+		priorRun, err := r.GetByID(currentRun.PriorRunID.ID)
+		if err != nil {
+			return BillingMeteredQuantity{}, fmt.Errorf("resolve prior realization run %s for run %s: %w", currentRun.PriorRunID.ID, currentRun.ID.ID, err)
+		}
+
+		if priorRun.ID.Namespace != currentRun.ID.Namespace {
+			return BillingMeteredQuantity{}, fmt.Errorf("prior realization run %s namespace does not match run %s namespace", priorRun.ID.ID, currentRun.ID.ID)
+		}
+
+		if priorRun.ID == currentRun.ID {
+			return BillingMeteredQuantity{}, fmt.Errorf("prior realization run cannot reference run %s itself", currentRun.ID.ID)
+		}
+
+		// Standard invoice line quantities intentionally use the prior run's
+		// persisted cumulative quantity. That value may have been captured with
+		// an older StoredAtLT than the current run. Period-preserving rating may
+		// still freshly snapshot prior event-time periods with the current
+		// StoredAtLT for correction calculation, but invoice line quantities
+		// should reflect what was previously billed.
+		preLinePeriod = priorRun.MeteredQuantity
+	}
+
+	linePeriod := currentRun.MeteredQuantity.Sub(preLinePeriod)
+	if linePeriod.IsNegative() {
+		return BillingMeteredQuantity{}, fmt.Errorf(
+			"line period metered quantity is negative: current=%s pre_line=%s",
+			currentRun.MeteredQuantity.String(),
+			preLinePeriod.String(),
+		)
+	}
+
+	return BillingMeteredQuantity{
+		PreLinePeriod: preLinePeriod,
+		LinePeriod:    linePeriod,
+	}, nil
+}
+
+func (r RealizationRuns) PriorMeteredQuantity(priorRunID *RealizationRunID) (alpacadecimal.Decimal, error) {
+	if priorRunID == nil {
+		return alpacadecimal.Zero, nil
+	}
+
+	priorRun, err := r.GetByID(priorRunID.ID)
+	if err != nil {
+		return alpacadecimal.Decimal{}, fmt.Errorf("resolve prior realization run %s: %w", priorRunID.ID, err)
+	}
+
+	return priorRun.MeteredQuantity, nil
+}
+
+// WithoutVoidedBillingHistory returns runs that still represent effective
+// invoice or ledger history.
+func (r RealizationRuns) WithoutVoidedBillingHistory() RealizationRuns {
+	return lo.Filter(r, func(run RealizationRun, _ int) bool {
+		return !run.IsVoidedBillingHistory()
+	})
+}
+
+// Latest returns the run with the latest service-period end. Ties are
+// resolved by creation time so callers get the newest run for the same realized
+// boundary. Filtering voided history is a caller decision.
+func (r RealizationRuns) Latest() (RealizationRun, bool) {
+	if len(r) == 0 {
+		return RealizationRun{}, false
+	}
+
+	return lo.MaxBy(r, func(run RealizationRun, latest RealizationRun) bool {
+		if c := meta.NormalizeTimestamp(run.ServicePeriodTo).Compare(meta.NormalizeTimestamp(latest.ServicePeriodTo)); c != 0 {
+			return c > 0
+		}
+
+		return run.CreatedAt.After(latest.CreatedAt)
+	}), true
+}
+
+// PriorRunIDForNextRun returns the most recently created run that still
+// represents effective billing history. A nil result identifies the first
+// effective run.
+func (r RealizationRuns) PriorRunIDForNextRun() *RealizationRunID {
+	nonVoidedRuns := r.WithoutVoidedBillingHistory()
+	if len(nonVoidedRuns) == 0 {
+		return nil
+	}
+
+	priorRun := lo.MaxBy(nonVoidedRuns, func(run RealizationRun, latest RealizationRun) bool {
+		if c := run.CreatedAt.Compare(latest.CreatedAt); c != 0 {
+			return c > 0
+		}
+
+		return run.ID.ID > latest.ID.ID
+	})
+
+	return lo.ToPtr(priorRun.ID)
+}
+
+func (r RealizationRuns) Validate() error {
+	var errs []error
+	for idx, realizationRun := range r {
+		if err := realizationRun.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("realization run[%d]: %w", idx, err))
+		}
+	}
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+// Sum returns the aggregate totals across non-voided billing history.
+func (r RealizationRuns) Sum() totals.Totals {
+	return totals.Sum(lo.Map(r.WithoutVoidedBillingHistory(), func(run RealizationRun, _ int) totals.Totals {
+		return run.Totals
+	})...)
+}
+
+func (r RealizationRuns) GetByID(id string) (RealizationRun, error) {
+	for _, run := range r {
+		if run.ID.ID == id {
+			return run, nil
+		}
+	}
+	return RealizationRun{}, fmt.Errorf("realization run not found [id=%s]", id)
+}
+
+func (r RealizationRuns) GetByLineID(lineID string) (RealizationRun, error) {
+	run, found := lo.Find(r, func(run RealizationRun) bool {
+		return run.LineID != nil && *run.LineID == lineID
+	})
+	if found {
+		return run, nil
+	}
+
+	return RealizationRun{}, fmt.Errorf("realization run not found [line_id=%s]", lineID)
+}
+
+func (r RealizationRuns) Without(id RealizationRunID) RealizationRuns {
+	return lo.Filter(r, func(run RealizationRun, _ int) bool {
+		return run.ID != id
+	})
+}
+
+func (r *RealizationRuns) SetRealizationRun(updatedRun RealizationRun) error {
+	for idx, realizationRun := range *r {
+		if realizationRun.ID.ID == updatedRun.ID.ID {
+			(*r)[idx] = updatedRun
+			return nil
+		}
+	}
+	return fmt.Errorf("realization run not found [id=%s]", updatedRun.ID.ID)
+}

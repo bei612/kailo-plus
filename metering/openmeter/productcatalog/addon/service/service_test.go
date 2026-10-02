@@ -1,0 +1,754 @@
+package service_test
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	decimal "github.com/alpacahq/alpacadecimal"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/openmeterio/openmeter/openmeter/app"
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	currencytestutils "github.com/openmeterio/openmeter/openmeter/currencies/testutils"
+	"github.com/openmeterio/openmeter/openmeter/meter"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/addon"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/feature"
+	pctestutils "github.com/openmeterio/openmeter/openmeter/productcatalog/testutils"
+	"github.com/openmeterio/openmeter/openmeter/taxcode"
+	"github.com/openmeterio/openmeter/pkg/convert"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/filter"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+)
+
+var MonthPeriod = datetime.ISODurationFromDuration(30 * 24 * time.Hour)
+
+func TestUpdateAddonInputRejectsPersistedUnrepresentableCurrencies(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*productcatalog.Addon)
+		expected  error
+	}{
+		{
+			name: "custom default currency",
+			configure: func(addon *productcatalog.Addon) {
+				addon.Currency = currencies.NewCurrencyReference("CREDITS")
+			},
+			expected: productcatalog.ErrCurrencyNotRepresentable,
+		},
+		{
+			name: "currency override",
+			configure: func(addon *productcatalog.Addon) {
+				addon.RateCards[0].(*productcatalog.FlatFeeRateCard).Currency = lo.ToPtr(
+					currencies.NewCurrencyReference("CREDITS"),
+				)
+			},
+			expected: productcatalog.ErrRateCardCurrencyNotRepresentable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// given:
+			// - a persisted add-on carrying currency configuration the caller cannot represent
+			persisted := pctestutils.NewTestAddon(t, "test", &productcatalog.FlatFeeRateCard{
+				RateCardMeta: productcatalog.RateCardMeta{Key: "flat", Name: "Flat"},
+			}).Addon
+			tt.configure(&persisted)
+
+			// when:
+			// - a v1-compatible update is validated against the persisted add-on
+			err := (addon.UpdateAddonInput{
+				RejectUnrepresentableCurrencies: true,
+			}).ValidateWithAddon(persisted)
+
+			// then:
+			// - validation rejects the operation before it can rewrite the add-on
+			require.ErrorIs(t, err, tt.expected)
+		})
+	}
+}
+
+func TestAddonService(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := pctestutils.NewTestEnv(t)
+	t.Cleanup(func() {
+		env.Close(t)
+	})
+
+	t.Run("Addon", func(t *testing.T) {
+		t.Run("Create", func(t *testing.T) {
+			// Get new namespace ID
+			namespace := pctestutils.NewTestNamespace(t)
+
+			// Setup meter repository
+			err := env.Meter.ReplaceMeters(ctx, pctestutils.NewTestMeters(t, namespace))
+			require.NoError(t, err, "replacing meters must not fail")
+
+			result, err := env.Meter.ListMeters(ctx, meter.ListMetersParams{
+				Page: pagination.Page{
+					PageSize:   1000,
+					PageNumber: 1,
+				},
+				Namespace: namespace,
+			})
+			require.NoErrorf(t, err, "listing meters must not fail")
+
+			meters := result.Items
+			require.NotEmptyf(t, meters, "list of Meters must not be empty")
+
+			// Set a feature for each meter
+			features := make([]feature.Feature, 0, len(meters))
+			for _, m := range meters {
+				input := pctestutils.NewTestFeatureFromMeter(t, &m)
+
+				feat, err := env.Feature.CreateFeature(ctx, input)
+				require.NoErrorf(t, err, "creating feature must not fail")
+				require.NotNil(t, feat, "feature must not be empty")
+
+				features = append(features, feat)
+			}
+
+			taxcode, err := env.TaxCode.CreateTaxCode(ctx, taxcode.CreateTaxCodeInput{
+				Namespace:   namespace,
+				Key:         "txcd_10000000",
+				Name:        "Test Tax Code",
+				Description: lo.ToPtr("Test Tax Code"),
+				AppMappings: []taxcode.TaxCodeAppMapping{
+					{
+						AppType: app.AppTypeStripe,
+						TaxCode: "txcd_10000000",
+					},
+				},
+				Metadata: models.Metadata{"name": "Test Tax Code"},
+			})
+			require.NoErrorf(t, err, "creating tax code must not fail")
+			require.NotNil(t, taxcode, "tax code must not be empty")
+
+			addonV1Input := pctestutils.NewTestAddon(t, namespace, productcatalog.RateCards{
+				&productcatalog.UsageBasedRateCard{
+					RateCardMeta: productcatalog.RateCardMeta{
+						Key:                 features[0].Key,
+						Name:                features[0].Name,
+						Description:         lo.ToPtr(features[0].Name),
+						Metadata:            models.Metadata{"name": features[0].Name},
+						Feature:             productcatalog.NewFeatureReference(lo.ToPtr(features[0].ID), nil),
+						EntitlementTemplate: productcatalog.NewEntitlementTemplateFrom(productcatalog.BooleanEntitlementTemplate{}),
+						TaxConfig: &productcatalog.TaxConfig{
+							Stripe: &productcatalog.StripeTaxConfig{
+								Code: "txcd_10000000",
+							},
+							TaxCodeID: lo.ToPtr(taxcode.ID),
+						},
+						Price: productcatalog.NewPriceFrom(productcatalog.TieredPrice{
+							Mode: productcatalog.VolumeTieredPrice,
+							Tiers: []productcatalog.PriceTier{
+								{
+									UpToAmount: lo.ToPtr(decimal.NewFromInt(1000)),
+									FlatPrice: &productcatalog.PriceTierFlatPrice{
+										Amount: decimal.NewFromInt(100),
+									},
+									UnitPrice: &productcatalog.PriceTierUnitPrice{
+										Amount: decimal.NewFromInt(50),
+									},
+								},
+								{
+									UpToAmount: nil,
+									FlatPrice: &productcatalog.PriceTierFlatPrice{
+										Amount: decimal.NewFromInt(5),
+									},
+									UnitPrice: &productcatalog.PriceTierUnitPrice{
+										Amount: decimal.NewFromInt(25),
+									},
+								},
+							},
+							Commitments: productcatalog.Commitments{
+								MinimumAmount: lo.ToPtr(decimal.NewFromInt(1000)),
+								MaximumAmount: nil,
+							},
+						}),
+					},
+					BillingCadence: MonthPeriod,
+				},
+			}...)
+
+			var addonV1 *addon.Addon
+
+			addonV1, err = env.Addon.CreateAddon(ctx, addonV1Input)
+			require.NoErrorf(t, err, "creating add-on must not fail")
+			require.NotNil(t, addonV1, "add-on must not be empty")
+
+			addon.AssertAddonCreateInputEqual(t, addonV1Input, *addonV1)
+
+			assert.Equalf(t, productcatalog.AddonStatusDraft, addonV1.Status(),
+				"add-on status mismatch: expected=%s, actual=%s", productcatalog.AddonStatusDraft, addonV1.Status())
+
+			t.Run("Get", func(t *testing.T) {
+				getAddon, err := env.Addon.GetAddon(ctx, addon.GetAddonInput{
+					NamespacedID: models.NamespacedID{
+						Namespace: addonV1Input.Namespace,
+					},
+					Key:           addonV1Input.Key,
+					IncludeLatest: true,
+				})
+				require.NoErrorf(t, err, "getting draft add-on must not fail")
+				require.NotNil(t, getAddon, "draft add-on must not be empty")
+
+				assert.Equalf(t, addonV1.ID, getAddon.ID,
+					"Plan ID mismatch: %s = %s", addonV1.ID, getAddon.ID)
+
+				assert.Equalf(t, addonV1.Key, getAddon.Key,
+					"Plan Key mismatch: %s = %s", addonV1.Key, getAddon.Key)
+
+				assert.Equalf(t, addonV1.Version, getAddon.Version,
+					"Plan Version mismatch: %d = %d", addonV1.Version, getAddon.Version)
+
+				assert.Equalf(t, productcatalog.AddonStatusDraft, getAddon.Status(),
+					"Plan Status mismatch: expected=%s, actual=%s", productcatalog.AddonStatusDraft, getAddon.Status())
+			})
+
+			t.Run("Update", func(t *testing.T) {
+				updateInput := addon.UpdateAddonInput{
+					NamespacedID: addonV1.NamespacedID,
+					RateCards: &productcatalog.RateCards{
+						&productcatalog.FlatFeeRateCard{
+							RateCardMeta: productcatalog.RateCardMeta{
+								Key:         features[0].Key,
+								Name:        features[0].Name,
+								Description: lo.ToPtr("RateCard 1"),
+								Metadata:    models.Metadata{"name": features[0].Name},
+								Feature:     productcatalog.NewFeatureReference(nil, lo.ToPtr(features[0].Key)),
+								TaxConfig: &productcatalog.TaxConfig{
+									Stripe: &productcatalog.StripeTaxConfig{
+										Code: "txcd_10000000",
+									},
+									TaxCodeID: lo.ToPtr(taxcode.ID),
+								},
+								Price: productcatalog.NewPriceFrom(
+									productcatalog.FlatPrice{
+										Amount:      decimal.NewFromInt(0),
+										PaymentTerm: productcatalog.InArrearsPaymentTerm,
+									}),
+							},
+							BillingCadence: &MonthPeriod,
+						},
+						&productcatalog.UsageBasedRateCard{
+							RateCardMeta: productcatalog.RateCardMeta{
+								Key:                 features[1].Key,
+								Name:                features[1].Name,
+								Description:         lo.ToPtr(features[1].Name),
+								Metadata:            models.Metadata{"name": features[1].Name},
+								Feature:             productcatalog.NewFeatureReference(lo.ToPtr(features[1].ID), nil),
+								EntitlementTemplate: productcatalog.NewEntitlementTemplateFrom(productcatalog.BooleanEntitlementTemplate{}),
+								TaxConfig: &productcatalog.TaxConfig{
+									Stripe: &productcatalog.StripeTaxConfig{
+										Code: "txcd_10000000",
+									},
+									TaxCodeID: lo.ToPtr(taxcode.ID),
+								},
+								Price: productcatalog.NewPriceFrom(productcatalog.TieredPrice{
+									Mode: productcatalog.VolumeTieredPrice,
+									Tiers: []productcatalog.PriceTier{
+										{
+											UpToAmount: lo.ToPtr(decimal.NewFromInt(1000)),
+											FlatPrice: &productcatalog.PriceTierFlatPrice{
+												Amount: decimal.NewFromInt(100),
+											},
+											UnitPrice: &productcatalog.PriceTierUnitPrice{
+												Amount: decimal.NewFromInt(50),
+											},
+										},
+										{
+											UpToAmount: nil,
+											FlatPrice: &productcatalog.PriceTierFlatPrice{
+												Amount: decimal.NewFromInt(5),
+											},
+											UnitPrice: &productcatalog.PriceTierUnitPrice{
+												Amount: decimal.NewFromInt(25),
+											},
+										},
+									},
+									Commitments: productcatalog.Commitments{
+										MinimumAmount: lo.ToPtr(decimal.NewFromInt(1000)),
+										MaximumAmount: nil,
+									},
+								}),
+							},
+							BillingCadence: MonthPeriod,
+						},
+					},
+				}
+
+				updateInput.IgnoreNonCriticalIssues = true
+
+				updatedAddon, err := env.Addon.UpdateAddon(ctx, updateInput)
+				require.NoErrorf(t, err, "updating draft add-on must not fail")
+				require.NotNil(t, updatedAddon, "updated draft add-on must not be empty")
+
+				addon.AssertAddonUpdateInputEqual(t, updateInput, *updatedAddon)
+			})
+
+			var publishedAddonV1 *addon.Addon
+
+			t.Run("Publish", func(t *testing.T) {
+				publishAt := time.Now().Truncate(time.Microsecond)
+
+				publishInput := addon.PublishAddonInput{
+					NamespacedID: addonV1.NamespacedID,
+					EffectivePeriod: productcatalog.EffectivePeriod{
+						EffectiveFrom: &publishAt,
+						EffectiveTo:   nil,
+					},
+				}
+
+				publishedAddonV1, err = env.Addon.PublishAddon(ctx, publishInput)
+				require.NoErrorf(t, err, "publishing draft add-on must not fail")
+				require.NotNil(t, publishedAddonV1, "published add-on must not be empty")
+				require.NotNil(t, publishedAddonV1.EffectiveFrom, "EffectiveFrom for published add-on must not be empty")
+
+				assert.Equalf(t, publishAt, *publishedAddonV1.EffectiveFrom,
+					"EffectiveFrom for published add-on mismatch: expected=%s, actual=%s", publishAt, *publishedAddonV1.EffectiveFrom)
+
+				assert.Equalf(t, productcatalog.AddonStatusActive, publishedAddonV1.Status(),
+					"add-on Status mismatch: expected=%s, actual=%s", productcatalog.AddonStatusActive, publishedAddonV1.Status())
+
+				t.Run("Update", func(t *testing.T) {
+					updateInput := addon.UpdateAddonInput{
+						NamespacedID: addonV1.NamespacedID,
+						Name:         lo.ToPtr("Invalid Update"),
+					}
+
+					_, err = env.Addon.UpdateAddon(ctx, updateInput)
+					require.Errorf(t, err, "updating active add-on must fail")
+				})
+			})
+
+			var addonV2 *addon.Addon
+			var addonV3 *addon.Addon
+
+			t.Run("V2", func(t *testing.T) {
+				addonV2, err = env.Addon.CreateAddon(ctx, addonV1Input)
+				require.NoErrorf(t, err, "creating a new draft add-on from active must not fail")
+				require.NotNil(t, addonV2, "new draft add-on must not be empty")
+
+				assert.Equalf(t, publishedAddonV1.Version+1, addonV2.Version,
+					"new draft add-on must have higher version number")
+
+				assert.Equalf(t, productcatalog.AddonStatusDraft, addonV2.Status(),
+					"add-on Status mismatch: expected=%s, actual=%s", productcatalog.AddonStatusDraft, addonV2.Status())
+
+				t.Run("PublishUnaligned", func(t *testing.T) {
+					updateInput := addon.UpdateAddonInput{
+						NamespacedID: addonV2.NamespacedID,
+						RateCards: &productcatalog.RateCards{
+							&productcatalog.FlatFeeRateCard{
+								RateCardMeta: productcatalog.RateCardMeta{
+									Key:  "misaligned1",
+									Name: "Misaligned 1",
+									Price: productcatalog.NewPriceFrom(productcatalog.FlatPrice{
+										Amount:      decimal.NewFromInt(100),
+										PaymentTerm: productcatalog.DefaultPaymentTerm,
+									}),
+								},
+								BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1W")),
+							},
+							&productcatalog.FlatFeeRateCard{
+								RateCardMeta: productcatalog.RateCardMeta{
+									Key:  "misaligned2",
+									Name: "Misaligned 2",
+									Price: productcatalog.NewPriceFrom(productcatalog.FlatPrice{
+										Amount:      decimal.NewFromInt(10),
+										PaymentTerm: productcatalog.DefaultPaymentTerm,
+									}),
+								},
+								BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1M")),
+							},
+						},
+					}
+
+					_, err := env.Addon.UpdateAddon(ctx, updateInput)
+					require.NoError(t, err)
+
+					// Get the updated add-on
+					_, err = env.Addon.GetAddon(ctx, addon.GetAddonInput{
+						NamespacedID: addonV2.NamespacedID,
+					})
+					require.NoError(t, err)
+
+					// Let's try to publish the add-on
+					publishAt := time.Now().Truncate(time.Microsecond)
+
+					publishInput := addon.PublishAddonInput{
+						NamespacedID: addonV2.NamespacedID,
+						EffectivePeriod: productcatalog.EffectivePeriod{
+							EffectiveFrom: &publishAt,
+							EffectiveTo:   nil,
+						},
+					}
+
+					_, err = env.Addon.PublishAddon(ctx, publishInput)
+					require.Error(t, err, "publishing draft add-on with alignment issues must fail")
+
+					// Let's update the plan to fix the alignment issue
+					_, err = env.Addon.UpdateAddon(ctx, addon.UpdateAddonInput{
+						NamespacedID: addonV2.NamespacedID,
+						RateCards:    lo.ToPtr(publishedAddonV1.RateCards.AsProductCatalogRateCards()),
+					})
+					require.NoError(t, err)
+				})
+
+				t.Run("Publish", func(t *testing.T) {
+					publishAt := time.Now().Truncate(time.Microsecond)
+
+					publishInput := addon.PublishAddonInput{
+						NamespacedID: addonV2.NamespacedID,
+						EffectivePeriod: productcatalog.EffectivePeriod{
+							EffectiveFrom: &publishAt,
+							EffectiveTo:   nil,
+						},
+					}
+
+					publishedAddonV2, err := env.Addon.PublishAddon(ctx, publishInput)
+					require.NoErrorf(t, err, "publishing draft add-on must not fail")
+					require.NotNil(t, publishedAddonV2, "published add-on must not be empty")
+					require.NotNil(t, publishedAddonV2.EffectiveFrom, "EffectiveFrom for published add-on must not be empty")
+
+					assert.Equalf(t, publishAt, *publishedAddonV2.EffectiveFrom,
+						"EffectiveFrom for published add-on mismatch: expected=%s, actual=%s", publishAt, *publishedAddonV2.EffectiveFrom)
+
+					assert.Equalf(t, productcatalog.AddonStatusActive, publishedAddonV2.Status(),
+						"add-on Status mismatch: expected=%s, actual=%s", productcatalog.AddonStatusActive, publishedAddonV2.Status())
+
+					getAddonV1, err := env.Addon.GetAddon(ctx, addon.GetAddonInput{
+						NamespacedID: publishedAddonV1.NamespacedID,
+					})
+					require.NoErrorf(t, err, "getting previous add-on version must not fail")
+					require.NotNil(t, getAddonV1, "previous add version must not be empty")
+
+					assert.Equalf(t, productcatalog.AddonStatusArchived, getAddonV1.Status(),
+						"add Status mismatch: expected=%s, actual=%s", productcatalog.AddonStatusArchived, getAddonV1.Status())
+
+					t.Run("V3", func(t *testing.T) {
+						addonV3, err = env.Addon.NextAddon(t.Context(), addon.NextAddonInput{
+							NamespacedID: models.NamespacedID{Namespace: publishedAddonV2.Namespace},
+							Key:          publishedAddonV2.Key,
+						})
+						require.NoErrorf(t, err, "creating a new draft add-on from active must not fail")
+						require.NotNil(t, addonV3, "new draft add-on must not be empty")
+
+						assert.Equalf(t, publishedAddonV2.Version+1, addonV3.Version,
+							"new draft add-on must have higher version number")
+						assert.Equalf(t, productcatalog.AddonStatusDraft, addonV3.Status(),
+							"add-on Status mismatch: expected=%s, actual=%s", productcatalog.AddonStatusDraft, addonV3.Status())
+						assert.Equal(t, publishedAddonV2.InstanceType, addonV3.InstanceType)
+						addon.AssertAddonEqual(t, *publishedAddonV2, *addonV3)
+					})
+
+					t.Run("Archive", func(t *testing.T) {
+						archiveAt := time.Now().Truncate(time.Microsecond)
+
+						archiveInput := addon.ArchiveAddonInput{
+							NamespacedID: addonV2.NamespacedID,
+							EffectiveTo:  archiveAt,
+						}
+
+						archivedAddonV2, err := env.Addon.ArchiveAddon(ctx, archiveInput)
+						require.NoErrorf(t, err, "archiving add-on must not fail")
+						require.NotNil(t, archivedAddonV2, "archived add-on must not be empty")
+						require.NotNil(t, archivedAddonV2.EffectiveTo, "EffectiveFrom for archived add-on must not be empty")
+
+						assert.Equalf(t, archiveAt, *archivedAddonV2.EffectiveTo,
+							"EffectiveTo for published add-on mismatch: expected=%s, actual=%s", archiveAt, *archivedAddonV2.EffectiveTo)
+
+						assert.Equalf(t, productcatalog.AddonStatusArchived, archivedAddonV2.Status(),
+							"Status mismatch for archived add-on: expected=%s, actual=%s", productcatalog.AddonStatusArchived, archivedAddonV2.Status())
+					})
+				})
+
+				t.Run("Delete", func(t *testing.T) {
+					deleteInput := addon.DeleteAddonInput{
+						NamespacedID: addonV2.NamespacedID,
+					}
+
+					err = env.Addon.DeleteAddon(ctx, deleteInput)
+					require.NoErrorf(t, err, "deleting add-on must not fail")
+
+					deletedAddonV2, err := env.Addon.GetAddon(ctx, addon.GetAddonInput{
+						NamespacedID: addonV2.NamespacedID,
+					})
+					require.NoErrorf(t, err, "getting deleted add-on version must not fail")
+					require.NotNil(t, deletedAddonV2, "deleted add-on version must not be empty")
+
+					assert.NotNilf(t, deletedAddonV2.DeletedAt, "deletedAt must not be empty")
+
+					err = env.Addon.DeleteAddon(ctx, deleteInput)
+					require.NoErrorf(t, err, "deleting add-on must not fail")
+
+					deletedAddonV2Next, err := env.Addon.GetAddon(ctx, addon.GetAddonInput{
+						NamespacedID: addonV2.NamespacedID,
+					})
+					require.NoErrorf(t, err, "getting deleted add-on version must not fail")
+					require.NotNil(t, deletedAddonV2Next, "deleted add-on version must not be empty")
+
+					assert.Truef(t, deletedAddonV2.DeletedAt.Equal(*deletedAddonV2Next.DeletedAt), "deletedAt field must not be updated")
+				})
+			})
+		})
+	})
+}
+
+func TestAddonService_List(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := pctestutils.NewTestEnv(t)
+	t.Cleanup(func() {
+		env.Close(t)
+	})
+
+	namespace := pctestutils.NewTestNamespace(t)
+
+	// Create some addons for testing
+	addonCount := 5
+	addons := make([]*addon.Addon, 0, addonCount)
+	for i := range addonCount {
+		addonInput := pctestutils.NewTestAddon(t, namespace, &productcatalog.FlatFeeRateCard{
+			RateCardMeta: productcatalog.RateCardMeta{
+				Key:  fmt.Sprintf("rc-%d", i),
+				Name: fmt.Sprintf("RateCard %d", i),
+				Price: productcatalog.NewPriceFrom(productcatalog.FlatPrice{
+					Amount:      decimal.NewFromInt(100),
+					PaymentTerm: productcatalog.InAdvancePaymentTerm,
+				}),
+			},
+		})
+		addonInput.Key = fmt.Sprintf("addon-%d", i)
+		addonInput.Name = fmt.Sprintf("Addon %d", i)
+		if i%2 == 0 {
+			addonInput.Currency = currencies.NewCurrencyReference(currencyx.Code("USD"))
+		} else {
+			addonInput.Currency = currencies.NewCurrencyReference(currencyx.Code("EUR"))
+		}
+
+		a, err := env.Addon.CreateAddon(ctx, addonInput)
+		require.NoError(t, err)
+		addons = append(addons, a)
+	}
+
+	testCases := []struct {
+		name     string
+		input    addon.ListAddonsInput
+		validate func(t *testing.T, res pagination.Result[addon.Addon])
+	}{
+		{
+			name: "ListAll",
+			input: addon.ListAddonsInput{
+				Namespaces: []string{namespace},
+				Page: pagination.Page{
+					PageSize:   10,
+					PageNumber: 1,
+				},
+			},
+			validate: func(t *testing.T, res pagination.Result[addon.Addon]) {
+				assert.Len(t, res.Items, addonCount)
+			},
+		},
+		{
+			name: "FilterByID",
+			input: addon.ListAddonsInput{
+				Namespaces: []string{namespace},
+				ID: &filter.FilterULID{
+					FilterString: filter.FilterString{
+						Eq: convert.ToPointer(addons[0].ID),
+					},
+				},
+				Page: pagination.Page{
+					PageSize:   10,
+					PageNumber: 1,
+				},
+			},
+			validate: func(t *testing.T, res pagination.Result[addon.Addon]) {
+				assert.Len(t, res.Items, 1)
+				assert.Equal(t, addons[0].ID, res.Items[0].ID)
+			},
+		},
+		{
+			name: "FilterByKey",
+			input: addon.ListAddonsInput{
+				Namespaces: []string{namespace},
+				Key: &filter.FilterString{
+					Eq: convert.ToPointer(addons[1].Key),
+				},
+				Page: pagination.Page{
+					PageSize:   10,
+					PageNumber: 1,
+				},
+			},
+			validate: func(t *testing.T, res pagination.Result[addon.Addon]) {
+				assert.Len(t, res.Items, 1)
+				assert.Equal(t, addons[1].Key, res.Items[0].Key)
+			},
+		},
+		{
+			name: "FilterByName",
+			input: addon.ListAddonsInput{
+				Namespaces: []string{namespace},
+				Name: &filter.FilterString{
+					Contains: convert.ToPointer("Addon 2"),
+				},
+				Page: pagination.Page{
+					PageSize:   10,
+					PageNumber: 1,
+				},
+			},
+			validate: func(t *testing.T, res pagination.Result[addon.Addon]) {
+				assert.Len(t, res.Items, 1)
+				assert.Equal(t, "Addon 2", res.Items[0].Name)
+			},
+		},
+		{
+			name: "FilterByCurrency",
+			input: addon.ListAddonsInput{
+				Namespaces: []string{namespace},
+				Currency: &filter.FilterString{
+					Eq: convert.ToPointer("EUR"),
+				},
+				Page: pagination.Page{
+					PageSize:   10,
+					PageNumber: 1,
+				},
+			},
+			validate: func(t *testing.T, res pagination.Result[addon.Addon]) {
+				assert.Len(t, res.Items, 2)
+			},
+		},
+		{
+			name: "FilterByStatus",
+			input: addon.ListAddonsInput{
+				Namespaces: []string{namespace},
+				Status:     []productcatalog.AddonStatus{productcatalog.AddonStatusDraft},
+				Page: pagination.Page{
+					PageSize:   10,
+					PageNumber: 1,
+				},
+			},
+			validate: func(t *testing.T, res pagination.Result[addon.Addon]) {
+				assert.Len(t, res.Items, addonCount)
+			},
+		},
+		{
+			name: "SortByNameDesc",
+			input: addon.ListAddonsInput{
+				Namespaces: []string{namespace},
+				OrderBy:    addon.OrderByName,
+				Order:      addon.OrderDesc,
+				Page: pagination.Page{
+					PageSize:   10,
+					PageNumber: 1,
+				},
+			},
+			validate: func(t *testing.T, res pagination.Result[addon.Addon]) {
+				assert.Len(t, res.Items, addonCount)
+				assert.Equal(t, "Addon 4", res.Items[0].Name)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := env.Addon.ListAddons(ctx, tc.input)
+			require.NoError(t, err)
+			tc.validate(t, res)
+		})
+	}
+}
+
+func TestUpdateAddonRateCardCurrencyResolutionUsesLatestActiveIdentity(t *testing.T) {
+	// given:
+	// - a draft add-on rate card linked to a managed CREDITS resource
+	// - the currency is archived and replaced by another active currency with the same code
+	env := pctestutils.NewTestEnv(t)
+	t.Cleanup(func() { env.Close(t) })
+
+	namespace := pctestutils.NewTestNamespace(t)
+	oldCredits, err := env.Currency.CreateCurrency(
+		t.Context(),
+		currencytestutils.NewCreateCurrencyInput(namespace, "CREDITS", "Credits", "cr"),
+	)
+	require.NoError(t, err)
+
+	_, err = env.Currency.CreateCostBasis(t.Context(), currencies.CreateCostBasisInput{
+		Namespace:  namespace,
+		CurrencyID: oldCredits.ID,
+		FiatCode:   currencyx.Code("USD"),
+		Rate:       decimal.NewFromInt(1),
+	})
+	require.NoError(t, err)
+
+	newRateCard := func() productcatalog.RateCard {
+		return &productcatalog.FlatFeeRateCard{RateCardMeta: productcatalog.RateCardMeta{
+			Key:      "credits",
+			Name:     "Credits",
+			Currency: lo.ToPtr(currencies.NewCurrencyReference(oldCredits.GetCode())),
+			Price: productcatalog.NewPriceFrom(productcatalog.FlatPrice{
+				Amount:      decimal.NewFromInt(1),
+				PaymentTerm: productcatalog.InAdvancePaymentTerm,
+			}),
+		}}
+	}
+
+	created, err := env.Addon.CreateAddon(
+		t.Context(),
+		pctestutils.NewTestAddon(t, namespace, newRateCard()),
+	)
+	require.NoError(t, err)
+	createdCurrency := created.AsProductCatalogAddon().RateCards[0].AsMeta().Currency
+	require.NotNil(t, createdCurrency)
+	require.NotNil(t, createdCurrency.CustomCurrencyID)
+	require.Equal(t, oldCredits.ID, *createdCurrency.CustomCurrencyID)
+
+	_, err = env.Client.CustomCurrency.UpdateOneID(oldCredits.ID).
+		SetDeletedAt(time.Now().UTC()).
+		Save(t.Context())
+	require.NoError(t, err)
+
+	newCredits, err := env.Currency.CreateCurrency(
+		t.Context(),
+		currencytestutils.NewCreateCurrencyInput(namespace, "CREDITS", "Credits", "cr"),
+	)
+	require.NoError(t, err)
+	_, err = env.Currency.CreateCostBasis(t.Context(), currencies.CreateCostBasisInput{
+		Namespace:  namespace,
+		CurrencyID: newCredits.ID,
+		FiatCode:   currencyx.Code("USD"),
+		Rate:       decimal.NewFromInt(1),
+	})
+	require.NoError(t, err)
+
+	updatedRateCards := productcatalog.RateCards{newRateCard()}
+
+	// when:
+	// - the code-only rate card is submitted as a full draft-add-on update
+	updated, err := env.Addon.UpdateAddon(t.Context(), addon.UpdateAddonInput{
+		NamespacedID: created.NamespacedID,
+		RateCards:    &updatedRateCards,
+	})
+
+	// then:
+	// - the code resolves to the currently active managed currency
+	require.NoError(t, err)
+	require.Len(t, updated.RateCards, 1)
+	updatedCurrency := updated.AsProductCatalogAddon().RateCards[0].AsMeta().Currency
+	require.NotNil(t, updatedCurrency)
+	require.NotNil(t, updatedCurrency.CustomCurrencyID)
+	require.Equal(t, newCredits.ID, *updatedCurrency.CustomCurrencyID)
+}

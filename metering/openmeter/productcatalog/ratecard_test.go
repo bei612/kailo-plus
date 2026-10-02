@@ -1,0 +1,1547 @@
+package productcatalog
+
+import (
+	"encoding/json"
+	"testing"
+	"time"
+
+	decimal "github.com/alpacahq/alpacadecimal"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/feature"
+	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+func TestRateCardJSONRoundTrip(t *testing.T) {
+	managedCurrency := mustManagedCustomCurrency(t, "01J00000000000000000000000", "CREDITS")
+
+	tests := []struct {
+		name              string
+		input             RateCard
+		target            RateCard
+		mismatchTarget    RateCard
+		mismatchTargetKey string
+		mismatchError     string
+	}{
+		{
+			name: "flat fee",
+			input: &FlatFeeRateCard{
+				RateCardMeta: RateCardMeta{
+					Key:      "flat",
+					Name:     "Flat",
+					Currency: lo.ToPtr(managedCurrency.Reference()),
+				},
+				BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1M")),
+			},
+			target: &FlatFeeRateCard{},
+			mismatchTarget: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{Key: "unchanged"},
+			},
+			mismatchTargetKey: "unchanged",
+			mismatchError:     `rate card type mismatch: expected "usage_based", got "flat_fee"`,
+		},
+		{
+			name: "usage based",
+			input: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{
+					Key:      "usage",
+					Name:     "Usage",
+					Currency: lo.ToPtr(managedCurrency.Reference()),
+				},
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+			},
+			target: &UsageBasedRateCard{},
+			mismatchTarget: &FlatFeeRateCard{
+				RateCardMeta: RateCardMeta{Key: "unchanged"},
+			},
+			mismatchTargetKey: "unchanged",
+			mismatchError:     `rate card type mismatch: expected "flat_fee", got "usage_based"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// given:
+			// - a concrete rate card serialized with its type discriminator
+			// when:
+			// - it is restored into either the matching or a different concrete type
+			// then:
+			// - the matching type round-trips and the mismatched receiver remains unchanged
+			data, err := json.Marshal(tt.input)
+			require.NoError(t, err)
+
+			require.NoError(t, json.Unmarshal(data, tt.target))
+			require.True(t, tt.input.Equal(tt.target))
+
+			err = json.Unmarshal(data, tt.mismatchTarget)
+			require.EqualError(t, err, tt.mismatchError)
+			require.Equal(t, tt.mismatchTargetKey, tt.mismatchTarget.Key())
+		})
+	}
+}
+
+func TestRateCardMetaCloneDeepCopiesCurrency(t *testing.T) {
+	custom := mustManagedCustomCurrency(t, "currency-1", "CREDITS")
+	original := RateCardMeta{Currency: lo.ToPtr(custom.Reference())}
+
+	clone := original.Clone()
+
+	require.NotSame(t, original.Currency, clone.Currency)
+	require.NotSame(t, original.Currency.CustomCurrencyID, clone.Currency.CustomCurrencyID)
+
+	resolved, ok := original.Currency.CustomCurrency()
+	require.True(t, ok)
+	clonedResolved, ok := clone.Currency.CustomCurrency()
+	require.True(t, ok)
+	require.NotSame(t, resolved, clonedResolved)
+
+	*clone.Currency.CustomCurrencyID = "currency-2"
+	clonedResolved.ID = "currency-2"
+
+	require.Equal(t, "currency-1", *original.Currency.CustomCurrencyID)
+	require.Equal(t, "currency-1", resolved.ID)
+}
+
+func TestValidateRateCardsWithResolvedFeatures(t *testing.T) {
+	featureID := "feature-id"
+	featureKey := "feature-key"
+	resolvedReference := feature.Feature{ID: featureID, Key: featureKey}.Reference()
+
+	tests := []struct {
+		name      string
+		reference *FeatureReference
+		wantError bool
+	}{
+		{name: "featureless rate card"},
+		{name: "unresolved partial reference", reference: NewFeatureReference(&featureID, nil), wantError: true},
+		{name: "unresolved complete reference", reference: NewFeatureReference(&featureID, &featureKey), wantError: true},
+		{name: "resolved reference", reference: &resolvedReference},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// given: a rate card whose optional feature reference may or may not be sideloaded
+			rateCards := RateCards{&FlatFeeRateCard{
+				RateCardMeta: RateCardMeta{
+					Key:     "rate-card",
+					Feature: tt.reference,
+				},
+			}}
+
+			// when: the service loading contract is validated
+			err := rateCards.ValidateWith(ValidateRateCardsWithResolvedFeatures())
+
+			// then: only feature references carrying their resolved feature are accepted
+			if tt.wantError {
+				require.ErrorContains(t, err, "feature reference must be resolved")
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestFlatFeeRateCard(t *testing.T) {
+	t.Run("Validate", func(t *testing.T) {
+		tests := []struct {
+			Name          string
+			RateCard      FlatFeeRateCard
+			ExpectedError bool
+		}{
+			{
+				Name: "valid",
+				RateCard: FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Key:         "feat-1",
+						Name:        "Flat 1",
+						Description: lo.ToPtr("Flat 1"),
+						Metadata: map[string]string{
+							"name": "Flat 1",
+						},
+						Feature: NewFeatureReference(lo.ToPtr("01JBP3SGZ20Y7VRVC351TDFXYZ"), lo.ToPtr("feat-1")),
+						EntitlementTemplate: NewEntitlementTemplateFrom(
+							StaticEntitlementTemplate{
+								Metadata: map[string]string{
+									"name": "static-1",
+								},
+								Config: []byte(`"test"`),
+							},
+						),
+						TaxConfig: &TaxConfig{
+							Stripe: &StripeTaxConfig{
+								Code: "txcd_99999999",
+							},
+						},
+						Price: NewPriceFrom(FlatPrice{
+							Amount:      decimal.NewFromInt(1000),
+							PaymentTerm: InArrearsPaymentTerm,
+						}),
+					},
+					BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1M")),
+				},
+				ExpectedError: false,
+			},
+			{
+				Name: "valid, nil billing cadence",
+				RateCard: FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Key:         "feat-1",
+						Name:        "Flat 1",
+						Description: lo.ToPtr("Flat 1"),
+					},
+					BillingCadence: nil,
+				},
+				ExpectedError: false,
+			},
+			{
+				Name: "invalid",
+				RateCard: FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Key:         "feat-2",
+						Name:        "Flat 2",
+						Description: lo.ToPtr("Flat 2"),
+						Metadata: map[string]string{
+							"name": "Flat 2",
+						},
+						Feature: NewFeatureReference(lo.ToPtr("01JBP3SGZ2YTM6DVH2W318TPNH"), lo.ToPtr("feat-2")),
+						EntitlementTemplate: NewEntitlementTemplateFrom(
+							StaticEntitlementTemplate{
+								Metadata: map[string]string{
+									"name": "static-1",
+								},
+								Config: []byte("invalid JSON"),
+							},
+						),
+						TaxConfig: &TaxConfig{
+							Stripe: &StripeTaxConfig{
+								Code: "invalid_code",
+							},
+						},
+						Price: NewPriceFrom(
+							FlatPrice{
+								Amount:      decimal.NewFromInt(-1000),
+								PaymentTerm: PaymentTermType("invalid"),
+							},
+						),
+					},
+					BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P0M")),
+				},
+				ExpectedError: true,
+			},
+			{
+				Name: "valid percentage discount",
+				RateCard: FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Key:         "feat-1",
+						Name:        "Flat 1",
+						Description: lo.ToPtr("Flat 1"),
+						Price: NewPriceFrom(FlatPrice{
+							Amount:      decimal.NewFromInt(1000),
+							PaymentTerm: InArrearsPaymentTerm,
+						}),
+						Discounts: Discounts{
+							Percentage: &PercentageDiscount{
+								Percentage: models.NewPercentage(10),
+							},
+						},
+					},
+					BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1M")),
+				},
+				ExpectedError: false,
+			},
+			{
+				Name: "invalid usage discount",
+				RateCard: FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Key:         "feat-1",
+						Name:        "Flat 1",
+						Description: lo.ToPtr("Flat 1"),
+						Price: NewPriceFrom(FlatPrice{
+							Amount:      decimal.NewFromInt(1000),
+							PaymentTerm: InArrearsPaymentTerm,
+						}),
+						Discounts: Discounts{
+							Usage: &UsageDiscount{
+								Quantity: decimal.NewFromInt(100),
+							},
+						},
+					},
+					BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1M")),
+				},
+				ExpectedError: true,
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.Name, func(t *testing.T) {
+				err := test.RateCard.Validate()
+
+				if test.ExpectedError {
+					assert.Error(t, err)
+				} else {
+					assert.NoError(t, err)
+				}
+			})
+		}
+	})
+}
+
+func TestUsageBasedRateCard(t *testing.T) {
+	feat1 := &feature.Feature{
+		Namespace:           "namespace-1",
+		ID:                  "01JBP3SGZ20Y7VRVC351TDFXYZ",
+		Name:                "Feature 1",
+		Key:                 "feat-1",
+		MeterID:             lo.ToPtr("meter-1"),
+		MeterGroupByFilters: nil,
+		Metadata: map[string]string{
+			"name": "Feature 1",
+		},
+		ArchivedAt: &time.Time{},
+		CreatedAt:  time.Time{},
+		UpdatedAt:  time.Time{},
+	}
+
+	t.Run("Validate", func(t *testing.T) {
+		tests := []struct {
+			Name          string
+			RateCard      UsageBasedRateCard
+			ExpectedError bool
+		}{
+			{
+				Name: "valid",
+				RateCard: UsageBasedRateCard{
+					RateCardMeta: RateCardMeta{
+						Key:         "feat-1",
+						Name:        "Usage 1",
+						Description: lo.ToPtr("Usage 1"),
+						Metadata: map[string]string{
+							"name": "usage-1",
+						},
+						Feature: NewFeatureReference(lo.ToPtr("01JBP3SGZ20Y7VRVC351TDFXYZ"), lo.ToPtr("feat-1")),
+						EntitlementTemplate: NewEntitlementTemplateFrom(
+							MeteredEntitlementTemplate{
+								Metadata: map[string]string{
+									"name": "Entitlement 1",
+								},
+								IsSoftLimit:             true,
+								IssueAfterReset:         lo.ToPtr(500.0),
+								IssueAfterResetPriority: lo.ToPtr[uint8](1),
+								PreserveOverageAtReset:  nil,
+								UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+							},
+						),
+						TaxConfig: &TaxConfig{
+							Stripe: &StripeTaxConfig{
+								Code: "txcd_99999999",
+							},
+						},
+						Price: NewPriceFrom(
+							UnitPrice{
+								Amount: decimal.NewFromInt(1000),
+								Commitments: Commitments{
+									MinimumAmount: lo.ToPtr(decimal.NewFromInt(500)),
+									MaximumAmount: lo.ToPtr(decimal.NewFromInt(1500)),
+								},
+							},
+						),
+					},
+					BillingCadence: datetime.MustParseDuration(t, "P1M"),
+				},
+				ExpectedError: false,
+			},
+			{
+				Name: "invalid",
+				RateCard: UsageBasedRateCard{
+					RateCardMeta: RateCardMeta{
+						Key:         "feat-2",
+						Name:        "Usage 2",
+						Description: lo.ToPtr("Usage 2"),
+						Metadata: map[string]string{
+							"name": "usage-2",
+						},
+						Feature: NewFeatureReference(lo.ToPtr("01JBWYR0G2PYB9DVADKQXF8E0P"), lo.ToPtr("feat-2")),
+						EntitlementTemplate: NewEntitlementTemplateFrom(
+							MeteredEntitlementTemplate{
+								Metadata: map[string]string{
+									"name": "Entitlement 1",
+								},
+								IsSoftLimit:             true,
+								IssueAfterReset:         lo.ToPtr(500.0),
+								IssueAfterResetPriority: lo.ToPtr[uint8](1),
+								PreserveOverageAtReset:  nil,
+								UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+							},
+						),
+						TaxConfig: &TaxConfig{
+							Stripe: &StripeTaxConfig{
+								Code: "invalid_code",
+							},
+						},
+						Price: NewPriceFrom(
+							UnitPrice{
+								Amount: decimal.NewFromInt(-1000),
+								Commitments: Commitments{
+									MinimumAmount: lo.ToPtr(decimal.NewFromInt(1500)),
+									MaximumAmount: lo.ToPtr(decimal.NewFromInt(500)),
+								},
+							},
+						),
+					},
+					BillingCadence: datetime.MustParseDuration(t, "P0M"),
+				},
+				ExpectedError: true,
+			},
+			{
+				Name: "valid, mixed discounts",
+				RateCard: UsageBasedRateCard{
+					RateCardMeta: RateCardMeta{
+						Key:     "feat-1",
+						Name:    "Usage 1",
+						Feature: NewFeatureReference(lo.ToPtr(feat1.ID), lo.ToPtr(feat1.Key)),
+						Price: NewPriceFrom(
+							UnitPrice{
+								Amount: decimal.NewFromInt(1000),
+								Commitments: Commitments{
+									MinimumAmount: lo.ToPtr(decimal.NewFromInt(500)),
+									MaximumAmount: lo.ToPtr(decimal.NewFromInt(1500)),
+								},
+							},
+						),
+						Discounts: Discounts{
+							Percentage: &PercentageDiscount{
+								Percentage: models.NewPercentage(10),
+							},
+							Usage: &UsageDiscount{
+								Quantity: decimal.NewFromInt(100),
+							},
+						},
+					},
+					BillingCadence: datetime.MustParseDuration(t, "P1M"),
+				},
+				ExpectedError: false,
+			},
+			{
+				Name: "invalid, usage discount for flat price",
+				RateCard: UsageBasedRateCard{
+					RateCardMeta: RateCardMeta{
+						Key:     "feat-1",
+						Name:    "Usage 1",
+						Feature: NewFeatureReference(lo.ToPtr(feat1.ID), lo.ToPtr(feat1.Key)),
+						Price: NewPriceFrom(
+							FlatPrice{
+								Amount: decimal.NewFromInt(1000),
+							},
+						),
+						Discounts: Discounts{
+							Percentage: &PercentageDiscount{
+								Percentage: models.NewPercentage(10),
+							},
+							Usage: &UsageDiscount{
+								Quantity: decimal.NewFromInt(100),
+							},
+						},
+					},
+					BillingCadence: datetime.MustParseDuration(t, "P1M"),
+				},
+				ExpectedError: true,
+			},
+			{
+				Name: "invalid, usage discount without price",
+				RateCard: UsageBasedRateCard{
+					RateCardMeta: RateCardMeta{
+						Key:     "feat-1",
+						Name:    "Usage 1",
+						Feature: NewFeatureReference(lo.ToPtr(feat1.ID), lo.ToPtr(feat1.Key)),
+						Discounts: Discounts{
+							Percentage: &PercentageDiscount{
+								Percentage: models.NewPercentage(10),
+							},
+							Usage: &UsageDiscount{
+								Quantity: decimal.NewFromInt(100),
+							},
+						},
+					},
+					BillingCadence: datetime.MustParseDuration(t, "P1M"),
+				},
+				ExpectedError: true,
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.Name, func(t *testing.T) {
+				err := test.RateCard.Validate()
+
+				if test.ExpectedError {
+					assert.Error(t, err)
+				} else {
+					assert.NoError(t, err)
+				}
+			})
+		}
+	})
+}
+
+func TestRateCardMetaUnitConfigValidation(t *testing.T) {
+	unitConfig := func() *UnitConfig {
+		return &UnitConfig{
+			Operation:        UnitConfigOperationDivide,
+			ConversionFactor: decimal.NewFromInt(1000),
+			Rounding:         UnitConfigRoundingModeCeiling,
+			DisplayUnit:      lo.ToPtr("K"),
+		}
+	}
+
+	tieredPrice := NewPriceFrom(TieredPrice{
+		Mode: VolumeTieredPrice,
+		Tiers: []PriceTier{
+			{
+				UpToAmount: lo.ToPtr(decimal.NewFromInt(1000)),
+				FlatPrice:  &PriceTierFlatPrice{Amount: decimal.NewFromInt(100)},
+				UnitPrice:  &PriceTierUnitPrice{Amount: decimal.NewFromInt(50)},
+			},
+			{
+				UpToAmount: nil,
+				FlatPrice:  &PriceTierFlatPrice{Amount: decimal.NewFromInt(5)},
+				UnitPrice:  &PriceTierUnitPrice{Amount: decimal.NewFromInt(25)},
+			},
+		},
+	})
+
+	tests := []struct {
+		Name        string
+		Price       *Price
+		ExpectError bool
+	}{
+		{
+			Name:        "unit price allows unit config",
+			Price:       NewPriceFrom(UnitPrice{Amount: decimal.NewFromInt(1)}),
+			ExpectError: false,
+		},
+		{
+			Name:        "tiered (volume) price allows unit config",
+			Price:       tieredPrice,
+			ExpectError: false,
+		},
+		{
+			Name:        "flat price rejects unit config",
+			Price:       NewPriceFrom(FlatPrice{Amount: decimal.NewFromInt(1)}),
+			ExpectError: true,
+		},
+		{
+			Name:        "package price rejects unit config",
+			Price:       NewPriceFrom(PackagePrice{Amount: decimal.NewFromInt(1), QuantityPerPackage: decimal.NewFromInt(1000)}),
+			ExpectError: true,
+		},
+		{
+			Name:        "dynamic price rejects unit config",
+			Price:       NewPriceFrom(DynamicPrice{Multiplier: decimal.NewFromFloat(1.2)}),
+			ExpectError: true,
+		},
+		{
+			Name:        "missing price rejects unit config",
+			Price:       nil,
+			ExpectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			meta := RateCardMeta{
+				Key:        "feat-1",
+				Name:       "RC",
+				Feature:    NewFeatureReference(lo.ToPtr("01JBP3SGZ20Y7VRVC351TDFXYZ"), lo.ToPtr("feat-1")),
+				Price:      test.Price,
+				UnitConfig: unitConfig(),
+			}
+
+			err := meta.Validate()
+			if test.ExpectError {
+				assert.ErrorContains(t, err, "unit config requires a usage-based price")
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestRateCardsEqual(t *testing.T) {
+	feat1 := &feature.Feature{
+		Namespace:           "namespace-1",
+		ID:                  "01JBP3SGZ20Y7VRVC351TDFXYZ",
+		Name:                "Feature 1",
+		Key:                 "feat-1",
+		MeterID:             lo.ToPtr("meter-1"),
+		MeterGroupByFilters: nil,
+		Metadata: map[string]string{
+			"name": "Feature 1",
+		},
+		ArchivedAt: &time.Time{},
+		CreatedAt:  time.Time{},
+		UpdatedAt:  time.Time{},
+	}
+
+	t.Run("Equal", func(t *testing.T) {
+		tests := []struct {
+			Name          string
+			Left          RateCards
+			Right         RateCards
+			ExpectedEqual bool
+		}{
+			{
+				Name: "True",
+				Left: []RateCard{
+					&UsageBasedRateCard{
+						RateCardMeta: RateCardMeta{
+							Key:         "feat-1",
+							Name:        "Usage 1",
+							Description: lo.ToPtr("Usage 1"),
+							Metadata: map[string]string{
+								"name": "usage-1",
+							},
+							Feature: NewFeatureReference(lo.ToPtr("01JBP3SGZ20Y7VRVC351TDFXYZ"), lo.ToPtr("feat-1")),
+							EntitlementTemplate: NewEntitlementTemplateFrom(
+								MeteredEntitlementTemplate{
+									Metadata: map[string]string{
+										"name": "Entitlement 1",
+									},
+									IsSoftLimit:             true,
+									IssueAfterReset:         lo.ToPtr(500.0),
+									IssueAfterResetPriority: lo.ToPtr[uint8](1),
+									PreserveOverageAtReset:  nil,
+									UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+								},
+							),
+							TaxConfig: &TaxConfig{
+								Stripe: &StripeTaxConfig{
+									Code: "txcd_99999999",
+								},
+							},
+							Price: NewPriceFrom(
+								UnitPrice{
+									Amount: decimal.NewFromInt(1000),
+									Commitments: Commitments{
+										MinimumAmount: lo.ToPtr(decimal.NewFromInt(500)),
+										MaximumAmount: lo.ToPtr(decimal.NewFromInt(1500)),
+									},
+								},
+							),
+							Discounts: Discounts{
+								Percentage: &PercentageDiscount{
+									Percentage: models.NewPercentage(10),
+								},
+								Usage: &UsageDiscount{
+									Quantity: decimal.NewFromInt(100),
+								},
+							},
+						},
+						BillingCadence: datetime.MustParseDuration(t, "P1M"),
+					},
+				},
+				Right: []RateCard{
+					&UsageBasedRateCard{
+						RateCardMeta: RateCardMeta{
+							Key:         "feat-1",
+							Name:        "Usage 1",
+							Description: lo.ToPtr("Usage 1"),
+							Metadata: map[string]string{
+								"name": "usage-1",
+							},
+							Feature: NewFeatureReference(lo.ToPtr("01JBP3SGZ20Y7VRVC351TDFXYZ"), lo.ToPtr("feat-1")),
+							EntitlementTemplate: NewEntitlementTemplateFrom(
+								MeteredEntitlementTemplate{
+									Metadata: map[string]string{
+										"name": "Entitlement 1",
+									},
+									IsSoftLimit:             true,
+									IssueAfterReset:         lo.ToPtr(500.0),
+									IssueAfterResetPriority: lo.ToPtr[uint8](1),
+									PreserveOverageAtReset:  nil,
+									UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+								},
+							),
+							TaxConfig: &TaxConfig{
+								Stripe: &StripeTaxConfig{
+									Code: "txcd_99999999",
+								},
+							},
+							Price: NewPriceFrom(
+								UnitPrice{
+									Amount: decimal.NewFromInt(1000),
+									Commitments: Commitments{
+										MinimumAmount: lo.ToPtr(decimal.NewFromInt(500)),
+										MaximumAmount: lo.ToPtr(decimal.NewFromInt(1500)),
+									},
+								},
+							),
+							Discounts: Discounts{
+								Percentage: &PercentageDiscount{
+									Percentage: models.NewPercentage(10),
+								},
+								Usage: &UsageDiscount{
+									Quantity: decimal.NewFromInt(100),
+								},
+							},
+						},
+						BillingCadence: datetime.MustParseDuration(t, "P1M"),
+					},
+				},
+				ExpectedEqual: true,
+			},
+			{
+				Name: "False",
+				Left: []RateCard{
+					&UsageBasedRateCard{
+						RateCardMeta: RateCardMeta{
+							Key:         "feat-1",
+							Name:        "Usage 1",
+							Description: lo.ToPtr("Usage 1"),
+							Metadata: map[string]string{
+								"name": "usage-1",
+							},
+							Feature: NewFeatureReference(lo.ToPtr("01JBP3SGZ20Y7VRVC351TDFXYZ"), lo.ToPtr("feat-1")),
+							EntitlementTemplate: NewEntitlementTemplateFrom(
+								MeteredEntitlementTemplate{
+									Metadata: map[string]string{
+										"name": "Entitlement 1",
+									},
+									IsSoftLimit:             true,
+									IssueAfterReset:         lo.ToPtr(500.0),
+									IssueAfterResetPriority: lo.ToPtr[uint8](1),
+									PreserveOverageAtReset:  nil,
+									UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+								},
+							),
+							TaxConfig: &TaxConfig{
+								Stripe: &StripeTaxConfig{
+									Code: "txcd_99999999",
+								},
+							},
+							Price: NewPriceFrom(
+								UnitPrice{
+									Amount: decimal.NewFromInt(1000),
+									Commitments: Commitments{
+										MinimumAmount: lo.ToPtr(decimal.NewFromInt(500)),
+										MaximumAmount: lo.ToPtr(decimal.NewFromInt(1500)),
+									},
+								},
+							),
+						},
+						BillingCadence: datetime.MustParseDuration(t, "P1M"),
+					},
+				},
+				Right: []RateCard{
+					&FlatFeeRateCard{
+						RateCardMeta: RateCardMeta{
+							Key:         "feat-1",
+							Name:        "Flat 1",
+							Description: lo.ToPtr("Flat 1"),
+							Metadata: map[string]string{
+								"name": "Flat 1",
+							},
+							Feature: NewFeatureReference(lo.ToPtr("01JBP3SGZ20Y7VRVC351TDFXYZ"), lo.ToPtr("feat-1")),
+							EntitlementTemplate: NewEntitlementTemplateFrom(
+								StaticEntitlementTemplate{
+									Metadata: map[string]string{
+										"name": "static-1",
+									},
+									Config: []byte(`"test"`),
+								},
+							),
+							TaxConfig: &TaxConfig{
+								Stripe: &StripeTaxConfig{
+									Code: "txcd_99999999",
+								},
+							},
+							Price: NewPriceFrom(FlatPrice{
+								Amount:      decimal.NewFromInt(1000),
+								PaymentTerm: InArrearsPaymentTerm,
+							}),
+						},
+						BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1M")),
+					},
+				},
+				ExpectedEqual: false,
+			},
+			{
+				// Usage and percentage discounts are applied at different stages, so we don't care about the
+				// ordering of discounts.
+				Name: "Discount ordering is not important (true)",
+				Left: []RateCard{
+					&UsageBasedRateCard{
+						RateCardMeta: RateCardMeta{
+							Key:         "feat-1",
+							Name:        "Usage 1",
+							Description: lo.ToPtr("Usage 1"),
+							Metadata: map[string]string{
+								"name": "usage-1",
+							},
+							Feature: NewFeatureReference(lo.ToPtr(feat1.ID), lo.ToPtr(feat1.Key)),
+							Price: NewPriceFrom(
+								UnitPrice{
+									Amount: decimal.NewFromInt(1000),
+									Commitments: Commitments{
+										MinimumAmount: lo.ToPtr(decimal.NewFromInt(500)),
+										MaximumAmount: lo.ToPtr(decimal.NewFromInt(1500)),
+									},
+								},
+							),
+							Discounts: Discounts{
+								Percentage: &PercentageDiscount{
+									Percentage: models.NewPercentage(10),
+								},
+								Usage: &UsageDiscount{
+									Quantity: decimal.NewFromInt(100),
+								},
+							},
+						},
+						BillingCadence: datetime.MustParseDuration(t, "P1M"),
+					},
+				},
+				Right: []RateCard{
+					&UsageBasedRateCard{
+						RateCardMeta: RateCardMeta{
+							Key:         "feat-1",
+							Name:        "Usage 1",
+							Description: lo.ToPtr("Usage 1"),
+							Metadata: map[string]string{
+								"name": "usage-1",
+							},
+							Feature: NewFeatureReference(lo.ToPtr(feat1.ID), lo.ToPtr(feat1.Key)),
+							Price: NewPriceFrom(
+								UnitPrice{
+									Amount: decimal.NewFromInt(1000),
+									Commitments: Commitments{
+										MinimumAmount: lo.ToPtr(decimal.NewFromInt(500)),
+										MaximumAmount: lo.ToPtr(decimal.NewFromInt(1500)),
+									},
+								},
+							),
+							Discounts: Discounts{
+								Usage: &UsageDiscount{
+									Quantity: decimal.NewFromInt(100),
+								},
+								Percentage: &PercentageDiscount{
+									Percentage: models.NewPercentage(10),
+								},
+							},
+						},
+						BillingCadence: datetime.MustParseDuration(t, "P1M"),
+					},
+				},
+				ExpectedEqual: true,
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.Name, func(t *testing.T) {
+				match := test.Left.Equal(test.Right)
+
+				if test.ExpectedEqual {
+					assert.True(t, match)
+				} else {
+					assert.False(t, match)
+				}
+			})
+		}
+	})
+}
+
+func TestRateCards_BillingCadenceAligned(t *testing.T) {
+	p1m := datetime.MustParseDuration(t, "P1M")
+	p3m := datetime.MustParseDuration(t, "P3M")
+	p1y := datetime.MustParseDuration(t, "P1Y")
+
+	// Helper for creating price
+	price := func() *Price {
+		return NewPriceFrom(FlatPrice{
+			Amount:      decimal.NewFromInt(1000),
+			PaymentTerm: InAdvancePaymentTerm,
+		})
+	}
+
+	tests := []struct {
+		name      string
+		rateCards RateCards
+		want      bool
+	}{
+		{
+			name:      "Empty rate cards",
+			rateCards: RateCards{},
+			want:      true,
+		},
+		{
+			name: "Single rate card",
+			rateCards: RateCards{
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: lo.ToPtr(p1m),
+				},
+			},
+			want: true,
+		},
+		{
+			name: "Multiple rate cards with same billing cadence",
+			rateCards: RateCards{
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: lo.ToPtr(p1m),
+				},
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: lo.ToPtr(p1m),
+				},
+				&UsageBasedRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: p1m,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "Multiple rate cards with different billing cadences",
+			rateCards: RateCards{
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: lo.ToPtr(p1m),
+				},
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: lo.ToPtr(p3m),
+				},
+			},
+			want: false,
+		},
+		{
+			name: "Multiple rate cards with some nil billing cadences",
+			rateCards: RateCards{
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: lo.ToPtr(p1m),
+				},
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: nil,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "Multiple rate cards with all nil billing cadences",
+			rateCards: RateCards{
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: nil,
+				},
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: nil,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "Mix of different rate card types with same billing cadence",
+			rateCards: RateCards{
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: lo.ToPtr(p1y),
+				},
+				&UsageBasedRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: p1y,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "Rate cards with no price are ignored",
+			rateCards: RateCards{
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(), // This one has a price
+					},
+					BillingCadence: lo.ToPtr(p1m),
+				},
+				&FlatFeeRateCard{
+					// No price set
+					BillingCadence: lo.ToPtr(p3m),
+				},
+			},
+			want: true, // Only the first rate card with price is considered
+		},
+		{
+			name: "All rate cards with no price",
+			rateCards: RateCards{
+				&FlatFeeRateCard{
+					// No price set
+					BillingCadence: lo.ToPtr(p1m),
+				},
+				&FlatFeeRateCard{
+					// No price set
+					BillingCadence: lo.ToPtr(p3m),
+				},
+			},
+			want: true, // No rate cards with price, so alignment check passes
+		},
+		{
+			name: "Multiple rate cards with price, but different cadences",
+			rateCards: RateCards{
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: lo.ToPtr(p1m),
+				},
+				&FlatFeeRateCard{
+					// No price, should be ignored
+					BillingCadence: lo.ToPtr(p3m),
+				},
+				&FlatFeeRateCard{
+					RateCardMeta: RateCardMeta{
+						Price: price(),
+					},
+					BillingCadence: lo.ToPtr(p1y), // Different from first card
+				},
+			},
+			want: false, // Two cards with price but different cadences
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.rateCards.SingleBillingCadence()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestRateCardsCompatible(t *testing.T) {
+	tests := []struct {
+		name    string
+		rCard   RateCard
+		vCard   RateCard
+		wantErr bool
+	}{
+		{
+			name: "Compatible",
+			rCard: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             false,
+							IssueAfterReset:         lo.ToPtr(500.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](1),
+							PreserveOverageAtReset:  lo.ToPtr(false),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+			},
+			vCard: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+			},
+			wantErr: false,
+		},
+		{
+			name: "Incompatible Price Type",
+			rCard: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             false,
+							IssueAfterReset:         lo.ToPtr(500.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](1),
+							PreserveOverageAtReset:  lo.ToPtr(false),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+			},
+			vCard: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(UnitPrice{
+						Commitments: Commitments{
+							MinimumAmount: lo.ToPtr(decimal.NewFromInt(1000)),
+						},
+						Amount: decimal.NewFromInt(10),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "Mismatched Feature Key",
+			rCard: &FlatFeeRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1M")),
+			},
+			vCard: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature2")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "Mismatched Feature ID",
+			rCard: &FlatFeeRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1M")),
+			},
+			vCard: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id2"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "Incompatible Billing Cadence",
+			rCard: &FlatFeeRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P3M")),
+			},
+			vCard: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "Incompatible Entitlement Template Type",
+			rCard: &FlatFeeRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1M")),
+			},
+			vCard: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						BooleanEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+						},
+					),
+				},
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "Incompatible Usage Period",
+			rCard: &FlatFeeRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P1M"),
+						},
+					),
+				},
+				BillingCadence: lo.ToPtr(datetime.MustParseDuration(t, "P1M")),
+			},
+			vCard: &UsageBasedRateCard{
+				RateCardMeta: RateCardMeta{
+					Key: "feature1",
+					Price: NewPriceFrom(FlatPrice{
+						Amount: decimal.NewFromInt(1000),
+					}),
+					Feature: NewFeatureReference(lo.ToPtr("id1"), lo.ToPtr("feature1")),
+					EntitlementTemplate: NewEntitlementTemplateFrom(
+						MeteredEntitlementTemplate{
+							Metadata: map[string]string{
+								"name": "metered-1",
+							},
+							IsSoftLimit:             true,
+							IssueAfterReset:         lo.ToPtr(1000.0),
+							IssueAfterResetPriority: lo.ToPtr[uint8](3),
+							PreserveOverageAtReset:  lo.ToPtr(true),
+							UsagePeriod:             datetime.MustParseDuration(t, "P3M"),
+						},
+					),
+				},
+				BillingCadence: datetime.MustParseDuration(t, "P1M"),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := NewRateCardWithOverlay(test.rCard, test.vCard).Validate()
+			if test.wantErr {
+				assert.Error(t, err)
+				t.Logf("Expected error: %v", err)
+
+				var expectedErr *models.GenericValidationError
+				assert.ErrorAs(t, err, &expectedErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestRateCardMetaUnitConfig(t *testing.T) {
+	// A feature-backed unit price keeps the unrelated price-type and
+	// usage-based-price-requires-feature rules satisfied, so these subtests stay
+	// focused on UnitConfig's own behavior (clone/equal/nested validation). The
+	// price-type requirement itself is covered by TestRateCardMetaUnitConfigValidation.
+	withUnitConfig := func(uc *UnitConfig) RateCardMeta {
+		return RateCardMeta{
+			Key:        "feat-1",
+			Name:       "Usage 1",
+			Feature:    NewFeatureReference(lo.ToPtr("01JBP3SGZ20Y7VRVC351TDFXYZ"), lo.ToPtr("feat-1")),
+			Price:      NewPriceFrom(UnitPrice{Amount: decimal.NewFromInt(1)}),
+			UnitConfig: uc,
+		}
+	}
+
+	t.Run("Clone deep-copies UnitConfig", func(t *testing.T) {
+		original := withUnitConfig(&UnitConfig{
+			Operation:        UnitConfigOperationDivide,
+			ConversionFactor: decimal.NewFromInt(1000),
+			DisplayUnit:      lo.ToPtr("GB"),
+		})
+
+		clone := original.Clone()
+		assert.True(t, original.Equal(clone))
+
+		// Mutating the clone must not affect the original.
+		*clone.UnitConfig.DisplayUnit = "MB"
+		assert.Equal(t, "GB", *original.UnitConfig.DisplayUnit)
+	})
+
+	t.Run("Equal", func(t *testing.T) {
+		uc := func() *UnitConfig {
+			return &UnitConfig{Operation: UnitConfigOperationDivide, ConversionFactor: decimal.NewFromInt(1000)}
+		}
+
+		// both nil → equal
+		assert.True(t, withUnitConfig(nil).Equal(withUnitConfig(nil)))
+
+		// equal configs → equal
+		assert.True(t, withUnitConfig(uc()).Equal(withUnitConfig(uc())))
+
+		// differs only by UnitConfig presence → not equal
+		assert.False(t, withUnitConfig(uc()).Equal(withUnitConfig(nil)))
+
+		// differs only by UnitConfig value → not equal
+		other := uc()
+		other.ConversionFactor = decimal.NewFromInt(2000)
+		assert.False(t, withUnitConfig(uc()).Equal(withUnitConfig(other)))
+	})
+
+	t.Run("Validate reports nested failures under the unit_config path", func(t *testing.T) {
+		invalid := withUnitConfig(&UnitConfig{
+			Operation:        UnitConfigOperationDivide,
+			ConversionFactor: decimal.NewFromInt(0), // must be > 0
+		})
+
+		err := invalid.Validate()
+		assert.Error(t, err)
+		// The field prefix is the "unit_config" selector (the v3 wire name),
+		// distinct from the "invalid unit config" message text.
+		assert.Contains(t, err.Error(), "unit_config")
+
+		valid := withUnitConfig(&UnitConfig{
+			Operation:        UnitConfigOperationMultiply,
+			ConversionFactor: decimal.NewFromFloat(1.5),
+		})
+		assert.NoError(t, valid.Validate())
+	})
+}
+
+func TestRateCardsHasUnitConfig(t *testing.T) {
+	card := func(uc *UnitConfig) RateCard {
+		return &UsageBasedRateCard{
+			RateCardMeta: RateCardMeta{
+				Key:        "feat-1",
+				Name:       "Feature 1",
+				Feature:    NewFeatureReference(nil, lo.ToPtr("feat-1")),
+				Price:      NewPriceFrom(UnitPrice{Amount: decimal.NewFromInt(1)}),
+				UnitConfig: uc,
+			},
+		}
+	}
+	divide := &UnitConfig{Operation: UnitConfigOperationDivide, ConversionFactor: decimal.NewFromInt(1000)}
+
+	t.Run("empty collection has none", func(t *testing.T) {
+		assert.False(t, RateCards{}.HasUnitConfig())
+	})
+
+	t.Run("no rate card carries unit_config", func(t *testing.T) {
+		assert.False(t, RateCards{card(nil), card(nil)}.HasUnitConfig())
+	})
+
+	t.Run("any rate card carrying unit_config is detected", func(t *testing.T) {
+		assert.True(t, RateCards{card(nil), card(divide)}.HasUnitConfig())
+	})
+}
+
+func TestValidateRateCardsHaveCompatibleUnitConfig(t *testing.T) {
+	card := func(uc *UnitConfig) RateCard {
+		return &UsageBasedRateCard{
+			RateCardMeta: RateCardMeta{
+				Key:        "feat-1",
+				Name:       "Feature 1",
+				Feature:    NewFeatureReference(nil, lo.ToPtr("feat-1")),
+				Price:      NewPriceFrom(UnitPrice{Amount: decimal.NewFromInt(1)}),
+				UnitConfig: uc,
+			},
+		}
+	}
+
+	divide1000 := func() *UnitConfig {
+		return &UnitConfig{Operation: UnitConfigOperationDivide, ConversionFactor: decimal.NewFromInt(1000)}
+	}
+	divide500 := func() *UnitConfig {
+		return &UnitConfig{Operation: UnitConfigOperationDivide, ConversionFactor: decimal.NewFromInt(500)}
+	}
+
+	validate := func(addon, target RateCard) error {
+		return NewRateCardWithOverlay(addon, target).ValidateWith(ValidateRateCardsHaveCompatibleUnitConfig)
+	}
+
+	t.Run("addon without unit_config leaves target untouched (compatible)", func(t *testing.T) {
+		assert.NoError(t, validate(card(nil), card(divide1000())))
+	})
+
+	t.Run("addon with equal unit_config is compatible", func(t *testing.T) {
+		assert.NoError(t, validate(card(divide1000()), card(divide1000())))
+	})
+
+	t.Run("both without unit_config is compatible", func(t *testing.T) {
+		assert.NoError(t, validate(card(nil), card(nil)))
+	})
+
+	t.Run("two differing unit_configs are rejected", func(t *testing.T) {
+		assert.ErrorIs(t, validate(card(divide500()), card(divide1000())), ErrAddonRateCardUnitConfigMismatch)
+	})
+
+	t.Run("a unit_config on only one side is compatible", func(t *testing.T) {
+		assert.NoError(t, validate(card(divide1000()), card(nil)))
+		assert.NoError(t, validate(card(nil), card(divide1000())))
+	})
+}

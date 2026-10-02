@@ -1,0 +1,79 @@
+//go:generate go run github.com/jmattheis/goverter/cmd/goverter gen ./
+package customers
+
+import (
+	"context"
+
+	"github.com/samber/lo"
+
+	api "github.com/openmeterio/openmeter/api/v3"
+	"github.com/openmeterio/openmeter/api/v3/apierrors"
+	"github.com/openmeterio/openmeter/api/v3/labels"
+	"github.com/openmeterio/openmeter/api/v3/response"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+func FromAPICustomerSortField(ctx context.Context, field string) (string, error) {
+	switch field {
+	case "id":
+		return "id", nil
+	case "created_at":
+		return "createdAt", nil
+	case "name":
+		return "name", nil
+	default:
+		return "", apierrors.NewUnsupportedSortFieldError(ctx, field, "id", "created_at", "name")
+	}
+}
+
+// goverter:variables
+// goverter:skipCopySameType
+// goverter:output:file ./convert.gen.go
+// goverter:useZeroValueOnPointerInconsistency
+// goverter:useUnderlyingTypeMethods
+// goverter:matchIgnoreCase
+// goverter:extend IntToFloat32
+// goverter:extend ConvertMetadataAnnotationsToLabels
+// goverter:extend ConvertLabelsToMetadata
+var (
+	// goverter:context namespace
+	// goverter:map Namespace | NamespaceFromContext
+	// goverter:map . CustomerMutate
+	FromAPICreateCustomerRequest func(namespace string, createCustomerRequest api.CreateCustomerRequest) (customer.CreateCustomerInput, error)
+	// goverter:map . Labels | ConvertMetadataAnnotationsToLabels
+	// goverter:map ManagedResource.ID Id
+	// goverter:map ManagedResource.Description Description
+	// goverter:map ManagedResource.Name Name
+	// goverter:map ManagedResource.ManagedModel.CreatedAt CreatedAt
+	// goverter:map ManagedResource.ManagedModel.UpdatedAt UpdatedAt
+	// goverter:map ManagedResource.ManagedModel.DeletedAt DeletedAt
+	ToAPIBillingCustomer func(customer.Customer) api.BillingCustomer
+	// goverter:map Labels Metadata
+	// goverter:ignore Annotation
+	FromAPICreateCustomerRequestToMutate func(createCustomerRequest api.CreateCustomerRequest) (customer.CustomerMutate, error)
+	// goverter:map Labels Metadata
+	// goverter:ignore Annotation
+	// goverter:ignore Key
+	FromAPIUpsertCustomerRequest       func(updateCustomerRequest api.UpsertCustomerRequest) (customer.CustomerMutate, error)
+	ToAPICustomerPagePaginatedResponse func(customers response.PagePaginationResponse[customer.Customer]) api.CustomerPagePaginatedResponse
+)
+
+func ConvertLabelsToMetadata(l *api.Labels) (*models.Metadata, error) {
+	m, err := labels.ToMetadata(l)
+
+	return &m, err
+}
+
+//goverter:context namespace
+func NamespaceFromContext(namespace string) string {
+	return namespace
+}
+
+func IntToFloat32(i int) float32 {
+	return float32(i)
+}
+
+func ConvertMetadataAnnotationsToLabels(source customer.Customer) *api.Labels {
+	return labels.FromMetadataAnnotations(lo.FromPtr(source.Metadata), lo.FromPtr(source.Annotation))
+}

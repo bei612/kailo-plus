@@ -1,0 +1,345 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-dev.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
+    branches:
+      - main
+  # Manual trigger lets maintainers publish a JS SDK beta on demand without a commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  artifacts:
+    name: Artifacts
+    # Artifact publishing (container images, etc.) is tag-only.
+    if: github.ref_type == 'tag'
+    uses: $/.github/workflows/artifacts.yaml
+    with:
+      publish: true
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+
+  helm-release:
+    name: Helm Charts
+    # Helm chart releases are tag-only.
+    if: github.ref_type == 'tag'
+    runs-on: depot-ubuntu-latest-8
+    environment: prod
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        chart: [ openmeter, benthos-collector ]
+
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+          use-policy-store: ${{ secrets.STEP_SECURITY_API_KEY != '' }}
+          api-key: ${{ secrets.STEP_SECURITY_API_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_conf: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            keep-env-derivations = true
+            keep-outputs = true
+
+      - name: Restore Nix store
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-${{
+            hashFiles('flake.*') }}
+          restore-prefixes-first-match: |
+            ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-
+            ${{ runner.os }}-openmeter-nix-build-main-${{ hashFiles('flake.*') }}
+            ${{ runner.os }}-openmeter-nix-build-main-
+            ${{ runner.os }}-openmeter-nix-build-
+
+      - name: Package chart
+        # Untrusted values (github.ref_name, matrix.chart) passed via env to
+        # avoid shell injection through ${{ ... }} interpolation in run:.
+        run: nix develop --impure .#ci -c make package-helm-chart CHART="$CHART"
+          VERSION="$VERSION"
+        env:
+          CHART: ${{ matrix.chart }}
+          VERSION: ${{ github.ref_name }}
+
+      - name: Login to GitHub Container Registry
+        run: echo "$GH_TOKEN" | nix develop --impure .#ci -c helm registry login ghcr.io
+          --username "$GH_ACTOR" --password-stdin
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+
+      - name: Push chart to GHCR
+        run: |
+          nix develop --impure .#ci -c helm push \
+            "build/helm/${CHART}-${GITHUB_REF_NAME#v}.tgz" \
+            oci://ghcr.io/openmeterio/helm-charts
+        env:
+          CHART: ${{ matrix.chart }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
+  binary-build:
+    name: Binary (${{ matrix.goos }}/${{ matrix.goarch }})
+    # Release binaries are tag-only.
+    if: github.ref_type == 'tag'
+    runs-on: depot-ubuntu-latest-8
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+          use-policy-store: ${{ secrets.STEP_SECURITY_API_KEY != '' }}
+          api-key: ${{ secrets.STEP_SECURITY_API_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_conf: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            keep-env-derivations = true
+            keep-outputs = true
+
+      - name: Restore Nix store
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-${{
+            hashFiles('flake.*') }}
+          restore-prefixes-first-match: |
+            ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-
+            ${{ runner.os }}-openmeter-nix-build-main-${{ hashFiles('flake.*') }}
+            ${{ runner.os }}-openmeter-nix-build-main-
+            ${{ runner.os }}-openmeter-nix-build-
+
+      - name: Restore Go module cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-openmeter-go-modules-${{
+            hashFiles('go.*', 'collector/go.*', 'api/v3/client/go.*', 'e2e/go.*') }}
+          restore-keys: |
+            ${{ runner.os }}-openmeter-go-modules-
+
+      - name: Build benthos-collector binary
+        # Untrusted github.ref_name passed via env; matrix values are
+        # workflow-controlled but routed via env for consistency.
+        run: |
+          nix develop --impure .#ci -c make build-benthos-collector-release \
+            GOOS="$GOOS" GOARCH="$GOARCH" VERSION="$VERSION"
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+
+      - name: Archive benthos-collector binary
+        run: |
+          nix develop --impure .#ci -c make archive-benthos-collector-release \
+            GOOS="$GOOS" GOARCH="$GOARCH"
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+
+      - name: Upload archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benthos-collector_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: build/release/benthos-collector_${{ matrix.goos }}_${{ matrix.goarch
+            }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  github-release:
+    name: GitHub Release
+    # GitHub release creation is tag-only.
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    needs: [ binary-build ]
+    environment: prod
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+          use-policy-store: ${{ secrets.STEP_SECURITY_API_KEY != '' }}
+          api-key: ${{ secrets.STEP_SECURITY_API_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download binary archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist
+          pattern: "benthos-collector_*"
+          merge-multiple: true
+
+      - name: Compute checksums
+        working-directory: dist
+        run: |
+          sha256sum benthos-collector_*.tar.gz > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag \
+            dist/benthos-collector_*.tar.gz \
+            dist/checksums.txt
+
+  # Compute the npm version and dist-tag from the trigger context so the
+  # reusable workflow below receives them as plain inputs. Tag pushes go to
+  # the `latest` dist-tag; main pushes and manual dispatches publish a
+  # per-commit beta.
+  sdk-javascript-meta:
+    name: JavaScript SDK Release Meta
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      dist-tag: ${{ steps.meta.outputs.dist-tag }}
+    steps:
+      - name: Determine version and npm dist-tag
+        id: meta
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "dist-tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            short_sha="${GITHUB_SHA:0:12}"
+            echo "version=1.0.0-beta-${short_sha}" >> "$GITHUB_OUTPUT"
+            echo "dist-tag=beta" >> "$GITHUB_OUTPUT"
+          fi
+
+  sdk-javascript-release:
+    name: JavaScript SDK Release
+    # Runs on both tag pushes (stable/pre-release) and main pushes (per-commit beta).
+    # npm's trusted publisher entry is keyed on caller workflow file + environment,
+    # so this single caller must serve both channels.
+    needs: [ sdk-javascript-meta ]
+    uses: $/.github/workflows/npm-release.yaml
+    with:
+      version: ${{ needs.sdk-javascript-meta.outputs.version }}
+      dist-tag: ${{ needs.sdk-javascript-meta.outputs.dist-tag }}
+    permissions:
+      contents: read
+      id-token: write
+
+  sdk-aip-release:
+    name: AIP TypeScript SDK Release
+    # The AIP SDK (@openmeter/client) shares the repo version and dist-tag with
+    # @openmeter/sdk, so it reuses the same meta job. Runs on both tag pushes
+    # (stable/pre-release) and main pushes (per-commit beta). npm's trusted
+    # publisher entry is keyed on caller workflow file + environment, so this
+    # caller must serve both channels.
+    needs: [ sdk-javascript-meta ]
+    uses: $/.github/workflows/aip-npm-release.yaml
+    with:
+      version: ${{ needs.sdk-javascript-meta.outputs.version }}
+      dist-tag: ${{ needs.sdk-javascript-meta.outputs.dist-tag }}
+    permissions:
+      contents: read
+      id-token: write
+
+  sdk-python-release:
+    name: Python SDK Release
+    # Python SDK releases are tag-only (dev Python releases live in sdk-python-dev-release.yaml).
+    if: github.ref_type == 'tag'
+    runs-on: depot-ubuntu-latest-8
+    environment: prod
+
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+          use-policy-store: ${{ secrets.STEP_SECURITY_API_KEY != '' }}
+          api-key: ${{ secrets.STEP_SECURITY_API_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Get short SHA
+        id: get-short-sha
+        run: |
+          echo "id=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_conf: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            keep-env-derivations = true
+            keep-outputs = true
+
+      - name: Restore Nix store
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-${{
+            hashFiles('flake.*') }}
+          restore-prefixes-first-match: |
+            ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-
+            ${{ runner.os }}-openmeter-nix-build-main-${{ hashFiles('flake.*') }}
+            ${{ runner.os }}-openmeter-nix-build-main-
+            ${{ runner.os }}-openmeter-nix-build-
+
+      - name: Publish Python package via Nix make target
+        run: |
+          nix develop --impure .#ci -c make -C api/client/python publish-python-sdk
+        env:
+          PY_SDK_RELEASE_VERSION: ${{ github.ref_name }}
+          COMMIT_SHORT_SHA: ${{ steps.get-short-sha.outputs.id }}
+          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_TOKEN }}

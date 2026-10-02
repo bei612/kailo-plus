@@ -1,0 +1,266 @@
+address: 127.0.0.1:8888
+
+telemetry:
+  log:
+    level: debug
+    # For writing to a file
+    exporters:
+      # file:
+      #   enabled: true
+      #   filepath: "./openmeter.log"
+      #   prettyprint: true  # optional
+
+termination:
+  # checkInterval defines the time period used for updating the readiness check based on the termination status.
+  checkInterval: 1s
+  # gracefulShutdownTimeout defines the maximum time for the process to gracefully stop on receiving stop signal.
+  gracefulShutdownTimeout: 30s
+  # propagationTimeout defines how long to block the termination process in order
+  # to allow the termination event to be propagated to other systems. e.g. reverse proxy.
+  # Its value should be set higher than the failure threshold for readiness probe.
+  # In Kubernetes it should be: readiness.periodSeconds * (readiness.failureThreshold + 1) + CheckInterval
+  # propagationTimeout must always less than GracefulShutdownTimeout.
+  propagationTimeout: 3s
+
+server:
+  # readHeaderTimeout is the maximum time allowed to read request headers.
+  # Protects against Slowloris attacks. Should be short.
+  readHeaderTimeout: 10s
+  # readTimeout is the maximum time allowed to read the entire request including the body.
+  readTimeout: 60s
+  # writeTimeout is the maximum time allowed to write a response.
+  # Must be shorter than the ingress gateway's upstream timeout.
+  writeTimeout: 90s
+  # idleTimeout is the maximum time a keep-alive connection remains idle before being closed.
+  idleTimeout: 120s
+  responseValidation:
+    # mode selects which v3 routes have their response bodies validated against the OpenAPI spec.
+    # Violations are logged as warnings; the client response is never affected.
+    # Validation buffers the full response body in memory.
+    #   off      — validation disabled (default)
+    #   unstable — validate only routes marked x-unstable: true in the spec
+    #   all      — validate every v3 route (highest overhead)
+    mode: "all"
+  clientIPMiddleware:
+    # source defines how to obtain the client IP address.
+    source: "remote-address" # "remote-address" | "header" | "x-forwarded-for"
+    # header defines the header name to get the client IP address from if the source is set to "header".
+    header: "X-Real-IP"
+    # trustedIPPrefixes defines a list of IP prefixes for trusted proxies used to determine the real client IP address from "X-Forwarded-For" HTTP header.
+    # Use this setting if source is set to "x-forwarded-for".
+    trustedIPPrefixes: [
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+    ]
+    # trustedProxies defines the number of trusted proxies used to determine the real client IP address from "X-Forwarded-For" HTTP header.
+    # Use this setting if source is set to "x-forwarded-for" and trustedIPPrefixes is not set (trustedIPPrefixes takes precedence when both are set).
+    trustedProxies: 2
+
+#ingest:
+#  kafka:
+#    # To enable stats reporting set this value to >=5s.
+#    # Setting this value to 0 makes reporting explicitly disabled.
+#    statsInterval: 5s
+#    # Set IP address family used for communicating with Kafka cluster
+#    brokerAddressFamily: v4
+#    # Use this configuration parameter to define how frequently the local metadata cache needs to be updated.
+#    # It cannot be lower than 10 seconds.
+#    topicMetadataRefreshInterval: 1m
+#    # Use this config parameter to enable TCP keep-alive in order to prevent the Kafka broker to close idle network connection.
+#    socketKeepAliveEnabled: true
+#    # Set list of debug contexts to enable for librdkafka
+#    # See: https://github.com/confluentinc/librdkafka/blob/master/INTRODUCTION.md#debug-contexts
+#    debugContexts:
+#      - broker
+#      - topic
+#    topicProvisioner:
+#      # The maximum number of entries stored in topic cache at a time which after the least recently used is evicted.
+#      # Setting it to 0 makes the cache size unlimited.
+#      cacheSize: 250
+#      # CacheTTL stores maximum time an entries is kept in cache before being evicted.
+#      # Setting it to 0 disables cache entry expiration.
+#      cacheTTL: 5m
+
+# dedupe:
+#   enabled: true
+#   driver: redis
+#   config:
+#     address: 127.0.0.1:6379
+#     database: 0
+#     expiration: 768h # 32d
+
+# entitlements:
+#   gracePeriod: P1D
+
+billing:
+  # for production deployments it's recommended to use queued for server only
+  # advancementStrategy: foreground
+  featureSwitches:
+    # 0 collects all eligible pending invoice lines. Positive values cap each
+    # collected standard invoice to the earliest N lines by service period start.
+    maxLinesPerCollectedInvoice: 0
+    subscriptionSyncForceAsyncAdvance: true
+
+credits:
+  enabled: true
+  enableCreditThenInvoice: false
+
+# unitConfig gates the UnitConfig feature on rate cards (conversion + rounding
+# of metered quantities before rating). Off by default: unit_config is rejected
+# on create/update and rating is unchanged. Enable per environment during rollout.
+unitConfig:
+  enabled: false
+
+apps:
+  baseURL: https://example.com
+  # stripe:
+  #   disableWebhookRegistration: true
+
+# System event generation
+events:
+  enabled: false
+# systemEvents:
+#   enabled: true
+#   topic: om_sys.api_events
+#   autoProvision:
+#     enabled: true
+#     partitions: 4
+# ingestEvents:
+#   enabled: true
+#   topic: om_sys.ingest_events
+#   autoProvision:
+#     enabled: true
+#     partitions: 8
+
+# Consumer portal
+# portal:
+#   enabled: true
+#   tokenSecret: this-isnt-secure
+
+postgres:
+  url: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+  autoMigrate: migration # Valid values are: migration, migration-job, false
+
+meters:
+  # Sample meter to count API requests
+  - slug: api_requests_total        # Unique identifier for the meter
+    description: API Requests
+    eventType: request              # Filter events by type
+    aggregation: COUNT              # Aggregation method: COUNT, SUM, etc.
+    groupBy:
+      method: $.method              # HTTP Method: GET, POST, etc.
+      route: $.route                # Route: /products/:product_id
+
+  # Sample meter to count LLM Token Usage
+  - slug: tokens_total
+    description: AI Token Usage
+    eventType: prompt               # Filter events by type
+    aggregation: SUM
+    valueProperty: $.tokens         # JSONPath to parse usage value
+    groupBy:
+      model: $.model                # AI model used: gpt4-turbo, etc.
+      type: $.type                  # Prompt type: input, output, system
+
+  # Sample meter to count workload runtime
+  - slug: workload_runtime_duration_seconds
+    description: Workload runtime duration in seconds
+    eventType: workload                       # Filter events by type
+    aggregation: SUM
+    valueProperty: $.duration_seconds         # JSONPath to parse usage value
+    groupBy:
+      region: $.region                        # Cloud region: us-east-1, etc.
+      zone: $.zone                            # Cloud zone: us-east-1a, etc.
+      instance_type: $.instance_type          # Instance type: t2.micro, etc.
+
+notification:
+  enabled: true
+#  webhook:
+#    eventTypeRegistrationTimeout: 30s
+#    skipEventTypeRegistrationOnError: false
+
+# Enable the following configuration to use Svix to deliver webhooks.
+# The default webhook handler is a noop handler and only logs operations.
+# svix:
+#   apiKey: secret
+#   serverURL: http://localhost:8071
+
+#sink:
+#  logDroppedEvents: true
+#  kafka:
+#    brokers: 127.0.0.1:9092,127.0.0.2:9092
+#    securityProtocol: SASL_SSL
+#    saslMechanisms: PLAIN
+#    saslUsername: user
+#    saslPassword: pass
+#    # To enable stats reporting set this value to >=5s.
+#    # Setting this value to 0 makes reporting explicitly disabled.
+#    statsInterval: 5s
+#    # Set IP address family used for communicating with Kafka cluster
+#    brokerAddressFamily: v4
+#    # Use this configuration parameter to define how frequently the local metadata cache needs to be updated.
+#    # It cannot be lower than 10 seconds.
+#    topicMetadataRefreshInterval: 1m
+#    # Use this config parameter to enable TCP keep-alive in order to prevent the Kafka broker to close idle network connection.
+#    socketKeepAliveEnabled: true
+#    # Set list of debug contexts to enable for librdkafka
+#    # See: https://github.com/confluentinc/librdkafka/blob/master/INTRODUCTION.md#debug-contexts
+#    debugContexts:
+#      - broker
+#      - topic
+#    # Consumer/Producer identifier
+#    clientID: kafka-client-1
+#    # Rack identifier (e.g. availability zone) the client is running in.
+#    # Enables rack-aware consumer group assignment and fetching from the closest replica.
+#    clientRack: use1-az1
+#    # Consumer group identifier
+#    consumerGroupID: consumer-group
+#    # Static membership identifier in consumer group
+#    consumerGroupInstanceID: consumer-group-1
+#    # Consumer group session and failure detection timeout.
+#    # The consumer sends periodic heartbeats (heartbeatInterval) to indicate its liveness to the broker.
+#    #	If no hearts are received by the broker for a group member within the session timeout,
+#    #	the broker will remove the consumer from the group and trigger a rebalance.
+#    sessionTimeout: 5m
+#    # Consumer group session keepalive heartbeat interval
+#    heartbeatInterval: 3s
+#    # Automatically and periodically commit offsets in the background
+#    enableAutoCommit: true
+#    # Automatically store offset of last message provided to application.
+#    # The offset store is an in-memory store of the next offset to (auto-)commit for each partition.
+#    enableAutoOffsetStore: false
+#    # AutoOffsetReset defines the action to take when there is no initial offset in offset store or the desired offset is out of range:
+#    #	* "smallest","earliest","beginning": automatically reset the offset to the smallest offset
+#    #	* "largest","latest","end": automatically reset the offset to the largest offset
+#    #	* "error":  trigger an error (ERR__AUTO_OFFSET_RESET) which is retrieved by consuming messages and checking 'message->err'.
+#    autoOffsetReset: "error"
+#    # partitionAssignmentStrategy defines one or more partition assignment strategies.
+#    # The elected group leader will use a strategy supported by all members of the group to assign partitions to group members.
+#    # If there is more than one eligible strategy, preference is determined by the order of this list (strategies earlier in the list have higher priority).
+#    # Cooperative and non-cooperative (eager) strategies must not be mixed.
+#    partitionAssignmentStrategy:
+#      - range
+#      - roundrobin
+#      - cooperative-sticky
+
+
+# progressManager:
+#   enabled: true
+#   expiration: 5m
+#   redis:
+#     address: 127.0.0.1:6379
+#     database: 0
+#     # Other redis options as needed
+
+# taxcode configures the list of tax codes to be auto-provisioned on namespace creation.
+# taxcode:
+#   seeds:
+#     - key: default
+#       name: "Provider default"
+#       defaultInvoicing: true
+#     - key: nontaxable
+#       name: "Nontaxable"
+#       defaultCreditGrant: true
+#       appMappings:
+#         - appType: stripe
+#           taxCode: "txcd_00000000"

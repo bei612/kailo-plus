@@ -1,0 +1,594 @@
+package plan
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/filter"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+	"github.com/openmeterio/openmeter/pkg/sortx"
+)
+
+const timeJitter = 30 * time.Second
+
+const (
+	OrderAsc  = sortx.OrderAsc
+	OrderDesc = sortx.OrderDesc
+)
+
+const (
+	OrderByID        OrderBy = "id"
+	OrderByKey       OrderBy = "key"
+	OrderByVersion   OrderBy = "version"
+	OrderByCreatedAt OrderBy = "created_at"
+	OrderByUpdatedAt OrderBy = "updated_at"
+)
+
+type OrderBy string
+
+func (f OrderBy) Values() []OrderBy {
+	return []OrderBy{
+		OrderByID,
+		OrderByKey,
+		OrderByVersion,
+		OrderByCreatedAt,
+		OrderByUpdatedAt,
+	}
+}
+
+func (f OrderBy) Validate() error {
+	if !slices.Contains(f.Values(), f) {
+		return models.NewGenericValidationError(fmt.Errorf("invalid plan order by: %s", f))
+	}
+
+	return nil
+}
+
+type Service interface {
+	ListPlans(ctx context.Context, params ListPlansInput) (pagination.Result[Plan], error)
+	CreatePlan(ctx context.Context, params CreatePlanInput) (*Plan, error)
+	DeletePlan(ctx context.Context, params DeletePlanInput) error
+	GetPlan(ctx context.Context, params GetPlanInput) (*Plan, error)
+	UpdatePlan(ctx context.Context, params UpdatePlanInput) (*Plan, error)
+	PublishPlan(ctx context.Context, params PublishPlanInput) (*Plan, error)
+	ArchivePlan(ctx context.Context, params ArchivePlanInput) (*Plan, error)
+	NextPlan(ctx context.Context, params NextPlanInput) (*Plan, error)
+}
+
+var _ models.Validator = (*ListPlansInput)(nil)
+
+type ListPlansInput struct {
+	// Page is the pagination parameters.
+	// TODO: make it optional.
+	pagination.Page
+
+	// OrderBy is the field to order by.
+	OrderBy OrderBy
+
+	// Order is the order direction.
+	Order sortx.Order
+
+	// Namespaces is the list of namespaces to filter by.
+	Namespaces []string
+
+	// IDs is the list of IDs to filter by.
+	IDs []string
+
+	// Keys is the list of keys to filter by.
+	Keys []string
+
+	// KeyVersions is the map of keys to versions to filter by.
+	KeyVersions map[string][]int
+
+	// IncludeDeleted defines whether to include deleted Plans.
+	IncludeDeleted bool
+
+	// Status filter
+	Status []productcatalog.PlanStatus
+
+	// Currencies is the list of currencies to filter by.
+	Currencies []string
+
+	// Key filters plans by their key field (AND semantics, supports eq/neq/contains/oeq).
+	Key *filter.FilterString
+
+	// Name filters plans by their name field (AND semantics, supports eq/neq/contains/oeq).
+	Name *filter.FilterString
+
+	// Currency filters plans by their currency field (AND semantics, supports eq/neq/contains/oeq).
+	Currency *filter.FilterString
+
+	// ExcludeUnitConfig omits plans carrying a unit_config conversion on any of their rate cards. (v1 can't represent it)
+	ExcludeUnitConfig bool
+
+	// ExcludeUnrepresentableCurrencies omits plans whose default currency or rate-card
+	// currency overrides cannot be represented by the v1 API.
+	ExcludeUnrepresentableCurrencies bool
+}
+
+func (i ListPlansInput) Validate() error {
+	var errs []error
+	if i.Key != nil {
+		if err := i.Key.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if i.Name != nil {
+		if err := i.Name.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if i.Currency != nil {
+		if err := i.Currency.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if i.OrderBy != "" {
+		if err := i.OrderBy.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type ListPlansStatusFilter struct {
+	// Active signals that the active plans should be returned.
+	Active bool
+
+	// Draft signals that the draft plans should be returned.
+	Draft bool
+
+	// Archived signals that the archived plans should be returned.
+	Archived bool
+}
+
+type inputOptions struct {
+	// ignoreNonCriticalIssues makes Validate() return errors with critical severity or higher.
+	// This allows creating resource with expected validation issues.
+	IgnoreNonCriticalIssues bool
+}
+
+var _ models.Validator = (*CreatePlanInput)(nil)
+
+type CreatePlanInput struct {
+	models.NamespacedModel
+	productcatalog.Plan
+
+	inputOptions
+}
+
+func (i CreatePlanInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, productcatalog.ErrNamespaceEmpty)
+	}
+
+	if err := i.Plan.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("invalid plan: %w", err))
+	}
+
+	issues, err := models.AsValidationIssues(errors.Join(errs...))
+	if err != nil {
+		return models.NewGenericValidationError(err)
+	}
+
+	if i.IgnoreNonCriticalIssues {
+		issues = issues.WithSeverityOrHigher(models.ErrorSeverityCritical)
+	}
+
+	return models.NewNillableGenericValidationError(issues.AsError())
+}
+
+var (
+	_ models.Validator     = (*UpdatePlanInput)(nil)
+	_ models.Equaler[Plan] = (*UpdatePlanInput)(nil)
+)
+
+type UpdatePlanInput struct {
+	models.NamespacedID
+
+	// EffectivePeriod
+	productcatalog.EffectivePeriod
+
+	// Name
+	Name *string `json:"name"`
+
+	// Description
+	Description *string `json:"description,omitempty"`
+
+	// Metadata
+	Metadata *models.Metadata `json:"metadata,omitempty"`
+
+	// BillingCadence is the default billing cadence for subscriptions using this plan
+	BillingCadence *datetime.ISODuration `json:"billingCadence,omitempty"`
+
+	// ProRatingConfig is the default pro-rating configuration for subscriptions using this plan
+	ProRatingConfig *productcatalog.ProRatingConfig `json:"proRatingConfig,omitempty"`
+
+	// SettlementMode is the settlement mode for the plan
+	SettlementMode *productcatalog.SettlementMode `json:"settlementMode,omitempty"`
+
+	// Phases
+	Phases *[]productcatalog.Phase `json:"phases"`
+
+	// RejectUnitConfig makes mutation validation reject a plan that carries a unit_config conversion on any rate card.
+	RejectUnitConfig bool
+
+	// RejectUnrepresentableCurrencies makes mutation validation reject a plan whose
+	// default currency or rate-card currency overrides cannot be represented by the v1 API.
+	RejectUnrepresentableCurrencies bool
+
+	inputOptions
+}
+
+func (i UpdatePlanInput) Equal(p Plan) bool {
+	if i.Namespace != p.Namespace {
+		return false
+	}
+
+	if i.ID != p.ID {
+		return false
+	}
+
+	if !i.EffectivePeriod.Equal(p.EffectivePeriod) {
+		return false
+	}
+
+	if i.Name != nil && *i.Name != p.Name {
+		return false
+	}
+
+	if i.Description != nil && lo.FromPtr(i.Description) != lo.FromPtr(p.Description) {
+		return false
+	}
+
+	if i.Metadata != nil && !i.Metadata.Equal(p.Metadata) {
+		return false
+	}
+
+	if i.BillingCadence != nil && i.BillingCadence.String() != p.BillingCadence.String() {
+		return false
+	}
+
+	if i.ProRatingConfig != nil && !i.ProRatingConfig.Equal(p.ProRatingConfig) {
+		return false
+	}
+
+	if i.SettlementMode != nil && *i.SettlementMode != p.SettlementMode {
+		return false
+	}
+
+	if i.Phases != nil {
+		if len(*i.Phases) != len(p.Phases) {
+			return false
+		}
+
+		for idx, phase := range *i.Phases {
+			if !phase.Equal(p.Phases[idx].Phase) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+func (i UpdatePlanInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, productcatalog.ErrNamespaceEmpty)
+	}
+
+	if i.ID == "" {
+		errs = append(errs, productcatalog.ErrIDEmpty)
+	}
+
+	if i.Name != nil && *i.Name == "" {
+		errs = append(errs, productcatalog.ErrResourceNameEmpty)
+	}
+
+	if i.EffectiveFrom != nil || i.EffectiveTo != nil {
+		if err := i.EffectivePeriod.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("invalid effective period: %w", err))
+		}
+	}
+
+	if i.Phases != nil {
+		for _, phase := range *i.Phases {
+			if err := phase.Validate(); err != nil {
+				errs = append(errs, fmt.Errorf("invalid plan phase: %w", err))
+			}
+		}
+	}
+
+	if i.SettlementMode != nil {
+		if *i.SettlementMode == "" {
+			errs = append(errs, fmt.Errorf("settlement mode is required"))
+		} else if err := i.SettlementMode.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("invalid settlement mode: %w", err))
+		}
+	}
+
+	issues, err := models.AsValidationIssues(errors.Join(errs...))
+	if err != nil {
+		return models.NewGenericValidationError(err)
+	}
+
+	if i.IgnoreNonCriticalIssues {
+		issues = issues.WithSeverityOrHigher(models.ErrorSeverityCritical)
+	}
+
+	return models.NewNillableGenericValidationError(issues.AsError())
+}
+
+func (i UpdatePlanInput) ValidateWithPlan(p productcatalog.Plan) error {
+	if i.RejectUnitConfig && p.HasUnitConfig() {
+		return productcatalog.ErrUnitConfigNotRepresentable
+	}
+	if i.RejectUnrepresentableCurrencies {
+		if p.Currency.IsCustom() {
+			return productcatalog.ErrCurrencyNotRepresentable
+		}
+		if p.HasCurrencyOverrides() {
+			return productcatalog.ErrRateCardCurrencyNotRepresentable
+		}
+	}
+
+	p = i.applyTo(p)
+
+	if i.RejectUnitConfig && p.HasUnitConfig() {
+		return productcatalog.ErrUnitConfigNotRepresentable
+	}
+	if i.RejectUnrepresentableCurrencies {
+		if p.Currency.IsCustom() {
+			return productcatalog.ErrCurrencyNotRepresentable
+		}
+		if p.HasCurrencyOverrides() {
+			return productcatalog.ErrRateCardCurrencyNotRepresentable
+		}
+	}
+
+	var errs []error
+
+	if err := p.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	issues, err := models.AsValidationIssues(errors.Join(errs...))
+	if err != nil {
+		return models.NewGenericValidationError(err)
+	}
+
+	if i.IgnoreNonCriticalIssues {
+		issues = issues.WithSeverityOrHigher(models.ErrorSeverityCritical)
+	}
+
+	return models.NewNillableGenericValidationError(issues.AsError())
+}
+
+func (i UpdatePlanInput) applyTo(p productcatalog.Plan) productcatalog.Plan {
+	if i.Name != nil {
+		p.Name = *i.Name
+	}
+
+	if i.Description != nil {
+		p.Description = i.Description
+	}
+
+	if i.Metadata != nil {
+		p.Metadata = *i.Metadata
+	}
+
+	if i.BillingCadence != nil {
+		p.BillingCadence = *i.BillingCadence
+	}
+
+	if i.ProRatingConfig != nil {
+		p.ProRatingConfig = *i.ProRatingConfig
+	}
+
+	if i.SettlementMode != nil {
+		p.SettlementMode = *i.SettlementMode
+	}
+
+	if i.Phases != nil {
+		p.Phases = *i.Phases
+	}
+
+	return p
+}
+
+// ExpandFields defines which fields to expand when returning the Plan.
+type ExpandFields struct {
+	PlanAddons     bool                              `json:"addons,omitempty"`
+	CustomCurrency *currencies.CurrencyExpandOptions `json:"customCurrency,omitempty"`
+}
+
+type GetPlanInput struct {
+	models.NamespacedID
+
+	// Key is the unique key for Plan.
+	Key string `json:"key,omitempty"`
+
+	// Version is the version of the Plan.
+	// If not set the latest version is assumed.
+	Version int `json:"version,omitempty"`
+
+	// IncludeLatest defines whether return the latest version regardless of its PlanStatus or with ActiveStatus only if
+	// Version is not set.
+	IncludeLatest bool `json:"includeLatest,omitempty"`
+
+	Expand ExpandFields `json:"expand,omitempty"`
+}
+
+func (i GetPlanInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, productcatalog.ErrNamespaceEmpty)
+	}
+
+	if i.ID == "" && i.Key == "" {
+		errs = append(errs, errors.New("either plan id or key must be provided"))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type DeletePlanInput struct {
+	models.NamespacedID
+}
+
+func (i DeletePlanInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, productcatalog.ErrNamespaceEmpty)
+	}
+
+	if i.ID == "" {
+		errs = append(errs, productcatalog.ErrIDEmpty)
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type PublishPlanInput struct {
+	models.NamespacedID
+
+	// EffectivePeriod
+	productcatalog.EffectivePeriod
+
+	// RejectUnitConfig rejects the operation when the target plan carries a unit_config
+	// conversion. The v1 API cannot represent it, so v1 handlers set this; v3 leaves it false.
+	RejectUnitConfig bool
+
+	// RejectUnrepresentableCurrencies rejects the operation when the target plan uses
+	// currency configuration that the v1 API cannot represent.
+	RejectUnrepresentableCurrencies bool
+}
+
+func (i PublishPlanInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, productcatalog.ErrNamespaceEmpty)
+	}
+
+	if i.ID == "" {
+		errs = append(errs, productcatalog.ErrIDEmpty)
+	}
+
+	now := clock.Now()
+
+	from := lo.FromPtr(i.EffectiveFrom)
+
+	if from.IsZero() {
+		errs = append(errs, errors.New("invalid EffectiveFrom: must not be empty"))
+	}
+
+	if !from.IsZero() && from.Before(now.Add(-timeJitter)) {
+		errs = append(errs, errors.New("invalid EffectiveFrom: period start must not be in the past"))
+	}
+
+	to := lo.FromPtr(i.EffectiveTo)
+
+	if !to.IsZero() && from.IsZero() {
+		errs = append(errs, errors.New("invalid EffectiveFrom: must not be empty if EffectiveTo is also set"))
+	}
+
+	if !to.IsZero() && to.Before(now.Add(timeJitter)) {
+		errs = append(errs, errors.New("invalid EffectiveTo: period end must not be in the past"))
+	}
+
+	if !from.IsZero() && !to.IsZero() && from.After(to) {
+		errs = append(errs, errors.New("invalid EffectivePeriod: period start must not be later than period end"))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type ArchivePlanInput struct {
+	// NamespacedID
+	models.NamespacedID
+
+	// EffectiveFrom defines the time from the Plan is going to be unpublished.
+	EffectiveTo time.Time `json:"effectiveTo,omitempty"`
+
+	// RejectUnitConfig rejects the operation when the target plan carries a unit_config
+	// conversion. The v1 API cannot represent it, so v1 handlers set this; v3 leaves it false.
+	RejectUnitConfig bool
+
+	// RejectUnrepresentableCurrencies rejects the operation when the target plan uses
+	// currency configuration that the v1 API cannot represent.
+	RejectUnrepresentableCurrencies bool
+}
+
+func (i ArchivePlanInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, productcatalog.ErrNamespaceEmpty)
+	}
+
+	if i.ID == "" {
+		errs = append(errs, productcatalog.ErrIDEmpty)
+	}
+	if i.EffectiveTo.IsZero() {
+		errs = append(errs, errors.New("invalid EffectiveTo: must not be empty"))
+	}
+
+	now := clock.Now()
+
+	if i.EffectiveTo.Before(now.Add(-timeJitter)) {
+		errs = append(errs, errors.New("invalid EffectiveTo: period end must not be in the past"))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type NextPlanInput struct {
+	// NamespacedID
+	models.NamespacedID
+
+	// Key is the unique key for Plan.
+	Key string `json:"key,omitempty"`
+
+	// Version is the version of the Plan.
+	// If not set the latest version is assumed.
+	Version int `json:"version,omitempty"`
+
+	// RejectUnitConfig rejects the operation when the target plan carries a unit_config
+	// conversion. The v1 API cannot represent it, so v1 handlers set this; v3 leaves it false.
+	RejectUnitConfig bool
+
+	// RejectUnrepresentableCurrencies rejects the operation when the source plan uses
+	// currency configuration that the v1 API cannot represent.
+	RejectUnrepresentableCurrencies bool
+}
+
+func (i NextPlanInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, productcatalog.ErrNamespaceEmpty)
+	}
+
+	if i.ID == "" && i.Key == "" {
+		errs = append(errs, errors.New("invalid: either ID or Key pair must be provided"))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}

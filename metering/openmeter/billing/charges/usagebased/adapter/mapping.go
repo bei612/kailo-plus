@@ -1,0 +1,236 @@
+package adapter
+
+import (
+	"cmp"
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/chargemeta"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/costbasis"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/creditrealization"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/invoicedusage"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/payment"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased"
+	"github.com/openmeterio/openmeter/openmeter/billing/models/totals"
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
+	"github.com/openmeterio/openmeter/pkg/convert"
+	"github.com/openmeterio/openmeter/pkg/framework/entutils"
+	"github.com/openmeterio/openmeter/pkg/slicesx"
+)
+
+func FromDB(entity *entdb.ChargeUsageBased, expands meta.Expands) (usagebased.Charge, error) {
+	chargeMeta, err := chargemeta.FromDB(entity, entity.Edges)
+	if err != nil {
+		return usagebased.Charge{}, fmt.Errorf("mapping usage based charge meta [id=%s]: %w", entity.ID, err)
+	}
+
+	return fromDBWithMeta(entity, chargeMeta, expands)
+}
+
+func FromDBWithCurrency(entity *entdb.ChargeUsageBased, currency currencies.Currency, expands meta.Expands) (usagebased.Charge, error) {
+	chargeMeta, err := chargemeta.FromDBWithCurrency(entity, currency)
+	if err != nil {
+		return usagebased.Charge{}, fmt.Errorf("mapping usage based charge meta [id=%s]: %w", entity.ID, err)
+	}
+
+	return fromDBWithMeta(entity, chargeMeta, expands)
+}
+
+func fromDBWithMeta(entity *entdb.ChargeUsageBased, chargeMeta meta.Charge, expands meta.Expands) (usagebased.Charge, error) {
+	base, err := fromDBBase(entity, chargeMeta)
+	if err != nil {
+		return usagebased.Charge{}, fmt.Errorf("mapping usage based charge base [id=%s]: %w", entity.ID, err)
+	}
+
+	var realizations usagebased.RealizationRuns
+	if expands.Has(meta.ExpandRealizations) {
+		var err error
+		realizations, err = fromDBRuns(entity)
+		if err != nil {
+			return usagebased.Charge{}, fmt.Errorf("mapping usage based charge [id=%s]: %w", entity.ID, err)
+		}
+	}
+
+	return usagebased.Charge{
+		ChargeBase:   base,
+		Realizations: realizations,
+	}, nil
+}
+
+func fromDBBaseWithCurrency(entity *entdb.ChargeUsageBased, currency currencies.Currency) (usagebased.ChargeBase, error) {
+	chargeMeta, err := chargemeta.FromDBWithCurrency(entity, currency)
+	if err != nil {
+		return usagebased.ChargeBase{}, fmt.Errorf("mapping charge meta: %w", err)
+	}
+
+	return fromDBBase(entity, chargeMeta)
+}
+
+func fromDBBase(entity *entdb.ChargeUsageBased, chargeMeta meta.Charge) (usagebased.ChargeBase, error) {
+	var costBasisIntent *costbasis.Intent
+	var resolvedCostBasis *costbasis.State
+	var costBasisID *string
+	if entity.CostBasisID != nil {
+		if entity.Edges.CostBasis == nil {
+			return usagebased.ChargeBase{}, fmt.Errorf("cost basis not loaded for usage based charge [id=%s,cost_basis_id=%s]", entity.ID, *entity.CostBasisID)
+		}
+
+		if entity.Edges.CostBasis.ID != *entity.CostBasisID {
+			return usagebased.ChargeBase{}, fmt.Errorf("cost basis ID mismatch for usage based charge [id=%s,cost_basis_id=%s,edge_id=%s]", entity.ID, *entity.CostBasisID, entity.Edges.CostBasis.ID)
+		}
+
+		mappedCostBasis, err := costbasis.Get(entity.Edges.CostBasis)
+		if err != nil {
+			return usagebased.ChargeBase{}, fmt.Errorf("mapping cost basis: %w", err)
+		}
+
+		costBasisID = lo.ToPtr(*entity.CostBasisID)
+		costBasisIntent = &mappedCostBasis.Intent
+		resolvedCostBasis = mappedCostBasis.State
+	} else if entity.Edges.CostBasis != nil {
+		return usagebased.ChargeBase{}, fmt.Errorf("cost basis edge loaded without a reference for usage based charge [id=%s,edge_id=%s]", entity.ID, entity.Edges.CostBasis.ID)
+	}
+
+	intent := usagebased.Intent{
+		Intent:     chargeMeta.Intent,
+		FeatureKey: entity.FeatureKey,
+		CostBasis:  costBasisIntent,
+		IntentMutableFields: usagebased.IntentMutableFields{
+			IntentMutableFields: chargeMeta.IntentMutableFields,
+			InvoiceAt:           entity.InvoiceAt.UTC(),
+			IntentDeletedAt:     convert.TimePtrIn(entity.IntentDeletedAt, time.UTC),
+			Discounts:           lo.FromPtr(entity.Discounts),
+			Price:               lo.FromPtr(entity.Price),
+			UnitConfig:          entity.UnitConfig,
+		},
+		SettlementMode: entity.SettlementMode,
+	}
+
+	return usagebased.ChargeBase{
+		ManagedResource:  chargeMeta.ManagedResource,
+		Status:           entity.StatusDetailed,
+		ValidationIssues: chargeMeta.ValidationIssues,
+		Intent:           usagebased.NewOverridableIntent(intent, fromDBOverride(entity.Edges.IntentOverride)),
+		State: usagebased.State{
+			CurrentRealizationRunID: entity.CurrentRealizationRunID,
+			AdvanceAfter:            entity.AdvanceAfter,
+			FeatureID:               lo.FromPtr(entity.FeatureID),
+			RatingEngine:            entity.RatingEngine,
+			CostBasisID:             costBasisID,
+			ResolvedCostBasis:       resolvedCostBasis,
+		},
+	}, nil
+}
+
+func fromDBRuns(entity *entdb.ChargeUsageBased) (usagebased.RealizationRuns, error) {
+	dbRuns, err := entity.Edges.RunsOrErr()
+	if err != nil {
+		return nil, fmt.Errorf("mapping usage based charge [id=%s]: %w", entity.ID, err)
+	}
+
+	runs, err := slicesx.MapWithErr(dbRuns, func(run *entdb.ChargeUsageBasedRuns) (usagebased.RealizationRun, error) {
+		return fromDBRun(run)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("mapping usage based charge [id=%s]: %w", entity.ID, err)
+	}
+
+	if len(runs) == 0 {
+		// Force nil value for easier testing
+		runs = nil
+	}
+
+	// Let's keep the runs sorted by period end.
+	slices.SortStableFunc(runs, func(a, b usagebased.RealizationRun) int {
+		return cmp.Compare(a.ServicePeriodTo.UnixNano(), b.ServicePeriodTo.UnixNano())
+	})
+
+	return runs, nil
+}
+
+func fromDBRunBase(dbRun *entdb.ChargeUsageBasedRuns) (usagebased.RealizationRunBase, error) {
+	if dbRun.SchemaLevel != usagebased.CurrentRealizationRunSchemaLevel {
+		return usagebased.RealizationRunBase{}, fmt.Errorf("unsupported usage-based realization run schema level: %d", dbRun.SchemaLevel)
+	}
+
+	var priorRunID *usagebased.RealizationRunID
+	if dbRun.PriorRunID != nil {
+		if *dbRun.PriorRunID == dbRun.ID {
+			return usagebased.RealizationRunBase{}, fmt.Errorf("usage-based realization run cannot reference itself as prior run [id=%s]", dbRun.ID)
+		}
+
+		priorRunID = &usagebased.RealizationRunID{
+			Namespace: dbRun.Namespace,
+			ID:        *dbRun.PriorRunID,
+		}
+	}
+
+	return usagebased.RealizationRunBase{
+		ID: usagebased.RealizationRunID{
+			Namespace: dbRun.Namespace,
+			ID:        dbRun.ID,
+		},
+		ManagedModel: entutils.MapTimeMixinFromDB(dbRun),
+
+		FeatureID:                             dbRun.FeatureID,
+		LineID:                                dbRun.LineID,
+		InvoiceID:                             dbRun.InvoiceID,
+		Type:                                  dbRun.Type,
+		InitialType:                           dbRun.InitialType,
+		StoredAtLT:                            dbRun.StoredAtLt.UTC(),
+		ServicePeriodTo:                       dbRun.ServicePeriodTo.UTC(),
+		PriorRunID:                            priorRunID,
+		MeteredQuantity:                       dbRun.MeteredQuantity,
+		Totals:                                totals.FromDB(dbRun),
+		NoFiatTransactionRequired:             dbRun.NoFiatTransactionRequired,
+		Immutable:                             dbRun.Immutable,
+		FiatOverageCreditAllocationCompleted:  dbRun.FiatOverageCreditAllocationCompleted,
+		DetailedLinesIncludeCreditAllocations: dbRun.DetailedLinesIncludeCreditAllocations,
+	}, nil
+}
+
+func fromDBRun(dbRun *entdb.ChargeUsageBasedRuns) (usagebased.RealizationRun, error) {
+	base, err := fromDBRunBase(dbRun)
+	if err != nil {
+		return usagebased.RealizationRun{}, err
+	}
+
+	run := usagebased.RealizationRun{
+		RealizationRunBase: base,
+	}
+
+	run.CreditsAllocated, err = creditrealization.FromDBRealizationsOrErr(dbRun.Edges.CreditAllocationsOrErr())
+	if err != nil {
+		return usagebased.RealizationRun{}, fmt.Errorf("mapping credit realizations for usage based charge run [id=%s]: %w", dbRun.ID, err)
+	}
+
+	run.FiatOverageCreditRealizations, err = creditrealization.FromDBRealizationsOrErr(dbRun.Edges.FiatOverageCreditAllocationsOrErr())
+	if err != nil {
+		return usagebased.RealizationRun{}, fmt.Errorf("mapping fiat overage credit realizations for usage based charge run [id=%s]: %w", dbRun.ID, err)
+	}
+
+	dbInvoiceUsage, err := dbRun.Edges.InvoicedUsageOrErr()
+	if _, ok := lo.ErrorsAs[*entdb.NotLoadedError](err); ok {
+		return usagebased.RealizationRun{}, fmt.Errorf("invoice usage not loaded for usage based charge run [id=%s]", dbRun.ID)
+	}
+
+	if dbInvoiceUsage != nil {
+		run.InvoiceUsage = lo.ToPtr(invoicedusage.MapAccruedUsageFromDB(dbInvoiceUsage))
+	}
+
+	dbPayment, err := dbRun.Edges.PaymentOrErr()
+	if _, ok := lo.ErrorsAs[*entdb.NotLoadedError](err); ok {
+		return usagebased.RealizationRun{}, fmt.Errorf("payment not loaded for usage based charge run [id=%s]", dbRun.ID)
+	}
+
+	if dbPayment != nil {
+		run.Payment = lo.ToPtr(payment.MapInvoicedFromDB(dbPayment))
+	}
+
+	return run, nil
+}

@@ -1,0 +1,731 @@
+package adapter
+
+import (
+	"log/slog"
+	"testing"
+	"time"
+
+	"github.com/alpacahq/alpacadecimal"
+	"github.com/oklog/ulid/v2"
+	"github.com/samber/lo"
+	"github.com/samber/mo"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	chargesmeta "github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	metaadapter "github.com/openmeterio/openmeter/openmeter/billing/charges/meta/adapter"
+	chargedetailedline "github.com/openmeterio/openmeter/openmeter/billing/charges/models/detailedline"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased"
+	"github.com/openmeterio/openmeter/openmeter/billing/models/stddetailedline"
+	"github.com/openmeterio/openmeter/openmeter/billing/models/totals"
+	currenciestestutils "github.com/openmeterio/openmeter/openmeter/currencies/testutils"
+	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
+	dbchargeusagebasedrundetailedline "github.com/openmeterio/openmeter/openmeter/ent/db/chargeusagebasedrundetailedline"
+	dbchargeusagebasedruns "github.com/openmeterio/openmeter/openmeter/ent/db/chargeusagebasedruns"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	taxcodetestutils "github.com/openmeterio/openmeter/openmeter/taxcode/testutils"
+	"github.com/openmeterio/openmeter/openmeter/testutils"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+func TestDetailedLineAdapter(t *testing.T) {
+	suite.Run(t, new(DetailedLineAdapterSuite))
+}
+
+type DetailedLineAdapterSuite struct {
+	suite.Suite
+
+	testDB   *testutils.TestDB
+	dbClient *entdb.Client
+	adapter  usagebased.Adapter
+
+	taxCodeEnv *taxcodetestutils.TestEnv
+}
+
+type newDetailedLineInput struct {
+	Charge                 usagebased.Charge
+	RunID                  usagebased.RealizationRunID
+	ServicePeriod          timeutil.ClosedPeriod
+	ChildUniqueReferenceID string
+	PricerReferenceID      string
+	CorrectsRunID          *string
+	Quantity               int64
+	Description            *string
+	AmountDiscounts        chargedetailedline.AmountDiscounts
+}
+
+func (s *DetailedLineAdapterSuite) SetupSuite() {
+	t := s.T()
+
+	s.testDB = testutils.InitPostgresDB(t, testutils.PostgresDBStateAtlasMigrated)
+	s.dbClient = entdb.NewClient(entdb.Driver(s.testDB.EntDriver.Driver()))
+
+	metaAdapter, err := metaadapter.New(metaadapter.Config{
+		Client: s.dbClient,
+		Logger: slog.Default(),
+	})
+	require.NoError(t, err)
+
+	a, err := New(Config{
+		Client:      s.dbClient,
+		Logger:      slog.Default(),
+		MetaAdapter: metaAdapter,
+	})
+	require.NoError(t, err)
+
+	s.adapter = a
+	s.taxCodeEnv = taxcodetestutils.NewTestEnvFromClient(t, s.dbClient, slog.Default())
+}
+
+func (s *DetailedLineAdapterSuite) TearDownSuite() {
+	s.dbClient.Close()
+	s.testDB.EntDriver.Close()
+	s.testDB.PGDriver.Close()
+}
+
+func (s *DetailedLineAdapterSuite) TestUpsertRunDetailedLinesReplacesAndSoftDeletesByChildUniqueReferenceID() {
+	ctx := s.T().Context()
+	namespace := "usagebased-detailedline-adapter"
+	customerID := s.createCustomer(namespace)
+	taxCodeID := s.taxCodeEnv.CreateTaxCode(s.T(), namespace).ID
+	s.createFeature(namespace, "feature-1")
+
+	servicePeriod := timeutil.ClosedPeriod{
+		From: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:   time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	createdCharges, err := s.adapter.CreateCharges(ctx, usagebased.CreateChargesAdapterInput{
+		Namespace: namespace,
+		Intents: []usagebased.CreateIntentAdapterInput{
+			{
+				Intent: usagebased.Intent{
+					Intent: chargesmeta.Intent{
+						ManagedBy:         billing.SubscriptionManagedLine,
+						UniqueReferenceID: nil,
+						CustomerID:        customerID,
+						Currency:          currenciestestutils.NewFiatCurrency(s.T(), "USD"),
+						TaxConfig: productcatalog.TaxCodeConfig{
+							TaxCodeID: taxCodeID,
+						},
+					},
+					IntentMutableFields: usagebased.IntentMutableFields{
+						IntentMutableFields: chargesmeta.IntentMutableFields{
+							Name:              "usage-charge",
+							ServicePeriod:     servicePeriod,
+							FullServicePeriod: servicePeriod,
+							BillingPeriod:     servicePeriod,
+						},
+						InvoiceAt: servicePeriod.To,
+						Price: *productcatalog.NewPriceFrom(productcatalog.UnitPrice{
+							Amount: alpacadecimal.NewFromFloat(0.1),
+						}),
+					},
+					SettlementMode: productcatalog.CreditOnlySettlementMode,
+					FeatureKey:     "feature-1",
+				}.AsOverridableIntent(),
+				FeatureID:    "feature-1",
+				RatingEngine: usagebased.RatingEngineDelta,
+			},
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(createdCharges, 1)
+	s.Require().Equal(usagebased.RatingEngineDelta, createdCharges[0].State.RatingEngine)
+
+	charge := createdCharges[0]
+	correctedRunBase, err := s.adapter.CreateRealizationRun(ctx, charge.GetChargeID(), usagebased.CreateRealizationRunAdapterInput{
+		CreateRealizationRunInput: usagebased.CreateRealizationRunInput{
+			FeatureID:       "feature-1",
+			Type:            usagebased.RealizationRunTypePartialInvoice,
+			StoredAtLT:      servicePeriod.From,
+			ServicePeriodTo: servicePeriod.From,
+			MeteredQuantity: alpacadecimal.NewFromInt(0),
+			Totals:          totals.Totals{},
+		},
+	})
+	s.Require().NoError(err)
+
+	runBase, err := s.adapter.CreateRealizationRun(ctx, charge.GetChargeID(), usagebased.CreateRealizationRunAdapterInput{
+		CreateRealizationRunInput: usagebased.CreateRealizationRunInput{
+			FeatureID:       "feature-1",
+			Type:            usagebased.RealizationRunTypeFinalRealization,
+			StoredAtLT:      servicePeriod.To,
+			ServicePeriodTo: servicePeriod.To,
+			MeteredQuantity: alpacadecimal.NewFromInt(10),
+			Totals: totals.Totals{
+				Amount:       alpacadecimal.NewFromInt(1),
+				ChargesTotal: alpacadecimal.NewFromInt(1),
+				Total:        alpacadecimal.NewFromInt(1),
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	initialLines := usagebased.DetailedLines{
+		s.newDetailedLine(newDetailedLineInput{
+			Charge:                 charge,
+			RunID:                  runBase.ID,
+			ServicePeriod:          servicePeriod,
+			ChildUniqueReferenceID: "keep@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]",
+			Quantity:               1,
+			Description:            lo.ToPtr("old description"),
+			AmountDiscounts: chargedetailedline.AmountDiscounts{
+				{
+					ChildUniqueReferenceID: "maximum-spend",
+					Reason:                 billing.NewDiscountReasonFrom(billing.MaximumSpendDiscount{}),
+					Amount:                 alpacadecimal.NewFromFloat(0.03),
+				},
+			},
+		}),
+		s.newDetailedLine(newDetailedLineInput{
+			Charge:                 charge,
+			RunID:                  runBase.ID,
+			ServicePeriod:          servicePeriod,
+			ChildUniqueReferenceID: "delete@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]",
+			Quantity:               2,
+			Description:            lo.ToPtr("delete me"),
+		}),
+	}
+	s.Require().NoError(s.adapter.UpsertRunDetailedLines(ctx, usagebased.UpsertRunDetailedLinesInput{
+		ChargeID:      charge.GetChargeID(),
+		RunID:         runBase.ID,
+		DetailedLines: initialLines,
+	}))
+
+	initialKeepRow, err := s.dbClient.ChargeUsageBasedRunDetailedLine.Query().
+		Where(
+			dbchargeusagebasedrundetailedline.NamespaceEQ(namespace),
+			dbchargeusagebasedrundetailedline.ChargeIDEQ(charge.ID),
+			dbchargeusagebasedrundetailedline.RunIDEQ(runBase.ID.ID),
+			dbchargeusagebasedrundetailedline.ChildUniqueReferenceIDEQ("keep@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]"),
+			dbchargeusagebasedrundetailedline.DeletedAtIsNil(),
+		).
+		Only(ctx)
+	s.Require().NoError(err)
+	s.Require().Len(initialKeepRow.AmountDiscounts, 1)
+	s.Require().Equal(float64(0.03), initialKeepRow.AmountDiscounts[0].Amount.InexactFloat64())
+
+	replacementLines := usagebased.DetailedLines{
+		s.newDetailedLine(newDetailedLineInput{
+			Charge:                 charge,
+			RunID:                  runBase.ID,
+			ServicePeriod:          servicePeriod,
+			ChildUniqueReferenceID: "keep@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]",
+			PricerReferenceID:      "keep-pricer-reference",
+			Quantity:               3,
+			AmountDiscounts:        chargedetailedline.AmountDiscounts{},
+		}),
+		s.newDetailedLine(newDetailedLineInput{
+			Charge:                 charge,
+			RunID:                  runBase.ID,
+			ServicePeriod:          servicePeriod,
+			ChildUniqueReferenceID: "new@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]",
+			CorrectsRunID:          lo.ToPtr(correctedRunBase.ID.ID),
+			Quantity:               -4,
+			Description:            lo.ToPtr("new description"),
+			AmountDiscounts: chargedetailedline.AmountDiscounts{
+				{
+					ChildUniqueReferenceID: "maximum-spend-reversal",
+					Reason:                 billing.NewDiscountReasonFrom(billing.MaximumSpendDiscount{}),
+					Amount:                 alpacadecimal.NewFromFloat(-0.02),
+					RoundingAmount:         alpacadecimal.NewFromFloat(-0.01),
+				},
+			},
+		}),
+	}
+	s.Require().NoError(s.adapter.UpsertRunDetailedLines(ctx, usagebased.UpsertRunDetailedLinesInput{
+		ChargeID:      charge.GetChargeID(),
+		RunID:         runBase.ID,
+		DetailedLines: replacementLines,
+	}))
+
+	replacedKeepRow, err := s.dbClient.ChargeUsageBasedRunDetailedLine.Query().
+		Where(
+			dbchargeusagebasedrundetailedline.NamespaceEQ(namespace),
+			dbchargeusagebasedrundetailedline.ChargeIDEQ(charge.ID),
+			dbchargeusagebasedrundetailedline.RunIDEQ(runBase.ID.ID),
+			dbchargeusagebasedrundetailedline.ChildUniqueReferenceIDEQ("keep@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]"),
+			dbchargeusagebasedrundetailedline.DeletedAtIsNil(),
+		).
+		Only(ctx)
+	s.Require().NoError(err)
+	s.Equal(initialKeepRow.ID, replacedKeepRow.ID)
+	s.Empty(replacedKeepRow.AmountDiscounts)
+
+	fetchedCharge, err := s.adapter.GetByID(ctx, usagebased.GetByIDInput{
+		ChargeID: charge.GetChargeID(),
+		Expands: chargesmeta.Expands{
+			chargesmeta.ExpandRealizations,
+			chargesmeta.ExpandDetailedLines,
+		},
+	})
+	s.Require().NoError(err)
+	fetchedRun, ok := lo.Find(fetchedCharge.Realizations, func(run usagebased.RealizationRun) bool {
+		return run.ID.ID == runBase.ID.ID
+	})
+	s.Require().True(ok)
+	s.True(fetchedRun.DetailedLines.IsPresent())
+	s.Len(fetchedRun.DetailedLines.OrEmpty(), 2)
+	s.Equal("keep@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]", fetchedRun.DetailedLines.OrEmpty()[0].ChildUniqueReferenceID)
+	s.Equal("new@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]", fetchedRun.DetailedLines.OrEmpty()[1].ChildUniqueReferenceID)
+	s.Equal("keep-pricer-reference", fetchedRun.DetailedLines.OrEmpty()[0].PricerReferenceID)
+	s.Equal("new@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]", fetchedRun.DetailedLines.OrEmpty()[1].PricerReferenceID)
+	s.Equal(float64(3), fetchedRun.DetailedLines.OrEmpty()[0].Quantity.InexactFloat64())
+	s.Nil(fetchedRun.DetailedLines.OrEmpty()[0].Description)
+	s.Nil(fetchedRun.DetailedLines.OrEmpty()[0].CorrectsRunID)
+	s.Empty(fetchedRun.DetailedLines.OrEmpty()[0].AmountDiscounts)
+	s.Equal(float64(-4), fetchedRun.DetailedLines.OrEmpty()[1].Quantity.InexactFloat64())
+	s.Equal(lo.ToPtr(correctedRunBase.ID.ID), fetchedRun.DetailedLines.OrEmpty()[1].CorrectsRunID)
+	newDiscounts := fetchedRun.DetailedLines.OrEmpty()[1].AmountDiscounts
+	s.Require().Len(newDiscounts, 1)
+	s.Require().Equal(float64(-0.02), newDiscounts[0].Amount.InexactFloat64())
+	s.Require().Equal(float64(-0.01), newDiscounts[0].RoundingAmount.InexactFloat64())
+
+	_, err = s.dbClient.ChargeUsageBasedRunDetailedLine.UpdateOneID(replacedKeepRow.ID).
+		ClearAmountDiscounts().
+		Save(ctx)
+	s.Require().NoError(err)
+
+	fetchedCharge, err = s.adapter.GetByID(ctx, usagebased.GetByIDInput{
+		ChargeID: charge.GetChargeID(),
+		Expands: chargesmeta.Expands{
+			chargesmeta.ExpandRealizations,
+			chargesmeta.ExpandDetailedLines,
+		},
+	})
+	s.Require().NoError(err)
+	fetchedRun, ok = lo.Find(fetchedCharge.Realizations, func(run usagebased.RealizationRun) bool {
+		return run.ID.ID == runBase.ID.ID
+	})
+	s.Require().True(ok)
+	s.Empty(fetchedRun.DetailedLines.OrEmpty()[0].AmountDiscounts)
+
+	deletedRow, err := s.dbClient.ChargeUsageBasedRunDetailedLine.Query().
+		Where(
+			dbchargeusagebasedrundetailedline.NamespaceEQ(namespace),
+			dbchargeusagebasedrundetailedline.ChargeIDEQ(charge.ID),
+			dbchargeusagebasedrundetailedline.RunIDEQ(runBase.ID.ID),
+			dbchargeusagebasedrundetailedline.ChildUniqueReferenceIDEQ("delete@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]"),
+		).
+		Only(ctx)
+	s.Require().NoError(err)
+	s.NotNil(deletedRow.DeletedAt)
+}
+
+func (s *DetailedLineAdapterSuite) TestFetchDetailedLinesUsesDetailedLinesPresentFlag() {
+	ctx := s.T().Context()
+	namespace := "usagebased-detailedline-adapter-fetch-flag"
+	charge, runBase, _ := s.createChargeWithRun(namespace)
+
+	fetchedWithoutMaterializedLines, err := s.adapter.GetByID(ctx, usagebased.GetByIDInput{
+		ChargeID: charge.GetChargeID(),
+		Expands: chargesmeta.Expands{
+			chargesmeta.ExpandRealizations,
+			chargesmeta.ExpandDetailedLines,
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(fetchedWithoutMaterializedLines.Realizations, 1)
+	s.False(fetchedWithoutMaterializedLines.Realizations[0].DetailedLines.IsPresent())
+
+	s.Require().NoError(s.adapter.UpsertRunDetailedLines(ctx, usagebased.UpsertRunDetailedLinesInput{
+		ChargeID: charge.GetChargeID(),
+		RunID:    runBase.ID,
+	}))
+
+	fetchedWithMaterializedEmptyLines, err := s.adapter.GetByID(ctx, usagebased.GetByIDInput{
+		ChargeID: charge.GetChargeID(),
+		Expands: chargesmeta.Expands{
+			chargesmeta.ExpandRealizations,
+			chargesmeta.ExpandDetailedLines,
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(fetchedWithMaterializedEmptyLines.Realizations, 1)
+	s.True(fetchedWithMaterializedEmptyLines.Realizations[0].DetailedLines.IsPresent())
+	s.Empty(fetchedWithMaterializedEmptyLines.Realizations[0].DetailedLines.OrEmpty())
+
+	dbRun, err := s.dbClient.ChargeUsageBasedRuns.Query().
+		Where(
+			dbchargeusagebasedruns.NamespaceEQ(namespace),
+			dbchargeusagebasedruns.ID(runBase.ID.ID),
+		).
+		Only(ctx)
+	s.Require().NoError(err)
+	s.True(dbRun.DetailedLinesPresent)
+}
+
+func (s *DetailedLineAdapterSuite) TestFetchDetailedLinesDoesNotRepairDetailedLinesPresentFlagWhenRowsExist() {
+	ctx := s.T().Context()
+	namespace := "usagebased-detailedline-adapter-fetch-does-not-repair-flag"
+	charge, runBase, servicePeriod := s.createChargeWithRun(namespace)
+
+	s.Require().NoError(s.adapter.UpsertRunDetailedLines(ctx, usagebased.UpsertRunDetailedLinesInput{
+		ChargeID: charge.GetChargeID(),
+		RunID:    runBase.ID,
+		DetailedLines: usagebased.DetailedLines{
+			s.newDetailedLine(newDetailedLineInput{
+				Charge:                 charge,
+				RunID:                  runBase.ID,
+				ServicePeriod:          servicePeriod,
+				ChildUniqueReferenceID: "existing@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]",
+				Quantity:               1,
+			}),
+		},
+	}))
+
+	_, err := s.dbClient.ChargeUsageBasedRuns.UpdateOneID(runBase.ID.ID).
+		Where(dbchargeusagebasedruns.NamespaceEQ(namespace)).
+		SetDetailedLinesPresent(false).
+		Save(ctx)
+	s.Require().NoError(err)
+
+	fetchedCharge, err := s.adapter.GetByID(ctx, usagebased.GetByIDInput{
+		ChargeID: charge.GetChargeID(),
+		Expands: chargesmeta.Expands{
+			chargesmeta.ExpandRealizations,
+			chargesmeta.ExpandDetailedLines,
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(fetchedCharge.Realizations, 1)
+	s.False(fetchedCharge.Realizations[0].DetailedLines.IsPresent())
+
+	dbRun, err := s.dbClient.ChargeUsageBasedRuns.Query().
+		Where(
+			dbchargeusagebasedruns.NamespaceEQ(namespace),
+			dbchargeusagebasedruns.ID(runBase.ID.ID),
+		).
+		Only(ctx)
+	s.Require().NoError(err)
+	s.False(dbRun.DetailedLinesPresent)
+}
+
+func (s *DetailedLineAdapterSuite) TestFetchDetailedLinesUsesPersistedDetailedLinesPresentFlag() {
+	ctx := s.T().Context()
+	namespace := "usagebased-detailedline-adapter-fetch-uses-persisted-flag"
+	charge, runBase, servicePeriod := s.createChargeWithRun(namespace)
+
+	s.Require().NoError(s.adapter.UpsertRunDetailedLines(ctx, usagebased.UpsertRunDetailedLinesInput{
+		ChargeID: charge.GetChargeID(),
+		RunID:    runBase.ID,
+		DetailedLines: usagebased.DetailedLines{
+			s.newDetailedLine(newDetailedLineInput{
+				Charge:                 charge,
+				RunID:                  runBase.ID,
+				ServicePeriod:          servicePeriod,
+				ChildUniqueReferenceID: "persisted@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]",
+				Quantity:               1,
+			}),
+		},
+	}))
+
+	_, err := s.dbClient.ChargeUsageBasedRuns.UpdateOneID(runBase.ID.ID).
+		Where(dbchargeusagebasedruns.NamespaceEQ(namespace)).
+		SetDetailedLinesPresent(false).
+		Save(ctx)
+	s.Require().NoError(err)
+
+	staleCharge := charge
+	staleCharge.Realizations = usagebased.RealizationRuns{
+		{
+			RealizationRunBase: runBase,
+		},
+	}
+	staleCharge.Realizations[0].DetailedLines = mo.Some(usagebased.DetailedLines{
+		s.newDetailedLine(newDetailedLineInput{
+			Charge:                 charge,
+			RunID:                  runBase.ID,
+			ServicePeriod:          servicePeriod,
+			ChildUniqueReferenceID: "stale@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]",
+			Quantity:               1,
+		}),
+	})
+
+	fetchedCharge, err := s.adapter.FetchDetailedLines(ctx, staleCharge)
+	s.Require().NoError(err)
+	s.Require().Len(fetchedCharge.Realizations, 1)
+	s.False(fetchedCharge.Realizations[0].DetailedLines.IsPresent())
+}
+
+func (s *DetailedLineAdapterSuite) TestFetchDetailedLinesClearsStaleDetailedLinesWhenRunMetadataIsMissing() {
+	ctx := s.T().Context()
+	namespace := "usagebased-detailedline-adapter-fetch-missing-run-metadata"
+	charge, runBase, servicePeriod := s.createChargeWithRun(namespace)
+
+	missingRunBase := runBase
+	missingRunBase.ID.ID = ulid.Make().String()
+
+	staleCharge := charge
+	staleCharge.Realizations = usagebased.RealizationRuns{
+		{
+			RealizationRunBase: missingRunBase,
+			DetailedLines: mo.Some(usagebased.DetailedLines{
+				s.newDetailedLine(newDetailedLineInput{
+					Charge:                 charge,
+					RunID:                  missingRunBase.ID,
+					ServicePeriod:          servicePeriod,
+					ChildUniqueReferenceID: "stale@[2026-01-01T00:00:00Z..2026-02-01T00:00:00Z]",
+					Quantity:               1,
+				}),
+			}),
+		},
+	}
+
+	fetchedCharge, err := s.adapter.FetchDetailedLines(ctx, staleCharge)
+	s.Require().NoError(err)
+	s.Require().Len(fetchedCharge.Realizations, 1)
+	s.False(fetchedCharge.Realizations[0].DetailedLines.IsPresent())
+}
+
+func (s *DetailedLineAdapterSuite) TestExpandRealizationsExcludesDeletedRuns() {
+	ctx := s.T().Context()
+	namespace := "usagebased-realizations-exclude-deleted-runs"
+	charge, runBase, servicePeriod := s.createChargeWithRun(namespace)
+
+	deletedRunBase, err := s.adapter.CreateRealizationRun(ctx, charge.GetChargeID(), usagebased.CreateRealizationRunAdapterInput{
+		CreateRealizationRunInput: usagebased.CreateRealizationRunInput{
+			FeatureID:       runBase.FeatureID,
+			Type:            usagebased.RealizationRunTypePartialInvoice,
+			StoredAtLT:      servicePeriod.From,
+			ServicePeriodTo: servicePeriod.From,
+			MeteredQuantity: alpacadecimal.Zero,
+			Totals:          totals.Totals{},
+		},
+	})
+	s.Require().NoError(err)
+
+	_, err = s.adapter.UpdateRealizationRun(ctx, usagebased.UpdateRealizationRunInput{
+		ID:        deletedRunBase.ID,
+		DeletedAt: mo.Some(lo.ToPtr(time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC))),
+	})
+	s.Require().NoError(err)
+
+	fetchedCharge, err := s.adapter.GetByID(ctx, usagebased.GetByIDInput{
+		ChargeID: charge.GetChargeID(),
+		Expands:  chargesmeta.Expands{chargesmeta.ExpandRealizations},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(fetchedCharge.Realizations, 1)
+	s.Equal(runBase.ID, fetchedCharge.Realizations[0].ID)
+}
+
+func (s *DetailedLineAdapterSuite) TestRealizationRunImmutableFlag() {
+	ctx := s.T().Context()
+	charge, _, servicePeriod := s.createChargeWithRun("usagebased-run-immutable")
+
+	createdRun, err := s.adapter.CreateRealizationRun(ctx, charge.GetChargeID(), usagebased.CreateRealizationRunAdapterInput{
+		CreateRealizationRunInput: usagebased.CreateRealizationRunInput{
+			FeatureID:       charge.State.FeatureID,
+			Type:            usagebased.RealizationRunTypePartialInvoice,
+			StoredAtLT:      servicePeriod.To,
+			ServicePeriodTo: servicePeriod.To,
+			MeteredQuantity: alpacadecimal.Zero,
+			Totals:          totals.Totals{},
+		},
+	})
+	s.Require().NoError(err)
+	s.False(createdRun.Immutable)
+
+	updatedRun, err := s.adapter.UpdateRealizationRun(ctx, usagebased.UpdateRealizationRunInput{
+		ID:        createdRun.ID,
+		Immutable: mo.Some(true),
+	})
+	s.Require().NoError(err)
+	s.True(updatedRun.Immutable)
+
+	fetchedCharge, err := s.adapter.GetByID(ctx, usagebased.GetByIDInput{
+		ChargeID: charge.GetChargeID(),
+		Expands:  chargesmeta.Expands{chargesmeta.ExpandRealizations},
+	})
+	s.Require().NoError(err)
+	fetchedRun, ok := lo.Find(fetchedCharge.Realizations, func(run usagebased.RealizationRun) bool {
+		return run.ID == createdRun.ID
+	})
+	s.Require().True(ok)
+	s.True(fetchedRun.Immutable)
+}
+
+func (s *DetailedLineAdapterSuite) createChargeWithRun(namespace string) (usagebased.Charge, usagebased.RealizationRunBase, timeutil.ClosedPeriod) {
+	s.T().Helper()
+
+	featureID := ulid.Make().String()
+	customerID := s.createCustomer(namespace)
+	taxCodeID := s.taxCodeEnv.CreateTaxCode(s.T(), namespace).ID
+	s.createFeature(namespace, featureID)
+
+	servicePeriod := timeutil.ClosedPeriod{
+		From: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:   time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	createdCharges, err := s.adapter.CreateCharges(s.T().Context(), usagebased.CreateChargesAdapterInput{
+		Namespace: namespace,
+		Intents: []usagebased.CreateIntentAdapterInput{
+			{
+				Intent: usagebased.Intent{
+					Intent: chargesmeta.Intent{
+						ManagedBy:         billing.SubscriptionManagedLine,
+						UniqueReferenceID: nil,
+						CustomerID:        customerID,
+						Currency:          currenciestestutils.NewFiatCurrency(s.T(), "USD"),
+						TaxConfig: productcatalog.TaxCodeConfig{
+							TaxCodeID: taxCodeID,
+						},
+					},
+					IntentMutableFields: usagebased.IntentMutableFields{
+						IntentMutableFields: chargesmeta.IntentMutableFields{
+							Name:              "usage-charge",
+							ServicePeriod:     servicePeriod,
+							FullServicePeriod: servicePeriod,
+							BillingPeriod:     servicePeriod,
+						},
+						InvoiceAt: servicePeriod.To,
+						Price: *productcatalog.NewPriceFrom(productcatalog.UnitPrice{
+							Amount: alpacadecimal.NewFromFloat(0.1),
+						}),
+					},
+					SettlementMode: productcatalog.CreditOnlySettlementMode,
+					FeatureKey:     featureID,
+				}.AsOverridableIntent(),
+				FeatureID:    featureID,
+				RatingEngine: usagebased.RatingEngineDelta,
+			},
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(createdCharges, 1)
+	s.Require().Equal(usagebased.RatingEngineDelta, createdCharges[0].State.RatingEngine)
+
+	charge := createdCharges[0]
+	runBase, err := s.adapter.CreateRealizationRun(s.T().Context(), charge.GetChargeID(), usagebased.CreateRealizationRunAdapterInput{
+		CreateRealizationRunInput: usagebased.CreateRealizationRunInput{
+			FeatureID:       featureID,
+			Type:            usagebased.RealizationRunTypeFinalRealization,
+			StoredAtLT:      servicePeriod.To,
+			ServicePeriodTo: servicePeriod.To,
+			MeteredQuantity: alpacadecimal.NewFromInt(10),
+			Totals: totals.Totals{
+				Amount:       alpacadecimal.NewFromInt(1),
+				ChargesTotal: alpacadecimal.NewFromInt(1),
+				Total:        alpacadecimal.NewFromInt(1),
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	return charge, runBase, servicePeriod
+}
+
+func (s *DetailedLineAdapterSuite) TestCreateRealizationRunPersistsPriorRunSchema() {
+	ctx := s.T().Context()
+	charge, firstRun, servicePeriod := s.createChargeWithRun("usagebased-run-lineage-" + ulid.Make().String())
+
+	s.Require().Nil(firstRun.PriorRunID)
+
+	secondRun, err := s.adapter.CreateRealizationRun(ctx, charge.GetChargeID(), usagebased.CreateRealizationRunAdapterInput{
+		CreateRealizationRunInput: usagebased.CreateRealizationRunInput{
+			FeatureID:       charge.State.FeatureID,
+			Type:            usagebased.RealizationRunTypeFinalRealization,
+			StoredAtLT:      servicePeriod.To,
+			ServicePeriodTo: servicePeriod.To,
+			MeteredQuantity: alpacadecimal.NewFromInt(10),
+			Totals: totals.Totals{
+				Amount:       alpacadecimal.NewFromInt(1),
+				ChargesTotal: alpacadecimal.NewFromInt(1),
+				Total:        alpacadecimal.NewFromInt(1),
+			},
+		},
+		PriorRunID: &firstRun.ID,
+	})
+	s.Require().NoError(err)
+	s.Require().Equal(&firstRun.ID, secondRun.PriorRunID)
+
+	persisted, err := s.dbClient.ChargeUsageBasedRuns.Get(ctx, secondRun.ID.ID)
+	s.Require().NoError(err)
+	s.Equal(usagebased.CurrentRealizationRunSchemaLevel, persisted.SchemaLevel)
+	s.Equal(firstRun.ID.ID, lo.FromPtr(persisted.PriorRunID))
+}
+
+func (s *DetailedLineAdapterSuite) TestSchemaDefaultCreatesCurrentRun() {
+	ctx := s.T().Context()
+	charge, _, servicePeriod := s.createChargeWithRun("usagebased-run-current-" + ulid.Make().String())
+
+	create := s.dbClient.ChargeUsageBasedRuns.Create().
+		SetNamespace(charge.Namespace).
+		SetChargeID(charge.ID).
+		SetFeatureID(charge.State.FeatureID).
+		SetType(usagebased.RealizationRunTypeFinalRealization).
+		SetInitialType(usagebased.RealizationRunTypeFinalRealization).
+		SetStoredAtLt(servicePeriod.To).
+		SetServicePeriodTo(servicePeriod.To).
+		SetDetailedLinesPresent(false).
+		SetMeteredQuantity(alpacadecimal.Zero).
+		SetNoFiatTransactionRequired(true)
+	create = totals.Set(create, totals.Totals{})
+
+	run, err := create.Save(ctx)
+	s.Require().NoError(err)
+	s.Equal(usagebased.CurrentRealizationRunSchemaLevel, run.SchemaLevel)
+
+	mapped, err := fromDBRunBase(run)
+	s.Require().NoError(err)
+	s.Nil(mapped.PriorRunID)
+}
+
+func (s *DetailedLineAdapterSuite) createCustomer(namespace string) string {
+	s.T().Helper()
+
+	customer, err := s.dbClient.Customer.Create().
+		SetNamespace(namespace).
+		SetName("test-customer").
+		Save(s.T().Context())
+	s.Require().NoError(err)
+
+	return customer.ID
+}
+
+func (s *DetailedLineAdapterSuite) createFeature(namespace, featureID string) {
+	s.T().Helper()
+
+	_, err := s.dbClient.Feature.Create().
+		SetNamespace(namespace).
+		SetID(featureID).
+		SetName("test-feature").
+		SetKey(featureID).
+		Save(s.T().Context())
+	s.Require().NoError(err)
+}
+
+func (s *DetailedLineAdapterSuite) newDetailedLine(input newDetailedLineInput) usagebased.DetailedLine {
+	s.T().Helper()
+
+	return usagebased.DetailedLine{
+		PricerReferenceID: lo.CoalesceOrEmpty(input.PricerReferenceID, input.ChildUniqueReferenceID),
+		Base: chargedetailedline.Base{
+			AmountDiscounts: input.AmountDiscounts,
+			Base: stddetailedline.Base{
+				ManagedResource: models.NewManagedResource(models.ManagedResourceInput{
+					Namespace:   input.Charge.Namespace,
+					Name:        "Detailed line",
+					Description: input.Description,
+				}),
+				ServicePeriod:          input.ServicePeriod,
+				ChildUniqueReferenceID: input.ChildUniqueReferenceID,
+				PaymentTerm:            productcatalog.InArrearsPaymentTerm,
+				PerUnitAmount:          alpacadecimal.NewFromFloat(0.1),
+				Quantity:               alpacadecimal.NewFromInt(input.Quantity),
+				Category:               stddetailedline.CategoryRegular,
+				Totals: totals.Totals{
+					Amount:       alpacadecimal.NewFromFloat(0.1).Mul(alpacadecimal.NewFromInt(input.Quantity)),
+					ChargesTotal: alpacadecimal.NewFromFloat(0.1).Mul(alpacadecimal.NewFromInt(input.Quantity)),
+					Total:        alpacadecimal.NewFromFloat(0.1).Mul(alpacadecimal.NewFromInt(input.Quantity)),
+				},
+			},
+		},
+		CorrectsRunID: input.CorrectsRunID,
+	}
+}

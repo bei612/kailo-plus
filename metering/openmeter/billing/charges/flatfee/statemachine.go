@@ -1,0 +1,62 @@
+package flatfee
+
+import (
+	"fmt"
+	"slices"
+
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+type Status string
+
+const (
+	StatusCreated             Status = Status(meta.ChargeStatusCreated)
+	StatusActive              Status = Status(meta.ChargeStatusActive)
+	StatusActiveClearOverride Status = "active.clear_override"
+
+	StatusActiveRealizationStarted                        Status = "active.realization.started"
+	StatusActiveRealizationWaitingForCollection           Status = "active.realization.waiting_for_collection"
+	StatusActiveRealizationProcessing                     Status = "active.realization.processing"
+	StatusActiveRealizationIssuing                        Status = "active.realization.issuing"
+	StatusActiveRealizationZeroFiatAmountOverageCompleted Status = "active.realization.zero_fiat_amount_overage_completed"
+	StatusActiveRealizationCompleted                      Status = "active.realization.completed"
+	StatusActiveAwaitingPaymentSettlement                 Status = "active.awaiting_payment_settlement"
+
+	StatusFinal                Status = Status(meta.ChargeStatusFinal)
+	StatusDeleted              Status = Status(meta.ChargeStatusDeleted)
+	StatusDeletedClearOverride Status = "deleted.clear_override"
+)
+
+func (Status) Values() []string {
+	return []string{
+		string(StatusCreated),
+		string(StatusActive),
+		string(StatusActiveClearOverride),
+		string(StatusActiveRealizationStarted),
+		string(StatusActiveRealizationWaitingForCollection),
+		string(StatusActiveRealizationProcessing),
+		string(StatusActiveRealizationIssuing),
+		string(StatusActiveRealizationZeroFiatAmountOverageCompleted),
+		string(StatusActiveRealizationCompleted),
+		string(StatusActiveAwaitingPaymentSettlement),
+		string(StatusFinal),
+		string(StatusDeleted),
+		string(StatusDeletedClearOverride),
+	}
+}
+
+func (s Status) Validate() error {
+	if !slices.Contains(s.Values(), string(s)) {
+		return models.NewGenericValidationError(fmt.Errorf("invalid status: %s", s))
+	}
+	return nil
+}
+
+func (s Status) ToMetaChargeStatus() (meta.ChargeStatus, error) {
+	if err := s.Validate(); err != nil {
+		return meta.ChargeStatusCreated, err
+	}
+
+	return meta.DetailedStatusToMetaStatus(string(s))
+}

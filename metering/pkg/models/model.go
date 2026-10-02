@@ -1,0 +1,241 @@
+package models
+
+import (
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/equal"
+)
+
+type ManagedUniqueResource struct {
+	NamespacedModel `json:",inline" mapstructure:",squash"`
+	ManagedModel    `json:",inline" mapstructure:",squash"`
+
+	// ID is the unique identifier for Resource.
+	ID string `json:"id"`
+
+	// Key is the unique key for Resource.
+	Key string `json:"key"`
+}
+
+type ManagedResource struct {
+	NamespacedModel `json:",inline" mapstructure:",squash"`
+	ManagedModel    `json:",inline" mapstructure:",squash"`
+
+	// ID is the unique identifier for Resource.
+	ID          string  `json:"id"`
+	Description *string `json:"description,omitempty"`
+	Name        string  `json:"name"`
+}
+
+func (m ManagedResource) GetID() string {
+	return m.ID
+}
+
+func (m ManagedResource) GetDescription() *string {
+	return m.Description
+}
+
+func (m ManagedResource) GetName() string {
+	return m.Name
+}
+
+type ManagedResourceInput struct {
+	ID          string
+	Namespace   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DeletedAt   *time.Time
+	Name        string
+	Description *string
+}
+
+func (r ManagedResourceInput) Validate() error {
+	if r.ID == "" {
+		return errors.New("id is required")
+	}
+
+	if r.Namespace == "" {
+		return errors.New("namespace is required")
+	}
+
+	if r.CreatedAt.IsZero() {
+		return errors.New("created at is required")
+	}
+
+	if r.UpdatedAt.IsZero() {
+		return errors.New("updated at is required")
+	}
+
+	return nil
+}
+
+func NewManagedResource(input ManagedResourceInput) ManagedResource {
+	return ManagedResource{
+		ID: input.ID,
+		NamespacedModel: NamespacedModel{
+			Namespace: input.Namespace,
+		},
+		ManagedModel: ManagedModel{
+			CreatedAt: input.CreatedAt.UTC(),
+			UpdatedAt: input.UpdatedAt.UTC(),
+			DeletedAt: func() *time.Time {
+				if input.DeletedAt == nil {
+					return nil
+				}
+
+				deletedAt := input.DeletedAt.UTC()
+
+				return &deletedAt
+			}(),
+		},
+		Name:        input.Name,
+		Description: input.Description,
+	}
+}
+
+func (r ManagedResource) Validate() error {
+	if err := r.NamespacedModel.Validate(); err != nil {
+		return fmt.Errorf("error validating namespaced model: %w", err)
+	}
+
+	if err := r.ManagedModel.Validate(); err != nil {
+		return fmt.Errorf("error validating managed model: %w", err)
+	}
+
+	if r.ID == "" {
+		return errors.New("id is required")
+	}
+
+	if r.Name == "" {
+		return errors.New("name is required")
+	}
+
+	return nil
+}
+
+type ManagedModel struct {
+	CreatedAt time.Time `json:"createdAt"`
+	// After creation the entity is considered updated.
+	UpdatedAt time.Time `json:"updatedAt"`
+	// Time of soft delete. If not null, the entity is considered deleted.
+	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+}
+
+func (m ManagedModel) Validate() error {
+	if m.CreatedAt.IsZero() {
+		return errors.New("created at is required")
+	}
+
+	if m.UpdatedAt.IsZero() {
+		return errors.New("updated at is required")
+	}
+
+	return nil
+}
+
+func (m ManagedModel) IsDeleted() bool {
+	return m.IsDeletedAt(clock.Now())
+}
+
+func (m ManagedModel) IsDeletedAt(t time.Time) bool {
+	if m.DeletedAt == nil {
+		return false
+	}
+
+	return !m.DeletedAt.After(t)
+}
+
+func (m ManagedModel) Equal(other ManagedModel) bool {
+	if !m.CreatedAt.Equal(other.CreatedAt) {
+		return false
+	}
+
+	if !m.UpdatedAt.Equal(other.UpdatedAt) {
+		return false
+	}
+
+	if !equal.PtrEqual(m.DeletedAt, other.DeletedAt) {
+		return false
+	}
+
+	return true
+}
+
+func (m ManagedModel) GetCreatedAt() time.Time {
+	return m.CreatedAt
+}
+
+func (m ManagedModel) GetUpdatedAt() time.Time {
+	return m.UpdatedAt
+}
+
+func (m ManagedModel) GetDeletedAt() *time.Time {
+	return m.DeletedAt
+}
+
+type ManagedModelWithID struct {
+	ManagedModel `json:",inline" mapstructure:",squash"`
+	ID           string `json:"id"`
+}
+
+func (m ManagedModelWithID) GetID() string {
+	return m.ID
+}
+
+func (m ManagedModelWithID) Equal(other ManagedModelWithID) bool {
+	if m.ID != other.ID {
+		return false
+	}
+
+	return m.ManagedModel.Equal(other.ManagedModel)
+}
+
+func (m ManagedModelWithID) Validate() error {
+	if m.ID == "" {
+		return errors.New("id is required")
+	}
+
+	return nil
+}
+
+type NamespacedModel struct {
+	Namespace string `json:"namespace"`
+}
+
+func (m NamespacedModel) Validate() error {
+	if m.Namespace == "" {
+		return errors.New("namespace is required")
+	}
+
+	return nil
+}
+
+func (m NamespacedModel) GetNamespace() string {
+	return m.Namespace
+}
+
+type Address struct {
+	Country     *CountryCode `json:"country,omitempty"`
+	PostalCode  *string      `json:"postalCode,omitempty"`
+	State       *string      `json:"state,omitempty"`
+	City        *string      `json:"city,omitempty"`
+	Line1       *string      `json:"line1,omitempty"`
+	Line2       *string      `json:"line2,omitempty"`
+	PhoneNumber *string      `json:"phoneNumber,omitempty"`
+}
+
+// [ISO 3166-1](https://www.iso.org/iso-3166-country-codes.html) alpha-2 country code.
+type CountryCode string
+
+// VersionedModel represents a versionable entity. With each new version the sequence is incremented
+// while the key remains the same. Key + Version uniquely identifies an entity.
+type VersionedModel struct {
+	// Key is the unique identifier of the entity across its versions.
+	// Might be generated by the system or provided by the user.
+	Key string `json:"key,omitempty"`
+	// Version is the integer sequential version of the entity, starting from 1.
+	Version int `json:"version,omitempty"`
+}

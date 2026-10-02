@@ -1,0 +1,203 @@
+address: 127.0.0.1:8888
+
+environment: local
+
+termination:
+  checkInterval: 7s
+  gracefulShutdownTimeout: 43s
+  propagationTimeout: 18s
+
+telemetry:
+  address: 127.0.0.1:10000
+
+  trace:
+    sampler: always
+    exporters:
+      otlp:
+        enabled: true
+        address: 127.0.0.1:4317
+
+  metrics:
+    exporters:
+      prometheus:
+        enabled: true
+      otlp:
+        enabled: true
+        address: 127.0.0.1:4317
+
+  log:
+    format: json
+    level: info
+
+namespace:
+  default: default
+
+ingest:
+  kafka:
+    broker: 127.0.0.1:9092
+    securityProtocol: SASL_SSL
+    saslMechanisms: PLAIN
+    saslUsername: user
+    saslPassword: pass
+    partitions: 1
+    statsInterval: 5s
+    brokerAddressFamily: any
+    socketKeepAliveEnabled: true
+    topicMetadataRefreshInterval: 1m
+    debugContexts:
+      - broker
+      - topic
+      - consumer
+    topicProvisioner:
+      cacheSize: 200
+      cacheTTL: 15m
+      protectedTopics:
+        - "protected-topic-1"
+        - "protected-topic-2"
+
+aggregation:
+  clickhouse:
+    address: 127.0.0.1:9440
+    tls: true
+    username: default
+    password: default
+    database: openmeter
+
+    retry:
+      enabled: true
+
+sink:
+  groupId: openmeter-sink-worker
+  minCommitCount: 500
+  maxCommitWait: 30s
+  namespaceRefetch: 15s
+  namespaceRefetchTimeout: 9s
+  namespaceTopicRegexp: "^om_test_([A-Za-z0-9]+(?:_[A-Za-z0-9]+)*)_events$"
+  dedupe:
+    enabled: true
+    driver: redis
+    config:
+      expiration: 768h # 32d
+      database: 0
+      address: 127.0.0.1:6379
+      username: default
+      password: pass
+      tls:
+        enabled: true
+  kafka:
+    brokers: 127.0.0.1:9092
+    securityProtocol: SASL_SSL
+    saslMechanisms: PLAIN
+    saslUsername: user
+    saslPassword: pass
+    statsInterval: 5s
+    brokerAddressFamily: any
+    socketKeepAliveEnabled: true
+    topicMetadataRefreshInterval: 1m
+    debugContexts:
+      - broker
+      - topic
+      - consumer
+    clientID: kafka-client-1
+    clientRack: use1-az1
+    consumerGroupID: consumer-group
+    consumerGroupInstanceID: consumer-group-1
+    sessionTimeout: 5m
+    heartbeatInterval: 3s
+    enableAutoCommit: true
+    enableAutoOffsetStore: false
+    autoOffsetReset: "error"
+    partitionAssignmentStrategy:
+      - "range"
+      - "roundrobin"
+
+customer:
+  enableSubjectHook: true
+  ignoreErrors: true
+
+dedupe:
+  enabled: true
+  driver: redis
+  config:
+    expiration: 768h # 32d
+    database: 0
+    address: 127.0.0.1:6379
+    username: default
+    password: pass
+    tls:
+      enabled: true
+
+balanceWorker:
+  stateStorage:
+    driver: redis
+    config:
+      expiration: 23h
+      address: 127.0.0.1:6379
+
+meters:
+  - slug: m1
+    eventType: api-calls
+    valueProperty: $.duration_ms
+    aggregation: SUM
+    groupBy:
+      method: $.method
+      path: $.path
+
+reservedEventTypes:
+  - ^reserved\..*$
+  - ^_\..*$
+  - ^openmeter\..*$
+
+notification:
+  enabled: true
+  reconcileInterval: 1m
+  sendingTimeout: 1h
+  pendingTimeout: 2h
+  reconcilerWorkers: 10
+  lock:
+    owner: lock-owner
+    leaseTime: 7m
+    heartbeatInterval: 29s
+
+svix:
+  apiKey: test-svix-token
+  serverURL: http://127.0.0.1:8071
+  debug: true
+
+productCatalog:
+  subscription:
+    multiSubscriptionNamespaces:
+      - "multi-subscription"
+
+taxcode:
+  seeds:
+    - key: default
+      name: Provider default
+      defaultInvoicing: true
+    - key: nontaxable
+      name: Nontaxable
+      defaultCreditGrant: true
+      appMappings:
+        - appType: stripe
+          taxCode: txcd_00000000
+featureGate:
+  enabled: true
+  flags:
+    om_ff_credits_enabled: "credits"
+
+server:
+  readHeaderTimeout: 10s
+  readTimeout: 30s
+  writeTimeout: 30s
+  idleTimeout: 60s
+  responseValidation:
+    mode: "unstable" # "off" | "unstable" | "all"
+  clientIPMiddleware:
+    source: "x-forwarded-for" # "remote-address" | "header" | "x-forwarded-for"
+    header: "X-Real-IP"
+    trustedIPPrefixes: [
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+    ]
+    trustedProxies: 2

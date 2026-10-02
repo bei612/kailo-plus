@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openmeter.componentName" (list . "api") }}
+  labels:
+    {{- include "openmeter.componentLabels" (list . "api") | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "openmeter.componentSelectorLabels" (list . "api") | nindent 4 }}

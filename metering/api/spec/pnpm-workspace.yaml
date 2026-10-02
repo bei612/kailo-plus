@@ -1,0 +1,32 @@
+packages:
+  - packages/*
+blockExoticSubdeps: true
+minimumReleaseAge: 4320
+# vite is a dev-only transitive of vitest (optionalDependency of @vitest/mocker)
+# that pnpm overrides cannot pin; exclude it from the maturity gate so test
+# tooling can resolve. The gate still applies to every other package.
+minimumReleaseAgeExclude: []
+trustPolicy: no-downgrade
+patchedDependencies:
+  '@typespec/compiler': patches/@typespec__compiler.patch
+  '@typespec/emitter-framework': patches/@typespec__emitter-framework.patch
+  '@typespec/http': patches/@typespec__http.patch
+  '@typespec/http-client': patches/@typespec__http-client.patch
+  '@typespec/http-client-python': patches/@typespec__http-client-python.patch
+  '@typespec/openapi': patches/@typespec__openapi.patch
+  '@typespec/openapi3': patches/@typespec__openapi3.patch
+overrides:
+  'semver@<7.7.4': '>=7.7.4'
+packageExtensions:
+  '@alloy-js/cli':
+    dependencies:
+      typescript: ^6.0.3
+# pnpm 11 replaces onlyBuiltDependencies with an explicit allow/deny map.
+# Preserve the prior allowlist: only @typespec/http-client-python may run its
+# build script; core-js/esbuild/protobufjs were never allowed and stay denied
+# so an install does not silently start running their postinstall scripts.
+allowBuilds:
+  '@typespec/http-client-python': true
+  esbuild: true
+  core-js: false
+  protobufjs: false

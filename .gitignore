@@ -83,3 +83,7 @@ __pycache__/
 !/agent-runtime/**/.codex/
 !/agent-runtime/**/.agents/
 !/agent-runtime/**/.vscode/
+!/metering/**/.claude/
+!/metering/**/.codex/
+!/metering/**/.agents/
+!/metering/**/.vscode/

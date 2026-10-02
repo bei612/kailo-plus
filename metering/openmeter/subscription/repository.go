@@ -1,0 +1,230 @@
+package subscription
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"reflect"
+	"time"
+
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/framework/entutils"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+type CreateSubscriptionEntityInput struct {
+	models.CadencedModel
+	models.NamespacedModel
+	models.MetadataModel
+
+	Annotations models.Annotations `json:"annotations"`
+
+	Plan        *PlanRef
+	Name        string  `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+
+	CustomerId      string `json:"customerId,omitempty"`
+	InvoiceCurrency currencyx.Code
+	CostBasisMode   CostBasisMode
+
+	// BillingCadence is the default billing cadence for subscriptions.
+	BillingCadence datetime.ISODuration `json:"billing_cadence"`
+
+	// ProRatingConfig is the default pro-rating configuration for subscriptions.
+	ProRatingConfig productcatalog.ProRatingConfig `json:"pro_rating_config"`
+
+	// SettlementMode is the settlement mode for the subscription.
+	SettlementMode productcatalog.SettlementMode `json:"settlement_mode"`
+
+	// BillingAnchor is the time the subscription will be billed.
+	BillingAnchor time.Time `json:"billingAnchor"`
+}
+
+type SubscriptionRepository interface {
+	entutils.TxCreator
+
+	models.CadencedResourceRepo[Subscription]
+
+	// Returns the subscription by ID
+	GetByID(ctx context.Context, subscriptionID models.NamespacedID) (Subscription, error)
+
+	// Create a new subscription
+	Create(ctx context.Context, input CreateSubscriptionEntityInput) (Subscription, error)
+
+	// Delete a subscription
+	Delete(ctx context.Context, id models.NamespacedID) error
+
+	// List subscriptions
+	List(ctx context.Context, params ListSubscriptionsInput) (SubscriptionList, error)
+
+	// UpdateAnnotations updates the annotations of a subscription
+	UpdateAnnotations(ctx context.Context, id models.NamespacedID, annotations models.Annotations) (*Subscription, error)
+
+	CreateCostBasisPins(ctx context.Context, inputs []CreateCostBasisPinEntityInput) error
+	// AdvancePlanReference only persists a later version of the same plan. It
+	// checks the expected current reference; it does not amend subscription items.
+	AdvancePlanReference(ctx context.Context, input AdvancePlanReferenceInput) error
+}
+
+type AdvancePlanReferenceInput struct {
+	SubscriptionID models.NamespacedID
+	CurrentPlan    PlanRef
+	TargetPlan     PlanRef
+}
+
+// Validate enforces forward movement within one plan, independently of the
+// calling workflow. Sync and the repository both enforce this contract.
+func (i AdvancePlanReferenceInput) Validate() error {
+	var errs []error
+	if i.SubscriptionID.Namespace == "" || i.SubscriptionID.ID == "" {
+		errs = append(errs, errors.New("subscription namespace and ID are required"))
+	}
+	if i.CurrentPlan.Id == "" || i.TargetPlan.Id == "" || i.CurrentPlan.Key == "" ||
+		i.CurrentPlan.Key != i.TargetPlan.Key || i.TargetPlan.Version <= i.CurrentPlan.Version {
+		errs = append(errs, errors.New("migration requires a later version of the same plan"))
+	}
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type CreateCostBasisPinEntityInput struct {
+	Namespace        string
+	SubscriptionID   string
+	CustomCurrencyID string
+	InvoiceCurrency  currencyx.Code
+	CostBasisID      string
+}
+
+var _ models.Validator = CreateCostBasisPinEntityInput{}
+
+func (i CreateCostBasisPinEntityInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, errors.New("namespace is required"))
+	}
+	if i.SubscriptionID == "" {
+		errs = append(errs, errors.New("subscription ID is required"))
+	}
+	if i.CustomCurrencyID == "" {
+		errs = append(errs, errors.New("custom currency ID is required"))
+	}
+	if i.CostBasisID == "" {
+		errs = append(errs, errors.New("cost basis ID is required"))
+	}
+	if err := i.InvoiceCurrency.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("invalid invoice currency %q: %w", i.InvoiceCurrency, err))
+	} else if !i.InvoiceCurrency.IsFiat() {
+		errs = append(errs, fmt.Errorf("invalid invoice currency %q", i.InvoiceCurrency))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type CreateSubscriptionPhaseEntityInput struct {
+	models.NamespacedModel
+	models.MetadataModel
+
+	// ActiveFrom is the time the phase becomes active.
+	ActiveFrom time.Time
+
+	// SubscriptionID is the ID of the subscription this phase belongs to.
+	SubscriptionID string `json:"subscriptionId"`
+
+	// Key is the unique key for Phase.
+	Key string `json:"key"`
+
+	// Name
+	Name string `json:"name"`
+
+	// Description
+	Description *string `json:"description,omitempty"`
+
+	// StartAfter
+	StartAfter datetime.ISODuration `json:"interval"`
+
+	// SortHint
+	SortHint *uint8 `json:"sortHint,omitempty"`
+}
+
+func (i CreateSubscriptionPhaseEntityInput) Equal(other CreateSubscriptionPhaseEntityInput) bool {
+	return reflect.DeepEqual(i, other)
+}
+
+type GetForSubscriptionAtInput struct {
+	Namespace      string
+	SubscriptionID string
+	At             time.Time
+}
+
+type SubscriptionPhaseRepository interface {
+	entutils.TxCreator
+
+	// Returns the phases for a subscription
+	GetForSubscriptionAt(ctx context.Context, input GetForSubscriptionAtInput) ([]SubscriptionPhase, error)
+	// Returns the phases for a list of subscriptions
+	GetForSubscriptionsAt(ctx context.Context, input []GetForSubscriptionAtInput) ([]SubscriptionPhase, error)
+
+	// Create a new subscription phase
+	Create(ctx context.Context, input CreateSubscriptionPhaseEntityInput) (SubscriptionPhase, error)
+	Delete(ctx context.Context, id models.NamespacedID) error
+}
+
+type CreateSubscriptionItemEntityInput struct {
+	models.NamespacedModel
+	models.MetadataModel
+
+	Annotations models.Annotations `json:"annotations"`
+
+	ActiveFromOverrideRelativeToPhaseStart *datetime.ISODuration
+	ActiveToOverrideRelativeToPhaseStart   *datetime.ISODuration
+
+	models.CadencedModel
+
+	BillingBehaviorOverride BillingBehaviorOverride
+
+	// PhaseID is the ID of the phase this item belongs to.
+	PhaseID string
+
+	// Key is the unique key of the item in the phase.
+	Key string
+
+	RateCard productcatalog.RateCard
+
+	EntitlementID *string
+	Name          string  `json:"name,omitempty"`
+	Description   *string `json:"description,omitempty"`
+}
+
+func (i CreateSubscriptionItemEntityInput) Equal(other CreateSubscriptionItemEntityInput) bool {
+	if (i.RateCard == nil) != (other.RateCard == nil) {
+		return false
+	}
+
+	rateCardsEqual := i.RateCard == nil || i.RateCard.Equal(other.RateCard)
+
+	a := i
+	a.MetadataModel = models.MetadataModel{}
+	a.Annotations = models.Annotations{}
+	a.RateCard = nil
+	b := other
+	b.MetadataModel = models.MetadataModel{}
+	b.Annotations = models.Annotations{}
+	b.RateCard = nil
+
+	// we don't compare annotations
+	return rateCardsEqual && reflect.DeepEqual(a, b) && maps.Equal(i.Metadata, other.Metadata)
+}
+
+type SubscriptionItemRepository interface {
+	entutils.TxCreator
+
+	GetForSubscriptionAt(ctx context.Context, inp GetForSubscriptionAtInput) ([]SubscriptionItem, error)
+	GetForSubscriptionsAt(ctx context.Context, input []GetForSubscriptionAtInput) ([]SubscriptionItem, error)
+
+	Create(ctx context.Context, input CreateSubscriptionItemEntityInput) (SubscriptionItem, error)
+	Delete(ctx context.Context, id models.NamespacedID) error
+	GetByID(ctx context.Context, id models.NamespacedID) (SubscriptionItem, error)
+}

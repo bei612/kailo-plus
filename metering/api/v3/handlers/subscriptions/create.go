@@ -1,0 +1,208 @@
+package subscriptions
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+
+	"github.com/samber/lo"
+
+	api "github.com/openmeterio/openmeter/api/v3"
+	"github.com/openmeterio/openmeter/api/v3/apierrors"
+	"github.com/openmeterio/openmeter/api/v3/request"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/plan"
+	plansubscription "github.com/openmeterio/openmeter/openmeter/productcatalog/subscription"
+	"github.com/openmeterio/openmeter/pkg/framework/commonhttp"
+	"github.com/openmeterio/openmeter/pkg/framework/transport/httptransport"
+	models "github.com/openmeterio/openmeter/pkg/models"
+)
+
+type (
+	CreateSubscriptionRequest  = plansubscription.CreateSubscriptionRequest
+	CreateSubscriptionResponse = api.BillingSubscription
+	CreateSubscriptionHandler  = httptransport.Handler[CreateSubscriptionRequest, CreateSubscriptionResponse]
+)
+
+// CreateSubscription returns a new httptransport.Handler for creating a subscription.
+func (h *handler) CreateSubscription() CreateSubscriptionHandler {
+	return httptransport.NewHandler(
+		func(ctx context.Context, r *http.Request) (plansubscription.CreateSubscriptionRequest, error) {
+			// Parse the request body
+			body := api.BillingSubscriptionCreate{}
+			if err := request.ParseBody(r, &body); err != nil {
+				return CreateSubscriptionRequest{}, err
+			}
+
+			// Resolve the namespace
+			ns, err := h.resolveNamespace(ctx)
+			if err != nil {
+				return CreateSubscriptionRequest{}, err
+			}
+
+			var settlementMode *productcatalog.SettlementMode
+			if body.SettlementMode != nil {
+				settlementMode = lo.ToPtr(productcatalog.SettlementMode(*body.SettlementMode))
+			}
+
+			// Validate that either customer ID or customer key is provided
+			if body.Customer.Id == nil && body.Customer.Key == nil {
+				reason := "one of customer.id or customer.key is required"
+				return CreateSubscriptionRequest{}, apierrors.NewBadRequestError(
+					ctx,
+					errors.New(reason),
+					[]apierrors.InvalidParameter{
+						{
+							Field:  "customer.id",
+							Reason: reason,
+							Source: apierrors.InvalidParamSourceBody,
+							Rule:   "required",
+						},
+						{
+							Field:  "customer.key",
+							Reason: reason,
+							Source: apierrors.InvalidParamSourceBody,
+							Rule:   "required",
+						},
+					},
+				)
+			}
+
+			// Get the customer to validate it exists
+			customerEntity, err := h.getCustomerByIDOrKey(ctx, ns, body.Customer.Id, body.Customer.Key)
+			if err != nil {
+				return CreateSubscriptionRequest{}, fmt.Errorf("failed to get customer: %w", err)
+			}
+
+			// Build the plan input. Exactly one of plan (reference to a published
+			// plan) or custom_plan (inline definition) must be provided; that rule is
+			// enforced by PlanInput.Validate() in the service, so here we only
+			// dispatch on which was supplied.
+			planInput := plansubscription.PlanInput{}
+			var subscriptionName string
+
+			if body.CustomPlan != nil {
+				customPlan, err := FromAPIBillingSubscriptionCustomPlan(ns, *body.CustomPlan)
+				if err != nil {
+					return CreateSubscriptionRequest{}, err
+				}
+				planInput.FromInput(&customPlan)
+				subscriptionName = customPlan.Name
+			}
+
+			if body.Plan != nil && (body.Plan.Id != nil || body.Plan.Key != nil) {
+				// Resolve the plan to a concrete version and validate it exists.
+				planEntity, err := h.getPlanByIDOrKey(ctx, ns, body.Plan.Id, body.Plan.Key, body.Plan.Version)
+				if err != nil {
+					return CreateSubscriptionRequest{}, fmt.Errorf("failed to get plan: %w", err)
+				}
+				planInput.FromRef(&plansubscription.PlanRefInput{
+					Key:     planEntity.Key,
+					Version: &planEntity.Version,
+				})
+				subscriptionName = fmt.Sprintf("%s v%d", planEntity.Key, planEntity.Version)
+			}
+
+			// Convert the request to a create subscription workflow input
+			workflowInput, err := FromAPIBillingSubscriptionCreate(
+				ns,
+				customerEntity.GetID(),
+				subscriptionName,
+				body,
+			)
+			if err != nil {
+				return CreateSubscriptionRequest{}, err
+			}
+
+			return plansubscription.CreateSubscriptionRequest{
+				WorkflowInput:  workflowInput,
+				PlanInput:      planInput,
+				StartingPhase:  body.StartingPhase,
+				SettlementMode: settlementMode,
+			}, nil
+		},
+		func(ctx context.Context, request plansubscription.CreateSubscriptionRequest) (CreateSubscriptionResponse, error) {
+			// Create the subscription from a plan
+			m, err := h.planSubscriptionService.Create(ctx, request)
+			if err != nil {
+				return CreateSubscriptionResponse{}, err
+			}
+
+			// Re-read the full view so the response carries phases and the current
+			// aligned billing period, consistent with get/list.
+			view, err := h.subscriptionService.GetView(ctx, m.NamespacedID)
+			if err != nil {
+				return CreateSubscriptionResponse{}, err
+			}
+
+			return ToAPIBillingSubscription(view)
+		},
+		commonhttp.JSONResponseEncoderWithStatus[CreateSubscriptionResponse](http.StatusCreated),
+		httptransport.AppendOptions(
+			h.options,
+			httptransport.WithOperationName("create-subscription"),
+			httptransport.WithErrorEncoder(apierrors.GenericErrorEncoder()),
+		)...,
+	)
+}
+
+// getCustomerByIDOrKey gets a customer by ID or key helper function
+// TODO: move this to the customer service
+func (h *handler) getCustomerByIDOrKey(ctx context.Context, namespace string, customerID *string, customerKey *string) (*customer.Customer, error) {
+	var getCustomerInput customer.GetCustomerInput
+
+	if customerID != nil {
+		getCustomerInput = customer.GetCustomerInput{
+			CustomerID: &customer.CustomerID{
+				Namespace: namespace,
+				ID:        *customerID,
+			},
+		}
+	} else if customerKey != nil {
+		getCustomerInput = customer.GetCustomerInput{
+			CustomerKey: &customer.CustomerKey{
+				Namespace: namespace,
+				Key:       *customerKey,
+			},
+		}
+	} else {
+		return nil, fmt.Errorf("customer id or customer key is required")
+	}
+
+	return h.customerService.GetCustomer(ctx, getCustomerInput)
+}
+
+// getPlanByIDOrKey gets a plan by ID or key helper function
+// TODO: move this to the plan service
+func (h *handler) getPlanByIDOrKey(ctx context.Context, namespace string, planID *string, planKey *string, planVersion *int) (*plan.Plan, error) {
+	// Get the plan entity, to validate it exists
+	var getPlanInput plan.GetPlanInput
+
+	if planID != nil {
+		getPlanInput = plan.GetPlanInput{
+			NamespacedID: models.NamespacedID{
+				Namespace: namespace,
+				ID:        *planID,
+			},
+		}
+	} else if planKey != nil {
+		getPlanInput = plan.GetPlanInput{}
+		// We use setters because namespace only exists on namespaced ID
+		// But here we don't have a namespaced ID
+		getPlanInput.Namespace = namespace
+		getPlanInput.Key = *planKey
+
+		if planVersion != nil {
+			getPlanInput.Version = *planVersion
+		} else {
+			getPlanInput.IncludeLatest = true
+		}
+	} else {
+		return nil, errors.New("plan id or plan key must be set")
+	}
+
+	// Get the plan entity
+	return h.planService.GetPlan(ctx, getPlanInput)
+}

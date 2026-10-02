@@ -1,0 +1,143 @@
+package ledger
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/samber/mo"
+
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination/v2"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+type Query struct {
+	Namespace string
+
+	Cursor *pagination.Cursor
+
+	Filters Filters
+}
+
+func (p Query) Validate() error {
+	if p.Namespace == "" {
+		return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+			"reason":    "namespace_required",
+			"namespace": p.Namespace,
+		})
+	}
+
+	if p.Cursor != nil {
+		if err := p.Cursor.Validate(); err != nil {
+			return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+				"reason": "cursor_invalid",
+				"cursor": p.Cursor,
+				"error":  err,
+			})
+		}
+	}
+
+	if p.Filters.TransactionID != nil && *p.Filters.TransactionID == "" {
+		return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+			"reason":         "transaction_id_required",
+			"transaction_id": *p.Filters.TransactionID,
+		})
+	}
+
+	if p.Filters.AccountID != nil && *p.Filters.AccountID == "" {
+		return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+			"reason":     "account_id_required",
+			"account_id": *p.Filters.AccountID,
+		})
+	}
+
+	if err := validateOptionalChargeIDFilter("source_charge_id", p.Filters.SourceChargeID); err != nil {
+		return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+			"reason": "source_charge_id_invalid",
+			"error":  err,
+		})
+	}
+
+	if err := validateOptionalChargeIDFilter("spend_charge_id", p.Filters.SpendChargeID); err != nil {
+		return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+			"reason": "spend_charge_id_invalid",
+			"error":  err,
+		})
+	}
+
+	if p.Filters.BookedAtPeriod != nil {
+		if err := p.Filters.BookedAtPeriod.Validate(); err != nil {
+			return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+				"reason":           "booked_at_period_invalid",
+				"booked_at_period": p.Filters.BookedAtPeriod,
+				"error":            err,
+			})
+		}
+	}
+
+	if p.Filters.After != nil {
+		if err := p.Filters.After.Validate(); err != nil {
+			return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+				"reason": "after_invalid",
+				"after":  p.Filters.After,
+				"error":  err,
+			})
+		}
+	}
+
+	if p.Filters.AsOf != nil && p.Filters.AsOf.IsZero() {
+		return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+			"reason": "as_of_invalid",
+			"as_of":  p.Filters.AsOf,
+			"error":  fmt.Errorf("as_of must not be zero"),
+		})
+	}
+
+	if p.Filters.After != nil && p.Filters.AsOf != nil {
+		return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+			"reason": "after_as_of_both_set",
+		})
+	}
+
+	if _, err := p.Filters.Route.Normalize(); err != nil {
+		return ErrLedgerQueryInvalid.WithAttrs(models.Attributes{
+			"reason": "route_invalid",
+			"route":  p.Filters.Route,
+			"error":  err,
+		})
+	}
+
+	return nil
+}
+
+type Filters struct {
+	// BookedAtPeriod is inclusive-exclusive... should it be? Maybe finally add period inclusivity params?
+	BookedAtPeriod *timeutil.OpenPeriod
+	After          *TransactionCursor
+	AsOf           *time.Time
+	TransactionID  *string
+	// AccountID narrows the query to a single account via its sub-accounts.
+	AccountID *string
+	// SourceChargeID narrows entries by the creditpurchase charge that funded them.
+	// Absent aggregates across source charges, Some(nil) selects source-less entries.
+	SourceChargeID mo.Option[*string]
+	// SpendChargeID narrows entries by the charge that consumed or accrued value.
+	// Absent aggregates across spend charges, Some(nil) selects spend-less entries.
+	SpendChargeID mo.Option[*string]
+	// Route is a partial route filter. AccountID plus a full Route.Filter() identifies
+	// one sub-account, but arbitrary RouteFilter values can match many sub-accounts.
+	Route RouteFilter
+}
+
+func validateOptionalChargeIDFilter(name string, filter mo.Option[*string]) error {
+	if filter.IsAbsent() {
+		return nil
+	}
+
+	value, _ := filter.Get()
+	if value != nil && *value == "" {
+		return fmt.Errorf("%s must not be empty", name)
+	}
+
+	return nil
+}

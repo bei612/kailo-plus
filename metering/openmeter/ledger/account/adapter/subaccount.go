@@ -1,0 +1,306 @@
+package adapter
+
+import (
+	"context"
+	"fmt"
+
+	"entgo.io/ent/dialect/sql"
+	"github.com/lib/pq"
+
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	"github.com/openmeterio/openmeter/openmeter/ent/db"
+	dbledgersubaccount "github.com/openmeterio/openmeter/openmeter/ent/db/ledgersubaccount"
+	dbledgersubaccountroute "github.com/openmeterio/openmeter/openmeter/ent/db/ledgersubaccountroute"
+	"github.com/openmeterio/openmeter/openmeter/ent/db/predicate"
+	"github.com/openmeterio/openmeter/openmeter/ledger"
+	ledgeraccount "github.com/openmeterio/openmeter/openmeter/ledger/account"
+	"github.com/openmeterio/openmeter/pkg/framework/entutils"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+func (r *repo) EnsureSubAccount(ctx context.Context, input ledgeraccount.CreateSubAccountInput) (*ledgeraccount.SubAccountData, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, tx *repo) (*ledgeraccount.SubAccountData, error) {
+		route, err := tx.resolveOrCreateRoute(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve route: %w", err)
+		}
+
+		err = tx.db.LedgerSubAccount.Create().
+			SetNamespace(input.Namespace).
+			SetAnnotations(input.Annotations).
+			SetAccountID(input.AccountID).
+			SetRouteID(route.ID).
+			OnConflict(
+				sql.ConflictColumns(
+					dbledgersubaccount.FieldNamespace,
+					dbledgersubaccount.FieldAccountID,
+					dbledgersubaccount.FieldRouteID,
+				),
+				sql.ResolveWithIgnore(),
+			).
+			Exec(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to ensure ledger sub-account: %w", err)
+		}
+
+		entity, err := tx.db.LedgerSubAccount.Query().
+			Where(
+				dbledgersubaccount.Namespace(input.Namespace),
+				dbledgersubaccount.AccountID(input.AccountID),
+				dbledgersubaccount.RouteID(route.ID),
+			).
+			Only(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve ledger sub-account: %w", err)
+		}
+
+		res, err := tx.GetSubAccountByID(ctx, models.NamespacedID{
+			Namespace: input.Namespace,
+			ID:        entity.ID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ledger sub-account: %w", err)
+		}
+
+		return res, nil
+	})
+}
+
+// We can use this upsert pattern for routes as they're a hidden internal & in practice routes would be shared between subaccounts.
+// Not making Routes a dependent of SubAccounts makes sense as the Routes table gives us meaningful information on what "type of currencies" we hold without the structural details of how subaccounts are grouped, e.g. its easy to see from the routes table if we hold EUR or USD...
+func (r *repo) resolveOrCreateRoute(ctx context.Context, input ledgeraccount.CreateSubAccountInput) (*db.LedgerSubAccountRoute, error) {
+	normalizedRoute, err := input.Route.Normalize()
+	if err != nil {
+		return nil, fmt.Errorf("failed to normalize route: %w", err)
+	}
+
+	routeKey, err := ledger.BuildRoutingKey(normalizedRoute)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build routing key: %w", err)
+	}
+
+	currency, err := normalizedRoute.Currency.MarshalText()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize route currency: %w", err)
+	}
+
+	create := r.db.LedgerSubAccountRoute.Create().
+		SetNamespace(input.Namespace).
+		SetAccountID(input.AccountID).
+		SetRoutingKeyVersion(routeKey.Version()).
+		SetRoutingKey(routeKey.Value()).
+		SetCurrency(string(currency)).
+		SetNillableCostBasisCurrency(normalizedRoute.CostBasisCurrency).
+		SetNillableTaxCode(normalizedRoute.TaxCode).
+		SetNillableTaxBehavior(normalizedRoute.TaxBehavior).
+		SetFeatures(pq.StringArray(normalizedRoute.Features)).
+		SetNillableCostBasis(normalizedRoute.CostBasis).
+		SetNillableCreditPriority(normalizedRoute.CreditPriority).
+		SetNillableTransactionAuthorizationStatus(normalizedRoute.TransactionAuthorizationStatus)
+
+	err = create.
+		OnConflict(
+			sql.ConflictColumns(
+				dbledgersubaccountroute.FieldNamespace,
+				dbledgersubaccountroute.FieldAccountID,
+				dbledgersubaccountroute.FieldRoutingKeyVersion,
+				dbledgersubaccountroute.FieldRoutingKey,
+			),
+			sql.ResolveWithIgnore(),
+		).
+		Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure sub-account route: %w", err)
+	}
+
+	routeEntity, err := r.db.LedgerSubAccountRoute.Query().
+		Where(
+			dbledgersubaccountroute.Namespace(input.Namespace),
+			dbledgersubaccountroute.AccountID(input.AccountID),
+			dbledgersubaccountroute.RoutingKeyVersion(routeKey.Version()),
+			dbledgersubaccountroute.RoutingKey(routeKey.Value()),
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve sub-account route: %w", err)
+	}
+
+	return routeEntity, nil
+}
+
+func (r *repo) GetSubAccountByID(ctx context.Context, id models.NamespacedID) (*ledgeraccount.SubAccountData, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, tx *repo) (*ledgeraccount.SubAccountData, error) {
+		entity, err := tx.db.LedgerSubAccount.Query().
+			Where(dbledgersubaccount.ID(id.ID)).
+			Where(dbledgersubaccount.Namespace(id.Namespace)).
+			WithRoute().
+			WithAccount().
+			Only(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ledger sub-account: %w", err)
+		}
+
+		subAccountData, err := MapSubAccountData(entity)
+		if err != nil {
+			return nil, fmt.Errorf("failed to map sub-account data: %w", err)
+		}
+
+		return &subAccountData, nil
+	})
+}
+
+func (r *repo) ListSubAccounts(ctx context.Context, input ledgeraccount.ListSubAccountsInput) ([]*ledgeraccount.SubAccountData, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, tx *repo) ([]*ledgeraccount.SubAccountData, error) {
+		predicates := []predicate.LedgerSubAccount{
+			dbledgersubaccount.Namespace(input.Namespace),
+			dbledgersubaccount.AccountID(input.AccountID),
+		}
+
+		normalizedRoute, err := input.Route.Normalize()
+		if err != nil {
+			return nil, fmt.Errorf("failed to normalize route filter: %w", err)
+		}
+
+		routePredicates := make([]predicate.LedgerSubAccountRoute, 0, 8)
+		if normalizedRoute.Currency.Code != "" {
+			if normalizedRoute.Currency.IsCustom() && !normalizedRoute.Currency.IsResolved() {
+				prefix, err := normalizedRoute.Currency.MarshalTextPrefix()
+				if err != nil {
+					return nil, fmt.Errorf("failed to serialize route currency filter prefix: %w", err)
+				}
+				routePredicates = append(routePredicates, dbledgersubaccountroute.CurrencyHasPrefix(string(prefix)))
+			} else {
+				currency, err := normalizedRoute.Currency.MarshalText()
+				if err != nil {
+					return nil, fmt.Errorf("failed to serialize route currency filter: %w", err)
+				}
+				routePredicates = append(routePredicates, dbledgersubaccountroute.Currency(string(currency)))
+			}
+		}
+		if normalizedRoute.CostBasisCurrency.IsPresent() {
+			costBasisCurrency, _ := normalizedRoute.CostBasisCurrency.Get()
+			if costBasisCurrency != nil {
+				routePredicates = append(routePredicates, dbledgersubaccountroute.CostBasisCurrency(*costBasisCurrency))
+			} else {
+				routePredicates = append(routePredicates, dbledgersubaccountroute.CostBasisCurrencyIsNil())
+			}
+		}
+		if normalizedRoute.CreditPriority != nil {
+			routePredicates = append(routePredicates,
+				dbledgersubaccountroute.CreditPriority(*normalizedRoute.CreditPriority),
+			)
+		}
+		if normalizedRoute.TaxCode.IsPresent() {
+			tc, _ := normalizedRoute.TaxCode.Get()
+			if tc != nil {
+				routePredicates = append(routePredicates, dbledgersubaccountroute.TaxCode(*tc))
+			} else {
+				routePredicates = append(routePredicates, dbledgersubaccountroute.TaxCodeIsNil())
+			}
+		}
+		if normalizedRoute.Features.IsPresent() {
+			features, _ := normalizedRoute.Features.Get()
+			if len(features) == 0 {
+				routePredicates = append(routePredicates, dbledgersubaccountroute.FeaturesIsNil())
+			} else {
+				routePredicates = append(routePredicates, dbledgersubaccountroute.Features(pq.StringArray(features)))
+			}
+		}
+		if normalizedRoute.MatchFeature != "" {
+			routePredicates = append(routePredicates, matchFeature(normalizedRoute.MatchFeature))
+		}
+		if normalizedRoute.CostBasis.IsPresent() {
+			costBasis, _ := normalizedRoute.CostBasis.Get()
+			if costBasis != nil {
+				routePredicates = append(routePredicates, dbledgersubaccountroute.CostBasis(*costBasis))
+			} else {
+				routePredicates = append(routePredicates, dbledgersubaccountroute.CostBasisIsNil())
+			}
+		}
+		if normalizedRoute.TaxBehavior.IsPresent() {
+			tb, _ := normalizedRoute.TaxBehavior.Get()
+			if tb != nil {
+				routePredicates = append(routePredicates, dbledgersubaccountroute.TaxBehavior(*tb))
+			} else {
+				routePredicates = append(routePredicates, dbledgersubaccountroute.TaxBehaviorIsNil())
+			}
+		}
+		if normalizedRoute.TransactionAuthorizationStatus != nil {
+			routePredicates = append(routePredicates, dbledgersubaccountroute.TransactionAuthorizationStatus(*normalizedRoute.TransactionAuthorizationStatus))
+		}
+		if len(routePredicates) > 0 {
+			predicates = append(predicates, dbledgersubaccount.HasRouteWith(routePredicates...))
+		}
+
+		entities, err := tx.db.LedgerSubAccount.Query().
+			Where(predicates...).
+			WithRoute().
+			WithAccount().
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list ledger sub-accounts: %w", err)
+		}
+
+		out := make([]*ledgeraccount.SubAccountData, 0, len(entities))
+		for _, entity := range entities {
+			subAccountData, err := MapSubAccountData(entity)
+			if err != nil {
+				return nil, fmt.Errorf("failed to map sub-account data: %w", err)
+			}
+			out = append(out, &subAccountData)
+		}
+
+		return out, nil
+	})
+}
+
+func matchFeature(feature string) predicate.LedgerSubAccountRoute {
+	return func(s *sql.Selector) {
+		s.Where(sql.Or(
+			sql.IsNull(s.C(dbledgersubaccountroute.FieldFeatures)),
+			sql.P(func(b *sql.Builder) {
+				b.Ident(s.C(dbledgersubaccountroute.FieldFeatures)).WriteString(" @> ").Arg(pq.StringArray{feature})
+			}),
+		))
+	}
+}
+
+func MapSubAccountData(entity *db.LedgerSubAccount) (ledgeraccount.SubAccountData, error) {
+	if entity.Edges.Account == nil {
+		return ledgeraccount.SubAccountData{}, fmt.Errorf("account edge is required")
+	}
+	if entity.Edges.Route == nil {
+		return ledgeraccount.SubAccountData{}, fmt.Errorf("route edge is required")
+	}
+
+	dbRoute := entity.Edges.Route
+
+	currency, err := currencies.ParseCurrencyReference([]byte(dbRoute.Currency))
+	if err != nil {
+		return ledgeraccount.SubAccountData{}, fmt.Errorf("parse route currency: %w", err)
+	}
+
+	return ledgeraccount.SubAccountData{
+		ID:          entity.ID,
+		Namespace:   entity.Namespace,
+		Annotations: entity.Annotations,
+		CreatedAt:   entity.CreatedAt,
+		AccountID:   entity.AccountID,
+		AccountType: entity.Edges.Account.AccountType,
+		Route: ledger.Route{
+			Currency:                       currency,
+			CostBasisCurrency:              dbRoute.CostBasisCurrency,
+			TaxCode:                        dbRoute.TaxCode,
+			TaxBehavior:                    dbRoute.TaxBehavior,
+			Features:                       []string(dbRoute.Features),
+			CostBasis:                      dbRoute.CostBasis,
+			CreditPriority:                 dbRoute.CreditPriority,
+			TransactionAuthorizationStatus: dbRoute.TransactionAuthorizationStatus,
+		},
+		RouteMeta: ledgeraccount.SubAccountRouteData{
+			ID:                dbRoute.ID,
+			RoutingKeyVersion: dbRoute.RoutingKeyVersion,
+			RoutingKey:        dbRoute.RoutingKey,
+		},
+	}, nil
+}

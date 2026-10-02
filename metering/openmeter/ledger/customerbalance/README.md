@@ -1,0 +1,253 @@
+# Customer Credit Balance
+
+This package exposes customer-facing credit balance and credit transaction views.
+
+> The current balance calculation path is temporary. It is expected to move to the **real-time-engine (RTE)** shortly. The API semantics below should remain stable even if the implementation stops querying the ledger directly for every balance view.
+
+## Balance Semantics
+
+Credit balance is defined at a point in time.
+
+`asOf` controls which booked ledger entries are visible:
+
+```text
+balance(asOf=T) =
+  sum(FBO entries where booked_at <= T)
+  + sum(nil-cost-basis receivable entries where booked_at <= T)
+```
+
+The receivable term represents credit-only advance: usage already consumed
+before purchased credit was available.
+
+Fiat currencies are identified by code. Custom-currency balance rows also
+carry `custom_currency_id`; balances remain separate when historical managed
+currencies reuse a display code. A code filter selects every matching identity.
+An explicit custom code resolves against both the namespace currency catalog
+and matching historical customer state; a code found in neither is rejected.
+Unfiltered listings discover currencies from customer-visible booked credit,
+uncovered advance, and pending grants at `asOf`. Current listings additionally
+include live credit-only exposure.
+
+Future-dated expiration entries do not affect the current balance. They do affect a balance queried at or after their expiration timestamp.
+
+Example:
+
+```text
+@T1
+FBO +10
+
+@T10 [breakage.plan]
+FBO -10
+BR  +10
+```
+
+Balances:
+
+```text
+asOf T5  => 10
+asOf T10 => 0
+```
+
+If 4 credits are used before expiry:
+
+```text
+@T5
+FBO     -4
+ACCRUED +4
+
+@T10 [breakage.release]
+FBO +4
+BR  -4
+```
+
+Balances:
+
+```text
+asOf T4  => 10
+asOf T5  => 6
+asOf T10 => 0
+```
+
+The `T10` balance is zero because the remaining 6 expired at `T10`.
+
+## Transaction Listing
+
+Customer-visible credit transactions are a read model over ledger and billing activity. They are not a raw dump of ledger transactions.
+
+Visible types:
+
+- `funded`: credit became available.
+- `consumed`: credit was used.
+- `expired`: unused credit expired.
+- `voided`: unused credit was forfeited by voiding its grant.
+
+The temporary issuance and consumption used to construct a custom-currency
+`credit_then_invoice` overage are internal accounting movements, not customer
+credit activity, and are excluded from this view.
+
+Funded rows include the response label `voided: "true"` when the backing grant
+has since been voided. The label is absent from active funded rows and from
+other transaction types.
+
+The visible amount is the customer balance impact:
+
+```text
+funded   => positive FBO issuance + positive nil-cost-basis receivable attribution
+consumed => negative FBO impact
+expired  => negative FBO impact
+```
+
+In a mixed-currency listing, `available_balance` is reconstructed independently
+for each currency identity even though the rows share one chronological stream.
+Custom-currency rows carry both their display code and `custom_currency_id`.
+
+Balances are resolved independently at each row's persisted boundary. Funded
+and consumed rows use their last contributing ledger transaction. Expired and
+voided rows are net projections at their booked timestamp: they include all
+postings at that timestamp, with later siblings of the same type and currency
+removed to retain stable balances within each terminal group. Across different
+types sharing one timestamp, these virtual before/after balances need not form a
+continuous chain. Type filtering and pagination preserve each row's balances.
+
+This matters when a purchase covers an existing advance. Its funded amount can
+be split between clearing the advance receivable and issuing the remainder to
+FBO. Impacts at the same effective time are shown as one funded row. If the
+remainder is scheduled for later, the history shows separate rows when each
+part affects the balance:
+
+```text
+@T1 funded +40  (advance attribution)
+@T2 funded +60  (scheduled FBO issuance)
+```
+
+## Listing Example: Funded, Consumed, Expired
+
+Credit issuance:
+
+```text
+@T1
+FBO +10
+```
+
+Usage:
+
+```text
+@T5
+FBO     -4
+ACCRUED +4
+```
+
+Expiration:
+
+```text
+@T10 [plan]
+FBO -10
+BR  +10
+
+@T10 [release]
+FBO +4
+BR  -4
+```
+
+Customer-visible transaction listing as of `T10`:
+
+```text
+T10 expired  -6
+T5  consumed -4
+T1  funded   +10
+```
+
+Listing as of `T5`:
+
+```text
+T5 consumed -4
+T1 funded   +10
+```
+
+The expired row is hidden before `T10` because the breakage entries are future-dated.
+
+## Expired Credit Projection
+
+Expired rows come from breakage impacts, not from raw breakage ledger transactions.
+
+Breakage can have multiple records at the same expiry:
+
+```text
+@T10 [plan]    10
+@T10 [release] 4
+@T10 [reopen]  2
+```
+
+Customerbalance should show one net expired row:
+
+```text
+plans - releases + reopens = 10 - 4 + 2 = 8
+expired amount = -8
+```
+
+Zero-impact groups are hidden:
+
+```text
+@T20 [plan]    5
+@T20 [release] 5
+
+expired amount = 0
+```
+
+This is common for expiring credit that immediately backfilled already-used advance.
+
+## Cursor Semantics
+
+Transaction listing is ordered by ledger cursor:
+
+```text
+booked_at
+created_at
+transaction_id
+```
+
+Expired rows use a synthetic cursor: expiry time for both timestamps and the
+first plan record ID for the source grant. Later releases or reopens change the
+net amount without changing that identity. Sibling offsets are calculated
+before cursor filtering, so a page starting within one expiry timestamp keeps
+the same balances as the full list.
+
+## Type Filtering
+
+If the caller requests a specific type:
+
+```text
+type=funded
+```
+
+only funded rows are returned. Type filtering changes row selection, not balance
+reconstruction: each returned row keeps the before/after balance from the
+complete movement history for its currency identity and feature scope.
+
+If the caller requests:
+
+```text
+type=expired
+asOf=T10
+```
+
+only expired rows visible at `T10` are returned.
+
+The `asOf` boundary applies before projection. Future breakage entries beyond `asOf` must not leak into the listing.
+
+## Presentation Boundary
+
+This package may:
+
+- merge funded, consumed, and expired views;
+- apply customer-facing labels and balances;
+- page and cursor the result set;
+- expose customer balance impact as the customer-visible amount.
+
+This package should not:
+
+- decide how plan/release/reopen rows net;
+- decide FBO collection order;
+- decide correction unwind order.
+
+Those correctness rules belong to `breakage` and `collector`.

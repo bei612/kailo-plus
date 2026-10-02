@@ -1,0 +1,66 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, labeled, unlabeled, synchronize]
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migration-atlas-sum:
+    name: Migration atlas.sum append-only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+          use-policy-store: ${{ secrets.STEP_SECURITY_API_KEY != '' }}
+          api-key: ${{ secrets.STEP_SECURITY_API_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run atlas.sum check unit tests
+        run: python3 -m unittest discover -s .github/tools/migrate -p 'test_*.py'
+
+      - name: Check atlas.sum is append-only
+        # base.sha is always a hex SHA, but route it via env for consistency
+        # with the repo-wide rule of never interpolating ${{ }} into run:.
+        run: python3 .github/tools/migrate/check_atlas_sum_append_only.py "$BASE_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+  release-label:
+    name: Release note label
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: write
+    steps:
+      - name: Check minimum labels
+        uses: mheap/github-action-required-labels@23e10fde7e062233401931a0eece796cd9bf3177 # v5.6.0
+        with:
+          mode: minimum
+          count: 1
+          labels: |
+            release-note/ignore
+            kind/feature
+            release-note/feature
+            kind/bug
+            release-note/bug-fix
+            release-note/breaking-change
+            release-note/deprecation
+            area/dependencies
+            release-note/dependency-update
+            kind/refactor
+            release-note/misc
+            kind/documentation

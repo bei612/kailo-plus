@@ -1,0 +1,287 @@
+package repo
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	"github.com/openmeterio/openmeter/openmeter/ent/db"
+	"github.com/openmeterio/openmeter/openmeter/ent/db/predicate"
+	dbsubscription "github.com/openmeterio/openmeter/openmeter/ent/db/subscription"
+	dbsubscriptionitem "github.com/openmeterio/openmeter/openmeter/ent/db/subscriptionitem"
+	dbsubscriptionphase "github.com/openmeterio/openmeter/openmeter/ent/db/subscriptionphase"
+	"github.com/openmeterio/openmeter/openmeter/subscription"
+	"github.com/openmeterio/openmeter/openmeter/subscription/validators/itemreference"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/framework/entutils"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/slicesx"
+)
+
+type subscriptionItemRepo struct {
+	db *db.Client
+}
+
+var _ subscription.SubscriptionItemRepository = (*subscriptionItemRepo)(nil)
+
+// validateCurrencyReferenceForPersistence enforces the repository contract
+// that custom currency references have already been resolved by the service.
+func validateCurrencyReferenceForPersistence(namespace string, reference currencies.CurrencyReference) error {
+	if err := reference.Validate(); err != nil {
+		return err
+	}
+
+	if reference.IsFiat() {
+		return nil
+	}
+
+	if !reference.IsResolved() {
+		return fmt.Errorf("custom currency %q must be resolved before persistence", reference.GetCode())
+	}
+
+	customCurrency, ok := reference.CustomCurrency()
+	if !ok {
+		return fmt.Errorf("custom currency %q must be resolved before persistence", reference.GetCode())
+	}
+
+	if customCurrency.Namespace != namespace {
+		return fmt.Errorf(
+			"custom currency namespace mismatch [subscription_item.namespace=%s currency.namespace=%s currency.id=%s]",
+			namespace,
+			customCurrency.Namespace,
+			customCurrency.ID,
+		)
+	}
+
+	return nil
+}
+
+func getItemForSubscriptionAtFilter(input subscription.GetForSubscriptionAtInput) predicate.SubscriptionItem {
+	return dbsubscriptionitem.And(
+		dbsubscriptionitem.HasPhaseWith(getPhaseForSubscriptionAtFilter(input)),
+		dbsubscriptionitem.Or(
+			dbsubscriptionitem.DeletedAtIsNil(),
+			dbsubscriptionitem.DeletedAtGT(input.At),
+		),
+	)
+}
+
+func (r *subscriptionItemRepo) GetForSubscriptionAt(ctx context.Context, input subscription.GetForSubscriptionAtInput) ([]subscription.SubscriptionItem, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionItemRepo) ([]subscription.SubscriptionItem, error) {
+		items, err := repo.db.SubscriptionItem.Query().
+			Where(getItemForSubscriptionAtFilter(input)).
+			WithPhase().
+			WithTaxCode().
+			WithCustomCurrency().
+			All(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		var result []subscription.SubscriptionItem
+
+		for _, item := range items {
+			r, err := MapDBSubscriptionItem(item)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, r)
+		}
+
+		return result, nil
+	})
+}
+
+func (r *subscriptionItemRepo) GetForSubscriptionsAt(ctx context.Context, input []subscription.GetForSubscriptionAtInput) ([]subscription.SubscriptionItem, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionItemRepo) ([]subscription.SubscriptionItem, error) {
+		if len(input) == 0 {
+			return nil, fmt.Errorf("filter is empty")
+		}
+
+		items, err := repo.db.SubscriptionItem.Query().
+			Where(dbsubscriptionitem.Or(
+				slicesx.Map(input, getItemForSubscriptionAtFilter)...,
+			)).
+			WithPhase().
+			WithTaxCode().
+			WithCustomCurrency().
+			All(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		var result []subscription.SubscriptionItem
+
+		for _, item := range items {
+			r, err := MapDBSubscriptionItem(item)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, r)
+		}
+
+		return result, nil
+	})
+}
+
+func (r *subscriptionItemRepo) GetByID(ctx context.Context, id models.NamespacedID) (subscription.SubscriptionItem, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionItemRepo) (subscription.SubscriptionItem, error) {
+		item, err := repo.db.SubscriptionItem.Query().
+			Where(dbsubscriptionitem.ID(id.ID)).
+			Where(dbsubscriptionitem.Namespace(id.Namespace)).
+			Where(dbsubscriptionitem.Or(
+				dbsubscriptionitem.DeletedAtIsNil(),
+				dbsubscriptionitem.DeletedAtGT(clock.Now()),
+			)).
+			WithPhase().
+			WithTaxCode().
+			WithCustomCurrency().
+			Only(ctx)
+
+		if db.IsNotFound(err) {
+			return subscription.SubscriptionItem{}, subscription.NewItemNotFoundError(id.ID)
+		}
+
+		if err != nil {
+			return subscription.SubscriptionItem{}, err
+		}
+
+		return MapDBSubscriptionItem(item)
+	})
+}
+
+func (r *subscriptionItemRepo) Create(ctx context.Context, input subscription.CreateSubscriptionItemEntityInput) (subscription.SubscriptionItem, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionItemRepo) (subscription.SubscriptionItem, error) {
+		var def subscription.SubscriptionItem
+		if input.RateCard.AsMeta().Price != nil && input.RateCard.AsMeta().Currency == nil {
+			return def, errors.New("priced subscription item currency must be materialized before persistence")
+		}
+
+		var featureKey *string
+		if feature := input.RateCard.AsMeta().Feature; feature != nil {
+			featureKey = feature.Key
+		}
+
+		cmd := repo.db.SubscriptionItem.Create().
+			SetNillableActiveFromOverrideRelativeToPhaseStart(input.ActiveFromOverrideRelativeToPhaseStart.ISOStringPtrOrNil()).
+			SetNillableActiveToOverrideRelativeToPhaseStart(input.ActiveToOverrideRelativeToPhaseStart.ISOStringPtrOrNil()).
+			SetActiveFrom(input.ActiveFrom).
+			SetNillableActiveTo(input.ActiveTo).
+			SetNamespace(input.Namespace).
+			SetName(input.Name).
+			SetNillableDescription(input.Description).
+			SetPhaseID(input.PhaseID).
+			SetKey(input.Key).
+			SetName(input.RateCard.AsMeta().Name).
+			SetNillableDescription(input.RateCard.AsMeta().Description).
+			SetNillableFeatureKey(featureKey).
+			SetNillableEntitlementID(input.EntitlementID).
+			SetNillableBillingCadence(input.RateCard.GetBillingCadence().ISOStringPtrOrNil()).
+			SetNillableRestartsBillingPeriod(input.BillingBehaviorOverride.RestartBillingPeriod)
+
+		if input.Annotations != nil {
+			cmd.SetAnnotations(input.Annotations)
+		}
+
+		// Due to the custom value scanner, these fields don't have Nillable setters generated, and the normal setters panic when trying to call .Validate() on nil
+		if input.RateCard.AsMeta().EntitlementTemplate != nil {
+			cmd.SetEntitlementTemplate(input.RateCard.AsMeta().EntitlementTemplate)
+		}
+
+		if input.RateCard.AsMeta().TaxConfig != nil {
+			cmd.SetTaxConfig(input.RateCard.AsMeta().TaxConfig)
+			cmd.SetNillableTaxCodeID(input.RateCard.AsMeta().TaxConfig.TaxCodeID)
+			cmd.SetNillableTaxBehavior(input.RateCard.AsMeta().TaxConfig.Behavior)
+		}
+
+		if input.RateCard.AsMeta().Price != nil {
+			cmd.SetPrice(input.RateCard.AsMeta().Price)
+		}
+
+		currencyRef := input.RateCard.AsMeta().Currency
+		if currencyRef != nil {
+			if err := validateCurrencyReferenceForPersistence(input.Namespace, *currencyRef); err != nil {
+				return def, fmt.Errorf("invalid subscription item currency: %w", err)
+			}
+
+			cmd.SetCurrency(currencyRef.GetCode().String())
+
+			if currencyRef.IsCustom() {
+				cmd.SetCustomCurrencyID(*currencyRef.CustomCurrencyID)
+			}
+		}
+
+		if !input.RateCard.AsMeta().Discounts.IsEmpty() {
+			cmd.SetDiscounts(lo.EmptyableToPtr(input.RateCard.AsMeta().Discounts))
+		}
+
+		if input.RateCard.AsMeta().UnitConfig != nil {
+			cmd.SetUnitConfig(input.RateCard.AsMeta().UnitConfig)
+		}
+
+		i, err := cmd.Save(ctx)
+		if err != nil {
+			return def, err
+		}
+
+		return repo.GetByID(ctx, models.NamespacedID{ID: i.ID, Namespace: i.Namespace})
+	})
+}
+
+func (r *subscriptionItemRepo) Delete(ctx context.Context, input models.NamespacedID) error {
+	_, err := entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionItemRepo) (any, error) {
+		at := clock.Now()
+		err := repo.db.SubscriptionItem.UpdateOneID(input.ID).
+			Where(
+				dbsubscriptionitem.Namespace(input.Namespace),
+				dbsubscriptionitem.Or(
+					dbsubscriptionitem.DeletedAtIsNil(),
+					dbsubscriptionitem.DeletedAtGT(at),
+				),
+			).SetDeletedAt(at).Exec(ctx)
+
+		if db.IsNotFound(err) {
+			return nil, subscription.NewItemNotFoundError(input.ID)
+		}
+
+		return nil, err
+	})
+
+	return err
+}
+
+var _ itemreference.Repository = (*subscriptionItemRepo)(nil)
+
+func NewSubscriptionItemRepo(db *db.Client) *subscriptionItemRepo {
+	return &subscriptionItemRepo{
+		db: db,
+	}
+}
+
+func (r *subscriptionItemRepo) IsValidItemReference(ctx context.Context, input itemreference.ValidateInput) (bool, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionItemRepo) (bool, error) {
+		valid, err := repo.db.SubscriptionItem.Query().
+			Where(
+				dbsubscriptionitem.ID(input.ItemID),
+				dbsubscriptionitem.Namespace(input.Namespace),
+				dbsubscriptionitem.HasPhaseWith(
+					dbsubscriptionphase.ID(input.PhaseID),
+					dbsubscriptionphase.Namespace(input.Namespace),
+					dbsubscriptionphase.SubscriptionID(input.SubscriptionID),
+					dbsubscriptionphase.HasSubscriptionWith(
+						dbsubscription.ID(input.SubscriptionID),
+						dbsubscription.Namespace(input.Namespace),
+					),
+				),
+			).
+			Exist(ctx)
+		if err != nil {
+			return false, fmt.Errorf("query subscription item reference: %w", err)
+		}
+
+		return valid, nil
+	})
+}

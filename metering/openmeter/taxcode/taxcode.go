@@ -1,0 +1,230 @@
+package taxcode
+
+import (
+	"errors"
+	"regexp"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/app"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+var TaxCodeStripeRegexp = regexp.MustCompile(`^txcd_\d{8}$`)
+
+const ProviderDefaultTaxCodeKey = "default"
+
+// TaxCodeAppMapping represents a mapping of an app type to a tax code.
+type TaxCodeAppMapping struct {
+	AppType app.AppType `json:"app_type"`
+	TaxCode string      `json:"tax_code"`
+}
+
+func (t TaxCodeAppMapping) Validate() error {
+	var errs []error
+
+	if err := t.AppType.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if t.TaxCode == "" {
+		errs = append(errs, ErrTaxCodeEmpty)
+	} else {
+		switch t.AppType {
+		case app.AppTypeStripe:
+			if !TaxCodeStripeRegexp.MatchString(t.TaxCode) {
+				errs = append(errs, ErrTaxCodeStripeInvalid)
+			}
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+// TaxCodeAppMappings is a list of TaxCodeAppMapping.
+type TaxCodeAppMappings []TaxCodeAppMapping
+
+func (t TaxCodeAppMappings) Validate() error {
+	var errs []error
+
+	appTypes := lo.UniqBy(t, func(t TaxCodeAppMapping) app.AppType {
+		return t.AppType
+	})
+
+	if len(appTypes) != len(t) {
+		errs = append(errs, ErrAppTypesMustBeUnique)
+	}
+
+	for _, t := range t {
+		if err := t.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+// TaxCode represents a tax code with mappings to app types.
+type TaxCode struct {
+	models.NamespacedID
+	models.ManagedModel
+
+	// Key is the unique key for TaxCode.
+	Key string `json:"key"`
+
+	// Name is the display name for TaxCode.
+	Name string `json:"name"`
+
+	// Description is the description for TaxCode.
+	Description *string `json:"description,omitempty"`
+
+	// AppMappings is the mapping of app types to tax codes.
+	AppMappings TaxCodeAppMappings `json:"app_mappings"`
+
+	// Metadata
+	Metadata models.Metadata `json:"metadata,omitempty"`
+
+	// Annotations are system-managed key/value pairs stored alongside the tax code.
+	Annotations models.Annotations `json:"annotations,omitempty"`
+}
+
+// Equal returns true when both TaxCode values carry identical semantic data.
+// Compares ID, Namespace, Key, Name, Description, and AppMappings.
+// ManagedModel timestamps, Metadata, and Annotations are excluded.
+func (t *TaxCode) Equal(v *TaxCode) bool {
+	if t == nil && v == nil {
+		return true
+	}
+
+	if t == nil || v == nil {
+		return false
+	}
+
+	if t.ID != v.ID || t.Namespace != v.Namespace {
+		return false
+	}
+
+	if t.Key != v.Key || t.Name != v.Name {
+		return false
+	}
+
+	if (t.Description == nil) != (v.Description == nil) {
+		return false
+	}
+
+	if t.Description != nil && *t.Description != *v.Description {
+		return false
+	}
+
+	if len(t.AppMappings) != len(v.AppMappings) {
+		return false
+	}
+
+	left := lo.SliceToMap(t.AppMappings, func(m TaxCodeAppMapping) (app.AppType, string) {
+		return m.AppType, m.TaxCode
+	})
+
+	for _, m := range v.AppMappings {
+		code, ok := left[m.AppType]
+		if !ok || code != m.TaxCode {
+			return false
+		}
+	}
+
+	return true
+}
+
+// IsManagedBySystem returns true when this tax code was auto-created by the system.
+func (t TaxCode) IsManagedBySystem() bool {
+	v, ok := t.Annotations[AnnotationKeyManagedBy]
+
+	if !ok {
+		return false
+	}
+	s, ok := v.(string)
+
+	return ok && s == AnnotationValueManagedBySystem
+}
+
+// GetAppMapping returns the app mapping for the given app type, if it exists.
+func (t TaxCode) GetAppMapping(appType app.AppType) (TaxCodeAppMapping, bool) {
+	return lo.Find(t.AppMappings, func(m TaxCodeAppMapping) bool {
+		return m.AppType == appType
+	})
+}
+
+func (t TaxCode) Validate() error {
+	var errs []error
+
+	if err := t.NamespacedID.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if err := t.ManagedModel.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if err := t.AppMappings.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+// OrganizationDefaultTaxCodesExpand controls which related objects are loaded.
+type OrganizationDefaultTaxCodesExpand struct {
+	InvoicingTaxCode   bool
+	CreditGrantTaxCode bool
+}
+
+// OrganizationDefaultTaxCodesExpandAll loads all related objects.
+var OrganizationDefaultTaxCodesExpandAll = OrganizationDefaultTaxCodesExpand{
+	InvoicingTaxCode:   true,
+	CreditGrantTaxCode: true,
+}
+
+// OrganizationDefaultTaxCodes stores the per-namespace default tax code references.
+type OrganizationDefaultTaxCodes struct {
+	models.NamespacedID
+	models.ManagedModel
+
+	InvoicingTaxCodeID string   `json:"invoicing_tax_code_id"`
+	InvoicingTaxCode   *TaxCode `json:"invoicing_tax_code,omitempty"`
+
+	CreditGrantTaxCodeID string   `json:"credit_grant_tax_code_id"`
+	CreditGrantTaxCode   *TaxCode `json:"credit_grant_tax_code,omitempty"`
+}
+
+func (o OrganizationDefaultTaxCodes) Validate() error {
+	var errs []error
+
+	if err := o.NamespacedID.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if err := o.ManagedModel.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if o.InvoicingTaxCodeID == "" {
+		errs = append(errs, ErrResourceIDEmpty.WithPathString("invoicing_tax_code_id"))
+	}
+
+	if o.CreditGrantTaxCodeID == "" {
+		errs = append(errs, ErrResourceIDEmpty.WithPathString("credit_grant_tax_code_id"))
+	}
+
+	if o.InvoicingTaxCode != nil {
+		if err := o.InvoicingTaxCode.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if o.CreditGrantTaxCode != nil {
+		if err := o.CreditGrantTaxCode.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}

@@ -1,0 +1,39 @@
+capability_id: metering.core_authentication
+title: 原生计量 API 的 Core service 身份认证
+stage: S4
+status: in_progress
+exposure: none
+
+design:
+  requirements: [V-REQ-08]
+  decisions: [DD-38]
+  facts: [SF-OMT-06]
+  seams: [SS-OMT-AUTH]
+  blockers: []
+  entities: []
+
+validation:
+  scenarios: []
+  evidence:
+    - dimension: 上游接缝
+      ref: metering/fork/verify/core-authentication.md
+    - dimension: 安全边界
+      ref: metering/fork/verify/core-authentication.md
+
+implementation:
+  owners: [team-platform]
+  paths: [metering/app/common/server.go, metering/app/config/server.go, metering/cmd/server/wire_gen.go]
+  surfaces: []
+  schemas: []
+  migrations: []
+
+runtime:
+  routes: []
+  actions: []
+  workflow_kinds: []
+
+release:
+  artifacts:
+    - name: metering
+      digest: sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783
+  gate: blocked_until_seams_closed

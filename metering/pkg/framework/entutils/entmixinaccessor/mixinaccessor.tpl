@@ -1,0 +1,35 @@
+{{/*
+    Generates getters for fields that were added to schemas via mixins.
+
+    For each node and each mixed-in field, it generates:
+      func (e *<Node>) Get<Field>() <Type> { return e.<Field> }
+
+    For nillable value fields, it returns a pointer type (matching the generated entity field type).
+
+    The ID field is handled separately since ent exposes it via $n.ID rather than $n.Fields.
+*/}}
+{{ define "entmixinaccessor" }}
+
+{{ $pkg := base $.Config.Package }}
+{{ template "header" $ }}
+
+{{ range $n := $.Nodes }}
+	{{- if and $n.ID $n.ID.Position $n.ID.Position.MixedIn }}
+
+func (e *{{ $n.Name }}) GetID() {{ $n.ID.Type }} {
+	return e.ID
+}
+
+	{{- end }}
+	{{ range $f := $n.Fields }}
+		{{- if and $f.Position $f.Position.MixedIn }}
+
+func (e *{{ $n.Name }}) Get{{ $f.StructField }}() {{ if $f.NillableValue }}*{{ end }}{{ $f.Type }} {
+	return e.{{ $f.StructField }}
+}
+
+		{{- end }}
+	{{ end }}
+{{ end }}
+
+{{ end }}

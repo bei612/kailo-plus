@@ -1,0 +1,143 @@
+package meta
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+func TestPatchExtendValidateWith(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	intent := IntentMutableFields{
+		ServicePeriod: timeutil.ClosedPeriod{
+			From: base,
+			To:   base.AddDate(0, 1, 0),
+		},
+		FullServicePeriod: timeutil.ClosedPeriod{
+			From: base,
+			To:   base.AddDate(0, 2, 0),
+		},
+		BillingPeriod: timeutil.ClosedPeriod{
+			From: base,
+			To:   base.AddDate(0, 3, 0),
+		},
+	}
+
+	tests := []struct {
+		name    string
+		patch   PatchExtend
+		wantErr bool
+	}{
+		{
+			name: "rejects missing change source",
+			patch: PatchExtend{
+				newServicePeriodTo:     intent.ServicePeriod.To.Add(time.Hour),
+				newFullServicePeriodTo: intent.FullServicePeriod.To,
+				newBillingPeriodTo:     intent.BillingPeriod.To,
+				newInvoiceAt:           intent.ServicePeriod.To.Add(time.Hour),
+			},
+			wantErr: true,
+		},
+		{
+			name: "allows service period extension with unchanged full service and billing periods",
+			patch: mustNewPatchExtend(t, NewPatchExtendInput{
+				ChangeSource:           billing.ChangeSourceSystem,
+				NewServicePeriodTo:     intent.ServicePeriod.To.Add(time.Hour),
+				NewFullServicePeriodTo: intent.FullServicePeriod.To,
+				NewBillingPeriodTo:     intent.BillingPeriod.To,
+				NewInvoiceAt:           intent.ServicePeriod.To.Add(time.Hour),
+			}),
+		},
+		{
+			name: "rejects unchanged service period end",
+			patch: mustNewPatchExtend(t, NewPatchExtendInput{
+				ChangeSource:           billing.ChangeSourceSystem,
+				NewServicePeriodTo:     intent.ServicePeriod.To,
+				NewFullServicePeriodTo: intent.FullServicePeriod.To,
+				NewBillingPeriodTo:     intent.BillingPeriod.To,
+				NewInvoiceAt:           intent.ServicePeriod.To,
+			}),
+			wantErr: true,
+		},
+		{
+			name: "rejects earlier service period end",
+			patch: mustNewPatchExtend(t, NewPatchExtendInput{
+				ChangeSource:           billing.ChangeSourceSystem,
+				NewServicePeriodTo:     intent.ServicePeriod.To.Add(-time.Hour),
+				NewFullServicePeriodTo: intent.FullServicePeriod.To,
+				NewBillingPeriodTo:     intent.BillingPeriod.To,
+				NewInvoiceAt:           intent.ServicePeriod.To.Add(-time.Hour),
+			}),
+			wantErr: true,
+		},
+		{
+			name: "allows earlier full service and billing period ends",
+			patch: mustNewPatchExtend(t, NewPatchExtendInput{
+				ChangeSource:           billing.ChangeSourceSystem,
+				NewServicePeriodTo:     intent.ServicePeriod.To.Add(time.Hour),
+				NewFullServicePeriodTo: intent.FullServicePeriod.To.Add(-time.Hour),
+				NewBillingPeriodTo:     intent.BillingPeriod.To.Add(-time.Hour),
+				NewInvoiceAt:           intent.ServicePeriod.To.Add(time.Hour),
+			}),
+		},
+		{
+			name: "rejects full service period end before its start",
+			patch: mustNewPatchExtend(t, NewPatchExtendInput{
+				ChangeSource:           billing.ChangeSourceSystem,
+				NewServicePeriodTo:     intent.ServicePeriod.To.Add(time.Hour),
+				NewFullServicePeriodTo: intent.FullServicePeriod.From.Add(-time.Hour),
+				NewBillingPeriodTo:     intent.BillingPeriod.To,
+				NewInvoiceAt:           intent.ServicePeriod.To.Add(time.Hour),
+			}),
+			wantErr: true,
+		},
+		{
+			name: "rejects billing period end before its start",
+			patch: mustNewPatchExtend(t, NewPatchExtendInput{
+				ChangeSource:           billing.ChangeSourceSystem,
+				NewServicePeriodTo:     intent.ServicePeriod.To.Add(time.Hour),
+				NewFullServicePeriodTo: intent.FullServicePeriod.To,
+				NewBillingPeriodTo:     intent.BillingPeriod.From.Add(-time.Hour),
+				NewInvoiceAt:           intent.ServicePeriod.To.Add(time.Hour),
+			}),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.patch.ValidateWith(intent)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestNewPatchExtendInputValidateRequiresChangeSource(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	_, err := NewPatchExtend(NewPatchExtendInput{
+		NewServicePeriodTo:     base.AddDate(0, 1, 0),
+		NewFullServicePeriodTo: base.AddDate(0, 1, 0),
+		NewBillingPeriodTo:     base.AddDate(0, 1, 0),
+		NewInvoiceAt:           base.AddDate(0, 1, 0),
+	})
+	require.Error(t, err)
+}
+
+func mustNewPatchExtend(t *testing.T, input NewPatchExtendInput) PatchExtend {
+	t.Helper()
+
+	patch, err := NewPatchExtend(input)
+	require.NoError(t, err)
+	return patch
+}

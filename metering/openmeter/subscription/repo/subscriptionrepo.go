@@ -1,0 +1,343 @@
+package repo
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/ent/db"
+	dbplan "github.com/openmeterio/openmeter/openmeter/ent/db/plan"
+	"github.com/openmeterio/openmeter/openmeter/ent/db/predicate"
+	dbsubscription "github.com/openmeterio/openmeter/openmeter/ent/db/subscription"
+	dbsubscriptionitem "github.com/openmeterio/openmeter/openmeter/ent/db/subscriptionitem"
+	dbsubscriptionphase "github.com/openmeterio/openmeter/openmeter/ent/db/subscriptionphase"
+	"github.com/openmeterio/openmeter/openmeter/subscription"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/filter"
+	"github.com/openmeterio/openmeter/pkg/framework/entutils"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+	"github.com/openmeterio/openmeter/pkg/sortx"
+)
+
+type subscriptionRepo struct {
+	db *db.Client
+}
+
+var _ subscription.SubscriptionRepository = (*subscriptionRepo)(nil)
+
+func NewSubscriptionRepo(db *db.Client) *subscriptionRepo {
+	return &subscriptionRepo{
+		db: db,
+	}
+}
+
+func withSubscriptionReferences(q *db.SubscriptionQuery) *db.SubscriptionQuery {
+	return q.
+		WithPlan().
+		WithCostBasisPins(func(q *db.SubscriptionCostBasisPinQuery) {
+			q.WithCostBasis()
+		})
+}
+
+func (r *subscriptionRepo) AdvancePlanReference(ctx context.Context, input subscription.AdvancePlanReferenceInput) error {
+	if err := input.Validate(); err != nil {
+		return err
+	}
+	_, err := entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionRepo) (struct{}, error) {
+		exists, err := repo.db.Plan.Query().Where(
+			dbplan.Namespace(input.SubscriptionID.Namespace), dbplan.ID(input.TargetPlan.Id),
+			dbplan.Key(input.TargetPlan.Key), dbplan.Version(input.TargetPlan.Version),
+		).Exist(ctx)
+		if err != nil {
+			return struct{}{}, err
+		}
+		if !exists {
+			return struct{}{}, models.NewGenericValidationError(errors.New("target plan reference does not exist in the subscription namespace"))
+		}
+		_, err = repo.db.Subscription.UpdateOneID(input.SubscriptionID.ID).
+			Where(dbsubscription.Namespace(input.SubscriptionID.Namespace), dbsubscription.PlanID(input.CurrentPlan.Id)).
+			SetPlanID(input.TargetPlan.Id).Save(ctx)
+		if db.IsNotFound(err) {
+			return struct{}{}, models.NewGenericConflictError(errors.New("subscription plan changed during migration"))
+		}
+		return struct{}{}, err
+	})
+	return err
+}
+
+func (r *subscriptionRepo) SetEndOfCadence(ctx context.Context, id models.NamespacedID, at *time.Time) (*subscription.Subscription, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionRepo) (*subscription.Subscription, error) {
+		_, err := repo.db.Subscription.UpdateOneID(id.ID).SetOrClearActiveTo(at).Where(dbsubscription.Namespace(id.Namespace)).Save(ctx)
+		if db.IsNotFound(err) {
+			return nil, subscription.NewSubscriptionNotFoundError(
+				id.ID,
+			)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		ent, err := withSubscriptionReferences(repo.db.Subscription.Query()).
+			Where(dbsubscription.ID(id.ID), dbsubscription.Namespace(id.Namespace)).
+			Only(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		sub, err := MapDBSubscription(ent)
+
+		return lo.ToPtr(sub), err
+	})
+}
+
+func (r *subscriptionRepo) UpdateAnnotations(ctx context.Context, id models.NamespacedID, annotations models.Annotations) (*subscription.Subscription, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionRepo) (*subscription.Subscription, error) {
+		_, err := repo.db.Subscription.UpdateOneID(id.ID).SetAnnotations(annotations).Where(dbsubscription.Namespace(id.Namespace)).Save(ctx)
+		if db.IsNotFound(err) {
+			return nil, subscription.NewSubscriptionNotFoundError(
+				id.ID,
+			)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		ent, err := withSubscriptionReferences(repo.db.Subscription.Query()).
+			Where(dbsubscription.ID(id.ID), dbsubscription.Namespace(id.Namespace)).
+			Only(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		sub, err := MapDBSubscription(ent)
+
+		return lo.ToPtr(sub), err
+	})
+}
+
+func (r *subscriptionRepo) GetByID(ctx context.Context, subscriptionID models.NamespacedID) (subscription.Subscription, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionRepo) (subscription.Subscription, error) {
+		res, err := withSubscriptionReferences(repo.db.Subscription.Query()).Where(dbsubscription.ID(subscriptionID.ID), dbsubscription.Namespace(subscriptionID.Namespace)).Where(SubscriptionNotDeletedAt(clock.Now())...).First(ctx)
+
+		if db.IsNotFound(err) {
+			return subscription.Subscription{}, subscription.NewSubscriptionNotFoundError(
+				subscriptionID.ID,
+			)
+		} else if err != nil {
+			return subscription.Subscription{}, err
+		} else if res == nil {
+			return subscription.Subscription{}, fmt.Errorf("unexpected nil subscription")
+		}
+
+		return MapDBSubscription(res)
+	})
+}
+
+func (r *subscriptionRepo) Create(ctx context.Context, sub subscription.CreateSubscriptionEntityInput) (subscription.Subscription, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionRepo) (subscription.Subscription, error) {
+		command := repo.db.Subscription.Create().
+			SetNamespace(sub.Namespace).
+			SetCustomerID(sub.CustomerId).
+			SetInvoiceCurrency(sub.InvoiceCurrency).
+			SetCostBasisMode(dbsubscription.CostBasisMode(sub.CostBasisMode.OrDefault())).
+			SetBillingCadence(sub.BillingCadence.ISOString()).
+			SetProRatingConfig(sub.ProRatingConfig).
+			SetSettlementMode(sub.SettlementMode).
+			SetActiveFrom(sub.ActiveFrom).
+			SetName(sub.Name).
+			SetNillableDescription(sub.Description).
+			SetMetadata(sub.Metadata).
+			SetAnnotations(sub.Annotations).
+			SetBillingAnchor(sub.BillingAnchor.UTC())
+
+		if sub.ActiveTo != nil {
+			command = command.SetActiveTo(*sub.ActiveTo)
+		}
+
+		if sub.Plan != nil {
+			command = command.SetPlanID(sub.Plan.Id)
+		}
+
+		res, err := command.Save(ctx)
+		if err != nil {
+			return subscription.Subscription{}, err
+		}
+
+		if res == nil {
+			return subscription.Subscription{}, fmt.Errorf("unexpected nil subscription")
+		}
+
+		res, err = withSubscriptionReferences(repo.db.Subscription.Query()).
+			Where(dbsubscription.ID(res.ID), dbsubscription.Namespace(res.Namespace)).
+			Only(ctx)
+		if err != nil {
+			return subscription.Subscription{}, fmt.Errorf("failed to reload subscription: %w", err)
+		}
+
+		return MapDBSubscription(res)
+	})
+}
+
+func (r *subscriptionRepo) CreateCostBasisPins(ctx context.Context, inputs []subscription.CreateCostBasisPinEntityInput) error {
+	if len(inputs) == 0 {
+		return nil
+	}
+
+	var errs []error
+	for idx, input := range inputs {
+		if err := input.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("input[%d]: %w", idx, err))
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+
+	return entutils.TransactingRepoWithNoValue(ctx, r, func(ctx context.Context, repo *subscriptionRepo) error {
+		builders := make([]*db.SubscriptionCostBasisPinCreate, 0, len(inputs))
+
+		for _, input := range inputs {
+			builders = append(builders, repo.db.SubscriptionCostBasisPin.Create().
+				SetNamespace(input.Namespace).
+				SetSubscriptionID(input.SubscriptionID).
+				SetCustomCurrencyID(input.CustomCurrencyID).
+				SetInvoiceCurrency(input.InvoiceCurrency).
+				SetCostBasisID(input.CostBasisID))
+		}
+
+		if _, err := repo.db.SubscriptionCostBasisPin.CreateBulk(builders...).Save(ctx); err != nil {
+			return fmt.Errorf("creating subscription cost basis pins: %w", err)
+		}
+
+		return nil
+	})
+}
+
+func (r *subscriptionRepo) Delete(ctx context.Context, id models.NamespacedID) error {
+	return entutils.TransactingRepoWithNoValue(ctx, r, func(ctx context.Context, repo *subscriptionRepo) error {
+		_, err := repo.db.Subscription.UpdateOneID(id.ID).SetDeletedAt(clock.Now()).Save(ctx)
+		if db.IsNotFound(err) {
+			return subscription.NewSubscriptionNotFoundError(id.ID)
+		}
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func (r *subscriptionRepo) List(ctx context.Context, in subscription.ListSubscriptionsInput) (subscription.SubscriptionList, error) {
+	return entutils.TransactingRepo(ctx, r, func(ctx context.Context, repo *subscriptionRepo) (subscription.SubscriptionList, error) {
+		now := clock.Now()
+
+		query := withSubscriptionReferences(repo.db.Subscription.Query())
+
+		notDeletedAtNow := SubscriptionNotDeletedAt(now)
+		if !in.IncludeDeleted {
+			query = query.Where(notDeletedAtNow...)
+		}
+
+		if len(in.Namespaces) > 0 {
+			query = query.Where(dbsubscription.NamespaceIn(in.Namespaces...))
+		}
+
+		if in.ExcludeCustomCurrency {
+			// Match the schedule loaded by GetView, including past and future items
+			// but excluding deleted revisions. InvoiceCurrency is always fiat.
+			query = query.Where(dbsubscription.Not(dbsubscription.HasPhasesWith(
+				dbsubscriptionphase.Or(dbsubscriptionphase.DeletedAtIsNil(), dbsubscriptionphase.DeletedAtGT(now)),
+				dbsubscriptionphase.HasItemsWith(
+					dbsubscriptionitem.Or(dbsubscriptionitem.DeletedAtIsNil(), dbsubscriptionitem.DeletedAtGT(now)),
+					dbsubscriptionitem.CustomCurrencyIDNotNil(),
+				),
+			)))
+		}
+
+		if in.PlanKey != nil {
+			if p := filter.SelectPredicate[predicate.Plan](filter.Filter(*in.PlanKey), dbplan.FieldKey); p != nil {
+				query = query.Where(dbsubscription.HasPlanWith(*p))
+			}
+		}
+		query = filter.ApplyToQuery(query, in.ID, dbsubscription.FieldID)
+		query = filter.ApplyToQuery(query, in.CustomerID, dbsubscription.FieldCustomerID)
+		query = filter.ApplyToQuery(query, in.PlanID, dbsubscription.FieldPlanID)
+		query = filter.ApplyToQuery(query, in.DeletedAt, dbsubscription.FieldDeletedAt)
+
+		if planKeyPred := filter.SelectPredicate[predicate.Plan](lo.FromPtrOr(in.PlanKey, filter.FilterString{}), dbplan.FieldKey); planKeyPred != nil {
+			query = query.Where(dbsubscription.HasPlanWith(*planKeyPred))
+		}
+
+		if in.ActiveAt != nil {
+			query = query.Where(
+				SubscriptionActiveAt(*in.ActiveAt)...,
+			)
+		}
+
+		if in.ActiveInPeriod != nil {
+			query = query.Where(SubscriptionActiveInPeriod(*in.ActiveInPeriod)...)
+		}
+
+		if len(in.Status) > 0 {
+			var predicates []predicate.Subscription
+
+			if slices.Contains(in.Status, subscription.SubscriptionStatusActive) {
+				predicates = append(predicates, dbsubscription.And(
+					dbsubscription.And(SubscriptionActiveAt(now)...),
+					dbsubscription.ActiveToIsNil(),
+				))
+			}
+
+			if slices.Contains(in.Status, subscription.SubscriptionStatusCanceled) {
+				predicates = append(predicates, dbsubscription.And(
+					dbsubscription.And(SubscriptionActiveAt(now)...),
+					dbsubscription.ActiveToGT(now),
+				))
+			}
+
+			if slices.Contains(in.Status, subscription.SubscriptionStatusInactive) {
+				predicates = append(predicates, dbsubscription.And(
+					dbsubscription.ActiveToLTE(now),
+				))
+			}
+
+			if slices.Contains(in.Status, subscription.SubscriptionStatusScheduled) {
+				predicates = append(predicates, dbsubscription.And(
+					dbsubscription.ActiveFromGT(now),
+				))
+			}
+
+			if len(predicates) > 0 {
+				query = query.Where(dbsubscription.Or(predicates...))
+			}
+		}
+
+		order := entutils.GetOrdering(sortx.OrderDefault)
+		if !in.Order.IsDefaultValue() {
+			order = entutils.GetOrdering(in.Order)
+		}
+
+		switch in.OrderBy {
+		case subscription.OrderByID:
+			query = query.Order(dbsubscription.ByID(order...))
+		case subscription.OrderByActiveFrom:
+			query = query.Order(dbsubscription.ByActiveFrom(order...))
+		case subscription.OrderByActiveTo:
+			query = query.Order(dbsubscription.ByActiveTo(order...))
+		default:
+			query = query.Order(dbsubscription.ByActiveFrom(order...))
+		}
+
+		paged, err := query.Paginate(ctx, in.Page)
+		if err != nil {
+			return subscription.SubscriptionList{}, err
+		}
+
+		return pagination.MapResultErr(paged, MapDBSubscription)
+	})
+}

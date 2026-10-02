@@ -1,0 +1,84 @@
+name: CodeQL Go
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "flake.*"
+      - "Makefile"
+      - ".github/workflows/codeql-go.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "flake.*"
+      - "Makefile"
+      - ".github/workflows/codeql-go.yaml"
+  schedule:
+    - cron: "30 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-go:
+    name: Analyze Go
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: depot-ubuntu-latest-16
+    timeout-minutes: 60
+
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+          use-policy-store: ${{ secrets.STEP_SECURITY_API_KEY != '' }}
+          api-key: ${{ secrets.STEP_SECURITY_API_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          check-latest: true
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            collector/go.sum
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: go
+          build-mode: manual
+          dependency-caching: false
+
+      - name: Build backend for CodeQL (PRs only)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          make build-server GO_BUILD_FLAGS=
+
+      - name: Full build report for CodeQL (non-PRs only)
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          make build GO_BUILD_FLAGS=
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: "/language:go"

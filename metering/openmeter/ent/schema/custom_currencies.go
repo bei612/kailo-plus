@@ -1,0 +1,147 @@
+package schema
+
+import (
+	"entgo.io/ent"
+	"entgo.io/ent/dialect"
+	"entgo.io/ent/dialect/entsql"
+	"entgo.io/ent/schema/edge"
+	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
+	"github.com/alpacahq/alpacadecimal"
+
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/framework/entutils"
+)
+
+type CustomCurrency struct {
+	ent.Schema
+}
+
+func (CustomCurrency) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		entutils.NamespaceMixin{},
+		entutils.IDMixin{},
+		entutils.TimeMixin{},
+	}
+}
+
+func (CustomCurrency) Fields() []ent.Field {
+	return []ent.Field{
+		field.String("code").
+			GoType(currencyx.Code("")).
+			NotEmpty().
+			MinLen(3).
+			MaxLen(24).
+			Immutable(),
+		field.String("name").
+			NotEmpty(),
+		field.String("symbol").
+			Optional(),
+		// NOTE: add defaults in order to avoid errors during schema migration when database has data already
+		field.Uint32("precision").
+			Default(2),
+		field.String("decimal_mark").
+			NotEmpty().
+			Default("."),
+		field.String("thousands_separator").
+			NotEmpty().
+			Default(","),
+	}
+}
+
+func (CustomCurrency) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.To("cost_basis_history", CurrencyCostBasis.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("charges_credit_purchase", ChargeCreditPurchase.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("charges_flat_fee", ChargeFlatFee.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("charges_usage_based", ChargeUsageBased.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("plans", Plan.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("addons", Addon.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("plan_rate_cards", PlanRateCard.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("addon_rate_cards", AddonRateCard.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("subscription_items", SubscriptionItem.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("subscription_cost_basis_pins", SubscriptionCostBasisPin.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+	}
+}
+
+func (CustomCurrency) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("namespace", "code").
+			Annotations(
+				entsql.IndexWhere("deleted_at IS NULL"),
+			).
+			Unique(),
+		index.Fields("namespace", "id").
+			Unique(),
+	}
+}
+
+type CurrencyCostBasis struct {
+	ent.Schema
+}
+
+func (CurrencyCostBasis) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		entutils.NamespaceMixin{},
+		entutils.IDMixin{},
+		entutils.TimeMixin{},
+	}
+}
+
+func (CurrencyCostBasis) Fields() []ent.Field {
+	return []ent.Field{
+		field.String("currency_id").
+			SchemaType(map[string]string{
+				dialect.Postgres: "char(26)",
+			}).
+			Immutable(),
+		field.String("fiat_code").
+			GoType(currencyx.Code("")).
+			NotEmpty().
+			Immutable(),
+		field.Other("rate", alpacadecimal.Decimal{}).
+			SchemaType(map[string]string{
+				dialect.Postgres: "numeric",
+			}).
+			Immutable(),
+		field.Time("effective_from").
+			Immutable(),
+		field.Time("effective_to").
+			Optional().
+			Nillable(),
+	}
+}
+
+func (CurrencyCostBasis) Edges() []ent.Edge {
+	return []ent.Edge{
+		// Many cost basis entries belong to one currency
+		edge.From("currency", CustomCurrency.Type).
+			Ref("cost_basis_history").
+			Field("currency_id").
+			Unique().
+			Required().
+			Immutable(),
+		edge.To("subscription_pins", SubscriptionCostBasisPin.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+	}
+}
+
+func (CurrencyCostBasis) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("namespace", "currency_id", "fiat_code", "effective_from").
+			Annotations(
+				entsql.IndexWhere("deleted_at IS NULL"),
+			).
+			Unique(),
+	}
+}

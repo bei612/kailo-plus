@@ -1,0 +1,519 @@
+package adapter
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	currencyadapter "github.com/openmeterio/openmeter/openmeter/currencies/adapter"
+	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	productcatalogadapter "github.com/openmeterio/openmeter/openmeter/productcatalog/adapter"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/addon"
+	taxcodeadapter "github.com/openmeterio/openmeter/openmeter/taxcode/adapter"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+func FromAddonRow(a entdb.Addon) (*addon.Addon, error) {
+	addonCurrency := currencies.CurrencyReference{
+		Code:             currencyx.Code(a.CurrencyCode),
+		CustomCurrencyID: a.CustomCurrencyID,
+	}
+
+	if a.Edges.CustomCurrency != nil {
+		customCurrency, err := currencyadapter.FromDBCustomCurrency(a.Edges.CustomCurrency)
+		if err != nil {
+			return nil, fmt.Errorf("invalid add-on currency: %w", err)
+		}
+
+		addonCurrency, err = addonCurrency.WithCurrency(&customCurrency)
+		if err != nil {
+			return nil, fmt.Errorf("invalid add-on currency: %w", err)
+		}
+	}
+
+	aa := &addon.Addon{
+		NamespacedID: models.NamespacedID{
+			Namespace: a.Namespace,
+			ID:        a.ID,
+		},
+		ManagedModel: models.ManagedModel{
+			CreatedAt: a.CreatedAt,
+			UpdatedAt: a.UpdatedAt,
+			DeletedAt: a.DeletedAt,
+		},
+		AddonMeta: productcatalog.AddonMeta{
+			Key:          a.Key,
+			Name:         a.Name,
+			Description:  a.Description,
+			Metadata:     a.Metadata,
+			Annotations:  a.Annotations,
+			Version:      a.Version,
+			Currency:     addonCurrency,
+			InstanceType: a.InstanceType,
+			EffectivePeriod: productcatalog.EffectivePeriod{
+				EffectiveFrom: a.EffectiveFrom,
+				EffectiveTo:   a.EffectiveTo,
+			},
+		},
+	}
+
+	// Set Rate Cards
+
+	if len(a.Edges.Ratecards) > 0 {
+		aa.RateCards = make(addon.RateCards, 0, len(a.Edges.Ratecards))
+		for _, edge := range a.Edges.Ratecards {
+			if edge == nil {
+				continue
+			}
+
+			ratecard, err := FromAddonRateCardRow(*edge)
+			if err != nil {
+				return nil, fmt.Errorf("invalid ratecard [namespace=%s key=%s]: %w", aa.Namespace, edge.Key, err)
+			}
+
+			aa.RateCards = append(aa.RateCards, *ratecard)
+		}
+	}
+
+	plans, err := a.Edges.PlansOrErr()
+	if err != nil {
+		aa.Plans = nil
+	} else {
+		planAddons := make([]addon.Plan, 0, len(plans))
+
+		for _, plan := range plans {
+			if plan == nil {
+				continue
+			}
+
+			planAddon, err := FromPlanAddonRow(*plan)
+			if err != nil {
+				return nil, fmt.Errorf("invalid plan add-on assignment %s: %w", plan.ID, err)
+			}
+
+			planAddons = append(planAddons, *planAddon)
+		}
+
+		aa.Plans = &planAddons
+	}
+
+	return aa, nil
+}
+
+func FromAddonRateCardRow(r entdb.AddonRateCard) (*addon.RateCard, error) {
+	var rateCardCurrency *currencies.CurrencyReference
+
+	if r.CurrencyCode != nil {
+		reference := currencies.CurrencyReference{
+			Code:             currencyx.Code(*r.CurrencyCode),
+			CustomCurrencyID: r.CustomCurrencyID,
+		}
+		if r.Edges.CustomCurrency != nil {
+			customCurrency, err := currencyadapter.FromDBCustomCurrency(r.Edges.CustomCurrency)
+			if err != nil {
+				return nil, fmt.Errorf("invalid rate card currency: %w", err)
+			}
+
+			reference, err = reference.WithCurrency(&customCurrency)
+			if err != nil {
+				return nil, fmt.Errorf("invalid rate card currency: %w", err)
+			}
+		}
+
+		rateCardCurrency = &reference
+	}
+
+	meta := productcatalog.RateCardMeta{
+		Key:                 r.Key,
+		Name:                r.Name,
+		Description:         r.Description,
+		Metadata:            r.Metadata,
+		Annotations:         r.Annotations,
+		EntitlementTemplate: r.EntitlementTemplate,
+		Feature:             productcatalog.NewFeatureReference(r.FeatureID, r.FeatureKey),
+		TaxConfig:           r.TaxConfig,
+		Price:               r.Price,
+		Discounts:           lo.FromPtr(r.Discounts),
+		UnitConfig:          r.UnitConfig,
+		Currency:            rateCardCurrency,
+	}
+
+	if meta.Feature != nil {
+		if err := meta.Feature.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid persisted feature reference: %w", err)
+		}
+
+		ratecardFeature, err := r.Edges.FeaturesOrErr()
+		if err == nil && ratecardFeature != nil {
+			resolvedFeature := productcatalogadapter.MapFeatureEntity(ratecardFeature)
+			resolvedReference, err := meta.Feature.WithFeature(&resolvedFeature)
+			if err != nil {
+				return nil, fmt.Errorf("invalid resolved feature reference: %w", err)
+			}
+			meta.Feature = &resolvedReference
+		}
+	}
+
+	// Map TaxCode if eagerly loaded.
+	taxCodeRow, err := r.Edges.TaxCodeOrErr()
+	if err == nil {
+		tc, err := taxcodeadapter.MapTaxCodeFromEntity(taxCodeRow)
+		if err != nil {
+			return nil, fmt.Errorf("invalid tax code for rate card %s: %w", r.ID, err)
+		}
+
+		meta.TaxCode = &tc
+	}
+
+	// Backfill legacy TaxConfig fields from new columns and TaxCode entity.
+	meta.TaxConfig = productcatalog.BackfillTaxConfig(meta.TaxConfig, r.TaxBehavior, meta.TaxCode)
+
+	// Get billing cadence
+
+	billingCadence, err := r.BillingCadence.ParsePtrOrNil()
+	if err != nil {
+		return nil, fmt.Errorf("invalid ratecard [namespace=%s key=%s]: billing cadence: %w", r.Namespace, r.Key, err)
+	}
+
+	// Managed fields
+
+	managed := addon.RateCardManagedFields{
+		ManagedModel: models.ManagedModel{
+			CreatedAt: r.CreatedAt,
+			UpdatedAt: r.UpdatedAt,
+			DeletedAt: r.DeletedAt,
+		},
+		NamespacedID: models.NamespacedID{
+			Namespace: r.Namespace,
+			ID:        r.ID,
+		},
+		AddonID: r.AddonID,
+	}
+
+	var ratecard *addon.RateCard
+
+	switch r.Type {
+	case productcatalog.FlatFeeRateCardType:
+		ratecard = &addon.RateCard{
+			RateCardManagedFields: managed,
+			RateCard: &productcatalog.FlatFeeRateCard{
+				RateCardMeta:   meta,
+				BillingCadence: billingCadence,
+			},
+		}
+	case productcatalog.UsageBasedRateCardType:
+		ratecard = &addon.RateCard{
+			RateCardManagedFields: managed,
+			RateCard: &productcatalog.UsageBasedRateCard{
+				RateCardMeta:   meta,
+				BillingCadence: lo.FromPtr(billingCadence),
+			},
+		}
+	default:
+		return nil, fmt.Errorf("invalid ratecard [namespace=%s key=%s]: invalid type %s: %w", r.Namespace, r.Key, r.Type, err)
+	}
+
+	return ratecard, nil
+}
+
+func FromPlanAddonRow(a entdb.PlanAddon) (*addon.Plan, error) {
+	planAddon := &addon.Plan{
+		NamespacedID: models.NamespacedID{
+			Namespace: a.Namespace,
+			ID:        a.ID,
+		},
+		ManagedModel: models.ManagedModel{
+			CreatedAt: a.CreatedAt,
+			UpdatedAt: a.UpdatedAt,
+			DeletedAt: a.DeletedAt,
+		},
+		PlanAddonMeta: productcatalog.PlanAddonMeta{
+			Metadata:    a.Metadata,
+			Annotations: a.Annotations,
+			PlanAddonConfig: productcatalog.PlanAddonConfig{
+				FromPlanPhase: a.FromPlanPhase,
+				MaxQuantity:   a.MaxQuantity,
+			},
+		},
+	}
+
+	// Set Plan
+
+	plan, err := a.Edges.PlanOrErr()
+	if err != nil {
+		return nil, errors.New("failed to cast plan: plan is not loaded")
+	}
+
+	pp, err := FromPlanRow(*plan)
+	if err != nil {
+		return nil, fmt.Errorf("failed to cast add-on: %w", err)
+	}
+
+	planAddon.Plan = *pp
+
+	return planAddon, nil
+}
+
+func FromPlanRow(p entdb.Plan) (*productcatalog.Plan, error) {
+	planCurrency := currencies.CurrencyReference{
+		Code:             currencyx.Code(p.CurrencyCode),
+		CustomCurrencyID: p.CustomCurrencyID,
+	}
+
+	if p.Edges.CustomCurrency != nil {
+		customCurrency, err := currencyadapter.FromDBCustomCurrency(p.Edges.CustomCurrency)
+		if err != nil {
+			return nil, fmt.Errorf("invalid plan currency: %w", err)
+		}
+
+		planCurrency, err = planCurrency.WithCurrency(&customCurrency)
+		if err != nil {
+			return nil, fmt.Errorf("invalid plan currency: %w", err)
+		}
+	}
+
+	billingCadence, err := p.BillingCadence.Parse()
+	if err != nil {
+		return nil, fmt.Errorf("invalid billing cadence %s: %w", p.BillingCadence, err)
+	}
+
+	pp := &productcatalog.Plan{
+		PlanMeta: productcatalog.PlanMeta{
+			Key:         p.Key,
+			Name:        p.Name,
+			Description: p.Description,
+			Metadata:    p.Metadata,
+			Version:     p.Version,
+			Currency:    planCurrency,
+			EffectivePeriod: productcatalog.EffectivePeriod{
+				EffectiveFrom: p.EffectiveFrom,
+				EffectiveTo:   p.EffectiveTo,
+			},
+			BillingCadence:  billingCadence,
+			ProRatingConfig: p.ProRatingConfig,
+			SettlementMode:  p.SettlementMode,
+		},
+	}
+
+	if len(p.Edges.Phases) > 0 {
+		phases := make([]productcatalog.Phase, len(p.Edges.Phases))
+		for _, edge := range p.Edges.Phases {
+			if edge == nil {
+				continue
+			}
+
+			phase, err := FromPlanPhaseRow(*edge)
+			if err != nil {
+				return nil, fmt.Errorf("invalid phase %s: %w", edge.ID, err)
+			}
+
+			phases[edge.Index] = *phase
+		}
+
+		if len(phases) > 0 {
+			pp.Phases = phases
+		}
+	}
+
+	return pp, nil
+}
+
+func FromPlanPhaseRow(p entdb.PlanPhase) (*productcatalog.Phase, error) {
+	pp := &productcatalog.Phase{
+		PhaseMeta: productcatalog.PhaseMeta{
+			Key:         p.Key,
+			Name:        p.Name,
+			Description: p.Description,
+			Metadata:    p.Metadata,
+		},
+	}
+
+	// Set Interval
+
+	duration, err := p.Duration.ParsePtrOrNil()
+	if err != nil {
+		return nil, fmt.Errorf("invalid duration %v: %w", p.Duration, err)
+	}
+
+	pp.Duration = duration
+
+	// Set Rate Cards
+
+	if len(p.Edges.Ratecards) > 0 {
+		pp.RateCards = make([]productcatalog.RateCard, 0, len(p.Edges.Ratecards))
+		for _, edge := range p.Edges.Ratecards {
+			if edge == nil {
+				continue
+			}
+
+			ratecard, err := FromPlanRateCardRow(*edge)
+			if err != nil {
+				return nil, fmt.Errorf("invalid rate card %s: %w", edge.ID, err)
+			}
+
+			pp.RateCards = append(pp.RateCards, ratecard)
+		}
+	}
+
+	return pp, nil
+}
+
+func FromPlanRateCardRow(r entdb.PlanRateCard) (productcatalog.RateCard, error) {
+	var rateCardCurrency *currencies.CurrencyReference
+	if r.CurrencyCode != nil {
+		reference := currencies.CurrencyReference{
+			Code:             currencyx.Code(*r.CurrencyCode),
+			CustomCurrencyID: r.CustomCurrencyID,
+		}
+		if r.Edges.CustomCurrency != nil {
+			customCurrency, err := currencyadapter.FromDBCustomCurrency(r.Edges.CustomCurrency)
+			if err != nil {
+				return nil, fmt.Errorf("invalid rate card currency: %w", err)
+			}
+
+			reference, err = reference.WithCurrency(&customCurrency)
+			if err != nil {
+				return nil, fmt.Errorf("invalid rate card currency: %w", err)
+			}
+		}
+
+		rateCardCurrency = &reference
+	}
+
+	meta := productcatalog.RateCardMeta{
+		Key:                 r.Key,
+		Name:                r.Name,
+		Description:         r.Description,
+		Metadata:            r.Metadata,
+		Annotations:         r.Annotations,
+		Feature:             productcatalog.NewFeatureReference(r.FeatureID, r.FeatureKey),
+		EntitlementTemplate: r.EntitlementTemplate,
+		TaxConfig:           r.TaxConfig,
+		Price:               r.Price,
+		Discounts:           lo.FromPtr(r.Discounts),
+		UnitConfig:          r.UnitConfig,
+		Currency:            rateCardCurrency,
+	}
+
+	if meta.Feature != nil {
+		if err := meta.Feature.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid persisted feature reference: %w", err)
+		}
+
+		ratecardFeature, err := r.Edges.FeaturesOrErr()
+		if err == nil && ratecardFeature != nil {
+			resolvedFeature := productcatalogadapter.MapFeatureEntity(ratecardFeature)
+			resolvedReference, err := meta.Feature.WithFeature(&resolvedFeature)
+			if err != nil {
+				return nil, fmt.Errorf("invalid resolved feature reference: %w", err)
+			}
+			meta.Feature = &resolvedReference
+		}
+	}
+
+	// Map TaxCode if eagerly loaded.
+	taxCodeRow, err := r.Edges.TaxCodeOrErr()
+	if err == nil {
+		tc, err := taxcodeadapter.MapTaxCodeFromEntity(taxCodeRow)
+		if err != nil {
+			return nil, fmt.Errorf("invalid tax code for rate card %s: %w", r.ID, err)
+		}
+
+		meta.TaxCode = &tc
+	}
+
+	// Backfill legacy TaxConfig fields from new columns and TaxCode entity.
+	meta.TaxConfig = productcatalog.BackfillTaxConfig(meta.TaxConfig, r.TaxBehavior, meta.TaxCode)
+
+	// Get billing cadence
+
+	billingCadence, err := r.BillingCadence.ParsePtrOrNil()
+	if err != nil {
+		return nil, fmt.Errorf("invalid rate card billing cadence %s: %w", r.ID, err)
+	}
+
+	var ratecard productcatalog.RateCard
+
+	switch r.Type {
+	case productcatalog.FlatFeeRateCardType:
+		ratecard = &productcatalog.FlatFeeRateCard{
+			RateCardMeta:   meta,
+			BillingCadence: billingCadence,
+		}
+	case productcatalog.UsageBasedRateCardType:
+		ratecard = &productcatalog.UsageBasedRateCard{
+			RateCardMeta:   meta,
+			BillingCadence: lo.FromPtr(billingCadence),
+		}
+	default:
+		return nil, fmt.Errorf("invalid RateCard type %s", r.Type)
+	}
+
+	return ratecard, nil
+}
+
+func asAddonRateCardRow(r productcatalog.RateCard) (entdb.AddonRateCard, error) {
+	meta := r.AsMeta()
+
+	var currencyCode *string
+	var customCurrencyID *string
+	if meta.Currency != nil {
+		currencyCode = lo.ToPtr(meta.Currency.Code.String())
+		customCurrencyID = meta.Currency.CustomCurrencyID
+	}
+
+	ratecard := entdb.AddonRateCard{
+		Key:                 meta.Key,
+		Metadata:            meta.Metadata,
+		Annotations:         meta.Annotations,
+		Name:                meta.Name,
+		Description:         meta.Description,
+		EntitlementTemplate: meta.EntitlementTemplate,
+		TaxConfig:           meta.TaxConfig,
+		Price:               meta.Price,
+		Type:                r.Type(),
+		Discounts:           lo.EmptyableToPtr(meta.Discounts),
+		UnitConfig:          meta.UnitConfig,
+		CurrencyCode:        currencyCode,
+		CustomCurrencyID:    customCurrencyID,
+	}
+
+	if meta.Feature != nil {
+		if err := meta.Feature.Validate(); err != nil {
+			return entdb.AddonRateCard{}, fmt.Errorf("invalid feature reference for persistence: %w", err)
+		}
+
+		if meta.Feature.ID == nil || meta.Feature.Key == nil {
+			return entdb.AddonRateCard{}, errors.New("feature reference must include both id and key for persistence")
+		}
+
+		ratecard.FeatureKey = meta.Feature.Key
+		ratecard.FeatureID = meta.Feature.ID
+	}
+
+	if managed, ok := r.(addon.ManagedRateCard); ok {
+		managedFields := managed.ManagedFields()
+		ratecard.Namespace = managedFields.Namespace
+		ratecard.ID = managedFields.ID
+	}
+
+	switch v := r.(type) {
+	case *productcatalog.FlatFeeRateCard:
+		ratecard.BillingCadence = v.BillingCadence.ISOStringPtrOrNil()
+	case *productcatalog.UsageBasedRateCard:
+		ratecard.BillingCadence = v.BillingCadence.ISOStringPtrOrNil()
+	default:
+		return ratecard, fmt.Errorf("invalid ratecard [key=%s]: invalid type: %T", r.Key(), r)
+	}
+
+	if meta.TaxConfig != nil {
+		ratecard.TaxCodeID = meta.TaxConfig.TaxCodeID
+		ratecard.TaxBehavior = meta.TaxConfig.Behavior
+	}
+
+	return ratecard, nil
+}

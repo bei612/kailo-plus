@@ -1,0 +1,180 @@
+package config
+
+import (
+	"errors"
+	"time"
+
+	"github.com/spf13/viper"
+
+	"github.com/openmeterio/openmeter/pkg/errorsx"
+)
+
+type SinkConfiguration struct {
+	// FIXME(chrisgacsal): remove as it is deprecated by moving Kafka specific configuration to dedicated config params.
+	GroupId             string
+	Dedupe              DedupeConfiguration
+	MinCommitCount      int
+	MaxCommitWait       time.Duration
+	MaxPollTimeout      time.Duration
+	NamespaceRefetch    time.Duration
+	FlushSuccessTimeout time.Duration
+	DrainTimeout        time.Duration
+	IngestNotifications IngestNotificationsConfiguration
+	// Kafka client/Consumer configuration
+	Kafka KafkaConfig
+	// TODO: remove, config moved to aggregation config
+	// Storage configuration
+	Storage StorageConfiguration
+
+	// NamespaceRefetchTimeout is the timeout for updating namespaces and consumer subscription.
+	// It must be less than NamespaceRefetch interval.
+	NamespaceRefetchTimeout time.Duration
+
+	// NamespaceTopicRegexp defines the regular expression to match/validate topic names the sink-worker needs to subscribe to.
+	NamespaceTopicRegexp string
+
+	// MeterRefetchInterval is the interval to refetch meters from the database
+	MeterRefetchInterval time.Duration
+
+	// LogDroppedEvents controls whether dropped events are logged
+	LogDroppedEvents bool
+}
+
+func (c SinkConfiguration) Validate() error {
+	var errs []error
+
+	if c.MinCommitCount < 1 {
+		errs = append(errs, errors.New("MinCommitCount must be greater than 0"))
+	}
+
+	if c.MaxCommitWait == 0 {
+		errs = append(errs, errors.New("MaxCommitWait must be greater than 0"))
+	}
+
+	if c.MaxPollTimeout == 0 {
+		errs = append(errs, errors.New("MaxPollTimeout must be greater than 0"))
+	}
+
+	if c.NamespaceRefetch == 0 {
+		errs = append(errs, errors.New("NamespaceRefetch must be greater than 0"))
+	}
+
+	if c.FlushSuccessTimeout == 0 {
+		errs = append(errs, errors.New("FlushSuccessTimeout must be greater than 0"))
+	}
+
+	if c.DrainTimeout == 0 {
+		errs = append(errs, errors.New("DrainTimeout must be greater than 0"))
+	}
+
+	if c.NamespaceRefetchTimeout != 0 && c.NamespaceRefetchTimeout > c.NamespaceRefetch {
+		errs = append(errs, errors.New("NamespaceRefetchTimeout must be less than or equal to NamespaceRefetch"))
+	}
+
+	if c.NamespaceTopicRegexp == "" {
+		errs = append(errs, errors.New("NamespaceTopicRegexp must no be empty"))
+	}
+
+	if err := c.IngestNotifications.Validate(); err != nil {
+		errs = append(errs, errorsx.WithPrefix(err, "ingest notifications"))
+	}
+
+	if err := c.Kafka.Validate(); err != nil {
+		errs = append(errs, errorsx.WithPrefix(err, "kafka"))
+	}
+
+	if c.MeterRefetchInterval <= 0 {
+		errs = append(errs, errors.New("MeterRefetchInterval must be greater than 0"))
+	}
+
+	return errors.Join(errs...)
+}
+
+type IngestNotificationsConfiguration struct {
+	MaxEventsInBatch int
+}
+
+func (c IngestNotificationsConfiguration) Validate() error {
+	var errs []error
+
+	if c.MaxEventsInBatch <= 0 {
+		errs = append(errs, errors.New("MaxEventsInBatch must be greater than 0"))
+	}
+
+	if c.MaxEventsInBatch > 1000 {
+		errs = append(errs, errors.New("MaxEventsInBatch must not be greater than 1000"))
+	}
+
+	return errors.Join(errs...)
+}
+
+type StorageConfiguration struct {
+	// Set true for ClickHouse first store the incoming inserts into an in-memory buffer
+	// before flushing them regularly to disk.
+	// See https://clickhouse.com/docs/en/cloud/bestpractices/asynchronous-inserts
+	AsyncInsert bool
+	// Set true if you want an insert statement to return with an acknowledgment immediately
+	// without waiting for the data got inserted into the buffer.
+	// Setting true can cause silent errors that you need to monitor separately.
+	AsyncInsertWait bool
+
+	// See https://clickhouse.com/docs/en/operations/settings/settings
+	// For example, you can set the `max_insert_threads` setting to control the number of threads
+	// or the `parallel_view_processing` setting to enable pushing to attached views concurrently.
+	QuerySettings map[string]string
+}
+
+func (c StorageConfiguration) Validate() error {
+	if c.AsyncInsertWait && !c.AsyncInsert {
+		return errors.New("AsyncInsertWait is set but AsyncInsert is not")
+	}
+
+	return nil
+}
+
+// ConfigureSink setup Sink specific configuration defaults for provided *viper.Viper instance.
+func ConfigureSink(v *viper.Viper) {
+	// Sink Dedupe
+	v.SetDefault("sink.dedupe.enabled", false)
+	v.SetDefault("sink.dedupe.driver", "memory")
+
+	// Sink Dedupe Memory driver
+	v.SetDefault("sink.dedupe.config.size", 128)
+
+	// Sink Dedupe Redis driver
+	v.SetDefault("sink.dedupe.config.address", "127.0.0.1:6379")
+	v.SetDefault("sink.dedupe.config.database", 0)
+	v.SetDefault("sink.dedupe.config.username", "")
+	v.SetDefault("sink.dedupe.config.password", "")
+	v.SetDefault("sink.dedupe.config.expiration", "24h")
+	v.SetDefault("sink.dedupe.config.sentinel.enabled", false)
+	v.SetDefault("sink.dedupe.config.sentinel.masterName", "")
+	v.SetDefault("sink.dedupe.config.tls.enabled", false)
+	v.SetDefault("sink.dedupe.config.tls.insecureSkipVerify", false)
+
+	// Sink
+	// FIXME(chrisgacsal): remove as it is deprecated by moving Kafka specific configuration to dedicated config params.
+	v.SetDefault("sink.groupId", "openmeter-sink-worker")
+	v.SetDefault("sink.minCommitCount", 500)
+	v.SetDefault("sink.maxCommitWait", "2s")
+	v.SetDefault("sink.maxPollTimeout", "100ms")
+	v.SetDefault("sink.namespaceRefetch", "15s")
+	v.SetDefault("sink.flushSuccessTimeout", "5s")
+	v.SetDefault("sink.drainTimeout", "10s")
+	v.SetDefault("sink.ingestNotifications.maxEventsInBatch", 50)
+	v.SetDefault("sink.namespaceRefetchTimeout", "10s")
+	v.SetDefault("sink.namespaceTopicRegexp", "^om_([A-Za-z0-9]+(?:_[A-Za-z0-9]+)*)_events$")
+	v.SetDefault("sink.meterRefetchInterval", "15s")
+	v.SetDefault("sink.logDroppedEvents", false)
+
+	// TODO: remove, config moved to aggregation config
+	// Sink Storage
+	v.SetDefault("sink.storage.asyncInsert", false)
+	v.SetDefault("sink.storage.asyncInsertWait", false)
+
+	// Sink Kafka configuration
+	ConfigureKafkaConfiguration(v, "sink")
+
+	// Override Kafka configuration defaults
+	v.SetDefault("sink.kafka.consumerGroupId", "openmeter-sink-worker")
+}

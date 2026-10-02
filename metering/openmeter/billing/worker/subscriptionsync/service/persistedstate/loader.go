@@ -1,0 +1,357 @@
+package persistedstate
+
+import (
+	"context"
+	"fmt"
+	"slices"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/openmeter/streaming"
+	"github.com/openmeterio/openmeter/openmeter/subscription"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+type billingService interface {
+	GetStandardLinesForSubscription(ctx context.Context, input billing.GetLinesForSubscriptionInput) (billing.StandardLines, error)
+	GetGatheringLinesForSubscription(ctx context.Context, input billing.GetLinesForSubscriptionInput) (billing.GatheringLines, error)
+	GetSplitLineGroupsForSubscription(ctx context.Context, input billing.GetLinesForSubscriptionInput) ([]billing.SplitLineHierarchy, error)
+	ListInvoices(ctx context.Context, input billing.ListInvoicesInput) (billing.ListInvoicesResponse, error)
+}
+
+type chargeService interface {
+	ListCharges(ctx context.Context, input charges.ListChargesInput) (pagination.Result[charges.Charge], error)
+}
+
+type Loader struct {
+	billingService billingService
+	chargeService  chargeService
+}
+
+func NewLoader(billingService billingService, chargeService chargeService) Loader {
+	return Loader{
+		billingService: billingService,
+		chargeService:  chargeService,
+	}
+}
+
+func (l Loader) LoadForSubscription(ctx context.Context, subs subscription.Subscription) (State, error) {
+	getLinesInput := billing.GetLinesForSubscriptionInput{
+		Namespace:      subs.Namespace,
+		SubscriptionID: subs.ID,
+		CustomerID:     subs.CustomerId,
+		// Charge-managed invoice lines are edited through charge patches, so subscription sync loads the
+		// charge entities instead of reconciling those lines directly.
+		IncludeChargeManaged: false,
+	}
+
+	standardLines, err := l.billingService.GetStandardLinesForSubscription(ctx, getLinesInput)
+	if err != nil {
+		return State{}, fmt.Errorf("getting existing standard lines: %w", err)
+	}
+
+	gatheringLines, err := l.billingService.GetGatheringLinesForSubscription(ctx, getLinesInput)
+	if err != nil {
+		return State{}, fmt.Errorf("getting existing gathering lines: %w", err)
+	}
+
+	splitLineGroups, err := l.billingService.GetSplitLineGroupsForSubscription(ctx, getLinesInput)
+	if err != nil {
+		return State{}, fmt.Errorf("getting existing split line groups: %w", err)
+	}
+
+	invoiceLines := slices.Concat(standardLines.AsGenericLines(), gatheringLines.AsGenericLines())
+	lineItems, err := lo.MapErr(invoiceLines, func(line billing.GenericInvoiceLine, _ int) (Item, error) {
+		normalizedLine, err := normalizePersistedLine(line)
+		if err != nil {
+			return nil, fmt.Errorf("normalizing existing invoice line: %w", err)
+		}
+
+		item, err := newPersistedLine(normalizedLine)
+		if err != nil {
+			return nil, fmt.Errorf("creating persisted invoice line item: %w", err)
+		}
+
+		return item, nil
+	})
+	if err != nil {
+		return State{}, fmt.Errorf("assembling persisted invoice line items: %w", err)
+	}
+
+	hierarchyItems, err := lo.MapErr(splitLineGroups, func(hierarchy billing.SplitLineHierarchy, _ int) (Item, error) {
+		normalizedHierarchy, err := normalizePersistedSplitLineHierarchy(hierarchy)
+		if err != nil {
+			return nil, fmt.Errorf("normalizing existing split line hierarchy: %w", err)
+		}
+
+		item, err := newPersistedSplitLineHierarchy(normalizedHierarchy)
+		if err != nil {
+			return nil, fmt.Errorf("creating persisted split line hierarchy item: %w", err)
+		}
+
+		return item, nil
+	})
+	if err != nil {
+		return State{}, fmt.Errorf("assembling persisted split line hierarchy items: %w", err)
+	}
+
+	invoiceItems := slices.Concat(lineItems, hierarchyItems)
+	itemsByUniqueID := lo.GroupBy(
+		lo.Filter(invoiceItems, func(item Item, _ int) bool {
+			return item.ChildUniqueReferenceID() != nil
+		}),
+		func(item Item) string {
+			return *item.ChildUniqueReferenceID()
+		},
+	)
+
+	byUniqueID, err := lo.MapValuesErr(itemsByUniqueID, func(items []Item, uniqueID string) (Item, error) {
+		if len(items) > 1 {
+			return nil, fmt.Errorf("duplicate unique id in persisted invoice items [unique_id=%s, existing_type=%s, duplicate_type=%s]", uniqueID, items[0].Type(), items[1].Type())
+		}
+
+		return items[0], nil
+	})
+	if err != nil {
+		return State{}, err
+	}
+
+	invoices, err := l.loadInvoicesForSubscriptionItems(ctx, subs, invoiceItems)
+	if err != nil {
+		return State{}, err
+	}
+
+	chargesByUniqueID, err := l.loadChargesForSubscription(ctx, subs)
+	if err != nil {
+		return State{}, err
+	}
+
+	for uniqueID := range chargesByUniqueID {
+		if _, ok := byUniqueID[uniqueID]; ok {
+			return State{}, fmt.Errorf("duplicate unique id across persisted lines and charges: %s", uniqueID)
+		}
+
+		byUniqueID[uniqueID] = chargesByUniqueID[uniqueID]
+	}
+
+	return State{
+		ByUniqueID: byUniqueID,
+		Invoices:   invoices,
+	}, nil
+}
+
+func (l Loader) loadChargesForSubscription(ctx context.Context, subs subscription.Subscription) (map[string]Item, error) {
+	if l.chargeService == nil {
+		return map[string]Item{}, nil
+	}
+
+	listedCharges, err := l.chargeService.ListCharges(ctx, charges.ListChargesInput{
+		Namespace:       subs.Namespace,
+		SubscriptionIDs: []string{subs.ID},
+		// Subscription sync reconciles subscription-owned source state, so API
+		// override deletion must not hide a charge whose base intent is still live.
+		DeletedAtFilter: charges.ListChargesDeletedAtFilterBaseIntent,
+		Expands:         meta.ExpandNone,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing charges for subscription: %w", err)
+	}
+
+	byUniqueID := make(map[string]Item, len(listedCharges.Items))
+
+	for _, charge := range listedCharges.Items {
+		switch charge.Type() {
+		case meta.ChargeTypeUsageBased:
+			usageBasedCharge, err := charge.AsUsageBasedCharge()
+			if err != nil {
+				return nil, fmt.Errorf("getting usage based charge: %w", err)
+			}
+
+			uniqueReferenceID := usageBasedCharge.Intent.GetUniqueReferenceID()
+			if uniqueReferenceID == nil {
+				continue
+			}
+
+			item, err := NewChargeItemFromChargeType(meta.ChargeTypeUsageBased, &usageBasedCharge, nil)
+			if err != nil {
+				return nil, fmt.Errorf("creating persisted usage based charge item[%s]: %w", *uniqueReferenceID, err)
+			}
+
+			if _, ok := byUniqueID[*uniqueReferenceID]; ok {
+				return nil, fmt.Errorf("duplicate unique ids in the existing charges")
+			}
+
+			byUniqueID[*uniqueReferenceID] = item
+		case meta.ChargeTypeFlatFee:
+			flatFeeCharge, err := charge.AsFlatFeeCharge()
+			if err != nil {
+				return nil, fmt.Errorf("getting flat fee charge: %w", err)
+			}
+
+			uniqueReferenceID := flatFeeCharge.Intent.GetUniqueReferenceID()
+			if uniqueReferenceID == nil {
+				continue
+			}
+
+			item, err := NewChargeItemFromChargeType(meta.ChargeTypeFlatFee, nil, &flatFeeCharge)
+			if err != nil {
+				return nil, fmt.Errorf("creating persisted flat fee charge item[%s]: %w", *uniqueReferenceID, err)
+			}
+
+			if _, ok := byUniqueID[*uniqueReferenceID]; ok {
+				return nil, fmt.Errorf("duplicate unique ids in the existing charges")
+			}
+
+			byUniqueID[*uniqueReferenceID] = item
+		case meta.ChargeTypeCreditPurchase:
+			creditPurchaseCharge, err := charge.AsCreditPurchaseCharge()
+			if err != nil {
+				return nil, fmt.Errorf("getting credit purchase charge: %w", err)
+			}
+
+			return nil, fmt.Errorf("credit purchase charges tied to subscriptions are unsupported [charge_id=%s, subscription_id=%s]", creditPurchaseCharge.ID, subs.ID)
+		default:
+			return nil, fmt.Errorf("unsupported charge type in persisted subscription state: %s", charge.Type())
+		}
+	}
+
+	return byUniqueID, nil
+}
+
+func (l Loader) loadInvoicesForSubscriptionItems(ctx context.Context, subs subscription.Subscription, items []Item) (Invoices, error) {
+	invoiceIDs := make(map[string]struct{})
+
+	for _, item := range items {
+		switch item.Type() {
+		case ItemTypeInvoiceLine:
+			line, err := ItemAsLine(item)
+			if err != nil {
+				return Invoices{}, fmt.Errorf("getting line invoice id: %w", err)
+			}
+
+			invoiceIDs[line.GetInvoiceID()] = struct{}{}
+		case ItemTypeInvoiceSplitLineGroup:
+			hierarchy, err := ItemAsSplitLineHierarchy(item)
+			if err != nil {
+				return Invoices{}, fmt.Errorf("getting hierarchy invoice ids: %w", err)
+			}
+
+			for _, child := range hierarchy.Lines {
+				invoiceIDs[child.Invoice.GetID()] = struct{}{}
+			}
+		default:
+			return Invoices{}, fmt.Errorf("unsupported persisted invoice item type: %s", item.Type())
+		}
+	}
+
+	if len(invoiceIDs) == 0 {
+		return Invoices{}, nil
+	}
+
+	invoices, err := l.loadInvoices(ctx, subs.Namespace, lo.Keys(invoiceIDs))
+	if err != nil {
+		return Invoices{}, err
+	}
+
+	for invoiceID := range invoiceIDs {
+		if _, ok := invoices[invoiceID]; !ok {
+			return Invoices{}, fmt.Errorf("invoice not found for persisted subscription state: %s", invoiceID)
+		}
+	}
+
+	return invoices, nil
+}
+
+func (l Loader) loadInvoices(ctx context.Context, namespace string, invoiceIDs []string) (Invoices, error) {
+	invoices, err := l.billingService.ListInvoices(ctx, billing.ListInvoicesInput{
+		Namespace:      namespace,
+		IDs:            invoiceIDs,
+		IncludeDeleted: true,
+	})
+	if err != nil {
+		return Invoices{}, fmt.Errorf("listing invoices: %w", err)
+	}
+
+	byID := make(map[string]billing.Invoice, len(invoices.Items))
+	for _, invoice := range invoices.Items {
+		genericInvoice, err := invoice.AsGenericInvoice()
+		if err != nil {
+			return Invoices{}, fmt.Errorf("converting invoice to generic invoice: %w", err)
+		}
+
+		byID[genericInvoice.GetID()] = invoice
+	}
+
+	return Invoices(byID), nil
+}
+
+func normalizePersistedLine(line billing.GenericInvoiceLine) (billing.GenericInvoiceLine, error) {
+	// Subscription sync diffs against meter-compatible time windows. Historical persisted
+	// lines can still carry sub-second timestamps from older writes, but the meter engine
+	// only supports MinimumWindowSizeDuration precision. We normalize persisted state on
+	// read so reconciliation does not keep proposing no-op repairs purely because the DB
+	// preserved finer precision than the target state can legally represent.
+	// TODO: Add a migration to normalize existing billing timestamps to the precision
+	// supported by meter queries.
+	if line == nil {
+		return nil, fmt.Errorf("line is nil")
+	}
+
+	cloned, err := line.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("cloning line: %w", err)
+	}
+
+	cloned.UpdateServicePeriod(func(period *timeutil.ClosedPeriod) {
+		*period = period.Truncate(streaming.MinimumWindowSizeDuration)
+	})
+
+	if invoiceAtAccessor, ok := cloned.(billing.InvoiceAtAccessor); ok {
+		invoiceAtAccessor.SetInvoiceAt(invoiceAtAccessor.GetInvoiceAt().Truncate(streaming.MinimumWindowSizeDuration))
+	}
+
+	normalizeSubscriptionReference(cloned.GetSubscriptionReference())
+
+	return cloned, nil
+}
+
+func normalizePersistedSplitLineHierarchy(hierarchy billing.SplitLineHierarchy) (*billing.SplitLineHierarchy, error) {
+	cloned, err := hierarchy.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("cloning hierarchy: %w", err)
+	}
+
+	cloned.Group.ServicePeriod = cloned.Group.ServicePeriod.Truncate(streaming.MinimumWindowSizeDuration)
+
+	for i := range cloned.Lines {
+		cloned.Lines[i].Line.UpdateServicePeriod(func(period *timeutil.ClosedPeriod) {
+			*period = period.Truncate(streaming.MinimumWindowSizeDuration)
+		})
+
+		if invoiceAtAccessor, ok := cloned.Lines[i].Line.(billing.InvoiceAtAccessor); ok {
+			invoiceAtAccessor.SetInvoiceAt(invoiceAtAccessor.GetInvoiceAt().Truncate(streaming.MinimumWindowSizeDuration))
+		}
+
+		normalizeSubscriptionReference(cloned.Lines[i].Line.GetSubscriptionReference())
+	}
+
+	return &cloned, nil
+}
+
+func normalizeSubscriptionReference(ref *billing.SubscriptionReference) {
+	if ref == nil {
+		return
+	}
+
+	// Historical billing rows can carry sub-second subscription billing periods even
+	// though subscription sync and meter queries operate on MinimumWindowSizeDuration
+	// precision. Normalize the persisted subscription reference on read so legacy
+	// timestamp precision does not leak into reconciliation decisions.
+	// TODO: Add a migration to normalize existing billing timestamps to the precision
+	// supported by meter queries.
+	ref.BillingPeriod = ref.BillingPeriod.Truncate(streaming.MinimumWindowSizeDuration)
+}

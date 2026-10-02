@@ -1,0 +1,295 @@
+package adapter
+
+import (
+	"crypto/rand"
+	"log/slog"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/oklog/ulid/v2"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
+	entitlementdb "github.com/openmeterio/openmeter/openmeter/ent/db/entitlement"
+	"github.com/openmeterio/openmeter/openmeter/meter"
+	"github.com/openmeterio/openmeter/openmeter/testutils"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+)
+
+func Test_Adapter(t *testing.T) {
+	env := NewTestEnv(t)
+	t.Cleanup(func() {
+		env.Close(t)
+	})
+
+	namespace := NewTestNamespace(t)
+
+	t.Run("Meter", func(t *testing.T) {
+		t.Run("List", func(t *testing.T) {
+			meterInputs := []meter.CreateMeterInput{
+				{
+					Namespace:     namespace,
+					Name:          "Test meter 1",
+					Key:           "test-meter-1",
+					Aggregation:   meter.MeterAggregationSum,
+					EventType:     "om.meter",
+					ValueProperty: lo.ToPtr("$.value"),
+					GroupBy: map[string]string{
+						"group":   "$.group",
+						"group_2": "$.group_2",
+					},
+				},
+				{
+					Namespace:     namespace,
+					Name:          "Test meter 2",
+					Key:           "test-meter-2",
+					Aggregation:   meter.MeterAggregationCount,
+					EventType:     "om.meter",
+					ValueProperty: nil,
+					GroupBy: map[string]string{
+						"group":   "$.group",
+						"group_2": "$.group_2",
+					},
+				},
+			}
+
+			for _, input := range meterInputs {
+				_, err := env.Meter.CreateMeter(t.Context(), input)
+				require.NoErrorf(t, err, "creating meter must not fail")
+			}
+
+			t.Run("FilterByEventTypes", func(t *testing.T) {
+				out, err := env.Meter.ListMeters(t.Context(), meter.ListMetersParams{
+					Page: pagination.Page{
+						PageSize:   100,
+						PageNumber: 1,
+					},
+					Namespace: namespace,
+					EventTypes: lo.ToPtr([]string{
+						"om.meter",
+					}),
+				})
+				require.NoErrorf(t, err, "listing meters must not fail")
+
+				require.Lenf(t, out.Items, 2, "expected 2 meters with event type om.meter, got %d", len(out.Items))
+
+				for _, m := range out.Items {
+					assert.Equalf(t, m.EventType, "om.meter", "expected meter event type om.meter, got %s", m.EventType)
+				}
+			})
+
+			t.Run("SortByKeyAsc", func(t *testing.T) {
+				out, err := env.Meter.ListMeters(t.Context(), meter.ListMetersParams{
+					Page:      pagination.Page{PageSize: 100, PageNumber: 1},
+					Namespace: namespace,
+					OrderBy:   meter.OrderByKey,
+					Order:     "ASC",
+				})
+				require.NoErrorf(t, err, "listing meters must not fail")
+				require.Lenf(t, out.Items, 2, "expected 2 meters")
+				assert.Equal(t, "test-meter-1", out.Items[0].Key)
+				assert.Equal(t, "test-meter-2", out.Items[1].Key)
+			})
+
+			t.Run("SortByKeyDesc", func(t *testing.T) {
+				out, err := env.Meter.ListMeters(t.Context(), meter.ListMetersParams{
+					Page:      pagination.Page{PageSize: 100, PageNumber: 1},
+					Namespace: namespace,
+					OrderBy:   meter.OrderByKey,
+					Order:     "DESC",
+				})
+				require.NoErrorf(t, err, "listing meters must not fail")
+				require.Lenf(t, out.Items, 2, "expected 2 meters")
+				assert.Equal(t, "test-meter-2", out.Items[0].Key)
+				assert.Equal(t, "test-meter-1", out.Items[1].Key)
+			})
+
+			t.Run("SortByNameAsc", func(t *testing.T) {
+				out, err := env.Meter.ListMeters(t.Context(), meter.ListMetersParams{
+					Page:      pagination.Page{PageSize: 100, PageNumber: 1},
+					Namespace: namespace,
+					OrderBy:   meter.OrderByName,
+					Order:     "ASC",
+				})
+				require.NoErrorf(t, err, "listing meters must not fail")
+				require.Lenf(t, out.Items, 2, "expected 2 meters")
+				assert.Equal(t, "Test meter 1", out.Items[0].Name)
+				assert.Equal(t, "Test meter 2", out.Items[1].Name)
+			})
+		})
+	})
+}
+
+func TestHasEntitlementForMeter(t *testing.T) {
+	env := NewTestEnv(t)
+	t.Cleanup(func() {
+		env.Close(t)
+	})
+
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	clock.FreezeTime(now)
+	defer clock.UnFreeze()
+
+	tests := []struct {
+		name               string
+		activeFrom         time.Time
+		activeTo           *time.Time
+		customerDeleted    bool
+		entitlementDeleted bool
+		want               bool
+	}{
+		{
+			name:       "active entitlement",
+			activeFrom: now.Add(-time.Hour),
+			want:       true,
+		},
+		{
+			name:       "ended entitlement",
+			activeFrom: now.Add(-2 * time.Hour),
+			activeTo:   lo.ToPtr(now.Add(-time.Hour)),
+			want:       false,
+		},
+		{
+			name:            "active entitlement for deleted customer",
+			activeFrom:      now.Add(-time.Hour),
+			customerDeleted: true,
+			want:            false,
+		},
+		{
+			name:               "deleted active entitlement",
+			activeFrom:         now.Add(-time.Hour),
+			entitlementDeleted: true,
+			want:               false,
+		},
+		{
+			name:       "scheduled entitlement",
+			activeFrom: now.Add(time.Hour),
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given a meter with an entitlement in the requested lifecycle state.
+			namespace := NewTestNamespace(t)
+			meterEntity, err := env.Meter.CreateMeter(t.Context(), meter.CreateMeterInput{
+				Namespace:   namespace,
+				Name:        tt.name,
+				Key:         "meter-" + NewTestULID(t),
+				Aggregation: meter.MeterAggregationCount,
+				EventType:   "test.event",
+			})
+			require.NoError(t, err)
+
+			featureEntity, err := env.Client.Feature.Create().
+				SetNamespace(namespace).
+				SetName(tt.name).
+				SetKey("feature-" + NewTestULID(t)).
+				SetMeterID(meterEntity.ID).
+				Save(t.Context())
+			require.NoError(t, err)
+
+			customerEntity, err := env.Client.Customer.Create().
+				SetNamespace(namespace).
+				SetName(tt.name).
+				Save(t.Context())
+			require.NoError(t, err)
+
+			entitlementCreate := env.Client.Entitlement.Create().
+				SetNamespace(namespace).
+				SetEntitlementType(entitlementdb.EntitlementTypeBoolean).
+				SetFeatureID(featureEntity.ID).
+				SetFeatureKey(featureEntity.Key).
+				SetCustomerID(customerEntity.ID).
+				SetActiveFrom(tt.activeFrom).
+				SetNillableActiveTo(tt.activeTo)
+			if tt.entitlementDeleted {
+				entitlementCreate.SetDeletedAt(now)
+			}
+
+			_, err = entitlementCreate.Save(t.Context())
+			require.NoError(t, err)
+
+			if tt.customerDeleted {
+				_, err = customerEntity.Update().SetDeletedAt(now).Save(t.Context())
+				require.NoError(t, err)
+			}
+
+			// When checking whether the meter has a blocking entitlement.
+			got, err := env.Meter.HasEntitlementForMeter(t.Context(), namespace, meterEntity.ID)
+
+			// Then only an entitlement active now blocks meter deletion.
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+type TestEnv struct {
+	Logger *slog.Logger
+	Meter  *Adapter
+
+	Client *entdb.Client
+	db     *testutils.TestDB
+	close  sync.Once
+}
+
+func (e *TestEnv) Close(t *testing.T) {
+	t.Helper()
+
+	e.close.Do(func() {
+		if e.db != nil {
+			if err := e.db.EntDriver.Close(); err != nil {
+				t.Errorf("failed to close ent driver: %v", err)
+			}
+
+			if err := e.db.PGDriver.Close(); err != nil {
+				t.Errorf("failed to postgres driver: %v", err)
+			}
+		}
+
+		if e.Client != nil {
+			if err := e.Client.Close(); err != nil {
+				t.Errorf("failed to close ent client: %v", err)
+			}
+		}
+	})
+}
+
+func NewTestEnv(t *testing.T) *TestEnv {
+	t.Helper()
+
+	// Init logger
+	logger := testutils.NewDiscardLogger(t)
+
+	// Init database
+	db := testutils.InitPostgresDB(t, testutils.PostgresDBStateEntMigrated)
+	client := db.EntDriver.Client()
+
+	// Init meter service
+	meterAdapter, err := New(Config{
+		Client: client,
+		Logger: logger,
+	})
+	require.NoErrorf(t, err, "initializing meter adapter must not fail")
+	require.NotNilf(t, meterAdapter, "meter adapter must not be nil")
+
+	return &TestEnv{
+		Logger: logger,
+		Meter:  meterAdapter,
+		db:     db,
+		Client: client,
+	}
+}
+
+func NewTestULID(t *testing.T) string {
+	t.Helper()
+
+	return ulid.MustNew(ulid.Timestamp(time.Now().UTC()), rand.Reader).String()
+}
+
+var NewTestNamespace = NewTestULID

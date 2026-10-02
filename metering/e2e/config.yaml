@@ -1,0 +1,122 @@
+address: 0.0.0.0:8080
+
+telemetry:
+  address: 0.0.0.0:10000
+  log:
+    level: debug
+    exporters:
+      file:
+        enabled: true
+        filepath: "/var/log/openmeter/openmeter.log"
+        prettyprint: true
+
+ingest:
+  kafka:
+    broker: kafka:9092
+
+aggregation:
+  clickhouse:
+    address: clickhouse:9000
+    retry:
+      enabled: true
+
+sink:
+  minCommitCount: 500
+  maxCommitWait: 1s
+  namespaceRefetch: 1s
+  namespaceRefetchTimeout: 1s
+  dedupe:
+    enabled: true
+    driver: redis
+    config:
+      expiration: 768h # 32d
+      database: 1
+      mode: keyhash
+      address: redis:6379
+  kafka:
+    brokers: kafka:9092
+    brokerAddressFamily: v4
+
+postgres:
+  url: postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable
+  autoMigrate: migration
+
+# Credits are enabled for the default e2e suite so billing flows run in the same
+# mode as production-like credit deployments. Credits-disabled compatibility
+# tests run from e2e/creditsdisabled with CREDITS_* env overrides.
+credits:
+  enabled: true
+  enableCreditThenInvoice: true
+
+unitConfig:
+  enabled: true
+
+notification:
+  lock:
+    owner: lock-owner
+    leaseTime: 7m
+    heartbeatInterval: 29s
+
+meters:
+  - slug: ingest
+    description: Meter for testing ingestion
+    eventType: ingest
+    valueProperty: $.duration_ms
+    aggregation: SUM
+  - slug: batchingest
+    description: Meter for testing batch ingestion
+    eventType: batchingest
+    valueProperty: $.duration_ms
+    aggregation: SUM
+  - slug: ingest_content_type_application_json
+    description: Meter for testing ingestion
+    eventType: ingest_content_type_application_json
+    valueProperty: $.duration_ms
+    aggregation: SUM
+  - slug: ingest_invalid
+    description: Meter for testing ingesting invalid events
+    eventType: ingest_invalid
+    valueProperty: $.duration_ms
+    aggregation: SUM
+  - slug: dedupe
+    description: Meter for testing deduplication
+    eventType: dedupe
+    aggregation: COUNT
+  - slug: query
+    description: Meter for testing querying
+    eventType: query
+    valueProperty: $.duration_ms
+    aggregation: SUM
+    groupBy:
+      method: $.method
+      path: $.path
+  - slug: credit_test_meter
+    description: Meter for testing credit
+    eventType: credit_event
+    aggregation: COUNT
+    groupBy:
+      model: $.model
+  - slug: entitlement_uc_meter
+    description: Meter for testing entitlements with unique count
+    eventType: credit_event_uc
+    valueProperty: $.value
+    aggregation: UNIQUE_COUNT
+  - slug: entitlement_v2_meter
+    description: Meter for testing entitlements with unique count
+    eventType: entitlement_v2
+    valueProperty: $.value
+    aggregation: UNIQUE_COUNT
+  - slug: entitlement_parity_meter
+    description: Meter for testing entitlements parity
+    eventType: entitlement_parity
+    valueProperty: $.value
+    aggregation: UNIQUE_COUNT
+  - slug: plan_meter
+    description: Meter for testing plan metered feature
+    eventType: plan_meter
+    aggregation: SUM
+    valueProperty: $.value
+  - slug: multi_subject_meter
+    description: Meter for testing multi subject
+    eventType: multi_subject
+    aggregation: COUNT

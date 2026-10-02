@@ -1,0 +1,1013 @@
+package adapter
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"time"
+
+	"entgo.io/ent/dialect/sql"
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
+	appcustomerdb "github.com/openmeterio/openmeter/openmeter/ent/db/appcustomer"
+	appcustominvoicingcustomerdb "github.com/openmeterio/openmeter/openmeter/ent/db/appcustominvoicingcustomer"
+	appstripecustomerdb "github.com/openmeterio/openmeter/openmeter/ent/db/appstripecustomer"
+	billingcustomeroverridedb "github.com/openmeterio/openmeter/openmeter/ent/db/billingcustomeroverride"
+	billingprofiledb "github.com/openmeterio/openmeter/openmeter/ent/db/billingprofile"
+	customerdb "github.com/openmeterio/openmeter/openmeter/ent/db/customer"
+	customersubjectsdb "github.com/openmeterio/openmeter/openmeter/ent/db/customersubjects"
+	plandb "github.com/openmeterio/openmeter/openmeter/ent/db/plan"
+	"github.com/openmeterio/openmeter/openmeter/ent/db/predicate"
+	subscriptiondb "github.com/openmeterio/openmeter/openmeter/ent/db/subscription"
+	"github.com/openmeterio/openmeter/openmeter/streaming"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/filter"
+	"github.com/openmeterio/openmeter/pkg/framework/entutils"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+	"github.com/openmeterio/openmeter/pkg/sortx"
+)
+
+// ListCustomers lists customers
+func (a *adapter) ListCustomers(ctx context.Context, input customer.ListCustomersInput) (pagination.Result[customer.Customer], error) {
+	if err := input.Validate(); err != nil {
+		return pagination.Result[customer.Customer]{}, models.NewGenericValidationError(err)
+	}
+
+	return entutils.TransactingRepo(ctx, a, func(ctx context.Context, repo *adapter) (pagination.Result[customer.Customer], error) {
+		// Build the database query
+		now := clock.Now().UTC()
+
+		query := repo.db.Customer.Query().Where(customerdb.Namespace(input.Namespace))
+		query = WithSubjects(query, now)
+		if slices.Contains(input.Expands, customer.ExpandSubscriptions) {
+			query = WithActiveSubscriptions(query, now)
+		}
+
+		// Do not return deleted customers by default
+		if !input.IncludeDeleted {
+			query = query.Where(customerdb.Or(
+				customerdb.DeletedAtIsNil(),
+				customerdb.DeletedAtGTE(now),
+			))
+		}
+
+		// Filters
+		query = filter.ApplyToQuery(query, input.Key, customerdb.FieldKey)
+		query = filter.ApplyToQuery(query, input.Name, customerdb.FieldName)
+		query = filter.ApplyToQuery(query, input.PrimaryEmail, customerdb.FieldPrimaryEmail)
+
+		if input.PlanKey != nil {
+			applyActiveSubscriptionFilterWithPlanKey(query, now, input.PlanKey)
+		}
+
+		if input.UsageAttributionSubjectKey != nil {
+			if p := filter.SelectPredicate[predicate.CustomerSubjects](
+				filter.Filter(*input.UsageAttributionSubjectKey),
+				customersubjectsdb.FieldSubjectKey,
+			); p != nil {
+				query = query.Where(customerdb.HasSubjectsWith(
+					*p,
+					customersubjectsdb.Or(
+						customersubjectsdb.DeletedAtIsNil(),
+						customersubjectsdb.DeletedAtGTE(now),
+					),
+				))
+			}
+		}
+
+		if input.BillingProfileID != nil {
+			defaultProfileID, err := repo.db.BillingProfile.Query().
+				Where(
+					billingprofiledb.Namespace(input.Namespace),
+					billingprofiledb.Default(true),
+					billingprofiledb.DeletedAtIsNil(),
+				).
+				FirstID(ctx)
+			if err != nil {
+				return pagination.Result[customer.Customer]{}, fmt.Errorf("resolving default billing profile id: %w", err)
+			}
+
+			if p := buildBillingProfileIDPredicate(*input.BillingProfileID, defaultProfileID); p != nil {
+				query = query.Where(*p)
+			}
+		}
+
+		if len(input.CustomerIDs) > 0 {
+			query = query.Where(customerdb.IDIn(input.CustomerIDs...))
+		}
+
+		// Order
+		order := entutils.GetOrdering(sortx.OrderDefault)
+		if !input.Order.IsDefaultValue() {
+			order = entutils.GetOrdering(input.Order)
+		}
+
+		switch input.OrderBy {
+		case "id":
+			query = query.Order(customerdb.ByID(order...))
+		case "createdAt":
+			query = query.Order(customerdb.ByCreatedAt(order...))
+		case "name":
+			fallthrough
+		default:
+			query = query.Order(customerdb.ByName(order...))
+		}
+
+		// Response
+		response := pagination.Result[customer.Customer]{
+			Page: input.Page,
+		}
+
+		paged, err := query.Paginate(ctx, input.Page)
+		if err != nil {
+			return response, err
+		}
+
+		result := make([]customer.Customer, 0, len(paged.Items))
+		for _, item := range paged.Items {
+			if item == nil {
+				a.logger.WarnContext(ctx, "invalid query result: nil customer received")
+				continue
+			}
+			cust, err := CustomerFromDBEntity(*item, input.Expands)
+			if err != nil {
+				return response, fmt.Errorf("failed to convert customer: %w", err)
+			}
+			if cust == nil {
+				return response, fmt.Errorf("invalid query result: nil customer received")
+			}
+
+			result = append(result, *cust)
+		}
+
+		response.TotalCount = paged.TotalCount
+		response.Items = result
+
+		return response, nil
+	})
+}
+
+// ListCustomerUsageAttributions lists customers usage attributions
+func (a *adapter) ListCustomerUsageAttributions(ctx context.Context, input customer.ListCustomerUsageAttributionsInput) (pagination.Result[streaming.CustomerUsageAttribution], error) {
+	if err := input.Validate(); err != nil {
+		return pagination.Result[streaming.CustomerUsageAttribution]{}, models.NewGenericValidationError(err)
+	}
+
+	return entutils.TransactingRepo(ctx, a, func(ctx context.Context, repo *adapter) (pagination.Result[streaming.CustomerUsageAttribution], error) {
+		// Build the database query
+		now := clock.Now().UTC()
+
+		query := repo.db.Customer.Query().
+			// We only need to select the fields we need for the usage attribution to optimize the query
+			Select(
+				customerdb.FieldID,
+				customerdb.FieldKey,
+			).
+			Where(customerdb.Namespace(input.Namespace)).
+			Order(customerdb.ByID(sql.OrderAsc()))
+		query = WithSubjects(query, now)
+
+		// Filters
+		if len(input.CustomerIDs) > 0 {
+			query = query.Where(customerdb.IDIn(input.CustomerIDs...))
+		}
+
+		// Do not return deleted customers by default
+		if !input.IncludeDeleted {
+			query = query.Where(customerdb.Or(
+				customerdb.DeletedAtIsNil(),
+				customerdb.DeletedAtGTE(now),
+			))
+		}
+
+		// Response
+		response := pagination.Result[streaming.CustomerUsageAttribution]{
+			Page: input.Page,
+		}
+
+		paged, err := query.Paginate(ctx, input.Page)
+		if err != nil {
+			return response, err
+		}
+
+		result := make([]streaming.CustomerUsageAttribution, 0, len(paged.Items))
+		for _, item := range paged.Items {
+			if item == nil {
+				a.logger.WarnContext(ctx, "invalid query result: nil customer received")
+				continue
+			}
+
+			subjectKeys, err := subjectKeysFromDBEntity(*item)
+			if err != nil {
+				return response, err
+			}
+
+			var usageAttribution streaming.CustomerUsageAttribution
+
+			if item.Key == "" {
+				usageAttribution = streaming.NewCustomerUsageAttribution(item.ID, nil, subjectKeys)
+			} else {
+				usageAttribution = streaming.NewCustomerUsageAttribution(item.ID, &item.Key, subjectKeys)
+			}
+
+			result = append(result, usageAttribution)
+		}
+
+		response.TotalCount = paged.TotalCount
+		response.Items = result
+
+		return response, nil
+	})
+}
+
+// CreateCustomer creates a new customer
+func (a *adapter) CreateCustomer(ctx context.Context, input customer.CreateCustomerInput) (*customer.Customer, error) {
+	if err := input.Validate(); err != nil {
+		return nil, models.NewGenericValidationError(
+			fmt.Errorf("error creating customer: %w", err),
+		)
+	}
+
+	return entutils.TransactingRepo(ctx, a, func(ctx context.Context, repo *adapter) (*customer.Customer, error) {
+		// Check if the key is not an ID of another customer
+		if input.Key != nil {
+			count, err := repo.db.Customer.Query().
+				Where(customerdb.ID(*input.Key)).
+				Where(customerdb.Namespace(input.Namespace)).
+				Count(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to check if key overlaps with id: %w", err)
+			}
+
+			if count > 0 {
+				repo.logger.WarnContext(
+					ctx,
+					"customer key overlaps with customer ID",
+					"namespace", input.Namespace,
+					"customer_key", *input.Key,
+					"conflicting_customer_id", *input.Key,
+				)
+
+				return nil, models.NewGenericConflictError(
+					fmt.Errorf("customer key %q overlaps with the ID of another customer", *input.Key),
+				)
+			}
+		}
+
+		// Check if the key is not a subject of another customer
+		if input.Key != nil {
+			conflictingCustomerIDs, err := repo.db.CustomerSubjects.Query().
+				Select(customersubjectsdb.FieldCustomerID).
+				Where(customersubjectsdb.Namespace(input.Namespace)).
+				Where(customersubjectsdb.SubjectKey(*input.Key)).
+				Where(customersubjectsdb.DeletedAtIsNil()).
+				All(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to check if key overlaps with subject: %w", err)
+			}
+
+			if len(conflictingCustomerIDs) > 0 {
+				conflictingCustomerID := conflictingCustomerIDs[0].CustomerID
+				repo.logger.WarnContext(
+					ctx,
+					"customer key overlaps with customer usage attribution key",
+					"namespace", input.Namespace,
+					"customer_key", *input.Key,
+					"conflicting_usage_attribution_key", *input.Key,
+					"conflicting_customer_id", conflictingCustomerID,
+				)
+
+				return nil, models.NewGenericConflictError(
+					fmt.Errorf("customer key %q overlaps with a usage attribution key of another customer: %s", *input.Key, conflictingCustomerID),
+				)
+			}
+		}
+
+		// Create the customer in the database
+		query := repo.db.Customer.Create().
+			SetNamespace(input.Namespace).
+			SetName(input.Name).
+			SetNillableDescription(input.Description).
+			SetNillablePrimaryEmail(input.PrimaryEmail).
+			SetNillableCurrency(input.Currency)
+
+		if input.Key != nil {
+			query = query.SetKey(*input.Key)
+		}
+
+		if input.Metadata != nil {
+			query = query.SetMetadata(input.Metadata.ToMap())
+		}
+
+		if input.Annotation != nil {
+			query = query.SetAnnotations(*input.Annotation)
+		}
+
+		if input.BillingAddress != nil {
+			query = query.
+				SetNillableBillingAddressCity(input.BillingAddress.City).
+				SetNillableBillingAddressCountry(input.BillingAddress.Country).
+				SetNillableBillingAddressLine1(input.BillingAddress.Line1).
+				SetNillableBillingAddressLine2(input.BillingAddress.Line2).
+				SetNillableBillingAddressPhoneNumber(input.BillingAddress.PhoneNumber).
+				SetNillableBillingAddressPostalCode(input.BillingAddress.PostalCode).
+				SetNillableBillingAddressState(input.BillingAddress.State)
+		}
+
+		customerEntity, err := query.Save(ctx)
+		if err != nil {
+			if entdb.IsConstraintError(err) {
+				customerKey := *lo.CoalesceOrEmpty(input.Key)
+				repo.logger.WarnContext(
+					ctx,
+					"customer key conflict while creating customer",
+					"namespace", input.Namespace,
+					"customer_key", customerKey,
+					"error", err,
+				)
+
+				return nil, customer.NewKeyConflictError(customerKey)
+			}
+
+			return nil, fmt.Errorf("failed to create customer: %w", err)
+		}
+
+		if customerEntity == nil {
+			return nil, fmt.Errorf("invalid query result: nil customer received")
+		}
+
+		// Create customer subjects
+		// TODO: customer.AddSubjects produces an invalid database query so we create it separately in a transaction.
+		// The number and shape of the queries executed is the same, it's a devex thing only.
+		if input.UsageAttribution != nil && len(input.UsageAttribution.SubjectKeys) > 0 {
+			_, err = repo.db.CustomerSubjects.
+				CreateBulk(
+					lo.Map(
+						input.UsageAttribution.SubjectKeys,
+						func(subjectKey string, _ int) *entdb.CustomerSubjectsCreate {
+							return repo.db.CustomerSubjects.Create().
+								SetNamespace(customerEntity.Namespace).
+								SetCustomerID(customerEntity.ID).
+								SetSubjectKey(subjectKey).
+								SetCreatedAt(customerEntity.CreatedAt)
+						},
+					)...,
+				).
+				Save(ctx)
+			if err != nil {
+				if entdb.IsConstraintError(err) {
+					repo.logger.WarnContext(
+						ctx,
+						"customer usage attribution key conflict while creating customer",
+						"namespace", input.Namespace,
+						"customer_id", customerEntity.ID,
+						"usage_attribution_keys", input.UsageAttribution.SubjectKeys,
+						"error", err,
+					)
+
+					return nil, customer.NewSubjectKeyConflictError(input.UsageAttribution.SubjectKeys)
+				}
+
+				return nil, fmt.Errorf("failed to create customer: failed to add subject keys: %w", err)
+			}
+		}
+
+		return repo.GetCustomer(ctx, customer.GetCustomerInput{
+			CustomerID: &customer.CustomerID{
+				ID:        customerEntity.ID,
+				Namespace: customerEntity.Namespace,
+			},
+		})
+	})
+}
+
+// DeleteCustomer deletes a customer
+func (a *adapter) DeleteCustomer(ctx context.Context, input customer.DeleteCustomerInput) error {
+	if err := input.Validate(); err != nil {
+		return models.NewGenericValidationError(
+			fmt.Errorf("error deleting customer: %w", err),
+		)
+	}
+
+	return entutils.TransactingRepoWithNoValue(ctx, a, func(ctx context.Context, repo *adapter) error {
+		deletedAt := clock.Now().UTC()
+
+		// Soft delete the customer
+		rows, err := repo.db.Customer.Update().
+			Where(customerdb.ID(input.ID)).
+			Where(customerdb.Namespace(input.Namespace)).
+			Where(customerdb.DeletedAtIsNil()).
+			SetDeletedAt(deletedAt).
+			Save(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to delete customer: %w", err)
+		}
+
+		if rows == 0 {
+			return models.NewGenericNotFoundError(
+				fmt.Errorf("customer with id %s not found in %s namespace", input.ID, input.Namespace),
+			)
+		}
+
+		// Soft delete the customer subjects
+		err = repo.db.CustomerSubjects.
+			Update().
+			Where(customersubjectsdb.CustomerID(input.ID)).
+			Where(customersubjectsdb.Namespace(input.Namespace)).
+			Where(customersubjectsdb.DeletedAtIsNil()).
+			SetDeletedAt(deletedAt).
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to delete customer subjects: %w", err)
+		}
+
+		// Soft delete the app customer associations
+		err = repo.db.AppCustomer.Update().
+			Where(appcustomerdb.CustomerID(input.ID)).
+			Where(appcustomerdb.Namespace(input.Namespace)).
+			Where(appcustomerdb.DeletedAtIsNil()).
+			SetDeletedAt(deletedAt).
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to delete app customer: %w", err)
+		}
+
+		// Soft delete the app stripe customer associations
+		err = repo.db.AppStripeCustomer.Update().
+			Where(appstripecustomerdb.CustomerID(input.ID)).
+			Where(appstripecustomerdb.Namespace(input.Namespace)).
+			Where(appstripecustomerdb.DeletedAtIsNil()).
+			SetDeletedAt(deletedAt).
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to delete app stripe customer: %w", err)
+		}
+
+		// Soft delete the app custom invoicing customer associations
+		err = repo.db.AppCustomInvoicingCustomer.Update().
+			Where(appcustominvoicingcustomerdb.CustomerID(input.ID)).
+			Where(appcustominvoicingcustomerdb.Namespace(input.Namespace)).
+			Where(appcustominvoicingcustomerdb.DeletedAtIsNil()).
+			SetDeletedAt(deletedAt).
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to delete app custom invoicing customer: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// GetCustomer gets a customer
+func (a *adapter) GetCustomer(ctx context.Context, input customer.GetCustomerInput) (*customer.Customer, error) {
+	if err := input.Validate(); err != nil {
+		return nil, models.NewGenericValidationError(
+			fmt.Errorf("error getting customer: %w", err),
+		)
+	}
+
+	return entutils.TransactingRepo(ctx, a, func(ctx context.Context, repo *adapter) (*customer.Customer, error) {
+		now := clock.Now().UTC()
+
+		query := repo.db.Customer.Query()
+		query = WithSubjects(query, now)
+		if slices.Contains(input.Expands, customer.ExpandSubscriptions) {
+			query = WithActiveSubscriptions(query, now)
+		}
+
+		if input.CustomerID != nil {
+			query = query.Where(customerdb.Namespace(input.CustomerID.Namespace))
+			query = query.Where(customerdb.ID(input.CustomerID.ID))
+		} else if input.CustomerKey != nil {
+			query = query.Where(customerdb.Namespace(input.CustomerKey.Namespace))
+			query = query.Where(customerdb.Key(input.CustomerKey.Key))
+			query = query.Where(customerdb.DeletedAtIsNil())
+		} else if input.CustomerIDOrKey != nil {
+			query = query.Where(customerdb.Namespace(input.CustomerIDOrKey.Namespace))
+			query = query.Where(customerdb.Or(
+				customerdb.ID(input.CustomerIDOrKey.IDOrKey),
+				customerdb.And(
+					customerdb.Key(input.CustomerIDOrKey.IDOrKey),
+					customerdb.DeletedAtIsNil(),
+				),
+			))
+			query = query.Order(customerdb.ByID(sql.OrderAsc()))
+		} else {
+			return nil, models.NewGenericValidationError(
+				fmt.Errorf("customer id or key is required"),
+			)
+		}
+
+		entity, err := query.First(ctx)
+		if err != nil {
+			if entdb.IsNotFound(err) {
+				if input.CustomerID != nil {
+					return nil, models.NewGenericNotFoundError(
+						fmt.Errorf("customer with id %s not found in %s namespace", input.CustomerID.ID, input.CustomerID.Namespace),
+					)
+				} else if input.CustomerKey != nil {
+					return nil, models.NewGenericNotFoundError(
+						fmt.Errorf("customer with key %s not found in %s namespace", input.CustomerKey.Key, input.CustomerKey.Namespace),
+					)
+				} else if input.CustomerIDOrKey != nil {
+					return nil, models.NewGenericNotFoundError(
+						fmt.Errorf("customer with id or key %s not found in %s namespace", input.CustomerIDOrKey.IDOrKey, input.CustomerIDOrKey.Namespace),
+					)
+				}
+			}
+
+			return nil, fmt.Errorf("failed to fetch customer: %w", err)
+		}
+
+		if entity == nil {
+			return nil, fmt.Errorf("invalid query result: nil customer received")
+		}
+
+		return CustomerFromDBEntity(*entity, input.Expands)
+	})
+}
+
+// customersMatchUsageAttributionKeys resolves customers whose own key OR one of their subject keys
+// is in the given key set, via two independently-indexable UNION ALL branches. It returns the full
+// candidate set rather than one winner per key: a key that matches both a customer's own key and a
+// different customer's subject key legitimately resolves to two distinct customers here, so the
+// caller applies key-over-subject precedence per input key (see
+// customer/service.resolveCustomersByKeyWithPrecedence). Both the single-key and bulk usage-attribution lookups
+// use this one predicate. The generated SQL shape mirrors:
+//
+//	WHERE customers.id IN (
+//	    SELECT c.id FROM customers AS c
+//	    WHERE c.namespace = $1
+//	      AND c.key IN (...)
+//	      AND (c.deleted_at IS NULL OR c.deleted_at > $2)
+//
+//	    UNION ALL
+//
+//	    SELECT c.id
+//	    FROM customer_subjects AS cs
+//	    JOIN customers AS c ON c.id = cs.customer_id
+//	    WHERE cs.namespace = $1
+//	      AND cs.subject_key IN (...)
+//	      AND (cs.deleted_at IS NULL OR cs.deleted_at > $2)
+//	      AND c.namespace = $1
+//	      AND (c.deleted_at IS NULL OR c.deleted_at > $2)
+//	)
+func customersMatchUsageAttributionKeys(namespace string, keys []string, at time.Time) predicate.Customer {
+	return func(s *sql.Selector) {
+		keyValues := lo.ToAnySlice(keys)
+
+		keyCustomerTable := sql.Table(customerdb.Table).As("customer_by_key")
+		customerKeyMatch := sql.Select(keyCustomerTable.C(customerdb.FieldID)).
+			From(keyCustomerTable).
+			Where(sql.And(
+				sql.EQ(keyCustomerTable.C(customerdb.FieldNamespace), namespace),
+				sql.In(keyCustomerTable.C(customerdb.FieldKey), keyValues...),
+				sql.Or(
+					sql.IsNull(keyCustomerTable.C(customerdb.FieldDeletedAt)),
+					sql.GT(keyCustomerTable.C(customerdb.FieldDeletedAt), at),
+				),
+			))
+
+		customerSubjectsTable := sql.Table(customersubjectsdb.Table).As("customer_subjects")
+		subjectCustomerTable := sql.Table(customerdb.Table).As("customer_by_subject")
+		subjectKeyMatch := sql.Select(subjectCustomerTable.C(customerdb.FieldID)).
+			From(customerSubjectsTable).
+			Join(subjectCustomerTable).
+			On(
+				subjectCustomerTable.C(customerdb.FieldID),
+				customerSubjectsTable.C(customersubjectsdb.FieldCustomerID),
+			).
+			Where(sql.And(
+				sql.EQ(customerSubjectsTable.C(customersubjectsdb.FieldNamespace), namespace),
+				sql.In(customerSubjectsTable.C(customersubjectsdb.FieldSubjectKey), keyValues...),
+				sql.Or(
+					sql.IsNull(customerSubjectsTable.C(customersubjectsdb.FieldDeletedAt)),
+					sql.GT(customerSubjectsTable.C(customersubjectsdb.FieldDeletedAt), at),
+				),
+				sql.EQ(subjectCustomerTable.C(customerdb.FieldNamespace), namespace),
+				sql.Or(
+					sql.IsNull(subjectCustomerTable.C(customerdb.FieldDeletedAt)),
+					sql.GT(subjectCustomerTable.C(customerdb.FieldDeletedAt), at),
+				),
+			))
+
+		candidates := customerKeyMatch.UnionAll(subjectKeyMatch)
+
+		s.Where(sql.In(s.C(customerdb.FieldID), candidates))
+	}
+}
+
+// GetCustomersByUsageAttribution resolves customers by usage attribution keys in a single query.
+// A key matches a customer either by the customer's own key or by one of its subject keys. It is the
+// sole usage-attribution lookup for both the bulk and single-key service paths; keys that match no
+// customer are simply absent from the result, and the caller derives which keys were not found.
+func (a *adapter) GetCustomersByUsageAttribution(ctx context.Context, input customer.GetCustomersByUsageAttributionInput) ([]customer.Customer, error) {
+	return entutils.TransactingRepo(ctx, a, func(ctx context.Context, repo *adapter) ([]customer.Customer, error) {
+		now := clock.Now().UTC()
+
+		// Deliberately no CreatedAtLTE(now) guard here or in WithSubjects below: this keeps the
+		// candidate predicate and the eager-loaded subject list in agreement. created_at is
+		// server-assigned and immutable (see ResourceMixin/CustomerSubjects schema), so a
+		// future-created subject can't occur in production — guarding only one of the two paths
+		// would instead cause a real, batch-composition-dependent resolution bug for a case that
+		// can't happen.
+		query := repo.db.Customer.Query().
+			Where(
+				customerdb.Namespace(input.Namespace),
+				customersMatchUsageAttributionKeys(input.Namespace, input.Keys, now),
+			)
+
+		query = WithSubjects(query, now)
+
+		if slices.Contains(input.Expands, customer.ExpandSubscriptions) {
+			query = WithActiveSubscriptions(query, now)
+		}
+
+		entities, err := query.All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch customers: %w", err)
+		}
+
+		result := make([]customer.Customer, 0, len(entities))
+
+		for _, entity := range entities {
+			if entity == nil {
+				a.logger.WarnContext(ctx, "invalid query result: nil customer received")
+
+				continue
+			}
+
+			cust, err := CustomerFromDBEntity(*entity, input.Expands)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert customer: %w", err)
+			}
+
+			if cust == nil {
+				return nil, fmt.Errorf("invalid query result: nil customer received")
+			}
+
+			result = append(result, *cust)
+		}
+
+		return result, nil
+	})
+}
+
+// UpdateCustomer updates a customer
+func (a *adapter) UpdateCustomer(ctx context.Context, input customer.UpdateCustomerInput) (*customer.Customer, error) {
+	if err := input.Validate(); err != nil {
+		return nil, models.NewGenericValidationError(
+			fmt.Errorf("error updating customer: %w", err),
+		)
+	}
+
+	return entutils.TransactingRepo(ctx, a, func(ctx context.Context, repo *adapter) (*customer.Customer, error) {
+		// Get the customer to diff the subjects
+		previousCustomer, err := repo.GetCustomer(ctx, customer.GetCustomerInput{
+			CustomerID: &input.CustomerID,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if previousCustomer != nil && previousCustomer.DeletedAt != nil {
+			return nil, models.NewGenericValidationError(
+				fmt.Errorf("cannot updated already deleted customer [namespace=%s customer.id=%s]", input.CustomerID.Namespace, input.CustomerID.ID),
+			)
+		}
+
+		// Check if the key is not an ID of another customer
+		if input.Key != nil {
+			count, err := repo.db.Customer.Query().
+				Where(customerdb.ID(*input.Key)).
+				Where(customerdb.Namespace(input.CustomerID.Namespace)).
+				Count(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to check if key overlaps with id: %w", err)
+			}
+
+			if count > 0 {
+				repo.logger.WarnContext(
+					ctx,
+					"customer key overlaps with customer ID",
+					"namespace", input.CustomerID.Namespace,
+					"customer_id", input.CustomerID.ID,
+					"customer_key", *input.Key,
+					"conflicting_customer_id", *input.Key,
+				)
+
+				return nil, models.NewGenericConflictError(
+					fmt.Errorf("customer key %q overlaps with the ID of another customer", *input.Key),
+				)
+			}
+		}
+
+		// Check if the key is not a subject of another customer
+		if input.Key != nil {
+			conflictingCustomerIDs, err := repo.db.CustomerSubjects.Query().
+				Select(customersubjectsdb.FieldCustomerID).
+				Where(customersubjectsdb.Namespace(input.CustomerID.Namespace)).
+				Where(customersubjectsdb.CustomerIDNEQ(input.CustomerID.ID)).
+				Where(customersubjectsdb.SubjectKey(*input.Key)).
+				Where(customersubjectsdb.DeletedAtIsNil()).
+				All(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to check if key overlaps with subject: %w", err)
+			}
+
+			if len(conflictingCustomerIDs) > 0 {
+				conflictingCustomerID := conflictingCustomerIDs[0].CustomerID
+				repo.logger.WarnContext(
+					ctx,
+					"customer key overlaps with customer usage attribution key",
+					"namespace", input.CustomerID.Namespace,
+					"customer_id", input.CustomerID.ID,
+					"customer_key", *input.Key,
+					"conflicting_usage_attribution_key", *input.Key,
+					"conflicting_customer_id", conflictingCustomerID,
+				)
+
+				return nil, models.NewGenericConflictError(
+					fmt.Errorf("customer key %q overlaps with a usage attribution key of another customer: %s", *input.Key, conflictingCustomerID),
+				)
+			}
+		}
+
+		query := repo.db.Customer.UpdateOneID(previousCustomer.ID).
+			Where(customerdb.Namespace(previousCustomer.Namespace)).
+			SetUpdatedAt(clock.Now().UTC()).
+			SetName(input.Name).
+			SetOrClearDescription(input.Description).
+			SetNillablePrimaryEmail(input.PrimaryEmail).
+			SetNillableCurrency(input.Currency).
+			SetOrClearKey(input.Key)
+
+		// Replace metadata
+		if input.Metadata != nil {
+			query = query.SetMetadata(input.Metadata.ToMap())
+		} else {
+			query = query.ClearMetadata()
+		}
+
+		if input.Annotation != nil {
+			query = query.SetAnnotations(*input.Annotation)
+		} else {
+			query = query.ClearAnnotations()
+		}
+
+		if input.BillingAddress != nil {
+			query = query.
+				SetNillableBillingAddressCity(input.BillingAddress.City).
+				SetNillableBillingAddressCountry(input.BillingAddress.Country).
+				SetNillableBillingAddressLine1(input.BillingAddress.Line1).
+				SetNillableBillingAddressLine2(input.BillingAddress.Line2).
+				SetNillableBillingAddressPhoneNumber(input.BillingAddress.PhoneNumber).
+				SetNillableBillingAddressPostalCode(input.BillingAddress.PostalCode).
+				SetNillableBillingAddressState(input.BillingAddress.State)
+		} else {
+			query = query.
+				ClearBillingAddressCity().
+				ClearBillingAddressCountry().
+				ClearBillingAddressLine1().
+				ClearBillingAddressLine2().
+				ClearBillingAddressPhoneNumber().
+				ClearBillingAddressPostalCode().
+				ClearBillingAddressState()
+		}
+
+		// Save the updated customer
+		entity, err := query.Save(ctx)
+		if err != nil {
+			if entdb.IsNotFound(err) {
+				return nil, models.NewGenericNotFoundError(
+					fmt.Errorf("customer with id %s not found in %s namespace", input.CustomerID.ID, input.CustomerID.Namespace),
+				)
+			}
+
+			if entdb.IsConstraintError(err) {
+				customerKey := *lo.CoalesceOrEmpty(input.Key)
+				repo.logger.WarnContext(
+					ctx,
+					"customer key conflict while updating customer",
+					"namespace", input.CustomerID.Namespace,
+					"customer_id", input.CustomerID.ID,
+					"customer_key", customerKey,
+					"error", err,
+				)
+
+				return nil, customer.NewKeyConflictError(customerKey)
+			}
+
+			return nil, fmt.Errorf("failed to update customer: %w", err)
+		}
+
+		if entity == nil {
+			return nil, fmt.Errorf("invalid query result: nil customer received")
+		}
+
+		var previousSubjectKeys, newSubjectKeys []string
+		if previousCustomer.UsageAttribution != nil {
+			previousSubjectKeys = previousCustomer.UsageAttribution.SubjectKeys
+		}
+		if input.UsageAttribution != nil {
+			newSubjectKeys = input.UsageAttribution.SubjectKeys
+		}
+
+		subKeysToRemove, subKeysToAdd := lo.Difference(
+			lo.Uniq(previousSubjectKeys),
+			lo.Uniq(newSubjectKeys),
+		)
+
+		now := clock.Now().UTC()
+
+		// Add subjects
+		if len(subKeysToAdd) > 0 {
+			_, err = repo.db.CustomerSubjects.
+				CreateBulk(
+					lo.Map(
+						subKeysToAdd,
+						func(subjectKey string, _ int) *entdb.CustomerSubjectsCreate {
+							return repo.db.CustomerSubjects.Create().
+								SetNamespace(input.CustomerID.Namespace).
+								SetCustomerID(input.CustomerID.ID).
+								SetSubjectKey(subjectKey).
+								SetCreatedAt(now)
+						},
+					)...,
+				).
+				Save(ctx)
+			if err != nil {
+				if entdb.IsConstraintError(err) {
+					repo.logger.WarnContext(
+						ctx,
+						"customer usage attribution key conflict while updating customer",
+						"namespace", input.CustomerID.Namespace,
+						"customer_id", input.CustomerID.ID,
+						"usage_attribution_keys", subKeysToAdd,
+						"error", err,
+					)
+
+					return nil, customer.NewSubjectKeyConflictError(subKeysToAdd)
+				}
+
+				return nil, fmt.Errorf("failed to add customer subjects: %w", err)
+			}
+		}
+
+		// Remove subjects
+		if len(subKeysToRemove) > 0 {
+			err = repo.db.CustomerSubjects.
+				Update().
+				Where(customersubjectsdb.CustomerID(input.CustomerID.ID)).
+				Where(customersubjectsdb.Namespace(input.CustomerID.Namespace)).
+				Where(customersubjectsdb.SubjectKeyIn(subKeysToRemove...)).
+				Where(customersubjectsdb.DeletedAtIsNil()).
+				SetDeletedAt(now).
+				Exec(ctx)
+			if err != nil {
+				if entdb.IsConstraintError(err) {
+					repo.logger.WarnContext(
+						ctx,
+						"customer usage attribution key conflict while updating customer",
+						"namespace", input.CustomerID.Namespace,
+						"customer_id", input.CustomerID.ID,
+						"usage_attribution_keys", subKeysToRemove,
+						"error", err,
+					)
+
+					return nil, customer.NewSubjectKeyConflictError(subKeysToRemove)
+				}
+
+				return nil, fmt.Errorf("failed to remove customer subjects: %w", err)
+			}
+		}
+
+		return repo.GetCustomer(ctx, customer.GetCustomerInput{
+			CustomerID: &input.CustomerID,
+		})
+	})
+}
+
+// WithSubjects returns a query with the subjects
+func WithSubjects(q *entdb.CustomerQuery, at time.Time) *entdb.CustomerQuery {
+	return q.WithSubjects(func(query *entdb.CustomerSubjectsQuery) {
+		query.Where(func(s *sql.Selector) {
+			ct := sql.Table(customerdb.Table)
+
+			s.Join(ct).On(ct.C(customerdb.FieldID), s.C(customersubjectsdb.FieldCustomerID))
+
+			s.Where(
+				sql.Or(
+					sql.And(
+						sql.NotNull(ct.C(customerdb.FieldDeletedAt)),
+						sql.ColumnsEQ(s.C(customersubjectsdb.FieldDeletedAt), ct.C(customerdb.FieldDeletedAt)),
+					),
+					sql.And(
+						sql.IsNull(ct.C(customerdb.FieldDeletedAt)),
+						sql.Or(
+							sql.IsNull(s.C(customersubjectsdb.FieldDeletedAt)),
+							sql.GTE(s.C(customersubjectsdb.FieldDeletedAt), at),
+						),
+					),
+				),
+			)
+		})
+	})
+}
+
+// WithActiveSubscriptions returns a query with the subscription
+func WithActiveSubscriptions(query *entdb.CustomerQuery, at time.Time) *entdb.CustomerQuery {
+	return query.WithSubscription(func(query *entdb.SubscriptionQuery) {
+		applyActiveSubscriptionFilter(query, at)
+		query.WithPlan()
+	})
+}
+
+func applyActiveSubscriptionFilter(query *entdb.SubscriptionQuery, at time.Time) {
+	query.Where(activeSubscriptionFilter(at)...)
+}
+
+func applyActiveSubscriptionFilterWithPlanKey(query *entdb.CustomerQuery, at time.Time, planKey *filter.FilterString) {
+	p := filter.SelectPredicate[predicate.Plan](filter.Filter(*planKey), plandb.FieldKey)
+	if p == nil {
+		return
+	}
+
+	predicates := activeSubscriptionFilter(at)
+	predicates = append(predicates, subscriptiondb.HasPlanWith(*p))
+
+	query.Where(
+		customerdb.HasSubscriptionWith(predicates...),
+	)
+}
+
+func activeSubscriptionFilter(at time.Time) []predicate.Subscription {
+	return []predicate.Subscription{
+		subscriptiondb.ActiveFromLTE(at),
+		subscriptiondb.Or(
+			subscriptiondb.ActiveToIsNil(),
+			subscriptiondb.ActiveToGT(at),
+		),
+		subscriptiondb.Or(
+			subscriptiondb.DeletedAtIsNil(),
+			subscriptiondb.DeletedAtGT(at),
+		),
+		subscriptiondb.CreatedAtLTE(at),
+	}
+}
+
+// buildBillingProfileIDPredicate builds a customer predicate that filters on
+// the customer's *effective* billing profile id — i.e.
+// COALESCE(override.billing_profile_id, namespace_default_profile.id).
+//
+// The filter is routed through filter.Select on both
+// billing_customer_override.billing_profile_id (for customers with an explicit
+// live override) and billing_profile.id (via an EXISTS subquery, for customers
+// who resolve to the namespace default).
+func buildBillingProfileIDPredicate(f filter.FilterULID, defaultProfileID string) *predicate.Customer {
+	overrideSelector := f.Select(billingcustomeroverridedb.FieldBillingProfileID)
+	if overrideSelector == nil {
+		return nil
+	}
+
+	preds := []predicate.Customer{
+		customerdb.HasBillingCustomerOverrideWith(
+			billingcustomeroverridedb.DeletedAtIsNil(),
+			predicate.BillingCustomerOverride(overrideSelector),
+		),
+	}
+
+	if defaultSelector := f.Select(billingprofiledb.FieldID); defaultSelector != nil {
+		// Resolves to the default profile: no live override OR a live override
+		// with NULL profile_id.
+		resolvesToDefault := customerdb.Or(
+			customerdb.Not(customerdb.HasBillingCustomerOverrideWith(
+				billingcustomeroverridedb.DeletedAtIsNil(),
+			)),
+			customerdb.HasBillingCustomerOverrideWith(
+				billingcustomeroverridedb.DeletedAtIsNil(),
+				billingcustomeroverridedb.BillingProfileIDIsNil(),
+			),
+		)
+
+		// EXISTS subquery that pins the namespace default profile row by id
+		// and applies the user's filter to that row's id. This lets eq, ne,
+		// in (and the And/Or wrappers) all flow through filter.Select.
+		defaultMatchesFilter := predicate.Customer(func(s *sql.Selector) {
+			bp := sql.Table(billingprofiledb.Table)
+			sub := sql.Select(bp.C(billingprofiledb.FieldID)).
+				From(bp).
+				Where(sql.EQ(bp.C(billingprofiledb.FieldID), defaultProfileID))
+			predicate.BillingProfile(defaultSelector)(sub)
+			s.Where(sql.Exists(sub))
+		})
+
+		preds = append(preds, customerdb.And(resolvesToDefault, defaultMatchesFilter))
+	}
+
+	p := customerdb.Or(preds...)
+	return &p
+}

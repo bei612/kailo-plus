@@ -1,0 +1,29 @@
+changelog:
+  exclude:
+    labels:
+      - release-note/ignore
+  categories:
+    - title: Security Fixes 🚨
+      labels:
+        - release-note/security-fix
+    - title: Exciting New Features 🎉
+      labels:
+        - kind/feature
+        - release-note/feature
+    - title: Bug Fixes 🐛
+      labels:
+        - kind/bug
+        - release-note/bug-fix
+    - title: Breaking Changes 🛠
+      labels:
+        - release-note/breaking-change
+    - title: Deprecations ❌
+      labels:
+        - release-note/deprecation
+    - title: Dependency Updates ⬆️
+      labels:
+        - area/dependencies
+        - release-note/dependency-update
+    - title: Other Changes
+      labels:
+        - "*"

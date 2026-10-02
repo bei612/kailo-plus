@@ -1,0 +1,102 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Server",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/server",
+      "args": [
+        "--config",
+        "${workspaceFolder}/config.yaml",
+        "--stripe-disable-webhook-registration",
+      ]
+    },
+    {
+      "name": "Launch Sink-Worker",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/sink-worker",
+      "args": [
+        "--config",
+        "${workspaceFolder}/config.yaml",
+        // Let's prevent port collision with server
+        "--telemetry-address",
+        ":10001",
+      ]
+    },
+    {
+      "name": "Launch Balance Worker",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/balance-worker",
+      "args": [
+        "--config",
+        "${workspaceFolder}/config.yaml",
+        "--telemetry-address",
+        ":10002"
+      ]
+    },
+    {
+      "name": "Launch Notification Service",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/notification-service",
+      "args": [
+        "--config",
+        "${workspaceFolder}/config.yaml",
+        "--telemetry-address",
+        ":10003"
+      ]
+    },
+    {
+      "name": "Launch recalculate entitlement snapshots",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/jobs",
+      "args": [
+        "--config",
+        "${workspaceFolder}/config.yaml",
+        "entitlement",
+        "recalculate-balance-snapshots"
+      ]
+    },
+    {
+      "name": "Launch billing-worker Service",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/billing-worker",
+      "args": [
+        "--config",
+        "${workspaceFolder}/config.yaml",
+        "--telemetry-address",
+        ":10004",
+        // force foreground billing advancement strategy, or billing-worker will not start (this way the config can be set to queued to validate that in local dev mode)
+        "--billing-advancement-strategy=foreground",
+      ]
+    },
+    {
+      "name": "Launch periodic jobs",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/jobs",
+      "args": [
+        "--config",
+        "${workspaceFolder}/config.yaml",
+        "billing",
+        "subscriptionsync",
+        "list"
+      ]
+    },
+  ]
+}

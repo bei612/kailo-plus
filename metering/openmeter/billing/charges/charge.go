@@ -1,0 +1,576 @@
+package charges
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/creditpurchase"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/flatfee"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased"
+	billingfeaturemeter "github.com/openmeterio/openmeter/openmeter/billing/featuremeter"
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/pkg/framework/entutils"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/ref"
+)
+
+var (
+	_ billingfeaturemeter.FeatureReferenceGetter = Charge{}
+	_ billingfeaturemeter.FeatureReferenceOwner  = Charge{}
+	_ billingfeaturemeter.FeatureReferenceGetter = ChargeIntent{}
+)
+
+type Charge struct {
+	t meta.ChargeType
+
+	flatFee        *flatfee.Charge
+	usageBased     *usagebased.Charge
+	creditPurchase *creditpurchase.Charge
+}
+
+func (c Charge) Type() meta.ChargeType {
+	return c.t
+}
+
+func NewCharge[T flatfee.Charge | usagebased.Charge | creditpurchase.Charge](ch T) Charge {
+	switch v := any(ch).(type) {
+	case flatfee.Charge:
+		return Charge{
+			t:       meta.ChargeTypeFlatFee,
+			flatFee: &v,
+		}
+	case creditpurchase.Charge:
+		return Charge{
+			t:              meta.ChargeTypeCreditPurchase,
+			creditPurchase: &v,
+		}
+	case usagebased.Charge:
+		return Charge{
+			t:          meta.ChargeTypeUsageBased,
+			usageBased: &v,
+		}
+	}
+
+	return Charge{}
+}
+
+func (c Charge) Validate() error {
+	switch c.t {
+	case meta.ChargeTypeFlatFee:
+		if c.flatFee == nil {
+			return models.NewGenericValidationError(fmt.Errorf("flat fee charge is nil"))
+		}
+
+		return c.flatFee.Validate()
+	case meta.ChargeTypeCreditPurchase:
+		if c.creditPurchase == nil {
+			return models.NewGenericValidationError(fmt.Errorf("credit purchase charge is nil"))
+		}
+
+		return c.creditPurchase.Validate()
+	case meta.ChargeTypeUsageBased:
+		if c.usageBased == nil {
+			return models.NewGenericValidationError(fmt.Errorf("usage based charge is nil"))
+		}
+
+		return c.usageBased.Validate()
+	}
+
+	return models.NewGenericValidationError(fmt.Errorf("invalid charge type: %s", c.t))
+}
+
+func (c Charge) AsFlatFeeCharge() (flatfee.Charge, error) {
+	if c.t != meta.ChargeTypeFlatFee {
+		return flatfee.Charge{}, fmt.Errorf("charge is not a flat fee charge")
+	}
+
+	if c.flatFee == nil {
+		return flatfee.Charge{}, fmt.Errorf("flat fee charge is nil")
+	}
+
+	return *c.flatFee, nil
+}
+
+func (c Charge) AsCreditPurchaseCharge() (creditpurchase.Charge, error) {
+	if c.t != meta.ChargeTypeCreditPurchase {
+		return creditpurchase.Charge{}, fmt.Errorf("charge is not a credit purchase charge")
+	}
+
+	if c.creditPurchase == nil {
+		return creditpurchase.Charge{}, fmt.Errorf("credit purchase charge is nil")
+	}
+
+	return *c.creditPurchase, nil
+}
+
+func (c Charge) AsUsageBasedCharge() (usagebased.Charge, error) {
+	if c.t != meta.ChargeTypeUsageBased {
+		return usagebased.Charge{}, fmt.Errorf("charge is not a usage based charge")
+	}
+
+	if c.usageBased == nil {
+		return usagebased.Charge{}, fmt.Errorf("usage based charge is nil")
+	}
+
+	return *c.usageBased, nil
+}
+
+func (c Charge) GetChargeID() (meta.ChargeID, error) {
+	switch c.t {
+	case meta.ChargeTypeFlatFee:
+		if c.flatFee == nil {
+			return meta.ChargeID{}, fmt.Errorf("flat fee charge is nil")
+		}
+
+		return c.flatFee.GetChargeID(), nil
+	case meta.ChargeTypeCreditPurchase:
+		if c.creditPurchase == nil {
+			return meta.ChargeID{}, fmt.Errorf("credit purchase charge is nil")
+		}
+
+		return c.creditPurchase.GetChargeID(), nil
+	case meta.ChargeTypeUsageBased:
+		if c.usageBased == nil {
+			return meta.ChargeID{}, fmt.Errorf("usage based charge is nil")
+		}
+
+		return c.usageBased.GetChargeID(), nil
+	}
+
+	return meta.ChargeID{}, fmt.Errorf("invalid charge type: %s", c.t)
+}
+
+func (c Charge) GetUniqueReferenceID() (*string, error) {
+	switch c.t {
+	case meta.ChargeTypeFlatFee:
+		if c.flatFee == nil {
+			return nil, fmt.Errorf("flat fee charge is nil")
+		}
+
+		return c.flatFee.Intent.GetUniqueReferenceID(), nil
+	case meta.ChargeTypeCreditPurchase:
+		if c.creditPurchase == nil {
+			return nil, fmt.Errorf("credit purchase charge is nil")
+		}
+
+		return c.creditPurchase.Intent.UniqueReferenceID, nil
+	case meta.ChargeTypeUsageBased:
+		if c.usageBased == nil {
+			return nil, fmt.Errorf("usage based charge is nil")
+		}
+
+		return c.usageBased.Intent.GetUniqueReferenceID(), nil
+	}
+
+	return nil, fmt.Errorf("invalid charge type: %s", c.t)
+}
+
+func (c Charge) GetValidationIssues() (billing.ValidationIssues, error) {
+	switch c.t {
+	case meta.ChargeTypeFlatFee:
+		if c.flatFee == nil {
+			return nil, fmt.Errorf("flat fee charge is nil")
+		}
+
+		return c.flatFee.ValidationIssues.Clone()
+	case meta.ChargeTypeCreditPurchase:
+		if c.creditPurchase == nil {
+			return nil, fmt.Errorf("credit purchase charge is nil")
+		}
+
+		return c.creditPurchase.ValidationIssues.Clone()
+	case meta.ChargeTypeUsageBased:
+		if c.usageBased == nil {
+			return nil, fmt.Errorf("usage based charge is nil")
+		}
+
+		return c.usageBased.ValidationIssues.Clone()
+	}
+
+	return nil, fmt.Errorf("invalid charge type: %s", c.t)
+}
+
+func (c Charge) GetCustomerID() (customer.CustomerID, error) {
+	switch c.t {
+	case meta.ChargeTypeFlatFee:
+		if c.flatFee == nil {
+			return customer.CustomerID{}, fmt.Errorf("flat fee charge is nil")
+		}
+
+		return c.flatFee.GetCustomerID(), nil
+	case meta.ChargeTypeCreditPurchase:
+		if c.creditPurchase == nil {
+			return customer.CustomerID{}, fmt.Errorf("credit purchase charge is nil")
+		}
+
+		return c.creditPurchase.GetCustomerID(), nil
+	case meta.ChargeTypeUsageBased:
+		if c.usageBased == nil {
+			return customer.CustomerID{}, fmt.Errorf("usage based charge is nil")
+		}
+
+		return c.usageBased.GetCustomerID(), nil
+	}
+
+	return customer.CustomerID{}, fmt.Errorf("invalid charge type: %s", c.t)
+}
+
+func (c Charge) GetCurrency() (currencies.Currency, error) {
+	switch c.t {
+	case meta.ChargeTypeFlatFee:
+		if c.flatFee == nil {
+			return currencies.Currency{}, fmt.Errorf("flat fee charge is nil")
+		}
+
+		return c.flatFee.GetCurrency(), nil
+	case meta.ChargeTypeCreditPurchase:
+		if c.creditPurchase == nil {
+			return currencies.Currency{}, fmt.Errorf("credit purchase charge is nil")
+		}
+
+		return c.creditPurchase.GetCurrency(), nil
+	case meta.ChargeTypeUsageBased:
+		if c.usageBased == nil {
+			return currencies.Currency{}, fmt.Errorf("usage based charge is nil")
+		}
+
+		return c.usageBased.GetCurrency(), nil
+	}
+
+	return currencies.Currency{}, fmt.Errorf("invalid charge type: %s", c.t)
+}
+
+func (c Charge) SettlementMode() (productcatalog.SettlementMode, error) {
+	switch c.t {
+	case meta.ChargeTypeFlatFee:
+		if c.flatFee == nil {
+			return "", fmt.Errorf("flat fee charge is nil")
+		}
+
+		return c.flatFee.Intent.GetSettlementMode(), nil
+	case meta.ChargeTypeUsageBased:
+		if c.usageBased == nil {
+			return "", fmt.Errorf("usage based charge is nil")
+		}
+
+		return c.usageBased.Intent.GetSettlementMode(), nil
+	default:
+		return "", fmt.Errorf("settlement mode is not supported for charge type %s", c.t)
+	}
+}
+
+var _ entutils.InIDOrderAccessor = (*Charge)(nil)
+
+func (c Charge) GetID() string {
+	id, err := c.GetChargeID()
+	if err != nil {
+		return ""
+	}
+
+	return id.ID
+}
+
+func (c Charge) GetNamespace() string {
+	id, err := c.GetChargeID()
+	if err != nil {
+		return ""
+	}
+
+	return id.Namespace
+}
+
+// GetFeatureMeterRef returns the charge's feature dependency. Usage-based
+// charges require a meter association, while flat-fee charges do not.
+func (c Charge) GetFeatureMeterRef() *billingfeaturemeter.FeatureMeterRef {
+	switch c.t {
+	case meta.ChargeTypeFlatFee:
+		if c.flatFee == nil {
+			return nil
+		}
+
+		return c.flatFee.GetFeatureMeterRef()
+	case meta.ChargeTypeUsageBased:
+		if c.usageBased == nil {
+			return nil
+		}
+
+		return c.usageBased.GetFeatureMeterRef()
+	case meta.ChargeTypeCreditPurchase:
+		return nil
+	default:
+		return nil
+	}
+}
+
+func (c Charge) GetFeatureMeterOwner() billingfeaturemeter.FeatureReferenceIdentity {
+	return billingfeaturemeter.FeatureReferenceIdentity{
+		Kind: billingfeaturemeter.FeatureReferenceKindCharges,
+		ID:   c.GetID(),
+	}
+}
+
+type Charges []Charge
+
+func (c Charges) Validate() error {
+	var errs []error
+
+	for i, ch := range c {
+		if err := ch.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("charge [%d]: %w", i, err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type ChargeIntent struct {
+	t meta.ChargeType
+
+	flatFee        *flatfee.Intent
+	creditPurchase *creditpurchase.Intent
+	usageBased     *usagebased.Intent
+}
+
+func NewChargeIntent[T flatfee.Intent | usagebased.Intent | creditpurchase.Intent](ch T) ChargeIntent {
+	switch v := any(ch).(type) {
+	case flatfee.Intent:
+		return ChargeIntent{
+			t:       meta.ChargeTypeFlatFee,
+			flatFee: &v,
+		}
+	case creditpurchase.Intent:
+		return ChargeIntent{
+			t:              meta.ChargeTypeCreditPurchase,
+			creditPurchase: &v,
+		}
+	case usagebased.Intent:
+		return ChargeIntent{
+			t:          meta.ChargeTypeUsageBased,
+			usageBased: &v,
+		}
+	}
+
+	return ChargeIntent{}
+}
+
+func (i ChargeIntent) Type() meta.ChargeType {
+	return i.t
+}
+
+func (i ChargeIntent) Validate() error {
+	switch i.t {
+	case meta.ChargeTypeFlatFee:
+		if i.flatFee == nil {
+			return models.NewGenericValidationError(fmt.Errorf("flat fee is nil"))
+		}
+
+		return i.flatFee.Validate()
+	case meta.ChargeTypeCreditPurchase:
+		if i.creditPurchase == nil {
+			return models.NewGenericValidationError(fmt.Errorf("credit purchase is nil"))
+		}
+
+		return i.creditPurchase.Validate()
+	case meta.ChargeTypeUsageBased:
+		if i.usageBased == nil {
+			return models.NewGenericValidationError(fmt.Errorf("usage based is nil"))
+		}
+
+		return i.usageBased.Validate()
+	}
+
+	return models.NewGenericValidationError(fmt.Errorf("invalid charge type: %s", i.t))
+}
+
+func (i ChargeIntent) AsFlatFeeIntent() (flatfee.Intent, error) {
+	if i.t != meta.ChargeTypeFlatFee {
+		return flatfee.Intent{}, fmt.Errorf("charge is not a flat fee charge")
+	}
+
+	if i.flatFee == nil {
+		return flatfee.Intent{}, fmt.Errorf("flat fee is nil")
+	}
+
+	return *i.flatFee, nil
+}
+
+func (i ChargeIntent) AsCreditPurchaseIntent() (creditpurchase.Intent, error) {
+	if i.t != meta.ChargeTypeCreditPurchase {
+		return creditpurchase.Intent{}, fmt.Errorf("charge is not a credit purchase charge")
+	}
+
+	if i.creditPurchase == nil {
+		return creditpurchase.Intent{}, fmt.Errorf("credit purchase is nil")
+	}
+
+	return *i.creditPurchase, nil
+}
+
+func (i ChargeIntent) AsUsageBasedIntent() (usagebased.Intent, error) {
+	if i.t != meta.ChargeTypeUsageBased {
+		return usagebased.Intent{}, fmt.Errorf("charge is not a usage based charge")
+	}
+
+	if i.usageBased == nil {
+		return usagebased.Intent{}, fmt.Errorf("usage based is nil")
+	}
+
+	return *i.usageBased, nil
+}
+
+func (c ChargeIntent) GetUniqueReferenceID() (*string, error) {
+	switch c.t {
+	case meta.ChargeTypeFlatFee:
+		if c.flatFee == nil {
+			return nil, fmt.Errorf("flat fee charge is nil")
+		}
+
+		return c.flatFee.Intent.UniqueReferenceID, nil
+	case meta.ChargeTypeCreditPurchase:
+		if c.creditPurchase == nil {
+			return nil, fmt.Errorf("credit purchase charge is nil")
+		}
+
+		return c.creditPurchase.Intent.UniqueReferenceID, nil
+	case meta.ChargeTypeUsageBased:
+		if c.usageBased == nil {
+			return nil, fmt.Errorf("usage based charge is nil")
+		}
+
+		return c.usageBased.Intent.UniqueReferenceID, nil
+	}
+
+	return nil, fmt.Errorf("invalid charge type: %s", c.t)
+}
+
+// TaxCodeID returns the intent's configured tax code ID.
+// It is empty when no tax code is set.
+func (i ChargeIntent) TaxCodeID() (string, error) {
+	switch i.t {
+	case meta.ChargeTypeFlatFee:
+		if i.flatFee == nil {
+			return "", fmt.Errorf("flat fee is nil")
+		}
+
+		return i.flatFee.TaxConfig.TaxCodeID, nil
+	case meta.ChargeTypeUsageBased:
+		if i.usageBased == nil {
+			return "", fmt.Errorf("usage based is nil")
+		}
+
+		return i.usageBased.TaxConfig.TaxCodeID, nil
+	case meta.ChargeTypeCreditPurchase:
+		if i.creditPurchase == nil {
+			return "", fmt.Errorf("credit purchase is nil")
+		}
+
+		return i.creditPurchase.TaxConfig.TaxCodeID, nil
+	}
+
+	return "", fmt.Errorf("unsupported charge type: %s", i.t)
+}
+
+type ChargeIntents []ChargeIntent
+
+func (i ChargeIntents) Validate() error {
+	var errs []error
+
+	for idx, ch := range i {
+		if err := ch.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("[%d]: %w", idx, err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+func (i ChargeIntent) GetFeatureMeterRef() *billingfeaturemeter.FeatureMeterRef {
+	switch i.Type() {
+	case meta.ChargeTypeFlatFee:
+		if i.flatFee == nil {
+			return nil
+		}
+
+		featureRef := ref.IDOrKey{}
+		if i.flatFee.FeatureID != nil {
+			featureRef.ID = *i.flatFee.FeatureID
+		}
+		if i.flatFee.FeatureKey != nil {
+			featureRef.Key = *i.flatFee.FeatureKey
+		}
+		if lo.IsEmpty(featureRef) {
+			return nil
+		}
+
+		return &billingfeaturemeter.FeatureMeterRef{IDOrKey: featureRef}
+	case meta.ChargeTypeUsageBased:
+		if i.usageBased == nil {
+			return nil
+		}
+
+		return &billingfeaturemeter.FeatureMeterRef{
+			IDOrKey:      i.usageBased.GetFeatureRef(),
+			RequireMeter: true,
+		}
+	case meta.ChargeTypeCreditPurchase:
+		return nil
+	default:
+		return nil
+	}
+}
+
+type ChargeIntentsByType struct {
+	FlatFee        []WithIndex[flatfee.Intent]
+	CreditPurchase []WithIndex[creditpurchase.Intent]
+	UsageBased     []WithIndex[usagebased.Intent]
+}
+
+func (i ChargeIntents) ByType() (ChargeIntentsByType, error) {
+	out := ChargeIntentsByType{
+		FlatFee:        make([]WithIndex[flatfee.Intent], 0, len(i)),
+		CreditPurchase: make([]WithIndex[creditpurchase.Intent], 0, len(i)),
+		UsageBased:     make([]WithIndex[usagebased.Intent], 0, len(i)),
+	}
+
+	for idx, ch := range i {
+		switch ch.Type() {
+		case meta.ChargeTypeFlatFee:
+			if ch.flatFee == nil {
+				return ChargeIntentsByType{}, fmt.Errorf("flat fee intent[%d] is nil", idx)
+			}
+
+			out.FlatFee = append(out.FlatFee, WithIndex[flatfee.Intent]{
+				Index: idx,
+				Value: *ch.flatFee,
+			})
+		case meta.ChargeTypeCreditPurchase:
+			if ch.creditPurchase == nil {
+				return ChargeIntentsByType{}, fmt.Errorf("credit purchase intent[%d] is nil", idx)
+			}
+
+			out.CreditPurchase = append(out.CreditPurchase, WithIndex[creditpurchase.Intent]{
+				Index: idx,
+				Value: *ch.creditPurchase,
+			})
+		case meta.ChargeTypeUsageBased:
+			if ch.usageBased == nil {
+				return ChargeIntentsByType{}, fmt.Errorf("usage based intent[%d] is nil", idx)
+			}
+
+			out.UsageBased = append(out.UsageBased, WithIndex[usagebased.Intent]{
+				Index: idx,
+				Value: *ch.usageBased,
+			})
+		default:
+			return ChargeIntentsByType{}, fmt.Errorf("unsupported charge type[%d]: %s", idx, ch.Type())
+		}
+	}
+
+	return out, nil
+}

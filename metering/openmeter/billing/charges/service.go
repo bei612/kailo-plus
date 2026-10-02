@@ -1,0 +1,338 @@
+package charges
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/creditpurchase"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/flatfee"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/pkg/filter"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+	"github.com/openmeterio/openmeter/pkg/sortx"
+)
+
+type Service interface {
+	ChargeService
+
+	// Facade interfaces provide convenience helpers for the API layer.
+	CreditPurchaseFacadeService
+	CustomerChargeAPIService
+}
+
+type ChargeService interface {
+	GetByID(ctx context.Context, input GetByIDInput) (Charge, error)
+	GetByIDs(ctx context.Context, input GetByIDsInput) (Charges, error)
+	Create(ctx context.Context, input CreateInput) (Charges, error)
+	CreatePendingInvoiceLines(ctx context.Context, input CreatePendingInvoiceLinesInput) (*CreatePendingInvoiceLinesResult, error)
+	UpdateSubscriptionItemID(ctx context.Context, charge Charge, newSubscriptionItemID string) (Charge, error)
+
+	AdvanceCharges(ctx context.Context, input AdvanceChargesInput) (Charges, error)
+	ListCustomersToAdvance(ctx context.Context, input ListCustomersToAdvanceInput) (pagination.Result[customer.CustomerID], error)
+	// ApplyPatches currently returns no affected-charge payload. If exact post-apply
+	// results are needed, shrink/extend must first be implemented properly instead of
+	// going through the temporary delete+create remap.
+	ApplyPatches(ctx context.Context, input ApplyPatchesInput) error
+	ListCharges(ctx context.Context, input ListChargesInput) (pagination.Result[Charge], error)
+}
+
+type CreateInput struct {
+	Namespace string
+	Intents   CreateChargeIntents
+}
+
+type CreateChargeIntent struct {
+	ChargeIntent
+	Options meta.CreateOptions
+}
+
+// WithTaxCodeID returns a copy of the create intent with TaxCodeID set to id.
+func (i CreateChargeIntent) WithTaxCodeID(id string) (CreateChargeIntent, error) {
+	switch i.t {
+	case meta.ChargeTypeFlatFee:
+		if i.flatFee == nil {
+			return CreateChargeIntent{}, fmt.Errorf("flat fee is nil")
+		}
+
+		intent := *i.flatFee
+		intent.TaxConfig.TaxCodeID = id
+		i.ChargeIntent = NewChargeIntent(intent)
+	case meta.ChargeTypeUsageBased:
+		if i.usageBased == nil {
+			return CreateChargeIntent{}, fmt.Errorf("usage based is nil")
+		}
+
+		intent := *i.usageBased
+		intent.TaxConfig.TaxCodeID = id
+		i.ChargeIntent = NewChargeIntent(intent)
+	case meta.ChargeTypeCreditPurchase:
+		if i.creditPurchase == nil {
+			return CreateChargeIntent{}, fmt.Errorf("credit purchase is nil")
+		}
+
+		intent := *i.creditPurchase
+		intent.TaxConfig.TaxCodeID = id
+		i.ChargeIntent = NewChargeIntent(intent)
+	default:
+		return CreateChargeIntent{}, fmt.Errorf("unsupported charge type: %s", i.t)
+	}
+
+	return i, nil
+}
+
+type CreateChargeIntents []CreateChargeIntent
+
+func NewCreateChargeIntents[T flatfee.Intent | usagebased.Intent | creditpurchase.Intent | ChargeIntent](intents ...T) CreateChargeIntents {
+	return lo.Map(intents, func(intent T, _ int) CreateChargeIntent {
+		switch intent := any(intent).(type) {
+		case ChargeIntent:
+			return CreateChargeIntent{ChargeIntent: intent}
+		case flatfee.Intent:
+			return CreateChargeIntent{ChargeIntent: NewChargeIntent(intent)}
+		case usagebased.Intent:
+			return CreateChargeIntent{ChargeIntent: NewChargeIntent(intent)}
+		case creditpurchase.Intent:
+			return CreateChargeIntent{ChargeIntent: NewChargeIntent(intent)}
+		default:
+			return CreateChargeIntent{}
+		}
+	})
+}
+
+func (i CreateChargeIntents) Validate() error {
+	return i.AsChargeIntents().Validate()
+}
+
+func (i CreateChargeIntents) AsChargeIntents() ChargeIntents {
+	return lo.Map(i, func(intent CreateChargeIntent, _ int) ChargeIntent {
+		return intent.ChargeIntent
+	})
+}
+
+type (
+	CreatePendingInvoiceLinesInput  = billing.CreatePendingInvoiceLinesInput
+	CreatePendingInvoiceLinesResult = billing.CreatePendingInvoiceLinesResult
+)
+
+func (i CreateInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, fmt.Errorf("namespace is required"))
+	}
+
+	if err := i.Intents.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("intents: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type GetByIDInput struct {
+	ChargeID meta.ChargeID
+	Expands  meta.Expands
+}
+
+func (i GetByIDInput) Validate() error {
+	var errs []error
+
+	if err := i.ChargeID.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("charge ID: %w", err))
+	}
+
+	if err := i.Expands.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("expands: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type GetByIDsInput struct {
+	Namespace string
+	IDs       []string
+	Expands   meta.Expands
+}
+
+func (i GetByIDsInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, errors.New("namespace is required"))
+	}
+
+	for _, id := range i.IDs {
+		if id == "" {
+			errs = append(errs, errors.New("id is required"))
+		}
+	}
+
+	if err := i.Expands.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("expands: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type AdvanceChargesInput struct {
+	Customer customer.CustomerID
+}
+
+func (i AdvanceChargesInput) Validate() error {
+	var errs []error
+	if err := i.Customer.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("customer ID: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type ListChargesDeletedAtFilter string
+
+const (
+	ListChargesDeletedAtFilterEffective  ListChargesDeletedAtFilter = "effective"
+	ListChargesDeletedAtFilterBaseIntent ListChargesDeletedAtFilter = "base_intent"
+)
+
+func (f ListChargesDeletedAtFilter) Validate() error {
+	switch f {
+	case "", ListChargesDeletedAtFilterEffective, ListChargesDeletedAtFilterBaseIntent:
+		return nil
+	default:
+		return fmt.Errorf("invalid value: %s", f)
+	}
+}
+
+type ListChargesInput struct {
+	pagination.Page
+
+	Namespace string
+	// CustomerIDs and CustomerID both narrow the listing and apply together;
+	// empty lists the whole namespace.
+	CustomerIDs     []string
+	CustomerID      *filter.FilterULID
+	SubscriptionIDs []string
+	ChargeTypes     []meta.ChargeType
+	Status          *filter.FilterString
+	// FeatureID and FeatureKey filter on the charge's feature reference;
+	// credit purchase charges carry no feature reference and never match.
+	FeatureID  *filter.FilterULID
+	FeatureKey *filter.FilterString
+	// ServicePeriodFrom and ServicePeriodTo filter on the charge's service
+	// period bounds independently, with the full operator set; the caller
+	// composes them into containment, overlap, or one-sided queries.
+	ServicePeriodFrom *filter.FilterTime
+	ServicePeriodTo   *filter.FilterTime
+	IncludeDeleted    bool
+	// DeletedAtFilter selects which deleted-at field is used when IncludeDeleted is false.
+	// Empty defaults to effective charge deletion.
+	DeletedAtFilter ListChargesDeletedAtFilter
+
+	// OrderBy is the field to sort by. Supported values: id, created_at,
+	// service_period.from, billing_period.from.
+	// Defaults to created_at when empty.
+	OrderBy string
+	Order   sortx.Order
+
+	Expands meta.Expands
+}
+
+func (i ListChargesInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, errors.New("namespace is required"))
+	}
+
+	for _, customerID := range i.CustomerIDs {
+		if customerID == "" {
+			errs = append(errs, errors.New("customer id is required"))
+		}
+	}
+
+	for _, subscriptionID := range i.SubscriptionIDs {
+		if subscriptionID == "" {
+			errs = append(errs, errors.New("subscription id is required"))
+		}
+	}
+
+	for _, chargeType := range i.ChargeTypes {
+		if err := chargeType.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("charge type: %w", err))
+		}
+	}
+
+	if i.CustomerID != nil {
+		if err := i.CustomerID.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("customer id filter: %w", err))
+		}
+	}
+
+	if i.Status != nil {
+		if err := i.Status.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("status filter: %w", err))
+		}
+	}
+
+	if i.FeatureID != nil {
+		if err := i.FeatureID.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("feature id filter: %w", err))
+		}
+	}
+
+	if i.FeatureKey != nil {
+		if err := i.FeatureKey.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("feature key filter: %w", err))
+		}
+	}
+
+	if i.ServicePeriodFrom != nil {
+		if err := i.ServicePeriodFrom.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("service period from filter: %w", err))
+		}
+	}
+
+	if i.ServicePeriodTo != nil {
+		if err := i.ServicePeriodTo.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("service period to filter: %w", err))
+		}
+	}
+
+	if err := i.DeletedAtFilter.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("deleted at filter: %w", err))
+	}
+
+	if err := i.Expands.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("expands: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type ListCustomersToAdvanceInput struct {
+	pagination.Page
+
+	Namespaces      []string
+	AdvanceAfterLTE time.Time
+}
+
+func (i ListCustomersToAdvanceInput) Validate() error {
+	if i.AdvanceAfterLTE.IsZero() {
+		return models.NewGenericValidationError(errors.New("advance_after_lte is required"))
+	}
+
+	if !i.Page.IsZero() {
+		if err := i.Page.Validate(); err != nil {
+			return models.NewGenericValidationError(fmt.Errorf("page: %w", err))
+		}
+	}
+
+	return nil
+}

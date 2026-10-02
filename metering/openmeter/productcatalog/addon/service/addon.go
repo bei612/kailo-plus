@@ -1,0 +1,786 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sort"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/addon"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/currencyresolver"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/featureresolver"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/filter"
+	"github.com/openmeterio/openmeter/pkg/framework/transaction"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+)
+
+func (s service) ListAddons(ctx context.Context, params addon.ListAddonsInput) (pagination.Result[addon.Addon], error) {
+	fn := func(ctx context.Context) (pagination.Result[addon.Addon], error) {
+		if err := params.Validate(); err != nil {
+			return pagination.Result[addon.Addon]{}, fmt.Errorf("invalid list add-ons params: %w", err)
+		}
+
+		return s.adapter.ListAddons(ctx, params)
+	}
+
+	return fn(ctx)
+}
+
+// resolveTaxCodes ensures that each RateCard with a Stripe tax code in its TaxConfig
+// has a corresponding TaxCode entity in the namespace. If no matching TaxCode exists,
+// one is created. The RateCard's TaxConfig.TaxCodeID is then populated.
+func (s service) resolveTaxCodes(ctx context.Context, namespace string, rateCards *productcatalog.RateCards) error {
+	if rateCards == nil || len(*rateCards) == 0 {
+		return nil
+	}
+
+	for _, rc := range *rateCards {
+		meta := rc.AsMeta()
+		if meta.TaxConfig == nil {
+			continue
+		}
+
+		if err := productcatalog.ResolveTaxConfig(ctx, s.taxCode, namespace, meta.TaxConfig); err != nil {
+			return err
+		}
+
+		var rcNew productcatalog.RateCard
+
+		switch rc.Type() {
+		case productcatalog.FlatFeeRateCardType:
+			rcNew = &productcatalog.FlatFeeRateCard{
+				RateCardMeta:   meta,
+				BillingCadence: rc.GetBillingCadence(),
+			}
+		case productcatalog.UsageBasedRateCardType:
+			bc := rc.GetBillingCadence()
+			if bc == nil {
+				return fmt.Errorf("billing cadence is required for usage-based rate card")
+			}
+
+			rcNew = &productcatalog.UsageBasedRateCard{
+				RateCardMeta:   meta,
+				BillingCadence: *bc,
+			}
+		default:
+			return fmt.Errorf("unsupported RateCard type: %s", rc.Type())
+		}
+
+		if err := rc.Merge(rcNew); err != nil {
+			return fmt.Errorf("failed to merge RateCard: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// addonVersions is a collection of add-ons versions (all of them have the same namespace key pair).
+type addonVersions []addon.Addon
+
+func (a addonVersions) Len() int {
+	return len(a)
+}
+
+func (a addonVersions) Less(i, j int) bool {
+	return a[i].Version < a[j].Version
+}
+
+func (a addonVersions) Swap(i, j int) {
+	a[i], a[j] = a[j], a[i]
+}
+
+// Sort sorts the add-ons by their versions.
+func (a addonVersions) Sort() {
+	sort.Sort(a)
+}
+
+// Latest returns add-on with the latest version regardless of its deleted status.
+func (a addonVersions) Latest() *addon.Addon {
+	if len(a) == 0 {
+		return nil
+	}
+
+	// Ensure the collection is sorted
+	a.Sort()
+
+	return &a[len(a)-1]
+}
+
+// HasDraft returns true if there is an active (non-deleted) add-on with draft status.
+func (a addonVersions) HasDraft() bool {
+	for _, aa := range a {
+		if aa.DeletedAt == nil && aa.Status() == productcatalog.AddonStatusDraft {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s service) getAddonVersions(ctx context.Context, namespace, key string) (addonVersions, error) {
+	versions, err := s.adapter.ListAddons(ctx, addon.ListAddonsInput{
+		OrderBy:        addon.OrderByVersion,
+		Order:          addon.OrderAsc,
+		Namespaces:     []string{namespace},
+		Key:            &filter.FilterString{In: &[]string{key}},
+		IncludeDeleted: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list versions of the add-on: %w", err)
+	}
+
+	return versions.Items, nil
+}
+
+func (s service) CreateAddon(ctx context.Context, params addon.CreateAddonInput) (*addon.Addon, error) {
+	fn := func(ctx context.Context) (*addon.Addon, error) {
+		if err := params.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid create add-on params: %w", err)
+		}
+
+		logger := s.logger.With(
+			"operation", "create",
+			"namespace", params.Namespace,
+			"addon.key", params.Key,
+		)
+
+		// Check if there is already an Add-on with the same Key
+		versions, err := s.getAddonVersions(ctx, params.Namespace, params.Key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get add-on generation: %w", err)
+		}
+
+		// Return error if the add-on generation already has an active (non-deleted) add-on with draft status
+		// as there can only be single draft add-on at a time.
+		if versions.HasDraft() {
+			return nil, models.NewGenericValidationError(
+				fmt.Errorf("only a single draft version is allowed for add-on"),
+			)
+		}
+
+		// Override the version parameter with the next version calculated from the last available version.
+		params.Version = lo.FromPtr(versions.Latest()).Version + 1
+
+		logger.Debug("creating add-on")
+
+		if len(params.RateCards) > 0 {
+			if err = featureresolver.ResolveFeaturesForRateCards(ctx, s.featureResolver, params.Namespace, &params.RateCards); err != nil {
+				return nil, fmt.Errorf("failed to resolve features for ratecards in add-on [addon.key=%s]: %w", params.Key, err)
+			}
+
+			if err = s.resolveTaxCodes(ctx, params.Namespace, &params.RateCards); err != nil {
+				return nil, fmt.Errorf("failed to resolve tax codes for ratecards in add-on: %w", err)
+			}
+		}
+
+		if err = currencyresolver.ResolveCurrenciesForAddon(ctx, s.currencyResolver.WithNamespace(params.Namespace), &params.Addon); err != nil {
+			return nil, fmt.Errorf("failed to resolve currencies in add-on [addon.key=%s]: %w", params.Key, err)
+		}
+
+		if err := params.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid resolved add-on: %w", err)
+		}
+
+		if err := validateAddonCurrencies(params.Addon, params.IgnoreNonCriticalIssues); err != nil {
+			return nil, fmt.Errorf("invalid add-on currencies: %w", err)
+		}
+
+		aa, err := s.adapter.CreateAddon(ctx, params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create add-on: %w", err)
+		}
+
+		logger.With("addon.id", aa.ID).Debug("add-on created")
+
+		// Emit add-on created event
+		event := addon.NewAddonCreateEvent(ctx, aa)
+		if err = s.publisher.Publish(ctx, event); err != nil {
+			return nil, fmt.Errorf("failed to publish add-on created event: %w", err)
+		}
+
+		return aa, nil
+	}
+
+	return transaction.Run(ctx, s.adapter, fn)
+}
+
+func (s service) DeleteAddon(ctx context.Context, params addon.DeleteAddonInput) error {
+	fn := func(ctx context.Context) (interface{}, error) {
+		if err := params.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid delete add-on params: %w", err)
+		}
+
+		logger := s.logger.With(
+			"operation", "delete",
+			"namespace", params.Namespace,
+			"addon.id", params.ID,
+		)
+
+		logger.Debug("deleting add-on")
+
+		// Get the add-on to check if it can be deleted
+		add, err := s.adapter.GetAddon(ctx, addon.GetAddonInput{
+			NamespacedID: models.NamespacedID{
+				Namespace: params.Namespace,
+				ID:        params.ID,
+			},
+			Expand: addon.ExpandFields{
+				PlanAddons: true,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get add-on: %w", err)
+		}
+
+		if add.DeletedAt != nil && add.DeletedAt.Before(clock.Now()) {
+			return nil, nil
+		}
+
+		if add.Plans == nil {
+			return nil, fmt.Errorf("cannot check whether add-on has plans enabled as plans were not dfetched for add-on [namespace=%s id=%s key=%s]",
+				add.Namespace, add.ID, add.Key)
+		}
+
+		if len(*add.Plans) > 0 {
+			return nil, models.NewGenericValidationError(
+				fmt.Errorf("failed to delete add-on [namespace=%s id=%s key=%s]: add-on has active assignments", add.Namespace, add.ID, add.Key),
+			)
+		}
+
+		// Run validations prior deleting add-on.
+		if err = add.AsProductCatalogAddon().ValidateWith(
+			productcatalog.ValidateAddonWithStatus(productcatalog.AddonStatusDraft, productcatalog.AddonStatusArchived),
+		); err != nil {
+			return nil, err
+		}
+
+		// Delete the add-on
+		err = s.adapter.DeleteAddon(ctx, params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to delete add-on: %w", err)
+		}
+
+		logger.Debug("add-on deleted")
+
+		// Get the deleted add-on to emit the event
+		add, err = s.adapter.GetAddon(ctx, addon.GetAddonInput{
+			NamespacedID: models.NamespacedID{
+				Namespace: params.Namespace,
+				ID:        params.ID,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get deleted add-on: %w", err)
+		}
+
+		// Emit add-on deleted event
+		event := addon.NewAddonDeleteEvent(ctx, add)
+		if err = s.publisher.Publish(ctx, event); err != nil {
+			return nil, fmt.Errorf("failed to publish add-on deleted event: %w", err)
+		}
+
+		return nil, nil
+	}
+
+	_, err := transaction.Run(ctx, s.adapter, fn)
+
+	return err
+}
+
+func (s service) GetAddon(ctx context.Context, params addon.GetAddonInput) (*addon.Addon, error) {
+	fn := func(ctx context.Context) (*addon.Addon, error) {
+		if err := params.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid get add-on params: %w", err)
+		}
+
+		logger := s.logger.With(
+			"operation", "get",
+			"namespace", params.Namespace,
+			"addon.id", params.ID,
+			"addon.key", params.Key,
+			"addon.version", params.Version,
+		)
+
+		logger.Debug("fetching add-on")
+
+		aa, err := s.adapter.GetAddon(ctx, params)
+		if err != nil {
+			// FIXME: not found error
+			return nil, fmt.Errorf("failed to get add-on: %w", err)
+		}
+
+		logger.Debug("add-on fetched")
+
+		return aa, nil
+	}
+
+	return fn(ctx)
+}
+
+func (s service) UpdateAddon(ctx context.Context, params addon.UpdateAddonInput) (*addon.Addon, error) {
+	fn := func(ctx context.Context) (*addon.Addon, error) {
+		if err := params.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid update add-on params: %w", err)
+		}
+
+		logger := s.logger.With(
+			"operation", "update",
+			"namespace", params.Namespace,
+			"addon.id", params.ID,
+		)
+		logger.Debug("updating add-on")
+
+		add, err := s.adapter.GetAddon(ctx, addon.GetAddonInput{
+			NamespacedID: models.NamespacedID{
+				Namespace: params.Namespace,
+				ID:        params.ID,
+			},
+			Expand: addon.ExpandFields{
+				CustomCurrency: &currencies.CurrencyExpandOptions{
+					CostBasis: true,
+				},
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get add-on: %w", err)
+		}
+
+		if params.RejectUnitConfig && add.AsProductCatalogAddon().HasUnitConfig() {
+			return nil, productcatalog.ErrUnitConfigNotRepresentable
+		}
+		if params.RejectUnrepresentableCurrencies {
+			if add.Currency.IsCustom() {
+				return nil, productcatalog.ErrCurrencyNotRepresentable
+			}
+			if add.AsProductCatalogAddon().HasCurrencyOverrides() {
+				return nil, productcatalog.ErrRateCardCurrencyNotRepresentable
+			}
+		}
+
+		// Run validations prior updating add-on.
+		if err = add.AsProductCatalogAddon().ValidateWith(
+			productcatalog.ValidateAddonWithStatus(productcatalog.AddonStatusDraft),
+		); err != nil {
+			return nil, err
+		}
+
+		if params.RateCards != nil && len(*params.RateCards) > 0 {
+			if err := featureresolver.ResolveFeaturesForRateCards(ctx, s.featureResolver, params.Namespace, params.RateCards); err != nil {
+				return nil, fmt.Errorf("failed to expand features for ratecards in add-on: %w", err)
+			}
+
+			if err := s.resolveTaxCodes(ctx, params.Namespace, params.RateCards); err != nil {
+				return nil, fmt.Errorf("failed to resolve tax codes for ratecards in add-on: %w", err)
+			}
+
+			candidate := add.AsProductCatalogAddon()
+			candidate.RateCards = *params.RateCards
+			if err := currencyresolver.ResolveCurrenciesForAddon(ctx, s.currencyResolver.WithNamespace(params.Namespace), &candidate); err != nil {
+				return nil, fmt.Errorf("failed to resolve currencies in add-on [addon.id=%s]: %w", params.ID, err)
+			}
+			*params.RateCards = candidate.RateCards
+		}
+
+		// Validate the full candidate only after all authoring currencies have
+		// become stable currency identities.
+		if err = params.ValidateWithAddon(add.AsProductCatalogAddon()); err != nil {
+			return nil, fmt.Errorf("invalid add-on update: %w", err)
+		}
+
+		currencyCandidate := add.AsProductCatalogAddon()
+		if params.RateCards != nil {
+			currencyCandidate.RateCards = *params.RateCards
+		}
+		if err = validateAddonCurrencies(currencyCandidate, params.IgnoreNonCriticalIssues); err != nil {
+			return nil, fmt.Errorf("invalid add-on currencies: %w", err)
+		}
+
+		logger.Debug("updating add-on")
+
+		// NOTE(chrisgacsal): we only allow updating the state of the add-on via Publish/Archive,
+		// therefore the EffectivePeriod attribute must be zeroed before updating the add-on.
+		params.EffectivePeriod = productcatalog.EffectivePeriod{}
+
+		add, err = s.adapter.UpdateAddon(ctx, params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to udpate add-on: %w", err)
+		}
+
+		logger.Debug("add-on updated")
+
+		// Emit add-on updated event
+		event := addon.NewAddonUpdateEvent(ctx, add)
+		if err = s.publisher.Publish(ctx, event); err != nil {
+			return nil, fmt.Errorf("failed to publish add-on updated event: %w", err)
+		}
+
+		return add, nil
+	}
+
+	return transaction.Run(ctx, s.adapter, fn)
+}
+
+func validateAddonCurrencies(addon productcatalog.Addon, ignoreNonCriticalIssues bool) error {
+	err := addon.ValidateWith(productcatalog.ValidateAddonWithCurrencies())
+	issues, conversionErr := models.AsValidationIssues(err)
+	if conversionErr != nil {
+		return err
+	}
+
+	if ignoreNonCriticalIssues {
+		issues = issues.WithSeverityOrHigher(models.ErrorSeverityCritical)
+	}
+
+	return models.NewNillableGenericValidationError(issues.AsError())
+}
+
+func (s service) PublishAddon(ctx context.Context, params addon.PublishAddonInput) (*addon.Addon, error) {
+	fn := func(ctx context.Context) (*addon.Addon, error) {
+		if err := params.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid publish add-on params: %w", err)
+		}
+
+		logger := s.logger.With(
+			"operation", "publish",
+			"namespace", params.Namespace,
+			"addon.id", params.ID,
+		)
+
+		logger.Debug("publishing add-on")
+
+		add, err := s.adapter.GetAddon(ctx, addon.GetAddonInput{
+			NamespacedID: models.NamespacedID{
+				Namespace: params.Namespace,
+				ID:        params.ID,
+			},
+			Expand: addon.ExpandFields{
+				CustomCurrency: &currencies.CurrencyExpandOptions{
+					CostBasis: true,
+				},
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get add-on: %w", err)
+		}
+
+		if add.DeletedAt != nil {
+			return nil, models.NewGenericValidationError(
+				fmt.Errorf("cannot publish a deleted add-on"),
+			)
+		}
+
+		if params.RejectUnitConfig && add.AsProductCatalogAddon().HasUnitConfig() {
+			return nil, productcatalog.ErrUnitConfigNotRepresentable
+		}
+		if params.RejectUnrepresentableCurrencies {
+			if add.Currency.IsCustom() {
+				return nil, productcatalog.ErrCurrencyNotRepresentable
+			}
+			if add.AsProductCatalogAddon().HasCurrencyOverrides() {
+				return nil, productcatalog.ErrRateCardCurrencyNotRepresentable
+			}
+		}
+
+		pa := add.AsProductCatalogAddon()
+
+		// Run validations prior publishing add-on.
+
+		var errs []error
+
+		if err = pa.Publishable(); err != nil {
+			errs = append(errs, fmt.Errorf("invalid add-on [id=%s key=%s version=%d]: %w",
+				add.ID, add.Key, add.Version, err),
+			)
+		}
+
+		if err = pa.ValidateWith(productcatalog.ValidateAddonWithCurrencies()); err != nil {
+			errs = append(errs, fmt.Errorf("invalid add-on currencies [id=%s key=%s version=%d]: %w",
+				add.ID, add.Key, add.Version, err),
+			)
+		}
+
+		// Validate plan with features
+		err = pa.ValidateWith(
+			productcatalog.ValidateAddonWithFeatures(ctx, s.featureResolver.WithNamespace(params.Namespace)),
+		)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("invalid add-on [id=%s key=%s version=%d]: %w",
+				add.ID, add.Key, add.Version, err),
+			)
+		}
+
+		if err = errors.Join(errs...); err != nil {
+			return nil, models.NewGenericValidationError(err)
+		}
+
+		// Find and archive add-on version with addon.AddonStatusActive if there is one. Only perform lookup if
+		// the add-on to be published has higher version then 1 meaning that it has previous versions,
+		// otherwise skip this step.
+		if add.Version > 1 {
+			activeAddon, err := s.adapter.GetAddon(ctx, addon.GetAddonInput{
+				NamespacedID: models.NamespacedID{
+					Namespace: params.Namespace,
+				},
+				Key: add.Key,
+			})
+			if err != nil {
+				if !addon.IsNotFound(err) {
+					return nil, fmt.Errorf("failed to get add-on with active status: %w", err)
+				}
+			}
+
+			if activeAddon != nil && params.EffectiveFrom != nil {
+				_, err = s.ArchiveAddon(ctx, addon.ArchiveAddonInput{
+					NamespacedID: models.NamespacedID{
+						Namespace: activeAddon.Namespace,
+						ID:        activeAddon.ID,
+					},
+					EffectiveTo:                     lo.FromPtr(params.EffectiveFrom),
+					RejectUnitConfig:                params.RejectUnitConfig,
+					RejectUnrepresentableCurrencies: params.RejectUnrepresentableCurrencies,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("failed to archive add-on with active status: %w", err)
+				}
+			}
+		}
+
+		// Publish new add-on version
+
+		input := addon.UpdateAddonInput{
+			NamespacedID: params.NamespacedID,
+		}
+
+		if params.EffectiveFrom != nil {
+			input.EffectiveFrom = lo.ToPtr(params.EffectiveFrom.UTC())
+		}
+
+		if params.EffectiveTo != nil {
+			input.EffectiveTo = lo.ToPtr(params.EffectiveTo.UTC())
+		}
+
+		add, err = s.adapter.UpdateAddon(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to publish add-on: %w", err)
+		}
+
+		logger.Debug("add-on published")
+
+		// Emit add-on published event
+		event := addon.NewAddonPublishEvent(ctx, add)
+		if err := s.publisher.Publish(ctx, event); err != nil {
+			return nil, fmt.Errorf("failed to publish add-on published event: %w", err)
+		}
+
+		return add, nil
+	}
+
+	return transaction.Run(ctx, s.adapter, fn)
+}
+
+func (s service) ArchiveAddon(ctx context.Context, params addon.ArchiveAddonInput) (*addon.Addon, error) {
+	fn := func(ctx context.Context) (*addon.Addon, error) {
+		if err := params.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid archive add-on params: %w", err)
+		}
+
+		logger := s.logger.With(
+			"operation", "archive",
+			"namespace", params.Namespace,
+			"addon.id", params.ID,
+		)
+
+		logger.Debug("archiving add-on")
+
+		add, err := s.adapter.GetAddon(ctx, addon.GetAddonInput{
+			NamespacedID: models.NamespacedID{
+				Namespace: params.Namespace,
+				ID:        params.ID,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get add-on: %w", err)
+		}
+
+		if add.DeletedAt != nil {
+			return nil, models.NewGenericValidationError(
+				fmt.Errorf("cannot archive a deleted add-on"),
+			)
+		}
+
+		if params.RejectUnitConfig && add.AsProductCatalogAddon().HasUnitConfig() {
+			return nil, productcatalog.ErrUnitConfigNotRepresentable
+		}
+		if params.RejectUnrepresentableCurrencies {
+			if add.Currency.IsCustom() {
+				return nil, productcatalog.ErrCurrencyNotRepresentable
+			}
+			if add.AsProductCatalogAddon().HasCurrencyOverrides() {
+				return nil, productcatalog.ErrRateCardCurrencyNotRepresentable
+			}
+		}
+
+		// Run validations prior archiving add-on.
+		if err = add.AsProductCatalogAddon().ValidateWith(
+			productcatalog.ValidateAddonWithStatus(productcatalog.AddonStatusActive),
+		); err != nil {
+			return nil, err
+		}
+
+		add, err = s.adapter.UpdateAddon(ctx, addon.UpdateAddonInput{
+			NamespacedID: models.NamespacedID{
+				Namespace: add.Namespace,
+				ID:        add.ID,
+			},
+			EffectivePeriod: productcatalog.EffectivePeriod{
+				EffectiveFrom: add.EffectiveFrom,
+				EffectiveTo:   lo.ToPtr(params.EffectiveTo.UTC()),
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to archive add-on: %w", err)
+		}
+
+		logger.Debug("add-on archived")
+
+		// Emit add-on archived event
+		event := addon.NewAddonArchiveEvent(ctx, add)
+		if err := s.publisher.Publish(ctx, event); err != nil {
+			return nil, fmt.Errorf("failed to publish add-on archived event: %w", err)
+		}
+
+		return add, nil
+	}
+
+	return transaction.Run(ctx, s.adapter, fn)
+}
+
+func (s service) NextAddon(ctx context.Context, params addon.NextAddonInput) (*addon.Addon, error) {
+	fn := func(ctx context.Context) (*addon.Addon, error) {
+		if err := params.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid next version add-on params: %w", err)
+		}
+
+		logger := s.logger.With(
+			"operation", "next",
+			"namespace", params.Namespace,
+			"addon.id", params.ID,
+			"addon.key", params.Key,
+			"addon.version", params.Version,
+		)
+
+		logger.Debug("creating new version of an add-on")
+
+		// Fetch all version of an add-on to find the one to be used as source and also to calculate the next version number.
+		versions, err := s.getAddonVersions(ctx, params.Namespace, params.Key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get add-on generation: %w", err)
+		}
+
+		if versions.Len() == 0 {
+			return nil, models.NewGenericValidationError(
+				fmt.Errorf("no versions available for this add-on"),
+			)
+		}
+
+		// Generate source add-on filter from input parameters
+
+		// addonFilterFunc is a filter function which returns tuple where the first boolean means that
+		// there is a match while the second tells the caller to stop further invocations as there is an exact match.
+		type addonFilterFunc func(addon addon.Addon) (match bool, stop bool)
+
+		sourceAddonFilterFunc := func() addonFilterFunc {
+			switch {
+			case params.ID != "":
+				return func(a addon.Addon) (match bool, stop bool) {
+					if a.Namespace == params.Namespace && a.ID == params.ID {
+						return true, true
+					}
+
+					return false, false
+				}
+			case params.Key != "" && params.Version == 0:
+				return func(a addon.Addon) (match bool, stop bool) {
+					return a.Namespace == params.Namespace && a.Key == params.Key, false
+				}
+			default:
+				return func(a addon.Addon) (match bool, stop bool) {
+					if a.Namespace == params.Namespace && a.Key == params.Key && a.Version == params.Version {
+						return true, true
+					}
+
+					return false, false
+				}
+			}
+		}()
+
+		var sourceAddon *addon.Addon
+
+		nextVersion := 1
+		var match, stop bool
+		for _, addonItem := range versions {
+			if addonItem.DeletedAt == nil && addonItem.Status() == productcatalog.AddonStatusDraft {
+				return nil, models.NewGenericValidationError(
+					fmt.Errorf("only a single draft version is allowed for add-on"),
+				)
+			}
+
+			if !stop {
+				match, stop = sourceAddonFilterFunc(addonItem)
+				if match {
+					sourceAddon = &addonItem
+				}
+			}
+
+			if addonItem.Version >= nextVersion {
+				nextVersion = addonItem.Version + 1
+			}
+		}
+
+		if sourceAddon == nil {
+			return nil, models.NewGenericValidationError(
+				fmt.Errorf("no versions available for add-on to use as source for next draft version"),
+			)
+		}
+
+		if err := sourceAddon.AsProductCatalogAddon().ValidateWith(productcatalog.ValidateAddonWithResolvedFeatures()); err != nil {
+			return nil, fmt.Errorf("source add-on has unresolved feature references: %w", err)
+		}
+
+		if params.RejectUnrepresentableCurrencies {
+			if sourceAddon.Currency.IsCustom() {
+				return nil, productcatalog.ErrCurrencyNotRepresentable
+			}
+			if sourceAddon.AsProductCatalogAddon().HasCurrencyOverrides() {
+				return nil, productcatalog.ErrRateCardCurrencyNotRepresentable
+			}
+		}
+
+		nextAddonMeta := sourceAddon.AddonMeta
+		nextAddonMeta.EffectivePeriod = productcatalog.EffectivePeriod{}
+		nextAddonMeta.Version = nextVersion
+
+		nextAddon, err := s.adapter.CreateAddon(ctx, addon.CreateAddonInput{
+			NamespacedModel: models.NamespacedModel{
+				Namespace: sourceAddon.Namespace,
+			},
+			Addon: productcatalog.Addon{
+				AddonMeta: nextAddonMeta,
+				RateCards: sourceAddon.RateCards.AsProductCatalogRateCards(),
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create new version of a add-on: %w", err)
+		}
+
+		return nextAddon, nil
+	}
+
+	return transaction.Run(ctx, s.adapter, fn)
+}

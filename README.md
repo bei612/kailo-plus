@@ -1,6 +1,6 @@
 # Kailo 工程根目录
 
-`apps` 是 Kailo 一期实现工程的根目录，包含实施合同、Core、Worker、按功能命名的二开项目（协作底座与 Desktop/Mobile 客户端、Web 客户端、模型网关、Agent 运行时，ADR-16）、客户端共用代码（`client-kit/`）、契约、部署配置与验证工具。当前交付状态以本仓库的代码、追溯记录和门禁结果为准，不以本 README 代替验收证据。
+`apps` 是 Kailo 一期实现工程的根目录，包含实施合同、Core、Worker、按功能命名的二开项目（协作底座与 Desktop/Mobile 客户端、Web 客户端、模型网关、Agent 运行时与计量服务，ADR-16）、客户端共用代码（`client-kit/`）、契约、部署配置与验证工具。当前交付状态以本仓库的代码、追溯记录和门禁结果为准，不以本 README 代替验收证据。
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
@@ -101,3 +101,5 @@ trellis init --claude --codex -u "<你的名字>" --workflow native
 当时两项 SKIP 是无适用对象而非遗漏：Stage 0 尚无用户可达能力的追溯记录，runbook 当时按 `07-运行与运维基线.md` §6 的适用性判定。当前已有生产路径的追溯记录；现阶段是否通过须读取实际记录与本轮门禁，不能继续沿用 Stage 0 的零记录判断。
 
 **当前正在开发 Stage 2，尚未生产就绪**：Stage 1 的身份与协作主链已有实现，但不能宣称其退出门禁全部闭合。`DD-70/72` 要求的 `tenants/<tenant_id>` OpenBao namespace、独立 KV/AppRole/policy/token 已在本地真实生命周期与跨 Tenant 拒绝探针中验证；旧 `platform/kv` SecretRef 的兼容读取保留，迁移及旧版本处置尚未完成，见 [SecretRef 核验](core/verify/secret-ref.md)。Stage 2 的 Governed Action、审批、角色、邀请及任务只读投影已有实现；本人任务取消与重跑已通过 Core、Temporal、Worker 的真实拓扑联调及 Web 真实浏览器走查。Desktop/Mobile 原生会话端到端证据与 Stage 2 其余能力仍未闭合，Stage 3–5、平台一期收口与三个能力扩展未交付。当前优先收口 Web，再推进 Stage 2；以 [纵向交付路线](02-纵向交付路线.md) §1.1、§3–4 的端规则和退出门禁逐项验收，不得把 Web 通过当作三端和全阶段通过。
+
+Stage 4 的 `SS-OMT-AUTH` 已将 OpenMeter 固定 commit `6d76d8a6fa90fbbab2d41035d31df2acec7ad3af` 的完整 4519 文件源码导入 `metering/`。Kailo 生产差异只有原生 v1/v3 Router hook 的 Core-only service credential、配置与 Wire 接线三个文件。完整正式构建、六个 binary 的 `xx-verify`、registry push 与来源登记退出 0，固定产物为 `sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783`；同一镜像的实际部署与 v1/v3 认证复验为 10/10。此提交只收录原生认证底座、来源与证据，不收录后续 Core Customer、Quota、Usage 或 Compose 消费者；核验记录中的这些工作树事实不等于本提交交付。额度与账单入口保持关闭，不宣布 Stage 4 或生产门禁通过，详见 [计量认证实现记录](metering/fork/verify/core-authentication.md)。

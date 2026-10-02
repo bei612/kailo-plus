@@ -1,0 +1,111 @@
+package appservice
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/app"
+	appstripe "github.com/openmeterio/openmeter/openmeter/app/stripe"
+	stripeclient "github.com/openmeterio/openmeter/openmeter/app/stripe/client"
+	"github.com/openmeterio/openmeter/pkg/framework/transaction"
+)
+
+var _ appstripe.Service = (*Service)(nil)
+
+func (s *Service) GetWebhookSecret(ctx context.Context, input appstripe.GetWebhookSecretInput) (appstripe.GetWebhookSecretOutput, error) {
+	return transaction.Run(ctx, s.adapter, func(ctx context.Context) (appstripe.GetWebhookSecretOutput, error) {
+		return s.adapter.GetWebhookSecret(ctx, input)
+	})
+}
+
+func (s *Service) UpdateAPIKey(ctx context.Context, input appstripe.UpdateAPIKeyInput) error {
+	return transaction.RunWithNoValue(ctx, s.adapter, func(ctx context.Context) error {
+		return s.adapter.UpdateAPIKey(ctx, appstripe.UpdateAPIKeyAdapterInput{
+			UpdateAPIKeyInput: input,
+			MaskedAPIKey:      s.generateMaskedSecretAPIKey(input.APIKey),
+		})
+	})
+}
+
+func (s *Service) CreateCheckoutSession(ctx context.Context, input appstripe.CreateCheckoutSessionInput) (appstripe.CreateCheckoutSessionOutput, error) {
+	return transaction.Run(ctx, s.adapter, func(ctx context.Context) (appstripe.CreateCheckoutSessionOutput, error) {
+		// Create the checkout session
+		output, err := s.adapter.CreateCheckoutSession(ctx, input)
+		if err != nil {
+			return appstripe.CreateCheckoutSessionOutput{}, err
+		}
+
+		// Emit the checkout session created event
+		event := appstripe.NewAppCheckoutSessionEvent(ctx, input.Namespace, output.SessionID, output.AppID.ID, output.CustomerID.ID)
+		if err := s.publisher.Publish(ctx, event); err != nil {
+			return appstripe.CreateCheckoutSessionOutput{}, fmt.Errorf("failed to publish event: %w", err)
+		}
+
+		return output, nil
+	})
+}
+
+func (s *Service) GetStripeAppData(ctx context.Context, input appstripe.GetStripeAppDataInput) (appstripe.AppData, error) {
+	return transaction.Run(ctx, s.adapter, func(ctx context.Context) (appstripe.AppData, error) {
+		return s.adapter.GetStripeAppData(ctx, input)
+	})
+}
+
+func (s *Service) GetStripeCustomerData(ctx context.Context, input appstripe.GetStripeCustomerDataInput) (appstripe.CustomerData, error) {
+	return transaction.Run(ctx, s.adapter, func(ctx context.Context) (appstripe.CustomerData, error) {
+		return s.adapter.GetStripeCustomerData(ctx, input)
+	})
+}
+
+func (s *Service) UpsertStripeCustomerData(ctx context.Context, input appstripe.UpsertStripeCustomerDataInput) error {
+	return transaction.RunWithNoValue(ctx, s.adapter, func(ctx context.Context) error {
+		return s.adapter.UpsertStripeCustomerData(ctx, input)
+	})
+}
+
+func (s *Service) DeleteStripeCustomerData(ctx context.Context, input appstripe.DeleteStripeCustomerDataInput) error {
+	return transaction.RunWithNoValue(ctx, s.adapter, func(ctx context.Context) error {
+		return s.adapter.DeleteStripeCustomerData(ctx, input)
+	})
+}
+
+func (s *Service) HandleSetupIntentSucceeded(ctx context.Context, input appstripe.HandleSetupIntentSucceededInput) (appstripe.HandleSetupIntentSucceededOutput, error) {
+	return transaction.Run(ctx, s.adapter, func(ctx context.Context) (appstripe.HandleSetupIntentSucceededOutput, error) {
+		def := appstripe.HandleSetupIntentSucceededOutput{}
+
+		res, err := s.adapter.SetCustomerDefaultPaymentMethod(ctx, input.SetCustomerDefaultPaymentMethodInput)
+		if err != nil {
+			return def, fmt.Errorf("failed to set customer default payment method: %w", err)
+		}
+
+		handlingApp, err := s.appService.GetApp(ctx, input.AppID)
+		if err != nil {
+			return def, fmt.Errorf("failed to get app: %w", err)
+		}
+
+		event := app.CustomerPaymentSetupSucceededEvent{
+			App:      handlingApp.GetAppBase(),
+			Customer: res.CustomerID,
+			Result: app.CustomerPaymentSetupResult{
+				Metadata: lo.OmitByKeys(input.PaymentIntentMetadata, stripeclient.SetupIntentReservedMetadataKeys),
+			},
+		}
+
+		if err := s.publisher.Publish(ctx, event); err != nil {
+			return def, fmt.Errorf("failed to publish event: %w", err)
+		}
+
+		return appstripe.HandleSetupIntentSucceededOutput(res), nil
+	})
+}
+
+// CreatePortalSession creates a portal session for a customer.
+func (s *Service) CreatePortalSession(ctx context.Context, input appstripe.CreateStripePortalSessionInput) (appstripe.StripePortalSession, error) {
+	return s.adapter.CreatePortalSession(ctx, input)
+}
+
+func (s *Service) generateMaskedSecretAPIKey(secretAPIKey string) string {
+	return fmt.Sprintf("%s***%s", secretAPIKey[:8], secretAPIKey[len(secretAPIKey)-3:])
+}

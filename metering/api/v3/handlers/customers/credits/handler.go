@@ -1,0 +1,64 @@
+package customerscredits
+
+import (
+	"context"
+
+	"github.com/alpacahq/alpacadecimal"
+
+	"github.com/openmeterio/openmeter/api/v3/handlers/billingerrors"
+	"github.com/openmeterio/openmeter/openmeter/billing/creditgrant"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/openmeter/ledger"
+	"github.com/openmeterio/openmeter/openmeter/ledger/customerbalance"
+	"github.com/openmeterio/openmeter/pkg/framework/transport/httptransport"
+)
+
+type customerBalanceFacade interface {
+	GetBalance(ctx context.Context, input customerbalance.GetBalanceInput) (alpacadecimal.Decimal, error)
+	GetBalances(ctx context.Context, input customerbalance.GetBalancesInput) ([]customerbalance.BalanceByCurrency, error)
+	ListCreditTransactions(ctx context.Context, input customerbalance.ListCreditTransactionsInput) (customerbalance.ListCreditTransactionsResult, error)
+}
+
+type Handler interface {
+	GetCustomerCreditBalance() GetCustomerCreditBalanceHandler
+	ListCreditGrants() ListCreditGrantsHandler
+	CreateCreditGrant() CreateCreditGrantHandler
+	GetCreditGrant() GetCreditGrantHandler
+	VoidCreditGrant() VoidCreditGrantHandler
+	UpdateCreditGrantExternalSettlement() UpdateCreditGrantExternalSettlementHandler
+	ListCreditTransactions() ListCreditTransactionsHandler
+}
+
+type handler struct {
+	resolveNamespace   func(ctx context.Context) (string, error)
+	customerService    customer.Service
+	balanceFacade      customerBalanceFacade
+	creditGrantService creditgrant.Service
+	ledger             ledger.Ledger
+	accountResolver    ledger.AccountResolver
+	options            []httptransport.HandlerOption
+}
+
+func New(
+	resolveNamespace func(ctx context.Context) (string, error),
+	customerService customer.Service,
+	balanceFacade customerBalanceFacade,
+	creditGrantService creditgrant.Service,
+	ledger ledger.Ledger,
+	accountResolver ledger.AccountResolver,
+	options ...httptransport.HandlerOption,
+) Handler {
+	sharedOptions := make([]httptransport.HandlerOption, 0, len(options)+1)
+	sharedOptions = append(sharedOptions, httptransport.WithErrorEncoder(billingerrors.ErrorEncoder()))
+	sharedOptions = append(sharedOptions, options...)
+
+	return &handler{
+		resolveNamespace:   resolveNamespace,
+		customerService:    customerService,
+		balanceFacade:      balanceFacade,
+		creditGrantService: creditGrantService,
+		ledger:             ledger,
+		accountResolver:    accountResolver,
+		options:            sharedOptions,
+	}
+}

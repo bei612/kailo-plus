@@ -1,0 +1,1283 @@
+package e2e
+
+import (
+	"cmp"
+	"context"
+	"net/http"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/semaphore"
+
+	api "github.com/openmeterio/openmeter/api/client/go"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+const (
+	PlanFeatureKey        = "plan_feature_1"
+	PlanMeteredFeatureKey = "plan_metered_feature_1"
+	PlanKey               = "test_plan"
+)
+
+func TestPlan(t *testing.T) {
+	client := initClient(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Let's set up three customers
+	// ensure subjects exist for usage attribution
+	{
+		resp, err := client.UpsertSubjectWithResponse(ctx, api.UpsertSubjectJSONRequestBody{api.SubjectUpsert{Key: "test_customer_subject_1"}})
+		require.Nil(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode())
+	}
+	customerAPIRes, err := client.CreateCustomerWithResponse(ctx, api.CreateCustomerJSONRequestBody{
+		Name:         "Test Customer 1",
+		Currency:     lo.ToPtr(api.CurrencyCode("USD")),
+		Description:  lo.ToPtr("Test Customer Description"),
+		PrimaryEmail: lo.ToPtr("customer1@mail.com"),
+		BillingAddress: &api.Address{
+			City:        lo.ToPtr("City"),
+			Country:     lo.ToPtr("US"),
+			Line1:       lo.ToPtr("Line 1"),
+			Line2:       lo.ToPtr("Line 2"),
+			State:       lo.ToPtr("State"),
+			PhoneNumber: lo.ToPtr("1234567890"),
+			PostalCode:  lo.ToPtr("12345"),
+		},
+		UsageAttribution: &api.CustomerUsageAttribution{
+			SubjectKeys: []string{"test_customer_subject_1"},
+		},
+	})
+	require.Nil(t, err)
+
+	require.Equal(t, 201, customerAPIRes.StatusCode(), "received the following body: %s", customerAPIRes.Body)
+	customer1 := customerAPIRes.JSON201
+	require.NotNil(t, customer1)
+
+	// ensure subject exists for second customer
+	{
+		resp, err := client.UpsertSubjectWithResponse(ctx, api.UpsertSubjectJSONRequestBody{api.SubjectUpsert{Key: "test_customer_subject_2"}})
+		require.Nil(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode())
+	}
+	customerAPIRes, err = client.CreateCustomerWithResponse(ctx, api.CreateCustomerJSONRequestBody{
+		Name:         "Test Customer 2",
+		Key:          lo.ToPtr("test_customer_2"),
+		Currency:     lo.ToPtr(api.CurrencyCode("USD")),
+		Description:  lo.ToPtr("Test Customer Description"),
+		PrimaryEmail: lo.ToPtr("customer2@mail.com"),
+		BillingAddress: &api.Address{
+			City:        lo.ToPtr("City"),
+			Country:     lo.ToPtr("US"),
+			Line1:       lo.ToPtr("Line 1"),
+			Line2:       lo.ToPtr("Line 2"),
+			State:       lo.ToPtr("State"),
+			PhoneNumber: lo.ToPtr("1234567890"),
+			PostalCode:  lo.ToPtr("12345"),
+		},
+		UsageAttribution: &api.CustomerUsageAttribution{
+			SubjectKeys: []string{"test_customer_subject_2"},
+		},
+	})
+	require.Nil(t, err)
+
+	customer3APIRes, err := client.CreateCustomerWithResponse(ctx, api.CreateCustomerJSONRequestBody{
+		Name:         "Test Customer 3",
+		Key:          lo.ToPtr("test_customer_3"),
+		Currency:     lo.ToPtr(api.CurrencyCode("USD")),
+		Description:  lo.ToPtr("Test Customer Description"),
+		PrimaryEmail: lo.ToPtr("customer3@mail.com"),
+		BillingAddress: &api.Address{
+			City:        lo.ToPtr("City"),
+			Country:     lo.ToPtr("US"),
+			Line1:       lo.ToPtr("Line 1"),
+			Line2:       lo.ToPtr("Line 2"),
+			State:       lo.ToPtr("State"),
+			PhoneNumber: lo.ToPtr("1234567890"),
+			PostalCode:  lo.ToPtr("12345"),
+		},
+		UsageAttribution: &api.CustomerUsageAttribution{
+			SubjectKeys: []string{},
+		},
+	})
+	require.Nil(t, err)
+	require.Equal(t, 201, customer3APIRes.StatusCode(), "received the following body: %s", customer3APIRes.Body)
+
+	customer3 := customer3APIRes.JSON201
+	require.NotNil(t, customer3, "received the following body: %s", customer3APIRes.Body)
+
+	t.Run("Should check access of customer returning nothing", func(t *testing.T) {
+		res, err := client.GetCustomerAccessWithResponse(ctx, customer1.Id)
+		require.Nil(t, err)
+
+		require.Equal(t, http.StatusOK, res.StatusCode(), "received the following body: %s", res.Body)
+		require.NotNil(t, res.JSON200)
+		require.NotNil(t, res.JSON200.Entitlements)
+		require.Equal(t, 0, len(res.JSON200.Entitlements))
+	})
+
+	customer2 := customerAPIRes.JSON201
+	require.NotNil(t, customer2)
+
+	// ensure subject exists for abused customer
+	{
+		resp, err := client.UpsertSubjectWithResponse(ctx, api.UpsertSubjectJSONRequestBody{api.SubjectUpsert{Key: "test_customer_subject_abused"}})
+		require.Nil(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode())
+	}
+	customerAPIRes, err = client.CreateCustomerWithResponse(ctx, api.CreateCustomerJSONRequestBody{
+		Name:         "Test Customer Abused",
+		Key:          lo.ToPtr("test_customer_abused"),
+		Currency:     lo.ToPtr(api.CurrencyCode("USD")),
+		Description:  lo.ToPtr("Test Customer Description"),
+		PrimaryEmail: lo.ToPtr("customer_abused@mail.com"),
+		BillingAddress: &api.Address{
+			City:        lo.ToPtr("City"),
+			Country:     lo.ToPtr("US"),
+			Line1:       lo.ToPtr("Line 1"),
+			Line2:       lo.ToPtr("Line 2"),
+			State:       lo.ToPtr("State"),
+			PhoneNumber: lo.ToPtr("1234567890"),
+			PostalCode:  lo.ToPtr("12345"),
+		},
+		UsageAttribution: &api.CustomerUsageAttribution{
+			SubjectKeys: []string{"test_customer_subject_abused"},
+		},
+	})
+	require.Nil(t, err)
+
+	customerAbused := customerAPIRes.JSON201
+	require.NotNil(t, customerAbused)
+
+	// Now, let's create dedicated features for the plan
+	featureAPIRes, err := client.CreateFeatureWithResponse(ctx, api.CreateFeatureJSONRequestBody{
+		Key:  PlanFeatureKey,
+		Name: "Test Plan Feature",
+	})
+	require.Nil(t, err)
+
+	feature := featureAPIRes.JSON201
+	require.NotNil(t, feature)
+
+	meteredFeatureAPIRes, err := client.CreateFeatureWithResponse(ctx, api.CreateFeatureJSONRequestBody{
+		Key:       PlanMeteredFeatureKey,
+		Name:      "Test Plan Metered Feature",
+		MeterSlug: lo.ToPtr("plan_meter"),
+	})
+	require.Nil(t, err)
+
+	meteredFeature := meteredFeatureAPIRes.JSON201
+	require.NotNil(t, meteredFeature)
+
+	var planId string
+
+	// Lets build a PlanCreate input
+	p1RC1 := api.RateCard{}
+	err = p1RC1.FromRateCardFlatFee(api.RateCardFlatFee{
+		Name:        "Test Plan Phase 1 Rate Card 1",
+		Description: lo.ToPtr("Has a one time flat price like an installation fee"),
+		Key:         "test_plan_phase_1_rate_card_1",
+		TaxConfig: &api.TaxConfig{
+			Stripe: &api.StripeTaxConfig{
+				Code: "txcd_10000000",
+			},
+		},
+		Price: &api.FlatPriceWithPaymentTerm{
+			Amount:      "1000",
+			PaymentTerm: lo.ToPtr(api.PricePaymentTerm("in_advance")),
+			Type:        api.FlatPriceWithPaymentTermType("flat"),
+		},
+		BillingCadence: nil,
+		Type:           api.RateCardFlatFeeType("flat"),
+	})
+	require.Nil(t, err)
+
+	et := &api.RateCardEntitlement{}
+	err = et.FromRateCardBooleanEntitlement(api.RateCardBooleanEntitlement{
+		Type: api.RateCardBooleanEntitlementType("boolean"),
+	})
+	require.Nil(t, err)
+
+	p1RC2 := api.RateCard{}
+	err = p1RC2.FromRateCardFlatFee(api.RateCardFlatFee{
+		Name:                "Test Plan Phase 1 Rate Card 2",
+		Description:         lo.ToPtr("Has a monthly recurring price to grant access to a feature"),
+		Key:                 PlanFeatureKey,
+		FeatureKey:          lo.ToPtr(PlanFeatureKey),
+		EntitlementTemplate: et,
+		TaxConfig: &api.TaxConfig{
+			Stripe: &api.StripeTaxConfig{
+				Code: "txcd_10000000",
+			},
+		},
+		Price: &api.FlatPriceWithPaymentTerm{
+			Amount:      "1000",
+			PaymentTerm: lo.ToPtr(api.PricePaymentTerm("in_advance")),
+			Type:        api.FlatPriceWithPaymentTermType("flat"),
+		},
+		BillingCadence: lo.ToPtr("P1M"),
+		Type:           api.RateCardFlatFeeType("flat"),
+	})
+	require.Nil(t, err)
+
+	p2RC1 := api.RateCard{}
+	err = p2RC1.FromRateCardFlatFee(api.RateCardFlatFee{
+		Name:        "Test Plan Phase 2 Rate Card 1",
+		Description: lo.ToPtr("Keeps access to the same feature as in phase 1"),
+		Key:         PlanFeatureKey,
+		FeatureKey:  lo.ToPtr(PlanFeatureKey),
+		TaxConfig: &api.TaxConfig{
+			Stripe: &api.StripeTaxConfig{
+				Code: "txcd_10000000",
+			},
+		},
+		Price: &api.FlatPriceWithPaymentTerm{
+			Amount:      "1000",
+			PaymentTerm: lo.ToPtr(api.PricePaymentTerm("in_advance")),
+			Type:        api.FlatPriceWithPaymentTermType("flat"),
+		},
+		BillingCadence: lo.ToPtr("P1M"),
+		Type:           api.RateCardFlatFeeType("flat"),
+	})
+	require.Nil(t, err)
+
+	p2RC2P := api.RateCardUsageBasedPrice{}
+	err = p2RC2P.FromUnitPriceWithCommitments(api.UnitPriceWithCommitments{
+		Amount: "0.1",
+		Type:   api.UnitPriceWithCommitmentsType("unit"),
+	})
+	require.Nil(t, err)
+
+	p2RC2UsageDiscount := api.DiscountPercentage{
+		Percentage: models.NewPercentage(10),
+	}
+
+	p2RC2 := api.RateCard{}
+	err = p2RC2.FromRateCardUsageBased(api.RateCardUsageBased{
+		Name:        "Test Plan Phase 2 Rate Card 2",
+		Description: lo.ToPtr("Adds a usage based price for the metered feature"),
+		Key:         PlanMeteredFeatureKey,
+		FeatureKey:  lo.ToPtr(PlanMeteredFeatureKey),
+		TaxConfig: &api.TaxConfig{
+			Stripe: &api.StripeTaxConfig{
+				Code: "txcd_10000000",
+			},
+		},
+		BillingCadence: "P1M",
+		Price:          &p2RC2P,
+		Discounts:      &api.Discounts{Percentage: &p2RC2UsageDiscount},
+		Type:           api.RateCardUsageBasedType("usage_based"),
+	})
+	require.Nil(t, err)
+
+	planCreate := api.PlanCreate{
+		Currency:       api.CurrencyCode("USD"),
+		Name:           "Test Plan",
+		Description:    lo.ToPtr("Test Plan Description"),
+		Key:            PlanKey,
+		BillingCadence: "P1M",
+		Alignment: &api.Alignment{
+			BillablesMustAlign: lo.ToPtr(true),
+		},
+		Phases: []api.PlanPhase{
+			{
+				Name:        "Test Plan Phase 1",
+				Key:         "test_plan_phase_1",
+				Description: lo.ToPtr("Test Plan Phase 1 Description"),
+				Duration:    lo.ToPtr("P2M"),
+				RateCards:   []api.RateCard{p1RC1, p1RC2},
+			},
+			{
+				Name:        "Test Plan Phase 2",
+				Key:         "test_plan_phase_2",
+				Description: lo.ToPtr("Test Plan Phase 1 Description"),
+				Duration:    nil,
+				RateCards:   []api.RateCard{p2RC1, p2RC2},
+			},
+		},
+	}
+
+	customPlanInput := api.CustomPlanInput{
+		Currency:       planCreate.Currency,
+		Name:           planCreate.Name,
+		Description:    planCreate.Description,
+		BillingCadence: planCreate.BillingCadence,
+		Phases:         planCreate.Phases,
+		ProRatingConfig: &api.ProRatingConfig{
+			Mode:    "prorate_prices",
+			Enabled: true,
+		},
+		Alignment: &api.Alignment{
+			BillablesMustAlign: lo.ToPtr(true),
+		},
+	}
+
+	t.Run("Should create a plan on happy path", func(t *testing.T) {
+		planAPIRes, err := client.CreatePlanWithResponse(ctx, planCreate)
+		require.Nil(t, err)
+		require.Equal(t, 201, planAPIRes.StatusCode())
+
+		plan := planAPIRes.JSON201
+		require.NotNil(t, plan, "received the following body: %s", planAPIRes.Body)
+
+		assert.Equal(t, PlanKey, plan.Key)
+		require.NotNil(t, plan.Version)
+		assert.Equal(t, 1, plan.Version)
+
+		require.NotNil(t, plan.Id)
+		planId = plan.Id
+	})
+
+	t.Run("Plan should have discounts correctly recorded", func(t *testing.T) {
+		require.Len(t, planCreate.Phases, 2)
+		require.Len(t, planCreate.Phases[1].RateCards, 2)
+
+		rateCard, found := lo.Find(planCreate.Phases[1].RateCards, func(rc api.RateCard) bool {
+			disc, err := rc.Discriminator()
+			if err != nil {
+				return false
+			}
+
+			if disc != string(api.RateCardUsageBasedTypeUsageBased) {
+				return false
+			}
+
+			usageBased, err := rc.AsRateCardUsageBased()
+			if err != nil {
+				return false
+			}
+
+			return *usageBased.FeatureKey == PlanMeteredFeatureKey
+		})
+		require.True(t, found)
+
+		ubpRateCard, err := rateCard.AsRateCardUsageBased()
+		require.NoError(t, err)
+		require.NotNil(t, ubpRateCard)
+
+		require.NotNil(t, ubpRateCard.Discounts)
+		require.NotNil(t, ubpRateCard.Discounts.Percentage)
+		require.Equal(t, float64(10), ubpRateCard.Discounts.Percentage.Percentage.InexactFloat64())
+	})
+
+	t.Run("Should publish the plan", func(t *testing.T) {
+		require.NotEmpty(t, planId)
+		apiRes, err := client.PublishPlanWithResponse(ctx, planId)
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, apiRes.StatusCode())
+
+		body := apiRes.JSON200
+		require.NotNil(t, body)
+	})
+
+	t.Run("Should not allow publishing a misaligned plan", func(t *testing.T) {
+		// Uses a separate plan to avoid conflicts
+
+		maP1RC1 := api.RateCard{}
+		err = maP1RC1.FromRateCardFlatFee(api.RateCardFlatFee{
+			Name:        "Test Plan Phase 1 Rate Card 1",
+			Description: lo.ToPtr("Has a one time flat price like an installation fee"),
+			Key:         "test_plan_phase_1_rate_card_1",
+			TaxConfig: &api.TaxConfig{
+				Stripe: &api.StripeTaxConfig{
+					Code: "txcd_10000000",
+				},
+			},
+			Price: &api.FlatPriceWithPaymentTerm{
+				Amount:      "1000",
+				PaymentTerm: lo.ToPtr(api.PricePaymentTerm("in_advance")),
+				Type:        api.FlatPriceWithPaymentTermType("flat"),
+			},
+			BillingCadence: lo.ToPtr("P1W"),
+			Type:           api.RateCardFlatFeeType("flat"),
+		})
+		require.Nil(t, err)
+
+		et := &api.RateCardEntitlement{}
+		err = et.FromRateCardBooleanEntitlement(api.RateCardBooleanEntitlement{
+			Type: api.RateCardBooleanEntitlementType("boolean"),
+		})
+		require.Nil(t, err)
+
+		maP1RC2 := api.RateCard{}
+		err = maP1RC2.FromRateCardFlatFee(api.RateCardFlatFee{
+			Name:                "Test Plan Phase 1 Rate Card 2",
+			Description:         lo.ToPtr("Has a monthly recurring price to grant access to a feature"),
+			Key:                 PlanFeatureKey,
+			FeatureKey:          lo.ToPtr(PlanFeatureKey),
+			EntitlementTemplate: et,
+			TaxConfig: &api.TaxConfig{
+				Stripe: &api.StripeTaxConfig{
+					Code: "txcd_10000000",
+				},
+			},
+			Price: &api.FlatPriceWithPaymentTerm{
+				Amount:      "1000",
+				PaymentTerm: lo.ToPtr(api.PricePaymentTerm("in_advance")),
+				Type:        api.FlatPriceWithPaymentTermType("flat"),
+			},
+			BillingCadence: lo.ToPtr("P1M"),
+			Type:           api.RateCardFlatFeeType("flat"),
+		})
+		require.Nil(t, err)
+
+		planKey := "test_plan_misaligned"
+		misalignedCreate := planCreate
+		misalignedCreate.Key = planKey
+
+		misalignedCreate.Alignment = &api.Alignment{
+			BillablesMustAlign: lo.ToPtr(true),
+		}
+		misalignedCreate.BillingCadence = "P1M"
+
+		misalignedCreate.Phases = slices.Clone(planCreate.Phases)
+		misalignedCreate.Phases[0].RateCards = slices.Clone(planCreate.Phases[0].RateCards)
+		misalignedCreate.Phases[0].RateCards = []api.RateCard{maP1RC1, maP1RC2}
+
+		planAPIRes, err := client.CreatePlanWithResponse(ctx, misalignedCreate)
+		require.Nil(t, err)
+		require.Equal(t, 201, planAPIRes.StatusCode(), "received the following body: %s", planAPIRes.Body)
+
+		plan := planAPIRes.JSON201
+		require.NotNil(t, plan, "received the following body: %s", planAPIRes.Body)
+
+		require.NotNil(t, plan.Version)
+		assert.Equal(t, 1, plan.Version)
+
+		require.NotNil(t, plan.Id)
+
+		// Let's try to publish it and assert it fails
+		require.NotNil(t, plan.Id)
+		apiRes, err := client.PublishPlanWithResponse(ctx, plan.Id)
+		require.Nil(t, err)
+
+		assert.Equal(t, 400, apiRes.StatusCode(), "should return 400, received the following body: %s", apiRes.Body)
+
+		// Now let's update the plan to fix the alignment issue
+		misalignedCreate.Phases[0].RateCards = []api.RateCard{maP1RC2}
+
+		updateRes, err := client.UpdatePlanWithResponse(ctx, plan.Id, api.UpdatePlanJSONRequestBody{
+			Name:           plan.Name,
+			BillingCadence: "P1M",
+			Phases:         misalignedCreate.Phases,
+		})
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, updateRes.StatusCode(), "received the following body: %s", updateRes.Body)
+
+		// And let's try to publish it once again
+		publishRes, err := client.PublishPlanWithResponse(ctx, plan.Id)
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, publishRes.StatusCode(), "received the following body: %s", publishRes.Body)
+	})
+
+	startTime := time.Now()
+
+	var subscriptionId string
+	var customSubscriptionId string
+
+	t.Run("Should create a custom subscription", func(t *testing.T) {
+		require.NotNil(t, customer1)
+		require.NotNil(t, customer1.Id)
+
+		ct := &api.SubscriptionTiming{}
+		require.NoError(t, ct.FromSubscriptionTiming1(startTime))
+
+		create := api.SubscriptionCreate{}
+
+		anchorTime := time.Now().Add(-time.Hour).Truncate(time.Millisecond).UTC()
+
+		err := create.FromCustomSubscriptionCreate(api.CustomSubscriptionCreate{
+			Timing:        ct,
+			CustomerKey:   customer2.Key,   // Let's use the key
+			CustomPlan:    customPlanInput, // For simplicity we can reuse the same plan input, we know its valid
+			BillingAnchor: lo.ToPtr(anchorTime),
+		})
+		require.Nil(t, err)
+
+		apiRes, err := client.CreateSubscriptionWithResponse(ctx, create)
+		require.Nil(t, err)
+
+		assert.Equal(t, 201, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+		subscription := apiRes.JSON201
+		require.NotNil(t, subscription)
+		require.NotNil(t, subscription.Id)
+		assert.Equal(t, api.SubscriptionStatusActive, subscription.Status)
+		assert.Nil(t, subscription.Plan)
+
+		customSubscriptionId = subscription.Id
+		require.Equal(t, "P1M", subscription.BillingCadence)
+		require.True(t, anchorTime.UTC().Equal(subscription.BillingAnchor.UTC()), "billing anchor should be %s, got %s", anchorTime, subscription.BillingAnchor)
+		require.Equal(t, api.ProRatingModeProratePrices, subscription.ProRatingConfig.Mode)
+		require.True(t, subscription.ProRatingConfig.Enabled)
+	})
+
+	t.Run("Should create a subscription even if Customer.UsageAttribution doesn't have any subjects", func(t *testing.T) {
+		require.NotNil(t, customer3)
+		require.NotNil(t, customer3.Id)
+
+		ct := &api.SubscriptionTiming{}
+		require.NoError(t, ct.FromSubscriptionTiming1(startTime))
+
+		create := api.SubscriptionCreate{}
+
+		anchorTime := time.Now().Add(-time.Hour).Truncate(time.Millisecond).UTC()
+
+		err := create.FromCustomSubscriptionCreate(api.CustomSubscriptionCreate{
+			Timing:        ct,
+			CustomerKey:   customer3.Key,
+			CustomPlan:    customPlanInput,
+			BillingAnchor: lo.ToPtr(anchorTime),
+		})
+		require.Nil(t, err)
+
+		apiRes, err := client.CreateSubscriptionWithResponse(ctx, create)
+		require.Nil(t, err, "received the following err: %w", err)
+
+		assert.Equal(t, 201, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+		subscription := apiRes.JSON201
+		require.NotNil(t, subscription)
+		require.NotNil(t, subscription.Id)
+		assert.Equal(t, api.SubscriptionStatusActive, subscription.Status)
+		assert.Nil(t, subscription.Plan)
+	})
+
+	t.Run("Should list customer subscriptions", func(t *testing.T) {
+		require.NotNil(t, customer2)
+		require.NotNil(t, customer2.Id)
+
+		apiRes, err := client.ListCustomerSubscriptionsWithResponse(ctx, customer2.Id, &api.ListCustomerSubscriptionsParams{
+			Page:     lo.ToPtr(1),
+			PageSize: lo.ToPtr(10),
+		})
+		require.Nil(t, err)
+		require.Equal(t, 200, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+		body := apiRes.JSON200
+		require.NotNil(t, body)
+
+		require.Equal(t, 1, len(body.Items))
+		require.Equal(t, customSubscriptionId, body.Items[0].Id)
+		require.Equal(t, 1, body.Page)
+		require.Equal(t, 10, body.PageSize)
+		require.Equal(t, 1, body.TotalCount)
+	})
+
+	t.Run("Should create a subscription based on the plan", func(t *testing.T) {
+		require.NotNil(t, customer1)
+		require.NotNil(t, customer1.Id)
+
+		ct := &api.SubscriptionTiming{}
+		require.NoError(t, ct.FromSubscriptionTiming1(startTime))
+
+		create := api.SubscriptionCreate{}
+		err := create.FromPlanSubscriptionCreate(api.PlanSubscriptionCreate{
+			Timing:      ct,
+			CustomerId:  &customer1.Id,
+			Name:        lo.ToPtr("Test Subscription"),
+			Description: lo.ToPtr("Test Subscription Description"),
+			Plan: api.PlanReferenceInput{
+				Key:     PlanKey,
+				Version: lo.ToPtr(1),
+			},
+		})
+		require.Nil(t, err)
+
+		apiRes, err := client.CreateSubscriptionWithResponse(ctx, create)
+		require.Nil(t, err)
+
+		assert.Equal(t, 201, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+		subscription := apiRes.JSON201
+		require.NotNil(t, subscription)
+		require.NotNil(t, subscription.Id)
+		assert.Equal(t, api.SubscriptionStatusActive, subscription.Status)
+		assert.Equal(t, planId, subscription.Plan.Id)
+
+		subscriptionId = subscription.Id
+		require.Equal(t, "P1M", subscription.BillingCadence)
+		require.Equal(t, api.ProRatingModeProratePrices, subscription.ProRatingConfig.Mode)
+		require.True(t, subscription.ProRatingConfig.Enabled)
+
+		t.Run("Should return nice validation error if the customer already has a subscription", func(t *testing.T) {
+			require.NotNil(t, customer1)
+			require.NotNil(t, customer1.Id)
+
+			ct := &api.SubscriptionTiming{}
+			require.NoError(t, ct.FromSubscriptionTiming1(startTime))
+
+			create := api.SubscriptionCreate{}
+			err := create.FromPlanSubscriptionCreate(api.PlanSubscriptionCreate{
+				Timing:      ct,
+				CustomerId:  &customer1.Id,
+				Name:        lo.ToPtr("Test Subscription"),
+				Description: lo.ToPtr("Test Subscription Description"),
+				Plan: api.PlanReferenceInput{
+					Key:     PlanKey,
+					Version: lo.ToPtr(1),
+				},
+			})
+			require.Nil(t, err)
+
+			apiRes, err := client.CreateSubscriptionWithResponse(ctx, create)
+			require.Nil(t, err)
+
+			require.Equal(t, 409, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+			extensions := apiRes.ApplicationproblemJSON409.Extensions
+
+			require.GreaterOrEqual(t, len(extensions.ValidationErrors), 1)
+			require.Equal(t, "only_single_subscription_allowed_per_customer_at_a_time", extensions.ValidationErrors[0].Code)
+
+			valErr := extensions.ValidationErrors[0]
+			require.NotNil(t, valErr)
+			require.Equal(t, "only_single_subscription_allowed_per_customer_at_a_time", valErr.Code, "received the following body: %s", apiRes.Body)
+			require.NotContains(t, valErr.AdditionalProperties, "models.ErrorCode:only_single_subscription_allowed_per_customer_at_a_time")
+		})
+	})
+
+	t.Run("Should create only ONE subscription per customer, even if we spam the API in a short period of time", func(t *testing.T) {
+		require.NotNil(t, customerAbused)
+		require.NotNil(t, customerAbused.Id)
+
+		ct := &api.SubscriptionTiming{}
+		require.NoError(t, ct.FromSubscriptionTiming1(startTime))
+
+		createSubscription := func(ctx context.Context) {
+			ct := &api.SubscriptionTiming{}
+			require.NoError(t, ct.FromSubscriptionTiming1(startTime))
+
+			// Let's create a custom subscription so it doesn't affect the other tests
+			create := api.SubscriptionCreate{}
+			err := create.FromCustomSubscriptionCreate(api.CustomSubscriptionCreate{
+				Timing:      ct,
+				CustomerKey: customerAbused.Key,
+				CustomPlan:  customPlanInput,
+			})
+			require.NoError(t, err)
+
+			start := time.Now()
+			apiRes, err := client.CreateSubscriptionWithResponse(ctx, create)
+			require.NoError(t, err)
+			t.Logf("Create subscription took %s", time.Since(start))
+
+			// It will either succeed or fail with 4xx
+			assert.Less(t, apiRes.StatusCode(), 500, "received the following status %d body: %s", apiRes.StatusCode(), apiRes.Body)
+		}
+
+		// Let's spam the API 5 times
+		makeParallelCalls := func(t *testing.T, nrParallelCalls int64) {
+			t.Helper()
+
+			sem := semaphore.NewWeighted(nrParallelCalls)
+			timeoutContext, timeoutContextCancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer timeoutContextCancel()
+
+			for i := 0; i < 5; i++ {
+				err := sem.Acquire(timeoutContext, 1)
+				require.NoError(t, err)
+				go func() {
+					defer sem.Release(1)
+					createSubscription(timeoutContext)
+				}()
+			}
+
+			err := sem.Acquire(timeoutContext, nrParallelCalls)
+			require.NoError(t, err)
+			require.NoError(t, timeoutContext.Err())
+		}
+
+		makeParallelCalls(t, 5)
+
+		// Now let's fetch the customer's subscriptions and assert there's only one
+		apiRes, err := client.ListCustomerSubscriptionsWithResponse(ctx, customerAbused.Id, &api.ListCustomerSubscriptionsParams{
+			Page:     lo.ToPtr(1),
+			PageSize: lo.ToPtr(10),
+		})
+		require.Nil(t, err)
+		require.Equal(t, 200, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+		body := apiRes.JSON200
+		require.NotNil(t, body)
+
+		require.Equal(t, 1, len(body.Items))
+	})
+
+	t.Run("Should retrieve the subscription", func(t *testing.T) {
+		require.NotEmpty(t, subscriptionId)
+
+		apiRes, err := client.GetSubscriptionWithResponse(ctx, subscriptionId, nil)
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+		subscription := apiRes.JSON200
+		require.NotNil(t, subscription)
+		require.NotNil(t, subscription.Id)
+
+		assert.Equal(t, subscriptionId, subscription.Id)
+		assert.Equal(t, api.SubscriptionStatusActive, subscription.Status)
+
+		// Should have the current period info
+		assert.NotNil(t, subscription.Alignment)
+		assert.NotNil(t, subscription.Alignment.CurrentAlignedBillingPeriod)
+		assert.NotEmpty(t, subscription.Alignment.CurrentAlignedBillingPeriod.From)
+		assert.NotEmpty(t, subscription.Alignment.CurrentAlignedBillingPeriod.To)
+
+		// Should have item features filled
+		require.GreaterOrEqual(t, len(subscription.Phases), 1)
+		phase := subscription.Phases[0]
+		require.GreaterOrEqual(t, len(phase.Items), 2)
+
+		item, ok := lo.Find(phase.Items, func(i api.SubscriptionItem) bool {
+			return i.Key == PlanFeatureKey
+		})
+		require.True(t, ok)
+		require.NotNil(t, item.Included.Feature)
+		assert.Equal(t, PlanFeatureKey, item.Included.Feature.Key)
+	})
+
+	t.Run("Should edit the subscription", func(t *testing.T) {
+		require.NotEmpty(t, subscriptionId)
+
+		o1 := api.SubscriptionEditOperation{}
+		err := o1.FromEditSubscriptionAddPhase(api.EditSubscriptionAddPhase{
+			Op: "add_phase",
+			Phase: api.SubscriptionPhaseCreate{
+				Key:        "test_plan_phase_3",
+				Name:       "Test Plan Phase 3",
+				StartAfter: lo.ToPtr("P5M"),
+			},
+		})
+		require.Nil(t, err)
+
+		rc := api.RateCard{}
+		err = rc.FromRateCardFlatFee(api.RateCardFlatFee{
+			Key:  "test_plan_phase_3_rate_card_1",
+			Name: "Test Plan Phase 3 Rate Card 1",
+		})
+		require.Nil(t, err)
+
+		o2 := api.SubscriptionEditOperation{}
+		err = o2.FromEditSubscriptionAddItem(api.EditSubscriptionAddItem{
+			Op:       "add_item",
+			PhaseKey: "test_plan_phase_3",
+			RateCard: rc,
+		})
+		require.Nil(t, err)
+
+		// TODO: test all patches
+
+		t.Run("Should return nice validation error for alignment issue", func(t *testing.T) {
+			o1 := api.SubscriptionEditOperation{}
+			err := o1.FromEditSubscriptionAddPhase(api.EditSubscriptionAddPhase{
+				Op: "add_phase",
+				Phase: api.SubscriptionPhaseCreate{
+					Key:        "test_plan_phase_3",
+					Name:       "Test Plan Phase 3",
+					StartAfter: lo.ToPtr("P5M"),
+				},
+			})
+			require.Nil(t, err)
+
+			rc := api.RateCard{}
+			err = rc.FromRateCardFlatFee(api.RateCardFlatFee{
+				Key:            "test_plan_phase_3_rate_card_1",
+				Name:           "Test Plan Phase 3 Rate Card 1",
+				BillingCadence: lo.ToPtr("P1W"),
+				Price: &api.FlatPriceWithPaymentTerm{
+					Amount:      "1000",
+					PaymentTerm: lo.ToPtr(api.PricePaymentTerm("in_advance")),
+					Type:        api.FlatPriceWithPaymentTermType("flat"),
+				},
+			})
+			require.Nil(t, err)
+
+			o2 := api.SubscriptionEditOperation{}
+			err = o2.FromEditSubscriptionAddItem(api.EditSubscriptionAddItem{
+				Op:       "add_item",
+				PhaseKey: "test_plan_phase_3",
+				RateCard: rc,
+			})
+			require.Nil(t, err)
+
+			apiRes, err := client.EditSubscriptionWithResponse(ctx, subscriptionId, api.EditSubscriptionJSONRequestBody{
+				Customizations: []api.SubscriptionEditOperation{o1, o2},
+			})
+			require.Nil(t, err)
+
+			require.Equal(t, 400, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+			// this breaks as we're not backwards compatible
+			extensions := apiRes.ApplicationproblemJSON400.Extensions
+			require.GreaterOrEqual(t, len(extensions.ValidationErrors), 1)
+
+			valErr := extensions.ValidationErrors[0]
+			require.NotNil(t, valErr)
+			require.Equal(t, "rate_card_billing_cadence_unaligned", valErr.Code, "received the following body: %s", apiRes.Body)
+		})
+
+		t.Run("Should return nice validation error for RateCard issue", func(t *testing.T) {
+			o1 := api.SubscriptionEditOperation{}
+			err := o1.FromEditSubscriptionAddPhase(api.EditSubscriptionAddPhase{
+				Op: "add_phase",
+				Phase: api.SubscriptionPhaseCreate{
+					Key:        "test_plan_phase_3",
+					Name:       "Test Plan Phase 3",
+					StartAfter: lo.ToPtr("P5M"),
+				},
+			})
+			require.Nil(t, err)
+
+			rc := api.RateCard{}
+			err = rc.FromRateCardFlatFee(api.RateCardFlatFee{
+				Key:            PlanFeatureKey,
+				Name:           "Test Plan Phase 3 Rate Card 1",
+				BillingCadence: lo.ToPtr("P1M"),
+				FeatureKey:     lo.ToPtr(PlanFeatureKey),
+				Price: &api.FlatPriceWithPaymentTerm{
+					Amount:      "1000",
+					PaymentTerm: lo.ToPtr(api.PricePaymentTerm("in_advance")),
+					Type:        api.FlatPriceWithPaymentTermType("flat"),
+				},
+				EntitlementTemplate: func() *api.RateCardEntitlement {
+					et := api.RateCardEntitlement{}
+					require.NoError(t, et.FromRateCardMeteredEntitlement(api.RateCardMeteredEntitlement{
+						IssueAfterResetPriority: lo.ToPtr(uint8(10)),
+					}))
+					return &et
+				}(),
+			})
+			require.Nil(t, err)
+
+			o2 := api.SubscriptionEditOperation{}
+			err = o2.FromEditSubscriptionAddItem(api.EditSubscriptionAddItem{
+				Op:       "add_item",
+				PhaseKey: "test_plan_phase_3",
+				RateCard: rc,
+			})
+			require.Nil(t, err)
+
+			apiRes, err := client.EditSubscriptionWithResponse(ctx, subscriptionId, api.EditSubscriptionJSONRequestBody{
+				Customizations: []api.SubscriptionEditOperation{o1, o2},
+			})
+			require.Nil(t, err)
+
+			require.Equal(t, 400, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+			require.NotNil(t, apiRes.ApplicationproblemJSON400.Extensions, "received the following body: %s", apiRes.Body)
+
+			extensions := apiRes.ApplicationproblemJSON400.Extensions
+			require.GreaterOrEqual(t, len(extensions.ValidationErrors), 2)
+
+			valErr := extensions.ValidationErrors[0]
+			require.NotNil(t, valErr)
+			require.Equal(t, "entitlement_template_invalid_issue_after_reset_with_priority", valErr.Code, "received the following body: %s", apiRes.Body)
+			require.Equal(t, "$.phases[?(@.key=='test_plan_phase_3')].items.plan_feature_1.entitlementTemplate.issueAfterReset", valErr.Field, "received the following body: %s", apiRes.Body)
+
+			valErr = extensions.ValidationErrors[1]
+			require.NotNil(t, valErr)
+			require.Equal(t, "entitlement_template_issue_after_reset_required", valErr.Code, "received the following body: %s", apiRes.Body)
+			require.Equal(t, "$.phases[?(@.key=='test_plan_phase_3')].items.plan_feature_1.entitlementTemplate.issueAfterReset", valErr.Field, "received the following body: %s", apiRes.Body)
+		})
+
+		apiRes, err := client.EditSubscriptionWithResponse(ctx, subscriptionId, api.EditSubscriptionJSONRequestBody{
+			Customizations: []api.SubscriptionEditOperation{o1, o2},
+		})
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+		// Let's fetch the sub and see the change in the timeline
+		viewRes, err := client.GetSubscriptionWithResponse(ctx, subscriptionId, nil)
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, viewRes.StatusCode(), "received the following body: %s", viewRes.Body)
+
+		require.NotNil(t, viewRes.JSON200)
+
+		// Let's get the phase
+		require.GreaterOrEqual(t, len(viewRes.JSON200.Phases), 3)
+		phase := viewRes.JSON200.Phases[2]
+
+		require.NotNil(t, phase.ItemTimelines)
+		require.NotNil(t, phase.ItemTimelines["test_plan_phase_3_rate_card_1"])
+		require.Equal(t, 1, len(phase.ItemTimelines["test_plan_phase_3_rate_card_1"]))
+	})
+
+	t.Run("Should schedule a cancellation for the subscription", func(t *testing.T) {
+		require.NotEmpty(t, subscriptionId)
+
+		ct := &api.SubscriptionTiming{}
+		require.NoError(t, ct.FromSubscriptionTimingEnum(api.SubscriptionTimingEnum("next_billing_cycle")))
+
+		apiRes, err := client.CancelSubscriptionWithResponse(ctx, subscriptionId, api.CancelSubscriptionJSONRequestBody{
+			Timing: ct,
+		})
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+		require.NotNil(t, apiRes.JSON200)
+		assert.Equal(t, api.SubscriptionStatusCanceled, apiRes.JSON200.Status)
+	})
+
+	t.Run("Should unschedule cancellation", func(t *testing.T) {
+		require.NotEmpty(t, subscriptionId)
+
+		apiRes, err := client.UnscheduleCancelationWithResponse(ctx, subscriptionId)
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+		require.NotNil(t, apiRes.JSON200)
+		assert.Equal(t, api.SubscriptionStatusActive, apiRes.JSON200.Status)
+	})
+
+	// The edited subscription starts phase 3 at P5M: phase 1 is P2M and phase 2 is P3M.
+	migrationPhases := []api.PlanPhase{
+		planCreate.Phases[0],
+		{
+			Name:      planCreate.Phases[1].Name,
+			Key:       planCreate.Phases[1].Key,
+			Duration:  lo.ToPtr("P3M"),
+			RateCards: planCreate.Phases[1].RateCards,
+		},
+		{
+			Name:      "Test Plan Phase 3",
+			Key:       "test_plan_phase_3",
+			RateCards: []api.RateCard{p2RC1},
+		},
+	}
+
+	t.Run("Should create and publish a new version of the plan", func(t *testing.T) {
+		require.NotEmpty(t, planId)
+
+		planAPIRes, err := client.CreatePlanWithResponse(ctx, api.CreatePlanJSONRequestBody{
+			Name:           "Test Plan New Version",
+			Key:            PlanKey,
+			Currency:       api.CurrencyCode("USD"),
+			BillingCadence: "P1M",
+			Phases:         migrationPhases,
+		})
+
+		require.Nil(t, err)
+
+		require.Equal(t, 201, planAPIRes.StatusCode(), "received the following body: %s", planAPIRes.Body)
+		require.NotNil(t, planAPIRes.JSON201)
+		require.NotNil(t, planAPIRes.JSON201.Id)
+		require.NotNil(t, planAPIRes.JSON201.Version)
+		require.NotNil(t, planAPIRes.JSON201.Key)
+
+		assert.NotEqual(t, planId, planAPIRes.JSON201.Id)
+		assert.Equal(t, PlanKey, planAPIRes.JSON201.Key)
+		assert.Equal(t, 2, planAPIRes.JSON201.Version)
+
+		// Let's publish the new version
+		apiRes2, err := client.PublishPlanWithResponse(ctx, planAPIRes.JSON201.Id)
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, apiRes2.StatusCode(), "received the following body: %s", apiRes2.Body)
+	})
+
+	var migratedSubscriptionId string
+
+	t.Run("Should migrate the subscription to a newer version in place", func(t *testing.T) {
+		// given a later plan version with the same phase timeline
+		require.NotEmpty(t, subscriptionId)
+		before, err := client.GetSubscriptionWithResponse(t.Context(), subscriptionId, nil)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, before.StatusCode(), "%s", before.Body)
+		require.NotNil(t, before.JSON200)
+
+		// when migrating without an anchor override
+		apiRes, err := client.MigrateSubscriptionWithResponse(t.Context(), subscriptionId, api.MigrateSubscriptionJSONRequestBody{
+			TargetVersion: lo.ToPtr(2),
+		})
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, apiRes.StatusCode(), "%s", apiRes.Body)
+		require.NotNil(t, apiRes.JSON200)
+
+		// then the subscription and unchanged items retain their identities and timing
+		current, next := apiRes.JSON200.Current, apiRes.JSON200.Next
+		require.Equal(t, subscriptionId, current.Id)
+		require.Equal(t, subscriptionId, next.Id)
+		require.NotNil(t, current.Plan)
+		require.NotNil(t, next.Plan)
+		require.Equal(t, 1, current.Plan.Version)
+		require.Equal(t, 2, next.Plan.Version)
+		require.Equal(t, before.JSON200.ActiveFrom, next.ActiveFrom)
+		require.Equal(t, before.JSON200.BillingAnchor, next.BillingAnchor)
+		require.Nil(t, next.ActiveTo)
+		require.Len(t, next.Phases, 3)
+		for idx, phase := range before.JSON200.Phases {
+			require.Equal(t, phase.Id, next.Phases[idx].Id)
+			require.Equal(t, phase.ActiveFrom, next.Phases[idx].ActiveFrom)
+			require.Equal(t, phase.ActiveTo, next.Phases[idx].ActiveTo)
+		}
+		require.Equal(t, before.JSON200.Phases[0].ItemTimelines, next.Phases[0].ItemTimelines)
+		require.Equal(t, "test_plan_phase_3", next.Phases[2].Key)
+
+		migratedSubscriptionId = next.Id
+	})
+
+	t.Run("Should reject migration that changes the phase timeline", func(t *testing.T) {
+		// given a later version that moves phase 3 from P5M to P9M
+		require.NotEmpty(t, migratedSubscriptionId)
+		phases := slices.Clone(migrationPhases)
+		phases[1].Duration = lo.ToPtr("P7M")
+		created, err := client.CreatePlanWithResponse(t.Context(), api.CreatePlanJSONRequestBody{
+			Name:           "Plan with changed phase timeline",
+			Key:            PlanKey,
+			Currency:       api.CurrencyCode("USD"),
+			BillingCadence: "P1M",
+			Phases:         phases,
+		})
+		require.NoError(t, err)
+		require.Equal(t, http.StatusCreated, created.StatusCode(), "%s", created.Body)
+		require.NotNil(t, created.JSON201)
+
+		published, err := client.PublishPlanWithResponse(t.Context(), created.JSON201.Id)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, published.StatusCode(), "%s", published.Body)
+
+		before, err := client.GetSubscriptionWithResponse(t.Context(), migratedSubscriptionId, nil)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, before.StatusCode(), "%s", before.Body)
+		require.NotNil(t, before.JSON200)
+
+		// when migrating to the version with different phase starts
+		response, err := client.MigrateSubscriptionWithResponse(t.Context(), migratedSubscriptionId, api.MigrateSubscriptionJSONRequestBody{
+			TargetVersion: &created.JSON201.Version,
+		})
+		require.NoError(t, err)
+
+		// then validation rejects the request and leaves the subscription unchanged
+		require.Equal(t, http.StatusBadRequest, response.StatusCode(), "%s", response.Body)
+		require.Contains(t, string(response.Body), "same start for phase")
+		require.Contains(t, string(response.Body), "startingPhase")
+
+		after, err := client.GetSubscriptionWithResponse(t.Context(), migratedSubscriptionId, nil)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, after.StatusCode(), "%s", after.Body)
+		require.NotNil(t, after.JSON200)
+		require.Equal(t, before.JSON200.Plan, after.JSON200.Plan)
+
+		// The flattened items have no ordering guarantee; item timelines do.
+		for _, phases := range [][]api.SubscriptionPhaseExpanded{before.JSON200.Phases, after.JSON200.Phases} {
+			for _, phase := range phases {
+				slices.SortFunc(phase.Items, func(a, b api.SubscriptionItem) int {
+					return cmp.Compare(a.Id, b.Id)
+				})
+			}
+		}
+		require.Equal(t, before.JSON200.Phases, after.JSON200.Phases)
+		require.Equal(t, before.JSON200.ActiveFrom, after.JSON200.ActiveFrom)
+		require.Equal(t, before.JSON200.ActiveTo, after.JSON200.ActiveTo)
+		require.Equal(t, before.JSON200.BillingAnchor, after.JSON200.BillingAnchor)
+	})
+
+	t.Run("Should change the subscription's plan", func(t *testing.T) {
+		// We'll use the custom sub for this
+		require.NotNil(t, customSubscriptionId)
+
+		req := api.SubscriptionChange{}
+
+		ct := &api.SubscriptionTiming{}
+		require.NoError(t, ct.FromSubscriptionTimingEnum(api.SubscriptionTimingEnum("immediate")))
+
+		err := req.FromCustomSubscriptionChange(api.CustomSubscriptionChange{
+			Timing:     *ct,
+			CustomPlan: customPlanInput, // It will functionally be the same as the old plan
+		})
+		require.Nil(t, err)
+
+		// For simplicity, let's change the plan to a custom one
+		apiRes, err := client.ChangeSubscriptionWithResponse(ctx, customSubscriptionId, req)
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+		require.NotNil(t, apiRes.JSON200)
+		require.NotNil(t, apiRes.JSON200.Current.Id)
+		require.NotNil(t, apiRes.JSON200.Next.Id)
+
+		require.Equal(t, customSubscriptionId, apiRes.JSON200.Current.Id)
+		require.NotEqual(t, customSubscriptionId, apiRes.JSON200.Next.Id)
+		require.Equal(t, apiRes.JSON200.Next.BillingAnchor, apiRes.JSON200.Current.BillingAnchor)
+
+		require.Equal(t, 2, len(planCreate.Phases))
+	})
+
+	t.Run("Should list customers of a given plan", func(t *testing.T) {
+		// Let's make sure our customer is there
+		require.NotNil(t, customer1)
+		require.NotEmpty(t, migratedSubscriptionId)
+
+		// Let's create a 3rd customer that doesnt have a subscription
+		// Let's set up two customers
+		// ensure subject exists for third customer
+		{
+			resp, err := client.UpsertSubjectWithResponse(ctx, api.UpsertSubjectJSONRequestBody{api.SubjectUpsert{Key: "test_customer_subject_3"}})
+			require.Nil(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode())
+		}
+		customerAPIRes, err := client.CreateCustomerWithResponse(ctx, api.CreateCustomerJSONRequestBody{
+			Name:         "Test Customer 3",
+			Currency:     lo.ToPtr(api.CurrencyCode("USD")),
+			Description:  lo.ToPtr("Test Customer Description"),
+			PrimaryEmail: lo.ToPtr("customer3@mail.com"),
+			BillingAddress: &api.Address{
+				City:        lo.ToPtr("City"),
+				Country:     lo.ToPtr("US"),
+				Line1:       lo.ToPtr("Line 1"),
+				Line2:       lo.ToPtr("Line 2"),
+				State:       lo.ToPtr("State"),
+				PhoneNumber: lo.ToPtr("1234567890"),
+				PostalCode:  lo.ToPtr("12345"),
+			},
+			UsageAttribution: &api.CustomerUsageAttribution{
+				SubjectKeys: []string{"test_customer_subject_3"},
+			},
+		})
+		require.Nil(t, err)
+		require.Equal(t, 201, customerAPIRes.StatusCode(), "received the following body: %s", customerAPIRes.Body)
+
+		// Let's make sure both customers do exist!
+		apiRes, err := client.ListCustomersWithResponse(ctx, &api.ListCustomersParams{})
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+		require.NotNil(t, apiRes.JSON200)
+		require.NotNil(t, apiRes.JSON200.Items)
+		require.GreaterOrEqual(t, len(apiRes.JSON200.Items), 3)
+
+		_, foundFirst := lo.Find(apiRes.JSON200.Items, func(item api.Customer) bool {
+			return item.Id == customer1.Id
+		})
+		require.True(t, foundFirst)
+
+		_, foundSecond := lo.Find(apiRes.JSON200.Items, func(item api.Customer) bool {
+			return item.Id == customer2.Id
+		})
+		require.True(t, foundSecond)
+
+		_, foundThird := lo.Find(apiRes.JSON200.Items, func(item api.Customer) bool {
+			return item.Id == customerAPIRes.JSON201.Id
+		})
+		require.True(t, foundThird)
+
+		// Now let's check the filtering works
+		apiRes, err = client.ListCustomersWithResponse(ctx, &api.ListCustomersParams{
+			PlanKey: lo.ToPtr(PlanKey),
+		})
+		require.Nil(t, err)
+
+		assert.Equal(t, 200, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+		require.NotNil(t, apiRes.JSON200)
+		require.NotNil(t, apiRes.JSON200.Items)
+
+		// Only customer 1 is returned
+		require.Equal(t, 1, len(apiRes.JSON200.Items))
+		require.Equal(t, customer1.Id, apiRes.JSON200.Items[0].Id)
+	})
+
+	t.Run("Should check entitlement of customer", func(t *testing.T) {
+		res, err := client.GetCustomerEntitlementValueWithResponse(ctx, customer1.Id, PlanFeatureKey, nil)
+		require.Nil(t, err)
+
+		require.Equal(t, http.StatusOK, res.StatusCode(), "received the following body: %s", res.Body)
+		require.NotNil(t, res.JSON200)
+		require.NotNil(t, res.JSON200.HasAccess)
+		assert.True(t, res.JSON200.HasAccess)
+	})
+
+	t.Run("Should not allow deleting subscription managed entitlement", func(t *testing.T) {
+		// First, let's get the entitlement ID
+		custEnts, err := client.ListCustomerEntitlementsV2WithResponse(ctx, customer1.Id, &api.ListCustomerEntitlementsV2Params{
+			PageSize: lo.ToPtr(100),
+			Page:     lo.ToPtr(1),
+		})
+		require.Nil(t, err)
+		require.Equal(t, http.StatusOK, custEnts.StatusCode(), "received the following body: %s", custEnts.Body)
+		require.NotNil(t, custEnts.JSON200)
+		require.NotNil(t, custEnts.JSON200.Items)
+
+		entID := ""
+
+		for _, ent := range custEnts.JSON200.Items {
+			switch typ, _ := ent.Discriminator(); typ {
+			case "metered":
+				v, err := ent.AsEntitlementMeteredV2()
+				require.Nil(t, err)
+				entID = v.Id
+			case "static":
+				v, err := ent.AsEntitlementStaticV2()
+				require.Nil(t, err)
+				entID = v.Id
+			case "boolean":
+				v, err := ent.AsEntitlementBooleanV2()
+				require.Nil(t, err)
+				entID = v.Id
+			}
+		}
+		require.NotEmpty(t, entID)
+
+		t.Run("Subject APIs", func(t *testing.T) {
+			res, err := client.DeleteEntitlementWithResponse(ctx, customer1.UsageAttribution.SubjectKeys[0], entID)
+			require.Nil(t, err)
+			require.Equal(t, http.StatusForbidden, res.StatusCode(), "received the following body: %s", res.Body)
+		})
+
+		t.Run("Customer APIs", func(t *testing.T) {
+			res, err := client.DeleteCustomerEntitlementV2WithResponse(ctx, customer1.Id, PlanFeatureKey)
+			require.Nil(t, err)
+			require.Equal(t, http.StatusForbidden, res.StatusCode(), "received the following body: %s", res.Body)
+		})
+	})
+
+	t.Run("Should check access of customer", func(t *testing.T) {
+		res, err := client.GetCustomerAccessWithResponse(ctx, customer1.Id)
+		require.Nil(t, err)
+
+		require.Equal(t, http.StatusOK, res.StatusCode(), "received the following body: %s", res.Body)
+		require.NotNil(t, res.JSON200)
+		require.NotNil(t, res.JSON200.Entitlements)
+		require.NotNil(t, res.JSON200.Entitlements[PlanFeatureKey])
+		require.True(t, res.JSON200.Entitlements[PlanFeatureKey].HasAccess)
+	})
+
+	t.Run("Should replace an incompatible subscription when startingPhase is supplied", func(t *testing.T) {
+		// given the incompatible latest plan version rejected by in-place migration above
+		require.NotEmpty(t, migratedSubscriptionId)
+
+		// when the caller explicitly selects a target starting phase
+		response, err := client.MigrateSubscriptionWithResponse(t.Context(), migratedSubscriptionId, api.MigrateSubscriptionJSONRequestBody{
+			StartingPhase: lo.ToPtr("test_plan_phase_2"),
+		})
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, response.StatusCode(), "%s", response.Body)
+		require.NotNil(t, response.JSON200)
+
+		// then the old subscription ends where its replacement and selected phase start
+		current, next := response.JSON200.Current, response.JSON200.Next
+		require.Equal(t, migratedSubscriptionId, current.Id)
+		require.NotEqual(t, current.Id, next.Id)
+		require.NotNil(t, current.ActiveTo)
+		require.Equal(t, *current.ActiveTo, next.ActiveFrom)
+		require.Equal(t, current.BillingAnchor, next.BillingAnchor)
+
+		phase, ok := lo.Find(next.Phases, func(phase api.SubscriptionPhaseExpanded) bool {
+			return phase.Key == "test_plan_phase_2"
+		})
+		require.True(t, ok)
+		require.Equal(t, next.ActiveFrom, phase.ActiveFrom)
+	})
+}

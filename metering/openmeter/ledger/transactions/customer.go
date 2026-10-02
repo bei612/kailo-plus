@@ -1,0 +1,817 @@
+package transactions
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/alpacahq/alpacadecimal"
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/openmeter/ledger"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+// IssueCustomerReceivableTemplate is a transaction increasing the customer's balance against an outstanding receivable account
+type IssueCustomerReceivableTemplate struct {
+	At                time.Time
+	Amount            alpacadecimal.Decimal
+	Currency          currencies.CurrencyReference
+	CostBasisCurrency *currencyx.Code
+	TaxCode           *string
+	CostBasis         *alpacadecimal.Decimal
+	Features          []string
+	SourceChargeID    *string
+	SpendChargeID     *string
+	// Optional, defaults to ledger.DefaultCustomerFBOPriority.
+	CreditPriority *int
+}
+
+func (t IssueCustomerReceivableTemplate) Validate() error {
+	var errs []error
+
+	if t.Amount.IsNegative() {
+		errs = append(errs, errors.New("amount must be positive"))
+	}
+
+	if t.Amount.IsZero() {
+		errs = append(errs, errors.New("amount must be non-zero"))
+	}
+
+	if t.At.IsZero() {
+		errs = append(errs, errors.New("at is required"))
+	}
+
+	if err := t.Currency.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("currency: %w", err))
+	}
+	if err := ledger.ValidateCostBasisCurrency(t.Currency.Code, t.CostBasisCurrency, t.CostBasis); err != nil {
+		errs = append(errs, fmt.Errorf("cost basis currency: %w", err))
+	}
+
+	if t.CostBasis != nil {
+		if err := ledger.ValidateCostBasis(*t.CostBasis); err != nil {
+			errs = append(errs, fmt.Errorf("cost basis: %w", err))
+		}
+	}
+
+	if t.CreditPriority != nil {
+		if err := ledger.ValidateCreditPriority(*t.CreditPriority); err != nil {
+			errs = append(errs, fmt.Errorf("credit priority: %w", err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+func (t IssueCustomerReceivableTemplate) typeGuard() guard {
+	return true
+}
+
+func (t IssueCustomerReceivableTemplate) code() TransactionTemplateCode {
+	return TemplateCodeIssueCustomerReceivable
+}
+
+var _ CustomerTransactionTemplate = (IssueCustomerReceivableTemplate{})
+
+func (t IssueCustomerReceivableTemplate) correct(scope CorrectionInput) ([]ledger.TransactionInput, error) {
+	var fboAddress ledger.PostingAddress
+	var receivableAddress ledger.PostingAddress
+	var fboAmount alpacadecimal.Decimal
+	var receivableAmount alpacadecimal.Decimal
+	var sourceChargeID *string
+	var spendChargeID *string
+
+	for _, entry := range scope.OriginalTransaction.Entries() {
+		switch {
+		case entry.PostingAddress().AccountType() == ledger.AccountTypeCustomerFBO && entry.Amount().IsPositive():
+			fboAddress = entry.PostingAddress()
+			fboAmount = fboAmount.Add(entry.Amount())
+			sourceChargeID = entry.SourceChargeID()
+			spendChargeID = entry.SpendChargeID()
+		case entry.PostingAddress().AccountType() == ledger.AccountTypeCustomerReceivable && entry.Amount().IsNegative():
+			receivableAddress = entry.PostingAddress()
+			receivableAmount = receivableAmount.Add(entry.Amount().Abs())
+			sourceChargeID = entry.SourceChargeID()
+			spendChargeID = entry.SpendChargeID()
+		}
+	}
+
+	if fboAddress == nil || receivableAddress == nil {
+		return nil, fmt.Errorf("issue receivable correction requires original FBO and receivable entries")
+	}
+
+	if scope.Amount.GreaterThan(fboAmount) || scope.Amount.GreaterThan(receivableAmount) {
+		return nil, fmt.Errorf("issue receivable correction amount %s exceeds original transaction amount", scope.Amount.String())
+	}
+
+	return []ledger.TransactionInput{
+		&TransactionInput{
+			bookedAt: scope.At,
+			entryInputs: []*EntryInput{
+				{
+					address: fboAddress,
+					amount:  scope.Amount.Neg(),
+					identity: ledger.EntryIdentityParts{
+						SourceChargeID: sourceChargeID,
+						SpendChargeID:  spendChargeID,
+					},
+				},
+				{
+					address: receivableAddress,
+					amount:  scope.Amount,
+					identity: ledger.EntryIdentityParts{
+						SourceChargeID: sourceChargeID,
+						SpendChargeID:  spendChargeID,
+					},
+				},
+			},
+		},
+	}, nil
+}
+
+func (t IssueCustomerReceivableTemplate) resolve(ctx context.Context, customerID customer.CustomerID, resolvers ResolverDependencies) (ledger.TransactionInput, error) {
+	priority := resolveCustomerFBOCreditPriority(t.CreditPriority)
+
+	customerAccounts, err := resolvers.AccountService.GetCustomerAccounts(ctx, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get customer accounts: %w", err)
+	}
+
+	fbo, err := customerAccounts.FBOAccount.GetSubAccountForRoute(ctx, ledger.CustomerFBORouteParams{
+		Currency:          t.Currency,
+		CostBasisCurrency: t.CostBasisCurrency,
+		CostBasis:         t.CostBasis,
+		Features:          t.Features,
+		CreditPriority:    priority,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get FBO sub-account: %w", err)
+	}
+
+	rec, err := customerAccounts.ReceivableAccount.GetSubAccountForRoute(ctx, ledger.CustomerReceivableRouteParams{
+		Currency:                       t.Currency,
+		CostBasisCurrency:              t.CostBasisCurrency,
+		Features:                       t.Features,
+		CostBasis:                      t.CostBasis,
+		TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusOpen,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get receivable sub-account: %w", err)
+	}
+
+	return &TransactionInput{
+		bookedAt: t.At,
+		entryInputs: []*EntryInput{
+			{
+				address: fbo.Address(),
+				amount:  t.Amount,
+				identity: ledger.EntryIdentityParts{
+					SourceChargeID: t.SourceChargeID,
+					SpendChargeID:  t.SpendChargeID,
+				},
+			},
+			{
+				address: rec.Address(),
+				amount:  t.Amount.Neg(),
+				identity: ledger.EntryIdentityParts{
+					SourceChargeID: t.SourceChargeID,
+					SpendChargeID:  t.SpendChargeID,
+				},
+			},
+		},
+	}, nil
+}
+
+// SettleCustomerReceivableFromPaymentTemplate records settled payment funds by
+// clearing authorized receivable from wash.
+type SettleCustomerReceivableFromPaymentTemplate struct {
+	At                time.Time
+	Amount            alpacadecimal.Decimal
+	Currency          currencies.CurrencyReference
+	CostBasisCurrency *currencyx.Code
+	TaxCode           *string
+	CostBasis         *alpacadecimal.Decimal
+	Features          []string
+	SourceChargeID    *string
+	SpendChargeID     *string
+}
+
+func (t SettleCustomerReceivableFromPaymentTemplate) Validate() error {
+	var errs []error
+
+	if t.At.IsZero() {
+		errs = append(errs, fmt.Errorf("at is required"))
+	}
+
+	if err := ledger.ValidateTransactionAmount(t.Amount); err != nil {
+		errs = append(errs, fmt.Errorf("amount: %w", err))
+	}
+
+	if err := t.Currency.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("currency: %w", err))
+	}
+
+	if t.CostBasis != nil {
+		if err := ledger.ValidateCostBasis(*t.CostBasis); err != nil {
+			errs = append(errs, fmt.Errorf("cost basis: %w", err))
+		}
+	}
+
+	if err := ledger.ValidateCostBasisCurrency(t.Currency.Code, t.CostBasisCurrency, t.CostBasis); err != nil {
+		errs = append(errs, fmt.Errorf("cost basis currency: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+var _ CustomerTransactionTemplate = (SettleCustomerReceivableFromPaymentTemplate{})
+
+func (t SettleCustomerReceivableFromPaymentTemplate) correct(CorrectionInput) ([]ledger.TransactionInput, error) {
+	return nil, templateCorrectionNotImplemented(TemplateCode(t))
+}
+
+func (t SettleCustomerReceivableFromPaymentTemplate) typeGuard() guard {
+	return true
+}
+
+func (t SettleCustomerReceivableFromPaymentTemplate) code() TransactionTemplateCode {
+	return TemplateCodeSettleCustomerReceivableFromPayment
+}
+
+func (t SettleCustomerReceivableFromPaymentTemplate) resolve(ctx context.Context, customerID customer.CustomerID, resolvers ResolverDependencies) (ledger.TransactionInput, error) {
+	customerAccounts, err := resolvers.AccountService.GetCustomerAccounts(ctx, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get customer accounts: %w", err)
+	}
+
+	rec, err := customerAccounts.ReceivableAccount.GetSubAccountForRoute(ctx, ledger.CustomerReceivableRouteParams{
+		Currency:                       t.Currency,
+		CostBasisCurrency:              t.CostBasisCurrency,
+		Features:                       t.Features,
+		CostBasis:                      t.CostBasis,
+		TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusAuthorized,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get receivable sub-account: %w", err)
+	}
+
+	businessAccounts, err := resolvers.AccountService.GetBusinessAccounts(ctx, customerID.Namespace)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get business accounts: %w", err)
+	}
+
+	wash, err := businessAccounts.WashAccount.GetSubAccountForRoute(ctx, ledger.BusinessRouteParams{
+		Currency:          t.Currency,
+		CostBasisCurrency: t.CostBasisCurrency,
+		CostBasis:         t.CostBasis,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get wash sub-account: %w", err)
+	}
+
+	return &TransactionInput{
+		bookedAt: t.At,
+		entryInputs: []*EntryInput{
+			{
+				address: wash.Address(),
+				amount:  t.Amount.Neg(),
+				identity: ledger.EntryIdentityParts{
+					SourceChargeID: t.SourceChargeID,
+					SpendChargeID:  t.SpendChargeID,
+				},
+			},
+			{
+				address: rec.Address(),
+				amount:  t.Amount,
+				identity: ledger.EntryIdentityParts{
+					SourceChargeID: t.SourceChargeID,
+					SpendChargeID:  t.SpendChargeID,
+				},
+			},
+		},
+	}, nil
+}
+
+// AuthorizeCustomerReceivablePaymentTemplate moves open receivable into the
+// authorized receivable route without moving funds across the external cash boundary.
+type AuthorizeCustomerReceivablePaymentTemplate struct {
+	At                time.Time
+	Amount            alpacadecimal.Decimal
+	Currency          currencies.CurrencyReference
+	CostBasisCurrency *currencyx.Code
+	TaxCode           *string
+	CostBasis         *alpacadecimal.Decimal
+	Features          []string
+	SourceChargeID    *string
+	SpendChargeID     *string
+}
+
+func (t AuthorizeCustomerReceivablePaymentTemplate) Validate() error {
+	var errs []error
+
+	if t.At.IsZero() {
+		errs = append(errs, fmt.Errorf("at is required"))
+	}
+
+	if err := ledger.ValidateTransactionAmount(t.Amount); err != nil {
+		errs = append(errs, fmt.Errorf("amount: %w", err))
+	}
+
+	if err := t.Currency.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("currency: %w", err))
+	}
+
+	if t.CostBasis != nil {
+		if err := ledger.ValidateCostBasis(*t.CostBasis); err != nil {
+			errs = append(errs, fmt.Errorf("cost basis: %w", err))
+		}
+	}
+
+	if err := ledger.ValidateCostBasisCurrency(t.Currency.Code, t.CostBasisCurrency, t.CostBasis); err != nil {
+		errs = append(errs, fmt.Errorf("cost basis currency: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+func (t AuthorizeCustomerReceivablePaymentTemplate) typeGuard() guard {
+	return true
+}
+
+func (t AuthorizeCustomerReceivablePaymentTemplate) code() TransactionTemplateCode {
+	return TemplateCodeAuthorizeCustomerReceivablePayment
+}
+
+var _ CustomerTransactionTemplate = (AuthorizeCustomerReceivablePaymentTemplate{})
+
+func (t AuthorizeCustomerReceivablePaymentTemplate) correct(CorrectionInput) ([]ledger.TransactionInput, error) {
+	return nil, templateCorrectionNotImplemented(TemplateCode(t))
+}
+
+func (t AuthorizeCustomerReceivablePaymentTemplate) resolve(ctx context.Context, customerID customer.CustomerID, resolvers ResolverDependencies) (ledger.TransactionInput, error) {
+	customerAccounts, err := resolvers.AccountService.GetCustomerAccounts(ctx, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get customer accounts: %w", err)
+	}
+
+	authorizedReceivable, err := customerAccounts.ReceivableAccount.GetSubAccountForRoute(ctx, ledger.CustomerReceivableRouteParams{
+		Currency:                       t.Currency,
+		CostBasisCurrency:              t.CostBasisCurrency,
+		Features:                       t.Features,
+		CostBasis:                      t.CostBasis,
+		TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusAuthorized,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get authorized receivable sub-account: %w", err)
+	}
+
+	openReceivable, err := customerAccounts.ReceivableAccount.GetSubAccountForRoute(ctx, ledger.CustomerReceivableRouteParams{
+		Currency:                       t.Currency,
+		CostBasisCurrency:              t.CostBasisCurrency,
+		Features:                       t.Features,
+		CostBasis:                      t.CostBasis,
+		TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusOpen,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get receivable sub-account: %w", err)
+	}
+
+	return &TransactionInput{
+		bookedAt: t.At,
+		entryInputs: []*EntryInput{
+			{
+				address: authorizedReceivable.Address(),
+				amount:  t.Amount.Neg(),
+				identity: ledger.EntryIdentityParts{
+					SourceChargeID: t.SourceChargeID,
+					SpendChargeID:  t.SpendChargeID,
+				},
+			},
+			{
+				address: openReceivable.Address(),
+				amount:  t.Amount,
+				identity: ledger.EntryIdentityParts{
+					SourceChargeID: t.SourceChargeID,
+					SpendChargeID:  t.SpendChargeID,
+				},
+			},
+		},
+	}, nil
+}
+
+// AttributeCustomerAdvanceReceivableCostBasisTemplate attributes existing open advance
+// receivable (`cost_basis=nil`) into a known purchase cost-basis bucket.
+type AttributeCustomerAdvanceReceivableCostBasisTemplate struct {
+	At                 time.Time
+	Amount             alpacadecimal.Decimal
+	Currency           currencies.CurrencyReference
+	CostBasisCurrency  *currencyx.Code
+	TaxCode            *string
+	CostBasis          *alpacadecimal.Decimal
+	AdvanceFeatures    []string
+	AttributedFeatures []string
+	SourceChargeID     *string
+	SpendChargeID      *string
+}
+
+func (t AttributeCustomerAdvanceReceivableCostBasisTemplate) Validate() error {
+	var errs []error
+
+	if t.At.IsZero() {
+		errs = append(errs, fmt.Errorf("at is required"))
+	}
+
+	if err := ledger.ValidateTransactionAmount(t.Amount); err != nil {
+		errs = append(errs, fmt.Errorf("amount: %w", err))
+	}
+
+	if err := t.Currency.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("currency: %w", err))
+	}
+
+	if err := ledger.ValidateCostBasisCurrency(t.Currency.Code, t.CostBasisCurrency, t.CostBasis); err != nil {
+		errs = append(errs, fmt.Errorf("cost basis currency: %w", err))
+	}
+
+	if t.CostBasis == nil {
+		errs = append(errs, fmt.Errorf("cost basis is required"))
+	} else if err := ledger.ValidateCostBasis(*t.CostBasis); err != nil {
+		errs = append(errs, fmt.Errorf("cost basis: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+func (t AttributeCustomerAdvanceReceivableCostBasisTemplate) typeGuard() guard {
+	return true
+}
+
+func (t AttributeCustomerAdvanceReceivableCostBasisTemplate) code() TransactionTemplateCode {
+	return TemplateCodeAttributeCustomerAdvanceReceivableCostBasis
+}
+
+var _ CustomerTransactionTemplate = (AttributeCustomerAdvanceReceivableCostBasisTemplate{})
+
+func (t AttributeCustomerAdvanceReceivableCostBasisTemplate) correct(scope CorrectionInput) ([]ledger.TransactionInput, error) {
+	var advanceReceivableAddress ledger.PostingAddress
+	var attributedReceivableAddress ledger.PostingAddress
+	var advanceReceivableAmount alpacadecimal.Decimal
+	var attributedReceivableAmount alpacadecimal.Decimal
+	var sourceChargeID *string
+	var spendChargeID *string
+
+	for _, entry := range scope.OriginalTransaction.Entries() {
+		switch {
+		case entry.PostingAddress().AccountType() != ledger.AccountTypeCustomerReceivable:
+			continue
+		case entry.Amount().IsPositive():
+			advanceReceivableAddress = entry.PostingAddress()
+			advanceReceivableAmount = advanceReceivableAmount.Add(entry.Amount())
+			spendChargeID = entry.SpendChargeID()
+		case entry.Amount().IsNegative():
+			attributedReceivableAddress = entry.PostingAddress()
+			attributedReceivableAmount = attributedReceivableAmount.Add(entry.Amount().Abs())
+			sourceChargeID = entry.SourceChargeID()
+			spendChargeID = entry.SpendChargeID()
+		}
+	}
+
+	if advanceReceivableAddress == nil || attributedReceivableAddress == nil {
+		return nil, fmt.Errorf("advance receivable attribution correction requires original receivable entries")
+	}
+
+	if scope.Amount.GreaterThan(advanceReceivableAmount) || scope.Amount.GreaterThan(attributedReceivableAmount) {
+		return nil, fmt.Errorf("advance receivable attribution correction amount %s exceeds original transaction amount", scope.Amount.String())
+	}
+
+	return []ledger.TransactionInput{
+		&TransactionInput{
+			bookedAt: scope.At,
+			entryInputs: []*EntryInput{
+				{
+					address: advanceReceivableAddress,
+					amount:  scope.Amount.Neg(),
+					identity: ledger.EntryIdentityParts{
+						SpendChargeID: spendChargeID,
+					},
+				},
+				{
+					address: attributedReceivableAddress,
+					amount:  scope.Amount,
+					identity: ledger.EntryIdentityParts{
+						SourceChargeID: sourceChargeID,
+						SpendChargeID:  spendChargeID,
+					},
+				},
+			},
+		},
+	}, nil
+}
+
+func (t AttributeCustomerAdvanceReceivableCostBasisTemplate) resolve(ctx context.Context, customerID customer.CustomerID, resolvers ResolverDependencies) (ledger.TransactionInput, error) {
+	customerAccounts, err := resolvers.AccountService.GetCustomerAccounts(ctx, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get customer accounts: %w", err)
+	}
+
+	advanceReceivable, err := customerAccounts.ReceivableAccount.GetSubAccountForRoute(ctx, ledger.CustomerReceivableRouteParams{
+		Currency:                       t.Currency,
+		Features:                       t.AdvanceFeatures,
+		CostBasis:                      nil,
+		TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusOpen,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get advance receivable sub-account: %w", err)
+	}
+
+	attributedReceivable, err := customerAccounts.ReceivableAccount.GetSubAccountForRoute(ctx, ledger.CustomerReceivableRouteParams{
+		Currency:                       t.Currency,
+		CostBasisCurrency:              t.CostBasisCurrency,
+		Features:                       t.AttributedFeatures,
+		CostBasis:                      t.CostBasis,
+		TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusOpen,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get attributed receivable sub-account: %w", err)
+	}
+
+	return &TransactionInput{
+		bookedAt: t.At,
+		entryInputs: []*EntryInput{
+			{
+				address: advanceReceivable.Address(),
+				amount:  t.Amount,
+				identity: ledger.EntryIdentityParts{
+					SpendChargeID: t.SpendChargeID,
+				},
+			},
+			{
+				address: attributedReceivable.Address(),
+				amount:  t.Amount.Neg(),
+				identity: ledger.EntryIdentityParts{
+					SourceChargeID: t.SourceChargeID,
+					SpendChargeID:  t.SpendChargeID,
+				},
+			},
+		},
+	}, nil
+}
+
+// CoverCustomerReceivableTemplate covers a customer receivable account from FBO account
+type CoverCustomerReceivableTemplate struct {
+	At        time.Time
+	Amount    alpacadecimal.Decimal
+	Currency  currencies.CurrencyReference
+	CostBasis *alpacadecimal.Decimal
+	// Optional, defaults to 100.
+	CreditPriority *int
+	// Sources are preselected FBO amounts. When present, Amount, CostBasis, and
+	// CreditPriority must be unset; each source is covered into the matching
+	// receivable route so its cost basis and feature restrictions are preserved.
+	Sources []PostingAmount
+}
+
+func (t CoverCustomerReceivableTemplate) Validate() error {
+	var errs []error
+
+	if t.At.IsZero() {
+		errs = append(errs, errors.New("at is required"))
+	}
+
+	if err := t.Currency.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("currency: %w", err))
+	}
+
+	if len(t.Sources) > 0 {
+		if !t.Amount.IsZero() {
+			errs = append(errs, errors.New("amount must be zero when sources are provided"))
+		}
+		if t.CostBasis != nil {
+			errs = append(errs, errors.New("cost basis must be nil when sources are provided"))
+		}
+		if t.CreditPriority != nil {
+			errs = append(errs, errors.New("credit priority must be nil when sources are provided"))
+		}
+
+		for i, source := range t.Sources {
+			if source.Address == nil {
+				errs = append(errs, fmt.Errorf("sources[%d]: address is required", i))
+				continue
+			}
+			if source.Address.AccountType() != ledger.AccountTypeCustomerFBO {
+				errs = append(errs, fmt.Errorf("sources[%d]: account type must be customer_fbo", i))
+			}
+			if !source.Address.Route().Route().Currency.Equal(t.Currency) {
+				errs = append(errs, fmt.Errorf("sources[%d]: currency must be %s", i, t.Currency))
+			}
+			if err := ledger.ValidateTransactionAmount(source.Amount); err != nil {
+				errs = append(errs, fmt.Errorf("sources[%d].amount: %w", i, err))
+			}
+		}
+
+		return models.NewNillableGenericValidationError(errors.Join(errs...))
+	}
+
+	if err := ledger.ValidateTransactionAmount(t.Amount); err != nil {
+		errs = append(errs, fmt.Errorf("amount: %w", err))
+	}
+
+	if t.CostBasis != nil {
+		if err := ledger.ValidateCostBasis(*t.CostBasis); err != nil {
+			errs = append(errs, fmt.Errorf("cost basis: %w", err))
+		}
+	}
+
+	if t.CreditPriority != nil {
+		if err := ledger.ValidateCreditPriority(*t.CreditPriority); err != nil {
+			errs = append(errs, fmt.Errorf("credit priority: %w", err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+func (t CoverCustomerReceivableTemplate) typeGuard() guard {
+	return true
+}
+
+func (t CoverCustomerReceivableTemplate) code() TransactionTemplateCode {
+	return TemplateCodeCoverCustomerReceivable
+}
+
+var _ CustomerTransactionTemplate = (CoverCustomerReceivableTemplate{})
+
+func (t CoverCustomerReceivableTemplate) correct(scope CorrectionInput) ([]ledger.TransactionInput, error) {
+	negativeFBOEntries := make([]ledger.Entry, 0)
+	positiveReceivableEntries := make([]ledger.Entry, 0)
+
+	for _, entry := range scope.OriginalTransaction.Entries() {
+		switch {
+		case entry.PostingAddress().AccountType() == ledger.AccountTypeCustomerFBO && entry.Amount().IsNegative():
+			negativeFBOEntries = append(negativeFBOEntries, entry)
+		case entry.PostingAddress().AccountType() == ledger.AccountTypeCustomerReceivable && entry.Amount().IsPositive():
+			positiveReceivableEntries = append(positiveReceivableEntries, entry)
+		}
+	}
+
+	slices.SortStableFunc(negativeFBOEntries, compareFBOCollectionCorrectionSourceEntries)
+	postings, err := allocateCorrectionLegs(
+		negativeFBOEntries,
+		positiveReceivableEntries,
+		t.entryRoutePairingKey,
+		scope.sourceEntryAmount,
+		scope.Amount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("allocate receivable cover correction legs: %w", err)
+	}
+
+	return []ledger.TransactionInput{
+		&TransactionInput{
+			bookedAt:    scope.At,
+			entryInputs: mapCorrectionPostingsToEntryInputs(postings),
+		},
+	}, nil
+}
+
+func (t CoverCustomerReceivableTemplate) resolve(ctx context.Context, customerID customer.CustomerID, resolvers ResolverDependencies) (ledger.TransactionInput, error) {
+	if len(t.Sources) > 0 {
+		return t.resolvePreselectedSources(ctx, customerID, resolvers)
+	}
+
+	priority := resolveCustomerFBOCreditPriority(t.CreditPriority)
+
+	customerAccounts, err := resolvers.AccountService.GetCustomerAccounts(ctx, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get customer accounts: %w", err)
+	}
+
+	fbo, err := customerAccounts.FBOAccount.GetSubAccountForRoute(ctx, ledger.CustomerFBORouteParams{
+		Currency:       t.Currency,
+		CostBasis:      t.CostBasis,
+		CreditPriority: priority,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get FBO sub-account: %w", err)
+	}
+
+	rec, err := customerAccounts.ReceivableAccount.GetSubAccountForRoute(ctx, ledger.CustomerReceivableRouteParams{
+		Currency:                       t.Currency,
+		CostBasis:                      t.CostBasis,
+		TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusOpen,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get receivable sub-account: %w", err)
+	}
+
+	return &TransactionInput{
+		bookedAt: t.At,
+		entryInputs: []*EntryInput{
+			{
+				address: fbo.Address(),
+				amount:  t.Amount.Neg(),
+			},
+			{
+				address: rec.Address(),
+				amount:  t.Amount,
+			},
+		},
+	}, nil
+}
+
+func (t CoverCustomerReceivableTemplate) resolvePreselectedSources(ctx context.Context, customerID customer.CustomerID, resolvers ResolverDependencies) (ledger.TransactionInput, error) {
+	customerAccounts, err := resolvers.AccountService.GetCustomerAccounts(ctx, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get customer accounts: %w", err)
+	}
+
+	receivableByKey := make(map[routePairingKey]PostingAmount, len(t.Sources))
+	for _, source := range t.Sources {
+		key := t.sourceRoutePairingKey(source)
+		current := receivableByKey[key]
+		if current.Address == nil {
+			sourceRoute := source.Address.Route().Route()
+			receivable, err := customerAccounts.ReceivableAccount.GetSubAccountForRoute(ctx, ledger.CustomerReceivableRouteParams{
+				Currency:                       sourceRoute.Currency,
+				CostBasisCurrency:              sourceRoute.CostBasisCurrency,
+				Features:                       sourceRoute.Features,
+				CostBasis:                      sourceRoute.CostBasis,
+				TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusOpen,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to get receivable sub-account: %w", err)
+			}
+
+			current.Address = receivable.Address()
+			current.Identity = ledger.EntryIdentityParts{
+				SourceChargeID: source.Identity.SourceChargeID,
+				SpendChargeID:  source.Identity.SpendChargeID,
+			}
+		}
+
+		current.Amount = current.Amount.Add(source.Amount)
+		receivableByKey[key] = current
+	}
+
+	entryInputs := make([]*EntryInput, 0, len(t.Sources)+len(receivableByKey))
+	for _, source := range t.Sources {
+		entryInputs = append(entryInputs, &EntryInput{
+			address:     source.Address,
+			amount:      source.Amount.Neg(),
+			identity:    source.Identity,
+			annotations: source.Annotations,
+		})
+	}
+
+	creditedKeys := make(map[routePairingKey]struct{}, len(receivableByKey))
+	for _, source := range t.Sources {
+		key := t.sourceRoutePairingKey(source)
+		if _, ok := creditedKeys[key]; ok {
+			continue
+		}
+
+		receivable := receivableByKey[key]
+		entryInputs = append(entryInputs, &EntryInput{
+			address:  receivable.Address,
+			amount:   receivable.Amount,
+			identity: receivable.Identity,
+		})
+		creditedKeys[key] = struct{}{}
+	}
+
+	return &TransactionInput{bookedAt: t.At, entryInputs: entryInputs}, nil
+}
+
+func (t CoverCustomerReceivableTemplate) routePairingKey(address ledger.PostingAddress) routePairingKey {
+	route := address.Route().Route()
+
+	return routePairingKey{
+		currency:          route.Currency.IdentityKey(),
+		costBasisCurrency: string(lo.FromPtrOr(route.CostBasisCurrency, currencyx.Code(""))),
+		features:          strings.Join(route.Features, "\x00"),
+		costBasis:         costBasisKey(route.CostBasis),
+	}
+}
+
+func (t CoverCustomerReceivableTemplate) entryRoutePairingKey(entry ledger.Entry) routePairingKey {
+	key := t.routePairingKey(entry.PostingAddress())
+	key.sourceChargeID = lo.FromPtrOr(entry.SourceChargeID(), "null")
+	key.spendChargeID = lo.FromPtrOr(entry.SpendChargeID(), "null")
+
+	return key
+}
+
+func (t CoverCustomerReceivableTemplate) sourceRoutePairingKey(source PostingAmount) routePairingKey {
+	key := t.routePairingKey(source.Address)
+	key.sourceChargeID = lo.FromPtrOr(source.Identity.SourceChargeID, "null")
+	key.spendChargeID = lo.FromPtrOr(source.Identity.SpendChargeID, "null")
+
+	return key
+}

@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "openmeter-examples"
+version = "0.0.0"
+description = "OpenMeter examples"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.9"
+openmeter = { path = "..", develop = true }
+
+[tool.poetry.group.dev.dependencies]
+pyright = "^1.1.407"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

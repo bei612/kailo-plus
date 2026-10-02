@@ -1,0 +1,164 @@
+package taxcode
+
+import (
+	"errors"
+	"net/http"
+
+	"github.com/openmeterio/openmeter/pkg/framework/commonhttp"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+const ErrCodeResourceNamespaceEmpty models.ErrorCode = "resource_namespace_empty"
+
+var ErrResourceNamespaceEmpty = models.NewValidationIssue(
+	ErrCodeResourceNamespaceEmpty,
+	"namespace must not be empty",
+	models.WithFieldString("namespace"),
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
+)
+
+const ErrCodeResourceKeyEmpty models.ErrorCode = "resource_key_empty"
+
+var ErrResourceKeyEmpty = models.NewValidationIssue(
+	ErrCodeResourceKeyEmpty,
+	"key must not be empty",
+	models.WithFieldString("key"),
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
+)
+
+const ErrCodeResourceIDEmpty models.ErrorCode = "resource_id_empty"
+
+var ErrResourceIDEmpty = models.NewValidationIssue(
+	ErrCodeResourceIDEmpty,
+	"id must not be empty",
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
+)
+
+const ErrCodeResourceNameEmpty models.ErrorCode = "resource_name_empty"
+
+var ErrResourceNameEmpty = models.NewValidationIssue(
+	ErrCodeResourceNameEmpty,
+	"name must not be empty",
+	models.WithFieldString("name"),
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
+)
+
+const ErrCodeAppTypesMustBeUnique models.ErrorCode = "app_types_must_be_unique"
+
+var ErrAppTypesMustBeUnique = models.NewValidationIssue(
+	ErrCodeAppTypesMustBeUnique,
+	"app types must be unique",
+	models.WithFieldString("app_mappings"),
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
+)
+
+const ErrCodeTaxCodeNotFound models.ErrorCode = "tax_code_not_found"
+
+var ErrTaxCodeNotFound = models.NewValidationIssue(
+	ErrCodeTaxCodeNotFound,
+	"tax code not found",
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusNotFound),
+)
+
+func NewTaxCodeNotFoundError(id string) error {
+	return ErrTaxCodeNotFound.
+		WithPathString("id").
+		WithAttr("id", id)
+}
+
+func NewTaxCodeByKeyNotFoundError(key string) error {
+	return ErrTaxCodeNotFound.
+		WithPathString("key").
+		WithAttr("key", key)
+}
+
+func NewTaxCodeByAppMappingNotFoundError(appType, taxCode string) error {
+	return ErrTaxCodeNotFound.
+		WithPathString("app_mappings").
+		WithAttr("app_type", appType).
+		WithAttr("tax_code", taxCode)
+}
+
+func IsTaxCodeNotFoundError(err error) bool {
+	var vi models.ValidationIssue
+	return errors.As(err, &vi) && vi.Code() == ErrCodeTaxCodeNotFound
+}
+
+const ErrCodeTaxCodeEmpty models.ErrorCode = "tax_code_empty"
+
+var ErrTaxCodeEmpty = models.NewValidationIssue(
+	ErrCodeTaxCodeEmpty,
+	"tax code cannot be empty",
+	models.WithFieldString("app_mappings"),
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
+)
+
+const ErrCodeTaxCodeManagedBySystem models.ErrorCode = "tax_code_managed_by_system"
+
+var ErrTaxCodeManagedBySystem = models.NewValidationIssue(
+	ErrCodeTaxCodeManagedBySystem,
+	"tax code is managed by the system and cannot be modified or deleted",
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusConflict),
+)
+
+const ErrCodeTaxCodeStripeInvalid models.ErrorCode = "tax_code_stripe_invalid"
+
+var ErrTaxCodeStripeInvalid = models.NewValidationIssue(
+	ErrCodeTaxCodeStripeInvalid,
+	"stripe tax code must be in the format of txcd_12345678",
+	models.WithFieldString("app_mappings"),
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
+)
+
+const ErrCodeOrganizationDefaultTaxCodesNotFound models.ErrorCode = "organization_default_tax_codes_not_found"
+
+var ErrOrganizationDefaultTaxCodesNotFound = models.NewValidationIssue(
+	ErrCodeOrganizationDefaultTaxCodesNotFound,
+	"organization default tax codes not found",
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusNotFound),
+)
+
+func NewOrganizationDefaultTaxCodesNotFoundError(namespace string) error {
+	return ErrOrganizationDefaultTaxCodesNotFound.
+		WithPathString("namespace").
+		WithAttr("namespace", namespace)
+}
+
+func IsOrganizationDefaultTaxCodesNotFoundError(err error) bool {
+	var vi models.ValidationIssue
+	return errors.As(err, &vi) && vi.Code() == ErrCodeOrganizationDefaultTaxCodesNotFound
+}
+
+const ErrCodeTaxCodeIsOrganizationDefault models.ErrorCode = "tax_code_is_organization_default"
+
+var ErrTaxCodeIsOrganizationDefault = models.NewValidationIssue(
+	ErrCodeTaxCodeIsOrganizationDefault,
+	"tax code is set as an organization default and cannot be deleted",
+	models.WithCriticalSeverity(),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusConflict),
+)
+
+func IsTaxCodeIsOrganizationDefaultError(err error) bool {
+	var vi models.ValidationIssue
+	return errors.As(err, &vi) && vi.Code() == ErrCodeTaxCodeIsOrganizationDefault
+}
+
+// ErrTaxCodeOrphanedKey is returned by GetOrCreateByAppMapping when a key derived from
+// the Stripe code already exists but no longer carries that app mapping (the mapping was
+// changed after the key was auto-created). The typed error prevents a raw constraint error from
+// poisoning the pg transaction (25P02).
+var ErrTaxCodeOrphanedKey = errors.New("tax code key exists but app mapping is orphaned")
+
+func IsTaxCodeOrphanedKeyError(err error) bool {
+	return errors.Is(err, ErrTaxCodeOrphanedKey)
+}

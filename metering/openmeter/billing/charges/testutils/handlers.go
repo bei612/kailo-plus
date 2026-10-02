@@ -1,0 +1,216 @@
+package testutils
+
+import (
+	"context"
+
+	"github.com/oklog/ulid/v2"
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/creditpurchase"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/flatfee"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/creditrealization"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/ledgertransaction"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased"
+)
+
+type MockHandlers struct {
+	FlatFee        flatfee.Handler
+	CreditPurchase creditpurchase.Handler
+	UsageBased     usagebased.Handler
+}
+
+func NewMockHandlers() MockHandlers {
+	return MockHandlers{
+		FlatFee:        mockFlatFeeHandler{},
+		CreditPurchase: mockCreditPurchaseHandler{},
+		UsageBased:     mockUsageBasedHandler{},
+	}
+}
+
+type mockFlatFeeHandler struct{}
+
+var _ flatfee.Handler = (*mockFlatFeeHandler)(nil)
+
+func (mockFlatFeeHandler) OnAllocateCredits(_ context.Context, input flatfee.OnAllocateCreditsInput) (creditrealization.CreateAllocationInputs, error) {
+	if input.PreTaxAmountToAllocate.IsZero() {
+		return nil, nil
+	}
+
+	return creditrealization.CreateAllocationInputs{
+		{
+			ServicePeriod:     input.ServicePeriod,
+			LedgerTransaction: newMockLedgerTransactionGroupReference(),
+			Amount:            input.PreTaxAmountToAllocate,
+		},
+	}, nil
+}
+
+func (mockFlatFeeHandler) OnInvoiceUsageAccrued(context.Context, flatfee.OnInvoiceUsageAccruedInput) (ledgertransaction.GroupReference, error) {
+	return newMockLedgerTransactionGroupReference(), nil
+}
+
+func (mockFlatFeeHandler) OnCustomCurrencyOverageAccrued(_ context.Context, input flatfee.OnCustomCurrencyOverageAccruedInput) (flatfee.OnCustomCurrencyOverageAccruedResult, error) {
+	costBasis, err := input.GetCostBasis()
+	if err != nil {
+		return flatfee.OnCustomCurrencyOverageAccruedResult{}, err
+	}
+
+	fiatCurrency, err := input.GetFiatCurrency()
+	if err != nil {
+		return flatfee.OnCustomCurrencyOverageAccruedResult{}, err
+	}
+
+	return flatfee.OnCustomCurrencyOverageAccruedResult{
+		TransactionGroup: newMockLedgerTransactionGroupReference(),
+		TotalFiatAmount:  fiatCurrency.RoundToPrecision(input.GetCustomCurrencyAmountAccrued().Mul(costBasis)),
+	}, nil
+}
+
+func (mockFlatFeeHandler) OnCustomCurrencyOverageAccruedCorrection(context.Context, flatfee.OnCustomCurrencyOverageAccruedCorrectionInput) error {
+	return nil
+}
+
+func (mockFlatFeeHandler) OnCorrectCreditAllocations(_ context.Context, input flatfee.CorrectCreditAllocationsInput) (creditrealization.CreateCorrectionInputs, error) {
+	return lo.Map(input.Corrections, func(correction creditrealization.CorrectionRequestItem, _ int) creditrealization.CreateCorrectionInput {
+		return creditrealization.CreateCorrectionInput{
+			LedgerTransaction:     newMockLedgerTransactionGroupReference(),
+			Amount:                correction.Amount,
+			CorrectsRealizationID: correction.Allocation.ID,
+		}
+	}), nil
+}
+
+func (mockFlatFeeHandler) OnAllocateFiatOverageCredits(_ context.Context, input flatfee.AllocateFiatOverageCreditsInput) (creditrealization.CreateAllocationInputs, error) {
+	return creditrealization.CreateAllocationInputs{
+		{
+			ServicePeriod:     input.Run.ServicePeriod,
+			LedgerTransaction: newMockLedgerTransactionGroupReference(),
+			Amount:            input.AmountToAllocate,
+		},
+	}, nil
+}
+
+func (mockFlatFeeHandler) OnCorrectFiatOverageCreditAllocations(_ context.Context, input flatfee.CorrectFiatOverageCreditAllocationsInput) (creditrealization.CreateCorrectionInputs, error) {
+	return lo.Map(input.Corrections, func(correction creditrealization.CorrectionRequestItem, _ int) creditrealization.CreateCorrectionInput {
+		return creditrealization.CreateCorrectionInput{
+			LedgerTransaction:     newMockLedgerTransactionGroupReference(),
+			Amount:                correction.Amount,
+			CorrectsRealizationID: correction.Allocation.ID,
+		}
+	}), nil
+}
+
+func (mockFlatFeeHandler) OnPaymentAuthorized(context.Context, flatfee.OnPaymentAuthorizedInput) (ledgertransaction.GroupReference, error) {
+	return newMockLedgerTransactionGroupReference(), nil
+}
+
+func (mockFlatFeeHandler) OnPaymentSettled(context.Context, flatfee.OnPaymentSettledInput) (ledgertransaction.GroupReference, error) {
+	return newMockLedgerTransactionGroupReference(), nil
+}
+
+func (mockFlatFeeHandler) OnPaymentUncollectible(context.Context, flatfee.Charge) (ledgertransaction.GroupReference, error) {
+	return newMockLedgerTransactionGroupReference(), nil
+}
+
+type mockCreditPurchaseHandler struct{}
+
+var _ creditpurchase.Handler = (*mockCreditPurchaseHandler)(nil)
+
+func (mockCreditPurchaseHandler) OnPromotionalCreditPurchase(context.Context, creditpurchase.CreditGrantInput) (creditpurchase.CreditGrantResult, error) {
+	return creditpurchase.CreditGrantResult{GroupReference: newMockLedgerTransactionGroupReference()}, nil
+}
+
+func (mockCreditPurchaseHandler) OnCreditPurchaseInitiated(context.Context, creditpurchase.CreditGrantInput) (creditpurchase.CreditGrantResult, error) {
+	return creditpurchase.CreditGrantResult{GroupReference: newMockLedgerTransactionGroupReference()}, nil
+}
+
+func (mockCreditPurchaseHandler) OnCreditPurchasePaymentAuthorized(context.Context, creditpurchase.PaymentEventInput) (ledgertransaction.GroupReference, error) {
+	return newMockLedgerTransactionGroupReference(), nil
+}
+
+func (mockCreditPurchaseHandler) OnCreditPurchasePaymentSettled(context.Context, creditpurchase.PaymentEventInput) (ledgertransaction.GroupReference, error) {
+	return newMockLedgerTransactionGroupReference(), nil
+}
+
+type mockUsageBasedHandler struct{}
+
+var _ usagebased.Handler = (*mockUsageBasedHandler)(nil)
+
+func (mockUsageBasedHandler) OnInvoiceUsageAccrued(context.Context, usagebased.OnInvoiceUsageAccruedInput) (ledgertransaction.GroupReference, error) {
+	return newMockLedgerTransactionGroupReference(), nil
+}
+
+func (mockUsageBasedHandler) OnCustomCurrencyOverageAccrued(_ context.Context, input usagebased.OnCustomCurrencyOverageAccruedInput) (usagebased.OnCustomCurrencyOverageAccruedResult, error) {
+	costBasis, err := input.GetCostBasis()
+	if err != nil {
+		return usagebased.OnCustomCurrencyOverageAccruedResult{}, err
+	}
+
+	fiatCurrency, err := input.GetFiatCurrency()
+	if err != nil {
+		return usagebased.OnCustomCurrencyOverageAccruedResult{}, err
+	}
+
+	return usagebased.OnCustomCurrencyOverageAccruedResult{
+		TransactionGroup: newMockLedgerTransactionGroupReference(),
+		TotalFiatAmount:  fiatCurrency.RoundToPrecision(input.GetCustomCurrencyAmountAccrued().Mul(costBasis)),
+	}, nil
+}
+
+func (mockUsageBasedHandler) OnCustomCurrencyOverageAccruedCorrection(context.Context, usagebased.OnCustomCurrencyOverageAccruedCorrectionInput) error {
+	return nil
+}
+
+func (mockUsageBasedHandler) OnPaymentAuthorized(context.Context, usagebased.OnPaymentAuthorizedInput) (ledgertransaction.GroupReference, error) {
+	return newMockLedgerTransactionGroupReference(), nil
+}
+
+func (mockUsageBasedHandler) OnPaymentSettled(context.Context, usagebased.OnPaymentSettledInput) (ledgertransaction.GroupReference, error) {
+	return newMockLedgerTransactionGroupReference(), nil
+}
+
+func (mockUsageBasedHandler) OnCreditsOnlyUsageAccrued(_ context.Context, input usagebased.CreditsOnlyUsageAccruedInput) (creditrealization.CreateAllocationInputs, error) {
+	return creditrealization.CreateAllocationInputs{
+		{
+			ServicePeriod:     input.Charge.Intent.GetEffectiveServicePeriod(),
+			LedgerTransaction: newMockLedgerTransactionGroupReference(),
+			Amount:            input.AmountToAllocate,
+		},
+	}, nil
+}
+
+func (mockUsageBasedHandler) OnCreditsOnlyUsageAccruedCorrection(_ context.Context, input usagebased.CreditsOnlyUsageAccruedCorrectionInput) (creditrealization.CreateCorrectionInputs, error) {
+	return lo.Map(input.Corrections, func(correction creditrealization.CorrectionRequestItem, _ int) creditrealization.CreateCorrectionInput {
+		return creditrealization.CreateCorrectionInput{
+			LedgerTransaction:     newMockLedgerTransactionGroupReference(),
+			Amount:                correction.Amount,
+			CorrectsRealizationID: correction.Allocation.ID,
+		}
+	}), nil
+}
+
+func (mockUsageBasedHandler) OnAllocateFiatOverageCredits(_ context.Context, input usagebased.AllocateFiatOverageCreditsInput) (creditrealization.CreateAllocationInputs, error) {
+	return creditrealization.CreateAllocationInputs{
+		{
+			ServicePeriod:     input.Charge.Intent.GetEffectiveServicePeriod(),
+			LedgerTransaction: newMockLedgerTransactionGroupReference(),
+			Amount:            input.AmountToAllocate,
+		},
+	}, nil
+}
+
+func (mockUsageBasedHandler) OnCorrectFiatOverageCreditAllocations(_ context.Context, input usagebased.CorrectFiatOverageCreditAllocationsInput) (creditrealization.CreateCorrectionInputs, error) {
+	return lo.Map(input.Corrections, func(correction creditrealization.CorrectionRequestItem, _ int) creditrealization.CreateCorrectionInput {
+		return creditrealization.CreateCorrectionInput{
+			LedgerTransaction:     newMockLedgerTransactionGroupReference(),
+			Amount:                correction.Amount,
+			CorrectsRealizationID: correction.Allocation.ID,
+		}
+	}), nil
+}
+
+func newMockLedgerTransactionGroupReference() ledgertransaction.GroupReference {
+	return ledgertransaction.GroupReference{
+		TransactionGroupID: ulid.Make().String(),
+	}
+}

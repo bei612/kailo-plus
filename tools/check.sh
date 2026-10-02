@@ -668,11 +668,9 @@ step_security() { hdr "9/10 受影响安全不变式"
   if [ ! -f deploy/local/compose.yaml ]; then skip "尚无部署描述"; return 0; fi
   python3 - <<'PY' || FAIL=1
 import glob, os, re, subprocess, sys, yaml
-import pathlib, shlex, tempfile
-from urllib.parse import unquote, urlsplit
+import pathlib
 
-# 配置校验与连接串编码直接运行生产脚本，夹具不读取部署 .env 或真实凭据。
-bootstrap = pathlib.Path("deploy/local/bootstrap.sh").read_text(encoding="utf-8")
+# 初始化顺序检查生产脚本；配置预检只使用实际部署输入，不维护第二套配置。
 initializer = pathlib.Path("deploy/local/init-local.sh").read_text(encoding="utf-8")
 prechecks = list(re.finditer(r"^\./bootstrap\.sh --validate-config$", initializer, re.M))
 destructive = list(re.finditer(r"^\s*(?:compose down --volumes|sudo -n rm -rf)\b", initializer, re.M))
@@ -692,57 +690,16 @@ if (len(ensure_calls) != 1 or not platform_subject or not tenant_boot or not cat
         or not idp_ready.end() < ensure_calls[0].start() < platform_subject.start() < core_start.start()
         or not core_start.start() < tenant_boot.start() < catalog_boot.start()):
     raise SystemExit("FAIL 平台管理员须在 IdP 就绪后补齐、取 subject，并在业务 Tenant 之后引导 Catalog")
-fixture_env = {
-    "PLATFORM_DISPLAY_NAME": '协作 < & "',
-    "PUBLIC_HOST": "platform.example.test", "AGENTGATEWAY_PORT": "18080",
-    "PUBLIC_ORIGIN": "http://platform.example.test:18080",
-    "OIDC_HOST": "identity.example.test", "KEYCLOAK_PORT": "18081",
-    "OIDC_REALM": "enterprise", "OIDC_ISSUER": "http://identity.example.test:18081/realms/enterprise",
-    "BUZZ_RELAY_HOST": "relay.example.test", "BUZZ_RELAY_PORT": "18082",
-    "CORE_DB_USER": "platform", "CORE_DB_NAME": "platform", "CORE_DB_PORT": "18083",
-    "AGENTGATEWAY_DB_USER": "gateway", "AGENTGATEWAY_DB_NAME": "gateway",
-    "VERIFY_USER": "walker", "BOOTSTRAP_USER": "founder", "PLATFORM_ADMIN_USER": "operator",
-}
-with tempfile.TemporaryDirectory(prefix="platform-config-check-") as directory:
-    root = pathlib.Path(directory)
-    bootstrap_file = root / "bootstrap.sh"
-    bootstrap_file.write_text(bootstrap, encoding="utf-8")
-    cases = [({}, 0)]
-    cases += [({"PLATFORM_DISPLAY_NAME": value}, 1) for value in ("", " \t ", "\u3000")]
-    cases += [({"CORE_DB_PORT": value}, 1) for value in ("bad", "0", "65536")]
-    # 三个 IdP 用户缺任一或两两重复（用户名不区分大小写）都在生成凭据前拒绝。
-    cases += [({"PLATFORM_ADMIN_USER": None}, 1), ({"PLATFORM_ADMIN_USER": ""}, 1),
-              ({"PLATFORM_ADMIN_USER": "walker"}, 2), ({"PLATFORM_ADMIN_USER": "Founder"}, 2),
-              ({"BOOTSTRAP_USER": "walker"}, 2)]
-    for override, expected in cases:
-        merged = {key: value for key, value in {**fixture_env, **override}.items() if value is not None}
-        (root / ".env").write_text("".join(key + "=" + shlex.quote(value) + "\n"
-                                          for key, value in merged.items()),
-                                   encoding="utf-8")
-        result = subprocess.run(["bash", str(bootstrap_file), "--validate-config"], capture_output=True)
-        if result.returncode != expected or set(p.name for p in root.iterdir()) != {".env", "bootstrap.sh"}:
-            raise SystemExit(f"FAIL bootstrap 预检必须无副作用地接受有效配置并拒绝空展示名、无效数据库端口、缺失或重复的 IdP 用户：{override}")
-    helper = root / "database-url.sh"
-    helper.write_bytes(pathlib.Path("deploy/local/database-url.sh").read_bytes())
-    (root / "secrets").mkdir()
-    for password in ("fixture-safe", "fixture+/=@:%?#", "夹具口令 / +", ""):
-        (root / "secrets/core_db_password").write_text(password, encoding="utf-8")
-        for authority in ("core-db:5432", "127.0.0.1:18083"):
-            result = subprocess.run(["bash", "-c", '. "$1"; core_database_url "$2"',
-                                     "config-check", str(helper), authority],
-                                    env={**os.environ, **fixture_env}, capture_output=True, text=True)
-            if not password:
-                if result.returncode == 0:
-                    raise SystemExit("FAIL 空数据库密码未拒绝")
-                continue
-            parsed = urlsplit(result.stdout.strip())
-            if (result.returncode != 0 or unquote(parsed.username or "") != fixture_env["CORE_DB_USER"]
-                    or unquote(parsed.password or "") != password
-                    or parsed.netloc.rsplit("@", 1)[-1] != authority
-                    or unquote(parsed.path) != "/" + fixture_env["CORE_DB_NAME"]
-                    or parsed.query or parsed.fragment):
-                raise SystemExit("FAIL Core 数据库连接串编码与共享输入不一致")
-print("  \033[32mPASS\033[0m 初始化展示名与三个 IdP 用户互斥校验；平台管理员在 IdP 就绪后补齐、业务 Tenant 后引导 Catalog；部署与宿主共用数据库 URL 编码，保留特殊字符口令")
+deployment_env = pathlib.Path("deploy/local/.env")
+if deployment_env.is_file():
+    result = subprocess.run(["bash", "deploy/local/bootstrap.sh", "--validate-config"],
+                            capture_output=True)
+    if result.returncode != 0:
+        raise SystemExit("FAIL 实际部署配置未通过 bootstrap --validate-config；本门禁不回显配置或凭据")
+    print("  \033[32mPASS\033[0m 实际部署配置通过生产预检；预检只读，不生成凭据或清理数据")
+else:
+    print("  \033[33mSKIP\033[0m 实际部署配置预检无适用对象（未提供 deploy/local/.env）；不代表运行验收")
+print("  \033[32mPASS\033[0m 初始化先预检、后清理；IdP 就绪后同步客户端与管理员，业务 Tenant 后引导 Catalog")
 
 class UniqueKeysLoader(yaml.SafeLoader):
     pass

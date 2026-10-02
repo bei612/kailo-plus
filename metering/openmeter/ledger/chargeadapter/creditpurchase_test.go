@@ -1,0 +1,1271 @@
+package chargeadapter_test
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/alpacahq/alpacadecimal"
+	"github.com/oklog/ulid/v2"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	chargecreditpurchase "github.com/openmeterio/openmeter/openmeter/billing/charges/creditpurchase"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/lineage"
+	lineageadapter "github.com/openmeterio/openmeter/openmeter/billing/charges/lineage/adapter"
+	lineageservice "github.com/openmeterio/openmeter/openmeter/billing/charges/lineage/service"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	chargecostbasis "github.com/openmeterio/openmeter/openmeter/billing/charges/models/costbasis"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/creditrealization"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/ledgertransaction"
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	currenciestestutils "github.com/openmeterio/openmeter/openmeter/currencies/testutils"
+	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
+	ledgerbreakagerecorddb "github.com/openmeterio/openmeter/openmeter/ent/db/ledgerbreakagerecord"
+	ledgertransactiondb "github.com/openmeterio/openmeter/openmeter/ent/db/ledgertransaction"
+	ledgertransactiongroupdb "github.com/openmeterio/openmeter/openmeter/ent/db/ledgertransactiongroup"
+	enttx "github.com/openmeterio/openmeter/openmeter/ent/tx"
+	"github.com/openmeterio/openmeter/openmeter/ledger"
+	ledgerbreakage "github.com/openmeterio/openmeter/openmeter/ledger/breakage"
+	ledgerbreakageadapter "github.com/openmeterio/openmeter/openmeter/ledger/breakage/adapter"
+	"github.com/openmeterio/openmeter/openmeter/ledger/chargeadapter"
+	ledgertestutils "github.com/openmeterio/openmeter/openmeter/ledger/testutils"
+	"github.com/openmeterio/openmeter/openmeter/ledger/transactions"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/framework/transaction"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+func TestOnPromotionalCreditPurchase(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	charge := env.newPromotionalCharge(alpacadecimal.NewFromInt(100))
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+	require.Equal(
+		t,
+		ledger.ChargeAnnotations(models.NamespacedID{Namespace: env.Namespace, ID: charge.ID}),
+		env.transactionGroupAnnotations(t, ref.TransactionGroupID),
+	)
+
+	require.True(t, env.sumBalance(t, env.fboSubAccount(t, alpacadecimal.Zero)).Equal(alpacadecimal.NewFromInt(100)))
+	require.True(t, env.sumBalance(t, env.receivableSubAccount(t, alpacadecimal.Zero)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.authorizedReceivableSubAccount(t, alpacadecimal.Zero)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.washSubAccount(t, alpacadecimal.Zero)).Equal(alpacadecimal.NewFromInt(-100)))
+}
+
+func TestOnPromotionalCreditPurchase_BacksAdvanceBeforeTopUp(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+	env.createAdvanceExposure(t, alpacadecimal.NewFromInt(40))
+
+	charge := env.newPromotionalCharge(alpacadecimal.NewFromInt(100))
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+	require.ElementsMatch(t, []string{
+		transactions.TemplateCode(transactions.AttributeCustomerAdvanceReceivableCostBasisTemplate{}),
+		transactions.TemplateCode(transactions.TranslateCustomerAccruedCostBasisTemplate{}),
+		transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{}),
+		transactions.TemplateCode(transactions.AuthorizeCustomerReceivablePaymentTemplate{}),
+		transactions.TemplateCode(transactions.SettleCustomerReceivableFromPaymentTemplate{}),
+	}, env.transactionTemplateCodes(t, ref.TransactionGroupID))
+
+	require.True(t, env.sumBalance(t, env.receivableSubAccount(t, alpacadecimal.Zero)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.authorizedReceivableSubAccount(t, alpacadecimal.Zero)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.unknownReceivableSubAccount(t)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.unknownAccruedSubAccount(t)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.accruedSubAccount(t, alpacadecimal.Zero)).Equal(alpacadecimal.NewFromInt(40)))
+	require.True(t, env.sumBalance(t, env.fboSubAccount(t, alpacadecimal.Zero)).Equal(alpacadecimal.NewFromInt(60)))
+	require.True(t, env.sumBalance(t, env.washSubAccount(t, alpacadecimal.Zero)).Equal(alpacadecimal.NewFromInt(-100)))
+}
+
+func TestOnCreditPurchaseInitiated_PastEffectiveGrantBackdatesAdvanceAttribution(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	// given:
+	// - advance exposure that predates a credit purchase's effective time
+	// - the purchase is materialized after that effective time
+	// when:
+	// - the purchase is initiated
+	// then:
+	// - recording time stays current while every purchase posting is effective in the past
+	recordedAt := env.Now()
+	effectiveAt := recordedAt.Add(-2 * time.Hour)
+	func() {
+		clock.FreezeTime(effectiveAt.Add(-time.Hour))
+		defer clock.UnFreeze()
+		env.createAdvanceExposure(t, alpacadecimal.NewFromInt(40))
+	}()
+	clock.FreezeTime(recordedAt)
+	defer clock.UnFreeze()
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	effectivePeriod := timeutil.ClosedPeriod{From: effectiveAt, To: effectiveAt}
+	charge.Intent.ServicePeriod = effectivePeriod
+	charge.Intent.FullServicePeriod = effectivePeriod
+	charge.Intent.BillingPeriod = effectivePeriod
+
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+
+	bookedAtByTemplate := env.transactionBookedAtByTemplateCode(t, ref.TransactionGroupID)
+	for _, template := range []transactions.TransactionTemplate{
+		transactions.AttributeCustomerAdvanceReceivableCostBasisTemplate{},
+		transactions.TranslateCustomerAccruedCostBasisTemplate{},
+		transactions.IssueCustomerReceivableTemplate{},
+	} {
+		bookedAt := bookedAtByTemplate[transactions.TemplateCode(template)]
+		require.Len(t, bookedAt, 1)
+		requireLedgerBookedAtEqual(t, effectiveAt, bookedAt[0])
+	}
+
+	transactionRows, err := env.DB.LedgerTransaction.Query().
+		Where(
+			ledgertransactiondb.Namespace(env.Namespace),
+			ledgertransactiondb.GroupID(ref.TransactionGroupID),
+		).
+		All(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, transactionRows)
+	for _, transactionRow := range transactionRows {
+		require.False(t, transactionRow.CreatedAt.Before(recordedAt))
+	}
+
+	require.Equal(t, float64(0), env.sumBalanceAsOf(t, env.unknownReceivableSubAccount(t), effectiveAt).InexactFloat64())
+	require.Equal(t, float64(-100), env.sumBalanceAsOf(t, env.receivableSubAccount(t, costBasis), effectiveAt).InexactFloat64())
+	require.Equal(t, float64(0), env.sumBalanceAsOf(t, env.authorizedReceivableSubAccount(t, costBasis), effectiveAt).InexactFloat64())
+	require.Equal(t, float64(40), env.sumBalanceAsOf(t, env.accruedSubAccount(t, costBasis), effectiveAt).InexactFloat64())
+	require.Equal(t, float64(60), env.sumBalanceAsOf(t, env.fboSubAccount(t, costBasis), effectiveAt).InexactFloat64())
+	require.Equal(t, float64(0), env.sumBalanceAsOf(t, env.washSubAccount(t, costBasis), effectiveAt).InexactFloat64())
+}
+
+func TestOnCreditPurchaseInitiated_BackfillsOnlyMatchingFeatureAdvances(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+	env.createAdvanceExposureWithFeatures(t, alpacadecimal.NewFromInt(40), []string{"api-calls"})
+	env.createAdvanceExposureWithFeatures(t, alpacadecimal.NewFromInt(30), []string{"storage"})
+
+	costBasis := mustDecimal(t, "0.5")
+	featureFilters := chargecreditpurchase.FeatureFilters{"api-calls"}
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	charge.Intent.FeatureFilters = featureFilters
+
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+	require.ElementsMatch(t, []string{
+		transactions.TemplateCode(transactions.AttributeCustomerAdvanceReceivableCostBasisTemplate{}),
+		transactions.TemplateCode(transactions.TranslateCustomerAccruedCostBasisTemplate{}),
+		transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{}),
+	}, env.transactionTemplateCodes(t, ref.TransactionGroupID))
+
+	require.True(t, env.sumBalance(t, env.unknownReceivableSubAccountWithFeatures(t, []string{"api-calls"})).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.unknownReceivableSubAccountWithFeatures(t, []string{"storage"})).Equal(alpacadecimal.NewFromInt(-30)))
+	require.True(t, env.sumBalance(t, env.unknownAccruedSubAccount(t)).Equal(alpacadecimal.NewFromInt(30)))
+	require.True(t, env.sumBalance(t, env.accruedSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(40)))
+	require.True(t, env.sumBalance(t, env.fboSubAccountWithFeatures(t, costBasis, featureFilters.Normalize())).Equal(alpacadecimal.NewFromInt(60)))
+	require.True(t, env.sumBalance(t, env.receivableSubAccountWithFeatures(t, costBasis, featureFilters.Normalize())).Equal(alpacadecimal.NewFromInt(-100)))
+}
+
+func TestOnCreditPurchaseInitiated_RestrictedCreditDoesNotBackfillFeaturelessAdvance(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+	env.createAdvanceExposure(t, alpacadecimal.NewFromInt(40))
+
+	costBasis := mustDecimal(t, "0.5")
+	featureFilters := chargecreditpurchase.FeatureFilters{"api-calls"}
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	charge.Intent.FeatureFilters = featureFilters
+
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+	require.ElementsMatch(t, []string{
+		transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{}),
+	}, env.transactionTemplateCodes(t, ref.TransactionGroupID))
+
+	require.True(t, env.sumBalance(t, env.unknownReceivableSubAccount(t)).Equal(alpacadecimal.NewFromInt(-40)))
+	require.True(t, env.sumBalance(t, env.unknownAccruedSubAccount(t)).Equal(alpacadecimal.NewFromInt(40)))
+	require.True(t, env.sumBalance(t, env.fboSubAccountWithFeatures(t, costBasis, featureFilters.Normalize())).Equal(alpacadecimal.NewFromInt(100)))
+	require.True(t, env.sumBalance(t, env.receivableSubAccountWithFeatures(t, costBasis, featureFilters.Normalize())).Equal(alpacadecimal.NewFromInt(-100)))
+}
+
+func TestOnCreditPurchaseInitiated(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+	require.ElementsMatch(t, []string{
+		transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{}),
+	}, env.transactionTemplateCodes(t, ref.TransactionGroupID))
+
+	require.True(t, env.sumBalance(t, env.fboSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(100)))
+	require.True(t, env.sumBalance(t, env.receivableSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(-100)))
+}
+
+func TestOnCreditPurchaseInitiated_FutureEffectiveGrantBackfillsAdvanceAtPurchaseTime(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	// given:
+	// - existing advance and a credit purchase whose remainder becomes effective later
+	// when:
+	// - the materialized charge initiates the purchase now
+	// then:
+	// - advance attribution is booked now while only the remainder is issued later
+	purchasedAt := env.Now()
+	env.createAdvanceExposure(t, alpacadecimal.NewFromInt(40))
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	effectiveAt := purchasedAt.Add(2 * time.Hour)
+	effectivePeriod := timeutil.ClosedPeriod{From: effectiveAt, To: effectiveAt}
+	charge.Intent.ServicePeriod = effectivePeriod
+	charge.Intent.FullServicePeriod = effectivePeriod
+	charge.Intent.BillingPeriod = effectivePeriod
+
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+
+	bookedAtByTemplate := env.transactionBookedAtByTemplateCode(t, ref.TransactionGroupID)
+	for _, template := range []transactions.TransactionTemplate{
+		transactions.AttributeCustomerAdvanceReceivableCostBasisTemplate{},
+		transactions.TranslateCustomerAccruedCostBasisTemplate{},
+	} {
+		bookedAt := bookedAtByTemplate[transactions.TemplateCode(template)]
+		require.Len(t, bookedAt, 1)
+		requireLedgerBookedAtEqual(t, purchasedAt, bookedAt[0])
+	}
+
+	issuanceBookedAt := bookedAtByTemplate[transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{})]
+	require.Len(t, issuanceBookedAt, 1)
+	requireLedgerBookedAtEqual(t, effectiveAt, issuanceBookedAt[0])
+
+	// The backfilled amount is reflected now, but the future remainder is not spendable yet.
+	require.Equal(t, float64(40), env.sumBalanceAsOf(t, env.accruedSubAccount(t, costBasis), purchasedAt).InexactFloat64())
+	require.Equal(t, float64(0), env.sumBalanceAsOf(t, env.fboSubAccount(t, costBasis), purchasedAt).InexactFloat64())
+	require.Equal(t, float64(60), env.sumBalanceAsOf(t, env.fboSubAccount(t, costBasis), effectiveAt).InexactFloat64())
+}
+
+func TestOnCreditPurchaseInitiated_SubsequentFuturePurchaseCannotOverAttributeAdvance(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	// given:
+	// - 100 of existing advance and two future-effective purchases of 60 each
+	// when:
+	// - both purchases are initiated now
+	// then:
+	// - the first attributes 60, the second attributes only the remaining 40, and 20 stays future issuance
+	purchasedAt := env.Now()
+	effectiveAt := purchasedAt.Add(2 * time.Hour)
+	effectivePeriod := timeutil.ClosedPeriod{From: effectiveAt, To: effectiveAt}
+	env.createAdvanceExposure(t, alpacadecimal.NewFromInt(100))
+
+	costBasis := mustDecimal(t, "0.5")
+	firstCharge := env.newExternalCharge(alpacadecimal.NewFromInt(60), costBasis)
+	firstCharge.ID = "01JABCDEF0123456789ABCDEFG"
+	firstCharge.Intent.ServicePeriod = effectivePeriod
+	firstCharge.Intent.FullServicePeriod = effectivePeriod
+	firstCharge.Intent.BillingPeriod = effectivePeriod
+
+	secondCharge := env.newExternalCharge(alpacadecimal.NewFromInt(60), costBasis)
+	secondCharge.ID = "01JBCDEF0123456789ABCDEFGH"
+	secondCharge.Intent.ServicePeriod = effectivePeriod
+	secondCharge.Intent.FullServicePeriod = effectivePeriod
+	secondCharge.Intent.BillingPeriod = effectivePeriod
+
+	firstRef, err := env.grantCredits(t, firstCharge)
+	require.NoError(t, err)
+	secondRef, err := env.grantCredits(t, secondCharge)
+	require.NoError(t, err)
+
+	require.NotContains(t, env.transactionTemplateCodes(t, firstRef.TransactionGroupID), transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{}))
+	secondBookedAtByTemplate := env.transactionBookedAtByTemplateCode(t, secondRef.TransactionGroupID)
+	secondAttributionBookedAt := secondBookedAtByTemplate[transactions.TemplateCode(transactions.AttributeCustomerAdvanceReceivableCostBasisTemplate{})]
+	require.Len(t, secondAttributionBookedAt, 1)
+	requireLedgerBookedAtEqual(t, purchasedAt, secondAttributionBookedAt[0])
+	secondIssuanceBookedAt := secondBookedAtByTemplate[transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{})]
+	require.Len(t, secondIssuanceBookedAt, 1)
+	requireLedgerBookedAtEqual(t, effectiveAt, secondIssuanceBookedAt[0])
+
+	require.Equal(t, float64(0), env.sumBalanceAsOf(t, env.unknownReceivableSubAccount(t), purchasedAt).InexactFloat64())
+	require.Equal(t, float64(100), env.sumBalanceAsOf(t, env.accruedSubAccount(t, costBasis), purchasedAt).InexactFloat64())
+	require.Equal(t, float64(0), env.sumBalanceAsOf(t, env.fboSubAccount(t, costBasis), purchasedAt).InexactFloat64())
+	require.Equal(t, float64(20), env.sumBalanceAsOf(t, env.fboSubAccount(t, costBasis), effectiveAt).InexactFloat64())
+}
+
+func TestOnCreditPurchaseInitiated_SeparatesSourceChargeBuckets(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	costBasis := mustDecimal(t, "0.5")
+	charge1 := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	charge1.ID = "01JABCDEF0123456789ABCDEFG"
+	charge2 := env.newExternalCharge(alpacadecimal.NewFromInt(50), costBasis)
+	charge2.ID = "01JBCDEF0123456789ABCDEFGH"
+
+	_, err := env.grantCredits(t, charge1)
+	require.NoError(t, err)
+	_, err = env.grantCredits(t, charge2)
+	require.NoError(t, err)
+
+	env.requireAccountSourceBucketAmounts(t, env.fboSubAccount(t, costBasis).AccountID().ID, map[string]float64{
+		charge1.ID: 100,
+		charge2.ID: 50,
+	})
+}
+
+func TestOnCreditPurchaseInitiated_AdvanceBackfillStampsSourceBuckets(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+	env.createAdvanceExposure(t, alpacadecimal.NewFromInt(40))
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	charge.ID = "01JABCDEF0123456789ABCDEFG"
+
+	_, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+
+	env.requireAccountSourceBucketAmounts(t, env.fboSubAccount(t, costBasis).AccountID().ID, map[string]float64{
+		charge.ID: 60,
+	})
+	env.requireAccountSourceBucketAmounts(t, env.receivableSubAccount(t, costBasis).AccountID().ID, map[string]float64{
+		charge.ID: -100,
+	})
+	env.requireAccountSourceBucketAmounts(t, env.accruedSubAccount(t, costBasis).AccountID().ID, map[string]float64{
+		charge.ID: 40,
+	})
+}
+
+func TestOnCreditPurchaseInitiated_AdvanceBackfillPreservesSpendBuckets(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+	spendChargeID1 := "01JSPEND00123456789ABCDEFG"
+	spendChargeID2 := "01JSPEND10123456789ABCDEFG"
+	env.createAdvanceExposureForSpend(t, alpacadecimal.NewFromInt(25), nil, &spendChargeID1)
+	env.createAdvanceExposureForSpend(t, alpacadecimal.NewFromInt(15), nil, &spendChargeID2)
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(40), costBasis)
+	charge.ID = "01JABCDEF0123456789ABCDEFG"
+
+	_, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+
+	env.requireAccountSourceSpendBucketAmounts(t, env.accruedSubAccount(t, costBasis).AccountID().ID, map[string]float64{
+		sourceSpendChargeKey(&charge.ID, &spendChargeID1): 25,
+		sourceSpendChargeKey(&charge.ID, &spendChargeID2): 15,
+	})
+	env.requireAccountSourceSpendBucketAmounts(t, env.receivableSubAccount(t, costBasis).AccountID().ID, map[string]float64{
+		sourceSpendChargeKey(&charge.ID, &spendChargeID1): -25,
+		sourceSpendChargeKey(&charge.ID, &spendChargeID2): -15,
+	})
+	require.True(t, env.sumBalance(t, env.unknownAccruedSubAccount(t)).Equal(alpacadecimal.Zero))
+}
+
+func TestOnCreditPurchaseInitiated_UsesFeatureRestrictedFBO(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	costBasis := mustDecimal(t, "0.5")
+	featureFilters := chargecreditpurchase.FeatureFilters{"api-calls", "storage"}
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	charge.Intent.FeatureFilters = featureFilters
+
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+
+	require.True(t, env.sumBalance(t, env.fboSubAccountWithFeatures(t, costBasis, featureFilters.Normalize())).Equal(alpacadecimal.NewFromInt(100)))
+	require.True(t, env.sumBalance(t, env.fboSubAccount(t, costBasis)).Equal(alpacadecimal.Zero))
+}
+
+func TestOnCreditPurchaseInitiated_ExpiringCreditPlansBreakage(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	expiresAt := charge.CreatedAt.Add(time.Hour)
+	charge.Intent.ExpiresAt = &expiresAt
+
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+	require.ElementsMatch(t, []string{
+		transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{}),
+		transactions.TemplateCode(transactions.PlanCustomerFBOBreakageTemplate{}),
+	}, env.transactionTemplateCodes(t, ref.TransactionGroupID))
+
+	rows := env.breakageRows(t, ref.TransactionGroupID)
+	require.Len(t, rows, 1)
+	require.Equal(t, ledger.BreakageKindPlan, rows[0].Kind)
+	require.True(t, rows[0].Amount.Equal(alpacadecimal.NewFromInt(100)), "plan amount: %s", rows[0].Amount)
+	require.WithinDuration(t, expiresAt, rows[0].ExpiresAt, time.Microsecond, "expires_at")
+
+	fbo := env.fboSubAccount(t, costBasis)
+	breakageSubAccount := env.BreakageSubAccountWithCostBasis(t, &costBasis)
+	require.True(t, env.sumBalanceAsOf(t, fbo, charge.CreatedAt).Equal(alpacadecimal.NewFromInt(100)))
+	require.True(t, env.sumBalanceAsOf(t, breakageSubAccount, charge.CreatedAt).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalanceAsOf(t, fbo, expiresAt).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalanceAsOf(t, breakageSubAccount, expiresAt).Equal(alpacadecimal.NewFromInt(100)))
+}
+
+func TestOnCreditPurchaseInitiated_ExpiringCreditReleasesAdvanceCoverage(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+	env.createAdvanceExposure(t, alpacadecimal.NewFromInt(40))
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	expiresAt := charge.CreatedAt.Add(time.Hour)
+	charge.Intent.ExpiresAt = &expiresAt
+
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+	require.ElementsMatch(t, []string{
+		transactions.TemplateCode(transactions.AttributeCustomerAdvanceReceivableCostBasisTemplate{}),
+		transactions.TemplateCode(transactions.TranslateCustomerAccruedCostBasisTemplate{}),
+		transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{}),
+		transactions.TemplateCode(transactions.PlanCustomerFBOBreakageTemplate{}),
+		transactions.TemplateCode(transactions.ReleaseCustomerFBOBreakageTemplate{}),
+	}, env.transactionTemplateCodes(t, ref.TransactionGroupID))
+
+	rows := env.breakageRows(t, ref.TransactionGroupID)
+	require.Len(t, rows, 2)
+
+	byKind := map[ledger.BreakageKind]alpacadecimal.Decimal{}
+	for _, row := range rows {
+		byKind[row.Kind] = row.Amount
+	}
+	require.True(t, byKind[ledger.BreakageKindPlan].Equal(alpacadecimal.NewFromInt(100)))
+	require.True(t, byKind[ledger.BreakageKindRelease].Equal(alpacadecimal.NewFromInt(40)))
+
+	fbo := env.fboSubAccount(t, costBasis)
+	breakageSubAccount := env.BreakageSubAccountWithCostBasis(t, &costBasis)
+	require.True(t, env.sumBalanceAsOf(t, fbo, charge.CreatedAt).Equal(alpacadecimal.NewFromInt(60)))
+	require.True(t, env.sumBalanceAsOf(t, breakageSubAccount, charge.CreatedAt).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalanceAsOf(t, fbo, expiresAt).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalanceAsOf(t, breakageSubAccount, expiresAt).Equal(alpacadecimal.NewFromInt(60)))
+}
+
+func TestOnCreditPurchaseInitiated_TracksChargeReferencesOnTransactions(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	charge.Intent.Subscription = &meta.SubscriptionReference{
+		SubscriptionID: "subscription-01JABCDEF0123456789ABCDEF",
+		PhaseID:        "phase-01JABCDEF0123456789ABCDEF",
+		ItemID:         "item-01JABCDEF0123456789ABCDEF",
+	}
+
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+
+	expected := ledger.ChargeTransactionAnnotations(ledger.ChargeTransactionAnnotationsInput{
+		ChargeID: models.NamespacedID{
+			Namespace: env.Namespace,
+			ID:        charge.ID,
+		},
+		SubscriptionID:      &charge.Intent.Subscription.SubscriptionID,
+		SubscriptionPhaseID: &charge.Intent.Subscription.PhaseID,
+		SubscriptionItemID:  &charge.Intent.Subscription.ItemID,
+	})
+	require.Equal(t, expected, env.transactionGroupAnnotations(t, ref.TransactionGroupID))
+
+	for _, annotations := range env.transactionAnnotations(t, ref.TransactionGroupID) {
+		require.Equal(t, charge.ID, annotations[ledger.AnnotationChargeID])
+		require.Equal(t, env.Namespace, annotations[ledger.AnnotationChargeNamespace])
+		require.Equal(t, charge.Intent.Subscription.SubscriptionID, annotations[ledger.AnnotationSubscriptionID])
+		require.Equal(t, charge.Intent.Subscription.PhaseID, annotations[ledger.AnnotationSubscriptionPhaseID])
+		require.Equal(t, charge.Intent.Subscription.ItemID, annotations[ledger.AnnotationSubscriptionItemID])
+	}
+}
+
+func TestOnCreditPurchaseInitiated_OnlyIssuesExcessBeyondAdvance(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+	env.createAdvanceExposure(t, alpacadecimal.NewFromInt(40))
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	ref, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+	require.ElementsMatch(t, []string{
+		transactions.TemplateCode(transactions.AttributeCustomerAdvanceReceivableCostBasisTemplate{}),
+		transactions.TemplateCode(transactions.TranslateCustomerAccruedCostBasisTemplate{}),
+		transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{}),
+	}, env.transactionTemplateCodes(t, ref.TransactionGroupID))
+
+	require.True(t, env.sumBalance(t, env.fboSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(60)))
+	require.True(t, env.sumBalance(t, env.receivableSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(-100)))
+	require.True(t, env.sumBalance(t, env.unknownReceivableSubAccount(t)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.unknownAccruedSubAccount(t)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.accruedSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(40)))
+}
+
+func TestOnCreditPurchasePaymentAuthorized(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	charge.ID = "01JABCDEF0123456789ABCDEFG"
+
+	_, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+
+	eventTime := charge.CreatedAt.Add(15 * time.Minute)
+	clock.FreezeTime(eventTime)
+	defer clock.UnFreeze()
+
+	ref, err := env.handler.OnCreditPurchasePaymentAuthorized(t.Context(), chargecreditpurchase.PaymentEventInput{
+		Charge:     charge,
+		EventAt:    eventTime,
+		FiatAmount: alpacadecimal.NewFromInt(100),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+	env.requireTransactionGroupEntriesSourceCharge(t, ref.TransactionGroupID, charge.ID)
+
+	require.True(t, env.sumBalance(t, env.receivableSubAccount(t, costBasis)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.authorizedReceivableSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(-100)))
+	require.True(t, env.sumBalance(t, env.washSubAccount(t, costBasis)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.fboSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(100)))
+
+	for _, bookedAt := range env.transactionBookedAtTimes(t, ref.TransactionGroupID) {
+		requireLedgerBookedAtEqual(t, eventTime, bookedAt)
+		requireLedgerBookedAtNotEqual(t, charge.CreatedAt, bookedAt)
+	}
+
+	ref, err = env.handler.OnCreditPurchasePaymentAuthorized(t.Context(), chargecreditpurchase.PaymentEventInput{
+		Charge:     charge,
+		EventAt:    time.Time{},
+		FiatAmount: alpacadecimal.NewFromInt(100),
+	})
+	require.ErrorContains(t, err, "event at is required")
+	require.Empty(t, ref.TransactionGroupID)
+
+	ref, err = env.handler.OnCreditPurchasePaymentAuthorized(t.Context(), chargecreditpurchase.PaymentEventInput{
+		Charge:  charge,
+		EventAt: eventTime,
+	})
+	require.ErrorContains(t, err, "fiat amount must be positive")
+	require.Empty(t, ref.TransactionGroupID)
+}
+
+func TestOnCreditPurchasePaymentSettled(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	charge.ID = "01JABCDEF0123456789ABCDEFG"
+	initRef, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{
+		transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{}),
+	}, env.transactionTemplateCodes(t, initRef.TransactionGroupID))
+
+	_, err = env.handler.OnCreditPurchasePaymentAuthorized(t.Context(), chargecreditpurchase.PaymentEventInput{
+		Charge:     charge,
+		EventAt:    charge.CreatedAt.Add(15 * time.Minute),
+		FiatAmount: alpacadecimal.NewFromInt(100),
+	})
+	require.NoError(t, err)
+
+	eventTime := charge.CreatedAt.Add(30 * time.Minute)
+	clock.FreezeTime(eventTime)
+	defer clock.UnFreeze()
+
+	ref, err := env.handler.OnCreditPurchasePaymentSettled(t.Context(), chargecreditpurchase.PaymentEventInput{
+		Charge:     charge,
+		EventAt:    eventTime,
+		FiatAmount: alpacadecimal.NewFromInt(100),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+	env.requireTransactionGroupEntriesSourceCharge(t, ref.TransactionGroupID, charge.ID)
+
+	require.True(t, env.sumBalance(t, env.receivableSubAccount(t, costBasis)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.authorizedReceivableSubAccount(t, costBasis)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.washSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(-100)))
+	require.True(t, env.sumBalance(t, env.fboSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(100)))
+
+	for _, bookedAt := range env.transactionBookedAtTimes(t, ref.TransactionGroupID) {
+		requireLedgerBookedAtEqual(t, eventTime, bookedAt)
+		requireLedgerBookedAtNotEqual(t, charge.CreatedAt, bookedAt)
+	}
+}
+
+func TestOnCreditPurchasePaymentLifecyclePreservesFiatCreditUnits(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+	costBasis := mustDecimal(t, "0.25")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+	fiatAmount := alpacadecimal.NewFromInt(25)
+
+	_, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+
+	authorizedRef, err := env.handler.OnCreditPurchasePaymentAuthorized(t.Context(), chargecreditpurchase.PaymentEventInput{
+		Charge:     charge,
+		EventAt:    charge.CreatedAt.Add(15 * time.Minute),
+		FiatAmount: fiatAmount,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		transactions.TemplateCode(transactions.AuthorizeCustomerReceivablePaymentTemplate{}),
+	}, env.transactionTemplateCodes(t, authorizedRef.TransactionGroupID))
+	require.True(t, env.sumBalance(t, env.receivableSubAccount(t, costBasis)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.authorizedReceivableSubAccount(t, costBasis)).Equal(charge.Intent.CreditAmount.Neg()))
+	brokerage, err := env.BusinessAccounts.BrokerageAccount.GetSubAccountForRoute(t.Context(), ledger.BusinessRouteParams{
+		Currency:  env.CurrencyReference(),
+		CostBasis: &costBasis,
+	})
+	require.NoError(t, err)
+	require.True(t, env.sumBalance(t, brokerage).IsZero())
+
+	_, err = env.handler.OnCreditPurchasePaymentSettled(t.Context(), chargecreditpurchase.PaymentEventInput{
+		Charge:     charge,
+		EventAt:    charge.CreatedAt.Add(30 * time.Minute),
+		FiatAmount: fiatAmount,
+	})
+	require.NoError(t, err)
+	require.True(t, env.sumBalance(t, env.authorizedReceivableSubAccount(t, costBasis)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.washSubAccount(t, costBasis)).Equal(charge.Intent.CreditAmount.Neg()))
+}
+
+func TestOnCreditPurchasePaymentSettled_BacksAdvanceBeforeTopUp(t *testing.T) {
+	env := newCreditPurchaseHandlerTestEnv(t)
+	env.createAdvanceExposure(t, alpacadecimal.NewFromInt(40))
+
+	costBasis := mustDecimal(t, "0.5")
+	charge := env.newExternalCharge(alpacadecimal.NewFromInt(100), costBasis)
+
+	initRef, err := env.grantCredits(t, charge)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{
+		transactions.TemplateCode(transactions.AttributeCustomerAdvanceReceivableCostBasisTemplate{}),
+		transactions.TemplateCode(transactions.TranslateCustomerAccruedCostBasisTemplate{}),
+		transactions.TemplateCode(transactions.IssueCustomerReceivableTemplate{}),
+	}, env.transactionTemplateCodes(t, initRef.TransactionGroupID))
+
+	_, err = env.handler.OnCreditPurchasePaymentAuthorized(t.Context(), chargecreditpurchase.PaymentEventInput{
+		Charge:     charge,
+		EventAt:    charge.CreatedAt.Add(15 * time.Minute),
+		FiatAmount: alpacadecimal.NewFromInt(100),
+	})
+	require.NoError(t, err)
+
+	eventTime := charge.CreatedAt.Add(30 * time.Minute)
+	ref, err := env.handler.OnCreditPurchasePaymentSettled(t.Context(), chargecreditpurchase.PaymentEventInput{
+		Charge:     charge,
+		EventAt:    eventTime,
+		FiatAmount: alpacadecimal.NewFromInt(100),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.TransactionGroupID)
+
+	require.True(t, env.sumBalance(t, env.receivableSubAccount(t, costBasis)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.authorizedReceivableSubAccount(t, costBasis)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.unknownReceivableSubAccount(t)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.unknownAccruedSubAccount(t)).Equal(alpacadecimal.Zero))
+	require.True(t, env.sumBalance(t, env.accruedSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(40)))
+	require.True(t, env.sumBalance(t, env.fboSubAccount(t, costBasis)).Equal(alpacadecimal.NewFromInt(60)))
+
+	for _, bookedAt := range env.transactionBookedAtTimes(t, ref.TransactionGroupID) {
+		requireLedgerBookedAtEqual(t, eventTime, bookedAt)
+		requireLedgerBookedAtNotEqual(t, charge.CreatedAt, bookedAt)
+	}
+}
+
+type creditPurchaseHandlerTestEnv struct {
+	*ledgertestutils.IntegrationEnv
+	handler               chargecreditpurchase.Handler
+	currency              currencies.Currency
+	lineage               lineage.Service
+	originalAdvanceGroups map[string]string
+}
+
+func newCreditPurchaseHandlerTestEnv(t *testing.T) *creditPurchaseHandlerTestEnv {
+	base := ledgertestutils.NewIntegrationEnv(t, "chargeadapter-creditpurchase")
+	breakageAdapter, err := ledgerbreakageadapter.New(ledgerbreakageadapter.Config{
+		Client: base.DB,
+	})
+	require.NoError(t, err)
+
+	breakageService, err := ledgerbreakage.NewService(ledgerbreakage.Config{
+		Adapter: breakageAdapter,
+		Dependencies: transactions.ResolverDependencies{
+			AccountService: base.Deps.ResolversService,
+			AccountCatalog: base.Deps.AccountService,
+			BalanceQuerier: base.Deps.HistoricalLedger,
+		},
+	})
+	require.NoError(t, err)
+
+	handler, err := chargeadapter.NewCreditPurchaseHandler(
+		base.Deps.HistoricalLedger,
+		base.Deps.HistoricalLedger,
+		base.Deps.ResolversService,
+		base.Deps.AccountService,
+		breakageService,
+		enttx.NewCreator(base.DB),
+	)
+	require.NoError(t, err)
+
+	lineageAdapter, err := lineageadapter.New(lineageadapter.Config{Client: base.DB})
+	require.NoError(t, err)
+	lineageService, err := lineageservice.New(lineageservice.Config{Adapter: lineageAdapter})
+	require.NoError(t, err)
+
+	return &creditPurchaseHandlerTestEnv{
+		IntegrationEnv:        base,
+		handler:               handler,
+		lineage:               lineageService,
+		originalAdvanceGroups: map[string]string{},
+		currency:              currenciestestutils.NewFiatCurrency(t, "USD"),
+	}
+}
+
+func (e *creditPurchaseHandlerTestEnv) newPromotionalCharge(amount alpacadecimal.Decimal) chargecreditpurchase.Charge {
+	now := time.Now().UTC()
+	servicePeriod := timeutil.ClosedPeriod{
+		From: now.Add(-time.Hour),
+		To:   now,
+	}
+
+	return chargecreditpurchase.Charge{
+		ChargeBase: chargecreditpurchase.ChargeBase{
+			ManagedResource: meta.ManagedResource{
+				NamespacedModel: models.NamespacedModel{
+					Namespace: e.Namespace,
+				},
+				ManagedModel: models.ManagedModel{
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
+				ID: "credit-purchase-charge",
+			},
+			Intent: chargecreditpurchase.Intent{
+				Intent: meta.Intent{
+					ManagedBy:  billing.SystemManagedLine,
+					CustomerID: e.CustomerID.ID,
+					Currency:   e.currency,
+					TaxConfig: productcatalog.TaxCodeConfig{
+						TaxCodeID: "tax-code-id",
+					},
+				},
+				IntentMutableFields: chargecreditpurchase.IntentMutableFields{
+					IntentMutableFields: meta.IntentMutableFields{
+						Name:              "Promotional Credit Purchase",
+						ServicePeriod:     servicePeriod,
+						FullServicePeriod: servicePeriod,
+						BillingPeriod:     servicePeriod,
+					},
+					CreditAmount: amount,
+					Settlement:   chargecreditpurchase.NewSettlement(chargecreditpurchase.PromotionalSettlement{}),
+				},
+			},
+			Status: chargecreditpurchase.StatusCreated,
+		},
+	}
+}
+
+func (e *creditPurchaseHandlerTestEnv) newExternalCharge(amount, costBasis alpacadecimal.Decimal) chargecreditpurchase.Charge {
+	now := time.Now().UTC()
+	servicePeriod := timeutil.ClosedPeriod{
+		From: now.Add(-time.Hour),
+		To:   now,
+	}
+	return chargecreditpurchase.Charge{
+		ChargeBase: chargecreditpurchase.ChargeBase{
+			ManagedResource: meta.ManagedResource{
+				NamespacedModel: models.NamespacedModel{
+					Namespace: e.Namespace,
+				},
+				ManagedModel: models.ManagedModel{
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
+				ID: "credit-purchase-charge",
+			},
+			Intent: chargecreditpurchase.Intent{
+				Intent: meta.Intent{
+					ManagedBy:  billing.SystemManagedLine,
+					CustomerID: e.CustomerID.ID,
+					Currency:   e.currency,
+					TaxConfig: productcatalog.TaxCodeConfig{
+						TaxCodeID: "tax-code-id",
+					},
+				},
+				IntentMutableFields: chargecreditpurchase.IntentMutableFields{
+					IntentMutableFields: meta.IntentMutableFields{
+						Name:              "External Credit Purchase",
+						ServicePeriod:     servicePeriod,
+						FullServicePeriod: servicePeriod,
+						BillingPeriod:     servicePeriod,
+					},
+					CreditAmount: amount,
+					Settlement: chargecreditpurchase.NewSettlement(chargecreditpurchase.ExternalSettlement{
+						InitialStatus: chargecreditpurchase.CreatedInitialPaymentSettlementStatus,
+					}),
+				},
+				CostBasis: chargecreditpurchase.NewCostBasis(chargecreditpurchase.FiatCostBasis{
+					Rate: costBasis,
+				}),
+			},
+			Status: chargecreditpurchase.StatusCreated,
+			State: chargecreditpurchase.State{
+				ResolvedCostBasis: &chargecostbasis.State{
+					CostBasis:  costBasis,
+					ResolvedAt: now,
+				},
+			},
+		},
+	}
+}
+
+func (e *creditPurchaseHandlerTestEnv) fboSubAccount(t *testing.T, costBasis alpacadecimal.Decimal) ledger.SubAccount {
+	t.Helper()
+
+	return e.fboSubAccountWithFeatures(t, costBasis, nil)
+}
+
+func (e *creditPurchaseHandlerTestEnv) fboSubAccountWithFeatures(t *testing.T, costBasis alpacadecimal.Decimal, features []string) ledger.SubAccount {
+	t.Helper()
+
+	subAccount, err := e.CustomerAccounts.FBOAccount.GetSubAccountForRoute(t.Context(), ledger.CustomerFBORouteParams{
+		Currency:       e.CurrencyReference(),
+		CostBasis:      &costBasis,
+		CreditPriority: ledger.DefaultCustomerFBOPriority,
+		Features:       features,
+	})
+	require.NoError(t, err)
+
+	return subAccount
+}
+
+func (e *creditPurchaseHandlerTestEnv) unknownReceivableSubAccount(t *testing.T) ledger.SubAccount {
+	t.Helper()
+
+	return e.unknownReceivableSubAccountWithFeatures(t, nil)
+}
+
+func (e *creditPurchaseHandlerTestEnv) unknownReceivableSubAccountWithFeatures(t *testing.T, features []string) ledger.SubAccount {
+	t.Helper()
+
+	subAccount, err := e.CustomerAccounts.ReceivableAccount.GetSubAccountForRoute(t.Context(), ledger.CustomerReceivableRouteParams{
+		Currency:                       e.CurrencyReference(),
+		Features:                       features,
+		CostBasis:                      nil,
+		TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusOpen,
+	})
+	require.NoError(t, err)
+
+	return subAccount
+}
+
+func (e *creditPurchaseHandlerTestEnv) unknownAccruedSubAccount(t *testing.T) ledger.SubAccount {
+	t.Helper()
+
+	subAccount, err := e.CustomerAccounts.AccruedAccount.GetSubAccountForRoute(t.Context(), ledger.CustomerAccruedRouteParams{
+		Currency:  e.CurrencyReference(),
+		CostBasis: nil,
+	})
+	require.NoError(t, err)
+
+	return subAccount
+}
+
+func (e *creditPurchaseHandlerTestEnv) accruedSubAccount(t *testing.T, costBasis alpacadecimal.Decimal) ledger.SubAccount {
+	t.Helper()
+
+	subAccount, err := e.CustomerAccounts.AccruedAccount.GetSubAccountForRoute(t.Context(), ledger.CustomerAccruedRouteParams{
+		Currency:  e.CurrencyReference(),
+		CostBasis: &costBasis,
+	})
+	require.NoError(t, err)
+
+	return subAccount
+}
+
+func (e *creditPurchaseHandlerTestEnv) receivableSubAccount(t *testing.T, costBasis alpacadecimal.Decimal) ledger.SubAccount {
+	t.Helper()
+
+	return e.receivableSubAccountWithFeatures(t, costBasis, nil)
+}
+
+func (e *creditPurchaseHandlerTestEnv) receivableSubAccountWithFeatures(t *testing.T, costBasis alpacadecimal.Decimal, features []string) ledger.SubAccount {
+	t.Helper()
+
+	subAccount, err := e.CustomerAccounts.ReceivableAccount.GetSubAccountForRoute(t.Context(), ledger.CustomerReceivableRouteParams{
+		Currency:                       e.CurrencyReference(),
+		Features:                       features,
+		CostBasis:                      &costBasis,
+		TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusOpen,
+	})
+	require.NoError(t, err)
+
+	return subAccount
+}
+
+func (e *creditPurchaseHandlerTestEnv) authorizedReceivableSubAccount(t *testing.T, costBasis alpacadecimal.Decimal) ledger.SubAccount {
+	t.Helper()
+
+	subAccount, err := e.CustomerAccounts.ReceivableAccount.GetSubAccountForRoute(t.Context(), ledger.CustomerReceivableRouteParams{
+		Currency:                       e.CurrencyReference(),
+		CostBasis:                      &costBasis,
+		TransactionAuthorizationStatus: ledger.TransactionAuthorizationStatusAuthorized,
+	})
+	require.NoError(t, err)
+
+	return subAccount
+}
+
+func (e *creditPurchaseHandlerTestEnv) washSubAccount(t *testing.T, costBasis alpacadecimal.Decimal) ledger.SubAccount {
+	t.Helper()
+
+	subAccount, err := e.BusinessAccounts.WashAccount.GetSubAccountForRoute(t.Context(), ledger.BusinessRouteParams{
+		Currency:  e.CurrencyReference(),
+		CostBasis: &costBasis,
+	})
+	require.NoError(t, err)
+
+	return subAccount
+}
+
+func (e *creditPurchaseHandlerTestEnv) sumBalance(t *testing.T, subAccount ledger.SubAccount) alpacadecimal.Decimal {
+	return e.SumBalance(t, subAccount)
+}
+
+func (e *creditPurchaseHandlerTestEnv) sumBalanceAsOf(t *testing.T, subAccount ledger.SubAccount, asOf time.Time) alpacadecimal.Decimal {
+	t.Helper()
+
+	balance, err := e.Deps.HistoricalLedger.GetSubAccountBalance(t.Context(), subAccount, ledger.BalanceQuery{
+		AsOf: &asOf,
+	})
+	require.NoError(t, err)
+
+	return balance
+}
+
+func (e *creditPurchaseHandlerTestEnv) breakageRows(t *testing.T, groupID string) []*entdb.LedgerBreakageRecord {
+	t.Helper()
+
+	rows, err := e.DB.LedgerBreakageRecord.Query().
+		Where(
+			ledgerbreakagerecorddb.Namespace(e.Namespace),
+			ledgerbreakagerecorddb.BreakageTransactionGroupID(groupID),
+		).
+		Order(
+			ledgerbreakagerecorddb.ByCreatedAt(),
+			ledgerbreakagerecorddb.ByID(),
+		).
+		All(t.Context())
+	require.NoError(t, err)
+
+	return rows
+}
+
+func (e *creditPurchaseHandlerTestEnv) createAdvanceExposure(t *testing.T, amount alpacadecimal.Decimal) {
+	t.Helper()
+
+	e.createAdvanceExposureWithFeatures(t, amount, nil)
+}
+
+func (e *creditPurchaseHandlerTestEnv) createAdvanceExposureWithFeatures(t *testing.T, amount alpacadecimal.Decimal, features []string) {
+	t.Helper()
+
+	e.createAdvanceExposureForSpend(t, amount, features, nil)
+}
+
+func (e *creditPurchaseHandlerTestEnv) createAdvanceExposureForSpend(t *testing.T, amount alpacadecimal.Decimal, features []string, spendChargeID *string) {
+	t.Helper()
+	e.createAdvance(t, advanceExposureInput{Currency: e.currency, Amount: amount, Features: features, SpendChargeID: spendChargeID})
+}
+
+type advanceExposureInput struct {
+	Currency      currencies.Currency
+	Amount        alpacadecimal.Decimal
+	Features      []string
+	SpendChargeID *string
+	TaxCode       *string
+}
+
+// createAdvance persists the original journal with its uncovered lineage.
+// Nil spend provenance exercises legacy entries through that same lineage path.
+func (e *creditPurchaseHandlerTestEnv) createAdvance(t *testing.T, input advanceExposureInput) {
+	t.Helper()
+	ctx := t.Context()
+	inputs, err := transactions.ResolveTransactions(ctx, transactions.ResolverDependencies{
+		AccountService: e.Deps.ResolversService,
+		AccountCatalog: e.Deps.AccountService,
+		BalanceQuerier: e.Deps.HistoricalLedger,
+	}, transactions.ResolutionScope{CustomerID: e.CustomerID, Namespace: e.Namespace},
+		transactions.IssueCustomerReceivableTemplate{
+			At: e.Now(), Amount: input.Amount, Currency: input.Currency.Reference(),
+			Features: input.Features, SpendChargeID: input.SpendChargeID,
+		},
+		transactions.TransferCustomerFBOAdvanceToAccruedTemplate{
+			At: e.Now(), Amount: input.Amount, Currency: input.Currency.Reference(),
+			Features: input.Features, SpendChargeID: input.SpendChargeID, TaxCode: input.TaxCode,
+		},
+	)
+	require.NoError(t, err)
+	group, err := e.Deps.HistoricalLedger.CommitGroup(ctx, transactions.GroupInputs(e.Namespace, nil, inputs...))
+	require.NoError(t, err)
+
+	chargeID := lo.FromPtrOr(input.SpendChargeID, ulid.Make().String())
+	_, err = e.DB.Charge.Create().SetID(chargeID).SetNamespace(e.Namespace).SetType(meta.ChargeTypeUsageBased).Save(ctx)
+	require.NoError(t, err)
+	realizationID := ulid.Make().String()
+	require.NoError(t, e.lineage.CreateInitialLineages(ctx, lineage.CreateInitialLineagesInput{
+		Namespace: e.Namespace, CustomerID: e.CustomerID.ID, ChargeID: chargeID,
+		Currency: input.Currency, Features: input.Features,
+		Realizations: creditrealization.Realizations{{CreateInput: creditrealization.CreateInput{
+			ID: realizationID, Type: creditrealization.TypeAllocation, Amount: input.Amount,
+			ServicePeriod:     timeutil.ClosedPeriod{From: e.Now(), To: e.Now()},
+			LedgerTransaction: ledgertransaction.GroupReference{TransactionGroupID: group.ID().ID},
+			Annotations:       creditrealization.LineageAnnotations(creditrealization.LineageOriginKindAdvance),
+		}}},
+	}))
+	e.originalAdvanceGroups[realizationID] = group.ID().ID
+}
+
+// grantCredits follows the service's atomic load, grant, and lineage-persistence
+// sequence, so repeated purchases observe the persisted remainder.
+func (e *creditPurchaseHandlerTestEnv) grantCredits(t *testing.T, charge chargecreditpurchase.Charge) (chargecreditpurchase.CreditGrantResult, error) {
+	t.Helper()
+	return transaction.Run(t.Context(), enttx.NewCreator(e.DB), func(ctx context.Context) (chargecreditpurchase.CreditGrantResult, error) {
+		roots, err := e.lineage.LoadLineagesByCustomer(ctx, lineage.LoadLineagesByCustomerInput{
+			Namespace: e.Namespace, CustomerID: e.CustomerID.ID, Currency: charge.Intent.Currency.Reference(),
+			OriginKind:        lo.ToPtr(creditrealization.LineageOriginKindAdvance),
+			HasActiveSegments: true,
+			SegmentState:      lo.ToPtr(creditrealization.LineageSegmentStateAdvanceUncovered),
+			FeatureFilters:    charge.Intent.FeatureFilters.Normalize(),
+		})
+		if err != nil {
+			return chargecreditpurchase.CreditGrantResult{}, err
+		}
+		// The charge service hydrates this reference from allocation rows. These
+		// handler fixtures retain the groups returned when creating each advance.
+		for i := range roots {
+			roots[i].OriginalTransactionGroupID = e.originalAdvanceGroups[roots[i].RootRealizationID]
+		}
+		input := chargecreditpurchase.CreditGrantInput{Charge: charge, AdvanceLineages: roots}
+		var result chargecreditpurchase.CreditGrantResult
+		if charge.Intent.Settlement.Type() == chargecreditpurchase.SettlementTypePromotional {
+			result, err = e.handler.OnPromotionalCreditPurchase(ctx, input)
+		} else {
+			result, err = e.handler.OnCreditPurchaseInitiated(ctx, input)
+		}
+		if err != nil || result.TransactionGroupID == "" {
+			return result, err
+		}
+		err = e.lineage.BackfillAdvanceLineageSegments(ctx, lineage.BackfillAdvanceLineageSegmentsInput{
+			Namespace: e.Namespace, CustomerID: e.CustomerID.ID, Currency: charge.Intent.Currency,
+			Amount: charge.Intent.CreditAmount, FeatureFilters: charge.Intent.FeatureFilters.Normalize(),
+			BackingTransactionGroupID: result.TransactionGroupID, Allocations: result.BackfillAllocations,
+		})
+		return result, err
+	})
+}
+
+func (e *creditPurchaseHandlerTestEnv) transactionGroupAnnotations(t *testing.T, groupID string) models.Annotations {
+	t.Helper()
+
+	group, err := e.DB.LedgerTransactionGroup.Query().
+		Where(
+			ledgertransactiongroupdb.Namespace(e.Namespace),
+			ledgertransactiongroupdb.ID(groupID),
+		).
+		Only(t.Context())
+	require.NoError(t, err)
+
+	return group.Annotations
+}
+
+func (e *creditPurchaseHandlerTestEnv) transactionAnnotations(t *testing.T, groupID string) []models.Annotations {
+	t.Helper()
+
+	transactions, err := e.DB.LedgerTransaction.Query().
+		Where(
+			ledgertransactiondb.Namespace(e.Namespace),
+			ledgertransactiondb.GroupID(groupID),
+		).
+		Order(
+			ledgertransactiondb.ByCreatedAt(),
+			ledgertransactiondb.ByID(),
+		).
+		All(t.Context())
+	require.NoError(t, err)
+
+	out := make([]models.Annotations, 0, len(transactions))
+	for _, tx := range transactions {
+		out = append(out, tx.Annotations)
+	}
+
+	return out
+}
+
+func (e *creditPurchaseHandlerTestEnv) transactionBookedAtTimes(t *testing.T, groupID string) []time.Time {
+	t.Helper()
+
+	transactions, err := e.DB.LedgerTransaction.Query().
+		Where(
+			ledgertransactiondb.Namespace(e.Namespace),
+			ledgertransactiondb.GroupID(groupID),
+		).
+		Order(
+			ledgertransactiondb.ByCreatedAt(),
+			ledgertransactiondb.ByID(),
+		).
+		All(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, transactions, "expected at least one ledger transaction for group")
+
+	out := make([]time.Time, 0, len(transactions))
+	for _, tx := range transactions {
+		out = append(out, tx.BookedAt)
+	}
+
+	return out
+}
+
+func (e *creditPurchaseHandlerTestEnv) transactionBookedAtByTemplateCode(t *testing.T, groupID string) map[string][]time.Time {
+	t.Helper()
+
+	transactionRows, err := e.DB.LedgerTransaction.Query().
+		Where(
+			ledgertransactiondb.Namespace(e.Namespace),
+			ledgertransactiondb.GroupID(groupID),
+		).
+		Order(
+			ledgertransactiondb.ByCreatedAt(),
+			ledgertransactiondb.ByID(),
+		).
+		All(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, transactionRows, "expected at least one ledger transaction for group")
+
+	out := make(map[string][]time.Time, len(transactionRows))
+	for _, transactionRow := range transactionRows {
+		code, err := ledger.TransactionTemplateCodeFromAnnotations(transactionRow.Annotations)
+		require.NoError(t, err)
+		out[code] = append(out[code], transactionRow.BookedAt)
+	}
+
+	return out
+}
+
+func (e *creditPurchaseHandlerTestEnv) transactionTemplateCodes(t *testing.T, groupID string) []string {
+	t.Helper()
+
+	annotations := e.transactionAnnotations(t, groupID)
+	out := make([]string, 0, len(annotations))
+	for _, annotation := range annotations {
+		code, err := ledger.TransactionTemplateCodeFromAnnotations(annotation)
+		require.NoError(t, err)
+		out = append(out, code)
+	}
+
+	return out
+}
+
+func (e *creditPurchaseHandlerTestEnv) requireAccountSourceBucketAmounts(t *testing.T, accountID string, expected map[string]float64) {
+	t.Helper()
+
+	buckets, err := e.Deps.HistoricalLedger.GetBalanceBuckets(t.Context(), ledger.BalanceBucketQuery{
+		Namespace: e.Namespace,
+		Filters: ledger.Filters{
+			AccountID: &accountID,
+		},
+		GroupBy: []string{ledger.BalanceBucketGroupBySourceChargeID},
+	})
+	require.NoError(t, err)
+
+	actual := make(map[string]float64, len(buckets))
+	for _, bucket := range buckets {
+		if bucket.SettledAmount.IsZero() {
+			continue
+		}
+
+		actual[sourceChargeBucketKey(bucket.GroupByValues[ledger.BalanceBucketGroupBySourceChargeID])] = bucket.SettledAmount.InexactFloat64()
+	}
+
+	require.Equal(t, expected, actual)
+}
+
+func (e *creditPurchaseHandlerTestEnv) requireAccountSourceSpendBucketAmounts(t *testing.T, accountID string, expected map[string]float64) {
+	t.Helper()
+
+	buckets, err := e.Deps.HistoricalLedger.GetBalanceBuckets(t.Context(), ledger.BalanceBucketQuery{
+		Namespace: e.Namespace,
+		Filters: ledger.Filters{
+			AccountID: &accountID,
+		},
+		GroupBy: []string{
+			ledger.BalanceBucketGroupBySourceChargeID,
+			ledger.BalanceBucketGroupBySpendChargeID,
+		},
+	})
+	require.NoError(t, err)
+
+	actual := make(map[string]float64, len(buckets))
+	for _, bucket := range buckets {
+		if bucket.SettledAmount.IsZero() {
+			continue
+		}
+
+		actual[sourceSpendChargeKey(
+			bucket.GroupByValues[ledger.BalanceBucketGroupBySourceChargeID],
+			bucket.GroupByValues[ledger.BalanceBucketGroupBySpendChargeID],
+		)] = bucket.SettledAmount.InexactFloat64()
+	}
+
+	require.Equal(t, expected, actual)
+}
+
+func (e *creditPurchaseHandlerTestEnv) requireTransactionGroupEntriesSourceCharge(t *testing.T, groupID string, sourceChargeID string) {
+	t.Helper()
+
+	entries := e.TransactionGroupEntries(t, groupID)
+	require.NotEmpty(t, entries)
+
+	expectedIdentityKey, _ := ledger.EntryIdentityParts{
+		SourceChargeID: &sourceChargeID,
+	}.Text()
+
+	for _, entry := range entries {
+		require.NotNil(t, entry.SourceChargeID)
+		require.Equal(t, sourceChargeID, *entry.SourceChargeID)
+		require.Nil(t, entry.SpendChargeID)
+		require.Equal(t, string(expectedIdentityKey), entry.IdentityKey)
+	}
+}
+
+func sourceChargeBucketKey(sourceChargeID *string) string {
+	if sourceChargeID == nil {
+		return "<nil>"
+	}
+
+	return strings.TrimSpace(*sourceChargeID)
+}
+
+func sourceSpendChargeKey(sourceChargeID, spendChargeID *string) string {
+	return sourceChargeBucketKey(sourceChargeID) + "|" + sourceChargeBucketKey(spendChargeID)
+}
+
+func mustDecimal(t *testing.T, raw string) alpacadecimal.Decimal {
+	t.Helper()
+
+	value, err := alpacadecimal.NewFromString(raw)
+	require.NoError(t, err)
+
+	return value
+}

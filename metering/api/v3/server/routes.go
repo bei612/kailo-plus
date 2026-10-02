@@ -1,0 +1,626 @@
+package server
+
+import (
+	"net/http"
+
+	api "github.com/openmeterio/openmeter/api/v3"
+	"github.com/openmeterio/openmeter/api/v3/handlers/billinginvoices"
+	currencieshandler "github.com/openmeterio/openmeter/api/v3/handlers/currencies"
+	chargeshandler "github.com/openmeterio/openmeter/api/v3/handlers/customers/charges"
+	customerscreditshandler "github.com/openmeterio/openmeter/api/v3/handlers/customers/credits"
+	customersentitlementhandler "github.com/openmeterio/openmeter/api/v3/handlers/customers/entitlementaccess"
+	planhandler "github.com/openmeterio/openmeter/api/v3/handlers/plans"
+	planaddonshandler "github.com/openmeterio/openmeter/api/v3/handlers/plans/planaddons"
+	subscriptionhandler "github.com/openmeterio/openmeter/api/v3/handlers/subscriptions"
+	subscriptionaddonshandler "github.com/openmeterio/openmeter/api/v3/handlers/subscriptions/subscriptionaddons"
+	"github.com/openmeterio/openmeter/pkg/featuregate"
+	"github.com/openmeterio/openmeter/pkg/framework/commonhttp"
+)
+
+// Meters
+
+func (s *Server) CreateMeter(w http.ResponseWriter, r *http.Request) {
+	s.metersHandler.CreateMeter().ServeHTTP(w, r)
+}
+
+func (s *Server) GetMeter(w http.ResponseWriter, r *http.Request, meterId api.ULID) {
+	s.metersHandler.GetMeter().With(meterId).ServeHTTP(w, r)
+}
+
+func (s *Server) ListMeters(w http.ResponseWriter, r *http.Request, params api.ListMetersParams) {
+	s.metersHandler.ListMeters().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateMeter(w http.ResponseWriter, r *http.Request, meterId api.ULID) {
+	s.metersHandler.UpdateMeter().With(meterId).ServeHTTP(w, r)
+}
+
+func (s *Server) DeleteMeter(w http.ResponseWriter, r *http.Request, meterId api.ULID) {
+	s.metersHandler.DeleteMeter().With(meterId).ServeHTTP(w, r)
+}
+
+func (s *Server) QueryMeter(w http.ResponseWriter, r *http.Request, meterId api.ULID) {
+	// Content negotiation: Accept: text/csv switches to the CSV encoder.
+	// All other media types (including a missing Accept header) use JSON.
+	if mediaType, _ := commonhttp.GetMediaType(r); mediaType == "text/csv" {
+		s.metersHandler.QueryMeterCSV().With(meterId).ServeHTTP(w, r)
+		return
+	}
+
+	s.metersHandler.QueryMeter().With(meterId).ServeHTTP(w, r)
+}
+
+// Events
+
+func (s *Server) IngestMeteringEvents(w http.ResponseWriter, r *http.Request) {
+	s.eventsHandler.IngestEvents().ServeHTTP(w, r)
+}
+
+func (s *Server) ListMeteringEvents(w http.ResponseWriter, r *http.Request, params api.ListMeteringEventsParams) {
+	s.eventsHandler.ListMeteringEvents().With(params).ServeHTTP(w, r)
+}
+
+// Customers
+
+func (s *Server) CreateCustomer(w http.ResponseWriter, r *http.Request) {
+	s.customersHandler.CreateCustomer().ServeHTTP(w, r)
+}
+
+func (s *Server) GetCustomer(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	s.customersHandler.GetCustomer().With(customerId).ServeHTTP(w, r)
+}
+
+func (s *Server) ListCustomers(w http.ResponseWriter, r *http.Request, params api.ListCustomersParams) {
+	s.customersHandler.ListCustomers().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) UpsertCustomer(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	s.customersHandler.UpsertCustomer().With(customerId).ServeHTTP(w, r)
+}
+
+func (s *Server) DeleteCustomer(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	s.customersHandler.DeleteCustomer().With(customerId).ServeHTTP(w, r)
+}
+
+// Customers Entitlement Access
+
+func (s *Server) ListCustomerEntitlementAccess(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	s.customersEntitlementHandler.ListCustomerEntitlementAccess().With(customerId).ServeHTTP(w, r)
+}
+
+func (s *Server) GetCustomerEntitlementAccess(w http.ResponseWriter, r *http.Request, customerId api.ULID, featureKey api.ResourceKey, params api.GetCustomerEntitlementAccessParams) {
+	s.customersEntitlementHandler.GetCustomerEntitlementAccess().With(customersentitlementhandler.GetCustomerEntitlementAccessParams{
+		CustomerID: customerId,
+		FeatureKey: featureKey,
+		Params:     params,
+	}).ServeHTTP(w, r)
+}
+
+// Subscriptions
+
+func (s *Server) CreateSubscription(w http.ResponseWriter, r *http.Request) {
+	s.subscriptionsHandler.CreateSubscription().
+		Chain(featuregate.NewMiddleware[subscriptionhandler.CreateSubscriptionRequest, subscriptionhandler.CreateSubscriptionResponse](
+			s.NamespaceDecoder.GetNamespace,
+			s.FeatureGate,
+		)).ServeHTTP(w, r)
+}
+
+func (s *Server) ListSubscriptions(w http.ResponseWriter, r *http.Request, params api.ListSubscriptionsParams) {
+	s.subscriptionsHandler.ListSubscriptions().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) GetSubscription(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID) {
+	s.subscriptionsHandler.GetSubscription().With(subscriptionId).ServeHTTP(w, r)
+}
+
+func (s *Server) CancelSubscription(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID) {
+	s.subscriptionsHandler.CancelSubscription().With(subscriptionId).ServeHTTP(w, r)
+}
+
+func (s *Server) UnscheduleCancelation(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID) {
+	s.subscriptionsHandler.UnscheduleCancelation().With(subscriptionId).ServeHTTP(w, r)
+}
+
+func (s *Server) UnscheduleSubscription(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID) {
+	s.subscriptionsHandler.UnscheduleSubscription().With(subscriptionId).ServeHTTP(w, r)
+}
+
+func (s *Server) RestoreSubscription(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID) {
+	s.subscriptionsHandler.RestoreSubscription().With(subscriptionId).ServeHTTP(w, r)
+}
+
+func (s *Server) ChangeSubscription(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID) {
+	s.subscriptionsHandler.ChangeSubscription().
+		Chain(featuregate.NewMiddleware[subscriptionhandler.ChangeSubscriptionRequest, subscriptionhandler.ChangeSubscriptionResponse](
+			s.NamespaceDecoder.GetNamespace,
+			s.FeatureGate,
+		)).With(subscriptionId).ServeHTTP(w, r)
+}
+
+func (s *Server) MigrateSubscription(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID) {
+	s.subscriptionsHandler.MigrateSubscription().
+		Chain(featuregate.NewMiddleware[subscriptionhandler.MigrateSubscriptionRequest, subscriptionhandler.MigrateSubscriptionResponse](
+			s.NamespaceDecoder.GetNamespace,
+			s.FeatureGate,
+		)).With(subscriptionId).ServeHTTP(w, r)
+}
+
+func (s *Server) EditSubscription(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID) {
+	s.subscriptionsHandler.EditSubscription().With(subscriptionId).ServeHTTP(w, r)
+}
+
+// Subscription Addons
+func (s *Server) CreateSubscriptionAddon(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID) {
+	s.subscriptionAddonsHandler.CreateSubscriptionAddon().With(subscriptionId).ServeHTTP(w, r)
+}
+
+func (s *Server) ListSubscriptionAddons(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID, params api.ListSubscriptionAddonsParams) {
+	s.subscriptionAddonsHandler.ListSubscriptionAddons().With(subscriptionaddonshandler.ListSubscriptionAddonsParams{
+		SubscriptionID: subscriptionId,
+		Params:         params,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) GetSubscriptionAddon(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID, subscriptionAddonId api.ULID) {
+	s.subscriptionAddonsHandler.GetSubscriptionAddon().With(subscriptionaddonshandler.GetSubscriptionAddonParams{
+		SubscriptionID:      subscriptionId,
+		SubscriptionAddonID: subscriptionAddonId,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateSubscriptionAddon(w http.ResponseWriter, r *http.Request, subscriptionId api.ULID, subscriptionAddonId api.ULID) {
+	s.subscriptionAddonsHandler.UpdateSubscriptionAddon().With(subscriptionaddonshandler.UpdateSubscriptionAddonParams{
+		SubscriptionID:      subscriptionId,
+		SubscriptionAddonID: subscriptionAddonId,
+	}).ServeHTTP(w, r)
+}
+
+// Apps
+
+func (s *Server) ListApps(w http.ResponseWriter, r *http.Request, params api.ListAppsParams) {
+	s.appsHandler.ListApps().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) GetApp(w http.ResponseWriter, r *http.Request, appId api.ULID) {
+	s.appsHandler.GetApp().With(appId).ServeHTTP(w, r)
+}
+
+func (s *Server) UninstallApp(w http.ResponseWriter, r *http.Request, appId api.ULID) {
+	s.appsHandler.UninstallApp().With(appId).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateApp(w http.ResponseWriter, r *http.Request, appId api.ULID) {
+	s.appsHandler.UpdateApp().With(appId).ServeHTTP(w, r)
+}
+
+func (s *Server) ListAppCatalog(w http.ResponseWriter, r *http.Request, params api.ListAppCatalogParams) {
+	s.appsHandler.ListAppCatalog().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) GetAppCatalogItem(w http.ResponseWriter, r *http.Request, pType api.BillingAppType) {
+	s.appsHandler.GetAppCatalog().With(pType).ServeHTTP(w, r)
+}
+
+func (s *Server) InstallApp(w http.ResponseWriter, r *http.Request) {
+	s.appsHandler.InstallApp().ServeHTTP(w, r)
+}
+
+// Billing Profiles
+
+func (s *Server) ListBillingProfiles(w http.ResponseWriter, r *http.Request, params api.ListBillingProfilesParams) {
+	s.billingProfilesHandler.ListBillingProfiles().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateBillingProfile(w http.ResponseWriter, r *http.Request) {
+	s.billingProfilesHandler.CreateBillingProfile().ServeHTTP(w, r)
+}
+
+func (s *Server) DeleteBillingProfile(w http.ResponseWriter, r *http.Request, id api.ULID) {
+	s.billingProfilesHandler.DeleteBillingProfile().With(id).ServeHTTP(w, r)
+}
+
+func (s *Server) GetBillingProfile(w http.ResponseWriter, r *http.Request, id api.ULID) {
+	s.billingProfilesHandler.GetBillingProfile().With(id).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateBillingProfile(w http.ResponseWriter, r *http.Request, id api.ULID) {
+	s.billingProfilesHandler.UpdateBillingProfile().With(id).ServeHTTP(w, r)
+}
+
+// Billing Invoices
+
+func (s *Server) ListInvoices(w http.ResponseWriter, r *http.Request, params api.ListInvoicesParams) {
+	s.billingInvoicesHandler.ListBillingInvoices().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) GetInvoice(w http.ResponseWriter, r *http.Request, invoiceId api.ULID) {
+	s.billingInvoicesHandler.GetBillingInvoice().With(invoiceId).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateInvoice(w http.ResponseWriter, r *http.Request, invoiceId api.ULID) {
+	s.billingInvoicesHandler.UpdateBillingInvoice().With(invoiceId).ServeHTTP(w, r)
+}
+
+func (s *Server) DeleteInvoice(w http.ResponseWriter, r *http.Request, invoiceId api.ULID) {
+	s.billingInvoicesHandler.DeleteBillingInvoice().With(invoiceId).ServeHTTP(w, r)
+}
+
+func (s *Server) AdvanceInvoice(w http.ResponseWriter, r *http.Request, invoiceId api.ULID) {
+	s.billingInvoicesHandler.ProgressInvoice(billinginvoices.InvoiceProgressActionAdvance).
+		With(invoiceId).ServeHTTP(w, r)
+}
+
+func (s *Server) ApproveInvoice(w http.ResponseWriter, r *http.Request, invoiceId api.ULID) {
+	s.billingInvoicesHandler.ProgressInvoice(billinginvoices.InvoiceProgressActionApprove).
+		With(invoiceId).ServeHTTP(w, r)
+}
+
+func (s *Server) RetryInvoice(w http.ResponseWriter, r *http.Request, invoiceId api.ULID) {
+	s.billingInvoicesHandler.ProgressInvoice(billinginvoices.InvoiceProgressActionRetry).
+		With(invoiceId).ServeHTTP(w, r)
+}
+
+func (s *Server) SnapshotQuantitiesInvoice(w http.ResponseWriter, r *http.Request, invoiceId api.ULID) {
+	s.billingInvoicesHandler.ProgressInvoice(billinginvoices.InvoiceProgressActionSnapshotQuantities).
+		With(invoiceId).ServeHTTP(w, r)
+}
+
+// Customer Billing
+
+func (s *Server) GetCustomerBilling(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	s.customersBillingHandler.GetCustomerBilling().With(customerId).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateCustomerBilling(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	s.customersBillingHandler.UpdateCustomerBilling().With(customerId).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateCustomerBillingAppData(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	s.customersBillingHandler.UpdateCustomerBillingAppData().With(customerId).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateCustomerStripeCheckoutSession(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	s.customersBillingHandler.CreateCustomerStripeCheckoutSession().With(customerId).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateCustomerStripePortalSession(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	s.customersBillingHandler.CreateCustomerStripePortalSession().With(customerId).ServeHTTP(w, r)
+}
+
+// Tax Codes
+
+func (s *Server) ListTaxCodes(w http.ResponseWriter, r *http.Request, params api.ListTaxCodesParams) {
+	s.taxcodesHandler.ListTaxCodes().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateTaxCode(w http.ResponseWriter, r *http.Request) {
+	s.taxcodesHandler.CreateTaxCode().ServeHTTP(w, r)
+}
+
+func (s *Server) DeleteTaxCode(w http.ResponseWriter, r *http.Request, taxCodeId api.ULID) {
+	s.taxcodesHandler.DeleteTaxCode().With(taxCodeId).ServeHTTP(w, r)
+}
+
+func (s *Server) GetTaxCode(w http.ResponseWriter, r *http.Request, taxCodeId api.ULID) {
+	s.taxcodesHandler.GetTaxCode().With(taxCodeId).ServeHTTP(w, r)
+}
+
+func (s *Server) UpsertTaxCode(w http.ResponseWriter, r *http.Request, taxCodeId api.ULID) {
+	s.taxcodesHandler.UpdateTaxCode().With(taxCodeId).ServeHTTP(w, r)
+}
+
+// Currencies
+
+func (s *Server) ListCurrencies(w http.ResponseWriter, r *http.Request, params api.ListCurrenciesParams) {
+	s.currenciesHandler.ListCurrencies().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateCustomCurrency(w http.ResponseWriter, r *http.Request) {
+	s.currenciesHandler.CreateCurrency().ServeHTTP(w, r)
+}
+
+func (s *Server) CreateCostBasis(w http.ResponseWriter, r *http.Request, currencyId api.ULID) {
+	s.currenciesHandler.CreateCostBasis().With(currencyId).ServeHTTP(w, r)
+}
+
+func (s *Server) ListCostBases(w http.ResponseWriter, r *http.Request, currencyId api.ULID, params api.ListCostBasesParams) {
+	s.currenciesHandler.ListCostBases().With(currencieshandler.ListCostBasesArgs{CurrencyID: currencyId, Params: params}).ServeHTTP(w, r)
+}
+
+func (s *Server) GetCustomCurrency(w http.ResponseWriter, r *http.Request, currencyId api.ULID) {
+	s.currenciesHandler.GetCurrency().With(currencyId).ServeHTTP(w, r)
+}
+
+// Features
+
+func (s *Server) ListFeatures(w http.ResponseWriter, r *http.Request, params api.ListFeaturesParams) {
+	s.featuresHandler.ListFeatures().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateFeature(w http.ResponseWriter, r *http.Request) {
+	s.featuresHandler.CreateFeature().ServeHTTP(w, r)
+}
+
+func (s *Server) GetFeature(w http.ResponseWriter, r *http.Request, featureId api.ULID) {
+	s.featuresHandler.GetFeature().With(featureId).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateFeature(w http.ResponseWriter, r *http.Request, featureId api.ULID) {
+	s.featuresHandler.UpdateFeature().With(featureId).ServeHTTP(w, r)
+}
+
+func (s *Server) DeleteFeature(w http.ResponseWriter, r *http.Request, featureId api.ULID) {
+	s.featuresHandler.DeleteFeature().With(featureId).ServeHTTP(w, r)
+}
+
+// Feature Cost
+
+func (s *Server) QueryFeatureCost(w http.ResponseWriter, r *http.Request, featureId api.ULID) {
+	s.featureCostHandler.QueryFeatureCost().With(featureId).ServeHTTP(w, r)
+}
+
+// LLM Cost Prices
+
+func (s *Server) ListLlmCostPrices(w http.ResponseWriter, r *http.Request, params api.ListLlmCostPricesParams) {
+	s.llmcostHandler.ListPrices().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) GetLlmCostPrice(w http.ResponseWriter, r *http.Request, priceId api.ULID) {
+	s.llmcostHandler.GetPrice().With(priceId).ServeHTTP(w, r)
+}
+
+// LLM Cost Overrides
+
+func (s *Server) ListLlmCostOverrides(w http.ResponseWriter, r *http.Request, params api.ListLlmCostOverridesParams) {
+	s.llmcostHandler.ListOverrides().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateLlmCostOverride(w http.ResponseWriter, r *http.Request) {
+	s.llmcostHandler.CreateOverride().ServeHTTP(w, r)
+}
+
+func (s *Server) DeleteLlmCostOverride(w http.ResponseWriter, r *http.Request, priceId api.ULID) {
+	s.llmcostHandler.DeleteOverride().With(priceId).ServeHTTP(w, r)
+}
+
+// Plans
+
+func (s *Server) ListPlans(w http.ResponseWriter, r *http.Request, params api.ListPlansParams) {
+	s.plansHandler.ListPlans().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) CreatePlan(w http.ResponseWriter, r *http.Request) {
+	s.plansHandler.CreatePlan().Chain(featuregate.NewMiddleware[planhandler.CreatePlanRequest, planhandler.CreatePlanResponse](
+		s.NamespaceDecoder.GetNamespace,
+		s.FeatureGate,
+	)).ServeHTTP(w, r)
+}
+
+func (s *Server) GetPlan(w http.ResponseWriter, r *http.Request, planId api.ULID) {
+	s.plansHandler.GetPlan().With(planId).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdatePlan(w http.ResponseWriter, r *http.Request, planId api.ULID) {
+	s.plansHandler.UpdatePlan().Chain(featuregate.NewMiddleware[planhandler.UpdatePlanRequest, planhandler.UpdatePlanResponse](
+		s.NamespaceDecoder.GetNamespace,
+		s.FeatureGate,
+	)).With(planId).ServeHTTP(w, r)
+}
+
+func (s *Server) DeletePlan(w http.ResponseWriter, r *http.Request, planId api.ULID) {
+	s.plansHandler.DeletePlan().With(planId).ServeHTTP(w, r)
+}
+
+func (s *Server) ArchivePlan(w http.ResponseWriter, r *http.Request, planId api.ULID) {
+	s.plansHandler.ArchivePlan().With(planId).ServeHTTP(w, r)
+}
+
+func (s *Server) PublishPlan(w http.ResponseWriter, r *http.Request, planId api.ULID) {
+	s.plansHandler.PublishPlan().With(planId).ServeHTTP(w, r)
+}
+
+// Addons
+
+func (s *Server) ListAddons(w http.ResponseWriter, r *http.Request, params api.ListAddonsParams) {
+	s.addonHandler.ListAddons().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateAddon(w http.ResponseWriter, r *http.Request) {
+	s.addonHandler.CreateAddon().ServeHTTP(w, r)
+}
+
+func (s *Server) GetAddon(w http.ResponseWriter, r *http.Request, addonId api.ULID) {
+	s.addonHandler.GetAddon().With(addonId).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateAddon(w http.ResponseWriter, r *http.Request, addonId api.ULID) {
+	s.addonHandler.UpdateAddon().With(addonId).ServeHTTP(w, r)
+}
+
+func (s *Server) DeleteAddon(w http.ResponseWriter, r *http.Request, addonId api.ULID) {
+	s.addonHandler.DeleteAddon().With(addonId).ServeHTTP(w, r)
+}
+
+func (s *Server) ArchiveAddon(w http.ResponseWriter, r *http.Request, addonId api.ULID) {
+	s.addonHandler.ArchiveAddon().With(addonId).ServeHTTP(w, r)
+}
+
+func (s *Server) PublishAddon(w http.ResponseWriter, r *http.Request, addonId api.ULID) {
+	s.addonHandler.PublishAddon().With(addonId).ServeHTTP(w, r)
+}
+
+// Plan Addons
+
+func (s *Server) ListPlanAddons(w http.ResponseWriter, r *http.Request, planId api.ULID, params api.ListPlanAddonsParams) {
+	s.planAddonsHandler.ListPlanAddons().With(planaddonshandler.ListPlanAddonsParams{
+		PlanID: planId,
+		Params: params,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) CreatePlanAddon(w http.ResponseWriter, r *http.Request, planId api.ULID) {
+	s.planAddonsHandler.CreatePlanAddon().With(planId).ServeHTTP(w, r)
+}
+
+func (s *Server) GetPlanAddon(w http.ResponseWriter, r *http.Request, planId api.ULID, planAddonId api.ULID) {
+	s.planAddonsHandler.GetPlanAddon().With(planaddonshandler.GetPlanAddonParams{
+		PlanID:      planId,
+		PlanAddonID: planAddonId,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdatePlanAddon(w http.ResponseWriter, r *http.Request, planId api.ULID, planAddonId api.ULID) {
+	s.planAddonsHandler.UpdatePlanAddon().With(planaddonshandler.UpdatePlanAddonParams{
+		PlanID:      planId,
+		PlanAddonID: planAddonId,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) DeletePlanAddon(w http.ResponseWriter, r *http.Request, planId api.ULID, planAddonId api.ULID) {
+	s.planAddonsHandler.DeletePlanAddon().With(planaddonshandler.DeletePlanAddonParams{
+		PlanID:      planId,
+		PlanAddonID: planAddonId,
+	}).ServeHTTP(w, r)
+}
+
+// Credits
+
+var unimplemented = api.Unimplemented{}
+
+func (s *Server) GetCustomerCreditBalance(w http.ResponseWriter, r *http.Request, customerId api.ULID, params api.GetCustomerCreditBalanceParams) {
+	if !s.Credits.Enabled || s.customersCreditsHandler == nil {
+		unimplemented.GetCustomerCreditBalance(w, r, customerId, params)
+		return
+	}
+
+	s.customersCreditsHandler.GetCustomerCreditBalance().With(customerscreditshandler.GetCustomerCreditBalanceParams{
+		CustomerID: customerId,
+		Params:     params,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) ListCreditGrants(w http.ResponseWriter, r *http.Request, customerId api.ULID, params api.ListCreditGrantsParams) {
+	if !s.Credits.Enabled || s.customersCreditsHandler == nil || s.CreditGrantService == nil {
+		unimplemented.ListCreditGrants(w, r, customerId, params)
+		return
+	}
+
+	s.customersCreditsHandler.ListCreditGrants().With(customerscreditshandler.ListCreditGrantsParams{
+		CustomerID: customerId,
+		Params:     params,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateCreditGrant(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	if !s.Credits.Enabled || s.customersCreditsHandler == nil || s.CreditGrantService == nil {
+		unimplemented.CreateCreditGrant(w, r, customerId)
+		return
+	}
+
+	s.customersCreditsHandler.CreateCreditGrant().With(customerscreditshandler.CreateCreditGrantParams{
+		CustomerID: customerId,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) GetCreditGrant(w http.ResponseWriter, r *http.Request, customerId api.ULID, creditGrantId api.ULID) {
+	if !s.Credits.Enabled || s.customersCreditsHandler == nil || s.CreditGrantService == nil {
+		unimplemented.GetCreditGrant(w, r, customerId, creditGrantId)
+		return
+	}
+
+	s.customersCreditsHandler.GetCreditGrant().With(customerscreditshandler.GetCreditGrantParams{
+		CustomerID:    customerId,
+		CreditGrantID: creditGrantId,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateCreditAdjustment(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	unimplemented.CreateCreditAdjustment(w, r, customerId)
+}
+
+func (s *Server) VoidCreditGrant(w http.ResponseWriter, r *http.Request, customerId api.ULID, creditGrantId api.ULID) {
+	if !s.Credits.Enabled || s.customersCreditsHandler == nil || s.CreditGrantService == nil {
+		unimplemented.VoidCreditGrant(w, r, customerId, creditGrantId)
+		return
+	}
+
+	s.customersCreditsHandler.VoidCreditGrant().With(customerscreditshandler.VoidCreditGrantParams{
+		CustomerID:    customerId,
+		CreditGrantID: creditGrantId,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateCreditGrantExternalSettlement(w http.ResponseWriter, r *http.Request, customerId api.ULID, creditGrantId api.ULID) {
+	if !s.Credits.Enabled || s.customersCreditsHandler == nil || s.CreditGrantService == nil {
+		unimplemented.UpdateCreditGrantExternalSettlement(w, r, customerId, creditGrantId)
+		return
+	}
+
+	s.customersCreditsHandler.UpdateCreditGrantExternalSettlement().With(customerscreditshandler.UpdateCreditGrantExternalSettlementParams{
+		CustomerID:    customerId,
+		CreditGrantID: creditGrantId,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) ListCreditTransactions(w http.ResponseWriter, r *http.Request, customerId api.ULID, params api.ListCreditTransactionsParams) {
+	if !s.Credits.Enabled || s.customersCreditsHandler == nil || s.Ledger == nil {
+		unimplemented.ListCreditTransactions(w, r, customerId, params)
+		return
+	}
+
+	s.customersCreditsHandler.ListCreditTransactions().With(customerscreditshandler.ListCreditTransactionsParams{
+		CustomerID: customerId,
+		Params:     params,
+	}).ServeHTTP(w, r)
+}
+
+// Charges
+
+func (s *Server) ListCharges(w http.ResponseWriter, r *http.Request, params api.ListChargesParams) {
+	if s.chargesHandler == nil {
+		unimplemented.ListCharges(w, r, params)
+		return
+	}
+
+	s.chargesHandler.ListCharges().With(params).ServeHTTP(w, r)
+}
+
+func (s *Server) ListCustomerCharges(w http.ResponseWriter, r *http.Request, customerId api.ULID, params api.ListCustomerChargesParams) {
+	if s.chargesHandler == nil {
+		unimplemented.ListCustomerCharges(w, r, customerId, params)
+		return
+	}
+
+	s.chargesHandler.ListCustomerCharges().With(chargeshandler.ListCustomerChargesParams{
+		CustomerID: customerId,
+		Params:     params,
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) CreateCustomerCharges(w http.ResponseWriter, r *http.Request, customerId api.ULID) {
+	if s.chargesHandler == nil {
+		unimplemented.CreateCustomerCharges(w, r, customerId)
+		return
+	}
+
+	s.chargesHandler.CreateCustomerCharge().With(chargeshandler.CreateCustomerChargesParams{
+		CustomerID: customerId,
+	}).ServeHTTP(w, r)
+}
+
+// Organization Default Tax Codes
+
+func (s *Server) GetOrganizationDefaultTaxCodes(w http.ResponseWriter, r *http.Request) {
+	s.taxcodesHandler.GetOrganizationDefaultTaxCodes().ServeHTTP(w, r)
+}
+
+func (s *Server) UpdateOrganizationDefaultTaxCodes(w http.ResponseWriter, r *http.Request) {
+	s.taxcodesHandler.UpsertOrganizationDefaultTaxCodes().ServeHTTP(w, r)
+}
+
+// EntitlementAccess
+
+func (s *Server) QueryEntitlementAccess(w http.ResponseWriter, r *http.Request, params api.QueryEntitlementAccessParams) {
+	s.entitlementAccessHandler.QueryEntitlementAccess().With(params).ServeHTTP(w, r)
+}

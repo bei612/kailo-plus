@@ -1,0 +1,208 @@
+package usagebased
+
+import (
+	"cmp"
+	"errors"
+	"fmt"
+	"slices"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	chargedetailedline "github.com/openmeterio/openmeter/openmeter/billing/charges/models/detailedline"
+	"github.com/openmeterio/openmeter/openmeter/billing/models/creditsapplied"
+	"github.com/openmeterio/openmeter/openmeter/billing/models/stddetailedline"
+	"github.com/openmeterio/openmeter/openmeter/billing/models/totals"
+	billingrating "github.com/openmeterio/openmeter/openmeter/billing/rating"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+type DetailedLine struct {
+	chargedetailedline.Base
+
+	PricerReferenceID string  `json:"pricerReferenceID"`
+	CorrectsRunID     *string `json:"correctsRunID,omitempty"`
+}
+
+func (l DetailedLine) Clone() DetailedLine {
+	l.Base = l.Base.Clone()
+
+	if l.CorrectsRunID != nil {
+		l.CorrectsRunID = lo.ToPtr(*l.CorrectsRunID)
+	}
+
+	return l
+}
+
+func (l DetailedLine) Validate() error {
+	var errs []error
+
+	if err := l.Base.Validate(stddetailedline.IgnoreQuantityChecks()); err != nil {
+		errs = append(errs, err)
+	}
+
+	if l.PricerReferenceID == "" {
+		errs = append(errs, errors.New("pricer reference id must not be empty"))
+	}
+
+	if l.CorrectsRunID != nil && *l.CorrectsRunID == "" {
+		errs = append(errs, errors.New("corrects run id must not be empty"))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type DetailedLines []DetailedLine
+
+type UpsertRunDetailedLinesInput struct {
+	ChargeID meta.ChargeID
+	RunID    RealizationRunID
+
+	DetailedLines                         DetailedLines
+	DetailedLinesIncludeCreditAllocations bool
+}
+
+func (i UpsertRunDetailedLinesInput) Validate() error {
+	var errs []error
+
+	if err := i.ChargeID.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("charge ID: %w", err))
+	}
+
+	if err := i.RunID.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("run ID: %w", err))
+	}
+
+	if err := i.DetailedLines.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("detailed lines: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+func NewDetailedLinesFromBilling(
+	defaultServicePeriod timeutil.ClosedPeriod,
+	lines billingrating.DetailedLines,
+) DetailedLines {
+	return lo.Map(lines, func(line billingrating.DetailedLine, idx int) DetailedLine {
+		period := defaultServicePeriod
+		if line.Period != nil {
+			period = *line.Period
+		}
+
+		category := line.Category
+		if category == "" {
+			category = stddetailedline.CategoryRegular
+		}
+
+		return DetailedLine{
+			PricerReferenceID: line.ChildUniqueReferenceID,
+			Base: chargedetailedline.Base{
+				AmountDiscounts: chargedetailedline.MapAmountDiscountsFromBilling(line.AmountDiscounts),
+				Base: stddetailedline.Base{
+					ManagedResource: models.NewManagedResource(models.ManagedResourceInput{
+						Name: line.Name,
+					}),
+					ServicePeriod:          period,
+					Index:                  lo.ToPtr(idx),
+					ChildUniqueReferenceID: line.ChildUniqueReferenceID,
+					PaymentTerm:            lo.CoalesceOrEmpty(line.PaymentTerm, productcatalog.InArrearsPaymentTerm),
+					PerUnitAmount:          line.PerUnitAmount,
+					Quantity:               line.Quantity,
+					Category:               category,
+					CreditsApplied:         line.CreditsApplied,
+					Totals:                 line.Totals,
+				},
+			},
+		}
+	})
+}
+
+func (l DetailedLines) Clone() DetailedLines {
+	return lo.Map(l, func(dl DetailedLine, _ int) DetailedLine {
+		return dl.Clone()
+	})
+}
+
+func (l DetailedLines) mapBase(fn func(stddetailedline.Bases) (stddetailedline.Bases, error)) (DetailedLines, error) {
+	out := l.Clone()
+	bases, err := fn(lo.Map(out, func(line DetailedLine, _ int) stddetailedline.Base {
+		return line.Base.Base
+	}))
+	if err != nil {
+		return nil, err
+	}
+
+	for idx := range out {
+		out[idx].Base.Base = bases[idx]
+	}
+
+	return out, nil
+}
+
+// WithCreditsApplied returns a cloned run-detail snapshot with the authoritative
+// run credit realizations applied. Existing applications are reversed first, so
+// rebuilding a persisted credit-then-invoice snapshot is retry-safe.
+func (l DetailedLines) WithCreditsApplied(
+	creditsApplied creditsapplied.CreditsApplied,
+	currency currencyx.Currency,
+) (DetailedLines, error) {
+	return l.mapBase(func(bases stddetailedline.Bases) (stddetailedline.Bases, error) {
+		return bases.WithCreditsApplied(creditsApplied, currency)
+	})
+}
+
+func (l DetailedLines) Sort() {
+	slices.SortStableFunc(l, compareDetailedLineForOutput)
+}
+
+func compareDetailedLineForOutput(a, b DetailedLine) int {
+	if c := a.ServicePeriod.From.Compare(b.ServicePeriod.From); c != 0 {
+		return c
+	}
+
+	if a.Index != nil && b.Index == nil {
+		return -1
+	}
+
+	if a.Index == nil && b.Index != nil {
+		return 1
+	}
+
+	if a.Index != nil && b.Index != nil {
+		if c := cmp.Compare(*a.Index, *b.Index); c != 0 {
+			return c
+		}
+	}
+
+	if c := cmp.Compare(a.ChildUniqueReferenceID, b.ChildUniqueReferenceID); c != 0 {
+		return c
+	}
+
+	return 0
+}
+
+func (l DetailedLines) SumTotals() totals.Totals {
+	out := totals.Totals{}
+
+	for _, line := range l {
+		out = out.Add(line.Totals)
+	}
+
+	return out
+}
+
+func (l DetailedLines) Validate() error {
+	var errs []error
+
+	for idx, line := range l {
+		if err := line.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("[%d]: %w", idx, err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}

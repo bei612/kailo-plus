@@ -1,0 +1,275 @@
+package lineengine
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	billingfeaturemeterservice "github.com/openmeterio/openmeter/openmeter/billing/featuremeter/service"
+	"github.com/openmeterio/openmeter/openmeter/billing/rating"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/openmeter/streaming"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/equal"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/slicesx"
+)
+
+var (
+	_ billing.LineEngine     = (*Engine)(nil)
+	_ billing.LineCalculator = (*Engine)(nil)
+)
+
+type Config struct {
+	SplitLineGroupAdapter        SplitLineGroupAdapter
+	RatingService                rating.Service
+	FeatureMeterResolver         *billingfeaturemeterservice.Resolver
+	StreamingConnector           streaming.Connector
+	MaxParallelQuantitySnapshots int
+}
+
+func (c Config) Validate() error {
+	var errs []error
+
+	if c.SplitLineGroupAdapter == nil {
+		errs = append(errs, errors.New("split line group adapter is required"))
+	}
+
+	if c.RatingService == nil {
+		errs = append(errs, errors.New("rating service is required"))
+	}
+
+	if c.FeatureMeterResolver == nil {
+		errs = append(errs, errors.New("feature meter resolver is required"))
+	}
+
+	if c.StreamingConnector == nil {
+		errs = append(errs, errors.New("streaming connector is required"))
+	}
+
+	if c.MaxParallelQuantitySnapshots < 1 {
+		errs = append(errs, errors.New("max parallel quantity snapshots must be greater than 0"))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type Engine struct {
+	adapter                      SplitLineGroupAdapter
+	ratingService                rating.Service
+	featureMeterResolver         *billingfeaturemeterservice.Resolver
+	streamingConnector           streaming.Connector
+	maxParallelQuantitySnapshots int
+}
+
+func New(config Config) (*Engine, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+
+	return &Engine{
+		adapter:                      config.SplitLineGroupAdapter,
+		ratingService:                config.RatingService,
+		featureMeterResolver:         config.FeatureMeterResolver,
+		streamingConnector:           config.StreamingConnector,
+		maxParallelQuantitySnapshots: config.MaxParallelQuantitySnapshots,
+	}, nil
+}
+
+func (e *Engine) GetLineEngineType() billing.LineEngineType {
+	return billing.LineEngineTypeInvoice
+}
+
+func (e *Engine) OnCollectionCompleted(ctx context.Context, input billing.OnCollectionCompletedInput) (billing.StandardLines, error) {
+	if input.Invoice.ID == "" {
+		return nil, fmt.Errorf("invoice is required")
+	}
+
+	if input.Invoice.QuantitySnapshotedAt != nil &&
+		!input.Invoice.QuantitySnapshotedAt.Before(input.Invoice.DefaultCollectionAtForStandardInvoice()) {
+		return input.Lines, nil
+	}
+
+	if input.Invoice.QuantitySnapshotedAt == nil &&
+		input.Invoice.CollectionAt != nil &&
+		clock.Now().Before(*input.Invoice.CollectionAt) {
+		return input.Lines, nil
+	}
+
+	if err := e.SnapshotLineQuantities(ctx, input.Invoice, input.Lines); err != nil {
+		return nil, fmt.Errorf("snapshotting lines: %w", err)
+	}
+
+	return input.Lines, nil
+}
+
+func (e *Engine) ValidateMutableInvoiceLineEditViaAPI(_ context.Context, input billing.OnMutableInvoiceUpdateInput) error {
+	if err := input.Validate(); err != nil {
+		return fmt.Errorf("validating input: %w", err)
+	}
+
+	for _, override := range input.Updated {
+		if err := validateLegacyLineOverride(override); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (e *Engine) OnMutableInvoiceLinesEditedViaAPI(ctx context.Context, input billing.OnMutableInvoiceUpdateInput) (billing.OnMutableInvoiceUpdateResult, error) {
+	if err := input.Validate(); err != nil {
+		return billing.OnMutableInvoiceUpdateResult{}, fmt.Errorf("validating input: %w", err)
+	}
+
+	createdLines, err := slicesx.MapWithErr(input.Created, func(line billing.GenericInvoiceLine) (billing.GenericInvoiceLine, error) {
+		lineID := line.GetID()
+
+		line, err := e.snapshotManualStandardLineOverrideIfNeeded(ctx, input.Invoice, line)
+		if err != nil {
+			return nil, fmt.Errorf("snapshotting line[%s]: %w", lineID, err)
+		}
+
+		return line, nil
+	})
+	if err != nil {
+		return billing.OnMutableInvoiceUpdateResult{}, fmt.Errorf("snapshotting created lines: %w", err)
+	}
+
+	updatedLines, err := slicesx.MapWithErr(input.Updated, func(override billing.InvoiceLineOverride) (billing.GenericInvoiceLine, error) {
+		if err := validateLegacyLineOverride(override); err != nil {
+			return nil, err
+		}
+
+		line, err := override.ChangesToApply.Apply(override.ExistingLine)
+		if err != nil {
+			return nil, fmt.Errorf("applying changes to line[%s]: %w", override.ExistingLine.GetID(), err)
+		}
+
+		line, err = e.snapshotManualStandardLineOverrideIfNeeded(ctx, input.Invoice, line)
+		if err != nil {
+			return nil, fmt.Errorf("snapshotting line[%s]: %w", override.ExistingLine.GetID(), err)
+		}
+
+		return line, nil
+	})
+	if err != nil {
+		return billing.OnMutableInvoiceUpdateResult{}, fmt.Errorf("snapshotting updated lines: %w", err)
+	}
+
+	return billing.OnMutableInvoiceUpdateResult{
+		CreatedLines: createdLines,
+		UpdatedLines: updatedLines,
+	}, nil
+}
+
+func (e *Engine) snapshotManualStandardLineOverrideIfNeeded(ctx context.Context, invoice billing.GenericInvoiceReader, line billing.GenericInvoiceLine) (billing.GenericInvoiceLine, error) {
+	if invoice.GetType() != billing.InvoiceTypeStandard {
+		return line, nil
+	}
+
+	standardInvoice, err := invoice.AsInvoice().AsStandardInvoice()
+	if err != nil {
+		return nil, fmt.Errorf("getting standard invoice: %w", err)
+	}
+
+	if standardInvoice.Status == billing.StandardInvoiceStatusGathering {
+		return line, nil
+	}
+
+	standardLine, err := line.AsInvoiceLine().AsStandardLine()
+	if err != nil {
+		return nil, fmt.Errorf("getting standard line: %w", err)
+	}
+
+	if err := e.SnapshotLineQuantities(ctx, standardInvoice, billing.StandardLines{&standardLine}); err != nil {
+		return nil, fmt.Errorf("snapshotting line quantity: %w", err)
+	}
+
+	return standardLine.AsGenericLine(), nil
+}
+
+func validateLegacyLineOverride(override billing.InvoiceLineOverride) error {
+	if override.ExistingLine.GetSplitLineGroupID() != nil {
+		// Split-line children share progressive-billing state across invoices, so the
+		// legacy line engine owns edits that would desynchronize later calculations.
+		if period, ok := override.ChangesToApply.Period.Get(); ok && !period.Equal(override.ExistingLine.GetServicePeriod()) {
+			return billing.ValidationError{
+				Err: fmt.Errorf("line[%s]: %w", override.ExistingLine.GetID(), billing.ErrInvoiceLineNoPeriodChangeForSplitLine),
+			}
+		}
+
+		if price, ok := override.ChangesToApply.Price.Get(); ok && !price.Equal(override.ExistingLine.GetPrice()) {
+			return billing.ValidationError{
+				Err: fmt.Errorf("line[%s]: %w", override.ExistingLine.GetID(), billing.ErrInvoiceProgressiveBillingNotSupported),
+			}
+		}
+
+		if featureKey, ok := override.ChangesToApply.FeatureKey.Get(); ok && featureKey != override.ExistingLine.GetFeatureKey() {
+			return billing.ValidationError{
+				Err: fmt.Errorf("line[%s]: %w", override.ExistingLine.GetID(), billing.ErrInvoiceProgressiveBillingNotSupported),
+			}
+		}
+
+		// Usage-discount quantities are consumed by earlier partial invoices. Updating
+		// the discount without a shared discount pool could make already-used quantity
+		// exceed the new allowed quantity.
+		if discounts, ok := override.ChangesToApply.Discounts.Get(); ok && !equal.PtrEqual(discounts.Usage, override.ExistingLine.GetRateCardDiscounts().Usage) {
+			return billing.ValidationError{
+				Err: fmt.Errorf("line[%s]: %w", override.ExistingLine.GetID(), billing.ErrInvoiceLineProgressiveBillingUsageDiscountUpdateForbidden),
+			}
+		}
+	}
+
+	if override.ExistingLine.GetSubscriptionReference() != nil && !isFlatFeeLineOverride(override) {
+		if period, ok := override.ChangesToApply.Period.Get(); ok && !period.Equal(override.ExistingLine.GetServicePeriod()) {
+			return billing.ValidationError{
+				Err: fmt.Errorf("line[%s]: %w", override.ExistingLine.GetID(), billing.ErrInvoiceLineNoPeriodChangeForSubscriptionManagedLine),
+			}
+		}
+	}
+
+	return nil
+}
+
+func isFlatFeeLineOverride(override billing.InvoiceLineOverride) bool {
+	existingPrice := override.ExistingLine.GetPrice()
+	if existingPrice == nil || existingPrice.Type() != productcatalog.FlatPriceType {
+		return false
+	}
+
+	if price, ok := override.ChangesToApply.Price.Get(); ok {
+		return price != nil && price.Type() == productcatalog.FlatPriceType
+	}
+
+	return true
+}
+
+func (e *Engine) OnMutableStandardLinesDeletedBySystem(_ context.Context, _ billing.OnMutableStandardLinesDeletedInput) error {
+	return nil
+}
+
+func (e *Engine) OnUnsupportedCreditNote(_ context.Context, _ billing.OnUnsupportedCreditNoteInput) error {
+	return nil
+}
+
+func (e *Engine) OnStandardInvoiceCreated(_ context.Context, input billing.OnStandardInvoiceCreatedInput) (billing.StandardLines, error) {
+	return input.Lines, nil
+}
+
+func (e *Engine) OnInvoiceFinalizing(_ context.Context, input billing.OnInvoiceFinalizingInput) (billing.StandardLines, error) {
+	return input.Lines, nil
+}
+
+func (e *Engine) OnInvoiceIssued(_ context.Context, _ billing.OnInvoiceIssuedInput) error {
+	return nil
+}
+
+func (e *Engine) OnPaymentAuthorized(_ context.Context, _ billing.OnPaymentAuthorizedInput) error {
+	return nil
+}
+
+func (e *Engine) OnPaymentSettled(_ context.Context, _ billing.OnPaymentSettledInput) error {
+	return nil
+}

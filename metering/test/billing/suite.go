@@ -1,0 +1,880 @@
+package billing
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/alpacahq/alpacadecimal"
+	"github.com/invopop/gobl/currency"
+	"github.com/oklog/ulid/v2"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/trace/noop"
+
+	"github.com/openmeterio/openmeter/app/config"
+	"github.com/openmeterio/openmeter/openmeter/app"
+	appadapter "github.com/openmeterio/openmeter/openmeter/app/adapter"
+	appcustominvoicing "github.com/openmeterio/openmeter/openmeter/app/custominvoicing"
+	"github.com/openmeterio/openmeter/openmeter/app/custominvoicing/adapter"
+	"github.com/openmeterio/openmeter/openmeter/app/custominvoicing/service"
+	appsandbox "github.com/openmeterio/openmeter/openmeter/app/sandbox"
+	appservice "github.com/openmeterio/openmeter/openmeter/app/service"
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	billingadapter "github.com/openmeterio/openmeter/openmeter/billing/adapter"
+	featuremeterservice "github.com/openmeterio/openmeter/openmeter/billing/featuremeter/service"
+	billinglineengine "github.com/openmeterio/openmeter/openmeter/billing/lineengine"
+	"github.com/openmeterio/openmeter/openmeter/billing/models/totals"
+	billingratingservice "github.com/openmeterio/openmeter/openmeter/billing/rating/service"
+	billingsequence "github.com/openmeterio/openmeter/openmeter/billing/sequence"
+	billingsequenceadapter "github.com/openmeterio/openmeter/openmeter/billing/sequence/adapter"
+	billingsequenceservice "github.com/openmeterio/openmeter/openmeter/billing/sequence/service"
+	billingservice "github.com/openmeterio/openmeter/openmeter/billing/service"
+	"github.com/openmeterio/openmeter/openmeter/billing/service/invoicecalc"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	customeradapter "github.com/openmeterio/openmeter/openmeter/customer/adapter"
+	customerservice "github.com/openmeterio/openmeter/openmeter/customer/service"
+	customerservicehooks "github.com/openmeterio/openmeter/openmeter/customer/service/hooks"
+	"github.com/openmeterio/openmeter/openmeter/ent/db"
+	"github.com/openmeterio/openmeter/openmeter/meter"
+	meteradapter "github.com/openmeterio/openmeter/openmeter/meter/mockadapter"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/feature"
+	registrybuilder "github.com/openmeterio/openmeter/openmeter/registry/builder"
+	streamingtestutils "github.com/openmeterio/openmeter/openmeter/streaming/testutils"
+	"github.com/openmeterio/openmeter/openmeter/subject"
+	subjectadapter "github.com/openmeterio/openmeter/openmeter/subject/adapter"
+	subjectservice "github.com/openmeterio/openmeter/openmeter/subject/service"
+	subjecthooks "github.com/openmeterio/openmeter/openmeter/subject/service/hooks"
+	"github.com/openmeterio/openmeter/openmeter/taxcode"
+	taxcodeadapter "github.com/openmeterio/openmeter/openmeter/taxcode/adapter"
+	taxcodeservice "github.com/openmeterio/openmeter/openmeter/taxcode/service"
+	"github.com/openmeterio/openmeter/openmeter/testutils"
+	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/framework/lockr"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+type BaseSuite struct {
+	suite.Suite
+
+	TestDB   *testutils.TestDB
+	DBClient *db.Client
+
+	BillingAdapter          billing.Adapter
+	BillingService          billing.Service
+	FeatureMeterResolver    *featuremeterservice.Resolver
+	LegacyBillingLineEngine *billinglineengine.Engine
+	SequenceService         billingsequence.Service
+	InvoiceCalculator       *invoicecalc.MockableInvoiceCalculator
+
+	FeatureService         feature.FeatureConnector
+	FeatureRepo            feature.FeatureRepo
+	MeterAdapter           *meteradapter.TestAdapter
+	MockStreamingConnector *streamingtestutils.MockStreamingConnector
+
+	CustomerService customer.Service
+	SubjectService  subject.Service
+
+	CustomInvoicingService appcustominvoicing.Service
+
+	AppService app.Service
+	SandboxApp *appsandbox.MockableFactory
+
+	TaxCodeService taxcode.Service
+}
+
+func (s *BaseSuite) TearDownTest() {
+	clock.UnFreeze()
+	clock.ResetTime()
+}
+
+// GetUniqueNamespace returns a unique namespace with the given prefix
+func (s *BaseSuite) GetUniqueNamespace(prefix string) string {
+	return fmt.Sprintf("%s_%s", prefix, ulid.Make().String())
+}
+
+func (b *BaseSuite) GetSubscriptionMixInDependencies() SubscriptionMixInDependencies {
+	return SubscriptionMixInDependencies{
+		DBClient:               b.DBClient,
+		FeatureRepo:            b.FeatureRepo,
+		FeatureService:         b.FeatureService,
+		CustomerService:        b.CustomerService,
+		MeterAdapter:           b.MeterAdapter,
+		MockStreamingConnector: b.MockStreamingConnector,
+	}
+}
+
+func (s *BaseSuite) SetupSuite() {
+	s.setupSuite()
+}
+
+func (s *BaseSuite) setupSuite() {
+	t := s.T()
+	t.Log("setup suite")
+	publisher := eventbus.NewMock(t)
+
+	s.TestDB = testutils.InitPostgresDB(t, testutils.PostgresDBStateAtlasMigrated)
+
+	// init db
+	dbClient := db.NewClient(db.Driver(s.TestDB.EntDriver.Driver()))
+	s.DBClient = dbClient
+
+	// setup invoicing stack
+
+	// Meter repo
+
+	s.MockStreamingConnector = streamingtestutils.NewMockStreamingConnector(t)
+
+	meterAdapter, err := meteradapter.New(nil)
+	require.NoError(t, err)
+	require.NoError(s.T(), meterAdapter.SetDBClient(dbClient))
+
+	s.MeterAdapter = meterAdapter
+
+	locker, err := lockr.NewLocker(&lockr.LockerConfig{
+		Logger: slog.Default(),
+	})
+	require.NoError(t, err)
+
+	// Subject
+	subjectAdapter, err := subjectadapter.New(dbClient)
+	require.NoError(t, err)
+
+	subjectService, err := subjectservice.New(subjectAdapter)
+	require.NoError(t, err)
+	s.SubjectService = subjectService
+
+	// Customer
+
+	customerAdapter, err := customeradapter.New(customeradapter.Config{
+		Client: dbClient,
+		Logger: slog.Default(),
+	})
+	require.NoError(t, err)
+
+	customerService, err := customerservice.New(customerservice.Config{
+		Adapter:   customerAdapter,
+		Publisher: publisher,
+	})
+	require.NoError(t, err)
+	s.CustomerService = customerService
+
+	// Entitlement
+	entitlementRegistry := registrybuilder.GetEntitlementRegistry(registrybuilder.EntitlementOptions{
+		DatabaseClient:     dbClient,
+		StreamingConnector: s.MockStreamingConnector,
+		Logger:             slog.Default(),
+		MeterService:       s.MeterAdapter,
+		CustomerService:    s.CustomerService,
+		Publisher:          publisher,
+		EntitlementsConfiguration: config.EntitlementsConfiguration{
+			GracePeriod: datetime.ISODurationString("P1D"),
+		},
+		Locker: locker,
+		Tracer: noop.NewTracerProvider().Tracer("test_env"),
+	})
+
+	// Feature
+	s.FeatureRepo = entitlementRegistry.FeatureRepo
+	s.FeatureService = entitlementRegistry.Feature
+
+	// App
+	appAdapter, err := appadapter.New(appadapter.Config{
+		Client: dbClient,
+	})
+	require.NoError(t, err)
+
+	appService, err := appservice.New(appservice.Config{
+		Adapter:   appAdapter,
+		Publisher: publisher,
+	})
+	require.NoError(t, err)
+	s.AppService = appService
+
+	// TaxCode
+	taxCodeAdapter, err := taxcodeadapter.New(taxcodeadapter.Config{
+		Client: dbClient,
+		Logger: slog.Default(),
+	})
+	require.NoError(t, err)
+
+	taxCodeService, err := taxcodeservice.New(taxcodeservice.Config{
+		Adapter: taxCodeAdapter,
+		Logger:  slog.Default(),
+	})
+	require.NoError(t, err)
+	s.TaxCodeService = taxCodeService
+
+	// Billing
+	billingAdapter, err := billingadapter.New(billingadapter.Config{
+		Client: dbClient,
+		Logger: slog.Default(),
+	})
+	require.NoError(t, err)
+	s.BillingAdapter = billingAdapter
+	require.NoError(t, billingAdapter.SetInvoiceDefaultSchemaLevel(t.Context(), billingadapter.DefaultInvoiceWriteSchemaLevel))
+
+	billingSequenceAdapter, err := billingsequenceadapter.New(billingsequenceadapter.Config{
+		Client: dbClient,
+		Logger: slog.Default(),
+	})
+	require.NoError(t, err)
+
+	billingSequenceService, err := billingsequenceservice.New(billingsequenceservice.Config{
+		Adapter: billingSequenceAdapter,
+		Meter:   metricnoop.NewMeterProvider().Meter("test"),
+	})
+	require.NoError(t, err)
+	s.SequenceService = billingSequenceService
+
+	billingRatingService := billingratingservice.New(billingratingservice.Config{UnitConfigEnabled: true})
+	featureMeterResolver, err := featuremeterservice.New(featuremeterservice.Config{
+		FeatureService: s.FeatureService,
+		MeterService:   s.MeterAdapter,
+		Logger:         slog.Default(),
+	})
+	require.NoError(t, err)
+	s.FeatureMeterResolver = featureMeterResolver
+
+	legacyBillingLineEngine, err := billinglineengine.New(billinglineengine.Config{
+		SplitLineGroupAdapter:        billingAdapter,
+		RatingService:                billingRatingService,
+		FeatureMeterResolver:         featureMeterResolver,
+		StreamingConnector:           s.MockStreamingConnector,
+		MaxParallelQuantitySnapshots: 2,
+	})
+	require.NoError(t, err)
+	s.LegacyBillingLineEngine = legacyBillingLineEngine
+
+	billingService, err := billingservice.New(billingservice.Config{
+		Adapter:                 billingAdapter,
+		SequenceService:         billingSequenceService,
+		RatingService:           billingRatingService,
+		LegacyBillingLineEngine: legacyBillingLineEngine,
+		CustomerService:         s.CustomerService,
+		AppService:              s.AppService,
+		Logger:                  slog.Default(),
+		FeatureMeterResolver:    featureMeterResolver,
+		Publisher:               publisher,
+		AdvancementStrategy:     billing.ForegroundAdvancementStrategy,
+		TaxCodeService:          taxCodeService,
+	})
+	require.NoError(t, err)
+
+	s.InvoiceCalculator = invoicecalc.NewMockableCalculator(t, billingService.InvoiceCalculator())
+
+	s.BillingService = billingService.WithInvoiceCalculator(s.InvoiceCalculator)
+
+	// Custom invoicing
+	s.CustomInvoicingService = s.SetupCustomInvoicingApp()
+
+	// OpenMeter sandbox (registration as side-effect)
+	sandboxApp, err := appsandbox.NewMockableFactory(t, appsandbox.Config{
+		AppService:      appService,
+		SequenceService: billingSequenceService,
+	})
+	require.NoError(t, err)
+
+	s.SandboxApp = sandboxApp
+
+	// Hooks
+
+	// Subject hooks
+
+	subjectCustomerHook, err := subjecthooks.NewCustomerSubjectHook(subjecthooks.CustomerSubjectHookConfig{
+		Subject: subjectService,
+		Logger:  slog.Default(),
+		Tracer:  noop.NewTracerProvider().Tracer("test_env"),
+	})
+	require.NoError(t, err)
+	customerService.RegisterHooks(subjectCustomerHook)
+
+	// customer hooks
+	customerSubjectHook, err := customerservicehooks.NewSubjectCustomerHook(customerservicehooks.SubjectCustomerHookConfig{
+		Customer:         customerService,
+		CustomerOverride: billingService,
+		Logger:           slog.Default(),
+		Tracer:           noop.NewTracerProvider().Tracer("test_env"),
+	})
+	require.NoError(t, err)
+	subjectService.RegisterHooks(customerSubjectHook)
+
+	entitlementValidatorHook, err := customerservicehooks.NewEntitlementValidatorHook(customerservicehooks.EntitlementValidatorHookConfig{
+		EntitlementService: entitlementRegistry.Entitlement,
+	})
+	require.NoError(t, err)
+	customerService.RegisterHooks(entitlementValidatorHook)
+}
+
+func (s *BaseSuite) InstallSandboxApp(t *testing.T, ns string) app.App {
+	ctx := context.Background()
+	appBase, err := s.AppService.CreateApp(ctx,
+		app.CreateAppInput{
+			Name:        "Sandbox",
+			Description: "Sandbox app",
+			Type:        app.AppTypeSandbox,
+			Namespace:   ns,
+		})
+
+	require.NoError(t, err)
+
+	sandboxApp, err := s.AppService.GetApp(ctx, app.GetAppInput{
+		Namespace: ns,
+		ID:        appBase.ID,
+	})
+	require.NoError(t, err)
+
+	return sandboxApp
+}
+
+func (s *BaseSuite) CreateTestCustomer(ns string, subjectKey string) *customer.Customer {
+	s.T().Helper()
+
+	customer, err := s.CustomerService.CreateCustomer(context.Background(), customer.CreateCustomerInput{
+		Namespace: ns,
+
+		CustomerMutate: customer.CustomerMutate{
+			Name:         "Test Customer",
+			PrimaryEmail: lo.ToPtr("test@test.com"),
+			BillingAddress: &models.Address{
+				Country:    lo.ToPtr(models.CountryCode("US")),
+				PostalCode: lo.ToPtr("12345"),
+			},
+			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
+			UsageAttribution: &customer.CustomerUsageAttribution{
+				SubjectKeys: []string{subjectKey},
+			},
+		},
+	})
+
+	s.NoError(err)
+	return customer
+}
+
+func (s *BaseSuite) TearDownSuite() {
+	s.TestDB.EntDriver.Close()
+	s.TestDB.PGDriver.Close()
+}
+
+func (s *BaseSuite) DebugDumpInvoice(h string, i billing.GenericInvoiceReader) {
+	s.T().Log(h)
+
+	invoice := i.AsInvoice()
+	switch invoice.Type() {
+	case billing.InvoiceTypeStandard:
+		standardInvoice, err := invoice.AsStandardInvoice()
+		s.NoError(err)
+
+		s.DebugDumpStandardInvoice(h, standardInvoice)
+	case billing.InvoiceTypeGathering:
+		gatheringInvoice, err := invoice.AsGatheringInvoice()
+		s.NoError(err)
+		s.DebugDumpGatheringInvoice(h, gatheringInvoice)
+	default:
+		s.Fail("invalid invoice type: %s", invoice.Type())
+	}
+}
+
+func (s *BaseSuite) DebugDumpStandardInvoice(h string, i billing.StandardInvoice) {
+	l := i.Lines.OrEmpty()
+
+	slices.SortFunc(l, func(l1, l2 *billing.StandardLine) int {
+		if l1.Period.From.Before(l2.Period.From) {
+			return -1
+		} else if l1.Period.From.After(l2.Period.From) {
+			return 1
+		}
+		return 0
+	})
+
+	for _, line := range i.Lines.OrEmpty() {
+		deleted := ""
+		if line.DeletedAt != nil {
+			deleted = " (deleted)"
+		}
+
+		priceJson, err := json.Marshal(line.UsageBased.Price)
+		s.NoError(err)
+
+		s.T().Logf("usage[%s..%s] childUniqueReferenceID: %s, invoiceAt: %s, qty: %s, price: %s (total=%s) %s\n",
+			line.Period.From.Format(time.RFC3339),
+			line.Period.To.Format(time.RFC3339),
+			lo.FromPtrOr(line.ChildUniqueReferenceID, "null"),
+			line.InvoiceAt.Format(time.RFC3339),
+			line.UsageBased.Quantity,
+			string(priceJson),
+			line.Totals.Total.String(),
+			deleted)
+	}
+}
+
+func (s *BaseSuite) DebugDumpGatheringInvoice(h string, i billing.GatheringInvoice) {
+	l := i.Lines.OrEmpty()
+
+	slices.SortFunc(l, func(l1, l2 billing.GatheringLine) int {
+		if l1.ServicePeriod.From.Before(l2.ServicePeriod.From) {
+			return -1
+		} else if l1.ServicePeriod.From.After(l2.ServicePeriod.From) {
+			return 1
+		}
+		return 0
+	})
+
+	for _, line := range i.Lines.OrEmpty() {
+		deleted := ""
+		if line.DeletedAt != nil {
+			deleted = " (deleted)"
+		}
+
+		priceJson, err := json.Marshal(&line.Price)
+		s.NoError(err)
+
+		s.T().Logf("usage[%s..%s] childUniqueReferenceID: %s, invoiceAt: %s, qty: N/A, price: %s (total=N/A) %s\n",
+			line.ServicePeriod.From.Format(time.RFC3339),
+			line.ServicePeriod.To.Format(time.RFC3339),
+			lo.FromPtrOr(line.ChildUniqueReferenceID, "null"),
+			line.InvoiceAt.Format(time.RFC3339),
+			string(priceJson),
+			deleted)
+	}
+}
+
+type DraftInvoiceInput struct {
+	Namespace string
+	Customer  *customer.Customer
+}
+
+func (i DraftInvoiceInput) Validate() error {
+	if i.Namespace == "" {
+		return errors.New("namespace is required")
+	}
+
+	if i.Customer == nil {
+		return errors.New("customer is required")
+	}
+
+	if err := i.Customer.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *BaseSuite) CreateGatheringInvoice(t *testing.T, ctx context.Context, in DraftInvoiceInput) {
+	s.NoError(in.Validate())
+
+	namespace := in.Customer.Namespace
+
+	now := clock.Now()
+	invoiceAt := now.Add(-time.Second)
+	periodEnd := now.Add(-24 * time.Hour)
+	periodStart := periodEnd.Add(-24 * 30 * time.Hour)
+	// Given we have a default profile for the namespace
+
+	res, err := s.BillingService.CreatePendingInvoiceLines(ctx,
+		billing.CreatePendingInvoiceLinesInput{
+			Customer: in.Customer.GetID(),
+			Currency: currencyx.FiatCode(currency.USD),
+			Lines: billing.NewCreatePendingInvoiceLines([]billing.GatheringLine{
+				billing.NewFlatFeeGatheringLine(
+					billing.NewFlatFeeLineInput{
+						Namespace:     namespace,
+						Period:        timeutil.ClosedPeriod{From: periodStart, To: periodEnd},
+						InvoiceAt:     invoiceAt,
+						ManagedBy:     billing.ManuallyManagedLine,
+						Name:          "Test item1",
+						PerUnitAmount: alpacadecimal.NewFromFloat(100),
+						Currency:      currencyx.FiatCode(currency.USD),
+						Metadata: map[string]string{
+							"key": "value",
+						},
+						PaymentTerm: productcatalog.InArrearsPaymentTerm,
+					},
+				),
+				billing.NewFlatFeeGatheringLine(
+					billing.NewFlatFeeLineInput{
+						Namespace:     namespace,
+						Period:        timeutil.ClosedPeriod{From: periodStart, To: periodEnd},
+						InvoiceAt:     invoiceAt,
+						ManagedBy:     billing.ManuallyManagedLine,
+						Name:          "Test item2",
+						PerUnitAmount: alpacadecimal.NewFromFloat(200),
+						Currency:      currencyx.FiatCode(currency.USD),
+						Metadata: map[string]string{
+							"key": "value",
+						},
+						PaymentTerm: productcatalog.InArrearsPaymentTerm,
+					},
+				),
+			}),
+		})
+
+	require.NoError(s.T(), err)
+	require.Len(s.T(), res.Lines, 2)
+	line1ID := res.Lines[0].ID
+	line2ID := res.Lines[1].ID
+	require.NotEmpty(s.T(), line1ID)
+	require.NotEmpty(s.T(), line2ID)
+}
+
+func (s *BaseSuite) CreateDraftInvoice(t *testing.T, ctx context.Context, in DraftInvoiceInput) billing.StandardInvoice {
+	s.NoError(in.Validate())
+
+	s.CreateGatheringInvoice(t, ctx, in)
+
+	now := clock.Now()
+	invoice, err := s.BillingService.InvoicePendingLines(ctx, billing.InvoicePendingLinesInput{
+		Customer: customer.CustomerID{
+			ID:        in.Customer.ID,
+			Namespace: in.Customer.Namespace,
+		},
+		AsOf: lo.ToPtr(now),
+	})
+
+	require.NoError(t, err)
+	require.Len(t, invoice, 1)
+	require.Len(t, invoice[0].Lines.MustGet(), 2)
+
+	return invoice[0]
+}
+
+type TestFeature struct {
+	Cleanup func()
+	Feature feature.Feature
+}
+
+func (s *BaseSuite) SetupApiRequestsTotalFeature(ctx context.Context, ns string) TestFeature {
+	apiRequestsTotalMeterSlug := "api-requests-total"
+	apiRequestsTotalMeterID := ulid.Make().String()
+
+	err := s.MeterAdapter.ReplaceMeters(ctx, []meter.Meter{
+		{
+			ManagedResource: models.ManagedResource{
+				ID: apiRequestsTotalMeterID,
+				NamespacedModel: models.NamespacedModel{
+					Namespace: ns,
+				},
+				ManagedModel: models.ManagedModel{
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
+				Name: "API Requests Total",
+			},
+			Key:           apiRequestsTotalMeterSlug,
+			Aggregation:   meter.MeterAggregationSum,
+			EventType:     "test",
+			ValueProperty: lo.ToPtr("$.value"),
+		},
+	})
+	s.NoError(err, "Replacing meters must not return error")
+
+	s.MockStreamingConnector.AddSimpleEvent(apiRequestsTotalMeterSlug, 0, time.Now())
+
+	apiRequestsTotalFeatureKey := "api-requests-total"
+
+	apiRequestsTotalFeature, err := s.FeatureService.CreateFeature(ctx, feature.CreateFeatureInputs{
+		Namespace: ns,
+		Name:      "api-requests-total",
+		Key:       apiRequestsTotalFeatureKey,
+		MeterID:   lo.ToPtr(apiRequestsTotalMeterID),
+	})
+	s.NoError(err)
+
+	return TestFeature{
+		Cleanup: func() {
+			err = s.MeterAdapter.ReplaceMeters(ctx, []meter.Meter{})
+			s.NoError(err, "failed to replace meters")
+
+			s.MockStreamingConnector.Reset()
+		},
+		Feature: apiRequestsTotalFeature,
+	}
+}
+
+type BillingProfileEditFn func(p *billing.CreateProfileInput)
+
+type BillingProfileProvisionOptions struct {
+	editFns []BillingProfileEditFn
+}
+
+type BillingProfileProvisionOption func(*BillingProfileProvisionOptions)
+
+func WithBillingProfileEditFn(editFn BillingProfileEditFn) BillingProfileProvisionOption {
+	return func(opts *BillingProfileProvisionOptions) {
+		opts.editFns = append(opts.editFns, editFn)
+	}
+}
+
+func WithProgressiveBilling() BillingProfileProvisionOption {
+	return WithBillingProfileEditFn(func(p *billing.CreateProfileInput) {
+		p.WorkflowConfig.Invoicing.ProgressiveBilling = true
+	})
+}
+
+func WithCollectionInterval(period datetime.ISODuration) BillingProfileProvisionOption {
+	return WithBillingProfileEditFn(func(p *billing.CreateProfileInput) {
+		p.WorkflowConfig.Collection.Interval = period
+	})
+}
+
+func WithManualApproval() BillingProfileProvisionOption {
+	return WithBillingProfileEditFn(func(p *billing.CreateProfileInput) {
+		p.WorkflowConfig.Invoicing.AutoAdvance = false
+	})
+}
+
+func (s *BaseSuite) ProvisionBillingProfile(ctx context.Context, ns string, appID app.AppID, opts ...BillingProfileProvisionOption) *billing.Profile {
+	provisionOpts := BillingProfileProvisionOptions{}
+
+	for _, opt := range opts {
+		opt(&provisionOpts)
+	}
+
+	clonedCreateProfileInput := minimalCreateProfileInputTemplate(appID)
+	clonedCreateProfileInput.Namespace = ns
+
+	for _, editFn := range provisionOpts.editFns {
+		editFn(&clonedCreateProfileInput)
+	}
+
+	profile, err := s.BillingService.CreateProfile(ctx, clonedCreateProfileInput)
+	s.NoError(err)
+
+	return profile
+}
+
+// SeedProfileDefaultTaxConfigViaAdapter seeds a stored DefaultTaxConfig on an existing
+// billing profile directly through the billing adapter, bypassing the service-level tax
+// code deprecation gate (InvoicingConfig.EnforceTaxCodeDeprecation). This simulates legacy
+// rows that were created before tax codes on billing profiles were deprecated.
+//
+// The tax config is resolved in place exactly like the pre-deprecation service path
+// (productcatalog.ResolveTaxConfig cross-populates TaxCodeID and Stripe.Code), then
+// persisted via the adapter so the JSON column, tax_code_id FK and tax_behavior columns
+// are written by the production adapter code path. Returns the re-read profile so tests
+// can assert on the stored state including read-time backfill.
+func (s *BaseSuite) SeedProfileDefaultTaxConfigViaAdapter(ctx context.Context, profileID billing.ProfileID, taxConfig *productcatalog.TaxConfig) *billing.AdapterGetProfileResponse {
+	s.T().Helper()
+
+	s.Require().NoError(productcatalog.ResolveTaxConfig(ctx, s.TaxCodeService, profileID.Namespace, taxConfig))
+
+	adapterProfile, err := s.BillingAdapter.GetProfile(ctx, billing.GetProfileInput{Profile: profileID})
+	s.Require().NoError(err)
+
+	targetState := adapterProfile.BaseProfile
+	// Mirror the service update path: app references are never part of the update target state.
+	targetState.AppReferences = nil
+	targetState.WorkflowConfig.Invoicing.DefaultTaxConfig = taxConfig
+
+	_, err = s.BillingAdapter.UpdateProfile(ctx, billing.UpdateProfileAdapterInput{
+		TargetState:      targetState,
+		WorkflowConfigID: adapterProfile.WorkflowConfigID,
+	})
+	s.Require().NoError(err)
+
+	updatedProfile, err := s.BillingAdapter.GetProfile(ctx, billing.GetProfileInput{Profile: profileID})
+	s.Require().NoError(err)
+
+	return updatedProfile
+}
+
+// ProvisionDefaultTaxCodes creates the invoicing and credit-grant tax codes for the
+// namespace and stores them as the organization defaults. Tests that create charges
+// via the real charges service must call this for the namespace, because charge
+// creation auto-stamps the namespace's default tax code when the caller's TaxConfig
+// has no TaxCodeID.
+func (s *BaseSuite) ProvisionDefaultTaxCodes(ctx context.Context, ns string) taxcode.OrganizationDefaultTaxCodes {
+	s.T().Helper()
+
+	invoicing := s.ProvisionProviderDefaultTaxCode(ctx, ns)
+	creditGrant := s.getOrCreateTaxCodeByKey(ctx, ns, "default-credit-grant", "Default Credit Grant")
+
+	defaults, err := s.TaxCodeService.UpsertOrganizationDefaultTaxCodes(ctx, taxcode.UpsertOrganizationDefaultTaxCodesInput{
+		Namespace:            ns,
+		InvoicingTaxCodeID:   invoicing.ID,
+		CreditGrantTaxCodeID: creditGrant.ID,
+	})
+	s.Require().NoError(err, "upserting organization default tax codes")
+	return defaults
+}
+
+// ProvisionProviderDefaultTaxCode creates the tax code used when an invoicing app
+// omits an app-specific provider code. This is distinct from organization default
+// tax-code settings: API invoice edit diffing needs the provider-default tax code
+// row to resolve empty provider tax config, but it must not imply that the
+// namespace has configured org-level default tax codes.
+func (s *BaseSuite) ProvisionProviderDefaultTaxCode(ctx context.Context, ns string) taxcode.TaxCode {
+	s.T().Helper()
+
+	return s.getOrCreateTaxCodeByKey(ctx, ns, taxcode.ProviderDefaultTaxCodeKey, "Provider Default")
+}
+
+func (s *BaseSuite) getOrCreateTaxCodeByKey(ctx context.Context, ns string, key string, name string) taxcode.TaxCode {
+	s.T().Helper()
+
+	taxCode, err := s.TaxCodeService.GetTaxCodeByKey(ctx, taxcode.GetTaxCodeByKeyInput{
+		Namespace: ns,
+		Key:       key,
+	})
+	if err == nil {
+		return taxCode
+	}
+
+	s.Require().True(taxcode.IsTaxCodeNotFoundError(err), "getting tax code by key should either succeed or return not found")
+
+	taxCode, err = s.TaxCodeService.CreateTaxCode(ctx, taxcode.CreateTaxCodeInput{
+		Namespace: ns,
+		Key:       key,
+		Name:      name,
+	})
+	s.Require().NoError(err, "creating tax code")
+
+	return taxCode
+}
+
+type SetupCustomInvoicingResponse struct {
+	App app.App
+}
+type setupCustomInvoicingOptions struct {
+	config appcustominvoicing.Configuration
+}
+
+type setupCustomInvoicingOption func(*setupCustomInvoicingOptions)
+
+func WithCustomInvoicingConfig(config appcustominvoicing.Configuration) setupCustomInvoicingOption {
+	return func(opts *setupCustomInvoicingOptions) {
+		opts.config = config
+	}
+}
+
+func (s *BaseSuite) SetupCustomInvoicingApp() appcustominvoicing.Service {
+	customInvoicingAdapter, err := adapter.New(adapter.Config{
+		Client: s.DBClient,
+		Logger: slog.Default(),
+	})
+	s.NoError(err, "failed to create custom invoicing adapter")
+
+	svc, err := service.New(service.Config{
+		Adapter:        customInvoicingAdapter,
+		Logger:         slog.Default(),
+		AppService:     s.AppService,
+		BillingService: s.BillingService,
+	})
+	s.NoError(err, "failed to create custom invoicing service")
+
+	// Let's register the app
+
+	_, err = appcustominvoicing.NewFactory(appcustominvoicing.FactoryConfig{
+		AppService:             s.AppService,
+		CustomInvoicingService: svc,
+		SequenceService:        s.SequenceService,
+	})
+	s.NoError(err, "failed to create custom invoicing factory")
+
+	return svc
+}
+
+func (s *BaseSuite) SetupCustomInvoicing(namespace string, opts ...setupCustomInvoicingOption) SetupCustomInvoicingResponse {
+	ctx := s.T().Context()
+
+	provisionOpts := setupCustomInvoicingOptions{}
+
+	for _, opt := range opts {
+		opt(&provisionOpts)
+	}
+
+	// Install custom invoicing app
+	customInvoicingApp, err := s.AppService.InstallApp(ctx, app.InstallAppV3Input{
+		MarketplaceListingID: app.MarketplaceListingID{
+			Type: app.AppTypeCustomInvoicing,
+		},
+		Namespace: namespace,
+		Name:      "Custom Invoicing",
+	})
+	s.NoError(err, "failed to install custom invoicing app")
+
+	// Let's set up the custom invoicing config
+	_, err = s.AppService.UpdateApp(ctx, app.UpdateAppInput{
+		AppID:           customInvoicingApp.App.GetID(),
+		Name:            customInvoicingApp.App.GetName(),
+		AppConfigUpdate: provisionOpts.config,
+	})
+	s.NoError(err, "failed to upsert custom invoicing config")
+
+	return SetupCustomInvoicingResponse{
+		App: customInvoicingApp.App,
+	}
+}
+
+func ExpectJSONEqual(t *testing.T, exp, actual any) {
+	t.Helper()
+
+	aJSON, err := json.Marshal(exp)
+	require.NoError(t, err)
+
+	bJSON, err := json.Marshal(actual)
+	require.NoError(t, err)
+
+	require.JSONEq(t, string(aJSON), string(bJSON))
+}
+
+type ExpectedTotals struct {
+	Amount              float64 `json:"amount"`
+	ChargesTotal        float64 `json:"chargesTotal"`
+	DiscountsTotal      float64 `json:"discountsTotal"`
+	TaxesInclusiveTotal float64 `json:"taxesInclusiveTotal"`
+	TaxesExclusiveTotal float64 `json:"taxesExclusiveTotal"`
+	TaxesTotal          float64 `json:"taxesTotal"`
+	Total               float64 `json:"total"`
+	CreditsTotal        float64 `json:"creditsTotal"`
+}
+
+func (s *BaseSuite) RequireTotals(expected ExpectedTotals, actual totals.Totals) {
+	s.T().Helper()
+
+	require.Equal(s.T(), expected, totalsToExpected(actual))
+}
+
+func (s *BaseSuite) AssertTotals(expected ExpectedTotals, actual totals.Totals) {
+	s.T().Helper()
+
+	AssertTotals(s.T(), expected, actual)
+}
+
+func AssertTotals(t *testing.T, expected ExpectedTotals, actual totals.Totals) {
+	t.Helper()
+
+	assert.Equal(t, expected, totalsToExpected(actual))
+}
+
+func totalsToExpected(actual totals.Totals) ExpectedTotals {
+	return ExpectedTotals{
+		Amount:              actual.Amount.InexactFloat64(),
+		ChargesTotal:        actual.ChargesTotal.InexactFloat64(),
+		DiscountsTotal:      actual.DiscountsTotal.InexactFloat64(),
+		TaxesInclusiveTotal: actual.TaxesInclusiveTotal.InexactFloat64(),
+		TaxesExclusiveTotal: actual.TaxesExclusiveTotal.InexactFloat64(),
+		TaxesTotal:          actual.TaxesTotal.InexactFloat64(),
+		Total:               actual.Total.InexactFloat64(),
+		CreditsTotal:        actual.CreditsTotal.InexactFloat64(),
+	}
+}
+
+func (s *BaseSuite) AssertDecimalEqual(expected, actual alpacadecimal.Decimal, label string) {
+	s.T().Helper()
+
+	s.True(actual.Equal(expected), "%s: expected %s, got %s", label, expected.String(), actual.String())
+}

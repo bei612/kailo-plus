@@ -1,0 +1,100 @@
+package schema
+
+import (
+	"entgo.io/ent"
+	"entgo.io/ent/dialect"
+	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/mixin"
+
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+type RateCard struct {
+	mixin.Schema
+}
+
+func (RateCard) Fields() []ent.Field {
+	// Name fields (name, description) and key field are missing as they're present in the UniqueResourceMixin...
+	var fields []ent.Field
+
+	fields = append(
+		fields,
+		field.Enum("type").
+			GoType(productcatalog.RateCardType("")).
+			Immutable(),
+		field.String("feature_key").
+			NotEmpty().
+			Optional().
+			Nillable(),
+		field.JSON("annotations", models.Annotations{}).
+			Optional().
+			SchemaType(map[string]string{
+				dialect.Postgres: "jsonb",
+			}),
+		field.String("entitlement_template").
+			GoType(&productcatalog.EntitlementTemplate{}).
+			ValueScanner(EntitlementTemplateValueScanner).
+			SchemaType(map[string]string{
+				dialect.Postgres: "jsonb",
+			}).
+			Optional().
+			Nillable(),
+		// TODO: Remove the legacy tax_config JSON field after all rate-card read and
+		// write paths use tax_code_id and tax_behavior as the sole representation.
+		field.String("tax_config").
+			GoType(&productcatalog.TaxConfig{}).
+			ValueScanner(TaxConfigValueScanner).
+			SchemaType(map[string]string{
+				dialect.Postgres: "jsonb",
+			}).
+			Optional().
+			Nillable(),
+		field.String("billing_cadence").
+			GoType(datetime.ISODurationString("")).
+			Optional().
+			Nillable(),
+		field.String("price").
+			GoType(&productcatalog.Price{}).
+			ValueScanner(PriceValueScanner).
+			SchemaType(map[string]string{
+				dialect.Postgres: "jsonb",
+			}).
+			Optional().
+			Nillable(),
+		field.String("currency_code").
+			StorageKey("currency").
+			NotEmpty().
+			MinLen(3).
+			MaxLen(24).
+			Optional().
+			Nillable().
+			Comment("The code of the fiat or custom currency."),
+		field.String("custom_currency_id").
+			SchemaType(map[string]string{
+				dialect.Postgres: "char(26)",
+			}).
+			NotEmpty().
+			Optional().
+			Nillable(),
+		field.String("discounts").
+			GoType(&productcatalog.Discounts{}).
+			ValueScanner(DiscountsValueScanner).
+			SchemaType(map[string]string{
+				dialect.Postgres: "jsonb",
+			}).
+			Optional().
+			Nillable(),
+		field.String("unit_config").
+			GoType(&productcatalog.UnitConfig{}).
+			ValueScanner(UnitConfigValueScanner).
+			SchemaType(map[string]string{
+				dialect.Postgres: "jsonb",
+			}).
+			Optional().
+			Nillable(),
+	)
+
+	return fields
+}

@@ -1,0 +1,199 @@
+package billingservice
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+
+	"github.com/openmeterio/openmeter/openmeter/app"
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	billingfeaturemeterservice "github.com/openmeterio/openmeter/openmeter/billing/featuremeter/service"
+	billinglineengine "github.com/openmeterio/openmeter/openmeter/billing/lineengine"
+	"github.com/openmeterio/openmeter/openmeter/billing/rating"
+	"github.com/openmeterio/openmeter/openmeter/billing/sequence"
+	"github.com/openmeterio/openmeter/openmeter/billing/service/invoicecalc"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/openmeter/taxcode"
+	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
+	"github.com/openmeterio/openmeter/pkg/framework/transaction"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+var _ billing.Service = (*Service)(nil)
+
+type Service struct {
+	adapter              billing.Adapter
+	sequenceService      sequence.Service
+	customerService      customer.Service
+	appService           app.Service
+	taxCodeService       taxcode.Service
+	logger               *slog.Logger
+	invoiceCalculator    invoicecalc.Calculator
+	lineEngines          *engineRegistry
+	ratingService        rating.Service
+	featureMeterResolver *billingfeaturemeterservice.Resolver
+
+	publisher eventbus.Publisher
+
+	advancementStrategy billing.AdvancementStrategy
+	fsNamespaceLockdown []string
+
+	standardInvoiceHooks *billing.StandardInvoiceHooks
+}
+
+type Config struct {
+	Adapter                 billing.Adapter
+	SequenceService         sequence.Service
+	CustomerService         customer.Service
+	AppService              app.Service
+	TaxCodeService          taxcode.Service
+	RatingService           rating.Service
+	LegacyBillingLineEngine *billinglineengine.Engine
+	Logger                  *slog.Logger
+	FeatureMeterResolver    *billingfeaturemeterservice.Resolver
+	Publisher               eventbus.Publisher
+	AdvancementStrategy     billing.AdvancementStrategy
+	FSNamespaceLockdown     []string
+}
+
+func (c Config) Validate() error {
+	if c.Adapter == nil {
+		return errors.New("adapter cannot be null")
+	}
+
+	if c.SequenceService == nil {
+		return errors.New("sequence service cannot be null")
+	}
+
+	if c.CustomerService == nil {
+		return errors.New("customer service cannot be null")
+	}
+
+	if c.AppService == nil {
+		return errors.New("app service cannot be null")
+	}
+
+	if c.TaxCodeService == nil {
+		return errors.New("tax code service cannot be null")
+	}
+
+	if c.RatingService == nil {
+		return errors.New("rating service cannot be null")
+	}
+
+	if c.LegacyBillingLineEngine == nil {
+		return errors.New("legacy billing line engine cannot be null")
+	}
+
+	if c.Logger == nil {
+		return errors.New("logger cannot be null")
+	}
+
+	if c.FeatureMeterResolver == nil {
+		return errors.New("feature meter resolver cannot be null")
+	}
+
+	if c.Publisher == nil {
+		return errors.New("publisher cannot be null")
+	}
+
+	if err := c.AdvancementStrategy.Validate(); err != nil {
+		return fmt.Errorf("validating advancement strategy: %w", err)
+	}
+
+	return nil
+}
+
+func New(config Config) (*Service, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+
+	svc := &Service{
+		adapter:              config.Adapter,
+		sequenceService:      config.SequenceService,
+		customerService:      config.CustomerService,
+		appService:           config.AppService,
+		taxCodeService:       config.TaxCodeService,
+		logger:               config.Logger,
+		ratingService:        config.RatingService,
+		featureMeterResolver: config.FeatureMeterResolver,
+		publisher:            config.Publisher,
+		advancementStrategy:  config.AdvancementStrategy,
+		fsNamespaceLockdown:  config.FSNamespaceLockdown,
+		invoiceCalculator:    invoicecalc.New(),
+		lineEngines:          newEngineRegistry(),
+		standardInvoiceHooks: models.NewServiceHookRegistry[billing.StandardInvoice](),
+	}
+
+	if err := svc.RegisterLineEngine(config.LegacyBillingLineEngine); err != nil {
+		return nil, fmt.Errorf("registering invoice engine: %w", err)
+	}
+
+	return svc, nil
+}
+
+func (s Service) WithInvoiceCalculator(calc invoicecalc.Calculator) *Service {
+	s.invoiceCalculator = calc
+
+	return &s
+}
+
+func (s Service) InvoiceCalculator() invoicecalc.Calculator {
+	return s.invoiceCalculator
+}
+
+// transactionForInvoiceManipulation is a helper function that wraps the given function in a transaction and ensures that
+// an update lock is held on the customer record.
+func transactionForInvoiceManipulation[T any](ctx context.Context, svc *Service, customerID customer.CustomerID, fn func(ctx context.Context) (T, error)) (T, error) {
+	var empty T
+
+	if err := customerID.Validate(); err != nil {
+		return empty, fmt.Errorf("validating customer: %w", err)
+	}
+
+	// NOTE: This should not be in transaction, or we can get a conflict for parallel writes
+	err := svc.adapter.UpsertCustomerLock(ctx, customerID)
+	if err != nil {
+		var empty T
+		return empty, fmt.Errorf("upserting customer lock: %w", err)
+	}
+
+	return transaction.Run(ctx, svc.adapter, func(ctx context.Context) (T, error) {
+		if err := svc.adapter.LockCustomerForUpdate(ctx, customerID); err != nil {
+			var empty T
+			return empty, fmt.Errorf("locking customer for update: %w", err)
+		}
+
+		return fn(ctx)
+	})
+}
+
+func transactionForInvoiceManipulationNoValue(ctx context.Context, svc *Service, customerID customer.CustomerID, fn func(ctx context.Context) error) error {
+	_, err := transactionForInvoiceManipulation(ctx, svc, customerID, func(ctx context.Context) (any, error) {
+		return nil, fn(ctx)
+	})
+
+	return err
+}
+
+func (s Service) GetAdvancementStrategy() billing.AdvancementStrategy {
+	return s.advancementStrategy
+}
+
+func (s Service) WithAdvancementStrategy(strategy billing.AdvancementStrategy) billing.Service {
+	s.advancementStrategy = strategy
+
+	return &s
+}
+
+func (s *Service) WithLockedNamespaces(namespaces []string) billing.Service {
+	s.fsNamespaceLockdown = namespaces
+
+	return s
+}
+
+func (s *Service) RegisterStandardInvoiceHooks(hooks ...billing.StandardInvoiceHook) {
+	s.standardInvoiceHooks.RegisterHooks(hooks...)
+}

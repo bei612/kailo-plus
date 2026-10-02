@@ -1,0 +1,355 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/costbasis"
+	chargestatemachine "github.com/openmeterio/openmeter/openmeter/billing/charges/statemachine"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased"
+	usagebasedrating "github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased/service/rating"
+	usagebasedrun "github.com/openmeterio/openmeter/openmeter/billing/charges/usagebased/service/run"
+	billingfeaturemeter "github.com/openmeterio/openmeter/openmeter/billing/featuremeter"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+type stateMachine struct {
+	*chargestatemachine.Machine[usagebased.Charge, usagebased.ChargeBase, usagebased.Status]
+
+	Logger *slog.Logger
+
+	Adapter usagebased.Adapter
+	Rater   usagebasedrating.Service
+	Runs    *usagebasedrun.Service
+
+	CustomerOverride   billing.CustomerOverrideWithDetails
+	FeatureMeters      billingfeaturemeter.FeatureMeters
+	CurrencyCalculator currencyx.Currency
+	CostBasisResolver  costbasis.Resolver
+}
+
+type StateMachine = chargestatemachine.StateMachine[usagebased.Charge]
+
+type StateMachineConfig struct {
+	Charge             usagebased.Charge
+	Adapter            usagebased.Adapter
+	Rater              usagebasedrating.Service
+	Runs               *usagebasedrun.Service
+	Logger             *slog.Logger
+	CustomerOverride   billing.CustomerOverrideWithDetails
+	FeatureMeters      billingfeaturemeter.FeatureMeters
+	CurrencyCalculator currencyx.Currency
+	CostBasisResolver  costbasis.Resolver
+}
+
+func (c StateMachineConfig) Validate() error {
+	var errs []error
+
+	if err := c.Charge.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("charge: %w", err))
+	}
+
+	if c.Adapter == nil {
+		errs = append(errs, errors.New("adapter is required"))
+	}
+
+	if c.Rater == nil {
+		errs = append(errs, errors.New("rater is required"))
+	}
+
+	if c.Runs == nil {
+		errs = append(errs, errors.New("run service is required"))
+	}
+
+	if c.CustomerOverride.Customer == nil {
+		errs = append(errs, errors.New("expanded customer is required"))
+	}
+
+	if err := c.CustomerOverride.MergedProfile.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("merged profile is required: %w", err))
+	}
+
+	if c.FeatureMeters == nil {
+		errs = append(errs, errors.New("feature meters are required"))
+	}
+
+	if c.CurrencyCalculator == nil {
+		return fmt.Errorf("currency calculator is required")
+	}
+
+	if c.CurrencyCalculator != nil {
+		if err := c.CurrencyCalculator.Validate(); err != nil {
+			return fmt.Errorf("currency calculator: %w", err)
+		}
+	}
+
+	if c.CostBasisResolver == nil {
+		errs = append(errs, errors.New("cost basis resolver is required"))
+	}
+
+	return errors.Join(errs...)
+}
+
+func newStateMachineBase(
+	config StateMachineConfig,
+	updateBaseHandlers ...chargestatemachine.UpdateBaseHandler[usagebased.ChargeBase],
+) (*stateMachine, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+
+	out := &stateMachine{
+		Logger:             lo.CoalesceOrEmpty(config.Logger, slog.Default()),
+		Adapter:            config.Adapter,
+		Rater:              config.Rater,
+		Runs:               config.Runs,
+		CustomerOverride:   config.CustomerOverride,
+		FeatureMeters:      config.FeatureMeters,
+		CurrencyCalculator: config.CurrencyCalculator,
+		CostBasisResolver:  config.CostBasisResolver,
+	}
+
+	machine, err := chargestatemachine.New(chargestatemachine.Config[usagebased.Charge, usagebased.ChargeBase, usagebased.Status]{
+		Charge:             config.Charge,
+		UpdateBaseHandlers: updateBaseHandlers,
+		Persistence: chargestatemachine.Persistence[usagebased.Charge, usagebased.ChargeBase]{
+			UpdateBase: out.Adapter.UpdateCharge,
+			Refetch: func(ctx context.Context, chargeID meta.ChargeID) (usagebased.Charge, error) {
+				return out.Adapter.GetByID(ctx, usagebased.GetByIDInput{
+					ChargeID: chargeID,
+					Expands:  meta.Expands{meta.ExpandRealizations},
+				})
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("new machine: %w", err)
+	}
+
+	out.Machine = machine
+
+	return out, nil
+}
+
+// mutateIntentLayer mutates the requested intent layer, creating a new override
+// layer first when the target is override and the charge has no override yet.
+func (s *stateMachine) mutateIntentLayer(ctx context.Context, target meta.ChangeTarget, editFn func(*usagebased.IntentMutableFields) error) error {
+	switch target {
+	case meta.ChangeTargetBase:
+		if err := s.Charge.Intent.Mutate(meta.ChangeTargetBase, func(fields *usagebased.IntentMutableFields) error {
+			return mutateUsageBasedIntentFields(fields, editFn)
+		}); err != nil {
+			return fmt.Errorf("mutating base intent: %w", err)
+		}
+	case meta.ChangeTargetOverride:
+		if s.Charge.Intent.HasOverrideLayer() {
+			if err := s.Charge.Intent.Mutate(meta.ChangeTargetOverride, func(fields *usagebased.IntentMutableFields) error {
+				return mutateUsageBasedIntentFields(fields, editFn)
+			}); err != nil {
+				return fmt.Errorf("mutating override intent: %w", err)
+			}
+
+			return nil
+		}
+
+		overrideFields := s.Charge.Intent.GetEffectiveIntent().IntentMutableFields
+		if err := mutateUsageBasedIntentFields(&overrideFields, editFn); err != nil {
+			return err
+		}
+
+		overrideFields = overrideFields.Normalized()
+		if err := overrideFields.Validate(); err != nil {
+			return fmt.Errorf("validating override intent: %w", err)
+		}
+
+		base, err := s.Adapter.CreateChargeOverride(ctx, s.Charge.ChargeBase, overrideFields)
+		if err != nil {
+			return fmt.Errorf("creating override intent: %w", err)
+		}
+
+		s.Charge.ChargeBase = base
+	default:
+		return fmt.Errorf("invalid change target: %s", target)
+	}
+
+	return nil
+}
+
+func mutateUsageBasedIntentFields(fields *usagebased.IntentMutableFields, editFn func(*usagebased.IntentMutableFields) error) error {
+	if err := editFn(fields); err != nil {
+		return err
+	}
+
+	fields.Discounts = fields.Discounts.UpsertCorrelationIDs()
+
+	return nil
+}
+
+// setOverrideIntent replaces the complete mutable override snapshot while
+// preserving the charge's base intent.
+func (s *stateMachine) setOverrideIntent(ctx context.Context, patch usagebased.PatchSetOverride) error {
+	target, err := patch.GetTargetLayer(s.Charge.Intent)
+	if err != nil {
+		return fmt.Errorf("getting patch target layer: %w", err)
+	}
+
+	fields := patch.GetIntentMutableFields()
+	if err := s.mutateIntentLayer(ctx, target, func(current *usagebased.IntentMutableFields) error {
+		*current = fields
+		return nil
+	}); err != nil {
+		return fmt.Errorf("setting usage-based override intent: %w", err)
+	}
+
+	return nil
+}
+
+func (s *stateMachine) UnsupportedSetOverrideOperation(_ context.Context, _ usagebased.PatchSetOverride) error {
+	return models.NewGenericPreConditionFailedError(
+		fmt.Errorf("cannot set override for usage-based charge in status %s; retry after billing advances", s.Charge.Status),
+	)
+}
+
+// clearOverrideIntent removes the effective override layer so the current base
+// intent becomes customer-facing again. State-machine transitions own
+// reconciling the restored intent's lifecycle, including deletion.
+func (s *stateMachine) clearOverrideIntent(ctx context.Context) error {
+	if !s.Charge.Intent.HasOverrideLayer() {
+		return errors.New("clearing usage-based override intent: override intent is required")
+	}
+
+	base, err := s.Adapter.DeleteChargeOverride(ctx, s.Charge.ChargeBase)
+	if err != nil {
+		return fmt.Errorf("deleting usage-based override intent: %w", err)
+	}
+
+	s.Charge.ChargeBase = base
+
+	return nil
+}
+
+func (s *stateMachine) IsBaseIntentDeleted() bool {
+	return s.Charge.Intent.GetBaseIntent().IntentDeletedAt != nil
+}
+
+// ClearOverrideFromDeletedBase removes a redundant override from a charge whose
+// source intent and lifecycle are already deleted. Deletion reconciliation has
+// already completed, so it must not be repeated.
+func (s *stateMachine) ClearOverrideFromDeletedBase(ctx context.Context, _ meta.PatchClearOverride) error {
+	if err := s.clearOverrideIntent(ctx); err != nil {
+		return err
+	}
+
+	if s.Charge.Intent.GetDeletedAt() == nil {
+		return errors.New("clearing usage-based override did not restore the deleted base intent")
+	}
+
+	return nil
+}
+
+func (s *stateMachine) UnsupportedClearOverrideOperation(_ context.Context, _ meta.PatchClearOverride) error {
+	return models.NewGenericPreConditionFailedError(
+		fmt.Errorf("cannot clear override for usage-based charge in status %s; retry after billing advances", s.Charge.Status),
+	)
+}
+
+// rejectHiddenIntentTarget prevents lifecycle state machines from processing a
+// hidden source intent. When an override layer exists, the override is the
+// active customer-facing charge: it owns status transitions, realization runs,
+// credit corrections, and invoice patches. Subscription-owned base/source
+// changes must be applied before state-machine dispatch by service-level
+// reconciliation, not interpreted as lifecycle events.
+func (s *stateMachine) rejectHiddenIntentTarget(target meta.ChangeTarget) error {
+	if target == meta.ChangeTargetBase && s.Charge.Intent.HasOverrideLayer() {
+		return models.NewGenericPreConditionFailedError(
+			fmt.Errorf("cannot mutate hidden base intent while override intent is active"),
+		)
+	}
+
+	return nil
+}
+
+func (s *stateMachine) IsInsideServicePeriod() bool {
+	return !clock.Now().Before(s.Charge.Intent.GetEffectiveServicePeriod().From)
+}
+
+func (s *stateMachine) IsAfterServicePeriod() bool {
+	return !clock.Now().Before(s.Charge.Intent.GetEffectiveServicePeriod().To)
+}
+
+func (s *stateMachine) AdvanceAfterServicePeriodTo(ctx context.Context) error {
+	s.Charge.State.AdvanceAfter = lo.ToPtr(meta.NormalizeTimestamp(s.Charge.Intent.GetEffectiveServicePeriod().To))
+	return nil
+}
+
+func (s *stateMachine) SyncFeatureIDFromFeatureMeter(ctx context.Context) error {
+	if s.Charge.State.FeatureID != "" && !s.Charge.ValidationIssues.HasComponent(billing.ValidationComponentProductCatalog) {
+		return nil
+	}
+
+	featureMeter, err := s.FeatureMeters.Get(s.Charge)
+	if err != nil {
+		return err
+	}
+
+	if s.Charge.State.FeatureID == "" {
+		s.Charge.State.FeatureID = featureMeter.Feature.ID
+	}
+	s.Charge.ValidationIssues = s.Charge.ValidationIssues.WithoutComponent(billing.ValidationComponentProductCatalog)
+
+	return nil
+}
+
+func (s *stateMachine) AdvanceAfterServicePeriodFrom(ctx context.Context) error {
+	s.Charge.State.AdvanceAfter = lo.ToPtr(meta.NormalizeTimestamp(s.Charge.Intent.GetEffectiveServicePeriod().From))
+	return nil
+}
+
+func (s *stateMachine) AdvanceAfterCollectionPeriodEnd(ctx context.Context) error {
+	snapshotAfter, err := s.getCurrentRunSnapshotAfter()
+	if err != nil {
+		return err
+	}
+
+	s.Charge.State.AdvanceAfter = lo.ToPtr(snapshotAfter)
+
+	return nil
+}
+
+func (s *stateMachine) IsAfterCollectionPeriod(ctx context.Context, _ ...any) bool {
+	snapshotAfter, err := s.getCurrentRunSnapshotAfter()
+	if err != nil {
+		s.Logger.ErrorContext(ctx, "failed to get snapshot after", "error", err, "customerID", s.Charge.Intent.GetCustomerID())
+		return false
+	}
+
+	return !clock.Now().Before(snapshotAfter)
+}
+
+func (s *stateMachine) getFinalRunStoredAtLT() (time.Time, error) {
+	collectionPeriod := s.CustomerOverride.MergedProfile.WorkflowConfig.Collection.Interval
+	storedAtLT, _ := collectionPeriod.AddTo(s.Charge.Intent.GetEffectiveServicePeriod().To)
+	return meta.NormalizeTimestamp(storedAtLT), nil
+}
+
+func (s *stateMachine) getCurrentRunSnapshotAfter() (time.Time, error) {
+	if s.Charge.State.CurrentRealizationRunID == nil {
+		return time.Time{}, fmt.Errorf("no realization run in progress [charge_id=%s]", s.Charge.ID)
+	}
+
+	currentRun, err := s.Charge.Realizations.GetByID(*s.Charge.State.CurrentRealizationRunID)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("get current realization run: %w", err)
+	}
+
+	return meta.NormalizeTimestamp(currentRun.StoredAtLT.Add(usagebased.InternalCollectionPeriod)), nil
+}

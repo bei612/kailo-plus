@@ -1,0 +1,157 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"sync/atomic"
+	"testing"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/flatfee"
+	flatfeerealizations "github.com/openmeterio/openmeter/openmeter/billing/charges/flatfee/service/realizations"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/lineage"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/costbasis"
+	billingfeaturemeterservice "github.com/openmeterio/openmeter/openmeter/billing/featuremeter/service"
+	"github.com/openmeterio/openmeter/openmeter/billing/rating"
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	"github.com/openmeterio/openmeter/openmeter/subscription/validators/itemreference"
+	"github.com/openmeterio/openmeter/pkg/framework/lockr"
+)
+
+type Config struct {
+	Adapter                flatfee.Adapter
+	Handler                flatfee.Handler
+	Lineage                lineage.Service
+	MetaAdapter            meta.Adapter
+	Locker                 *lockr.Locker
+	RatingService          rating.Service
+	FeatureMeterResolver   *billingfeaturemeterservice.Resolver
+	Currencies             currencies.Service
+	ItemReferenceValidator itemreference.Validator
+	BillingService         billing.Service
+}
+
+type LineSubscriptionReferenceService interface {
+	SetGatheringLineSubscriptionReferenceByChargeID(ctx context.Context, input billing.SetLineSubscriptionReferenceByChargeIDInput) error
+	SetStandardLineSubscriptionReferenceByChargeID(ctx context.Context, input billing.SetLineSubscriptionReferenceByChargeIDInput) error
+}
+
+func (c Config) Validate() error {
+	var errs []error
+
+	if c.Adapter == nil {
+		errs = append(errs, errors.New("adapter cannot be null"))
+	}
+
+	if c.Handler == nil {
+		errs = append(errs, errors.New("handler cannot be null"))
+	}
+
+	if c.Lineage == nil {
+		errs = append(errs, errors.New("lineage service cannot be null"))
+	}
+
+	if c.MetaAdapter == nil {
+		errs = append(errs, errors.New("meta adapter cannot be null"))
+	}
+
+	if c.Locker == nil {
+		errs = append(errs, errors.New("locker cannot be null"))
+	}
+
+	if c.RatingService == nil {
+		errs = append(errs, errors.New("rating service cannot be null"))
+	}
+
+	if c.FeatureMeterResolver == nil {
+		errs = append(errs, errors.New("feature meter resolver cannot be null"))
+	}
+
+	if c.Currencies == nil {
+		errs = append(errs, errors.New("currencies service cannot be null"))
+	}
+
+	if c.ItemReferenceValidator == nil {
+		errs = append(errs, errors.New("subscription item reference validator cannot be null"))
+	}
+
+	if c.BillingService == nil {
+		errs = append(errs, errors.New("billing service cannot be null"))
+	}
+
+	return errors.Join(errs...)
+}
+
+func New(config Config) (flatfee.Service, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+
+	realizations, err := flatfeerealizations.New(flatfeerealizations.Config{
+		Adapter:       config.Adapter,
+		Handler:       config.Handler,
+		Lineage:       config.Lineage,
+		RatingService: config.RatingService,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	costbasisResolver, err := costbasis.NewResolver(costbasis.ResolverConfig{
+		Currencies: config.Currencies,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	svc := &service{
+		adapter:                          config.Adapter,
+		handler:                          config.Handler,
+		metaAdapter:                      config.MetaAdapter,
+		locker:                           config.Locker,
+		ratingService:                    config.RatingService,
+		featureMeterResolver:             config.FeatureMeterResolver,
+		realizations:                     realizations,
+		costbasisResolver:                costbasisResolver,
+		itemReferenceValidator:           config.ItemReferenceValidator,
+		lineSubscriptionReferenceService: config.BillingService,
+	}
+	svc.creditNotesSupported.Store(charges.CreditNotesSupportedByLineUpdater)
+
+	return svc, nil
+}
+
+type service struct {
+	adapter                          flatfee.Adapter
+	handler                          flatfee.Handler
+	metaAdapter                      meta.Adapter
+	locker                           *lockr.Locker
+	ratingService                    rating.Service
+	featureMeterResolver             *billingfeaturemeterservice.Resolver
+	realizations                     *flatfeerealizations.Service
+	creditNotesSupported             atomic.Bool
+	costbasisResolver                costbasis.Resolver
+	itemReferenceValidator           itemreference.Validator
+	lineSubscriptionReferenceService LineSubscriptionReferenceService
+}
+
+func (s *service) GetLineEngine() billing.LineEngine {
+	return &LineEngine{
+		service: s,
+	}
+}
+
+// SetCreditNotesSupportedByLineUpdater sets the credit notes supported by the line updater.
+// This is used to test the credit notes supported by the line updater, but must not be used
+// in production code.
+func (s *service) SetCreditNotesSupportedByLineUpdater(t *testing.T, supported bool) error {
+	if t == nil {
+		return errors.New("testing is nil")
+	}
+
+	t.Helper()
+	s.creditNotesSupported.Store(supported)
+	return nil
+}

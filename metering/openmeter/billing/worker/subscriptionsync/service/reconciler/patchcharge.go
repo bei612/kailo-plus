@@ -1,0 +1,166 @@
+package reconciler
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"github.com/alpacahq/alpacadecimal"
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges"
+	chargesmeta "github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/costbasis"
+	"github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync/service/persistedstate"
+	"github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync/service/targetstate"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+type chargePatchCollection struct {
+	engineType billing.LineEngineType
+	itemType   persistedstate.ItemType
+	patches    charges.ApplyPatchesInput
+}
+
+func (c chargePatchCollection) GetLineEngineType() billing.LineEngineType {
+	return c.engineType
+}
+
+func newChargePatchCollection(engineType billing.LineEngineType, itemType persistedstate.ItemType, preallocatedCapacity int) chargePatchCollection {
+	if preallocatedCapacity <= 0 {
+		preallocatedCapacity = 16
+	}
+
+	return chargePatchCollection{
+		engineType: engineType,
+		itemType:   itemType,
+		patches: charges.ApplyPatchesInput{
+			PatchesByChargeID: make(map[string]charges.Patch, preallocatedCapacity),
+			Creates:           make(charges.CreateChargeIntents, 0, preallocatedCapacity),
+		},
+	}
+}
+
+func (c chargePatchCollection) unsupportedOperationError(operation PatchOperation, uniqueID string, existing persistedstate.Item) error {
+	return fmt.Errorf("unsupported operation %s for charge patches [item_type=%s, uniqueID=%s, id=%s]", operation, c.itemType, uniqueID, existing.ID())
+}
+
+func (c chargePatchCollection) IsEmpty() bool {
+	return len(c.patches.PatchesByChargeID) == 0 && len(c.patches.Creates) == 0
+}
+
+func (c chargePatchCollection) Patches() charges.ApplyPatchesInput {
+	return c.patches
+}
+
+func (c *chargePatchCollection) addCreate(intent charges.ChargeIntent, options chargesmeta.CreateOptions) error {
+	// Full intent validation is intentionally delayed until charges.Service.ApplyPatches,
+	// after namespace default tax codes are applied to create intents.
+	uniqueReferenceID, err := intent.GetUniqueReferenceID()
+	if err != nil {
+		return fmt.Errorf("getting unique reference ID: %w", err)
+	}
+
+	if lo.FromPtr(uniqueReferenceID) == "" {
+		return fmt.Errorf("unique reference ID is required")
+	}
+
+	c.patches.Creates = append(c.patches.Creates, charges.CreateChargeIntent{
+		ChargeIntent: intent,
+		Options:      options,
+	})
+	return nil
+}
+
+func (c *chargePatchCollection) addPatch(chargeID string, patch charges.Patch) error {
+	if chargeID == "" {
+		return fmt.Errorf("charge ID is required")
+	}
+
+	if patch == nil {
+		return fmt.Errorf("patch is required")
+	}
+
+	if err := patch.Validate(); err != nil {
+		return fmt.Errorf("invalid patch: %w", err)
+	}
+
+	if _, exists := c.patches.PatchesByChargeID[chargeID]; exists {
+		return fmt.Errorf("patch for charge ID %s already exists", chargeID)
+	}
+
+	c.patches.PatchesByChargeID[chargeID] = patch
+	return nil
+}
+
+func (c *chargePatchCollection) AddDelete(_ string, existing persistedstate.Item) error {
+	patch, err := chargesmeta.NewPatchDelete(chargesmeta.NewPatchDeleteInput{
+		ChangeSource: billing.ChangeSourceSystem,
+		Policy:       chargesmeta.RefundAsCreditsDeletePolicy,
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.addPatch(existing.ID().ID, patch)
+}
+
+func (c *chargePatchCollection) AddProrate(existing persistedstate.Item, target targetstate.StateItem, originalPeriod, targetPeriod timeutil.ClosedPeriod, originalAmount, targetAmount alpacadecimal.Decimal) error {
+	// Charge-backed reconciliation does not emit explicit prorate patches. For charges,
+	// any period-shape change is carried by shrink/extend and the charge domain is
+	// responsible for recalculating the effective amount from the updated periods.
+	return c.unsupportedOperationError(PatchOperationProrate, target.UniqueID, existing)
+}
+
+func logChargesPatches(ctx context.Context, log *slog.Logger, patches charges.ApplyPatchesInput) {
+	for chargeID, patch := range patches.PatchesByChargeID {
+		log.InfoContext(ctx, "patching charge", "charge_id", chargeID, "patch", patch)
+	}
+
+	for _, intent := range patches.Creates {
+		log.InfoContext(ctx, "creating charge", "intent", intent.ChargeIntent)
+	}
+}
+
+func newChargeCostBasisIntent(target targetstate.StateItem) (*costbasis.Intent, error) {
+	if !target.Currency.IsCustom() || target.Subscription.SettlementMode != productcatalog.CreditThenInvoiceSettlementMode {
+		return nil, nil
+	}
+
+	fiatCurrency, err := currencyx.NewFiatCurrency(target.Subscription.InvoiceCurrency)
+	if err != nil {
+		return nil, fmt.Errorf("building invoice currency: %w", err)
+	}
+
+	if !target.Subscription.CostBasisMode.IsPinned() {
+		intent := costbasis.NewIntent(costbasis.DynamicIntent{FiatCurrency: fiatCurrency})
+		return &intent, nil
+	}
+
+	var costBasisID string
+	for _, pin := range target.Subscription.CostBasisPins {
+		if pin.CustomCurrencyID != target.Currency.ID || pin.InvoiceCurrency != target.Subscription.InvoiceCurrency {
+			continue
+		}
+
+		if costBasisID != "" {
+			return nil, fmt.Errorf("multiple pinned cost bases found for custom currency [currency_id=%s invoice_currency=%s]", target.Currency.ID, target.Subscription.InvoiceCurrency)
+		}
+
+		costBasisID = pin.CostBasis.ID
+	}
+
+	if costBasisID == "" {
+		return nil, fmt.Errorf("pinned cost basis not found for custom currency [currency_id=%s invoice_currency=%s]", target.Currency.ID, target.Subscription.InvoiceCurrency)
+	}
+
+	intent := costbasis.NewIntent(costbasis.PinnedIntent{
+		FiatCurrency:        fiatCurrency,
+		CurrencyCostBasisID: costBasisID,
+	})
+
+	return &intent, nil
+}

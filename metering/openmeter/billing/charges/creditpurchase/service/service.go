@@ -1,0 +1,91 @@
+package service
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/creditpurchase"
+	creditpurchaserealizations "github.com/openmeterio/openmeter/openmeter/billing/charges/creditpurchase/service/realizations"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/lineage"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/costbasis"
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+)
+
+type Config struct {
+	Adapter     creditpurchase.Adapter
+	Handler     creditpurchase.Handler
+	Lineage     lineage.Service
+	MetaAdapter meta.Adapter
+	Currencies  currencies.Service
+}
+
+func (c Config) Validate() error {
+	var errs []error
+
+	if c.Adapter == nil {
+		errs = append(errs, errors.New("adapter cannot be null"))
+	}
+
+	if c.Handler == nil {
+		errs = append(errs, errors.New("credit purchase handler cannot be null"))
+	}
+
+	if c.Lineage == nil {
+		errs = append(errs, errors.New("lineage service cannot be null"))
+	}
+
+	if c.MetaAdapter == nil {
+		errs = append(errs, errors.New("meta adapter cannot be null"))
+	}
+
+	if c.Currencies == nil {
+		errs = append(errs, errors.New("currencies service cannot be null"))
+	}
+
+	return errors.Join(errs...)
+}
+
+func New(config Config) (creditpurchase.Service, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+
+	realizations, err := creditpurchaserealizations.New(creditpurchaserealizations.Config{
+		Adapter: config.Adapter,
+		Handler: config.Handler,
+		Lineage: config.Lineage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("realizations: %w", err)
+	}
+
+	costbasisResolver, err := costbasis.NewResolver(costbasis.ResolverConfig{
+		Currencies: config.Currencies,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("cost basis resolver: %w", err)
+	}
+
+	return &service{
+		adapter:           config.Adapter,
+		metaAdapter:       config.MetaAdapter,
+		realizations:      realizations,
+		costbasisResolver: costbasisResolver,
+	}, nil
+}
+
+type service struct {
+	adapter      creditpurchase.Adapter
+	metaAdapter  meta.Adapter
+	realizations *creditpurchaserealizations.Service
+
+	costbasisResolver costbasis.Resolver
+}
+
+func (s *service) GetLineEngine() billing.LineEngine {
+	return &LineEngine{
+		service: s,
+	}
+}

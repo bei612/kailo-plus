@@ -1,0 +1,157 @@
+package billing
+
+import (
+	"context"
+
+	"github.com/openmeterio/openmeter/openmeter/app"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+)
+
+type Service interface {
+	ProfileService
+	CustomerOverrideService
+	LineEngineService
+	SplitLineGroupService
+	InvoiceService
+	GatheringInvoiceService
+	StandardInvoiceService
+	SubscriptionReferenceService
+	LockableService
+
+	InvoiceAppService
+
+	ConfigService
+}
+
+type ProfileService interface {
+	CreateProfile(ctx context.Context, param CreateProfileInput) (*Profile, error)
+	GetDefaultProfile(ctx context.Context, input GetDefaultProfileInput) (*Profile, error)
+	GetProfile(ctx context.Context, input GetProfileInput) (*Profile, error)
+	ListProfiles(ctx context.Context, input ListProfilesInput) (ListProfilesResult, error)
+	DeleteProfile(ctx context.Context, input DeleteProfileInput) error
+	UpdateProfile(ctx context.Context, input UpdateProfileInput) (*Profile, error)
+	ProvisionDefaultBillingProfile(ctx context.Context, namespace string) error
+	IsAppUsed(ctx context.Context, appID app.AppID) error
+	ResolveStripeAppIDFromBillingProfile(ctx context.Context, namespace string, customerId *customer.CustomerID) (app.AppID, error)
+}
+
+type CustomerOverrideService interface {
+	UpsertCustomerOverride(ctx context.Context, input UpsertCustomerOverrideInput) (CustomerOverrideWithDetails, error)
+	DeleteCustomerOverride(ctx context.Context, input DeleteCustomerOverrideInput) error
+
+	GetCustomerOverride(ctx context.Context, input GetCustomerOverrideInput) (CustomerOverrideWithDetails, error)
+	GetCustomerApp(ctx context.Context, input GetCustomerAppInput) (app.App, error)
+	ListCustomerOverrides(ctx context.Context, input ListCustomerOverridesInput) (ListCustomerOverridesResult, error)
+}
+
+type LineEngineService interface {
+	RegisterLineEngine(engine LineEngine) error
+	RegisterCreateLineRouter(router CreateLineRouter) error
+	DeregisterLineEngine(engineType LineEngineType) error
+	GetRegisteredLineEngines() []LineEngineType
+	// OnUnsupportedCreditNote is invoked when a line deletion targets an immutable invoice but credit-note support is not available yet.
+	// This is a temporary placeholder instead of the credit-note implementation that allows us to externally
+	// invoke the right line engine for the line deletion.
+	OnUnsupportedCreditNote(ctx context.Context, input OnUnsupportedCreditNoteInput) error
+}
+
+type SplitLineGroupService interface {
+	DeleteSplitLineGroup(ctx context.Context, input DeleteSplitLineGroupInput) error
+	UpdateSplitLineGroup(ctx context.Context, input UpdateSplitLineGroupInput) (SplitLineGroup, error)
+	// GetSplitLineGroupsForSubscription returns the active split-line hierarchies required for subscription sync.
+	GetSplitLineGroupsForSubscription(ctx context.Context, input GetLinesForSubscriptionInput) ([]SplitLineHierarchy, error)
+}
+
+type InvoiceService interface {
+	InvoicePendingLines(ctx context.Context, input InvoicePendingLinesInput, opts ...InvoicePendingLinesOption) ([]StandardInvoice, error)
+
+	ListInvoices(ctx context.Context, input ListInvoicesInput) (ListInvoicesResponse, error)
+	// GetInvoiceById returns the invoice by its ID using the Invoice union type.
+	// Please use GetStandardInvoiceById or GetGatheringInvoiceById instead if you know exactly the type of the invoice.
+	GetInvoiceById(ctx context.Context, input GetInvoiceByIdInput) (Invoice, error)
+	// AdvanceInvoice advances the invoice to the next stage, the advancement is stopped until:
+	// - an error is occurred
+	// - the invoice is in a state that cannot be advanced (e.g. waiting for draft period to expire)
+	// - the invoice is advanced to the final state
+	AdvanceInvoice(ctx context.Context, input AdvanceInvoiceInput) (StandardInvoice, error)
+	// ForceCollectInvoice bypasses the invoice collection period and moves the invoice into collection immediately.
+	ForceCollectInvoice(ctx context.Context, input ForceCollectInvoiceInput) (StandardInvoice, error)
+	ApproveInvoice(ctx context.Context, input ApproveInvoiceInput) (StandardInvoice, error)
+	PaymentAuthorized(ctx context.Context, input PaymentAuthorizedInput) (StandardInvoice, error)
+	RetryInvoice(ctx context.Context, input RetryInvoiceInput) (StandardInvoice, error)
+	DeleteInvoice(ctx context.Context, input DeleteInvoiceInput) (StandardInvoice, error)
+
+	// SimulateInvoice generates an invoice based on the provided input, but does not persist it
+	// can be used to execute the invoice generation logic without actually creating an invoice in the database
+	SimulateInvoice(ctx context.Context, input SimulateInvoiceInput) (StandardInvoice, error)
+	// UpsertValidationIssues upserts validation errors to the invoice bypassing the state machine, can only be
+	// used on invoices in immutable state.
+	UpsertValidationIssues(ctx context.Context, input UpsertValidationIssuesInput) error
+
+	// RecalculateGatheringInvoices recalculates the gathering invoices for a given customer, updating the
+	// collection_at attribute and deleting the gathering invoice if it has no lines.
+	RecalculateGatheringInvoices(ctx context.Context, input RecalculateGatheringInvoicesInput) error
+}
+
+type StandardInvoiceService interface {
+	// GetStandardLinesForSubscription returns standard lines required for subscription sync.
+	// Deleted lines are excluded unless they are manually managed, preserving explicit user intent during reconciliation.
+	GetStandardLinesForSubscription(ctx context.Context, input GetLinesForSubscriptionInput) (StandardLines, error)
+	// UpdateStandardInvoice updates a standard invoice as a whole
+	UpdateStandardInvoice(ctx context.Context, input UpdateStandardInvoiceInput) (StandardInvoice, error)
+	// GetStandardInvoiceById gets a standard invoice by its ID
+	GetStandardInvoiceById(ctx context.Context, input GetStandardInvoiceByIdInput) (StandardInvoice, error)
+	// ListStandardInvoices lists standard invoices
+	ListStandardInvoices(ctx context.Context, input ListStandardInvoicesInput) (ListStandardInvoicesResponse, error)
+	// ListStandardInvoicesPendingAdvancement lists the identifiers required to dispatch automatic advancement.
+	ListStandardInvoicesPendingAdvancement(ctx context.Context, input ListStandardInvoicesPendingAdvancementInput) ([]InvoiceAdvancementCandidate, error)
+	// CreateStandardInvoiceFromGatheringLines creates a standard invoice from the gathering invoice lines.
+	CreateStandardInvoiceFromGatheringLines(ctx context.Context, input CreateStandardInvoiceFromGatheringLinesInput) (*StandardInvoice, error)
+	// RegisterStandardInvoiceHooks registers hooks for standard invoice lifecycle events
+	RegisterStandardInvoiceHooks(hooks ...StandardInvoiceHook)
+}
+
+type GatheringInvoiceService interface {
+	// GetGatheringLinesForSubscription returns gathering lines required for subscription sync.
+	// Deleted lines are excluded unless they are manually managed, preserving explicit user intent during reconciliation.
+	GetGatheringLinesForSubscription(ctx context.Context, input GetLinesForSubscriptionInput) (GatheringLines, error)
+	// CreatePendingInvoiceLines creates pending invoice lines for a customer, if the lines are zero valued, the response is nil
+	CreatePendingInvoiceLines(ctx context.Context, input CreatePendingInvoiceLinesInput) (*CreatePendingInvoiceLinesResult, error)
+
+	ListGatheringInvoices(ctx context.Context, input ListGatheringInvoicesInput) (pagination.Result[GatheringInvoice], error)
+	// ListCustomerIDsPendingCollection lists unique customers with gathering invoices due for automatic collection.
+	ListCustomerIDsPendingCollection(ctx context.Context, input ListCustomerIDsPendingCollectionInput) ([]customer.CustomerID, error)
+	GetGatheringInvoiceById(ctx context.Context, input GetGatheringInvoiceByIdInput) (GatheringInvoice, error)
+	UpdateGatheringInvoice(ctx context.Context, input UpdateGatheringInvoiceInput) (GatheringInvoice, error)
+	DeleteGatheringInvoice(ctx context.Context, input DeleteInvoiceInput) (GatheringInvoice, error)
+	RecalculateGatheringInvoices(ctx context.Context, input RecalculateGatheringInvoicesInput) error
+}
+
+type SubscriptionReferenceService interface {
+	SetGatheringLineSubscriptionReferenceByChargeID(ctx context.Context, input SetLineSubscriptionReferenceByChargeIDInput) error
+	SetStandardLineSubscriptionReferenceByChargeID(ctx context.Context, input SetLineSubscriptionReferenceByChargeIDInput) error
+}
+
+type InvoiceAppService interface {
+	// TriggerInvoice triggers the invoice state machine to start processing the invoice
+	TriggerInvoice(ctx context.Context, input InvoiceTriggerServiceInput) error
+
+	// UpdateInvoiceFields updates the fields of an invoice which are not managed by the state machine
+	// These are usually metadata fields settable after the invoice has been finalized
+	UpdateInvoiceFields(ctx context.Context, input UpdateInvoiceFieldsInput) error
+
+	// Async sync support
+	SyncDraftInvoice(ctx context.Context, input SyncDraftStandardInvoiceInput) (StandardInvoice, error)
+	SyncIssuingInvoice(ctx context.Context, input SyncIssuingStandardInvoiceInput) (StandardInvoice, error)
+}
+
+type LockableService interface {
+	WithLock(ctx context.Context, customerID customer.CustomerID, fn func(ctx context.Context) error) error
+}
+
+type ConfigService interface {
+	GetAdvancementStrategy() AdvancementStrategy
+	WithAdvancementStrategy(strategy AdvancementStrategy) Service
+	WithLockedNamespaces(namespaces []string) Service
+}

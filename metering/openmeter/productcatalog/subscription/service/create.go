@@ -1,0 +1,96 @@
+package service
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	productcatalogcurrencyresolver "github.com/openmeterio/openmeter/openmeter/productcatalog/currencyresolver"
+	plansubscription "github.com/openmeterio/openmeter/openmeter/productcatalog/subscription"
+	"github.com/openmeterio/openmeter/openmeter/subscription"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/featuregate"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+func (s *service) Create(ctx context.Context, request plansubscription.CreateSubscriptionRequest) (subscription.Subscription, error) {
+	var def subscription.Subscription
+
+	// Let's build the plan input
+	var plan subscription.Plan
+
+	if err := request.PlanInput.Validate(); err != nil {
+		return def, err
+	}
+
+	if request.PlanInput.AsInput() != nil {
+		planInput := *request.PlanInput.AsInput()
+		if request.SettlementMode != nil {
+			planInput.SettlementMode = *request.SettlementMode
+		}
+		// Gate custom currencies behind the credits feature before resolving them, so
+		// a deployment without credits returns a clear "not enabled" error rather than
+		// the downstream "currency does not exist" that resolution would raise for an
+		// unregistered custom currency. UsesCustomCurrency inspects currency codes, so
+		// it works before resolution.
+		if !featuregate.ContextResolver().Credits(ctx) && planInput.Plan.UsesCustomCurrency() {
+			return def, models.NewGenericValidationError(errCustomCurrenciesDisabled)
+		}
+
+		if err := s.resolveCustomPlanFeatures(ctx, request.WorkflowInput.Namespace, &planInput); err != nil {
+			return def, err
+		}
+
+		if err := productcatalogcurrencyresolver.ResolveCurrenciesForPlan(ctx, s.CurrencyResolver.WithNamespace(request.WorkflowInput.Namespace), &planInput.Plan); err != nil {
+			return def, fmt.Errorf("invalid plan currencies: %w", err)
+		}
+
+		p, err := PlanFromPlanInput(planInput)
+		if err != nil {
+			return def, err
+		}
+
+		plan = p
+	} else if request.PlanInput.AsRef() != nil {
+		p, err := s.getPlanByVersion(ctx, request.WorkflowInput.Namespace, *request.PlanInput.AsRef())
+		if err != nil {
+			return def, err
+		}
+
+		now := clock.Now()
+
+		if p.DeletedAt != nil && !now.Before(*p.DeletedAt) {
+			return def, models.NewGenericValidationError(
+				fmt.Errorf("plan is deleted [namespace=%s, key=%s, version=%d, deleted_at=%s]", p.Namespace, p.Key, p.Version, p.DeletedAt),
+			)
+		}
+
+		if p.StatusAt(now) != productcatalog.PlanStatusActive {
+			return def, models.NewGenericValidationError(
+				fmt.Errorf("plan %s@%d is not active at %s", p.Key, p.Version, now),
+			)
+		}
+
+		if request.StartingPhase != nil {
+			if err := s.zeroPhasesBeforeStartingPhase(p, *request.StartingPhase); err != nil {
+				return def, err
+			}
+		}
+
+		if request.SettlementMode != nil {
+			p.SettlementMode = *request.SettlementMode
+		}
+
+		plan = PlanFromPlan(*p)
+	} else {
+		return def, fmt.Errorf("plan or plan reference must be provided, should have validated already")
+	}
+
+	// Then let's create the subscription form the plan
+	subView, err := s.WorkflowService.CreateFromPlan(ctx, request.WorkflowInput, plan)
+	if err != nil {
+		return def, err
+	}
+
+	return subView.Subscription, nil
+}

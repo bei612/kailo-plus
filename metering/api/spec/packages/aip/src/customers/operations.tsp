@@ -1,0 +1,220 @@
+import "@typespec/http";
+import "@typespec/rest";
+import "@typespec/openapi";
+import "@typespec/openapi3";
+import "../common/error.tsp";
+import "../common/pagination.tsp";
+import "../common/parameters.tsp";
+import "../shared/index.tsp";
+import "./customer.tsp";
+import "./billing.tsp";
+
+using TypeSpec.Http;
+using TypeSpec.OpenAPI;
+
+namespace Customers;
+
+/**
+ * Filter options for listing customers.
+ */
+@friendlyName("ListCustomersParamsFilter")
+model ListCustomersParamsFilter {
+  #suppress "@openmeter/api-spec-aip/doc-decorator" "filter field"
+  key?: Common.StringFieldFilter;
+  #suppress "@openmeter/api-spec-aip/doc-decorator" "filter field"
+  name?: Common.StringFieldFilter;
+  #suppress "@openmeter/api-spec-aip/doc-decorator" "filter field"
+  primary_email?: Common.StringFieldFilter;
+  #suppress "@openmeter/api-spec-aip/doc-decorator" "filter field"
+  usage_attribution_subject_key?: Common.StringFieldFilter;
+  #suppress "@openmeter/api-spec-aip/doc-decorator" "filter field"
+  plan_key?: Common.StringFieldFilter;
+  #suppress "@openmeter/api-spec-aip/doc-decorator" "filter field"
+  billing_profile_id?: Common.ULIDFieldFilter;
+}
+
+interface CustomersOperations {
+  @post
+  @operationId("create-customer")
+  @summary("Create customer")
+  create(
+    @body
+    customer: Shared.CreateRequest<Customer>,
+  ): Shared.CreateResponse<Customer> | Common.ErrorResponses;
+
+  @get
+  @operationId("get-customer")
+  @summary("Get customer")
+  get(@path customerId: Shared.ULID):
+    | Shared.GetResponse<Customer>
+    | Common.NotFound
+    | Common.ErrorResponses;
+
+  @get
+  @operationId("list-customers")
+  @summary("List customers")
+  list(
+    ...Common.PagePaginationQuery,
+
+    /**
+     * Sort customers returned in the response. Supported sort attributes are:
+     *
+     * - `id`
+     * - `name` (default)
+     * - `created_at`
+     *
+     * The `asc` suffix is optional as the default sort order is ascending. The `desc`
+     * suffix is used to specify a descending order.
+     */
+    @query(#{ name: "sort" })
+    sort?: Common.SortQuery,
+
+    /**
+     * Filter customers returned in the response.
+     *
+     * To filter customers by key add the following query param: filter[key]=my-db-id
+     */
+    @query(#{ style: "deepObject", explode: true })
+    filter?: ListCustomersParamsFilter,
+  ): Shared.PagePaginatedResponse<Customer> | Common.ErrorResponses;
+
+  @put
+  @operationId("upsert-customer")
+  @summary("Upsert customer")
+  upsert(
+    @path customerId: Shared.ULID,
+
+    @body
+    customer: Shared.UpsertRequest<Customer>,
+  ):
+    | Shared.UpsertResponse<Customer>
+    | Common.Gone
+    | Common.NotFound
+    | Common.ErrorResponses;
+
+  @delete
+  @operationId("delete-customer")
+  @summary("Delete customer")
+  delete(@path customerId: Shared.ULID):
+    | Shared.DeleteResponse
+    | Common.NotFound
+    | Common.ErrorResponses;
+}
+
+namespace Billing {
+  interface CustomerBillingOperations {
+    @get
+    @operationId("get-customer-billing")
+    @summary("Get customer billing data")
+    get(@path customerId: Shared.ULID):
+      | Shared.GetResponse<CustomerBillingData>
+      | Common.NotFound
+      | Common.ErrorResponses;
+
+    @put
+    @operationId("update-customer-billing")
+    @summary("Update customer billing data")
+    upsert(
+      @path customerId: Shared.ULID,
+      @body body: Shared.UpsertRequest<CustomerBillingData>,
+    ):
+      | Shared.UpsertResponse<CustomerBillingData>
+      | Common.Gone
+      | Common.NotFound
+      | Common.ErrorResponses;
+
+    @put
+    @route("/app-data")
+    @operationId("update-customer-billing-app-data")
+    @summary("Update customer billing app data")
+    upsertAppData(
+      @path customerId: Shared.ULID,
+      @body body: Shared.UpsertRequest<Apps.AppCustomerData>,
+    ):
+      | Shared.UpsertResponse<Apps.AppCustomerData>
+      | Common.Gone
+      | Common.NotFound
+      | Common.ErrorResponses;
+
+    /**
+     * Create a [Stripe Checkout Session](https://docs.stripe.com/payments/checkout)
+     * for the customer.
+     *
+     * Creates a Checkout Session for collecting payment method information from
+     * customers. The session operates in "setup" mode, which collects payment details
+     * without charging the customer immediately. The collected payment method can be
+     * used for future subscription billing.
+     *
+     * For hosted checkout sessions, redirect customers to the returned URL. For
+     * embedded sessions, use the client_secret to initialize Stripe.js in your
+     * application.
+     */
+    @post
+    @route("/stripe/checkout-sessions")
+    @operationId("create-customer-stripe-checkout-session")
+    @summary("Create Stripe Checkout Session")
+    createCheckoutSession(
+      @path customerId: Shared.ULID,
+      @body body: CustomerBillingStripeCreateCheckoutSessionRequest,
+    ):
+      | Shared.CreateResponse<Apps.CreateStripeCheckoutSessionResult>
+      | Common.Gone
+      | Common.NotFound
+      | Common.ErrorResponses;
+
+    /**
+     * Create Stripe Customer Portal Session.
+     *
+     * Useful to redirect the customer to the Stripe Customer Portal to manage their
+     * payment methods, change their billing address and access their invoice history.
+     * Only returns URL if the customer billing profile is linked to a stripe app and
+     * customer.
+     */
+    @post
+    @route("/stripe/portal-sessions")
+    @operationId("create-customer-stripe-portal-session")
+    @summary("Create Stripe customer portal session")
+    createPortalSession(
+      @path customerId: Shared.ULID,
+      @body body: CustomerBillingStripeCreateCustomerPortalSessionRequest,
+    ):
+      | Shared.CreateResponse<Apps.CreateStripeCustomerPortalSessionResult>
+      | Common.Gone
+      | Common.NotFound
+      | Common.ErrorResponses;
+  }
+}
+
+/**
+ * Request to create a Stripe Checkout Session for the customer.
+ *
+ * Checkout Sessions are used to collect payment method information from customers
+ * in a secure, Stripe-hosted interface. This integration uses setup mode to
+ * collect payment methods that can be charged later for subscription billing.
+ */
+@friendlyName("BillingCustomerStripeCreateCheckoutSessionRequest")
+model CustomerBillingStripeCreateCheckoutSessionRequest {
+  /**
+   * Options for configuring the Stripe Checkout Session.
+   *
+   * These options are passed directly to Stripe's
+   * [checkout session creation API](https://docs.stripe.com/api/checkout/sessions/create).
+   */
+  stripe_options: Apps.CreateStripeCheckoutSessionRequestOptions;
+}
+
+/**
+ * Request to create a Stripe Customer Portal Session for the customer.
+ *
+ * Useful to redirect the customer to the Stripe Customer Portal to manage their
+ * payment methods, change their billing address and access their invoice history.
+ * Only returns URL if the customer billing profile is linked to a stripe app and
+ * customer.
+ */
+@friendlyName("BillingCustomerStripeCreateCustomerPortalSessionRequest")
+model CustomerBillingStripeCreateCustomerPortalSessionRequest {
+  /**
+   * Options for configuring the Stripe Customer Portal Session.
+   */
+  stripe_options: Apps.CreateStripeCustomerPortalSessionOptions;
+}

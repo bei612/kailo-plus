@@ -1,0 +1,489 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/getkin/kin-openapi/routers"
+	"github.com/go-chi/chi/v5"
+	"github.com/samber/lo"
+
+	api "github.com/openmeterio/openmeter/api/v3"
+	"github.com/openmeterio/openmeter/api/v3/apierrors"
+	addonshandler "github.com/openmeterio/openmeter/api/v3/handlers/addons"
+	appshandler "github.com/openmeterio/openmeter/api/v3/handlers/apps"
+	billinginvoiceshandler "github.com/openmeterio/openmeter/api/v3/handlers/billinginvoices"
+	billingprofileshandler "github.com/openmeterio/openmeter/api/v3/handlers/billingprofiles"
+	currencieshandler "github.com/openmeterio/openmeter/api/v3/handlers/currencies"
+	customershandler "github.com/openmeterio/openmeter/api/v3/handlers/customers"
+	customersbillinghandler "github.com/openmeterio/openmeter/api/v3/handlers/customers/billing"
+	chargeshandler "github.com/openmeterio/openmeter/api/v3/handlers/customers/charges"
+	customerscreditshandler "github.com/openmeterio/openmeter/api/v3/handlers/customers/credits"
+	customersentitlementhandler "github.com/openmeterio/openmeter/api/v3/handlers/customers/entitlementaccess"
+	entitlementaccesshandler "github.com/openmeterio/openmeter/api/v3/handlers/entitlementaccess"
+	eventshandler "github.com/openmeterio/openmeter/api/v3/handlers/events"
+	featurecosthandler "github.com/openmeterio/openmeter/api/v3/handlers/featurecost"
+	featureshandler "github.com/openmeterio/openmeter/api/v3/handlers/features"
+	llmcosthandler "github.com/openmeterio/openmeter/api/v3/handlers/llmcost"
+	metershandler "github.com/openmeterio/openmeter/api/v3/handlers/meters"
+	planshandler "github.com/openmeterio/openmeter/api/v3/handlers/plans"
+	planaddonshandler "github.com/openmeterio/openmeter/api/v3/handlers/plans/planaddons"
+	subscriptionshandler "github.com/openmeterio/openmeter/api/v3/handlers/subscriptions"
+	subscriptionaddonshandler "github.com/openmeterio/openmeter/api/v3/handlers/subscriptions/subscriptionaddons"
+	taxcodeshandler "github.com/openmeterio/openmeter/api/v3/handlers/taxcodes"
+	"github.com/openmeterio/openmeter/api/v3/oasmiddleware"
+	"github.com/openmeterio/openmeter/api/v3/render"
+	"github.com/openmeterio/openmeter/app/config"
+	"github.com/openmeterio/openmeter/openmeter/app"
+	appstripe "github.com/openmeterio/openmeter/openmeter/app/stripe"
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	billingcharges "github.com/openmeterio/openmeter/openmeter/billing/charges"
+	"github.com/openmeterio/openmeter/openmeter/billing/creditgrant"
+	"github.com/openmeterio/openmeter/openmeter/cost"
+	"github.com/openmeterio/openmeter/openmeter/currencies"
+	"github.com/openmeterio/openmeter/openmeter/customer"
+	"github.com/openmeterio/openmeter/openmeter/entitlement"
+	"github.com/openmeterio/openmeter/openmeter/entitlementaccess"
+	"github.com/openmeterio/openmeter/openmeter/ingest"
+	"github.com/openmeterio/openmeter/openmeter/ledger"
+	"github.com/openmeterio/openmeter/openmeter/ledger/customerbalance"
+	ledgernoop "github.com/openmeterio/openmeter/openmeter/ledger/noop"
+	"github.com/openmeterio/openmeter/openmeter/llmcost"
+	"github.com/openmeterio/openmeter/openmeter/meter"
+	"github.com/openmeterio/openmeter/openmeter/meterevent"
+	"github.com/openmeterio/openmeter/openmeter/namespace/namespacedriver"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/addon"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/feature"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/plan"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/planaddon"
+	plansubscription "github.com/openmeterio/openmeter/openmeter/productcatalog/subscription"
+	"github.com/openmeterio/openmeter/openmeter/streaming"
+	"github.com/openmeterio/openmeter/openmeter/subscription"
+	subscriptionaddon "github.com/openmeterio/openmeter/openmeter/subscription/addon"
+	subscriptionworkflow "github.com/openmeterio/openmeter/openmeter/subscription/workflow"
+	"github.com/openmeterio/openmeter/openmeter/taxcode"
+	"github.com/openmeterio/openmeter/pkg/errorsx"
+	"github.com/openmeterio/openmeter/pkg/featuregate"
+	"github.com/openmeterio/openmeter/pkg/framework/transport/httptransport"
+	"github.com/openmeterio/openmeter/pkg/server"
+)
+
+type Config struct {
+	BaseURL             string
+	NamespaceDecoder    namespacedriver.NamespaceDecoder
+	ErrorHandler        errorsx.Handler
+	Middlewares         []server.MiddlewareFunc
+	PostAuthMiddlewares []server.MiddlewareFunc
+	Credits             config.CreditsConfiguration
+	ResponseValidation  config.ResponseValidationConfig
+	UnitConfig          config.UnitConfigConfiguration
+
+	// services
+	AddonService                addon.Service
+	AppService                  app.Service
+	BillingService              billing.Service
+	LLMCostService              llmcost.Service
+	MeterService                meter.ManageService
+	StreamingConnector          streaming.Connector
+	IngestService               ingest.Service
+	MeterEventService           meterevent.Service
+	CustomerService             customer.Service
+	CreditGrantService          creditgrant.Service
+	Ledger                      ledger.Ledger
+	AccountResolver             ledger.AccountResolver
+	CustomerBalanceFacade       *customerbalance.Facade
+	EntitlementService          entitlement.Service
+	EntitlementAccessService    entitlementaccess.Service
+	PlanService                 plan.Service
+	PlanAddonService            planaddon.Service
+	PlanSubscriptionService     plansubscription.PlanSubscriptionService
+	StripeService               appstripe.Service
+	SubscriptionService         subscription.Service
+	SubscriptionAddonService    subscriptionaddon.Service
+	SubscriptionWorkflowService subscriptionworkflow.Service
+	TaxCodeService              taxcode.Service
+	CurrencyService             currencies.Service
+	ChargeService               billingcharges.Service
+	CostService                 cost.Service
+	FeatureConnector            feature.FeatureConnector
+
+	FeatureGate *featuregate.FeatureGateChecker
+}
+
+func (c *Config) Validate() error {
+	var errs []error
+
+	if err := c.ResponseValidation.Mode.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if c.BaseURL == "" {
+		errs = append(errs, errors.New("base URL is required"))
+	}
+
+	if c.NamespaceDecoder == nil {
+		errs = append(errs, errors.New("namespace decoder is required"))
+	}
+
+	if c.ErrorHandler == nil {
+		errs = append(errs, errors.New("error handler is required"))
+	}
+
+	if c.AppService == nil {
+		errs = append(errs, errors.New("app service is required"))
+	}
+
+	if c.BillingService == nil {
+		errs = append(errs, errors.New("billing service is required"))
+	}
+
+	if c.MeterService == nil {
+		errs = append(errs, errors.New("meter service is required"))
+	}
+
+	if c.StreamingConnector == nil {
+		errs = append(errs, errors.New("streaming connector is required"))
+	}
+
+	if c.IngestService == nil {
+		errs = append(errs, errors.New("ingest service is required"))
+	}
+
+	if c.MeterEventService == nil {
+		errs = append(errs, errors.New("meter event service is required"))
+	}
+
+	if c.CustomerService == nil {
+		errs = append(errs, errors.New("customer service is required"))
+	}
+
+	if c.EntitlementService == nil {
+		errs = append(errs, errors.New("entitlement service is required"))
+	}
+
+	if c.EntitlementAccessService == nil {
+		errs = append(errs, errors.New("entitlement access service is required"))
+	}
+
+	if c.PlanService == nil {
+		errs = append(errs, errors.New("plan service is required"))
+	}
+
+	if c.PlanAddonService == nil {
+		errs = append(errs, errors.New("plan addon service is required"))
+	}
+
+	if c.PlanSubscriptionService == nil {
+		errs = append(errs, errors.New("plan subscription service is required"))
+	}
+
+	if c.StripeService == nil {
+		errs = append(errs, errors.New("stripe service is required"))
+	}
+
+	if c.SubscriptionService == nil {
+		errs = append(errs, errors.New("subscription service is required"))
+	}
+
+	if c.SubscriptionAddonService == nil {
+		errs = append(errs, errors.New("subscription addon service is required"))
+	}
+
+	if c.TaxCodeService == nil {
+		errs = append(errs, errors.New("tax code service is required"))
+	}
+
+	if c.CurrencyService == nil {
+		errs = append(errs, errors.New("currency service is required"))
+	}
+
+	if c.FeatureConnector == nil {
+		errs = append(errs, errors.New("feature connector is required"))
+	}
+
+	if c.Credits.Enabled {
+		if c.CustomerBalanceFacade == nil {
+			errs = append(errs, errors.New("customer balance facade is required when credits are enabled"))
+		}
+
+		if c.CreditGrantService == nil {
+			errs = append(errs, errors.New("credit grant service is required when credits are enabled"))
+		}
+
+		if c.Ledger == nil {
+			errs = append(errs, errors.New("ledger is required when credits are enabled"))
+		}
+
+		if c.AccountResolver == nil {
+			errs = append(errs, errors.New("account resolver is required when credits are enabled"))
+		}
+	}
+
+	if c.AddonService == nil {
+		errs = append(errs, errors.New("addon service is required"))
+	}
+
+	if c.SubscriptionAddonService == nil {
+		errs = append(errs, errors.New("subscription addon service is required"))
+	}
+
+	if err := c.FeatureGate.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if c.SubscriptionWorkflowService == nil {
+		errs = append(errs, errors.New("subscription workflow service is required"))
+	}
+
+	return errors.Join(errs...)
+}
+
+type Server struct {
+	*Config
+
+	swagger *openapi3.T
+
+	// handlers
+	addonHandler                addonshandler.Handler
+	appsHandler                 appshandler.Handler
+	eventsHandler               eventshandler.Handler
+	llmcostHandler              llmcosthandler.Handler
+	customersHandler            customershandler.Handler
+	customersBillingHandler     customersbillinghandler.Handler
+	customersCreditsHandler     customerscreditshandler.Handler
+	customersEntitlementHandler customersentitlementhandler.Handler
+	entitlementAccessHandler    entitlementaccesshandler.Handler
+	metersHandler               metershandler.Handler
+	subscriptionsHandler        subscriptionshandler.Handler
+	subscriptionAddonsHandler   subscriptionaddonshandler.Handler
+	billingProfilesHandler      billingprofileshandler.Handler
+	billingInvoicesHandler      billinginvoiceshandler.Handler
+	plansHandler                planshandler.Handler
+	planAddonsHandler           planaddonshandler.Handler
+	chargesHandler              chargeshandler.Handler
+	taxcodesHandler             taxcodeshandler.Handler
+	currenciesHandler           currencieshandler.Handler
+	featuresHandler             featureshandler.Handler
+	featureCostHandler          featurecosthandler.Handler
+}
+
+// Make sure we conform to ServerInterface
+var _ api.ServerInterface = (*Server)(nil)
+
+func NewServer(config *Config) (*Server, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid v3 server config: %w", err)
+	}
+
+	// Get the OpenAPI spec
+	swagger, err := api.GetSpec()
+	if err != nil {
+		slog.Error("failed to get swagger", "error", err)
+		return nil, err
+	}
+
+	// Set the server URL to the base URL to make validation work on the base URL
+	swagger.Servers = []*openapi3.Server{
+		{
+			URL: config.BaseURL,
+		},
+	}
+
+	resolveNamespace := func(ctx context.Context) (string, error) {
+		ns, ok := config.NamespaceDecoder.GetNamespace(ctx)
+		if !ok {
+			return "", apierrors.NewInternalError(ctx, errors.New("failed to resolve namespace"))
+		}
+
+		return ns, nil
+	}
+
+	addonHandler := addonshandler.New(resolveNamespace, config.AddonService, config.UnitConfig.Enabled, httptransport.WithErrorHandler(config.ErrorHandler))
+	appsHandler := appshandler.New(resolveNamespace, config.AppService, config.BillingService, config.StripeService, httptransport.WithErrorHandler(config.ErrorHandler))
+	eventsHandler := eventshandler.New(resolveNamespace, config.IngestService, config.MeterEventService, httptransport.WithErrorHandler(config.ErrorHandler))
+	customersHandler := customershandler.New(resolveNamespace, config.CustomerService, httptransport.WithErrorHandler(config.ErrorHandler))
+	customersBillingHandler := customersbillinghandler.New(resolveNamespace, config.BillingService, config.CustomerService, config.StripeService, httptransport.WithErrorHandler(config.ErrorHandler))
+	customerBalanceFacade := config.CustomerBalanceFacade
+	creditGrantService := config.CreditGrantService
+	ledgerService := config.Ledger
+	accountResolver := config.AccountResolver
+	if !config.Credits.Enabled {
+		customerBalanceFacade, err = customerbalance.NewFacade(customerbalance.NewNoopService())
+		if err != nil {
+			return nil, fmt.Errorf("create noop customer balance facade: %w", err)
+		}
+
+		creditGrantService = creditgrant.NewNoopService()
+		ledgerService = ledgernoop.Ledger{}
+		accountResolver = ledgernoop.AccountResolver{}
+	}
+	customersCreditsHandler := customerscreditshandler.New(resolveNamespace, config.CustomerService, customerBalanceFacade, creditGrantService, ledgerService, accountResolver, httptransport.WithErrorHandler(config.ErrorHandler))
+	customersEntitlementHandler := customersentitlementhandler.New(resolveNamespace, config.EntitlementService, httptransport.WithErrorHandler(config.ErrorHandler))
+	metersHandler := metershandler.New(resolveNamespace, config.MeterService, config.StreamingConnector, config.CustomerService, httptransport.WithErrorHandler(config.ErrorHandler))
+	subscriptionsHandler := subscriptionshandler.New(resolveNamespace, config.CustomerService, config.PlanService, config.PlanSubscriptionService, config.SubscriptionService, config.SubscriptionWorkflowService, httptransport.WithErrorHandler(config.ErrorHandler))
+	subscriptionAddonsHandler := subscriptionaddonshandler.New(resolveNamespace, config.SubscriptionAddonService, config.SubscriptionService, config.SubscriptionWorkflowService, httptransport.WithErrorHandler(config.ErrorHandler))
+	billingProfilesHandler := billingprofileshandler.New(resolveNamespace, config.BillingService, httptransport.WithErrorHandler(config.ErrorHandler))
+	billingInvoicesHandler := billinginvoiceshandler.New(resolveNamespace, config.BillingService, httptransport.WithErrorHandler(config.ErrorHandler))
+	plansHandler := planshandler.New(resolveNamespace, config.PlanService, config.UnitConfig.Enabled, httptransport.WithErrorHandler(config.ErrorHandler))
+	planAddonsHandler := planaddonshandler.New(resolveNamespace, config.PlanService, config.PlanAddonService, httptransport.WithErrorHandler(config.ErrorHandler))
+	taxcodesHandler := taxcodeshandler.New(resolveNamespace, config.TaxCodeService, httptransport.WithErrorHandler(config.ErrorHandler))
+	currenciesHandler := currencieshandler.New(resolveNamespace, config.CurrencyService, config.Credits.Enabled, httptransport.WithErrorHandler(config.ErrorHandler))
+
+	var chargesH chargeshandler.Handler
+	if config.ChargeService != nil {
+		chargesH = chargeshandler.New(resolveNamespace, config.ChargeService, config.UnitConfig.Enabled, httptransport.WithErrorHandler(config.ErrorHandler))
+	}
+
+	featuresH := featureshandler.New(resolveNamespace, config.FeatureConnector, config.MeterService, config.LLMCostService, httptransport.WithErrorHandler(config.ErrorHandler))
+	entitlementAccessHandler := entitlementaccesshandler.New(resolveNamespace, config.EntitlementAccessService, httptransport.WithErrorHandler(config.ErrorHandler))
+
+	var llmcostH llmcosthandler.Handler
+	if config.LLMCostService != nil {
+		llmcostH = llmcosthandler.New(resolveNamespace, config.LLMCostService, httptransport.WithErrorHandler(config.ErrorHandler))
+	}
+
+	var featureCostH featurecosthandler.Handler
+	if config.CostService != nil && config.FeatureConnector != nil {
+		featureCostH = featurecosthandler.New(resolveNamespace, config.CostService, config.FeatureConnector, config.MeterService, config.CustomerService, httptransport.WithErrorHandler(config.ErrorHandler))
+	}
+
+	return &Server{
+		Config:                      config,
+		swagger:                     swagger,
+		addonHandler:                addonHandler,
+		appsHandler:                 appsHandler,
+		eventsHandler:               eventsHandler,
+		llmcostHandler:              llmcostH,
+		customersHandler:            customersHandler,
+		customersBillingHandler:     customersBillingHandler,
+		customersCreditsHandler:     customersCreditsHandler,
+		customersEntitlementHandler: customersEntitlementHandler,
+		metersHandler:               metersHandler,
+		subscriptionsHandler:        subscriptionsHandler,
+		subscriptionAddonsHandler:   subscriptionAddonsHandler,
+		billingProfilesHandler:      billingProfilesHandler,
+		billingInvoicesHandler:      billingInvoicesHandler,
+		plansHandler:                plansHandler,
+		planAddonsHandler:           planAddonsHandler,
+		chargesHandler:              chargesH,
+		taxcodesHandler:             taxcodesHandler,
+		currenciesHandler:           currenciesHandler,
+		featuresHandler:             featuresH,
+		featureCostHandler:          featureCostH,
+		entitlementAccessHandler:    entitlementAccessHandler,
+	}, nil
+}
+
+func (s *Server) RegisterRoutes(r chi.Router) error {
+	validationRouter, err := oasmiddleware.NewValidationRouter(
+		context.Background(),
+		s.swagger,
+		&oasmiddleware.ValidationRouterOpts{
+			DeleteServers: true,
+			ServerPrefix:  s.BaseURL,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("create validation router: %w", err)
+	}
+
+	validationMiddleware := oasmiddleware.ValidateRequest(validationRouter, oasmiddleware.ValidateRequestOption{
+		RouteNotFoundHook: oasmiddleware.OasRouteNotFoundErrorHook,
+		RouteValidationErrorHook: func(err error, w http.ResponseWriter, r *http.Request) bool {
+			return oasmiddleware.OasValidationErrorHook(r.Context(), err, w, r)
+		},
+		FilterOptions: &openapi3filter.Options{
+			// No-op auth: auth is handled by other middleware.
+			AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
+			MultiError:         true,
+		},
+	})
+
+	r.Route(s.BaseURL, func(r chi.Router) {
+		for _, mw := range s.Middlewares {
+			r.Use(mw)
+		}
+		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+			apierrors.
+				NewNotFoundError(r.Context(), errors.New("route not found"), "route").
+				HandleAPIError(w, r)
+		})
+		r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+			apierrors.
+				NewMethodNotAllowedError(r.Context()).
+				HandleAPIError(w, r)
+		})
+
+		// Serve the OpenAPI spec
+		r.Get("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+			_ = render.RenderJSON(w, s.swagger)
+		})
+
+		r.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+			_ = render.RenderYAML(w, s.swagger)
+		})
+
+		middlewares := []api.MiddlewareFunc{
+			validationMiddleware,
+		}
+
+		if s.ResponseValidation.Mode.Enabled() {
+			middlewares = append(middlewares, oasmiddleware.ValidateResponse(validationRouter, oasmiddleware.ValidateResponseOption{
+				RouteFilterHook: buildResponseValidationRouteFilter(s.ResponseValidation),
+				ResponseValidationErrorHook: func(err error, r *http.Request) {
+					// Raw err can echo offending response field values (customer PII, billing identifiers).
+					// Keep that detail behind DEBUG; emit a sanitized summary at WARN.
+					slog.WarnContext(
+						r.Context(), "response validation failed",
+						slog.String("method", r.Method),
+						slog.String("path", r.URL.Path),
+						slog.String("error_type", fmt.Sprintf("%T", err)),
+					)
+					slog.DebugContext(
+						r.Context(), "response validation details",
+						slog.String("method", r.Method),
+						slog.String("path", r.URL.Path),
+						slog.Any("error", err),
+					)
+				},
+			}))
+		}
+
+		postAuthMiddlewares := lo.Map(s.PostAuthMiddlewares, func(mwf server.MiddlewareFunc, _ int) api.MiddlewareFunc {
+			return api.MiddlewareFunc(mwf)
+		})
+
+		middlewares = append(middlewares, postAuthMiddlewares...)
+
+		_ = api.HandlerWithOptions(s, api.ChiServerOptions{
+			BaseRouter:       r,
+			Middlewares:      middlewares,
+			ErrorHandlerFunc: apierrors.NewV3ErrorHandlerFunc(s.ErrorHandler),
+		})
+	})
+
+	return nil
+}
+
+// buildResponseValidationRouteFilter returns a route filter for response validation.
+// In "all" mode the filter is nil (every route is validated). In "unstable" mode only
+// operations marked x-unstable: true in the spec are validated.
+func buildResponseValidationRouteFilter(cfg config.ResponseValidationConfig) func(*routers.Route) bool {
+	if cfg.Mode != config.ResponseValidationModeUnstable {
+		return nil
+	}
+	return func(route *routers.Route) bool {
+		if route.Operation == nil {
+			return false
+		}
+		// kin-openapi unmarshals JSON booleans directly into map[string]any,
+		// so the extension value is a plain bool here.
+		v, _ := route.Operation.Extensions["x-unstable"].(bool)
+		return v
+	}
+}

@@ -1,0 +1,1217 @@
+package billingservice
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/qmuntal/stateless"
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/app"
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/service/invoicecalc"
+	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/framework/transaction"
+	"github.com/openmeterio/openmeter/pkg/statelessx"
+)
+
+type InvoiceStateMachine struct {
+	Invoice             billing.StandardInvoice
+	NeedsDBSave         bool
+	Calculator          invoicecalc.Calculator
+	StateMachine        *stateless.StateMachine
+	Logger              *slog.Logger
+	Publisher           eventbus.Publisher
+	Service             *Service
+	FSNamespaceLockdown []string
+}
+
+var invoiceStateMachineCache = sync.Pool{
+	New: func() interface{} {
+		return allocateStateMachine()
+	},
+}
+
+// TODO[OM-990]: this can panic let's validate that upon init somehow
+func allocateStateMachine() *InvoiceStateMachine {
+	out := &InvoiceStateMachine{}
+
+	// TODO[OM-979]: Tax is not captured here for now, as it would require the DB schema too
+
+	stateMachine := stateless.NewStateMachineWithExternalStorage(
+		func(ctx context.Context) (stateless.State, error) {
+			return out.Invoice.Status, nil
+		},
+		func(ctx context.Context, state stateless.State) error {
+			invState, ok := state.(billing.StandardInvoiceStatus)
+			if !ok {
+				return fmt.Errorf("invalid state type: %v", state)
+			}
+
+			previousStatus := out.Invoice.Status
+			out.Invoice.Status = invState
+
+			if invState == billing.StandardInvoiceStatusPaymentProcessingPending &&
+				previousStatus != billing.StandardInvoiceStatusPaymentProcessingPending &&
+				out.Invoice.PaymentProcessingEnteredAt == nil {
+				now := clock.Now().UTC()
+				out.Invoice.PaymentProcessingEnteredAt = &now
+			}
+
+			sd, err := out.StatusDetails(ctx)
+			if err != nil {
+				return err
+			}
+
+			out.Invoice.StatusDetails = sd
+
+			return nil
+		},
+		stateless.FiringImmediate,
+	)
+
+	// Draft states
+
+	// NOTE: we are not using the substate support of stateless for now, as the
+	// substate inherits all the parent's state transitions resulting in unexpected behavior (
+	// e.g. allowing billing.TriggerNext on the "superstate" causes all substates to have billing.TriggerNext).
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftCreated).
+		Permit(billing.TriggerNext, billing.StandardInvoiceStatusDraftWaitingForCollection).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusDraftInvalidCreated).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerUpdated, billing.StandardInvoiceStatusDraftUpdating).
+		OnActive(statelessx.AllOf(
+			out.calculateInvoice,
+			out.requireDBSave, // so that any new detailed lines have IDs
+		))
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftWaitingForCollection).
+		Permit(
+			billing.TriggerNext,
+			billing.StandardInvoiceStatusDraftCollecting,
+			statelessx.BoolFn(out.isReadyForCollection),
+		).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerUpdated, billing.StandardInvoiceStatusDraftUpdating).
+		Permit(billing.TriggerForceCollect, billing.StandardInvoiceStatusDraftCollecting)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftCollecting).
+		Permit(billing.TriggerNext, billing.StandardInvoiceStatusDraftValidating).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusDraftInvalidCreated).
+		Permit(billing.TriggerUpdated, billing.StandardInvoiceStatusDraftUpdating).
+		OnActive(
+			statelessx.AllOf(
+				out.onCollectionCompleted,
+				out.calculateInvoice,
+				out.requireDBSave, // so that any new detailed lines have IDs
+			),
+		)
+
+	// Invoice is edited
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftUpdating).
+		Permit(billing.TriggerNext, billing.StandardInvoiceStatusDraftWaitingForCollection).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusDraftInvalid).
+		OnActive(
+			statelessx.AllOf(
+				out.calculateInvoice,
+				out.validateDraftInvoice,
+				out.requireDBSave, // Due to the calculation, new detailed lines may be added
+			),
+		)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftValidating).
+		Permit(
+			billing.TriggerNext,
+			billing.StandardInvoiceStatusDraftSyncing,
+			statelessx.BoolFn(out.noCriticalValidationErrors),
+		).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusDraftInvalid).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		// NOTE: we should permit update here, but stateless doesn't allow transitions to the same state
+		Permit(billing.TriggerUpdated, billing.StandardInvoiceStatusDraftUpdating).
+		OnActive(statelessx.AllOf(
+			out.calculateInvoice,
+			out.validateDraftInvoice,
+			out.requireDBSave, // Due to the calculation, new detailed lines may be added
+		))
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftInvalidCreated).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusDraftCreated).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerUpdated, billing.StandardInvoiceStatusDraftUpdating)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftInvalid).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusDraftValidating).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerUpdated, billing.StandardInvoiceStatusDraftUpdating)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftSyncing).
+		Permit(
+			billing.TriggerNext,
+			billing.StandardInvoiceStatusDraftManualApprovalNeeded,
+			statelessx.BoolFn(statelessx.Not(out.isAutoAdvanceEnabled)),
+			statelessx.BoolFn(out.noCriticalValidationErrors),
+			statelessx.BoolFn(out.canDraftSyncAdvance),
+		).
+		Permit(
+			billing.TriggerNext,
+			billing.StandardInvoiceStatusDraftWaitingAutoApproval,
+			statelessx.BoolFn(out.isAutoAdvanceEnabled),
+			statelessx.BoolFn(out.noCriticalValidationErrors),
+			statelessx.BoolFn(out.canDraftSyncAdvance),
+		).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusDraftSyncFailed).
+		OnActive(statelessx.AllOf(
+			out.syncDraftInvoice,
+		))
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftSyncFailed).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusDraftValidating).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerUpdated, billing.StandardInvoiceStatusDraftUpdating)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftReadyToIssue).
+		PermitDynamic(billing.TriggerNext, out.resolveStateAfterDraftReadyToIssue).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerUpdated, billing.StandardInvoiceStatusDraftUpdating)
+
+	// Automatic and manual approvals
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftWaitingAutoApproval).
+		// Manual approval forces the draft invoice to be issued regardless of the review period
+		Permit(billing.TriggerApprove, billing.StandardInvoiceStatusDraftReadyToIssue).
+		Permit(billing.TriggerUpdated, billing.StandardInvoiceStatusDraftUpdating).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerNext,
+			billing.StandardInvoiceStatusDraftReadyToIssue,
+			statelessx.BoolFn(out.shouldAutoAdvance),
+			statelessx.BoolFn(out.noCriticalValidationErrors),
+		)
+
+	// This state is a pre-issuing state where we can halt the execution and execute issuing in the background
+	// if needed
+	stateMachine.Configure(billing.StandardInvoiceStatusDraftManualApprovalNeeded).
+		Permit(billing.TriggerApprove,
+			billing.StandardInvoiceStatusDraftReadyToIssue,
+			statelessx.BoolFn(out.noCriticalValidationErrors),
+		).
+		Permit(billing.TriggerUpdated, billing.StandardInvoiceStatusDraftUpdating).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress)
+
+	// Deletion state
+	stateMachine.Configure(billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerNext, billing.StandardInvoiceStatusDeleteSyncing).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusDeleteFailed).
+		OnEntry(statelessx.WithParameters(out.deleteInvoice))
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDeleteSyncing).
+		Permit(billing.TriggerNext, billing.StandardInvoiceStatusDeleted).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusDeleteFailed).
+		OnActive(statelessx.AllOf(
+			out.ensureEmptyInvoiceDeletionPrepared,
+			out.syncDeletedInvoice,
+		))
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDeleteFailed).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusDeleted)
+
+	// Issuing state. Line finalization handlers can persist durable preparation
+	// before returning. Preparation failures remain retry-only, while invoice-app
+	// synchronization can be abandoned through the charge-owned correction path.
+
+	stateMachine.Configure(billing.StandardInvoiceStatusIssuingLineFinalization).
+		Permit(
+			billing.TriggerNext,
+			billing.StandardInvoiceStatusIssuingSyncing,
+		).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusIssuingLineFinalizationFailed).
+		OnActive(statelessx.AllOf(
+			out.onInvoiceFinalizing,
+			out.requireDBSave,
+		))
+
+	stateMachine.Configure(billing.StandardInvoiceStatusIssuingLineFinalizationFailed).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusIssuingLineFinalization)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusIssuingSyncing).
+		Permit(billing.TriggerNext,
+			billing.StandardInvoiceStatusIssuingChargeBooking,
+			statelessx.BoolFn(out.canIssuingSyncAdvance),
+		).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusIssuingSyncFailed).
+		OnActive(statelessx.AllOf(
+			out.finalizeInvoice,
+		))
+
+	stateMachine.Configure(billing.StandardInvoiceStatusIssuingSyncFailed).
+		Permit(billing.TriggerDelete, billing.StandardInvoiceStatusDeleteInProgress).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusIssuingSyncing)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusIssuingChargeBooking).
+		Permit(billing.TriggerNext, billing.StandardInvoiceStatusIssued).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusIssuingChargeBookingFailed).
+		OnActive(out.onInvoiceIssued)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusIssuingChargeBookingFailed).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusIssuingChargeBooking)
+
+	// Issued state
+	stateMachine.Configure(billing.StandardInvoiceStatusIssued).
+		Permit(billing.TriggerNext, billing.StandardInvoiceStatusPaymentProcessingPending).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided)
+
+	// Payment states
+	stateMachine.Configure(billing.StandardInvoiceStatusPaymentProcessingPending).
+		Permit(billing.TriggerAuthorized, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorized).
+		Permit(billing.TriggerPaid, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedAndSettled).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusPaymentProcessingFailed).
+		Permit(billing.TriggerPaymentUncollectible, billing.StandardInvoiceStatusUncollectible).
+		Permit(billing.TriggerPaymentOverdue, billing.StandardInvoiceStatusOverdue).
+		Permit(billing.TriggerActionRequired, billing.StandardInvoiceStatusPaymentProcessingActionRequired).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusPaymentProcessingBookingAuthorized).
+		Permit(billing.TriggerNext, billing.StandardInvoiceStatusPaymentProcessingAuthorized).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedFailed).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided).
+		OnActive(out.onPaymentAuthorized)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedFailed).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorized).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided)
+
+	// Some payment apps jump directly from pending to paid. This combined state keeps
+	// charge-side ledger booking consistent by running authorized booking before settlement.
+	stateMachine.Configure(billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedAndSettled).
+		Permit(billing.TriggerNext, billing.StandardInvoiceStatusPaid).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedAndSettledFailed).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided).
+		OnActive(out.onPaymentAuthorizedAndSettled)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedAndSettledFailed).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedAndSettled).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusPaymentProcessingAuthorized).
+		Permit(billing.TriggerPaid, billing.StandardInvoiceStatusPaymentProcessingBookingSettled).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusPaymentProcessingFailed).
+		Permit(billing.TriggerPaymentUncollectible, billing.StandardInvoiceStatusUncollectible).
+		Permit(billing.TriggerPaymentOverdue, billing.StandardInvoiceStatusOverdue).
+		Permit(billing.TriggerActionRequired, billing.StandardInvoiceStatusPaymentProcessingActionRequired).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusPaymentProcessingBookingSettled).
+		Permit(billing.TriggerNext, billing.StandardInvoiceStatusPaid).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusPaymentProcessingBookingSettledFailed).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided).
+		OnActive(out.onPaymentSettled)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusPaymentProcessingBookingSettledFailed).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusPaymentProcessingBookingSettled).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusPaymentProcessingFailed).
+		Permit(billing.TriggerAuthorized, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorized).
+		Permit(billing.TriggerPaid, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedAndSettled).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusPaymentProcessingPending).
+		Permit(billing.TriggerPaymentOverdue, billing.StandardInvoiceStatusOverdue).
+		Permit(billing.TriggerPaymentUncollectible, billing.StandardInvoiceStatusUncollectible).
+		Permit(billing.TriggerActionRequired, billing.StandardInvoiceStatusPaymentProcessingActionRequired).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusPaymentProcessingActionRequired).
+		Permit(billing.TriggerAuthorized, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorized).
+		Permit(billing.TriggerPaid, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedAndSettled).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusPaymentProcessingFailed).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusPaymentProcessingPending).
+		Permit(billing.TriggerPaymentOverdue, billing.StandardInvoiceStatusOverdue).
+		Permit(billing.TriggerPaymentUncollectible, billing.StandardInvoiceStatusUncollectible).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided)
+
+	// Payment overdue state
+
+	stateMachine.Configure(billing.StandardInvoiceStatusOverdue).
+		Permit(billing.TriggerAuthorized, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorized).
+		Permit(billing.TriggerPaid, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedAndSettled).
+		Permit(billing.TriggerFailed, billing.StandardInvoiceStatusPaymentProcessingFailed).
+		Permit(billing.TriggerRetry, billing.StandardInvoiceStatusPaymentProcessingPending).
+		Permit(billing.TriggerPaymentUncollectible, billing.StandardInvoiceStatusUncollectible).
+		Permit(billing.TriggerActionRequired, billing.StandardInvoiceStatusPaymentProcessingActionRequired)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusUncollectible).
+		Permit(billing.TriggerVoid, billing.StandardInvoiceStatusVoided).
+		Permit(billing.TriggerAuthorized, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorized).
+		Permit(billing.TriggerPaid, billing.StandardInvoiceStatusPaymentProcessingBookingAuthorizedAndSettled)
+
+	// Final payment states
+	stateMachine.Configure(billing.StandardInvoiceStatusPaid)
+
+	stateMachine.Configure(billing.StandardInvoiceStatusVoided)
+
+	out.StateMachine = stateMachine
+
+	return out
+}
+
+type InvoiceStateMachineCallback func(context.Context, *InvoiceStateMachine) error
+
+func (s *Service) WithInvoiceStateMachine(ctx context.Context, invoice billing.StandardInvoice, cb InvoiceStateMachineCallback) (billing.StandardInvoice, error) {
+	sm := invoiceStateMachineCache.Get().(*InvoiceStateMachine)
+	sm.Logger = s.logger
+	sm.Publisher = s.publisher
+	sm.FSNamespaceLockdown = s.fsNamespaceLockdown
+	// Stateless doesn't store any state in the state machine, so it's fine to reuse the state machine itself
+	sm.Invoice = invoice
+	sm.NeedsDBSave = false
+	sm.Calculator = s.invoiceCalculator
+	sm.Service = s
+
+	defer func() {
+		sm.Invoice = billing.StandardInvoice{}
+		sm.Calculator = nil
+		sm.Service = nil
+		sm.Logger = nil
+		sm.Publisher = nil
+		sm.FSNamespaceLockdown = nil
+		sm.NeedsDBSave = false
+		invoiceStateMachineCache.Put(sm)
+	}()
+
+	if err := cb(ctx, sm); err != nil {
+		return billing.StandardInvoice{}, err
+	}
+
+	sd, err := sm.StatusDetails(ctx)
+	if err != nil {
+		return sm.Invoice, fmt.Errorf("error resolving status details: %w", err)
+	}
+
+	sm.Invoice.StatusDetails = sd
+
+	return sm.Invoice, nil
+}
+
+func (m *InvoiceStateMachine) StatusDetails(ctx context.Context) (billing.StandardInvoiceStatusDetails, error) {
+	if m.Invoice.Status == billing.StandardInvoiceStatusGathering {
+		// Gathering is a special state that is not part of the state machine, due to
+		// cross invoice operations, for now the sugar around grathering invoices will handle
+		// the status details.
+		return billing.StandardInvoiceStatusDetails{}, nil
+	}
+
+	var outErr, err error
+	availableActions := billing.StandardInvoiceAvailableActions{}
+
+	if availableActions.Advance, err = m.calculateAvailableActionDetails(ctx, billing.TriggerNext); err != nil {
+		outErr = errors.Join(outErr, err)
+	}
+
+	// Delete has trigger parameters and side effects, so status-details
+	// resolution must not fire it just to discover the resulting state.
+	if canDelete, err := m.StateMachine.CanFireCtx(ctx, billing.TriggerDelete); err != nil {
+		outErr = errors.Join(outErr, err)
+	} else if canDelete {
+		availableActions.Delete = &billing.StandardInvoiceAvailableActionDetails{
+			ResultingState: billing.StandardInvoiceStatusDeleted,
+		}
+	}
+
+	if availableActions.Retry, err = m.calculateAvailableActionDetails(ctx, billing.TriggerRetry); err != nil {
+		outErr = errors.Join(outErr, err)
+	}
+
+	if availableActions.Approve, err = m.calculateAvailableActionDetails(ctx, billing.TriggerApprove); err != nil {
+		outErr = errors.Join(outErr, err)
+	}
+
+	if availableActions.SnapshotQuantities, err = m.calculateAvailableActionDetails(ctx, billing.TriggerForceCollect); err != nil {
+		outErr = errors.Join(outErr, err)
+	}
+
+	mutable, err := m.StateMachine.CanFireCtx(ctx, billing.TriggerUpdated)
+	if err != nil {
+		outErr = errors.Join(outErr, err)
+	}
+
+	// TODO[OM-988]: add more actions (void, delete, etc.)
+
+	return billing.StandardInvoiceStatusDetails{
+		Immutable:        !mutable,
+		Failed:           m.Invoice.Status.IsFailed(),
+		AvailableActions: availableActions,
+	}, outErr
+}
+
+func (m *InvoiceStateMachine) calculateAvailableActionDetails(ctx context.Context, baseTrigger billing.InvoiceTrigger) (*billing.StandardInvoiceAvailableActionDetails, error) {
+	ok, err := m.StateMachine.CanFireCtx(ctx, baseTrigger)
+	if err != nil {
+		return nil, err
+	}
+
+	if !ok {
+		return nil, nil
+	}
+
+	// Given we don't have access to the underlying graph we need to emulate the state transitions without any side-effects.
+	// To achieve this, we are temporary modifying the invoice object, but never invoke the
+	// ActiveCtx to prevent any callbacks from being executed.
+
+	originalState := m.Invoice.Status
+	originalValidationErrors := m.Invoice.ValidationIssues
+	originalPaymentProcessingEnteredAt := m.Invoice.PaymentProcessingEnteredAt
+	m.Invoice.ValidationIssues = nil
+
+	if err := m.StateMachine.FireCtx(ctx, baseTrigger); err != nil {
+		return nil, err
+	}
+
+	for {
+		canFire, err := m.StateMachine.CanFireCtx(ctx, billing.TriggerNext)
+		if err != nil {
+			return nil, err
+		}
+
+		if !canFire {
+			break
+		}
+
+		if err := m.StateMachine.FireCtx(ctx, billing.TriggerNext); err != nil {
+			return nil, err
+		}
+	}
+
+	resultingState := m.Invoice.Status
+	m.Invoice.Status = originalState
+	m.Invoice.PaymentProcessingEnteredAt = originalPaymentProcessingEnteredAt
+	m.Invoice.ValidationIssues = originalValidationErrors
+
+	return &billing.StandardInvoiceAvailableActionDetails{
+		ResultingState: resultingState,
+	}, nil
+}
+
+func (m *InvoiceStateMachine) requireDBSave(ctx context.Context) error {
+	m.NeedsDBSave = true
+
+	return nil
+}
+
+func (m *InvoiceStateMachine) AdvanceUntilStateStable(ctx context.Context) error {
+	for {
+		preAdvanceState, err := billing.NewEventStandardInvoice(m.Invoice)
+		if err != nil {
+			return err
+		}
+
+		canFire, err := m.StateMachine.CanFireCtx(ctx, billing.TriggerNext)
+		if err != nil {
+			return err
+		}
+
+		// We have reached a state that requires either manual intervention or that is final
+		if !canFire {
+			if err := m.triggerPostAdvanceHooks(ctx); err != nil {
+				return err
+			}
+
+			return m.Invoice.ValidationIssues.AsError()
+		}
+
+		if err := m.FireAndActivate(ctx, billing.TriggerNext); err != nil {
+			validationIssues, validationErr := billing.ToValidationIssues(err)
+			if validationErr != nil {
+				return fmt.Errorf("cannot transition to the next status [current_status=%s]: %w", m.Invoice.Status, err)
+			}
+
+			m.Invoice.ValidationIssues = validationIssues
+
+			return validationIssues.AsError()
+		}
+
+		if m.NeedsDBSave {
+			updatedInvoice, err := m.Service.updateInvoice(ctx, m.Invoice)
+			if err != nil {
+				return fmt.Errorf("error updating invoice: %w", err)
+			}
+
+			m.NeedsDBSave = false
+			m.Invoice = updatedInvoice
+		}
+
+		// Let's emit an event for the transition
+		event, err := billing.NewStandardInvoiceUpdatedEvent(m.Invoice, preAdvanceState)
+		if err != nil {
+			return fmt.Errorf("error creating invoice updated event: %w", err)
+		}
+
+		if err := m.Publisher.Publish(ctx, event); err != nil {
+			return fmt.Errorf("error emitting invoice updated event: %w", err)
+		}
+	}
+}
+
+func (m *InvoiceStateMachine) CanFire(ctx context.Context, trigger billing.InvoiceTrigger, args ...any) (bool, error) {
+	return m.StateMachine.CanFireCtx(ctx, trigger, args...)
+}
+
+func (m *InvoiceStateMachine) TriggerFailed(ctx context.Context) error {
+	if err := m.StateMachine.FireCtx(ctx, billing.TriggerFailed); err != nil {
+		return err
+	}
+
+	activationError := m.StateMachine.ActivateCtx(ctx)
+	if activationError != nil {
+		return activationError
+	}
+
+	return nil
+}
+
+// FireAndActivate fires the trigger and activates the new state, if activation fails it automatically
+// transitions to the failed state and activates that.
+// In addition to the activation a calculation is always performed to ensure that the invoice is up to date.
+func (m *InvoiceStateMachine) FireAndActivate(ctx context.Context, trigger billing.InvoiceTrigger, args ...any) error {
+	previousStatus := m.Invoice.Status
+	if err := m.StateMachine.FireCtx(ctx, trigger, args...); err != nil {
+		if m.Invoice.Status == previousStatus {
+			return err
+		}
+
+		canFireFailed, failedCheckErr := m.StateMachine.CanFireCtx(ctx, billing.TriggerFailed)
+		if failedCheckErr != nil {
+			return fmt.Errorf("failed to check if we can transition to failed state: %w", failedCheckErr)
+		}
+
+		if !canFireFailed {
+			return err
+		}
+
+		if failedErr := m.StateMachine.FireCtx(ctx, billing.TriggerFailed); failedErr != nil {
+			return fmt.Errorf("failed to transition to failed state after fire error: %w", failedErr)
+		}
+
+		if activationErr := m.StateMachine.ActivateCtx(ctx); activationErr != nil {
+			return activationErr
+		}
+
+		return err
+	}
+
+	activationError := m.StateMachine.ActivateCtx(ctx)
+	if activationError != nil || m.Invoice.HasCriticalValidationIssues() {
+		validationIssues, err := m.Invoice.ValidationIssues.Clone()
+		if err != nil {
+			return fmt.Errorf("cloning validation issues: %w", err)
+		}
+
+		// There was an error activating the state, we should trigger a transition to the failed state
+		canFire, err := m.StateMachine.CanFireCtx(ctx, billing.TriggerFailed)
+		if err != nil {
+			return fmt.Errorf("failed to check if we can transition to failed state: %w", err)
+		}
+
+		if !canFire {
+			return fmt.Errorf("cannot move into failed state: %w", activationError)
+		}
+
+		if err := m.StateMachine.FireCtx(ctx, billing.TriggerFailed); err != nil {
+			return fmt.Errorf("failed to transition to failed state: %w", err)
+		}
+
+		if activationError != nil {
+			return activationError
+		}
+
+		return validationIssues.AsError()
+	}
+
+	// We are embedding the handling into a new sub-transaction so that whenever we are returning an error, whatever was changed downstream is rolled back.
+	//
+	// This is important as the invoice update will take the error and record it as a validation issue, and commit the transaction.
+	err := transaction.RunWithNoValue(ctx, m.Service.adapter, func(ctx context.Context) error {
+		if err := m.Service.standardInvoiceHooks.PostUpdate(ctx, &m.Invoice); err != nil {
+			return fmt.Errorf("error calling post update hooks for invoice [%s]: %w", m.Invoice.ID, err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		// TODO: Make these validation errors and validate the behavior
+		return err
+	}
+
+	return nil
+}
+
+func (m *InvoiceStateMachine) withInvoicingApp(op billing.StandardInvoiceOperation, cb func(billing.InvoicingApp) (*billing.StandardInvoiceOperation, error)) error {
+	invocingBase := m.Invoice.Workflow.Apps.Invoicing
+	invoicingApp, ok := invocingBase.(billing.InvoicingApp)
+	if !ok {
+		// If this happens we are rolling back the state transition (as we are not wrapping this into a validation issue)
+		return fmt.Errorf("app [type=%s, id=%s] does not implement the invoicing interface",
+			m.Invoice.Workflow.Apps.Invoicing.GetType(),
+			m.Invoice.Workflow.Apps.Invoicing.GetID().ID)
+	}
+
+	opOverride, result := cb(invoicingApp)
+	if opOverride != nil {
+		op = *opOverride
+		if err := op.Validate(); err != nil {
+			return err
+		}
+	}
+
+	component := billing.AppTypeCapabilityToComponent(invocingBase.GetType(), app.CapabilityTypeInvoiceCustomers, string(op))
+
+	// Anything returned by the validation is considered a validation issue, thus in case of an error
+	// we wouldn't roll back the state transitions.
+	return m.Invoice.MergeValidationIssues(
+		billing.ValidationWithComponent(
+			component,
+			result,
+		),
+		component,
+	)
+}
+
+func (m *InvoiceStateMachine) triggerPostAdvanceHooks(ctx context.Context) error {
+	return m.withInvoicingApp(billing.StandardInvoiceOpPostAdvanceHook, func(app billing.InvoicingApp) (*billing.StandardInvoiceOperation, error) {
+		if hook, ok := app.(billing.InvoicingAppPostAdvanceHook); ok {
+			clonedInvoice, err := m.Invoice.Clone()
+			if err != nil {
+				return nil, err
+			}
+
+			res, err := hook.PostAdvanceStandardInvoiceHook(ctx, clonedInvoice)
+			if err != nil {
+				return nil, err
+			}
+
+			if res == nil {
+				return nil, nil
+			}
+
+			var opOverride *billing.StandardInvoiceOperation
+			if trigger := res.GetTriggerToInvoke(); trigger != nil {
+				if trigger.ValidationErrors != nil {
+					opOverride = &trigger.ValidationErrors.Operation
+				}
+
+				return opOverride, m.HandleInvoiceTrigger(ctx, *trigger)
+			}
+
+			return opOverride, nil
+		}
+
+		return nil, nil
+	})
+}
+
+func (m *InvoiceStateMachine) HandleInvoiceTrigger(ctx context.Context, trigger billing.InvoiceTriggerInput) error {
+	if err := trigger.Validate(); err != nil {
+		return err
+	}
+
+	if trigger.Invoice != m.Invoice.GetInvoiceID() {
+		return fmt.Errorf("trigger invoice ID does not match the current invoice ID")
+	}
+
+	preAdvanceState, err := billing.NewEventStandardInvoice(m.Invoice)
+	if err != nil {
+		return err
+	}
+
+	err = m.FireAndActivate(ctx, trigger.Trigger)
+	if err != nil {
+		return err
+	}
+
+	event, err := billing.NewStandardInvoiceUpdatedEvent(m.Invoice, preAdvanceState)
+	if err != nil {
+		return err
+	}
+
+	if err := m.Publisher.Publish(ctx, event); err != nil {
+		return err
+	}
+
+	if err := m.AdvanceUntilStateStable(ctx); err != nil {
+		return err
+	}
+
+	if trigger.ValidationErrors != nil {
+		return errors.Join(trigger.ValidationErrors.Errors...)
+	}
+
+	return nil
+}
+
+func (m *InvoiceStateMachine) mergeUpsertInvoiceResult(result *billing.UpsertStandardInvoiceResult) error {
+	return result.MergeIntoInvoice(&m.Invoice)
+}
+
+// validateDraftInvoice validates the draft invoice using the apps referenced in the invoice.
+func (m *InvoiceStateMachine) validateDraftInvoice(ctx context.Context) error {
+	if err := m.validateNamespaceLockdown(); err != nil {
+		return err
+	}
+
+	return m.withInvoicingApp(billing.StandardInvoiceOpValidate, func(app billing.InvoicingApp) (*billing.StandardInvoiceOperation, error) {
+		clonedInvoice, err := m.Invoice.Clone()
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, app.ValidateStandardInvoice(ctx, clonedInvoice)
+	})
+}
+
+func (m *InvoiceStateMachine) calculateInvoice(ctx context.Context) error {
+	taxCodes, err := m.Service.resolveTaxCodes(ctx, resolveTaxCodesInput{
+		Namespace: m.Invoice.Namespace,
+		Invoice:   &m.Invoice,
+		ReadOnly:  false,
+	})
+	if err != nil {
+		return fmt.Errorf("resolving tax codes: %w", err)
+	}
+
+	return m.Calculator.Calculate(&m.Invoice, invoicecalc.StandardInvoiceCalculatorDependencies{
+		RatingService: m.Service.ratingService,
+		TaxCodes:      taxCodes,
+		LineEngines:   m.Service.lineEngines,
+	})
+}
+
+// syncDraftInvoice syncs the draft invoice with the external system.
+func (m *InvoiceStateMachine) syncDraftInvoice(ctx context.Context) error {
+	if err := m.validateNamespaceLockdown(); err != nil {
+		return err
+	}
+
+	// Let's save the invoice so that we are sure that all the IDs are available for downstream apps
+	return m.withInvoicingApp(billing.StandardInvoiceOpSync, func(app billing.InvoicingApp) (*billing.StandardInvoiceOperation, error) {
+		clonedInvoice, err := m.Invoice.Clone()
+		if err != nil {
+			return nil, err
+		}
+
+		results, err := app.UpsertStandardInvoice(ctx, clonedInvoice)
+		if err != nil {
+			return nil, err
+		}
+
+		if results == nil {
+			return nil, nil
+		}
+
+		return nil, m.mergeUpsertInvoiceResult(results)
+	})
+}
+
+// finalizeInvoice finalizes the invoice using the invoicing app and payment app (later).
+func (m *InvoiceStateMachine) finalizeInvoice(ctx context.Context) error {
+	if err := m.validateNamespaceLockdown(); err != nil {
+		return err
+	}
+
+	return m.withInvoicingApp(billing.StandardInvoiceOpFinalize, func(app billing.InvoicingApp) (*billing.StandardInvoiceOperation, error) {
+		clonedInvoice, err := m.Invoice.Clone()
+		if err != nil {
+			return nil, err
+		}
+
+		// First we sync the invoice
+		upsertResults, err := app.UpsertStandardInvoice(ctx, clonedInvoice)
+		if err != nil {
+			return nil, err
+		}
+
+		if upsertResults != nil {
+			if err := m.mergeUpsertInvoiceResult(upsertResults); err != nil {
+				return nil, err
+			}
+		}
+
+		// Let's set the issuedAt now as if the finalization fails we will roll back the state transition
+		m.Invoice.IssuedAt = lo.ToPtr(clock.Now().In(time.UTC))
+
+		// Let's update the dueAt now that we know when the invoice was issued (so that downstream apps
+		// can use this during the sync)
+		if err := invoicecalc.CalculateDueAt(&m.Invoice); err != nil {
+			return nil, err
+		}
+
+		// Let's update the cloned invoice so that the FinalizeStandardInvoice method can use the updated invoice
+		clonedInvoice, err = m.Invoice.Clone()
+		if err != nil {
+			return nil, err
+		}
+
+		results, err := app.FinalizeStandardInvoice(ctx, clonedInvoice)
+		if err != nil {
+			return nil, err
+		}
+
+		if results != nil {
+			if err := results.MergeIntoInvoice(&m.Invoice); err != nil {
+				return nil, err
+			}
+		}
+
+		return nil, nil
+	})
+}
+
+// syncDeletedInvoice syncs the deleted invoice with the external system
+func (m *InvoiceStateMachine) syncDeletedInvoice(ctx context.Context) error {
+	if err := m.validateNamespaceLockdown(); err != nil {
+		return err
+	}
+
+	return m.withInvoicingApp(billing.StandardInvoiceOpDelete, func(app billing.InvoicingApp) (*billing.StandardInvoiceOperation, error) {
+		clonedInvoice, err := m.Invoice.Clone()
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, app.DeleteStandardInvoice(ctx, clonedInvoice)
+	})
+}
+
+func (m *InvoiceStateMachine) resolveStateAfterDraftReadyToIssue(_ context.Context, _ ...any) (stateless.State, error) {
+	if m.Invoice.Lines.IsPresent() && m.Invoice.Lines.NonDeletedLineCount() == 0 {
+		return billing.StandardInvoiceStatusDeleteSyncing, nil
+	}
+
+	return billing.StandardInvoiceStatusIssuingLineFinalization, nil
+}
+
+// ensureEmptyInvoiceDeletionPrepared starts a system deletion when issuing
+// discovers that every invoice line has already been deleted. Explicit
+// deletions have already been prepared in delete.in_progress and require no
+// further work.
+func (m *InvoiceStateMachine) ensureEmptyInvoiceDeletionPrepared(ctx context.Context) error {
+	if m.Invoice.DeletedAt != nil {
+		return nil
+	}
+
+	if !m.Invoice.Lines.IsPresent() {
+		return errors.New("invoice lines must be expanded before preparing empty invoice deletion")
+	}
+
+	if m.Invoice.Lines.NonDeletedLineCount() != 0 {
+		return errors.New("cannot prepare empty invoice deletion: invoice has non-deleted lines")
+	}
+
+	return m.deleteInvoice(ctx, billing.DeleteInvoiceTriggerInput{
+		Source: billing.ChangeSourceSystem,
+	})
+}
+
+// deleteInvoice handles entering the delete lifecycle. The delete source is
+// passed as trigger input so the state-machine side effect is tied to the
+// transition that requested deletion; the invoice field is only persisted for
+// audit.
+func (m *InvoiceStateMachine) deleteInvoice(ctx context.Context, input billing.DeleteInvoiceTriggerInput) error {
+	if err := input.Validate(); err != nil {
+		return err
+	}
+
+	// Each delete attempt owns its validation result. This keeps a retry from
+	// being poisoned by a prior delete-sync failure.
+	m.Invoice.ValidationIssues = nil
+
+	// DeletedAt is persisted before delete syncing starts. If syncing later fails
+	// and delete is retried, the source-specific line-engine cleanup has already
+	// run and must not be dispatched again.
+	if m.Invoice.DeletedAt != nil {
+		return nil
+	}
+
+	m.Invoice.DeletionSource = input.Source
+
+	switch input.Source {
+	case billing.ChangeSourceAPIRequest:
+		// API deletes are user-initiated invoice line deletes at invoice scope.
+		// Let line engines reject unsupported charge-managed deletes or perform
+		// their own manual-override side effects before the invoice is marked
+		// deleted.
+		if err := m.Service.dispatchAPIStandardLineDeletions(
+			ctx,
+			m.Invoice,
+			lo.Filter(m.Invoice.Lines.OrEmpty(), func(line *billing.StandardLine, _ int) bool {
+				return line != nil && line.DeletedAt == nil
+			}),
+		); err != nil {
+			return err
+		}
+	case billing.ChangeSourceSystem:
+		// System invoice deletes keep the invoice lines visible on the deleted
+		// invoice, but charge-backed engines still need the same notification they
+		// receive when system code deletes standard lines individually.
+		if err := m.Service.dispatchSystemStandardLineDeletions(
+			ctx,
+			m.Invoice,
+			lo.Filter(m.Invoice.Lines.OrEmpty(), func(line *billing.StandardLine, _ int) bool {
+				return line != nil && line.DeletedAt == nil
+			}).AsGenericLines(),
+		); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported deletion source: %s", input.Source)
+	}
+
+	m.Invoice.DeletedAt = lo.ToPtr(clock.Now().In(time.UTC))
+
+	return nil
+}
+
+func (m *InvoiceStateMachine) noCriticalValidationErrors() bool {
+	return !m.Invoice.HasCriticalValidationIssues()
+}
+
+func (m *InvoiceStateMachine) isAutoAdvanceEnabled() bool {
+	return m.Invoice.Workflow.Config.Invoicing.AutoAdvance
+}
+
+func (m *InvoiceStateMachine) shouldAutoAdvance() bool {
+	if !m.isAutoAdvanceEnabled() || m.Invoice.DraftUntil == nil {
+		return false
+	}
+
+	return !clock.Now().In(time.UTC).Before(*m.Invoice.DraftUntil)
+}
+
+func (m *InvoiceStateMachine) isReadyForCollection() bool {
+	if m.Invoice.CollectionAt == nil {
+		// A nil collection time is normal for invoices without metered lines or an explicit collection deadline.
+		m.Logger.Debug("invoice has no collection at set, assuming collection is not required", "invoice", m.Invoice.ID)
+		return true
+	}
+
+	if clock.Now().Before(*m.Invoice.CollectionAt) {
+		return false
+	}
+
+	return true
+}
+
+func (m *InvoiceStateMachine) onCollectionCompleted(ctx context.Context) error {
+	groupedLines, err := m.Service.lineEngines.groupStandardLinesByEngine(m.Invoice.Lines.OrEmpty())
+	if err != nil {
+		return fmt.Errorf("grouping standard lines by engine: %w", err)
+	}
+
+	var hadValidationErr bool
+
+	for _, grouped := range groupedLines {
+		component := billing.LineEngineValidationComponent(grouped.Engine.GetLineEngineType())
+
+		input := billing.OnCollectionCompletedInput{
+			Invoice: m.Invoice,
+			Lines:   grouped.Lines,
+		}
+		if err := input.Validate(); err != nil {
+			return fmt.Errorf("validating collection completed input for engine %s: %w", grouped.Engine.GetLineEngineType(), err)
+		}
+
+		lines, err := grouped.Engine.OnCollectionCompleted(ctx, input)
+		if err != nil {
+			hadValidationErr = true
+			if err := m.Invoice.MergeValidationIssues(billing.NewLineEngineValidationError(grouped.Engine, err), component); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := m.Invoice.Lines.ReplaceExact(billing.ReplaceExactLinesInput{
+			Existing:    grouped.Lines,
+			Replacement: lines,
+		}); err != nil {
+			return fmt.Errorf("replacing collection completed lines for engine %s: %w", grouped.Engine.GetLineEngineType(), err)
+		}
+
+		if err := m.Invoice.MergeValidationIssues(nil, component); err != nil {
+			return fmt.Errorf("clearing collection completed validation issues for engine %s: %w", grouped.Engine.GetLineEngineType(), err)
+		}
+	}
+
+	if len(groupedLines) > 0 && !hadValidationErr {
+		now := clock.Now().UTC()
+		m.Invoice.QuantitySnapshotedAt = &now
+	}
+
+	return nil
+}
+
+// onInvoiceFinalizing lets line engines make their lines authoritative before
+// the invoice is sent to the invoicing app. Engines own line calculation at
+// this boundary; billing only validates, replaces, and aggregates their output.
+func (m *InvoiceStateMachine) onInvoiceFinalizing(ctx context.Context) error {
+	finalizedInvoice, err := m.Invoice.Clone()
+	if err != nil {
+		return fmt.Errorf("cloning invoice for line finalization: %w", err)
+	}
+
+	groupedLines, err := m.Service.lineEngines.groupStandardLinesByEngine(finalizedInvoice.Lines.OrEmpty())
+	if err != nil {
+		return fmt.Errorf("grouping standard lines by engine: %w", err)
+	}
+
+	for _, grouped := range groupedLines {
+		input := billing.OnInvoiceFinalizingInput{
+			Invoice: finalizedInvoice,
+			Lines:   grouped.Lines,
+		}
+		if err := input.Validate(); err != nil {
+			return fmt.Errorf("validating invoice finalizing input for engine %s: %w", grouped.Engine.GetLineEngineType(), err)
+		}
+
+		lines, err := grouped.Engine.OnInvoiceFinalizing(ctx, input)
+		if err != nil {
+			return billing.NewLineEngineValidationError(grouped.Engine, err)
+		}
+
+		if err := finalizedInvoice.Lines.ReplaceExact(billing.ReplaceExactLinesInput{
+			Existing:    grouped.Lines,
+			Replacement: lines,
+		}); err != nil {
+			return billing.NewLineEngineValidationError(
+				grouped.Engine,
+				fmt.Errorf("replacing invoice finalizing lines: %w", err),
+			)
+		}
+	}
+
+	if err := invoicecalc.RecalculateTotals(&finalizedInvoice); err != nil {
+		return fmt.Errorf("recalculating invoice totals after line finalization: %w", err)
+	}
+
+	m.Invoice = finalizedInvoice
+
+	return nil
+}
+
+func (m *InvoiceStateMachine) onInvoiceIssued(ctx context.Context) error {
+	groupedLines, err := m.Service.lineEngines.groupStandardLinesByEngine(m.Invoice.Lines.OrEmpty())
+	if err != nil {
+		return fmt.Errorf("grouping standard lines by engine: %w", err)
+	}
+
+	for _, grouped := range groupedLines {
+		input := billing.OnInvoiceIssuedInput{
+			Invoice: m.Invoice,
+			Lines:   grouped.Lines,
+		}
+		if err := input.Validate(); err != nil {
+			return fmt.Errorf("validating invoice issued input for engine %s: %w", grouped.Engine.GetLineEngineType(), err)
+		}
+
+		if err := grouped.Engine.OnInvoiceIssued(ctx, input); err != nil {
+			return billing.NewLineEngineValidationError(grouped.Engine, err)
+		}
+	}
+
+	return nil
+}
+
+func (m *InvoiceStateMachine) onPaymentAuthorized(ctx context.Context) error {
+	groupedLines, err := m.Service.lineEngines.groupStandardLinesByEngine(m.Invoice.Lines.OrEmpty())
+	if err != nil {
+		return fmt.Errorf("grouping standard lines by engine: %w", err)
+	}
+
+	for _, grouped := range groupedLines {
+		input := billing.OnPaymentAuthorizedInput{
+			Invoice: m.Invoice,
+			Lines:   grouped.Lines,
+		}
+		if err := input.Validate(); err != nil {
+			return fmt.Errorf("validating payment authorized input for engine %s: %w", grouped.Engine.GetLineEngineType(), err)
+		}
+
+		if err := grouped.Engine.OnPaymentAuthorized(ctx, input); err != nil {
+			return billing.NewLineEngineValidationError(grouped.Engine, err)
+		}
+	}
+
+	return nil
+}
+
+func (m *InvoiceStateMachine) onPaymentAuthorizedAndSettled(ctx context.Context) error {
+	if err := m.onPaymentAuthorized(ctx); err != nil {
+		return err
+	}
+
+	return m.onPaymentSettled(ctx)
+}
+
+func (m *InvoiceStateMachine) onPaymentSettled(ctx context.Context) error {
+	groupedLines, err := m.Service.lineEngines.groupStandardLinesByEngine(m.Invoice.Lines.OrEmpty())
+	if err != nil {
+		return fmt.Errorf("grouping standard lines by engine: %w", err)
+	}
+
+	for _, grouped := range groupedLines {
+		input := billing.OnPaymentSettledInput{
+			Invoice: m.Invoice,
+			Lines:   grouped.Lines,
+		}
+		if err := input.Validate(); err != nil {
+			return fmt.Errorf("validating payment settled input for engine %s: %w", grouped.Engine.GetLineEngineType(), err)
+		}
+
+		if err := grouped.Engine.OnPaymentSettled(ctx, input); err != nil {
+			return billing.NewLineEngineValidationError(grouped.Engine, err)
+		}
+	}
+
+	return nil
+}
+
+func (m *InvoiceStateMachine) canDraftSyncAdvance() bool {
+	if invoicingApp, ok := m.Invoice.Workflow.Apps.Invoicing.(billing.InvoicingAppAsyncSyncer); ok {
+		can, err := invoicingApp.CanDraftSyncAdvance(m.Invoice)
+		if err != nil {
+			m.Logger.Error("error checking if we can advance the draft invoice", "error", err)
+			return false
+		}
+		return can
+	}
+
+	return true
+}
+
+func (m *InvoiceStateMachine) validateNamespaceLockdown() error {
+	if slices.Contains(m.FSNamespaceLockdown, m.Invoice.Namespace) {
+		return fmt.Errorf("%w: %s", billing.ErrNamespaceLocked, m.Invoice.Namespace)
+	}
+
+	return nil
+}
+
+func (m *InvoiceStateMachine) canIssuingSyncAdvance() bool {
+	if invoicingApp, ok := m.Invoice.Workflow.Apps.Invoicing.(billing.InvoicingAppAsyncSyncer); ok {
+		can, err := invoicingApp.CanIssuingSyncAdvance(m.Invoice)
+		if err != nil {
+			m.Logger.Error("error checking if we can advance the issuing invoice", "error", err)
+			return false
+		}
+		return can
+	}
+
+	return true
+}

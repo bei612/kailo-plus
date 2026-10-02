@@ -1,0 +1,132 @@
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directories:
+      - "/"
+      - "/collector"
+      - "/e2e"
+      - "/api/v3/client"
+    open-pull-requests-limit: 10
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+    labels:
+      - area/dependencies
+      - dependency/go
+      - release-note/dependency-update
+    ignore:
+      - dependency-name: "ariga.io/atlas"
+    groups:
+      k8s:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.sk8s.io/*"
+      aws:
+        patterns:
+          - "github.com/aws/*"
+      azure:
+        patterns:
+          - "github.com/Azure/azure-sdk-for-go"
+          - "github.com/Azure/azure-sdk-for-go/*"
+      googlecloud:
+        patterns:
+          - "cloud.google.com/go"
+          - "cloud.google.com/go/*"
+          - "github.com/GoogleCloudPlatform/*"
+          - "google.golang.org/*"
+      golang:
+        patterns:
+          - "google.golang.org/*"
+          - "golang.org/x/*"
+      otel:
+        patterns:
+          - "go.opentelemetry.io/*"
+      samber:
+        patterns:
+          - "github.com/samber/*"
+      prometheus:
+        patterns:
+          - "github.com/prometheus/*"
+      redis:
+        patterns:
+          - "github.com/redis/go-redis/*"
+      benthos:
+        patterns:
+          - "github.com/redpanda-data/benthos/*"
+          - "github.com/redpanda-data/connect/*"
+      oapi-codegen:
+        patterns:
+          - "github.com/oapi-codegen/*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    cooldown:
+      default-days: 7
+    labels:
+      - area/dependencies
+      - dependency/github_actions
+      - release-note/ignore
+    groups:
+      codeql:
+        patterns:
+          - "github/codeql-action"
+          - "github/codeql-action/*"
+      kong:
+        patterns:
+          - "Kong/public-shared-actions/*"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    cooldown:
+      default-days: 7
+    labels:
+      - area/dependencies
+      - dependency/docker
+      - release-note/dependency-update
+
+  - package-ecosystem: npm
+    open-pull-requests-limit: 0
+    directory: "/api/client/javascript"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - area/dependencies
+      - dependency/javascript
+      - release-note/dependency-update
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+      development-dependencies:
+        dependency-type: "development"
+    ignore:
+      - dependency-name: "eslint"
+      - dependency-name: "eslint-formatter-pretty"
+
+  - package-ecosystem: pip
+    open-pull-requests-limit: 1
+    directory: "/api/client/python"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - area/dependencies
+      - dependency/python
+      - release-note/dependency-update
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+      development-dependencies:
+        dependency-type: "development"

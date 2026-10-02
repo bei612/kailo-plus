@@ -1,0 +1,143 @@
+package adapter
+
+import (
+	"log/slog"
+	"testing"
+	"time"
+
+	"github.com/alpacahq/alpacadecimal"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/flatfee"
+	chargesmeta "github.com/openmeterio/openmeter/openmeter/billing/charges/meta"
+	metaadapter "github.com/openmeterio/openmeter/openmeter/billing/charges/meta/adapter"
+	currenciestestutils "github.com/openmeterio/openmeter/openmeter/currencies/testutils"
+	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	taxcodetestutils "github.com/openmeterio/openmeter/openmeter/taxcode/testutils"
+	"github.com/openmeterio/openmeter/openmeter/testutils"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
+)
+
+func TestFlatFeeRealizationRunAdapter(t *testing.T) {
+	suite.Run(t, new(FlatFeeRealizationRunAdapterSuite))
+}
+
+type FlatFeeRealizationRunAdapterSuite struct {
+	suite.Suite
+
+	testDB   *testutils.TestDB
+	dbClient *entdb.Client
+	adapter  flatfee.Adapter
+
+	taxCodeEnv *taxcodetestutils.TestEnv
+}
+
+func (s *FlatFeeRealizationRunAdapterSuite) SetupSuite() {
+	t := s.T()
+
+	s.testDB = testutils.InitPostgresDB(t, testutils.PostgresDBStateAtlasMigrated)
+	s.dbClient = entdb.NewClient(entdb.Driver(s.testDB.EntDriver.Driver()))
+
+	metaAdapter, err := metaadapter.New(metaadapter.Config{
+		Client: s.dbClient,
+		Logger: slog.Default(),
+	})
+	require.NoError(t, err)
+
+	a, err := New(Config{
+		Client:      s.dbClient,
+		Logger:      slog.Default(),
+		MetaAdapter: metaAdapter,
+	})
+	require.NoError(t, err)
+
+	s.adapter = a
+	s.taxCodeEnv = taxcodetestutils.NewTestEnvFromClient(t, s.dbClient, slog.Default())
+}
+
+func (s *FlatFeeRealizationRunAdapterSuite) TearDownSuite() {
+	s.dbClient.Close()
+	s.testDB.EntDriver.Close()
+	s.testDB.PGDriver.Close()
+}
+
+func (s *FlatFeeRealizationRunAdapterSuite) TestCreateCurrentRunFailsWhenCurrentRunAlreadyAttached() {
+	ctx := s.T().Context()
+	namespace := "flatfee-current-run-adapter"
+	customerID := s.createCustomer(namespace)
+	taxCodeID := s.taxCodeEnv.CreateTaxCode(s.T(), namespace).ID
+
+	servicePeriod := timeutil.ClosedPeriod{
+		From: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:   time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	createdCharges, err := s.adapter.CreateCharges(ctx, flatfee.CreateChargesInput{
+		Namespace: namespace,
+		Intents: []flatfee.IntentWithInitialStatus{
+			{
+				Intent: flatfee.Intent{
+					Intent: chargesmeta.Intent{
+						ManagedBy:  billing.SubscriptionManagedLine,
+						CustomerID: customerID,
+						Currency:   currenciestestutils.NewFiatCurrency(s.T(), "USD"),
+						TaxConfig: productcatalog.TaxCodeConfig{
+							TaxCodeID: taxCodeID,
+						},
+					},
+					IntentMutableFields: flatfee.IntentMutableFields{
+						IntentMutableFields: chargesmeta.IntentMutableFields{
+							Name:              "flat-fee-charge",
+							ServicePeriod:     servicePeriod,
+							FullServicePeriod: servicePeriod,
+							BillingPeriod:     servicePeriod,
+						},
+						InvoiceAt:             servicePeriod.To,
+						PaymentTerm:           productcatalog.InAdvancePaymentTerm,
+						AmountBeforeProration: alpacadecimal.NewFromInt(10),
+						ProRating: productcatalog.ProRatingConfig{
+							Enabled: false,
+							Mode:    productcatalog.ProRatingModeProratePrices,
+						},
+					},
+					SettlementMode: productcatalog.CreditThenInvoiceSettlementMode,
+				},
+				InitialStatus:        flatfee.StatusCreated,
+				AmountAfterProration: alpacadecimal.NewFromInt(10),
+			},
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(createdCharges, 1)
+
+	run, err := s.adapter.CreateCurrentRun(ctx, flatfee.CreateCurrentRunInput{
+		Charge:               createdCharges[0].ChargeBase,
+		ServicePeriod:        servicePeriod,
+		AmountAfterProration: alpacadecimal.NewFromInt(10),
+	})
+	s.Require().NoError(err)
+	s.Nil(run.LineID)
+	s.Nil(run.InvoiceID)
+
+	_, err = s.adapter.CreateCurrentRun(ctx, flatfee.CreateCurrentRunInput{
+		Charge:               createdCharges[0].ChargeBase,
+		ServicePeriod:        servicePeriod,
+		AmountAfterProration: alpacadecimal.NewFromInt(10),
+	})
+	s.Require().ErrorContains(err, "already has current run")
+}
+
+func (s *FlatFeeRealizationRunAdapterSuite) createCustomer(namespace string) string {
+	s.T().Helper()
+
+	customer, err := s.dbClient.Customer.Create().
+		SetNamespace(namespace).
+		SetName("test-customer").
+		Save(s.T().Context())
+	s.Require().NoError(err)
+
+	return customer.ID
+}

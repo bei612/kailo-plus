@@ -1,0 +1,351 @@
+package creditgrant
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/alpacahq/alpacadecimal"
+
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/creditpurchase"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/payment"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/pkg/currencyx"
+	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/filter"
+	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+)
+
+// Service provides a credit-grant-centric API on top of the charges layer.
+type Service interface {
+	Create(ctx context.Context, input CreateInput) (creditpurchase.Charge, error)
+	Get(ctx context.Context, input GetInput) (creditpurchase.Charge, error)
+	List(ctx context.Context, input ListInput) (pagination.Result[creditpurchase.Charge], error)
+	UpdateExternalSettlement(ctx context.Context, input UpdateExternalSettlementInput) (creditpurchase.Charge, error)
+	// Void forfeits the grant's remaining unused value by correcting the
+	// original receivable issuance at the current server time.
+	Void(ctx context.Context, input VoidInput) (creditpurchase.Charge, error)
+}
+
+// GrantStatus is the public lifecycle status of a grant.
+type GrantStatus string
+
+const (
+	GrantStatusPending GrantStatus = "pending"
+	GrantStatusActive  GrantStatus = "active"
+	GrantStatusExpired GrantStatus = "expired"
+	GrantStatusVoided  GrantStatus = "voided"
+)
+
+type VoidPaymentAdjustment string
+
+const (
+	// VoidPaymentAdjustmentNone leaves invoice, payment authorization,
+	// settlement, payment intent, and external collection state unchanged.
+	VoidPaymentAdjustmentNone VoidPaymentAdjustment = "none"
+)
+
+func (s GrantStatus) Validate() error {
+	switch s {
+	case GrantStatusPending, GrantStatusActive, GrantStatusExpired, GrantStatusVoided:
+		return nil
+	default:
+		return fmt.Errorf("invalid grant status: %s", s)
+	}
+}
+
+func (a VoidPaymentAdjustment) Validate() error {
+	switch a {
+	case "", VoidPaymentAdjustmentNone:
+		return nil
+	default:
+		return fmt.Errorf("invalid payment adjustment: %s", a)
+	}
+}
+
+// FundingMethod represents how a credit grant is funded.
+type FundingMethod string
+
+const (
+	FundingMethodNone     FundingMethod = "none"
+	FundingMethodInvoice  FundingMethod = "invoice"
+	FundingMethodExternal FundingMethod = "external"
+)
+
+func (f FundingMethod) Validate() error {
+	switch f {
+	case FundingMethodNone, FundingMethodInvoice, FundingMethodExternal:
+		return nil
+	default:
+		return fmt.Errorf("invalid funding method: %s", f)
+	}
+}
+
+// PurchaseTerms defines the purchase/payment terms for a credit grant.
+type PurchaseTerms struct {
+	// Currency is the fiat currency the purchase is settled in.
+	Currency currencyx.Code
+	// CostBasis prices the credits in Currency: fiat grants accept only a fiat rate,
+	// custom-currency grants require a custom-currency intent. Mutually exclusive
+	// with PerUnitCostBasis.
+	CostBasis *creditpurchase.CostBasis
+	// PerUnitCostBasis is the deprecated fiat-only rate, defaulting to 1.
+	PerUnitCostBasis   *alpacadecimal.Decimal
+	AvailabilityPolicy *creditpurchase.InitialPaymentSettlementStatus
+}
+
+type CreateInput struct {
+	Namespace     string
+	CustomerID    string
+	Name          string
+	Description   *string
+	Labels        map[string]string
+	Currency      currencyx.Code
+	Amount        alpacadecimal.Decimal
+	EffectiveAt   *time.Time
+	Priority      *int16
+	FundingMethod FundingMethod
+	Purchase      *PurchaseTerms
+	TaxConfig     *productcatalog.TaxConfig
+	Filters       *GrantFilters
+	ExpiresAfter  *datetime.ISODuration
+	// Key is the optional idempotency key: a retried create with the same key returns a conflict.
+	Key *string
+}
+
+type GrantFilters struct {
+	Features []string
+}
+
+func (i CreateInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, errors.New("namespace is required"))
+	}
+
+	if i.CustomerID == "" {
+		errs = append(errs, errors.New("customer ID is required"))
+	}
+
+	if i.Name == "" {
+		errs = append(errs, errors.New("name is required"))
+	}
+
+	if err := i.Currency.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("currency: %w", err))
+	}
+
+	if !i.Amount.IsPositive() {
+		errs = append(errs, errors.New("amount must be positive"))
+	}
+
+	if err := i.FundingMethod.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if i.FundingMethod != FundingMethodNone && i.Purchase == nil {
+		errs = append(errs, errors.New("purchase terms are required for funded grants"))
+	}
+
+	if i.Purchase != nil {
+		if err := i.Purchase.ValidateWith(i.Currency, i.FundingMethod); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if i.ExpiresAfter != nil {
+		expiresAfter := i.ExpiresAfter.Simplify(true)
+		if expiresAfter.IsZero() || expiresAfter.IsNegative() {
+			errs = append(errs, errors.New("expires_after must be positive"))
+		}
+	}
+
+	if i.TaxConfig != nil {
+		if err := i.TaxConfig.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("tax config: %w", err))
+		}
+	}
+
+	if i.Filters != nil {
+		if err := creditpurchase.FeatureFilters(i.Filters.Features).Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("filters.features: %w", err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+func (p PurchaseTerms) ValidateWith(creditCurrency currencyx.Code, fundingMethod FundingMethod) error {
+	var errs []error
+
+	if err := p.Currency.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("purchase currency: %w", err))
+	} else if !p.Currency.IsFiat() {
+		errs = append(errs, fmt.Errorf("purchase currency %q must be a fiat currency", p.Currency))
+	}
+
+	if p.CostBasis != nil {
+		if err := p.CostBasis.ValidateWith(creditCurrency, p.Currency); err != nil {
+			errs = append(errs, err)
+		}
+	} else if creditCurrency.IsCustom() {
+		errs = append(errs, errors.New("purchase.cost_basis is required for custom currency credit grants"))
+	}
+
+	if p.PerUnitCostBasis != nil && p.CostBasis != nil {
+		errs = append(errs, errors.New("per_unit_cost_basis and purchase.cost_basis are mutually exclusive"))
+	}
+
+	if creditCurrency.IsCustom() && p.PerUnitCostBasis != nil {
+		errs = append(errs, errors.New("per_unit_cost_basis is not supported for custom currency credit grants"))
+	}
+
+	if creditCurrency.IsFiat() {
+		if p.CostBasis != nil && p.CostBasis.Type() != creditpurchase.CostBasisTypeFiat {
+			errs = append(errs, errors.New("purchase.cost_basis is not supported for fiat credit grants"))
+		}
+
+		if fundingMethod != FundingMethodNone && p.Currency != creditCurrency {
+			errs = append(errs, fmt.Errorf("purchase currency %q must match credit currency %q", p.Currency, creditCurrency))
+		}
+
+		if p.PerUnitCostBasis != nil && !p.PerUnitCostBasis.IsPositive() {
+			errs = append(errs, errors.New("per_unit_cost_basis must be positive"))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+type GetInput struct {
+	Namespace  string
+	CustomerID string
+	ChargeID   string
+}
+
+func (i GetInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, errors.New("namespace is required"))
+	}
+
+	if i.CustomerID == "" {
+		errs = append(errs, errors.New("customer ID is required"))
+	}
+
+	if i.ChargeID == "" {
+		errs = append(errs, errors.New("charge ID is required"))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type ListInput struct {
+	pagination.Page
+
+	Namespace  string
+	CustomerID string
+
+	// Optional filters
+	Status   *GrantStatus
+	Currency *currencyx.Code
+	Key      *filter.FilterString
+}
+
+func (i ListInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, errors.New("namespace is required"))
+	}
+
+	if i.CustomerID == "" {
+		errs = append(errs, errors.New("customer ID is required"))
+	}
+
+	if i.Status != nil {
+		if err := i.Status.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if i.Currency != nil {
+		if err := i.Currency.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("currency: %w", err))
+		}
+	}
+
+	if i.Key != nil {
+		if err := i.Key.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("key: %w", err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type VoidInput struct {
+	Namespace  string
+	CustomerID string
+	ChargeID   string
+
+	// PaymentAdjustment is currently a no-op: voiding leaves invoice, payment
+	// authorization, settlement, payment intent, and external collection state unchanged.
+	PaymentAdjustment VoidPaymentAdjustment
+}
+
+func (i VoidInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, errors.New("namespace is required"))
+	}
+
+	if i.CustomerID == "" {
+		errs = append(errs, errors.New("customer ID is required"))
+	}
+
+	if i.ChargeID == "" {
+		errs = append(errs, errors.New("charge ID is required"))
+	}
+
+	if err := i.PaymentAdjustment.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("payment adjustment: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+type UpdateExternalSettlementInput struct {
+	Namespace  string
+	CustomerID string
+	ChargeID   string
+
+	TargetStatus payment.Status
+}
+
+func (i UpdateExternalSettlementInput) Validate() error {
+	var errs []error
+
+	if i.Namespace == "" {
+		errs = append(errs, errors.New("namespace is required"))
+	}
+
+	if i.CustomerID == "" {
+		errs = append(errs, errors.New("customer ID is required"))
+	}
+
+	if i.ChargeID == "" {
+		errs = append(errs, errors.New("charge ID is required"))
+	}
+
+	if err := i.TargetStatus.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("target status: %w", err))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}

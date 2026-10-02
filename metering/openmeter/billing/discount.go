@@ -1,0 +1,418 @@
+package billing
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"github.com/oklog/ulid/v2"
+	"github.com/samber/lo"
+
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/pkg/equal"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+type discountType[T any] interface {
+	models.Clonable[T]
+	models.Equaler[T]
+	models.Validator
+}
+
+// Extended discount types
+
+var _ discountType[PercentageDiscount] = (*PercentageDiscount)(nil)
+
+type PercentageDiscount struct {
+	productcatalog.PercentageDiscount `json:",inline"`
+
+	CorrelationID string `json:"correlationID"`
+}
+
+func (d PercentageDiscount) Clone() PercentageDiscount {
+	return PercentageDiscount{
+		PercentageDiscount: d.PercentageDiscount.Clone(),
+		CorrelationID:      d.CorrelationID,
+	}
+}
+
+func (d *PercentageDiscount) CloneOrNil() *PercentageDiscount {
+	if d == nil {
+		return nil
+	}
+
+	return lo.ToPtr(d.Clone())
+}
+
+// UpsertCorrelationID returns a copy with a correlation ID allocated when it is missing.
+// Persisted charge discounts use the ID to preserve detailed-line lineage across realizations.
+// Existing IDs are preserved, and a nil discount remains nil.
+func (d *PercentageDiscount) UpsertCorrelationID() *PercentageDiscount {
+	if d == nil {
+		return nil
+	}
+
+	out := d.Clone()
+	if out.CorrelationID == "" {
+		out.CorrelationID = ulid.Make().String()
+	}
+
+	return &out
+}
+
+func (d PercentageDiscount) Equal(other PercentageDiscount) bool {
+	if d.PercentageDiscount.Hash() != other.PercentageDiscount.Hash() {
+		return false
+	}
+
+	if d.CorrelationID != other.CorrelationID {
+		return false
+	}
+
+	return true
+}
+
+type UsageDiscount struct {
+	productcatalog.UsageDiscount `json:",inline"`
+
+	CorrelationID string `json:"correlationID"`
+}
+
+var _ discountType[UsageDiscount] = (*UsageDiscount)(nil)
+
+func (d UsageDiscount) Clone() UsageDiscount {
+	return UsageDiscount{
+		UsageDiscount: d.UsageDiscount.Clone(),
+		CorrelationID: d.CorrelationID,
+	}
+}
+
+func (d UsageDiscount) Equal(other UsageDiscount) bool {
+	if d.UsageDiscount.Hash() != other.UsageDiscount.Hash() {
+		return false
+	}
+
+	if d.CorrelationID != other.CorrelationID {
+		return false
+	}
+
+	return true
+}
+
+// UpsertCorrelationID returns a copy with a correlation ID allocated when it is missing.
+// Persisted charge discounts use the ID to preserve detailed-line lineage across realizations.
+// Existing IDs are preserved, and a nil discount remains nil.
+func (d *UsageDiscount) UpsertCorrelationID() *UsageDiscount {
+	if d == nil {
+		return nil
+	}
+
+	out := d.Clone()
+	if out.CorrelationID == "" {
+		out.CorrelationID = ulid.Make().String()
+	}
+
+	return &out
+}
+
+var _ models.Clonable[Discounts] = (*Discounts)(nil)
+
+type Discounts struct {
+	Percentage *PercentageDiscount `json:"percentage,omitempty"`
+	Usage      *UsageDiscount      `json:"usage,omitempty"`
+}
+
+func (d Discounts) Clone() Discounts {
+	discounts := Discounts{}
+
+	if d.Percentage != nil {
+		discounts.Percentage = lo.ToPtr(d.Percentage.Clone())
+	}
+
+	if d.Usage != nil {
+		discounts.Usage = lo.ToPtr(d.Usage.Clone())
+	}
+
+	return discounts
+}
+
+func (d Discounts) IsEmpty() bool {
+	return lo.IsEmpty(d)
+}
+
+func (d Discounts) ValidateForPrice(price *productcatalog.Price) error {
+	var errs []error
+
+	if d.Percentage != nil {
+		if err := d.Percentage.ValidateForPrice(price); err != nil {
+			errs = append(errs, fmt.Errorf("percentage: %w", err))
+		}
+	}
+
+	if d.Usage != nil {
+		if err := d.Usage.ValidateForPrice(price); err != nil {
+			errs = append(errs, fmt.Errorf("usage: %w", err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+func (d Discounts) Equal(other Discounts) bool {
+	if !equal.PtrEqual(d.Percentage, other.Percentage) {
+		return false
+	}
+
+	if !equal.PtrEqual(d.Usage, other.Usage) {
+		return false
+	}
+
+	return true
+}
+
+func (d Discounts) Validate() error {
+	var errs []error
+
+	if d.Percentage != nil {
+		if err := d.Percentage.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("percentage: %w", err))
+		}
+	}
+
+	if d.Usage != nil {
+		if err := d.Usage.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("usage: %w", err))
+		}
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+func DiscountsFromProductCatalog(discounts productcatalog.Discounts) Discounts {
+	out := Discounts{}
+
+	if discounts.Percentage != nil {
+		out.Percentage = &PercentageDiscount{
+			PercentageDiscount: discounts.Percentage.Clone(),
+		}
+	}
+
+	if discounts.Usage != nil {
+		out.Usage = &UsageDiscount{
+			UsageDiscount: discounts.Usage.Clone(),
+		}
+	}
+
+	return out
+}
+
+// UpsertCorrelationIDs returns a copy with correlation IDs allocated for all present discounts.
+// It preserves existing IDs and leaves the receiver unchanged.
+func (d Discounts) UpsertCorrelationIDs() Discounts {
+	d.Percentage = d.Percentage.UpsertCorrelationID()
+	d.Usage = d.Usage.UpsertCorrelationID()
+
+	return d
+}
+
+// DiscountReason type
+type discountReason interface {
+	json.Marshaler
+	json.Unmarshaler
+
+	models.Validator
+
+	Type() DiscountReasonType
+	AsRatecardPercentage() (PercentageDiscount, error)
+	AsRatecardUsage() (UsageDiscount, error)
+	AsMaximumSpend() (MaximumSpendDiscount, error)
+}
+
+var _ discountReason = (*DiscountReason)(nil)
+
+type DiscountReasonType string
+
+const (
+	MaximumSpendDiscountReason       DiscountReasonType = "maximum_spend"
+	RatecardPercentageDiscountReason DiscountReasonType = "ratecard_percentage"
+	RatecardUsageDiscountReason      DiscountReasonType = "ratecard_usage"
+)
+
+func (DiscountReasonType) Values() []string {
+	return []string{
+		string(MaximumSpendDiscountReason),
+		string(RatecardPercentageDiscountReason),
+		string(RatecardUsageDiscountReason),
+	}
+}
+
+// MaximumSpendDiscount contains information about the maximum spend induced discounts
+type MaximumSpendDiscount struct{}
+
+type DiscountReason struct {
+	t DiscountReasonType
+
+	percentage *PercentageDiscount
+	usage      *UsageDiscount
+}
+
+func NewDiscountReasonFrom[T PercentageDiscount | UsageDiscount | productcatalog.PercentageDiscount | productcatalog.UsageDiscount | MaximumSpendDiscount](in T) DiscountReason {
+	switch d := any(in).(type) {
+	case PercentageDiscount:
+		percentage := any(d).(PercentageDiscount)
+		return DiscountReason{
+			t:          RatecardPercentageDiscountReason,
+			percentage: &percentage,
+		}
+	case productcatalog.PercentageDiscount:
+		percentage := any(d).(productcatalog.PercentageDiscount)
+		return DiscountReason{
+			t: RatecardPercentageDiscountReason,
+			percentage: &PercentageDiscount{
+				PercentageDiscount: percentage,
+			},
+		}
+	case UsageDiscount:
+		usage := any(d).(UsageDiscount)
+		return DiscountReason{
+			t:     RatecardUsageDiscountReason,
+			usage: &usage,
+		}
+	case productcatalog.UsageDiscount:
+		usage := any(d).(productcatalog.UsageDiscount)
+		return DiscountReason{
+			t: RatecardUsageDiscountReason,
+			usage: &UsageDiscount{
+				UsageDiscount: usage,
+			},
+		}
+	case MaximumSpendDiscount:
+		return DiscountReason{
+			t: MaximumSpendDiscountReason,
+		}
+	}
+
+	return DiscountReason{}
+}
+
+func (d *DiscountReason) MarshalJSON() ([]byte, error) {
+	var serde interface{}
+
+	switch d.t {
+	case RatecardPercentageDiscountReason:
+		serde = struct {
+			Type DiscountReasonType `json:"type"`
+			*PercentageDiscount
+		}{
+			Type:               RatecardPercentageDiscountReason,
+			PercentageDiscount: d.percentage,
+		}
+	case RatecardUsageDiscountReason:
+		serde = struct {
+			Type DiscountReasonType `json:"type"`
+			*UsageDiscount
+		}{
+			Type:          RatecardUsageDiscountReason,
+			UsageDiscount: d.usage,
+		}
+	case MaximumSpendDiscountReason:
+		serde = struct {
+			Type DiscountReasonType `json:"type"`
+		}{
+			Type: MaximumSpendDiscountReason,
+		}
+	default:
+		return nil, fmt.Errorf("invalid Discount type: %s", d.t)
+	}
+
+	b, err := json.Marshal(serde)
+	if err != nil {
+		return nil, fmt.Errorf("failed to JSON serialize Discount: %w", err)
+	}
+
+	return b, nil
+}
+
+func (d *DiscountReason) UnmarshalJSON(bytes []byte) error {
+	serde := &struct {
+		Type DiscountReasonType `json:"type"`
+	}{}
+
+	if err := json.Unmarshal(bytes, serde); err != nil {
+		return fmt.Errorf("failed to JSON deserialize Discount type: %w", err)
+	}
+
+	switch serde.Type {
+	case RatecardPercentageDiscountReason:
+		v := &PercentageDiscount{}
+		if err := json.Unmarshal(bytes, v); err != nil {
+			return fmt.Errorf("failed to JSON deserialize Discount: %w", err)
+		}
+
+		d.percentage = v
+		d.t = RatecardPercentageDiscountReason
+	case RatecardUsageDiscountReason:
+		v := &UsageDiscount{}
+		if err := json.Unmarshal(bytes, v); err != nil {
+			return fmt.Errorf("failed to JSON deserialize Discount: %w", err)
+		}
+
+		d.usage = v
+		d.t = RatecardUsageDiscountReason
+	case MaximumSpendDiscountReason:
+		d.t = MaximumSpendDiscountReason
+	default:
+		return fmt.Errorf("invalid Discount type: %s", serde.Type)
+	}
+
+	return nil
+}
+
+func (d *DiscountReason) Type() DiscountReasonType {
+	return d.t
+}
+
+func (d *DiscountReason) AsRatecardPercentage() (PercentageDiscount, error) {
+	if d.t != RatecardPercentageDiscountReason {
+		return PercentageDiscount{}, errors.New("invalid discount type")
+	}
+
+	if d.percentage == nil {
+		return PercentageDiscount{}, errors.New("percentage discount is missing")
+	}
+
+	return *d.percentage, nil
+}
+
+func (d *DiscountReason) AsRatecardUsage() (UsageDiscount, error) {
+	if d.t != RatecardUsageDiscountReason {
+		return UsageDiscount{}, errors.New("invalid discount type")
+	}
+
+	if d.usage == nil {
+		return UsageDiscount{}, errors.New("usage discount is missing")
+	}
+
+	return *d.usage, nil
+}
+
+func (d *DiscountReason) AsMaximumSpend() (MaximumSpendDiscount, error) {
+	if d.t != MaximumSpendDiscountReason {
+		return MaximumSpendDiscount{}, errors.New("invalid discount type")
+	}
+
+	return MaximumSpendDiscount{}, nil
+}
+
+func (d *DiscountReason) Validate() error {
+	switch d.t {
+	case RatecardPercentageDiscountReason:
+		return d.percentage.Validate()
+	case RatecardUsageDiscountReason:
+		return d.usage.Validate()
+	case MaximumSpendDiscountReason:
+		return nil
+	default:
+		return fmt.Errorf("invalid discount type: %s", d.t)
+	}
+}

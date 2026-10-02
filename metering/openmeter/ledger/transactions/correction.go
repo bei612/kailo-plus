@@ -1,0 +1,172 @@
+package transactions
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/alpacahq/alpacadecimal"
+
+	"github.com/openmeterio/openmeter/openmeter/ledger"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+const legacyAnnotationTransactionTemplateName = "ledger.transaction.template_name"
+
+type CorrectionInput struct {
+	At     time.Time
+	Amount alpacadecimal.Decimal
+
+	// SourceEntryAmounts selects exact original source slices. Nil keeps the template default.
+	SourceEntryAmounts map[string]alpacadecimal.Decimal
+
+	// CostBasis is required only by templates whose correction must reapply an
+	// immutable conversion rate (e.g. ConvertCurrencyTemplate). The charge layer
+	// supplies it; the template validates it against the original booking
+	// instead of reverse-engineering it from booked amounts.
+	CostBasis *alpacadecimal.Decimal
+
+	OriginalTransaction ledger.Transaction
+	OriginalGroup       ledger.TransactionGroup
+}
+
+type CorrectionScope = CorrectionInput
+
+func (i CorrectionScope) Validate() error {
+	var errs []error
+
+	if i.At.IsZero() {
+		errs = append(errs, errors.New("at is required"))
+	}
+
+	if err := ledger.ValidateTransactionAmount(i.Amount); err != nil {
+		errs = append(errs, fmt.Errorf("amount: %w", err))
+	}
+
+	if i.OriginalTransaction == nil {
+		errs = append(errs, errors.New("original transaction is required"))
+	}
+
+	if i.SourceEntryAmounts != nil && i.OriginalTransaction != nil {
+		original := make(map[string]ledger.Entry)
+		for _, entry := range i.OriginalTransaction.Entries() {
+			original[entry.ID().ID] = entry
+		}
+		total := alpacadecimal.Zero
+		for id, amount := range i.SourceEntryAmounts {
+			entry, ok := original[id]
+			if !ok || !entry.Amount().IsNegative() || !amount.IsPositive() || amount.GreaterThan(entry.Amount().Abs()) {
+				errs = append(errs, fmt.Errorf("invalid correction source amount for entry %s", id))
+			}
+			total = total.Add(amount)
+		}
+		if !total.Equal(i.Amount) {
+			errs = append(errs, errors.New("source entry amounts must sum to correction amount"))
+		}
+	}
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+func CorrectTransaction(
+	_ context.Context,
+	deps ResolverDependencies,
+	scope CorrectionScope,
+) ([]ledger.TransactionInput, error) {
+	if err := scope.Validate(); err != nil {
+		return nil, fmt.Errorf("validate correction input: %w", err)
+	}
+
+	direction, err := ledger.TransactionDirectionFromAnnotations(scope.OriginalTransaction.Annotations())
+	if err != nil {
+		return nil, fmt.Errorf("transaction direction: %w", err)
+	}
+
+	if direction == ledger.TransactionDirectionCorrection {
+		return nil, fmt.Errorf("cannot correct a correction transaction")
+	}
+
+	template, err := transactionTemplateFromAnnotations(scope.OriginalTransaction.Annotations())
+	if err != nil {
+		return nil, fmt.Errorf("transaction template: %w", err)
+	}
+
+	if scope.SourceEntryAmounts != nil {
+		switch template.(type) {
+		case TransferCustomerFBOToAccruedTemplate, CoverCustomerReceivableTemplate, RecognizeEarningsFromAttributableAccruedTemplate:
+		default:
+			return nil, fmt.Errorf("transaction template %T does not support source entry selection", template)
+		}
+	}
+
+	outputs, err := correctTemplate(scope, template)
+	if err != nil {
+		return nil, err
+	}
+
+	annotated := make([]ledger.TransactionInput, 0, len(outputs))
+	for _, output := range outputs {
+		annotatedOutput, err := annotateTemplateTransaction(output, template, ledger.TransactionDirectionCorrection)
+		if err != nil {
+			return nil, err
+		}
+
+		annotated = append(annotated, annotatedOutput)
+	}
+
+	return annotated, nil
+}
+
+func transactionTemplateFromAnnotations(annotations models.Annotations) (TransactionTemplate, error) {
+	if _, ok := annotations[ledger.AnnotationTransactionTemplateCode]; ok {
+		code, err := ledger.TransactionTemplateCodeFromAnnotations(annotations)
+		if err != nil {
+			return nil, fmt.Errorf("code: %w", err)
+		}
+
+		return transactionTemplateByCode(code)
+	}
+
+	name, err := transactionTemplateNameFromAnnotations(annotations)
+	if err != nil {
+		return nil, fmt.Errorf("name: %w", err)
+	}
+
+	return transactionTemplateByLegacyName(name)
+}
+
+func transactionTemplateNameFromAnnotations(annotations models.Annotations) (string, error) {
+	raw, ok := annotations[legacyAnnotationTransactionTemplateName]
+	if !ok {
+		return "", fmt.Errorf("transaction template name annotation is required")
+	}
+
+	templateName, ok := raw.(string)
+	if !ok || templateName == "" {
+		return "", fmt.Errorf("transaction template name annotation is invalid")
+	}
+
+	return templateName, nil
+}
+
+func correctTemplate(scope CorrectionScope, template TransactionTemplate) ([]ledger.TransactionInput, error) {
+	switch typ := any(template).(type) {
+	case CustomerTransactionTemplate:
+		return typ.correct(scope)
+	case OrgTransactionTemplate:
+		return typ.correct(scope)
+	default:
+		return nil, fmt.Errorf("unsupported correction template type %T", template)
+	}
+}
+
+func templateCorrectionNotImplemented(template string) error {
+	return fmt.Errorf("%s correction is not implemented", template)
+}
+
+func (i CorrectionInput) sourceEntryAmount(entry ledger.Entry) alpacadecimal.Decimal {
+	if i.SourceEntryAmounts != nil {
+		return i.SourceEntryAmounts[entry.ID().ID]
+	}
+	return entry.Amount().Abs()
+}

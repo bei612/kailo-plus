@@ -1,0 +1,339 @@
+package schema
+
+import (
+	"entgo.io/ent"
+	"entgo.io/ent/dialect"
+	"entgo.io/ent/dialect/entsql"
+	"entgo.io/ent/schema"
+	"entgo.io/ent/schema/edge"
+	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
+	"github.com/alpacahq/alpacadecimal"
+	"github.com/lib/pq"
+
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/creditpurchase"
+	"github.com/openmeterio/openmeter/openmeter/billing/charges/models/payment"
+	"github.com/openmeterio/openmeter/pkg/framework/entutils"
+)
+
+type ChargeCreditPurchase struct {
+	ent.Schema
+}
+
+func (ChargeCreditPurchase) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		ChargesMetaMixin{},
+		ChargeValidationIssuesMixin{},
+	}
+}
+
+func (ChargeCreditPurchase) Fields() []ent.Field {
+	return []ent.Field{
+		field.Int("schema_level").
+			Default(creditpurchase.CurrentSchemaLevel).
+			SchemaType(map[string]string{
+				dialect.Postgres: "smallint",
+			}),
+		field.Other("fiat_cost_basis", alpacadecimal.Decimal{}).
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{
+				dialect.Postgres: "numeric",
+			}),
+		field.Enum("settlement_type").
+			GoType(creditpurchase.SettlementType("")).
+			Optional().
+			Nillable(),
+		field.Enum("initial_payment_settlement_status").
+			GoType(creditpurchase.InitialPaymentSettlementStatus("")).
+			Optional().
+			Nillable(),
+
+		// Intent fields
+		field.Other("credit_amount", alpacadecimal.Decimal{}).
+			SchemaType(map[string]string{
+				dialect.Postgres: "numeric",
+			}),
+		field.Time("effective_at").
+			Optional().
+			Nillable().
+			Immutable(),
+		field.Time("expires_at").
+			Optional().
+			Nillable().
+			Immutable(),
+		field.Int("priority").
+			Optional().
+			Nillable().
+			Immutable(),
+		field.Other("feature_filters", pq.StringArray{}).
+			Optional().
+			Immutable().
+			SchemaType(map[string]string{
+				dialect.Postgres: "text[]",
+			}),
+
+		field.String("settlement").
+			Optional().
+			Nillable().
+			Immutable().
+			Deprecated("use settlement_type and the dedicated cost-basis fields instead").
+			SchemaType(map[string]string{
+				dialect.Postgres: "jsonb",
+			}),
+
+		field.Enum("status_detailed").
+			GoType(creditpurchase.Status("")),
+
+		field.String("key").
+			Optional().
+			Nillable().
+			Immutable(),
+
+		field.Time("voided_at").
+			Optional().
+			Nillable(),
+
+		field.String("cost_basis_id").
+			SchemaType(map[string]string{
+				dialect.Postgres: "char(26)",
+			}).
+			Optional().
+			Nillable(),
+	}
+}
+
+func (ChargeCreditPurchase) Annotations() []schema.Annotation {
+	return []schema.Annotation{
+		entsql.Checks(map[string]string{
+			"schema_level":                              "schema_level = 2",
+			"fiat_cost_basis_positive":                  "fiat_cost_basis IS NULL OR (fiat_cost_basis <> 'NaN'::numeric AND fiat_cost_basis > 0)",
+			"settlement_type":                           "settlement_type IS NULL OR settlement_type IN ('invoice', 'external', 'promotional')",
+			"initial_payment_settlement_status":         "initial_payment_settlement_status IS NULL OR initial_payment_settlement_status IN ('created', 'authorized', 'settled')",
+			"cost_basis_schema_level_settlement_fields": "settlement_type IS NOT NULL AND ((settlement_type = 'external' AND initial_payment_settlement_status IS NOT NULL) OR (settlement_type IN ('invoice', 'promotional') AND initial_payment_settlement_status IS NULL))",
+		}),
+	}
+}
+
+func (ChargeCreditPurchase) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.To("external_payment", ChargeCreditPurchaseExternalPayment.Type).
+			Unique().
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("invoiced_payment", ChargeCreditPurchaseInvoicedPayment.Type).
+			Unique().
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("credit_grant", ChargeCreditPurchaseCreditGrant.Type).
+			Unique().
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("cost_basis", ChargeCreditPurchaseCostBasis.Type).
+			Field("cost_basis_id").
+			StorageKey(edge.Symbol("charge_credit_purchase_cost_basis_charge_fk")).
+			Unique().
+			// The charge stores the foreign key, so cascading a cost-basis delete
+			// would delete the financial charge record instead of its child state.
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("charge", Charge.Type).
+			Unique().
+			Immutable().
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.From("subscription", Subscription.Type).
+			Ref("charges_credit_purchase").
+			Field("subscription_id").
+			Immutable().
+			Unique(),
+		edge.From("subscription_phase", SubscriptionPhase.Type).
+			Ref("charges_credit_purchase").
+			Field("subscription_phase_id").
+			Unique(),
+		edge.From("subscription_item", SubscriptionItem.Type).
+			Ref("charges_credit_purchase").
+			Field("subscription_item_id").
+			Unique(),
+		edge.From("customer", Customer.Type).
+			Field("customer_id").
+			Ref("charges_credit_purchase").
+			Unique().
+			Required().
+			Immutable(),
+		edge.From("tax_code", TaxCode.Type).
+			Ref("charge_credit_purchases").
+			Field("tax_code_id").
+			Unique().
+			Required().
+			Immutable().
+			// We must not falsify tax code IDs on charges, when deleting a tax code (they have soft delete either ways).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.From("custom_currency", CustomCurrency.Type).
+			Ref("charges_credit_purchase").
+			Field("custom_currency_id").
+			Unique().
+			Immutable().
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+	}
+}
+
+func (ChargeCreditPurchase) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("tax_code_id").
+			StorageKey("chargecreditpurchases_tax_code_id"),
+		index.Fields("cost_basis_id").
+			StorageKey("chargecreditpurchases_cost_basis_id").
+			Unique(),
+		// Idempotency key, unique per customer within a namespace. Partial so it is enforced
+		// only while live: NULL means no idempotency requested, and a soft-deleted grant must
+		// not permanently reserve a key the caller may reuse.
+		index.Fields("namespace", "customer_id", "key").
+			Annotations(
+				entsql.IndexWhere("key IS NOT NULL AND deleted_at IS NULL"),
+			).
+			Unique(),
+	}
+}
+
+type ChargeCreditPurchaseCostBasis struct {
+	ent.Schema
+}
+
+func (ChargeCreditPurchaseCostBasis) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		ChargeCostBasisMixin{},
+	}
+}
+
+func (ChargeCreditPurchaseCostBasis) Edges() []ent.Edge {
+	return chargeCostBasisCurrencyEdges("charge_credit_purchase_cost_basis")
+}
+
+func (ChargeCreditPurchaseCostBasis) Annotations() []schema.Annotation {
+	return []schema.Annotation{
+		entsql.Annotation{Table: "charge_credit_purchase_cost_bases"},
+	}
+}
+
+type ChargeCreditPurchaseCreditGrant struct {
+	ent.Schema
+}
+
+func (ChargeCreditPurchaseCreditGrant) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		entutils.NamespaceMixin{},
+		entutils.IDMixin{},
+		entutils.TimeMixin{},
+	}
+}
+
+func (ChargeCreditPurchaseCreditGrant) Fields() []ent.Field {
+	return []ent.Field{
+		field.String("charge_id").
+			SchemaType(map[string]string{
+				dialect.Postgres: "char(26)",
+			}).
+			Immutable(),
+
+		field.String("transaction_group_id").
+			SchemaType(map[string]string{
+				dialect.Postgres: "char(26)",
+			}).
+			NotEmpty(),
+
+		field.Time("granted_at"),
+	}
+}
+
+func (ChargeCreditPurchaseCreditGrant) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("credit_purchase", ChargeCreditPurchase.Type).
+			Ref("credit_grant").
+			Field("charge_id").
+			Unique().
+			Required().
+			Immutable(),
+	}
+}
+
+func (ChargeCreditPurchaseCreditGrant) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("namespace", "charge_id").
+			Unique(),
+	}
+}
+
+type ChargeCreditPurchaseExternalPayment struct {
+	ent.Schema
+}
+
+func (ChargeCreditPurchaseExternalPayment) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		payment.ExternalMixin{},
+	}
+}
+
+func (ChargeCreditPurchaseExternalPayment) Fields() []ent.Field {
+	return []ent.Field{
+		field.String("charge_id").
+			SchemaType(map[string]string{
+				dialect.Postgres: "char(26)",
+			}).
+			Immutable(),
+	}
+}
+
+func (ChargeCreditPurchaseExternalPayment) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("credit_purchase", ChargeCreditPurchase.Type).
+			Ref("external_payment").
+			Field("charge_id").
+			Unique().
+			Required().
+			Immutable(),
+	}
+}
+
+func (ChargeCreditPurchaseExternalPayment) Indexes() []ent.Index {
+	return nil
+}
+
+type ChargeCreditPurchaseInvoicedPayment struct {
+	ent.Schema
+}
+
+func (ChargeCreditPurchaseInvoicedPayment) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		payment.InvoicedMixin{},
+	}
+}
+
+func (ChargeCreditPurchaseInvoicedPayment) Fields() []ent.Field {
+	return []ent.Field{
+		field.String("charge_id").
+			SchemaType(map[string]string{
+				dialect.Postgres: "char(26)",
+			}).
+			Immutable(),
+	}
+}
+
+func (ChargeCreditPurchaseInvoicedPayment) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("billing_invoice_line", BillingInvoiceLine.Type).
+			Ref("charge_credit_purchase_invoiced_payment").
+			Field("line_id").
+			Required().
+			Immutable().
+			Unique(),
+		edge.From("credit_purchase", ChargeCreditPurchase.Type).
+			Ref("invoiced_payment").
+			Field("charge_id").
+			Unique().
+			Required().
+			Immutable(),
+	}
+}
+
+func (ChargeCreditPurchaseInvoicedPayment) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("namespace", "charge_id").
+			Unique(),
+	}
+}

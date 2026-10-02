@@ -1,0 +1,580 @@
+package service_test
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
+
+	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/plan"
+	plansubscription "github.com/openmeterio/openmeter/openmeter/productcatalog/subscription"
+	"github.com/openmeterio/openmeter/openmeter/subscription"
+	subscriptiontestutils "github.com/openmeterio/openmeter/openmeter/subscription/testutils"
+	subscriptionworkflow "github.com/openmeterio/openmeter/openmeter/subscription/workflow"
+	"github.com/openmeterio/openmeter/openmeter/testutils"
+	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/models"
+)
+
+func TestChange(t *testing.T) {
+	logger := testutils.NewLogger(t)
+
+	type tDeps struct {
+		subDeps subscriptiontestutils.SubscriptionDependencies
+		subSvc  subscription.Service
+		wfSvc   subscriptionworkflow.Service
+	}
+
+	withDeps := func(t *testing.T, f func(t *testing.T, deps tDeps)) {
+		t.Helper()
+		dbDeps := subscriptiontestutils.SetupDBDeps(t)
+		defer dbDeps.Cleanup(t)
+
+		deps := subscriptiontestutils.NewService(t, dbDeps)
+
+		f(t, tDeps{
+			subDeps: deps,
+			subSvc:  deps.SubscriptionService,
+			wfSvc:   deps.WorkflowService,
+		})
+	}
+
+	t.Run("Should change to different plan", func(t *testing.T) {
+		withDeps(t, func(t *testing.T, deps tDeps) {
+			examplePlanInput1 := subscriptiontestutils.GetExamplePlanInput(t)
+
+			now := testutils.GetRFC3339Time(t, "2021-01-01T00:01:10Z")
+			clock.SetTime(now)
+			defer clock.ResetTime()
+
+			ctx := context.Background()
+
+			svc := newPlanSubscriptionService(t, deps.subDeps, logger)
+
+			// Let's set up the feature & customer
+			cust := deps.subDeps.CustomerAdapter.CreateExampleCustomer(t)
+			deps.subDeps.FeatureConnector.CreateExampleFeatures(t, deps.subDeps.ExampleMeterID)
+
+			// Let's create the plan
+			plan1 := deps.subDeps.PlanHelper.CreatePlan(t, examplePlanInput1)
+
+			// Let's create the subscription
+			p1Inp := plansubscription.PlanInput{}
+			p1Inp.FromRef(&plansubscription.PlanRefInput{
+				Key:     plan1.ToCreateSubscriptionPlanInput().Plan.Key,
+				Version: &plan1.ToCreateSubscriptionPlanInput().Plan.Version,
+			})
+
+			sub, err := svc.Create(ctx, plansubscription.CreateSubscriptionRequest{
+				PlanInput: p1Inp,
+				WorkflowInput: subscriptionworkflow.CreateSubscriptionWorkflowInput{
+					ChangeSubscriptionWorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+						Name: "test",
+						Timing: subscription.Timing{
+							Custom: lo.ToPtr(now.Add(time.Second)),
+						},
+					},
+					Namespace:  cust.Namespace,
+					CustomerID: cust.ID,
+				},
+			})
+			require.Nil(t, err, "error creating subscription: %v", err)
+
+			p2Input := examplePlanInput1
+			p2Input.Plan.PlanMeta.Name = "New Plan"
+			p2Input.Plan.PlanMeta.Key = "new_plan"
+			// We need to copy the phases to avoid modifying the original plan
+			p2Input.Plan.Phases = lo.Map(p2Input.Plan.Phases, func(phase productcatalog.Phase, _ int) productcatalog.Phase { return phase })
+			p2Input.Plan.Phases[2].Duration = lo.ToPtr(datetime.MustParseDuration(t, "P5M"))
+			p2Input.Plan.Phases = append(p2Input.Plan.Phases, productcatalog.Phase{
+				PhaseMeta: productcatalog.PhaseMeta{
+					Key:         "test_phase_4",
+					Name:        "Test Phase 4",
+					Description: lo.ToPtr("Test Phase 4 Description"),
+				},
+				RateCards: productcatalog.RateCards{
+					subscriptiontestutils.ExampleRateCard1.Clone(),
+				},
+			})
+
+			// Let's create a second plan
+			plan2, err := deps.subDeps.PlanService.CreatePlan(ctx, p2Input)
+			require.Nil(t, err)
+
+			eFrom := clock.Now().Add(5 * time.Second)
+
+			// Let's publish the new plan
+			plan2, err = deps.subDeps.PlanService.PublishPlan(ctx, plan.PublishPlanInput{
+				NamespacedID: plan2.NamespacedID,
+				EffectivePeriod: productcatalog.EffectivePeriod{
+					EffectiveFrom: &eFrom,
+				},
+			})
+			require.Nil(t, err)
+			require.NotNil(t, plan2)
+
+			clock.SetTime(eFrom.Add(time.Second))
+
+			pInp := plansubscription.PlanInput{}
+			pInp.FromRef(&plansubscription.PlanRefInput{
+				Key:     plan2.Key,
+				Version: &plan2.Version,
+			})
+
+			// Let's change the subscription to the new plan
+			resp, err := svc.Change(ctx, plansubscription.ChangeSubscriptionRequest{
+				ID: sub.NamespacedID,
+				WorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+					Timing: subscription.Timing{
+						Enum: lo.ToPtr(subscription.TimingImmediate),
+					},
+					Name: sub.Name,
+				},
+				PlanInput: pInp,
+			})
+			require.Nil(t, err)
+
+			require.Equal(t, sub.NamespacedID, resp.Current.NamespacedID)
+			require.Equal(t, plan2.PlanMeta.Key, resp.Next.Subscription.PlanRef.Key)
+		})
+	})
+
+	t.Run("Should change to different plan starting from specific phase", func(t *testing.T) {
+		withDeps(t, func(t *testing.T, deps tDeps) {
+			examplePlanInput1 := subscriptiontestutils.GetExamplePlanInput(t)
+
+			now := testutils.GetRFC3339Time(t, "2021-01-01T00:01:10Z")
+			clock.SetTime(now)
+			defer clock.ResetTime()
+
+			ctx := context.Background()
+
+			svc := newPlanSubscriptionService(t, deps.subDeps, logger)
+
+			// Let's set up the feature & customer
+			cust := deps.subDeps.CustomerAdapter.CreateExampleCustomer(t)
+			deps.subDeps.FeatureConnector.CreateExampleFeatures(t, deps.subDeps.ExampleMeterID)
+
+			// Let's create the plan
+			plan1 := deps.subDeps.PlanHelper.CreatePlan(t, examplePlanInput1)
+
+			// Let's create the subscription
+			p1Inp := plansubscription.PlanInput{}
+			p1Inp.FromRef(&plansubscription.PlanRefInput{
+				Key:     plan1.ToCreateSubscriptionPlanInput().Plan.Key,
+				Version: &plan1.ToCreateSubscriptionPlanInput().Plan.Version,
+			})
+
+			sub, err := svc.Create(ctx, plansubscription.CreateSubscriptionRequest{
+				PlanInput: p1Inp,
+				WorkflowInput: subscriptionworkflow.CreateSubscriptionWorkflowInput{
+					ChangeSubscriptionWorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+						Name: "test",
+						Timing: subscription.Timing{
+							Custom: lo.ToPtr(now.Add(time.Second)),
+						},
+					},
+					Namespace:  cust.Namespace,
+					CustomerID: cust.ID,
+				},
+			})
+			require.Nil(t, err, "error creating subscription: %v", err)
+
+			p2Input := examplePlanInput1
+			p2Input.Plan.PlanMeta.Name = "New Plan"
+			p2Input.Plan.PlanMeta.Key = "new_plan"
+			// We need to copy the phases to avoid modifying the original plan
+			p2Input.Plan.Phases = lo.Map(p2Input.Plan.Phases, func(phase productcatalog.Phase, _ int) productcatalog.Phase { return phase })
+			p2Input.Plan.Phases[2].Duration = lo.ToPtr(datetime.MustParseDuration(t, "P5M"))
+			p2Input.Plan.Phases = append(p2Input.Plan.Phases, productcatalog.Phase{
+				PhaseMeta: productcatalog.PhaseMeta{
+					Key:         "test_phase_4",
+					Name:        "Test Phase 4",
+					Description: lo.ToPtr("Test Phase 4 Description"),
+				},
+				RateCards: productcatalog.RateCards{
+					subscriptiontestutils.ExampleRateCard1.Clone(),
+				},
+			})
+
+			// Let's create a second plan
+			plan2, err := deps.subDeps.PlanService.CreatePlan(ctx, p2Input)
+			require.Nil(t, err, "error creating plan: %v", err)
+
+			eFrom := clock.Now().Add(5 * time.Second)
+
+			// Let's publish the new plan
+			plan2, err = deps.subDeps.PlanService.PublishPlan(ctx, plan.PublishPlanInput{
+				NamespacedID: plan2.NamespacedID,
+				EffectivePeriod: productcatalog.EffectivePeriod{
+					EffectiveFrom: &eFrom,
+				},
+			})
+			require.Nil(t, err, "error publishing plan: %v", err)
+			require.NotNil(t, plan2)
+
+			clock.SetTime(eFrom.Add(time.Second))
+
+			pInp := plansubscription.PlanInput{}
+			pInp.FromRef(&plansubscription.PlanRefInput{
+				Key:     plan2.Key,
+				Version: &plan2.Version,
+			})
+
+			t.Run("Should error if starting phase is not found", func(t *testing.T) {
+				_, err := svc.Change(ctx, plansubscription.ChangeSubscriptionRequest{
+					ID: sub.NamespacedID,
+					WorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+						Timing: subscription.Timing{
+							Custom: lo.ToPtr(clock.Now()),
+						},
+						Name: sub.Name,
+					},
+					PlanInput:     pInp,
+					StartingPhase: lo.ToPtr("test_phase_NOT_FOUND"),
+				})
+				require.Error(t, err)
+				require.ErrorAs(t, err, lo.ToPtr(&models.GenericValidationError{}))
+			})
+
+			// Let's change the subscription to the new plan
+			resp, err := svc.Change(ctx, plansubscription.ChangeSubscriptionRequest{
+				ID: sub.NamespacedID,
+				WorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+					Timing: subscription.Timing{
+						Enum: lo.ToPtr(subscription.TimingImmediate),
+					},
+					Name: sub.Name,
+				},
+				PlanInput:     pInp,
+				StartingPhase: lo.ToPtr("test_phase_3"),
+			})
+			require.Nil(t, err)
+
+			require.Len(t, resp.Next.Phases, len(plan2.Phases))
+			require.Equal(t, resp.Next.Phases[0].SubscriptionPhase.ActiveFrom, resp.Next.Phases[1].SubscriptionPhase.ActiveFrom)
+			require.Equal(t, resp.Next.Phases[1].SubscriptionPhase.ActiveFrom, resp.Next.Phases[2].SubscriptionPhase.ActiveFrom)
+			require.Equal(t, "test_phase_1", resp.Next.Phases[0].SubscriptionPhase.Key)
+			require.Equal(t, "test_phase_2", resp.Next.Phases[1].SubscriptionPhase.Key)
+			require.Equal(t, "test_phase_3", resp.Next.Phases[2].SubscriptionPhase.Key)
+			require.Equal(t, "test_phase_4", resp.Next.Phases[3].SubscriptionPhase.Key)
+		})
+	})
+
+	t.Run("Should not allow changing to inactive plan", func(t *testing.T) {
+		withDeps(t, func(t *testing.T, deps tDeps) {
+			examplePlanInput1 := subscriptiontestutils.GetExamplePlanInput(t)
+
+			now := testutils.GetRFC3339Time(t, "2021-01-01T00:01:10Z")
+			clock.SetTime(now)
+			defer clock.ResetTime()
+
+			ctx := context.Background()
+
+			svc := newPlanSubscriptionService(t, deps.subDeps, logger)
+
+			// Let's set up the feature & customer
+			cust := deps.subDeps.CustomerAdapter.CreateExampleCustomer(t)
+			deps.subDeps.FeatureConnector.CreateExampleFeatures(t, deps.subDeps.ExampleMeterID)
+
+			// Let's create the plan
+			plan1 := deps.subDeps.PlanHelper.CreatePlan(t, examplePlanInput1)
+
+			// Let's create the subscription
+			p1Inp := plansubscription.PlanInput{}
+			p1Inp.FromRef(&plansubscription.PlanRefInput{
+				Key:     plan1.ToCreateSubscriptionPlanInput().Plan.Key,
+				Version: &plan1.ToCreateSubscriptionPlanInput().Plan.Version,
+			})
+
+			sub, err := svc.Create(ctx, plansubscription.CreateSubscriptionRequest{
+				PlanInput: p1Inp,
+				WorkflowInput: subscriptionworkflow.CreateSubscriptionWorkflowInput{
+					ChangeSubscriptionWorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+						Name: "test",
+						Timing: subscription.Timing{
+							Custom: lo.ToPtr(now.Add(time.Second)),
+						},
+					},
+					Namespace:  cust.Namespace,
+					CustomerID: cust.ID,
+				},
+			})
+			require.Nil(t, err, "error creating subscription: %v", err)
+
+			p2Input := examplePlanInput1
+			p2Input.Plan.PlanMeta.Name = "New Plan"
+			p2Input.Plan.PlanMeta.Key = "new_plan"
+			// We need to copy the phases to avoid modifying the original plan
+			p2Input.Plan.Phases = lo.Map(p2Input.Plan.Phases, func(phase productcatalog.Phase, _ int) productcatalog.Phase { return phase })
+			p2Input.Plan.Phases[2].Duration = lo.ToPtr(datetime.MustParseDuration(t, "P5M"))
+			p2Input.Plan.Phases = append(p2Input.Plan.Phases, productcatalog.Phase{
+				PhaseMeta: productcatalog.PhaseMeta{
+					Key:         "test_phase_4",
+					Name:        "Test Phase 4",
+					Description: lo.ToPtr("Test Phase 4 Description"),
+				},
+				RateCards: productcatalog.RateCards{
+					subscriptiontestutils.ExampleRateCard1.Clone(),
+				},
+			})
+
+			// Let's create a second plan
+			plan2, err := deps.subDeps.PlanService.CreatePlan(ctx, p2Input)
+			require.Nil(t, err)
+
+			eFrom := clock.Now().Add(5 * time.Second)
+
+			// Let's publish the new plan
+			plan2, err = deps.subDeps.PlanService.PublishPlan(ctx, plan.PublishPlanInput{
+				NamespacedID: plan2.NamespacedID,
+				EffectivePeriod: productcatalog.EffectivePeriod{
+					EffectiveFrom: &eFrom,
+				},
+			})
+			require.Nil(t, err)
+			require.NotNil(t, plan2)
+
+			// Let's create a new version of the second plan
+			p2v2Input := p2Input
+			p2v2Input.Plan.PlanMeta.Name = "New Plan 2"
+
+			plan2v2, err := deps.subDeps.PlanService.CreatePlan(ctx, p2v2Input)
+			require.Nil(t, err)
+
+			eFrom2 := clock.Now().Add(10 * time.Second)
+			clock.SetTime(eFrom2)
+
+			// Let's publish the new version of the second plan
+			_, err = deps.subDeps.PlanService.PublishPlan(ctx, plan.PublishPlanInput{
+				NamespacedID: plan2v2.NamespacedID,
+				EffectivePeriod: productcatalog.EffectivePeriod{
+					EffectiveFrom: &eFrom2,
+				},
+			})
+			require.Nil(t, err)
+
+			clock.SetTime(eFrom2.Add(10 * time.Second))
+
+			// Let's change the subscription to the old version of the new plan
+			pInp := plansubscription.PlanInput{}
+			pInp.FromRef(&plansubscription.PlanRefInput{
+				Key:     plan2.Key,
+				Version: &plan2.Version,
+			})
+			_, err = svc.Change(ctx, plansubscription.ChangeSubscriptionRequest{
+				ID: sub.NamespacedID,
+				WorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+					Timing: subscription.Timing{
+						Custom: lo.ToPtr(clock.Now()),
+					},
+					Name: sub.Name,
+				},
+				PlanInput: pInp,
+			})
+
+			require.NotNil(t, err)
+			require.ErrorAs(t, err, lo.ToPtr(&models.GenericValidationError{}))
+			require.ErrorContains(t, err, fmt.Sprintf("plan %s@%d is not active at", plan2.Key, plan2.Version))
+		})
+	})
+
+	t.Run("Should apply the settlement mode override when creating from a plan reference", func(t *testing.T) {
+		withDeps(t, func(t *testing.T, deps tDeps) {
+			examplePlanInput := subscriptiontestutils.GetExamplePlanInput(t)
+			require.Equal(t, productcatalog.CreditThenInvoiceSettlementMode, examplePlanInput.Plan.SettlementMode)
+
+			now := testutils.GetRFC3339Time(t, "2021-01-01T00:01:10Z")
+			clock.SetTime(now)
+			defer clock.ResetTime()
+
+			ctx := context.Background()
+
+			svc := newPlanSubscriptionService(t, deps.subDeps, logger)
+
+			cust := deps.subDeps.CustomerAdapter.CreateExampleCustomer(t)
+			deps.subDeps.FeatureConnector.CreateExampleFeatures(t, deps.subDeps.ExampleMeterID)
+
+			plan1 := deps.subDeps.PlanHelper.CreatePlan(t, examplePlanInput)
+
+			p1Inp := plansubscription.PlanInput{}
+			p1Inp.FromRef(&plansubscription.PlanRefInput{
+				Key:     plan1.ToCreateSubscriptionPlanInput().Plan.Key,
+				Version: &plan1.ToCreateSubscriptionPlanInput().Plan.Version,
+			})
+
+			sub, err := svc.Create(ctx, plansubscription.CreateSubscriptionRequest{
+				PlanInput:      p1Inp,
+				SettlementMode: lo.ToPtr(productcatalog.CreditOnlySettlementMode),
+				WorkflowInput: subscriptionworkflow.CreateSubscriptionWorkflowInput{
+					ChangeSubscriptionWorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+						Name: "test",
+						Timing: subscription.Timing{
+							Custom: lo.ToPtr(now.Add(time.Second)),
+						},
+					},
+					Namespace:  cust.Namespace,
+					CustomerID: cust.ID,
+				},
+			})
+			require.Nil(t, err, "error creating subscription: %v", err)
+
+			require.Equal(t, productcatalog.CreditOnlySettlementMode, sub.SettlementMode)
+		})
+	})
+
+	t.Run("Should apply the settlement mode override when changing to a plan reference", func(t *testing.T) {
+		withDeps(t, func(t *testing.T, deps tDeps) {
+			examplePlanInput1 := subscriptiontestutils.GetExamplePlanInput(t)
+
+			now := testutils.GetRFC3339Time(t, "2021-01-01T00:01:10Z")
+			clock.SetTime(now)
+			defer clock.ResetTime()
+
+			ctx := context.Background()
+
+			svc := newPlanSubscriptionService(t, deps.subDeps, logger)
+
+			cust := deps.subDeps.CustomerAdapter.CreateExampleCustomer(t)
+			deps.subDeps.FeatureConnector.CreateExampleFeatures(t, deps.subDeps.ExampleMeterID)
+
+			plan1 := deps.subDeps.PlanHelper.CreatePlan(t, examplePlanInput1)
+
+			p1Inp := plansubscription.PlanInput{}
+			p1Inp.FromRef(&plansubscription.PlanRefInput{
+				Key:     plan1.ToCreateSubscriptionPlanInput().Plan.Key,
+				Version: &plan1.ToCreateSubscriptionPlanInput().Plan.Version,
+			})
+
+			sub, err := svc.Create(ctx, plansubscription.CreateSubscriptionRequest{
+				PlanInput: p1Inp,
+				WorkflowInput: subscriptionworkflow.CreateSubscriptionWorkflowInput{
+					ChangeSubscriptionWorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+						Name: "test",
+						Timing: subscription.Timing{
+							Custom: lo.ToPtr(now.Add(time.Second)),
+						},
+					},
+					Namespace:  cust.Namespace,
+					CustomerID: cust.ID,
+				},
+			})
+			require.Nil(t, err, "error creating subscription: %v", err)
+			require.Equal(t, productcatalog.CreditThenInvoiceSettlementMode, sub.SettlementMode)
+
+			p2Input := examplePlanInput1
+			p2Input.Plan.PlanMeta.Name = "New Plan"
+			p2Input.Plan.PlanMeta.Key = "new_plan"
+			p2Input.Plan.Phases = lo.Map(p2Input.Plan.Phases, func(phase productcatalog.Phase, _ int) productcatalog.Phase { return phase })
+
+			plan2, err := deps.subDeps.PlanService.CreatePlan(ctx, p2Input)
+			require.Nil(t, err)
+
+			eFrom := clock.Now().Add(5 * time.Second)
+
+			plan2, err = deps.subDeps.PlanService.PublishPlan(ctx, plan.PublishPlanInput{
+				NamespacedID: plan2.NamespacedID,
+				EffectivePeriod: productcatalog.EffectivePeriod{
+					EffectiveFrom: &eFrom,
+				},
+			})
+			require.Nil(t, err)
+			require.NotNil(t, plan2)
+
+			clock.SetTime(eFrom.Add(time.Second))
+
+			pInp := plansubscription.PlanInput{}
+			pInp.FromRef(&plansubscription.PlanRefInput{
+				Key:     plan2.Key,
+				Version: &plan2.Version,
+			})
+
+			resp, err := svc.Change(ctx, plansubscription.ChangeSubscriptionRequest{
+				ID:             sub.NamespacedID,
+				PlanInput:      pInp,
+				SettlementMode: lo.ToPtr(productcatalog.CreditOnlySettlementMode),
+				WorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+					Timing: subscription.Timing{
+						Enum: lo.ToPtr(subscription.TimingImmediate),
+					},
+					Name: sub.Name,
+				},
+			})
+			require.Nil(t, err)
+
+			require.Equal(t, productcatalog.CreditOnlySettlementMode, resp.Next.Subscription.SettlementMode)
+		})
+	})
+}
+
+func TestChangeInlineCustomPlanRejectsMissingFeature(t *testing.T) {
+	// given:
+	// - a running subscription and an inline replacement plan whose rate card
+	//   references a feature that does not exist
+	// when:
+	// - the subscription is changed to the inline plan
+	// then:
+	// - the change fails with the product catalog's missing-feature validation error
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	clock.FreezeTime(now)
+	defer clock.UnFreeze()
+
+	dbDeps := subscriptiontestutils.SetupDBDeps(t)
+	defer dbDeps.Cleanup(t)
+
+	deps := subscriptiontestutils.NewService(t, dbDeps)
+	svc := newPlanSubscriptionService(t, deps, testutils.NewLogger(t))
+	customer := deps.CustomerAdapter.CreateExampleCustomer(t)
+	deps.FeatureConnector.CreateExampleFeatures(t, deps.ExampleMeterID)
+
+	currentPlanInput := subscriptiontestutils.GetExamplePlanInput(t)
+	currentPlanInput.Plan.Key = ""
+	currentPlanInput.Plan.Version = 0
+	currentPlan := plansubscription.PlanInput{}
+	currentPlan.FromInput(&currentPlanInput)
+
+	sub, err := svc.Create(t.Context(), plansubscription.CreateSubscriptionRequest{
+		PlanInput: currentPlan,
+		WorkflowInput: subscriptionworkflow.CreateSubscriptionWorkflowInput{
+			ChangeSubscriptionWorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+				Name:   "subscription before invalid plan change",
+				Timing: subscription.Timing{Enum: lo.ToPtr(subscription.TimingImmediate)},
+			},
+			Namespace:  customer.Namespace,
+			CustomerID: customer.ID,
+		},
+	})
+	require.NoError(t, err)
+
+	const missingFeatureKey = "missing-change-feature"
+	replacementPlanInput := subscriptiontestutils.GetExamplePlanInput(t)
+	replacementPlanInput.Plan.Key = ""
+	replacementPlanInput.Plan.Version = 0
+	require.NoError(t, replacementPlanInput.Plan.Phases[0].RateCards[0].ChangeMeta(func(meta productcatalog.RateCardMeta) (productcatalog.RateCardMeta, error) {
+		meta.Key = missingFeatureKey
+		meta.Feature = productcatalog.NewFeatureReference(nil, lo.ToPtr(missingFeatureKey))
+
+		return meta, nil
+	}))
+	replacementPlan := plansubscription.PlanInput{}
+	replacementPlan.FromInput(&replacementPlanInput)
+
+	_, err = svc.Change(t.Context(), plansubscription.ChangeSubscriptionRequest{
+		ID:        sub.NamespacedID,
+		PlanInput: replacementPlan,
+		WorkflowInput: subscriptionworkflow.ChangeSubscriptionWorkflowInput{
+			Name:   sub.Name,
+			Timing: subscription.Timing{Enum: lo.ToPtr(subscription.TimingImmediate)},
+		},
+	})
+	require.ErrorIs(t, err, productcatalog.ErrRateCardFeatureNotFound)
+	require.ErrorContains(t, err, missingFeatureKey)
+	issues, systemErr := models.AsValidationIssues(err)
+	require.NoError(t, systemErr)
+	require.NotEmpty(t, issues)
+}
