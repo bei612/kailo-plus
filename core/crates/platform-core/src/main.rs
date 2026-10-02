@@ -15,6 +15,7 @@ mod agent_version;
 mod audit;
 mod audit_views;
 mod automation;
+mod automation_query;
 mod bff;
 mod capability_registry;
 mod capacity;

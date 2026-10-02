@@ -513,6 +513,8 @@ impl Governance {
             delegation_id: None,
             delegation_version: None,
             delegation_grant: None,
+            automation_version_content: None,
+            executor_installation_resource_id: None,
         };
         let admit = match open_execution(
             &mut tx,

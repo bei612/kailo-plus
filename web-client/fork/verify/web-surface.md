@@ -891,3 +891,55 @@ backend 冻结快照内，既有 Web/Desktop 构建与部署记录不覆盖这�
 来源为 `sha256:2326ff60e9610425307b864dca7b2ec83de15de7060969486a787ad694cf7c0c`，
 均由原 helper 写回，日志为同目录 `web-build.log`。没有部署此镜像，
 没有新增浏览器登录、Win11、Mobile 或 Agent 执行业务验收。
+
+## 2026-10-02 22:15 UTC：Automation 共用管理消费者的正式 Web 工件
+
+本批私有集成输入为
+`/volumes/data/kailo/tmp/codex-automation-integration-20261002.bOjEqV/apps`。
+Web 与 Desktop 直接消费同一 TypeScript 管理页与客户端；查询沿既有
+Automation 列表、详情 GET，五个写命令为 `automation.create`、
+`automation.publish`、`automation.enable`、`automation.pause`、
+`automation.disable`，仍提交原 governed ActionCommand，不在 Web 另立
+权限、状态或执行入口。此前四侧生成和 `--check`、shared/Web/Desktop
+类型检查及共用包 98 项检查实际退出 0；Thread 枚举反向破坏由原类型检查
+报 TS2339，按 SHA 还原后通过。这些是类型与呈现证据，不是新增管理动作、
+真实 Automation 执行或三端业务验收。
+
+源码冻结后仅运行一次原 `tools/build-upstream.sh web-client`，session
+`79029` 实际退出 0；镜像内 npm ci、tsc/Vite、export/load、registry push
+及官方 record 均完成，原 npm audit 为 0。原 source 算法读取 97 个输入，
+构建前、构建后与官方登记均为
+`sha256:8dbb98b595a7510b584fa1c50e4d0aec37be553bc998263dfbafd7b0401c58eb`；
+实际 stage 的路径、正文 SHA 与文件模式逐项相等，额外/缺失/不匹配均为零。
+artifact 为
+`sha256:6f54ce3744408aa3adfa898ec639b9fad1ef4438774a0869f21b33e722d298ce`。
+registry digest GET 与 tag HEAD 都为 HTTP 200；manifest 原字节 SHA、
+响应 digest、RepoDigest 与官方登记相等，最终读回退出 0。
+
+完整原件目录为
+`/volumes/data/kailo/tmp/codex-automation-web-release-20261002.t6SQjw`：
+`helper.log` SHA-256 为
+`0c4077c6159ccaafa2a0fa7f062c3e9d5392d300446ea9ddb35df9236fa05302`，
+原 native 日志 `tmp/build-web-client.d7tLbB.log` SHA-256 为
+`2fe192e77e54851e135c0a4b8888ccc9f746e775d699e4f8fcf3f3e7ae1cd901`，
+`final-receipt.json` SHA-256 为
+`9383170d3f213aecca1fd91fe93ee064a8bbe7293a5efe9fe72c8a30ca6f1c91`，
+`registry.manifest.json` 原字节 SHA 为上述 artifact，`source.stage.tar`
+SHA-256 为
+`70d87c25ef7041dc28714e83475dc34ecfea55685522111efeee653ae1375e06`。
+`source-before.json`、`source-after.json`、`stage-comparison.json`、
+registry headers/tag headers 与 `image-inspect.json` 保留原始核对事实；
+`upstream.record-only.diff` 只含该 Web source/artifact 两字段，SHA-256 为
+`bf86b4d92a6d87109cee8011a743cd66d333d3a88422161f7350108e18531369`。
+
+首次派生回执错误地将 Docker `.Id` 当作 OCI config digest，断言退出 1；
+`receipt-initial-failure.log` 保留原失败。实际 containerd image store 的
+`.Id` 是 manifest digest，OCI config 为另一个已登记字段；按真实原生值
+纠正派生断言后回执退出 0，没有修改 helper、镜像或来源摘要，也没有
+重复重建。原大 chunk 警告保留。
+
+复用既有 BuildKit 与 Data 缓存：Docker 配置为合计 8 CPU、16 GiB，
+HostConfig memory+swap 为 16 GiB；实际父 cgroup `memory.swap.max=max`、
+主机没有交换设备，不将其写成内核 swap0。构建后 builder 仅剩 daemon，
+OOM/kill 未增加。没有宿主 SDK、部署、浏览器业务、Win11 安装验收或
+完整 Agent 执行验收；当前产物不解除这些门禁，也不覆盖历史失败。

@@ -421,6 +421,11 @@ pub enum Semantic {
     AgentInstallationCreate,
     AgentDelegationGrant,
     AgentDelegationRevoke,
+    AutomationCreate,
+    AutomationPublish,
+    AutomationEnable,
+    AutomationPause,
+    AutomationDisable,
     ResourceTransferOwner,
 }
 
@@ -454,6 +459,11 @@ impl Semantic {
             "agent.installation.create" => Self::AgentInstallationCreate,
             "agent.delegation.grant" => Self::AgentDelegationGrant,
             "agent.delegation.revoke" => Self::AgentDelegationRevoke,
+            "automation.create" => Self::AutomationCreate,
+            "automation.publish_version" => Self::AutomationPublish,
+            "automation.enable" => Self::AutomationEnable,
+            "automation.pause" => Self::AutomationPause,
+            "automation.disable" => Self::AutomationDisable,
             "resource.transfer_owner" => Self::ResourceTransferOwner,
             _ => return None,
         })
@@ -463,6 +473,17 @@ impl Semantic {
     /// 目标是兑换建立的 INVITED membership，由请求体直接提交就绕开了兑换这一事实。
     fn bff_submittable(self) -> bool {
         self != Self::TenantMemberAdmit
+    }
+
+    pub(crate) fn is_automation(self) -> bool {
+        matches!(
+            self,
+            Self::AutomationCreate
+                | Self::AutomationPublish
+                | Self::AutomationEnable
+                | Self::AutomationPause
+                | Self::AutomationDisable
+        )
     }
 
     /// 在准入落定的同一事务里完成、没有外部副作用的同步动作：门禁 ALLOWED 与
@@ -477,6 +498,9 @@ impl Semantic {
                 | Self::AgentVersionPublish
                 | Self::AgentDelegationGrant
                 | Self::AgentDelegationRevoke
+                | Self::AutomationEnable
+                | Self::AutomationPause
+                | Self::AutomationDisable
         )
     }
 
@@ -497,6 +521,7 @@ impl Semantic {
     /// 会改变「有效 Tenant admin」集合的动作在 Tenant 行锁下判定与写入（DD-82）。
     fn serializes_on_tenant(self) -> bool {
         self.is_role()
+            || self.is_automation()
             || matches!(
                 self,
                 Self::TenantMemberRevoke
@@ -531,16 +556,17 @@ impl Semantic {
 
     /// 由用户在目标详情上显式确认、确认位冻结在参数里的语义（`confirmation_mode=EXPLICIT`）。
     fn takes_explicit_confirmation(self) -> bool {
-        matches!(
-            self,
-            Self::SecretRefRehome
-                | Self::TenantSuspend
-                | Self::TenantRestore
-                | Self::AgentVersionPublish
-                | Self::AgentInstallationCreate
-                | Self::AgentDelegationGrant
-                | Self::AgentDelegationRevoke
-        )
+        self.is_automation()
+            || matches!(
+                self,
+                Self::SecretRefRehome
+                    | Self::TenantSuspend
+                    | Self::TenantRestore
+                    | Self::AgentVersionPublish
+                    | Self::AgentInstallationCreate
+                    | Self::AgentDelegationGrant
+                    | Self::AgentDelegationRevoke
+            )
     }
 
     fn workspace_segment(self) -> Option<(&'static [&'static str], &'static str, ScopeOperation)> {
@@ -575,6 +601,8 @@ pub struct Params {
     pub delegation_id: Option<Uuid>,
     pub delegation_version: Option<i32>,
     pub delegation_grant: Option<contracts::DelegationGrantParameters>,
+    pub automation_version_content: Option<Value>,
+    pub executor_installation_resource_id: Option<Uuid>,
 }
 
 impl Params {
@@ -621,6 +649,12 @@ impl Params {
         }
         if let Some(grant) = &self.delegation_grant {
             m.insert("delegationGrant".into(), json!(grant));
+        }
+        if let Some(content) = &self.automation_version_content {
+            m.insert("automationVersionContent".into(), content.clone());
+        }
+        if let Some(id) = self.executor_installation_resource_id {
+            m.insert("executorInstallationResourceId".into(), json!(id));
         }
         if let Some(s) = &self.slug {
             m.insert("slug".into(), json!(s));
@@ -672,6 +706,8 @@ impl Params {
                 .map(|v| serde_json::from_value(v.clone()))
                 .transpose()
                 .ok()?,
+            automation_version_content: v.get("automationVersionContent").cloned(),
+            executor_installation_resource_id: uuid("executorInstallationResourceId"),
         })
     }
 }
@@ -732,7 +768,21 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                 delegation::normalize(grant)
             })
             .transpose()?,
+        automation_version_content: cmd
+            .automation_version_content
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|_| bad())?,
+        executor_installation_resource_id: uuid(&cmd.executor_installation_resource_id)?,
     };
+    if sem.is_automation() {
+        crate::automation::validate_management_params(sem, &p)?;
+        return Ok(p);
+    }
+    if p.automation_version_content.is_some() || p.executor_installation_resource_id.is_some() {
+        return Err(bad());
+    }
     // tenantId 只属于业务 Tenant 的暂停与恢复
     if sem.tenant_segment().is_none() && sem != Semantic::TenantDelete && p.tenant_id.is_some() {
         return Err(bad());
@@ -950,6 +1000,11 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                 && p.slug.is_none()
                 && p.name.is_none()
         }
+        Semantic::AutomationCreate
+        | Semantic::AutomationPublish
+        | Semantic::AutomationEnable
+        | Semantic::AutomationPause
+        | Semantic::AutomationDisable => false,
     };
     if ok {
         Ok(p)
@@ -1044,6 +1099,14 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::AutomationCreate
+        | Semantic::AutomationPublish
+        | Semantic::AutomationEnable
+        | Semantic::AutomationPause
+        | Semantic::AutomationDisable => {
+            crate::automation::management_target(conn, tenant, initiator, def, p, frozen, lock)
+                .await
+        }
         Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke => {
             delegation::target(conn, tenant, def, sem, p, frozen, lock).await
         }
@@ -1777,6 +1840,7 @@ impl Governance {
         // `.design/03` §2）：SUSPENDING/SUSPENDED/RESTORING 期间，成员、角色与任务
         // 控制等 Workspace scope 的新动作一律在 permission Check 之前拒绝
         if def.workspace_rule == "WORKSPACE_REQUIRED"
+            || def.action_key.starts_with("automation.")
             || matches!(
                 def.action_key.as_str(),
                 "agent.delegation.grant" | "agent.delegation.revoke"
@@ -1816,7 +1880,39 @@ impl Governance {
                 }
             },
             "resource" => {
-                if matches!(
+                if def.action_key.starts_with("automation.") {
+                    let mut conn = self.pool.acquire().await?;
+                    let row = crate::automation::management_resource(
+                        &mut conn,
+                        actor.tenant_id,
+                        target.id,
+                        false,
+                    )
+                    .await?
+                    .filter(|row| {
+                        row.state == "ACTIVE"
+                            && row.version == target.version
+                            && row.projection_action_execution_id.is_none()
+                            && Some(row.workspace_id) == target.workspace_id
+                    });
+                    let Some(row) = row else {
+                        return Ok(deny(
+                            "DENY",
+                            "NOT_APPLICABLE",
+                            None,
+                            ReasonCode::ScopeGuardFailed,
+                        ));
+                    };
+                    if !crate::automation::management_projection(self, &row).await? {
+                        return Ok(deny(
+                            "DENY",
+                            "NOT_APPLICABLE",
+                            None,
+                            ReasonCode::ScopeGuardFailed,
+                        ));
+                    }
+                    target.id
+                } else if matches!(
                     def.action_key.as_str(),
                     "agent.delegation.grant" | "agent.delegation.revoke"
                 ) {
@@ -1971,16 +2067,19 @@ impl Governance {
         // - 从未加入：fresh workspace manage 为真即满足（`03` §2），即由 DD-82 授予、
         //   不要求先加入 Workspace 的 Workspace admin。
         // 本切片 Workspace 动作检查的正是 workspace manage，Check 为假时不设例外。
-        if matches!(
-            def.action_key.as_str(),
-            "agent.delegation.grant" | "agent.delegation.revoke"
-        ) && checked.zed_token.is_empty()
+        if (def.action_key.starts_with("automation.")
+            || matches!(
+                def.action_key.as_str(),
+                "agent.delegation.grant" | "agent.delegation.revoke"
+            ))
+            && checked.zed_token.is_empty()
         {
             return Err(Refusal::Unavailable(
                 "Delegation 准入缺 checked revision".into(),
             ));
         }
         if def.workspace_rule == "WORKSPACE_REQUIRED"
+            || def.action_key.starts_with("automation.")
             || matches!(
                 def.action_key.as_str(),
                 "agent.delegation.grant" | "agent.delegation.revoke"
@@ -1997,10 +2096,12 @@ impl Governance {
             let mut workspace_manage = def.permission == "manage"
                 && def.permission_object_type == "workspace"
                 && checked.allowed;
-            if matches!(
-                def.action_key.as_str(),
-                "agent.delegation.grant" | "agent.delegation.revoke"
-            ) && membership.as_deref() != Some("ACTIVE")
+            if (def.action_key.starts_with("automation.")
+                || matches!(
+                    def.action_key.as_str(),
+                    "agent.delegation.grant" | "agent.delegation.revoke"
+                ))
+                && membership.as_deref() != Some("ACTIVE")
             {
                 let workspace = target
                     .workspace_id
@@ -2040,10 +2141,12 @@ impl Governance {
                         )
                         .await
                         .map_err(|e| Refusal::Unavailable(e.to_string()))?;
-                    if matches!(
-                        def.action_key.as_str(),
-                        "agent.delegation.grant" | "agent.delegation.revoke"
-                    ) && management.zed_token.is_empty()
+                    if (def.action_key.starts_with("automation.")
+                        || matches!(
+                            def.action_key.as_str(),
+                            "agent.delegation.grant" | "agent.delegation.revoke"
+                        ))
+                        && management.zed_token.is_empty()
                     {
                         return Err(Refusal::Unavailable(
                             "Delegation Tenant membership 缺 checked revision".into(),
@@ -2436,6 +2539,8 @@ impl Governance {
             delegation_id: None,
             delegation_version: None,
             delegation_grant: None,
+            automation_version_content: None,
+            executor_installation_resource_id: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -2524,6 +2629,8 @@ impl Governance {
             delegation_id: None,
             delegation_version: None,
             delegation_grant: None,
+            automation_version_content: None,
+            executor_installation_resource_id: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -3607,10 +3714,12 @@ impl Governance {
         {
             return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
         }
-        if matches!(
-            sem,
-            Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
-        ) {
+        if sem.is_automation()
+            || matches!(
+                sem,
+                Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
+            )
+        {
             // Installation target 已锁 Workspace；已有成员行同锁覆盖 fresh check 到
             // 授予/撤销 commit。无行时 Workspace 的 FOR UPDATE 也阻止并发 FK 插入。
             let _: Option<Uuid> = sqlx::query_scalar(
@@ -3622,35 +3731,38 @@ impl Governance {
             .fetch_optional(&mut **tx)
             .await?;
         }
-        if matches!(
-            sem,
-            Semantic::AgentDefinitionCreate
-                | Semantic::AgentDefinitionUpdate
-                | Semantic::ResourceTransferOwner
-                | Semantic::AgentVersionCreate
-                | Semantic::AgentVersionUpdate
-                | Semantic::AgentVersionPublish
-                | Semantic::AgentInstallationCreate
-                | Semantic::AgentDelegationGrant
-                | Semantic::AgentDelegationRevoke
-        ) && !crate::agent_definition::active_owner(tx, ae.tenant_id, ae.initiator_principal_id)
-            .await?
+        if (sem.is_automation()
+            || matches!(
+                sem,
+                Semantic::AgentDefinitionCreate
+                    | Semantic::AgentDefinitionUpdate
+                    | Semantic::ResourceTransferOwner
+                    | Semantic::AgentVersionCreate
+                    | Semantic::AgentVersionUpdate
+                    | Semantic::AgentVersionPublish
+                    | Semantic::AgentInstallationCreate
+                    | Semantic::AgentDelegationGrant
+                    | Semantic::AgentDelegationRevoke
+            ))
+            && !crate::agent_definition::active_owner(tx, ae.tenant_id, ae.initiator_principal_id)
+                .await?
         {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
-        let locked_evaluation = if matches!(
-            sem,
-            Semantic::TenantDelete
-                | Semantic::AgentDefinitionCreate
-                | Semantic::AgentDefinitionUpdate
-                | Semantic::ResourceTransferOwner
-                | Semantic::AgentVersionCreate
-                | Semantic::AgentVersionUpdate
-                | Semantic::AgentVersionPublish
-                | Semantic::AgentInstallationCreate
-                | Semantic::AgentDelegationGrant
-                | Semantic::AgentDelegationRevoke
-        ) {
+        let locked_evaluation = if sem.is_automation()
+            || matches!(
+                sem,
+                Semantic::TenantDelete
+                    | Semantic::AgentDefinitionCreate
+                    | Semantic::AgentDefinitionUpdate
+                    | Semantic::ResourceTransferOwner
+                    | Semantic::AgentVersionCreate
+                    | Semantic::AgentVersionUpdate
+                    | Semantic::AgentVersionPublish
+                    | Semantic::AgentInstallationCreate
+                    | Semantic::AgentDelegationGrant
+                    | Semantic::AgentDelegationRevoke
+            ) {
             let fresh = self
                 .evaluate(
                     Actor {
@@ -3761,6 +3873,28 @@ impl Governance {
             )
             .await?;
             return match sem {
+                Semantic::AutomationCreate
+                | Semantic::AutomationPublish
+                | Semantic::AutomationEnable
+                | Semantic::AutomationPause
+                | Semantic::AutomationDisable => {
+                    crate::automation::management_prewrite(self, tx, ae, def, sem, params).await?;
+                    if completes {
+                        self.record_local_outcome(
+                            tx,
+                            ae,
+                            def,
+                            match sem {
+                                Semantic::AutomationEnable => "AUTOMATION_ENABLED",
+                                Semantic::AutomationPause => "AUTOMATION_PAUSED",
+                                _ => "AUTOMATION_DISABLED",
+                            },
+                            Vec::new(),
+                        )
+                        .await?;
+                    }
+                    Ok(None)
+                }
                 Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke => {
                     delegation::prewrite(tx, ae, sem, params).await?;
                     self.record_local_outcome(
@@ -4016,6 +4150,8 @@ impl Governance {
             | Semantic::AgentDelegationGrant
             | Semantic::AgentDelegationRevoke
             | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish
+            | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
+            | Semantic::AutomationPause | Semantic::AutomationDisable
             // 业务 Tenant 生命周期在上面单独落定
             | Semantic::TenantSuspend
             | Semantic::TenantRestore => {
@@ -5460,6 +5596,8 @@ impl Governance {
             // 在准入事务里已完成的同步动作没有可派发的东西；走到这里只可能是角色
             return if sem == Semantic::AgentVersionCreate {
                 crate::agent_version::dispatch(self, ae_id, &def).await
+            } else if sem.is_automation() {
+                crate::automation::management_dispatch(self, ae_id, &def, sem).await
             } else if matches!(
                 sem,
                 Semantic::AgentDefinitionCreate | Semantic::ResourceTransferOwner
@@ -5558,6 +5696,8 @@ impl Governance {
                 | Semantic::AgentDefinitionUpdate
                 | Semantic::ResourceTransferOwner
                 | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish
+                | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
+                | Semantic::AutomationPause | Semantic::AutomationDisable
                 | Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
                 // 业务 Tenant 生命周期由 dispatch_tenant_lifecycle 派发
                 | Semantic::TenantSuspend

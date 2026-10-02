@@ -55,6 +55,15 @@
       "$ref": "../domain/agent_version_content.schema.json",
       "description": "仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。"
     },
+    "automationVersionContent": {
+      "$ref": "../domain/automation_version_content.schema.json",
+      "description": "仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。"
+    },
+    "executorInstallationResourceId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。"
+    },
     "delegationId": {
       "type": "string",
       "format": "uuid",

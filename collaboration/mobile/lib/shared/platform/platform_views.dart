@@ -94,10 +94,12 @@ final platformAgentInstallationsProvider = FutureProvider.autoDispose
       ref,
       query,
     ) async {
-      final params = Uri(queryParameters: {
-        'workspaceId': query.workspaceId,
-        'offset': '${query.offset}',
-      }).query;
+      final params = Uri(
+        queryParameters: {
+          'workspaceId': query.workspaceId,
+          'offset': '${query.offset}',
+        },
+      ).query;
       final page = await _fetchOne(
         ref,
         '/api/v1/agent-installations?$params',
@@ -142,31 +144,162 @@ void _validateInstallation(
   AgentInstallationView row, {
   required String workspaceId,
 }) {
-  if (row.workspaceId != workspaceId || row.resourceVersion <= 0 || [
-    row.resourceId, row.workspaceId, row.agentResourceId,
-    row.pinnedVersionAssetId, row.agentPrincipalId, row.ownerPrincipalId,
-  ].any((id) => id.isEmpty)) {
+  if (row.workspaceId != workspaceId ||
+      row.resourceVersion <= 0 ||
+      [
+        row.resourceId,
+        row.workspaceId,
+        row.agentResourceId,
+        row.pinnedVersionAssetId,
+        row.agentPrincipalId,
+        row.ownerPrincipalId,
+      ].any((id) => id.isEmpty)) {
     throw const FormatException('Installation scope');
   }
   final projection = row.projection;
-  if (projection != null && (projection.generation <= 0
-      || projection.agentVersionAssetId != row.pinnedVersionAssetId
-      || projection.runtimeProfileKey.isEmpty
-      || !RegExp(r'^[0-9a-f]{64}$').hasMatch(projection.configHash))) {
+  if (projection != null &&
+      (projection.generation <= 0 ||
+          projection.agentVersionAssetId != row.pinnedVersionAssetId ||
+          projection.runtimeProfileKey.isEmpty ||
+          !RegExp(r'^[0-9a-f]{64}$').hasMatch(projection.configHash))) {
     throw const FormatException('Installation projection');
   }
   final generation = row.activeProjectionGeneration;
-  if (generation != null && (generation <= 0
-      || projection?.generation != generation)) {
+  if (generation != null &&
+      (generation <= 0 || projection?.generation != generation)) {
     throw const FormatException('Installation generation');
   }
   if (row.channelBinding?.triggers.isEmpty == true) {
     throw const FormatException('Installation triggers');
   }
-  if (row.toJson()['state'] == 'ACTIVE' && (generation == null
-      || row.resourceState != ResourceState.ACTIVE
-      || projection?.toJson()['state'] != 'ACTIVE')) {
+  if (row.toJson()['state'] == 'ACTIVE' &&
+      (generation == null ||
+          row.resourceState != ResourceState.ACTIVE ||
+          projection?.toJson()['state'] != 'ACTIVE')) {
     throw const FormatException('Installation active record');
+  }
+}
+
+/// REQ-21/DD-107：只读已准入 Workspace 的 Automation，不消费写入许可。
+final platformAutomationsProvider = FutureProvider.autoDispose
+    .family<AutomationPage, ({String workspaceId, int offset})>((
+      ref,
+      query,
+    ) async {
+      final params = Uri(
+        queryParameters: {
+          'workspaceId': query.workspaceId,
+          'offset': '${query.offset}',
+        },
+      ).query;
+      final page = await _fetchOne(
+        ref,
+        '/api/v1/automations?$params',
+        AutomationPage.fromJson,
+      );
+      _validateAutomationCursor(query.offset, page.nextOffset);
+      final ids = <String>{};
+      for (final item in page.automations) {
+        final row = AutomationView.fromJson(item.toJson());
+        _validateAutomation(row, query.workspaceId);
+        if (!ids.add(row.resourceId)) {
+          throw const FormatException('Automation duplicate');
+        }
+      }
+      return page;
+    }, retry: _noRetry);
+
+final platformAutomationProvider = FutureProvider.autoDispose
+    .family<
+      AutomationDetailView,
+      ({
+        String workspaceId,
+        String resourceId,
+        int versionOffset,
+        int delegationOffset,
+      })
+    >((ref, query) async {
+      final params = Uri(
+        queryParameters: {
+          'versionOffset': '${query.versionOffset}',
+          'delegationOffset': '${query.delegationOffset}',
+        },
+      ).query;
+      final detail = await _fetchOne(
+        ref,
+        '/api/v1/automations/${Uri.encodeComponent(query.resourceId)}?$params',
+        AutomationDetailView.fromJson,
+      );
+      final row = AutomationView.fromJson(detail.automation.toJson());
+      _validateAutomation(row, query.workspaceId);
+      if (row.resourceId != query.resourceId) {
+        throw const FormatException('Automation identity');
+      }
+      _validateAutomationCursor(query.versionOffset, detail.nextVersionOffset);
+      _validateAutomationCursor(
+        query.delegationOffset,
+        detail.nextDelegationOffset,
+      );
+      final versions = <String>{};
+      for (final version in detail.versions) {
+        final content = version.content;
+        if (!versions.add(version.assetId) ||
+            version.assetId.isEmpty ||
+            version.automationResourceId != row.resourceId ||
+            version.assetVersion <= 0 ||
+            version.ordinal <= 0 ||
+            version.ownerPrincipalId.isEmpty ||
+            !RegExp(r'^[0-9a-f]{64}$').hasMatch(version.configHash) ||
+            content.resultTarget != ResultTarget.TRIGGER_THREAD ||
+            content.action.kind != ActionKind.AGENT_TURN ||
+            content.action.template.trim().isEmpty ||
+            (content.trigger.kind == TriggerKind.MENTION
+                ? content.trigger.mentionPrincipalId?.isNotEmpty != true
+                : content.trigger.mentionPrincipalId != null)) {
+          throw const FormatException('Automation version');
+        }
+        if (version.assetId == row.pinnedVersionAssetId &&
+            version.state != AgentVersionState.PUBLISHED) {
+          throw const FormatException('Automation pinned version');
+        }
+      }
+      final grants = <String>{};
+      for (final grant in detail.delegations) {
+        if (!grants.add(grant.delegationId) ||
+            grant.delegationId.isEmpty ||
+            grant.delegationVersion <= 0 ||
+            grant.ownerPrincipalId != row.ownerPrincipalId ||
+            grant.executorInstallationResourceId !=
+                row.executorInstallationResourceId ||
+            DateTime.tryParse(grant.expiresAt) == null) {
+          throw const FormatException('Automation delegation');
+        }
+      }
+      return detail;
+    }, retry: _noRetry);
+
+void _validateAutomationCursor(int offset, int? next) {
+  if (offset < 0 || (next != null && next <= offset)) {
+    throw const FormatException('Automation page cursor');
+  }
+}
+
+// 跨字段一致性不是授权替代；每次 GET 仍由 BFF 核对 scope/owner/native projection。
+void _validateAutomation(AutomationView row, String workspaceId) {
+  if (row.workspaceId != workspaceId ||
+      row.resourceVersion <= 0 ||
+      row.resourceState != ResourceState.ACTIVE ||
+      [
+        row.resourceId,
+        row.workspaceId,
+        row.ownerPrincipalId,
+        row.executorInstallationResourceId,
+      ].any((id) => id.isEmpty) ||
+      row.pinnedVersionAssetId?.isEmpty == true ||
+      row.delegationId?.isEmpty == true ||
+      (row.state == AutomationState.ENABLED &&
+          (row.pinnedVersionAssetId == null || row.delegationId == null))) {
+    throw const FormatException('Automation scope');
   }
 }
 

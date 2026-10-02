@@ -29,8 +29,8 @@ artifacts:
     build_context: agent-runtime
     build_dockerfile: agent-runtime/fork/packaging/Dockerfile
     inputs: [agent-runtime/]
-    source_digest: none
-    artifact_digest: none
+    source_digest: sha256:3215869e5d6e235259485458bcfedaeb65494fb3dcae461616f3eae358b9d544
+    artifact_digest: sha256:ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec
 
 source_facts: [SF-COD-01, SF-COD-03, SF-COD-04, SF-COD-10, SF-COD-11, SF-COD-12, SF-COD-15]
 source_seams: [SS-COD-TRACE, SS-COD-RUNTIME, SS-COD-APP]

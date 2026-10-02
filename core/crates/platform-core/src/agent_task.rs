@@ -234,7 +234,15 @@ pub(crate) async fn advance(
             Ok(page) => page,
             Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
         };
-        return observe(&state, &invocation, &projection, page, holder.released).await;
+        return observe(
+            &state,
+            &invocation,
+            &projection,
+            page,
+            &input,
+            holder.released,
+        )
+        .await;
     }
     if !holder.held {
         return result(id, TaskStatus::Running, "CAPACITY_UNAVAILABLE");
@@ -685,6 +693,7 @@ async fn observe(
     invocation: &Invocation,
     projection: &RuntimeRef,
     page: Value,
+    activity: &AgentTaskAdvanceRequest,
     released: bool,
 ) -> Response {
     let Some(turns) = page.get("data").and_then(Value::as_array) else {
@@ -920,30 +929,38 @@ async fn observe(
         return result(invocation.id, TaskStatus::Running, "BILLING_UNAVAILABLE");
     }
     if status == "completed" {
-        let waiting = if invocation.reply_event_id.is_none() {
-            // replyPolicy 仅有键集合，尚无已验收的键到 native 行为投递。
-            // 此消费者不能签名/发布，也不能生成第二个 Reply ID。
-            "CAPABILITY_BLOCKED"
-        } else {
-            match reconcile_reply(state, invocation, id).await {
-                Ok(true) => "BILLING_UNAVAILABLE",
-                Ok(false) => {
-                    let changed = match sqlx::query("update catalog.agent_invocation set status='UNKNOWN',updated_at=now() where id=$1 and status='RUNNING' and native_status='completed' and runtime_turn_id=$2 and reply_event_id is not distinct from $3")
-                        .bind(invocation.id).bind(id).bind(&invocation.reply_event_id)
+        let event_id = match invocation.reply_event_id.as_deref() {
+            Some(event_id) => event_id.to_owned(),
+            None => match publish_reply(state, invocation, projection, turn, activity).await {
+                Ok(event_id) => event_id,
+                Err(error) => {
+                    // 新回复仍须 fresh 准入；没有已持久意图时不把拒绝伪装为发送。
+                    return result(
+                        invocation.id,
+                        TaskStatus::Running,
+                        &crate::governance::wire(&error.reason()),
+                    );
+                }
+            },
+        };
+        let waiting = match reconcile_reply(state, invocation, id, &event_id).await {
+            Ok(true) => "BILLING_UNAVAILABLE",
+            Ok(false) => {
+                let changed = match sqlx::query("update catalog.agent_invocation set status='UNKNOWN',updated_at=now() where id=$1 and status='RUNNING' and native_status='completed' and runtime_turn_id=$2 and reply_event_id=$3")
+                        .bind(invocation.id).bind(id).bind(&event_id)
                         .execute(&state.pool).await {
                         Ok(changed) => changed, Err(error) => return unavailable(error),
                     };
-                    if changed.rows_affected() != 1 {
-                        return result(
-                            invocation.id,
-                            TaskStatus::Running,
-                            "UNKNOWN_EXTERNAL_RESULT",
-                        );
-                    }
-                    "UNKNOWN_EXTERNAL_RESULT"
+                if changed.rows_affected() != 1 {
+                    return result(
+                        invocation.id,
+                        TaskStatus::Running,
+                        "UNKNOWN_EXTERNAL_RESULT",
+                    );
                 }
-                Err(error) => return unavailable(error),
+                "UNKNOWN_EXTERNAL_RESULT"
             }
+            Err(error) => return unavailable(error),
         };
         return release_holder(state, invocation.id, released, waiting).await;
     }
@@ -952,6 +969,317 @@ async fn observe(
     }
     // 原生 usage notification 仍不替代 durable Usage 与 reply/sideeffect receipts。
     result(invocation.id, TaskStatus::Running, "NONE")
+}
+
+#[derive(FromRow, PartialEq)]
+struct ReplyBinding {
+    agent_pubkey: String,
+    agent_locator: String,
+    agent_secret_version: i32,
+    agent_audience: String,
+    normalized_host: String,
+    nip11_snapshot_digest: String,
+    channel_id: Uuid,
+}
+
+/// Consume only the original message-triggered AGENT_TURN result location.
+/// An arbitrary AgentVersion replyPolicy key is not a broadcast policy.
+async fn lock_reply(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    invocation: &Invocation,
+    projection: &RuntimeRef,
+    turn_id: &str,
+    expected_event: Option<&str>,
+) -> Result<(crate::governance::Execution, ReplyBinding), crate::governance::Refusal> {
+    use crate::governance::Refusal;
+    use contracts::ReasonCode;
+    let ae = crate::governance::lock_execution(tx, invocation.action_execution_id).await?;
+    let lifecycle: Option<bool> = sqlx::query_scalar(
+        "select t.state='ACTIVE' and w.state='ACTIVE' from identity.tenant t
+         join identity.workspace w on w.tenant_id=t.id where t.id=$1 and w.id=$2
+         for no key update of t,w",
+    )
+    .bind(invocation.tenant_id)
+    .bind(invocation.workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if lifecycle != Some(true)
+        || ae.tenant_id != invocation.tenant_id
+        || ae.workspace_id != Some(invocation.workspace_id)
+        || ae.temporal_workflow_id.as_deref() != Some(invocation.workflow_id.as_str())
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let binding: Option<ReplyBinding> = sqlx::query_as(
+        "select b.pubkey agent_pubkey,b.private_key_secret_ref agent_locator,
+            b.private_key_secret_version agent_secret_version,b.private_key_secret_audience agent_audience,
+            tb.normalized_host,tb.nip11_snapshot_digest,wb.channel_id
+         from catalog.agent_invocation i
+         join catalog.agent_session s on s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
+           and s.installation_resource_id=i.installation_resource_id and s.tenant_id=i.tenant_id
+           and s.agent_version_asset_id=i.agent_version_asset_id and s.projection_generation=i.projection_generation
+         join catalog.agent_runtime_projection p on p.installation_resource_id=i.installation_resource_id
+           and p.generation=i.projection_generation and p.agent_version_asset_id=i.agent_version_asset_id
+         join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
+           and v.automation_resource_id=i.automation_resource_id and v.state='PUBLISHED'
+           and v.action->>'kind'='AGENT_TURN' and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION')
+           and v.result_target='TRIGGER_THREAD'
+         join catalog.agent_installation a on a.resource_id=i.installation_resource_id and a.workspace_id=i.workspace_id
+           and a.pinned_version_asset_id=i.agent_version_asset_id and a.active_projection_generation=i.projection_generation
+         join catalog.agent_memory_binding m on m.installation_resource_id=a.resource_id and m.state='ACTIVE'
+         join identity.buzz_identity_binding b on b.pubkey=m.agent_buzz_identity_binding_id
+           and b.principal_id=a.agent_principal_id and b.tenant_id=i.tenant_id and b.kind='AGENT'
+           and b.custody='SERVER' and b.state='ACTIVE'
+         join catalog.channel_agent_binding cb on cb.installation_resource_id=a.resource_id
+           and cb.workspace_id=i.workspace_id and cb.status='ACTIVE'
+         join projection.tenant_buzz_binding tb on tb.tenant_id=i.tenant_id and tb.state='ACTIVE'
+         join projection.workspace_buzz_binding wb on wb.workspace_id=i.workspace_id and wb.state='ACTIVE'
+         where i.id=$1 and i.action_execution_id=$2 and i.tenant_id=$3 and i.workspace_id=$4
+           and i.installation_resource_id=$5 and i.agent_version_asset_id=$6 and i.projection_generation=$7
+           and p.config_hash=$8 and p.state='ACTIVE' and s.status='ACTIVE' and s.runtime_thread_id=$9
+           and i.status in ('RUNNING','UNKNOWN') and i.native_status='completed' and i.runtime_turn_id=$10
+           and i.reply_event_id is not distinct from $11::text and not i.cancel_pending
+           and b.private_key_secret_ref is not null and b.private_key_secret_version>0
+           and b.private_key_secret_audience is not null and tb.nip11_snapshot_digest is not null
+         for update of i,s,p,b,m,cb,tb,wb")
+        .bind(invocation.id).bind(ae.id).bind(invocation.tenant_id).bind(invocation.workspace_id)
+        .bind(projection.installation_id).bind(invocation.agent_version_asset_id).bind(projection.generation)
+        .bind(&projection.config_hash).bind(&invocation.runtime_thread_id).bind(turn_id).bind(expected_event)
+        .fetch_optional(&mut **tx).await?;
+    Ok((
+        ae,
+        binding.ok_or(Refusal::Precondition(ReasonCode::BindingNotActive))?,
+    ))
+}
+
+/// Full durable history is already fenced by the unique Invocation clientId.
+/// Only an explicit final_answer is publishable; unknown phases/async questions
+/// do not become a guessed reply, and completion time never comes from a poll.
+fn native_reply(turn: &Value) -> Option<(&str, u64)> {
+    if turn.get("status").and_then(Value::as_str) != Some("completed")
+        || turn.get("itemsView").and_then(Value::as_str) != Some("full")
+        || turn.get("error").is_some_and(|error| !error.is_null())
+    {
+        return None;
+    }
+    let started = turn.get("startedAt")?.as_i64().filter(|time| *time > 0)?;
+    let completed = turn
+        .get("completedAt")?
+        .as_i64()
+        .filter(|time| *time >= started && *time <= chrono::Utc::now().timestamp())?;
+    let mut final_message = None;
+    for message in turn
+        .get("items")?
+        .as_array()?
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("agentMessage"))
+    {
+        if message.get("id")?.as_str()?.is_empty()
+            || message
+                .get("delivery")
+                .is_some_and(|delivery| !delivery.is_null())
+            || message
+                .get("questions")
+                .is_some_and(|questions| !questions.is_null())
+        {
+            return None;
+        }
+        match message.get("phase").and_then(Value::as_str) {
+            Some("commentary") => {}
+            Some("final_answer") => {
+                if final_message.replace(message).is_some() {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+    let message = final_message?;
+    let text = message
+        .get("text")?
+        .as_str()
+        .filter(|text| !text.trim().is_empty())?;
+    Some((text, u64::try_from(completed).ok()?))
+}
+
+async fn publish_reply(
+    state: &ServiceState,
+    invocation: &Invocation,
+    projection: &RuntimeRef,
+    turn: &Value,
+    activity: &AgentTaskAdvanceRequest,
+) -> Result<String, crate::governance::Refusal> {
+    use crate::{audit::Evidence, governance::Refusal};
+    use collab_bridge::bridge::{Custody, Delivery, IdentityClient};
+    use contracts::ReasonCode;
+    let unknown = || Refusal::Unavailable("Agent reply evidence cannot be verified".into());
+    let (text, completed_at) = native_reply(turn).ok_or_else(unknown)?;
+    let turn_id = turn.get("id").and_then(Value::as_str).ok_or_else(unknown)?;
+    let attempt = i32::try_from(activity.attempt).map_err(|_| unknown())?;
+    let holder = state
+        .capacity
+        .acquire_or_renew(
+            &state.pool,
+            &state.temporal,
+            invocation.id,
+            &activity.run_id,
+            &activity.activity_id,
+            attempt,
+        )
+        .await
+        .map_err(|_| unknown())?;
+    if !holder.held || holder.workflow_cancel_requested || invocation.cancel_pending {
+        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+    }
+    crate::service_api::audit_gate(state)
+        .await
+        .map_err(|_| unknown())?;
+    let mut tx = state.pool.begin().await?;
+    let (ae, binding) = lock_reply(&mut tx, invocation, projection, turn_id, None).await?;
+    let expected_locator = state.secrets.tenant_locator(
+        invocation.tenant_id,
+        &format!(
+            "buzz-agent/installation/{}",
+            invocation.installation_resource_id
+        ),
+    );
+    if binding.agent_locator != expected_locator || binding.agent_audience != state.secret_audience
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let keys = crate::server_identity::read_bound_keys(
+        &state.secrets,
+        &secret_store::SecretRef {
+            locator: binding.agent_locator.clone(),
+            version: u32::try_from(binding.agent_secret_version).map_err(|_| unknown())?,
+            audience: binding.agent_audience.clone(),
+        },
+        &binding.agent_pubkey,
+    )
+    .await
+    .map_err(|_| unknown())?;
+    let client = IdentityClient::new(
+        Custody::Server,
+        &keys.secret_key().to_secret_hex(),
+        &state.relay_transport,
+        &binding.normalized_host,
+    )
+    .map_err(|_| unknown())?;
+    let transport = reqwest::Url::parse(&state.relay_transport).map_err(|_| unknown())?;
+    let nip11 =
+        collab_bridge::limits::fetch_nip11(&state.http, &transport, &binding.normalized_host)
+            .await
+            .map_err(|_| unknown())?;
+    if nip11.digest != binding.nip11_snapshot_digest {
+        return Err(Refusal::Precondition(ReasonCode::BindingNotActive));
+    }
+    let revision =
+        crate::automation::fresh_reply(state, &mut tx, invocation.id, turn_id, None).await?;
+    let event = client
+        .sign_channel_reply_at(
+            &binding.channel_id.to_string(),
+            text,
+            (&invocation.root_event_id, &invocation.source_event_id),
+            completed_at,
+        )
+        .map_err(|_| unknown())?;
+    let event_id = event.id.to_hex();
+    let admitted = client.admit().map_err(|_| unknown())?;
+    let evidence = vec![
+        Evidence::new(EvidenceKind::ActionExecutionId, ae.id),
+        Evidence::new(EvidenceKind::BuzzEventId, &event_id),
+        Evidence::new(EvidenceKind::BuzzPubkey, &binding.agent_pubkey),
+        Evidence::new(EvidenceKind::SpicedbZedtoken, revision),
+        Evidence::new(EvidenceKind::TemporalWorkflowId, &invocation.workflow_id),
+        Evidence::new(EvidenceKind::TemporalRunId, &activity.run_id),
+    ];
+    let changed = sqlx::query(
+        "update catalog.agent_invocation set reply_event_id=$3,updated_at=now()
+        where id=$1 and runtime_turn_id=$2 and native_status='completed' and reply_event_id is null
+          and status in ('RUNNING','UNKNOWN') and not cancel_pending",
+    )
+    .bind(invocation.id)
+    .bind(turn_id)
+    .bind(&event_id)
+    .execute(&mut *tx)
+    .await?;
+    if changed.rows_affected() != 1 {
+        return Err(unknown());
+    }
+    turn_audit(
+        state,
+        &mut tx,
+        &ae,
+        invocation.id,
+        (
+            &format!("reply:{event_id}:dispatch"),
+            "DISPATCH",
+            "DISPATCHED",
+        ),
+        evidence.clone(),
+    )
+    .await?;
+    tx.commit().await?;
+    // A crash after this commit leaves only the stable ID. Future observations
+    // query it; they cannot sign again or reconstruct/replay a second reply.
+    let holder = state
+        .capacity
+        .acquire_or_renew(
+            &state.pool,
+            &state.temporal,
+            invocation.id,
+            &activity.run_id,
+            &activity.activity_id,
+            attempt,
+        )
+        .await
+        .map_err(|_| unknown())?;
+    if !holder.held || holder.workflow_cancel_requested {
+        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+    }
+    let mut guard = state.pool.begin().await?;
+    let (current_ae, current_binding) =
+        lock_reply(&mut guard, invocation, projection, turn_id, Some(&event_id)).await?;
+    let intents: Vec<ReplyIntent> = sqlx::query_as(REPLY_INTENT)
+        .bind(invocation.id)
+        .bind(&event_id)
+        .bind(turn_id)
+        .fetch_all(&mut *guard)
+        .await?;
+    let [intent] = intents.as_slice() else {
+        return Err(unknown());
+    };
+    if current_binding != binding
+        || current_ae.operation_id != ae.operation_id
+        || intent.operation_id != ae.operation_id
+        || intent.agent_pubkey != binding.agent_pubkey
+        || intent.channel_id != binding.channel_id
+    {
+        return Err(unknown());
+    }
+    crate::automation::fresh_reply(state, &mut guard, invocation.id, turn_id, Some(&event_id))
+        .await?;
+    // Keep the same DB fences through the one external call. Neither native
+    // rejection nor an HTTP timeout causes a new ID, turn or body replay.
+    let outcome = match client.deliver(&state.http, &event, admitted).await {
+        Delivery::Accepted => Some("ACCEPTED"),
+        Delivery::Rejected(_) => Some("REJECTED"),
+        Delivery::Limited(_, _) => Some("NOT_DELIVERED"),
+        Delivery::Unknown(_) => None,
+    };
+    if let Some(outcome) = outcome {
+        turn_audit(
+            state,
+            &mut guard,
+            &ae,
+            invocation.id,
+            (&format!("reply:{event_id}:outcome"), "OUTCOME", outcome),
+            evidence,
+        )
+        .await?;
+    }
+    guard.commit().await?;
+    Ok(event_id)
 }
 
 #[derive(FromRow, PartialEq)]
@@ -1016,10 +1344,8 @@ async fn reconcile_reply(
     state: &ServiceState,
     invocation: &Invocation,
     turn_id: &str,
+    event_id: &str,
 ) -> Result<bool, sqlx::Error> {
-    let Some(event_id) = invocation.reply_event_id.as_deref() else {
-        return Ok(false);
-    };
     let intents: Vec<ReplyIntent> = sqlx::query_as(REPLY_INTENT)
         .bind(invocation.id)
         .bind(event_id)
@@ -1162,4 +1488,81 @@ fn result(id: Uuid, status: TaskStatus, waiting: &str) -> Response {
         }),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::native_reply;
+    use serde_json::json;
+
+    // 实现后的原生协议断言，无 Tenant/Installation/DB 或执行入口夹具。
+    #[test]
+    fn completed_reply_requires_full_final_and_native_completion_time() {
+        let mut turn = json!({"status":"completed","itemsView":"full","error":null,
+            "startedAt":100,"completedAt":105,"items":[
+                {"type":"agentMessage","id":"note","phase":"commentary","text":"working"},
+                {"type":"agentMessage","id":"answer","phase":"final_answer","text":"native answer"}]});
+        assert_eq!(native_reply(&turn), Some(("native answer", 105)));
+        for status in ["inProgress", "failed", "interrupted", "futureStatus"] {
+            turn["status"] = json!(status);
+            assert!(native_reply(&turn).is_none());
+        }
+        turn["status"] = json!("completed");
+        for view in ["summary", "notLoaded", "futureView"] {
+            turn["itemsView"] = json!(view);
+            assert!(native_reply(&turn).is_none());
+        }
+        turn["itemsView"] = json!("full");
+        for time in [
+            json!(null),
+            json!(0),
+            json!(99),
+            json!("105"),
+            json!(i64::MAX),
+        ] {
+            turn["completedAt"] = time;
+            assert!(native_reply(&turn).is_none());
+        }
+        turn["completedAt"] = json!(105);
+        turn.as_object_mut().unwrap().remove("completedAt");
+        assert!(native_reply(&turn).is_none());
+    }
+
+    #[test]
+    fn completed_reply_rejects_unknown_or_missing_phase_even_alongside_final() {
+        let mut turn = json!({"status":"completed","itemsView":"full","startedAt":100,
+            "completedAt":105,"items":[
+                {"type":"agentMessage","id":"note","phase":"commentary","text":"working"},
+                {"type":"agentMessage","id":"answer","phase":"final_answer","text":"native answer"}]});
+        for phase in [json!("future_phase"), json!(null), json!(7)] {
+            turn["items"][0]["phase"] = phase;
+            assert!(native_reply(&turn).is_none());
+        }
+        turn["items"][0].as_object_mut().unwrap().remove("phase");
+        assert!(native_reply(&turn).is_none());
+        turn["items"][0]["phase"] = json!("final_answer");
+        assert!(native_reply(&turn).is_none());
+    }
+
+    #[test]
+    fn completed_reply_rejects_async_delivery_questions_and_empty_answer() {
+        let mut turn = json!({"status":"completed","itemsView":"full","startedAt":100,
+            "completedAt":105,"items":[
+                {"type":"agentMessage","id":"answer","phase":"final_answer","text":"native answer"}]});
+        for delivery in [json!("async"), json!("futureDelivery")] {
+            turn["items"][0]["delivery"] = delivery;
+            assert!(native_reply(&turn).is_none());
+        }
+        turn["items"][0]["delivery"] = json!(null);
+        for questions in [json!([]), json!([{"title":"choose"}])] {
+            turn["items"][0]["questions"] = questions;
+            assert!(native_reply(&turn).is_none());
+        }
+        turn["items"][0]["questions"] = json!(null);
+        turn["items"][0]["text"] = json!(" ");
+        assert!(native_reply(&turn).is_none());
+        turn["items"][0]["text"] = json!("native answer");
+        turn["items"][0]["id"] = json!("");
+        assert!(native_reply(&turn).is_none());
+    }
 }

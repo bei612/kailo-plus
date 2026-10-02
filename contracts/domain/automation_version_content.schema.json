@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/automation_version_content.schema.json",
+  "title": "AutomationVersionContent",
+  "description": "REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与 AGENT_TURN；不含消息正文、provider 配置或凭据。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["trigger", "action", "resultTarget"],
+  "properties": {
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"type": "string", "enum": ["CHANNEL_MESSAGE", "MENTION"]},
+        "textPrefix": {"type": "string"},
+        "mentionPrincipalId": {"type": "string", "format": "uuid"}
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "template"],
+      "properties": {
+        "kind": {"type": "string", "enum": ["AGENT_TURN"]},
+        "template": {"type": "string", "minLength": 1}
+      }
+    },
+    "resultTarget": {"type": "string", "enum": ["TRIGGER_THREAD"]}
+  }
+}

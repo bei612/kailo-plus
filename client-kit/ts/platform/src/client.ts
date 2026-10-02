@@ -11,6 +11,8 @@ import type {
   AgentInstallationPage,
   AgentInstallationView,
   AgentVersionView,
+  AutomationPage,
+  AutomationDetailView,
   ApprovalControlOutcome,
   ApprovalDecision,
   ApprovalDecisionOutcome,
@@ -78,6 +80,19 @@ export function createBffClient(transport: BffTransport) {
     },
     agentInstallation: (resourceId: string) =>
       get<AgentInstallationView>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}`),
+
+    /** Automation 管理引用；不存在手动运行、轮换或外部触发入口。 */
+    automations: (workspaceId: string, offset?: number) => {
+      const query = new URLSearchParams({ workspaceId });
+      if (offset !== undefined) query.set("offset", String(offset));
+      return get<AutomationPage>(`/api/v1/automations?${query}`);
+    },
+    automation: (resourceId: string, versionOffset?: number, delegationOffset?: number) => {
+      const query = new URLSearchParams();
+      if (versionOffset !== undefined) query.set("versionOffset", String(versionOffset));
+      if (delegationOffset !== undefined) query.set("delegationOffset", String(delegationOffset));
+      return get<AutomationDetailView>(`/api/v1/automations/${encodeURIComponent(resourceId)}?${query}`);
+    },
 
     /** 成员按人聚合：`pubkeys` 是此人全部 ACTIVE 的 Buzz 公钥（DD-77）。 */
     members: (workspaceId: string) =>

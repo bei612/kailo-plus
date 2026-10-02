@@ -8,10 +8,17 @@ capabilities:
   - /api/v1/agent-versions/{asset_id}
   - /api/v1/agent-installations
   - /api/v1/agent-installations/{resource_id}
+  - /api/v1/automations
+  - /api/v1/automations/{resource_id}
   actions:
   - agent.definition.create
   - agent.definition.update
   - resource.transfer_owner
+  - automation.create
+  - automation.publish_version
+  - automation.enable
+  - automation.pause
+  - automation.disable
   tools: []
   workflow_kinds: []
 - id: collab.channel.media

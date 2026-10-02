@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/automation_delegation_view.schema.json",
+  "title": "AutomationDelegationView",
+  "description": "实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["delegationId", "delegationVersion", "ownerPrincipalId", "executorInstallationResourceId", "expiresAt"],
+  "properties": {
+    "delegationId": {"type": "string", "format": "uuid"},
+    "delegationVersion": {"type": "integer", "minimum": 1},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "executorInstallationResourceId": {"type": "string", "format": "uuid"},
+    "expiresAt": {"type": "string", "description": "RFC3339，UTC；与现有管理查询时间字段一致。"}
+  }
+}

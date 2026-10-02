@@ -217,6 +217,46 @@ impl IdentityClient {
         self.sign(KIND_CHANNEL_MESSAGE, content, &tags)
     }
 
+    /// 原 Task 的确定完成时间与 NIP-10 引用决定唯一 Reply ID；不取签名时钟。
+    /// 正文只留在调用请求内，Core 持久化该 ID 后才可以发送。
+    pub fn sign_channel_reply_at(
+        &self,
+        channel_id: &str,
+        content: &str,
+        ancestry: (&str, &str),
+        completed_at: u64,
+    ) -> Result<Event, OperatorError> {
+        let root = nostr::EventId::from_hex(ancestry.0)
+            .map_err(|_| OperatorError::Sign("Reply root is invalid".into()))?;
+        let source = nostr::EventId::from_hex(ancestry.1)
+            .map_err(|_| OperatorError::Sign("Reply source is invalid".into()))?;
+        let tags = [
+            vec!["h".to_owned(), channel_id.to_owned()],
+            vec![
+                "e".to_owned(),
+                root.to_hex(),
+                String::new(),
+                "root".to_owned(),
+            ],
+            vec![
+                "e".to_owned(),
+                source.to_hex(),
+                String::new(),
+                "reply".to_owned(),
+            ],
+        ];
+        let tags = tags
+            .into_iter()
+            .map(Tag::parse)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| OperatorError::Sign("Reply tags are invalid".into()))?;
+        EventBuilder::new(Kind::Custom(KIND_CHANNEL_MESSAGE), content)
+            .tags(tags)
+            .custom_created_at(nostr::Timestamp::from(completed_at))
+            .sign_with_keys(&self.keys)
+            .map_err(|_| OperatorError::Sign("Reply signing failed".into()))
+    }
+
     /// 以该身份签名并发布一条事件，返回 Relay 的原始回应。
     ///
     /// 回应里 `accepted` 为 false 不是传输错误——那是 Relay 的判定，由调用方
@@ -277,11 +317,20 @@ impl IdentityClient {
     ) -> Delivery {
         match self.send_admitted(http, event, admitted).await {
             Ok(v) => {
-                let accepted = v.get("accepted").and_then(|a| a.as_bool()) == Some(true);
-                let message = v
-                    .get("message")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or_default();
+                // 固定原生 submit_event 回应 event_id/accepted/message。HTTP 成功、
+                // 另一条事件的 ack 或损坏回应都不证明本次事件已送达。
+                let (Some(event_id), Some(accepted), Some(message)) = (
+                    v.get("event_id").and_then(Value::as_str),
+                    v.get("accepted").and_then(Value::as_bool),
+                    v.get("message").and_then(Value::as_str),
+                ) else {
+                    return Delivery::Unknown("Relay event acknowledgement is incomplete".into());
+                };
+                if event_id != event.id.to_hex() {
+                    return Delivery::Unknown(
+                        "Relay event acknowledgement ID does not match".into(),
+                    );
+                }
                 if accepted || message.starts_with("duplicate:") {
                     Delivery::Accepted
                 } else {

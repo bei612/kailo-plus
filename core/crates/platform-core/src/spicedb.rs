@@ -615,7 +615,7 @@ impl SpiceDb {
         Ok(out)
     }
 
-    async fn read_native(
+    pub(crate) async fn read_native(
         &self,
         filter: &RelationshipFilter<'_>,
         page: u32,

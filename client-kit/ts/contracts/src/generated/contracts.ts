@@ -118,6 +118,10 @@ export interface ActionCommand {
      */
     assetVersion?: number;
     /**
+     * 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+     */
+    automationVersionContent?: AutomationVersionContentClass;
+    /**
      * 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
      */
     delegationGrant?: DelegationGrantClass;
@@ -129,6 +133,10 @@ export interface ActionCommand {
      * 仅 revoke：调用方实际读取的 Grant 版本。
      */
     delegationVersion?: number;
+    /**
+     * 仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。
+     */
+    executorInstallationResourceId?: string;
     /**
      * EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
      */
@@ -231,6 +239,42 @@ export enum AgentTrigger {
 export interface AgentVersionContentTurnLimits {
     idleTimeoutSeconds:     number;
     maxTurnDurationSeconds: number;
+}
+
+/**
+ * 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+ *
+ * REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
+ * AGENT_TURN；不含消息正文、provider 配置或凭据。
+ */
+export interface AutomationVersionContentClass {
+    action:       AutomationVersionContentAction;
+    resultTarget: ResultTarget;
+    trigger:      AutomationVersionContentTrigger;
+}
+
+export interface AutomationVersionContentAction {
+    kind:     ActionKind;
+    template: string;
+}
+
+export enum ActionKind {
+    AgentTurn = "AGENT_TURN",
+}
+
+export enum ResultTarget {
+    TriggerThread = "TRIGGER_THREAD",
+}
+
+export interface AutomationVersionContentTrigger {
+    kind:                TriggerKind;
+    mentionPrincipalId?: string;
+    textPrefix?:         string;
+}
+
+export enum TriggerKind {
+    ChannelMessage = "CHANNEL_MESSAGE",
+    Mention = "MENTION",
 }
 
 /**
@@ -764,6 +808,117 @@ export enum EvidenceKind {
 export enum EvidenceSensitivity {
     Restricted = "RESTRICTED",
     Summary = "SUMMARY",
+}
+
+/**
+ * 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
+ */
+export interface AutomationDelegationView {
+    delegationId:                   string;
+    delegationVersion:              number;
+    executorInstallationResourceId: string;
+    /**
+     * RFC3339，UTC；与现有管理查询时间字段一致。
+     */
+    expiresAt:        string;
+    ownerPrincipalId: string;
+}
+
+export interface AutomationDetailView {
+    automation: AutomationElement;
+    /**
+     * 当前 Resource manage；不是运行准入、额度允许或业务成功。
+     */
+    canManage:             boolean;
+    delegations:           DelegationElement[];
+    nextDelegationOffset?: number;
+    nextVersionOffset?:    number;
+    versions:              VersionElement[];
+}
+
+export interface AutomationElement {
+    delegationId?:                  string;
+    executorInstallationResourceId: string;
+    ownerPrincipalId:               string;
+    pinnedVersionAssetId?:          string;
+    resourceId:                     string;
+    resourceState:                  ResourceState;
+    resourceVersion:                number;
+    state:                          AutomationState;
+    workspaceId:                    string;
+}
+
+/**
+ * 03 §7、05 §2.9：AutomationDefinition 的真实管理状态，不是 Invocation 终态。
+ */
+export enum AutomationState {
+    Disabled = "DISABLED",
+    Draft = "DRAFT",
+    Enabled = "ENABLED",
+    Paused = "PAUSED",
+}
+
+/**
+ * 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
+ */
+export interface DelegationElement {
+    delegationId:                   string;
+    delegationVersion:              number;
+    executorInstallationResourceId: string;
+    /**
+     * RFC3339，UTC；与现有管理查询时间字段一致。
+     */
+    expiresAt:        string;
+    ownerPrincipalId: string;
+}
+
+/**
+ * Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
+ */
+export interface VersionElement {
+    assetId:              string;
+    assetVersion:         number;
+    automationResourceId: string;
+    configHash:           string;
+    content:              AutomationVersionContentClass;
+    ordinal:              number;
+    ownerPrincipalId:     string;
+    state:                AgentVersionState;
+}
+
+export interface AutomationPage {
+    automations: AutomationElement[];
+    /**
+     * 本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。
+     */
+    canCreate:   boolean;
+    nextOffset?: number;
+}
+
+/**
+ * Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
+ */
+export interface AutomationVersionView {
+    assetId:              string;
+    assetVersion:         number;
+    automationResourceId: string;
+    configHash:           string;
+    content:              AutomationVersionContentClass;
+    ordinal:              number;
+    ownerPrincipalId:     string;
+    state:                AgentVersionState;
+}
+
+export interface AutomationView {
+    delegationId?:                  string;
+    executorInstallationResourceId: string;
+    ownerPrincipalId:               string;
+    pinnedVersionAssetId?:          string;
+    resourceId:                     string;
+    resourceState:                  ResourceState;
+    resourceVersion:                number;
+    state:                          AutomationState;
+    workspaceId:                    string;
 }
 
 /**
@@ -1344,6 +1499,27 @@ export interface AgentVersionContentPersonaIdentityClass {
 export interface AgentVersionContentTurnLimitsClass {
     idleTimeoutSeconds:     number;
     maxTurnDurationSeconds: number;
+}
+
+/**
+ * REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
+ * AGENT_TURN；不含消息正文、provider 配置或凭据。
+ */
+export interface AutomationVersionContent {
+    action:       AutomationVersionContentActionClass;
+    resultTarget: ResultTarget;
+    trigger:      AutomationVersionContentTriggerClass;
+}
+
+export interface AutomationVersionContentActionClass {
+    kind:     ActionKind;
+    template: string;
+}
+
+export interface AutomationVersionContentTriggerClass {
+    kind:                TriggerKind;
+    mentionPrincipalId?: string;
+    textPrefix?:         string;
 }
 
 export interface DelegationGrantParameters {

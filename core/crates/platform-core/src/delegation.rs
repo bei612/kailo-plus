@@ -255,7 +255,10 @@ pub(super) async fn target_gate(
         else {
             return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
         };
-        if !has_agent_consumer(&scope.action_key) || scope.tool_resource_id.is_some() {
+        let automation = scope.action_key == "automation.run";
+        if (!automation && !has_agent_consumer(&scope.action_key))
+            || scope.tool_resource_id.is_some()
+        {
             // ToolDefinition/PEP 当前没有真实生产者，不查询不存在的表或编造输出合同。
             return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
         }
@@ -290,6 +293,18 @@ pub(super) async fn target_gate(
                 .bind(target).bind(tenant).bind(row.workspace_id).fetch_one(&mut *conn).await?;
             if !valid {
                 return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+            if automation {
+                crate::automation::delegation_target(
+                    g,
+                    conn,
+                    tenant,
+                    row.workspace_id,
+                    row.id,
+                    initiator,
+                    (target, scope.action_version),
+                )
+                .await?;
             }
             target
         } else {

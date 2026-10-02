@@ -74,6 +74,55 @@ fn client_custody_identity_is_never_signed_by_core() {
     );
 }
 
+/// 实现后的离线原生签名断言：不创建业务对象、不发送事件或投递凭据。
+#[test]
+fn task_reply_id_is_fixed_by_native_time_body_and_thread_ancestry() {
+    let keys = Keys::generate();
+    let client = IdentityClient::new(
+        Custody::Server,
+        &keys.secret_key().to_secret_hex(),
+        "http://unused.invalid",
+        "unused.platform.test",
+    )
+    .unwrap();
+    let root = "a".repeat(64);
+    let source = "b".repeat(64);
+    let first = client
+        .sign_channel_reply_at("channel", "native answer", (&root, &source), 105)
+        .unwrap();
+    let same = client
+        .sign_channel_reply_at("channel", "native answer", (&root, &source), 105)
+        .unwrap();
+    assert_eq!(first.id, same.id);
+    assert_eq!(first.kind.as_u16(), 9);
+    assert_eq!(first.pubkey, keys.public_key());
+    assert_eq!(first.created_at.as_secs(), 105);
+    assert!(first.verify().is_ok());
+    assert_eq!(
+        collab_bridge::nip10::parse_thread_markers(&first.tags).resolve(),
+        Some((root.clone(), source.clone()))
+    );
+    assert!(first
+        .tags
+        .iter()
+        .any(|tag| tag.as_slice() == ["h", "channel"]));
+    let changed_time = client
+        .sign_channel_reply_at("channel", "native answer", (&root, &source), 106)
+        .unwrap();
+    let changed_source = client
+        .sign_channel_reply_at("channel", "native answer", (&root, &root), 105)
+        .unwrap();
+    let changed_body = client
+        .sign_channel_reply_at("channel", "different answer", (&root, &source), 105)
+        .unwrap();
+    assert_ne!(first.id, changed_time.id);
+    assert_ne!(first.id, changed_source.id);
+    assert_ne!(first.id, changed_body.id);
+    assert!(client
+        .sign_channel_reply_at("channel", "native answer", ("bad-root", &source), 105)
+        .is_err());
+}
+
 #[tokio::test]
 async fn non_member_publish_is_rejected_and_member_publish_is_accepted() {
     let Some((origin, op_key, audience)) = env() else {

@@ -142,3 +142,30 @@ widget/indicator 三项回归均退出 0；检查日志为
 `/volumes/data/kailo/tmp/codex-mobile-display-checks-20260930.log`，13.750 秒。
 未改测试、未安装或升级依赖、未构建 APK，不把这三项回归写成真机名称刷新、换服、
 实际读屏或当前安装包的验收。Mobile release 签名仍为原阻断。
+
+## Automation 受权只读管理视图（2026-10-02）
+
+本轮实现按 REQ-21、REQ-08、DD-107、`.design/17-Agent管理平面设计.md` §8，沿既有 Settings→Workspace 管理面提供 Automation 列表/详情。只消费本批生成的 Automation Page/Detail/View、封闭状态枚举与同源 en/zh-CN message keys，不增加 Dart 类型、私有文案或权限权威。实现与验证在私有候选 `/volumes/data/kailo/tmp/codex-automation-integration-20261002.bOjEqV/apps`，正式工作树与正式 Git index 未写入。
+
+实际 4 个源码路径：
+
+- `collaboration/mobile/lib/shared/platform/platform_views.dart`：原 NativeSession GET 的受权分页/精确 ID 消费者。
+- `collaboration/mobile/lib/features/platform/platform_agent_installation_workspaces_page.dart`：既有 Workspace 选择入口中的 Automation 只读链接。
+- `collaboration/mobile/lib/features/platform/platform_automations_page.dart`：受权列表、原游标前后页与详情导航。
+- `collaboration/mobile/lib/features/platform/platform_automation_detail_page.dart`：Resource、owner、executor、pin、Version 与 Grant 记录及独立分页。
+
+调用仅为 BFF `GET /api/v1/automations?workspaceId&offset` 与 `GET /api/v1/automations/{resource_id}?versionOffset&delegationOffset`。每次认证、scope、owner、native projection 与 Asset read 授权仍由 BFF fresh 核验；客户端只拒绝矛盾的 scope/ID/游标/重复数据、未知枚举、无 pin/grant 的 ENABLED、非 PUBLISHED 的已见 pinned Version、无效内容或 Grant 引用，不将本地一致性判断当授权。只读页不消费 `canCreate/canManage` 成为写入口，不生成 create/publish/enable/pause/disable/run、ActionSubmission、runtime 调用或 WebView。原 PlatformAsyncView 保留登录失效、确定拒绝与 UNKNOWN 的区别，错误不降为受权空列表；Version 内容仅是 BFF 受权返回的既有 Core 自有 AutomationVersion，临时显示而不持久化。
+
+最终 4-path 窗口 540+/26-（含两份既有 owned 文件的 Dart 格式化），原件 `/volumes/data/kailo/tmp/codex-automation-integration-20261002.bOjEqV/mobile-window.diff`，SHA256 `0e91bb075ba63eaf80226573748ba2812c59e1e05caf907446bc3d1e140f8065`。原两文件 before 保存于 `/volumes/data/kailo/tmp/codex-automation-mobile-before-20261002.jLcomU`，两新页在窗口前不存在；最终字节清单为同一候选父目录 `mobile-source-final.sha256`。源码于 22:24:58 UTC 停写，反向 apply 检查与 `git diff --check` 实际退出 0。
+
+### 实际窄验证与失败原件
+
+复用固定 Flutter 3.41.7 镜像 `sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3`、当前 UID:GID、Data 缓存和原 Flutter 工具缓存。每次按原 `container_resource_preflight` 与 `container_verify_limits` 核验，实际 Docker 限额 4 CPU/8 GiB memory=memory+swap；宿主不执行 Flutter。以下日志均位于 `/volumes/data/kailo/tmp/codex-automation-integration-20261002.bOjEqV/`：
+
+- `mobile-readonly-verify.log`（SHA256 `69872a1dabfa070b5bcde84965edcfaa54e8db1b9a6ffd416b0bce890337b48f`）：临时执行 launcher 首次参数续行错误，退出 127，未创建 SDK；按既有数组 launcher 纠正，不改检查门禁。
+- `mobile-readonly-verify-corrected-launcher.log`（`2e08a3e91531df43d108820817e8bf122283ffcf61f60404037c8ec598bbb106`）：两处 `curly_braces_in_flow_control_structures`，SDK/attach 1；直接把这两处现有条件补为完整 block，规则不变。
+- `mobile-readonly-verify-braces-corrected.log`（`94388a008c6a53bf4269c681fe40cdbadd68974646962e8f6f57eca031ca4361`）：4 文件 analyze 0，既有测试实际 14 通过/11 失败。新 Automation 行仅以 workspace.name 作 subtitle，导致原 Installation 的 `tap('Ops')` 同屏出现两个精确目标；实现改为真实 name+slug 区分导航上下文，未改测试/夹具。
+- `mobile-readonly-verify-navigation-corrected.log`（`b8e4cb0921bdc6437c0cac5d416daeae4d1eb6208512bb245e4e2f07de7d8eb4`）：`flutter pub get --enforce-lockfile`、四 owned 文件 `dart format`、`flutter analyze --no-pub <四文件>` 与 `flutter test --no-pub test/features/platform/platform_pages_test.dart test/shared/platform/platform_read_state_test.dart` 实际 SDK/attach 0；输出为 `No issues found!`、`+25: All tests passed!`。
+- `mobile-readonly-thread-mutation.log`（`5bd3552a0c75b51dcd18a24f5ea9cf7ef36596bbea27fcc63e69e38b6ea5af64`）：通过后将 reader 的 `ResultTarget.TRIGGER_THREAD` 暂改为契约不存在的 `ResultTarget.CHANNEL`，现有分析器实际退出 1、`undefined_enum_constant`。反向补丁还原后原文件 SHA 完全相同，输出 `mutation=unsupported-thread-enum exit=1 restored=true`；同容器再次分析四文件 0，整体 SDK/attach 0。该负向只证明类型检查能发现不支持的目标，不冒称运行或业务授权已验收。
+
+未新增测试、夹具、业务对象或独立检查脚本。25 项是已有页面/读状态回归，不是新 Automation 正向场景。未进行真实受权 Automation 列表/详情端点正向、真机交互、APK/iOS 构建、release 签名、部署或本刀提交/push；未重跑全量 Flutter/full/端到端，未把空数据库、旧安装包或上文历史产物移作本增量证据。只清理本人 4 个已退出 SDK 容器，日志、镜像、Data 缓存与其他 lane 的容器保留。

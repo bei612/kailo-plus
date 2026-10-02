@@ -1,5 +1,124 @@
 # AgentDefinition 与 Resource owner 实现核验
 
+## 本批固定树全量收口
+
+实现与负向恢复完成后，原 `tools/check.sh --full` 对固定树
+`641f5cf0ef5d8a0e33515739303b33cff7b2f49b` 实际退出 0。
+原件 `bOjEqV/full.log` SHA-256
+`888d3185ba0019361836c9c280fe6dbaeb341f599835f4eac0d9564ffc1a288f`。
+121 schema、四侧生成与兼容、真实数据库前进/回退/再前进、SQLx、44 项
+命名枚举约束、workspace 检查、replay、18 条追溯与供应链均通过。
+实际 `.env` 预检 SKIP；Catalog bootstrap、approval CAN 与 Relay outage
+三项 ignored；内置 secret 扫描无命中但未安装 gitleaks。外部集成早返不算
+业务验收，Desktop 旧 h2 构建失败与 Mobile keystore 缺失仍属于该冻结树的
+发布边界。独立新 Win11 包不反改此回执；后追加证据只运行原文档快路径。
+
+## 2026-10-02 22:40 UTC 本批 Automation 管理与原生回复检查
+
+Automation 已沿原治理入口实现五项管理命令及 BFF 列表/详情，共享 TS 管理页和
+Mobile 只读页复用同一生成合同。权威是 REQ-23、DD-107、设计 05 §2.9；本刀
+不新增 Schedule/Webhook/手动运行，不更换 Temporal，不建立第二份 Registry。
+新准入只消费 ENABLED 与当前 pin；已准入 Invocation 在 PAUSED/DISABLED 下
+消费原冻结版本、Installation、Grant 和 generation，真实撤权或代际变化仍拒绝。
+首 turn 的空 native-turn 阶段与 completed reply 的确切 turn/固定 event ID 阶段
+互斥；每次外部查证后按真实数据库时钟复读已锁 Grant，不借锁冻结到期时刻。
+Resource/Asset 及失败创建的同 AE、两 native 删除证明和完整空关系集归属已有
+生命周期；管理读取不执行 quota、health 或对账。写者为原 Core，读取者为生成
+TS/Dart 合同；50th 迁移原回退/再前进退出 0，当前无旧在线 writer 或历史数据
+兼容窗口，不新增旧读链。Core 不复制协作正文，UNKNOWN 不渲染成功或失败。
+
+实现之后追加的六项 Automation 检查实际基线和最终均为 6/6，SDK 退出 0。
+其中真实 PostgreSQL EXPLAIN 核查原 RUN/FROZEN 查询与原锁目标，直接消费原
+SQL 谓词核查 240 个准入/在途组合和 720 个首 turn/回复阶段组合；独立库无
+业务行，不能将这些检查称为真实运行。逐次破坏 MENTION 字段、线程唯一目标、
+显式确认、Version 正数、暂停后在途状态和 exact native-turn fence，六次均
+编译成功后指定断言失败（Cargo/SDK 101，原启动 wrapper 1）。每次立即恢复
+`automation.rs` SHA-256
+`2ecd1e2cf6d48211ffa461944bea8088a5fa374aa74dfe193e44dce37ea0320b`；
+最终 `automation-evidence-restored.log` SHA-256
+`c4d8d6c2625793705a51882800a6ff59dfc85f9144e5b9d4c22a20a0cf6975b1`。
+原件在 `/volumes/data/kailo/tmp/codex-automation-integration-20261002.bOjEqV/`，
+六个 `automation-mutation-*.log` 均保留，不以 wrapper 的退出码改写 Cargo 结果。
+初轮接线中途编译缺少 publish_reply 的 101 和未投递 DESIGN 时 registry 生成
+拒绝均保留；它们不是预期反例。冻结实现后检查通过；registry 使用真实相邻
+设计路径再次生成退出 0，没有修改产品以迎合私有目录投递错误。
+
+原生回复的三项 Task 与一项 Bridge 后实现检查基线、最终都实际退出 0。
+未知/缺失 phase、未来 completedAt、固定签名时间三次变异分别触发原指定断言
+失败（Cargo/docker-exec 101），逐次 SHA 还原再通过；最终日志
+`/volumes/data/kailo/tmp/codex-task-bridge-mutations-20261002.iPZsYz/final.log`
+SHA-256 `7b4698aba11c0fa00f38b73721228a0b7b38bd40626745ccf4bbdbea00d93784`。
+Task 恢复 SHA `0d9ed40379ade47bb5fc10c92c9f973da33d321de497a5e8a068a80c92c9d9bb`，
+Bridge 恢复 SHA `3f2d4a0801ed785c1ed6b5f313c655eab50504a8b3701f8a576be1d44ad21452`。
+初轮实际 SDK 指出的弃用 as_u64 已机械改为原 API as_secs，最终检查无该警告；
+本次唯一持久修正只在原检查的一行。初次 TMPDIR 拒绝、基线及变异引入的警告
+均保留，不能把容器编排进程清理退出码 137 当作检查退出码或 OOM。
+资源复用不可变 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+与已有 4 CPU/8 GiB、Data 缓存，实际检查 OOM 为零，没有宿主工具链或新 checker。
+
+共享 UI 三消费者类型及原 98 项检查、Mobile 原 25 项与四文件 analyze 均通过；
+Thread→CHANNEL 分别被真实 TypeScript/Dart 工具拒绝，精确还原后再通过。
+完整原件与失败/还原边界见现有 Web/Mobile 核验记录。本节不证明真实
+Codex→Relay 回复、完整 billing、Memory 写入、通用 replyPolicy、模型 Route
+产出方、公开 Installation/Grant、Win11 安装、三端或生产部署已经完成。
+
+## 2026-10-02 本批 Agent 原生回复生产者：已实现、业务尚未验收
+
+本节记录私有候选 `bOjEqV/apps` 的最新实现；下文历史检查只覆盖各自当时
+冻结范围，不验证本节新增回复代码。本批沿用 REQ-03/06/23、DD-37/47/48/107、
+`09` §3、`12` §6、`17` §7/10 与 `19` 的正文及引用边界，没有新增动作、
+ReplyPolicy 语义、审批权威、Workflow 或公开运行入口。
+
+### 四步影响与实现事实
+
+1. 权威与原生依据：固定 Codex 提交
+   `7498521d288b9b3b96ffba4eedf089d8d6e06a84` 的
+   `codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs::Turn`、
+   `codex-rs/app-server-protocol/src/protocol/v2/item.rs::ThreadItem::AgentMessage` 与
+   `codex-rs/protocol/src/models.rs::MessagePhase` 提供 full items、原生完成时间
+   和封闭的 `commentary`/`final_answer`。`native_reply` 要求 completed、完整
+   items、唯一非空 final、确定且合法的原生时间；任何 AgentMessage 的未知或
+   缺失 phase、异步 delivery/questions、重复 final 均拒绝，不以另一个 final
+   掩盖未知事实。AutomationVersion 已冻结的 `TRIGGER_THREAD` 是本刀唯一结果
+   目标；仅支持消息/@提及触发，不解释任意 `AgentVersion.replyPolicy` 字符串。
+2. 调用与准入：已有 `AgentTask.advance -> observe` 在同 Invocation/native
+   thread/turn/clientId 关联和 completed 事实下调用真实生产者。两次事务均
+   核同 AE、Tenant/Workspace、Installation、pin Version、projection generation、
+   AGENT 身份与原 Temporal Activity；复用 `automation::fresh_reply` 同一准入
+   实现，分别消费未冻结回复和已冻结确切 event ID，并在外发前重验当前
+   Grant/scope/权限/Quota。没有复用首 turn 的 null-turn 准入绕过回复条件。
+3. 副作用与证据：复用 collab-bridge 的原 OpenBao AGENT 代签、原 Relay
+   publish/query。固定 Buzz 提交 `779af8886caae1317b4de962082429867ab61503`
+   的 `crates/buzz-relay/src/api/bridge.rs::submit_event` 与
+   `crates/buzz-core/src/nip10.rs::ThreadMarkers::resolve` 是接受和 root/source
+   取证接缝。kind 9 的时间取原生 completedAt，root/source 取冻结 Invocation；
+   先持久固定 event ID 和原 operation 的 AGENT DISPATCH，再且仅在当前请求
+   外发已签 event。确认必须包含同一 event ID；原生查询须证明单一确切 ID、
+   AGENT 作者、签名、Channel 和 root/source。Core 仅存引用与类型化审计元数据，
+   不保存输出正文、签名完整 event 或复制 Codex/Relay 历史。
+4. 幂等、取消与终态：每次外发前重查同 Temporal Activity、cancel 和固定意图。
+   已有 event ID 的后续观察只查原 ID；崩溃或发送结果不明不重签、不生成新 ID、
+   不重跑 turn/model。原生 accepted/HTTP 202 都不是 Invocation 终态；缺确切
+   Relay 证明保持 UNKNOWN。即使回复已查证，完整 billing completeness 未闭合
+   仍保留 BILLING_UNAVAILABLE，不写 Invocation COMPLETED，不伪造计费成功。
+
+### 本批检查事实与未验收边界
+
+已在实现之后追加三项 Task 原函数断言和现有 Bridge 检查中的一项离线签名
+断言：完整 final/原生时间、未知或缺 phase、重复 final/异步消息，以及固定
+时间/正文/root/source 的 kind 9 ID。三个私有 mutation diff 分别破坏 phase
+拒绝、未来原生时间拒绝和固定签名时间；只读 apply-check 已通过。本节最初
+写入时四项断言和三个变异尚未运行；随后实际运行结果以上方 22:40 UTC 记录
+为准。源码窄 `git diff --check` 实际退出 0，不等同真实业务验收。
+
+本刀三条源码与检查路径于 22:23:13 UTC 停写；before、精确窗口差异和三个
+mutation diff 位于
+`/volumes/data/kailo/tmp/codex-agent-native-reply-before-20261002.6MWGhs/`。
+没有执行真实 Codex turn→Relay 回复端到端、Win11/三端运行或生产部署；完整
+bill commit、Memory 读写与结果暴露验收、通用 replyPolicy 投递、llm_route
+治理 producer 均不由本刀宣称已交付。Installation ready/ACTIVE 与全部运行
+链仍须各自事实闭合；本节不是 Stage 5 完成或公开入口开放证明。
+
 ## 2026-10-02 实现范围与权威
 
 本批是 Stage 5 的首个 Core 平台 Resource 实现，不是 Buzz Desktop 本地

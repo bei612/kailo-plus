@@ -131,6 +131,16 @@ pub(crate) async fn frozen_agent_inventory(
 ) -> Result<Value, crate::governance::Refusal> {
     let mut inventory: Value = sqlx::query_scalar(
         "select jsonb_build_object(
+          'automations', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select d.resource_id,d.workspace_id,d.executor_installation_resource_id,d.delegation_id,
+                   d.pinned_version_asset_id,d.schedule_id,d.webhook_secret_ref,d.state,d.version,d.enabled_at
+            from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id
+            where r.tenant_id=$1 order by d.resource_id for update of d) x),
+          'automation_versions', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select v.asset_id,v.automation_resource_id,v.ordinal,v.approval_policy_id,
+                   v.result_target,v.config_hash,v.state
+            from catalog.automation_version v join catalog.resource r on r.id=v.automation_resource_id
+            where r.tenant_id=$1 order by v.automation_resource_id,v.ordinal for update of v) x),
           'installations', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
             select i.resource_id,i.workspace_id,i.agent_resource_id,i.pinned_version_asset_id,
                    i.agent_principal_id,i.runtime_isolation_ref
@@ -1781,6 +1791,8 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.agent_memory_binding set state='REVOKED',version=version+1 where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and state<>'REVOKED'",
         "update catalog.agent_model_binding set secret_status='REVOKED' where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and secret_status<>'REVOKED'",
         "update catalog.agent_session set status='CLOSED' where tenant_id=$1 and status<>'CLOSED'",
+        "update catalog.automation_definition set state='DISABLED',pinned_version_asset_id=null,version=version+1 where resource_id in (select id from catalog.resource where tenant_id=$1)",
+        "update catalog.automation_version set state='RETIRED' where automation_resource_id in (select id from catalog.resource where tenant_id=$1) and state<>'RETIRED'",
         "update catalog.agent_definition set status='DELETED',current_published_version_asset_id=null where resource_id in (select id from catalog.resource where tenant_id=$1)",
         "update catalog.agent_version set state='RETIRED' where asset_id in (select id from catalog.asset where tenant_id=$1) and state<>'RETIRED'",
         "update catalog.asset set state='DELETED',version=version+1,projection_action_execution_id=null where tenant_id=$1 and state<>'DELETED'",

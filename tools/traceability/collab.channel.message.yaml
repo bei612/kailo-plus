@@ -42,7 +42,7 @@ release:
     - name: core
       digest: sha256:a52669b7227a79bd0b382e093f91ed197f48985d29fc2ca8ad3766cae84cb2f2
     - name: web-client
-      digest: sha256:13841511c9f35552e827bb1d94ad5c68bf3fcc0de921de984b75d107a4382353
+      digest: sha256:6f54ce3744408aa3adfa898ec639b9fad1ef4438774a0869f21b33e722d298ce
     - name: collaboration-relay
       digest: sha256:2ea8059fd418cff927ad8122980917f996915eb2c8c789ac1e7a995b21479158
   gate: shipped

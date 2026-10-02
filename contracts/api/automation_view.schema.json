@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/automation_view.schema.json",
+  "title": "AutomationView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "workspaceId", "ownerPrincipalId", "resourceVersion", "resourceState", "state", "executorInstallationResourceId"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer", "minimum": 1},
+    "resourceState": {"$ref": "../enums/resource_state.schema.json"},
+    "state": {"$ref": "../enums/automation_state.schema.json"},
+    "executorInstallationResourceId": {"type": "string", "format": "uuid"},
+    "pinnedVersionAssetId": {"type": "string", "format": "uuid"},
+    "delegationId": {"type": "string", "format": "uuid"}
+  }
+}

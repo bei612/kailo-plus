@@ -232,7 +232,28 @@ Windows 终态时父 cgroup 的 max/oom/oom_kill 计数均为 0。
 这个包是 unsigned 开发测试安装包，不是 signed release；没有在 Win11 安装、启动、
 登录或验收 clipboard、keyring、协作功能，不把构建 0 或 Linux 历史证据当 Windows 运行验收。
 
-## 2026-10-02：AgentVersion 契约变更后的 Windows 构建失败
+## 2026-10-02 21:41 UTC：上一批 Agent 共源 Win11 测试包实际构建
+
+本节补记已发生的正式原 helper 结果，不能用下节历史下载失败继续表示
+所有 Windows 构建均阻断。输入是上一批 `fc0c2e0d…` 的 Agent 共用页面与
+合同，不包含后续 Automation 页面；2254 个真实输入的前后 source 均为
+`sha256:6113ccd288f87488fd8dc8e4ac09e6baa96e007dc3917995ad69f5013b891143`。
+原 `tools/build-upstream.sh desktop-client` 的类型/Vite、Windows MSVC、
+cargo-xwin 与 NSIS 全部实际退出 0，工具链与 recipe 沿已有锁和容器。
+
+真正产物位于
+`/volumes/data/kailo/tmp/codex-current-win11-20261002.PjUMXE/apps/dist/desktop-client/Kailo_0.5.23_x64-setup.exe`，
+15,071,240 字节，SHA-256 为
+`e7e1c79450d804033ec4e9db03d51e19c514637990656ad4686ebf6c7c9de656`。
+原 helper 日志同目录上层 `helper.log` 的 SHA-256 为
+`cdd355923b9949d19cb0b25e297bf3f879572accca243b5a1392eb1c376a60fd`；
+原构建日志 `/volumes/data/kailo/tmp/build-desktop-client.wVh5Jy.log` 的 SHA-256 为
+`906d17d58858a515f219da0c4b7de7a81d622b97b659b1073e1cedb0f0872342`。
+本包是 unsigned Win11 x64 开发测试包，没有签名、安装、启动或设备业务验收。
+本批 Automation 合同改变后，旧包的 source 不能冒充当前 Desktop source；
+没有把旧 artifact 填入本批来源登记，也未据此提高 Stage/生产完成状态。
+
+## 2026-10-02 历史记录：AgentVersion 契约变更后的 Windows 构建失败
 
 选定输入 `/volumes/data/kailo/tmp/codex-agent-version-selected-20261002.7p1PX8` 的
 Desktop 当前真实 source 为

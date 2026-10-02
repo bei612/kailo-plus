@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/automation_page.schema.json",
+  "title": "AutomationPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["automations", "canCreate"],
+  "properties": {
+    "automations": {"type": "array", "items": {"$ref": "automation_view.schema.json"}},
+    "canCreate": {"type": "boolean", "description": "本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。"},
+    "nextOffset": {"type": "integer", "minimum": 1}
+  }
+}

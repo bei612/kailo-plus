@@ -7,6 +7,7 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import 'platform_agent_installations_page.dart';
+import 'platform_automations_page.dart';
 import 'platform_async_view.dart';
 
 /// REQ-21、17 §8：在既有管理面选择已准入 Workspace，只读安装事实。
@@ -18,18 +19,23 @@ class PlatformAgentInstallationWorkspacesPage extends ConsumerWidget {
     final locale = Localizations.localeOf(context).toLanguageTag();
     final value = ref.watch(platformWorkspacesProvider);
     final checked = value.whenData((rows) {
-      if (rows.any((w) => w.id.isEmpty)
-          || rows.map((w) => w.id).toSet().length != rows.length) {
+      if (rows.any((w) => w.id.isEmpty) ||
+          rows.map((w) => w.id).toSet().length != rows.length) {
         throw const FormatException('Workspace selection');
       }
       return rows;
     });
     return Scaffold(
       appBar: AppBar(
-        title: Text(platformText(PlatformMessageKey.platformTabAgents, locale: locale)),
+        title: Text(
+          platformText(PlatformMessageKey.platformTabAgents, locale: locale),
+        ),
         actions: [
           IconButton(
-            tooltip: platformText(PlatformMessageKey.platformRefresh, locale: locale),
+            tooltip: platformText(
+              PlatformMessageKey.platformRefresh,
+              locale: locale,
+            ),
             onPressed: () => ref.invalidate(platformWorkspacesProvider),
             icon: const Icon(Icons.refresh),
           ),
@@ -42,20 +48,35 @@ class PlatformAgentInstallationWorkspacesPage extends ConsumerWidget {
           children: [
             Padding(
               padding: const EdgeInsets.all(Grid.gutter),
-              child: Text(platformText(PlatformMessageKey.agentsInstallationReadOnly, locale: locale)),
+              child: Text(
+                platformText(
+                  PlatformMessageKey.agentsInstallationReadOnly,
+                  locale: locale,
+                ),
+              ),
             ),
             if (workspaces.isEmpty)
               Padding(
                 padding: const EdgeInsets.all(Grid.gutter),
-                child: Text(platformText(PlatformMessageKey.agentsInstallationNoWorkspace, locale: locale)),
+                child: Text(
+                  platformText(
+                    PlatformMessageKey.agentsInstallationNoWorkspace,
+                    locale: locale,
+                  ),
+                ),
               )
             else
               AppListCard(
-                label: platformText(PlatformMessageKey.platformWorkspaces, locale: locale),
+                label: platformText(
+                  PlatformMessageKey.platformWorkspaces,
+                  locale: locale,
+                ),
                 children: [
-                  for (final workspace in workspaces)
+                  for (final workspace in workspaces) ...[
                     AppListRow(
-                      key: ValueKey('platform-installation-workspace-${workspace.id}'),
+                      key: ValueKey(
+                        'platform-installation-workspace-${workspace.id}',
+                      ),
                       title: workspace.name,
                       subtitle: workspace.slug,
                       onTap: () => Navigator.of(context).push(
@@ -67,6 +88,24 @@ class PlatformAgentInstallationWorkspacesPage extends ConsumerWidget {
                         ),
                       ),
                     ),
+                    AppListRow(
+                      key: ValueKey(
+                        'platform-automation-workspace-${workspace.id}',
+                      ),
+                      title: platformText(
+                        PlatformMessageKey.agentsAutomationTitle,
+                        locale: locale,
+                      ),
+                      subtitle: '${workspace.name} · ${workspace.slug}',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => PlatformAutomationsPage(
+                            workspaceId: workspace.id,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
           ],

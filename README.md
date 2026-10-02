@@ -4,7 +4,32 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 最新交付状态（2026-10-02 20:43 UTC）
+## 最新交付状态（2026-10-02 22:28 UTC）
+
+**仍未生产就绪。** 上一批 Agent 主线已提交并普通 push 为 `fc0c2e0dbd33af72ab5a16cd621715f3a33ad4a6`，本地与远端 main 已核对一致。本批接续实际功能，不再使用 GitNexus；集中验证和阶段提交不在小改动或 push 时重复触发。
+
+本批 60 文件的固定树 `641f5cf0ef5d8a0e33515739303b33cff7b2f49b` 已实际运行原 `tools/check.sh --full`，退出 0；`full.log` SHA-256 为 `888d3185ba0019361836c9c280fe6dbaeb341f599835f4eac0d9564ffc1a288f`。121 schema、四侧兼容、真实数据库迁移前进/回退/再前进、SQLx 与 44 项枚举约束均通过，本次数据库不是 SKIP。实际 `.env` 预检仍 SKIP，Catalog bootstrap、approval CAN 与 Relay outage 三项 ignored，未安装 gitleaks；外部集成早返不计业务验收。该树仍保留 Desktop/Mobile 发布阻断，不借独立 Win11 构建改写已冻结回执。此回执在提交前形成，提交/push 由实际 Git 输出核对；只追加证据文档走原文档快路径，不重复源码构建。
+
+| 范围 | 本批实际增量 | 尚未发生 |
+|---|---|---|
+| Automation 管理 | 原统一 Action 路径接入 create、publish_version、enable、pause、disable；不可变版本、Installation/Grant pin 与 ACTIVE 投影按真实 scope 查证 | 手动运行、Schedule、Webhook、公开 Grant/Installation 产出入口未开放；已有版本管理不等于 Agent 全链运行通过 |
+| Web/Desktop | 同一 `AgentDefinitionsPage` 消费新增 BFF Automation 列表/详情及五项命令；三个消费者类型检查与共享包 98 项检查退出 0，非法 CHANNEL 枚举破坏确实报错并还原 | 未新增第二份 Web 前端；最新共用页面未在浏览器或 Win11 验收 |
+| Mobile | 原 Settings 的 Workspace 管理选择增加 Automation 列表与详情，只读经 BFF；四文件 analyze 及既有 25 项检查退出 0，非法枚举破坏被分析器拒绝并还原 | 不提供命令、运行、组件宿主、编辑器或 WebView；无真实 Automation 对象、签名包或设备业务验收 |
+| Agent 执行 | 原 Task 消费完整原生 final_answer 和原生完成时钟，经过两次 fresh authorization，持久化固定回复 ID 后单次外发；暂停/停用保留原冻结在途版本，真实撤权仍拒绝 | 回复未知只查证原事件，仍保留 BILLING_UNAVAILABLE；完整结算、严格预留、工具治理和 Memory 写入未完成 |
+| 数据/契约 | 新增 Automation 数据约束为第 50 条迁移，原回退/再前进实际退出 0；四侧由原生成器产出。最新六项后实现检查退出 0，包含真实 PostgreSQL 解析和状态/阶段谓词 | 独立库零业务对象；不把 SQL 证据、类型检查或生成记录算作业务闭环 |
+| Web 产物 | 原 helper、push 与 registry 读回退出 0：artifact `sha256:6f54ce3744408aa3adfa898ec639b9fad1ef4438774a0869f21b33e722d298ce`，97 个输入 source `sha256:8dbb98b595a7510b584fa1c50e4d0aec37be553bc998263dfbafd7b0401c58eb`，构建前后字节一致 | 尚未部署；旧运行 Core/Worker 不因新源码自动更新 |
+| 原生 Runtime / Win11 | 固定 Codex 原 helper 构建与 registry 读回退出 0，Runtime artifact `sha256:ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec`；上一批共享源码的 Win11 x64 NSIS 包实际构建退出 0 | Runtime 镜像缺失的构建阻断已解除，Core/Worker 本批正式 release 仍须实际运行；Win11 包未签名、未安装，且不匹配本批新增 Automation 页面来源 |
+
+本批原件在 `/volumes/data/kailo/tmp/codex-automation-integration-20261002.bOjEqV/`。源码验证、全量门禁、提交与部署分别记录，不提前称为通过。本批变更的四步结论如下，记录已有实现，不是另立规格：
+
+- 权威：REQ-23、DD-107 和设计 05 §2.9 固定五项管理动作及线程回复；DD-24/25、DD-65/66/67 固定 Agent pin/主体/记忆边界；DD-74/75 与 REQ-21 固定三端职责。未冻结或已阻断的入口不生成。
+- 影响：ActionCommand 和 Automation typed query 的唯一 writer 是原 Core，reader 为同一 TS 主体与生成 Dart 合同；Resource/Asset/Invocation、原 ActionExecution/Audit、SpiceDB 原投影和 Temporal Task 是实际事务与副作用边界。当前全新库没有旧在线 writer，历史迁移兼容无适用对象；新字段与新类型仍经四侧生成、双向序列化和已有契约比对核验，不保留第二套旧读路径。
+- 副作用：管理事务不复制协作正文、不新增额度或注册权威。回复正文只在本次内存签名调用中消费，Core 持久化原 Invocation 的固定事件 ID 与同一执行的 typed evidence；外发前两次查证且第二次持锁，原事件结果不明不重新签名或执行。
+- 异常：空列表/分页继续沿原 BFF 协议；未知枚举、缺 scope/owner/binding/secret/projection、失效 Grant 或过期 Capacity fail closed。重复命令使用原幂等键，UNKNOWN 保持原键及未知呈现；暂停/停用不取消冻结在途任务，真实撤权拒绝。租户暂停、过期授权、部分副作用、崩溃残留与重复投递沿原 Task/Operation 对账，不捏造终态；责任归属现有 RB-05，时限读取既有运行配置，不引入新状态或硬编码期限。六类错误仍为 DENIED/BLOCKED/PRECONDITION/LIMIT/CONFLICT/UNKNOWN。
+
+模型 Route 管理产出方、运行 profile 的实际投递、工具治理、通用 replyPolicy 的原生映射、严格预留与完整账单、Memory 写入、真实 Agent 业务闭环和三端发布/设备验收仍是剩余缺口。可选 Cells/WeKnora/Wren 不阻断平台核心开发；18 条追溯不是 18 项目标全部完成。详细证据见 [Agent 记录](core/verify/agent-definition.md)、[Web 记录](web-client/fork/verify/web-surface.md) 与 [Desktop 记录](collaboration/fork/verify/desktop-client.md)。
+
+## 上一批交付状态（2026-10-02 20:43 UTC）
 
 **仍未生产就绪。** 本批实现先行、事后集中验证，GitNexus 未使用；下一批自动化管理独立推进，不等待当前提交或 Codex 镜像构建。工具目录缺口不以无调用方的凭据或空 MCP 模块绕过。
 

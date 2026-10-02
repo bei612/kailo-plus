@@ -423,6 +423,111 @@ pub(crate) async fn frozen_owners(
     ))
 }
 
+/// 生命周期读者按真实平台类型查权威；普通Definition CRUD仍只用resource()。
+async fn lifecycle_resource(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    id: Uuid,
+) -> Result<Option<Resource>, sqlx::Error> {
+    sqlx::query_as("select r.id,r.tenant_id,r.owner_principal_id,r.home_workspace_id,r.state,r.version,
+        r.projection_action_execution_id from catalog.resource r
+        join catalog.resource_type_definition kind on kind.type_key=r.type_key
+        where r.tenant_id=$1 and r.id=$2 and kind.status='ACTIVE' and kind.tenant_delete_action_key='tenant.delete'
+          and ((r.type_key='agent.definition' and r.home_workspace_id is null
+                and exists(select 1 from catalog.agent_definition d where d.resource_id=r.id))
+            or (r.type_key='agent.installation' and exists(select 1 from catalog.agent_installation i
+                where i.resource_id=r.id and i.workspace_id=r.home_workspace_id))
+            or (r.type_key='llm_route' and exists(select 1 from catalog.model_route m where m.resource_id=r.id))
+            or (r.type_key='automation' and exists(select 1 from catalog.automation_definition d
+                where d.resource_id=r.id and d.workspace_id=r.home_workspace_id))) for update of r")
+        .bind(tenant).bind(id).fetch_optional(conn).await
+}
+
+#[derive(sqlx::FromRow)]
+struct LifecycleAsset {
+    id: Uuid,
+    resource_id: Uuid,
+    owner_principal_id: Uuid,
+    version: i32,
+    state: String,
+    native_state: String,
+    projection_action_execution_id: Option<Uuid>,
+}
+
+async fn lifecycle_asset(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    id: Uuid,
+    lock: bool,
+) -> Result<Option<LifecycleAsset>, sqlx::Error> {
+    sqlx::query_as(&format!("select a.id,a.resource_id,a.owner_principal_id,a.version,a.state,
+        case when a.type_key='agent.version' then av.state else automation.state end native_state,
+        a.projection_action_execution_id from catalog.asset a
+        left join catalog.agent_version av on av.asset_id=a.id and av.agent_resource_id=a.resource_id
+        left join catalog.automation_version automation on automation.asset_id=a.id and automation.automation_resource_id=a.resource_id
+        where a.tenant_id=$1 and a.id=$2 and ((a.type_key='agent.version' and av.asset_id is not null)
+          or (a.type_key='automation.version' and automation.asset_id is not null)){}",
+        if lock{" for update of a"}else{""}))
+        .bind(tenant).bind(id).fetch_optional(conn).await
+}
+
+/// FAILED 不是 UNKNOWN。只有同 create AE 的确定中止、两原生删除证据和
+/// 当前 Resource/Asset 完整空集合一起成立，才不要求已删除的 owner relationship。
+async fn failed_lifecycle_projection(
+    gov: &crate::governance::Governance,
+    conn: &mut PgConnection,
+    r: &Resource,
+) -> Result<bool, Refusal> {
+    let asset:Option<Uuid>=sqlx::query_scalar("select a.id from catalog.resource resource
+        join catalog.automation_definition d on d.resource_id=resource.id
+        join admission.action_execution ae on ae.target_id=resource.id and ae.tenant_id=resource.tenant_id
+        join catalog.asset a on a.id=ae.id and a.resource_id=resource.id and a.tenant_id=resource.tenant_id
+        join catalog.automation_version v on v.asset_id=a.id and v.automation_resource_id=resource.id
+        join audit.audit_event evidence on evidence.action_execution_id=ae.id
+          and evidence.operation_id=ae.operation_id and evidence.tenant_id=ae.tenant_id
+          and evidence.target_id=resource.id and evidence.action_key=ae.action_key
+          and evidence.action_version=ae.action_version
+        where resource.id=$1 and resource.tenant_id=$2 and resource.type_key='automation'
+          and resource.state='FAILED' and resource.projection_action_execution_id is null
+          and d.state='DISABLED' and d.pinned_version_asset_id is null
+          and ae.action_key='automation.create' and ae.gate_state='ALLOWED' and ae.dispatch_state='ABORTED'
+          and ae.initiator_principal_id=resource.owner_principal_id
+          and a.owner_principal_id=resource.owner_principal_id and a.type_key='automation.version'
+          and a.state='DELETED' and a.projection_action_execution_id is null and v.state='RETIRED'
+          and evidence.event_type='DISPATCH' and evidence.result_code='DISPATCH_ABORTED'
+          and jsonb_array_length(evidence.evidence_refs)=2
+          and not exists(select 1 from jsonb_array_elements(evidence.evidence_refs) ref
+              where ref->>'kind' is distinct from 'SPICEDB_ZEDTOKEN'
+                or jsonb_typeof(ref->'value') is distinct from 'string'
+                or length(ref->>'value')=0)
+          and not exists(select 1 from catalog.asset other
+              where other.resource_id=resource.id and other.state<>'DELETED')")
+        .bind(r.id).bind(r.tenant_id).fetch_optional(&mut *conn).await?;
+    let Some(asset) = asset else {
+        return Ok(false);
+    };
+    for (kind, id) in [("resource", r.id), ("asset", asset)] {
+        let id = id.to_string();
+        let rows = gov
+            .spicedb
+            .read_native(
+                &crate::spicedb::RelationshipFilter {
+                    object_type: kind,
+                    object_id: Some(&id),
+                    relation: None,
+                    subject_principal: None,
+                },
+                gov.cfg.relationship_page,
+            )
+            .await
+            .map_err(|e| Refusal::Unavailable(e.to_string()))?;
+        if !rows.is_empty() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 pub(crate) async fn validate_frozen_owners(
     gov: &crate::governance::Governance,
     conn: &mut PgConnection,
@@ -443,7 +548,7 @@ pub(crate) async fn validate_frozen_owners(
             .map_err(|_| Refusal::Conflict(ReasonCode::TargetStateConflict))?;
         let r = match owner.target_type.as_str() {
             "RESOURCE" => {
-                let Some(r) = resource(conn, tenant, id, true).await? else {
+                let Some(r) = lifecycle_resource(conn, tenant, id).await? else {
                     return Ok(false);
                 };
                 if i64::from(r.version) != owner.target_version || r.owner_principal_id != principal
@@ -454,25 +559,34 @@ pub(crate) async fn validate_frozen_owners(
             }
             "ASSET" => {
                 // 先定位、锁父 Resource，再锁 Asset，与发布/更新的锁序相同。
-                let Some(located) = crate::agent_version::version(conn, tenant, id, false).await?
+                let Some(located) = lifecycle_asset(conn, tenant, id, false).await? else {
+                    return Ok(false);
+                };
+                let Some(parent) = lifecycle_resource(conn, tenant, located.resource_id).await?
                 else {
                     return Ok(false);
                 };
-                let Some(parent) = resource(conn, tenant, located.agent_resource_id, true).await?
-                else {
+                let Some(v) = lifecycle_asset(conn, tenant, id, true).await? else {
                     return Ok(false);
                 };
-                let Some(v) = crate::agent_version::version(conn, tenant, id, true).await? else {
-                    return Ok(false);
-                };
-                if v.agent_resource_id != parent.id
+                if v.resource_id != parent.id
                     || i64::from(v.version) != owner.target_version
                     || v.owner_principal_id != principal
                     || !matches!(v.state.as_str(), "DRAFT" | "PUBLISHED" | "RETIRED")
-                    || v.asset_state != v.state
+                    || v.native_state != v.state
                     || v.projection_action_execution_id.is_some()
                     || !active_owner(conn, tenant, principal).await?
-                    || !crate::agent_version::projection_matches(gov, &v).await?
+                    || !gov
+                        .spicedb
+                        .asset_projection_matches(
+                            &v.id.to_string(),
+                            &tenant.to_string(),
+                            &parent.id.to_string(),
+                            &v.owner_principal_id.to_string(),
+                            gov.cfg.relationship_page,
+                        )
+                        .await
+                        .map_err(|e| Refusal::Unavailable(e.to_string()))?
                 {
                     return Ok(false);
                 }
@@ -480,11 +594,27 @@ pub(crate) async fn validate_frozen_owners(
             }
             _ => return Ok(false),
         };
-        if r.state != "ACTIVE"
-            || r.projection_action_execution_id.is_some()
+        if r.projection_action_execution_id.is_some()
             || !active_owner(conn, tenant, r.owner_principal_id).await?
-            || !projection_matches(gov, r.id, tenant, r.owner_principal_id).await?
         {
+            return Ok(false);
+        }
+        let projection = match r.state.as_str() {
+            "ACTIVE" => gov
+                .spicedb
+                .resource_projection_matches_in_workspace(
+                    &r.id.to_string(),
+                    &tenant.to_string(),
+                    &r.owner_principal_id.to_string(),
+                    r.home_workspace_id.map(|id| id.to_string()).as_deref(),
+                    gov.cfg.relationship_page,
+                )
+                .await
+                .map_err(|e| Refusal::Unavailable(e.to_string()))?,
+            "FAILED" => failed_lifecycle_projection(gov, conn, &r).await?,
+            _ => false,
+        };
+        if !projection {
             return Ok(false);
         }
     }

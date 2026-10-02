@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/automation_detail_view.schema.json",
+  "title": "AutomationDetailView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["automation", "versions", "delegations", "canManage"],
+  "properties": {
+    "automation": {"$ref": "automation_view.schema.json"},
+    "versions": {"type": "array", "items": {"$ref": "automation_version_view.schema.json"}},
+    "delegations": {"type": "array", "items": {"$ref": "automation_delegation_view.schema.json"}},
+    "canManage": {"type": "boolean", "description": "当前 Resource manage；不是运行准入、额度允许或业务成功。"},
+    "nextVersionOffset": {"type": "integer", "minimum": 1},
+    "nextDelegationOffset": {"type": "integer", "minimum": 1}
+  }
+}

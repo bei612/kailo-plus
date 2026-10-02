@@ -18,6 +18,990 @@ use crate::{
 const ACTION: &str = "automation.run";
 
 #[derive(FromRow)]
+pub(crate) struct ManagementResource {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub workspace_id: Uuid,
+    pub owner_principal_id: Uuid,
+    pub version: i32,
+    pub state: String,
+    pub projection_action_execution_id: Option<Uuid>,
+    automation_state: String,
+    executor_installation_resource_id: Uuid,
+    schedule_id: Option<String>,
+    webhook_secret_ref: Option<Value>,
+}
+
+pub(crate) async fn management_resource(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    id: Uuid,
+    lock: bool,
+) -> Result<Option<ManagementResource>, sqlx::Error> {
+    sqlx::query_as(&format!(
+        "select r.id,r.tenant_id,d.workspace_id,r.owner_principal_id,r.version,
+        r.state,r.projection_action_execution_id,d.state automation_state,
+        d.executor_installation_resource_id,d.schedule_id,d.webhook_secret_ref
+        from catalog.resource r join catalog.automation_definition d on d.resource_id=r.id
+        where r.tenant_id=$1 and r.id=$2 and r.type_key='automation'
+          and r.home_workspace_id=d.workspace_id and r.application_binding_id is null{}",
+        if lock { " for update of r,d" } else { "" }
+    ))
+    .bind(tenant)
+    .bind(id)
+    .fetch_optional(conn)
+    .await
+}
+
+pub(crate) async fn management_projection(
+    g: &Governance,
+    row: &ManagementResource,
+) -> Result<bool, Refusal> {
+    g.spicedb
+        .resource_projection_matches_in_workspace(
+            &row.id.to_string(),
+            &row.tenant_id.to_string(),
+            &row.owner_principal_id.to_string(),
+            Some(&row.workspace_id.to_string()),
+            g.cfg.relationship_page,
+        )
+        .await
+        .map_err(|_| Refusal::Unavailable("Automation owner 投影不可核验".into()))
+}
+
+fn invalid_management() -> Refusal {
+    Refusal::Precondition(ReasonCode::InvalidParameters)
+}
+
+/// 使用共享命令契约产生的值；数据库存储沿原 Relay consumer 的 native 字段名。
+fn management_content(value: &Value) -> Result<Value, Refusal> {
+    let object = value.as_object().ok_or_else(invalid_management)?;
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "trigger" | "action" | "resultTarget"))
+    {
+        return Err(invalid_management());
+    }
+    let trigger = value
+        .get("trigger")
+        .and_then(Value::as_object)
+        .ok_or_else(invalid_management)?;
+    let action = value
+        .get("action")
+        .and_then(Value::as_object)
+        .ok_or_else(invalid_management)?;
+    if trigger
+        .keys()
+        .any(|key| !matches!(key.as_str(), "kind" | "textPrefix" | "mentionPrincipalId"))
+        || action
+            .keys()
+            .any(|key| !matches!(key.as_str(), "kind" | "template"))
+        || action.get("kind").and_then(Value::as_str) != Some("AGENT_TURN")
+        || action
+            .get("template")
+            .and_then(Value::as_str)
+            .is_none_or(|text| text.trim().is_empty())
+    {
+        return Err(invalid_management());
+    }
+    let mut native_trigger = json!({"kind":trigger.get("kind").ok_or_else(invalid_management)?});
+    if let Some(prefix) = trigger.get("textPrefix") {
+        if prefix.as_str().is_none_or(str::is_empty) {
+            return Err(invalid_management());
+        }
+        native_trigger["text_prefix"] = prefix.clone();
+    }
+    match trigger.get("kind").and_then(Value::as_str) {
+        Some("CHANNEL_MESSAGE") if !trigger.contains_key("mentionPrincipalId") => {}
+        Some("MENTION") => {
+            let id = trigger
+                .get("mentionPrincipalId")
+                .and_then(Value::as_str)
+                .and_then(|text| Uuid::parse_str(text).ok())
+                .filter(|id| !id.is_nil())
+                .ok_or_else(invalid_management)?;
+            native_trigger["mention_principal_id"] = json!(id);
+        }
+        _ => return Err(invalid_management()),
+    }
+    let result = value
+        .get("resultTarget")
+        .and_then(Value::as_str)
+        .filter(|result| *result == "TRIGGER_THREAD")
+        .ok_or_else(invalid_management)?;
+    Ok(
+        json!({"trigger":native_trigger,"action":action,"approvalPolicyId":null,"resultTarget":result}),
+    )
+}
+
+pub(crate) fn validate_management_params(
+    sem: governance::Semantic,
+    p: &governance::Params,
+) -> Result<(), Refusal> {
+    use governance::Semantic;
+    if p.tenant_id.is_some()
+        || p.principal_id.is_some()
+        || p.slug.is_some()
+        || p.name.is_some()
+        || p.invitation_id.is_some()
+        || p.original_action_execution_id.is_some()
+        || p.agent_version_content.is_some()
+        || p.delegation_grant.is_some()
+        || p.explicit_confirmation != Some(true)
+    {
+        return Err(invalid_management());
+    }
+    let content = matches!(
+        sem,
+        Semantic::AutomationCreate | Semantic::AutomationPublish
+    );
+    if p.automation_version_content.is_some() != content {
+        return Err(invalid_management());
+    }
+    if let Some(value) = &p.automation_version_content {
+        management_content(value)?;
+    }
+    let valid = match sem {
+        Semantic::AutomationCreate => {
+            p.workspace_id.is_some_and(|id| !id.is_nil())
+                && p.executor_installation_resource_id
+                    .is_some_and(|id| !id.is_nil())
+                && p.resource_id.is_none()
+                && p.resource_version.is_none()
+                && p.asset_id.is_none()
+                && p.asset_version.is_none()
+                && p.delegation_id.is_none()
+                && p.delegation_version.is_none()
+        }
+        Semantic::AutomationPublish
+        | Semantic::AutomationEnable
+        | Semantic::AutomationPause
+        | Semantic::AutomationDisable => {
+            p.workspace_id.is_none()
+                && p.executor_installation_resource_id.is_none()
+                && p.resource_id.is_some_and(|id| !id.is_nil())
+                && p.resource_version.is_some_and(|v| v > 0)
+                && if sem == Semantic::AutomationEnable {
+                    p.asset_id.is_some_and(|id| !id.is_nil())
+                        && p.asset_version.is_some_and(|v| v > 0)
+                        && p.delegation_id.is_some_and(|id| !id.is_nil())
+                        && p.delegation_version.is_some_and(|v| v > 0)
+                } else {
+                    p.asset_id.is_none()
+                        && p.asset_version.is_none()
+                        && p.delegation_id.is_none()
+                        && p.delegation_version.is_none()
+                }
+        }
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(invalid_management())
+    }
+}
+
+pub(crate) async fn management_target(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    initiator: Uuid,
+    def: &Definition,
+    p: &governance::Params,
+    frozen: Option<Uuid>,
+    lock: bool,
+) -> Result<Target, Refusal> {
+    use governance::Semantic;
+    let sem = Semantic::from_key(&def.action_key)
+        .filter(|sem| sem.is_automation())
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    validate_management_params(sem, p)?;
+    let creating = sem == Semantic::AutomationCreate;
+    if def.target_type != "RESOURCE"
+        || def.tenant_rule != "SESSION_TENANT"
+        || def.workspace_rule
+            != if creating {
+                "WORKSPACE_REQUIRED"
+            } else {
+                "TARGET_HOME_WORKSPACE"
+            }
+        || def.permission_object_type != if creating { "workspace" } else { "resource" }
+        || def.permission != if creating { "create" } else { "manage" }
+        || def.execution_mode != "SYNC"
+        || def.confirmation_mode != "EXPLICIT"
+        || def.approval_policy_id.is_some()
+        || def.approval_policy_version.is_some()
+        || def.workflow_kind.is_some()
+        || def.quota_policy != "NONE"
+        || !def.meters.is_empty()
+        || def.result_exposure != "NONE"
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    if lock && !crate::agent_definition::active_owner(conn, tenant, initiator).await? {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    if creating {
+        let workspace = p.workspace_id.ok_or_else(invalid_management)?;
+        let active:bool=sqlx::query_scalar("select exists(select 1 from catalog.resource_type_definition
+            where type_key='automation' and status='ACTIVE' and tenant_delete_action_key='tenant.delete')")
+            .fetch_one(&mut *conn).await?;
+        if !active {
+            return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+        }
+        let actual: Option<Uuid> = sqlx::query_scalar(&format!(
+            "select i.agent_principal_id from identity.workspace w
+            join catalog.agent_installation i on i.workspace_id=w.id
+            join catalog.resource r on r.id=i.resource_id and r.tenant_id=w.tenant_id
+            where w.id=$1 and w.tenant_id=$2 and w.state='ACTIVE' and i.resource_id=$3
+              and r.type_key='agent.installation' and r.home_workspace_id=w.id
+              and r.state not in ('DELETED','FAILED'){}",
+            if lock { " for update of w,i,r" } else { "" }
+        ))
+        .bind(workspace)
+        .bind(tenant)
+        .bind(p.executor_installation_resource_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+        let agent = actual.ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
+        let content = management_content(
+            p.automation_version_content
+                .as_ref()
+                .ok_or_else(invalid_management)?,
+        )?;
+        if content.pointer("/trigger/kind").and_then(Value::as_str) == Some("MENTION")
+            && content
+                .pointer("/trigger/mention_principal_id")
+                .and_then(Value::as_str)
+                != Some(agent.to_string().as_str())
+        {
+            return Err(invalid_management());
+        }
+        return Ok(Target {
+            id: frozen.unwrap_or_else(Uuid::new_v4),
+            version: 0,
+            workspace_id: Some(workspace),
+        });
+    }
+    let row = management_resource(
+        conn,
+        tenant,
+        p.resource_id.ok_or_else(invalid_management)?,
+        lock,
+    )
+    .await?
+    .filter(|r| {
+        r.state == "ACTIVE"
+            && r.projection_action_execution_id.is_none()
+            && Some(r.version) == p.resource_version
+            && frozen.is_none_or(|id| id == r.id)
+    })
+    .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    if row.schedule_id.is_some()
+        || row.webhook_secret_ref.is_some()
+        || !matches!(
+            row.automation_state.as_str(),
+            "DRAFT" | "ENABLED" | "PAUSED" | "DISABLED"
+        )
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    if (sem == Semantic::AutomationPause && row.automation_state != "ENABLED")
+        || (sem == Semantic::AutomationEnable && row.automation_state == "ENABLED")
+        || (sem == Semantic::AutomationDisable && row.automation_state == "DISABLED")
+    {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    let workspace: Option<Uuid> = sqlx::query_scalar(&format!(
+        "select id from identity.workspace
+        where id=$1 and tenant_id=$2 and state='ACTIVE'{}",
+        if lock { " for update" } else { "" }
+    ))
+    .bind(row.workspace_id)
+    .bind(tenant)
+    .fetch_optional(&mut *conn)
+    .await?;
+    if workspace.is_none() {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    Ok(Target {
+        id: row.id,
+        version: row.version,
+        workspace_id: Some(row.workspace_id),
+    })
+}
+
+async fn management_installation(
+    g: &Governance,
+    tx: &mut Transaction<'_, Postgres>,
+    tenant: Uuid,
+    workspace: Uuid,
+    installation: Uuid,
+    human: Uuid,
+    content: &Value,
+) -> Result<(), Refusal> {
+    let actual:Option<(Uuid,Value)>=sqlx::query_as("select i.agent_principal_id,v.content
+        from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
+        join catalog.agent_version v on v.asset_id=i.pinned_version_asset_id
+        join catalog.asset a on a.id=v.asset_id and a.tenant_id=r.tenant_id
+        join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
+          and p.generation=i.active_projection_generation and p.agent_version_asset_id=v.asset_id
+        join catalog.agent_model_binding b on b.installation_resource_id=i.resource_id
+          and b.projection_generation=p.generation and b.model_route_resource_id=p.model_route_resource_id
+        join identity.principal agent on agent.id=i.agent_principal_id and agent.tenant_id=r.tenant_id
+        join identity.principal owner on owner.id=r.owner_principal_id and owner.tenant_id=r.tenant_id
+        join identity.tenant_membership tm on tm.tenant_id=r.tenant_id and tm.tenant_principal_id=owner.id
+        join identity.principal version_owner on version_owner.id=a.owner_principal_id and version_owner.tenant_id=r.tenant_id
+        join identity.tenant_membership version_tm on version_tm.tenant_id=r.tenant_id and version_tm.tenant_principal_id=version_owner.id
+        where r.id=$1 and r.tenant_id=$2 and i.workspace_id=$3 and r.home_workspace_id=$3
+          and r.state='ACTIVE' and r.projection_action_execution_id is null and i.state='ACTIVE'
+          and v.state='PUBLISHED' and a.state='PUBLISHED' and a.projection_action_execution_id is null
+          and p.state='ACTIVE' and b.secret_status='ACTIVE' and b.secret_version>0
+          and length(b.secret_locator)>0 and length(b.secret_audience)>0
+          and length(b.native_key_id)>0 and b.native_key_revision>0
+          and agent.kind='AGENT' and agent.status='ACTIVE'
+          and owner.kind='HUMAN' and owner.status='ACTIVE' and tm.state='ACTIVE'
+          and version_owner.kind='HUMAN' and version_owner.status='ACTIVE' and version_tm.state='ACTIVE'
+        for update of r,i,v,a,p,b,agent,owner,tm,version_owner,version_tm")
+        .bind(installation).bind(tenant).bind(workspace).fetch_optional(&mut **tx).await?;
+    let Some((agent, requested)) = actual else {
+        return Err(Refusal::Precondition(ReasonCode::BindingNotActive));
+    };
+    if content.pointer("/trigger/kind").and_then(Value::as_str) == Some("MENTION")
+        && content
+            .pointer("/trigger/mention_principal_id")
+            .and_then(Value::as_str)
+            != Some(agent.to_string().as_str())
+    {
+        return Err(invalid_management());
+    }
+    if !content.get("approvalPolicyId").is_none_or(Value::is_null) {
+        // 当前首 turn 没有 child step Approval consumer；不让发布假装可运行。
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let requested: contracts::ContentClass = serde_json::from_value(requested)
+        .map_err(|_| Refusal::Unavailable("Installation 已发布 Version 不符合共享契约".into()))?;
+    crate::agent_version::validate_references(g, tx, tenant, human, &requested).await
+}
+
+pub(crate) async fn management_prewrite(
+    g: &Governance,
+    tx: &mut Transaction<'_, Postgres>,
+    ae: &governance::Execution,
+    def: &Definition,
+    sem: governance::Semantic,
+    p: &governance::Params,
+) -> Result<(), Refusal> {
+    use governance::Semantic;
+    if sem == Semantic::AutomationCreate {
+        let normalized = management_content(
+            p.automation_version_content
+                .as_ref()
+                .ok_or_else(invalid_management)?,
+        )?;
+        let workspace = ae.workspace_id.ok_or_else(invalid_management)?;
+        sqlx::query("insert into catalog.resource
+            (id,tenant_id,type_key,owner_principal_id,home_workspace_id,component_type_key,native_type,native_id,state,version,projection_action_execution_id)
+            values($1,$2,'automation',$3,$4,$5,'automation',$1::text,'PROVISIONING',1,$6)")
+            .bind(ae.target_id).bind(ae.tenant_id).bind(ae.initiator_principal_id).bind(workspace)
+            .bind(&def.component_type_key).bind(ae.id).execute(&mut **tx).await?;
+        sqlx::query("insert into catalog.automation_definition
+            (resource_id,workspace_id,executor_installation_resource_id,state,version) values($1,$2,$3,'DRAFT',1)")
+            .bind(ae.target_id).bind(workspace).bind(p.executor_installation_resource_id)
+            .execute(&mut **tx).await?;
+        return management_insert_version(tx, ae, ae.target_id, normalized).await;
+    }
+    let row = management_resource(tx, ae.tenant_id, ae.target_id, true)
+        .await?
+        .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
+    if !crate::agent_definition::active_owner(tx, ae.tenant_id, row.owner_principal_id).await?
+        || !management_projection(g, &row).await?
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    match sem {
+        Semantic::AutomationPublish => {
+            let normalized = management_content(
+                p.automation_version_content
+                    .as_ref()
+                    .ok_or_else(invalid_management)?,
+            )?;
+            management_installation(
+                g,
+                tx,
+                ae.tenant_id,
+                row.workspace_id,
+                row.executor_installation_resource_id,
+                ae.initiator_principal_id,
+                &normalized,
+            )
+            .await?;
+            management_insert_version(tx, ae, row.id, normalized).await
+        }
+        Semantic::AutomationEnable => {
+            let version: Option<ManagementVersion> = sqlx::query_as(
+                "select a.id asset_id,a.owner_principal_id,
+                a.state,a.projection_action_execution_id,v.config_hash,
+                jsonb_build_object('trigger',v.trigger,'action',v.action,
+                'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target) content
+                from catalog.automation_version v join catalog.asset a on a.id=v.asset_id
+                where v.asset_id=$1 and v.automation_resource_id=$2 and v.state='PUBLISHED'
+                  and a.tenant_id=$3 and a.resource_id=$2 and a.state='PUBLISHED' and a.version=$4
+                  and a.type_key='automation.version'
+                  and a.projection_action_execution_id is null for update of a,v",
+            )
+            .bind(p.asset_id)
+            .bind(row.id)
+            .bind(ae.tenant_id)
+            .bind(p.asset_version)
+            .fetch_optional(&mut **tx)
+            .await?;
+            let version = version.ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+            if collab_bridge::limits::canonical_digest(&version.content) != version.config_hash
+                || !crate::agent_definition::active_owner(
+                    tx,
+                    ae.tenant_id,
+                    version.owner_principal_id,
+                )
+                .await?
+                || !g
+                    .spicedb
+                    .asset_projection_matches(
+                        &version.asset_id.to_string(),
+                        &ae.tenant_id.to_string(),
+                        &row.id.to_string(),
+                        &version.owner_principal_id.to_string(),
+                        g.cfg.relationship_page,
+                    )
+                    .await
+                    .map_err(|_| {
+                        Refusal::Unavailable("Automation Version owner 投影不可核验".into())
+                    })?
+            {
+                return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
+            }
+            management_installation(
+                g,
+                tx,
+                ae.tenant_id,
+                row.workspace_id,
+                row.executor_installation_resource_id,
+                row.owner_principal_id,
+                &version.content,
+            )
+            .await?;
+            management_grant(g, tx, &row, p).await?;
+            sqlx::query("update catalog.automation_definition set pinned_version_asset_id=$2,delegation_id=$3,
+                state='ENABLED',enabled_at=clock_timestamp(),version=version+1 where resource_id=$1")
+                .bind(row.id).bind(p.asset_id).bind(p.delegation_id).execute(&mut **tx).await?;
+            sqlx::query("update catalog.resource set version=version+1 where id=$1")
+                .bind(row.id)
+                .execute(&mut **tx)
+                .await?;
+            Ok(())
+        }
+        Semantic::AutomationPause | Semantic::AutomationDisable => {
+            sqlx::query("update catalog.automation_definition set state=$2,version=version+1 where resource_id=$1")
+                .bind(row.id).bind(if sem==Semantic::AutomationPause{"PAUSED"}else{"DISABLED"})
+                .execute(&mut **tx).await?;
+            sqlx::query("update catalog.resource set version=version+1 where id=$1")
+                .bind(row.id)
+                .execute(&mut **tx)
+                .await?;
+            Ok(())
+        }
+        _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
+    }
+}
+
+async fn management_insert_version(
+    tx: &mut Transaction<'_, Postgres>,
+    ae: &governance::Execution,
+    resource: Uuid,
+    content: Value,
+) -> Result<(), Refusal> {
+    let ordinal:i32=sqlx::query_scalar("select coalesce(max(ordinal),0)+1 from catalog.automation_version where automation_resource_id=$1")
+        .bind(resource).fetch_one(&mut **tx).await?;
+    let approval = content
+        .get("approvalPolicyId")
+        .and_then(Value::as_str)
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| invalid_management())?;
+    sqlx::query("insert into catalog.asset
+        (id,tenant_id,resource_id,type_key,owner_principal_id,producer_principal_id,native_ref,state,version,projection_action_execution_id)
+        values($1,$2,$3,'automation.version',$4,$4,$1::text,'DRAFT',1,$1)")
+        .bind(ae.id).bind(ae.tenant_id).bind(resource).bind(ae.initiator_principal_id).execute(&mut **tx).await?;
+    sqlx::query("insert into catalog.automation_version
+        (asset_id,automation_resource_id,ordinal,trigger,action,approval_policy_id,result_target,config_hash,state)
+        values($1,$2,$3,$4,$5,$6,$7,$8,'DRAFT')")
+        .bind(ae.id).bind(resource).bind(ordinal).bind(&content["trigger"]).bind(&content["action"])
+        .bind(approval).bind(content["resultTarget"].as_str()).bind(collab_bridge::limits::canonical_digest(&content))
+        .execute(&mut **tx).await?;
+    Ok(())
+}
+
+async fn management_grant(
+    g: &Governance,
+    tx: &mut Transaction<'_, Postgres>,
+    row: &ManagementResource,
+    p: &governance::Params,
+) -> Result<(), Refusal> {
+    let run_def = definition(g).await?;
+    let grant: Option<Uuid> = sqlx::query_scalar(
+        "select id from admission.delegation_grant
+        where id=$1 and version=$2 and tenant_id=$3 and workspace_id=$4
+          and grantor_principal_id=$5 and installation_resource_id=$6 and state='ACTIVE'
+          and valid_from<=clock_timestamp() and expires_at>clock_timestamp() for update",
+    )
+    .bind(p.delegation_id)
+    .bind(p.delegation_version)
+    .bind(row.tenant_id)
+    .bind(row.workspace_id)
+    .bind(row.owner_principal_id)
+    .bind(row.executor_installation_resource_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if grant.is_none() {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    let allowed:bool=sqlx::query_scalar("select exists(select 1 from admission.delegation_grant g
+        join admission.delegation_scope scope on scope.delegation_id=g.id
+        join catalog.agent_installation i on i.resource_id=g.installation_resource_id
+        join catalog.result_exposure_policy exposure on exposure.id=scope.result_exposure_policy_id
+          and exposure.version=scope.result_exposure_policy_version
+        where g.id=$1 and g.version=$2 and g.tenant_id=$3 and g.workspace_id=$4
+          and g.grantor_principal_id=$5 and g.installation_resource_id=$6
+          and g.agent_principal_id=i.agent_principal_id and g.state='ACTIVE'
+          and g.valid_from<=clock_timestamp() and g.expires_at>clock_timestamp()
+          and (g.max_uses is null or g.max_uses>(select count(*) from admission.delegation_use u where u.delegation_id=g.id))
+          and scope.action_key=$7 and scope.action_version=$8 and scope.target_type='RESOURCE' and scope.target_id=$9
+          and scope.create_workspace_id is null and scope.tool_resource_id is null
+          and exposure.tenant_id=$3 and exposure.status='ACTIVE' and exposure.mode='CONSUME_ONLY'
+          and exposure.output_schema_hash=$10 and exposure.redaction_policy=$11)")
+        .bind(p.delegation_id).bind(p.delegation_version).bind(row.tenant_id).bind(row.workspace_id)
+        .bind(row.owner_principal_id).bind(row.executor_installation_resource_id).bind(ACTION).bind(run_def.version)
+        .bind(row.id).bind(contracts_hash()).bind("PLATFORM_METADATA_ONLY").fetch_one(&mut **tx).await?;
+    if !allowed {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    // Grant 行锁覆盖 revoke；到期仍按时钟判定，管理 NONE 不读额度或占用次数。
+    let agent: Uuid = sqlx::query_scalar(
+        "select agent_principal_id from catalog.agent_installation where resource_id=$1",
+    )
+    .bind(row.executor_installation_resource_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    for principal in [row.owner_principal_id, agent] {
+        let checked = g
+            .spicedb
+            .check(
+                "resource",
+                &row.id.to_string(),
+                "execute",
+                &principal.to_string(),
+                Consistency::FullyConsistent,
+            )
+            .await
+            .map_err(|_| Refusal::Unavailable("Automation execute 不可核验".into()))?;
+        if checked.zed_token.is_empty() {
+            return Err(Refusal::Unavailable(
+                "Automation execute 缺原生 checked revision".into(),
+            ));
+        }
+        if !checked.allowed {
+            return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+        }
+    }
+    let valid: bool = sqlx::query_scalar(
+        "select valid_from<=clock_timestamp() and expires_at>clock_timestamp()
+        from admission.delegation_grant where id=$1 and state='ACTIVE'",
+    )
+    .bind(p.delegation_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !valid {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    Ok(())
+}
+
+/// Delegation消费的是已接入Relay→Invocation→Task的原run合同，不走HUMAN管理Semantic。
+pub(crate) async fn delegation_target(
+    g: &Governance,
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    workspace: Uuid,
+    installation: Uuid,
+    human: Uuid,
+    target: (Uuid, i64),
+) -> Result<(), Refusal> {
+    let (target, action_version) = target;
+    let def = definition(g).await?;
+    if i64::from(def.version) != action_version {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let row = management_resource(conn, tenant, target, false)
+        .await?
+        .filter(|row| {
+            row.workspace_id == workspace
+                && row.executor_installation_resource_id == installation
+                && row.owner_principal_id == human
+                && row.state == "ACTIVE"
+                && row.projection_action_execution_id.is_none()
+        })
+        .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
+    if !management_projection(g, &row).await? {
+        return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
+    }
+    Ok(())
+}
+
+#[derive(FromRow)]
+struct ManagementVersion {
+    asset_id: Uuid,
+    owner_principal_id: Uuid,
+    state: String,
+    projection_action_execution_id: Option<Uuid>,
+    config_hash: String,
+    content: Value,
+}
+
+/// create/publish 的唯一派发入口。native关系写入的未知结果沿同AE读回，不分配新ID。
+pub(crate) async fn management_dispatch(
+    g: &Governance,
+    id: Uuid,
+    def: &Definition,
+    sem: governance::Semantic,
+) -> Result<(), Refusal> {
+    use governance::Semantic;
+    let mut tx = g.pool.begin().await?;
+    let ae = governance::lock_execution(&mut tx, id).await?;
+    if ae.gate_state != "ALLOWED"
+        || !matches!(ae.dispatch_state.as_str(), "NOT_DISPATCHED" | "UNKNOWN")
+    {
+        return Ok(());
+    }
+    let creating = sem == Semantic::AutomationCreate;
+    if !creating && sem != Semantic::AutomationPublish {
+        return Ok(());
+    }
+    let active: bool =
+        sqlx::query_scalar("select state='ACTIVE' from identity.tenant where id=$1 for update")
+            .bind(ae.tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .unwrap_or(false);
+    let row = management_resource(&mut tx, ae.tenant_id, ae.target_id, true)
+        .await?
+        .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    let version:ManagementVersion=sqlx::query_as("select a.id asset_id,a.owner_principal_id,a.state,
+        a.projection_action_execution_id,v.config_hash,jsonb_build_object('trigger',v.trigger,'action',v.action,
+          'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target) content
+        from catalog.asset a join catalog.automation_version v on v.asset_id=a.id
+        where a.id=$1 and a.tenant_id=$2 and a.resource_id=$3 and a.type_key='automation.version'
+          and v.automation_resource_id=$3 for update of a,v")
+        .bind(ae.id).bind(ae.tenant_id).bind(row.id).fetch_one(&mut *tx).await?;
+    if version.projection_action_execution_id != Some(ae.id)
+        || version.state != "DRAFT"
+        || collab_bridge::limits::canonical_digest(&version.content) != version.config_hash
+        || (creating && row.projection_action_execution_id != Some(ae.id))
+    {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    let workspace: Option<Uuid> = sqlx::query_scalar(
+        "select id from identity.workspace
+        where id=$1 and tenant_id=$2 and state='ACTIVE' for update",
+    )
+    .bind(row.workspace_id)
+    .bind(ae.tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let valid = active
+        && workspace.is_some()
+        && crate::agent_definition::active_owner(&mut tx, ae.tenant_id, row.owner_principal_id)
+            .await?
+        && crate::agent_definition::active_owner(&mut tx, ae.tenant_id, version.owner_principal_id)
+            .await?
+        && crate::agent_definition::active_owner(&mut tx, ae.tenant_id, ae.initiator_principal_id)
+            .await?
+        && if creating {
+            row.state == "PROVISIONING"
+        } else {
+            row.state == "ACTIVE"
+                && row.projection_action_execution_id.is_none()
+                && Some(row.version) == ae.frozen_target_version()
+        };
+    if !valid {
+        return management_abort(g, tx, &ae, def, &row, version.asset_id, creating).await;
+    }
+    if let Err(error) = management_authorized(g, &mut tx, &ae, def, &row).await {
+        return match error {
+            Refusal::Unavailable(_) => management_unknown(tx, &ae, def).await,
+            _ => management_abort(g, tx, &ae, def, &row, version.asset_id, creating).await,
+        };
+    }
+    if !creating {
+        if let Err(error) = management_installation(
+            g,
+            &mut tx,
+            ae.tenant_id,
+            row.workspace_id,
+            row.executor_installation_resource_id,
+            ae.initiator_principal_id,
+            &version.content,
+        )
+        .await
+        {
+            return match error {
+                Refusal::Unavailable(_) => management_unknown(tx, &ae, def).await,
+                _ => management_abort(g, tx, &ae, def, &row, version.asset_id, false).await,
+            };
+        }
+    }
+    let parent = match management_projection(g, &row).await {
+        Ok(matched) => matched,
+        Err(_) => return management_unknown(tx, &ae, def).await,
+    };
+    if !parent {
+        if !creating {
+            return management_unknown(tx, &ae, def).await;
+        }
+        if g.spicedb
+            .replace_resource_projection(
+                &row.id.to_string(),
+                &row.tenant_id.to_string(),
+                &row.owner_principal_id.to_string(),
+                &row.owner_principal_id.to_string(),
+                Some(&row.workspace_id.to_string()),
+            )
+            .await
+            .is_err()
+        {
+            return management_unknown(tx, &ae, def).await;
+        }
+    }
+    let asset = match g
+        .spicedb
+        .asset_projection_matches(
+            &version.asset_id.to_string(),
+            &row.tenant_id.to_string(),
+            &row.id.to_string(),
+            &version.owner_principal_id.to_string(),
+            g.cfg.relationship_page,
+        )
+        .await
+    {
+        Ok(matched) => matched,
+        Err(_) => return management_unknown(tx, &ae, def).await,
+    };
+    if !asset
+        && g.spicedb
+            .write_asset_projection(
+                &version.asset_id.to_string(),
+                &row.tenant_id.to_string(),
+                &row.id.to_string(),
+                &version.owner_principal_id.to_string(),
+            )
+            .await
+            .is_err()
+    {
+        return management_unknown(tx, &ae, def).await;
+    }
+    if !matches!(management_projection(g, &row).await, Ok(true))
+        || !matches!(
+            g.spicedb
+                .asset_projection_matches(
+                    &version.asset_id.to_string(),
+                    &row.tenant_id.to_string(),
+                    &row.id.to_string(),
+                    &version.owner_principal_id.to_string(),
+                    g.cfg.relationship_page
+                )
+                .await,
+            Ok(true)
+        )
+    {
+        return management_unknown(tx, &ae, def).await;
+    }
+    let proof = match g
+        .spicedb
+        .check(
+            "asset",
+            &version.asset_id.to_string(),
+            "read",
+            &version.owner_principal_id.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+    {
+        Ok(proof) if proof.allowed && !proof.zed_token.is_empty() => proof.zed_token,
+        _ => return management_unknown(tx, &ae, def).await,
+    };
+    sqlx::query(
+        "update catalog.asset set projection_action_execution_id=null,version=version+1,
+        state=case when $2 then 'DRAFT' else 'PUBLISHED' end where id=$1",
+    )
+    .bind(version.asset_id)
+    .bind(creating)
+    .execute(&mut *tx)
+    .await?;
+    if !creating {
+        sqlx::query("update catalog.automation_version set state='PUBLISHED' where asset_id=$1 and state='DRAFT'")
+            .bind(version.asset_id).execute(&mut *tx).await?;
+    }
+    sqlx::query("update catalog.resource set state='ACTIVE',version=version+1,projection_action_execution_id=null where id=$1")
+        .bind(row.id).execute(&mut *tx).await?;
+    governance::record_dispatch(
+        &mut tx,
+        ae.id,
+        def.audit_class(),
+        Ok(()),
+        vec![crate::audit::Evidence::new(
+            contracts::EvidenceKind::SpicedbZedtoken,
+            proof,
+        )],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn management_authorized(
+    g: &Governance,
+    tx: &mut Transaction<'_, Postgres>,
+    ae: &governance::Execution,
+    def: &Definition,
+    row: &ManagementResource,
+) -> Result<(), Refusal> {
+    let membership: Option<String> = sqlx::query_scalar(
+        "select state from identity.workspace_membership
+        where workspace_id=$1 and tenant_principal_id=$2 for update",
+    )
+    .bind(row.workspace_id)
+    .bind(ae.initiator_principal_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if membership.as_deref() != Some("ACTIVE") {
+        let (kind, id) = if membership.is_some() {
+            ("tenant", row.tenant_id)
+        } else {
+            ("workspace", row.workspace_id)
+        };
+        let checked = g
+            .spicedb
+            .check(
+                kind,
+                &id.to_string(),
+                "manage",
+                &ae.initiator_principal_id.to_string(),
+                Consistency::FullyConsistent,
+            )
+            .await
+            .map_err(|_| Refusal::Unavailable("Automation Workspace 资格不可核验".into()))?;
+        if checked.zed_token.is_empty() {
+            return Err(Refusal::Unavailable(
+                "Automation scope 缺原生 checked revision".into(),
+            ));
+        }
+        if !checked.allowed {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
+    }
+    let object = if def.permission_object_type == "workspace" {
+        row.workspace_id
+    } else {
+        row.id
+    };
+    let checked = g
+        .spicedb
+        .check(
+            &def.permission_object_type,
+            &object.to_string(),
+            &def.permission,
+            &ae.initiator_principal_id.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| Refusal::Unavailable("Automation fresh authorization 不可核验".into()))?;
+    if checked.zed_token.is_empty() {
+        return Err(Refusal::Unavailable(
+            "Automation authorization 缺原生 checked revision".into(),
+        ));
+    }
+    if !checked.allowed {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    Ok(())
+}
+
+async fn management_unknown(
+    mut tx: Transaction<'_, Postgres>,
+    ae: &governance::Execution,
+    def: &Definition,
+) -> Result<(), Refusal> {
+    governance::record_dispatch(
+        &mut tx,
+        ae.id,
+        def.audit_class(),
+        Err(axum::http::StatusCode::SERVICE_UNAVAILABLE),
+        Vec::new(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn management_abort(
+    g: &Governance,
+    mut tx: Transaction<'_, Postgres>,
+    ae: &governance::Execution,
+    def: &Definition,
+    row: &ManagementResource,
+    asset: Uuid,
+    creating: bool,
+) -> Result<(), Refusal> {
+    let proof = match g.spicedb.delete_asset_projection(asset).await {
+        Ok(proof) if !proof.is_empty() => proof,
+        _ => return management_unknown(tx, ae, def).await,
+    };
+    let mut evidence = vec![crate::audit::Evidence::new(
+        contracts::EvidenceKind::SpicedbZedtoken,
+        proof,
+    )];
+    if creating {
+        let parent_proof = match g.spicedb.delete_resource_projection(row.id).await {
+            Ok(proof) if !proof.is_empty() => proof,
+            _ => return management_unknown(tx, ae, def).await,
+        };
+        evidence.push(crate::audit::Evidence::new(
+            contracts::EvidenceKind::SpicedbZedtoken,
+            parent_proof,
+        ));
+        sqlx::query("update catalog.automation_definition set state='DISABLED',version=version+1 where resource_id=$1")
+            .bind(row.id).execute(&mut *tx).await?;
+        sqlx::query("update catalog.resource set state='FAILED',version=version+1,projection_action_execution_id=null where id=$1")
+            .bind(row.id).execute(&mut *tx).await?;
+    }
+    sqlx::query("update catalog.automation_version set state='RETIRED' where asset_id=$1")
+        .bind(asset)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("update catalog.asset set state='DELETED',version=version+1,projection_action_execution_id=null where id=$1")
+        .bind(asset).execute(&mut *tx).await?;
+    governance::record_dispatch(
+        &mut tx,
+        ae.id,
+        def.audit_class(),
+        Err(axum::http::StatusCode::FORBIDDEN),
+        evidence,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+#[derive(FromRow)]
 struct Run {
     resource_id: Uuid,
     tenant_id: Uuid,
@@ -43,14 +1027,17 @@ struct Run {
 
 // 同一 scope 的真实对象，不从当前 pointer 推断已经冻结的 Invocation。
 const RUN: &str = "select r.id resource_id,r.tenant_id,d.workspace_id,r.version resource_version,
-    r.owner_principal_id,tm.human_identity_id,d.executor_installation_resource_id,
-    i.agent_principal_id,d.delegation_id,v.asset_id automation_version_asset_id,
-    a.version automation_version,i.pinned_version_asset_id agent_version_asset_id,
-    i.active_projection_generation projection_generation,v.trigger,v.action,v.approval_policy_id,
+    r.owner_principal_id,tm.human_identity_id,i.resource_id executor_installation_resource_id,
+    i.agent_principal_id,case when $2::uuid is null then d.delegation_id else invocation.delegation_id end delegation_id,
+    v.asset_id automation_version_asset_id,a.version automation_version,p.agent_version_asset_id,
+    p.generation projection_generation,v.trigger,v.action,v.approval_policy_id,
     v.result_target,v.config_hash,d.enabled_at,a.owner_principal_id version_owner_principal_id
     from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id
     join catalog.resource_type_definition type on type.type_key=r.type_key
-    join catalog.automation_version v on v.asset_id=d.pinned_version_asset_id and v.automation_resource_id=r.id
+    left join catalog.agent_invocation invocation on invocation.id=$2 and invocation.automation_resource_id=r.id
+      and invocation.tenant_id=r.tenant_id and invocation.workspace_id=d.workspace_id
+    join catalog.automation_version v on v.asset_id=case when $2::uuid is null then d.pinned_version_asset_id
+      else invocation.automation_version_asset_id end and v.automation_resource_id=r.id
     join catalog.asset a on a.id=v.asset_id and a.resource_id=r.id and a.tenant_id=r.tenant_id
     join identity.tenant t on t.id=r.tenant_id
     join identity.workspace w on w.id=d.workspace_id and w.tenant_id=t.id
@@ -58,14 +1045,20 @@ const RUN: &str = "select r.id resource_id,r.tenant_id,d.workspace_id,r.version 
     join identity.tenant_membership tm on tm.tenant_principal_id=owner.id and tm.tenant_id=t.id
     join identity.principal version_owner on version_owner.id=a.owner_principal_id and version_owner.tenant_id=t.id
     join identity.tenant_membership version_tm on version_tm.tenant_principal_id=version_owner.id and version_tm.tenant_id=t.id
-    join catalog.agent_installation i on i.resource_id=d.executor_installation_resource_id and i.workspace_id=w.id
+    join catalog.agent_installation i on i.resource_id=case when $2::uuid is null then d.executor_installation_resource_id
+      else invocation.installation_resource_id end and i.workspace_id=w.id
     join catalog.resource ir on ir.id=i.resource_id and ir.tenant_id=t.id and ir.home_workspace_id=w.id
     join identity.principal agent on agent.id=i.agent_principal_id and agent.tenant_id=t.id
     join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
       and p.generation=i.active_projection_generation and p.agent_version_asset_id=i.pinned_version_asset_id
+      and ($2::uuid is null or (p.generation=invocation.projection_generation
+        and p.agent_version_asset_id=invocation.agent_version_asset_id))
     where r.id=$1 and r.type_key='automation' and r.home_workspace_id=w.id
       and r.application_binding_id is null and r.state='ACTIVE' and r.projection_action_execution_id is null
-      and type.status='ACTIVE' and d.state='ENABLED' and d.enabled_at is not null
+      and type.status='ACTIVE' and d.enabled_at is not null
+      and (($2::uuid is null and d.state='ENABLED') or ($2::uuid is not null
+        and d.state in ('ENABLED','PAUSED','DISABLED') and invocation.id is not null
+        and invocation.status in ('CREATED','DISPATCHING','RUNNING','UNKNOWN') and not invocation.cancel_pending))
       and t.state='ACTIVE' and w.state='ACTIVE' and v.state='PUBLISHED' and a.state='PUBLISHED'
       and a.type_key='automation.version' and a.projection_action_execution_id is null
       and owner.kind='HUMAN' and owner.status='ACTIVE' and tm.state='ACTIVE'
@@ -73,11 +1066,16 @@ const RUN: &str = "select r.id resource_id,r.tenant_id,d.workspace_id,r.version 
       and ir.type_key='agent.installation' and ir.state='ACTIVE' and ir.projection_action_execution_id is null
       and i.state='ACTIVE' and agent.kind='AGENT' and agent.status='ACTIVE' and p.state='ACTIVE'";
 
-async fn run(tx: &mut Transaction<'_, Postgres>, resource: Uuid) -> Result<Run, Refusal> {
+async fn run(
+    tx: &mut Transaction<'_, Postgres>,
+    resource: Uuid,
+    invocation: Option<Uuid>,
+) -> Result<Run, Refusal> {
     sqlx::query_as(&format!(
         "{RUN} for update of r,d,a,v,w,owner,tm,version_owner,version_tm,ir,i,agent,p"
     ))
     .bind(resource)
+    .bind(invocation)
     .fetch_optional(&mut **tx)
     .await?
     .ok_or(Refusal::Precondition(ReasonCode::TargetStateConflict))
@@ -144,7 +1142,7 @@ async fn fresh(
             Some("CHANNEL_MESSAGE" | "MENTION")
         )
         || row.approval_policy_id.is_some()
-        || !matches!(row.result_target.as_str(), "TRIGGER_THREAD" | "CHANNEL")
+        || row.result_target != "TRIGGER_THREAD"
         || row.config_hash
             != collab_bridge::limits::canonical_digest(&json!({
             "trigger":row.trigger,"action":row.action,"approvalPolicyId":row.approval_policy_id,
@@ -254,6 +1252,19 @@ async fn fresh(
         revision = Some(checked.zed_token);
     }
     g.check_automation_quota(row.tenant_id, def).await?;
+    // 外部 permission、runtime 与 quota 读取可能跨过到期时刻；原 Grant 行锁
+    // 阻止 revoke 写入，但不能冻结时钟。每个真实副作用前按当前数据库时钟收口。
+    let still_valid: bool = sqlx::query_scalar(
+        "select exists(select 1 from admission.delegation_grant
+         where id=$1 and state='ACTIVE' and valid_from<=clock_timestamp()
+           and expires_at>clock_timestamp())",
+    )
+    .bind(row.delegation_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !still_valid {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
     revision.ok_or_else(|| Refusal::Unavailable("Automation permission 未读取".into()))
 }
 
@@ -281,26 +1292,63 @@ struct FrozenInvocation {
     root_event_id: String,
 }
 
+const FROZEN_INVOCATION_SQL: &str = "select i.automation_resource_id,i.automation_version_asset_id,i.action_execution_id,a.operation_id,
+            a.action_version,i.agent_version_asset_id,i.projection_generation,i.delegation_id,
+            i.source_event_id,i.root_event_id
+         from catalog.agent_invocation i join admission.action_execution a on a.id=i.action_execution_id
+         where i.id=$1 and not i.cancel_pending
+           and (($3::text is null and $4::text is null and i.status in ('CREATED','DISPATCHING') and i.runtime_turn_id is null)
+             or ($3::text is not null and i.status in ('RUNNING','UNKNOWN')
+               and i.native_status='completed' and i.runtime_turn_id=$3 and i.reply_event_id is not distinct from $4::text))
+           and a.action_key=$2 and a.gate_state='ALLOWED' and a.dispatch_state='DISPATCHED'
+           and a.tenant_id=i.tenant_id and a.workspace_id=i.workspace_id for update of i,a";
+
 /// Supervisor 的第二次 Tenant-lock 事务内调用：不再次加 Tenant 锁，不借安装准入替代授权。
 pub(crate) async fn fresh_invocation(
     state: &ServiceState,
     tx: &mut Transaction<'_, Postgres>,
     invocation: Uuid,
 ) -> Result<(), Refusal> {
+    recheck_invocation(state, tx, invocation, None, None)
+        .await
+        .map(|_| ())
+}
+
+/// 同一原 operation 的完成回帖副作用；首 turn 的 fence 不允许进入这个阶段。
+pub(crate) async fn fresh_reply(
+    state: &ServiceState,
+    tx: &mut Transaction<'_, Postgres>,
+    invocation: Uuid,
+    turn_id: &str,
+    expected_reply: Option<&str>,
+) -> Result<String, Refusal> {
+    if turn_id.trim().is_empty() || expected_reply.is_some_and(|reply| reply.trim().is_empty()) {
+        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+    }
+    recheck_invocation(state, tx, invocation, Some(turn_id), expected_reply).await
+}
+
+async fn recheck_invocation(
+    state: &ServiceState,
+    tx: &mut Transaction<'_, Postgres>,
+    invocation: Uuid,
+    completed_turn: Option<&str>,
+    expected_reply: Option<&str>,
+) -> Result<String, Refusal> {
     let g = &state.governance;
-    let frozen: Option<FrozenInvocation> = sqlx::query_as(
-        "select i.automation_resource_id,i.automation_version_asset_id,i.action_execution_id,a.operation_id,
-            a.action_version,i.agent_version_asset_id,i.projection_generation,i.delegation_id,
-            i.source_event_id,i.root_event_id
-         from catalog.agent_invocation i join admission.action_execution a on a.id=i.action_execution_id
-         where i.id=$1 and i.status in ('CREATED','DISPATCHING') and i.runtime_turn_id is null and not i.cancel_pending
-           and a.action_key=$2 and a.gate_state='ALLOWED' and a.dispatch_state='DISPATCHED'
-           and a.tenant_id=i.tenant_id and a.workspace_id=i.workspace_id for update of i,a")
-        .bind(invocation).bind(ACTION).fetch_optional(&mut **tx).await?;
+    let frozen: Option<FrozenInvocation> = sqlx::query_as(FROZEN_INVOCATION_SQL)
+        .bind(invocation)
+        .bind(ACTION)
+        .bind(completed_turn)
+        .bind(expected_reply)
+        .fetch_optional(&mut **tx)
+        .await?;
     let Some(frozen) = frozen else {
         return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
     };
-    let row = run(tx, frozen.automation_resource_id).await?;
+    // 已启动 Workflow 的 Invocation 使用已冻结版本、Installation 与 Grant。
+    // pause/disable 只禁止新准入，不用当前 pointer 或 Resource 管理版本撤销在途 run。
+    let row = run(tx, frozen.automation_resource_id, Some(invocation)).await?;
     let def = definition(g).await?;
     let ae = governance::lock_execution(tx, frozen.action_execution_id).await?;
     if row.automation_version_asset_id != frozen.automation_version_asset_id
@@ -313,7 +1361,42 @@ pub(crate) async fn fresh_invocation(
         || ae.initiator_principal_id != row.owner_principal_id
         || ae.actor_principal_id != row.agent_principal_id
         || ae.target_id != row.resource_id
-        || ae.frozen_target_version() != Some(row.resource_version)
+        || ae
+            .frozen_target_version()
+            .is_none_or(|version| version <= 0)
+        || ae
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("automationVersionAssetId"))
+            .and_then(Value::as_str)
+            .and_then(|id| Uuid::parse_str(id).ok())
+            != Some(frozen.automation_version_asset_id)
+        || ae
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("automationVersion"))
+            .and_then(Value::as_i64)
+            != Some(i64::from(row.automation_version))
+        || ae
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("agentVersionAssetId"))
+            .and_then(Value::as_str)
+            .and_then(|id| Uuid::parse_str(id).ok())
+            != Some(frozen.agent_version_asset_id)
+        || ae
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("projectionGeneration"))
+            .and_then(Value::as_i64)
+            != Some(frozen.projection_generation)
+        || ae
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("delegationId"))
+            .and_then(Value::as_str)
+            .and_then(|id| Uuid::parse_str(id).ok())
+            != Some(frozen.delegation_id)
         || ae
             .parameters
             .as_ref()
@@ -345,9 +1428,9 @@ pub(crate) async fn fresh_invocation(
     source_human(g, tx, &row, author, pubkey).await?;
     fresh_runtime(state, tx, &row).await?;
     let revision = fresh(g, tx, &row, &def, Some(frozen.operation_id)).await?;
-    g.record_automation_decision(tx, &ae, &def, "RECHECK", Ok(revision))
+    g.record_automation_decision(tx, &ae, &def, "RECHECK", Ok(revision.clone()))
         .await?;
-    Ok(())
+    Ok(revision)
 }
 
 #[derive(FromRow)]
@@ -654,6 +1737,7 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
     // 没有持有 Tenant/Resource 写锁的网络读取；真正准入之后重新锁所有事实。
     let row: Run = sqlx::query_as(RUN)
         .bind(resource)
+        .bind(Option::<Uuid>::None)
         .fetch_optional(&mut *conn)
         .await?
         .ok_or(Refusal::Precondition(ReasonCode::TargetStateConflict))?;
@@ -837,8 +1921,10 @@ pub(crate) async fn turn_template(
 ) -> Result<String, Refusal> {
     let template:Option<String>=sqlx::query_scalar("select v.action->>'template'
         from catalog.agent_invocation i join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
+        join catalog.asset a on a.id=v.asset_id and a.resource_id=i.automation_resource_id and a.tenant_id=i.tenant_id
         where i.id=$1 and v.automation_resource_id=i.automation_resource_id
-          and v.state='PUBLISHED' and v.action->>'kind'='AGENT_TURN'
+          and v.state='PUBLISHED' and a.state='PUBLISHED' and a.type_key='automation.version'
+          and a.projection_action_execution_id is null and v.action->>'kind'='AGENT_TURN'
           and i.status in ('CREATED','DISPATCHING') and not i.cancel_pending")
         .bind(invocation).fetch_optional(pool).await?;
     template
@@ -925,7 +2011,7 @@ async fn admit(
     if !active {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
-    let row = run(&mut tx, snapshot.resource_id).await?;
+    let row = run(&mut tx, snapshot.resource_id, None).await?;
     if row.resource_version != snapshot.resource_version
         || row.automation_version_asset_id != snapshot.automation_version_asset_id
         || row.agent_version_asset_id != snapshot.agent_version_asset_id
@@ -1100,7 +2186,7 @@ async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
         if !active {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
-        let row = run(&mut tx, resource).await?;
+        let row = run(&mut tx, resource, None).await?;
         if row.automation_version_asset_id != version
             || row.agent_version_asset_id != agent_version
             || row.projection_generation != generation
@@ -1172,3 +2258,7 @@ async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
     tx.commit().await?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "automation/management_evidence.rs"]
+mod management_evidence;

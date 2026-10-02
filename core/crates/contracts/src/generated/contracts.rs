@@ -156,6 +156,10 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_version: Option<i64>,
 
+    /// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_version_content: Option<AutomationVersionContentClass>,
+
     /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegation_grant: Option<DelegationGrantClass>,
@@ -167,6 +171,10 @@ pub struct ActionCommand {
     /// 仅 revoke：调用方实际读取的 Grant 版本。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegation_version: Option<i64>,
+
+    /// 仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executor_installation_resource_id: Option<String>,
 
     /// EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -300,6 +308,62 @@ pub struct ContentTurnLimits {
     pub idle_timeout_seconds: i64,
 
     pub max_turn_duration_seconds: i64,
+}
+
+/// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+///
+/// REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
+/// AGENT_TURN；不含消息正文、provider 配置或凭据。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationVersionContentClass {
+    pub action: ContentAction,
+
+    pub result_target: ResultTarget,
+
+    pub trigger: ContentTrigger,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContentAction {
+    pub kind: ActionKind,
+
+    pub template: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ActionKind {
+    #[serde(rename = "AGENT_TURN")]
+    AgentTurn,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ResultTarget {
+    #[serde(rename = "TRIGGER_THREAD")]
+    TriggerThread,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentTrigger {
+    pub kind: TriggerKind,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mention_principal_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TriggerKind {
+    #[serde(rename = "CHANNEL_MESSAGE")]
+    ChannelMessage,
+
+    Mention,
 }
 
 /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -1219,6 +1283,175 @@ pub enum EvidenceSensitivity {
     Summary,
 }
 
+/// 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationDelegationView {
+    pub delegation_id: String,
+
+    pub delegation_version: i64,
+
+    pub executor_installation_resource_id: String,
+
+    /// RFC3339，UTC；与现有管理查询时间字段一致。
+    pub expires_at: String,
+
+    pub owner_principal_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationDetailView {
+    pub automation: AutomationElement,
+
+    /// 当前 Resource manage；不是运行准入、额度允许或业务成功。
+    pub can_manage: bool,
+
+    pub delegations: Vec<DelegationElement>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_delegation_offset: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_version_offset: Option<i64>,
+
+    pub versions: Vec<VersionElement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationElement {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delegation_id: Option<String>,
+
+    pub executor_installation_resource_id: String,
+
+    pub owner_principal_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned_version_asset_id: Option<String>,
+
+    pub resource_id: String,
+
+    pub resource_state: ResourceState,
+
+    pub resource_version: i64,
+
+    pub state: AutomationState,
+
+    pub workspace_id: String,
+}
+
+/// 03 §7、05 §2.9：AutomationDefinition 的真实管理状态，不是 Invocation 终态。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AutomationState {
+    #[serde(rename = "DISABLED")]
+    Disabled,
+
+    #[serde(rename = "DRAFT")]
+    Draft,
+
+    #[serde(rename = "ENABLED")]
+    Enabled,
+
+    #[serde(rename = "PAUSED")]
+    Paused,
+}
+
+/// 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegationElement {
+    pub delegation_id: String,
+
+    pub delegation_version: i64,
+
+    pub executor_installation_resource_id: String,
+
+    /// RFC3339，UTC；与现有管理查询时间字段一致。
+    pub expires_at: String,
+
+    pub owner_principal_id: String,
+}
+
+/// Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VersionElement {
+    pub asset_id: String,
+
+    pub asset_version: i64,
+
+    pub automation_resource_id: String,
+
+    pub config_hash: String,
+
+    pub content: AutomationVersionContentClass,
+
+    pub ordinal: i64,
+
+    pub owner_principal_id: String,
+
+    pub state: AgentVersionState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationPage {
+    pub automations: Vec<AutomationElement>,
+
+    /// 本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。
+    pub can_create: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+}
+
+/// Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationVersionView {
+    pub asset_id: String,
+
+    pub asset_version: i64,
+
+    pub automation_resource_id: String,
+
+    pub config_hash: String,
+
+    pub content: AutomationVersionContentClass,
+
+    pub ordinal: i64,
+
+    pub owner_principal_id: String,
+
+    pub state: AgentVersionState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delegation_id: Option<String>,
+
+    pub executor_installation_resource_id: String,
+
+    pub owner_principal_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned_version_asset_id: Option<String>,
+
+    pub resource_id: String,
+
+    pub resource_state: ResourceState,
+
+    pub resource_version: i64,
+
+    pub state: AutomationState,
+
+    pub workspace_id: String,
+}
+
 /// GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1967,6 +2200,37 @@ pub struct AgentVersionContentTurnLimits {
     pub idle_timeout_seconds: i64,
 
     pub max_turn_duration_seconds: i64,
+}
+
+/// REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
+/// AGENT_TURN；不含消息正文、provider 配置或凭据。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationVersionContent {
+    pub action: AutomationVersionContentAction,
+
+    pub result_target: ResultTarget,
+
+    pub trigger: AutomationVersionContentTrigger,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutomationVersionContentAction {
+    pub kind: ActionKind,
+
+    pub template: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationVersionContentTrigger {
+    pub kind: TriggerKind,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mention_principal_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

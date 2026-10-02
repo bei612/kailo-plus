@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/automation_version_view.schema.json",
+  "title": "AutomationVersionView",
+  "description": "Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assetId", "automationResourceId", "ownerPrincipalId", "assetVersion", "ordinal", "state", "configHash", "content"],
+  "properties": {
+    "assetId": {"type": "string", "format": "uuid"},
+    "automationResourceId": {"type": "string", "format": "uuid"},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "assetVersion": {"type": "integer", "minimum": 1},
+    "ordinal": {"type": "integer", "minimum": 1},
+    "state": {"$ref": "../enums/agent_version_state.schema.json"},
+    "configHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "content": {"$ref": "../domain/automation_version_content.schema.json"}
+  }
+}

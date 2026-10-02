@@ -37,6 +37,21 @@
 //    auditEventPage, err := UnmarshalAuditEventPage(bytes)
 //    bytes, err = auditEventPage.Marshal()
 //
+//    automationDelegationView, err := UnmarshalAutomationDelegationView(bytes)
+//    bytes, err = automationDelegationView.Marshal()
+//
+//    automationDetailView, err := UnmarshalAutomationDetailView(bytes)
+//    bytes, err = automationDetailView.Marshal()
+//
+//    automationPage, err := UnmarshalAutomationPage(bytes)
+//    bytes, err = automationPage.Marshal()
+//
+//    automationVersionView, err := UnmarshalAutomationVersionView(bytes)
+//    bytes, err = automationVersionView.Marshal()
+//
+//    automationView, err := UnmarshalAutomationView(bytes)
+//    bytes, err = automationView.Marshal()
+//
 //    clientKeyView, err := UnmarshalClientKeyView(bytes)
 //    bytes, err = clientKeyView.Marshal()
 //
@@ -102,6 +117,9 @@
 //
 //    agentVersionContent, err := UnmarshalAgentVersionContent(bytes)
 //    bytes, err = agentVersionContent.Marshal()
+//
+//    automationVersionContent, err := UnmarshalAutomationVersionContent(bytes)
+//    bytes, err = automationVersionContent.Marshal()
 //
 //    delegationGrantParameters, err := UnmarshalDelegationGrantParameters(bytes)
 //    bytes, err = delegationGrantParameters.Marshal()
@@ -307,6 +325,56 @@ func UnmarshalAuditEventPage(data []byte) (AuditEventPage, error) {
 }
 
 func (r *AuditEventPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationDelegationView(data []byte) (AutomationDelegationView, error) {
+	var r AutomationDelegationView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationDelegationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationDetailView(data []byte) (AutomationDetailView, error) {
+	var r AutomationDetailView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationDetailView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationPage(data []byte) (AutomationPage, error) {
+	var r AutomationPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationVersionView(data []byte) (AutomationVersionView, error) {
+	var r AutomationVersionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationVersionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationView(data []byte) (AutomationView, error) {
+	var r AutomationView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -527,6 +595,16 @@ func UnmarshalAgentVersionContent(data []byte) (AgentVersionContent, error) {
 }
 
 func (r *AgentVersionContent) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationVersionContent(data []byte) (AutomationVersionContent, error) {
+	var r AutomationVersionContent
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationVersionContent) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -851,12 +929,16 @@ type ActionCommand struct {
 	AssetID *string `json:"assetId,omitempty"`
 	// 调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
 	AssetVersion *int64 `json:"assetVersion,omitempty"`
+	// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+	AutomationVersionContent *AutomationVersionContentClass `json:"automationVersionContent,omitempty"`
 	// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 	DelegationGrant *DelegationGrantClass `json:"delegationGrant,omitempty"`
 	// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
 	DelegationID *string `json:"delegationId,omitempty"`
 	// 仅 revoke：调用方实际读取的 Grant 版本。
 	DelegationVersion *int64 `json:"delegationVersion,omitempty"`
+	// 仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。
+	ExecutorInstallationResourceID *string `json:"executorInstallationResourceId,omitempty"`
 	// EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
 	ExplicitConfirmation *bool `json:"explicitConfirmation,omitempty"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
@@ -916,6 +998,27 @@ type AgentVersionContentPersonaIdentity struct {
 type AgentVersionContentTurnLimits struct {
 	IdleTimeoutSeconds     int64 `json:"idleTimeoutSeconds"`
 	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
+}
+
+// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+//
+// REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
+// AGENT_TURN；不含消息正文、provider 配置或凭据。
+type AutomationVersionContentClass struct {
+	Action       AutomationVersionContentAction  `json:"action"`
+	ResultTarget ResultTarget                    `json:"resultTarget"`
+	Trigger      AutomationVersionContentTrigger `json:"trigger"`
+}
+
+type AutomationVersionContentAction struct {
+	Kind     ActionKind `json:"kind"`
+	Template string     `json:"template"`
+}
+
+type AutomationVersionContentTrigger struct {
+	Kind               TriggerKind `json:"kind"`
+	MentionPrincipalID *string     `json:"mentionPrincipalId,omitempty"`
+	TextPrefix         *string     `json:"textPrefix,omitempty"`
 }
 
 // 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -1148,6 +1251,91 @@ type AuditEvidenceSlot struct {
 	// 存量种类不可识别时缺省
 	Kind        *EvidenceKind        `json:"kind,omitempty"`
 	Sensitivity *EvidenceSensitivity `json:"sensitivity,omitempty"`
+}
+
+// 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
+type AutomationDelegationView struct {
+	DelegationID                   string `json:"delegationId"`
+	DelegationVersion              int64  `json:"delegationVersion"`
+	ExecutorInstallationResourceID string `json:"executorInstallationResourceId"`
+	// RFC3339，UTC；与现有管理查询时间字段一致。
+	ExpiresAt        string `json:"expiresAt"`
+	OwnerPrincipalID string `json:"ownerPrincipalId"`
+}
+
+type AutomationDetailView struct {
+	Automation AutomationElement `json:"automation"`
+	// 当前 Resource manage；不是运行准入、额度允许或业务成功。
+	CanManage            bool                `json:"canManage"`
+	Delegations          []DelegationElement `json:"delegations"`
+	NextDelegationOffset *int64              `json:"nextDelegationOffset,omitempty"`
+	NextVersionOffset    *int64              `json:"nextVersionOffset,omitempty"`
+	Versions             []VersionElement    `json:"versions"`
+}
+
+type AutomationElement struct {
+	DelegationID                   *string         `json:"delegationId,omitempty"`
+	ExecutorInstallationResourceID string          `json:"executorInstallationResourceId"`
+	OwnerPrincipalID               string          `json:"ownerPrincipalId"`
+	PinnedVersionAssetID           *string         `json:"pinnedVersionAssetId,omitempty"`
+	ResourceID                     string          `json:"resourceId"`
+	ResourceState                  ResourceState   `json:"resourceState"`
+	ResourceVersion                int64           `json:"resourceVersion"`
+	State                          AutomationState `json:"state"`
+	WorkspaceID                    string          `json:"workspaceId"`
+}
+
+// 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
+type DelegationElement struct {
+	DelegationID                   string `json:"delegationId"`
+	DelegationVersion              int64  `json:"delegationVersion"`
+	ExecutorInstallationResourceID string `json:"executorInstallationResourceId"`
+	// RFC3339，UTC；与现有管理查询时间字段一致。
+	ExpiresAt        string `json:"expiresAt"`
+	OwnerPrincipalID string `json:"ownerPrincipalId"`
+}
+
+// Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
+type VersionElement struct {
+	AssetID              string                        `json:"assetId"`
+	AssetVersion         int64                         `json:"assetVersion"`
+	AutomationResourceID string                        `json:"automationResourceId"`
+	ConfigHash           string                        `json:"configHash"`
+	Content              AutomationVersionContentClass `json:"content"`
+	Ordinal              int64                         `json:"ordinal"`
+	OwnerPrincipalID     string                        `json:"ownerPrincipalId"`
+	State                AgentVersionState             `json:"state"`
+}
+
+type AutomationPage struct {
+	Automations []AutomationElement `json:"automations"`
+	// 本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。
+	CanCreate  bool   `json:"canCreate"`
+	NextOffset *int64 `json:"nextOffset,omitempty"`
+}
+
+// Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
+type AutomationVersionView struct {
+	AssetID              string                        `json:"assetId"`
+	AssetVersion         int64                         `json:"assetVersion"`
+	AutomationResourceID string                        `json:"automationResourceId"`
+	ConfigHash           string                        `json:"configHash"`
+	Content              AutomationVersionContentClass `json:"content"`
+	Ordinal              int64                         `json:"ordinal"`
+	OwnerPrincipalID     string                        `json:"ownerPrincipalId"`
+	State                AgentVersionState             `json:"state"`
+}
+
+type AutomationView struct {
+	DelegationID                   *string         `json:"delegationId,omitempty"`
+	ExecutorInstallationResourceID string          `json:"executorInstallationResourceId"`
+	OwnerPrincipalID               string          `json:"ownerPrincipalId"`
+	PinnedVersionAssetID           *string         `json:"pinnedVersionAssetId,omitempty"`
+	ResourceID                     string          `json:"resourceId"`
+	ResourceState                  ResourceState   `json:"resourceState"`
+	ResourceVersion                int64           `json:"resourceVersion"`
+	State                          AutomationState `json:"state"`
+	WorkspaceID                    string          `json:"workspaceId"`
 }
 
 // GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
@@ -1457,6 +1645,25 @@ type AgentVersionContentPersonaIdentityClass struct {
 type AgentVersionContentTurnLimitsClass struct {
 	IdleTimeoutSeconds     int64 `json:"idleTimeoutSeconds"`
 	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
+}
+
+// REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
+// AGENT_TURN；不含消息正文、provider 配置或凭据。
+type AutomationVersionContent struct {
+	Action       AutomationVersionContentActionClass  `json:"action"`
+	ResultTarget ResultTarget                         `json:"resultTarget"`
+	Trigger      AutomationVersionContentTriggerClass `json:"trigger"`
+}
+
+type AutomationVersionContentActionClass struct {
+	Kind     ActionKind `json:"kind"`
+	Template string     `json:"template"`
+}
+
+type AutomationVersionContentTriggerClass struct {
+	Kind               TriggerKind `json:"kind"`
+	MentionPrincipalID *string     `json:"mentionPrincipalId,omitempty"`
+	TextPrefix         *string     `json:"textPrefix,omitempty"`
 }
 
 type DelegationGrantParameters struct {
@@ -1852,8 +2059,27 @@ const (
 type AgentTrigger string
 
 const (
-	ManualAssignment AgentTrigger = "MANUAL_ASSIGNMENT"
-	Mention          AgentTrigger = "MENTION"
+	AgentTriggerMENTION AgentTrigger = "MENTION"
+	ManualAssignment    AgentTrigger = "MANUAL_ASSIGNMENT"
+)
+
+type ActionKind string
+
+const (
+	AgentTurn ActionKind = "AGENT_TURN"
+)
+
+type ResultTarget string
+
+const (
+	TriggerThread ResultTarget = "TRIGGER_THREAD"
+)
+
+type TriggerKind string
+
+const (
+	ChannelMessage TriggerKind = "CHANNEL_MESSAGE"
+	KindMENTION    TriggerKind = "MENTION"
 )
 
 type ResultExposureMode string
@@ -1998,9 +2224,9 @@ const (
 type AgentVersionState string
 
 const (
-	Draft     AgentVersionState = "DRAFT"
-	Published AgentVersionState = "PUBLISHED"
-	Retired   AgentVersionState = "RETIRED"
+	AgentVersionStateDRAFT AgentVersionState = "DRAFT"
+	Published              AgentVersionState = "PUBLISHED"
+	Retired                AgentVersionState = "RETIRED"
 )
 
 // approver 的不可变决定（.design/03 §6）。
@@ -2111,6 +2337,16 @@ type EvidenceSensitivity string
 const (
 	EvidenceSensitivityRESTRICTED EvidenceSensitivity = "RESTRICTED"
 	Summary                       EvidenceSensitivity = "SUMMARY"
+)
+
+// 03 §7、05 §2.9：AutomationDefinition 的真实管理状态，不是 Invocation 终态。
+type AutomationState string
+
+const (
+	AutomationStateDISABLED AutomationState = "DISABLED"
+	AutomationStateDRAFT    AutomationState = "DRAFT"
+	Enabled                 AutomationState = "ENABLED"
+	Paused                  AutomationState = "PAUSED"
 )
 
 // BuzzIdentityBinding 状态机。custody=CLIENT 时跳过 PENDING_SECRET，自 RECONCILING 起始。

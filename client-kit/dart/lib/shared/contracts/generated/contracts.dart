@@ -12,6 +12,11 @@
 //     final approvalDecisionRequest = approvalDecisionRequestFromJson(jsonString);
 //     final approvalView = approvalViewFromJson(jsonString);
 //     final auditEventPage = auditEventPageFromJson(jsonString);
+//     final automationDelegationView = automationDelegationViewFromJson(jsonString);
+//     final automationDetailView = automationDetailViewFromJson(jsonString);
+//     final automationPage = automationPageFromJson(jsonString);
+//     final automationVersionView = automationVersionViewFromJson(jsonString);
+//     final automationView = automationViewFromJson(jsonString);
 //     final clientKeyView = clientKeyViewFromJson(jsonString);
 //     final clientKeyStatus = clientKeyStatusFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
@@ -34,6 +39,7 @@
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
 //     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
+//     final automationVersionContent = automationVersionContentFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
 //     final errorBody = errorBodyFromJson(jsonString);
 //     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
@@ -132,6 +138,34 @@ AuditEventPage auditEventPageFromJson(String str) =>
     AuditEventPage.fromJson(json.decode(str));
 
 String auditEventPageToJson(AuditEventPage data) => json.encode(data.toJson());
+
+AutomationDelegationView automationDelegationViewFromJson(String str) =>
+    AutomationDelegationView.fromJson(json.decode(str));
+
+String automationDelegationViewToJson(AutomationDelegationView data) =>
+    json.encode(data.toJson());
+
+AutomationDetailView automationDetailViewFromJson(String str) =>
+    AutomationDetailView.fromJson(json.decode(str));
+
+String automationDetailViewToJson(AutomationDetailView data) =>
+    json.encode(data.toJson());
+
+AutomationPage automationPageFromJson(String str) =>
+    AutomationPage.fromJson(json.decode(str));
+
+String automationPageToJson(AutomationPage data) => json.encode(data.toJson());
+
+AutomationVersionView automationVersionViewFromJson(String str) =>
+    AutomationVersionView.fromJson(json.decode(str));
+
+String automationVersionViewToJson(AutomationVersionView data) =>
+    json.encode(data.toJson());
+
+AutomationView automationViewFromJson(String str) =>
+    AutomationView.fromJson(json.decode(str));
+
+String automationViewToJson(AutomationView data) => json.encode(data.toJson());
 
 ClientKeyView clientKeyViewFromJson(String str) =>
     ClientKeyView.fromJson(json.decode(str));
@@ -255,6 +289,12 @@ AgentVersionContent agentVersionContentFromJson(String str) =>
     AgentVersionContent.fromJson(json.decode(str));
 
 String agentVersionContentToJson(AgentVersionContent data) =>
+    json.encode(data.toJson());
+
+AutomationVersionContent automationVersionContentFromJson(String str) =>
+    AutomationVersionContent.fromJson(json.decode(str));
+
+String automationVersionContentToJson(AutomationVersionContent data) =>
     json.encode(data.toJson());
 
 DelegationGrantParameters delegationGrantParametersFromJson(String str) =>
@@ -615,6 +655,9 @@ class ActionCommand {
   ///调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
   final int? assetVersion;
 
+  ///仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+  final AutomationVersionContentClass? automationVersionContent;
+
   ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
   final DelegationGrantClass? delegationGrant;
 
@@ -623,6 +666,9 @@ class ActionCommand {
 
   ///仅 revoke：调用方实际读取的 Grant 版本。
   final int? delegationVersion;
+
+  ///仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。
+  final String? executorInstallationResourceId;
 
   ///EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
   final bool? explicitConfirmation;
@@ -662,9 +708,11 @@ class ActionCommand {
     this.agentVersionContent,
     this.assetId,
     this.assetVersion,
+    this.automationVersionContent,
     this.delegationGrant,
     this.delegationId,
     this.delegationVersion,
+    this.executorInstallationResourceId,
     this.explicitConfirmation,
     required this.idempotencyKey,
     this.invitationId,
@@ -685,11 +733,17 @@ class ActionCommand {
         : ContentClass.fromJson(json["agentVersionContent"]),
     assetId: json["assetId"],
     assetVersion: json["assetVersion"],
+    automationVersionContent: json["automationVersionContent"] == null
+        ? null
+        : AutomationVersionContentClass.fromJson(
+            json["automationVersionContent"],
+          ),
     delegationGrant: json["delegationGrant"] == null
         ? null
         : DelegationGrantClass.fromJson(json["delegationGrant"]),
     delegationId: json["delegationId"],
     delegationVersion: json["delegationVersion"],
+    executorInstallationResourceId: json["executorInstallationResourceId"],
     explicitConfirmation: json["explicitConfirmation"],
     idempotencyKey: json["idempotencyKey"],
     invitationId: json["invitationId"],
@@ -708,9 +762,11 @@ class ActionCommand {
     "agentVersionContent": agentVersionContent?.toJson(),
     "assetId": assetId,
     "assetVersion": assetVersion,
+    "automationVersionContent": automationVersionContent?.toJson(),
     "delegationGrant": delegationGrant?.toJson(),
     "delegationId": delegationId,
     "delegationVersion": delegationVersion,
+    "executorInstallationResourceId": executorInstallationResourceId,
     "explicitConfirmation": explicitConfirmation,
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
@@ -892,6 +948,93 @@ class ContentTurnLimits {
     "maxTurnDurationSeconds": maxTurnDurationSeconds,
   });
 }
+
+///仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+///
+///REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
+///AGENT_TURN；不含消息正文、provider 配置或凭据。
+class AutomationVersionContentClass {
+  final ContentAction action;
+  final ResultTarget resultTarget;
+  final ContentTrigger trigger;
+
+  AutomationVersionContentClass({
+    required this.action,
+    required this.resultTarget,
+    required this.trigger,
+  });
+
+  factory AutomationVersionContentClass.fromJson(Map<String, dynamic> json) =>
+      AutomationVersionContentClass(
+        action: ContentAction.fromJson(json["action"]),
+        resultTarget: resultTargetValues.map[json["resultTarget"]]!,
+        trigger: ContentTrigger.fromJson(json["trigger"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "action": action.toJson(),
+    "resultTarget": resultTargetValues.reverse[resultTarget],
+    "trigger": trigger.toJson(),
+  });
+}
+
+class ContentAction {
+  final ActionKind kind;
+  final String template;
+
+  ContentAction({required this.kind, required this.template});
+
+  factory ContentAction.fromJson(Map<String, dynamic> json) => ContentAction(
+    kind: actionKindValues.map[json["kind"]]!,
+    template: json["template"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": actionKindValues.reverse[kind],
+    "template": template,
+  });
+}
+
+enum ActionKind { AGENT_TURN }
+
+final actionKindValues = EnumValues({"AGENT_TURN": ActionKind.AGENT_TURN});
+
+enum ResultTarget { TRIGGER_THREAD }
+
+final resultTargetValues = EnumValues({
+  "TRIGGER_THREAD": ResultTarget.TRIGGER_THREAD,
+});
+
+class ContentTrigger {
+  final TriggerKind kind;
+  final String? mentionPrincipalId;
+  final String? textPrefix;
+
+  ContentTrigger({
+    required this.kind,
+    this.mentionPrincipalId,
+    this.textPrefix,
+  });
+
+  factory ContentTrigger.fromJson(Map<String, dynamic> json) => ContentTrigger(
+    kind: triggerKindValues.map[json["kind"]]!,
+    mentionPrincipalId: json["mentionPrincipalId"],
+    textPrefix: json["textPrefix"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": triggerKindValues.reverse[kind],
+    "mentionPrincipalId": mentionPrincipalId,
+    "textPrefix": textPrefix,
+  });
+}
+
+enum TriggerKind { CHANNEL_MESSAGE, MENTION }
+
+final triggerKindValues = EnumValues({
+  "CHANNEL_MESSAGE": TriggerKind.CHANNEL_MESSAGE,
+  "MENTION": TriggerKind.MENTION,
+});
 
 ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 class DelegationGrantClass {
@@ -2158,6 +2301,347 @@ final evidenceSensitivityValues = EnumValues({
   "SUMMARY": EvidenceSensitivity.SUMMARY,
 });
 
+///实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
+class AutomationDelegationView {
+  final String delegationId;
+  final int delegationVersion;
+  final String executorInstallationResourceId;
+
+  ///RFC3339，UTC；与现有管理查询时间字段一致。
+  final String expiresAt;
+  final String ownerPrincipalId;
+
+  AutomationDelegationView({
+    required this.delegationId,
+    required this.delegationVersion,
+    required this.executorInstallationResourceId,
+    required this.expiresAt,
+    required this.ownerPrincipalId,
+  });
+
+  factory AutomationDelegationView.fromJson(Map<String, dynamic> json) =>
+      AutomationDelegationView(
+        delegationId: json["delegationId"],
+        delegationVersion: json["delegationVersion"],
+        executorInstallationResourceId: json["executorInstallationResourceId"],
+        expiresAt: json["expiresAt"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "delegationId": delegationId,
+    "delegationVersion": delegationVersion,
+    "executorInstallationResourceId": executorInstallationResourceId,
+    "expiresAt": expiresAt,
+    "ownerPrincipalId": ownerPrincipalId,
+  });
+}
+
+class AutomationDetailView {
+  final AutomationElement automation;
+
+  ///当前 Resource manage；不是运行准入、额度允许或业务成功。
+  final bool canManage;
+  final List<DelegationElement> delegations;
+  final int? nextDelegationOffset;
+  final int? nextVersionOffset;
+  final List<VersionElement> versions;
+
+  AutomationDetailView({
+    required this.automation,
+    required this.canManage,
+    required this.delegations,
+    this.nextDelegationOffset,
+    this.nextVersionOffset,
+    required this.versions,
+  });
+
+  factory AutomationDetailView.fromJson(Map<String, dynamic> json) =>
+      AutomationDetailView(
+        automation: AutomationElement.fromJson(json["automation"]),
+        canManage: json["canManage"],
+        delegations: List<DelegationElement>.from(
+          json["delegations"].map((x) => DelegationElement.fromJson(x)),
+        ),
+        nextDelegationOffset: json["nextDelegationOffset"],
+        nextVersionOffset: json["nextVersionOffset"],
+        versions: List<VersionElement>.from(
+          json["versions"].map((x) => VersionElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "automation": automation.toJson(),
+    "canManage": canManage,
+    "delegations": List<dynamic>.from(delegations.map((x) => x.toJson())),
+    "nextDelegationOffset": nextDelegationOffset,
+    "nextVersionOffset": nextVersionOffset,
+    "versions": List<dynamic>.from(versions.map((x) => x.toJson())),
+  });
+}
+
+class AutomationElement {
+  final String? delegationId;
+  final String executorInstallationResourceId;
+  final String ownerPrincipalId;
+  final String? pinnedVersionAssetId;
+  final String resourceId;
+  final ResourceState resourceState;
+  final int resourceVersion;
+  final AutomationState state;
+  final String workspaceId;
+
+  AutomationElement({
+    this.delegationId,
+    required this.executorInstallationResourceId,
+    required this.ownerPrincipalId,
+    this.pinnedVersionAssetId,
+    required this.resourceId,
+    required this.resourceState,
+    required this.resourceVersion,
+    required this.state,
+    required this.workspaceId,
+  });
+
+  factory AutomationElement.fromJson(Map<String, dynamic> json) =>
+      AutomationElement(
+        delegationId: json["delegationId"],
+        executorInstallationResourceId: json["executorInstallationResourceId"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        pinnedVersionAssetId: json["pinnedVersionAssetId"],
+        resourceId: json["resourceId"],
+        resourceState: resourceStateValues.map[json["resourceState"]]!,
+        resourceVersion: json["resourceVersion"],
+        state: automationStateValues.map[json["state"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "delegationId": delegationId,
+    "executorInstallationResourceId": executorInstallationResourceId,
+    "ownerPrincipalId": ownerPrincipalId,
+    "pinnedVersionAssetId": pinnedVersionAssetId,
+    "resourceId": resourceId,
+    "resourceState": resourceStateValues.reverse[resourceState],
+    "resourceVersion": resourceVersion,
+    "state": automationStateValues.reverse[state],
+    "workspaceId": workspaceId,
+  });
+}
+
+///03 §7、05 §2.9：AutomationDefinition 的真实管理状态，不是 Invocation 终态。
+enum AutomationState { DISABLED, DRAFT, ENABLED, PAUSED }
+
+final automationStateValues = EnumValues({
+  "DISABLED": AutomationState.DISABLED,
+  "DRAFT": AutomationState.DRAFT,
+  "ENABLED": AutomationState.ENABLED,
+  "PAUSED": AutomationState.PAUSED,
+});
+
+///实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
+class DelegationElement {
+  final String delegationId;
+  final int delegationVersion;
+  final String executorInstallationResourceId;
+
+  ///RFC3339，UTC；与现有管理查询时间字段一致。
+  final String expiresAt;
+  final String ownerPrincipalId;
+
+  DelegationElement({
+    required this.delegationId,
+    required this.delegationVersion,
+    required this.executorInstallationResourceId,
+    required this.expiresAt,
+    required this.ownerPrincipalId,
+  });
+
+  factory DelegationElement.fromJson(Map<String, dynamic> json) =>
+      DelegationElement(
+        delegationId: json["delegationId"],
+        delegationVersion: json["delegationVersion"],
+        executorInstallationResourceId: json["executorInstallationResourceId"],
+        expiresAt: json["expiresAt"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "delegationId": delegationId,
+    "delegationVersion": delegationVersion,
+    "executorInstallationResourceId": executorInstallationResourceId,
+    "expiresAt": expiresAt,
+    "ownerPrincipalId": ownerPrincipalId,
+  });
+}
+
+///Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
+class VersionElement {
+  final String assetId;
+  final int assetVersion;
+  final String automationResourceId;
+  final String configHash;
+  final AutomationVersionContentClass content;
+  final int ordinal;
+  final String ownerPrincipalId;
+  final AgentVersionState state;
+
+  VersionElement({
+    required this.assetId,
+    required this.assetVersion,
+    required this.automationResourceId,
+    required this.configHash,
+    required this.content,
+    required this.ordinal,
+    required this.ownerPrincipalId,
+    required this.state,
+  });
+
+  factory VersionElement.fromJson(Map<String, dynamic> json) => VersionElement(
+    assetId: json["assetId"],
+    assetVersion: json["assetVersion"],
+    automationResourceId: json["automationResourceId"],
+    configHash: json["configHash"],
+    content: AutomationVersionContentClass.fromJson(json["content"]),
+    ordinal: json["ordinal"],
+    ownerPrincipalId: json["ownerPrincipalId"],
+    state: agentVersionStateValues.map[json["state"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "assetId": assetId,
+    "assetVersion": assetVersion,
+    "automationResourceId": automationResourceId,
+    "configHash": configHash,
+    "content": content.toJson(),
+    "ordinal": ordinal,
+    "ownerPrincipalId": ownerPrincipalId,
+    "state": agentVersionStateValues.reverse[state],
+  });
+}
+
+class AutomationPage {
+  final List<AutomationElement> automations;
+
+  ///本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。
+  final bool canCreate;
+  final int? nextOffset;
+
+  AutomationPage({
+    required this.automations,
+    required this.canCreate,
+    this.nextOffset,
+  });
+
+  factory AutomationPage.fromJson(Map<String, dynamic> json) => AutomationPage(
+    automations: List<AutomationElement>.from(
+      json["automations"].map((x) => AutomationElement.fromJson(x)),
+    ),
+    canCreate: json["canCreate"],
+    nextOffset: json["nextOffset"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "automations": List<dynamic>.from(automations.map((x) => x.toJson())),
+    "canCreate": canCreate,
+    "nextOffset": nextOffset,
+  });
+}
+
+///Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
+class AutomationVersionView {
+  final String assetId;
+  final int assetVersion;
+  final String automationResourceId;
+  final String configHash;
+  final AutomationVersionContentClass content;
+  final int ordinal;
+  final String ownerPrincipalId;
+  final AgentVersionState state;
+
+  AutomationVersionView({
+    required this.assetId,
+    required this.assetVersion,
+    required this.automationResourceId,
+    required this.configHash,
+    required this.content,
+    required this.ordinal,
+    required this.ownerPrincipalId,
+    required this.state,
+  });
+
+  factory AutomationVersionView.fromJson(Map<String, dynamic> json) =>
+      AutomationVersionView(
+        assetId: json["assetId"],
+        assetVersion: json["assetVersion"],
+        automationResourceId: json["automationResourceId"],
+        configHash: json["configHash"],
+        content: AutomationVersionContentClass.fromJson(json["content"]),
+        ordinal: json["ordinal"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        state: agentVersionStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "assetId": assetId,
+    "assetVersion": assetVersion,
+    "automationResourceId": automationResourceId,
+    "configHash": configHash,
+    "content": content.toJson(),
+    "ordinal": ordinal,
+    "ownerPrincipalId": ownerPrincipalId,
+    "state": agentVersionStateValues.reverse[state],
+  });
+}
+
+class AutomationView {
+  final String? delegationId;
+  final String executorInstallationResourceId;
+  final String ownerPrincipalId;
+  final String? pinnedVersionAssetId;
+  final String resourceId;
+  final ResourceState resourceState;
+  final int resourceVersion;
+  final AutomationState state;
+  final String workspaceId;
+
+  AutomationView({
+    this.delegationId,
+    required this.executorInstallationResourceId,
+    required this.ownerPrincipalId,
+    this.pinnedVersionAssetId,
+    required this.resourceId,
+    required this.resourceState,
+    required this.resourceVersion,
+    required this.state,
+    required this.workspaceId,
+  });
+
+  factory AutomationView.fromJson(Map<String, dynamic> json) => AutomationView(
+    delegationId: json["delegationId"],
+    executorInstallationResourceId: json["executorInstallationResourceId"],
+    ownerPrincipalId: json["ownerPrincipalId"],
+    pinnedVersionAssetId: json["pinnedVersionAssetId"],
+    resourceId: json["resourceId"],
+    resourceState: resourceStateValues.map[json["resourceState"]]!,
+    resourceVersion: json["resourceVersion"],
+    state: automationStateValues.map[json["state"]]!,
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "delegationId": delegationId,
+    "executorInstallationResourceId": executorInstallationResourceId,
+    "ownerPrincipalId": ownerPrincipalId,
+    "pinnedVersionAssetId": pinnedVersionAssetId,
+    "resourceId": resourceId,
+    "resourceState": resourceStateValues.reverse[resourceState],
+    "resourceVersion": resourceVersion,
+    "state": automationStateValues.reverse[state],
+    "workspaceId": workspaceId,
+  });
+}
+
 ///GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
 class ClientKeyView {
   ///RFC3339
@@ -3408,6 +3892,76 @@ class AgentVersionContentTurnLimits {
   Map<String, dynamic> toJson() => _stripNulls({
     "idleTimeoutSeconds": idleTimeoutSeconds,
     "maxTurnDurationSeconds": maxTurnDurationSeconds,
+  });
+}
+
+///REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
+///AGENT_TURN；不含消息正文、provider 配置或凭据。
+class AutomationVersionContent {
+  final AutomationVersionContentAction action;
+  final ResultTarget resultTarget;
+  final AutomationVersionContentTrigger trigger;
+
+  AutomationVersionContent({
+    required this.action,
+    required this.resultTarget,
+    required this.trigger,
+  });
+
+  factory AutomationVersionContent.fromJson(Map<String, dynamic> json) =>
+      AutomationVersionContent(
+        action: AutomationVersionContentAction.fromJson(json["action"]),
+        resultTarget: resultTargetValues.map[json["resultTarget"]]!,
+        trigger: AutomationVersionContentTrigger.fromJson(json["trigger"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "action": action.toJson(),
+    "resultTarget": resultTargetValues.reverse[resultTarget],
+    "trigger": trigger.toJson(),
+  });
+}
+
+class AutomationVersionContentAction {
+  final ActionKind kind;
+  final String template;
+
+  AutomationVersionContentAction({required this.kind, required this.template});
+
+  factory AutomationVersionContentAction.fromJson(Map<String, dynamic> json) =>
+      AutomationVersionContentAction(
+        kind: actionKindValues.map[json["kind"]]!,
+        template: json["template"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": actionKindValues.reverse[kind],
+    "template": template,
+  });
+}
+
+class AutomationVersionContentTrigger {
+  final TriggerKind kind;
+  final String? mentionPrincipalId;
+  final String? textPrefix;
+
+  AutomationVersionContentTrigger({
+    required this.kind,
+    this.mentionPrincipalId,
+    this.textPrefix,
+  });
+
+  factory AutomationVersionContentTrigger.fromJson(Map<String, dynamic> json) =>
+      AutomationVersionContentTrigger(
+        kind: triggerKindValues.map[json["kind"]]!,
+        mentionPrincipalId: json["mentionPrincipalId"],
+        textPrefix: json["textPrefix"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": triggerKindValues.reverse[kind],
+    "mentionPrincipalId": mentionPrincipalId,
+    "textPrefix": textPrefix,
   });
 }
 
