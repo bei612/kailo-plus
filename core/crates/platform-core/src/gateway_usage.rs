@@ -1,19 +1,23 @@
 //! DD-21、03 §3/8、11 §4：只消费 Gateway 已提交的 usage outbox。
-//! 当前缺 SS-COD-TRACE 与 meter 归因事实，原记录留在 Gateway、checkpoint 不前移；
-//! 不创建不可归因的 UsageEvent，不把空页或认证/传输失败当成零用量。
+//! 只按写前冻结的 Invocation/operation/专属 Gateway identity 归因；缺任一事实
+//! 原记录留在 Gateway、checkpoint 不前移，不从模型名或时间猜测 operation。
 
 use std::collections::HashSet;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use contracts::EvidenceKind;
 use opentelemetry::metrics::{Counter, Gauge, Meter};
 use opentelemetry::KeyValue;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
-use sqlx::PgPool;
+use serde_json::{json, Value};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
+use crate::audit::{append, AuditEntry, Evidence};
 use crate::oidc::TokenSource;
+use crate::openmeter::{GatewayMeter, InvocationMeter, OpenMeter};
 
 /// .design/11 §4 固定的全局持久流；不是 Tenant 或模型配置。
 const SOURCE_KEY: &str = "agentgateway-durable-usage-tail";
@@ -33,6 +37,585 @@ struct Entry {
     id: Uuid,
     started_at: DateTime<Utc>,
     completed_at: DateTime<Utc>,
+    trace_id: Option<String>,
+    agentgateway_user: Option<String>,
+    gen_ai: GenAi,
+    usage: Usage,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenAi {
+    provider_name: Option<String>,
+    request_model: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Usage {
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
+    total_tokens: Option<i64>,
+}
+
+#[derive(FromRow, PartialEq)]
+struct TurnFacts {
+    invocation_id: Uuid,
+    operation_id: Uuid,
+    tenant_id: Uuid,
+    workspace_id: Uuid,
+    installation_resource_id: Uuid,
+    projection_generation: i64,
+    config_hash: String,
+    gateway_principal_id: Uuid,
+    customer_id: String,
+    namespace: String,
+    subject_key_prefix: String,
+    binding_version: i32,
+    meters: Vec<String>,
+}
+
+#[derive(FromRow)]
+struct Correlation {
+    invocation_id: Uuid,
+    operation_id: Uuid,
+    tenant_id: Uuid,
+    workspace_id: Uuid,
+    installation_resource_id: Uuid,
+    agent_version_asset_id: Uuid,
+    gateway_principal_id: Uuid,
+    customer_id: String,
+    namespace: String,
+    subject_key: String,
+    meter_projection: Value,
+}
+
+#[derive(FromRow)]
+struct InvocationUsage {
+    tenant_id: Uuid,
+    workspace_id: Uuid,
+    operation_id: Uuid,
+    installation_resource_id: Uuid,
+    agent_version_asset_id: Uuid,
+    automation_resource_id: Uuid,
+    customer_id: String,
+    subject_key: String,
+    invocation_meter_projection: Value,
+}
+
+#[derive(FromRow)]
+struct UncountedInvocation {
+    invocation_id: Uuid,
+    installation_resource_id: Uuid,
+    projection_generation: i64,
+    config_hash: String,
+    runtime_thread_id: String,
+    runtime_turn_id: String,
+    native_status: Option<String>,
+}
+
+const CORRELATION: &str = "select t.invocation_id,t.operation_id,t.tenant_id,t.workspace_id,
+ i.installation_resource_id,i.agent_version_asset_id,t.gateway_principal_id,
+ t.openmeter_customer_id customer_id,t.openmeter_namespace namespace,t.subject_key,
+ t.meter_projection
+ from projection.agent_model_trace t join catalog.agent_invocation i on i.id=t.invocation_id
+ join admission.action_execution a on a.id=i.action_execution_id
+ where t.trace_id=$1 and a.operation_id=t.operation_id and a.tenant_id=t.tenant_id
+ and a.workspace_id=t.workspace_id and i.tenant_id=t.tenant_id and i.workspace_id=t.workspace_id";
+
+/// 同一准入后的事实；不取 Agent 自报 subject/model/meter 或 Core 运行身份作模型身份。
+const TURN_FACTS: &str = "select i.id invocation_id,a.operation_id,i.tenant_id,i.workspace_id,
+ i.installation_resource_id,i.projection_generation,p.config_hash,
+ b.gateway_principal_id,o.customer_id,o.namespace,o.subject_key_prefix,o.version binding_version,d.meters
+ from catalog.agent_invocation i join admission.action_execution a on a.id=i.action_execution_id
+ join catalog.action_definition d on d.action_key=a.action_key and d.version=a.action_version
+ join catalog.agent_session s on s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
+   and s.installation_resource_id=i.installation_resource_id
+ join catalog.agent_installation installation on installation.resource_id=i.installation_resource_id
+ join catalog.resource r on r.id=installation.resource_id and r.tenant_id=i.tenant_id
+ join identity.workspace w on w.id=i.workspace_id and w.tenant_id=i.tenant_id
+ join catalog.agent_runtime_projection p on p.installation_resource_id=i.installation_resource_id
+   and p.generation=i.projection_generation and p.agent_version_asset_id=i.agent_version_asset_id
+ join catalog.agent_model_binding b on b.installation_resource_id=i.installation_resource_id
+   and b.projection_generation=i.projection_generation
+ join identity.principal principal on principal.id=b.gateway_principal_id and principal.tenant_id=i.tenant_id
+ join projection.openmeter_binding o on o.tenant_id=i.tenant_id
+ join admission.capacity_lease lease on lease.invocation_id=i.id and lease.operation_id=a.operation_id
+ join admission.delegation_grant delegation on delegation.id=i.delegation_id
+   and delegation.tenant_id=i.tenant_id and delegation.workspace_id=i.workspace_id
+   and delegation.installation_resource_id=i.installation_resource_id
+   and delegation.grantor_principal_id=a.initiator_principal_id and delegation.agent_principal_id=a.actor_principal_id
+ where i.id=$1 and i.status='DISPATCHING' and i.runtime_turn_id is null
+ and a.tenant_id=i.tenant_id and a.workspace_id=i.workspace_id and a.gate_state='ALLOWED'
+ and d.quota_policy='CHECK' and cardinality(d.meters)>0
+ and s.status='ACTIVE' and s.runtime_thread_id=$2 and s.projection_generation=i.projection_generation
+ and s.agent_version_asset_id=i.agent_version_asset_id
+ and installation.state='ACTIVE' and installation.active_projection_generation=i.projection_generation
+ and r.state='ACTIVE' and w.state='ACTIVE' and p.state='ACTIVE'
+ and b.secret_status='ACTIVE' and b.native_key_id is not null and b.native_key_revision>0
+ and principal.kind='SERVICE' and principal.status='ACTIVE' and o.status='ACTIVE'
+ and lease.state='HELD' and lease.expires_at>clock_timestamp()
+ and delegation.state='ACTIVE' and delegation.valid_from<=clock_timestamp() and delegation.expires_at>clock_timestamp()";
+
+async fn lock_tenant(
+    tx: &mut Transaction<'_, Postgres>,
+    invocation: Uuid,
+) -> Result<(), &'static str> {
+    let execution: Option<Uuid> = sqlx::query_scalar("select a.id from admission.action_execution a
+        join catalog.agent_invocation i on i.action_execution_id=a.id where i.id=$1 for update of a")
+        .bind(invocation).fetch_optional(&mut **tx).await.map_err(|_| "模型 Action fence 不可核验")?;
+    execution.ok_or("模型 Action 不存在")?;
+    let active: Option<Uuid> = sqlx::query_scalar("select t.id from identity.tenant t
+        join catalog.agent_invocation i on i.tenant_id=t.id where i.id=$1 and t.state='ACTIVE' for update of t")
+        .bind(invocation).fetch_optional(&mut **tx).await.map_err(|_| "模型 Tenant fence 不可核验")?;
+    active.ok_or("模型 Tenant 不在 ACTIVE")?;
+    Ok(())
+}
+
+/// SS-COD-TRACE：只在真实 invocation/slot/quota 事实齐备之后、原生模型副作用之前持久。
+pub(crate) async fn prepare_turn(
+    pool: &PgPool,
+    openmeter: &OpenMeter,
+    projection: &crate::agent_runtime::RuntimeRef,
+    invocation: Uuid,
+    thread: &str,
+) -> Result<String, &'static str> {
+    let mut tx = pool.begin().await.map_err(|_| "模型 dispatch 事务不可用")?;
+    lock_tenant(&mut tx, invocation).await?;
+    let facts: TurnFacts = sqlx::query_as(TURN_FACTS)
+        .bind(invocation)
+        .bind(thread)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| "模型准入事实不可读")?
+        .ok_or("模型准入事实不成立")?;
+    if facts.installation_resource_id != projection.installation_id
+        || facts.projection_generation != projection.generation
+        || facts.config_hash != projection.config_hash
+        || facts.namespace != openmeter.namespace()
+        || facts.subject_key_prefix != format!("{}:", facts.tenant_id)
+    {
+        return Err("模型 projection/OpenMeter scope 不一致");
+    }
+    let subject = format!(
+        "{}{}",
+        facts.subject_key_prefix, facts.installation_resource_id
+    );
+    let (meters, invocation_meter) = openmeter
+        .turn_meters(facts.tenant_id, &facts.customer_id, &subject, &facts.meters)
+        .await
+        .map_err(|_| "模型实际 meter/Customer subject 映射不可核验")?;
+    if !openmeter
+        .check_quota(facts.tenant_id, &facts.customer_id, &facts.meters)
+        .await
+        .map_err(|_| "模型 fresh Quota 不可核验")?
+    {
+        return Err("模型 fresh Quota 拒绝");
+    }
+    let trace = Uuid::new_v4().simple().to_string();
+    let span = Uuid::new_v4().simple().to_string()[..16].to_owned();
+    let inserted=sqlx::query("insert into projection.agent_model_trace
+        (invocation_id,trace_id,span_id,operation_id,tenant_id,workspace_id,gateway_principal_id,
+         openmeter_customer_id,openmeter_namespace,subject_key,binding_version,meter_projection,invocation_meter_projection)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) on conflict(invocation_id) do nothing")
+        .bind(facts.invocation_id).bind(&trace).bind(&span).bind(facts.operation_id).bind(facts.tenant_id)
+        .bind(facts.workspace_id).bind(facts.gateway_principal_id).bind(&facts.customer_id).bind(&facts.namespace)
+        .bind(&subject).bind(facts.binding_version).bind(serde_json::to_value(meters).map_err(|_| "模型 meter 投影不可编码")?)
+        .bind(serde_json::to_value(invocation_meter).map_err(|_| "Invocation meter 投影不可编码")?)
+        .execute(&mut *tx).await.map_err(|_| "模型 trace 不可持久")?;
+    if inserted.rows_affected() != 1 {
+        return Err("模型已有 dispatch 意图；只能按原生引用观察");
+    }
+    usage_audit(
+        &mut tx,
+        facts.operation_id,
+        "model-dispatch-intent",
+        "DISPATCH",
+        "DISPATCH_INTENT",
+        vec![Evidence::new(EvidenceKind::TraceId, &trace)],
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|_| "模型 dispatch 意图提交不明")?;
+    Ok(format!("00-{trace}-{span}-01"))
+}
+
+/// 写前意图已提交后重新锁同一生命周期；保持直到 RPC 返回，不让暂停/销毁穿过副作用。
+pub(crate) async fn dispatch_guard(
+    pool: &PgPool,
+    openmeter: &OpenMeter,
+    projection: &crate::agent_runtime::RuntimeRef,
+    invocation: Uuid,
+    thread: &str,
+) -> Result<Transaction<'static, Postgres>, &'static str> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| "模型 dispatch fence 不可用")?;
+    recheck_dispatch(&mut tx, openmeter, projection, invocation, thread).await?;
+    Ok(tx)
+}
+
+/// Process/原生只读等待之后仍复用同一事务和核证，不新建另一套派发准入。
+pub(crate) async fn recheck_dispatch(
+    tx: &mut Transaction<'_, Postgres>,
+    openmeter: &OpenMeter,
+    projection: &crate::agent_runtime::RuntimeRef,
+    invocation: Uuid,
+    thread: &str,
+) -> Result<(), &'static str> {
+    lock_tenant(tx, invocation).await?;
+    let facts: TurnFacts = sqlx::query_as(TURN_FACTS)
+        .bind(invocation)
+        .bind(thread)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|_| "模型 dispatch 事实不可读")?
+        .ok_or("模型 dispatch 已撤销")?;
+    if facts.installation_resource_id != projection.installation_id
+        || facts.projection_generation != projection.generation
+        || facts.config_hash != projection.config_hash
+    {
+        return Err("模型 generation 已失效");
+    }
+    let frozen: Option<(Uuid,String,String,String,i32,Value,Value)> = sqlx::query_as(
+        "select gateway_principal_id,openmeter_customer_id,openmeter_namespace,subject_key,binding_version,meter_projection,invocation_meter_projection
+         from projection.agent_model_trace where invocation_id=$1 and operation_id=$2")
+        .bind(invocation).bind(facts.operation_id).fetch_optional(&mut **tx).await
+        .map_err(|_| "模型写前 trace 意图不可读")?;
+    let Some((principal, customer, namespace, subject, version, meters, invocation_meter)) = frozen
+    else {
+        return Err("模型写前 trace 缺失");
+    };
+    if principal != facts.gateway_principal_id
+        || customer != facts.customer_id
+        || namespace != facts.namespace
+        || namespace != openmeter.namespace()
+        || subject
+            != format!(
+                "{}{}",
+                facts.subject_key_prefix, facts.installation_resource_id
+            )
+        || version != facts.binding_version
+    {
+        return Err("模型写前 binding/trace 已失效");
+    }
+    let frozen: Vec<GatewayMeter> =
+        serde_json::from_value(meters).map_err(|_| "模型冻结 meter 不可读")?;
+    let frozen_invocation: InvocationMeter =
+        serde_json::from_value(invocation_meter).map_err(|_| "Invocation 冻结 meter 不可读")?;
+    let (current, current_invocation) = openmeter
+        .turn_meters(facts.tenant_id, &customer, &subject, &facts.meters)
+        .await
+        .map_err(|_| "模型发派前 meter/Customer 映射不可核验")?;
+    if current != frozen
+        || current_invocation != frozen_invocation
+        || !openmeter
+            .check_quota(facts.tenant_id, &customer, &facts.meters)
+            .await
+            .map_err(|_| "模型发派前 Quota 不可核验")?
+    {
+        return Err("模型发派前 meter/Quota 已失效");
+    }
+    // 原生 meter/Quota RPC 也消耗时间。最后以真实时钟读取同一事实，不能借
+    // transaction now() 延长 Grant 或 holder，亦不能只在等 Process 锁前查证。
+    let final_facts: Option<TurnFacts> = sqlx::query_as(TURN_FACTS)
+        .bind(invocation)
+        .bind(thread)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|_| "模型 RPC 前生命周期事实不可读")?;
+    if final_facts.as_ref() != Some(&facts) {
+        return Err("模型 RPC 前 Grant/Capacity/scope 已失效");
+    }
+    Ok(())
+}
+
+/// 只消费 Task 已唯一查证的 native turn/startedAt，和冻结 meter 同一 outbox。
+/// 恢复观察重入保持同一 ID/time/body；缺实际 turn 不创建“运行次数”。
+pub(crate) async fn record_invocation_usage(
+    pool: &PgPool,
+    invocation: Uuid,
+    turn: &str,
+    started_at: DateTime<Utc>,
+) -> Result<(), &'static str> {
+    if turn.is_empty() || started_at.timestamp() < 0 || started_at > Utc::now() {
+        return Err("Invocation native turn/time 不可核验");
+    }
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| "Invocation usage 事务不可用")?;
+    let origin: Option<InvocationUsage> = sqlx::query_as(
+        "select t.tenant_id,t.workspace_id,t.operation_id,i.installation_resource_id,i.agent_version_asset_id,
+            i.automation_resource_id,t.openmeter_customer_id customer_id,t.subject_key,t.invocation_meter_projection
+         from projection.agent_model_trace t join catalog.agent_invocation i on i.id=t.invocation_id
+         join admission.action_execution a on a.id=i.action_execution_id
+         where i.id=$1 and i.runtime_turn_id=$2 and i.status in ('DISPATCHING','RUNNING','UNKNOWN')
+           and a.operation_id=t.operation_id and a.tenant_id=t.tenant_id and a.workspace_id=t.workspace_id
+           and a.action_key='automation.run'")
+        .bind(invocation).bind(turn).fetch_optional(&mut *tx).await.map_err(|_| "Invocation usage 归属不可读")?;
+    let Some(origin) = origin else {
+        return Err("Invocation usage 没有同 operation 的已绑定 native turn");
+    };
+    let meter: InvocationMeter = serde_json::from_value(origin.invocation_meter_projection)
+        .map_err(|_| "Invocation meter 不可读")?;
+    if meter.key != "automation.run" {
+        return Err("Invocation 未知计数 meter");
+    }
+    let id = Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        format!(
+            "{}:AGENT_INVOCATION:{invocation}:{}",
+            origin.tenant_id, meter.key
+        )
+        .as_bytes(),
+    );
+    let dimensions = json!({"tenant_id":origin.tenant_id,"workspace_id":origin.workspace_id,"operation_id":origin.operation_id,
+        "agent_installation_resource_id":origin.installation_resource_id,"agent_version_asset_id":origin.agent_version_asset_id,
+        "automation_resource_id":origin.automation_resource_id});
+    let event = json!({"specversion":"1.0","id":id,"source":"urn:platform:core:usage",
+        "type":meter.event_type,"subject":origin.subject_key,"time":started_at,"datacontenttype":"application/json","data":dimensions});
+    sqlx::query("insert into outbox.usage_event
+        (id,invocation_id,operation_id,tenant_id,workspace_id,openmeter_customer_id,agent_installation_resource_id,
+         source_type,source_id,native_turn_id,meter_key,subject_key,quantity,occurred_at,dimensions,openmeter_event_id,event,settlement_status)
+        values($1,$2,$3,$4,$5,$6,$7,'AGENT_INVOCATION',$2,$8,$9,$10,1,$11,$12,$1,$13,'PENDING_PUBLISH')
+        on conflict(tenant_id,source_type,source_id,meter_key) do nothing")
+        .bind(id).bind(invocation).bind(origin.operation_id).bind(origin.tenant_id).bind(origin.workspace_id)
+        .bind(origin.customer_id).bind(origin.installation_resource_id)
+        .bind(turn).bind(&meter.key).bind(origin.subject_key).bind(started_at).bind(dimensions).bind(&event)
+        .execute(&mut *tx).await.map_err(|_| "Invocation UsageEvent 不可持久")?;
+    let frozen: (Uuid, Value, String) = sqlx::query_as(
+        "select id,event,native_turn_id from outbox.usage_event
+        where tenant_id=$1 and source_type='AGENT_INVOCATION' and source_id=$2 and meter_key=$3",
+    )
+    .bind(origin.tenant_id)
+    .bind(invocation)
+    .bind(&meter.key)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| "Invocation usage 幂等事实不可读")?;
+    if frozen != (id, event, turn.to_owned()) {
+        return Err("Invocation usage 的 native 事实发生冲突");
+    }
+    usage_audit(
+        &mut tx,
+        origin.operation_id,
+        &format!("usage:{id}:PENDING_PUBLISH"),
+        "RECONCILIATION",
+        "PENDING_PUBLISH",
+        vec![Evidence::new(EvidenceKind::UsageEventId, id)],
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|_| "Invocation usage 提交结果不明")
+}
+
+/// 来源、scope、meter 和数量在 checkpoint 前一起持久。所有重读只接受同一事件。
+async fn correlate(
+    tx: &mut Transaction<'_, Postgres>,
+    entry: &Entry,
+    namespace: &str,
+) -> Result<(), &'static str> {
+    let trace = entry
+        .trace_id
+        .as_deref()
+        .filter(|trace| !trace.is_empty())
+        .ok_or("Gateway durable usage 缺 Core trace")?;
+    let origin: Correlation = sqlx::query_as(CORRELATION)
+        .bind(trace)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|_| "Gateway trace 归因不可读")?
+        .ok_or("Gateway trace 没有同 Invocation/operation 写前意图")?;
+    let gateway_user = origin.gateway_principal_id.to_string();
+    if origin.namespace != namespace
+        || entry.agentgateway_user.as_deref() != Some(gateway_user.as_str())
+    {
+        return Err("Gateway usage 专属模型身份/namespace 与写前意图不一致");
+    }
+    let provider = entry
+        .gen_ai
+        .provider_name
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .ok_or("Gateway usage 缺原生 provider")?;
+    let model = entry
+        .gen_ai
+        .request_model
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .ok_or("Gateway usage 缺原生 model")?;
+    if [
+        entry.usage.input_tokens,
+        entry.usage.output_tokens,
+        entry.usage.total_tokens,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|quantity| quantity < 0)
+    {
+        return Err("Gateway durable usage 数量不可核验");
+    }
+    let meters: Vec<GatewayMeter> = serde_json::from_value(origin.meter_projection)
+        .map_err(|_| "Gateway usage 冻结 meter 不可读")?;
+    if meters.is_empty() {
+        return Err("Gateway usage 冻结 meter 为空");
+    }
+    let dimensions = json!({"tenant_id":origin.tenant_id,"workspace_id":origin.workspace_id,
+        "operation_id":origin.operation_id,"agent_installation_resource_id":origin.installation_resource_id,
+        "agent_version_asset_id":origin.agent_version_asset_id,"provider":provider,"model":model});
+    let mut data = dimensions.clone();
+    for (key, quantity) in [
+        ("inputTokens", entry.usage.input_tokens),
+        ("outputTokens", entry.usage.output_tokens),
+        ("totalTokens", entry.usage.total_tokens),
+    ] {
+        if let Some(quantity) = quantity {
+            data[key] = quantity.into();
+        }
+    }
+    let mut seen = HashSet::new();
+    for meter in meters {
+        if !seen.insert(meter.key.clone()) {
+            return Err("Gateway usage 冻结 meter 重复");
+        }
+        let quantity = match meter.value_property.as_str() {
+            "$.inputTokens" => entry.usage.input_tokens,
+            "$.outputTokens" => entry.usage.output_tokens,
+            "$.totalTokens" => entry.usage.total_tokens,
+            _ => return Err("Gateway usage 未知原生计量字段"),
+        }
+        .ok_or("Gateway durable usage 没有该 meter 的实际数量")?;
+        let id = Uuid::new_v5(
+            &Uuid::NAMESPACE_URL,
+            format!(
+                "{}:GATEWAY_DURABLE_USAGE:{}:{}",
+                origin.tenant_id, entry.id, meter.key
+            )
+            .as_bytes(),
+        );
+        let event = json!({"specversion":"1.0","id":id,"source":"urn:platform:core:usage",
+            "type":meter.event_type,"subject":origin.subject_key,"time":entry.completed_at,
+            "datacontenttype":"application/json","data":data});
+        sqlx::query("insert into outbox.usage_event
+            (id,invocation_id,operation_id,tenant_id,workspace_id,openmeter_customer_id,
+             agent_installation_resource_id,source_type,source_id,native_seq,meter_key,subject_key,quantity,
+             occurred_at,dimensions,openmeter_event_id,event,settlement_status)
+             values($1,$2,$3,$4,$5,$6,$7,'GATEWAY_DURABLE_USAGE',$8,$15,$9,$10,$11,$12,$13,$1,$14,'PENDING_PUBLISH')
+             on conflict(tenant_id,source_type,source_id,meter_key) do nothing")
+            .bind(id).bind(origin.invocation_id).bind(origin.operation_id).bind(origin.tenant_id)
+            .bind(origin.workspace_id).bind(&origin.customer_id).bind(origin.installation_resource_id)
+            .bind(entry.id).bind(&meter.key).bind(&origin.subject_key).bind(quantity).bind(entry.completed_at)
+            .bind(&dimensions).bind(&event).bind(entry.seq).execute(&mut **tx).await.map_err(|_| "Gateway UsageEvent 不可持久")?;
+        let frozen: (Uuid,Value,i64) = sqlx::query_as("select id,event,native_seq from outbox.usage_event
+            where tenant_id=$1 and source_type='GATEWAY_DURABLE_USAGE' and source_id=$2 and meter_key=$3")
+            .bind(origin.tenant_id).bind(entry.id).bind(&meter.key).fetch_one(&mut **tx).await
+            .map_err(|_| "Gateway UsageEvent 幂等事实不可读")?;
+        if frozen != (id, event, entry.seq) {
+            return Err("Gateway stable ID 的冻结 usage 内容不一致");
+        }
+        usage_audit(
+            tx,
+            origin.operation_id,
+            &format!("usage:{id}:PENDING_PUBLISH"),
+            "RECONCILIATION",
+            "PENDING_PUBLISH",
+            vec![
+                Evidence::new(EvidenceKind::UsageEventId, id),
+                Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id),
+                Evidence::new(EvidenceKind::TraceId, trace),
+            ],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// 同一权威 AuditEvent，与引用和状态写同事务；不建立计量审计的第二份表。
+async fn usage_audit(
+    tx: &mut Transaction<'_, Postgres>,
+    operation: Uuid,
+    stage: &str,
+    event_type: &str,
+    result_code: &str,
+    evidence_refs: Vec<Evidence>,
+) -> Result<(), &'static str> {
+    #[derive(FromRow)]
+    struct Facts {
+        tenant_id: Uuid,
+        workspace_id: Option<Uuid>,
+        human_identity_id: Option<Uuid>,
+        initiator_principal_id: Uuid,
+        actor_principal_id: Uuid,
+        action_key: String,
+        action_version: i32,
+        component_type_key: String,
+        target_type: String,
+        target_id: Uuid,
+        parameter_hash: String,
+        result_exposure: String,
+        correlation_id: Uuid,
+    }
+    let facts: Facts = sqlx::query_as("select a.tenant_id,a.workspace_id,m.human_identity_id,
+        a.initiator_principal_id,a.actor_principal_id,a.action_key,a.action_version,d.component_type_key,
+        d.target_type,a.target_id,a.parameter_hash,d.result_exposure,a.correlation_id
+        from admission.action_execution a join catalog.action_definition d
+          on d.action_key=a.action_key and d.version=a.action_version
+        left join identity.tenant_membership m on m.tenant_id=a.tenant_id and m.tenant_principal_id=a.initiator_principal_id
+        where a.operation_id=$1")
+        .bind(operation).fetch_one(&mut **tx).await.map_err(|_| "Usage 审计 scope 不可读")?;
+    append(
+        tx,
+        AuditEntry {
+            event_key: format!("{operation}:{stage}"),
+            tenant_id: Some(facts.tenant_id),
+            workspace_id: facts.workspace_id,
+            operation_id: operation,
+            event_type,
+            human_identity_id: facts.human_identity_id,
+            initiator_principal_id: Some(facts.initiator_principal_id),
+            actor_principal_id: Some(facts.actor_principal_id),
+            action_key: &facts.action_key,
+            action_version: facts.action_version,
+            component_type_key: &facts.component_type_key,
+            target_type: Some(&facts.target_type),
+            target_id: Some(facts.target_id),
+            parameter_hash: &facts.parameter_hash,
+            decision: "NONE",
+            result_code,
+            result_exposure: &facts.result_exposure,
+            evidence_refs,
+            correlation_id: facts.correlation_id,
+        },
+    )
+    .await
+    .map_err(|_| "Usage 审计不可持久")
+}
+
+/// BFF 已 fresh 审计授权并核同 operation 后才调用。seq 只是 native 查证位置，
+/// 必须回读真实 stable ID/trace/user；本地 UsageEvent 不是 Gateway 存在性的证明。
+pub(crate) async fn native_usage_exists(
+    seq: i64,
+    id: Uuid,
+    trace: &str,
+    principal: Uuid,
+) -> Result<bool, &'static str> {
+    if seq <= 0 {
+        return Err("Gateway usage 原生 seq 无效");
+    }
+    let ingress = Ingress::from_env(&opentelemetry::global::meter("platform-core"))
+        .map_err(|_| "Gateway usage 原生查证配置不可用")?;
+    let page = ingress.read(seq - 1, 1).await?;
+    let user = principal.to_string();
+    Ok(page.entries.first().is_some_and(|entry| {
+        entry.seq == seq
+            && entry.id == id
+            && entry.trace_id.as_deref() == Some(trace)
+            && entry.agentgateway_user.as_deref() == Some(user.as_str())
+    }))
 }
 
 impl Page {
@@ -57,6 +640,96 @@ impl Page {
             return Err("Gateway usage nextCursor 与持久页不一致");
         }
         Ok(())
+    }
+}
+
+/// 原 Activity 已闭合也仍可按同一 native 引用核验运行次数。这里不 resume、
+/// interrupt 或派发 turn，不从本机时间、模型日志数量或空页推断一次运行。
+async fn invocation_started_at(
+    runtime: &crate::agent_runtime::Supervisor,
+    invocation: &UncountedInvocation,
+) -> Result<DateTime<Utc>, &'static str> {
+    if Uuid::parse_str(&invocation.runtime_thread_id).is_err()
+        || Uuid::parse_str(&invocation.runtime_turn_id).is_err()
+    {
+        return Err("Invocation usage native 引用不可核验");
+    }
+    let projection = crate::agent_runtime::RuntimeRef {
+        installation_id: invocation.installation_resource_id,
+        generation: invocation.projection_generation,
+        config_hash: invocation.config_hash.clone(),
+    };
+    let client_id = invocation.invocation_id.to_string();
+    let mut cursor = None;
+    let mut cursors = HashSet::new();
+    let mut matched = None;
+    loop {
+        let page = runtime
+            .turns(
+                &projection,
+                &invocation.runtime_thread_id,
+                cursor.as_deref(),
+            )
+            .await
+            .map_err(|_| "Invocation usage native history 不可读")?;
+        let turns = page
+            .get("data")
+            .and_then(Value::as_array)
+            .ok_or("Invocation usage native history 格式不明")?;
+        for turn in turns {
+            if turn.get("itemsView").and_then(Value::as_str) != Some("full") {
+                return Err("Invocation usage native history 不完整");
+            }
+            let id = turn
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .ok_or("Invocation usage native turn 缺 ID")?;
+            let items = turn
+                .get("items")
+                .and_then(Value::as_array)
+                .ok_or("Invocation usage native turn 缺 items")?;
+            let correlations = items
+                .iter()
+                .filter(|item| {
+                    item.get("type").and_then(Value::as_str) == Some("userMessage")
+                        && item.get("clientId").and_then(Value::as_str) == Some(client_id.as_str())
+                })
+                .count();
+            if id != invocation.runtime_turn_id && correlations == 0 {
+                continue;
+            }
+            if id != invocation.runtime_turn_id || correlations != 1 || matched.is_some() {
+                return Err("Invocation usage native turn/clientId 不唯一");
+            }
+            let status = turn
+                .get("status")
+                .and_then(Value::as_str)
+                .ok_or("Invocation usage native status 不明")?;
+            if !matches!(
+                status,
+                "inProgress" | "completed" | "failed" | "interrupted"
+            ) || invocation.native_status.as_deref().is_some_and(|known| {
+                matches!(known, "completed" | "failed" | "interrupted") && known != status
+            }) {
+                return Err("Invocation usage native status 冲突");
+            }
+            matched = Some(
+                turn.get("startedAt")
+                    .and_then(Value::as_i64)
+                    .filter(|seconds| *seconds > 0)
+                    .and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0))
+                    .filter(|started| *started <= Utc::now())
+                    .ok_or("Invocation usage 缺实际 native startedAt")?,
+            );
+        }
+        match page.get("nextCursor") {
+            Some(Value::Null) => return matched.ok_or("Invocation usage 未查到原 native turn"),
+            Some(Value::String(next)) if !next.is_empty() && cursors.insert(next.clone()) => {
+                cursor = Some(next.clone());
+            }
+            _ => return Err("Invocation usage native history 游标不明或循环"),
+        }
     }
 }
 
@@ -167,8 +840,20 @@ impl Ingress {
 
     /// 由同一治理对账循环调用。多 Core 副本以 checkpoint 行锁互斥；原生请求和
     /// IdP 取 token 合计受现有 admin deadline 约束，不让一个副本永久占住游标。
-    pub(crate) async fn reconcile(&self, pool: &PgPool, batch: i64) -> Result<(), &'static str> {
-        let result = self.inspect(pool, batch).await;
+    pub(crate) async fn reconcile(
+        &self,
+        pool: &PgPool,
+        batch: i64,
+        openmeter: &OpenMeter,
+        runtime: Option<&crate::agent_runtime::Supervisor>,
+    ) -> Result<(), &'static str> {
+        let counted = self.reconcile_invocation_usage(pool, batch, runtime).await;
+        let inspected = self.inspect(pool, batch, openmeter.namespace()).await;
+        // 新页缺归因时也继续对账已持久的 outbox，不能让后一条坏来源拖住已有投递。
+        let settled = self.settle(pool, batch, openmeter).await;
+        let result = counted.and_then(|counted| {
+            inspected.and_then(|empty| settled.map(|settled| counted && empty && settled))
+        });
         let outcome = match &result {
             Ok(true) => "EMPTY",
             Ok(false) => "BUSY",
@@ -181,7 +866,75 @@ impl Ingress {
         result.map(|_| ())
     }
 
-    async fn inspect(&self, pool: &PgPool, batch: i64) -> Result<bool, &'static str> {
+    async fn reconcile_invocation_usage(
+        &self,
+        pool: &PgPool,
+        batch: i64,
+        runtime: Option<&crate::agent_runtime::Supervisor>,
+    ) -> Result<bool, &'static str> {
+        if batch <= 0 {
+            return Err("Invocation usage 治理对账批次无效");
+        }
+        let pending: Vec<UncountedInvocation> = sqlx::query_as(
+            "select i.id invocation_id,i.installation_resource_id,i.projection_generation,
+                p.config_hash,s.runtime_thread_id,i.runtime_turn_id,i.native_status
+             from catalog.agent_invocation i
+             join projection.agent_model_trace t on t.invocation_id=i.id
+               and t.tenant_id=i.tenant_id and t.workspace_id=i.workspace_id
+             join admission.action_execution a on a.id=i.action_execution_id
+               and a.operation_id=t.operation_id and a.tenant_id=t.tenant_id and a.workspace_id=t.workspace_id
+             join catalog.agent_session s on s.tenant_id=i.tenant_id and s.workspace_id=i.workspace_id
+               and s.root_event_id=i.root_event_id and s.installation_resource_id=i.installation_resource_id
+               and s.agent_version_asset_id=i.agent_version_asset_id and s.projection_generation=i.projection_generation
+             join catalog.agent_runtime_projection p on p.installation_resource_id=i.installation_resource_id
+               and p.generation=i.projection_generation and p.agent_version_asset_id=i.agent_version_asset_id
+             where i.status in ('DISPATCHING','RUNNING','UNKNOWN') and a.action_key='automation.run'
+               and i.runtime_turn_id is not null and s.runtime_thread_id is not null
+               and not exists(select 1 from outbox.usage_event u where u.invocation_id=i.id
+                 and u.source_type='AGENT_INVOCATION' and u.source_id=i.id and u.meter_key='automation.run')
+             order by i.updated_at,i.id limit $1")
+            .bind(batch).fetch_all(pool).await.map_err(|_| "Invocation usage 待对账引用不可读")?;
+        if pending.is_empty() {
+            return Ok(true);
+        }
+        let runtime = runtime.ok_or("Invocation usage 缺原 native 只读运行体，保持待对账")?;
+        let mut unavailable = false;
+        for invocation in pending {
+            // 使用现有 ingress deadline 限制整条分页查证，不持数据库锁等原生页。
+            let observed =
+                tokio::time::timeout(self.timeout, invocation_started_at(runtime, &invocation))
+                    .await;
+            let recorded = match observed {
+                Ok(Ok(started)) => {
+                    record_invocation_usage(
+                        pool,
+                        invocation.invocation_id,
+                        &invocation.runtime_turn_id,
+                        started,
+                    )
+                    .await
+                }
+                Ok(Err(reason)) => Err(reason),
+                Err(_) => Err("Invocation usage native 查证超时"),
+            };
+            if let Err(reason) = recorded {
+                unavailable = true;
+                tracing::warn!(invocation_id=%invocation.invocation_id,state="UNKNOWN",
+                    reason_code="BILLING_UNAVAILABLE",%reason,"Invocation 原计数引用保留，未推测一次运行");
+            }
+        }
+        if unavailable {
+            return Err("BILLING_UNAVAILABLE：Invocation 原生计数尚待对账");
+        }
+        Ok(false)
+    }
+
+    async fn inspect(
+        &self,
+        pool: &PgPool,
+        batch: i64,
+        namespace: &str,
+    ) -> Result<bool, &'static str> {
         if batch <= 0 {
             return Err("Gateway usage 治理对账批次无效");
         }
@@ -224,34 +977,121 @@ impl Ingress {
         let page = tokio::time::timeout(self.timeout, self.read(after, batch))
             .await
             .map_err(|_| "Gateway usage 读取超时，原游标保留")??;
-        // 没有 UsageEvent 持久幂等及全部归因证据，nextCursor 不能先写。崩溃或
-        // 身份/上游失败均只重读同一稳定 ID，绝不丢掉未归因记录。
+        self.pending_observed.record(page.entries.len() as u64, &[]);
+        for entry in &page.entries {
+            if let Err(reason) = correlate(&mut tx, entry, namespace).await {
+                self.oldest_observed_age.record(
+                    Utc::now()
+                        .signed_duration_since(entry.completed_at)
+                        .num_seconds()
+                        .max(0) as u64,
+                    &[],
+                );
+                tracing::warn!(source_id=%entry.id,cursor=after,state="UNKNOWN",
+                    reason_code="BILLING_UNAVAILABLE",%reason,"Gateway usage 原游标保留；没有推测归因");
+                return Err(reason);
+            }
+        }
+        sqlx::query("update projection.ingress_checkpoint set cursor=$2 where source_key=$1")
+            .bind(SOURCE_KEY)
+            .bind(page.next_cursor.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| "Gateway usage checkpoint 不可持久")?;
+        // 与全部 UsageEvent 同事务推进。202/结算未完成不丢记录，由持久 outbox 收敛。
         tx.commit()
             .await
-            .map_err(|_| "Gateway usage checkpoint 观察提交不明")?;
-        self.pending_observed.record(page.entries.len() as u64, &[]);
-        let Some(first) = page.entries.first() else {
-            self.oldest_observed_age.record(0, &[]);
-            self.unavailable.record(0, &[]);
+            .map_err(|_| "Gateway usage/checkpoint 提交结果不明")?;
+        self.checkpoint_cursor.record(page.next_cursor as u64, &[]);
+        self.oldest_observed_age.record(0, &[]);
+        if page.entries.is_empty() {
             tracing::debug!("Gateway usage outbox 无适用对象；不形成计费用量结论");
-            return Ok(true);
-        };
-        let oldest = page
-            .entries
-            .iter()
-            .map(|entry| entry.completed_at)
-            .min()
-            .ok_or("Gateway usage 页没有可核验的完成时间")?;
-        let age = Utc::now()
-            .signed_duration_since(oldest)
-            .num_seconds()
-            .max(0);
-        self.oldest_observed_age.record(age as u64, &[]);
-        // 当前 producer 没有 Core trace→Session/Invocation/Operation 与 provider
-        // meter/reservation 的完整事实；不能用 native trace、时间或 model 名猜。
-        tracing::warn!(source_id = %first.id, cursor = after, next_cursor = page.next_cursor,
-            state = "UNKNOWN", reason_code = "BILLING_UNAVAILABLE",
-            "Gateway durable usage 待对账：缺权威归因与 meter 事实，原 checkpoint 不前移");
-        Err("BILLING_UNAVAILABLE：Gateway durable usage 归因待对账，原游标保留")
+        }
+        Ok(page.entries.is_empty())
+    }
+
+    async fn settle(
+        &self,
+        pool: &PgPool,
+        batch: i64,
+        openmeter: &OpenMeter,
+    ) -> Result<bool, &'static str> {
+        if batch <= 0 {
+            return Err("Gateway usage 治理对账批次无效");
+        }
+        let ids: Vec<Uuid> = sqlx::query_scalar("select id from outbox.usage_event
+            where settlement_status in ('PENDING_PUBLISH','ACCEPTED','UNKNOWN') order by updated_at,id limit $1")
+            .bind(batch).fetch_all(pool).await.map_err(|_| "UsageEvent 待投递集合不可读")?;
+        let mut unavailable = false;
+        for id in &ids {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|_| "UsageEvent 对账事务不可用")?;
+            let row: Option<(Value,String,String,Uuid,Uuid,String)> = sqlx::query_as("select u.event,u.settlement_status,t.openmeter_namespace,
+                u.operation_id,u.source_id,u.source_type
+                from outbox.usage_event u join projection.agent_model_trace t on t.invocation_id=u.invocation_id
+                where u.id=$1 and u.settlement_status in ('PENDING_PUBLISH','ACCEPTED','UNKNOWN') for update of u skip locked")
+                .bind(id).fetch_optional(&mut *tx).await.map_err(|_| "UsageEvent 对账事实不可读")?;
+            let Some((event, status, namespace, operation, source_id, source_type)) = row else {
+                continue;
+            };
+            let evidence = if namespace == openmeter.namespace() {
+                openmeter.stored_usage(&event).await
+            } else {
+                Err(crate::openmeter::Error::Conflict)
+            };
+            let (next, stored_at) = match evidence {
+                Ok(Some(evidence)) => {
+                    if evidence.configuration_warning {
+                        tracing::warn!(usage_event_id=%id,reason_code="BILLING_UNAVAILABLE",
+                            "OpenMeter event 已 stored_at；读时配置告警不重判持久事实或声称账单已结算");
+                    }
+                    ("COMMITTED", Some(evidence.stored_at))
+                }
+                Ok(None) if status == "ACCEPTED" => ("ACCEPTED", None),
+                Ok(None) => match openmeter.publish_usage(&event).await {
+                    Ok(()) => ("ACCEPTED", None),
+                    Err(_) => {
+                        unavailable = true;
+                        ("UNKNOWN", None)
+                    }
+                },
+                Err(_) => {
+                    unavailable = true;
+                    ("UNKNOWN", None)
+                }
+            };
+            sqlx::query("update outbox.usage_event set settlement_status=$2,stored_at=$3,updated_at=now() where id=$1")
+                .bind(id).bind(next).bind(stored_at).execute(&mut *tx).await
+                .map_err(|_| "UsageEvent 对账结果不可持久")?;
+            let mut evidence = vec![
+                Evidence::new(EvidenceKind::UsageEventId, id),
+                Evidence::new(EvidenceKind::OpenmeterEventId, id),
+            ];
+            if source_type == "GATEWAY_DURABLE_USAGE" {
+                evidence.push(Evidence::new(EvidenceKind::AgentgatewayUsageId, source_id));
+            } else if source_type != "AGENT_INVOCATION" {
+                return Err("UsageEvent source 不可核验");
+            }
+            usage_audit(
+                &mut tx,
+                operation,
+                &format!("usage:{id}:{next}"),
+                "RECONCILIATION",
+                next,
+                evidence,
+            )
+            .await?;
+            tx.commit()
+                .await
+                .map_err(|_| "UsageEvent 对账提交结果不明")?;
+        }
+        if unavailable {
+            return Err("BILLING_UNAVAILABLE：OpenMeter usage 投递/查证结果不明");
+        }
+        self.unavailable.record(0, &[]);
+        // 仅表示当前 outbox 无待投递对象；不是 turn 请求全集或账单终态。
+        Ok(ids.is_empty())
     }
 }

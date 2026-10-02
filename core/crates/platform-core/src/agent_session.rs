@@ -66,9 +66,12 @@ pub(crate) async fn birth(
     if session.status != "PENDING" || session.runtime_thread_id.is_some() {
         return Err(RuntimeError::Unavailable);
     }
+    crate::automation::fresh_invocation(state, &mut tx, invocation_id)
+        .await
+        .map_err(|_| RuntimeError::AdmissionRequired)?;
     // 同一事务的 Invocation/lifecycle fence；不另起 memory Action，且不读缓存 head。
     let core_memory =
-        crate::agent_memory::read_core(state, &mut tx, invocation_id, &state.agent_memory)
+        crate::agent_memory::read_core(state, &mut tx, invocation_id, &state.agent_memory, None)
             .await
             .map_err(|_| RuntimeError::Unavailable)?;
     let (memory_state, memory_event) = match &core_memory {
@@ -121,6 +124,9 @@ pub(crate) async fn birth(
     {
         return Err(RuntimeError::Unknown);
     }
+    crate::automation::fresh_invocation(state, &mut tx, invocation_id)
+        .await
+        .map_err(|_| RuntimeError::AdmissionRequired)?;
     let observed = runtime.start_thread(projection).await;
     let thread = observed.as_ref().ok().map(String::as_str);
     let changed = sqlx::query(
@@ -154,13 +160,60 @@ pub(crate) async fn birth(
     })
 }
 
+/// A crash after thread birth must not refresh the Session's memory snapshot.
+/// Read its exact encrypted native event again, or retain UNREADABLE. Known
+/// ABSENT stays ABSENT even if a later replaceable head now exists.
+pub(crate) async fn fixed_core(
+    state: &ServiceState,
+    invocation_id: Uuid,
+    projection: &RuntimeRef,
+) -> Result<Option<CoreMemory>, RuntimeError> {
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
+    let session = lock_birth(&mut tx, invocation_id, projection).await?;
+    if session.status != "ACTIVE" || session.runtime_thread_id.is_none() {
+        return Err(RuntimeError::Unavailable);
+    }
+    crate::automation::fresh_invocation(state, &mut tx, invocation_id)
+        .await
+        .map_err(|_| RuntimeError::AdmissionRequired)?;
+    let memory = match (
+        session.core_memory_state.as_str(),
+        session.core_memory_event_id.as_deref(),
+    ) {
+        ("ABSENT", None) => Some(CoreMemory::Absent),
+        ("UNREADABLE", None) => None,
+        ("FOUND", Some(event)) => {
+            let memory = crate::agent_memory::read_core(
+                state,
+                &mut tx,
+                invocation_id,
+                &state.agent_memory,
+                Some(event),
+            )
+            .await
+            .map_err(|_| RuntimeError::Unavailable)?;
+            match &memory {
+                Some(CoreMemory::Found { head, .. }) if head.event_id == event => memory,
+                _ => None,
+            }
+        }
+        _ => return Err(RuntimeError::Unavailable),
+    };
+    tx.commit().await.map_err(|_| RuntimeError::Unknown)?;
+    Ok(memory)
+}
+
 async fn lock_birth(
     tx: &mut Transaction<'_, Postgres>,
     invocation: Uuid,
     projection: &RuntimeRef,
 ) -> Result<BirthSession, RuntimeError> {
-    let scope: (Uuid, Uuid) = sqlx::query_as(
-        "select tenant_id,workspace_id
+    let scope: (Uuid, Uuid, Uuid) = sqlx::query_as(
+        "select tenant_id,workspace_id,action_execution_id
         from catalog.agent_invocation where id=$1",
     )
     .bind(invocation)
@@ -168,6 +221,11 @@ async fn lock_birth(
     .await
     .map_err(|_| RuntimeError::Unknown)?
     .ok_or(RuntimeError::Unavailable)?;
+    // The same AE→Tenant lock order is used by governance/Delegation. The
+    // native lifecycle fence must not introduce Tenant→AE inversion.
+    crate::governance::lock_execution(tx, scope.2)
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
     let active: Option<bool> = sqlx::query_scalar(
         "select t.state='ACTIVE' and w.state='ACTIVE'
         from identity.tenant t join identity.workspace w on w.tenant_id=t.id

@@ -55,6 +55,20 @@
       "$ref": "../domain/agent_version_content.schema.json",
       "description": "仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。"
     },
+    "delegationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。"
+    },
+    "delegationVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "仅 revoke：调用方实际读取的 Grant 版本。"
+    },
+    "delegationGrant": {
+      "$ref": "../domain/delegation_grant_parameters.schema.json",
+      "description": "仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。"
+    },
     "slug": {
       "type": "string",
       "description": "workspace.create 或 agent.definition.create 的稳定 slug"

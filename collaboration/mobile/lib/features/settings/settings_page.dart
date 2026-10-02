@@ -20,6 +20,7 @@ import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../platform/platform_audit_page.dart';
+import '../platform/platform_agent_installation_workspaces_page.dart';
 import '../platform/platform_devices_page.dart';
 import '../platform/platform_members_page.dart';
 import '../platform/platform_status_text.dart';
@@ -125,6 +126,16 @@ class _OrganizationSection extends StatelessWidget {
       ),
       verticalPadding: Grid.twelve,
       children: [
+        AppListRow(
+          key: const ValueKey('settings-platform-agents'),
+          icon: LucideIcons.bot,
+          title: platformText(
+            PlatformMessageKey.platformTabAgents,
+            locale: locale,
+          ),
+          trailing: const _RowChevron(),
+          onTap: () => open(const PlatformAgentInstallationWorkspacesPage()),
+        ),
         AppListRow(
           key: const ValueKey('settings-platform-members'),
           icon: LucideIcons.users,

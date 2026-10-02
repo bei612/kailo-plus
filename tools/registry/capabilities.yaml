@@ -6,6 +6,8 @@ capabilities:
   - /api/v1/agent-definitions
   - /api/v1/agent-definitions/{resource_id}
   - /api/v1/agent-versions/{asset_id}
+  - /api/v1/agent-installations
+  - /api/v1/agent-installations/{resource_id}
   actions:
   - agent.definition.create
   - agent.definition.update

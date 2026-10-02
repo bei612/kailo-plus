@@ -111,7 +111,7 @@ pub(crate) async fn reconcile(
         .await?;
         return Ok(false);
     }
-    let observed = observe(state, &binding, config, false).await;
+    let observed = observe(state, &binding, config, ReadRequest::Snapshot).await;
     match observed {
         Ok(Observed::Snapshot(snapshot)) => {
             let ready = !snapshot.head_ahead_of_relay;
@@ -158,6 +158,7 @@ pub(crate) async fn read_core(
     conn: &mut PgConnection,
     invocation: Uuid,
     config: &Config,
+    frozen_event: Option<&str>,
 ) -> Result<Option<CoreMemory>, Refusal> {
     let installation: Option<Uuid> = sqlx::query_scalar(
         "select v.installation_resource_id from catalog.agent_invocation v
@@ -187,7 +188,11 @@ pub(crate) async fn read_core(
     {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
-    match observe(state, &binding, config, true).await {
+    let request = match frozen_event {
+        Some(event) => ReadRequest::CoreEvent(event),
+        None => ReadRequest::Core,
+    };
+    match observe(state, &binding, config, request).await {
         Ok(Observed::Core(core)) => Ok(Some(core)),
         Ok(Observed::Snapshot(_)) => Err(unavailable("Agent memory Session 结果类型不符")),
         Err(ObserveError::Native(_)) => Ok(None),
@@ -257,11 +262,17 @@ enum ObserveError {
     Native(MemoryError),
 }
 
+enum ReadRequest<'a> {
+    Snapshot,
+    Core,
+    CoreEvent(&'a str),
+}
+
 async fn observe(
     state: &ServiceState,
     binding: &Binding,
     config: &Config,
-    core_only: bool,
+    request: ReadRequest<'_>,
 ) -> Result<Observed, ObserveError> {
     crate::service_api::audit_gate(state)
         .await
@@ -347,18 +358,23 @@ async fn observe(
     )
     .map_err(ObserveError::Native)?;
     let now = u64::try_from(chrono::Utc::now().timestamp()).map_err(|_| ObserveError::Binding)?;
-    if core_only {
-        return reader
+    match request {
+        ReadRequest::Core => reader
             .read_core(&state.http, now)
             .await
             .map(Observed::Core)
-            .map_err(ObserveError::Native);
+            .map_err(ObserveError::Native),
+        ReadRequest::CoreEvent(event) => reader
+            .read_core_event(&state.http, event, now)
+            .await
+            .map(Observed::Core)
+            .map_err(ObserveError::Native),
+        ReadRequest::Snapshot => reader
+            .inspect(&state.http, now)
+            .await
+            .map(Observed::Snapshot)
+            .map_err(ObserveError::Native),
     }
-    reader
-        .inspect(&state.http, now)
-        .await
-        .map(Observed::Snapshot)
-        .map_err(ObserveError::Native)
 }
 
 async fn record(

@@ -315,6 +315,61 @@ impl IdentityClient {
             .any(|e| e.get("id").and_then(|v| v.as_str()) == Some(event_id)))
     }
 
+    /// 查证已经持久化的 Reply ID，不签名、不发布，也不把消息正文交给 Core。
+    /// 作者、Channel 和 NIP-10 ancestry 必须都是调用方冻结的原始引用。
+    pub async fn channel_reply_exists(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+        author: &str,
+        channel_id: &str,
+        ancestry: (&str, &str),
+    ) -> Result<bool, OperatorError> {
+        let page = self
+            .query(http, &[serde_json::json!({ "ids": [event_id] })])
+            .await?;
+        let events: Vec<Event> = serde_json::from_value(page)
+            .map_err(|_| OperatorError::NotConverged("Reply 查询不是有效的原生事件数组".into()))?;
+        let mut events = events.into_iter();
+        let Some(event) = events.next() else {
+            return Ok(false);
+        };
+        if events.next().is_some()
+            || event.id.to_hex() != event_id
+            || event.pubkey.to_hex() != author
+            || event.kind.as_u16() != KIND_CHANNEL_MESSAGE
+            || event.verify().is_err()
+        {
+            return Err(OperatorError::NotConverged(
+                "Reply 的数量、ID、作者、kind 或原生签名不符合冻结引用".into(),
+            ));
+        }
+        let mut observed_channel = None;
+        for tag in event.tags.iter() {
+            let parts = tag.as_slice();
+            if parts.first().map(String::as_str) == Some("h") {
+                if observed_channel.is_some() || parts.len() != 2 {
+                    return Err(OperatorError::NotConverged(
+                        "Reply 的 Channel 标签损坏或重复".into(),
+                    ));
+                }
+                observed_channel = parts.get(1);
+            }
+        }
+        let observed_ancestry = buzz_core::nip10::parse_thread_markers(&event.tags).resolve();
+        if observed_channel.map(String::as_str) != Some(channel_id)
+            || observed_ancestry
+                .as_ref()
+                .map(|(root, parent)| (root.as_str(), parent.as_str()))
+                != Some(ancestry)
+        {
+            return Err(OperatorError::NotConverged(
+                "Reply 不属于冻结的 Channel、root 或 source event".into(),
+            ));
+        }
+        Ok(true)
+    }
+
     /// 读取 roster 快照。
     ///
     /// 这是 roster 唯一的读取面：上游没有暴露直接读 `relay_members` 或

@@ -118,6 +118,18 @@ export interface ActionCommand {
      */
     assetVersion?: number;
     /**
+     * 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
+     */
+    delegationGrant?: DelegationGrantClass;
+    /**
+     * 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
+     */
+    delegationId?: string;
+    /**
+     * 仅 revoke：调用方实际读取的 Grant 版本。
+     */
+    delegationVersion?: number;
+    /**
      * EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
      */
     explicitConfirmation?: boolean;
@@ -219,6 +231,34 @@ export enum AgentTrigger {
 export interface AgentVersionContentTurnLimits {
     idleTimeoutSeconds:     number;
     maxTurnDurationSeconds: number;
+}
+
+/**
+ * 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
+ */
+export interface DelegationGrantClass {
+    expiresAt: Date;
+    maxUses?:  number;
+    scopes:    DelegationGrantScope[];
+    validFrom: Date;
+}
+
+export interface DelegationGrantScope {
+    actionKey:          string;
+    actionVersion:      number;
+    createWorkspaceId?: string;
+    outputSchemaHash:   string;
+    redactionPolicy:    string;
+    resultExposureMode: ResultExposureMode;
+    targetId?:          string;
+    targetType:         string;
+    toolResourceId?:    string;
+}
+
+export enum ResultExposureMode {
+    ConsumeOnly = "CONSUME_ONLY",
+    Export = "EXPORT",
+    Read = "READ",
 }
 
 /**
@@ -382,6 +422,120 @@ export interface AgentDefinitionView {
     resourceVersion:                 number;
     stableSlug:                      string;
     status:                          string;
+}
+
+/**
+ * 按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
+ */
+export interface AgentInstallationPage {
+    installations: InstallationElement[];
+    nextOffset?:   number;
+}
+
+/**
+ * 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
+ * 正文、执行或管理权限。
+ */
+export interface InstallationElement {
+    activeProjectionGeneration?: number;
+    agentPrincipalId:            string;
+    agentPrincipalState:         AgentPrincipalState;
+    agentResourceId:             string;
+    channelBinding?:             InstallationChannelBinding;
+    ownerPrincipalId:            string;
+    pinnedVersionAssetId:        string;
+    projection?:                 ProjectionClass;
+    resourceId:                  string;
+    resourceState:               ResourceState;
+    resourceVersion:             number;
+    state:                       AgentInstallationState;
+    workspaceId:                 string;
+}
+
+export enum AgentPrincipalState {
+    Active = "ACTIVE",
+    Disabled = "DISABLED",
+}
+
+export interface InstallationChannelBinding {
+    channelId?: string;
+    status:     Status;
+    triggers:   AgentTrigger[];
+}
+
+export enum Status {
+    Active = "ACTIVE",
+    Disabled = "DISABLED",
+    Error = "ERROR",
+}
+
+/**
+ * 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
+ */
+export interface ProjectionClass {
+    agentVersionAssetId: string;
+    configHash:          string;
+    generation:          number;
+    runtimeProfileKey:   string;
+    state:               AgentRuntimeProjectionState;
+}
+
+/**
+ * 03 §7 的静态运行投影状态，不承载 Invocation 动态准入。
+ */
+export enum AgentRuntimeProjectionState {
+    Active = "ACTIVE",
+    Error = "ERROR",
+    Pending = "PENDING",
+    Revoked = "REVOKED",
+}
+
+/**
+ * 03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
+ */
+export enum AgentInstallationState {
+    Active = "ACTIVE",
+    Disabled = "DISABLED",
+    Draining = "DRAINING",
+    Error = "ERROR",
+    Provisioning = "PROVISIONING",
+}
+
+/**
+ * 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
+ */
+export interface AgentInstallationProjectionView {
+    agentVersionAssetId: string;
+    configHash:          string;
+    generation:          number;
+    runtimeProfileKey:   string;
+    state:               AgentRuntimeProjectionState;
+}
+
+/**
+ * 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
+ * 正文、执行或管理权限。
+ */
+export interface AgentInstallationView {
+    activeProjectionGeneration?: number;
+    agentPrincipalId:            string;
+    agentPrincipalState:         AgentPrincipalState;
+    agentResourceId:             string;
+    channelBinding?:             AgentInstallationViewChannelBinding;
+    ownerPrincipalId:            string;
+    pinnedVersionAssetId:        string;
+    projection?:                 ProjectionClass;
+    resourceId:                  string;
+    resourceState:               ResourceState;
+    resourceVersion:             number;
+    state:                       AgentInstallationState;
+    workspaceId:                 string;
+}
+
+export interface AgentInstallationViewChannelBinding {
+    channelId?: string;
+    status:     Status;
+    triggers:   AgentTrigger[];
 }
 
 export interface AgentVersionView {
@@ -559,9 +713,11 @@ export interface AuditEvidenceSlot {
  * EvidenceRef 所指证据的源码权威。
  */
 export enum EvidenceAuthority {
+    Agentgateway = "AGENTGATEWAY",
     Buzz = "BUZZ",
     Core = "CORE",
     Oidc = "OIDC",
+    Openmeter = "OPENMETER",
     Spicedb = "SPICEDB",
     Temporal = "TEMPORAL",
 }
@@ -575,6 +731,7 @@ export enum EvidenceAuthority {
 export enum EvidenceKind {
     ActionExecutionID = "ACTION_EXECUTION_ID",
     AdmitActionExecutionID = "ADMIT_ACTION_EXECUTION_ID",
+    AgentgatewayUsageID = "AGENTGATEWAY_USAGE_ID",
     ApprovalPolicy = "APPROVAL_POLICY",
     ApprovalWorkflowID = "APPROVAL_WORKFLOW_ID",
     BuzzDeletionInventoryDigest = "BUZZ_DELETION_INVENTORY_DIGEST",
@@ -583,6 +740,7 @@ export enum EvidenceKind {
     BuzzPubkey = "BUZZ_PUBKEY",
     DeploymentBootstrap = "DEPLOYMENT_BOOTSTRAP",
     ExternalSubjectSha256 = "EXTERNAL_SUBJECT_SHA256",
+    OpenmeterEventID = "OPENMETER_EVENT_ID",
     OriginalActionExecutionID = "ORIGINAL_ACTION_EXECUTION_ID",
     PlatformSessionID = "PLATFORM_SESSION_ID",
     SecretRefRehomeID = "SECRET_REF_REHOME_ID",
@@ -595,6 +753,8 @@ export enum EvidenceKind {
     TenantInvitationID = "TENANT_INVITATION_ID",
     TenantLifecycleSnapshotID = "TENANT_LIFECYCLE_SNAPSHOT_ID",
     TenantMembershipID = "TENANT_MEMBERSHIP_ID",
+    TraceID = "TRACE_ID",
+    UsageEventID = "USAGE_EVENT_ID",
 }
 
 /**
@@ -1184,6 +1344,25 @@ export interface AgentVersionContentPersonaIdentityClass {
 export interface AgentVersionContentTurnLimitsClass {
     idleTimeoutSeconds:     number;
     maxTurnDurationSeconds: number;
+}
+
+export interface DelegationGrantParameters {
+    expiresAt: Date;
+    maxUses?:  number;
+    scopes:    DelegationGrantParametersScope[];
+    validFrom: Date;
+}
+
+export interface DelegationGrantParametersScope {
+    actionKey:          string;
+    actionVersion:      number;
+    createWorkspaceId?: string;
+    outputSchemaHash:   string;
+    redactionPolicy:    string;
+    resultExposureMode: ResultExposureMode;
+    targetId?:          string;
+    targetType:         string;
+    toolResourceId?:    string;
 }
 
 /**

@@ -9,6 +9,8 @@
     "TEMPORAL",
     "SPICEDB",
     "BUZZ",
-    "OIDC"
+    "OIDC",
+    "OPENMETER",
+    "AGENTGATEWAY"
   ]
 }

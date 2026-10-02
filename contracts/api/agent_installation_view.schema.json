@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_installation_view.schema.json",
+  "title": "AgentInstallationView",
+  "description": "03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version 正文、执行或管理权限。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "workspaceId", "agentResourceId", "pinnedVersionAssetId", "agentPrincipalId", "agentPrincipalState", "ownerPrincipalId", "resourceVersion", "resourceState", "state"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "agentResourceId": {"type": "string", "format": "uuid"},
+    "pinnedVersionAssetId": {"type": "string", "format": "uuid"},
+    "agentPrincipalId": {"type": "string", "format": "uuid"},
+    "agentPrincipalState": {"type": "string", "enum": ["ACTIVE", "DISABLED"]},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer", "minimum": 1},
+    "resourceState": {"$ref": "../enums/resource_state.schema.json"},
+    "state": {"$ref": "../enums/agent_installation_state.schema.json"},
+    "activeProjectionGeneration": {"type": "integer", "minimum": 1},
+    "channelBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "triggers"],
+      "properties": {
+        "status": {"type": "string", "enum": ["ACTIVE", "DISABLED", "ERROR"]},
+        "triggers": {"type": "array", "items": {"$ref": "../enums/agent_trigger.schema.json"}},
+        "channelId": {"type": "string", "format": "uuid"}
+      }
+    },
+    "projection": {"$ref": "agent_installation_projection_view.schema.json"}
+  }
+}

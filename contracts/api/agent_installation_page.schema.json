@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_installation_page.schema.json",
+  "title": "AgentInstallationPage",
+  "description": "按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["installations"],
+  "properties": {
+    "installations": {"type": "array", "items": {"$ref": "agent_installation_view.schema.json"}},
+    "nextOffset": {"type": "integer", "minimum": 0}
+  }
+}

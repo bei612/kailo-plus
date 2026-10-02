@@ -92,6 +92,8 @@ pub fn describe(kind: &EvidenceKind) -> (EvidenceAuthority, EvidenceSensitivity)
         | K::BuzzDeletionRequestId
         | K::BuzzDeletionInventoryDigest => (A::Buzz, S::Summary),
         K::ExternalSubjectSha256 => (A::Oidc, S::Restricted),
+        K::OpenmeterEventId => (A::Openmeter, S::Summary),
+        K::AgentgatewayUsageId => (A::Agentgateway, S::Summary),
         K::PlatformSessionId => (A::Core, S::Restricted),
         K::ApprovalPolicy
         | K::ActionExecutionId
@@ -102,6 +104,8 @@ pub fn describe(kind: &EvidenceKind) -> (EvidenceAuthority, EvidenceSensitivity)
         | K::TenantLifecycleSnapshotId
         | K::TenantDeleteSubprocessId
         | K::SecretRefRehomeId
+        | K::UsageEventId
+        | K::TraceId
         | K::DeploymentBootstrap => (A::Core, S::Summary),
     }
 }

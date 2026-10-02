@@ -159,7 +159,26 @@ pub(crate) async fn frozen_agent_inventory(
             select id,tenant_id,workspace_id,root_event_id,source_event_id,installation_resource_id,
                    agent_version_asset_id,projection_generation,parent_invocation_id,
                    delegation_id,automation_version_asset_id,action_execution_id,workflow_id
-            from catalog.agent_invocation where tenant_id=$1 order by id for update) x))",
+            from catalog.agent_invocation where tenant_id=$1 order by id for update) x),
+          'delegation_grants', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select id,tenant_id,workspace_id,grantor_principal_id,installation_resource_id,
+                   agent_principal_id,valid_from,expires_at,max_uses,action_execution_id
+            from admission.delegation_grant where tenant_id=$1 order by id for update) x),
+          'delegation_scopes', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select s.delegation_id,s.action_key,s.action_version,s.target_type,s.target_id,
+                   s.create_workspace_id,s.tool_resource_id,
+                   s.result_exposure_policy_id,s.result_exposure_policy_version
+            from admission.delegation_scope s join admission.delegation_grant g on g.id=s.delegation_id
+            where g.tenant_id=$1
+            order by s.delegation_id,s.action_key,s.action_version,s.target_type,s.target_id,
+                     s.create_workspace_id,s.tool_resource_id for update of s) x),
+          'delegation_uses', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select u.delegation_id,u.operation_id,u.first_dispatch_at
+            from admission.delegation_use u join admission.delegation_grant g on g.id=u.delegation_id
+            where g.tenant_id=$1 order by u.delegation_id,u.operation_id for update of u) x),
+          'result_exposure_policies', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select id,tenant_id,version
+            from catalog.result_exposure_policy where tenant_id=$1 order by id,version for update) x))",
     )
     .bind(tenant)
     .fetch_one(&mut *conn)
@@ -372,6 +391,15 @@ async fn drain_agents(state: &ServiceState, deletion: &Delete) -> Result<bool, s
     if !same_agent_inventory(actual, inventory.clone())? {
         return Ok(false);
     }
+    // Grant 生命周期可收紧，Scope/Use 及原 Action/Audit 引用仍保留在同一冻结清单。
+    // 与首次 dispatch 共用 Tenant 锁；暂停/删除过程中不存在新 Use 的合法写者。
+    sqlx::query(
+        "update admission.delegation_grant set state='REVOKING',version=version+1
+        where tenant_id=$1 and state='ACTIVE'",
+    )
+    .bind(deletion.tenant_id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("update catalog.agent_installation set state='DRAINING' where resource_id in
         (select id from catalog.resource where tenant_id=$1) and state not in ('DRAINING','DISABLED')")
         .bind(deletion.tenant_id).execute(&mut *tx).await?;
@@ -1745,6 +1773,8 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
     // 历史 operation、Workflow、审计和外部引用不删除；保留的 FK 目标是
     // DISABLED/REVOKED 墓碑，不再是可用身份、scope 或 binding。
     for sql in [
+        "update admission.delegation_grant set state='REVOKED',version=version+1 where tenant_id=$1 and state in ('ACTIVE','REVOKING')",
+        "update catalog.result_exposure_policy set status='RETIRED' where tenant_id=$1 and status='ACTIVE'",
         "update catalog.agent_installation set state='DISABLED',active_projection_generation=null where resource_id in (select id from catalog.resource where tenant_id=$1)",
         "update catalog.agent_runtime_projection set state='REVOKED' where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and state<>'REVOKED'",
         "update catalog.channel_agent_binding set status='DISABLED' where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and status<>'DISABLED'",

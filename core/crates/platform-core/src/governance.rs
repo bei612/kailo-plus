@@ -52,6 +52,9 @@ use crate::scope_state::ScopeKind;
 use crate::spicedb::{Consistency, SpiceDb};
 use crate::temporal::{ObservedState, TemporalClient, TemporalError, UpdateOutcome};
 
+#[path = "delegation.rs"]
+pub(crate) mod delegation;
+
 /// Worker 注册的审批 Workflow 类型名，两侧逐字相同。
 pub const APPROVAL_WORKFLOW_TYPE: &str = "ApprovalWorkflow";
 /// 审批 workflow ID 的类型段。它不是 ComponentTaskWorkflow 的 kind，只占
@@ -416,6 +419,8 @@ pub enum Semantic {
     AgentVersionUpdate,
     AgentVersionPublish,
     AgentInstallationCreate,
+    AgentDelegationGrant,
+    AgentDelegationRevoke,
     ResourceTransferOwner,
 }
 
@@ -447,6 +452,8 @@ impl Semantic {
             "agent.version.update" => Self::AgentVersionUpdate,
             "agent.version.publish" => Self::AgentVersionPublish,
             "agent.installation.create" => Self::AgentInstallationCreate,
+            "agent.delegation.grant" => Self::AgentDelegationGrant,
+            "agent.delegation.revoke" => Self::AgentDelegationRevoke,
             "resource.transfer_owner" => Self::ResourceTransferOwner,
             _ => return None,
         })
@@ -468,6 +475,8 @@ impl Semantic {
                 | Self::AgentDefinitionUpdate
                 | Self::AgentVersionUpdate
                 | Self::AgentVersionPublish
+                | Self::AgentDelegationGrant
+                | Self::AgentDelegationRevoke
         )
     }
 
@@ -498,6 +507,8 @@ impl Semantic {
                     | Self::AgentVersionUpdate
                     | Self::AgentVersionPublish
                     | Self::AgentInstallationCreate
+                    | Self::AgentDelegationGrant
+                    | Self::AgentDelegationRevoke
                     | Self::ResourceTransferOwner
             )
     }
@@ -527,6 +538,8 @@ impl Semantic {
                 | Self::TenantRestore
                 | Self::AgentVersionPublish
                 | Self::AgentInstallationCreate
+                | Self::AgentDelegationGrant
+                | Self::AgentDelegationRevoke
         )
     }
 
@@ -559,6 +572,9 @@ pub struct Params {
     pub asset_id: Option<Uuid>,
     pub asset_version: Option<i32>,
     pub agent_version_content: Option<contracts::ContentClass>,
+    pub delegation_id: Option<Uuid>,
+    pub delegation_version: Option<i32>,
+    pub delegation_grant: Option<contracts::DelegationGrantParameters>,
 }
 
 impl Params {
@@ -597,6 +613,15 @@ impl Params {
         if let Some(content) = &self.agent_version_content {
             m.insert("agentVersionContent".into(), json!(content));
         }
+        if let Some(id) = self.delegation_id {
+            m.insert("delegationId".into(), json!(id));
+        }
+        if let Some(version) = self.delegation_version {
+            m.insert("delegationVersion".into(), json!(version));
+        }
+        if let Some(grant) = &self.delegation_grant {
+            m.insert("delegationGrant".into(), json!(grant));
+        }
         if let Some(s) = &self.slug {
             m.insert("slug".into(), json!(s));
         }
@@ -634,6 +659,16 @@ impl Params {
                 .and_then(|n| i32::try_from(n).ok()),
             agent_version_content: v
                 .get("agentVersionContent")
+                .map(|v| serde_json::from_value(v.clone()))
+                .transpose()
+                .ok()?,
+            delegation_id: uuid("delegationId"),
+            delegation_version: v
+                .get("delegationVersion")
+                .and_then(Value::as_i64)
+                .and_then(|n| i32::try_from(n).ok()),
+            delegation_grant: v
+                .get("delegationGrant")
                 .map(|v| serde_json::from_value(v.clone()))
                 .transpose()
                 .ok()?,
@@ -683,6 +718,20 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map(|n| i32::try_from(n).map_err(|_| bad()))
             .transpose()?,
         agent_version_content: cmd.agent_version_content.clone(),
+        delegation_id: uuid(&cmd.delegation_id)?,
+        delegation_version: cmd
+            .delegation_version
+            .map(|n| i32::try_from(n).map_err(|_| bad()))
+            .transpose()?,
+        delegation_grant: cmd
+            .delegation_grant
+            .as_ref()
+            .map(|grant| {
+                let value = serde_json::to_value(grant).map_err(|_| bad())?;
+                let grant = serde_json::from_value(value).map_err(|_| bad())?;
+                delegation::normalize(grant)
+            })
+            .transpose()?,
     };
     // tenantId 只属于业务 Tenant 的暂停与恢复
     if sem.tenant_segment().is_none() && sem != Semantic::TenantDelete && p.tenant_id.is_some() {
@@ -696,6 +745,8 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             | Semantic::AgentVersionUpdate
             | Semantic::AgentVersionPublish
             | Semantic::AgentInstallationCreate
+            | Semantic::AgentDelegationGrant
+            | Semantic::AgentDelegationRevoke
     ) && (p.resource_id.is_some() || p.resource_version.is_some())
     {
         return Err(bad());
@@ -711,7 +762,32 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Err(bad());
     }
     // 每个语义要求的参数集合是闭集：多出与缺少都拒绝，不按「字段为空即忽略」猜
+    if !matches!(
+        sem,
+        Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
+    ) && (p.delegation_id.is_some()
+        || p.delegation_version.is_some()
+        || p.delegation_grant.is_some())
+    {
+        return Err(bad());
+    }
     let ok = match sem {
+        Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.resource_id.is_some()
+                && p.resource_version.is_some_and(|v| v > 0)
+                && p.delegation_id.is_some_and(|id| !id.is_nil())
+                && if sem == Semantic::AgentDelegationGrant {
+                    p.delegation_grant.is_some() && p.delegation_version.is_none()
+                } else {
+                    p.delegation_grant.is_none() && p.delegation_version.is_some_and(|v| v > 0)
+                }
+        }
         Semantic::AgentInstallationCreate => {
             p.workspace_id.is_some()
                 && p.principal_id.is_none()
@@ -968,6 +1044,9 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke => {
+            delegation::target(conn, tenant, def, sem, p, frozen, lock).await
+        }
         Semantic::AgentInstallationCreate => {
             crate::agent_installation::target(conn, tenant, initiator, def, p, frozen, lock).await
         }
@@ -1697,7 +1776,12 @@ impl Governance {
         // Workspace scoped 动作先要求执行 Workspace 属于该 Tenant 且 ACTIVE（DD-46、
         // `.design/03` §2）：SUSPENDING/SUSPENDED/RESTORING 期间，成员、角色与任务
         // 控制等 Workspace scope 的新动作一律在 permission Check 之前拒绝
-        if def.workspace_rule == "WORKSPACE_REQUIRED" {
+        if def.workspace_rule == "WORKSPACE_REQUIRED"
+            || matches!(
+                def.action_key.as_str(),
+                "agent.delegation.grant" | "agent.delegation.revoke"
+            )
+        {
             let ws_active: Option<i32> = sqlx::query_scalar(
                 "select 1 from identity.workspace
                  where id = $1 and tenant_id = $2 and state = 'ACTIVE'",
@@ -1732,39 +1816,74 @@ impl Governance {
                 }
             },
             "resource" => {
-                let mut conn = self.pool.acquire().await?;
-                let row =
-                    crate::agent_definition::resource(&mut conn, actor.tenant_id, target.id, false)
-                        .await?;
-                let Some(r) = row.filter(|r| {
-                    r.state == "ACTIVE"
-                        && r.version == target.version
-                        && r.projection_action_execution_id.is_none()
-                        && r.home_workspace_id == target.workspace_id
-                }) else {
-                    return Ok(deny(
-                        "DENY",
-                        "NOT_APPLICABLE",
-                        None,
-                        ReasonCode::ScopeGuardFailed,
-                    ));
-                };
-                if !crate::agent_definition::projection_matches(
-                    self,
-                    r.id,
-                    r.tenant_id,
-                    r.owner_principal_id,
-                )
-                .await?
-                {
-                    return Ok(deny(
-                        "DENY",
-                        "NOT_APPLICABLE",
-                        None,
-                        ReasonCode::ScopeGuardFailed,
-                    ));
+                if matches!(
+                    def.action_key.as_str(),
+                    "agent.delegation.grant" | "agent.delegation.revoke"
+                ) {
+                    let mut conn = self.pool.acquire().await?;
+                    let row =
+                        delegation::installation(&mut conn, actor.tenant_id, target.id, false)
+                            .await?
+                            .filter(|row| {
+                                row.version == target.version
+                                    && Some(row.workspace_id) == target.workspace_id
+                            });
+                    let Some(row) = row else {
+                        return Ok(deny(
+                            "DENY",
+                            "NOT_APPLICABLE",
+                            None,
+                            ReasonCode::ScopeGuardFailed,
+                        ));
+                    };
+                    if !delegation::projection_matches(self, &row).await? {
+                        return Ok(deny(
+                            "DENY",
+                            "NOT_APPLICABLE",
+                            None,
+                            ReasonCode::ScopeGuardFailed,
+                        ));
+                    }
+                    target.id
+                } else {
+                    let mut conn = self.pool.acquire().await?;
+                    let row = crate::agent_definition::resource(
+                        &mut conn,
+                        actor.tenant_id,
+                        target.id,
+                        false,
+                    )
+                    .await?;
+                    let Some(r) = row.filter(|r| {
+                        r.state == "ACTIVE"
+                            && r.version == target.version
+                            && r.projection_action_execution_id.is_none()
+                            && r.home_workspace_id == target.workspace_id
+                    }) else {
+                        return Ok(deny(
+                            "DENY",
+                            "NOT_APPLICABLE",
+                            None,
+                            ReasonCode::ScopeGuardFailed,
+                        ));
+                    };
+                    if !crate::agent_definition::projection_matches(
+                        self,
+                        r.id,
+                        r.tenant_id,
+                        r.owner_principal_id,
+                    )
+                    .await?
+                    {
+                        return Ok(deny(
+                            "DENY",
+                            "NOT_APPLICABLE",
+                            None,
+                            ReasonCode::ScopeGuardFailed,
+                        ));
+                    }
+                    target.id
                 }
-                target.id
             }
             "asset" => {
                 let mut conn = self.pool.acquire().await?;
@@ -1852,7 +1971,21 @@ impl Governance {
         // - 从未加入：fresh workspace manage 为真即满足（`03` §2），即由 DD-82 授予、
         //   不要求先加入 Workspace 的 Workspace admin。
         // 本切片 Workspace 动作检查的正是 workspace manage，Check 为假时不设例外。
-        if def.workspace_rule == "WORKSPACE_REQUIRED" {
+        if matches!(
+            def.action_key.as_str(),
+            "agent.delegation.grant" | "agent.delegation.revoke"
+        ) && checked.zed_token.is_empty()
+        {
+            return Err(Refusal::Unavailable(
+                "Delegation 准入缺 checked revision".into(),
+            ));
+        }
+        if def.workspace_rule == "WORKSPACE_REQUIRED"
+            || matches!(
+                def.action_key.as_str(),
+                "agent.delegation.grant" | "agent.delegation.revoke"
+            )
+        {
             let membership: Option<String> = sqlx::query_scalar(
                 "select state from identity.workspace_membership
                  where workspace_id = $1 and tenant_principal_id = $2",
@@ -1861,14 +1994,43 @@ impl Governance {
             .bind(actor.principal_id)
             .fetch_optional(&self.pool)
             .await?;
-            let workspace_manage = def.permission == "manage"
+            let mut workspace_manage = def.permission == "manage"
                 && def.permission_object_type == "workspace"
                 && checked.allowed;
+            if matches!(
+                def.action_key.as_str(),
+                "agent.delegation.grant" | "agent.delegation.revoke"
+            ) && membership.as_deref() != Some("ACTIVE")
+            {
+                let workspace = target
+                    .workspace_id
+                    .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
+                let management = self
+                    .spicedb
+                    .check(
+                        "workspace",
+                        &workspace.to_string(),
+                        "manage",
+                        &actor.principal_id.to_string(),
+                        Consistency::FullyConsistent,
+                    )
+                    .await
+                    .map_err(|_| {
+                        Refusal::Unavailable("Delegation Workspace membership 不可核验".into())
+                    })?;
+                if management.zed_token.is_empty() {
+                    return Err(Refusal::Unavailable(
+                        "Delegation Workspace membership 缺 checked revision".into(),
+                    ));
+                }
+                workspace_manage = management.allowed;
+            }
             let admitted = match membership.as_deref() {
                 Some("ACTIVE") => true,
                 None => workspace_manage,
                 Some(_) if workspace_manage => {
-                    self.spicedb
+                    let management = self
+                        .spicedb
                         .check(
                             "tenant",
                             &actor.tenant_id.to_string(),
@@ -1877,8 +2039,17 @@ impl Governance {
                             Consistency::FullyConsistent,
                         )
                         .await
-                        .map_err(|e| Refusal::Unavailable(e.to_string()))?
-                        .allowed
+                        .map_err(|e| Refusal::Unavailable(e.to_string()))?;
+                    if matches!(
+                        def.action_key.as_str(),
+                        "agent.delegation.grant" | "agent.delegation.revoke"
+                    ) && management.zed_token.is_empty()
+                    {
+                        return Err(Refusal::Unavailable(
+                            "Delegation Tenant membership 缺 checked revision".into(),
+                        ));
+                    }
+                    management.allowed
                 }
                 Some(_) => false,
             };
@@ -1993,6 +2164,103 @@ impl Governance {
         if let Some(reason) = reason {
             eval.allowed = false;
             eval.reason = Some(reason);
+        }
+        Ok(())
+    }
+
+    /// automation.run 使用同一 native CHECK，不建立另一额度准入或余额。
+    pub(crate) async fn check_automation_quota(
+        &self,
+        tenant: Uuid,
+        def: &Definition,
+    ) -> Result<(), Refusal> {
+        let mut eval = Evaluation {
+            allowed: true,
+            scope: "ALLOW",
+            authorization: "ALLOW",
+            quota: "NOT_APPLICABLE",
+            zed_token: None,
+            reason: None,
+        };
+        self.check_quota(tenant, def, &mut eval).await?;
+        if eval.allowed && eval.quota == "ALLOW" {
+            Ok(())
+        } else {
+            Err(Refusal::from_reason(
+                eval.reason.unwrap_or(ReasonCode::CapabilityBlocked),
+            ))
+        }
+    }
+
+    /// 非 HUMAN actor 的实际判定仍写既有 ActionDecision/AuditEntry；不能复用 HUMAN
+    /// 路径中的 actor=initiator、Delegation NOT_APPLICABLE 默认值。
+    pub(crate) async fn record_automation_decision(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        ae: &Execution,
+        def: &Definition,
+        phase: &str,
+        result: Result<String, &Refusal>,
+    ) -> Result<(), sqlx::Error> {
+        let (outcome, token, reason) = match &result {
+            Ok(token) => ("ALLOW", Some(token.as_str()), None),
+            Err(Refusal::Unavailable(_)) => (
+                "NOT_APPLICABLE",
+                None,
+                Some(ReasonCode::DependencyUnavailable),
+            ),
+            Err(error) => ("DENY", None, Some(error.reason())),
+        };
+        sqlx::query("insert into admission.action_decision
+            (id,operation_id,action_execution_id,phase,tenant_id,workspace_id,
+             authenticated_principal_id,acting_principal_id,action_key,action_version,target_id,parameter_hash,
+             scope_decision,authorization_decision,delegation_decision,approval_decision,
+             capacity_decision,quota_decision,audit_decision,zed_token,reason_code)
+            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,$13,
+                    'NOT_APPLICABLE','REQUIRED',$13,'RECORDED',$14,$15)")
+            .bind(Uuid::new_v4()).bind(ae.operation_id).bind(ae.id).bind(phase).bind(ae.tenant_id)
+            .bind(ae.workspace_id).bind(ae.initiator_principal_id).bind(ae.actor_principal_id)
+            .bind(&ae.action_key).bind(ae.action_version).bind(ae.target_id).bind(&ae.parameter_hash)
+            .bind(outcome).bind(token).bind(reason.as_ref().map(wire)).execute(&mut **tx).await?;
+        let source = ae
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("sourceEventId"))
+            .and_then(Value::as_str)
+            .into_iter()
+            .map(|id| Evidence::new(EvidenceKind::BuzzEventId, id))
+            .collect();
+        let abandoned = reason == Some(ReasonCode::AdmissionAbandoned);
+        let stage = if abandoned {
+            "automation-expired"
+        } else if outcome == "NOT_APPLICABLE" {
+            "automation-admission-unknown"
+        } else if phase == "ADMISSION" {
+            "admission"
+        } else {
+            "automation-recheck"
+        };
+        audit(
+            tx,
+            ae,
+            def,
+            stage,
+            "DECISION",
+            if outcome == "NOT_APPLICABLE" {
+                "NONE"
+            } else {
+                outcome
+            },
+            reason.as_ref().map(wire).as_deref().unwrap_or("NONE"),
+            None,
+            source,
+        )
+        .await?;
+        if phase == "ADMISSION" {
+            sqlx::query("update admission.action_execution set gate_state=$2,reason_code=$3,updated_at=now()
+                where id=$1 and gate_state='EVALUATING'")
+                .bind(ae.id).bind(if abandoned { "EXPIRED" } else { match outcome { "ALLOW"=>"ALLOWED","DENY"=>"DENIED",_=>"EVALUATING" } })
+                .bind(reason.as_ref().map(wire)).execute(&mut **tx).await?;
         }
         Ok(())
     }
@@ -2165,6 +2433,9 @@ impl Governance {
             asset_id: None,
             asset_version: None,
             agent_version_content: None,
+            delegation_id: None,
+            delegation_version: None,
+            delegation_grant: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -2250,6 +2521,9 @@ impl Governance {
             asset_id: None,
             asset_version: None,
             agent_version_content: None,
+            delegation_id: None,
+            delegation_version: None,
+            delegation_grant: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -2389,16 +2663,71 @@ pub(crate) async fn open_execution(
     idempotency_key: Uuid,
     correlation_id: Option<Uuid>,
 ) -> Result<Execution, sqlx::Error> {
-    let ae_id = Uuid::new_v4();
-    let operation_id = Uuid::new_v4();
     let hash = parameter_hash(def, target.id, params);
     let parameters = json!({ "params": params.to_json(), "targetVersion": target.version });
+    open_execution_values(
+        tx,
+        actor,
+        actor.principal_id,
+        def,
+        target,
+        parameters,
+        hash,
+        idempotency_key,
+        correlation_id,
+    )
+    .await
+}
+
+/// 触发的 initiator 仍是 HUMAN owner，actor 必须在 INTENT 前就是实际 Installation Agent。
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn open_automation_execution(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Actor,
+    agent: Uuid,
+    def: &Definition,
+    target: &Target,
+    parameters: Value,
+    idempotency_key: Uuid,
+) -> Result<Execution, sqlx::Error> {
+    let hash = collab_bridge::limits::canonical_digest(&json!({
+        "actionKey":def.action_key,"actionVersion":def.version,"targetId":target.id,
+        "parameters":parameters
+    }));
+    open_execution_values(
+        tx,
+        actor,
+        agent,
+        def,
+        target,
+        parameters,
+        hash,
+        idempotency_key,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn open_execution_values(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Actor,
+    acting_principal: Uuid,
+    def: &Definition,
+    target: &Target,
+    parameters: Value,
+    hash: String,
+    idempotency_key: Uuid,
+    correlation_id: Option<Uuid>,
+) -> Result<Execution, sqlx::Error> {
+    let ae_id = Uuid::new_v4();
+    let operation_id = Uuid::new_v4();
     sqlx::query(
         "insert into admission.action_execution
              (id, operation_id, tenant_id, workspace_id, action_key, action_version,
               initiator_principal_id, actor_principal_id, target_id, parameter_hash,
               parameters, idempotency_key, gate_state, dispatch_state, correlation_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,'EVALUATING','NOT_DISPATCHED',$12)",
+         values ($1,$2,$3,$4,$5,$6,$7,$13,$8,$9,$10,$11,'EVALUATING','NOT_DISPATCHED',$12)",
     )
     .bind(ae_id)
     .bind(operation_id)
@@ -2412,6 +2741,7 @@ pub(crate) async fn open_execution(
     .bind(&parameters)
     .bind(idempotency_key)
     .bind(correlation_id.unwrap_or(operation_id))
+    .bind(acting_principal)
     .execute(&mut **tx)
     .await?;
     let ae = lock_execution(tx, ae_id).await?;
@@ -3058,7 +3388,12 @@ impl Governance {
         };
         match gate {
             Ok(()) => {}
-            Err(r @ (Refusal::Conflict(_) | Refusal::Precondition(_) | Refusal::Denied(_))) => {
+            Err(
+                r @ (Refusal::Conflict(_)
+                | Refusal::Precondition(_)
+                | Refusal::Denied(_)
+                | Refusal::Blocked(_)),
+            ) => {
                 self.close_gate(
                     &ae,
                     def,
@@ -3274,6 +3609,21 @@ impl Governance {
         }
         if matches!(
             sem,
+            Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
+        ) {
+            // Installation target 已锁 Workspace；已有成员行同锁覆盖 fresh check 到
+            // 授予/撤销 commit。无行时 Workspace 的 FOR UPDATE 也阻止并发 FK 插入。
+            let _: Option<Uuid> = sqlx::query_scalar(
+                "select id from identity.workspace_membership
+                where workspace_id=$1 and tenant_principal_id=$2 for update",
+            )
+            .bind(target.workspace_id)
+            .bind(ae.initiator_principal_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+        }
+        if matches!(
+            sem,
             Semantic::AgentDefinitionCreate
                 | Semantic::AgentDefinitionUpdate
                 | Semantic::ResourceTransferOwner
@@ -3281,6 +3631,8 @@ impl Governance {
                 | Semantic::AgentVersionUpdate
                 | Semantic::AgentVersionPublish
                 | Semantic::AgentInstallationCreate
+                | Semantic::AgentDelegationGrant
+                | Semantic::AgentDelegationRevoke
         ) && !crate::agent_definition::active_owner(tx, ae.tenant_id, ae.initiator_principal_id)
             .await?
         {
@@ -3296,6 +3648,8 @@ impl Governance {
                 | Semantic::AgentVersionUpdate
                 | Semantic::AgentVersionPublish
                 | Semantic::AgentInstallationCreate
+                | Semantic::AgentDelegationGrant
+                | Semantic::AgentDelegationRevoke
         ) {
             let fresh = self
                 .evaluate(
@@ -3407,6 +3761,22 @@ impl Governance {
             )
             .await?;
             return match sem {
+                Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke => {
+                    delegation::prewrite(tx, ae, sem, params).await?;
+                    self.record_local_outcome(
+                        tx,
+                        ae,
+                        def,
+                        if sem == Semantic::AgentDelegationGrant {
+                            "DELEGATION_GRANTED"
+                        } else {
+                            "DELEGATION_REVOKED"
+                        },
+                        Vec::new(),
+                    )
+                    .await?;
+                    Ok(None)
+                }
                 Semantic::AgentVersionCreate
                 | Semantic::AgentVersionUpdate
                 | Semantic::AgentVersionPublish => {
@@ -3643,6 +4013,8 @@ impl Governance {
             | Semantic::AgentDefinitionCreate
             | Semantic::AgentDefinitionUpdate
             | Semantic::ResourceTransferOwner
+            | Semantic::AgentDelegationGrant
+            | Semantic::AgentDelegationRevoke
             | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish
             // 业务 Tenant 生命周期在上面单独落定
             | Semantic::TenantSuspend
@@ -4143,6 +4515,12 @@ impl Governance {
         sem: Semantic,
         p: &Params,
     ) -> Result<(), Refusal> {
+        if matches!(
+            sem,
+            Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
+        ) {
+            return delegation::target_gate(self, conn, tenant, initiator, sem, p).await;
+        }
         if sem == Semantic::TenantDelete {
             if !crate::tenant_delete::secrets_ready(&self.secrets, conn, tenant).await? {
                 return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
@@ -5180,6 +5558,7 @@ impl Governance {
                 | Semantic::AgentDefinitionUpdate
                 | Semantic::ResourceTransferOwner
                 | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish
+                | Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
                 // 业务 Tenant 生命周期由 dispatch_tenant_lifecycle 派发
                 | Semantic::TenantSuspend
                 | Semantic::TenantRestore => Err(StatusCode::CONFLICT.into_response()),
@@ -6252,6 +6631,23 @@ impl Governance {
             .map(|(r, s)| (r.as_str(), s.as_str()))
             .unwrap_or(("", ""));
         match (ae.gate_state.as_str(), ae.dispatch_state.as_str()) {
+            ("EVALUATING", _) if stale && ae.action_key == "automation.run" => {
+                let def = exact_definition(&self.pool, &ae.action_key, ae.action_version).await?;
+                let mut tx = self.pool.begin().await?;
+                let current = lock_execution(&mut tx, ae.id).await?;
+                if current.gate_state == "EVALUATING" {
+                    self.record_automation_decision(
+                        &mut tx,
+                        &current,
+                        &def,
+                        "ADMISSION",
+                        Err(&Refusal::Precondition(ReasonCode::AdmissionAbandoned)),
+                    )
+                    .await?;
+                }
+                tx.commit().await?;
+                Ok("EVALUATION_EXPIRED")
+            }
             // 判定中途崩溃或依赖长时间不可用：意图过期，不替发起者猜结论
             ("EVALUATING", _) if stale => {
                 let def = exact_definition(&self.pool, &ae.action_key, ae.action_version).await?;

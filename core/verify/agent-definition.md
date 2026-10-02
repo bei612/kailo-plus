@@ -689,3 +689,143 @@ Web 来源不一致均按真实来源修正。Rust 的真实失败随后由原 l
 本批不包含正在开发的 Delegation、Usage audit/commit 或 Installation 查询。
 首轮 Invocation、模型执行/回复、完整计费、记忆写入、自动化与三端业务闭环
 仍缺实证，未以编译、HTTP 接受、镜像 push 或健康检查解除发布阻断。
+
+### 2026-10-02 AgentTask 已有 Reply 引用只读消费
+
+此节记录实现后的源代码事实，不是新增 Reply 策略或运行入口。
+
+1. 权威：DD-47/48、03 AgentInvocation 与 12/17/19 的原生引用边界。
+   Codex 固定提交 `7498521d288b9b3b96ffba4eedf089d8d6e06a84` 的
+   `codex-rs/app-server-protocol/src/protocol/v2/item.rs::ThreadItem::UserMessage`
+   给出 `clientId`；现有 `Supervisor::turns` 读取 full items。Task 现在即使
+   已持有 turn ID，也要求同一个 turn 内唯一的 Invocation clientId，未知状态、
+   缺关联、重复关联或不完整页不构成 native terminal 证据。正文不落 Core。
+2. 影响：原 `AgentTask.advance -> observe` 消费持久 `reply_event_id`，
+   仅在 native completed 后查证；它不生成 Reply ID、签名、发布或重跑模型。
+   原 AE operation 的 AGENT DISPATCH 必须带同 Reply ID、AGENT pubkey 与
+   ActionExecution 引用，并与 Tenant、Workspace、安装、pin Version 和
+   projection generation 联合核对。任意一条引用缺失都不能称送达。
+3. 副作用：`IdentityClient::channel_reply_exists` 使用原认证 `/query`，
+   回应必须为单一确切 ID、kind 9、固定 AGENT 作者且原生签名有效。
+   Channel 标签唯一；root/parent 使用 apps 同源 `buzz_core::nip10` 解析，
+   必须等于 Invocation 的 root/source。查询后再次锁原 Invocation 并核对
+   同一 DISPATCH/身份/scope 引用，才追加稳定键的 RECONCILIATION/ACCEPTED；
+   审计只继承原引用，不保存消息或 Codex 正文。空查询、身份不可读、回应错误
+   或并发引用变化仍待对账，不解释为拒绝、未送达或允许第二次发布。
+4. 终态：Reply 观察不制造新授权；撤权后的读取只收尾已有意图。仍沿原
+   Capacity native/Temporal 双侧释放，Activity 可结束不等于 Invocation 完成。
+   原 Reply ID 未有送达证据保持 UNKNOWN；即使已查证送达，缺 per-turn 用量
+   completeness 证据仍为 BILLING_UNAVAILABLE，未写 COMPLETED。
+
+当前 `AgentVersion.replyPolicy` 和 RuntimeProfile 仅能表达策略键集合，没有
+已验收的键到 thread/broadcast 原生语义投递。Buzz 固定提交
+`779af8886caae1317b4de962082429867ab61503` 的
+`crates/buzz-persona/src/resolve.rs::ResolvedPersona` 是两个独立布尔事实
+`thread_replies`/`broadcast_replies`，不能擅自映射为 THREAD 默认值。
+没有合法 Reply 发布路径时仍 CAPABILITY_BLOCKED；本刀未添加没有调用方的
+正文解析或发布方法，也未把 `replyPolicy` 记作 effective。
+
+实现窗口的原始三文件 before 位于
+`/volumes/data/kailo/tmp/codex-agent-reply-owned-before-20261002.AiUi6Y/`。
+本 lane 只运行源差异与 `git diff --check`（实际 0）；没有执行 SDK、格式化、
+编译、数据库、真实 Relay Reply、Codex turn 或端到端演练，也没有图谱、
+提交、部署或 push。新发布、合法 Invocation producer、完整计费与
+RuntimeProfile 投递仍未验收，不因本只读消费者宣称 Agent 运行交付完成。
+
+### 2026-10-02 原生首 turn 与两类实际用量的集中集成
+
+此记录产生于实现之后，不重定义已有自动化或计量合同。
+
+- 权威：DD-47/48/107、05 §2.9 与 03 §8。自动化 owner 是 HUMAN，实际 actor
+  是已 pin Installation 的 AGENT；模型 token 只来自 durable Gateway，运行次数只来自
+  唯一查证的原生 turn。复核 OpenMeter 完整 commit
+  `6d76d8a6fa90fbbab2d41035d31df2acec7ad3af` 的
+  `openmeter/meter/parse.go::ParseEvent`：COUNT 原生计为一，不读取 value property；
+  `api/v3/handlers/meters/convert.go::ToAPIMeterAggregation` 与
+  `api/v3/openapi.yaml::MeterAggregation` 的 API 值是 `count/sum`。
+- 影响：原 Supervisor 的 `turn/start`、Task 的 CREATED 消费、Session 冻结 Memory
+  引用、Automation Relay producer、同一 AE/Delegation/CHECK/Capacity、原 trace/usage
+  outbox 与审计查证。Web/Desktop 只用共源 Installation GET，Mobile 只读管理。
+  未发布迁移尚无旧 writer、原私有空库无模型 trace/usage，历史兼容无适用对象；
+  回退拒绝有持久 trace/usage 的库，不删除真实使用记录。
+- 副作用：写前派发意图先提交，AE→Tenant→Invocation 锁序下在原 guard 内 fresh，
+  不另开锁自身的事务。冻结 Automation template 与临时触发正文分别成为原生 text
+  input，不发明插值，不把正文写入 Core、审计或 Temporal history。
+  同一 native meter 集合精确分离 automation count 与模型 token sum，CHECK 仍检查
+  全部已登记 meter，不删计数 meter 绕过限制。
+- 终结与异常：缺授权、binding、native startedAt、meter 或终态证据仍拒绝或 UNKNOWN。
+  `AGENT_INVOCATION` 的稳定 ID/time/body 与已查证 native turn 绑定；模型事件继续
+  使用原生 durable seq/ID。二者共用唯一 outbox 与已有治理周期，202 只 ACCEPTED，
+  精确事件 stored_at 才 COMMITTED；投递不明保持原 ID 对账，告警归原用量 runbook。
+  未有 per-turn 全集完成证据时不宣称完整计费或 Invocation COMPLETED。
+  错误仍用 06 §4 六分类，撤权、重入、未知状态和恢复无连续 activity 事实不降级成功。
+
+共享 UI 选定树实际 98 项通过；scope、Version pin、generation 三次私有破坏均有
+断言失败，逐次还原后 9 项通过。原始 `ui-final.log` 位于
+`/volumes/data/kailo/tmp/codex-agent-next-batch-20261002.reqvgM/`，SDK 退出 0。
+前两次错误按钮 label 的失败输出保留；无关既有 theme 检查不混入本批。
+这只是管理面呈现证据，不代替浏览器、Win11、Mobile 签名或 Agent 业务闭环。
+
+### 2026-10-02 20:43 UTC 同批纠偏与实际输出
+
+并行复核在实现后确认并直接修正四个可达问题：触发 HUMAN 与 owner 不同时的
+成员撤权竞态；Session/Capacity 持 DB fence 等 Process 与旧派发反向持锁的循环；
+Process 等待跨过 Grant/lease 期限；Workflow 已关闭而 native turn 已存在时的运行
+计数漏消费。现在都是原 AE→Tenant→Invocation/成员 fence→Process，同一事务
+在 idle-read 后重验；CHECK HTTP 后用 `clock_timestamp()` 再读真实 Grant/lease。
+同一原 Usage 对账只读查证 fixed thread/turn、唯一 Invocation clientId 与 native
+startedAt，补同一稳定 count/outbox；不改 Invocation 业务终态或重发 turn。
+
+`agent_model_trace.invocation_meter_projection` 原 CHECK 对缺 key 的 `{}` 会得
+SQL NULL、被 PostgreSQL 接受，已改为整体 `IS TRUE`。这是同一未发布迁移的
+fail-closed 修正，不新增状态、历史窗口或第二 meter。原私有空库末三条迁移
+实际回退/重进，49 条到 `20261002230000`；Agent Session/Invocation/lease 均零行。
+复用原 catalog 检查核对 25 个实际 CHECK 标量边界，主动移除新 meter CHECK 后
+报 SQLSTATE 23514，ROLLBACK 后原检查再次通过。没有向业务表插入假对象。
+
+本批原件均位于 `codex-agent-next-batch-20261002.reqvgM`：
+
+| 原件 | 实际结果 | SHA-256 |
+|---|---|---|
+| `sdk-final.log` | SQLx prepare、clippy、workspace 退出 0；两种 policy/runtime 变异各断言失败、按 SHA 还原且原检查通过；SDK 0 | `0d3d07c3f723d33e7faf8a28f9de816119d09626f36d94712dfa8356da91c9c0` |
+| `ui-final.log` | 98 项通过；scope/pin/generation 变异各断言失败，还原后 9 项通过；SDK 0 | `bdf8288829be42d7fe4d56a9515fa9ac4bee2b729ad3767d475c366d65a5f26f` |
+| `mobile-sdk-mutations.log` | 原固定 Flutter 3.41.7 镜像、非 root；12 项与四种实际变异/还原，SDK 0 | `2dbd52695a3ff189badbe438bc1692324fb657482bb0423432a3b0a431487008` |
+| `web-build.log` | 原 Web helper、registry push 0，真实 artifact `13841511…`/source `28eb2fd4…` | `178009db3097f525c6ff531d2f08322a8b0d07da221e6c51017006696d8b86b1` |
+
+DB 的 `db-final.log` 与 `catalog-final.log` 保留完整原输出。Core 初轮实际失败包括
+未读字段/大 tuple、`url` 未导入及旧 Refusal 显示/类型接线，均修正实现而非压掉
+warning；原错误留在 `sdk-integrated-restored.log` 等文件。Mobile 初轮原镜像
+权限失败和第一次变异错误 cwd 的日志保留，最终执行的是非 root 私有缓存与
+apps 根下 apply；不以工具失败冒充断言抓错。
+
+当前仍无新 Web 部署或 Codex/Relay/OpenMeter 全链真实业务验收。模型 Route
+的原生 Hybrid ConfigResource 能力已亲核固定
+`1f7ebbf87cbdbe9517f6f181221879d04dc50692` 的
+`crates/agentgateway/src/ui.rs::upsert_config_resources` 与
+`crates/agentgateway/src/config_store.rs::ConfigResourceStore::upsert_prepared`；
+阻断不是上游不支持，而是设计 03 §7、05 §2.8、17 的 `TENANT_ONLY` 模型管理
+尚未冻结 Action/审批/配置输入归属，不能借应用 `resource.create` 改义。
+工具治理、回复策略投递、Memory 写入、Automation 管理与完整计费仍未交付。
+这些缺口不把本批检查通过改写成一期或 18 项目标全部通过，也不阻塞其他已定
+功能独立开发；原 runtime artifact 由另一队友唯一构建，不重复启动。
+
+### 2026-10-02 阶段全量收口
+
+选定树 `9c18676a5b49e95a9647a06b77bee2e0eb8e3bf2` 实际运行原
+`tools/check.sh --full`，退出码 0，输出末行 `全部通过。`。
+原件 `full-restored.log` 的 SHA-256 为
+`95daa606a86434c66f569989d11c7ab4c3bddff6bfbf0ea2460057331c5935d9`。
+117 个 schema、四侧生成/序列化与兼容、既有检查、Temporal replay、18 条追溯、
+18 个供应链产物、6 份上游来源/4 个当前源产物、28 个服务静态边界实际通过。
+
+初轮 `full.log` 退出 1，原件摘要
+`31f6159afd3da71481d4350d1672c9c1ec6a3d494cd640329e955c5307b2296b`：
+AutomationRun 不是冻结实体、DD-99 不归 S5、13 份既有 Web 追溯还指旧产物。
+实体/DD 与产物登记按原权威改正，没有修改领域代码或重复 Web 构建。
+初轮真实失败不抹除；第二轮与最后文档快路径单列。
+
+full 内实际数据库演练因未提供 DATABASE_URL 明确 SKIP；前述私有空库 49 条迁移
+与实际 SQL 边界证据另列，不能称为业务运行演练。实际 `.env` 预检也 SKIP，
+内置 secret 扫描未安装 gitleaks；Win11 当前包与 Mobile 签名缺口仍是 NOTE。
+最后新增的这段证据与根入口说明仅经原 `check-docs.sh` 文档快路径复核，
+不外推成全工作树、下一批 Automation 五动作、部署或一期生产验收。

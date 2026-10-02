@@ -4,23 +4,23 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 最新交付状态（2026-10-02 19:31 UTC）
+## 最新交付状态（2026-10-02 20:43 UTC）
 
-**仍未生产就绪。** 本轮集中开发已有以下实际结果，不把写入、编译、镜像 push 或健康接口当作业务验收。
+**仍未生产就绪。** 本批实现先行、事后集中验证，GitNexus 未使用；下一批自动化管理独立推进，不等待当前提交或 Codex 镜像构建。工具目录缺口不以无调用方的凭据或空 MCP 模块绕过。
 
 | 范围 | 实际结果 | 交付边界 |
 |---|---|---|
-| Git | 本批冻结父提交为已 push 的 `91a5eb2e779593ea8cfb38e10ec6c04886f88138`；只在 apps 独立 Git 选择提交范围 | 后续 Delegation、Usage 与 Installation 只读增量不混入本批冻结树 |
-| 共享管理界面 | Web/Desktop 直接消费同一 `AgentDefinitionsPage`；共享包类型及 77 项既有检查、Desktop 类型、Web 类型及 14 项既有检查通过 | Desktop 全检查首次 2281 通过、1 失败，原因是旧字体检查引用已迁走的 CSS；修正真实引用后该检查 9 项通过，主动破坏 1 项失败、还原后 9 项通过。未声称新增管理业务验收 |
-| Web 产物 | 原构建入口及镜像仓库 push 退出 0；本批真实 artifact 为 `sha256:d0bf2e646bf8b1954a32d18ffe2dfbaf7556e7ddfebeed7094ce35289d850aae`，source 为 `2326ff60…` | 未部署；不能用镜像 push 替代浏览器业务、Win11 或 Mobile 验收 |
-| Core/Worker 集中 SDK | 46 条独立空库迁移、回退/重进及 SQLx prepare、全目标 clippy 和既有检查退出 0；数据库实际边界检查通过，主动删除约束时报错，回滚后通过 | 选定树首次 full 退出 1，保留输出；空 Cargo 并行环境投递、漏选注册表及无对应产物的 pin 已纠正。最终 full 单独记录，不外推新增业务通过 |
-| 共享读状态 | 既有共享包实际 89 项检查通过；三次分别破坏裸状态识别、UNKNOWN 优先级和未知分类保护，分别 5/2/1 项失败，逐次还原后 12 项通过；最终包检查再次 89 项通过 | 只证明三个现有 GET 消费者的拒绝与未知呈现；不执行写入重放、不新增执行入口、不代替浏览器或原生端走查 |
-| 实际部署 | 17:03–17:07 只读核验：Core `03c24669…`、Worker `4832ccbb…` running，Web `ad82d6e6…` healthy；Core BFF 与 Web 内部健康接口均 200 | 仍是旧镜像；缺 source commit 标签，不能反推对应当前 HEAD。公网匿名 302 是认证跳转，不是业务验收 |
-| Agent 主线 | 安装物化、Memory 读取、Session 创建/恢复与 Capacity 双侧终态回收消费者已集中写入；已知 thread 不等于 turn，空 history 不伪造执行结果。三条下一批并行线正在实现显式 Delegation 管理、用量持久化/原生查证与共享 Installation 只读页 | 四项运行策略的真实控制、Invocation 准入生产、模型执行/回复、严格额度、完整用量结算、记忆写入和自动化仍未贯通；缺事实的执行入口保持关闭 |
+| Git | 上一批 `558e5a39b0be27ac206a3a382d9ddecbb14513e1` 已普通 push；当前批从它选择独立冻结树 | 当前批的提交、push 由实际 Git 输出核对；下一批改动不混入 |
+| Web/Desktop | 同一 `AgentDefinitionsPage` 新增 Workspace 范围的 Installation 列表、分页及详情；98 项检查通过，scope/pin/generation 三种破坏各触发断言，逐次还原后 9 项通过 | 不是第二套 Web UI；不因此宣布浏览器、Win11 或整个三端业务验收 |
+| Mobile | 原 Settings→Workspace→Installation 只读链；12 项 Flutter 检查通过，scope/pin/generation/未知分类四次实际破坏均失败并还原 | 不提供安装、运行、工具、文档编辑或 WebView；未取得签名包、设备验收 |
+| Agent 执行 | 原 Relay→Automation 准入→AgentTask→固定 Session/Memory→原生首 turn 消费已接线；native startedAt/emittedAtMs 驱动空闲及总时长限制，Capacity 使用 pin Version 的 parallelism | 类型/动作未完整发布的入口仍关闭；模型 Route 管理策略、回复策略投递、工具治理、记忆写入、自动化管理仍缺闭环 |
+| 用量/委托 | 原生 COUNT 与 Gateway token SUM 分源，同一稳定 outbox/audit；关闭 Workflow 的实际计数补偿、Customer subject、Delegation 管理及生命周期消费已集成 | 202 不当 COMMITTED；未知关联不捏造次数。strict reservation、per-turn 全集与最终结算未完成；公开 Delegation/运行入口不提前生成 |
+| Core 集中 SDK | SQLx prepare、全目标 clippy、workspace 检查退出 0；两项新 policy/runtime 检查主动破坏后各断言失败并按 SHA 还原；49 条私有迁移、末三条回退/重进及 25 个数据库边界核对通过 | 私有 Agent 表仍零对象；不是真实 Codex/Relay/OpenMeter 执行业务验收。此前编译失败原件保留 |
+| Web 构建/部署 | 原 helper 与镜像仓库 push 退出 0；artifact `sha256:13841511c9f35552e827bb1d94ad5c68bf3fcc0de921de984b75d107a4382353`，source `28eb2fd45d9ad0752b005d5c3e39c6dbc10bb80feb3e7852dbecc4edf6366c49` | 新产物未部署；仍沿上一批运行镜像。Codex 产物正在独立原 helper 构建，不能在实际成功前解除 Core release 阻断 |
 
-本批日志位于 `/volumes/data/kailo/tmp/codex-agent-batch-20261002.UGTzYB/`：`sdk-core-frozen.log` 退出 0；`ui-sdk-isolated.log` 的三个变异退出 1、均还原，SDK 最终退出 0；`web-build.log` 是原 helper 的实际构建与镜像仓库 push。此前 SDK 因缺 pnpm PATH 退出 127、继承 live 子 mount 导致类型错配退出 2，均保留；纠正执行投递后才核对冻结字节，不修改产品代码迁就检查。数据库边界与负向回滚记录见 `core/verify/agent-definition.md`。以上不替代正式 release、三端验收或一期生产门禁。
+本批原件位于 `/volumes/data/kailo/tmp/codex-agent-next-batch-20261002.reqvgM/`：`sdk-final.log`、`ui-final.log`、`mobile-sdk-mutations.log`、`db-final.log`、`catalog-final.log` 与 `web-build.log`。真实失败、日志摘要、四步影响解释及未覆盖范围见 [Agent 实现记录](core/verify/agent-definition.md)。`llm_route` 仍 DRAFT：设计只定实体与 Core-only 原生投影，没有冻结其管理 Action/审批/输入归属；不借应用 `resource.create` 改义绕过。
 
-本批最终选定树 `54df43378b6d51a52318be750778f126adb084c0` 的原 `tools/check.sh --full` 已退出 0；原日志 `selected-final-full.log`，SHA-256 `85e39588ad30fca54888b59492ee343870a8bd2e2d6dcb44cd06b67fa620d217`。108 schema、四侧验证、replay、18 条追溯、原生供应链与部署拓扑检查通过。full 内未提供 `DATABASE_URL` 与实际 `.env`，相应项目明确 SKIP；未安装 gitleaks，仅内置扫描通过。新安装/执行业务、Win11、Mobile 与生产退出门禁仍未通过。此次纯证据补记只走文档快路径，不重复编译或发布。
+本批选定树 `9c18676a5b49e95a9647a06b77bee2e0eb8e3bf2` 的原 `tools/check.sh --full` 实际退出 0，日志 `full-restored.log`，SHA-256 `95daa606a86434c66f569989d11c7ab4c3bddff6bfbf0ea2460057331c5935d9`。初轮只在实体/DD 归属与 13 份 Web 产物引用登记处失败，原 `full.log` 保留，不把它记为通过。最后证据文档另走原文档快路径；不重建源码或 Web。18 条追溯不是用户 18 项目标完成数；full 内数据库/实际配置 SKIP、Win11/Mobile 与生产退出缺口不改记 PASS。
 
 ## 上一批交付状态（2026-10-02 15:16 UTC）
 

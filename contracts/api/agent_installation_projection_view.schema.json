@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_installation_projection_view.schema.json",
+  "title": "AgentInstallationProjectionView",
+  "description": "17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generation", "agentVersionAssetId", "runtimeProfileKey", "configHash", "state"],
+  "properties": {
+    "generation": {"type": "integer", "minimum": 1},
+    "agentVersionAssetId": {"type": "string", "format": "uuid"},
+    "runtimeProfileKey": {"type": "string"},
+    "configHash": {"type": "string"},
+    "state": {"$ref": "../enums/agent_runtime_projection_state.schema.json"}
+  }
+}

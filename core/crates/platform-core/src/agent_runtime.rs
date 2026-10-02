@@ -71,6 +71,13 @@ struct Process {
     home: PathBuf,
     next_id: u64,
     pending_line: Vec<u8>,
+    // 仅保留活动 turn 的 native 时间/引用，不保留通知正文或 durable usage。
+    native_activity: HashMap<Uuid, NativeActivity>,
+}
+
+struct NativeActivity {
+    turn_id: Uuid,
+    emitted_at_ms: i64,
 }
 
 impl Supervisor {
@@ -276,6 +283,7 @@ impl Supervisor {
             home,
             next_id: 0,
             pending_line: Vec::new(),
+            native_activity: HashMap::new(),
         };
         let initialized = process.rpc("initialize", json!({"clientInfo":{"name":"platform-core","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}), self.timeout, self.max_message_bytes).await?;
         if initialized.get("codexHome").and_then(Value::as_str) != process.home.to_str() {
@@ -398,6 +406,116 @@ impl Supervisor {
         Ok(())
     }
 
+    /// SS-COD-TRACE/APP：唯一已准入 Invocation 发派，Core context 仅在本次 RPC 内。
+    /// 先提交不可重放 trace 意图，再持生命周期 fence/fresh 授权至原生 RPC 返回。
+    pub(crate) async fn start_turn(
+        &self,
+        state: &crate::service_api::ServiceState,
+        projection: &RuntimeRef,
+        invocation: Uuid,
+        thread: &str,
+        source_context: (&str, Option<&str>),
+    ) -> Result<String, RuntimeError> {
+        let (input, core_memory) = source_context;
+        if Uuid::parse_str(thread).is_err() || input.is_empty() {
+            return Err(RuntimeError::Protocol);
+        }
+        let trace = crate::gateway_usage::prepare_turn(
+            &state.pool,
+            &state.openmeter,
+            projection,
+            invocation,
+            thread,
+        )
+        .await
+        .map_err(|_| RuntimeError::Unavailable)?;
+        let mut guard = crate::gateway_usage::dispatch_guard(
+            &state.pool,
+            &state.openmeter,
+            projection,
+            invocation,
+            thread,
+        )
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
+        crate::automation::fresh_invocation(state, &mut guard, invocation)
+            .await
+            .map_err(|_| RuntimeError::AdmissionRequired)?;
+        let template = crate::automation::turn_template(&state.pool, invocation)
+            .await
+            .map_err(|_| RuntimeError::AdmissionRequired)?;
+        // Session birth 已按 AE→Tenant→Session→Process 持锁；dispatch 必须先取得
+        // 同一 lifecycle fence 再等 Process，不能持 Process 反向等待 Tenant。
+        // 此后失败也保留已提交的 trace 意图，只能 UNKNOWN/观察，不能重发。
+        let process = self
+            .processes
+            .lock()
+            .await
+            .get(&projection.installation_id)
+            .cloned()
+            .ok_or(RuntimeError::Unavailable)?;
+        let mut process = process.lock().await;
+        process
+            .check(projection.generation, &projection.config_hash)
+            .await?;
+        // turn/start 对活跃 turn 可能变成 steer。历史首页不能证明实时空闲；
+        // 原生 metadata status=idle 才允许另一 Invocation，未知/未加载均拒绝。
+        let current = process
+            .rpc(
+                "thread/read",
+                json!({"threadId":thread,"includeTurns":false}),
+                self.timeout,
+                self.max_message_bytes,
+            )
+            .await?;
+        if current.pointer("/thread/id").and_then(Value::as_str) != Some(thread)
+            || current
+                .pointer("/thread/status/type")
+                .and_then(Value::as_str)
+                != Some("idle")
+        {
+            return Err(RuntimeError::Unknown);
+        }
+        // Process 等待和 native idle-read 可以跨过 Grant/Lease 期限。重用已持有
+        // Invocation/lifecycle 锁的同一 guard fresh 授权；模型 CHECK 后最后以
+        // clock_timestamp 核同一冻结事实，不开第二事务或借事务 now 放行。
+        crate::automation::fresh_invocation(state, &mut guard, invocation)
+            .await
+            .map_err(|_| RuntimeError::AdmissionRequired)?;
+        crate::gateway_usage::recheck_dispatch(
+            &mut guard,
+            &state.openmeter,
+            projection,
+            invocation,
+            thread,
+        )
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
+        let context = core_memory.map(
+            |profile| json!({"platform.agent-memory.core":{"value":profile,"kind":"untrusted"}}),
+        );
+        let result=process.rpc_traced("turn/start",json!({"threadId":thread,
+            "clientUserMessageId":invocation.to_string(),"input":[{"type":"text","text":template,"textElements":[]},
+                {"type":"text","text":input,"textElements":[]}],
+            "additionalContext":context}),Some(&trace),self.timeout,self.max_message_bytes).await;
+        // 事务只提供 fence；无论 RPC 结果如何，先前已提交的 trace/native 意图都保留。
+        guard.commit().await.map_err(|_| RuntimeError::Unknown)?;
+        let response = result?;
+        let turn = response.get("turn").ok_or(RuntimeError::Protocol)?;
+        let id = turn
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .ok_or(RuntimeError::Protocol)?;
+        if !matches!(
+            turn.get("status").and_then(Value::as_str),
+            Some("inProgress" | "completed" | "failed" | "interrupted")
+        ) {
+            return Err(RuntimeError::Protocol);
+        }
+        Ok(id.to_owned())
+    }
+
     /// 固定已知 thread/turn，不发送原生允许的空 turn 启动期取消。
     pub(crate) async fn interrupt(
         &self,
@@ -434,6 +552,34 @@ impl Supervisor {
             json!({"threadId":thread_id,"cursor":cursor,"sortDirection":"desc","itemsView":"full"}),
         )
         .await
+    }
+
+    /// 只读已经由 stdio RPC reader 消费的同一活动 turn 元事实。缺通知/恢复
+    /// 不返回本机时钟；本方法不发 RPC，也不创建另一套运行体登记。
+    pub(crate) async fn last_activity_at(
+        &self,
+        projection: &RuntimeRef,
+        thread_id: &str,
+        turn_id: &str,
+    ) -> Result<Option<i64>, RuntimeError> {
+        let thread = Uuid::parse_str(thread_id).map_err(|_| RuntimeError::Protocol)?;
+        let turn = Uuid::parse_str(turn_id).map_err(|_| RuntimeError::Protocol)?;
+        let process = self
+            .processes
+            .lock()
+            .await
+            .get(&projection.installation_id)
+            .cloned()
+            .ok_or(RuntimeError::Unavailable)?;
+        let mut process = process.lock().await;
+        process
+            .check(projection.generation, &projection.config_hash)
+            .await?;
+        Ok(process
+            .native_activity
+            .get(&thread)
+            .filter(|activity| activity.turn_id == turn)
+            .map(|activity| activity.emitted_at_ms))
     }
 
     pub(crate) async fn stop(&self, installation: Uuid) -> Result<(), RuntimeError> {
@@ -671,9 +817,23 @@ impl Process {
         timeout: Duration,
         max: usize,
     ) -> Result<Value, RuntimeError> {
+        self.rpc_traced(method, params, None, timeout, max).await
+    }
+
+    async fn rpc_traced(
+        &mut self,
+        method: &str,
+        params: Value,
+        traceparent: Option<&str>,
+        timeout: Duration,
+        max: usize,
+    ) -> Result<Value, RuntimeError> {
         self.next_id = self.next_id.checked_add(1).ok_or(RuntimeError::Protocol)?;
         let id = self.next_id;
-        let request = json!({"id":id,"method":method,"params":params});
+        let mut request = json!({"id":id,"method":method,"params":params});
+        if let Some(trace) = traceparent {
+            request["trace"] = json!({"traceparent":trace});
+        }
         tokio::time::timeout(timeout, self.send(&request))
             .await
             .map_err(|_| RuntimeError::Unknown)??;
@@ -721,11 +881,193 @@ impl Process {
                     self.send(&json!({"id":message["id"],"error":{"code":-32000,"message":"PLATFORM_ADMISSION_REQUIRED"}})).await?;
                     return Err(RuntimeError::AdmissionRequired);
                 }
-                // notifications 可含模型正文/usage：不记日志，不当 durable usage 权威。
+                // 不复制正文。活动只取原生 envelope 的时间与 thread/turn 引用；
+                // usage/account/RPC response 不重置 idle timer、不当 durable usage。
+                record_native_activity(
+                    &mut self.native_activity,
+                    &message,
+                    chrono::Utc::now().timestamp_millis(),
+                )?;
             }
         };
         tokio::time::timeout(timeout, read)
             .await
             .map_err(|_| RuntimeError::Unknown)?
+    }
+}
+
+/// Fixed Codex 7498521d288b9b3b96ffba4eedf089d8d6e06a84:
+/// common.rs::ServerNotificationEnvelope → timestamped_server_notification →
+/// app-server-transport::transport::stdio 的原生序列化，emittedAtMs 未被剥离。
+fn record_native_activity(
+    activities: &mut HashMap<Uuid, NativeActivity>,
+    message: &Value,
+    now_ms: i64,
+) -> Result<(), RuntimeError> {
+    let Some(method) = message.get("method").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    if method == "thread/closed" {
+        let thread = message
+            .pointer("/params/threadId")
+            .and_then(Value::as_str)
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .ok_or(RuntimeError::Protocol)?;
+        activities.remove(&thread);
+        return Ok(());
+    }
+    let boundary = matches!(method, "turn/started" | "turn/completed");
+    if !boundary
+        && !matches!(
+            method,
+            "turn/diff/updated"
+                | "turn/plan/updated"
+                | "item/started"
+                | "item/completed"
+                | "item/agentMessage/delta"
+                | "item/plan/delta"
+                | "item/reasoning/summaryTextDelta"
+                | "item/reasoning/summaryPartAdded"
+                | "item/reasoning/textDelta"
+                | "item/commandExecution/outputDelta"
+                | "item/commandExecution/terminalInteraction"
+                | "item/fileChange/outputDelta"
+                | "item/fileChange/patchUpdated"
+                | "item/mcpToolCall/progress"
+        )
+    {
+        // 不把 bookkeeping、未知 method 或 unrelated thread 通知当运行进展。
+        return Ok(());
+    }
+    let thread = message
+        .pointer("/params/threadId")
+        .and_then(Value::as_str)
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .ok_or(RuntimeError::Protocol)?;
+    let turn = message
+        .pointer(if boundary {
+            "/params/turn/id"
+        } else {
+            "/params/turnId"
+        })
+        .and_then(Value::as_str)
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .ok_or(RuntimeError::Protocol)?;
+    if boundary {
+        let status = message
+            .pointer("/params/turn/status")
+            .and_then(Value::as_str);
+        if (method == "turn/started" && status != Some("inProgress"))
+            || (method == "turn/completed"
+                && !matches!(status, Some("completed" | "failed" | "interrupted")))
+        {
+            activities.remove(&thread);
+            return Err(RuntimeError::Protocol);
+        }
+    }
+    if method == "turn/completed" {
+        if activities
+            .get(&thread)
+            .is_some_and(|activity| activity.turn_id == turn)
+        {
+            activities.remove(&thread);
+        }
+        return Ok(());
+    }
+    let Some(emitted_at_ms) = message
+        .get("emittedAtMs")
+        .and_then(Value::as_i64)
+        .filter(|time| *time > 0 && *time <= now_ms)
+    else {
+        // 失去时间事实后不能继续沿用旧缓存推断 idle，直到新的真实 turn start。
+        activities.remove(&thread);
+        return Err(RuntimeError::Protocol);
+    };
+    if method == "turn/started" {
+        if activities
+            .get(&thread)
+            .is_none_or(|activity| activity.turn_id != turn)
+        {
+            activities.insert(
+                thread,
+                NativeActivity {
+                    turn_id: turn,
+                    emitted_at_ms,
+                },
+            );
+        }
+        // 同 turn 的重发 start 不延长 idle，不能让恢复/重发伪造新活动。
+    } else if let Some(activity) = activities.get_mut(&thread) {
+        if activity.turn_id == turn {
+            activity.emitted_at_ms = activity.emitted_at_ms.max(emitted_at_ms);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod activity_tests {
+    use super::*;
+
+    #[test]
+    fn only_same_started_turn_progress_advances_native_clock() {
+        let thread = Uuid::from_u128(1);
+        let turn = Uuid::from_u128(2);
+        let start = json!({"method":"turn/started","emittedAtMs":1000,
+            "params":{"threadId":thread,"turn":{"id":turn,"status":"inProgress"}}});
+        let delta = json!({"method":"item/agentMessage/delta","emittedAtMs":2000,
+            "params":{"threadId":thread,"turnId":turn}});
+        let mut activities = HashMap::new();
+        record_native_activity(&mut activities, &delta, 3000).unwrap();
+        assert!(activities.is_empty());
+        record_native_activity(&mut activities, &start, 3000).unwrap();
+        record_native_activity(&mut activities, &delta, 3000).unwrap();
+        assert_eq!(activities[&thread].emitted_at_ms, 2000);
+        for message in [
+            json!({"method":"turn/started","emittedAtMs":2900,
+                "params":{"threadId":thread,"turn":{"id":turn,"status":"inProgress"}}}),
+            json!({"method":"item/agentMessage/delta","emittedAtMs":2900,
+                "params":{"threadId":thread,"turnId":Uuid::from_u128(3)}}),
+            json!({"method":"thread/tokenUsage/updated","emittedAtMs":2900,
+                "params":{"threadId":thread,"turnId":turn}}),
+            json!({"id":1,"result":{},"emittedAtMs":2900}),
+        ] {
+            record_native_activity(&mut activities, &message, 3000).unwrap();
+            assert_eq!(activities[&thread].emitted_at_ms, 2000);
+        }
+    }
+
+    #[test]
+    fn missing_or_future_native_clock_loses_idle_evidence() {
+        let thread = Uuid::from_u128(1);
+        let turn = Uuid::from_u128(2);
+        let start = json!({"method":"turn/started","emittedAtMs":1000,
+            "params":{"threadId":thread,"turn":{"id":turn,"status":"inProgress"}}});
+        let mut activities = HashMap::new();
+        for stamp in [Value::Null, json!(3001)] {
+            record_native_activity(&mut activities, &start, 3000).unwrap();
+            let message = json!({"method":"item/agentMessage/delta","emittedAtMs":stamp,
+                "params":{"threadId":thread,"turnId":turn}});
+            assert!(record_native_activity(&mut activities, &message, 3000).is_err());
+            assert!(activities.is_empty());
+        }
+    }
+
+    #[test]
+    fn native_terminal_removes_clock_and_unknown_boundary_is_rejected() {
+        let thread = Uuid::from_u128(1);
+        let turn = Uuid::from_u128(2);
+        let start = json!({"method":"turn/started","emittedAtMs":1000,
+            "params":{"threadId":thread,"turn":{"id":turn,"status":"inProgress"}}});
+        let mut activities = HashMap::new();
+        record_native_activity(&mut activities, &start, 3000).unwrap();
+        let mut terminal = json!({"method":"turn/completed","emittedAtMs":2000,
+            "params":{"threadId":thread,"turn":{"id":turn,"status":"completed"}}});
+        record_native_activity(&mut activities, &terminal, 3000).unwrap();
+        assert!(activities.is_empty());
+        record_native_activity(&mut activities, &start, 3000).unwrap();
+        terminal["params"]["turn"]["status"] = json!("futureStatus");
+        assert!(record_native_activity(&mut activities, &terminal, 3000).is_err());
+        assert!(activities.is_empty());
     }
 }

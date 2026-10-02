@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use buzz_core::engram::{self, Body};
-use buzz_core::kind::KIND_AGENT_ENGRAM;
+use buzz_core::kind::{KIND_AGENT_ENGRAM, KIND_STREAM_MESSAGE};
 use nostr::{Event, Keys, PublicKey};
 use serde_json::{json, Value};
 
@@ -35,6 +35,66 @@ pub struct Head {
 pub enum CoreMemory {
     Found { head: Head, profile: String },
     Absent,
+}
+
+/// Only the current native-read/turn call owns this plaintext. It must never
+/// become a serialized workflow input, database row or diagnostic value.
+pub struct SourceMessage {
+    pub author: String,
+    pub content: String,
+}
+
+impl IdentityClient {
+    /// Read the exact persisted trigger, using Buzz's single NIP-10 parser.
+    /// A new head, another channel or an unverified event cannot supply input.
+    pub async fn source_message(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+        channel: &str,
+        root: &str,
+    ) -> Result<SourceMessage, MemoryError> {
+        let page = self
+            .query(http, &[json!({"ids":[event_id]})])
+            .await
+            .map_err(|_| MemoryError::Unavailable)?;
+        let events: Vec<Event> =
+            serde_json::from_value(page).map_err(|_| MemoryError::InvalidEvidence)?;
+        let mut events = events.into_iter();
+        let event = events.next().ok_or(MemoryError::Unavailable)?;
+        if events.next().is_some()
+            || event.id.to_hex() != event_id
+            || u32::from(event.kind.as_u16()) != KIND_STREAM_MESSAGE
+            || event.verify().is_err()
+        {
+            return Err(MemoryError::InvalidEvidence);
+        }
+        let mut observed_channel = None;
+        for tag in event.tags.iter() {
+            let parts = tag.as_slice();
+            if parts.first().map(String::as_str) == Some("h") {
+                if observed_channel.is_some() || parts.len() != 2 {
+                    return Err(MemoryError::InvalidEvidence);
+                }
+                observed_channel = parts.get(1);
+            }
+        }
+        let ancestry = buzz_core::nip10::parse_thread_markers(&event.tags).resolve();
+        let belongs = if event_id == root {
+            ancestry.is_none()
+        } else {
+            ancestry
+                .as_ref()
+                .is_some_and(|(observed, _)| observed == root)
+        };
+        if observed_channel.map(String::as_str) != Some(channel) || !belongs {
+            return Err(MemoryError::InvalidEvidence);
+        }
+        Ok(SourceMessage {
+            author: event.pubkey.to_hex(),
+            content: event.content,
+        })
+    }
 }
 
 pub struct Snapshot {
@@ -126,6 +186,67 @@ impl<'a> Reader<'a> {
         Ok(self.core(heads))
     }
 
+    /// Recover a Session's already frozen core reference. This is not a
+    /// replaceable-event/head query: missing/deleted/corrupt is UNREADABLE,
+    /// never ABSENT and never permission to substitute the current head.
+    pub async fn read_core_event(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+        now: u64,
+    ) -> Result<CoreMemory, MemoryError> {
+        let page = self
+            .client
+            .query(http, &[json!({"ids":[event_id]})])
+            .await
+            .map_err(|_| MemoryError::Unavailable)?;
+        let events: Vec<Event> =
+            serde_json::from_value(page).map_err(|_| MemoryError::InvalidEvidence)?;
+        let mut events = events.into_iter();
+        let event = events.next().ok_or(MemoryError::Unavailable)?;
+        if events.next().is_some()
+            || event.id.to_hex() != event_id
+            || self.head_is_ahead(&event, now)
+        {
+            return Err(MemoryError::InvalidEvidence);
+        }
+        let Body::Core { profile } = self.body(&event)? else {
+            return Err(MemoryError::InvalidEvidence);
+        };
+        Ok(CoreMemory::Found {
+            head: Head {
+                event_id: event.id.to_hex(),
+                created_at: event.created_at.as_secs(),
+            },
+            profile,
+        })
+    }
+
+    fn body(&self, event: &Event) -> Result<Body, MemoryError> {
+        // Measure the native plaintext before parsing drops unknown fields.
+        if event.verify().is_err() {
+            return Err(MemoryError::InvalidEvidence);
+        }
+        let plaintext = nostr::nips::nip44::decrypt(
+            self.counterparty.secret_key(),
+            &self.agent,
+            &event.content,
+        )
+        .map_err(|_| MemoryError::InvalidEvidence)?;
+        if plaintext.len() > self.limits.plaintext_bytes {
+            return Err(MemoryError::InvalidEvidence);
+        }
+        drop(plaintext);
+        engram::validate_and_decrypt(
+            event,
+            &self.agent,
+            &self.counterparty.public_key(),
+            self.counterparty.secret_key(),
+            &self.agent,
+        )
+        .map_err(|_| MemoryError::InvalidEvidence)
+    }
+
     fn head_is_ahead(&self, event: &Event, now: u64) -> bool {
         event.created_at.as_secs() > now.saturating_add(self.limits.relay_timestamp_window_seconds)
     }
@@ -191,27 +312,7 @@ impl<'a> Reader<'a> {
                 {
                     return Err(MemoryError::InvalidEvidence);
                 }
-                // Measure the complete native plaintext, including unknown
-                // JSON fields: reserializing Body would discard those fields
-                // and incorrectly accept an oversized decrypted envelope.
-                let plaintext = nostr::nips::nip44::decrypt(
-                    self.counterparty.secret_key(),
-                    &self.agent,
-                    &event.content,
-                )
-                .map_err(|_| MemoryError::InvalidEvidence)?;
-                if plaintext.len() > self.limits.plaintext_bytes {
-                    return Err(MemoryError::InvalidEvidence);
-                }
-                drop(plaintext);
-                let body = engram::validate_and_decrypt(
-                    &event,
-                    &self.agent,
-                    &self.counterparty.public_key(),
-                    self.counterparty.secret_key(),
-                    &self.agent,
-                )
-                .map_err(|_| MemoryError::InvalidEvidence)?;
+                let body = self.body(&event)?;
                 let key = engram::conversation_key(self.counterparty.secret_key(), &self.agent);
                 let address = engram::d_tag(&key, body.slug());
                 if slot.is_some_and(|slot| slot != address) {

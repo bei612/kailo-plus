@@ -280,6 +280,35 @@ impl Capacity {
         {
             return Err(CapacityError::Exhausted);
         }
+        // Version.parallelism 是每 Installation 的运行边界，不是第二个容量池。
+        // 同一既有 Installation 行串行跨 pool/generation 的首次分配；重试与
+        // 已有 holder 在上方原幂等路径返回。UNKNOWN/EXPIRED/RELEASING 不归还名额。
+        let installation: Uuid = sqlx::query_scalar(
+            "select i.installation_resource_id from catalog.agent_invocation i
+             join catalog.agent_installation n on n.resource_id=i.installation_resource_id
+             where i.id=$1 for update of n",
+        )
+        .bind(invocation)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(CapacityError::Rejected)?;
+        let policy = crate::agent_policy::load(&mut tx, invocation)
+            .await
+            .map_err(|error| match error {
+                crate::agent_policy::PolicyError::Rejected => CapacityError::Rejected,
+                crate::agent_policy::PolicyError::Database(error) => CapacityError::Database(error),
+            })?;
+        let installation_occupied: i64 = sqlx::query_scalar(
+            "select count(*)::bigint from admission.capacity_lease l
+             join catalog.agent_invocation i on i.id=l.invocation_id
+             where i.installation_resource_id=$1 and l.state<>'RELEASED'",
+        )
+        .bind(installation)
+        .fetch_one(&mut *tx)
+        .await?;
+        if installation_occupied >= policy.parallelism {
+            return Err(CapacityError::Exhausted);
+        }
         let id = Uuid::new_v4();
         sqlx::query("insert into admission.capacity_lease(id,invocation_id,operation_id,tenant_id,
             workspace_id,pool_key,workflow_id,run_id,activity_id,attempt,scheduled_event_id,units,

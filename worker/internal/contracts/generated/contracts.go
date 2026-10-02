@@ -16,6 +16,15 @@
 //    agentDefinitionView, err := UnmarshalAgentDefinitionView(bytes)
 //    bytes, err = agentDefinitionView.Marshal()
 //
+//    agentInstallationPage, err := UnmarshalAgentInstallationPage(bytes)
+//    bytes, err = agentInstallationPage.Marshal()
+//
+//    agentInstallationProjectionView, err := UnmarshalAgentInstallationProjectionView(bytes)
+//    bytes, err = agentInstallationProjectionView.Marshal()
+//
+//    agentInstallationView, err := UnmarshalAgentInstallationView(bytes)
+//    bytes, err = agentInstallationView.Marshal()
+//
 //    agentVersionView, err := UnmarshalAgentVersionView(bytes)
 //    bytes, err = agentVersionView.Marshal()
 //
@@ -93,6 +102,9 @@
 //
 //    agentVersionContent, err := UnmarshalAgentVersionContent(bytes)
 //    bytes, err = agentVersionContent.Marshal()
+//
+//    delegationGrantParameters, err := UnmarshalDelegationGrantParameters(bytes)
+//    bytes, err = delegationGrantParameters.Marshal()
 //
 //    errorBody, err := UnmarshalErrorBody(bytes)
 //    bytes, err = errorBody.Marshal()
@@ -174,6 +186,8 @@
 
 package generated
 
+import "time"
+
 import "encoding/json"
 
 func UnmarshalCanary(data []byte) (Canary, error) {
@@ -223,6 +237,36 @@ func UnmarshalAgentDefinitionView(data []byte) (AgentDefinitionView, error) {
 }
 
 func (r *AgentDefinitionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationPage(data []byte) (AgentInstallationPage, error) {
+	var r AgentInstallationPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationProjectionView(data []byte) (AgentInstallationProjectionView, error) {
+	var r AgentInstallationProjectionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationProjectionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationView(data []byte) (AgentInstallationView, error) {
+	var r AgentInstallationView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -483,6 +527,16 @@ func UnmarshalAgentVersionContent(data []byte) (AgentVersionContent, error) {
 }
 
 func (r *AgentVersionContent) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalDelegationGrantParameters(data []byte) (DelegationGrantParameters, error) {
+	var r DelegationGrantParameters
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *DelegationGrantParameters) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -797,6 +851,12 @@ type ActionCommand struct {
 	AssetID *string `json:"assetId,omitempty"`
 	// 调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
 	AssetVersion *int64 `json:"assetVersion,omitempty"`
+	// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
+	DelegationGrant *DelegationGrantClass `json:"delegationGrant,omitempty"`
+	// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
+	DelegationID *string `json:"delegationId,omitempty"`
+	// 仅 revoke：调用方实际读取的 Grant 版本。
+	DelegationVersion *int64 `json:"delegationVersion,omitempty"`
 	// EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
 	ExplicitConfirmation *bool `json:"explicitConfirmation,omitempty"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
@@ -858,6 +918,26 @@ type AgentVersionContentTurnLimits struct {
 	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
 }
 
+// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
+type DelegationGrantClass struct {
+	ExpiresAt time.Time              `json:"expiresAt"`
+	MaxUses   *int64                 `json:"maxUses,omitempty"`
+	Scopes    []DelegationGrantScope `json:"scopes"`
+	ValidFrom time.Time              `json:"validFrom"`
+}
+
+type DelegationGrantScope struct {
+	ActionKey          string             `json:"actionKey"`
+	ActionVersion      int64              `json:"actionVersion"`
+	CreateWorkspaceID  *string            `json:"createWorkspaceId,omitempty"`
+	OutputSchemaHash   string             `json:"outputSchemaHash"`
+	RedactionPolicy    string             `json:"redactionPolicy"`
+	ResultExposureMode ResultExposureMode `json:"resultExposureMode"`
+	TargetID           *string            `json:"targetId,omitempty"`
+	TargetType         string             `json:"targetType"`
+	ToolResourceID     *string            `json:"toolResourceId,omitempty"`
+}
+
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
 // 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
 type ActionSubmission struct {
@@ -910,6 +990,78 @@ type AgentDefinitionView struct {
 	ResourceVersion                int64         `json:"resourceVersion"`
 	StableSlug                     string        `json:"stableSlug"`
 	Status                         string        `json:"status"`
+}
+
+// 按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
+type AgentInstallationPage struct {
+	Installations []InstallationElement `json:"installations"`
+	NextOffset    *int64                `json:"nextOffset,omitempty"`
+}
+
+// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
+// 正文、执行或管理权限。
+type InstallationElement struct {
+	ActiveProjectionGeneration *int64                      `json:"activeProjectionGeneration,omitempty"`
+	AgentPrincipalID           string                      `json:"agentPrincipalId"`
+	AgentPrincipalState        AgentPrincipalState         `json:"agentPrincipalState"`
+	AgentResourceID            string                      `json:"agentResourceId"`
+	ChannelBinding             *InstallationChannelBinding `json:"channelBinding,omitempty"`
+	OwnerPrincipalID           string                      `json:"ownerPrincipalId"`
+	PinnedVersionAssetID       string                      `json:"pinnedVersionAssetId"`
+	Projection                 *ProjectionClass            `json:"projection,omitempty"`
+	ResourceID                 string                      `json:"resourceId"`
+	ResourceState              ResourceState               `json:"resourceState"`
+	ResourceVersion            int64                       `json:"resourceVersion"`
+	State                      AgentInstallationState      `json:"state"`
+	WorkspaceID                string                      `json:"workspaceId"`
+}
+
+type InstallationChannelBinding struct {
+	ChannelID *string        `json:"channelId,omitempty"`
+	Status    Status         `json:"status"`
+	Triggers  []AgentTrigger `json:"triggers"`
+}
+
+// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
+type ProjectionClass struct {
+	AgentVersionAssetID string                      `json:"agentVersionAssetId"`
+	ConfigHash          string                      `json:"configHash"`
+	Generation          int64                       `json:"generation"`
+	RuntimeProfileKey   string                      `json:"runtimeProfileKey"`
+	State               AgentRuntimeProjectionState `json:"state"`
+}
+
+// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
+type AgentInstallationProjectionView struct {
+	AgentVersionAssetID string                      `json:"agentVersionAssetId"`
+	ConfigHash          string                      `json:"configHash"`
+	Generation          int64                       `json:"generation"`
+	RuntimeProfileKey   string                      `json:"runtimeProfileKey"`
+	State               AgentRuntimeProjectionState `json:"state"`
+}
+
+// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
+// 正文、执行或管理权限。
+type AgentInstallationView struct {
+	ActiveProjectionGeneration *int64                               `json:"activeProjectionGeneration,omitempty"`
+	AgentPrincipalID           string                               `json:"agentPrincipalId"`
+	AgentPrincipalState        AgentPrincipalState                  `json:"agentPrincipalState"`
+	AgentResourceID            string                               `json:"agentResourceId"`
+	ChannelBinding             *AgentInstallationViewChannelBinding `json:"channelBinding,omitempty"`
+	OwnerPrincipalID           string                               `json:"ownerPrincipalId"`
+	PinnedVersionAssetID       string                               `json:"pinnedVersionAssetId"`
+	Projection                 *ProjectionClass                     `json:"projection,omitempty"`
+	ResourceID                 string                               `json:"resourceId"`
+	ResourceState              ResourceState                        `json:"resourceState"`
+	ResourceVersion            int64                                `json:"resourceVersion"`
+	State                      AgentInstallationState               `json:"state"`
+	WorkspaceID                string                               `json:"workspaceId"`
+}
+
+type AgentInstallationViewChannelBinding struct {
+	ChannelID *string        `json:"channelId,omitempty"`
+	Status    Status         `json:"status"`
+	Triggers  []AgentTrigger `json:"triggers"`
 }
 
 type AgentVersionView struct {
@@ -1307,6 +1459,25 @@ type AgentVersionContentTurnLimitsClass struct {
 	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
 }
 
+type DelegationGrantParameters struct {
+	ExpiresAt time.Time                        `json:"expiresAt"`
+	MaxUses   *int64                           `json:"maxUses,omitempty"`
+	Scopes    []DelegationGrantParametersScope `json:"scopes"`
+	ValidFrom time.Time                        `json:"validFrom"`
+}
+
+type DelegationGrantParametersScope struct {
+	ActionKey          string             `json:"actionKey"`
+	ActionVersion      int64              `json:"actionVersion"`
+	CreateWorkspaceID  *string            `json:"createWorkspaceId,omitempty"`
+	OutputSchemaHash   string             `json:"outputSchemaHash"`
+	RedactionPolicy    string             `json:"redactionPolicy"`
+	ResultExposureMode ResultExposureMode `json:"resultExposureMode"`
+	TargetID           *string            `json:"targetId,omitempty"`
+	TargetType         string             `json:"targetType"`
+	ToolResourceID     *string            `json:"toolResourceId,omitempty"`
+}
+
 // 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
 type ErrorBody struct {
 	Class ErrorClass `json:"class"`
@@ -1667,8 +1838,8 @@ const (
 type AgentMemoryColdWrite string
 
 const (
-	Disabled         AgentMemoryColdWrite = "DISABLED"
-	InvocationScoped AgentMemoryColdWrite = "INVOCATION_SCOPED"
+	AgentMemoryColdWriteDISABLED AgentMemoryColdWrite = "DISABLED"
+	InvocationScoped             AgentMemoryColdWrite = "INVOCATION_SCOPED"
 )
 
 type AgentMemoryCoreWrite string
@@ -1683,6 +1854,14 @@ type AgentTrigger string
 const (
 	ManualAssignment AgentTrigger = "MANUAL_ASSIGNMENT"
 	Mention          AgentTrigger = "MENTION"
+)
+
+type ResultExposureMode string
+
+const (
+	ConsumeOnly ResultExposureMode = "CONSUME_ONLY"
+	Export      ResultExposureMode = "EXPORT"
+	Read        ResultExposureMode = "READ"
 )
 
 // ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
@@ -1780,6 +1959,42 @@ const (
 	RetainedReadOnly          ResourceState = "RETAINED_READ_ONLY"
 )
 
+type AgentPrincipalState string
+
+const (
+	AgentPrincipalStateACTIVE   AgentPrincipalState = "ACTIVE"
+	AgentPrincipalStateDISABLED AgentPrincipalState = "DISABLED"
+)
+
+type Status string
+
+const (
+	StatusACTIVE   Status = "ACTIVE"
+	StatusDISABLED Status = "DISABLED"
+	StatusERROR    Status = "ERROR"
+)
+
+// 03 §7 的静态运行投影状态，不承载 Invocation 动态准入。
+type AgentRuntimeProjectionState string
+
+const (
+	AgentRuntimeProjectionStateACTIVE  AgentRuntimeProjectionState = "ACTIVE"
+	AgentRuntimeProjectionStateERROR   AgentRuntimeProjectionState = "ERROR"
+	AgentRuntimeProjectionStateREVOKED AgentRuntimeProjectionState = "REVOKED"
+	Pending                            AgentRuntimeProjectionState = "PENDING"
+)
+
+// 03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
+type AgentInstallationState string
+
+const (
+	AgentInstallationStateACTIVE       AgentInstallationState = "ACTIVE"
+	AgentInstallationStateDISABLED     AgentInstallationState = "DISABLED"
+	AgentInstallationStateERROR        AgentInstallationState = "ERROR"
+	AgentInstallationStatePROVISIONING AgentInstallationState = "PROVISIONING"
+	Draining                           AgentInstallationState = "DRAINING"
+)
+
 type AgentVersionState string
 
 const (
@@ -1845,11 +2060,13 @@ const (
 type EvidenceAuthority string
 
 const (
-	Buzz     EvidenceAuthority = "BUZZ"
-	Core     EvidenceAuthority = "CORE"
-	Oidc     EvidenceAuthority = "OIDC"
-	Spicedb  EvidenceAuthority = "SPICEDB"
-	Temporal EvidenceAuthority = "TEMPORAL"
+	Agentgateway EvidenceAuthority = "AGENTGATEWAY"
+	Buzz         EvidenceAuthority = "BUZZ"
+	Core         EvidenceAuthority = "CORE"
+	Oidc         EvidenceAuthority = "OIDC"
+	Openmeter    EvidenceAuthority = "OPENMETER"
+	Spicedb      EvidenceAuthority = "SPICEDB"
+	Temporal     EvidenceAuthority = "TEMPORAL"
 )
 
 // 存量种类不可识别时缺省
@@ -1861,6 +2078,7 @@ type EvidenceKind string
 const (
 	ActionExecutionID           EvidenceKind = "ACTION_EXECUTION_ID"
 	AdmitActionExecutionID      EvidenceKind = "ADMIT_ACTION_EXECUTION_ID"
+	AgentgatewayUsageID         EvidenceKind = "AGENTGATEWAY_USAGE_ID"
 	ApprovalPolicy              EvidenceKind = "APPROVAL_POLICY"
 	ApprovalWorkflowID          EvidenceKind = "APPROVAL_WORKFLOW_ID"
 	BuzzDeletionInventoryDigest EvidenceKind = "BUZZ_DELETION_INVENTORY_DIGEST"
@@ -1869,6 +2087,7 @@ const (
 	BuzzPubkey                  EvidenceKind = "BUZZ_PUBKEY"
 	DeploymentBootstrap         EvidenceKind = "DEPLOYMENT_BOOTSTRAP"
 	ExternalSubjectSha256       EvidenceKind = "EXTERNAL_SUBJECT_SHA256"
+	OpenmeterEventID            EvidenceKind = "OPENMETER_EVENT_ID"
 	OriginalActionExecutionID   EvidenceKind = "ORIGINAL_ACTION_EXECUTION_ID"
 	PlatformSessionID           EvidenceKind = "PLATFORM_SESSION_ID"
 	SecretRefRehomeID           EvidenceKind = "SECRET_REF_REHOME_ID"
@@ -1881,6 +2100,8 @@ const (
 	TenantInvitationID          EvidenceKind = "TENANT_INVITATION_ID"
 	TenantLifecycleSnapshotID   EvidenceKind = "TENANT_LIFECYCLE_SNAPSHOT_ID"
 	TenantMembershipID          EvidenceKind = "TENANT_MEMBERSHIP_ID"
+	TraceID                     EvidenceKind = "TRACE_ID"
+	UsageEventID                EvidenceKind = "USAGE_EVENT_ID"
 )
 
 // EvidenceRef 的敏感级别。SUMMARY 在当前 audit permission 下可解引用；RESTRICTED 还需 ResultExposure

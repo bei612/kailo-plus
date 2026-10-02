@@ -254,6 +254,10 @@ enum ExistenceError {
     Temporal(#[from] crate::temporal::TemporalError),
     #[error("SpiceDB: {0}")]
     SpiceDb(#[from] crate::spicedb::SpiceDbError),
+    #[error("OpenMeter: {0}")]
+    OpenMeter(#[from] crate::openmeter::Error),
+    #[error("Gateway usage: {0}")]
+    Gateway(&'static str),
 }
 
 /// 同一事件中 run ID 所属的 workflow ID：事件内 workflow 种类的证据恰好只指向一个
@@ -318,6 +322,72 @@ async fn evidence_existence(
         }
     };
     let sql = match e.kind {
+        K::TraceId => {
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from projection.agent_model_trace
+                where trace_id=$1 and tenant_id=$2 and operation_id=$3",
+            )
+            .bind(&e.value)
+            .bind(tenant_id)
+            .bind(operation_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(found.is_some()));
+        }
+        K::UsageEventId | K::OpenmeterEventId | K::AgentgatewayUsageId => {
+            let Ok(id) = Uuid::parse_str(&e.value) else {
+                return Ok(Existence::Absent);
+            };
+            match e.kind {
+                K::UsageEventId => {
+                    let found = sqlx::query_scalar::<_, i32>(
+                        "select 1 from outbox.usage_event
+                        where id=$1 and tenant_id=$2 and operation_id=$3",
+                    )
+                    .bind(id)
+                    .bind(tenant_id)
+                    .bind(operation_id)
+                    .fetch_optional(&state.pool)
+                    .await?;
+                    return Ok(present(found.is_some()));
+                }
+                K::OpenmeterEventId => {
+                    let row: Option<(Value,String)>=sqlx::query_as("select u.event,t.openmeter_namespace
+                        from outbox.usage_event u join projection.agent_model_trace t on t.invocation_id=u.invocation_id
+                        where u.openmeter_event_id=$1 and u.tenant_id=$2 and u.operation_id=$3")
+                        .bind(id).bind(tenant_id).bind(operation_id).fetch_optional(&state.pool).await?;
+                    let Some((event, namespace)) = row else {
+                        return Ok(Existence::Unverifiable);
+                    };
+                    if namespace != state.governance.openmeter.namespace() {
+                        return Ok(Existence::Unverifiable);
+                    }
+                    return Ok(present(
+                        state
+                            .governance
+                            .openmeter
+                            .stored_usage(&event)
+                            .await?
+                            .is_some(),
+                    ));
+                }
+                K::AgentgatewayUsageId => {
+                    let refs: Vec<(i64,String,Uuid)>=sqlx::query_as("select distinct u.native_seq,t.trace_id,t.gateway_principal_id
+                        from outbox.usage_event u join projection.agent_model_trace t on t.invocation_id=u.invocation_id
+                        where u.source_id=$1 and u.source_type='GATEWAY_DURABLE_USAGE' and u.tenant_id=$2 and u.operation_id=$3")
+                        .bind(id).bind(tenant_id).bind(operation_id).fetch_all(&state.pool).await?;
+                    let [(seq, trace, principal)] = refs.as_slice() else {
+                        return Ok(Existence::Unverifiable);
+                    };
+                    let found =
+                        crate::gateway_usage::native_usage_exists(*seq, id, trace, *principal)
+                            .await
+                            .map_err(ExistenceError::Gateway)?;
+                    return Ok(present(found));
+                }
+                _ => unreachable!("仅上方三个封闭证据种类进入此分支"),
+            }
+        }
         // 审批策略属平台 Catalog，按 (id, version) 核对；存量把版本写在值里
         // （`<id>@<version>`），新写入用 version 字段，两种形状指向同一条策略
         K::ApprovalPolicy => {

@@ -7,3 +7,4 @@ pub mod limits;
 pub mod memory;
 pub mod operator;
 pub mod stream;
+pub use buzz_core::{kind, nip10};

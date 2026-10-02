@@ -3,6 +3,9 @@ import {
   ActionDispatchState,
   ActionGateState,
   AgentVersionState,
+  AgentInstallationState,
+  AgentRuntimeProjectionState,
+  AgentTrigger,
   ErrorClass,
   ReasonCode,
   ResourceState,
@@ -10,6 +13,7 @@ import {
   type ActionCommand,
   type ActionSubmission,
   type AgentDefinitionView,
+  type AgentInstallationView,
   type TaskView,
 } from "@client-kit/contracts";
 import { useEffect, useRef, useState } from "react";
@@ -47,7 +51,7 @@ function AgentReadFailure({ error, onRetry }: { error: unknown; onRetry: () => v
   const response = error instanceof BffError ? error : null;
   const knownClass = response?.errorClass !== undefined
     && Object.values(ErrorClass).includes(response.errorClass);
-  // 这三个 GET 的裸 403/404 是确定的读取拒绝；不据状态码制造错误分类或 reason。
+  // 管理 GET 的裸 403/404 是确定的读取拒绝；不据状态码制造错误分类或 reason。
   // 显式 UNKNOWN、未知分类和无可用响应优先保留未知，不能退回成确定失败。
   const refusal = response && (response.errorClass === undefined || knownClass)
     && response.errorClass !== ErrorClass.Unknown
@@ -113,8 +117,160 @@ export function AgentDefinitionsPage() {
           </>}
       </section>
       {selected ? <DefinitionDetail key={selected} resourceId={selected} locked={locked} onEdit={(target, owner) => setEdit({ target, owner })} /> : null}
+      <InstallationManagement />
     </div>
   );
+}
+
+const installationLabels = {
+  [AgentInstallationState.Provisioning]: "agents.installation.state.provisioning",
+  [AgentInstallationState.Active]: "agents.installation.state.active",
+  [AgentInstallationState.Draining]: "agents.installation.state.draining",
+  [AgentInstallationState.Disabled]: "agents.installation.state.disabled",
+  [AgentInstallationState.Error]: "agents.installation.state.error",
+} as const satisfies Record<AgentInstallationState, PlatformMessageKey>;
+const projectionLabels = {
+  [AgentRuntimeProjectionState.Pending]: "agents.installation.projection.pending",
+  [AgentRuntimeProjectionState.Active]: "agents.installation.projection.active",
+  [AgentRuntimeProjectionState.Error]: "agents.installation.projection.error",
+  [AgentRuntimeProjectionState.Revoked]: "agents.installation.projection.revoked",
+} as const satisfies Record<AgentRuntimeProjectionState, PlatformMessageKey>;
+const resourceLabels = {
+  [ResourceState.Provisioning]: "agents.installation.resource.provisioning",
+  [ResourceState.Active]: "agents.installation.resource.active",
+  [ResourceState.Unknown]: "agents.installation.resource.unknown",
+  [ResourceState.Failed]: "agents.installation.resource.failed",
+  [ResourceState.RetainedReadOnly]: "agents.installation.resource.retained",
+  [ResourceState.Deleting]: "agents.installation.resource.deleting",
+  [ResourceState.Deleted]: "agents.installation.resource.deleted",
+} as const satisfies Record<ResourceState, PlatformMessageKey>;
+const principalLabels = { ACTIVE: "agents.installation.principal.active", DISABLED: "agents.installation.principal.disabled" } as const;
+const channelLabels = { ACTIVE: "agents.installation.channel.active", DISABLED: "agents.installation.channel.disabled", ERROR: "agents.installation.channel.error" } as const;
+const triggerLabels = {
+  [AgentTrigger.Mention]: "agents.installation.trigger.mention",
+  [AgentTrigger.ManualAssignment]: "agents.installation.trigger.manual",
+} as const satisfies Record<AgentTrigger, PlatformMessageKey>;
+
+function validInstallation(row: AgentInstallationView): boolean {
+  if (!row || ![row.resourceId, row.workspaceId, row.agentResourceId, row.pinnedVersionAssetId,
+    row.agentPrincipalId, row.ownerPrincipalId].every((id) => typeof id === "string" && !!id)
+    || !Number.isSafeInteger(row.resourceVersion) || row.resourceVersion <= 0
+    || !Object.values(ResourceState).includes(row.resourceState)
+    || !Object.values(AgentInstallationState).includes(row.state)
+    || (row.agentPrincipalState !== "ACTIVE" && row.agentPrincipalState !== "DISABLED")) return false;
+  const channel = row.channelBinding;
+  if (channel !== undefined && (!channel || !["ACTIVE", "DISABLED", "ERROR"].includes(channel.status)
+    || !Array.isArray(channel.triggers) || channel.triggers.length === 0
+    || !channel.triggers.every((trigger) => Object.values(AgentTrigger).includes(trigger))
+    || (channel.channelId !== undefined && (typeof channel.channelId !== "string" || !channel.channelId)))) return false;
+  const projection = row.projection;
+  if (projection !== undefined && (!projection || !Number.isSafeInteger(projection.generation) || projection.generation <= 0
+    || projection.agentVersionAssetId !== row.pinnedVersionAssetId
+    || typeof projection.runtimeProfileKey !== "string" || !projection.runtimeProfileKey
+    || typeof projection.configHash !== "string" || !/^[0-9a-f]{64}$/.test(projection.configHash)
+    || !Object.values(AgentRuntimeProjectionState).includes(projection.state))) return false;
+  if (row.activeProjectionGeneration !== undefined && (!Number.isSafeInteger(row.activeProjectionGeneration)
+    || row.activeProjectionGeneration <= 0 || projection?.generation !== row.activeProjectionGeneration)) return false;
+  return row.state !== AgentInstallationState.Active || (row.resourceState === ResourceState.Active
+    && row.activeProjectionGeneration !== undefined && projection?.state === AgentRuntimeProjectionState.Active);
+}
+
+function InstallationManagement() {
+  const client = useBffClient();
+  const t = useT();
+  const [state, reload] = useLoad("agent-installation-workspaces", client.workspaces);
+  const [selected, setSelected] = useState<string | null>(null);
+  const value = state.status === "ok" ? state.data : null;
+  const workspaces = value && Array.isArray(value) && value.every((w) => w && typeof w.id === "string" && !!w.id
+    && typeof w.name === "string" && typeof w.slug === "string") && new Set(value.map((w) => w.id)).size === value.length ? value : null;
+  const workspace = workspaces?.find((w) => w.id === selected) ?? workspaces?.[0];
+  return <section className="flex flex-col gap-3" data-testid="agent-installations">
+    <h2 className="font-medium">{t("agents.installation.title")}</h2>
+    <p className="text-sm text-muted-foreground">{t("agents.installation.readOnly")}</p>
+    <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
+    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
+      : !workspaces ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      : !workspace ? <Notice>{t("agents.installation.noWorkspace")}</Notice>
+      : <>
+        <label className="flex flex-col gap-1 text-sm">{t("platform.workspace")}
+          <select className="h-8 rounded-md border border-input bg-background px-2" value={workspace.id}
+            onChange={(event) => setSelected(event.target.value)}>
+            {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+        </label>
+        <InstallationList key={workspace.id} workspaceId={workspace.id} />
+      </>}
+  </section>;
+}
+
+function InstallationList({ workspaceId }: { workspaceId: string }) {
+  const client = useBffClient();
+  const t = useT();
+  const [offsets, setOffsets] = useState([0]);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
+  const offset = offsets[pageIndex] ?? 0;
+  const [state, reload] = useLoad(`agent-installations:${workspaceId}:${offset}`, () => client.agentInstallations(workspaceId, offset));
+  const value = state.status === "ok" ? state.data : null;
+  const page = value && Array.isArray(value.installations) && value.installations.every((row) => validInstallation(row) && row.workspaceId === workspaceId)
+    && new Set(value.installations.map((row) => row.resourceId)).size === value.installations.length
+    && (value.nextOffset === undefined || (Number.isSafeInteger(value.nextOffset) && value.nextOffset > offset)) ? value : null;
+  const next = page?.nextOffset;
+  const changePage = (index: number) => { setSelected(null); setPageIndex(index); };
+  return <div className="flex flex-col gap-3">
+    <Button className="w-fit" onClick={() => { setSelected(null); reload(); }}>{t("platform.refresh")}</Button>
+    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
+      : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={() => { setSelected(null); reload(); }} />
+      : <>
+        {page.installations.length === 0 ? <Notice>{t("agents.installation.none")}</Notice>
+          : <Table head={[t("agents.installation.id"), t("agents.installation.version"), t("agents.installation.principal"), t("platform.state"), ""]}>
+            {page.installations.map((row) => <tr key={row.resourceId}>
+              <Cell mono>{row.resourceId}</Cell><Cell mono>{row.pinnedVersionAssetId}</Cell><Cell mono>{row.agentPrincipalId}</Cell>
+              <Cell><Badge tone="neutral">{t(installationLabels[row.state])}</Badge></Cell>
+              <Cell><Button onClick={() => setSelected(row.resourceId)}>{t("agents.installation.open")}</Button></Cell>
+            </tr>)}
+          </Table>}
+        <div className="flex gap-2">
+          {pageIndex > 0 ? <Button onClick={() => changePage(pageIndex - 1)}>{t("roles.previous")}</Button> : null}
+          {next !== undefined ? <Button onClick={() => { setOffsets((old) => [...old.slice(0, pageIndex + 1), next]); changePage(pageIndex + 1); }}>{t("roles.next")}</Button> : null}
+        </div>
+        {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} /> : null}
+      </>}
+  </div>;
+}
+
+function InstallationDetail({ resourceId, workspaceId }: { resourceId: string; workspaceId: string }) {
+  const client = useBffClient();
+  const t = useT();
+  const [state, reload] = useLoad(`agent-installation:${workspaceId}:${resourceId}`, () => client.agentInstallation(resourceId));
+  const row = state.status === "ok" && validInstallation(state.data) && state.data.resourceId === resourceId
+    && state.data.workspaceId === workspaceId ? state.data : null;
+  if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
+  if (!row) return <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
+  return <section className="flex flex-col gap-2 border-t pt-3" data-testid="agent-installation-detail">
+    <h3 className="text-sm font-medium">{t("agents.installation.id")}: <span className="break-all font-mono">{row.resourceId}</span></h3>
+    <Badge tone="neutral">{t(installationLabels[row.state])}</Badge>
+    <p className="text-sm">{t(resourceLabels[row.resourceState])} · {t("agents.resourceVersion")}: {row.resourceVersion}</p>
+    <p className="break-all text-sm">{t("agents.owner")}: {row.ownerPrincipalId}</p>
+    <p className="break-all text-sm">{t("platform.workspace")}: {row.workspaceId}</p>
+    <p className="break-all text-sm">{t("agents.installation.definition")}: {row.agentResourceId}</p>
+    <p className="break-all text-sm">{t("agents.installation.version")}: {row.pinnedVersionAssetId}</p>
+    <p className="break-all text-sm">{t("agents.installation.principal")}: {row.agentPrincipalId} · {t(principalLabels[row.agentPrincipalState])}</p>
+    <h4 className="text-sm font-medium">{t("agents.installation.channel")}</h4>
+    {row.channelBinding ? <>
+      <p className="text-sm">{t(channelLabels[row.channelBinding.status])}</p>
+      <p className="break-all text-sm">{row.channelBinding.channelId ?? t("agents.installation.notRecorded")}</p>
+      <p className="text-sm">{t("agents.installation.triggers")}: {row.channelBinding.triggers.map((trigger) => t(triggerLabels[trigger])).join(" · ")}</p>
+    </> : <p role="status" className="text-sm">{t("agents.installation.notRecorded")}</p>}
+    <h4 className="text-sm font-medium">{t("agents.installation.projection")}</h4>
+    <p className="text-sm">{t("agents.installation.activeGeneration")}: {row.activeProjectionGeneration ?? t("agents.installation.notRecorded")}</p>
+    {row.projection ? <>
+      <p className="text-sm">{t(projectionLabels[row.projection.state])} · {t("agents.installation.generation")}: {row.projection.generation}</p>
+      <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {row.projection.runtimeProfileKey}</p>
+      <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {row.projection.configHash}</p>
+    </> : <p role="status" className="text-sm">{t("agents.installation.notRecorded")}</p>}
+    <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
+  </section>;
 }
 
 function DefinitionDetail({ resourceId, locked, onEdit }: {

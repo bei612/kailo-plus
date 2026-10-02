@@ -341,6 +341,14 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/agent-definitions/{resource_id}",
             get(crate::agent_definition::get),
         )
+        .exposed_route(
+            "/api/v1/agent-installations",
+            get(crate::agent_installation_query::list),
+        )
+        .exposed_route(
+            "/api/v1/agent-installations/{resource_id}",
+            get(crate::agent_installation_query::get),
+        )
         // 未登记 exposure 的 Version 链不生成实际路由；read 也复用同一 BFF 身份。
         .exposed_route(
             "/api/v1/agent-versions/{asset_id}",

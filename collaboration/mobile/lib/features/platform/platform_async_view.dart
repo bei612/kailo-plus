@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import 'package:client_kit/shared/contracts/contracts.dart';
+
 import '../../shared/platform/platform_api.dart';
 import '../../shared/platform/platform_link.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
@@ -65,7 +67,7 @@ class PlatformAsyncView<T> extends ConsumerWidget {
 String platformErrorText(Object error, {String? locale}) {
   if (error is PlatformApiError) {
     final body = error.response.error;
-    if (body != null) {
+    if (body != null && body.errorBodyClass != ErrorClass.UNKNOWN) {
       return platformText(
         PlatformMessageKey.platformReasonWithCode,
         locale: locale,
@@ -74,6 +76,16 @@ String platformErrorText(Object error, {String? locale}) {
           'code': platformReasonCode(body.reason),
         },
       );
+    }
+    // 裸读取拒绝是确定结论；显式 UNKNOWN、未知分类/原因优先保留不明。
+    final raw = error.response.body;
+    if (raw == null || (raw is Map<String, dynamic> && raw['class'] == null)) {
+      if (error.response.status == 403) {
+        return platformText(PlatformMessageKey.tasksStatusDenied, locale: locale);
+      }
+      if (error.response.status == 404) {
+        return platformText(PlatformMessageKey.nativeUnavailableTitle, locale: locale);
+      }
     }
     return platformText(
       PlatformMessageKey.nativeErrorHttpOutcomeUnknown,

@@ -141,45 +141,6 @@ cargo check --locked --offline -p buzz-relay --all-targets
 
 本批未执行真实 S3/数据库删除、取消竞态、provider 失联、保留统计正向读回或 Core 合流业务验收；这些原有单元检查没有覆盖新增 CAS producer 的实际对象归因。Core 本刀编译、批末完整门禁、发布镜像对应性、提交/push/部署由主代理分别收口，不能以本节结果替代。公开删除 exposure 为 `none`、routes/actions/workflow_kinds 仍为空，不能宣称 Stage 3、`SS-BUZ-COMMUNITY-DELETE` 或生产就绪完成。
 
-## 独立候选的实际消费闭合（2026-10-02 UTC）
-
-本节只记录上述已写实现的交付整合，不增加功能或覆盖前文历史结果。候选基线为 `e4c544fdb63d5e54fe775d58e684249166c89543`，实际目录为 `/volumes/data/kailo/tmp/codex-delete-commit-candidate-20261002.KBSv5P`。源码由原 Git 的私有 index/object 隔离选择；不是另建仓库，不覆盖正式工作树，也不把整个脏工作树纳入本刀。
-
-实际必需的消费链已经接入候选：原生冻结保留统计 → Core 同一快照与子流程 → Worker 既有 `TENANT_LIFECYCLE/DELETE` 分支及 `snapshotId` → 原私有 `AdvanceTenantDelete` Activity。新增四项删除证据枚举及对应 TypeScript 文案、Advance 请求/结果与子流程封闭枚举由 `contracts/` 同源生成，未手写四侧类型。并行的 AgentDefinition 消费同一 Resource 和 owner/version 事实；必要的 `ResourceState`、定义 query 与 ActionCommand 字段进入同一候选，不引入 AgentVersion、运行或第二份注册权威。
-
-Customer 逻辑退役依赖真实 OpenMeter 客户端，候选部署从唯一 `.env` 投递其四个必填输入、受控 token 及 `RELAY_OPERATOR_COMMIT_WINDOW_SECONDS`，没有默认地址、共享明文凭据、Quota 正向执行或 usage producer。候选只选择已有原生 API、PostgreSQL、Kafka、ClickHouse 配置；没有将 sink/Redis 去重的另一批增量混入。本地初始化的既有 Core 迁移调用同时改为受限检查镜像路径，不使用宿主 SQLx；本轮没有调用初始化或销毁当前开发环境。
-
-### 真实失败与修正
-
-- 第一次四侧生成及 `--check` 实际退出 0，但独立枚举未被对象 schema 引用，Core 随后实际报 `E0432: unresolved import contracts::PlatformSessionAccessMode`，退出 101。按 `.design/03` §2，只纳入既有 `contracts/api/session.schema.json` 的必填 `accessMode` 与 `$ref`，由原生成入口产生类型；BFF 初始化实际模式，未复制整份会话增量或开放受限展示行为。原始编译输出为 `/volumes/data/kailo/tmp/codex-delete-core-validation-20261002.S93Atr/validation-preserved-env.log`。
-- Worker 首次窄验证实际报 `workflows/component_task.go:275:39: undefined: generated.Failed`，退出 1。生成后的 ResourceState 与 TaskStatus 含同名 `FAILED`，原生成器为 TaskStatus 产生 `TaskStatusFAILED`。已机械同步唯一生产消费和四处既有测试断言，线格式仍为 `"FAILED"`；没有新增测试、历史或夹具。原件为 `/volumes/data/kailo/tmp/codex-delete-candidate-worker-20261002.faLez0/{go-verify,exit}.log`。
-- Session 字段闭合后的 Core 窄编译仍实际报两个 `E0599`：Customer-only 的 `tenant_lifecycle::metering_error` 消费 `BindingNotActive` 与 `RateLimited`，候选 e4 契约缺两值，退出 101。只纳入这两项既有 reason code 与原文案，不纳入 `QuotaExhausted`、`PayloadTooLarge` 或 Quota 实现。该次原件为上述 `S93Atr/validation-session-contract-closed.log`；生成成功不能替代后续 Core 编译结论。
-- 部署验证首次 SDK 投递因候选只读根没有 `.env` 挂载点，实际退出 1、容器码 128，产品命令未运行；原件为 `/volumes/data/kailo/tmp/codex-delete-candidate-deploy-20261002.EWfVJh/`。改为原文件只读投递后校验成功。另一次 Compose 解析实际退出 1，暴露候选选择时字符串替换错误地折叠原生 `$$` 转义，以及候选相对秘密路径未投递；保持原生字节重新选择、使用真实本地配置只读解析后退出 0，没有修改健康检查语义或启动服务。失败与还原分别保留在 `/volumes/data/kailo/tmp/codex-delete-candidate-deploy-20261002.Z0sONg/{compose-config,compose-config-restored-escaping}.log`。
-
-### 已实际通过的窄验证
-
-检查镜像固定为 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，SDK 为 UID/GID 1000、缓存位于 `/volumes/data/kailo/check-cache`；启动前保存进程及 CPU/内存压力，并回读实际容器限额。没有使用宿主 Cargo、Go、Node。
-
-- 原 `bash tools/gen.sh` 与 `bash tools/gen.sh --check` 在 Session 字段闭合后实际退出 0，Rust、Go、TypeScript、Dart 四侧同步，Mobile catalog 同步。日志为 `/volumes/data/kailo/tmp/codex-delete-candidate-final-gen-20261002.gbGlPy/{preflight,limits,generate,exit}.log`，实际 2 CPU、4 GiB、无额外 swap。最初成功但尚缺对象引用的记录 `/volumes/data/kailo/tmp/codex-delete-candidate-gen-20261002.5ZwRPk/` 保留，不能以该次生成成功证明 Core 可编译。
-- Session 闭合后的 Worker `gofmt -l` 的五个实际输入均无输出，`go vet ./activities ./workflows ./replay-tests`、`go test ./workflows ./replay-tests` 实际退出 0，workflows 与既有 replay 均 `ok`。日志为 `/volumes/data/kailo/tmp/codex-delete-candidate-worker-final-20261002.n9kk40/{preflight,limits,go-verify,exit}.log`，实际 4 CPU、6 GiB、无额外 swap。此结果先于 Customer 两项 reason code 纳入，不能作为后续生成字节重新验证的结果。未新录 DELETE history，不将现有重放成功当作新删除场景验收。
-- 原部署脚本语法与 `bootstrap.sh --validate-config` 实际退出 0，日志为上述 `Z0sONg/{preflight,limits,validate,exit}.log`，实际 1 CPU、512 MiB、无额外 swap。原 `docker compose config --no-env-resolution --quiet` 使用真实本地 `.env` 与原 project-directory 只读解析候选 YAML，实际退出 0，日志为 `compose-config-restored-escaping.log`。未执行 OpenMeter 原生 `--validate`、`init-local.sh`、服务 up 或数据库清理。
-
-Customer 两项 reason code 纳入后，同一原生成入口再次实际完成 `gen → --check`，四侧及 Mobile catalog 全部同步，attach 与容器终态均为 0；原件为 `/volumes/data/kailo/tmp/codex-delete-candidate-reasons-gen-20261002.1ReYtS/{preflight,limits,generate,exit}.log`。仍为上述不可变 SDK、UID/GID 1000、实际 2 CPU/4 GiB、无额外 swap。本次没有重新跑 Worker 或完整契约门禁，不把此前的窄验证重复登记为新结果。
-
-本节记录时，候选完整 Core 编译、独立迁移与 SQLx 验证尚无本节的通过结论，四侧 round-trip、历史兼容、批末完整门禁和最终发布产物须分别读取主代理本批真实结果。证据文档写入不改变生成输入；最终合并的 Rust/Go/TypeScript/Dart 类型、Worker 和原生 codec/lock 是各自发布产物的真实输入，不能借用早期 UI 或 Relay 产物的来源摘要冒充本候选产物。
-
-本轮未做真实 DELETE 正向、共享 CAS 对象归因读回、四类 provider 合流、不可逆取消或故障恢复业务验收，未创建业务对象；公开删除入口仍关闭。本候选未提交、push 或部署，编译/生成/现有检查通过不等于 `SS-BUZ-COMMUNITY-DELETE`、Stage 3 或一期生产就绪完成。
-
-### 后续精确候选的 Core 与独立数据库结果
-
-上述“记录时尚无结论”保留原时点事实；随后同一 `KBSv5P` 候选、上述最终生成字节的原检查已经实际完成。`SQLX_OFFLINE=true cargo clippy --offline --manifest-path core/Cargo.toml --workspace --all-targets -- -D warnings` 退出 0；原件为 `/volumes/data/kailo/tmp/codex-delete-core-validation-20261002.S93Atr/clippy-closed-contract.log`，SDK UID/GID 1000、实际 4 CPU/8 GiB、无额外 swap，Cargo 16 jobs 未下调。
-
-同批精确归属的一次性全新 PostgreSQL 实际应用 37 条迁移，最后为 `20261002010000_agent_definition`，回退该条再前进退出 0。原生 `cargo sqlx prepare --workspace` 退出 0，随后原 `step_migrate` 的配对、前进/回退/再前进、离线 SQLx 同步与 40 个命名约束逐值比对均 PASS，`EXISTING_STEP_MIGRATE_FAIL=0`，没有 migrate SKIP。原件为同目录 `migration-sqlx-closed-contract.log`；SDK 实际 8 CPU/16 GiB、临时 PG 1 CPU/1 GiB、均无额外 swap，未连接业务库。Tenant、Resource、AgentDefinition 行数均实查为 0，没有新增业务样例。
-
-原 CLI 只淘汰 12 条本候选查询不再使用的 SQLx metadata，保留 83 条，无新增或修改 query 文件；精确删除清单为同目录 `sqlx-real-delta.txt`。没有复制正式工作树的删除清单或手改查询摘要。SDK 和本次临时 PG 已清理，原日志记录二者 `cleanup absent`；Data 候选、派生缓存和证据日志仍保留。此前第一次 `validation.log` 退出 1 是环境未完整投递造成临时 PG 未 ready，SDK 尚未启动，失败没有改记为通过。
-
-此处 37 条仅对应精确候选，不覆盖前文工作树历史的 39 条。Core 编译/迁移/SQLx 通过仍不代表真实 DELETE、CAS 对象归因、四 provider、完整门禁、正式产物或部署通过；删除 gate 与未验收业务边界保持不变。下一次机械合并共享 UI 也不能自动继承为最终产物的来源验收。
-
 ## 冻结 HUMAN owner 的生命周期资格消费修正（2026-10-02 UTC）
 
 实现后按已提交设计复核发现两个实际缺口：`bff::lifecycle_identity` 仅接受 Tenant `manage`，冻结的非管理员 HUMAN owner 因而在审批入口前被拒绝；`governance_api::eligible` 又只检查角色，单修会话仍无法让该 owner 查询本人相关审批。这与 `.design/03` §2、`DD-96(5)` 和 `.design/05` 的 `tenant.delete` 角色票 AND `ALL_AFFECTED_OWNERS` 不符。前文仅管理员的实现描述保留其历史时点，不作为当前实现结论。
@@ -206,3 +167,39 @@ SQLX_OFFLINE=true cargo clippy --manifest-path core/Cargo.toml -p platform-core 
 该次 attach、容器与外层实际均退出 0，`OOMKilled=false`；Cargo 16 jobs 未下调，独占此前候选的 `S93Atr/rust-target`，未并发写他人 target。原件为 `/volumes/data/kailo/tmp/codex-lifecycle-owner-clippy-final-20261002.RsS54W/clippy.log`。两个 SDK 均已清理，Data 缓存及证据保留。
 
 本刀未创建业务数据、测试、夹具或检查脚本；未重跑迁移、SQLx prepare、四侧生成或完整门禁，未实际运行非管理员 owner 正向审批、撤权并发或故障恢复。窄编译不证明新动态 SQL 的运行期行为，也不继承为正式工作树全部增量已验收。公开删除入口仍关闭，本刀尚未提交、push 或部署；最终图谱、完整门禁和新 Core 产物由主代理统一收口。
+
+## 原生关系销毁后的受限生命周期读取（2026-10-02 UTC）
+
+实现后窄复核确认：原删除链先销毁 Tenant、Workspace、Resource/Asset 的 SpiceDB 关系，再对账 OpenBao 与 OpenMeter。后两者结果不明时，Tenant 保持 `DELETING`、子流程保持 `UNKNOWN`；原 `lifecycle_identity` 的管理员 Check 和冻结 owner 的当前投影检查都已无法成立，生命周期任务与审批在 BFF 身份入口前不可见。零 Resource 同样会丢失管理员读取资格。这违反 `DD-96(5)` 的删除中受限生命周期可见性；仅调整 provider 顺序仍无法关闭原生副作用成功与 Core 提交之间的崩溃窗口。
+
+本刀仅修改 `bff.rs`、`tenant_delete.rs` 和本记录。不可逆派发前，在原 Tenant、snapshot 与子流程事务锁内，复用当前 ACTIVE HUMAN membership、原生 Tenant admin 关系和 FullyConsistent `manage` Check，以及既有 `validate_frozen_owners` 与 Resource/Asset `read` Check；把通过核验的 principal ID、非空 ZedToken、snapshot ID、冻结 Tenant 版本和 inventory digest 写入同一子流程的既有 `provider_evidence.LIFECYCLE_READERS`。同 operation 的审计保存 snapshot、subprocess、ActionExecution 与这些原生 revision 引用；checkpoint、审计和不可逆标记一起提交后才执行任何删除。没有新表、注册表、契约、工作流或权限正文副本，零 Resource 使用真实管理员观察，不制造 owner。
+
+BFF 仍先解析真实身份并锁定、核对当前 ACTIVE HUMAN 成员。销毁后的读取仅匹配同 Tenant、当前 `DELETING` 版本、不可逆 `DELETING` snapshot、ALLOWED `tenant.delete` ActionExecution、同一 TenantLifecycle WorkflowRef，以及 `RUNNING` 或 `UNKNOWN` 的 PLATFORM_CORE_CHAIN 子流程；checkpoint 的 snapshot/version/digest 和同 operation 的审计证据必须同时成立。审批可见性额外限定该 ActionExecution，不能用别的 snapshot 的资格放行。销毁前仍走原当前 owner 投影检查。
+
+普通 `resolve_execution_context` 没有修改，也没有回退 FULL。此观察证据不被 `Governance::evaluate`、`fresh_approval_admission` 或不可逆取消谓词消费：新删除只从 SUSPENDED 准入，取消要求尚未不可逆，审批新决定仍要求原新鲜资格和未决状态。重复投递复用同一已提交 checkpoint，不在原生关系销毁后重新构造资格；checkpoint 缺失、结构不符或 revision 为空时不继续派发，保持 UNKNOWN。读取遇 SQL/证据解析错误返回不可用，缺证据不放行；成员 REVOKING/REVOKED 或 Tenant/子流程 DELETED 后即不再接受该证据，仅保留原审计。没有新增生命周期状态或任意超时/重试阈值，UNKNOWN 仍由既有删除工作流对账收敛，不能渲染成成功或确定失败。
+
+本刀完整 byte-exact before 位于 `/volumes/data/kailo/tmp/codex-lifecycle-observer-before-20261002.hp7jca/`，保留已有脏改动，仅追加本窗口。实现后执行 `git diff --check -- core/crates/platform-core/src/bff.rs core/crates/platform-core/src/tenant_delete.rs core/verify/tenant-deletion.md`；实际退出 0、输出为空。源码消费者复核覆盖会话、任务列表/详情、审批列表/详情、决定、撤回和动作提交，它们仍复用原受限 resolver 与各自现有写准入；未增加检查、测试或夹具，未运行图谱、宿主 SDK、编译或部署。中央 SDK 编译、新动态 SQL 的真实数据库执行、SpiceDB 删除后另一 provider UNKNOWN 的 HTTP 正向观察及并发撤权仍未实跑，不记通过。公开删除 exposure 仍为 `none`；本刀写入不代表 Stage 3 或生产就绪验收完成。
+
+## 真实 Agent 库存的销毁消费（2026-10-02 UTC）
+
+依据 `DD-99`、`DD-47/48`、`03` §4/§7 与 `06` §7.2，新增的 Agent 平台事实不能被原 Definition/Asset 墓碑处理忽略。本刀只修改 `tenant_delete.rs`、本记录，以及 `governance.rs::frozen_delete_inventory` 内唯一 `agent_inventory` 字段；未修改 BFF、AgentTask、Installation、原生 Gateway 客户端、Supervisor、迁移或公开入口。完整 byte-exact before 位于 `/volumes/data/kailo/tmp/codex-agent-delete-inventory-before-20261002.SwKg6e/`，不把本窗口与继承的脏树差异混算。
+
+准入时，在原 Tenant 串行边界内冻结实际 Installation、RuntimeProjection、ChannelAgentBinding、AgentMemoryBinding、AgentSession、AgentInvocation 的 scope、版本/generation 与权威引用，模型库存直接复用 `model_route::freeze`。不复制 effective 配置、记忆、消息或原生 thread/turn 正文；可变运行状态不写进不可变 inventory。重试按原 snapshot/version/digest 比对实际库存，不重新冻结。原 Gateway handler 在同一派发 fence 下恢复未知随机 key ID/revision、或把凭据置为 SUPERSEDED，只允许这两种受控前进；所有其余 scope、SecretRef、ActionExecution、对象版本与引用仍须完全相同。
+
+销毁推进先把真实 Installation 置为 DRAINING、Channel binding 禁用、非终态 Invocation 写入原 `cancel_pending`，再沿其原 AgentTaskWorkflow 请求取消并观察。每个取消请求的 workflow/first-run 链先保存到原子流程 `provider_evidence.AGENT_DRAIN`，使用本删除 ActionExecution 的稳定请求 ID；取消已接受、history 有取消事件、原生 interrupt 回应均不作为终态。只有相同链的 Temporal 已关闭、Invocation 的 native 状态/回复证据与同一 WorkflowRef/TaskProjection 终态和 run 一致、且无 observation gap，才保存 drain 证据。已持久的同 inventory 终态观察可以恢复消费，不因 Temporal history 过期重建工作流。RUNNING、UNKNOWN、缺失执行链、未知状态或缺终态投影均保持原删除 UNKNOWN，不删 Invocation 或覆盖其原生引用。
+
+drain 未证实之前保留 runtime、模型凭据、Buzz Memory 和 OpenBao namespace，供原工作流继续 interrupt、用量与 Capacity 对账。已证实 drain 后才调用本批真实 `Supervisor::retirement`：原进程退出与同一 installation ownership 下的精确状态目录删除均需回读缺席；缺 Supervisor 不冒充删除成功。模型/凭据退休只调用本批唯一 `model_route::retire`，消费其真实 stored/effective 缺席和旧 key 数据面拒绝证据，不实现第二套 Gateway 客户端。原 `AGENT_RUNTIME/GATEWAY` provider evidence 都绑定冻结 inventory digest；原生模型缺席引用持久在同一子流程，namespace 销毁后的恢复不再读取已删除 secret。
+
+最终 Core 事务再次核对冻结 Agent 库存、drain/runtime/Gateway 证据及无非终态 Invocation，再将 Installation、静态 runtime/channel/memory 投影、模型 SecretRef 和 Session 收缩到其既有禁用/撤销/关闭状态，随后执行原 Resource/Asset/Tenant 墓碑处理。Invocation、ActionExecution、WorkflowRef、Audit 与原生引用保留，不建立第二份历史或 Workflow 权威。零条目来自完整实际扫描；没有插入空表、测试 Tenant、固定成功值或新检查来声称正向验收。
+
+本刀只做实现与完整源码/消费者差异复核；`git diff --check` 实际退出 0、输出为空。没有运行 SDK、格式化、编译、迁移、SQLx、图谱、真实 Gateway/runtime 删除或 Temporal 取消验收，中央镜像检查由主代理执行。当前 AgentTask 原生产代码即使观察到 native terminal 仍返回 RUNNING，因为 usage/Capacity/reply 的完整终态生产链尚未闭合；因此有这类在途 Invocation 时本删除消费会明确阻断，而不是据 native terminal 提前成功。公开删除入口保持关闭，本节不宣布 AgentTask、Tenant 删除或生产就绪完成。
+
+## 委托事实的同生命周期收口（2026-10-02 UTC）
+
+实现依据为 `DD-49/99`、`03` §6/§7 与 `17` §10；修改前检索 `frozen_agent_inventory` 的全部生产调用及 Grant/Scope/Use 的写者。新增委托表不是第二授权权威，但原删除库存若遗漏它们，Tenant 墓碑不能证明授权已撤回、首次 dispatch 证据仍有归属。这一刀直接扩展原 `agent_inventory`，不新增删除服务、工作流、状态或公开入口。
+
+冻结同 Tenant 的 Grant、Scope、Use 与 ResultExposurePolicy 的稳定引用；Grant 的 state/version 和 Policy 的退休状态属于收紧过程，不进入不可变库存。Scope 内容及 Use 的 operation/first-dispatch 事实保留并参与库存相等比较，不复制原生消息、配置或记忆正文。零条目按实际表扫描返回完整空集合；新增表缺失或 SQL 查询失败不被解释成零对象。
+
+原 `drain_agents` 在同一 Tenant 串行事务将 ACTIVE Grant 收紧为 REVOKING，随已有取消和原工作流查证继续收敛。删除终态前仍核对固定 inventory、原 Task/native/drain 证据及无非终态 Invocation；终态同事务撤销余下 Grant、退休 Policy，保留 Scope、Use、Action、Workflow 与 Audit。不能借退休 Policy 或撤销 Grant 把 UNKNOWN 执行解释为已完成，也不删除已经发生的用量或授权使用证据。REVOKING 的终结复用原治理对账器，异常时保留原删除 UNKNOWN 和已有运维对账入口。
+
+当前环境没有旧版在线 writer；这些表此前未发布，不引入历史兼容读路径。`git diff --check` 实际退出 0、无输出；集中生成、镜像编译、真实新库查询及删除业务演练尚未执行，不记 PASS。公开删除仍关闭，本节只记录已发生的实现与确定边界。

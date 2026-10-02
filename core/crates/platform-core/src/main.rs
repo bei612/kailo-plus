@@ -5,13 +5,16 @@
 
 mod agent_definition;
 mod agent_installation;
+mod agent_installation_query;
 mod agent_memory;
+mod agent_policy;
 mod agent_runtime;
 mod agent_session;
 mod agent_task;
 mod agent_version;
 mod audit;
 mod audit_views;
+mod automation;
 mod bff;
 mod capability_registry;
 mod capacity;

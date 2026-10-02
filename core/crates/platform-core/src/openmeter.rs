@@ -3,7 +3,9 @@
 
 use chrono::{DateTime, Utc};
 use reqwest::{header, StatusCode, Url};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 
@@ -27,6 +29,12 @@ pub struct Customer {
     pub id: String,
     pub key: String,
     pub deleted_at: Option<DateTime<Utc>>,
+    usage_attribution: Option<UsageAttribution>,
+}
+
+#[derive(Deserialize)]
+struct UsageAttribution {
+    subject_keys: Vec<String>,
 }
 
 impl Customer {
@@ -75,6 +83,199 @@ struct Meter {
     id: String,
     key: String,
     deleted_at: Option<DateTime<Utc>>,
+    aggregation: String,
+    event_type: String,
+    value_property: Option<String>,
+    dimensions: Option<BTreeMap<String, String>>,
+}
+
+/// 原生 Meter 的最小不可变准入投影；数量只来自 durable Gateway 字段。
+#[derive(Serialize, Deserialize, PartialEq)]
+pub(crate) struct GatewayMeter {
+    pub key: String,
+    pub id: String,
+    pub event_type: String,
+    pub value_property: String,
+}
+
+/// DD-107：automation.run 只计真实 AgentInvocation，不计模型 HTTP 请求数量。
+#[derive(Serialize, Deserialize, PartialEq)]
+pub(crate) struct InvocationMeter {
+    pub key: String,
+    pub id: String,
+    pub event_type: String,
+}
+
+#[derive(Deserialize)]
+struct StoredEventPage {
+    data: Vec<StoredEvent>,
+    meta: CursorMeta,
+}
+
+#[derive(Deserialize)]
+struct CursorMeta {
+    page: CursorPage,
+}
+
+#[derive(Deserialize)]
+struct CursorPage {
+    next: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct StoredEvent {
+    event: Value,
+    stored_at: DateTime<Utc>,
+    validation_errors: Option<Vec<Value>>,
+}
+
+pub(crate) struct StoredEvidence {
+    pub stored_at: DateTime<Utc>,
+    pub configuration_warning: bool,
+}
+
+/// 仅本次 HTTP 调用期间持有原生可写字段，不序列化或持久化 Customer 正文。
+/// digest 绑定 namespace/Customer/完整期望字段，供已有 AE 派发阶段对账。
+pub(crate) struct SubjectProjection {
+    tenant: Uuid,
+    customer_id: String,
+    subject: String,
+    body: Value,
+    needs_write: bool,
+}
+
+impl SubjectProjection {
+    pub(crate) fn needs_write(&self) -> bool {
+        self.needs_write
+    }
+
+    pub(crate) fn digest(&self, namespace: &str) -> Result<String, Error> {
+        let projection = serde_json::json!({"namespace": namespace,
+            "customerId": self.customer_id, "body": self.body});
+        let bytes = serde_json::to_vec(&projection).map_err(|_| Error::Unknown)?;
+        Ok(hex::encode(Sha256::digest(bytes)))
+    }
+}
+
+/// 固定 native v1 CustomerReplaceUpdate 的可写字段。未知字段或不可回写的
+/// annotations 拒绝；不能借 v3 labels 的有损转换抹掉原生系统事实。
+fn subject_body(native: Value, tenant: Uuid, id: &str) -> Result<Value, Error> {
+    let object = native.as_object().ok_or(Error::Unknown)?;
+    if object.get("id").and_then(Value::as_str) != Some(id)
+        || object.get("key").and_then(Value::as_str) != Some(tenant.to_string().as_str())
+        || object.get("deletedAt").is_some_and(|v| !v.is_null())
+        || object.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "id" | "key"
+                    | "name"
+                    | "description"
+                    | "metadata"
+                    | "usageAttribution"
+                    | "primaryEmail"
+                    | "currency"
+                    | "billingAddress"
+                    | "createdAt"
+                    | "updatedAt"
+                    | "deletedAt"
+                    | "annotations"
+                    | "currentSubscriptionId"
+                    | "subscriptions"
+            )
+        })
+    {
+        return Err(Error::Conflict);
+    }
+    if object.get("annotations").is_some_and(|v| {
+        !v.is_null()
+            && !v
+                .as_object()
+                .is_some_and(|annotations| annotations.is_empty())
+    }) {
+        return Err(Error::Precondition);
+    }
+    let mut body = serde_json::Map::new();
+    for key in [
+        "key",
+        "name",
+        "description",
+        "metadata",
+        "primaryEmail",
+        "currency",
+        "billingAddress",
+    ] {
+        let value = object.get(key).filter(|v| !v.is_null());
+        if matches!(key, "key" | "name") && value.is_none() {
+            return Err(Error::Unknown);
+        }
+        if let Some(value) = value {
+            let valid = match key {
+                "metadata" => value
+                    .as_object()
+                    .is_some_and(|fields| fields.values().all(Value::is_string)),
+                "billingAddress" => value.as_object().is_some_and(|fields| {
+                    fields.iter().all(|(key, value)| {
+                        matches!(
+                            key.as_str(),
+                            "city"
+                                | "country"
+                                | "line1"
+                                | "line2"
+                                | "phoneNumber"
+                                | "postalCode"
+                                | "state"
+                        ) && (value.is_null() || value.is_string())
+                    })
+                }),
+                _ => value.is_string(),
+            };
+            if !valid || key == "name" && value.as_str().is_none_or(str::is_empty) {
+                return Err(Error::Precondition);
+            }
+            if key == "billingAddress" {
+                // Native encoder omits nil address components after a replace.
+                let fields = value
+                    .as_object()
+                    .ok_or(Error::Unknown)?
+                    .iter()
+                    .filter(|(_, value)| !value.is_null())
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect();
+                body.insert(key.into(), Value::Object(fields));
+            } else if key != "metadata"
+                || !value.as_object().is_some_and(|fields| fields.is_empty())
+            {
+                body.insert(key.into(), value.clone());
+            }
+        }
+    }
+    let mut subjects = Vec::new();
+    if let Some(attribution) = object.get("usageAttribution").filter(|v| !v.is_null()) {
+        let attribution = attribution.as_object().ok_or(Error::Unknown)?;
+        if attribution.keys().any(|key| key != "subjectKeys") {
+            return Err(Error::Precondition);
+        }
+        let keys = attribution.get("subjectKeys").ok_or(Error::Unknown)?;
+        if !keys.is_null() {
+            for key in keys.as_array().ok_or(Error::Unknown)? {
+                let key = key
+                    .as_str()
+                    .filter(|key| !key.is_empty())
+                    .ok_or(Error::Unknown)?;
+                if !key.starts_with(&format!("{tenant}:")) || subjects.iter().any(|old| old == key)
+                {
+                    return Err(Error::Conflict);
+                }
+                subjects.push(key.to_owned());
+            }
+        }
+    }
+    subjects.sort_unstable();
+    body.insert(
+        "usageAttribution".into(),
+        serde_json::json!({"subjectKeys": subjects}),
+    );
+    Ok(Value::Object(body))
 }
 
 #[derive(Deserialize)]
@@ -254,6 +455,151 @@ impl OpenMeter {
         Ok(url)
     }
 
+    fn legacy_customer_url(&self, id: &str) -> Result<Url, Error> {
+        if !valid_customer_id(id) {
+            return Err(Error::Conflict);
+        }
+        let prefix = self
+            .customers
+            .path()
+            .strip_suffix("/api/v3/openmeter/customers")
+            .ok_or(Error::Precondition)?;
+        let mut url = self.customers.clone();
+        // 路径是固定上游协议；origin/部署前缀仍来自唯一 Customer 配置。
+        url.set_path(&format!("{prefix}/api/v1/customers/{id}"));
+        Ok(url)
+    }
+
+    /// 调用方持同 Tenant 生命周期锁及真实 Installation/AE 准入事实。
+    pub(crate) async fn subject_projection(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+        installation: Uuid,
+    ) -> Result<SubjectProjection, Error> {
+        let native: Value = self.read(self.legacy_customer_url(customer_id)?).await?;
+        let mut body = subject_body(native, tenant, customer_id)?;
+        let subject = format!("{tenant}:{installation}");
+        let keys = body["usageAttribution"]["subjectKeys"]
+            .as_array_mut()
+            .ok_or(Error::Unknown)?;
+        let needs_write = !keys
+            .iter()
+            .any(|key| key.as_str() == Some(subject.as_str()));
+        if needs_write {
+            keys.push(Value::String(subject.clone()));
+            keys.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+        }
+        Ok(SubjectProjection {
+            tenant,
+            customer_id: customer_id.into(),
+            subject,
+            body,
+            needs_write,
+        })
+    }
+
+    /// 原生 replace 不是 CAS。已有 AE 派发引用必须先落库；方法不盲目重试 PUT。
+    pub(crate) async fn write_subject_projection(
+        &self,
+        projection: &SubjectProjection,
+    ) -> Result<(), Error> {
+        let response = self
+            .http
+            .put(self.legacy_customer_url(&projection.customer_id)?)
+            .json(&projection.body)
+            .send()
+            .await
+            .map_err(|_| Error::Unknown)?;
+        if response.status() != StatusCode::OK {
+            return Err(status_error(response.status()));
+        }
+        Ok(())
+    }
+
+    /// 200 或 subject 单独存在不足以完成；原字段、完整集合及 v3 归属都必须吻合。
+    pub(crate) async fn verify_subject_projection(
+        &self,
+        projection: &SubjectProjection,
+    ) -> Result<(), Error> {
+        let native: Value = self
+            .read(self.legacy_customer_url(&projection.customer_id)?)
+            .await?;
+        let body = subject_body(native, projection.tenant, &projection.customer_id)?;
+        if body != projection.body {
+            return Err(Error::Unknown);
+        }
+        let customer = self
+            .customer_by_id(&projection.customer_id, projection.tenant)
+            .await?
+            .ok_or(Error::Unknown)?;
+        let expected = projection.body["usageAttribution"]["subjectKeys"]
+            .as_array()
+            .ok_or(Error::Unknown)?;
+        let attribution = customer.usage_attribution.as_ref().ok_or(Error::Unknown)?;
+        let mut observed = attribution.subject_keys.clone();
+        observed.sort_unstable();
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|key| key.as_str().ok_or(Error::Unknown))
+            .collect::<Result<_, _>>()?;
+        if !customer.is_active()
+            || !observed.iter().any(|key| key == &projection.subject)
+            || observed.iter().map(String::as_str).collect::<Vec<_>>() != expected
+            || self
+                .customer_by_key(projection.tenant)
+                .await?
+                .is_none_or(|active| active.id != projection.customer_id)
+        {
+            return Err(Error::Unknown);
+        }
+        self.verify_subject_owner(
+            projection.tenant,
+            &projection.customer_id,
+            &projection.subject,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn verify_subject_owner(
+        &self,
+        tenant: Uuid,
+        id: &str,
+        subject: &str,
+    ) -> Result<(), Error> {
+        // Native customer.key takes precedence over subject_keys. A different key-owner
+        // must not redirect this subject, even when the expected Customer contains it.
+        let mut key_url = self.customers.clone();
+        key_url
+            .query_pairs_mut()
+            .append_pair("filter[key][eq]", subject);
+        let key_owners: Vec<Customer> = self.collection(key_url).await?;
+        if !key_owners.is_empty() {
+            return Err(Error::Conflict);
+        }
+        let mut subject_url = self.customers.clone();
+        subject_url
+            .query_pairs_mut()
+            .append_pair("filter[usage_attribution_subject_key][eq]", subject);
+        let mut owners: Vec<Customer> = self.collection(subject_url).await?;
+        if owners.len() != 1 {
+            return Err(Error::Conflict);
+        }
+        let owner = owners
+            .pop()
+            .ok_or(Error::Unknown)?
+            .validate(tenant, Some(id))?;
+        if !owner.is_active()
+            || !owner.usage_attribution.as_ref().is_some_and(|attribution| {
+                attribution.subject_keys.iter().any(|key| key == subject)
+            })
+        {
+            return Err(Error::Conflict);
+        }
+        Ok(())
+    }
+
     fn collection_url(&self, collection: &str) -> Result<Url, Error> {
         let mut url = self.customers.clone();
         url.path_segments_mut()
@@ -424,6 +770,199 @@ impl OpenMeter {
             }
         }
         Ok(true)
+    }
+
+    /// 只选 Action 已登记的 meter；配置不是由模型名、token 总量或价格猜测。
+    /// 同 event_type 多 meter 会让逐 meter CloudEvent 重复入账，因而明确拒绝。
+    pub(crate) async fn turn_meters(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+        subject: &str,
+        keys: &[String],
+    ) -> Result<(Vec<GatewayMeter>, InvocationMeter), Error> {
+        let customer = self
+            .customer_by_id(customer_id, tenant)
+            .await?
+            .ok_or(Error::Precondition)?;
+        if !customer.is_active()
+            || !subject.starts_with(&format!("{tenant}:"))
+            || !customer
+                .usage_attribution
+                .as_ref()
+                .is_some_and(|a| a.subject_keys.iter().any(|s| s == subject))
+            || keys.is_empty()
+        {
+            return Err(Error::Precondition);
+        }
+        self.verify_subject_owner(tenant, customer_id, subject)
+            .await?;
+        let native: Vec<Meter> = self.collection(self.collection_url("meters")?).await?;
+        let mut seen = HashSet::new();
+        let mut event_types = HashSet::new();
+        let mut selected = Vec::new();
+        let mut invocation = None;
+        for key in keys {
+            if !valid_resource_key(key) || !seen.insert(key) {
+                return Err(Error::Precondition);
+            }
+            let matches: Vec<_> = native
+                .iter()
+                .filter(|m| m.key == *key && m.deleted_at.is_none())
+                .collect();
+            let [meter] = matches.as_slice() else {
+                return Err(Error::Conflict);
+            };
+            if !valid_customer_id(&meter.id)
+                || meter.event_type.is_empty()
+                || !event_types.insert(&meter.event_type)
+                || native
+                    .iter()
+                    .filter(|m| m.deleted_at.is_none() && m.event_type == meter.event_type)
+                    .count()
+                    != 1
+            {
+                return Err(Error::Precondition);
+            }
+            // 05 §2.9 的封闭计数键，实际 aggregation/type/id 来自原生 meter。
+            if key == "automation.run" {
+                if meter.aggregation != "count"
+                    || meter.value_property.is_some()
+                    || meter.dimensions.as_ref().is_some_and(|d| {
+                        d.values().any(|p| {
+                            !matches!(
+                                p.as_str(),
+                                "$.tenant_id"
+                                    | "$.workspace_id"
+                                    | "$.operation_id"
+                                    | "$.agent_installation_resource_id"
+                                    | "$.agent_version_asset_id"
+                                    | "$.automation_resource_id"
+                            )
+                        })
+                    })
+                {
+                    return Err(Error::Precondition);
+                }
+                invocation = Some(InvocationMeter {
+                    key: key.clone(),
+                    id: meter.id.clone(),
+                    event_type: meter.event_type.clone(),
+                });
+                continue;
+            }
+            let property = meter.value_property.as_deref().ok_or(Error::Precondition)?;
+            // 精确原生 JSONPath 的三个已存在 usage 字段；不实现第二 JSONPath 引擎。
+            if !valid_customer_id(&meter.id)
+                || meter.aggregation != "sum"
+                || meter.event_type.is_empty()
+                || !matches!(
+                    property,
+                    "$.inputTokens" | "$.outputTokens" | "$.totalTokens"
+                )
+                || meter.dimensions.as_ref().is_some_and(|d| {
+                    d.values().any(|p| {
+                        !matches!(
+                            p.as_str(),
+                            "$.tenant_id"
+                                | "$.workspace_id"
+                                | "$.operation_id"
+                                | "$.agent_installation_resource_id"
+                                | "$.agent_version_asset_id"
+                                | "$.provider"
+                                | "$.model"
+                        )
+                    })
+                })
+            {
+                return Err(Error::Precondition);
+            }
+            selected.push(GatewayMeter {
+                key: key.clone(),
+                id: meter.id.clone(),
+                event_type: meter.event_type.clone(),
+                value_property: property.to_owned(),
+            });
+        }
+        if selected.is_empty() {
+            return Err(Error::Precondition);
+        }
+        Ok((selected, invocation.ok_or(Error::Precondition)?))
+    }
+
+    /// 调用前已持久同一 CloudEvent。202 仅 ACCEPTED；网络/未知状态只 UNKNOWN。
+    pub(crate) async fn publish_usage(&self, event: &Value) -> Result<(), Error> {
+        let response = self
+            .http
+            .post(self.collection_url("events")?)
+            .header(header::CONTENT_TYPE, "application/cloudevents+json")
+            .json(event)
+            .send()
+            .await
+            .map_err(|_| Error::Unknown)?;
+        if response.status() != StatusCode::ACCEPTED {
+            return Err(status_error(response.status()));
+        }
+        Ok(())
+    }
+
+    /// 按固定 namespace/source/id/subject/type 查真正 stored_at，不拿 202 或 customer
+    /// 读时派生值作持久终态。validation_errors 只返回配置告警，不改变已落库事实。
+    pub(crate) async fn stored_usage(
+        &self,
+        expected: &Value,
+    ) -> Result<Option<StoredEvidence>, Error> {
+        let mut url = self.collection_url("events")?;
+        for key in ["id", "source", "subject", "type"] {
+            let value = expected
+                .get(key)
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .ok_or(Error::Precondition)?;
+            url.query_pairs_mut()
+                .append_pair(&format!("filter[{key}][eq]"), value);
+        }
+        let page: StoredEventPage = self.read(url).await?;
+        if page.meta.page.next.is_some() || page.data.len() > 1 {
+            return Err(Error::Conflict);
+        }
+        let Some(stored) = page.data.into_iter().next() else {
+            return Ok(None);
+        };
+        // 固定版本 createEventsTable::toSQL 的 time 是 ClickHouse DateTime（秒）；
+        // 查询 encoder 也会使用不同的 RFC3339 UTC 拼写。按原生保存精度比较，
+        // 原 outbox 的 occurred_at/body 仍保持第一次原生完成时间，重试不改写。
+        let expected_time = expected
+            .get("time")
+            .and_then(Value::as_str)
+            .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
+            .ok_or(Error::Precondition)?;
+        let stored_time = stored
+            .event
+            .get("time")
+            .and_then(Value::as_str)
+            .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
+            .ok_or(Error::Conflict)?;
+        let mut actual = stored.event;
+        let mut frozen = expected.clone();
+        actual
+            .as_object_mut()
+            .ok_or(Error::Conflict)?
+            .remove("time");
+        frozen
+            .as_object_mut()
+            .ok_or(Error::Precondition)?
+            .remove("time");
+        if stored_time.timestamp() != expected_time.timestamp()
+            || stored_time.timestamp_subsec_nanos() != 0
+            || actual != frozen
+        {
+            return Err(Error::Conflict);
+        }
+        Ok(Some(StoredEvidence {
+            stored_at: stored.stored_at,
+            configuration_warning: stored.validation_errors.is_some_and(|v| !v.is_empty()),
+        }))
     }
 
     pub async fn customer_by_key(&self, tenant: Uuid) -> Result<Option<Customer>, Error> {

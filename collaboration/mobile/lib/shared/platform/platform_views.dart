@@ -88,6 +88,88 @@ Future<T> _fetchOne<T>(
   return fromJson(response.body! as Map<String, dynamic>);
 }
 
+/// DD-25/50、17 §8：按选定 Workspace 分页读取，不能据空授权页断言全域为空。
+final platformAgentInstallationsProvider = FutureProvider.autoDispose
+    .family<AgentInstallationPage, ({String workspaceId, int offset})>((
+      ref,
+      query,
+    ) async {
+      final params = Uri(queryParameters: {
+        'workspaceId': query.workspaceId,
+        'offset': '${query.offset}',
+      }).query;
+      final page = await _fetchOne(
+        ref,
+        '/api/v1/agent-installations?$params',
+        AgentInstallationPage.fromJson,
+      );
+      final next = page.nextOffset;
+      if (query.offset < 0 || (next != null && next <= query.offset)) {
+        throw const FormatException('Installation page cursor');
+      }
+      final ids = <String>{};
+      for (final item in page.installations) {
+        // 生成器的页内 element 与 root view 各自有绑定；复用生成解码，不手写 DTO。
+        final row = AgentInstallationView.fromJson(item.toJson());
+        _validateInstallation(row, workspaceId: query.workspaceId);
+        if (!ids.add(row.resourceId)) {
+          throw const FormatException('Installation page duplicate');
+        }
+      }
+      return page;
+    }, retry: _noRetry);
+
+/// 精确 ID + Workspace fence；不解引用 Version 正文，也不调用 runtime/reconcile。
+final platformAgentInstallationProvider = FutureProvider.autoDispose
+    .family<AgentInstallationView, ({String workspaceId, String resourceId})>((
+      ref,
+      query,
+    ) async {
+      final row = await _fetchOne(
+        ref,
+        '/api/v1/agent-installations/${Uri.encodeComponent(query.resourceId)}',
+        AgentInstallationView.fromJson,
+      );
+      _validateInstallation(row, workspaceId: query.workspaceId);
+      if (row.resourceId != query.resourceId) {
+        throw const FormatException('Installation detail identity');
+      }
+      return row;
+    }, retry: _noRetry);
+
+// 只验证跨字段的持久事实，权限仍由每次 BFF fresh Check 决定。
+void _validateInstallation(
+  AgentInstallationView row, {
+  required String workspaceId,
+}) {
+  if (row.workspaceId != workspaceId || row.resourceVersion <= 0 || [
+    row.resourceId, row.workspaceId, row.agentResourceId,
+    row.pinnedVersionAssetId, row.agentPrincipalId, row.ownerPrincipalId,
+  ].any((id) => id.isEmpty)) {
+    throw const FormatException('Installation scope');
+  }
+  final projection = row.projection;
+  if (projection != null && (projection.generation <= 0
+      || projection.agentVersionAssetId != row.pinnedVersionAssetId
+      || projection.runtimeProfileKey.isEmpty
+      || !RegExp(r'^[0-9a-f]{64}$').hasMatch(projection.configHash))) {
+    throw const FormatException('Installation projection');
+  }
+  final generation = row.activeProjectionGeneration;
+  if (generation != null && (generation <= 0
+      || projection?.generation != generation)) {
+    throw const FormatException('Installation generation');
+  }
+  if (row.channelBinding?.triggers.isEmpty == true) {
+    throw const FormatException('Installation triggers');
+  }
+  if (row.toJson()['state'] == 'ACTIVE' && (generation == null
+      || row.resourceState != ResourceState.ACTIVE
+      || projection?.toJson()['state'] != 'ACTIVE')) {
+    throw const FormatException('Installation active record');
+  }
+}
+
 /// 本人发起的受治理动作，新的在前（`.design/06` §9）。Mobile 只读：取消、撤回与
 /// 审批决定都在 Web/Desktop 上（apps/02 §4）。
 final platformTasksProvider = FutureProvider<List<TaskView>>(

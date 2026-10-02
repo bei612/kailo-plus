@@ -5,6 +5,9 @@
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
 //     final agentDefinitionPage = agentDefinitionPageFromJson(jsonString);
 //     final agentDefinitionView = agentDefinitionViewFromJson(jsonString);
+//     final agentInstallationPage = agentInstallationPageFromJson(jsonString);
+//     final agentInstallationProjectionView = agentInstallationProjectionViewFromJson(jsonString);
+//     final agentInstallationView = agentInstallationViewFromJson(jsonString);
 //     final agentVersionView = agentVersionViewFromJson(jsonString);
 //     final approvalDecisionRequest = approvalDecisionRequestFromJson(jsonString);
 //     final approvalView = approvalViewFromJson(jsonString);
@@ -31,6 +34,7 @@
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
 //     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
+//     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
 //     final errorBody = errorBodyFromJson(jsonString);
 //     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
 //     final runtimeProfileDirectory = runtimeProfileDirectoryFromJson(jsonString);
@@ -85,6 +89,26 @@ AgentDefinitionView agentDefinitionViewFromJson(String str) =>
     AgentDefinitionView.fromJson(json.decode(str));
 
 String agentDefinitionViewToJson(AgentDefinitionView data) =>
+    json.encode(data.toJson());
+
+AgentInstallationPage agentInstallationPageFromJson(String str) =>
+    AgentInstallationPage.fromJson(json.decode(str));
+
+String agentInstallationPageToJson(AgentInstallationPage data) =>
+    json.encode(data.toJson());
+
+AgentInstallationProjectionView agentInstallationProjectionViewFromJson(
+  String str,
+) => AgentInstallationProjectionView.fromJson(json.decode(str));
+
+String agentInstallationProjectionViewToJson(
+  AgentInstallationProjectionView data,
+) => json.encode(data.toJson());
+
+AgentInstallationView agentInstallationViewFromJson(String str) =>
+    AgentInstallationView.fromJson(json.decode(str));
+
+String agentInstallationViewToJson(AgentInstallationView data) =>
     json.encode(data.toJson());
 
 AgentVersionView agentVersionViewFromJson(String str) =>
@@ -231,6 +255,12 @@ AgentVersionContent agentVersionContentFromJson(String str) =>
     AgentVersionContent.fromJson(json.decode(str));
 
 String agentVersionContentToJson(AgentVersionContent data) =>
+    json.encode(data.toJson());
+
+DelegationGrantParameters delegationGrantParametersFromJson(String str) =>
+    DelegationGrantParameters.fromJson(json.decode(str));
+
+String delegationGrantParametersToJson(DelegationGrantParameters data) =>
     json.encode(data.toJson());
 
 ErrorBody errorBodyFromJson(String str) => ErrorBody.fromJson(json.decode(str));
@@ -585,6 +615,15 @@ class ActionCommand {
   ///调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
   final int? assetVersion;
 
+  ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
+  final DelegationGrantClass? delegationGrant;
+
+  ///显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
+  final String? delegationId;
+
+  ///仅 revoke：调用方实际读取的 Grant 版本。
+  final int? delegationVersion;
+
   ///EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
   final bool? explicitConfirmation;
 
@@ -623,6 +662,9 @@ class ActionCommand {
     this.agentVersionContent,
     this.assetId,
     this.assetVersion,
+    this.delegationGrant,
+    this.delegationId,
+    this.delegationVersion,
     this.explicitConfirmation,
     required this.idempotencyKey,
     this.invitationId,
@@ -643,6 +685,11 @@ class ActionCommand {
         : ContentClass.fromJson(json["agentVersionContent"]),
     assetId: json["assetId"],
     assetVersion: json["assetVersion"],
+    delegationGrant: json["delegationGrant"] == null
+        ? null
+        : DelegationGrantClass.fromJson(json["delegationGrant"]),
+    delegationId: json["delegationId"],
+    delegationVersion: json["delegationVersion"],
     explicitConfirmation: json["explicitConfirmation"],
     idempotencyKey: json["idempotencyKey"],
     invitationId: json["invitationId"],
@@ -661,6 +708,9 @@ class ActionCommand {
     "agentVersionContent": agentVersionContent?.toJson(),
     "assetId": assetId,
     "assetVersion": assetVersion,
+    "delegationGrant": delegationGrant?.toJson(),
+    "delegationId": delegationId,
+    "delegationVersion": delegationVersion,
     "explicitConfirmation": explicitConfirmation,
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
@@ -842,6 +892,96 @@ class ContentTurnLimits {
     "maxTurnDurationSeconds": maxTurnDurationSeconds,
   });
 }
+
+///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
+class DelegationGrantClass {
+  final DateTime expiresAt;
+  final int? maxUses;
+  final List<DelegationGrantScope> scopes;
+  final DateTime validFrom;
+
+  DelegationGrantClass({
+    required this.expiresAt,
+    this.maxUses,
+    required this.scopes,
+    required this.validFrom,
+  });
+
+  factory DelegationGrantClass.fromJson(Map<String, dynamic> json) =>
+      DelegationGrantClass(
+        expiresAt: DateTime.parse(json["expiresAt"]),
+        maxUses: json["maxUses"],
+        scopes: List<DelegationGrantScope>.from(
+          json["scopes"].map((x) => DelegationGrantScope.fromJson(x)),
+        ),
+        validFrom: DateTime.parse(json["validFrom"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "expiresAt": expiresAt.toIso8601String(),
+    "maxUses": maxUses,
+    "scopes": List<dynamic>.from(scopes.map((x) => x.toJson())),
+    "validFrom": validFrom.toIso8601String(),
+  });
+}
+
+class DelegationGrantScope {
+  final String actionKey;
+  final int actionVersion;
+  final String? createWorkspaceId;
+  final String outputSchemaHash;
+  final String redactionPolicy;
+  final ResultExposureMode resultExposureMode;
+  final String? targetId;
+  final String targetType;
+  final String? toolResourceId;
+
+  DelegationGrantScope({
+    required this.actionKey,
+    required this.actionVersion,
+    this.createWorkspaceId,
+    required this.outputSchemaHash,
+    required this.redactionPolicy,
+    required this.resultExposureMode,
+    this.targetId,
+    required this.targetType,
+    this.toolResourceId,
+  });
+
+  factory DelegationGrantScope.fromJson(Map<String, dynamic> json) =>
+      DelegationGrantScope(
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        createWorkspaceId: json["createWorkspaceId"],
+        outputSchemaHash: json["outputSchemaHash"],
+        redactionPolicy: json["redactionPolicy"],
+        resultExposureMode:
+            resultExposureModeValues.map[json["resultExposureMode"]]!,
+        targetId: json["targetId"],
+        targetType: json["targetType"],
+        toolResourceId: json["toolResourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "createWorkspaceId": createWorkspaceId,
+    "outputSchemaHash": outputSchemaHash,
+    "redactionPolicy": redactionPolicy,
+    "resultExposureMode": resultExposureModeValues.reverse[resultExposureMode],
+    "targetId": targetId,
+    "targetType": targetType,
+    "toolResourceId": toolResourceId,
+  });
+}
+
+enum ResultExposureMode { CONSUME_ONLY, EXPORT, READ }
+
+final resultExposureModeValues = EnumValues({
+  "CONSUME_ONLY": ResultExposureMode.CONSUME_ONLY,
+  "EXPORT": ResultExposureMode.EXPORT,
+  "READ": ResultExposureMode.READ,
+});
 
 ///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
 ///必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
@@ -1189,6 +1329,338 @@ class AgentDefinitionView {
     "resourceVersion": resourceVersion,
     "stableSlug": stableSlug,
     "status": status,
+  });
+}
+
+///按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
+class AgentInstallationPage {
+  final List<InstallationElement> installations;
+  final int? nextOffset;
+
+  AgentInstallationPage({required this.installations, this.nextOffset});
+
+  factory AgentInstallationPage.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationPage(
+        installations: List<InstallationElement>.from(
+          json["installations"].map((x) => InstallationElement.fromJson(x)),
+        ),
+        nextOffset: json["nextOffset"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "installations": List<dynamic>.from(installations.map((x) => x.toJson())),
+    "nextOffset": nextOffset,
+  });
+}
+
+///03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
+///正文、执行或管理权限。
+class InstallationElement {
+  final int? activeProjectionGeneration;
+  final String agentPrincipalId;
+  final AgentPrincipalState agentPrincipalState;
+  final String agentResourceId;
+  final InstallationChannelBinding? channelBinding;
+  final String ownerPrincipalId;
+  final String pinnedVersionAssetId;
+  final ProjectionClass? projection;
+  final String resourceId;
+  final ResourceState resourceState;
+  final int resourceVersion;
+  final AgentInstallationState state;
+  final String workspaceId;
+
+  InstallationElement({
+    this.activeProjectionGeneration,
+    required this.agentPrincipalId,
+    required this.agentPrincipalState,
+    required this.agentResourceId,
+    this.channelBinding,
+    required this.ownerPrincipalId,
+    required this.pinnedVersionAssetId,
+    this.projection,
+    required this.resourceId,
+    required this.resourceState,
+    required this.resourceVersion,
+    required this.state,
+    required this.workspaceId,
+  });
+
+  factory InstallationElement.fromJson(Map<String, dynamic> json) =>
+      InstallationElement(
+        activeProjectionGeneration: json["activeProjectionGeneration"],
+        agentPrincipalId: json["agentPrincipalId"],
+        agentPrincipalState:
+            agentPrincipalStateValues.map[json["agentPrincipalState"]]!,
+        agentResourceId: json["agentResourceId"],
+        channelBinding: json["channelBinding"] == null
+            ? null
+            : InstallationChannelBinding.fromJson(json["channelBinding"]),
+        ownerPrincipalId: json["ownerPrincipalId"],
+        pinnedVersionAssetId: json["pinnedVersionAssetId"],
+        projection: json["projection"] == null
+            ? null
+            : ProjectionClass.fromJson(json["projection"]),
+        resourceId: json["resourceId"],
+        resourceState: resourceStateValues.map[json["resourceState"]]!,
+        resourceVersion: json["resourceVersion"],
+        state: agentInstallationStateValues.map[json["state"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "activeProjectionGeneration": activeProjectionGeneration,
+    "agentPrincipalId": agentPrincipalId,
+    "agentPrincipalState":
+        agentPrincipalStateValues.reverse[agentPrincipalState],
+    "agentResourceId": agentResourceId,
+    "channelBinding": channelBinding?.toJson(),
+    "ownerPrincipalId": ownerPrincipalId,
+    "pinnedVersionAssetId": pinnedVersionAssetId,
+    "projection": projection?.toJson(),
+    "resourceId": resourceId,
+    "resourceState": resourceStateValues.reverse[resourceState],
+    "resourceVersion": resourceVersion,
+    "state": agentInstallationStateValues.reverse[state],
+    "workspaceId": workspaceId,
+  });
+}
+
+enum AgentPrincipalState { ACTIVE, DISABLED }
+
+final agentPrincipalStateValues = EnumValues({
+  "ACTIVE": AgentPrincipalState.ACTIVE,
+  "DISABLED": AgentPrincipalState.DISABLED,
+});
+
+class InstallationChannelBinding {
+  final String? channelId;
+  final Status status;
+  final List<AgentTrigger> triggers;
+
+  InstallationChannelBinding({
+    this.channelId,
+    required this.status,
+    required this.triggers,
+  });
+
+  factory InstallationChannelBinding.fromJson(Map<String, dynamic> json) =>
+      InstallationChannelBinding(
+        channelId: json["channelId"],
+        status: statusValues.map[json["status"]]!,
+        triggers: List<AgentTrigger>.from(
+          json["triggers"].map((x) => agentTriggerValues.map[x]!),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channelId": channelId,
+    "status": statusValues.reverse[status],
+    "triggers": List<dynamic>.from(
+      triggers.map((x) => agentTriggerValues.reverse[x]),
+    ),
+  });
+}
+
+enum Status { ACTIVE, DISABLED, ERROR }
+
+final statusValues = EnumValues({
+  "ACTIVE": Status.ACTIVE,
+  "DISABLED": Status.DISABLED,
+  "ERROR": Status.ERROR,
+});
+
+///17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
+class ProjectionClass {
+  final String agentVersionAssetId;
+  final String configHash;
+  final int generation;
+  final String runtimeProfileKey;
+  final AgentRuntimeProjectionState state;
+
+  ProjectionClass({
+    required this.agentVersionAssetId,
+    required this.configHash,
+    required this.generation,
+    required this.runtimeProfileKey,
+    required this.state,
+  });
+
+  factory ProjectionClass.fromJson(Map<String, dynamic> json) =>
+      ProjectionClass(
+        agentVersionAssetId: json["agentVersionAssetId"],
+        configHash: json["configHash"],
+        generation: json["generation"],
+        runtimeProfileKey: json["runtimeProfileKey"],
+        state: agentRuntimeProjectionStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentVersionAssetId": agentVersionAssetId,
+    "configHash": configHash,
+    "generation": generation,
+    "runtimeProfileKey": runtimeProfileKey,
+    "state": agentRuntimeProjectionStateValues.reverse[state],
+  });
+}
+
+///03 §7 的静态运行投影状态，不承载 Invocation 动态准入。
+enum AgentRuntimeProjectionState { ACTIVE, ERROR, PENDING, REVOKED }
+
+final agentRuntimeProjectionStateValues = EnumValues({
+  "ACTIVE": AgentRuntimeProjectionState.ACTIVE,
+  "ERROR": AgentRuntimeProjectionState.ERROR,
+  "PENDING": AgentRuntimeProjectionState.PENDING,
+  "REVOKED": AgentRuntimeProjectionState.REVOKED,
+});
+
+///03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
+enum AgentInstallationState { ACTIVE, DISABLED, DRAINING, ERROR, PROVISIONING }
+
+final agentInstallationStateValues = EnumValues({
+  "ACTIVE": AgentInstallationState.ACTIVE,
+  "DISABLED": AgentInstallationState.DISABLED,
+  "DRAINING": AgentInstallationState.DRAINING,
+  "ERROR": AgentInstallationState.ERROR,
+  "PROVISIONING": AgentInstallationState.PROVISIONING,
+});
+
+///17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
+class AgentInstallationProjectionView {
+  final String agentVersionAssetId;
+  final String configHash;
+  final int generation;
+  final String runtimeProfileKey;
+  final AgentRuntimeProjectionState state;
+
+  AgentInstallationProjectionView({
+    required this.agentVersionAssetId,
+    required this.configHash,
+    required this.generation,
+    required this.runtimeProfileKey,
+    required this.state,
+  });
+
+  factory AgentInstallationProjectionView.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationProjectionView(
+        agentVersionAssetId: json["agentVersionAssetId"],
+        configHash: json["configHash"],
+        generation: json["generation"],
+        runtimeProfileKey: json["runtimeProfileKey"],
+        state: agentRuntimeProjectionStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentVersionAssetId": agentVersionAssetId,
+    "configHash": configHash,
+    "generation": generation,
+    "runtimeProfileKey": runtimeProfileKey,
+    "state": agentRuntimeProjectionStateValues.reverse[state],
+  });
+}
+
+///03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
+///正文、执行或管理权限。
+class AgentInstallationView {
+  final int? activeProjectionGeneration;
+  final String agentPrincipalId;
+  final AgentPrincipalState agentPrincipalState;
+  final String agentResourceId;
+  final AgentInstallationViewChannelBinding? channelBinding;
+  final String ownerPrincipalId;
+  final String pinnedVersionAssetId;
+  final ProjectionClass? projection;
+  final String resourceId;
+  final ResourceState resourceState;
+  final int resourceVersion;
+  final AgentInstallationState state;
+  final String workspaceId;
+
+  AgentInstallationView({
+    this.activeProjectionGeneration,
+    required this.agentPrincipalId,
+    required this.agentPrincipalState,
+    required this.agentResourceId,
+    this.channelBinding,
+    required this.ownerPrincipalId,
+    required this.pinnedVersionAssetId,
+    this.projection,
+    required this.resourceId,
+    required this.resourceState,
+    required this.resourceVersion,
+    required this.state,
+    required this.workspaceId,
+  });
+
+  factory AgentInstallationView.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationView(
+        activeProjectionGeneration: json["activeProjectionGeneration"],
+        agentPrincipalId: json["agentPrincipalId"],
+        agentPrincipalState:
+            agentPrincipalStateValues.map[json["agentPrincipalState"]]!,
+        agentResourceId: json["agentResourceId"],
+        channelBinding: json["channelBinding"] == null
+            ? null
+            : AgentInstallationViewChannelBinding.fromJson(
+                json["channelBinding"],
+              ),
+        ownerPrincipalId: json["ownerPrincipalId"],
+        pinnedVersionAssetId: json["pinnedVersionAssetId"],
+        projection: json["projection"] == null
+            ? null
+            : ProjectionClass.fromJson(json["projection"]),
+        resourceId: json["resourceId"],
+        resourceState: resourceStateValues.map[json["resourceState"]]!,
+        resourceVersion: json["resourceVersion"],
+        state: agentInstallationStateValues.map[json["state"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "activeProjectionGeneration": activeProjectionGeneration,
+    "agentPrincipalId": agentPrincipalId,
+    "agentPrincipalState":
+        agentPrincipalStateValues.reverse[agentPrincipalState],
+    "agentResourceId": agentResourceId,
+    "channelBinding": channelBinding?.toJson(),
+    "ownerPrincipalId": ownerPrincipalId,
+    "pinnedVersionAssetId": pinnedVersionAssetId,
+    "projection": projection?.toJson(),
+    "resourceId": resourceId,
+    "resourceState": resourceStateValues.reverse[resourceState],
+    "resourceVersion": resourceVersion,
+    "state": agentInstallationStateValues.reverse[state],
+    "workspaceId": workspaceId,
+  });
+}
+
+class AgentInstallationViewChannelBinding {
+  final String? channelId;
+  final Status status;
+  final List<AgentTrigger> triggers;
+
+  AgentInstallationViewChannelBinding({
+    this.channelId,
+    required this.status,
+    required this.triggers,
+  });
+
+  factory AgentInstallationViewChannelBinding.fromJson(
+    Map<String, dynamic> json,
+  ) => AgentInstallationViewChannelBinding(
+    channelId: json["channelId"],
+    status: statusValues.map[json["status"]]!,
+    triggers: List<AgentTrigger>.from(
+      json["triggers"].map((x) => agentTriggerValues.map[x]!),
+    ),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channelId": channelId,
+    "status": statusValues.reverse[status],
+    "triggers": List<dynamic>.from(
+      triggers.map((x) => agentTriggerValues.reverse[x]),
+    ),
   });
 }
 
@@ -1595,12 +2067,22 @@ class AuditEvidenceSlot {
 }
 
 ///EvidenceRef 所指证据的源码权威。
-enum EvidenceAuthority { BUZZ, CORE, OIDC, SPICEDB, TEMPORAL }
+enum EvidenceAuthority {
+  AGENTGATEWAY,
+  BUZZ,
+  CORE,
+  OIDC,
+  OPENMETER,
+  SPICEDB,
+  TEMPORAL,
+}
 
 final evidenceAuthorityValues = EnumValues({
+  "AGENTGATEWAY": EvidenceAuthority.AGENTGATEWAY,
   "BUZZ": EvidenceAuthority.BUZZ,
   "CORE": EvidenceAuthority.CORE,
   "OIDC": EvidenceAuthority.OIDC,
+  "OPENMETER": EvidenceAuthority.OPENMETER,
   "SPICEDB": EvidenceAuthority.SPICEDB,
   "TEMPORAL": EvidenceAuthority.TEMPORAL,
 });
@@ -1612,6 +2094,7 @@ final evidenceAuthorityValues = EnumValues({
 enum EvidenceKind {
   ACTION_EXECUTION_ID,
   ADMIT_ACTION_EXECUTION_ID,
+  AGENTGATEWAY_USAGE_ID,
   APPROVAL_POLICY,
   APPROVAL_WORKFLOW_ID,
   BUZZ_DELETION_INVENTORY_DIGEST,
@@ -1620,6 +2103,7 @@ enum EvidenceKind {
   BUZZ_PUBKEY,
   DEPLOYMENT_BOOTSTRAP,
   EXTERNAL_SUBJECT_SHA256,
+  OPENMETER_EVENT_ID,
   ORIGINAL_ACTION_EXECUTION_ID,
   PLATFORM_SESSION_ID,
   SECRET_REF_REHOME_ID,
@@ -1632,11 +2116,14 @@ enum EvidenceKind {
   TENANT_INVITATION_ID,
   TENANT_LIFECYCLE_SNAPSHOT_ID,
   TENANT_MEMBERSHIP_ID,
+  TRACE_ID,
+  USAGE_EVENT_ID,
 }
 
 final evidenceKindValues = EnumValues({
   "ACTION_EXECUTION_ID": EvidenceKind.ACTION_EXECUTION_ID,
   "ADMIT_ACTION_EXECUTION_ID": EvidenceKind.ADMIT_ACTION_EXECUTION_ID,
+  "AGENTGATEWAY_USAGE_ID": EvidenceKind.AGENTGATEWAY_USAGE_ID,
   "APPROVAL_POLICY": EvidenceKind.APPROVAL_POLICY,
   "APPROVAL_WORKFLOW_ID": EvidenceKind.APPROVAL_WORKFLOW_ID,
   "BUZZ_DELETION_INVENTORY_DIGEST": EvidenceKind.BUZZ_DELETION_INVENTORY_DIGEST,
@@ -1645,6 +2132,7 @@ final evidenceKindValues = EnumValues({
   "BUZZ_PUBKEY": EvidenceKind.BUZZ_PUBKEY,
   "DEPLOYMENT_BOOTSTRAP": EvidenceKind.DEPLOYMENT_BOOTSTRAP,
   "EXTERNAL_SUBJECT_SHA256": EvidenceKind.EXTERNAL_SUBJECT_SHA256,
+  "OPENMETER_EVENT_ID": EvidenceKind.OPENMETER_EVENT_ID,
   "ORIGINAL_ACTION_EXECUTION_ID": EvidenceKind.ORIGINAL_ACTION_EXECUTION_ID,
   "PLATFORM_SESSION_ID": EvidenceKind.PLATFORM_SESSION_ID,
   "SECRET_REF_REHOME_ID": EvidenceKind.SECRET_REF_REHOME_ID,
@@ -1657,6 +2145,8 @@ final evidenceKindValues = EnumValues({
   "TENANT_INVITATION_ID": EvidenceKind.TENANT_INVITATION_ID,
   "TENANT_LIFECYCLE_SNAPSHOT_ID": EvidenceKind.TENANT_LIFECYCLE_SNAPSHOT_ID,
   "TENANT_MEMBERSHIP_ID": EvidenceKind.TENANT_MEMBERSHIP_ID,
+  "TRACE_ID": EvidenceKind.TRACE_ID,
+  "USAGE_EVENT_ID": EvidenceKind.USAGE_EVENT_ID,
 });
 
 ///EvidenceRef 的敏感级别。SUMMARY 在当前 audit permission 下可解引用；RESTRICTED 还需 ResultExposure
@@ -2918,6 +3408,87 @@ class AgentVersionContentTurnLimits {
   Map<String, dynamic> toJson() => _stripNulls({
     "idleTimeoutSeconds": idleTimeoutSeconds,
     "maxTurnDurationSeconds": maxTurnDurationSeconds,
+  });
+}
+
+class DelegationGrantParameters {
+  final DateTime expiresAt;
+  final int? maxUses;
+  final List<DelegationGrantParametersScope> scopes;
+  final DateTime validFrom;
+
+  DelegationGrantParameters({
+    required this.expiresAt,
+    this.maxUses,
+    required this.scopes,
+    required this.validFrom,
+  });
+
+  factory DelegationGrantParameters.fromJson(Map<String, dynamic> json) =>
+      DelegationGrantParameters(
+        expiresAt: DateTime.parse(json["expiresAt"]),
+        maxUses: json["maxUses"],
+        scopes: List<DelegationGrantParametersScope>.from(
+          json["scopes"].map((x) => DelegationGrantParametersScope.fromJson(x)),
+        ),
+        validFrom: DateTime.parse(json["validFrom"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "expiresAt": expiresAt.toIso8601String(),
+    "maxUses": maxUses,
+    "scopes": List<dynamic>.from(scopes.map((x) => x.toJson())),
+    "validFrom": validFrom.toIso8601String(),
+  });
+}
+
+class DelegationGrantParametersScope {
+  final String actionKey;
+  final int actionVersion;
+  final String? createWorkspaceId;
+  final String outputSchemaHash;
+  final String redactionPolicy;
+  final ResultExposureMode resultExposureMode;
+  final String? targetId;
+  final String targetType;
+  final String? toolResourceId;
+
+  DelegationGrantParametersScope({
+    required this.actionKey,
+    required this.actionVersion,
+    this.createWorkspaceId,
+    required this.outputSchemaHash,
+    required this.redactionPolicy,
+    required this.resultExposureMode,
+    this.targetId,
+    required this.targetType,
+    this.toolResourceId,
+  });
+
+  factory DelegationGrantParametersScope.fromJson(Map<String, dynamic> json) =>
+      DelegationGrantParametersScope(
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        createWorkspaceId: json["createWorkspaceId"],
+        outputSchemaHash: json["outputSchemaHash"],
+        redactionPolicy: json["redactionPolicy"],
+        resultExposureMode:
+            resultExposureModeValues.map[json["resultExposureMode"]]!,
+        targetId: json["targetId"],
+        targetType: json["targetType"],
+        toolResourceId: json["toolResourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "createWorkspaceId": createWorkspaceId,
+    "outputSchemaHash": outputSchemaHash,
+    "redactionPolicy": redactionPolicy,
+    "resultExposureMode": resultExposureModeValues.reverse[resultExposureMode],
+    "targetId": targetId,
+    "targetType": targetType,
+    "toolResourceId": toolResourceId,
   });
 }
 

@@ -156,6 +156,18 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_version: Option<i64>,
 
+    /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delegation_grant: Option<DelegationGrantClass>,
+
+    /// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delegation_id: Option<String>,
+
+    /// 仅 revoke：调用方实际读取的 Grant 版本。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delegation_version: Option<i64>,
+
     /// EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explicit_confirmation: Option<bool>,
@@ -288,6 +300,56 @@ pub struct ContentTurnLimits {
     pub idle_timeout_seconds: i64,
 
     pub max_turn_duration_seconds: i64,
+}
+
+/// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegationGrantClass {
+    pub expires_at: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_uses: Option<i64>,
+
+    pub scopes: Vec<DelegationGrantScope>,
+
+    pub valid_from: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegationGrantScope {
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create_workspace_id: Option<String>,
+
+    pub output_schema_hash: String,
+
+    pub redaction_policy: String,
+
+    pub result_exposure_mode: ResultExposureMode,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+
+    pub target_type: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_resource_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ResultExposureMode {
+    #[serde(rename = "CONSUME_ONLY")]
+    ConsumeOnly,
+
+    Export,
+
+    Read,
 }
 
 /// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -595,6 +657,194 @@ pub struct AgentDefinitionView {
     pub status: String,
 }
 
+/// 按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationPage {
+    pub installations: Vec<InstallationElement>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+}
+
+/// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
+/// 正文、执行或管理权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallationElement {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_projection_generation: Option<i64>,
+
+    pub agent_principal_id: String,
+
+    pub agent_principal_state: AgentPrincipalState,
+
+    pub agent_resource_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_binding: Option<InstallationChannelBinding>,
+
+    pub owner_principal_id: String,
+
+    pub pinned_version_asset_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projection: Option<ProjectionClass>,
+
+    pub resource_id: String,
+
+    pub resource_state: ResourceState,
+
+    pub resource_version: i64,
+
+    pub state: AgentInstallationState,
+
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentPrincipalState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallationChannelBinding {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+
+    pub status: Status,
+
+    pub triggers: Vec<AgentTrigger>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Status {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+
+    #[serde(rename = "ERROR")]
+    Error,
+}
+
+/// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectionClass {
+    pub agent_version_asset_id: String,
+
+    pub config_hash: String,
+
+    pub generation: i64,
+
+    pub runtime_profile_key: String,
+
+    pub state: AgentRuntimeProjectionState,
+}
+
+/// 03 §7 的静态运行投影状态，不承载 Invocation 动态准入。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentRuntimeProjectionState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "ERROR")]
+    Error,
+
+    #[serde(rename = "PENDING")]
+    Pending,
+
+    #[serde(rename = "REVOKED")]
+    Revoked,
+}
+
+/// 03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentInstallationState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+
+    #[serde(rename = "DRAINING")]
+    Draining,
+
+    #[serde(rename = "ERROR")]
+    Error,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+}
+
+/// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationProjectionView {
+    pub agent_version_asset_id: String,
+
+    pub config_hash: String,
+
+    pub generation: i64,
+
+    pub runtime_profile_key: String,
+
+    pub state: AgentRuntimeProjectionState,
+}
+
+/// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
+/// 正文、执行或管理权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_projection_generation: Option<i64>,
+
+    pub agent_principal_id: String,
+
+    pub agent_principal_state: AgentPrincipalState,
+
+    pub agent_resource_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_binding: Option<AgentInstallationViewChannelBinding>,
+
+    pub owner_principal_id: String,
+
+    pub pinned_version_asset_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projection: Option<ProjectionClass>,
+
+    pub resource_id: String,
+
+    pub resource_state: ResourceState,
+
+    pub resource_version: i64,
+
+    pub state: AgentInstallationState,
+
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationViewChannelBinding {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+
+    pub status: Status,
+
+    pub triggers: Vec<AgentTrigger>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentVersionView {
@@ -850,6 +1100,9 @@ pub struct AuditEvidenceSlot {
 /// EvidenceRef 所指证据的源码权威。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EvidenceAuthority {
+    #[serde(rename = "AGENTGATEWAY")]
+    Agentgateway,
+
     #[serde(rename = "BUZZ")]
     Buzz,
 
@@ -858,6 +1111,9 @@ pub enum EvidenceAuthority {
 
     #[serde(rename = "OIDC")]
     Oidc,
+
+    #[serde(rename = "OPENMETER")]
+    Openmeter,
 
     #[serde(rename = "SPICEDB")]
     Spicedb,
@@ -878,6 +1134,9 @@ pub enum EvidenceKind {
 
     #[serde(rename = "ADMIT_ACTION_EXECUTION_ID")]
     AdmitActionExecutionId,
+
+    #[serde(rename = "AGENTGATEWAY_USAGE_ID")]
+    AgentgatewayUsageId,
 
     #[serde(rename = "APPROVAL_POLICY")]
     ApprovalPolicy,
@@ -902,6 +1161,9 @@ pub enum EvidenceKind {
 
     #[serde(rename = "EXTERNAL_SUBJECT_SHA256")]
     ExternalSubjectSha256,
+
+    #[serde(rename = "OPENMETER_EVENT_ID")]
+    OpenmeterEventId,
 
     #[serde(rename = "ORIGINAL_ACTION_EXECUTION_ID")]
     OriginalActionExecutionId,
@@ -938,6 +1200,12 @@ pub enum EvidenceKind {
 
     #[serde(rename = "TENANT_MEMBERSHIP_ID")]
     TenantMembershipId,
+
+    #[serde(rename = "TRACE_ID")]
+    TraceId,
+
+    #[serde(rename = "USAGE_EVENT_ID")]
+    UsageEventId,
 }
 
 /// EvidenceRef 的敏感级别。SUMMARY 在当前 audit permission 下可解引用；RESTRICTED 还需 ResultExposure
@@ -1699,6 +1967,44 @@ pub struct AgentVersionContentTurnLimits {
     pub idle_timeout_seconds: i64,
 
     pub max_turn_duration_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegationGrantParameters {
+    pub expires_at: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_uses: Option<i64>,
+
+    pub scopes: Vec<DelegationGrantParametersScope>,
+
+    pub valid_from: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegationGrantParametersScope {
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create_workspace_id: Option<String>,
+
+    pub output_schema_hash: String,
+
+    pub redaction_policy: String,
+
+    pub result_exposure_mode: ResultExposureMode,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+
+    pub target_type: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_resource_id: Option<String>,
 }
 
 /// 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。

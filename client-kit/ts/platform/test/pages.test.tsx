@@ -766,3 +766,97 @@ describe("AgentDefinitionsPage read outcomes", () => {
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 });
+
+describe("AgentDefinitionsPage installation read-only facts", () => {
+  const installation = {
+    resourceId: "installation-1", workspaceId: "workspace-1", agentResourceId: "agent-1",
+    pinnedVersionAssetId: "pinned-asset-1", agentPrincipalId: "agent-principal-1",
+    agentPrincipalState: "ACTIVE", ownerPrincipalId: "owner-1", resourceVersion: 1,
+    resourceState: "PROVISIONING", state: "PROVISIONING",
+    channelBinding: { status: "DISABLED", triggers: ["MENTION", "MANUAL_ASSIGNMENT"], channelId: "channel-1" },
+    projection: { generation: 1, agentVersionAssetId: "pinned-asset-1", runtimeProfileKey: "SERVER_CODEX",
+      configHash: "a".repeat(64), state: "PENDING" },
+    runtimeIsolationRef: "/private/runtime/root", content: "private-prompt", secretRef: "private-secret-ref",
+  };
+  const routes = (page: (r: BffRequest) => BffReply) => transport((r) => {
+    if (r.path === "/api/v1/tasks") return { status: 200, body: [] };
+    if (r.path === "/api/v1/agent-definitions") return { status: 200, body: { definitions: [] } };
+    if (r.path === "/api/v1/workspaces") return { status: 200, body: [{ id: "workspace-1", slug: "ops", name: "Ops" }] };
+    if (r.path === "/api/v1/agent-installations/installation-1") return { status: 200, body: installation };
+    return page(r);
+  });
+
+  it("shows the exact pin and recorded pending facts without body, credentials or write controls", async () => {
+    const t = routes(() => ({ status: 200, body: { installations: [installation] } }));
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
+    expect(section.textContent).toContain("Being installed");
+    expect(section.textContent).toContain("pinned-asset-1");
+    expect(section.textContent).toContain("agent-principal-1");
+    await click(button(section, "View installation"));
+    const detail = section.querySelector("[data-testid=agent-installation-detail]") as HTMLElement;
+    expect(detail.textContent).toContain("Projection pending");
+    expect(detail.textContent).toContain("Disabled channel binding");
+    expect(detail.textContent).toContain("Mention · Manual assignment");
+    expect(detail.textContent).toContain("SERVER_CODEX");
+    expect(detail.textContent).toContain("a".repeat(64));
+    expect(section.textContent).toContain("not proof that a process is currently healthy");
+    expect(section.textContent).not.toMatch(/private-prompt|private-secret-ref|\/private\/runtime\/root/);
+    const controls = [...section.querySelectorAll("button")].map((b) => b.textContent);
+    for (const label of ["Install", "Run", "Create session", "Disable"]) {
+      expect(controls).not.toContain(label);
+    }
+    expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
+    expect(t.send.mock.calls.some(([r]) => r.path.startsWith("/api/v1/agent-versions/"))).toBe(false);
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations?workspaceId=workspace-1&offset=0" });
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations/installation-1" });
+  });
+
+  it("an authorized empty scan page can continue; it does not assert no installations exist", async () => {
+    const t = routes((r) => r.path.endsWith("offset=0")
+      ? { status: 200, body: { installations: [], nextOffset: 9 } }
+      : { status: 200, body: { installations: [installation] } });
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
+    expect(section.textContent).toContain("No installations you may read on this page.");
+    await click(button(section, "Next page"));
+    expect(section.textContent).toContain("pinned-asset-1");
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations?workspaceId=workspace-1&offset=9" });
+    expect(button(section, "Previous page")).toBeTruthy();
+    expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
+  });
+
+  it.each([
+    { name: "cross-workspace row", row: { ...installation, workspaceId: "workspace-other" } },
+    { name: "unknown installation state", row: { ...installation, state: "FUTURE_STATE" } },
+    { name: "different pinned projection", row: { ...installation,
+      projection: { ...installation.projection, agentVersionAssetId: "latest-instead-of-pin" } } },
+    { name: "mismatched active generation", row: { ...installation, state: "ACTIVE", resourceState: "ACTIVE",
+      activeProjectionGeneration: 2, projection: { ...installation.projection, state: "ACTIVE" } } },
+  ])("keeps $name unknown rather than rendering usable installation metadata", async ({ row }) => {
+    const host = await mount(routes(() => ({ status: 200, body: { installations: [row] } })), <AgentDefinitionsPage />);
+    await settle();
+    const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
+    expect(section.querySelector("[role=status]")?.textContent).toContain("result is unknown");
+    expect(section.textContent).not.toContain("No installations you may read");
+    expect(section.textContent).not.toContain("pinned-asset-1");
+    expect([...section.querySelectorAll("button")].some((b) => b.textContent === "View installation")).toBe(false);
+  });
+
+  it.each([
+    { reply: { status: 403, body: undefined }, label: "Not allowed" },
+    { reply: { status: 404, body: undefined }, label: "Not available here" },
+    { reply: { status: 503, body: { class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable } },
+      label: "result is unknown" },
+  ])("installation read $reply.status does not turn into an authorized empty page", async ({ reply, label }) => {
+    const t = routes(() => reply);
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
+    expect(section.textContent).toContain(label);
+    expect(section.textContent).not.toContain("No installations you may read");
+    expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
+  });
+});

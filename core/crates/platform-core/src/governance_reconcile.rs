@@ -161,9 +161,21 @@ pub fn spawn(
                 }
             };
             metrics.passes.add(1, &[KeyValue::new("outcome", outcome)]);
+            if let Err(error) = crate::automation::reconcile(&state, cfg.batch).await {
+                tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
+                    state="UNKNOWN", "自动化持久触发对账未完成；原 checkpoint 保留");
+            }
             // Usage 与 ActionExecution 各自收敛：缺归因保留 Gateway 原游标，
             // 不把它伪结算，也不让它阻止本轮其他治理动作。
-            if let Err(reason) = gateway_usage.reconcile(&state.pool, cfg.batch).await {
+            if let Err(reason) = gateway_usage
+                .reconcile(
+                    &state.pool,
+                    cfg.batch,
+                    &state.openmeter,
+                    state.agent_runtime.as_deref(),
+                )
+                .await
+            {
                 tracing::warn!(
                     reason_code = "BILLING_UNAVAILABLE",
                     state = "UNKNOWN",
@@ -182,6 +194,9 @@ async fn pass(
     rehome_alert_after_secs: u64,
 ) -> Result<(), String> {
     let g: &Governance = &state.governance;
+    g.reconcile_delegations(batch)
+        .await
+        .map_err(|error| crate::governance::wire(&error.reason()))?;
     // 只取此刻确有一步可做的行：正常等待审批中的 WAITING 不进批次，否则它们
     // 会永远排在最前，把真正要处理的挤出去。
     let ids: Vec<Uuid> = sqlx::query_scalar(

@@ -683,6 +683,255 @@ Mobile 签名仍阻断。外侧日志为
 `incompleteReasons=[]`，但 `contentDrift` 为八个路径、总状态 `stale`；
 因此没有把旧检测结果当作本次提交门禁，尚未据本节提交或 push。
 
+## CHECK 准入源码与核验（2026-10-02）
+
+### 权威、影响与执行边界
+
+依据 `.design/05` §1、§6、`.design/11` §3、`DD-07/38/51`、ADR-14 决策3
+与 `apps/02` §6，额度事实只由 OpenMeter entitlement/credit 决定。
+实现位于 `core/crates/platform-core/src/openmeter.rs::OpenMeterClient::check_quota`、
+`governance.rs::Governance::check_quota`、同文件确认后与审批后准入调用点；
+`main.rs` 共享一个既有 OpenMeter 实例，结果存既有 ActionDecision，不建第二账本。
+meter key 先解为原生 ID，按该 ID 列举全部 feature 分页，再读取真实 Customer 的
+entitlement-access 与展开的 value。credit Numeric 保留原生十进制语义，不转为
+浮点余额、不以自定余额阈值覆盖 soft-limit；缺失、歧义和未知响应均拒绝。
+
+固定上游为 `6d76d8a6fa90fbbab2d41035d31df2acec7ad3af`：
+`api/v3/client/models_shared.go::Feature`、`api/v3/client/models_entitlements.go::EntitlementAccessResult` 与
+`api/v3/handlers/customers/entitlementaccess/convert.go::mapEntitlementAccessToAPI`
+定义 meter 关联、access/value 与 NoAccess 的实际 wire 语义。
+复核以该版本源码为准，没有调用标为未实现的 IncludeCredits 充当 credit 证据。
+
+编辑前 impact 已明确告警：evaluate、record_decision、Evaluation、close_gate
+为 CRITICAL，allow_in_tx、Tenant lifecycle、取消/重跑为 HIGH；UNKNOWN 的
+main/schema 消费者另按实际 Arc 接线、SQL 约束和四侧生成检查，不冒充零风险。
+原始结果在 `/volumes/data/kailo/tmp/codex-core-quota-preimpact-20261002.raw.jsonl`、
+`codex-core-quota-symbol-impact-20261002.raw.jsonl` 与
+`codex-core-quota-main-impact-20261002.raw.jsonl`。
+
+源码边界（不是端到端 PASS）：
+
+- 认证、scope、fresh permission、确认及审批仍先由原治理链处理，DENIED 不短路。
+- NONE+空 meter 立即返回 NOT_APPLICABLE，无计量查询；CHECK 缺 ACTIVE binding
+  为 PRECONDITION。异步查询前后再次比对 binding/customer，防止沿用失效引用。
+- 原生无 access 为 LIMIT/QUOTA_EXHAUSTED；依赖不可得、未知枚举或结果不可查证
+  为 UNKNOWN，不写成额度耗尽或成功；不记录用量正文或凭据。
+- CHECK 与 STRICT 正向派发继续 BLOCKED；本刀没有 producer、副作用、UsageEvent、
+  reservation 或新重放路径，不声称解决额度查询后到执行前的并发耗尽。
+- 确认/审批重入、幂等与 CONFLICT 沿用原 ActionDecision/事务边界；并发、撤权、
+  暂停、投影落后、超时和崩溃恢复未因源码复核变为已运行验收。
+
+新 `20261002000000_quota_check` up/down 迁移只允许 NONE+空 meter 或结构有效
+的非空 CHECK，STRICT 不开放，不创建或改写动作。存在 CHECK 定义时 down 的
+旧 NONE 约束明确失败、停止回退，不能默默降成 NONE。该新迁移尚未在数据库执行。
+Web/Desktop 继续共用 TS 文案；Dart 由同一目录生成；管理面都经 BFF，未加 Mobile
+写入口、Web 私钥或 Relay 直连。既有动作仍为 NONE，不制造对象作为验证适用对象。
+
+### 已执行结果与尚未验收范围
+
+同一不可变 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+在启动前核实资源限额。生成容器为 4 CPU/6 GiB、缓存与临时数据在 Data；
+`tools/gen.sh`、`cargo fmt --all`、`tools/gen.sh --check` 退出 0，四侧契约与
+TS/Dart 同源原因码一致。完整输出为
+`/volumes/data/kailo/tmp/codex-quota-generate-final-20261002.log`。
+第一次错误使用 login shell 覆盖 SDK PATH，Dart/rustfmt 不可得、文案比对退出1；
+修正容器调用为保留 SDK PATH 的 shell 后重跑通过，未放宽生成器或检查器。
+失败原文保留在 `codex-quota-generate-20261002.log`。
+
+原 `tools/check.sh lint` 在 8 CPU/12 GiB 检查容器中实际退出 0：cargo fmt、
+全 targets clippy（warnings 为错误）、gofmt、go vet、TS typecheck、Dart analyze
+通过。外层日志为 `/volumes/data/kailo/tmp/codex-quota-lint-20261002.log`，
+内层为 `/volumes/data/kailo/tmp/tmp.lc8XIpIS0q.check.log`。
+合同与工程红线两轴事后复核未发现本刀确定可达缺陷；历史 File.content 只用于
+区分继承改动，不作 fresh 提交门禁。未新增测试、夹具或检查脚本。
+
+以上不证明真实拒绝链、审批后额度变化、迁移、契约双向 round-trip、CHECK
+业务副作用或 Stage 4 已验收；未构建/部署新 Core，不修改原生计量产物 digest。
+
+## CHECK 批次后续验证与提交边界（2026-10-02）
+
+本节追加上述记录写入后的实际结果；此前“尚未执行”“未提交”的描述保留为
+对应时点的事实，不将后来的验证倒填为历史通过。当前额度查询的实际符号为
+`core/crates/platform-core/src/openmeter.rs::OpenMeter::check_quota`。
+
+### 当前工作区检查
+
+以下命令均实际退出 0，日志位于 `/volumes/data/kailo/tmp/`。SDK 仍为上述
+不可变 image ID，启动前有资源预检与实际 cgroup 限额；没有使用宿主机语言
+工具链，没有因这些检查重建上游产物。
+
+| 入口 | 已执行结果 | 外层日志 |
+| --- | --- | --- |
+| `tools/gen.sh`、`cargo fmt --all`、`tools/gen.sh --check` | 四侧生成与 TS/Dart 文案同源检查通过 | `codex-quota-generate-final-20261002.log` |
+| `tools/check.sh lint` | Cargo/Go/TS/Dart 六项通过 | `codex-quota-lint-20261002.log` |
+| `tools/check.sh verify` | Cargo/Go/TS/Dart 四侧既有验证通过 | `codex-quota-verify-20261002.log` |
+| `tools/check.sh contract` | 四侧生成同步；90 个 schema 比对，匹配 3 个历史 schema，无破坏性变更 | `codex-quota-contract-20261002.log` |
+| `tools/check-docs.sh` | 272 个引用闭合；86 实体、115 DD、27 SS 全部归属；87 场景中 86 映射、1 明确排除；markdownlint 0 issues | `codex-quota-docs-20261002.log` |
+| `tools/check.sh trace` | 17 条追溯记录与能力注册表一致；18 个封闭 workflow kind 参与校验 | `codex-quota-trace-20261002.log` |
+| `tools/gen-registry.py` | 注册表按既有追溯重新生成；17 条能力与 18 个 workflow kind 的一致性由上述 trace 步骤校验 | `codex-quota-registry-20261002.log` |
+
+生成容器 4 CPU/6 GiB；lint、verify、contract 各 8 CPU/12 GiB；docs、trace、
+registry 各 2 CPU/2 GiB，memory 与 swap 限额相等。内层原文分别为
+`tmp.lc8XIpIS0q.check.log`、`tmp.hbN2qVLehs.check.log`、
+`tmp.W5i3YlawkM.check.log`、`tmp.lIQxsv4YFY.check.log`、
+`tmp.jFFzd7cPz9.check.log`。
+verify 未提供 `DATABASE_URL`，其通过不等于真实数据库集成或 CHECK 业务链
+通过；四侧既有 round-trip 证据也不代替真实额度变化与副作用验收。
+上述 docs 检查在本节追加前执行，不将其当作本节追加后的文档门禁。
+
+### 全新一次性数据库迁移
+
+仅为已实现迁移执行原有 `tools/check.sh migrate`。使用确切归属本次演练的
+全新 Postgres，不连接旧业务库或旧 K8S；没有新建检查脚本、测试或夹具，
+没有人为创建 ActionDefinition、Tenant、meter 或 Customer。
+随机凭据只从受保护文件与环境传递，不记录凭据值。实际调用为：
+
+```bash
+sudo -n -H --preserve-env=DATABASE_URL,CARGO_BUILD_JOBS \
+  -u ubuntu -g docker env \
+  TMPDIR=/volumes/data/kailo/tmp \
+  CHECK_CPUS=8 CHECK_MEMORY=16g CHECK_NETWORK=host \
+  CHECK_CACHE_ROOT=/volumes/data/kailo/check-cache \
+  bash tools/check.sh migrate
+```
+
+检查 SDK 为 8 CPU/16 GiB；数据库为 1 CPU/512 MiB，memory 与 swap 限额
+相等，数据仅存 tmpfs。数据库镜像来自当前 Compose 的不可变引用
+`postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea`。
+实际命令与外层演练均退出 0，无迁移 SKIP，原文包括：
+
+```text
+PASS 每个迁移都有配对的回退脚本
+PASS 前进、回退、再前进三步演练通过
+PASS sqlx 离线数据与迁移后的库和查询同步
+PASS 39 个命名约束与 contracts/enums/ 逐值相等
+全部通过。
+```
+
+真实 catalog 显示 38 个成功迁移，最新为 `20261002000000`；
+`action_quota_policy_enum` 与 `quota_check_supported` 均已 validated。
+后者只接受 NONE 且 `cardinality(meters)=0`，或 CHECK 且非空一维数组、
+无 NULL/空字符串；因此枚举虽包含 `STRICT_RESERVATION`，支持约束仍拒绝它。
+字段 `meters` 和 `quota_policy` 均 NOT NULL；迁移自然登记的 28 条动作均为
+NONE，Tenant 为 0。这是运行后约束 catalog 核对，不冒充真实业务行写入的
+破坏验收，也没有验收“已存在 CHECK 定义时回退”的拒绝分支。
+
+成功原件目录为
+`/volumes/data/kailo/tmp/codex-quota-migrate-final-20261002.cJoITK/`：
+`standard-migrate.log`、`exit.log`、`quota-catalog.log`、`migration-catalog.log`、
+`postgres-limits.log`、`postgres-storage.log`、`remaining-containers.log` 与
+`cleanup.log`；内层原文为 `/volumes/data/kailo/tmp/tmp.XocnZYONv2.check.log`。
+演练结束只移除本次一次性数据库容器与随机凭据，真实查询确认其不再存在；
+tmpfs 数据不保留，证据日志保留，没有删除历史业务数据。
+
+前两次失败不计入通过：
+`codex-quota-migrate-20261002.6syQVJ/standard-migrate.log` 中 sudo 回退路径未
+传入 `DATABASE_URL`，原入口实际 SKIP，后续 catalog 查询也失败；
+`codex-quota-migrate-corrected-20261002.UQiQFK/standard-migrate.log` 中 sudo
+清理 `TMPDIR`，入口退出 2、未启动 SDK。两次外层演练均退出 1，均清理了
+各自一次性容器与凭据。最终调用显式传递非密执行配置与必要环境后才通过，
+没有修改全局用户组、Docker daemon 或迁移检查逻辑。
+
+### 本地提交、push 与发布状态
+
+本地提交 `c478169a07376f3a7271ed8b857d06c307b87fa2` 仅收口原生计量变更，
+不包含本批 Quota/UI。普通 push 实际退出 1，pre-push 的 `--full` 在 8/10
+上游 seam diff 拒绝以下四个既有产物的源码摘要不匹配：
+`collaboration-relay`、`desktop-client`、`model-gateway`、`web-client`。
+原文为 `/volumes/data/kailo/tmp/codex-native-metering-push-20261002.log`，
+内层为 `/volumes/data/kailo/tmp/tmp.bWnwSfBMQI.check.log`；没有绕过该门禁。
+
+随后只读核对发现四个已暂存产物确实存在：冻结源码快照
+`/volumes/data/kailo/candidate-release20261001.Raj4qb/apps` 对应 Git tree
+`6851698a9cb0f90a72b7776b36d8aebb4af3b95b`，其中 collaboration、
+model-gateway、web-client、client-kit 源码与本地 HEAD
+比较无差异；三个 registry 请求为 HTTP 200，Docker-Content-Digest 与产物
+登记逐字相同，Desktop deb 的 SHA-256 也相同。失败源于来源登记没有纳入
+此次独立原生提交，不是据此判定产物需要重建；本节不把后续登记提交或 push
+描述为已经完成。
+
+该 push 全量检查的真实迁移因未提供 `DATABASE_URL` 而 SKIP，部署配置预检
+因导出树无 `deploy/local/.env` 而 SKIP；未安装 gitleaks，只是内置扫描通过。
+这次全量导出为 15 条追溯记录，与上述当前工作区 17 条不同；它不是上述
+一次性数据库演练，也不能合并成一次“全量通过”。
+
+本节写入时 Quota/UI 仍未提交、未构建部署。本轮只完成 CHECK 额度准入源码
+及上述已有门禁，没有首个真实 producer、UsageEvent 或 fresh 权限保护下的
+业务副作用验收；CHECK/STRICT 正向执行仍关闭，NONE+空 meter 不依赖
+OpenMeter。没有据此宣布任何 Stage 完成、用户端功能可用或一期生产就绪。
+
+### 来源引用的阶段性关联（2026-10-02）
+
+三份来源清单实际单独提交为
+`6d2bb152bad7106bd99d0274162e637d2fbecf83`，只有八对 source/artifact
+摘要值的替换，没有重新构建、业务源码、schema、API、Workflow 或部署变化。
+提交前原生 schema-4 reader 确认 apps 源根、当前内容、runner 与空 incomplete
+列表；隔离候选的 `detect_changes` 实际退出 0，三个文件、零代码符号、LOW。
+完整原件在
+`/volumes/data/kailo/tmp/codex-native-provenance-20261002.t0nmJk/`。
+
+第二次普通 push 仍实际退出 1。全量检查的格式、四语言已有验证、契约、
+replay、供应链与 seam 通过；追溯和部署静态检查拒绝相同四个产物的旧引用。
+原文在 `/volumes/data/kailo/tmp/codex-native-provenance-push-20261002.log`。
+本地来源清单并不等于完整发布关联；Compose 与十四份追溯记录需要与同一
+真实 artifact 保持一致，不能靠省略它们或绕过 pre-push 宣称 push 完成。
+真实数据库演练和 SDK 内部署 `.env` 预检仍分别 SKIP，保留这一边界。
+
+随后从原暂存 blob 只读制作十五文件隔离候选，基于上述本地提交，tree 为
+`59d1dd0e636ae25d4e09313e5b1e695ef5890a7f`，仅二十三对摘要替换；
+没有引入当前工作区的新功能或改变 gate、网络、端口、凭据与配置字段。
+完整 diff 在
+`/volumes/data/kailo/tmp/codex-release-reference-candidate-20261002.3B5CAF/`。
+该候选通过原 `check.sh trace` 与 `check.sh security`，二者实际退出 0：
+
+```text
+PASS 15 条追溯记录通过 06 §1 的七条硬规则
+PASS 能力注册表与追溯记录一致，四个构建期拒绝条件全部通过
+PASS 24 个服务：network 显式、边界不越层、私有数据网络按所有者隔离、镜像按 digest、无端口字面量、公共配置单源投影；SpiceDB schema 与 .design/03 §5 逐字相等
+```
+
+执行使用上述不可变 SDK，各 4 CPU/4 GiB memory=swap，导出候选及其固定
+设计版本，未执行新构建。原件为
+`codex-release-reference-trace-20261002.log` 与
+`codex-release-reference-security-20261002.log`，均在同一 Data tmp 目录。
+部署配置预检因该导出树没有 `.env` 明确 SKIP，不是实际环境预检通过。
+写入本节时这十五文件候选尚未提交；独立远端查询 main 仍为
+`14fa7833d6bfd6d089c805899002b869fadebe86`。不将两个本地提交或窄检查
+当作已 push、已部署或 Stage 完成。
+
+### 后续正常 push 收口（2026-10-02）
+
+本节追加该候选记录之后的实际结果，不撤销上述两次 push 的失败。
+`e4c544fdb63d5e54fe775d58e684249166c89543` 收口 Worker 冻结 owner 审批与
+既有发布引用，共 17 个路径；原生计量与来源清单仍分别属于上述 `c478169a…`
+和 `6d2bb152…`，不混入当前工作区的 CHECK、AgentDefinition 或后续 UI 增量。
+共享 pre-push 在不可变受限 SDK 中检查实际提交树，没有关闭钩子或绕过门禁。
+
+最终普通 push 的完整原文为
+`/volumes/data/kailo/tmp/codex-final-owner-push-keepalive-20261002.log`。
+`tools/check.sh --full` 与 push 实际退出 0，末尾输出为：
+
+```text
+全部通过。
+To github.com:bei612/kailo-plus.git
+   14fa7833..e4c544fd  main -> main
+```
+
+该提交树的格式、静态检查、四语言既有验证、90 个 schema 与三份历史契约兼容、
+Workflow replay、15 条追溯与 18 个 workflow kind、18 个产物来源、六份上游来源
+记录及 24 服务部署静态检查通过。实际数据库迁移未提供 `DATABASE_URL`、
+部署配置预检未提供 `.env`，分别明确 SKIP；内置秘密扫描通过但未安装 gitleaks。
+Mobile 签名 upload keystore 仍未提供，不将其发布阻断改写为通过。
+
+成功前还发生共享派生缓存的权限失败及全量检查通过后的 SSH 连接失败；保留
+`codex-final-owner-push-20261002.log` 与 `codex-final-owner-push-retry-20261002.log`
+中的原始结果。仅核对并纠正本项目派生缓存的 UID 归属，最终连接使用 SSH
+keepalive，没有更改产品逻辑、清空全部缓存、强推或改写远端历史。
+本地 HEAD、origin/main 与独立 `ls-remote` 随后均确认上述完整 commit。
+
+这证明这三个提交已入库并 push，不证明新 Worker 已构建部署、CHECK 正向
+producer 已存在、owner 正向业务链已验收或一期生产就绪。
+
 ### 原生 Customer HTTP 412 分类修正（2026-10-02）
 
 本次修正 `core/crates/platform-core/src/openmeter.rs::status_error` 的既有
@@ -773,3 +1022,78 @@ HTTP 412 的三行增加、一行删除。401/403 到 `Denied`、429 到 `Limit`
 本刀已被编译与既有检查消费，不再写为尚无 SDK 验证；上述分类断言和业务
 闭环仍未取得，不外推为通过。迁移演练与真实 `.env` 部署预检均 SKIP，
 本次不包含独立 CHECK 或 AgentVersion，也未构建部署该树。
+
+### Installation Customer subject 物化与原生回读（2026-10-02）
+
+本节记录已经写入的独立源码窗口，不修改上述历史结果，也不将前一批 SDK
+结果移用到本刀。唯一实现路径为 Platform Core 的 `openmeter.rs`、
+`model_route.rs` 与本记录；未修改契约、迁移、计量原生源码、公开路由或发布登记。
+
+权威与影响面：DD-38、`.design/03` §8、`11` §3–4 要求固定 namespace 中的
+唯一 Tenant Customer，Agent subject 带 Tenant 前缀且实际归属于该 Customer。
+现有 `agent_installation::provision_runtime` 消费 `model_route::provision`，
+本刀在后者已有 Tenant/Workspace/Resource/HUMAN 生命周期锁内物化
+`<tenant_id>:<installation_resource_id>`；来源只是真实 Installation、已准入
+AE、已启动的 AGENT_INSTALLATION Workflow 与 ACTIVE OpenMeterBinding。
+没有构造 Invocation 或模型请求，没有复制商业余额、Customer 或账单正文。
+`gateway_usage::prepare_turn/dispatch_guard` 既有 `gateway_meters` 消费则在每次
+取用时重新核验原生 subject 归属；它没有因此取得合法 Invocation 生产入口。
+没有改变四侧 JSON 字段、API 或 Temporal Input，历史数据兼容在本刀无新增
+格式迁移对象；已有脏工作树差异不计为本次实现。
+
+固定上游重新核验到完整 commit
+`6d76d8a6fa90fbbab2d41035d31df2acec7ad3af`，仅使用只读 `git show/git grep`：
+
+- `openmeter/customer/httpdriver/customer.go::handler.UpdateCustomer` 读取原生
+  v1 Customer，消费 CustomerReplaceUpdate；
+- `openmeter/customer/httpdriver/apimapping.go::MapCustomerReplaceUpdate` 与
+  `openmeter/customer/adapter/customer.go::adapter.UpdateCustomer` 是 replace
+  而非增量追加或 CAS。后者会清除未提供的 metadata、annotations、billing
+  address，并按集合差更新 subject；
+- `api/v3/handlers/customers/convert.go::FromAPIUpsertCustomerRequest` 明确忽略
+  Annotation，`api/v3/labels/convert.go::FromMetadataAnnotations` 还可能过滤
+  不能转换的原生 annotation。不能以仅含 subject 的 v3 PUT 或有损 labels
+  回写覆盖这些事实；
+- `openmeter/customer/adapter/entitymapping.go::CustomerFromDBEntity` 在零
+  subject 时省略 UsageAttribution，保留原生可写字段与系统 annotations；
+- `openmeter/customer/service/customer.go::resolveCustomersByKeyWithPrecedence`
+  规定 customer.key 优先于 subject key。`api/v3/handlers/customers/list.go::handler.ListCustomers`
+  提供精确 key 与 usage_attribution_subject_key 的过滤读回。
+
+已经实现的副作用边界：适配器只在内存读取原生 v1 完整 Customer、保留全部
+可无损回写字段与原 subject 集合，追加这个真实 Installation subject。非空
+annotations、未知字段、不能表达的地址或 metadata、跨 Tenant/重复 subject、
+退役 Customer 都拒绝，不发送 destructive replace。管理身份仍为现有
+Core-only credential；v1 协议路径由唯一 Customer URL 的 origin/部署前缀
+派生，不新增地址、超时、凭据或配置副本。
+
+写入前沿同一 AE/operation 的已有 AuditEvent 提交 DISPATCH 阶段引用；阶段
+键绑定 Customer、Installation 与完整期望投影 SHA256，正文只在该次调用内存
+中存在，不进入 Core 数据库、审计、Workflow 或客户端。Tenant 锁使现有
+Core 管理写者串行，但这不是原生 CAS，不能在有绕过 Core 的 Customer
+管理写者时声称具备无损并发保证。一次 PUT 后无论回应是成功还是传输失败，
+都回读原生 v1 全部可写字段及完整 subject 集合，再核 v3 同 Tenant/customer
+归属、完整 subject 集合、唯一 subject-owner 且没有 key-owner 遮蔽；仅返回
+200 或只发现新 subject 都不能终结。
+
+边界与收敛：已 DISPATCH 但未 VERIFIED 的尝试只按持久摘要查证，不重 PUT；
+Customer 缺失、字段变化、回应未知或分页不完整时记录原 operation 的 UNKNOWN。
+未对账的 replace 阻止同 Customer 的后续 subject 写者覆盖其恢复证据。
+已 VERIFIED 的旧 generation 可消费后续合法 Installation 新增 subject 的
+当前事实，但 subject 丢失不靠重放旧 PUT 修复。写前确定拒绝分别落到既有
+DENIED/PRECONDITION/CONFLICT/LIMIT，依赖不可查证为 UNKNOWN；写后不能证明
+结果时一律 UNKNOWN，现有 Installation projection 对账继续负责恢复或告警。
+本刀没有新增未终结状态、第二份计量权威或默认成功分支。
+
+这是模型 runtime projection 物化期所需的 Customer 归属依赖，不是
+`quota_policy=NONE` 管理动作查询 entitlement/credit/reservation：NONE 准入的
+既有免额度查询边界不变。模型 runtime 准备缺真实 Customer 归属便保持关闭，
+不能把所有 NONE 生命周期动作描述为完全没有 OpenMeter 外部引用。
+
+精确 before 为
+`/volumes/data/kailo/tmp/codex-openmeter-subject-before-20261002.5NwcW7/`
+中的三份字节快照；写入后 scoped `git diff --check` 实际退出 0。
+本刀未运行 SDK、格式/静态检查、全量门禁、真实 Customer PUT/回读、业务
+并发或破坏还原验证；未创建 Customer、meter、Installation 或业务种子。
+尚未生成、构建、提交、push 或部署，实际运行证据留待批次集中验证，
+不宣称本 subject 链、SS-OMT-AUTH、Stage 4/5 或生产门禁已验收。

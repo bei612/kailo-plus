@@ -368,6 +368,210 @@ fn conflict() -> Refusal {
     Refusal::Conflict(ReasonCode::TargetStateConflict)
 }
 
+fn metering_refusal(error: crate::openmeter::Error) -> Refusal {
+    use crate::openmeter::Error;
+    match error {
+        Error::Denied => Refusal::Denied(ReasonCode::PermissionDenied),
+        Error::Precondition => Refusal::Precondition(ReasonCode::BindingNotActive),
+        Error::Conflict => conflict(),
+        Error::Limit => Refusal::Limit(ReasonCode::RateLimited),
+        Error::Unknown => Refusal::Unavailable("OpenMeter subject 结果不可查证".into()),
+    }
+}
+
+async fn subject_audit(
+    state: &ServiceState,
+    context: &crate::platform_keys::ActionAuditContext,
+    tenant: Uuid,
+    action: Uuid,
+    event_key: String,
+    result: &str,
+) -> Result<(), Refusal> {
+    let mut tx = state.pool.begin().await?;
+    let target_type = context.target_type.as_deref().ok_or_else(unavailable)?;
+    let exposure = context.result_exposure.as_deref().ok_or_else(unavailable)?;
+    crate::audit::append(
+        &mut tx,
+        crate::audit::AuditEntry {
+            event_key,
+            tenant_id: Some(tenant),
+            workspace_id: context.workspace_id,
+            operation_id: context.operation_id,
+            event_type: if result == "DISPATCH_RESULT_UNKNOWN" {
+                "DISPATCH"
+            } else {
+                "RECONCILIATION"
+            },
+            human_identity_id: None,
+            initiator_principal_id: Some(context.initiator_principal_id),
+            actor_principal_id: Some(context.actor_principal_id),
+            action_key: &context.action_key,
+            action_version: context.action_version,
+            component_type_key: "openmeter",
+            target_type: Some(target_type),
+            target_id: Some(context.target_id),
+            parameter_hash: &context.parameter_hash,
+            decision: if result == "EXTERNAL_RESULT_UNKNOWN" {
+                "UNKNOWN"
+            } else {
+                "ALLOW"
+            },
+            result_code: result,
+            result_exposure: exposure,
+            evidence_refs: vec![crate::audit::Evidence::new(
+                contracts::EvidenceKind::ActionExecutionId,
+                action,
+            )],
+            correlation_id: context.correlation_id,
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// DD-38：已有安装 projection 的副作用依赖，不创建 Invocation 或商业账本。
+/// lifecycle 保留 Tenant 锁，Core-only 身份只允许此受治理写者；native PUT 没有 CAS。
+async fn ensure_usage_subject(
+    state: &ServiceState,
+    lifecycle: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant: Uuid,
+    workspace: Uuid,
+    installation: Uuid,
+    action: Uuid,
+) -> Result<(), Refusal> {
+    let binding: Option<(String, String, String, String, i32)> = sqlx::query_as(
+        "select namespace,customer_id,subject_key_prefix,status,version
+        from projection.openmeter_binding where tenant_id=$1 for no key update",
+    )
+    .bind(tenant)
+    .fetch_optional(&mut **lifecycle)
+    .await?;
+    let (namespace, customer, prefix, status, version) =
+        binding.ok_or(Refusal::Precondition(ReasonCode::BindingNotActive))?;
+    if namespace != state.openmeter.namespace()
+        || prefix != format!("{tenant}:")
+        || status != "ACTIVE"
+        || version <= 0
+    {
+        return Err(conflict());
+    }
+    let context = crate::platform_keys::action_audit_context(lifecycle, action, tenant).await?;
+    if context.target_id != installation
+        || context.workspace_id != Some(workspace)
+        || context.action_key != "agent.installation.create"
+    {
+        return Err(conflict());
+    }
+    let base = format!(
+        "{}:openmeter:customer:{customer}:subject:{installation}",
+        context.operation_id
+    );
+    let dispatch_prefix = format!("{base}:dispatch:");
+    let attempts: Vec<String> = sqlx::query_scalar(
+        "select event_key from audit.audit_event where tenant_id=$1 and operation_id=$2
+        and event_key like $3 order by event_key",
+    )
+    .bind(tenant)
+    .bind(context.operation_id)
+    .bind(format!("{dispatch_prefix}%"))
+    .fetch_all(&mut **lifecycle)
+    .await?;
+    if attempts.len() > 1 {
+        return Err(unavailable());
+    }
+    // Unreconciled replace blocks later subject writes under the same Customer lock.
+    // Otherwise a second add could erase the first attempt's exact recovery comparison.
+    let pending: Vec<String> = sqlx::query_scalar(
+        "select d.event_key from audit.audit_event d where d.tenant_id=$1 and d.event_key like $2
+        and not exists(select 1 from audit.audit_event v where v.tenant_id=d.tenant_id
+          and v.event_key=replace(d.event_key,':dispatch:',':verified:'))",
+    )
+    .bind(tenant)
+    .bind(format!(
+        "%:openmeter:customer:{customer}:subject:%:dispatch:%"
+    ))
+    .fetch_all(&mut **lifecycle)
+    .await?;
+    if pending.iter().any(|key| !attempts.contains(key)) {
+        return Err(unavailable());
+    }
+    let projection = match state
+        .openmeter
+        .subject_projection(tenant, &customer, installation)
+        .await
+    {
+        Ok(projection) => projection,
+        Err(error) if attempts.is_empty() => return Err(metering_refusal(error)),
+        Err(_) => {
+            subject_audit(
+                state,
+                &context,
+                tenant,
+                action,
+                format!("{base}:unknown"),
+                "EXTERNAL_RESULT_UNKNOWN",
+            )
+            .await?;
+            return Err(unavailable());
+        }
+    };
+    let hash = projection.digest(&namespace).map_err(metering_refusal)?;
+    let dispatch_key = format!("{dispatch_prefix}{hash}");
+    let verified_key = format!("{base}:verified:{hash}");
+    if let Some(previous) = attempts.first() {
+        let previous_verified: bool = sqlx::query_scalar(
+            "select exists(select 1 from audit.audit_event where tenant_id=$1 and operation_id=$2 and event_key=$3)")
+            .bind(tenant).bind(context.operation_id).bind(previous.replace(":dispatch:", ":verified:"))
+            .fetch_one(&mut **lifecycle).await?;
+        // Earlier verified writes remain evidence when another legitimate installation
+        // later adds a subject. A lost subject is never repaired by replaying old PUT.
+        if projection.needs_write() || !previous_verified && previous != &dispatch_key {
+            subject_audit(
+                state,
+                &context,
+                tenant,
+                action,
+                format!("{base}:unknown"),
+                "EXTERNAL_RESULT_UNKNOWN",
+            )
+            .await?;
+            return Err(unavailable());
+        }
+    } else if projection.needs_write() {
+        // Commit only native references/digest, not Customer contact/billing fields.
+        subject_audit(
+            state,
+            &context,
+            tenant,
+            action,
+            dispatch_key,
+            "DISPATCH_RESULT_UNKNOWN",
+        )
+        .await?;
+        // A transport error is not a failed write: only native readback decides.
+        let _write_result = state.openmeter.write_subject_projection(&projection).await;
+    }
+    if state
+        .openmeter
+        .verify_subject_projection(&projection)
+        .await
+        .is_err()
+    {
+        subject_audit(
+            state,
+            &context,
+            tenant,
+            action,
+            format!("{base}:unknown"),
+            "EXTERNAL_RESULT_UNKNOWN",
+        )
+        .await?;
+        return Err(unavailable());
+    }
+    subject_audit(state, &context, tenant, action, verified_key, "ACTIVE").await
+}
+
 const ROUTE: &str = "select r.tenant_id,r.owner_principal_id,r.home_workspace_id,r.native_id,
     r.version as resource_version,m.native_revision,m.native_config_hash
     from catalog.resource r join catalog.model_route m on m.resource_id=r.id
@@ -476,6 +680,15 @@ pub(crate) async fn provision(
     crate::service_api::audit_gate(state)
         .await
         .map_err(|_| unavailable())?;
+    ensure_usage_subject(
+        state,
+        &mut lifecycle,
+        tenant,
+        workspace,
+        installation,
+        action,
+    )
+    .await?;
     let written = state
         .governance
         .spicedb
