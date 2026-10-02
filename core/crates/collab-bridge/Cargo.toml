@@ -6,6 +6,7 @@ publish.workspace = true
 
 [dependencies]
 contracts = { path = "../contracts" }
+buzz-core = { path = "../../../collaboration/crates/buzz-core" }
 nostr = { version = "0.44", default-features = false, features = ["std"] }
 base64 = "0.22"
 sha2 = "0.10"

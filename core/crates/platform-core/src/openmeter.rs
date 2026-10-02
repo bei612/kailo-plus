@@ -4,6 +4,7 @@
 use chrono::{DateTime, Utc};
 use reqwest::{header, StatusCode, Url};
 use serde::Deserialize;
+use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
@@ -61,6 +62,98 @@ fn valid_customer_id(id: &str) -> bool {
 struct CustomerPage {
     data: Vec<Customer>,
     meta: PageMeta,
+}
+
+#[derive(Deserialize)]
+struct Collection<T> {
+    data: Vec<T>,
+    meta: PageMeta,
+}
+
+#[derive(Deserialize)]
+struct Meter {
+    id: String,
+    key: String,
+    deleted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Deserialize)]
+struct Feature {
+    id: String,
+    key: String,
+    deleted_at: Option<DateTime<Utc>>,
+    meter: Option<FeatureMeter>,
+}
+
+#[derive(Deserialize)]
+struct FeatureMeter {
+    id: String,
+    filters: Option<BTreeMap<String, serde_json::Value>>,
+}
+
+#[derive(Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum EntitlementType {
+    Metered,
+    Static,
+    Boolean,
+}
+
+#[derive(Deserialize)]
+struct EntitlementAccess {
+    #[serde(rename = "type")]
+    kind: EntitlementType,
+    feature_key: String,
+    has_access: bool,
+    value: Option<CreditValue>,
+}
+
+#[derive(Deserialize)]
+struct EntitlementAccessList {
+    data: Vec<EntitlementAccess>,
+}
+
+#[derive(Deserialize)]
+struct CreditValue {
+    balance: String,
+    usage: String,
+    overage: String,
+    total_available_grant_amount: String,
+    grant_balances: BTreeMap<String, String>,
+}
+
+impl CreditValue {
+    fn valid(&self) -> bool {
+        // 原生 Numeric 是十进制字符串；这里只校验真实响应，不计算或复制余额。
+        [
+            &self.balance,
+            &self.usage,
+            &self.overage,
+            &self.total_available_grant_amount,
+        ]
+        .into_iter()
+        .chain(self.grant_balances.values())
+        .all(|value| {
+            let decimal = value.strip_prefix('-').unwrap_or(value);
+            let mut parts = decimal.split('.');
+            let integer = parts.next().unwrap_or_default();
+            let fraction = parts.next();
+            !integer.is_empty()
+                && integer.bytes().all(|b| b.is_ascii_digit())
+                && fraction.is_none_or(|f| !f.is_empty() && f.bytes().all(|b| b.is_ascii_digit()))
+                && parts.next().is_none()
+        })
+    }
+}
+
+fn valid_resource_key(key: &str) -> bool {
+    !key.is_empty()
+        && !key.starts_with('_')
+        && !key.ends_with('_')
+        && !key.contains("__")
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 
 #[derive(Deserialize)]
@@ -159,6 +252,178 @@ impl OpenMeter {
             .map_err(|_| Error::Unknown)?
             .push(id);
         Ok(url)
+    }
+
+    fn collection_url(&self, collection: &str) -> Result<Url, Error> {
+        let mut url = self.customers.clone();
+        url.path_segments_mut()
+            .map_err(|_| Error::Unknown)?
+            .pop()
+            .push(collection);
+        Ok(url)
+    }
+
+    async fn read<T: serde::de::DeserializeOwned>(&self, url: Url) -> Result<T, Error> {
+        let response = self
+            .http
+            .get(url)
+            .send()
+            .await
+            .map_err(|_| Error::Unknown)?;
+        if response.status() != StatusCode::OK {
+            return Err(status_error(response.status()));
+        }
+        response.json().await.map_err(|_| Error::Unknown)
+    }
+
+    async fn collection<T: serde::de::DeserializeOwned>(&self, url: Url) -> Result<Vec<T>, Error> {
+        let mut data = Vec::new();
+        let mut number = 1_u64;
+        let mut expected: Option<(u64, u64)> = None;
+        loop {
+            let mut page_url = url.clone();
+            page_url
+                .query_pairs_mut()
+                .append_pair("page[number]", &number.to_string());
+            if let Some((size, _)) = expected {
+                page_url
+                    .query_pairs_mut()
+                    .append_pair("page[size]", &size.to_string());
+            }
+            let page: Collection<T> = self.read(page_url).await?;
+            let meta = page.meta.page;
+            let seen = data.len() as u64;
+            if meta.number != number
+                || meta.size == 0
+                || meta.total < seen
+                || expected.is_some_and(|old| old != (meta.size, meta.total))
+                || page.data.len() as u64 != meta.size.min(meta.total - seen)
+            {
+                return Err(Error::Unknown);
+            }
+            expected = Some((meta.size, meta.total));
+            data.extend(page.data);
+            if data.len() as u64 == meta.total {
+                return Ok(data);
+            }
+            number = number.checked_add(1).ok_or(Error::Unknown)?;
+        }
+    }
+
+    /// DD-07/38、ADR-14：只消费原生 entitlement/credit，不建立额度账本。
+    /// meter 不是 feature key；只接受 Customer 唯一、无未解析维度 filter 的原生关系。
+    pub async fn check_quota(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+        meters: &[String],
+    ) -> Result<bool, Error> {
+        let customer = self
+            .customer_by_id(customer_id, tenant)
+            .await?
+            .ok_or(Error::Precondition)?;
+        if !customer.is_active() || meters.is_empty() {
+            return Err(Error::Precondition);
+        }
+        let mut access_url = self.customer_url(customer_id)?;
+        access_url
+            .path_segments_mut()
+            .map_err(|_| Error::Unknown)?
+            .push("entitlement-access");
+        let entitlements: EntitlementAccessList = self.read(access_url.clone()).await?;
+        let mut keys = HashSet::new();
+        if entitlements
+            .data
+            .iter()
+            .any(|e| !valid_resource_key(&e.feature_key) || !keys.insert(&e.feature_key))
+        {
+            return Err(Error::Unknown);
+        }
+        for key in meters {
+            if !valid_resource_key(key) {
+                return Err(Error::Precondition);
+            }
+            let mut meter_url = self.collection_url("meters")?;
+            meter_url
+                .query_pairs_mut()
+                .append_pair("filter[key][eq]", key);
+            let mut native_meters: Vec<Meter> = self.collection(meter_url).await?;
+            let meter = match native_meters.len() {
+                0 => return Err(Error::Precondition),
+                1 => native_meters.pop().ok_or(Error::Unknown)?,
+                _ => return Err(Error::Conflict),
+            };
+            if meter.key != *key || !valid_customer_id(&meter.id) || meter.deleted_at.is_some() {
+                return Err(Error::Conflict);
+            }
+            let mut feature_url = self.collection_url("features")?;
+            feature_url
+                .query_pairs_mut()
+                .append_pair("filter[meter_id][oeq]", &meter.id);
+            let features: Vec<Feature> = self.collection(feature_url).await?;
+            if features.is_empty() {
+                return Err(Error::Precondition);
+            }
+            let mut feature_ids = HashSet::new();
+            let mut feature_keys = HashSet::new();
+            let mut selected = None;
+            for feature in &features {
+                if !valid_customer_id(&feature.id)
+                    || !valid_resource_key(&feature.key)
+                    || !feature_ids.insert(&feature.id)
+                    || !feature_keys.insert(&feature.key)
+                {
+                    return Err(Error::Unknown);
+                }
+                let reference = feature.meter.as_ref().ok_or(Error::Conflict)?;
+                if reference.id != meter.id {
+                    return Err(Error::Conflict);
+                }
+                if feature.deleted_at.is_some() || !keys.contains(&feature.key) {
+                    continue;
+                }
+                if selected.is_some() {
+                    return Err(Error::Conflict);
+                }
+                if reference
+                    .filters
+                    .as_ref()
+                    .is_some_and(|filters| !filters.is_empty())
+                {
+                    return Err(Error::Precondition);
+                }
+                selected = Some(&feature.key);
+            }
+            let Some(feature_key) = selected else {
+                return Ok(false);
+            };
+            let mut value_url = access_url.clone();
+            value_url
+                .path_segments_mut()
+                .map_err(|_| Error::Unknown)?
+                .push("features")
+                .push(feature_key);
+            value_url.query_pairs_mut().append_pair("expand", "value");
+            let access: EntitlementAccess = self.read(value_url).await?;
+            if access.feature_key != *feature_key {
+                return Err(Error::Conflict);
+            }
+            // 原生 NoAccessValue 映射为 static/false；不是猜测缺失 credit。
+            if access.kind == EntitlementType::Static && !access.has_access {
+                return Ok(false);
+            }
+            if access.kind != EntitlementType::Metered {
+                return Err(Error::Precondition);
+            }
+            if !access.value.as_ref().is_some_and(CreditValue::valid) {
+                return Err(Error::Unknown);
+            }
+            // 原生 soft-limit 可以在余额非正时允许。CHECK 不擅自改成 hard-limit。
+            if !access.has_access {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     pub async fn customer_by_key(&self, tenant: Uuid) -> Result<Option<Customer>, Error> {

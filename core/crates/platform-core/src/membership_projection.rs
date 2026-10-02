@@ -389,20 +389,20 @@ async fn resolve(state: &ServiceState, req: &BuzzProjectionRequest) -> Result<Pl
         }
     };
 
-    // TenantBuzzBinding 必须 ACTIVE：库里的三条 CHECK 已保证 ACTIVE 蕴含
-    // require_relay_membership=true 且 allow_nip_oa_auth=false，也就是协作面
-    // 确实有准入执行点（SF-BUZ-26、DD-75）。这里只需断言状态。
-    let binding = sqlx::query!(
-        "select normalized_host, control_service_principal_id
-         from projection.tenant_buzz_binding
-         where tenant_id = $1 and state = 'ACTIVE'",
-        tenant_id
-    )
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(Blocked::Refused(Refusal::Denied(
-        "TenantBuzzBinding 不是 ACTIVE",
-    )))?;
+    // 建立方向要求 TenantBuzzBinding ACTIVE：库里的三条 CHECK 已保证 ACTIVE 蕴含
+    // require_relay_membership=true 且 allow_nip_oa_auth=false，也就是协作面确实有
+    // 准入执行点（SF-BUZ-26、DD-75）。撤权方向在 binding 因 NIP-11 漂移处于
+    // RECONCILING 时照常收敛（DD-114(2)）。判定只在 `ProjectionDirection` 一处。
+    let direction = match req.presence {
+        TargetPresence::Present => crate::tenant_lifecycle::ProjectionDirection::Establish,
+        TargetPresence::Absent => crate::tenant_lifecycle::ProjectionDirection::Withdraw,
+    };
+    let (normalized_host, control_service_principal_id) =
+        crate::tenant_lifecycle::projection_binding(&state.pool, tenant_id, direction)
+            .await?
+            .ok_or(Blocked::Refused(Refusal::Denied(
+                "TenantBuzzBinding 的状态不允许该方向的投影",
+            )))?;
 
     // CONTROL 身份：必须 SERVER 托管且 ACTIVE。CLIENT 托管说明私钥不在 Core
     // 手里，此时代签是走错了路径，必须当场失败而不是换个身份凑合（DD-75）。
@@ -413,7 +413,7 @@ async fn resolve(state: &ServiceState, req: &BuzzProjectionRequest) -> Result<Pl
          where tenant_id = $1 and principal_id = $2
            and kind = 'CONTROL' and custody = 'SERVER' and state = 'ACTIVE'",
         tenant_id,
-        binding.control_service_principal_id
+        control_service_principal_id
     )
     .fetch_optional(&state.pool)
     .await?
@@ -525,7 +525,7 @@ async fn resolve(state: &ServiceState, req: &BuzzProjectionRequest) -> Result<Pl
 
     Ok(Plan {
         tenant_id,
-        community_host: binding.normalized_host,
+        community_host: normalized_host,
         channel_id,
         target_pubkeys: targets,
         control_pubkey: control.pubkey,

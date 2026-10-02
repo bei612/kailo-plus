@@ -4,9 +4,9 @@
 //! snapshot 与一个 generation，随后是增量事件。断线重连时带上 generation——
 //! **对不上就重新取 snapshot**，而不是从某个猜测的位置接着读。
 //!
-//! generation 绑定的是「这条流建立时的那次准入与那个 Channel」。准入变了
-//! （撤权、Workspace 停用、Channel 重绑）就必然换一个 generation，因此客户端
-//! 不可能拿着旧 generation 悄悄续上一条本不该继续的流。
+//! generation 绑定真实的成员、Tenant/Workspace 生命周期版本与 Channel；暂停后
+//! 恢复也不能复用暂停前的 snapshot。管理资格仍做 fresh Check，但没有对应的
+//! Core 授权版本可证明撤销后重新授予未发生，因此管理者的新流始终取完整 snapshot。
 //!
 //! 续流走 SSE 自带的协议，不另造：generation 作为事件 `id:` 下发，浏览器的
 //! EventSource 断线后自动重连并把它放进 `Last-Event-ID` 头带回来；重连间隔
@@ -27,13 +27,17 @@ use axum::{
         IntoResponse, Response,
     },
 };
-use collab_bridge::stream::{subscribe, Frame};
+use collab_bridge::operator::LimitKind;
+use collab_bridge::stream::{Frame, SessionKey};
 use futures_util::stream::Stream;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
-use crate::web_transport::{actor_keys, admit_workspace, WorkspaceScope};
+use crate::web_transport::{
+    actor_keys, admit_workspace_scope, page_limit, relay_limits, AdmissionFailure,
+    WorkspaceAdmissionEpoch, WorkspaceScope,
+};
 
 /// 打开一条 Workspace 事件流。
 pub async fn open_stream(
@@ -45,9 +49,15 @@ pub async fn open_stream(
         Ok(c) => c,
         Err(r) => return r,
     };
-    let scope = match admit_workspace(&state, &ctx, workspace_id).await {
+    let retry = std::time::Duration::from_millis(state.stream_retry_millis);
+    let scope = match admit_workspace_scope(&state, &ctx, workspace_id).await {
         Ok(s) => s,
-        Err(r) => return r,
+        // binding 暂不是 ACTIVE（NIP-11 漂移重新查证中）是可恢复的：带内关闭并按
+        // 间隔重连。非 200 会让浏览器永久停止重连，只留给确定的拒绝
+        Err(AdmissionFailure::BindingNotActive) => {
+            return closed_in_band(retry, "binding-not-active")
+        }
+        Err(f) => return f.into_response(),
     };
     let keys = match actor_keys(&state, &ctx).await {
         Ok(k) => k,
@@ -57,13 +67,26 @@ pub async fn open_stream(
     // generation 由「谁 + 哪个 Channel + 哪次准入」共同决定。把 principal 放进去
     // 是必要的：同一个 Channel 上不同人看到的 scope 一样，但撤权只影响其中一个，
     // 而撤权必须让那个人的旧 generation 失效。
-    let generation = generation_of(&ctx.tenant_principal_id, &scope.channel_id, scope.version);
+    let generation = generation_of(
+        &ctx.tenant_principal_id,
+        &scope.channel_id,
+        &scope.admission_epoch,
+    );
     // 上次拿到的 generation 由 EventSource 放在 Last-Event-ID 里带回。
-    // 缺失或对不上都意味着要重新取 snapshot。
-    let resume =
-        headers.get("last-event-id").and_then(|v| v.to_str().ok()) == Some(generation.as_str());
+    // 缺失或对不上都意味着要重新取 snapshot。管理者的准入只有 fresh Check，
+    // 不能从生命周期版本推断管理授权未曾撤销再授予，不跳过完整 snapshot。
+    let resume = matches!(
+        &scope.admission_epoch,
+        WorkspaceAdmissionEpoch::Membership { .. }
+    ) && headers.get("last-event-id").and_then(|v| v.to_str().ok())
+        == Some(generation.as_str());
 
-    let retry = std::time::Duration::from_millis(state.stream_retry_millis);
+    // 运行期 NIP-11 与 binding 快照一致才开新流，且订阅与 snapshot 都按其上界预检
+    // （`.design/09`「BFF Relay 连接模型」：对不上即关闭新 stream）
+    let limits = match relay_limits(&state, &scope).await {
+        Ok(l) => l,
+        Err(c) => return closed_in_band(retry, c.stream_reason()),
+    };
 
     // snapshot 走 HTTP bridge，增量走 WS 订阅。两者用同一把钥匙、同一个
     // Community host，因此看到的 scope 是同一个。
@@ -82,36 +105,57 @@ pub async fn open_stream(
                 &[serde_json::json!({
                     "kinds": [9],
                     "#h": [scope.channel_id],
-                    "limit": state.message_page_limit,
+                    "limit": page_limit(&state, &limits),
                 })],
             )
             .await
         {
             Ok(v) => Some(v),
+            // 限流是 LIMIT，不是上游不可用：原因如实下发，重连间隔不短于预算
+            // 给出的重置时刻，免得每次重连的 snapshot 继续消耗同一份额度
+            Err(e) if e.limit() == Some(LimitKind::RateLimited) => {
+                tracing::info!(error = %e, "取 snapshot 被限流");
+                let wait = e
+                    .retry_after_secs()
+                    .map(std::time::Duration::from_secs)
+                    .map_or(retry, |w| w.max(retry));
+                return closed_in_band(wait, "rate-limited");
+            }
             Err(e) => {
                 tracing::warn!(error = %e, "取 snapshot 失败");
-                return upstream_unavailable(retry);
+                return closed_in_band(retry, "upstream-unavailable");
             }
         }
     };
 
-    // 订阅以这把钥匙建立 NIP-42 会话：它被撤销（key revoke/rotate）后流必须关闭
+    // 订阅以这把钥匙的 NIP-42 会话进行：它被撤销（key revoke/rotate）后流必须关闭。
+    // 会话按 (PlatformSession, Community host, pubkey) 复用：同一会话的多条流共用
+    // 一条已认证连接，各开一个 REQ（`apps/02` Stage 1）。
     let signer = keys.public_key().to_hex();
-    let ws_url = state.relay_ws_url.clone();
-    let sub = match subscribe(
-        keys,
-        &ws_url,
-        &scope.community_host,
-        vec![serde_json::json!({ "kinds": [9], "#h": [scope.channel_id] })],
-        state.stream_buffer,
-        std::time::Duration::from_secs(state.stream_auth_timeout_seconds),
-    )
-    .await
+    let session = SessionKey {
+        session: ctx.session_id.to_string(),
+        community_host: scope.community_host.clone(),
+        pubkey: signer.clone(),
+    };
+    let sub = match state
+        .relay_sessions
+        .subscribe(
+            session,
+            &keys,
+            vec![serde_json::json!({ "kinds": [9], "#h": [scope.channel_id] })],
+            &limits,
+        )
+        .await
     {
         Ok(s) => s,
+        // 该会话的订阅数已到 NIP-11 声明的上界：确定的 LIMIT，不把第 N+1 个 REQ 发给 Relay
+        Err(e) if e.limit() == Some(LimitKind::Capacity) => {
+            tracing::info!(error = %e, "订阅数达到上界");
+            return closed_in_band(retry, "subscription-limit");
+        }
         Err(e) => {
             tracing::warn!(error = %e, "建立订阅失败");
-            return upstream_unavailable(retry);
+            return closed_in_band(retry, "upstream-unavailable");
         }
     };
 
@@ -134,16 +178,18 @@ pub async fn open_stream(
     .into_response()
 }
 
-/// 准入已过而上游（Relay）暂不可用时的回应。
+/// 准入已过而上游（Relay）暂不可用、被限流或上界不成立时的回应。
 ///
 /// 不能回 503：SSE 规范规定重连得到非 200 回应时浏览器「使连接失败」，永久停止
 /// 重连——一次 Relay 的短暂不可用就会让页面停在「刷新页面重连」。非 200 只留给
-/// 确定的拒绝（身份、撤权）。结果不明在带内表达：一个 `closed` 帧说明原因并带上
-/// 重连间隔，然后正常结束，浏览器按间隔自动重连。
-fn upstream_unavailable(retry: std::time::Duration) -> Response {
+/// 确定的拒绝（身份、撤权）。其余在带内表达：一个 `closed` 帧说明原因并带上
+/// 重连间隔，然后正常结束，浏览器按间隔自动重连。原因取值：
+/// `upstream-unavailable`（结果不明）、`rate-limited` 与 `subscription-limit`
+/// （`apps/06` §4 的 LIMIT）、`binding-not-active`（NIP-11 与 binding 快照不一致）。
+fn closed_in_band(retry: std::time::Duration, reason: &'static str) -> Response {
     let frames = async_stream::stream! {
         yield Ok::<_, Infallible>(retry_frame(retry));
-        yield Ok(Event::default().event("closed").retry(retry).data("upstream-unavailable"));
+        yield Ok(Event::default().event("closed").retry(retry).data(reason));
     };
     Sse::new(frames).into_response()
 }
@@ -176,14 +222,17 @@ impl Readmission {
         if !identity::session::is_live(&self.state.pool, self.ctx.session_id).await? {
             return Ok(Some("session-revoked"));
         }
-        let current = match admit_workspace(&self.state, &self.ctx, self.workspace_id).await {
+        let current = match admit_workspace_scope(&self.state, &self.ctx, self.workspace_id).await {
             Ok(scope) => scope,
-            Err(response) if response.status().is_server_error() => {
+            // TenantBuzzBinding 转 RECONCILING（DD-114(2)）：已建立的流在再准入时关闭，
+            // 原因如实说明——这不是撤权，客户端按间隔重连，binding 回到 ACTIVE 即恢复
+            Err(AdmissionFailure::BindingNotActive) => return Ok(Some("binding-not-active")),
+            Err(AdmissionFailure::Unavailable) => {
                 return Ok(Some("readmission-unavailable"));
             }
-            Err(_) => return Ok(Some("scope-revoked")),
+            Err(AdmissionFailure::Denied) => return Ok(Some("scope-revoked")),
         };
-        if current.version != self.scope.version
+        if current.admission_epoch != self.scope.admission_epoch
             || current.channel_id != self.scope.channel_id
             || current.community_host != self.scope.community_host
         {
@@ -287,16 +336,53 @@ fn frames(
     }
 }
 
-/// generation 的构成：principal + channel + 准入版本。
+/// generation 的构成：principal + channel + 真实准入依据及其 Core 版本。
 ///
 /// 用摘要而不是把三者原样拼出来：generation 会出现在 URL 与客户端存储里，
 /// 原样拼接等于把 principal 与 channel 的内部 ID 散出去。
-fn generation_of(principal: &Uuid, channel_id: &str, admission_version: i32) -> String {
+fn generation_of(
+    principal: &Uuid,
+    channel_id: &str,
+    admission_epoch: &WorkspaceAdmissionEpoch,
+) -> String {
     let mut h = Sha256::new();
     h.update(principal.as_bytes());
     h.update([0u8]);
     h.update(channel_id.as_bytes());
     h.update([0u8]);
-    h.update(admission_version.to_be_bytes());
+    match admission_epoch {
+        WorkspaceAdmissionEpoch::Membership {
+            tenant_version,
+            workspace_version,
+            membership_id,
+            version,
+        } => {
+            h.update(b"membership\0");
+            h.update(tenant_version.to_be_bytes());
+            h.update(workspace_version.to_be_bytes());
+            h.update(membership_id.as_bytes());
+            h.update(version.to_be_bytes());
+        }
+        WorkspaceAdmissionEpoch::WorkspaceManage {
+            tenant_version,
+            workspace_version,
+        } => {
+            h.update(b"workspace-manage\0");
+            h.update(tenant_version.to_be_bytes());
+            h.update(workspace_version.to_be_bytes());
+        }
+        WorkspaceAdmissionEpoch::TenantManage {
+            tenant_version,
+            workspace_version,
+            membership_id,
+            membership_version,
+        } => {
+            h.update(b"tenant-manage\0");
+            h.update(tenant_version.to_be_bytes());
+            h.update(workspace_version.to_be_bytes());
+            h.update(membership_id.as_bytes());
+            h.update(membership_version.to_be_bytes());
+        }
+    }
     hex::encode(&h.finalize()[..16])
 }

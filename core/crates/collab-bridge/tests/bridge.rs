@@ -37,12 +37,10 @@ async fn provision(
 ) -> (OperatorIdentity, Keys, String) {
     let op = OperatorIdentity::new(op_key, origin, audience, audience).expect("operator 身份");
     let control = Keys::generate();
+    // 主机名取自这次新生成的 owner 公钥：并行用例同一微秒起步也不会撞名
     let host = format!(
         "{prefix}{}.platform.test",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_micros()
+        &control.public_key().to_hex()[..16]
     );
     op.provision_community(http, &host, &control.public_key().to_hex())
         .await
@@ -493,5 +491,294 @@ async fn roster_projection(http: &reqwest::Client, origin: &str, control: &Keys,
     assert!(
         matches!(err, OperatorError::Rejected { .. }),
         "得到 {err:?}"
+    );
+}
+
+/// 读部署登记的整数配置。集成核验 source 了 `deploy/local/.env`，登记值必须在；
+/// 缺失即该上界未登记，直接失败而不是猜一个默认值。
+fn registered(name: &str) -> u64 {
+    std::env::var(name)
+        .unwrap_or_else(|_| panic!("缺少部署登记值 {name}"))
+        .parse()
+        .unwrap_or_else(|_| panic!("{name} 必须是非负整数"))
+}
+
+/// 等到订阅追平（EOSE）；中途收到关闭即失败。
+async fn until_live(sub: &mut collab_bridge::stream::Subscription, what: &str) {
+    use collab_bridge::stream::Frame;
+    let deadline = tokio::time::Instant::now()
+        + std::time::Duration::from_secs(registered("BFF_STREAM_AUTH_TIMEOUT_SECONDS"));
+    loop {
+        match tokio::time::timeout_at(deadline, sub.next()).await {
+            Ok(Some(Frame::EndOfStored)) => return,
+            Ok(Some(Frame::Event(_))) => {}
+            Ok(Some(Frame::Closed(r))) => panic!("{what} 在追平前被关闭：{r}"),
+            Ok(None) => panic!("{what} 已结束"),
+            Err(_) => panic!("{what} 未在认证上界内追平"),
+        }
+    }
+}
+
+/// 等到订阅收到指定事件。
+async fn until_event(sub: &mut collab_bridge::stream::Subscription, event_id: &str, what: &str) {
+    use collab_bridge::stream::Frame;
+    let deadline = tokio::time::Instant::now()
+        + std::time::Duration::from_secs(registered("BFF_STREAM_AUTH_TIMEOUT_SECONDS"));
+    loop {
+        match tokio::time::timeout_at(deadline, sub.next()).await {
+            Ok(Some(Frame::Event(ev))) if ev["id"].as_str() == Some(event_id) => return,
+            Ok(Some(Frame::Closed(r))) => panic!("{what} 在收到事件前被关闭：{r}"),
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("{what} 已结束"),
+            Err(_) => panic!("{what} 未收到刚发布的事件"),
+        }
+    }
+}
+
+/// NIP-42 会话复用（`apps/02` Stage 1「按 (principal, active session) 复用 NIP-42 会话」）。
+///
+/// 验四件事：同一会话的多条流共用一条已认证连接且事件按订阅分发；另一个会话不继承
+/// 这条连接的认证；最后一个订阅结束时连接关闭；每连接订阅数按 NIP-11 上界预检，
+/// 超出是 LIMIT 而不发往 Relay。上界取自运行期从 Relay 读取的 NIP-11。
+#[tokio::test]
+async fn one_session_shares_one_authenticated_connection() {
+    let Some((origin, op_key, audience)) = env() else {
+        return;
+    };
+    let http = reqwest::Client::new();
+    let (op, control, host) = provision(&http, &origin, &op_key, &audience, "s").await;
+    let outcome = AssertUnwindSafe(session_reuse(&http, &origin, &control, &host))
+        .catch_unwind()
+        .await;
+    retire(&http, &op, &host, &control).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn session_reuse(http: &reqwest::Client, origin: &str, control: &Keys, host: &str) {
+    use collab_bridge::limits::{fetch_nip11, RelayLimits};
+    use collab_bridge::operator::LimitKind;
+    use collab_bridge::stream::{RelaySessions, SessionKey};
+    use std::sync::Arc;
+
+    let owner = IdentityClient::new(
+        Custody::Server,
+        &control.secret_key().to_secret_hex(),
+        origin,
+        host,
+    )
+    .expect("构造客户端");
+    let channel_id = uuid::Uuid::new_v4().to_string();
+    owner
+        .ensure_channel(http, &channel_id, "session-reuse")
+        .await
+        .expect("建立 Channel");
+
+    let limits = fetch_nip11(http, &url::Url::parse(origin).expect("origin"), host)
+        .await
+        .expect("运行期读取 NIP-11")
+        .limits;
+    let ws_url = origin.replacen("http", "ws", 1);
+    let hub = Arc::new(RelaySessions::new(
+        &ws_url,
+        std::time::Duration::from_secs(registered("BFF_STREAM_AUTH_TIMEOUT_SECONDS")),
+        registered("BFF_STREAM_BUFFER") as usize,
+    ));
+    let key = |session: &str| SessionKey {
+        session: session.to_owned(),
+        community_host: host.to_owned(),
+        pubkey: control.public_key().to_hex(),
+    };
+    let filter = || vec![serde_json::json!({ "kinds": [9], "#h": [channel_id] })];
+
+    let mut a = hub
+        .subscribe(key("s1"), control, filter(), &limits)
+        .await
+        .expect("首个订阅");
+    let mut b = hub
+        .subscribe(key("s1"), control, filter(), &limits)
+        .await
+        .expect("同一会话的第二个订阅");
+    assert_eq!(
+        hub.connection_count(),
+        1,
+        "同一会话的两条流必须共用一条已认证连接"
+    );
+    until_live(&mut a, "订阅 a").await;
+    until_live(&mut b, "订阅 b").await;
+
+    // 同一连接上的两个 REQ 都收到新事件：分发按订阅 id，不串也不漏
+    let event_id = owner
+        .publish_channel_message(http, &channel_id, "shared connection", &[])
+        .await
+        .expect("发布");
+    until_event(&mut a, &event_id, "订阅 a").await;
+    until_event(&mut b, &event_id, "订阅 b").await;
+
+    // 另一个会话不继承这条连接的认证：它另建连接、自己完成 NIP-42
+    let mut c = hub
+        .subscribe(key("s2"), control, filter(), &limits)
+        .await
+        .expect("另一个会话的订阅");
+    assert_eq!(hub.connection_count(), 2, "另一个会话必须另建连接");
+    until_live(&mut c, "订阅 c").await;
+
+    // 每连接订阅数按 NIP-11 上界预检：已有 2 个时，上界为 2 的第三个是 LIMIT
+    let tight = RelayLimits {
+        max_subscriptions: 2,
+        ..limits.clone()
+    };
+    let err = match hub.subscribe(key("s1"), control, filter(), &tight).await {
+        Ok(_) => panic!("超出每连接订阅上界的订阅必须被拒"),
+        Err(e) => e,
+    };
+    assert_eq!(err.limit(), Some(LimitKind::Capacity), "得到 {err:?}");
+    // 预检失败不影响已有订阅，也不另开连接
+    assert_eq!(hub.connection_count(), 2);
+
+    // 最后一个订阅结束时连接关闭；会话 s1 仍有订阅 b，连接保留
+    drop(c);
+    drop(a);
+    let deadline = tokio::time::Instant::now()
+        + std::time::Duration::from_secs(registered("BFF_STREAM_AUTH_TIMEOUT_SECONDS"));
+    while hub.connection_count() != 1 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "会话 s2 的最后一个订阅结束后连接应关闭，仍有 {} 条",
+            hub.connection_count()
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    // s1 的连接仍在用：再开一条流不新建连接
+    let d = hub
+        .subscribe(key("s1"), control, filter(), &limits)
+        .await
+        .expect("复用已有连接");
+    assert_eq!(hub.connection_count(), 1, "仍有订阅的会话连接必须被复用");
+    drop(b);
+    drop(d);
+    while hub.connection_count() != 0 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "全部订阅结束后连接应关闭"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+/// Relay 的 429 属于 `apps/06` §4 的 LIMIT，Core 预算在发往 Relay 之前拦截。
+///
+/// Relay 对 `/events`、`/query`、`/count` 按 (Community, pubkey) 共用一份额度，且在
+/// 读取请求体、核对成员之前先扣（`api/bridge.rs::enforce_http_admission`）。于是
+/// 任何已认证 pubkey 都能量出该额度 L：连续查询直到第一次 429。再用另一把钥匙挂上
+/// Core 预算（1 次）：第 1 次发出，其后被预算拦下；如果拦下的请求其实发出去了，
+/// 这把钥匙在 Relay 上剩下的额度就会少于 L-1。
+#[tokio::test]
+async fn relay_rate_limit_is_limit_and_core_budget_stops_before_relay() {
+    let Some((origin, op_key, audience)) = env() else {
+        return;
+    };
+    let http = reqwest::Client::new();
+    let (op, control, host) = provision(&http, &origin, &op_key, &audience, "l").await;
+    let outcome = AssertUnwindSafe(rate_limits(&http, &origin, &host))
+        .catch_unwind()
+        .await;
+    retire(&http, &op, &host, &control).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+/// 以一把钥匙连续查询，直到第一次被判为 LIMIT；返回此前 Relay 受理的次数。
+///
+/// 上界是 Relay 的一个窗口：上游 admission 窗口固定 60 秒，一个窗口内打不满就
+/// 永远打不满，此时失败而不是无限循环。
+async fn calls_until_limited(http: &reqwest::Client, client: &IdentityClient) -> u64 {
+    use collab_bridge::operator::LimitKind;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let mut accepted = 0;
+    let filter = [serde_json::json!({ "kinds": [9], "limit": 1 })];
+    loop {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "一个 admission 窗口内没有被限流"
+        );
+        match client.query(http, &filter).await {
+            // 非成员查询在额度之后才被拒（403），同样计入 Relay 额度
+            Ok(_) | Err(OperatorError::Rejected { status: 403, .. }) => accepted += 1,
+            Err(e) => {
+                assert_eq!(
+                    e.limit(),
+                    Some(LimitKind::RateLimited),
+                    "Relay 的 429 必须判为 LIMIT，而不是拒绝或结果不明：{e:?}"
+                );
+                assert!(
+                    matches!(e, OperatorError::Rejected { status: 429, .. }),
+                    "没有挂预算时，这个 LIMIT 必须来自 Relay：{e:?}"
+                );
+                return accepted;
+            }
+        }
+    }
+}
+
+async fn rate_limits(http: &reqwest::Client, origin: &str, host: &str) {
+    use collab_bridge::bridge::Delivery;
+    use collab_bridge::limits::ApiBudget;
+    use collab_bridge::operator::LimitKind;
+    use std::sync::Arc;
+
+    let client = |keys: &Keys| {
+        IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            origin,
+            host,
+        )
+        .expect("构造客户端")
+    };
+
+    let first = Keys::generate();
+    let quota = calls_until_limited(http, &client(&first)).await;
+    assert!(quota > 0, "Relay 额度必须为正");
+
+    // 被 429 的发布是确定未落库的 LIMIT，不是「拒绝」也不是「结果不明」
+    let c = client(&first);
+    let event = c
+        .sign_channel_message(&uuid::Uuid::new_v4().to_string(), "limited", &[])
+        .expect("签名");
+    let admitted = c.admit().expect("未挂预算时总能取到额度");
+    match c.deliver(http, &event, admitted).await {
+        Delivery::Limited(LimitKind::RateLimited, _) => {}
+        other => panic!("429 的发布必须是 Limited(RateLimited)，得到 {other:?}"),
+    }
+
+    // Core 预算：额度 1，窗口取 Relay 的整个窗口，预算内的第 2 次起不发出
+    let second = Keys::generate();
+    let budget = Arc::new(ApiBudget::new(1, std::time::Duration::from_secs(60)).expect("预算"));
+    let budgeted = client(&second).with_budget(budget);
+    let filter = [serde_json::json!({ "kinds": [9], "limit": 1 })];
+    match budgeted.query(http, &filter).await {
+        Ok(_) | Err(OperatorError::Rejected { status: 403, .. }) => {}
+        Err(e) => panic!("预算内的第 1 次应发往 Relay：{e:?}"),
+    }
+    for _ in 0..3 {
+        let err = budgeted
+            .query(http, &filter)
+            .await
+            .expect_err("预算用完必须拒绝");
+        assert!(
+            matches!(err, OperatorError::BudgetExhausted { retry_after_secs } if retry_after_secs > 0),
+            "预算用完必须是 BudgetExhausted 且给出等待时长：{err:?}"
+        );
+        assert_eq!(err.limit(), Some(LimitKind::RateLimited));
+    }
+    // 预算拦下的 3 次没有打到 Relay：这把钥匙在 Relay 上恰好只用掉 1 次
+    let remaining = calls_until_limited(http, &client(&second)).await;
+    assert_eq!(
+        remaining,
+        quota - 1,
+        "被 Core 预算拦下的请求不得消耗 Relay 额度"
     );
 }

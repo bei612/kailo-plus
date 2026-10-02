@@ -51,11 +51,23 @@ pub struct ServiceState {
     pub temporal: Arc<crate::temporal::TemporalClient>,
     /// ApprovalWorkflow 的投影写回与审批者资格判定（.design/06 §4）
     pub governance: Arc<crate::governance::Governance>,
+    /// 单一 Core 内 Supervisor；未投递时 Agent 链拒绝，不回退本机进程。
+    pub agent_runtime: Option<Arc<crate::agent_runtime::Supervisor>>,
+    pub(crate) capacity: Arc<crate::capacity::Capacity>,
+    pub(crate) agent_memory: Arc<crate::agent_memory::Config>,
 }
 
 pub fn router(state: ServiceState) -> Router {
     Router::new()
         .route("/service/v1/task-projections", post(project_task_state))
+        .route(
+            "/service/v1/agent-tasks/advance",
+            post(crate::agent_task::advance),
+        )
+        .route(
+            "/service/v1/agent-installations/advance",
+            post(crate::agent_installation::advance),
+        )
         .route(
             "/service/v1/membership-projections/buzz",
             post(crate::membership_projection::project_buzz_roster),

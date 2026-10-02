@@ -187,61 +187,6 @@ SQLx 编译失败，补入原文件而非合成配置后才通过；首次 fmt �
 这些结果只证明本次登记与生产准入判据纠偏，不是 AgentDefinition 业务
 端到端、AgentVersion 发布、模型调用或运行时验收，也不是 `--full` 通过。
 
-## 2026-10-02 精确发布候选的 Core 与新库核验
-
-本次只核验从 `e4c544fdb63d5e54fe775d58e684249166c89543` 选择完整
-Definition、Resource owner 与 Tenant 删除调用闭包的私有候选
-`/volumes/data/kailo/tmp/codex-delete-commit-candidate-20261002.KBSv5P`。
-没有把整个工作树的 Quota、Session 展示或运行时功能混入候选；其中
-PlatformSession 的实际 `accessMode` 类型和 FULL 初始化，以及 Customer
-消费者实际使用的 `BINDING_NOT_ACTIVE` / `RATE_LIMITED`，按各自已有
-生产调用点纳入闭包，不新增枚举权威或返回占位状态。
-
-原始记录位于
-`/volumes/data/kailo/tmp/codex-delete-core-validation-20261002.S93Atr`。
-SDK 固定为
-`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
-容器显式 UID:GID `1000:1000`，独立 Data Rust 派生缓存，
-`CARGO_BUILD_JOBS=16`。clippy 容器为 CPU 4 / memory 8 GiB，新库迁移与
-SQLx 容器为 CPU 8 / memory 16 GiB；启动后回读内核 `memory.swap.max=0`。
-临时 PostgreSQL 为 CPU 1 / memory 1 GiB，仅回环随机端口，不复用业务库。
-
-- `clippy-closed-contract.log`：`SQLX_OFFLINE=true cargo clippy --offline
-  --manifest-path core/Cargo.toml --workspace --all-targets -- -D warnings`
-  实际退出 0，`WORKSPACE_CLIPPY_EXIT=0`。
-- `migration-sqlx-closed-contract.log`：全新库实际应用 37 条迁移，最后一条
-  为 `20261002010000_agent_definition`；回退该迁移后再前进实际退出 0。
-  这是精确候选的 37 条结果，不替代前述工作树历史的 39 条结果。
-- 同一库的原生 `cargo sqlx prepare --workspace` 实际退出 0；随后复用既有
-  `step_migrate`，配对脚本、前进/回退/再前进、离线 SQLx 同步及 40 个
-  命名枚举约束逐值比对均 PASS，`EXISTING_STEP_MIGRATE_FAIL=0`，没有
-  migrate SKIP。原生 prepare 产生的候选 SQLx 差异仅为删除 12 条不再被
-  该候选查询使用的旧 metadata，保留 83 条；没有复制工作树的 metadata
-  删除清单，也没有手改 query 哈希。
-- 数据库实际读取 Tenant、Resource、AgentDefinition 行数均为 0；未创建
-  测试 Tenant、Agent、审批或其它业务样例。
-- 检查结束 SDK 与本次临时 PG 均精确清理，原日志记录 `SDK cleanup
-  absent` / `Postgres cleanup absent`。Data 源码、派生缓存和原日志保留，
-  不声称这些磁盘副本已删除。
-
-失败记录仍保留：`validation.log` 退出 1，是 sudo 环境未投递造成临时
-PG 未 ready，SDK 尚未启动；`validation-preserved-env.log` 退出 101，
-指向缺少被 Session schema 实际引用的 `PlatformSessionAccessMode`；
-`validation-session-contract-closed.log` 退出 101，指向上述 Customer
-消费者缺少两项已有原因码。对应真实 schema / 构造方闭合后由原生成
-入口重新生成四侧，再运行上述检查；没有手写生成类型、伪造常量业务
-结果、删验证或另造测试使检查通过。
-
-最终源码摘要分别为：AgentDefinition
-`c0153938e6a8de78b8f30f415b9e85fae37ea53b3718d17d0b39ec9cdb03e9dd`，
-Tenant 删除推进器
-`2e7b87fcfc037f6a20b024f4e9aaec6a797937a6637c9eaaf714513b26128ac2`，
-Rust 生成契约
-`069216e6e450d94f5cd2cc8779b385aaa8a31d8671e91c725c4a795741def5df`；
-容器核验值与候选相等。这些是编译、迁移和查询元数据证据，不是
-AgentDefinition 或 Tenant 删除正向业务端到端、原生 CAS 销毁、四 provider
-验收、`--full`、正式构建或部署通过；所有既定关闭入口保持关闭。
-
 ## 2026-10-02 派发前 Tenant ACTIVE 谓词纠偏
 
 本刀关联 `DD-96`、`.design/03` 的 Tenant 状态与 `06` §7.2：暂停首先
@@ -613,3 +558,134 @@ full 所验证的完整补丁、29 路径与字节表分别保留为 q85LI1 下�
 `full-verified-window.patch`、`full-verified-owned-paths.txt`、
 `full-verified-selected.sha256`。之后只追加本节事实记录，不改变已验证源码
 或产物输入；提交、push、Core 发布和部署由主线另行收口。
+
+### 2026-10-02 17:48 UTC 阶段提交与远端核对
+
+上述 29 路径已提交为 `91a5eb2e779593ea8cfb38e10ec6c04886f88138`，
+提交树为 `aa7ea2602e557e38380117ff1560efadd62e88ee`。普通
+`git push origin main` 实际退出 0，远端 main 从 `d994b2e8…` 更新至
+`91a5eb2e…`；随后 `git ls-remote --heads origin main` 回读同一完整 commit。
+追加事实记录后的原 `tools/check-docs.sh` 对提交树退出 0，日志为
+`/volumes/data/kailo/tmp/tmp.jEJlwE0JCa.check.log`。没有触发 pre-push
+全量检查、额外构建或部署。本次提交不包含仍在开发的 Installation、
+Capacity、Session、Memory 或 Gateway 增量，不能外推其验收结果。
+
+## 2026-10-02 18:12 UTC Installation 与原生 Memory 消费事实
+
+本节只追加已经写入的消费链，不把前述 Definition-only 提交的 full 或 Web
+构建结果外推到本批。依据为 `DD-25/50/66/67/72/99`、`.design/03` §7、
+`.design/17` §6–7、`.design/19` §3–4/§8 与 `SS-BUZ-ENGRAM`；适用场景为
+`V-SCN-23/59`，这里只记录实现，未将这两个业务场景记为通过。
+
+### 已有 Installation 意图与激活消费
+
+`agent_installation.rs::target/prewrite/start/create_projection/initialize`
+复用 Resource、ActionExecution 和 `ComponentTaskWorkflow(kind=AGENT_INSTALLATION)`。
+创建固定实际 Workspace、Definition Resource/version 与 PUBLISHED Version
+Asset/version，Resource 的责任 owner 是 ACTIVE HUMAN；独立 AGENT Principal、
+Buzz identity、DISABLED Channel binding 与 PENDING runtime generation 均属于
+同一安装，不从 HUMAN WorkspaceMembership 推断 Agent 授权。
+`20261002190000_agent_installation_create.up.sql` 登记的管理创建动作明确为
+`capacity=NONE、quota=NONE、meters=[]`，不因此开放 Codex 回合或模型用量。
+
+AGENT 密钥写入前已有持久 Resource projection ActionExecution。现有
+`read_or_write_provision_key` 使用固定 Tenant locator 与 CAS=0 后回读，
+不为结果不明另分配 locator 或 pubkey。`create_projection` 在原 Tenant/
+Workspace/ActionExecution 事务中绑定同 Tenant CONTROL counterparty，调用
+`agent_memory::reconcile`；返回 false 时仍提交真实 ERROR/UNKNOWN 观测，
+不投影 Channel roster 或把失败当作空记忆。Memory 成立后才对账 SpiceDB
+Resource/workspace 关系、fresh discover 与真实 Relay/Channel roster。
+
+`initialize` 对原 PROVISIONING/PENDING 意图先核原管理准入、实际 Workflow
+启动事实与 fresh HUMAN 权限，再消费 `model_route::provision`、审计就绪的
+SecretStore 读取和 Supervisor `ensure`/原生配置回读。ACTIVE 同代恢复使用
+原模型 binding，不制造新代。原网络调用后的 snapshot、Tenant/Workspace、
+发起者/owner 成员行锁、授权与 projection generation 再次核对后，才可在
+同一事务 CAS 激活 Resource、Installation、runtime projection 与 Channel
+binding。原生初始化只证明实际加载的字段；`verify_projection` 不把缺少策略
+消费者的 RuntimeProfile 内容全部标成 effective。缺事实继续保持非就绪。
+
+### SS-BUZ-ENGRAM 的真实读边
+
+上游基准重新以只读 Git 核验为完整 commit
+`779af8886caae1317b4de962082429867ab61503`。可解析来源是该 Buzz 仓库中的
+`crates/buzz-core/src/engram.rs::{conversation_key,d_tag,validate_and_decrypt,select_head,NIP44_PLAINTEXT_MAX}`、
+`crates/buzz-acp/src/relay.rs::RestClient::query_raw_all` 与
+`crates/buzz-acp/src/engram_fetch.rs::{fetch_core_body,decode_core_body}`；实际
+证据目录为 `/volumes/kailo/.references/buzz`。没有执行其中的程序。
+
+新 `collab-bridge/src/memory.rs::Reader` 直接依赖 apps 中的同源 `buzz-core`，
+不复制加解密、slug/HMAC 或 head 算法。CONTROL 用现有 NIP-98 读取同一
+Installation AGENT/counterparty pair；fresh NIP-11 给出页上界，原复合
+`until/before_id` 游标走到末尾才 COMPLETE。完整页序、重复 ID、签名、
+原生 envelope、解密和完整 plaintext bytes 任一不成立均拒绝；恰到 listing
+上界仍作一条探测，超过上界是 BOUND_EXCEEDED，不伪装为完整空集合。
+head 选择保留原生 timestamp/event ID 规则，不改写未来 head 或迁移 ciphertext。
+
+`platform-core/src/agent_memory.rs::{Config::from_env,reconcile,read_core}`
+消费既有 AgentMemoryBinding。Config 三项上界均必填且无源码默认值；body
+还受上游导出的 NIP-44 上界约束。binding 查询锁定实际 Tenant/Workspace、
+HUMAN owner/成员、AGENT、CONTROL 与原 Memory 行；PROVISIONING 只允许原
+同 scope ALLOWED 创建意图及已启动的 AGENT_INSTALLATION Workflow。
+双 SecretRef 的 locator/version/audience/pubkey、audit gate 和当前 Relay
+NIP-11 snapshot 均实际重验，缺失不回退共享身份。成功枚举产生
+COMPLETE/CONSISTENT/ACTIVE；超前 head 产生 HEAD_AHEAD_OF_RELAY/ERROR；
+不可查证为 UNKNOWN/ERROR，确定撤销为 REVOKED。只 CAS 写 binding/head
+引用和观测状态，原生明文不进入数据库、审计、history 或错误字符串。
+
+新 Session 读取函数区分实际 Found、确认空集合 Absent 与原生不可读 None；
+身份、scope、secret 或 projection 失效仍是拒绝，不降为 Absent。当前
+`agent_session.rs` 已有真实调用点，但此记录不把正在集成的 Session 持久 pin、
+首轮 memory context、恢复或用量链声称为已验收。Memory 写入、core 审批、
+cold 工具和 Memory 管理入口不在本刀实现范围，`V-SCN-60` 未验收。
+
+Memory 四个实际路径于 17:55:48 UTC 停写，原 before/after 字节在
+`/volumes/data/kailo/tmp/codex-agent-memory-before-20261002.9KfWj4/`。
+两新模块 SHA-256 分别为
+`a03a9f534eb0048d5d544f2c30c6c2bcb61c5208d9b9a1a8dca146cace20330a`
+与 `4594188d4e69c92dca45c1cb1438cec8f7496ec75c7e88f1431bdec49f8fc598`。
+其余两条仅为 collab-bridge 现有 Cargo path dependency 与 lib module export；
+继承的 `limits` export 不算本刀。`git diff --check` 实际退出 0；本 lane
+没有启动 SDK、生成、格式化、编译、真实记忆/安装演练或部署。主线集中
+SDK 的后续结果单独记录；目前未提交或 Git push，不宣布 Stage 5 完成。
+
+### 2026-10-02 19:14 UTC 集中消费者批次证据
+
+以下是上述实现之后的冻结批记录，不把正在开发的下一批混入验收。
+
+- 权威：沿用 DD-47/48/65/66/67/70/71 与 SS-COD-CONFIG、SS-BUZ-ENGRAM；
+  Core 只存平台治理事实与 thread/head/lease 等引用，不复制记忆或消息正文。
+  AgentTask 使用 Temporal 的原 Workflow/Activity，不另建执行权威。
+- 影响：安装 ActionExecution/ComponentTask、AGENT 身份/Memory binding、
+  runtime projection、Session、Invocation 消费和 CapacityLease 共用原事务与
+  scope；Worker 的 heartbeat/attempt/run input 和四侧生成物一并冻结。
+  全新空库没有旧 writer，历史数据兼容无适用对象；公开动作仍只有已有
+  Definition 管理及 Version 读取，不开放安装或执行。Web/Desktop 使用同一 TS。
+- 副作用：Session 先落 STARTING 再 thread/start，结果不明只查证原引用；
+  已知 thread 不是已派发 turn。Capacity 回收同时消费原生与 Temporal 终态，
+  观测超时或缺证据不释放单位。原生 Memory 超前 head 在 inspect/read 两边拒绝，
+  不改写为 Absent；Gateway 缺用量关联不推进非空输入游标。
+- 边界：重复 Activity 只续同 run/holder/attempt，背压返回等待；取消 accepted、
+  空 history、部分投影和上游未知状态不构成业务成功或失败。撤权后的安全收尾
+  不发起新 turn；四项未有真实策略消费者的运行字段仍不可 active。
+  DENIED/BLOCKED/PRECONDITION/LIMIT/CONFLICT/UNKNOWN 沿用 06 §4，UNKNOWN 不终结。
+
+冻结目录为 `/volumes/data/kailo/tmp/codex-agent-batch-20261002.UGTzYB`。
+`sdk-core-frozen.log` 实际退出 0、OOMKilled=false：SQLx prepare、全目标
+clippy 与 Rust 既有检查通过。Worker vet/test、46 条独立空库迁移的前进、
+最后一条回退与重进记录在同目录前序日志；这不是实际部署库或新增业务验收。
+独立 PostgreSQL `catalog-check-restored.log` 位于
+`/volumes/data/kailo/tmp/codex-agent-task-catalog-evidence-20261002.fMTAy3`，
+SHA-256 为 `e9fca2a9e2e264ff08a7d1a2da74b58a211a2de3c807efe306b753837b683a29`。
+实际 48 个约束、三个 scope trigger 和零业务对象；NULL 原生终态、缺双侧终态
+引用的 RELEASED 均拒绝。事务内删除实际 Invocation 约束后相同检查确实报
+SQLSTATE 23514，ROLLBACK 后原检查再次通过；未留下业务种子或删除实际数据。
+
+首次选定树 `full.log` 实际退出 1，漏选能力注册表、Compose 产物 pin 以及
+Web 来源不一致均按真实来源修正。Rust 的真实失败随后由原 lint 输出定位为
+空 `CARGO_BUILD_JOBS` 投递；未设置就不传，不调低并行度。最终 full 独立留存，
+数据库演练与实际部署配置缺投递时仍 SKIP，不把它们改记 PASS。
+
+本批不包含正在开发的 Delegation、Usage audit/commit 或 Installation 查询。
+首轮 Invocation、模型执行/回复、完整计费、记忆写入、自动化与三端业务闭环
+仍缺实证，未以编译、HTTP 接受、镜像 push 或健康检查解除发布阻断。

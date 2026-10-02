@@ -61,6 +61,7 @@ struct Metrics {
     provision_orphan_unknown: Gauge<u64>,
     retirement_pending: Gauge<u64>,
     bootstrap_overdue: Gauge<u64>,
+    nip11_unverified: Gauge<u64>,
 }
 
 /// 非终态的门禁/派发组合。每轮都记一次，没有行的记 0：告警不能停在旧值上。
@@ -71,7 +72,12 @@ const OPEN_STATES: &[(&str, &str)] = &[
     ("ALLOWED", "UNKNOWN"),
 ];
 
-pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
+pub fn spawn(
+    state: ServiceState,
+    meter: &Meter,
+    cfg: Config,
+    gateway_usage: crate::gateway_usage::Ingress,
+) {
     let metrics = Metrics {
         open: meter
             .u64_gauge("platform.action_execution.open")
@@ -128,6 +134,12 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
             .u64_gauge("platform.tenant_bootstrap.overdue")
             .with_description("超过准入对账上界仍未由部署引导命令确认派发的动作")
             .build(),
+        nip11_unverified: meter
+            .u64_gauge("platform.tenant_buzz_binding.nip11_unverified")
+            .with_description(
+                "因 NIP-11 漂移停在 RECONCILING、未通过重新查证的 TenantBuzzBinding 数",
+            )
+            .build(),
     };
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(cfg.interval);
@@ -149,6 +161,16 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
                 }
             };
             metrics.passes.add(1, &[KeyValue::new("outcome", outcome)]);
+            // Usage 与 ActionExecution 各自收敛：缺归因保留 Gateway 原游标，
+            // 不把它伪结算，也不让它阻止本轮其他治理动作。
+            if let Err(reason) = gateway_usage.reconcile(&state.pool, cfg.batch).await {
+                tracing::warn!(
+                    reason_code = "BILLING_UNAVAILABLE",
+                    state = "UNKNOWN",
+                    error = reason,
+                    "Gateway usage ingress 尚未收敛"
+                );
+            }
         }
     });
 }
@@ -493,5 +515,25 @@ async fn pass(
             "部署引导派发未确认，需按固定 Workflow ID 重跑引导命令对账"
         );
     }
+
+    // TenantBuzzBinding 的 NIP-11 漂移（DD-114）：进入、重新查证与告警都在这一步
+    let drift = crate::tenant_lifecycle::reconcile_nip11_drift(state, batch).await?;
+    for stage in drift.outcomes {
+        metrics.driven.add(1, &[KeyValue::new("stage", stage)]);
+    }
+    metrics.nip11_unverified.record(drift.unverified, &[]);
+    for stage in crate::agent_installation::reconcile(state, batch).await? {
+        metrics.driven.add(1, &[KeyValue::new("stage", stage)]);
+    }
+    state
+        .capacity
+        .reconcile(
+            &state.pool,
+            &state.temporal,
+            state.agent_runtime.as_deref(),
+            batch,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
     Ok(())
 }

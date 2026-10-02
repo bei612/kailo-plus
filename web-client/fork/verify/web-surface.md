@@ -842,3 +842,52 @@ artifact；不改其他服务、能力状态或 gate，历史正文摘要保留�
 
 这是构建与来源关联事实，不是新 Web 部署或登录业务通过；本批最终
 full/detect、提交与部署尚未完成，Win11 新包结果另由 Desktop 核验记录。
+
+## 2026-10-02 18:48 UTC：Agent 共享管理页的确定读取拒绝与未知结果
+
+本增量沿用 DD-24/25、设计 17 §8 与 apps/06 §4，只修正已有
+`client-kit/ts/platform/src/react/agents.tsx` 的读取状态呈现。
+Web `web/src/platform/ui/PlatformApp.tsx` 与 Desktop
+`src/app/routes/platform.$section.tsx` 仍通过原 `react/pages` 导出消费
+同一个 `AgentDefinitionsPage`，没有第二份管理前端。
+
+实际 Core `agent_definition::get` 与 `agent_version::get` 分别 fresh 检查
+Resource/Asset 的 read 权限；未获准返回裸 403，当前范围内不可取得返回
+404。Definition 的 discover 或 read 不授予 Version 的 Asset read。
+原列表、详情和已发布 Version 的三处读取失败现在共用 `AgentReadFailure`：
+确定 403 显示既有“未获准”文案，404 显示既有“此处不可用”文案；
+已知、非 UNKNOWN 的实际分类可呈现确定拒绝，有真实已知 reason 时复用
+原本地化说明和稳定 code，不从状态码制造 reason。
+显式 UNKNOWN 或未知分类优先保持未知，网络错误、其他无分类错误和
+畸形 2xx 数据也仍显示“结果不明”，不把它们当空列表、对象删除或成功。
+不显示原始服务错误正文；重试仅调用原三个 GET，不重放写动作。
+`DefinitionAction` 的冻结意图、原幂等键和未知结果处理未改，未新增
+Installation、Session、运行或执行入口，也未推导客户端权限。
+
+精确 before 与 `source-window.diff` 保存在
+`/volumes/data/kailo/tmp/codex-agent-read-state-before-20261002.P44fQh`。
+源 SHA-256 从
+`7a9e530e62ed9bc0b149c94dc37ac3717da4d00c36e7fa4843a92ab910a4a15e`
+变为 `84f26975241f74f76d20c275c962398e4e2c62acb9a56ccf781c5d668d9922aa`；
+窗口 diff SHA-256 为
+`c8f710bc59b1e1651d95977a8ff9695e5a9df03af78880eefabaf78cd0e1327c`。
+本刀源码窄 `git diff --check` 实际退出 0；未运行 SDK 类型/测试、SSR、
+浏览器或破坏验证，没有新增测试、夹具或工具。此增量不在同时验证的
+backend 冻结快照内，既有 Web/Desktop 构建与部署记录不覆盖这些新字节；
+尚未构建、发布或部署，不计业务 PASS、Win11 或 Stage 验收。
+
+随后本批已按 HEAD `91a5eb2e…` 的私有选定源码集中核验，未混入继承 theme
+检查或下一批 Installation 视图。实际共享包 89 项通过；在独立 SDK 副本
+分别删除裸 403/404 识别、UNKNOWN 优先级和未知分类保护，实际 5/2/1 项
+呈现断言失败，各变异退出 1。每次反向还原并核对源码 SHA 后，同 12 项
+检查通过，最终原包检查再次 89 项通过，SDK 退出 0、无 OOM。
+原始日志是 `/volumes/data/kailo/tmp/codex-agent-batch-20261002.UGTzYB/ui-sdk-isolated.log`。
+还原源 SHA 保持上述 `84f26975…`；仅本刀新增检查的 HEAD 私有文件 SHA 为
+`6ba749c0883be519e71d8fc7e520650b111d55bae91eb109a3c80ed38662b923`。
+先前因工具 PATH 和继承 live 子 mount 的两次失败也保留，不冒充产品反例。
+
+同批原 `tools/build-upstream.sh web-client` 与镜像仓库 push 实际退出 0，
+产物为 `sha256:d0bf2e646bf8b1954a32d18ffe2dfbaf7556e7ddfebeed7094ce35289d850aae`，
+来源为 `sha256:2326ff60e9610425307b864dca7b2ec83de15de7060969486a787ad694cf7c0c`，
+均由原 helper 写回，日志为同目录 `web-build.log`。没有部署此镜像，
+没有新增浏览器登录、Win11、Mobile 或 Agent 执行业务验收。

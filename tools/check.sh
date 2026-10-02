@@ -98,7 +98,18 @@ PY
       mounts+=(--mount "type=bind,src=$(realpath -e -- "$location"),dst=$destination,readonly")
     fi
   done
-  container_id=$("${CONTAINER_DOCKER[@]}" create --pull=never \
+  # sudo 会清理宿主环境；名称式 --env 不能证明 DATABASE_URL 已投递。
+  # 值只走 Docker stdin，不进 argv、日志或临时文件。
+  for name in DATABASE_URL CARGO_BUILD_JOBS; do
+    if [[ -v "$name" && ( "${!name}" == *$'\n'* || "${!name}" == *$'\r'* ) ]]; then
+      echo "拒绝检查：$name 不能包含换行" >&2; exit 2
+    fi
+  done
+  container_id=$({
+    for name in DATABASE_URL CARGO_BUILD_JOBS; do
+      if [[ -v "$name" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
+    done
+  } | "${CONTAINER_DOCKER[@]}" create --pull=never \
     --cpus "$CHECK_CPUS" --memory "$CHECK_MEMORY" --memory-swap "$CHECK_MEMORY" \
     --user "$(id -u):$(id -g)" --network "$CHECK_NETWORK" \
     "${mounts[@]}" --workdir /workspace/apps \
@@ -106,7 +117,7 @@ PY
     --env CARGO_TARGET_DIR=/cache/rust-target --env GOCACHE=/cache/go-build \
     --env GOMODCACHE=/cache/go-mod --env PUB_CACHE=/cache/pub \
     --env npm_config_cache=/cache/npm --env DESIGN=/workspace/.design \
-    --env DATABASE_URL --env CARGO_BUILD_JOBS \
+    --env-file /dev/stdin \
     "$image" bash tools/check.sh "$@")
   container_verify_limits "$container_id"
   log=$(mktemp --suffix=.check.log)
@@ -143,7 +154,7 @@ step_lint() {
       && pass "cargo fmt" || fail "cargo fmt"
     # 编译一律用入库的 sqlx 离线数据，与镜像构建（core/Dockerfile）同一输入；离线数据与
     # 查询是否同步由第 4 步在演练库迁移到最新之后核对，不在空库上在线编译。
-    SQLX_OFFLINE=true cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings >/dev/null 2>&1 \
+    SQLX_OFFLINE=true cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings \
       && pass "cargo clippy" || fail "cargo clippy"
   fi
   if populated worker && have go; then
@@ -170,7 +181,7 @@ step_lint() {
 step_verify()   { hdr "2/10 受影响范围的验证"
   local ran=0
   if populated core && have cargo; then ran=1
-    SQLX_OFFLINE=true cargo test --manifest-path core/Cargo.toml >/dev/null 2>&1 && pass "cargo test" || fail "cargo test"; fi
+    SQLX_OFFLINE=true cargo test --manifest-path core/Cargo.toml && pass "cargo test" || fail "cargo test"; fi
   if populated worker && have go; then ran=1
     (cd worker && go test ./... >/dev/null 2>&1) && pass "go test" || fail "go test"; fi
   if populated client-kit/ts && have pnpm; then ran=1
@@ -740,6 +751,21 @@ projections = {
     ("temporal-schema", "VISIBILITY_DATABASE"): "${TEMPORAL_DB_NAME}_visibility",
     ("temporal", "TEMPORAL_DB_NAME"): "${TEMPORAL_DB_NAME}",
     ("temporal", "TEMPORAL_VISIBILITY_DB_NAME"): "${TEMPORAL_DB_NAME}_visibility",
+    ("core-bff", "OPENMETER_CUSTOMERS_URL"): "${OPENMETER_CUSTOMERS_URL}",
+    ("core-bff", "OPENMETER_NAMESPACE"): "${OPENMETER_NAMESPACE}",
+    ("core-bff", "OPENMETER_HTTP_TIMEOUT_SECONDS"): "${OPENMETER_HTTP_TIMEOUT_SECONDS}",
+    ("core-bff", "OPENMETER_CORE_TOKEN_FILE"): "${OPENMETER_CORE_TOKEN_FILE}",
+    ("openmeter", "NAMESPACE_DEFAULT"): "${OPENMETER_NAMESPACE}",
+    ("openmeter", "SERVER_CORESERVICETOKENFILE"): "${OPENMETER_CORE_TOKEN_FILE}",
+    ("openmeter", "OPENMETER_API_PORT"): "${OPENMETER_API_PORT}",
+    ("openmeter", "POSTGRES_USER"): "${OPENMETER_DB_USER}",
+    ("openmeter", "POSTGRES_DATABASE"): "${OPENMETER_DB_NAME}",
+    ("openmeter-postgres", "POSTGRES_USER"): "${OPENMETER_DB_USER}",
+    ("openmeter-postgres", "POSTGRES_DB"): "${OPENMETER_DB_NAME}",
+    ("openmeter", "AGGREGATION_CLICKHOUSE_USERNAME"): "${OPENMETER_CLICKHOUSE_USER}",
+    ("openmeter", "AGGREGATION_CLICKHOUSE_DATABASE"): "${OPENMETER_CLICKHOUSE_DB_NAME}",
+    ("openmeter-clickhouse", "CLICKHOUSE_USER"): "${OPENMETER_CLICKHOUSE_USER}",
+    ("openmeter-clickhouse", "CLICKHOUSE_DB"): "${OPENMETER_CLICKHOUSE_DB_NAME}",
 }
 for (service, key), expected in projections.items():
     value = (d.get("services", {}).get(service, {}).get("environment") or {}).get(key, "")
@@ -751,6 +777,7 @@ sample_keys = set(re.findall(r"^([A-Z][A-Z_0-9]*)=", sample, re.M))
 for key, expression in {
     "PUBLIC_ORIGIN": "http://${PUBLIC_HOST}:${AGENTGATEWAY_PORT}",
     "OIDC_ISSUER": "http://${OIDC_HOST}:${KEYCLOAK_PORT}/realms/${OIDC_REALM}",
+    "OPENMETER_CUSTOMERS_URL": "http://${OPENMETER_HOST}:${OPENMETER_API_PORT}/api/v3/openmeter/customers",
 }.items():
     if f"{key}={expression}" not in sample.splitlines():
         bad.append(f".env.example: {key} 必须保留本地拓扑派生表达式，不得重新手填")

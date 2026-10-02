@@ -13,7 +13,7 @@ async-stream = "0.3"
 axum = { version = "0.8", features = ["macros"] }
 futures-util = "0.3"
 getrandom = "0.3"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "process", "io-util", "time", "sync", "fs"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "uuid", "macros", "json", "chrono"] }
 chrono = { version = "0.4", default-features = false, features = ["serde"] }
 hex = "0.4"

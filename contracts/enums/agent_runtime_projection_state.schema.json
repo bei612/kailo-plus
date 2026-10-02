@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_runtime_projection_state.schema.json",
+  "title": "AgentRuntimeProjectionState",
+  "description": "03 §7 的静态运行投影状态，不承载 Invocation 动态准入。",
+  "type": "string",
+  "enum": ["PENDING", "ACTIVE", "ERROR", "REVOKED"]
+}

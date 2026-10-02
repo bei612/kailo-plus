@@ -229,6 +229,7 @@ pub(crate) async fn dispatch(
                 &r.tenant_id.to_string(),
                 &r.owner_principal_id.to_string(),
                 &owner.to_string(),
+                None,
             )
             .await
         {
@@ -325,6 +326,7 @@ async fn abort_projection(
                 &r.tenant_id.to_string(),
                 &attempted_owner.to_string(),
                 &r.owner_principal_id.to_string(),
+                None,
             )
             .await
     };

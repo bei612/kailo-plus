@@ -4,14 +4,21 @@
 //! `01-工程结构与模块边界.md` §3 以 crate 与可见性划分，不走网络、不引消息总线。
 
 mod agent_definition;
+mod agent_installation;
+mod agent_memory;
+mod agent_runtime;
+mod agent_session;
+mod agent_task;
 mod agent_version;
 mod audit;
 mod audit_views;
 mod bff;
 mod capability_registry;
+mod capacity;
 mod client_keys;
 mod component_task;
 mod external_human;
+mod gateway_usage;
 mod governance;
 mod governance_api;
 mod governance_reconcile;
@@ -20,6 +27,7 @@ mod invitation;
 mod membership_lifecycle;
 mod membership_projection;
 mod membership_state;
+mod model_route;
 mod native;
 mod oidc;
 mod openmeter;
@@ -93,6 +101,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&database_url)
         .await?;
 
+    let agent_runtime = agent_runtime::Supervisor::from_env()?.map(std::sync::Arc::new);
+    let capacity = std::sync::Arc::new(capacity::Capacity::from_env()?);
+    let agent_memory =
+        std::sync::Arc::new(agent_memory::Config::from_env().map_err(|_| "Agent memory 配置无效")?);
+
     // BFF 与 service API 分开监听。网关的路由是 pathPrefix: /，整体转发给
     // BFF；把 Worker 的写入口挂在同一端口上，等于让任何已登录用户能打到它。
     // 端口隔离让这件事在拓扑层就不成立，而不是只靠代码里的认证分支。
@@ -155,6 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             temporal: std::sync::Arc::clone(&temporal),
             spicedb: spicedb::SpiceDb::from_env(reqwest::Client::new())?,
             secrets: std::sync::Arc::clone(&secrets),
+            openmeter: std::sync::Arc::clone(&openmeter),
             cfg: governance::GovernanceConfig::from_env()?,
         });
         // 角色 relationship 以成员事实为准对账，并度量没有有效 admin 的 Tenant（DD-82）
@@ -181,6 +195,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             http: reqwest::Client::new(),
             temporal: std::sync::Arc::clone(&temporal),
             governance: std::sync::Arc::clone(&governance),
+            agent_runtime: agent_runtime.clone(),
+            capacity,
+            agent_memory,
         };
         // 同一治理对账器也持有 service 依赖，以恢复 OpenBao 写入结果不明的
         // SERVER HUMAN 意图；不另建一个无权威的轮询入口。
@@ -188,6 +205,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             service_state.clone(),
             &opentelemetry::global::meter("platform-core"),
             governance_reconcile::Config::from_env()?,
+            gateway_usage::Ingress::from_env(&opentelemetry::global::meter("platform-core"))?,
         );
 
         // roster 与成员事实的对账度量（07 §3）。它用 CONTROL 身份读 roster，与
@@ -257,16 +275,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|_| "缺少 BFF_MESSAGE_PAGE_LIMIT")?
                 .parse()
                 .map_err(|_| "BFF_MESSAGE_PAGE_LIMIT 必须是数字")?,
-            relay_ws_url: std::env::var("BUZZ_RELAY_WS_URL")
-                .map_err(|_| "缺少 BUZZ_RELAY_WS_URL")?,
-            stream_buffer: std::env::var("BFF_STREAM_BUFFER")
-                .map_err(|_| "缺少 BFF_STREAM_BUFFER")?
-                .parse()
-                .map_err(|_| "BFF_STREAM_BUFFER 必须是数字")?,
-            stream_auth_timeout_seconds: std::env::var("BFF_STREAM_AUTH_TIMEOUT_SECONDS")
-                .map_err(|_| "缺少 BFF_STREAM_AUTH_TIMEOUT_SECONDS")?
-                .parse()
-                .map_err(|_| "BFF_STREAM_AUTH_TIMEOUT_SECONDS 必须是秒数")?,
+            relay_sessions: {
+                let ws_url =
+                    std::env::var("BUZZ_RELAY_WS_URL").map_err(|_| "缺少 BUZZ_RELAY_WS_URL")?;
+                let buffer: usize = std::env::var("BFF_STREAM_BUFFER")
+                    .map_err(|_| "缺少 BFF_STREAM_BUFFER")?
+                    .parse()
+                    .map_err(|_| "BFF_STREAM_BUFFER 必须是数字")?;
+                let auth_timeout: u64 = std::env::var("BFF_STREAM_AUTH_TIMEOUT_SECONDS")
+                    .map_err(|_| "缺少 BFF_STREAM_AUTH_TIMEOUT_SECONDS")?
+                    .parse()
+                    .map_err(|_| "BFF_STREAM_AUTH_TIMEOUT_SECONDS 必须是秒数")?;
+                std::sync::Arc::new(collab_bridge::stream::RelaySessions::new(
+                    &ws_url,
+                    std::time::Duration::from_secs(auth_timeout),
+                    buffer,
+                ))
+            },
+            relay_budget: {
+                let calls: usize = std::env::var("BFF_RELAY_API_BUDGET")
+                    .map_err(|_| "缺少 BFF_RELAY_API_BUDGET")?
+                    .parse()
+                    .map_err(|_| "BFF_RELAY_API_BUDGET 必须是正整数")?;
+                let window: u64 = std::env::var("BFF_RELAY_API_BUDGET_WINDOW_SECONDS")
+                    .map_err(|_| "缺少 BFF_RELAY_API_BUDGET_WINDOW_SECONDS")?
+                    .parse()
+                    .map_err(|_| "BFF_RELAY_API_BUDGET_WINDOW_SECONDS 必须是秒数")?;
+                std::sync::Arc::new(
+                    collab_bridge::limits::ApiBudget::new(
+                        calls,
+                        std::time::Duration::from_secs(window),
+                    )
+                    .map_err(|e| e.to_string())?,
+                )
+            },
+            relay_nip11: {
+                let ttl: u64 = std::env::var("BFF_RELAY_NIP11_TTL_SECONDS")
+                    .map_err(|_| "缺少 BFF_RELAY_NIP11_TTL_SECONDS")?
+                    .parse()
+                    .map_err(|_| "BFF_RELAY_NIP11_TTL_SECONDS 必须是秒数")?;
+                let transport = std::env::var("BUZZ_RELAY_TRANSPORT")
+                    .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?;
+                std::sync::Arc::new(
+                    collab_bridge::limits::Nip11Cache::new(
+                        &transport,
+                        std::time::Duration::from_secs(ttl),
+                    )
+                    .map_err(|e| e.to_string())?,
+                )
+            },
+            message_max_content_bytes: {
+                let max: usize = std::env::var("BFF_MESSAGE_MAX_CONTENT_BYTES")
+                    .map_err(|_| "缺少 BFF_MESSAGE_MAX_CONTENT_BYTES")?
+                    .parse()
+                    .map_err(|_| "BFF_MESSAGE_MAX_CONTENT_BYTES 必须是字节数")?;
+                if max == 0 {
+                    return Err("BFF_MESSAGE_MAX_CONTENT_BYTES 必须为正".into());
+                }
+                max
+            },
             stream_readmit_seconds: std::env::var("BFF_STREAM_READMIT_SECONDS")
                 .map_err(|_| "缺少 BFF_STREAM_READMIT_SECONDS")?
                 .parse()
@@ -335,6 +402,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     .await;
 
+    let runtime_shutdown = match &agent_runtime {
+        Some(runtime) => runtime.stop_all(&pool).await,
+        None => Ok(()),
+    };
+
     // 两个 AppRole 位于不同 namespace；即使其中一个撤销失败也必须尝试另一个。
     // connect 失败的会话没有 lease，revoke_current 对它是确定的空操作。
     let audit_revocation = audit.revoke_current().await;
@@ -347,6 +419,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "OpenBao service token 撤销未确认，拒绝正常退出: audit={audit_revocation:?}, platform={secret_revocation:?}"
         )
         .into());
+    }
+    if runtime_shutdown.is_err() {
+        return Err("Agent runtime 停机尚未确认；原 Invocation 保持 UNKNOWN".into());
     }
     outcome
 }

@@ -150,3 +150,56 @@ Web 镜像 `sha256:3a23b71a80045bf337a8ee4af9c54dde1fc53cbfbba275ba39ccd4db4371d
 - 审批空闲等待时没有写回，停掉 Core 不会让 history 增长；「Core 不可达、写回逐轮失败后
   续跑」由 `worker/workflows/approval_can_test.go` 在测试环境核验，真实 Server 上的演练
   覆盖的是安全点续跑。测试环境不计 history 长度，event_id 基数跨 run 单调由演练证明。
+
+## 2026-10-02 18:12 UTC Codex Capacity 与 AgentTask 消费事实
+
+依据 `.design/03` §8、`.design/11` §2、`DD-47/48/69` 与 Stage 5 的
+Activity heartbeat 退出门禁。前文 2026-09-25 的 NONE/无适用对象是当时
+运行版本的事实，保留不改；本批已有真实 PLATFORM_SLOT 消费代码，不能
+继续借该历史结论宣称新 lease 的超时/终态行为已经验收。
+
+`capacity.rs::acquire_or_renew/renew/begin_release/reconcile` 复用唯一 Core
+CapacityLease 与现有 Temporal 客户端。真实 Invocation、ActionExecution、
+operation/scope、Workflow 首个 run 链与 SDK ActivityID/attempt 先匹配，再
+读取同一 Activity 的 scheduled event、pending heartbeat/timeout 或 terminal
+history。pool 行锁串行分配；SDK retry 只更新原 holder attempt，不另占 units。
+不同 run/Activity 不能接管未释放 holder；到期、查询失败或失联都保留 UNKNOWN
+占用，不以超时直接回池。原生 turn 终态或确定未派发取消只进入 RELEASING，
+还需原 holder 的 Activity terminal event 才 RELEASED。配套实际迁移为
+`20261002180000_platform_capacity.up/down.sql`，没有给业务能力服务造 lease。
+原治理对账节拍已调用该 reconcile，保留 occupied/unknown/oldest 指标。
+
+Core `agent_task.rs::advance/release_holder` 与 Worker
+`activities/agent_task.go::AdvanceAgentTask` 消费同一 `finishActivity` 字段。
+结束 Activity 不等于完成 Invocation：真实 holder 未释放时只要求 Activity
+收尾；RELEASED 后的 Running/finishActivity=true 只观察原 Invocation 的
+计量/回复结果，不占新 units。Completed/Failed/Canceled 回应需真实 RELEASED，
+Worker 再确认同一 TaskProjection event 的 ACK 才关闭 Workflow。native terminal、
+HTTP 200、取消已接受或 Activity 返回都不单独证明业务完成；缺 durable usage/
+reply 保持 Running/BILLING_UNAVAILABLE，不写零用量或伪终态。
+
+本 lane 已修 `worker/workflows/agent_task.go` 初始投影失败的真实缺陷：原先
+直接 return error 会把 ACK/传输不明变成 Workflow FAILED；现在沿既有持久
+timer 和 continue-as-new 安全点重查，投影 ACK 未成立前不调用 Advance 或
+取得 runner。CancelPending/EventBase 与原冻结 Input 跨 run 保留，不新增
+Input 或 Workflow 类型。`worker/activities/agent_task.go` 核对后未修改；其
+SDK holder/heartbeat、缺字段/未知状态拒绝和 terminal/finishActivity 核验仍保留。
+
+Worker 精确 before/after 位于
+`/volumes/data/kailo/tmp/codex-agent-task-capacity-before-20261002.VaMQ7H/`，
+于 18:06:45 UTC 停写。workflow SHA-256 为
+`20ce30310ba15acd446f0e1dc6150f5abb8cb94cf883bce320a13f0337d4bd2f`；
+activity 未变，SHA-256 为
+`4d83425aad30ca65bbcdf8bdabd8aa236a4534e86889eb1d525af51143164b9e`。
+选定两路径 `git diff --check` 实际退出 0；没有 SDK 或新 AgentTask 正向演练。
+现有 replay 只有既有 Approval/ComponentTask/Baseline history，没有本批
+AgentTask 录制 history，不用旧 replay 通过冒称新流程兼容验收。
+
+现有 `tools/check.sh` 已覆盖 lint、既有 verify、contract、migrate、replay、
+trace 与 docs，不新增检查脚本。生成物漂移、缺配对 down、命名枚举与数据库
+约束漂移均有原检查对象；它们的失败不能替代 lease/Memory/Installation
+业务断言。现有 checks 未包含本批新 holder 释放和原生 Memory 分支的直接
+断言；本 lane 没有可执行的对应负向业务对象，也没有破坏/还原业务对象或
+造 Tenant、Invocation、event/history 充验收。SDK、实际数据库与负向结果
+只认主线之后的原始日志。本节尚未运行 docs 门禁，由批次负责人集中执行；
+本批未提交、未部署，不提高 Stage 或生产完成度。

@@ -112,6 +112,24 @@
 //    affectedOwnerRef, err := UnmarshalAffectedOwnerRef(bytes)
 //    bytes, err = affectedOwnerRef.Marshal()
 //
+//    agentInstallationAdvanceRequest, err := UnmarshalAgentInstallationAdvanceRequest(bytes)
+//    bytes, err = agentInstallationAdvanceRequest.Marshal()
+//
+//    agentInstallationAdvanceResult, err := UnmarshalAgentInstallationAdvanceResult(bytes)
+//    bytes, err = agentInstallationAdvanceResult.Marshal()
+//
+//    agentInstallationWorkflowTarget, err := UnmarshalAgentInstallationWorkflowTarget(bytes)
+//    bytes, err = agentInstallationWorkflowTarget.Marshal()
+//
+//    agentTaskAdvanceRequest, err := UnmarshalAgentTaskAdvanceRequest(bytes)
+//    bytes, err = agentTaskAdvanceRequest.Marshal()
+//
+//    agentTaskAdvanceResult, err := UnmarshalAgentTaskAdvanceResult(bytes)
+//    bytes, err = agentTaskAdvanceResult.Marshal()
+//
+//    agentTaskWorkflowInput, err := UnmarshalAgentTaskWorkflowInput(bytes)
+//    bytes, err = agentTaskWorkflowInput.Marshal()
+//
 //    approvalControlOutcome, err := UnmarshalApprovalControlOutcome(bytes)
 //    bytes, err = approvalControlOutcome.Marshal()
 //
@@ -525,6 +543,66 @@ func UnmarshalAffectedOwnerRef(data []byte) (AffectedOwnerRef, error) {
 }
 
 func (r *AffectedOwnerRef) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationAdvanceRequest(data []byte) (AgentInstallationAdvanceRequest, error) {
+	var r AgentInstallationAdvanceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationAdvanceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationAdvanceResult(data []byte) (AgentInstallationAdvanceResult, error) {
+	var r AgentInstallationAdvanceResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationAdvanceResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationWorkflowTarget(data []byte) (AgentInstallationWorkflowTarget, error) {
+	var r AgentInstallationWorkflowTarget
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationWorkflowTarget) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentTaskAdvanceRequest(data []byte) (AgentTaskAdvanceRequest, error) {
+	var r AgentTaskAdvanceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentTaskAdvanceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentTaskAdvanceResult(data []byte) (AgentTaskAdvanceResult, error) {
+	var r AgentTaskAdvanceResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentTaskAdvanceResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentTaskWorkflowInput(data []byte) (AgentTaskWorkflowInput, error) {
+	var r AgentTaskWorkflowInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentTaskWorkflowInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1046,8 +1124,9 @@ type PlatformTenantView struct {
 	State              TenantState               `json:"state"`
 }
 
-// PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
-// msg:<Buzz event id>；version 是读到的 CollaborationUserState 版本，不符即 409。
+// PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
+// ID、msg:<Buzz event id> 或 thread:<Buzz root event id>；version 是读到的 CollaborationUserState
+// 版本，不符即 409。
 type ReadMarkRequest struct {
 	ContextKey string `json:"contextKey"`
 	// RFC3339，Core 统一存成 UTC
@@ -1302,6 +1381,69 @@ type AffectedOwnerRef struct {
 	TargetID         string `json:"targetId"`
 	TargetType       string `json:"targetType"`
 	TargetVersion    int64  `json:"targetVersion"`
+}
+
+// 唯一安装 Workflow 推进同一 ActionExecution/version/generation；取消接收不是原生清理终态。
+type AgentInstallationAdvanceRequest struct {
+	ActionExecutionID    string `json:"actionExecutionId"`
+	AgentVersionAssetID  string `json:"agentVersionAssetId"`
+	CancelRequested      bool   `json:"cancelRequested"`
+	InstallationID       string `json:"installationId"`
+	ProjectionGeneration int64  `json:"projectionGeneration"`
+	RunID                string `json:"runId"`
+	WorkflowID           string `json:"workflowId"`
+}
+
+// Core 查证后的安装生命周期状态；身份/模型/记忆/runtime 未闭合只返回 RUNNING/UNKNOWN，不把 spawn 当 ACTIVE。
+type AgentInstallationAdvanceResult struct {
+	InstallationID string     `json:"installationId"`
+	Status         TaskStatus `json:"status"`
+	WaitingReason  string     `json:"waitingReason"`
+}
+
+// DD-25/48：既有 ComponentTaskWorkflow 的 AGENT_INSTALLATION 冻结目标；不含凭据或 Version 正文。
+type AgentInstallationWorkflowTarget struct {
+	ActionExecutionID    string `json:"actionExecutionId"`
+	AgentVersionAssetID  string `json:"agentVersionAssetId"`
+	InstallationID       string `json:"installationId"`
+	ProjectionGeneration int64  `json:"projectionGeneration"`
+}
+
+// Worker 推进已冻结 Invocation；未知原生结果只观察，不再次 turn/start。
+type AgentTaskAdvanceRequest struct {
+	ActivityID                 string `json:"activityId"`
+	AgentVersionAssetID        string `json:"agentVersionAssetId"`
+	Attempt                    int64  `json:"attempt"`
+	CancelRequested            bool   `json:"cancelRequested"`
+	HeartbeatIntervalSeconds   int64  `json:"heartbeatIntervalSeconds"`
+	InstallationID             string `json:"installationId"`
+	InvocationID               string `json:"invocationId"`
+	ObservationIntervalSeconds int64  `json:"observationIntervalSeconds"`
+	ProjectionGeneration       int64  `json:"projectionGeneration"`
+	RunID                      string `json:"runId"`
+	WorkflowID                 string `json:"workflowId"`
+}
+
+// Core 查证的引用与状态；native completed 缺 reply/usage 证据仍 RUNNING。
+type AgentTaskAdvanceResult struct {
+	// 已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
+	FinishActivity bool       `json:"finishActivity"`
+	InvocationID   string     `json:"invocationId"`
+	Status         TaskStatus `json:"status"`
+	WaitingReason  string     `json:"waitingReason"`
+}
+
+// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
+type AgentTaskWorkflowInput struct {
+	AgentVersionAssetID        string `json:"agentVersionAssetId"`
+	CancelPending              bool   `json:"cancelPending"`
+	EventBase                  int64  `json:"eventBase"`
+	HeartbeatIntervalSeconds   int64  `json:"heartbeatIntervalSeconds"`
+	HeartbeatTimeoutSeconds    int64  `json:"heartbeatTimeoutSeconds"`
+	InstallationID             string `json:"installationId"`
+	InvocationID               string `json:"invocationId"`
+	ObservationIntervalSeconds int64  `json:"observationIntervalSeconds"`
+	ProjectionGeneration       int64  `json:"projectionGeneration"`
 }
 
 // consume、invalidate、withdraw 三个 Update 的结果：执行后的 Approval 状态。
@@ -1606,10 +1748,12 @@ const (
 	InviteeAlreadyMember         ReasonCode = "INVITEE_ALREADY_MEMBER"
 	LastTenantAdmin              ReasonCode = "LAST_TENANT_ADMIN"
 	NativeSurfaceRequired        ReasonCode = "NATIVE_SURFACE_REQUIRED"
+	PayloadTooLarge              ReasonCode = "PAYLOAD_TOO_LARGE"
 	PermissionDenied             ReasonCode = "PERMISSION_DENIED"
 	ProjectionDelayed            ReasonCode = "PROJECTION_DELAYED"
 	PublishRejected              ReasonCode = "PUBLISH_REJECTED"
 	PublishResultUnknown         ReasonCode = "PUBLISH_RESULT_UNKNOWN"
+	QuotaExhausted               ReasonCode = "QUOTA_EXHAUSTED"
 	RateLimited                  ReasonCode = "RATE_LIMITED"
 	ScopeGuardFailed             ReasonCode = "SCOPE_GUARD_FAILED"
 	SelfApprovalDenied           ReasonCode = "SELF_APPROVAL_DENIED"
@@ -1872,6 +2016,7 @@ const (
 type WorkflowKind string
 
 const (
+	AgentInstallation      WorkflowKind = "AGENT_INSTALLATION"
 	BuzzIdentityProjection WorkflowKind = "BUZZ_IDENTITY_PROJECTION"
 	MembershipProjection   WorkflowKind = "MEMBERSHIP_PROJECTION"
 	MembershipRevocation   WorkflowKind = "MEMBERSHIP_REVOCATION"

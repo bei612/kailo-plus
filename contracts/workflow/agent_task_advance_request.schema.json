@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/agent_task_advance_request.schema.json",
+  "title": "AgentTaskAdvanceRequest",
+  "description": "Worker 推进已冻结 Invocation；未知原生结果只观察，不再次 turn/start。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invocationId", "installationId", "agentVersionAssetId", "projectionGeneration", "workflowId", "runId", "cancelRequested", "activityId", "attempt", "heartbeatIntervalSeconds", "observationIntervalSeconds"],
+  "properties": {
+    "invocationId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" },
+    "agentVersionAssetId": { "type": "string", "format": "uuid" },
+    "projectionGeneration": { "type": "integer", "minimum": 1 },
+    "workflowId": { "type": "string" },
+    "runId": { "type": "string", "format": "uuid" },
+    "cancelRequested": { "type": "boolean" },
+    "activityId": { "type": "string", "minLength": 1 },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "heartbeatIntervalSeconds": { "type": "integer", "minimum": 1 },
+    "observationIntervalSeconds": { "type": "integer", "minimum": 1 }
+  }
+}

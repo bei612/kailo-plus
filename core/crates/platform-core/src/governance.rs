@@ -138,6 +138,7 @@ pub struct Governance {
     pub temporal: std::sync::Arc<TemporalClient>,
     pub spicedb: SpiceDb,
     pub secrets: std::sync::Arc<SecretStore>,
+    pub openmeter: std::sync::Arc<crate::openmeter::OpenMeter>,
     pub cfg: GovernanceConfig,
 }
 
@@ -151,6 +152,7 @@ pub enum Refusal {
     Denied(ReasonCode),
     Blocked(ReasonCode),
     Precondition(ReasonCode),
+    Limit(ReasonCode),
     Conflict(ReasonCode),
     /// 依赖不可用：结果不明，不是拒绝
     Unavailable(String),
@@ -165,6 +167,7 @@ impl Refusal {
                 (ErrorClass::Precondition, StatusCode::UNPROCESSABLE_ENTITY)
             }
             Refusal::Conflict(_) => (ErrorClass::Conflict, StatusCode::CONFLICT),
+            Refusal::Limit(_) => (ErrorClass::Limit, StatusCode::TOO_MANY_REQUESTS),
             Refusal::Unavailable(_) => (ErrorClass::Unknown, StatusCode::SERVICE_UNAVAILABLE),
         }
     }
@@ -174,8 +177,21 @@ impl Refusal {
             Refusal::Denied(r)
             | Refusal::Blocked(r)
             | Refusal::Precondition(r)
+            | Refusal::Limit(r)
             | Refusal::Conflict(r) => r.clone(),
             Refusal::Unavailable(_) => ReasonCode::DependencyUnavailable,
+        }
+    }
+
+    fn from_reason(reason: ReasonCode) -> Self {
+        match reason {
+            r @ (ReasonCode::ScopeGuardFailed
+            | ReasonCode::PermissionDenied
+            | ReasonCode::ApprovalDenied) => Self::Denied(r),
+            r @ ReasonCode::CapabilityBlocked => Self::Blocked(r),
+            r @ (ReasonCode::QuotaExhausted | ReasonCode::RateLimited) => Self::Limit(r),
+            r @ ReasonCode::TargetStateConflict => Self::Conflict(r),
+            r => Self::Precondition(r),
         }
     }
 
@@ -239,6 +255,8 @@ pub struct Definition {
     pub workflow_kind: Option<String>,
     pub result_exposure: String,
     pub execution_mode: String,
+    pub quota_policy: String,
+    pub meters: Vec<String>,
     pub role_template_key: Option<String>,
     pub role_template_version: Option<i32>,
 }
@@ -278,7 +296,7 @@ const DEFINITION_COLUMNS: &str =
     "action_key, version, component_type_key, target_type, tenant_rule, workspace_rule,
      permission, permission_object_type, confirmation_mode, approval_policy_id,
      approval_policy_version, workflow_kind, result_exposure, execution_mode,
-     role_template_key, role_template_version";
+     quota_policy, meters, role_template_key, role_template_version";
 
 /// 角色动作按确切版本引用的 RoleTemplate。定义与模板任一缺失即说明目录与语义
 /// 不一致，fail closed。
@@ -307,7 +325,7 @@ pub(crate) async fn active_definition(
 
 /// 确切版本，不看 status：已准入的动作按准入时的规则重新准入与解释，
 /// 之后被 RETIRED 不改变它（.design/03 §4 的「固定快照」）。
-async fn exact_definition(
+pub(crate) async fn exact_definition(
     pool: &PgPool,
     key: &str,
     version: i32,
@@ -397,6 +415,7 @@ pub enum Semantic {
     AgentVersionCreate,
     AgentVersionUpdate,
     AgentVersionPublish,
+    AgentInstallationCreate,
     ResourceTransferOwner,
 }
 
@@ -427,6 +446,7 @@ impl Semantic {
             "agent.version.create" => Self::AgentVersionCreate,
             "agent.version.update" => Self::AgentVersionUpdate,
             "agent.version.publish" => Self::AgentVersionPublish,
+            "agent.installation.create" => Self::AgentInstallationCreate,
             "resource.transfer_owner" => Self::ResourceTransferOwner,
             _ => return None,
         })
@@ -477,6 +497,7 @@ impl Semantic {
                     | Self::AgentVersionCreate
                     | Self::AgentVersionUpdate
                     | Self::AgentVersionPublish
+                    | Self::AgentInstallationCreate
                     | Self::ResourceTransferOwner
             )
     }
@@ -505,6 +526,7 @@ impl Semantic {
                 | Self::TenantSuspend
                 | Self::TenantRestore
                 | Self::AgentVersionPublish
+                | Self::AgentInstallationCreate
         )
     }
 
@@ -673,19 +695,36 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             | Semantic::AgentVersionCreate
             | Semantic::AgentVersionUpdate
             | Semantic::AgentVersionPublish
+            | Semantic::AgentInstallationCreate
     ) && (p.resource_id.is_some() || p.resource_version.is_some())
     {
         return Err(bad());
     }
     if !matches!(
         sem,
-        Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish
+        Semantic::AgentVersionCreate
+            | Semantic::AgentVersionUpdate
+            | Semantic::AgentVersionPublish
+            | Semantic::AgentInstallationCreate
     ) && (p.asset_id.is_some() || p.asset_version.is_some() || p.agent_version_content.is_some())
     {
         return Err(bad());
     }
     // 每个语义要求的参数集合是闭集：多出与缺少都拒绝，不按「字段为空即忽略」猜
     let ok = match sem {
+        Semantic::AgentInstallationCreate => {
+            p.workspace_id.is_some()
+                && p.principal_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.resource_id.is_some()
+                && p.resource_version.is_some_and(|v| v > 0)
+                && p.asset_id.is_some()
+                && p.asset_version.is_some_and(|v| v > 0)
+                && p.agent_version_content.is_none()
+        }
         Semantic::AgentVersionCreate
         | Semantic::AgentVersionUpdate
         | Semantic::AgentVersionPublish => {
@@ -929,6 +968,9 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::AgentInstallationCreate => {
+            crate::agent_installation::target(conn, tenant, initiator, def, p, frozen, lock).await
+        }
         Semantic::AgentVersionCreate
         | Semantic::AgentVersionUpdate
         | Semantic::AgentVersionPublish => {
@@ -1580,6 +1622,7 @@ struct Evaluation {
     allowed: bool,
     scope: &'static str,
     authorization: &'static str,
+    quota: &'static str,
     zed_token: Option<String>,
     reason: Option<ReasonCode>,
 }
@@ -1596,6 +1639,7 @@ impl Governance {
             allowed: false,
             scope,
             authorization: authz,
+            quota: "NOT_APPLICABLE",
             zed_token: token,
             reason: Some(reason),
         };
@@ -1859,9 +1903,98 @@ impl Governance {
             allowed: true,
             scope: "ALLOW",
             authorization: "ALLOW",
+            quota: "NOT_APPLICABLE",
             zed_token: Some(checked.zed_token),
             reason: None,
         })
+    }
+
+    /// ADR-14：在确认/批准满足之后消费 native CHECK；NONE 不读商业额度。
+    /// 这里只产生准入结论，不创建 reservation、usage 或商业余额副本。
+    async fn check_quota(
+        &self,
+        tenant: Uuid,
+        def: &Definition,
+        eval: &mut Evaluation,
+    ) -> Result<(), Refusal> {
+        if !eval.allowed {
+            return Ok(());
+        }
+        let reason = match def.quota_policy.as_str() {
+            "NONE" if def.meters.is_empty() => return Ok(()),
+            "CHECK"
+                if !def.meters.is_empty() && {
+                    let mut unique = std::collections::HashSet::new();
+                    def.meters
+                        .iter()
+                        .all(|key| !key.trim().is_empty() && unique.insert(key))
+                } =>
+            {
+                let binding: Option<(String, String, String, String, i32)> = sqlx::query_as(
+                    "select namespace, customer_id, subject_key_prefix, status, version
+                     from projection.openmeter_binding where tenant_id = $1",
+                )
+                .bind(tenant)
+                .fetch_optional(&self.pool)
+                .await?;
+                if let Some((namespace, customer_id, prefix, status, version)) = &binding {
+                    if namespace != self.openmeter.namespace()
+                        || prefix != &format!("{tenant}:")
+                        || status != "ACTIVE"
+                        || *version <= 0
+                    {
+                        Some(ReasonCode::BindingNotActive)
+                    } else {
+                        let result = self
+                            .openmeter
+                            .check_quota(tenant, customer_id, &def.meters)
+                            .await;
+                        // native 读取期间的撤销或重新绑定不能被先前的 ACTIVE 快照放行。
+                        let current: Option<(String, String, String, String, i32)> =
+                            sqlx::query_as(
+                                "select namespace, customer_id, subject_key_prefix, status, version
+                             from projection.openmeter_binding where tenant_id = $1",
+                            )
+                            .bind(tenant)
+                            .fetch_optional(&self.pool)
+                            .await?;
+                        if current != binding {
+                            Some(ReasonCode::BindingNotActive)
+                        } else {
+                            match result {
+                                Ok(true) => None,
+                                Ok(false) => Some(ReasonCode::QuotaExhausted),
+                                Err(
+                                    crate::openmeter::Error::Denied
+                                    | crate::openmeter::Error::Precondition,
+                                ) => Some(ReasonCode::BindingNotActive),
+                                Err(crate::openmeter::Error::Conflict) => {
+                                    Some(ReasonCode::TargetStateConflict)
+                                }
+                                Err(crate::openmeter::Error::Limit) => {
+                                    Some(ReasonCode::RateLimited)
+                                }
+                                Err(crate::openmeter::Error::Unknown) => {
+                                    return Err(Refusal::Unavailable(
+                                        "OpenMeter CHECK 的 entitlement/credit 无法查证".into(),
+                                    ))
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Some(ReasonCode::BindingNotActive)
+                }
+            }
+            // STRICT 没有完整 producer 闭合与上界；未知 policy 或不合 meters 也不放行。
+            _ => Some(ReasonCode::CapabilityBlocked),
+        };
+        eval.quota = if reason.is_none() { "ALLOW" } else { "DENY" };
+        if let Some(reason) = reason {
+            eval.allowed = false;
+            eval.reason = Some(reason);
+        }
+        Ok(())
     }
 
     /// Workspace 创建入口的一次性可用性提示；提交时仍由 submit 重新准入。
@@ -2532,6 +2665,7 @@ async fn record_decision(
     scope: &str,
     authorization: &str,
     approval: &str,
+    quota: &str,
     zed_token: Option<&str>,
     reason: Option<&ReasonCode>,
 ) -> Result<(), sqlx::Error> {
@@ -2543,7 +2677,7 @@ async fn record_decision(
               delegation_decision, approval_decision, capacity_decision, quota_decision,
               audit_decision, zed_token, reason_code)
          values ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,
-                 'NOT_APPLICABLE',$14,'NOT_APPLICABLE','NOT_APPLICABLE','RECORDED',$15,$16)",
+                 'NOT_APPLICABLE',$14,'NOT_APPLICABLE',$15,'RECORDED',$16,$17)",
     )
     .bind(Uuid::new_v4())
     .bind(ae.operation_id)
@@ -2559,6 +2693,7 @@ async fn record_decision(
     .bind(scope)
     .bind(authorization)
     .bind(approval)
+    .bind(quota)
     .bind(zed_token)
     .bind(reason.map(wire))
     .execute(&mut **tx)
@@ -2679,6 +2814,7 @@ pub(crate) async fn frozen_delete_inventory(
         },
         "openmeter_binding": openmeter_binding,
         "resource_owner_versions": resources, "asset_owner_versions": assets,
+        "agent_inventory": crate::tenant_delete::frozen_agent_inventory(conn, tenant).await?,
         "component_binding_refs_and_versions": []
     }))
 }
@@ -2880,7 +3016,7 @@ impl Governance {
             version: ae.frozen_target_version().unwrap_or(0),
             workspace_id: ae.workspace_id,
         };
-        let eval = match self.evaluate(actor, def, &target).await {
+        let mut eval = match self.evaluate(actor, def, &target).await {
             Ok(e) => e,
             // SpiceDB/库不可用：不判定，EVALUATING 保持（对账作业以超时收敛，或
             // 客户端以同一幂等键重试）
@@ -2900,15 +3036,7 @@ impl Governance {
             )
             .await
             .map_err(|e| (e.into(), op))?;
-            return Err((
-                match reason {
-                    ReasonCode::ScopeGuardFailed | ReasonCode::PermissionDenied => {
-                        Refusal::Denied(reason)
-                    }
-                    other => Refusal::Precondition(other),
-                },
-                op,
-            ));
+            return Err((Refusal::from_reason(reason), op));
         }
 
         // 目标事实的门禁在授权之后判定：无权者先得到 PERMISSION_DENIED，而不是借
@@ -2961,6 +3089,25 @@ impl Governance {
             return Err((Refusal::Blocked(ReasonCode::CapabilityBlocked), op));
         }
 
+        self.check_quota(actor.tenant_id, def, &mut eval)
+            .await
+            .map_err(|r| (r, op))?;
+        if !eval.allowed {
+            let reason = eval.reason.clone().unwrap_or(ReasonCode::CapabilityBlocked);
+            self.close_gate(
+                &ae,
+                def,
+                "ADMISSION",
+                "DENIED",
+                &eval,
+                &reason,
+                actor.human_identity_id,
+            )
+            .await
+            .map_err(|e| (e.into(), op))?;
+            return Err((Refusal::from_reason(reason), op));
+        }
+
         let mut tx = self.pool.begin().await.map_err(|e| (e.into(), op))?;
         let ae = lock_execution(&mut tx, ae_id)
             .await
@@ -2984,7 +3131,13 @@ impl Governance {
             .await
         {
             Ok(issued) => issued,
-            Err(r @ (Refusal::Conflict(_) | Refusal::Precondition(_) | Refusal::Denied(_))) => {
+            Err(
+                r @ (Refusal::Conflict(_)
+                | Refusal::Precondition(_)
+                | Refusal::Denied(_)
+                | Refusal::Blocked(_)
+                | Refusal::Limit(_)),
+            ) => {
                 drop(tx);
                 // 评估与落定之间 target 事实变了：按当时事实拒绝并留痕
                 self.close_gate(
@@ -3055,6 +3208,7 @@ impl Governance {
             eval.scope,
             eval.authorization,
             approval,
+            eval.quota,
             eval.zed_token.as_deref(),
             Some(reason),
         )
@@ -3090,6 +3244,11 @@ impl Governance {
         eval: &Evaluation,
         human: Option<Uuid>,
     ) -> Result<Option<crate::invitation::Issued>, Refusal> {
+        // ADR-14：现有执行语义均为 NONE。CHECK 的真实副作用 producer 尚未接入，
+        // 原生额度允许也不能开启缺少副作用前重新准入与 usage 闭合的派发链。
+        if def.quota_policy != "NONE" || !def.meters.is_empty() {
+            return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+        }
         // 会改变有效 Tenant admin 的动作先取 Tenant 行锁，其后的判定与写入都在锁内
         // （DD-82）。锁序固定为 ActionExecution → Tenant，与派发一致。
         if sem.serializes_on_tenant() && !crate::roles::lock_tenant(tx, ae.tenant_id).await? {
@@ -3121,6 +3280,7 @@ impl Governance {
                 | Semantic::AgentVersionCreate
                 | Semantic::AgentVersionUpdate
                 | Semantic::AgentVersionPublish
+                | Semantic::AgentInstallationCreate
         ) && !crate::agent_definition::active_owner(tx, ae.tenant_id, ae.initiator_principal_id)
             .await?
         {
@@ -3135,6 +3295,7 @@ impl Governance {
                 | Semantic::AgentVersionCreate
                 | Semantic::AgentVersionUpdate
                 | Semantic::AgentVersionPublish
+                | Semantic::AgentInstallationCreate
         ) {
             let fresh = self
                 .evaluate(
@@ -3184,6 +3345,7 @@ impl Governance {
                 eval.scope,
                 eval.authorization,
                 approval,
+                eval.quota,
                 eval.zed_token.as_deref(),
                 None,
             )
@@ -3223,6 +3385,7 @@ impl Governance {
                 eval.scope,
                 eval.authorization,
                 approval,
+                eval.quota,
                 eval.zed_token.as_deref(),
                 None,
             )
@@ -3360,6 +3523,9 @@ impl Governance {
                 version
             }
             Semantic::SecretRefRehome => 1,
+            Semantic::AgentInstallationCreate => {
+                crate::agent_installation::prewrite(self, tx, ae, params).await?
+            }
             Semantic::WorkspaceCreate => {
                 sqlx::query_scalar(
                     "insert into identity.workspace (id, tenant_id, slug, name, state)
@@ -3515,6 +3681,7 @@ impl Governance {
             eval.scope,
             eval.authorization,
             approval,
+            eval.quota,
             eval.zed_token.as_deref(),
             None,
         )
@@ -3666,6 +3833,7 @@ impl Governance {
             eval.scope,
             eval.authorization,
             approval,
+            eval.quota,
             eval.zed_token.as_deref(),
             None,
         )
@@ -4249,16 +4417,7 @@ fn submission_result(
             .unwrap_or(ReasonCode::PermissionDenied)
     };
     match ae.gate_state.as_str() {
-        "DENIED" => Err((
-            match reason() {
-                r @ (ReasonCode::ScopeGuardFailed
-                | ReasonCode::PermissionDenied
-                | ReasonCode::ApprovalDenied) => Refusal::Denied(r),
-                r @ ReasonCode::TargetStateConflict => Refusal::Conflict(r),
-                r => Refusal::Precondition(r),
-            },
-            op,
-        )),
+        "DENIED" => Err((Refusal::from_reason(reason()), op)),
         "ALLOWED" if ae.dispatch_state == "DISPATCHED" => Ok((StatusCode::OK, ae.submission())),
         _ => Ok((StatusCode::ACCEPTED, ae.submission())),
     }
@@ -4383,6 +4542,7 @@ impl Governance {
             } else {
                 "NOT_REQUIRED"
             },
+            eval.quota,
             eval.zed_token.as_deref(),
             None,
         )
@@ -4511,6 +4671,7 @@ impl Governance {
             } else {
                 "NOT_REQUIRED"
             },
+            eval.quota,
             eval.zed_token.as_deref(),
             Some(&reason),
         )
@@ -4711,6 +4872,7 @@ impl Governance {
             eval.scope,
             eval.authorization,
             "NOT_REQUIRED",
+            eval.quota,
             eval.zed_token.as_deref(),
             reason.as_ref(),
         )
@@ -4946,6 +5108,11 @@ impl Governance {
             Ok(())
         } else {
             let started = match sem {
+                Semantic::AgentInstallationCreate => {
+                    crate::agent_installation::start(
+                        &self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id,
+                    ).await
+                }
                 Semantic::TenantDelete => launch_scope(
                     &self.pool, &self.temporal,
                     &ScopeLifecycleRequest { kind: ScopeKind::Tenant, id: ae.target_id,
@@ -5251,6 +5418,7 @@ impl Governance {
             eval.scope,
             eval.authorization,
             "REQUIRED",
+            eval.quota,
             eval.zed_token.as_deref(),
             Some(&ReasonCode::WaitingApproval),
         )
@@ -5439,7 +5607,8 @@ impl Governance {
             workspace_id: ae.workspace_id,
         };
         // 完整重新准入：scope、发起者仍 active、fresh Check、target 事实未变
-        let eval = self.evaluate(actor, &def, &target).await?;
+        let mut eval = self.evaluate(actor, &def, &target).await?;
+        self.check_quota(ae.tenant_id, &def, &mut eval).await?;
         let refused = if !eval.allowed {
             Some(eval.reason.clone().unwrap_or(ReasonCode::PermissionDenied))
         } else {
@@ -6090,6 +6259,7 @@ impl Governance {
                     allowed: false,
                     scope: "NOT_APPLICABLE",
                     authorization: "NOT_APPLICABLE",
+                    quota: "NOT_APPLICABLE",
                     zed_token: None,
                     reason: Some(ReasonCode::AdmissionAbandoned),
                 };
@@ -6127,6 +6297,7 @@ impl Governance {
                     allowed: false,
                     scope: "NOT_APPLICABLE",
                     authorization: "NOT_APPLICABLE",
+                    quota: "NOT_APPLICABLE",
                     zed_token: None,
                     reason: Some(ReasonCode::ApprovalInvalidated),
                 };
@@ -6241,6 +6412,7 @@ pub async fn record_owned_decision(
         "ALLOW",
         "ALLOW",
         "NOT_REQUIRED",
+        "NOT_APPLICABLE",
         Some(zed_token),
         None,
     )

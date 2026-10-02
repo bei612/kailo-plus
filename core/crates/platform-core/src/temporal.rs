@@ -75,6 +75,29 @@ pub enum ObservedState {
     Unrecognized(i32),
 }
 
+/// 03 §8：只保存 Activity 的持有/终态引用，不复制 input 或 heartbeat 正文。
+pub(crate) struct ActivityObservation {
+    pub scheduled_event_id: i64,
+    pub invocation_id: String,
+    pub projection_generation: i64,
+    pub workflow_cancel_requested: bool,
+    pub state: ActivityState,
+}
+
+pub(crate) enum ActivityState {
+    Started {
+        attempt: i32,
+        started_at: chrono::DateTime<chrono::Utc>,
+        heartbeat_at: Option<chrono::DateTime<chrono::Utc>>,
+        heartbeat_timeout_seconds: i64,
+    },
+    Terminal {
+        event_id: i64,
+        at: chrono::DateTime<chrono::Utc>,
+    },
+    Unconfirmed,
+}
+
 /// 本 namespace 固定登记的三个 Keyword Search Attribute（`.design/06` §3）。Core 在 Start
 /// 时写其中两个；ADR-17 迁移窗口内旧名 SA 只读不写，Core 不按 SA 列举，不需要旧名常量。
 pub const SA_TENANT: &str = "PlatformTenantId";
@@ -88,6 +111,259 @@ pub struct TemporalClient {
 }
 
 impl TemporalClient {
+    /// Exact run + Activity 的完整 history/Describe 观察。pending 缺席、Workflow
+    /// 终态或 heartbeat 超时都不是 Activity 终态证据；未知枚举同样不可释放。
+    pub(crate) async fn activity(
+        &self,
+        workflow_id: &str,
+        run_id: &str,
+        activity_id: &str,
+    ) -> Result<ActivityObservation, TemporalError> {
+        use temporalio_common::protos::temporal::api::enums::v1::{
+            PendingActivityState, RetryState,
+        };
+        if workflow_id.is_empty()
+            || activity_id.is_empty()
+            || uuid::Uuid::parse_str(run_id).is_err()
+        {
+            return Err(TemporalError::Encode("Activity holder 引用不完整".into()));
+        }
+        self.refresh_token().await?;
+        let execution = WorkflowExecution {
+            workflow_id: workflow_id.to_owned(),
+            run_id: run_id.to_owned(),
+        };
+        let mut page_token = Vec::new();
+        let mut visited_pages = HashSet::new();
+        let mut scheduled = None;
+        let mut terminal = None;
+        let mut canceled = false;
+        loop {
+            let request = GetWorkflowExecutionHistoryRequest {
+                namespace: self.namespace.clone(),
+                execution: Some(execution.clone()),
+                next_page_token: page_token.clone(),
+                ..Default::default()
+            };
+            let response = self
+                .with_auth_retry(|mut svc| {
+                    let request = request.clone();
+                    async move {
+                        svc.get_workflow_execution_history(tonic::Request::new(request))
+                            .await
+                    }
+                })
+                .await
+                .map_err(|_| TemporalError::Unknown("Activity history 不可读".into()))?;
+            if !response.raw_history.is_empty() {
+                return Err(TemporalError::Unknown("Activity history 未解码".into()));
+            }
+            let history = response
+                .history
+                .ok_or_else(|| TemporalError::Unknown("Activity history 缺事件集".into()))?;
+            if page_token.is_empty() && history.events.is_empty() {
+                return Err(TemporalError::Unknown("Activity history 为空".into()));
+            }
+            for event in history.events {
+                let event_id = event.event_id;
+                let event_time = event.event_time.and_then(|t| {
+                    u32::try_from(t.nanos)
+                        .ok()
+                        .and_then(|n| chrono::DateTime::from_timestamp(t.seconds, n))
+                });
+                let mut terminal_scheduled = None;
+                match event.attributes {
+                    Some(Attributes::ActivityTaskScheduledEventAttributes(a))
+                        if a.activity_id == activity_id =>
+                    {
+                        if scheduled.is_some()
+                            || event_id <= 0
+                            || a.activity_type.as_ref().map(|t| t.name.as_str())
+                                != Some("AdvanceAgentTask")
+                        {
+                            return Err(TemporalError::Unknown(
+                                "Activity schedule 不唯一或类型不符".into(),
+                            ));
+                        }
+                        let timeout = a
+                            .heartbeat_timeout
+                            .filter(|t| t.seconds > 0 && t.nanos == 0)
+                            .ok_or_else(|| {
+                                TemporalError::Unknown("Activity 没有精确 HeartbeatTimeout".into())
+                            })?;
+                        let input = a.input.filter(|p| p.payloads.len() == 1).ok_or_else(|| {
+                            TemporalError::Unknown("Activity 缺 Invocation 冻结输入".into())
+                        })?;
+                        let input: serde_json::Value =
+                            serde_json::from_slice(&input.payloads[0].data).map_err(|_| {
+                                TemporalError::Unknown("Activity 冻结输入不可解码".into())
+                            })?;
+                        let invocation = input
+                            .get("invocationId")
+                            .and_then(serde_json::Value::as_str)
+                            .filter(|id| uuid::Uuid::parse_str(id).is_ok())
+                            .ok_or_else(|| {
+                                TemporalError::Unknown("Activity 缺 Invocation ID".into())
+                            })?;
+                        let generation = input
+                            .get("projectionGeneration")
+                            .and_then(serde_json::Value::as_i64)
+                            .filter(|g| *g > 0)
+                            .ok_or_else(|| {
+                                TemporalError::Unknown("Activity 缺 generation".into())
+                            })?;
+                        scheduled =
+                            Some((event_id, invocation.to_owned(), generation, timeout.seconds));
+                    }
+                    Some(Attributes::ActivityTaskCompletedEventAttributes(a)) => {
+                        terminal_scheduled = Some(a.scheduled_event_id)
+                    }
+                    Some(Attributes::ActivityTaskCanceledEventAttributes(a)) => {
+                        terminal_scheduled = Some(a.scheduled_event_id)
+                    }
+                    Some(Attributes::ActivityTaskFailedEventAttributes(a)) => {
+                        if matches!(RetryState::try_from(a.retry_state), Ok(state) if state != RetryState::InProgress && state != RetryState::Unspecified)
+                        {
+                            terminal_scheduled = Some(a.scheduled_event_id);
+                        }
+                    }
+                    Some(Attributes::ActivityTaskTimedOutEventAttributes(a)) => {
+                        if matches!(RetryState::try_from(a.retry_state), Ok(state) if state != RetryState::InProgress && state != RetryState::Unspecified)
+                        {
+                            terminal_scheduled = Some(a.scheduled_event_id);
+                        }
+                    }
+                    Some(Attributes::WorkflowExecutionCancelRequestedEventAttributes(_)) => {
+                        canceled = true
+                    }
+                    _ => {}
+                }
+                if terminal_scheduled
+                    .is_some_and(|id| scheduled.as_ref().is_some_and(|s| s.0 == id))
+                {
+                    if terminal.is_some()
+                        || event_id <= scheduled.as_ref().expect("已匹配 schedule").0
+                    {
+                        return Err(TemporalError::Unknown("Activity terminal 引用冲突".into()));
+                    }
+                    terminal = Some((
+                        event_id,
+                        event_time.ok_or_else(|| {
+                            TemporalError::Unknown("Activity terminal 缺原生时间".into())
+                        })?,
+                    ));
+                }
+            }
+            if response.next_page_token.is_empty() {
+                break;
+            }
+            if !visited_pages.insert(response.next_page_token.clone()) {
+                return Err(TemporalError::Unknown("Activity history 分页循环".into()));
+            }
+            page_token = response.next_page_token;
+        }
+        let (scheduled_event_id, invocation_id, projection_generation, heartbeat_timeout_seconds) =
+            scheduled.ok_or_else(|| TemporalError::Unknown("Activity schedule 未查证".into()))?;
+        if let Some((event_id, at)) = terminal {
+            return Ok(ActivityObservation {
+                scheduled_event_id,
+                invocation_id,
+                projection_generation,
+                workflow_cancel_requested: canceled,
+                state: ActivityState::Terminal { event_id, at },
+            });
+        }
+        let request = DescribeWorkflowExecutionRequest {
+            namespace: self.namespace.clone(),
+            execution: Some(execution),
+        };
+        let response = self
+            .with_auth_retry(|mut svc| {
+                let request = request.clone();
+                async move {
+                    svc.describe_workflow_execution(tonic::Request::new(request))
+                        .await
+                }
+            })
+            .await
+            .map_err(|_| TemporalError::Unknown("Activity Describe 不可读".into()))?;
+        let info = response
+            .workflow_execution_info
+            .ok_or_else(|| TemporalError::Unknown("Activity Describe 缺执行引用".into()))?;
+        if info
+            .execution
+            .as_ref()
+            .map(|e| (e.workflow_id.as_str(), e.run_id.as_str()))
+            != Some((workflow_id, run_id))
+        {
+            return Err(TemporalError::Unknown(
+                "Activity Describe execution 不符".into(),
+            ));
+        }
+        let execution_open = matches!(
+            WorkflowExecutionStatus::try_from(info.status),
+            Ok(WorkflowExecutionStatus::Running | WorkflowExecutionStatus::Paused)
+        );
+        let mut matching = response
+            .pending_activities
+            .into_iter()
+            .filter(|p| p.activity_id == activity_id);
+        let pending = matching.next();
+        if matching.next().is_some() {
+            return Err(TemporalError::Unknown("Activity pending 不唯一".into()));
+        }
+        let state = match pending {
+            Some(p)
+                if execution_open
+                    && matches!(
+                        PendingActivityState::try_from(p.state),
+                        Ok(PendingActivityState::Started | PendingActivityState::CancelRequested)
+                    )
+                    && p.attempt > 0 =>
+            {
+                canceled |= matches!(
+                    PendingActivityState::try_from(p.state),
+                    Ok(PendingActivityState::CancelRequested)
+                );
+                let started_at = p
+                    .last_started_time
+                    .and_then(|t| {
+                        u32::try_from(t.nanos)
+                            .ok()
+                            .and_then(|n| chrono::DateTime::from_timestamp(t.seconds, n))
+                    })
+                    .ok_or_else(|| {
+                        TemporalError::Unknown("Activity pending 缺 started 时间".into())
+                    })?;
+                let heartbeat_at = match p.last_heartbeat_time {
+                    Some(t) => Some(
+                        u32::try_from(t.nanos)
+                            .ok()
+                            .and_then(|n| chrono::DateTime::from_timestamp(t.seconds, n))
+                            .ok_or_else(|| {
+                                TemporalError::Unknown("Activity heartbeat 时间无效".into())
+                            })?,
+                    ),
+                    None => None,
+                };
+                ActivityState::Started {
+                    attempt: p.attempt,
+                    started_at,
+                    heartbeat_at,
+                    heartbeat_timeout_seconds,
+                }
+            }
+            _ => ActivityState::Unconfirmed,
+        };
+        Ok(ActivityObservation {
+            scheduled_event_id,
+            invocation_id,
+            projection_generation,
+            workflow_cancel_requested: canceled,
+            state,
+        })
+    }
+
     /// 四项配置都不接受默认值。namespace 尤其不能猜：Temporal 的 default claim
     /// mapper 按 `"<namespace>:<role>"` 解析 permissions，写错即全部调用被拒，
     /// 而错误信息离真正的原因很远（`SF-TMP-06`）。

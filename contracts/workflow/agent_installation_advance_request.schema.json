@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/agent_installation_advance_request.schema.json",
+  "title": "AgentInstallationAdvanceRequest",
+  "description": "唯一安装 Workflow 推进同一 ActionExecution/version/generation；取消接收不是原生清理终态。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "installationId", "agentVersionAssetId", "projectionGeneration", "workflowId", "runId", "cancelRequested"],
+  "properties": {
+    "actionExecutionId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" },
+    "agentVersionAssetId": { "type": "string", "format": "uuid" },
+    "projectionGeneration": { "type": "integer", "minimum": 1 },
+    "workflowId": { "type": "string" },
+    "runId": { "type": "string", "format": "uuid" },
+    "cancelRequested": { "type": "boolean" }
+  }
+}

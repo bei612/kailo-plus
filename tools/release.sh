@@ -33,7 +33,8 @@ trap 'rm -r -- "$BUILD_CONTEXT"' EXIT
 # 本独立仓库的根就是构建根，不向父目录查找历史外层仓库。
 # 导出集合与 .dockerignore 的 allowlist 同步：Core 编译期内嵌生成的能力注册表。
 git archive --format=tar "$COMMIT" .dockerignore core worker \
-  tools/registry/capabilities.yaml | tar -xf - -C "$BUILD_CONTEXT" \
+  collaboration/Cargo.toml collaboration/crates/buzz-core \
+  tools/registry/capabilities.yaml agent-runtime/fork/upstream.yaml | tar -xf - -C "$BUILD_CONTEXT" \
   || die "无法从固定 commit 导出构建上下文"
 
 mkdir -p "$OUT"
@@ -48,9 +49,31 @@ for unit in "${UNITS[@]}"; do
   container_require_limited_builder
   build_log=$(mktemp "$TMPDIR/release-$unit.XXXXXX.log")
   say "构建日志：$build_log"
+  runtime_image=""
+  build_args=()
+  if [ "$unit" = core ]; then
+    # 只消费原来源工具的真实记录/算法。none、陈旧 source 或未按 digest 投递
+    # 都拒绝 release，不从本机 tag 猜测、不新编一份 Codex、不修改记录凑门禁。
+    runtime_digest=$(python3 - "$BUILD_CONTEXT/agent-runtime/fork/upstream.yaml" <<'PY'
+import pathlib, re, sys
+sys.path.insert(0, "tools")
+import upstream_manifest as upstream
+path, manifest, artifact = upstream.resolve("agent-runtime")
+if pathlib.Path(path).read_bytes() != pathlib.Path(sys.argv[1]).read_bytes():
+    sys.exit("agent-runtime 来源记录不再等于固定 commit，停止 release")
+bad = upstream.problems(path, manifest, check_digest=True)
+digest = str(artifact.get("artifact_digest", "none"))
+if bad or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+    sys.exit("agent-runtime 来源未闭合：" + "; ".join(bad or ["缺少真实 runtime artifact digest"]))
+print(digest)
+PY
+    ) || die "Core 所需 agent-runtime 尚未按原入口构建"
+    runtime_image="${REGISTRY:?Core release 需要已使用的 REGISTRY}/agent-runtime@$runtime_digest"
+    build_args+=(--build-arg "AGENT_RUNTIME_IMAGE=$runtime_image")
+  fi
   # 校验与执行使用同一 Docker 身份；服务端限额约束真正的编译进程。
   "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --load --progress=plain \
-    -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" 2>&1 | tee "$build_log" \
+    "${build_args[@]}" -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" 2>&1 | tee "$build_log" \
     || die "$unit 构建失败"
   digest=$("${CONTAINER_DOCKER[@]}" image inspect --format '{{.Id}}' "$tag")
   pass "镜像 $digest"
@@ -70,9 +93,9 @@ for unit in "${UNITS[@]}"; do
   lock_digest=$( [ -n "$locks" ] && git hash-object $locks | sha256sum | cut -d' ' -f1 || echo none )
 
   prov="$OUT/$unit.${digest#sha256:}.provenance.json"
-  python3 - "$unit" "$digest" "$COMMIT" "$lock_digest" "$prov" <<'PY'
+  python3 - "$unit" "$digest" "$COMMIT" "$lock_digest" "$prov" "$runtime_image" <<'PY'
 import json, os, subprocess, sys
-unit, digest, commit, lock_digest, out = sys.argv[1:6]
+unit, digest, commit, lock_digest, out, runtime_image = sys.argv[1:7]
 remote = subprocess.run(["git","config","--get","remote.origin.url"],
                         capture_output=True, text=True).stdout.strip() or "none"
 json.dump({
@@ -82,11 +105,13 @@ json.dump({
     "predicate": {
         "buildDefinition": {
             "buildType": "https://platform.local/docker-build/v1",
-            "externalParameters": {"dockerfile": f"{unit}/Dockerfile", "context": "."},
+            "externalParameters": {"dockerfile": f"{unit}/Dockerfile", "context": ".",
+                                   "buildArgs": {"AGENT_RUNTIME_IMAGE": runtime_image} if runtime_image else {}},
             "resolvedDependencies": [
                 {"uri": remote, "digest": {"gitCommit": commit}},
                 {"name": "dependency-locks", "digest": {"sha256": lock_digest}},
-            ],
+            ] + ([{"uri": "oci://" + runtime_image.split("@")[0],
+                   "digest": {"sha256": runtime_image.split("@sha256:")[1]}}] if runtime_image else []),
         },
         "runDetails": {
             "builder": {"id": os.environ.get("PLATFORM_BUILDER_ID", "local")},

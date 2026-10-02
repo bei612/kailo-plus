@@ -7,13 +7,16 @@
 //! 上游 `HarnessRelay`/`RestClient` 是 ACP harness 内的单身份客户端，其内存
 //! queue/seen/retry 不升格为业务可靠权威——重试与去重由 Core 的 outbox 承担。
 
+use std::sync::Arc;
+
 use base64::Engine;
 use nostr::{Event, EventBuilder, Keys, Kind, Tag};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use url::Url;
 
-use crate::operator::OperatorError;
+use crate::limits::ApiBudget;
+use crate::operator::{LimitKind, OperatorError};
 
 /// Buzz 的事件 kind。取自上游 `buzz-core/src/kind.rs` 的同名常量，
 /// 不是本仓库自定义的编号——改动必须回到上游确认。
@@ -59,7 +62,17 @@ pub enum Delivery {
     Rejected(String),
     /// 可能已送达也可能没有
     Unknown(String),
+    /// Relay 以 `LIMIT` 类原因（429 限流、413 超大）拒绝，且在读取事件之前——
+    /// 确定没有落库，可按策略用同一个幂等键重发（`apps/06` §4）。
+    Limited(LimitKind, String),
 }
+
+/// 已从 Core 预算中取得一次额度的证明。
+///
+/// 发布要在写 DISPATCH 审计**之前**取额度：取不到就既不落账也不发送。把额度证明
+/// 作为 `deliver` 的参数，编译期就保证了发布不会绕过预算。
+#[derive(Debug)]
+pub struct Admitted(());
 
 /// 密钥托管方。只有 `Server` 才可能由 Core 代签（`DD-75`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +90,9 @@ pub struct IdentityClient {
     /// Relay 按 Host 绑定 Community，并以 `{scheme}://{host}{path}` 作为签名
     /// 期望 URL；网络地址不参与签名（SF-BUZ-32）。
     community_host: String,
+    /// Core 自己的 Relay 调用预算（`apps/07` §5）。BFF 构造的客户端必带；
+    /// 不带时（服务面与投影面的 CONTROL 客户端）行为不变。
+    budget: Option<Arc<ApiBudget>>,
 }
 
 /// 手写而不是派生：派生会把私钥打进任何 `{:?}` 的输出。
@@ -108,7 +124,22 @@ impl IdentityClient {
             keys,
             transport: Url::parse(transport_url)?,
             community_host: community_host.to_owned(),
+            budget: None,
         })
+    }
+
+    /// 让这个客户端的每次 HTTP bridge 调用先经过 Core 预算。
+    pub fn with_budget(mut self, budget: Arc<ApiBudget>) -> Self {
+        self.budget = Some(budget);
+        self
+    }
+
+    /// 取一次额度。没有挂预算时总是成功。
+    pub fn admit(&self) -> Result<Admitted, OperatorError> {
+        if let Some(b) = &self.budget {
+            b.try_acquire(&self.community_host, &self.pubkey_hex())?;
+        }
+        Ok(Admitted(()))
     }
 
     pub fn pubkey_hex(&self) -> String {
@@ -218,17 +249,33 @@ impl IdentityClient {
     }
 
     async fn send(&self, http: &reqwest::Client, event: &Event) -> Result<Value, OperatorError> {
+        let admitted = self.admit()?;
+        self.send_admitted(http, event, admitted).await
+    }
+
+    async fn send_admitted(
+        &self,
+        http: &reqwest::Client,
+        event: &Event,
+        _admitted: Admitted,
+    ) -> Result<Value, OperatorError> {
         let payload = serde_json::to_vec(event).map_err(|e| OperatorError::Sign(e.to_string()))?;
-        self.bridge_post(http, "/events", &payload).await
+        self.bridge_post_admitted(http, "/events", &payload).await
     }
 
     /// 发送一条已签好的事件，并把 Relay 的回应分成三种确定的结果。
     ///
     /// 同一条事件重发是幂等的：Relay 以「duplicate」回应，说明它已经存着这条——
     /// 那是已送达，不是拒绝。Relay 的 5xx 与传输失败是结果不明：事件可能已落库
-    /// 也可能没有，只能按 event id 去查（`DD-81`）。
-    pub async fn deliver(&self, http: &reqwest::Client, event: &Event) -> Delivery {
-        match self.send(http, event).await {
+    /// 也可能没有，只能按 event id 去查（`DD-81`）。429 与 413 在 Relay 读取事件前
+    /// 返回，是确定未落库的 `LIMIT`，不并入「拒绝」（那会被当成不可重试的权限类）。
+    pub async fn deliver(
+        &self,
+        http: &reqwest::Client,
+        event: &Event,
+        admitted: Admitted,
+    ) -> Delivery {
+        match self.send_admitted(http, event, admitted).await {
             Ok(v) => {
                 let accepted = v.get("accepted").and_then(|a| a.as_bool()) == Some(true);
                 let message = v
@@ -240,6 +287,10 @@ impl IdentityClient {
                 } else {
                     Delivery::Rejected(message.to_owned())
                 }
+            }
+            Err(e) if e.limit().is_some() => {
+                let kind = e.limit().expect("已判定为 LIMIT");
+                Delivery::Limited(kind, e.to_string())
             }
             Err(OperatorError::Rejected { status, body }) if (400..500).contains(&status) => {
                 Delivery::Rejected(format!("HTTP {status} {body}"))
@@ -406,7 +457,8 @@ impl IdentityClient {
     }
 
     /// 从 kind 39000 discovery 读 Channel 是否已归档。读不到该 Channel 的 discovery
-    /// 时返回 `None`：不存在与未归档不是一回事。
+    /// 时返回 `None`：不存在与未归档不是一回事。损坏或不符合请求 scope 的证据报错，
+    /// 不能将它解释为未归档；上游正常的未归档 discovery 省略 `archived` 标签。
     pub async fn channel_archived(
         &self,
         http: &reqwest::Client,
@@ -415,20 +467,59 @@ impl IdentityClient {
         let filter =
             serde_json::json!({ "kinds": [KIND_CHANNEL_METADATA], "#d": [channel_id], "limit": 1 });
         let page = self.query(http, &[filter]).await?;
-        let Some(event) = page.as_array().and_then(|a| a.first()) else {
+        let events: Vec<Event> = serde_json::from_value(page).map_err(|_| {
+            OperatorError::NotConverged("Channel discovery 回应不是有效事件数组".into())
+        })?;
+        let mut events = events.into_iter();
+        let Some(event) = events.next() else {
             return Ok(None);
         };
-        let archived = event
-            .get("tags")
-            .and_then(|t| t.as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(|t| t.as_array())
-            .any(|t| {
-                t.first().and_then(|v| v.as_str()) == Some("archived")
-                    && t.get(1).and_then(|v| v.as_str()) == Some("true")
-            });
-        Ok(Some(archived))
+        if events.next().is_some()
+            || event.kind.as_u16() != KIND_CHANNEL_METADATA
+            || event.verify().is_err()
+        {
+            return Err(OperatorError::NotConverged(
+                "Channel discovery 的数量、kind 或事件签名不符合查询合同".into(),
+            ));
+        }
+        let mut observed_channel = None;
+        let mut archived = None;
+        for tag in event.tags.iter() {
+            let parts = tag.as_slice();
+            match parts.first().map(String::as_str) {
+                Some("d") => {
+                    if observed_channel.is_some() || parts.len() != 2 {
+                        return Err(OperatorError::NotConverged(
+                            "Channel discovery 的 d 标签损坏或重复".into(),
+                        ));
+                    }
+                    observed_channel = parts.get(1);
+                }
+                Some("archived") => {
+                    if archived.is_some() || parts.len() != 2 {
+                        return Err(OperatorError::NotConverged(
+                            "Channel discovery 的 archived 标签损坏或重复".into(),
+                        ));
+                    }
+                    archived = Some(match parts[1].as_str() {
+                        "true" => true,
+                        "false" => false,
+                        _ => {
+                            return Err(OperatorError::NotConverged(
+                                "Channel discovery 的 archived 状态未知".into(),
+                            ));
+                        }
+                    });
+                }
+                _ => {}
+            }
+        }
+        if observed_channel.map(String::as_str) != Some(channel_id) {
+            return Err(OperatorError::NotConverged(
+                "Channel discovery 不属于请求的 Channel".into(),
+            ));
+        }
+        Ok(Some(archived.unwrap_or(false)))
     }
 
     /// 以该身份查询历史。filter 由调用方给出，BFF 不接受 Browser 提交的
@@ -487,6 +578,18 @@ impl IdentityClient {
     }
 
     async fn bridge_post(
+        &self,
+        http: &reqwest::Client,
+        path: &str,
+        payload: &[u8],
+    ) -> Result<Value, OperatorError> {
+        // `/events`、`/query`、`/count` 在 Relay 侧共用同一份每 pubkey 额度，
+        // 因此每一次都先取 Core 的额度，取不到就不发
+        self.admit()?;
+        self.bridge_post_admitted(http, path, payload).await
+    }
+
+    async fn bridge_post_admitted(
         &self,
         http: &reqwest::Client,
         path: &str,

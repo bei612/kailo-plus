@@ -6,11 +6,16 @@
 # Core 的每一次启动都要一份新的投递——`docker compose restart/start core-bff`
 # 会拿着已被消费的旧投递启动，Core 按泄漏处理并拒绝启动。
 #
-# 用法（deploy/local 下）：./start-core.sh
+# 用法（deploy/local 下）：./start-core.sh；仅更换部署配置时 ./start-core.sh --no-build。
 #
 # 镜像先构建、投递后取：构建可能远长于 OPENBAO_SECRET_ID_WRAP_TTL，先取投递再构建，
 # 投递在 Core 启动前就已过期。
 set -euo pipefail
+case "$#:$*" in
+  0:) build=true ;;
+  1:--no-build) build=false ;;
+  *) echo '用法：start-core.sh [--no-build]' >&2; exit 2 ;;
+esac
 cd "$(dirname "$0")"
 (cd ../.. && python3 tools/gen-registry.py --check)
 . ./.env
@@ -37,7 +42,9 @@ wrapped() { # <namespace> <role> → wrapping token
     | python3 -c 'import json,sys;print(json.load(sys.stdin)["wrap_info"]["token"])'
 }
 
-compose build core-bff
+if [ "$build" = true ]; then
+  compose build core-bff
+fi
 
 umask 077
 tmp=$(mktemp)

@@ -38,10 +38,12 @@ String platformReasonText(ReasonCode reason, {String? locale}) {
       ReasonCode.INVITEE_ALREADY_MEMBER => '你已经是该组织的成员。',
       ReasonCode.LAST_TENANT_ADMIN => '这会让组织失去最后一位管理员。',
       ReasonCode.NATIVE_SURFACE_REQUIRED => '这一步只能在桌面端或移动端完成。',
+      ReasonCode.PAYLOAD_TOO_LARGE => '内容超过服务器允许的大小，本次未发出；请缩短后再试。',
       ReasonCode.PERMISSION_DENIED => '你没有执行此操作的权限。',
       ReasonCode.PROJECTION_DELAYED => '显示的状态可能尚未更新。',
       ReasonCode.PUBLISH_REJECTED => '消息被拒绝。',
       ReasonCode.PUBLISH_RESULT_UNKNOWN => '消息是否送达尚不明确。',
+      ReasonCode.QUOTA_EXHAUSTED => '此操作没有可用授权额度，本次未执行。',
       ReasonCode.RATE_LIMITED => '请求过于频繁，本次未执行；请稍候再试。',
       ReasonCode.SCOPE_GUARD_FAILED => '超出了你所属的组织或工作区范围。',
       ReasonCode.SELF_APPROVAL_DENIED => '不能审批自己发起的请求。',
@@ -109,11 +111,15 @@ String platformReasonText(ReasonCode reason, {String? locale}) {
       'The organization would be left without an admin.',
     ReasonCode.NATIVE_SURFACE_REQUIRED =>
       'This must be done in the desktop or mobile app.',
+    ReasonCode.PAYLOAD_TOO_LARGE =>
+      'The content is larger than the server accepts. Nothing was sent; shorten it and try again.',
     ReasonCode.PERMISSION_DENIED => 'You do not have permission to do this.',
     ReasonCode.PROJECTION_DELAYED => 'The status shown may be out of date.',
     ReasonCode.PUBLISH_REJECTED => 'The message was rejected.',
     ReasonCode.PUBLISH_RESULT_UNKNOWN =>
       'Whether the message was delivered is not known yet.',
+    ReasonCode.QUOTA_EXHAUSTED =>
+      'This operation has no available entitlement or quota. Nothing was executed.',
     ReasonCode.RATE_LIMITED =>
       'Too many requests right now. Nothing was done; wait a moment and try again.',
     ReasonCode.SCOPE_GUARD_FAILED =>

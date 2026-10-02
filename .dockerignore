@@ -9,6 +9,9 @@
 !core/Cargo.lock
 !core/crates
 !core/.sqlx
+!collaboration/Cargo.toml
+!collaboration/crates/buzz-core
 !tools/registry/capabilities.yaml
+!agent-runtime/fork/upstream.yaml
 !worker
 **/target

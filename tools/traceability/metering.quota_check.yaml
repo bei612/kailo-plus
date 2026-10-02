@@ -1,0 +1,39 @@
+capability_id: metering.quota_check
+title: 原生额度事实驱动的 CHECK 准入机制
+stage: S4
+status: in_progress
+exposure: none
+
+design:
+  requirements: []
+  decisions: [DD-07, DD-38, DD-51]
+  facts: []
+  seams: [SS-OMT-AUTH]
+  blockers: []
+  entities: [OpenMeterBinding]
+
+validation:
+  scenarios: [V-SCN-15, V-SCN-41]
+  evidence:
+    - dimension: 上游接缝
+      ref: metering/fork/verify/core-authentication.md
+    - dimension: 安全边界
+      ref: metering/fork/verify/core-authentication.md
+    - dimension: 数据契约
+      ref: metering/fork/verify/core-authentication.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/openmeter.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/main.rs, client-kit/ts/platform/src/i18n.ts]
+  surfaces: []
+  schemas: [contracts/enums/reason_code.schema.json]
+  migrations: [core/migrations/20261002000000_quota_check.up.sql, core/migrations/20261002000000_quota_check.down.sql]
+
+runtime:
+  routes: []
+  actions: []
+  workflow_kinds: []
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

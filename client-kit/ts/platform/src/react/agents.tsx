@@ -3,6 +3,7 @@ import {
   ActionDispatchState,
   ActionGateState,
   AgentVersionState,
+  ErrorClass,
   ReasonCode,
   ResourceState,
   TaskStatus,
@@ -14,7 +15,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import type { PlatformMessageKey } from "../i18n";
-import { TransportError, type WriteFailure, writeFailure } from "../transport";
+import { BffError, TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useReasonText, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
@@ -38,6 +39,28 @@ function validDefinitionTask(task: TaskView): boolean {
     && Object.values(ActionDispatchState).includes(task.dispatchState)
     && (task.taskStatus === undefined || Object.values(TaskStatus).includes(task.taskStatus))
     && (task.workflowId === undefined || (typeof task.workflowId === "string" && !!task.workflowId));
+}
+
+function AgentReadFailure({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const t = useT();
+  const reasonText = useReasonText();
+  const response = error instanceof BffError ? error : null;
+  const knownClass = response?.errorClass !== undefined
+    && Object.values(ErrorClass).includes(response.errorClass);
+  // 这三个 GET 的裸 403/404 是确定的读取拒绝；不据状态码制造错误分类或 reason。
+  // 显式 UNKNOWN、未知分类和无可用响应优先保留未知，不能退回成确定失败。
+  const refusal = response && (response.errorClass === undefined || knownClass)
+    && response.errorClass !== ErrorClass.Unknown
+    && (knownClass || response.status === 403 || response.status === 404) ? response : null;
+  const reason = refusal?.reason;
+  const text = !refusal ? t("platform.loadFailed")
+    : reason !== undefined && Object.values(ReasonCode).includes(reason) ? reasonText(reason)
+    : refusal.status === 403 ? t("tasks.status.denied")
+    : refusal.status === 404 ? t("native.unavailable.title")
+    : t("workspace.lifecycle.rejected", { reason: String(refusal.status) });
+  return <Notice role={refusal ? "alert" : "status"}>
+    {text}<Button onClick={onRetry}>{t("platform.retry")}</Button>
+  </Notice>;
 }
 
 export function AgentDefinitionsPage() {
@@ -64,7 +87,7 @@ export function AgentDefinitionsPage() {
       <section className="flex flex-col gap-3">
         <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
         {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-          : !page ? <Notice role="alert">{t("platform.loadFailed")}</Notice>
+          : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
           : <>
             {page.definitions.length === 0 ? <Notice>{t("agents.none")}</Notice> : (
               <Table head={[t("agents.name"), t("agents.slug"), t("agents.owner"), t("agents.publishedVersion"), t("platform.state"), ""]}>
@@ -102,7 +125,7 @@ function DefinitionDetail({ resourceId, locked, onEdit }: {
   const [state, reload] = useLoad(`agent-definition:${resourceId}`, () => client.agentDefinition(resourceId));
   if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
   const row = state.status === "ok" && validDefinition(state.data) && state.data.resourceId === resourceId ? state.data : null;
-  if (!row) return <Notice role="alert">{t("platform.loadFailed")}<Button onClick={reload}>{t("platform.retry")}</Button></Notice>;
+  if (!row) return <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
   return (
     <section className="flex flex-col gap-3 rounded-md border p-3">
       <h2 className="font-medium">{row.displayName}</h2>
@@ -137,7 +160,7 @@ function PublishedVersion({ resourceId, assetId }: { resourceId: string; assetId
   return <section className="flex flex-col gap-2 border-t pt-3">
     <h3 className="text-sm font-medium">{t("agents.publishedVersion")}</h3>
     {state.status === "pending" ? <p role="status">{t("platform.loading")}</p>
-      : !version ? <Notice role="alert">{t("platform.loadFailed")}<Button onClick={reload}>{t("platform.retry")}</Button></Notice>
+      : !version ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : <>
         <Badge tone="neutral">{t("agents.version.published")}</Badge>
         <p className="text-sm">{t("agents.version.ordinal")}: {version.ordinal}</p>

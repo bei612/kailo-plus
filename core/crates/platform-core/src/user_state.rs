@@ -4,9 +4,10 @@
 //! 保留用户解密私钥，原来的 NIP-44 同步路走不通；原生端本地持钥、自己能解密，
 //! 但仍以 Core 为准，那是三端一致与可撤权的要求。
 //!
-//! 键的合法性在写入时校验，不在读取时过滤：读时过滤会让库里长期存着一堆指向
-//! 不可见 Workspace 的偏好，撤权之后它们仍在，只是看不见——而「看不见」和
-//! 「不存在」在对账时是两件事。
+//! 写入时校验键，读取时按当前 scope 过滤 Workspace 偏好与已读位置。
+//! 撤权不删除库中历史，也不改变状态版本；恢复成员关系后可继续使用原状态。
+//! msg/thread 的可读性由 Relay 以本人 SERVER 身份查证，不借用 CONTROL 或其他 HUMAN。
+//! CLIENT-only 身份缺少服务端事件查证凭据，不借用其他身份绕行。
 
 use axum::{
     extract::{Path, State},
@@ -15,7 +16,9 @@ use axum::{
     Json,
 };
 use contracts::{ReadMarkRequest, UserStateVersion, WorkspacePreferenceRequest};
+use nostr::EventId;
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
@@ -52,18 +55,116 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
             }),
         )
             .into_response(),
-        Ok(Some(row)) => (
-            StatusCode::OK,
-            Json(UserStateResponse {
-                workspace_preferences: row.workspace_preferences,
-                read_contexts: row.read_contexts,
-                version: row.version,
-            }),
-        )
-            .into_response(),
+        Ok(Some(row)) => {
+            let (Some(preferences), Some(contexts)) = (
+                row.workspace_preferences.as_object(),
+                row.read_contexts.as_object(),
+            ) else {
+                tracing::warn!("用户状态不符合数据库的对象形状约束");
+                return user_state_unavailable();
+            };
+            let event_ids: HashSet<EventId> = contexts
+                .keys()
+                .filter_map(|key| {
+                    key.strip_prefix("msg:")
+                        .or_else(|| key.strip_prefix("thread:"))
+                })
+                .filter_map(|id| EventId::from_hex(id).ok())
+                .collect();
+            let readable_events = match readable_event_ids(&state, &ctx, &event_ids).await {
+                Ok(events) => events,
+                Err(r) => return r,
+            };
+            let mut workspace_ids: Vec<Uuid> = preferences
+                .keys()
+                .filter_map(|key| key.parse().ok())
+                .collect();
+            let channel_ids: Vec<Uuid> =
+                contexts.keys().filter_map(|key| key.parse().ok()).collect();
+            let channels: Vec<(Uuid, Uuid)> = if channel_ids.is_empty() {
+                Vec::new()
+            } else {
+                match sqlx::query_as(
+                    "select b.channel_id, w.id from projection.workspace_buzz_binding b
+                     join identity.workspace w on w.id = b.workspace_id
+                     where b.channel_id = any($1) and b.state = 'ACTIVE'
+                       and w.tenant_id = $2 and w.state = 'ACTIVE'",
+                )
+                .bind(&channel_ids)
+                .bind(ctx.tenant_id)
+                .fetch_all(&state.pool)
+                .await
+                {
+                    Ok(rows) => rows,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "读用户状态的 Channel 映射失败");
+                        return user_state_unavailable();
+                    }
+                }
+            };
+            // 只读过频道、未设置收藏/静音时，仍须查证该频道所属 Workspace。
+            workspace_ids.extend(channels.iter().map(|(_, workspace_id)| *workspace_id));
+            workspace_ids.extend(readable_events.values().map(|(workspace, _)| *workspace));
+            workspace_ids.sort_unstable();
+            workspace_ids.dedup();
+            let admitted = match crate::web_transport::workspace_admissions(
+                &state,
+                &ctx,
+                &workspace_ids,
+            )
+            .await
+            {
+                Ok(admitted) => admitted,
+                Err(crate::web_transport::AdmissionFailure::Unavailable) => {
+                    return user_state_unavailable()
+                }
+                Err(e) => return e.into_response(),
+            };
+            let visible_channels: std::collections::HashSet<Uuid> = channels
+                .into_iter()
+                .filter(|(_, workspace_id)| admitted.contains_key(workspace_id))
+                .map(|(channel_id, _)| channel_id)
+                .collect();
+            (
+                StatusCode::OK,
+                Json(UserStateResponse {
+                    workspace_preferences: serde_json::Value::Object(
+                        preferences
+                            .iter()
+                            .filter(|(key, _)| {
+                                key.parse::<Uuid>()
+                                    .is_ok_and(|id| admitted.contains_key(&id))
+                            })
+                            .map(|(key, value)| (key.clone(), value.clone()))
+                            .collect(),
+                    ),
+                    read_contexts: serde_json::Value::Object(
+                        contexts
+                            .iter()
+                            .filter(|(key, _)| {
+                                if let Ok(id) = key.parse::<Uuid>() {
+                                    return visible_channels.contains(&id);
+                                }
+                                key.strip_prefix("msg:")
+                                    .or_else(|| key.strip_prefix("thread:"))
+                                    .and_then(|id| EventId::from_hex(id).ok())
+                                    .and_then(|id| readable_events.get(&id))
+                                    .is_some_and(|(workspace, is_root)| {
+                                        admitted.contains_key(workspace)
+                                            && (!key.starts_with("thread:") || *is_root)
+                                    })
+                            })
+                            .map(|(key, value)| (key.clone(), value.clone()))
+                            .collect(),
+                    ),
+                    version: row.version,
+                }),
+            )
+                .into_response()
+        }
         Err(e) => {
             tracing::warn!(error = %e, "读用户状态失败");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
+            user_state_unavailable()
         }
     }
 }
@@ -129,38 +230,40 @@ pub async fn put_read_mark(
         return StatusCode::BAD_REQUEST.into_response();
     };
 
-    // `.design/03` §4 固定了两种取值：可读 Workspace 内的 Channel ID，
-    // 或 `msg:<Buzz event id>`。其余一律拒绝——放开键空间等于给用户状态
-    // 表开了一个任意写入面。
-    let channel = match req.context_key.strip_prefix("msg:") {
-        Some(event_id) => {
-            if event_id.len() != 64 || !event_id.chars().all(|c| c.is_ascii_hexdigit()) {
-                tracing::warn!(key = %req.context_key, "msg: 前缀后不是 Buzz event id");
-                return StatusCode::BAD_REQUEST.into_response();
-            }
-            // `msg:` 形式不绑定具体 Channel：它指向一条事件，而该事件所属的
-            // Channel 由 Relay 决定。可见性因此退到「该 HUMAN 至少有一个
-            // active WorkspaceMembership」——更细的判定要按 event 反查 Channel，
-            // 那是 stream 面闭合之后才有的能力。
-            None
-        }
-        None => match req.context_key.parse::<Uuid>() {
-            Ok(id) => Some(id),
-            Err(_) => {
-                tracing::warn!(key = %req.context_key, "context_key 既不是 UUID 也不是 msg: 形式");
-                return StatusCode::BAD_REQUEST.into_response();
-            }
-        },
+    // 格式非法先拒绝，避免为必然不能写入的请求发起 Relay 查询。
+    let Ok(last_read_at) = chrono::DateTime::parse_from_rfc3339(&req.last_read_at) else {
+        return StatusCode::BAD_REQUEST.into_response();
     };
-
-    match channel {
-        Some(channel_id) => {
-            if let Err(r) = require_visible_channel(&state, &ctx, channel_id).await {
+    match req
+        .context_key
+        .strip_prefix("msg:")
+        .or_else(|| req.context_key.strip_prefix("thread:"))
+    {
+        Some(id) => {
+            let Ok(event_id) = EventId::from_hex(id) else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            let readable = match readable_event_ids(&state, &ctx, &HashSet::from([event_id])).await
+            {
+                Ok(events) => events,
+                Err(r) => return r,
+            };
+            let Some((workspace_id, is_root)) = readable.get(&event_id) else {
+                return StatusCode::FORBIDDEN.into_response();
+            };
+            if req.context_key.starts_with("thread:") && !is_root {
+                return StatusCode::FORBIDDEN.into_response();
+            }
+            // Relay 查询期间撤权后，旧可读结果不能成为这次写入的准入依据。
+            if let Err(r) = require_visible_workspace(&state, &ctx, *workspace_id).await {
                 return r;
             }
         }
         None => {
-            if let Err(r) = require_any_workspace(&state, &ctx).await {
+            let Ok(channel_id) = req.context_key.parse::<Uuid>() else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            if let Err(r) = require_visible_channel(&state, &ctx, channel_id).await {
                 return r;
             }
         }
@@ -168,9 +271,6 @@ pub async fn put_read_mark(
 
     // 三端读写同一个值，格式必须是一个：RFC 3339，统一存成 UTC。不校验，
     // 一端写进去的任意字符串在另一端就是解析不了的垃圾。
-    let Ok(last_read_at) = chrono::DateTime::parse_from_rfc3339(&req.last_read_at) else {
-        return StatusCode::BAD_REQUEST.into_response();
-    };
     let last_read_at = last_read_at
         .with_timezone(&chrono::Utc)
         .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true);
@@ -218,18 +318,28 @@ async fn upsert(
         Stamp::None => "$3::jsonb",
         Stamp::UpdatedAt => "($3::jsonb || jsonb_build_object('updatedAt', now()))",
     };
-    let sql = format!(
-        "insert into identity.collaboration_user_state
+    // 无行时读取的版本是 0，只有持有该版本的第一次写入能够建行。
+    // 插入与更新分别保持原子：先查存在性再写会让两个首次写入都绕过 CAS。
+    let sql = if expected_version == 0 {
+        format!(
+            "insert into identity.collaboration_user_state
              (tenant_principal_id, {column}, version, updated_at)
-         values ($1, jsonb_build_object($2::text, {value_sql}), 1, now())
-         on conflict (tenant_principal_id) do update set
+         select $1, jsonb_build_object($2::text, {value_sql}), 1, now()
+         where $4::integer = 0
+         on conflict (tenant_principal_id) do nothing
+         returning version"
+        )
+    } else {
+        format!(
+            "update identity.collaboration_user_state set
              {column} = jsonb_set(
                  identity.collaboration_user_state.{column}, array[$2::text], {value_sql}, true),
              version = identity.collaboration_user_state.version + 1,
              updated_at = now()
-         where identity.collaboration_user_state.version = $4
+         where tenant_principal_id = $1 and version = $4
          returning version"
-    );
+        )
+    };
     match sqlx::query_scalar::<_, i32>(&sql)
         .bind(ctx.tenant_principal_id)
         .bind(key)
@@ -245,7 +355,7 @@ async fn upsert(
             }),
         )
             .into_response(),
-        // 没有返回行只有一种成因：已存在的行版本与期望不符。
+        // 无行却提交非零版本、首次写入已被另一端完成、存量版本不符均为冲突。
         Ok(None) => StatusCode::CONFLICT.into_response(),
         Err(e) => {
             tracing::warn!(error = %e, "写用户状态失败");
@@ -259,22 +369,13 @@ async fn require_visible_workspace(
     ctx: &ExecutionContext,
     workspace_id: Uuid,
 ) -> Result<(), Response> {
-    let ok = sqlx::query_scalar!(
-        "select 1 from identity.workspace w
-         join identity.workspace_membership wm
-           on wm.workspace_id = w.id and wm.tenant_principal_id = $2 and wm.state = 'ACTIVE'
-         where w.id = $1 and w.tenant_id = $3 and w.state = 'ACTIVE'",
-        workspace_id,
-        ctx.tenant_principal_id,
-        ctx.tenant_id,
-    )
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::warn!(error = %e, "Workspace 可见性查询失败");
-        StatusCode::SERVICE_UNAVAILABLE.into_response()
-    })?;
-    ok.map(|_| ()).ok_or_else(|| {
+    let admitted = crate::web_transport::workspace_admissions(state, ctx, &[workspace_id])
+        .await
+        .map_err(IntoResponse::into_response)?;
+    if admitted.contains_key(&workspace_id) {
+        return Ok(());
+    }
+    Err({
         tracing::warn!(workspace = %workspace_id, "Workspace 对该 Principal 不可见");
         StatusCode::FORBIDDEN.into_response()
     })
@@ -285,47 +386,163 @@ async fn require_visible_channel(
     ctx: &ExecutionContext,
     channel_id: Uuid,
 ) -> Result<(), Response> {
-    let ok = sqlx::query_scalar!(
-        "select 1 from projection.workspace_buzz_binding b
+    let workspace_id: Option<Uuid> = sqlx::query_scalar(
+        "select w.id from projection.workspace_buzz_binding b
          join identity.workspace w on w.id = b.workspace_id
-         join identity.workspace_membership wm
-           on wm.workspace_id = w.id and wm.tenant_principal_id = $2 and wm.state = 'ACTIVE'
          where b.channel_id = $1 and b.state = 'ACTIVE'
-           and w.tenant_id = $3 and w.state = 'ACTIVE'",
-        channel_id,
-        ctx.tenant_principal_id,
-        ctx.tenant_id,
+           and w.tenant_id = $2 and w.state = 'ACTIVE'",
     )
+    .bind(channel_id)
+    .bind(ctx.tenant_id)
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| {
         tracing::warn!(error = %e, "Channel 可见性查询失败");
         StatusCode::SERVICE_UNAVAILABLE.into_response()
     })?;
-    ok.map(|_| ()).ok_or_else(|| {
+    let workspace_id = workspace_id.ok_or_else(|| {
         tracing::warn!(channel = %channel_id, "Channel 对该 Principal 不可见");
         StatusCode::FORBIDDEN.into_response()
-    })
+    })?;
+    require_visible_workspace(state, ctx, workspace_id).await
 }
 
-async fn require_any_workspace(state: &BffState, ctx: &ExecutionContext) -> Result<(), Response> {
-    let ok = sqlx::query_scalar!(
-        "select 1 from identity.workspace_membership wm
-         join identity.workspace w on w.id = wm.workspace_id
-         where wm.tenant_principal_id = $1 and wm.state = 'ACTIVE'
-           and w.tenant_id = $2 and w.state = 'ACTIVE'
-         limit 1",
-        ctx.tenant_principal_id,
-        ctx.tenant_id,
+/// 临时查证事件所属的可读 Workspace；事件正文不入 Core，也不返回给状态调用方。
+/// Relay 自己执行 author-only、result-gated 与 Channel 可读策略，本侧不重写它们。
+async fn readable_event_ids(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    requested: &HashSet<EventId>,
+) -> Result<HashMap<EventId, (Uuid, bool)>, Response> {
+    use crate::web_transport::{self, AdmissionFailure};
+
+    let mut readable = HashMap::new();
+    if requested.is_empty() {
+        return Ok(readable);
+    }
+    let workspace_ids: Vec<Uuid> = sqlx::query_scalar(
+        "select id from identity.workspace where tenant_id = $1 and state = 'ACTIVE' order by id",
     )
-    .fetch_optional(&state.pool)
+    .bind(ctx.tenant_id)
+    .fetch_all(&state.pool)
     .await
     .map_err(|e| {
-        tracing::warn!(error = %e, "Workspace 成员查询失败");
-        StatusCode::SERVICE_UNAVAILABLE.into_response()
+        tracing::warn!(error = %e, "事件可读性候选查询失败");
+        user_state_unavailable()
     })?;
-    ok.map(|_| ()).ok_or_else(|| {
-        tracing::warn!(principal = %ctx.tenant_principal_id, "该 Principal 没有任何可读 Workspace");
-        StatusCode::FORBIDDEN.into_response()
-    })
+    let admitted = web_transport::workspace_admissions(state, ctx, &workspace_ids)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    if admitted.is_empty() {
+        return Ok(readable);
+    }
+    let keys = web_transport::actor_keys(state, ctx).await?;
+    for workspace_id in workspace_ids {
+        if readable.len() == requested.len() {
+            break;
+        }
+        if !admitted.contains_key(&workspace_id) {
+            continue;
+        }
+        let scope = match web_transport::admit_workspace_scope(state, ctx, workspace_id).await {
+            Ok(scope) => scope,
+            Err(AdmissionFailure::Denied) => continue,
+            Err(e) => return Err(e.into_response()),
+        };
+        let limits = web_transport::relay_limits(state, &scope)
+            .await
+            .map_err(IntoResponse::into_response)?;
+        let page_size = usize::try_from(web_transport::page_limit(state, &limits))
+            .ok()
+            .filter(|size| *size > 0)
+            .ok_or_else(user_state_unavailable)?;
+        let client = web_transport::identity_client(state, &keys, &scope)?;
+        let mut remaining: Vec<EventId> = requested
+            .iter()
+            .filter(|id| !readable.contains_key(*id))
+            .copied()
+            .collect();
+        remaining.sort_unstable();
+        let mut observed = HashMap::new();
+        // 复用部署与 binding 的真实单页上界；不新增消息数量阈值，也不静默截断。
+        for batch in remaining.chunks(page_size) {
+            let ids: Vec<String> = batch.iter().map(ToString::to_string).collect();
+            let limit = i64::try_from(batch.len()).map_err(|_| user_state_unavailable())?;
+            let filter = serde_json::json!({
+                "ids": ids,
+                "#h": [scope.channel_id],
+                "limit": limit,
+            });
+            let result = client.query(&state.http, &[filter]).await.map_err(|e| {
+                tracing::warn!(error = %e, "查证已读事件可见性失败");
+                web_transport::relay_error_response(&e, None)
+            })?;
+            let events: Vec<nostr::Event> = serde_json::from_value(result).map_err(|e| {
+                tracing::warn!(error = %e, "Relay 可见性回应不是有效事件数组");
+                user_state_unavailable()
+            })?;
+            if events.len() > batch.len() {
+                return Err(user_state_unavailable());
+            }
+            for event in events {
+                let channel = event
+                    .tags
+                    .iter()
+                    .map(nostr::Tag::as_slice)
+                    .find(|tag| tag.first().is_some_and(|name| name == "h"))
+                    .and_then(|tag| tag.get(1));
+                if !batch.contains(&event.id)
+                    || channel != Some(&scope.channel_id)
+                    || event.verify().is_err()
+                {
+                    tracing::warn!("Relay 可见性回应不符合请求 scope 或验签合同");
+                    return Err(user_state_unavailable());
+                }
+                // Buzz 的 NIP-10 resolver 只以有效的 lowercase e/reply 标记判定回复；
+                // root-only 仍是顶层。复用 nostr 的 EventId/marker 解析，忽略此判定
+                // 不使用的 relay/author 槽，避免它们的格式使真实回复被误判成根。
+                let is_root = !event.tags.iter().any(|tag| {
+                    let parts = tag.as_slice();
+                    parts.len() >= 4
+                        && parts[0] == "e"
+                        && nostr::Tag::parse([
+                            parts[0].as_str(),
+                            parts[1].as_str(),
+                            "",
+                            parts[3].as_str(),
+                        ])
+                        .is_ok_and(|tag| tag.is_reply())
+                });
+                observed.insert(event.id, is_root);
+            }
+        }
+        // 不沿用外部读取之前的资格或 binding；查询期间撤权时丢弃该 scope 的结果。
+        let current = match web_transport::admit_workspace_scope(state, ctx, workspace_id).await {
+            Ok(scope) => scope,
+            Err(AdmissionFailure::Denied) => continue,
+            Err(e) => return Err(e.into_response()),
+        };
+        if current.channel_id != scope.channel_id || current.community_host != scope.community_host
+        {
+            return Err(AdmissionFailure::BindingNotActive.into_response());
+        }
+        readable.extend(
+            observed
+                .into_iter()
+                .map(|(id, is_root)| (id, (workspace_id, is_root))),
+        );
+    }
+    Ok(readable)
+}
+
+fn user_state_unavailable() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(contracts::ErrorBody {
+            class: contracts::ErrorClass::Precondition,
+            reason: contracts::ReasonCode::DependencyUnavailable,
+            operation_id: None,
+        }),
+    )
+        .into_response()
 }

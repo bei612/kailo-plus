@@ -72,20 +72,37 @@ pub async fn apply(
 
     let last_event_id = match updated {
         Ok(Some(id)) => id,
-        // 没有返回行只有一种可能：已存在的 last_event_id 不小于本次。回读权威值
-        // 并按幂等成功返回——Activity 重试到达同一结果不该被当成失败再重试。
+        // 同 EventID 只有同一报告才是幂等重试。仅回读事件号会把不同 run/终态
+        // 的碰撞误作已写入；较旧报告仍按原单调规则忽略。
         Ok(None) => {
             tx.rollback().await?;
-            return Ok(sqlx::query_scalar!(
-                "select last_event_id from projection.task_projection where workflow_id = $1",
-                report.workflow_id
+            let current: Option<(i64, bool)> = sqlx::query_as(
+                "select last_event_id,
+                    (run_id = $2 and status = $3
+                     and waiting_reason is not distinct from $4
+                     and progress is not distinct from $5)
+                 from projection.task_projection where workflow_id = $1",
             )
+            .bind(&report.workflow_id)
+            .bind(&report.run_id)
+            .bind(&status)
+            .bind(&report.waiting_reason)
+            .bind(&report.progress)
             .fetch_optional(pool)
-            .await?
-            .map(|last_event_id| Applied {
-                applied: false,
-                last_event_id,
-            }));
+            .await?;
+            return current
+                .map(|(last_event_id, matches)| {
+                    if last_event_id == report.event_id && !matches {
+                        return Err(sqlx::Error::Protocol(
+                            "TaskProjection 同 EventID 的报告证据冲突".into(),
+                        ));
+                    }
+                    Ok(Applied {
+                        applied: false,
+                        last_event_id,
+                    })
+                })
+                .transpose();
         }
         Err(sqlx::Error::Database(e)) if e.is_foreign_key_violation() => return Ok(None),
         Err(e) => return Err(e),

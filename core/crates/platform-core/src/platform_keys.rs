@@ -1351,3 +1351,92 @@ pub(crate) async fn reconcile_platform_key_intent(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn context(action_key: &str, defined: bool) -> ActionAuditContext {
+        let id = Uuid::nil();
+        ActionAuditContext {
+            operation_id: id,
+            workspace_id: None,
+            initiator_principal_id: id,
+            actor_principal_id: id,
+            target_id: id,
+            parameter_hash: String::new(),
+            correlation_id: id,
+            action_version: 1,
+            action_key: action_key.to_owned(),
+            component_type_key: defined.then(|| "defined".to_owned()),
+            target_type: defined.then(|| "DEFINED".to_owned()),
+            result_exposure: defined.then(|| "SUMMARY".to_owned()),
+        }
+    }
+
+    fn triple(class: Option<AuditClass<'_>>) -> Option<(String, String, String)> {
+        class.map(|c| {
+            (
+                c.component_type_key.to_owned(),
+                c.target_type.to_owned(),
+                c.result_exposure.to_owned(),
+            )
+        })
+    }
+
+    /// 托管身份建钥、撤钥与 Tenant 建立的引导动作没有 ActionDefinition（入口自声明
+    /// 分类）；终态审计不能因此永远写不出去，使已销毁的意图停在 FENCED。
+    #[test]
+    fn audit_uses_entry_class_without_definition() {
+        for key in [HUMAN_PROVISION, HUMAN_REVOKE] {
+            assert_eq!(
+                triple(audit_class(&context(key, false), PlatformKey::Human, None)),
+                Some(("buzz".into(), "PRINCIPAL".into(), "NONE".into()))
+            );
+        }
+        assert_eq!(
+            triple(audit_class(
+                &context("tenant.bootstrap", false),
+                PlatformKey::Human,
+                Some("WORKSPACE")
+            )),
+            Some(("core".into(), "WORKSPACE_MEMBERSHIP".into(), "NONE".into()))
+        );
+        assert_eq!(
+            triple(audit_class(
+                &context("tenant.bootstrap", false),
+                PlatformKey::Control,
+                None
+            )),
+            Some(("core".into(), "TENANT".into(), "NONE".into()))
+        );
+        assert_eq!(
+            triple(audit_class(
+                &context("tenant.member.invite", true),
+                PlatformKey::Human,
+                Some("TENANT")
+            )),
+            Some(("defined".into(), "DEFINED".into(), "SUMMARY".into()))
+        );
+    }
+
+    #[test]
+    fn audit_refuses_unknown_entry() {
+        assert!(audit_class(&context("verify.other", false), PlatformKey::Human, None).is_none());
+        assert!(audit_class(
+            &context(HUMAN_PROVISION, false),
+            PlatformKey::Human,
+            Some("OTHER")
+        )
+        .is_none());
+        assert!(audit_class(
+            &context("tenant.bootstrap", false),
+            PlatformKey::Operator,
+            None
+        )
+        .is_none());
+        let mut partial = context(HUMAN_PROVISION, true);
+        partial.target_type = None;
+        assert!(audit_class(&partial, PlatformKey::Human, None).is_none());
+    }
+}

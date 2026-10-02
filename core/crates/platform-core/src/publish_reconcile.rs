@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 use crate::audit::{append, AuditEntry};
 use crate::service_api::ServiceState;
-use crate::tenant_lifecycle::control_client;
+use crate::tenant_lifecycle::{control_client, ProjectionDirection};
 use crate::web_transport::PUBLISH_ACTION;
 
 pub struct Config {
@@ -213,7 +213,9 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
 }
 
 async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
-    let Ok((control, _)) = control_client(state, p.tenant_id).await else {
+    // 按 event id 查证是经 Relay 的读取：binding 须 ACTIVE，漂移期间留待下一轮
+    let Ok((control, _)) = control_client(state, p.tenant_id, ProjectionDirection::Establish).await
+    else {
         return "CONTROL_UNREADABLE";
     };
     let result_code = match control.event_exists(&state.http, &p.event_id).await {

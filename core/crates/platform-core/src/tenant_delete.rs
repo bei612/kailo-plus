@@ -84,6 +84,14 @@ pub(crate) async fn secrets_ready(
         let owns = match kind.as_str() {
             "HUMAN" => secrets.owns_platform_key(PlatformKey::Human, tenant, &locator),
             "CONTROL" => secrets.owns_platform_key(PlatformKey::Control, tenant, &locator),
+            "AGENT" => locator
+                .strip_prefix(&secrets.tenant_locator(tenant, ""))
+                .is_some_and(|suffix| {
+                    !suffix.is_empty()
+                        && suffix
+                            .split('/')
+                            .all(|part| !part.is_empty() && part != "." && part != "..")
+                }),
             _ => false,
         };
         if owns {
@@ -115,6 +123,483 @@ pub(crate) async fn secrets_ready(
     Ok(true)
 }
 
+/// DD-99：只冻结现有 Agent 库存的 scope、版本及原生引用，不复制配置/记忆正文。
+/// 可变运行状态由原 Invocation/Workflow 观察，不能塞进不可变 inventory 后再改写。
+pub(crate) async fn frozen_agent_inventory(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+) -> Result<Value, crate::governance::Refusal> {
+    let mut inventory: Value = sqlx::query_scalar(
+        "select jsonb_build_object(
+          'installations', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select i.resource_id,i.workspace_id,i.agent_resource_id,i.pinned_version_asset_id,
+                   i.agent_principal_id,i.runtime_isolation_ref
+            from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
+            where r.tenant_id=$1 order by i.resource_id for update of i) x),
+          'runtime_projections', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select p.installation_resource_id,p.generation,p.agent_version_asset_id,
+                   p.model_route_resource_id,p.gateway_resource_ids,p.config_hash
+            from catalog.agent_runtime_projection p join catalog.resource r on r.id=p.installation_resource_id
+            where r.tenant_id=$1 order by p.installation_resource_id,p.generation for update of p) x),
+          'channel_bindings', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select b.installation_resource_id,b.workspace_id,b.triggers
+            from catalog.channel_agent_binding b join catalog.resource r on r.id=b.installation_resource_id
+            where r.tenant_id=$1 order by b.installation_resource_id for update of b) x),
+          'memory_bindings', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select b.installation_resource_id,b.agent_buzz_identity_binding_id,
+                   b.memory_counterparty_buzz_identity_binding_id,b.version
+            from catalog.agent_memory_binding b join catalog.resource r on r.id=b.installation_resource_id
+            where r.tenant_id=$1 order by b.installation_resource_id for update of b) x),
+          'sessions', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select tenant_id,workspace_id,root_event_id,installation_resource_id,
+                   agent_version_asset_id,projection_generation
+            from catalog.agent_session where tenant_id=$1
+            order by workspace_id,root_event_id,installation_resource_id for update) x),
+          'invocations', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select id,tenant_id,workspace_id,root_event_id,source_event_id,installation_resource_id,
+                   agent_version_asset_id,projection_generation,parent_invocation_id,
+                   delegation_id,automation_version_asset_id,action_execution_id,workflow_id
+            from catalog.agent_invocation where tenant_id=$1 order by id for update) x))",
+    )
+    .bind(tenant)
+    .fetch_one(&mut *conn)
+    .await?;
+    let routes = crate::model_route::freeze(conn, tenant).await?;
+    inventory
+        .as_object_mut()
+        .ok_or_else(|| crate::governance::Refusal::Unavailable("Agent inventory 不是对象".into()))?
+        .insert(
+            "model_routes".into(),
+            serde_json::to_value(routes)
+                .map_err(|e| crate::governance::Refusal::Unavailable(e.to_string()))?,
+        );
+    Ok(inventory)
+}
+
+fn agent_rows<'a>(inventory: &'a Value, category: &str) -> Result<&'a [Value], sqlx::Error> {
+    inventory
+        .get(category)
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .ok_or_else(|| sqlx::Error::Protocol(format!("冻结 Agent inventory 缺少 {category}")))
+}
+
+fn same_agent_inventory(mut current: Value, mut frozen: Value) -> Result<bool, sqlx::Error> {
+    let current_routes = current
+        .get_mut("model_routes")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| sqlx::Error::Protocol("当前 model route inventory 缺失".into()))?;
+    let frozen_routes = frozen
+        .get_mut("model_routes")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| sqlx::Error::Protocol("冻结 model route inventory 缺失".into()))?;
+    if current_routes.len() != frozen_routes.len() {
+        return Ok(false);
+    }
+    for (current, frozen) in current_routes.iter_mut().zip(frozen_routes) {
+        let current_credentials = current
+            .get_mut("credentials")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(|| sqlx::Error::Protocol("当前 credential inventory 缺失".into()))?;
+        let frozen_credentials = frozen
+            .get_mut("credentials")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(|| sqlx::Error::Protocol("冻结 credential inventory 缺失".into()))?;
+        if current_credentials.len() != frozen_credentials.len() {
+            return Ok(false);
+        }
+        for (current, frozen) in current_credentials.iter_mut().zip(frozen_credentials) {
+            let current = current
+                .as_object_mut()
+                .ok_or_else(|| sqlx::Error::Protocol("当前 credential 不是对象".into()))?;
+            let frozen = frozen
+                .as_object_mut()
+                .ok_or_else(|| sqlx::Error::Protocol("冻结 credential 不是对象".into()))?;
+            let original = frozen.get("secret_status").and_then(Value::as_str);
+            let now = current.get("secret_status").and_then(Value::as_str);
+            if !matches!(
+                original,
+                Some("PENDING" | "ACTIVE" | "SUPERSEDED" | "REVOKED")
+            ) || !(now == original
+                || (matches!(original, Some("PENDING" | "ACTIVE")) && now == Some("SUPERSEDED")))
+            {
+                return Ok(false);
+            }
+            // 固定 dispatch fence 的 UNKNOWN random ID 仅由原 Gateway handler
+            // 查证并补全；scope/SecretRef/revision 之外的字节仍必须逐值相等。
+            if frozen.get("native_key_id") == Some(&Value::Null)
+                && frozen.get("native_key_revision") == Some(&Value::Null)
+                && frozen.get("native_dispatch_started") == Some(&Value::Bool(true))
+                && current
+                    .get("native_key_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| !id.is_empty())
+                && current
+                    .get("native_key_revision")
+                    .and_then(Value::as_i64)
+                    .is_some_and(|version| version > 0)
+            {
+                current.insert("native_key_id".into(), Value::Null);
+                current.insert("native_key_revision".into(), Value::Null);
+            }
+            current.remove("secret_status");
+            frozen.remove("secret_status");
+        }
+    }
+    Ok(current == frozen)
+}
+
+#[derive(sqlx::FromRow)]
+struct DrainingInvocation {
+    id: Uuid,
+    workflow_id: String,
+    action_execution_id: Uuid,
+    status: String,
+    native_status: Option<String>,
+    reply_event_id: Option<String>,
+    workflow_state: String,
+    task_status: Option<String>,
+    task_run_id: Option<String>,
+    observation_gap: bool,
+}
+
+impl DrainingInvocation {
+    fn terminal_matches(&self, status: &str, run: &str) -> bool {
+        let native = match (status, self.native_status.as_deref()) {
+            ("COMPLETED", Some("completed")) => self
+                .reply_event_id
+                .as_deref()
+                .is_some_and(|id| !id.is_empty()),
+            ("FAILED", Some("failed")) | ("CANCELED", Some("interrupted")) => true,
+            _ => false,
+        };
+        native
+            && self.status == status
+            && self.workflow_state == "TERMINAL"
+            && self.task_status.as_deref() == Some(status)
+            && !run.is_empty()
+            && self.task_run_id.as_deref() == Some(run)
+            && !self.observation_gap
+    }
+}
+
+/// 取消 intent 固定同一 Temporal execution chain，先落库再发请求。
+/// 请求已接受或 history 有取消事件都不是 Invocation/usage 的终态证据。
+async fn agent_cancel_chain(
+    state: &ServiceState,
+    deletion: &Delete,
+    invocation: &DrainingInvocation,
+    observed: &crate::temporal::Observed,
+) -> Result<String, sqlx::Error> {
+    if observed.first_run_id.is_empty() || observed.run_id.is_empty() {
+        return Err(sqlx::Error::Protocol(
+            "Agent Workflow 缺少原生 run 引用".into(),
+        ));
+    }
+    let mut tx = state.pool.begin().await?;
+    let _ = crate::roles::lock_tenant(&mut tx, deletion.tenant_id).await?;
+    let durable = load(&mut tx, deletion.tenant_id, deletion.snapshot_id)
+        .await?
+        .ok_or_else(|| sqlx::Error::Protocol("Agent drain 的删除快照缺失".into()))?;
+    if durable.subprocess_state == "DELETED" || !durable.irreversible_dispatch_started {
+        return Err(sqlx::Error::Protocol("Agent drain 已失去删除准入".into()));
+    }
+    let mut drain = durable
+        .provider_evidence
+        .get("AGENT_DRAIN")
+        .cloned()
+        .unwrap_or_else(|| json!({"cancel_chains":{}}));
+    let chains = drain
+        .get_mut("cancel_chains")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| sqlx::Error::Protocol("Agent cancel chain 证据不合结构".into()))?;
+    let key = invocation.id.to_string();
+    if let Some(chain) = chains.get(&key) {
+        if chain.get("workflow_id").and_then(Value::as_str) != Some(&invocation.workflow_id)
+            || chain.get("first_run_id").and_then(Value::as_str) != Some(&observed.first_run_id)
+        {
+            return Err(sqlx::Error::Protocol(
+                "Agent Workflow 已偏离冻结执行链".into(),
+            ));
+        }
+        return Ok(observed.first_run_id.clone());
+    }
+    chains.insert(
+        key,
+        json!({"workflow_id":invocation.workflow_id,"first_run_id":observed.first_run_id}),
+    );
+    sqlx::query("update admission.tenant_delete_subprocess set provider_evidence=provider_evidence || $2::jsonb where id=$1")
+        .bind(deletion.subprocess_id).bind(json!({"AGENT_DRAIN":drain})).execute(&mut *tx).await?;
+    let open = matches!(observed.state, crate::temporal::ObservedState::Open);
+    deletion
+        .audit(
+            &mut tx,
+            &format!("agent-chain:{}", invocation.id),
+            if open { "DISPATCH" } else { "RECONCILIATION" },
+            if open { "DISPATCH_PENDING" } else { "OBSERVED" },
+            vec![
+                Evidence::new(EvidenceKind::TemporalWorkflowId, &invocation.workflow_id),
+                Evidence::new(EvidenceKind::TemporalFirstRunId, &observed.first_run_id),
+                Evidence::new(
+                    EvidenceKind::OriginalActionExecutionId,
+                    invocation.action_execution_id,
+                ),
+            ],
+        )
+        .await?;
+    tx.commit().await?;
+    Ok(observed.first_run_id.clone())
+}
+
+async fn drain_agents(state: &ServiceState, deletion: &Delete) -> Result<bool, sqlx::Error> {
+    let inventory = deletion
+        .frozen_inventory
+        .get("agent_inventory")
+        .ok_or_else(|| sqlx::Error::Protocol("冻结清单缺少 Agent 适用性".into()))?;
+    let frozen = agent_rows(inventory, "invocations")?;
+    let mut tx = state.pool.begin().await?;
+    let current: Option<(String, i32)> =
+        sqlx::query_as("select state,version from identity.tenant where id=$1 for update")
+            .bind(deletion.tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if current != Some(("DELETING".into(), deletion.tenant_version + 1)) {
+        return Ok(false);
+    }
+    let actual = frozen_agent_inventory(&mut tx, deletion.tenant_id)
+        .await
+        .map_err(|e| sqlx::Error::Protocol(format!("{e:?}")))?;
+    if !same_agent_inventory(actual, inventory.clone())? {
+        return Ok(false);
+    }
+    sqlx::query("update catalog.agent_installation set state='DRAINING' where resource_id in
+        (select id from catalog.resource where tenant_id=$1) and state not in ('DRAINING','DISABLED')")
+        .bind(deletion.tenant_id).execute(&mut *tx).await?;
+    sqlx::query("update catalog.channel_agent_binding set status='DISABLED' where installation_resource_id in
+        (select id from catalog.resource where tenant_id=$1) and status<>'DISABLED'")
+        .bind(deletion.tenant_id).execute(&mut *tx).await?;
+    sqlx::query("update catalog.agent_invocation set cancel_pending=true,updated_at=now()
+        where tenant_id=$1 and status not in ('COMPLETED','FAILED','CANCELED') and not cancel_pending")
+        .bind(deletion.tenant_id).execute(&mut *tx).await?;
+    let invocations: Vec<DrainingInvocation> = sqlx::query_as(
+        "select i.id,i.workflow_id,i.action_execution_id,i.status,i.native_status,i.reply_event_id,
+                w.projection_state as workflow_state,p.status as task_status,p.run_id as task_run_id,
+                coalesce(p.observation_gap,true) as observation_gap
+         from catalog.agent_invocation i
+         join admission.action_execution a on a.id=i.action_execution_id
+              and a.tenant_id=i.tenant_id and a.workspace_id=i.workspace_id
+         join projection.workflow_ref w on w.workflow_id=i.workflow_id and w.tenant_id=i.tenant_id
+              and w.workspace_id=i.workspace_id and w.action_execution_id=i.action_execution_id
+              and w.workflow_type='AgentTaskWorkflow' and w.kind is null
+         left join projection.task_projection p on p.workflow_id=w.workflow_id
+         where i.tenant_id=$1 order by i.id",
+    ).bind(deletion.tenant_id).fetch_all(&mut *tx).await?;
+    if invocations.len() != frozen.len() {
+        return Ok(false);
+    }
+    let durable = load(&mut tx, deletion.tenant_id, deletion.snapshot_id)
+        .await?
+        .ok_or_else(|| sqlx::Error::Protocol("Agent drain 快照已丢失".into()))?;
+    if let Some(evidence) = durable.provider_evidence.get("AGENT_DRAIN") {
+        let receipts = evidence.get("invocations").and_then(Value::as_array);
+        if evidence.get("drained") == Some(&Value::Bool(true))
+            && evidence.get("inventory_digest").and_then(Value::as_str)
+                == Some(&deletion.inventory_digest)
+            && receipts.is_some_and(|receipts| {
+                receipts.len() == invocations.len()
+                    && invocations.iter().all(|invocation| {
+                        receipts.iter().any(|receipt| {
+                            receipt.get("invocation_id").and_then(Value::as_str)
+                                == Some(&invocation.id.to_string())
+                                && receipt.get("workflow_id").and_then(Value::as_str)
+                                    == Some(&invocation.workflow_id)
+                                && receipt
+                                    .get("first_run_id")
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|run| !run.is_empty())
+                                && receipt
+                                    .get("status")
+                                    .and_then(Value::as_str)
+                                    .zip(receipt.get("run_id").and_then(Value::as_str))
+                                    .is_some_and(|(status, run)| {
+                                        invocation.terminal_matches(status, run)
+                                    })
+                        })
+                    })
+            })
+        {
+            tx.commit().await?;
+            return Ok(true);
+        }
+    }
+    tx.commit().await?;
+    let mut drained = true;
+    let mut receipts = Vec::new();
+    let mut refs = Vec::new();
+    for invocation in invocations {
+        let observed = match state.temporal.describe(&invocation.workflow_id).await {
+            Ok(Some(observed)) => observed,
+            _ => {
+                drained = false;
+                continue;
+            }
+        };
+        let first_run = agent_cancel_chain(state, deletion, &invocation, &observed).await?;
+        let terminal = match &observed.state {
+            crate::temporal::ObservedState::Closed(contracts::TaskStatus::Completed) => {
+                Some("COMPLETED")
+            }
+            crate::temporal::ObservedState::Closed(contracts::TaskStatus::Failed) => Some("FAILED"),
+            crate::temporal::ObservedState::Closed(contracts::TaskStatus::Canceled) => {
+                Some("CANCELED")
+            }
+            _ => None,
+        };
+        if let Some(status) =
+            terminal.filter(|status| invocation.terminal_matches(status, &observed.run_id))
+        {
+            receipts.push(
+                json!({"invocation_id":invocation.id,"workflow_id":invocation.workflow_id,
+                "first_run_id":first_run,"run_id":observed.run_id,"status":status}),
+            );
+            refs.extend([
+                Evidence::new(EvidenceKind::TemporalWorkflowId, &invocation.workflow_id),
+                Evidence::new(EvidenceKind::TemporalFirstRunId, first_run),
+                Evidence::new(EvidenceKind::TemporalRunId, observed.run_id),
+            ]);
+        } else {
+            drained = false;
+            if matches!(observed.state, crate::temporal::ObservedState::Open) {
+                let recorded = state
+                    .temporal
+                    .cancel_request_recorded(
+                        &invocation.workflow_id,
+                        &first_run,
+                        deletion.action_execution_id,
+                    )
+                    .await;
+                if matches!(recorded, Ok(false)) {
+                    // 相同请求 ID + 首次 run fence；接收/超时都等下一轮原工作流观察。
+                    let _ = state
+                        .temporal
+                        .request_cancel(
+                            &invocation.workflow_id,
+                            &first_run,
+                            deletion.action_execution_id,
+                        )
+                        .await;
+                }
+            }
+        }
+    }
+    if !drained {
+        return Ok(false);
+    }
+    let mut tx = state.pool.begin().await?;
+    let _ = crate::roles::lock_tenant(&mut tx, deletion.tenant_id).await?;
+    let durable = load(&mut tx, deletion.tenant_id, deletion.snapshot_id)
+        .await?
+        .ok_or_else(|| sqlx::Error::Protocol("Agent drain 快照已丢失".into()))?;
+    let mut evidence = durable
+        .provider_evidence
+        .get("AGENT_DRAIN")
+        .cloned()
+        .unwrap_or_else(|| json!({"cancel_chains":{}}));
+    let object = evidence
+        .as_object_mut()
+        .ok_or_else(|| sqlx::Error::Protocol("Agent drain 证据不是对象".into()))?;
+    object.insert("drained".into(), Value::Bool(true));
+    object.insert(
+        "inventory_digest".into(),
+        Value::String(deletion.inventory_digest.clone()),
+    );
+    object.insert("invocations".into(), Value::Array(receipts));
+    sqlx::query("update admission.tenant_delete_subprocess set provider_evidence=provider_evidence || $2::jsonb where id=$1 and state<>'DELETED'")
+        .bind(deletion.subprocess_id).bind(json!({"AGENT_DRAIN":evidence})).execute(&mut *tx).await?;
+    deletion
+        .audit(&mut tx, "AGENT_DRAIN", "RECONCILIATION", "DRAINED", refs)
+        .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+async fn retire_agents(state: &ServiceState, deletion: &Delete) -> Result<bool, sqlx::Error> {
+    if !drain_agents(state, deletion).await? {
+        return Ok(false);
+    }
+    let inventory = deletion
+        .frozen_inventory
+        .get("agent_inventory")
+        .ok_or_else(|| sqlx::Error::Protocol("冻结清单缺少 Agent 适用性".into()))?;
+    let installations = agent_rows(inventory, "installations")?;
+    let mut retired = Vec::new();
+    for installation in installations {
+        let id: Uuid = serde_json::from_value(installation["resource_id"].clone())
+            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        let Some(runtime) = state.agent_runtime.as_ref() else {
+            return Ok(false);
+        };
+        if let Err(error) = runtime.retirement(&state.pool, id).await {
+            tracing::warn!(tenant_id = %deletion.tenant_id, installation_id = %id, error = %error, "Agent 隔离运行状态销毁未查证");
+            return Ok(false);
+        }
+        retired.push(id);
+    }
+    persist(
+        state,
+        deletion,
+        Some((
+            "AGENT_RUNTIME",
+            json!({"deleted":true,
+        "inventory_digest":deletion.inventory_digest,"installations":retired}),
+        )),
+    )
+    .await?;
+    let mut tx = state.pool.begin().await?;
+    let durable = load(&mut tx, deletion.tenant_id, deletion.snapshot_id)
+        .await?
+        .ok_or_else(|| sqlx::Error::Protocol("Agent Gateway 销毁快照已丢失".into()))?;
+    tx.commit().await?;
+    if durable.provider_evidence.pointer("/GATEWAY/deleted") == Some(&Value::Bool(true))
+        && durable
+            .provider_evidence
+            .pointer("/GATEWAY/inventory_digest")
+            .and_then(Value::as_str)
+            == Some(&deletion.inventory_digest)
+    {
+        // 已查证的 native absence 可在 namespace 销毁后恢复，不能再读已删 SecretRef。
+        return Ok(true);
+    }
+    let routes: Vec<crate::model_route::FrozenRoute> = serde_json::from_value(
+        inventory
+            .get("model_routes")
+            .cloned()
+            .ok_or_else(|| sqlx::Error::Protocol("冻结模型库存缺失".into()))?,
+    )
+    .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+    let mut absent = Vec::new();
+    for route in routes {
+        match crate::model_route::retire(state, deletion.tenant_id, &route).await {
+            Ok(evidence) => absent.extend(evidence),
+            Err(error) => {
+                tracing::warn!(tenant_id = %deletion.tenant_id, route_id = %route.resource_id, error = ?error, "Gateway 模型/凭据销毁未查证");
+                return Ok(false);
+            }
+        }
+    }
+    persist(
+        state,
+        deletion,
+        Some((
+            "GATEWAY",
+            json!({"deleted":true,
+        "inventory_digest":deletion.inventory_digest,"native_absence":absent}),
+        )),
+    )
+    .await?;
+    Ok(true)
+}
+
 #[derive(sqlx::FromRow)]
 struct Delete {
     snapshot_id: Uuid,
@@ -135,6 +620,214 @@ struct Delete {
     action_version: i32,
     parameter_hash: String,
     correlation_id: Uuid,
+}
+
+/// 关系销毁前的原生观察证据，仅供同一删除链的受限读取；不是当前写权限。
+#[derive(serde::Deserialize, serde::Serialize)]
+struct LifecycleReaders {
+    snapshot_id: Uuid,
+    tenant_version: i32,
+    inventory_digest: String,
+    readers: Vec<LifecycleReader>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct LifecycleReader {
+    principal_id: Uuid,
+    revisions: Vec<String>,
+}
+
+impl LifecycleReaders {
+    fn matches(&self, snapshot: Uuid, version: i32, digest: &str) -> bool {
+        self.snapshot_id == snapshot
+            && self.tenant_version == version
+            && self.inventory_digest == digest
+            && !self.readers.is_empty()
+            && self.readers.iter().all(|reader| {
+                !reader.revisions.is_empty()
+                    && reader.revisions.iter().all(|revision| !revision.is_empty())
+            })
+    }
+
+    fn evidence(&self) -> Vec<Evidence> {
+        self.readers
+            .iter()
+            .flat_map(|reader| reader.revisions.iter())
+            .map(|revision| Evidence::new(EvidenceKind::SpicedbZedtoken, revision))
+            .collect()
+    }
+}
+
+/// 调用方已持有 Tenant 与当前 HUMAN membership 锁。原生关系销毁后不再重新
+/// 推断角色：只消费销毁前与同一 snapshot/operation 原子持久化的观察证据。
+pub(crate) async fn lifecycle_reader_eligible(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    principal: Uuid,
+    action_execution_id: Option<Uuid>,
+) -> Result<bool, sqlx::Error> {
+    let rows: Vec<(Uuid, Uuid, i32, String, Value, Uuid, Uuid)> = sqlx::query_as(
+        "select s.id,p.id,s.tenant_version,s.inventory_digest,
+                p.provider_evidence->'LIFECYCLE_READERS',a.id,a.operation_id
+         from admission.tenant_lifecycle_snapshot s
+         join identity.tenant t on t.id=s.tenant_id
+         join admission.tenant_delete_subprocess p on p.tenant_lifecycle_snapshot_id=s.id
+              and p.tenant_id=s.tenant_id and p.subject='PLATFORM_CORE' and p.mode='PLATFORM_CORE_CHAIN'
+         join admission.action_execution a on a.id=s.action_execution_id
+              and a.tenant_id=s.tenant_id and a.target_id=s.tenant_id
+              and a.action_key='tenant.delete' and a.gate_state='ALLOWED'
+         join projection.workflow_ref w on w.action_execution_id=a.id
+              and w.workflow_id=a.temporal_workflow_id and w.tenant_id=s.tenant_id
+              and w.kind='TENANT_LIFECYCLE'
+         where s.tenant_id=$1 and ($2::uuid is null or a.id=$2)
+           and t.state='DELETING' and s.state='DELETING' and s.tenant_version=t.version-1
+           and s.irreversible_dispatch_started and p.state in ('RUNNING','UNKNOWN')
+           and p.provider_evidence ? 'LIFECYCLE_READERS'",
+    )
+    .bind(tenant)
+    .bind(action_execution_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    for (snapshot, subprocess, version, digest, value, execution, operation) in rows {
+        let readers: LifecycleReaders =
+            serde_json::from_value(value).map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        if !readers.matches(snapshot, version, &digest)
+            || !readers
+                .readers
+                .iter()
+                .any(|reader| reader.principal_id == principal)
+        {
+            continue;
+        }
+        let mut evidence = readers.evidence();
+        evidence.extend([
+            Evidence::new(EvidenceKind::TenantLifecycleSnapshotId, snapshot),
+            Evidence::new(EvidenceKind::TenantDeleteSubprocessId, subprocess),
+            Evidence::new(EvidenceKind::ActionExecutionId, execution),
+        ]);
+        let recorded: bool = sqlx::query_scalar(
+            "select exists(select 1 from audit.audit_event
+             where event_key=$1 and tenant_id=$2 and operation_id=$3
+               and action_key='tenant.delete' and result_code='ADMITTED'
+               and evidence_refs @> $4::jsonb)",
+        )
+        .bind(format!("tenant-delete:{subprocess}:lifecycle-readers"))
+        .bind(tenant)
+        .bind(operation)
+        .bind(audit::evidence_json(&evidence))
+        .fetch_one(&mut *conn)
+        .await?;
+        if recorded {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+async fn freeze_lifecycle_readers(
+    state: &ServiceState,
+    tx: &mut Transaction<'_, Postgres>,
+    deletion: &Delete,
+) -> Result<Option<LifecycleReaders>, sqlx::Error> {
+    let tenant_id = deletion.tenant_id.to_string();
+    let admins = state
+        .governance
+        .spicedb
+        .read(
+            &crate::spicedb::RelationshipFilter {
+                object_type: "tenant",
+                object_id: Some(&tenant_id),
+                relation: Some("admin"),
+                subject_principal: None,
+            },
+            state.governance.cfg.relationship_page,
+        )
+        .await
+        .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+    let mut readers = std::collections::BTreeMap::<Uuid, Vec<String>>::new();
+    for admin in admins {
+        let principal = Uuid::parse_str(&admin.subject_principal)
+            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        if !crate::agent_definition::active_owner(tx, deletion.tenant_id, principal).await? {
+            continue;
+        }
+        let check = state
+            .governance
+            .spicedb
+            .check(
+                "tenant",
+                &tenant_id,
+                "manage",
+                &admin.subject_principal,
+                crate::spicedb::Consistency::FullyConsistent,
+            )
+            .await
+            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        if !check.allowed || check.zed_token.is_empty() {
+            return Ok(None);
+        }
+        readers.entry(principal).or_default().push(check.zed_token);
+    }
+    let mut owners: Vec<contracts::AffectedOwnerRef> =
+        serde_json::from_value(deletion.frozen_inventory["resource_owner_versions"].clone())
+            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+    owners.extend(
+        serde_json::from_value::<Vec<contracts::AffectedOwnerRef>>(
+            deletion.frozen_inventory["asset_owner_versions"].clone(),
+        )
+        .map_err(|e| sqlx::Error::Protocol(e.to_string()))?,
+    );
+    if !crate::agent_definition::validate_frozen_owners(
+        &state.governance,
+        tx,
+        deletion.tenant_id,
+        &owners,
+    )
+    .await
+    .map_err(|e| sqlx::Error::Protocol(format!("{e:?}")))?
+    {
+        return Ok(None);
+    }
+    for owner in owners {
+        let kind = match owner.target_type.as_str() {
+            "RESOURCE" => "resource",
+            "ASSET" => "asset",
+            _ => return Ok(None),
+        };
+        let principal = Uuid::parse_str(&owner.owner_principal_id)
+            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        let check = state
+            .governance
+            .spicedb
+            .check(
+                kind,
+                &owner.target_id,
+                "read",
+                &owner.owner_principal_id,
+                crate::spicedb::Consistency::FullyConsistent,
+            )
+            .await
+            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        if !check.allowed || check.zed_token.is_empty() {
+            return Ok(None);
+        }
+        readers.entry(principal).or_default().push(check.zed_token);
+    }
+    if readers.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(LifecycleReaders {
+        snapshot_id: deletion.snapshot_id,
+        tenant_version: deletion.tenant_version,
+        inventory_digest: deletion.inventory_digest.clone(),
+        readers: readers
+            .into_iter()
+            .map(|(principal_id, revisions)| LifecycleReader {
+                principal_id,
+                revisions,
+            })
+            .collect(),
+    }))
 }
 
 impl Delete {
@@ -323,6 +1016,37 @@ async fn advance_inner(
             tx.commit().await?;
             return Ok(Some(deletion.result()));
         }
+        let readers = match freeze_lifecycle_readers(state, &mut tx, &deletion).await {
+            Ok(Some(readers)) => readers,
+            result => {
+                if let Err(error) = result {
+                    tracing::warn!(tenant_id = %tenant, error = %error, "生命周期读取资格未查证");
+                }
+                mark_unknown(&mut tx, &deletion).await?;
+                tx.commit().await?;
+                return Ok(Some(deletion.result()));
+            }
+        };
+        let checkpoint = json!({"LIFECYCLE_READERS": readers});
+        sqlx::query("update admission.tenant_delete_subprocess set provider_evidence=provider_evidence || $2::jsonb where id=$1")
+            .bind(deletion.subprocess_id).bind(&checkpoint).execute(&mut *tx).await?;
+        deletion
+            .audit(
+                &mut tx,
+                "lifecycle-readers",
+                "RECONCILIATION",
+                "ADMITTED",
+                readers.evidence(),
+            )
+            .await?;
+        deletion
+            .provider_evidence
+            .as_object_mut()
+            .ok_or_else(|| sqlx::Error::Protocol("删除 provider evidence 不是对象".into()))?
+            .insert(
+                "LIFECYCLE_READERS".into(),
+                checkpoint["LIFECYCLE_READERS"].clone(),
+            );
         sqlx::query("update admission.tenant_lifecycle_snapshot set irreversible_dispatch_started = true where id = $1")
             .bind(snapshot).execute(&mut *tx).await?;
         deletion
@@ -330,10 +1054,34 @@ async fn advance_inner(
             .await?;
         deletion.irreversible_dispatch_started = true;
     }
+    let readers = deletion
+        .provider_evidence
+        .get("LIFECYCLE_READERS")
+        .cloned()
+        .map(serde_json::from_value::<LifecycleReaders>);
+    if !matches!(readers, Some(Ok(ref readers)) if readers.matches(
+        deletion.snapshot_id, deletion.tenant_version, &deletion.inventory_digest,
+    )) {
+        mark_unknown(&mut tx, &deletion).await?;
+        tx.commit().await?;
+        return Ok(Some(deletion.result()));
+    }
     sqlx::query("update admission.tenant_delete_subprocess set state = 'RUNNING',version = version + 1 where id = $1")
         .bind(deletion.subprocess_id).execute(&mut *tx).await?;
     tx.commit().await?;
 
+    // drain 未证实前保留 runtime、模型 credential、Buzz Memory 与 namespace，
+    // 让原 AgentTaskWorkflow 继续 interrupt/usage/capacity 对账，绝不抹掉 UNKNOWN。
+    match retire_agents(state, &deletion).await {
+        Ok(true) => {}
+        result => {
+            if let Err(error) = result {
+                tracing::warn!(tenant_id = %tenant, error = %error, "Agent 库存销毁未对账");
+            }
+            persist(state, &deletion, None).await?;
+            return reload_result(state, tenant, snapshot).await;
+        }
+    }
     let Some(transport) = &state.deletion_transport else {
         persist(state, &deletion, None).await?;
         return reload_result(state, tenant, snapshot).await;
@@ -933,6 +1681,17 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
     }
     if !durable.irreversible_dispatch_started
         || current != Some(("DELETING".into(), deletion.tenant_version + 1))
+        || durable.provider_evidence.pointer("/AGENT_DRAIN/drained") != Some(&Value::Bool(true))
+        || ["AGENT_DRAIN", "AGENT_RUNTIME", "GATEWAY"]
+            .iter()
+            .any(|kind| {
+                durable
+                    .provider_evidence
+                    .get(*kind)
+                    .and_then(|v| v.get("inventory_digest"))
+                    .and_then(Value::as_str)
+                    != Some(&durable.inventory_digest)
+            })
         || durable
             .frozen_inventory
             .get("openmeter_binding")
@@ -951,20 +1710,47 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
             != durable
                 .frozen_inventory
                 .pointer("/openmeter_binding/namespace")
-        || ["BUZZ", "SPICEDB", "OPENBAO"].iter().any(|kind| {
-            durable
-                .provider_evidence
-                .get(*kind)
-                .and_then(|v| v.get("deleted"))
-                .and_then(Value::as_bool)
-                != Some(true)
-        })
+        || ["BUZZ", "SPICEDB", "OPENBAO", "AGENT_RUNTIME", "GATEWAY"]
+            .iter()
+            .any(|kind| {
+                durable
+                    .provider_evidence
+                    .get(*kind)
+                    .and_then(|v| v.get("deleted"))
+                    .and_then(Value::as_bool)
+                    != Some(true)
+            })
     {
         return Ok(());
+    }
+    let agents = durable
+        .frozen_inventory
+        .get("agent_inventory")
+        .ok_or_else(|| sqlx::Error::Protocol("删除终态缺少冻结 Agent 库存".into()))?;
+    let actual = frozen_agent_inventory(&mut tx, deletion.tenant_id)
+        .await
+        .map_err(|e| sqlx::Error::Protocol(format!("{e:?}")))?;
+    if !same_agent_inventory(actual, agents.clone())?
+        || sqlx::query_scalar::<_, bool>(
+            "select exists(select 1 from catalog.agent_invocation
+            where tenant_id=$1 and status not in ('COMPLETED','FAILED','CANCELED'))",
+        )
+        .bind(deletion.tenant_id)
+        .fetch_one(&mut *tx)
+        .await?
+    {
+        mark_unknown(&mut tx, &durable).await?;
+        return tx.commit().await;
     }
     // 历史 operation、Workflow、审计和外部引用不删除；保留的 FK 目标是
     // DISABLED/REVOKED 墓碑，不再是可用身份、scope 或 binding。
     for sql in [
+        "update catalog.agent_installation set state='DISABLED',active_projection_generation=null where resource_id in (select id from catalog.resource where tenant_id=$1)",
+        "update catalog.agent_runtime_projection set state='REVOKED' where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and state<>'REVOKED'",
+        "update catalog.channel_agent_binding set status='DISABLED' where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and status<>'DISABLED'",
+        "update catalog.agent_memory_binding set state='REVOKED',version=version+1 where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and state<>'REVOKED'",
+        "update catalog.agent_model_binding set secret_status='REVOKED' where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and secret_status<>'REVOKED'",
+        "update catalog.agent_session set status='CLOSED' where tenant_id=$1 and status<>'CLOSED'",
         "update catalog.agent_definition set status='DELETED',current_published_version_asset_id=null where resource_id in (select id from catalog.resource where tenant_id=$1)",
         "update catalog.agent_version set state='RETIRED' where asset_id in (select id from catalog.asset where tenant_id=$1) and state<>'RETIRED'",
         "update catalog.asset set state='DELETED',version=version+1,projection_action_execution_id=null where tenant_id=$1 and state<>'DELETED'",

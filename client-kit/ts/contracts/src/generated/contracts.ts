@@ -316,10 +316,12 @@ export enum ReasonCode {
     InviteeAlreadyMember = "INVITEE_ALREADY_MEMBER",
     LastTenantAdmin = "LAST_TENANT_ADMIN",
     NativeSurfaceRequired = "NATIVE_SURFACE_REQUIRED",
+    PayloadTooLarge = "PAYLOAD_TOO_LARGE",
     PermissionDenied = "PERMISSION_DENIED",
     ProjectionDelayed = "PROJECTION_DELAYED",
     PublishRejected = "PUBLISH_REJECTED",
     PublishResultUnknown = "PUBLISH_RESULT_UNKNOWN",
+    QuotaExhausted = "QUOTA_EXHAUSTED",
     RateLimited = "RATE_LIMITED",
     ScopeGuardFailed = "SCOPE_GUARD_FAILED",
     SelfApprovalDenied = "SELF_APPROVAL_DENIED",
@@ -854,8 +856,9 @@ export enum TenantState {
 }
 
 /**
- * PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
- * msg:<Buzz event id>；version 是读到的 CollaborationUserState 版本，不符即 409。
+ * PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
+ * ID、msg:<Buzz event id> 或 thread:<Buzz root event id>；version 是读到的 CollaborationUserState
+ * 版本，不符即 409。
  */
 export interface ReadMarkRequest {
     contextKey: string;
@@ -1035,6 +1038,7 @@ export enum TaskStatus {
  * 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
  */
 export enum WorkflowKind {
+    AgentInstallation = "AGENT_INSTALLATION",
     BuzzIdentityProjection = "BUZZ_IDENTITY_PROJECTION",
     MembershipProjection = "MEMBERSHIP_PROJECTION",
     MembershipRevocation = "MEMBERSHIP_REVOCATION",
@@ -1288,6 +1292,83 @@ export interface AffectedOwnerRef {
     targetId:         string;
     targetType:       string;
     targetVersion:    number;
+}
+
+/**
+ * 唯一安装 Workflow 推进同一 ActionExecution/version/generation；取消接收不是原生清理终态。
+ */
+export interface AgentInstallationAdvanceRequest {
+    actionExecutionId:    string;
+    agentVersionAssetId:  string;
+    cancelRequested:      boolean;
+    installationId:       string;
+    projectionGeneration: number;
+    runId:                string;
+    workflowId:           string;
+}
+
+/**
+ * Core 查证后的安装生命周期状态；身份/模型/记忆/runtime 未闭合只返回 RUNNING/UNKNOWN，不把 spawn 当 ACTIVE。
+ */
+export interface AgentInstallationAdvanceResult {
+    installationId: string;
+    status:         TaskStatus;
+    waitingReason:  string;
+}
+
+/**
+ * DD-25/48：既有 ComponentTaskWorkflow 的 AGENT_INSTALLATION 冻结目标；不含凭据或 Version 正文。
+ */
+export interface AgentInstallationWorkflowTarget {
+    actionExecutionId:    string;
+    agentVersionAssetId:  string;
+    installationId:       string;
+    projectionGeneration: number;
+}
+
+/**
+ * Worker 推进已冻结 Invocation；未知原生结果只观察，不再次 turn/start。
+ */
+export interface AgentTaskAdvanceRequest {
+    activityId:                 string;
+    agentVersionAssetId:        string;
+    attempt:                    number;
+    cancelRequested:            boolean;
+    heartbeatIntervalSeconds:   number;
+    installationId:             string;
+    invocationId:               string;
+    observationIntervalSeconds: number;
+    projectionGeneration:       number;
+    runId:                      string;
+    workflowId:                 string;
+}
+
+/**
+ * Core 查证的引用与状态；native completed 缺 reply/usage 证据仍 RUNNING。
+ */
+export interface AgentTaskAdvanceResult {
+    /**
+     * 已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
+     */
+    finishActivity: boolean;
+    invocationId:   string;
+    status:         TaskStatus;
+    waitingReason:  string;
+}
+
+/**
+ * DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
+ */
+export interface AgentTaskWorkflowInput {
+    agentVersionAssetId:        string;
+    cancelPending:              boolean;
+    eventBase:                  number;
+    heartbeatIntervalSeconds:   number;
+    heartbeatTimeoutSeconds:    number;
+    installationId:             string;
+    invocationId:               string;
+    observationIntervalSeconds: number;
+    projectionGeneration:       number;
 }
 
 /**

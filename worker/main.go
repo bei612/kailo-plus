@@ -74,6 +74,8 @@ func main() {
 		workflow.RegisterOptions{Name: workflows.ComponentTaskKind})
 	w.RegisterWorkflowWithOptions(workflows.Approval,
 		workflow.RegisterOptions{Name: workflows.ApprovalKind})
+	w.RegisterWorkflowWithOptions(workflows.AgentTask,
+		workflow.RegisterOptions{Name: workflows.AgentTaskKind})
 	// 以方法值注册：Workflow 侧按 (*T).Method 引用同一个函数，两边必须一致。
 	w.RegisterActivity(spicedb.Converge)
 	w.RegisterActivity(spicedb.RevokeSubject)
@@ -88,10 +90,14 @@ func main() {
 	w.RegisterActivity(core.ConvergeWorkspaceChannelRoster)
 	w.RegisterActivity(core.ConvergeTenantCommunityArchive)
 	w.RegisterActivity(core.ReconcileTenantRestore)
+	w.RegisterActivity(core.AdvanceTenantDelete)
 	w.RegisterActivity(core.TransitionScope)
 	w.RegisterActivity(core.ProjectApprovalState)
 	w.RegisterActivity(core.FreshApprovalAdmission)
 	w.RegisterActivity(core.AdvanceSecretRefRehome)
+	w.RegisterActivity(core.AdvanceAgentTask)
+	w.RegisterActivity(core.AdvanceAgentInstallation)
+	w.RegisterActivity(core.ProjectAgentTaskState)
 
 	if err := w.Run(worker.InterruptCh()); err != nil {
 		log.Fatalf("worker 退出: %v", err)

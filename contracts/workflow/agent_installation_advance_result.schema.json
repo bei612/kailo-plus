@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/agent_installation_advance_result.schema.json",
+  "title": "AgentInstallationAdvanceResult",
+  "description": "Core 查证后的安装生命周期状态；身份/模型/记忆/runtime 未闭合只返回 RUNNING/UNKNOWN，不把 spawn 当 ACTIVE。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["installationId", "status", "waitingReason"],
+  "properties": {
+    "installationId": { "type": "string", "format": "uuid" },
+    "status": { "$ref": "../enums/task_status.schema.json" },
+    "waitingReason": { "type": "string" }
+  }
+}

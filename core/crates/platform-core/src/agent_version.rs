@@ -88,7 +88,7 @@ pub(crate) fn content(value: &AgentVersionContent) -> Result<(Value, String), Re
     Ok((normalized, digest))
 }
 
-fn canonical(value: Value) -> Value {
+pub(crate) fn canonical(value: Value) -> Value {
     match value {
         Value::Object(fields) => {
             let mut keys: Vec<_> = fields.into_iter().collect();

@@ -4,24 +4,42 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 最新交付状态（2026-10-02 14:01 UTC）
+## 最新交付状态（2026-10-02 19:31 UTC）
+
+**仍未生产就绪。** 本轮集中开发已有以下实际结果，不把写入、编译、镜像 push 或健康接口当作业务验收。
+
+| 范围 | 实际结果 | 交付边界 |
+|---|---|---|
+| Git | 本批冻结父提交为已 push 的 `91a5eb2e779593ea8cfb38e10ec6c04886f88138`；只在 apps 独立 Git 选择提交范围 | 后续 Delegation、Usage 与 Installation 只读增量不混入本批冻结树 |
+| 共享管理界面 | Web/Desktop 直接消费同一 `AgentDefinitionsPage`；共享包类型及 77 项既有检查、Desktop 类型、Web 类型及 14 项既有检查通过 | Desktop 全检查首次 2281 通过、1 失败，原因是旧字体检查引用已迁走的 CSS；修正真实引用后该检查 9 项通过，主动破坏 1 项失败、还原后 9 项通过。未声称新增管理业务验收 |
+| Web 产物 | 原构建入口及镜像仓库 push 退出 0；本批真实 artifact 为 `sha256:d0bf2e646bf8b1954a32d18ffe2dfbaf7556e7ddfebeed7094ce35289d850aae`，source 为 `2326ff60…` | 未部署；不能用镜像 push 替代浏览器业务、Win11 或 Mobile 验收 |
+| Core/Worker 集中 SDK | 46 条独立空库迁移、回退/重进及 SQLx prepare、全目标 clippy 和既有检查退出 0；数据库实际边界检查通过，主动删除约束时报错，回滚后通过 | 选定树首次 full 退出 1，保留输出；空 Cargo 并行环境投递、漏选注册表及无对应产物的 pin 已纠正。最终 full 单独记录，不外推新增业务通过 |
+| 共享读状态 | 既有共享包实际 89 项检查通过；三次分别破坏裸状态识别、UNKNOWN 优先级和未知分类保护，分别 5/2/1 项失败，逐次还原后 12 项通过；最终包检查再次 89 项通过 | 只证明三个现有 GET 消费者的拒绝与未知呈现；不执行写入重放、不新增执行入口、不代替浏览器或原生端走查 |
+| 实际部署 | 17:03–17:07 只读核验：Core `03c24669…`、Worker `4832ccbb…` running，Web `ad82d6e6…` healthy；Core BFF 与 Web 内部健康接口均 200 | 仍是旧镜像；缺 source commit 标签，不能反推对应当前 HEAD。公网匿名 302 是认证跳转，不是业务验收 |
+| Agent 主线 | 安装物化、Memory 读取、Session 创建/恢复与 Capacity 双侧终态回收消费者已集中写入；已知 thread 不等于 turn，空 history 不伪造执行结果。三条下一批并行线正在实现显式 Delegation 管理、用量持久化/原生查证与共享 Installation 只读页 | 四项运行策略的真实控制、Invocation 准入生产、模型执行/回复、严格额度、完整用量结算、记忆写入和自动化仍未贯通；缺事实的执行入口保持关闭 |
+
+本批日志位于 `/volumes/data/kailo/tmp/codex-agent-batch-20261002.UGTzYB/`：`sdk-core-frozen.log` 退出 0；`ui-sdk-isolated.log` 的三个变异退出 1、均还原，SDK 最终退出 0；`web-build.log` 是原 helper 的实际构建与镜像仓库 push。此前 SDK 因缺 pnpm PATH 退出 127、继承 live 子 mount 导致类型错配退出 2，均保留；纠正执行投递后才核对冻结字节，不修改产品代码迁就检查。数据库边界与负向回滚记录见 `core/verify/agent-definition.md`。以上不替代正式 release、三端验收或一期生产门禁。
+
+本批最终选定树 `54df43378b6d51a52318be750778f126adb084c0` 的原 `tools/check.sh --full` 已退出 0；原日志 `selected-final-full.log`，SHA-256 `85e39588ad30fca54888b59492ee343870a8bd2e2d6dcb44cd06b67fa620d217`。108 schema、四侧验证、replay、18 条追溯、原生供应链与部署拓扑检查通过。full 内未提供 `DATABASE_URL` 与实际 `.env`，相应项目明确 SKIP；未安装 gitleaks，仅内置扫描通过。新安装/执行业务、Win11、Mobile 与生产退出门禁仍未通过。此次纯证据补记只走文档快路径，不重复编译或发布。
+
+## 上一批交付状态（2026-10-02 15:16 UTC）
 
 **仍未生产就绪。** 下表分别说明源码、验证、提交与部署；后文的历史记录不代表当前版本已通过同一验收。
 
 | 范围 | 已发生的事实 | 尚未完成 |
 |---|---|---|
-| Git 主干 | 本地 HEAD 与远端 main 均为 `8ec78ed43e4a3e1fdc3f3243719cb7c1673eded6`，Web/Desktop 共源呈现已提交并 push | 后续治理集成候选与独立增量尚未提交、push |
+| Git 主干 | 本地 HEAD 与远端 main 均为 `994aa3ca536d09ad8ea716c4aad1088f759f552c`，Agent Definition/Version 治理批已提交并普通 push；包含此前的 Web/Desktop 共源呈现提交 | Installation、Codex Task 与 Gateway 后续增量仍在工作树，尚未提交、push |
 | 当前部署 | Web 镜像 `ad82d6e6…` healthy；Core `03c24669…`、Worker `4832ccbb…` running，两者未配置容器 healthcheck | 后续 Core/Worker 候选未部署；此 Web 版本部署后尚无新的完整登录业务走查 |
 | 已验证的集成候选 | 包含 Agent Definition/Version 的选定树 `7de76d450c4b54086a79841cf9a866a9c13aeaf2` 已实际运行原 `tools/check.sh --full`，退出 0 | full 内数据库演练与实际 `.env` 预检明确 SKIP；独立空库验证单列。尚无该树的 Core/Worker 正式 release 或部署，不代表整个脏工作树通过 |
 | 最新源码纠偏 | AgentDefinition 派发前锁定 Tenant 并读取真实 ACTIVE 状态；OpenMeter HTTP 412 映射到既有 Precondition 分类；两处已纳入上述 SDK 检查 | 编译与既有检查通过不等于新增业务分支已验收；两处尚无业务闭环或部署证据，412 分类没有既有可执行断言，不能声称负向验收通过 |
-| Agent 主线 | 已写入 Definition/Version、真实 published pointer、两类 owner 冻结/审批、撤权、邀请和删除消费；追溯与来源收敛后最终 full 实际退出 0，108 schema 兼容、四侧已有验证通过；独立空库迁移/SQLx/41 枚举约束、后实现查询与真实 Web 重建完成 | 公开入口与新增业务验收未完成；RuntimeProfile/llm_route 缺失仍拒绝，Installation、Codex turn、工具用量、记忆及自动化未交付 |
+| Agent 主线 | Definition/Version、published pointer、owner 冻结/审批及生命周期消费已随上述提交入库；选定树最终 full 退出 0，108 schema 兼容、四侧已有验证、独立空库迁移/SQLx/41 枚举约束通过。后续 Installation 表、运行查证与 Codex supervisor/Task 代码正在接入 | 新增工作树未编译验收或部署；公开入口与业务闭环未完成，模型凭据、Delegation、Capacity、用量、记忆及自动化仍须贯通 |
 | 三端 | Web/Desktop 共用 TypeScript 呈现；新 Web 构建退出 0，历史 Win11 包保留原来源 | 当前共享合同对应的 Win11 原打包退出 1：crates.io 的 h2 索引下载超时，无新包；撤回失效的当前产物登记，Win11 发布仍阻断。Mobile release 签名缺失，三端完整验收未闭合 |
 
 各 Stage 的剩余缺口见 [交付路线最新状态](02-纵向交付路线.md)；Stage 1/2 的历史证据与最新缺口分别见 [Stage 1 报告](docs/acceptance/stage-1.md)、[Stage 2 报告](docs/acceptance/stage-2.md)。本刀源码依据及验证边界见 [AgentDefinition 记录](core/verify/agent-definition.md) 与 [计量记录](metering/fork/verify/core-authentication.md)，三端产物依据见 [Desktop 记录](collaboration/fork/verify/desktop-client.md) 与 [Web 记录](web-client/fork/verify/web-surface.md)。可选业务能力不作为平台核心发布前提；本次只同步现状，不改设计或扩大交付范围。
 
 最新 full 的原始日志为 `/volumes/data/kailo/tmp/codex-agent-version-selected-final-full-20261002.BkGKqU/full.log`，SHA-256 `460b33a9b62c5217523c7dcee7b99c6785dc138dff542854c248265b5fbcd366`；检查固定上述 `7de76d45…` 选定树，包含 AgentVersion，不包含独立 CHECK 等未选入增量。此前 full 的失败原件保留；最终退出 0 不解除 Windows/Mobile 发布阻断，不代表新增业务或部署验收。
 
-AgentVersion 四侧生成原始日志为 `/volumes/data/kailo/tmp/codex-agent-version-generated-20261002.YBWlJF/gen.log`；只证明既有生成入口实际产出 Rust/Go/TypeScript/Dart，不能代替其集成验证或新增提交。上述最新状态摘要与相关核验记录目前仍是本地未提交更新；远端 main 不包含它们。
+AgentVersion 四侧生成原始日志为 `/volumes/data/kailo/tmp/codex-agent-version-generated-20261002.YBWlJF/gen.log`；只证明既有生成入口实际产出 Rust/Go/TypeScript/Dart，不能代替其集成验证。14:29 UTC 已完成上述治理批提交与普通 push；本段 15:16 UTC 的后续状态更新仍未提交，不外推为新增实现已验收。
 
 ## 阅读顺序
 
@@ -48,6 +66,7 @@ AgentVersion 四侧生成原始日志为 `/volumes/data/kailo/tmp/codex-agent-ve
 ## 当前确定边界
 
 - 一期同时交付 Buzz Web、Buzz Desktop、Buzz Mobile 三端；它们是仅有的用户入口，能力按 `REQ-21` 分级。
+- 用户的 Desktop 测试机为 Windows 11；交付给用户测试的桌面安装包以该平台为目标。Linux `.deb` 只作为 Linux 构建证据，不代替 Win11 安装、登录与协作验收。
 - Platform Core/BFF 是单一模块化 Rust 服务，共享业务事务边界。
 - Application Worker 是同仓库、独立部署的 Go 进程，使用 Temporal Go SDK `v1.48.0`；该版本是 Kailo 的选择，与 Server 内部依赖版本无关（`SF-TMP-04`）。
 - Kailo 分平台核心与业务能力服务两层（`DD-87`）：平台核心强集成、不可替换，零业务能力 binding 时即是完整产品；文件存储、文档编辑、知识与数据查询是可缺席、可替换的业务能力，按能力类别与版本化能力契约接入（`DD-88`），内置的 Cells+ONLYOFFICE、WeKnora、Wren 只是参考实现。
@@ -105,7 +124,7 @@ trellis init --claude --codex -u "<你的名字>" --workflow native
 
 其中 [backend/quality-guidelines.md](.trellis/spec/backend/quality-guidelines.md) 与 [frontend/quality-guidelines.md](.trellis/spec/frontend/quality-guidelines.md) 已记录真实工程约定，其余模板不能据此称为已补齐。`guides/` 由 Trellis 模板提供，升级产生的差异按普通改动评审，不把自动稿覆盖当作知识库更新完成。进入 `.design` 或本目录实施文档的结论以那两处为准，`spec/` 只记录代码层面的约定，不得在其中重新定义产品语义或能力状态。
 
-代码检索与影响分析使用 GitNexus；源码根、Git 归属、凭据和运行数据排除、索引 freshness、编辑前 impact 与提交前 detect 的约束见 [AGENTS.md](AGENTS.md)「代码检索与影响门禁」。当前独立 Git 不依赖父仓库；根核对失败时停止工程操作，不能把外层索引或缓存安装树当作本工程的完整审查证据。
+代码检索以 `rg`、源码、契约和完整 diff 为依据，GitNexus 按需辅助，不阻塞开发、提交或 push，也不在每次小改动后刷新。使用时的源码范围与证据边界见 [AGENTS.md](AGENTS.md)「代码检索与影响复核」。当前独立 Git 不依赖父仓库；根核对失败时停止工程操作，不能把外层索引或缓存安装树当作本工程的完整审查证据。
 
 ## 历史实施与验证记录
 
@@ -117,13 +136,31 @@ trellis init --claude --codex -u "<你的名字>" --workflow native
 
 当时两项 SKIP 是无适用对象而非遗漏：Stage 0 尚无用户可达能力的追溯记录，runbook 当时按 `07-运行与运维基线.md` §6 的适用性判定。当前已有生产路径的追溯记录；现阶段是否通过须读取实际记录与本轮门禁，不能继续沿用 Stage 0 的零记录判断。
 
-**当前正在开发 Stage 2，尚未生产就绪**：Stage 1 的身份与协作主链已有实现，但不能宣称其退出门禁全部闭合。`DD-70/72` 要求的 `tenants/<tenant_id>` OpenBao namespace、独立 KV/AppRole/policy/token 已在本地真实生命周期与跨 Tenant 拒绝探针中验证；旧 `platform/kv` SecretRef 的兼容读取保留，迁移及旧版本处置尚未完成，见 [SecretRef 核验](core/verify/secret-ref.md)。Stage 2 的 Governed Action、审批、角色、邀请及任务只读投影已有实现；本人任务取消与重跑已通过 Core、Temporal、Worker 的真实拓扑联调及 Web 真实浏览器走查。Desktop/Mobile 原生会话端到端证据与 Stage 2 其余能力仍未闭合，Stage 3–5、平台一期收口与三个能力扩展未交付。当前优先收口 Web，再推进 Stage 2；以 [纵向交付路线](02-纵向交付路线.md) §1.1、§3–4 的端规则和退出门禁逐项验收，不得把 Web 通过当作三端和全阶段通过。
+**Stage 2 收口与 Stage 3 实现并行，尚未生产就绪**：Stage 1 的身份与协作主链已有实现，但不能宣称其退出门禁全部闭合。`DD-70/72` 要求的 `tenants/<tenant_id>` OpenBao namespace、独立 KV/AppRole/policy/token 已在本地真实生命周期与跨 Tenant 拒绝探针中验证。2026-10-01 的归位适用性查询实查 4 个 ACTIVE SERVER binding、0 个遗留 locator、0 条归位记录；旧 `platform/kv` 历史形态恢复在本次全新环境无适用对象，不作为当前开发阻断，也不把五项历史归位 FAIL 改为 PASS，见 [SecretRef 归位核验](core/verify/secret-ref-rehome.md)。同日已在当时运行的 Core `69aaf4a2…` 上经真实邀请、Temporal 审批与成员撤权完成未来删除时间版本的原生 delete/destroy、意图退休与 403 拒绝链；该 HUMAN 正向链不覆盖其他故障或整个生命周期，见 [SecretRef 核验](core/verify/secret-ref.md)。
 
-Stage 4 的 `SS-OMT-AUTH` 已将 OpenMeter 固定 commit `6d76d8a6fa90fbbab2d41035d31df2acec7ad3af` 的完整 4519 文件源码导入 `metering/`。Kailo 生产差异只有原生 v1/v3 Router hook 的 Core-only service credential、配置与 Wire 接线三个文件。完整正式构建、六个 binary 的 `xx-verify`、registry push 与来源登记退出 0，固定产物为 `sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783`；同一镜像的实际部署与 v1/v3 认证复验为 10/10。此提交只收录原生认证底座、来源与证据，不收录后续 Core Customer、Quota、Usage 或 Compose 消费者；核验记录中的这些工作树事实不等于本提交交付。额度与账单入口保持关闭，不宣布 Stage 4 或生产门禁通过，详见 [计量认证实现记录](metering/fork/verify/core-authentication.md)。
+Stage 2 的 Governed Action、审批、角色、邀请及任务只读投影已有实现；本人任务取消与重跑已有 Core、Temporal、Worker 联调和历史 Web 走查。共用审批面板的刷新与 UNKNOWN 控制修正已构建到 Web `970e1743…` 并部署，持久 Compose pin 与官方产物登记同步。真实现有用户登录成功、Tasks/Approvals 均 200/0 条；原治理测试 14 项不直接覆盖两处修复，当前无真实适用审批对象，两处业务场景不记 PASS。镜像构建报告 3 项 npm 漏洞（2 moderate、1 high）尚无处置验收，详见 [审批面板核验](core/verify/task-view-enum-fail-closed.md)；不以新 Web 已运行代替 Stage 2 总验收。
 
-2026-10-02，原生计量认证、三份实际产物来源记录、Worker 的冻结 owner 审批与既有摘要引用分别已随 `c478169a…`、`6d2bb152…` 和 `e4c544fdb63d5e54fe775d58e684249166c89543` 提交。共享 pre-push 对最后的提交树运行原全量门禁实际退出 0，普通 push 成功；数据库演练未提供 `DATABASE_URL`、导出树 `.env` 预检均明确 SKIP，Mobile release 签名仍阻断。Worker 尚未由该提交构建部署，不把 push 计为业务验收。
+Stage 3 的 Tenant 删除冻结、平台子流程、不可逆派发与 provider 对账已接入代码、共享契约和 Worker；Core 编译、clippy、四侧生成与隔离库 SQLx 校验通过。已准入后、不可逆派发前的清单、密钥或处理器重验失效现同事务保存 `UNKNOWN` 与审计，保留原取消分界；镜像静态与既有单元检查退出 0，但这些单元检查未执行新增事务分支。原生共享 CAS 保留量证据和真实业务验收仍未闭合，删除公开 routes/actions/workflow_kinds 为空，详见 [Tenant 删除实现记录](core/verify/tenant-deletion.md)。Desktop/Mobile 原生会话端到端证据、Stage 2 其余能力、Stage 3–5 的退出门禁、平台一期收口与三个能力扩展未交付。当前优先收口 Web，互不依赖的既定实现并行推进；以 [纵向交付路线](02-纵向交付路线.md) §1.1、§3–4 的端规则和退出门禁逐项验收，不得把编译、Web 通过或源代码写入当作三端和全阶段通过。
 
-同日 Web/Desktop 的既有导航、内容面、主题、正文、图片尺寸、表格和代码块呈现直接复用 `client-kit` 一份源码，旧重复实现已删除；Web 仍经 BFF，Desktop 的 native clipboard/ref/主题接线仍在宿主，没有移动身份或治理边界。三项类型检查、Desktop 66 项、Web 5 项既有正文检查与两实际消费者 SSR 通过；私有候选断开共享 pre 时既有断言确实失败，按原字节还原后通过。原正式构建入口已产出 Web 镜像 `ad82d6e6…` 和 Linux Desktop deb `d28520f7…`，source/artifact 由原 helper 登记；Relay 原同源 `3700b743…` 按实际输入证据复用。此批不包含工作区继承的 Session、Quota、AgentDefinition 和 TenantDelete 增量；构建不代表部署或整个 UI 99%一致，Linux 包不替代 Win11 包，三端与阶段退出门禁仍未全部闭合。精确来源、失败与限制见 [Web 面核验](web-client/fork/verify/web-surface.md) 末节及 [共享边界](docs/adr/ADR-09-shared-client-typescript.md)。
+Stage 4 的 `SS-OMT-AUTH` 已将固定版本 OpenMeter 完整源码导入 `metering/`，在原生 v1/v3 Router hook 接入 Core-only service credential，并同步上游 Wire 生成接线。2026-10-01 完整 4519 文件输入的正式构建、六个 binary 的 `xx-verify`、registry push 与官方来源登记实际退出 0，artifact digest 为 `sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783`。同一固定镜像已部署到正式 Compose 的独立原生 Kafka、ClickHouse、PostgreSQL 拓扑，四服务 healthy、v1/v3 认证 10/10，缺失、错误、重复凭据及未认证 OPTIONS 均 401，有效凭据 200。随后 Core Customer 客户端、创建前持久化 DISPATCH 的 Tenant 生命周期消费者、六字段外部引用 projection 和逻辑退役处理器已写入；开发镜像 `03c24669…` 构建与全新 wrapping 启动均退出 0，healthz 200、Core/native namespace 一致，业务库仅向前迁移至 37 条，其余 41 个容器未变。现有三个 Tenant 全为 ACTIVE、PROVISIONING 与 OpenMeter binding 均为 0，客户创建链无现存适用对象，映射/退役端到端与 SQLx prepare 仍未验收；不改状态或造对象充当通过。Quota、CloudEvent、usage commit 与账单消费者未交付，额度与账单入口未开放；该 Core 是冻结脏工作树开发构建，不是 clean commit 正式 release，registry push 也不是 Git push。详情见 [计量认证实现记录](metering/fork/verify/core-authentication.md)，不据此宣布 Stage 4 或生产门禁通过。
+
+同日下一批已接入原生 sink worker 与独立持久 Redis，API/sink 的双侧去重共享同一份原生 YAML、使用两个不同逻辑库，初始化入口也启动真实 sink。两个原生 `--validate` 最终退出 0；正式三个目标服务部署退出 0、healthy，认证重新通过 10/10，原有三个计量后端及其余 41 个基线容器未变。集中 `tools/check.sh --full` 退出 0，但数据库演练与 SDK 内实际 `.env` 预检明确 SKIP；真实部署输入另由原预检和原生 parser 核验。meter/customer 均为空，不声称事件去重、commit、Quota 或结算端到端通过；全部失败与还原、原生崩溃窗口和当前未提交状态见上述核验记录。
+
+2026-10-01 Web/Desktop 共源呈现增量：原 Desktop 导航、内容面、主题与 typography 已直接进入 `client-kit`；15 个纯正文块和正文间距两端共用，保留 Web 的 BFF 媒体与原生传输边界。共享包 88 项、Web 14 项既有检查通过，Web 类型、格式、构建与 npm audit 通过，当前 audit 为 0；这不修改历史 `970e1743…` 镜像的漏洞记录。事后复核检出的有序列表起始编号和表格列对齐丢失已在同一共享实现修正，实际 SSR 通过。最终 Web 镜像 `e1938f3c…` 已登记、pin、部署且 healthy；现有用户的真实浏览器复验确认左侧五项导航、Enter 操作和跟随系统主题切换。同源 Desktop deb `426a2a29…` 正式打包通过，源码摘要前后一致，未安装运行。完整结果见 [Web 面核验](web-client/fork/verify/web-surface.md)。解析器、缓存、编辑器与宿主特化仍有差异，不宣称整体 UI 共享比例或 Stage 总验收。整批 `check.sh --full` 退出 1，Core 检查、发布摘要及上游缓存权限失败分别收口；registry push 不代表 Git 提交与 push。
+
+同日 Relay 来源校准已由既有正式构建入口完成：共用 workspace 锁文件仍属于 Relay 的真实输入，未删减输入或手改源码摘要。构建、registry push 与官方登记退出 0，源码摘要前后一致，产物 `3700b743…` 已同步两处 Compose 指针和两份既有追溯记录；随后仅替换 `buzz-relay`，新容器 healthy，其余 21 个现有 Compose 容器的 ID、镜像与启动时间均未改变。此处不是新业务验收，也未将历史全量门禁退出 1、迁移跳过或 Mobile 未签名改记为通过；完整来源、部署与日志见 [Web 面核验](web-client/fork/verify/web-surface.md)。
+
+2026-10-02 实现增量：Core 的 `CHECK` 准入现消费原生 Customer entitlement/credit，NONE 动作不查询计量；确认或审批满足后查询，额度不足拒绝、不可查证不伪装为成功。新增 CHECK 数据约束、共用原因码与四侧生成已通过原检查，集中 lint、四语言既有验证、契约兼容、文档与追溯均退出 0。全新隔离 PostgreSQL 的迁移前进、回退、再前进及 SQLx 离线核对也已退出 0，38 条迁移、39 个枚举约束成立；没有创建测试 Tenant 或业务定义。STRICT 和 CHECK 正向派发仍关闭，没有登记新的业务产出方或额度账本，真实额度拒绝链尚未验收（ADR-14）。Web/Desktop 的图片尺寸解析也已收为同一份既有实现，两端类型检查、Desktop 78 项与 Web 14 项既有检查通过。两项仍为未提交的源码增量，尚未构建部署，不提高 Stage 完成状态；详见上述计量与 Web 核验记录。
+
+同日并行增量：Worker 的 owner 审批不再恒定返回不满足，按冻结 owner 与逐项角色要求共同判定；未知枚举拒绝，非 NONE 行为由 Temporal GetVersion 隔离。不可变 SDK 中的格式、静态检查、既有 workflows 与 replay 均退出 0；九份已有 Approval history 都是 NONE，不是新 owner 正向链验收，见 [owner 审批实现记录](worker/verify/approval-owner.md)。该 Worker 源码已随下述 `e4c544fd…` 提交并 push，尚未据此构建部署。Desktop 原表格 DOM 也已直接进入共用 `MessageTable`，宿主保留原 hook/ref，Web 从已有 Markdown 组件映射消费；三处类型检查、Desktop 66 项、Web 5 项既有检查和两实际消费者的现有表格 SSR 均通过。表格增量仍未提交或构建部署，不代表 Win11、浏览器业务或 Stage 5 退出门禁通过。
+
+原生计量源码已单独提交为 `c478169a…`，四个既有产物的三份来源清单已提交为 `6d2bb152…`。两次普通 push 被原全量门禁拒绝的失败记录保留：首次是来源摘要未关联，第二次是相同产物的 Compose 与能力追溯引用仍指向旧摘要。随后 `e4c544fdb63d5e54fe775d58e684249166c89543` 收口 Worker owner 审批和对应既有来源引用；共享 pre-push 对该提交树执行 `tools/check.sh --full`，实际退出 0，普通 push 成功，远端 main 已从 `14fa7833…` 更新到 `e4c544fd…`。上述三提交不包含当前工作区的 Quota、AgentDefinition 和后续 UI 增量。全量检查的真实数据库演练未提供 `DATABASE_URL`、导出树部署配置预检未提供 `.env`，均明确 SKIP；内置秘密扫描通过但未安装 gitleaks，Mobile release 签名仍阻断。不把已 push 计为已部署、完整业务验收或 Stage 完成，原始失败与最终成功输出见上述计量实现记录。
+
+同日 AgentDefinition 增量已复用既有 Resource、ActionExecution、SpiceDB、审批与 Tenant 生命周期，实现定义创建、更新、读取及 owner 转移；没有新增 Agent 注册权威、AgentVersion、安装或运行入口。事后复核确认的终态证据缺失、副作用后的结果不明回滚、未知权限枚举误判三处问题已修正。镜像内 workspace clippy 退出 0，既有检查 106 项通过、3 项忽略；其中依赖数据库而提前返回的检查不算新增业务验收。独立全新 PostgreSQL 实际完成 39 条迁移的前进、回退与再前进、SQLx 离线核对及 40 个枚举约束核对；四侧生成、90 个 schema 与 3 份历史契约兼容、18 条追溯及完整文档门禁均退出 0。Resource 与 AgentDefinition 行数均为 0，未造对象宣称正向通过，源码尚未提交或部署，详情见 [AgentDefinition 实现记录](core/verify/agent-definition.md)。
+
+后续同日纠偏已将 AgentDefinition 的八字段 `NATIVE_INTERNAL/NATIVE` 增量合同登记为真实迁移输入，写入前的既有登记查询拒绝缺少该合同的类型。原隔离库迁移往返、SQLx、40 项命名约束及 fmt/clippy 实际通过；空合同写入被约束拒绝，事务内更改合同角色后准入谓词为 false，还原后为 true。Web/Desktop 代码块正文、高亮与 CSS 也已直接复用原 Desktop 实现，宿主保留复制操作与 resolved theme；三项类型检查、Desktop 66 项、Web 5 项既有检查和两真实 Markdown 消费者的 SSR 通过。两刀仍未提交或部署，不把源码/窄验证算作新浏览器业务、Win11 或 Stage 退出验收，详见上述 AgentDefinition 记录及 [Web 面核验](web-client/fork/verify/web-surface.md)。
+
+随后 UI 的独立候选仅选择既有共享呈现与实际来源引用，不混入上述治理增量。原正式构建入口已实际退出 0，产出 Web 镜像 `ad82d6e6…` 和 Linux Desktop deb `d28520f7…`；source/artifact 由原 helper 登记，Relay 原同源 `3700b743…` 按 1118 个实际输入与 registry 原 manifest 证据复用，不重复构建。私有候选断开 Web 的共享 pre 时既有 SSR 断言确实失败，按原字节还原后通过；没有新增持久测试或夹具。记录时仍未部署该 Web 镜像，Linux 包不替代 Win11 包，也不据此宣布整体 UI 99%一致或 Stage 退出。精确来源、失败与边界见 [Web 面核验](web-client/fork/verify/web-surface.md) 末节。
 
 ### 2026-10-02 前一批阶段收口记录
 

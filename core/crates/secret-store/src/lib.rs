@@ -1873,9 +1873,7 @@ mod tests {
                 stream
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .unwrap();
-                let mut bytes = [0u8; 4096];
-                let size = stream.read(&mut bytes).unwrap();
-                requests.push(String::from_utf8_lossy(&bytes[..size]).to_string());
+                requests.push(read_request(&mut stream));
                 let (status, body) = replies[requests.len() - 1];
                 if status.is_empty() {
                     continue;
@@ -1955,9 +1953,7 @@ mod tests {
                 stream
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .unwrap();
-                let mut bytes = [0u8; 4096];
-                let size = stream.read(&mut bytes).unwrap();
-                requests.push(String::from_utf8_lossy(&bytes[..size]).to_string());
+                requests.push(read_request(&mut stream));
                 let (status, body) = replies[requests.len() - 1];
                 if status.is_empty() {
                     continue;
@@ -2046,9 +2042,7 @@ mod tests {
                     stream
                         .set_read_timeout(Some(Duration::from_secs(5)))
                         .unwrap();
-                    let mut bytes = [0u8; 4096];
-                    let size = stream.read(&mut bytes).unwrap();
-                    requests.push(String::from_utf8_lossy(&bytes[..size]).to_string());
+                    requests.push(read_request(&mut stream));
                     let (status, body) = replies[requests.len() - 1];
                     if status.is_empty() {
                         continue;
@@ -2076,6 +2070,258 @@ mod tests {
             assert!(requests[3].starts_with("POST /v1/kv/destroy/buzz-human/provision/"));
             assert!(requests[3].contains("\"versions\":[1]"));
         }
+    }
+
+    /// 读完一个 HTTP 请求（头部与 Content-Length 声明的正文）再回应。只读一次
+    /// 可能只拿到前一段；回应后关闭连接时未读的字节会让内核发 RST，客户端看到的
+    /// 是连接被重置，而不是脚本里的回应或回应丢失。
+    fn read_request(stream: &mut std::net::TcpStream) -> String {
+        let mut raw = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let size = stream.read(&mut chunk).unwrap();
+            assert!(size > 0, "请求未读完连接已关闭");
+            raw.extend_from_slice(&chunk[..size]);
+            let Some(end) = raw.windows(4).position(|w| w == b"\r\n\r\n") else {
+                continue;
+            };
+            let head = String::from_utf8_lossy(&raw[..end]).to_ascii_lowercase();
+            let length = head
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length:"))
+                .map_or(0, |v| v.trim().parse::<usize>().unwrap());
+            if raw.len() >= end + 4 + length {
+                return String::from_utf8_lossy(&raw).to_string();
+            }
+        }
+    }
+
+    /// 按脚本逐条回应的假 OpenBao；空状态表示请求已处理而回应在途丢失。
+    fn scripted_openbao(
+        replies: Vec<(&'static str, &'static str)>,
+    ) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while requests.len() < replies.len() && std::time::Instant::now() < deadline {
+                let (mut stream, _) = match listener.accept() {
+                    Ok(connection) => connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(error) => panic!("mock OpenBao accept: {error}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                requests.push(read_request(&mut stream));
+                let (status, body) = replies[requests.len() - 1];
+                if status.is_empty() {
+                    continue;
+                }
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+            requests
+        });
+        (addr, server)
+    }
+
+    #[tokio::test]
+    async fn operator_prefix_is_listed_read_only_and_bounded() {
+        let (addr, server) = scripted_openbao(vec![
+            ("200 OK", r#"{"data":{"keys":["aud/"]}}"#),
+            ("200 OK", r#"{"data":{"keys":["pk1","pk2/"]}}"#),
+            ("200 OK", r#"{"data":{"keys":["delivery"]}}"#),
+        ]);
+        let store = fake_store(&addr);
+        *store.session.lease.write().await = Some(Lease {
+            token: Arc::new("service".to_owned()),
+            ttl: Duration::from_secs(120),
+        });
+        let listed = store
+            .list_operator_locators()
+            .await
+            .expect("列出 operator 前缀");
+        assert_eq!(
+            listed,
+            vec![
+                "platform/kv/relay-operator/aud/pk1".to_owned(),
+                "platform/kv/relay-operator/aud/pk2/delivery".to_owned(),
+            ]
+        );
+        let requests = server.join().unwrap();
+        assert!(requests
+            .iter()
+            .all(|r| r.starts_with("GET ") && r.contains("list=true")));
+
+        // 超出平台写出的形状（第四层目录）不猜测处置
+        let (addr, server) = scripted_openbao(vec![
+            ("200 OK", r#"{"data":{"keys":["a/"]}}"#),
+            ("200 OK", r#"{"data":{"keys":["b/"]}}"#),
+            ("200 OK", r#"{"data":{"keys":["c/"]}}"#),
+        ]);
+        let store = fake_store(&addr);
+        *store.session.lease.write().await = Some(Lease {
+            token: Arc::new("service".to_owned()),
+            ttl: Duration::from_secs(120),
+        });
+        assert!(matches!(
+            store.list_operator_locators().await,
+            Err(SecretError::Malformed)
+        ));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn platform_key_locators_are_confined_to_their_exclusive_shape() {
+        let store = fake_store("");
+        let tenant = Uuid::from_u128(7);
+        let other = Uuid::from_u128(8);
+        let human = store.tenant_locator(tenant, "buzz-human/provision/a");
+        let control = store.tenant_locator(tenant, "buzz-control/abc");
+        let rehomed = store.tenant_locator(tenant, "buzz-ref-rehome/r");
+        assert!(store.owns_platform_key(PlatformKey::Human, tenant, &human));
+        assert!(store.owns_platform_key(PlatformKey::Human, tenant, &rehomed));
+        assert!(store.owns_platform_key(PlatformKey::Control, tenant, &control));
+        assert!(store.owns_platform_key(PlatformKey::Control, tenant, &rehomed));
+        assert!(store.owns_platform_key(
+            PlatformKey::Operator,
+            tenant,
+            "platform/kv/relay-operator/aud/pk"
+        ));
+        for (kind, locator) in [
+            (PlatformKey::Human, control.clone()),
+            (PlatformKey::Control, human.clone()),
+            (
+                PlatformKey::Human,
+                store.tenant_locator(other, "buzz-human/provision/a"),
+            ),
+            // 尚未归位的 platform/ 存量：先按 DD-85 归位再退役
+            (
+                PlatformKey::Human,
+                format!("platform/kv/buzz-human/{tenant}/x"),
+            ),
+            (
+                PlatformKey::Control,
+                format!("platform/kv/buzz-control/{tenant}"),
+            ),
+            (
+                PlatformKey::Operator,
+                store.tenant_locator(tenant, "relay-operator/a/b"),
+            ),
+            (
+                PlatformKey::Operator,
+                "platform/kv/relay-operator/../x".to_owned(),
+            ),
+            (
+                PlatformKey::Human,
+                store.tenant_locator(tenant, "buzz-human/"),
+            ),
+        ] {
+            assert!(
+                !store.owns_platform_key(kind, tenant, &locator),
+                "{kind:?} {locator}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn lost_delete_response_is_resolved_by_deletion_time() {
+        let tenant = Uuid::from_u128(7);
+        let (addr, server) = scripted_openbao(vec![
+            (
+                "200 OK",
+                r#"{"data":{"current_version":1,"versions":{"1":{"destroyed":false,"deletion_time":"2099-01-01T00:00:00Z"}}}}"#,
+            ),
+            (
+                "200 OK",
+                r#"{"data":{"data":{},"metadata":{"version":1,"destroyed":false,"deletion_time":"2099-01-01T00:00:00Z"}}}"#,
+            ),
+            ("", ""), // 服务端已 delete，回应在途丢失。
+            (
+                "200 OK",
+                r#"{"data":{"current_version":1,"versions":{"1":{"destroyed":false,"deletion_time":"2026-09-29T00:00:00Z"}}}}"#,
+            ),
+            (
+                "404 Not Found",
+                r#"{"data":{"data":null,"metadata":{"version":1,"destroyed":false,"deletion_time":"2026-09-29T00:00:00Z"}}}"#,
+            ),
+        ]);
+        let store = fake_tenant_store(&addr, tenant).await;
+        let locator = store.tenant_locator(tenant, "buzz-human/provision/a");
+        store
+            .delete_bound_version_one(PlatformKey::Human, tenant, &locator)
+            .await
+            .expect("以原生 404 与同版本 metadata 查证");
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 5);
+        assert!(requests[2].starts_with("POST ") && requests[2].contains("/delete/buzz-human/"));
+        assert!(requests[2].contains(r#""versions":[1]"#));
+        for request in [&requests[1], &requests[4]] {
+            assert!(request.starts_with("GET ") && request.contains("/data/buzz-human/"));
+            assert!(request.contains("?version=1 "));
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_without_proof_or_on_second_version_is_not_done() {
+        let tenant = Uuid::from_u128(7);
+        let (addr, server) = scripted_openbao(vec![
+            (
+                "200 OK",
+                r#"{"data":{"current_version":1,"versions":{"1":{"destroyed":false,"deletion_time":""}}}}"#,
+            ),
+            ("204 No Content", ""),
+            (
+                "200 OK",
+                r#"{"data":{"current_version":1,"versions":{"1":{"destroyed":false,"deletion_time":""}}}}"#,
+            ),
+            (
+                "200 OK",
+                r#"{"data":{"current_version":2,"versions":{"1":{"destroyed":false,"deletion_time":""}}}}"#,
+            ),
+        ]);
+        let store = fake_tenant_store(&addr, tenant).await;
+        let locator = store.tenant_locator(tenant, "buzz-human/provision/a");
+        assert!(matches!(
+            store
+                .delete_bound_version_one(PlatformKey::Human, tenant, &locator)
+                .await,
+            Err(SecretError::VersionUnavailable)
+        ));
+        assert!(matches!(
+            store
+                .delete_bound_version_one(PlatformKey::Human, tenant, &locator)
+                .await,
+            Err(SecretError::VersionUnavailable)
+        ));
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 4, "版本 2 时不发 delete");
+    }
+
+    #[tokio::test]
+    async fn bound_retirement_never_claims_an_empty_locator() {
+        let tenant = Uuid::from_u128(7);
+        let (addr, server) = scripted_openbao(vec![("404 Not Found", "")]);
+        let store = fake_tenant_store(&addr, tenant).await;
+        let locator = store.tenant_locator(tenant, "buzz-control/abc");
+        assert!(matches!(
+            store
+                .retire_bound_version_one(PlatformKey::Control, tenant, &locator)
+                .await,
+            Err(SecretError::VersionUnavailable)
+        ));
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 1, "metadata 缺失时不写 CAS、不销毁");
+        assert!(requests[0].starts_with("GET "));
     }
 
     #[tokio::test]
@@ -2134,9 +2380,7 @@ mod tests {
                 stream
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .unwrap();
-                let mut bytes = [0u8; 4096];
-                let size = stream.read(&mut bytes).unwrap();
-                let request = String::from_utf8_lossy(&bytes[..size]).to_string();
+                let request = read_request(&mut stream);
                 let body = replies[requests.len()];
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -2192,9 +2436,7 @@ mod tests {
                 stream
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .unwrap();
-                let mut bytes = [0u8; 4096];
-                let size = stream.read(&mut bytes).unwrap();
-                let request = String::from_utf8_lossy(&bytes[..size]).to_string();
+                let request = read_request(&mut stream);
                 let status = if requests.is_empty() {
                     "500 Internal Server Error"
                 } else {

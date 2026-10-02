@@ -96,11 +96,12 @@ type SecretRefRehomeTarget struct {
 
 // ComponentTaskInput 是 ComponentTaskWorkflow 的统一输入。
 type ComponentTaskInput struct {
-	Kind       generated.WorkflowKind `json:"kind"`
-	Membership *MembershipTarget      `json:"membership,omitempty"`
-	Scope      *ScopeTarget           `json:"scope,omitempty"`
-	Identity   *IdentityTarget        `json:"identity,omitempty"`
-	Rehome     *SecretRefRehomeTarget `json:"rehome,omitempty"`
+	Kind         generated.WorkflowKind                     `json:"kind"`
+	Membership   *MembershipTarget                          `json:"membership,omitempty"`
+	Scope        *ScopeTarget                               `json:"scope,omitempty"`
+	Identity     *IdentityTarget                            `json:"identity,omitempty"`
+	Rehome       *SecretRefRehomeTarget                     `json:"rehome,omitempty"`
+	Installation *generated.AgentInstallationWorkflowTarget `json:"installation,omitempty"`
 	// continue-as-new 时带入的 history 长度累计。投影的 event_id 按 workflow ID
 	// 单调去重（06 §2：按 workflow ID 而非 run ID 聚合），新 run 的 history 从零
 	// 数起，不加上它，续跑后的投影会被当成旧事件丢掉。
@@ -304,7 +305,7 @@ func (t *task) cancel() error {
 // 未实现的 kind 落到 default 分支当场失败——不写一个「什么都不做就成功」的
 // 分支，那会让未实现的能力看起来像执行过了。
 func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
-	if in.CancelPending && !(in.Kind == generated.TenantLifecycle &&
+	if in.CancelPending && in.Kind != generated.AgentInstallation && !(in.Kind == generated.TenantLifecycle &&
 		in.Scope != nil && in.Scope.Operation == scopeOperationDelete) {
 		return newTask(ctx, in).cancel()
 	}
@@ -321,6 +322,8 @@ func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 		return identityProjection(ctx, in)
 	case generated.SecretRefRehome:
 		return secretRefRehome(ctx, in)
+	case generated.AgentInstallation:
+		return agentInstallation(ctx, in)
 	default:
 		return temporal.NewNonRetryableApplicationError(
 			"kind 尚未实现", activities.ErrTypeRejected, nil)

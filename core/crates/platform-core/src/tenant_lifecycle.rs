@@ -20,7 +20,6 @@ use collab_bridge::bridge::{Custody, IdentityClient, Presence, Scope};
 use collab_bridge::operator::{OperatorError, OperatorIdentity};
 use secret_store::SecretRef;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -174,7 +173,189 @@ pub async fn provision_tenant_buzz(
         .into_response()
 }
 
-/// 抓 NIP-11、核验准入执行点成立、把 binding 推进到 `ACTIVE`。
+/// 治理对账器审计 NIP-11 漂移时的 action key。
+pub const NIP11_RECONCILE_ACTION: &str = "tenant.buzz_binding.nip11_reconcile";
+
+/// 一轮 NIP-11 漂移对账的结果。
+pub struct DriftPass {
+    /// 每个被检查的 binding 的结论，供度量按阶段计数
+    pub outcomes: Vec<&'static str>,
+    /// 此刻因漂移停在 `RECONCILING` 的 binding 数：非零即告警
+    pub unverified: u64,
+}
+
+/// 按 Tenant id 轮转的对账游标：批次有上界时，每轮从上次停下的地方继续。
+static DRIFT_CURSOR: std::sync::Mutex<Option<Uuid>> = std::sync::Mutex::new(None);
+
+/// TenantBuzzBinding 的 NIP-11 漂移对账（DD-114(2)–(4)，由治理对账器每轮调用）。
+///
+/// 对每个 `ACTIVE` binding 以 `normalized_host` 抓 NIP-11：抓取失败不迁移（传输失败不是
+/// 不一致的证据）；摘要与快照相同则不动（存量行在此登记 `self`，见迁移说明）；不同
+/// 则以条件更新转 `RECONCILING` 并写审计，随即以 verify 步的同一查证实现
+/// （[`judge_nip11`]、[`commit_verified`]）重新查证。漂移后停在 `RECONCILING` 的
+/// binding 每轮重试，满足接受条件即回到 `ACTIVE`，否则保持并告警。
+pub async fn reconcile_nip11_drift(state: &ServiceState, batch: i64) -> Result<DriftPass, String> {
+    let sql = format!(
+        "select {FACTS_COLUMNS}
+         from projection.tenant_buzz_binding b
+         join identity.tenant t on t.id = b.tenant_id
+         where ((b.state = 'ACTIVE' and t.state = 'ACTIVE')
+                or (b.state = 'RECONCILING' and b.nip11_snapshot_digest is not null))
+           and ($1::uuid is null or b.tenant_id > $1)
+         order by b.tenant_id limit $2"
+    );
+    let select = |after: Option<Uuid>| {
+        sqlx::query_as::<_, FactsRow>(&sql)
+            .bind(after)
+            .bind(batch)
+            .fetch_all(&state.pool)
+    };
+    let after = *DRIFT_CURSOR.lock().unwrap_or_else(|e| e.into_inner());
+    let mut rows = select(after).await.map_err(|e| e.to_string())?;
+    if rows.is_empty() && after.is_some() {
+        rows = select(None).await.map_err(|e| e.to_string())?;
+    }
+    *DRIFT_CURSOR.lock().unwrap_or_else(|e| e.into_inner()) = rows
+        .last()
+        .map(|r| r.0)
+        .filter(|_| rows.len() as i64 >= batch);
+
+    let mut outcomes = Vec::with_capacity(rows.len());
+    for row in rows {
+        let (tenant, facts) = into_facts(row);
+        outcomes.push(drift_one(state, tenant, facts).await);
+    }
+
+    let unverified: i64 = sqlx::query_scalar(
+        "select count(*)::bigint from projection.tenant_buzz_binding
+         where state = 'RECONCILING' and nip11_snapshot_digest is not null",
+    )
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if unverified > 0 {
+        tracing::warn!(
+            unverified,
+            "TenantBuzzBinding 因 NIP-11 漂移停在 RECONCILING，协作面对这些 Tenant 关闭"
+        );
+    }
+    Ok(DriftPass {
+        outcomes,
+        unverified: unverified.max(0) as u64,
+    })
+}
+
+async fn drift_one(state: &ServiceState, tenant: Uuid, mut facts: BindingFacts) -> &'static str {
+    let doc = match fetch_nip11_document(state, &facts.host).await {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::info!(tenant = %tenant, error = %e, "对账抓 NIP-11 失败，不迁移状态");
+            return "NIP11_FETCH_FAILED";
+        }
+    };
+    if facts.state == "ACTIVE" {
+        let Some(old) = facts.digest.clone() else {
+            return "NIP11_SNAPSHOT_MISSING";
+        };
+        let observed = collab_bridge::limits::canonical_digest(&doc);
+        if observed == old {
+            if facts.relay_self.is_some() {
+                return "NIP11_UNCHANGED";
+            }
+            // 摘要相等：这就是当时查证过的文档，其中的 `self` 就是查证过的值
+            let Some(relay_self) = doc.get("self").and_then(|v| v.as_str()) else {
+                return "NIP11_UNCHANGED";
+            };
+            return match sqlx::query(
+                "update projection.tenant_buzz_binding set relay_self_pubkey = $2
+                 where tenant_id = $1 and state = 'ACTIVE' and version = $3
+                   and nip11_snapshot_digest = $4 and relay_self_pubkey is null
+                   and $2 ~ '^[0-9a-f]{64}$'",
+            )
+            .bind(tenant)
+            .bind(relay_self)
+            .bind(facts.version)
+            .bind(&old)
+            .execute(&state.pool)
+            .await
+            {
+                Ok(r) if r.rows_affected() == 1 => "NIP11_SELF_REGISTERED",
+                Ok(_) => "NIP11_UNCHANGED",
+                Err(e) => {
+                    tracing::warn!(tenant = %tenant, error = %e, "登记 Relay self 失败");
+                    "NIP11_WRITE_FAILED"
+                }
+            };
+        }
+
+        // 进入：条件更新（仍 ACTIVE、原 digest 与原 version 均未变）并在同一事务写审计
+        let entered: Result<bool, sqlx::Error> = async {
+            let mut tx = state.pool.begin().await?;
+            let n = sqlx::query(
+                "update projection.tenant_buzz_binding
+                 set state = 'RECONCILING', version = version + 1
+                 where tenant_id = $1 and state = 'ACTIVE'
+                   and nip11_snapshot_digest = $2 and version = $3",
+            )
+            .bind(tenant)
+            .bind(&old)
+            .bind(facts.version)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+            if n == 0 {
+                return Ok(false);
+            }
+            let digests = digest_pair(&old, &observed);
+            crate::audit::append(
+                &mut tx,
+                drift_audit(tenant, facts.version + 1, "NIP11_DRIFT", &digests),
+            )
+            .await?;
+            tx.commit().await?;
+            Ok(true)
+        }
+        .await;
+        match entered {
+            Ok(true) => {
+                tracing::warn!(tenant = %tenant, old = %old, new = %observed, "NIP-11 漂移，binding 转 RECONCILING");
+                facts.state = "RECONCILING".to_owned();
+                facts.version += 1;
+            }
+            Ok(false) => return "NIP11_RACED",
+            Err(e) => {
+                tracing::warn!(tenant = %tenant, error = %e, "NIP-11 漂移未能落账");
+                return "NIP11_WRITE_FAILED";
+            }
+        }
+    }
+
+    // 出口：verify 步的同一查证实现
+    match judge_nip11(&doc, facts.expectation()) {
+        Err(why) => {
+            tracing::warn!(
+                tenant = %tenant,
+                reason = why.code(),
+                "NIP-11 未通过重新查证，binding 保持 RECONCILING"
+            );
+            "NIP11_UNVERIFIED"
+        }
+        Ok(accepted) => match commit_verified(&state.pool, tenant, &facts, &accepted).await {
+            Ok(true) => "NIP11_REVERIFIED",
+            Ok(false) => "NIP11_RACED",
+            Err(e) => {
+                tracing::warn!(tenant = %tenant, error = %e, "重新查证结果未能落账");
+                "NIP11_WRITE_FAILED"
+            }
+        },
+    }
+}
+
+/// 抓 NIP-11、按 DD-114 的接受条件查证、把 binding 推进到 `ACTIVE`。
+///
+/// 只对 `RECONCILING` 的 binding 写快照。已 `ACTIVE` 的 binding 不在这里改写快照
+/// （DD-114(5)）：它的快照只经治理对账器的漂移路径 `ACTIVE→RECONCILING→ACTIVE`
+/// 改写。Workflow 重放到这一步时 binding 已 ACTIVE，只补做 CONTROL 身份的激活。
 pub async fn verify_tenant_buzz(
     State(state): State<ServiceState>,
     headers: HeaderMap,
@@ -192,95 +373,59 @@ pub async fn verify_tenant_buzz(
         return r;
     }
 
-    let binding = match sqlx::query!(
-        "select normalized_host, control_service_principal_id
-         from projection.tenant_buzz_binding
-         where tenant_id = $1 and state in ('RECONCILING', 'ACTIVE')",
-        req.tenant_id
-    )
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(b)) => b,
-        Ok(None) => return StatusCode::CONFLICT.into_response(),
+    let binding = match binding_facts(&state.pool, req.tenant_id).await {
+        Ok(Some(b)) if b.state == "RECONCILING" || b.state == "ACTIVE" => b,
+        Ok(_) => return StatusCode::CONFLICT.into_response(),
         Err(e) => return unavailable(e),
     };
 
-    // NIP-11 按 Community host 抓：Relay 按 Host 绑定 Community，用网络地址
-    // 抓到的是另一个 Community 的文档（`SF-BUZ-32`）。
-    let info: serde_json::Value = match state
-        .http
-        .get(format!("{}/info", state.relay_transport))
-        .header(reqwest::header::HOST, &binding.normalized_host)
-        .send()
-        .await
-    {
-        Ok(r) if r.status().is_success() => match r.json().await {
-            Ok(v) => v,
+    let digest = if binding.state == "ACTIVE" {
+        match binding.digest.clone() {
+            Some(d) => d,
+            // ACTIVE 必带快照（表约束）；读不到说明库与约束不一致，不当成功
+            None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        }
+    } else {
+        // NIP-11 按 Community host 抓：Relay 按 Host 绑定 Community，用网络地址
+        // 抓到的是另一个 Community 的文档（`SF-BUZ-32`）。
+        let doc = match fetch_nip11_document(&state, &binding.host).await {
+            Ok(d) => d,
             Err(e) => {
-                tracing::warn!(error = %e, "NIP-11 文档不可解析");
+                tracing::warn!(error = %e, "抓 NIP-11 失败");
                 return StatusCode::SERVICE_UNAVAILABLE.into_response();
             }
-        },
-        Ok(r) => {
-            tracing::warn!(status = %r.status(), "抓 NIP-11 失败");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        };
+        // 观测而非采信配置：同一套接受条件既用于建立，也用于漂移后的重新查证
+        let accepted = match judge_nip11(&doc, binding.expectation()) {
+            Ok(a) => a,
+            Err(why) => {
+                tracing::warn!(
+                    host = %binding.host,
+                    reason = why.code(),
+                    "NIP-11 未通过查证，binding 不开放"
+                );
+                return StatusCode::FORBIDDEN.into_response();
+            }
+        };
+
+        // Community 已接受 owner pubkey 仍不足以证明 Core 持有对应私钥。CONTROL
+        // binding 与 Tenant binding 开放前，必须读回钉住的 KV 版本并核对公钥。
+        if let Err(r) =
+            verify_control_secret(&state, req.tenant_id, binding.control_principal).await
+        {
+            return r;
         }
-        Err(e) => {
-            tracing::warn!(error = %e, "抓 NIP-11 失败");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        if let Err(r) = crate::service_api::audit_gate(&state).await {
+            return r;
         }
+        match commit_verified(&state.pool, req.tenant_id, &binding, &accepted).await {
+            Ok(true) => {}
+            // 期间 binding 已被别处推进：本次不写，重试会读到新状态
+            Ok(false) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            Err(e) => return unavailable(e),
+        }
+        accepted.digest
     };
-
-    // 观测而非采信配置：上游仅在「配了稳定 relay 私钥且开启成员校验」时才广告
-    // NIP-43（`SF-BUZ-35`）。它不成立就意味着协作面没有准入执行点——此时把
-    // binding 置为 ACTIVE 等于开着门说门是关的。
-    let membership_enforced = info
-        .get("supported_nips")
-        .and_then(|v| v.as_array())
-        .is_some_and(|nips| {
-            nips.iter()
-                .any(|n| n.as_u64() == Some(NIP_RELAY_MEMBERSHIP))
-        });
-    if !membership_enforced {
-        tracing::warn!(
-            host = %binding.normalized_host,
-            "NIP-11 未广告 NIP-43：该部署没有执行成员准入"
-        );
-        return StatusCode::FORBIDDEN.into_response();
-    }
-
-    let digest = canonical_digest(&info);
-
-    // Community 已接受 owner pubkey 仍不足以证明 Core 持有对应私钥。CONTROL
-    // binding 与 Tenant binding 开放前，必须读回钉住的 KV 版本并核对公钥。
-    if let Err(r) =
-        verify_control_secret(&state, req.tenant_id, binding.control_service_principal_id).await
-    {
-        return r;
-    }
-
-    if let Err(r) = crate::service_api::audit_gate(&state).await {
-        return r;
-    }
-
-    // 一条 UPDATE 同时写快照与三个观测值并推进状态：分成多句会留下
-    // 「digest 已更新但状态还没动」的中间态，而那正是对账要排除的东西。
-    let updated = sqlx::query!(
-        "update projection.tenant_buzz_binding
-         set nip11_snapshot_digest = $2, nip11_observed_at = now(),
-             require_relay_membership = true, allow_nip_oa_auth = false,
-             state = 'ACTIVE', version = version + 1
-         where tenant_id = $1 and state in ('RECONCILING', 'ACTIVE')
-         returning tenant_id",
-        req.tenant_id,
-        digest,
-    )
-    .fetch_optional(&state.pool)
-    .await;
-    if let Err(e) = updated {
-        return unavailable(e);
-    }
 
     // CONTROL 身份在其 Community owner 身份查证后才 ACTIVE：它是 Community 的
     // owner，而 owner 身份恰恰由刚才的 provision 建立并被 Relay 接受。绑定版本的
@@ -291,7 +436,7 @@ pub async fn verify_tenant_buzz(
          where tenant_id = $1 and principal_id = $2 and state = 'RECONCILING'",
     )
     .bind(req.tenant_id)
-    .bind(binding.control_service_principal_id)
+    .bind(binding.control_principal)
     .execute(&state.pool)
     .await
     {
@@ -302,48 +447,10 @@ pub async fn verify_tenant_buzz(
         StatusCode::OK,
         Json(VerifyResponse {
             nip11_digest: digest,
-            membership_enforced,
+            membership_enforced: true,
         }),
     )
         .into_response()
-}
-
-/// CONTROL 私钥可读回且与 binding 记录的公钥一致：读回钉住的 KV 版本并核对公钥。
-/// Tenant 建立的查证（`verify_tenant_buzz`）与恢复的对账（`restore_reconcile`）共用。
-async fn verify_control_secret(
-    state: &ServiceState,
-    tenant_id: Uuid,
-    control_principal: Uuid,
-) -> Result<(), Response> {
-    let control = match sqlx::query!(
-        "select pubkey, private_key_secret_ref, private_key_secret_version,
-                private_key_secret_audience
-         from identity.buzz_identity_binding
-         where tenant_id = $1 and principal_id = $2 and kind = 'CONTROL'
-           and custody = 'SERVER' and state in ('RECONCILING', 'ACTIVE')",
-        tenant_id,
-        control_principal,
-    )
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(row)) => row,
-        Ok(None) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
-        Err(e) => return Err(unavailable(e)),
-    };
-    let control_ref = SecretRef {
-        locator: control.private_key_secret_ref.unwrap_or_default(),
-        version: control.private_key_secret_version.unwrap_or_default() as u32,
-        audience: control.private_key_secret_audience.unwrap_or_default(),
-    };
-    if let Err(e) =
-        crate::server_identity::read_bound_keys(&state.secrets, &control_ref, &control.pubkey).await
-    {
-        tracing::warn!(error = %e, "CONTROL 私钥不可用，Tenant binding 不开放");
-        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
-    }
-
-    Ok(())
 }
 
 /// 原 Tenant Workflow 已冻结的动作，而不是按时间挑一条最近的 ActionExecution。
@@ -702,28 +809,308 @@ fn metering_error(error: crate::openmeter::Error) -> Response {
     (status, Json(code)).into_response()
 }
 
-/// `.design/03` §8 的全局 digest 规则：结构化对象按 canonical JSON
-/// （键排序、无无意义空白、UTF-8）序列化再 sha256，十六进制表示。
-///
-/// `serde_json::Value` 的 `Map` 默认按插入序，因此必须显式重排；直接对响应
-/// 原文取 hash 会让上游换一次字段顺序就产生一个新 digest。
-fn canonical_digest(v: &serde_json::Value) -> String {
-    fn canon(v: &serde_json::Value) -> serde_json::Value {
-        match v {
-            serde_json::Value::Object(m) => {
-                let mut keys: Vec<&String> = m.keys().collect();
-                keys.sort();
-                serde_json::Value::Object(
-                    keys.into_iter()
-                        .map(|k| (k.clone(), canon(&m[k])))
-                        .collect(),
-                )
-            }
-            serde_json::Value::Array(a) => serde_json::Value::Array(a.iter().map(canon).collect()),
-            other => other.clone(),
+/// TenantBuzzBinding 的 NIP-11 事实（DD-114(1)）。
+struct BindingFacts {
+    host: String,
+    control_principal: Uuid,
+    state: String,
+    version: i32,
+    digest: Option<String>,
+    relay_self: Option<String>,
+}
+
+impl BindingFacts {
+    /// 查证时对 `self` 的要求。已有快照的 binding 是漂移后的重新查证：必须有登记值
+    /// 且相等；没有快照的是建立，`self` 在此登记。
+    fn expectation(&self) -> RelaySelf<'_> {
+        match (&self.digest, &self.relay_self) {
+            (_, Some(registered)) => RelaySelf::Registered(registered),
+            (None, None) => RelaySelf::Establishing,
+            (Some(_), None) => RelaySelf::Unregistered,
         }
     }
-    hex::encode(Sha256::digest(canon(v).to_string().as_bytes()))
+}
+
+/// `BindingFacts` 的库行：tenant_id 加六列事实，列序与 [`FACTS_COLUMNS`] 一致。
+type FactsRow = (
+    Uuid,
+    String,
+    Uuid,
+    String,
+    i32,
+    Option<String>,
+    Option<String>,
+);
+
+const FACTS_COLUMNS: &str = "b.tenant_id, b.normalized_host, b.control_service_principal_id,
+     b.state, b.version, b.nip11_snapshot_digest, b.relay_self_pubkey";
+
+fn into_facts(row: FactsRow) -> (Uuid, BindingFacts) {
+    let (tenant, host, control_principal, state, version, digest, relay_self) = row;
+    (
+        tenant,
+        BindingFacts {
+            host,
+            control_principal,
+            state,
+            version,
+            digest,
+            relay_self,
+        },
+    )
+}
+
+async fn binding_facts(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+) -> Result<Option<BindingFacts>, sqlx::Error> {
+    let row: Option<FactsRow> = sqlx::query_as(&format!(
+        "select {FACTS_COLUMNS} from projection.tenant_buzz_binding b where b.tenant_id = $1"
+    ))
+    .bind(tenant_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| into_facts(r).1))
+}
+
+/// 以 Community host 为 Host 抓 NIP-11 原文（DD-114(1)：「实际 Relay origin」就是该 host）。
+async fn fetch_nip11_document(
+    state: &ServiceState,
+    host: &str,
+) -> Result<serde_json::Value, String> {
+    let r = state
+        .http
+        .get(format!("{}/info", state.relay_transport))
+        .header(reqwest::header::HOST, host)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !r.status().is_success() {
+        return Err(format!("HTTP {}", r.status()));
+    }
+    r.json()
+        .await
+        .map_err(|e| format!("NIP-11 文档不可解析: {e}"))
+}
+
+/// 查证时对 NIP-11 `self` 的要求。
+#[derive(Debug, Clone, Copy)]
+enum RelaySelf<'a> {
+    /// 建立：登记文档里的 `self`
+    Establishing,
+    /// 重新查证：必须等于登记值（DD-114(4)：不自动改写登记值）
+    Registered(&'a str),
+    /// 已有快照却没有登记值（迁移前的存量行在漂移之后）：无从比对，不接受
+    Unregistered,
+}
+
+/// 通过查证的文档。
+#[derive(Debug, PartialEq, Eq)]
+struct AcceptedNip11 {
+    digest: String,
+    relay_self: String,
+}
+
+/// DD-114(3) 的拒绝理由。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Nip11Rejection {
+    /// 协作面失去准入执行点（SF-BUZ-35）
+    Nip43Missing,
+    /// 文档没有合法的 `self`
+    SelfMissing,
+    /// Relay 签名身份或部署已换
+    SelfChanged,
+    /// 有快照而无登记值，无从判断 Relay 是否仍是登记的那一个
+    SelfUnregistered,
+    AuthNotRequired,
+    /// BFF 用到的四项上界不全
+    BoundsMissing,
+}
+
+impl Nip11Rejection {
+    fn code(self) -> &'static str {
+        match self {
+            Nip11Rejection::Nip43Missing => "NIP43_MISSING",
+            Nip11Rejection::SelfMissing => "SELF_MISSING",
+            Nip11Rejection::SelfChanged => "SELF_CHANGED",
+            Nip11Rejection::SelfUnregistered => "SELF_UNREGISTERED",
+            Nip11Rejection::AuthNotRequired => "AUTH_NOT_REQUIRED",
+            Nip11Rejection::BoundsMissing => "BOUNDS_MISSING",
+        }
+    }
+}
+
+/// DD-114(3) 的接受条件，建立与漂移重新查证共用这一个实现：`supported_nips` 含 43；
+/// `self` 等于登记值（建立时登记）；`limitation.auth_required=true`；BFF 用到的四项
+/// 上界都存在。上界的升降不是拒绝理由——BFF 始终取快照与自身配置的交集。版本号、
+/// 图标、`admin_api` 等字段的变化（SF-BUZ-47）不参与判定。
+fn judge_nip11(
+    doc: &serde_json::Value,
+    expected: RelaySelf<'_>,
+) -> Result<AcceptedNip11, Nip11Rejection> {
+    let nip43 = doc
+        .get("supported_nips")
+        .and_then(|v| v.as_array())
+        .is_some_and(|nips| {
+            nips.iter()
+                .any(|n| n.as_u64() == Some(NIP_RELAY_MEMBERSHIP))
+        });
+    if !nip43 {
+        return Err(Nip11Rejection::Nip43Missing);
+    }
+    let relay_self = doc
+        .get("self")
+        .and_then(|v| v.as_str())
+        .filter(|s| s.len() == 64 && s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')))
+        .ok_or(Nip11Rejection::SelfMissing)?;
+    match expected {
+        RelaySelf::Establishing => {}
+        RelaySelf::Registered(r) if r == relay_self => {}
+        RelaySelf::Registered(_) => return Err(Nip11Rejection::SelfChanged),
+        RelaySelf::Unregistered => return Err(Nip11Rejection::SelfUnregistered),
+    }
+    let auth_required = doc
+        .get("limitation")
+        .and_then(|l| l.get("auth_required"))
+        .and_then(|v| v.as_bool())
+        == Some(true);
+    if !auth_required {
+        return Err(Nip11Rejection::AuthNotRequired);
+    }
+    if collab_bridge::limits::RelayLimits::from_nip11(doc).is_err() {
+        return Err(Nip11Rejection::BoundsMissing);
+    }
+    Ok(AcceptedNip11 {
+        // 与运行期核对（`web_transport::relay_limits`）同一个实现：两侧逐字节一致才比得上
+        digest: collab_bridge::limits::canonical_digest(doc),
+        relay_self: relay_self.to_owned(),
+    })
+}
+
+/// 把一次通过查证的观察写成新快照并回到 `ACTIVE`。
+///
+/// 条件更新：仍是 `RECONCILING`、version 未变、登记的 `self` 未被改写。一条 UPDATE
+/// 同时写快照、`self` 与三个观测值并推进状态：分成多句会留下「digest 已更新但状态
+/// 还没动」的中间态。漂移路径（原快照存在）在同一事务内写审计，记旧、新 digest。
+async fn commit_verified(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    binding: &BindingFacts,
+    accepted: &AcceptedNip11,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let updated = sqlx::query(
+        "update projection.tenant_buzz_binding
+         set nip11_snapshot_digest = $2, nip11_observed_at = now(),
+             relay_self_pubkey = $3,
+             require_relay_membership = true, allow_nip_oa_auth = false,
+             state = 'ACTIVE', version = version + 1
+         where tenant_id = $1 and state = 'RECONCILING' and version = $4
+           and (relay_self_pubkey is null or relay_self_pubkey = $3)",
+    )
+    .bind(tenant_id)
+    .bind(&accepted.digest)
+    .bind(&accepted.relay_self)
+    .bind(binding.version)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if updated == 0 {
+        return Ok(false);
+    }
+    if let Some(old) = &binding.digest {
+        let digests = digest_pair(old, &accepted.digest);
+        crate::audit::append(
+            &mut tx,
+            drift_audit(tenant_id, binding.version, "NIP11_REVERIFIED", &digests),
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// 审计里「旧 digest:新 digest」的写法。
+fn digest_pair(old: &str, new: &str) -> String {
+    format!("{old}:{new}")
+}
+
+/// 治理对账器的 NIP-11 漂移审计。
+///
+/// 一次漂移（进入与回到 ACTIVE）归同一个 operation：由 Tenant 与进入 `RECONCILING`
+/// 后的 binding version 派生，重试得到同一个值。旧、新 digest 记在 `parameter_hash`
+/// （两者本身都是摘要）与稳定的 `event_key` 中。
+fn drift_audit<'a>(
+    tenant_id: Uuid,
+    reconciling_version: i32,
+    result_code: &'a str,
+    digests: &'a str,
+) -> crate::audit::AuditEntry<'a> {
+    let operation = Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        format!("urn:platform:tenant-buzz-nip11:{tenant_id}:{reconciling_version}").as_bytes(),
+    );
+    crate::audit::AuditEntry {
+        event_key: format!(
+            "tenant.buzz_binding.nip11:{tenant_id}:{reconciling_version}:{result_code}"
+        ),
+        tenant_id: Some(tenant_id),
+        workspace_id: None,
+        operation_id: operation,
+        event_type: "RECONCILIATION",
+        human_identity_id: None,
+        initiator_principal_id: None,
+        actor_principal_id: None,
+        action_key: NIP11_RECONCILE_ACTION,
+        action_version: 1,
+        component_type_key: "buzz",
+        target_type: Some("TENANT"),
+        target_id: Some(tenant_id),
+        parameter_hash: digests,
+        decision: "ALLOW",
+        result_code,
+        result_exposure: "NONE",
+        evidence_refs: vec![],
+        correlation_id: operation,
+    }
+}
+
+/// CONTROL 私钥可读回且与 binding 记录的公钥一致：读回钉住的 KV 版本并核对公钥。
+/// Tenant 建立的查证（`verify_tenant_buzz`）与恢复的对账（`restore_reconcile`）共用。
+async fn verify_control_secret(
+    state: &ServiceState,
+    tenant_id: Uuid,
+    control_principal: Uuid,
+) -> Result<(), Response> {
+    let control = match sqlx::query!(
+        "select pubkey, private_key_secret_ref, private_key_secret_version,
+                private_key_secret_audience
+         from identity.buzz_identity_binding
+         where tenant_id = $1 and principal_id = $2 and kind = 'CONTROL'
+           and custody = 'SERVER' and state in ('RECONCILING', 'ACTIVE')",
+        tenant_id,
+        control_principal,
+    )
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
+        Err(e) => return Err(unavailable(e)),
+    };
+    let control_ref = SecretRef {
+        locator: control.private_key_secret_ref.unwrap_or_default(),
+        version: control.private_key_secret_version.unwrap_or_default() as u32,
+        audience: control.private_key_secret_audience.unwrap_or_default(),
+    };
+    if let Err(e) =
+        crate::server_identity::read_bound_keys(&state.secrets, &control_ref, &control.pubkey).await
+    {
+        tracing::warn!(error = %e, "CONTROL 私钥不可用，Tenant binding 不开放");
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+
+    Ok(())
 }
 
 pub(crate) async fn load_operator(state: &ServiceState) -> Result<OperatorIdentity, Response> {
@@ -768,6 +1155,9 @@ pub(crate) async fn load_operator(state: &ServiceState) -> Result<OperatorIdenti
     })
 }
 
+/// CONTROL 客户端所需的库行：Community host、pubkey 与钉住的 SecretRef 三列。
+type ControlRow = (String, String, Option<String>, Option<i32>, Option<String>);
+
 /// 以 CONTROL 身份建该 Tenant 的一个 Channel，返回 Relay 分配的 UUID。
 ///
 /// 供 `WORKSPACE_LIFECYCLE` 用。放在这里是因为它和上面两步共享同一套身份
@@ -775,28 +1165,31 @@ pub(crate) async fn load_operator(state: &ServiceState) -> Result<OperatorIdenti
 pub async fn control_client(
     state: &ServiceState,
     tenant_id: Uuid,
+    direction: ProjectionDirection,
 ) -> Result<(IdentityClient, String), Response> {
-    let row = sqlx::query!(
+    let row: Option<ControlRow> = sqlx::query_as(
         "select b.normalized_host, i.pubkey, i.private_key_secret_ref,
-                i.private_key_secret_version, i.private_key_secret_audience
-         from projection.tenant_buzz_binding b
-         join identity.buzz_identity_binding i
-           on i.tenant_id = b.tenant_id and i.principal_id = b.control_service_principal_id
-         where b.tenant_id = $1 and b.state = 'ACTIVE' and i.state = 'ACTIVE'
-           and i.custody = 'SERVER'",
-        tenant_id
+                    i.private_key_secret_version, i.private_key_secret_audience
+             from projection.tenant_buzz_binding b
+             join identity.buzz_identity_binding i
+               on i.tenant_id = b.tenant_id and i.principal_id = b.control_service_principal_id
+             where b.tenant_id = $1 and b.state = any($2) and i.state = 'ACTIVE'
+               and i.custody = 'SERVER'",
     )
+    .bind(tenant_id)
+    .bind(direction.binding_states())
     .fetch_optional(&state.pool)
     .await
-    .map_err(unavailable)?
-    .ok_or_else(|| StatusCode::FORBIDDEN.into_response())?;
+    .map_err(unavailable)?;
+    let (normalized_host, pubkey, secret_ref, secret_version, secret_audience) =
+        row.ok_or_else(|| StatusCode::FORBIDDEN.into_response())?;
 
     let secret = SecretRef {
-        locator: row.private_key_secret_ref.unwrap_or_default(),
-        version: row.private_key_secret_version.unwrap_or_default() as u32,
-        audience: row.private_key_secret_audience.unwrap_or_default(),
+        locator: secret_ref.unwrap_or_default(),
+        version: secret_version.unwrap_or_default() as u32,
+        audience: secret_audience.unwrap_or_default(),
     };
-    let keys = crate::server_identity::read_bound_keys(&state.secrets, &secret, &row.pubkey)
+    let keys = crate::server_identity::read_bound_keys(&state.secrets, &secret, &pubkey)
         .await
         .map_err(|e| {
             tracing::warn!(error = %e, "取 CONTROL 私钥失败");
@@ -806,13 +1199,54 @@ pub async fn control_client(
         Custody::Server,
         &keys.secret_key().to_secret_hex(),
         &state.relay_transport,
-        &row.normalized_host,
+        &normalized_host,
     )
     .map_err(|e| {
         tracing::warn!(error = %e, "构造 CONTROL 客户端失败");
         StatusCode::FORBIDDEN.into_response()
     })?;
-    Ok((client, row.normalized_host))
+    Ok((client, normalized_host))
+}
+
+/// 以 CONTROL 身份经 Relay 做一件事的方向（DD-114(2)）。
+///
+/// TenantBuzzBinding 因 NIP-11 漂移处于 `RECONCILING` 时，经 Relay 的读写与投入方向都
+/// 等回到 `ACTIVE`；撤出方向（成员撤权、设备撤销、roster 移除、暂停时的清空与归档）
+/// 照常收敛——撤权不能因为 Relay 文档的无关变化而停摆。这是唯一的判定点：CONTROL
+/// 客户端与成员投影都按它取 binding，调用点不各自加条件。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectionDirection {
+    /// 投入、重建与其它经 Relay 的读写：要求 binding `ACTIVE`
+    Establish,
+    /// 移出与停用：binding `ACTIVE` 或 `RECONCILING` 都可执行
+    Withdraw,
+}
+
+impl ProjectionDirection {
+    /// 该方向允许的 TenantBuzzBinding 状态。
+    pub fn binding_states(self) -> Vec<String> {
+        match self {
+            ProjectionDirection::Establish => vec!["ACTIVE".to_owned()],
+            ProjectionDirection::Withdraw => vec!["ACTIVE".to_owned(), "RECONCILING".to_owned()],
+        }
+    }
+}
+
+/// 按方向取该 Tenant 的 Community host 与 CONTROL Principal；binding 状态不允许该方向时为 `None`。
+pub async fn projection_binding(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    direction: ProjectionDirection,
+) -> Result<Option<(String, Uuid)>, sqlx::Error> {
+    sqlx::query_as(
+        "select normalized_host, control_service_principal_id
+         from projection.tenant_buzz_binding
+         where tenant_id = $1 and state = any($2)",
+    )
+    .bind(tenant_id)
+    .bind(direction.binding_states())
+    .fetch_optional(pool)
+    .await
 }
 
 // ---- Workspace ----
@@ -884,10 +1318,11 @@ pub async fn provision_workspace_buzz(
         Err(e) => return unavailable(e),
     }
 
-    let (control, _) = match control_client(&state, ws.tenant_id).await {
-        Ok(c) => c,
-        Err(r) => return r,
-    };
+    let (control, _) =
+        match control_client(&state, ws.tenant_id, ProjectionDirection::Establish).await {
+            Ok(c) => c,
+            Err(r) => return r,
+        };
 
     // Channel id 取 Workspace id：Channel 在 Community 内按 id 唯一，重试时重发
     // 同一个 id 不会另建。只剩「事件被接受而回应丢失」这一种结果不明，由下面
@@ -978,7 +1413,13 @@ pub async fn converge_workspace_channel_archive(
             Ok(r) => r,
             Err(r) => return r,
         };
-    let (control, _) = match control_client(&state, tenant_id).await {
+    // 暂停时归档是撤出方向；恢复时解档是投入方向
+    let direction = if req.archived {
+        ProjectionDirection::Withdraw
+    } else {
+        ProjectionDirection::Establish
+    };
+    let (control, _) = match control_client(&state, tenant_id, direction).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1074,7 +1515,12 @@ pub async fn converge_workspace_channel_roster(
             Ok(r) => r,
             Err(r) => return r,
         };
-    let (control, _) = match control_client(&state, tenant_id).await {
+    // 暂停时清空 roster 是撤出方向；恢复时重建是投入方向
+    let direction = match req.mode {
+        RosterMode::Clear => ProjectionDirection::Withdraw,
+        RosterMode::Rebuild => ProjectionDirection::Establish,
+    };
+    let (control, _) = match control_client(&state, tenant_id, direction).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1281,6 +1727,7 @@ async fn converging_tenant(
     tenant_id: Uuid,
     tenant_version: i32,
     converging: &[&str],
+    direction: ProjectionDirection,
 ) -> Result<(String, String, Uuid), Response> {
     match sqlx::query_as::<_, (String, String, Uuid)>(
         "select b.normalized_host, i.pubkey, b.control_service_principal_id
@@ -1289,11 +1736,12 @@ async fn converging_tenant(
          join identity.buzz_identity_binding i
            on i.tenant_id = b.tenant_id and i.principal_id = b.control_service_principal_id
          where t.id = $1 and t.version = $2 and t.state = any($3)
-           and b.state = 'ACTIVE' and i.kind = 'CONTROL' and i.state = 'ACTIVE'",
+           and b.state = any($4) and i.kind = 'CONTROL' and i.state = 'ACTIVE'",
     )
     .bind(tenant_id)
     .bind(tenant_version)
     .bind(converging)
+    .bind(direction.binding_states())
     .fetch_optional(&state.pool)
     .await
     {
@@ -1343,11 +1791,24 @@ pub async fn converge_tenant_community_archive(
     } else {
         &["RESTORING"]
     };
-    let (host, owner, _) =
-        match converging_tenant(&state, req.tenant_id, req.tenant_version, converging).await {
-            Ok(r) => r,
-            Err(r) => return r,
-        };
+    // 暂停时归档 Community 是撤出方向；恢复时解档是投入方向（DD-114(2)）
+    let direction = if req.archived {
+        ProjectionDirection::Withdraw
+    } else {
+        ProjectionDirection::Establish
+    };
+    let (host, owner, _) = match converging_tenant(
+        &state,
+        req.tenant_id,
+        req.tenant_version,
+        converging,
+        direction,
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
     let operator = match load_operator(&state).await {
         Ok(o) => o,
         Err(r) => return r,
@@ -1452,11 +1913,18 @@ pub async fn restore_reconcile(
     let Ok(Json(req)) = body else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    let (_, _, control_principal) =
-        match converging_tenant(&state, req.tenant_id, req.tenant_version, &["RESTORING"]).await {
-            Ok(r) => r,
-            Err(r) => return r,
-        };
+    let (_, _, control_principal) = match converging_tenant(
+        &state,
+        req.tenant_id,
+        req.tenant_version,
+        &["RESTORING"],
+        ProjectionDirection::Establish,
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(r) => return r,
+    };
     let converged = match req.phase {
         RestorePhase::Bindings => {
             if let Err(r) = verify_control_secret(&state, req.tenant_id, control_principal).await {
@@ -1533,7 +2001,8 @@ async fn reconcile_tenant_relationships(
 /// relay roster 按 Core 事实收敛：多余的移出、缺少的加入，收敛后按当前事实重算并与
 /// 回读比对。
 async fn reconcile_relay_roster(state: &ServiceState, tenant_id: Uuid) -> Result<bool, Response> {
-    let (control, _) = control_client(state, tenant_id).await?;
+    // Tenant 恢复时按 Core 事实重建 relay roster：投入方向
+    let (control, _) = control_client(state, tenant_id, ProjectionDirection::Establish).await?;
     let control_pubkey = control.pubkey_hex();
     let expected = || async {
         let settled = crate::roster_reconcile::settled_relay_roster(
@@ -1588,4 +2057,134 @@ async fn reconcile_relay_roster(state: &ServiceState, tenant_id: Uuid) -> Result
         }
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod nip11_tests {
+    use super::*;
+
+    const SELF_A: &str = "7658f4ec0658aaaa7658f4ec0658aaaa7658f4ec0658aaaa7658f4ec0658aaaa";
+    const SELF_B: &str = "1111f4ec0658aaaa7658f4ec0658aaaa7658f4ec0658aaaa7658f4ec0658aaaa";
+
+    /// 与本地 Relay 实测 `/info` 同形的文档（`relay-server-client.md` 第 2 节）
+    fn doc() -> serde_json::Value {
+        serde_json::json!({
+            "name": "c", "version": "1.0.0", "icon": null,
+            "self": SELF_A,
+            "supported_nips": [1, 11, 29, 42, 43],
+            "limitation": {"max_message_length": 524288, "max_subscriptions": 1024,
+                           "max_filters": 10, "max_limit": 1000, "max_subid_length": 256,
+                           "auth_required": true, "restricted_writes": true}
+        })
+    }
+
+    /// DD-114(2)：只有撤出方向在 RECONCILING 下可用，投入与读写仍要求 ACTIVE
+    #[test]
+    fn only_withdrawal_proceeds_while_reconciling() {
+        assert_eq!(ProjectionDirection::Establish.binding_states(), ["ACTIVE"]);
+        assert_eq!(
+            ProjectionDirection::Withdraw.binding_states(),
+            ["ACTIVE", "RECONCILING"]
+        );
+    }
+
+    #[test]
+    fn establishment_registers_self() {
+        let a = judge_nip11(&doc(), RelaySelf::Establishing).expect("建立时接受");
+        assert_eq!(a.relay_self, SELF_A);
+        assert_eq!(a.digest, collab_bridge::limits::canonical_digest(&doc()));
+    }
+
+    #[test]
+    fn unrelated_fields_do_not_block_reverification() {
+        // SF-BUZ-47：版本、图标、admin_api 与上界的升降都不是拒绝理由
+        let mut d = doc();
+        d["version"] = "2.0.0".into();
+        d["icon"] = "https://x/icon.png".into();
+        d["admin_api"] = "https://admin".into();
+        d["limitation"]["max_limit"] = 500.into();
+        let a = judge_nip11(&d, RelaySelf::Registered(SELF_A)).expect("无关字段变化应被接受");
+        assert_ne!(a.digest, collab_bridge::limits::canonical_digest(&doc()));
+    }
+
+    #[test]
+    fn each_acceptance_condition_is_enforced() {
+        let reject = |d: serde_json::Value, e: RelaySelf<'_>| judge_nip11(&d, e).unwrap_err();
+
+        let mut d = doc();
+        d["supported_nips"] = serde_json::json!([1, 11, 42]);
+        assert_eq!(
+            reject(d, RelaySelf::Registered(SELF_A)),
+            Nip11Rejection::Nip43Missing
+        );
+
+        assert_eq!(
+            reject(doc(), RelaySelf::Registered(SELF_B)),
+            Nip11Rejection::SelfChanged,
+            "self 改变不得接受，也不改写登记值"
+        );
+        assert_eq!(
+            reject(doc(), RelaySelf::Unregistered),
+            Nip11Rejection::SelfUnregistered
+        );
+        let mut d = doc();
+        d.as_object_mut().unwrap().remove("self");
+        assert_eq!(
+            reject(d, RelaySelf::Establishing),
+            Nip11Rejection::SelfMissing
+        );
+
+        let mut d = doc();
+        d["limitation"]["auth_required"] = false.into();
+        assert_eq!(
+            reject(d, RelaySelf::Registered(SELF_A)),
+            Nip11Rejection::AuthNotRequired
+        );
+
+        for bound in [
+            "max_subscriptions",
+            "max_filters",
+            "max_limit",
+            "max_message_length",
+        ] {
+            let mut d = doc();
+            d["limitation"].as_object_mut().unwrap().remove(bound);
+            assert_eq!(
+                reject(d, RelaySelf::Registered(SELF_A)),
+                Nip11Rejection::BoundsMissing,
+                "缺 {bound}"
+            );
+        }
+        // 第五项不在 DD-114 的四项之内：缺它仍接受
+        let mut d = doc();
+        d["limitation"]
+            .as_object_mut()
+            .unwrap()
+            .remove("max_subid_length");
+        judge_nip11(&d, RelaySelf::Registered(SELF_A)).expect("max_subid_length 不是接受条件");
+    }
+
+    #[test]
+    fn expectation_follows_binding_facts() {
+        let facts = |digest: Option<&str>, relay_self: Option<&str>| BindingFacts {
+            host: "h".into(),
+            control_principal: Uuid::nil(),
+            state: "RECONCILING".into(),
+            version: 1,
+            digest: digest.map(str::to_owned),
+            relay_self: relay_self.map(str::to_owned),
+        };
+        assert!(matches!(
+            facts(None, None).expectation(),
+            RelaySelf::Establishing
+        ));
+        assert!(matches!(
+            facts(Some("d"), None).expectation(),
+            RelaySelf::Unregistered
+        ));
+        assert!(matches!(
+            facts(Some("d"), Some(SELF_A)).expectation(),
+            RelaySelf::Registered(s) if s == SELF_A
+        ));
+    }
 }

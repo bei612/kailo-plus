@@ -3,5 +3,7 @@
 //! （`01-工程结构与模块边界.md` §6）。
 
 pub mod bridge;
+pub mod limits;
+pub mod memory;
 pub mod operator;
 pub mod stream;

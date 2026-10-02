@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/agent_installation_workflow_target.schema.json",
+  "title": "AgentInstallationWorkflowTarget",
+  "description": "DD-25/48：既有 ComponentTaskWorkflow 的 AGENT_INSTALLATION 冻结目标；不含凭据或 Version 正文。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "installationId", "agentVersionAssetId", "projectionGeneration"],
+  "properties": {
+    "actionExecutionId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" },
+    "agentVersionAssetId": { "type": "string", "format": "uuid" },
+    "projectionGeneration": { "type": "integer", "minimum": 1 }
+  }
+}

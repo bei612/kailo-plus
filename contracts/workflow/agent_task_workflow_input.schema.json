@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/agent_task_workflow_input.schema.json",
+  "title": "AgentTaskWorkflowInput",
+  "description": "DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invocationId", "installationId", "agentVersionAssetId", "projectionGeneration", "eventBase", "cancelPending", "heartbeatTimeoutSeconds", "heartbeatIntervalSeconds", "observationIntervalSeconds"],
+  "properties": {
+    "invocationId": { "type": "string", "format": "uuid" },
+    "installationId": { "type": "string", "format": "uuid" },
+    "agentVersionAssetId": { "type": "string", "format": "uuid" },
+    "projectionGeneration": { "type": "integer", "minimum": 1 },
+    "eventBase": { "type": "integer", "minimum": 0 },
+    "cancelPending": { "type": "boolean" },
+    "heartbeatTimeoutSeconds": { "type": "integer", "minimum": 1 },
+    "heartbeatIntervalSeconds": { "type": "integer", "minimum": 1 },
+    "observationIntervalSeconds": { "type": "integer", "minimum": 1 }
+  }
+}

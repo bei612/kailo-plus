@@ -961,6 +961,14 @@ export const reasonMessages = {
     en: "Too many requests right now. Nothing was done; wait a moment and try again.",
     "zh-CN": "请求过于频繁，本次未执行；请稍候再试。",
   },
+  [ReasonCode.QuotaExhausted]: {
+    en: "This operation has no available entitlement or quota. Nothing was executed.",
+    "zh-CN": "此操作没有可用授权额度，本次未执行。",
+  },
+  [ReasonCode.PayloadTooLarge]: {
+    en: "The content is larger than the server accepts. Nothing was sent; shorten it and try again.",
+    "zh-CN": "内容超过服务器允许的大小，本次未发出；请缩短后再试。",
+  },
   [ReasonCode.PublishRejected]: { en: "The message was rejected.", "zh-CN": "消息被拒绝。" },
   [ReasonCode.PublishResultUnknown]: {
     en: "Whether the message was delivered is not known yet.",

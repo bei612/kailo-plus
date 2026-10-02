@@ -55,15 +55,19 @@ pub struct BffState {
     /// 历史查询的单页上界。NIP-11 声明的 1000 是 Relay 的上限，不是平台该放行
     /// 的值——上界在 BFF 侧先行设定（`07` §5）。
     pub message_page_limit: i64,
-    /// Relay 的 WebSocket 地址。与 HTTP transport 分开配置：两者在部署里
-    /// 可能经不同的入口，而 Community host 都另从 binding 取。
-    pub relay_ws_url: String,
-    /// 单条流的缓冲帧数。满了对上游形成背压而不是丢帧——丢帧会让客户端
-    /// 以为自己看到了完整序列。
-    pub stream_buffer: usize,
-    /// 连上 Relay 后等 NIP-42 challenge 的上界。对端连上却不发 challenge 时，
-    /// 流以可处理的失败结束，而不是永远挂着。
-    pub stream_auth_timeout_seconds: u64,
+    /// 按 (PlatformSession, Community host, pubkey) 复用的已认证 Relay 连接
+    /// （`apps/02` Stage 1）。连接地址 `BUZZ_RELAY_WS_URL`、每条流的缓冲帧数
+    /// `BFF_STREAM_BUFFER` 与建连认证上界 `BFF_STREAM_AUTH_TIMEOUT_SECONDS` 都在它里面。
+    pub relay_sessions: std::sync::Arc<collab_bridge::stream::RelaySessions>,
+    /// Core 自己的 Relay HTTP 调用预算（`apps/07` §5：BFF 侧先行设界）。数值是
+    /// 部署登记值，不得高于 Relay 的 tier 额度（`.design/09`、`SF-BUZ-28`）。
+    pub relay_budget: std::sync::Arc<collab_bridge::limits::ApiBudget>,
+    /// 运行期 NIP-11：只有 digest 与 ACTIVE binding 快照一致时才采用其上界
+    /// （`.design/03` §2、`.design/09`「BFF Relay 连接模型」）。
+    pub relay_nip11: std::sync::Arc<collab_bridge::limits::Nip11Cache>,
+    /// 单条消息正文的字节上界（`.design/09`：单 event content 不超过 256 KiB，
+    /// `SF-BUZ-28`）。NIP-11 不声明它，因此是部署登记值；BFF 在发往 Relay 前预检。
+    pub message_max_content_bytes: usize,
     /// 撤权对**已建立流**生效的上界。请求路径上撤权立刻生效，长连接靠这个
     /// 周期回头看——它是一个必须被说出来的时间窗，不是实现细节。
     pub stream_readmit_seconds: u64,
@@ -120,8 +124,8 @@ pub async fn resolve_execution_context(
 }
 
 /// DD-96：普通端点始终调用严格 resolver；只有生命周期治理与会话展示调用此处。
-/// 该 release 未登记真实删除链时，暂停 Tenant 仍无入口。资格每个请求 fresh Check，
-/// 不把模式本身作为授权凭证，不读取 Browser 自报角色。
+/// 该 release 未登记真实删除链时，暂停 Tenant 仍无入口。每次请求核当前成员与
+/// 原生权限或该删除链的销毁前观察证据，不把模式本身作为授权凭证。
 async fn lifecycle_identity(
     state: &BffState,
     headers: &HeaderMap,
@@ -150,6 +154,18 @@ async fn lifecycle_identity(
     if !registered {
         return Err(error_response(IdentityError::TenantNotActive));
     }
+    let principal = identity
+        .tenant_principal_id
+        .parse::<Uuid>()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
+    // 不可逆删除已擦除原生角色时，仅同一删除链的持久观察证据仍可用于受限读取。
+    // 普通 resolver 与审批/动作的 fresh 写准入不消费该证据。
+    if lifecycle_owner_eligible(&state.governance, tenant, principal, None)
+        .await
+        .map_err(|e| e.respond(None))?
+    {
+        return Ok((identity, PlatformSessionAccessMode::LifecycleRestricted));
+    }
     let check = state
         .governance
         .spicedb
@@ -162,21 +178,14 @@ async fn lifecycle_identity(
         )
         .await
         .map_err(|e| crate::governance::Refusal::Unavailable(e.to_string()).respond(None))?;
-    let principal = identity
-        .tenant_principal_id
-        .parse::<Uuid>()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
-    if !check.allowed
-        && !lifecycle_owner_eligible(&state.governance, tenant, principal, None)
-            .await
-            .map_err(|e| e.respond(None))?
-    {
+    if !check.allowed {
         return Err(error_response(IdentityError::TenantNotActive));
     }
     Ok((identity, PlatformSessionAccessMode::LifecycleRestricted))
 }
 
-/// DD-96：冻结 owner 资格不是名单授权，当前成员、Resource 版本及 owner 投影必须仍成立。
+/// DD-96：冻结 owner 资格不是名单授权；销毁前核对当前投影，销毁后仅接受该链的
+/// 原生观察证据，且每次请求仍锁定、核对当前 ACTIVE HUMAN 成员。
 /// 会话查本 Tenant 的当前 snapshot；审批可见性只查该 ActionExecution 的同一 snapshot。
 pub(crate) async fn lifecycle_owner_eligible(
     governance: &crate::governance::Governance,
@@ -189,6 +198,17 @@ pub(crate) async fn lifecycle_owner_eligible(
         || !crate::agent_definition::active_owner(&mut tx, tenant, principal).await?
     {
         return Ok(false);
+    }
+    if crate::tenant_delete::lifecycle_reader_eligible(
+        &mut tx,
+        tenant,
+        principal,
+        action_execution_id,
+    )
+    .await?
+    {
+        tx.commit().await?;
+        return Ok(true);
     }
     let snapshots: Vec<serde_json::Value> = sqlx::query_scalar(
         "select s.resource_owner_versions || s.asset_owner_versions from admission.tenant_lifecycle_snapshot s
@@ -433,8 +453,8 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
     let header = |name: &str| -> Option<&str> { headers.get(name).and_then(|v| v.to_str().ok()) };
     let (issuer, subject) = (header(HEADER_ISSUER), header(HEADER_SUBJECT));
 
-    match resolve(pool, issuer, subject).await {
-        Ok(identity) => {
+    match lifecycle_identity(&state, &headers).await {
+        Ok((identity, access_mode)) => {
             // 会话在身份解析**之后**建立：解析不过就没有会话可用，撤权因此
             // 对下一个请求立刻生效，不需要等任何凭证过期（`.design/03` §4.1）。
             let (Ok(human), Ok(membership)) = (
@@ -456,7 +476,15 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
                 Ok(n) => n,
                 Err(e) => return error_response(IdentityError::Unavailable(e)),
             };
-            match session::ensure(pool, human, membership, state.session_ttl_seconds).await {
+            match session::ensure_mode(
+                pool,
+                human,
+                membership,
+                state.session_ttl_seconds,
+                access_mode.clone(),
+            )
+            .await
+            {
                 Ok(s) => (
                     StatusCode::OK,
                     Json(PlatformSessionView {
@@ -466,8 +494,7 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
                         tenant_membership_id: identity.tenant_membership_id,
                         tenant_principal_id: identity.tenant_principal_id,
                         platform_session_id: s.id.to_string(),
-                        // ensure 已在 Tenant/membership 行锁下确认并读取/写入 FULL 会话。
-                        access_mode: PlatformSessionAccessMode::Full,
+                        access_mode,
                         // 未选定 Workspace 时缺省，不写 null（contracts/README.md §1）
                         current_workspace_id: s.current_workspace_id.map(|w| w.to_string()),
                     }),
@@ -478,16 +505,18 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
                 Err(e) => error_response(e),
             }
         }
-        Err(e) => {
+        Err(response) => {
             // 这里是 `.design/03` §9 允许 `tenant_id=NONE` 的那段边界：网关已经
             // 验过 OIDC，但 Core 还没解析出可用的 TenantMembership。拒绝必须留痕，
             // 否则「谁被挡在门外」这件事无处可查——而这恰恰是最需要查的。
             //
             // 依赖不可用不记：那不是一次身份判定，记下来会把运维故障混进拒绝审计。
-            if !matches!(e, IdentityError::Unavailable(_)) {
-                record_denied_authentication(pool, issuer, subject, &e).await;
+            if let Err(e) = resolve(pool, issuer, subject).await {
+                if !matches!(e, IdentityError::Unavailable(_)) {
+                    record_denied_authentication(pool, issuer, subject, &e).await;
+                }
             }
-            error_response(e)
+            response
         }
     }
 }

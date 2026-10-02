@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::service_api::{authorize, unavailable, ServiceState};
-use crate::tenant_lifecycle::control_client;
+use crate::tenant_lifecycle::{control_client, ProjectionDirection};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -118,7 +118,14 @@ pub async fn project_buzz_identity(
         }
     }
 
-    let (control, _) = match control_client(&state, binding.tenant_id).await {
+    // 登记中的钥匙投入 roster 是投入方向；撤销中的钥匙移出 roster 是撤出方向，
+    // binding 因 NIP-11 漂移处于 RECONCILING 时照常执行（DD-114(2)）
+    let direction = if binding.state == "REVOKING" {
+        ProjectionDirection::Withdraw
+    } else {
+        ProjectionDirection::Establish
+    };
+    let (control, _) = match control_client(&state, binding.tenant_id, direction).await {
         Ok(c) => c,
         Err(r) => return r,
     };

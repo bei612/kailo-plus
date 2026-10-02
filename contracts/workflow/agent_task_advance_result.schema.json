@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/agent_task_advance_result.schema.json",
+  "title": "AgentTaskAdvanceResult",
+  "description": "Core 查证的引用与状态；native completed 缺 reply/usage 证据仍 RUNNING。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invocationId", "status", "waitingReason", "finishActivity"],
+  "properties": {
+    "invocationId": { "type": "string", "format": "uuid" },
+    "status": { "$ref": "../enums/task_status.schema.json" },
+    "waitingReason": { "type": "string" },
+    "finishActivity": { "type": "boolean", "description": "已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。" }
+  }
+}

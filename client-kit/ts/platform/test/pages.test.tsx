@@ -2,7 +2,7 @@ import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
-import { AuditPage, DevicesPage, WorkspaceMembersPage } from "../src/react/pages";
+import { AgentDefinitionsPage, AuditPage, DevicesPage, WorkspaceMembersPage } from "../src/react/pages";
 import { PlatformProvider } from "../src/react/context";
 import { LegacySecretRefManagement, RoleManagement, RoleMembers } from "../src/react/roles";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
@@ -664,5 +664,105 @@ describe("AuditPage 范围审计", () => {
     await settle();
     expect(section.textContent).toContain("workspace.admin.grant");
     expect(section.textContent).not.toContain("tenant.admin.revoke");
+  });
+});
+
+// DD-24/25、17 §8、apps/06 §4：通过实际共享页与 GET 客户端检查读取结论，
+// 不把 Definition 可见推导为 Asset 可读，也不从 UNKNOWN 制造确定失败。
+describe("AgentDefinitionsPage read outcomes", () => {
+  const definition = {
+    resourceId: "agent-1", displayName: "Observed definition", stableSlug: "observed",
+    ownerPrincipalId: "owner-1", resourceVersion: 1, resourceState: "ACTIVE", status: "ACTIVE",
+    currentPublishedVersionAssetId: "asset-1",
+  };
+
+  it.each([
+    { status: 403, label: "Not allowed" },
+    { status: 404, label: "Not available here" },
+  ])("list bare $status is definitive; retry only repeats GET", async ({ status, label }) => {
+    let reply: BffReply = { status, body: undefined };
+    const t = transport((r) => r.path === "/api/v1/tasks" ? { status: 200, body: [] } : reply);
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    expect(host.querySelector("[role=alert]")?.textContent).toContain(label);
+    expect(host.textContent).not.toContain("result is unknown");
+    expect(host.textContent).not.toContain("No definitions visible");
+    expect(host.textContent).not.toContain("PERMISSION_DENIED");
+    expect(host.textContent).not.toContain("TARGET_NOT_FOUND");
+
+    reply = { status: 200, body: { definitions: [] } };
+    await click(button(host, "Try again"));
+    expect(host.textContent).toContain("No definitions visible on this page.");
+    expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/agent-definitions")).toHaveLength(2);
+    expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
+  });
+
+  it.each([
+    { status: 403, label: "Not allowed", open: "View definition", locale: "en" as const },
+    { status: 404, label: "此处不可用", open: "查看定义", locale: "zh-CN" as const },
+  ])("definition detail bare $status does not become unknown", async ({ status, label, open, locale }) => {
+    const t = transport((r) => r.path === "/api/v1/tasks" ? { status: 200, body: [] }
+      : r.path === "/api/v1/agent-definitions" ? { status: 200, body: { definitions: [definition] } }
+      : { status, body: undefined });
+    const host = await mount(t, <AgentDefinitionsPage />, locale);
+    await settle();
+    await click(button(host, open));
+    expect(host.querySelector("[role=alert]")?.textContent).toContain(label);
+    expect(host.textContent).not.toMatch(/result is unknown|结果不明/);
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-definitions/agent-1" });
+    expect(t.send.mock.calls.some(([r]) => r.path.startsWith("/api/v1/agent-versions/"))).toBe(false);
+    expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
+  });
+
+  it.each([
+    { reply: { status: 403, body: undefined }, label: "Not allowed", open: "View definition", locale: "en" as const },
+    { reply: { status: 404, body: { class: ErrorClass.Precondition, reason: ReasonCode.TargetNotFound,
+      content: "private-error-body" } }, label: "TARGET_NOT_FOUND", open: "查看定义", locale: "zh-CN" as const },
+  ])("published Version shows actual refusal $label, not parent permission", async ({ reply, label, open, locale }) => {
+    const t = transport((r) => r.path === "/api/v1/tasks" ? { status: 200, body: [] }
+      : r.path === "/api/v1/agent-definitions" ? { status: 200, body: { definitions: [definition] } }
+      : r.path === "/api/v1/agent-definitions/agent-1" ? { status: 200, body: definition }
+      : reply);
+    const host = await mount(t, <AgentDefinitionsPage />, locale);
+    await settle();
+    await click(button(host, open));
+    const section = host.querySelector("h3")?.parentElement;
+    expect(section?.querySelector("[role=alert]")?.textContent).toContain(label);
+    expect(section?.textContent).not.toMatch(/result is unknown|结果不明/);
+    expect(section?.textContent).not.toContain("private-error-body");
+    if (reply.body === undefined) expect(section?.textContent).not.toContain("PERMISSION_DENIED");
+    expect(section?.querySelector("pre")).toBeNull();
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-versions/asset-1" });
+    expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
+  });
+
+  it.each([
+    { name: "explicit UNKNOWN over 403", reply: { status: 403,
+      body: { class: ErrorClass.Unknown, reason: ReasonCode.PermissionDenied, content: "private-error-body" } } },
+    { name: "explicit UNKNOWN over 404", reply: { status: 404,
+      body: { class: ErrorClass.Unknown, reason: ReasonCode.TargetNotFound, content: "private-error-body" } } },
+    { name: "unknown classification over 403", reply: { status: 403,
+      body: { class: "FUTURE_CLASS", reason: ReasonCode.PermissionDenied, content: "private-error-body" } } },
+    { name: "unclassified 503", reply: { status: 503, body: undefined } },
+    { name: "malformed 200", reply: { status: 200, body: { assetId: "asset-1" } } },
+    { name: "transport error", reply: new TransportError("private-error-body") },
+  ])("published Version keeps $name unknown", async ({ reply }) => {
+    const t = transport((r) => {
+      if (r.path === "/api/v1/tasks") return { status: 200, body: [] };
+      if (r.path === "/api/v1/agent-definitions") return { status: 200, body: { definitions: [definition] } };
+      if (r.path === "/api/v1/agent-definitions/agent-1") return { status: 200, body: definition };
+      if (reply instanceof TransportError) throw reply;
+      return reply;
+    });
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    await click(button(host, "View definition"));
+    const section = host.querySelector("h3")?.parentElement;
+    expect(section?.querySelector("[role=status]")?.textContent).toContain("the result is unknown");
+    expect(section?.querySelector("[role=alert]")).toBeNull();
+    expect(section?.textContent).not.toMatch(/Not allowed|Not available here|PERMISSION_DENIED|TARGET_NOT_FOUND|private-error-body/);
+    expect(section?.querySelector("pre")).toBeNull();
+    expect(section && button(section, "Try again")).toBeTruthy();
+    expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 });

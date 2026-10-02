@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_installation_state.schema.json",
+  "title": "AgentInstallationState",
+  "description": "03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。",
+  "type": "string",
+  "enum": ["PROVISIONING", "ACTIVE", "DRAINING", "DISABLED", "ERROR"]
+}

@@ -176,6 +176,12 @@ capabilities:
   actions: []
   tools: []
   workflow_kinds: []
+- id: metering.quota_check
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: platform.pages
   exposure: end_user
   routes:

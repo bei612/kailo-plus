@@ -469,6 +469,9 @@ pub enum ReasonCode {
     #[serde(rename = "NATIVE_SURFACE_REQUIRED")]
     NativeSurfaceRequired,
 
+    #[serde(rename = "PAYLOAD_TOO_LARGE")]
+    PayloadTooLarge,
+
     #[serde(rename = "PERMISSION_DENIED")]
     PermissionDenied,
 
@@ -480,6 +483,9 @@ pub enum ReasonCode {
 
     #[serde(rename = "PUBLISH_RESULT_UNKNOWN")]
     PublishResultUnknown,
+
+    #[serde(rename = "QUOTA_EXHAUSTED")]
+    QuotaExhausted,
 
     #[serde(rename = "RATE_LIMITED")]
     RateLimited,
@@ -1248,8 +1254,9 @@ pub enum TenantState {
     Suspending,
 }
 
-/// PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
-/// msg:<Buzz event id>；version 是读到的 CollaborationUserState 版本，不符即 409。
+/// PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
+/// ID、msg:<Buzz event id> 或 thread:<Buzz root event id>；version 是读到的 CollaborationUserState
+/// 版本，不符即 409。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadMarkRequest {
@@ -1489,6 +1496,9 @@ pub enum TaskStatus {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum WorkflowKind {
+    #[serde(rename = "AGENT_INSTALLATION")]
+    AgentInstallation,
+
     #[serde(rename = "BUZZ_IDENTITY_PROJECTION")]
     BuzzIdentityProjection,
 
@@ -1826,6 +1836,113 @@ pub struct AffectedOwnerRef {
     pub target_type: String,
 
     pub target_version: i64,
+}
+
+/// 唯一安装 Workflow 推进同一 ActionExecution/version/generation；取消接收不是原生清理终态。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationAdvanceRequest {
+    pub action_execution_id: String,
+
+    pub agent_version_asset_id: String,
+
+    pub cancel_requested: bool,
+
+    pub installation_id: String,
+
+    pub projection_generation: i64,
+
+    pub run_id: String,
+
+    pub workflow_id: String,
+}
+
+/// Core 查证后的安装生命周期状态；身份/模型/记忆/runtime 未闭合只返回 RUNNING/UNKNOWN，不把 spawn 当 ACTIVE。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationAdvanceResult {
+    pub installation_id: String,
+
+    pub status: TaskStatus,
+
+    pub waiting_reason: String,
+}
+
+/// DD-25/48：既有 ComponentTaskWorkflow 的 AGENT_INSTALLATION 冻结目标；不含凭据或 Version 正文。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationWorkflowTarget {
+    pub action_execution_id: String,
+
+    pub agent_version_asset_id: String,
+
+    pub installation_id: String,
+
+    pub projection_generation: i64,
+}
+
+/// Worker 推进已冻结 Invocation；未知原生结果只观察，不再次 turn/start。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTaskAdvanceRequest {
+    pub activity_id: String,
+
+    pub agent_version_asset_id: String,
+
+    pub attempt: i64,
+
+    pub cancel_requested: bool,
+
+    pub heartbeat_interval_seconds: i64,
+
+    pub installation_id: String,
+
+    pub invocation_id: String,
+
+    pub observation_interval_seconds: i64,
+
+    pub projection_generation: i64,
+
+    pub run_id: String,
+
+    pub workflow_id: String,
+}
+
+/// Core 查证的引用与状态；native completed 缺 reply/usage 证据仍 RUNNING。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTaskAdvanceResult {
+    /// 已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
+    pub finish_activity: bool,
+
+    pub invocation_id: String,
+
+    pub status: TaskStatus,
+
+    pub waiting_reason: String,
+}
+
+/// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTaskWorkflowInput {
+    pub agent_version_asset_id: String,
+
+    pub cancel_pending: bool,
+
+    pub event_base: i64,
+
+    pub heartbeat_interval_seconds: i64,
+
+    pub heartbeat_timeout_seconds: i64,
+
+    pub installation_id: String,
+
+    pub invocation_id: String,
+
+    pub observation_interval_seconds: i64,
+
+    pub projection_generation: i64,
 }
 
 /// consume、invalidate、withdraw 三个 Update 的结果：执行后的 Approval 状态。

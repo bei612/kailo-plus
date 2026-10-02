@@ -21,7 +21,7 @@ use opentelemetry::KeyValue;
 use uuid::Uuid;
 
 use crate::service_api::ServiceState;
-use crate::tenant_lifecycle::control_client;
+use crate::tenant_lifecycle::{control_client, ProjectionDirection};
 
 pub struct Config {
     pub interval: Duration,
@@ -93,7 +93,9 @@ async fn pass(state: &ServiceState, metrics: &Metrics) -> Result<(), String> {
     let mut relay = Drift::default();
     let mut channel = Drift::default();
     for tenant in tenants {
-        let Ok((control, _)) = control_client(state, tenant).await else {
+        // 只读对账度量，经 Relay 的读取按投入方向：binding 须 ACTIVE（与上面的选取一致）
+        let Ok((control, _)) = control_client(state, tenant, ProjectionDirection::Establish).await
+        else {
             // CONTROL 身份不可读：该 Tenant 的 roster 这一轮看不到，不猜
             metrics
                 .scopes
@@ -198,7 +200,7 @@ fn diff(roster: &HashSet<String>, settled: &HashSet<String>, unsettled: &HashSet
 }
 
 /// relay roster「应在」的集合：CONTROL（Community owner，恒在），加上该 Tenant 全部
-/// ACTIVE TenantMembership 对应 Principal 的全部 ACTIVE Buzz 身份。对账度量与 Tenant
+/// ACTIVE HUMAN membership 身份与已闭合的 AGENT Installation。对账度量与 Tenant
 /// 恢复时的 relay roster 收敛（DD-96(4)）共用这一处。
 pub(crate) async fn settled_relay_roster(
     pool: &sqlx::PgPool,
@@ -210,7 +212,7 @@ pub(crate) async fn settled_relay_roster(
         "select b.pubkey from identity.buzz_identity_binding b
          join identity.tenant_membership m
            on m.tenant_principal_id = b.principal_id and m.tenant_id = b.tenant_id
-         where b.tenant_id = $1 and b.kind <> 'CONTROL'
+         where b.tenant_id = $1 and b.kind = 'HUMAN'
            and b.state = 'ACTIVE' and m.state = 'ACTIVE'",
         tenant
     )
@@ -218,6 +220,7 @@ pub(crate) async fn settled_relay_roster(
     .await?
     .into_iter()
     .collect();
+    settled.extend(agent_roster(pool, tenant, None, true).await?);
     settled.insert(control_pubkey);
     Ok(settled)
 }
@@ -227,11 +230,11 @@ pub(crate) async fn unsettled_relay_roster(
     pool: &sqlx::PgPool,
     tenant: Uuid,
 ) -> Result<HashSet<String>, sqlx::Error> {
-    Ok(sqlx::query_scalar!(
+    let mut unsettled: HashSet<String> = sqlx::query_scalar!(
         "select b.pubkey from identity.buzz_identity_binding b
          left join identity.tenant_membership m
            on m.tenant_principal_id = b.principal_id and m.tenant_id = b.tenant_id
-         where b.tenant_id = $1 and b.kind <> 'CONTROL'
+         where b.tenant_id = $1 and b.kind = 'HUMAN'
            and (b.state in ('PENDING_SECRET', 'RECONCILING', 'REVOKING')
                 or m.state in ('INVITED', 'PROVISIONING', 'REVOKING'))",
         tenant
@@ -239,7 +242,9 @@ pub(crate) async fn unsettled_relay_roster(
     .fetch_all(pool)
     .await?
     .into_iter()
-    .collect())
+    .collect();
+    unsettled.extend(agent_roster(pool, tenant, None, false).await?);
+    Ok(unsettled)
 }
 
 async fn compare_relay(
@@ -265,7 +270,7 @@ async fn compare_relay(
 
 /// 一个 Workspace 的 Channel roster「应在」的集合：CONTROL（Channel 的建立者与
 /// owner），加上该 Workspace 全部 ACTIVE WorkspaceMembership 对应 Principal 的全部
-/// ACTIVE Buzz 身份（其 TenantMembership 也须 ACTIVE）。对账度量与恢复时的 roster
+/// ACTIVE HUMAN Buzz 身份与该 Workspace 的已闭合 AGENT Installation。对账度量与恢复时的 roster
 /// 重建（DD-97）共用这一处，两边不会各自理解「应在」。
 pub(crate) async fn settled_channel_roster(
     pool: &sqlx::PgPool,
@@ -278,7 +283,7 @@ pub(crate) async fn settled_channel_roster(
          join identity.workspace_membership wm on wm.tenant_principal_id = b.principal_id
          join identity.tenant_membership m
            on m.tenant_principal_id = b.principal_id and m.tenant_id = b.tenant_id
-         where b.tenant_id = $1 and wm.workspace_id = $2 and b.kind <> 'CONTROL'
+         where b.tenant_id = $1 and wm.workspace_id = $2 and b.kind = 'HUMAN'
            and b.state = 'ACTIVE' and wm.state = 'ACTIVE' and m.state = 'ACTIVE'",
         tenant,
         workspace
@@ -287,6 +292,7 @@ pub(crate) async fn settled_channel_roster(
     .await?
     .into_iter()
     .collect();
+    settled.extend(agent_roster(pool, tenant, Some(workspace), true).await?);
     settled.insert(control_pubkey);
     Ok(settled)
 }
@@ -298,19 +304,80 @@ pub(crate) async fn unsettled_channel_roster(
     tenant: Uuid,
     workspace: Uuid,
 ) -> Result<HashSet<String>, sqlx::Error> {
-    Ok(sqlx::query_scalar!(
+    let mut unsettled: HashSet<String> = sqlx::query_scalar!(
         "select b.pubkey from identity.buzz_identity_binding b
          left join identity.workspace_membership wm
            on wm.tenant_principal_id = b.principal_id and wm.workspace_id = $2
          left join identity.tenant_membership m
            on m.tenant_principal_id = b.principal_id and m.tenant_id = b.tenant_id
-         where b.tenant_id = $1 and b.kind <> 'CONTROL'
+         where b.tenant_id = $1 and b.kind = 'HUMAN'
            and (b.state in ('PENDING_SECRET', 'RECONCILING', 'REVOKING')
                 or wm.state in ('PROVISIONING', 'REVOKING')
                 or m.state in ('INVITED', 'PROVISIONING', 'REVOKING'))",
         tenant,
         workspace
     )
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+    unsettled.extend(agent_roster(pool, tenant, Some(workspace), false).await?);
+    Ok(unsettled)
+}
+
+/// DD-50/66：AGENT 的 Workspace 归属只来自 Installation，不建立 HUMAN membership。
+/// 恢复与度量共用同一查询；Channel 只允许属于这个 Workspace 的安装身份。
+async fn agent_roster(
+    pool: &sqlx::PgPool,
+    tenant: Uuid,
+    workspace: Option<Uuid>,
+    settled: bool,
+) -> Result<HashSet<String>, sqlx::Error> {
+    Ok(sqlx::query_scalar::<_, String>(
+        "select b.pubkey from catalog.agent_installation i
+         join catalog.resource r on r.id=i.resource_id and r.tenant_id=$1
+           and r.type_key='agent.installation' and r.home_workspace_id=i.workspace_id
+         join identity.workspace w on w.id=i.workspace_id and w.tenant_id=r.tenant_id
+         join identity.principal agent on agent.id=i.agent_principal_id
+           and agent.tenant_id=r.tenant_id and agent.kind='AGENT'
+         join identity.buzz_identity_binding b on b.principal_id=agent.id
+           and b.tenant_id=r.tenant_id and b.kind='AGENT' and b.custody='SERVER'
+         left join catalog.channel_agent_binding cb on cb.installation_resource_id=i.resource_id
+           and cb.workspace_id=i.workspace_id
+         left join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
+           and p.generation=i.active_projection_generation
+           and p.agent_version_asset_id=i.pinned_version_asset_id
+         left join catalog.agent_memory_binding m on m.installation_resource_id=i.resource_id
+           and m.agent_buzz_identity_binding_id=b.pubkey
+         where ($2::uuid is null or i.workspace_id=$2)
+           and case when $3 then
+             i.state='ACTIVE' and r.state='ACTIVE' and r.projection_action_execution_id is null
+             and agent.status='ACTIVE' and b.state='ACTIVE' and b.private_key_secret_status='ACTIVE'
+             and cb.status='ACTIVE' and p.state='ACTIVE' and m.state='ACTIVE'
+             and m.listing_state='COMPLETE' and m.head_state='CONSISTENT'
+             and exists (select 1 from identity.principal owner
+               join identity.tenant_membership om on om.tenant_principal_id=owner.id
+                 and om.tenant_id=r.tenant_id and om.state='ACTIVE'
+               where owner.id=r.owner_principal_id and owner.tenant_id=r.tenant_id
+                 and owner.kind='HUMAN' and owner.status='ACTIVE')
+             and exists (select 1 from catalog.agent_definition d
+               join catalog.resource dr on dr.id=d.resource_id and dr.tenant_id=r.tenant_id
+               join catalog.agent_version v on v.agent_resource_id=d.resource_id
+                 and v.asset_id=i.pinned_version_asset_id
+               join catalog.asset a on a.id=v.asset_id and a.tenant_id=r.tenant_id
+               where d.resource_id=i.agent_resource_id and d.status='ACTIVE'
+                 and dr.state='ACTIVE' and dr.projection_action_execution_id is null
+                 and v.state in ('PUBLISHED','RETIRED') and a.state in ('PUBLISHED','RETIRED')
+                 and a.projection_action_execution_id is null)
+           else
+             i.state in ('PROVISIONING','DRAINING')
+             or b.state in ('PENDING_SECRET','RECONCILING','REVOKING')
+             or p.state='PENDING'
+           end",
+    )
+    .bind(tenant)
+    .bind(workspace)
+    .bind(settled)
     .fetch_all(pool)
     .await?
     .into_iter()

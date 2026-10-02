@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_memory_binding_state.schema.json",
+  "title": "AgentMemoryBindingState",
+  "description": "03 §7、19 §3 的独立 NIP-AE pair binding 状态，不保存正文。",
+  "type": "string",
+  "enum": ["PROVISIONING", "ACTIVE", "ERROR", "REVOKED"]
+}

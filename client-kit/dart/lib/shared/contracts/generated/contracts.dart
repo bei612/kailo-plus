@@ -37,6 +37,12 @@
 //     final taskStateReport = taskStateReportFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
 //     final affectedOwnerRef = affectedOwnerRefFromJson(jsonString);
+//     final agentInstallationAdvanceRequest = agentInstallationAdvanceRequestFromJson(jsonString);
+//     final agentInstallationAdvanceResult = agentInstallationAdvanceResultFromJson(jsonString);
+//     final agentInstallationWorkflowTarget = agentInstallationWorkflowTargetFromJson(jsonString);
+//     final agentTaskAdvanceRequest = agentTaskAdvanceRequestFromJson(jsonString);
+//     final agentTaskAdvanceResult = agentTaskAdvanceResultFromJson(jsonString);
+//     final agentTaskWorkflowInput = agentTaskWorkflowInputFromJson(jsonString);
 //     final approvalControlOutcome = approvalControlOutcomeFromJson(jsonString);
 //     final approvalDecisionOutcome = approvalDecisionOutcomeFromJson(jsonString);
 //     final approvalDecisionRecord = approvalDecisionRecordFromJson(jsonString);
@@ -258,6 +264,48 @@ AffectedOwnerRef affectedOwnerRefFromJson(String str) =>
     AffectedOwnerRef.fromJson(json.decode(str));
 
 String affectedOwnerRefToJson(AffectedOwnerRef data) =>
+    json.encode(data.toJson());
+
+AgentInstallationAdvanceRequest agentInstallationAdvanceRequestFromJson(
+  String str,
+) => AgentInstallationAdvanceRequest.fromJson(json.decode(str));
+
+String agentInstallationAdvanceRequestToJson(
+  AgentInstallationAdvanceRequest data,
+) => json.encode(data.toJson());
+
+AgentInstallationAdvanceResult agentInstallationAdvanceResultFromJson(
+  String str,
+) => AgentInstallationAdvanceResult.fromJson(json.decode(str));
+
+String agentInstallationAdvanceResultToJson(
+  AgentInstallationAdvanceResult data,
+) => json.encode(data.toJson());
+
+AgentInstallationWorkflowTarget agentInstallationWorkflowTargetFromJson(
+  String str,
+) => AgentInstallationWorkflowTarget.fromJson(json.decode(str));
+
+String agentInstallationWorkflowTargetToJson(
+  AgentInstallationWorkflowTarget data,
+) => json.encode(data.toJson());
+
+AgentTaskAdvanceRequest agentTaskAdvanceRequestFromJson(String str) =>
+    AgentTaskAdvanceRequest.fromJson(json.decode(str));
+
+String agentTaskAdvanceRequestToJson(AgentTaskAdvanceRequest data) =>
+    json.encode(data.toJson());
+
+AgentTaskAdvanceResult agentTaskAdvanceResultFromJson(String str) =>
+    AgentTaskAdvanceResult.fromJson(json.decode(str));
+
+String agentTaskAdvanceResultToJson(AgentTaskAdvanceResult data) =>
+    json.encode(data.toJson());
+
+AgentTaskWorkflowInput agentTaskWorkflowInputFromJson(String str) =>
+    AgentTaskWorkflowInput.fromJson(json.decode(str));
+
+String agentTaskWorkflowInputToJson(AgentTaskWorkflowInput data) =>
     json.encode(data.toJson());
 
 ApprovalControlOutcome approvalControlOutcomeFromJson(String str) =>
@@ -941,10 +989,12 @@ enum ReasonCode {
   INVITEE_ALREADY_MEMBER,
   LAST_TENANT_ADMIN,
   NATIVE_SURFACE_REQUIRED,
+  PAYLOAD_TOO_LARGE,
   PERMISSION_DENIED,
   PROJECTION_DELAYED,
   PUBLISH_REJECTED,
   PUBLISH_RESULT_UNKNOWN,
+  QUOTA_EXHAUSTED,
   RATE_LIMITED,
   SCOPE_GUARD_FAILED,
   SELF_APPROVAL_DENIED,
@@ -989,10 +1039,12 @@ final reasonCodeValues = EnumValues({
   "INVITEE_ALREADY_MEMBER": ReasonCode.INVITEE_ALREADY_MEMBER,
   "LAST_TENANT_ADMIN": ReasonCode.LAST_TENANT_ADMIN,
   "NATIVE_SURFACE_REQUIRED": ReasonCode.NATIVE_SURFACE_REQUIRED,
+  "PAYLOAD_TOO_LARGE": ReasonCode.PAYLOAD_TOO_LARGE,
   "PERMISSION_DENIED": ReasonCode.PERMISSION_DENIED,
   "PROJECTION_DELAYED": ReasonCode.PROJECTION_DELAYED,
   "PUBLISH_REJECTED": ReasonCode.PUBLISH_REJECTED,
   "PUBLISH_RESULT_UNKNOWN": ReasonCode.PUBLISH_RESULT_UNKNOWN,
+  "QUOTA_EXHAUSTED": ReasonCode.QUOTA_EXHAUSTED,
   "RATE_LIMITED": ReasonCode.RATE_LIMITED,
   "SCOPE_GUARD_FAILED": ReasonCode.SCOPE_GUARD_FAILED,
   "SELF_APPROVAL_DENIED": ReasonCode.SELF_APPROVAL_DENIED,
@@ -2113,8 +2165,9 @@ final tenantStateValues = EnumValues({
   "SUSPENDING": TenantState.SUSPENDING,
 });
 
-///PUT /api/v1/user-state/read 的请求体（DD-40）。contextKey 只接受调用方可读 Workspace 内的 Channel ID 或
-///msg:<Buzz event id>；version 是读到的 CollaborationUserState 版本，不符即 409。
+///PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
+///ID、msg:<Buzz event id> 或 thread:<Buzz root event id>；version 是读到的 CollaborationUserState
+///版本，不符即 409。
 class ReadMarkRequest {
   final String contextKey;
 
@@ -2507,6 +2560,7 @@ final taskStatusValues = EnumValues({
 ///ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
 ///必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
 enum WorkflowKind {
+  AGENT_INSTALLATION,
   BUZZ_IDENTITY_PROJECTION,
   MEMBERSHIP_PROJECTION,
   MEMBERSHIP_REVOCATION,
@@ -2516,6 +2570,7 @@ enum WorkflowKind {
 }
 
 final workflowKindValues = EnumValues({
+  "AGENT_INSTALLATION": WorkflowKind.AGENT_INSTALLATION,
   "BUZZ_IDENTITY_PROJECTION": WorkflowKind.BUZZ_IDENTITY_PROJECTION,
   "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
   "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
@@ -3140,6 +3195,243 @@ class AffectedOwnerRef {
     "targetId": targetId,
     "targetType": targetType,
     "targetVersion": targetVersion,
+  });
+}
+
+///唯一安装 Workflow 推进同一 ActionExecution/version/generation；取消接收不是原生清理终态。
+class AgentInstallationAdvanceRequest {
+  final String actionExecutionId;
+  final String agentVersionAssetId;
+  final bool cancelRequested;
+  final String installationId;
+  final int projectionGeneration;
+  final String runId;
+  final String workflowId;
+
+  AgentInstallationAdvanceRequest({
+    required this.actionExecutionId,
+    required this.agentVersionAssetId,
+    required this.cancelRequested,
+    required this.installationId,
+    required this.projectionGeneration,
+    required this.runId,
+    required this.workflowId,
+  });
+
+  factory AgentInstallationAdvanceRequest.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationAdvanceRequest(
+        actionExecutionId: json["actionExecutionId"],
+        agentVersionAssetId: json["agentVersionAssetId"],
+        cancelRequested: json["cancelRequested"],
+        installationId: json["installationId"],
+        projectionGeneration: json["projectionGeneration"],
+        runId: json["runId"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "agentVersionAssetId": agentVersionAssetId,
+    "cancelRequested": cancelRequested,
+    "installationId": installationId,
+    "projectionGeneration": projectionGeneration,
+    "runId": runId,
+    "workflowId": workflowId,
+  });
+}
+
+///Core 查证后的安装生命周期状态；身份/模型/记忆/runtime 未闭合只返回 RUNNING/UNKNOWN，不把 spawn 当 ACTIVE。
+class AgentInstallationAdvanceResult {
+  final String installationId;
+  final TaskStatus status;
+  final String waitingReason;
+
+  AgentInstallationAdvanceResult({
+    required this.installationId,
+    required this.status,
+    required this.waitingReason,
+  });
+
+  factory AgentInstallationAdvanceResult.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationAdvanceResult(
+        installationId: json["installationId"],
+        status: taskStatusValues.map[json["status"]]!,
+        waitingReason: json["waitingReason"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "installationId": installationId,
+    "status": taskStatusValues.reverse[status],
+    "waitingReason": waitingReason,
+  });
+}
+
+///DD-25/48：既有 ComponentTaskWorkflow 的 AGENT_INSTALLATION 冻结目标；不含凭据或 Version 正文。
+class AgentInstallationWorkflowTarget {
+  final String actionExecutionId;
+  final String agentVersionAssetId;
+  final String installationId;
+  final int projectionGeneration;
+
+  AgentInstallationWorkflowTarget({
+    required this.actionExecutionId,
+    required this.agentVersionAssetId,
+    required this.installationId,
+    required this.projectionGeneration,
+  });
+
+  factory AgentInstallationWorkflowTarget.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationWorkflowTarget(
+        actionExecutionId: json["actionExecutionId"],
+        agentVersionAssetId: json["agentVersionAssetId"],
+        installationId: json["installationId"],
+        projectionGeneration: json["projectionGeneration"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "agentVersionAssetId": agentVersionAssetId,
+    "installationId": installationId,
+    "projectionGeneration": projectionGeneration,
+  });
+}
+
+///Worker 推进已冻结 Invocation；未知原生结果只观察，不再次 turn/start。
+class AgentTaskAdvanceRequest {
+  final String activityId;
+  final String agentVersionAssetId;
+  final int attempt;
+  final bool cancelRequested;
+  final int heartbeatIntervalSeconds;
+  final String installationId;
+  final String invocationId;
+  final int observationIntervalSeconds;
+  final int projectionGeneration;
+  final String runId;
+  final String workflowId;
+
+  AgentTaskAdvanceRequest({
+    required this.activityId,
+    required this.agentVersionAssetId,
+    required this.attempt,
+    required this.cancelRequested,
+    required this.heartbeatIntervalSeconds,
+    required this.installationId,
+    required this.invocationId,
+    required this.observationIntervalSeconds,
+    required this.projectionGeneration,
+    required this.runId,
+    required this.workflowId,
+  });
+
+  factory AgentTaskAdvanceRequest.fromJson(Map<String, dynamic> json) =>
+      AgentTaskAdvanceRequest(
+        activityId: json["activityId"],
+        agentVersionAssetId: json["agentVersionAssetId"],
+        attempt: json["attempt"],
+        cancelRequested: json["cancelRequested"],
+        heartbeatIntervalSeconds: json["heartbeatIntervalSeconds"],
+        installationId: json["installationId"],
+        invocationId: json["invocationId"],
+        observationIntervalSeconds: json["observationIntervalSeconds"],
+        projectionGeneration: json["projectionGeneration"],
+        runId: json["runId"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "activityId": activityId,
+    "agentVersionAssetId": agentVersionAssetId,
+    "attempt": attempt,
+    "cancelRequested": cancelRequested,
+    "heartbeatIntervalSeconds": heartbeatIntervalSeconds,
+    "installationId": installationId,
+    "invocationId": invocationId,
+    "observationIntervalSeconds": observationIntervalSeconds,
+    "projectionGeneration": projectionGeneration,
+    "runId": runId,
+    "workflowId": workflowId,
+  });
+}
+
+///Core 查证的引用与状态；native completed 缺 reply/usage 证据仍 RUNNING。
+class AgentTaskAdvanceResult {
+  ///已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
+  final bool finishActivity;
+  final String invocationId;
+  final TaskStatus status;
+  final String waitingReason;
+
+  AgentTaskAdvanceResult({
+    required this.finishActivity,
+    required this.invocationId,
+    required this.status,
+    required this.waitingReason,
+  });
+
+  factory AgentTaskAdvanceResult.fromJson(Map<String, dynamic> json) =>
+      AgentTaskAdvanceResult(
+        finishActivity: json["finishActivity"],
+        invocationId: json["invocationId"],
+        status: taskStatusValues.map[json["status"]]!,
+        waitingReason: json["waitingReason"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "finishActivity": finishActivity,
+    "invocationId": invocationId,
+    "status": taskStatusValues.reverse[status],
+    "waitingReason": waitingReason,
+  });
+}
+
+///DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
+class AgentTaskWorkflowInput {
+  final String agentVersionAssetId;
+  final bool cancelPending;
+  final int eventBase;
+  final int heartbeatIntervalSeconds;
+  final int heartbeatTimeoutSeconds;
+  final String installationId;
+  final String invocationId;
+  final int observationIntervalSeconds;
+  final int projectionGeneration;
+
+  AgentTaskWorkflowInput({
+    required this.agentVersionAssetId,
+    required this.cancelPending,
+    required this.eventBase,
+    required this.heartbeatIntervalSeconds,
+    required this.heartbeatTimeoutSeconds,
+    required this.installationId,
+    required this.invocationId,
+    required this.observationIntervalSeconds,
+    required this.projectionGeneration,
+  });
+
+  factory AgentTaskWorkflowInput.fromJson(Map<String, dynamic> json) =>
+      AgentTaskWorkflowInput(
+        agentVersionAssetId: json["agentVersionAssetId"],
+        cancelPending: json["cancelPending"],
+        eventBase: json["eventBase"],
+        heartbeatIntervalSeconds: json["heartbeatIntervalSeconds"],
+        heartbeatTimeoutSeconds: json["heartbeatTimeoutSeconds"],
+        installationId: json["installationId"],
+        invocationId: json["invocationId"],
+        observationIntervalSeconds: json["observationIntervalSeconds"],
+        projectionGeneration: json["projectionGeneration"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentVersionAssetId": agentVersionAssetId,
+    "cancelPending": cancelPending,
+    "eventBase": eventBase,
+    "heartbeatIntervalSeconds": heartbeatIntervalSeconds,
+    "heartbeatTimeoutSeconds": heartbeatTimeoutSeconds,
+    "installationId": installationId,
+    "invocationId": invocationId,
+    "observationIntervalSeconds": observationIntervalSeconds,
+    "projectionGeneration": projectionGeneration,
   });
 }
 

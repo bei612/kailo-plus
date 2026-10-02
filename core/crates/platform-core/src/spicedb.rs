@@ -15,11 +15,13 @@ use serde::Deserialize;
 
 /// 一次 Check 的一致性要求（`.design/10` §1 的固定使用规则）。
 #[derive(Clone, Copy)]
-pub enum Consistency {
+pub enum Consistency<'a> {
     /// 准入、重新准入与审批者资格：即将发生外部副作用且无因果 token
     FullyConsistent,
     /// 列表与发现：允许低延迟，但点击动作仍 fresh Check
     MinimizeLatency,
+    /// 同一关系写入后的因果检查，至少读到其原生 writtenAt revision。
+    AtLeastAsFresh(&'a str),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -182,11 +184,19 @@ impl SpiceDb {
         object_id: &str,
         permission: &str,
         subject_principal: &str,
-        consistency: Consistency,
+        consistency: Consistency<'_>,
     ) -> Result<Checked, SpiceDbError> {
         let consistency = match consistency {
             Consistency::FullyConsistent => serde_json::json!({ "fullyConsistent": true }),
             Consistency::MinimizeLatency => serde_json::json!({ "minimizeLatency": true }),
+            Consistency::AtLeastAsFresh(token) if !token.is_empty() => {
+                serde_json::json!({ "atLeastAsFresh": { "token": token } })
+            }
+            Consistency::AtLeastAsFresh(_) => {
+                return Err(SpiceDbError::Unavailable(
+                    "因果检查缺少写入 revision".into(),
+                ));
+            }
         };
         let body = serde_json::json!({
             "consistency": consistency,
@@ -378,7 +388,7 @@ impl SpiceDb {
             .ok_or_else(|| SpiceDbError::Unavailable("回应缺 writtenAt".into()))
     }
 
-    /// 真实 Core Resource 的 tenant/owner 在同一次原生 WriteRelationships 中替换。
+    /// 真实 Core Resource 的 tenant/owner/home Workspace 在同一次原生写入中投影。
     /// 旧角色 Relationship 的 principal-only 形状不承担 tenant object 箭头。
     pub(crate) async fn replace_resource_projection(
         &self,
@@ -386,6 +396,7 @@ impl SpiceDb {
         tenant: &str,
         old_owner: &str,
         owner: &str,
+        workspace: Option<&str>,
     ) -> Result<String, SpiceDbError> {
         let relationship = |relation: &str, subject_type: &str, subject: &str| {
             serde_json::json!({
@@ -401,6 +412,10 @@ impl SpiceDb {
         }
         updates.push(serde_json::json!({"operation":"OPERATION_TOUCH",
             "relationship":relationship("owner","principal",owner)}));
+        if let Some(workspace) = workspace {
+            updates.push(serde_json::json!({"operation":"OPERATION_TOUCH",
+                "relationship":relationship("home_workspace","workspace",workspace)}));
+        }
         self.write_native_updates(updates).await
     }
 
@@ -409,6 +424,18 @@ impl SpiceDb {
         id: &str,
         tenant: &str,
         owner: &str,
+        page: u32,
+    ) -> Result<bool, SpiceDbError> {
+        self.resource_projection_matches_in_workspace(id, tenant, owner, None, page)
+            .await
+    }
+
+    pub(crate) async fn resource_projection_matches_in_workspace(
+        &self,
+        id: &str,
+        tenant: &str,
+        owner: &str,
+        workspace: Option<&str>,
         page: u32,
     ) -> Result<bool, SpiceDbError> {
         let rows = self
@@ -424,6 +451,7 @@ impl SpiceDb {
             .await?;
         let mut owners = vec![];
         let mut tenants = vec![];
+        let mut workspaces = vec![];
         for r in rows {
             let text = |p: &str| r.pointer(p).and_then(serde_json::Value::as_str);
             if text("/resource/objectType") != Some("resource")
@@ -446,12 +474,26 @@ impl SpiceDb {
                             .unwrap_or_default()
                             .to_owned(),
                     ),
+                Some("home_workspace")
+                    if text("/subject/object/objectType") == Some("workspace") =>
+                {
+                    workspaces.push(
+                        text("/subject/object/objectId")
+                            .unwrap_or_default()
+                            .to_owned(),
+                    )
+                }
                 Some("home_workspace") => return Ok(false),
                 Some("owner" | "tenant") => return Ok(false),
                 _ => {}
             }
         }
-        Ok(owners == [owner] && tenants == [tenant])
+        Ok(owners == [owner]
+            && tenants == [tenant]
+            && match workspace {
+                Some(workspace) => workspaces == [workspace],
+                None => workspaces.is_empty(),
+            })
     }
 
     /// Asset 自己的 owner 关系不从 Resource owner 推断；同一原生事务固定父与 Tenant。

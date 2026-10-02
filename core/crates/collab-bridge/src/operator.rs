@@ -48,6 +48,52 @@ pub enum OperatorError {
     /// 调用方必须当作可重试失败，绝不能据此把成员置为 active。
     #[error("roster 未收敛: {0}")]
     NotConverged(String),
+    /// Core 自己的 Relay 调用预算已用完，请求**没有**发往 Relay（`apps/07` §5：
+    /// 在 BFF 侧先行设界，不把压力透传给 Relay）。
+    #[error("Core 的 Relay 调用预算已用完，{retry_after_secs} 秒后可再试")]
+    BudgetExhausted { retry_after_secs: u64 },
+    /// 请求会超出 Relay 在 NIP-11 中声明的上界，因此没有发出（`.design/09`
+    /// 「BFF Relay 连接模型」、`SF-BUZ-28`）。
+    #[error("超出 Relay 声明的上界: {0}")]
+    OverLimit(String),
+}
+
+/// `apps/06` §4 `LIMIT` 类下的具体成因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LimitKind {
+    /// 调用频率：Core 自己的预算，或 Relay 的 429（`enforce_http_admission`）
+    RateLimited,
+    /// 大小上界：Relay 的 413（请求体上界）
+    PayloadTooLarge,
+    /// 容量：NIP-11 声明的订阅数等上界
+    Capacity,
+}
+
+impl OperatorError {
+    /// 这个失败是否属于 `LIMIT` 类。只按状态码与本地变体判定，不解析上游的
+    /// 错误文案——文案一改，按文案的分类就会静默失效。
+    ///
+    /// 429 与 413 都在 Relay 读取事件之前返回（`api/bridge.rs::submit_event_authed`
+    /// 先做 admission 再解析 body；413 来自路由层的请求体上界），因此它们是
+    /// **确定未处理**，不是结果不明。
+    pub fn limit(&self) -> Option<LimitKind> {
+        match self {
+            OperatorError::BudgetExhausted { .. } | OperatorError::Rejected { status: 429, .. } => {
+                Some(LimitKind::RateLimited)
+            }
+            OperatorError::Rejected { status: 413, .. } => Some(LimitKind::PayloadTooLarge),
+            OperatorError::OverLimit(_) => Some(LimitKind::Capacity),
+            _ => None,
+        }
+    }
+
+    /// Core 预算给出的等待时长；Relay 的 429 不带可机读的重置时刻，返回 `None`。
+    pub fn retry_after_secs(&self) -> Option<u64> {
+        match self {
+            OperatorError::BudgetExhausted { retry_after_secs } => Some(*retry_after_secs),
+            _ => None,
+        }
+    }
 }
 
 /// `GET /operator/communities` 的一行：host 与归档时刻（未归档为 `None`）。

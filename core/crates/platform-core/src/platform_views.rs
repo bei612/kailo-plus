@@ -28,46 +28,54 @@ use crate::spicedb::{Consistency, RelationshipFilter};
 
 /// 我在当前 Tenant 里能进的 Workspace。
 ///
-/// 只列有 active WorkspaceMembership 且两侧 binding 都 ACTIVE 的——列出一个
+/// 只列 HUMAN scope 已准入且两侧 binding 都 ACTIVE 的——列出一个
 /// 点进去会 403 的 Workspace，比不列更糟：它把「存在但你进不去」变成了可见信息。
 pub async fn list_workspaces(State(state): State<BffState>, headers: HeaderMap) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
-    match sqlx::query_as::<_, (Uuid, String, String)>(
+    let rows = match sqlx::query_as::<_, (Uuid, String, String)>(
         "select w.id, w.slug, w.name
          from identity.workspace w
-         join identity.workspace_membership wm
-           on wm.workspace_id = w.id and wm.tenant_principal_id = $1 and wm.state = 'ACTIVE'
+         join identity.tenant tenant
+           on tenant.id = w.tenant_id and tenant.state = 'ACTIVE'
          join projection.workspace_buzz_binding b
            on b.workspace_id = w.id and b.state = 'ACTIVE'
-         where w.tenant_id = $2 and w.state = 'ACTIVE'
+         join projection.tenant_buzz_binding t
+           on t.tenant_id = w.tenant_id and t.state = 'ACTIVE'
+         where w.tenant_id = $1 and w.state = 'ACTIVE'
          order by w.slug",
     )
-    .bind(ctx.tenant_principal_id)
     .bind(ctx.tenant_id)
     .fetch_all(&state.pool)
     .await
     {
-        Ok(rows) => (
-            StatusCode::OK,
-            Json(
-                rows.into_iter()
-                    .map(|(id, slug, name)| WorkspaceView {
-                        id: id.to_string(),
-                        slug,
-                        name,
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-        )
-            .into_response(),
+        Ok(rows) => rows,
         Err(e) => {
             tracing::warn!(error = %e, "列 Workspace 失败");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
-    }
+    };
+    let ids: Vec<Uuid> = rows.iter().map(|(id, _, _)| *id).collect();
+    let admitted = match crate::web_transport::workspace_admissions(&state, &ctx, &ids).await {
+        Ok(admitted) => admitted,
+        Err(e) => return e.into_response(),
+    };
+    (
+        StatusCode::OK,
+        Json(
+            rows.into_iter()
+                .filter(|(id, _, _)| admitted.contains_key(id))
+                .map(|(id, slug, name)| WorkspaceView {
+                    id: id.to_string(),
+                    slug,
+                    name,
+                })
+                .collect::<Vec<_>>(),
+        ),
+    )
+        .into_response()
 }
 
 /// 某个 Workspace 的成员。
