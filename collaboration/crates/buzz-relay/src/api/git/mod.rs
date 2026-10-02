@@ -26,7 +26,7 @@ pub mod binding;
 pub mod cas_publish;
 pub mod hook;
 pub mod hydrate;
-pub mod manifest;
+pub use buzz_core::git_manifest as manifest;
 pub mod manifest_event;
 pub mod pack_cache;
 pub mod policy;
@@ -65,4 +65,21 @@ pub fn git_policy_router(state: Arc<AppState>) -> Router {
         .layer(RequestBodyLimitLayer::new(1024 * 1024)) // 1 MB
         .layer(middleware::from_fn(require_localhost))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::manifest::pointer_key;
+    use buzz_core::tenant::CommunityId;
+
+    #[test]
+    fn pointer_writer_is_covered_by_deletion_taxonomy() {
+        let community = CommunityId::from_uuid(uuid::Uuid::from_u128(1));
+        let owner = "a".repeat(64);
+        let key = pointer_key(community, &owner, "repo");
+        let prefixes = buzz_media::tenant_prefixes(*community.as_uuid());
+
+        assert!(prefixes.iter().any(|prefix| key.starts_with(prefix)));
+        assert!(buzz_media::is_tenant_owned_key(*community.as_uuid(), &key));
+    }
 }

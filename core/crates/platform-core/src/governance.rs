@@ -371,6 +371,8 @@ pub enum Semantic {
     /// 业务 Tenant；业务侧由它自己的 TENANT_LIFECYCLE operation 承接。
     TenantSuspend,
     TenantRestore,
+    /// DD-96(4)、DD-99/100：业务 Tenant 自己的受限会话从 SUSPENDED 发起删除。
+    TenantDelete,
     WorkspaceMemberAdd,
     WorkspaceMemberRevoke,
     TenantMemberRevoke,
@@ -390,6 +392,12 @@ pub enum Semantic {
     TaskRerun,
     /// DD-85：旧平台 namespace 中的同一私钥归位，不更换 Buzz pubkey。
     SecretRefRehome,
+    AgentDefinitionCreate,
+    AgentDefinitionUpdate,
+    AgentVersionCreate,
+    AgentVersionUpdate,
+    AgentVersionPublish,
+    ResourceTransferOwner,
 }
 
 impl Semantic {
@@ -400,6 +408,7 @@ impl Semantic {
             "workspace.restore" => Self::WorkspaceRestore,
             "tenant.suspend" => Self::TenantSuspend,
             "tenant.restore" => Self::TenantRestore,
+            "tenant.delete" => Self::TenantDelete,
             "workspace.member.add" => Self::WorkspaceMemberAdd,
             "workspace.member.revoke" => Self::WorkspaceMemberRevoke,
             "tenant.member.revoke" => Self::TenantMemberRevoke,
@@ -413,6 +422,12 @@ impl Semantic {
             key if key.starts_with("task.cancel.") => Self::TaskCancel,
             key if key.starts_with("task.rerun.") => Self::TaskRerun,
             "identity.secret_ref.rehome" => Self::SecretRefRehome,
+            "agent.definition.create" => Self::AgentDefinitionCreate,
+            "agent.definition.update" => Self::AgentDefinitionUpdate,
+            "agent.version.create" => Self::AgentVersionCreate,
+            "agent.version.update" => Self::AgentVersionUpdate,
+            "agent.version.publish" => Self::AgentVersionPublish,
+            "resource.transfer_owner" => Self::ResourceTransferOwner,
             _ => return None,
         })
     }
@@ -428,7 +443,11 @@ impl Semantic {
     fn completes_in_admission(self) -> bool {
         matches!(
             self,
-            Self::TenantMemberInvite | Self::TenantMemberInviteRevoke
+            Self::TenantMemberInvite
+                | Self::TenantMemberInviteRevoke
+                | Self::AgentDefinitionUpdate
+                | Self::AgentVersionUpdate
+                | Self::AgentVersionPublish
         )
     }
 
@@ -448,7 +467,18 @@ impl Semantic {
 
     /// 会改变「有效 Tenant admin」集合的动作在 Tenant 行锁下判定与写入（DD-82）。
     fn serializes_on_tenant(self) -> bool {
-        self.is_role() || self == Self::TenantMemberRevoke
+        self.is_role()
+            || matches!(
+                self,
+                Self::TenantMemberRevoke
+                    | Self::TenantDelete
+                    | Self::AgentDefinitionCreate
+                    | Self::AgentDefinitionUpdate
+                    | Self::AgentVersionCreate
+                    | Self::AgentVersionUpdate
+                    | Self::AgentVersionPublish
+                    | Self::ResourceTransferOwner
+            )
     }
 
     /// Workspace 生命周期的一段：它接受的起始状态、准入落定时置入的收敛中状态，
@@ -471,7 +501,10 @@ impl Semantic {
     fn takes_explicit_confirmation(self) -> bool {
         matches!(
             self,
-            Self::SecretRefRehome | Self::TenantSuspend | Self::TenantRestore
+            Self::SecretRefRehome
+                | Self::TenantSuspend
+                | Self::TenantRestore
+                | Self::AgentVersionPublish
         )
     }
 
@@ -486,7 +519,8 @@ impl Semantic {
     }
 }
 
-/// 规范化参数。只含 ID 与平台自有的名称事实，不含任何业务正文。
+/// 规范化参数。只含引用与平台自有事实；AgentVersion requested 内容属于 Core
+/// 权威，不接收上游业务正文、凭据或 host environment。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Params {
     pub workspace_id: Option<Uuid>,
@@ -498,6 +532,11 @@ pub struct Params {
     pub invitation_id: Option<Uuid>,
     pub original_action_execution_id: Option<Uuid>,
     pub explicit_confirmation: Option<bool>,
+    pub resource_id: Option<Uuid>,
+    pub resource_version: Option<i32>,
+    pub asset_id: Option<Uuid>,
+    pub asset_version: Option<i32>,
+    pub agent_version_content: Option<contracts::ContentClass>,
 }
 
 impl Params {
@@ -521,6 +560,21 @@ impl Params {
         if let Some(confirmed) = self.explicit_confirmation {
             m.insert("explicitConfirmation".into(), json!(confirmed));
         }
+        if let Some(id) = self.resource_id {
+            m.insert("resourceId".into(), json!(id));
+        }
+        if let Some(version) = self.resource_version {
+            m.insert("resourceVersion".into(), json!(version));
+        }
+        if let Some(id) = self.asset_id {
+            m.insert("assetId".into(), json!(id));
+        }
+        if let Some(version) = self.asset_version {
+            m.insert("assetVersion".into(), json!(version));
+        }
+        if let Some(content) = &self.agent_version_content {
+            m.insert("agentVersionContent".into(), json!(content));
+        }
         if let Some(s) = &self.slug {
             m.insert("slug".into(), json!(s));
         }
@@ -530,7 +584,7 @@ impl Params {
         Value::Object(m)
     }
 
-    fn from_json(v: &Value) -> Option<Self> {
+    pub(crate) fn from_json(v: &Value) -> Option<Self> {
         let uuid = |k: &str| {
             v.get(k)
                 .and_then(Value::as_str)
@@ -546,6 +600,21 @@ impl Params {
             invitation_id: uuid("invitationId"),
             original_action_execution_id: uuid("originalActionExecutionId"),
             explicit_confirmation: v.get("explicitConfirmation").and_then(Value::as_bool),
+            resource_id: uuid("resourceId"),
+            resource_version: v
+                .get("resourceVersion")
+                .and_then(Value::as_i64)
+                .and_then(|n| i32::try_from(n).ok()),
+            asset_id: uuid("assetId"),
+            asset_version: v
+                .get("assetVersion")
+                .and_then(Value::as_i64)
+                .and_then(|n| i32::try_from(n).ok()),
+            agent_version_content: v
+                .get("agentVersionContent")
+                .map(|v| serde_json::from_value(v.clone()))
+                .transpose()
+                .ok()?,
         })
     }
 }
@@ -581,13 +650,102 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         invitation_id: uuid(&cmd.invitation_id)?,
         original_action_execution_id: uuid(&cmd.original_action_execution_id)?,
         explicit_confirmation: cmd.explicit_confirmation,
+        resource_id: uuid(&cmd.resource_id)?,
+        resource_version: cmd
+            .resource_version
+            .map(|n| i32::try_from(n).map_err(|_| bad()))
+            .transpose()?,
+        asset_id: uuid(&cmd.asset_id)?,
+        asset_version: cmd
+            .asset_version
+            .map(|n| i32::try_from(n).map_err(|_| bad()))
+            .transpose()?,
+        agent_version_content: cmd.agent_version_content.clone(),
     };
     // tenantId 只属于业务 Tenant 的暂停与恢复
-    if sem.tenant_segment().is_none() && p.tenant_id.is_some() {
+    if sem.tenant_segment().is_none() && sem != Semantic::TenantDelete && p.tenant_id.is_some() {
+        return Err(bad());
+    }
+    if !matches!(
+        sem,
+        Semantic::AgentDefinitionUpdate
+            | Semantic::ResourceTransferOwner
+            | Semantic::AgentVersionCreate
+            | Semantic::AgentVersionUpdate
+            | Semantic::AgentVersionPublish
+    ) && (p.resource_id.is_some() || p.resource_version.is_some())
+    {
+        return Err(bad());
+    }
+    if !matches!(
+        sem,
+        Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish
+    ) && (p.asset_id.is_some() || p.asset_version.is_some() || p.agent_version_content.is_some())
+    {
         return Err(bad());
     }
     // 每个语义要求的参数集合是闭集：多出与缺少都拒绝，不按「字段为空即忽略」猜
     let ok = match sem {
+        Semantic::AgentVersionCreate
+        | Semantic::AgentVersionUpdate
+        | Semantic::AgentVersionPublish => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.resource_id.is_some()
+                && p.resource_version.is_some_and(|v| v > 0)
+                && if sem == Semantic::AgentVersionCreate {
+                    p.asset_id.is_none()
+                        && p.asset_version.is_none()
+                        && p.agent_version_content.is_some()
+                } else {
+                    p.asset_id.is_some()
+                        && p.asset_version.is_some_and(|v| v > 0)
+                        && (p.agent_version_content.is_some()
+                            == (sem == Semantic::AgentVersionUpdate))
+                }
+        }
+        Semantic::AgentDefinitionCreate => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.as_deref().is_some_and(valid_slug)
+                && p.name.as_deref().is_some_and(|n| !n.is_empty())
+        }
+        Semantic::AgentDefinitionUpdate => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.is_none()
+                && p.name.as_deref().is_some_and(|n| !n.is_empty())
+                && p.resource_id.is_some()
+                && p.resource_version.is_some_and(|n| n > 0)
+        }
+        Semantic::ResourceTransferOwner => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_some()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.resource_id.is_some()
+                && p.resource_version.is_some_and(|n| n > 0)
+        }
+        Semantic::TenantDelete => {
+            p.tenant_id.is_some()
+                && p.workspace_id.is_none()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.explicit_confirmation.is_none()
+        }
         Semantic::TenantSuspend | Semantic::TenantRestore => {
             p.tenant_id.is_some()
                 && p.workspace_id.is_none()
@@ -771,6 +929,144 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::AgentVersionCreate
+        | Semantic::AgentVersionUpdate
+        | Semantic::AgentVersionPublish => {
+            let creating = sem == Semantic::AgentVersionCreate;
+            let expected_object = if creating { "resource" } else { "asset" };
+            let expected_permission = if creating {
+                "create"
+            } else if sem == Semantic::AgentVersionUpdate {
+                "update"
+            } else {
+                "manage"
+            };
+            if def.target_type != if creating { "RESOURCE" } else { "ASSET" }
+                || def.permission_object_type != expected_object
+                || def.permission != expected_permission
+                || def.workspace_rule != "TARGET_HOME_WORKSPACE"
+                || def.tenant_rule != "SESSION_TENANT"
+                || def.execution_mode != "SYNC"
+                || (!creating
+                    && sem == Semantic::AgentVersionPublish
+                    && !matches!(
+                        def.confirmation_mode.as_str(),
+                        "NONE" | "EXPLICIT" | "APPROVAL"
+                    ))
+                || (sem != Semantic::AgentVersionPublish && def.confirmation_mode != "NONE")
+            {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            let parent_id = p
+                .resource_id
+                .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+            let parent = crate::agent_definition::resource(conn, tenant, parent_id, lock)
+                .await?
+                .filter(|r| {
+                    r.state == "ACTIVE"
+                        && r.projection_action_execution_id.is_none()
+                        && p.resource_version == Some(r.version)
+                })
+                .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+            if creating {
+                if frozen.is_some_and(|id| id != parent.id) {
+                    return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+                }
+                Ok(Target {
+                    id: parent.id,
+                    version: parent.version,
+                    workspace_id: parent.home_workspace_id,
+                })
+            } else {
+                let id = p
+                    .asset_id
+                    .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+                let v = crate::agent_version::version(conn, tenant, id, lock)
+                    .await?
+                    .filter(|v| {
+                        v.agent_resource_id == parent.id
+                            && v.state == "DRAFT"
+                            && v.asset_state == "DRAFT"
+                            && v.projection_action_execution_id.is_none()
+                            && p.asset_version == Some(v.version)
+                            && frozen.is_none_or(|id| id == v.asset_id)
+                    })
+                    .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+                Ok(Target {
+                    id: v.asset_id,
+                    version: v.version,
+                    workspace_id: parent.home_workspace_id,
+                })
+            }
+        }
+        Semantic::AgentDefinitionCreate => {
+            if def.target_type != "RESOURCE"
+                || def.permission_object_type != "tenant"
+                || def.permission != "create"
+                || def.workspace_rule != "TENANT_ONLY"
+                || def.execution_mode != "SYNC"
+                || def.confirmation_mode != "NONE"
+            {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            let taken:Option<Uuid> = sqlx::query_scalar(
+                "select a.resource_id from catalog.agent_definition a join catalog.resource r on r.id=a.resource_id
+                 where r.tenant_id=$1 and a.stable_slug=$2")
+                .bind(tenant).bind(&p.slug).fetch_optional(&mut *conn).await?;
+            if taken.is_some() {
+                return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+            }
+            if lock && !crate::agent_definition::active_owner(conn, tenant, initiator).await? {
+                return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+            Ok(Target {
+                id: frozen.unwrap_or_else(Uuid::new_v4),
+                version: 0,
+                workspace_id: None,
+            })
+        }
+        Semantic::AgentDefinitionUpdate | Semantic::ResourceTransferOwner => {
+            if def.target_type != "RESOURCE"
+                || def.permission_object_type != "resource"
+                || def.workspace_rule != "TARGET_HOME_WORKSPACE"
+                || def.execution_mode != "SYNC"
+                || (sem == Semantic::AgentDefinitionUpdate
+                    && (def.permission != "update" || def.confirmation_mode != "NONE"))
+                || (sem == Semantic::ResourceTransferOwner
+                    && (def.permission != "transfer_owner" || def.confirmation_mode != "APPROVAL"))
+            {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            let id = p
+                .resource_id
+                .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+            let r = crate::agent_definition::resource(conn, tenant, id, lock)
+                .await?
+                .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
+            if r.state != "ACTIVE"
+                || r.projection_action_execution_id.is_some()
+                || p.resource_version != Some(r.version)
+                || frozen.is_some_and(|f| f != r.id)
+            {
+                return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+            }
+            if sem == Semantic::ResourceTransferOwner {
+                let owner = p
+                    .principal_id
+                    .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+                if owner == r.owner_principal_id {
+                    return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+                }
+                if !crate::agent_definition::active_owner(conn, tenant, owner).await? {
+                    return Err(Refusal::Precondition(ReasonCode::TargetNotFound));
+                }
+            }
+            Ok(Target {
+                id: r.id,
+                version: r.version,
+                workspace_id: r.home_workspace_id,
+            })
+        }
         Semantic::SecretRefRehome => {
             let principal = p
                 .principal_id
@@ -890,6 +1186,40 @@ async fn resolve_target(
                 version: 0,
                 workspace_id: None,
             })
+        }
+        Semantic::TenantDelete => {
+            if def.target_type != "TENANT"
+                || def.tenant_rule != "SESSION_TENANT"
+                || def.workspace_rule != "TENANT_ONLY"
+                || def.permission_object_type != "tenant"
+                || def.permission != "manage"
+                || def.confirmation_mode != "APPROVAL"
+                || def.execution_mode != "TEMPORAL"
+                || def.workflow_kind.as_deref() != Some("TENANT_LIFECYCLE")
+            {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            if p.tenant_id != Some(tenant)
+                || frozen.is_some_and(|id| id != tenant)
+                || crate::platform_bootstrap::is_catalog_tenant(&mut *conn, tenant).await?
+            {
+                return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+            let row: Option<(i32, String)> = sqlx::query_as(&format!(
+                "select version, state from identity.tenant where id = $1{for_update}"
+            ))
+            .bind(tenant)
+            .fetch_optional(&mut *conn)
+            .await?;
+            match row {
+                Some((version, state)) if state == "SUSPENDED" => Ok(Target {
+                    id: tenant,
+                    version,
+                    workspace_id: None,
+                }),
+                Some(_) => Err(Refusal::Conflict(ReasonCode::TargetStateConflict)),
+                None => Err(Refusal::Precondition(ReasonCode::TargetNotFound)),
+            }
         }
         Semantic::TenantSuspend | Semantic::TenantRestore => {
             // DD-96(1)：只在 Platform Catalog Tenant 的会话中执行，Check 对象是 Catalog
@@ -1276,10 +1606,17 @@ impl Governance {
              join identity.tenant t on t.id = p.tenant_id
              join identity.tenant_membership tm on tm.tenant_principal_id = p.id
              where p.id = $1 and p.tenant_id = $2 and p.kind = 'HUMAN' and p.status = 'ACTIVE'
-               and t.state = 'ACTIVE' and tm.state = 'ACTIVE'",
+               and (t.state = 'ACTIVE' or ($3 and t.state = 'SUSPENDED')
+                    or ($4 and t.state = 'DELETING' and exists (
+                        select 1 from admission.action_execution ae
+                        where ae.id = $5 and ae.tenant_id = t.id and ae.action_key = 'tenant.delete')))
+               and tm.state = 'ACTIVE'",
         )
         .bind(actor.principal_id)
         .bind(actor.tenant_id)
+        .bind(def.action_key == "tenant.delete")
+        .bind(def.action_key.starts_with("task.cancel.tenant.delete.v"))
+        .bind(target.id)
         .fetch_optional(&self.pool)
         .await?;
         if active.is_none() {
@@ -1350,7 +1687,97 @@ impl Governance {
                     ))
                 }
             },
-            // resource/asset 目标在本切片没有语义；有定义也不放行
+            "resource" => {
+                let mut conn = self.pool.acquire().await?;
+                let row =
+                    crate::agent_definition::resource(&mut conn, actor.tenant_id, target.id, false)
+                        .await?;
+                let Some(r) = row.filter(|r| {
+                    r.state == "ACTIVE"
+                        && r.version == target.version
+                        && r.projection_action_execution_id.is_none()
+                        && r.home_workspace_id == target.workspace_id
+                }) else {
+                    return Ok(deny(
+                        "DENY",
+                        "NOT_APPLICABLE",
+                        None,
+                        ReasonCode::ScopeGuardFailed,
+                    ));
+                };
+                if !crate::agent_definition::projection_matches(
+                    self,
+                    r.id,
+                    r.tenant_id,
+                    r.owner_principal_id,
+                )
+                .await?
+                {
+                    return Ok(deny(
+                        "DENY",
+                        "NOT_APPLICABLE",
+                        None,
+                        ReasonCode::ScopeGuardFailed,
+                    ));
+                }
+                target.id
+            }
+            "asset" => {
+                let mut conn = self.pool.acquire().await?;
+                let v = crate::agent_version::version(&mut conn, actor.tenant_id, target.id, false)
+                    .await?
+                    .filter(|v| {
+                        v.version == target.version
+                            && v.projection_action_execution_id.is_none()
+                            && matches!(v.asset_state.as_str(), "DRAFT" | "PUBLISHED" | "RETIRED")
+                    });
+                let Some(v) = v else {
+                    return Ok(deny(
+                        "DENY",
+                        "NOT_APPLICABLE",
+                        None,
+                        ReasonCode::ScopeGuardFailed,
+                    ));
+                };
+                let parent = crate::agent_definition::resource(
+                    &mut conn,
+                    actor.tenant_id,
+                    v.agent_resource_id,
+                    false,
+                )
+                .await?
+                .filter(|r| {
+                    r.state == "ACTIVE"
+                        && r.projection_action_execution_id.is_none()
+                        && r.home_workspace_id == target.workspace_id
+                });
+                let Some(parent) = parent else {
+                    return Ok(deny(
+                        "DENY",
+                        "NOT_APPLICABLE",
+                        None,
+                        ReasonCode::ScopeGuardFailed,
+                    ));
+                };
+                if !crate::agent_definition::projection_matches(
+                    self,
+                    parent.id,
+                    parent.tenant_id,
+                    parent.owner_principal_id,
+                )
+                .await?
+                    || !crate::agent_version::projection_matches(self, &v).await?
+                {
+                    return Ok(deny(
+                        "DENY",
+                        "NOT_APPLICABLE",
+                        None,
+                        ReasonCode::ScopeGuardFailed,
+                    ));
+                }
+                target.id
+            }
+            // 未登记的对象类型始终失败闭合。
             _ => {
                 return Ok(deny(
                     "DENY",
@@ -1600,6 +2027,11 @@ impl Governance {
             invitation_id: None,
             original_action_execution_id: Some(original_id),
             explicit_confirmation: None,
+            resource_id: None,
+            resource_version: None,
+            asset_id: None,
+            asset_version: None,
+            agent_version_content: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -1680,6 +2112,11 @@ impl Governance {
             invitation_id: None,
             original_action_execution_id: Some(original_id),
             explicit_confirmation: None,
+            resource_id: None,
+            resource_version: None,
+            asset_id: None,
+            asset_version: None,
+            agent_version_content: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -1760,7 +2197,7 @@ impl Execution {
             .and_then(Params::from_json)
     }
 
-    fn frozen_target_version(&self) -> Option<i32> {
+    pub(crate) fn frozen_target_version(&self) -> Option<i32> {
         self.parameters
             .as_ref()
             .and_then(|v| v.get("targetVersion"))
@@ -1794,7 +2231,7 @@ pub async fn load_execution(pool: &PgPool, id: Uuid) -> Result<Option<Execution>
     .await
 }
 
-async fn lock_execution(
+pub(crate) async fn lock_execution(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<Execution, sqlx::Error> {
@@ -2171,6 +2608,80 @@ fn approval_workflow_id(tenant: Uuid, action_execution_id: Uuid) -> String {
 // ---------------------------------------------------------------------------
 // 提交
 // ---------------------------------------------------------------------------
+
+/// Resource/Asset owner/version 与 Buzz、OpenMeter 定位在同一准入事务完整冻结。
+/// ApplicationBinding 尚无生产者，正式数组保持无适用对象。
+pub(crate) async fn frozen_delete_inventory(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    version: i32,
+) -> Result<Value, Refusal> {
+    let binding: Option<(Uuid, String, Uuid, String, i32)> = sqlx::query_as(
+        "select b.community_id,b.normalized_host,b.control_service_principal_id,i.pubkey,b.version
+         from projection.tenant_buzz_binding b
+         join identity.buzz_identity_binding i on i.tenant_id = b.tenant_id
+           and i.principal_id = b.control_service_principal_id and i.kind = 'CONTROL'
+         where b.tenant_id = $1 and b.state = 'ACTIVE' and i.state = 'ACTIVE'
+           and b.require_relay_membership and not b.allow_nip_oa_auth
+         for update of b,i",
+    )
+    .bind(tenant)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let Some((
+        community_id,
+        normalized_host,
+        control_service_principal_id,
+        control_pubkey,
+        binding_version,
+    )) = binding
+    else {
+        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+    };
+    // DD-99：新增平台存储面与同构建的销毁处理器共同进入冻结清单。
+    let metering: Option<(String, String, String, String, i32)> = sqlx::query_as(
+        "select namespace,customer_id,subject_key_prefix,status,version
+         from projection.openmeter_binding where tenant_id = $1 for update",
+    )
+    .bind(tenant)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let openmeter_binding = match metering {
+        Some((namespace, customer_id, subject_key_prefix, status, binding_version)) => {
+            if status != "ACTIVE" {
+                return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+            }
+            json!({"tenant_id":tenant,"namespace":namespace,"customer_id":customer_id,
+                "subject_key_prefix":subject_key_prefix,"status":status,"version":binding_version})
+        }
+        // 没有引用不等于 native 不存在：POST 成功而本地提交未知时也没有 binding。
+        // DD-38 的 Tenant Customer 映射未成立，不允许把空表当作无适用对象。
+        None => return Err(Refusal::Precondition(ReasonCode::TargetStateConflict)),
+    };
+    let owners: Vec<contracts::AffectedOwnerRef> =
+        serde_json::from_value(crate::agent_definition::frozen_owners(conn, tenant).await?)
+            .map_err(|e| Refusal::Unavailable(e.to_string()))?;
+    let mut resources = Vec::new();
+    let mut assets = Vec::new();
+    for owner in owners {
+        match owner.target_type.as_str() {
+            "RESOURCE" => resources.push(owner),
+            "ASSET" => assets.push(owner),
+            _ => return Err(Refusal::Conflict(ReasonCode::TargetStateConflict)),
+        }
+    }
+    Ok(json!({
+        "tenant_id": tenant, "tenant_version": version,
+        "tenant_buzz_binding": {
+            "community_id": community_id, "normalized_host": normalized_host,
+            "control_service_principal_id": control_service_principal_id,
+            "control_pubkey": control_pubkey, "version": binding_version
+        },
+        "openmeter_binding": openmeter_binding,
+        "resource_owner_versions": resources, "asset_owner_versions": assets,
+        "component_binding_refs_and_versions": []
+    }))
+}
 
 impl Governance {
     /// BFF 语义命令的入口。成功时回 ActionSubmission；拒绝已写入 ActionExecution
@@ -2602,6 +3113,50 @@ impl Governance {
         {
             return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
         }
+        if matches!(
+            sem,
+            Semantic::AgentDefinitionCreate
+                | Semantic::AgentDefinitionUpdate
+                | Semantic::ResourceTransferOwner
+                | Semantic::AgentVersionCreate
+                | Semantic::AgentVersionUpdate
+                | Semantic::AgentVersionPublish
+        ) && !crate::agent_definition::active_owner(tx, ae.tenant_id, ae.initiator_principal_id)
+            .await?
+        {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
+        let locked_evaluation = if matches!(
+            sem,
+            Semantic::TenantDelete
+                | Semantic::AgentDefinitionCreate
+                | Semantic::AgentDefinitionUpdate
+                | Semantic::ResourceTransferOwner
+                | Semantic::AgentVersionCreate
+                | Semantic::AgentVersionUpdate
+                | Semantic::AgentVersionPublish
+        ) {
+            let fresh = self
+                .evaluate(
+                    Actor {
+                        tenant_id: ae.tenant_id,
+                        principal_id: ae.initiator_principal_id,
+                        human_identity_id: human,
+                    },
+                    def,
+                    &target,
+                )
+                .await?;
+            if !fresh.allowed {
+                return Err(Refusal::Denied(
+                    fresh.reason.unwrap_or(ReasonCode::PermissionDenied),
+                ));
+            }
+            Some(fresh)
+        } else {
+            None
+        };
+        let eval = locked_evaluation.as_ref().unwrap_or(eval);
         self.target_gate(
             &mut *tx,
             ae.tenant_id,
@@ -2689,6 +3244,43 @@ impl Governance {
             )
             .await?;
             return match sem {
+                Semantic::AgentVersionCreate
+                | Semantic::AgentVersionUpdate
+                | Semantic::AgentVersionPublish => {
+                    let evidence =
+                        crate::agent_version::prewrite(self, tx, ae, sem, params).await?;
+                    if completes {
+                        self.record_local_outcome(
+                            tx,
+                            ae,
+                            def,
+                            if sem == Semantic::AgentVersionPublish {
+                                "AGENT_VERSION_PUBLISHED"
+                            } else {
+                                "AGENT_VERSION_UPDATED"
+                            },
+                            evidence,
+                        )
+                        .await?;
+                    }
+                    Ok(None)
+                }
+                Semantic::AgentDefinitionCreate
+                | Semantic::AgentDefinitionUpdate
+                | Semantic::ResourceTransferOwner => {
+                    crate::agent_definition::prewrite(tx, ae, def, sem, params).await?;
+                    if completes {
+                        self.record_local_outcome(
+                            tx,
+                            ae,
+                            def,
+                            "AGENT_DEFINITION_UPDATED",
+                            Vec::new(),
+                        )
+                        .await?;
+                    }
+                    Ok(None)
+                }
                 Semantic::TenantMemberInvite => {
                     let label = params
                         .name
@@ -2737,6 +3329,36 @@ impl Governance {
                 .await;
         }
         let version: i32 = match sem {
+            Semantic::TenantDelete => {
+                let snapshot: Option<(Uuid, i32, serde_json::Value)> = sqlx::query_as(
+                    "select id, tenant_version, frozen_inventory from admission.tenant_lifecycle_snapshot
+                     where action_execution_id = $1 and tenant_id = $2 and not irreversible_dispatch_started for update",
+                ).bind(ae.id).bind(ae.tenant_id).fetch_optional(&mut **tx).await?;
+                let Some((snapshot_id, frozen_version, frozen_inventory)) = snapshot else {
+                    return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+                };
+                if frozen_version != target.version {
+                    return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+                }
+                // 冻结以后恢复/投影重建/CONTROL 变动使审批失效，不能换成当前绑定执行。
+                let current = frozen_delete_inventory(tx, ae.tenant_id, target.version).await?;
+                if current != frozen_inventory { return Err(Refusal::Conflict(ReasonCode::TargetStateConflict)); }
+                let mut owners:Vec<contracts::AffectedOwnerRef>=serde_json::from_value(current["resource_owner_versions"].clone())
+                    .map_err(|e|Refusal::Unavailable(e.to_string()))?;
+                owners.extend(serde_json::from_value::<Vec<contracts::AffectedOwnerRef>>(current["asset_owner_versions"].clone())
+                    .map_err(|e|Refusal::Unavailable(e.to_string()))?);
+                if !crate::agent_definition::validate_frozen_owners(self,tx,ae.tenant_id,&owners).await? {
+                    return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+                }
+                let version: Option<i32> = sqlx::query_scalar(
+                    "update identity.tenant set state = 'DELETING', version = version + 1
+                     where id = $1 and state = 'SUSPENDED' and version = $2 returning version",
+                ).bind(ae.tenant_id).bind(target.version).fetch_optional(&mut **tx).await?;
+                let version = version.ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+                sqlx::query("update admission.tenant_lifecycle_snapshot set state = 'DELETING' where id = $1")
+                    .bind(snapshot_id).execute(&mut **tx).await?;
+                version
+            }
             Semantic::SecretRefRehome => 1,
             Semantic::WorkspaceCreate => {
                 sqlx::query_scalar(
@@ -2852,6 +3474,10 @@ impl Governance {
             | Semantic::TenantMemberInviteRevoke
             | Semantic::TaskCancel
             | Semantic::TaskRerun
+            | Semantic::AgentDefinitionCreate
+            | Semantic::AgentDefinitionUpdate
+            | Semantic::ResourceTransferOwner
+            | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish
             // 业务 Tenant 生命周期在上面单独落定
             | Semantic::TenantSuspend
             | Semantic::TenantRestore => {
@@ -2894,6 +3520,24 @@ impl Governance {
         )
         .await?;
         let mut evidence = zed_evidence(eval.zed_token.as_deref());
+        if sem == Semantic::TenantDelete {
+            let (snapshot_id, subprocess_id): (Uuid, Uuid) = sqlx::query_as(
+                "select s.id, p.id from admission.tenant_lifecycle_snapshot s
+                 join admission.tenant_delete_subprocess p on p.tenant_lifecycle_snapshot_id = s.id
+                 where s.action_execution_id = $1 and p.subject = 'PLATFORM_CORE'",
+            )
+            .bind(ae.id)
+            .fetch_one(&mut **tx)
+            .await?;
+            evidence.push(Evidence::new(
+                EvidenceKind::TenantLifecycleSnapshotId,
+                snapshot_id,
+            ));
+            evidence.push(Evidence::new(
+                EvidenceKind::TenantDeleteSubprocessId,
+                subprocess_id,
+            ));
+        }
         {
             evidence.push(Evidence::new(EvidenceKind::TemporalWorkflowId, workflow_id));
             if let Some(a) = &ae.approval_workflow_id {
@@ -3210,6 +3854,20 @@ impl Governance {
             false,
         )
         .await?;
+        if original.action_key == "tenant.delete" {
+            let reversible: bool = sqlx::query_scalar(
+                "select exists (select 1 from admission.tenant_lifecycle_snapshot
+                                where action_execution_id = $1 and tenant_id = $2
+                                  and not irreversible_dispatch_started)",
+            )
+            .bind(original.id)
+            .bind(tenant)
+            .fetch_one(&mut *conn)
+            .await?;
+            if !reversible {
+                return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+            }
+        }
         let workflow_id = original
             .temporal_workflow_id
             .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
@@ -3317,6 +3975,12 @@ impl Governance {
         sem: Semantic,
         p: &Params,
     ) -> Result<(), Refusal> {
+        if sem == Semantic::TenantDelete {
+            if !crate::tenant_delete::secrets_ready(&self.secrets, conn, tenant).await? {
+                return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+            }
+            return Ok(());
+        }
         if sem == Semantic::SecretRefRehome {
             return crate::secret_ref_rehome::target_gate(&self.secrets, conn, tenant, p).await;
         }
@@ -4254,7 +4918,14 @@ impl Governance {
         }
         if def.execution_mode == "SYNC" {
             // 在准入事务里已完成的同步动作没有可派发的东西；走到这里只可能是角色
-            return if sem.is_role() {
+            return if sem == Semantic::AgentVersionCreate {
+                crate::agent_version::dispatch(self, ae_id, &def).await
+            } else if matches!(
+                sem,
+                Semantic::AgentDefinitionCreate | Semantic::ResourceTransferOwner
+            ) {
+                crate::agent_definition::dispatch(self, ae_id, &def, sem).await
+            } else if sem.is_role() {
                 self.dispatch_role(ae_id, &def, sem).await
             } else {
                 Ok(())
@@ -4275,6 +4946,11 @@ impl Governance {
             Ok(())
         } else {
             let started = match sem {
+                Semantic::TenantDelete => launch_scope(
+                    &self.pool, &self.temporal,
+                    &ScopeLifecycleRequest { kind: ScopeKind::Tenant, id: ae.target_id,
+                        action_execution_id: ae.id, operation: ScopeOperation::Delete },
+                ).await,
                 Semantic::WorkspaceCreate
                 | Semantic::WorkspaceSuspend
                 | Semantic::WorkspaceRestore => {
@@ -4333,6 +5009,10 @@ impl Governance {
                 | Semantic::TenantMemberInviteRevoke
                 | Semantic::TaskCancel
                 | Semantic::TaskRerun
+                | Semantic::AgentDefinitionCreate
+                | Semantic::AgentDefinitionUpdate
+                | Semantic::ResourceTransferOwner
+                | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish
                 // 业务 Tenant 生命周期由 dispatch_tenant_lifecycle 派发
                 | Semantic::TenantSuspend
                 | Semantic::TenantRestore => Err(StatusCode::CONFLICT.into_response()),
@@ -4398,7 +5078,9 @@ impl Governance {
         // 选择器与 owner 要求必须在本 target 上可解析，否则请求不启动（.design/03 §6、
         // .design/10 §2）：RESOURCE_APPROVER 需要 Resource 目标，WORKSPACE_ADMIN 需要
         // 冻结 Workspace；本切片的目标都没有 owner 事实。不换用更宽的角色。
-        let resolvable = policy.owner_requirement == "NONE"
+        let deletion = def.action_key == "tenant.delete";
+        let resolvable = (policy.owner_requirement == "NONE"
+            || (deletion && policy.owner_requirement == "ALL_AFFECTED_OWNERS"))
             && policy.role_requirements.iter().all(|r| match r.selector {
                 ApprovalSelector::TenantAdmin => true,
                 ApprovalSelector::WorkspaceAdmin => ae.workspace_id.is_some(),
@@ -4429,6 +5111,111 @@ impl Governance {
             drop(tx);
             return submission_result(&locked);
         }
+        let mut deletion_refs = Vec::new();
+        let mut locked_evaluation = None;
+        if deletion {
+            if policy.owner_requirement != "ALL_AFFECTED_OWNERS"
+                || policy.self_approval != "ALLOW"
+                || policy.role_requirements.len() != 1
+                || policy.role_requirements[0].selector != ApprovalSelector::TenantAdmin
+                || policy.role_requirements[0].min_distinct != 1
+            {
+                return Err((Refusal::Blocked(ReasonCode::CapabilityBlocked), op));
+            }
+            let version: Option<i32> = sqlx::query_scalar(
+                "select version from identity.tenant where id = $1 and state = 'SUSPENDED' for update",
+            ).bind(ae.tenant_id).fetch_optional(&mut *tx).await.map_err(|e| (e.into(), op))?;
+            let Some(version) = version.filter(|v| Some(*v) == ae.frozen_target_version()) else {
+                return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), op));
+            };
+            let fresh = self
+                .evaluate(
+                    actor,
+                    def,
+                    &Target {
+                        id: ae.target_id,
+                        version,
+                        workspace_id: None,
+                    },
+                )
+                .await
+                .map_err(|e| (e, op))?;
+            if !fresh.allowed {
+                return Err((
+                    Refusal::Denied(fresh.reason.unwrap_or(ReasonCode::PermissionDenied)),
+                    op,
+                ));
+            }
+            locked_evaluation = Some(fresh);
+            let params = ae
+                .params()
+                .ok_or((Refusal::Precondition(ReasonCode::InvalidParameters), op))?;
+            self.target_gate(
+                &mut tx,
+                ae.tenant_id,
+                ae.initiator_principal_id,
+                def,
+                Semantic::TenantDelete,
+                &params,
+            )
+            .await
+            .map_err(|e| (e, op))?;
+            let inventory = frozen_delete_inventory(&mut tx, ae.tenant_id, version)
+                .await
+                .map_err(|e| (e, op))?;
+            let mut owner_refs: Vec<contracts::AffectedOwnerRef> =
+                serde_json::from_value(inventory["resource_owner_versions"].clone())
+                    .map_err(|e| (Refusal::Unavailable(e.to_string()), op))?;
+            owner_refs.extend(
+                serde_json::from_value::<Vec<contracts::AffectedOwnerRef>>(
+                    inventory["asset_owner_versions"].clone(),
+                )
+                .map_err(|e| (Refusal::Unavailable(e.to_string()), op))?,
+            );
+            if !crate::agent_definition::validate_frozen_owners(
+                self,
+                &mut tx,
+                ae.tenant_id,
+                &owner_refs,
+            )
+            .await
+            .map_err(|e| (e, op))?
+            {
+                return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), op));
+            }
+            let digest = hex::encode(Sha256::digest(inventory.to_string().as_bytes()));
+            let snapshot_id = Uuid::new_v4();
+            let subprocess_id = Uuid::new_v4();
+            sqlx::query(
+                "insert into admission.tenant_lifecycle_snapshot
+                 (id,tenant_id,action_execution_id,tenant_version,resource_owner_versions,asset_owner_versions,
+                  component_binding_refs_and_versions,inventory_digest,frozen_inventory,state)
+                 values ($1,$2,$3,$4,$7,$8,'[]',$5,$6,'SUSPENDED')",
+            ).bind(snapshot_id).bind(ae.tenant_id).bind(ae.id).bind(version).bind(digest)
+                .bind(&inventory).bind(&inventory["resource_owner_versions"])
+                .bind(&inventory["asset_owner_versions"])
+                .execute(&mut *tx).await.map_err(|e| (e.into(), op))?;
+            sqlx::query(
+                "insert into admission.tenant_delete_subprocess
+                 (id,tenant_lifecycle_snapshot_id,tenant_id,subject,mode,state)
+                 values ($1,$2,$3,'PLATFORM_CORE','PLATFORM_CORE_CHAIN','PENDING')",
+            )
+            .bind(subprocess_id)
+            .bind(snapshot_id)
+            .bind(ae.tenant_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| (e.into(), op))?;
+            deletion_refs.push(Evidence::new(
+                EvidenceKind::TenantLifecycleSnapshotId,
+                snapshot_id,
+            ));
+            deletion_refs.push(Evidence::new(
+                EvidenceKind::TenantDeleteSubprocessId,
+                subprocess_id,
+            ));
+        }
+        let eval = locked_evaluation.as_ref().unwrap_or(eval);
         sqlx::query(
             "update admission.action_execution
              set gate_state = 'WAITING', approval_workflow_id = $2,
@@ -4470,6 +5257,7 @@ impl Governance {
         .await
         .map_err(|e| (e.into(), op))?;
         let mut evidence = zed_evidence(eval.zed_token.as_deref());
+        evidence.extend(deletion_refs);
         evidence.push(Evidence::new(EvidenceKind::ApprovalWorkflowId, workflow_id));
         evidence.push(Evidence::versioned(
             EvidenceKind::ApprovalPolicy,
@@ -4510,6 +5298,19 @@ impl Governance {
         let expires = ae
             .approval_expires_at
             .ok_or_else(|| Refusal::Unavailable("WAITING 缺冻结的过期时刻".into()))?;
+        let affected_owner_refs = if policy.owner_requirement == "ALL_AFFECTED_OWNERS" {
+            let refs: Value = sqlx::query_scalar(
+                "select resource_owner_versions || asset_owner_versions from admission.tenant_lifecycle_snapshot
+                where action_execution_id=$1 and tenant_id=$2",
+            )
+            .bind(ae.id)
+            .bind(ae.tenant_id)
+            .fetch_one(&self.pool)
+            .await?;
+            serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
+        } else {
+            Vec::new()
+        };
         Ok(ApprovalWorkflowInput {
             action_execution_id: ae.id.to_string(),
             operation_id: ae.operation_id.to_string(),
@@ -4532,7 +5333,7 @@ impl Governance {
                 .collect(),
             owner_requirement: parse(&policy.owner_requirement)
                 .ok_or_else(|| Refusal::Unavailable("owner_requirement 不在契约内".into()))?,
-            affected_owner_refs: vec![],
+            affected_owner_refs,
             self_approval: parse(&policy.self_approval)
                 .ok_or_else(|| Refusal::Unavailable("self_approval 不在契约内".into()))?,
             initiator_principal_id: ae.initiator_principal_id.to_string(),
@@ -5052,23 +5853,44 @@ impl Governance {
         let policy = exact_policy(&self.pool, pid, pver).await?;
         let approver = Uuid::parse_str(&req.approver_principal_id)
             .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+        // TARGET_OWNER 尚无本次真实动作消费者；不能把它或未知枚举按 NONE 处理。
+        if !matches!(
+            policy.owner_requirement.as_str(),
+            "NONE" | "ALL_AFFECTED_OWNERS"
+        ) {
+            return Ok(Some(FreshApprovalAdmissionResult {
+                admitted: false,
+                reason: Some(ReasonCode::ApprovalSelectorUnresolvable),
+                satisfied_selectors: Vec::new(),
+            }));
+        }
 
         let refuse = |reason| FreshApprovalAdmissionResult {
             admitted: false,
             reason: Some(reason),
             satisfied_selectors: vec![],
         };
+        let mut tx = self.pool.begin().await?;
         // approver 必须是同 Tenant 的 active HUMAN，且 TenantMembership ACTIVE：
+        // 与 Resource 写者一致先锁 Tenant；SUSPENDED 的删除资格由下面的冻结检查判定。
+        let _ = crate::roles::lock_tenant(&mut tx, ae.tenant_id).await?;
         // Agent、SERVICE、过期/失权 Human 的 Update 不形成决定（DD-47）
         let active: Option<i32> = sqlx::query_scalar(
             "select 1 from identity.principal p
              join identity.tenant_membership tm on tm.tenant_principal_id = p.id
+             join identity.tenant t on t.id = p.tenant_id
              where p.id = $1 and p.tenant_id = $2 and p.kind = 'HUMAN' and p.status = 'ACTIVE'
-               and tm.state = 'ACTIVE'",
+               and tm.state = 'ACTIVE' and (t.state = 'ACTIVE'
+                    or ($3 and t.state = 'SUSPENDED' and exists (
+                        select 1 from admission.tenant_lifecycle_snapshot s
+                        where s.action_execution_id = $4 and s.tenant_version = t.version
+                          and not s.irreversible_dispatch_started))) for update of p,tm",
         )
         .bind(approver)
         .bind(ae.tenant_id)
-        .fetch_optional(&self.pool)
+        .bind(ae.action_key == "tenant.delete")
+        .bind(ae.id)
+        .fetch_optional(&mut *tx)
         .await?;
         let mut zed = None;
         let result = if active.is_none() {
@@ -5077,12 +5899,80 @@ impl Governance {
             // 职责分离：发起者不能批准也不能否决自己的请求
             refuse(ReasonCode::SelfApprovalDenied)
         } else {
+            let refs: Vec<contracts::AffectedOwnerRef> = if policy.owner_requirement
+                == "ALL_AFFECTED_OWNERS"
+            {
+                let refs: Value = sqlx::query_scalar(
+                        "select resource_owner_versions || asset_owner_versions from admission.tenant_lifecycle_snapshot
+                    where action_execution_id=$1 and tenant_id=$2",
+                    )
+                    .bind(ae.id)
+                    .bind(ae.tenant_id)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
+            } else {
+                Vec::new()
+            };
+            let owners_current =
+                crate::agent_definition::validate_frozen_owners(self, &mut tx, ae.tenant_id, &refs)
+                    .await?;
+            let target_current = if def.target_type == "RESOURCE" {
+                match crate::agent_definition::resource(&mut tx, ae.tenant_id, ae.target_id, true)
+                    .await?
+                {
+                    Some(r)
+                        if r.state == "ACTIVE"
+                            && r.projection_action_execution_id.is_none()
+                            && Some(r.version) == ae.frozen_target_version() =>
+                    {
+                        crate::agent_definition::projection_matches(
+                            self,
+                            r.id,
+                            r.tenant_id,
+                            r.owner_principal_id,
+                        )
+                        .await?
+                    }
+                    _ => false,
+                }
+            } else if def.target_type == "ASSET" {
+                match crate::agent_version::version(&mut tx, ae.tenant_id, ae.target_id, false)
+                    .await?
+                {
+                    Some(v) if Some(v.version) == ae.frozen_target_version() => {
+                        crate::agent_definition::validate_frozen_owners(
+                            self,
+                            &mut tx,
+                            ae.tenant_id,
+                            &[contracts::AffectedOwnerRef {
+                                target_type: "ASSET".into(),
+                                target_id: v.asset_id.to_string(),
+                                target_version: i64::from(v.version),
+                                owner_principal_id: v.owner_principal_id.to_string(),
+                            }],
+                        )
+                        .await?
+                    }
+                    _ => false,
+                }
+            } else {
+                true
+            };
+            let is_owner = owners_current
+                && refs
+                    .iter()
+                    .any(|r| r.owner_principal_id == approver.to_string());
             let mut satisfied = vec![];
             for r in &policy.role_requirements {
                 let object = match r.selector {
                     ApprovalSelector::TenantAdmin => Some(("tenant", ae.tenant_id)),
                     ApprovalSelector::WorkspaceAdmin => ae.workspace_id.map(|w| ("workspace", w)),
-                    // 目标不是 Resource：没有可 Check 的对象，fail closed
+                    ApprovalSelector::ResourceApprover
+                        if def.target_type == "RESOURCE" && target_current =>
+                    {
+                        Some(("resource", ae.target_id))
+                    }
                     ApprovalSelector::ResourceApprover => None,
                 };
                 let Some((ty, id)) = object else { continue };
@@ -5091,7 +5981,11 @@ impl Governance {
                     .check(
                         ty,
                         &id.to_string(),
-                        "manage",
+                        if r.selector == ApprovalSelector::ResourceApprover {
+                            "approve"
+                        } else {
+                            "manage"
+                        },
                         &approver.to_string(),
                         Consistency::FullyConsistent,
                     )
@@ -5102,7 +5996,7 @@ impl Governance {
                     satisfied.push(r.selector.clone());
                 }
             }
-            if satisfied.is_empty() {
+            if !owners_current || !target_current || (satisfied.is_empty() && !is_owner) {
                 refuse(ReasonCode::ApproverNotEligible)
             } else {
                 FreshApprovalAdmissionResult {
@@ -5113,7 +6007,6 @@ impl Governance {
             }
         };
 
-        let mut tx = self.pool.begin().await?;
         let result_code = result
             .reason
             .as_ref()

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/resource_state.schema.json",
+  "title": "ResourceState",
+  "description": "03 §7 Resource 的正式状态，投影未闭合不得呈现 ACTIVE。",
+  "type": "string",
+  "enum": ["PROVISIONING", "ACTIVE", "UNKNOWN", "FAILED", "RETAINED_READ_ONLY", "DELETING", "DELETED"]
+}

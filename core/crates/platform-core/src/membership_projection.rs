@@ -186,27 +186,34 @@ pub async fn project_buzz_roster(
                 }
             }
             let transition = match (req.presence, req.scope) {
-                (TargetPresence::Present, _) => sqlx::query!(
+                // 绑定版本随 binding 一起转 ACTIVE（`.design/03` SecretRef 状态机）。
+                (TargetPresence::Present, _) => sqlx::query(
                     "update identity.buzz_identity_binding
-                     set state = 'ACTIVE', version = version + 1
+                     set state = 'ACTIVE', version = version + 1,
+                         private_key_secret_status = 'ACTIVE'
                      where tenant_id = $1 and pubkey = any($2)
                        and custody = 'SERVER' and state = 'RECONCILING'",
-                    plan.tenant_id,
-                    &plan.target_pubkeys,
                 )
+                .bind(plan.tenant_id)
+                .bind(&plan.target_pubkeys)
                 .execute(&state.pool)
                 .await
                 .map(|_| ()),
-                (TargetPresence::Absent, MembershipScope::Tenant) => sqlx::query!(
-                    "update identity.buzz_identity_binding
-                     set state = 'REVOKED', version = version + 1
-                     where tenant_id = $1 and pubkey = any($2) and state <> 'REVOKED'",
-                    plan.tenant_id,
-                    &plan.target_pubkeys,
-                )
-                .execute(&state.pool)
-                .await
-                .map(|_| ()),
+                // 撤权后私钥不再有读取者：引用转 SUPERSEDED，同事务冻结退役 operation，
+                // roster 已查证移出，随即按 DD-115 (3) 退役。
+                (TargetPresence::Absent, MembershipScope::Tenant) => {
+                    return match revoke_member_keys(&state, &plan, &req).await {
+                        Ok(()) => (
+                            StatusCode::OK,
+                            Json(BuzzProjectionResponse {
+                                converged: true,
+                                target_pubkeys: plan.target_pubkeys,
+                            }),
+                        )
+                            .into_response(),
+                        Err(r) => r,
+                    };
+                }
                 (TargetPresence::Absent, MembershipScope::Workspace) => Ok(()),
             };
             if let Err(e) = transition {
@@ -232,6 +239,101 @@ pub async fn project_buzz_roster(
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
+}
+
+/// DD-115 (2)(3)：成员撤权使此人的 binding 进入 `REVOKED`。同一事务把使 SERVER
+/// 私钥到期的 operation（该成员关系版本的 `MEMBERSHIP_REVOCATION`）冻结到其 BOUND
+/// 意图；roster 已由调用方查证移出，随后执行 delete 与 destroy 并按 metadata 查证。
+/// 没有完成的由治理对账器按「binding 已 REVOKED、意图 BOUND、退役 operation 已冻结」
+/// 补做；这里以 503 让 Activity 重试，重试时已 REVOKED 的钥匙不再是投影目标。
+async fn revoke_member_keys(
+    state: &ServiceState,
+    plan: &Plan,
+    req: &BuzzProjectionRequest,
+) -> Result<(), Response> {
+    let locators: Vec<String> = sqlx::query_scalar(
+        "select private_key_secret_ref from identity.buzz_identity_binding
+         where tenant_id = $1 and pubkey = any($2) and custody = 'SERVER' and kind = 'HUMAN'
+           and state <> 'REVOKED' and private_key_secret_ref is not null",
+    )
+    .bind(plan.tenant_id)
+    .bind(&plan.target_pubkeys)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(unavailable)?;
+    let operation = if locators.is_empty() {
+        None
+    } else {
+        let workflow_id = crate::component_task::workflow_id(
+            "MEMBERSHIP_REVOCATION",
+            plan.tenant_id,
+            &req.membership_id.to_string(),
+            req.membership_version,
+        );
+        match sqlx::query_scalar::<_, Uuid>(
+            "select operation_id from projection.workflow_ref
+             where workflow_id = $1 and tenant_id = $2 and kind = 'MEMBERSHIP_REVOCATION'",
+        )
+        .bind(&workflow_id)
+        .bind(plan.tenant_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(unavailable)?
+        {
+            Some(operation) => Some(operation),
+            None => {
+                tracing::warn!(workflow_id, "成员撤权的 WorkflowRef 缺失，不推进 REVOKED");
+                return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+            }
+        }
+    };
+    let mut tx = state.pool.begin().await.map_err(unavailable)?;
+    sqlx::query(
+        "update identity.buzz_identity_binding
+         set state = 'REVOKED', version = version + 1,
+             private_key_secret_status = case
+                 when private_key_secret_status in ('PENDING', 'ACTIVE')
+                 then 'SUPERSEDED' else private_key_secret_status end
+         where tenant_id = $1 and pubkey = any($2) and state <> 'REVOKED'",
+    )
+    .bind(plan.tenant_id)
+    .bind(&plan.target_pubkeys)
+    .execute(&mut *tx)
+    .await
+    .map_err(unavailable)?;
+    if let Some(operation) = operation {
+        for locator in &locators {
+            if !crate::platform_keys::freeze_retirement(&mut tx, locator, operation)
+                .await
+                .map_err(unavailable)?
+            {
+                tracing::error!("撤权的 SERVER 身份没有可退役的 BOUND 意图");
+            }
+        }
+    }
+    tx.commit().await.map_err(unavailable)?;
+
+    let stores = crate::platform_keys::Stores::of(state);
+    let mut pending = false;
+    for locator in &locators {
+        match crate::platform_keys::retire_bound_key(
+            &stores,
+            secret_store::PlatformKey::Human,
+            plan.tenant_id,
+            locator,
+        )
+        .await
+        .map_err(unavailable)?
+        {
+            crate::platform_keys::Retirement::Retired
+            | crate::platform_keys::Retirement::NotExclusive => {}
+            _ => pending = true,
+        }
+    }
+    if pending {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    Ok(())
 }
 
 /// 一次投影所需的全部事实，解析完就不再回库。
@@ -542,10 +644,12 @@ pub(crate) async fn ensure_human_identity(
     }
     let inserted = sqlx::query(
         "insert into admission.server_key_provision_intent
-             (action_execution_id, tenant_id, principal_id, target_locator,
-              source_membership_id, source_membership_version, source_membership_scope)
-         values ($1,$2,$3,$4,$5,$6,$7)
-         on conflict (action_execution_id) do nothing",
+             (action_execution_id, key_kind, origin, operation_id, tenant_id, principal_id,
+              target_locator, source_membership_id, source_membership_version,
+              source_membership_scope)
+         select $1, 'HUMAN', 'PROVISIONED', ae.operation_id, $2, $3, $4, $5, $6, $7
+         from admission.action_execution ae where ae.id = $1
+         on conflict (action_execution_id) where key_kind = 'HUMAN' do nothing",
     )
     .bind(action_id)
     .bind(tenant_id)
@@ -587,9 +691,7 @@ pub(crate) async fn ensure_human_identity(
     }
     tx.commit().await?;
 
-    state
-        .secrets
-        .ensure_tenant(tenant_id)
+    crate::platform_keys::ensure_tenant_namespace(&state.pool, &state.secrets, tenant_id)
         .await
         .map_err(|e| Blocked::Unavailable(format!("Tenant secret namespace 未就绪：{e}")))?;
 
@@ -640,8 +742,9 @@ pub(crate) async fn ensure_human_identity(
     let inserted = sqlx::query(
         "insert into identity.buzz_identity_binding
              (tenant_id, principal_id, pubkey, custody, private_key_secret_ref,
-              private_key_secret_version, private_key_secret_audience, kind, state)
-         values ($1,$2,$3,'SERVER',$4,1,$5,'HUMAN','RECONCILING')",
+              private_key_secret_version, private_key_secret_audience,
+              private_key_secret_status, kind, state)
+         values ($1,$2,$3,'SERVER',$4,1,$5,'PENDING','HUMAN','RECONCILING')",
     )
     .bind(tenant_id)
     .bind(principal_id)

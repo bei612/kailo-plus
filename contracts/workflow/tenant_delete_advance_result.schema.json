@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/tenant_delete_advance_result.schema.json",
+  "title": "TenantDeleteAdvanceResult",
+  "description": "Core 返回已经持久化的删除推进事实；UNKNOWN 由错误分类表达，不伪装为 completed 或 canceled。原生证据只保留引用。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["snapshotId", "subprocessId", "irreversibleDispatchStarted", "completed", "canceled"],
+  "properties": {
+    "snapshotId": { "type": "string", "format": "uuid" },
+    "subprocessId": { "type": "string", "format": "uuid" },
+    "irreversibleDispatchStarted": { "type": "boolean" },
+    "completed": { "type": "boolean" },
+    "canceled": { "type": "boolean" },
+    "nativeRequestId": { "type": "string", "format": "uuid" },
+    "nativeInventoryDigest": { "type": "string" }
+  }
+}

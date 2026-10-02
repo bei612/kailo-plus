@@ -22,6 +22,8 @@ const UNARCHIVE_PATH: &str = "/operator/communities/unarchive";
 /// 同上，`community_availability` 的签名路径。它是 operator 面唯一只读、
 /// 不产生任何副作用的端点，用来查证「Relay 接受这把 operator key」。
 const AVAILABILITY_PATH: &str = "/operator/communities/availability";
+/// SS-BUZ-COMMUNITY-DELETE 的部署私有执行器路径，不进入公开 Relay Router。
+const DELETION_PATH: &str = "/operator/deletions";
 
 #[derive(Debug, thiserror::Error)]
 pub enum OperatorError {
@@ -97,8 +99,8 @@ impl OperatorIdentity {
 
     /// 构造 `Authorization: Nostr <base64(event)>`。
     ///
-    /// 签名覆盖方法、URL 与 payload 摘要；URL 必须是调用方真正请求的那个，
-    /// 逐字符等于 Relay 配置的 origin 加路径。
+    /// 签名覆盖方法、URL 与 payload 摘要；URL 逐字符等于 Relay 配置的
+    /// canonical operator origin 加实际路径与查询串，不以私有 transport 替换。
     fn nip98_header(&self, method: &str, url: &str, body: &[u8]) -> Result<String, OperatorError> {
         let tag = |parts: [&str; 2]| {
             Tag::parse(parts).map_err(|e| OperatorError::Sign(format!("NIP-98 tag: {e}")))
@@ -231,6 +233,132 @@ impl OperatorIdentity {
             .collect()
     }
 
+    /// 提交 DD-109 的原生删除请求。requested_by 固定为 TenantDeleteSubprocess ID；
+    /// 结果不明时由调用方先按 exact host 回读，不能以重发代替对账。
+    pub async fn submit_community_deletion(
+        &self,
+        http: &reqwest::Client,
+        transport: &str,
+        host: &str,
+        requested_by: uuid::Uuid,
+    ) -> Result<serde_json::Value, OperatorError> {
+        self.deletion_request(
+            http,
+            transport,
+            reqwest::Method::POST,
+            self.api_origin.join(DELETION_PATH)?,
+            Some(&serde_json::json!({
+                "host": host,
+                "requested_by": requested_by.to_string(),
+            })),
+        )
+        .await
+    }
+
+    /// 返回 exact host 的完整非 aborted 原生请求数组，包括 blocked 请求。
+    /// 不从部署全局列表截取后再过滤，不根据 HTTP 成功合成生命周期状态。
+    pub async fn list_community_deletions(
+        &self,
+        http: &reqwest::Client,
+        transport: &str,
+        host: &str,
+    ) -> Result<serde_json::Value, OperatorError> {
+        let mut canonical = self.api_origin.join(DELETION_PATH)?;
+        canonical.query_pairs_mut().append_pair("host", host);
+        self.deletion_request(http, transport, reqwest::Method::GET, canonical, None)
+            .await
+    }
+
+    /// 原样返回 request、approval 与 checkpoints；native inspection 保持权威。
+    pub async fn inspect_community_deletion(
+        &self,
+        http: &reqwest::Client,
+        transport: &str,
+        request_id: uuid::Uuid,
+    ) -> Result<serde_json::Value, OperatorError> {
+        self.deletion_request(
+            http,
+            transport,
+            reqwest::Method::GET,
+            self.api_origin
+                .join(&format!("{DELETION_PATH}/{request_id}"))?,
+            None,
+        )
+        .await
+    }
+
+    /// 审批原生冻结清单；digest 使用上游裸十六进制值，approved_by 为
+    /// tenant.delete 的 ActionExecution ID，不改写原生审批证据。
+    pub async fn approve_community_deletion(
+        &self,
+        http: &reqwest::Client,
+        transport: &str,
+        request_id: uuid::Uuid,
+        expected_inventory_digest: &str,
+        approved_by: uuid::Uuid,
+    ) -> Result<serde_json::Value, OperatorError> {
+        self.deletion_request(
+            http,
+            transport,
+            reqwest::Method::POST,
+            self.api_origin
+                .join(&format!("{DELETION_PATH}/{request_id}/approve"))?,
+            Some(&serde_json::json!({
+                "expected_inventory_digest": expected_inventory_digest,
+                "approved_by": approved_by.to_string(),
+            })),
+        )
+        .await
+    }
+
+    /// 调用 Buzz 进程内的原生引擎并返回完整 inspection。retention_pending
+    /// 不能单独证明 Tenant 删除；调用方仍须回读 CONTROL owner Community list。
+    pub async fn run_community_deletion(
+        &self,
+        http: &reqwest::Client,
+        transport: &str,
+        request_id: uuid::Uuid,
+    ) -> Result<serde_json::Value, OperatorError> {
+        self.deletion_request(
+            http,
+            transport,
+            reqwest::Method::POST,
+            self.api_origin
+                .join(&format!("{DELETION_PATH}/{request_id}/run"))?,
+            Some(&serde_json::json!({})),
+        )
+        .await
+    }
+
+    async fn deletion_request(
+        &self,
+        http: &reqwest::Client,
+        transport: &str,
+        method: reqwest::Method,
+        canonical: Url,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value, OperatorError> {
+        let mut destination = Url::parse(transport)?;
+        if !matches!(destination.scheme(), "http" | "https")
+            || destination.host_str().is_none()
+            || !destination.username().is_empty()
+            || destination.password().is_some()
+            || destination.path() != "/"
+            || destination.query().is_some()
+            || destination.fragment().is_some()
+        {
+            return Err(OperatorError::Sign(
+                "删除执行器 transport 必须是无凭据、无路径与查询的 HTTP(S) origin".to_owned(),
+            ));
+        }
+        // 唯一变化是网络 authority；路径、原始查询串与签名 canonical 完全一致。
+        // Relay 按配置的 operator origin 校验，不读入站 Host。
+        destination.set_path(canonical.path());
+        destination.set_query(canonical.query());
+        self.request_json(http, method, canonical, destination, body)
+            .await
+    }
+
     /// 以这把 key 签一次只读的 operator 请求，查证 Relay 当前接受它。
     ///
     /// 问的 host 取 operator origin 自己的主机名：它是部署事实、总是合法的
@@ -265,20 +393,39 @@ impl OperatorIdentity {
         body: &serde_json::Value,
     ) -> Result<serde_json::Value, OperatorError> {
         let url = self.api_origin.join(path)?;
-        let payload = serde_json::to_vec(body).map_err(|e| OperatorError::Sign(e.to_string()))?;
+        self.request_json(http, reqwest::Method::POST, url.clone(), url, Some(body))
+            .await
+    }
+
+    async fn request_json(
+        &self,
+        http: &reqwest::Client,
+        method: reqwest::Method,
+        canonical: Url,
+        destination: Url,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value, OperatorError> {
+        let payload = match body {
+            Some(body) => {
+                serde_json::to_vec(body).map_err(|e| OperatorError::Sign(e.to_string()))?
+            }
+            None => Vec::new(),
+        };
 
         // NIP-98 事件按上游客户端的同一形状构造（buzz-acp 的 sign_nip98）：
         // u / method / nonce 三个标签必给，带 body 时再加 payload 摘要。
         // nonce 不能省——Relay 的 check_operator_replay 依赖它做重放判定。
-        let header = self.nip98_header("POST", url.as_str(), &payload)?;
+        let header = self.nip98_header(method.as_str(), canonical.as_str(), &payload)?;
 
-        let resp = http
-            .post(url)
-            .header("Authorization", header)
-            .header("Content-Type", "application/json")
-            .body(payload)
-            .send()
-            .await?;
+        let mut request = http
+            .request(method, destination)
+            .header("Authorization", header);
+        if body.is_some() {
+            request = request
+                .header("Content-Type", "application/json")
+                .body(payload);
+        }
+        let resp = request.send().await?;
 
         let status = resp.status();
         let text = resp.text().await?;

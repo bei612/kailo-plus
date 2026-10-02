@@ -335,9 +335,11 @@ async fn prewrite_secret_intent(
     }
     let inserted = sqlx::query(
         "insert into admission.server_key_provision_intent
-             (action_execution_id, tenant_id, principal_id, target_locator)
-         values ($1,$2,$3,$4)
-         on conflict (action_execution_id) do nothing",
+             (action_execution_id, key_kind, origin, operation_id, tenant_id, principal_id,
+              target_locator)
+         select $1, 'HUMAN', 'PROVISIONED', ae.operation_id, $2, $3, $4
+         from admission.action_execution ae where ae.id = $1
+         on conflict (action_execution_id) where key_kind = 'HUMAN' do nothing",
     )
     .bind(action_id)
     .bind(tenant_id)
@@ -524,8 +526,9 @@ async fn provision_admitted(
     let inserted = sqlx::query(
         "insert into identity.buzz_identity_binding
              (tenant_id, principal_id, pubkey, custody, private_key_secret_ref,
-              private_key_secret_version, private_key_secret_audience, kind, state)
-         values ($1,$2,$3,'SERVER',$4,1,$5,'HUMAN','RECONCILING')",
+              private_key_secret_version, private_key_secret_audience,
+              private_key_secret_status, kind, state)
+         values ($1,$2,$3,'SERVER',$4,1,$5,'PENDING','HUMAN','RECONCILING')",
     )
     .bind(tenant_id)
     .bind(principal_id)
@@ -637,289 +640,27 @@ async fn prewrite_admissible(
     Ok(allowed.is_some())
 }
 
-#[derive(sqlx::FromRow)]
-struct ProvisionAuditContext {
-    operation_id: Uuid,
-    workspace_id: Option<Uuid>,
-    initiator_principal_id: Uuid,
-    actor_principal_id: Uuid,
-    target_id: Uuid,
-    parameter_hash: String,
-    correlation_id: Uuid,
-    action_version: i32,
-    action_key: String,
-    component_type_key: String,
-    target_type: String,
-    result_exposure: String,
-}
-
-#[derive(sqlx::FromRow)]
-struct FrozenProvisionIntent {
-    target_locator: String,
-    finished: bool,
-    destroyed: bool,
-    direct: bool,
-}
-
-/// DD-86：两个建钥入口共用这一条补偿链。先在原动作和 Principal 锁下持久
-/// fence，再与在途 CAS 争夺版本 1；没有 metadata 销毁证明时绝不终结意图。
+/// DD-86：两个 HUMAN 建钥入口共用 `platform_keys` 的同一条孤儿收敛（DD-113 也
+/// 用它收敛 CONTROL 与 operator）。这里只把原 ActionExecution 换成意图行。
 pub(crate) async fn fence_and_destroy_provision_intent(
     state: &ServiceState,
     action_id: Uuid,
 ) -> &'static str {
-    let snapshot: Option<(Uuid, Uuid, String)> = match sqlx::query_as(
-        "select tenant_id, principal_id, target_locator
-         from admission.server_key_provision_intent where action_execution_id = $1",
+    let id: Result<Option<Uuid>, _> = sqlx::query_scalar(
+        "select id from admission.server_key_provision_intent
+         where action_execution_id = $1 and key_kind = 'HUMAN'",
     )
     .bind(action_id)
     .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(row) => row,
+    .await;
+    match id {
+        Ok(Some(id)) => crate::platform_keys::fence_and_destroy_intent(state, id).await,
+        Ok(None) => "GONE",
         Err(error) => {
             tracing::warn!(action = %action_id, error = %error, "读取建钥意图失败");
-            return "FAILED";
-        }
-    };
-    let Some((tenant_id, principal_id, locator)) = snapshot else {
-        return "GONE";
-    };
-    let mut tx = match state.pool.begin().await {
-        Ok(tx) => tx,
-        Err(_) => return "FAILED",
-    };
-    let owner: Result<Option<i32>, _> = sqlx::query_scalar(
-        "select 1 from admission.action_execution ae
-         join identity.principal p on p.id = $3 and p.tenant_id = ae.tenant_id
-         where ae.id = $1 and ae.tenant_id = $2
-         for update of ae,p",
-    )
-    .bind(action_id)
-    .bind(tenant_id)
-    .bind(principal_id)
-    .fetch_optional(&mut *tx)
-    .await;
-    if !matches!(owner, Ok(Some(_))) {
-        return "CONFLICT";
-    }
-    let frozen: Result<Option<FrozenProvisionIntent>, _> = sqlx::query_as(
-        "select target_locator, finished_at is not null as finished,
-                destroyed_at is not null as destroyed,
-                source_membership_id is null as direct
-         from admission.server_key_provision_intent
-         where action_execution_id = $1 and tenant_id = $2 and principal_id = $3
-         for update",
-    )
-    .bind(action_id)
-    .bind(tenant_id)
-    .bind(principal_id)
-    .fetch_optional(&mut *tx)
-    .await;
-    let FrozenProvisionIntent {
-        target_locator: stored,
-        finished,
-        destroyed,
-        direct,
-    } = match frozen {
-        Ok(Some(row)) => row,
-        _ => return "FAILED",
-    };
-    if stored != locator {
-        return "CONFLICT";
-    }
-    if finished {
-        return if destroyed { "CONVERGED" } else { "CONFLICT" };
-    }
-    let referenced: Result<bool, _> = sqlx::query_scalar(
-        "select exists (select 1 from identity.buzz_identity_binding
-                        where private_key_secret_ref = $1)",
-    )
-    .bind(&locator)
-    .fetch_one(&mut *tx)
-    .await;
-    if !matches!(referenced, Ok(false)) {
-        return "CONFLICT";
-    }
-    let workflow: Result<bool, _> = sqlx::query_scalar(
-        "select exists (select 1 from projection.workflow_ref
-                        where action_execution_id = $1 and kind = $2)",
-    )
-    .bind(action_id)
-    .bind(KIND)
-    .fetch_one(&mut *tx)
-    .await;
-    if !matches!(workflow, Ok(false)) {
-        return "CONFLICT";
-    }
-    if sqlx::query(
-        "update admission.server_key_provision_intent
-         set fenced_at = coalesce(fenced_at, now())
-         where action_execution_id = $1 and finished_at is null",
-    )
-    .bind(action_id)
-    .execute(&mut *tx)
-    .await
-    .is_err()
-        || tx.commit().await.is_err()
-    {
-        return "FAILED";
-    }
-
-    // DELETING/DELETED 的 namespace 不得被补偿逻辑重新创建；其意图保留告警。
-    let tenant_state: Result<Option<String>, _> =
-        sqlx::query_scalar("select state from identity.tenant where id = $1")
-            .bind(tenant_id)
-            .fetch_optional(&state.pool)
-            .await;
-    let Ok(Some(tenant_state)) = tenant_state else {
-        return "PENDING";
-    };
-    if matches!(tenant_state.as_str(), "DELETING" | "DELETED") {
-        return "PENDING";
-    }
-    if state.secrets.ensure_tenant(tenant_id).await.is_err() {
-        tracing::warn!(action = %action_id, "孤儿密钥的 Tenant OpenBao 策略未就绪");
-        return "PENDING";
-    }
-    let referenced: Result<bool, _> = sqlx::query_scalar(
-        "select exists (select 1 from identity.buzz_identity_binding
-                        where private_key_secret_ref = $1)",
-    )
-    .bind(&locator)
-    .fetch_one(&state.pool)
-    .await;
-    if !matches!(referenced, Ok(false)) {
-        return "CONFLICT";
-    }
-    if state
-        .secrets
-        .destroy_unbound_server_human_provision(tenant_id, action_id, &locator)
-        .await
-        .is_err()
-    {
-        tracing::warn!(action = %action_id, "孤儿密钥版本 1 销毁未取得 metadata 证明");
-        return "PENDING";
-    }
-
-    let mut tx = match state.pool.begin().await {
-        Ok(tx) => tx,
-        Err(_) => return "FAILED",
-    };
-    let owner: Result<Option<i32>, _> = sqlx::query_scalar(
-        "select 1 from admission.action_execution ae
-         join identity.principal p on p.id = $3 and p.tenant_id = ae.tenant_id
-         where ae.id = $1 and ae.tenant_id = $2
-         for update of ae,p",
-    )
-    .bind(action_id)
-    .bind(tenant_id)
-    .bind(principal_id)
-    .fetch_optional(&mut *tx)
-    .await;
-    if !matches!(owner, Ok(Some(_))) {
-        return "FAILED";
-    }
-    let still_fenced: Result<Option<String>, _> = sqlx::query_scalar(
-        "select target_locator from admission.server_key_provision_intent
-         where action_execution_id = $1 and tenant_id = $2 and principal_id = $3
-           and fenced_at is not null and destroyed_at is null and finished_at is null
-         for update",
-    )
-    .bind(action_id)
-    .bind(tenant_id)
-    .bind(principal_id)
-    .fetch_optional(&mut *tx)
-    .await;
-    if !matches!(still_fenced, Ok(Some(ref path)) if *path == locator) {
-        return "CONFLICT";
-    }
-    let referenced: Result<bool, _> = sqlx::query_scalar(
-        "select exists (select 1 from identity.buzz_identity_binding
-                        where private_key_secret_ref = $1)",
-    )
-    .bind(&locator)
-    .fetch_one(&mut *tx)
-    .await;
-    if !matches!(referenced, Ok(false)) {
-        return "CONFLICT";
-    }
-    let context: ProvisionAuditContext = match sqlx::query_as(
-        "select ae.operation_id, ae.workspace_id, ae.initiator_principal_id,
-                ae.actor_principal_id, ae.target_id, ae.parameter_hash,
-                ae.correlation_id, ae.action_version, ae.action_key,
-                d.component_type_key, d.target_type, d.result_exposure
-         from admission.action_execution ae
-         join catalog.action_definition d
-           on d.action_key = ae.action_key and d.version = ae.action_version
-         where ae.id = $1 and ae.tenant_id = $2",
-    )
-    .bind(action_id)
-    .bind(tenant_id)
-    .fetch_one(&mut *tx)
-    .await
-    {
-        Ok(context) => context,
-        Err(_) => return "FAILED",
-    };
-    let changed = sqlx::query(
-        "update admission.server_key_provision_intent
-         set destroyed_at = now(), finished_at = now()
-         where action_execution_id = $1 and fenced_at is not null
-           and finished_at is null and destroyed_at is null",
-    )
-    .bind(action_id)
-    .execute(&mut *tx)
-    .await;
-    if !matches!(changed, Ok(ref result) if result.rows_affected() == 1) {
-        return "FAILED";
-    }
-    if direct {
-        let aborted = sqlx::query(
-            "update admission.action_execution
-             set dispatch_state = 'ABORTED', reason_code = 'TARGET_STATE_CONFLICT',
-                 updated_at = now()
-             where id = $1 and gate_state = 'ALLOWED' and dispatch_state = 'UNKNOWN'",
-        )
-        .bind(action_id)
-        .execute(&mut *tx)
-        .await;
-        if !matches!(aborted, Ok(ref result) if result.rows_affected() == 1) {
-            return "FAILED";
+            "FAILED"
         }
     }
-    if append(
-        &mut tx,
-        AuditEntry {
-            event_key: format!("{}:server-human-orphan-destroyed", context.operation_id),
-            tenant_id: Some(tenant_id),
-            workspace_id: context.workspace_id,
-            operation_id: context.operation_id,
-            event_type: "RECONCILIATION",
-            human_identity_id: None,
-            initiator_principal_id: Some(context.initiator_principal_id),
-            actor_principal_id: Some(context.actor_principal_id),
-            action_key: &context.action_key,
-            action_version: context.action_version,
-            component_type_key: &context.component_type_key,
-            target_type: Some(&context.target_type),
-            target_id: Some(context.target_id),
-            parameter_hash: &context.parameter_hash,
-            decision: "ALLOW",
-            result_code: "DESTROYED",
-            result_exposure: &context.result_exposure,
-            evidence_refs: vec![Evidence::new(EvidenceKind::ActionExecutionId, action_id)],
-            correlation_id: context.correlation_id,
-        },
-    )
-    .await
-    .is_err()
-    {
-        return "FAILED";
-    }
-    if tx.commit().await.is_err() {
-        return "FAILED";
-    }
-    "CONVERGED"
 }
 
 /// 现有治理对账器重驱动唯一持久意图；不接受请求方替换 locator/pubkey。
@@ -927,11 +668,12 @@ pub(crate) async fn reconcile_provision_intent(
     state: &ServiceState,
     action_id: Uuid,
 ) -> &'static str {
-    let row: Option<(Uuid, Uuid, bool, bool, bool)> = match sqlx::query_as(
+    let row: Option<(Uuid, Uuid, bool, bool, bool, String)> = match sqlx::query_as(
         "select tenant_id, principal_id, finished_at is not null,
-                fenced_at is not null, destroyed_at is not null
+                fenced_at is not null, destroyed_at is not null, target_locator
          from admission.server_key_provision_intent
-         where action_execution_id = $1 and source_membership_id is null",
+         where action_execution_id = $1 and source_membership_id is null
+           and key_kind = 'HUMAN'",
     )
     .bind(action_id)
     .fetch_optional(&state.pool)
@@ -943,7 +685,7 @@ pub(crate) async fn reconcile_provision_intent(
             return "FAILED";
         }
     };
-    let Some((tenant_id, principal_id, finished, fenced, destroyed)) = row else {
+    let Some((tenant_id, principal_id, finished, fenced, destroyed, locator)) = row else {
         return "GONE";
     };
     if finished && destroyed {
@@ -951,6 +693,33 @@ pub(crate) async fn reconcile_provision_intent(
     }
     if fenced {
         return fence_and_destroy_provision_intent(state, action_id).await;
+    }
+    if !finished {
+        // DD-86「另一 binding 胜出」：此人已有另一条非 REVOKED 的 SERVER 身份时，
+        // 这条意图永远不能再绑定（DD-77 每人至多一条），与成员初建意图的对账
+        // （`membership_projection::reconcile_member_key_intent`）同一判据。
+        let existing: Result<Option<String>, _> = sqlx::query_scalar(
+            "select private_key_secret_ref from identity.buzz_identity_binding
+             where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN'
+               and custody = 'SERVER' and state <> 'REVOKED'",
+        )
+        .bind(tenant_id)
+        .bind(principal_id)
+        .fetch_optional(&state.pool)
+        .await;
+        match existing {
+            Ok(Some(bound)) if bound != locator => {
+                return fence_and_destroy_provision_intent(state, action_id).await;
+            }
+            // 引用本意图 locator 的 binding 只能与 finished_at 同事务提交；未终结
+            // 却已被引用是不一致，保持开放并由 overdue 告警。
+            Ok(Some(_)) => return "CONFLICT",
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(action = %action_id, error = %e, "核对托管身份 binding 失败");
+                return "FAILED";
+            }
+        }
     }
     if finished {
         return match resume(
@@ -1430,5 +1199,100 @@ async fn start(
         )
             .into_response(),
         Err(r) => r,
+    }
+}
+
+/// DD-113 (3) 第一段：binding 已 `REVOKING`（Core signer 已停签）时，对绑定版本
+/// 执行可逆的 `delete`，metadata 查证后引用转 `SUPERSEDED`。不用 `undelete`：
+/// 撤销的 pubkey 不再回到 roster，重建总是新 pubkey 与新 locator（DD-77）。
+///
+/// locator 不是 DD-113 独占形状的存量引用（未归位的 `platform/`）不在此删除——
+/// 它须先按 DD-85 归位；这里只把引用标为 SUPERSEDED 并告警，不阻断撤钥的
+/// roster 移出。
+pub(crate) async fn supersede_server_human_key(
+    state: &ServiceState,
+    tenant_id: Uuid,
+    pubkey: &str,
+    locator: &str,
+) -> Result<(), Response> {
+    let exclusive =
+        state
+            .secrets
+            .owns_platform_key(secret_store::PlatformKey::Human, tenant_id, locator);
+    if exclusive {
+        crate::service_api::audit_gate(state).await?;
+        // 早于 DD-113 的 Tenant namespace 策略没有 delete 能力；先收敛策略。
+        crate::platform_keys::ensure_tenant_namespace(&state.pool, &state.secrets, tenant_id)
+            .await
+            .map_err(|e| {
+                tracing::warn!(error = %e, "撤钥的 Tenant OpenBao 策略未就绪");
+                StatusCode::SERVICE_UNAVAILABLE.into_response()
+            })?;
+        state
+            .secrets
+            .delete_bound_version_one(secret_store::PlatformKey::Human, tenant_id, locator)
+            .await
+            .map_err(|e| {
+                tracing::warn!(error = %e, pubkey, "撤钥绑定版本的 delete 未取得 metadata 证明");
+                StatusCode::SERVICE_UNAVAILABLE.into_response()
+            })?;
+    } else {
+        tracing::error!(
+            pubkey,
+            "撤钥的私钥引用不是独占 locator，须先按 DD-85 归位后退役"
+        );
+    }
+    sqlx::query(
+        "update identity.buzz_identity_binding set private_key_secret_status = 'SUPERSEDED'
+         where pubkey = $1 and tenant_id = $2 and custody = 'SERVER' and state = 'REVOKING'
+           and private_key_secret_status in ('PENDING', 'ACTIVE')",
+    )
+    .bind(pubkey)
+    .bind(tenant_id)
+    .execute(&state.pool)
+    .await
+    .map_err(unavailable)?;
+    Ok(())
+}
+
+/// DD-113 (3) 第二段 / DD-115 (2)(3)：binding 到 `REVOKED` 后，按到期时冻结的
+/// `retire_operation_id` 退役绑定版本（`platform_keys::retire_bound_key`）：delete 与
+/// destroy 均按 metadata 查证，同事务记意图 RETIRED、引用 `REVOKED`，审计追加到
+/// 使其到期的 operation。身份私钥在 `REVOKING` 起没有读取者，只等 `REVOKED`。
+///
+/// 返回 `Ok(true)` 为已退役；`Ok(false)` 为存量非独占引用，保持 SUPERSEDED 告警。
+pub(crate) async fn retire_server_human_key(
+    state: &ServiceState,
+    tenant_id: Uuid,
+    pubkey: &str,
+) -> Result<bool, Response> {
+    let locator: Option<String> = sqlx::query_scalar(
+        "select private_key_secret_ref from identity.buzz_identity_binding
+         where pubkey = $1 and tenant_id = $2 and kind = 'HUMAN' and custody = 'SERVER'
+           and state = 'REVOKED'",
+    )
+    .bind(pubkey)
+    .bind(tenant_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(unavailable)?;
+    let Some(locator) = locator else {
+        return Err(StatusCode::CONFLICT.into_response());
+    };
+    use crate::platform_keys::{retire_bound_key, Retirement, Stores};
+    match retire_bound_key(
+        &Stores::of(state),
+        secret_store::PlatformKey::Human,
+        tenant_id,
+        &locator,
+    )
+    .await
+    .map_err(unavailable)?
+    {
+        Retirement::Retired => Ok(true),
+        Retirement::NotExclusive => Ok(false),
+        Retirement::NotDue | Retirement::Pending => {
+            Err(StatusCode::SERVICE_UNAVAILABLE.into_response())
+        }
     }
 }

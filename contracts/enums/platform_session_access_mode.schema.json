@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/platform_session_access_mode.schema.json",
+  "title": "PlatformSessionAccessMode",
+  "description": "PlatformSession.access_mode（.design/03 §2）；受限会话不授予普通管理面或协作面准入。",
+  "type": "string",
+  "enum": ["FULL", "LIFECYCLE_RESTRICTED"]
+}

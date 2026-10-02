@@ -169,7 +169,7 @@ func TestWorkspaceSuspendRejectedEntersError(t *testing.T) {
 	if len(run.to) != 1 || run.to[0] != "ERROR" {
 		t.Fatalf("归档被拒绝时应只跃迁到 ERROR，得到 %v", run.to)
 	}
-	if last := run.statuses[len(run.statuses)-1]; last != generated.Failed {
+	if last := run.statuses[len(run.statuses)-1]; last != generated.TaskStatusFAILED {
 		t.Fatalf("终态投影应为 FAILED，得到 %v", run.statuses)
 	}
 }
@@ -196,7 +196,7 @@ func TestWorkspaceTransitionRejectedTriesErrorOnce(t *testing.T) {
 	if !sameSteps(run.to, "SUSPENDED", "ERROR") {
 		t.Fatalf("应先试 SUSPENDED、再试一次 ERROR，得到 %v", run.to)
 	}
-	if last := run.statuses[len(run.statuses)-1]; last != generated.Failed {
+	if last := run.statuses[len(run.statuses)-1]; last != generated.TaskStatusFAILED {
 		t.Fatalf("终态投影应为 FAILED，得到 %v", run.statuses)
 	}
 }

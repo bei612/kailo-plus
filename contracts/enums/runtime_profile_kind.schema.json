@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/runtime_profile_kind.schema.json",
+  "title": "RuntimeProfileKind",
+  "type": "string",
+  "enum": ["SERVER_CODEX", "LOCAL_ACP", "REMOTE_PROVIDER"]
+}

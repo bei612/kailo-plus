@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_definition_view.schema.json",
+  "title": "AgentDefinitionView",
+  "description": "DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "stableSlug", "displayName", "status", "resourceVersion", "ownerPrincipalId", "resourceState"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "stableSlug": {"type": "string"},
+    "displayName": {"type": "string"},
+    "currentPublishedVersionAssetId": {"type": "string", "format": "uuid"},
+    "status": {"type": "string"},
+    "resourceVersion": {"type": "integer"},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "resourceState": {"$ref": "../enums/resource_state.schema.json"}
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/agent_version_content.schema.json",
+  "title": "AgentVersionContent",
+  "description": "03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host environment。发布不等于安装或运行授权。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["personaIdentity", "instructions", "runtimeProfileKey", "modelRouteResourceId", "skillVersionAssetIds", "declaredToolResourceIds", "capabilityRequirements", "triggerDefaults", "replyPolicy", "parallelism", "turnLimits", "memoryPolicy"],
+  "properties": {
+    "personaIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displayName"],
+      "properties": {
+        "displayName": {"type": "string"},
+        "avatarUrl": {"type": "string"},
+        "description": {"type": "string"}
+      }
+    },
+    "instructions": {"type": "string"},
+    "runtimeProfileKey": {"type": "string"},
+    "modelRouteResourceId": {"type": "string", "format": "uuid"},
+    "skillVersionAssetIds": {"type": "array", "items": {"type": "string", "format": "uuid"}},
+    "declaredToolResourceIds": {"type": "array", "items": {"type": "string", "format": "uuid"}},
+    "capabilityRequirements": {"type": "array", "items": {"type": "string"}, "description": "精确 contract_key@version，不引用业务能力实现名。"},
+    "triggerDefaults": {"type": "array", "items": {"$ref": "../enums/agent_trigger.schema.json"}},
+    "replyPolicy": {"type": "string", "description": "RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。"},
+    "parallelism": {"type": "integer"},
+    "turnLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["idleTimeoutSeconds", "maxTurnDurationSeconds"],
+      "properties": {
+        "idleTimeoutSeconds": {"type": "integer"},
+        "maxTurnDurationSeconds": {"type": "integer"}
+      }
+    },
+    "memoryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coreWrite", "coldWrite"],
+      "properties": {
+        "coreWrite": {"$ref": "../enums/agent_memory_core_write.schema.json"},
+        "coldWrite": {"$ref": "../enums/agent_memory_cold_write.schema.json"}
+      }
+    }
+  }
+}

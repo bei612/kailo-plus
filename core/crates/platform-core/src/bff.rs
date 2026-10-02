@@ -11,7 +11,9 @@ use axum::{
     routing::{get, MethodRouter},
     Json, Router,
 };
-use contracts::{ErrorBody, ErrorClass, PlatformSessionView};
+use contracts::{
+    ErrorBody, ErrorClass, PlatformSessionAccessMode, PlatformSessionView, ResolvedIdentity,
+};
 
 use crate::audit;
 use identity::{resolve, session, IdentityError};
@@ -81,6 +83,7 @@ pub struct ExecutionContext {
     pub tenant_id: Uuid,
     pub tenant_principal_id: Uuid,
     pub session_id: Uuid,
+    pub access_mode: PlatformSessionAccessMode,
 }
 
 /// 解析执行身份，失败即返回可直接下发的响应。
@@ -112,6 +115,141 @@ pub async fn resolve_execution_context(
         tenant_id: tenant,
         tenant_principal_id: principal,
         session_id: s.id,
+        access_mode: PlatformSessionAccessMode::Full,
+    })
+}
+
+/// DD-96：普通端点始终调用严格 resolver；只有生命周期治理与会话展示调用此处。
+/// 该 release 未登记真实删除链时，暂停 Tenant 仍无入口。资格每个请求 fresh Check，
+/// 不把模式本身作为授权凭证，不读取 Browser 自报角色。
+async fn lifecycle_identity(
+    state: &BffState,
+    headers: &HeaderMap,
+) -> Result<(ResolvedIdentity, PlatformSessionAccessMode), Response> {
+    let header = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
+    let identity =
+        identity::resolve_for_lifecycle(&state.pool, header(HEADER_ISSUER), header(HEADER_SUBJECT))
+            .await
+            .map_err(error_response)?;
+    let tenant = identity
+        .tenant_id
+        .parse::<Uuid>()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
+    let active = sqlx::query_scalar::<_, String>("select state from identity.tenant where id = $1")
+        .bind(tenant)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| error_response(e.into()))?;
+    if active == "ACTIVE" {
+        return Ok((identity, PlatformSessionAccessMode::Full));
+    }
+    let registered = crate::capability_registry::action_exposed("tenant.delete")
+        && sqlx::query_scalar::<_, bool>(
+            "select exists (select 1 from catalog.action_definition where action_key = 'tenant.delete' and status = 'ACTIVE')",
+        ).fetch_one(&state.pool).await.map_err(|e| error_response(e.into()))?;
+    if !registered {
+        return Err(error_response(IdentityError::TenantNotActive));
+    }
+    let check = state
+        .governance
+        .spicedb
+        .check(
+            "tenant",
+            &identity.tenant_id,
+            "manage",
+            &identity.tenant_principal_id,
+            crate::spicedb::Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|e| crate::governance::Refusal::Unavailable(e.to_string()).respond(None))?;
+    let principal = identity
+        .tenant_principal_id
+        .parse::<Uuid>()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
+    if !check.allowed
+        && !lifecycle_owner_eligible(&state.governance, tenant, principal, None)
+            .await
+            .map_err(|e| e.respond(None))?
+    {
+        return Err(error_response(IdentityError::TenantNotActive));
+    }
+    Ok((identity, PlatformSessionAccessMode::LifecycleRestricted))
+}
+
+/// DD-96：冻结 owner 资格不是名单授权，当前成员、Resource 版本及 owner 投影必须仍成立。
+/// 会话查本 Tenant 的当前 snapshot；审批可见性只查该 ActionExecution 的同一 snapshot。
+pub(crate) async fn lifecycle_owner_eligible(
+    governance: &crate::governance::Governance,
+    tenant: Uuid,
+    principal: Uuid,
+    action_execution_id: Option<Uuid>,
+) -> Result<bool, crate::governance::Refusal> {
+    let mut tx = governance.pool.begin().await?;
+    if !crate::roles::lock_tenant(&mut tx, tenant).await?
+        || !crate::agent_definition::active_owner(&mut tx, tenant, principal).await?
+    {
+        return Ok(false);
+    }
+    let snapshots: Vec<serde_json::Value> = sqlx::query_scalar(
+        "select s.resource_owner_versions || s.asset_owner_versions from admission.tenant_lifecycle_snapshot s
+         join identity.tenant t on t.id = s.tenant_id
+         join admission.action_execution ae on ae.id = s.action_execution_id
+             and ae.tenant_id = s.tenant_id and ae.action_key = 'tenant.delete'
+         where s.tenant_id = $1 and ($2::uuid is null or s.action_execution_id = $2)
+           and ((t.state = 'SUSPENDED' and s.state = 'SUSPENDED' and s.tenant_version = t.version)
+             or (t.state = 'DELETING' and s.state = 'DELETING' and s.tenant_version = t.version - 1))",
+    )
+    .bind(tenant)
+    .bind(action_execution_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let principal = principal.to_string();
+    for snapshot in snapshots {
+        let refs: Vec<contracts::AffectedOwnerRef> = serde_json::from_value(snapshot)
+            .map_err(|e| crate::governance::Refusal::Unavailable(e.to_string()))?;
+        let refs: Vec<_> = refs
+            .into_iter()
+            .filter(|owner| owner.owner_principal_id == principal)
+            .collect();
+        if !refs.is_empty()
+            && crate::agent_definition::validate_frozen_owners(governance, &mut tx, tenant, &refs)
+                .await?
+        {
+            tx.commit().await?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+pub async fn resolve_lifecycle_execution_context(
+    state: &BffState,
+    headers: &HeaderMap,
+) -> Result<ExecutionContext, Response> {
+    let (identity, access_mode) = lifecycle_identity(state, headers).await?;
+    let (Ok(human), Ok(membership), Ok(tenant), Ok(principal)) = (
+        identity.human_identity_id.parse(),
+        identity.tenant_membership_id.parse(),
+        identity.tenant_id.parse(),
+        identity.tenant_principal_id.parse(),
+    ) else {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    };
+    let s = session::ensure_mode(
+        &state.pool,
+        human,
+        membership,
+        state.session_ttl_seconds,
+        access_mode.clone(),
+    )
+    .await
+    .map_err(error_response)?;
+    Ok(ExecutionContext {
+        human_identity_id: human,
+        tenant_id: tenant,
+        tenant_principal_id: principal,
+        session_id: s.id,
+        access_mode,
     })
 }
 
@@ -174,6 +312,19 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/role-workspaces",
             get(crate::platform_views::list_role_workspaces),
+        )
+        .exposed_route(
+            "/api/v1/agent-definitions",
+            get(crate::agent_definition::list),
+        )
+        .exposed_route(
+            "/api/v1/agent-definitions/{resource_id}",
+            get(crate::agent_definition::get),
+        )
+        // 未登记 exposure 的 Version 链不生成实际路由；read 也复用同一 BFF 身份。
+        .exposed_route(
+            "/api/v1/agent-versions/{asset_id}",
+            get(crate::agent_version::get),
         )
         // DD-96：业务 Tenant 的暂停与恢复只由 Platform Catalog 会话管理
         .exposed_route(
@@ -315,6 +466,8 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
                         tenant_membership_id: identity.tenant_membership_id,
                         tenant_principal_id: identity.tenant_principal_id,
                         platform_session_id: s.id.to_string(),
+                        // ensure 已在 Tenant/membership 行锁下确认并读取/写入 FULL 会话。
+                        access_mode: PlatformSessionAccessMode::Full,
                         // 未选定 Workspace 时缺省，不写 null（contracts/README.md §1）
                         current_workspace_id: s.current_workspace_id.map(|w| w.to_string()),
                     }),

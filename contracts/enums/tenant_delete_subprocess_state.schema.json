@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/tenant_delete_subprocess_state.schema.json",
+  "title": "TenantDeleteSubprocessState",
+  "description": "TenantDeleteSubprocess.state（.design/03 §4）；结果不明不是成功或确定失败。",
+  "type": "string",
+  "enum": ["PENDING", "RUNNING", "DELETED", "RETAINED_DECLARED", "UNKNOWN", "RETAINED_BY_DECISION"]
+}

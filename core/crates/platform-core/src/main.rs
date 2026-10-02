@@ -3,6 +3,8 @@
 //! 单一部署单元、单一业务事务边界（`AGENTS.md` 规则 6）。模块按
 //! `01-工程结构与模块边界.md` §3 以 crate 与可见性划分，不走网络、不引消息总线。
 
+mod agent_definition;
+mod agent_version;
 mod audit;
 mod audit_views;
 mod bff;
@@ -20,8 +22,10 @@ mod membership_projection;
 mod membership_state;
 mod native;
 mod oidc;
+mod openmeter;
 mod platform_bootstrap;
 mod platform_info;
+mod platform_keys;
 mod platform_views;
 mod publish_reconcile;
 mod role_reconcile;
@@ -40,6 +44,7 @@ mod task_rerun;
 mod telemetry;
 mod temporal;
 mod tenant_bootstrap;
+mod tenant_delete;
 mod tenant_lifecycle;
 mod user_state;
 mod web_transport;
@@ -122,6 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let catalog_tenant = platform_bootstrap::ensure(
             &pool,
             &secrets,
+            &audit,
             &platform_bootstrap::BootstrapConfig::from_env()?,
             &reqwest::Client::new(),
         )
@@ -143,6 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 治理内核：准入、审批与派发（.design/05 §1）。BFF 与 service API 共用一份——
         // 审批投影写回（service）与语义命令（BFF）推进的是同一批 ActionExecution。
+        let openmeter = std::sync::Arc::new(openmeter::OpenMeter::from_env()?);
         let governance = std::sync::Arc::new(governance::Governance {
             pool: pool.clone(),
             temporal: std::sync::Arc::clone(&temporal),
@@ -169,6 +176,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|_| "缺少 BUZZ_COMMUNITY_DOMAIN")?,
             relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
                 .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
+            deletion_transport: tenant_delete::DeletionTransport::from_env()?,
+            openmeter: std::sync::Arc::clone(&openmeter),
             http: reqwest::Client::new(),
             temporal: std::sync::Arc::clone(&temporal),
             governance: std::sync::Arc::clone(&governance),
@@ -350,17 +359,18 @@ async fn converge_tenant_namespaces(
     pool: &sqlx::PgPool,
     secrets: &secret_store::SecretStore,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let tenants: Vec<uuid::Uuid> =
-        sqlx::query_scalar("select id from identity.tenant where state <> 'DELETED'")
-            .fetch_all(pool)
-            .await?;
+    let tenants: Vec<uuid::Uuid> = sqlx::query_scalar(
+        "select id from identity.tenant where state not in ('DELETING','DELETED')",
+    )
+    .fetch_all(pool)
+    .await?;
     let failed = opentelemetry::global::meter("platform-core")
         .u64_gauge("platform.secret_store.tenant_converge_failed")
         .with_description("启动时 Tenant 子 namespace 收敛失败的数量")
         .build();
     let mut failures = 0u64;
     for tenant in &tenants {
-        if let Err(e) = secrets.ensure_tenant(*tenant).await {
+        if let Err(e) = platform_keys::ensure_tenant_namespace(pool, secrets, *tenant).await {
             failures += 1;
             tracing::error!(%tenant, error = %e, "Tenant 子 namespace 收敛失败，其密钥取用保持拒绝");
         }

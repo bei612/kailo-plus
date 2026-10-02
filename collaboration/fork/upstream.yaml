@@ -30,6 +30,8 @@ remove_paths:
   - .github/workflows/signed-macos-canary.yml
   - .github/workflows/windows-canary.yml
   - .release
+  # 原 Git manifest 解析器移入 buzz-core，Relay 与原生删除共用同一份实现。
+  - crates/buzz-relay/src/api/git/manifest.rs
   - desktop/.env.e2e
   - desktop/public/app-icon@2x.png
   - desktop/public/app-icon@3x.png
@@ -983,22 +985,23 @@ artifacts:
     build_dockerfile: collaboration/Dockerfile
     inputs: [collaboration/]
     exclude: [collaboration/desktop/, collaboration/mobile/, collaboration/fork/packaging/]
-    source_digest: sha256:f63619626081bc3dd1c655922163299e5816e90f502ac5a0ae052a3f1f0e1368
-    artifact_digest: sha256:3700b743b341d05ae2ddaae388954634c2381a5b10877c565021f3e6a7ca0bea
-  # Linux 桌面安装包（.deb）：上游没有打包用的 Dockerfile，由本仓库维护的构建文件产出，
+    source_digest: sha256:cf87de56f571ad03a102ffed330e5218789beb48448495a7921c082e28e4c797
+    artifact_digest: sha256:2ea8059fd418cff927ad8122980917f996915eb2c8c789ac1e7a995b21479158
+  # Windows x64 NSIS 测试安装包：官方 Tauri cargo-xwin 同主体交叉打包，不作为带签名正式发布。
   # artifact_digest 记安装包字节的 SHA-256（06 §2）。mobile/ 与 crates/buzz-relay/ 不是它的输入：
   # desktop/src-tauri 不在根 Cargo workspace 内，其 Cargo.lock 不含 buzz-relay；pnpm workspace
   # 只有 desktop、web、admin-web。
   - name: desktop-client
     kind: bundle
     build_context: .
-    build_dockerfile: collaboration/fork/packaging/desktop.Dockerfile
+    build_dockerfile: collaboration/fork/packaging/desktop.windows.Dockerfile
     inputs: [collaboration/, client-kit/ts/contracts/, client-kit/ts/platform/]
     exclude: [collaboration/mobile/, collaboration/crates/buzz-relay/, collaboration/fork/packaging/mobile.Dockerfile, collaboration/fork/packaging/mobile.Dockerfile.dockerignore]
     # 安装包显示名由发布配置注入（DD-111），不写在源码里
     build_args: [PLATFORM_DISPLAY_NAME]
-    source_digest: sha256:378834b3a8fedaafb2a8f8739bc6f3cecc408678d7e12ef65be5d33358091bce
-    artifact_digest: sha256:d28520f7949f4422f0b542025ff62b914229671ff11f91a11d3d80e426cac054
+    blocked: Windows 原入口构建失败：crates.io h2索引下载超时；无当前安装包
+    source_digest: none
+    artifact_digest: none
   # Android release APK（ADR-06 客户端发布单元按端分离：应用商店包，带平台签名）。
   # 阻断：release 签名所需的 upload keystore 未提供。上游 release 构建缺 keystore 即失败，
   # 不以 debug 证书冒充 release；profile/debug APK 只是测试构建，不登记为发布产物。
@@ -1017,4 +1020,4 @@ source_facts: [SF-BUZ-26, SF-BUZ-30, SF-BUZ-31, SF-BUZ-32, SF-BUZ-33, SF-BUZ-37,
 source_seams: [SS-BUZ-OPERATOR, SS-BUZ-SERVER-CLIENT, SS-BUZ-GOVERNANCE, SS-BUZ-COMMUNITY-DELETE]
 compatibility_evidence: [collaboration/fork/verify/operator-provisioning.md, collaboration/fork/verify/server-client.md, collaboration/fork/verify/governance.md, collaboration/fork/verify/baseline-build.md, collaboration/fork/verify/desktop-client.md, collaboration/fork/verify/mobile-client.md]
 owner: team-platform
-last_reverified: 2026-09-30
+last_reverified: 2026-10-02

@@ -57,30 +57,56 @@ pub async fn project_buzz_identity(
         return StatusCode::BAD_REQUEST.into_response();
     };
 
-    let binding = match sqlx::query!(
+    // Workflow 冻结的是 REVOKING 时的版本；SERVER 身份在 REVOKED（版本 +1）之后
+    // 还要完成 DD-113 的第二段 destroy，重试时按确定的下一版本找回同一 binding。
+    let binding: Option<ProjectedBinding> = match sqlx::query_as(
         "select tenant_id, principal_id, state, custody, private_key_secret_ref,
                 private_key_secret_version, private_key_secret_audience
          from identity.buzz_identity_binding
-         where pubkey = $1 and version = $2 and kind = 'HUMAN'",
-        req.pubkey,
-        req.binding_version
+         where pubkey = $1 and kind = 'HUMAN'
+           and (version = $2
+                or (custody = 'SERVER' and state = 'REVOKED' and version = $2 + 1))",
     )
+    .bind(&req.pubkey)
+    .bind(req.binding_version)
     .fetch_optional(&state.pool)
     .await
     {
-        Ok(Some(b)) => b,
-        Ok(None) => {
+        Ok(b) => b,
+        Err(e) => return unavailable(e),
+    };
+    let binding = match binding {
+        Some(b) => b,
+        None => {
             tracing::warn!(pubkey = %req.pubkey, "HUMAN binding 不存在或版本不符");
             return StatusCode::NOT_FOUND.into_response();
         }
-        Err(e) => return unavailable(e),
     };
+    let revoke_workflow = crate::component_task::workflow_id(
+        crate::client_keys::KIND,
+        binding.tenant_id,
+        &req.pubkey,
+        req.binding_version,
+    );
+    if binding.state == "REVOKED" {
+        // 只有 SERVER 身份按版本 +1 命中：roster 已移出，只剩第二段 destroy。
+        return match crate::server_keys::retire_server_human_key(
+            &state,
+            binding.tenant_id,
+            &req.pubkey,
+        )
+        .await
+        {
+            Ok(_) => converged(req.pubkey, "REVOKED"),
+            Err(r) => r,
+        };
+    }
 
     // CLIENT 私钥只在原生设备；SERVER 身份进入 roster 前必须证明钉住的 KV
     // 版本仍可读，且读出的私钥确实派生为这条 binding 的 pubkey。
     if binding.state == "RECONCILING" && binding.custody == "SERVER" {
         let secret = SecretRef {
-            locator: binding.private_key_secret_ref.unwrap_or_default(),
+            locator: binding.private_key_secret_ref.clone().unwrap_or_default(),
             version: binding.private_key_secret_version.unwrap_or_default() as u32,
             audience: binding.private_key_secret_audience.unwrap_or_default(),
         };
@@ -108,7 +134,69 @@ pub async fn project_buzz_identity(
             )
             .await
         }
-        "REVOKING" => retire(&state, &control, binding.tenant_id, &req).await,
+        "REVOKING" => {
+            if binding.custody == "SERVER" {
+                // DD-113 (3) 第一段先于 roster 移出：数据面立即 404。
+                if let Err(r) = crate::server_keys::supersede_server_human_key(
+                    &state,
+                    binding.tenant_id,
+                    &req.pubkey,
+                    binding
+                        .private_key_secret_ref
+                        .as_deref()
+                        .unwrap_or_default(),
+                )
+                .await
+                {
+                    return r;
+                }
+            }
+            // DD-115 (2)：使 SERVER 私钥到期的是本次撤钥 operation，与 REVOKED 同事务冻结。
+            let retire_operation = if binding.custody == "SERVER" {
+                match sqlx::query_scalar::<_, Uuid>(
+                    "select operation_id from projection.workflow_ref
+                     where workflow_id = $1 and tenant_id = $2 and kind = $3",
+                )
+                .bind(&revoke_workflow)
+                .bind(binding.tenant_id)
+                .bind(crate::client_keys::KIND)
+                .fetch_optional(&state.pool)
+                .await
+                {
+                    Ok(Some(operation)) => Some(operation),
+                    Ok(None) => {
+                        tracing::warn!(pubkey = %req.pubkey, "撤钥 WorkflowRef 缺失，不推进 REVOKED");
+                        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                    }
+                    Err(e) => return unavailable(e),
+                }
+            } else {
+                None
+            };
+            match retire(
+                &state,
+                &control,
+                binding.tenant_id,
+                &req,
+                retire_operation.zip(binding.private_key_secret_ref.as_deref()),
+            )
+            .await
+            {
+                Ok(done) if binding.custody == "SERVER" => {
+                    match crate::server_keys::retire_server_human_key(
+                        &state,
+                        binding.tenant_id,
+                        &req.pubkey,
+                    )
+                    .await
+                    {
+                        Ok(_) => Ok(done),
+                        Err(r) => Err(r),
+                    }
+                }
+                other => other,
+            }
+        }
         other => {
             // 其余状态没有可投影的方向。已是终态说明这条 Workflow 迟到了。
             tracing::warn!(state = other, "binding 状态不在可投影的两个状态上");
@@ -116,17 +204,32 @@ pub async fn project_buzz_identity(
         }
     };
     match result {
-        Ok(final_state) => (
-            StatusCode::OK,
-            Json(IdentityProjectionResponse {
-                converged: true,
-                pubkey: req.pubkey,
-                state: final_state,
-            }),
-        )
-            .into_response(),
+        Ok(final_state) => converged(req.pubkey, &final_state),
         Err(r) => r,
     }
+}
+
+#[derive(sqlx::FromRow)]
+struct ProjectedBinding {
+    tenant_id: Uuid,
+    principal_id: Uuid,
+    state: String,
+    custody: String,
+    private_key_secret_ref: Option<String>,
+    private_key_secret_version: Option<i32>,
+    private_key_secret_audience: Option<String>,
+}
+
+fn converged(pubkey: String, final_state: &str) -> Response {
+    (
+        StatusCode::OK,
+        Json(IdentityProjectionResponse {
+            converged: true,
+            pubkey,
+            state: final_state.to_owned(),
+        }),
+    )
+        .into_response()
 }
 
 /// 投入：relay roster，再逐个未暂停 Workspace 的 Channel roster（暂停中与已暂停的
@@ -174,14 +277,17 @@ async fn admit(
 
     crate::service_api::audit_gate(state).await?;
     // 置 ACTIVE 与「成员仍 ACTIVE」在同一句里判定，不给撤权留下两句之间的窗口。
-    let done = sqlx::query!(
+    // 绑定版本随 binding 一起转 ACTIVE（`.design/03` SecretRef 状态机）；CLIENT 无引用。
+    let done = sqlx::query(
         "update identity.buzz_identity_binding b
-         set state = 'ACTIVE', version = version + 1
+         set state = 'ACTIVE', version = version + 1,
+             private_key_secret_status = case when b.private_key_secret_ref is null
+                                              then null else 'ACTIVE' end
          where b.pubkey = $1 and b.state = 'RECONCILING'
            and exists (select 1 from identity.tenant_membership tm
                        where tm.tenant_principal_id = b.principal_id and tm.state = 'ACTIVE')",
-        req.pubkey
     )
+    .bind(&req.pubkey)
     .execute(&state.pool)
     .await
     .map_err(unavailable)?;
@@ -213,6 +319,7 @@ async fn retire(
     control: &IdentityClient,
     tenant_id: Uuid,
     req: &IdentityProjectionRequest,
+    retire_operation: Option<(Uuid, &str)>,
 ) -> Result<String, Response> {
     // 不按 Workspace 状态筛：暂停中的 Channel 在清空之后已无该 pubkey，按缺席查证
     // 先读 roster 即成立、不发 9001，不会卡在已归档的 Channel 上（DD-97）
@@ -237,14 +344,25 @@ async fn retire(
         .await?;
     }
     converge(state, control, Scope::Relay, &req.pubkey, Presence::Absent).await?;
-    sqlx::query!(
+    let mut tx = state.pool.begin().await.map_err(unavailable)?;
+    let revoked = sqlx::query(
         "update identity.buzz_identity_binding set state = 'REVOKED', version = version + 1
          where pubkey = $1 and state = 'REVOKING'",
-        req.pubkey
     )
-    .execute(&state.pool)
+    .bind(&req.pubkey)
+    .execute(&mut *tx)
     .await
     .map_err(unavailable)?;
+    if let Some((operation, locator)) = retire_operation {
+        if revoked.rows_affected() == 1
+            && !crate::platform_keys::freeze_retirement(&mut tx, locator, operation)
+                .await
+                .map_err(unavailable)?
+        {
+            tracing::error!(pubkey = %req.pubkey, "撤销的 SERVER 身份没有可退役的 BOUND 意图");
+        }
+    }
+    tx.commit().await.map_err(unavailable)?;
     Ok("REVOKED".to_owned())
 }
 

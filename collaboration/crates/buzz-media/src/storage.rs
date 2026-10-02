@@ -299,6 +299,28 @@ impl MediaStorage {
         }
     }
 
+    /// Read the exact historical version listed by the deletion inventory.
+    /// Never fall back to the current object when that version is unavailable.
+    pub async fn get_version(&self, key: &str, version_id: &str) -> Result<Vec<u8>, MediaError> {
+        if version_id.is_empty() {
+            return Err(MediaError::StorageError("missing object version id".into()));
+        }
+        let bucket = self
+            .bucket
+            .with_extra_query(HashMap::from([("versionId".into(), version_id.into())]))
+            .map_err(|e| MediaError::StorageError(e.to_string()))?;
+        match bucket.get_object(key).await {
+            Ok(response) if response.status_code() == 200 => Ok(response.to_vec()),
+            Ok(response) if response.status_code() == 404 => Err(MediaError::NotFound),
+            Ok(response) => Err(MediaError::StorageError(format!(
+                "get object version failed with status {}",
+                response.status_code()
+            ))),
+            Err(s3::error::S3Error::HttpFailWithBody(404, _)) => Err(MediaError::NotFound),
+            Err(e) => Err(MediaError::StorageError(e.to_string())),
+        }
+    }
+
     /// Retrieve a byte range from an object via S3-native `Range` GET.
     ///
     /// `start` and `end` are inclusive byte offsets. Only the requested slice

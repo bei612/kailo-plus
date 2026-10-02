@@ -31,15 +31,37 @@
     "principalId": {
       "type": "string",
       "format": "uuid",
-      "description": "成员动作的目标 Principal"
+      "description": "成员动作的目标 Principal；resource.transfer_owner 的新 owner"
+    },
+    "resourceId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影"
+    },
+    "resourceVersion": {
+      "type": "integer",
+      "description": "调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT"
+    },
+    "assetId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。"
+    },
+    "assetVersion": {
+      "type": "integer",
+      "description": "调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。"
+    },
+    "agentVersionContent": {
+      "$ref": "../domain/agent_version_content.schema.json",
+      "description": "仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。"
     },
     "slug": {
       "type": "string",
-      "description": "workspace.create 的 slug"
+      "description": "workspace.create 或 agent.definition.create 的稳定 slug"
     },
     "name": {
       "type": "string",
-      "description": "workspace.create 的显示名；tenant.member.invite 的被邀请人称呼（只作展示）"
+      "description": "workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）"
     },
     "invitationId": {
       "type": "string",

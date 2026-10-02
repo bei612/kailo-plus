@@ -106,6 +106,18 @@ export enum VariantKind {
 export interface ActionCommand {
     actionKey: string;
     /**
+     * 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
+     */
+    agentVersionContent?: AgentVersionContentClass;
+    /**
+     * AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。
+     */
+    assetId?: string;
+    /**
+     * 调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
+     */
+    assetVersion?: number;
+    /**
      * EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
      */
     explicitConfirmation?: boolean;
@@ -118,7 +130,7 @@ export interface ActionCommand {
      */
     invitationId?: string;
     /**
-     * workspace.create 的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
+     * workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
      */
     name?: string;
     /**
@@ -126,11 +138,19 @@ export interface ActionCommand {
      */
     originalActionExecutionId?: string;
     /**
-     * 成员动作的目标 Principal
+     * 成员动作的目标 Principal；resource.transfer_owner 的新 owner
      */
     principalId?: string;
     /**
-     * workspace.create 的 slug
+     * Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
+     */
+    resourceId?: string;
+    /**
+     * 调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
+     */
+    resourceVersion?: number;
+    /**
+     * workspace.create 或 agent.definition.create 的稳定 slug
      */
     slug?: string;
     /**
@@ -141,6 +161,64 @@ export interface ActionCommand {
      * Workspace 内动作的执行 Workspace
      */
     workspaceId?: string;
+}
+
+/**
+ * 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
+ *
+ * 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
+ * environment。发布不等于安装或运行授权。
+ */
+export interface AgentVersionContentClass {
+    /**
+     * 精确 contract_key@version，不引用业务能力实现名。
+     */
+    capabilityRequirements:  string[];
+    declaredToolResourceIds: string[];
+    instructions:            string;
+    memoryPolicy:            AgentVersionContentMemoryPolicy;
+    modelRouteResourceId:    string;
+    parallelism:             number;
+    personaIdentity:         AgentVersionContentPersonaIdentity;
+    /**
+     * RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
+     */
+    replyPolicy:          string;
+    runtimeProfileKey:    string;
+    skillVersionAssetIds: string[];
+    triggerDefaults:      AgentTrigger[];
+    turnLimits:           AgentVersionContentTurnLimits;
+}
+
+export interface AgentVersionContentMemoryPolicy {
+    coldWrite: AgentMemoryColdWrite;
+    coreWrite: AgentMemoryCoreWrite;
+}
+
+export enum AgentMemoryColdWrite {
+    Disabled = "DISABLED",
+    InvocationScoped = "INVOCATION_SCOPED",
+}
+
+export enum AgentMemoryCoreWrite {
+    AgentWithApproval = "AGENT_WITH_APPROVAL",
+    HumanOnly = "HUMAN_ONLY",
+}
+
+export interface AgentVersionContentPersonaIdentity {
+    avatarUrl?:   string;
+    description?: string;
+    displayName:  string;
+}
+
+export enum AgentTrigger {
+    ManualAssignment = "MANUAL_ASSIGNMENT",
+    Mention = "MENTION",
+}
+
+export interface AgentVersionContentTurnLimits {
+    idleTimeoutSeconds:     number;
+    maxTurnDurationSeconds: number;
 }
 
 /**
@@ -217,6 +295,7 @@ export enum ReasonCode {
     ApprovalSelectorUnresolvable = "APPROVAL_SELECTOR_UNRESOLVABLE",
     ApprovalWithdrawn = "APPROVAL_WITHDRAWN",
     ApproverNotEligible = "APPROVER_NOT_ELIGIBLE",
+    BindingNotActive = "BINDING_NOT_ACTIVE",
     CapabilityBlocked = "CAPABILITY_BLOCKED",
     ClientKeyAlreadyBound = "CLIENT_KEY_ALREADY_BOUND",
     ClientKeyLimitReached = "CLIENT_KEY_LIMIT_REACHED",
@@ -241,6 +320,7 @@ export enum ReasonCode {
     ProjectionDelayed = "PROJECTION_DELAYED",
     PublishRejected = "PUBLISH_REJECTED",
     PublishResultUnknown = "PUBLISH_RESULT_UNKNOWN",
+    RateLimited = "RATE_LIMITED",
     ScopeGuardFailed = "SCOPE_GUARD_FAILED",
     SelfApprovalDenied = "SELF_APPROVAL_DENIED",
     SessionNotActive = "SESSION_NOT_ACTIVE",
@@ -251,6 +331,72 @@ export enum ReasonCode {
     TenantNotActive = "TENANT_NOT_ACTIVE",
     TenantSelectionNotAvailable = "TENANT_SELECTION_NOT_AVAILABLE",
     WaitingApproval = "WAITING_APPROVAL",
+}
+
+/**
+ * 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
+ */
+export interface AgentDefinitionPage {
+    definitions: DefinitionElement[];
+    nextOffset?: number;
+}
+
+/**
+ * DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
+ */
+export interface DefinitionElement {
+    currentPublishedVersionAssetId?: string;
+    displayName:                     string;
+    ownerPrincipalId:                string;
+    resourceId:                      string;
+    resourceState:                   ResourceState;
+    resourceVersion:                 number;
+    stableSlug:                      string;
+    status:                          string;
+}
+
+/**
+ * 03 §7 Resource 的正式状态，投影未闭合不得呈现 ACTIVE。
+ */
+export enum ResourceState {
+    Active = "ACTIVE",
+    Deleted = "DELETED",
+    Deleting = "DELETING",
+    Failed = "FAILED",
+    Provisioning = "PROVISIONING",
+    RetainedReadOnly = "RETAINED_READ_ONLY",
+    Unknown = "UNKNOWN",
+}
+
+/**
+ * DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
+ */
+export interface AgentDefinitionView {
+    currentPublishedVersionAssetId?: string;
+    displayName:                     string;
+    ownerPrincipalId:                string;
+    resourceId:                      string;
+    resourceState:                   ResourceState;
+    resourceVersion:                 number;
+    stableSlug:                      string;
+    status:                          string;
+}
+
+export interface AgentVersionView {
+    agentResourceId:  string;
+    assetId:          string;
+    assetVersion:     number;
+    configHash:       string;
+    content:          AgentVersionContentClass;
+    ordinal:          number;
+    ownerPrincipalId: string;
+    state:            AgentVersionState;
+}
+
+export enum AgentVersionState {
+    Draft = "DRAFT",
+    Published = "PUBLISHED",
+    Retired = "RETIRED",
 }
 
 /**
@@ -429,6 +575,8 @@ export enum EvidenceKind {
     AdmitActionExecutionID = "ADMIT_ACTION_EXECUTION_ID",
     ApprovalPolicy = "APPROVAL_POLICY",
     ApprovalWorkflowID = "APPROVAL_WORKFLOW_ID",
+    BuzzDeletionInventoryDigest = "BUZZ_DELETION_INVENTORY_DIGEST",
+    BuzzDeletionRequestID = "BUZZ_DELETION_REQUEST_ID",
     BuzzEventID = "BUZZ_EVENT_ID",
     BuzzPubkey = "BUZZ_PUBKEY",
     DeploymentBootstrap = "DEPLOYMENT_BOOTSTRAP",
@@ -441,7 +589,9 @@ export enum EvidenceKind {
     TemporalFirstRunID = "TEMPORAL_FIRST_RUN_ID",
     TemporalRunID = "TEMPORAL_RUN_ID",
     TemporalWorkflowID = "TEMPORAL_WORKFLOW_ID",
+    TenantDeleteSubprocessID = "TENANT_DELETE_SUBPROCESS_ID",
     TenantInvitationID = "TENANT_INVITATION_ID",
+    TenantLifecycleSnapshotID = "TENANT_LIFECYCLE_SNAPSHOT_ID",
     TenantMembershipID = "TENANT_MEMBERSHIP_ID",
 }
 
@@ -807,6 +957,7 @@ export enum WorkspaceState {
  * 绑定设备持钥证明（DD-79）。
  */
 export interface PlatformSessionView {
+    accessMode: PlatformSessionAccessMode;
     /**
      * 当前选定的 Workspace；未选定时缺省
      */
@@ -820,6 +971,14 @@ export interface PlatformSessionView {
     tenantId:           string;
     tenantMembershipId: string;
     tenantPrincipalId:  string;
+}
+
+/**
+ * PlatformSession.access_mode（.design/03 §2）；受限会话不授予普通管理面或协作面准入。
+ */
+export enum PlatformSessionAccessMode {
+    Full = "FULL",
+    LifecycleRestricted = "LIFECYCLE_RESTRICTED",
 }
 
 /**
@@ -983,6 +1142,47 @@ export interface WorkspacePreferenceRequest {
 }
 
 /**
+ * 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
+ * environment。发布不等于安装或运行授权。
+ */
+export interface AgentVersionContent {
+    /**
+     * 精确 contract_key@version，不引用业务能力实现名。
+     */
+    capabilityRequirements:  string[];
+    declaredToolResourceIds: string[];
+    instructions:            string;
+    memoryPolicy:            AgentVersionContentMemoryPolicyClass;
+    modelRouteResourceId:    string;
+    parallelism:             number;
+    personaIdentity:         AgentVersionContentPersonaIdentityClass;
+    /**
+     * RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
+     */
+    replyPolicy:          string;
+    runtimeProfileKey:    string;
+    skillVersionAssetIds: string[];
+    triggerDefaults:      AgentTrigger[];
+    turnLimits:           AgentVersionContentTurnLimitsClass;
+}
+
+export interface AgentVersionContentMemoryPolicyClass {
+    coldWrite: AgentMemoryColdWrite;
+    coreWrite: AgentMemoryCoreWrite;
+}
+
+export interface AgentVersionContentPersonaIdentityClass {
+    avatarUrl?:   string;
+    description?: string;
+    displayName:  string;
+}
+
+export interface AgentVersionContentTurnLimitsClass {
+    idleTimeoutSeconds:     number;
+    maxTurnDurationSeconds: number;
+}
+
+/**
  * 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
  */
 export interface ErrorBody {
@@ -1006,6 +1206,35 @@ export interface ResolvedIdentity {
     tenantId:            string;
     tenantMembershipId:  string;
     tenantPrincipalId:   string;
+}
+
+/**
+ * 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
+ */
+export interface RuntimeProfileDirectory {
+    profiles: Profile[];
+}
+
+export interface Profile {
+    capabilityContract: CapabilityContract;
+    key:                string;
+    kind:               RuntimeProfileKind;
+    status:             string;
+    webAvailability:    string;
+}
+
+export interface CapabilityContract {
+    capabilityRequirements: string[];
+    maxIdleTimeoutSeconds:  number;
+    maxParallelism:         number;
+    maxTurnDurationSeconds: number;
+    replyPolicies:          string[];
+}
+
+export enum RuntimeProfileKind {
+    LocalACP = "LOCAL_ACP",
+    RemoteProvider = "REMOTE_PROVIDER",
+    ServerCodex = "SERVER_CODEX",
 }
 
 /**
@@ -1305,4 +1534,27 @@ export interface FreshApprovalAdmissionResult {
     admitted:           boolean;
     reason?:            ReasonCode;
     satisfiedSelectors: ApprovalSelector[];
+}
+
+/**
+ * TENANT_LIFECYCLE DELETE Activity 只推进已准入且已冻结的 Tenant 删除，不重新解析绑定或建立新快照。
+ */
+export interface TenantDeleteAdvanceRequest {
+    cancelRequested: boolean;
+    snapshotId:      string;
+    tenantId:        string;
+    tenantVersion:   number;
+}
+
+/**
+ * Core 返回已经持久化的删除推进事实；UNKNOWN 由错误分类表达，不伪装为 completed 或 canceled。原生证据只保留引用。
+ */
+export interface TenantDeleteAdvanceResult {
+    canceled:                    boolean;
+    completed:                   boolean;
+    irreversibleDispatchStarted: boolean;
+    nativeInventoryDigest?:      string;
+    nativeRequestId?:            string;
+    snapshotId:                  string;
+    subprocessId:                string;
 }

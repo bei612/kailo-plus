@@ -12,12 +12,12 @@
 //! token 已被消费、过期或来路不对，都按泄漏处理并拒绝启动；运行中续期被确定拒绝
 //! （令牌被撤销），同样 fail closed，由部署重新投递。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Deserialize;
-use tokio::sync::{mpsc, Mutex, OnceCell, RwLock};
+use tokio::sync::{mpsc, watch, Mutex, OnceCell, RwLock};
 use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
@@ -52,6 +52,14 @@ pub enum SecretError {
     Malformed,
     #[error("Tenant namespace 的 OpenBao 配置未收敛")]
     TenantNamespaceNotReady,
+}
+
+/// DD-113 覆盖的三类平台自持 Nostr 私钥；决定其独占 locator 的合法形状。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformKey {
+    Human,
+    Control,
+    Operator,
 }
 
 /// 一条 SecretRef。字段与 `.design/03` §9 的定义一一对应。
@@ -403,6 +411,9 @@ pub struct SecretStore {
     provisioner: AppRoleSession,
     tenant: TenantConfig,
     tenant_sessions: Mutex<HashMap<Uuid, Arc<OnceCell<Arc<AppRoleSession>>>>>,
+    /// 已准入删除的 namespace 不再取用；只终止该 namespace 的续期观察，
+    /// 不把受治理的正常销毁当作整个 Core 的部署凭据泄漏。
+    retiring_tenants: watch::Sender<HashSet<Uuid>>,
     tenant_failure_tx: mpsc::UnboundedSender<()>,
     tenant_failure_rx: Mutex<mpsc::UnboundedReceiver<()>>,
     /// 本服务的身份。SecretRef 的 audience 必须等于它，否则拒绝取用——
@@ -536,6 +547,7 @@ impl SecretStore {
                 core_bound_cidrs: get("OPENBAO_TENANT_CORE_BOUND_CIDRS")?,
             },
             tenant_sessions: Mutex::new(HashMap::new()),
+            retiring_tenants: watch::channel(HashSet::new()).0,
             tenant_failure_tx,
             tenant_failure_rx: Mutex::new(tenant_failure_rx),
             identity: get("OPENBAO_SERVICE_IDENTITY")?,
@@ -701,7 +713,7 @@ impl SecretStore {
         if locator != self.tenant_locator(tenant_id, &format!("buzz-human/provision/{action_id}")) {
             return Err(SecretError::Refused);
         }
-        self.destroy_unreferenced_version_one(locator).await
+        self.destroy_version_one(locator, true).await
     }
 
     /// DD-85：已复制但切换被确定拒绝的归位目标。locator 由归位 ID 唯一确定，
@@ -715,17 +727,287 @@ impl SecretStore {
         if locator != self.tenant_locator(tenant_id, &format!("buzz-ref-rehome/{rehome_id}")) {
             return Err(SecretError::Refused);
         }
-        self.destroy_unreferenced_version_one(locator).await
+        self.destroy_version_one(locator, true).await
     }
 
-    /// 调用方已证明该 locator 专属于一条未形成 binding 的写入意图。CAS 版本 0
-    /// 与仍在途的原写入竞争；无论哪一方赢，只允许销毁版本 1。
-    async fn destroy_unreferenced_version_one(&self, locator: &str) -> Result<(), SecretError> {
+    /// DD-113 (1)：平台自持私钥各自独占的 locator 形状。HUMAN 与 CONTROL 只在该
+    /// Tenant 的 namespace 与 KV mount 下（含 DD-85 归位后的目标），OPERATOR 只在
+    /// 部署级 namespace 的 `relay-operator/` 下。形状之外的引用（例如尚未归位的
+    /// `platform/` 存量）不能借退役或孤儿收敛被删除或销毁。
+    pub fn owns_platform_key(&self, kind: PlatformKey, tenant_id: Uuid, locator: &str) -> bool {
+        let Ok((namespace, mount, path)) = split_locator(locator) else {
+            return false;
+        };
+        if mount != self.tenant.mount
+            || path
+                .split('/')
+                .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+        {
+            return false;
+        }
+        let tenant_namespace = format!("{}/{}", self.tenant.parent, tenant_id);
+        let (want_namespace, prefixes): (&str, &[&str]) = match kind {
+            PlatformKey::Human => (&tenant_namespace, &["buzz-human/", "buzz-ref-rehome/"]),
+            PlatformKey::Control => (&tenant_namespace, &["buzz-control/", "buzz-ref-rehome/"]),
+            PlatformKey::Operator => (&self.session.namespace, &["relay-operator/"]),
+        };
+        namespace == want_namespace
+            && prefixes
+                .iter()
+                .any(|prefix| path.len() > prefix.len() && path.starts_with(prefix))
+    }
+
+    /// DD-113 (2)：CONTROL 或 OPERATOR 写入后未形成 binding/identity 的孤儿。与
+    /// DD-86 同一收敛：CAS 版本 0 争取版本 1，只销毁版本 1，以 metadata 为证。
+    pub async fn destroy_unbound_platform_key(
+        &self,
+        kind: PlatformKey,
+        tenant_id: Uuid,
+        locator: &str,
+    ) -> Result<(), SecretError> {
+        if !self.owns_platform_key(kind, tenant_id, locator) {
+            return Err(SecretError::Refused);
+        }
+        self.destroy_version_one(locator, true).await
+    }
+
+    /// DD-113 (3)：撤钥第一段。只对已绑定的版本 1 执行可逆的 `delete`，随后读
+    /// metadata：已销毁，或数据读取返回 404 且附带版本 1 的已删除 metadata 才算
+    /// 完成。回应丢失同样按此查证；版本不是 1、metadata 缺失都不是完成。
+    pub async fn delete_bound_version_one(
+        &self,
+        kind: PlatformKey,
+        tenant_id: Uuid,
+        locator: &str,
+    ) -> Result<(), SecretError> {
+        if !self.owns_platform_key(kind, tenant_id, locator) {
+            return Err(SecretError::Refused);
+        }
+        let (namespace, mount, path) = split_locator(locator)?;
+        let token = self.token_for_namespace(&namespace).await?;
+        if self
+            .version_one_removed(&namespace, &mount, &path, token.as_str())
+            .await?
+        {
+            return Ok(());
+        }
+        let result = self
+            .session
+            .http
+            .post(format!("{}/v1/{mount}/delete/{path}", self.session.addr))
+            .header("X-Vault-Namespace", &namespace)
+            .header("X-Vault-Token", token.as_str())
+            .json(&serde_json::json!({ "versions": [1] }))
+            .send()
+            .await;
+        let outcome = match result {
+            Ok(response) if matches!(response.status().as_u16(), 200 | 204) => Ok(()),
+            Ok(response) if matches!(response.status().as_u16(), 401 | 403) => {
+                Err(SecretError::Refused)
+            }
+            Ok(_) => Err(SecretError::Malformed),
+            Err(error) => Err(SecretError::Transport(error)),
+        };
+        if self
+            .version_one_removed(&namespace, &mount, &path, token.as_str())
+            .await?
+        {
+            Ok(())
+        } else {
+            outcome.and(Err(SecretError::VersionUnavailable))
+        }
+    }
+
+    /// DD-113 (3)(4)：撤钥第二段与 operator 旧 key 退役。已绑定的版本 1 不存在
+    /// 在途的原写入，metadata 缺失即异常：不以 CAS 抢占，直接按 DD-86 的条件
+    /// 销毁并查证。
+    pub async fn retire_bound_version_one(
+        &self,
+        kind: PlatformKey,
+        tenant_id: Uuid,
+        locator: &str,
+    ) -> Result<(), SecretError> {
+        if !self.owns_platform_key(kind, tenant_id, locator) {
+            return Err(SecretError::Refused);
+        }
+        self.destroy_version_one(locator, false).await
+    }
+
+    /// DD-115 (6)：只读 LIST 部署级 namespace 下 operator 私钥前缀的全部 locator。
+    /// 前缀下的形状只有 `relay-operator/<audience>/<pubkey>`（DD-113）与更早的
+    /// `relay-operator/<audience>/<pubkey>/<投递 ID>`，因此逐层展开至多三层；更深
+    /// 的目录不是平台写出的形状，返回错误交由调用方告警而不是猜测处置。
+    pub async fn list_operator_locators(&self) -> Result<Vec<String>, SecretError> {
+        const OPERATOR_PREFIX_DEPTH: usize = 3;
+        let namespace = self.session.namespace.clone();
+        let mount = self.tenant.mount.clone();
+        let token = self.token_for_namespace(&namespace).await?;
+        let mut folders = vec![("relay-operator/".to_owned(), 0usize)];
+        let mut locators = Vec::new();
+        while let Some((folder, depth)) = folders.pop() {
+            let response = self
+                .session
+                .http
+                .get(format!(
+                    "{}/v1/{mount}/metadata/{folder}",
+                    self.session.addr
+                ))
+                .query(&[("list", "true")])
+                .header("X-Vault-Namespace", &namespace)
+                .header("X-Vault-Token", token.as_str())
+                .send()
+                .await?;
+            let body: serde_json::Value = match response.status().as_u16() {
+                200 => response.json().await?,
+                404 => continue,
+                401 | 403 => return Err(SecretError::Refused),
+                _ => return Err(SecretError::Malformed),
+            };
+            let keys = body
+                .pointer("/data/keys")
+                .and_then(|v| v.as_array())
+                .ok_or(SecretError::Malformed)?;
+            for key in keys {
+                let key = key.as_str().ok_or(SecretError::Malformed)?;
+                if key.is_empty() || key.starts_with('/') || key.contains("..") {
+                    return Err(SecretError::Malformed);
+                }
+                if let Some(child) = key.strip_suffix('/') {
+                    if depth + 1 >= OPERATOR_PREFIX_DEPTH {
+                        return Err(SecretError::Malformed);
+                    }
+                    folders.push((format!("{folder}{child}/"), depth + 1));
+                } else {
+                    locators.push(format!("{namespace}/{mount}/{folder}{key}"));
+                }
+            }
+        }
+        locators.sort();
+        Ok(locators)
+    }
+
+    /// 只读查证：独占 locator 的版本 1 是否已被销毁（`current_version=1` 且
+    /// `destroyed=true`）。供退役在库内提交丢失后，以 metadata 补记 RETIRED。
+    pub async fn bound_version_one_destroyed(
+        &self,
+        kind: PlatformKey,
+        tenant_id: Uuid,
+        locator: &str,
+    ) -> Result<bool, SecretError> {
+        if !self.owns_platform_key(kind, tenant_id, locator) {
+            return Err(SecretError::Refused);
+        }
+        let (namespace, mount, path) = split_locator(locator)?;
+        let token = self.token_for_namespace(&namespace).await?;
+        self.unreferenced_version_one_destroyed(&namespace, &mount, &path, token.as_str())
+            .await
+    }
+
+    /// 版本 1 已 `destroy`，或由原生数据读取的 404 与同版本 metadata 证明已 `delete`。
+    /// 非空 `deletion_time` 包含尚未生效的自动删除时间，不能单独作为完成证据。
+    /// 当前版本必须恰为 1：独占 locator 从不写第二个版本（DD-113 (1)）。
+    async fn version_one_removed(
+        &self,
+        namespace: &str,
+        mount: &str,
+        path: &str,
+        token: &str,
+    ) -> Result<bool, SecretError> {
+        let body = self.metadata_body(namespace, mount, path, token).await?;
+        if body
+            .pointer("/data/current_version")
+            .and_then(|v| v.as_u64())
+            != Some(1)
+        {
+            return Err(SecretError::VersionUnavailable);
+        }
+        let destroyed = body
+            .pointer("/data/versions/1/destroyed")
+            .and_then(|v| v.as_bool())
+            .ok_or(SecretError::Malformed)?;
+        let deleted = body
+            .pointer("/data/versions/1/deletion_time")
+            .and_then(|v| v.as_str())
+            .ok_or(SecretError::Malformed)?;
+        if destroyed {
+            return Ok(true);
+        }
+        if deleted.is_empty() {
+            return Ok(false);
+        }
+        let response = self
+            .session
+            .http
+            .get(format!("{}/v1/{mount}/data/{path}", self.session.addr))
+            .query(&[("version", "1")])
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token)
+            .send()
+            .await?;
+        match response.status().as_u16() {
+            200 => Ok(false),
+            404 => {
+                let body: serde_json::Value = response.json().await?;
+                if body
+                    .pointer("/data/metadata/version")
+                    .and_then(|v| v.as_u64())
+                    != Some(1)
+                {
+                    return Err(SecretError::VersionUnavailable);
+                }
+                let destroyed = body
+                    .pointer("/data/metadata/destroyed")
+                    .and_then(|v| v.as_bool())
+                    .ok_or(SecretError::Malformed)?;
+                let deleted = body
+                    .pointer("/data/metadata/deletion_time")
+                    .and_then(|v| v.as_str())
+                    .ok_or(SecretError::Malformed)?;
+                Ok(destroyed || !deleted.is_empty())
+            }
+            401 | 403 => Err(SecretError::Refused),
+            _ => Err(SecretError::Malformed),
+        }
+    }
+
+    async fn metadata_body(
+        &self,
+        namespace: &str,
+        mount: &str,
+        path: &str,
+        token: &str,
+    ) -> Result<serde_json::Value, SecretError> {
+        let response = self
+            .session
+            .http
+            .get(format!("{}/v1/{mount}/metadata/{path}", self.session.addr))
+            .header("X-Vault-Namespace", namespace)
+            .header("X-Vault-Token", token)
+            .send()
+            .await?;
+        match response.status().as_u16() {
+            200 => Ok(response.json().await?),
+            401 | 403 => Err(SecretError::Refused),
+            _ => Err(SecretError::VersionUnavailable),
+        }
+    }
+
+    /// 调用方已证明该 locator 专属于一条写入意图（DD-86/DD-113）。`claim_empty`
+    /// 为真时（未绑定的写入），CAS 版本 0 与仍在途的原写入竞争；无论哪一方赢，
+    /// 只允许销毁版本 1。已绑定的版本传 false：metadata 缺失不是可抢占的空路径。
+    async fn destroy_version_one(
+        &self,
+        locator: &str,
+        claim_empty: bool,
+    ) -> Result<(), SecretError> {
         let (namespace, mount, path) = split_locator(locator)?;
         let token = self.token_for_namespace(&namespace).await?;
         let observed = self
             .current_version(&namespace, &mount, &path, token.as_str())
             .await?;
+        if observed == 0 && !claim_empty {
+            return Err(SecretError::VersionUnavailable);
+        }
         if observed == 0 {
             match self
                 .write_with_cas(
@@ -783,31 +1065,17 @@ impl SecretStore {
         path: &str,
         token: &str,
     ) -> Result<bool, SecretError> {
-        let response = self
-            .session
-            .http
-            .get(format!("{}/v1/{mount}/metadata/{path}", self.session.addr))
-            .header("X-Vault-Namespace", namespace)
-            .header("X-Vault-Token", token)
-            .send()
-            .await?;
-        match response.status().as_u16() {
-            200 => {
-                let body: serde_json::Value = response.json().await?;
-                if body
-                    .pointer("/data/current_version")
-                    .and_then(|v| v.as_u64())
-                    != Some(1)
-                {
-                    return Err(SecretError::VersionUnavailable);
-                }
-                body.pointer("/data/versions/1/destroyed")
-                    .and_then(|v| v.as_bool())
-                    .ok_or(SecretError::Malformed)
-            }
-            401 | 403 => Err(SecretError::Refused),
-            _ => Err(SecretError::VersionUnavailable),
+        let body = self.metadata_body(namespace, mount, path, token).await?;
+        if body
+            .pointer("/data/current_version")
+            .and_then(|v| v.as_u64())
+            != Some(1)
+        {
+            return Err(SecretError::VersionUnavailable);
         }
+        body.pointer("/data/versions/1/destroyed")
+            .and_then(|v| v.as_bool())
+            .ok_or(SecretError::Malformed)
     }
 
     async fn tenant_admin(
@@ -865,6 +1133,9 @@ impl SecretStore {
     /// 中途失败留下的 namespace 由同一固定 Tenant ID 的下一次 Activity 重试
     /// 收敛；不把私钥写回 platform/ 作为降级路径。
     pub async fn ensure_tenant(&self, tenant_id: Uuid) -> Result<(), SecretError> {
+        if self.retiring_tenants.borrow().contains(&tenant_id) {
+            return Err(SecretError::Refused);
+        }
         let child = format!("{}/{}", self.tenant.parent, tenant_id);
         let ns_path = format!("sys/namespaces/{tenant_id}");
         let mut namespace = self
@@ -1006,7 +1277,10 @@ impl SecretStore {
         let policy = format!(
             "path \"{mount}/data/*\" {{ capabilities = [\"create\", \"update\", \"read\"] }}\n\
              path \"{mount}/metadata/*\" {{ capabilities = [\"read\", \"list\"] }}\n\
-             path \"{mount}/destroy/buzz-human/provision/*\" {{ capabilities = [\"update\"] }}\n\
+             path \"{mount}/delete/buzz-human/*\" {{ capabilities = [\"update\"] }}\n\
+             path \"{mount}/delete/buzz-ref-rehome/*\" {{ capabilities = [\"update\"] }}\n\
+             path \"{mount}/destroy/buzz-human/*\" {{ capabilities = [\"update\"] }}\n\
+             path \"{mount}/destroy/buzz-control/*\" {{ capabilities = [\"update\"] }}\n\
              path \"{mount}/destroy/buzz-ref-rehome/*\" {{ capabilities = [\"update\"] }}\n",
             mount = self.tenant.mount
         );
@@ -1076,7 +1350,40 @@ impl SecretStore {
         Ok(())
     }
 
+    /// 原生 namespace 删除为异步操作（SF-OBA-02）。HTTP 200 的 in-progress
+    /// 不是完成；只有父 namespace 的确切路径回读 404 才返回 true。
+    /// 调用方必须先持久化该 Tenant 的不可逆删除意图和 DISPATCH 审计。
+    pub async fn delete_tenant(&self, tenant_id: Uuid) -> Result<bool, SecretError> {
+        self.retiring_tenants.send_modify(|ids| {
+            ids.insert(tenant_id);
+        });
+        self.tenant_sessions.lock().await.remove(&tenant_id);
+        let path = format!("sys/namespaces/{tenant_id}");
+        let response = self
+            .tenant_admin(&self.tenant.parent, reqwest::Method::DELETE, &path, None)
+            .await;
+        // 丢失 DELETE 响应后仍以相同父 namespace 的 GET 查证，不重建子 namespace。
+        let observed = self
+            .tenant_admin(&self.tenant.parent, reqwest::Method::GET, &path, None)
+            .await?;
+        if observed.status().as_u16() == 404 {
+            return Ok(true);
+        }
+        let current = Self::admin_result(observed)?
+            .json::<TenantNamespaceResponse>()
+            .await
+            .map_err(|_| SecretError::Malformed)?;
+        if current.data.path != format!("{}/{tenant_id}/", self.tenant.parent) {
+            return Err(SecretError::Malformed);
+        }
+        Self::admin_result(response?)?;
+        Ok(false)
+    }
+
     async fn tenant_session(&self, tenant_id: Uuid) -> Result<Arc<AppRoleSession>, SecretError> {
+        if self.retiring_tenants.borrow().contains(&tenant_id) {
+            return Err(SecretError::Refused);
+        }
         let cell = {
             self.tenant_sessions
                 .lock()
@@ -1123,14 +1430,26 @@ impl SecretStore {
             session.connect_secret_id(&secret_id).await?;
             let watched = Arc::clone(&session);
             let failed = self.tenant_failure_tx.clone();
+            let mut retiring = self.retiring_tenants.subscribe();
             tokio::spawn(async move {
-                let _ = watched.keep_alive().await;
-                let _ = failed.send(());
+                let stopped = tokio::select! {
+                    _ = async { let _ = retiring.wait_for(|ids| ids.contains(&tenant_id)).await; } => false,
+                    _ = watched.keep_alive() => true,
+                };
+                if stopped && !retiring.borrow().contains(&tenant_id) {
+                    let _ = failed.send(());
+                }
             });
             Ok(session)
         })
         .await
-        .map(Arc::clone)
+        .and_then(|session| {
+            if self.retiring_tenants.borrow().contains(&tenant_id) {
+                Err(SecretError::Refused)
+            } else {
+                Ok(Arc::clone(session))
+            }
+        })
     }
 
     async fn token_for_namespace(&self, namespace: &str) -> Result<Arc<String>, SecretError> {
@@ -1448,6 +1767,7 @@ mod tests {
                 core_bound_cidrs: String::new(),
             },
             tenant_sessions: Mutex::new(HashMap::new()),
+            retiring_tenants: watch::channel(HashSet::new()).0,
             tenant_failure_tx,
             tenant_failure_rx: Mutex::new(tenant_failure_rx),
             identity: "core".to_owned(),

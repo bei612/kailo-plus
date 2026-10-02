@@ -139,7 +139,7 @@ func TestTenantSuspendRejectedEntersError(t *testing.T) {
 	if !sameSteps(run.to, "ERROR") || run.kinds[0] != "TENANT" {
 		t.Fatalf("归档被拒绝时应只跃迁 Tenant 到 ERROR，得到 %v %v", run.to, run.kinds)
 	}
-	if last := run.statuses[len(run.statuses)-1]; last != generated.Failed {
+	if last := run.statuses[len(run.statuses)-1]; last != generated.TaskStatusFAILED {
 		t.Fatalf("终态投影应为 FAILED，得到 %v", run.statuses)
 	}
 }
@@ -166,7 +166,7 @@ func TestTenantRestoreFailureAfterUnarchiveArchivesBeforeError(t *testing.T) {
 	if !sameSteps(run.steps, "reconcile:BINDINGS", "unarchive", "reconcile:ROSTER", "archive", "transition:ERROR") {
 		t.Fatalf("解档后失败应先归档再 ERROR，步骤 %v", run.steps)
 	}
-	if last := run.statuses[len(run.statuses)-1]; last != generated.Failed {
+	if last := run.statuses[len(run.statuses)-1]; last != generated.TaskStatusFAILED {
 		t.Fatalf("终态投影应为 FAILED，得到 %v", run.statuses)
 	}
 }

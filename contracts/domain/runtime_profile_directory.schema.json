@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/runtime_profile_directory.schema.json",
+  "title": "RuntimeProfileDirectory",
+  "description": "03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profiles"],
+  "properties": {
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "kind", "capabilityContract", "webAvailability", "status"],
+        "properties": {
+          "key": {"type": "string"},
+          "kind": {"$ref": "../enums/runtime_profile_kind.schema.json"},
+          "webAvailability": {"type": "string"},
+          "status": {"type": "string"},
+          "capabilityContract": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["capabilityRequirements", "replyPolicies", "maxParallelism", "maxIdleTimeoutSeconds", "maxTurnDurationSeconds"],
+            "properties": {
+              "capabilityRequirements": {"type": "array", "items": {"type": "string"}},
+              "replyPolicies": {"type": "array", "items": {"type": "string"}},
+              "maxParallelism": {"type": "integer"},
+              "maxIdleTimeoutSeconds": {"type": "integer"},
+              "maxTurnDurationSeconds": {"type": "integer"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

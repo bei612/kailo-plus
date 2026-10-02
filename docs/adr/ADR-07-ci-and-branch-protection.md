@@ -14,7 +14,7 @@
 
 ## 候选方案
 
-**统一入口脚本加 GitHub Actions**：门禁定义在仓库内的脚本里，CI 只负责调用。工作流与本地 `pre-push` 钩子调用同一入口，两者行为一致。
+**统一入口脚本加 GitHub Actions**：门禁定义在仓库内的脚本里，阶段收口与 CI 调用同一入口；普通 push 只传输提交，不再触发本地验证。
 
 **门禁逻辑写在 CI 配置里**：配置即流程，但本地无法复现，违反「与 CI 使用同一入口」。
 
@@ -26,12 +26,12 @@
 
 - **入口结构**：`tools/check.sh` 按 `03-验证发布与验收门禁.md` §5 的十项分为十个子步骤，每步独立可单独调用（`tools/check.sh <step>`），全部失败以非零码退出。`tools/check-docs.sh` 成为其中「只改文档」的快路径，保持现有行为与独立可执行性。
 - **Git 边界**：代码远端沿用原仓库，`main` 的目录直接提升原 `apps` 子树；保留原 commit 与 tag，不强推、不移动历史 tag。目录迁移与未验收的业务修改分开提交；本地凭据、运行数据、缓存、产物和会话导出不入库。外层历史只作保留记录，不再从外层执行代码提交或 push。
-- **设计权威**：`.design` 位于实现 Git 之外，门禁仍读取相邻设计目录。CI 的 `DESIGN_COMMIT` 固定到保留历史中的设计提交，checkout 完整历史后用 Git archive 读取该提交的 `.design` 子树至相邻目录；不在实现工程内建立第二份正文。更新设计须先独立复核与提交，再推进 CI 的设计版本，不直接借用本机未提交文本。
+- **设计权威**：`.design` 位于实现 Git 之外，门禁仍读取相邻设计目录。CI 的 `DESIGN_COMMIT` 固定到独立复核的设计提交，checkout 完整历史后用 Git archive 读取该提交的 `.design` 子树至相邻目录；不在实现工程内建立第二份正文。2026-10-02 起新增设计提交由代码 Git 以普通 push 发布到同一远端的 `design-authority` 分支，该分支只追加设计变更，保留原历史；不合入代码 main、不重写代码根结构，也不从外层执行代码 push。更新设计须先独立复核、提交并发布该提交，再推进 CI 的设计版本，不直接借用本机未提交文本。
 - **历史路径**：旧契约 tag 和旧 artifact provenance 指向迁移前的 `apps/...`；新提交以 `contracts/...`、`tools/...` 为根。历史核验按被引用提交的真实树定位，不重指 tag、不把取不到历史 schema 当作全新 schema而放行。
 - **执行范围**：当前 `tools/check.sh` 不带参数与 `--full` 均执行全部步骤（另含只提示上游变化的 `status`）；`tools/check.sh <step>` 才是单步调用，`contract` 为单数。没有自动按 diff 选择步骤的实现；提交前仍执行适用的全量门禁，纯文档快路径保留。
 - **执行环境**：`.github/workflows/check.yml` 保留 `ubuntu-latest` runner 与原 PostgreSQL service，删除宿主 SDK 安装步骤。job 私有 `docker-container` builder 构建 `tools/check.Dockerfile`；四语言工具链来自该文件的固定基础镜像，运行以不可变 image ID 记录。资源与数据路径从 workflow env/repository variables 投递，缺失即拒绝；不新增 self-hosted runner。真正执行十项门禁的入口仍是 `tools/check.sh`，CI 不另立判定。实际工具链、依赖锁与环境随输出留证；镜像构建成功不证明全量门禁或远端 CI 成功。
 - **本机工具链边界**：项目构建、工具链验证和打包在镜像内执行；宿主 Bash/Python 只承接启动与元数据检查，不调用宿主 Cargo、Go、Node 验证项目。`check.sh`、`release.sh` 与 `build-upstream.sh` 共用 `container-safety.sh`，检查容器先 create、回读限额再 start，BuildKit 节点必须已运行且实际受限；没有默认、不受限 builder 回退。资源、缓存与配置规则以 `07-运行与运维基线.md` §2.1 为准。
-- **CI 平台**：GitHub Actions 把独立仓库 checkout 到 workspace 的 `apps` 目录，`.design` 放在其相邻位置，保持设计导航的既定目录关系；`apps` 是 checkout 目录名，不是仓库内的子树。shell 在该 Git 根调用 `tools/check.sh --full`，不在 YAML 中另立门禁判定。入库 `.githooks/pre-push` 只略过合法的全零 OID 删除 ref；其他不可解析提交拒绝，通过 `CHECK_SOURCE_REF` 检查真实 local OID，而非无关工作树。新克隆通过 `git config core.hooksPath .githooks` 安装。repository variables 投递与远端 CI 实际成功须有对应运行证据，配置入库本身不证明通过。
+- **CI 平台**：GitHub Actions 把独立仓库 checkout 到 workspace 的 `apps` 目录，`.design` 放在其相邻位置，保持设计导航的既定目录关系；`apps` 是 checkout 目录名，不是仓库内的子树。shell 在该 Git 根调用 `tools/check.sh --full`，不在 YAML 中另立门禁判定。2026-10-02 按用户决定删除本地 `.githooks/pre-push`，不再安装 push 钩子；阶段收口仍验证实际交付树，普通 push 与网络重试不重复本地全量检查，不新增缓存凭证或绕过开关。repository variables 投递与远端 CI 实际成功须有对应运行证据，配置入库本身不证明通过。
 - **受保护分支**：既定规则是 `main` 合并须经评审、全量门禁通过，历史只追加且禁止强制推送。本地文件不能证明 GitHub 分支保护已强制这些规则；当前只读核查未取得远端配置证据，不能声称「禁止直推」已经由平台落实。用户明确授权的阶段提交与 push 不等于完成分支保护验收；不得擅自修改远端规则。
 - **门禁不得跳过**：不提供跳过开关。某项门禁在当前 Stage 无适用对象时（例如尚无 Workflow 时的 replay 检查），该步骤输出「无适用对象」并通过，而不是被注释掉——这样它在首次出现适用对象时自动生效。
 
@@ -39,13 +39,13 @@
 
 正面：门禁定义与代码同版本，本地与 CI 共用入口；平台只是调用点，更换 CI 平台不改门禁判定。
 
-负面：本地 hook 不能替代远端保护；共用命令不消除工具链与环境差异。保留历史包含旧目录结构，历史契约与产物核验必须使用对应提交的真实路径；设计版本的单独提交和固定读取仍是工程发布前提。
+负面：普通 push 不证明验证通过；阶段收口与远端 CI 须保留实际结果，共用命令不消除工具链与环境差异。保留历史包含旧目录结构，历史契约与产物核验必须使用对应提交的真实路径；设计版本的单独提交和固定读取仍是工程发布前提。
 
 锁定：以脚本为门禁定义的形式。放弃：使用 CI 平台专有编排能力（矩阵、缓存策略）来组织门禁逻辑。
 
 ## 替换边界
 
-更换 CI 平台或落实独立 Git 管理时，重新核对 workflow、hook、相对路径、远端与分支保护；`tools/check.sh` 的门禁语义不因此改变。若全量执行时间影响迭代，使用现有单步验证集中收口，不虚构自动增量实现或削减提交门禁。
+更换 CI 平台或落实独立 Git 管理时，重新核对 workflow、相对路径、远端与分支保护；`tools/check.sh` 的门禁语义不因此改变。若全量执行时间影响迭代，使用现有单步验证集中收口，不虚构自动增量实现或削减提交门禁；不得重新引入普通 push 的本地全量触发。
 
 ## 不改变的事
 

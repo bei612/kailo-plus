@@ -271,6 +271,33 @@ func (c *CoreAPI) ReconcileTenantRestore(ctx context.Context, in TenantRestoreIn
 	return c.post(ctx, "/service/v1/tenants/restore-reconcile", in, nil)
 }
 
+// AdvanceTenantDelete 推进同一冻结 snapshot 的平台核心销毁链。取消只是意图；
+// 是否已经不可逆、能否撤回以及是否完成，都由 Core 持久化事实回答。
+func (c *CoreAPI) AdvanceTenantDelete(
+	ctx context.Context, in generated.TenantDeleteAdvanceRequest,
+) (generated.TenantDeleteAdvanceResult, error) {
+	var out generated.TenantDeleteAdvanceResult
+	var raw json.RawMessage
+	if err := c.post(ctx, "/service/v1/tenants/delete-advance", in, &raw); err != nil {
+		return out, err
+	}
+	// encoding/json 会把缺失或 null 的 bool 解成 false；那不能证明仍可撤回。
+	// 先查共享 schema 的必填事实，再解码生成类型，缺事实仍按 UNKNOWN 对账。
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return out, err
+	}
+	for _, key := range []string{
+		"snapshotId", "subprocessId", "irreversibleDispatchStarted", "completed", "canceled",
+	} {
+		value, present := fields[key]
+		if !present || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return out, fmt.Errorf("Tenant 删除推进回应缺少事实 %s", key)
+		}
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
 // ScopeTransitionInput 是 Tenant/Workspace 自身状态的跃迁载荷。
 // 与成员状态跃迁分开：两者是不同的状态机（scope 有 SUSPENDING/RESTORING）。
 type ScopeTransitionInput struct {

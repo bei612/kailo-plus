@@ -1,5 +1,11 @@
 # 生成物，不手工编辑。由 tools/gen-registry.py 从 tools/traceability/ 生成。
 capabilities:
+- id: agent.definition_management
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: collab.channel.media
   exposure: end_user
   routes:
@@ -116,6 +122,12 @@ capabilities:
   tools: []
   workflow_kinds:
   - SECRET_REF_REHOME
+- id: lifecycle.tenant_delete
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: lifecycle.tenant_suspension
   exposure: tenant_admin
   routes:

@@ -2349,6 +2349,7 @@ mod track_c_tests {
             .await
             .expect("submit deletion");
         let inventory = FrozenInventory {
+            retained_cas: None,
             schema: store
                 .inventory_schema(request.community_id)
                 .await

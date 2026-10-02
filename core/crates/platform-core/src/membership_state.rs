@@ -13,9 +13,8 @@
 //!    成员生命周期。没有它，状态就成了可以被任意服务调用改写的东西。
 //!
 //! Tenant 成员进入 `REVOKED` 还要求已无 active Resource/Asset owner 引用
-//! （`DD-45`）。该 owner gate 与查证一样在 Workflow 内执行（`.design/09` 第 5 步
-//! 的撤权链）；Resource/Asset 在本 Stage 尚未存在，因此当前没有可引用的对象。
-//! 这里不写一个恒为真的检查冒充它——那会在 Resource 出现时悄悄放行。
+//! （`DD-45`）。Workflow 消费本入口时，Core 在状态跃迁的同一事务内核对真实
+//! Resource/Asset 的 owner 责任与未收敛投影，不重做上游查证。
 
 use crate::audit::Evidence;
 use axum::{
@@ -138,12 +137,47 @@ pub async fn transition_membership(
         Ok(t) => t,
         Err(e) => return unavailable(e),
     };
+    if matches!(req.scope, MembershipScope::Tenant) {
+        // 创建/转入 owner 与此处共用同一 membership 行锁；ACTIVE 的读与写不留窗口。
+        let locked: Result<Option<Uuid>, _> =
+            sqlx::query_scalar("select id from identity.tenant_membership where id=$1 for update")
+                .bind(req.membership_id)
+                .fetch_optional(&mut *tx)
+                .await;
+        match locked {
+            Ok(Some(_)) => {}
+            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+            Err(e) => return unavailable(e),
+        }
+    }
     // Tenant 成员进入 REVOKED 之前，他在本 Tenant 的 WorkspaceMembership 必须都已
     // 收敛出去（`.design/10` §5）：还有建立中、ACTIVE 或撤权中的，就说明 Channel
     // roster 尚未查证撤出，此时宣布 REVOKED 会让按邀请恢复的同一 Principal 带着
     // 旧的 Workspace 投影回来。Tenant 已不在 ACTIVE，Workspace 成员加入的准入已
     // 关门，因此这次判定与随后的 UPDATE 之间不会再长出新的成员关系。
     if matches!(req.scope, MembershipScope::Tenant) && req.to_state == "REVOKED" {
+        let owned: Result<bool, _> = sqlx::query_scalar(
+            "select exists(select 1 from identity.tenant_membership tm
+             join identity.tenant t on t.id=tm.tenant_id
+             where tm.id=$1 and t.state not in ('DELETING','DELETED')
+               and (exists(select 1 from catalog.resource r
+                      where r.tenant_id=tm.tenant_id and r.owner_principal_id=tm.tenant_principal_id
+                        and (r.state not in ('DELETED','FAILED') or r.projection_action_execution_id is not null))
+                    or exists(select 1 from catalog.asset a
+                      where a.tenant_id=tm.tenant_id and a.owner_principal_id=tm.tenant_principal_id
+                        and (a.state not in ('DELETED','FAILED') or a.projection_action_execution_id is not null))))",
+        )
+        .bind(req.membership_id)
+        .fetch_one(&mut *tx)
+        .await;
+        match owned {
+            Ok(false) => {}
+            Ok(true) => {
+                tracing::warn!(membership=%req.membership_id,"成员仍拥有 Resource/Asset 或未收敛投影，必须先治理转移或对账");
+                return StatusCode::CONFLICT.into_response();
+            }
+            Err(e) => return unavailable(e),
+        }
         let pending: Result<Option<i32>, _> = sqlx::query_scalar(
             "select 1 from identity.tenant_membership tm
              join identity.workspace w on w.tenant_id = tm.tenant_id

@@ -27,7 +27,7 @@
 
 use std::collections::BTreeMap;
 
-use buzz_core::tenant::CommunityId;
+use crate::tenant::CommunityId;
 use serde::{Deserialize, Serialize};
 
 /// Current manifest schema version. Bump on incompatible change.
@@ -472,17 +472,6 @@ mod tests {
         let mut m = sample();
         m.parent = None;
         m.validate().expect("no parent is fine (first push)");
-    }
-
-    #[test]
-    fn pointer_writer_is_covered_by_deletion_taxonomy() {
-        let community = CommunityId::from_uuid(uuid::Uuid::from_u128(1));
-        let owner = "a".repeat(64);
-        let key = pointer_key(community, &owner, "repo");
-        let prefixes = buzz_media::tenant_prefixes(*community.as_uuid());
-
-        assert!(prefixes.iter().any(|prefix| key.starts_with(prefix)));
-        assert!(buzz_media::is_tenant_owned_key(*community.as_uuid(), &key));
     }
 
     #[test]

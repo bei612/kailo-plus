@@ -574,6 +574,7 @@ mod postgres_tests {
             .expect("submit deletion request");
         let empty_digest = hex::encode(sha2::Sha256::digest([]));
         let inventory = crate::deletion::FrozenInventory {
+            retained_cas: None,
             schema: store
                 .inventory_schema(community)
                 .await

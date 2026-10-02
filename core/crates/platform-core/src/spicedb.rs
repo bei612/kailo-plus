@@ -78,6 +78,86 @@ pub enum Write {
 }
 
 impl SpiceDb {
+    /// Tenant 删除只删除一个明确 object 的全部关系（含 workspace#tenant），
+    /// 再以 FullyConsistent 原生 ReadRelationships 查证为空。不经只返回
+    /// principal 关系的角色列表读取，否则会遗漏 workspace 的 tenant 箭头。
+    pub async fn delete_object(
+        &self,
+        http: &reqwest::Client,
+        object_type: &str,
+        object_id: uuid::Uuid,
+    ) -> Result<String, SpiceDbError> {
+        if !matches!(object_type, "tenant" | "workspace" | "resource" | "asset") {
+            return Err(SpiceDbError::Unavailable("非本批删除 object type".into()));
+        }
+        let filter = serde_json::json!({
+            "resourceType": object_type,
+            "optionalResourceId": object_id.to_string(),
+        });
+        let response = http
+            .post(format!("{}/v1/relationships/delete", self.base))
+            .bearer_auth(&self.key)
+            .json(&serde_json::json!({ "relationshipFilter": filter }))
+            .send()
+            .await
+            .map_err(|e| SpiceDbError::Unavailable(e.to_string()))?;
+        if !response.status().is_success() {
+            return Err(SpiceDbError::Unavailable(format!(
+                "删除关系 HTTP {}",
+                response.status()
+            )));
+        }
+        let result: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| SpiceDbError::Unavailable(e.to_string()))?;
+        let token = result
+            .pointer("/deletedAt/token")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| SpiceDbError::Unavailable("删除关系缺 revision".into()))?;
+        if result.get("deletionProgress").and_then(|v| v.as_str())
+            != Some("DELETION_PROGRESS_COMPLETE")
+        {
+            return Err(SpiceDbError::Unavailable("关系仅部分删除或终态未知".into()));
+        }
+        let observed = http
+            .post(format!("{}/v1/relationships/read", self.base))
+            .bearer_auth(&self.key)
+            .json(&serde_json::json!({
+                "consistency": { "fullyConsistent": true },
+                "relationshipFilter": filter,
+                // 这是存在性查证，不是有上界的资源枚举：任何一行即未删除。
+                "optionalLimit": 1,
+            }))
+            .send()
+            .await
+            .map_err(|e| SpiceDbError::Unavailable(e.to_string()))?;
+        if !observed.status().is_success() {
+            return Err(SpiceDbError::Unavailable(format!(
+                "删除回读 HTTP {}",
+                observed.status()
+            )));
+        }
+        let text = observed
+            .text()
+            .await
+            .map_err(|e| SpiceDbError::Unavailable(e.to_string()))?;
+        if text.lines().any(|line| !line.trim().is_empty()) {
+            return Err(SpiceDbError::Unavailable(
+                "删除关系后仍有数据或流错误".into(),
+            ));
+        }
+        Ok(token.to_owned())
+    }
+
+    pub(crate) async fn delete_resource_projection(
+        &self,
+        id: uuid::Uuid,
+    ) -> Result<String, SpiceDbError> {
+        self.delete_object(&self.http, "resource", id).await
+    }
+
     /// 地址与凭据都不接受默认值：猜一个地址会让判定打到一个不是权威的实例。
     pub fn from_env(http: reqwest::Client) -> Result<Self, String> {
         let base = std::env::var("SPICEDB_HTTP_URL").map_err(|_| "缺少 SPICEDB_HTTP_URL")?;
@@ -145,8 +225,15 @@ impl SpiceDb {
             .json()
             .await
             .map_err(|e| SpiceDbError::Unavailable(format!("回应不可解析: {e}")))?;
+        let allowed = match r.permissionship.as_str() {
+            "PERMISSIONSHIP_HAS_PERMISSION" => true,
+            "PERMISSIONSHIP_NO_PERMISSION" => false,
+            _ => {
+                return Err(SpiceDbError::Unavailable("未支持的 permissionship".into()));
+            }
+        };
         Ok(Checked {
-            allowed: r.permissionship == "PERMISSIONSHIP_HAS_PERMISSION",
+            allowed,
             zed_token: r.checked_at.map(|t| t.token).unwrap_or_default(),
         })
     }
@@ -260,6 +347,13 @@ impl SpiceDb {
                 })
             })
             .collect();
+        self.write_native_updates(updates).await
+    }
+
+    async fn write_native_updates(
+        &self,
+        updates: Vec<serde_json::Value>,
+    ) -> Result<String, SpiceDbError> {
         let resp = self
             .http
             .post(format!("{}/v1/relationships/write", self.base))
@@ -284,6 +378,169 @@ impl SpiceDb {
             .ok_or_else(|| SpiceDbError::Unavailable("回应缺 writtenAt".into()))
     }
 
+    /// 真实 Core Resource 的 tenant/owner 在同一次原生 WriteRelationships 中替换。
+    /// 旧角色 Relationship 的 principal-only 形状不承担 tenant object 箭头。
+    pub(crate) async fn replace_resource_projection(
+        &self,
+        id: &str,
+        tenant: &str,
+        old_owner: &str,
+        owner: &str,
+    ) -> Result<String, SpiceDbError> {
+        let relationship = |relation: &str, subject_type: &str, subject: &str| {
+            serde_json::json!({
+                "resource":{"objectType":"resource","objectId":id},"relation":relation,
+                "subject":{"object":{"objectType":subject_type,"objectId":subject}}
+            })
+        };
+        let mut updates = vec![serde_json::json!({"operation":"OPERATION_TOUCH",
+            "relationship":relationship("tenant","tenant",tenant)})];
+        if old_owner != owner {
+            updates.push(serde_json::json!({"operation":"OPERATION_DELETE",
+                "relationship":relationship("owner","principal",old_owner)}));
+        }
+        updates.push(serde_json::json!({"operation":"OPERATION_TOUCH",
+            "relationship":relationship("owner","principal",owner)}));
+        self.write_native_updates(updates).await
+    }
+
+    pub(crate) async fn resource_projection_matches(
+        &self,
+        id: &str,
+        tenant: &str,
+        owner: &str,
+        page: u32,
+    ) -> Result<bool, SpiceDbError> {
+        let rows = self
+            .read_native(
+                &RelationshipFilter {
+                    object_type: "resource",
+                    object_id: Some(id),
+                    relation: None,
+                    subject_principal: None,
+                },
+                page,
+            )
+            .await?;
+        let mut owners = vec![];
+        let mut tenants = vec![];
+        for r in rows {
+            let text = |p: &str| r.pointer(p).and_then(serde_json::Value::as_str);
+            if text("/resource/objectType") != Some("resource")
+                || text("/resource/objectId") != Some(id)
+                || text("/subject/optionalRelation").is_some_and(|x| !x.is_empty())
+                || text("/optionalCaveat/caveatName").is_some_and(|x| !x.is_empty())
+            {
+                return Ok(false);
+            }
+            match text("/relation") {
+                Some("owner") if text("/subject/object/objectType") == Some("principal") => owners
+                    .push(
+                        text("/subject/object/objectId")
+                            .unwrap_or_default()
+                            .to_owned(),
+                    ),
+                Some("tenant") if text("/subject/object/objectType") == Some("tenant") => tenants
+                    .push(
+                        text("/subject/object/objectId")
+                            .unwrap_or_default()
+                            .to_owned(),
+                    ),
+                Some("home_workspace") => return Ok(false),
+                Some("owner" | "tenant") => return Ok(false),
+                _ => {}
+            }
+        }
+        Ok(owners == [owner] && tenants == [tenant])
+    }
+
+    /// Asset 自己的 owner 关系不从 Resource owner 推断；同一原生事务固定父与 Tenant。
+    pub(crate) async fn write_asset_projection(
+        &self,
+        id: &str,
+        tenant: &str,
+        resource: &str,
+        owner: &str,
+    ) -> Result<String, SpiceDbError> {
+        let relationships = [
+            ("tenant", "tenant", tenant),
+            ("resource", "resource", resource),
+            ("owner", "principal", owner),
+        ];
+        let updates = relationships
+            .into_iter()
+            .map(|(relation, subject_type, subject)| {
+                serde_json::json!({
+                    "operation":"OPERATION_TOUCH",
+                    "relationship":{
+                        "resource":{"objectType":"asset","objectId":id},"relation":relation,
+                        "subject":{"object":{"objectType":subject_type,"objectId":subject}}
+                    }
+                })
+            })
+            .collect();
+        self.write_native_updates(updates).await
+    }
+
+    pub(crate) async fn asset_projection_matches(
+        &self,
+        id: &str,
+        tenant: &str,
+        resource: &str,
+        owner: &str,
+        page: u32,
+    ) -> Result<bool, SpiceDbError> {
+        let rows = self
+            .read_native(
+                &RelationshipFilter {
+                    object_type: "asset",
+                    object_id: Some(id),
+                    relation: None,
+                    subject_principal: None,
+                },
+                page,
+            )
+            .await?;
+        let mut observed = std::collections::HashMap::new();
+        for r in rows {
+            let text = |p: &str| r.pointer(p).and_then(serde_json::Value::as_str);
+            if text("/resource/objectType") != Some("asset")
+                || text("/resource/objectId") != Some(id)
+                || text("/subject/optionalRelation").is_some_and(|s| !s.is_empty())
+                || text("/optionalCaveat/caveatName").is_some_and(|s| !s.is_empty())
+            {
+                return Ok(false);
+            }
+            let relation = text("/relation")
+                .ok_or_else(|| SpiceDbError::Unavailable("Asset 关系缺 relation".into()))?;
+            if matches!(relation, "tenant" | "resource" | "owner") {
+                let subject_type = text("/subject/object/objectType").unwrap_or_default();
+                let subject = text("/subject/object/objectId").unwrap_or_default();
+                if observed
+                    .insert(
+                        relation.to_owned(),
+                        (subject_type.to_owned(), subject.to_owned()),
+                    )
+                    .is_some()
+                {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(
+            observed.get("tenant") == Some(&("tenant".into(), tenant.into()))
+                && observed.get("resource") == Some(&("resource".into(), resource.into()))
+                && observed.get("owner") == Some(&("principal".into(), owner.into())),
+        )
+    }
+
+    pub(crate) async fn delete_asset_projection(
+        &self,
+        id: uuid::Uuid,
+    ) -> Result<String, SpiceDbError> {
+        self.delete_object(&self.http, "asset", id).await
+    }
+
     /// 以 FullyConsistent 读出满足过滤条件、主体为 principal 的全部关系。按 `page`
     /// 分页读到底：读一半就停等于把「还没读到」当成「不存在」，而角色判定恰恰
     /// 建立在「此外再没有别人」之上。
@@ -292,6 +549,35 @@ impl SpiceDb {
         filter: &RelationshipFilter<'_>,
         page: u32,
     ) -> Result<Vec<Relationship>, SpiceDbError> {
+        let mut out = vec![];
+        for r in self.read_native(filter, page).await? {
+            let s = |p: &str| r.pointer(p).and_then(|x| x.as_str()).map(str::to_owned);
+            let (Some(ot), Some(oi), Some(rel), Some(st), Some(si)) = (
+                s("/resource/objectType"),
+                s("/resource/objectId"),
+                s("/relation"),
+                s("/subject/object/objectType"),
+                s("/subject/object/objectId"),
+            ) else {
+                return Err(SpiceDbError::Unavailable("关系形状不符".into()));
+            };
+            if st == "principal" {
+                out.push(Relationship {
+                    object_type: ot,
+                    object_id: oi,
+                    relation: rel,
+                    subject_principal: si,
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    async fn read_native(
+        &self,
+        filter: &RelationshipFilter<'_>,
+        page: u32,
+    ) -> Result<Vec<serde_json::Value>, SpiceDbError> {
         let mut f = serde_json::json!({ "resourceType": filter.object_type });
         if let Some(id) = filter.object_id {
             f["optionalResourceId"] = id.into();
@@ -357,15 +643,10 @@ impl SpiceDb {
                     .and_then(|x| x.as_str())
                     .map(str::to_owned);
                 n += 1;
-                // workspace#tenant 的主体是 tenant，不是角色，不返回
-                if st == "principal" {
-                    out.push(Relationship {
-                        object_type: ot,
-                        object_id: oi,
-                        relation: rel,
-                        subject_principal: si,
-                    });
-                }
+                // 同一原生分页能力服务角色读取与 Resource tenant/owner 查证。
+                // 完整原生形状保留在当前请求内，不写 Core 权限正文副本。
+                let _ = (ot, oi, rel, st, si);
+                out.push(r.clone());
             }
             if n < page {
                 return Ok(out);

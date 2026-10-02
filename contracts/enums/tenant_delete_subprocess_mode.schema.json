@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/tenant_delete_subprocess_mode.schema.json",
+  "title": "TenantDeleteSubprocessMode",
+  "description": "TenantDeleteSubprocess.mode（.design/03 §4）。",
+  "type": "string",
+  "enum": ["PLATFORM_CORE_CHAIN", "NATIVE_DELETE", "RETAIN_ON_TENANT_DELETE"]
+}

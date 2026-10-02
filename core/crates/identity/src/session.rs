@@ -8,6 +8,7 @@
 //! 会话承载的唯一额外事实是 `current_workspace_id`：它是 BFF 后续按 Workspace
 //! 取 scope 的起点，不是权限本身。
 
+use contracts::PlatformSessionAccessMode;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -32,10 +33,59 @@ pub async fn ensure(
     tenant_membership_id: Uuid,
     ttl_seconds: i64,
 ) -> Result<PlatformSession, crate::IdentityError> {
+    ensure_mode(
+        pool,
+        human_identity_id,
+        tenant_membership_id,
+        ttl_seconds,
+        PlatformSessionAccessMode::Full,
+    )
+    .await
+}
+
+/// access_mode 是已完成 fresh 生命周期资格判定的结果，不接受 Browser 自报。
+/// Tenant 行先于 membership 锁定，与治理准入的锁顺序相同；暂停/删除不能与
+/// FULL 会话的重建交错。模式变化撤销旧会话，不复用旧 Workspace 选择。
+pub async fn ensure_mode(
+    pool: &PgPool,
+    human_identity_id: Uuid,
+    tenant_membership_id: Uuid,
+    ttl_seconds: i64,
+    access_mode: PlatformSessionAccessMode,
+) -> Result<PlatformSession, crate::IdentityError> {
     // 同一 membership 的请求在其已有行上串行化：只把查找与插入放进事务
     // 仍会让两个副本同时读到空结果、各插入一条。锁不跨网络调用，也不改变
     // 会话的入参、TTL 或授权判定（DD-112 的幂等会话簿记）。
     let mut tx = pool.begin().await?;
+    let tenant_id: Option<Uuid> = sqlx::query_scalar(
+        "select tenant_id from identity.tenant_membership where id = $1 and human_identity_id = $2",
+    )
+    .bind(tenant_membership_id)
+    .bind(human_identity_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(tenant_id) = tenant_id else {
+        return Err(crate::IdentityError::MembershipNotActive);
+    };
+    let tenant_state: Option<String> =
+        sqlx::query_scalar("select state from identity.tenant where id = $1 for update")
+            .bind(tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let permitted = match access_mode {
+        PlatformSessionAccessMode::Full => tenant_state.as_deref() == Some("ACTIVE"),
+        PlatformSessionAccessMode::LifecycleRestricted => matches!(
+            tenant_state.as_deref(),
+            Some("SUSPENDING" | "SUSPENDED" | "DELETING")
+        ),
+    };
+    if !permitted {
+        return Err(crate::IdentityError::TenantNotActive);
+    }
+    let mode = match access_mode {
+        PlatformSessionAccessMode::Full => "FULL",
+        PlatformSessionAccessMode::LifecycleRestricted => "LIFECYCLE_RESTRICTED",
+    };
     let membership = sqlx::query_scalar::<_, Uuid>(
         "select id from identity.tenant_membership
          where id = $1 and human_identity_id = $2 and state = 'ACTIVE' for update",
@@ -50,39 +100,49 @@ pub async fn ensure(
         return Err(crate::IdentityError::MembershipNotActive);
     }
 
-    if let Some(row) = sqlx::query!(
+    sqlx::query(
+        "update identity.platform_session set status = 'REVOKED'
+         where human_identity_id = $1 and tenant_membership_id = $2
+           and status = 'ACTIVE' and access_mode <> $3",
+    )
+    .bind(human_identity_id)
+    .bind(tenant_membership_id)
+    .bind(mode)
+    .execute(&mut *tx)
+    .await?;
+
+    if let Some((id, current_workspace_id)) = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
         "select id, current_workspace_id from identity.platform_session
          where human_identity_id = $1 and tenant_membership_id = $2
-           and status = 'ACTIVE' and expires_at > now()",
-        human_identity_id,
-        tenant_membership_id
+           and status = 'ACTIVE' and expires_at > now() and access_mode = $3",
     )
+    .bind(human_identity_id)
+    .bind(tenant_membership_id)
+    .bind(mode)
     .fetch_optional(&mut *tx)
     .await?
     {
         tx.commit().await?;
         return Ok(PlatformSession {
-            id: row.id,
-            current_workspace_id: row.current_workspace_id,
+            id,
+            current_workspace_id,
         });
     }
 
-    let row = sqlx::query!(
+    let (id, current_workspace_id) = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
         "insert into identity.platform_session
-             (id, human_identity_id, tenant_membership_id, issued_at, expires_at, status)
-         values ($1, $2, $3, now(), now() + make_interval(secs => $4), 'ACTIVE')
+             (id, human_identity_id, tenant_membership_id, issued_at, expires_at, status, access_mode)
+         values ($1, $2, $3, now(), now() + make_interval(secs => $4), 'ACTIVE', $5)
          returning id, current_workspace_id",
-        Uuid::new_v4(),
-        human_identity_id,
-        tenant_membership_id,
-        ttl_seconds as f64,
     )
+    .bind(Uuid::new_v4()).bind(human_identity_id).bind(tenant_membership_id)
+    .bind(ttl_seconds as f64).bind(mode)
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
     Ok(PlatformSession {
-        id: row.id,
-        current_workspace_id: row.current_workspace_id,
+        id,
+        current_workspace_id,
     })
 }
 

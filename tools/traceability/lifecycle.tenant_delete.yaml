@@ -1,0 +1,39 @@
+capability_id: lifecycle.tenant_delete
+title: 业务 Tenant 的冻结准入与四类平台事实销毁（未开放）
+stage: S3
+status: in_progress
+exposure: none
+
+design:
+  requirements: [V-REQ-03, V-REQ-19]
+  decisions: [DD-91, DD-99, DD-100, DD-109]
+  facts: [SF-BUZ-46]
+  seams: [SS-BUZ-COMMUNITY-DELETE]
+  blockers: []
+  entities: [Tenant, TenantLifecycleSnapshot, TenantDeleteSubprocess, PlatformSession, Resource, ActionExecution, WorkflowRef, AuditEvent]
+
+validation:
+  scenarios: [V-SCN-31]
+  evidence:
+    - dimension: 上游接缝
+      ref: collaboration/fork/verify/operator-provisioning.md
+    - dimension: 领域规则
+      ref: core/verify/tenant-deletion.md
+    - dimension: 安全边界
+      ref: core/verify/tenant-deletion.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/tenant_delete.rs, core/crates/platform-core/src/membership_lifecycle.rs, core/crates/platform-core/src/service_api.rs, core/crates/platform-core/src/openmeter.rs, core/crates/platform-core/src/bff.rs, core/crates/identity/src/session.rs, core/crates/collab-bridge/src/operator.rs, core/crates/secret-store/src/lib.rs, worker/workflows/component_task.go, worker/activities/core_api.go, collaboration/crates/buzz-deletion/src/lib.rs, collaboration/crates/buzz-db/src/store/deletion.rs, collaboration/crates/buzz-media/src/storage.rs, collaboration/crates/buzz-core/src/git_manifest.rs]
+  surfaces: []
+  schemas: [contracts/api/session.schema.json, contracts/enums/platform_session_access_mode.schema.json, contracts/enums/tenant_delete_subprocess_subject.schema.json, contracts/enums/tenant_delete_subprocess_mode.schema.json, contracts/enums/tenant_delete_subprocess_state.schema.json, contracts/enums/evidence_kind.schema.json, contracts/workflow/tenant_delete_advance_request.schema.json, contracts/workflow/tenant_delete_advance_result.schema.json]
+  migrations: [core/migrations/20261001010000_tenant_delete.up.sql]
+
+runtime:
+  routes: []
+  actions: []
+  workflow_kinds: []
+
+release:
+  artifacts: []
+  gate: closed

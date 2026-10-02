@@ -811,6 +811,8 @@ export const evidenceKindMessages = {
   [EvidenceKind.AdmitActionExecutionID]: { en: "Admitting action execution", "zh-CN": "准入动作执行" },
   [EvidenceKind.ApprovalPolicy]: { en: "Approval policy", "zh-CN": "审批策略" },
   [EvidenceKind.ApprovalWorkflowID]: { en: "Approval workflow", "zh-CN": "审批流程" },
+  [EvidenceKind.BuzzDeletionInventoryDigest]: { en: "Buzz deletion inventory digest", "zh-CN": "Buzz 删除清单摘要" },
+  [EvidenceKind.BuzzDeletionRequestID]: { en: "Buzz deletion request", "zh-CN": "Buzz 删除请求" },
   [EvidenceKind.BuzzEventID]: { en: "Buzz event", "zh-CN": "Buzz 事件" },
   [EvidenceKind.BuzzPubkey]: { en: "Buzz public key", "zh-CN": "Buzz 公钥" },
   [EvidenceKind.DeploymentBootstrap]: { en: "Deployment bootstrap", "zh-CN": "部署初始化" },
@@ -823,7 +825,9 @@ export const evidenceKindMessages = {
   [EvidenceKind.TemporalFirstRunID]: { en: "First workflow run", "zh-CN": "流程首次运行" },
   [EvidenceKind.TemporalRunID]: { en: "Workflow run", "zh-CN": "流程运行" },
   [EvidenceKind.TemporalWorkflowID]: { en: "Workflow", "zh-CN": "流程" },
+  [EvidenceKind.TenantDeleteSubprocessID]: { en: "Organization deletion subprocess", "zh-CN": "组织删除子流程" },
   [EvidenceKind.TenantInvitationID]: { en: "Organization invitation", "zh-CN": "组织邀请" },
+  [EvidenceKind.TenantLifecycleSnapshotID]: { en: "Organization lifecycle snapshot", "zh-CN": "组织生命周期快照" },
   [EvidenceKind.TenantMembershipID]: { en: "Organization membership", "zh-CN": "组织成员资格" },
 } as const satisfies Record<EvidenceKind, Message>;
 
@@ -914,6 +918,14 @@ export const reasonMessages = {
   [ReasonCode.DependencyUnavailable]: {
     en: "A service this depends on is unavailable.",
     "zh-CN": "所依赖的服务暂不可用。",
+  },
+  [ReasonCode.BindingNotActive]: {
+    en: "The connection required for this operation is not active. Nothing was executed; try again later.",
+    "zh-CN": "此操作所需的连接尚未生效，本次未执行；请稍后再试。",
+  },
+  [ReasonCode.RateLimited]: {
+    en: "Too many requests right now. Nothing was done; wait a moment and try again.",
+    "zh-CN": "请求过于频繁，本次未执行；请稍候再试。",
   },
   [ReasonCode.PublishRejected]: { en: "The message was rejected.", "zh-CN": "消息被拒绝。" },
   [ReasonCode.PublishResultUnknown]: {

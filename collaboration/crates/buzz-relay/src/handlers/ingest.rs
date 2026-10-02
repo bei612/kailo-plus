@@ -3579,6 +3579,7 @@ mod postgres_tests {
             .await
             .expect("submit");
         let inventory = FrozenInventory {
+            retained_cas: None,
             schema: store
                 .inventory_schema(community)
                 .await

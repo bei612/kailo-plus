@@ -18,6 +18,8 @@ pub mod error;
 pub mod event;
 /// NIP-01 subscription filter matching.
 pub mod filter;
+/// Canonical Git manifest codec shared by relay readers and deletion inventory.
+pub mod git_manifest;
 /// Git permission types — ref patterns, protection rules, policy evaluation.
 pub mod git_perms;
 /// Shared invite-link contract constants.

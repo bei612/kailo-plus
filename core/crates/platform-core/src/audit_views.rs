@@ -305,6 +305,7 @@ fn parse_relationship(value: &str) -> Option<crate::spicedb::Relationship> {
 async fn evidence_existence(
     state: &BffState,
     tenant_id: Uuid,
+    operation_id: Uuid,
     refs: &Value,
     e: &Evidence,
 ) -> Result<Existence, ExistenceError> {
@@ -385,8 +386,37 @@ async fn evidence_existence(
         K::SpicedbZedtoken
         | K::BuzzEventId
         | K::BuzzPubkey
+        | K::BuzzDeletionRequestId
+        | K::BuzzDeletionInventoryDigest
         | K::ExternalSubjectSha256
         | K::PlatformSessionId => return Ok(Existence::Unverifiable),
+        K::TenantLifecycleSnapshotId | K::TenantDeleteSubprocessId => {
+            let Ok(id) = Uuid::parse_str(&e.value) else {
+                return Ok(Existence::Absent);
+            };
+            // operation_id 是跨组件关联键，不是 ActionExecution.id。冻结对象必须
+            // 由同 Tenant、同 operation 的执行持有，不能解引用另一操作的快照。
+            let sql = if e.kind == K::TenantLifecycleSnapshotId {
+                "select 1 from admission.tenant_lifecycle_snapshot s
+                 join admission.action_execution ae on ae.id = s.action_execution_id
+                 where s.id = $1 and s.tenant_id = $2 and ae.tenant_id = $2
+                   and ae.operation_id = $3"
+            } else {
+                "select 1 from admission.tenant_delete_subprocess p
+                 join admission.tenant_lifecycle_snapshot s
+                   on s.id = p.tenant_lifecycle_snapshot_id and s.tenant_id = p.tenant_id
+                 join admission.action_execution ae on ae.id = s.action_execution_id
+                 where p.id = $1 and p.tenant_id = $2 and ae.tenant_id = $2
+                   and ae.operation_id = $3"
+            };
+            let row = sqlx::query_scalar::<_, i32>(sql)
+                .bind(id)
+                .bind(tenant_id)
+                .bind(operation_id)
+                .fetch_optional(&state.pool)
+                .await?;
+            return Ok(present(row.is_some()));
+        }
         K::ActionExecutionId | K::AdmitActionExecutionId | K::OriginalActionExecutionId => {
             "select 1 from admission.action_execution where id = $1 and tenant_id = $2"
         }
@@ -424,14 +454,15 @@ pub async fn dereference_evidence(
         Ok(c) => c,
         Err(r) => return r,
     };
-    let row: Result<Option<(Option<Uuid>, Value)>, _> = sqlx::query_as(
-        "select workspace_id, evidence_refs from audit.audit_event where id = $1 and tenant_id = $2",
+    let row: Result<Option<(Option<Uuid>, Uuid, Value)>, _> = sqlx::query_as(
+        "select workspace_id, operation_id, evidence_refs
+         from audit.audit_event where id = $1 and tenant_id = $2",
     )
     .bind(event_id)
     .bind(ctx.tenant_id)
     .fetch_optional(&state.pool)
     .await;
-    let (workspace_id, refs) = match row {
+    let (workspace_id, operation_id, refs) = match row {
         Ok(Some(r)) => r,
         // 别的 Tenant 的事件与不存在的事件同样回 404：不透露它在哪里
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
@@ -462,7 +493,7 @@ pub async fn dereference_evidence(
         ))
         .into_response();
     }
-    match evidence_existence(&state, ctx.tenant_id, &refs, &evidence).await {
+    match evidence_existence(&state, ctx.tenant_id, operation_id, &refs, &evidence).await {
         Ok(Existence::Present) => {}
         // 原证据明确不存在：404，正文仍是只含原因的不可用视图
         Ok(Existence::Absent) => {

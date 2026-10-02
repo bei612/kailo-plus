@@ -2,6 +2,7 @@
 #![warn(missing_docs)]
 //! Shared durable whole-community deletion engine and store adapters.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,18 +10,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use buzz_core::git_manifest::Manifest;
 use buzz_db::deletion::{
     ClaimedDeletion, DeletionInspection, DeletionRequest, DeletionStage, DeletionStore,
-    FrozenInventory, KeyStreamDigest, LeaseToken, PrefixManifest, StorageManifest,
-    StorageManifestEntry, DEFAULT_LEASE_DURATION,
+    FrozenInventory, KeyStreamDigest, LeaseToken, PrefixManifest, RetainedCasManifest,
+    StorageManifest, StorageManifestEntry, DEFAULT_LEASE_DURATION,
 };
 use buzz_db::{Db, DbConfig};
 use buzz_media::{
-    is_tenant_owned_key, tenant_prefixes, BulkDeleteOutcome, MediaStorage, ObjectVersionKind,
-    ObjectVersionRef,
+    classify_key, is_tenant_owned_key, tenant_prefixes, BlobMeta, BulkDeleteOutcome, KeyClass,
+    MediaStorage, ObjectVersionEntry, ObjectVersionKind, ObjectVersionRef,
 };
 use clap::Subcommand;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use uuid::Uuid;
@@ -817,6 +820,24 @@ fn validate_frozen_inventory(request: &DeletionRequest) -> Result<FrozenInventor
         return Err(permanent("approved frozen inventory digest mismatch"));
     }
     validate_storage_ownership(request, &frozen.storage)?;
+    let retained = frozen
+        .retained_cas
+        .as_ref()
+        .ok_or_else(|| permanent("approved inventory has no shared-CAS retention evidence"))?;
+    let empty_digest = hex::encode(Sha256::digest([]));
+    if retained.keys_digest.len() != 64
+        || !retained
+            .keys_digest
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        || (retained.object_count == 0
+            && (retained.total_bytes != 0 || retained.keys_digest != empty_digest))
+        || (retained.object_count != 0 && retained.keys_digest == empty_digest)
+    {
+        return Err(permanent(
+            "approved shared-CAS retention evidence is inconsistent",
+        ));
+    }
     Ok(frozen)
 }
 
@@ -845,7 +866,188 @@ async fn build_inventory(
         .inventory_schema(request.community_id)
         .await?;
     let storage = enumerate_tenant_prefixes(services, request, None, None).await?;
-    Ok(FrozenInventory { schema, storage })
+    let retained_cas = Some(inventory_retained_cas(services, request).await?);
+    Ok(FrozenInventory {
+        schema,
+        storage,
+        retained_cas,
+    })
+}
+
+/// Read complete version catalogs, rejecting missing/non-progressing pagination.
+async fn inventory_versions(
+    storage: &MediaStorage,
+    prefix: &str,
+) -> Result<Vec<ObjectVersionEntry>> {
+    let mut key_marker = None;
+    let mut version_marker = None;
+    let mut cursors = BTreeSet::new();
+    let mut identities = BTreeSet::new();
+    let mut versions = Vec::new();
+    loop {
+        let page = storage
+            .list_prefix_versions_page(prefix, key_marker, version_marker, LIST_PAGE_SIZE)
+            .await?;
+        for entry in page.entries {
+            if !entry.key.starts_with(prefix)
+                || entry.version_id.is_empty()
+                || !identities.insert((entry.key.clone(), entry.version_id.clone()))
+            {
+                return Err(transient(
+                    "retention version catalog has an invalid or duplicate entry",
+                ));
+            }
+            versions.push(entry);
+        }
+        if !page.is_truncated {
+            break;
+        }
+        let cursor =
+            require_truncated_version_markers(page.next_key_marker, page.next_version_id_marker)?;
+        if !cursors.insert(cursor.clone()) {
+            return Err(transient(
+                "retention version catalog pagination did not advance",
+            ));
+        }
+        key_marker = Some(cursor.0);
+        version_marker = Some(cursor.1);
+    }
+    Ok(versions)
+}
+
+async fn inventory_version_bytes(
+    storage: &MediaStorage,
+    entry: &ObjectVersionEntry,
+) -> Result<Vec<u8>> {
+    let bytes = storage.get_version(&entry.key, &entry.version_id).await?;
+    if u64::try_from(bytes.len())? != entry.size {
+        return Err(transient(
+            "retention reference version size differs from its catalog",
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Attribute shared objects only through this community's historical sidecars
+/// and Git pointers. No whole-bucket or tenant-prefix deletion count is reused.
+async fn inventory_retained_cas(
+    services: &Services,
+    request: &DeletionRequest,
+) -> Result<RetainedCasManifest> {
+    let mut keys = BTreeMap::new();
+    let mut manifests = BTreeSet::new();
+    let sidecar_prefix = format!("_meta/{}/", request.community_id);
+    for entry in inventory_versions(&services.media, &sidecar_prefix).await? {
+        if entry.kind != ObjectVersionKind::Object {
+            continue;
+        }
+        let KeyClass::Sidecar { community, sha256 } = classify_key(&entry.key) else {
+            return Err(permanent(
+                "retention reference is not a native media sidecar",
+            ));
+        };
+        if community != *request.community_id.as_uuid() {
+            return Err(permanent(
+                "retention reference belongs to another community",
+            ));
+        }
+        let meta: BlobMeta =
+            serde_json::from_slice(&inventory_version_bytes(&services.media, &entry).await?)?;
+        let key = format!("{sha256}.{}", meta.ext);
+        if !matches!(classify_key(&key), KeyClass::Blob { sha256: ref digest, .. } if digest == &sha256)
+        {
+            return Err(permanent(
+                "retention sidecar has an invalid native blob extension",
+            ));
+        }
+        keys.insert(key, true);
+        if !meta.thumb_url.is_empty() {
+            keys.insert(format!("{sha256}.thumb.jpg"), true);
+        }
+    }
+    let repos_prefix = format!("repos/{}/", request.community_id);
+    for entry in inventory_versions(&services.media, &repos_prefix).await? {
+        if entry.kind != ObjectVersionKind::Object || !entry.key.ends_with("/pointer") {
+            continue;
+        }
+        let bytes = inventory_version_bytes(&services.media, &entry).await?;
+        let digest = std::str::from_utf8(&bytes)?.trim();
+        if digest.len() != 64
+            || !digest
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(permanent(
+                "retention Git pointer is not a native manifest digest",
+            ));
+        }
+        manifests.insert(digest.to_owned());
+    }
+
+    let mut seen_manifests = BTreeSet::new();
+    let mut versions = BTreeMap::new();
+    while let Some(digest) = manifests.pop_first() {
+        if !seen_manifests.insert(digest.clone()) {
+            continue;
+        }
+        let key = format!("manifests/{digest}");
+        let objects = inventory_versions(&services.media, &key)
+            .await?
+            .into_iter()
+            .filter(|entry| entry.key == key && entry.kind == ObjectVersionKind::Object)
+            .collect::<Vec<_>>();
+        if objects.is_empty() {
+            return Err(transient("retention Git manifest reference is missing"));
+        }
+        for entry in objects {
+            let bytes = inventory_version_bytes(&services.media, &entry).await?;
+            if hex::encode(Sha256::digest(&bytes)) != digest {
+                return Err(permanent("retention Git manifest content digest mismatch"));
+            }
+            let manifest = Manifest::from_bytes(&bytes)?;
+            manifest.validate()?;
+            if let Some(parent) = manifest.parent {
+                manifests.insert(parent);
+            }
+            for pack in manifest.packs {
+                // The native parser has already validated packs/<SHA-256>.
+                let pack_digest = pack
+                    .strip_prefix("packs/")
+                    .ok_or_else(|| permanent("retention manifest has an invalid pack key"))?;
+                keys.entry(format!("idx/{pack_digest}")).or_insert(false);
+                keys.insert(pack, true);
+            }
+            versions.insert((entry.key, entry.version_id), entry.size);
+        }
+    }
+    for (key, required) in keys {
+        let objects = inventory_versions(&services.media, &key)
+            .await?
+            .into_iter()
+            .filter(|entry| entry.key == key && entry.kind == ObjectVersionKind::Object)
+            .collect::<Vec<_>>();
+        if required && objects.is_empty() {
+            return Err(transient("retention shared-CAS reference is missing"));
+        }
+        for entry in objects {
+            versions.insert((entry.key, entry.version_id), entry.size);
+        }
+    }
+    let mut stream = KeyStreamDigest::new();
+    let mut total_bytes = 0_u64;
+    for ((key, version), size) in versions {
+        // JSON tuple escaping keeps key/version boundaries unambiguous.
+        stream.fold_unordered(&serde_json::to_string(&(key, version, size))?)?;
+        total_bytes = total_bytes
+            .checked_add(size)
+            .ok_or_else(|| permanent("retention byte count overflow"))?;
+    }
+    let (keys_digest, object_count) = stream.finish();
+    Ok(RetainedCasManifest {
+        object_count,
+        total_bytes,
+        keys_digest,
+    })
 }
 
 /// Buffered writer for frozen key chunks during the destructive freeze.
@@ -1559,13 +1761,15 @@ async fn execute_stage(
                 .await?;
         }
         DeletionStage::LogicallyVerified => {
-            validate_frozen_inventory(request)?;
+            let frozen = validate_frozen_inventory(request)?;
             services
                 .store
                 .mark_retention_pending(
                     &token,
                     serde_json::json!({
-                        "policy": "member-erasure and fleet-wide shared-CAS GC are out of V1 scope"
+                        "policy": "member-erasure and fleet-wide shared-CAS GC are out of V1 scope",
+                        "inventory_digest": request.inventory_digest,
+                        "retained_cas": frozen.retained_cas
                     }),
                 )
                 .await?;
@@ -1834,6 +2038,7 @@ mod postgres_tests {
             .await
             .expect("submit deletion request");
         let inventory = FrozenInventory {
+            retained_cas: None,
             schema: store
                 .inventory_schema(community.id)
                 .await

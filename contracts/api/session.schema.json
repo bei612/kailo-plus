@@ -5,7 +5,7 @@
   "description": "GET /api/v1/session 的回应：已解析的执行身份与本次 PlatformSession。原生端以 platformSessionId 绑定设备持钥证明（DD-79）。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["humanIdentityId", "displayName", "tenantId", "tenantMembershipId", "tenantPrincipalId", "platformSessionId"],
+  "required": ["humanIdentityId", "displayName", "tenantId", "tenantMembershipId", "tenantPrincipalId", "platformSessionId", "accessMode"],
   "properties": {
     "humanIdentityId": { "type": "string", "format": "uuid" },
     "displayName": { "type": "string", "description": "HumanIdentity 的显示名，只用于界面上认出本人，不参与任何判定" },
@@ -13,6 +13,7 @@
     "tenantMembershipId": { "type": "string", "format": "uuid" },
     "tenantPrincipalId": { "type": "string", "format": "uuid" },
     "platformSessionId": { "type": "string", "format": "uuid" },
+    "accessMode": { "$ref": "../enums/platform_session_access_mode.schema.json" },
     "currentWorkspaceId": { "type": "string", "format": "uuid", "description": "当前选定的 Workspace；未选定时缺省" }
   }
 }

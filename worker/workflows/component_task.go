@@ -65,12 +65,15 @@ type ScopeTarget struct {
 	// 执行状态机的哪一段。建立链的 input 不带此字段（已录制的 history 与在途
 	// 建立链逐字不变），缺省即建立；暂停与恢复由 Core 显式写出（.design/06 §7.3）。
 	Operation string `json:"operation,omitempty"`
+	// 删除准入冻结的快照；建立、暂停与恢复不写此字段。
+	SnapshotID string `json:"snapshotId,omitempty"`
 }
 
 // ScopeTarget.Operation 的取值，与 Core 的 ScopeOperation 逐字相同。
 const (
 	scopeOperationSuspend = "SUSPEND"
 	scopeOperationRestore = "RESTORE"
+	scopeOperationDelete  = "DELETE"
 )
 
 // IdentityTarget 是原生设备公钥投影的冻结输入（DD-79）。
@@ -102,7 +105,8 @@ type ComponentTaskInput struct {
 	// 单调去重（06 §2：按 workflow ID 而非 run ID 聚合），新 run 的 history 从零
 	// 数起，不加上它，续跑后的投影会被当成旧事件丢掉。
 	EventBase int64 `json:"eventBase,omitempty"`
-	// 取消后的终态投影尚未落库时，continue-as-new 只续跑收尾，不重放业务步骤。
+	// 取消后的收尾尚未落库时，continue-as-new 只续跑收尾。DELETE 用它保留
+	// 取消意图，仍向 Core 对账不可逆标记，不能直接写 CANCELED。
 	CancelPending bool `json:"cancelPending,omitempty"`
 }
 
@@ -268,7 +272,7 @@ func (t *task) fail(cause error) error {
 	if temporal.IsCanceledError(t.ctx.Err()) {
 		return t.cancel()
 	}
-	if err := t.project(t.ctx, generated.Failed, nil).Get(t.ctx, nil); err != nil {
+	if err := t.project(t.ctx, generated.TaskStatusFAILED, nil).Get(t.ctx, nil); err != nil {
 		if temporal.IsCanceledError(t.ctx.Err()) {
 			return t.cancel()
 		}
@@ -300,7 +304,8 @@ func (t *task) cancel() error {
 // 未实现的 kind 落到 default 分支当场失败——不写一个「什么都不做就成功」的
 // 分支，那会让未实现的能力看起来像执行过了。
 func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
-	if in.CancelPending {
+	if in.CancelPending && !(in.Kind == generated.TenantLifecycle &&
+		in.Scope != nil && in.Scope.Operation == scopeOperationDelete) {
 		return newTask(ctx, in).cancel()
 	}
 	switch in.Kind {
@@ -540,6 +545,8 @@ func tenantLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 		return tenantSuspend(ctx, in)
 	case scopeOperationRestore:
 		return tenantRestore(ctx, in)
+	case scopeOperationDelete:
+		return tenantDelete(ctx, in)
 	default:
 		return temporal.NewNonRetryableApplicationError(
 			"TENANT_LIFECYCLE 的 operation 未实现", activities.ErrTypeRejected, nil)
@@ -576,6 +583,101 @@ func tenantLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 	}
 	workflow.GetLogger(ctx).Info("Tenant 已就绪", "state", out.State, "version", out.Version)
 	return t.complete()
+}
+
+// tenantDelete 只推进 Core 已冻结的销毁记录（DD-43/91/99/100/109）。
+// 不可逆标记与终态只取自 Core；取消 HTTP Activity 不代表已撤回副作用。
+// 任何未闭合结果都保持 RUNNING，不能复用 failScope 的 ERROR/FAILED 路径。
+func tenantDelete(ctx workflow.Context, in ComponentTaskInput) error {
+	s := in.Scope
+	if s == nil || s.SnapshotID == "" {
+		return temporal.NewNonRetryableApplicationError(
+			"TENANT_LIFECYCLE DELETE 缺少冻结的 snapshot", activities.ErrTypeRejected, nil)
+	}
+	execCtx := ctx
+	t := newTask(execCtx, in)
+	begun := false
+	for {
+		if temporal.IsCanceledError(execCtx.Err()) {
+			// 取消意图跨 continue-as-new 保留；它不是不可逆事实。Core 的同一
+			// 持久记录仲裁普通 advance 与撤回，post-flag 继续对账直到完成。
+			detached, done := workflow.NewDisconnectedContext(execCtx)
+			defer done()
+			execCtx = detached
+			next := t.in
+			next.CancelPending = true
+			t = newTask(execCtx, next)
+		}
+		var err error
+		if !begun {
+			err = t.begin()
+			if err == nil {
+				begun = true
+			}
+			var cont *workflow.ContinueAsNewError
+			if errors.As(err, &cont) {
+				return err
+			}
+		}
+		if err == nil {
+			var out generated.TenantDeleteAdvanceResult
+			ao := workflow.WithActivityOptions(execCtx, activityOptions())
+			future := workflow.ExecuteActivity(ao, (*activities.CoreAPI).AdvanceTenantDelete,
+				generated.TenantDeleteAdvanceRequest{
+					TenantID:        s.ID,
+					TenantVersion:   int64(s.Version),
+					SnapshotID:      s.SnapshotID,
+					CancelRequested: t.in.CancelPending,
+				})
+			selector := workflow.NewSelector(execCtx)
+			selector.AddFuture(future, func(f workflow.Future) { err = f.Get(execCtx, &out) })
+			selector.AddReceive(execCtx.Done(), func(workflow.ReceiveChannel, bool) {
+				err = temporal.NewCanceledError()
+			})
+			selector.Select(execCtx)
+			if temporal.IsCanceledError(execCtx.Err()) {
+				continue
+			}
+			if err == nil {
+				// 空响应、其他 snapshot 或互相矛盾的终态都不是成功证据。
+				refsMatch := out.SnapshotID == s.SnapshotID && out.SubprocessID != ""
+				canceled := refsMatch && out.Canceled && !out.Completed &&
+					!out.IrreversibleDispatchStarted
+				completed := refsMatch && out.Completed && !out.Canceled &&
+					out.IrreversibleDispatchStarted && out.NativeRequestID != nil &&
+					*out.NativeRequestID != "" && out.NativeInventoryDigest != nil &&
+					*out.NativeInventoryDigest != ""
+				if canceled || completed {
+					status := generated.Completed
+					if canceled {
+						status = generated.Canceled
+					}
+					if err = t.project(execCtx, status, nil).Get(execCtx, nil); err == nil {
+						if canceled {
+							return temporal.NewCanceledError()
+						}
+						return nil
+					}
+				}
+			}
+		}
+		if temporal.IsCanceledError(execCtx.Err()) {
+			continue
+		}
+		// 正常 200 的 pending、4xx、超时和投影失败都继续查同一记录；
+		// Core 没有给出确定终态时，Workflow 不写 FAILED 或 CANCELED。
+		workflow.GetLogger(execCtx).Warn("Tenant 删除尚未对账，等待下一轮")
+		reason := "PENDING_EXTERNAL"
+		_ = t.project(execCtx, generated.Running, &reason).Get(execCtx, nil)
+		if err := workflow.Sleep(execCtx, retry.RoundInterval); err != nil {
+			continue
+		}
+		if workflow.GetInfo(execCtx).GetContinueAsNewSuggested() {
+			next := t.in
+			next.EventBase = eventID(execCtx, t.in)
+			return workflow.NewContinueAsNewError(execCtx, ComponentTask, next)
+		}
+	}
 }
 
 // workspaceLifecycle 建立一个 Workspace 的协作面与授权归属。

@@ -14,7 +14,19 @@ cd "$(dirname "$0")"
   "${KEYCLOAK_PORT:?缺少 KEYCLOAK_PORT}" \
   "${CORE_DB_PORT:?缺少 CORE_DB_PORT}" \
   "${CORE_DB_USER:?缺少 CORE_DB_USER}" "${CORE_DB_NAME:?缺少 CORE_DB_NAME}" \
-  "${AGENTGATEWAY_DB_USER:?缺少 AGENTGATEWAY_DB_USER}" "${AGENTGATEWAY_DB_NAME:?缺少 AGENTGATEWAY_DB_NAME}"
+  "${AGENTGATEWAY_DB_USER:?缺少 AGENTGATEWAY_DB_USER}" "${AGENTGATEWAY_DB_NAME:?缺少 AGENTGATEWAY_DB_NAME}" \
+  "${OPENMETER_HOST:?缺少 OPENMETER_HOST}" "${OPENMETER_API_PORT:?缺少 OPENMETER_API_PORT}" \
+  "${OPENMETER_CUSTOMERS_URL:?缺少 OPENMETER_CUSTOMERS_URL}" "${OPENMETER_NAMESPACE:?缺少 OPENMETER_NAMESPACE}" \
+  "${OPENMETER_HTTP_TIMEOUT_SECONDS:?缺少 OPENMETER_HTTP_TIMEOUT_SECONDS}" \
+  "${OPENMETER_CORE_TOKEN_FILE:?缺少 OPENMETER_CORE_TOKEN_FILE}" \
+  "${OPENMETER_DB_NAME:?缺少 OPENMETER_DB_NAME}" "${OPENMETER_DB_USER:?缺少 OPENMETER_DB_USER}" \
+  "${OPENMETER_CLICKHOUSE_DB_NAME:?缺少 OPENMETER_CLICKHOUSE_DB_NAME}" \
+  "${OPENMETER_CLICKHOUSE_USER:?缺少 OPENMETER_CLICKHOUSE_USER}" \
+  "${OPENMETER_KAFKA_CLUSTER_ID:?缺少 OPENMETER_KAFKA_CLUSTER_ID}" \
+  "${OPENMETER_API_CPUS:?缺少 OPENMETER_API_CPUS}" "${OPENMETER_API_MEMORY:?缺少 OPENMETER_API_MEMORY}" \
+  "${OPENMETER_KAFKA_CPUS:?缺少 OPENMETER_KAFKA_CPUS}" "${OPENMETER_KAFKA_MEMORY:?缺少 OPENMETER_KAFKA_MEMORY}" \
+  "${OPENMETER_CLICKHOUSE_CPUS:?缺少 OPENMETER_CLICKHOUSE_CPUS}" "${OPENMETER_CLICKHOUSE_MEMORY:?缺少 OPENMETER_CLICKHOUSE_MEMORY}" \
+  "${OPENMETER_POSTGRES_CPUS:?缺少 OPENMETER_POSTGRES_CPUS}" "${OPENMETER_POSTGRES_MEMORY:?缺少 OPENMETER_POSTGRES_MEMORY}"
 # 本地拓扑导入 Keycloak realm；issuer 的 realm 必须与导入对象完全相同。
 # PUBLIC_ORIGIN 是浏览器入口的唯一根地址，回调与邀请页均从它派生。
 OIDC_ISSUER="$OIDC_ISSUER" OIDC_REALM="$OIDC_REALM" PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
@@ -23,10 +35,23 @@ BUZZ_RELAY_PORT="$BUZZ_RELAY_PORT" AGENTGATEWAY_PORT="$AGENTGATEWAY_PORT" \
 KEYCLOAK_PORT="$KEYCLOAK_PORT" CORE_DB_USER="$CORE_DB_USER" CORE_DB_NAME="$CORE_DB_NAME" \
 CORE_DB_PORT="$CORE_DB_PORT" \
 AGENTGATEWAY_DB_USER="$AGENTGATEWAY_DB_USER" AGENTGATEWAY_DB_NAME="$AGENTGATEWAY_DB_NAME" \
+OPENMETER_HOST="$OPENMETER_HOST" OPENMETER_API_PORT="$OPENMETER_API_PORT" \
+OPENMETER_CUSTOMERS_URL="$OPENMETER_CUSTOMERS_URL" OPENMETER_NAMESPACE="$OPENMETER_NAMESPACE" \
+OPENMETER_HTTP_TIMEOUT_SECONDS="$OPENMETER_HTTP_TIMEOUT_SECONDS" \
+OPENMETER_CORE_TOKEN_FILE="$OPENMETER_CORE_TOKEN_FILE" \
+OPENMETER_DB_NAME="$OPENMETER_DB_NAME" OPENMETER_DB_USER="$OPENMETER_DB_USER" \
+OPENMETER_CLICKHOUSE_DB_NAME="$OPENMETER_CLICKHOUSE_DB_NAME" OPENMETER_CLICKHOUSE_USER="$OPENMETER_CLICKHOUSE_USER" \
+OPENMETER_KAFKA_CLUSTER_ID="$OPENMETER_KAFKA_CLUSTER_ID" \
+OPENMETER_API_CPUS="$OPENMETER_API_CPUS" OPENMETER_API_MEMORY="$OPENMETER_API_MEMORY" \
+OPENMETER_KAFKA_CPUS="$OPENMETER_KAFKA_CPUS" OPENMETER_KAFKA_MEMORY="$OPENMETER_KAFKA_MEMORY" \
+OPENMETER_CLICKHOUSE_CPUS="$OPENMETER_CLICKHOUSE_CPUS" OPENMETER_CLICKHOUSE_MEMORY="$OPENMETER_CLICKHOUSE_MEMORY" \
+OPENMETER_POSTGRES_CPUS="$OPENMETER_POSTGRES_CPUS" OPENMETER_POSTGRES_MEMORY="$OPENMETER_POSTGRES_MEMORY" \
 PLATFORM_DISPLAY_NAME="${PLATFORM_DISPLAY_NAME:-}" \
 python3 - <<'PYCONFIG'
 import os
 import re
+from decimal import Decimal, InvalidOperation
+from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
 if not os.environ["PLATFORM_DISPLAY_NAME"].strip():
@@ -84,6 +109,34 @@ checked_port("CORE_DB_PORT")
 for name in ("CORE_DB_USER", "CORE_DB_NAME", "AGENTGATEWAY_DB_USER", "AGENTGATEWAY_DB_NAME"):
     if not re.fullmatch(r"[A-Za-z0-9_-]+", os.environ[name]):
         raise SystemExit(f"{name} 不适合 PostgreSQL URL")
+for name in ("OPENMETER_DB_USER", "OPENMETER_DB_NAME", "OPENMETER_CLICKHOUSE_USER", "OPENMETER_CLICKHOUSE_DB_NAME"):
+    if not re.fullmatch(r"[A-Za-z0-9_]+", os.environ[name]):
+        raise SystemExit(f"{name} 必须是字母、数字或下划线组成的原生存储标识")
+native_host = host("OPENMETER_HOST")
+native_port = checked_port("OPENMETER_API_PORT")
+if os.environ["OPENMETER_CUSTOMERS_URL"] != f"http://{native_host}:{native_port}/api/v3/openmeter/customers":
+    raise SystemExit("OPENMETER_CUSTOMERS_URL 必须由 OPENMETER_HOST/API_PORT 派生为原生 v3 Customer 路径")
+for name in ("OPENMETER_NAMESPACE", "OPENMETER_KAFKA_CLUSTER_ID"):
+    if invalid_chars(os.environ[name]) or not re.fullmatch(r"[A-Za-z0-9_-]+", os.environ[name]):
+        raise SystemExit(f"{name} 含无效的原生 namespace 或集群标识字符")
+if not re.fullmatch(r"[1-9][0-9]*", os.environ["OPENMETER_HTTP_TIMEOUT_SECONDS"]):
+    raise SystemExit("OPENMETER_HTTP_TIMEOUT_SECONDS 必须是正整数秒")
+raw = os.environ["OPENMETER_CORE_TOKEN_FILE"]
+path = PurePosixPath(raw)
+if (invalid_chars(raw) or not raw.startswith("/") or raw.endswith("/")
+        or str(path) != raw or ".." in path.parts):
+    raise SystemExit("OPENMETER_CORE_TOKEN_FILE 必须是规范的容器内绝对文件路径")
+for component in ("API", "KAFKA", "CLICKHOUSE", "POSTGRES"):
+    name = f"OPENMETER_{component}_CPUS"
+    try:
+        cpus = Decimal(os.environ[name])
+    except InvalidOperation:
+        raise SystemExit(f"{name} 必须是有限正数") from None
+    if not cpus.is_finite() or cpus <= 0:
+        raise SystemExit(f"{name} 必须是有限正数")
+    name = f"OPENMETER_{component}_MEMORY"
+    if not re.fullmatch(r"[1-9][0-9]*(?:[bBkKmMgG]|[kKmMgG][bB])?", os.environ[name]):
+        raise SystemExit(f"{name} 必须是正的 Compose 内存容量")
 PYCONFIG
 # 三个 IdP 用户各自只属于一个 Tenant：一期同一 HumanIdentity 在多个 Tenant 有
 # ACTIVE membership 时登录被拒（TENANT_SELECTION_NOT_AVAILABLE），Catalog admin 也
@@ -96,6 +149,14 @@ PYCONFIG
   echo 'BOOTSTRAP_USER、VERIFY_USER 与 PLATFORM_ADMIN_USER 必须两两不同：一期不能在登录时选择 Tenant，Catalog admin 不得绑定业务 Tenant' >&2
   exit 2
 }
+if [ -n "${BUZZ_DELETION_PORT:-}" ]; then
+  [[ "$BUZZ_DELETION_PORT" =~ ^[1-9][0-9]*$ ]] \
+    && (( BUZZ_DELETION_PORT <= 65535 )) \
+    && [[ "${BUZZ_DELETION_HTTP_TIMEOUT_SECONDS:-}" =~ ^[1-9][0-9]*$ ]] || {
+    echo '私有删除端口必须为有效 TCP 端口，HTTP timeout 必须为正整数秒' >&2
+    exit 2
+  }
+fi
 if [ "${1:-}" = '--validate-config' ] && [ "$#" -eq 1 ]; then
   exit 0
 fi
@@ -357,6 +418,19 @@ gen agentgateway_db_password
     "$AGENTGATEWAY_DB_USER" "$(cat secrets/agentgateway_db_password)" "$AGENTGATEWAY_DB_NAME"; } > secrets/agentgateway-db.env
 chmod 600 secrets/agentgateway-db.env
 printf '  已生成：secrets/agentgateway-db.env\n'
+# 原生 API 只接受数据库口令环境变量；从唯一 secret 文件投递，不在 .env 维护副本。
+# Core 与原生鉴权共用只读 token 文件。Compose 本地文件 secret 忽略 uid/mode，
+# 所以宿主文件显式归 Core 的 uid 10001；当前部署用户组可读，其他用户不可读。
+gen openmeter_db_password
+gen openmeter_clickhouse_password
+[ ! -L secrets/openmeter_core_token ] || { echo '拒绝 OpenMeter token 符号链接' >&2; exit 2; }
+gen openmeter_core_token
+sudo -n chown "10001:$(id -g)" secrets/openmeter_core_token
+sudo -n chmod 0440 secrets/openmeter_core_token
+{ printf 'POSTGRES_PASSWORD='; cat secrets/openmeter_db_password; printf '\n'
+  printf 'AGGREGATION_CLICKHOUSE_PASSWORD='; cat secrets/openmeter_clickhouse_password; printf '\n'; } > secrets/openmeter.env
+chmod 600 secrets/openmeter.env
+printf '  已投递：secrets/openmeter.env 与只读 OpenMeter Core token\n'
 gen buzz_db_password
 gen buzz_objects_root_password
 gen keycloak_admin_password
@@ -502,6 +576,9 @@ printf '  已生成：secrets/browser-client.env\n'
   # operator 面：签名 URL 必须精确等于 origin + path，因此 origin 是配置而非
   # 入站 Host 头推导（SS-BUZ-OPERATOR）。允许的 operator pubkey 白名单同理。
   printf 'RELAY_OPERATOR_API_ORIGIN=%s\n' "${RELAY_OPERATOR_API_ORIGIN:?}"
+  if [ -n "${BUZZ_DELETION_PORT:-}" ]; then
+    printf 'BUZZ_DELETION_BIND_ADDR=0.0.0.0:%s\n' "$BUZZ_DELETION_PORT"
+  fi
   # 轮换窗口（RB-02 步骤 F）：退役中的 operator pubkey 与在用的并列，直到 Core
   # 已切到新 key 并查证；删掉 .retiring 文件再派生一次即关闭窗口。
   printf 'RELAY_OPERATOR_PUBKEYS='; cat secrets/relay_operator_pubkey
@@ -526,7 +603,11 @@ printf '  已生成：secrets/spicedb.env\n'
 # 文件 bind mount 进去，uid/gid/mode 全部被忽略。宿主上这些文件是 0600 属主
 # 为当前用户，而 core 镜像以 uid 10001 运行，因此读不到。同一原因下
 # SpiceDB 也走 env_file（它是 distroless）。
-{ printf 'OIDC_SERVICE_CLIENT_SECRET='; cat secrets/core_client_secret; printf '\n'
+{ if [ -n "${BUZZ_DELETION_PORT:-}" ]; then
+    printf 'BUZZ_DELETION_API_URL=http://%s:%s\n' "$BUZZ_RELAY_HOST" "$BUZZ_DELETION_PORT"
+    printf 'BUZZ_DELETION_HTTP_TIMEOUT_SECONDS=%s\n' "$BUZZ_DELETION_HTTP_TIMEOUT_SECONDS"
+  fi
+  printf 'OIDC_SERVICE_CLIENT_SECRET='; cat secrets/core_client_secret; printf '\n'
   printf 'RELAY_OPERATOR_PRIVATE_KEY='; cat secrets/relay_operator_private_key; printf '\n'; } > secrets/core-service.env
 chmod 600 secrets/core-service.env
 printf '  已生成：secrets/core-service.env\n'

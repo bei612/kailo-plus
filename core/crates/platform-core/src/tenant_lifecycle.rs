@@ -1,4 +1,4 @@
-//! Tenant 的 Buzz 投影与查证（`TENANT_LIFECYCLE`、`.design/09` 第 3 步）。
+//! Tenant 的协作面与 OpenMeter 映射查证（`TENANT_LIFECYCLE`、`.design/09` 第 3 步、DD-38）。
 //!
 //! 两个端点对应 `TenantBuzzBinding` 状态机的两段（`.design/03` §2）：
 //!
@@ -18,7 +18,6 @@ use axum::{
 };
 use collab_bridge::bridge::{Custody, IdentityClient, Presence, Scope};
 use collab_bridge::operator::{OperatorError, OperatorIdentity};
-use nostr::Keys;
 use secret_store::SecretRef;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -87,82 +86,27 @@ pub async fn provision_tenant_buzz(
 
     // DD-70/72：在任何 CONTROL 私钥生成与写入前，先收敛该 Tenant 的真实
     // OpenBao namespace、KV mount、policy 与 AppRole。失败不能退回 platform/kv。
-    if let Err(error) = state.secrets.ensure_tenant(req.tenant_id).await {
+    if let Err(error) =
+        crate::platform_keys::ensure_tenant_namespace(&state.pool, &state.secrets, req.tenant_id)
+            .await
+    {
         tracing::warn!(error = %error, tenant_id = %req.tenant_id, "Tenant secret namespace 未就绪");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
 
     // CONTROL Principal：Tenant 的协议 owner，不是业务 actor（`DD-03`）。
-    let control_principal = match sqlx::query_scalar!(
-        "insert into identity.principal (id, tenant_id, kind, status)
-         select $1, $2, 'SERVICE', 'ACTIVE'
-         where not exists (
-             select 1 from identity.buzz_identity_binding
-             where tenant_id = $2 and kind = 'CONTROL' and state <> 'REVOKED')
-         returning id",
-        Uuid::new_v4(),
-        req.tenant_id
+    // 已有 CONTROL 身份就沿用；没有才按 DD-113 冻结意图后生成。重新生成会让
+    // Community 的 owner 与 Core 记录的身份对不上，而那在 Relay 侧表现为「谁都
+    // 不是 owner」。
+    let (control_principal, control_pubkey) = match crate::platform_keys::ensure_control_identity(
+        &state,
+        req.tenant_id,
+        req.tenant_version,
     )
-    .fetch_optional(&state.pool)
     .await
     {
-        Ok(Some(id)) => Some(id),
-        Ok(None) => None,
-        Err(e) => return unavailable(e),
-    };
-
-    // 已有 CONTROL 身份就沿用；没有才生成。重新生成会让 Community 的 owner
-    // 与 Core 记录的身份对不上，而那在 Relay 侧表现为「谁都不是 owner」。
-    let (control_principal, control_pubkey) = match control_principal {
-        Some(principal) => {
-            let keys = Keys::generate();
-            let pubkey = keys.public_key().to_hex();
-            // 首次建 Tenant 的投影可重试；每把新 key 独占路径，避免重试写入同一
-            // KV 路径时由 max_versions 淘汰仍需保留的旧 generation。
-            let locator = state
-                .secrets
-                .tenant_locator(req.tenant_id, &format!("buzz-control/{pubkey}"));
-            let version = match state
-                .secrets
-                .write(&locator, "value", &keys.secret_key().to_secret_hex())
-                .await
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::warn!(error = %e, "写 CONTROL 私钥失败");
-                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
-                }
-            };
-            if let Err(e) = sqlx::query!(
-                "insert into identity.buzz_identity_binding
-                     (tenant_id, principal_id, pubkey, custody, private_key_secret_ref,
-                      private_key_secret_version, private_key_secret_audience, kind, state)
-                 values ($1, $2, $3, 'SERVER', $4, $5, $6, 'CONTROL', 'RECONCILING')",
-                req.tenant_id,
-                principal,
-                pubkey,
-                locator,
-                version as i32,
-                state.secret_audience,
-            )
-            .execute(&state.pool)
-            .await
-            {
-                return unavailable(e);
-            }
-            (principal, pubkey)
-        }
-        None => match sqlx::query!(
-            "select principal_id, pubkey from identity.buzz_identity_binding
-             where tenant_id = $1 and kind = 'CONTROL' and state <> 'REVOKED'",
-            req.tenant_id
-        )
-        .fetch_one(&state.pool)
-        .await
-        {
-            Ok(r) => (r.principal_id, r.pubkey),
-            Err(e) => return unavailable(e),
-        },
+        Ok(identity) => identity,
+        Err(r) => return r,
     };
 
     // Community host 由 Tenant slug 与部署的 Community 域拼成。它是签名权威
@@ -216,6 +160,10 @@ pub async fn provision_tenant_buzz(
         return unavailable(e);
     }
 
+    if let Err(r) = reconcile_metering_customer(&state, &req, true).await {
+        return r;
+    }
+
     (
         StatusCode::OK,
         Json(ProvisionResponse {
@@ -238,6 +186,11 @@ pub async fn verify_tenant_buzz(
     let Ok(Json(req)) = body else {
         return StatusCode::BAD_REQUEST.into_response();
     };
+
+    // Tenant ACTIVE 同时要求真实 Customer 映射；查证段绝不补发创建请求。
+    if let Err(r) = reconcile_metering_customer(&state, &req, false).await {
+        return r;
+    }
 
     let binding = match sqlx::query!(
         "select normalized_host, control_service_principal_id
@@ -330,13 +283,15 @@ pub async fn verify_tenant_buzz(
     }
 
     // CONTROL 身份在其 Community owner 身份查证后才 ACTIVE：它是 Community 的
-    // owner，而 owner 身份恰恰由刚才的 provision 建立并被 Relay 接受。
-    if let Err(e) = sqlx::query!(
-        "update identity.buzz_identity_binding set state = 'ACTIVE', version = version + 1
+    // owner，而 owner 身份恰恰由刚才的 provision 建立并被 Relay 接受。绑定版本的
+    // 引用在同一句里由 PENDING 转 ACTIVE（`.design/03` SecretRef 状态机）。
+    if let Err(e) = sqlx::query(
+        "update identity.buzz_identity_binding
+         set state = 'ACTIVE', version = version + 1, private_key_secret_status = 'ACTIVE'
          where tenant_id = $1 and principal_id = $2 and state = 'RECONCILING'",
-        req.tenant_id,
-        binding.control_service_principal_id,
     )
+    .bind(req.tenant_id)
+    .bind(binding.control_service_principal_id)
     .execute(&state.pool)
     .await
     {
@@ -391,6 +346,362 @@ async fn verify_control_secret(
     Ok(())
 }
 
+/// 原 Tenant Workflow 已冻结的动作，而不是按时间挑一条最近的 ActionExecution。
+struct MeteringOperation {
+    workflow_id: String,
+    action_id: Uuid,
+    audit: crate::platform_keys::ActionAuditContext,
+}
+
+async fn metering_tenant_tx<'a>(
+    state: &'a ServiceState,
+    req: &TenantStepRequest,
+) -> Result<sqlx::Transaction<'a, sqlx::Postgres>, Response> {
+    let mut tx = state.pool.begin().await.map_err(unavailable)?;
+    let found: Option<bool> = sqlx::query_scalar(
+        "select true from identity.tenant
+         where id = $1 and version = $2 and state = 'PROVISIONING' for update",
+    )
+    .bind(req.tenant_id)
+    .bind(req.tenant_version)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(unavailable)?;
+    if found != Some(true) {
+        return Err(metering_error(crate::openmeter::Error::Conflict));
+    }
+    Ok(tx)
+}
+
+async fn metering_operation(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    req: &TenantStepRequest,
+) -> Result<MeteringOperation, Response> {
+    let workflow_id = crate::component_task::workflow_id(
+        "TENANT_LIFECYCLE",
+        req.tenant_id,
+        &req.tenant_id.to_string(),
+        req.tenant_version,
+    );
+    let action_id: Option<Uuid> = sqlx::query_scalar(
+        "select wr.action_execution_id from projection.workflow_ref wr
+         join admission.action_execution ae on ae.id = wr.action_execution_id
+         where wr.workflow_id = $1 and wr.kind = 'TENANT_LIFECYCLE'
+           and wr.tenant_id = $2 and ae.tenant_id = wr.tenant_id
+           and ae.operation_id = wr.operation_id and ae.target_id = $2
+           and ae.gate_state = 'ALLOWED'
+           and wr.projection_state in ('PENDING_START', 'RUNNING', 'UNKNOWN')",
+    )
+    .bind(&workflow_id)
+    .bind(req.tenant_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(unavailable)?;
+    let action_id = action_id.ok_or_else(|| metering_error(crate::openmeter::Error::Denied))?;
+    let audit = crate::platform_keys::action_audit_context(tx, action_id, req.tenant_id)
+        .await
+        .map_err(unavailable)?;
+    Ok(MeteringOperation {
+        workflow_id,
+        action_id,
+        audit,
+    })
+}
+
+async fn metering_audit(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant: Uuid,
+    operation: &MeteringOperation,
+    phase: &str,
+    event_type: &str,
+    result_code: &str,
+) -> Result<(), sqlx::Error> {
+    let context = &operation.audit;
+    crate::audit::append(
+        tx,
+        crate::audit::AuditEntry {
+            event_key: format!("{}:openmeter:customer:{phase}", context.operation_id),
+            tenant_id: Some(tenant),
+            workspace_id: context.workspace_id,
+            operation_id: context.operation_id,
+            event_type,
+            human_identity_id: None,
+            initiator_principal_id: Some(context.initiator_principal_id),
+            actor_principal_id: Some(context.actor_principal_id),
+            action_key: &context.action_key,
+            action_version: context.action_version,
+            component_type_key: "openmeter",
+            target_type: Some("TENANT"),
+            target_id: Some(tenant),
+            parameter_hash: &context.parameter_hash,
+            decision: if result_code == "EXTERNAL_RESULT_UNKNOWN" {
+                "UNKNOWN"
+            } else {
+                "ALLOW"
+            },
+            result_code,
+            result_exposure: "STATUS",
+            evidence_refs: vec![
+                crate::audit::Evidence::new(
+                    contracts::EvidenceKind::ActionExecutionId,
+                    operation.action_id,
+                ),
+                crate::audit::Evidence::new(
+                    contracts::EvidenceKind::TemporalWorkflowId,
+                    &operation.workflow_id,
+                ),
+            ],
+            correlation_id: context.correlation_id,
+        },
+    )
+    .await
+}
+
+/// 派发后未查明原生结果时，沿同一 Operation 记录 UNKNOWN，不投影成失败。
+async fn metering_observation_error(
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant: Uuid,
+    operation: &MeteringOperation,
+    dispatched: bool,
+    error: crate::openmeter::Error,
+) -> Response {
+    if dispatched {
+        if let Err(error) = metering_audit(
+            &mut tx,
+            tenant,
+            operation,
+            "unknown",
+            "RECONCILIATION",
+            "EXTERNAL_RESULT_UNKNOWN",
+        )
+        .await
+        {
+            return unavailable(error);
+        }
+        if let Err(error) = tx.commit().await {
+            return unavailable(error);
+        }
+        return metering_error(crate::openmeter::Error::Unknown);
+    }
+    metering_error(error)
+}
+
+/// DD-38：只存唯一 Customer 引用，不复制计费正文。两个现有 Activity 共用判据。
+async fn reconcile_metering_customer(
+    state: &ServiceState,
+    req: &TenantStepRequest,
+    may_create: bool,
+) -> Result<(), Response> {
+    let mut tx = metering_tenant_tx(state, req).await?;
+    let operation = metering_operation(&mut tx, req).await?;
+    let binding: Option<(String, String, String, String, i32)> = sqlx::query_as(
+        "select namespace, customer_id, subject_key_prefix, status, version
+         from projection.openmeter_binding where tenant_id = $1",
+    )
+    .bind(req.tenant_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(unavailable)?;
+    let mut dispatched: bool =
+        sqlx::query_scalar("select exists (select 1 from audit.audit_event where event_key = $1)")
+            .bind(format!(
+                "{}:openmeter:customer:dispatch",
+                operation.audit.operation_id
+            ))
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(unavailable)?;
+    let prefix = format!("{}:", req.tenant_id);
+    let customer_id = if let Some((namespace, id, stored_prefix, status, version)) = binding {
+        if namespace != state.openmeter.namespace()
+            || stored_prefix != prefix
+            || status != "ACTIVE"
+            || version <= 0
+        {
+            return Err(metering_error(crate::openmeter::Error::Conflict));
+        }
+        // ACTIVE 引用丢失 native 对象时只对账，不创建第二个 Customer。
+        id
+    } else {
+        let customer = match state.openmeter.customer_by_key(req.tenant_id).await {
+            Ok(customer) => customer,
+            Err(error) => {
+                return Err(metering_observation_error(
+                    tx,
+                    req.tenant_id,
+                    &operation,
+                    dispatched,
+                    error,
+                )
+                .await)
+            }
+        };
+        match customer {
+            Some(customer) => customer.id,
+            // 没查到不等于没发生：未知 POST 永不自动重发，包括 verify 重试。
+            None if dispatched => {
+                return Err(metering_observation_error(
+                    tx,
+                    req.tenant_id,
+                    &operation,
+                    dispatched,
+                    crate::openmeter::Error::Unknown,
+                )
+                .await)
+            }
+            None if !may_create => {
+                return Err(metering_error(crate::openmeter::Error::Precondition))
+            }
+            None => {
+                metering_audit(
+                    &mut tx,
+                    req.tenant_id,
+                    &operation,
+                    "dispatch",
+                    "DISPATCH",
+                    "DISPATCH_RESULT_UNKNOWN",
+                )
+                .await
+                .map_err(unavailable)?;
+                // 同一连接先持久化意图，再重新锁定 Tenant；不在持锁事务内开另一条
+                // pool 事务。两次锁之间被暂停/删除或版本变化时，不调用 provider。
+                tx.commit().await.map_err(unavailable)?;
+                tx = metering_tenant_tx(state, req).await?;
+                let current = metering_operation(&mut tx, req).await?;
+                if current.action_id != operation.action_id
+                    || current.audit.operation_id != operation.audit.operation_id
+                    || current.audit.parameter_hash != operation.audit.parameter_hash
+                {
+                    return Err(metering_error(crate::openmeter::Error::Conflict));
+                }
+                dispatched = true;
+                match state.openmeter.create_customer(req.tenant_id).await {
+                    Ok(customer) => customer.id,
+                    Err(error) => {
+                        // 即使 POST 的响应丢失，原生 key 查询仍能找回同一引用。
+                        match state.openmeter.customer_by_key(req.tenant_id).await {
+                            Ok(Some(customer)) => customer.id,
+                            _ => {
+                                return Err(metering_observation_error(
+                                    tx,
+                                    req.tenant_id,
+                                    &operation,
+                                    dispatched,
+                                    error,
+                                )
+                                .await);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    let customer = match state
+        .openmeter
+        .customer_by_id(&customer_id, req.tenant_id)
+        .await
+    {
+        Ok(Some(customer)) => customer,
+        Ok(None) => {
+            return Err(metering_observation_error(
+                tx,
+                req.tenant_id,
+                &operation,
+                dispatched,
+                crate::openmeter::Error::Unknown,
+            )
+            .await)
+        }
+        Err(error) => {
+            return Err(metering_observation_error(
+                tx,
+                req.tenant_id,
+                &operation,
+                dispatched,
+                error,
+            )
+            .await)
+        }
+    };
+    let active = match state.openmeter.customer_by_key(req.tenant_id).await {
+        Ok(Some(customer)) => customer,
+        Ok(None) => {
+            return Err(metering_observation_error(
+                tx,
+                req.tenant_id,
+                &operation,
+                dispatched,
+                crate::openmeter::Error::Unknown,
+            )
+            .await)
+        }
+        Err(error) => {
+            return Err(metering_observation_error(
+                tx,
+                req.tenant_id,
+                &operation,
+                dispatched,
+                error,
+            )
+            .await)
+        }
+    };
+    if !customer.is_active() || active.id != customer_id {
+        return Err(metering_observation_error(
+            tx,
+            req.tenant_id,
+            &operation,
+            dispatched,
+            crate::openmeter::Error::Conflict,
+        )
+        .await);
+    }
+    sqlx::query(
+        "insert into projection.openmeter_binding
+             (tenant_id, namespace, customer_id, subject_key_prefix, status, version)
+         values ($1, $2, $3, $4, 'ACTIVE', 1) on conflict (tenant_id) do nothing",
+    )
+    .bind(req.tenant_id)
+    .bind(state.openmeter.namespace())
+    .bind(&customer_id)
+    .bind(prefix)
+    .execute(&mut *tx)
+    .await
+    .map_err(unavailable)?;
+    metering_audit(
+        &mut tx,
+        req.tenant_id,
+        &operation,
+        "verified",
+        "RECONCILIATION",
+        "ACTIVE",
+    )
+    .await
+    .map_err(unavailable)?;
+    tx.commit().await.map_err(unavailable)
+}
+
+fn metering_error(error: crate::openmeter::Error) -> Response {
+    use contracts::ReasonCode;
+    let (status, code) = match error {
+        crate::openmeter::Error::Denied => (StatusCode::FORBIDDEN, ReasonCode::PermissionDenied),
+        crate::openmeter::Error::Precondition => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            ReasonCode::BindingNotActive,
+        ),
+        crate::openmeter::Error::Conflict => {
+            (StatusCode::CONFLICT, ReasonCode::TargetStateConflict)
+        }
+        crate::openmeter::Error::Limit => (StatusCode::TOO_MANY_REQUESTS, ReasonCode::RateLimited),
+        crate::openmeter::Error::Unknown => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            ReasonCode::ExternalResultUnknown,
+        ),
+    };
+    (status, Json(code)).into_response()
+}
+
 /// `.design/03` §8 的全局 digest 规则：结构化对象按 canonical JSON
 /// （键排序、无无意义空白、UTF-8）序列化再 sha256，十六进制表示。
 ///
@@ -415,7 +726,7 @@ fn canonical_digest(v: &serde_json::Value) -> String {
     hex::encode(Sha256::digest(canon(v).to_string().as_bytes()))
 }
 
-async fn load_operator(state: &ServiceState) -> Result<OperatorIdentity, Response> {
+pub(crate) async fn load_operator(state: &ServiceState) -> Result<OperatorIdentity, Response> {
     let row = sqlx::query!(
         "select pubkey, private_key_secret_ref, private_key_secret_version,
                 private_key_secret_audience, audience, relay_operator_api_origin

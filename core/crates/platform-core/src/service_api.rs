@@ -41,6 +41,11 @@ pub struct ServiceState {
     /// Relay 的网络地址。它与 Community host 不是一回事：后者参与 NIP-98
     /// 签名并作为 Host 头，前者只用于建立连接（SF-BUZ-32）。
     pub relay_transport: String,
+    /// 私有删除执行器的部署投递；不使用 Community host 或公开 operator origin
+    /// 猜测地址。未投递时 tenant.delete 的四处理器链不成立。
+    pub deletion_transport: Option<crate::tenant_delete::DeletionTransport>,
+    /// DD-38：固定 namespace 的唯一原生 Customer client；不向前端投递凭据。
+    pub openmeter: Arc<crate::openmeter::OpenMeter>,
     /// 复用连接池。每次投影新建 Client 会让 TLS 与连接开销落在重试路径上。
     pub http: reqwest::Client,
     pub temporal: Arc<crate::temporal::TemporalClient>,
@@ -88,6 +93,10 @@ pub fn router(state: ServiceState) -> Router {
         .route(
             "/service/v1/tenants/restore-reconcile",
             post(crate::tenant_lifecycle::restore_reconcile),
+        )
+        .route(
+            "/service/v1/tenants/delete-advance",
+            post(crate::tenant_delete::advance),
         )
         // Workspace 暂停/恢复：Channel roster 清空与重建（DD-97）
         .route(

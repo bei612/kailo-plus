@@ -20,6 +20,7 @@ networks:
   buzz-data:
   spicedb-data:
   agentgateway-data:
+  openmeter-data:
 
 volumes:
   core-db-data:
@@ -28,6 +29,11 @@ volumes:
   spicedb-db-data:
   agentgateway-db-data:
   keycloak-data:
+  openmeter-postgres-data:
+  openmeter-kafka-data:
+  openmeter-kafka-secrets:
+  openmeter-clickhouse-data:
+  openmeter-clickhouse-logs:
 
 services:
   core-db:
@@ -229,7 +235,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:3700b743b341d05ae2ddaae388954634c2381a5b10877c565021f3e6a7ca0bea
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:2ea8059fd418cff927ad8122980917f996915eb2c8c789ac1e7a995b21479158
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -248,7 +254,7 @@ services:
   # 镜像是带 SS-BUZ-GOVERNANCE 改动的本仓库构建（collaboration/），不是上游
   # 发布镜像：上游的 NIP-29 权限比平台宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:3700b743b341d05ae2ddaae388954634c2381a5b10877c565021f3e6a7ca0bea
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:2ea8059fd418cff927ad8122980917f996915eb2c8c789ac1e7a995b21479158
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
@@ -291,6 +297,134 @@ services:
       timeout: 5s
       retries: 30
 
+  # 原生 OpenMeter 保持 Customer/计量账本权威（DD-37/38）。只接实际 Customer
+  # 接口；不用 quickstart seed、额外管理 UI 或无调用方的 billing worker。
+  openmeter-postgres:
+    image: postgres@sha256:14f02666642586a64d6fae8ef42d479fd76456a77c73ae8a626b8fe323b76d22
+    networks: [openmeter-data]
+    cpus: ${OPENMETER_POSTGRES_CPUS:?必须显式提供本机运行预算}
+    mem_limit: ${OPENMETER_POSTGRES_MEMORY:?必须显式提供本机运行预算}
+    memswap_limit: ${OPENMETER_POSTGRES_MEMORY:?必须显式提供本机运行预算}
+    environment:
+      POSTGRES_DB: ${OPENMETER_DB_NAME:?必须显式提供，禁止硬编码}
+      POSTGRES_USER: ${OPENMETER_DB_USER:?必须显式提供，禁止硬编码}
+      POSTGRES_PASSWORD_FILE: /run/secrets/openmeter_db_password
+    secrets: [openmeter_db_password]
+    volumes: [openmeter-postgres-data:/var/lib/postgresql/data]
+    command: [postgres, -c, wal_level=logical]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  openmeter-kafka:
+    image: confluentinc/cp-kafka@sha256:db5eac24a1d15a1689fa89642ef97a7e3bc4f55ad5159a07b213c4dc7d0114e3
+    networks: [openmeter-data]
+    cpus: ${OPENMETER_KAFKA_CPUS:?必须显式提供本机运行预算}
+    mem_limit: ${OPENMETER_KAFKA_MEMORY:?必须显式提供本机运行预算}
+    memswap_limit: ${OPENMETER_KAFKA_MEMORY:?必须显式提供本机运行预算}
+    environment:
+      CLUSTER_ID: ${OPENMETER_KAFKA_CLUSTER_ID:?必须显式提供，禁止硬编码}
+      KAFKA_BROKER_ID: "0"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 0@openmeter-kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://openmeter-kafka:9092
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_MESSAGE_TIMESTAMP_AFTER_MAX_MS: "9223372036854775807"
+    volumes:
+      - openmeter-kafka-data:/var/lib/kafka/data
+      - openmeter-kafka-secrets:/etc/kafka/secrets
+    healthcheck:
+      test: [CMD-SHELL, "kafka-topics --bootstrap-server openmeter-kafka:9092 --list >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  openmeter-clickhouse:
+    image: clickhouse/clickhouse-server@sha256:74da41cd61db84f652c6364fd30d59e19b7276d34f7c82515f5f0e70d6f325da
+    networks: [openmeter-data]
+    cpus: ${OPENMETER_CLICKHOUSE_CPUS:?必须显式提供本机运行预算}
+    mem_limit: ${OPENMETER_CLICKHOUSE_MEMORY:?必须显式提供本机运行预算}
+    memswap_limit: ${OPENMETER_CLICKHOUSE_MEMORY:?必须显式提供本机运行预算}
+    environment:
+      CLICKHOUSE_USER: ${OPENMETER_CLICKHOUSE_USER:?必须显式提供，禁止硬编码}
+      CLICKHOUSE_DB: ${OPENMETER_CLICKHOUSE_DB_NAME:?必须显式提供，禁止硬编码}
+      # 固定镜像原生 entrypoint 支持 FILE；它内部初始化 client 仍会使用 --password。
+      CLICKHOUSE_PASSWORD_FILE: /run/secrets/openmeter_clickhouse_password
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    secrets: [openmeter_clickhouse_password]
+    volumes:
+      - openmeter-clickhouse-data:/var/lib/clickhouse
+      - openmeter-clickhouse-logs:/var/log/clickhouse-server
+    ulimits:
+      nofile: {soft: 262144, hard: 262144}
+    healthcheck:
+      test: [CMD, wget, --spider, http://127.0.0.1:8123/ping]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  openmeter:
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/metering@sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783
+    networks:
+      app:
+        aliases: ["${OPENMETER_HOST:?必须显式提供，禁止硬编码}"]
+      openmeter-data: {}
+    cpus: ${OPENMETER_API_CPUS:?必须显式提供本机运行预算}
+    mem_limit: ${OPENMETER_API_MEMORY:?必须显式提供本机运行预算}
+    memswap_limit: ${OPENMETER_API_MEMORY:?必须显式提供本机运行预算}
+    depends_on:
+      openmeter-postgres: {condition: service_healthy}
+      openmeter-kafka: {condition: service_healthy}
+      openmeter-clickhouse: {condition: service_healthy}
+    command: [openmeter, --address, "0.0.0.0:${OPENMETER_API_PORT:?必须显式提供，禁止硬编码}"]
+    # 裸 Viper 的真实键，无 OPENMETER_ 前缀；密码走受控 env_file，token 仅走文件。
+    environment:
+      SERVER_CORESERVICETOKENFILE: ${OPENMETER_CORE_TOKEN_FILE:?必须显式提供，禁止硬编码}
+      NAMESPACE_DEFAULT: ${OPENMETER_NAMESPACE:?必须显式提供，禁止硬编码}
+      POSTGRES_HOST: openmeter-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DATABASE: ${OPENMETER_DB_NAME:?必须显式提供，禁止硬编码}
+      POSTGRES_USER: ${OPENMETER_DB_USER:?必须显式提供，禁止硬编码}
+      POSTGRES_OPTIONS_SSLVERIFY: disable
+      AGGREGATION_CLICKHOUSE_ADDRESS: openmeter-clickhouse:9000
+      AGGREGATION_CLICKHOUSE_USERNAME: ${OPENMETER_CLICKHOUSE_USER:?必须显式提供，禁止硬编码}
+      AGGREGATION_CLICKHOUSE_DATABASE: ${OPENMETER_CLICKHOUSE_DB_NAME:?必须显式提供，禁止硬编码}
+      INGEST_KAFKA_BROKER: openmeter-kafka:9092
+      OPENMETER_API_PORT: ${OPENMETER_API_PORT:?必须显式提供，禁止硬编码}
+    env_file: [./secrets/openmeter.env]
+    secrets:
+      - source: openmeter_core_token
+        target: ${OPENMETER_CORE_TOKEN_FILE:?必须显式提供，禁止硬编码}
+    healthcheck:
+      # 原生镜像有 Bash 而无 curl。令牌仅进进程内存与 HTTP header，不上 argv/日志。
+      # 只读真实 v3 Customer API 返回 200 才就绪，不把无认证 /health 或 TCP 当业务 ready。
+      test:
+        - CMD
+        - /bin/bash
+        - -ec
+        - |
+          set -euo pipefail
+          token=$$(<"$$SERVER_CORESERVICETOKENFILE")
+          [ -n "$$token" ]
+          exec 3<>"/dev/tcp/127.0.0.1/$$OPENMETER_API_PORT"
+          printf 'GET /api/v3/openmeter/customers HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer %s\r\nConnection: close\r\n\r\n' "$$token" >&3
+          unset token
+          read -r protocol status reason <&3
+          [[ "$$protocol" == HTTP/1.* && "$$status" == 200 ]]
+      interval: 5s
+      timeout: ${OPENMETER_HTTP_TIMEOUT_SECONDS:?必须显式提供，禁止硬编码}s
+      retries: 40
+
   # Platform Core/BFF：单一模块化 Rust 服务，共享业务事务边界（DD-05）。
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
   # 只在 app 网络：Browser 永远到不了它，必须经 edge 上的网关。
@@ -301,6 +435,7 @@ services:
     networks: [app, core-data]
     depends_on:
       core-db: { condition: service_healthy }
+      openmeter: { condition: service_healthy }
       temporal: { condition: service_healthy }
       keycloak: { condition: service_healthy }
     environment:
@@ -359,6 +494,11 @@ services:
       OPENBAO_TOKEN_PERIOD: ${OPENBAO_TOKEN_PERIOD:?必须显式提供，禁止硬编码}
       # SecretRef 的 audience 必须等于它，否则拒绝取用
       OPENBAO_SERVICE_IDENTITY: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
+      # SS-OMT-AUTH：Core 使用与原生 API 同源的服务 token，不取 Browser 凭据。
+      OPENMETER_CUSTOMERS_URL: ${OPENMETER_CUSTOMERS_URL:?必须显式提供，禁止硬编码}
+      OPENMETER_NAMESPACE: ${OPENMETER_NAMESPACE:?必须显式提供，禁止硬编码}
+      OPENMETER_HTTP_TIMEOUT_SECONDS: ${OPENMETER_HTTP_TIMEOUT_SECONDS:?必须显式提供，禁止硬编码}
+      OPENMETER_CORE_TOKEN_FILE: ${OPENMETER_CORE_TOKEN_FILE:?必须显式提供，禁止硬编码}
       # Relay 的网络地址。与 Community host 不是一回事：后者参与 NIP-98
       # 签名并作为 Host 头，前者只用于建立连接（SF-BUZ-32）。
       BUZZ_RELAY_TRANSPORT: http://${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}
@@ -374,6 +514,9 @@ services:
       # operator 私钥经 secret 挂载读入，写进 OpenBao 后只留 locator 与版本。
       PLATFORM_CATALOG_TENANT_SLUG: ${PLATFORM_CATALOG_TENANT_SLUG:?必须显式提供，禁止硬编码}
       RELAY_OPERATOR_AUDIENCE: ${RELAY_OPERATOR_AUDIENCE:?必须显式提供，禁止硬编码}
+      # DD-115：operator 私钥写入意图的提交截止时限（秒）。冻结意图时写入截止时刻，绑定只能在截止前提交；
+      # 过截止即终态，由引导或对账器按 DD-86 隔离销毁。它只决定慢引导能否完成，不影响安全
+      RELAY_OPERATOR_COMMIT_WINDOW_SECONDS: ${RELAY_OPERATOR_COMMIT_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
       RELAY_OPERATOR_API_ORIGIN: http://${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}
       # Community host = <tenant slug>.<domain>。host 是 NIP-98 的签名权威
       # （SF-BUZ-32），必须稳定可推导。
@@ -434,6 +577,9 @@ services:
       - ./secrets/core-service.env
       # SpiceDB preshared key（SPICEDB_PRESHARED_KEY）；不进 .env、不上命令行
       - ./secrets/core-spicedb.env
+    secrets:
+      - source: openmeter_core_token
+        target: ${OPENMETER_CORE_TOKEN_FILE:?必须显式提供，禁止硬编码}
     ports:
       # 仅绑回环，供本机核验 service API；不暴露到宿主网络之外。
       - "127.0.0.1:${SERVICE_PORT:?必须显式提供，禁止硬编码}:${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}"
@@ -494,7 +640,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:ad82d6e69049b2d7bccbc4f4a0c6e2079fcdc06fff1c58c39beb9f49e845bcf7
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:0f5039d60badaf461fec0ef6041093762ab1d92caad9463bbd08d174baea7ef7
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
@@ -780,6 +926,12 @@ services:
       retries: 20
 
 secrets:
+  openmeter_db_password:
+    file: ./secrets/openmeter_db_password
+  openmeter_clickhouse_password:
+    file: ./secrets/openmeter_clickhouse_password
+  openmeter_core_token:
+    file: ./secrets/openmeter_core_token
   buzz_db_password:
     file: ./secrets/buzz_db_password
   agentgateway_db_password:

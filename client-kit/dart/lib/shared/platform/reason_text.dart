@@ -17,6 +17,7 @@ String platformReasonText(ReasonCode reason, {String? locale}) {
       ReasonCode.APPROVAL_SELECTOR_UNRESOLVABLE => '找不到可以审批此请求的人。',
       ReasonCode.APPROVAL_WITHDRAWN => '请求已被撤回。',
       ReasonCode.APPROVER_NOT_ELIGIBLE => '你不具备审批此请求的资格。',
+      ReasonCode.BINDING_NOT_ACTIVE => '此操作所需的连接尚未生效，本次未执行；请稍后再试。',
       ReasonCode.CAPABILITY_BLOCKED => '该能力尚未开放。',
       ReasonCode.CLIENT_KEY_ALREADY_BOUND => '这把设备密钥已被撤销或属于他人。',
       ReasonCode.CLIENT_KEY_LIMIT_REACHED => '你登记的设备已达上限，请先撤销一台。',
@@ -41,6 +42,7 @@ String platformReasonText(ReasonCode reason, {String? locale}) {
       ReasonCode.PROJECTION_DELAYED => '显示的状态可能尚未更新。',
       ReasonCode.PUBLISH_REJECTED => '消息被拒绝。',
       ReasonCode.PUBLISH_RESULT_UNKNOWN => '消息是否送达尚不明确。',
+      ReasonCode.RATE_LIMITED => '请求过于频繁，本次未执行；请稍候再试。',
       ReasonCode.SCOPE_GUARD_FAILED => '超出了你所属的组织或工作区范围。',
       ReasonCode.SELF_APPROVAL_DENIED => '不能审批自己发起的请求。',
       ReasonCode.SESSION_NOT_ACTIVE => '你的会话已失效。',
@@ -70,6 +72,8 @@ String platformReasonText(ReasonCode reason, {String? locale}) {
     ReasonCode.APPROVAL_WITHDRAWN => 'The request was withdrawn.',
     ReasonCode.APPROVER_NOT_ELIGIBLE =>
       'You are not eligible to decide on this approval.',
+    ReasonCode.BINDING_NOT_ACTIVE =>
+      'The connection required for this operation is not active. Nothing was executed; try again later.',
     ReasonCode.CAPABILITY_BLOCKED => 'This capability is not available.',
     ReasonCode.CLIENT_KEY_ALREADY_BOUND =>
       'This device key was revoked or belongs to someone else.',
@@ -110,6 +114,8 @@ String platformReasonText(ReasonCode reason, {String? locale}) {
     ReasonCode.PUBLISH_REJECTED => 'The message was rejected.',
     ReasonCode.PUBLISH_RESULT_UNKNOWN =>
       'Whether the message was delivered is not known yet.',
+    ReasonCode.RATE_LIMITED =>
+      'Too many requests right now. Nothing was done; wait a moment and try again.',
     ReasonCode.SCOPE_GUARD_FAILED =>
       'This is outside the organization or workspace you belong to.',
     ReasonCode.SELF_APPROVAL_DENIED => 'You cannot approve your own request.',

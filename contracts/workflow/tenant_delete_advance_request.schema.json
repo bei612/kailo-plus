@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/tenant_delete_advance_request.schema.json",
+  "title": "TenantDeleteAdvanceRequest",
+  "description": "TENANT_LIFECYCLE DELETE Activity 只推进已准入且已冻结的 Tenant 删除，不重新解析绑定或建立新快照。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenantId", "tenantVersion", "snapshotId", "cancelRequested"],
+  "properties": {
+    "tenantId": { "type": "string", "format": "uuid" },
+    "tenantVersion": { "type": "integer" },
+    "snapshotId": { "type": "string", "format": "uuid" },
+    "cancelRequested": { "type": "boolean" }
+  }
+}

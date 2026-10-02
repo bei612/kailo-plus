@@ -77,7 +77,7 @@ HEAD 与 `implementation_base_commit` 不一致即失败。
 
 ## 未覆盖
 
-- 只构建了 Linux `.deb`；macOS、Windows 安装包与代码签名未做。
+- 本节历史核验只构建了 Linux `.deb`；2026-10-02 的 Windows unsigned 测试安装包构建见文末。macOS、Win11 安装运行和代码签名仍未覆盖。
 - 安装包已在 Xvfb 桌面会话里安装运行，结果见文末「2026-09-29 安装包在桌面会话中的端到端」。
   撤权后 Desktop 界面不再提供发布入口，因此没有从安装包观察到 Relay 拒绝撤权后的发布。
 
@@ -155,3 +155,106 @@ NativeSession 的显示名，无值时使用共享中性标题；外观与主题
 日志为 `/volumes/data/kailo/tmp/codex-native-name-desktop-artifact-root-20260930.log`；
 前两次执行包装失败保留于同目录，未据其报告构建完成。该包未安装或启动，来自
 完整工作树的产物不作为选定源码提交的发布证明，能力状态与三端验收结论不变。
+
+## 2026-10-02 Windows x64 NSIS unsigned 测试包（独立纯呈现源码）
+
+按 DD-74、ADR-06/16/18 与现有 Desktop 打包入口，独立 Data 候选直接复用
+已经核验的 Web/Desktop 共源呈现。只新增 Windows Dockerfile 与同名 ignore 文件，
+并将私有候选的现有 `desktop-client` 配方指向该文件；没有恢复 sidecar、updater、
+新 runtime/profile、签名凭据或身份/媒体传输路径。正式工程、Linux 原产物记录和部署未改。
+
+原 `tools/build-upstream.sh desktop-client` 实际退出 0。Rust 1.95.0、
+pnpm 11.4.0、`cargo-xwin 0.23.1 --locked`、MSVC target 与 NSIS 路线实际完成编译、
+插件摘要核验及打包；生成 `Kailo_0.5.23_x64-setup.exe`，15,061,019 字节，
+SHA-256 `83e612e8b577996cb69b7af08e3228c05f074302fcd1a4cbae63bef4a146d6a7`。
+原来源算法复算 source 为
+`66e92a99d39d40c19880bcee12ca9489f6df0a1591a035ada1f82c14565bbc4a`，
+与私有产物记录一致；纯 UI 父树为 `da5bff76d9d88bc0aae292f994d4d8ddf0a0fca8`，
+Windows 包装源树为 `35b7e0c4c9bb53434772f534580d83065e7d21cf`。
+
+构建使用原 8 CPU / 16 GiB Data builder；实际 `memory.swap.max=max`，
+主机无 swap，不声称 cgroup 硬零。原源先 COPY 再安装工具，因此后续合同源码变化
+可能使工具层缓存失效；warm builder 不保证免除该成本，不另造 SDK 镜像或重排本配方。
+工具版本、固定 cargo-xwin 发布源码/锁文件、实际 CRT 14.44/Win11 SDK 10.0.26100、
+原始警告和退出码保存在
+`/volumes/data/kailo/tmp/codex-win11-presentation-build-20261002.WR8wSc/provenance/windows-delivery-handoff.md`。
+
+这是 unsigned 开发测试包，不是 signed release：安装器 PE security directory 为零，
+原签名跳过警告保留。尚未在 Win11 安装、启动、登录或验证 clipboard、keyring 与协作功能；
+不能把构建成功、Linux 历史运行或 SSR 核对冒充 Windows 运行验收。
+该包仅属于上述旧纯呈现源码；正在收口的 Core/最终合同一旦变化，
+必须在同一最终产品候选上由原入口重新构建 Web 和 Windows 并登记真实新摘要，
+不得将本节 source/产物摘要当作下一轮最终合同产物或提升任何 capability/gate 状态。
+
+## 2026-10-02：同一产品候选与最终合同的 unsigned Windows x64 包
+
+本节关联 `REQ-21`、`DD-74/75`、`DD-111`、`SS-WEB-PRESENTATION` 与 ADR-06/09/18，
+只记录既有 Tauri 主体的真实 Windows 测试安装包，不新增 sidecar、runtime/profile
+或业务接口。原三路径 Windows 配方与上节一致，未做缓存层排序优化或引入第二 SDK。
+共享 UI、最终合同和 Core/Worker 在同一个 Data 产品候选闭合；初始业务源 tree
+`575163abf772e380125ab1682881ad344371a810`、文档 tree
+`06e6c45100959bcdeac1ef11cae8933af57efd72`，随后 Core-only 修正的 tree
+`e1717576d4d97892d60abadea86978b9d0410173` 不改变本产物输入。
+这些 tree 不冒充 commit；正式提交由批次负责人完成。
+
+原 `tools/build-upstream.sh desktop-client` session `82920` 真正退出 0，
+以 `PLATFORM_DISPLAY_NAME=Kailo` 构建。原 helper 实际 stage 2880 个文件，
+摘要按既有 exclude 消费 2253 个文件；实际 stage 与最终候选均由原
+`tools/upstream_manifest.py source_digest` 核得
+`sha256:ae470872bfc63b972249045f75c5579765c1fb840e1dd545ff8703efceccc0ec`。
+前后路径和字节摘要一致；原 helper 已登记该 source 与新 artifact，未借旧包改摘要。
+
+真正的安装包为
+`/volumes/data/kailo/tmp/codex-delete-commit-candidate-20261002.KBSv5P/dist/desktop-client/Kailo_0.5.23_x64-setup.exe`，
+15,066,717 字节，uid/gid `1000:1000`、mode `0644`，SHA-256 为
+`9aef4725e49e87daa4b52decc2ed69de14eb293aeaf2540d4a854e97f868970b`。
+Desktop 类型/Vite 已通过；真正 Windows MSVC release 编译完成（9m48s），
+本体是 `target/x86_64-pc-windows-msvc/release/buzz-desktop.exe`。
+NSIS 插件 hash 验证、`Target: x64`、真实 `makensis` 与 `Finished 1 bundle` 均有原日志。
+`file` 报 I386 是 NSIS bootstrap，不把它当作本体架构；PE Security Directory 两字段为零，
+原 cross-platform experimental、跳过签名、dead-code 和 chunk 警告保留。
+
+实际镜像内工具为源树 Rust 1.95.0、pnpm 11.4.0、固定 `cargo-xwin 0.23.1 --locked`，
+xwin 完成标记记载 MSVC CRT 14.44.17.14 与 Win11 SDK 10.0.26100。
+沿用[官方 Tauri NSIS 交叉打包路径](https://v2.tauri.app/distribute/windows-installer/#build-windows-apps-on-linux-and-macos)，
+固定 cargo-xwin crate/锁来源原件仍在上一节 `windows-official-route.md`；未安装宿主 SDK。
+APT/Rust/cargo-xwin/pnpm 实测分别为 849.6/128.3/175.9/369.0 秒，warm builder 不保证
+工具层命中。与 Relay 按本轮明确批准共享同一个 8 CPU/16 GiB 父 BuildKit cgroup，
+不是各分一份限额；实际 `memory.swap.max=max`，主机无 swap，不称硬 swap 0。
+Windows 终态时父 cgroup 的 max/oom/oom_kill 计数均为 0。
+
+全部原件位于 `/volumes/data/kailo/tmp/codex-unified-web-win-build-20261002.0VQIcC`：
+`windows-build.log`、`tmp/build-desktop-client.V0IYsn.log`、`windows-build-exit-receipt.txt`、
+`windows-original-build-context.tar`、`windows-actual-stage-source-proof.json`、
+`final-source-record-proof.json`、`actual-xwin-sdk-crt-DONE.txt`、
+`windows-installer-pe-signature.log` 与 `actual-shared-builder-at-windows-terminal.log`。
+两处已有 Desktop trace 只同步真实新 artifact digest，不改 status/gate。
+这个包是 unsigned 开发测试安装包，不是 signed release；没有在 Win11 安装、启动、
+登录或验收 clipboard、keyring、协作功能，不把构建 0 或 Linux 历史证据当 Windows 运行验收。
+
+## 2026-10-02：AgentVersion 契约变更后的 Windows 构建失败
+
+选定输入 `/volumes/data/kailo/tmp/codex-agent-version-selected-20261002.7p1PX8` 的
+Desktop 当前真实 source 为
+`sha256:9255e0e8ff3d8764973770ee1cc7598a84fd1e6d89977c4614eb6d8f98f051a7`，
+仍由原来源算法消费 2253 个输入文件。原 `bash tools/build-upstream.sh desktop-client`
+session `99519` 实际退出 1：类型/Vite 与第二轮 MSVC CRT 获取已完成，但 Cargo
+无法下载 `https://index.crates.io/2/h2`（锁定 `reqwest 0.13.4` 的依赖），
+重试后仍报 `[28] Timeout was reached`。原 Tauri Windows MSVC/NSIS 入口失败，
+未导出新的安装包；没有改配方、依赖、签名要求或门禁来迎合此次失败。
+
+完整原 helper 日志为
+`/volumes/data/kailo/tmp/codex-agent-version-client-artifacts-20261002.ZqqCat/win-helper.log`，
+SHA-256 `4c05c2a7190660d51d74fe936e0c2093022a546c96d209aa0c65ce02f6a2ff1f`；
+原 BuildKit 日志为同目录 `build-desktop-client.I4wlez.log`，SHA-256
+`b6e57a8b69f2907ea109de718e1777be43eeab6dd4725c86dfcc018f7b2fd08d`。
+Web/Desktop 联合 2308 个输入的前后清单字节完全一致，清单 SHA-256 为
+`ebc901ae66b3125dd41f8d1bb88df650cc0117a6bfef134fe72bbde6e8208177`。
+
+旧 `9aef4725e49e87daa4b52decc2ed69de14eb293aeaf2540d4a854e97f868970b`
+包仍属上节 `ae470872…ccc0ec` 来源，不匹配当前 `9255e0e8…051a7`；
+15,066,717 字节的原包及历史验证保留，额外原字节备份位于上述日志目录的
+`dist-before/Kailo_0.5.23_x64-setup.exe`。因此当前 Desktop artifact 真实登记为
+`blocked`，`source_digest` 与 `artifact_digest` 均为 `none`；两处既有追溯仅移除
+无效的 Desktop 发布条目，不改 routes/actions/surfaces 或提升任何能力状态。
+尚无与当前来源匹配的 Win11 测试安装包，更没有 Win11 安装运行验收或 signed release。

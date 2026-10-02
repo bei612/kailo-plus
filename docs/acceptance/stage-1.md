@@ -1,11 +1,40 @@
 # Stage 1 验收报告：身份、Tenant/Workspace 与三端协作
 
-- 报告日期：2026-09-29
-- 核对基线：提交 `9566ac0`（目录重构 `076681d` 之后的 release 登记）
+- 历史报告日期：2026-09-29
+- 最新事实核对日期：2026-10-02 11:30 UTC（源码、产物、检查与运行版本核对，不是新增业务验收）
+- 历史核对基线：提交 `9566ac0`（目录重构 `076681d` 之后的 release 登记）
 - 依据：`02-纵向交付路线.md` §3 的验收映射与退出门禁、§1.1 端交付规则；`03-验证发布与验收门禁.md` §9
 - 证据口径：只引用核验记录、追溯记录与提交说明中写明的实际执行结果；路径相对 `apps/`。核验记录中早于目录重构的测试路径仍写作 `core/crates/kailo-core/…`，现对应 `core/crates/platform-core/…`
 
-## 结论
+## 2026-10-02 现状摘要
+
+**Stage 1 仍不能关闭。** 下文 09-30/10-01 的 PASS、FAIL、命令和范围保持
+历史条件，不自动成为当前版本的验收结果；旧的「当前」均指各段记录时点。
+
+- HEAD 与实际远端 main 均为 `8ec78ed43e4a3e1fdc3f3243719cb7c1673eded6`。
+  Web `ad82d6e6…` 已运行且 healthy；Core `03c24669…`、Worker `4832ccbb…`
+  仍是旧运行镜像，二者没有 healthcheck，不能写成新候选已部署或三服务 healthy。
+- Web/Desktop 的共享主题、导航、正文、表格、CodeBlock 与已修日期/文案已有
+  实现；Desktop 注销与发送结果不明的处理也已有源码及历史限定证据，不能再
+  笼统列为未开发。现有 Win11 NSIS 包 `9aef4725…` 是 unsigned 测试包，
+  不是「Windows 尚未构建」，也不是签名 release 或安装、登录、协作验收。
+  详见[Web 面核验](../../web-client/fork/verify/web-surface.md)与
+  [Desktop 核验](../../collaboration/fork/verify/desktop-client.md)的本日记录。
+- 原关闭条件中的三端整体呈现、有效对象的 CSRF 负向、NIP-42 会话复用、
+  当前原生安装包 logout/断线恢复/撤权后 Relay 拒绝，以及 CLIENT-only、
+  CAS/generation 等专门边界，仍须按对应版本和端取得证据；不把源码修复或
+  历史 Web 11/11、Linux 安装包结果外推为当前 Win11/Mobile 通过。
+- 含 Tenant ACTIVE 与 OpenMeter 412 修正的 `254e071f…` 候选已实际运行原
+  `--full`，退出 0，但 DATABASE_URL 实际迁移演练与 `.env` 部署预检均
+  SKIP，Mobile release 签名仍阻断。此前 Core 开发候选 `87c086a2…` 来自
+  `77d02501…`，构建退出 0、未部署，不覆盖两处修正；本次 full 也不包含
+  在开发的 AgentVersion 或独立 CHECK，不能外推整个未提交工作树通过。
+  原日志为 `/volumes/data/kailo/tmp/codex-core-functional-closure-254e-full-20261002.37trEJ.log`。
+  这些检查不关闭 Stage；正在实现的 AgentVersion 属于 Stage 5，不改变本报告结论。
+
+## 历史结论与验证记录
+
+下文是该历史报告的原条件；最新缺口以上方摘要为准，不把旧措辞中的“当前”作为新版本事实。
 
 **不能关闭。** 退出门禁「七个接缝各有接缝成立的可复核证据」对 `SS-WEB-PRESENTATION` 不成立，`SS-AGW-OIDC`、`SS-BUZ-SERVER-CLIENT` 各有一部分要求没有证据；「登录、logout、断线恢复端到端通过」按 §1.1「每个端各自成立」的硬规则在 Desktop 与 Mobile 上没有 logout 与断线恢复证据；`V-SCN-70` 在核验记录中被明确登记为生产阻断。关闭条件见「关闭前必须补齐」。
 

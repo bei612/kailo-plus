@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_version_view.schema.json",
+  "title": "AgentVersionView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assetId", "agentResourceId", "ordinal", "assetVersion", "ownerPrincipalId", "content", "configHash", "state"],
+  "properties": {
+    "assetId": {"type": "string", "format": "uuid"},
+    "agentResourceId": {"type": "string", "format": "uuid"},
+    "ordinal": {"type": "integer"},
+    "assetVersion": {"type": "integer"},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "content": {"$ref": "../domain/agent_version_content.schema.json"},
+    "configHash": {"type": "string"},
+    "state": {"$ref": "../enums/agent_version_state.schema.json"}
+  }
+}

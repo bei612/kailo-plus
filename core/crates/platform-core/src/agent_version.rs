@@ -1,0 +1,657 @@
+//! DD-24/25/45/47、03 §4/§7、17 §3/§6：Definition 下的不可变 Version Asset。
+//! 创建与更新只经已有 Governance/ActionExecution；不安装、启动或复制 Agent 权威。
+
+use axum::{http::StatusCode, response::IntoResponse, Json};
+use contracts::{ContentClass as AgentVersionContent, ReasonCode};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+use sqlx::{PgConnection, Postgres, Transaction};
+use uuid::Uuid;
+
+use crate::{
+    governance::{Definition, Execution, Governance, Params, Refusal, Semantic},
+    spicedb::Consistency,
+};
+
+#[derive(sqlx::FromRow)]
+pub(crate) struct Version {
+    pub asset_id: Uuid,
+    pub tenant_id: Uuid,
+    pub agent_resource_id: Uuid,
+    pub owner_principal_id: Uuid,
+    pub ordinal: i32,
+    pub version: i32,
+    pub content: Value,
+    pub config_hash: String,
+    pub state: String,
+    pub asset_state: String,
+    pub projection_action_execution_id: Option<Uuid>,
+}
+
+pub(crate) async fn version(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    id: Uuid,
+    lock: bool,
+) -> Result<Option<Version>, sqlx::Error> {
+    sqlx::query_as(&format!(
+        "select v.asset_id,a.tenant_id,v.agent_resource_id,a.owner_principal_id,v.ordinal,
+         a.version,v.content,v.config_hash,v.state,a.state as asset_state,a.projection_action_execution_id
+         from catalog.agent_version v join catalog.asset a on a.id=v.asset_id
+         where a.tenant_id=$1 and a.id=$2{}", if lock { " for update of a,v" } else { "" }))
+        .bind(tenant).bind(id).fetch_optional(conn).await
+}
+
+fn invalid() -> Refusal {
+    Refusal::Precondition(ReasonCode::InvalidParameters)
+}
+
+/// 共享契约的基础约束；没有缺省模型、timeout、owner 或 runtime。
+pub(crate) fn content(value: &AgentVersionContent) -> Result<(Value, String), Refusal> {
+    if value.persona_identity.display_name.trim().is_empty()
+        || value.instructions.trim().is_empty()
+        || value.runtime_profile_key.trim().is_empty()
+        || value.reply_policy.trim().is_empty()
+        || value.parallelism <= 0
+        || value.turn_limits.idle_timeout_seconds <= 0
+        || value.turn_limits.max_turn_duration_seconds <= 0
+        || value.turn_limits.idle_timeout_seconds > value.turn_limits.max_turn_duration_seconds
+        || Uuid::parse_str(&value.model_route_resource_id).is_err()
+    {
+        return Err(invalid());
+    }
+    for refs in [
+        &value.skill_version_asset_ids,
+        &value.declared_tool_resource_ids,
+    ] {
+        let mut seen = std::collections::HashSet::new();
+        for id in refs {
+            if Uuid::parse_str(id).is_err() || !seen.insert(id) {
+                return Err(invalid());
+            }
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    for key in &value.capability_requirements {
+        let Some((name, version)) = key.rsplit_once('@') else {
+            return Err(invalid());
+        };
+        if name.is_empty() || version.trim().is_empty() || !seen.insert(key) {
+            return Err(invalid());
+        }
+    }
+    // 递归排序键使 hash 不依赖 serde_json 的 Map feature；只含 requested 内容，
+    // 不含 owner、安装、runtime state 或当前用量。
+    let normalized = canonical(serde_json::to_value(value).map_err(|_| invalid())?);
+    let canonical = serde_json::to_vec(&normalized).map_err(|_| invalid())?;
+    let digest = hex::encode(Sha256::digest(canonical));
+    Ok((normalized, digest))
+}
+
+fn canonical(value: Value) -> Value {
+    match value {
+        Value::Object(fields) => {
+            let mut keys: Vec<_> = fields.into_iter().collect();
+            keys.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(
+                keys.into_iter()
+                    .map(|(key, value)| (key, canonical(value)))
+                    .collect(),
+            )
+        }
+        Value::Array(values) => Value::Array(values.into_iter().map(canonical).collect()),
+        value => value,
+    }
+}
+
+/// 发布读取随平台 release 投递的 RuntimeProfile；不在此处登记或激活 profile。
+fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal> {
+    let path = std::env::var("AGENT_RUNTIME_PROFILES_FILE")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    let bytes = std::fs::read(path)
+        .map_err(|_| Refusal::Unavailable("RuntimeProfile Catalog 不可读".into()))?;
+    let directory: contracts::RuntimeProfileDirectory = serde_json::from_slice(&bytes)
+        .map_err(|_| Refusal::Unavailable("RuntimeProfile Catalog 不符合共享契约".into()))?;
+    let mut keys = std::collections::HashSet::new();
+    if directory
+        .profiles
+        .iter()
+        .any(|p| p.key.trim().is_empty() || !keys.insert(&p.key))
+    {
+        return Err(Refusal::Unavailable(
+            "RuntimeProfile Catalog 的 key 不唯一".into(),
+        ));
+    }
+    let profile = directory
+        .profiles
+        .iter()
+        .find(|p| p.key == value.runtime_profile_key)
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    let c = &profile.capability_contract;
+    if profile.kind != contracts::RuntimeProfileKind::ServerCodex
+        || profile.status != "ACTIVE"
+        || profile.web_availability != "ENABLED"
+        || c.max_parallelism <= 0
+        || c.max_idle_timeout_seconds <= 0
+        || c.max_turn_duration_seconds <= 0
+        || value.parallelism > c.max_parallelism
+        || value.turn_limits.idle_timeout_seconds > c.max_idle_timeout_seconds
+        || value.turn_limits.max_turn_duration_seconds > c.max_turn_duration_seconds
+        || !c.reply_policies.contains(&value.reply_policy)
+        || value
+            .capability_requirements
+            .iter()
+            .any(|r| !c.capability_requirements.contains(r))
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    Ok(())
+}
+
+/// 引用只声明 requested；引用存在与 fresh read 不把 execute 权限送给未来 Installation。
+pub(crate) async fn validate_references(
+    gov: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    human: Uuid,
+    value: &AgentVersionContent,
+) -> Result<(), Refusal> {
+    runtime_profile(value)?;
+    let route = Uuid::parse_str(&value.model_route_resource_id).map_err(|_| invalid())?;
+    let row: Option<(String, Uuid)> = sqlx::query_as(
+        "select native_id,owner_principal_id from catalog.resource
+         where tenant_id=$1 and id=$2 and type_key='llm_route' and state='ACTIVE'
+           and projection_action_execution_id is null and native_id is not null",
+    )
+    .bind(tenant)
+    .bind(route)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let Some((native, owner)) = row else {
+        return Err(Refusal::Precondition(ReasonCode::TargetNotFound));
+    };
+    if !crate::agent_definition::active_owner(conn, tenant, owner).await? {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    // 只以受控 Core 服务身份读原生已登记 route，不复制配置正文或 provider credential。
+    native_route(&native).await?;
+    if !value.declared_tool_resource_ids.is_empty() || !value.skill_version_asset_ids.is_empty() {
+        // 未实现的 Tool/Skill producer 不靠一个裸 Resource/Asset UUID 冒充。
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let checked = gov
+        .spicedb
+        .check(
+            "resource",
+            &route.to_string(),
+            "read",
+            &human.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|e| Refusal::Unavailable(e.to_string()))?;
+    if !checked.allowed {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    Ok(())
+}
+
+async fn native_route(id: &str) -> Result<(), Refusal> {
+    let base = std::env::var("AGENTGATEWAY_ADMIN_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    let seconds = std::env::var("AGENTGATEWAY_ADMIN_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    let mut url =
+        reqwest::Url::parse(&base).map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    url.path_segments_mut()
+        .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?
+        .pop_if_empty()
+        .extend(["api", "config", "resources", "llm.virtualModel"]);
+    let tokens = crate::oidc::TokenSource::from_env()
+        .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    let bearer = tokens
+        .token()
+        .await
+        .map_err(|_| Refusal::Unavailable("Gateway Core 服务身份不可用".into()))?;
+    let response = reqwest::Client::new()
+        .get(url)
+        .bearer_auth(bearer)
+        .timeout(std::time::Duration::from_secs(seconds))
+        .send()
+        .await
+        .map_err(|_| Refusal::Unavailable("Gateway route 原生读取不可达".into()))?;
+    if !response.status().is_success() {
+        return Err(Refusal::Unavailable(format!(
+            "Gateway route 读取 HTTP {}",
+            response.status()
+        )));
+    }
+    let result: Value = response
+        .json()
+        .await
+        .map_err(|_| Refusal::Unavailable("Gateway route 原生回应不可解析".into()))?;
+    let rows = result
+        .get("resources")
+        .and_then(Value::as_array)
+        .ok_or_else(|| Refusal::Unavailable("Gateway route 回应缺 resources".into()))?;
+    let mut found = 0;
+    for row in rows {
+        if row.get("kind").and_then(Value::as_str) != Some("llm.virtualModel")
+            || row.get("id").and_then(Value::as_str).is_none()
+            || row
+                .get("revision")
+                .and_then(Value::as_i64)
+                .is_none_or(|v| v <= 0)
+        {
+            return Err(Refusal::Unavailable(
+                "Gateway route 原生回应形状不符".into(),
+            ));
+        }
+        if row.get("id").and_then(Value::as_str) == Some(id) {
+            found += 1;
+        }
+    }
+    if found != 1 {
+        return Err(Refusal::Precondition(ReasonCode::TargetNotFound));
+    }
+    Ok(())
+}
+
+pub(crate) async fn prewrite(
+    gov: &Governance,
+    tx: &mut Transaction<'_, Postgres>,
+    ae: &Execution,
+    sem: Semantic,
+    p: &Params,
+) -> Result<Vec<crate::audit::Evidence>, Refusal> {
+    let resource_id = p.resource_id.ok_or_else(invalid)?;
+    let parent = crate::agent_definition::resource(tx, ae.tenant_id, resource_id, true)
+        .await?
+        .filter(|r| r.state == "ACTIVE" && r.projection_action_execution_id.is_none())
+        .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    if !crate::agent_definition::active_owner(tx, ae.tenant_id, ae.initiator_principal_id).await?
+        || !crate::agent_definition::active_owner(tx, ae.tenant_id, parent.owner_principal_id)
+            .await?
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    match sem {
+        Semantic::AgentVersionCreate => {
+            let requested = p.agent_version_content.as_ref().ok_or_else(invalid)?;
+            let (normalized, digest) = content(requested)?;
+            validate_references(gov, tx, ae.tenant_id, ae.initiator_principal_id, requested)
+                .await?;
+            let ordinal: i32 = sqlx::query_scalar(
+                "select coalesce(max(ordinal),0)+1 from catalog.agent_version where agent_resource_id=$1")
+                .bind(parent.id).fetch_one(&mut **tx).await?;
+            sqlx::query("insert into catalog.asset
+                (id,tenant_id,resource_id,type_key,owner_principal_id,producer_principal_id,native_ref,state,version,projection_action_execution_id)
+                values ($1,$2,$3,'agent.version',$4,$4,$1::text,'DRAFT',1,$5)")
+                .bind(ae.id).bind(ae.tenant_id).bind(parent.id).bind(ae.initiator_principal_id)
+                .bind(ae.id).execute(&mut **tx).await?;
+            sqlx::query("insert into catalog.agent_version
+                (asset_id,agent_resource_id,ordinal,content,config_hash,state) values ($1,$2,$3,$4,$5,'DRAFT')")
+                .bind(ae.id).bind(parent.id).bind(ordinal).bind(normalized).bind(digest)
+                .execute(&mut **tx).await?;
+            Ok(Vec::new())
+        }
+        Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish => {
+            let v = version(tx, ae.tenant_id, ae.target_id, true)
+                .await?
+                .filter(|v| {
+                    v.agent_resource_id == parent.id
+                        && v.state == "DRAFT"
+                        && v.asset_state == "DRAFT"
+                        && v.projection_action_execution_id.is_none()
+                })
+                .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+            if !crate::agent_definition::active_owner(tx, ae.tenant_id, v.owner_principal_id)
+                .await?
+            {
+                return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+            if !projection_matches(gov, &v).await? {
+                return Err(Refusal::Unavailable("Asset 权限投影不一致".into()));
+            }
+            let requested = match sem {
+                Semantic::AgentVersionUpdate => {
+                    p.agent_version_content.clone().ok_or_else(invalid)?
+                }
+                _ => serde_json::from_value(v.content.clone()).map_err(|_| invalid())?,
+            };
+            let (normalized, digest) = content(&requested)?;
+            validate_references(gov, tx, ae.tenant_id, ae.initiator_principal_id, &requested)
+                .await?;
+            if sem == Semantic::AgentVersionPublish && digest != v.config_hash {
+                return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+            }
+            sqlx::query("update catalog.agent_version set content=$2,config_hash=$3,
+                state=case when $4 then 'PUBLISHED' else state end where asset_id=$1 and state='DRAFT'")
+                .bind(v.asset_id).bind(normalized).bind(digest).bind(sem == Semantic::AgentVersionPublish)
+                .execute(&mut **tx).await?;
+            sqlx::query(
+                "update catalog.asset set version=version+1,
+                state=case when $2 then 'PUBLISHED' else state end where id=$1",
+            )
+            .bind(v.asset_id)
+            .bind(sem == Semantic::AgentVersionPublish)
+            .execute(&mut **tx)
+            .await?;
+            if sem == Semantic::AgentVersionPublish {
+                sqlx::query("update catalog.agent_definition set current_published_version_asset_id=$2 where resource_id=$1")
+                    .bind(parent.id).bind(v.asset_id).execute(&mut **tx).await?;
+                sqlx::query("update catalog.resource set version=version+1 where id=$1")
+                    .bind(parent.id)
+                    .execute(&mut **tx)
+                    .await?;
+            }
+            Ok(Vec::new())
+        }
+        _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
+    }
+}
+
+pub(crate) async fn projection_matches(gov: &Governance, v: &Version) -> Result<bool, Refusal> {
+    gov.spicedb
+        .asset_projection_matches(
+            &v.asset_id.to_string(),
+            &v.tenant_id.to_string(),
+            &v.agent_resource_id.to_string(),
+            &v.owner_principal_id.to_string(),
+            gov.cfg.relationship_page,
+        )
+        .await
+        .map_err(|e| Refusal::Unavailable(e.to_string()))
+}
+
+pub(crate) async fn dispatch(gov: &Governance, id: Uuid, def: &Definition) -> Result<(), Refusal> {
+    let mut tx = gov.pool.begin().await?;
+    let ae = crate::governance::lock_execution(&mut tx, id).await?;
+    if ae.gate_state != "ALLOWED"
+        || !matches!(ae.dispatch_state.as_str(), "NOT_DISPATCHED" | "UNKNOWN")
+    {
+        return Ok(());
+    }
+    let active = sqlx::query_scalar::<_, bool>(
+        "select state='ACTIVE' from identity.tenant where id=$1 for update",
+    )
+    .bind(ae.tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(false);
+    // 创建 target 是已存在的父 Resource（create Check）；Asset 以同一预写 AE 的 UUID 固定。
+    let v = version(&mut tx, ae.tenant_id, ae.id, true)
+        .await?
+        .filter(|v| v.projection_action_execution_id == Some(ae.id))
+        .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    let parent =
+        crate::agent_definition::resource(&mut tx, ae.tenant_id, v.agent_resource_id, true).await?;
+    let parent_active = match parent.as_ref() {
+        Some(r) if r.state == "ACTIVE" && r.projection_action_execution_id.is_none() => {
+            crate::agent_definition::active_owner(&mut tx, ae.tenant_id, r.owner_principal_id)
+                .await?
+        }
+        _ => false,
+    };
+    let valid = active
+        && parent_active
+        && crate::agent_definition::active_owner(&mut tx, ae.tenant_id, v.owner_principal_id)
+            .await?;
+    let matched = if valid {
+        let r = parent
+            .as_ref()
+            .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+        match crate::agent_definition::projection_matches(
+            gov,
+            r.id,
+            r.tenant_id,
+            r.owner_principal_id,
+        )
+        .await
+        {
+            Ok(true) => {}
+            _ => return unknown(tx, &ae, def).await,
+        }
+        match projection_matches(gov, &v).await {
+            Ok(matched) => matched,
+            Err(_) => return unknown(tx, &ae, def).await,
+        }
+    } else {
+        false
+    };
+    let result = if !valid
+        || (!matched
+            && parent
+                .as_ref()
+                .is_none_or(|r| Some(r.version) != ae.frozen_target_version()))
+    {
+        // 可能已经写入的投影先原生删除+空集合查证，再 ABORTED；不把未知写当从未发生。
+        gov.spicedb
+            .delete_asset_projection(v.asset_id)
+            .await
+            .map(|t| (false, t))
+    } else {
+        match matched {
+            false => {
+                let checked = gov
+                    .spicedb
+                    .check(
+                        "resource",
+                        &v.agent_resource_id.to_string(),
+                        "create",
+                        &ae.initiator_principal_id.to_string(),
+                        Consistency::FullyConsistent,
+                    )
+                    .await;
+                match checked {
+                    Err(_) => return unknown(tx, &ae, def).await,
+                    Ok(c) if !c.allowed => gov
+                        .spicedb
+                        .delete_asset_projection(v.asset_id)
+                        .await
+                        .map(|t| (false, t)),
+                    Ok(_) => {
+                        if gov
+                            .spicedb
+                            .write_asset_projection(
+                                &v.asset_id.to_string(),
+                                &v.tenant_id.to_string(),
+                                &v.agent_resource_id.to_string(),
+                                &v.owner_principal_id.to_string(),
+                            )
+                            .await
+                            .is_err()
+                        {
+                            return unknown(tx, &ae, def).await;
+                        }
+                        match projection_matches(gov, &v).await {
+                            Ok(true) => observed(gov, &v).await.map(|t| (true, t)),
+                            _ => return unknown(tx, &ae, def).await,
+                        }
+                    }
+                }
+            }
+            true => observed(gov, &v).await.map(|t| (true, t)),
+        }
+    };
+    let (created, token) = match result {
+        Ok((created, token)) if !token.is_empty() => (created, token),
+        _ => return unknown(tx, &ae, def).await,
+    };
+    sqlx::query(
+        "update catalog.asset set projection_action_execution_id=null,
+        state=case when $2 then state else 'DELETED' end,version=version+1 where id=$1",
+    )
+    .bind(v.asset_id)
+    .bind(created)
+    .execute(&mut *tx)
+    .await?;
+    crate::governance::record_dispatch(
+        &mut tx,
+        ae.id,
+        def.audit_class(),
+        if created {
+            Ok(())
+        } else {
+            Err(StatusCode::FORBIDDEN)
+        },
+        vec![crate::audit::Evidence::new(
+            contracts::EvidenceKind::SpicedbZedtoken,
+            token,
+        )],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn observed(gov: &Governance, v: &Version) -> Result<String, crate::spicedb::SpiceDbError> {
+    gov.spicedb
+        .check(
+            "asset",
+            &v.asset_id.to_string(),
+            "read",
+            &v.owner_principal_id.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+        .and_then(|c| {
+            if c.allowed && !c.zed_token.is_empty() {
+                Ok(c.zed_token)
+            } else {
+                Err(crate::spicedb::SpiceDbError::Unavailable(
+                    "Asset owner 查证不一致".into(),
+                ))
+            }
+        })
+}
+
+async fn unknown(
+    mut tx: Transaction<'_, Postgres>,
+    ae: &Execution,
+    def: &Definition,
+) -> Result<(), Refusal> {
+    crate::governance::record_dispatch(
+        &mut tx,
+        ae.id,
+        def.audit_class(),
+        Err(StatusCode::SERVICE_UNAVAILABLE),
+        Vec::new(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn get(
+    axum::extract::State(state): axum::extract::State<crate::bff::BffState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> axum::response::Response {
+    let ctx = match crate::bff::resolve_execution_context(&state, &headers).await {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    let mut conn = match state.pool.acquire().await {
+        Ok(c) => c,
+        Err(e) => return crate::service_api::unavailable(e),
+    };
+    let v = match version(&mut conn, ctx.tenant_id, id, false).await {
+        Ok(Some(v))
+            if v.projection_action_execution_id.is_none()
+                && matches!(v.asset_state.as_str(), "DRAFT" | "PUBLISHED" | "RETIRED") =>
+        {
+            v
+        }
+        Ok(_) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return crate::service_api::unavailable(e),
+    };
+    if v.asset_state != v.state {
+        return Refusal::Unavailable("Asset 与 Version 状态不一致".into()).respond(None);
+    }
+    let parent = match crate::agent_definition::resource(
+        &mut conn,
+        ctx.tenant_id,
+        v.agent_resource_id,
+        false,
+    )
+    .await
+    {
+        Ok(Some(r)) if r.state == "ACTIVE" && r.projection_action_execution_id.is_none() => r,
+        Ok(_) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return crate::service_api::unavailable(e),
+    };
+    match crate::agent_definition::projection_matches(
+        &state.governance,
+        parent.id,
+        parent.tenant_id,
+        parent.owner_principal_id,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return Refusal::Unavailable("父 Resource 投影不一致".into()).respond(None),
+        Err(e) => return e.respond(None),
+    }
+    match projection_matches(&state.governance, &v).await {
+        Ok(true) => {}
+        Ok(false) => return Refusal::Unavailable("Asset 投影不一致".into()).respond(None),
+        Err(e) => return e.respond(None),
+    }
+    match state
+        .governance
+        .spicedb
+        .check(
+            "asset",
+            &id.to_string(),
+            "read",
+            &ctx.tenant_principal_id.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+    {
+        Ok(c) if c.allowed => {}
+        Ok(_) => return StatusCode::FORBIDDEN.into_response(),
+        Err(e) => return Refusal::Unavailable(e.to_string()).respond(None),
+    }
+    let content: AgentVersionContent = match serde_json::from_value(v.content) {
+        Ok(c) => c,
+        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    if !self::content(&content).is_ok_and(|(_, hash)| hash == v.config_hash) {
+        return Refusal::Unavailable("AgentVersion config_hash 不一致".into()).respond(None);
+    }
+    let state = match v.state.as_str() {
+        "DRAFT" => contracts::AgentVersionState::Draft,
+        "PUBLISHED" => contracts::AgentVersionState::Published,
+        "RETIRED" => contracts::AgentVersionState::Retired,
+        _ => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    Json(contracts::AgentVersionView {
+        asset_id: v.asset_id.to_string(),
+        agent_resource_id: v.agent_resource_id.to_string(),
+        ordinal: i64::from(v.ordinal),
+        asset_version: i64::from(v.version),
+        owner_principal_id: v.owner_principal_id.to_string(),
+        content,
+        config_hash: v.config_hash,
+        state,
+    })
+    .into_response()
+}

@@ -59,6 +59,7 @@ struct Metrics {
     provision_oldest_age: Gauge<u64>,
     provision_overdue: Gauge<u64>,
     provision_orphan_unknown: Gauge<u64>,
+    retirement_pending: Gauge<u64>,
     bootstrap_overdue: Gauge<u64>,
 }
 
@@ -114,6 +115,10 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
         provision_overdue: meter
             .u64_gauge("platform.server_key_provision.overdue")
             .with_description("超出准入对账上界的 SERVER HUMAN 写入意图")
+            .build(),
+        retirement_pending: meter
+            .u64_gauge("platform.server_key.retirement_pending")
+            .with_description("已撤销或已替下、私钥版本尚未销毁查证的平台自持 Nostr 私钥")
             .build(),
         provision_orphan_unknown: meter
             .u64_gauge("platform.server_key_provision.orphan_unknown")
@@ -206,6 +211,10 @@ async fn pass(
         "with selected as (
          select i.action_execution_id from admission.server_key_provision_intent i
          where i.finished_at is null and i.source_membership_id is null
+           and i.key_kind = 'HUMAN'
+           and not exists (select 1 from admission.action_execution ae
+                           where ae.id = i.action_execution_id and ae.tenant_id = i.tenant_id
+                             and ae.action_key = $3)
            and i.created_at < now() - make_interval(secs => $2::bigint)
          order by coalesce(i.reconcile_last_attempt_at, i.created_at), i.action_execution_id
          limit $1 for update of i skip locked
@@ -217,6 +226,7 @@ async fn pass(
     )
     .bind(batch)
     .bind(g.cfg.evaluation_timeout_seconds)
+    .bind("identity.secret_ref.rehome")
     .fetch_all(&g.pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -273,6 +283,80 @@ async fn pass(
     for id in membership_key_ids {
         let step = membership_projection::reconcile_member_key_intent(state, id).await;
         metrics.driven.add(1, &[KeyValue::new("stage", step)]);
+    }
+    // DD-113 (2) / DD-115 (4)：CONTROL 与 operator 的未绑定写入。CONTROL 超过准入
+    // 对账上界后按其 Tenant 建立 operation 是否终态判定；OPERATOR 以冻结的提交截止
+    // 为终态判据。同一公平轮转，超出上界的仍由 overdue 度量告警。
+    let platform_key_ids: Vec<Uuid> = sqlx::query_scalar(
+        "with selected as (
+         select i.id from admission.server_key_provision_intent i
+         where i.finished_at is null and i.origin = 'PROVISIONED'
+           and not exists (select 1 from admission.action_execution ae
+                           where ae.id = i.action_execution_id and ae.tenant_id = i.tenant_id
+                             and ae.action_key = $3)
+           and ((i.key_kind = 'CONTROL'
+                 and i.created_at < now() - make_interval(secs => $2::bigint))
+                or (i.key_kind = 'OPERATOR' and i.commit_deadline_at <= now()))
+         order by coalesce(i.reconcile_last_attempt_at, i.created_at), i.id
+         limit $1 for update of i skip locked
+         )
+         update admission.server_key_provision_intent i
+            set reconcile_last_attempt_at = now()
+           from selected where i.id = selected.id
+         returning i.id",
+    )
+    .bind(batch)
+    .bind(g.cfg.evaluation_timeout_seconds)
+    .bind("identity.secret_ref.rehome")
+    .fetch_all(&g.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    for id in platform_key_ids {
+        let step = crate::platform_keys::reconcile_platform_key_intent(state, id).await;
+        metrics.driven.add(1, &[KeyValue::new("stage", step)]);
+    }
+    // DD-115 (3)：退役补做——binding 已 REVOKED、意图 BOUND、退役 operation 已冻结，
+    // 投影内的 delete/destroy 没有完成的行。
+    let retiring_ids: Vec<Uuid> = sqlx::query_scalar(
+        "with selected as (
+         select i.id from admission.server_key_provision_intent i
+         join identity.buzz_identity_binding b
+           on b.private_key_secret_ref = i.target_locator and b.tenant_id = i.tenant_id
+         where i.key_kind = 'HUMAN' and b.state = 'REVOKED'
+           and i.finished_at is not null and i.fenced_at is null and i.destroyed_at is null
+           and i.retire_operation_id is not null and i.retired_at is null
+         order by coalesce(i.reconcile_last_attempt_at, i.created_at), i.id
+         limit $1 for update of i skip locked
+         )
+         update admission.server_key_provision_intent i
+            set reconcile_last_attempt_at = now()
+           from selected where i.id = selected.id
+         returning i.id",
+    )
+    .bind(batch)
+    .fetch_all(&g.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    for id in retiring_ids {
+        let step = crate::platform_keys::reconcile_retirement(state, id).await;
+        metrics.driven.add(1, &[KeyValue::new("stage", step)]);
+    }
+    // DD-115 (6)：DD-113 之前的轮换遗留、既无引用也无意图的 operator locator。
+    match crate::platform_keys::retire_unrecorded_operator_keys(
+        state,
+        state.catalog_tenant,
+        Uuid::new_v4(),
+    )
+    .await
+    {
+        Ok(outcomes) => {
+            for step in outcomes {
+                metrics.driven.add(1, &[KeyValue::new("stage", step)]);
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "operator 私钥前缀不可列出或判定，遗留 locator 保持并告警")
+        }
     }
 
     let rows: Vec<(String, String, i64, i64)> = sqlx::query_as(
@@ -341,6 +425,30 @@ async fn pass(
     metrics.provision_overdue.record(overdue.max(0) as u64, &[]);
     if overdue > 0 {
         tracing::warn!(overdue, "托管身份写入意图超过治理对账上界，需运维核查");
+    }
+    // DD-113 (3)(4)(6)：退役结果不明、存量非独占引用或旧 operator key 仍被接受时保持
+    // 原状态并告警，不宣称完成。
+    let retirement_pending: i64 = sqlx::query_scalar(
+        "select (select count(*) from identity.buzz_identity_binding
+                 where custody = 'SERVER' and state = 'REVOKED'
+                   and private_key_secret_status = 'SUPERSEDED')
+              + (select count(*) from admission.server_key_provision_intent i
+                 where i.key_kind = 'OPERATOR' and i.finished_at is not null
+                   and i.fenced_at is null and i.retired_at is null
+                   and not exists (select 1 from identity.relay_operator_identity o
+                                   where o.private_key_secret_ref = i.target_locator))",
+    )
+    .fetch_one(&g.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    metrics
+        .retirement_pending
+        .record(retirement_pending.max(0) as u64, &[]);
+    if retirement_pending > 0 {
+        tracing::warn!(
+            retirement_pending,
+            "平台自持私钥退役未完成，旧版本仍未销毁查证"
+        );
     }
     let orphan_unknown: i64 = sqlx::query_scalar(
         "select count(*)::bigint from admission.action_execution ae

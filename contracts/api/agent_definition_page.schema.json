@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_definition_page.schema.json",
+  "title": "AgentDefinitionPage",
+  "description": "同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["definitions"],
+  "properties": {
+    "definitions": {"type": "array", "items": {"$ref": "agent_definition_view.schema.json"}},
+    "nextOffset": {"type": "integer"}
+  }
+}

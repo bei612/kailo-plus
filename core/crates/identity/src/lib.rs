@@ -75,6 +75,25 @@ pub async fn resolve(
     issuer: Option<&str>,
     subject: Option<&str>,
 ) -> Result<ResolvedIdentity, IdentityError> {
+    resolve_mode(pool, issuer, subject, false).await
+}
+
+/// 仅供 BFF 生命周期入口使用。这里仍不授予权限；BFF 必须 fresh 检查 Tenant
+/// manage（或冻结 owner 资格），且该版本必须已开放真实 tenant.delete 链。
+pub async fn resolve_for_lifecycle(
+    pool: &PgPool,
+    issuer: Option<&str>,
+    subject: Option<&str>,
+) -> Result<ResolvedIdentity, IdentityError> {
+    resolve_mode(pool, issuer, subject, true).await
+}
+
+async fn resolve_mode(
+    pool: &PgPool,
+    issuer: Option<&str>,
+    subject: Option<&str>,
+    lifecycle: bool,
+) -> Result<ResolvedIdentity, IdentityError> {
     // 缺任一条即拒绝。CEL 求值失败时网关会删除目标 header，
     // 因此「缺失」正是 fail-closed 链路上预期的信号（SS-AGW-OIDC）。
     let (issuer, subject) = match (issuer, subject) {
@@ -128,7 +147,18 @@ pub async fn resolve(
     if !row.principal_valid {
         return Err(IdentityError::PrincipalNotActive);
     }
-    if !tenant_active(pool, row.tenant_id).await? {
+    let tenant_state =
+        sqlx::query_scalar::<_, String>("select state from identity.tenant where id = $1")
+            .bind(row.tenant_id)
+            .fetch_optional(pool)
+            .await?;
+    if tenant_state.as_deref() != Some("ACTIVE")
+        && !(lifecycle
+            && matches!(
+                tenant_state.as_deref(),
+                Some("SUSPENDING" | "SUSPENDED" | "DELETING")
+            ))
+    {
         return Err(IdentityError::TenantNotActive);
     }
 

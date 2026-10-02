@@ -87,7 +87,10 @@ pub fn describe(kind: &EvidenceKind) -> (EvidenceAuthority, EvidenceSensitivity)
         | K::TemporalFirstRunId
         | K::ApprovalWorkflowId => (A::Temporal, S::Summary),
         K::SpicedbZedtoken | K::SpicedbRelationship => (A::Spicedb, S::Summary),
-        K::BuzzEventId | K::BuzzPubkey => (A::Buzz, S::Summary),
+        K::BuzzEventId
+        | K::BuzzPubkey
+        | K::BuzzDeletionRequestId
+        | K::BuzzDeletionInventoryDigest => (A::Buzz, S::Summary),
         K::ExternalSubjectSha256 => (A::Oidc, S::Restricted),
         K::PlatformSessionId => (A::Core, S::Restricted),
         K::ApprovalPolicy
@@ -96,6 +99,8 @@ pub fn describe(kind: &EvidenceKind) -> (EvidenceAuthority, EvidenceSensitivity)
         | K::OriginalActionExecutionId
         | K::TenantInvitationId
         | K::TenantMembershipId
+        | K::TenantLifecycleSnapshotId
+        | K::TenantDeleteSubprocessId
         | K::SecretRefRehomeId
         | K::DeploymentBootstrap => (A::Core, S::Summary),
     }

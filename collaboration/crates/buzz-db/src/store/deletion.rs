@@ -505,6 +505,20 @@ pub struct FrozenInventory {
     pub schema: SchemaManifest,
     /// Object-store state.
     pub storage: StorageManifest,
+    /// Physical shared-CAS versions attributed to this community at inventory time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retained_cas: Option<RetainedCasManifest>,
+}
+
+/// Frozen retention accounting, not a claim that shared bytes were reclaimed.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RetainedCasManifest {
+    /// Distinct byte-bearing S3 object versions, excluding delete markers.
+    pub object_count: u64,
+    /// Actual bytes of those versions from the object-store catalog.
+    pub total_bytes: u64,
+    /// SHA-256 of the canonical key/version/size stream, bound by inventory digest.
+    pub keys_digest: String,
 }
 
 impl FrozenInventory {
@@ -3309,6 +3323,7 @@ mod tests {
         digest.fold_unordered(&entry).expect("fold entry");
         let (keys_digest, object_count) = digest.finish();
         let inventory = FrozenInventory {
+            retained_cas: None,
             schema: SchemaManifest {
                 scoped_tables: vec!["events".to_string()],
                 row_counts: BTreeMap::from([("events".to_string(), 1)]),
@@ -3437,6 +3452,7 @@ mod tests {
     #[test]
     fn frozen_inventory_digest_is_stable() {
         let inventory = FrozenInventory {
+            retained_cas: None,
             schema: SchemaManifest {
                 scoped_tables: vec!["events".to_string()],
                 row_counts: BTreeMap::from([("events".to_string(), 3)]),
@@ -3516,6 +3532,7 @@ mod postgres_tests {
             .expect("submit");
         assert_eq!(submitted.community_id, community.id);
         let inventory = FrozenInventory {
+            retained_cas: None,
             schema: store
                 .inventory_schema(community.id)
                 .await

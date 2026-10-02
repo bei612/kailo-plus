@@ -682,3 +682,94 @@ Mobile 签名仍阻断。外侧日志为
 本节写入前实际 `status --json` 退出 `0`，runner schema 4/current、
 `incompleteReasons=[]`，但 `contentDrift` 为八个路径、总状态 `stale`；
 因此没有把旧检测结果当作本次提交门禁，尚未据本节提交或 push。
+
+### 原生 Customer HTTP 412 分类修正（2026-10-02）
+
+本次修正 `core/crates/platform-core/src/openmeter.rs::status_error` 的既有
+错误分类：HTTP 412 原来落入 `Error::Unknown`，现与 400、422 同归已有
+`Error::Precondition`。没有增加枚举、接口、账本或重试路径，也没有修改
+CHECK 审计、契约或迁移。主代理随后只将该错误分类 delta 纳入既有 Customer
+消费者的 37 迁移集成候选，不混入独立 CHECK 实现。
+
+权威依据是 DD-38 的唯一 Tenant Customer 关联及 `06` §4 的六类错误合同。
+固定 OpenMeter commit `6d76d8a6fa90fbbab2d41035d31df2acec7ad3af` 的
+`openmeter/entitlement/service/api.go::getActiveCustomer` 对已删除 Customer
+返回 `GenericPreConditionFailedError`；同版本
+`pkg/framework/commonhttp/encoder.go::GenericErrorEncoder` 明确将该错误编码
+为 HTTP 412。Customer 在初次读取后、权益读取前退役，是确定的前置条件
+不成立，不是无法判断的外部结果。两处原生符号均通过该完整 commit 的
+`git show` 只读核验，没有执行 `.references` 中的内容。
+
+修改前的实际 native context/upstream impact 原件为
+`/volumes/data/kailo/tmp/codex-openmeter-412-impact-20261002.1zLtok.log`，
+reader 实际退出 0。`apps-source` 的源根和存储均在 `apps`，indexedAt 为
+`2026-10-02T10:30:37.680Z`，commit 为
+`8ec78ed43e4a3e1fdc3f3243719cb7c1673eded6`；structured status、typed
+context、schema-4 runner 官方比较及 contentDrift 均为 current，
+`incompleteReasons` 与 forbidden paths 均为空。实际 reader cgroup 为
+2 CPU、6 GiB memory、5 GiB memory.high、swap 0。
+
+精确目标 `Function:core/crates/platform-core/src/openmeter.rs:status_error`
+的上游影响为 HIGH（shared axes MEDIUM）：五个直接调用方
+`create_customer/customer_by_id/customer_by_key/read/retire_customer`，
+两个间接调用方 `check_quota/collection`。HIGH 已在编辑前报告；图中零
+process 不作为跨领域零风险的证据。源码补证确认
+`tenant_lifecycle.rs::metering_error` 及现有
+`governance.rs::check_quota` 已将 `Precondition` 消费为
+`BINDING_NOT_ACTIVE`，本次没有改动这两个消费者。
+
+影响面与副作用边界：仅调整已知原生状态码的错误标签，不改变写读字段、
+数据库格式、Workflow、三端接口或兼容窗口。认证拒绝仍为 `Denied`，429
+仍为 `Limit`，未识别状态及原有传输、解析失败仍不构造成功结果；现有
+UNKNOWN/不可用消费路径不变。未增加本地额度权威或正文复制，未开放
+CHECK/STRICT 正向执行入口；NONE 加空 meter 的既有行为不变。
+
+首次写入发生在共享写入窗口放行之前，随后只用 `apply_patch` 还原本人
+这一 hunk；整文件与修改前快照 `cmp` 实际退出 0。主代理在还原后核验
+current 实际退出 0，原件为
+`/volumes/data/kailo/tmp/codex-batch15-fresh-20261002.log`。收到同批前置
+impact 完成及统一 GO 后才重做该修正，没有自行刷新图谱或写入 Git 索引。
+本次精确 before 在
+`/volumes/data/kailo/tmp/codex-openmeter-412-before-20261002.sPLduF/openmeter.rs`，
+SHA-256 为 `6e43cab8b495a09de51b18ddc16813a6667c0670bdafb15c3dcffcf81e4e7167`；
+修正后为 `e785168183ee69f6c4536631608c19a5cb7263f3268a914ab1bef2953b30c596`，
+逻辑 delta 仅三行增加、一行删除。
+
+本节写入时未运行 SDK、文档门禁或全量检查，也未做真实 Customer 退役与
+权益读取竞争的业务运行验收；集中验证由主代理后续收口。本次没有新增
+测试、夹具或检查脚本，未提交、未 push、未部署，不能据此宣布 Stage 完成
+或一期生产就绪。
+
+随后只读核对主代理实际选择树
+`254e071fe529f565bb854e4483390c1087f5ef7e`，不以完整脏工作树代替该输入。
+该树的 `openmeter.rs::status_error` 位于 266–275 行；与先前候选
+`77d02501a6a2503550c20600a6d2aec0eeedf4c7` 比较，此文件只有上述
+HTTP 412 的三行增加、一行删除。401/403 到 `Denied`、429 到 `Limit`、
+其他未识别状态到 `Unknown` 的分支逐字未变。这里是实际源码比对结果，
+不是这些状态已通过业务请求运行的结论。
+
+选择树的 `tenant_lifecycle.rs::metering_error`（685–701 行）确有
+`Precondition` 到 `BINDING_NOT_ACTIVE` 的消费；其中
+`metering_observation_error`（461–487 行）在已有 DISPATCH、原生结果尚未
+查明时仍持久化 UNKNOWN 并返回 `EXTERNAL_RESULT_UNKNOWN`，不能因新的
+412 分类把在途创建误记为确定失败。另一消费者
+`governance.rs::check_quota` 仅存在于未选入的 CHECK 工作树增量，本选择树
+没有这个函数；前述两个消费者的工作树核对不作为两者都已纳入候选的证据。
+固定版本原生两处符号再次通过 `git show` 核验，结果与上述 412 依据相同。
+
+针对 Rust `status_error` 分类的既有可直接执行断言：**无适用对象**。
+该选择树的 `openmeter.rs` 没有测试模块；`git grep` 在现有 Platform Core
+集成测试中查询 `openmeter/metering_error/status_error` 返回 1，即没有引用。
+原生 `metering/openmeter/entitlement/service/api_test.go` 已有删除 Customer
+后 Get/List 返回 `GenericPreConditionFailedError` 的断言，但它不执行 Rust
+分类或其消费者，本轮未运行它，也未创建 Customer。没有拿编译通过冒充
+分类断言，没有为破坏核验新增测试、夹具或脚本；本轮未修改、破坏或还原
+任何源码，因此没有新取得“破坏后失败、还原后通过”的运行证据。
+本轮仅只读复核和本记录追加，不重跑 SDK/full、刷新图谱或写入 Git 索引。
+
+随后集中运行固定树 `254e071fe529f565bb854e4483390c1087f5ef7e` 的原
+`tools/check.sh --full`，实际退出 0；不可变 SDK、4 CPU、8 GiB、swap 0，
+原日志为 `/volumes/data/kailo/tmp/codex-core-functional-closure-254e-full-20261002.37trEJ.log`。
+本刀已被编译与既有检查消费，不再写为尚无 SDK 验证；上述分类断言和业务
+闭环仍未取得，不外推为通过。迁移演练与真实 `.env` 部署预检均 SKIP，
+本次不包含独立 CHECK 或 AgentVersion，也未构建部署该树。

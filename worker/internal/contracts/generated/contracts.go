@@ -10,6 +10,15 @@
 //    actionSubmission, err := UnmarshalActionSubmission(bytes)
 //    bytes, err = actionSubmission.Marshal()
 //
+//    agentDefinitionPage, err := UnmarshalAgentDefinitionPage(bytes)
+//    bytes, err = agentDefinitionPage.Marshal()
+//
+//    agentDefinitionView, err := UnmarshalAgentDefinitionView(bytes)
+//    bytes, err = agentDefinitionView.Marshal()
+//
+//    agentVersionView, err := UnmarshalAgentVersionView(bytes)
+//    bytes, err = agentVersionView.Marshal()
+//
 //    approvalDecisionRequest, err := UnmarshalApprovalDecisionRequest(bytes)
 //    bytes, err = approvalDecisionRequest.Marshal()
 //
@@ -82,11 +91,17 @@
 //    workspacePreferenceRequest, err := UnmarshalWorkspacePreferenceRequest(bytes)
 //    bytes, err = workspacePreferenceRequest.Marshal()
 //
+//    agentVersionContent, err := UnmarshalAgentVersionContent(bytes)
+//    bytes, err = agentVersionContent.Marshal()
+//
 //    errorBody, err := UnmarshalErrorBody(bytes)
 //    bytes, err = errorBody.Marshal()
 //
 //    resolvedIdentity, err := UnmarshalResolvedIdentity(bytes)
 //    bytes, err = resolvedIdentity.Marshal()
+//
+//    runtimeProfileDirectory, err := UnmarshalRuntimeProfileDirectory(bytes)
+//    bytes, err = runtimeProfileDirectory.Marshal()
 //
 //    taskStateReport, err := UnmarshalTaskStateReport(bytes)
 //    bytes, err = taskStateReport.Marshal()
@@ -132,6 +147,12 @@
 //
 //    freshApprovalAdmissionResult, err := UnmarshalFreshApprovalAdmissionResult(bytes)
 //    bytes, err = freshApprovalAdmissionResult.Marshal()
+//
+//    tenantDeleteAdvanceRequest, err := UnmarshalTenantDeleteAdvanceRequest(bytes)
+//    bytes, err = tenantDeleteAdvanceRequest.Marshal()
+//
+//    tenantDeleteAdvanceResult, err := UnmarshalTenantDeleteAdvanceResult(bytes)
+//    bytes, err = tenantDeleteAdvanceResult.Marshal()
 
 package generated
 
@@ -164,6 +185,36 @@ func UnmarshalActionSubmission(data []byte) (ActionSubmission, error) {
 }
 
 func (r *ActionSubmission) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentDefinitionPage(data []byte) (AgentDefinitionPage, error) {
+	var r AgentDefinitionPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentDefinitionPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentDefinitionView(data []byte) (AgentDefinitionView, error) {
+	var r AgentDefinitionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentDefinitionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentVersionView(data []byte) (AgentVersionView, error) {
+	var r AgentVersionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentVersionView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -407,6 +458,16 @@ func (r *WorkspacePreferenceRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAgentVersionContent(data []byte) (AgentVersionContent, error) {
+	var r AgentVersionContent
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentVersionContent) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalErrorBody(data []byte) (ErrorBody, error) {
 	var r ErrorBody
 	err := json.Unmarshal(data, &r)
@@ -424,6 +485,16 @@ func UnmarshalResolvedIdentity(data []byte) (ResolvedIdentity, error) {
 }
 
 func (r *ResolvedIdentity) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalRuntimeProfileDirectory(data []byte) (RuntimeProfileDirectory, error) {
+	var r RuntimeProfileDirectory
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *RuntimeProfileDirectory) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -577,6 +648,26 @@ func (r *FreshApprovalAdmissionResult) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalTenantDeleteAdvanceRequest(data []byte) (TenantDeleteAdvanceRequest, error) {
+	var r TenantDeleteAdvanceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TenantDeleteAdvanceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalTenantDeleteAdvanceResult(data []byte) (TenantDeleteAdvanceResult, error) {
+	var r TenantDeleteAdvanceResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TenantDeleteAdvanceResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 // 可用 JSON Schema 子集的可执行定义。它穷举 contracts/README.md 第 1
 // 节允许的每一种构造；四侧生成器必须全部生成成功并通过双向序列化。新增构造先加进本文件并四侧验证通过，才允许在其他 schema 中使用。
 type Canary struct {
@@ -622,24 +713,71 @@ type Variant struct {
 // actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
 type ActionCommand struct {
 	ActionKey string `json:"actionKey"`
+	// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
+	AgentVersionContent *AgentVersionContentClass `json:"agentVersionContent,omitempty"`
+	// AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。
+	AssetID *string `json:"assetId,omitempty"`
+	// 调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
+	AssetVersion *int64 `json:"assetVersion,omitempty"`
 	// EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
 	ExplicitConfirmation *bool `json:"explicitConfirmation,omitempty"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
 	IdempotencyKey string `json:"idempotencyKey"`
 	// tenant.member.invite.revoke 的目标邀请
 	InvitationID *string `json:"invitationId,omitempty"`
-	// workspace.create 的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
+	// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
 	Name *string `json:"name,omitempty"`
 	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
 	OriginalActionExecutionID *string `json:"originalActionExecutionId,omitempty"`
-	// 成员动作的目标 Principal
+	// 成员动作的目标 Principal；resource.transfer_owner 的新 owner
 	PrincipalID *string `json:"principalId,omitempty"`
-	// workspace.create 的 slug
+	// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
+	ResourceID *string `json:"resourceId,omitempty"`
+	// 调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
+	ResourceVersion *int64 `json:"resourceVersion,omitempty"`
+	// workspace.create 或 agent.definition.create 的稳定 slug
 	Slug *string `json:"slug,omitempty"`
 	// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
 	TenantID *string `json:"tenantId,omitempty"`
 	// Workspace 内动作的执行 Workspace
 	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
+//
+// 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
+// environment。发布不等于安装或运行授权。
+type AgentVersionContentClass struct {
+	// 精确 contract_key@version，不引用业务能力实现名。
+	CapabilityRequirements  []string                           `json:"capabilityRequirements"`
+	DeclaredToolResourceIDS []string                           `json:"declaredToolResourceIds"`
+	Instructions            string                             `json:"instructions"`
+	MemoryPolicy            AgentVersionContentMemoryPolicy    `json:"memoryPolicy"`
+	ModelRouteResourceID    string                             `json:"modelRouteResourceId"`
+	Parallelism             int64                              `json:"parallelism"`
+	PersonaIdentity         AgentVersionContentPersonaIdentity `json:"personaIdentity"`
+	// RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
+	ReplyPolicy          string                        `json:"replyPolicy"`
+	RuntimeProfileKey    string                        `json:"runtimeProfileKey"`
+	SkillVersionAssetIDS []string                      `json:"skillVersionAssetIds"`
+	TriggerDefaults      []AgentTrigger                `json:"triggerDefaults"`
+	TurnLimits           AgentVersionContentTurnLimits `json:"turnLimits"`
+}
+
+type AgentVersionContentMemoryPolicy struct {
+	ColdWrite AgentMemoryColdWrite `json:"coldWrite"`
+	CoreWrite AgentMemoryCoreWrite `json:"coreWrite"`
+}
+
+type AgentVersionContentPersonaIdentity struct {
+	AvatarURL   *string `json:"avatarUrl,omitempty"`
+	Description *string `json:"description,omitempty"`
+	DisplayName string  `json:"displayName"`
+}
+
+type AgentVersionContentTurnLimits struct {
+	IdleTimeoutSeconds     int64 `json:"idleTimeoutSeconds"`
+	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
 }
 
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -664,6 +802,47 @@ type InvitationClass struct {
 	InvitationID string `json:"invitationId"`
 	// 部署登记的链接基址 + '#' + 一次性凭据
 	Link string `json:"link"`
+}
+
+// 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
+type AgentDefinitionPage struct {
+	Definitions []DefinitionElement `json:"definitions"`
+	NextOffset  *int64              `json:"nextOffset,omitempty"`
+}
+
+// DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
+type DefinitionElement struct {
+	CurrentPublishedVersionAssetID *string       `json:"currentPublishedVersionAssetId,omitempty"`
+	DisplayName                    string        `json:"displayName"`
+	OwnerPrincipalID               string        `json:"ownerPrincipalId"`
+	ResourceID                     string        `json:"resourceId"`
+	ResourceState                  ResourceState `json:"resourceState"`
+	ResourceVersion                int64         `json:"resourceVersion"`
+	StableSlug                     string        `json:"stableSlug"`
+	Status                         string        `json:"status"`
+}
+
+// DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
+type AgentDefinitionView struct {
+	CurrentPublishedVersionAssetID *string       `json:"currentPublishedVersionAssetId,omitempty"`
+	DisplayName                    string        `json:"displayName"`
+	OwnerPrincipalID               string        `json:"ownerPrincipalId"`
+	ResourceID                     string        `json:"resourceId"`
+	ResourceState                  ResourceState `json:"resourceState"`
+	ResourceVersion                int64         `json:"resourceVersion"`
+	StableSlug                     string        `json:"stableSlug"`
+	Status                         string        `json:"status"`
+}
+
+type AgentVersionView struct {
+	AgentResourceID  string                   `json:"agentResourceId"`
+	AssetID          string                   `json:"assetId"`
+	AssetVersion     int64                    `json:"assetVersion"`
+	ConfigHash       string                   `json:"configHash"`
+	Content          AgentVersionContentClass `json:"content"`
+	Ordinal          int64                    `json:"ordinal"`
+	OwnerPrincipalID string                   `json:"ownerPrincipalId"`
+	State            AgentVersionState        `json:"state"`
 }
 
 // POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为
@@ -921,6 +1100,7 @@ type RoleWorkspaceView struct {
 // GET /api/v1/session 的回应：已解析的执行身份与本次 PlatformSession。原生端以 platformSessionId
 // 绑定设备持钥证明（DD-79）。
 type PlatformSessionView struct {
+	AccessMode PlatformSessionAccessMode `json:"accessMode"`
 	// 当前选定的 Workspace；未选定时缺省
 	CurrentWorkspaceID *string `json:"currentWorkspaceId,omitempty"`
 	// HumanIdentity 的显示名，只用于界面上认出本人，不参与任何判定
@@ -1013,6 +1193,41 @@ type WorkspacePreferenceRequest struct {
 	Version int64 `json:"version"`
 }
 
+// 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
+// environment。发布不等于安装或运行授权。
+type AgentVersionContent struct {
+	// 精确 contract_key@version，不引用业务能力实现名。
+	CapabilityRequirements  []string                                `json:"capabilityRequirements"`
+	DeclaredToolResourceIDS []string                                `json:"declaredToolResourceIds"`
+	Instructions            string                                  `json:"instructions"`
+	MemoryPolicy            AgentVersionContentMemoryPolicyClass    `json:"memoryPolicy"`
+	ModelRouteResourceID    string                                  `json:"modelRouteResourceId"`
+	Parallelism             int64                                   `json:"parallelism"`
+	PersonaIdentity         AgentVersionContentPersonaIdentityClass `json:"personaIdentity"`
+	// RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
+	ReplyPolicy          string                             `json:"replyPolicy"`
+	RuntimeProfileKey    string                             `json:"runtimeProfileKey"`
+	SkillVersionAssetIDS []string                           `json:"skillVersionAssetIds"`
+	TriggerDefaults      []AgentTrigger                     `json:"triggerDefaults"`
+	TurnLimits           AgentVersionContentTurnLimitsClass `json:"turnLimits"`
+}
+
+type AgentVersionContentMemoryPolicyClass struct {
+	ColdWrite AgentMemoryColdWrite `json:"coldWrite"`
+	CoreWrite AgentMemoryCoreWrite `json:"coreWrite"`
+}
+
+type AgentVersionContentPersonaIdentityClass struct {
+	AvatarURL   *string `json:"avatarUrl,omitempty"`
+	Description *string `json:"description,omitempty"`
+	DisplayName string  `json:"displayName"`
+}
+
+type AgentVersionContentTurnLimitsClass struct {
+	IdleTimeoutSeconds     int64 `json:"idleTimeoutSeconds"`
+	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
+}
+
 // 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
 type ErrorBody struct {
 	Class ErrorClass `json:"class"`
@@ -1029,6 +1244,27 @@ type ResolvedIdentity struct {
 	TenantID           string  `json:"tenantId"`
 	TenantMembershipID string  `json:"tenantMembershipId"`
 	TenantPrincipalID  string  `json:"tenantPrincipalId"`
+}
+
+// 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
+type RuntimeProfileDirectory struct {
+	Profiles []Profile `json:"profiles"`
+}
+
+type Profile struct {
+	CapabilityContract CapabilityContract `json:"capabilityContract"`
+	Key                string             `json:"key"`
+	Kind               RuntimeProfileKind `json:"kind"`
+	Status             string             `json:"status"`
+	WebAvailability    string             `json:"webAvailability"`
+}
+
+type CapabilityContract struct {
+	CapabilityRequirements []string `json:"capabilityRequirements"`
+	MaxIdleTimeoutSeconds  int64    `json:"maxIdleTimeoutSeconds"`
+	MaxParallelism         int64    `json:"maxParallelism"`
+	MaxTurnDurationSeconds int64    `json:"maxTurnDurationSeconds"`
+	ReplyPolicies          []string `json:"replyPolicies"`
 }
 
 // Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId
@@ -1231,6 +1467,25 @@ type FreshApprovalAdmissionResult struct {
 	SatisfiedSelectors []ApprovalSelector `json:"satisfiedSelectors"`
 }
 
+// TENANT_LIFECYCLE DELETE Activity 只推进已准入且已冻结的 Tenant 删除，不重新解析绑定或建立新快照。
+type TenantDeleteAdvanceRequest struct {
+	CancelRequested bool   `json:"cancelRequested"`
+	SnapshotID      string `json:"snapshotId"`
+	TenantID        string `json:"tenantId"`
+	TenantVersion   int64  `json:"tenantVersion"`
+}
+
+// Core 返回已经持久化的删除推进事实；UNKNOWN 由错误分类表达，不伪装为 completed 或 canceled。原生证据只保留引用。
+type TenantDeleteAdvanceResult struct {
+	Canceled                    bool    `json:"canceled"`
+	Completed                   bool    `json:"completed"`
+	IrreversibleDispatchStarted bool    `json:"irreversibleDispatchStarted"`
+	NativeInventoryDigest       *string `json:"nativeInventoryDigest,omitempty"`
+	NativeRequestID             *string `json:"nativeRequestId,omitempty"`
+	SnapshotID                  string  `json:"snapshotId"`
+	SubprocessID                string  `json:"subprocessId"`
+}
+
 // 可选的枚举引用
 //
 // 能力状态。权威定义见 .design/02-源码证据与设计决策.md。BLOCKED 的能力不得生成任何入口、路由、动作、工具或开关。
@@ -1265,6 +1520,27 @@ const (
 	File    VariantKind = "FILE"
 	Message VariantKind = "MESSAGE"
 	Task    VariantKind = "TASK"
+)
+
+type AgentMemoryColdWrite string
+
+const (
+	Disabled         AgentMemoryColdWrite = "DISABLED"
+	InvocationScoped AgentMemoryColdWrite = "INVOCATION_SCOPED"
+)
+
+type AgentMemoryCoreWrite string
+
+const (
+	AgentWithApproval AgentMemoryCoreWrite = "AGENT_WITH_APPROVAL"
+	HumanOnly         AgentMemoryCoreWrite = "HUMAN_ONLY"
+)
+
+type AgentTrigger string
+
+const (
+	ManualAssignment AgentTrigger = "MANUAL_ASSIGNMENT"
+	Mention          AgentTrigger = "MENTION"
 )
 
 // ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
@@ -1309,6 +1585,7 @@ const (
 	ApprovalSelectorUnresolvable ReasonCode = "APPROVAL_SELECTOR_UNRESOLVABLE"
 	ApprovalWithdrawn            ReasonCode = "APPROVAL_WITHDRAWN"
 	ApproverNotEligible          ReasonCode = "APPROVER_NOT_ELIGIBLE"
+	BindingNotActive             ReasonCode = "BINDING_NOT_ACTIVE"
 	CapabilityBlocked            ReasonCode = "CAPABILITY_BLOCKED"
 	ClientKeyAlreadyBound        ReasonCode = "CLIENT_KEY_ALREADY_BOUND"
 	ClientKeyLimitReached        ReasonCode = "CLIENT_KEY_LIMIT_REACHED"
@@ -1333,6 +1610,7 @@ const (
 	ProjectionDelayed            ReasonCode = "PROJECTION_DELAYED"
 	PublishRejected              ReasonCode = "PUBLISH_REJECTED"
 	PublishResultUnknown         ReasonCode = "PUBLISH_RESULT_UNKNOWN"
+	RateLimited                  ReasonCode = "RATE_LIMITED"
 	ScopeGuardFailed             ReasonCode = "SCOPE_GUARD_FAILED"
 	SelfApprovalDenied           ReasonCode = "SELF_APPROVAL_DENIED"
 	SessionNotActive             ReasonCode = "SESSION_NOT_ACTIVE"
@@ -1343,6 +1621,27 @@ const (
 	TenantNotActive              ReasonCode = "TENANT_NOT_ACTIVE"
 	TenantSelectionNotAvailable  ReasonCode = "TENANT_SELECTION_NOT_AVAILABLE"
 	WaitingApproval              ReasonCode = "WAITING_APPROVAL"
+)
+
+// 03 §7 Resource 的正式状态，投影未闭合不得呈现 ACTIVE。
+type ResourceState string
+
+const (
+	ResourceStateACTIVE       ResourceState = "ACTIVE"
+	ResourceStateDELETED      ResourceState = "DELETED"
+	ResourceStateDELETING     ResourceState = "DELETING"
+	ResourceStateFAILED       ResourceState = "FAILED"
+	ResourceStatePROVISIONING ResourceState = "PROVISIONING"
+	ResourceStateUNKNOWN      ResourceState = "UNKNOWN"
+	RetainedReadOnly          ResourceState = "RETAINED_READ_ONLY"
+)
+
+type AgentVersionState string
+
+const (
+	Draft     AgentVersionState = "DRAFT"
+	Published AgentVersionState = "PUBLISHED"
+	Retired   AgentVersionState = "RETIRED"
 )
 
 // approver 的不可变决定（.design/03 §6）。
@@ -1416,24 +1715,28 @@ const (
 type EvidenceKind string
 
 const (
-	ActionExecutionID         EvidenceKind = "ACTION_EXECUTION_ID"
-	AdmitActionExecutionID    EvidenceKind = "ADMIT_ACTION_EXECUTION_ID"
-	ApprovalPolicy            EvidenceKind = "APPROVAL_POLICY"
-	ApprovalWorkflowID        EvidenceKind = "APPROVAL_WORKFLOW_ID"
-	BuzzEventID               EvidenceKind = "BUZZ_EVENT_ID"
-	BuzzPubkey                EvidenceKind = "BUZZ_PUBKEY"
-	DeploymentBootstrap       EvidenceKind = "DEPLOYMENT_BOOTSTRAP"
-	ExternalSubjectSha256     EvidenceKind = "EXTERNAL_SUBJECT_SHA256"
-	OriginalActionExecutionID EvidenceKind = "ORIGINAL_ACTION_EXECUTION_ID"
-	PlatformSessionID         EvidenceKind = "PLATFORM_SESSION_ID"
-	SecretRefRehomeID         EvidenceKind = "SECRET_REF_REHOME_ID"
-	SpicedbRelationship       EvidenceKind = "SPICEDB_RELATIONSHIP"
-	SpicedbZedtoken           EvidenceKind = "SPICEDB_ZEDTOKEN"
-	TemporalFirstRunID        EvidenceKind = "TEMPORAL_FIRST_RUN_ID"
-	TemporalRunID             EvidenceKind = "TEMPORAL_RUN_ID"
-	TemporalWorkflowID        EvidenceKind = "TEMPORAL_WORKFLOW_ID"
-	TenantInvitationID        EvidenceKind = "TENANT_INVITATION_ID"
-	TenantMembershipID        EvidenceKind = "TENANT_MEMBERSHIP_ID"
+	ActionExecutionID           EvidenceKind = "ACTION_EXECUTION_ID"
+	AdmitActionExecutionID      EvidenceKind = "ADMIT_ACTION_EXECUTION_ID"
+	ApprovalPolicy              EvidenceKind = "APPROVAL_POLICY"
+	ApprovalWorkflowID          EvidenceKind = "APPROVAL_WORKFLOW_ID"
+	BuzzDeletionInventoryDigest EvidenceKind = "BUZZ_DELETION_INVENTORY_DIGEST"
+	BuzzDeletionRequestID       EvidenceKind = "BUZZ_DELETION_REQUEST_ID"
+	BuzzEventID                 EvidenceKind = "BUZZ_EVENT_ID"
+	BuzzPubkey                  EvidenceKind = "BUZZ_PUBKEY"
+	DeploymentBootstrap         EvidenceKind = "DEPLOYMENT_BOOTSTRAP"
+	ExternalSubjectSha256       EvidenceKind = "EXTERNAL_SUBJECT_SHA256"
+	OriginalActionExecutionID   EvidenceKind = "ORIGINAL_ACTION_EXECUTION_ID"
+	PlatformSessionID           EvidenceKind = "PLATFORM_SESSION_ID"
+	SecretRefRehomeID           EvidenceKind = "SECRET_REF_REHOME_ID"
+	SpicedbRelationship         EvidenceKind = "SPICEDB_RELATIONSHIP"
+	SpicedbZedtoken             EvidenceKind = "SPICEDB_ZEDTOKEN"
+	TemporalFirstRunID          EvidenceKind = "TEMPORAL_FIRST_RUN_ID"
+	TemporalRunID               EvidenceKind = "TEMPORAL_RUN_ID"
+	TemporalWorkflowID          EvidenceKind = "TEMPORAL_WORKFLOW_ID"
+	TenantDeleteSubprocessID    EvidenceKind = "TENANT_DELETE_SUBPROCESS_ID"
+	TenantInvitationID          EvidenceKind = "TENANT_INVITATION_ID"
+	TenantLifecycleSnapshotID   EvidenceKind = "TENANT_LIFECYCLE_SNAPSHOT_ID"
+	TenantMembershipID          EvidenceKind = "TENANT_MEMBERSHIP_ID"
 )
 
 // EvidenceRef 的敏感级别。SUMMARY 在当前 audit permission 下可解引用；RESTRICTED 还需 ResultExposure
@@ -1502,9 +1805,9 @@ const (
 type TenantState string
 
 const (
-	Deleted                 TenantState = "DELETED"
-	Deleting                TenantState = "DELETING"
 	TenantStateACTIVE       TenantState = "ACTIVE"
+	TenantStateDELETED      TenantState = "DELETED"
+	TenantStateDELETING     TenantState = "DELETING"
 	TenantStateERROR        TenantState = "ERROR"
 	TenantStatePROVISIONING TenantState = "PROVISIONING"
 	TenantStateRESTORING    TenantState = "RESTORING"
@@ -1542,18 +1845,26 @@ const (
 	WorkspaceStateSUSPENDING   WorkspaceState = "SUSPENDING"
 )
 
+// PlatformSession.access_mode（.design/03 §2）；受限会话不授予普通管理面或协作面准入。
+type PlatformSessionAccessMode string
+
+const (
+	Full                PlatformSessionAccessMode = "FULL"
+	LifecycleRestricted PlatformSessionAccessMode = "LIFECYCLE_RESTRICTED"
+)
+
 // TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
 // status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
 // WorkflowRef 进入 TERMINAL。
 type TaskStatus string
 
 const (
-	Canceled   TaskStatus = "CANCELED"
-	Completed  TaskStatus = "COMPLETED"
-	Failed     TaskStatus = "FAILED"
-	Running    TaskStatus = "RUNNING"
-	Terminated TaskStatus = "TERMINATED"
-	TimedOut   TaskStatus = "TIMED_OUT"
+	Canceled         TaskStatus = "CANCELED"
+	Completed        TaskStatus = "COMPLETED"
+	Running          TaskStatus = "RUNNING"
+	TaskStatusFAILED TaskStatus = "FAILED"
+	Terminated       TaskStatus = "TERMINATED"
+	TimedOut         TaskStatus = "TIMED_OUT"
 )
 
 // ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
@@ -1589,6 +1900,14 @@ const (
 	WorkspaceMembershipStatePROVISIONING WorkspaceMembershipState = "PROVISIONING"
 	WorkspaceMembershipStateREVOKED      WorkspaceMembershipState = "REVOKED"
 	WorkspaceMembershipStateREVOKING     WorkspaceMembershipState = "REVOKING"
+)
+
+type RuntimeProfileKind string
+
+const (
+	LocalACP       RuntimeProfileKind = "LOCAL_ACP"
+	RemoteProvider RuntimeProfileKind = "REMOTE_PROVIDER"
+	ServerCodex    RuntimeProfileKind = "SERVER_CODEX"
 )
 
 // ApprovalPolicy.owner_requirement（.design/03 §4）。

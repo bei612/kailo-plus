@@ -505,6 +505,11 @@ impl Governance {
             invitation_id: Some(m.id),
             original_action_execution_id: None,
             explicit_confirmation: None,
+            resource_id: None,
+            resource_version: None,
+            asset_id: None,
+            asset_version: None,
+            agent_version_content: None,
         };
         let admit = match open_execution(
             &mut tx,

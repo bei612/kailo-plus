@@ -27,3 +27,27 @@
 这不免除平台投影副作用的写前事实与结果不明纪律：`membership_lifecycle.rs::launch_membership/launch_scope` 先核对已准入的 ActionExecution，`component_task.rs::start_typed/prewrite` 在 Temporal Start 前落唯一 WorkflowRef；`client_keys.rs::register` 在启动身份投影前持久化 ActionExecution。SpiceDB `Converge/RevokeSubject` 采用幂等写入后 FullyConsistent 读回，Buzz 投影由 Core 端点核对 binding/version 与 native 结果。取消不会自动撤回已发生的外部写入。上述证据只证明当前没有需要实例化 ExternalExecution 的组件 native execution，不证明所有平台 RPC 的失败分支都已通过生产故障演练。
 
 因此 Stage 2 的 ExternalExecution 实例化门禁当前为**无适用对象**，不是“功能已实现”；首个真实 native task/job 的 ComponentBinding 与 ActionDefinition 一旦接入，必须与写前记录、幂等、UNKNOWN、native query/dedupe、TaskProjection 同刀交付，缺一项就不得 active。这个边界不放宽 `.design/06` §6 的真实副作用合同。
+
+## 已实现删除分支的隔离候选验证（2026-10-02 UTC）
+
+前文五个 kind 与宿主检查只记录当时事实，不作为本次范围或执行方式。基线 `e4c544fdb63d5e54fe775d58e684249166c89543` 的 Data 候选 `/volumes/data/kailo/tmp/codex-delete-commit-candidate-20261002.KBSv5P` 已接入现有 `TENANT_LIFECYCLE/DELETE` 分支：同一冻结 `snapshotId` 经既有 `CoreAPI.AdvanceTenantDelete` Activity 交给 Core 的持久子流程；Worker 校验返回的 snapshot/subprocess 引用，不建立另一份删除或 ExternalExecution 权威。
+
+取消以 `CancelPending` 继续查询同一 Core 子流程，由已持久化的不可逆标记裁决；Activity 超时、provider 失联或矛盾响应不能直接产生业务 `FAILED/CANCELED`，仍等待原生终态证据。以上是源码消费事实，不是本轮真实 Server/provider 验收，公开删除 workflow gate 未开放（`DD-99/100/109`、`V-SCN-31`）。
+
+首次窄验证报 `component_task.go:275:39: undefined: generated.Failed`，实际退出 1，原件为 `/volumes/data/kailo/tmp/codex-delete-candidate-worker-20261002.faLez0/{go-verify,exit}.log`。共享 ResourceState 引入同名 `FAILED` 后，原 Go 生成器将 TaskStatus 常量命名为 `TaskStatusFAILED`；唯一生产引用与两个既有 suspension 检查各两处断言已机械同步，线格式仍为 `"FAILED"`，没有新测试、重放 history 或夹具。
+
+该轮仅在不可变检查镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82` 执行：
+
+```bash
+gofmt -l activities/core_api.go workflows/component_task.go workflows/tenant_suspension_test.go workflows/workspace_suspension_test.go internal/contracts/generated/contracts.go
+go vet ./activities ./workflows ./replay-tests
+go test ./workflows ./replay-tests
+```
+
+格式检查无输出；workflows 与 replay-tests 均 `ok`，attach 与容器终态退出 0。日志为 `/volumes/data/kailo/tmp/codex-delete-candidate-worker-final-20261002.n9kk40/{preflight,limits,go-verify,exit}.log`，SDK UID/GID 1000、实际 4 CPU/6 GiB、无额外 swap，依赖缓存来自 `/volumes/data/kailo/check-cache`。未使用宿主 Go，也未新增检查。
+
+该结果对应 Session 字段闭合后的生成物，先于 Customer 消费所需 `BindingNotActive/RateLimited` 两项 reason code 纳入；其后重新生成的 Go 文件不能借用这次退出码声称已经再验证。后续实际合并输入由批末既有门禁分别核验。
+
+两项 reason code 闭合后的原 `tools/gen.sh` 与 `--check` 已实际退出 0，四侧与 Mobile catalog 同步，日志在 `/volumes/data/kailo/tmp/codex-delete-candidate-reasons-gen-20261002.1ReYtS/`；这一次没有运行 Go vet/workflows/replay，不当作第二次 Worker 通过。
+
+本轮没有新 DELETE 录制历史，没有实际原生 CAS 保留统计、四类 provider 合流、不可逆窗口取消或结果不明的业务验收；现有 replay 通过不证明这些新增路径。候选尚未提交、push、构建或部署，不把上述窄验证记为 Stage 3 完成。四侧最终生成与 Core 的真实失败另见 [Tenant 删除记录](../../core/verify/tenant-deletion.md)。

@@ -1,11 +1,42 @@
 # Stage 2 验收报告：统一治理内核、Temporal 与任务工作台
 
-- 报告日期：2026-09-29
-- 核对基线：提交 `9566ac0`（目录重构 `076681d` 之后的 release 登记）
+- 历史报告日期：2026-09-29
+- 最新事实核对日期：2026-10-02 11:30 UTC（源码、产物、检查与运行版本核对，不是新增业务验收）
+- 历史核对基线：提交 `9566ac0`（目录重构 `076681d` 之后的 release 登记）
 - 依据：`02-纵向交付路线.md` §4 的验收映射与退出门禁、§1.1 端交付规则；`03-验证发布与验收门禁.md` §9
 - 证据口径：只引用核验记录、追溯记录与提交说明中写明的实际执行结果；路径相对 `apps/`。核验记录中早于目录重构的测试路径仍写作 `core/crates/kailo-core/…`，现对应 `core/crates/platform-core/…`
 
-## 结论
+## 2026-10-02 现状摘要
+
+**Stage 2 仍不能关闭。** 下文 09-30/10-01 的 PASS、FAIL、命令和范围保持
+历史条件，不自动成为当前版本的验收结果；旧的「当前」均指各段记录时点。
+
+- HEAD 与实际远端 main 均为 `8ec78ed43e4a3e1fdc3f3243719cb7c1673eded6`。
+  Web `ad82d6e6…` 已运行且 healthy；Core `03c24669…`、Worker `4832ccbb…`
+  仍是旧运行镜像、均无 healthcheck，不覆盖新治理资格与投影修正。
+- 治理、任务/审批、平台私钥退役与孤儿收敛已有实现及限定历史证据；共享
+  ApprovalPanel 的刷新与 UNKNOWN 修正不是未开发项。Desktop 已直接消费
+  共享 TasksPage，取消/重跑按服务端 ActionKey 呈现，不能笼统写成不渲染入口；
+  这不改变 CLIENT 身份限制，也不证明当前安装包的取消、重试或 evidence 导航。
+  Win11 `9aef4725…` 已是真实 unsigned 测试安装包，但尚无 Win11 运行验收，
+  详见[Desktop 核验](../../collaboration/fork/verify/desktop-client.md)本日记录。
+- 原关闭条件仍要求适用生产路径的私钥退休/fence 与故障证据、当前 Desktop
+  管理动作验收、升级 Worker 的在途 history replay 和对应发布 digest 回滚。
+  `V-SCN-69` 旧形态是否适用按真实 locator 判定，不制造旧数据；历史五项 FAIL
+  不改为 PASS，也不因已写修复代码就宣称当前版本链路验收。旧回滚登记摘要
+  不是当前运行或待发布版本；未有消费方的组件凭据链不预建为关闭前提。
+- 含 Tenant ACTIVE 与 OpenMeter 412 修正的 `254e071f…` 候选已实际运行原
+  `--full`，退出 0，但 DATABASE_URL 实际迁移演练与 `.env` 部署预检均
+  SKIP，Mobile release 签名仍阻断。此前 Core 开发候选 `87c086a2…` 来自
+  `77d02501…`，构建退出 0、未部署，不覆盖两处修正；本次 full 也不包含
+  在开发的 AgentVersion 或独立 CHECK，不能外推整个未提交工作树通过。
+  原日志为 `/volumes/data/kailo/tmp/codex-core-functional-closure-254e-full-20261002.37trEJ.log`。
+  这些结果不替代本 Stage 的业务验收；AgentVersion 尚在 Stage 5 实现，不提高
+  Stage 1/2 闭合状态，也不作为本 Stage 新增关闭条件。
+
+## 历史结论与验证记录
+
+下文是该历史报告的原条件；最新缺口以上方摘要为准，不把旧措辞中的“当前”作为新版本事实。
 
 **不能关闭。** 八项退出门禁中七项有证据，「录制 history 在升级版本 Worker 上 replay」只以当前代码重放旧 history 证明；实施内容中「完整 SecretRef 生命周期」被核验记录明确登记为未完成（`core/verify/secret-ref.md` L269：「故不把 Stage 2 SecretRef 生命周期标记完成」），`V-SCN-69` 被明确登记为不关闭（`core/verify/secret-ref-rehome.md` L488–490）；Desktop 的取消、重试与 evidence 导航没有端到端证据，不满足 §1.1「每个端各自成立」。关闭条件见「关闭前必须补齐」。
 

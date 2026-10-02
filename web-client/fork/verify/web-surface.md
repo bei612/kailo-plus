@@ -775,3 +775,70 @@ source/artifact 关联，dist 的这两项规则只适用 Core/Worker，不补�
 本节记录构建和检查的实际结果；记录时未部署上述 Web 产物，尚未取得
 本批提交树的全量门禁与批末 fresh/detect 回执。SSR 仍不证明异步高亮、
 原生剪贴板、浏览器端到端、整体共享比例或三端 Stage 退出验收。
+
+## 2026-10-02：同一产品候选与最终合同的 Web/Windows 原入口重建
+
+本节是 `REQ-21`、`DD-74`、`DD-111` 与 `SS-WEB-PRESENTATION` 的实际构建增量，
+沿用 ADR-06/09/18 的两宿主边界与直接共源，不新增业务功能或提高能力状态。
+前节 `ad82d6e6…` 与旧 Windows `83e612e8…` 不替代这次新合同产物。
+唯一输入候选为 `/volumes/data/kailo/tmp/codex-delete-commit-candidate-20261002.KBSv5P`：
+共享 UI 与最终四侧合同在业务源 tree `575163abf772e380125ab1682881ad344371a810` 冻结，
+文档同步 tree 为 `06e6c45100959bcdeac1ef11cae8933af57efd72`；后来 Core-only 修正的
+tree `e1717576d4d97892d60abadea86978b9d0410173` 不改变 Web/Windows 输入。
+这些是 tree，不冒称 commit；实际产品提交由批次负责人另行登记。
+
+原 `tools/build-upstream.sh web-client` session `49846` 实际退出 0，包含真实类型/Vite
+构建、registry push 与原 helper 来源登记。固定 Node/Caddy 配方未改：原算法与实际
+stage/tar 均核得 96 个输入，source 为
+`sha256:d08638e53edb14745d4c235ba2e5e7cef15755ba11f7ef884fe05c8e16f45539`；
+新 Web 镜像为
+`sha256:bfc118ab03bd0c430d3027a30c2407e62dce46de44d5cce8b384d2b8549c3109`。
+registry 原 manifest HTTP 200、响应 digest 与 1816 字节的 SHA-256 三者一致。
+没有复用旧 source digest，也未用改摘要或删输入方式通过门禁。
+
+同一候选的原 Desktop Windows helper session `82920` 实际退出 0，最终 source 为
+`sha256:ae470872bfc63b972249045f75c5579765c1fb840e1dd545ff8703efceccc0ec`，
+真实 NSIS 安装包 digest 为
+`sha256:9aef4725e49e87daa4b52decc2ed69de14eb293aeaf2540d4a854e97f868970b`。
+完整 Windows 字节、工具链与 unsigned 边界见
+[Desktop 核验](../../../collaboration/fork/verify/desktop-client.md) 本日同合同增量。
+13 份已有 Web trace 的 artifact 引用与两处 Desktop 引用仅同步本次真实 digest，
+不改其他产物、status 或 gate；没有覆盖 Core/Worker/Relay 的记录。
+
+原日志、实际输入归档、锁与共享正文 SHA、registry 原件及前后原算法核对均保存在
+`/volumes/data/kailo/tmp/codex-unified-web-win-build-20261002.0VQIcC`：
+`web-build.log`、`tmp/build-web-client.rMP1fE.log`、`web-build-exit-receipt.txt`、
+`web-original-build-context.tar`、`web-actual-stage-source-proof.json`、
+`web-registry-manifest.headers`、`web-registry-manifest.json`、
+`final-candidate-build-inputs-before.json`、`final-source-record-proof.json` 与
+`frozen-lock-contract-ui-recipe-sha-complete.log`。末次核对的输入路径、source digest 与
+原 helper 写回值均一致；前一可选 SHA 探针错用不存在的 `src/enums.ts` 退出 1，
+按真实 `src/generated/contracts.ts` 修正后退出 0，两个原结果保留，不是构建失败。
+大 chunk 等原警告未隐藏。复用已有 8 CPU/16 GiB builder 与 Data 缓存；
+未新增 SDK、测试、夹具或重新运行全量检查。记录时新 Web 未部署，
+新 Windows 未安装运行，不宣称浏览器业务、Win11 或三端 Stage 验收。
+
+## 2026-10-02 13:30 UTC AgentVersion 合同变更后的 Web 原入口重建
+
+本次只因四侧共享合同已变更，重建其实际消费者；没有另写 Web UI，仍
+复用 client-kit 与 Desktop 的同一份 TypeScript 呈现。
+实际输入为本批选定快照
+`/volumes/data/kailo/tmp/codex-agent-version-selected-20261002.7p1PX8`，
+原算法核得 96 个输入，source 为
+`sha256:e01a495ef6445f8c8b54d9951881d0f338fbcdee8ae21b3fbcf9d9854b09d9e3`。
+原 `tools/build-upstream.sh web-client` 实际退出 0，完成真实 tsc/Vite、
+OCI export/load、registry push 与原 record；artifact 为
+`sha256:0f5039d60badaf461fec0ef6041093762ab1d92caad9463bbd08d174baea7ef7`。
+原构建输出报告 npm audit 0；这不抹去前文旧镜像的漏洞记录。
+
+registry 原 manifest GET 为 HTTP 200，响应 digest、原字节 SHA-256 与
+构建 digest 相同。原件目录为
+`/volumes/data/kailo/tmp/codex-agent-version-client-artifacts-20261002.ZqqCat`，
+`web-helper.log` SHA-256 为
+`92c61ecab2f46f32acc07f82243efe1aac8f3ad019a17e45cda5db18b2968474`。
+沿用已有受限 BuildKit、镜像内 Node 与 Data 缓存，没有宿主 SDK 或新检查。
+upstream 两字段由原 helper 写回，Compose 与 13 份 trace 只同步真实
+artifact；不改其他服务、能力状态或 gate，历史正文摘要保留。
+
+这是构建与来源关联事实，不是新 Web 部署或登录业务通过；本批最终
+full/detect、提交与部署尚未完成，Win11 新包结果另由 Desktop 核验记录。

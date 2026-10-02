@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_memory_core_write.schema.json",
+  "title": "AgentMemoryCoreWrite",
+  "type": "string",
+  "enum": ["HUMAN_ONLY", "AGENT_WITH_APPROVAL"]
+}

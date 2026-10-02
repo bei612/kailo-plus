@@ -45,8 +45,20 @@ ADR-03 要求四门语言由同一 schema 生成。四个生成器支持的构�
 
 ## 3. 改动流程
 
-改 schema 后运行 `tools/check.sh contracts`：重新生成四侧、比对工作树无 diff、跑 canary 与 round-trip、与上一个已发布版本做兼容比对。生成物入库，改动在 PR 中可见。
+改 schema 后用镜像内原 `tools/gen.sh` 生成四侧，再运行 `tools/check.sh contract`：检查生成物同步及与上一个已发布版本的兼容；canary 与 round-trip 由既有 `verify` 步骤承担。生成物入库，改动在 PR 中可见。执行环境遵守工程根 `07-运行与运维基线.md` §2.1，不调用宿主工具链。
 
 新增枚举值对读取端是破坏性的，除非读取端已实现未知值降级；四侧的降级形态见 ADR-03。
 
 能力契约 schema 与其他目录遵守同一子集与生成规则；契约键、`type_key` 与枚举值不得含实现产品名，实现来源只记在 `component_type_key`（`DD-88`）。
+
+## 4. 本次实际生成记录（2026-10-02 UTC）
+
+基线 `e4c544fdb63d5e54fe775d58e684249166c89543` 的独立 Data 候选 `codex-delete-commit-candidate-20261002.KBSv5P` 选择已写的 Tenant 删除/AgentDefinition 真实消费所需 schema，不复制其他 Quota 或会话功能。四项删除 EvidenceKind、Advance 请求/结果、子流程枚举及实际 Resource/定义/ActionCommand 消费由同一 schema 生成 Rust、Go、TypeScript、Dart 类型；四项证据文案来自共用 TypeScript i18n，Mobile catalog 由原入口同步。
+
+真实消费揭示两项不能被“生成成功”掩盖的边界：`enums/` 不单独传给生成器，孤立 `PlatformSessionAccessMode` 不会输出类型；Core 实际 `E0432` 后纳入现有 Session schema 必填 `accessMode` 与 `$ref`，原入口重新生成。同名 `FAILED` 使 Go 生成名改为 `TaskStatusFAILED`，已同步五处现有消费者，JSON 值不变。Customer-only 的既有错误映射还实际报缺 `BindingNotActive`、`RateLimited`；候选只接入这两枚举和同源文案，不含 Quota 新功能。
+
+Session 闭合后的 `tools/gen.sh`、`tools/gen.sh --check` 实际退出 0，四侧与 Mobile catalog 同步；不可变镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，实际 2 CPU/4 GiB、无额外 swap。原件 `/volumes/data/kailo/tmp/codex-delete-candidate-final-gen-20261002.gbGlPy/{preflight,limits,generate,exit}.log`。此前两次 Core 编译 101 与 Worker 消费失败 1 保留于 [Tenant 删除记录](../core/verify/tenant-deletion.md)；没有手写类型、修改生成器或新增夹具绕过真实消费者。
+
+两项 Customer reason code 纳入后，原 `gen → --check` 再次实际退出 0，四侧与 Mobile catalog 同步；同一不可变 SDK、UID/GID 1000、实际 2 CPU/4 GiB、无额外 swap，原件 `/volumes/data/kailo/tmp/codex-delete-candidate-reasons-gen-20261002.1ReYtS/{preflight,limits,generate,exit}.log`。此前 Worker 0 不是这一版生成字节的再验证，不重复计通过。
+
+这次生成校验不是四侧双向序列化、历史兼容、完整 Core 编译或业务链验收；这些由批末已有门禁分别取实际证据。候选尚未提交或部署，旧产物不能仅因 schema 名称相同就视为使用了本次生成字节。

@@ -368,7 +368,8 @@ async fn load(state: &ServiceState, req: &StepRequest) -> Result<Rehome, Respons
     let Some(r) = row else {
         return Err(StatusCode::NOT_FOUND.into_response());
     };
-    if r.action_execution_id != req.action_execution_id
+    if r.id != r.action_execution_id
+        || r.action_execution_id != req.action_execution_id
         || r.workflow_id != req.workflow_id
         || r.tenant_id != req.tenant_id
         || r.identity_pubkey != req.pubkey
@@ -391,14 +392,23 @@ async fn load(state: &ServiceState, req: &StepRequest) -> Result<Rehome, Respons
         return Err(StatusCode::CONFLICT.into_response());
     }
     let allowed: Option<i32> = sqlx::query_scalar(
-        "select 1 from admission.action_execution
-         where id = $1 and tenant_id = $2 and action_key = $3
-           and temporal_workflow_id = $4 and gate_state = 'ALLOWED'",
+        "select 1 from admission.action_execution ae
+         join projection.workflow_ref w
+           on w.workflow_id = ae.temporal_workflow_id and w.action_execution_id = ae.id
+          and w.tenant_id = ae.tenant_id and w.operation_id = ae.operation_id
+         join identity.buzz_identity_binding b
+           on b.pubkey = $5 and b.tenant_id = ae.tenant_id and b.principal_id = ae.target_id
+         where ae.id = $1 and ae.tenant_id = $2 and ae.action_key = $3
+           and ae.temporal_workflow_id = $4 and ae.gate_state = 'ALLOWED'
+           and w.workflow_type = 'ComponentTaskWorkflow' and w.kind = $6
+           and b.custody = 'SERVER' and b.kind in ('HUMAN', 'CONTROL')",
     )
     .bind(r.action_execution_id)
     .bind(r.tenant_id)
     .bind(ACTION)
     .bind(&r.workflow_id)
+    .bind(&r.identity_pubkey)
+    .bind(KIND)
     .fetch_optional(&state.pool)
     .await
     .map_err(unavailable)?;
@@ -418,22 +428,22 @@ async fn actor_still_authorized(state: &ServiceState, r: &Rehome) -> Result<bool
     let Some(principal) = principal else {
         return Ok(false);
     };
+    let tenant = r.tenant_id.to_string();
     let checked = state
         .governance
         .spicedb
-        .check(
+        .check_bulk(
             "tenant",
-            &r.tenant_id.to_string(),
+            std::slice::from_ref(&tenant),
             "manage",
             &principal.to_string(),
-            Consistency::FullyConsistent,
         )
         .await
         .map_err(|e| {
             tracing::warn!(error = %e, "归位前新鲜权限判定不可得");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         })?;
-    Ok(checked.allowed)
+    Ok(checked.contains(&tenant))
 }
 
 async fn advance_inner(state: &ServiceState, req: StepRequest) -> Result<String, Response> {
@@ -494,6 +504,37 @@ async fn copy_once(state: &ServiceState, r: &Rehome) -> Result<String, Response>
     // 先记外部写入意图。崩在此处之后，COPY_UNKNOWN 只查目标 locator，绝不
     // 再走写路径；这宁可留下需运维介入的缺口，也不猜测一次丢失的响应。
     let mut tx = state.pool.begin().await.map_err(unavailable)?;
+    // 与平台 fence 使用相同的原 Action、Principal → 意图锁序；归属来自实际
+    // 归位/Workflow/binding，不从请求或 locator 形状猜测。
+    let owner: Option<(String, Uuid, Uuid)> = sqlx::query_as(
+        "select b.kind, b.principal_id, ae.operation_id
+         from admission.secret_ref_rehome rh
+         join admission.action_execution ae
+           on ae.id = rh.action_execution_id and ae.tenant_id = rh.tenant_id
+         join projection.workflow_ref w
+           on w.workflow_id = rh.workflow_id and w.action_execution_id = ae.id
+          and w.tenant_id = ae.tenant_id and w.operation_id = ae.operation_id
+         join identity.buzz_identity_binding b
+           on b.pubkey = rh.identity_pubkey and b.tenant_id = ae.tenant_id
+          and b.principal_id = ae.target_id
+         join identity.principal p on p.id = b.principal_id and p.tenant_id = b.tenant_id
+         where rh.id = $1 and rh.id = ae.id and rh.tenant_id = $2 and rh.state = 'INTENT'
+           and ae.action_key = $3 and ae.gate_state = 'ALLOWED'
+           and ae.temporal_workflow_id = w.workflow_id
+           and w.workflow_type = 'ComponentTaskWorkflow' and w.kind = $4
+           and b.custody = 'SERVER' and b.kind in ('HUMAN','CONTROL')
+         for update of ae,p",
+    )
+    .bind(r.id)
+    .bind(r.tenant_id)
+    .bind(ACTION)
+    .bind(KIND)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(unavailable)?;
+    let Some((key_kind, principal, operation)) = owner else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    };
     let updated = sqlx::query(
         "update admission.secret_ref_rehome set state = 'COPY_UNKNOWN', updated_at = now()
          where id = $1 and state = 'INTENT'",
@@ -505,6 +546,21 @@ async fn copy_once(state: &ServiceState, r: &Rehome) -> Result<String, Response>
     if updated.rows_affected() == 0 {
         return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
     }
+    sqlx::query(
+        "insert into admission.server_key_provision_intent
+             (key_kind, origin, operation_id, action_execution_id, tenant_id, principal_id,
+              target_locator)
+         values ($1, 'PROVISIONED', $2, $3, $4, $5, $6)",
+    )
+    .bind(key_kind)
+    .bind(operation)
+    .bind(r.action_execution_id)
+    .bind(r.tenant_id)
+    .bind(principal)
+    .bind(&r.target_locator)
+    .execute(&mut *tx)
+    .await
+    .map_err(unavailable)?;
     audit(&mut tx, r, "copy-intent", "INTENT", "COPY_UNKNOWN").await?;
     tx.commit().await.map_err(unavailable)?;
 
@@ -542,6 +598,11 @@ async fn observe_copy(state: &ServiceState, r: &Rehome) -> Result<String, Respon
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
     let mut tx = state.pool.begin().await.map_err(unavailable)?;
+    let target = target_copy_intent(&mut tx, r).await?;
+    if !matches!(target, Some(ref intent) if !intent.finished && !intent.fenced && !intent.destroyed)
+    {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
     let updated = sqlx::query(
         "update admission.secret_ref_rehome
          set state = 'COPIED', new_ref_version = 1, new_ref_status = 'PENDING', updated_at = now()
@@ -580,6 +641,20 @@ async fn mark_failed(state: &ServiceState, r: &Rehome) -> Result<(), Response> {
 /// 切换只修改 locator/version/audience 与 binding generation；pubkey、Relay
 /// roster、历史 event 均不变。旧消费者清单与切换同事务冻结。
 async fn cutover(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
+    // 已持久 fence 是这次副本不可再绑定的单调事实。先辨识它，避免权限恢复后
+    // 重试卡在读取已销毁副本；不持有数据库锁跨 OpenBao 请求。
+    let mut tx = state.pool.begin().await.map_err(unavailable)?;
+    let target = target_copy_intent(&mut tx, r).await?;
+    let Some(target) = target else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    };
+    tx.rollback().await.map_err(unavailable)?;
+    if target.fenced || target.destroyed {
+        return discard_copy(state, r).await;
+    }
+    if target.finished {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
     if !actor_still_authorized(state, r).await? {
         return discard_copy(state, r).await;
     }
@@ -603,6 +678,17 @@ async fn cutover(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
     audit_gate(state).await?;
     observe_target_without_transition(state, r).await?;
     let mut tx = state.pool.begin().await.map_err(unavailable)?;
+    let target = target_copy_intent(&mut tx, r).await?;
+    let Some(target) = target else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    };
+    if target.fenced || target.destroyed {
+        tx.rollback().await.map_err(unavailable)?;
+        return discard_copy(state, r).await;
+    }
+    if target.finished {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
     let locked: Option<(String, i32, String, i32, String)> = sqlx::query_as(
         "select private_key_secret_ref, private_key_secret_version,
                 private_key_secret_audience, version, state
@@ -666,10 +752,14 @@ async fn cutover(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
         .into_iter()
         .map(|(id, workflow)| json!({"actionExecutionId": id, "workflowId": workflow}))
         .collect();
+    // 新切换必须有旧 BOUND 意图；使旧 ref 到期的真实归位 operation 与 CAS
+    // 同事务冻结。缺行或已有不同退休归属时不切换，也不伪造签发意图。
+    freeze_old_retirement(&mut tx, r, false).await?;
     let changed = sqlx::query(
         "update identity.buzz_identity_binding
          set private_key_secret_ref = $3, private_key_secret_version = 1,
-             private_key_secret_audience = $4, version = version + 1
+             private_key_secret_audience = $4, private_key_secret_status = 'ACTIVE',
+             version = version + 1
          where pubkey = $1 and tenant_id = $2 and version = $5 and state = 'ACTIVE'",
     )
     .bind(&r.identity_pubkey)
@@ -681,6 +771,19 @@ async fn cutover(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
     .await
     .map_err(unavailable)?;
     if changed.rows_affected() != 1 {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    // DD-86/113：只把写前冻结且从未 fence 的同一意图变为 BOUND；它与 binding
+    // CAS 同事务，不能在切换时补造意图或复活 FENCED。
+    let bound = sqlx::query(
+        "update admission.server_key_provision_intent set finished_at = now()
+         where id = $1 and finished_at is null and fenced_at is null and destroyed_at is null",
+    )
+    .bind(target.id)
+    .execute(&mut *tx)
+    .await
+    .map_err(unavailable)?;
+    if bound.rows_affected() != 1 {
         return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
     }
     let updated = sqlx::query(
@@ -715,35 +818,17 @@ fn binding_matches_frozen(binding: &(String, i32, String, i32, String), r: &Reho
 /// 版本 1 并经 metadata 查证后才终结为 FAILED；销毁不明保持 COPIED 由同一
 /// Workflow 继续对账，绝不留下一份无人引用的私钥副本而宣告失败。
 async fn discard_copy(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
-    audit_gate(state).await?;
-    // 早于该策略开通的 Tenant namespace 没有目标路径的 destroy 能力；先收敛策略。
-    state
-        .secrets
-        .ensure_tenant(r.tenant_id)
-        .await
-        .map_err(|e| {
-            tracing::warn!(rehome = %r.id, error = %e, "归位副本的 Tenant OpenBao 策略未就绪");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
-        })?;
-    let referenced: bool = sqlx::query_scalar(
-        "select exists (select 1 from identity.buzz_identity_binding
-                        where private_key_secret_ref = $1)",
-    )
-    .bind(&r.target_locator)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(unavailable)?;
-    if referenced {
+    let mut tx = state.pool.begin().await.map_err(unavailable)?;
+    let target = target_copy_intent(&mut tx, r).await?;
+    let Some(target) = target else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    };
+    tx.rollback().await.map_err(unavailable)?;
+    // 唯一平台补偿链持久 fence、CAS0 争版本 1、metadata 查证和原 operation
+    // DESTROYED 审计。BOUND 或结果不明都不能把归位宣布为 FAILED。
+    if crate::platform_keys::fence_and_destroy_intent(state, target.id).await != "CONVERGED" {
         return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
     }
-    state
-        .secrets
-        .destroy_unbound_rehome_copy(r.tenant_id, r.id, &r.target_locator)
-        .await
-        .map_err(|e| {
-            tracing::warn!(rehome = %r.id, error = %e, "归位副本销毁未得到查证");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
-        })?;
     let mut tx = state.pool.begin().await.map_err(unavailable)?;
     let updated = sqlx::query(
         "update admission.secret_ref_rehome
@@ -760,6 +845,50 @@ async fn discard_copy(state: &ServiceState, r: &Rehome) -> Result<String, Respon
     audit(&mut tx, r, "copy-discarded", "OUTCOME", "FAILED").await?;
     tx.commit().await.map_err(unavailable)?;
     Err(StatusCode::CONFLICT.into_response())
+}
+
+/// 只锁真实 DD-85 写前目标意图；历史缺行不补造。锁序与平台 fence 一致，
+/// binding 的原 ref/generation 另由 cutover 的行锁和 CAS 判定。
+async fn target_copy_intent(
+    tx: &mut Transaction<'_, Postgres>,
+    r: &Rehome,
+) -> Result<Option<crate::platform_keys::Intent>, Response> {
+    sqlx::query_as(
+        "select i.id, i.key_kind, i.tenant_id, i.principal_id, i.action_execution_id,
+                i.operation_id, i.origin, i.target_locator, i.source_membership_scope,
+                i.finished_at is not null as finished, i.fenced_at is not null as fenced,
+                i.destroyed_at is not null as destroyed, false as deadline_passed
+         from admission.secret_ref_rehome rh
+         join admission.action_execution ae
+           on ae.id = rh.action_execution_id and ae.tenant_id = rh.tenant_id
+         join projection.workflow_ref w
+           on w.workflow_id = rh.workflow_id and w.action_execution_id = ae.id
+          and w.tenant_id = ae.tenant_id and w.operation_id = ae.operation_id
+         join identity.buzz_identity_binding b
+           on b.pubkey = rh.identity_pubkey and b.tenant_id = ae.tenant_id
+          and b.principal_id = ae.target_id and b.custody = 'SERVER'
+          and b.kind in ('HUMAN','CONTROL')
+         join identity.principal p on p.id = b.principal_id and p.tenant_id = b.tenant_id
+         join admission.server_key_provision_intent i
+           on i.action_execution_id = ae.id and i.operation_id = ae.operation_id
+          and i.tenant_id = b.tenant_id and i.principal_id = b.principal_id
+          and i.key_kind = b.kind and i.target_locator = rh.target_locator
+         where rh.id = $1 and rh.id = ae.id and rh.tenant_id = $2
+           and rh.state in ('COPY_UNKNOWN','COPIED') and ae.action_key = $3
+           and ae.temporal_workflow_id = w.workflow_id
+           and w.workflow_type = 'ComponentTaskWorkflow' and w.kind = $4
+           and i.origin = 'PROVISIONED' and i.source_membership_id is null
+           and i.source_membership_version is null and i.source_membership_scope is null
+           and i.retire_operation_id is null and i.retired_at is null
+         for update of ae,p,i",
+    )
+    .bind(r.id)
+    .bind(r.tenant_id)
+    .bind(ACTION)
+    .bind(KIND)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(unavailable)
 }
 
 async fn observe_target_without_transition(
@@ -786,6 +915,110 @@ async fn observe_target_without_transition(
     Ok(())
 }
 
+/// DD-115：旧意图的退休归属只能是该 DD-85 动作的真实 operation。已冻结的
+/// 不同 ID 不改写；历史上已 SWITCHED、由迁移仅补建当前 target 的任务没有旧
+/// 意图时，只续用其原 DD-85 事实，不补造签发或退休意图。
+async fn freeze_old_retirement(
+    tx: &mut Transaction<'_, Postgres>,
+    r: &Rehome,
+    allow_history: bool,
+) -> Result<Option<(Uuid, Uuid)>, Response> {
+    let frozen: Option<(Uuid, Uuid)> = sqlx::query_as(
+        "update admission.server_key_provision_intent i
+         set retire_operation_id = coalesce(i.retire_operation_id, ae.operation_id)
+         from admission.action_execution ae
+         join identity.buzz_identity_binding b
+           on b.tenant_id = ae.tenant_id and b.principal_id = ae.target_id
+         join projection.workflow_ref w
+           on w.workflow_id = ae.temporal_workflow_id and w.action_execution_id = ae.id
+          and w.tenant_id = ae.tenant_id and w.operation_id = ae.operation_id
+         where i.target_locator = $1 and i.tenant_id = $2
+           and b.pubkey = $3 and b.tenant_id = i.tenant_id
+           and b.custody = 'SERVER' and b.kind in ('HUMAN', 'CONTROL')
+           and i.principal_id = b.principal_id and i.key_kind = b.kind
+           and ae.id = $4 and ae.action_key = $6 and ae.gate_state = 'ALLOWED'
+           and w.workflow_id = $5 and w.workflow_type = 'ComponentTaskWorkflow' and w.kind = $7
+           and i.finished_at is not null and i.fenced_at is null and i.destroyed_at is null
+           and ($8::boolean or i.retired_at is null)
+           and (i.retire_operation_id is null or i.retire_operation_id = ae.operation_id)
+         returning i.id, ae.operation_id",
+    )
+    .bind(&r.old_locator)
+    .bind(r.tenant_id)
+    .bind(&r.identity_pubkey)
+    .bind(r.action_execution_id)
+    .bind(&r.workflow_id)
+    .bind(ACTION)
+    .bind(KIND)
+    .bind(allow_history)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(unavailable)?;
+    if frozen.is_some() {
+        return Ok(frozen);
+    }
+    if !allow_history {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    // 不匹配、非 BOUND 或已冻结另一 operation 的旧行不能冒充“历史缺行”。
+    let old_exists: bool = sqlx::query_scalar(
+        "select exists (select 1 from admission.server_key_provision_intent
+                        where target_locator = $1)",
+    )
+    .bind(&r.old_locator)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(unavailable)?;
+    if old_exists {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    // HUMAN/CONTROL 的 BACKFILLED 只由 DD-113 迁移按当前 binding ref 生成。
+    // 旧版 cutover 不登记目标意图，因此只在完整原动作/Workflow/切换事实仍
+    // 匹配时承认这一历史来源。now() 是事务起点，不以 created_at 排因果。
+    let historical: bool = sqlx::query_scalar(
+        "select exists (
+             select 1 from admission.secret_ref_rehome rh
+             join identity.buzz_identity_binding b
+               on b.pubkey = rh.identity_pubkey and b.tenant_id = rh.tenant_id
+             join admission.server_key_provision_intent i
+               on i.target_locator = rh.target_locator and i.tenant_id = b.tenant_id
+              and i.principal_id = b.principal_id and i.key_kind = b.kind
+             join admission.action_execution ae
+               on ae.id = rh.action_execution_id and ae.tenant_id = rh.tenant_id
+              and ae.target_id = b.principal_id
+             join projection.workflow_ref w
+               on w.workflow_id = rh.workflow_id and w.action_execution_id = ae.id
+              and w.tenant_id = ae.tenant_id and w.operation_id = ae.operation_id
+             where rh.id = $1 and rh.id = rh.action_execution_id
+               and rh.action_execution_id = $2 and rh.tenant_id = $3 and rh.identity_pubkey = $4
+               and rh.state = 'SWITCHED' and rh.cutover_at is not null
+               and rh.old_ref_status = 'SUPERSEDED' and rh.new_ref_status = 'ACTIVE'
+               and rh.new_ref_version = 1
+               and b.custody = 'SERVER' and b.kind in ('HUMAN', 'CONTROL')
+               and b.private_key_secret_ref = rh.target_locator and b.private_key_secret_version = 1
+               and b.private_key_secret_audience = rh.old_audience
+               and b.version > rh.expected_binding_version
+               and i.origin = 'BACKFILLED' and i.operation_id is null and i.action_execution_id is null
+               and i.finished_at is not null and i.fenced_at is null and i.destroyed_at is null
+               and ae.action_key = $5 and ae.gate_state = 'ALLOWED'
+               and ae.temporal_workflow_id = w.workflow_id
+               and w.workflow_type = 'ComponentTaskWorkflow' and w.kind = $6)",
+    )
+    .bind(r.id)
+    .bind(r.action_execution_id)
+    .bind(r.tenant_id)
+    .bind(&r.identity_pubkey)
+    .bind(ACTION)
+    .bind(KIND)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(unavailable)?;
+    if !historical {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    Ok(None)
+}
+
 async fn retire(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
     let refs = r
         .old_generation_consumer_refs
@@ -805,20 +1038,25 @@ async fn retire(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
     // 冻结清单只证明旧 generation 的已知消费者已终态；切换与退役是不同
     // 轮次，还要确认当前 binding 仍指向已查证的新 ref。现有 Core 中只有
     // cutover 改写该 locator，其他身份路径只改状态/generation，不写回旧 ref。
+    let mut before_destroy = state.pool.begin().await.map_err(unavailable)?;
     let binding: Option<(String, i32, String, i32)> = sqlx::query_as(
         "select private_key_secret_ref, private_key_secret_version,
                 private_key_secret_audience, version
          from identity.buzz_identity_binding
-         where pubkey = $1 and tenant_id = $2",
+         where pubkey = $1 and tenant_id = $2 for update",
     )
     .bind(&r.identity_pubkey)
     .bind(r.tenant_id)
-    .fetch_optional(&state.pool)
+    .fetch_optional(&mut *before_destroy)
     .await
     .map_err(unavailable)?;
     if !binding_is_cutover_target(binding.as_ref(), r) {
         return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
     }
+    let old_intent = freeze_old_retirement(&mut before_destroy, r, true).await?;
+    // 已 SWITCHED 的旧任务可恢复遗漏的退休冻结，但冻结先提交才能永久销毁；
+    // 不持有 binding/意图行锁跨 OpenBao 请求，后续撤权也不改变已冻结归属。
+    before_destroy.commit().await.map_err(unavailable)?;
     let version = u32::try_from(r.old_version).map_err(|_| StatusCode::CONFLICT.into_response())?;
     let destroyed = state
         .secrets
@@ -855,6 +1093,25 @@ async fn retire(state: &ServiceState, r: &Rehome) -> Result<String, Response> {
     .map_err(unavailable)?;
     if updated.rows_affected() != 1 {
         return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    if let Some((intent_id, operation)) = old_intent {
+        let retired = sqlx::query(
+            "update admission.server_key_provision_intent
+             set retired_at = coalesce(retired_at, now())
+             where id = $1 and retire_operation_id = $2 and tenant_id = $3
+               and target_locator = $4 and finished_at is not null
+               and fenced_at is null and destroyed_at is null",
+        )
+        .bind(intent_id)
+        .bind(operation)
+        .bind(r.tenant_id)
+        .bind(&r.old_locator)
+        .execute(&mut *tx)
+        .await
+        .map_err(unavailable)?;
+        if retired.rows_affected() != 1 {
+            return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+        }
     }
     audit(&mut tx, r, "retired", "OUTCOME", "RETIRED").await?;
     tx.commit().await.map_err(unavailable)?;

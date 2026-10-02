@@ -70,6 +70,8 @@ pub struct ScopeTarget {
     /// 字段缺省识别建立。暂停与恢复显式写出（`.design/06` §7.3）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation: Option<ScopeOperation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_id: Option<String>,
 }
 
 /// scope 生命周期 Workflow 执行的那一段状态机。调用方声明意图，Core 再核对实体
@@ -81,6 +83,7 @@ pub enum ScopeOperation {
     Provision,
     Suspend,
     Restore,
+    Delete,
 }
 
 impl ScopeOperation {
@@ -90,6 +93,7 @@ impl ScopeOperation {
             Self::Provision => "PROVISIONING",
             Self::Suspend => "SUSPENDING",
             Self::Restore => "RESTORING",
+            Self::Delete => "DELETING",
         }
     }
 
@@ -413,6 +417,32 @@ pub(crate) async fn launch_scope(
         tracing::warn!(state = %scope_state, operation = ?req.operation, "scope 不在该段的收敛中状态，不启动");
         return Err(StatusCode::CONFLICT.into_response());
     }
+    let snapshot_id = if req.operation == ScopeOperation::Delete {
+        if !matches!(req.kind, crate::scope_state::ScopeKind::Tenant) {
+            return Err(StatusCode::FORBIDDEN.into_response());
+        }
+        let frozen: Option<Uuid> = sqlx::query_scalar(
+            "select s.id from admission.tenant_lifecycle_snapshot s
+             join admission.action_execution ae on ae.id = s.action_execution_id
+             join admission.tenant_delete_subprocess p on p.tenant_lifecycle_snapshot_id = s.id
+             where s.action_execution_id = $1 and s.tenant_id = $2 and s.tenant_version = $3 - 1
+               and ae.action_key = 'tenant.delete' and ae.gate_state = 'ALLOWED'
+               and p.subject = 'PLATFORM_CORE' and p.mode = 'PLATFORM_CORE_CHAIN'",
+        )
+        .bind(req.action_execution_id)
+        .bind(tenant_id)
+        .bind(version)
+        .fetch_optional(pool)
+        .await
+        .map_err(unavailable)?;
+        Some(
+            frozen
+                .ok_or_else(|| StatusCode::FORBIDDEN.into_response())?
+                .to_string(),
+        )
+    } else {
+        None
+    };
 
     match sqlx::query!(
         "select 1 as ok from admission.action_execution
@@ -442,6 +472,7 @@ pub(crate) async fn launch_scope(
                     crate::scope_state::ScopeKind::Tenant => None,
                 },
                 operation: req.operation.input_field(),
+                snapshot_id,
             },
         },
     };
@@ -479,6 +510,7 @@ mod tests {
                     version: 3,
                     tenant_id: Some("t".to_owned()),
                     operation: operation.input_field(),
+                    snapshot_id: None,
                 },
             },
         })

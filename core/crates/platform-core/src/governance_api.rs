@@ -27,7 +27,7 @@ use contracts::{
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
+use crate::bff::{resolve_lifecycle_execution_context, BffState, ExecutionContext};
 use crate::governance::{parse, Actor, Applied, Governance, Refusal, UpdateResult};
 use crate::service_api::{authorize, ServiceState};
 use crate::spicedb::Consistency;
@@ -54,13 +54,19 @@ pub async fn submit_action(
     headers: HeaderMap,
     body: Result<Json<ActionCommand>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
-    let ctx = match resolve_execution_context(&state, &headers).await {
+    let ctx = match resolve_lifecycle_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
     let Ok(Json(cmd)) = body else {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     };
+    if ctx.access_mode == contracts::PlatformSessionAccessMode::LifecycleRestricted
+        && cmd.action_key != "tenant.delete"
+        && !cmd.action_key.starts_with("task.cancel.tenant.delete.v")
+    {
+        return Refusal::Denied(ReasonCode::ScopeGuardFailed).respond(None);
+    }
     match state.governance.submit(actor(&ctx), &cmd).await {
         Ok((status, submission)) => (status, Json(submission)).into_response(),
         Err((refusal, op)) => refusal.respond(op),
@@ -218,18 +224,19 @@ fn task_view(r: TaskRow) -> Result<TaskView, Response> {
 
 /// `GET /api/v1/tasks`：本人发起的受治理动作，新的在前。
 pub async fn list_tasks(State(state): State<BffState>, headers: HeaderMap) -> Response {
-    let ctx = match resolve_execution_context(&state, &headers).await {
+    let ctx = match resolve_lifecycle_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
     let g = &state.governance;
     let rows: Result<Vec<TaskRow>, _> = sqlx::query_as(&format!(
-        "{TASK_QUERY} order by ae.created_at desc limit $4"
+        "{TASK_QUERY} and (not $5 or ae.action_key = 'tenant.delete') order by ae.created_at desc limit $4"
     ))
     .bind(ctx.tenant_id)
     .bind(ctx.tenant_principal_id)
     .bind(g.cfg.projection_freshness_seconds)
     .bind(g.cfg.page_limit)
+    .bind(ctx.access_mode == contracts::PlatformSessionAccessMode::LifecycleRestricted)
     .fetch_all(&g.pool)
     .await;
     match rows {
@@ -253,18 +260,21 @@ pub async fn get_task(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Response {
-    let ctx = match resolve_execution_context(&state, &headers).await {
+    let ctx = match resolve_lifecycle_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
     let g = &state.governance;
-    let row: Result<Option<TaskRow>, _> = sqlx::query_as(&format!("{TASK_QUERY} and ae.id = $4"))
-        .bind(ctx.tenant_id)
-        .bind(ctx.tenant_principal_id)
-        .bind(g.cfg.projection_freshness_seconds)
-        .bind(id)
-        .fetch_optional(&g.pool)
-        .await;
+    let row: Result<Option<TaskRow>, _> = sqlx::query_as(&format!(
+        "{TASK_QUERY} and ae.id = $4 and (not $5 or ae.action_key = 'tenant.delete')"
+    ))
+    .bind(ctx.tenant_id)
+    .bind(ctx.tenant_principal_id)
+    .bind(g.cfg.projection_freshness_seconds)
+    .bind(id)
+    .bind(ctx.access_mode == contracts::PlatformSessionAccessMode::LifecycleRestricted)
+    .fetch_optional(&g.pool)
+    .await;
     match row {
         Ok(Some(r)) => match task_view(r) {
             Ok(mut v) => {
@@ -439,7 +449,8 @@ impl ApprovalRow {
     }
 }
 
-/// 调用方此刻能否满足该审批的某个选择器。列表用低延迟一致性（`.design/10` §1），
+/// 调用方此刻能否满足该审批的某个选择器或冻结 owner 要求。普通列表使用低延迟
+/// 一致性（`.design/10` §1）；受限会话只以 fresh 角色或同一 snapshot 的 owner 资格可见。
 /// 真正的决定仍由 FreshApprovalAdmission 以 FullyConsistent 判定。
 async fn eligible(
     g: &Governance,
@@ -470,7 +481,13 @@ async fn eligible(
                         &id.to_string(),
                         "manage",
                         &ctx.tenant_principal_id.to_string(),
-                        Consistency::MinimizeLatency,
+                        if ctx.access_mode
+                            == contracts::PlatformSessionAccessMode::LifecycleRestricted
+                        {
+                            Consistency::FullyConsistent
+                        } else {
+                            Consistency::MinimizeLatency
+                        },
                     )
                     .await
                     .map_err(|e| Refusal::Unavailable(e.to_string()))?;
@@ -482,21 +499,32 @@ async fn eligible(
             return Ok(true);
         }
     }
-    Ok(false)
+    if row.action_key == "tenant.delete" {
+        crate::bff::lifecycle_owner_eligible(
+            g,
+            ctx.tenant_id,
+            ctx.tenant_principal_id,
+            Some(row.action_execution_id),
+        )
+        .await
+    } else {
+        Ok(false)
+    }
 }
 
 /// `GET /api/v1/approvals`：待我审批——未决、我尚未决定、我能满足某个选择器。
 pub async fn list_pending_approvals(State(state): State<BffState>, headers: HeaderMap) -> Response {
-    let ctx = match resolve_execution_context(&state, &headers).await {
+    let ctx = match resolve_lifecycle_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
     let g = &state.governance;
     let rows: Result<Vec<ApprovalRow>, _> = sqlx::query_as(&format!(
-        "{APPROVAL_QUERY} and ap.status in ('REQUESTED', 'WAITING') order by ae.created_at limit $2"
+        "{APPROVAL_QUERY} and ap.status in ('REQUESTED', 'WAITING') and (not $3 or ae.action_key = 'tenant.delete') order by ae.created_at limit $2"
     ))
     .bind(ctx.tenant_id)
     .bind(g.cfg.page_limit)
+    .bind(ctx.access_mode == contracts::PlatformSessionAccessMode::LifecycleRestricted)
     .fetch_all(&g.pool)
     .await;
     let rows = match rows {
@@ -528,17 +556,19 @@ pub async fn get_approval(
     Path(workflow_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let ctx = match resolve_execution_context(&state, &headers).await {
+    let ctx = match resolve_lifecycle_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
     let g = &state.governance;
-    let row: Result<Option<ApprovalRow>, _> =
-        sqlx::query_as(&format!("{APPROVAL_QUERY} and ap.workflow_id = $2"))
-            .bind(ctx.tenant_id)
-            .bind(&workflow_id)
-            .fetch_optional(&g.pool)
-            .await;
+    let row: Result<Option<ApprovalRow>, _> = sqlx::query_as(&format!(
+        "{APPROVAL_QUERY} and ap.workflow_id = $2 and (not $3 or ae.action_key = 'tenant.delete')"
+    ))
+    .bind(ctx.tenant_id)
+    .bind(&workflow_id)
+    .bind(ctx.access_mode == contracts::PlatformSessionAccessMode::LifecycleRestricted)
+    .fetch_optional(&g.pool)
+    .await;
     let not_found = || Refusal::Precondition(ReasonCode::TargetNotFound).respond(None);
     let row = match row {
         Ok(Some(r)) => r,
@@ -569,7 +599,7 @@ pub async fn decide(
     headers: HeaderMap,
     body: Result<Json<ApprovalDecisionRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
-    let ctx = match resolve_execution_context(&state, &headers).await {
+    let ctx = match resolve_lifecycle_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -583,6 +613,11 @@ pub async fn decide(
         Err(e) => return Refusal::from(e).respond(None),
     };
     let op = Some(ae.operation_id);
+    if ctx.access_mode == contracts::PlatformSessionAccessMode::LifecycleRestricted
+        && ae.action_key != "tenant.delete"
+    {
+        return Refusal::Denied(ReasonCode::ScopeGuardFailed).respond(op);
+    }
     let update = ApprovalDecisionUpdate {
         approver_principal_id: ctx.tenant_principal_id.to_string(),
         decision: req.decision.clone(),
@@ -625,7 +660,7 @@ pub async fn withdraw(
     Path(workflow_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let ctx = match resolve_execution_context(&state, &headers).await {
+    let ctx = match resolve_lifecycle_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -636,6 +671,11 @@ pub async fn withdraw(
         Err(e) => return Refusal::from(e).respond(None),
     };
     let op = Some(ae.operation_id);
+    if ctx.access_mode == contracts::PlatformSessionAccessMode::LifecycleRestricted
+        && ae.action_key != "tenant.delete"
+    {
+        return Refusal::Denied(ReasonCode::ScopeGuardFailed).respond(op);
+    }
     match g
         .send_update(
             &workflow_id,

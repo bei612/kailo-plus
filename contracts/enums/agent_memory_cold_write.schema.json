@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_memory_cold_write.schema.json",
+  "title": "AgentMemoryColdWrite",
+  "type": "string",
+  "enum": ["DISABLED", "INVOCATION_SCOPED"]
+}
