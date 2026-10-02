@@ -5,9 +5,10 @@ import {
   translate,
 } from "../i18n";
 
-/** The existing Desktop platform menu order, shared by both React hosts. */
+/** The platform menu order, shared by both React hosts. */
 export const platformNavigationSections = [
   "members",
+  "agents",
   "tasks",
   "approvals",
   "audit",
@@ -19,6 +20,7 @@ export type PlatformNavigationSection =
 
 const sectionLabel: Record<PlatformNavigationSection, PlatformMessageKey> = {
   members: "platform.tab.members",
+  agents: "platform.tab.agents",
   tasks: "platform.tab.tasks",
   approvals: "platform.tab.approvals",
   audit: "platform.tab.audit",
@@ -52,7 +54,7 @@ function NavigationButton({
   );
 }
 
-/** The five existing platform destinations; host-native rows remain with the host. */
+/** Released platform destinations; host-native rows remain with the host. */
 export function PlatformNavigation({
   locale,
   selectedSection,

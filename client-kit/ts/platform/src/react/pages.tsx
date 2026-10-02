@@ -32,6 +32,8 @@ import { type Loaded, useLoad } from "./use-load";
 import { LegacySecretRefManagement, RoleManagement } from "./roles";
 import { PlatformTenantManagement } from "./tenants";
 
+export { AgentDefinitionsPage } from "./agents";
+
 /** 按读取状态渲染：载入中、结果不明（可重试）、或数据。 */
 export function Resource<T>({
   state,

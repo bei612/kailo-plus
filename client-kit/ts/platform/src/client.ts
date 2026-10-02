@@ -6,6 +6,9 @@
 import type {
   ActionCommand,
   ActionSubmission,
+  AgentDefinitionPage,
+  AgentDefinitionView,
+  AgentVersionView,
   ApprovalControlOutcome,
   ApprovalDecision,
   ApprovalDecisionOutcome,
@@ -56,6 +59,14 @@ export function createBffClient(transport: BffTransport) {
 
     /** 我能进的 Workspace。列表已排除进不去的——列出一个点进去 403 的比不列更糟。 */
     workspaces: () => get<WorkspaceView[]>("/api/v1/workspaces"),
+
+    /** Tenant 稳定定义；列表逐项经 discover 过滤，详情和 Version 由 BFF fresh read。 */
+    agentDefinitions: (offset?: number) =>
+      get<AgentDefinitionPage>(`/api/v1/agent-definitions${offset ? `?offset=${offset}` : ""}`),
+    agentDefinition: (resourceId: string) =>
+      get<AgentDefinitionView>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}`),
+    agentVersion: (assetId: string) =>
+      get<AgentVersionView>(`/api/v1/agent-versions/${encodeURIComponent(assetId)}`),
 
     /** 成员按人聚合：`pubkeys` 是此人全部 ACTIVE 的 Buzz 公钥（DD-77）。 */
     members: (workspaceId: string) =>

@@ -1,8 +1,8 @@
 capability_id: agent.definition_management
-title: Core AgentDefinition/Version 与 Resource/Asset owner 经同一治理事务和 SpiceDB 投影闭合
+title: Core Agent Definition 管理与 Version 只读，共享 Web/Desktop 消费同一治理事务和 SpiceDB 投影
 stage: S5
 status: in_progress
-exposure: none
+exposure: end_user
 
 design:
   requirements: [V-REQ-03, V-REQ-05, V-REQ-11, V-REQ-15, V-REQ-19]
@@ -19,20 +19,25 @@ validation:
       ref: core/verify/agent-definition.md
     - dimension: 安全边界
       ref: core/verify/agent-definition.md
+    - dimension: 呈现
+      ref: core/verify/agent-definition.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/agent_definition.rs, core/crates/platform-core/src/agent_version.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/spicedb.rs, core/crates/platform-core/src/membership_state.rs, core/crates/platform-core/src/invitation.rs, core/crates/platform-core/src/tenant_delete.rs, core/crates/platform-core/src/bff.rs]
-  surfaces: []
+  paths: [core/crates/platform-core/src/agent_definition.rs, core/crates/platform-core/src/agent_version.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/spicedb.rs, core/crates/platform-core/src/membership_state.rs, core/crates/platform-core/src/invitation.rs, core/crates/platform-core/src/tenant_delete.rs, core/crates/platform-core/src/bff.rs, client-kit/ts/platform/src/client.ts, client-kit/ts/platform/src/react/agents.tsx, client-kit/ts/platform/src/react/navigation.tsx, web-client/web/src/platform/ui/PlatformApp.tsx, collaboration/desktop/src/app/routes/platform.$section.tsx]
+  surfaces: [web, desktop]
   schemas: [contracts/api/action_command.schema.json, contracts/api/agent_definition_view.schema.json, contracts/api/agent_definition_page.schema.json, contracts/api/agent_version_view.schema.json, contracts/domain/agent_version_content.schema.json, contracts/domain/runtime_profile_directory.schema.json, contracts/enums/agent_version_state.schema.json, contracts/enums/agent_memory_core_write.schema.json, contracts/enums/agent_memory_cold_write.schema.json, contracts/enums/agent_trigger.schema.json, contracts/enums/runtime_profile_kind.schema.json, contracts/enums/resource_state.schema.json]
   migrations: [core/migrations/20261002010000_agent_definition.up.sql, core/migrations/20261002110000_agent_version.up.sql]
 
 runtime:
-  routes: []
-  actions: []
+  routes: ["/api/v1/agent-definitions", "/api/v1/agent-definitions/{resource_id}", "/api/v1/agent-versions/{asset_id}"]
+  actions: [agent.definition.create, agent.definition.update, resource.transfer_owner]
   tools: []
   workflow_kinds: []
 
 release:
-  artifacts: []
-  gate: closed
+  artifacts:
+    - name: web-client
+      digest: sha256:ad4bcec7044b5ce55a219aff4d37ce35f9e9db2a0025e977d4a71a6ac69b61b0
+  # 仅登记本批原 helper 实际 Web 产物；Core/桌面发布及业务验收仍由主线收口。
+  gate: blocked_until_seams_closed

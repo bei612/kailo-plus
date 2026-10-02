@@ -1,6 +1,7 @@
 import { resolveLocale } from "@client-kit/platform/i18n";
 import { PlatformNavigation } from "@client-kit/platform/react/navigation";
 import {
+  Bot,
   ClipboardCheck,
   History,
   Inbox,
@@ -25,6 +26,7 @@ type SidebarSelectedView = "home" | "channel" | "platform";
 
 const PLATFORM_SECTION_ICON = {
   members: <Users className="h-4 w-4" />,
+  agents: <Bot className="h-4 w-4" />,
   tasks: <ListChecks className="h-4 w-4" />,
   approvals: <ClipboardCheck className="h-4 w-4" />,
   audit: <History className="h-4 w-4" />,

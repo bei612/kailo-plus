@@ -434,3 +434,182 @@ Desktop 当前来源为 blocked/none，Mobile 缺 release 签名，原输出明�
 记录两端阻断；分端门禁通过不解除这些发布条件。新 Web 产物未部署，
 Core/Worker 未由本树构建部署，Agent 公开入口和新增业务场景未验收；
 没有改变能力状态或将检查通过写成生产就绪。此前失败与旧产物证据保留。
+
+## 2026-10-02 16:35 UTC Definition-only 共享客户端增量
+
+本次直接消费已经实现的 Definition 管理链，不增加 Agent 注册权威、API、
+数据库对象或运行策略。依据 `.design/17` §6–8 与 `DD-24/25/45`，稳定定义、
+版本发布、Workspace 安装及运行授权是不同准入点；定义创建/显示名更新不需要
+启动 runtime。`resource.transfer_owner` 仍按 `.design/05` §2.8 走既有审批，
+Core 的目标查询通过 `catalog.agent_definition` 限定真实 Resource。
+
+既有追溯记录只登记 Definition 列表/详情与 Version 的三条只读 BFF 路由，以及
+`agent.definition.create`、`agent.definition.update`、`resource.transfer_owner`
+三个已有动作。BFF 的 `exposed_route` 已有实际消费，不另建路由；没有登记
+Version 写动作、删除、Installation、Invocation、Skill、Tool 或模型管理入口。
+能力目录仍须由原 `tools/gen-registry.py` 生成，不手写生成物。
+
+Web 与 Desktop 都挂载 `client-kit/ts/platform/src/react/agents.tsx` 的同一份
+`AgentDefinitionsPage`；宿主只接既有导航、图标与内容分支。Desktop 的
+`PLATFORM_SECTIONS` 改为直接引用共享导航目录，不再维护第二份枚举。
+共享客户端从生成的 Definition/Page/Version 与 ActionCommand/Submission
+契约读取字段；没有改契约或手写第二份领域类型。列表/详情读取失败不是空列表，
+未知状态或不完整 Resource 事实不显示为就绪；当前 published pointer 的 Version
+读取每次仍由 BFF 执行 fresh read 与父 Resource/Asset 投影核对。
+
+写表单复用现有语义色、Button/Table、useLoad、幂等键、Task 状态解读和
+writeFailure 规则。核对面板冻结实际读取的 Resource ID/version 与命令；创建
+仅写稳定标识/显示名，更新仅写显示名，owner 转移仅引用新的 HUMAN Principal。
+权限、成员资格、审批、Quota/Capacity 与版本冲突仍由 Core 重查。
+网络结果不明、派发 UNKNOWN、EVALUATING 或尚未派发的 ALLOWED 不渲染为
+成功/失败，不取消冻结意图，只允许以同一幂等键重查原请求；列表翻页或刷新不
+卸载此意图。已登记回应只展示 Operation/ActionExecution 引用，并指向既有
+Tasks/Approvals 查证，页面重入时也读取本人仍在进行的定义任务。
+
+所有新增文案进入共享 `en/zh-CN` 消息表，继承宿主主题；未新增 Mobile 组件宿主
+或写界面。新增共享文案的 Dart 投影仍需原生成入口集中生成；不手改生成物。
+
+本刀改前字节与精确差异存于
+`/volumes/data/kailo/tmp/codex-definition-ui-window-20261002.BS2o8R/`。
+源码检索已核对两真实宿主、BFF、治理参数、原 ACTIVE ActionDefinition 与审批
+目录；GitNexus 按用户当前要求暂停。已运行选定已跟踪路径的 `git diff --check`，
+退出 0；新增文件的 no-index 检查无空白错误输出，其差异退出码不作为编译通过。
+没有运行 SDK、类型检查、React/浏览器验证、注册表生成、文案生成、构建、
+业务端点演练或部署；这些由主线在实际选定输入上集中执行。
+
+当前追溯记录仍为 `in_progress`，release gate 保持
+`blocked_until_seams_closed`，没有借旧 Web/Desktop 或 Core 摘要冒充本刀产物。
+exposure 的源码登记不等于当前运行版本已开放；须原生成、实际新来源产物与
+端点验证收口后才能发布。此前空库、full 通过及入口关闭的历史记录均保留，
+不改记为本次业务验收；本刀未提交、未 push、未部署，不宣称 Stage 5 完成。
+
+### 2026-10-02 16:56 UTC 同窗口消费纠偏
+
+实现后复核发现原表单将任务读取失败当作零条在途请求，而且在途 owner 转移
+只有提示，未阻止同一 Resource 的新意图。现已直接修正该判定：原任务读取
+pending、失败、未知 gate/dispatch/task 枚举或缺少关联引用时，不准备新请求；
+同 Definition ID 的修改/转移仍在进行时必须先查证，创建在途时不另发创建。
+这些是客户端防重复交互，不替代 Core 的 fresh 权限、审批和版本核验。
+结果不明的原意图仍保留冻结命令与幂等键，只重查原请求；任务与审批仍由
+原 BFF 消费，没有新建状态权威或存储层。已有任务可手动刷新查证，不设置
+新的超时或自动重发。回应含未知 reason 也视为不明，不展示确定成功/失败。
+
+已登记回应会关闭旧详情，再从实际目录读取新的 owner/version；不在客户端
+乐观修改 owner。新的 owner 与旧 owner 相同不准备转移。当前 published
+pointer 只接受实际 PUBLISHED Version；读取期间遇到 DRAFT/RETIRED 或不一致
+关联时显示读取失败并允许刷新，不把矛盾生命周期渲染成已发布。没有 pointer
+仍是合法的“尚无已发布版本”，并非读取失败。未使用的 Draft/Retired 显示分支
+和文案已删除，未加入 Version 列表或运行入口。
+
+本次共享新增消息为 34 项。原生成入口为 `python3 tools/gen-registry.py`
+及其 `--check`，和 `python3 tools/gen-platform-i18n.py` 及其 `--check`。
+后者必须调用 Dart formatter，按禁止宿主工具链的约束，本 lane 未运行生成，
+交由主线在已有受限 SDK 中集中执行；无契约改动，不手写四语言类型。
+生成产物是否一致、编译和真实端点结果以主线实际日志为准，不提前记通过。
+
+现有 fork manifest 的 source/artifact 摘要只证明其实际构建版本。共享 TS 改动
+进入 Web/Desktop 的真实构建输入，registry 改动进入 Core 的 release 输入；
+旧摘要不能证明本刀。原 release/build-upstream 入口须实际构建并登记最终来源，
+再同步 trace 的产物引用。本刀未填入假摘要或以源码 exposure 代替已部署事实。
+原 before 保留，纠偏后精确窗口继续存于同一 Data 证据目录；产品源码于
+16:56:54 UTC 停写。选定已跟踪路径 `git diff --check` 再次退出 0，仍没有 SDK、
+浏览器/业务正向验收、构建、提交、push 或部署。
+
+### 2026-10-02 17:23 UTC Definition-only 候选实际验证与 Web 构建
+
+本节追加已发生的结果，不覆盖上述写作时尚未执行的历史。唯一输入为
+`/volumes/data/kailo/tmp/codex-definition-ui-head-20261002.q85LI1/candidate`，
+从 apps HEAD `d994b2e8dab0eb19889720fef0f3cc9763c95dc9` 精确选入上述
+Definition-only 11 路径；原私有 tree 为
+`8f49dbd1f4cda38902949d1168b29606e4a90166`，生成及既有检查修正后的 tree 为
+`5923b19a450bef265d2feedb7c2152a81bb19c58`。这些是输入 tree，不冒称提交。
+未选入正式工作树的 Installation、Invocation、Quota 或 Gateway 后续增量。
+
+实际 SDK 为
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID/GID 为 1000:1000，镜像内 Node 为 v24.21.0。执行前核查现有构建与
+CPU/内存压力；实际 cgroup 为 4 CPU、8 GiB、swap 0，缓存与临时目录均在
+Data。没有调用宿主 Node/Dart、执行只读上游或修改检查工具。原 registry
+生成及 `--check` 均退出 0，17 条能力、18 个封闭 Workflow kind 校验成立；
+原 i18n 生成及 `--check` 均退出 0，Mobile 文案投影与共享 TypeScript 同源。
+实际变化只在既有 capability registry 和 Dart platform_text 投影，无 DTO 变更。
+
+共享包类型检查退出 0，原 7 文件 77 项检查通过；Desktop 类型检查退出 0。
+首次 Desktop 原完整检查为 2282 项、2281 通过、1 失败，SDK 实际退出 1：
+`fontSizePreference.test.mjs` 仍读取已迁走的 Desktop typography 路径，报
+`ENOENT`，不是 OOM。实际 Desktop/Web 都已引用共享 typography；因此只把
+这份既有检查的读取路径改为真实共享 CSS，没有复制旧 CSS、新增用例或夹具。
+续跑该原检查为 9 项通过、退出 0；Web 原 `npm ci`、类型检查与 4 文件 14 项
+检查均退出 0，包含 MessageContent 的 5 项既有 SSR。未重复共享检查、生成
+或整个 Desktop 检查，不把首次失败改记为完整 Desktop 退出 0。
+
+修正检查后只在 Data 候选将共享 CSS 的真实 rem 投影临时破坏为 `1px`，
+同一原检查实际 8 通过、1 失败、退出 1，确实命中 root rem 断言。随后按
+原字节还原，CSS SHA-256 恢复为
+`a70c922ca8ea648f818bff79fe0c05d65004a1a3d72eab6303d85d49275b24ad`，
+同一 SDK/同一检查重新 9 项通过、退出 0。正式 CSS 未写，候选无破坏残留；
+只有上述既有检查的一行路径同步入实际实现范围。
+
+原 `tools/build-upstream.sh web-client` 实际退出 0，完成镜像内 tsc/Vite、
+OCI load、registry push 与原 record。使用既有 kailo-core-data builder，
+实际 8 CPU、16 GiB、swap 0，缓存为 Data 的 buildkit-core-state；发布地址
+只来自唯一部署 `.env` 的 REGISTRY_HOST，没有改配方、限额或新建服务。
+原 helper 写回 source
+`sha256:ef73ee2c0a29dc27746ed6219357ea9f99d862a90afaf38ab9b6dd3f0f3a89db`
+及 artifact
+`sha256:ad4bcec7044b5ce55a219aff4d37ce35f9e9db2a0025e977d4a71a6ac69b61b0`。
+构建报告 npm audit 0；大 chunk 警告完整保留，不上调阈值或伪造来源。
+
+原件均在上述 q85LI1 的 `logs/`：`sdk.log`、`sdk-exit.log`、
+`sdk-remaining.log`、`sdk-remaining-exit.log`、`css-negative.log`、
+`css-negative-exit.log`、`css-restored.log`、`css-restored-exit.log`、
+`web-build.log` 与 `web-build-exit.log`；各实际容器限额另存于同目录。
+原 helper 的完整 BuildKit 日志是 `tmp/build-web-client.HAb7Bu.log`。
+`web-build.log` SHA-256 为
+`8f503754b133d54f6181445dffe4a1e345cad71a86fd58a517c976ead63d9223`。
+本 lane 创建的三份 SDK 容器已清理，日志保留；没有清理其他容器或缓存。
+
+既有检查不包含新增 Definition 表单的业务正向、撤权、审批或 UNKNOWN 场景，
+不得据类型/SSR/构建称其业务通过。本节没有数据库、真实登录或 BFF 端点演练，
+也没有 Win11 包或安装验证；Mobile 没有加入组件宿主。Core release 输入因
+registry 变化仍须由主线实际收口；仅新 Web 镜像不证明运行中 BFF 已开放。
+本刀尚未执行集中 full、提交、push 或部署，release gate 与 Stage 状态不提升。
+
+### 2026-10-02 17:37 UTC 同一候选集中门禁收口
+
+实际构建之后，Data 候选仅将 Compose 和 13 份既有 trace 的有效 Web
+产物指针同步为上述真实 `ad4bcec7…`，Definition 记录也只登记这一实际
+Web artifact。未借用 Core/Desktop 旧摘要，仍保留 `in_progress` 与
+`blocked_until_seams_closed`；历史验证正文中的旧摘要不全局替换。
+原 `upstream_manifest.resolve/source_digest` 重算仍等于已登记的
+`ef73ee2c…`，这些配置/追溯变动未改变 Web 构建输入，不重复构建。
+
+最终业务及登记输入 tree 为
+`67fc8e3d10582473578aad67e619dd5b68262193`，29 路径，逐项字节校验一致。
+在同一不可变 SDK、4 CPU/8 GiB/swap 0、Cargo 并行度 16、Data 缓存与
+host network 下，执行未修改的原 `tools/check.sh --full`，实际退出 0，
+attach 退出 0、无 OOM。源码只来自该 tree 的独立导出，不含正式脏工作树。
+应用 Git 和只读上游 Git 各自解析，不执行 `.references` 中的程序。
+
+首次 full 因 SDK 全局 Git 环境误投递，将只读上游查询也指向 apps 对象库，
+错误报告 Codex 基准不可解析。实际中止退出 137、无 OOM；它不是完整
+full 通过，也不能据此认为固定上游 commit 缺失。没有修改门禁或产品源码，
+修正投递后仅在启动前的单条命令解析私有 tree，进入原 full 前清除全局 Git
+变量；正常只读 Git 投递的完整重跑退出 0。两次原日志均保留。
+
+最终格式/静态检查、四侧生成与已有测试、108 schema 与 3 份历史契约兼容、
+Workflow replay、设计文档、17 份追溯/18 种 Workflow kind、18 份既有
+产物元数据、6 份上游来源和 4 份当前来源产物、安全不变式及 runbook 均通过。
+没有 DATABASE_URL，实际迁移演练和 SQLx 在线核对明确 SKIP；没有实际部署
+`.env`，运行配置预检明确 SKIP；未安装 gitleaks，只通过现有内置扫描。
+原输出保留 Windows 无当前包和 Mobile 缺 release 签名的阻断，不能用该
+full 退出 0 解除两端发布条件或替代 Definition 新业务场景验收。
+
+原件仍在上述 q85LI1 `logs/`：首次 `full.log`、`full-exit.log`；最终
+`full-corrected.log`、`full-corrected-exit.log`、`full-corrected-limits.log`，
+以及 `full-container-terminal-states.log`。最终完整日志 SHA-256 为
+`f7b8d9fded928f17dc7d42c4ac09077f8dfae21f0c57bb6ae8bf6c8749e56b58`。
+full 所验证的完整补丁、29 路径与字节表分别保留为 q85LI1 下的
+`full-verified-window.patch`、`full-verified-owned-paths.txt`、
+`full-verified-selected.sha256`。之后只追加本节事实记录，不改变已验证源码
+或产物输入；提交、push、Core 发布和部署由主线另行收口。

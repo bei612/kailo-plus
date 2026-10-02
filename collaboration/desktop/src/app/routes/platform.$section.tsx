@@ -3,6 +3,7 @@ import { translate, resolveLocale } from "@client-kit/platform/i18n";
 import { ApprovalsPage, TasksPage } from "@client-kit/platform/react/governance";
 import { TenantInvitations } from "@client-kit/platform/react/invitations";
 import {
+  AgentDefinitionsPage,
   AuditPage,
   DevicesPage,
   WorkspaceMembersPage,
@@ -51,6 +52,8 @@ function PlatformScreen({ section }: { section: PlatformSection }) {
           <WorkspaceMembersPage />
           <TenantInvitations />
         </div>
+      ) : section === "agents" ? (
+        <AgentDefinitionsPage />
       ) : section === "tasks" ? (
         <TasksPage />
       ) : section === "approvals" ? (

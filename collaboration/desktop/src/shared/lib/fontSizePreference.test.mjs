@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import config from "../../../tailwind.config.js";
 
 const typographyCss = readFileSync(
-  new URL("../styles/globals/typography.css", import.meta.url),
+  new URL("../../../../../client-kit/ts/platform/src/typography.css", import.meta.url),
   "utf8",
 );
 

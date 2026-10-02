@@ -18,12 +18,13 @@ import {
   PlatformNavigation,
   type PlatformNavigationSection,
 } from "@client-kit/platform/react/navigation";
-import { AuditPage, DevicesPage, MembersPane } from "@client-kit/platform/react/pages";
+import { AgentDefinitionsPage, AuditPage, DevicesPage, MembersPane } from "@client-kit/platform/react/pages";
 import { LegacySecretRefManagement, RoleManagement } from "@client-kit/platform/react/roles";
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BellOff,
+  Bot,
   ClipboardCheck,
   Hash,
   History,
@@ -133,6 +134,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ({
       channel: t("platform.tab.channel"),
       members: t("platform.tab.members"),
+      agents: t("platform.tab.agents"),
       tasks: t("platform.tab.tasks"),
       approvals: t("platform.tab.approvals"),
       devices: t("platform.tab.devices"),
@@ -153,7 +155,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     <MembersPane key={active} workspaceId={active} />
   );
   const body =
-    tab === "tasks" ? (
+    tab === "agents" ? (
+      <AgentDefinitionsPage />
+    ) : tab === "tasks" ? (
       <TasksPage />
     ) : tab === "approvals" ? (
       <ApprovalsPage />
@@ -196,6 +200,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onSelectSection={setTab}
               icons={{
                 members: <Users className="h-4 w-4" />,
+                agents: <Bot className="h-4 w-4" />,
                 tasks: <ListChecks className="h-4 w-4" />,
                 approvals: <ClipboardCheck className="h-4 w-4" />,
                 audit: <History className="h-4 w-4" />,
