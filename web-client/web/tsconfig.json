@@ -8,9 +8,6 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    // client-kit 以本地路径依赖接入（ADR-16）：按 node_modules 里的链接路径解析，
-    // 共用包里的 react 等与本项目是同一份
-    "preserveSymlinks": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",

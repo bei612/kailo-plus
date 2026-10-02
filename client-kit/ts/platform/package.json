@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "files": [
+    "src"
+  ],
   "exports": {
     "./client": "./src/client.ts",
     "./format": "./src/format.ts",
@@ -13,11 +16,18 @@
     "./react/context": "./src/react/context.tsx",
     "./react/governance": "./src/react/governance.tsx",
     "./react/invitations": "./src/react/invitations.tsx",
+    "./react/message-body": "./src/react/message-body.tsx",
+    "./react/navigation": "./src/react/navigation.tsx",
     "./react/pages": "./src/react/pages.tsx",
     "./react/roles": "./src/react/roles.tsx",
+    "./react/surfaces": "./src/react/surfaces.tsx",
     "./react/tenants": "./src/react/tenants.tsx",
     "./react/ui": "./src/react/ui.tsx",
     "./react/use-load": "./src/react/use-load.ts",
+    "./theme/adaptive-theme": "./src/theme/adaptive-theme.ts",
+    "./theme/theme-loader": "./src/theme/theme-loader.ts",
+    "./theme.css": "./src/theme.css",
+    "./typography.css": "./src/typography.css",
     "./transport": "./src/transport.ts",
     "./web-fetch": "./src/web-fetch.ts"
   },
@@ -26,16 +36,26 @@
     "test": "tsc --noEmit -p tsconfig.test.json && vitest run"
   },
   "peerDependencies": {
-    "react": "^19.1.0"
+    "@client-kit/contracts": "0.0.0",
+    "@types/react": "^19.1.8",
+    "react": "^19.1.0",
+    "shiki": "^4.0.2"
   },
   "devDependencies": {
     "@client-kit/contracts": "workspace:*",
+    "@types/node": "^24.9.2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "jsdom": "^27.4.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "shiki": "^4.0.2",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
+  },
+  "peerDependenciesMeta": {
+    "@types/react": {
+      "optional": true
+    }
   }
 }

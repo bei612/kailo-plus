@@ -67,11 +67,11 @@ importers:
   desktop:
     dependencies:
       '@client-kit/contracts':
-        specifier: link:../../client-kit/ts/contracts
-        version: link:../../client-kit/ts/contracts
+        specifier: file:../../client-kit/ts/contracts
+        version: file:../client-kit/ts/contracts
       '@client-kit/platform':
-        specifier: link:../../client-kit/ts/platform
-        version: link:../../client-kit/ts/platform
+        specifier: file:../../client-kit/ts/platform
+        version: file:../client-kit/ts/platform(@client-kit/contracts@file:../client-kit/ts/contracts)(@types/react@19.2.18)(react@19.2.8)(shiki@4.1.0)
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -538,6 +538,20 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@client-kit/contracts@file:../client-kit/ts/contracts':
+    resolution: {directory: ../client-kit/ts/contracts, type: directory}
+
+  '@client-kit/platform@file:../client-kit/ts/platform':
+    resolution: {directory: ../client-kit/ts/platform, type: directory}
+    peerDependencies:
+      '@client-kit/contracts': 0.0.0
+      '@types/react': ^19.1.8
+      react: ^19.1.0
+      shiki: ^4.0.2
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
 
   '@csstools/color-helpers@6.1.0':
     resolution: {integrity: sha512-064IFJdjTfUqnjpCVpMOdbr8FLQBhinbZj6yRv2An2E41O/pLEXqfFRWqGq/SxlE5PEUYTlvWsG2r8MswAVvkg==}
@@ -3692,6 +3706,16 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.4.16':
     optional: true
+
+  '@client-kit/contracts@file:../client-kit/ts/contracts': {}
+
+  '@client-kit/platform@file:../client-kit/ts/platform(@client-kit/contracts@file:../client-kit/ts/contracts)(@types/react@19.2.18)(react@19.2.8)(shiki@4.1.0)':
+    dependencies:
+      '@client-kit/contracts': file:../client-kit/ts/contracts
+      react: 19.2.8
+      shiki: 4.1.0
+    optionalDependencies:
+      '@types/react': 19.2.18
 
   '@csstools/color-helpers@6.1.0': {}
 

@@ -983,8 +983,8 @@ artifacts:
     build_dockerfile: collaboration/Dockerfile
     inputs: [collaboration/]
     exclude: [collaboration/desktop/, collaboration/mobile/, collaboration/fork/packaging/]
-    source_digest: sha256:c475aab76ed26fcca26071e8986900ec66aa1676f1e158e5e8bbdc44115beb00
-    artifact_digest: sha256:a02068e5cda2d2feb8a62f7e0d33468eb928a9eb55f9a1a1486f0ea9c86da23c
+    source_digest: sha256:f63619626081bc3dd1c655922163299e5816e90f502ac5a0ae052a3f1f0e1368
+    artifact_digest: sha256:3700b743b341d05ae2ddaae388954634c2381a5b10877c565021f3e6a7ca0bea
   # Linux 桌面安装包（.deb）：上游没有打包用的 Dockerfile，由本仓库维护的构建文件产出，
   # artifact_digest 记安装包字节的 SHA-256（06 §2）。mobile/ 与 crates/buzz-relay/ 不是它的输入：
   # desktop/src-tauri 不在根 Cargo workspace 内，其 Cargo.lock 不含 buzz-relay；pnpm workspace
@@ -997,8 +997,8 @@ artifacts:
     exclude: [collaboration/mobile/, collaboration/crates/buzz-relay/, collaboration/fork/packaging/mobile.Dockerfile, collaboration/fork/packaging/mobile.Dockerfile.dockerignore]
     # 安装包显示名由发布配置注入（DD-111），不写在源码里
     build_args: [PLATFORM_DISPLAY_NAME]
-    source_digest: sha256:c69632a9042bc075f889c61a2c5168af13b5fa9f0c910b5513797b9318f484d7
-    artifact_digest: sha256:73f350c5839673462098a84a073f62b10949d97f6293502050db68072e2cef24
+    source_digest: sha256:378834b3a8fedaafb2a8f8739bc6f3cecc408678d7e12ef65be5d33358091bce
+    artifact_digest: sha256:d28520f7949f4422f0b542025ff62b914229671ff11f91a11d3d80e426cac054
   # Android release APK（ADR-06 客户端发布单元按端分离：应用商店包，带平台签名）。
   # 阻断：release 签名所需的 upload keystore 未提供。上游 release 构建缺 keystore 即失败，
   # 不以 debug 证书冒充 release；profile/debug APK 只是测试构建，不登记为发布产物。

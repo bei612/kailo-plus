@@ -1,6 +1,6 @@
 # Desktop 客户端的 Linux 安装包构建（DD-74、ADR-06）。
 #
-# 构建上下文是 apps/（ADR-16）：协作底座源码树 collaboration/ 与它以本地路径依赖（link:）
+# 构建上下文是 apps/（ADR-16）：协作底座源码树 collaboration/ 与它以本地路径依赖（pnpm file:，按副本安装，ADR-18）
 # 引用的 client-kit/ts，保持与仓库里相同的相对位置；取舍见同名 .dockerignore。产物不是镜像
 # 而是 .deb：最后一个阶段只含安装包，调用方以 `--output type=local` 取出，摘要写回来源记录
 # 的 artifact_digest。

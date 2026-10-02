@@ -1,4 +1,5 @@
-import { translate, resolveLocale } from "@client-kit/platform/i18n";
+import { resolveLocale } from "@client-kit/platform/i18n";
+import { PlatformNavigation } from "@client-kit/platform/react/navigation";
 import {
   ClipboardCheck,
   History,
@@ -13,26 +14,21 @@ import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import type { Channel, SearchHit } from "@/shared/api/types";
 import {
   SidebarHeader,
-  SidebarMenu,
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/shared/ui/sidebar";
 import { SidebarMenuLabel } from "@/shared/ui/sidebar-menu-label";
-import {
-  PLATFORM_SECTION_LABEL,
-  PLATFORM_SECTIONS,
-  type PlatformSection,
-} from "@/features/platform/platformSections";
+import type { PlatformSection } from "@/features/platform/platformSections";
 
 type SidebarSelectedView = "home" | "channel" | "platform";
 
 const PLATFORM_SECTION_ICON = {
-  members: Users,
-  tasks: ListChecks,
-  approvals: ClipboardCheck,
-  audit: History,
-  devices: MonitorSmartphone,
+  members: <Users className="h-4 w-4" />,
+  tasks: <ListChecks className="h-4 w-4" />,
+  approvals: <ClipboardCheck className="h-4 w-4" />,
+  audit: <History className="h-4 w-4" />,
+  devices: <MonitorSmartphone className="h-4 w-4" />,
 } satisfies Record<PlatformSection, unknown>;
 
 type AppSidebarPinnedHeaderProps = {
@@ -99,50 +95,37 @@ export function AppSidebarPrimaryMenu({
       data-tauri-drag-region
       data-testid="sidebar-primary-menu"
     >
-      <SidebarMenu className="sidebar-primary-menu pb-2">
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            className="data-[active=true]:font-normal"
-            isActive={selectedView === "home"}
-            onClick={onSelectHome}
-            tooltip="Inbox"
-            type="button"
-          >
-            <Inbox className="h-4 w-4" />
-            <SidebarMenuLabel>Inbox</SidebarMenuLabel>
-          </SidebarMenuButton>
-          {homeBadgeCount > 0 ? (
-            <SidebarMenuBadge
-              className="right-2 rounded-full bg-primary/15 px-1.5 text-2xs text-primary peer-data-[active=true]/menu-button:bg-sidebar-active-foreground/20 peer-data-[active=true]/menu-button:text-sidebar-active-foreground"
-              data-testid="sidebar-home-count"
+      <PlatformNavigation
+        ButtonComponent={SidebarMenuButton}
+        icons={PLATFORM_SECTION_ICON}
+        locale={locale}
+        onSelectSection={onSelectPlatformSection}
+        selectedSection={
+          selectedView === "platform" ? selectedPlatformSection : null
+        }
+        firstRow={
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className="data-[active=true]:font-normal"
+              isActive={selectedView === "home"}
+              onClick={onSelectHome}
+              tooltip="Inbox"
+              type="button"
             >
-              {Math.min(homeBadgeCount, 99)}
-            </SidebarMenuBadge>
-          ) : null}
-        </SidebarMenuItem>
-        {PLATFORM_SECTIONS.map((section) => {
-          const Icon = PLATFORM_SECTION_ICON[section];
-          const label = translate(locale, PLATFORM_SECTION_LABEL[section]);
-          return (
-            <SidebarMenuItem key={section}>
-              <SidebarMenuButton
-                className="data-[active=true]:font-normal"
-                data-testid={`sidebar-platform-${section}`}
-                isActive={
-                  selectedView === "platform" &&
-                  selectedPlatformSection === section
-                }
-                onClick={() => onSelectPlatformSection(section)}
-                tooltip={label}
-                type="button"
+              <Inbox className="h-4 w-4" />
+              <SidebarMenuLabel>Inbox</SidebarMenuLabel>
+            </SidebarMenuButton>
+            {homeBadgeCount > 0 ? (
+              <SidebarMenuBadge
+                className="right-2 rounded-full bg-primary/15 px-1.5 text-2xs text-primary peer-data-[active=true]/menu-button:bg-sidebar-active-foreground/20 peer-data-[active=true]/menu-button:text-sidebar-active-foreground"
+                data-testid="sidebar-home-count"
               >
-                <Icon className="h-4 w-4" />
-                <SidebarMenuLabel>{label}</SidebarMenuLabel>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          );
-        })}
-      </SidebarMenu>
+                {Math.min(homeBadgeCount, 99)}
+              </SidebarMenuBadge>
+            ) : null}
+          </SidebarMenuItem>
+        }
+      />
     </SidebarHeader>
   );
 }

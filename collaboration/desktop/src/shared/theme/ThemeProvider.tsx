@@ -12,7 +12,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invokeTauri } from "@/shared/api/tauri";
 import { isMacPlatform } from "@/shared/lib/platform";
 import { getStorageItem } from "@/shared/lib/safeStorage";
-import { createThemeVars, hexToHsl } from "./adaptive-theme";
+import {
+  applyNeutralThemeAccent,
+  createThemeVars,
+  hexToHsl,
+} from "@client-kit/platform/theme/adaptive-theme";
 import {
   SYNTAX_THEMES,
   type SyntaxThemeName,
@@ -20,7 +24,7 @@ import {
   getThemePair,
   loadThemeData,
   resolveSystemTheme,
-} from "./theme-loader";
+} from "@client-kit/platform/theme/theme-loader";
 
 export const THEME_STORAGE_KEY = "buzz-theme";
 const CACHE_KEY = "buzz-theme-cache";
@@ -34,7 +38,6 @@ export const DEFAULT_GLASS_OPACITY = 65;
 export const DEFAULT_PROMINENT_ACTIVE_TAB = false;
 export const NEUTRAL_ACCENT = "neutral";
 const FOLLOW_SYSTEM_KEY = "buzz-follow-system";
-const VIDEO_REVIEW_NEUTRAL_ACCENT = "0 0% 98%";
 const VIDEO_REVIEW_CHIP_SURFACE = "#161616";
 const VIDEO_REVIEW_TEXT_CONTRAST = 4.5;
 const VIDEO_REVIEW_CHIP_BACKGROUND_ALPHAS = [0.15, 0.3] as const;
@@ -196,24 +199,7 @@ function rgbToHex({ r, g, b }: Rgb): string {
 function applyAccentColor(value: string) {
   const root = document.documentElement;
   if (value === NEUTRAL_ACCENT) {
-    const styles = window.getComputedStyle(root);
-    const foreground = styles.getPropertyValue("--foreground").trim();
-    const background = styles.getPropertyValue("--background").trim();
-    root.style.setProperty("--buzz-selected-accent", foreground);
-    root.style.setProperty(
-      "--buzz-video-review-accent",
-      VIDEO_REVIEW_NEUTRAL_ACCENT,
-    );
-    root.style.setProperty(
-      "--buzz-video-review-accent-foreground",
-      VIDEO_REVIEW_NEUTRAL_ACCENT,
-    );
-    root.style.setProperty("--primary", foreground);
-    root.style.setProperty("--primary-foreground", background);
-    root.style.setProperty("--sidebar-primary", foreground);
-    root.style.setProperty("--sidebar-primary-foreground", background);
-    root.style.setProperty("--sidebar-active", foreground);
-    root.style.setProperty("--sidebar-active-foreground", background);
+    applyNeutralThemeAccent(root);
     return;
   }
 

@@ -1,4 +1,11 @@
 import * as React from "react";
+import {
+  MESSAGE_BODY_CLASS_NAME,
+  MESSAGE_BODY_COMPONENTS,
+  MessageBody,
+  PlainCodeBlock,
+  getCodeBlockLanguage,
+} from "@client-kit/platform/react/message-body";
 import { createPortal } from "react-dom";
 import type { Components } from "react-markdown";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
@@ -21,10 +28,7 @@ import { useRelayOrigin } from "@/shared/lib/useRelayOrigin";
 import { createMarkdownMention } from "./markdown/MarkdownMention";
 import { LinkPreviewList } from "@/shared/ui/link-preview-list";
 import { useSmoothCorners } from "@/shared/ui/smoothCorners";
-import {
-  INLINE_CODE_CHIP_CLASS,
-  MESSAGE_MARKDOWN_CLASS,
-} from "@/shared/ui/mentionChip";
+import { INLINE_CODE_CHIP_CLASS } from "@/shared/ui/mentionChip";
 
 import {
   classifyChildren,
@@ -37,7 +41,6 @@ import { copyImageToClipboard, downloadImage } from "./markdown/imageActions";
 import { ImageGalleryStatus } from "./markdown/ImageGalleryStatus";
 import { ImageLightboxZoomControls } from "./markdown/ImageLightboxZoomControls";
 import {
-  CODE_BLOCK_CLASS,
   extractLanguage,
   MarkdownCodeBlock,
   SyntaxHighlightedCode,
@@ -1202,9 +1205,6 @@ export function createMarkdownComponents(
   mediaInset = false,
   blockCode = false,
 ): Components {
-  const listItemClassName = "[&_p]:inline";
-  const listClassName = "space-y-1 pl-6 marker:text-muted-foreground/80";
-
   function MarkdownAnchor({
     children,
     href,
@@ -1310,6 +1310,7 @@ export function createMarkdownComponents(
   }
 
   return {
+    ...MESSAGE_BODY_COMPONENTS,
     spoiler: ({
       children,
       ...props
@@ -1332,12 +1333,6 @@ export function createMarkdownComponents(
       return <span {...props}>{children}</span>;
     },
     a: MarkdownAnchor,
-    blockquote: ({ children }) => (
-      <blockquote className="border-l-2 border-border pl-4 italic text-muted-foreground [&>*:first-child]:mt-0 [&>*+*]:mt-2">
-        {children}
-      </blockquote>
-    ),
-    br: () => <br />,
     code: ({ children, className, ...props }: React.ComponentProps<"code">) => {
       const rawCode = String(children);
       const code = rawCode.replace(/\n$/, "");
@@ -1353,17 +1348,7 @@ export function createMarkdownComponents(
           );
         }
 
-        const lines = code.split("\n");
-        return (
-          <code {...props} className={CODE_BLOCK_CLASS}>
-            {lines.map((line, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
-              <span key={i} data-line="">
-                {line}
-              </span>
-            ))}
-          </code>
-        );
+        return <PlainCodeBlock {...props} code={code} />;
       }
 
       return (
@@ -1372,37 +1357,6 @@ export function createMarkdownComponents(
         </code>
       );
     },
-    h1: ({ children }) => (
-      <h1 className="text-xl font-semibold leading-8 tracking-tight">
-        {children}
-      </h1>
-    ),
-    h2: ({ children }) => (
-      <h2 className="text-lg font-semibold leading-7 tracking-tight">
-        {children}
-      </h2>
-    ),
-    h3: ({ children }) => (
-      <h3 className="text-base font-semibold leading-6 tracking-tight">
-        {children}
-      </h3>
-    ),
-    h4: ({ children }) => (
-      <h4 className="text-sm font-semibold leading-5 tracking-tight">
-        {children}
-      </h4>
-    ),
-    h5: ({ children }) => (
-      <h5 className="text-sm font-semibold leading-5 tracking-tight">
-        {children}
-      </h5>
-    ),
-    h6: ({ children }) => (
-      <h6 className="text-sm font-medium leading-5 tracking-tight text-muted-foreground">
-        {children}
-      </h6>
-    ),
-    hr: () => <hr className="border-border/80" />,
     img: function MarkdownImage({ alt, src }) {
       const { imetaByUrl } = useMarkdownRuntime();
       const entry = src ? imetaByUrl?.get(src) : undefined;
@@ -1444,10 +1398,6 @@ export function createMarkdownComponents(
       );
     },
     input: MarkdownInput,
-    li: ({ children }) => <li className={listItemClassName}>{children}</li>,
-    ol: ({ children }) => (
-      <ol className={cn("list-decimal", listClassName)}>{children}</ol>
-    ),
     p: function MarkdownParagraph({ children }) {
       const { imetaByUrl } = useMarkdownRuntime();
       // Detect media-only paragraphs (images + <br> from remarkBreaks).
@@ -1477,36 +1427,13 @@ export function createMarkdownComponents(
     },
     pre: ({ children }) => {
       if (!interactive && !blockCode) return <span>{children}</span>;
-      let language = "";
-      React.Children.forEach(children, (child) => {
-        if (
-          React.isValidElement<Record<string, unknown>>(child) &&
-          typeof child.props?.className === "string"
-        ) {
-          language = extractLanguage(child.props.className);
-        }
-      });
       return (
-        <MarkdownCodeBlock language={language}>{children}</MarkdownCodeBlock>
+        <MarkdownCodeBlock language={getCodeBlockLanguage(children)}>
+          {children}
+        </MarkdownCodeBlock>
       );
     },
-    strong: ({ children }) => (
-      <strong className="font-semibold">{children}</strong>
-    ),
     table: ({ children }) => <MarkdownTable>{children}</MarkdownTable>,
-    td: ({ children }) => (
-      <td className="min-w-24 border-t border-border/70 px-3 py-2 align-top">
-        {children}
-      </td>
-    ),
-    th: ({ children }) => (
-      <th className="min-w-24 bg-muted/60 px-3 py-2 align-top font-semibold text-foreground">
-        {children}
-      </th>
-    ),
-    ul: ({ children }) => (
-      <ul className={cn("list-disc", listClassName)}>{children}</ul>
-    ),
     mention: createMarkdownMention(interactive),
     "channel-deep-link": ({ children }: { children?: React.ReactNode }) => (
       <MarkdownChannelDeepLink interactive={interactive}>
@@ -1678,26 +1605,7 @@ function MarkdownInner({
   });
 
   return (
-    <div
-      className={cn(
-        MESSAGE_MARKDOWN_CLASS,
-        [
-          "max-w-none wrap-anywhere text-message font-normal tracking-normal text-foreground",
-          "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-          "[&>*+*]:mt-3",
-          "[&>p+p]:mt-conversation-paragraph [&>ol]:space-y-conversation-list [&>ul]:space-y-conversation-list",
-          "[&>*+h1]:mt-3.5 [&>*+h2]:mt-3.5 [&>*+h3]:mt-3.5 [&>*+h4]:mt-3.5 [&>*+h5]:mt-3.5 [&>*+h6]:mt-3.5",
-          "[&>h1+*]:mt-0.5 [&>h2+*]:mt-0.5 [&>h3+*]:mt-0.5 [&>h4+*]:mt-0.5 [&>h5+*]:mt-0.5 [&>h6+*]:mt-0.5",
-          "[&>h1+h2]:mt-1.5! [&>h2+h3]:mt-1.5! [&>h3+h4]:mt-1.5! [&>h4+h5]:mt-1.5! [&>h5+h6]:mt-1.5!",
-          "[&>*+blockquote]:mt-3.5 [&>blockquote+*]:mt-3.5",
-          "[&>*+[data-code-block]]:mt-3.5 [&>[data-code-block]+*]:mt-3.5",
-          "[&>*+[data-table-block]]:mt-3.5 [&>[data-table-block]+*]:mt-3.5",
-          "[&>*+hr]:mt-4 [&>hr+*]:mt-4",
-          "[&>p+ul]:mt-1.5 [&>p+ol]:mt-1.5 [&>div+ul]:mt-1.5 [&>div+ol]:mt-1.5",
-        ].join(" "),
-        className,
-      )}
-    >
+    <MessageBody className={cn(MESSAGE_BODY_CLASS_NAME, className)}>
       <MarkdownRuntimeContext.Provider value={runtime}>
         <VideoReviewMarkdownContext.Provider value={videoReviewContext}>
           {markdownNode}
@@ -1708,7 +1616,7 @@ function MarkdownInner({
           />
         </VideoReviewMarkdownContext.Provider>
       </MarkdownRuntimeContext.Provider>
-    </div>
+    </MessageBody>
   );
 }
 

@@ -25,9 +25,6 @@ export default defineConfig(async () => {
       alias: {
         "@": "/src",
       },
-      // client-kit 以本地路径依赖（link:）接入（ADR-16）。pnpm 的布局要求按真实路径解析，
-      // 共用包里的裸依赖因此以本项目为起点解析：只打包一份 React
-      dedupe: ["react", "react-dom", "@client-kit/contracts"],
     },
 
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

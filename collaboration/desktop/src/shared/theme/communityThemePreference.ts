@@ -1,6 +1,6 @@
 import { normalizeRelayUrl } from "@/features/profile/lib/selfProfileStorage";
 import { ACCENT_COLORS } from "./ThemeProvider";
-import { SYNTAX_THEMES, type SyntaxThemeName } from "./theme-loader";
+import { SYNTAX_THEMES, type SyntaxThemeName } from "@client-kit/platform/theme/theme-loader";
 
 const STORAGE_KEY_PREFIX = "buzz-community-theme.v1";
 const MIGRATION_KEY_PREFIX = "buzz-community-theme-migrated.v1";

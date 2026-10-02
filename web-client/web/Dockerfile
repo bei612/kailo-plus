@@ -6,6 +6,7 @@ COPY client-kit/ts/contracts /src/client-kit/ts/contracts
 COPY client-kit/ts/platform /src/client-kit/ts/platform
 WORKDIR /src/web-client/web
 COPY web-client/web/package.json web-client/web/package-lock.json ./
+COPY web-client/web/.npmrc ./
 RUN npm ci
 
 COPY web-client/web/ ./

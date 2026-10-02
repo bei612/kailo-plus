@@ -4,14 +4,29 @@
 // 这里按消息的 NIP-92 imeta 把正文里的媒体地址对应到 sha256，再从 BFF 取：
 // 同源、凭网关 cookie，不需要 object URL。正文里没有 imeta 背书的媒体地址
 // 一律当普通链接——不拿任意外部地址当图片加载（CSP 也不允许）。
+import {
+  dimensionsFromDim,
+  MESSAGE_BODY_CLASS_NAME,
+  MESSAGE_BODY_COMPONENTS,
+  MessageBody,
+  PlainCodeBlock,
+  SyntaxHighlightedCode,
+  extractLanguage,
+} from "@client-kit/platform/react/message-body";
+import {
+  BUZZ_DARK_THEME_NAME,
+  BUZZ_THEME_NAME,
+  resolveShikiThemeName,
+} from "@client-kit/platform/theme/theme-loader";
 import { Bot, Download, ImageOff } from "lucide-react";
-import { createContext, useContext, useState } from "react";
+import { type ComponentProps, createContext, useContext, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMentions from "@/features/chat/lib/remark-mentions";
 import { mediaUrl } from "@/platform/bff-client";
 import { t } from "@/shared/i18n";
+import { useTheme } from "@/shared/theme/ThemeProvider";
 
 const IMAGE_MAX_WIDTH = 384;
 const IMAGE_MAX_HEIGHT = 256;
@@ -42,17 +57,6 @@ function useMarkdownRenderContext(): MarkdownRenderContextValue {
   return context;
 }
 
-function dimensionsFromDim(value: string | undefined): ImageDimensions | null {
-  const match = value?.match(/^(\d+)x(\d+)$/i);
-  if (!match) return null;
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    return null;
-  }
-  return { width, height };
-}
-
 /** url → imeta。没有 `x`（sha256）的条目不算：BFF 只按 hash 取媒体。 */
 function imetaMedia(mediaTags: readonly (readonly string[])[] | undefined) {
   const media = new Map<string, ImetaMedia>();
@@ -66,7 +70,7 @@ function imetaMedia(mediaTags: readonly (readonly string[])[] | undefined) {
     media.set(url, {
       sha256: sha256.toLowerCase(),
       mime: field("m") ?? "",
-      dimensions: dimensionsFromDim(field("dim")),
+      dimensions: dimensionsFromDim(field("dim")) ?? null,
     });
   }
   return media;
@@ -186,7 +190,38 @@ function MarkdownMention({ children }: { children?: React.ReactNode }) {
   );
 }
 
+function ThemedCodeBlock({ code, language, ...props }: {
+  code: string;
+  language: string;
+} & ComponentProps<"code">) {
+  const { isDark } = useTheme();
+  return (
+    <SyntaxHighlightedCode
+      {...props}
+      code={code}
+      language={language}
+      shikiTheme={resolveShikiThemeName(isDark ? BUZZ_DARK_THEME_NAME : BUZZ_THEME_NAME)}
+    />
+  );
+}
+
+function MarkdownCode({ children, className, node: _node, ...props }: ComponentProps<"code"> & { node?: unknown }) {
+  const rawCode = String(children);
+  const code = rawCode.replace(/\n$/, "");
+  const isFencedCodeBlock =
+    typeof className === "string" && className.includes("language-");
+  if (isFencedCodeBlock || rawCode.endsWith("\n") || code.includes("\n")) {
+    const language = extractLanguage(className);
+    return language
+      ? <ThemedCodeBlock {...props} code={code} language={language} />
+      : <PlainCodeBlock {...props} code={code} />;
+  }
+  return <code {...props} className={className}>{children}</code>;
+}
+
 const MARKDOWN_COMPONENTS = {
+  ...MESSAGE_BODY_COMPONENTS,
+  code: MarkdownCode,
   img: MarkdownImage,
   a: MarkdownLink,
   mention: MarkdownMention,
@@ -222,14 +257,14 @@ export function MessageContent({
 
   return (
     <MarkdownRenderContext.Provider value={{ mediaByUrl, mentionsByName, workspaceId }}>
-      <div className="buzz-message-markdown">
+      <MessageBody className={`${MESSAGE_BODY_CLASS_NAME} buzz-message-markdown`}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkBreaks, [remarkMentions, { mentionNames }]]}
           components={MARKDOWN_COMPONENTS}
         >
           {displayContent(content)}
         </ReactMarkdown>
-      </div>
+      </MessageBody>
     </MarkdownRenderContext.Provider>
   );
 }

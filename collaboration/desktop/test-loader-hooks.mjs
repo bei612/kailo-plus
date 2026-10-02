@@ -7,13 +7,6 @@ const srcRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "src",
 );
-const projectUrl = pathToFileURL(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "package.json"),
-).href;
-// client-kit 的真实位置（链接目标），与 package.json 的 link: 依赖一致
-const clientKitUrl = pathToFileURL(
-  `${path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../client-kit")}/`,
-).href;
 
 // `nextResolve` requires specifiers to be URLs or relative paths. Passing an
 // absolute filesystem path happens to work on POSIX (node coerces it), but on
@@ -86,17 +79,6 @@ export function resolve(specifier, context, nextResolve) {
       shortCircuit: true,
       url: `${STUB_URL_PREFIX}${specifier}`,
     };
-  }
-  // client-kit 以本地路径依赖接入（ADR-16）。node 按真实路径解析链接包，共用包里的裸说明符
-  // （react 等）会落到 client-kit 自己的 node_modules，成为第二份 React；这里改以本项目
-  // 为起点解析，与 Vite 的 preserveSymlinks 同义。
-  if (
-    context.parentURL?.startsWith(clientKitUrl) &&
-    !specifier.startsWith(".") &&
-    !specifier.startsWith("/") &&
-    !specifier.includes(":")
-  ) {
-    return nextResolve(specifier, { ...context, parentURL: projectUrl });
   }
   if (specifier.startsWith("@/")) {
     const stripped = specifier.slice(2);

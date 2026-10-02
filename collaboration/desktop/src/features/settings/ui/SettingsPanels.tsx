@@ -29,7 +29,7 @@ import {
   SYNTAX_THEMES,
   type SyntaxThemeName,
   getThemePair,
-} from "@/shared/theme/theme-loader";
+} from "@client-kit/platform/theme/theme-loader";
 import {
   BUZZ_GRADIENT_STOPS,
   SystemPreferencePreviewFrame,

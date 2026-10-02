@@ -1,5 +1,5 @@
 import type * as React from "react";
-import * as BuzzTheme from "@/app/BuzzThemeSurfaces";
+import * as BuzzTheme from "@client-kit/platform/react/surfaces";
 import { MainInsetProvider } from "@/shared/layout/MainInsetContext";
 import { chromeCssVarDefaults } from "@/shared/layout/chromeLayout";
 import { cn } from "@/shared/lib/cn";

@@ -23,19 +23,20 @@ function hexToRgb(hex: string): RGB {
     hex,
   );
   if (long) {
+    // All three color groups are required by the matched expression.
     return {
-      r: parseInt(long[1], 16),
-      g: parseInt(long[2], 16),
-      b: parseInt(long[3], 16),
+      r: parseInt(long[1]!, 16),
+      g: parseInt(long[2]!, 16),
+      b: parseInt(long[3]!, 16),
     };
   }
 
   const short = /^#?([a-f\d])([a-f\d])([a-f\d])([a-f\d])?$/i.exec(hex);
   if (short) {
     return {
-      r: parseInt(short[1] + short[1], 16),
-      g: parseInt(short[2] + short[2], 16),
-      b: parseInt(short[3] + short[3], 16),
+      r: parseInt(short[1]! + short[1]!, 16),
+      g: parseInt(short[2]! + short[2]!, 16),
+      b: parseInt(short[3]! + short[3]!, 16),
     };
   }
 
@@ -49,11 +50,11 @@ function rgbToHex({ r, g, b }: RGB): string {
 
 export function luminance(hex: string): number {
   const { r, g, b } = hexToRgb(hex);
-  const [rs, gs, bs] = [r, g, b].map((c) => {
+  const linearize = (c: number) => {
     const s = c / 255;
     return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+  };
+  return 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
 }
 
 function mix(hex1: string, hex2: string, factor: number): string {
@@ -263,4 +264,22 @@ export function createThemeVars(
       "--ui-warning-bg": overlay(accentOrange, isDark ? 0.1 : 0.08),
     },
   };
+}
+
+const VIDEO_REVIEW_NEUTRAL_ACCENT = "0 0% 98%";
+
+/** Apply Buzz's neutral accent from the installed semantic theme palette. */
+export function applyNeutralThemeAccent(root: HTMLElement): void {
+  const styles = window.getComputedStyle(root);
+  const foreground = styles.getPropertyValue("--foreground").trim();
+  const background = styles.getPropertyValue("--background").trim();
+  root.style.setProperty("--buzz-selected-accent", foreground);
+  root.style.setProperty("--buzz-video-review-accent", VIDEO_REVIEW_NEUTRAL_ACCENT);
+  root.style.setProperty("--buzz-video-review-accent-foreground", VIDEO_REVIEW_NEUTRAL_ACCENT);
+  root.style.setProperty("--primary", foreground);
+  root.style.setProperty("--primary-foreground", background);
+  root.style.setProperty("--sidebar-primary", foreground);
+  root.style.setProperty("--sidebar-primary-foreground", background);
+  root.style.setProperty("--sidebar-active", foreground);
+  root.style.setProperty("--sidebar-active-foreground", background);
 }

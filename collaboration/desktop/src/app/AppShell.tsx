@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Outlet, useLocation } from "@tanstack/react-router";
 import { deriveShellRoute, markAllReadSources } from "@/app/AppShell.helpers";
-import * as BuzzTheme from "@/app/BuzzThemeSurfaces";
+import * as BuzzTheme from "@client-kit/platform/react/surfaces";
 import { AppShellProvider } from "@/app/AppShellContext";
 import { AppShellChannelSurface } from "@/app/AppShellChannelSurface";
 import { AppTopChrome } from "@/app/AppTopChrome";

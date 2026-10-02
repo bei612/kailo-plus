@@ -229,7 +229,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:a02068e5cda2d2feb8a62f7e0d33468eb928a9eb55f9a1a1486f0ea9c86da23c
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:3700b743b341d05ae2ddaae388954634c2381a5b10877c565021f3e6a7ca0bea
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -248,7 +248,7 @@ services:
   # 镜像是带 SS-BUZ-GOVERNANCE 改动的本仓库构建（collaboration/），不是上游
   # 发布镜像：上游的 NIP-29 权限比平台宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:a02068e5cda2d2feb8a62f7e0d33468eb928a9eb55f9a1a1486f0ea9c86da23c
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:3700b743b341d05ae2ddaae388954634c2381a5b10877c565021f3e6a7ca0bea
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
@@ -494,7 +494,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:0a4337391293aa22b38b72802470640f2968ab74095e20771c66a2ec94883011
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:ad82d6e69049b2d7bccbc4f4a0c6e2079fcdc06fff1c58c39beb9f49e845bcf7
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}

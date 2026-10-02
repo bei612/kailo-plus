@@ -838,3 +838,7 @@
   /* WebKit otherwise paints an opaque page canvas above native vibrancy. */
   background: transparent;
 }
+
+/* The app persists its selected theme on the root `.dark` class. Use that
+   class, rather than the system preference, for every `dark:` utility. */
+@custom-variant dark (&:where(.dark, .dark *));

@@ -4,7 +4,8 @@
 // 全部数据经 BFF；这个文件里没有 Relay 地址、没有 signer、没有 Nostr filter。
 //
 // 成员、审计、设备、任务、审批五页是 Web 与 Desktop 共用的同一份组件（@client-kit/platform，
-// ADR-09），这里只提供 Web 的外壳：Workspace 选择、收藏/静音、频道与退出。
+// ADR-09）。导航与内容展示也消费 Desktop 提取的同一份源；这里仅保留 Web 的
+// Workspace 选择、收藏/静音、频道与退出接线。
 //
 // 未启用的能力不在这里出现。不渲染一个点进去说「未启用」的入口——
 // 那是把阻断项做成了可见功能。
@@ -13,10 +14,24 @@ import { type PlatformSessionView, ReasonCode } from "@client-kit/contracts";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { ApprovalsPage, TasksPage } from "@client-kit/platform/react/governance";
 import { RedemptionProgress, TenantInvitations } from "@client-kit/platform/react/invitations";
+import {
+  PlatformNavigation,
+  type PlatformNavigationSection,
+} from "@client-kit/platform/react/navigation";
 import { AuditPage, DevicesPage, MembersPane } from "@client-kit/platform/react/pages";
 import { LegacySecretRefManagement, RoleManagement } from "@client-kit/platform/react/roles";
+import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellOff, Star } from "lucide-react";
+import {
+  BellOff,
+  ClipboardCheck,
+  Hash,
+  History,
+  ListChecks,
+  MonitorSmartphone,
+  Star,
+  Users,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
@@ -24,7 +39,7 @@ import { platformQueries } from "@/platform/ui/queries";
 import { getLocale, t } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 
-type Tab = "channel" | "members" | "tasks" | "approvals" | "devices" | "audit";
+type Tab = "channel" | PlatformNavigationSection;
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -159,82 +174,122 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     );
 
   return (
-    <div className="flex h-dvh flex-col">
-      <header className="flex items-center gap-3 border-b px-4 py-2 text-sm">
-        <strong>{t("platform.title")}</strong>
-        {/* 没有可进入的 Workspace 就不画选择器：一个空下拉框什么也选不了 */}
-        {rows.length > 0 ? (
-          <select
-            aria-label={t("platform.workspace")}
-            className="h-8 rounded-md border border-input bg-transparent px-2"
-            value={active ?? ""}
-            onChange={(e) => setChosen(e.target.value || null)}
+    <div className="relative isolate flex h-dvh flex-col overflow-hidden bg-sidebar text-sm">
+      <GradientLayer />
+      <div className="relative z-10 flex h-9 shrink-0 items-center px-4 font-semibold">
+        {t("platform.title")}
+      </div>
+      <div className="flex min-h-0 flex-1">
+        <aside
+          aria-label={t("platform.title")}
+          className="relative z-10 flex w-[300px] shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground"
+          data-testid="app-sidebar"
+        >
+          <nav
+            aria-label={t("platform.title")}
+            className="shrink-0 px-2"
+            data-testid="sidebar-primary-menu"
           >
-            {rows.map((w) => (
-              <option key={w.id} value={w.id}>
-                {prefs[w.id]?.starred ? `★ ${w.name}` : w.name}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        {active && userState.isSuccess ? (
-          <>
-            <Button
-              aria-label={t("platform.star")}
-              aria-pressed={pref?.starred ?? false}
-              disabled={preference.isPending}
-              size="icon"
-              type="button"
-              variant="ghost"
-              onClick={() =>
-                preference.mutate({
-                  starred: !(pref?.starred ?? false),
-                  muted: pref?.muted ?? false,
-                })
+            <PlatformNavigation
+              locale={getLocale()}
+              selectedSection={tab === "channel" ? null : tab}
+              onSelectSection={setTab}
+              icons={{
+                members: <Users className="h-4 w-4" />,
+                tasks: <ListChecks className="h-4 w-4" />,
+                approvals: <ClipboardCheck className="h-4 w-4" />,
+                audit: <History className="h-4 w-4" />,
+                devices: <MonitorSmartphone className="h-4 w-4" />,
+              }}
+              firstRow={
+                <li className="group/menu-item relative" data-sidebar="menu-item">
+                  <Button
+                    aria-pressed={tab === "channel"}
+                    className="h-8 w-full justify-start gap-2 text-left font-normal"
+                    data-testid="sidebar-channel"
+                    data-sidebar="menu-button"
+                    data-active={tab === "channel"}
+                    size="sm"
+                    type="button"
+                    variant={tab === "channel" ? "secondary" : "ghost"}
+                    onClick={() => setTab("channel")}
+                  >
+                    <Hash className="h-4 w-4" />
+                    {t("platform.tab.channel")}
+                  </Button>
+                </li>
               }
-            >
-              <Star className={pref?.starred ? "fill-current" : undefined} />
-            </Button>
-            <Button
-              aria-label={t("platform.mute")}
-              aria-pressed={pref?.muted ?? false}
-              disabled={preference.isPending}
-              size="icon"
-              type="button"
-              variant="ghost"
-              onClick={() =>
-                preference.mutate({
-                  starred: pref?.starred ?? false,
-                  muted: !(pref?.muted ?? false),
-                })
-              }
-            >
-              <BellOff className={pref?.muted ? undefined : "opacity-40"} />
-            </Button>
-          </>
-        ) : null}
-        <nav className="flex gap-1">
-          {(["channel", "members", "tasks", "approvals", "devices", "audit"] as const).map(
-            (name) => (
-              <Button
-                key={name}
-                aria-pressed={tab === name}
-                size="sm"
-                type="button"
-                variant={tab === name ? "secondary" : "ghost"}
-                onClick={() => setTab(name)}
+            />
+          </nav>
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto px-3 py-2">
+            {/* 没有可进入的 Workspace 就不画选择器：一个空下拉框什么也选不了 */}
+            {rows.length > 0 ? (
+              <select
+                aria-label={t("platform.workspace")}
+                className="h-8 w-full min-w-0 rounded-md border border-input bg-transparent px-2"
+                value={active ?? ""}
+                onChange={(e) => setChosen(e.target.value || null)}
               >
-                {tabLabel(name)}
-              </Button>
-            ),
-          )}
-        </nav>
-        <span className="ml-auto text-muted-foreground">{session.displayName}</span>
-        <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
-          {t("platform.signOut")}
-        </Button>
-      </header>
-      <main className="min-h-0 flex-1 overflow-auto p-4 text-sm">{body}</main>
+                {rows.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {prefs[w.id]?.starred ? `★ ${w.name}` : w.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {active && userState.isSuccess ? (
+              <div className="flex items-center gap-1">
+                <Button
+                  aria-label={t("platform.star")}
+                  aria-pressed={pref?.starred ?? false}
+                  disabled={preference.isPending}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                  onClick={() =>
+                    preference.mutate({
+                      starred: !(pref?.starred ?? false),
+                      muted: pref?.muted ?? false,
+                    })
+                  }
+                >
+                  <Star className={pref?.starred ? "fill-current" : undefined} />
+                </Button>
+                <Button
+                  aria-label={t("platform.mute")}
+                  aria-pressed={pref?.muted ?? false}
+                  disabled={preference.isPending}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                  onClick={() =>
+                    preference.mutate({
+                      starred: pref?.starred ?? false,
+                      muted: !(pref?.muted ?? false),
+                    })
+                  }
+                >
+                  <BellOff className={pref?.muted ? undefined : "opacity-40"} />
+                </Button>
+              </div>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2 p-3">
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">
+              {session.displayName}
+            </span>
+            <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
+              {t("platform.signOut")}
+            </Button>
+          </div>
+        </aside>
+        <ContentSurface>
+          <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
+            {tabLabel(tab)}
+          </header>
+          <main className="min-h-0 flex-1 overflow-auto p-4">{body}</main>
+        </ContentSurface>
+      </div>
     </div>
   );
 }

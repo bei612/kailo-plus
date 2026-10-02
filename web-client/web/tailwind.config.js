@@ -2,6 +2,19 @@
 export default {
   theme: {
     extend: {
+      fontSize: {
+        message: [
+          "var(--conversation-message-font-size)",
+          { lineHeight: "var(--conversation-message-line-height)" },
+        ],
+      },
+      spacing: {
+        "conversation-list": "var(--conversation-list-item-gap)",
+        "conversation-paragraph": "var(--conversation-paragraph-gap)",
+      },
+      boxShadow: {
+        "content-edge": "-1px -1px 0 0 hsl(var(--sidebar-border) / 0.45)",
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
@@ -49,6 +62,8 @@ export default {
           foreground: "hsl(var(--sidebar-foreground))",
           primary: "hsl(var(--sidebar-primary))",
           "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
+          active: "hsl(var(--sidebar-active))",
+          "active-foreground": "hsl(var(--sidebar-active-foreground))",
           accent: "hsl(var(--sidebar-accent))",
           "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
           border: "hsl(var(--sidebar-border))",
