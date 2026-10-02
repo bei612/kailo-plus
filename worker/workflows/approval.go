@@ -34,6 +34,10 @@ const waitingApproval = string(generated.WaitingApproval)
 // continue-as-new，重放走原来的命令序列。
 const changeApprovalContinueAsNew = "approval-continue-as-new"
 
+// changeApprovalOwnerRequirements 门控 owner 判定：旧 history 保留非 NONE 不满足的
+// 原行为；新 run 按 Core 冻结并 fresh 核验的 owner 清单计数（DD-47/69）。
+const changeApprovalOwnerRequirements = "approval-owner-requirements"
+
 // errContinueAsNew 是「此处需要续跑」的内部信号：写回循环在 Server 建议续跑时以它
 // 返回，由主协程在安全点排空 handler 后续跑。它从不离开本 Workflow。
 var errContinueAsNew = errors.New("审批需要 continue-as-new")
@@ -56,6 +60,8 @@ type approval struct {
 	eventBase int64
 	// 本次执行是否启用 continue-as-new（GetVersion 门控的结论）
 	canEnabled bool
+	// 本 run 是否启用冻结 owner 的审批判定，旧 history 不改变命令序列
+	ownerEnabled bool
 	// 已请求续跑：handler 不再发起新的资格判定，主协程排空 handler 后续跑
 	wantCAN bool
 }
@@ -88,32 +94,60 @@ func (a *approval) set(status generated.ApprovalStatus, reason *generated.Reason
 
 func reasonPtr(r generated.ReasonCode) *generated.ReasonCode { return &r }
 
-// satisfied 判定角色要求是否逐项满足：每项各自数不同 approver，同一人可在多个
-// 要求中计数，但只有一个决定（.design/03 §6）。不以总人数替代某一项。
+// satisfied 同时满足冻结 owner 与逐项角色要求：同一 HUMAN 可满足多个要求，但
+// 只有一个已获 Core 准入的不可变决定（.design/03 §6），不以总人数替代某一项。
 func (a *approval) satisfied() bool {
-	if a.in.OwnerRequirement != generated.None {
-		// Core 在请求时已拒绝本切片无法解析的 owner 要求；走到这里说明输入与
-		// Core 的判定不一致，按不满足处理——fail closed
+	if a.in.OwnerRequirement != generated.None && !a.ownerEnabled {
+		// 保留 GetVersion 门控之前的 owner 审批 history 行为。
+		return false
+	}
+	required := len(a.in.RoleRequirements) > 0
+	switch a.in.OwnerRequirement {
+	case generated.None:
+	case generated.AllAffectedOwners:
+		// 同一 owner 的多份 Resource/Asset 引用由同一个决定满足。零资源清单
+		// 不伪造 owner，角色票仍独立必需；零约束不能自动批准。
+		for _, owner := range a.in.AffectedOwnerRefs {
+			d := a.recorded(owner.OwnerPrincipalID)
+			if d == nil || d.Decision != generated.Approve {
+				return false
+			}
+			required = true
+		}
+	case generated.TargetOwner:
+		if len(a.in.AffectedOwnerRefs) != 1 {
+			return false
+		}
+		owner := a.in.AffectedOwnerRefs[0]
+		if owner.TargetType != a.in.TargetType || owner.TargetID != a.in.TargetID {
+			return false
+		}
+		d := a.recorded(owner.OwnerPrincipalID)
+		if d == nil || d.Decision != generated.Approve {
+			return false
+		}
+		required = true
+	default:
 		return false
 	}
 	for _, req := range a.in.RoleRequirements {
-		n := int64(0)
+		approvers := map[string]struct{}{}
 		for _, d := range a.decisions {
 			if d.Decision != generated.Approve {
 				continue
 			}
 			for _, s := range d.SatisfiedSelectors {
 				if s == req.Selector {
-					n++
+					approvers[d.ApproverPrincipalID] = struct{}{}
 					break
 				}
 			}
 		}
-		if n < req.MinDistinct {
+		if int64(len(approvers)) < req.MinDistinct {
 			return false
 		}
 	}
-	return len(a.in.RoleRequirements) > 0
+	return required
 }
 
 // validateDecide 是 decide 的 Validator：只做确定性的状态判断，不调度 Activity、
@@ -380,6 +414,10 @@ func Approval(ctx workflow.Context, in generated.ApprovalWorkflowInput) error {
 	}
 	a.canEnabled = workflow.GetVersion(ctx, changeApprovalContinueAsNew,
 		workflow.DefaultVersion, 1) == 1
+	if in.OwnerRequirement != generated.None {
+		a.ownerEnabled = workflow.GetVersion(ctx, changeApprovalOwnerRequirements,
+			workflow.DefaultVersion, 1) == 1
+	}
 
 	project := func() error {
 		return a.projectUntilDone(ctx, func(ao workflow.Context) error {

@@ -229,7 +229,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:a6405922db615e2ada34048a9ea3dbe65037fab3f8a4b22b19e39f4ec33ae977
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:a02068e5cda2d2feb8a62f7e0d33468eb928a9eb55f9a1a1486f0ea9c86da23c
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -248,7 +248,7 @@ services:
   # 镜像是带 SS-BUZ-GOVERNANCE 改动的本仓库构建（collaboration/），不是上游
   # 发布镜像：上游的 NIP-29 权限比平台宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:a6405922db615e2ada34048a9ea3dbe65037fab3f8a4b22b19e39f4ec33ae977
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:a02068e5cda2d2feb8a62f7e0d33468eb928a9eb55f9a1a1486f0ea9c86da23c
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
@@ -494,7 +494,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:6fbd6c35a357b738ead8c4a3b91c49fdfce4e0b48fe6f35ffc3d493c9cb5e480
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:0a4337391293aa22b38b72802470640f2968ab74095e20771c66a2ec94883011
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
@@ -507,7 +507,7 @@ services:
   agentgateway:
     # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:6b8a47a36ab1d090fb9b1924e8e946dafb45b937f02507c36b2bf2e493d746be
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:63a5123aaa5b1969fa273479f4aa406a92b7b6e584d4f1eeebc91db80cd7c591
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个
