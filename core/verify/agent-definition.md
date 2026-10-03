@@ -1,5 +1,33 @@
 # AgentDefinition 与 Resource owner 实现核验
 
+## 2026-10-03 10:46 UTC 源码阶段 push 与最终固定输入检查
+
+源码与后置检查阶段已普通 push 为
+`b16e6dea2a03128956028bb12d4fd3c2c33242c4`；本地与远端 main 精确一致。
+相对 `4b44ac6b266345fbc19e3c315df5c3d9bd0af00b` 为 81 文件、8608+/660-。
+三处 UNKNOWN 修复与实际新 Web 来源已在该提交，不包含 NEXT ReplyPolicy、
+nullable-list 生成器修正或无认证提供方创建增量。push 没有额外图谱或构建门禁。
+
+新 Win11 原 helper 13848 实际退出 0，原 MSVC release 3m28s、NSIS x64 导出完成；
+15,087,570 字节文件独立 SHA 与原 record 为
+`b05f16f10dcde1e0044959ab7f18f2a4c4482ec2596278825659293b141f2725`。
+真实安装包 source/artifact 更新后，固定树
+`a7b752937d5536ff6b1189defca5ffa42d3264e3` 的原
+`tools/check.sh --full`（session 43116）实际退出 0，输出末尾 `全部通过。`。
+SDK 10ad、实际 4CPU/8GiB、swap0、Cargo16、Data 缓存；
+没有宿主工具链、GitNexus、降低 Cargo 并行度或重建已完成的客户端。
+142 schema、四侧生成与兼容、Core/Worker 与 replay、18 条追溯、
+六份上游来源和六个当前源码产物通过；本次供应链检查实际发现两组证明。
+数据库及实际 `.env` 预检仍 SKIP，三项外部演练 ignored，未安装 gitleaks 而用原内置扫描。
+
+原件：`/volumes/data/kailo/tmp/codex-agent-management-close-20261003.8e3wdG/full-final.log`，
+SHA-256 `233641a20064aa24729531f7b14e2b3e1faefb21ed1830f1002178f0e9d01e06`。
+阶段文档快路径原件 `checkpoint-docs.log` 实际退出 0，SHA-256
+`5d23f7540db9acdcf1ed31577d2e0850f2cc83effeecb43e033f44c15f5e2ca8`。
+此前 full1、修正 full0 与两次断言错误均保留，不用本次结果改写历史。
+安装包仍 unsigned，未 Win11 安装/登录/持钥；尚未部署本管理批或执行真实
+Agent/LLM/工具/Memory/计量终态，生产就绪与端侧验收门禁未解除。
+
 ## 2026-10-03 10:05 UTC 完整检查通过与 UNKNOWN 真实修复
 
 固定树 `0c07ea4e6c8031ce0dac47403c676c597fda58cc` 的原

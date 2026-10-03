@@ -374,3 +374,44 @@ SHA-256 `4ea43390e376d57a6573c079bfa916d3d5245b55b868bf8bd57bccb42a2db5e6`。
 指针修正树 `433be885faead1e95072e10ca447d36b660a1fa7` 的原 full 实际退出 0；
 日志 SHA `b6557aced681ee364ede8f722761a1e7a4c76835267f09d29962b95efa738210`。
 数据库/.env SKIP、三项演练 ignored；本包仍 unsigned、未 Win11 安装或业务验收。
+
+## 2026-10-03 10:38 UTC：共享管理 UNKNOWN 修正后的 Win11 原产物
+
+本次只消费 8e3 私有选定输入的旧契约和当前共享主体，不包含 formal NEXT。
+沿 DD-74/75/78 与既定 Governed Action 的 UNKNOWN 边界，修正 Installation、
+Delegation、Version 三个实际消费者：曾结果不明的请求在后续 403/409 或传输
+失败后仍保留原命令、幂等键、已知 AE/Operation、锁与未知呈现，不开放取消。
+首次明确拒绝仍可解除，Version 编辑表单可按真实 Cancel request 关闭。
+没有新增客户端权威、状态、接口、原生身份或 sidecar。
+
+实现后的原三消费者类型和平台 148/148 检查退出 0；私有副本实际破坏三处
+生产 UNKNOWN guard 时，六个重查用例均失败、原 vitest 退出 1。
+按 SHA 精确还原后同完整目标退出 0，原两轮断言错误和导出失败保留。
+这些是共享交互/类型证据，不是 Windows 设备或 Agent 执行业务验收。
+原件目录为 `/volumes/data/kailo/tmp/codex-shared-management-unknown-fix-20261003.Ew1h5v/`，
+最终 `sdk-restored-final.log` SHA-256 为
+`e534e8550feea30701f8a59f6d58754ff58afb59611f93ae149c8c484604f277`。
+
+原 `tools/build-upstream.sh desktop-client` 的 helper 13848 实际退出 0，
+固定 cargo-xwin0.23.1/MSVC 目标 release 编译为 3m28s，原 NSIS 验证和
+唯一 bundle 导出完成。2255 个输入的原算法 source 为
+`sha256:6243945683bd87a306e8e1194ba295f2b08d4e3b599b380bc2b229293a8eb356`；
+artifact 为
+`sha256:b05f16f10dcde1e0044959ab7f18f2a4c4482ec2596278825659293b141f2725`。
+安装包 `dist/desktop-client/Kailo_0.5.23_x64-setup.exe` 为 15,087,570 字节、
+mode644，文件 SHA 与原 helper record 逐字一致。NSIS 外层是 PE32 launcher，
+实际 Rust 目标和 NSIS Target 均为 x64；不拿 Linux 包替代 Windows 包。
+Web 与 Desktop 的原 source 前后逐字一致；没有手调摘要、lock 或输入集合。
+
+原件目录为 `/volumes/data/kailo/tmp/codex-agent-management-web-win-20261003.yUA7u9/`，
+`win-unknown-fix-helper.log` SHA-256 为
+`8f0cfaa110797b98221345b302e856fdaff7266d36c70756be9b4b994ffbc9ec`。
+既有 kailo-core-data 实际 8CPU/16GiB/swap0、Data 缓存，原安全预检通过，
+未降低 Cargo 并行度。工具层实际未命中缓存，APT/Rust/cargo-xwin 安装输出
+完整保留；原继承的 diffy0.5.2 解析与两项 native 未用符号警告亦保留。
+
+四步结论：权威沿用既定动作和端边界；影响仅同一管理主体及两端产物；
+外发仍经原 BFF、不变更原生持钥；结果不明只对账同一请求，不生成替代意图。
+本节仅记录私有构建和实现后检查，不声称 full、Git、部署或三端通过。
+原实验性交叉编译、跳过签名及 NSIS charset 警告保留：本包 unsigned，
+没有 Win11 安装、登录、持钥、真实 Agent/Memory/计量 E2E 或签名 release 验收。

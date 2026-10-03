@@ -4,7 +4,20 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 最新实现状态（2026-10-03 10:05 UTC，Agent 管理批）
+## 最新交付事实（2026-10-03 10:46 UTC，Agent 管理批）
+
+源码阶段已普通 push 为 `b16e6dea2a03128956028bb12d4fd3c2c33242c4`；
+相对 Memory 批为 81 文件、8608 行新增、660 行删除。Web/Desktop 共用管理主体。
+随后新 Win11 原 helper 实际退出 0，unsigned x64 安装包 15,087,570 字节；
+真实 source/artifact 已对齐。固定树 `a7b752937d5536ff6b1189defca5ffa42d3264e3`
+的原 `tools/check.sh --full` 实际退出 0：142 schema、四侧、Core/Worker/replay、
+18 条追溯、六份来源与六个当前源码产物通过。原日志 SHA-256 为
+`233641a20064aa24729531f7b14e2b3e1faefb21ed1830f1002178f0e9d01e06`。
+数据库和实际 `.env` 仍 SKIP、三项外部演练 ignored；未部署新管理批，
+设备/签名与实际 Agent 模型、工具、Memory、用量闭环未验收，不称生产就绪。
+下一批 ReplyPolicy、生成器与无认证提供方接入不在本次 full 或源码提交内。
+
+## 本批源码阶段状态（2026-10-03 10:05 UTC，Agent 管理批）
 
 修正后固定树 `0c07ea4e6c8031ce0dac47403c676c597fda58cc` 的原完整检查
 已实际退出 0：132 schema、四侧、Core/Worker/replay、18 条追溯与真实产物来源通过。
