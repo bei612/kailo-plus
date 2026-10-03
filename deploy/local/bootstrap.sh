@@ -19,17 +19,33 @@ cd "$(dirname "$0")"
   "${OPENMETER_CUSTOMERS_URL:?缺少 OPENMETER_CUSTOMERS_URL}" "${OPENMETER_NAMESPACE:?缺少 OPENMETER_NAMESPACE}" \
   "${OPENMETER_HTTP_TIMEOUT_SECONDS:?缺少 OPENMETER_HTTP_TIMEOUT_SECONDS}" \
   "${OPENMETER_CORE_TOKEN_FILE:?缺少 OPENMETER_CORE_TOKEN_FILE}" \
+  "${OPENMETER_CONFIG_FILE:?缺少 OPENMETER_CONFIG_FILE}" \
   "${OPENMETER_DB_NAME:?缺少 OPENMETER_DB_NAME}" "${OPENMETER_DB_USER:?缺少 OPENMETER_DB_USER}" \
   "${OPENMETER_CLICKHOUSE_DB_NAME:?缺少 OPENMETER_CLICKHOUSE_DB_NAME}" \
   "${OPENMETER_CLICKHOUSE_USER:?缺少 OPENMETER_CLICKHOUSE_USER}" \
   "${OPENMETER_KAFKA_CLUSTER_ID:?缺少 OPENMETER_KAFKA_CLUSTER_ID}" \
+  "${OPENMETER_REDIS_PORT:?缺少 OPENMETER_REDIS_PORT}" \
+  "${OPENMETER_REDIS_DATABASES:?缺少 OPENMETER_REDIS_DATABASES}" \
+  "${OPENMETER_INGRESS_DEDUPE_DATABASE:?缺少 OPENMETER_INGRESS_DEDUPE_DATABASE}" \
+  "${OPENMETER_SINK_DEDUPE_DATABASE:?缺少 OPENMETER_SINK_DEDUPE_DATABASE}" \
+  "${OPENMETER_DEDUPE_EXPIRATION:?缺少 OPENMETER_DEDUPE_EXPIRATION}" \
+  "${OPENMETER_REDIS_MAXMEMORY:?缺少 OPENMETER_REDIS_MAXMEMORY}" \
+  "${OPENMETER_SINK_TELEMETRY_PORT:?缺少 OPENMETER_SINK_TELEMETRY_PORT}" \
+  "${OPENMETER_REDIS_HEALTH_INTERVAL_SECONDS:?缺少 OPENMETER_REDIS_HEALTH_INTERVAL_SECONDS}" \
+  "${OPENMETER_REDIS_HEALTH_TIMEOUT_SECONDS:?缺少 OPENMETER_REDIS_HEALTH_TIMEOUT_SECONDS}" \
+  "${OPENMETER_REDIS_HEALTH_RETRIES:?缺少 OPENMETER_REDIS_HEALTH_RETRIES}" \
+  "${OPENMETER_SINK_HEALTH_INTERVAL_SECONDS:?缺少 OPENMETER_SINK_HEALTH_INTERVAL_SECONDS}" \
+  "${OPENMETER_SINK_HEALTH_TIMEOUT_SECONDS:?缺少 OPENMETER_SINK_HEALTH_TIMEOUT_SECONDS}" \
+  "${OPENMETER_SINK_HEALTH_RETRIES:?缺少 OPENMETER_SINK_HEALTH_RETRIES}" \
   "${OPENMETER_API_CPUS:?缺少 OPENMETER_API_CPUS}" "${OPENMETER_API_MEMORY:?缺少 OPENMETER_API_MEMORY}" \
   "${OPENMETER_KAFKA_CPUS:?缺少 OPENMETER_KAFKA_CPUS}" "${OPENMETER_KAFKA_MEMORY:?缺少 OPENMETER_KAFKA_MEMORY}" \
   "${OPENMETER_KAFKA_HEAP_OPTS:?缺少 OPENMETER_KAFKA_HEAP_OPTS}" \
   "${OPENMETER_CLICKHOUSE_CPUS:?缺少 OPENMETER_CLICKHOUSE_CPUS}" "${OPENMETER_CLICKHOUSE_MEMORY:?缺少 OPENMETER_CLICKHOUSE_MEMORY}" \
-  "${OPENMETER_POSTGRES_CPUS:?缺少 OPENMETER_POSTGRES_CPUS}" "${OPENMETER_POSTGRES_MEMORY:?缺少 OPENMETER_POSTGRES_MEMORY}"
-# 本地拓扑导入 Keycloak realm；issuer 的 realm 必须与导入对象完全相同。
+  "${OPENMETER_POSTGRES_CPUS:?缺少 OPENMETER_POSTGRES_CPUS}" "${OPENMETER_POSTGRES_MEMORY:?缺少 OPENMETER_POSTGRES_MEMORY}" \
+  "${OPENMETER_SINK_CPUS:?缺少 OPENMETER_SINK_CPUS}" "${OPENMETER_SINK_MEMORY:?缺少 OPENMETER_SINK_MEMORY}" \
+  "${OPENMETER_REDIS_CPUS:?缺少 OPENMETER_REDIS_CPUS}" "${OPENMETER_REDIS_MEMORY:?缺少 OPENMETER_REDIS_MEMORY}"
 : "${AGENT_MEMORY_READ_TIMEOUT_SECONDS:?缺少 AGENT_MEMORY_READ_TIMEOUT_SECONDS}"
+# 本地拓扑导入 Keycloak realm；issuer 的 realm 必须与导入对象完全相同。
 # PUBLIC_ORIGIN 是浏览器入口的唯一根地址，回调与邀请页均从它派生。
 OIDC_ISSUER="$OIDC_ISSUER" OIDC_REALM="$OIDC_REALM" PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
 PUBLIC_HOST="$PUBLIC_HOST" OIDC_HOST="$OIDC_HOST" BUZZ_RELAY_HOST="$BUZZ_RELAY_HOST" \
@@ -41,20 +57,37 @@ OPENMETER_HOST="$OPENMETER_HOST" OPENMETER_API_PORT="$OPENMETER_API_PORT" \
 OPENMETER_CUSTOMERS_URL="$OPENMETER_CUSTOMERS_URL" OPENMETER_NAMESPACE="$OPENMETER_NAMESPACE" \
 OPENMETER_HTTP_TIMEOUT_SECONDS="$OPENMETER_HTTP_TIMEOUT_SECONDS" \
 OPENMETER_CORE_TOKEN_FILE="$OPENMETER_CORE_TOKEN_FILE" \
+OPENMETER_CONFIG_FILE="$OPENMETER_CONFIG_FILE" \
 OPENMETER_DB_NAME="$OPENMETER_DB_NAME" OPENMETER_DB_USER="$OPENMETER_DB_USER" \
 OPENMETER_CLICKHOUSE_DB_NAME="$OPENMETER_CLICKHOUSE_DB_NAME" OPENMETER_CLICKHOUSE_USER="$OPENMETER_CLICKHOUSE_USER" \
 OPENMETER_KAFKA_CLUSTER_ID="$OPENMETER_KAFKA_CLUSTER_ID" \
+OPENMETER_REDIS_PORT="$OPENMETER_REDIS_PORT" OPENMETER_REDIS_DATABASES="$OPENMETER_REDIS_DATABASES" \
+OPENMETER_INGRESS_DEDUPE_DATABASE="$OPENMETER_INGRESS_DEDUPE_DATABASE" \
+OPENMETER_SINK_DEDUPE_DATABASE="$OPENMETER_SINK_DEDUPE_DATABASE" \
+OPENMETER_DEDUPE_EXPIRATION="$OPENMETER_DEDUPE_EXPIRATION" \
+OPENMETER_REDIS_MAXMEMORY="$OPENMETER_REDIS_MAXMEMORY" \
+OPENMETER_SINK_TELEMETRY_PORT="$OPENMETER_SINK_TELEMETRY_PORT" \
+OPENMETER_REDIS_HEALTH_INTERVAL_SECONDS="$OPENMETER_REDIS_HEALTH_INTERVAL_SECONDS" \
+OPENMETER_REDIS_HEALTH_TIMEOUT_SECONDS="$OPENMETER_REDIS_HEALTH_TIMEOUT_SECONDS" \
+OPENMETER_REDIS_HEALTH_RETRIES="$OPENMETER_REDIS_HEALTH_RETRIES" \
+OPENMETER_SINK_HEALTH_INTERVAL_SECONDS="$OPENMETER_SINK_HEALTH_INTERVAL_SECONDS" \
+OPENMETER_SINK_HEALTH_TIMEOUT_SECONDS="$OPENMETER_SINK_HEALTH_TIMEOUT_SECONDS" \
+OPENMETER_SINK_HEALTH_RETRIES="$OPENMETER_SINK_HEALTH_RETRIES" \
 OPENMETER_API_CPUS="$OPENMETER_API_CPUS" OPENMETER_API_MEMORY="$OPENMETER_API_MEMORY" \
 OPENMETER_KAFKA_CPUS="$OPENMETER_KAFKA_CPUS" OPENMETER_KAFKA_MEMORY="$OPENMETER_KAFKA_MEMORY" \
 OPENMETER_KAFKA_HEAP_OPTS="$OPENMETER_KAFKA_HEAP_OPTS" \
 OPENMETER_CLICKHOUSE_CPUS="$OPENMETER_CLICKHOUSE_CPUS" OPENMETER_CLICKHOUSE_MEMORY="$OPENMETER_CLICKHOUSE_MEMORY" \
 OPENMETER_POSTGRES_CPUS="$OPENMETER_POSTGRES_CPUS" OPENMETER_POSTGRES_MEMORY="$OPENMETER_POSTGRES_MEMORY" \
+OPENMETER_SINK_CPUS="$OPENMETER_SINK_CPUS" OPENMETER_SINK_MEMORY="$OPENMETER_SINK_MEMORY" \
+OPENMETER_REDIS_CPUS="$OPENMETER_REDIS_CPUS" OPENMETER_REDIS_MEMORY="$OPENMETER_REDIS_MEMORY" \
 PLATFORM_DISPLAY_NAME="${PLATFORM_DISPLAY_NAME:-}" \
 AGENT_MEMORY_READ_TIMEOUT_SECONDS="$AGENT_MEMORY_READ_TIMEOUT_SECONDS" \
 python3 - <<'PYCONFIG'
 import os
 import re
+from ctypes import c_int, sizeof
 from decimal import Decimal, InvalidOperation
+from fractions import Fraction
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
@@ -127,13 +160,57 @@ if not re.fullmatch(r"[1-9][0-9]*", os.environ["OPENMETER_HTTP_TIMEOUT_SECONDS"]
     raise SystemExit("OPENMETER_HTTP_TIMEOUT_SECONDS 必须是正整数秒")
 if not re.fullmatch(r"[1-9][0-9]*", os.environ["AGENT_MEMORY_READ_TIMEOUT_SECONDS"]):
     raise SystemExit("AGENT_MEMORY_READ_TIMEOUT_SECONDS 必须是正整数秒")
-raw = os.environ["OPENMETER_CORE_TOKEN_FILE"]
-path = PurePosixPath(raw)
-if (invalid_chars(raw) or not raw.startswith("/") or raw.endswith("/")
-        or str(path) != raw or ".." in path.parts):
-    raise SystemExit("OPENMETER_CORE_TOKEN_FILE 必须是规范的容器内绝对文件路径")
+for name in ("OPENMETER_REDIS_HEALTH_INTERVAL_SECONDS", "OPENMETER_REDIS_HEALTH_TIMEOUT_SECONDS",
+             "OPENMETER_REDIS_HEALTH_RETRIES", "OPENMETER_SINK_HEALTH_INTERVAL_SECONDS",
+             "OPENMETER_SINK_HEALTH_TIMEOUT_SECONDS", "OPENMETER_SINK_HEALTH_RETRIES"):
+    if not re.fullmatch(r"[1-9][0-9]*", os.environ[name]):
+        raise SystemExit(f"{name} 必须是正整数")
+paths = {}
+for name in ("OPENMETER_CORE_TOKEN_FILE", "OPENMETER_CONFIG_FILE"):
+    raw = os.environ[name]
+    path = PurePosixPath(raw)
+    if (invalid_chars(raw) or not raw.startswith("/") or raw.endswith("/")
+            or str(path) != raw or ".." in path.parts):
+        raise SystemExit(f"{name} 必须是规范的容器内绝对文件路径")
+    paths[name] = path
+config_path = paths["OPENMETER_CONFIG_FILE"]
+token_path = paths["OPENMETER_CORE_TOKEN_FILE"]
+if config_path.suffix not in (".yaml", ".yml"):
+    raise SystemExit("OPENMETER_CONFIG_FILE 必须是原生 YAML 配置文件路径")
+# API 现有挂载只有 token；sink 无既有挂载。禁止同路径或父子覆盖该文件挂载。
+if (config_path == token_path or token_path in config_path.parents
+        or config_path in token_path.parents):
+    raise SystemExit("OPENMETER_CONFIG_FILE 不得覆盖 OpenMeter token 挂载")
+checked_port("OPENMETER_REDIS_PORT")
+checked_port("OPENMETER_SINK_TELEMETRY_PORT")
+database_values = {}
+for name in ("OPENMETER_REDIS_DATABASES", "OPENMETER_INGRESS_DEDUPE_DATABASE", "OPENMETER_SINK_DEDUPE_DATABASE"):
+    raw = os.environ[name]
+    if not re.fullmatch(r"0|[1-9][0-9]*", raw):
+        raise SystemExit(f"{name} 必须是规范的非负十进制整数")
+    database_values[name] = int(raw)
+database_count = database_values["OPENMETER_REDIS_DATABASES"]
+# Redis databases 配置采用 C int；索引必须小于投递给 Redis 的实际库数量。
+if not 0 < database_count < 1 << (sizeof(c_int) * 8 - 1):
+    raise SystemExit("OPENMETER_REDIS_DATABASES 必须是原生 Redis 可接受的正整数")
+ingress_database = database_values["OPENMETER_INGRESS_DEDUPE_DATABASE"]
+sink_database = database_values["OPENMETER_SINK_DEDUPE_DATABASE"]
+if ingress_database >= database_count or sink_database >= database_count:
+    raise SystemExit("OpenMeter 去重逻辑库必须小于 OPENMETER_REDIS_DATABASES")
+if ingress_database == sink_database:
+    raise SystemExit("OpenMeter ingress 与 sink 去重不可共用逻辑库")
+expiration = os.environ["OPENMETER_DEDUPE_EXPIRATION"]
+duration_part = r"([0-9]+(?:\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h)"
+if expiration != "0" and not re.fullmatch(f"(?:{duration_part})+", expiration):
+    raise SystemExit("OPENMETER_DEDUPE_EXPIRATION 必须是非负的原生 Go duration")
+unit_nanoseconds = {"ns": 1, "us": 1000, "µs": 1000, "μs": 1000,
+                    "ms": 1000000, "s": 1000000000, "m": 60000000000, "h": 3600000000000}
+duration_nanoseconds = sum(int(Fraction(value) * unit_nanoseconds[unit])
+                           for value, unit in re.findall(duration_part, expiration))
+if duration_nanoseconds >= 1 << 63:
+    raise SystemExit("OPENMETER_DEDUPE_EXPIRATION 超出原生 time.Duration 范围")
 memory_values = {}
-for component in ("API", "KAFKA", "CLICKHOUSE", "POSTGRES"):
+for component in ("API", "KAFKA", "CLICKHOUSE", "POSTGRES", "SINK", "REDIS"):
     name = f"OPENMETER_{component}_CPUS"
     try:
         cpus = Decimal(os.environ[name])
@@ -157,6 +234,15 @@ if set(kafka_heap) != {"s", "x"} or kafka_heap["s"] > kafka_heap["x"]:
     raise SystemExit("OPENMETER_KAFKA_HEAP_OPTS 必须含 -Xms<=-Xmx")
 if kafka_heap["x"] >= memory_values["KAFKA"]:
     raise SystemExit("Kafka -Xmx 必须小于容器预算，保留非堆内存与健康检查余量")
+maxmemory = os.environ["OPENMETER_REDIS_MAXMEMORY"].lower()
+match = re.fullmatch(r"([1-9][0-9]*)(b|k|kb|m|mb|g|gb)?", maxmemory)
+if not match:
+    raise SystemExit("OPENMETER_REDIS_MAXMEMORY 必须是原生 Redis 可接受的正容量")
+amount, suffix = match.groups()
+redis_units = {None: 1, "b": 1, "k": 1000, "kb": 1024, "m": 1000000,
+               "mb": 1048576, "g": 1000000000, "gb": 1073741824}
+if int(amount) * redis_units[suffix] >= memory_values["REDIS"]:
+    raise SystemExit("OPENMETER_REDIS_MAXMEMORY 必须小于 Redis 容器内存预算")
 PYCONFIG
 # 三个 IdP 用户各自只属于一个 Tenant：一期同一 HumanIdentity 在多个 Tenant 有
 # ACTIVE membership 时登录被拒（TENANT_SELECTION_NOT_AVAILABLE），Catalog admin 也

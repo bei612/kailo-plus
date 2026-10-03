@@ -35,6 +35,7 @@ volumes:
   openmeter-kafka-secrets:
   openmeter-clickhouse-data:
   openmeter-clickhouse-logs:
+  openmeter-dedupe-data:
 
 services:
   core-db:
@@ -299,7 +300,7 @@ services:
       retries: 30
 
   # 原生 OpenMeter 保持 Customer/计量账本权威（DD-37/38）。只接实际 Customer
-  # 接口；不用 quickstart seed、额外管理 UI 或无调用方的 billing worker。
+  # 与原生双侧去重消费者；不用 quickstart seed、额外管理 UI 或无调用方的 billing worker。
   openmeter-postgres:
     image: postgres@sha256:14f02666642586a64d6fae8ef42d479fd76456a77c73ae8a626b8fe323b76d22
     networks: [openmeter-data]
@@ -389,7 +390,8 @@ services:
       openmeter-postgres: {condition: service_healthy}
       openmeter-kafka: {condition: service_healthy}
       openmeter-clickhouse: {condition: service_healthy}
-    command: [openmeter, --address, "0.0.0.0:${OPENMETER_API_PORT:?必须显式提供，禁止硬编码}"]
+      openmeter-dedupe: {condition: service_healthy}
+    command: [openmeter, --address, "0.0.0.0:${OPENMETER_API_PORT:?必须显式提供，禁止硬编码}", --config, "${OPENMETER_CONFIG_FILE:?必须显式提供，禁止硬编码}"]
     # 裸 Viper 的真实键，无 OPENMETER_ 前缀；密码走受控 env_file，token 仅走文件。
     environment:
       SERVER_CORESERVICETOKENFILE: ${OPENMETER_CORE_TOKEN_FILE:?必须显式提供，禁止硬编码}
@@ -405,6 +407,9 @@ services:
       INGEST_KAFKA_BROKER: openmeter-kafka:9092
       OPENMETER_API_PORT: ${OPENMETER_API_PORT:?必须显式提供，禁止硬编码}
     env_file: [./secrets/openmeter.env]
+    configs:
+      - source: openmeter_usage_config
+        target: ${OPENMETER_CONFIG_FILE:?必须显式提供，禁止硬编码}
     secrets:
       - source: openmeter_core_token
         target: ${OPENMETER_CORE_TOKEN_FILE:?必须显式提供，禁止硬编码}
@@ -427,6 +432,84 @@ services:
       interval: 5s
       timeout: ${OPENMETER_HTTP_TIMEOUT_SECONDS:?必须显式提供，禁止硬编码}s
       retries: 40
+
+  # 去重索引归 OpenMeter 自有存储，不是另一份 Usage/额度账本；无跨组件网络或宿主端口。
+  # 固定版本原生 Redis：noeviction 不允许内存压力驱逐键使重复事件重新变成 unique；
+  # AOF always 保留已确认的索引写入，但不宣称消除原生 Kafka/ClickHouse 崩溃窗口。
+  openmeter-dedupe:
+    image: redis@sha256:c6e4a82ce60b829a72a21cc4ad4c1c274fa6962eb0d6ac698e8157cbc3fe16a4
+    networks: [openmeter-data]
+    cpus: ${OPENMETER_REDIS_CPUS:?必须显式提供本机运行预算}
+    mem_limit: ${OPENMETER_REDIS_MEMORY:?必须显式提供本机运行预算}
+    memswap_limit: ${OPENMETER_REDIS_MEMORY:?必须显式提供本机运行预算}
+    command:
+      - redis-server
+      - --port
+      - ${OPENMETER_REDIS_PORT:?必须显式提供，禁止硬编码}
+      - --databases
+      - ${OPENMETER_REDIS_DATABASES:?必须显式提供，禁止硬编码}
+      - --maxmemory
+      - ${OPENMETER_REDIS_MAXMEMORY:?必须显式提供本机运行预算}
+      - --maxmemory-policy
+      - noeviction
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - always
+    volumes: [openmeter-dedupe-data:/data]
+    healthcheck:
+      test: [CMD-SHELL, "redis-cli -p ${OPENMETER_REDIS_PORT:?必须显式提供，禁止硬编码} ping | grep -qx PONG"]
+      interval: ${OPENMETER_REDIS_HEALTH_INTERVAL_SECONDS:?必须显式提供健康检查间隔}s
+      timeout: ${OPENMETER_REDIS_HEALTH_TIMEOUT_SECONDS:?必须显式提供健康检查超时}s
+      retries: ${OPENMETER_REDIS_HEALTH_RETRIES:?必须显式提供健康检查重试次数}
+
+  # 同一镜像的真实原生消费者，把 Kafka 用量持久到 ClickHouse；零 meter 时不造事件。
+  # 只接自己的数据网络，无 Core credential、共享网络或宿主发布端口。
+  openmeter-sink-worker:
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/metering@sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783
+    networks: [openmeter-data]
+    cpus: ${OPENMETER_SINK_CPUS:?必须显式提供本机运行预算}
+    mem_limit: ${OPENMETER_SINK_MEMORY:?必须显式提供本机运行预算}
+    memswap_limit: ${OPENMETER_SINK_MEMORY:?必须显式提供本机运行预算}
+    depends_on:
+      openmeter: {condition: service_healthy}
+      openmeter-postgres: {condition: service_healthy}
+      openmeter-kafka: {condition: service_healthy}
+      openmeter-clickhouse: {condition: service_healthy}
+      openmeter-dedupe: {condition: service_healthy}
+    command: [openmeter-sink-worker, --config, "${OPENMETER_CONFIG_FILE:?必须显式提供，禁止硬编码}"]
+    environment:
+      NAMESPACE_DEFAULT: ${OPENMETER_NAMESPACE:?必须显式提供，禁止硬编码}
+      POSTGRES_HOST: openmeter-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DATABASE: ${OPENMETER_DB_NAME:?必须显式提供，禁止硬编码}
+      POSTGRES_USER: ${OPENMETER_DB_USER:?必须显式提供，禁止硬编码}
+      POSTGRES_OPTIONS_SSLVERIFY: disable
+      AGGREGATION_CLICKHOUSE_ADDRESS: openmeter-clickhouse:9000
+      AGGREGATION_CLICKHOUSE_USERNAME: ${OPENMETER_CLICKHOUSE_USER:?必须显式提供，禁止硬编码}
+      AGGREGATION_CLICKHOUSE_DATABASE: ${OPENMETER_CLICKHOUSE_DB_NAME:?必须显式提供，禁止硬编码}
+      INGEST_KAFKA_BROKER: openmeter-kafka:9092
+      TELEMETRY_ADDRESS: "127.0.0.1:${OPENMETER_SINK_TELEMETRY_PORT:?必须显式提供，禁止硬编码}"
+      OPENMETER_SINK_TELEMETRY_PORT: ${OPENMETER_SINK_TELEMETRY_PORT:?必须显式提供，禁止硬编码}
+    env_file: [./secrets/openmeter.env]
+    configs:
+      - source: openmeter_usage_config
+        target: ${OPENMETER_CONFIG_FILE:?必须显式提供，禁止硬编码}
+    healthcheck:
+      # 仅确认真实 native readiness，不把它当 Usage 已 COMMITTED 或业务验收。
+      test:
+        - CMD
+        - /bin/bash
+        - -ec
+        - |
+          set -euo pipefail
+          exec 3<>"/dev/tcp/127.0.0.1/$$OPENMETER_SINK_TELEMETRY_PORT"
+          printf 'GET /healthz/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3
+          read -r protocol status reason <&3
+          [[ "$$protocol" == HTTP/1.* && "$$status" == 200 ]]
+      interval: ${OPENMETER_SINK_HEALTH_INTERVAL_SECONDS:?必须显式提供健康检查间隔}s
+      timeout: ${OPENMETER_SINK_HEALTH_TIMEOUT_SECONDS:?必须显式提供健康检查超时}s
+      retries: ${OPENMETER_SINK_HEALTH_RETRIES:?必须显式提供健康检查重试次数}
 
   # Platform Core/BFF：单一模块化 Rust 服务，共享业务事务边界（DD-05）。
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
@@ -979,6 +1062,29 @@ secrets:
     file: ./secrets/core_db_password
 
 configs:
+  # 唯一原生去重配置由 .env 投影，API 与 sink 共用真正的 YAML bool/整数。
+  # 启用与 driver 是既定要求，不以可关闭开关绕过；两阶段索引严格分库。
+  openmeter_usage_config:
+    content: |
+      dedupe:
+        enabled: true
+        driver: redis
+        config:
+          address: "openmeter-dedupe:${OPENMETER_REDIS_PORT:?必须显式提供，禁止硬编码}"
+          database: ${OPENMETER_INGRESS_DEDUPE_DATABASE:?必须显式提供，禁止硬编码}
+          expiration: "${OPENMETER_DEDUPE_EXPIRATION:?必须显式提供，禁止硬编码}"
+          mode: rawkey
+      sink:
+        kafka:
+          brokers: openmeter-kafka:9092
+        dedupe:
+          enabled: true
+          driver: redis
+          config:
+            address: "openmeter-dedupe:${OPENMETER_REDIS_PORT:?必须显式提供，禁止硬编码}"
+            database: ${OPENMETER_SINK_DEDUPE_DATABASE:?必须显式提供，禁止硬编码}
+            expiration: "${OPENMETER_DEDUPE_EXPIRATION:?必须显式提供，禁止硬编码}"
+            mode: rawkey
   spicedb_schema:
     file: ./authorization/schema.zed
   agentgateway_config:

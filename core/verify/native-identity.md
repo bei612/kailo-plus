@@ -306,3 +306,25 @@ Win11 x64 source 为 `5a85c94e4be590901cb5fd127bab76c43d7a3ac3b9d973b06ffcde0a0d
 原件、两次 helper 日志与 NSIS 包在
 `/volumes/data/kailo/tmp/codex-desktop-session-web-win-20261003.6ZOd0g/`。
 构建明确保留交叉编译、未签名提示；没有安装运行或部署声明。
+
+### 本批提交、全量检查与 Web 实际投递
+
+选定树 `b41cae30df461b3a9adcfdb3b17cec1e75f876e1` 的原
+`./tools/check.sh --full` 实际退出 0，末行“全部通过”。原件为上述
+`native-session-batch.0ZyXoF/full.log`，SHA-256 为
+`f7a12d547abc2a910a8dc751d3baaf2156d8054451dc574d64a785df6f192abd`。
+数据库迁移演练因缺 DATABASE_URL 跳过，实际部署配置预检因 SDK 未投递 .env
+跳过；未安装 gitleaks，实际执行的是内置扫描。客户端签名/设备发布条件不变。
+43 文件、+2610/-318 已提交并普通 push 为
+`4dca2f355dcee8df1c563ee6d4871fd81eea474c`，远端 main 独立读回一致。
+
+2026-10-03 22:41 UTC 用该提交的冻结 Compose、实际配置和原 secret 路径，仅替换
+buzz-web，未使用工作树其他未提交部署改动。新容器
+`d638331c5303c5d1dbc67ebe76a86f1862056a294f8493d5ce91b60848805d24`
+使用上述 `7576e989…` 镜像且 healthy；内部 healthz/app 均 HTTP 200，公开匿名
+app/session 均 HTTP 302 到既有 OIDC。其余 27 个 Compose 容器的 ID/image 未变，
+包括原有两个 OpenMeter orphan；未清理 orphan、未重建、未启动 K8S。
+证据目录 `/volumes/data/kailo/tmp/codex-native-session-web-deploy-20261003.su7yLP/`，
+`receipt.md` SHA-256 为
+`7b6dacfa3db39ffb0b111d8b8b0557a6a05d66665d8fa1c5e27b107ab20731ea`。
+此处新增的是 Web 投递和 HTTP 观察，不是浏览器登录 E2E、Win11/手机安装或 Agent 首轮验收。

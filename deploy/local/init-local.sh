@@ -188,7 +188,7 @@ done
 
 # Compose 自己等待 health 与依赖任务；namespace/schema 作业还要查终态。
 compose up -d --wait keycloak temporal spicedb buzz-relay
-compose up -d --wait --no-build openmeter
+compose up -d --wait --no-build openmeter openmeter-sink-worker
 ./bootstrap.sh --sync-client-redirects
 ./bootstrap.sh --ensure-platform-admin
 ./bootstrap.sh --ensure-service-audience

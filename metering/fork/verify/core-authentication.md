@@ -1097,3 +1097,102 @@ DENIED/PRECONDITION/CONFLICT/LIMIT，依赖不可查证为 UNKNOWN；写后不�
 并发或破坏还原验证；未创建 Customer、meter、Installation 或业务种子。
 尚未生成、构建、提交、push 或部署，实际运行证据留待批次集中验证，
 不宣称本 subject 链、SS-OMT-AUTH、Stage 4/5 或生产门禁已验收。
+
+## 已运行双阶段去重配置的提交边界收口（2026-10-03）
+
+本次核对基线为 apps HEAD
+`4dca2f355dcee8df1c563ee6d4871fd81eea474c`，只收口既有
+`deploy/local/compose.yaml`、`bootstrap.sh`、`init-local.sh` 的原生
+去重与 sink 接线。HEAD 已含相应 `.env.example` 输入；双侧去重运行期开关
+说明仍仅在既有工作树 07 §1，该 HEAD Compose 也尚未声明实际运行的
+sink、Redis；限定 Web 部署已观察到
+这两个 orphan。本次不是新增部署能力，也没有清理、重启或重新部署它们。
+历史 2026-10-01 失败、校验及全量结果保留，不改记为当前提交验收。
+
+四步影响结论：
+
+1. 权威为 DD-08、`.design/11` §4。固定上游
+   `6d76d8a6fa90fbbab2d41035d31df2acec7ad3af` 的
+   `app/config/dedupe.go::ConfigureDedupe/DecodeMap`、
+   `app/config/sink.go::ConfigureSink` 分别定义两阶段配置；
+   `app/common/openmeter_server.go::NewIngestCollector` 与
+   `app/common/openmeter_sinkworker.go::NewSinkDeduplicator` 消费原生 driver。
+   `openmeter/dedupe/dedupe.go::Item.Key` 与
+   `openmeter/dedupe/redisdedupe/redisdedupe.go::Deduplicator.IsUnique`
+   绑定 namespace/source/event.id；两阶段必须分库，不增加 Core 计量权威。
+2. 调用面为原 bootstrap 预检→原 Compose 同一 YAML 的 API/sink→原
+   init-local 的 `up --wait --no-build`。独立选择保留原 Kafka heap 校验，
+   排除工作树 PUBLIC_BIND 校验、BFF 注释、依赖排序及无关空行变化；
+   没有新入口、业务对象、凭据或镜像。工作树和 clean HEAD 加所选窗口的
+   `bash deploy/local/bootstrap.sh --validate-config` 均实际退出 0。
+3. 2026-10-03 22:48 UTC 只读回执：API/sink 同为
+   `sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783`，
+   各 1 CPU/1 GiB，Redis 为 1 CPU/512 MiB；四目标均 healthy、无 OOM，
+   Kafka 保持已提交 heap 修复后的 2 CPU/2 GiB。API/sink 实际配置摘要同为
+   `c66358804d842bf981bc87829ddbf4f62f7dedd6148a90d731fbe318cd5de54d`，
+   原生 bool 均 true、driver=redis、DB=0/1、expiration=0。
+   Redis 回读 databases=2、maxmemory=268435456、noeviction、AOF always、
+   aof_last_write_status=ok；只接 openmeter-data、无宿主端口，专属卷为
+   `platform-local_openmeter-dedupe-data`。原生 Kafka consumer-group 只读命令
+   退出 0，`openmeter-sink-worker` 已分配 `om_default_events` 的 partition 0，
+   log-end-offset=0；没有把尚无已消费事件的分配证据当作用量结算。
+4. 未发现需要新增生产修复的接线缺陷。原 YAML 配置摘要与 2026-10-01
+   回执相同，只证明配置投递及实际消费者存在；不证明真实重复事件、
+   202→stored_at、credit、Quota、账单或 Agent E2E 已通过。
+   本轮没有 SDK/full、镜像构建、业务写入、Git index/commit/push 或服务变更。
+   原生 Redis/Kafka/ClickHouse 跨系统崩溃窗口仍保留，不宣称 exactly-once。
+
+精确独立源码与本次回执保留于
+`/volumes/data/kailo/tmp/codex-openmeter-dedupe-close-20261003.qCSHTp/`；
+该私有窗口仅选择上述三份部署文件及本节，不混入其他 inherited 差异。
+
+
+### 本批健康检查配置收束（2026-10-03）
+
+选择既有部署窗口后，复核确认 Redis/sink 的 interval/timeout/retries
+仍含本项目固定数值。现有 Compose 两个检查已改为读取唯一部署输入，
+`.env.example` 增加六个空字段，原 bootstrap 对缺失、零、负数、非整数
+统一拒绝；没有更改上游协议或扩张额度策略。
+2026-10-03 实际 `Config.Healthcheck` 逐项读回 Redis 为 5 秒/3 秒/30 次，
+sink 为 5 秒/10 秒/40 次，已原样显式投递唯一 ignored `.env`。
+正式与私有候选原 `--validate-config` 均退出 0；未重启服务，现有运行
+调度与镜像、数据卷保持原样。sink 的 HTTP 超时和调度重试独立取值，
+不把 HTTP deadline 当成次数。上述非密配置不进业务对象或第二份计量权威。
+
+本批选择新增 `.env.example`，并纳入根已选 README/native-identity 两段
+部署事实及 07 §1 已有双侧去重/Redis 两行；不纳入 07 的其他 inherited
+修订。检查仅使用该固定 8 路径候选；真实事件去重、Agent 首轮、用量/账单
+和客户端设备验收仍不据本批配置收束宣称通过。
+健康输入实际破坏/还原使用私有投递对象与原 bootstrap：正向 0，缺项 1、
+零超时 1、畸形 retries 1，逐字还原后 0；未破坏真实 `.env`。
+完整回执为 `/volumes/data/kailo/tmp/codex-openmeter-dedupe-close-20261003.qCSHTp/health-preflight-mutations.log`，
+SHA-256 `8c1ee3b36493a3e9c4f7f51ae20cb3ba57730cc8a9c3ed882064b630b5856058`。
+
+### 本批固定输入全量回执（2026-10-03 23:10 UTC）
+
+固定检查输入为 tree `d16970e72e035f8c1b03230e66b0dfd6b9908fcd`，
+不是新增 commit；相对上述 HEAD 仅 8 路径、+313/-13。
+从 apps 根执行原 `./tools/check.sh --full`，显式投递
+`CHECK_SOURCE_REF=d16970e72e035f8c1b03230e66b0dfd6b9908fcd`、
+`TMPDIR=/volumes/data/kailo/tmp`、`CHECK_CPUS=4`、`CHECK_MEMORY=8g`、
+`CHECK_NETWORK=host`、`CHECK_CACHE_ROOT=/volumes/data/kailo/check-cache`、
+`CARGO_BUILD_JOBS=16` 与既有 `BUILDX_BUILDER=kailo-core-data`。
+原 launcher 选中 immutable SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`；
+真实 UID/GID=1000:1000、cpu.max=400000/100000、memory.max=8589934592、
+memory.swap.max=0，OOM/oom_kill=0，实际 Config.Env 的 Cargo jobs=16。
+
+session 10539 原 full 实际退出 0，末行“全部通过”；完整输出
+`/volumes/data/kailo/tmp/codex-openmeter-dedupe-close-20261003.qCSHTp/full.log`，
+SHA-256 `ccdf21cb85603f092b57065c429258f48d89ec05af3a6352cd7dc11f9e648cd3`。
+原 launcher 日志 `/volumes/data/kailo/tmp/tmp.Rhzvaj2VTF.check.log`，
+SHA-256 `6f2fdc442228b933de115690c96777e7095d2c5670951fa86cdf78d57e02f851`。
+检查前后 8 路径 SHA 全部一致；结束后自有 SDK 已由原 launcher 清理。
+
+未提供 DATABASE_URL，实际迁移演练明确 SKIP；未投递 ignored `.env`，
+实际部署配置预检明确 SKIP。四个需显式数据库/运维条件的 Rust 演练保持
+ignored；未安装 gitleaks，运行的是原内置扫描。格式、静态、四侧契约、
+原测试、Workflow replay、18 条追溯、28 份产物摘要/证明及 30 个服务的
+配置边界静态检查均通过，但不替代真实重复事件、用量/账单 commit、
+Agent 首轮、真实业务 E2E、签名或设备验收；本轮未构建镜像或变更服务。
+以下仅补本回执并跑原文档快路径，不为证据文字重跑 full。
