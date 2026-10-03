@@ -186,3 +186,76 @@ GET 返回 405 均为操作失败，未写业务状态；更正为真实 full-co
 原 ActionExecution 观察，不生成第二个请求。目录缺 RuntimeProfile 时继续关闭
 Version 入口。此次没有运行 full，没有创建 Agent Installation 或实际调用模型，
 未证明计量、工具、客户端设备或一期生产就绪。
+
+## 2026-10-03 Customer 初始化与 run 登记批产物
+
+固定公开 commit `104a9104b60d5357306cfc7528d7b8188399c536` 的干净 Data
+快照执行原 `tools/release.sh core worker`，真实退出 0。Core、Worker 的镜像、
+原 Syft SPDX 与 SLSA provenance 均成功产出；没有重建 Runtime、Web、Relay 或 Win。
+复用 Runtime `sha256:ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec`。
+
+```text
+core   sha256:0b4299137ebe516a99f8e05763cd106ed952ae8a08ef40817ae1c1a829a0339d
+worker sha256:2cb5525cf269ab9099eaa609363e6088c14e9aa1ea2272c67aeff3d707ce947e
+```
+
+两者原 registry push 均退出 0，独立 HEAD/GET 均为 200，返回 digest 和 manifest
+原始字节 SHA 与上述产物一致。Git archive、ls-tree 前后比较均 0；Git 来源为真实
+Github remote，不是本地 clone。原 BuildKit 父 cgroup 为 8 CPU / 16 GiB、swap 0；
+未修改 Cargo 并行或原配方。Core 配方没有显式 `CARGO_BUILD_JOBS`，不将其写作 16。
+
+原件位于 `/volumes/data/kailo/tmp/codex-customer-core-worker-release-20261003.853u9M/`：
+`release.log`、`release.exit`、两份 `*-push.*`、`*-registry-*`、
+`artifact-proofs.sha256`、`source-*-before.*` / `source-*-after.*` 和资源回读。
+此前输入哈希跟随 symlink 的失败保留，不作源码证明；以 Git 原生字节比较为准。
+本条只证明发布产物与来源；限定部署、Customer 初始化、Agent 首 turn 与联合计量
+E2E 不由 release 或 registry 200 推导。固定源码的原 full 由同一批单独留存实际结果。
+
+### 同批部署与 Customer 重入实证
+
+原 `start-core.sh --no-build` 与 Worker 的原 Compose 限定替换均退出 0；
+部署前后容器 ID、镜像和启动时间比较只有 Core/Worker 改变。Core healthz 200，
+Worker 日志确认原 Task Queue 启动。在线库已有 57 条成功迁移，
+`3d8c0c11..104a9104` 的迁移目录无变化，本批不重复执行迁移。
+
+从原 `init-local.sh` 复用 IdP subject 查找及 `bootstrap-tenant` 调用，对既有业务 Tenant
+`6179e160-6055-4e9a-ae63-1793509c230c` 初始化原生计量 Customer；不直接写业务表。
+首次与第二次调用均退出 0，均返回相同 Tenant、管理员与 `state=COMPLETED`。
+Core binding 为 ACTIVE、version 1，customer_id 为 `01M41A96ZS6QM302QNE3EDF3YM`；
+OpenMeter 原生集合与单项接口均 200，集合总数 1，key 为该 Tenant UUID。
+
+ActionExecution `74dbc127-674e-45fa-94ce-fbb156e808ab` 为 ALLOWED/DISPATCHED，
+Operation `d4e13300-34ad-4d36-8f8d-868c257dbb0a` 与幂等键均未改变。
+重入后同一 Operation 下仍为六条审计事件：INTENT 一条、DECISION 一条、
+派发 fence 两条、RECONCILIATION/ACTIVE 一条、DISPATCH/DISPATCHED 一条。
+审计关联读取既有 `operation_id` 与 `evidence_refs`，不把未填的顶层 AE 列误判成无审计。
+
+原件位于 `/volumes/data/kailo/tmp/codex-source-close-20261003.7MzqS1/`，SHA-256：
+
+| 文件 | SHA-256 |
+|---|---|
+| `start-core.log` | `5cf4aeaaf9a07048396712a2c8c7a80e0fcd82cc2535fb3791a2b7f91536076e` |
+| `start-worker.log` | `66e5df7d95496e455d35f38e84dc8166d0926e99935c99c44fe136b9a6d31be0` |
+| `tenant-customer-bootstrap.log`、`tenant-customer-bootstrap-repeat.log` | `779188d123f4c9d0d134c4402610a376bf06e580910bd9f50b9a8f8500b40b78` |
+| `customer-reentry-readback.log` | `187ee9239c0e2db16c589bd4c3f4b72df2c9fa6c740e1715101c32f5d5802950` |
+| `native-customer-readback.log` | `5b966ce72c3b4e87a34c6dbe9ec66114bf611e58bac1d79f535691682fcc71e9` |
+
+四步结论：权威为 DD-13 与既有租户计量接缝、AE/Operation 和原生 Customer；
+影响为已发布镜像及一个既有业务 Tenant 的外部引用，schema/API/Workflow 不变；
+不复制原生账本、不创建默认授权、不重放未知副作用；重复调用读取同一结果，
+失败与 UNKNOWN 仍沿既有对账处理。此次不证明全部 Tenant、Quota/credit、真实用量、
+普通 mention、模型推理、工具或三端设备通过，不改变任何追溯门禁状态。
+
+### 同批完整检查的失败边界
+
+同一次原 `tools/check.sh --full` 实际退出 1，原件为上述 `853u9M/full.log`，
+SHA-256 `64f955bece49e71cfe80550126d56b21e05fc132ddc8d97cc18d066f74598fa1`。
+Core/Worker 静态检查与既有验证、四侧生成与 143 个 schema 兼容、隔离库
+57 条迁移前进/末条回退/再前进、SQLx 和 44 个枚举约束通过。
+失败项为 Desktop 来源校验：登记值 `6243945683bd87a306e8e1194ba295f2b08d4e3b599b380bc2b229293a8eb356`
+与检查树实算 `b624765fdef6a30f0935d3a8cd705e2e8088d859f10230b24dc05bd52ae4bd13` 不一致。
+不手改来源摘要冒充重新构建，不把这个结果外推成当前整个工作树通过。
+
+实际 `.env` 预检在该隔离检查中 SKIP，三项显式业务演练 ignored，未安装 gitleaks；
+Win11 实机/签名与 Mobile release 签名仍未闭合。本轮追加回执走原文档快路径，
+不重新编译 Core/Worker 或重跑 full；客户端来源在其独立交付批次收口。

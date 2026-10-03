@@ -6,6 +6,31 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### 16:58 UTC Customer 真实闭环与部署
+
+`104a9104b60d5357306cfc7528d7b8188399c536` 的正式 Core/Worker 已限定部署，
+实际镜像分别为 `0b429913…`、`2cb5525c…`；部署前后逐项比较只有这两个服务变化。
+Core healthz 200，Worker 启动原 Temporal 队列。在线库仍为 57 条成功迁移，
+本批没有新增迁移或重置数据库。
+
+对原业务 Tenant 执行既有 `bootstrap-tenant`，首次与重复调用均实际返回
+`COMPLETED`。Core 中只有一份 ACTIVE Customer binding；OpenMeter 原生集合与
+单项回读均 200、同一个 Customer、总数 1。原 ActionExecution 为
+ALLOWED/DISPATCHED，同一 Operation 下六条审计事件；重入不新增 Customer、
+绑定或执行。完整 ID、命令结果及日志摘要见 [发布回执](core/verify/release-artifacts.md)。
+这证明一个现存业务 Tenant 的 Customer 创建与重入，不证明额度、用量结算或 Agent 首轮。
+
+桌面端原生发送导出与锁文件修复已提交并 push 为 `9387bfa2abf350c0e05506b443a1abb127c083f5`；
+Kafka heap 与容器预算修复为 `f24fa6721505a6c3a190af59d04d572ef4dfe7a3`。
+两提交相对 `104a9104` 合计 6 文件、+39/-4；并非六项功能验收。
+原生 ACK 检查已实际通过、破坏后失败、还原后通过；Win11 实机仍未验收。
+本批原完整检查实际退出 1：Desktop 产物的登记 source digest 与检查树不一致；
+Core/Worker、四侧契约与隔离数据库检查通过，不用局部结果覆盖该失败。
+
+普通频道 mention 的生产者与准入、有效 RuntimeProfile、Installation、真实模型首轮、
+回复和用量收尾仍未贯通；不能称为用户已可正式使用 Agent。
+Cells、WeKnora、Wren 与设备交付继续独立处理，不作为核心开发等待条件。
+
 ### 16:06 UTC 首轮入口复核与撤回
 
 `bd7cdfc3bf4190287a37f0ef8b4e1fddc77166e5` 已普通 push；相对
