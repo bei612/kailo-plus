@@ -672,7 +672,7 @@ services:
   agentgateway:
     # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:63a5123aaa5b1969fa273479f4aa406a92b7b6e584d4f1eeebc91db80cd7c591
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:471fa4e93689fc0a896b641decd94ca14fa7e76765899c6a8c1dea2c94e881ad
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个

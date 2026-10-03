@@ -3050,6 +3050,9 @@ async fn make_backend_call(
 	let span_target = backend_call.span_target;
 	dtrace::trace(|trace| trace.backend_call_started(&call.target));
 	let upstream = inputs.upstream.clone();
+	if let Some(log) = log.as_deref_mut() {
+		log.begin_usage_dispatch().await.map_err(|_| ProxyError::ProcessingString("durable model request admission is unavailable".to_string()))?;
+	}
 	let llm_logging = log.as_ref().map(|l| llm::LLMLogging {
 		response: l.llm_response.clone(),
 		guardrails: l.guardrails.clone(),
@@ -3702,6 +3705,11 @@ fn finalize_attempt_for_retry(
 		llm_response.as_ref(),
 		mcp.as_ref(),
 	);
+	// The retry may fail before reaching a provider. Do not attach that failure (or its
+	// response) to an earlier admitted effect. That earlier effect stays pending when
+	// this best-effort snapshot cannot certify its complete native usage.
+	log.usage_request_id = None;
+	log.llm_response = Default::default();
 }
 
 fn should_retry(

@@ -4443,6 +4443,16 @@ async fn convert_llm_config(
 	});
 
 	let ordered_models = llm_registry.ordered_models();
+	let denied_model_authorization = Authorization(Arc::new(crate::http::authorization::RuleSet::new(
+		crate::http::authorization::PolicySet::new(
+			vec![],
+			vec![],
+			vec![Arc::new(
+				cel::Expression::new_strict("false")
+					.map_err(|err| anyhow!("invalid default model authorization: {err}"))?,
+			)],
+		),
+	)));
 	let mut resolved_models = ResolvedLLMModelRegistry::new();
 	let mut router_models = Vec::new();
 	let mut providers_by_name = HashMap::new();
@@ -4458,6 +4468,11 @@ async fn convert_llm_config(
 	// Create routes and backends for each model
 	for (idx, (_, model_config)) in ordered_models.into_iter().enumerate() {
 		let mut model_config = model_config;
+		// Normalize once so direct routes and failover providers inherit the same
+		// fail-closed policy. Explicit authorization keeps its native semantics.
+		model_config.authorization = Some(
+			model_config.authorization.take().unwrap_or_else(|| denied_model_authorization.clone()),
+		);
 		if let LocalModelAIProvider::Builtin(LocalBuiltinModelAIProvider::Reference(reference)) =
 			&model_config.provider
 		{
@@ -4742,6 +4757,7 @@ async fn convert_llm_config(
 					inline_policies: vec![],
 				});
 				llm::model_router::VirtualModelRouting::Failover {
+					models: failover.targets.iter().map(|target| target.model.clone()).collect(),
 					backend: RouteBackendReference {
 						weight: 1,
 						target: BackendReference::Backend(strng::format!("/{backend_key}")).into(),

@@ -60,7 +60,7 @@ async fn postgres_backend() -> (Backend, TestDb) {
 		panic!("AGENTGATEWAY_TEST_POSTGRES_URL is not a postgres URL")
 	};
 	sqlx::query(
-		"DROP TABLE IF EXISTS usage_outbox, usage_outbox_unavailable, request_log_payloads, request_logs, _agentgateway_request_log_migrations",
+		"DROP TABLE IF EXISTS usage_dispatches, usage_outbox, usage_outbox_unavailable, request_log_payloads, request_logs, _agentgateway_request_log_migrations",
 	)
 	.execute(&pg)
 	.await
@@ -116,7 +116,7 @@ fn pending(records: Vec<StoredRequestLog>) -> PendingBatch {
 
 async fn outbox_ids(backend: &Backend, after: Option<i64>) -> (Vec<(i64, String)>, i64) {
 	let resp = backend
-		.usage_outbox(UsageOutboxRequest { after, limit: None })
+		.usage_outbox(UsageOutboxRequest { after, limit: None, trace_id: None })
 		.await
 		.unwrap();
 	(
@@ -157,6 +157,7 @@ async fn usage_outbox_holds_llm_records_in_commit_order(backend: Backend, _db: T
 		.usage_outbox(UsageOutboxRequest {
 			after: None,
 			limit: Some(1),
+			trace_id: None,
 		})
 		.await
 		.unwrap();
@@ -165,8 +166,44 @@ async fn usage_outbox_holds_llm_records_in_commit_order(backend: Backend, _db: T
 	assert_eq!(resp.entries[0].usage.total_tokens, Some(18));
 	assert_eq!(resp.entries[0].agentgateway_user.as_deref(), Some("user-a"));
 	assert_eq!(resp.entries[0].attributes["agw.ai.usage.cost.pages"], 2);
+	assert_eq!(resp.submitted_requests, 0);
+	assert_eq!(resp.untracked_requests, 3);
+	assert!(!resp.request_set_complete, "legacy completion logs do not prove a submitted request set");
 	let body = serde_json::to_string(&resp).unwrap();
 	assert!(!body.contains("secret prompt"), "{body}");
+
+	// The same native backend admits before completion. A committed intent without
+	// a completion survives independently and prevents an empty tail claiming zero.
+	let mut admitted = record("admitted", true);
+	admitted.trace_id = Some("5bf92f3577b34da6a3ce929d0e0e4736".to_string());
+	backend.begin_usage(&admitted.id, admitted.trace_id.as_deref(), admitted.started_at, 0).await.unwrap();
+	let request = UsageOutboxRequest { after: None, limit: None, trace_id: admitted.trace_id.clone() };
+	let before = backend.usage_outbox(request.clone()).await.unwrap();
+	assert!(before.entries.is_empty());
+	assert_eq!((before.submitted_requests, before.pending_requests, before.untracked_requests), (1, 1, 0));
+	assert!(!before.request_set_complete);
+	let mut completed = pending(vec![admitted.clone()]);
+	assert!(flush_log_store_batch(&backend, &mut completed).await);
+	let after = backend.usage_outbox(request).await.unwrap();
+	assert_eq!(after.entries.len(), 1);
+	assert_eq!(after.entries[0].id, admitted.id);
+	assert_eq!(after.entries[0].dispatch_attempt, Some(0));
+	assert_eq!((after.submitted_requests, after.pending_requests, after.untracked_requests), (1, 0, 0));
+	assert!(after.request_set_complete);
+	let empty = backend.usage_outbox(UsageOutboxRequest { after: None, limit: None, trace_id: Some("6bf92f3577b34da6a3ce929d0e0e4736".to_string()) }).await.unwrap();
+	assert_eq!(empty.submitted_requests, 0);
+	assert!(!empty.request_set_complete);
+
+	// A completion with another trace cannot satisfy this accepted request's receipt.
+	admitted.id = "foreign-completion".to_string();
+	backend.begin_usage(&admitted.id, admitted.trace_id.as_deref(), admitted.started_at, 1).await.unwrap();
+	admitted.trace_id = Some("6bf92f3577b34da6a3ce929d0e0e4736".to_string());
+	let mut foreign = pending(vec![admitted]);
+	assert!(flush_log_store_batch(&backend, &mut foreign).await);
+	let not_complete = backend.usage_outbox(UsageOutboxRequest { after: None, limit: None, trace_id: Some("5bf92f3577b34da6a3ce929d0e0e4736".to_string()) }).await.unwrap();
+	assert_eq!((not_complete.submitted_requests, not_complete.pending_requests), (2, 1));
+	assert!(!not_complete.request_set_complete);
+	assert!(backend.usage_outbox(UsageOutboxRequest { after: None, limit: None, trace_id: Some("not-a-trace".to_string()) }).await.is_err());
 }
 
 async fn failed_flush_keeps_records_until_persisted(backend: Backend, db: TestDb) {

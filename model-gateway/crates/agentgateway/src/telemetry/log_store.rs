@@ -97,6 +97,14 @@ pub fn enabled() -> bool {
 	REQUEST_LOG_STORE.get().is_some()
 }
 
+/// A provider attempt is durably identified before dispatch; a lost completion stays pending.
+pub(super) async fn begin_usage(trace_id: Option<String>, started_at: DateTime<Utc>, attempt: i64) -> anyhow::Result<String> {
+	let store = REQUEST_LOG_STORE.get().ok_or_else(|| anyhow::anyhow!("request log database is not configured"))?;
+	let id = uuid::Uuid::now_v7().to_string();
+	store.request(|tx| LogStoreMsg::BeginUsage { id: id.clone(), trace_id, started_at, attempt, tx }).await?;
+	Ok(id)
+}
+
 pub async fn search(request: SearchRequest) -> anyhow::Result<SearchResponse> {
 	let store = REQUEST_LOG_STORE
 		.get()
@@ -187,6 +195,13 @@ const LOG_STORE_SHUTDOWN_ATTEMPTS: u32 = 5;
 #[allow(clippy::large_enum_variant)] // The StoredRequestLog, which is used 99.9% of the time, is the large one
 enum LogStoreMsg {
 	Record(PendingRequestLog),
+	BeginUsage {
+		id: String,
+		trace_id: Option<String>,
+		started_at: DateTime<Utc>,
+		attempt: i64,
+		tx: QueryResponse<()>,
+	},
 	Search {
 		request: SearchRequest,
 		tx: QueryResponse<SearchResponse>,
@@ -401,6 +416,10 @@ async fn process_log_store_msg(
 	msg: LogStoreMsg,
 ) -> bool {
 	match msg {
+		LogStoreMsg::BeginUsage { id, trace_id, started_at, attempt, tx } => {
+			let _ = tx.send(backend.begin_usage(&id, trace_id.as_deref(), started_at, attempt).await);
+			false
+		},
 		LogStoreMsg::Record(pending) => {
 			let mut record = pending.record;
 			record.payload = super::log::database_llm_payload(
@@ -433,7 +452,10 @@ async fn process_log_store_msg(
 			false
 		},
 		LogStoreMsg::UsageOutbox { request, tx } => {
-			flush_log_store_batch(backend, batch).await;
+			if !flush_log_store_batch(backend, batch).await {
+				let _ = tx.send(Err(anyhow::anyhow!("request log database has unconfirmed usage")));
+				return false;
+			}
 			let _ = tx.send(backend.usage_outbox(request).await);
 			false
 		},
@@ -465,6 +487,9 @@ async fn flush_log_store_batch(backend: &Backend, batch: &mut PendingBatch) -> b
 				.collect::<Vec<_>>();
 			let stored = backend.stored_ids(&ids).await?;
 			batch.records.retain(|r| !stored.contains(&r.id));
+			// Release confirmed records even if inserting the remaining records fails again.
+			let confirmed = count - batch.records.len();
+			REQUEST_LOG_STORE_BACKLOG.fetch_sub(confirmed, Ordering::Relaxed);
 		}
 		backend.insert_batch(&batch.records).await
 	}
@@ -483,6 +508,7 @@ async fn flush_log_store_batch(backend: &Backend, batch: &mut PendingBatch) -> b
 		);
 		return false;
 	}
+	let count = batch.records.len();
 	let backlog = REQUEST_LOG_STORE_BACKLOG.fetch_sub(count, Ordering::Relaxed) - count;
 	let latency = t0.elapsed();
 	let throughput = count as f64 / latency.as_secs_f64();
@@ -645,6 +671,9 @@ pub struct UsageOutboxRequest {
 	pub after: Option<i64>,
 	#[serde(default)]
 	pub limit: Option<i64>,
+	/// Filter the entries and their durable dispatch set by the same exact trace.
+	#[serde(default)]
+	pub trace_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -653,6 +682,13 @@ pub struct UsageOutboxResponse {
 	pub entries: Vec<UsageOutboxEntry>,
 	/// The cursor to resume from: the last returned `seq`, or the request cursor if nothing new.
 	pub next_cursor: i64,
+	/// Counts from the same database snapshot as the entries, not the process queue.
+	pub submitted_requests: i64,
+	pub pending_requests: i64,
+	pub untracked_requests: i64,
+	/// A nonempty trace set whose durable dispatches all have committed outbox entries.
+	/// It does not certify provider quantities or OpenMeter settlement.
+	pub request_set_complete: bool,
 }
 
 /// One completed LLM request as recorded at completion. Prompt and completion content is not
@@ -663,6 +699,8 @@ pub struct UsageOutboxEntry {
 	pub seq: i64,
 	/// The stable request log ID.
 	pub id: String,
+	/// The provider attempt admitted by the same durable request ID; absent for legacy logs.
+	pub dispatch_attempt: Option<i64>,
 	pub started_at: DateTime<Utc>,
 	pub completed_at: DateTime<Utc>,
 	pub trace_id: Option<String>,
@@ -678,7 +716,7 @@ pub struct UsageOutboxEntry {
 }
 
 impl UsageOutboxResponse {
-	fn new(request: &UsageOutboxRequest, entries: Vec<UsageOutboxEntry>) -> Self {
+	fn new(request: &UsageOutboxRequest, entries: Vec<UsageOutboxEntry>, counts: (i64, i64, i64)) -> Self {
 		let next_cursor = entries
 			.last()
 			.map(|e| e.seq)
@@ -686,6 +724,10 @@ impl UsageOutboxResponse {
 		Self {
 			entries,
 			next_cursor,
+			submitted_requests: counts.0,
+			pending_requests: counts.1,
+			untracked_requests: counts.2,
+			request_set_complete: request.trace_id.is_some() && counts.0 > 0 && counts.1 == 0 && counts.2 == 0,
 		}
 	}
 }
@@ -1005,11 +1047,21 @@ impl Backend {
 	}
 
 	async fn usage_outbox(&self, request: UsageOutboxRequest) -> anyhow::Result<UsageOutboxResponse> {
-		let entries = match self {
+		if request.trace_id.as_deref().is_some_and(|trace| trace.len() != 32 || !trace.bytes().all(|b| b.is_ascii_hexdigit())) {
+			anyhow::bail!("usage trace identity is invalid");
+		}
+		let (entries, counts) = match self {
 			Self::Sqlite(store) => store.usage_outbox(&request).await?,
 			Self::Postgres(store) => store.usage_outbox(&request).await?,
 		};
-		Ok(UsageOutboxResponse::new(&request, entries))
+		Ok(UsageOutboxResponse::new(&request, entries, counts))
+	}
+
+	async fn begin_usage(&self, id: &str, trace: Option<&str>, started_at: DateTime<Utc>, attempt: i64) -> anyhow::Result<()> {
+		match self {
+			Self::Sqlite(store) => store.begin_usage(id, trace, started_at, attempt).await,
+			Self::Postgres(store) => store.begin_usage(id, trace, started_at, attempt).await,
+		}
 	}
 
 	async fn tail(&self, request: TailRequest) -> anyhow::Result<TailResponse> {

@@ -1076,6 +1076,23 @@ fn proxy_context(log: &RequestLog) -> cel::ProxyContext {
 }
 
 impl RequestLog {
+	pub(crate) async fn begin_usage_dispatch(&mut self) -> anyhow::Result<()> {
+		if self.llm_request.is_none() {
+			return Ok(());
+		}
+		if !log_store::enabled() {
+			anyhow::bail!("request log database is not configured");
+		}
+		// A retry is a distinct provider effect. Its previous admitted ID remains pending unless
+		// its own completion was durably recorded; never relabel it with the next attempt's usage.
+		self.usage_request_id = None;
+		self.llm_response = Default::default();
+		let trace = self.outgoing_span.as_ref().or(self.incoming_span.as_ref()).map(|s| s.trace_id().to_string());
+		let id = log_store::begin_usage(trace, self.start.as_datetime().with_timezone(&chrono::Utc), i64::from(self.retry_attempt.unwrap_or(0))).await?;
+		self.usage_request_id = Some(id);
+		Ok(())
+	}
+
 	pub fn new(
 		cel: CelLogging,
 		metrics: Arc<Metrics>,
@@ -1129,6 +1146,7 @@ impl RequestLog {
 			incoming_span: None,
 			outgoing_span: None,
 			llm_request: None,
+			usage_request_id: None,
 			llm_response: Default::default(),
 			guardrails: Default::default(),
 			budgets: None,
@@ -1307,6 +1325,8 @@ pub struct RequestLog {
 	pub outgoing_span: Option<trc::TraceParent>,
 
 	pub llm_request: Option<llm::LLMRequest>,
+	/// Stable identity acknowledged by the request-log database before this provider attempt.
+	pub usage_request_id: Option<String>,
 	pub llm_response: AsyncLog<llm::LLMInfo>,
 	pub guardrails: GuardrailLog,
 	pub budgets: Option<crate::http::budget::BudgetSettlement>,
@@ -2027,7 +2047,7 @@ impl Drop for DropOnLog {
 
 			if maybe_enable_log || log_store_enabled {
 				let passes_log_filter = cel_exec.eval_filter();
-				if !passes_log_filter {
+				if !passes_log_filter && !log_store_enabled {
 					return;
 				}
 				kv.reserve(fields.add.len());
@@ -2047,7 +2067,7 @@ impl Drop for DropOnLog {
 					kv.push((k, eval));
 				}
 
-				if maybe_enable_log {
+				if maybe_enable_log && passes_log_filter {
 					if use_otel_stdout {
 						let mut stdout_kv = otel_kv
 							.as_ref()
@@ -2127,7 +2147,7 @@ impl Drop for DropOnLog {
 							.or_else(|| Some(llm.input_tokens?.saturating_add(llm.output_tokens?)))
 					});
 					let record = log_store::StoredRequestLog {
-						id: uuid::Uuid::now_v7().to_string(),
+						id: log.usage_request_id.clone().unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
 						started_at: log.start.as_datetime().with_timezone(&chrono::Utc),
 						completed_at: end_time.as_datetime().with_timezone(&chrono::Utc),
 						duration_ms: u128_to_i64(duration.as_millis()),
@@ -2163,10 +2183,9 @@ impl Drop for DropOnLog {
 						has_payload: false,
 						attributes_json: attributes.json,
 						payload: None,
-						// Every completed LLM request is usage evidence: it enters the durable usage
-						// outbox with this record's stable ID, whether or not the provider reported
-						// token counts, so the reader can tell a missing count from a missing record.
-						usage_outbox: log.llm_request.is_some(),
+						// Only the exact acknowledged provider attempt is a submitted usage source.
+						// Rejected pre-dispatch requests remain ordinary diagnostic logs.
+						usage_outbox: log.usage_request_id.is_some(),
 					};
 					log_store::emit(log_store::PendingRequestLog {
 						record,

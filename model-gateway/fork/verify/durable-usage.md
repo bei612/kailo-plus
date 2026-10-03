@@ -279,3 +279,72 @@ UsageEvent 全部 COMMITTED 均不证明请求全集、credit 吸收或 Invocati
 UNKNOWN 按既有治理 interval、admin timeout 和 RB-06 用量缺口责任边界持续对账，不丢弃、
 不超时补零、不释放并重复执行。源码尚未提交、push、部署；上一个冻结批次 SDK 的结果
 不作为本节验收。
+
+## 2026-10-03 原生模型派发全集持久化
+
+本段仅交付 Gateway 原生派发记录，不以它宣称 Core Invocation、Memory、模型调用或账单验收完成。
+权威为 DD-21/48/51、SS-AGW-USAGE 与 `.design/11` §3–6；
+固定上游为 `1f7ebbf87cbdbe9517f6f181221879d04dc50692`，
+`crates/agentgateway/src/proxy/httpproxy.rs::make_backend_call` 和
+`crates/agentgateway/src/telemetry/log.rs::RequestLog` 已以该 commit 的 `git grep` 重核。
+
+影响面是原生 `make_backend_call → begin_usage_dispatch → log_store`、
+SQLite/PostgreSQL 两后端、原 durable usage 查询和 native model-router 两种构造方。
+副作用之前先持久化稳定 dispatch ID；无日志库或持久化失败则拒绝真正的 LLM 请求，
+不把缺失记录当作成功。记录留在原生日志库，不成为第二 Quota、UsageEvent 或 Audit 权威，
+不保存新的模型正文副本；非 LLM 仍走原非计量路径。
+
+原接口新增 submitted/pending/untracked/request_set_complete 与 dispatch_attempt，
+旧 entries/next_cursor 保持；已有记录没有派发证据时计为 untracked，
+pending、跨 trace completion、未知或部分全集均不返回完整性证明。
+未知外部结果保留原生待对账事实，不凭空页、当前已见记录或重复 completion 补成终态；
+请求完成须匹配原 dispatch 与 trace。该全集只供消费者关联，不能代替 OpenMeter stored_at、
+额度快照吸收或 invoice finalized。Native failover/model 解析复用原 ModelRouter 授权，
+未配置 policy 不回退允许；local 与 xDS 构造方一同编译。
+
+实现后实际命令（原生 SDK）：
+
+```sh
+cargo test --locked --profile ci -p agentgateway --lib telemetry::log_store::tests -- --test-threads=1
+cargo test --locked --profile ci -p agentgateway --lib telemetry::log_store::tests::postgres_backend -- --ignored --test-threads=1
+```
+
+最终输出为 SQLite 5 passed、PostgreSQL 4 passed，退出码均 0；PG ignored 组由第二条命令实际执行，
+没有把忽略当通过。实际工具链是原 Dockerfile 的 Rust 1.98.0；
+SDK 镜像 `sha256:17a2ffedc7792a8dc0bfb17f34d6dd928db5efff67d5698d3c449cb6ffb94936`，
+复用已有 4 CPU/8 GiB 配置、UID 1000，未设置或降低 Cargo jobs。
+完整原日志、10 路径 SHA 与还原证据：
+`/volumes/data/kailo/tmp/codex-gateway-dispatch-sdk-20261003.WESIVK/handoff.md`。
+
+主动破坏实际 SQLite pending SQL 后断言失败、退出 101；精确还原后两后端 9 项通过。
+再破坏 trace 匹配 SQL，实际断言失败、退出 101；精确还原后两后端 9 项通过。
+两次都编译成功后才失败，未修改期望值；全部 SDK OOMKilled=false。
+missing-global-log-store 分支已实际编译，但本组没有独立执行该分支；
+不冒称 HTTP/provider E2E、当前部署、Core Task/Memory 终态或商业结算已验收。
+
+### 本批构建与集中收口回执
+
+原 `tools/build-upstream.sh model-gateway` 实际退出 0，registry 读回产物为
+`sha256:471fa4e93689fc0a896b641decd94ca14fa7e76765899c6a8c1dea2c94e881ad`，
+同一实际输入摘要为 `sha256:c9e6b4781f6032fdcab4e5440b038e6c01525f773518feb6f77ef231fc397768`。
+构建原件 `codex-memory-billing-selected-20261003.w9pIBc/model-gateway-build.log`
+SHA-256 为 `57c1634c65cb4b41de47d2311c9517c6975f9bdfa8d5b61b0582f7e0108f2327`。
+本批没有重建未变的 Core、Worker 或三端产物。
+
+正式 apps 根的原 `tools/check.sh --full` 对私有提交
+`c609cf4e4281bb6537f9bdd735a0601788566e72`、固定树
+`81d7ceb7026be5f6702726a368ded8dcbaee7a90` 实际退出 0，末行「全部通过」。
+原件 `codex-gateway-delivery-20261003.2yDULc/full-corrected.log`
+SHA-256 为 `ced6266629ab5d724b86f0343218d0dba07dbf730bcfbee21dede3b1591ad843`。
+四侧生成、128 schema 兼容、原验证与 replay、18 条追溯、已有 18 份产物证明、
+六份 seam 来源与实际 Gateway digest 指针均通过。
+实际平台数据库演练和部署 `.env` 预检明确 SKIP；三项外部演练 ignored，
+未安装 gitleaks，Win11/Mobile 签名及设备门禁仍阻断，不改记为业务或部署验收。
+
+初轮完整检查退出 1：私有共享克隆的 Git alternates 在 SDK 中不可达，历史契约
+读取退出 128，且未挂载现有 dist；Gateway 的 Compose 与两处 trace 指针仍为旧值。
+原失败日志保留为同目录 `full.log`，SHA-256
+`0d206cd2c2ae549e15c7371f21d4f16d7ffc6948072f2ef0259428e19fa4915f`。
+随后只修真实来源指针，并由正式 apps Git 对象库与现有 dist 检查同一源码，
+未重编译 Gateway，未补造 SBOM/provenance，未更改数据库或旧失败结论。
+上述 full 在追加本节前形成；证据文档另走原文档快路径，不重复全量构建。

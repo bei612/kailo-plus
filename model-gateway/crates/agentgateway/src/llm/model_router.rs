@@ -110,7 +110,13 @@ pub struct VirtualModelRoute {
 #[apply(schema_ser_schema!)]
 pub enum VirtualModelRouting {
 	Weighted(Vec<WeightedTarget>),
-	Failover { backend: RouteBackendReference },
+	Failover {
+		backend: RouteBackendReference,
+		// Local normalization retains the same declared model targets used by the backend.
+		// An opaque backend reference alone is not proof of an authorized model.
+		#[serde(skip)]
+		models: Vec<String>,
+	},
 	Conditional(Vec<ConditionalTarget>),
 }
 
@@ -253,6 +259,7 @@ impl ModelRouter {
 					.virtual_models
 					.iter()
 					.filter(|model| api_key_model_authorized(req, &model.name))
+					.filter(|model| self.virtual_model_authorized(model, req))
 					.map(|model| model_list_entry(&model.name, model.created)),
 			)
 			.collect::<Vec<_>>();
@@ -266,6 +273,23 @@ impl ModelRouter {
 			.header(::http::header::CONTENT_TYPE, "application/json")
 			.body(http::Body::from(body))
 			.expect("LLM model list response is valid")
+	}
+
+	fn virtual_model_authorized(&self, model: &VirtualModelRoute, req: &Request) -> bool {
+		let authorized = |target: &str| {
+			matches!(self.resolve_concrete_model(target, true, req), Ok(Some(_)))
+		};
+		match &model.routing {
+			VirtualModelRouting::Weighted(targets) => targets
+				.iter()
+				.any(|target| !target.invalid && authorized(&target.model)),
+			VirtualModelRouting::Conditional(targets) => targets
+				.iter()
+				.any(|target| !target.invalid && authorized(&target.model)),
+			VirtualModelRouting::Failover { models, .. } => {
+				models.iter().any(|target| authorized(target))
+			},
+		}
 	}
 
 	async fn resolve_virtual_model(
@@ -288,11 +312,14 @@ impl ModelRouter {
 					},
 				}
 			},
-			VirtualModelRouting::Failover { backend } => {
+			VirtualModelRouting::Failover { backend, .. } => {
 				if let RequestedModelLocation::Body(body) = location {
 					req
 						.body_mut()
 						.insert_extension(crate::json::ParsedJson(body));
+				}
+				if !self.virtual_model_authorized(virtual_model, req) {
+					return ResolveResult::DirectResponse(model_authorization_denied_response());
 				}
 				return ResolveResult::Backend(ResolvedBackend {
 					backend: backend.clone(),
@@ -445,17 +472,11 @@ fn llm_error_response(status: ::http::StatusCode, message: &str, code: &str) -> 
 }
 
 fn model_authorized(model: &ModelRoute, req: &Request) -> bool {
-	let rules = model
-		.policies
-		.authorization
-		.iter()
-		.map(|authorization| authorization.0.clone())
-		.collect::<Vec<_>>();
-	if rules.is_empty() {
-		return true;
-	}
+	let Some(authorization) = model.policies.authorization.as_ref() else {
+		return false;
+	};
 	crate::http::authorization::HTTPAuthorizationSet::new(
-		crate::http::authorization::RuleSets::from_arcs(rules),
+		crate::http::authorization::RuleSets::from_arcs(vec![authorization.0.clone()]),
 	)
 	.apply(req)
 	.is_ok()
@@ -948,7 +969,15 @@ mod tests {
 			},
 			policies: ModelRoutePolicies {
 				llm: default_route_types(),
-				authorization: None,
+				authorization: Some(Authorization(Arc::new(
+					crate::http::authorization::RuleSet::new(
+						crate::http::authorization::PolicySet::new(
+							vec![Arc::new(cel::Expression::new_strict("true").expect("valid CEL"))],
+							vec![],
+							vec![],
+						),
+					),
+				))),
 			},
 			backend_policies: vec![],
 		};
@@ -1085,7 +1114,7 @@ mod tests {
 				vec![],
 			),
 		)));
-		let model = ModelRoute {
+		let mut model = ModelRoute {
 			id: None,
 			name: "gpt-5-mini".to_string(),
 			created: 0,
@@ -1115,6 +1144,8 @@ mod tests {
 
 		assert!(model_authorized(&model, &allowed));
 		assert!(!model_authorized(&model, &denied));
+		model.policies.authorization = None;
+		assert!(!model_authorized(&model, &allowed));
 	}
 
 	#[test]

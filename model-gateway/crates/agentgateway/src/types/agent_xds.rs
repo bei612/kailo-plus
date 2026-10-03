@@ -1751,6 +1751,9 @@ impl ModelRoute {
 					},
 					Some(virtual_model::Routing::Failover(failover)) => {
 						llm::model_router::VirtualModelRouting::Failover {
+							// The wire backend reference carries no concrete model targets.
+							// Keep that absence explicit instead of fabricating authorization facts.
+							models: vec![],
 							backend: RouteBackendReference {
 								weight: 1,
 								target: resolve_reference(failover.backend.as_ref()).into(),
@@ -5605,9 +5608,10 @@ mod tests {
 		let ModelRouteKind::Virtual(model) = route.kind else {
 			panic!("expected virtual model route");
 		};
-		let llm::model_router::VirtualModelRouting::Failover { backend } = model.routing else {
+		let llm::model_router::VirtualModelRouting::Failover { backend, models } = model.routing else {
 			panic!("expected failover routing");
 		};
+		assert!(models.is_empty());
 		assert_eq!(backend.weight, 1);
 		assert!(backend.inline_policies.is_empty());
 		match backend.target {
