@@ -943,3 +943,61 @@ HostConfig memory+swap 为 16 GiB；实际父 cgroup `memory.swap.max=max`、
 主机没有交换设备，不将其写成内核 swap0。构建后 builder 仅剩 daemon，
 OOM/kill 未增加。没有宿主 SDK、部署、浏览器业务、Win11 安装验收或
 完整 Agent 执行验收；当前产物不解除这些门禁，也不覆盖历史失败。
+
+## 同源 Memory 页面功能批（2026-10-03）
+
+实际入口仍是 client-kit 的同一 TypeScript 主体，Web 与 Desktop 不另建表单。
+HUMAN owner 四写消费原 ActionCommand、原生 valueHash 与真实 head；
+UNKNOWN 保留同幂等 key 并冻结再次提交，确认的原生冲突才允许重新读 head。
+Core 是准入权威；浏览器不持 AGENT 密钥、不自行实现 Memory 加密或补丁算法。
+
+本批原共享 pages 检查 63/63、共享包/Web/Desktop 类型检查均退出 0，
+原件在 `codex-memory-ui-selected-verify-20261003.pxMZ6I/`。
+22 输入路径中 21 项未变，唯一有意变化是原 i18n 生成器补齐 13 条 Dart 同源文案；
+这次未重跑全平台套件、浏览器/Win11/Mobile E2E，不借旧日志声称通过。
+
+原 `tools/build-upstream.sh web-client` 唯一构建、上传、登记与 registry 读回均 0。
+固定上游 `a6766c482533d028582d0efcfd3740769f86217c`，98 个原算法输入 source
+`sha256:998c3c64308aef52bdf29eb3a2f0e05d954bface856468f6927e05a5b5535bba`，
+artifact `sha256:97bc23790559a9019feaba5bb9e514d19730410b20beb9cc8dca2924823fb69e`。
+前后原 source/plan 比较 0，registry HTTP200、1816 字节原 manifest 摘要与
+Docker-Content-Digest 相同。原 npm ci 280 包、audit 0，tsc/Vite build 0，
+大 chunk 警告保留。原记录两 digest 字段之外未更改。
+
+原件在 `codex-memory-web-build-20261003.1zMbBL/`：
+`helper.log` SHA `d275e0277ba9ad7cd16f89789e4ba3a0d50ad792e7b1b947d5fc0b4822958a43`，
+`readback.log` SHA `770e12a4a1f00456abfb5753d66aef73f8bdb385ab5b682341438265b87b8f83`。
+首次 wrapper 因实际 .env 没有 REGISTRY 被拒 1，未启动 helper；随后只将原
+REGISTRY_HOST 映射给 helper 的 REGISTRY，不新造地址或改部署配置，失败日志保留。
+Node/npm/Vite 只在既有受限 BuildKit 中执行，8CPU/16Gi、Data 缓存、OOM/kill 无新增。
+本产物未部署，不把 registry push、编译或局部页面检查称为真实 Memory 业务验收。
+
+### 同批 Relay 实际来源收口
+
+共享 Buzz Memory 源码改变了 Relay 的原输入，不能继续用旧产物摘要。
+固定私有 commit `55a248e0872055fbb03bcafd083710028c4efef8`、tree
+`68a74f7592fabdfbe5fc8a7503a71d7006a6d873` 的原
+`tools/build-upstream.sh collaboration-relay` build/load/push/record 均退出 0。
+1118 个真实输入的 source 为
+`sha256:e68add606d98c362e49f9a9fbf33cc4deb24936d065e1ac4f5ef456e79ec30fe`，
+artifact 为 `sha256:d42f83fa0dadcd78c4ad721047433a9a7c8e522767edd96cb326d641c5dd0056`。
+前后原 digest 与输入数逐字相等，独立 registry GET 为 HTTP200，
+Docker-Content-Digest 与 2008 字节原 manifest 的 SHA 相同。
+
+原件在 `codex-memory-relay-win-artifacts-20261003.SosEFm/`：
+`relay-helper.log` SHA-256
+`6df64651b08cfd58dc9cb26e656cfde5c27f8ef2e0bcd6ccd3c88b37fc990d20`；
+`relay-tmp/build-collaboration-relay.X6psGv.log` SHA-256
+`c9f57f3669c268443b4cbbf35bd0fe121f310db9f3c89ebab44ef4c14c015a1a`；
+两份 source 日志同为 `3ec5b4d027c86bfcf01d6468d5d877c37c1e6fd070aec570b2942a6aa0f58a8b`。
+首份派生 after 回执漏输入数，cmp 退出 1；原 digest 已相同，保留该回执后
+按同一 digest+count 格式核对为 0，没有重建或修改源码。
+
+原 helper stage tar、逐文件 SHA、manifest 原字节与终态资源回读均保留。
+只更新现有两份 Relay trace 与两个 Compose pin，不改变发布状态、scope、
+认证或运行服务；本节不覆盖上方原 Web97 产物，不重复构建 Web，也没有部署 Relay。
+Win11 新 unsigned 包独立见 Desktop 记录，真实 Memory/Agent/计量 E2E 未验收。
+
+指针修正树 `433be885faead1e95072e10ca447d36b660a1fa7` 的原 full 实际退出 0；
+日志 SHA `b6557aced681ee364ede8f722761a1e7a4c76835267f09d29962b95efa738210`，
+原 full1 保留。数据库/.env SKIP、三项演练 ignored，Web97 与运行服务均未改变。

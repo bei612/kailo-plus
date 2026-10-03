@@ -150,6 +150,11 @@ export interface ActionCommand {
      */
     invitationId?: string;
     /**
+     * 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+     * 输入；其他命令禁止携带。
+     */
+    memoryWrite?: MemoryWriteClass;
+    /**
      * workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
      */
     name?: string;
@@ -303,6 +308,44 @@ export enum ResultExposureMode {
     ConsumeOnly = "CONSUME_ONLY",
     Export = "EXPORT",
     Read = "READ",
+}
+
+/**
+ * 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+ * 输入；其他命令禁止携带。
+ *
+ * HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
+ */
+export interface MemoryWriteClass {
+    /**
+     * entry.patch 当前原生 value 的 SHA-256。
+     */
+    baseHash?: string;
+    /**
+     * 调用方实际读取的 head；null 只表示原生确认不存在。
+     */
+    expectedHeadEventId?: null | string;
+    /**
+     * 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+     */
+    expectedHeadState: ExpectedHeadState;
+    /**
+     * entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
+     */
+    patch?: string;
+    slug:   string;
+    /**
+     * core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
+     */
+    value?: string;
+}
+
+/**
+ * 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+ */
+export enum ExpectedHeadState {
+    Absent = "ABSENT",
+    Found = "FOUND",
 }
 
 /**
@@ -580,6 +623,75 @@ export interface AgentInstallationViewChannelBinding {
     channelId?: string;
     status:     Status;
     triggers:   AgentTrigger[];
+}
+
+/**
+ * 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
+ * snapshot，不是严格存量权威。
+ */
+export interface AgentMemoryEntryPage {
+    entries:                EntryElement[];
+    installationResourceId: string;
+    operationId:            string;
+    state:                  AgentMemoryEntryPageState;
+    workspaceId:            string;
+}
+
+/**
+ * NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+ */
+export interface EntryElement {
+    createdAt: number;
+    eventId:   string;
+    slug:      string;
+    tombstone: boolean;
+}
+
+export enum AgentMemoryEntryPageState {
+    BoundExceeded = "BOUND_EXCEEDED",
+    Complete = "COMPLETE",
+    Unknown = "UNKNOWN",
+}
+
+/**
+ * NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+ */
+export interface AgentMemoryEntryView {
+    createdAt: number;
+    eventId:   string;
+    slug:      string;
+    tombstone: boolean;
+}
+
+/**
+ * DD-66/68、19 §5：fresh HUMAN Installation read 后的原生 core/cold head。正文仅本次 no-store HTTP，不入
+ * Core 数据库、审计或客户端持久存储。ABSENT 不等于 UNREADABLE；tombstone 可带原 head 引用。
+ */
+export interface AgentMemoryReadView {
+    content?: string;
+    /**
+     * UTF-8 bytes of the returned content string, not the whole native NIP-44 JSON body or a
+     * billing measurement.
+     */
+    contentBytes?:          number;
+    createdAt?:             number;
+    eventId?:               string;
+    installationResourceId: string;
+    operationId:            string;
+    slug:                   string;
+    state:                  AgentMemoryReadViewState;
+    /**
+     * FOUND only: native buzz mem hash of the exact UTF-8 value, used by strict patch baseHash;
+     * not the JSON body or a stored plaintext copy.
+     */
+    valueHash?:  string;
+    workspaceId: string;
+}
+
+export enum AgentMemoryReadViewState {
+    Absent = "ABSENT",
+    Found = "FOUND",
+    Unreadable = "UNREADABLE",
 }
 
 export interface AgentVersionView {
@@ -1458,6 +1570,33 @@ export interface WorkspacePreferenceRequest {
     muted:   boolean;
     starred: boolean;
     version: number;
+}
+
+/**
+ * HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
+ */
+export interface AgentMemoryWriteInput {
+    /**
+     * entry.patch 当前原生 value 的 SHA-256。
+     */
+    baseHash?: string;
+    /**
+     * 调用方实际读取的 head；null 只表示原生确认不存在。
+     */
+    expectedHeadEventId?: null | string;
+    /**
+     * 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+     */
+    expectedHeadState: ExpectedHeadState;
+    /**
+     * entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
+     */
+    patch?: string;
+    slug:   string;
+    /**
+     * core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
+     */
+    value?: string;
 }
 
 /**

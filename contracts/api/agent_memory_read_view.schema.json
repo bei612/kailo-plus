@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_memory_read_view.schema.json",
+  "title": "AgentMemoryReadView",
+  "description": "DD-66/68、19 §5：fresh HUMAN Installation read 后的原生 core/cold head。正文仅本次 no-store HTTP，不入 Core 数据库、审计或客户端持久存储。ABSENT 不等于 UNREADABLE；tombstone 可带原 head 引用。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["installationResourceId", "workspaceId", "operationId", "slug", "state"],
+  "properties": {
+    "installationResourceId": {"type": "string", "format": "uuid"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "operationId": {"type": "string", "format": "uuid"},
+    "slug": {"type": "string", "minLength": 1, "maxLength": 255},
+    "state": {"type": "string", "enum": ["FOUND", "ABSENT", "UNREADABLE"]},
+    "eventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "createdAt": {"type": "integer", "minimum": 0},
+    "content": {"type": "string"},
+    "valueHash": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "FOUND only: native buzz mem hash of the exact UTF-8 value, used by strict patch baseHash; not the JSON body or a stored plaintext copy."},
+    "contentBytes": {"type": "integer", "minimum": 0, "description": "UTF-8 bytes of the returned content string, not the whole native NIP-44 JSON body or a billing measurement."}
+  }
+}

@@ -80,6 +80,12 @@ String platformTaskPhase(TaskView task, {String? locale}) {
       break;
   }
   if (task.workflowId == null) {
+    if (task.actionKey.startsWith('task.cancel.')) {
+      return platformText(
+        PlatformMessageKey.tasksStatusCancelRequestAccepted,
+        locale: locale,
+      );
+    }
     return platformText(PlatformMessageKey.tasksStatusApplied, locale: locale);
   }
   return switch (task.taskStatus) {

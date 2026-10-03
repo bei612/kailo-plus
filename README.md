@@ -4,7 +4,74 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 最新交付状态（2026-10-03 01:26 UTC）
+## 当前功能批（2026-10-03，集中收口）
+
+**仍未生产就绪。** 当前选定实现包含 Memory 原生读取与 HUMAN owner 四写动作、
+正常 turn 的全集用量结算、确定无模型派发的取消收敛，以及共源客户端消费。
+它们只复用原 ActionExecution、UsageEvent、Buzz NIP-AE 与 OpenMeter，不建立第二权威。
+本节是实现后的交付事实，不改变原路线或增加产品要求。
+
+- 已运行的窄验证：共享 TypeScript 原页面检查 63/63、Web/Desktop 类型检查、
+  Mobile 原页面检查 63/63 与 analyze 均退出 0；这不是三端实机或业务 E2E。
+  HUMAN writer 的四侧生成、隔离库 53 条迁移与 SQLx、原生严格补丁破坏/还原有独立回执。
+  最后两源审计/准入过期修正只纳入本批集中检查，不借旧日志声称它已验收。
+- 原 Web helper 对 98 个真实输入构建、上传并读回退出 0，artifact
+  `sha256:97bc23790559a9019feaba5bb9e514d19730410b20beb9cc8dca2924823fb69e`，
+  source `sha256:998c3c64308aef52bdf29eb3a2f0e05d954bface856468f6927e05a5b5535bba`。
+  Compose 与 14 条实际 Web 产物引用已对齐；产物未部署，不把 registry push 当 Git push。
+- 本批固定树的原 `check.sh --full` 已实际退出 1：编译、四侧生成与兼容、
+  既有验证和 replay 通过；两处 Gateway 产物引用遗漏及共享 Buzz 变更后的
+  Relay/Win11 来源失配失败。前者已对齐实际 `471fa4e9…`，后者须由原 helper
+  真实构建，不手写 source/artifact 摘要冒充通过。数据库和实际配置预检为 SKIP。
+  原失败回执见 Agent 记录；公开提交、Core/Worker release 与部署尚未完成，
+  运行产物仍为下节历史版本。
+- 随后原 Relay 与 Win11 helper 均完整退出 0。Relay 的 1118 个输入 source
+  `e68add606d98c362e49f9a9fbf33cc4deb24936d065e1ac4f5ef456e79ec30fe`，
+  artifact `d42f83fa0dadcd78c4ad721047433a9a7c8e522767edd96cb326d641c5dd0056`；
+  独立 registry HTTP200 与原 manifest SHA 一致。Win11 的 2255 个输入 source
+  `af6418a4394f1ddff402ef968eaaa45c4319fbc7e843c87cef42dc026c4602ee`，
+  15,076,978 字节安装包 artifact
+  `5378f3703e0208a6f727357f72b59e7e81836889adf0ff54990f8c718badecce`。
+  两者源码摘要前后逐字相等，只同步原来源与 Relay pin；没有部署或重复构建 Web。
+  Win11 包未签名、未安装运行。原 full1 历史保留，不把产物生成记为真实
+  Memory、计量或设备验收。
+- 修正产物指针的固定树 `433be885faead1e95072e10ca447d36b660a1fa7`
+  原 `tools/check.sh --full` 实际退出 0：128 schema、四侧、Core/replay、追溯和来源均通过。
+  数据库与实际配置仍 SKIP、三项外部演练 ignored；尚未公开提交、本批 release 或部署。
+  原日志 SHA 和前后输入证明见 Agent 记录。
+- Installation/Grant 的公开生产者、模型与工具治理、严格预留、真实 Agent/Memory/计量
+  业务闭环及 Win11/Mobile 设备和签名仍有缺口。Cells、WeKnora、Wren 未完成集成，
+  不以这些可选扩展缺席阻断核心功能实现。
+
+详细来源与验证边界见 [Agent 记录](core/verify/agent-definition.md)、
+[Web 记录](web-client/fork/verify/web-surface.md) 和
+[Mobile 记录](collaboration/fork/verify/mobile-client.md)。
+本批 Win11 来源、原日志与未验收边界见
+[Desktop 记录](collaboration/fork/verify/desktop-client.md)。
+
+## 上一批交付状态（2026-10-03 03:30 UTC）
+
+**仍未生产就绪。** Gateway 原生持久用量批已提交并普通 push 为
+`ab27c8ed5cd4cd4c0fda8e7748a18649cfbffde4`，本地与远端 main 已核对一致。
+该批只包含 Gateway 的原生 dispatch/request-set 证据、来源与产物指针，
+不把后续 Memory、正常 turn 或取消增量提前计入已交付范围。
+
+- 验证：该批固定源码树的原 `tools/check.sh --full` 实际退出 0；128 schema、四侧生成与兼容、
+  原验证/replay、18 条追溯与实际 Gateway 来源均通过。平台数据库和实际 `.env` 预检明确 SKIP，
+  三项外部演练 ignored；签名、设备与真实 Agent 业务闭环仍未通过。
+- 部署：只替换 Gateway 为 `sha256:471fa4e93689fc0a896b641decd94ca14fa7e76765899c6a8c1dea2c94e881ad`，
+  原公开监听地址保持不变。匿名 `/app/` 与 `/api/v1/session` 实际均为 HTTP 302 登录跳转，
+  其余 23 个 Compose 服务的容器 ID、镜像和启动时间逐个比对未变；没有重建或重置 Core、Worker、数据库。
+  这是产物部署和匿名准入证据，不是模型调用、Memory 或账单业务验收。
+- 正在收口的实现：Memory HUMAN 四项写动作复用 Buzz 原生签名、加密、head 与 CLI 严格补丁；
+  通过原 Action 路径接入治理、一次发布和 UNKNOWN 对账。Web/Desktop 共用同一写入页面，
+  Mobile Definition/Version 与 Memory 保持 BFF 只读；上述增量已合入同一私有候选，尚未提交或部署。
+  Core、客户端与契约的集中验证分别留回执，不以源码合入提高生产完成度。
+
+Gateway 构建、完整检查的失败/跳过与本次部署边界见
+[原生用量记录](model-gateway/fork/verify/durable-usage.md)。此前 Core/Worker/Web 的运行产物仍为下节记录的版本。
+
+## 上一批交付状态（2026-10-03 01:26 UTC）
 
 **仍未生产就绪。** Runtime 配置与正式打包输入批已提交并普通 push 为
 `67b48b7c027317efb59533ee9dcb5bc9b4a1a892`；该源码提交已与远端 main 核对。

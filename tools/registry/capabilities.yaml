@@ -10,6 +10,9 @@ capabilities:
   - /api/v1/agent-installations/{resource_id}
   - /api/v1/automations
   - /api/v1/automations/{resource_id}
+  - /api/v1/agent-installations/{resource_id}/memory/core
+  - /api/v1/agent-installations/{resource_id}/memory/entries
+  - /api/v1/agent-installations/{resource_id}/memory/entry
   actions:
   - agent.definition.create
   - agent.definition.update
@@ -19,6 +22,13 @@ capabilities:
   - automation.enable
   - automation.pause
   - automation.disable
+  - agent.memory.core.read
+  - agent.memory.entry.list
+  - agent.memory.entry.read
+  - agent.memory.core.replace
+  - agent.memory.entry.set
+  - agent.memory.entry.patch
+  - agent.memory.entry.remove
   tools: []
   workflow_kinds: []
 - id: collab.channel.media

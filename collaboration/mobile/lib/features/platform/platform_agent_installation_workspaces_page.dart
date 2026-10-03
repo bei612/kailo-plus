@@ -6,6 +6,7 @@ import '../../shared/platform/platform_views.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
+import 'platform_agent_definitions_page.dart';
 import 'platform_agent_installations_page.dart';
 import 'platform_automations_page.dart';
 import 'platform_async_view.dart';
@@ -31,6 +32,18 @@ class PlatformAgentInstallationWorkspacesPage extends ConsumerWidget {
           platformText(PlatformMessageKey.platformTabAgents, locale: locale),
         ),
         actions: [
+          IconButton(
+            tooltip: platformText(
+              PlatformMessageKey.agentsOpen,
+              locale: locale,
+            ),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const PlatformAgentDefinitionsPage(),
+              ),
+            ),
+            icon: const Icon(Icons.list_alt),
+          ),
           IconButton(
             tooltip: platformText(
               PlatformMessageKey.platformRefresh,

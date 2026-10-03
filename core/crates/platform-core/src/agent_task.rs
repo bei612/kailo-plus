@@ -131,7 +131,7 @@ pub(crate) async fn advance(
     tracing::debug!(invocation_id=%id, lease_id=%holder.lease_id, "原生 Activity holder 已查证");
     match invocation.status.as_str() {
         "COMPLETED" | "FAILED" | "CANCELED" if !holder.released => {
-            return release_holder(&state, id, false, "BILLING_UNAVAILABLE").await;
+            return release_holder(&state, id, false, "CAPACITY_UNAVAILABLE").await;
         }
         "COMPLETED" => return result(id, TaskStatus::Completed, "NONE"),
         "FAILED" => return result(id, TaskStatus::Failed, "NONE"),
@@ -157,8 +157,14 @@ pub(crate) async fn advance(
         return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT");
     }
     if invocation.cancel_pending && invocation.status == "CREATED" {
-        // 确定未派发只启动释放；Activity 自己的原生终态仍由对账器核证。
-        return release_holder(&state, id, holder.released, "BILLING_UNAVAILABLE").await;
+        // CREATED 的旧读不能证明未派发：与 first_turn 共用 AE→Tenant→Invocation
+        // 锁序，重新查证无 turn/trace/usage 后才记取消，不伪造 native interrupted。
+        return match cancel_before_dispatch(&state, &invocation).await {
+            Ok(true) if holder.released => result(id, TaskStatus::Canceled, "NONE"),
+            Ok(true) => release_holder(&state, id, false, "CAPACITY_UNAVAILABLE").await,
+            Ok(false) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+            Err(error) => unavailable(error),
+        };
     }
     let Some(runtime) = state.agent_runtime.as_ref() else {
         return result(id, TaskStatus::Running, "RUNTIME_UNAVAILABLE");
@@ -292,6 +298,86 @@ pub(crate) async fn advance(
         }
         Err(_) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
     }
+}
+
+/// A canceled CREATED invocation has no model execution to settle. The absence
+/// proof is taken under the same fence as the only first-turn writer; an intent
+/// or trace already written is never reclassified as zero usage.
+async fn cancel_before_dispatch(
+    state: &ServiceState,
+    invocation: &Invocation,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = state.pool.begin().await?;
+    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+    if ae.tenant_id != invocation.tenant_id
+        || ae.workspace_id != Some(invocation.workspace_id)
+        || ae.temporal_workflow_id.as_deref() != Some(invocation.workflow_id.as_str())
+    {
+        return Ok(false);
+    }
+    // Cleanup remains possible after scope revocation/suspension. This lock
+    // fences new dispatch; it does not grant an ACTIVE tenant or permission.
+    let tenant: Option<Uuid> =
+        sqlx::query_scalar("select id from identity.tenant where id=$1 for no key update")
+            .bind(ae.tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if tenant != Some(invocation.tenant_id) {
+        return Ok(false);
+    }
+    let undispatched: Option<bool> = sqlx::query_scalar(
+        "select i.status='CREATED' and i.cancel_pending and i.runtime_turn_id is null
+           and i.native_status is null and i.reply_event_id is null
+           and d.quota_policy='CHECK' and cardinality(d.meters)>0
+           and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+           and not exists(select 1 from outbox.usage_event u where u.invocation_id=i.id or u.operation_id=$6)
+         from catalog.agent_invocation i join catalog.action_definition d
+           on d.action_key=$7 and d.version=$8
+         where i.id=$1 and i.action_execution_id=$2 and i.tenant_id=$3
+           and i.workspace_id=$4 and i.workflow_id=$5 for update of i",
+    )
+    .bind(invocation.id)
+    .bind(ae.id)
+    .bind(ae.tenant_id)
+    .bind(ae.workspace_id)
+    .bind(&invocation.workflow_id)
+    .bind(ae.operation_id)
+    .bind(&ae.action_key)
+    .bind(ae.action_version)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if undispatched != Some(true) {
+        return Ok(false);
+    }
+    let changed = sqlx::query(
+        "update catalog.agent_invocation set status='CANCELED',updated_at=now()
+         where id=$1 and status='CREATED' and cancel_pending and runtime_turn_id is null
+           and native_status is null and reply_event_id is null",
+    )
+    .bind(invocation.id)
+    .execute(&mut *tx)
+    .await?;
+    if changed.rows_affected() != 1 {
+        return Ok(false);
+    }
+    turn_audit(
+        state,
+        &mut tx,
+        &ae,
+        invocation.id,
+        (
+            "canceled-before-dispatch",
+            "OUTCOME",
+            "CANCELED_BEFORE_MODEL_DISPATCH",
+        ),
+        vec![
+            crate::audit::Evidence::new(EvidenceKind::ActionExecutionId, ae.id),
+            crate::audit::Evidence::new(EvidenceKind::TemporalWorkflowId, &invocation.workflow_id),
+        ],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(true)
 }
 
 /// The only first-turn sender. Once DISPATCHING is committed this branch is
@@ -944,7 +1030,10 @@ async fn observe(
             },
         };
         let waiting = match reconcile_reply(state, invocation, id, &event_id).await {
-            Ok(true) => "BILLING_UNAVAILABLE",
+            Ok(true) if released => {
+                return finish_billed_turn(state, invocation, id, status, Some(&event_id)).await;
+            }
+            Ok(true) => "CAPACITY_UNAVAILABLE",
             Ok(false) => {
                 let changed = match sqlx::query("update catalog.agent_invocation set status='UNKNOWN',updated_at=now() where id=$1 and status='RUNNING' and native_status='completed' and runtime_turn_id=$2 and reply_event_id=$3")
                         .bind(invocation.id).bind(id).bind(&event_id)
@@ -965,7 +1054,10 @@ async fn observe(
         return release_holder(state, invocation.id, released, waiting).await;
     }
     if matches!(status, "failed" | "interrupted") {
-        return release_holder(state, invocation.id, released, "BILLING_UNAVAILABLE").await;
+        if released {
+            return finish_billed_turn(state, invocation, id, status, None).await;
+        }
+        return release_holder(state, invocation.id, false, "CAPACITY_UNAVAILABLE").await;
     }
     // 原生 usage notification 仍不替代 durable Usage 与 reply/sideeffect receipts。
     result(invocation.id, TaskStatus::Running, "NONE")
@@ -1439,8 +1531,186 @@ async fn reconcile_reply(
     .await?;
     tx.commit().await?;
     // Relay acceptance proves delivery, not Usage completeness or Invocation
-    // business completion. The caller keeps BILLING_UNAVAILABLE.
+    // business completion. The caller separately requires the committed set.
     Ok(true)
+}
+
+/// A released holder and native terminal turn are necessary but not metering
+/// proof. Finish only after the actual nonempty Gateway set and turn COUNT have
+/// all reached OpenMeter stored_at, and persist those exact references atomically.
+async fn finish_billed_turn(
+    state: &ServiceState,
+    invocation: &Invocation,
+    turn: &str,
+    native_status: &str,
+    reply: Option<&str>,
+) -> Response {
+    let (status, wire_status) = match native_status {
+        "completed" if reply.is_some() => (TaskStatus::Completed, "COMPLETED"),
+        "failed" if reply.is_none() => (TaskStatus::Failed, "FAILED"),
+        "interrupted" if reply.is_none() => (TaskStatus::Canceled, "CANCELED"),
+        _ => {
+            return result(
+                invocation.id,
+                TaskStatus::Running,
+                "UNKNOWN_EXTERNAL_RESULT",
+            )
+        }
+    };
+    let (ids, mut evidence) = match crate::gateway_usage::committed_turn(
+        &state.pool,
+        &state.openmeter,
+        invocation.id,
+        turn,
+        native_status,
+    )
+    .await
+    {
+        Ok(Some(proof)) => proof,
+        Ok(None) | Err(_) => {
+            return release_holder(state, invocation.id, true, "BILLING_UNAVAILABLE").await;
+        }
+    };
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(error) => return unavailable(error),
+    };
+    let ae = match crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await
+    {
+        Ok(ae) => ae,
+        Err(_) => {
+            return result(
+                invocation.id,
+                TaskStatus::Running,
+                "UNKNOWN_EXTERNAL_RESULT",
+            )
+        }
+    };
+    // Cleanup does not grant a new execution after suspend/revoke. Preserve the
+    // existing AE→Tenant→Invocation lock order without requiring ACTIVE now.
+    let tenant: Option<Uuid> =
+        match sqlx::query_scalar("select id from identity.tenant where id=$1 for no key update")
+            .bind(ae.tenant_id)
+            .fetch_optional(&mut *tx)
+            .await
+        {
+            Ok(tenant) => tenant,
+            Err(error) => return unavailable(error),
+        };
+    if tenant != Some(invocation.tenant_id)
+        || ae.workspace_id != Some(invocation.workspace_id)
+        || ae.temporal_workflow_id.as_deref() != Some(invocation.workflow_id.as_str())
+    {
+        return result(
+            invocation.id,
+            TaskStatus::Running,
+            "UNKNOWN_EXTERNAL_RESULT",
+        );
+    }
+    let Ok(event_count) = i64::try_from(ids.len()) else {
+        return result(
+            invocation.id,
+            TaskStatus::Running,
+            "UNKNOWN_EXTERNAL_RESULT",
+        );
+    };
+    let settled: Option<bool> = match sqlx::query_scalar(
+        "select l.state='RELEASED' and l.native_release_confirmed_at is not null
+           and l.terminal_event_id is not null and l.terminal_event_at is not null
+           and (select count(*) from outbox.usage_event u where u.invocation_id=i.id
+             and u.operation_id=$7 and u.id=any($8::uuid[]) and u.settlement_status='COMMITTED'
+             and u.stored_at is not null)=$9
+           and not exists(select 1 from outbox.usage_event u where u.invocation_id=i.id
+             and (u.operation_id<>$7 or not(u.id=any($8::uuid[]))))
+         from catalog.agent_invocation i join admission.capacity_lease l on l.invocation_id=i.id
+           and l.operation_id=$7 and l.tenant_id=i.tenant_id and l.workspace_id=i.workspace_id
+           and l.workflow_id=i.workflow_id
+         where i.id=$1 and i.action_execution_id=$2 and i.tenant_id=$3 and i.workspace_id=$4
+           and i.status in ('RUNNING','UNKNOWN') and i.runtime_turn_id=$5 and i.native_status=$6
+           and i.reply_event_id is not distinct from $10::text for update of i,l",
+    )
+    .bind(invocation.id)
+    .bind(ae.id)
+    .bind(invocation.tenant_id)
+    .bind(invocation.workspace_id)
+    .bind(turn)
+    .bind(native_status)
+    .bind(ae.operation_id)
+    .bind(&ids)
+    .bind(event_count)
+    .bind(reply)
+    .fetch_optional(&mut *tx)
+    .await
+    {
+        Ok(settled) => settled,
+        Err(error) => return unavailable(error),
+    };
+    if settled != Some(true) || ids.is_empty() {
+        return result(
+            invocation.id,
+            TaskStatus::Running,
+            "UNKNOWN_EXTERNAL_RESULT",
+        );
+    }
+    let changed = match sqlx::query(
+        "update catalog.agent_invocation set status=$2,observation_cursor=null,updated_at=now()
+         where id=$1 and status in ('RUNNING','UNKNOWN') and runtime_turn_id=$3 and native_status=$4
+           and reply_event_id is not distinct from $5::text",
+    )
+    .bind(invocation.id)
+    .bind(wire_status)
+    .bind(turn)
+    .bind(native_status)
+    .bind(reply)
+    .execute(&mut *tx)
+    .await
+    {
+        Ok(changed) => changed,
+        Err(error) => return unavailable(error),
+    };
+    if changed.rows_affected() != 1 {
+        return result(
+            invocation.id,
+            TaskStatus::Running,
+            "UNKNOWN_EXTERNAL_RESULT",
+        );
+    }
+    evidence.push(crate::audit::Evidence::new(
+        EvidenceKind::ActionExecutionId,
+        ae.id,
+    ));
+    evidence.push(crate::audit::Evidence::new(
+        EvidenceKind::TemporalWorkflowId,
+        &invocation.workflow_id,
+    ));
+    if let Some(reply) = reply {
+        evidence.push(crate::audit::Evidence::new(
+            EvidenceKind::BuzzEventId,
+            reply,
+        ));
+    }
+    if let Err(error) = turn_audit(
+        state,
+        &mut tx,
+        &ae,
+        invocation.id,
+        ("check-usage-committed", "OUTCOME", wire_status),
+        evidence,
+    )
+    .await
+    {
+        return unavailable(error);
+    }
+    if tx.commit().await.is_err() {
+        return result(
+            invocation.id,
+            TaskStatus::Running,
+            "UNKNOWN_EXTERNAL_RESULT",
+        );
+    }
+    // Task completion certifies execution/reply/CHECK usage; it is deliberately
+    // not an OpenMeter invoice-finalized or credit-snapshot assertion.
+    result(invocation.id, status, "NONE")
 }
 
 async fn release_holder(state: &ServiceState, id: Uuid, released: bool, waiting: &str) -> Response {

@@ -4,6 +4,8 @@
 /// BFF 拒绝什么就显示它按契约给出的 reason code。
 library;
 
+import 'dart:convert';
+
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../auth/auth.dart';
@@ -87,6 +89,82 @@ Future<T> _fetchOne<T>(
   if (response.status != 200) throw PlatformApiError(response);
   return fromJson(response.body! as Map<String, dynamic>);
 }
+
+/// DD-24/25、17 §8：Tenant 目录，空授权页只代表本页；不请求 Workspace 权限。
+final platformAgentDefinitionsProvider = FutureProvider.autoDispose
+    .family<AgentDefinitionPage, int>((ref, offset) async {
+      if (offset < 0) throw const FormatException('Definition page offset');
+      final params = Uri(queryParameters: {'offset': '$offset'}).query;
+      final page = await _fetchOne(
+        ref,
+        '/api/v1/agent-definitions?$params',
+        AgentDefinitionPage.fromJson,
+      );
+      if (page.nextOffset != null && page.nextOffset! <= offset) {
+        throw const FormatException('Definition page cursor');
+      }
+      final ids = <String>{};
+      for (final item in page.definitions) {
+        final row = AgentDefinitionView.fromJson(item.toJson());
+        _validateDefinition(row);
+        if (!ids.add(row.resourceId)) {
+          throw const FormatException('Definition duplicate');
+        }
+      }
+      return page;
+    }, retry: _noRetry);
+
+/// Definition read 独立于目录 discover；不把 403/UNKNOWN 变为空记录。
+final platformAgentDefinitionProvider = FutureProvider.autoDispose
+    .family<AgentDefinitionView, String>((ref, resourceId) async {
+      final row = await _fetchOne(
+        ref,
+        '/api/v1/agent-definitions/${Uri.encodeComponent(resourceId)}',
+        AgentDefinitionView.fromJson,
+      );
+      _validateDefinition(row);
+      if (row.resourceId != resourceId) {
+        throw const FormatException('Definition identity');
+      }
+      return row;
+    }, retry: _noRetry);
+
+// 与共享 TS validDefinition 同一消费边界；Tenant、owner 投影和 read 仍由 BFF 查证。
+void _validateDefinition(AgentDefinitionView row) {
+  if (row.resourceId.isEmpty ||
+      row.ownerPrincipalId.isEmpty ||
+      row.resourceVersion <= 0 ||
+      row.resourceState != ResourceState.ACTIVE ||
+      row.status != 'ACTIVE' ||
+      row.currentPublishedVersionAssetId?.isEmpty == true) {
+    throw const FormatException('Definition record');
+  }
+}
+
+/// 只读已发布指针的 exact Asset；Asset read 不从父 Definition read 推导。
+final platformAgentPublishedVersionProvider = FutureProvider.autoDispose
+    .family<AgentVersionView, ({String resourceId, String assetId})>((
+      ref,
+      query,
+    ) async {
+      final row = await _fetchOne(
+        ref,
+        '/api/v1/agent-versions/${Uri.encodeComponent(query.assetId)}',
+        AgentVersionView.fromJson,
+      );
+      if (row.assetId != query.assetId ||
+          row.agentResourceId != query.resourceId ||
+          row.state != AgentVersionState.PUBLISHED ||
+          row.ordinal <= 0 ||
+          row.assetVersion <= 0 ||
+          row.ownerPrincipalId.isEmpty ||
+          !RegExp(r'^[0-9a-f]{64}$').hasMatch(row.configHash) ||
+          row.content.runtimeProfileKey.isEmpty ||
+          row.content.modelRouteResourceId.isEmpty) {
+        throw const FormatException('Published version record');
+      }
+      return row;
+    }, retry: _noRetry);
 
 /// DD-25/50、17 §8：按选定 Workspace 分页读取，不能据空授权页断言全域为空。
 final platformAgentInstallationsProvider = FutureProvider.autoDispose
@@ -177,6 +255,109 @@ void _validateInstallation(
           row.resourceState != ResourceState.ACTIVE ||
           projection?.toJson()['state'] != 'ACTIVE')) {
     throw const FormatException('Installation active record');
+  }
+}
+
+/// 19 §5/7、REQ-21：只在 Memory 页面打开后枚举原生 head，不取正文。
+final platformAgentMemoryEntriesProvider = FutureProvider.autoDispose
+    .family<AgentMemoryEntryPage, ({String workspaceId, String resourceId})>((
+      ref,
+      query,
+    ) async {
+      final page = await _fetchOne(
+        ref,
+        '/api/v1/agent-installations/${Uri.encodeComponent(query.resourceId)}/memory/entries',
+        AgentMemoryEntryPage.fromJson,
+      );
+      if (page.installationResourceId != query.resourceId ||
+          page.workspaceId != query.workspaceId ||
+          page.operationId.isEmpty) {
+        throw const FormatException('Memory listing scope');
+      }
+      final slugs = <String>{};
+      final heads = <String>{};
+      for (final entry in page.entries) {
+        _validateColdMemorySlug(entry.slug);
+        _validateMemoryHead(entry.eventId, entry.createdAt);
+        if (!slugs.add(entry.slug) || !heads.add(entry.eventId)) {
+          throw const FormatException('Memory duplicate head');
+        }
+      }
+      return page;
+    }, retry: _noRetry);
+
+/// 正文仅在显式打开时 GET；每次打开有独立临时实例，关闭即失去订阅并销毁。
+/// 不 keepAlive、不写用户 cache/磁盘，不复用上次打开的明文。
+final platformAgentMemoryReadProvider = FutureProvider.autoDispose
+    .family<
+      AgentMemoryReadView,
+      ({
+        String workspaceId,
+        String resourceId,
+        String slug,
+        Object readInstance,
+      })
+    >((ref, query) async {
+      final String path;
+      if (query.slug == 'core') {
+        path =
+            '/api/v1/agent-installations/${Uri.encodeComponent(query.resourceId)}/memory/core';
+      } else {
+        _validateColdMemorySlug(query.slug);
+        final params = Uri(queryParameters: {'slug': query.slug}).query;
+        path =
+            '/api/v1/agent-installations/${Uri.encodeComponent(query.resourceId)}/memory/entry?$params';
+      }
+      final row = await _fetchOne(ref, path, AgentMemoryReadView.fromJson);
+      if (row.installationResourceId != query.resourceId ||
+          row.workspaceId != query.workspaceId ||
+          row.slug != query.slug ||
+          row.operationId.isEmpty) {
+        throw const FormatException('Memory read scope');
+      }
+      final hasHead = row.eventId != null || row.createdAt != null;
+      if (hasHead) {
+        if (row.eventId == null || row.createdAt == null) {
+          throw const FormatException('Memory incomplete head');
+        }
+        _validateMemoryHead(row.eventId!, row.createdAt!);
+      }
+      switch (row.state) {
+        case AgentMemoryReadViewState.FOUND:
+          if (!hasHead ||
+              row.content == null ||
+              row.contentBytes != utf8.encode(row.content!).length) {
+            throw const FormatException('Memory content evidence');
+          }
+        case AgentMemoryReadViewState.ABSENT:
+          if (row.content != null || row.contentBytes != null) {
+            throw const FormatException('Memory absent content');
+          }
+        case AgentMemoryReadViewState.UNREADABLE:
+          if (hasHead || row.content != null || row.contentBytes != null) {
+            throw const FormatException('Memory unreadable content');
+          }
+      }
+      return row;
+    }, retry: _noRetry);
+
+// Buzz@779af8886caae1317b4de962082429867ab61503 engram.rs::validate_slug。
+// 原协议语法/255 bytes，不是客户端创建的目录或新限额。
+void _validateColdMemorySlug(String slug) {
+  if (utf8.encode(slug).length > 255 ||
+      RegExp(
+            r'^mem/[a-z0-9][a-z0-9_-]{0,63}(/[a-z0-9][a-z0-9_-]{0,63})*$',
+          ).stringMatch(slug) !=
+          slug) {
+    throw const FormatException('Memory slug');
+  }
+}
+
+void _validateMemoryHead(String eventId, int createdAt) {
+  if (eventId.length != 64 ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(eventId) ||
+      createdAt < 0) {
+    throw const FormatException('Memory head');
   }
 }
 

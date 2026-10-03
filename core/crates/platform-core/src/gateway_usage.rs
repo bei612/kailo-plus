@@ -28,6 +28,14 @@ const SOURCE_KEY: &str = "agentgateway-durable-usage-tail";
 struct Page {
     entries: Vec<Entry>,
     next_cursor: i64,
+    #[serde(default)]
+    submitted_requests: Option<i64>,
+    #[serde(default)]
+    pending_requests: Option<i64>,
+    #[serde(default)]
+    untracked_requests: Option<i64>,
+    #[serde(default)]
+    request_set_complete: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -35,12 +43,72 @@ struct Page {
 struct Entry {
     seq: i64,
     id: Uuid,
+    #[serde(default)]
+    dispatch_attempt: Option<i64>,
     started_at: DateTime<Utc>,
     completed_at: DateTime<Utc>,
     trace_id: Option<String>,
     agentgateway_user: Option<String>,
     gen_ai: GenAi,
     usage: Usage,
+}
+
+/// Only a complete native pagination observation. It has no database state,
+/// meter, balance or dispatch authority; callers cannot correlate its partial set.
+#[derive(Default)]
+struct RequestSet {
+    after: i64,
+    submitted: Option<i64>,
+    ids: HashSet<Uuid>,
+    entries: Vec<Entry>,
+}
+
+impl RequestSet {
+    fn absorb(
+        &mut self,
+        page: Page,
+        trace: &str,
+        principal: Uuid,
+        batch: i64,
+    ) -> Result<bool, &'static str> {
+        page.validate(self.after, batch)?;
+        let count = page
+            .submitted_requests
+            .filter(|count| *count > 0)
+            .ok_or("Gateway native dispatch 集合缺失或为空；不能证明零用量")?;
+        if page.request_set_complete != Some(true)
+            || page.pending_requests != Some(0)
+            || page.untracked_requests != Some(0)
+            || self.submitted.is_some_and(|known| known != count)
+        {
+            return Err("Gateway native dispatch/completion 集合尚未完整或分页变化");
+        }
+        self.submitted = Some(count);
+        // Native can cap a configured page limit. Only its empty page proves
+        // exhaustion; a short page is not the request-set boundary.
+        let exhausted = page.entries.is_empty();
+        let user = principal.to_string();
+        for entry in page.entries {
+            if entry.trace_id.as_deref() != Some(trace)
+                || entry.agentgateway_user.as_deref() != Some(user.as_str())
+                || entry.dispatch_attempt.is_none_or(|attempt| attempt < 0)
+                || !self.ids.insert(entry.id)
+            {
+                return Err("Gateway request 缺同 trace/专属身份/持久 attempt 或重复 ID");
+            }
+            self.entries.push(entry);
+        }
+        let observed =
+            i64::try_from(self.ids.len()).map_err(|_| "Gateway request 集合大小不可核验")?;
+        if observed > count {
+            return Err("Gateway request 数量超过原生已提交集合");
+        }
+        self.after = page.next_cursor;
+        if exhausted && observed != count {
+            return Err("Gateway native completion 页没有覆盖全部已提交请求");
+        }
+        Ok(exhausted)
+    }
 }
 
 #[derive(Deserialize)]
@@ -112,6 +180,30 @@ struct UncountedInvocation {
     runtime_thread_id: String,
     runtime_turn_id: String,
     native_status: Option<String>,
+}
+
+#[derive(FromRow)]
+struct SettlementFacts {
+    trace_id: String,
+    operation_id: Uuid,
+    tenant_id: Uuid,
+    workspace_id: Uuid,
+    gateway_principal_id: Uuid,
+    customer_id: String,
+    namespace: String,
+    subject_key: String,
+    meter_projection: Value,
+    invocation_meter_projection: Value,
+    meters: Vec<String>,
+}
+
+#[derive(FromRow)]
+struct SettlementEvent {
+    id: Uuid,
+    source_type: String,
+    source_id: Uuid,
+    meter_key: String,
+    native_turn_id: Option<String>,
 }
 
 const CORRELATION: &str = "select t.invocation_id,t.operation_id,t.tenant_id,t.workspace_id,
@@ -807,16 +899,29 @@ impl Ingress {
     }
 
     async fn read(&self, after: i64, batch: i64) -> Result<Page, &'static str> {
+        self.read_page(after, batch, None).await
+    }
+
+    async fn read_page(
+        &self,
+        after: i64,
+        batch: i64,
+        trace: Option<&str>,
+    ) -> Result<Page, &'static str> {
         let token = self
             .tokens
             .token()
             .await
             .map_err(|_| "Gateway usage 身份不可用")?;
-        let response = self
+        let mut request = self
             .http
             .get(self.endpoint.clone())
             .bearer_auth(token)
-            .query(&[("after", after), ("limit", batch)])
+            .query(&[("after", after), ("limit", batch)]);
+        if let Some(trace) = trace {
+            request = request.query(&[("traceId", trace)]);
+        }
+        let response = request
             .send()
             .await
             .map_err(|_| "Gateway usage 请求结果不明")?;
@@ -836,6 +941,26 @@ impl Ingress {
             .map_err(|_| "Gateway usage 响应不可核验")?;
         page.validate(after, batch)?;
         Ok(page)
+    }
+
+    /// A native nonempty dispatch set, not a tail cursor or locally observed
+    /// UsageEvent count. The final Codex turn/Capacity fence is supplied by Task.
+    async fn completed_requests(
+        &self,
+        trace: &str,
+        principal: Uuid,
+        batch: i64,
+    ) -> Result<Vec<Entry>, &'static str> {
+        if batch <= 0 {
+            return Err("Gateway usage 治理对账批次无效");
+        }
+        let mut requests = RequestSet::default();
+        loop {
+            let page = self.read_page(requests.after, batch, Some(trace)).await?;
+            if requests.absorb(page, trace, principal, batch)? {
+                return Ok(requests.entries);
+            }
+        }
     }
 
     /// 由同一治理对账循环调用。多 Core 副本以 checkpoint 行锁互斥；原生请求和
@@ -1022,76 +1147,409 @@ impl Ingress {
         let ids: Vec<Uuid> = sqlx::query_scalar("select id from outbox.usage_event
             where settlement_status in ('PENDING_PUBLISH','ACCEPTED','UNKNOWN') order by updated_at,id limit $1")
             .bind(batch).fetch_all(pool).await.map_err(|_| "UsageEvent 待投递集合不可读")?;
-        let mut unavailable = false;
-        for id in &ids {
-            let mut tx = pool
-                .begin()
-                .await
-                .map_err(|_| "UsageEvent 对账事务不可用")?;
-            let row: Option<(Value,String,String,Uuid,Uuid,String)> = sqlx::query_as("select u.event,u.settlement_status,t.openmeter_namespace,
+        settle_events(pool, &ids, openmeter).await?;
+        self.unavailable.record(0, &[]);
+        // 仅表示当前 outbox 无待投递对象；不是 turn 请求全集或账单终态。
+        Ok(ids.is_empty())
+    }
+}
+
+/// CHECK completion consumes the actual native dispatch set and the separately
+/// acknowledged turn COUNT. This is committed metering, not invoice finalization
+/// or STRICT reservation release. An empty native set is never zero usage proof.
+pub(crate) async fn committed_turn(
+    pool: &PgPool,
+    openmeter: &OpenMeter,
+    invocation: Uuid,
+    turn: &str,
+    native_status: &str,
+) -> Result<Option<(Vec<Uuid>, Vec<Evidence>)>, &'static str> {
+    if !matches!(native_status, "completed" | "failed" | "interrupted") {
+        return Err("计量查证缺确定 native turn 终态");
+    }
+    let facts: SettlementFacts = sqlx::query_as(
+        "select t.trace_id,t.operation_id,t.tenant_id,t.workspace_id,t.gateway_principal_id,
+           t.openmeter_customer_id customer_id,t.openmeter_namespace namespace,t.subject_key,
+           t.meter_projection,t.invocation_meter_projection,d.meters
+         from projection.agent_model_trace t join catalog.agent_invocation i on i.id=t.invocation_id
+         join admission.action_execution a on a.id=i.action_execution_id
+         join catalog.action_definition d on d.action_key=a.action_key and d.version=a.action_version
+         join admission.capacity_lease l on l.invocation_id=i.id and l.operation_id=a.operation_id
+         where i.id=$1 and i.runtime_turn_id=$2 and i.native_status=$3 and i.status in ('RUNNING','UNKNOWN')
+           and a.action_key='automation.run' and a.operation_id=t.operation_id
+           and a.tenant_id=t.tenant_id and a.workspace_id=t.workspace_id
+           and i.tenant_id=t.tenant_id and i.workspace_id=t.workspace_id
+           and a.gate_state='ALLOWED' and d.quota_policy='CHECK'
+           and l.tenant_id=i.tenant_id and l.workspace_id=i.workspace_id and l.workflow_id=i.workflow_id
+           and l.state='RELEASED' and l.native_release_confirmed_at is not null
+           and l.terminal_event_id is not null and l.terminal_event_at is not null")
+        .bind(invocation).bind(turn).bind(native_status).fetch_optional(pool).await
+        .map_err(|_| "计量查证的原 Invocation/operation/Capacity 不可读")?
+        .ok_or("计量查证缺同 scope 的已释放 native/Temporal holder")?;
+    if facts.namespace != openmeter.namespace() {
+        return Err("计量查证 namespace 与冻结 trace 不一致");
+    }
+    let meters: Vec<GatewayMeter> = serde_json::from_value(facts.meter_projection)
+        .map_err(|_| "计量查证冻结 SUM meter 不可读")?;
+    let count: InvocationMeter = serde_json::from_value(facts.invocation_meter_projection)
+        .map_err(|_| "计量查证冻结 COUNT meter 不可读")?;
+    let mut meter_keys: HashSet<String> = meters.iter().map(|meter| meter.key.clone()).collect();
+    let action_meters: HashSet<String> = facts.meters.iter().cloned().collect();
+    if meters.is_empty()
+        || meter_keys.len() != meters.len()
+        || !meter_keys.insert(count.key.clone())
+        || count.key != "automation.run"
+        || action_meters.len() != facts.meters.len()
+        || meter_keys != action_meters
+    {
+        return Err("计量查证 SUM/COUNT 集合与原 CHECK 动作不一致");
+    }
+    let batch = std::env::var("GOVERNANCE_RECONCILE_BATCH")
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .ok_or("计量查证缺现有治理对账批次投递")?;
+    let ingress = Ingress::from_env(&opentelemetry::global::meter("platform-core"))
+        .map_err(|_| "计量查证缺现有 Gateway 原生读取投递")?;
+    let entries = tokio::time::timeout(
+        ingress.timeout,
+        ingress.completed_requests(&facts.trace_id, facts.gateway_principal_id, batch),
+    )
+    .await
+    .map_err(|_| "Gateway 请求全集查证超时；保留原用量待对账")??;
+    let mut expected = HashSet::new();
+    expected.insert(("AGENT_INVOCATION".to_owned(), invocation, count.key));
+    let mut evidence = vec![Evidence::new(EvidenceKind::TraceId, &facts.trace_id)];
+    let mut tx = pool.begin().await.map_err(|_| "计量全集关联事务不可用")?;
+    for entry in &entries {
+        // Reuses exactly the global ingress attribution, native quantities and
+        // stable event identities; it does not create another source or ledger.
+        correlate(&mut tx, entry, &facts.namespace).await?;
+        for meter in &meters {
+            expected.insert((
+                "GATEWAY_DURABLE_USAGE".to_owned(),
+                entry.id,
+                meter.key.clone(),
+            ));
+        }
+        evidence.push(Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id));
+    }
+    let events: Vec<SettlementEvent> = sqlx::query_as(
+        "select id,source_type,source_id,meter_key,native_turn_id from outbox.usage_event
+         where invocation_id=$1 and operation_id=$2 and tenant_id=$3 and workspace_id=$4
+           and openmeter_customer_id=$5 and openmeter_namespace=$6 and subject_key=$7 order by id",
+    )
+    .bind(invocation)
+    .bind(facts.operation_id)
+    .bind(facts.tenant_id)
+    .bind(facts.workspace_id)
+    .bind(&facts.customer_id)
+    .bind(&facts.namespace)
+    .bind(&facts.subject_key)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|_| "计量全集的持久 UsageEvent 不可读")?;
+    if events.len() != expected.len() {
+        return Err("计量全集缺 SUM/COUNT 事件或包含额外来源");
+    }
+    let mut ids = Vec::with_capacity(events.len());
+    for event in events {
+        if !expected.remove(&(event.source_type.clone(), event.source_id, event.meter_key))
+            || (event.source_type == "AGENT_INVOCATION"
+                && event.native_turn_id.as_deref() != Some(turn))
+        {
+            return Err("计量全集的 source/meter/native turn 不一致");
+        }
+        ids.push(event.id);
+        evidence.push(Evidence::new(EvidenceKind::UsageEventId, event.id));
+        evidence.push(Evidence::new(EvidenceKind::OpenmeterEventId, event.id));
+    }
+    tx.commit().await.map_err(|_| "计量全集关联提交结果不明")?;
+    if !settle_events(pool, &ids, openmeter).await? {
+        return Ok(None);
+    }
+    Ok(Some((ids, evidence)))
+}
+
+/// The same outbox publisher serves the exact UsageEvents of a governed read.
+/// Only native stored_at can close each event; an accepted enqueue, absent ID,
+/// or a row held by another reconciler is not a completed read charge.
+pub(crate) async fn settle_events(
+    pool: &PgPool,
+    ids: &[Uuid],
+    openmeter: &OpenMeter,
+) -> Result<bool, &'static str> {
+    let mut unavailable = false;
+    let mut committed = true;
+    for id in ids {
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|_| "UsageEvent 对账事务不可用")?;
+        let row: Option<(Value,String,Uuid,Uuid,String)> = sqlx::query_as("select u.event,u.openmeter_namespace,
                 u.operation_id,u.source_id,u.source_type
-                from outbox.usage_event u join projection.agent_model_trace t on t.invocation_id=u.invocation_id
+                from outbox.usage_event u
                 where u.id=$1 and u.settlement_status in ('PENDING_PUBLISH','ACCEPTED','UNKNOWN') for update of u skip locked")
                 .bind(id).fetch_optional(&mut *tx).await.map_err(|_| "UsageEvent 对账事实不可读")?;
-            let Some((event, status, namespace, operation, source_id, source_type)) = row else {
-                continue;
-            };
-            let evidence = if namespace == openmeter.namespace() {
-                openmeter.stored_usage(&event).await
-            } else {
-                Err(crate::openmeter::Error::Conflict)
-            };
-            let (next, stored_at) = match evidence {
-                Ok(Some(evidence)) => {
-                    if evidence.configuration_warning {
-                        tracing::warn!(usage_event_id=%id,reason_code="BILLING_UNAVAILABLE",
+        let Some((event, namespace, operation, source_id, source_type)) = row else {
+            let already_committed: bool = sqlx::query_scalar(
+                "select exists(select 1 from outbox.usage_event
+                    where id=$1 and settlement_status='COMMITTED' and stored_at is not null)",
+            )
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| "UsageEvent 已提交事实不可读")?;
+            committed &= already_committed;
+            continue;
+        };
+        if !matches!(
+            source_type.as_str(),
+            "GATEWAY_DURABLE_USAGE" | "AGENT_INVOCATION" | "BUZZ_AGENT_MEMORY"
+        ) {
+            return Err("UsageEvent source 不可核验");
+        }
+        let evidence = if namespace == openmeter.namespace() {
+            openmeter.stored_usage(&event).await
+        } else {
+            Err(crate::openmeter::Error::Conflict)
+        };
+        let (next, stored_at) = match evidence {
+            Ok(Some(evidence)) => {
+                if evidence.configuration_warning {
+                    tracing::warn!(usage_event_id=%id,reason_code="BILLING_UNAVAILABLE",
                             "OpenMeter event 已 stored_at；读时配置告警不重判持久事实或声称账单已结算");
-                    }
-                    ("COMMITTED", Some(evidence.stored_at))
                 }
-                Ok(None) if status == "ACCEPTED" => ("ACCEPTED", None),
-                Ok(None) => match openmeter.publish_usage(&event).await {
-                    Ok(()) => ("ACCEPTED", None),
-                    Err(_) => {
-                        unavailable = true;
-                        ("UNKNOWN", None)
-                    }
-                },
+                ("COMMITTED", Some(evidence.stored_at))
+            }
+            // The native 202 only enqueues into Kafka's producer; a later
+            // delivery failure has no HTTP acknowledgement. DD-08 retries
+            // this frozen CloudEvent through the two native deduplicators,
+            // never the model call or a new event identity. Only stored_at
+            // ends delivery reconciliation, including after ACCEPTED.
+            Ok(None) => match openmeter.publish_usage(&event).await {
+                Ok(()) => ("ACCEPTED", None),
                 Err(_) => {
                     unavailable = true;
                     ("UNKNOWN", None)
                 }
-            };
-            sqlx::query("update outbox.usage_event set settlement_status=$2,stored_at=$3,updated_at=now() where id=$1")
+            },
+            Err(_) => {
+                unavailable = true;
+                ("UNKNOWN", None)
+            }
+        };
+        committed &= delivery_committed(next, stored_at);
+        sqlx::query("update outbox.usage_event set settlement_status=$2,stored_at=$3,updated_at=now() where id=$1")
                 .bind(id).bind(next).bind(stored_at).execute(&mut *tx).await
                 .map_err(|_| "UsageEvent 对账结果不可持久")?;
-            let mut evidence = vec![
-                Evidence::new(EvidenceKind::UsageEventId, id),
-                Evidence::new(EvidenceKind::OpenmeterEventId, id),
-            ];
-            if source_type == "GATEWAY_DURABLE_USAGE" {
-                evidence.push(Evidence::new(EvidenceKind::AgentgatewayUsageId, source_id));
-            } else if source_type != "AGENT_INVOCATION" {
-                return Err("UsageEvent source 不可核验");
-            }
-            usage_audit(
-                &mut tx,
-                operation,
-                &format!("usage:{id}:{next}"),
-                "RECONCILIATION",
-                next,
-                evidence,
+        let mut evidence = vec![
+            Evidence::new(EvidenceKind::UsageEventId, id),
+            Evidence::new(EvidenceKind::OpenmeterEventId, id),
+        ];
+        if source_type == "GATEWAY_DURABLE_USAGE" {
+            evidence.push(Evidence::new(EvidenceKind::AgentgatewayUsageId, source_id));
+        } else if source_type == "BUZZ_AGENT_MEMORY" {
+            evidence.push(Evidence::new(
+                EvidenceKind::OriginalActionExecutionId,
+                source_id,
+            ));
+        }
+        usage_audit(
+            &mut tx,
+            operation,
+            &format!("usage:{id}:{next}"),
+            "RECONCILIATION",
+            next,
+            evidence,
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|_| "UsageEvent 对账提交结果不明")?;
+    }
+    if unavailable {
+        return Err("BILLING_UNAVAILABLE：OpenMeter usage 投递/查证结果不明");
+    }
+    Ok(committed)
+}
+
+fn delivery_committed(status: &str, stored_at: Option<DateTime<Utc>>) -> bool {
+    status == "COMMITTED" && stored_at.is_some()
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::{delivery_committed, Page, RequestSet};
+    use chrono::Utc;
+    use serde_json::{json, Value};
+    use uuid::Uuid;
+
+    // Protocol-only inputs to the same production guard, added after the live
+    // consumer. These create no Tenant, Invocation, meter, model call or UsageEvent.
+    fn page(entries: Vec<Value>, cursor: i64, submitted: i64) -> Page {
+        serde_json::from_value(json!({
+            "entries": entries, "nextCursor": cursor,
+            "submittedRequests": submitted, "pendingRequests": 0,
+            "untrackedRequests": 0, "requestSetComplete": true
+        }))
+        .expect("native Page field types")
+    }
+
+    fn entry(id: Uuid, seq: i64, trace: &str, principal: Uuid) -> Value {
+        let observed = Utc::now();
+        json!({
+            "id":id,"seq":seq,"dispatchAttempt":0,
+            "startedAt":observed,"completedAt":observed,
+            "traceId":trace,"agentgatewayUser":principal,
+            "genAi":{"providerName":null,"requestModel":null},
+            "usage":{"inputTokens":null,"outputTokens":null,"totalTokens":null}
+        })
+    }
+
+    #[test]
+    fn native_set_requires_every_short_page_and_empty_exhaustion() {
+        let trace = Uuid::new_v4().simple().to_string();
+        let principal = Uuid::new_v4();
+        let mut set = RequestSet::default();
+        // A native-capped short page is not exhaustion, even though batch=2.
+        assert!(!set
+            .absorb(
+                page(vec![entry(Uuid::new_v4(), 1, &trace, principal)], 1, 2),
+                &trace,
+                principal,
+                2
             )
-            .await?;
-            tx.commit()
-                .await
-                .map_err(|_| "UsageEvent 对账提交结果不明")?;
+            .expect("first native page"));
+        assert!(!set
+            .absorb(
+                page(vec![entry(Uuid::new_v4(), 2, &trace, principal)], 2, 2),
+                &trace,
+                principal,
+                2
+            )
+            .expect("second native page"));
+        assert!(set
+            .absorb(page(vec![], 2, 2), &trace, principal, 2)
+            .expect("exhausted native set"));
+        assert_eq!(set.ids.len(), 2);
+        assert_eq!(set.entries.len(), 2);
+    }
+
+    #[test]
+    fn empty_native_set_and_missing_completion_page_never_prove_zero_usage() {
+        let trace = Uuid::new_v4().simple().to_string();
+        let principal = Uuid::new_v4();
+        assert!(RequestSet::default()
+            .absorb(page(vec![], 0, 0), &trace, principal, 2)
+            .is_err());
+        let mut set = RequestSet::default();
+        assert!(!set
+            .absorb(
+                page(vec![entry(Uuid::new_v4(), 1, &trace, principal)], 1, 2),
+                &trace,
+                principal,
+                2
+            )
+            .expect("partial native page"));
+        assert!(set
+            .absorb(page(vec![], 1, 2), &trace, principal, 2)
+            .is_err());
+    }
+
+    #[test]
+    fn changing_pending_legacy_or_missing_native_snapshot_is_unknown() {
+        let trace = Uuid::new_v4().simple().to_string();
+        let principal = Uuid::new_v4();
+        let id = Uuid::new_v4();
+        let mut set = RequestSet::default();
+        assert!(!set
+            .absorb(
+                page(vec![entry(id, 1, &trace, principal)], 1, 2),
+                &trace,
+                principal,
+                2
+            )
+            .expect("partial native page"));
+        assert!(set
+            .absorb(
+                page(vec![entry(Uuid::new_v4(), 2, &trace, principal)], 2, 3),
+                &trace,
+                principal,
+                2
+            )
+            .is_err());
+        for counter in ["pendingRequests", "untrackedRequests"] {
+            let mut snapshot = json!({
+                "entries":[entry(Uuid::new_v4(), 1, &trace, principal)],
+                "nextCursor":1,"submittedRequests":1,
+                "pendingRequests":0,"untrackedRequests":0,"requestSetComplete":true
+            });
+            snapshot[counter] = 1.into();
+            let page = serde_json::from_value(snapshot).expect("native counters");
+            assert!(RequestSet::default()
+                .absorb(page, &trace, principal, 2)
+                .is_err());
         }
-        if unavailable {
-            return Err("BILLING_UNAVAILABLE：OpenMeter usage 投递/查证结果不明");
+        let legacy =
+            serde_json::from_value(json!({"entries":[],"nextCursor":0})).expect("legacy Page");
+        assert!(RequestSet::default()
+            .absorb(legacy, &trace, principal, 2)
+            .is_err());
+    }
+
+    #[test]
+    fn repeated_request_id_cannot_reenter_attribution_as_another_effect() {
+        let trace = Uuid::new_v4().simple().to_string();
+        let principal = Uuid::new_v4();
+        let id = Uuid::new_v4();
+        let mut set = RequestSet::default();
+        assert!(!set
+            .absorb(
+                page(vec![entry(id, 1, &trace, principal)], 1, 1),
+                &trace,
+                principal,
+                1
+            )
+            .expect("first native request"));
+        assert!(set
+            .absorb(
+                page(vec![entry(id, 2, &trace, principal)], 2, 1),
+                &trace,
+                principal,
+                1
+            )
+            .is_err());
+        assert_eq!(set.entries.len(), 1);
+    }
+
+    #[test]
+    fn missing_attempt_wrong_scope_or_cursor_cannot_complete_the_set() {
+        let trace = Uuid::new_v4().simple().to_string();
+        let principal = Uuid::new_v4();
+        for field in ["dispatchAttempt", "traceId", "agentgatewayUser"] {
+            let mut native = entry(Uuid::new_v4(), 1, &trace, principal);
+            native[field] = Value::Null;
+            assert!(RequestSet::default()
+                .absorb(page(vec![native], 1, 1), &trace, principal, 1)
+                .is_err());
         }
-        self.unavailable.record(0, &[]);
-        // 仅表示当前 outbox 无待投递对象；不是 turn 请求全集或账单终态。
-        Ok(ids.is_empty())
+        assert!(RequestSet::default()
+            .absorb(
+                page(vec![entry(Uuid::new_v4(), 1, &trace, principal)], 0, 1),
+                &trace,
+                principal,
+                1
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn accepted_enqueue_is_not_native_committed_metering() {
+        assert!(!delivery_committed("ACCEPTED", None));
+        assert!(!delivery_committed("UNKNOWN", None));
+        assert!(!delivery_committed("COMMITTED", None));
+        assert!(!delivery_committed("ACCEPTED", Some(Utc::now())));
+        assert!(delivery_committed("COMMITTED", Some(Utc::now())));
     }
 }

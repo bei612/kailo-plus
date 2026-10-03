@@ -339,3 +339,38 @@ SHA-256 `4ea43390e376d57a6573c079bfa916d3d5245b55b868bf8bd57bccb42a2db5e6`。
 本次只恢复原 Desktop 产物两摘要、纠正发布边界并追加现有事实记录；不新增追溯记录，
 也没有重跑 Core 全量门禁或重复编译。独立元数据与文档检查由主线集中收口，
 这里不提前记录为通过或已提交/push。
+
+## Memory 共源功能批 Win11 产物收口（2026-10-03）
+
+从已实施的私有 commit `55a248e0872055fbb03bcafd083710028c4efef8`、tree
+`68a74f7592fabdfbe5fc8a7503a71d7006a6d873` 机械归档，原
+`tools/build-upstream.sh desktop-client` 完整退出 0。没有从正式脏工作树取源，
+没有改 Windows 配方、降低 Cargo 并行度或重复构建 Runtime/Web/Core/Worker。
+2255 个原算法输入的 source 为
+`sha256:af6418a4394f1ddff402ef968eaaa45c4319fbc7e843c87cef42dc026c4602ee`，
+构建前后原 digest 与输入数逐字相等。
+
+原 NSIS 产出 `Kailo_0.5.23_x64-setup.exe`，15,076,978 字节，artifact 为
+`sha256:5378f3703e0208a6f727357f72b59e7e81836889adf0ff54990f8c718badecce`。
+原 helper 的 export/install/record 均 0；包字节 SHA 与登记一致。
+原 Tauri 日志明确跳过签名，PE Security Directory offset/size 均为 0。
+这仍是 unsigned Windows x64 测试安装包，没有 Win11 安装、启动、登录或业务验收。
+
+原件目录为 `codex-memory-relay-win-artifacts-20261003.SosEFm/`：
+`win-helper.log` SHA-256
+`4fb683fc251fcb129659536383457b8a4f477e67008fb07842b36e1bb02e63ec`；
+`win-tmp/build-desktop-client.1Q8Ae1.log` SHA-256
+`790e0c90f2fad7f904381830b7faa88361c2294def04551346f0a6205b325abf`；
+`desktop-client.source-before.log` 与 `desktop-client.source-after.log` 同为
+`2334a09f2c25401dd514580d09cee58f43a15e3e6c87d4dfaca9929fc34071be`。
+原 stage tar、逐文件 SHA、PE 与终态日志均留存；未把 Core 工具请求增量混入该输入。
+
+沿原 `kailo-core-data` 与 Data 缓存，HostConfig memory=swap=16GiB，实际父
+`cpu.max=800000 100000`、`memory.max=17179869184`、`memory.swap.max=0`；
+本次原安全预检通过，终态 max/oom/oom_kill 均为 0。旧记录中的 swap.max=max
+是旧时点事实，不据本次修正历史。两个 helper 私有 Git 只读 bind 已精确卸载。
+本次只同步真实产物字段与证据，未部署，原 full1 和全部设备/签名阻断保留。
+
+指针修正树 `433be885faead1e95072e10ca447d36b660a1fa7` 的原 full 实际退出 0；
+日志 SHA `b6557aced681ee364ede8f722761a1e7a4c76835267f09d29962b95efa738210`。
+数据库/.env SKIP、三项演练 ignored；本包仍 unsigned、未 Win11 安装或业务验收。

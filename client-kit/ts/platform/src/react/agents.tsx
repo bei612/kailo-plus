@@ -31,6 +31,7 @@ import { BffError, TransportError, type WriteFailure, writeFailure } from "../tr
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
+import { InstallationMemory } from "./memory";
 
 function validDefinition(value: AgentDefinitionView): boolean {
   return !!value && typeof value.resourceId === "string" && !!value.resourceId
@@ -651,6 +652,7 @@ function InstallationDetail({ resourceId, workspaceId }: { resourceId: string; w
       <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {row.projection.configHash}</p>
     </> : <p role="status" className="text-sm">{t("agents.installation.notRecorded")}</p>}
     <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
+    {row.state === AgentInstallationState.Active ? <InstallationMemory resourceId={resourceId} workspaceId={workspaceId} installation={row} /> : null}
   </section>;
 }
 

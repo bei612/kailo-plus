@@ -286,6 +286,7 @@ struct DrainingInvocation {
     status: String,
     native_status: Option<String>,
     reply_event_id: Option<String>,
+    canceled_before_dispatch: bool,
     workflow_state: String,
     task_status: Option<String>,
     task_run_id: Option<String>,
@@ -300,6 +301,7 @@ impl DrainingInvocation {
                 .as_deref()
                 .is_some_and(|id| !id.is_empty()),
             ("FAILED", Some("failed")) | ("CANCELED", Some("interrupted")) => true,
+            ("CANCELED", None) => self.canceled_before_dispatch,
             _ => false,
         };
         native
@@ -421,6 +423,18 @@ async fn drain_agents(state: &ServiceState, deletion: &Delete) -> Result<bool, s
         .bind(deletion.tenant_id).execute(&mut *tx).await?;
     let invocations: Vec<DrainingInvocation> = sqlx::query_as(
         "select i.id,i.workflow_id,i.action_execution_id,i.status,i.native_status,i.reply_event_id,
+                (i.status='CANCELED' and i.cancel_pending and i.runtime_turn_id is null
+                 and i.native_status is null and i.reply_event_id is null
+                 and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+                 and not exists(select 1 from outbox.usage_event u
+                   where u.invocation_id=i.id or u.operation_id=a.operation_id)
+                 and exists(select 1 from admission.capacity_lease l
+                   where l.invocation_id=i.id and l.operation_id=a.operation_id
+                     and l.tenant_id=i.tenant_id and l.workspace_id=i.workspace_id
+                     and l.workflow_id=i.workflow_id and l.state='RELEASED'
+                     and l.native_release_confirmed_at is not null
+                     and l.terminal_event_id is not null and l.terminal_event_at is not null))
+                as canceled_before_dispatch,
                 w.projection_state as workflow_state,p.status as task_status,p.run_id as task_run_id,
                 coalesce(p.observation_gap,true) as observation_gap
          from catalog.agent_invocation i

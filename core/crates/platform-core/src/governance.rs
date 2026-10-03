@@ -1760,23 +1760,33 @@ pub struct Actor {
     pub human_identity_id: Option<Uuid>,
 }
 
-struct Evaluation {
-    allowed: bool,
-    scope: &'static str,
-    authorization: &'static str,
-    quota: &'static str,
-    zed_token: Option<String>,
-    reason: Option<ReasonCode>,
+pub(crate) struct Evaluation {
+    pub(crate) allowed: bool,
+    pub(crate) scope: &'static str,
+    pub(crate) authorization: &'static str,
+    pub(crate) quota: &'static str,
+    pub(crate) zed_token: Option<String>,
+    pub(crate) reason: Option<ReasonCode>,
 }
 
 impl Governance {
     /// scope guard 在 permission Check 之前（DD-46/50）；两者都通过才 ALLOW。
-    async fn evaluate(
+    pub(crate) async fn evaluate(
         &self,
         actor: Actor,
         def: &Definition,
         target: &Target,
     ) -> Result<Evaluation, Refusal> {
+        let is_memory = matches!(
+            def.action_key.as_str(),
+            "agent.memory.core.read"
+                | "agent.memory.entry.list"
+                | "agent.memory.entry.read"
+                | "agent.memory.core.replace"
+                | "agent.memory.entry.set"
+                | "agent.memory.entry.patch"
+                | "agent.memory.entry.remove"
+        );
         let deny = |scope: &'static str, authz: &'static str, token, reason| Evaluation {
             allowed: false,
             scope,
@@ -1912,10 +1922,12 @@ impl Governance {
                         ));
                     }
                     target.id
-                } else if matches!(
-                    def.action_key.as_str(),
-                    "agent.delegation.grant" | "agent.delegation.revoke"
-                ) {
+                } else if is_memory
+                    || matches!(
+                        def.action_key.as_str(),
+                        "agent.delegation.grant" | "agent.delegation.revoke"
+                    )
+                {
                     let mut conn = self.pool.acquire().await?;
                     let row =
                         delegation::installation(&mut conn, actor.tenant_id, target.id, false)
@@ -2067,7 +2079,8 @@ impl Governance {
         // - 从未加入：fresh workspace manage 为真即满足（`03` §2），即由 DD-82 授予、
         //   不要求先加入 Workspace 的 Workspace admin。
         // 本切片 Workspace 动作检查的正是 workspace manage，Check 为假时不设例外。
-        if (def.action_key.starts_with("automation.")
+        if (is_memory
+            || def.action_key.starts_with("automation.")
             || matches!(
                 def.action_key.as_str(),
                 "agent.delegation.grant" | "agent.delegation.revoke"
@@ -2096,7 +2109,8 @@ impl Governance {
             let mut workspace_manage = def.permission == "manage"
                 && def.permission_object_type == "workspace"
                 && checked.allowed;
-            if (def.action_key.starts_with("automation.")
+            if (is_memory
+                || def.action_key.starts_with("automation.")
                 || matches!(
                     def.action_key.as_str(),
                     "agent.delegation.grant" | "agent.delegation.revoke"
@@ -2141,7 +2155,8 @@ impl Governance {
                         )
                         .await
                         .map_err(|e| Refusal::Unavailable(e.to_string()))?;
-                    if (def.action_key.starts_with("automation.")
+                    if (is_memory
+                        || def.action_key.starts_with("automation.")
                         || matches!(
                             def.action_key.as_str(),
                             "agent.delegation.grant" | "agent.delegation.revoke"
@@ -2185,7 +2200,7 @@ impl Governance {
 
     /// ADR-14：在确认/批准满足之后消费 native CHECK；NONE 不读商业额度。
     /// 这里只产生准入结论，不创建 reservation、usage 或商业余额副本。
-    async fn check_quota(
+    pub(crate) async fn check_quota(
         &self,
         tenant: Uuid,
         def: &Definition,
@@ -2816,7 +2831,7 @@ pub(crate) async fn open_automation_execution(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn open_execution_values(
+pub(crate) async fn open_execution_values(
     tx: &mut Transaction<'_, Postgres>,
     actor: Actor,
     acting_principal: Uuid,
@@ -3095,7 +3110,7 @@ pub(crate) async fn record_direct_launch(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn record_decision(
+pub(crate) async fn record_decision(
     tx: &mut Transaction<'_, Postgres>,
     ae: &DecisionSubject<'_>,
     phase: &str,
@@ -3264,6 +3279,9 @@ impl Governance {
         actor: Actor,
         cmd: &contracts::ActionCommand,
     ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
+        if cmd.memory_write.is_some() {
+            return Err((Refusal::Precondition(ReasonCode::InvalidParameters), None));
+        }
         // Catalog 中仍 ACTIVE 的旧定义也不能绕开发布 exposure。目录缺失或为
         // none/internal 时先阻断，不解析参数、target 或幂等键。
         if !crate::capability_registry::action_exposed(&cmd.action_key) {

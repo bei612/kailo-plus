@@ -280,6 +280,198 @@ UNKNOWN 按既有治理 interval、admin timeout 和 RB-06 用量缺口责任边
 不超时补零、不释放并重复执行。源码尚未提交、push、部署；上一个冻结批次 SDK 的结果
 不作为本节验收。
 
+## 取消收敛与未确认投递纠偏（2026-10-03，源码实现后记录）
+
+本刀依据仍为 DD-08/21/47/48/51、`.design/03` §7–8、`11` §2–4 和
+`06-工程基线规范.md` §4；未建立第二个计量 outbox、额度余额、账单或审计权威。
+精确实施前字节在
+`/volumes/data/kailo/tmp/codex-agent-billing-window-20261003.cH0WCz/`，
+不能把该目录的 before 与当前 HEAD 之间继承的改动计作本刀。
+
+### 原因与实际影响
+
+- 原 Task 的 CREATED 取消只进入 Capacity release，随后永久返回
+  `BILLING_UNAVAILABLE`，没有业务取消终态。现在同 first-turn 的
+  AE→Tenant→Invocation 锁内重新查证：同 scope/Workflow、CHECK 动作、无 native
+  turn/status/reply、无 trace、无本 Invocation/operation 的 UsageEvent，才记录
+  `CANCELED_BEFORE_MODEL_DISPATCH` 并写 CANCELED。不是伪造 native `interrupted`、
+  零 token、零 UsageEvent 或已经派发的结算。
+- paired `20261003010000_agent_cancel_before_dispatch` 扩展原取消 CHECK，另以触发器
+  拒绝把 INSERT 或 DISPATCHING/UNKNOWN、有 trace/usage 的对象写成无 turn 取消。
+  down 在存在这种真实终态时拒绝恢复旧约束，不删除事实或补假 native status。
+  当前空白开发库没有旧 writer 兼容窗口；该状态只由新取消消费写入。
+- Capacity 先消费上述确定无派发事实，不再因尚无 Session 而漏读；结束 holder
+  不归还 units。原对账器确认确切 Run/Activity/attempt 的 Temporal terminal 后，
+  与 native-release 证明一起写 RELEASED。租户删除只在相同事实仍存在、lease
+  RELEASED 且两侧证据齐全时接受这个取消；仍要求原 Workflow/Task/run 投影一致、
+  无 observation gap。原 native 失败、完成与 interrupted 分支没有改成状态标签放行。
+- `Ingress::settle` 原 ACCEPTED 后只查询的分支已删除。固定 OpenMeter commit
+  `6d76d8a6fa90fbbab2d41035d31df2acec7ad3af` 的
+  `openmeter/ingest/kafkaingest/collector.go::Collector.Ingest` 调用异步
+  `Producer.Produce(msg, nil)`；同文件 `KafkaProducerGroup` 的之后投递失败只记日志。
+  因此 202 不能保证之后可见 stored_at。读不到 stored_at 时重投原冻结的
+  CloudEvent ID/source/time/body，复用原生去重，不重新执行模型；只有 stored_at
+  才 COMMITTED。这仍不是 credit 已吸收或 invoice finalized。
+- 同一 publisher 的既有循环提为 `gateway_usage::settle_events`，供实际 Memory
+  读消费精确 UsageEvent ID。namespace 读取同 Event 的冻结字段；支持已有模型来源
+  与 `BUZZ_AGENT_MEMORY`，未知 source 在外部 publish 前拒绝。202、缺 ID 或被另一个
+  reconciler 持锁均不声明该读用量完成；Memory 的实际 source/AE/native head 审计和
+  同表约束由对应消费者维护，不造 model trace 代替 HUMAN 读取。
+- Gateway 原 `process_log_store_msg` 的 UsageOutbox 分支现在在
+  `flush_log_store_batch=false` 时返回错误，不继续读旧页掩盖已知未确认批次。
+  当前 admin 错误映射为 HTTP 500，未配置日志库仍为原 503；Core 非 200 均保留游标。
+  `DropOnLog::drop` 的实际 `dtrace::with_trace` 是同步调用，之后 `emit` 进入内存队列，
+  不是数据库 ack；这项纠偏不宣称每个 turn 请求全集已经完备。
+
+### 失败边界、收敛与已运行范围
+
+空 Session 只影响已确定无派发取消，不允许空 Gateway 页证明零模型用量。
+重复 cancel/Activity retry 消费同 Invocation 与 lease；已持久派发意图或提交结果不明
+只保留 UNKNOWN、按既有治理 interval/admin timeout 对账，不重发 turn、不释放未知 units。
+租户暂停或成员撤权不授予新执行，只允许上述安全收尾；失败证据、未知枚举、缺关联、
+scope/binding/secret/native 读取缺失仍映射既有 UNKNOWN 或拒绝，未渲染成功/失败。
+负责收敛的仍是治理与 Capacity 对账器以及 RB-06 原用量缺口处置，不增加独立调度者。
+Web/Desktop/Mobile 消费原 Task 状态与证据边界，没有新增运行或组件宿主入口。
+
+本刀限定 `git diff --check` 实际退出 0、无输出；固定上游路径/符号以只读
+`git show/git grep` 核验，未执行 `.references`。
+本节写作时未运行 SDK、fmt/clippy、迁移/回退、replay、真实取消、Gateway HTTP、
+OpenMeter publish/stored 或破坏还原；这些均跳过，不把源码检查或上一个批次结果记为验收。
+正常已派发 turn 仍保持 `BILLING_UNAVAILABLE`，原生 durable dispatch/completion 完整性
+生产证据不在本刀声称完成范围；STRICT 不开放。源码未提交、push 或部署。
+
+### 同一源码切片的实际窄验证（2026-10-03）
+
+以上“写作时未运行”保持为历史事实。本轮从 `67b48b7c027317efb59533ee9dcb5bc9b4a1a892`
+导出 Data 私有候选，仅加入四个 Core 取消/publisher 消费文件、取消 paired 迁移、
+Memory 同表 paired 迁移及它已实现的 `result_exposure` NONE/READ 枚举。
+该独立枚举只用于命名数据库约束比对，当前没有 domain/api/workflow `$ref`；
+未把另一 Delegation `ResultExposureMode` 或未选 Memory DTO 生成物混入本轮。
+SDK 格式化后核验树为 `44fb5f59f88c54ceaa0a440bed40e35981274996`，
+正式工作树与 Git 索引没有被 SDK 写入。
+
+预检原构建进程与 CPU/内存 pressure 后，使用现有不可变 SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+及单独创建、只在 loopback 暴露的临时 PostgreSQL。
+SDK 实际 UID:GID 为 1000:1000，`cpu.max=400000 100000`、
+`memory.max=8589934592`、`memory.swap.max=0`，未设置或降低 Cargo jobs。
+Cargo target 是 Data 独立目录，registry/git 缓存沿用原检查投递；没有连接业务库。
+原始记录均位于
+`/volumes/data/kailo/tmp/codex-agent-billing-window-20261003.cH0WCz/`：
+
+| 实际阶段 | 结果与原件 |
+|---|---|
+| 首次原 fmt 检查 | 1；临时 launcher 漏格式化提取后的 publisher，`validation-first-fmt.log` / `sdk-first-fmt.log`；未执行 clippy 或数据库检查 |
+| 格式化上述真实源后 | fmt/clippy 0；`validation-enum-failure.log` / `sdk-enum-failure.log` 保留同次原 migrate 的后续失败：库 NONE/READ 与所选旧枚举 NONE 不等 |
+| 补齐现有独立枚举后的原 migrate | 0；前进、回退、再前进、原 `sqlx prepare --check`、44 个命名约束逐值相等；`validation.log` / `sdk.log`；未重复已通过 clippy |
+| 两层显式回退再前进 | 0；`20261003020000` Memory 再 `20261003010000` 取消，随后两层重新应用；`sdk.log` / `migration-catalog.log` |
+| 原 catalog 检查沿实际约束同步后 | 0；25 个 CHECK 标量边界、4 个启用的 scope/evidence trigger；`catalog-check.log` |
+| 主动破坏与还原 | 同一事务删除实际 `catalog.agent_invocation.agent_invocation_check1` 后报 SQLSTATE 23514；rollback 后原检查重新 0；`catalog-check.log` |
+
+续跑曾直接执行位于 noexec Data 的临时 launcher，被拒绝 126，保留
+`validation-resume-launch-126.log`；改用 bash 投递，未改挂载权限或检查门禁。
+最终 SDK `OOMKilled=false`、退出 0，本人临时 SDK/PG 容器已移除。
+`catalog.agent_session`、`catalog.agent_invocation`、`admission.capacity_lease` 实际均为零对象。
+本轮没有造 Tenant、Invocation、用户、meter 或 native 用量，也未执行真实取消、
+Activity replay、Gateway producer/native HTTP、OpenMeter publish/stored、Memory BFF/UI
+或正常已派发 turn 的结算验收。约束和编译通过不证明这些业务路径已完成。
+没有重跑 full、生成四侧、重建发布产物、更新业务数据库、提交或部署；STRICT 与缺证据入口仍关闭。
+
+## 正常 turn 的全集已提交用量消费（2026-10-03，实现后记录）
+
+上一节取消切片的验证不作为本节新源码的验收。此独立窗口仅修改
+`core/crates/platform-core/src/agent_task.rs` 与 `gateway_usage.rs`，
+before 与完整差异保存在
+`/volumes/data/kailo/tmp/codex-agent-billing-complete-window-20261003.v3gxqc/`。
+`capacity.rs` 保持上一节已验证字节，没有新增迁移、契约或公开运行入口。
+
+### 四步影响结论与实际调用
+
+- 权威：DD-21/48/51、`.design/11` §3 CHECK、§4 Usage 幂等与 §6 审计证据，
+  要求实际 native source、稳定 UsageEvent 和原生 `stored_at`；202 不作 COMMITTED，
+  COMMITTED 不作余额快照已吸收或 invoice finalized。Gateway 基准仍为
+  `1f7ebbf87cbdbe9517f6f181221879d04dc50692`，OpenMeter 为
+  `6d76d8a6fa90fbbab2d41035d31df2acec7ad3af`，Codex 为
+  `7498521d288b9b3b96ffba4eedf089d8d6e06a84`。
+  本刀消费实际二开 `model-gateway/crates/agentgateway/src/telemetry/log_store.rs`
+  的 `UsageOutboxResponse`、
+  `model-gateway/crates/agentgateway/src/telemetry/log_store/postgres.rs::usage_outbox` 与
+  `model-gateway/crates/agentgateway/src/telemetry/log_store/sqlite.rs::usage_outbox`
+  原生请求集合快照，不从已收到的日志数量推测全集。
+- 影响：原 Task completed 且回复已按固定事件 ID 查证、或 failed/interrupted，
+  在 Capacity holder 已 RELEASED 且 native/Temporal 证据齐全后调用
+  `gateway_usage::committed_turn`。其 `Ingress::completed_requests` 实际使用
+  `RequestSet::absorb` 的分页裁决；逐页读取同 trace、专属 SERVICE identity、
+  持久 attempt、稳定正数 submitted，以及 pending/untracked 为零的原生快照。
+  短页不是结束，必须读到空页且唯一 ID 数覆盖全部 submitted。
+  原 `correlate` 形成相同 SUM 事件，唯一已查证 Codex turn 形成独立 COUNT 事件，
+  source/meter 集合必须与冻结 CHECK action 完全一致。全局历史 ingress 仍可读旧页，
+  旧页缺完整性字段不能证明正常 turn 已结清。当前没有旧在线 writer 兼容窗口；
+  Web/Desktop/Mobile 继续消费原 Task 状态和 evidence，不增加运行入口。
+- 副作用：`settle_events` 复用同一 OpenMeter publisher 与稳定 CloudEvent 去重键，
+  不创建第二账本。全部实际事件 COMMITTED 后，Task 再持 AE→Tenant→Invocation/lease
+  原锁序，核对相同 scope、operation、native turn/status、回复、确切事件 ID 与
+  RELEASED 双侧证据，才保存 Task 终态及原 Audit 引用。
+  这是已发生执行的收尾，不因租户暂停或撤权授权新执行；计量重投只重投原事件，
+  不调用 `turn/start`、不重签回复，不复制模型或协作正文。
+- 异常：空集、缺页、分页总数变化、重复 ID、缺失或负 attempt、错 scope、未知枚举、
+  缺 meter quantity、绑定变化、native 读取/提交不明均保持非终态；202 与未观察到
+  `stored_at` 保持 BILLING_UNAVAILABLE，原 turn 和 outbox 留待既有对账器处理。
+  已释放 holder 的观察不重新占 units。整体读取超时与批次分别来自现有 admin timeout
+  与 `GOVERNANCE_RECONCILE_BATCH`，对账间隔和责任仍归原治理/Capacity 对账器及 RB-06，
+  未新增硬编码时限、状态、调度者或金额权威。STRICT 和 invoice finalization 未开放。
+
+### 实际窄验证、主动破坏与还原
+
+复用 Memory 同一 feature 的 Data 私有快照
+`/volumes/data/kailo/tmp/codex-memory-feature-sdk-20261003.sdcocM/apps`，
+没有另起第三并行 SDK lane。原 `core-final/sdk.log` 的全 Core clippy 及
+六项 `gateway_usage::usage_tests` 实际退出 0；原 rustfmt 从 `main.rs` 递归格式化了
+本刀两源，不能声称其格式化前后 SHA 相同。
+
+后续仍使用不可变 SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+预检并回读 1000:1000、4 CPU、8 GiB、swap 0、Data 缓存，Cargo jobs 未设置或降低。
+所有破坏只改上述私有快照的生产 guard，不改断言期待、不改正式生产 guard。
+既有一项反例原本会被空页缺口遮蔽；已将原 total/pending/untracked 协议断言的其他字段
+改为合法非空页，以下独立破坏实际证明它们能抓到目标缺失。没有业务 seed 或新检查脚本。
+
+原始日志均在该目录的 `normal-turn-mutation/`：
+
+| 实际阶段 | 原输出与退出码 |
+|---|---|
+| 原入口与独立 guard baseline | `baseline-original-entry.log`、`baseline-isolated-guards.log`：各 0，6 passed/0 failed |
+| 短页当结束、移除跨页重复 ID/attempt 拒绝、ACCEPTED 当 COMMITTED | `mutation-short-duplicate-attempt-202.log`：101，6 个断言失败；包含无关反例也因错误短页终止被拒，不能算六个独立条件分别证明 |
+| 空集当零用量证明 | `mutation-empty-set.log`：101，空集断言失败 |
+| 缺页允许结束 | `mutation-missing-page.log`：101，缺页断言失败 |
+| 总数跨页变化不拒绝 | `mutation-changing-total.log`：101，对应断言失败 |
+| pending 不拒绝 | `mutation-pending.log`：101，对应断言失败 |
+| untracked 不拒绝 | `mutation-untracked.log`：101，对应断言失败 |
+| 精确还原后原窄检查 | `restored-final.log`：rustfmt、platform-core all-targets clippy 与原六项检查均 0；6 passed/0 failed |
+
+每组差异留在同名 `.diff`，每次恢复均与 `guard-baseline.rs` 按字节比较为相同，
+并保存 `restore-*.sha256`。最终验证 Task SHA 为
+`e3ce724568f27e4ef80672f9a805edcbb833bdcd5b067ac3cbacf2b7978ffc11`，
+usage 为 `5e2dba2e09872ed3bd6f805005b2f2a71632049e372ef0647688a2aa388d14ef`；
+`source-proof-final.log` 在 SDK 内格式化正式两源后逐字节比较为相同。
+最终 `restored-final.log` SHA 为
+`f549b3c5272688cbac776075835441cf1845a8b00dd61b2760d02c356e0237bb`，
+全部反例日志摘要保存在 `logs.sha256`。
+
+首次来源比较直接使用带文件名头的 rustfmt stdout，`source-proof.log` 比较退出 1；
+改为 stdin 输出后比较 0，未改变产品源。首次窄命令误带 `--lib`，
+`baseline.log` / `baseline-exit.log` 保留 Cargo 101“no library targets found”；
+续用原实际 binary 检查入口，不修改项目类型或门禁。
+实际命令为 `cargo test --offline --manifest-path core/Cargo.toml -p platform-core gateway_usage::usage_tests -- --nocapture`。
+OOM 计数均为零；验证命令终态 0 与常驻 `tail` 容器停止后的 ExitCode 137 分别记录，
+`state-final.json` 的 OOMKilled 为 false，不把清理进程退出码冒充编译结果。
+本人容器已移除，清理回执为 `cleanup-confirmed.log`。
+
+重复 ID 断言只证明重复归因被拒，未执行真实 provider/Task 重投，不能据此宣称外部
+调用次数验收。此次没有真实 Invocation、Gateway HTTP、OpenMeter publish/stored 或账单
+业务验收；没有造业务对象、重复迁移、生成四侧、full、build/release、提交、push 或部署。
+尚缺的合法运行/模型事实与 STRICT 能力仍保持关闭；不以协议反例或编译通过提升生产门禁。
+
 ## 2026-10-03 原生模型派发全集持久化
 
 本段仅交付 Gateway 原生派发记录，不以它宣称 Core Invocation、Memory、模型调用或账单验收完成。
@@ -348,3 +540,25 @@ SHA-256 为 `ced6266629ab5d724b86f0343218d0dba07dbf730bcfbee21dede3b1591ad843`�
 随后只修真实来源指针，并由正式 apps Git 对象库与现有 dist 检查同一源码，
 未重编译 Gateway，未补造 SBOM/provenance，未更改数据库或旧失败结论。
 上述 full 在追加本节前形成；证据文档另走原文档快路径，不重复全量构建。
+
+### 本批提交与单服务部署回执
+
+2026-10-03 03:30 UTC，本批源码已提交并普通 push 为
+`ab27c8ed5cd4cd4c0fda8e7748a18649cfbffde4`，远端 main 回读一致。
+从正式 `deploy/local/compose.yaml` 只执行 Gateway 的 pull 和
+`up -d --no-deps --no-build agentgateway`，没有重新构建 Gateway 或其他服务。
+执行前原 Gateway 数据库、Keycloak 与 Web 均已 healthy；本次缩小更新范围不跳过依赖就绪条件。
+
+新容器 `1b87f47b6e9a9555d6ceeb225eaa3fd546d2cae3bc235d5ee8b8e9f331b4e996`
+实际运行产物 `sha256:471fa4e93689fc0a896b641decd94ca14fa7e76765899c6a8c1dea2c94e881ad`。
+公开端保持本次实际配置的 `0.0.0.0:58090`，原生端仍是 `127.0.0.1:58091`；
+这些是本次投递事实，不是业务源码缺省值。匿名 `/app/` 与 `/api/v1/session` 均实查 HTTP 302，
+仍由原 OIDC 准入拒绝匿名业务访问。其他 23 个 Compose 服务的容器 ID、镜像、启动时间和状态
+前后逐个比对完全相同；没有数据库重置、Core/Worker 更新或初始化重跑。
+
+原件在 `codex-gateway-delivery-20261003.2yDULc/`：
+`deploy-up.log` SHA-256 `bd644437d6da29fd04e968e34d218a7e55058e1da26fe3678139daff81603a46`；
+`deploy-before.log` SHA-256 `1f09ea90dee17c6c98194c2c53785b369b5663fbccf19e395cc468c7f186c1b9`；
+`deploy-after.log` SHA-256 `e0b23f9f56ae006db05ae0ac6f2cc4718b38af830ecfe6673d3a419fe71e728f`。
+本回执仅证明这个产物的更新与匿名准入，未执行真实 provider/model/Memory/OpenMeter 业务链，
+也不把另一批 Core Task/Memory 的未提交源码视为已部署。

@@ -1,9 +1,11 @@
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
+import { AgentMemoryEntryPageState, AgentMemoryReadViewState, type AgentMemoryEntryPage, type AgentMemoryReadView } from "@client-kit/contracts";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { AgentDefinitionsPage, AuditPage, DevicesPage, WorkspaceMembersPage } from "../src/react/pages";
 import { PlatformProvider } from "../src/react/context";
+import { InstallationMemory, validMemoryEntries, validMemoryRead } from "../src/react/memory";
 import { LegacySecretRefManagement, RoleManagement, RoleMembers } from "../src/react/roles";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { TransportError } from "../src/transport";
@@ -27,6 +29,67 @@ const key = (pubkey: string, state = "ACTIVE") => ({
   pubkey,
   state,
   createdAt: new Date().toISOString(),
+});
+
+describe("InstallationMemory BFF read boundaries", () => {
+  const resource = "installation-1";
+  const workspace = "workspace-1";
+  const read: AgentMemoryReadView = {
+    installationResourceId: resource, workspaceId: workspace, operationId: "memory-op-1",
+    slug: "core", state: AgentMemoryReadViewState.Found, eventId: "a".repeat(64),
+    createdAt: 1, content: "记忆", contentBytes: 6,
+  };
+  const entries: AgentMemoryEntryPage = {
+    installationResourceId: resource, workspaceId: workspace, operationId: "memory-op-2",
+    state: AgentMemoryEntryPageState.Complete,
+    entries: [{ slug: "mem/context", eventId: "b".repeat(64), createdAt: 2, tombstone: false }],
+  };
+
+  it("requires exact scope, native head and returned UTF-8 size before rendering plaintext", () => {
+    expect(validMemoryRead(read, resource, workspace, "core")).toBe(true);
+    expect(validMemoryRead({ ...read, workspaceId: "other" }, resource, workspace, "core")).toBe(false);
+    expect(validMemoryRead({ ...read, eventId: "A".repeat(64) }, resource, workspace, "core")).toBe(false);
+    expect(validMemoryRead({ ...read, contentBytes: 2 }, resource, workspace, "core")).toBe(false);
+    expect(validMemoryRead({ ...read, valueHash: "c".repeat(64) }, resource, workspace, "core")).toBe(true);
+    expect(validMemoryRead({ ...read, valueHash: "not-a-native-hash" }, resource, workspace, "core")).toBe(false);
+    expect(validMemoryRead({ installationResourceId: resource, workspaceId: workspace, operationId: read.operationId,
+      slug: "mem/context", state: AgentMemoryReadViewState.Absent, valueHash: "c".repeat(64) }, resource, workspace, "mem/context")).toBe(false);
+    expect(validMemoryRead({ ...read, state: AgentMemoryReadViewState.Unreadable }, resource, workspace, "core")).toBe(false);
+  });
+
+  it("does not turn partial, duplicate or malformed native inventory into a complete list", () => {
+    expect(validMemoryEntries(entries, resource, workspace)).toBe(true);
+    expect(validMemoryEntries({ ...entries, state: AgentMemoryEntryPageState.Unknown }, resource, workspace)).toBe(false);
+    expect(validMemoryEntries({ ...entries, entries: [...entries.entries, ...entries.entries] }, resource, workspace)).toBe(false);
+    expect(validMemoryEntries({ ...entries, entries: [{ ...entries.entries[0]!, slug: "mem/../context" }] }, resource, workspace)).toBe(false);
+    expect(validMemoryEntries({ ...entries, entries: [], state: AgentMemoryEntryPageState.Unknown }, resource, workspace)).toBe(true);
+  });
+
+  it("reads only on explicit open and removes plaintext when the shared view is closed", async () => {
+    const t = transport((r) => ({ status: 200, body: r.path.endsWith("/entries") ? entries : read }));
+    const host = await mount(t, <InstallationMemory resourceId={resource} workspaceId={workspace} />);
+    expect(t.send).not.toHaveBeenCalled();
+    await click(button(host, "Read memory"));
+    expect(host.querySelector("pre")?.textContent).toBe("记忆");
+    expect(t.send.mock.calls.map(([r]) => r)).toEqual(expect.arrayContaining([
+      { method: "GET", path: `/api/v1/agent-installations/${resource}/memory/core` },
+      { method: "GET", path: `/api/v1/agent-installations/${resource}/memory/entries` },
+    ]));
+    await click(button(host, "Close memory"));
+    expect(host.querySelector("pre")).toBeNull();
+    expect(host.textContent).not.toContain("记忆");
+  });
+
+  it("rejects a wrong-scope body and does not report a failed inventory as empty", async () => {
+    const t = transport((r) => r.path.endsWith("/entries")
+      ? { status: 503, body: { class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable } }
+      : { status: 200, body: { ...read, workspaceId: "other" } });
+    const host = await mount(t, <InstallationMemory resourceId={resource} workspaceId={workspace} />);
+    await click(button(host, "Read memory"));
+    expect(host.querySelector("pre")).toBeNull();
+    expect(host.textContent).not.toContain("记忆");
+    expect(host.textContent).not.toContain("Complete snapshot contains no cold entries.");
+  });
 });
 
 describe("DevicesPage", () => {
@@ -857,6 +920,110 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
     expect(section.textContent).toContain(label);
     expect(section.textContent).not.toContain("No installations you may read");
+    expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
+  });
+
+  // After-implementation protocol evidence of the same real page caller.
+  // Reuse the existing Installation row/transport; no DB seed or native ACK.
+  it.each([
+    { name: "core replace", label: "Replace core memory", action: "agent.memory.core.replace", slug: "core", mode: "value", state: "FOUND", head: "a".repeat(64), reply: undefined },
+    { name: "entry set", label: "Set entry value", action: "agent.memory.entry.set", slug: "mem/context", mode: "value", state: "ABSENT", head: "b".repeat(64), reply: undefined },
+    { name: "entry patch", label: "Apply strict patch", action: "agent.memory.entry.patch", slug: "mem/context", mode: "patch", state: "FOUND", head: "b".repeat(64), reply: undefined },
+    { name: "entry remove", label: "Write tombstone", action: "agent.memory.entry.remove", slug: "mem/context", mode: "remove", state: "FOUND", head: "b".repeat(64), reply: undefined },
+    { name: "unclassified 503", label: "Replace core memory", action: "agent.memory.core.replace", slug: "core", mode: "value", state: "FOUND", head: "a".repeat(64), reply: { status: 503, body: undefined } },
+    { name: "DENIED with unknown dispatch", label: "Replace core memory", action: "agent.memory.core.replace", slug: "core", mode: "value", state: "FOUND", head: "a".repeat(64), reply: { status: 200, body: { actionKey: "agent.memory.core.replace", actionExecutionId: "write-ae", operationId: "write-op", gateState: "DENIED", dispatchState: "UNKNOWN", reason: ReasonCode.PermissionDenied } } },
+  ])("$name freezes the actual head and scope in the original ActionCommand", async ({ label, action, slug, mode, state, head, reply }) => {
+    const active = { ...installation, state: "ACTIVE", resourceState: "ACTIVE", activeProjectionGeneration: 1,
+      projection: { ...installation.projection, state: "ACTIVE" } };
+    const t = transport((r) => {
+      if (r.path === "/api/v1/tasks") return { status: 200, body: [] };
+      if (r.path === "/api/v1/session") return { status: 200, body: { accessMode: "FULL", tenantPrincipalId: installation.ownerPrincipalId } };
+      if (r.path === "/api/v1/agent-definitions") return { status: 200, body: { definitions: [] } };
+      if (r.path === "/api/v1/workspaces") return { status: 200, body: [{ id: installation.workspaceId, slug: "ops", name: "Ops" }] };
+      if (r.path === `/api/v1/agent-installations/${installation.resourceId}`) return { status: 200, body: active };
+      if (r.path.startsWith("/api/v1/agent-installations?")) return { status: 200, body: { installations: [active] } };
+      if (r.path.endsWith("/memory/entries")) return { status: 200, body: { installationResourceId: installation.resourceId,
+        workspaceId: installation.workspaceId, operationId: "memory-op", state: "COMPLETE", entries: [] } };
+      if (r.path.includes("/memory/")) return { status: 200, body: { installationResourceId: installation.resourceId,
+        workspaceId: installation.workspaceId, operationId: "memory-op", slug, state, eventId: head, createdAt: 1,
+        ...(state === "FOUND" ? { content: "记忆", contentBytes: 6, valueHash: "c".repeat(64) } : {}) } };
+      if (r.path === "/api/v1/actions") {
+        if (reply) return reply;
+        throw new TransportError("reply lost");
+      }
+      return forbidden;
+    });
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    await click(button(host.querySelector("[data-testid=agent-installations]") as HTMLElement, "View installation"));
+    await click(button(host, "Read memory"));
+    if (slug !== "core") {
+      const input = host.querySelector("[data-testid=agent-memory] input") as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      await act(async () => { setter?.call(input, slug); input.dispatchEvent(new Event("input", { bubbles: true })); });
+      await click(button(host, "Read entry"));
+    }
+    await click(button(host, label));
+    const editor = host.querySelector("[data-testid=agent-memory-editor]") as HTMLElement;
+    const textarea = editor.querySelector("textarea");
+    const text = mode === "patch" ? "--- a\n+++ b\n@@ -1 +1 @@\n-记忆\n+更新\n" : "更新";
+    if (textarea) {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      await act(async () => { setter?.call(textarea, text); textarea.dispatchEvent(new Event("input", { bubbles: true })); });
+    }
+    await click(button(editor, "Review request"));
+    await click(button(editor, "Submit governed request"));
+    const posts = t.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.body).toEqual({ actionKey: action, idempotencyKey: expect.any(String),
+      resourceId: installation.resourceId, resourceVersion: installation.resourceVersion, workspaceId: installation.workspaceId,
+      memoryWrite: { slug, expectedHeadState: state, expectedHeadEventId: head,
+        ...(mode === "value" ? { value: text } : mode === "patch" ? { patch: text, baseHash: "c".repeat(64) } : {}) } });
+    expect(editor.textContent).toContain("Outcome is not confirmed");
+    expect(button(host, "Close memory").disabled).toBe(true);
+    expect(editor.querySelector("textarea")).toBeNull();
+    await click(button(editor, "Re-check same request"));
+    const retried = t.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
+    expect(retried).toHaveLength(2);
+    expect(retried[1]?.body).toEqual(retried[0]?.body);
+  });
+
+  it.each([
+    { owner: "another-human", canWrite: false, tasks: { status: 200, body: [] } },
+    { owner: installation.ownerPrincipalId, canWrite: false, tasks: { status: 503, body: undefined } },
+    { owner: installation.ownerPrincipalId, tasks: { status: 200, body: [{ actionKey: "agent.memory.core.replace",
+      targetId: installation.resourceId, actionExecutionId: "existing-ae", operationId: "existing-op",
+      gateState: "ALLOWED", dispatchState: "UNKNOWN" }] }, canWrite: false },
+    { owner: installation.ownerPrincipalId, tasks: { status: 200, body: [{ actionKey: "agent.memory.core.replace",
+      targetId: installation.resourceId, actionExecutionId: "existing-ae", operationId: "existing-op",
+      gateState: "DENIED", dispatchState: "UNKNOWN", reason: ReasonCode.PermissionDenied }] }, canWrite: false },
+    { owner: installation.ownerPrincipalId, tasks: { status: 200, body: [{ actionKey: "agent.memory.core.replace",
+      targetId: installation.resourceId, actionExecutionId: "existing-ae", operationId: "existing-op",
+      gateState: "ALLOWED", dispatchState: "DISPATCHED", reason: ReasonCode.TargetStateConflict }] }, canWrite: true },
+    { owner: installation.ownerPrincipalId, tasks: { status: 200, body: [{ actionKey: "agent.memory.core.replace",
+      targetId: installation.resourceId, actionExecutionId: "existing-ae", operationId: "existing-op",
+      gateState: "ALLOWED", dispatchState: "DISPATCHED", reason: ReasonCode.ExternalResultUnknown }] }, canWrite: false },
+  ])("uses exact owner and confirmed task facts before offering replacement writes ($canWrite)", async ({ owner, tasks, canWrite }) => {
+    const active = { ...installation, state: "ACTIVE", resourceState: "ACTIVE", activeProjectionGeneration: 1,
+      projection: { ...installation.projection, state: "ACTIVE" } };
+    const t = transport((r) => {
+      if (r.path === "/api/v1/tasks") return tasks;
+      if (r.path === "/api/v1/session") return { status: 200, body: { accessMode: "FULL", tenantPrincipalId: owner } };
+      if (r.path === "/api/v1/agent-definitions") return { status: 200, body: { definitions: [] } };
+      if (r.path === "/api/v1/workspaces") return { status: 200, body: [{ id: installation.workspaceId, slug: "ops", name: "Ops" }] };
+      if (r.path === `/api/v1/agent-installations/${installation.resourceId}`) return { status: 200, body: active };
+      if (r.path.startsWith("/api/v1/agent-installations?")) return { status: 200, body: { installations: [active] } };
+      if (r.path.endsWith("/memory/entries")) return { status: 200, body: { installationResourceId: installation.resourceId,
+        workspaceId: installation.workspaceId, operationId: "memory-op", state: "COMPLETE", entries: [] } };
+      if (r.path.endsWith("/memory/core")) return { status: 200, body: { installationResourceId: installation.resourceId,
+        workspaceId: installation.workspaceId, operationId: "memory-op", slug: "core", state: "ABSENT" } };
+      return forbidden;
+    });
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    await click(button(host.querySelector("[data-testid=agent-installations]") as HTMLElement, "View installation"));
+    await click(button(host, "Read memory"));
+    expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Replace core memory")).toBe(canWrite);
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 });

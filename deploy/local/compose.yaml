@@ -235,7 +235,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:2ea8059fd418cff927ad8122980917f996915eb2c8c789ac1e7a995b21479158
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:d42f83fa0dadcd78c4ad721047433a9a7c8e522767edd96cb326d641c5dd0056
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -254,7 +254,7 @@ services:
   # 镜像是带 SS-BUZ-GOVERNANCE 改动的本仓库构建（collaboration/），不是上游
   # 发布镜像：上游的 NIP-29 权限比平台宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:2ea8059fd418cff927ad8122980917f996915eb2c8c789ac1e7a995b21479158
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:d42f83fa0dadcd78c4ad721047433a9a7c8e522767edd96cb326d641c5dd0056
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
@@ -516,6 +516,7 @@ services:
       AGENT_MEMORY_LIST_LIMIT: ${AGENT_MEMORY_LIST_LIMIT:?必须显式提供完整 listing 上界}
       AGENT_MEMORY_MAX_DECOMPRESSED_BYTES: ${AGENT_MEMORY_MAX_DECOMPRESSED_BYTES:?必须显式提供原生正文上界}
       AGENT_MEMORY_RELAY_TIMESTAMP_WINDOW_SECONDS: ${AGENT_MEMORY_RELAY_TIMESTAMP_WINDOW_SECONDS:?必须显式提供固定 Relay 时间窗口}
+      AGENT_MEMORY_READ_TIMEOUT_SECONDS: ${AGENT_MEMORY_READ_TIMEOUT_SECONDS:?必须显式提供完整 Memory 读取时限}
       # Relay 的网络地址。与 Community host 不是一回事：后者参与 NIP-98
       # 签名并作为 Host 头，前者只用于建立连接（SF-BUZ-32）。
       BUZZ_RELAY_TRANSPORT: http://${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}
@@ -659,7 +660,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:6f54ce3744408aa3adfa898ec639b9fad1ef4438774a0869f21b33e722d298ce
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:97bc23790559a9019feaba5bb9e514d19730410b20beb9cc8dca2924823fb69e
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}

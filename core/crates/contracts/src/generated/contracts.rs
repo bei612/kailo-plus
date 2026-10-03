@@ -187,6 +187,11 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invitation_id: Option<String>,
 
+    /// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+    /// 输入；其他命令禁止携带。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_write: Option<MemoryWriteClass>,
+
     /// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -414,6 +419,45 @@ pub enum ResultExposureMode {
     Export,
 
     Read,
+}
+
+/// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+/// 输入；其他命令禁止携带。
+///
+/// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryWriteClass {
+    /// entry.patch 当前原生 value 的 SHA-256。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_hash: Option<String>,
+
+    /// 调用方实际读取的 head；null 只表示原生确认不存在。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_head_event_id: Option<String>,
+
+    /// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+    pub expected_head_state: ExpectedHeadState,
+
+    /// entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
+
+    pub slug: String,
+
+    /// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+/// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ExpectedHeadState {
+    #[serde(rename = "ABSENT")]
+    Absent,
+
+    #[serde(rename = "FOUND")]
+    Found,
 }
 
 /// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -907,6 +951,106 @@ pub struct AgentInstallationViewChannelBinding {
     pub status: Status,
 
     pub triggers: Vec<AgentTrigger>,
+}
+
+/// 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
+/// snapshot，不是严格存量权威。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMemoryEntryPage {
+    pub entries: Vec<EntryElement>,
+
+    pub installation_resource_id: String,
+
+    pub operation_id: String,
+
+    pub state: AgentMemoryEntryPageState,
+
+    pub workspace_id: String,
+}
+
+/// NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntryElement {
+    pub created_at: i64,
+
+    pub event_id: String,
+
+    pub slug: String,
+
+    pub tombstone: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AgentMemoryEntryPageState {
+    #[serde(rename = "BOUND_EXCEEDED")]
+    BoundExceeded,
+
+    Complete,
+
+    Unknown,
+}
+
+/// NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMemoryEntryView {
+    pub created_at: i64,
+
+    pub event_id: String,
+
+    pub slug: String,
+
+    pub tombstone: bool,
+}
+
+/// DD-66/68、19 §5：fresh HUMAN Installation read 后的原生 core/cold head。正文仅本次 no-store HTTP，不入
+/// Core 数据库、审计或客户端持久存储。ABSENT 不等于 UNREADABLE；tombstone 可带原 head 引用。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMemoryReadView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+
+    /// UTF-8 bytes of the returned content string, not the whole native NIP-44 JSON body or a
+    /// billing measurement.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_bytes: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+
+    pub installation_resource_id: String,
+
+    pub operation_id: String,
+
+    pub slug: String,
+
+    pub state: AgentMemoryReadViewState,
+
+    /// FOUND only: native buzz mem hash of the exact UTF-8 value, used by strict patch baseHash;
+    /// not the JSON body or a stored plaintext copy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_hash: Option<String>,
+
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentMemoryReadViewState {
+    #[serde(rename = "ABSENT")]
+    Absent,
+
+    #[serde(rename = "FOUND")]
+    Found,
+
+    #[serde(rename = "UNREADABLE")]
+    Unreadable,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2140,6 +2284,32 @@ pub struct WorkspacePreferenceRequest {
     pub starred: bool,
 
     pub version: i64,
+}
+
+/// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMemoryWriteInput {
+    /// entry.patch 当前原生 value 的 SHA-256。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_hash: Option<String>,
+
+    /// 调用方实际读取的 head；null 只表示原生确认不存在。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_head_event_id: Option<String>,
+
+    /// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+    pub expected_head_state: ExpectedHeadState,
+
+    /// entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
+
+    pub slug: String,
+
+    /// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
 }
 
 /// 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host

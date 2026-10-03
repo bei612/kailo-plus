@@ -203,15 +203,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             capacity,
             agent_memory,
         };
-        // 同一治理对账器也持有 service 依赖，以恢复 OpenBao 写入结果不明的
-        // SERVER HUMAN 意图；不另建一个无权威的轮询入口。
-        governance_reconcile::spawn(
-            service_state.clone(),
-            &opentelemetry::global::meter("platform-core"),
-            governance_reconcile::Config::from_env()?,
-            gateway_usage::Ingress::from_env(&opentelemetry::global::meter("platform-core"))?,
-        );
-
         // roster 与成员事实的对账度量（07 §3）。它用 CONTROL 身份读 roster，与
         // service API 共用同一份依赖。
         roster_reconcile::spawn(
@@ -228,6 +219,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         let bff_state = bff::BffState {
+            memory_service: service_state.clone(),
             platform_info,
             pool: pool.clone(),
             temporal,
@@ -351,6 +343,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .parse()
                 .map_err(|_| "BFF_MEDIA_MAX_BYTES 必须是字节数")?,
         };
+
+        // The SAME tick/batch also observes fixed Memory write IDs. BFF state
+        // contributes its existing controlled Relay budget, never a new clock.
+        governance_reconcile::spawn(
+            service_state.clone(),
+            bff_state.clone(),
+            &opentelemetry::global::meter("platform-core"),
+            governance_reconcile::Config::from_env()?,
+            gateway_usage::Ingress::from_env(&opentelemetry::global::meter("platform-core"))?,
+        );
 
         let bff = tokio::net::TcpListener::bind(listen).await?;
         let service = tokio::net::TcpListener::bind(service_listen).await?;

@@ -28,6 +28,8 @@ pub(crate) const HEADER_SUBJECT: &str = "x-platform-oidc-subject";
 /// BFF 的运行状态。
 #[derive(Clone)]
 pub struct BffState {
+    /// Same Core dependencies; the adapter never exports credentials to clients.
+    pub(crate) memory_service: crate::service_api::ServiceState,
     /// 部署配置下发的公开平台信息（DD-111），启动时校验，运行期不变
     pub platform_info: std::sync::Arc<contracts::PlatformInfo>,
     pub pool: PgPool,
@@ -353,6 +355,18 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/agent-installations/{resource_id}",
             get(crate::agent_installation_query::get),
+        )
+        .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/memory/core",
+            get(crate::agent_memory::core),
+        )
+        .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/memory/entries",
+            get(crate::agent_memory::entries),
+        )
+        .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/memory/entry",
+            get(crate::agent_memory::entry),
         )
         // 未登记 exposure 的 Version 链不生成实际路由；read 也复用同一 BFF 身份。
         .exposed_route(

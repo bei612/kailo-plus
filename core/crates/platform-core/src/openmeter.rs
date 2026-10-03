@@ -106,6 +106,15 @@ pub(crate) struct InvocationMeter {
     pub event_type: String,
 }
 
+/// 19 §6 的两个已定 HUMAN-read meter；配置与 ID 只取原生 OpenMeter。
+#[derive(Serialize, Deserialize, PartialEq)]
+pub(crate) struct MemoryMeter {
+    pub key: String,
+    pub id: String,
+    pub event_type: String,
+    pub value_property: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct StoredEventPage {
     data: Vec<StoredEvent>,
@@ -888,6 +897,97 @@ impl OpenMeter {
             return Err(Error::Precondition);
         }
         Ok((selected, invocation.ok_or(Error::Precondition)?))
+    }
+
+    pub(crate) async fn memory_read_meters(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+        subject: &str,
+    ) -> Result<Vec<MemoryMeter>, Error> {
+        self.memory_meters(tenant, customer_id, subject, "agent_memory_read_count")
+            .await
+    }
+
+    pub(crate) async fn memory_write_meters(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+        subject: &str,
+    ) -> Result<Vec<MemoryMeter>, Error> {
+        self.memory_meters(tenant, customer_id, subject, "agent_memory_write_count")
+            .await
+    }
+
+    async fn memory_meters(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+        subject: &str,
+        count_key: &str,
+    ) -> Result<Vec<MemoryMeter>, Error> {
+        let customer = self
+            .customer_by_id(customer_id, tenant)
+            .await?
+            .ok_or(Error::Precondition)?;
+        if !customer.is_active()
+            || !customer
+                .usage_attribution
+                .as_ref()
+                .is_some_and(|a| a.subject_keys.iter().any(|s| s == subject))
+        {
+            return Err(Error::Precondition);
+        }
+        self.verify_subject_owner(tenant, customer_id, subject)
+            .await?;
+        let native: Vec<Meter> = self.collection(self.collection_url("meters")?).await?;
+        let mut event_types = HashSet::new();
+        let mut result = Vec::new();
+        for key in [count_key, "agent_memory_plaintext_bytes"] {
+            let matched: Vec<_> = native
+                .iter()
+                .filter(|m| m.key == key && m.deleted_at.is_none())
+                .collect();
+            let [meter] = matched.as_slice() else {
+                return Err(Error::Precondition);
+            };
+            let shape = if key == count_key {
+                meter.aggregation == "count" && meter.value_property.is_none()
+            } else {
+                meter.aggregation == "sum"
+                    && meter.value_property.as_deref() == Some("$.plaintext_bytes")
+            };
+            if !shape
+                || !valid_customer_id(&meter.id)
+                || meter.event_type.is_empty()
+                || !event_types.insert(&meter.event_type)
+                || native
+                    .iter()
+                    .filter(|m| m.deleted_at.is_none() && m.event_type == meter.event_type)
+                    .count()
+                    != 1
+                || meter.dimensions.as_ref().is_some_and(|d| {
+                    d.values().any(|p| {
+                        !matches!(
+                            p.as_str(),
+                            "$.tenant_id"
+                                | "$.workspace_id"
+                                | "$.operation_id"
+                                | "$.agent_installation_resource_id"
+                        )
+                    })
+                })
+            {
+                return Err(Error::Precondition);
+            }
+            result.push(MemoryMeter {
+                key: key.into(),
+                id: meter.id.clone(),
+                event_type: meter.event_type.clone(),
+                value_property: meter.value_property.clone(),
+            });
+        }
+        Ok(result)
     }
 
     /// 调用前已持久同一 CloudEvent。202 仅 ACCEPTED；网络/未知状态只 UNKNOWN。

@@ -67,7 +67,12 @@ pub async fn submit_action(
     {
         return Refusal::Denied(ReasonCode::ScopeGuardFailed).respond(None);
     }
-    match state.governance.submit(actor(&ctx), &cmd).await {
+    let result = if crate::agent_memory::write::is_action(&cmd.action_key) {
+        state.governance.submit_memory(&state, &ctx, &cmd).await
+    } else {
+        state.governance.submit(actor(&ctx), &cmd).await
+    };
+    match result {
         Ok((status, submission)) => (status, Json(submission)).into_response(),
         Err((refusal, op)) => refusal.respond(op),
     }

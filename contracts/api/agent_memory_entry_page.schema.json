@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_memory_entry_page.schema.json",
+  "title": "AgentMemoryEntryPage",
+  "description": "19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple snapshot，不是严格存量权威。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["installationResourceId", "workspaceId", "operationId", "state", "entries"],
+  "properties": {
+    "installationResourceId": {"type": "string", "format": "uuid"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "operationId": {"type": "string", "format": "uuid"},
+    "state": {"type": "string", "enum": ["COMPLETE", "BOUND_EXCEEDED", "UNKNOWN"]},
+    "entries": {"type": "array", "items": {"$ref": "agent_memory_entry_view.schema.json"}}
+  }
+}

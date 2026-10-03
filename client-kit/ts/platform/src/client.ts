@@ -10,6 +10,8 @@ import type {
   AgentDefinitionView,
   AgentInstallationPage,
   AgentInstallationView,
+  AgentMemoryReadView,
+  AgentMemoryEntryPage,
   AgentVersionView,
   AutomationPage,
   AutomationDetailView,
@@ -80,6 +82,16 @@ export function createBffClient(transport: BffTransport) {
     },
     agentInstallation: (resourceId: string) =>
       get<AgentInstallationView>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}`),
+
+    /** DD-66/68: BFF alone owns CONTROL custody and native pair selection. */
+    agentMemoryCore: (resourceId: string) =>
+      get<AgentMemoryReadView>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/memory/core`),
+    agentMemoryEntries: (resourceId: string) =>
+      get<AgentMemoryEntryPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/memory/entries`),
+    agentMemoryEntry: (resourceId: string, slug: string) => {
+      const query = new URLSearchParams({ slug });
+      return get<AgentMemoryReadView>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/memory/entry?${query}`);
+    },
 
     /** Automation 管理引用；不存在手动运行、轮换或外部触发入口。 */
     automations: (workspaceId: string, offset?: number) => {

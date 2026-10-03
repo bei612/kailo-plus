@@ -169,3 +169,23 @@ widget/indicator 三项回归均退出 0；检查日志为
 - `mobile-readonly-thread-mutation.log`（`5bd3552a0c75b51dcd18a24f5ea9cf7ef36596bbea27fcc63e69e38b6ea5af64`）：通过后将 reader 的 `ResultTarget.TRIGGER_THREAD` 暂改为契约不存在的 `ResultTarget.CHANNEL`，现有分析器实际退出 1、`undefined_enum_constant`。反向补丁还原后原文件 SHA 完全相同，输出 `mutation=unsupported-thread-enum exit=1 restored=true`；同容器再次分析四文件 0，整体 SDK/attach 0。该负向只证明类型检查能发现不支持的目标，不冒称运行或业务授权已验收。
 
 未新增测试、夹具、业务对象或独立检查脚本。25 项是已有页面/读状态回归，不是新 Automation 正向场景。未进行真实受权 Automation 列表/详情端点正向、真机交互、APK/iOS 构建、release 签名、部署或本刀提交/push；未重跑全量 Flutter/full/端到端，未把空数据库、旧安装包或上文历史产物移作本增量证据。只清理本人 4 个已退出 SDK 容器，日志、镜像、Data 缓存与其他 lane 的容器保留。
+
+## Definition、Version 与 Memory 只读功能批（2026-10-03）
+
+现有 Workspace 管理入口增加 Definition 分页、受权详情与 exact PublishedVersion，
+Installation 详情接 Memory core/entries/entry 的原 BFF typed query；取消只展示
+原 Task phase/evidence，cancel accepted 不作为已取消终态。
+DD-74/75、REQ-21 与设计17/19的端边界不变：无 Memory 写、运行命令、
+组件宿主、文档编辑或 WebView；未知枚举和 scope/pin 不匹配不渲染成功。
+
+在同一选定输入的原 Flutter SDK 上，八源 dart format/check 未产生格式变化，
+dart analyze 为 0，原 `platform_pages_test.dart` 实际 63/63、退出 0。
+原件在 `codex-memory-ui-selected-verify-20261003.pxMZ6I/`，
+`terminal-receipt.json` SHA 为
+`edb98fbe8292b456aa71b865b892a545d2e42646e25ddfa72586f3c9831ed2b9`。
+与共享 UI 一起记录的 22 路径最终摘要为
+`d65adf01a7b4bd41c0b4a0236f4378cc0afcf677726124befabc6519293b9d9e`，
+不是整个仓库或 Mobile release 的证明。13 条 Dart 文案由原同源生成器补齐。
+SDK 实际4CPU/8Gi、swap0、UID1000；停止清理的 idle tail 137 与检查退出0分开，
+OOMKilled=false。本轮未做新破坏、签名、真机/BFF业务 E2E或安装包构建，
+不将前一输入的反例、旧25项或静态枚举检查替代这些验收。

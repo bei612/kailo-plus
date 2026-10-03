@@ -25,6 +25,15 @@
 //    agentInstallationView, err := UnmarshalAgentInstallationView(bytes)
 //    bytes, err = agentInstallationView.Marshal()
 //
+//    agentMemoryEntryPage, err := UnmarshalAgentMemoryEntryPage(bytes)
+//    bytes, err = agentMemoryEntryPage.Marshal()
+//
+//    agentMemoryEntryView, err := UnmarshalAgentMemoryEntryView(bytes)
+//    bytes, err = agentMemoryEntryView.Marshal()
+//
+//    agentMemoryReadView, err := UnmarshalAgentMemoryReadView(bytes)
+//    bytes, err = agentMemoryReadView.Marshal()
+//
 //    agentVersionView, err := UnmarshalAgentVersionView(bytes)
 //    bytes, err = agentVersionView.Marshal()
 //
@@ -114,6 +123,9 @@
 //
 //    workspacePreferenceRequest, err := UnmarshalWorkspacePreferenceRequest(bytes)
 //    bytes, err = workspacePreferenceRequest.Marshal()
+//
+//    agentMemoryWriteInput, err := UnmarshalAgentMemoryWriteInput(bytes)
+//    bytes, err = agentMemoryWriteInput.Marshal()
 //
 //    agentVersionContent, err := UnmarshalAgentVersionContent(bytes)
 //    bytes, err = agentVersionContent.Marshal()
@@ -285,6 +297,36 @@ func UnmarshalAgentInstallationView(data []byte) (AgentInstallationView, error) 
 }
 
 func (r *AgentInstallationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentMemoryEntryPage(data []byte) (AgentMemoryEntryPage, error) {
+	var r AgentMemoryEntryPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentMemoryEntryPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentMemoryEntryView(data []byte) (AgentMemoryEntryView, error) {
+	var r AgentMemoryEntryView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentMemoryEntryView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentMemoryReadView(data []byte) (AgentMemoryReadView, error) {
+	var r AgentMemoryReadView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentMemoryReadView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -585,6 +627,16 @@ func UnmarshalWorkspacePreferenceRequest(data []byte) (WorkspacePreferenceReques
 }
 
 func (r *WorkspacePreferenceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentMemoryWriteInput(data []byte) (AgentMemoryWriteInput, error) {
+	var r AgentMemoryWriteInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentMemoryWriteInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -945,6 +997,9 @@ type ActionCommand struct {
 	IdempotencyKey string `json:"idempotencyKey"`
 	// tenant.member.invite.revoke 的目标邀请
 	InvitationID *string `json:"invitationId,omitempty"`
+	// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+	// 输入；其他命令禁止携带。
+	MemoryWrite *MemoryWriteClass `json:"memoryWrite,omitempty"`
 	// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
 	Name *string `json:"name,omitempty"`
 	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
@@ -1039,6 +1094,24 @@ type DelegationGrantScope struct {
 	TargetID           *string            `json:"targetId,omitempty"`
 	TargetType         string             `json:"targetType"`
 	ToolResourceID     *string            `json:"toolResourceId,omitempty"`
+}
+
+// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+// 输入；其他命令禁止携带。
+//
+// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
+type MemoryWriteClass struct {
+	// entry.patch 当前原生 value 的 SHA-256。
+	BaseHash *string `json:"baseHash,omitempty"`
+	// 调用方实际读取的 head；null 只表示原生确认不存在。
+	ExpectedHeadEventID *string `json:"expectedHeadEventId,omitempty"`
+	// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+	ExpectedHeadState ExpectedHeadState `json:"expectedHeadState"`
+	// entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
+	Patch *string `json:"patch,omitempty"`
+	Slug  string  `json:"slug"`
+	// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
+	Value *string `json:"value,omitempty"`
 }
 
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -1165,6 +1238,51 @@ type AgentInstallationViewChannelBinding struct {
 	ChannelID *string        `json:"channelId,omitempty"`
 	Status    Status         `json:"status"`
 	Triggers  []AgentTrigger `json:"triggers"`
+}
+
+// 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
+// snapshot，不是严格存量权威。
+type AgentMemoryEntryPage struct {
+	Entries                []EntryElement            `json:"entries"`
+	InstallationResourceID string                    `json:"installationResourceId"`
+	OperationID            string                    `json:"operationId"`
+	State                  AgentMemoryEntryPageState `json:"state"`
+	WorkspaceID            string                    `json:"workspaceId"`
+}
+
+// NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+type EntryElement struct {
+	CreatedAt int64  `json:"createdAt"`
+	EventID   string `json:"eventId"`
+	Slug      string `json:"slug"`
+	Tombstone bool   `json:"tombstone"`
+}
+
+// NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+type AgentMemoryEntryView struct {
+	CreatedAt int64  `json:"createdAt"`
+	EventID   string `json:"eventId"`
+	Slug      string `json:"slug"`
+	Tombstone bool   `json:"tombstone"`
+}
+
+// DD-66/68、19 §5：fresh HUMAN Installation read 后的原生 core/cold head。正文仅本次 no-store HTTP，不入
+// Core 数据库、审计或客户端持久存储。ABSENT 不等于 UNREADABLE；tombstone 可带原 head 引用。
+type AgentMemoryReadView struct {
+	Content *string `json:"content,omitempty"`
+	// UTF-8 bytes of the returned content string, not the whole native NIP-44 JSON body or a
+	// billing measurement.
+	ContentBytes           *int64                   `json:"contentBytes,omitempty"`
+	CreatedAt              *int64                   `json:"createdAt,omitempty"`
+	EventID                *string                  `json:"eventId,omitempty"`
+	InstallationResourceID string                   `json:"installationResourceId"`
+	OperationID            string                   `json:"operationId"`
+	Slug                   string                   `json:"slug"`
+	State                  AgentMemoryReadViewState `json:"state"`
+	// FOUND only: native buzz mem hash of the exact UTF-8 value, used by strict patch baseHash;
+	// not the JSON body or a stored plaintext copy.
+	ValueHash   *string `json:"valueHash,omitempty"`
+	WorkspaceID string  `json:"workspaceId"`
 }
 
 type AgentVersionView struct {
@@ -1610,6 +1728,21 @@ type WorkspacePreferenceRequest struct {
 	Muted   bool  `json:"muted"`
 	Starred bool  `json:"starred"`
 	Version int64 `json:"version"`
+}
+
+// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
+type AgentMemoryWriteInput struct {
+	// entry.patch 当前原生 value 的 SHA-256。
+	BaseHash *string `json:"baseHash,omitempty"`
+	// 调用方实际读取的 head；null 只表示原生确认不存在。
+	ExpectedHeadEventID *string `json:"expectedHeadEventId,omitempty"`
+	// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+	ExpectedHeadState ExpectedHeadState `json:"expectedHeadState"`
+	// entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
+	Patch *string `json:"patch,omitempty"`
+	Slug  string  `json:"slug"`
+	// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
+	Value *string `json:"value,omitempty"`
 }
 
 // 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
@@ -2090,6 +2223,14 @@ const (
 	Read        ResultExposureMode = "READ"
 )
 
+// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+type ExpectedHeadState string
+
+const (
+	ExpectedHeadStateABSENT ExpectedHeadState = "ABSENT"
+	ExpectedHeadStateFOUND  ExpectedHeadState = "FOUND"
+)
+
 // ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
 // seam 能把它收敛，不能因无 native ID 就自动重放（DD-48）。
 type ActionDispatchState string
@@ -2219,6 +2360,22 @@ const (
 	AgentInstallationStateERROR        AgentInstallationState = "ERROR"
 	AgentInstallationStatePROVISIONING AgentInstallationState = "PROVISIONING"
 	Draining                           AgentInstallationState = "DRAINING"
+)
+
+type AgentMemoryEntryPageState string
+
+const (
+	BoundExceeded AgentMemoryEntryPageState = "BOUND_EXCEEDED"
+	Complete      AgentMemoryEntryPageState = "COMPLETE"
+	StateUNKNOWN  AgentMemoryEntryPageState = "UNKNOWN"
+)
+
+type AgentMemoryReadViewState string
+
+const (
+	StateABSENT AgentMemoryReadViewState = "ABSENT"
+	StateFOUND  AgentMemoryReadViewState = "FOUND"
+	Unreadable  AgentMemoryReadViewState = "UNREADABLE"
 )
 
 type AgentVersionState string

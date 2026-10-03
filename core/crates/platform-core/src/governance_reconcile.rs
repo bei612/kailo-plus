@@ -74,6 +74,7 @@ const OPEN_STATES: &[(&str, &str)] = &[
 
 pub fn spawn(
     state: ServiceState,
+    memory: crate::bff::BffState,
     meter: &Meter,
     cfg: Config,
     gateway_usage: crate::gateway_usage::Ingress,
@@ -161,6 +162,10 @@ pub fn spawn(
                 }
             };
             metrics.passes.add(1, &[KeyValue::new("outcome", outcome)]);
+            if let Err(error) = crate::agent_memory::write::reconcile(&memory, cfg.batch).await {
+                tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
+                    state="UNKNOWN", "Memory 原固定事件对账未完成；RB-05 保留原 operation");
+            }
             if let Err(error) = crate::automation::reconcile(&state, cfg.batch).await {
                 tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
                     state="UNKNOWN", "自动化持久触发对账未完成；原 checkpoint 保留");
@@ -205,6 +210,11 @@ async fn pass(
          left join projection.approval_projection ap on ap.workflow_id = ae.approval_workflow_id
          left join projection.workflow_ref aw on aw.workflow_id = ae.approval_workflow_id
          where ae.action_key <> $4
+           and (ae.action_key not in ('agent.memory.core.replace','agent.memory.entry.set',
+                                     'agent.memory.entry.patch','agent.memory.entry.remove')
+                or (ae.gate_state='EVALUATING' and ae.dispatch_state='NOT_DISPATCHED'
+                    and not exists(select 1 from projection.agent_memory_write mw
+                                   where mw.action_execution_id=ae.id)))
            and not (ae.action_key = $3 and ae.gate_state = 'ALLOWED'
                     and ae.dispatch_state = 'UNKNOWN')
            and ((ae.gate_state = 'EVALUATING'

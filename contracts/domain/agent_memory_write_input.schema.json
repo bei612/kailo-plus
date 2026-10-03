@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/agent_memory_write_input.schema.json",
+  "title": "AgentMemoryWriteInput",
+  "description": "HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["slug", "expectedHeadState"],
+  "properties": {
+    "slug": {"type": "string"},
+    "expectedHeadState": {"type": "string", "enum": ["FOUND", "ABSENT"], "description": "原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。"},
+    "expectedHeadEventId": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "调用方实际读取的 head；null 只表示原生确认不存在。"
+    },
+    "value": {"type": "string", "description": "core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。"},
+    "patch": {"type": "string", "description": "entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。"},
+    "baseHash": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "entry.patch 当前原生 value 的 SHA-256。"}
+  }
+}

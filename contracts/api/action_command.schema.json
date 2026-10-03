@@ -64,6 +64,10 @@
       "format": "uuid",
       "description": "仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。"
     },
+    "memoryWrite": {
+      "$ref": "../domain/agent_memory_write_input.schema.json",
+      "description": "仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native 输入；其他命令禁止携带。"
+    },
     "delegationId": {
       "type": "string",
       "format": "uuid",

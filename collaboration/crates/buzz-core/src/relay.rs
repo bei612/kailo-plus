@@ -1,5 +1,8 @@
-//! Canonical relay identities shared by runtime components.
+//! Canonical relay identities and bounded native queries shared by callers.
 
+use std::{collections::HashSet, future::Future};
+
+use serde_json::{json, Value};
 use thiserror::Error;
 use url::{Host, Url};
 
@@ -75,6 +78,91 @@ pub fn normalize_relay_url(raw: &str) -> Result<String, NormalizeRelayUrlError> 
         url.set_path("");
     }
     Ok(url.to_string().trim_end_matches('/').to_string())
+}
+
+/// An exhaustive raw query never treats an invalid or truncated page as empty.
+#[derive(Debug, Error)]
+pub enum QueryAllError<E> {
+    /// The caller's existing authenticated transport failed.
+    #[error("relay query failed")]
+    Query(E),
+    /// The page or cursor violates native `(created_at DESC, id ASC)` ordering.
+    #[error("invalid relay query page or limits")]
+    InvalidPage,
+    /// An additional event proves the delivered exhaustive bound was exceeded.
+    #[error("relay query event bound exceeded")]
+    BoundExceeded,
+}
+
+/// Query one raw filter using Buzz's composite `(until, before_id)` cursor.
+///
+/// The caller retains its authenticated transport, timeout and delivered page
+/// and event bounds. Both RestClient and CONTROL reads use this cursor loop;
+/// it rejects repeated, out-of-order and oversized pages before exposing an
+/// exhaustive result. A one-event probe distinguishes an exact-bound result
+/// from a truncated one. Event signatures and business scope remain the
+/// caller's validation responsibility.
+pub async fn query_raw_all<E, F, Fut>(
+    mut filter: Value,
+    page_size: usize,
+    event_bound: usize,
+    mut query: F,
+) -> Result<Vec<Value>, QueryAllError<E>>
+where
+    F: FnMut(Value) -> Fut,
+    Fut: Future<Output = Result<Value, E>>,
+{
+    let probe_bound = event_bound
+        .checked_add(1)
+        .filter(|_| page_size > 0 && event_bound > 0 && filter.is_object())
+        .ok_or(QueryAllError::InvalidPage)?;
+    let mut events = Vec::new();
+    let mut seen = HashSet::new();
+    let mut cursor: Option<(u64, String)> = None;
+    loop {
+        let requested = page_size.min(probe_bound - events.len());
+        filter["limit"] = json!(requested);
+        let page = query(filter.clone()).await.map_err(QueryAllError::Query)?;
+        let page = page.as_array().ok_or(QueryAllError::InvalidPage)?;
+        if page.len() > requested {
+            return Err(QueryAllError::InvalidPage);
+        }
+        let exhausted = page.len() < requested;
+        for event in page {
+            let timestamp = event
+                .get("created_at")
+                .and_then(Value::as_u64)
+                .ok_or(QueryAllError::InvalidPage)?;
+            let id = event
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| {
+                    id.len() == 64
+                        && id
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                })
+                .ok_or(QueryAllError::InvalidPage)?;
+            if !seen.insert(id.to_owned())
+                || cursor.as_ref().is_some_and(|(time, prior_id)| {
+                    timestamp > *time || (timestamp == *time && id <= prior_id.as_str())
+                })
+            {
+                return Err(QueryAllError::InvalidPage);
+            }
+            cursor = Some((timestamp, id.to_owned()));
+        }
+        if events.len() + page.len() > event_bound {
+            return Err(QueryAllError::BoundExceeded);
+        }
+        events.extend(page.iter().cloned());
+        if exhausted {
+            return Ok(events);
+        }
+        let (timestamp, id) = cursor.as_ref().ok_or(QueryAllError::InvalidPage)?;
+        filter["until"] = json!(timestamp);
+        filter["before_id"] = json!(id);
+    }
 }
 
 #[cfg(test)]

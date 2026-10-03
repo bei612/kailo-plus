@@ -17,8 +17,9 @@
 use std::io::Read;
 use std::time::SystemTime;
 
-use sha2::{Digest, Sha256};
-
+use buzz_core::engram::value_hash as sha256_hex;
+#[cfg(test)]
+use buzz_core::engram::verify_hunks_at_declared_position;
 use buzz_core::engram::{
     self, conversation_key, d_tag, normalize_slug, select_head, validate_and_decrypt, Body, Listing,
 };
@@ -371,113 +372,6 @@ pub async fn cmd_set(
     Ok(())
 }
 
-/// Compute the canonical hex-encoded SHA-256 of a UTF-8 string. Matches
-/// `printf '%s' "$value" | sha256sum`, so operators can verify base-hash
-/// from the shell.
-fn sha256_hex(s: &str) -> String {
-    let mut h = Sha256::new();
-    h.update(s.as_bytes());
-    hex::encode(h.finalize())
-}
-
-/// Verify that each hunk's preimage lines (Context + Delete) match the
-/// current value byte-for-byte starting at the line number the hunk declares.
-///
-/// Diffy's `apply` is strict on context content but will *slide* a hunk
-/// forward or backward through the file to find a position where the
-/// preimage matches. For memory-edit safety we want the stronger property:
-/// the patch must apply at exactly the line number it was generated against.
-/// Drift in line numbers usually means lines were inserted or deleted before
-/// the hunk — at which point regenerating the patch is the correct response,
-/// not silently landing the change at a different position.
-///
-/// Returns `Ok(())` on a clean match, `Err(message)` otherwise.
-///
-/// Line-number convention: unified-diff `@@ -N,M @@` uses 1-based line
-/// numbers. A pure-insertion hunk against an empty file is encoded as
-/// `@@ -0,0 +1,M @@` (`start == 0`, `len == 0`), which we treat as
-/// "apply at index 0 of an empty preimage."
-fn verify_hunks_at_declared_position(
-    current: &str,
-    patch: &diffy::Patch<'_, str>,
-) -> Result<(), String> {
-    // `split_inclusive('\n')` preserves the trailing newline on each line,
-    // matching diffy's own line representation. A value with no trailing
-    // newline produces a last segment with no `\n`, which also matches how
-    // diffy stores the "no newline at EOF" case (parser strips the `\n`).
-    let current_lines: Vec<&str> = current.split_inclusive('\n').collect();
-
-    for (i, hunk) in patch.hunks().iter().enumerate() {
-        let preimage: Vec<&str> = hunk
-            .lines()
-            .iter()
-            .filter_map(|l| match l {
-                diffy::Line::Context(s) | diffy::Line::Delete(s) => Some(*s),
-                diffy::Line::Insert(_) => None,
-            })
-            .collect();
-
-        // Pure insertion at start of empty file: `@@ -0,0 +1,M @@`.
-        //
-        // Known limitation: a pure-insertion hunk into a non-empty value
-        // (`@@ -N,0 +N,M @@` with `N > 0`) is currently rejected. With no
-        // preimage lines there's nothing to position-check against, and the
-        // safe-default for a strict mode is "refuse" rather than "land at an
-        // unverified position." `diff -u` includes context lines by default,
-        // so users hit this only if they hand-author a no-context insertion.
-        // Failure mode is rejection, not corruption — see PR #627 review.
-        if preimage.is_empty() {
-            if hunk.old_range().start() == 0 {
-                continue;
-            }
-            return Err(format!(
-                "hunk #{} has empty preimage at line {}; \
-                 pure no-context insertions into non-empty values are not \
-                 supported (regenerate the patch with `diff -u` to include \
-                 surrounding context)",
-                i + 1,
-                hunk.old_range().start()
-            ));
-        }
-
-        // Convert 1-based line number to 0-based index.
-        let declared_start = hunk
-            .old_range()
-            .start()
-            .checked_sub(1)
-            .ok_or_else(|| format!("hunk #{} has invalid line number 0", i + 1))?;
-
-        let end = declared_start
-            .checked_add(preimage.len())
-            .ok_or_else(|| format!("hunk #{} line range overflows", i + 1))?;
-        if end > current_lines.len() {
-            return Err(format!(
-                "hunk #{} expects {} preimage line(s) starting at line {}, \
-                 but the value only has {} line(s)",
-                i + 1,
-                preimage.len(),
-                declared_start + 1,
-                current_lines.len()
-            ));
-        }
-
-        for (offset, expected) in preimage.iter().enumerate() {
-            let actual = current_lines[declared_start + offset];
-            if *expected != actual {
-                return Err(format!(
-                    "hunk #{} preimage mismatch at line {}: \
-                     patch expects {:?} but value has {:?}",
-                    i + 1,
-                    declared_start + offset + 1,
-                    expected,
-                    actual
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Extract the current slug value as a `String` (or return `NotFound`).
 /// Used by `mem hash` and `mem patch` — they both need "the value or fail".
 /// Returns `(head_event, value)` so the caller can preserve monotonic ordering.
@@ -601,52 +495,12 @@ pub async fn cmd_patch(
     let agent_pubkey = client.keys().public_key();
     let (head, current) = fetch_value(client, &agent_pubkey, &owner, &slug).await?;
 
-    // Base-hash gate: concurrent-edit safety.
-    if let Some(expected) = base_hash {
-        let actual = sha256_hex(&current);
-        if actual != expected.to_ascii_lowercase() {
-            return Err(CliError::Conflict(format!(
-                "slug `{slug}` has changed since patch was generated \
-                 (expected sha256 {expected}, got {actual}). Re-fetch and regenerate the patch."
-            )));
-        }
-    }
-
-    // Reject multi-file patches. A memory slug is a single virtual file; a
-    // patch with multiple `--- ` headers is ambiguous and almost certainly an
-    // operator mistake (e.g. piping a multi-file `git diff` output here).
-    let file_header_count = diff_text.lines().filter(|l| l.starts_with("--- ")).count();
-    if file_header_count > 1 {
-        return Err(CliError::Usage(format!(
-            "multi-file patch not supported (found {file_header_count} `--- ` headers); \
-             a memory slug is a single virtual file"
-        )));
-    }
-
-    let patch = diffy::Patch::from_str(&diff_text)
-        .map_err(|e| CliError::Usage(format!("malformed unified diff: {e}")))?;
-
-    // Strict positional check — diffy's `apply` allows the hunk to slide
-    // forward/backward in the file if it finds the preimage elsewhere. For
-    // memory edits we want the stronger guarantee: the hunk must apply at
-    // exactly the line number it claims. If the file has drifted enough that
-    // the hunk's declared position no longer matches, we'd rather refuse and
-    // make the operator regenerate the patch than risk landing the change
-    // somewhere unintended.
-    verify_hunks_at_declared_position(&current, &patch).map_err(|msg| {
-        CliError::Usage(format!(
-            "patch did not apply cleanly to slug `{slug}`: {msg}. \
-             Context must match the current value verbatim at the declared \
-             line numbers — no fuzz, no offset."
-        ))
-    })?;
-
-    let new_value = diffy::apply(&current, &patch).map_err(|e| {
-        CliError::Usage(format!(
-            "patch did not apply cleanly to slug `{slug}`: {e}. \
-             Context must match the current value verbatim — no fuzz, no offset."
-        ))
-    })?;
+    let new_value = engram::apply_memory_patch(&current, &diff_text, base_hash).map_err(
+        |error| match error {
+            engram::MemoryPatchError::Conflict => CliError::Conflict(error.to_string()),
+            engram::MemoryPatchError::Invalid => CliError::Usage(error.to_string()),
+        },
+    )?;
 
     if new_value.len() > engram::NIP44_PLAINTEXT_MAX {
         return Err(CliError::Usage(format!(

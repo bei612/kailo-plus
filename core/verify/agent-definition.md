@@ -1,5 +1,70 @@
 # AgentDefinition 与 Resource owner 实现核验
 
+## 2026-10-03 HUMAN Memory 三项读取：实现后的窄证据
+
+本刀实现 `agent.memory.core.read`、`agent.memory.entry.list` 与
+`agent.memory.entry.read`，由既有 BFF Installation 路径和 Web/Desktop 的同一
+共享 TS Installation 页面实际消费。依据 DD-66/67/68、`19` §3—7，四步结论如下：
+
+1. 原生权威：固定 Buzz 提交 `779af8886caae1317b4de962082429867ab61503`
+   的 `crates/buzz-core/src/engram.rs::{validate_and_decrypt,select_head}`、
+   `crates/buzz-acp/src/relay.rs::RestClient::query_raw_all` 与
+   `desktop/src/features/agent-memory/ui/MemorySection.tsx` 是协议、读取及交互依据。
+   本地原 `buzz-core` 验证入口增加同一次解密的原始 plaintext 字节结果，旧入口
+   仍供已有调用方使用；原分页逻辑收敛到 `buzz-core::relay::query_raw_all`，
+   RestClient 和 Core CONTROL IdentityClient 共同消费。Core 保留受控 Host、
+   NIP11、ApiBudget 与动态上界，不另写存储、检索、密码学、同步或 Memory 权威。
+2. 调用与权限：复用同一 ServiceState、Governance/ActionExecution、HUMAN
+   与 active 生命周期/Installation/Resource 权限及受控双方 SecretRef。
+   三个生成 schema 同时有真实 Core writer 和 TS reader，正文只在 no-store
+   HTTP 回应与已展开组件内存中存在，关闭即卸载。UI 沿原 MemorySection 的
+   折叠条目布局接 BFF，不带原 Tauri/本地钥匙/cache，也不注册写入或运行权限。
+3. 副作用与计量：原生读取后，两个真实 meter 事件进入原 `outbox.usage_event`，
+   source 为 `BUZZ_AGENT_MEMORY`、关联原 AE，不造 Invocation/model trace。
+   count 与原生 JSON plaintext bytes 使用唯一 AE/meter ID，经原 OpenMeter
+   publish/stored 消费查证，再重验 scope、binding、SecretRef、meter 与 native head
+   才披露正文；202、缺映射、配置 warning 或未知均不据此返回正文。不存正文、
+   ciphertext、私钥或 slug 明文；`contentBytes` 仅校验返回文字的 UTF-8 长度，
+   不是原生 JSON billing bytes。必填总读取时限由唯一运行配置投递，不给默认值。
+4. 错误与恢复：BOUND/UNKNOWN/UNREADABLE 不伪报 ABSENT 或空库存；原始
+   byte count、复合游标顺序/重复/超页/超界与跨 Workspace 拒绝均有实现后
+   断言。原生长期记忆仍只在 Relay，Model/Quota/账单没有第二权威。
+
+不可变 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+使用 launcher UID:GID、原 4 CPU/8 GiB、memory+swap 8 GiB 和 Data 缓存；
+未自行设置或降低 Cargo 并行度。原四侧生成/检查和 registry 生成实际退出 0；
+初轮 Bridge 未用 import、不存在的 BillingUnavailable 枚举及旧快照 normal-turn
+布尔式三次 Cargo 101 均保留，分别修正真实源/选定已冻结消费者后，Core
+all-target clippy `-D warnings` 与原 normal-turn 六项检查实际退出 0。
+
+原生 Bridge 两项游标检查、Buzz engram 34 项和 ACP 原分页消费一项均通过；
+shared/Web/Desktop 三消费者类型检查为 0。新增 Memory 四项通过，但第一次
+共享整套 113 项为 112 通过、1 项继承 theme scanner 在原 GFM `style` 命中失败，
+没有修改 scanner 或 GFM 呈现使其过关。随后错误 `pnpm test -- -t` 的整套重跑
+同样失败，属于过滤投递错误，原件保留；修正调用后四项为 4/4，其他 109 项
+明确 filtered。Go 原 contracts round-trip 与 Dart 原九项检查实际退出 0。
+
+主动破坏重新序列化 byte count、原复合游标倒序拒绝及跨 Workspace 拒绝后，
+三个检查分别在编译成功后真实断言失败（SDK 101、101、1）；每次还原原 SHA，
+对应最终 1/1、2/2、4/4 为 0。原始日志在
+`/volumes/data/kailo/tmp/codex-memory-feature-sdk-20261003.sdcocM/` 的
+`byte-mutation/byte-restored`、`cursor-mutation/cursor-restored`、
+`ui-mutation/ui-restored`，以及 `core-final`、`native-ui`、`roundtrip-final`。
+所有变异只发生于该私有快照，正式源码未被变异。
+
+同表迁移在独立空库的原 migrate/SQLx、两层回退/再前进、44 枚举核对及实际
+CHECK 破坏/回滚还原已为 0，原件为
+`codex-agent-billing-window-20261003.cH0WCz/{sdk,validation,catalog-check,migration-catalog}.log`。
+这不证明原生 BFF→Memory→OpenMeter→正文披露 E2E。仅 Memory 的 17 文案从
+真实 HEAD i18n 用原 generator 生成检查，排除继承 native 文案/generator 改动；
+首次 Dart 基线误含工具截断显示文字的错误 patch 保留，已用原生 Git stdout
+与 blob SHA 重做并 apply-check，不修改产品以迁就错误证据。
+
+本刀没有 full、产物构建/来源登记、提交或部署，旧 Web/Desktop/Relay digest
+不覆盖本次 shared/native 变化。Memory 写入由独立后续窗口负责，Mobile
+Memory 管理页、真实原生读取与 billing/disclosure、三端设备验收均未由本刀
+验收；这些窄 PASS 不代表 Stage 5 或生产可用。
+
 ## 本批固定树全量收口
 
 实现与负向恢复完成后，原 `tools/check.sh --full` 对固定树
@@ -1058,3 +1123,132 @@ DATABASE_URL 仅在内存/标准输入投递，无全局 Git 定位变量或宿�
 Relay outage 三项 ignored，未安装 gitleaks，仅内置扫描。Win11 unsigned 测试包未实机
 安装或业务验收，Mobile release 签名仍阻断。本次不改变生产门禁、Stage 退出状态，
 也不把外部集成检查的早返计作真实业务闭环。
+
+## 2026-10-03 已部署 Web 的真实定义创建与回读
+
+本次业务走查使用已部署的 Core/Worker 源码提交
+`67b48b7c027317efb59533ee9dcb5bc9b4a1a892` 与 Web `6f54ce3744408aa3adfa898ec639b9fad1ef4438774a0869f21b33e722d298ce`，
+不把后续 Memory、Gateway 或正常 turn 工作树增量计为已部署。
+01:51:49–01:51:50 UTC 现有首位管理员经原 OIDC 登录，在共用 Agents 页面填写
+定义、查看原确认面板并提交一次 `agent.definition.create`；没有直接写业务数据库、
+创建运行 profile、安装或触发模型，也没有用零条目列表替代创建验收。
+
+原 UI 业务脚本在固定浏览器镜像
+`sha256:6446946a1d9fd62d9ae501312a2d76a43ee688542b21622056a372959b65d63d`
+内实际退出 0；口令仅由受控只读文件提供，原件不保存口令或 cookie。
+实际入口为 `http://192.168.0.193:58090`，不是 HTTPS 验收。
+
+| 真实消费 | 实际结果 |
+|---|---|
+| 原 `POST /api/v1/actions` | HTTP 200；AE `797b83d1-0361-4564-bf3b-3142b4824065`，operation `39ba2a10-92b7-49b0-ac86-ddb2ab7c0169`，ALLOWED/DISPATCHED |
+| 同页面定义回读 | Resource `88325239-707e-471c-89c7-f7675e341928`，ACTIVE、version 2；名称与 stableSlug 和原提交一致，owner 为实际 HUMAN |
+| 原 Task 回读 | HTTP 200；同 AE、operation、action 与 Resource，不捏造 Workflow 或 observation 终态 |
+| 原生审计只读核对 | 同 operation/target 的 INTENT(EVALUATING)、DECISION(ALLOWED)、DISPATCH(DISPATCHED) 三行；原 `psql` SELECT 实际退出 0 |
+| 浏览器实际呈现 | 原左侧导航与新定义行实际渲染；pageErrors 为 0，原件含实际截图 |
+
+原始业务输入与观察在
+`/volumes/data/kailo/tmp/codex-live-agent-definition-20261003.qsiGq3/`：
+`intent.json` SHA-256 `9b0a3d1e6583df1795039943a45508d723a691cea46de50babc80455be0d4479`，
+`observation.json` SHA-256 `0312716a3c873502a2bcb28e3e22de0c60d4692f0ce896b8b2bd5ee302affbc6`；
+`native-audit.log` SHA-256 `45f8b8ba05bf7b341cd865273fc0c59a8821a8612e5c44a84460c9d9ae9e7795`。
+审计 SELECT 可按上述 operation_id 重查，不把数据库核对称为 Audit UI/API 验收。
+
+该真实定义是保留的合法开发业务对象；本次只证明定义创建、呈现、回读及同链审计，
+不证明 AgentVersion/Installation、Memory、Codex turn、OpenMeter、严格预留、
+工具审批、Win11 或 Mobile 设备业务闭环，也不解除一期生产发布门禁。
+
+## Memory HUMAN 写入与客户端消费集成（2026-10-03）
+
+本节记录已经实现的调用链，不新建规格、Memory 服务或第二账本。
+权威为 DD-66/67/68、设计19 §5/6/8与原统一 Action、Installation Resource scope。
+四个 owner 写键 core.replace、entry.set、entry.patch、entry.remove 只经原
+`/api/v1/actions`，目录为 SYNC/NONE/CHECK；Mobile 不写，AGENT 写工具不生成。
+
+实际 writer 为 `agent_memory_write.rs`，复用原准入、fresh authorization、
+OpenMeter CHECK、ActionExecution/Operation/Audit 与 UsageEvent。
+签名加密、head 判定和严格补丁复用 Buzz commit
+`779af8886caae1317b4de962082429867ab61503` 的
+`crates/buzz-core/src/engram.rs::{build_event,conversation_key,validate_and_decrypt_with_size}`；
+`crates/buzz-cli/src/commands/mem.rs::cmd_patch` 的严格原位置 verifier/hash
+已归入同一 buzz-core，CLI 旧副本删除，Core 由 collab-bridge 消费。
+
+影响与副作用：Core 只持 scope、固定 event/head、摘要、字节数和外部证据引用；
+value、slug、patch、密文与密钥不持久化。唯一写前意图冻结原 event，
+后续同 key 或后台只观察原 ID；发布后原生 head 不匹配即 CONFLICT，不自动重发。
+两条原生 count/plaintext_bytes 用量均 observed stored 才 DISPATCHED，
+202、未知 ACK/head、计量未 stored 均 UNKNOWN，沿原治理批次/时限与 RB-05 收敛。
+owner、CHECK 与旧 head/base 拒绝现沿同一 AE/Audit 留证；未知依赖保持
+EVALUATING/NOT_DISPATCHED，仅没有 native intent 的准入可按原超时 EXPIRED，
+已签名 intent 不以该超时误判为失败。同一已拒 key 保留冻结 reason/class。
+撤权、暂停、并发重入、未知枚举和缺 projection/secret 均拒绝新副作用，
+不把 UNKNOWN 展示为成功或失败；没有旧在线 writer 兼容窗口。
+
+独立 writer 回执在 `codex-human-memory-write-20261003.FfQQps/`：
+原四侧 gen/--check、53 条空库迁移回退再前进、SQLx、44 命名约束均 0；
+主动删除被检查约束实际 SQLSTATE23514，事务还原后 0；
+原 CLI 严格补丁 5/5、生产 guard 破坏 101、按 SHA 还原后 5/5。
+审计修正的原 all-targets clippy 为 0；最后准入过期选批与 EXPIRED 同 key 返回
+在该日志之后修改，只由本批集中验证覆盖，旧 clippy 不证明新事务业务通过。
+
+当前 writer SHA 为 `93b8706256d4c2d5fd842827e74c2642b804532045477707708a21a57c6f20ba`，
+reconcile 为 `7b310801109766c12eb5083d95652255d3f15b95547023f2fd7ea81d03f76d73`。
+TS 与 Mobile 原页面各 63/63、Web/Desktop 类型检查及 Dart analyze 实际 0，
+日志与 22 路径输入摘要见 `codex-memory-ui-selected-verify-20261003.pxMZ6I/`。
+只生成了同源 13 条缺失 Dart 文案，不用旧主题或其他未运行检查填充通过。
+
+真实 HUMAN Installation/owner 四写、Relay ACK/head冲突、OpenBao exact AGENT secret、
+OpenMeter 两事件 stored 的整体链未验收；没有造业务 seed、重置数据库、
+安装 Win11 包或部署本 writer。正常 turn 与取消的原 native 用量证据另见
+[持久用量记录](../../model-gateway/fork/verify/durable-usage.md)。
+
+### 当前功能树集中验证与产物收口
+
+固定候选 commit `98df24a41284d92c692c2742770ab45945c05b28`、tree
+`e5234981243519b30e24eea0818a5ee196e4bc2a` 的原 `tools/check.sh --full`
+实际退出 1。原日志为
+`/volumes/data/kailo/tmp/codex-memory-delivery-20261003.BES8UA/full.log`，
+SHA-256 `c12f7e32b62aa4771d5717b71d4111d3a7b50abdf6bd48dcdb99355310cba016`。
+原容器内 fmt/clippy、Go/TS/Dart 静态检查、四侧生成与兼容、既有验证、replay、
+文档和安全边界检查均通过。三项外部演练 ignored；数据库与实际部署配置预检
+明确 SKIP，不以早返的集成检查声称真实业务 E2E。
+
+失败输出是两处 trace 的 Gateway artifact digest 不符，以及 Relay、Win11
+artifact 的 source_digest 不符。前者仍引用旧 `63a5123…`，现仅将这两处引用
+对齐已正式构建并部署的 `471fa4e9…`，不重建 Gateway。后者由共享 Buzz 与
+客户端的本批源码变化导致，按原构建入口生成真实产物后才能解除；不手改摘要、
+不删构建输入、不将旧安装包称为当前源码产物。
+
+来源修正的四步结论：权威为工程基线 §2 与 ADR-06/15/16 的实际来源合同，
+不改变产品设计；影响限于两条 trace 的既有 Gateway 引用与本批证据，runtime
+已使用同一真实 digest，没有 schema/Workflow/数据库兼容变化；无新外部副作用、
+默认值或第二权威，不改变 fail-closed；缺真实产物继续明确失败，设备与签名、
+UNKNOWN 业务终态、真实 Agent/Memory/计量闭环仍未验收。
+
+### 同源 Relay 与 Win11 原产物已生成
+
+上述 full1 原件保留不改。随后从已实施私有 commit
+`55a248e0872055fbb03bcafd083710028c4efef8` 的同一冻结源码分别调用原 Relay 与
+Win11 helper，两者完整退出 0；没有重建源码摘要未变的 Web97、Runtime、Core 或 Worker。
+Relay 的 1118 个输入 source 为 `e68add606d98c362e49f9a9fbf33cc4deb24936d065e1ac4f5ef456e79ec30fe`，
+artifact 为 `d42f83fa0dadcd78c4ad721047433a9a7c8e522767edd96cb326d641c5dd0056`；
+Win11 的 2255 个输入 source 为 `af6418a4394f1ddff402ef968eaaa45c4319fbc7e843c87cef42dc026c4602ee`，
+artifact 为 `5378f3703e0208a6f727357f72b59e7e81836889adf0ff54990f8c718badecce`。
+两份原源码回执前后逐字相等，Relay 原 registry manifest 独立读回 HTTP200、SHA 相等；
+NSIS 包为 15,076,978 字节且未签名。完整原件与 SHA 清单在
+`codex-memory-relay-win-artifacts-20261003.SosEFm/`。
+
+四步结论：依据仍是工程基线 §2 与 ADR-06/15/16 的实际来源合同；
+影响只限来源四摘要、现有 Relay trace/pin 与证据，不改变业务/schema/Workflow 权威；
+外部副作用仅原 registry 上传和 Data 测试包产出，不替换服务、不修改数据库；
+原 full1、UNKNOWN 对账、三项 ignored、数据库/实际配置 SKIP 与设备/签名阻断均保留。
+修正指针的固定树 `433be885faead1e95072e10ca447d36b660a1fa7` 随后仅运行一次原
+`tools/check.sh --full`，完整退出 0。原日志
+`/volumes/data/kailo/tmp/codex-memory-artifact-close-20261003.iEBtsF/full.log` 的 SHA-256 为
+`b6557aced681ee364ede8f722761a1e7a4c76835267f09d29962b95efa738210`。
+128 schema、四侧、Core/replay、18 条追溯、18 份供应链产物证明及 6 份来源均通过。
+输入树与全部 Git blob 列表前后逐字相等；blob 列表 SHA-256 为
+`2d53fec44f0a05c9b8243013ce6df375be3cf509e2f86d6bc481a983ce3c87f2`。
+原 SDK 为 `10ad51…`、UID 1000:1000、实际 4CPU/8GiB/swap0；没有新建 SDK 或重跑构建。
+未提供 DATABASE_URL 和部署 .env，实际数据库/配置演练仍 SKIP；Catalog 新库、
+Approval 续跑、Relay 故障撤权三项外部演练 ignored，不把早返检查计为业务验收。
+公开提交、Core/Worker 本批 release、部署及真实 HUMAN Memory/计量/Agent E2E 仍未发生。

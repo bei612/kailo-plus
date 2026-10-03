@@ -352,10 +352,16 @@ async fn evidence_existence(
                     return Ok(present(found.is_some()));
                 }
                 K::OpenmeterEventId => {
-                    let row: Option<(Value,String)>=sqlx::query_as("select u.event,t.openmeter_namespace
-                        from outbox.usage_event u join projection.agent_model_trace t on t.invocation_id=u.invocation_id
-                        where u.openmeter_event_id=$1 and u.tenant_id=$2 and u.operation_id=$3")
-                        .bind(id).bind(tenant_id).bind(operation_id).fetch_optional(&state.pool).await?;
+                    let row: Option<(Value, String)> = sqlx::query_as(
+                        "select u.event,u.openmeter_namespace
+                        from outbox.usage_event u
+                        where u.openmeter_event_id=$1 and u.tenant_id=$2 and u.operation_id=$3",
+                    )
+                    .bind(id)
+                    .bind(tenant_id)
+                    .bind(operation_id)
+                    .fetch_optional(&state.pool)
+                    .await?;
                     let Some((event, namespace)) = row else {
                         return Ok(Existence::Unverifiable);
                     };

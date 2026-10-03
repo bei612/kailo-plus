@@ -8,6 +8,9 @@
 //     final agentInstallationPage = agentInstallationPageFromJson(jsonString);
 //     final agentInstallationProjectionView = agentInstallationProjectionViewFromJson(jsonString);
 //     final agentInstallationView = agentInstallationViewFromJson(jsonString);
+//     final agentMemoryEntryPage = agentMemoryEntryPageFromJson(jsonString);
+//     final agentMemoryEntryView = agentMemoryEntryViewFromJson(jsonString);
+//     final agentMemoryReadView = agentMemoryReadViewFromJson(jsonString);
 //     final agentVersionView = agentVersionViewFromJson(jsonString);
 //     final approvalDecisionRequest = approvalDecisionRequestFromJson(jsonString);
 //     final approvalView = approvalViewFromJson(jsonString);
@@ -38,6 +41,7 @@
 //     final workspaceView = workspaceViewFromJson(jsonString);
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
 //     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
+//     final agentMemoryWriteInput = agentMemoryWriteInputFromJson(jsonString);
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
@@ -115,6 +119,24 @@ AgentInstallationView agentInstallationViewFromJson(String str) =>
     AgentInstallationView.fromJson(json.decode(str));
 
 String agentInstallationViewToJson(AgentInstallationView data) =>
+    json.encode(data.toJson());
+
+AgentMemoryEntryPage agentMemoryEntryPageFromJson(String str) =>
+    AgentMemoryEntryPage.fromJson(json.decode(str));
+
+String agentMemoryEntryPageToJson(AgentMemoryEntryPage data) =>
+    json.encode(data.toJson());
+
+AgentMemoryEntryView agentMemoryEntryViewFromJson(String str) =>
+    AgentMemoryEntryView.fromJson(json.decode(str));
+
+String agentMemoryEntryViewToJson(AgentMemoryEntryView data) =>
+    json.encode(data.toJson());
+
+AgentMemoryReadView agentMemoryReadViewFromJson(String str) =>
+    AgentMemoryReadView.fromJson(json.decode(str));
+
+String agentMemoryReadViewToJson(AgentMemoryReadView data) =>
     json.encode(data.toJson());
 
 AgentVersionView agentVersionViewFromJson(String str) =>
@@ -283,6 +305,12 @@ WorkspacePreferenceRequest workspacePreferenceRequestFromJson(String str) =>
     WorkspacePreferenceRequest.fromJson(json.decode(str));
 
 String workspacePreferenceRequestToJson(WorkspacePreferenceRequest data) =>
+    json.encode(data.toJson());
+
+AgentMemoryWriteInput agentMemoryWriteInputFromJson(String str) =>
+    AgentMemoryWriteInput.fromJson(json.decode(str));
+
+String agentMemoryWriteInputToJson(AgentMemoryWriteInput data) =>
     json.encode(data.toJson());
 
 AgentVersionContent agentVersionContentFromJson(String str) =>
@@ -679,6 +707,10 @@ class ActionCommand {
   ///tenant.member.invite.revoke 的目标邀请
   final String? invitationId;
 
+  ///仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+  ///输入；其他命令禁止携带。
+  final MemoryWriteClass? memoryWrite;
+
   ///workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
   final String? name;
 
@@ -716,6 +748,7 @@ class ActionCommand {
     this.explicitConfirmation,
     required this.idempotencyKey,
     this.invitationId,
+    this.memoryWrite,
     this.name,
     this.originalActionExecutionId,
     this.principalId,
@@ -747,6 +780,9 @@ class ActionCommand {
     explicitConfirmation: json["explicitConfirmation"],
     idempotencyKey: json["idempotencyKey"],
     invitationId: json["invitationId"],
+    memoryWrite: json["memoryWrite"] == null
+        ? null
+        : MemoryWriteClass.fromJson(json["memoryWrite"]),
     name: json["name"],
     originalActionExecutionId: json["originalActionExecutionId"],
     principalId: json["principalId"],
@@ -770,6 +806,7 @@ class ActionCommand {
     "explicitConfirmation": explicitConfirmation,
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
+    "memoryWrite": memoryWrite?.toJson(),
     "name": name,
     "originalActionExecutionId": originalActionExecutionId,
     "principalId": principalId,
@@ -1124,6 +1161,65 @@ final resultExposureModeValues = EnumValues({
   "CONSUME_ONLY": ResultExposureMode.CONSUME_ONLY,
   "EXPORT": ResultExposureMode.EXPORT,
   "READ": ResultExposureMode.READ,
+});
+
+///仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+///输入；其他命令禁止携带。
+///
+///HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
+class MemoryWriteClass {
+  ///entry.patch 当前原生 value 的 SHA-256。
+  final String? baseHash;
+
+  ///调用方实际读取的 head；null 只表示原生确认不存在。
+  final String? expectedHeadEventId;
+
+  ///原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+  final ExpectedHeadState expectedHeadState;
+
+  ///entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
+  final String? patch;
+  final String slug;
+
+  ///core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
+  final String? value;
+
+  MemoryWriteClass({
+    this.baseHash,
+    this.expectedHeadEventId,
+    required this.expectedHeadState,
+    this.patch,
+    required this.slug,
+    this.value,
+  });
+
+  factory MemoryWriteClass.fromJson(Map<String, dynamic> json) =>
+      MemoryWriteClass(
+        baseHash: json["baseHash"],
+        expectedHeadEventId: json["expectedHeadEventId"],
+        expectedHeadState:
+            expectedHeadStateValues.map[json["expectedHeadState"]]!,
+        patch: json["patch"],
+        slug: json["slug"],
+        value: json["value"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "baseHash": baseHash,
+    "expectedHeadEventId": expectedHeadEventId,
+    "expectedHeadState": expectedHeadStateValues.reverse[expectedHeadState],
+    "patch": patch,
+    "slug": slug,
+    "value": value,
+  });
+}
+
+///原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+enum ExpectedHeadState { ABSENT, FOUND }
+
+final expectedHeadStateValues = EnumValues({
+  "ABSENT": ExpectedHeadState.ABSENT,
+  "FOUND": ExpectedHeadState.FOUND,
 });
 
 ///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -1806,6 +1902,179 @@ class AgentInstallationViewChannelBinding {
     ),
   });
 }
+
+///19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
+///snapshot，不是严格存量权威。
+class AgentMemoryEntryPage {
+  final List<EntryElement> entries;
+  final String installationResourceId;
+  final String operationId;
+  final AgentMemoryEntryPageState state;
+  final String workspaceId;
+
+  AgentMemoryEntryPage({
+    required this.entries,
+    required this.installationResourceId,
+    required this.operationId,
+    required this.state,
+    required this.workspaceId,
+  });
+
+  factory AgentMemoryEntryPage.fromJson(Map<String, dynamic> json) =>
+      AgentMemoryEntryPage(
+        entries: List<EntryElement>.from(
+          json["entries"].map((x) => EntryElement.fromJson(x)),
+        ),
+        installationResourceId: json["installationResourceId"],
+        operationId: json["operationId"],
+        state: agentMemoryEntryPageStateValues.map[json["state"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "entries": List<dynamic>.from(entries.map((x) => x.toJson())),
+    "installationResourceId": installationResourceId,
+    "operationId": operationId,
+    "state": agentMemoryEntryPageStateValues.reverse[state],
+    "workspaceId": workspaceId,
+  });
+}
+
+///NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+class EntryElement {
+  final int createdAt;
+  final String eventId;
+  final String slug;
+  final bool tombstone;
+
+  EntryElement({
+    required this.createdAt,
+    required this.eventId,
+    required this.slug,
+    required this.tombstone,
+  });
+
+  factory EntryElement.fromJson(Map<String, dynamic> json) => EntryElement(
+    createdAt: json["createdAt"],
+    eventId: json["eventId"],
+    slug: json["slug"],
+    tombstone: json["tombstone"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "createdAt": createdAt,
+    "eventId": eventId,
+    "slug": slug,
+    "tombstone": tombstone,
+  });
+}
+
+enum AgentMemoryEntryPageState { BOUND_EXCEEDED, COMPLETE, UNKNOWN }
+
+final agentMemoryEntryPageStateValues = EnumValues({
+  "BOUND_EXCEEDED": AgentMemoryEntryPageState.BOUND_EXCEEDED,
+  "COMPLETE": AgentMemoryEntryPageState.COMPLETE,
+  "UNKNOWN": AgentMemoryEntryPageState.UNKNOWN,
+});
+
+///NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+class AgentMemoryEntryView {
+  final int createdAt;
+  final String eventId;
+  final String slug;
+  final bool tombstone;
+
+  AgentMemoryEntryView({
+    required this.createdAt,
+    required this.eventId,
+    required this.slug,
+    required this.tombstone,
+  });
+
+  factory AgentMemoryEntryView.fromJson(Map<String, dynamic> json) =>
+      AgentMemoryEntryView(
+        createdAt: json["createdAt"],
+        eventId: json["eventId"],
+        slug: json["slug"],
+        tombstone: json["tombstone"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "createdAt": createdAt,
+    "eventId": eventId,
+    "slug": slug,
+    "tombstone": tombstone,
+  });
+}
+
+///DD-66/68、19 §5：fresh HUMAN Installation read 后的原生 core/cold head。正文仅本次 no-store HTTP，不入
+///Core 数据库、审计或客户端持久存储。ABSENT 不等于 UNREADABLE；tombstone 可带原 head 引用。
+class AgentMemoryReadView {
+  final String? content;
+
+  ///UTF-8 bytes of the returned content string, not the whole native NIP-44 JSON body or a
+  ///billing measurement.
+  final int? contentBytes;
+  final int? createdAt;
+  final String? eventId;
+  final String installationResourceId;
+  final String operationId;
+  final String slug;
+  final AgentMemoryReadViewState state;
+
+  ///FOUND only: native buzz mem hash of the exact UTF-8 value, used by strict patch baseHash;
+  ///not the JSON body or a stored plaintext copy.
+  final String? valueHash;
+  final String workspaceId;
+
+  AgentMemoryReadView({
+    this.content,
+    this.contentBytes,
+    this.createdAt,
+    this.eventId,
+    required this.installationResourceId,
+    required this.operationId,
+    required this.slug,
+    required this.state,
+    this.valueHash,
+    required this.workspaceId,
+  });
+
+  factory AgentMemoryReadView.fromJson(Map<String, dynamic> json) =>
+      AgentMemoryReadView(
+        content: json["content"],
+        contentBytes: json["contentBytes"],
+        createdAt: json["createdAt"],
+        eventId: json["eventId"],
+        installationResourceId: json["installationResourceId"],
+        operationId: json["operationId"],
+        slug: json["slug"],
+        state: agentMemoryReadViewStateValues.map[json["state"]]!,
+        valueHash: json["valueHash"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "content": content,
+    "contentBytes": contentBytes,
+    "createdAt": createdAt,
+    "eventId": eventId,
+    "installationResourceId": installationResourceId,
+    "operationId": operationId,
+    "slug": slug,
+    "state": agentMemoryReadViewStateValues.reverse[state],
+    "valueHash": valueHash,
+    "workspaceId": workspaceId,
+  });
+}
+
+enum AgentMemoryReadViewState { ABSENT, FOUND, UNREADABLE }
+
+final agentMemoryReadViewStateValues = EnumValues({
+  "ABSENT": AgentMemoryReadViewState.ABSENT,
+  "FOUND": AgentMemoryReadViewState.FOUND,
+  "UNREADABLE": AgentMemoryReadViewState.UNREADABLE,
+});
 
 class AgentVersionView {
   final String agentResourceId;
@@ -3739,6 +4008,54 @@ class WorkspacePreferenceRequest {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"muted": muted, "starred": starred, "version": version});
+}
+
+///HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
+class AgentMemoryWriteInput {
+  ///entry.patch 当前原生 value 的 SHA-256。
+  final String? baseHash;
+
+  ///调用方实际读取的 head；null 只表示原生确认不存在。
+  final String? expectedHeadEventId;
+
+  ///原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+  final ExpectedHeadState expectedHeadState;
+
+  ///entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
+  final String? patch;
+  final String slug;
+
+  ///core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
+  final String? value;
+
+  AgentMemoryWriteInput({
+    this.baseHash,
+    this.expectedHeadEventId,
+    required this.expectedHeadState,
+    this.patch,
+    required this.slug,
+    this.value,
+  });
+
+  factory AgentMemoryWriteInput.fromJson(Map<String, dynamic> json) =>
+      AgentMemoryWriteInput(
+        baseHash: json["baseHash"],
+        expectedHeadEventId: json["expectedHeadEventId"],
+        expectedHeadState:
+            expectedHeadStateValues.map[json["expectedHeadState"]]!,
+        patch: json["patch"],
+        slug: json["slug"],
+        value: json["value"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "baseHash": baseHash,
+    "expectedHeadEventId": expectedHeadEventId,
+    "expectedHeadState": expectedHeadStateValues.reverse[expectedHeadState],
+    "patch": patch,
+    "slug": slug,
+    "value": value,
+  });
 }
 
 ///03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host

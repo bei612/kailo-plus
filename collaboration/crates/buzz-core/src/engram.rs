@@ -16,6 +16,152 @@ use sha2::Sha256;
 
 use crate::kind::KIND_AGENT_ENGRAM;
 
+/// Rejection from the native strict single-value patch consumer.
+#[derive(Debug, thiserror::Error)]
+pub enum MemoryPatchError {
+    /// The current value no longer matches the supplied native hash.
+    #[error("memory value differs from the supplied base hash")]
+    Conflict,
+    /// The diff or its declared preimage cannot be applied exactly.
+    #[error("invalid strict memory patch")]
+    Invalid,
+}
+
+/// Native `buzz mem hash`: SHA-256 of the UTF-8 value, not the JSON body.
+/// The Core read response may expose this digest, never a durable body copy.
+pub fn value_hash(value: &str) -> String {
+    use sha2::Digest;
+    hex::encode(Sha256::digest(value.as_bytes()))
+}
+
+/// The same native unified-diff operation consumed by CLI and Core. No fuzz,
+/// no offset, no multi-file patch. Values remain transient in the caller.
+pub fn apply_memory_patch(
+    current: &str,
+    text: &str,
+    base_hash: Option<&str>,
+) -> Result<String, MemoryPatchError> {
+    if text.is_empty() {
+        return Err(MemoryPatchError::Invalid);
+    }
+    if let Some(expected) = base_hash {
+        if expected.len() != 64 || !expected.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(MemoryPatchError::Invalid);
+        }
+        if value_hash(current) != expected.to_ascii_lowercase() {
+            return Err(MemoryPatchError::Conflict);
+        }
+    }
+    if text.lines().filter(|line| line.starts_with("--- ")).count() > 1 {
+        return Err(MemoryPatchError::Invalid);
+    }
+    let patch = diffy::Patch::from_str(text).map_err(|_| MemoryPatchError::Invalid)?;
+    verify_hunks_at_declared_position(current, &patch).map_err(|_| MemoryPatchError::Invalid)?;
+    let value = diffy::apply(current, &patch).map_err(|_| MemoryPatchError::Invalid)?;
+    if value.len() > NIP44_PLAINTEXT_MAX {
+        return Err(MemoryPatchError::Invalid);
+    }
+    Ok(value)
+}
+
+/// Verify that each hunk's preimage lines (Context + Delete) match the
+/// current value byte-for-byte starting at the line number the hunk declares.
+///
+/// Diffy's `apply` is strict on context content but will *slide* a hunk
+/// forward or backward through the file to find a position where the
+/// preimage matches. For memory-edit safety we want the stronger property:
+/// the patch must apply at exactly the line number it was generated against.
+/// Drift in line numbers usually means lines were inserted or deleted before
+/// the hunk — at which point regenerating the patch is the correct response,
+/// not silently landing the change at a different position.
+///
+/// Returns `Ok(())` on a clean match, `Err(message)` otherwise.
+///
+/// Line-number convention: unified-diff `@@ -N,M @@` uses 1-based line
+/// numbers. A pure-insertion hunk against an empty file is encoded as
+/// `@@ -0,0 +1,M @@` (`start == 0`, `len == 0`), which we treat as
+/// "apply at index 0 of an empty preimage."
+pub fn verify_hunks_at_declared_position(
+    current: &str,
+    patch: &diffy::Patch<'_, str>,
+) -> Result<(), String> {
+    // `split_inclusive('\n')` preserves the trailing newline on each line,
+    // matching diffy's own line representation. A value with no trailing
+    // newline produces a last segment with no `\n`, which also matches how
+    // diffy stores the "no newline at EOF" case (parser strips the `\n`).
+    let current_lines: Vec<&str> = current.split_inclusive('\n').collect();
+
+    for (i, hunk) in patch.hunks().iter().enumerate() {
+        let preimage: Vec<&str> = hunk
+            .lines()
+            .iter()
+            .filter_map(|l| match l {
+                diffy::Line::Context(s) | diffy::Line::Delete(s) => Some(*s),
+                diffy::Line::Insert(_) => None,
+            })
+            .collect();
+
+        // Pure insertion at start of empty file: `@@ -0,0 +1,M @@`.
+        //
+        // Known limitation: a pure-insertion hunk into a non-empty value
+        // (`@@ -N,0 +N,M @@` with `N > 0`) is currently rejected. With no
+        // preimage lines there's nothing to position-check against, and the
+        // safe-default for a strict mode is "refuse" rather than "land at an
+        // unverified position." `diff -u` includes context lines by default,
+        // so users hit this only if they hand-author a no-context insertion.
+        // Failure mode is rejection, not corruption — see PR #627 review.
+        if preimage.is_empty() {
+            if hunk.old_range().start() == 0 {
+                continue;
+            }
+            return Err(format!(
+                "hunk #{} has empty preimage at line {}; \
+                 pure no-context insertions into non-empty values are not \
+                 supported (regenerate the patch with `diff -u` to include \
+                 surrounding context)",
+                i + 1,
+                hunk.old_range().start()
+            ));
+        }
+
+        // Convert 1-based line number to 0-based index.
+        let declared_start = hunk
+            .old_range()
+            .start()
+            .checked_sub(1)
+            .ok_or_else(|| format!("hunk #{} has invalid line number 0", i + 1))?;
+
+        let end = declared_start
+            .checked_add(preimage.len())
+            .ok_or_else(|| format!("hunk #{} line range overflows", i + 1))?;
+        if end > current_lines.len() {
+            return Err(format!(
+                "hunk #{} expects {} preimage line(s) starting at line {}, \
+                 but the value only has {} line(s)",
+                i + 1,
+                preimage.len(),
+                declared_start + 1,
+                current_lines.len()
+            ));
+        }
+
+        for (offset, expected) in preimage.iter().enumerate() {
+            let actual = current_lines[declared_start + offset];
+            if *expected != actual {
+                return Err(format!(
+                    "hunk #{} preimage mismatch at line {}: \
+                     patch expects {:?} but value has {:?}",
+                    i + 1,
+                    declared_start + offset + 1,
+                    expected,
+                    actual
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The reserved slug for the agent's core (identity) engram.
 pub const CORE_SLUG: &str = "core";
 
@@ -492,6 +638,29 @@ pub fn validate_and_decrypt(
     my_seckey: &SecretKey,
     their_pubkey: &PublicKey,
 ) -> Result<Body, EngramError> {
+    validate_and_decrypt_with_size(
+        event,
+        expected_agent,
+        expected_owner,
+        my_seckey,
+        their_pubkey,
+    )
+    .map(|(body, _)| body)
+}
+
+/// Validate and decrypt once, returning the original decrypted JSON byte count.
+///
+/// This applies the same envelope, strict JSON and slug checks as
+/// [`validate_and_decrypt`]. The count includes fields that parsing does not
+/// retain; reserializing [`Body`] is not a measurement of the native plaintext.
+/// The caller must verify the outer signature before invoking this function.
+pub fn validate_and_decrypt_with_size(
+    event: &Event,
+    expected_agent: &PublicKey,
+    expected_owner: &PublicKey,
+    my_seckey: &SecretKey,
+    their_pubkey: &PublicKey,
+) -> Result<(Body, usize), EngramError> {
     if event.kind.as_u16() as u32 != KIND_AGENT_ENGRAM {
         return Err(EngramError::InvalidEnvelope(format!(
             "wrong kind: {}",
@@ -553,7 +722,7 @@ pub fn validate_and_decrypt(
             "body slug does not re-derive to d tag".into(),
         ));
     }
-    Ok(body)
+    Ok((body, plaintext.len()))
 }
 
 /// Pick the head from a set of events targeting the same slug — greatest
@@ -829,6 +998,40 @@ mod tests {
         .unwrap();
         assert_eq!(decoded_agent, decoded);
         assert_eq!(decoded, original);
+        let (measured, plaintext_bytes) = validate_and_decrypt_with_size(
+            &event,
+            &agent.public_key(),
+            &owner.public_key(),
+            owner.secret_key(),
+            &agent.public_key(),
+        )
+        .unwrap();
+        assert_eq!(measured, original);
+        assert_eq!(plaintext_bytes, original.to_json_bytes().len());
+        // Native JSON whitespace is decrypted too; parsing/reserializing the
+        // body must not erase these bytes from the reader's measurement.
+        let raw = format!(
+            "{} \n",
+            String::from_utf8(original.to_json_bytes()).unwrap()
+        );
+        let ciphertext =
+            nip44::encrypt(agent.secret_key(), &owner.public_key(), &raw, Version::V2).unwrap();
+        let measured_event = EventBuilder::new(event.kind, ciphertext)
+            .tags(event.tags.clone())
+            .custom_created_at(event.created_at)
+            .sign_with_keys(&agent)
+            .unwrap();
+        assert!(measured_event.verify().is_ok());
+        let (measured, plaintext_bytes) = validate_and_decrypt_with_size(
+            &measured_event,
+            &agent.public_key(),
+            &owner.public_key(),
+            owner.secret_key(),
+            &agent.public_key(),
+        )
+        .unwrap();
+        assert_eq!(measured, original);
+        assert_eq!(plaintext_bytes, raw.len());
     }
 
     #[test]

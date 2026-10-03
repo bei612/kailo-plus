@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_memory_entry_view.schema.json",
+  "title": "AgentMemoryEntryView",
+  "description": "NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["slug", "eventId", "createdAt", "tombstone"],
+  "properties": {
+    "slug": {"type": "string", "minLength": 1, "maxLength": 255},
+    "eventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "createdAt": {"type": "integer", "minimum": 0},
+    "tombstone": {"type": "boolean"}
+  }
+}

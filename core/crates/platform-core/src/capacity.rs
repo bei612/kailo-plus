@@ -408,11 +408,22 @@ impl Capacity {
             .await?;
         let ready: Option<bool> = sqlx::query_scalar(
             "select
-            (coalesce(native_status in ('completed','failed','interrupted'),false)
-              or (status='CREATED' and cancel_pending and runtime_turn_id is null))
-            from catalog.agent_invocation where id=$1 for update",
+            (coalesce(i.native_status in ('completed','failed','interrupted'),false)
+              or (i.status='CANCELED' and i.cancel_pending and i.runtime_turn_id is null
+                and i.native_status is null and i.reply_event_id is null
+                and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+                and not exists(select 1 from outbox.usage_event u
+                  where u.invocation_id=i.id or u.operation_id=a.operation_id)))
+            from catalog.agent_invocation i
+            join admission.action_execution a on a.id=i.action_execution_id
+              and a.tenant_id=i.tenant_id and a.workspace_id=i.workspace_id
+              and a.temporal_workflow_id=i.workflow_id
+            join admission.capacity_lease l on l.invocation_id=i.id and l.operation_id=a.operation_id
+              and l.tenant_id=i.tenant_id and l.workspace_id=i.workspace_id and l.workflow_id=i.workflow_id
+            where i.id=$1 and l.pool_key=$2 for update of i",
         )
         .bind(invocation)
+        .bind(&self.pool_key)
         .fetch_optional(&mut *tx)
         .await?;
         if ready != Some(true) {
@@ -584,6 +595,31 @@ async fn confirm_closed_native(
     runtime: Option<&Supervisor>,
     lease: &Lease,
 ) -> Result<bool, CapacityError> {
+    // The caller has confirmed this exact holder Activity is terminal. A
+    // CREATED cancellation may precede Session birth, so consume its fenced
+    // absence of dispatch before the native Session observation query.
+    let no_dispatch: Option<Uuid> = sqlx::query_scalar(
+        "select i.id from catalog.agent_invocation i
+         join admission.action_execution a on a.id=i.action_execution_id
+         join admission.capacity_lease l on l.invocation_id=i.id and l.operation_id=a.operation_id
+           and l.tenant_id=i.tenant_id and l.workspace_id=i.workspace_id and l.workflow_id=i.workflow_id
+         where i.id=$1 and i.workflow_id=$2 and l.id=$3
+           and a.tenant_id=i.tenant_id and a.workspace_id=i.workspace_id
+           and a.temporal_workflow_id=i.workflow_id and i.status='CANCELED'
+           and i.cancel_pending and i.runtime_turn_id is null and i.native_status is null
+           and i.reply_event_id is null
+           and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+           and not exists(select 1 from outbox.usage_event u where u.invocation_id=i.id or u.operation_id=a.operation_id)
+         for update of i",
+    )
+    .bind(lease.invocation_id)
+    .bind(&lease.workflow_id)
+    .bind(lease.id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if no_dispatch.is_some() {
+        return Ok(true);
+    }
     let invocation: Option<NativeInvocation> = sqlx::query_as(
         "select v.status,v.projection_generation,p.config_hash,s.runtime_thread_id,
           v.runtime_turn_id,v.native_status,w.run_id as first_run,v.installation_resource_id
