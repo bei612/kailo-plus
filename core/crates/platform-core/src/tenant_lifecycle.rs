@@ -455,22 +455,57 @@ pub async fn verify_tenant_buzz(
 
 /// 原 Tenant Workflow 已冻结的动作，而不是按时间挑一条最近的 ActionExecution。
 struct MeteringOperation {
-    workflow_id: String,
+    workflow_id: Option<String>,
     action_id: Uuid,
     audit: crate::platform_keys::ActionAuditContext,
+    zed_token: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+enum CustomerAdmission<'a> {
+    Lifecycle,
+    Bootstrap {
+        action_id: Uuid,
+        spicedb: &'a crate::spicedb::SpiceDb,
+    },
 }
 
 async fn metering_tenant_tx<'a>(
-    state: &'a ServiceState,
+    pool: &'a sqlx::PgPool,
     req: &TenantStepRequest,
+    admission: CustomerAdmission<'_>,
 ) -> Result<sqlx::Transaction<'a, sqlx::Postgres>, Response> {
-    let mut tx = state.pool.begin().await.map_err(unavailable)?;
+    let mut tx = pool.begin().await.map_err(unavailable)?;
+    // 部署补齐不重启已终态的 Tenant Workflow；沿原 AE → Tenant 锁序，
+    // 重新取得 ACTIVE scope 后才读/写原生 Customer。
+    if let CustomerAdmission::Bootstrap { action_id, .. } = admission {
+        let allowed: Option<bool> = sqlx::query_scalar(
+            "select true from admission.action_execution
+             where id=$1 and tenant_id=$2 and target_id=$2 and action_key=$3
+               and gate_state='ALLOWED'
+               and dispatch_state in ('NOT_DISPATCHED','UNKNOWN','DISPATCHED')
+               and temporal_workflow_id is null for update",
+        )
+        .bind(action_id)
+        .bind(req.tenant_id)
+        .bind(crate::tenant_bootstrap::ACTION_KEY)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(unavailable)?;
+        if allowed != Some(true) {
+            return Err(metering_error(crate::openmeter::Error::Denied));
+        }
+    }
+    let bootstrap = matches!(admission, CustomerAdmission::Bootstrap { .. });
     let found: Option<bool> = sqlx::query_scalar(
         "select true from identity.tenant
-         where id = $1 and version = $2 and state = 'PROVISIONING' for update",
+         where id = $1
+           and (($3 and state='ACTIVE')
+                or (not $3 and version=$2 and state='PROVISIONING')) for update",
     )
     .bind(req.tenant_id)
     .bind(req.tenant_version)
+    .bind(bootstrap)
     .fetch_optional(&mut *tx)
     .await
     .map_err(unavailable)?;
@@ -483,7 +518,26 @@ async fn metering_tenant_tx<'a>(
 async fn metering_operation(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     req: &TenantStepRequest,
+    admission: CustomerAdmission<'_>,
+    namespace: &str,
 ) -> Result<MeteringOperation, Response> {
+    if let CustomerAdmission::Bootstrap { action_id, spicedb } = admission {
+        let (audit, zed_token) = crate::tenant_bootstrap::metering_context(
+            &mut *tx,
+            spicedb,
+            action_id,
+            req.tenant_id,
+            namespace,
+        )
+        .await
+        .map_err(metering_error)?;
+        return Ok(MeteringOperation {
+            workflow_id: None,
+            action_id,
+            audit,
+            zed_token: Some(zed_token),
+        });
+    }
     let workflow_id = crate::component_task::workflow_id(
         "TENANT_LIFECYCLE",
         req.tenant_id,
@@ -509,9 +563,10 @@ async fn metering_operation(
         .await
         .map_err(unavailable)?;
     Ok(MeteringOperation {
-        workflow_id,
+        workflow_id: Some(workflow_id),
         action_id,
         audit,
+        zed_token: None,
     })
 }
 
@@ -524,6 +579,27 @@ async fn metering_audit(
     result_code: &str,
 ) -> Result<(), sqlx::Error> {
     let context = &operation.audit;
+    let mut evidence = vec![crate::audit::Evidence::new(
+        contracts::EvidenceKind::ActionExecutionId,
+        operation.action_id,
+    )];
+    if let Some(workflow) = &operation.workflow_id {
+        evidence.push(crate::audit::Evidence::new(
+            contracts::EvidenceKind::TemporalWorkflowId,
+            workflow,
+        ));
+    } else {
+        evidence.push(crate::audit::Evidence::new(
+            contracts::EvidenceKind::DeploymentBootstrap,
+            crate::tenant_bootstrap::AUDIENCE,
+        ));
+    }
+    if let Some(token) = &operation.zed_token {
+        evidence.push(crate::audit::Evidence::new(
+            contracts::EvidenceKind::SpicedbZedtoken,
+            token,
+        ));
+    }
     crate::audit::append(
         tx,
         crate::audit::AuditEntry {
@@ -548,20 +624,28 @@ async fn metering_audit(
             },
             result_code,
             result_exposure: "STATUS",
-            evidence_refs: vec![
-                crate::audit::Evidence::new(
-                    contracts::EvidenceKind::ActionExecutionId,
-                    operation.action_id,
-                ),
-                crate::audit::Evidence::new(
-                    contracts::EvidenceKind::TemporalWorkflowId,
-                    &operation.workflow_id,
-                ),
-            ],
+            evidence_refs: evidence.clone(),
             correlation_id: context.correlation_id,
         },
     )
-    .await
+    .await?;
+    // 同步部署步骤也复用原派发裁决。写前 fence 是 UNKNOWN，不把它当
+    // Customer 已建成；只有原生 ID/key/状态回读和 binding 同事务成立才确定派发。
+    if operation.workflow_id.is_none() && matches!(phase, "dispatch" | "verified") {
+        crate::governance::record_dispatch(
+            tx,
+            operation.action_id,
+            crate::governance::AuditClass::core("TENANT"),
+            if phase == "verified" {
+                Ok(())
+            } else {
+                Err(StatusCode::SERVICE_UNAVAILABLE)
+            },
+            evidence,
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 /// 派发后未查明原生结果时，沿同一 Operation 记录 UNKNOWN，不投影成失败。
@@ -599,8 +683,44 @@ async fn reconcile_metering_customer(
     req: &TenantStepRequest,
     may_create: bool,
 ) -> Result<(), Response> {
-    let mut tx = metering_tenant_tx(state, req).await?;
-    let operation = metering_operation(&mut tx, req).await?;
+    reconcile_customer(
+        &state.pool,
+        &state.openmeter,
+        req,
+        may_create,
+        CustomerAdmission::Lifecycle,
+    )
+    .await
+}
+
+/// ACTIVE Tenant 的显式部署补齐：原 tenant.bootstrap AE/Operation，
+/// 不更改 Tenant 状态、成员、角色或旧 Workflow。与开通 Activity 共用原生算法。
+pub(crate) async fn reconcile_bootstrap_customer(
+    pool: &sqlx::PgPool,
+    openmeter: &crate::openmeter::OpenMeter,
+    spicedb: &crate::spicedb::SpiceDb,
+    req: &TenantStepRequest,
+    action_id: Uuid,
+) -> Result<(), Response> {
+    reconcile_customer(
+        pool,
+        openmeter,
+        req,
+        true,
+        CustomerAdmission::Bootstrap { action_id, spicedb },
+    )
+    .await
+}
+
+async fn reconcile_customer(
+    pool: &sqlx::PgPool,
+    openmeter: &crate::openmeter::OpenMeter,
+    req: &TenantStepRequest,
+    may_create: bool,
+    admission: CustomerAdmission<'_>,
+) -> Result<(), Response> {
+    let mut tx = metering_tenant_tx(pool, req, admission).await?;
+    let mut operation = metering_operation(&mut tx, req, admission, openmeter.namespace()).await?;
     let binding: Option<(String, String, String, String, i32)> = sqlx::query_as(
         "select namespace, customer_id, subject_key_prefix, status, version
          from projection.openmeter_binding where tenant_id = $1",
@@ -620,7 +740,7 @@ async fn reconcile_metering_customer(
             .map_err(unavailable)?;
     let prefix = format!("{}:", req.tenant_id);
     let customer_id = if let Some((namespace, id, stored_prefix, status, version)) = binding {
-        if namespace != state.openmeter.namespace()
+        if namespace != openmeter.namespace()
             || stored_prefix != prefix
             || status != "ACTIVE"
             || version <= 0
@@ -630,7 +750,7 @@ async fn reconcile_metering_customer(
         // ACTIVE 引用丢失 native 对象时只对账，不创建第二个 Customer。
         id
     } else {
-        let customer = match state.openmeter.customer_by_key(req.tenant_id).await {
+        let customer = match openmeter.customer_by_key(req.tenant_id).await {
             Ok(customer) => customer,
             Err(error) => {
                 return Err(metering_observation_error(
@@ -673,20 +793,22 @@ async fn reconcile_metering_customer(
                 // 同一连接先持久化意图，再重新锁定 Tenant；不在持锁事务内开另一条
                 // pool 事务。两次锁之间被暂停/删除或版本变化时，不调用 provider。
                 tx.commit().await.map_err(unavailable)?;
-                tx = metering_tenant_tx(state, req).await?;
-                let current = metering_operation(&mut tx, req).await?;
+                tx = metering_tenant_tx(pool, req, admission).await?;
+                let current =
+                    metering_operation(&mut tx, req, admission, openmeter.namespace()).await?;
                 if current.action_id != operation.action_id
                     || current.audit.operation_id != operation.audit.operation_id
                     || current.audit.parameter_hash != operation.audit.parameter_hash
                 {
                     return Err(metering_error(crate::openmeter::Error::Conflict));
                 }
+                operation = current;
                 dispatched = true;
-                match state.openmeter.create_customer(req.tenant_id).await {
+                match openmeter.create_customer(req.tenant_id).await {
                     Ok(customer) => customer.id,
                     Err(error) => {
                         // 即使 POST 的响应丢失，原生 key 查询仍能找回同一引用。
-                        match state.openmeter.customer_by_key(req.tenant_id).await {
+                        match openmeter.customer_by_key(req.tenant_id).await {
                             Ok(Some(customer)) => customer.id,
                             _ => {
                                 return Err(metering_observation_error(
@@ -704,11 +826,7 @@ async fn reconcile_metering_customer(
             }
         }
     };
-    let customer = match state
-        .openmeter
-        .customer_by_id(&customer_id, req.tenant_id)
-        .await
-    {
+    let customer = match openmeter.customer_by_id(&customer_id, req.tenant_id).await {
         Ok(Some(customer)) => customer,
         Ok(None) => {
             return Err(metering_observation_error(
@@ -731,7 +849,7 @@ async fn reconcile_metering_customer(
             .await)
         }
     };
-    let active = match state.openmeter.customer_by_key(req.tenant_id).await {
+    let active = match openmeter.customer_by_key(req.tenant_id).await {
         Ok(Some(customer)) => customer,
         Ok(None) => {
             return Err(metering_observation_error(
@@ -770,7 +888,7 @@ async fn reconcile_metering_customer(
          values ($1, $2, $3, $4, 'ACTIVE', 1) on conflict (tenant_id) do nothing",
     )
     .bind(req.tenant_id)
-    .bind(state.openmeter.namespace())
+    .bind(openmeter.namespace())
     .bind(&customer_id)
     .bind(prefix)
     .execute(&mut *tx)

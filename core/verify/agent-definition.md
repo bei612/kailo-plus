@@ -1539,3 +1539,62 @@ NSIS 包为 15,076,978 字节且未签名。完整原件与 SHA 清单在
 未提供 DATABASE_URL 和部署 .env，实际数据库/配置演练仍 SKIP；Catalog 新库、
 Approval 续跑、Relay 故障撤权三项外部演练 ignored，不把早返检查计为业务验收。
 公开提交、Core/Worker 本批 release、部署及真实 HUMAN Memory/计量/Agent E2E 仍未发生。
+
+### 2026-10-03 首轮触发的目录生产缺口
+
+源码核对发现 `automation::definition` 已强制加载 `automation.run`，但原迁移
+仅登记五个管理动作，没有运行定义的生产方。本批在原 Core 启动路径调用
+`automation::register_run`，由受控配置 `AUTOMATION_RUN_METERS_JSON` 显式投递
+meter key，Capacity pool 复用原 `AGENT_CAPACITY_POOL_KEY`。不提供默认模型
+meter，不创建 Customer、原生 meter、feature、entitlement、业务对象或授予权限。
+
+四步影响结论：
+
+- 权威为 `.design/05` §2.9、DD-107 与 `03` ActionDefinition：固定 RESOURCE、
+  TARGET_HOME_WORKSPACE、execute、AgentTaskWorkflow、PLATFORM_SLOT、CHECK，
+  meter 必须包含 `automation.run` 和模型 meter；仍无 BFF 手动运行入口。
+- writer 是原 Core 的部署初始化，reader 仍为原 automation 管理启用、触发准入、
+  Delegation 与执行核验链。同一目录不另建注册表；无共享契约、表字段或 Workflow
+  输入格式变化。已有定义不覆盖、不复活，配置不一致拒绝启动，不改冻结版本。
+- 配置数组先校验完整、非空、唯一并排序；缺省不登记且原 consumer 拒绝执行。
+  注册不代表原生 meter 可用；每次准入与派发仍检查真实 Customer、meter、额度、
+  fresh 权限与 Delegation。使用 OpenMeter committed usage 作为计量权威，
+  不将 Gateway 请求日志当账单，不增加前端身份或秘密。
+- 并发初始化由原主键与单 ACTIVE 唯一索引收敛；相同配置幂等，冲突保留原定义并
+  拒绝新实例启动。未知策略/配置缺失按 CAPABILITY_BLOCKED 关闭，数据库不可用
+  不被记为业务失败或成功。运行期 UNKNOWN、撤权、重复触发和额度耗尽仍由原
+  统一准入与 AgentTask 路径处理。零 Tool 回合不依赖 MCP 凭据；此变更不放宽三端
+  BFF/Relay 边界，也不开放 Mobile 组件宿主。
+
+这是已写入的首轮生产接线，不是线上可用声明。本批 SDK、动态 SQL、真实触发与
+用量闭环的结果分别追加实际回执，历史 full 结果不能替代本批验收。
+
+同批 Customer 缺口：原 `tenant_bootstrap::run` 遇到已有效的相同 HUMAN admin
+便直接返回，而原生 Customer 只有 PROVISIONING 生命周期生产方。现在原部署
+CLI 的该分支先执行 `ensure_metering_customer`，沿原 `tenant.bootstrap`
+AE/Operation 调用唯一 `tenant_lifecycle::reconcile_customer`，不重启已终态
+Workflow、不更改 Tenant/成员/admin 状态。依据 `03` §8、`11`、DD-38/82；
+没有 schema、外部 API 或 Workflow 输入增量。冻结 Tenant/namespace/admin/
+external identity 与参数 hash，AE→Tenant 锁序重验 ACTIVE HUMAN 和 fresh
+Tenant manage；副作用前提交意图，同一原生 key 查不明只对账，不重复 POST。
+Customer 原生 ID/key/ACTIVE 读回和 binding 同事务成立才记确定派发；binding
+存在而原生对象消失时不重建。Core 仅保留关联与审计，不保存额度或用量正文。
+
+冻结基线 `f535e7d07843119b01ee30a1625fb459c44edd82` 的两 Customer 源、
+automation 源和 main 单行接线共 4 路径、+457/-37；canonical diff SHA-256
+`3fbd730935a2c0c23b2f2e9c09e12c895cd33685bdba8b9feff91c63c280a84c`。
+固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+中最终 rustfmt --check、原 all-target Clippy 和三组定向检查退出 0，
+9 passed、1 ignored。先前私有快照漏带 main 接线导致 dead_code 的失败日志保留；
+仅选入实际调用后通过，不抑制 lint。检查中 bootstrap/NIP-11/roster 原单元不
+覆盖新 Customer HTTP 或权限并发，不把这些数量算作 Customer 业务通过。
+
+新增实际 SQL 机械提取为 8 条，在既有隔离 PostgreSQL 中全部 PREPARE/EXPLAIN
+通过后 ROLLBACK；无业务对象写入，不等同运行新事务分支。实际删除
+`parse_run_meters` 的必含 `automation.run` 保护，原检查报错并退出 101，
+精确还原后退出 0。最终 automation 源摘要
+`d46e3529b5a294599913d52c9fc8f630720eb1094b4715980ae40eb50df1a25d`。
+原件目录 `/volumes/data/kailo/tmp/codex-active-customer-sdk-20261003.G9a2eG/`，
+日志为 `restored-final.log`、`parser-mutation.log`、`sql-prepare-explain.log`。
+CPU 4、memory 8 GiB、实际 swap 0、Cargo 16；最终 OOM/max 事件为 0。
+尚未运行本批 full、正式构建部署、真实 Customer 对账与 Agent 首轮计量闭环。

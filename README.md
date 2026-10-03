@@ -6,6 +6,25 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### 15:38 UTC 首轮 Agent 主线增量
+
+`f535e7d07843119b01ee30a1625fb459c44edd82` 已普通 push，较上一提交
+4 文件、+91/-3：禁用托管 Codex 的旁路 web search，并按 OpenMeter 原生
+Meter key 规则接受既定 `automation.run`；原 Feature key 约束不放宽。
+固定 SDK 中 Clippy、Meter 1/1、Runtime 6/6 通过；两处实际守卫破坏后均失败，
+还原后通过。没有以此重复全量构建或部署，线上仍是下节列出的产物。
+
+下一批已写入原 ACTIVE Tenant 的 Customer 初始化消费者，以及
+`automation.run` 的受控配置登记与原准入消费；复用已有 AE/Operation、
+Customer 对账和 ActionDefinition，不创建第二份额度或工作流权威。
+两处缺口是零 Tool 首轮的实际前置，不以空目录称为就绪。集中 fmt/Clippy 通过，
+定向检查 9 passed/1 ignored，8 条 SQL 的隔离库 PREPARE/EXPLAIN 通过；
+运行 meter 必含项的实际守卫破坏后失败、还原后通过，尚无新业务或部署验收。
+完整验证回执见 [Agent 实施记录](core/verify/agent-definition.md)。
+Gateway 服务身份和 Tool 接入另批推进，不作为零 Tool 回合的依赖。
+RuntimeProfile 尚未投递有效目录，真实首轮、原生额度与用量收尾、三端设备和
+一期生产验收仍未完成；Cells、WeKnora、Wren 参考业务扩展仍未集成交付。
+
 ### 14:40 UTC 部署与真实创建结果
 
 `3d8c0c11285fbf1cfa447ba21e465842ceb4abf3` 的正式 Core/Worker 及同源 Web

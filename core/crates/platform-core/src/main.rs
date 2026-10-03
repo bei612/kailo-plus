@@ -178,6 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             openmeter: std::sync::Arc::clone(&openmeter),
             cfg: governance::GovernanceConfig::from_env()?,
         });
+        automation::register_run(&governance).await?;
         // 角色 relationship 以成员事实为准对账，并度量没有有效 admin 的 Tenant（DD-82）
         role_reconcile::spawn(
             std::sync::Arc::clone(&governance),

@@ -17,6 +17,71 @@ use crate::{
 
 const ACTION: &str = "automation.run";
 
+fn configured_run_meters() -> Result<Option<Vec<String>>, String> {
+    match std::env::var("AUTOMATION_RUN_METERS_JSON") {
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Ok(value) if value.is_empty() => Ok(None),
+        Ok(value) => parse_run_meters(&value).map(Some),
+        Err(_) => Err("AUTOMATION_RUN_METERS_JSON 不是有效 Unicode".into()),
+    }
+}
+
+fn parse_run_meters(value: &str) -> Result<Vec<String>, String> {
+    let mut meters: Vec<String> = serde_json::from_str(value)
+        .map_err(|_| "AUTOMATION_RUN_METERS_JSON 必须是 meter key 字符串数组")?;
+    if meters.len() < 2
+        || !meters.iter().any(|key| key == ACTION)
+        || meters
+            .iter()
+            .any(|key| key.trim().is_empty() || key.trim() != key)
+    {
+        return Err("automation.run 必须显式登记计数 meter 与模型 meter".into());
+    }
+    meters.sort();
+    if meters.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err("automation.run meter key 不得重复".into());
+    }
+    Ok(meters)
+}
+
+/// DD-107：只从受控部署配置登记已有 consumer 的固定策略，不生成 meter、
+/// Customer、额度或业务对象。原生 meter/entitlement 仍在每次准入与派发时核验。
+/// 已有定义不覆盖、不复活；配置漂移拒绝启动，避免改变已冻结的授权版本。
+pub(crate) async fn register_run(g: &Governance) -> Result<(), String> {
+    let Some(meters) = configured_run_meters()? else {
+        return Ok(());
+    };
+    let pool_key = std::env::var("AGENT_CAPACITY_POOL_KEY")
+        .ok()
+        .filter(|key| !key.trim().is_empty() && key.trim() == key)
+        .ok_or("automation.run 缺少有效 AGENT_CAPACITY_POOL_KEY")?;
+    sqlx::query(
+        "insert into catalog.action_definition
+        (action_key,version,component_type_key,target_type,tenant_rule,workspace_rule,
+         permission,permission_object_type,execution_mode,confirmation_mode,
+         workflow_type,capacity_policy,capacity_pool_key,quota_policy,meters,
+         result_exposure,audit_policy,obs_correlation_mode,obs_progress_source,
+         obs_terminal_source,obs_usage_source,obs_cost_source,obs_redaction_policy,status)
+        select $1,1,'core','RESOURCE','SESSION_TENANT','TARGET_HOME_WORKSPACE',
+          'execute','resource','TEMPORAL','NONE',$2,'PLATFORM_SLOT',$3,'CHECK',$4,
+          'NONE','FULL_LIFECYCLE','OPERATION_REF','TEMPORAL','TEMPORAL','OPENMETER',
+          'NONE','PLATFORM_METADATA_ONLY','ACTIVE'
+        where not exists(select 1 from catalog.action_definition where action_key=$1)
+        on conflict do nothing",
+    )
+    .bind(ACTION)
+    .bind(crate::agent_task::WORKFLOW_TYPE)
+    .bind(pool_key)
+    .bind(&meters)
+    .execute(&g.pool)
+    .await
+    .map_err(|e| format!("automation.run 登记失败: {e}"))?;
+    definition(g)
+        .await
+        .map_err(|_| "automation.run 已登记策略与投递配置不一致".to_owned())?;
+    Ok(())
+}
+
 #[derive(FromRow)]
 pub(crate) struct ManagementResource {
     pub id: Uuid,
@@ -1082,6 +1147,9 @@ async fn run(
 }
 
 async fn definition(g: &Governance) -> Result<Definition, Refusal> {
+    let meters = configured_run_meters()
+        .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     let def = governance::active_definition(&g.pool, ACTION)
         .await?
         .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
@@ -1097,8 +1165,10 @@ async fn definition(g: &Governance) -> Result<Definition, Refusal> {
         || def.approval_policy_version.is_some()
         || def.result_exposure != "NONE"
         || def.quota_policy != "CHECK"
-        || !def.meters.iter().any(|meter| meter == ACTION)
-        || def.meters.len() < 2
+        || def.meters != meters
+        || def.component_type_key != "core"
+        || def.role_template_key.is_some()
+        || def.role_template_version.is_some()
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
@@ -1109,7 +1179,11 @@ async fn definition(g: &Governance) -> Result<Definition, Refusal> {
     let contract: bool = sqlx::query_scalar(
         "select exists(select 1 from catalog.action_definition
         where action_key=$1 and version=$2 and status='ACTIVE' and workflow_type=$3
-          and capacity_policy='PLATFORM_SLOT' and capacity_pool_key=$4)",
+          and capacity_policy='PLATFORM_SLOT' and capacity_pool_key=$4
+          and audit_policy='FULL_LIFECYCLE' and obs_correlation_mode='OPERATION_REF'
+          and obs_progress_source='TEMPORAL' and obs_terminal_source='TEMPORAL'
+          and obs_usage_source='OPENMETER' and obs_cost_source='NONE'
+          and obs_redaction_policy='PLATFORM_METADATA_ONLY')",
     )
     .bind(ACTION)
     .bind(def.version)
@@ -2262,3 +2336,30 @@ async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
 #[cfg(test)]
 #[path = "automation/management_evidence.rs"]
 mod management_evidence;
+
+#[cfg(test)]
+mod run_registration_tests {
+    use super::parse_run_meters;
+
+    #[test]
+    fn explicit_meter_policy_is_complete_unique_and_order_independent() {
+        assert_eq!(
+            parse_run_meters(r#"["model_tokens", "automation.run"]"#).unwrap(),
+            parse_run_meters(r#"["automation.run", "model_tokens"]"#).unwrap()
+        );
+        for rejected in [
+            "null",
+            "{}",
+            "[]",
+            r#"["automation.run"]"#,
+            r#"["model_tokens", "other_tokens"]"#,
+            r#"["automation.run", "automation.run"]"#,
+            r#"["automation.run", ""]"#,
+            r#"["automation.run", " "]"#,
+            r#"["automation.run", " model_tokens"]"#,
+            r#"["automation.run", 1]"#,
+        ] {
+            assert!(parse_run_meters(rejected).is_err(), "{rejected}");
+        }
+    }
+}

@@ -45,7 +45,7 @@ use crate::temporal::TemporalClient;
 
 /// 部署引导这一 ServicePrincipal 的 audience。它是平台内一个固定身份的名字，
 /// 不是部署取值：审计按它归因，换名字就断了历史。
-const AUDIENCE: &str = "platform-deployment-bootstrap";
+pub(crate) const AUDIENCE: &str = "platform-deployment-bootstrap";
 pub(crate) const ACTION_KEY: &str = "tenant.bootstrap";
 /// 轮询生命周期推进的间隔。等待的上界由运维以 `--wait-seconds` 给出。
 const POLL: Duration = Duration::from_secs(1);
@@ -115,6 +115,7 @@ struct Ctx {
     pool: PgPool,
     temporal: TemporalClient,
     spicedb: SpiceDb,
+    openmeter: crate::openmeter::OpenMeter,
     page: u32,
     issuer: String,
     client_id: String,
@@ -378,6 +379,7 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
     let ctx = Ctx {
         temporal: TemporalClient::from_env(crate::oidc::TokenSource::from_env()?).await?,
         spicedb: SpiceDb::from_env(reqwest::Client::new())?,
+        openmeter: crate::openmeter::OpenMeter::from_env()?,
         page: env("SPICEDB_READ_PAGE_LIMIT")?
             .parse()
             .map_err(|_| "SPICEDB_READ_PAGE_LIMIT 必须是正整数")?,
@@ -410,8 +412,9 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
         });
     }
 
-    // 2. 0→1 判定先于任何写入：已有有效 admin 的 Tenant 里，引导既不登记身份、
-    //    不加人，也不授权
+    // 2. 0→1 判定先于身份/授权写入：已有有效 admin 的 Tenant 里，引导既不登记
+    //    身份、不加人，也不授权。声明的同一 admin 可补齐 DD-38 的原生 Customer；
+    //    此步骤有自己的原 tenant.bootstrap AE，而不是重开已终态的 Tenant Workflow。
     let mut conn = ctx.pool.acquire().await.map_err(|e| e.to_string())?;
     let effective =
         crate::roles::effective_tenant_admins(&mut conn, &ctx.spicedb, tenant, ctx.page)
@@ -430,6 +433,8 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
     .await
     .map_err(|e| e.to_string())?;
     if let Some(p) = existing.filter(|p| effective.contains(p)) {
+        ctx.ensure_metering_customer(tenant, p, initiator, &args.admin_subject)
+            .await?;
         return Ok(Outcome {
             tenant_id: tenant,
             admin_principal_id: Some(p),
@@ -465,7 +470,202 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
         .await
 }
 
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CustomerBootstrapIntent {
+    tenant_id: Uuid,
+    namespace: String,
+    admin_principal_id: Uuid,
+    issuer: String,
+    subject: String,
+}
+
+/// 原部署 ServicePrincipal 的固定 Customer 意图。调用方已按 AE → Tenant 持锁；
+/// 这里锁 exact HUMAN 身份/membership 并 fresh Check，不把 service 凭据当业务权限。
+pub(crate) async fn metering_context(
+    conn: &mut PgConnection,
+    spicedb: &SpiceDb,
+    action: Uuid,
+    tenant: Uuid,
+    namespace: &str,
+) -> Result<(crate::platform_keys::ActionAuditContext, String), crate::openmeter::Error> {
+    use crate::openmeter::Error;
+    let row: Option<(serde_json::Value, String)> = sqlx::query_as(
+        "select ae.parameters, ae.parameter_hash from admission.action_execution ae
+         join identity.service_principal sp on sp.principal_id=ae.initiator_principal_id
+         join identity.principal p on p.id=sp.principal_id
+         where ae.id=$1 and ae.tenant_id=$2 and ae.target_id=$2
+           and ae.action_key=$3 and ae.action_version=1
+           and ae.actor_principal_id=ae.initiator_principal_id
+           and ae.gate_state='ALLOWED'
+           and ae.dispatch_state in ('NOT_DISPATCHED','UNKNOWN','DISPATCHED')
+           and ae.temporal_workflow_id is null
+           and sp.audience=$4 and p.kind='SERVICE' and p.status='ACTIVE'
+         for update of p,sp",
+    )
+    .bind(action)
+    .bind(tenant)
+    .bind(ACTION_KEY)
+    .bind(AUDIENCE)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(|_| Error::Unknown)?;
+    let (parameters, hash) = row.ok_or(Error::Denied)?;
+    let intent: CustomerBootstrapIntent =
+        serde_json::from_value(parameters.clone()).map_err(|_| Error::Conflict)?;
+    if intent.tenant_id != tenant
+        || intent.namespace != namespace
+        || intent.issuer.is_empty()
+        || intent.subject.is_empty()
+        || hex::encode(Sha256::digest(parameters.to_string().as_bytes())) != hash
+    {
+        return Err(Error::Conflict);
+    }
+    let token = customer_admin(conn, spicedb, &intent).await?;
+    let context = crate::platform_keys::action_audit_context(conn, action, tenant)
+        .await
+        .map_err(|_| Error::Unknown)?;
+    Ok((context, token))
+}
+
+async fn customer_admin(
+    conn: &mut PgConnection,
+    spicedb: &SpiceDb,
+    intent: &CustomerBootstrapIntent,
+) -> Result<String, crate::openmeter::Error> {
+    use crate::openmeter::Error;
+    let tenant = intent.tenant_id;
+    let active: Option<bool> = sqlx::query_scalar(
+        "select true from identity.tenant_membership tm
+         join identity.principal p on p.id=tm.tenant_principal_id
+         join identity.human_identity h on h.id=tm.human_identity_id
+         join identity.external_identity ei on ei.human_identity_id=h.id
+         where tm.tenant_id=$1 and tm.tenant_principal_id=$2 and tm.state='ACTIVE'
+           and p.tenant_id=tm.tenant_id and p.kind='HUMAN' and p.status='ACTIVE'
+           and h.status='ACTIVE' and ei.status='ACTIVE'
+           and ei.issuer=$3 and ei.subject=$4
+         for update of tm,p,h,ei",
+    )
+    .bind(tenant)
+    .bind(intent.admin_principal_id)
+    .bind(&intent.issuer)
+    .bind(&intent.subject)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(|_| Error::Unknown)?;
+    if active != Some(true) {
+        return Err(Error::Denied);
+    }
+    let checked = spicedb
+        .check(
+            "tenant",
+            &tenant.to_string(),
+            "manage",
+            &intent.admin_principal_id.to_string(),
+            crate::spicedb::Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| Error::Unknown)?;
+    if !checked.allowed {
+        return Err(Error::Denied);
+    }
+    if checked.zed_token.is_empty() {
+        return Err(Error::Unknown);
+    }
+    Ok(checked.zed_token)
+}
+
 impl Ctx {
+    async fn ensure_metering_customer(
+        &self,
+        tenant: Uuid,
+        admin: Uuid,
+        initiator: Uuid,
+        subject: &str,
+    ) -> Result<(), String> {
+        let intent = CustomerBootstrapIntent {
+            tenant_id: tenant,
+            namespace: self.openmeter.namespace().to_owned(),
+            admin_principal_id: admin,
+            issuer: self.issuer.clone(),
+            subject: subject.to_owned(),
+        };
+        let parameters = serde_json::to_value(&intent).map_err(|_| "Customer 引导参数不合合同")?;
+        let hash = hex::encode(Sha256::digest(parameters.to_string().as_bytes()));
+        // 唯一 Tenant Customer 意图不因重试、暂停恢复或配置变化换键。
+        // 已 fence 的旧 Operation 只读 exact native key，不派第二次 POST。
+        let key = Uuid::new_v5(
+            &Uuid::NAMESPACE_URL,
+            format!("urn:platform:tenant:{tenant}:openmeter-customer").as_bytes(),
+        );
+        let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
+        let version: Option<i32> = sqlx::query_scalar(
+            "select version from identity.tenant where id=$1 and state='ACTIVE' for update",
+        )
+        .bind(tenant)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        let version = version.ok_or("Customer 引导只接受原 ACTIVE Tenant")?;
+        customer_admin(&mut tx, &self.spicedb, &intent)
+            .await
+            .map_err(|_| {
+                "声明的 admin 身份或 fresh Tenant manage 未成立，未准入 Customer 初始化"
+            })?;
+        let found: Option<(Uuid, String, Option<serde_json::Value>)> = sqlx::query_as(
+            "select id,parameter_hash,parameters from admission.action_execution
+             where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3",
+        )
+        .bind(tenant)
+        .bind(initiator)
+        .bind(key)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        let action = match found {
+            Some((id, frozen_hash, frozen))
+                if frozen_hash == hash && frozen.as_ref() == Some(&parameters) =>
+            {
+                id
+            }
+            Some(_) => {
+                return Err("原 Customer 引导意图与本次 scope/config 不一致，不重建或重派发".into())
+            }
+            None => {
+                let action =
+                    record_bootstrap(&mut tx, tenant, initiator, "TENANT", tenant, &hash).await?;
+                sqlx::query("update admission.action_execution set parameters=$2,idempotency_key=$3 where id=$1")
+                    .bind(action)
+                    .bind(&parameters)
+                    .bind(key)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                action
+            }
+        };
+        // 准备事务不锁旧 AE，避免 Tenant → AE 的重入倒序；尚未派副作用。
+        // 消费方提交后以原 AE → Tenant → exact HUMAN 行锁重验授权。
+        tx.commit().await.map_err(|e| e.to_string())?;
+        crate::tenant_lifecycle::reconcile_bootstrap_customer(
+            &self.pool,
+            &self.openmeter,
+            &self.spicedb,
+            &crate::tenant_lifecycle::TenantStepRequest {
+                tenant_id: tenant,
+                tenant_version: version,
+            },
+            action,
+        )
+        .await
+        .map_err(|response| {
+            format!(
+                "Customer 对账未闭合（HTTP {}）；重跑只消费原 Operation",
+                response.status()
+            )
+        })
+    }
+
     async fn assert_bootstrap_subject_exclusive(
         &self,
         target_slug: &str,
