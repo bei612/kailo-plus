@@ -1715,3 +1715,58 @@ DependencyUnavailable，没有 Codex 子进程。只保留原 Workflow 对账，
 `480bc275d8dbe9eba81c6f367a11d271fac33860227a63fbc2c971bee4086d84`；
 `installation-readback.log`（只读脚本退出 0）SHA-256
 `5793b8128c77425ac49be89ee5b8bf44f89ac4efce94a10e4df09da64ba8c38c`。
+
+### 2026-10-03 安装 WorkflowRef scope 漏写修复
+
+上述同一安装的只读核查确认：WorkflowRef 的 AE、Operation、Tenant、type/kind、
+固定 Workflow ID 与原执行一致，但 workspace_id 为 NULL；同 AE 与 Installation
+均有准确 Workspace。原 `model_route::installation_scope` 因此正确拒绝，发生于
+模型凭据意图和 Codex spawn 之前。原 Version/projection hash 重算一致；OpenMeter
+原生 Customer 缺省 usageAttribution 已被既有代码正确接受，不作无依据修改。
+
+四步变更结论：
+
+- 权威：设计 `03/06` 的冻结执行身份和派生 WorkflowRef、`17` 的 Installation
+  链决定行为；AE 是正本，不在 Runtime 另建 scope 或默认 Workspace。
+- 影响：原 `start_typed`、`prewrite` 两 writer 继承同 AE 的 workspace；治理、
+  server_keys、task_rerun、Automation 共用调用保留。两条 INSERT 的 SQLx 元数据
+  经真实数据库重新生成并替换旧文件，无 API/schema/Workflow 输入或上游改动。
+  Web/Desktop/Mobile 继续读取原 BFF 状态，不增加入口或客户端权限判断。
+- 副作用：原模型 scope guard 不变。既有有界对账循环仅按同 AE、Tenant、Operation、
+  固定 Workflow ID、登记 type/kind 与同 Tenant Workspace 证明补齐 NULL；不覆盖
+  非 NULL 冲突，不重 Start、不改 run/state/history、不建立新投影权威。
+- 边界：纯 Tenant NULL、跨 Tenant 生命周期与不匹配身份不推断；重复修复不增版本。
+  仅锁 WorkflowRef，避免 Automation 持 AE 等待池内写入时的反向锁链。scope 冲突
+  只 Describe 原 ID 并轮转既有观察尝试时间，不写 TaskProjection；保留错误度量，
+  不让最旧错误占满 batch。无新状态，收敛周期与责任沿原对账配置及 runbook；
+  授权/租户暂停仍由原消费门禁拒绝，不因 scope 补齐变成成功或恢复权限。
+  不新增错误类别；数据冲突和依赖不可查证分别保持冲突/UNKNOWN 语义。
+
+不可变 SDK `10ad51a2…`、4 CPU/8 GiB、Cargo 并行 16；独立 PostgreSQL 完成
+57 条迁移，SQLx prepare 退出 0，离线 Clippy `-D warnings` 退出 0。
+实现后的原数据库目标实际 1 passed/78 filtered，覆盖两原写者、幂等补齐、冲突、
+错误身份和持 AE 锁并发；分别破坏 prewrite scope、Start scope、operation guard、
+AE 锁四处均退出 101，逐字还原后的同一目标退出 0。两修改模块的 2021 格式与
+diff 检查退出 0。首次快照漏 buzz-core，以及宽快照含既有格式差异的失败保留，
+选定提交不纳入这些无关脏内容；冲突 Describe 分支只有源码复核，不称动态验收。
+
+证据根 `/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/`，
+完整说明为 `handoff.md`，恢复目标为 `restored-final.log`、静态检查为
+`clippy-final.log`，四项破坏分别见 `mutation-prewrite.log`、`mutation-start.log`、
+`mutation-operation.log`、`mutation-ae-lock.log`。没有直接修改线上库或重建安装；
+修复的源码验证不证明线上原安装已恢复，部署与恢复读回单独记录。
+
+集中检查原件位于
+`/volumes/data/kailo/tmp/codex-workflow-scope-delivery-20261003.ry3CqV/`。
+首轮 `full.log` 因隔离数据库容器的无外网 namespace 导致 pnpm EAI_AGAIN，
+准备阶段退出 2；恢复原 host 检查网络后的 `full-network-corrected.log`
+实际退出 1：四语言静态检查与验证、契约、Workflow replay 通过，trace 因本地
+`dist/` 未收录上一批 Core/Worker 原 SPDX/provenance 失败。将 `853u9M/apps/dist`
+的四份既有证明逐字复制并 `cmp` 通过后，使用同一源码 tree 复跑；没有改摘要、
+生成替代证明或关闭检查。该 full 不投递线上数据库凭据，迁移演练与实际部署
+配置预检均明确 SKIP；上述独立数据库验证不替代完整在线演练。
+
+最终 `full-proofs-restored.log` 对固定 tree
+`2c503b0c202fe183db521b79f323007404cec241` 的原 `tools/check.sh --full`
+实际退出 0，末行“全部通过”：18 条追溯、26 个发布产物证明、6 份上游来源通过。
+补写本节结果仅走原文档快路径，不再次编译；未将该结果提升为生产或设备验收。

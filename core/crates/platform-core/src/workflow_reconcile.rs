@@ -199,6 +199,41 @@ async fn pass(
     .map_err(|e| e.to_string())?;
 
     for r in stale {
+        // Workspace is a projection of the same frozen action, not new scope.
+        // Use this bounded existing reconciliation path; never restart a task
+        // or overwrite a non-null conflict in order to make readiness pass.
+        // A scope failure still observes the original Temporal ID for rotation,
+        // but cannot advance TaskProjection under the conflicting scope.
+        match crate::component_task::reconcile_workspace(pool, &r.workflow_id).await {
+            Ok(true) => metrics
+                .reconciled
+                .add(1, &[KeyValue::new("outcome", "WORKSPACE_PROJECTED")]),
+            Ok(false) => {}
+            Err(error) => {
+                tracing::warn!(workflow_id=%r.workflow_id,error=%error,
+                    "WorkflowRef Workspace 未闭合；保留原引用");
+                metrics
+                    .reconciled
+                    .add(1, &[KeyValue::new("outcome", "WORKSPACE_UNVERIFIED")]);
+                if let Err(error) = temporal.describe(&r.workflow_id).await {
+                    tracing::warn!(workflow_id=%r.workflow_id,error=%error,
+                        "Workspace 冲突引用的 Describe 结果不明");
+                    metrics
+                        .reconciled
+                        .add(1, &[KeyValue::new("outcome", "DESCRIBE_FAILED")]);
+                }
+                // Same attempted-observation clock as the normal Describe path;
+                // leave run, state and TaskProjection unchanged on scope failure.
+                sqlx::query!(
+                    "update projection.workflow_ref set last_observed_at = now() where workflow_id = $1",
+                    r.workflow_id
+                )
+                .execute(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+                continue;
+            }
+        }
         let terminal_projection = if r.needs_repair {
             None
         } else {

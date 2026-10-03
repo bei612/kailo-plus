@@ -1061,3 +1061,34 @@ registry 独立 GET 200、1816 字节、digest header 和正文 SHA 与登记逐
 部署比对原件在 `codex-gateway-reactor-delivery-20261003.DtznEx/` 的
 `deploy-after-web-containers.log`，SHA-256
 `ace4ae4dc8faaffcbd79282d27c4054612f2f4453dc4cfaab01b0c833c3ce90e`。
+
+随后该产物经真实 HUMAN OIDC 登录与共享导航打开 Agent 管理页，原 Definition
+详情、Version 历史/配置、安装列表与候选请求均返回 200。页面实际显示首版
+`cc099e7c-74d6-48a8-86c2-63bb878551ea` 为 Published，安装
+`8f240978-34bb-437d-97ee-498a30e67e86` 为 Being installed；没有将其呈现为
+ACTIVE 或回答成功，浏览器 pageerror 为 0。只点击原只读详情，未提交新业务动作。
+首次探针的显示名少一个空格导致定位超时，退出 1；改用已核实 stableSlug 后
+等待实际版本 hash 和安装行呈现，最终脚本退出 0，不把探针错误归为产品缺陷。
+上述 Gateway/Web 引用与前段记录已提交并普通 push 为
+`66c48e80994437685c1eaa713b93a4bac43b8207`，相对 `c0707d8f` 为 21 文件、
++156/-22。该选定树文档检查退出 0；不替代最新仍失败的完整检查。
+浏览器原件仍在 `codex-gateway-reactor-delivery-20261003.DtznEx/`：
+`read-management.log` SHA-256
+`df03570f88c2c633c3de4f964c503d47fc3635d57d42171a7d50e31593029723`；
+最终 `read-management-complete.log` SHA-256
+`a1819b666282061b73054f17591a46a776cde37d1acf466f9ed74ee31d5cdc36`。
+
+本批共源 Desktop 也沿原 `tools/build-upstream.sh desktop-client` 退出 0。
+source `e8a4dc259f440233f3851598bb1a5a980865dbc4c28c0ee2a87a7d118a7cd3c7`，
+2258 项输入 path/bytes/link 与 Cargo.lock 前后未变；原 helper 登记 artifact
+`f7f8c8aa9a61543fdae84ff779030bf59c812bab7c8690cb1a38a7886308951e`。
+`codex-client-management-delivery-20261003.3RI9lm/apps/dist/desktop-client/` 下
+`Kailo_0.5.23_x64-setup.exe` 实际 15,111,005 字节，文件 SHA 与 artifact 相等。
+没有另外编写 Desktop 或 Web 主体；此 unsigned 包尚未在 Win11 安装或业务验收。
+同目录外层 `win-helper.log` SHA-256
+`adbfe711f41619a39dc8aa964dcdf1390dde278dbdfee68d123250015980f834`，
+`final-source-readback-corrected.log` SHA-256
+`0ae2a52491b91badf5b2fbbaaea83162219e1730ef3167c4c989a65521183897`。
+初次参数路径错误 127、后置符号链接解析错误 1 的原件保留；两者不是 helper
+构建失败，纠正后的两端 helper 和来源回读均退出 0。原 builder 的实际父 cgroup
+为 8 CPU/16 GiB/swap 0，OOM 0；未改变 Cargo 并行度，也未新增第三套构建入口。

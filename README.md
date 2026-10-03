@@ -6,6 +6,26 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### Gateway/Web 已提交，安装卡点定位到工作流 scope 投影
+
+`66c48e80994437685c1eaa713b93a4bac43b8207` 已普通 push，远端 main 读回一致；
+相对 `c0707d8f` 为 21 文件、+156/-22。选定树的原文档检查退出 0，未重复构建。
+新 Web 真实 OIDC 登录后，共享 Agent 管理页展示 Published 版本与 Being installed
+安装；相关 BFF 读取均为 200、浏览器 pageerror 为 0，不把安装中记为运行成功。
+
+原安装的只读调查确认 WorkflowRef 的 workspace_id 为空，而同 ActionExecution
+具有准确 workspace；模型凭据生产者的既有 scope guard 因此拒绝。修复落在原
+ComponentTask 写者和既有有界工作流对账循环：新写入继承冻结 scope，已有缺失值
+须证明同一执行身份才补齐，非空冲突不覆盖，不删除 guard、不重新发起安装。
+该修复已完成实现后定向验证及集中 full（退出 0），尚未部署；Win11 原 helper 已退出 0，详见下段。真实 Agent 首轮、
+普通触发、回复、用量及三端设备验收仍未闭合，不能正式使用 Agent 的结论不变。
+
+同批共源 Win11 x64 NSIS 安装包已生成，15,111,005 字节，SHA-256
+`f7f8c8aa9a61543fdae84ff779030bf59c812bab7c8690cb1a38a7886308951e`。
+原件为 `/volumes/data/kailo/tmp/codex-client-management-delivery-20261003.3RI9lm/apps/dist/desktop-client/Kailo_0.5.23_x64-setup.exe`。
+2258 项实际输入和 Cargo.lock 构建前后未变，来源两字段已按原 helper 同步；
+仍是未签名测试包，没有 Win11 安装运行验收，不因此关闭生产门禁。
+
 ### 19:23 UTC 版本发布成功，安装初始化仍未闭合
 
 干净 `c0707d8fda400f4fcfd1eae9c57e494a633398d9` 的 Gateway 原 helper 已退出 0，

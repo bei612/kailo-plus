@@ -98,6 +98,26 @@ pub(crate) struct Launch<'a> {
     pub action_execution_id: Uuid,
 }
 
+// Start 前落引用；同 ID 重试不改既有行，one_per_type 仍约束业务 Workflow 唯一性。
+async fn persist_start_reference(pool: &PgPool, launch: &Launch<'_>) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "insert into projection.workflow_ref
+             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
+              operation_id, action_execution_id, workspace_id, projection_state)
+         select $1, $2, 1, $3, $4, ae.operation_id, ae.id, ae.workspace_id, 'PENDING_START'
+         from admission.action_execution ae where ae.id = $5
+         on conflict (workflow_id) do nothing",
+        launch.workflow_id,
+        launch.workflow_type,
+        launch.kind,
+        launch.tenant_id,
+        launch.action_execution_id,
+    )
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
 /// 任一类型 Workflow 的唯一启动路径：先落 WorkflowRef、以固定 ID 至多一次启动、
 /// 回填 run ID。`start` 与 ApprovalWorkflow 的启动共用它，「结果不明时换不换 ID」
 /// 这类细节因此只有一份实现。
@@ -107,6 +127,11 @@ pub(crate) async fn start_typed(
     launch: Launch<'_>,
     input: &impl Serialize,
 ) -> Result<Option<String>, Response> {
+    // Keep the pre-Start write independently verifiable without issuing Start.
+    if let Err(e) = persist_start_reference(pool, &launch).await {
+        tracing::warn!(error = %e, workflow_id=launch.workflow_id, "持久化 WorkflowRef 失败");
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
     let Launch {
         workflow_id,
         workflow_type,
@@ -114,29 +139,6 @@ pub(crate) async fn start_typed(
         tenant_id,
         action_execution_id,
     } = launch;
-    // Start 之前先落 WorkflowRef。ON CONFLICT DO NOTHING 让重复调用收敛到同一
-    // 行而不是失败——重复调用与崩溃重试是同一件事。action_execution_id 上的
-    // 唯一约束保证一个 ActionExecution 至多一个业务 Workflow。
-    if let Err(e) = sqlx::query!(
-        "insert into projection.workflow_ref
-             (workflow_id, workflow_type, workflow_version, kind, tenant_id,
-              operation_id, action_execution_id, projection_state)
-         select $1, $2, 1, $3, $4, ae.operation_id, ae.id, 'PENDING_START'
-         from admission.action_execution ae where ae.id = $5
-         on conflict (workflow_id) do nothing",
-        workflow_id,
-        workflow_type,
-        kind,
-        tenant_id,
-        action_execution_id,
-    )
-    .execute(pool)
-    .await
-    {
-        tracing::warn!(error = %e, workflow_id, "持久化 WorkflowRef 失败");
-        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
-    }
-
     // 预写引用在重试时仍是同一行。不能仅凭同 ID 就接受另一条动作的引用；
     // 更不能对 UNKNOWN 直接再 Start：history 过 retention 后已没有去重证据。
     let reference: (String, Option<String>, String, Option<String>, Uuid, Uuid) =
@@ -361,8 +363,9 @@ pub(crate) async fn prewrite(
     sqlx::query!(
         "insert into projection.workflow_ref
              (workflow_id, workflow_type, workflow_version, kind, tenant_id,
-              operation_id, action_execution_id, projection_state)
-         values ($1, $2, 1, $3, $4, $5, $6, 'PENDING_START')",
+              operation_id, action_execution_id, workspace_id, projection_state)
+         values ($1, $2, 1, $3, $4, $5, $6,
+                 (select workspace_id from admission.action_execution where id=$6), 'PENDING_START')",
         workflow_id,
         WORKFLOW_TYPE,
         kind,
@@ -373,4 +376,245 @@ pub(crate) async fn prewrite(
     .execute(&mut **tx)
     .await
     .map(|_| ())
+}
+
+/// Repair only missing scope on the original business WorkflowRef. The frozen
+/// ActionExecution, registered definition and same-Tenant Workspace prove the
+/// value; history/run/state are not rewritten and a conflicting value is never
+/// replaced. Tenant-scope and cross-Tenant lifecycle references are untouched.
+pub(crate) async fn reconcile_workspace(
+    pool: &PgPool,
+    workflow_id: &str,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    // Action scope is immutable after admission. Lock only its projection:
+    // dispatch may already hold AE while awaiting a pooled WorkflowRef write.
+    let reference: Option<(Option<Uuid>, Uuid)> = sqlx::query_as(
+        "select w.workspace_id,ae.workspace_id
+         from projection.workflow_ref w
+         join admission.action_execution ae on ae.id=w.action_execution_id
+           and ae.tenant_id=w.tenant_id and ae.operation_id=w.operation_id
+           and ae.temporal_workflow_id=w.workflow_id
+         join catalog.action_definition d on d.action_key=ae.action_key
+           and d.version=ae.action_version and d.execution_mode='TEMPORAL'
+           and d.workflow_type=w.workflow_type and d.workflow_kind is not distinct from w.kind
+         join identity.workspace s on s.id=ae.workspace_id and s.tenant_id=ae.tenant_id
+         where w.workflow_id=$1
+           and w.workflow_type in ('ComponentTaskWorkflow','AgentTaskWorkflow')
+         for update of w",
+    )
+    .bind(workflow_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((stored, frozen)) = reference else {
+        return Ok(false);
+    };
+    if stored == Some(frozen) {
+        return Ok(false);
+    }
+    if stored.is_some() {
+        return Err(sqlx::Error::Protocol(
+            "WorkflowRef Workspace 与冻结 ActionExecution 冲突".into(),
+        ));
+    }
+    let changed = sqlx::query(
+        "update projection.workflow_ref set workspace_id=$2,version=version+1
+         where workflow_id=$1 and workspace_id is null",
+    )
+    .bind(workflow_id)
+    .bind(frozen)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(changed.rows_affected() == 1)
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+
+    /// Uses a disposable migrated database only; no Temporal or production fixture.
+    #[tokio::test]
+    #[ignore = "requires WORKFLOW_SCOPE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn workflow_workspace_projection_preserves_frozen_identity_and_state() {
+        let url = std::env::var("WORKFLOW_SCOPE_TEST_DATABASE_URL").unwrap();
+        let pool = PgPool::connect(&url).await.unwrap();
+        let tenant = Uuid::new_v4();
+        let workspace = Uuid::new_v4();
+        let conflicting = Uuid::new_v4();
+        let principal = Uuid::new_v4();
+        let action = Uuid::new_v4();
+        let operation = Uuid::new_v4();
+        let workflow = workflow_id("AGENT_INSTALLATION", tenant, &action.to_string(), 1);
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$1::text,'scope verification','ACTIVE')")
+            .bind(tenant).execute(&pool).await.unwrap();
+        for id in [workspace, conflicting] {
+            sqlx::query("insert into identity.workspace(id,tenant_id,slug,name,state) values($1,$2,$1::text,'scope verification','ACTIVE')")
+                .bind(id).bind(tenant).execute(&pool).await.unwrap();
+        }
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(principal).bind(tenant).execute(&pool).await.unwrap();
+        sqlx::query("insert into admission.action_execution
+            (id,operation_id,tenant_id,workspace_id,action_key,action_version,
+             initiator_principal_id,actor_principal_id,target_id,parameter_hash,
+             temporal_workflow_id,gate_state,dispatch_state,correlation_id)
+            values($1,$2,$3,$4,'agent.installation.create',1,$5,$5,$1,$6,$7,'ALLOWED','DISPATCHED',$1)")
+            .bind(action).bind(operation).bind(tenant).bind(workspace).bind(principal)
+            .bind("0".repeat(64)).bind(&workflow).execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        prewrite(
+            &mut tx,
+            &workflow,
+            "AGENT_INSTALLATION",
+            tenant,
+            operation,
+            action,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        let scope: Option<Uuid> = sqlx::query_scalar(
+            "select workspace_id from projection.workflow_ref where workflow_id=$1",
+        )
+        .bind(&workflow)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            scope,
+            Some(workspace),
+            "the original writer must project frozen scope"
+        );
+        sqlx::query("delete from projection.workflow_ref where workflow_id=$1")
+            .bind(&workflow)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let launch = Launch {
+            workflow_id: &workflow,
+            workflow_type: WORKFLOW_TYPE,
+            kind: Some("AGENT_INSTALLATION"),
+            tenant_id: tenant,
+            action_execution_id: action,
+        };
+        persist_start_reference(&pool, &launch).await.unwrap();
+        persist_start_reference(&pool, &launch).await.unwrap();
+        let started: (Option<Uuid>, i32) = sqlx::query_as(
+            "select workspace_id,version from projection.workflow_ref where workflow_id=$1",
+        )
+        .bind(&workflow)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            started,
+            (Some(workspace), 1),
+            "Start writer projects scope exactly once"
+        );
+
+        // Reproduce the live missing projection, without changing its execution.
+        sqlx::query("update projection.workflow_ref set workspace_id=null,run_id='existing-run',projection_state='RUNNING' where workflow_id=$1")
+            .bind(&workflow).execute(&pool).await.unwrap();
+        // Dispatch holds AE while another pooled request writes WorkflowRef.
+        // Repair must not acquire that AE lock in the reverse order.
+        let mut dispatch = pool.begin().await.unwrap();
+        sqlx::query("select id from admission.action_execution where id=$1 for update")
+            .bind(action)
+            .fetch_one(&mut *dispatch)
+            .await
+            .unwrap();
+        let repaired = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            reconcile_workspace(&pool, &workflow),
+        )
+        .await;
+        dispatch.rollback().await.unwrap();
+        assert!(repaired
+            .expect("scope repair must not wait on dispatch AE lock")
+            .unwrap());
+        let restored: (Option<Uuid>, String, String, i32) = sqlx::query_as("select workspace_id,run_id,projection_state,version from projection.workflow_ref where workflow_id=$1")
+            .bind(&workflow).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            restored,
+            (Some(workspace), "existing-run".into(), "RUNNING".into(), 2)
+        );
+        assert!(!reconcile_workspace(&pool, &workflow).await.unwrap());
+        let version: i32 =
+            sqlx::query_scalar("select version from projection.workflow_ref where workflow_id=$1")
+                .bind(&workflow)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            version, 2,
+            "repeat repair does not manufacture another version"
+        );
+
+        sqlx::query("update projection.workflow_ref set workspace_id=$2 where workflow_id=$1")
+            .bind(&workflow)
+            .bind(conflicting)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(reconcile_workspace(&pool, &workflow).await.is_err());
+        let scope: Option<Uuid> = sqlx::query_scalar(
+            "select workspace_id from projection.workflow_ref where workflow_id=$1",
+        )
+        .bind(&workflow)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            scope,
+            Some(conflicting),
+            "never overwrite conflicting scope"
+        );
+
+        // A matching action ID alone cannot justify repairing another reference.
+        for mutation in [
+            "operation_id='00000000-0000-0000-0000-000000000000'",
+            "kind='MEMBERSHIP_PROJECTION'",
+            "workflow_type='AgentTaskWorkflow'",
+        ] {
+            sqlx::query(&format!("update projection.workflow_ref set workspace_id=null,{mutation} where workflow_id=$1"))
+                .bind(&workflow).execute(&pool).await.unwrap();
+            assert!(!reconcile_workspace(&pool, &workflow).await.unwrap());
+            sqlx::query("update projection.workflow_ref set operation_id=$2,kind='AGENT_INSTALLATION',workflow_type='ComponentTaskWorkflow' where workflow_id=$1")
+                .bind(&workflow).bind(operation).execute(&pool).await.unwrap();
+        }
+        sqlx::query("update admission.action_execution set temporal_workflow_id=null where id=$1")
+            .bind(action)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(!reconcile_workspace(&pool, &workflow).await.unwrap());
+        sqlx::query("update admission.action_execution set temporal_workflow_id=$2 where id=$1")
+            .bind(action)
+            .bind(&workflow)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let other_tenant = Uuid::new_v4();
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$1::text,'scope verification','ACTIVE')")
+            .bind(other_tenant).execute(&pool).await.unwrap();
+        sqlx::query("update projection.workflow_ref set tenant_id=$2 where workflow_id=$1")
+            .bind(&workflow)
+            .bind(other_tenant)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !reconcile_workspace(&pool, &workflow).await.unwrap(),
+            "cross-Tenant lifecycle references are not inferred"
+        );
+        sqlx::query("update projection.workflow_ref set tenant_id=$2 where workflow_id=$1")
+            .bind(&workflow)
+            .bind(tenant)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("update admission.action_execution set temporal_workflow_id=$2,workspace_id=null where id=$1")
+            .bind(action).bind(&workflow).execute(&pool).await.unwrap();
+        assert!(!reconcile_workspace(&pool, &workflow).await.unwrap());
+    }
 }
