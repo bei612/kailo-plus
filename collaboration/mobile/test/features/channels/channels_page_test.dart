@@ -215,7 +215,7 @@ void main() {
     await tester.pumpWidget(
       buildTestable(
         bottomPadding: footerClearance,
-        textScaler: const TextScaler.linear(1.5),
+        textScaler: const TextScaler.linear(2),
         overrides: [
           channelsProvider.overrideWith(() => _FakeNotifier(channels)),
           relaySessionProvider.overrideWith(() => relay),

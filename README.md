@@ -6,6 +6,26 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### 安装链依赖与 Mobile 大字号修复
+
+共享管理页刷新修复已普通 push 为 `c0d32d47db2d63350b1dc40bfb2dc94de45ebe94`，
+相对 `2b58aa82d` 为 4 文件、+156/-10；原文档检查退出 0，未构建或部署客户端。
+版本配置 503 已定位到 Gateway 日志 worker 的阻塞队列等待：它暂停单线程
+runtime 的 I/O，影响共用数据库池的原生配置读取。修复保留原队列、重试与排空，
+不提高 Core 超时、不放宽认证或投影核验。固定 native SDK 原目标实际
+7 passed、4 ignored；旧同步等待变异退出 101，逐字恢复后退出 0。
+固定镜像缺 rustfmt，格式调用退出 1；未做 Clippy、构建或部署，不称安装成功。
+实际命令、日志摘要及跳过边界见 [原生日志核验](model-gateway/fork/verify/durable-usage.md)。
+
+Mobile 原频道标题 Row 的无约束 Text 已改为 Expanded 自然换行，原 Spacer 删除；
+REQ-08/21、DD-74/75 对应的客户端呈现保持原文案、主题、点击与认证路径，不增加
+业务状态、权限、契约或三端差异。两文件 +8/-7，原 320px/2 倍字号长列表目标
+实际通过，恢复旧布局后重现 8px RenderFlex overflow、退出 1，逐字还原后退出 0；
+format 与 analyze 通过。证据位于
+`/volumes/data/kailo/tmp/codex-mobile-section-header-20261003.Cj9h7x/`，恢复日志
+SHA-256 `9784fae5a4defdf8b10a605c87f8de1f1f80d9e1ec9ac208aae9b7af40ffe775`。
+本批记录源码与定向检查，没有打包，不扩大为全部页面、语言或设备验收。
+
 ### 17:55 UTC 运行配置实际开放
 
 原 thread-only `SERVER_CODEX` 运行配置已通过既有受控文件投递；没有把

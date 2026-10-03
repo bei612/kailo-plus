@@ -156,14 +156,15 @@ class _SectionHeader extends StatelessWidget {
               ),
             ),
             const SizedBox(width: _kChannelLabelGap),
-            Text(
-              label,
-              style: contentListTitleTextStyle.copyWith(
-                color: sectionColor,
-                fontWeight: FontWeight.w600,
+            Expanded(
+              child: Text(
+                label,
+                style: contentListTitleTextStyle.copyWith(
+                  color: sectionColor,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-            const Spacer(),
             _SectionChevron(expanded: expanded, color: sectionColor),
           ],
         ),

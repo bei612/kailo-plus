@@ -2,6 +2,41 @@ use sqlx::{PgPool, SqlitePool};
 
 use super::*;
 
+#[tokio::test(flavor = "current_thread")]
+async fn queue_wait_keeps_current_thread_reactor_live_and_shutdown_wakes_it() {
+	let (tx, receiver) = crossbeam::channel::unbounded();
+	let (progress_tx, progress_rx) = std::sync::mpsc::channel();
+	let sender = thread::spawn(move || {
+		// Bound a broken wait so the regression fails instead of hanging the test runner.
+		let progressed = progress_rx.recv_timeout(StdDuration::from_secs(5)).is_ok();
+		tx.send(LogStoreMsg::Shutdown).unwrap();
+		progressed
+	});
+	let (received, ()) = tokio::join!(
+		receive_log_store_message(&receiver, None),
+		async {
+			tokio::time::sleep(StdDuration::from_millis(1)).await;
+			let _ = progress_tx.send(());
+		},
+	);
+	assert!(matches!(received, Ok(LogStoreMsg::Shutdown)));
+	assert!(sender.join().unwrap(), "the original queue wait blocked the runtime reactor");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn queue_wait_preserves_retry_deadline_and_disconnect() {
+	let (tx, receiver) = crossbeam::channel::unbounded();
+	assert!(matches!(
+		receive_log_store_message(&receiver, Some(Instant::now())).await,
+		Err(RecvTimeoutError::Timeout)
+	));
+	drop(tx);
+	assert!(matches!(
+		receive_log_store_message(&receiver, None).await,
+		Err(RecvTimeoutError::Disconnected)
+	));
+}
+
 /// Raw access to the database behind a backend, for arranging failures and counting rows.
 enum TestDb {
 	// The directory holds the database file; it is removed when dropped.

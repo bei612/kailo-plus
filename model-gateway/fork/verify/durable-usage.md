@@ -562,3 +562,53 @@ SHA-256 为 `ced6266629ab5d724b86f0343218d0dba07dbf730bcfbee21dede3b1591ad843`�
 `deploy-after.log` SHA-256 `e0b23f9f56ae006db05ae0ac6f2cc4718b38af830ecfe6673d3a419fe71e728f`。
 本回执仅证明这个产物的更新与匿名准入，未执行真实 provider/model/Memory/OpenMeter 业务链，
 也不把另一批 Core Task/Memory 的未提交源码视为已部署。
+
+## 2026-10-03 日志等待阻塞原生配置读取的修复
+
+真实版本配置 BFF 于 17:59、18:02 UTC 返回 503/DEPENDENCY_UNAVAILABLE；
+Gateway 同期 SQLx acquire 实测等待 14.994855541 秒，原生 PostgreSQL 聚合为
+5 个 idle/ClientRead，无锁等待。原件位于
+`/volumes/data/kailo/tmp/codex-runtime-profile-publish-20261003.VtmqFm/` 的
+`core-route-error-only.log`、`gateway-pool-error-only.log`、`gateway-pg-activity-readonly.log`。
+
+源码因果：固定上游 `1f7ebbf87cbdbe9517f6f181221879d04dc50692` 的
+`crates/agentgateway/src/telemetry/log_store.rs::LogStoreWorker::work` 创建单线程
+Tokio runtime，`work_async` 在其中同步 `recv`；`setup_with_pool` 允许日志与
+配置存储共用数据库池。日志 worker 创建的连接回到共享池后，其他消费者读取
+仍依赖其 runtime 的 I/O；队列空闲时阻塞等待会使这些读取停滞。本 fork 的
+`recv_deadline` 重试分支也具有相同问题。此问题属于既有 SS-AGW-USAGE 接缝，
+不是 Core 权限、模型投影或凭据裁决需要放宽。
+
+实现将原 crossbeam 队列的单次等待移到 `spawn_blocking`，原 worker await
+结果，释放 I/O 调度线程；没有第二份队列或数据库池。原 unbounded 队列、
+retry deadline、批量写入、失败保留和 shutdown 排空保持不变。等待任务异常
+进入原停止/排空分支并记录错误，不返回持久化成功。没有新增配置、schema、
+API、计费来源、三端差异或用户权限；Core 的原依赖超时保持不变。
+
+实现后在固定 native SDK
+`sha256:17a2ffedc7792a8dc0bfb17f34d6dd928db5efff67d5698d3c449cb6ffb94936`
+内执行原 `telemetry::log_store::tests`：7 passed、4 ignored、退出 0；4 项 PostgreSQL
+场景因未提供专用演练库而跳过，不记数据库业务通过。执行身份为 1000:1000，
+实际回读 4 CPU、8 GiB、swap 0、Cargo 16、Rust 1.98.0；复用 Data 缓存。
+首次工具链自动下载运行被主动停止，退出 137、OOMKilled=false，没有运行测试；
+随后显式使用镜像内已安装的 `RUSTUP_TOOLCHAIN=1.98.0` 离线执行，不隐藏该失败。
+
+在私有源码快照恢复原同步等待后，同一检查实际退出 101：6 passed、1 failed、
+4 ignored，失败为 `the original queue wait blocked the runtime reactor`；
+不是修改断言或检查脚本制造失败。正式工作树未被变异覆盖。原件目录为
+`/volumes/data/kailo/tmp/codex-gateway-reactor-fix-20261003.qqmDU7/`：
+
+- `baseline-fixed-toolchain.log` SHA-256：
+  `d66dcb27afa406fda9f30aea6236e715f7ae6ffc0de34cb29808972e3f36d19d`。
+- `mutation-sync-wait.log` SHA-256：
+  `c9ca478dd3ac06de6c30f635927f568c804a67ac80d49a0cc8fa091b6c66aa55`。
+- `restored.log` SHA-256：
+  `a3b0f16c22ca1c99e30214641c90368a614f247ad7119659695768da2dc090ba`。
+
+恢复后两源与正式工作树逐字相同，原目标再次 7 passed、4 ignored、退出 0；
+实际 cgroup 的 max/oom/oom_kill 均为 0。该轮 rustfmt 调用明确退出 1：固定
+1.98.0 镜像未安装该组件；没有改用宿主工具链，不声称 fmt 或 Clippy 通过。
+完整源码 diff 已复核，`git diff --check` 退出 0。
+
+产物构建、单 Gateway 部署和原 BFF 重验尚未完成；当前不能据源码和窄检查
+解除线上 503 或声明安装成功。本批无契约迁移和新增不安全开关。

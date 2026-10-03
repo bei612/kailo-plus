@@ -255,6 +255,27 @@ fn retry_delay(failures: u32) -> StdDuration {
 
 type QueryResponse<T> = oneshot::Sender<anyhow::Result<T>>;
 
+async fn receive_log_store_message(
+	receiver: &Receiver<LogStoreMsg>,
+	retry_at: Option<Instant>,
+) -> Result<LogStoreMsg, RecvTimeoutError> {
+	// Shared database connections may be driven by this current-thread runtime. Waiting for
+	// another log must not stop their I/O. The clone consumes the same queue, one wait at a time.
+	let receiver = receiver.clone();
+	match tokio::task::spawn_blocking(move || match retry_at {
+		Some(at) => receiver.recv_deadline(at),
+		None => receiver.recv().map_err(|_| RecvTimeoutError::Disconnected),
+	})
+	.await
+	{
+		Ok(received) => received,
+		Err(err) => {
+			warn!(target: "request", ?err, "request log database queue wait failed");
+			Err(RecvTimeoutError::Disconnected)
+		},
+	}
+}
+
 struct LogStoreWorker {
 	receiver: Receiver<LogStoreMsg>,
 	cfg: Config,
@@ -325,13 +346,7 @@ impl LogStoreWorker {
 		let mut batch = PendingBatch::new(batch_size);
 		loop {
 			// With a failed batch pending, wake up for the retry even if no new message arrives.
-			let received = match batch.retry_at {
-				Some(at) => self.receiver.recv_deadline(at),
-				None => self
-					.receiver
-					.recv()
-					.map_err(|_| RecvTimeoutError::Disconnected),
-			};
+			let received = receive_log_store_message(&self.receiver, batch.retry_at).await;
 			let mut shutdown = match received {
 				Ok(msg) => process_log_store_msg(&backend, &mut batch, msg).await,
 				Err(RecvTimeoutError::Timeout) => false,
