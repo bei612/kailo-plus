@@ -158,3 +158,45 @@ registry GET 200，header 与 manifest body SHA 独立读回一致；选定与�
 source 均相同。原件 `codex-agent-management-web-win-20261003.yUA7u9/gateway-lf-helper.log`
 SHA-256 为 `f700d89df9fd70020438214d1672dda58350917f2f0b1d0baae1719afdc7da93`。
 真实 helper 仅更新两字段 metadata；未重建 Web/Win、未部署、未进行 LLM 业务验收。
+
+## 2026-10-03 模型发现同名投影修复
+
+原安装在 Core scope 修复后进入凭据对账；Gateway 原生库中该凭据已创建，
+同一治理 Route 投影同时具有同名 concrete 和 virtual model。原模型列表直接
+拼接两组，能返回重复 ID；Core `GatewayHttp::check_model` 要求授权列表恰好
+一个且 ID 匹配，因此不能把 HTTP 200 当作凭据可用。此处没有删除 Core 的检查，
+也没有重新派发安装或创建替代凭据。真实 HTTP 正文尚未读取，源码与库投影是
+定位证据，不冒充请求正文实测。
+
+四步实施结论：
+
+1. 权威为 DD-13/37/70/71/110、SS-AGW-PEP；固定上游
+   `1f7ebbf87cbdbe9517f6f181221879d04dc50692` 的完整 Git 路径
+   `crates/agentgateway/src/llm/model_router.rs::ModelRouter::resolve` 已只读重验：
+   同名 virtual 优先，拒绝也不回退 concrete。修复的是原发现函数与原解析规则不一致，
+   没有另建模型目录或权限策略。
+2. 影响面为原 `ModelRouter::model_list_response` 和已有 API key 模型发现消费。
+   先按 virtual 输出，再按最终发现 ID 排除被 virtual 占用的 concrete，最后稳定去重；
+   wildcard 展开后同样核对最终 ID。权限过滤前保留全部 virtual 名称，拒绝不会
+   暴露同名 concrete。原 API key、模型授权和 virtual 目标授权谓词全部保留。
+   不更改契约、数据库、Workflow、客户端或 Codex 协议，无格式迁移。
+3. 此路径只读，不创建外部副作用、第二权威或新状态。同名条目的 created 取 virtual，
+   同类重复保留原顺序的首条；不同授权模型仍各自可见。三端仍经原 BFF 管理面，
+   不把模型密钥交给 Web/Desktop/Mobile。
+4. 空集合仍为空、未授权仍不可见、未知目标仍由原拒绝裁决处理。列表不能证明凭据
+   查证成功时 Core 仍保持依赖不可查证/UNKNOWN，不改判业务成功或失败；重入、
+   并发与恢复继续由原安装对账收敛，不新增重试写入或期限。既有上限、背压和
+   暂停/撤权 guard 不变。实现后补四项检查，覆盖同名、重复/wildcard、拒绝遮蔽和
+   不同授权 ID；原生 SDK 的实际执行回执另列，不以源码存在称通过。
+
+源码检查点回执：原 native SDK `17a2ffed…` 的 Rust/Cargo 1.98.0、4 CPU、
+8 GiB、swap 0、Cargo jobs 16 下，原 `cargo test --offline --locked --profile ci
+-p agentgateway --lib model_list_ -- --test-threads=1` 实际 4 passed / 0 failed，
+2129 filtered out，退出 0。首轮因测试的 `log::Config` 不实现 Default 编译退出 101，
+修正为既有显式构造后才通过；日志位于
+`/volumes/data/kailo/tmp/codex-model-discovery-validation-20261003.Mjt4jr/` 的
+`baseline.log` 与 `baseline-repaired.log`。后者的 must_use 警告随后以原
+`PolicyResponse::should_short_circuit` 断言收口，最终负向及还原执行仍在进行。
+native SDK 缺 rustfmt 的退出 1 保留；复用原检查 SDK `10ad51a2…` 的 Rust1.90
+格式工具，显式 toolchain 与 edition 2024 检查最终源码退出 0。文档原检查退出 0；
+此检查点尚未运行本批 full、构建、部署或原安装恢复验收，不登记新 artifact digest。

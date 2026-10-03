@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};
 
 use agent_core::strng;
@@ -245,23 +246,34 @@ impl ModelRouter {
 	}
 
 	fn model_list_response(&self, req: &Request) -> Response {
-		let data = self
-			.models
+		// resolve() selects a virtual model before concrete routes, even when the
+		// virtual target is denied. Reserve its final name before authorization so
+		// a concrete route (including wildcard discovery) cannot advertise a fallback.
+		let virtual_names: HashSet<_> = self
+			.virtual_models
 			.iter()
-			.filter(|model| model.visibility == ModelVisibility::Public)
-			.filter(|model| model_authorized(model, req))
-			.flat_map(|model| {
-				api_key_discoverable_models(req, &model.name)
-					.map(|name| model_list_entry(name, model.created))
-			})
+			.map(|model| model.name.as_str())
+			.collect();
+		let mut seen = HashSet::new();
+		let data = self
+			.virtual_models
+			.iter()
+			.filter(|model| api_key_model_authorized(req, &model.name))
+			.filter(|model| self.virtual_model_authorized(model, req))
+			.map(|model| (model.name.as_str(), model.created))
 			.chain(
 				self
-					.virtual_models
+					.models
 					.iter()
-					.filter(|model| api_key_model_authorized(req, &model.name))
-					.filter(|model| self.virtual_model_authorized(model, req))
-					.map(|model| model_list_entry(&model.name, model.created)),
+					.filter(|model| model.visibility == ModelVisibility::Public)
+					.filter(|model| model_authorized(model, req))
+					.flat_map(|model| {
+						api_key_discoverable_models(req, &model.name).map(|name| (name, model.created))
+					})
+					.filter(|(name, _)| !virtual_names.contains(name)),
 			)
+			.filter(|(name, _)| seen.insert(*name))
+			.map(|(name, created)| model_list_entry(name, created))
 			.collect::<Vec<_>>();
 		let body = serde_json::json!({
 			"data": data,
@@ -276,9 +288,8 @@ impl ModelRouter {
 	}
 
 	fn virtual_model_authorized(&self, model: &VirtualModelRoute, req: &Request) -> bool {
-		let authorized = |target: &str| {
-			matches!(self.resolve_concrete_model(target, true, req), Ok(Some(_)))
-		};
+		let authorized =
+			|target: &str| matches!(self.resolve_concrete_model(target, true, req), Ok(Some(_)));
 		match &model.routing {
 			VirtualModelRouting::Weighted(targets) => targets
 				.iter()
@@ -954,6 +965,169 @@ mod tests {
 	use crate::transport::BufferLimit;
 	use crate::types::agent::RouteBackendTarget;
 
+	fn discovery_model(name: &str, allowed: bool, created: u64) -> ModelRoute {
+		ModelRoute {
+			id: None,
+			name: name.into(),
+			created,
+			visibility: ModelVisibility::Public,
+			header_matches: vec![],
+			backend: RouteBackendReference {
+				weight: 1,
+				target: RouteBackendTarget::Invalid,
+				inline_policies: vec![],
+			},
+			policies: ModelRoutePolicies {
+				llm: default_route_types(),
+				authorization: Some(Authorization(Arc::new(
+					crate::http::authorization::RuleSet::new(crate::http::authorization::PolicySet::new(
+						vec![Arc::new(
+							cel::Expression::new_strict(if allowed { "true" } else { "false" }).unwrap(),
+						)],
+						vec![],
+						vec![],
+					)),
+				))),
+			},
+			backend_policies: vec![],
+		}
+	}
+
+	fn discovery_virtual(name: &str, target: &str, created: u64) -> VirtualModelRoute {
+		VirtualModelRoute {
+			name: name.into(),
+			created,
+			llm_policy: default_route_types(),
+			routing: VirtualModelRouting::Weighted(vec![WeightedTarget {
+				model: target.into(),
+				weight: 1,
+				invalid: false,
+			}]),
+		}
+	}
+
+	async fn discovery_request(allowed_models: &[&str]) -> Request {
+		use crate::store::RequestPolicyTrait;
+		let local: crate::http::apikey::LocalAPIKeys = serde_json::from_value(serde_json::json!({
+			"mode": "strict",
+			"keys": [{"key": "discovery-test-only", "allowedModels": allowed_models}]
+		}))
+		.unwrap();
+		let proxy = crate::test_helpers::proxymock::setup_proxy_test("{}").unwrap();
+		let log_config = crate::telemetry::log::Config {
+			filter: None,
+			fields: Default::default(),
+			database_fields: Default::default(),
+			level: "info".to_string(),
+			format: crate::LoggingFormat::Text,
+			database: None,
+		};
+		let mut log = crate::telemetry::log::RequestLog::new(
+			crate::telemetry::log::CelLogging::new(log_config, Default::default()),
+			proxy.pi.metrics.clone(),
+			proxy.pi.model_catalog.clone(),
+			agent_core::Timestamp::now(),
+			crate::transport::stream::TCPConnectionInfo {
+				peer_addr: "127.0.0.1:12345".parse().unwrap(),
+				local_addr: "127.0.0.1:8080".parse().unwrap(),
+				start: std::time::Instant::now(),
+				raw_peer_addr: None,
+			},
+		);
+		let mut req = ::http::Request::builder()
+			.uri("http://example.com/v1/models")
+			.header("authorization", "Bearer discovery-test-only")
+			.body(http::Body::empty())
+			.unwrap();
+		let policy_response = local
+			.compile()
+			.unwrap()
+			.apply(
+				&crate::proxy::httpproxy::PolicyClient::new(proxy.pi.clone()),
+				&mut log,
+				&mut req,
+			)
+			.await
+			.unwrap();
+		assert!(!policy_response.should_short_circuit());
+		req
+	}
+
+	async fn discovery_entries(router: &ModelRouter, req: &Request) -> Value {
+		let response = router.model_list_response(req);
+		assert_eq!(response.status(), ::http::StatusCode::OK);
+		let body = http::read_body_with_limit(response.into_body(), 8192)
+			.await
+			.unwrap();
+		let body: Value = serde_json::from_slice(&body).unwrap();
+		body["data"].clone()
+	}
+
+	#[tokio::test]
+	async fn model_list_same_name_prefers_virtual_once() {
+		let router = ModelRouter::new(
+			vec![discovery_model("route", true, 1)],
+			vec![discovery_virtual("route", "route", 2)],
+		);
+		let req = discovery_request(&["route"]).await;
+		assert_eq!(
+			discovery_entries(&router, &req).await,
+			serde_json::json!([model_list_entry("route", 2)])
+		);
+	}
+
+	#[tokio::test]
+	async fn model_list_deduplicates_concrete_and_wildcard_ids() {
+		let router = ModelRouter::new(
+			vec![
+				discovery_model("route", true, 1),
+				discovery_model("route", true, 2),
+				discovery_model("*", true, 3),
+			],
+			vec![],
+		);
+		let req = discovery_request(&["route"]).await;
+		assert_eq!(
+			discovery_entries(&router, &req).await,
+			serde_json::json!([model_list_entry("route", 1)])
+		);
+	}
+
+	#[tokio::test]
+	async fn model_list_denied_virtual_shadows_concrete_and_wildcard() {
+		let router = ModelRouter::new(
+			vec![
+				discovery_model("route", true, 1),
+				discovery_model("route*", true, 2),
+				discovery_model("denied", false, 3),
+			],
+			vec![discovery_virtual("route", "denied", 4)],
+		);
+		let req = discovery_request(&["route"]).await;
+		assert_eq!(
+			discovery_entries(&router, &req).await,
+			serde_json::json!([])
+		);
+	}
+
+	#[tokio::test]
+	async fn model_list_preserves_distinct_allowed_ids_and_denials() {
+		let router = ModelRouter::new(
+			vec![
+				discovery_model("route", true, 1),
+				discovery_model("other", true, 2),
+				discovery_model("denied", false, 3),
+				discovery_model("not-in-key", true, 4),
+			],
+			vec![discovery_virtual("route", "route", 5)],
+		);
+		let req = discovery_request(&["route", "other", "denied"]).await;
+		assert_eq!(
+			discovery_entries(&router, &req).await,
+			serde_json::json!([model_list_entry("route", 5), model_list_entry("other", 2)])
+		);
+	}
+
 	#[tokio::test]
 	async fn conditional_virtual_model_can_use_llm_request() {
 		let model = |name: &str| ModelRoute {
@@ -970,13 +1144,13 @@ mod tests {
 			policies: ModelRoutePolicies {
 				llm: default_route_types(),
 				authorization: Some(Authorization(Arc::new(
-					crate::http::authorization::RuleSet::new(
-						crate::http::authorization::PolicySet::new(
-							vec![Arc::new(cel::Expression::new_strict("true").expect("valid CEL"))],
-							vec![],
-							vec![],
-						),
-					),
+					crate::http::authorization::RuleSet::new(crate::http::authorization::PolicySet::new(
+						vec![Arc::new(
+							cel::Expression::new_strict("true").expect("valid CEL"),
+						)],
+						vec![],
+						vec![],
+					)),
 				))),
 			},
 			backend_policies: vec![],
