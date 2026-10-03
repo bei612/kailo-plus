@@ -155,7 +155,7 @@ pub(crate) fn runtime_profile_directory() -> Result<contracts::RuntimeProfileDir
 }
 
 /// 同一发布合同的纯映射裁决；旧目录可以没有映射，但不能据此执行策略。
-fn reply_policy_contract(
+pub(crate) fn reply_policy_contract(
     contract: &contracts::FluffyCapabilityContract,
     selected: Option<&str>,
 ) -> Result<(), Refusal> {

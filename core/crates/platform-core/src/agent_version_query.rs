@@ -85,20 +85,7 @@ async fn configuration_page(
         Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)) => Vec::new(),
         Err(error) => return Err(error.respond(None)),
     };
-    profiles.retain(|profile| {
-        let capability = &profile.capability_contract;
-        profile.kind == contracts::RuntimeProfileKind::ServerCodex
-            && profile.status == "ACTIVE"
-            && profile.web_availability == "ENABLED"
-            && capability.max_parallelism > 0
-            && capability.max_idle_timeout_seconds > 0
-            && capability.max_turn_duration_seconds >= capability.max_idle_timeout_seconds
-            && !capability.reply_policies.is_empty()
-            && capability
-                .reply_policies
-                .iter()
-                .all(|key| !key.trim().is_empty())
-    });
+    profiles.retain_mut(retain_consumable_profile);
     let rows: Vec<RouteRow> = sqlx::query_as(&format!("{ROUTES} order by r.id offset $2 limit $3"))
         .bind(context.tenant_id)
         .bind(offset)
@@ -230,6 +217,37 @@ async fn configuration_page(
         "canCreate": can_create,
     }))
     .map_err(|_| Refusal::Unavailable("Version 配置目录不符合共享契约".into()).respond(None))
+}
+
+fn retain_consumable_profile(profile: &mut contracts::Profile) -> bool {
+    let capability = &profile.capability_contract;
+    if !(profile.kind == contracts::RuntimeProfileKind::ServerCodex
+        && profile.status == "ACTIVE"
+        && profile.web_availability == "ENABLED"
+        && capability.max_parallelism > 0
+        && capability.max_idle_timeout_seconds > 0
+        && capability.max_turn_duration_seconds >= capability.max_idle_timeout_seconds)
+    {
+        return false;
+    }
+    // 同一发布判定决定能否消费策略；目录不把缺失、仅广播或关闭
+    // thread 回复的原生映射变成可提交来源，也不猜 opaque key 的含义。
+    let supported: Vec<_> = capability
+        .reply_policies
+        .iter()
+        .filter(|key| crate::agent_version::reply_policy_contract(capability, Some(key)).is_ok())
+        .cloned()
+        .collect();
+    if supported.is_empty() {
+        return false;
+    }
+    let capability = &mut profile.capability_contract;
+    capability.reply_policies = supported;
+    let policy_keys = &capability.reply_policies;
+    if let Some(mappings) = &mut capability.reply_policy_mappings {
+        mappings.retain(|mapping| policy_keys.contains(&mapping.key));
+    }
+    true
 }
 
 async fn read_definition(
@@ -447,4 +465,90 @@ pub(crate) async fn version_permissions(
         allowed[index] = checked.allowed;
     }
     Ok((allowed[0], allowed[1], allowed[2]))
+}
+
+#[cfg(test)]
+mod configuration_profile_tests {
+    use super::retain_consumable_profile;
+    use crate::agent_version::reply_policy_contract;
+    use serde_json::json;
+
+    // 内存中的生成契约输入，只执行目录筛选，不投递或启用运行 Profile。
+    fn profile() -> serde_json::Value {
+        json!({
+            "key": "registered-profile", "kind": "SERVER_CODEX",
+            "status": "ACTIVE", "webAvailability": "ENABLED",
+            "capabilityContract": {
+                "capabilityRequirements": [],
+                "maxParallelism": 2, "maxIdleTimeoutSeconds": 30,
+                "maxTurnDurationSeconds": 60,
+                "replyPolicies": ["policy-a", "policy-b", "policy-c", "policy-d"],
+                "replyPolicyMappings": [
+                    {"key": "policy-a", "threadReplies": true, "broadcastReplies": false},
+                    {"key": "policy-b", "threadReplies": false, "broadcastReplies": true},
+                    {"key": "policy-c", "threadReplies": false, "broadcastReplies": false},
+                    {"key": "policy-d", "threadReplies": true, "broadcastReplies": true}
+                ]
+            }
+        })
+    }
+
+    #[test]
+    fn mixed_policies_expose_only_the_consumable_policy_and_mapping() {
+        let original = profile();
+        let mut profiles: Vec<contracts::Profile> =
+            serde_json::from_value(json!([original.clone()])).unwrap();
+        profiles.retain_mut(retain_consumable_profile);
+        assert_eq!(profiles.len(), 1);
+        let mut expected = original;
+        expected["capabilityContract"]["replyPolicies"] = json!(["policy-a"]);
+        expected["capabilityContract"]["replyPolicyMappings"] =
+            json!([expected["capabilityContract"]["replyPolicyMappings"][0].clone()]);
+        assert_eq!(serde_json::to_value(&profiles[0]).unwrap(), expected);
+        assert!(reply_policy_contract(&profiles[0].capability_contract, None).is_ok());
+        assert!(reply_policy_contract(&profiles[0].capability_contract, Some("policy-a")).is_ok());
+    }
+
+    #[test]
+    fn unsupported_or_missing_mappings_do_not_advertise_a_profile() {
+        let mut missing = profile();
+        missing["capabilityContract"]["replyPolicyMappings"] = json!([]);
+        let mut unsupported = profile();
+        unsupported["capabilityContract"]["replyPolicies"] =
+            json!(["policy-b", "policy-c", "policy-d"]);
+        unsupported["capabilityContract"]["replyPolicyMappings"]
+            .as_array_mut()
+            .unwrap()
+            .remove(0);
+        let mut profiles: Vec<contracts::Profile> =
+            serde_json::from_value(json!([missing, unsupported])).unwrap();
+        profiles.retain_mut(retain_consumable_profile);
+        assert!(profiles.is_empty());
+    }
+
+    #[test]
+    fn old_directory_remains_readable_but_is_not_a_selectable_source() {
+        let mut old = profile();
+        old["capabilityContract"]
+            .as_object_mut()
+            .unwrap()
+            .remove("replyPolicyMappings");
+        let value = json!({"profiles": [old]});
+        let mut directory: contracts::RuntimeProfileDirectory =
+            serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&directory).unwrap(), value);
+        assert!(reply_policy_contract(&directory.profiles[0].capability_contract, None).is_ok());
+        directory.profiles.retain_mut(retain_consumable_profile);
+        assert!(directory.profiles.is_empty());
+    }
+
+    #[test]
+    fn empty_policies_do_not_advertise_a_profile() {
+        let mut empty = profile();
+        empty["capabilityContract"]["replyPolicies"] = json!([]);
+        empty["capabilityContract"]["replyPolicyMappings"] = json!([]);
+        let mut profiles: Vec<contracts::Profile> = serde_json::from_value(json!([empty])).unwrap();
+        profiles.retain_mut(retain_consumable_profile);
+        assert!(profiles.is_empty());
+    }
 }
