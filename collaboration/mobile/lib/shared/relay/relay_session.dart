@@ -454,7 +454,10 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _cancelAllHistory(Exception('App moved to background'));
     _rejectAllPending(Exception('App moved to background'));
     _socket?.disconnect();
-    state = const SessionState(status: SessionStatus.disconnected);
+    state = SessionState(
+      status: SessionStatus.disconnected,
+      authRejected: state.authRejected,
+    );
   }
 
   /// Called by the app lifecycle provider when the app returns to foreground.
@@ -482,7 +485,10 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   }
 
   Future<void> _connect(RelayConfig config) async {
-    if (_disposed) return;
+    // A transport/lifecycle retry is not a new authentication context. Only
+    // an auth context rebuild (including sign-out/sign-in) or configuration
+    // change retires this rejection.
+    if (_disposed || state.authRejected) return;
 
     final generation = ++_connectionGeneration;
     state = SessionState(
@@ -508,7 +514,11 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   }
 
   Future<void> _handleConnected(int generation) async {
-    if (_disposed || generation != _connectionGeneration) return;
+    if (_disposed ||
+        generation != _connectionGeneration ||
+        state.authRejected) {
+      return;
+    }
     _socketConnected = true;
     _hasConnectedOnce = true;
     _reconnectDelayMs = _baseReconnectDelayMs;
@@ -525,9 +535,12 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _eventBuffer.clear();
     _flushTimer?.cancel();
     _flushTimer = null;
-    if (error is RelayAuthRejectedException) {
+    if (error is RelayAuthRejectedException || state.authRejected) {
       _reconnectTimer?.cancel();
-      state = const SessionState(status: SessionStatus.disconnected);
+      state = const SessionState(
+        status: SessionStatus.disconnected,
+        authRejected: true,
+      );
       return;
     }
     _scheduleReconnect();

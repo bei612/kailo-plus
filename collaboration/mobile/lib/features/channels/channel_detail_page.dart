@@ -26,6 +26,7 @@ import 'channel.dart';
 import 'channel_actions_sheet.dart';
 import 'channel_link_navigation.dart';
 import 'channel_management_provider.dart';
+import 'relay_sync_banner.dart';
 import 'channel_messages_provider.dart';
 import 'channels_provider.dart';
 import 'unread_badge/observed_unread_event.dart';
@@ -395,6 +396,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                   ),
                 ),
               ),
+              if (!showsComposer) const RelaySyncBanner(),
               if (!showsComposer) _ReadOnlyNotice(channel: resolvedChannel),
             ],
           ),
@@ -412,6 +414,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      const RelaySyncBanner(),
                       ComposeBar(
                         channelId: channel.id,
                         focusNode: composerFocusNode,

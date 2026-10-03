@@ -192,11 +192,33 @@ void main() {
     tester,
   ) async {
     const footerClearance = 102.0;
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final channels = List.generate(
+      40,
+      (index) => Channel(
+        id: 'channel-$index',
+        name: 'channel-$index',
+        channelType: 'stream',
+        visibility: 'open',
+        description: 'Channel $index',
+        createdBy: 'abc',
+        createdAt: DateTime(2025),
+        memberCount: 10,
+        isMember: true,
+      ),
+    );
+    final relay = _ReconnectingRelaySession(
+      initialStatus: SessionStatus.connected,
+    );
     await tester.pumpWidget(
       buildTestable(
         bottomPadding: footerClearance,
+        textScaler: const TextScaler.linear(1.5),
         overrides: [
-          channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+          channelsProvider.overrideWith(() => _FakeNotifier(channels)),
+          relaySessionProvider.overrideWith(() => relay),
         ],
       ),
     );
@@ -209,6 +231,34 @@ void main() {
       ),
     );
     expect((padding.padding as EdgeInsets).bottom, footerClearance);
+
+    relay.setReconnecting();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    final scrollView = find.byType(CustomScrollView);
+    final scrollable = tester.state<ScrollableState>(
+      find.descendant(of: scrollView, matching: find.byType(Scrollable)).first,
+    );
+    scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+
+    final banner = find.byKey(
+      const ValueKey('relay-sync-banner-nativeSyncReconnecting'),
+    );
+    final lastChannel = find.text('channel-39');
+    expect(banner, findsOneWidget);
+    expect(lastChannel, findsOneWidget);
+    // The scaled, wrapped banner owns space below the entire scroll viewport.
+    expect(
+      tester.getRect(scrollView).bottom,
+      lessThanOrEqualTo(tester.getRect(banner).top),
+    );
+    expect(
+      tester.getRect(lastChannel).bottom,
+      lessThanOrEqualTo(tester.getRect(banner).top),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('keeps the Buzz background fixed behind the channels list', (
@@ -1078,6 +1128,7 @@ ObservedUnreadEvent _observed({
 /// label.
 
 final _sessionView = PlatformSessionView(
+  accessMode: PlatformSessionAccessMode.FULL,
   humanIdentityId: '00000000-0000-4000-8000-000000000001',
   displayName: 'Tester',
   tenantId: '00000000-0000-4000-8000-000000000002',

@@ -945,6 +945,14 @@ export const platformMessages = {
     en: "Delivery not confirmed. Your text is kept; sending it again unchanged will not post it twice.",
     "zh-CN": "未确认送达。内容已保留；原样再次发送不会重复发出。",
   },
+  "native.sync.reconnecting": {
+    en: "Not synced: reconnecting to the server. Messages shown may be out of date.",
+    "zh-CN": "未同步：正在重新连接服务器，显示的消息可能不是最新。",
+  },
+  "native.sync.rejected": {
+    en: "Not synced: the server no longer accepts this device.",
+    "zh-CN": "未同步：服务器已不再接受本机。",
+  },
 } as const;
 
 export type PlatformMessageKey = keyof typeof platformMessages;

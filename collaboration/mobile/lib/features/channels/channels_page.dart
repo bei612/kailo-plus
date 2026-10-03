@@ -23,6 +23,7 @@ import 'channel.dart';
 import 'channel_actions_sheet.dart';
 import 'channel_detail_page.dart';
 import 'channels_provider.dart';
+import 'relay_sync_banner.dart';
 import '../../shared/read_state/deferred_read_state_update.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
@@ -310,17 +311,27 @@ class ChannelsPage extends HookConsumerWidget {
         bottomHeight: _kTopSectionBottomPadding,
         bottom: const SizedBox.expand(),
       ),
-      body: _ChannelsBody(
-        channels: channels,
-        channelsAsync: channelsAsync,
-        showError: showError.value,
-        sessionStatus: sessionState.status,
-        showConnectionSkeleton: showConnectionSkeleton.value,
-        topSectionHeight: topSectionHeight,
-        usesPinnedGradient: usesPinnedGradient,
-        scrollController: channelsScrollController,
-        onRefresh: () => ref.read(channelsProvider.notifier).refresh(),
-        onSelectChannel: openChannel,
+      body: Column(
+        children: [
+          Expanded(
+            child: _ChannelsBody(
+              channels: channels,
+              channelsAsync: channelsAsync,
+              showError: showError.value,
+              sessionStatus: sessionState.status,
+              showConnectionSkeleton: showConnectionSkeleton.value,
+              topSectionHeight: topSectionHeight,
+              usesPinnedGradient: usesPinnedGradient,
+              scrollController: channelsScrollController,
+              onRefresh: () => ref.read(channelsProvider.notifier).refresh(),
+              onSelectChannel: openChannel,
+            ),
+          ),
+          // 与 Relay 不同步时如实说明：列表可能过时（DD-75 直连会话）
+          if (sessionState.authRejected ||
+              sessionState.status == SessionStatus.reconnecting)
+            const SafeArea(top: false, child: RelaySyncBanner()),
+        ],
       ),
     );
   }

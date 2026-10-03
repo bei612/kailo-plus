@@ -548,6 +548,8 @@ enum PlatformMessageKey {
   nativeSendRateLimitedNoHint,
   nativeSendNotConnected,
   nativeSendOutcomeUnknown,
+  nativeSyncReconnecting,
+  nativeSyncRejected,
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
@@ -1954,6 +1956,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.nativeSendOutcomeUnknown: (
     'Delivery not confirmed. Your text is kept; sending it again unchanged will not post it twice.',
     '未确认送达。内容已保留；原样再次发送不会重复发出。',
+  ),
+  PlatformMessageKey.nativeSyncReconnecting: (
+    'Not synced: reconnecting to the server. Messages shown may be out of date.',
+    '未同步：正在重新连接服务器，显示的消息可能不是最新。',
+  ),
+  PlatformMessageKey.nativeSyncRejected: (
+    'Not synced: the server no longer accepts this device.',
+    '未同步：服务器已不再接受本机。',
   ),
 };
 

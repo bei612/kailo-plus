@@ -6,6 +6,31 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### 运行配置修复与客户端收口
+
+`31d71b1c4ee002f8b392ffa14b07d1fca6dee4ca` 已提交并普通 push：运行配置目录
+复用原 Version 发布裁决，只返回支持的回复策略及其原生映射，不再提供提交后必然
+拒绝的选项。相对 `2ef579bdf` 为 2 文件、+119/-15。Clippy 与 8 项检查实际通过；
+策略判定、映射子集两次生产变异均退出 101，逐字恢复后退出 0。未激活 Profile，未部署。
+
+本批 Mobile 修复认证拒绝被前后台切换或迟到回调清除的问题；频道列表与详情共用
+同步状态横幅。横幅自然占位，不覆盖末项。共享 TypeScript 文案生成 Dart，未另立
+文案来源。初始选定检查 112 项及详情重连 1 项通过；认证 guard 破坏退出 1、恢复
+退出 0。布局在 320px/1.5 倍字号下检查通过，恢复旧覆盖布局后实际失败、还原通过。
+320px/2 倍字号检查另发现既有 `_SectionHeader` 横向溢出 8px，该失败保留，
+不声称整页大字号、设备或 Mobile release 验收通过。最终选定补丁为 11 文件、
++412/-20，SHA-256 `715364edb3afb45fb8c447b37baa0d2dad2f3891f8faece393941b5daac6a5f2`。
+
+原 Win11 x64 helper 对干净 `2ef579bdfc4e4cd243de835988940f07018f5833`
+实际退出 0。2258 项输入摘要与 Desktop Cargo.lock 构建前后逐字一致；安装包
+`Kailo_0.5.23_x64-setup.exe` 为 15110708 字节，SHA-256
+`d2b0558e06be8f0b36fdac5d8e00128afc067442093f999ac3e1d384d0a9eebd`。
+原件位于 `/volumes/data/kailo/tmp/codex-desktop-source-closure-20261003.NXRrHU/apps/dist/desktop-client/`。
+helper 日志 SHA-256 为 `95f9bc14e953913351a505ec12312d15b9044f7eb54aa3020c920763afcb9d3b`。
+它是未签名测试包，未做 Win11 安装运行验收。共享文案属于 Desktop 构建输入，
+因此该包不覆盖本批 Mobile 文案后的新源码；不重写其来源摘要或据此报告完整检查通过。
+本批没有重新部署服务。普通 mention、安装、真实模型首轮、回复和结算仍未贯通。
+
 ### 16:58 UTC Customer 真实闭环与部署
 
 `104a9104b60d5357306cfc7528d7b8188399c536` 的正式 Core/Worker 已限定部署，

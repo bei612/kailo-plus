@@ -569,6 +569,11 @@ void main() {
       await tester.pump();
 
       expect(find.text('Existing message'), findsOneWidget);
+      // 重连期间如实说明未同步，而不是只换骨架屏
+      final notSynced = find.byKey(
+        const ValueKey('relay-sync-banner-nativeSyncReconnecting'),
+      );
+      expect(notSynced, findsOneWidget);
       expect(
         tester.widget<SkeletonReveal>(find.byType(SkeletonReveal)).loading,
         isFalse,
@@ -604,6 +609,7 @@ void main() {
       relaySession.connect();
       await tester.pump();
       await tester.pump();
+      expect(notSynced, findsNothing);
       expect(
         tester.widget<SkeletonReveal>(find.byType(SkeletonReveal)).loading,
         isFalse,

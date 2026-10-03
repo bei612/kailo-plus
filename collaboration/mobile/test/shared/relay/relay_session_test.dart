@@ -431,23 +431,82 @@ void main() {
   test(
     'stops reconnecting without deleting community after auth rejection',
     () async {
-      final session = RelaySessionNotifier();
+      final sockets = <_ControlledRelaySocket>[];
+      final session = RelaySessionNotifier(
+        socketFactory:
+            ({
+              required wsUrl,
+              required nsec,
+              required onMessage,
+              required onConnected,
+              required onDisconnected,
+            }) {
+              final socket = _ControlledRelaySocket(
+                wsUrl: wsUrl,
+                nsec: nsec,
+                onMessage: onMessage,
+                onConnected: onConnected,
+                onDisconnected: onDisconnected,
+              );
+              sockets.add(socket);
+              return socket;
+            },
+      );
       final auth = _FakeAuthNotifier();
+      final config = _FakeRelayConfigNotifier(
+        baseUrl: 'https://relay.example',
+        nsec: null,
+      );
       final container = ProviderContainer(
         overrides: [
           relaySessionProvider.overrideWith(() => session),
           authProvider.overrideWith(() => auth),
+          relayConfigProvider.overrideWith(() => config),
         ],
       );
       addTearDown(container.dispose);
+      await container.read(authProvider.future);
       container.read(relaySessionProvider);
 
       session.debugHandleDisconnected(
         const RelayAuthRejectedException('auth-required: verification failed'),
       );
+      expect(
+        session.state.authRejected,
+        isTrue,
+        reason: 'Relay 拒绝本机身份时界面要能说「不再接受本机」，而不是「正在重连」',
+      );
       await Future<void>.delayed(Duration.zero);
 
       expect(session.state.status, SessionStatus.disconnected);
+      expect(auth.signOutCount, 0);
+
+      session.debugPauseNow();
+      expect(session.state.authRejected, isTrue);
+      session.onAppResumed();
+      await session.reconnect();
+      // A later transport callback must not erase the terminal AUTH result.
+      session.debugHandleDisconnected();
+      await Future<void>.delayed(Duration.zero);
+      expect(session.state.authRejected, isTrue);
+      expect(session.state.status, SessionStatus.disconnected);
+      expect(sockets, isEmpty);
+
+      // Sign-out/sign-in rebuilds the auth context even with the same device.
+      container.invalidate(authProvider);
+      await container.read(authProvider.future);
+      container.read(relaySessionProvider);
+      expect(session.state.authRejected, isFalse);
+      session.debugHandleDisconnected(
+        const RelayAuthRejectedException('restricted: access revoked'),
+      );
+
+      // Changing the relay/identity context retires only the old rejection.
+      config.update(baseUrl: 'https://other-relay.example', nsec: null);
+      container.read(relaySessionProvider);
+      expect(session.state.authRejected, isFalse);
+      await session.reconnect();
+      expect(sockets, hasLength(1));
       expect(auth.signOutCount, 0);
     },
   );
@@ -1454,10 +1513,106 @@ void main() {
       session.debugSupersedeConnection();
       gateTimers.single.fire();
 
-      await expectLater(publish, throwsA(isA<StateError>()));
+      // EVENT 从未离开本机：确定未发送，不是结果不明
+      await expectLater(publish, throwsA(isA<RelayPublishNotSent>()));
       expect(socket.messages, isEmpty);
     },
   );
+
+  group('publish outcomes are classified, never guessed (apps/06 §4)', () {
+    test(
+      'OK false is a definite rejection carrying the relay reason',
+      () async {
+        final session = RelaySessionNotifier();
+        session.debugAttachSocketForTest(_RecordingRelaySocket());
+
+        final publish = session.publish(_event());
+        session.debugHandleMessage([
+          'OK',
+          'event-1',
+          false,
+          'restricted: not a channel member',
+        ]);
+
+        await expectLater(
+          publish,
+          throwsA(
+            isA<RelayPublishRejected>()
+                .having((e) => e.rateLimited, 'rateLimited', isFalse)
+                .having((e) => e.eventId, 'eventId', 'event-1')
+                .having((e) => e.message, 'message', contains('restricted:')),
+          ),
+        );
+      },
+    );
+
+    test('rate-limited OK false carries the retry hint', () async {
+      final session = RelaySessionNotifier(
+        rateLimitGate: RelayRateLimitGate(now: () => DateTime(2026)),
+      );
+      session.debugAttachSocketForTest(_RecordingRelaySocket());
+
+      final publish = session.publish(_event());
+      session.debugHandleMessage([
+        'OK',
+        'event-1',
+        false,
+        'rate-limited: quota exceeded; retry in 7s',
+      ]);
+
+      await expectLater(
+        publish,
+        throwsA(
+          isA<RelayPublishRejected>()
+              .having((e) => e.rateLimited, 'rateLimited', isTrue)
+              .having((e) => e.retryAfterSeconds, 'retryAfterSeconds', 7),
+        ),
+      );
+    });
+
+    test(
+      'no OK before the timeout is an unknown outcome, not a failure',
+      () async {
+        final session = RelaySessionNotifier();
+        session.debugAttachSocketForTest(_RecordingRelaySocket());
+
+        await expectLater(
+          session.publish(_event(), timeout: Duration.zero),
+          throwsA(
+            isA<RelayPublishOutcomeUnknown>().having(
+              (e) => e.eventId,
+              'eventId',
+              'event-1',
+            ),
+          ),
+        );
+      },
+    );
+
+    test('a disconnect while awaiting OK is an unknown outcome', () async {
+      final session = RelaySessionNotifier();
+      final container = ProviderContainer(
+        overrides: [relaySessionProvider.overrideWith(() => session)],
+      );
+      addTearDown(container.dispose);
+      container.read(relaySessionProvider);
+      session.debugAttachSocketForTest(_RecordingRelaySocket());
+
+      final publish = session.publish(_event());
+      session.debugHandleDisconnected(Exception('socket closed'));
+      expect(session.state.status, SessionStatus.reconnecting);
+
+      await expectLater(publish, throwsA(isA<RelayPublishOutcomeUnknown>()));
+    });
+
+    test('publishing while disconnected is definitely not sent', () async {
+      final session = RelaySessionNotifier();
+      await expectLater(
+        session.publish(_event()),
+        throwsA(isA<RelayPublishNotSent>()),
+      );
+    });
+  });
 
   test('an ordinary OK rejection does not arm the gate', () async {
     final gate = RelayRateLimitGate(now: () => DateTime(2026));
