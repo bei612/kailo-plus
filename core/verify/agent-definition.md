@@ -1674,3 +1674,44 @@ UNKNOWN 场景的回读次数两项断言失败，退出 1；按原字节恢复�
 实际生产变异只发生于私有导出，正式两源未被破坏。上述是源码与协议夹具证据，
 不是在线 BFF、Codex 或 Installation E2E；未运行本批 full、客户端构建或部署，
 不覆盖历史完整检查失败、设备或生产验收缺口。
+
+### 2026-10-03 19:23 UTC 首个版本发布与安装真实准入
+
+Gateway 修复产物 `b9e3bf8d…` 部署后，原 HUMAN/FULL 会话重新读取 Definition、
+空版本历史及版本配置均为 200。首轮操作脚本使用了非 UUID 幂等键，原准入
+在解析键时返回 422/PRECONDITION/INVALID_PARAMETERS，未进入 ActionExecution
+创建；没有放宽校验。纠正为原契约 UUID 后重新读取历史仍为空，再发出新意图。
+
+原 Definition `88325239-707e-471c-89c7-f7675e341928` 的版本
+`cc099e7c-74d6-48a8-86c2-63bb878551ea` 实际从 DRAFT/version 2，经显式发布
+读回 PUBLISHED/version 3，ordinal 1，configHash
+`71015605ae785d3bbb148e45e661b9b2f1584a13ff5e35805e5904037ff3ac44`。
+内容使用已投递 thread-only Profile、受权 Route、零 Tool/Skill、HUMAN_ONLY/
+DISABLED Memory 策略及既定 1/300/600；不另立运行配置或权限。
+创建 ActionExecution 为上述版本 ID，Operation
+`e2761c44-d1fb-412b-96e9-e434094a4e1b`；发布 ActionExecution
+`51d70376-46a5-4127-b280-f25c1a587c90`，Operation
+`e324190a-edab-4adf-b24b-0ed4e642af0f`。
+
+候选目录实际 canCreate=true，返回该确切 PUBLISHED Asset。原安装动作准入后
+创建 Installation `8f240978-34bb-437d-97ee-498a30e67e86`、Agent Principal
+`45f6fe8b-113f-4d2d-8ee3-f95b635732ac`；ActionExecution
+`991c2ceb-e3f7-4413-883b-db97fe01e8e3`，Operation
+`3d9839ca-85bd-4baf-8cbf-9336ff43c535`，Workflow
+`platform:AGENT_INSTALLATION:6179e160-6055-4e9a-ae63-1793509c230c:8f240978-34bb-437d-97ee-498a30e67e86:1`。
+三个实际 UUID 幂等键分别为 `1c8ae196-3fe3-4dbe-bb87-5018e8ff7d19`、
+`d3cbaa10-b368-404e-816f-d361b09fd16d`、`7d888641-531c-481d-94eb-fdd44b6b052b`。
+
+随后安装详情读回 PROVISIONING、projection PENDING/generation 1，频道 binding
+DISABLED；任务 RUNNING/UNKNOWN_EXTERNAL_RESULT。Core 原生初始化记录
+DependencyUnavailable，没有 Codex 子进程。只保留原 Workflow 对账，不重新
+创建、改 SQL 状态或把 DISPATCHED 当安装完成。普通 mention、模型首轮、回复与
+用量终态仍无验收证据；本批未新增 schema、迁移或安全策略。
+
+原件 `/volumes/data/kailo/tmp/codex-gateway-reactor-delivery-20261003.DtznEx/`：
+`version-installation-live.log`（422）SHA-256
+`1f8a2345fb86eb8b2262c07367481a6bd3005f346390943370fbf823eee2cfd5`；
+`version-installation-uuid-live.log`（脚本退出 0）SHA-256
+`480bc275d8dbe9eba81c6f367a11d271fac33860227a63fbc2c971bee4086d84`；
+`installation-readback.log`（只读脚本退出 0）SHA-256
+`5793b8128c77425ac49be89ee5b8bf44f89ac4efce94a10e4df09da64ba8c38c`。

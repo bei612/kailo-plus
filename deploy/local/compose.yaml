@@ -667,7 +667,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:42afa40d12af5ae1d17dd7571a31375b948983e65031b6976c37effbf2b8d498
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:b366d565242d9efd9e1812110bbd400c936d8f53b5fcd8ca87b687d4d707d85b
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
@@ -680,7 +680,7 @@ services:
   agentgateway:
     # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:14bf9f878fbca870361171331ac4401f7c3fa5cd8168c665ae9061a4b2a674e7
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:b9e3bf8d84cf24fc81930c70a6c2df19e32b077412a72aa16d11b9279ad5898d
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个

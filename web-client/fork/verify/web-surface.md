@@ -1037,3 +1037,27 @@ registry 独立 HTTP200、响应正文 SHA、digest header 与原 record 逐字�
 影响仅真实共享管理消费者及其两端产物，外发仍经原 BFF，异常保留同请求 UNKNOWN。
 本节是私有候选的交互和产物证据，不是 full、Git、部署、浏览器或 Agent 业务验收；
 未将旧 Web/Win 产物冒充修正后来源。
+
+### 2026-10-03 共享管理刷新批的实际 Web 交付
+
+干净 `c0707d8fda400f4fcfd1eae9c57e494a633398d9` 经原 Web helper 实际退出 0；
+98 项输入的路径、字节与原算法摘要前后一致。source 为
+`sha256:c201703085f23e45c5733deaac1f4d9d915587ba384e6d43113b6492171caa84`，
+artifact 为
+`sha256:b366d565242d9efd9e1812110bbd400c936d8f53b5fcd8ca87b687d4d707d85b`。
+registry 独立 GET 200、1816 字节、digest header 和正文 SHA 与登记逐字一致。
+沿用原 builder、8 CPU/16 GiB/swap 0 和 Data 缓存；不复制第二份 Web UI。
+
+同步原来源、Compose pin 与 14 条 Web 追溯引用后，原 Compose 仅
+`up -d --no-deps --force-recreate --no-build buzz-web`，退出 0；新容器
+`2444722ebd1028596526699f831940655efdfeba36d6cfd30d60bfc4ee737814`
+运行上述产物且 healthy。与本次 Gateway 部署前基线逐项比较，只有 Gateway
+和 Web 两服务变化，其余 26 个容器 ID、镜像和启动时间不变。
+本回执不替代新页面浏览器交互、Win11 设备、安装初始化或全量门禁验收。
+
+构建原件 `/volumes/data/kailo/tmp/codex-client-management-delivery-20261003.3RI9lm/`，
+`web-helper.log` SHA-256
+`2f46b60e5f536736e0deeea3ff17033def22cd017cac90212b511522de138ef3`；
+部署比对原件在 `codex-gateway-reactor-delivery-20261003.DtznEx/` 的
+`deploy-after-web-containers.log`，SHA-256
+`ace4ae4dc8faaffcbd79282d27c4054612f2f4453dc4cfaab01b0c833c3ce90e`。

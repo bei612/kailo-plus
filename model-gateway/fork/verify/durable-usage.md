@@ -612,3 +612,37 @@ API、计费来源、三端差异或用户权限；Core 的原依赖超时保持
 
 产物构建、单 Gateway 部署和原 BFF 重验尚未完成；当前不能据源码和窄检查
 解除线上 503 或声明安装成功。本批无契约迁移和新增不安全开关。
+
+### 19:18 UTC 修复产物与限定部署
+
+上述修复已随 `c0707d8fda400f4fcfd1eae9c57e494a633398d9` 提交并 push。
+原首次 BuildKit `666zgmpv7tsaill2tgw7e4vtx` 实际为 Canceled，没有产物；
+确认其终态后，使用同一干净提交、原 helper 与受限 builder 恢复构建。
+原 session 96205 最终退出 0，Rust 1.98.0 release 编译、镜像导出、registry
+push 与原来源登记成功；builder 实际 8 CPU、16 GiB、swap 0、Data 缓存，
+没有降低原 Cargo 并行度。新 source 为
+`sha256:94b5136f5a54cb6565b8723f58e4186249ed0899f7c1bb54c22fd8b0184a4965`，
+artifact 为
+`sha256:b9e3bf8d84cf24fc81930c70a6c2df19e32b077412a72aa16d11b9279ad5898d`。
+独立 registry GET 返回的 manifest 正文 SHA-256 与此 artifact 完全一致。
+
+正式来源、Compose pin 与两处追溯同步真实摘要；原 Compose
+`up -d --no-deps --force-recreate --no-build agentgateway` 退出 0。
+新容器 `8acc25825e2277bd5717e06d2fc6538b71078d4b0d094e22efe51c92c51f0fc9`
+运行上述精确镜像。原投递环境逐值比对一致；首次比对误含镜像自带三项环境
+而退出 1，尚未执行部署，按 Compose 投递范围纠正后通过，没有修改配置值。
+其他 27 个 Compose 容器 ID、镜像与启动时间逐项不变，没有重启数据库、Core 或 Worker。
+
+真实 HUMAN 登录后版本配置重读两次 200/canCreate=true，随后 Version 创建、
+发布与安装候选读取成功；不再出现此前模型配置读取 503。Installation 的后续
+原生初始化仍为 UNKNOWN，见 Agent 记录；本次不声明首 turn 或计量业务完成。
+上节 PostgreSQL ignored、缺 rustfmt 与最新 full 的失败边界均保留。
+
+原件目录 `/volumes/data/kailo/tmp/codex-gateway-reactor-delivery-20261003.DtznEx/`：
+`helper-resumed.log` SHA-256
+`836d30dc325fa94d32422c438a7ee91687ea612a4a5accc8a65e5fa1fdb24538`；
+`helper-resumed.exit` 为 0，`registry-manifest.json` 摘要同 artifact；
+`deploy-before-containers.log` SHA-256
+`59febf01ecfd620fe8339b8939269abdc3f47c875751413df1b07b64ee2108df`，
+`deploy-after-containers.log` SHA-256
+`90baac82a962193c7874765583a9111ae97ed20c70b8d978eafc506fa90deb44`。

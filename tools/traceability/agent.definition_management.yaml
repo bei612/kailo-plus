@@ -58,7 +58,7 @@ runtime:
 release:
   artifacts:
     - name: web-client
-      digest: sha256:42afa40d12af5ae1d17dd7571a31375b948983e65031b6976c37effbf2b8d498
+      digest: sha256:b366d565242d9efd9e1812110bbd400c936d8f53b5fcd8ca87b687d4d707d85b
   # 保留原入口登记的真实共享管理页产物；它不覆盖本批未发布的后端源码。
   # 未部署或业务验收，Installation/Memory/Capacity/Task 不据此计为 ready/PASS。
   gate: blocked_until_seams_closed

@@ -6,6 +6,41 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### 19:23 UTC 版本发布成功，安装初始化仍未闭合
+
+干净 `c0707d8fda400f4fcfd1eae9c57e494a633398d9` 的 Gateway 原 helper 已退出 0，
+registry manifest 独立 SHA 与登记一致，产物为 `b9e3bf8d…`；仅替换 Gateway 后，
+真实 HUMAN 的版本配置连续读回 200，未增加超时或放宽原生投影查证。
+首个 AgentVersion 已经原 Action 创建、显式发布并读回 `PUBLISHED`；Installation
+已准入并创建原 Temporal Workflow，但仍是 `PROVISIONING / PENDING`，任务为
+`RUNNING / UNKNOWN_EXTERNAL_RESULT`，原生初始化报依赖不可查证，尚无 Codex 子进程。
+这推进了真实发布链，不等于 Agent 已能回答；不重复创建或直接改业务状态。
+
+共源 Web 原 helper 同批退出 0，`b366d565…` 已限定部署且 healthy；部署前后
+只有 Gateway、Web 两服务变化，其他 26 个 Compose 容器的 ID、镜像和启动时间不变。
+Win11 正沿原 helper 打包，尚无本批安装包或设备验收。新的产物引用与本节记录
+尚未提交；最新完整检查的 Desktop 来源失配失败仍保留，未称 full 或生产验收通过。
+实际来源、首次非 UUID 操作键被 422 拒绝及后续真实业务回执分别见
+[Gateway 记录](model-gateway/fork/verify/durable-usage.md)、
+[Agent 记录](core/verify/agent-definition.md)、[Web 记录](web-client/fork/verify/web-surface.md)。
+
+### Gateway 修复源码已提交，普通触发缺项收敛
+
+`c0707d8fda400f4fcfd1eae9c57e494a633398d9` 已普通 push，本地与远端 main 一致；
+相对 `c0d32d47d` 为 6 文件、+135/-14，包含下节 Gateway 与 Mobile 修复。
+固定提交树的原文档检查退出 0，不替代完整发布检查。原 Gateway 构建
+`666zgmpv7tsaill2tgw7e4vtx` 的 BuildKit 实际状态为 `Canceled`，运行 3 分 56 秒，
+没有新产物或部署；不能把其他项目的运行构建进程当作本次进展。
+
+普通频道 mention/manual-assignment 已由设计 `17` §2 明确为独立入口，
+ChannelAgentBinding、Invocation 幂等键及 HUMAN/Agent/Delegation 权限交集、
+Temporal、Capacity、模型用量和回复边界均已有定义，不再统称运行策略缺失。
+当前缺项是普通触发对应的完整 ActionDefinition 目录条目；设计 `03` §4
+禁止缺省其权限、确认/审批、quota/meter、结果曝光与审计观测字段。
+`05` §2.9 的 `automation.run` 专属于 Automation，不能借给普通触发。
+实际代码仍只有 Automation 生产 Invocation，fresh、reply 和 usage 消费也仍
+绑定该来源；安装配置成功不代表普通 @Agent 已能回答。
+
 ### 安装链依赖与 Mobile 大字号修复
 
 共享管理页刷新修复已普通 push 为 `c0d32d47db2d63350b1dc40bfb2dc94de45ebe94`，
