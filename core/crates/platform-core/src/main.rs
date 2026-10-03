@@ -413,7 +413,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await;
 
     let runtime_shutdown = match &agent_runtime {
-        Some(runtime) => runtime.stop_all(&pool).await,
+        Some(runtime) => runtime.stop_all().await,
         None => Ok(()),
     };
 

@@ -1812,3 +1812,92 @@ Core 原证明；部署原件为上述 `ry3CqV/` 中的 `start-core.log`、`core
 线上 Worker。原 release 输入 Git archive 前后 SHA 完全一致、clean HEAD/tree
 不变，原 builder OOM 计数为 0；准备阶段全仓文件摘要因 tracked symlink 退出
 123 的失败保留，实际来源按原 release archive 输入核验，不修工具绕过。
+
+## 2026-10-03 Runtime 恢复锁序与同一 thread 投影回读
+
+本节为实现后的源码与窄验证记录，尚未进行本批集中 full、产物构建或部署。
+仅修改 `agent_runtime.rs` 及 `main.rs` 的唯一停机调用；不改 Session/Invocation
+业务模型、权限、迁移、原安装状态或原生 thread/turn 引用。
+
+四步变更结论：
+
+- 权威：设计 `12/17/19` 的 Installation/RuntimeProjection fence、持久 Session
+  身份与 UNKNOWN 只观察恢复路径不变。固定 Codex
+  `7498521d288b9b3b96ffba4eedf089d8d6e06a84` 的
+  `codex-rs/app-server-protocol/src/protocol/v2/thread.rs` 中
+  `ThreadStartResponse`、`ThreadResumeResponse` 均具有 model、cwd、
+  approvalPolicy、approvalsReviewer；只读上游，未执行或修改引用工程。
+- 影响：ensure、call、start_turn、last_activity_at、stop 与健康扫描共用原安装的
+  本机 Process 槽。start/resume 在同一 Process 锁内核验既有投影字段；
+  `healthy_installations` 调用签名不变，`stop_all` 移除不用的 pool 参数，
+  `main.rs` 唯一调用同步调整。retirement 仍先 stop、再取得原 ownership。
+- 副作用：全局 map 锁只定位/快照；清理先使原 Process 拒绝新调用，冻结其
+  generation/ownership，释放 Process 锁后用原 ownership 连接写 UNKNOWN，
+  确认原子进程退出才清空槽。不新取池连接，不让同代替换越过旧写入；
+  stop_all 忽略空槽，且只更新实际持有的那一代，不把旧 key 当进程归属。
+- 异常：取消保留原 retiring Process，后续扫描可继续；退出不明仍拒绝新调用。
+  ownership 连接永久失效时明确记录 UNKNOWN 未写成，确认子进程退出后保持
+  原有可清理行为，不永久卡槽。原 DISPATCHING/RUNNING 的持久引用仍沿
+  `agent_task::advance` 的 resume/history 分支，不进入仅 CREATED 可走的
+  first_turn；投影缺失或漂移返回 Protocol，不回退创建 thread。
+
+复用固定 SDK `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+Rust/Cargo 1.90.0、Cargo 并行 16、4 CPU/8 GiB/swap0；隔离 PostgreSQL 为
+2 CPU/1 GiB/swap0、network none，总预算 6 CPU/9 GiB。每次 Cargo 前检查
+实际进程、CPU/内存压力与容器限额，内存 PSI 为 0；使用 Data 私有快照与独立
+reflink target，没有重建 SDK、争用公共 target 或向线上数据库写入。
+
+实际命令均由 `rtk` 调用既有受限 SDK，结果如下：
+
+- `cargo test -p platform-core --bin platform-core recovery_releases_slot_before_row_wait_and_resume_checks_loaded_projection -- --ignored --nocapture`
+  初始及补齐停机断言后均退出 0；真实 PG 行锁/advisory lock 与受控 stdio
+  覆盖池连接耗尽、取消恢复、同代替换、断 ownership 后子进程退出及原引用保留、
+  8 种 resume 字段缺失/漂移、合法 resume、空槽和不同代际停机边界。
+- 私有源码三次真实生产变异使用同一目标、未改测试预期：恢复旧持锁顺序在
+  Process 等待处超时（2.29 秒），跳过 resume 校验接受错误 model（1.15 秒），
+  将清槽条件改回 recorded && stopped 后坏连接永久卡槽（1.47 秒）；均退出 101。
+  每次用补丁还原，最终源码与格式化原件 `cmp` 一致后才复跑。
+- `cargo test -p platform-core --bin platform-core agent_runtime::activity_tests -- --include-ignored --nocapture`
+  最终退出 0，7 passed、73 filtered，1.12 秒，包含原迟到消息活动时钟检查。
+- `cargo clippy -p platform-core --bin platform-core --tests -- -D warnings`
+  退出 0，36.47 秒；选定 Runtime 的 `rustfmt --edition 2021 --check` 与
+  正式两源码 `git diff --check` 退出 0。选定源码排除继承的单行 assert 格式脏改，
+  正式工作树仍保留该用户增量，不声称它本身已通过格式检查。
+
+证据根 `/volumes/data/kailo/tmp/codex-runtime-session-scope-20261003.UQJGvp/`：
+`runtime-baseline.log`、`runtime-final-baseline.log`、`mutation-row-lock.log`、
+`mutation-resume.log`、`mutation-dead-ownership.log`、`runtime-restored.log`、
+`runtime-clippy.log`、`runtime-format.log`；原件摘要见 `evidence.sha256`。
+可选定补丁为 `canonical-runtime.patch`，规范 Runtime 源码 SHA-256 为
+`8f04ccfbd3c8f665ae1c78d25b33295f966bc6a63d6c222a78154c6bb502f539`。
+该数据库只是隔离的最小并发锁夹具，不是完整迁移演练；stdio 子进程不是
+真实 Codex/model，不含凭据，不能把上述通过算作线上恢复、Agent 首轮或设备 E2E。
+
+### 23:28 UTC 固定四路径集中检查回执
+
+本轮基线为 `a6716fe42d18a2054ee8a6325ffe063530dbf6d0`；唯一原 full 输入
+是 tree `060453005d77317a9661119973892d8dfe948b34`（不是新增 commit），
+4 路径、+586/-65。只包含上述两个规范源码与 README/本节，排除继承 assert
+格式差异及其他工作树增量；检查前后四路径 SHA 全部一致。
+
+从 apps 根运行原 `./tools/check.sh --full`，使用 `CHECK_SOURCE_REF` 指向该树，
+`TMPDIR=/volumes/data/kailo/tmp`、`CHECK_CPUS=4`、`CHECK_MEMORY=8g`、
+`CHECK_NETWORK=host`、`CHECK_CACHE_ROOT=/volumes/data/kailo/check-cache`、
+`CARGO_BUILD_JOBS=16`、`BUILDX_BUILDER=kailo-core-data`。原 launcher 复用
+上述 immutable `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 UID/GID=1000:1000、cpu.max=400000/100000、memory.max=8589934592、
+memory.swap.max=0，实际 Cargo jobs=16；未重建镜像或修改限额/并行度。
+
+session 56205 实际退出 0，末行“全部通过”。完整原件
+`/volumes/data/kailo/tmp/codex-runtime-recovery-full-20261003.R457c7/full.log`，
+SHA-256 `7eb3532cf47a5558270a567366f85c309325437014e3b990f686c657d568d63c`；
+原 launcher 日志 `/volumes/data/kailo/tmp/tmp.ClYsDg25EX.check.log`，
+SHA-256 `eb760b8034caabdfb9a2913417ee901c5daf9d550dec8f9d48c739c0fcc73b66`。
+自有 SDK 已由原 launcher 清理，没有部署、线上数据写入或构建产物。
+
+未提供 DATABASE_URL，实际迁移演练 SKIP；未投递 ignored `.env`，实际部署
+配置预检 SKIP。五个需要显式数据库/运维条件的演练保持 ignored，包含上文
+已单独实际验证的 Runtime recovery 目标；不把本次 full 当成它再运行一次。
+未安装 gitleaks，仅原内置扫描通过。完整 full 通过不替代真实 Codex/模型、
+线上 crash recovery、Agent 首轮、普通触发或设备验收。此后仅更新本刀 README
+摘要与追加本回执，再用原文档快路径核对，不为记录文字重跑 full。

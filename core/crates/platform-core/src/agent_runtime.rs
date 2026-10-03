@@ -48,12 +48,15 @@ pub(crate) struct RuntimeRef {
     pub config_hash: String,
 }
 
+type ProcessSlot = Arc<Mutex<Option<Process>>>;
+
 pub(crate) struct Supervisor {
     binary: PathBuf,
     root: PathBuf,
     timeout: Duration,
     max_message_bytes: usize,
-    processes: Mutex<HashMap<Uuid, Arc<Mutex<Process>>>>,
+    // The map lock only locates installation-local slots; no RPC/DB wait holds it.
+    processes: Mutex<HashMap<Uuid, ProcessSlot>>,
 }
 
 struct Process {
@@ -61,7 +64,10 @@ struct Process {
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     // 同一 Core 进程的 mutex 与跨 Core 的原生 advisory lock 都必须成立。
-    ownership: PoolConnection<Postgres>,
+    ownership: Arc<Mutex<PoolConnection<Postgres>>>,
+    // Local fail-closed fence while recovery persists UNKNOWN without the slot lock.
+    // Kept in the slot even if the recovery future is cancelled; the next scan retries.
+    retiring: bool,
     generation: i64,
     config_hash: String,
     model: String,
@@ -166,9 +172,15 @@ impl Supervisor {
         {
             return Err(RuntimeError::Unavailable);
         }
-        let mut processes = self.processes.lock().await;
-        if let Some(process) = processes.get(&projection.installation_id) {
-            let mut process = process.lock().await;
+        let slot = self
+            .processes
+            .lock()
+            .await
+            .entry(projection.installation_id)
+            .or_insert_with(|| Arc::new(Mutex::new(None)))
+            .clone();
+        let mut slot = slot.lock().await;
+        if let Some(process) = slot.as_mut() {
             process
                 .check(projection.generation, &projection.config_hash)
                 .await?;
@@ -284,7 +296,8 @@ impl Supervisor {
             child,
             stdin,
             stdout: BufReader::new(stdout),
-            ownership,
+            ownership: Arc::new(Mutex::new(ownership)),
+            retiring: false,
             generation: projection.generation,
             config_hash: projection.config_hash.clone(),
             model: projection.model.clone(),
@@ -329,7 +342,7 @@ impl Supervisor {
         {
             return Err(RuntimeError::Protocol);
         }
-        processes.insert(projection.installation_id, Arc::new(Mutex::new(process)));
+        *slot = Some(process);
         Ok(())
     }
 
@@ -346,13 +359,18 @@ impl Supervisor {
             .get(&projection.installation_id)
             .cloned()
             .ok_or(RuntimeError::Unavailable)?;
-        let mut process = process.lock().await;
+        let mut slot = process.lock().await;
+        let process = slot.as_mut().ok_or(RuntimeError::Unavailable)?;
         process
             .check(projection.generation, &projection.config_hash)
             .await?;
-        process
+        let response = process
             .rpc(method, params, self.timeout, self.max_message_bytes)
-            .await
+            .await?;
+        if matches!(method, "thread/start" | "thread/resume") {
+            check_thread_projection(&response, &process.model, &process.home)?;
+        }
+        Ok(response)
     }
 
     /// Fixed Codex 7498521d288b9b3b96ffba4eedf089d8d6e06a84,
@@ -374,24 +392,6 @@ impl Supervisor {
             )
             .await?;
         let thread_id = isolated_thread_id(&response)?;
-        let process = self
-            .processes
-            .lock()
-            .await
-            .get(&projection.installation_id)
-            .cloned()
-            .ok_or(RuntimeError::Unknown)?;
-        let mut process = process.lock().await;
-        process
-            .check(projection.generation, &projection.config_hash)
-            .await?;
-        if response.get("model").and_then(Value::as_str) != Some(process.model.as_str())
-            || response.get("cwd").and_then(Value::as_str) != process.home.to_str()
-            || response.get("approvalPolicy").and_then(Value::as_str) != Some("on-request")
-            || response.get("approvalsReviewer").and_then(Value::as_str) != Some("user")
-        {
-            return Err(RuntimeError::Protocol);
-        }
         Ok(thread_id.to_owned())
     }
 
@@ -466,7 +466,8 @@ impl Supervisor {
             .get(&projection.installation_id)
             .cloned()
             .ok_or(RuntimeError::Unavailable)?;
-        let mut process = process.lock().await;
+        let mut slot = process.lock().await;
+        let process = slot.as_mut().ok_or(RuntimeError::Unavailable)?;
         process
             .check(projection.generation, &projection.config_hash)
             .await?;
@@ -583,7 +584,8 @@ impl Supervisor {
             .get(&projection.installation_id)
             .cloned()
             .ok_or(RuntimeError::Unavailable)?;
-        let mut process = process.lock().await;
+        let mut slot = process.lock().await;
+        let process = slot.as_mut().ok_or(RuntimeError::Unavailable)?;
         process
             .check(projection.generation, &projection.config_hash)
             .await?;
@@ -595,14 +597,19 @@ impl Supervisor {
     }
 
     pub(crate) async fn stop(&self, installation: Uuid) -> Result<(), RuntimeError> {
-        let mut processes = self.processes.lock().await;
-        if let Some(process) = processes.get(&installation).cloned() {
-            {
-                let mut process = process.lock().await;
+        let slot = self.processes.lock().await.get(&installation).cloned();
+        if let Some(slot) = slot {
+            let mut slot = slot.lock().await;
+            if let Some(process) = slot.as_mut() {
+                // Recovery still owns the original UNKNOWN write; stop cannot let a
+                // same-generation replacement overtake that write or delete its state.
+                if process.retiring {
+                    return Err(RuntimeError::Unknown);
+                }
                 terminate(&mut process.child, self.timeout).await?;
             }
             // 只有 wait 已确认退出才释放跨 Core ownership；结果不明保留原引用。
-            processes.remove(&installation);
+            *slot = None;
         }
         Ok(())
     }
@@ -679,13 +686,21 @@ impl Supervisor {
     /// reconcile 只排除本机确实存活且仍持相同 generation/hash fence 的实例。
     /// 这是本机进程观察，不是第二份 Installation 状态/注册权威。
     pub(crate) async fn healthy_installations(&self) -> Vec<Uuid> {
-        let mut processes = self.processes.lock().await;
+        let processes: Vec<_> = self
+            .processes
+            .lock()
+            .await
+            .iter()
+            .map(|(installation, process)| (*installation, Arc::clone(process)))
+            .collect();
         let mut healthy = Vec::new();
-        let mut remove = Vec::new();
-        for (installation, process) in processes.iter() {
-            let mut process = process.lock().await;
+        for (installation, slot) in processes {
+            let mut locked = slot.lock().await;
+            let Some(process) = locked.as_mut() else {
+                continue;
+            };
             let live = matches!(process.child.try_wait(), Ok(None));
-            let fenced = if live {
+            let fenced = if live && !process.retiring {
                 let generation = process.generation;
                 let hash = process.config_hash.clone();
                 sqlx::query_scalar::<_, bool>("select exists(select 1 from catalog.agent_installation i
@@ -694,44 +709,104 @@ impl Supervisor {
                     where i.resource_id=$1 and i.state='ACTIVE' and p.state='ACTIVE'
                       and p.generation=$2 and p.config_hash=$3)")
                     .bind(installation).bind(generation).bind(hash)
-                    .fetch_one(&mut *process.ownership).await.unwrap_or(false)
+                    .fetch_one(&mut **process.ownership.lock().await).await.unwrap_or(false)
             } else {
                 false
             };
             if live && fenced {
-                healthy.push(*installation);
+                healthy.push(installation);
             } else {
                 let generation = process.generation;
-                // DB 不可达时写入也可能失败；仍不返回健康、不清除任何原生引用。
-                let _ = sqlx::query(
-                    "update catalog.agent_invocation set status='UNKNOWN',updated_at=now()
-                    where installation_resource_id=$1 and projection_generation=$2
-                      and status in ('DISPATCHING','RUNNING')",
-                )
-                .bind(installation)
-                .bind(generation)
-                .execute(&mut *process.ownership)
-                .await;
-                if terminate(&mut process.child, self.timeout).await.is_ok() {
-                    remove.push(*installation);
-                }
+                process.retiring = true;
+                let ownership = Arc::clone(&process.ownership);
+                // Dispatch/birth hold Invocation rows before waiting for this slot.
+                // Mark it unavailable first, then release it before any row-lock wait.
+                // Reuse the original advisory owner: no pool acquisition and no newer
+                // native process can start while this UNKNOWN update is outstanding.
+                drop(locked);
+                let _ = self
+                    .stop_observed(installation, &slot, generation, ownership)
+                    .await;
             }
-        }
-        for installation in remove {
-            processes.remove(&installation);
         }
         healthy
     }
 
-    pub(crate) async fn stop_all(&self, pool: &PgPool) -> Result<(), RuntimeError> {
-        let installations: Vec<_> = self.processes.lock().await.keys().copied().collect();
+    // Both crash reconciliation and shutdown act only on the Process actually
+    // fenced in this slot, never a remembered installation key or another owner.
+    async fn stop_observed(
+        &self,
+        installation: Uuid,
+        slot: &ProcessSlot,
+        generation: i64,
+        ownership: Arc<Mutex<PoolConnection<Postgres>>>,
+    ) -> Result<(), RuntimeError> {
+        let identity = Arc::downgrade(&ownership);
+        let recorded = sqlx::query(
+            "update catalog.agent_invocation set status='UNKNOWN',updated_at=now()
+                    where installation_resource_id=$1 and projection_generation=$2
+                      and status in ('DISPATCHING','RUNNING')",
+        )
+        .bind(installation)
+        .bind(generation)
+        .execute(&mut **ownership.lock().await)
+        .await
+        .is_ok();
+        if !recorded {
+            // A lost ownership connection must not permanently pin a dead
+            // process. Existing DISPATCHING/RUNNING refs still enter only
+            // resume/history in AgentTask::advance, never a second start.
+            tracing::warn!(%installation, generation,
+                        "Runtime UNKNOWN observation write unavailable; preserving native references");
+        }
+        drop(ownership);
+        let mut locked = slot.lock().await;
+        if let Some(process) = locked.as_mut() {
+            if !std::sync::Weak::ptr_eq(&identity, &Arc::downgrade(&process.ownership)) {
+                return Err(RuntimeError::Unknown);
+            }
+            let stopped = terminate(&mut process.child, self.timeout).await.is_ok();
+            // A cancelled scan or uncertain exit keeps the fenced original
+            // Process for retry. Confirmed exit follows the existing recovery
+            // path even if DB was lost: no status/ID is fabricated or replayed.
+            if stopped {
+                *locked = None;
+            } else {
+                return Err(RuntimeError::Unknown);
+            }
+        }
+        if recorded {
+            Ok(())
+        } else {
+            Err(RuntimeError::Unknown)
+        }
+    }
+
+    pub(crate) async fn stop_all(&self) -> Result<(), RuntimeError> {
+        let processes: Vec<_> = self
+            .processes
+            .lock()
+            .await
+            .iter()
+            .map(|(installation, slot)| (*installation, Arc::clone(slot)))
+            .collect();
         let mut failed = false;
-        for installation in installations {
+        for (installation, slot) in processes {
+            let mut locked = slot.lock().await;
+            let Some(process) = locked.as_mut() else {
+                continue;
+            };
+            let generation = process.generation;
+            process.retiring = true;
+            let ownership = Arc::clone(&process.ownership);
+            drop(locked);
             // Core 进程退出不证明 native terminal。先保留 UNKNOWN 原引用，再停
             // 子进程；不释放 Capacity、不发第二次 turn，也不清 durable thread。
-            if sqlx::query("update catalog.agent_invocation set status='UNKNOWN',updated_at=now() where installation_resource_id=$1 and status in ('DISPATCHING','RUNNING')")
-                .bind(installation).execute(pool).await.is_err() { failed = true; }
-            if self.stop(installation).await.is_err() {
+            if self
+                .stop_observed(installation, &slot, generation, ownership)
+                .await
+                .is_err()
+            {
                 failed = true;
             }
         }
@@ -741,6 +816,18 @@ impl Supervisor {
             Ok(())
         }
     }
+}
+
+fn check_thread_projection(response: &Value, model: &str, home: &Path) -> Result<(), RuntimeError> {
+    isolated_thread_id(response)?;
+    if response.get("model").and_then(Value::as_str) != Some(model)
+        || response.get("cwd").and_then(Value::as_str) != home.to_str()
+        || response.get("approvalPolicy").and_then(Value::as_str) != Some("on-request")
+        || response.get("approvalsReviewer").and_then(Value::as_str) != Some("user")
+    {
+        return Err(RuntimeError::Protocol);
+    }
+    Ok(())
 }
 
 fn isolated_thread_id(response: &Value) -> Result<&str, RuntimeError> {
@@ -790,7 +877,7 @@ async fn terminate(child: &mut Child, timeout: Duration) -> Result<(), RuntimeEr
 
 impl Process {
     async fn check(&mut self, generation: i64, config_hash: &str) -> Result<(), RuntimeError> {
-        if self.generation != generation || self.config_hash != config_hash {
+        if self.retiring || self.generation != generation || self.config_hash != config_hash {
             return Err(RuntimeError::Unavailable);
         }
         if self
@@ -802,7 +889,7 @@ impl Process {
             return Err(RuntimeError::Unavailable);
         }
         if sqlx::query("select 1")
-            .execute(&mut *self.ownership)
+            .execute(&mut **self.ownership.lock().await)
             .await
             .is_err()
         {
@@ -1019,6 +1106,371 @@ fn record_native_activity(
 
 #[cfg(test)]
 mod activity_tests {
+    // Post-implementation regression: real PostgreSQL row/advisory locks plus
+    // controlled stdio children; no model, production database or installation.
+    #[tokio::test]
+    #[ignore = "requires an explicitly isolated runtime_recovery_verify_* database"]
+    async fn recovery_releases_slot_before_row_wait_and_resume_checks_loaded_projection() {
+        use sqlx::postgres::PgPoolOptions;
+        let url = std::env::var("RUNTIME_RECOVERY_TEST_DATABASE_URL").unwrap();
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(&url)
+            .await
+            .unwrap();
+        let database: String = sqlx::query_scalar("select current_database()")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(database.starts_with("runtime_recovery_verify_"));
+        sqlx::raw_sql(
+            "create schema if not exists catalog;
+            create table if not exists catalog.agent_installation
+              (resource_id uuid primary key, active_projection_generation bigint, state text);
+            create table if not exists catalog.agent_runtime_projection
+              (installation_resource_id uuid, generation bigint, config_hash text, state text);
+            create table if not exists catalog.agent_invocation
+              (id uuid primary key, installation_resource_id uuid, projection_generation bigint,
+               status text, updated_at timestamptz, runtime_thread_id text, runtime_turn_id text)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let installation = Uuid::new_v4();
+        let invocation = Uuid::new_v4();
+        let thread = Uuid::new_v4().to_string();
+        let turn = Uuid::new_v4().to_string();
+        let hash = "a".repeat(64);
+        let projection = RuntimeRef {
+            installation_id: installation,
+            generation: 1,
+            config_hash: hash.clone(),
+        };
+        sqlx::query("insert into catalog.agent_installation values($1,1,'ACTIVE')")
+            .bind(installation)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("insert into catalog.agent_runtime_projection values($1,1,$2,'ACTIVE')")
+            .bind(installation)
+            .bind(&hash)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("insert into catalog.agent_invocation values($1,$2,1,'RUNNING',now(),$3,$4)")
+            .bind(invocation)
+            .bind(installation)
+            .bind(&thread)
+            .bind(&turn)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let mut process = recovery_process(&pool, installation, &hash, "exec sleep 300").await;
+        process.child.kill().await.unwrap();
+        let slot = Arc::new(Mutex::new(Some(process)));
+        let supervisor = Arc::new(Supervisor {
+            binary: PathBuf::from("/unused"),
+            root: PathBuf::from("/unused"),
+            timeout: Duration::from_secs(2),
+            max_message_bytes: 4096,
+            processes: Mutex::new(HashMap::from([(installation, Arc::clone(&slot))])),
+        });
+        // Consume the only non-ownership connection and hold the dispatch row.
+        // Recovery must reuse ownership and let a row-owning caller enter the slot.
+        let mut dispatch = pool.begin().await.unwrap();
+        sqlx::query("select id from catalog.agent_invocation where id=$1 for update")
+            .bind(invocation)
+            .execute(&mut *dispatch)
+            .await
+            .unwrap();
+        let scanning = Arc::clone(&supervisor);
+        let scan = tokio::spawn(async move { scanning.healthy_installations().await });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar(
+                    "select exists(select 1 from pg_stat_activity
+                    where datname=current_database() and wait_event_type='Lock'
+                    and query like 'update catalog.agent_invocation set status=%')",
+                )
+                .fetch_one(&mut *dispatch)
+                .await
+                .unwrap();
+                if waiting {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("recovery must reach the original row lock using its ownership connection");
+        let locked = tokio::time::timeout(Duration::from_secs(2), slot.lock())
+            .await
+            .expect("row-owning dispatch must not wait behind recovery holding the Process lock");
+        assert!(locked.as_ref().unwrap().retiring);
+        drop(locked);
+        assert!(matches!(
+            supervisor.call(&projection, "thread/read", json!({})).await,
+            Err(RuntimeError::Unavailable)
+        ));
+        let candidate = Projection {
+            installation_id: installation,
+            generation: 1,
+            config_hash: hash.clone(),
+            model: "model".into(),
+            gateway_base_url: "http://gateway.invalid/v1".into(),
+            instructions: "fixed".into(),
+        };
+        assert!(matches!(
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                supervisor.ensure(&pool, &candidate, "test-token-not-a-credential")
+            )
+            .await
+            .unwrap(),
+            Err(RuntimeError::Unavailable)
+        ));
+        assert!(matches!(
+            supervisor.stop(installation).await,
+            Err(RuntimeError::Unknown)
+        ));
+        let another_owner: bool =
+            sqlx::query_scalar("select pg_try_advisory_lock(hashtextextended($1,0))")
+                .bind(format!("platform.agent-runtime:{installation}"))
+                .fetch_one(&mut *dispatch)
+                .await
+                .unwrap();
+        assert!(
+            !another_owner,
+            "same-generation replacement must not overtake UNKNOWN persistence"
+        );
+        scan.abort();
+        assert!(scan.await.unwrap_err().is_cancelled());
+        assert!(
+            slot.lock().await.as_ref().unwrap().retiring,
+            "cancelled recovery keeps the original Process available for reconciliation"
+        );
+        dispatch.commit().await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), supervisor.healthy_installations())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(slot.lock().await.is_none());
+        let preserved: (String, String, String) = sqlx::query_as(
+            "select status,runtime_thread_id,runtime_turn_id from catalog.agent_invocation where id=$1")
+            .bind(invocation).fetch_one(&pool).await.unwrap();
+        assert_eq!(preserved, ("UNKNOWN".into(), thread.clone(), turn));
+
+        // A same-generation replacement becomes possible only after old ownership
+        // is released. Its running invocation cannot be marked by the old scan.
+        let newer = Uuid::new_v4();
+        sqlx::query("insert into catalog.agent_invocation values($1,$2,1,'RUNNING',now(),$3,null)")
+            .bind(newer)
+            .bind(installation)
+            .bind(&thread)
+            .execute(&pool)
+            .await
+            .unwrap();
+        *slot.lock().await =
+            Some(recovery_process(&pool, installation, &hash, "exec sleep 300").await);
+        assert_eq!(supervisor.healthy_installations().await, vec![installation]);
+        let status: String =
+            sqlx::query_scalar("select status from catalog.agent_invocation where id=$1")
+                .bind(newer)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "RUNNING");
+        supervisor.stop(installation).await.unwrap();
+
+        // The old connection itself can be permanently dead. Confirmed child exit
+        // must release the slot; unchanged RUNNING refs remain native observation,
+        // not permission to resend (AgentTask::advance's existing branch).
+        let process = recovery_process(&pool, installation, &hash, "exec sleep 300").await;
+        let child_pid = process.child.id().unwrap();
+        let backend: i32 = sqlx::query_scalar("select pg_backend_pid()")
+            .fetch_one(&mut **process.ownership.lock().await)
+            .await
+            .unwrap();
+        *slot.lock().await = Some(process);
+        let killed: bool = sqlx::query_scalar("select pg_terminate_backend($1)")
+            .bind(backend)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(killed);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), supervisor.healthy_installations())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            slot.lock().await.is_none(),
+            "dead ownership must not permanently pin a stopped process"
+        );
+        #[cfg(target_os = "linux")]
+        assert!(
+            !Path::new(&format!("/proc/{child_pid}")).exists(),
+            "old child must have exited"
+        );
+        let status: String =
+            sqlx::query_scalar("select status from catalog.agent_invocation where id=$1")
+                .bind(newer)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            status, "RUNNING",
+            "failed UNKNOWN write must not be reported as persisted"
+        );
+        let refs: (String, Option<String>) = sqlx::query_as(
+            "select runtime_thread_id,runtime_turn_id from catalog.agent_invocation where id=$1",
+        )
+        .bind(newer)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(refs, (thread.clone(), None));
+
+        let valid = json!({"thread":{"id":thread,"ephemeral":false,"parentThreadId":null,
+            "forkedFromId":null,"environments":[],"modelProvider":"platform_gateway"},
+            "modelProvider":"platform_gateway","model":"model","cwd":"/runtime-test",
+            "approvalPolicy":"on-request","approvalsReviewer":"user"});
+        for (field, wrong) in [
+            ("model", json!("other")),
+            ("cwd", json!("/other")),
+            ("approvalPolicy", json!("never")),
+            ("approvalsReviewer", json!("auto")),
+        ] {
+            for value in [Some(wrong), None] {
+                let mut response = valid.clone();
+                match value {
+                    Some(value) => {
+                        response[field] = value;
+                    }
+                    None => {
+                        response.as_object_mut().unwrap().remove(field);
+                    }
+                }
+                let wire = json!({"id":1,"result":response});
+                let script = format!(
+                    "IFS= read -r request; printf '%s\\n' '{}' ; exec sleep 300",
+                    wire
+                );
+                *slot.lock().await =
+                    Some(recovery_process(&pool, installation, &hash, &script).await);
+                assert!(
+                    matches!(
+                        supervisor.resume_thread(&projection, &thread).await,
+                        Err(RuntimeError::Protocol)
+                    ),
+                    "resume accepted absent/drifted {field}"
+                );
+                supervisor.stop(installation).await.unwrap();
+            }
+        }
+        let wire = json!({"id":1,"result":valid});
+        let script = format!(
+            "IFS= read -r request; printf '%s\\n' '{}' ; exec sleep 300",
+            wire
+        );
+        *slot.lock().await = Some(recovery_process(&pool, installation, &hash, &script).await);
+        supervisor
+            .resume_thread(&projection, &thread)
+            .await
+            .unwrap();
+        supervisor.stop(installation).await.unwrap();
+
+        // A remembered empty slot owns nothing. Shutdown must not touch another
+        // Core's invocation, nor a different generation of the same installation.
+        supervisor.stop_all().await.unwrap();
+        let status: String =
+            sqlx::query_scalar("select status from catalog.agent_invocation where id=$1")
+                .bind(newer)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            status, "RUNNING",
+            "empty slot must not claim another owner at shutdown"
+        );
+        let next_generation = Uuid::new_v4();
+        sqlx::query("insert into catalog.agent_invocation values($1,$2,2,'RUNNING',now(),$3,null)")
+            .bind(next_generation)
+            .bind(installation)
+            .bind(&thread)
+            .execute(&pool)
+            .await
+            .unwrap();
+        *slot.lock().await =
+            Some(recovery_process(&pool, installation, &hash, "exec sleep 300").await);
+        supervisor.stop_all().await.unwrap();
+        assert!(slot.lock().await.is_none());
+        let status: String =
+            sqlx::query_scalar("select status from catalog.agent_invocation where id=$1")
+                .bind(newer)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "UNKNOWN");
+        let status: String =
+            sqlx::query_scalar("select status from catalog.agent_invocation where id=$1")
+                .bind(next_generation)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            status, "RUNNING",
+            "shutdown may only mark its owned generation"
+        );
+        pool.close().await;
+    }
+
+    async fn recovery_process(
+        pool: &PgPool,
+        installation: Uuid,
+        hash: &str,
+        script: &str,
+    ) -> Process {
+        let mut ownership = pool.acquire().await.unwrap();
+        let locked: bool =
+            sqlx::query_scalar("select pg_try_advisory_lock(hashtextextended($1,0))")
+                .bind(format!("platform.agent-runtime:{installation}"))
+                .fetch_one(&mut *ownership)
+                .await
+                .unwrap();
+        assert!(locked);
+        ownership.close_on_drop();
+        let mut child = Command::new("sh")
+            .args(["-c", script])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        Process {
+            stdin: child.stdin.take().unwrap(),
+            stdout: BufReader::new(child.stdout.take().unwrap()),
+            child,
+            ownership: Arc::new(Mutex::new(ownership)),
+            retiring: false,
+            generation: 1,
+            config_hash: hash.into(),
+            model: "model".into(),
+            gateway_base_url: "http://gateway.invalid/v1".into(),
+            instructions: "fixed".into(),
+            credential_digest: Sha256::digest(b"test-token-not-a-credential").into(),
+            home: PathBuf::from("/runtime-test"),
+            next_id: 0,
+            pending_line: Vec::new(),
+            native_activity: HashMap::new(),
+        }
+    }
+
     #[test]
     fn effective_web_search_requires_explicit_disabled() {
         for config in [

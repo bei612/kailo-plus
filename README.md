@@ -6,6 +6,16 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### Runtime 恢复锁序与原生投影：源码已修复，尚未部署
+
+Core Runtime 已修复进程清理与 Invocation 行锁的反向等待，恢复同一 thread 时
+补齐既有模型、目录和审批字段回读；停机清理仅作用于本机仍持有的进程及其代际。
+实现后原 Runtime 目标 7 项通过，3 次生产变异均被抓住，逐字还原后通过；
+Clippy 与选定源码格式检查退出 0；本批原集中 full 已退出 0，实际数据库演练与
+部署配置预检跳过。尚未构建或部署本批产物，
+隔离 PostgreSQL/受控 stdio 验证不等于真实 Codex 或 Agent 首轮 E2E。
+原安装完成及线上镜像事实不变，详见[Runtime 事后证据](core/verify/agent-definition.md)。
+
 ### 原生会话异步归属批：源码与验收边界
 
 共享 TypeScript、Desktop 原生会话与 Mobile 登录链源码已集中收口：旧登录、
