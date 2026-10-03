@@ -124,3 +124,43 @@ PREPARE / EXPLAIN (ANALYZE FALSE) 通过，随后 ROLLBACK，退出 0，无写�
 `7de7079f90e3777e77c6bead9743385ea33204a48d390910d13e1282f120c5e2`。
 首次私有快照缺原 registry include 文件导致编译 101，不算有效破坏；补齐
 实际依赖后才得到上述生产守卫反例。源码阶段提交不声明 full 通过或已部署。
+
+## Meter selector 与 hosted search 修复回执（2026-10-03）
+
+本批以 `a80646d4d4ae8632c600e2df860b8c4388b4ae90` 为源码基准，
+只合入 OpenMeter selector 与 Runtime ensure 两个已验证窗口，不含正在开发的
+Tool、Session 或 Gateway 服务认证。代码两文件 +50/-3；部署未改变。
+
+- 权威：DD-107 的 `automation.run` 为原计数 meter。OpenMeter 固定
+  `6d76d8a6fa90fbbab2d41035d31df2acec7ad3af`，
+  `openmeter/meter/meter.go::Meter.Validate` 只要求 meter key 非空；
+  Feature ResourceKey 的规则不能套到 meter selector。
+  Codex 固定 `7498521d288b9b3b96ffba4eedf089d8d6e06a84`，
+  `codex-rs/core/src/tools/hosted_spec.rs::create_web_search_tool` 中
+  Disabled 不生成 hosted search 工具；此运行期开关已登记于 07 §1。
+- 影响：`check_quota`、`turn_meters` 共用正确 selector；Feature/entitlement
+  key 仍用原限制。Runtime 写入配置并由 ensure 的实际 config/read 消费者核对。
+  不改契约、数据库、Workflow 类型、三端职责或既有状态机。
+- 副作用：不创建 meter、Customer、Profile 或 Installation；不产生模型请求。
+  禁止 hosted search 绕开 ToolBinding/MCP；其后续工具链不是本批已交付内容。
+- 边界：缺失、null、未知值、cached/live/indexed 均拒绝；meter 空 key 拒绝，
+  原生 exact key、唯一 ID、Customer/subject/entitlement 前提仍保留。
+  失败仍由原调用方映射拒绝或 UNKNOWN，不把外部不明结果改成成功。
+
+固定检查镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`；
+4 CPU、8 GiB、memory+swap 同额，UID/GID 1000，Data 缓存，Cargo jobs=16。
+原 all-target Clippy 退出 0；Meter 1/1、Runtime activity 6/6，最终退出 0。
+分别恢复错误 meter 规则、反转 hosted search 生产谓词后，指定断言均实际失败、
+退出 101；逐次 SHA/cmp 精确还原，再跑同一目标通过。不是仅编译失败的变异。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-meter-websearch-validation-20261003.lKhNLV`。
+最终 `restored-final.log` SHA-256
+`96211b4637b2795dd9dd2a31db1a420a336c8023d8df646c5634ab754b808e9b`；
+meter 变异日志
+`c5e507f8322b7a09488e8a433b4f6c47ea41a497fc6afc20c510f2b2c1773f0f`；
+Runtime 变异日志
+`5a96b41fdc43cee2df86f0510e3d787bef0894ec6e4e51ee9153a08141fbc5be`。
+
+本批没有运行 full、重新构建镜像、发布、实际 Codex config/read 或 Agent 首 turn，
+不据窄检查宣称模型/工具/计量联合验收或生产就绪。

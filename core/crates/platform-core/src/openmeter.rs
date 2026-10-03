@@ -366,6 +366,13 @@ fn valid_resource_key(key: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 
+fn valid_meter_key(key: &str) -> bool {
+    // 固定 OpenMeter Meter::Validate 只要求 key 非空。Feature ResourceKey 的
+    // 下划线规则不是 meter selector 规则；DD-107 的原计数键含点号。
+    // 调用方仍从原生集合查证 exact key/唯一 ID，不翻译或生成别名。
+    !key.is_empty()
+}
+
 #[derive(Deserialize)]
 struct PageMeta {
     page: Page,
@@ -695,7 +702,7 @@ impl OpenMeter {
             return Err(Error::Unknown);
         }
         for key in meters {
-            if !valid_resource_key(key) {
+            if !valid_meter_key(key) {
                 return Err(Error::Precondition);
             }
             let mut meter_url = self.collection_url("meters")?;
@@ -812,7 +819,7 @@ impl OpenMeter {
         let mut selected = Vec::new();
         let mut invocation = None;
         for key in keys {
-            if !valid_resource_key(key) || !seen.insert(key) {
+            if !valid_meter_key(key) || !seen.insert(key) {
                 return Err(Error::Precondition);
             }
             let matches: Vec<_> = native
@@ -1176,5 +1183,20 @@ fn status_error(status: StatusCode) -> Error {
         StatusCode::CONFLICT => Error::Conflict,
         StatusCode::TOO_MANY_REQUESTS => Error::Limit,
         _ => Error::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod meter_key_tests {
+    use super::{valid_meter_key, valid_resource_key};
+
+    #[test]
+    fn native_meter_selector_does_not_use_feature_key_rules() {
+        assert!(valid_meter_key("automation.run"));
+        assert!(valid_meter_key("input_tokens"));
+        assert!(!valid_meter_key(""));
+        // Feature/entitlement-access 路径继续消费原生 ResourceKey，不一起放宽。
+        assert!(!valid_resource_key("automation.run"));
+        assert!(valid_resource_key("input_tokens"));
     }
 }

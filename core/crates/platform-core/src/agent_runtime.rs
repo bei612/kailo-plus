@@ -80,6 +80,10 @@ struct NativeActivity {
     emitted_at_ms: i64,
 }
 
+fn hosted_search_disabled(config: &Value) -> bool {
+    config.get("web_search").and_then(Value::as_str) == Some("disabled")
+}
+
 impl Supervisor {
     /// 对账整条原生观察链共享已投递的 RPC 预算，不按页无限延长持锁时间。
     pub(crate) fn observation_timeout(&self) -> Duration {
@@ -239,7 +243,9 @@ impl Supervisor {
         let quoted = |s: &str| serde_json::to_string(s).map_err(|_| RuntimeError::Protocol);
         // 当前既有 Version 准入拒绝非空 Skill/Tool 引用。原生 bundled skill
         // 默认开启，必须明确关闭；不能把默认发现当成已治理的 SkillVersion。
-        let config = format!("model = {}\nmodel_provider = \"platform_gateway\"\napproval_policy = \"on-request\"\napprovals_reviewer = \"user\"\nsqlite_home = {}\ndeveloper_instructions = {}\n[skills.bundled]\nenabled = false\n[features]\nmemories = false\nshell_tool = false\ntool_call_mcp_elicitation = true\n[model_providers.platform_gateway]\nname = \"Platform AgentGateway\"\nbase_url = {}\nwire_api = \"responses\"\nenv_key = \"KAILO_CODEX_MODEL_TOKEN\"\n", quoted(&projection.model)?, quoted(&home.to_string_lossy())?, quoted(&projection.instructions)?, quoted(&projection.gateway_base_url)?);
+        // 固定 Codex 的 custom provider 也默认启用 hosted web search/cached；
+        // 该路径不经 MCP/ExtMcp，不能成为 ToolBinding/Admission 的替代入口。
+        let config = format!("model = {}\nmodel_provider = \"platform_gateway\"\napproval_policy = \"on-request\"\napprovals_reviewer = \"user\"\nweb_search = \"disabled\"\nsqlite_home = {}\ndeveloper_instructions = {}\n[skills.bundled]\nenabled = false\n[features]\nmemories = false\nshell_tool = false\ntool_call_mcp_elicitation = true\n[model_providers.platform_gateway]\nname = \"Platform AgentGateway\"\nbase_url = {}\nwire_api = \"responses\"\nenv_key = \"KAILO_CODEX_MODEL_TOKEN\"\n", quoted(&projection.model)?, quoted(&home.to_string_lossy())?, quoted(&projection.instructions)?, quoted(&projection.gateway_base_url)?);
         tokio::fs::write(home.join("config.toml"), config)
             .await
             .map_err(|_| RuntimeError::Unavailable)?;
@@ -308,6 +314,7 @@ impl Supervisor {
             || config.get("model_provider").and_then(Value::as_str) != Some("platform_gateway")
             || config.get("approval_policy").and_then(Value::as_str) != Some("on-request")
             || config.get("approvals_reviewer").and_then(Value::as_str) != Some("user")
+            || !hosted_search_disabled(config)
             || config.get("developer_instructions").and_then(Value::as_str) != Some(projection.instructions.as_str())
             || config.pointer("/skills/bundled/enabled").and_then(Value::as_bool) != Some(false)
             // 固定 ConfigToml 的 MCP 默认是空 map；显式未知形状或非空配置
@@ -1012,6 +1019,24 @@ fn record_native_activity(
 
 #[cfg(test)]
 mod activity_tests {
+    #[test]
+    fn effective_web_search_requires_explicit_disabled() {
+        for config in [
+            serde_json::json!({}),
+            serde_json::json!({"web_search": null}),
+            serde_json::json!({"web_search": "futureMode"}),
+            serde_json::json!({"web_search": "cached"}),
+            serde_json::json!({"web_search": "live"}),
+            serde_json::json!({"web_search": "indexed"}),
+            serde_json::json!({"web_search": false}),
+        ] {
+            assert!(!super::hosted_search_disabled(&config));
+        }
+        assert!(super::hosted_search_disabled(
+            &serde_json::json!({"web_search": "disabled"})
+        ));
+    }
+
     use super::*;
 
     // 每个 env case 调用同一 from_env，在独立测试进程中运行，避免改变并行检查的环境。
