@@ -1,0 +1,126 @@
+# 2026-10-03 核心实现与在途改动复核
+
+本记录是实现后的审查结果，不新增产品要求、接口或发布门禁。
+权威仍是 `.design`；实现、检查、提交和部署分别计数。
+
+## 范围与证据边界
+
+- 唯一工程/Git 根：`/volumes/kailo/apps`。
+- 已提交范围：`4b44ac6b266345fbc19e3c315df5c3d9bd0af00b` 到
+  `9b2225a2d268f41902621ba0d4b1fd44f3b9a8ee`，82 文件、+8690/-660 行。
+- 未提交源码冻结为 Git tree `a1588c071059fc66088f6c8f63777a7e92658b4a`：
+  相对上述 HEAD，135 文件、+10020/-783 行，含 10 个新文件。
+  它包含历史未收口改动，不能全部归为本次交付。
+- 三条并行审查分别核对工程规范、设计符合性、三端与运行投递；根负责人复核
+  关键调用路径。审阅全部改动路径清单，深读核心治理与副作用边界，未逐行穷尽
+  所有 UI、测试和历史文档，也未重审全部上游源码。
+- GitNexus 未调用，没有重建图谱或新增检查工具。审查不是并发故障、真实模型、
+  OpenMeter 账单或设备验收；原 full 通过不能外推到本冻结树。
+- 冻结期间停止新增功能和配置投递；已执行的提供方守卫变异只完成精确还原：
+  真实断言退出 101，还原后同一四项检查退出 0。API 守卫变异未执行。
+
+审查原件位于
+`/volumes/data/kailo/tmp/codex-full-review-20261003.G3v7AD/`；
+冻结 diff SHA-256：
+`785b56099882489de2093478ad63d226997fea8124f9bb01d1f4275aa09c7217`。
+
+## 工程规范轴：1 项 P1
+
+### P1：Desktop REST 未核验原事件终态
+
+`collaboration/desktop/src-tauri/src/commands/messages/unconfirmed.rs:77` 仅将
+连接中断与 5xx 视为结果不明；`relay.rs:250` 的成功 HTTP 损坏 JSON 错误没有进入
+缓存。Relay 已存储但响应损坏时，重试会重新签名，产生另一个事件 ID。
+这是新缓存的缺陷。
+
+`relay/submit.rs:48` 的继承缺陷是只核验 `accepted`，不核验响应的
+`event_id == event.id`。错配 ACK 会清除缓存，且 `commands/messages.rs:326`
+将错误 ID 交给乐观 UI。两处属于同一终态证据问题。
+
+依据：[工程守则](../../AGENTS.md) 规则 10/15、
+[工程基线](../../06-工程基线规范.md) §4：UNKNOWN 不得转为无证据的成功或失败。
+
+## 设计符合性轴：1 项 P1，另有未闭合能力
+
+### P1：Delegation 撤销与到期不收敛在途 Codex turn
+
+`core/crates/platform-core/src/delegation.rs:377` 与 `:462` 仅更新
+REVOKED/EXPIRED 并审计，没有取消已关联的 Invocation/Workflow。
+`agent_task.rs:945` 对 inProgress 只检查空闲/总时长；首 turn 与回复前的 fresh
+检查不能停止正在执行的模型副作用。显式 Task cancel、Tenant 删除和 Capacity
+终态对账不是定向 Grant 撤销的替代路径。
+
+依据：`.design/10` §4(3–5)、`17` §6、`05` §8。这是既定要求的部分实现，
+本批公开 Grant 管理使缺口可达，不把它全部归为新引入的回归。
+
+### 未闭合能力，不计为新回归
+
+- Agent 工具与主动冷 Memory：`agent_version.rs:240` 拒绝非空 Tool/Skill，
+  `agent_runtime.rs:315` 拒绝非空 MCP，`:884` 拒绝 native host 请求。
+  入口安全关闭，但尚不满足 `.design/12` §3–4、DD-105 与 `19` §5。
+- 实际 RuntimeProfile 目录为空；真实模型绑定、Installation 准入与首 turn
+  没有受控运行验收。Codex 二进制存在不等于 Installation 可运行。
+- CHECK/outbox/stored 证据已有消费者，真实
+  Relay→Temporal→Codex→Gateway→Reply→OpenMeter 全链仍未验收。
+  STRICT Reservation 的适用产出方仍未闭合；按 ADR-14，它不泛化为首批 CHECK
+  链的开发前提。
+- Cells、WeKnora、Wren 尚未集成，是可缺席的业务能力，不阻断平台核心开发。
+
+本轴未确认新增无依据业务范围或第二套上游权威。
+
+## 三端与投递轴：2 项 P2
+
+### P2：未知消息重发被拒后误报确定失败
+
+Desktop `useMentionSendFlow.ts:339` 和 Mobile `compose_bar_widget.dart:472`
+先清旧状态，再按本次拒绝渲染失败；底层仍保留原未确认事件。
+首次确认丢失、随后撤权重发被拒时，新拒绝不能证明首次未存储。
+依据工程基线 §4；属于冻结树中的未提交客户端改动。
+
+### P2：Mobile 回读确认未清除原去重缓存
+
+`compose_bar_widget.dart:111` 收到原事件 ID 后清 UNKNOWN 与草稿，却未结束
+`send_message_provider.dart:97` 的未确认缓存。随后用户主动发送相同正文和标签，
+仍重用旧 ID，Relay duplicate 接受但没有新消息，composer 却被清空。
+已有肯定证据应结束原 UNKNOWN 的生命周期，不能永久吞掉后续新消息。
+
+共享 Web/Desktop TypeScript 消费成立；未量化证明视觉“99%”，未覆盖 Win11
+安装/签名/本机持钥与 Mobile 设备验收。
+
+## 实际投递与浏览器观察
+
+沿原项目 `platform-local`、原镜像与唯一 `.env`，仅替换四个目标服务；
+没有本轮重编译、全量初始化或数据重置。
+
+| 服务 | 实际 artifact digest | 观察 |
+|---|---|---|
+| Core | `fd913f5d7078eaad6a6e93e09c33a19d0d4697ef6c98ae88d321f809623a2ae1` | running，healthz 200 |
+| Worker | `a69cb46b26fc30c93ae68dc6f3f8274123c4f330572cc3e8222e506b296a73fc` | 原 Task Queue 启动 |
+| Web | `66646d2a6bcf46a19852ca182af8a51bf31aa33563fdcecce94e6527ec5e9f3e` | 原 healthcheck healthy |
+| Gateway | `14bf9f878fbca870361171331ac4401f7c3fa5cd8168c665ae9061a4b2a674e7` | readiness 200，匿名 native 401 |
+
+在线库仅 forward，53→55 条迁移，退出 0。首次 LAN 请求 curl 7/HTTP000，原因是
+9b 的发布绑定仍为 loopback；消费已有 PUBLIC_BIND_ADDR 后，仅重建 Gateway
+容器，最终 `/app/`、`/api/v1/session` 为 302。绑定修正未进入 9b，不能称干净
+9b 已证明 LAN 可访问。24 个非目标平台容器和 9 个数字人容器身份/镜像/启动时间
+逐项未变；不宣称全 Docker 状态没有外部并发变化。
+
+原管理员真实 OIDC 登录后，session 为 200/FULL，workspaces 为 200/空列表，
+AgentDefinition 为 200/一条真实 ACTIVE 定义。未创建 Workspace、Version、
+Installation、模型 Route 或发起 Agent turn。遗漏必填 workspaceId 的 Installation
+诊断请求返回 400，是调用错误，不记为产品缺陷或安装列表为空的证据。
+
+投递原件：`/volumes/data/kailo/tmp/codex-agent-management-deploy-20261003.hX2NKL/`；
+浏览器原件：`/volumes/data/kailo/tmp/codex-agent-live-browser-20261003.SSepBZ/`。
+临时浏览器容器已精确停止删除，证据保留，不保存口令或会话 cookie。
+
+Core/Worker/Gateway 没有 Docker healthcheck，四服务没有运行资源限额；这是
+运行边界，不冒称违反仅针对构建的镜像限额规则。构建容器的有限限额已另核验。
+
+## 结论与接续
+
+确认 2 项 P1、2 项 P2，未确认 P0；不据本次有限审查声称全仓无缺陷。
+审查结束后恢复三个不重叠实现窗口：Desktop 消息终态、Grant 撤权收敛、Mobile
+未知状态与去重生命周期；根负责人继续收口已有模型提供方与 ReplyPolicy 接入。
+实现后沿原检查集中验证并阶段提交，不为每个小改动刷新图谱、重新发布。
+这些是既定范围的接续，不是新增规格；实际修复验收另据命令终态登记。
