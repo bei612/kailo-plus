@@ -279,3 +279,63 @@ Web/Desktop 联合 2308 个输入的前后清单字节完全一致，清单 SHA-
 `blocked`，`source_digest` 与 `artifact_digest` 均为 `none`；两处既有追溯仅移除
 无效的 Desktop 发布条目，不改 routes/actions/surfaces 或提升任何能力状态。
 尚无与当前来源匹配的 Win11 测试安装包，更没有 Win11 安装运行验收或 signed release。
+
+## 2026-10-02 23:02 UTC：本批 Automation 共源 Win11 测试安装包
+
+本节追加本次真实结果，保留上节 h2 下载失败及此前各版本的历史范围。
+按 DD-74/75、DD-111 与 ADR-06/16/18，直接使用已有
+`bash tools/build-upstream.sh desktop-client`、固定 Tauri cargo-xwin/NSIS 配方。
+构建实际输入为
+`/volumes/data/kailo/tmp/codex-automation-integration-20261002.bOjEqV/apps`，
+包含本批 Web/Desktop 共用 Automation 管理页面与四侧生成契约，不新增第二份前端。
+2026-10-02 22:33:30 UTC 启动、23:02:22 UTC 结束，原 helper 实际退出 0。
+`helper.exit` 来自内层 `PIPESTATUS[0]`，不是外层 tee 的退出码。
+
+原 `tools/upstream_manifest.py` 算法核对构建前后 **2254 个输入**，source 均为
+`sha256:c14a69f578b2b214818b987c965ac75e88d79dfb75ed21c9254efce83d44b68b`，
+两份输出字节完全一致，`cmp` 退出 0。随后只读导出已提交的
+`c242384a644dbd21b8b8a98fa0c09a8b2038f8b4`，沿同一原算法得到完全相同的
+2254 输入与 source，退出 0；没有把正式脏树新增的 2257 输入混入此包。
+该提交匹配证明是事后源码核对，不冒充从 clean commit 执行过另一套 release。
+
+实际安装包为
+`/volumes/data/kailo/tmp/codex-automation-integration-20261002.bOjEqV/apps/dist/desktop-client/Kailo_0.5.23_x64-setup.exe`，
+15,073,566 字节，原 helper 登记与 `sha256sum` 实读均为
+`sha256:9c8101d17425571a4c44f219bf74457976ffd20db20e0b006e6d597fac940b62`。
+桌面 TypeScript/Vite、Windows MSVC Rust release、NSIS 生成与本地产物导出均完成；
+原日志保留 `Target: x64`、`Finished 1 bundle`，本轮没有失败后重启或重试构建。
+Rust 1.95.0、pnpm 11.4.0、`cargo-xwin 0.23.1 --locked` 与原配方未变，未使用宿主 SDK。
+
+原 warning 全部保留：APT 的 lzma aliases 与 c++ manpage 缺失提示；bundle identifier
+以 `.app` 结束；Vite chunk 大小及 plugin timing；Windows 上未使用的
+`NATIVE_NOTIFICATION_ACTIVATED_EVENT`、`create_symlink`；cross-platform compilation
+experimental；两次跳过签名；NSIS `5202 -OUTPUTCHARSET`。没有修改阈值、抑制警告、
+依赖或配方来迎合构建。工具层未命中缓存的实际耗时保留在原件，未为它重排层或更换工具镜像。
+
+沿用既有 `kailo-core-data` 受限 BuildKit 与 Data 缓存。实际
+`cpu.max=800000 100000`、`memory.max=17179869184`；Docker memory=swap 为 16 GiB，
+内核 `memory.swap.max=max` 原样记录，不称硬 swap 0。构建前后 `memory.events` 的
+max 均为历史值 5701，oom/oom_kill/oom_group_kill 均为 0；终态只剩 init/buildkitd。
+原 Tauri 明确跳过签名，安装包 PE Security Directory offset/size 实读均为 0。
+这是 **unsigned Win11 x64 测试包**，不是 signed release；未在 Win11 安装、启动、登录，
+未验收 keyring、clipboard、协作或 Automation 五项管理业务，也未部署。
+不将安装包生成、源码一致或历史 Web 结果计作三端业务验收、Stage 完成或生产就绪。
+
+本次构建原件目录为
+`/volumes/data/kailo/tmp/codex-automation-win11-20261002.q0OcgZ`：
+
+- `source-before.log` 与 `source-after.log` SHA-256 同为
+  `3a5578f02ae447d23a537063e9585ccde5792359549651c7916b2680ff70fc9a`；
+- `helper.log` 为 `2cc62467d957dd147a7ce84865f832d855d3358bd925b0da5cb911209535139a`；
+- `preflight-launch.log` 为 `fea65c85d0eb11b7a6c1a056f64504c27733acd942b9ced94813ed2ae8b1540b`；
+- `helper.exit` 为 `9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa`；
+- `terminal-receipt.log` 为 `90d6fbe96fdd049f0100e5d478b7f4e31def5bcbfde6bcb83b57489760cbbc7f`；
+- 完整 BuildKit 原件 `/volumes/data/kailo/tmp/build-desktop-client.lqPSkZ.log` 为
+  `b6722b97359e3612a68a50773342a5d7d091ac968f7ed90cae195b537f5c7de4`。
+
+选定提交源码核对原件为
+`/volumes/data/kailo/tmp/codex-win11-metadata-20261002.849wHX/selected-c242-source.log`，
+SHA-256 `4ea43390e376d57a6573c079bfa916d3d5245b55b868bf8bd57bccb42a2db5e6`。
+本次只恢复原 Desktop 产物两摘要、纠正发布边界并追加现有事实记录；不新增追溯记录，
+也没有重跑 Core 全量门禁或重复编译。独立元数据与文档检查由主线集中收口，
+这里不提前记录为通过或已提交/push。

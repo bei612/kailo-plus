@@ -15,6 +15,7 @@ COPY core/.sqlx ./.sqlx
 COPY collaboration/Cargo.toml /build/apps/collaboration/Cargo.toml
 COPY collaboration/crates/buzz-core /build/apps/collaboration/crates/buzz-core
 COPY tools/registry/capabilities.yaml /build/apps/tools/registry/capabilities.yaml
+COPY contracts/api/action_submission.schema.json /build/apps/contracts/api/action_submission.schema.json
 # 离线编译：镜像构建时没有数据库，用入库的 sqlx 查询快照做编译期 SQL 校验
 ENV SQLX_OFFLINE=true
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

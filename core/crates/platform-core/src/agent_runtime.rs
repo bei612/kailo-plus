@@ -94,6 +94,7 @@ impl Supervisor {
             "AGENT_RUNTIME_STATE_ROOT",
             "AGENT_RUNTIME_RPC_TIMEOUT_SECONDS",
             "AGENT_RUNTIME_MAX_MESSAGE_BYTES",
+            "AGENT_RUNTIME_PROFILES_FILE",
         ];
         let values: Vec<_> = names.iter().map(|n| std::env::var(n).ok()).collect();
         if values.iter().all(Option::is_none) {
@@ -121,6 +122,10 @@ impl Supervisor {
         {
             return Err(RuntimeError::Unavailable);
         }
+        // 目录也是同一运行投递的一部分；部分或畸形投递在启动时拒绝，
+        // 不等到发布才发现缺文件，不把可读文件或进程存在当 profile ACTIVE。
+        value(4)?;
+        crate::agent_version::runtime_profile_directory().map_err(|_| RuntimeError::Unavailable)?;
         Ok(Some(Self {
             binary,
             root,
@@ -1008,6 +1013,150 @@ fn record_native_activity(
 #[cfg(test)]
 mod activity_tests {
     use super::*;
+
+    // 每个 env case 调用同一 from_env，在独立测试进程中运行，避免改变并行检查的环境。
+    #[test]
+    fn runtime_delivery_probe() {
+        let Ok(expected) = std::env::var("KAILO_RUNTIME_DELIVERY_EXPECTED") else {
+            return;
+        };
+        let result = Supervisor::from_env();
+        assert!(
+            match expected.as_str() {
+                "OFF" => matches!(result, Ok(None)),
+                "REJECT" => result.is_err(),
+                "CONFIGURED" => matches!(result, Ok(Some(_))),
+                _ => false,
+            },
+            "from_env 未保持 {expected} 边界"
+        );
+    }
+
+    #[test]
+    fn runtime_delivery_from_env_fail_closed() {
+        let names = [
+            "AGENT_RUNTIME_BINARY",
+            "AGENT_RUNTIME_STATE_ROOT",
+            "AGENT_RUNTIME_RPC_TIMEOUT_SECONDS",
+            "AGENT_RUNTIME_MAX_MESSAGE_BYTES",
+            "AGENT_RUNTIME_PROFILES_FILE",
+        ];
+        let binary = std::env::current_exe().unwrap();
+        let root = std::env::temp_dir().join(format!("runtime-delivery-{}", Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let empty = root.join("empty.json");
+        let malformed = root.join("malformed.json");
+        let malformed_contract = root.join("malformed-contract.json");
+        let extra_directory = root.join("extra-directory.json");
+        let extra_profile = root.join("extra-profile.json");
+        let extra_capability = root.join("extra-capability.json");
+        std::fs::write(&empty, r#"{"profiles":[]}"#).unwrap();
+        std::fs::write(&malformed, "{").unwrap();
+        std::fs::write(&malformed_contract, r#"{"profiles":[{}]}"#).unwrap();
+        // 只为非法键核证构造未启用的合同值，不提供任何 ACTIVE profile 或执行权限。
+        let inactive = contracts::RuntimeProfileDirectory {
+            profiles: vec![contracts::Profile {
+                key: "negative-contract-only".into(),
+                kind: contracts::RuntimeProfileKind::ServerCodex,
+                status: "DRAFT".into(),
+                web_availability: "DISABLED".into(),
+                capability_contract: contracts::CapabilityContract {
+                    capability_requirements: Vec::new(),
+                    reply_policies: Vec::new(),
+                    max_parallelism: 0,
+                    max_idle_timeout_seconds: 0,
+                    max_turn_duration_seconds: 0,
+                },
+            }],
+        };
+        let mut extra = serde_json::to_value(&inactive).unwrap();
+        extra["unrecognized"] = json!(true);
+        std::fs::write(&extra_directory, serde_json::to_vec(&extra).unwrap()).unwrap();
+        let mut extra = serde_json::to_value(&inactive).unwrap();
+        extra["profiles"][0]["unrecognized"] = json!(true);
+        std::fs::write(&extra_profile, serde_json::to_vec(&extra).unwrap()).unwrap();
+        let mut extra = serde_json::to_value(&inactive).unwrap();
+        extra["profiles"][0]["capabilityContract"]["unrecognized"] = json!(true);
+        std::fs::write(&extra_capability, serde_json::to_vec(&extra).unwrap()).unwrap();
+        let values = [
+            binary.to_str().unwrap().to_owned(),
+            root.to_str().unwrap().to_owned(),
+            "1".to_owned(),
+            "1".to_owned(),
+            empty.to_str().unwrap().to_owned(),
+        ];
+        let check = |label: &str, expected: &str, env: &[Option<String>; 5]| {
+            let mut child = std::process::Command::new(&binary);
+            child
+                .args([
+                    "--exact",
+                    "agent_runtime::activity_tests::runtime_delivery_probe",
+                    "--nocapture",
+                ])
+                .env("KAILO_RUNTIME_DELIVERY_EXPECTED", expected);
+            for (name, value) in names.iter().zip(env) {
+                child.env_remove(name);
+                if let Some(value) = value {
+                    child.env(name, value);
+                }
+            }
+            let output = child.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{label}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            println!("from_env {label}: {expected}");
+        };
+        let absent = [None, None, None, None, None];
+        check("all-absent", "OFF", &absent);
+        let full = values.map(Some);
+        check(
+            "empty-directory-is-not-an-ACTIVE-profile",
+            "CONFIGURED",
+            &full,
+        );
+        for i in 0..names.len() {
+            let mut partial = full.clone();
+            partial[i] = None;
+            check(names[i], "REJECT", &partial);
+        }
+        let mut profile_only = absent;
+        profile_only[4] = full[4].clone();
+        check("profile-only", "REJECT", &profile_only);
+        for (label, index, value) in [
+            ("empty-binary", 0, ""),
+            ("relative-root", 1, "relative"),
+            ("zero-timeout", 2, "0"),
+            ("zero-message-limit", 3, "0"),
+            ("empty-profile-path", 4, ""),
+            ("relative-profile-path", 4, "relative.json"),
+            ("profile-is-directory", 4, root.to_str().unwrap()),
+            ("malformed-json", 4, malformed.to_str().unwrap()),
+            (
+                "malformed-contract",
+                4,
+                malformed_contract.to_str().unwrap(),
+            ),
+            (
+                "extra-directory-field",
+                4,
+                extra_directory.to_str().unwrap(),
+            ),
+            ("extra-profile-field", 4, extra_profile.to_str().unwrap()),
+            (
+                "extra-capability-field",
+                4,
+                extra_capability.to_str().unwrap(),
+            ),
+        ] {
+            let mut invalid = full.clone();
+            invalid[index] = Some(value.to_owned());
+            check(label, "REJECT", &invalid);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn only_same_started_turn_progress_advances_native_clock() {

@@ -948,3 +948,113 @@ full 内实际数据库演练因未提供 DATABASE_URL 明确 SKIP；前述私�
 内置 secret 扫描未安装 gitleaks；Win11 当前包与 Mobile 签名缺口仍是 NOTE。
 最后新增的这段证据与根入口说明仅经原 `check-docs.sh` 文档快路径复核，
 不外推成全工作树、下一批 Automation 五动作、部署或一期生产验收。
+
+## 2026-10-02 23:47 UTC Runtime 五项受控投递与启动拒绝证据
+
+本节记录实现后的私有验证与正式源码窄同步，不重定义 RuntimeProfile。
+输入是 clean commit `c242384a644dbd21b8b8a98fa0c09a8b2038f8b4` 加本刀四路径，
+私有证据于 23:41:58 UTC 冻结，正式同步仅应用核对后的差异；模板与 start-core
+已匹配最终字节，两个 Rust 文件按窄 hunk 合入，没有整文件覆盖继承变化。
+原件目录为 `/volumes/data/kailo/tmp/codex-runtime-delivery-check-20261002.mnQHbI/`。
+
+### Runtime 四步结论
+
+1. 权威：沿用 DD-47、DD-66、DD-67、设计 12/17 与现有
+   `contracts/domain/runtime_profile_directory.schema.json`。五项配置只来自原
+   `.env` 投递与 Config 消费，不生成默认 profile、模型 route、Secret 或注册表。
+   四侧 generated 正文及目录 schema 与 c242 的 SHA 全部一致，未手写生成合同。
+2. 影响：`.env.example` 声明五项可选整组配置；唯一 `start-core.sh` 用同一个
+   Compose consumer 合入临时配置。`Supervisor::from_env` 与 Version 发布复用
+   `agent_version::runtime_profile_directory`，保留既有 ACTIVE/ENABLED、能力和 pin
+   核验。共享生成类型回写 JSON 必须与输入相等，拒绝三层合同静默丢弃的额外键，
+   不维护另一张字段表或第二份目录权威。
+3. 副作用：配置全缺省时不注入空值；完整投递只挂载已存在的受控 state root 与
+   profiles 文件，后者只读，`create_host_path=false`。临时配置仍由原启动函数消费
+   并清理，不创建目录正文、ACTIVE profile 或业务对象。原 OpenBao 一次性 wrapping
+   链保持。私有验证只复用已有 50 迁移库/网络做 SQLx 核对，本刀无迁移、无新 PG
+   或业务行写入，未启动正式 Core 或 Agent。
+4. 异常与边界：全缺省关闭，partial、空值、非法路径/数值、畸形 JSON、缺必填字段
+   和三层额外键拒绝。空目录解析成功仅说明配置可解析，不说明存在 ACTIVE profile；
+   未验证真实 Runtime 初始化、Installation ready、模型/工具执行或生产部署。
+   未把这些配置证据外推为 Agent 全链、三端或 Stage 退出验收。
+
+### Runtime 实际命令、破坏与还原
+
+最终私有 SDK 使用不可变镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID:GID 为 1000:1000，实际 cpu.max 为 400000/100000，memory.max 为
+8589934592、memory.swap.max 为 0，Data 缓存；执行前核对原安全预检和实际限额。
+DATABASE_URL 只在内存/标准输入投递，不回显值。原 SDK2676 的 Config.Env 没有
+CARGO_BUILD_JOBS，最终原样保留缺省；早期 baseline 的16来自此前人工执行配置，
+并非该原容器元数据，没有把它改成产品必填项或降低并行度。
+
+23:38:04 至 23:40:56 UTC 的 `final-narrow-sdk.log` 实际 exec 退出 0：
+`bash -n deploy/local/start-core.sh`、原 `bootstrap.sh --validate-config`、
+`cargo fmt --all --check`、原 `cargo sqlx prepare --check --workspace`、
+全目标 clippy `-D warnings` 及既有 Runtime 模块五项检查均为 0。
+from_env 检查实际覆盖 20 个情形，在独立子进程调用原生产函数，未 spawn Codex。
+日志 SHA-256 为
+`82b424b12ddddb218c66d21c49ea34a41405b9ef92c15c8c631aacdd1385c2c2`。
+
+实现后逐次破坏原生产 guard：全缺省返回、partial 整组判定、目录解析调用、
+额外键等值判定，四次均编译后实际 Cargo 101；分别在 all-absent、缺 binary、
+relative-profile-path、extra-directory-field 断言处失败。每次立即按四文件 SHA
+精确还原并复测退出 0，原件为 `mutation-01.log` 至 `mutation-04.log` 及各自
+`*-restored.log`、`*-restored.sha256.log`，不以 wrapper 的预期退出码代替 Cargo 结果。
+
+早期新建网络被 daemon 地址池耗尽拒绝的1、错误要求缺省 Cargo jobs 导致启动1、
+初轮 fmt1 均保留于原件；后续直接复用原库/网络、保留缺省并由原 formatter 修正。
+它们不算业务反例或产品阻断。三个自有验证容器已清理，原 SDK/PG/网络未动；
+proof 的 idle 容器被 stop 后退出137，与检查 exec0 分开记录，实际 OOM 为0。
+
+相对 c242 的唯一四路径补丁为 `source-vs-c242.diff`，SHA-256
+`f150f6497b9e26d11af13c15091c8989b12734103a7a23a459af3f976e5fb060`；
+四文件字节见 `source-final.sha256`，原日志摘要见 `evidence.sha256`，
+generated 未变证明见 `generated-unchanged.log`。正式四文件与私有最终 SHA 完全一致，
+窄 diffcheck 退出0。本次没有 full、release、提交或部署；新增本节尚未另行运行文档
+门禁，不借旧全量回执声称当前整批通过。
+
+## 2026-10-03 Runtime 与 Core 打包集中验证事实
+
+本次私有源以 `c242384a` 为底，选入 11 个代码/元数据路径与本记录的一段已有
+Runtime 证据，固定树为 `e998d4212c936e1cbf42477fe7bf24859c3776cf`。
+00:19:22 至 00:23:48 UTC 运行原 `bash tools/check.sh --full` 一次，attach 与
+容器终态均为 0，OOM 为 false。原日志位于
+`/volumes/data/kailo/tmp/codex-runtime-win-packaging-full-20261003.EQx6D6/full.log`，
+SHA-256 为 `ee5552cf46bbc9d244985eff1237704331ba6d4100a7fddd8495ed7b47adedd2`。
+终态 12/12 输入、4/4 生成物一致，全部 tracked 输入未变，diffcheck 为 0；
+本节在 full 后追加，仅由原 docs 快路径验证，不外推为该原树已经含有本节。
+
+### 本次四步影响结论
+
+- 权威：DD-47、DD-66/67 与既有 RuntimeProfileDirectory、ActionSubmission 合同；
+  不改设计、generated 正文、权限或状态。五项配置沿现有 Config/原启动入口投递。
+- 影响：Core 已有编译期 `include_str!` 消费 `contracts/api/action_submission.schema.json`，
+  早期原 release 的 Cargo 101 是归档与镜像上下文未包含该真实输入，不是合同或
+  业务逻辑错误。现有 `.dockerignore` 放行、`core/Dockerfile` COPY 与
+  `tools/release.sh` git archive 三处已同步同一文件；没有删 CI/编译检查迎合产物。
+- 副作用：本次只有原 SDK 验证和独立验证库的原末条迁移往返，没有 release、
+  部署、业务对象、凭据签发或默认 profile。源与既有 Win11 元数据分别取其窄窗口，
+  未带入正式树的其他继承变化；没有重复原生 Runtime、Web 或 Win11 构建。
+- 边界：全缺省关闭、partial、畸形目录及未知键拒绝；先前四次生产 guard 破坏
+  的真实失败与 SHA 还原记录保留。没有从 parser/类型检查推导 ACTIVE、模型
+  正向调用、工具、Memory 写入、结算或 Agent 业务链已经验收。
+
+### 实际环境、通过项与未覆盖项
+
+不可变 SDK 为 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID:GID 1000:1000；create 后 start 前原限额核验为 4 CPU、8 GiB memory=swap，
+实际 cpu.max=400000/100000、memory.max=8589934592、memory.swap.max=0。
+使用原 Data 缓存与原验证 PG/网络；原 SDK2676 未设 CARGO_BUILD_JOBS，本次仍缺省。
+DATABASE_URL 仅在内存/标准输入投递，无全局 Git 定位变量或宿主 SDK。
+
+格式、clippy、Go/TS/Dart 静态检查与原四侧验证、128 schema 兼容、Workflow replay、
+文档/18 条追溯、供应链与原 seam 检查全部通过。原 PG 原样恢复后仍为 50 条成功迁移，
+前进、回退末条、再前进与 SQLx、44 项枚举约束真实通过；没有新建库、网桥或业务夹具。
+原容器此前停机是外部 daemon 事件，不归因本次 SDK。自有 SDK 已终态 0 后清理，
+原 PG、原配置 SDK、Data 源与日志保留。
+
+实际部署 `deploy/local/.env` 未投递，原预检 SKIP；Catalog bootstrap、approval CAN、
+Relay outage 三项 ignored，未安装 gitleaks，仅内置扫描。Win11 unsigned 测试包未实机
+安装或业务验收，Mobile release 签名仍阻断。本次不改变生产门禁、Stage 退出状态，
+也不把外部集成检查的早返计作真实业务闭环。

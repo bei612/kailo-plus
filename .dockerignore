@@ -12,6 +12,7 @@
 !collaboration/Cargo.toml
 !collaboration/crates/buzz-core
 !tools/registry/capabilities.yaml
+!contracts/api/action_submission.schema.json
 !agent-runtime/fork/upstream.yaml
 !worker
 **/target

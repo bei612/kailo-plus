@@ -22,12 +22,79 @@ cd "$(dirname "$0")"
 : "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_TENANT_PARENT_NAMESPACE:?}" \
   "${OPENBAO_TENANT_PROVISIONER_ROLE_NAME:?}" \
   "${OPENBAO_SECRET_ID_WRAP_TTL:?缺少 .env 中的 OPENBAO_SECRET_ID_WRAP_TTL}"
+# 可选运行投递仅在五项完整时合入同一 Compose；关闭态不能给 Core 注入空值。
+runtime_names=(AGENT_RUNTIME_BINARY AGENT_RUNTIME_STATE_ROOT AGENT_RUNTIME_RPC_TIMEOUT_SECONDS
+  AGENT_RUNTIME_MAX_MESSAGE_BYTES AGENT_RUNTIME_PROFILES_FILE)
+runtime_present=0
+for runtime_name in "${runtime_names[@]}"; do
+  if [ -n "${!runtime_name:-}" ]; then runtime_present=$((runtime_present + 1)); fi
+done
+if [ "$runtime_present" -ne 0 ] && [ "$runtime_present" -ne "${#runtime_names[@]}" ]; then
+  echo 'Agent Runtime 五项配置必须全缺省或完整投递' >&2
+  exit 2
+fi
+runtime_config=
+tmp=
+cleanup_start_core() {
+  local status=$?
+  trap - EXIT
+  if [ -n "$runtime_config" ]; then rm -f -- "$runtime_config" || status=2; fi
+  if [ -n "$tmp" ]; then rm -f -- "$tmp" || status=2; fi
+  exit "$status"
+}
+trap cleanup_start_core EXIT
+runtime_compose=()
+if [ "$runtime_present" -ne 0 ]; then
+  runtime_config=$(mktemp)
+  AGENT_RUNTIME_BINARY="$AGENT_RUNTIME_BINARY" AGENT_RUNTIME_STATE_ROOT="$AGENT_RUNTIME_STATE_ROOT" \
+  AGENT_RUNTIME_RPC_TIMEOUT_SECONDS="$AGENT_RUNTIME_RPC_TIMEOUT_SECONDS" \
+  AGENT_RUNTIME_MAX_MESSAGE_BYTES="$AGENT_RUNTIME_MAX_MESSAGE_BYTES" \
+  AGENT_RUNTIME_PROFILES_FILE="$AGENT_RUNTIME_PROFILES_FILE" \
+  python3 - "$runtime_config" <<'PYRUNTIME'
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import sys
+
+names = ("AGENT_RUNTIME_BINARY", "AGENT_RUNTIME_STATE_ROOT", "AGENT_RUNTIME_RPC_TIMEOUT_SECONDS",
+         "AGENT_RUNTIME_MAX_MESSAGE_BYTES", "AGENT_RUNTIME_PROFILES_FILE")
+values = {name: os.environ[name] for name in names}
+for name in ("AGENT_RUNTIME_BINARY", "AGENT_RUNTIME_STATE_ROOT", "AGENT_RUNTIME_PROFILES_FILE"):
+    raw = values[name]
+    path = PurePosixPath(raw)
+    if not path.is_absolute() or path == PurePosixPath("/") or ".." in path.parts or str(path) != raw:
+        raise SystemExit(f"{name} 必须是规范绝对路径")
+for name in ("AGENT_RUNTIME_RPC_TIMEOUT_SECONDS", "AGENT_RUNTIME_MAX_MESSAGE_BYTES"):
+    if not re.fullmatch(r"[1-9][0-9]*", values[name]):
+        raise SystemExit(f"{name} 必须是正整数")
+root = Path(values["AGENT_RUNTIME_STATE_ROOT"])
+profiles = Path(values["AGENT_RUNTIME_PROFILES_FILE"])
+try:
+    if not root.is_dir() or root.resolve(strict=True) != root:
+        raise ValueError("state root")
+    if not profiles.is_file() or profiles.resolve(strict=True) != profiles:
+        raise ValueError("profiles")
+except (OSError, ValueError):
+    raise SystemExit("Agent Runtime 目录与 profile 文件必须真实存在且不能经符号链接投递") from None
+# 不生成或改写 profile 内容；共享契约与 key 校验由 Core 原消费者执行。
+volumes = [
+    {"type": "bind", "source": str(root), "target": str(root),
+     "bind": {"create_host_path": False}},
+    {"type": "bind", "source": str(profiles), "target": str(profiles), "read_only": True,
+     "bind": {"create_host_path": False}},
+]
+with open(sys.argv[1], "w", encoding="utf-8") as stream:
+    json.dump({"services": {"core-bff": {"environment": values, "volumes": volumes}}}, stream)
+PYRUNTIME
+  runtime_compose=(-f "$runtime_config")
+fi
 project=$(python3 -c 'import re,io;print(re.search(r"^name: (\S+)", io.open("compose.yaml",encoding="utf-8").read(), re.M).group(1))')
 app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
 [ -n "$app_cidr" ] || { echo "取不到 ${project}_app 网络子网，拒绝创建 Tenant AppRole" >&2; exit 2; }
 
 # sudo 只保留受控构建器选择，避免 Core 镜像构建落到无 cgroup 限额的默认 builder。
-compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "$@"; }
+compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "${runtime_compose[@]}" "$@"; }
 root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
 # 令牌经 stdin 进入容器，不上命令行（与 secret-store-init.sh 的 run_bao 同一做法）
 run_bao() {
@@ -48,7 +115,6 @@ fi
 
 umask 077
 tmp=$(mktemp)
-trap 'rm -f "$tmp"' EXIT
 { printf 'OPENBAO_ROLE_ID=%s\n' "$(run_bao "$OPENBAO_PLATFORM_NAMESPACE" read -field=role_id auth/approle/role/platform-core/role-id)"
   printf 'OPENBAO_ROLE_NAME=platform-core\n'
   printf 'OPENBAO_WRAPPED_SECRET_ID=%s\n' "$(wrapped "$OPENBAO_PLATFORM_NAMESPACE" platform-core)"
@@ -62,6 +128,6 @@ trap 'rm -f "$tmp"' EXIT
 # 十行都非空才落位：半份投递会让 Core 以「缺少某项」退出，却看不出是投递失败
 [ "$(grep -c '=.\+' "$tmp")" = 10 ] || { echo "投递不完整，未改动 secrets/openbao-core.env" >&2; exit 2; }
 mv "$tmp" secrets/openbao-core.env
-trap - EXIT
+tmp=
 
 compose up -d --no-deps --force-recreate --no-build core-bff

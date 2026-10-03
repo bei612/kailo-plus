@@ -104,16 +104,39 @@ pub(crate) fn canonical(value: Value) -> Value {
     }
 }
 
-/// 发布读取随平台 release 投递的 RuntimeProfile；不在此处登记或激活 profile。
-fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal> {
+/// 同一受控 release 文件供启动与发布读取；不登记或激活 profile。
+pub(crate) fn runtime_profile_directory() -> Result<contracts::RuntimeProfileDirectory, Refusal> {
     let path = std::env::var("AGENT_RUNTIME_PROFILES_FILE")
         .ok()
         .filter(|v| !v.trim().is_empty())
         .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    let path = std::path::Path::new(&path);
+    if !path.is_absolute()
+        || !path.is_file()
+        || path
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Err(Refusal::Unavailable(
+            "RuntimeProfile Catalog 路径无效".into(),
+        ));
+    }
     let bytes = std::fs::read(path)
         .map_err(|_| Refusal::Unavailable("RuntimeProfile Catalog 不可读".into()))?;
-    let directory: contracts::RuntimeProfileDirectory = serde_json::from_slice(&bytes)
+    let source: Value = serde_json::from_slice(&bytes)
         .map_err(|_| Refusal::Unavailable("RuntimeProfile Catalog 不符合共享契约".into()))?;
+    let directory: contracts::RuntimeProfileDirectory = serde_json::from_value(source.clone())
+        .map_err(|_| Refusal::Unavailable("RuntimeProfile Catalog 不符合共享契约".into()))?;
+    // 三层合同的字段均 required、无 default/Option；生成类型的原样回写须与输入相等。
+    // 不另列字段表，但不能把 serde 静默丢弃的未知配置键当作合法投递。
+    if serde_json::to_value(&directory)
+        .map_err(|_| Refusal::Unavailable("RuntimeProfile Catalog 不符合共享契约".into()))?
+        != source
+    {
+        return Err(Refusal::Unavailable(
+            "RuntimeProfile Catalog 含共享契约外字段".into(),
+        ));
+    }
     let mut keys = std::collections::HashSet::new();
     if directory
         .profiles
@@ -124,6 +147,12 @@ fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal> {
             "RuntimeProfile Catalog 的 key 不唯一".into(),
         ));
     }
+    Ok(directory)
+}
+
+/// 发布只消费已投递合同，profile 的 ACTIVE 不能从 runtime spawn 推导。
+fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal> {
+    let directory = runtime_profile_directory()?;
     let profile = directory
         .profiles
         .iter()

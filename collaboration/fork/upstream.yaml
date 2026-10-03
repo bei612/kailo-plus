@@ -999,9 +999,9 @@ artifacts:
     exclude: [collaboration/mobile/, collaboration/crates/buzz-relay/, collaboration/fork/packaging/mobile.Dockerfile, collaboration/fork/packaging/mobile.Dockerfile.dockerignore]
     # 安装包显示名由发布配置注入（DD-111），不写在源码里
     build_args: [PLATFORM_DISPLAY_NAME]
-    blocked: Windows 原入口构建失败：crates.io h2索引下载超时；无当前安装包
-    source_digest: none
-    artifact_digest: none
+    blocked: Win11 x64 unsigned 测试安装包已生成；代码签名、Win11 安装运行与业务验收未完成
+    source_digest: sha256:c14a69f578b2b214818b987c965ac75e88d79dfb75ed21c9254efce83d44b68b
+    artifact_digest: sha256:9c8101d17425571a4c44f219bf74457976ffd20db20e0b006e6d597fac940b62
   # Android release APK（ADR-06 客户端发布单元按端分离：应用商店包，带平台签名）。
   # 阻断：release 签名所需的 upload keystore 未提供。上游 release 构建缺 keystore 即失败，
   # 不以 debug 证书冒充 release；profile/debug APK 只是测试构建，不登记为发布产物。

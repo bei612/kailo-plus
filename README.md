@@ -18,7 +18,7 @@
 | Agent 执行 | 原 Task 消费完整原生 final_answer 和原生完成时钟，经过两次 fresh authorization，持久化固定回复 ID 后单次外发；暂停/停用保留原冻结在途版本，真实撤权仍拒绝 | 回复未知只查证原事件，仍保留 BILLING_UNAVAILABLE；完整结算、严格预留、工具治理和 Memory 写入未完成 |
 | 数据/契约 | 新增 Automation 数据约束为第 50 条迁移，原回退/再前进实际退出 0；四侧由原生成器产出。最新六项后实现检查退出 0，包含真实 PostgreSQL 解析和状态/阶段谓词 | 独立库零业务对象；不把 SQL 证据、类型检查或生成记录算作业务闭环 |
 | Web 产物 | 原 helper、push 与 registry 读回退出 0：artifact `sha256:6f54ce3744408aa3adfa898ec639b9fad1ef4438774a0869f21b33e722d298ce`，97 个输入 source `sha256:8dbb98b595a7510b584fa1c50e4d0aec37be553bc998263dfbafd7b0401c58eb`，构建前后字节一致 | 尚未部署；旧运行 Core/Worker 不因新源码自动更新 |
-| 原生 Runtime / Win11 | 固定 Codex 原 helper 构建与 registry 读回退出 0，Runtime artifact `sha256:ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec`；上一批共享源码的 Win11 x64 NSIS 包实际构建退出 0 | Runtime 镜像缺失的构建阻断已解除，Core/Worker 本批正式 release 仍须实际运行；Win11 包未签名、未安装，且不匹配本批新增 Automation 页面来源 |
+| 原生 Runtime / Win11 | 固定 Codex 原 helper 构建与 registry 读回退出 0，Runtime artifact `sha256:ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec`；本批共享 Automation 页面与生成契约的 Win11 x64 NSIS 测试包实际构建退出 0，artifact `9c8101d1…`、2254 输入 source `c14a69f5…` | Runtime 镜像缺失的构建阻断已解除，Core/Worker 本批正式 release 仍须实际运行；Win11 包未签名、未安装运行、未做设备业务验收，不据此关闭生产门禁 |
 
 本批原件在 `/volumes/data/kailo/tmp/codex-automation-integration-20261002.bOjEqV/`。源码验证、全量门禁、提交与部署分别记录，不提前称为通过。本批变更的四步结论如下，记录已有实现，不是另立规格：
 
@@ -194,3 +194,11 @@ Stage 4 的 `SS-OMT-AUTH` 已将固定版本 OpenMeter 完整源码导入 `meter
 后续集成候选只选择 AgentDefinition、Customer、SecretRef 退役、Tenant 删除及其真实契约消费，不混入独立的 Quota CHECK 与 NIP-11 对账增量。该候选在加入最后的审批资格修正之前，镜像内 clippy、37 条空库迁移往返、SQLx 离线核对与 40 个命名约束均已通过；没有创建业务对象。Core/Worker 开发镜像构建均退出 0，但没有 commit provenance、正式 release 或部署，且前一 Core 镜像不覆盖随后修改的审批资格代码。独立设计提交 `22b8beada030fb49df82c236ab69007a33d7701b` 已发布到同一远端的 `design-authority`，候选 CI pin 与覆盖映射随实施批单独收口。
 
 AgentDefinition 与 Tenant 删除公开入口仍关闭；AgentVersion、Installation、Codex turn、模型与工具用量、记忆、自动化及三端完整验收仍未交付。此前各段的空库、构建与局部检查结果不改变这一边界；可选业务能力不作为平台核心发布前提。最新源码、产物、失败与未覆盖范围分别见 [AgentDefinition 记录](core/verify/agent-definition.md)、[Tenant 删除记录](core/verify/tenant-deletion.md) 和 [Web 面记录](web-client/fork/verify/web-surface.md)。
+
+### 2026-10-03 Runtime 与打包候选集中验证回执
+
+以 `c242384a` 为底，仅选入 Runtime 四路径、Win11 来源与记录四路径、Core 打包三路径和一份 Runtime 证据，固定树为 `e998d4212c936e1cbf42477fe7bf24859c3776cf`。00:19:22 至 00:23:48 UTC 原 `tools/check.sh --full` 实际退出 0；原件为 `/volumes/data/kailo/tmp/codex-runtime-win-packaging-full-20261003.EQx6D6/full.log`，SHA-256 `ee5552cf46bbc9d244985eff1237704331ba6d4100a7fddd8495ed7b47adedd2`。终态 12 路径和四侧生成物未变，生成合同仍与底版一致。
+
+Core 原打包遗漏编译期实际消费的 `contracts/api/action_submission.schema.json`：现有 `.dockerignore`、`core/Dockerfile` 和 `tools/release.sh` 已补齐同一文件的上下文、COPY 与归档输入，不修改合同正文或治理行为。Runtime 五项配置仍走原 `start-core.sh`，全缺省关闭、半份和畸形拒绝；没有生成默认 profile 或宣称 Installation ACTIVE。四步影响结论及原失败见 [Agent 记录](core/verify/agent-definition.md)。
+
+本次原库 50 条迁移、末条回退再前进、SQLx、44 枚举约束和原范围验证通过；实际部署 `.env` 预检仍 SKIP，三项显式演练 ignored，未安装 gitleaks。Win11 unsigned 包仍未安装运行或业务验收，Mobile 签名仍阻断。本回执是私有候选检查，不是 release、提交、部署或业务验收；本节追加后仅运行原文档快路径，不重复 full。

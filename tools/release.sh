@@ -31,9 +31,10 @@ container_require_limited_builder
 BUILD_CONTEXT=$(mktemp -d)
 trap 'rm -r -- "$BUILD_CONTEXT"' EXIT
 # 本独立仓库的根就是构建根，不向父目录查找历史外层仓库。
-# 导出集合与 .dockerignore 的 allowlist 同步：Core 编译期内嵌生成的能力注册表。
+# 导出集合与 .dockerignore 的 allowlist 同步：Core 编译期内嵌能力注册表与动作回应契约。
 git archive --format=tar "$COMMIT" .dockerignore core worker \
   collaboration/Cargo.toml collaboration/crates/buzz-core \
+  contracts/api/action_submission.schema.json \
   tools/registry/capabilities.yaml agent-runtime/fork/upstream.yaml | tar -xf - -C "$BUILD_CONTEXT" \
   || die "无法从固定 commit 导出构建上下文"
 
