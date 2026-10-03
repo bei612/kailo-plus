@@ -6,6 +6,27 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### 17:55 UTC 运行配置实际开放
+
+原 thread-only `SERVER_CODEX` 运行配置已通过既有受控文件投递；没有把
+尚不存在的 Installation 凭据或首轮成功当成配置目录发布的前提。原
+`start-core.sh --no-build` 实际退出 0，仅重建 Core，镜像保持 `0b429913…`；
+新容器 `20c963ca2e4e` 内只读挂载与宿主文件 SHA-256 一致，healthz 返回 200。
+真实 HUMAN 登录后的版本配置 BFF 返回 200：`canCreate=true`，一个 ACTIVE
+Profile 和一个已治理的模型 Route；此前同入口为 `canCreate=false`、空目录。
+
+17:59 UTC 创建前再次读取配置返回 503，18:02 UTC 只读复查仍为
+`UNKNOWN/DEPENDENCY_UNAVAILABLE`；Core 报模型原生投影或凭据查证未闭合。
+尚未发出 Version 创建、发布或 Installation 写请求，不能据首次 200 称入口稳定可用。
+Installation 仍须经原权限、凭据、Codex initialize、投影回读和最终状态核验。
+原始部署、配置摘要与 BFF 回读见
+[Agent 实施记录](core/verify/agent-definition.md)。
+
+共享 Web/Desktop 管理页已修正另一处实际缺口：发布版本和管理区刷新现在都会
+重新读取安装候选，不再保留首次读取的空目录；UNKNOWN 安装意图、原命令和幂等键
+保持不变。类型检查与 39 项定向检查通过，去掉生产刷新键后两项失败，精确还原后
+再次通过；116 项未选中，不计通过。本批没有构建或部署客户端，不是安装业务验收。
+
 ### 运行配置修复与客户端收口
 
 `31d71b1c4ee002f8b392ffa14b07d1fca6dee4ca` 已提交并普通 push：运行配置目录
@@ -30,6 +51,8 @@ helper 日志 SHA-256 为 `95f9bc14e953913351a505ec12312d15b9044f7eb54aa3020c920
 它是未签名测试包，未做 Win11 安装运行验收。共享文案属于 Desktop 构建输入，
 因此该包不覆盖本批 Mobile 文案后的新源码；不重写其来源摘要或据此报告完整检查通过。
 本批没有重新部署服务。普通 mention、安装、真实模型首轮、回复和结算仍未贯通。
+上述 Mobile 修复和客户端证据已提交并普通 push 为
+`2b58aa82d55fd7e17ccadf78ba33596bbc92f372`，相对 `31d71b1c4` 为 13 文件、+439/-22。
 
 ### 16:58 UTC Customer 真实闭环与部署
 

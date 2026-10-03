@@ -142,7 +142,7 @@ export function AgentDefinitionsPage() {
       </section>
       {selected ? <DefinitionDetail key={`${selected}:${versionRevision}`} resourceId={selected} locked={blocked || versionEdit !== null}
         onEdit={(target, owner) => setEdit({ target, owner })} onVersionEdit={setVersionEdit} /> : null}
-      <InstallationManagement />
+      <InstallationManagement versionRevision={versionRevision} />
       <AutomationManagement />
     </div>
   );
@@ -573,7 +573,7 @@ function validInstallation(row: AgentInstallationView): boolean {
     && row.activeProjectionGeneration !== undefined && projection?.state === AgentRuntimeProjectionState.Active);
 }
 
-function InstallationManagement() {
+function InstallationManagement({ versionRevision }: { versionRevision: number }) {
   const client = useBffClient();
   const t = useT();
   const [state, reload] = useLoad("agent-installation-workspaces", client.workspaces);
@@ -588,7 +588,7 @@ function InstallationManagement() {
   return <section className="flex flex-col gap-3" data-testid="agent-installations">
     <h2 className="font-medium">{t("agents.installation.title")}</h2>
     <p className="text-sm text-muted-foreground">{t("agents.installation.management")}</p>
-    <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
+    <Button className="w-fit" disabled={locked} onClick={() => { reload(); setRevision((value) => value + 1); }}>{t("platform.refresh")}</Button>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !workspaces ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : !workspace ? <Notice>{t("agents.installation.noWorkspace")}</Notice>
@@ -601,7 +601,7 @@ function InstallationManagement() {
         </label>
       </>}
     {/* 原意图留在 Workspace/列表之外，结果不明时不生成替代键。 */}
-    <InstallationCreate workspaceId={workspace?.id} workspaceName={workspace?.name} locked={locked} onLocked={setLocked}
+    <InstallationCreate workspaceId={workspace?.id} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}`} locked={locked} onLocked={setLocked}
       onRecorded={() => setRevision((old) => old + 1)} />
     <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
       onRecorded={() => setRevision((old) => old + 1)} />
@@ -618,8 +618,8 @@ function validInstallationCandidate(row: AgentInstallationCandidate): boolean {
     && Number.isSafeInteger(row.ordinal) && row.ordinal > 0;
 }
 
-function InstallationCreate({ workspaceId, workspaceName, locked, onLocked, onRecorded }: {
-  workspaceId?: string; workspaceName?: string; locked: boolean; onLocked: (locked: boolean) => void; onRecorded: () => void;
+function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked, onLocked, onRecorded }: {
+  workspaceId?: string; workspaceName?: string; sourceRevision: string; locked: boolean; onLocked: (locked: boolean) => void; onRecorded: () => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -634,7 +634,7 @@ function InstallationCreate({ workspaceId, workspaceName, locked, onLocked, onRe
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const offset = offsets[index] ?? 0;
-  const [sources, reloadSources] = useLoad(`installation-candidates:${workspaceId}:${offset}`,
+  const [sources, reloadSources] = useLoad(`installation-candidates:${workspaceId}:${offset}:${sourceRevision}`,
     () => workspaceId ? client.agentInstallationCandidates(workspaceId, offset) : Promise.resolve(null));
   const page = sources.status === "ok" && sources.data && sources.data.workspaceId === workspaceId
     && typeof sources.data.canCreate === "boolean" && Array.isArray(sources.data.candidates)

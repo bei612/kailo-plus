@@ -1598,3 +1598,79 @@ automation 源和 main 单行接线共 4 路径、+457/-37；canonical diff SHA-
 日志为 `restored-final.log`、`parser-mutation.log`、`sql-prepare-explain.log`。
 CPU 4、memory 8 GiB、实际 swap 0、Cargo 16；最终 OOM/max 事件为 0。
 尚未运行本批 full、正式构建部署、真实 Customer 对账与 Agent 首轮计量闭环。
+
+### 2026-10-03 运行配置发布与真实 BFF 回读
+
+本节只记录本次运行配置发布，不以历史空目录结论覆盖新状态，也不把配置
+可选等同于 Installation 或 Invocation 就绪。依据 `03` §7、`17` §5–6、
+DD-26/69/70/71：RuntimeProfile 是平台发布的能力合同，Installation 则在
+创建后生成专属凭据，经 Codex initialize 和投影核验才允许 ACTIVE。
+要求前者发布前先有后者的运行成功证据会形成循环前提。
+
+- 影响面：仅将原 operator 的 thread-only SERVER_CODEX 候选由 DISABLED
+  发布为 ACTIVE，沿既有 `AGENT_RUNTIME_PROFILES_FILE` 投递。零能力需求、
+  threadReplies=true、broadcastReplies=false 和显式 1/300/600 上界均沿用
+  原候选；没有生成业务 Resource、权限、Delegation 或默认租户。
+- 目录 writer 是受控部署，reader 为版本配置/发布和 Installation 原消费者；
+  不改变 schema、API 或数据库，不增加三端身份路径。新 Profile 不替代
+  每次安装和外部副作用前的 fresh authorization，不使未知结果变成成功。
+- 原候选 SHA-256 为
+  `ef77f1a240a404b6e801a81922ae1e5a12299aab75b7c37e03be23eaa10b7ea3`；
+  实际投递及 Core 内只读挂载读回 SHA-256 均为
+  `5149bbbacbb29f3ac7b3540b4928970c0d49ba542cf0184947d5ff87af242709`。
+  单文件 bind 在宿主替换后需重新挂载；原 `start-core.sh --no-build` 以
+  fresh wrapping 重建 Core，实际退出 0，未构建镜像或替换 Worker。
+- Core 镜像保持
+  `sha256:0b4299137ebe516a99f8e05763cd106ed952ae8a08ef40817ae1c1a829a0339d`，
+  新容器 `20c963ca2e4e`，healthz 实际 200。真实 HUMAN/FULL 会话下
+  AgentDefinition `88325239-707e-471c-89c7-f7675e341928` 的版本配置 BFF
+  实际 200、canCreate=true、resourceVersion=2：唯一 Profile 为
+  `server-codex-thread-only-uat`，唯一模型 Route 为
+  `eb0d3d98-b49f-4002-b9b4-f00023ea35ab`，native revision=1。
+
+原件目录 `/volumes/data/kailo/tmp/codex-runtime-profile-publish-20261003.VtmqFm/`：
+`start-core.exit`、`profile-mount-readback.log`、`core-health.log`、
+`bff-configuration-readback-restored.log` 与 `bff-readback-restored.exit`。
+首次浏览器启动因依赖默认浏览器版本与镜像不同失败，未发业务请求；复用镜像
+已安装 Chrome 后回读退出 0，没有安装或构建浏览器。这里尚无真实 Installation
+ACTIVE、普通 mention、模型首轮、回复或计量终态证据；full 历史失败仍保留。
+
+随后 17:59 UTC 创建前配置 GET 返回 503，18:02 UTC 同一只读复查仍返回
+`UNKNOWN/DEPENDENCY_UNAVAILABLE`；Core 原错误为“模型原生投影或凭据查证未闭合”。
+Definition 与空版本列表 GET 为 200，但三个创建/发布/安装 POST 均未发送。
+因此首次配置 200 不是入口稳定或安装成功证据；尚未证实具体依赖失败根因，
+不以扩大超时、绕过原生查证或改数据库状态处置。
+同目录 `version-installation-actions.log`、`bff-configuration-once-recheck.log`
+保留两次失败，`handoff.md` SHA-256 为
+`e7e8bf550aae34138cfae10ecf34af40a5dae37b66e2386e1e7b8c6f8d5c740a`。
+
+### 2026-10-03 共享管理页发布后安装候选刷新
+
+本批依据设计 `17` §2/3/6/8：发布版本后按 BFF 当前权限和精确版本重新读取
+安装候选，发布不改变已有 Installation 的 pin。原缺陷是 Version 已递增
+`versionRevision`，安装候选读取却只按 Workspace/offset 缓存；管理区刷新也只读
+Workspace。首次空候选及退休后旧候选因此会滞留，直到用户切换或重载页面。
+
+- 影响面：Web/Desktop 共用的 `AgentDefinitionsPage` 将已有版本 revision 传给
+  安装管理，并与原安装 revision 共同进入候选读取键；原刷新按钮递增原 revision。
+  没有新增发布状态、组件 remount、API/schema/迁移或 Mobile 写入口。
+- 权威和副作用：候选、canCreate、精确 pin 仍来自原 BFF；已记录的版本动作仅触发
+  回读，不把 DISPATCHED 解释成安装成功，也不添加默认 Profile/模型/权限。
+- 异常：组件保持挂载，UNKNOWN 安装的原命令和幂等键不变；其他版本动作触发
+  候选回读时仍保留未知呈现。空页、读失败、分页与服务端六类错误沿用原处理。
+  不增加业务状态、后台重放、副作用或第二份权威。
+
+选定基准 `2b58aa82d55fd7e17ccadf78ba33596bbc92f372`，两源路径 +57/-10；
+生产 `agents.tsx` 仅 +7/-7。原 SDK 内执行共享包 typecheck 和既有 pages 的
+`AgentDefinitionsPage governed Version Installation Grant` 组：39 passed、
+116 skipped、退出 0。实际去掉私有生产代码的候选 revision 键后，发布候选与
+UNKNOWN 场景的回读次数两项断言失败，退出 1；按原字节恢复、cmp 0 后同目标
+39 passed、116 skipped、退出 0。最初私有依赖缺项导致的退出 2 原件保留，
+之后只按原 frozen lock 离线补齐私有依赖，未改锁或包版本。
+
+原件目录 `/volumes/data/kailo/tmp/codex-agent-management-refresh-20261003.fy7VXI/`，
+含 `baseline-dependencies/`、`mutation/`、`restored/`；最终恢复日志 SHA-256
+`0ff0f21892ba520352ff3ef75a95e26e6ff8aedfd6dcfc4feb1a2a2d78ebb3e6`。
+实际生产变异只发生于私有导出，正式两源未被破坏。上述是源码与协议夹具证据，
+不是在线 BFF、Codex 或 Installation E2E；未运行本批 full、客户端构建或部署，
+不覆盖历史完整检查失败、设备或生产验收缺口。

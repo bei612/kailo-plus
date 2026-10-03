@@ -246,8 +246,22 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
   });
 
   it("publishes an immutable exact draft with Explicit Confirmation and no replacement content", async () => {
-    const t = routes((r) => r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.version.publish") } : undefined);
+    let published = false;
+    const t = routes((r) => {
+      if (r.path === "/api/v1/actions") {
+        published = true;
+        return { status: 200, body: submission("agent.version.publish") };
+      }
+      if (r.path.startsWith("/api/v1/agent-installation-candidates?")) return { status: 200,
+        body: { workspaceId: installation.workspaceId, canCreate: true, candidates: published ? [{
+          agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+          displayName: definition.displayName, agentVersionAssetId: version.assetId,
+          assetVersion: version.assetVersion + 1, ordinal: version.ordinal,
+        }] : [] } };
+      return undefined;
+    });
     const host = await open(t);
+    expect(section(host, "agent-installation-create").textContent).toContain("No authorized published Agent version on this page.");
     await click(button(section(host, "agent-version-directory"), "Publish exact draft"));
     const action = section(host, "agent-version-action");
     expect(action.querySelector("fieldset")?.disabled).toBe(true);
@@ -259,6 +273,28 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.version.publish", idempotencyKey: expect.any(String),
       resourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
       assetId: version.assetId, assetVersion: version.assetVersion, explicitConfirmation: true });
+    const create = section(host, "agent-installation-create");
+    expect(create.querySelector(`option[value="${version.assetId}"]`)).toBeTruthy();
+    expect(create.textContent).not.toContain("No authorized published Agent version on this page.");
+    await change(create, "Definition reference", version.assetId);
+    await click(button(create, "Review request"));
+    expect(create.textContent).toContain(`${version.assetId} · ${version.assetVersion + 1}`);
+    expect(posts(t)).toHaveLength(1);
+    expect(section(host, "agent-installations").textContent).toContain(installation.pinnedVersionAssetId);
+  });
+
+  it("refreshes installation candidates from the authority without changing Workspace", async () => {
+    let available = false;
+    const t = routes((r) => !available && r.path.startsWith("/api/v1/agent-installation-candidates?")
+      ? { status: 200, body: { workspaceId: installation.workspaceId, canCreate: true, candidates: [] } } : undefined);
+    const host = await open(t);
+    const installed = section(host, "agent-installations");
+    expect(section(host, "agent-installation-create").textContent).toContain("No authorized published Agent version on this page.");
+    available = true;
+    await click(button(installed, "Refresh"));
+    expect(section(host, "agent-installation-create").querySelector(`option[value="${installation.pinnedVersionAssetId}"]`)).toBeTruthy();
+    expect(installed.querySelector("select")?.value).toBe(installation.workspaceId);
+    expect(posts(t)).toHaveLength(0);
   });
 
   it("retires only the authorized exact published version without needing configuration providers", async () => {
@@ -449,6 +485,9 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     let count = 0;
     const t = routes((r) => {
       if (r.path !== "/api/v1/actions") return undefined;
+      if (r.body && typeof r.body === "object" && "actionKey" in r.body && r.body.actionKey === "agent.version.publish") {
+        return { status: 200, body: submission("agent.version.publish") };
+      }
       count += 1;
       return { status: 200, body: count === 1 ? submission("agent.installation.create", "UNKNOWN")
         : { ...submission("agent.installation.create"), operationId: "foreign-operation" } };
@@ -459,12 +498,20 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(action, "Review request"));
     expect(posts(t)).toHaveLength(0);
     await click(button(action, "Submit governed request"));
+    const candidateReads = t.send.mock.calls.filter(([r]) => r.path.startsWith("/api/v1/agent-installation-candidates?")).length;
+    await click(button(section(host, "agent-version-directory"), "Publish exact draft"));
+    const publishing = section(host, "agent-version-action");
+    await click(button(publishing, "Review request"));
+    await click(button(publishing, "Submit governed request"));
+    expect(t.send.mock.calls.filter(([r]) => r.path.startsWith("/api/v1/agent-installation-candidates?")).length).toBeGreaterThan(candidateReads);
+    expect(section(host, "agent-installation-create")).toBe(action);
+    expect(action.textContent).toContain("Outcome is not confirmed.");
     await click(button(action, "Re-check same request"));
-    expect(posts(t)).toHaveLength(2);
+    expect(posts(t)).toHaveLength(3);
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.installation.create", idempotencyKey: expect.any(String),
       workspaceId: installation.workspaceId, resourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
       assetId: installation.pinnedVersionAssetId, assetVersion: 9 });
-    expect(posts(t)[1]?.body).toEqual(posts(t)[0]?.body);
+    expect(posts(t)[2]?.body).toEqual(posts(t)[0]?.body);
     expect(action.textContent).toContain("Outcome is not confirmed.");
     expect(action.textContent).toContain("exact-operation");
     expect(action.textContent).not.toMatch(/Request recorded\.|foreign-operation/);
