@@ -52,14 +52,18 @@ fn rfc3339(t: DateTime<Utc>) -> String {
 pub async fn submit_action(
     State(state): State<BffState>,
     headers: HeaderMap,
-    body: Result<Json<ActionCommand>, axum::extract::rejection::JsonRejection>,
+    body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let ctx = match resolve_lifecycle_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
-    let Ok(Json(cmd)) = body else {
+    let Ok(Json(value)) = body else {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    };
+    let cmd = match parse_action_command(value) {
+        Ok(cmd) => cmd,
+        Err(refusal) => return refusal.respond(None),
     };
     if ctx.access_mode == contracts::PlatformSessionAccessMode::LifecycleRestricted
         && cmd.action_key != "tenant.delete"
@@ -75,6 +79,121 @@ pub async fn submit_action(
     match result {
         Ok((status, submission)) => (status, Json(submission)).into_response(),
         Err((refusal, op)) => refusal.respond(op),
+    }
+}
+
+fn parse_action_command(value: Value) -> Result<ActionCommand, Refusal> {
+    // NONE must not carry a credential field, even null: generated Option
+    // fields otherwise erase the difference between null and absence.
+    if value.get("actionKey").and_then(Value::as_str) == Some("llm_route.create")
+        && value
+            .pointer("/llmRouteCreate/providerCredentialMode")
+            .and_then(Value::as_str)
+            == Some("NONE")
+        && value
+            .get("llmRouteCreate")
+            .and_then(Value::as_object)
+            .is_some_and(|source| source.contains_key("providerSecretRef"))
+    {
+        return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
+    }
+    serde_json::from_value(value).map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))
+}
+
+#[cfg(test)]
+mod action_command_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn route_command() -> Value {
+        let source = json!({
+            "id": Uuid::new_v4().to_string(),
+            "revision": 1,
+            "sha256": "a".repeat(64),
+        });
+        json!({
+            "actionKey": "llm_route.create",
+            "idempotencyKey": Uuid::new_v4().to_string(),
+            "llmRouteCreate": {
+                "provider": source,
+                "model": source,
+                "providerCredentialMode": "NONE",
+            },
+        })
+    }
+
+    #[test]
+    fn route_command_keeps_explicit_credential_variants() {
+        let command = route_command();
+        let route = parse_action_command(command.clone())
+            .unwrap()
+            .llm_route_create
+            .unwrap();
+        assert_eq!(
+            route.provider_credential_mode,
+            contracts::LlmProviderCredentialMode::None
+        );
+        assert!(route.provider_secret_ref.is_none());
+
+        let mut command = command;
+        command["llmRouteCreate"]["providerCredentialMode"] = json!("SECRET_REF");
+        command["llmRouteCreate"]["providerSecretRef"] = json!({
+            "locator": Uuid::new_v4().to_string(),
+            "version": 1,
+            "audience": Uuid::new_v4().to_string(),
+        });
+        let route = parse_action_command(command)
+            .unwrap()
+            .llm_route_create
+            .unwrap();
+        assert_eq!(
+            route.provider_credential_mode,
+            contracts::LlmProviderCredentialMode::SecretRef
+        );
+        assert!(route.provider_secret_ref.is_some());
+
+        assert!(parse_action_command(json!({
+            "actionKey": "workspace.create",
+            "idempotencyKey": Uuid::new_v4().to_string(),
+        }))
+        .is_ok());
+    }
+
+    #[test]
+    fn route_command_rejects_erased_null_and_unrecognized_mode() {
+        let command = route_command();
+        for reference in [
+            Value::Null,
+            json!({
+                "locator": Uuid::new_v4().to_string(),
+                "version": 1,
+                "audience": Uuid::new_v4().to_string(),
+            }),
+        ] {
+            let mut invalid = command.clone();
+            invalid["llmRouteCreate"]["providerSecretRef"] = reference;
+            assert!(matches!(
+                parse_action_command(invalid),
+                Err(Refusal::Precondition(ReasonCode::InvalidParameters))
+            ));
+        }
+        for mode in [Value::Null, json!("UNRECOGNIZED")] {
+            let mut invalid = command.clone();
+            invalid["llmRouteCreate"]["providerCredentialMode"] = mode;
+            assert!(matches!(
+                parse_action_command(invalid),
+                Err(Refusal::Precondition(ReasonCode::InvalidParameters))
+            ));
+        }
+        let mut invalid = command;
+        invalid["llmRouteCreate"]
+            .as_object_mut()
+            .unwrap()
+            .remove("providerCredentialMode");
+        assert!(matches!(
+            parse_action_command(invalid),
+            Err(Refusal::Precondition(ReasonCode::InvalidParameters))
+        ));
     }
 }
 

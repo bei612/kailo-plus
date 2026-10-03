@@ -25,6 +25,21 @@
             "properties": {
               "capabilityRequirements": {"type": "array", "items": {"type": "string"}},
               "replyPolicies": {"type": "array", "items": {"type": "string"}},
+              "replyPolicyMappings": {
+                "type": "array",
+                "description": "同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。",
+                "items": {
+                  "title": "RuntimeReplyPolicyMapping",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["key", "threadReplies", "broadcastReplies"],
+                  "properties": {
+                    "key": {"type": "string"},
+                    "threadReplies": {"type": "boolean"},
+                    "broadcastReplies": {"type": "boolean"}
+                  }
+                }
+              },
               "maxParallelism": {"type": "integer"},
               "maxIdleTimeoutSeconds": {"type": "integer"},
               "maxTurnDurationSeconds": {"type": "integer"}

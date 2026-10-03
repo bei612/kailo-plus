@@ -101,6 +101,15 @@ pub(crate) async fn advance(
     {
         return StatusCode::CONFLICT.into_response();
     }
+    if matches!(
+        invocation.status.as_str(),
+        "CREATED" | "DISPATCHING" | "RUNNING" | "UNKNOWN"
+    ) {
+        invocation.cancel_pending = match refresh_delegation_cancel(&state, &invocation).await {
+            Ok(pending) => pending,
+            Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+        };
+    }
     let Ok(attempt) = i32::try_from(input.attempt) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -298,6 +307,86 @@ pub(crate) async fn advance(
         }
         Err(_) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
     }
+}
+
+#[derive(FromRow)]
+struct CancellationGrant {
+    id: Uuid,
+    state: String,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    observed_at: chrono::DateTime<chrono::Utc>,
+    cancel_pending: bool,
+}
+
+/// The same immutable Grant is checked on every Advance, including a running
+/// turn. AE→Tenant→Invocation is shared with the first-turn and cleanup writers;
+/// expiry uses actual wall clock, not an Automation pause/current-version flag.
+async fn refresh_delegation_cancel(
+    state: &ServiceState,
+    invocation: &Invocation,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = state.pool.begin().await?;
+    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+    if ae.tenant_id != invocation.tenant_id
+        || ae.workspace_id != Some(invocation.workspace_id)
+        || ae.temporal_workflow_id.as_deref() != Some(invocation.workflow_id.as_str())
+    {
+        return Err(sqlx::Error::Protocol("Delegation 取消 scope 不一致".into()));
+    }
+    let tenant: Option<Uuid> =
+        sqlx::query_scalar("select id from identity.tenant where id=$1 for no key update")
+            .bind(ae.tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if tenant != Some(invocation.tenant_id) {
+        return Err(sqlx::Error::Protocol(
+            "Delegation 取消 Tenant 不可核验".into(),
+        ));
+    }
+    let grant: Option<CancellationGrant> =
+        sqlx::query_as("select g.id,g.state,g.expires_at,clock_timestamp() as observed_at,i.cancel_pending
+            from catalog.agent_invocation i join admission.delegation_grant g on g.id=i.delegation_id
+            where i.id=$1 and i.action_execution_id=$2 and i.tenant_id=$3 and i.workspace_id=$4
+              and i.workflow_id=$5 and i.installation_resource_id=$6
+              and i.agent_version_asset_id=$7 and i.projection_generation=$8
+              and g.tenant_id=i.tenant_id and g.workspace_id=i.workspace_id
+              and g.installation_resource_id=i.installation_resource_id
+              and g.agent_principal_id=$9 and g.grantor_principal_id=$10
+            for update of i")
+        .bind(invocation.id).bind(ae.id).bind(ae.tenant_id).bind(ae.workspace_id)
+        .bind(&invocation.workflow_id).bind(invocation.installation_resource_id)
+        .bind(invocation.agent_version_asset_id).bind(invocation.projection_generation)
+        .bind(ae.actor_principal_id).bind(ae.initiator_principal_id)
+        .fetch_optional(&mut *tx).await?;
+    let Some(grant) = grant else {
+        return Err(sqlx::Error::Protocol(
+            "Invocation 冻结 Delegation 不可核验".into(),
+        ));
+    };
+    let revoked = crate::governance::delegation::cancellation_required(
+        &grant.state,
+        grant.expires_at,
+        grant.observed_at,
+    )
+    .map_err(|_| sqlx::Error::Protocol("Delegation 状态不可核验".into()))?;
+    if revoked {
+        crate::governance::delegation::flag_invocations(&mut tx, invocation.tenant_id, grant.id)
+            .await?;
+        turn_audit(
+            state,
+            &mut tx,
+            &ae,
+            invocation.id,
+            ("delegation-cancel", "DISPATCH", "DELEGATION_CANCEL_PENDING"),
+            vec![crate::audit::Evidence::new(
+                EvidenceKind::ActionExecutionId,
+                ae.id,
+            )],
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(grant.cancel_pending || revoked)
 }
 
 /// A canceled CREATED invocation has no model execution to settle. The absence
@@ -924,6 +1013,28 @@ async fn observe(
             "UNKNOWN_EXTERNAL_RESULT",
         );
     }
+    if status == "inProgress" && invocation.cancel_pending {
+        // Recovery can discover the original turn ID in this very page. Stop
+        // that turn even when its billing timestamp is still unknown, without
+        // another dispatch; acceptance is not native terminal evidence.
+        let (Some(runtime), Some(thread)) = (
+            state.agent_runtime.as_ref(),
+            invocation.runtime_thread_id.as_deref(),
+        ) else {
+            return result(
+                invocation.id,
+                TaskStatus::Running,
+                "UNKNOWN_EXTERNAL_RESULT",
+            );
+        };
+        if runtime.interrupt(projection, thread, id).await.is_err() {
+            return result(
+                invocation.id,
+                TaskStatus::Running,
+                "UNKNOWN_EXTERNAL_RESULT",
+            );
+        }
+    }
     let Some(started_at) = turn
         .get("startedAt")
         .and_then(Value::as_i64)
@@ -1015,6 +1126,15 @@ async fn observe(
         return result(invocation.id, TaskStatus::Running, "BILLING_UNAVAILABLE");
     }
     if status == "completed" {
+        if invocation.cancel_pending && invocation.reply_event_id.is_none() {
+            // Known native completion is not a successful governed reply. A
+            // revoked run cannot create a new reply intent, but must settle its
+            // actual usage and release its holder before business failure.
+            if released {
+                return finish_billed_turn(state, invocation, id, status, None, None).await;
+            }
+            return release_holder(state, invocation.id, false, "CAPACITY_UNAVAILABLE").await;
+        }
         let event_id = match invocation.reply_event_id.as_deref() {
             Some(event_id) => event_id.to_owned(),
             None => match publish_reply(state, invocation, projection, turn, activity).await {
@@ -1030,11 +1150,19 @@ async fn observe(
             },
         };
         let waiting = match reconcile_reply(state, invocation, id, &event_id).await {
-            Ok(true) if released => {
-                return finish_billed_turn(state, invocation, id, status, Some(&event_id)).await;
+            Ok(Some(delivered)) if released => {
+                return finish_billed_turn(
+                    state,
+                    invocation,
+                    id,
+                    status,
+                    Some(&event_id),
+                    Some(delivered),
+                )
+                .await;
             }
-            Ok(true) => "CAPACITY_UNAVAILABLE",
-            Ok(false) => {
+            Ok(Some(_)) => "CAPACITY_UNAVAILABLE",
+            Ok(None) => {
                 let changed = match sqlx::query("update catalog.agent_invocation set status='UNKNOWN',updated_at=now() where id=$1 and status='RUNNING' and native_status='completed' and runtime_turn_id=$2 and reply_event_id=$3")
                         .bind(invocation.id).bind(id).bind(&event_id)
                         .execute(&state.pool).await {
@@ -1055,7 +1183,7 @@ async fn observe(
     }
     if matches!(status, "failed" | "interrupted") {
         if released {
-            return finish_billed_turn(state, invocation, id, status, None).await;
+            return finish_billed_turn(state, invocation, id, status, None, None).await;
         }
         return release_holder(state, invocation.id, false, "CAPACITY_UNAVAILABLE").await;
     }
@@ -1065,6 +1193,8 @@ async fn observe(
 
 #[derive(FromRow, PartialEq)]
 struct ReplyBinding {
+    agent_version_content: Value,
+    agent_version_config_hash: String,
     agent_pubkey: String,
     agent_locator: String,
     agent_secret_version: i32,
@@ -1103,7 +1233,8 @@ async fn lock_reply(
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
     let binding: Option<ReplyBinding> = sqlx::query_as(
-        "select b.pubkey agent_pubkey,b.private_key_secret_ref agent_locator,
+        "select av.content agent_version_content,av.config_hash agent_version_config_hash,
+            b.pubkey agent_pubkey,b.private_key_secret_ref agent_locator,
             b.private_key_secret_version agent_secret_version,b.private_key_secret_audience agent_audience,
             tb.normalized_host,tb.nip11_snapshot_digest,wb.channel_id
          from catalog.agent_invocation i
@@ -1118,6 +1249,10 @@ async fn lock_reply(
            and v.result_target='TRIGGER_THREAD'
          join catalog.agent_installation a on a.resource_id=i.installation_resource_id and a.workspace_id=i.workspace_id
            and a.pinned_version_asset_id=i.agent_version_asset_id and a.active_projection_generation=i.projection_generation
+         join catalog.agent_version av on av.asset_id=i.agent_version_asset_id
+           and av.agent_resource_id=a.agent_resource_id and av.state in ('PUBLISHED','RETIRED')
+         join catalog.asset va on va.id=av.asset_id and va.tenant_id=i.tenant_id
+           and va.state in ('PUBLISHED','RETIRED') and va.projection_action_execution_id is null
          join catalog.agent_memory_binding m on m.installation_resource_id=a.resource_id and m.state='ACTIVE'
          join identity.buzz_identity_binding b on b.pubkey=m.agent_buzz_identity_binding_id
            and b.principal_id=a.agent_principal_id and b.tenant_id=i.tenant_id and b.kind='AGENT'
@@ -1138,10 +1273,21 @@ async fn lock_reply(
         .bind(projection.installation_id).bind(invocation.agent_version_asset_id).bind(projection.generation)
         .bind(&projection.config_hash).bind(&invocation.runtime_thread_id).bind(turn_id).bind(expected_event)
         .fetch_optional(&mut **tx).await?;
-    Ok((
-        ae,
-        binding.ok_or(Refusal::Precondition(ReasonCode::BindingNotActive))?,
-    ))
+    let binding = binding.ok_or(Refusal::Precondition(ReasonCode::BindingNotActive))?;
+    let content: contracts::ContentClass =
+        serde_json::from_value(binding.agent_version_content.clone())
+            .map_err(|_| Refusal::Unavailable("Agent reply 的固定版本不符合共享契约".into()))?;
+    let (_, hash) = crate::agent_version::content(&content)?;
+    if hash != binding.agent_version_config_hash {
+        return Err(Refusal::Unavailable(
+            "Agent reply 的固定版本摘要不可查证".into(),
+        ));
+    }
+    // Both pre-sign and pre-delivery callers take this fence. The current
+    // Automation result target remains TRIGGER_THREAD; no broadcast publisher
+    // is introduced, and an already persisted reply ID is only observed.
+    crate::agent_version::runtime_profile(&content)?;
+    Ok((ae, binding))
 }
 
 /// Full durable history is already fenced by the unique Invocation clientId.
@@ -1314,43 +1460,67 @@ async fn publish_reply(
     tx.commit().await?;
     // A crash after this commit leaves only the stable ID. Future observations
     // query it; they cannot sign again or reconstruct/replay a second reply.
-    let holder = state
-        .capacity
-        .acquire_or_renew(
-            &state.pool,
-            &state.temporal,
-            invocation.id,
-            &activity.run_id,
-            &activity.activity_id,
-            attempt,
-        )
-        .await
-        .map_err(|_| unknown())?;
-    if !holder.held || holder.workflow_cancel_requested {
-        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+    let prepared = async {
+        let holder = state
+            .capacity
+            .acquire_or_renew(
+                &state.pool,
+                &state.temporal,
+                invocation.id,
+                &activity.run_id,
+                &activity.activity_id,
+                attempt,
+            )
+            .await
+            .map_err(|_| unknown())?;
+        if !holder.held || holder.workflow_cancel_requested {
+            return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+        }
+        let mut guard = state.pool.begin().await?;
+        let (current_ae, current_binding) =
+            lock_reply(&mut guard, invocation, projection, turn_id, Some(&event_id)).await?;
+        let intents: Vec<ReplyIntent> = sqlx::query_as(REPLY_INTENT)
+            .bind(invocation.id)
+            .bind(&event_id)
+            .bind(turn_id)
+            .fetch_all(&mut *guard)
+            .await?;
+        let [intent] = intents.as_slice() else {
+            return Err(unknown());
+        };
+        if current_binding != binding
+            || current_ae.operation_id != ae.operation_id
+            || intent.operation_id != ae.operation_id
+            || intent.agent_pubkey != binding.agent_pubkey
+            || intent.channel_id != binding.channel_id
+        {
+            return Err(unknown());
+        }
+        crate::automation::fresh_reply(state, &mut guard, invocation.id, turn_id, Some(&event_id))
+            .await?;
+        Ok::<_, Refusal>(guard)
     }
-    let mut guard = state.pool.begin().await?;
-    let (current_ae, current_binding) =
-        lock_reply(&mut guard, invocation, projection, turn_id, Some(&event_id)).await?;
-    let intents: Vec<ReplyIntent> = sqlx::query_as(REPLY_INTENT)
-        .bind(invocation.id)
-        .bind(&event_id)
-        .bind(turn_id)
-        .fetch_all(&mut *guard)
-        .await?;
-    let [intent] = intents.as_slice() else {
-        return Err(unknown());
+    .await;
+    let mut guard = match prepared {
+        Ok(guard) => guard,
+        Err(error) => {
+            // Only this invocation of publish_reply just won the intent CAS;
+            // no deliver call has begun. Dependency/DB uncertainty is not a
+            // rejection proof, and recovery never manufactures this outcome.
+            if definite_reply_refusal(&error) {
+                record_reply_not_delivered(
+                    state,
+                    invocation,
+                    &ae,
+                    turn_id,
+                    &event_id,
+                    evidence.clone(),
+                )
+                .await?;
+            }
+            return Err(error);
+        }
     };
-    if current_binding != binding
-        || current_ae.operation_id != ae.operation_id
-        || intent.operation_id != ae.operation_id
-        || intent.agent_pubkey != binding.agent_pubkey
-        || intent.channel_id != binding.channel_id
-    {
-        return Err(unknown());
-    }
-    crate::automation::fresh_reply(state, &mut guard, invocation.id, turn_id, Some(&event_id))
-        .await?;
     // Keep the same DB fences through the one external call. Neither native
     // rejection nor an HTTP timeout causes a new ID, turn or body replay.
     let outcome = match client.deliver(&state.http, &event, admitted).await {
@@ -1374,6 +1544,78 @@ async fn publish_reply(
     Ok(event_id)
 }
 
+fn definite_reply_refusal(error: &crate::governance::Refusal) -> bool {
+    use crate::governance::Refusal;
+    match error {
+        Refusal::Denied(_)
+        | Refusal::Blocked(_)
+        | Refusal::Precondition(_)
+        | Refusal::Limit(_)
+        | Refusal::Conflict(_) => true,
+        Refusal::Unavailable(_) => false,
+    }
+}
+
+async fn record_reply_not_delivered(
+    state: &ServiceState,
+    invocation: &Invocation,
+    ae: &crate::governance::Execution,
+    turn: &str,
+    event: &str,
+    evidence: Vec<crate::audit::Evidence>,
+) -> Result<(), crate::governance::Refusal> {
+    let mut tx = state.pool.begin().await?;
+    let current = crate::governance::lock_execution(&mut tx, ae.id).await?;
+    if current.operation_id != ae.operation_id
+        || current.tenant_id != invocation.tenant_id
+        || current.workspace_id != Some(invocation.workspace_id)
+        || current.parameter_hash != ae.parameter_hash
+    {
+        return Err(crate::governance::Refusal::Unavailable(
+            "Reply intent 不可核验".into(),
+        ));
+    }
+    let tenant: Option<Uuid> =
+        sqlx::query_scalar("select id from identity.tenant where id=$1 for no key update")
+            .bind(ae.tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let exact: Option<Uuid> = sqlx::query_scalar(
+        "select id from catalog.agent_invocation
+        where id=$1 and action_execution_id=$2 and tenant_id=$3 and workspace_id=$4
+          and runtime_turn_id=$5 and native_status='completed' and reply_event_id=$6
+          and status in ('RUNNING','UNKNOWN') for update",
+    )
+    .bind(invocation.id)
+    .bind(ae.id)
+    .bind(ae.tenant_id)
+    .bind(ae.workspace_id)
+    .bind(turn)
+    .bind(event)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if tenant != Some(ae.tenant_id) || exact != Some(invocation.id) {
+        return Err(crate::governance::Refusal::Unavailable(
+            "Reply intent 已漂移".into(),
+        ));
+    }
+    turn_audit(
+        state,
+        &mut tx,
+        &current,
+        invocation.id,
+        (
+            &format!("reply:{event}:outcome"),
+            "OUTCOME",
+            "NOT_DELIVERED",
+        ),
+        evidence,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 #[derive(FromRow, PartialEq)]
 struct ReplyIntent {
     dispatch_audit_id: Uuid,
@@ -1392,6 +1634,7 @@ struct ReplyIntent {
     evidence_refs: Value,
     agent_pubkey: String,
     channel_id: Uuid,
+    delivery_outcome: Option<String>,
 }
 
 // Readback only: revoked identities/projections may still have an in-flight
@@ -1400,7 +1643,7 @@ struct ReplyIntent {
 const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.human_identity_id,
     d.initiator_principal_id,d.actor_principal_id,d.action_key,d.action_version,
     d.component_type_key,d.target_type,d.target_id,d.parameter_hash,d.result_exposure,
-    d.correlation_id,d.evidence_refs,b.pubkey as agent_pubkey,wb.channel_id
+    d.correlation_id,d.evidence_refs,b.pubkey as agent_pubkey,wb.channel_id,o.result_code as delivery_outcome
   from catalog.agent_invocation i
   join admission.action_execution ae on ae.id=i.action_execution_id
     and ae.tenant_id=i.tenant_id and ae.workspace_id=i.workspace_id
@@ -1427,6 +1670,13 @@ const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.hu
       jsonb_build_object('kind','BUZZ_EVENT_ID','value',i.reply_event_id),
       jsonb_build_object('kind','BUZZ_PUBKEY','value',b.pubkey),
       jsonb_build_object('kind','ACTION_EXECUTION_ID','value',ae.id::text))
+  left join audit.audit_event o on o.event_key=ae.operation_id::text||':agent-turn:'||i.id::text||':reply:'||i.reply_event_id||':outcome'
+    and o.operation_id=d.operation_id and o.tenant_id=d.tenant_id and o.workspace_id=d.workspace_id
+    and o.actor_principal_id=d.actor_principal_id and o.action_key=d.action_key
+    and o.action_version=d.action_version and o.parameter_hash=d.parameter_hash and o.event_type='OUTCOME'
+    and o.evidence_refs @> jsonb_build_array(
+      jsonb_build_object('kind','BUZZ_EVENT_ID','value',i.reply_event_id),
+      jsonb_build_object('kind','ACTION_EXECUTION_ID','value',ae.id::text))
   where i.id=$1 and i.reply_event_id=$2 and i.runtime_turn_id=$3
     and i.native_status='completed' and i.status in ('RUNNING','UNKNOWN')";
 
@@ -1437,7 +1687,7 @@ async fn reconcile_reply(
     invocation: &Invocation,
     turn_id: &str,
     event_id: &str,
-) -> Result<bool, sqlx::Error> {
+) -> Result<Option<bool>, sqlx::Error> {
     let intents: Vec<ReplyIntent> = sqlx::query_as(REPLY_INTENT)
         .bind(invocation.id)
         .bind(event_id)
@@ -1445,18 +1695,24 @@ async fn reconcile_reply(
         .fetch_all(&state.pool)
         .await?;
     let [intent] = intents.as_slice() else {
-        return Ok(false);
+        return Ok(None);
     };
     let Some(raw_refs) = intent.evidence_refs.as_array() else {
-        return Ok(false);
+        return Ok(None);
     };
     let Some(evidence_refs) = raw_refs
         .iter()
         .map(crate::audit::Evidence::parse)
         .collect::<Option<Vec<_>>>()
     else {
-        return Ok(false);
+        return Ok(None);
     };
+    if matches!(
+        intent.delivery_outcome.as_deref(),
+        Some("REJECTED" | "NOT_DELIVERED")
+    ) {
+        return Ok(Some(false));
+    }
     let Ok((control, _)) = crate::tenant_lifecycle::control_client(
         state,
         invocation.tenant_id,
@@ -1464,7 +1720,7 @@ async fn reconcile_reply(
     )
     .await
     else {
-        return Ok(false);
+        return Ok(None);
     };
     let observed = control
         .channel_reply_exists(
@@ -1477,7 +1733,7 @@ async fn reconcile_reply(
         .await;
     if !matches!(observed, Ok(true)) {
         // Native errors may include protocol bodies; don't copy them to logs.
-        return Ok(false);
+        return Ok(None);
     }
     let mut tx = state.pool.begin().await?;
     let locked: Option<Uuid> = sqlx::query_scalar(
@@ -1490,7 +1746,7 @@ async fn reconcile_reply(
     .fetch_optional(&mut *tx)
     .await?;
     if locked.is_none() {
-        return Ok(false);
+        return Ok(None);
     }
     let current: Vec<ReplyIntent> = sqlx::query_as(REPLY_INTENT)
         .bind(invocation.id)
@@ -1499,7 +1755,7 @@ async fn reconcile_reply(
         .fetch_all(&mut *tx)
         .await?;
     if current.as_slice() != std::slice::from_ref(intent) {
-        return Ok(false);
+        return Ok(None);
     }
     crate::audit::append(
         &mut tx,
@@ -1532,7 +1788,7 @@ async fn reconcile_reply(
     tx.commit().await?;
     // Relay acceptance proves delivery, not Usage completeness or Invocation
     // business completion. The caller separately requires the committed set.
-    Ok(true)
+    Ok(Some(true))
 }
 
 /// A released holder and native terminal turn are necessary but not metering
@@ -1544,18 +1800,19 @@ async fn finish_billed_turn(
     turn: &str,
     native_status: &str,
     reply: Option<&str>,
+    reply_delivered: Option<bool>,
 ) -> Response {
-    let (status, wire_status) = match native_status {
-        "completed" if reply.is_some() => (TaskStatus::Completed, "COMPLETED"),
-        "failed" if reply.is_none() => (TaskStatus::Failed, "FAILED"),
-        "interrupted" if reply.is_none() => (TaskStatus::Canceled, "CANCELED"),
-        _ => {
-            return result(
-                invocation.id,
-                TaskStatus::Running,
-                "UNKNOWN_EXTERNAL_RESULT",
-            )
-        }
+    let Some((status, wire_status)) = billed_outcome(
+        native_status,
+        reply,
+        invocation.cancel_pending,
+        reply_delivered,
+    ) else {
+        return result(
+            invocation.id,
+            TaskStatus::Running,
+            "UNKNOWN_EXTERNAL_RESULT",
+        );
     };
     let (ids, mut evidence) = match crate::gateway_usage::committed_turn(
         &state.pool,
@@ -1627,7 +1884,17 @@ async fn finish_billed_turn(
            and l.workflow_id=i.workflow_id
          where i.id=$1 and i.action_execution_id=$2 and i.tenant_id=$3 and i.workspace_id=$4
            and i.status in ('RUNNING','UNKNOWN') and i.runtime_turn_id=$5 and i.native_status=$6
-           and i.reply_event_id is not distinct from $10::text for update of i,l",
+           and i.reply_event_id is not distinct from $10::text
+           and ($6<>'completed' or $10::text is not null or i.cancel_pending)
+           and ($11::boolean is distinct from false or exists(select 1 from audit.audit_event o
+             where o.event_key=$7::text||':agent-turn:'||i.id::text||':reply:'||i.reply_event_id||':outcome'
+               and o.operation_id=$7 and o.tenant_id=i.tenant_id and o.workspace_id=i.workspace_id
+               and o.action_key=$12 and o.action_version=$13 and o.actor_principal_id=$14
+               and o.parameter_hash=$15 and o.event_type='OUTCOME' and o.result_code in ('REJECTED','NOT_DELIVERED')
+               and o.evidence_refs @> jsonb_build_array(
+                 jsonb_build_object('kind','BUZZ_EVENT_ID','value',i.reply_event_id),
+                 jsonb_build_object('kind','ACTION_EXECUTION_ID','value',i.action_execution_id::text))))
+           for update of i,l",
     )
     .bind(invocation.id)
     .bind(ae.id)
@@ -1639,6 +1906,8 @@ async fn finish_billed_turn(
     .bind(&ids)
     .bind(event_count)
     .bind(reply)
+    .bind(reply_delivered)
+    .bind(&ae.action_key).bind(ae.action_version).bind(ae.actor_principal_id).bind(&ae.parameter_hash)
     .fetch_optional(&mut *tx)
     .await
     {
@@ -1694,7 +1963,15 @@ async fn finish_billed_turn(
         &mut tx,
         &ae,
         invocation.id,
-        ("check-usage-committed", "OUTCOME", wire_status),
+        (
+            "check-usage-committed",
+            "OUTCOME",
+            if native_status == "completed" && wire_status == "FAILED" {
+                "FAILED_REPLY_NOT_DELIVERED"
+            } else {
+                wire_status
+            },
+        ),
         evidence,
     )
     .await
@@ -1711,6 +1988,26 @@ async fn finish_billed_turn(
     // Task completion certifies execution/reply/CHECK usage; it is deliberately
     // not an OpenMeter invoice-finalized or credit-snapshot assertion.
     result(invocation.id, status, "NONE")
+}
+
+fn billed_outcome(
+    native_status: &str,
+    reply: Option<&str>,
+    cancel_pending: bool,
+    reply_delivered: Option<bool>,
+) -> Option<(TaskStatus, &'static str)> {
+    match native_status {
+        "completed" if reply.is_some() && reply_delivered == Some(true) => {
+            Some((TaskStatus::Completed, "COMPLETED"))
+        }
+        "completed" if reply.is_some() && reply_delivered == Some(false) => {
+            Some((TaskStatus::Failed, "FAILED"))
+        }
+        "completed" if reply.is_none() && cancel_pending => Some((TaskStatus::Failed, "FAILED")),
+        "failed" if reply.is_none() => Some((TaskStatus::Failed, "FAILED")),
+        "interrupted" if reply.is_none() => Some((TaskStatus::Canceled, "CANCELED")),
+        _ => None,
+    }
 }
 
 async fn release_holder(state: &ServiceState, id: Uuid, released: bool, waiting: &str) -> Response {
@@ -1762,8 +2059,53 @@ fn result(id: Uuid, status: TaskStatus, waiting: &str) -> Response {
 
 #[cfg(test)]
 mod reply_tests {
-    use super::native_reply;
+    use super::{billed_outcome, definite_reply_refusal, native_reply};
     use serde_json::json;
+
+    #[test]
+    fn revoked_completed_turn_requires_delivery_or_exact_rejection_proof() {
+        assert_eq!(
+            billed_outcome("completed", None, true, None),
+            Some((contracts::TaskStatus::Failed, "FAILED"))
+        );
+        assert!(billed_outcome("completed", None, false, None).is_none());
+        // An already-issued reply is observed/settled, never erased or resent.
+        assert_eq!(
+            billed_outcome("completed", Some("original-event"), true, Some(true)),
+            Some((contracts::TaskStatus::Completed, "COMPLETED"))
+        );
+        assert_eq!(
+            billed_outcome("completed", Some("original-event"), true, Some(false)),
+            Some((contracts::TaskStatus::Failed, "FAILED"))
+        );
+        assert_eq!(
+            billed_outcome("completed", Some("original-event"), false, Some(false)),
+            Some((contracts::TaskStatus::Failed, "FAILED"))
+        );
+        assert!(billed_outcome("completed", Some("original-event"), true, None).is_none());
+        for status in ["inProgress", "future-status", "UNKNOWN"] {
+            assert!(billed_outcome(status, None, true, None).is_none());
+        }
+        assert_eq!(
+            billed_outcome("interrupted", None, true, None),
+            Some((contracts::TaskStatus::Canceled, "CANCELED"))
+        );
+    }
+
+    #[test]
+    fn dependency_uncertainty_is_not_a_pre_delivery_rejection() {
+        use crate::governance::Refusal;
+        use contracts::ReasonCode;
+        for refusal in [
+            Refusal::Denied(ReasonCode::ScopeGuardFailed),
+            Refusal::Precondition(ReasonCode::TargetStateConflict),
+        ] {
+            assert!(definite_reply_refusal(&refusal));
+        }
+        assert!(!definite_reply_refusal(&Refusal::Unavailable(
+            "read unknown".into()
+        )));
+    }
 
     // 实现后的原生协议断言，无 Tenant/Installation/DB 或执行入口夹具。
     #[test]

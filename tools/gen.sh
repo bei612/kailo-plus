@@ -69,9 +69,9 @@ src = re.sub(r"\n(\s*)\};\n", lambda m: "\n%s});\n" % m.group(1), src)
 # 直接抛错——缺省的可选字段恰恰是常态（例如 TaskView.observation）。按类找出声明为
 # 可空的字段，只改写它们：缺省即 null；出现了本端不认识的值仍然抛错（回应不合契约，
 # 不猜它的意思）。必填字段不动。
-def _optional_enums(block):
+def _optional_fields(block):
     nullable = set(re.findall(r"^\s*final \w+\? (\w+);", block, flags=re.M))
-    return re.sub(
+    block = re.sub(
         r'(\w+): (\w+Values)\.map\[json\["(\w+)"\]\]!',
         lambda m: (
             '%s: json["%s"] == null ? null : %s.map[json["%s"]]!'
@@ -81,7 +81,22 @@ def _optional_enums(block):
         ),
         block,
     )
-src = "".join(_optional_enums(b) for b in re.split(r"(?=^class \w+ \{)", src, flags=re.M))
+    # 可空 List 的缺省不是空集合。quicktype 在两侧写 ? []，会给旧输入
+    # 伪造字段；按同一类的 nullable 声明改为 null，再由 _stripNulls 省略。
+    lists = set(re.findall(r"^\s*final List<[^;]+>\? (\w+);", block, flags=re.M))
+    block = re.sub(
+        r'(\w+): (json\["[^"]+"\] == null \? )\[\]( : List<)',
+        lambda m: m.group(1) + ": " + m.group(2) + "null" + m.group(3)
+        if m.group(1) in lists else m.group(0),
+        block,
+    )
+    return re.sub(
+        r'("[^"]+": )(\w+)( == null \? )\[\]( : List<)',
+        lambda m: m.group(1) + m.group(2) + m.group(3) + "null" + m.group(4)
+        if m.group(2) in lists else m.group(0),
+        block,
+    )
+src = "".join(_optional_fields(b) for b in re.split(r"(?=^class \w+ \{)", src, flags=re.M))
 src += """
 
 /// 去掉值为 null 的键。缺省的可选字段必须在线格式中省略而不是写成 null——

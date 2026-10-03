@@ -630,7 +630,7 @@ class Canary {
     ratio: json["ratio"]?.toDouble(),
     tags: List<String>.from(json["tags"].map((x) => x)),
     variants: json["variants"] == null
-        ? []
+        ? null
         : List<Variant>.from(json["variants"]!.map((x) => Variant.fromJson(x))),
   );
 
@@ -646,7 +646,7 @@ class Canary {
     "ratio": ratio,
     "tags": List<dynamic>.from(tags.map((x) => x)),
     "variants": variants == null
-        ? []
+        ? null
         : List<dynamic>.from(variants!.map((x) => x.toJson())),
   });
 }
@@ -695,14 +695,14 @@ class Nested {
   factory Nested.fromJson(Map<String, dynamic> json) => Nested(
     label: json["label"],
     weights: json["weights"] == null
-        ? []
+        ? null
         : List<double>.from(json["weights"]!.map((x) => x?.toDouble())),
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "label": label,
     "weights": weights == null
-        ? []
+        ? null
         : List<dynamic>.from(weights!.map((x) => x)),
   });
 }
@@ -1247,31 +1247,39 @@ final resultExposureModeValues = EnumValues({
 
 ///仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
 ///
-///受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+///受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
+///仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
 class LlmRouteCreateClass {
   final Model model;
   final Model provider;
-  final LlmRouteCreateProviderSecretRef providerSecretRef;
+  final LlmProviderCredentialMode providerCredentialMode;
+  final LlmRouteCreateProviderSecretRef? providerSecretRef;
 
   LlmRouteCreateClass({
     required this.model,
     required this.provider,
-    required this.providerSecretRef,
+    required this.providerCredentialMode,
+    this.providerSecretRef,
   });
 
-  factory LlmRouteCreateClass.fromJson(Map<String, dynamic> json) =>
-      LlmRouteCreateClass(
-        model: Model.fromJson(json["model"]),
-        provider: Model.fromJson(json["provider"]),
-        providerSecretRef: LlmRouteCreateProviderSecretRef.fromJson(
-          json["providerSecretRef"],
-        ),
-      );
+  factory LlmRouteCreateClass.fromJson(
+    Map<String, dynamic> json,
+  ) => LlmRouteCreateClass(
+    model: Model.fromJson(json["model"]),
+    provider: Model.fromJson(json["provider"]),
+    providerCredentialMode:
+        llmProviderCredentialModeValues.map[json["providerCredentialMode"]]!,
+    providerSecretRef: json["providerSecretRef"] == null
+        ? null
+        : LlmRouteCreateProviderSecretRef.fromJson(json["providerSecretRef"]),
+  );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "model": model.toJson(),
     "provider": provider.toJson(),
-    "providerSecretRef": providerSecretRef.toJson(),
+    "providerCredentialMode":
+        llmProviderCredentialModeValues.reverse[providerCredentialMode],
+    "providerSecretRef": providerSecretRef?.toJson(),
   });
 }
 
@@ -1288,6 +1296,14 @@ class Model {
   Map<String, dynamic> toJson() =>
       _stripNulls({"id": id, "revision": revision, "sha256": sha256});
 }
+
+///提供方认证的显式封闭选择；NONE 不豁免 Gateway 调用者认证或业务授权。
+enum LlmProviderCredentialMode { NONE, SECRET_REF }
+
+final llmProviderCredentialModeValues = EnumValues({
+  "NONE": LlmProviderCredentialMode.NONE,
+  "SECRET_REF": LlmProviderCredentialMode.SECRET_REF,
+});
 
 class LlmRouteCreateProviderSecretRef {
   final String audience;
@@ -2585,12 +2601,16 @@ class PurpleCapabilityContract {
   final int maxTurnDurationSeconds;
   final List<String> replyPolicies;
 
+  ///同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+  final List<PurpleRuntimeReplyPolicyMapping>? replyPolicyMappings;
+
   PurpleCapabilityContract({
     required this.capabilityRequirements,
     required this.maxIdleTimeoutSeconds,
     required this.maxParallelism,
     required this.maxTurnDurationSeconds,
     required this.replyPolicies,
+    this.replyPolicyMappings,
   });
 
   factory PurpleCapabilityContract.fromJson(Map<String, dynamic> json) =>
@@ -2602,6 +2622,13 @@ class PurpleCapabilityContract {
         maxParallelism: json["maxParallelism"],
         maxTurnDurationSeconds: json["maxTurnDurationSeconds"],
         replyPolicies: List<String>.from(json["replyPolicies"].map((x) => x)),
+        replyPolicyMappings: json["replyPolicyMappings"] == null
+            ? null
+            : List<PurpleRuntimeReplyPolicyMapping>.from(
+                json["replyPolicyMappings"]!.map(
+                  (x) => PurpleRuntimeReplyPolicyMapping.fromJson(x),
+                ),
+              ),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -2612,6 +2639,34 @@ class PurpleCapabilityContract {
     "maxParallelism": maxParallelism,
     "maxTurnDurationSeconds": maxTurnDurationSeconds,
     "replyPolicies": List<dynamic>.from(replyPolicies.map((x) => x)),
+    "replyPolicyMappings": replyPolicyMappings == null
+        ? null
+        : List<dynamic>.from(replyPolicyMappings!.map((x) => x.toJson())),
+  });
+}
+
+class PurpleRuntimeReplyPolicyMapping {
+  final bool broadcastReplies;
+  final String key;
+  final bool threadReplies;
+
+  PurpleRuntimeReplyPolicyMapping({
+    required this.broadcastReplies,
+    required this.key,
+    required this.threadReplies,
+  });
+
+  factory PurpleRuntimeReplyPolicyMapping.fromJson(Map<String, dynamic> json) =>
+      PurpleRuntimeReplyPolicyMapping(
+        broadcastReplies: json["broadcastReplies"],
+        key: json["key"],
+        threadReplies: json["threadReplies"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "broadcastReplies": broadcastReplies,
+    "key": key,
+    "threadReplies": threadReplies,
   });
 }
 
@@ -5161,31 +5216,40 @@ class ResolvedIdentity {
   });
 }
 
-///受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+///受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
+///仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
 class LlmRouteCreateInput {
   final Model model;
   final Model provider;
-  final LlmRouteCreateInputProviderSecretRef providerSecretRef;
+  final LlmProviderCredentialMode providerCredentialMode;
+  final LlmRouteCreateInputProviderSecretRef? providerSecretRef;
 
   LlmRouteCreateInput({
     required this.model,
     required this.provider,
-    required this.providerSecretRef,
+    required this.providerCredentialMode,
+    this.providerSecretRef,
   });
 
   factory LlmRouteCreateInput.fromJson(Map<String, dynamic> json) =>
       LlmRouteCreateInput(
         model: Model.fromJson(json["model"]),
         provider: Model.fromJson(json["provider"]),
-        providerSecretRef: LlmRouteCreateInputProviderSecretRef.fromJson(
-          json["providerSecretRef"],
-        ),
+        providerCredentialMode: llmProviderCredentialModeValues
+            .map[json["providerCredentialMode"]]!,
+        providerSecretRef: json["providerSecretRef"] == null
+            ? null
+            : LlmRouteCreateInputProviderSecretRef.fromJson(
+                json["providerSecretRef"],
+              ),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "model": model.toJson(),
     "provider": provider.toJson(),
-    "providerSecretRef": providerSecretRef.toJson(),
+    "providerCredentialMode":
+        llmProviderCredentialModeValues.reverse[providerCredentialMode],
+    "providerSecretRef": providerSecretRef?.toJson(),
   });
 }
 
@@ -5274,12 +5338,16 @@ class FluffyCapabilityContract {
   final int maxTurnDurationSeconds;
   final List<String> replyPolicies;
 
+  ///同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+  final List<FluffyRuntimeReplyPolicyMapping>? replyPolicyMappings;
+
   FluffyCapabilityContract({
     required this.capabilityRequirements,
     required this.maxIdleTimeoutSeconds,
     required this.maxParallelism,
     required this.maxTurnDurationSeconds,
     required this.replyPolicies,
+    this.replyPolicyMappings,
   });
 
   factory FluffyCapabilityContract.fromJson(Map<String, dynamic> json) =>
@@ -5291,6 +5359,13 @@ class FluffyCapabilityContract {
         maxParallelism: json["maxParallelism"],
         maxTurnDurationSeconds: json["maxTurnDurationSeconds"],
         replyPolicies: List<String>.from(json["replyPolicies"].map((x) => x)),
+        replyPolicyMappings: json["replyPolicyMappings"] == null
+            ? null
+            : List<FluffyRuntimeReplyPolicyMapping>.from(
+                json["replyPolicyMappings"]!.map(
+                  (x) => FluffyRuntimeReplyPolicyMapping.fromJson(x),
+                ),
+              ),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -5301,6 +5376,34 @@ class FluffyCapabilityContract {
     "maxParallelism": maxParallelism,
     "maxTurnDurationSeconds": maxTurnDurationSeconds,
     "replyPolicies": List<dynamic>.from(replyPolicies.map((x) => x)),
+    "replyPolicyMappings": replyPolicyMappings == null
+        ? null
+        : List<dynamic>.from(replyPolicyMappings!.map((x) => x.toJson())),
+  });
+}
+
+class FluffyRuntimeReplyPolicyMapping {
+  final bool broadcastReplies;
+  final String key;
+  final bool threadReplies;
+
+  FluffyRuntimeReplyPolicyMapping({
+    required this.broadcastReplies,
+    required this.key,
+    required this.threadReplies,
+  });
+
+  factory FluffyRuntimeReplyPolicyMapping.fromJson(Map<String, dynamic> json) =>
+      FluffyRuntimeReplyPolicyMapping(
+        broadcastReplies: json["broadcastReplies"],
+        key: json["key"],
+        threadReplies: json["threadReplies"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "broadcastReplies": broadcastReplies,
+    "key": key,
+    "threadReplies": threadReplies,
   });
 }
 

@@ -6,6 +6,15 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+审查后模型/回复策略与 Grant 撤权源码窗口已集中验证：固定源码树
+`ea75ebb874c3748e8973e3d477bc55849ea1f082` 相对 `2432c0b6` 为 26 文件、
++1799/-289；包含四侧生成和独立私网 LLM 投递，不含随后 Version 退役或客户端
+修复窗口。原 full 曾退出 1，格式与 Go 消费点随后已修正：Core fmt/Clippy、
+70 passed / 1 ignored、Go vet/test/replay 均退出 0；五项模型检查的真实守卫
+删除产生断言失败，精确还原后通过。旧 Web/Win11 产物仍落后于共用契约，
+完整发布门禁未闭合，不把窄通过当 full 或部署通过。详见
+[模型接入实际回执](core/verify/model-route-runtime-policy.md)。
+
 Agent 管理源码与证据已普通 push 至 `9b2225a2d268f41902621ba0d4b1fd44f3b9a8ee`。
 相对 Memory 批为 82 文件、+8690/-660 行。四个已构建目标服务已限定替换，
 在线库仅 forward 至 55 条；浏览器真实 OIDC 登录成功，共享管理主体可访问。

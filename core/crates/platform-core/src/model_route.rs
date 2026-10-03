@@ -17,13 +17,12 @@ use crate::{
 type CreateInput = contracts::LlmRouteCreateInput;
 
 fn create_input(params: &crate::governance::Params) -> Result<CreateInput, Refusal> {
-    let input: CreateInput = serde_json::from_value(
-        params
-            .llm_route_create
-            .clone()
-            .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?,
-    )
-    .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    let value = params
+        .llm_route_create
+        .as_ref()
+        .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    let input = frozen_creation_input(value)
+        .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
     let valid_hash = |hash: &str| {
         hash.len() == 64
             && hash
@@ -36,20 +35,44 @@ fn create_input(params: &crate::governance::Params) -> Result<CreateInput, Refus
         || input.model.id.is_empty()
         || input.model.revision <= 0
         || !valid_hash(&input.model.sha256)
-        || provider_version(&input).is_err()
-        || input.provider_secret_ref.locator.is_empty()
-        || input.provider_secret_ref.audience.is_empty()
+        || input
+            .provider_secret_ref
+            .as_ref()
+            .is_some_and(|reference| reference.locator.is_empty() || reference.audience.is_empty())
     {
         return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
     }
     Ok(input)
 }
 
-fn provider_version(input: &CreateInput) -> Result<u32, Refusal> {
-    u32::try_from(input.provider_secret_ref.version)
-        .ok()
-        .filter(|version| *version > 0)
-        .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))
+fn provider_version(input: &CreateInput) -> Result<Option<u32>, Refusal> {
+    match (
+        &input.provider_credential_mode,
+        input.provider_secret_ref.as_ref(),
+    ) {
+        (contracts::LlmProviderCredentialMode::None, None) => Ok(None),
+        (contracts::LlmProviderCredentialMode::SecretRef, Some(reference)) => {
+            u32::try_from(reference.version)
+                .ok()
+                .filter(|version| *version > 0)
+                .map(Some)
+                .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))
+        }
+        _ => Err(Refusal::Precondition(ReasonCode::InvalidParameters)),
+    }
+}
+
+// Admission and frozen intents use the same required credential contract.
+// An omitted mode or an explicit null is not evidence of provider authentication.
+fn frozen_creation_input(value: &Value) -> Result<CreateInput, Refusal> {
+    let input: CreateInput = serde_json::from_value(value.clone()).map_err(|_| unavailable())?;
+    if input.provider_credential_mode == contracts::LlmProviderCredentialMode::None
+        && value.get("providerSecretRef").is_some()
+    {
+        return Err(unavailable());
+    }
+    provider_version(&input)?;
+    Ok(input)
 }
 
 pub(crate) async fn create_target(
@@ -115,7 +138,7 @@ pub(crate) async fn create_prewrite(
     def: &crate::governance::Definition,
     params: &crate::governance::Params,
 ) -> Result<(), Refusal> {
-    let input = create_input(params)?;
+    create_input(params)?;
     if !crate::agent_definition::active_owner(tx, ae.tenant_id, ae.initiator_principal_id).await? {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
@@ -140,7 +163,7 @@ pub(crate) async fn create_prewrite(
     )
     .bind(ae.target_id)
     .bind(ae.id)
-    .bind(serde_json::to_value(input).map_err(|_| unavailable())?)
+    .bind(params.llm_route_create.as_ref().ok_or_else(unavailable)?)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -234,7 +257,7 @@ pub(crate) async fn pending_owner(
     let Some(refs) = refs else {
         return Ok(false);
     };
-    let _: CreateInput = serde_json::from_value(refs).map_err(|_| unavailable())?;
+    frozen_creation_input(&refs)?;
     if !crate::agent_definition::active_owner(conn, row.tenant_id, row.owner_principal_id).await? {
         return Ok(false);
     }
@@ -307,8 +330,7 @@ pub(crate) async fn retire_creations(
         if active_consumer {
             return Err(unavailable());
         }
-        let input: CreateInput =
-            serde_json::from_value(intent.source_refs).map_err(|_| unavailable())?;
+        let input = frozen_creation_input(&intent.source_refs)?;
         let previous: Option<Value> = sqlx::query_scalar(
             "select retired_absence from catalog.model_route_projection
             where resource_id=$1 and action_execution_id=$2 for update",
@@ -320,8 +342,8 @@ pub(crate) async fn retire_creations(
         if let Some(previous) = previous {
             let previous: Vec<CreationAbsence> =
                 serde_json::from_value(previous).map_err(|_| unavailable())?;
-            if !gateway.creation_absent(intent.resource_id).await?
-                || !gateway
+            let credential_absent = match provider_version(&input)? {
+                Some(version) => gateway
                     .admin(
                         &[
                             "api",
@@ -329,13 +351,15 @@ pub(crate) async fn retire_creations(
                             "provider-credentials",
                             &tenant.to_string(),
                             &intent.resource_id.to_string(),
-                            &input.provider_secret_ref.version.to_string(),
+                            &version.to_string(),
                         ],
                         None,
                     )
                     .await?
-                    .is_null()
-            {
+                    .is_null(),
+                None => true,
+            };
+            if !gateway.creation_absent(intent.resource_id).await? || !credential_absent {
                 return Err(unavailable());
             }
             evidence.extend(previous);
@@ -546,7 +570,7 @@ async fn desired_route(
     gateway: &Gateway,
     input: &CreateInput,
     id: Uuid,
-    file: &str,
+    file: Option<&str>,
 ) -> Result<Vec<Value>, Refusal> {
     let mut provider = pinned_resource(
         &gateway.resources("llm.provider").await?,
@@ -560,6 +584,9 @@ async fn desired_route(
         input.model.revision,
         &input.model.sha256,
     )?;
+    if file.is_none() && !native_provider_without_auth(&provider) {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
     // A supplied key must be the only credential source; native defaults/environment cannot win.
     let provider_object = provider.as_object_mut().ok_or_else(unavailable)?;
     if provider_object
@@ -586,7 +613,10 @@ async fn desired_route(
     {
         return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
     }
-    params.insert("apiKey".into(), json!({"file":file}));
+    if let Some(file) = file {
+        params.insert("apiKey".into(), json!({"file":file}));
+    }
+    let provider_object = provider.as_object_mut().ok_or_else(unavailable)?;
     provider_object.insert("name".into(), json!(id));
     let model_object = model.as_object_mut().ok_or_else(unavailable)?;
     if model_object
@@ -627,6 +657,39 @@ async fn desired_route(
         json!({"kind":"llm.virtualModel","value":{"name":id,
             "routing":{"weighted":{"targets":[{"model":id}]}}}}),
     ])
+}
+
+// Fixed native Custom providers have no ambient provider credential branch.
+// Absence is accepted only in the pinned provider body, never inferred from a missing SecretRef.
+fn native_provider_without_auth(provider: &Value) -> bool {
+    let Some(object) = provider.as_object() else {
+        return false;
+    };
+    let Some(params) = provider.get("params").and_then(Value::as_object) else {
+        return false;
+    };
+    let Some(kind) = provider.get("provider").and_then(Value::as_object) else {
+        return false;
+    };
+    let Some(custom) = kind.get("custom").and_then(Value::as_object) else {
+        return false;
+    };
+    object
+        .keys()
+        .all(|key| matches!(key.as_str(), "name" | "params" | "provider" | "defaults"))
+        && kind.len() == 1
+        && custom
+            .keys()
+            .all(|key| matches!(key.as_str(), "model" | "provider" | "formats"))
+        && custom
+            .get("formats")
+            .and_then(Value::as_array)
+            .is_some_and(|formats| !formats.is_empty())
+        && provider.get("defaults").is_none_or(Value::is_null)
+        && params.get("apiKey").is_none_or(Value::is_null)
+        && params
+            .keys()
+            .all(|key| matches!(key.as_str(), "baseUrl" | "apiKey" | "model" | "tokenize"))
 }
 
 pub(crate) async fn create_dispatch(
@@ -671,29 +734,31 @@ pub(crate) async fn create_dispatch(
     }
     // Configuration/SecretRef failure cannot prove that a previous native write
     // did not happen. Only an intent that has never dispatched may return it directly.
-    let prepared: Result<(CreateInput, Gateway, u32), Refusal> = async {
-        let input: CreateInput =
-            serde_json::from_value(intent.source_refs).map_err(|_| unavailable())?;
+    let prepared: Result<(CreateInput, Gateway, Option<u32>), Refusal> = async {
+        let input = frozen_creation_input(&intent.source_refs)?;
         let gateway = Gateway::from_env()?;
         let version = provider_version(&input)?;
         // The configured Tenant namespace/mount is the frozen SecretRef scope authority.
-        let tenant_prefix = gov.secrets.tenant_locator(ae.tenant_id, "");
-        let same_tenant_path = input
-            .provider_secret_ref
-            .locator
-            .strip_prefix(&tenant_prefix)
-            .is_some_and(|path| {
-                !path.is_empty()
-                    && path
-                        .split('/')
-                        .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
-                    && !path.bytes().any(|byte| {
-                        byte.is_ascii_control() || matches!(byte, b'\\' | b'%' | b'?' | b'#')
-                    })
-            });
-        let audience = std::env::var("OPENBAO_SERVICE_IDENTITY").map_err(|_| unavailable())?;
-        if !same_tenant_path || input.provider_secret_ref.audience != audience {
-            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        if let Some(reference) = input.provider_secret_ref.as_ref() {
+            let tenant_prefix = gov.secrets.tenant_locator(ae.tenant_id, "");
+            let same_tenant_path =
+                reference
+                    .locator
+                    .strip_prefix(&tenant_prefix)
+                    .is_some_and(|path| {
+                        !path.is_empty()
+                            && path.split('/').all(|segment| {
+                                !segment.is_empty() && segment != "." && segment != ".."
+                            })
+                            && !path.bytes().any(|byte| {
+                                byte.is_ascii_control()
+                                    || matches!(byte, b'\\' | b'%' | b'?' | b'#')
+                            })
+                    });
+            let audience = std::env::var("OPENBAO_SERVICE_IDENTITY").map_err(|_| unavailable())?;
+            if !same_tenant_path || reference.audience != audience {
+                return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
         }
         Ok((input, gateway, version))
     }
@@ -718,7 +783,10 @@ pub(crate) async fn create_dispatch(
     }
     // Recovery must prove the same exact version is still auditably readable;
     // a matching Gateway projection alone cannot establish SecretRef readiness.
-    let readable: Result<SecretValue, Refusal> = async {
+    let readable: Result<Option<SecretValue>, Refusal> = async {
+        let (Some(reference), Some(version)) = (input.provider_secret_ref.as_ref(), version) else {
+            return Ok(None);
+        };
         if gov
             .audit
             .enabled_devices()
@@ -732,9 +800,9 @@ pub(crate) async fn create_dispatch(
             .secrets
             .read(
                 &SecretRef {
-                    locator: input.provider_secret_ref.locator.clone(),
+                    locator: reference.locator.clone(),
                     version,
-                    audience: input.provider_secret_ref.audience.clone(),
+                    audience: reference.audience.clone(),
                 },
                 "value",
             )
@@ -743,7 +811,7 @@ pub(crate) async fn create_dispatch(
         if secret.expose().is_empty() {
             return Err(unavailable());
         }
-        Ok(secret)
+        Ok(Some(secret))
     }
     .await;
     let secret = match readable {
@@ -751,13 +819,17 @@ pub(crate) async fn create_dispatch(
         Err(_) if intent.dispatch_started => return creation_unknown(tx, &ae, def).await,
         Err(error) => return Err(error),
     };
-    let hash = hex::encode(Sha256::digest(secret.expose().as_bytes()));
-    if intent.dispatch_started && credential_hash.as_deref() != Some(hash.as_str()) {
+    let hash = secret
+        .as_ref()
+        .map(|secret| hex::encode(Sha256::digest(secret.expose().as_bytes())));
+    if intent.dispatch_started && credential_hash != hash {
         return creation_unknown(tx, &ae, def).await;
     }
     if !intent.dispatch_started {
-        let file = gateway.credential_file(ae.tenant_id, ae.target_id, version)?;
-        let desired = desired_route(&gateway, &input, ae.target_id, &file).await?;
+        let file = version
+            .map(|version| gateway.credential_file(ae.tenant_id, ae.target_id, version))
+            .transpose()?;
+        let desired = desired_route(&gateway, &input, ae.target_id, file.as_deref()).await?;
         let hashes = desired
             .iter()
             .map(|resource| {
@@ -798,7 +870,7 @@ pub(crate) async fn create_dispatch(
             Ok(false) => return creation_abort(gov, tx, &ae, def, &input).await,
             Err(_) => return creation_unknown(tx, &ae, def).await,
         }
-        if gov
+        let projected = gov
             .spicedb
             .replace_resource_projection(
                 &ae.target_id.to_string(),
@@ -807,12 +879,17 @@ pub(crate) async fn create_dispatch(
                 &ae.initiator_principal_id.to_string(),
                 ae.workspace_id.map(|id| id.to_string()).as_deref(),
             )
-            .await
-            .is_err()
-            || gateway
-                .project_credential(ae.tenant_id, ae.target_id, version, &secret, &hash)
-                .await
-                .is_err()
+            .await;
+        let credential = match (projected.is_ok(), version, secret.as_ref(), hash.as_deref()) {
+            (true, Some(version), Some(secret), Some(hash)) => {
+                gateway
+                    .project_credential(ae.tenant_id, ae.target_id, version, secret, hash)
+                    .await
+            }
+            (true, None, None, None) => Ok(()),
+            _ => Err(unavailable()),
+        };
+        if credential.is_err()
             || gateway
                 .admin(
                     &["api", "config", "routes", &ae.target_id.to_string()],
@@ -824,10 +901,9 @@ pub(crate) async fn create_dispatch(
             return creation_unknown(tx, &ae, def).await;
         }
         planned = Some(Value::Object(hashes));
-        credential_hash = Some(hash);
+        credential_hash = hash;
     }
-    let (Some(planned), Some(credential_hash)) = (planned.as_ref(), credential_hash.as_deref())
-    else {
+    let Some(planned) = planned.as_ref() else {
         return creation_unknown(tx, &ae, def).await;
     };
     let observed = match gateway
@@ -836,7 +912,7 @@ pub(crate) async fn create_dispatch(
             ae.target_id,
             version,
             planned,
-            credential_hash,
+            credential_hash.as_deref(),
         )
         .await
     {
@@ -2244,32 +2320,38 @@ impl Gateway {
         &self,
         tenant: Uuid,
         route: Uuid,
-        version: u32,
+        version: Option<u32>,
         hashes: &Value,
-        credential_hash: &str,
+        credential_hash: Option<&str>,
     ) -> Result<Option<(i64, String)>, Refusal> {
-        let credential = self
-            .admin(
-                &[
-                    "api",
-                    "config",
-                    "provider-credentials",
-                    &tenant.to_string(),
-                    &route.to_string(),
-                    &version.to_string(),
-                ],
-                None,
-            )
-            .await?;
-        if credential.is_null() {
-            return Ok(None);
-        }
-        if credential.get("file").and_then(Value::as_str)
-            != Some(self.credential_file(tenant, route, version)?.as_str())
-            || credential.get("version").and_then(Value::as_u64) != Some(u64::from(version))
-            || credential.get("sha256").and_then(Value::as_str) != Some(credential_hash)
-        {
-            return Err(conflict());
+        match (version, credential_hash) {
+            (Some(version), Some(credential_hash)) => {
+                let credential = self
+                    .admin(
+                        &[
+                            "api",
+                            "config",
+                            "provider-credentials",
+                            &tenant.to_string(),
+                            &route.to_string(),
+                            &version.to_string(),
+                        ],
+                        None,
+                    )
+                    .await?;
+                if credential.is_null() {
+                    return Ok(None);
+                }
+                if credential.get("file").and_then(Value::as_str)
+                    != Some(self.credential_file(tenant, route, version)?.as_str())
+                    || credential.get("version").and_then(Value::as_u64) != Some(u64::from(version))
+                    || credential.get("sha256").and_then(Value::as_str) != Some(credential_hash)
+                {
+                    return Err(conflict());
+                }
+            }
+            (None, None) => (),
+            _ => return Err(conflict()),
         }
         let effective = self.admin(&["api", "config", "effective"], None).await?;
         let mut result = None;
@@ -2291,6 +2373,9 @@ impl Gateway {
                 .and_then(Value::as_str)
                 .ok_or_else(unavailable)?;
             if matching.next().is_some() || digest(value)? != expected {
+                return Err(conflict());
+            }
+            if kind == "llm.provider" && version.is_none() && !native_provider_without_auth(value) {
                 return Err(conflict());
             }
             let revision = row
@@ -2321,7 +2406,7 @@ impl Gateway {
         &self,
         tenant: Uuid,
         route: Uuid,
-        version: u32,
+        version: Option<u32>,
         hashes: Option<&Value>,
     ) -> Result<Vec<CreationAbsence>, Refusal> {
         let mut absent = Vec::new();
@@ -2365,38 +2450,40 @@ impl Gateway {
             return Err(unavailable());
         }
         // All native users are gone before destroying the file; old generations are drained upstream.
-        self.admin_delete(&[
-            "api",
-            "config",
-            "provider-credentials",
-            &tenant.to_string(),
-            &route.to_string(),
-            &version.to_string(),
-        ])
-        .await?;
-        if !self
-            .admin(
-                &[
-                    "api",
-                    "config",
-                    "provider-credentials",
-                    &tenant.to_string(),
-                    &route.to_string(),
-                    &version.to_string(),
-                ],
-                None,
-            )
-            .await?
-            .is_null()
-        {
-            return Err(unavailable());
+        if let Some(version) = version {
+            self.admin_delete(&[
+                "api",
+                "config",
+                "provider-credentials",
+                &tenant.to_string(),
+                &route.to_string(),
+                &version.to_string(),
+            ])
+            .await?;
+            if !self
+                .admin(
+                    &[
+                        "api",
+                        "config",
+                        "provider-credentials",
+                        &tenant.to_string(),
+                        &route.to_string(),
+                        &version.to_string(),
+                    ],
+                    None,
+                )
+                .await?
+                .is_null()
+            {
+                return Err(unavailable());
+            }
+            absent.push(CreationAbsence {
+                kind: "providerCredential".into(),
+                id: format!("{tenant}.{route}.{version}"),
+                revision: Some(i64::from(version)),
+                absent: true,
+            });
         }
-        absent.push(CreationAbsence {
-            kind: "providerCredential".into(),
-            id: format!("{tenant}.{route}.{version}"),
-            revision: Some(i64::from(version)),
-            absent: true,
-        });
         Ok(absent)
     }
 
@@ -2430,9 +2517,8 @@ impl Gateway {
             &route.creation_hashes,
             &route.credential_hash,
         ) {
-            (Some(source), Some(hashes), Some(credential_hash)) => {
-                let input: CreateInput =
-                    serde_json::from_value(source.clone()).map_err(|_| unavailable())?;
+            (Some(source), Some(hashes), credential_hash) => {
+                let input = frozen_creation_input(source)?;
                 let id = Uuid::parse_str(&route.native_id).map_err(|_| unavailable())?;
                 if self
                     .observe_creation(
@@ -2440,7 +2526,7 @@ impl Gateway {
                         id,
                         provider_version(&input)?,
                         hashes,
-                        credential_hash,
+                        credential_hash.as_deref(),
                     )
                     .await?
                     != Some((route.native_revision, route.native_config_hash.clone()))
@@ -2684,4 +2770,87 @@ fn digest(value: &Value) -> Result<String, Refusal> {
     Ok(hex::encode(Sha256::digest(
         serde_json::to_vec(&canonical).map_err(|_| unavailable())?,
     )))
+}
+
+#[cfg(test)]
+mod provider_auth_checks {
+    use super::*;
+
+    fn native_custom() -> Value {
+        // Only protocol fields, not a fabricated Tenant/Route or active provider inventory.
+        json!({"params":{},"provider":{"custom":{"formats":[{"type":"responses"}]}}})
+    }
+
+    #[test]
+    fn no_provider_auth_accepts_only_explicit_native_custom_absence() {
+        let mut provider = native_custom();
+        assert!(native_provider_without_auth(&provider));
+        provider["params"]["apiKey"] = Value::Null;
+        assert!(native_provider_without_auth(&provider));
+        provider["params"]["apiKey"] = json!({});
+        assert!(!native_provider_without_auth(&provider));
+    }
+
+    #[test]
+    fn no_provider_auth_rejects_ambient_and_unknown_provider_shapes() {
+        let mut provider = native_custom();
+        provider["provider"] = json!({"bedrock":{}});
+        assert!(!native_provider_without_auth(&provider));
+        provider["provider"] = json!({"unrecognized":{}});
+        assert!(!native_provider_without_auth(&provider));
+        provider["provider"] = Value::Null;
+        assert!(!native_provider_without_auth(&provider));
+    }
+
+    #[test]
+    fn no_provider_auth_rejects_hidden_credential_sources() {
+        let mut provider = native_custom();
+        provider["defaults"] = json!({});
+        assert!(!native_provider_without_auth(&provider));
+        provider.as_object_mut().unwrap().remove("defaults");
+        provider["auth"] = json!({});
+        assert!(!native_provider_without_auth(&provider));
+        provider.as_object_mut().unwrap().remove("auth");
+        provider["params"]["awsRegion"] = Value::Null;
+        assert!(!native_provider_without_auth(&provider));
+    }
+
+    #[test]
+    fn no_provider_auth_rejects_missing_or_conflicting_native_capability() {
+        let mut provider = native_custom();
+        provider["provider"]["custom"]["formats"] = json!([]);
+        assert!(!native_provider_without_auth(&provider));
+        provider = native_custom();
+        provider["provider"]["other"] = Value::Null;
+        assert!(!native_provider_without_auth(&provider));
+        provider = native_custom();
+        provider["provider"]["custom"]["credential"] = Value::Null;
+        assert!(!native_provider_without_auth(&provider));
+    }
+
+    #[test]
+    fn frozen_intent_requires_explicit_mode_and_absent_none_secret_field() {
+        // Serialization-only configuration references, never native inventory or business rows.
+        let reference = json!({
+            "id": Uuid::new_v4().to_string(),
+            "revision": 1,
+            "sha256": hex::encode(Sha256::digest([])),
+        });
+        let mut input = json!({
+            "provider": reference,
+            "model": reference,
+            "providerCredentialMode": "NONE",
+        });
+        assert!(frozen_creation_input(&input).is_ok());
+        input["providerSecretRef"] = Value::Null;
+        assert!(frozen_creation_input(&input).is_err());
+        input.as_object_mut().unwrap().remove("providerSecretRef");
+        input["providerCredentialMode"] = json!("UNKNOWN");
+        assert!(frozen_creation_input(&input).is_err());
+        input
+            .as_object_mut()
+            .unwrap()
+            .remove("providerCredentialMode");
+        assert!(frozen_creation_input(&input).is_err());
+    }
 }

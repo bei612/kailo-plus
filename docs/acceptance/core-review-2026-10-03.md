@@ -124,3 +124,35 @@ Core/Worker/Gateway 没有 Docker healthcheck，四服务没有运行资源限�
 未知状态与去重生命周期；根负责人继续收口已有模型提供方与 ReplyPolicy 接入。
 实现后沿原检查集中验证并阶段提交，不为每个小改动刷新图谱、重新发布。
 这些是既定范围的接续，不是新增规格；实际修复验收另据命令终态登记。
+
+## 审查后实施与验证
+
+原四项审查结论保留，不以随后源码改动改写审查时状态。以下均为先改实际
+消费者，再在已有检查入口产生反例证据；没有新建检查工具或扩大产品范围。
+
+| 原问题 | 实际源码修正 | 实现后证据与边界 |
+| --- | --- | --- |
+| Desktop REST 终态与错配 ACK | 原 REST 发布器核验 ACK event ID；损坏成功响应进入同一原事件 UNKNOWN 缓存 | 10/10；删除 REST 分类守卫实际 1 项失败，精确还原后 10/10。Desktop 原生 Cargo 缺 GTK/WebKit，未执行原生 ACK 联合验收；TS 类型检查退出 2，不记通过 |
+| Grant 撤销、到期与在途 turn | 同事务标原 Grant 的 `cancel_pending`；原治理循环及每次 Advance 只取消 exact scope/Workflow/known thread/turn；保留原 usage/holder 终态核验 | 三源 fmt/Clippy 与 6 项检查退出 0；撤销、completed 未回复、UNKNOWN 不得确定拒绝的三个生产守卫删除均断言退出 101，逐次 SHA 还原后通过。真实 Temporal/native/usage 联合 E2E 未执行 |
+| 原 UNKNOWN 消息的重发被拒 | 共享 TS 与 Mobile 都保留首次原事件的不明结果，不把随后拒绝当成首次未存储证明 | TS 删除生产保留守卫实际 1 项失败；Mobile 同类守卫删除实际退出 1，原源还原后通过 |
+| Mobile 回读后的去重生命周期 | authoritative 原 Relay 回读只确认同事件/身份/会话；结束原缓存，旧 ACK 不清除后续新 intent；原 publisher 同步签名登记后才 await | 原三目标共 162/162、format/analyze 退出 0；删除原缓存回读与 exact event ID fence 的生产守卫分别退出 1，9 源逐字恢复后再次 162/162。未做真实 Mobile 设备验收 |
+
+三条实现窗口的精确差分比较基准为各自开工 before，不与全工作树混算：
+
+- Desktop：6 文件、+190/-57；
+- Grant：3 文件、+662/-94（包含只限三源的 SDK 格式调整），上刀固定
+  ReplyPolicy 依赖另为 +24/-5，不重复计为本刀新写；
+- Mobile：9 文件、+565/-45，必需的原 publisher、结构化错误、共享 i18n
+  继承依赖在交接中独立登记，不把无关 sync banner 改动纳入该功能。
+
+原件分别为 Data 临时目录
+`codex-desktop-publication-terminal-20261003.RRD0si`、
+`codex-delegation-revocation-20261003.TZXNsc`、
+`codex-mobile-unconfirmed-lifecycle-20261003.JzlMKC`。
+各自自有 SDK 已精确删除；没有删除服务、缓存或业务数据。
+
+模型认证与原生 ReplyPolicy 的实现、四侧生成、原生产守卫反例与开发库旧读链
+收缩另见 [接入证据](../../core/verify/model-route-runtime-policy.md)。运行模型发现
+与候选 RuntimeProfile 配置不等于受治理 Installation ACTIVE。上述源码修正尚不
+解除首个真实 Relay→Temporal→Codex→Gateway→Reply→OpenMeter 全链或签名端侧
+验收；阶段提交、完整批次检查与实际部署各以随后回执为准。

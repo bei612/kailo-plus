@@ -1231,11 +1231,13 @@ type ScopeElement struct {
 
 // 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
 //
-// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
+// 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
 type LlmRouteCreateClass struct {
-	Model             Model                           `json:"model"`
-	Provider          Model                           `json:"provider"`
-	ProviderSecretRef LlmRouteCreateProviderSecretRef `json:"providerSecretRef"`
+	Model                  Model                            `json:"model"`
+	Provider               Model                            `json:"provider"`
+	ProviderCredentialMode LlmProviderCredentialMode        `json:"providerCredentialMode"`
+	ProviderSecretRef      *LlmRouteCreateProviderSecretRef `json:"providerSecretRef,omitempty"`
 }
 
 type Model struct {
@@ -1531,6 +1533,14 @@ type PurpleCapabilityContract struct {
 	MaxParallelism         int64    `json:"maxParallelism"`
 	MaxTurnDurationSeconds int64    `json:"maxTurnDurationSeconds"`
 	ReplyPolicies          []string `json:"replyPolicies"`
+	// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+	ReplyPolicyMappings []PurpleRuntimeReplyPolicyMapping `json:"replyPolicyMappings,omitempty"`
+}
+
+type PurpleRuntimeReplyPolicyMapping struct {
+	BroadcastReplies bool   `json:"broadcastReplies"`
+	Key              string `json:"key"`
+	ThreadReplies    bool   `json:"threadReplies"`
 }
 
 // 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
@@ -2139,11 +2149,13 @@ type ResolvedIdentity struct {
 	TenantPrincipalID  string  `json:"tenantPrincipalId"`
 }
 
-// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
+// 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
 type LlmRouteCreateInput struct {
-	Model             Model                                `json:"model"`
-	Provider          Model                                `json:"provider"`
-	ProviderSecretRef LlmRouteCreateInputProviderSecretRef `json:"providerSecretRef"`
+	Model                  Model                                 `json:"model"`
+	Provider               Model                                 `json:"provider"`
+	ProviderCredentialMode LlmProviderCredentialMode             `json:"providerCredentialMode"`
+	ProviderSecretRef      *LlmRouteCreateInputProviderSecretRef `json:"providerSecretRef,omitempty"`
 }
 
 type LlmRouteCreateInputProviderSecretRef struct {
@@ -2171,6 +2183,14 @@ type FluffyCapabilityContract struct {
 	MaxParallelism         int64    `json:"maxParallelism"`
 	MaxTurnDurationSeconds int64    `json:"maxTurnDurationSeconds"`
 	ReplyPolicies          []string `json:"replyPolicies"`
+	// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+	ReplyPolicyMappings []FluffyRuntimeReplyPolicyMapping `json:"replyPolicyMappings,omitempty"`
+}
+
+type FluffyRuntimeReplyPolicyMapping struct {
+	BroadcastReplies bool   `json:"broadcastReplies"`
+	Key              string `json:"key"`
+	ThreadReplies    bool   `json:"threadReplies"`
 }
 
 // Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId
@@ -2537,6 +2557,14 @@ const (
 	ConsumeOnly ResultExposureMode = "CONSUME_ONLY"
 	Export      ResultExposureMode = "EXPORT"
 	Read        ResultExposureMode = "READ"
+)
+
+// 提供方认证的显式封闭选择；NONE 不豁免 Gateway 调用者认证或业务授权。
+type LlmProviderCredentialMode string
+
+const (
+	LlmProviderCredentialModeNONE LlmProviderCredentialMode = "NONE"
+	SecretRef                     LlmProviderCredentialMode = "SECRET_REF"
 )
 
 // 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
@@ -2998,9 +3026,9 @@ const (
 type ApprovalOwnerRequirement string
 
 const (
-	AllAffectedOwners ApprovalOwnerRequirement = "ALL_AFFECTED_OWNERS"
-	None              ApprovalOwnerRequirement = "NONE"
-	TargetOwner       ApprovalOwnerRequirement = "TARGET_OWNER"
+	AllAffectedOwners            ApprovalOwnerRequirement = "ALL_AFFECTED_OWNERS"
+	ApprovalOwnerRequirementNONE ApprovalOwnerRequirement = "NONE"
+	TargetOwner                  ApprovalOwnerRequirement = "TARGET_OWNER"
 )
 
 // ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。

@@ -1353,6 +1353,10 @@ fn supports_effective_field(content: &AgentVersionContent, key: &str) -> bool {
             content.memory_policy.core_write == contracts::AgentMemoryCoreWrite::HumanOnly
                 && content.memory_policy.cold_write == contracts::AgentMemoryColdWrite::Disabled
         }
+        // The same release contract must explicitly map this exact key to the
+        // implemented thread-only consumer. Missing/unknown/broadcast mappings
+        // do not become effective merely because replyPolicies contains a key.
+        "replyPolicy" => crate::agent_version::runtime_profile(content).is_ok(),
         _ => false,
     }
 }

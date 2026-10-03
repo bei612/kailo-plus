@@ -199,7 +199,7 @@ async fn pass(
     rehome_alert_after_secs: u64,
 ) -> Result<(), String> {
     let g: &Governance = &state.governance;
-    g.reconcile_delegations(batch)
+    g.reconcile_delegations(state.agent_runtime.as_deref(), batch)
         .await
         .map_err(|error| crate::governance::wire(&error.reason()))?;
     // 只取此刻确有一步可做的行：正常等待审批中的 WAITING 不进批次，否则它们

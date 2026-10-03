@@ -428,7 +428,8 @@ pub enum ResultExposureMode {
 
 /// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
 ///
-/// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+/// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
+/// 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmRouteCreateClass {
@@ -436,7 +437,10 @@ pub struct LlmRouteCreateClass {
 
     pub provider: Model,
 
-    pub provider_secret_ref: LlmRouteCreateProviderSecretRef,
+    pub provider_credential_mode: LlmProviderCredentialMode,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_secret_ref: Option<LlmRouteCreateProviderSecretRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -446,6 +450,16 @@ pub struct Model {
     pub revision: i64,
 
     pub sha256: String,
+}
+
+/// 提供方认证的显式封闭选择；NONE 不豁免 Gateway 调用者认证或业务授权。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum LlmProviderCredentialMode {
+    None,
+
+    #[serde(rename = "SECRET_REF")]
+    SecretRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1266,6 +1280,20 @@ pub struct PurpleCapabilityContract {
     pub max_turn_duration_seconds: i64,
 
     pub reply_policies: Vec<String>,
+
+    /// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_policy_mappings: Option<Vec<PurpleRuntimeReplyPolicyMapping>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurpleRuntimeReplyPolicyMapping {
+    pub broadcast_replies: bool,
+
+    pub key: String,
+
+    pub thread_replies: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2795,7 +2823,8 @@ pub struct ResolvedIdentity {
     pub tenant_principal_id: String,
 }
 
-/// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+/// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
+/// 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmRouteCreateInput {
@@ -2803,7 +2832,10 @@ pub struct LlmRouteCreateInput {
 
     pub provider: Model,
 
-    pub provider_secret_ref: LlmRouteCreateInputProviderSecretRef,
+    pub provider_credential_mode: LlmProviderCredentialMode,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_secret_ref: Option<LlmRouteCreateInputProviderSecretRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2847,6 +2879,20 @@ pub struct FluffyCapabilityContract {
     pub max_turn_duration_seconds: i64,
 
     pub reply_policies: Vec<String>,
+
+    /// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_policy_mappings: Option<Vec<FluffyRuntimeReplyPolicyMapping>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FluffyRuntimeReplyPolicyMapping {
+    pub broadcast_replies: bool,
+
+    pub key: String,
+
+    pub thread_replies: bool,
 }
 
 /// Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId

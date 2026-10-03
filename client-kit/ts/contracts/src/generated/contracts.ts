@@ -320,18 +320,28 @@ export enum ResultExposureMode {
 /**
  * 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
  *
- * 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+ * 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
+ * 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
  */
 export interface LlmRouteCreateClass {
-    model:             Model;
-    provider:          Model;
-    providerSecretRef: LlmRouteCreateProviderSecretRef;
+    model:                  Model;
+    provider:               Model;
+    providerCredentialMode: LlmProviderCredentialMode;
+    providerSecretRef?:     LlmRouteCreateProviderSecretRef;
 }
 
 export interface Model {
     id:       string;
     revision: number;
     sha256:   string;
+}
+
+/**
+ * 提供方认证的显式封闭选择；NONE 不豁免 Gateway 调用者认证或业务授权。
+ */
+export enum LlmProviderCredentialMode {
+    None = "NONE",
+    SecretRef = "SECRET_REF",
 }
 
 export interface LlmRouteCreateProviderSecretRef {
@@ -837,6 +847,16 @@ export interface PurpleCapabilityContract {
     maxParallelism:         number;
     maxTurnDurationSeconds: number;
     replyPolicies:          string[];
+    /**
+     * 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+     */
+    replyPolicyMappings?: PurpleRuntimeReplyPolicyMapping[];
+}
+
+export interface PurpleRuntimeReplyPolicyMapping {
+    broadcastReplies: boolean;
+    key:              string;
+    threadReplies:    boolean;
 }
 
 export enum RuntimeProfileKind {
@@ -1929,12 +1949,14 @@ export interface ResolvedIdentity {
 }
 
 /**
- * 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+ * 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
+ * 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
  */
 export interface LlmRouteCreateInput {
-    model:             Model;
-    provider:          Model;
-    providerSecretRef: LlmRouteCreateInputProviderSecretRef;
+    model:                  Model;
+    provider:               Model;
+    providerCredentialMode: LlmProviderCredentialMode;
+    providerSecretRef?:     LlmRouteCreateInputProviderSecretRef;
 }
 
 export interface LlmRouteCreateInputProviderSecretRef {
@@ -1964,6 +1986,16 @@ export interface FluffyCapabilityContract {
     maxParallelism:         number;
     maxTurnDurationSeconds: number;
     replyPolicies:          string[];
+    /**
+     * 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+     */
+    replyPolicyMappings?: FluffyRuntimeReplyPolicyMapping[];
+}
+
+export interface FluffyRuntimeReplyPolicyMapping {
+    broadcastReplies: boolean;
+    key:              string;
+    threadReplies:    boolean;
 }
 
 /**

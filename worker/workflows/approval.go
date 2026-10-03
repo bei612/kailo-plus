@@ -97,13 +97,13 @@ func reasonPtr(r generated.ReasonCode) *generated.ReasonCode { return &r }
 // satisfied 同时满足冻结 owner 与逐项角色要求：同一 HUMAN 可满足多个要求，但
 // 只有一个已获 Core 准入的不可变决定（.design/03 §6），不以总人数替代某一项。
 func (a *approval) satisfied() bool {
-	if a.in.OwnerRequirement != generated.None && !a.ownerEnabled {
+	if a.in.OwnerRequirement != generated.ApprovalOwnerRequirementNONE && !a.ownerEnabled {
 		// 保留 GetVersion 门控之前的 owner 审批 history 行为。
 		return false
 	}
 	required := len(a.in.RoleRequirements) > 0
 	switch a.in.OwnerRequirement {
-	case generated.None:
+	case generated.ApprovalOwnerRequirementNONE:
 	case generated.AllAffectedOwners:
 		// 同一 owner 的多份 Resource/Asset 引用由同一个决定满足。零资源清单
 		// 不伪造 owner，角色票仍独立必需；零约束不能自动批准。
@@ -414,7 +414,7 @@ func Approval(ctx workflow.Context, in generated.ApprovalWorkflowInput) error {
 	}
 	a.canEnabled = workflow.GetVersion(ctx, changeApprovalContinueAsNew,
 		workflow.DefaultVersion, 1) == 1
-	if in.OwnerRequirement != generated.None {
+	if in.OwnerRequirement != generated.ApprovalOwnerRequirementNONE {
 		a.ownerEnabled = workflow.GetVersion(ctx, changeApprovalOwnerRequirements,
 			workflow.DefaultVersion, 1) == 1
 	}

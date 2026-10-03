@@ -105,7 +105,7 @@ func setup(t *testing.T, admit func(generated.FreshApprovalAdmissionRequest) gen
 		ActionDefinitionVersion: 1, TargetType: "TENANT_MEMBERSHIP", TargetID: "77777777-7777-7777-7777-777777777777",
 		ParameterHash: "h", PolicyID: "88888888-8888-8888-8888-888888888888", PolicyVersion: 1,
 		RoleRequirements:     []generated.RoleRequirementElement{{Selector: generated.TenantAdmin, MinDistinct: 1}},
-		OwnerRequirement:     generated.None,
+		OwnerRequirement:     generated.ApprovalOwnerRequirementNONE,
 		AffectedOwnerRefs:    []generated.AffectedOwnerRefElement{},
 		SelfApproval:         generated.ApprovalSelfApprovalDENY,
 		InitiatorPrincipalID: initiator,

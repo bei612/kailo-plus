@@ -28,12 +28,29 @@ config:
     clientId: ${AGENTGATEWAY_ADMIN_CLIENT_ID}
     jwks:
       url: ${OIDC_JWKS_URI}
-  # request log 与 durable usage outbox 的库（SS-AGW-USAGE）。只在网关自己的私有数据网络内
-  # 可达（DD-93）；连接串含口令，经 env_file 投递，不写在本文件里。未配置时 outbox 接口回 503，
-  # Core 据此显示 BILLING_UNAVAILABLE，而不是零用量。
-  logging:
-    database:
-      url: ${AGENTGATEWAY_LOG_DATABASE_URL}
+  # ConfigResource 的原生持久 revision、request log 与 durable usage outbox 共用网关自己的库。
+  # logging 未另配 database 时由原生 parser 回退到此处，不维护第二份连接配置。库仅在
+  # agentgateway-data 私有网络可达（DD-93），既有 env_file 投递凭据，Core 不持有该连接串。
+  # File 模式的资源读取只返回空清单，不能作为 Catalog 投影的 read-back 证据（DD-13）。
+  storage:
+    mode: hybrid
+  database:
+    url: ${AGENTGATEWAY_LOG_DATABASE_URL}
+
+# 独立模型入口（DD-70/71/110）：只在容器网络提供，不属于 Web/Bearer 用户代理。
+# keys 由 Core 以 Installation 专属 SecretRef/hash 与 allowedModels 原生投影；此处
+# 空集合不产生共享 key。Hybrid 资源合入以后仍必须使用 strict 入站认证。
+llm:
+  port: ${AGENTGATEWAY_MODEL_PORT}
+  policies:
+    apiKey:
+      mode: strict
+      keys: []
+      location:
+        header:
+          name: authorization
+          prefix: 'Bearer '
+  models: []
 
 binds:
 - port: 8080

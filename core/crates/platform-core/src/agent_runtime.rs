@@ -1063,6 +1063,7 @@ mod activity_tests {
                 capability_contract: contracts::FluffyCapabilityContract {
                     capability_requirements: Vec::new(),
                     reply_policies: Vec::new(),
+                    reply_policy_mappings: None,
                     max_parallelism: 0,
                     max_idle_timeout_seconds: 0,
                     max_turn_duration_seconds: 0,

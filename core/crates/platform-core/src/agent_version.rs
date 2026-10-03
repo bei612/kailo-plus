@@ -127,7 +127,8 @@ pub(crate) fn runtime_profile_directory() -> Result<contracts::RuntimeProfileDir
         .map_err(|_| Refusal::Unavailable("RuntimeProfile Catalog 不符合共享契约".into()))?;
     let directory: contracts::RuntimeProfileDirectory = serde_json::from_value(source.clone())
         .map_err(|_| Refusal::Unavailable("RuntimeProfile Catalog 不符合共享契约".into()))?;
-    // 三层合同的字段均 required、无 default/Option；生成类型的原样回写须与输入相等。
+    // 生成类型的原样回写须与输入相等；可选映射缺省由原生成器 skipNone
+    // 保持缺席，不填 null/default，也不能把缺映射当支持。
     // 不另列字段表，但不能把 serde 静默丢弃的未知配置键当作合法投递。
     if serde_json::to_value(&directory)
         .map_err(|_| Refusal::Unavailable("RuntimeProfile Catalog 不符合共享契约".into()))?
@@ -147,7 +148,55 @@ pub(crate) fn runtime_profile_directory() -> Result<contracts::RuntimeProfileDir
             "RuntimeProfile Catalog 的 key 不唯一".into(),
         ));
     }
+    for profile in &directory.profiles {
+        reply_policy_contract(&profile.capability_contract, None)?;
+    }
     Ok(directory)
+}
+
+/// 同一发布合同的纯映射裁决；旧目录可以没有映射，但不能据此执行策略。
+fn reply_policy_contract(
+    contract: &contracts::FluffyCapabilityContract,
+    selected: Option<&str>,
+) -> Result<(), Refusal> {
+    let mut policy_keys = std::collections::HashSet::new();
+    let mut mapping_keys = std::collections::HashSet::new();
+    if contract
+        .reply_policies
+        .iter()
+        .any(|key| key.trim().is_empty() || !policy_keys.insert(key.as_str()))
+        || contract
+            .reply_policy_mappings
+            .as_deref()
+            .into_iter()
+            .flatten()
+            .any(|mapping| {
+                !policy_keys.contains(mapping.key.as_str())
+                    || !mapping_keys.insert(mapping.key.as_str())
+            })
+    {
+        return Err(Refusal::Unavailable(
+            "RuntimeProfile 回复策略键或原生映射不唯一/未登记".into(),
+        ));
+    }
+    let Some(key) = selected else {
+        return Ok(());
+    };
+    if !policy_keys.contains(key) {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let mapping = contract
+        .reply_policy_mappings
+        .as_deref()
+        .and_then(|mappings| mappings.iter().find(|mapping| mapping.key == key))
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    // Buzz ResolvedPersona exposes two independent native booleans. The
+    // existing Task consumer publishes only a reply to the triggering thread;
+    // neither an opaque key nor broadcast support can borrow that execution.
+    if !mapping.thread_replies || mapping.broadcast_replies {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    Ok(())
 }
 
 /// 发布只消费已投递合同，profile 的 ACTIVE 不能从 runtime spawn 推导。
@@ -168,7 +217,6 @@ pub(crate) fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal
         || value.parallelism > c.max_parallelism
         || value.turn_limits.idle_timeout_seconds > c.max_idle_timeout_seconds
         || value.turn_limits.max_turn_duration_seconds > c.max_turn_duration_seconds
-        || !c.reply_policies.contains(&value.reply_policy)
         || value
             .capability_requirements
             .iter()
@@ -176,7 +224,7 @@ pub(crate) fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
-    Ok(())
+    reply_policy_contract(c, Some(&value.reply_policy))
 }
 
 /// 引用只声明 requested；引用存在与 fresh read 不把 execute 权限送给未来 Installation。
@@ -596,4 +644,127 @@ pub(crate) async fn read(
         can_update: Some(can_update),
         can_publish: Some(can_publish),
     })
+}
+
+#[cfg(test)]
+mod reply_policy_tests {
+    use super::reply_policy_contract;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn absent_mapping_preserves_old_contract_but_never_supports_a_policy() {
+        let original = json!({
+            "capabilityRequirements": [],
+            "replyPolicies": ["registered"],
+            "maxParallelism": 1,
+            "maxIdleTimeoutSeconds": 1,
+            "maxTurnDurationSeconds": 1
+        });
+        let contract: contracts::FluffyCapabilityContract =
+            serde_json::from_value(original.clone()).expect("old capability contract parses");
+        assert!(contract.reply_policy_mappings.is_none());
+        assert_eq!(serde_json::to_value(&contract).unwrap(), original);
+        assert!(reply_policy_contract(&contract, None).is_ok());
+        assert!(reply_policy_contract(&contract, Some("registered")).is_err());
+    }
+
+    #[test]
+    fn only_exact_registered_thread_only_mapping_is_supported() {
+        for (thread, broadcast, supported) in [
+            (false, false, false),
+            (false, true, false),
+            (true, false, true),
+            (true, true, false),
+        ] {
+            let contract: contracts::FluffyCapabilityContract = serde_json::from_value(json!({
+                "capabilityRequirements": [],
+                "replyPolicies": ["registered"],
+                "replyPolicyMappings": [{
+                    "key": "registered",
+                    "threadReplies": thread,
+                    "broadcastReplies": broadcast
+                }],
+                "maxParallelism": 1,
+                "maxIdleTimeoutSeconds": 1,
+                "maxTurnDurationSeconds": 1
+            }))
+            .unwrap();
+            assert_eq!(
+                reply_policy_contract(&contract, Some("registered")).is_ok(),
+                supported,
+                "thread={thread}, broadcast={broadcast}"
+            );
+            assert!(reply_policy_contract(&contract, Some("REGISTERED")).is_err());
+            assert!(reply_policy_contract(&contract, Some("unknown")).is_err());
+        }
+    }
+
+    #[test]
+    fn duplicate_unknown_blank_or_missing_mapping_keys_are_rejected() {
+        let original = json!({
+            "capabilityRequirements": [],
+            "replyPolicies": ["registered"],
+            "replyPolicyMappings": [{
+                "key": "registered", "threadReplies": true, "broadcastReplies": false
+            }],
+            "maxParallelism": 1,
+            "maxIdleTimeoutSeconds": 1,
+            "maxTurnDurationSeconds": 1
+        });
+        let mut duplicate_policy = original.clone();
+        duplicate_policy["replyPolicies"] = json!(["registered", "registered"]);
+        let mut duplicate_mapping = original.clone();
+        duplicate_mapping["replyPolicyMappings"]
+            .as_array_mut()
+            .unwrap()
+            .push(original["replyPolicyMappings"][0].clone());
+        let mut unknown_mapping = original.clone();
+        unknown_mapping["replyPolicyMappings"][0]["key"] = json!("unknown");
+        let mut blank_policy = original.clone();
+        blank_policy["replyPolicies"] = json!([" "]);
+        let mut empty_mapping = original;
+        empty_mapping["replyPolicyMappings"] = json!([]);
+        for value in [
+            duplicate_policy,
+            duplicate_mapping,
+            unknown_mapping,
+            blank_policy,
+            empty_mapping,
+        ] {
+            let contract: contracts::FluffyCapabilityContract =
+                serde_json::from_value(value).unwrap();
+            assert!(reply_policy_contract(&contract, Some("registered")).is_err());
+        }
+    }
+
+    #[test]
+    fn native_boolean_fields_are_explicit_and_absence_is_not_a_default() {
+        let original = json!({
+            "capabilityRequirements": [],
+            "replyPolicies": ["registered"],
+            "replyPolicyMappings": [{
+                "key": "registered", "threadReplies": true, "broadcastReplies": false
+            }],
+            "maxParallelism": 1,
+            "maxIdleTimeoutSeconds": 1,
+            "maxTurnDurationSeconds": 1
+        });
+        for field in ["threadReplies", "broadcastReplies"] {
+            let mut missing = original.clone();
+            missing["replyPolicyMappings"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            assert!(
+                serde_json::from_value::<contracts::FluffyCapabilityContract>(missing).is_err()
+            );
+        }
+        let mut null_mapping = original;
+        null_mapping["replyPolicyMappings"] = Value::Null;
+        let parsed: contracts::FluffyCapabilityContract =
+            serde_json::from_value(null_mapping.clone()).unwrap();
+        // Optional None serializes as absence; the production strict roundtrip
+        // therefore rejects explicit null instead of treating it as old syntax.
+        assert_ne!(serde_json::to_value(parsed).unwrap(), null_mapping);
+    }
 }

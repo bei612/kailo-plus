@@ -19,6 +19,27 @@ pub(crate) struct Installation {
     pub(crate) version: i32,
 }
 
+#[cfg(test)]
+mod cancellation_tests {
+    use super::cancellation_required;
+    use chrono::{TimeDelta, Utc};
+
+    #[test]
+    fn only_known_revocation_or_wall_clock_expiry_cancels() {
+        let now = chrono::DateTime::<Utc>::from_timestamp(100, 0).unwrap();
+        let future = now + TimeDelta::seconds(1);
+        assert!(!cancellation_required("ACTIVE", future, now).unwrap());
+        assert!(cancellation_required("ACTIVE", now, now).unwrap());
+        assert!(cancellation_required("ACTIVE", now - TimeDelta::seconds(1), now).unwrap());
+        for state in ["REVOKING", "REVOKED", "EXPIRED"] {
+            assert!(cancellation_required(state, future, now).unwrap());
+        }
+        for state in ["", "PAUSED", "DISABLED", "FUTURE_STATE"] {
+            assert!(cancellation_required(state, future, now).is_err());
+        }
+    }
+}
+
 pub(crate) async fn installation(
     conn: &mut PgConnection,
     tenant: Uuid,
@@ -390,6 +411,7 @@ pub(super) async fn prewrite(
         if changed.rows_affected() != 1 {
             return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
         }
+        flag_invocations(tx, ae.tenant_id, id).await?;
         return Ok(());
     }
     let grant = params
@@ -457,11 +479,72 @@ pub(super) async fn prewrite(
     Ok(())
 }
 
+/// The same closed Grant-state rule is consumed by reconciliation and each
+/// Advance. A failed/unknown read is not evidence that authorization was revoked.
+pub(crate) fn cancellation_required(
+    state: &str,
+    expires_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<bool, Refusal> {
+    match state {
+        "ACTIVE" => Ok(expires_at <= now),
+        "REVOKING" | "REVOKED" | "EXPIRED" => Ok(true),
+        _ => Err(Refusal::Unavailable("Delegation 状态不可核验".into())),
+    }
+}
+
+// Called under the existing Tenant fence. No business/native terminal is
+// inferred here; the immutable Grant ID and scope exclude other delegations.
+pub(crate) async fn flag_invocations(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    grant: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "update catalog.agent_invocation i set cancel_pending=true,updated_at=now()
+        from admission.delegation_grant g
+        where g.id=$1 and g.tenant_id=$2 and i.delegation_id=g.id
+          and i.tenant_id=g.tenant_id and i.workspace_id=g.workspace_id
+          and i.installation_resource_id=g.installation_resource_id
+          and i.status in ('CREATED','DISPATCHING','RUNNING','UNKNOWN') and not i.cancel_pending
+          and (g.state in ('REVOKING','REVOKED','EXPIRED')
+               or (g.state='ACTIVE' and g.expires_at<=clock_timestamp()))",
+    )
+    .bind(grant)
+    .bind(tenant)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+#[derive(sqlx::FromRow)]
+struct Cancellation {
+    id: Uuid,
+    action_execution_id: Uuid,
+    workflow_id: String,
+    first_run_id: Option<String>,
+    installation_resource_id: Uuid,
+    projection_generation: i64,
+    config_hash: Option<String>,
+    runtime_thread_id: Option<String>,
+    runtime_turn_id: Option<String>,
+    native_status: Option<String>,
+}
+
 impl Governance {
     /// 复用现有治理循环的 batch/节拍；expiry 是授权事实，不是新的工作流。
-    pub(crate) async fn reconcile_delegations(&self, batch: i64) -> Result<(), Refusal> {
-        let rows:Vec<(Uuid,Uuid,Uuid)>=sqlx::query_as("select id,action_execution_id,tenant_id
-            from admission.delegation_grant where state='REVOKING' or (state='ACTIVE' and expires_at<=now())
+    pub(crate) async fn reconcile_delegations(
+        &self,
+        runtime: Option<&crate::agent_runtime::Supervisor>,
+        batch: i64,
+    ) -> Result<(), Refusal> {
+        let rows:Vec<(Uuid,Uuid,Uuid)>=sqlx::query_as("select g.id,g.action_execution_id,g.tenant_id
+            from admission.delegation_grant g where g.state='REVOKING'
+              or (g.state='ACTIVE' and g.expires_at<=clock_timestamp())
+              or (g.state in ('REVOKED','EXPIRED') and exists(select 1 from catalog.agent_invocation i
+                  where i.delegation_id=g.id and i.tenant_id=g.tenant_id and i.workspace_id=g.workspace_id
+                    and i.installation_resource_id=g.installation_resource_id
+                    and i.status in ('CREATED','DISPATCHING','RUNNING','UNKNOWN')))
             order by expires_at,id limit $1")
             .bind(batch).fetch_all(&self.pool).await?;
         for (id, execution, tenant) in rows {
@@ -473,41 +556,203 @@ impl Governance {
                     .bind(tenant)
                     .fetch_one(&mut *tx)
                     .await?;
-            let state:Option<String>=sqlx::query_scalar("select state from admission.delegation_grant
-                where id=$1 and (state='REVOKING' or (state='ACTIVE' and expires_at<=now())) for update skip locked")
-                .bind(id).fetch_optional(&mut *tx).await?;
-            let Some(state) = state else {
+            let grant: Option<(String, DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
+                "select state,expires_at,clock_timestamp() from admission.delegation_grant
+                where id=$1 and tenant_id=$2 for update skip locked",
+            )
+            .bind(id)
+            .bind(tenant)
+            .fetch_optional(&mut *tx)
+            .await?;
+            let Some((state, expires, now)) = grant else {
                 tx.rollback().await?;
                 continue;
             };
+            if !cancellation_required(&state, expires, now)? {
+                tx.rollback().await?;
+                continue;
+            }
             let terminal = if state == "REVOKING" {
                 "REVOKED"
             } else {
                 "EXPIRED"
             };
-            sqlx::query(
-                "update admission.delegation_grant set state=$2,version=version+1 where id=$1",
-            )
-            .bind(id)
-            .bind(terminal)
-            .execute(&mut *tx)
-            .await?;
+            if matches!(state.as_str(), "ACTIVE" | "REVOKING") {
+                sqlx::query(
+                    "update admission.delegation_grant set state=$2,version=version+1 where id=$1",
+                )
+                .bind(id)
+                .bind(terminal)
+                .execute(&mut *tx)
+                .await?;
+            }
+            flag_invocations(&mut tx, tenant, id).await?;
             let def =
                 super::exact_definition(&self.pool, &ae.action_key, ae.action_version).await?;
-            super::audit(
-                &mut tx,
-                &ae,
-                &def,
-                &format!("delegation:{id}:{terminal}"),
-                "OUTCOME",
-                "NONE",
-                &format!("DELEGATION_{terminal}"),
-                None,
-                Vec::new(),
-            )
-            .await?;
+            if matches!(state.as_str(), "ACTIVE" | "REVOKING") {
+                super::audit(
+                    &mut tx,
+                    &ae,
+                    &def,
+                    &format!("delegation:{id}:{terminal}"),
+                    "OUTCOME",
+                    "NONE",
+                    &format!("DELEGATION_{terminal}"),
+                    None,
+                    Vec::new(),
+                )
+                .await?;
+            }
+            let pending: Vec<Cancellation> = sqlx::query_as("select i.id,i.action_execution_id,i.workflow_id,
+                w.run_id as first_run_id,i.installation_resource_id,i.projection_generation,p.config_hash,
+                s.runtime_thread_id,i.runtime_turn_id,i.native_status
+                from catalog.agent_invocation i
+                join admission.delegation_grant g on g.id=i.delegation_id
+                join admission.action_execution a on a.id=i.action_execution_id
+                  and a.tenant_id=i.tenant_id and a.workspace_id=i.workspace_id
+                  and a.temporal_workflow_id=i.workflow_id and a.actor_principal_id=g.agent_principal_id
+                  and a.initiator_principal_id=g.grantor_principal_id
+                left join projection.workflow_ref w on w.workflow_id=i.workflow_id
+                  and w.tenant_id=i.tenant_id and w.action_execution_id=a.id and w.operation_id=a.operation_id
+                  and w.workflow_type=$3 and w.kind is null
+                left join catalog.agent_runtime_projection p on p.installation_resource_id=i.installation_resource_id
+                  and p.generation=i.projection_generation and p.agent_version_asset_id=i.agent_version_asset_id
+                left join catalog.agent_session s on s.tenant_id=i.tenant_id and s.workspace_id=i.workspace_id
+                  and s.root_event_id=i.root_event_id and s.installation_resource_id=i.installation_resource_id
+                  and s.agent_version_asset_id=i.agent_version_asset_id and s.projection_generation=i.projection_generation
+                where g.id=$1 and g.tenant_id=$2 and i.tenant_id=g.tenant_id and i.workspace_id=g.workspace_id
+                  and i.installation_resource_id=g.installation_resource_id and i.cancel_pending
+                  and i.status in ('CREATED','DISPATCHING','RUNNING','UNKNOWN') order by i.id")
+                .bind(id).bind(tenant).bind(crate::agent_task::WORKFLOW_TYPE).fetch_all(&mut *tx).await?;
+            for invocation in &pending {
+                super::audit(
+                    &mut tx,
+                    &ae,
+                    &def,
+                    &format!("delegation:{id}:cancel:{}:intent", invocation.id),
+                    "DISPATCH",
+                    "ALLOW",
+                    "DELEGATION_CANCEL_PENDING",
+                    None,
+                    vec![crate::audit::Evidence::new(
+                        contracts::EvidenceKind::OriginalActionExecutionId,
+                        invocation.action_execution_id,
+                    )],
+                )
+                .await?;
+            }
             tx.commit().await?;
+            for invocation in pending {
+                // Cancellation is retried only at the same control AE/execution
+                // chain. Acceptance is not an Invocation or Workflow terminal.
+                let native = match (&invocation.runtime_thread_id, &invocation.runtime_turn_id) {
+                    (Some(thread), Some(turn))
+                        if invocation.native_status.as_deref().is_none_or(|s| {
+                            !matches!(s, "completed" | "failed" | "interrupted")
+                        }) =>
+                    {
+                        match (runtime, invocation.config_hash.as_ref()) {
+                            (Some(runtime), Some(hash)) => runtime
+                                .interrupt(
+                                    &crate::agent_runtime::RuntimeRef {
+                                        installation_id: invocation.installation_resource_id,
+                                        generation: invocation.projection_generation,
+                                        config_hash: hash.clone(),
+                                    },
+                                    thread,
+                                    turn,
+                                )
+                                .await
+                                .is_ok(),
+                            _ => false,
+                        }
+                    }
+                    // No turn ID is not absence proof; Advance observes the
+                    // same client ID. Known terminal turns still settle usage.
+                    _ => false,
+                };
+                let recorded = self.cancel_delegated_workflow(&invocation, ae.id).await;
+                tracing::debug!(invocation_id=%invocation.id, cancel_recorded=recorded,
+                    interrupt_accepted=native, "Delegation 定向取消仍由原 Task/native/usage 对账确认终态");
+                let mut tx = self.pool.begin().await?;
+                let control = super::lock_execution(&mut tx, ae.id).await?;
+                let mut evidence = vec![crate::audit::Evidence::new(
+                    contracts::EvidenceKind::OriginalActionExecutionId,
+                    invocation.action_execution_id,
+                )];
+                if recorded {
+                    evidence.push(crate::audit::Evidence::new(
+                        contracts::EvidenceKind::TemporalWorkflowId,
+                        &invocation.workflow_id,
+                    ));
+                    if let Some(first) = &invocation.first_run_id {
+                        evidence.push(crate::audit::Evidence::new(
+                            contracts::EvidenceKind::TemporalFirstRunId,
+                            first,
+                        ));
+                    }
+                }
+                super::audit(
+                    &mut tx,
+                    &control,
+                    &def,
+                    &format!(
+                        "delegation:{id}:cancel:{}:observed:{recorded}:{native}",
+                        invocation.id
+                    ),
+                    "RECONCILIATION",
+                    "NONE",
+                    if recorded {
+                        "CANCEL_REQUEST_RECORDED"
+                    } else {
+                        "UNKNOWN_EXTERNAL_RESULT"
+                    },
+                    None,
+                    evidence,
+                )
+                .await?;
+                tx.commit().await?;
+            }
         }
         Ok(())
+    }
+
+    async fn cancel_delegated_workflow(&self, invocation: &Cancellation, control: Uuid) -> bool {
+        let Some(first) = invocation
+            .first_run_id
+            .as_deref()
+            .filter(|run| !run.is_empty())
+        else {
+            return false;
+        };
+        let Ok(Some(observed)) = self.temporal.describe(&invocation.workflow_id).await else {
+            return false;
+        };
+        if observed.first_run_id.is_empty()
+            || (first != observed.first_run_id && first != observed.run_id)
+            || !matches!(observed.state, crate::temporal::ObservedState::Open)
+        {
+            return false;
+        }
+        match self
+            .temporal
+            .cancel_request_recorded(&invocation.workflow_id, first, control)
+            .await
+        {
+            Ok(true) => true,
+            Ok(false) => {
+                let _ = self
+                    .temporal
+                    .request_cancel(&invocation.workflow_id, first, control)
+                    .await;
+                matches!(
+                    self.temporal
+                        .cancel_request_recorded(&invocation.workflow_id, first, control)
+                        .await,
+                    Ok(true)
+                )
+            }
+            Err(_) => false,
+        }
     }
 }
