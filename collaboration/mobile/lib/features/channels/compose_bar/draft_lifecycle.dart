@@ -12,6 +12,7 @@ Future<void> _sendTextOnlyDraft({
   required _OutgoingMentions outgoing,
   required ComposeBarOnSend onSend,
   required ScaffoldMessengerState? messenger,
+  required ValueNotifier<_ComposeSendOutcome?> sendOutcome,
 }) async {
   TextEditingValue? clearedDraftText;
   Map<String, MentionCandidate>? clearedDraftMentions;
@@ -46,6 +47,17 @@ Future<void> _sendTextOnlyDraft({
       outgoing.pubkeys,
       mediaTags: [...payload.mediaTags, ...outgoing.referenceTags],
     );
+    if (context.mounted) sendOutcome.value = null;
+  } on RelayPublishFailure catch (error) {
+    // Relay 拒绝、限流、未发出或结果不明：恢复草稿，并在 composer 上留下确定的
+    // 状态，而不是一闪而过的提示
+    restoreClearedDraft();
+    final outcome = _composeSendOutcomeFor(error)!;
+    if (context.mounted) {
+      sendOutcome.value = outcome.withRestoredText(
+        clearedDraftText?.text ?? payload.content,
+      );
+    }
   } on StateError {
     restoreClearedDraft();
     _reportSendCancelledByCommunitySwitch(messenger);
@@ -75,6 +87,7 @@ void _useComposeDraftLifecycle({
   required ValueNotifier<bool> isSending,
   required ValueNotifier<_AttachmentSurface> attachmentSurface,
   required ValueNotifier<String?> uploadError,
+  required ValueNotifier<_ComposeSendOutcome?> sendOutcome,
   required _IOSAttachmentPopoverController iosAttachmentPopover,
   required VoidCallback onDraftIdentityChanged,
 }) {
@@ -109,6 +122,7 @@ void _useComposeDraftLifecycle({
       isSending.value = false;
       attachmentSurface.value = _AttachmentSurface.closed;
       uploadError.value = null;
+      sendOutcome.value = null;
       unawaited(iosAttachmentPopover.dispose());
       final staleAttachments = attachments.value;
       attachments.value = const [];

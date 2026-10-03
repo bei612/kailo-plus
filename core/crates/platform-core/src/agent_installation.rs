@@ -588,6 +588,18 @@ async fn create_projection(
         .await?
         .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
     if ae.action_key != CREATE_ACTION
+        || def.action_key != CREATE_ACTION
+        || def.target_type != "RESOURCE"
+        || def.tenant_rule != "SESSION_TENANT"
+        || def.workspace_rule != "WORKSPACE_REQUIRED"
+        || def.permission_object_type != "workspace"
+        || def.permission != "create"
+        || def.execution_mode != "TEMPORAL"
+        || def.workflow_kind.as_deref() != Some(KIND)
+        || !matches!(
+            def.confirmation_mode.as_str(),
+            "NONE" | "EXPLICIT" | "APPROVAL"
+        )
         || ae.target_id != installation
         || ae.tenant_id != row.tenant_id
         || ae.workspace_id != Some(row.workspace_id)
@@ -615,18 +627,48 @@ async fn create_projection(
     {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
-    target(
-        &mut tx,
-        row.tenant_id,
-        ae.initiator_principal_id,
-        &def,
-        &params,
-        Some(installation),
-        true,
+    // This is the already persisted installation for this exact AE, not a new
+    // install. Retirement may advance management versions and clear the parent
+    // pointer, but it cannot change this installation's immutable Version pin.
+    let definition =
+        crate::agent_definition::resource(&mut tx, row.tenant_id, row.agent_resource_id, true)
+            .await?
+            .filter(|r| r.state == "ACTIVE" && r.projection_action_execution_id.is_none())
+            .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    let definition_active: bool = sqlx::query_scalar(
+        "select exists(select 1 from catalog.agent_definition
+        where resource_id=$1 and status='ACTIVE')",
     )
+    .bind(definition.id)
+    .fetch_one(&mut *tx)
     .await?;
-    if !crate::agent_definition::active_owner(&mut tx, row.tenant_id, row.owner_principal_id)
+    let version =
+        crate::agent_version::version(&mut tx, row.tenant_id, row.pinned_version_asset_id, true)
+            .await?
+            .filter(|v| {
+                v.agent_resource_id == definition.id
+                    && matches!(v.state.as_str(), "PUBLISHED" | "RETIRED")
+                    && v.asset_state == v.state
+                    && v.projection_action_execution_id.is_none()
+            })
+            .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    if !definition_active
+        || !crate::agent_definition::active_owner(&mut tx, row.tenant_id, ae.initiator_principal_id)
+            .await?
+        || !crate::agent_definition::active_owner(
+            &mut tx,
+            row.tenant_id,
+            definition.owner_principal_id,
+        )
         .await?
+        || !crate::agent_definition::active_owner(
+            &mut tx,
+            row.tenant_id,
+            version.owner_principal_id,
+        )
+        .await?
+        || !crate::agent_definition::active_owner(&mut tx, row.tenant_id, row.owner_principal_id)
+            .await?
     {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }

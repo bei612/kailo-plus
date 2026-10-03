@@ -531,6 +531,24 @@ function MessageComposerImpl({
                 </button>
               </div>
             ) : null}
+            {mentionSendFlow.sendOutcome ? (
+              <div
+                aria-live="polite"
+                className={cn(
+                  "mb-2 rounded-lg px-3 py-2 text-xs",
+                  mentionSendFlow.sendOutcome.unknown
+                    ? "bg-muted text-muted-foreground"
+                    : "bg-destructive/10 text-destructive",
+                )}
+                data-outcome={
+                  mentionSendFlow.sendOutcome.unknown ? "unknown" : "not-sent"
+                }
+                data-testid="composer-send-outcome"
+                role="status"
+              >
+                {mentionSendFlow.sendOutcome.text}
+              </div>
+            ) : null}
             {composerLinkPreviews}
             {(media.pendingImeta.length > 0 ||
               media.queuedAttachments.length > 0 ||

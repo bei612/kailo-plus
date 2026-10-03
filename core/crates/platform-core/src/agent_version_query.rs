@@ -368,15 +368,17 @@ async fn version_page(
     .map_err(|_| Refusal::Unavailable("Version 目录不符合共享契约".into()).respond(None))
 }
 
-pub(crate) async fn draft_permissions(
+pub(crate) async fn version_permissions(
     state: &BffState,
     context: &ExecutionContext,
     connection: &mut sqlx::PgConnection,
     version: &crate::agent_version::Version,
     parent: &crate::agent_definition::Resource,
-) -> Result<(bool, bool), Response> {
-    if version.state != "DRAFT" || version.asset_state != "DRAFT" {
-        return Ok((false, false));
+) -> Result<(bool, bool, bool), Response> {
+    if !matches!(version.state.as_str(), "DRAFT" | "PUBLISHED")
+        || version.asset_state != version.state
+    {
+        return Ok((false, false, false));
     }
     for human in [
         context.tenant_principal_id,
@@ -387,18 +389,19 @@ pub(crate) async fn draft_permissions(
             .await
             .map_err(crate::service_api::unavailable)?
         {
-            return Ok((false, false));
+            return Ok((false, false, false));
         }
     }
-    let mut allowed = [false, false];
-    for (index, (key, permission, confirmation)) in [
-        ("agent.version.update", "update", "NONE"),
-        ("agent.version.publish", "manage", "EXPLICIT"),
+    let mut allowed = [false, false, false];
+    for (index, (key, permission, confirmation, required_state)) in [
+        ("agent.version.update", "update", "NONE", "DRAFT"),
+        ("agent.version.publish", "manage", "EXPLICIT", "DRAFT"),
+        ("agent.version.retire", "manage", "EXPLICIT", "PUBLISHED"),
     ]
     .into_iter()
     .enumerate()
     {
-        if !crate::capability_registry::action_exposed(key) {
+        if version.state != required_state || !crate::capability_registry::action_exposed(key) {
             continue;
         }
         let Some(definition) = crate::governance::active_definition(&state.pool, key)
@@ -443,5 +446,5 @@ pub(crate) async fn draft_permissions(
         }
         allowed[index] = checked.allowed;
     }
-    Ok((allowed[0], allowed[1]))
+    Ok((allowed[0], allowed[1], allowed[2]))
 }

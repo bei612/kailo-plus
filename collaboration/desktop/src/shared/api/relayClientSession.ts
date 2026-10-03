@@ -30,6 +30,12 @@ import {
 import { getChannelReconnectRepairEvents } from "@/shared/api/channelReconnectRepair";
 import { replayLiveSubscriptions } from "@/shared/api/relayReconnectReplay";
 import { publishSessionEvent } from "@/shared/api/relayEventPublisher";
+import {
+  RelayPublishNotSentError,
+  RelayPublishRejectedError,
+  RelayPublishUnknownError,
+  unconfirmedFingerprint,
+} from "@/shared/api/relayPublishOutcome";
 import { activateRateLimitIfSignalled } from "@/shared/api/relayRateLimitGate";
 import { requestHistoryGated } from "@/shared/api/relayGateBoundary";
 import { RelayConnectionStateEmitter } from "@/shared/api/relayConnectionStateEmitter";
@@ -71,6 +77,8 @@ export class RelayClient {
   private authRequest: RelayAuthRequest | null = null;
   private subscriptions = new Map<string, RelaySubscription>();
   private pendingEvents = new Map<string, PendingEvent>();
+  /** 发出后结果不明的消息事件，按内容指纹索引，供原样重发（见 relayPublishOutcome）。 */
+  private unconfirmedEvents = new Map<string, RelayEvent>();
   private eventBuffer: SubscriptionEventBufferItem[] = [];
   private flushTimeout: number | null = null;
   private reconnectListeners = new Set<() => void>();
@@ -118,6 +126,8 @@ export class RelayClient {
     this.visibleChannelId = null;
     this.authOkTracker.reset();
     this.connectionStateEmitter.set("idle");
+    // 未确认的事件属于上一个社区与身份，不能在新会话里重发
+    this.unconfirmedEvents.clear();
 
     if (this.wsId !== null) {
       void closeWebSocket(this.wsId, "community switch");
@@ -187,8 +197,6 @@ export class RelayClient {
     mentionPubkeys: string[] = [],
     extraTags: string[][] = [],
   ) {
-    await this.ensureConnected();
-
     const tags: string[][] = [["h", channelId]];
     for (const pubkey of mentionPubkeys) {
       tags.push(["p", pubkey]);
@@ -197,17 +205,80 @@ export class RelayClient {
       tags.push(tag);
     }
 
-    const event = await signRelayEvent({
-      kind: KIND_STREAM_MESSAGE,
-      content: content.trim(),
+    // 同一内容上一次的结果不明：原样重发那个已签名事件，而不是签一条新的
+    // ——Relay 若已存储它只回 `duplicate:`，不会出现第二条消息
+    const epoch = this.sessionEpoch;
+    let fingerprint = unconfirmedFingerprint(
+      this.relayUrl ?? "",
+      KIND_STREAM_MESSAGE,
+      content.trim(),
       tags,
-    });
-
-    return this.publishEvent(
-      event,
-      "Timed out while sending the message.",
-      "Failed to send the message.",
     );
+    let previous = this.unconfirmedEvents.get(fingerprint);
+    try {
+      await this.ensureConnected();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // 新事件未发出是确定状态，但旧事件的首次发布仍未查证。
+      if (previous && epoch === this.sessionEpoch) {
+        throw new RelayPublishUnknownError(previous.id, message);
+      }
+      throw new RelayPublishNotSentError(message);
+    }
+    if (epoch !== this.sessionEpoch) {
+      throw new RelayPublishNotSentError(
+        "Relay disconnected for community switch.",
+      );
+    }
+    // 首次连接才解析 Relay URL，缓存必须归属连接后的真实地址；重连前读取
+    // 旧记录仅用于保留“没有再发出也不能证明首次未存储”的结果。
+    fingerprint = unconfirmedFingerprint(
+      this.relayUrl ?? "",
+      KIND_STREAM_MESSAGE,
+      content.trim(),
+      tags,
+    );
+    previous = this.unconfirmedEvents.get(fingerprint);
+    const event =
+      previous ??
+      (await signRelayEvent({
+        kind: KIND_STREAM_MESSAGE,
+        content: content.trim(),
+        tags,
+      }));
+    if (epoch !== this.sessionEpoch) {
+      throw new RelayPublishNotSentError(
+        "Relay disconnected for community switch.",
+      );
+    }
+
+    try {
+      const published = await this.publishEvent(
+        event,
+        "Timed out while sending the message.",
+        "Failed to send the message.",
+      );
+      this.unconfirmedEvents.delete(fingerprint);
+      return published;
+    } catch (error) {
+      // 只有结果不明才留着供原样重发；重发时被拒不改变「第一次是否已存储」的
+      // 未知，所以记录只在确认接受（或切换社区）时清除
+      // 社区切换或退出（disconnect 递增 sessionEpoch）之后不再记录：新会话可能
+      // 换了身份
+      if (
+        error instanceof RelayPublishUnknownError &&
+        epoch === this.sessionEpoch
+      ) {
+        this.unconfirmedEvents.set(fingerprint, event);
+      }
+      if (previous && epoch === this.sessionEpoch) {
+        throw new RelayPublishUnknownError(
+          event.id,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      throw error;
+    }
   }
 
   /** Subscribe to channel rows and aux starting now, with no history replay. */
@@ -723,7 +794,7 @@ export class RelayClient {
       // rejects an over-quota EVENT on the OK channel so this pending publish
       // can be settled at all. Unarmed, the send retries into the same quota.
       activateRateLimitIfSignalled(message);
-      pendingEvent.reject(new Error(message || "Relay rejected the event."));
+      pendingEvent.reject(new RelayPublishRejectedError(eventId, message));
     }
   }
 
@@ -874,7 +945,8 @@ export class RelayClient {
     }
     for (const [eventId, pendingEvent] of this.pendingEvents) {
       window.clearTimeout(pendingEvent.timeout);
-      pendingEvent.reject(error);
+      // EVENT 已写出而连接断开：Relay 是否存储了它不得而知
+      pendingEvent.reject(new RelayPublishUnknownError(eventId, error.message));
       this.pendingEvents.delete(eventId);
     }
     if (options?.reconnect !== false) {

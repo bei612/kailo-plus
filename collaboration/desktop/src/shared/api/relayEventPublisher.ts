@@ -2,6 +2,7 @@ import type { RelayEvent } from "@/shared/api/types";
 import type { PendingEvent } from "@/shared/api/relayClientShared";
 import { waitForRateLimit } from "@/shared/api/relayRateLimitGate";
 import { PUBLISH_TIMEOUT_MS } from "@/shared/api/relayClientTimings";
+import { RelayPublishUnknownError } from "@/shared/api/relayPublishOutcome";
 
 type PublishSession = {
   generation: () => number;
@@ -30,7 +31,8 @@ export async function publishSessionEvent(
   return new Promise<RelayEvent>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       session.pendingEvents.delete(event.id);
-      reject(new Error(timeoutMessage));
+      // EVENT 已发出而没有 OK：Relay 可能已经存储它
+      reject(new RelayPublishUnknownError(event.id, timeoutMessage));
     }, PUBLISH_TIMEOUT_MS);
     const pendingEvent = { event, resolve, reject, timeout };
     session.pendingEvents.set(event.id, pendingEvent);
@@ -71,12 +73,18 @@ export async function publishSessionEvent(
 
           window.clearTimeout(timeout);
           session.pendingEvents.delete(event.id);
-          reject(
+          const failure =
             publishOwnership === session.ownership() &&
-              retryGeneration !== null &&
-              session.generation() === retryGeneration
+            retryGeneration !== null &&
+            session.generation() === retryGeneration
               ? session.recoverSocketFailure(retryError, sendError.message)
-              : session.normalizeError(retryError, sendError.message),
+              : session.normalizeError(retryError, sendError.message);
+          // 第一次 send 失败时帧是否已写出无从判定：按结果不明处理，原样重发
+          // 同一事件由 Relay 去重
+          reject(
+            publishOwnership === session.ownership()
+              ? new RelayPublishUnknownError(event.id, failure.message)
+              : failure,
           );
         }
       });

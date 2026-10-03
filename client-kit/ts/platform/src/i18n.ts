@@ -210,6 +210,7 @@ export const platformMessages = {
   "agents.version.create": { en: "Create version draft", "zh-CN": "创建版本草稿" },
   "agents.version.edit": { en: "Edit draft", "zh-CN": "编辑草稿" },
   "agents.version.publish": { en: "Publish exact draft", "zh-CN": "发布精确草稿" },
+  "agents.version.retire": { en: "Retire exact published version", "zh-CN": "退役精确已发布版本" },
   "agents.version.createUnavailable": { en: "This action has no authorized configuration source or registered permission. No default profile or route is supplied.", "zh-CN": "此动作缺少受权配置来源或已登记权限。不提供默认运行配置或路由。" },
   "agents.version.currentHumanOwner": { en: "Current active human identity", "zh-CN": "当前有效 HUMAN 身份" },
   "agents.version.avatar": { en: "Avatar URL (optional metadata)", "zh-CN": "头像 URL（可选元数据）" },
@@ -230,6 +231,7 @@ export const platformMessages = {
   "agents.version.toolsUnavailable": { en: "This implementation has no governed Skill/Tool producer; new drafts declare neither. Capability requirements do not grant permissions or install a provider.", "zh-CN": "当前实现尚无受治理的 Skill/Tool 产出链，新草稿不声明两者。能力需求不授予权限，也不安装实现。" },
   "agents.version.saveReview": { en: "Save only this draft content. Core validates the declared sources and freezes its hash; installations and runtime projections are unchanged. Management quota/capacity is NONE; scope and permission are rechecked.", "zh-CN": "仅保存此草稿正文。Core 查证声明来源并固定摘要；已有安装和运行投影不变。管理额度/容量为 NONE，scope 与权限仍重查。" },
   "agents.version.publishReview": { en: "Explicitly publish this exact draft and hash. The request contains no replacement content. The definition's published pointer changes; existing installations remain pinned. No approval workflow, quota or capacity is required by this registered management action.", "zh-CN": "显式发布这个精确草稿与摘要。请求不携带替代正文，仅改变定义的已发布指针；已有安装仍固定原版本。此已登记管理动作无审批 Workflow、额度或容量要求。" },
+  "agents.version.retireReview": { en: "Explicitly retire only this published version to prohibit new installations. Existing installations and in-flight invocations keep their exact immutable version; history, usage and audit remain. If this is the definition's published pointer, it is cleared without selecting a replacement. This Asset manage action has no approval workflow, quota or capacity requirement; Core rechecks scope and permission.", "zh-CN": "显式退役这个已发布版本，禁止新安装。已有安装和在途 Invocation 保留精确不可变版本，历史、用量和审计不删除。若定义的已发布指针指向此版，仅清空而不选择替代版本。此 Asset manage 动作无审批 Workflow、额度或容量要求，Core 仍重查 scope 与权限。" },
   "agents.version.inFlight": { en: "Existing version requests still require reconciliation", "zh-CN": "已有版本请求仍待对账" },
   "agents.version.ordinal": { en: "Version number", "zh-CN": "版本序号" },
   "agents.version.runtimeProfile": { en: "Requested runtime profile", "zh-CN": "声明的运行配置" },
@@ -922,6 +924,26 @@ export const platformMessages = {
   "native.connect.failed": {
     en: "Couldn't connect to your community: {message}",
     "zh-CN": "未能连接 Community：{message}",
+  },
+  "native.send.rejected": {
+    en: "Not sent: the server refused this message. Your text is kept.",
+    "zh-CN": "未发送：服务器拒绝了这条消息。内容已保留。",
+  },
+  "native.send.rateLimited": {
+    en: "Not sent: you are sending too fast. Try again in {seconds} s. Your text is kept.",
+    "zh-CN": "未发送：发送过于频繁，请 {seconds} 秒后再试。内容已保留。",
+  },
+  "native.send.rateLimitedNoHint": {
+    en: "Not sent: you are sending too fast. Try again shortly. Your text is kept.",
+    "zh-CN": "未发送：发送过于频繁，请稍后再试。内容已保留。",
+  },
+  "native.send.notConnected": {
+    en: "Not sent: this device is not connected to the server. Your text is kept.",
+    "zh-CN": "未发送：本机尚未连接服务器。内容已保留。",
+  },
+  "native.send.outcomeUnknown": {
+    en: "Delivery not confirmed. Your text is kept; sending it again unchanged will not post it twice.",
+    "zh-CN": "未确认送达。内容已保留；原样再次发送不会重复发出。",
   },
 } as const;
 

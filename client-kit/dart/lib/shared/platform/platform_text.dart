@@ -119,6 +119,7 @@ enum PlatformMessageKey {
   agentsVersionCreate,
   agentsVersionEdit,
   agentsVersionPublish,
+  agentsVersionRetire,
   agentsVersionCreateUnavailable,
   agentsVersionCurrentHumanOwner,
   agentsVersionAvatar,
@@ -139,6 +140,7 @@ enum PlatformMessageKey {
   agentsVersionToolsUnavailable,
   agentsVersionSaveReview,
   agentsVersionPublishReview,
+  agentsVersionRetireReview,
   agentsVersionInFlight,
   agentsVersionOrdinal,
   agentsVersionRuntimeProfile,
@@ -541,6 +543,11 @@ enum PlatformMessageKey {
   nativeCommunityLoading,
   nativeCommunityFailed,
   nativeConnectFailed,
+  nativeSendRejected,
+  nativeSendRateLimited,
+  nativeSendRateLimitedNoHint,
+  nativeSendNotConnected,
+  nativeSendOutcomeUnknown,
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
@@ -808,6 +815,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsVersionCreate: ('Create version draft', '创建版本草稿'),
   PlatformMessageKey.agentsVersionEdit: ('Edit draft', '编辑草稿'),
   PlatformMessageKey.agentsVersionPublish: ('Publish exact draft', '发布精确草稿'),
+  PlatformMessageKey.agentsVersionRetire: (
+    'Retire exact published version',
+    '退役精确已发布版本',
+  ),
   PlatformMessageKey.agentsVersionCreateUnavailable: (
     'This action has no authorized configuration source or registered permission. No default profile or route is supplied.',
     '此动作缺少受权配置来源或已登记权限。不提供默认运行配置或路由。',
@@ -884,6 +895,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsVersionPublishReview: (
     'Explicitly publish this exact draft and hash. The request contains no replacement content. The definition\'s published pointer changes; existing installations remain pinned. No approval workflow, quota or capacity is required by this registered management action.',
     '显式发布这个精确草稿与摘要。请求不携带替代正文，仅改变定义的已发布指针；已有安装仍固定原版本。此已登记管理动作无审批 Workflow、额度或容量要求。',
+  ),
+  PlatformMessageKey.agentsVersionRetireReview: (
+    'Explicitly retire only this published version to prohibit new installations. Existing installations and in-flight invocations keep their exact immutable version; history, usage and audit remain. If this is the definition\'s published pointer, it is cleared without selecting a replacement. This Asset manage action has no approval workflow, quota or capacity requirement; Core rechecks scope and permission.',
+    '显式退役这个已发布版本，禁止新安装。已有安装和在途 Invocation 保留精确不可变版本，历史、用量和审计不删除。若定义的已发布指针指向此版，仅清空而不选择替代版本。此 Asset manage 动作无审批 Workflow、额度或容量要求，Core 仍重查 scope 与权限。',
   ),
   PlatformMessageKey.agentsVersionInFlight: (
     'Existing version requests still require reconciliation',
@@ -1919,6 +1934,26 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.nativeConnectFailed: (
     'Couldn\'t connect to your community: {message}',
     '未能连接 Community：{message}',
+  ),
+  PlatformMessageKey.nativeSendRejected: (
+    'Not sent: the server refused this message. Your text is kept.',
+    '未发送：服务器拒绝了这条消息。内容已保留。',
+  ),
+  PlatformMessageKey.nativeSendRateLimited: (
+    'Not sent: you are sending too fast. Try again in {seconds} s. Your text is kept.',
+    '未发送：发送过于频繁，请 {seconds} 秒后再试。内容已保留。',
+  ),
+  PlatformMessageKey.nativeSendRateLimitedNoHint: (
+    'Not sent: you are sending too fast. Try again shortly. Your text is kept.',
+    '未发送：发送过于频繁，请稍后再试。内容已保留。',
+  ),
+  PlatformMessageKey.nativeSendNotConnected: (
+    'Not sent: this device is not connected to the server. Your text is kept.',
+    '未发送：本机尚未连接服务器。内容已保留。',
+  ),
+  PlatformMessageKey.nativeSendOutcomeUnknown: (
+    'Delivery not confirmed. Your text is kept; sending it again unchanged will not post it twice.',
+    '未确认送达。内容已保留；原样再次发送不会重复发出。',
   ),
 };
 

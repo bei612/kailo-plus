@@ -156,3 +156,45 @@ Core/Worker/Gateway 没有 Docker healthcheck，四服务没有运行资源限�
 与候选 RuntimeProfile 配置不等于受治理 Installation ACTIVE。上述源码修正尚不
 解除首个真实 Relay→Temporal→Codex→Gateway→Reply→OpenMeter 全链或签名端侧
 验收；阶段提交、完整批次检查与实际部署各以随后回执为准。
+
+## 2026-10-03 13:46 UTC：三端发送与 Version 退役源码批
+
+模型/ReplyPolicy 与 Grant 撤权已普通 push 为
+`632ccb1fc887e18687577930190500733a974b88`，27 文件、+1819/-289。
+随后私有选定树 `c84d321d533a0d8c15c0b82dd979c06a60013577` 相对此提交为
+42 文件、+2465/-134，包含 Desktop/Mobile 原发送链的必需继承实现，不全计为新写。
+没有纳入认证、同步横幅或其他无关脏改动；共享 TS 是 Web/Desktop 唯一管理主体。
+
+Version 退役依据设计03 Asset/manage、05 §2.8 与17 §8/§10，复用原 HUMAN
+统一 Action、EXPLICIT 确认和既有审计。精确 PUBLISHED Version/Asset 同事务退役，
+只清除与它相等的当前发布指针，不选择替代版本、不改正文或 Installation pin。
+新安装仍仅接受 PUBLISHED；已持久同 AE 的初始化恢复查原精确版本并允许 RETIRED，
+不复用新安装的管理版本门禁，也不放宽 fresh scope/member/permission。
+可选 canRetire 缺席不开放入口，Mobile 仍是原只读管理面。
+
+实际集中证据如下，不外推真实业务或设备验收：
+
+- 四侧契约、共享文案、原能力注册表生成和比对退出0，18能力/18封闭 Workflow kind。
+- Core fmt/Clippy 退出0，原 binary 70 passed/1 ignored；独立库 bootstrap 未执行。
+- 共享包与检查类型退出0，原 pages 103/103。仅私有导出删除 canRetire 缺席拒绝守卫，
+  实际102通过/1失败、退出1；逐字恢复后103/103、退出0，生产源 SHA 为
+  `cf3594d3e9e92756b41b7aafe24131b98ea97fb27abefa0ed41b8ba5562a69f8`。
+- Desktop 干净12路径候选类型退出0、原10/10；Native Cargo ACK尚未执行，
+  旧检查 SDK缺GTK/WebKit不代表现有Win11 build stage缺少这些依赖。
+- Mobile 干净15路径候选 lock/format/analyze退出0、原三目标162/162；旧快照的三次
+  生产守卫变异不冒称本次候选变异，未做真实 Relay/设备/签名验收。
+- 退役与恢复6条真实SQL在原55迁移库 BEGIN READ ONLY 中 PREPARE/EXPLAIN退出0，
+  随后ROLLBACK；没有执行写入、构造授权对象或把规划结果冒称业务通过。
+
+初次Core格式退出1，机械格式化后通过；随后共享类型因已安装依赖缺Shiki退出2，
+从相同选定源码沿原冻结锁安装私有依赖后通过，没有改产品代码或类型规则迁就环境。
+初次生成容器使用不存在网络而未运行工具链，随后沿现有Docker网络生成通过。
+所有失败原件保留在 Data 目录 `codex-agent-delivery-20261003.mjdwzG`。
+正常 pages 原件 SHA 为
+`b0c94e9b7c745131e18732e5c89750ee6421e62d19580bdff4614a18f717d184`；
+守卫变异/还原原件分别为
+`7905964ca6328805336f2da125e70db0d34e4a4329158cd80d9a93be8e221250`、
+`cbb29236a11f01ac52e5c6a6340f297a41a08e0903ade9d3cfa3cb30aa72e9f4`。
+
+本批未完整检查、构建、部署或完成真实 Agent 首 turn；旧客户端产物不证明新源码。
+运行目录仍空，工具/MCP/主动冷Memory与真实回复/用量链仍关闭或未验收。

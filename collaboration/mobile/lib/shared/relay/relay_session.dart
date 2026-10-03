@@ -16,10 +16,12 @@ import 'relay_client.dart';
 import 'relay_closed_policy.dart';
 import 'relay_http_query_client.dart';
 import 'relay_provider.dart';
+import 'relay_publish_failure.dart';
 import 'relay_rate_limit_gate.dart';
 import 'relay_session_types.dart';
 import 'relay_socket.dart';
 
+export 'relay_publish_failure.dart';
 export 'relay_session_types.dart';
 
 part 'relay_session_auth.dart';
@@ -323,7 +325,8 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     final generation = _connectionGeneration;
     if (_rateLimitGate.isActive) await _rateLimitGate.wait();
     if (!_isActiveConnection(generation) || !_socketConnected) {
-      throw StateError('Relay session is not connected');
+      // EVENT 还没有离开本机：确定未发送，而不是结果不明
+      throw RelayPublishNotSent(event.id, 'relay session is not connected');
     }
 
     final completer = Completer<NostrEvent>();
@@ -331,9 +334,11 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     final timer = Timer(timeout, () {
       final pending = _pendingEvents.remove(event.id);
       if (pending != null && !pending.completer.isCompleted) {
+        // EVENT 已发出而没有 OK：Relay 可能已经存储它
         pending.completer.completeError(
-          TimeoutException(
-            'Event ${event.id} not acknowledged within $timeout',
+          RelayPublishOutcomeUnknown(
+            event.id,
+            'not acknowledged within $timeout',
           ),
         );
       }
@@ -838,12 +843,19 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       // rejects an over-quota EVENT on the OK channel so this pending publish
       // can be settled at all. Without arming the gate the send would fail
       // without ever backing off.
+      final retryAfter = parseRateLimitRetrySeconds(message);
       if (message.startsWith('rate-limited:')) {
-        _rateLimitGate.activate(parseRateLimitRetrySeconds(message));
+        _rateLimitGate.activate(retryAfter);
       }
       if (!pending.completer.isCompleted) {
         pending.completer.completeError(
-          Exception(message.isNotEmpty ? message : 'Event rejected'),
+          RelayPublishRejected(
+            eventId,
+            message.isNotEmpty ? message : 'Event rejected',
+            retryAfterSeconds: message.startsWith('rate-limited:')
+                ? retryAfter
+                : null,
+          ),
         );
       }
     }
@@ -950,11 +962,18 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _historySubscriptions.clear();
   }
 
+  /// 连接断开、转入后台或会话销毁时仍在等 OK 的发布：EVENT 已经发出，Relay
+  /// 是否存储了它不得而知。
   void _rejectAllPending(Object? error) {
-    for (final entry in _pendingEvents.values) {
-      entry.timeout.cancel();
-      if (!entry.completer.isCompleted) {
-        entry.completer.completeError(error ?? Exception('Connection lost'));
+    for (final entry in _pendingEvents.entries) {
+      entry.value.timeout.cancel();
+      if (!entry.value.completer.isCompleted) {
+        entry.value.completer.completeError(
+          RelayPublishOutcomeUnknown(
+            entry.key,
+            '${error ?? 'connection lost'} before acknowledgement',
+          ),
+        );
       }
     }
     _pendingEvents.clear();

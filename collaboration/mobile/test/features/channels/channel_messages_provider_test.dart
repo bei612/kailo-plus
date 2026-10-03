@@ -4,13 +4,133 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:nostr/nostr.dart' as nostr;
 import 'package:buzz/features/channels/channel_messages_provider.dart';
+import 'package:buzz/features/channels/send_message_provider.dart';
 import 'package:buzz/features/channels/pending_local_messages_provider.dart';
 import 'package:buzz/features/channels/thread_replies_provider.dart';
 import 'package:buzz/features/channels/timeline_message.dart';
 import 'package:buzz/shared/relay/relay.dart';
 
 void main() {
+  for (final readback in ['live', 'history', 'window']) {
+    test(
+      'only authoritative $readback settles the scoped original send',
+      () async {
+        final identity = nostr.Keys.generate();
+        final event = NostrEvent(
+          id: 'original-send',
+          pubkey: identity.public,
+          createdAt: 10,
+          kind: EventKind.streamMessage,
+          tags: [
+            ['h', _channelId],
+          ],
+          content: 'hello',
+          sig: 'sig',
+        );
+        final window = Completer<List<NostrEvent>>();
+        final relaySession = _RecordingRelaySessionNotifier(
+          queryResults: readback == 'window' ? [window.future] : const [],
+        );
+        final container = ProviderContainer(
+          overrides: [
+            relaySessionProvider.overrideWith(() => relaySession),
+            relayConfigProvider.overrideWithBuild(
+              (ref, notifier) => RelayConfig(
+                baseUrl: 'https://relay.example',
+                nsec: identity.nsec,
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        final unconfirmed = container.read(unconfirmedPublishesProvider);
+        final fingerprint = UnconfirmedPublishes.fingerprint(
+          relayBaseUrl: 'https://relay.example',
+          pubkey: identity.public,
+          kind: event.kind,
+          content: event.content,
+          tags: event.tags,
+        );
+        unconfirmed.remember(fingerprint, event);
+        container.read(channelMessagesProvider(_channelId));
+        await relaySession.subscribed;
+        final notifier = container.read(
+          channelMessagesProvider(_channelId).notifier,
+        );
+        notifier.addLocalMessage(event);
+        await _pumpEventQueue();
+        expect(
+          unconfirmed.lookup(fingerprint)?.id,
+          event.id,
+          reason: '本机乐观插入不能查证 Relay 已存储',
+        );
+        switch (readback) {
+          case 'live':
+            relaySession.emit(event);
+            relaySession.completeHistory([]);
+          case 'history':
+            relaySession.completeHistory([event]);
+          case 'window':
+            window.complete([event, _bounds()]);
+        }
+        await _pumpEventQueue();
+        expect(unconfirmed.lookup(fingerprint), isNull);
+      },
+    );
+  }
+
+  test(
+    'old community live callback cannot settle a new community send',
+    () async {
+      final identity = nostr.Keys.generate();
+      final relaySession = _RecordingRelaySessionNotifier();
+      final container = ProviderContainer(
+        overrides: [
+          relaySessionProvider.overrideWith(() => relaySession),
+          relayConfigProvider.overrideWithBuild(
+            (ref, notifier) => RelayConfig(
+              baseUrl: 'https://old.example',
+              nsec: identity.nsec,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final config = container.read(relayConfigProvider.notifier);
+      config.update(baseUrl: 'https://old.example', nsec: identity.nsec);
+      container.read(channelMessagesProvider(_channelId));
+      await relaySession.subscribed;
+      await _pumpEventQueue();
+      config.update(baseUrl: 'https://new.example', nsec: identity.nsec);
+      final event = NostrEvent(
+        id: 'original-send',
+        pubkey: identity.public,
+        createdAt: 10,
+        kind: EventKind.streamMessage,
+        tags: [
+          ['h', _channelId],
+        ],
+        content: 'hello',
+        sig: 'sig',
+      );
+      final unconfirmed = container.read(unconfirmedPublishesProvider);
+      final fingerprint = UnconfirmedPublishes.fingerprint(
+        relayBaseUrl: 'https://new.example',
+        pubkey: identity.public,
+        kind: event.kind,
+        content: event.content,
+        tags: event.tags,
+      );
+      unconfirmed.remember(fingerprint, event);
+      relaySession.emit(event);
+      relaySession.completeHistory([event]);
+      await _pumpEventQueue();
+      expect(unconfirmed.lookup(fingerprint)?.id, event.id);
+    },
+  );
+
   test('live window without deep links does not rescan flattened ids', () async {
     var historyIdReads = 0;
     final history = _IdReadTrackingEvent(

@@ -14,6 +14,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:buzz/features/channels/channel.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/compose_bar.dart';
 import 'package:buzz/features/channels/send_message_provider.dart';
@@ -1171,6 +1172,170 @@ void main() {
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         'retry me',
       );
+    });
+
+    group('a send the relay did not accept leaves a lasting state', () {
+      Future<void> sendAndFail(WidgetTester tester, Object failure) async {
+        await tester.pumpWidget(
+          _buildComposeBar(
+            uploadService: _testUploadService(nostr.Keys.generate().nsec),
+            onSend:
+                (
+                  content,
+                  mentionPubkeys, {
+                  mediaTags = const <List<String>>[],
+                }) async => throw failure,
+          ),
+        );
+        await _expandComposer(tester);
+        await tester.enterText(find.byType(TextField), 'keep me');
+        await tester.pumpAndSettle();
+        await tester.tap(find.byIcon(LucideIcons.arrowUp));
+        await tester.pumpAndSettle();
+      }
+
+      String composerText(WidgetTester tester) =>
+          tester.widget<TextField>(find.byType(TextField)).controller!.text;
+
+      final cases = <String, (Object, String, String Function())>{
+        'rejected': (
+          const RelayPublishRejected('e1', 'restricted: not a channel member'),
+          'compose-send-outcome-rejected',
+          () => platformText(PlatformMessageKey.nativeSendRejected),
+        ),
+        'rate limited with a hint': (
+          const RelayPublishRejected(
+            'e1',
+            'rate-limited: quota exceeded; retry in 9s',
+            retryAfterSeconds: 9,
+          ),
+          'compose-send-outcome-rateLimited',
+          () => platformText(
+            PlatformMessageKey.nativeSendRateLimited,
+            variables: {'seconds': 9},
+          ),
+        ),
+        'rate limited without a hint': (
+          const RelayPublishRejected('e1', 'rate-limited: slow down'),
+          'compose-send-outcome-rateLimited',
+          () => platformText(PlatformMessageKey.nativeSendRateLimitedNoHint),
+        ),
+        'not sent': (
+          const RelayPublishNotSent('e1', 'not connected'),
+          'compose-send-outcome-notSent',
+          () => platformText(PlatformMessageKey.nativeSendNotConnected),
+        ),
+        'outcome unknown': (
+          const RelayPublishOutcomeUnknown('e1', 'timeout'),
+          'compose-send-outcome-outcomeUnknown',
+          () => platformText(PlatformMessageKey.nativeSendOutcomeUnknown),
+        ),
+      };
+      for (final MapEntry(key: name, value: (failure, key, text))
+          in cases.entries) {
+        testWidgets('$name: shared text, draft kept, relay text hidden', (
+          tester,
+        ) async {
+          await sendAndFail(tester, failure);
+
+          final outcome = find.byKey(ValueKey(key));
+          expect(outcome, findsOneWidget);
+          expect(tester.widget<Text>(outcome).data, text());
+          expect(composerText(tester), 'keep me');
+          expect(find.textContaining('restricted:'), findsNothing);
+          expect(find.textContaining('rate-limited:'), findsNothing);
+          expect(find.byType(SnackBar), findsNothing);
+
+          // 状态不会自行消失（不是一闪而过的提示）
+          await tester.pump(const Duration(seconds: 10));
+          expect(find.byKey(ValueKey(key)), findsOneWidget);
+        });
+      }
+
+      testWidgets('the next send clears the previous state', (tester) async {
+        var attempts = 0;
+        await tester.pumpWidget(
+          _buildComposeBar(
+            uploadService: _testUploadService(nostr.Keys.generate().nsec),
+            onSend:
+                (
+                  content,
+                  mentionPubkeys, {
+                  mediaTags = const <List<String>>[],
+                }) async {
+                  attempts++;
+                  if (attempts == 1) {
+                    throw const RelayPublishOutcomeUnknown('e1', 'timeout');
+                  }
+                },
+          ),
+        );
+        await _expandComposer(tester);
+        await tester.enterText(find.byType(TextField), 'keep me');
+        await tester.pumpAndSettle();
+        await tester.tap(find.byIcon(LucideIcons.arrowUp));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('compose-send-outcome-outcomeUnknown')),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byIcon(LucideIcons.arrowUp));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('compose-send-outcome-outcomeUnknown')),
+          findsNothing,
+        );
+        expect(composerText(tester), '');
+      });
+
+      testWidgets('same unknown draft stays unknown while retry is in flight', (
+        tester,
+      ) async {
+        final retry = Completer<void>();
+        var attempts = 0;
+        await tester.pumpWidget(
+          _buildComposeBar(
+            uploadService: _testUploadService(nostr.Keys.generate().nsec),
+            onSend:
+                (
+                  content,
+                  mentionPubkeys, {
+                  mediaTags = const <List<String>>[],
+                }) {
+                  attempts++;
+                  if (attempts == 1) {
+                    return Future.error(
+                      const RelayPublishOutcomeUnknown('e1', 'timeout'),
+                    );
+                  }
+                  return retry.future;
+                },
+          ),
+        );
+        await _expandComposer(tester);
+        await tester.enterText(find.byType(TextField), 'keep me');
+        await tester.pumpAndSettle();
+        await tester.tap(find.byIcon(LucideIcons.arrowUp));
+        await tester.pumpAndSettle();
+        final unknown = find.byKey(
+          const ValueKey('compose-send-outcome-outcomeUnknown'),
+        );
+        expect(unknown, findsOneWidget);
+        await tester.tap(find.byIcon(LucideIcons.arrowUp));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(unknown, findsOneWidget);
+        retry.completeError(
+          const RelayPublishOutcomeUnknown('e1', 'restricted: retry refused'),
+        );
+        await tester.pumpAndSettle();
+        expect(unknown, findsOneWidget);
+        expect(composerText(tester), 'keep me');
+        expect(
+          find.byKey(const ValueKey('compose-send-outcome-rejected')),
+          findsNothing,
+        );
+      });
     });
 
     testWidgets('a failed send does not overwrite a new draft', (tester) async {

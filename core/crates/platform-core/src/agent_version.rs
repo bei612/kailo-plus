@@ -334,6 +334,62 @@ pub(crate) async fn prewrite(
             }
             Ok(Vec::new())
         }
+        Semantic::AgentVersionRetire => {
+            let v = version(tx, ae.tenant_id, ae.target_id, true)
+                .await?
+                .filter(|v| {
+                    v.agent_resource_id == parent.id
+                        && v.state == "PUBLISHED"
+                        && v.asset_state == "PUBLISHED"
+                        && p.asset_version == Some(v.version)
+                        && v.projection_action_execution_id.is_none()
+                })
+                .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+            if !crate::agent_definition::active_owner(tx, ae.tenant_id, v.owner_principal_id)
+                .await?
+            {
+                return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+            if !projection_matches(gov, &v).await? {
+                return Err(Refusal::Unavailable("Asset 权限投影不一致".into()));
+            }
+            // Retire only closes new installation selection. It does not revalidate
+            // configuration providers or rewrite existing pins, content or evidence.
+            let cleared = sqlx::query(
+                "update catalog.agent_definition
+                set current_published_version_asset_id=null
+                where resource_id=$1 and current_published_version_asset_id=$2",
+            )
+            .bind(parent.id)
+            .bind(v.asset_id)
+            .execute(&mut **tx)
+            .await?;
+            if cleared.rows_affected() == 1 {
+                sqlx::query("update catalog.resource set version=version+1 where id=$1")
+                    .bind(parent.id)
+                    .execute(&mut **tx)
+                    .await?;
+            }
+            let retired = sqlx::query(
+                "update catalog.agent_version set state='RETIRED'
+                where asset_id=$1 and state='PUBLISHED'",
+            )
+            .bind(v.asset_id)
+            .execute(&mut **tx)
+            .await?;
+            let asset = sqlx::query(
+                "update catalog.asset set state='RETIRED',version=version+1
+                where id=$1 and version=$2 and state='PUBLISHED'",
+            )
+            .bind(v.asset_id)
+            .bind(v.version)
+            .execute(&mut **tx)
+            .await?;
+            if retired.rows_affected() != 1 || asset.rows_affected() != 1 {
+                return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+            }
+            Ok(Vec::new())
+        }
         _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
     }
 }
@@ -617,8 +673,8 @@ pub(crate) async fn read(
         Ok(_) => return Err(StatusCode::FORBIDDEN.into_response()),
         Err(e) => return Err(Refusal::Unavailable(e.to_string()).respond(None)),
     }
-    let (can_update, can_publish) =
-        crate::agent_version_query::draft_permissions(state, ctx, conn, &v, &parent).await?;
+    let (can_update, can_publish, can_retire) =
+        crate::agent_version_query::version_permissions(state, ctx, conn, &v, &parent).await?;
     let content: AgentVersionContent = match serde_json::from_value(v.content) {
         Ok(c) => c,
         Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
@@ -643,6 +699,7 @@ pub(crate) async fn read(
         state,
         can_update: Some(can_update),
         can_publish: Some(can_publish),
+        can_retire: Some(can_retire),
     })
 }
 

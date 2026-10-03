@@ -100,6 +100,7 @@ void exactMentionTests() {
           ),
         );
         sendMessage = SendMessage(
+          relayBaseUrl: 'https://relay.example',
           signedEventRelay: SignedEventRelay(
             session: session,
             nsec: signer.nsec,

@@ -1106,7 +1106,9 @@ function validVersion(row: AgentVersionView, resourceId: string): boolean {
     && typeof row.configHash === "string" && /^[a-f0-9]{64}$/.test(row.configHash)
     && (row.canUpdate === undefined || typeof row.canUpdate === "boolean")
     && (row.canPublish === undefined || typeof row.canPublish === "boolean")
+    && (row.canRetire === undefined || typeof row.canRetire === "boolean")
     && (row.state === AgentVersionState.Draft || (!row.canUpdate && !row.canPublish))
+    && (row.state === AgentVersionState.Published || !row.canRetire)
     && !!content && typeof content.instructions === "string" && !!content.instructions.trim()
     && !!content.personaIdentity && typeof content.personaIdentity.displayName === "string" && !!content.personaIdentity.displayName.trim()
     && [content.personaIdentity.description, content.personaIdentity.avatarUrl].every((value) => value === undefined || typeof value === "string")
@@ -1150,7 +1152,7 @@ function validVersionConfiguration(page: AgentVersionConfigurationPage, definiti
     && (page.nextOffset == null || (Number.isSafeInteger(page.nextOffset) && page.nextOffset > offset));
 }
 
-type VersionEdit = { definition: AgentDefinitionView; version?: AgentVersionView; publish: boolean; configurationOffsets: number[] };
+type VersionEdit = { definition: AgentDefinitionView; version?: AgentVersionView; mode: "edit" | "publish" | "retire"; configurationOffsets: number[] };
 
 function VersionDirectory({ definition, locked, onEdit }: {
   definition: AgentDefinitionView; locked: boolean; onEdit: (edit: VersionEdit) => void;
@@ -1177,7 +1179,7 @@ function VersionDirectory({ definition, locked, onEdit }: {
     <h3 className="font-medium">{t("agents.version.history")}</h3>
     <p className="text-sm text-muted-foreground">{t("agents.version.boundary")}</p>
     <div className="flex flex-wrap gap-2"><Button disabled={locked} onClick={() => { reload(); reloadConfiguration(); }}>{t("platform.refresh")}</Button>
-      {page && source?.canCreate ? <Button disabled={locked} onClick={() => onEdit({ definition, publish: false, configurationOffsets })}>{t("agents.version.create")}</Button> : null}</div>
+      {page && source?.canCreate ? <Button disabled={locked} onClick={() => onEdit({ definition, mode: "edit", configurationOffsets })}>{t("agents.version.create")}</Button> : null}</div>
     {configuration.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !source ? <AgentReadFailure error={configuration.status === "error" ? configuration.error : undefined} onRetry={reloadConfiguration} />
       : !source.canCreate ? <p className="text-sm text-muted-foreground">{t("agents.version.createUnavailable")}</p> : null}
@@ -1197,9 +1199,11 @@ function VersionDirectory({ definition, locked, onEdit }: {
             <details><summary className="cursor-pointer text-sm">{t("agents.version.instructions")}</summary>
               <pre className="whitespace-pre-wrap break-words text-sm">{version.content.instructions}</pre></details>
             {version.state === AgentVersionState.Draft && source && source.routes.length > 0 ? <div className="flex flex-wrap gap-2">
-              {version.canUpdate === true ? <Button disabled={locked} onClick={() => onEdit({ definition, version, publish: false, configurationOffsets })}>{t("agents.version.edit")}</Button> : null}
-              {version.canPublish === true ? <Button disabled={locked} onClick={() => onEdit({ definition, version, publish: true, configurationOffsets })}>{t("agents.version.publish")}</Button> : null}
+              {version.canUpdate === true ? <Button disabled={locked} onClick={() => onEdit({ definition, version, mode: "edit", configurationOffsets })}>{t("agents.version.edit")}</Button> : null}
+              {version.canPublish === true ? <Button disabled={locked} onClick={() => onEdit({ definition, version, mode: "publish", configurationOffsets })}>{t("agents.version.publish")}</Button> : null}
             </div> : null}
+            {version.state === AgentVersionState.Published && version.canRetire === true ? <Button className="w-fit" disabled={locked}
+              onClick={() => onEdit({ definition, version, mode: "retire", configurationOffsets })}>{t("agents.version.retire")}</Button> : null}
           </section>)}
         <div className="flex gap-2">{index > 0 ? <Button disabled={locked} onClick={() => setIndex(index - 1)}>{t("roles.previous")}</Button> : null}
           {page.nextOffset != null ? <Button disabled={locked} onClick={() => { setOffsets((values) => [...values.slice(0, index + 1), page.nextOffset!]); setIndex(index + 1); }}>{t("roles.next")}</Button> : null}</div>
@@ -1247,8 +1251,8 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
     setOffsets(edit?.configurationOffsets ?? [0]); setIndex((edit?.configurationOffsets.length ?? 1) - 1);
   }, [edit]);
   const offset = offsets[index] ?? 0;
-  const [configuration, reloadConfiguration] = useLoad(`version-action-sources:${edit?.definition.resourceId ?? "none"}:${offset}`,
-    () => edit ? client.agentVersionConfiguration(edit.definition.resourceId, offset) : Promise.resolve(null));
+  const [configuration, reloadConfiguration] = useLoad(`version-action-sources:${edit?.definition.resourceId ?? "none"}:${edit?.mode ?? "none"}:${offset}`,
+    () => edit && edit.mode !== "retire" ? client.agentVersionConfiguration(edit.definition.resourceId, offset) : Promise.resolve(null));
   const [tasks, reloadTasks] = useLoad("agent-version-actions-in-flight", client.tasks);
   const source = edit && configuration.status === "ok" && configuration.data
     && validVersionConfiguration(configuration.data, edit.definition, offset) ? configuration.data : null;
@@ -1258,18 +1262,21 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
   const corePolicy = Object.values(AgentMemoryCoreWrite).find((value) => value === coreWrite);
   const coldPolicy = Object.values(AgentMemoryColdWrite).find((value) => value === coldWrite);
   const taskRows = tasks.status === "ok" && Array.isArray(tasks.data) && tasks.data.every(validDefinitionTask) ? tasks.data : null;
-  const pending = taskRows?.filter((task) => ["agent.version.create", "agent.version.update", "agent.version.publish"].includes(task.actionKey)
+  const pending = taskRows?.filter((task) => ["agent.version.create", "agent.version.update", "agent.version.publish", "agent.version.retire"].includes(task.actionKey)
     && taskPhase(task).tone === "neutral") ?? [];
   // 未知创建目标是 Definition，编辑/发布目标是 Asset；任何未查证版本请求阻止新意图。
   const requestBlocked = !taskRows || pending.length > 0;
-  const actionKey = edit?.publish ? "agent.version.publish" : edit?.version ? "agent.version.update" : "agent.version.create";
-  const title: PlatformMessageKey = edit?.publish ? "agents.version.publish" : edit?.version ? "agents.version.edit" : "agents.version.create";
-  const permitted = !!edit && !!source && source.routes.length > 0
-    && (edit.version ? edit.version.state === AgentVersionState.Draft && (edit.publish ? edit.version.canPublish === true : edit.version.canUpdate === true) : source.canCreate);
+  const retiring = edit?.mode === "retire";
+  const publishing = edit?.mode === "publish";
+  const actionKey = retiring ? "agent.version.retire" : publishing ? "agent.version.publish" : edit?.version ? "agent.version.update" : "agent.version.create";
+  const title: PlatformMessageKey = retiring ? "agents.version.retire" : publishing ? "agents.version.publish" : edit?.version ? "agents.version.edit" : "agents.version.create";
+  const permitted = retiring ? edit?.version?.state === AgentVersionState.Published && edit.version.canRetire === true
+    : !!edit && !!source && source.routes.length > 0
+      && (edit.version ? edit.version.state === AgentVersionState.Draft && (publishing ? edit.version.canPublish === true : edit.version.canUpdate === true) : source.canCreate);
   const sourceContent = edit?.version?.content;
   const supported = !sourceContent || (sourceContent.skillVersionAssetIds.length === 0 && sourceContent.declaredToolResourceIds.length === 0);
   const integer = (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
-  const valid = permitted && supported && !!profile && !!route && !!contract && !!name.trim() && !!instructions.trim()
+  const valid = retiring ? permitted : permitted && supported && !!profile && !!route && !!contract && !!name.trim() && !!instructions.trim()
     && contract.replyPolicies.includes(reply) && capabilities.every((key) => contract.capabilityRequirements.includes(key))
     && integer(parallelism) && Number(parallelism) <= contract.maxParallelism
     && integer(idle) && Number(idle) <= contract.maxIdleTimeoutSeconds
@@ -1283,7 +1290,7 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
     const command: ActionCommand = { actionKey, idempotencyKey: newIdempotencyKey(),
       resourceId: edit.definition.resourceId, resourceVersion: edit.definition.resourceVersion };
     if (edit.version) { command.assetId = edit.version.assetId; command.assetVersion = edit.version.assetVersion; }
-    if (edit.publish) command.explicitConfirmation = true;
+    if (edit.mode !== "edit") command.explicitConfirmation = true;
     else command.agentVersionContent = {
       personaIdentity: { displayName: name, ...(avatar ? { avatarUrl: avatar } : {}), ...(description ? { description } : {}) },
       instructions, runtimeProfileKey: profileKey, modelRouteResourceId: routeId, replyPolicy: reply,
@@ -1338,15 +1345,21 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
       <p className="break-words">{t("agents.version.capabilities")}: {capabilities.join(", ") || "—"}</p>
       <p>{t("agents.version.triggers")}: {triggers.map((trigger) => t(trigger === AgentTrigger.Mention ? "agents.installation.trigger.mention" : "agents.version.manualAssignment")).join(", ") || "—"}</p>
       <pre className="whitespace-pre-wrap break-words">{instructions}</pre>
-      <p>{t(edit?.publish ? "agents.version.publishReview" : "agents.version.saveReview")}</p><p>{t("agents.admission")}</p>
+      <p>{t(retiring ? "agents.version.retireReview" : publishing ? "agents.version.publishReview" : "agents.version.saveReview")}</p><p>{t("agents.admission")}</p>
       <div className="flex gap-2"><Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
         {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}</div>
-    </div> : edit ? <>
+    </div> : retiring ? <>
+      <p className="break-words text-sm">{edit?.version?.assetId} · {t("agents.version.assetVersion")}: {edit?.version?.assetVersion}</p>
+      <p className="break-words text-sm">{t("agents.owner")}: {edit?.version?.ownerPrincipalId}</p>
+      <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {edit?.version?.configHash}</p>
+      <p className="text-sm">{t("agents.version.retireReview")}</p>
+      <div className="flex gap-2"><Button disabled={requestBlocked || !valid} onClick={prepare}>{t("agents.review")}</Button><Button onClick={onReset}>{t("agents.cancel")}</Button></div>
+    </> : edit ? <>
       {configuration.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
         : !source ? <AgentReadFailure error={configuration.status === "error" ? configuration.error : undefined} onRetry={reloadConfiguration} />
         : <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
           {!permitted || !supported ? <Notice>{t("agents.version.createUnavailable")}</Notice> : null}
-          <fieldset disabled={!!edit?.publish || !permitted || !supported} className="flex flex-col gap-3">
+          <fieldset disabled={publishing || !permitted || !supported} className="flex flex-col gap-3">
             <label className="flex flex-col gap-1 text-sm">{t("agents.name")}<input required value={name} onChange={(event) => setName(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.avatar")}<input value={avatar} onChange={(event) => setAvatar(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.description")}<textarea value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-16 rounded-md border border-input bg-background p-2" /></label>

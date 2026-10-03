@@ -58,4 +58,8 @@ class SignedEventRelay {
     onSigned?.call(nostrEvent);
     return _session.publish(nostrEvent);
   }
+
+  /// 原样重发一个已签名事件（同一 id）。用于结果不明后的重试：Relay 若已存储
+  /// 该事件，会以 `duplicate:` 接受而不是再存一条。
+  Future<NostrEvent> resubmit(NostrEvent event) => _session.publish(event);
 }

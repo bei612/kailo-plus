@@ -261,6 +261,82 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       assetId: version.assetId, assetVersion: version.assetVersion, explicitConfirmation: true });
   });
 
+  it("retires only the authorized exact published version without needing configuration providers", async () => {
+    const published = { ...version, state: "PUBLISHED", canUpdate: false, canPublish: false, canRetire: true };
+    const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
+      agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion, versions: [published], nextOffset: null } }
+      : r.path.includes("/version-configuration?") ? { status: 200, body: {
+        ...configuration, profiles: [], routes: [], canCreate: false } }
+      : r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.version.retire") } : undefined);
+    const host = await open(t);
+    const reads = t.send.mock.calls.filter(([r]) => r.path.includes("/version-configuration?")).length;
+    await click(button(section(host, "agent-version-directory"), "Retire exact published version"));
+    const action = section(host, "agent-version-action");
+    expect(action.querySelector("input,textarea,select")).toBeNull();
+    expect(button(action, "Review request").disabled).toBe(false);
+    expect(action.textContent).toContain(published.configHash);
+    expect(action.textContent).toContain("without selecting a replacement");
+    expect(t.send.mock.calls.filter(([r]) => r.path.includes("/version-configuration?"))).toHaveLength(reads);
+    await click(button(action, "Review request"));
+    expect(posts(t)).toHaveLength(0);
+    await click(button(action, "Submit governed request"));
+    expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.version.retire", idempotencyKey: expect.any(String),
+      resourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+      assetId: published.assetId, assetVersion: published.assetVersion, explicitConfirmation: true });
+    expect(section(host, "agent-installations").textContent).toContain(installation.pinnedVersionAssetId);
+    expect(posts(t)).toHaveLength(1);
+  });
+
+  it.each([undefined, false])("never infers retire permission from published read/manage UI (%j)", async (canRetire) => {
+    const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
+      agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+      versions: [{ ...version, state: "PUBLISHED", canUpdate: false, canPublish: false, canRetire }], nextOffset: null } } : undefined);
+    const host = await open(t);
+    expect(section(host, "agent-version-directory").textContent).toContain("Published");
+    expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Retire exact published version")).toBe(false);
+    expect(posts(t)).toHaveLength(0);
+  });
+
+  it.each(["DRAFT", "RETIRED"])("does not turn contradictory canRetire on %s into a write entry", async (state) => {
+    const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
+      agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+      versions: [{ ...version, state, canUpdate: false, canPublish: false, canRetire: true }], nextOffset: null } } : undefined);
+    const host = await open(t);
+    expect(section(host, "agent-version-directory").querySelector("[role=status]")).toBeTruthy();
+    expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Retire exact published version")).toBe(false);
+    expect(posts(t)).toHaveLength(0);
+  });
+
+  it("keeps UNKNOWN retire intent and key through repeated refused rechecks until its exact execution is confirmed", async () => {
+    let count = 0;
+    const t = routes((r) => {
+      if (r.path.includes("/versions?")) return { status: 200, body: {
+        agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+        versions: [{ ...version, state: "PUBLISHED", canUpdate: false, canPublish: false, canRetire: true }], nextOffset: null } };
+      if (r.path !== "/api/v1/actions") return undefined;
+      count += 1;
+      return count === 1 ? { status: 200, body: submission("agent.version.retire", "UNKNOWN") }
+        : count < 4 ? { status: count === 2 ? 403 : 409, body: {} }
+        : { status: 200, body: submission("agent.version.retire") };
+    });
+    const host = await open(t);
+    await click(button(section(host, "agent-version-directory"), "Retire exact published version"));
+    const action = section(host, "agent-version-action");
+    await click(button(action, "Review request"));
+    await click(button(action, "Submit governed request"));
+    const command = posts(t)[0]?.body;
+    for (let retry = 0; retry < 2; retry += 1) {
+      await click(button(action, "Re-check same request"));
+      expect(action.textContent).toContain("Outcome is not confirmed.");
+      expect([...action.querySelectorAll("button")].some((b) => b.textContent === "Cancel request")).toBe(false);
+    }
+    await click(button(action, "Re-check same request"));
+    expect(posts(t)).toHaveLength(4);
+    expect(posts(t).every((r) => JSON.stringify(r.body) === JSON.stringify(command))).toBe(true);
+    expect(action.textContent).toContain("Request recorded.");
+    expect(action.textContent).not.toContain("Outcome is not confirmed.");
+  });
+
   it("keeps the exact draft route selected until its authorized configuration page is loaded", async () => {
     const laterRoute = { ...route, resourceId: "route-later", nativeConfigResourceId: "route-later" };
     const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {

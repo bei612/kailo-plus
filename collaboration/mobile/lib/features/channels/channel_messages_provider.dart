@@ -6,6 +6,7 @@ import 'channel_event_order.dart';
 import 'pending_local_messages_provider.dart';
 import 'channel_window.dart';
 import 'thread_replies_provider.dart';
+import 'send_message_provider.dart';
 
 const _channelLiveEventKinds = [
   ...EventKind.channelEventKinds,
@@ -78,6 +79,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     _clearSubscription();
     try {
       final session = ref.read(relaySessionProvider.notifier);
+      final config = ref.read(relayConfigProvider);
 
       try {
         final unsubscribe = await session.subscribe(
@@ -89,7 +91,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
             since: _currentUnixSeconds(),
             limit: 200,
           ),
-          _handleLiveEvent,
+          (event) {
+            if (!_isCurrentInit(initVersion)) return;
+            _settleRelayEvents([event], config);
+            _handleLiveEvent(event);
+          },
         );
         if (!_isCurrentInit(initVersion)) {
           unsubscribe();
@@ -136,6 +142,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   Future<List<NostrEvent>> _fetchNewestHistory(
     RelaySessionNotifier session,
   ) async {
+    final initVersion = _initVersion;
+    final config = ref.read(relayConfigProvider);
     try {
       _initialWindowQueryInFlight = true;
       final page = await _fetchWindowPage(session, null);
@@ -159,6 +167,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       final history = await session.fetchHistory(
         NostrFilters.messages(channelId),
       );
+      if (_isCurrentInit(initVersion)) _settleRelayEvents(history, config);
       history.sort(compareChannelTimelineEventsChronologically);
       return history;
     }
@@ -168,8 +177,14 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     RelaySessionNotifier session,
     ChannelPageCursor? cursor,
   ) async {
+    final initVersion = _initVersion;
+    final config = ref.read(relayConfigProvider);
     final events = await session.queryRelay([_channelWindowFilter(cursor)]);
-    return parseChannelWindowResponse(events, channelId, cursor);
+    final page = parseChannelWindowResponse(events, channelId, cursor);
+    if (_isCurrentInit(initVersion)) {
+      _settleRelayEvents(page.rows.map((row) => row.event), config);
+    }
+    return page;
   }
 
   NostrFilter _channelWindowFilter(ChannelPageCursor? cursor) => NostrFilter(
@@ -300,6 +315,24 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         .confirm(eventIds);
   }
 
+  // 只消费原订阅/查询的服务端事件；本机 addLocalMessage 从不走这里。
+  void _settleRelayEvents(Iterable<NostrEvent> events, RelayConfig config) {
+    final current = ref.read(relayConfigProvider);
+    if (current.baseUrl != config.baseUrl || current.nsec != config.nsec) {
+      return;
+    }
+    final unconfirmed = ref.read(unconfirmedPublishesProvider);
+    final pubkey = pubkeyFromNsec(config.nsec);
+    for (final event in events) {
+      if (event.channelId != channelId) continue;
+      unconfirmed.settleObserved(
+        relayBaseUrl: config.baseUrl,
+        pubkey: pubkey,
+        event: event,
+      );
+    }
+  }
+
   /// Adds a just-signed outgoing message before the relay acknowledges it.
   /// The live relay echo is deduplicated by event id.
   void addLocalMessage(NostrEvent event) {
@@ -402,6 +435,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
   /// Loads specific deep-link targets that may fall outside the newest window.
   Future<void> loadEventsById(Iterable<String> eventIds) async {
+    final initVersion = _initVersion;
+    final config = ref.read(relayConfigProvider);
     final ids = eventIds.where((id) => id.isNotEmpty).toSet();
     if (ids.isEmpty) return;
     _retainedDeepLinkEventIds.addAll(ids);
@@ -422,6 +457,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
             limit: ids.length,
           ),
         );
+    if (!_isCurrentInit(initVersion)) return;
+    _settleRelayEvents(events, config);
     for (final event in events) {
       if (event.channelId == channelId &&
           _retainedDeepLinkEventIds.contains(event.id)) {
@@ -459,6 +496,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   Future<bool> fetchOlder() async {
     if (_reachedOldest || _initInFlight) return false;
 
+    final initVersion = _initVersion;
+    final config = ref.read(relayConfigProvider);
     final session = ref.read(relaySessionProvider.notifier);
     if (_usingChannelWindow) {
       final cursor = channelWindowNextCursor(_windowStore);
@@ -468,6 +507,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       }
       try {
         final page = await _fetchWindowPage(session, cursor);
+        if (!_isCurrentInit(initVersion)) return false;
         _windowStore = appendOlderChannelWindow(_windowStore, page);
         _reachedOldest = !channelWindowHasMore(_windowStore);
         final flattened = _withDeepLinkEvents(
@@ -490,6 +530,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     final older = await session.fetchHistory(
       NostrFilters.messages(channelId, limit: 100, until: oldest),
     );
+    if (!_isCurrentInit(initVersion)) return false;
+    _settleRelayEvents(older, config);
     if (older.isEmpty) {
       _reachedOldest = true;
       return false;

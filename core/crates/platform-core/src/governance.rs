@@ -420,6 +420,7 @@ pub enum Semantic {
     AgentVersionCreate,
     AgentVersionUpdate,
     AgentVersionPublish,
+    AgentVersionRetire,
     AgentInstallationCreate,
     AgentDelegationGrant,
     AgentDelegationRevoke,
@@ -459,6 +460,7 @@ impl Semantic {
             "agent.version.create" => Self::AgentVersionCreate,
             "agent.version.update" => Self::AgentVersionUpdate,
             "agent.version.publish" => Self::AgentVersionPublish,
+            "agent.version.retire" => Self::AgentVersionRetire,
             "agent.installation.create" => Self::AgentInstallationCreate,
             "agent.delegation.grant" => Self::AgentDelegationGrant,
             "agent.delegation.revoke" => Self::AgentDelegationRevoke,
@@ -499,6 +501,7 @@ impl Semantic {
                 | Self::AgentDefinitionUpdate
                 | Self::AgentVersionUpdate
                 | Self::AgentVersionPublish
+                | Self::AgentVersionRetire
                 | Self::AgentDelegationGrant
                 | Self::AgentDelegationRevoke
                 | Self::AutomationEnable
@@ -535,6 +538,7 @@ impl Semantic {
                     | Self::AgentVersionCreate
                     | Self::AgentVersionUpdate
                     | Self::AgentVersionPublish
+                    | Self::AgentVersionRetire
                     | Self::AgentInstallationCreate
                     | Self::AgentDelegationGrant
                     | Self::AgentDelegationRevoke
@@ -568,6 +572,7 @@ impl Semantic {
                     | Self::TenantSuspend
                     | Self::TenantRestore
                     | Self::AgentVersionPublish
+                    | Self::AgentVersionRetire
                     | Self::AgentInstallationCreate
                     | Self::AgentDelegationGrant
                     | Self::AgentDelegationRevoke
@@ -813,6 +818,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             | Semantic::AgentVersionCreate
             | Semantic::AgentVersionUpdate
             | Semantic::AgentVersionPublish
+            | Semantic::AgentVersionRetire
             | Semantic::AgentInstallationCreate
             | Semantic::AgentDelegationGrant
             | Semantic::AgentDelegationRevoke
@@ -825,6 +831,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         Semantic::AgentVersionCreate
             | Semantic::AgentVersionUpdate
             | Semantic::AgentVersionPublish
+            | Semantic::AgentVersionRetire
             | Semantic::AgentInstallationCreate
     ) && (p.asset_id.is_some() || p.asset_version.is_some() || p.agent_version_content.is_some())
     {
@@ -887,7 +894,8 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         }
         Semantic::AgentVersionCreate
         | Semantic::AgentVersionUpdate
-        | Semantic::AgentVersionPublish => {
+        | Semantic::AgentVersionPublish
+        | Semantic::AgentVersionRetire => {
             p.workspace_id.is_none()
                 && p.principal_id.is_none()
                 && p.slug.is_none()
@@ -1152,7 +1160,8 @@ async fn resolve_target(
         }
         Semantic::AgentVersionCreate
         | Semantic::AgentVersionUpdate
-        | Semantic::AgentVersionPublish => {
+        | Semantic::AgentVersionPublish
+        | Semantic::AgentVersionRetire => {
             let creating = sem == Semantic::AgentVersionCreate;
             let expected_object = if creating { "resource" } else { "asset" };
             let expected_permission = if creating {
@@ -1174,7 +1183,18 @@ async fn resolve_target(
                         def.confirmation_mode.as_str(),
                         "NONE" | "EXPLICIT" | "APPROVAL"
                     ))
-                || (sem != Semantic::AgentVersionPublish && def.confirmation_mode != "NONE")
+                || (sem == Semantic::AgentVersionRetire
+                    && (def.confirmation_mode != "EXPLICIT"
+                        || def.approval_policy_id.is_some()
+                        || def.approval_policy_version.is_some()
+                        || def.workflow_kind.is_some()
+                        || def.quota_policy != "NONE"
+                        || !def.meters.is_empty()
+                        || def.result_exposure != "NONE"))
+                || (matches!(
+                    sem,
+                    Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate
+                ) && def.confirmation_mode != "NONE")
             {
                 return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
             }
@@ -1206,8 +1226,13 @@ async fn resolve_target(
                     .await?
                     .filter(|v| {
                         v.agent_resource_id == parent.id
-                            && v.state == "DRAFT"
-                            && v.asset_state == "DRAFT"
+                            && v.state
+                                == if sem == Semantic::AgentVersionRetire {
+                                    "PUBLISHED"
+                                } else {
+                                    "DRAFT"
+                                }
+                            && v.asset_state == v.state
                             && v.projection_action_execution_id.is_none()
                             && p.asset_version == Some(v.version)
                             && frozen.is_none_or(|id| id == v.asset_id)
@@ -3817,6 +3842,7 @@ impl Governance {
                     | Semantic::AgentVersionCreate
                     | Semantic::AgentVersionUpdate
                     | Semantic::AgentVersionPublish
+                    | Semantic::AgentVersionRetire
                     | Semantic::AgentInstallationCreate
                     | Semantic::AgentDelegationGrant
                     | Semantic::AgentDelegationRevoke
@@ -3837,6 +3863,7 @@ impl Governance {
                     | Semantic::AgentVersionCreate
                     | Semantic::AgentVersionUpdate
                     | Semantic::AgentVersionPublish
+                    | Semantic::AgentVersionRetire
                     | Semantic::AgentInstallationCreate
                     | Semantic::AgentDelegationGrant
                     | Semantic::AgentDelegationRevoke
@@ -3991,7 +4018,8 @@ impl Governance {
                 }
                 Semantic::AgentVersionCreate
                 | Semantic::AgentVersionUpdate
-                | Semantic::AgentVersionPublish => {
+                | Semantic::AgentVersionPublish
+                | Semantic::AgentVersionRetire => {
                     let evidence =
                         crate::agent_version::prewrite(self, tx, ae, sem, params).await?;
                     if completes {
@@ -3999,7 +4027,9 @@ impl Governance {
                             tx,
                             ae,
                             def,
-                            if sem == Semantic::AgentVersionPublish {
+                            if sem == Semantic::AgentVersionRetire {
+                                "AGENT_VERSION_RETIRED"
+                            } else if sem == Semantic::AgentVersionPublish {
                                 "AGENT_VERSION_PUBLISHED"
                             } else {
                                 "AGENT_VERSION_UPDATED"
@@ -4232,7 +4262,7 @@ impl Governance {
             | Semantic::ResourceTransferOwner
             | Semantic::AgentDelegationGrant
             | Semantic::AgentDelegationRevoke
-            | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish
+            | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish | Semantic::AgentVersionRetire
             | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
             | Semantic::AutomationPause | Semantic::AutomationDisable
             // 业务 Tenant 生命周期在上面单独落定
@@ -5781,7 +5811,7 @@ impl Governance {
                 | Semantic::LlmRouteCreate
                 | Semantic::AgentDefinitionUpdate
                 | Semantic::ResourceTransferOwner
-                | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish
+                | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish | Semantic::AgentVersionRetire
                 | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
                 | Semantic::AutomationPause | Semantic::AutomationDisable
                 | Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke

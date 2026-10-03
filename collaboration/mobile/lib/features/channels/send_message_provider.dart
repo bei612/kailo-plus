@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/relay/relay.dart';
@@ -19,8 +21,11 @@ class SendMessage {
   final void Function(String channelId, String eventId) _completeLocalMessage;
   final void Function(String channelId, String eventId) _removeLocalMessage;
   final bool Function()? _isDeliveryValid;
+  final UnconfirmedPublishes _unconfirmed;
+  final String _relayBaseUrl;
 
   SendMessage({
+    required String relayBaseUrl,
     required SignedEventRelay signedEventRelay,
     required Future<List<ChannelMember>> Function(String channelId)
     fetchMembers,
@@ -32,7 +37,10 @@ class SendMessage {
     completeLocalMessage,
     required void Function(String channelId, String eventId) removeLocalMessage,
     bool Function()? isDeliveryValid,
+    UnconfirmedPublishes? unconfirmed,
   }) : _signedEventRelay = signedEventRelay,
+       _relayBaseUrl = relayBaseUrl,
+       _unconfirmed = unconfirmed ?? UnconfirmedPublishes(),
        _fetchMembers = fetchMembers,
        _readUserCache = readUserCache,
        _addLocalMessage = addLocalMessage,
@@ -81,23 +89,66 @@ class SendMessage {
     ];
 
     _ensureDeliveryValid();
+    // 同一内容上一次的结果不明：原样重发那个已签名事件，而不是签一条新的
+    // ——Relay 若已存储它只回 `duplicate:`，不会出现第二条消息。
+    final fingerprint = UnconfirmedPublishes.fingerprint(
+      relayBaseUrl: _relayBaseUrl,
+      pubkey: authorPubkey,
+      kind: EventKind.streamMessage,
+      content: content,
+      tags: tags,
+    );
+    final previous = _unconfirmed.lookup(fingerprint);
     NostrEvent? localMessage;
+    _UnconfirmedPublish? publication;
+    void adoptLocal(NostrEvent event) {
+      localMessage = event;
+      // EVENT 可以先于 publish 回应；先记录同一原事件，回读才可原子结清。
+      _unconfirmed.remember(fingerprint, event);
+      publication = _unconfirmed._events[fingerprint];
+      if (previous != null) publication!.uncertain = true;
+      _markLocalMessageForAnimation(channelId, event.id);
+      _addLocalMessage(channelId, event);
+    }
+
     try {
-      await _signedEventRelay.submit(
-        kind: EventKind.streamMessage,
-        content: content,
-        tags: tags,
-        onSigned: (event) {
-          localMessage = event;
-          _markLocalMessageForAnimation(channelId, event.id);
-          _addLocalMessage(channelId, event);
-        },
-      );
+      if (previous != null) {
+        adoptLocal(previous);
+        await _signedEventRelay.resubmit(previous);
+      } else {
+        await _signedEventRelay.submit(
+          kind: EventKind.streamMessage,
+          content: content,
+          tags: tags,
+          onSigned: adoptLocal,
+        );
+      }
       final event = localMessage;
-      if (event != null) _completeLocalMessage(channelId, event.id);
-    } catch (_) {
+      if (event != null) {
+        publication!.accepted = true;
+        _unconfirmed.settle(fingerprint, event.id);
+        _completeLocalMessage(channelId, event.id);
+      }
+    } catch (error) {
       final event = localMessage;
-      if (event != null) _removeLocalMessage(channelId, event.id);
+      if (event != null) {
+        if (publication?.accepted == true) {
+          // 等待重发回应期间，原事件已由 Relay 流/查询肯定查证。
+          _completeLocalMessage(channelId, event.id);
+          return;
+        }
+        _removeLocalMessage(channelId, event.id);
+        // 结果不明的事件留着供原样重发；重发时被拒或未发出都不改变「第一次
+        // 是否已被存储」这一未知，所以只在确认接受时才丢弃。
+        if (error is RelayPublishOutcomeUnknown) {
+          publication!.uncertain = true;
+        }
+        if (publication?.uncertain == true) {
+          // 这次拒绝/未发送不能查证第一次是否已存储，继续保留同一事件的不明结果。
+          throw RelayPublishOutcomeUnknown(event.id, '$error');
+        }
+        _unconfirmed.settle(fingerprint, event.id);
+      }
       rethrow;
     }
   }
@@ -181,9 +232,78 @@ class SendMessage {
   }
 }
 
+/// 已发出而未得到 Relay 确认的消息事件，按「社区 + 作者 + 种类 + 内容 + 标签」索引。
+///
+/// 用户对同一内容再次发送时取回同一个已签名事件原样重发。它不依赖 Relay 配置
+/// 的生命周期：断线重连会重建发送器，但未确认的事件必须跨过重连留下来。
+class UnconfirmedPublishes {
+  final Map<String, _UnconfirmedPublish> _events = {};
+
+  static String fingerprint({
+    required String relayBaseUrl,
+    required String? pubkey,
+    required int kind,
+    required String content,
+    required List<List<String>> tags,
+  }) => jsonEncode([relayBaseUrl, pubkey?.toLowerCase(), kind, content, tags]);
+
+  NostrEvent? lookup(String fingerprint) => _events[fingerprint]?.event;
+
+  void remember(String fingerprint, NostrEvent event) {
+    final existing = _events[fingerprint];
+    if (existing?.event.id == event.id) return;
+    final publication = _UnconfirmedPublish(event);
+    _events[fingerprint] = publication;
+  }
+
+  void settle(String fingerprint, String eventId) {
+    if (_events[fingerprint]?.event.id == eventId) _events.remove(fingerprint);
+  }
+
+  /// 只有当前社区/作者从 Relay 回读的确切原事件，才结清该未确认发布。
+  bool settleObserved({
+    required String relayBaseUrl,
+    required String? pubkey,
+    required NostrEvent event,
+  }) {
+    if (pubkey == null ||
+        event.pubkey.toLowerCase() != pubkey.toLowerCase() ||
+        event.kind != EventKind.streamMessage) {
+      return false;
+    }
+    final key = fingerprint(
+      relayBaseUrl: relayBaseUrl,
+      pubkey: pubkey,
+      kind: event.kind,
+      content: event.content,
+      tags: event.tags,
+    );
+    final publication = _events[key];
+    if (publication?.event.id != event.id) return false;
+    publication!.accepted = true;
+    _events.remove(key);
+    return true;
+  }
+}
+
+// 同一 cache 项由该事件的在途发送共享；移除 Map 项后原回应仍只消费自身事实。
+class _UnconfirmedPublish {
+  final NostrEvent event;
+  bool accepted = false;
+  bool uncertain = false;
+
+  _UnconfirmedPublish(this.event);
+}
+
+final unconfirmedPublishesProvider = Provider<UnconfirmedPublishes>(
+  (ref) => UnconfirmedPublishes(),
+);
+
 final sendMessageProvider = Provider<SendMessage>((ref) {
   final config = ref.watch(relayConfigProvider);
   return SendMessage(
+    relayBaseUrl: config.baseUrl,
+    unconfirmed: ref.read(unconfirmedPublishesProvider),
     signedEventRelay: SignedEventRelay(
       session: ref.read(relaySessionProvider.notifier),
       nsec: config.nsec,

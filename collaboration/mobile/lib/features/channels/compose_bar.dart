@@ -14,6 +14,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:client_kit/shared/platform/platform_text.dart';
 
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/mentions/mention_bindings.dart';
@@ -33,6 +34,9 @@ import 'compose_drafts_provider.dart';
 import 'camera_capture_cleanup.dart';
 import 'channel.dart';
 import 'channel_management_provider.dart';
+import 'channel_messages_provider.dart';
+import 'pending_local_messages_provider.dart';
+import 'send_message_provider.dart';
 import 'channels_provider.dart';
 import 'emoji_picker.dart';
 import 'mentions/mention_candidates.dart';

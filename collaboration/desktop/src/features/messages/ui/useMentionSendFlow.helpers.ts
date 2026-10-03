@@ -5,6 +5,9 @@ import {
 import type { QueuedMediaAttachment } from "@/features/messages/lib/backgroundMediaUploadStore";
 import type { PreparedBackgroundLinkPreviews } from "@/features/messages/lib/linkPreviewPreparationStore";
 import type { DraftMentionRef } from "@/features/messages/lib/useDrafts";
+import { resolveLocale, translate } from "@client-kit/platform/i18n";
+
+import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 /** A single visit to a source draft; returning to the same key is a new owner. */
@@ -80,7 +83,38 @@ export function getErrorMessage(error: unknown, fallback: string) {
 }
 
 export function formatMessageSendError(error: unknown) {
-  return `Message failed to send: ${getErrorMessage(error, "Unknown error")}`;
+  return (
+    relayPublishFailureText(error) ??
+    `Message failed to send: ${getErrorMessage(error, "Unknown error")}`
+  );
+}
+
+/**
+ * Relay 没有接受这次发送时的确定文案（被拒、限流、未发出、结果不明），取自共享
+ * 平台文案目录；Relay 的原文只作诊断，不上屏。不是 Relay 发布失败时返回 null。
+ */
+export function relayPublishFailureText(
+  error: unknown,
+  locale = resolveLocale(),
+): string | null {
+  const failure = classifyRelayPublishFailure(error);
+  switch (failure?.kind) {
+    case undefined:
+      return null;
+    case "rejected":
+      return translate(locale, "native.send.rejected");
+    case "rateLimited":
+      return failure.retryAfterSeconds !== null && failure.retryAfterSeconds > 0
+        ? translate(locale, "native.send.rateLimited", {
+            seconds: failure.retryAfterSeconds,
+          })
+        : translate(locale, "native.send.rateLimitedNoHint");
+    case "notSent":
+      return translate(locale, "native.send.notConnected");
+    case "outcomeUnknown":
+      // 两条发送路径都会原样重发同一个已签名事件（relayPublishOutcome.ts）
+      return translate(locale, "native.send.outcomeUnknown");
+  }
 }
 
 export function uniqueNormalizedPubkeys(pubkeys: Iterable<string>) {

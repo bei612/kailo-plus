@@ -5,6 +5,7 @@ class _ComposeBarLayout extends HookWidget {
   final List<_PendingAttachment> attachments;
   final ValueChanged<int> onRemoveAttachment;
   final String? uploadError;
+  final _ComposeSendOutcome? sendOutcome;
   final bool isExpanded;
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -34,6 +35,7 @@ class _ComposeBarLayout extends HookWidget {
     required this.attachments,
     required this.onRemoveAttachment,
     required this.uploadError,
+    this.sendOutcome,
     required this.isExpanded,
     required this.controller,
     required this.focusNode,
@@ -104,6 +106,24 @@ class _ComposeBarLayout extends HookWidget {
           _AttachmentStrip(
             attachments: attachments,
             onRemove: onRemoveAttachment,
+          ),
+          const SizedBox(height: Grid.xxs),
+        ],
+        if (sendOutcome case final outcome?) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                _composeSendOutcomeText(outcome),
+                key: ValueKey('compose-send-outcome-${outcome.kind.name}'),
+                style: context.textTheme.bodySmall?.copyWith(
+                  color: outcome.kind == _ComposeSendOutcomeKind.outcomeUnknown
+                      ? context.colors.onSurfaceVariant
+                      : context.colors.error,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: Grid.xxs),
         ],

@@ -68,6 +68,7 @@ class ComposeBar extends HookConsumerWidget {
     final attachments = useState<List<_PendingAttachment>>([]);
     _useOwnedAttachmentCleanup(attachments);
     final uploadError = useState<String?>(null);
+    final sendOutcome = useState<_ComposeSendOutcome?>(null);
     final uploadingCount = useState(0);
     final uploadProgress = useState(0.0);
     final uploadGeneration = useRef(0);
@@ -101,9 +102,61 @@ class ComposeBar extends HookConsumerWidget {
       isSending: isSending,
       attachmentSurface: attachmentSurface,
       uploadError: uploadError,
+      sendOutcome: sendOutcome,
       iosAttachmentPopover: iosAttachmentPopover,
       onDraftIdentityChanged: voiceNote.onDraftIdentityChanged,
     );
+    // 结果不明的消息一旦出现在 Relay 的消息流里（例如重连后的补发回放），就是
+    // 已存储的证明：撤下状态；正文未被改动时一并清空，免得用户再发一次。
+    final channelMessages = ref.watch(channelMessagesProvider(channelId));
+    useEffect(() {
+      final outcome = sendOutcome.value;
+      final eventId = outcome?.eventId;
+      if (outcome?.kind != _ComposeSendOutcomeKind.outcomeUnknown ||
+          eventId == null) {
+        return null;
+      }
+      // 同时响应流回读和发送结果：EVENT 可先于超时/重发回应到达。
+      scheduleMicrotask(() {
+        if (!context.mounted || sendOutcome.value != outcome) return;
+        final events = ref
+            .read(channelMessagesProvider(channelId))
+            .asData
+            ?.value;
+        final event = events
+            ?.where(
+              (event) => event.id == eventId && event.channelId == channelId,
+            )
+            .firstOrNull;
+        if (event == null ||
+            ref
+                .read(pendingLocalMessagesProvider(channelId))
+                .containsKey(eventId)) {
+          // 本机乐观插入不是 Relay 已存储的证据。
+          return;
+        }
+        final config = ref.read(relayConfigProvider);
+        final fingerprint = UnconfirmedPublishes.fingerprint(
+          relayBaseUrl: config.baseUrl,
+          pubkey: pubkeyFromNsec(config.nsec),
+          kind: event.kind,
+          content: event.content,
+          tags: event.tags,
+        );
+        if (ref.read(unconfirmedPublishesProvider).lookup(fingerprint) !=
+            null) {
+          return;
+        }
+        sendOutcome.value = null;
+        if (controller.text == outcome?.restoredText &&
+            attachments.value.isEmpty) {
+          draftRevision.value += 1;
+          controller.clear();
+          mentionMap.value.clear();
+        }
+      });
+      return null;
+    }, [channelMessages, sendOutcome.value]);
     final clipboardHasImage = useState(false);
     final hasAttachments = attachments.value.isNotEmpty;
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
@@ -446,6 +499,10 @@ class ComposeBar extends HookConsumerWidget {
         return;
       }
       final submittedDraftRevision = draftRevision.value;
+      if (sendOutcome.value?.kind != _ComposeSendOutcomeKind.outcomeUnknown ||
+          sendOutcome.value?.restoredText != controller.text) {
+        sendOutcome.value = null;
+      }
       // Resolved before any await: see
       // `_reportSendCancelledByCommunitySwitch`.
       final messenger = ScaffoldMessenger.maybeOf(context);
@@ -512,6 +569,7 @@ class ComposeBar extends HookConsumerWidget {
             outgoing: outgoing,
             onSend: onSend,
             messenger: messenger,
+            sendOutcome: sendOutcome,
           );
           return;
         }
@@ -564,9 +622,19 @@ class ComposeBar extends HookConsumerWidget {
               outgoing.pubkeys,
               mediaTags: [...payload.mediaTags, ...outgoing.referenceTags],
             );
+            if (context.mounted && queueGeneration == uploadGeneration.value) {
+              sendOutcome.value = null;
+            }
           } catch (error) {
             if (cancellation.isCancelled) return;
-            if (context.mounted) uploadError.value = _formatUploadError(error);
+            final outcome = _composeSendOutcomeFor(error);
+            if (context.mounted) {
+              if (outcome != null) {
+                sendOutcome.value = outcome.withRestoredText(draftText.text);
+              } else {
+                uploadError.value = _formatUploadError(error);
+              }
+            }
             if (context.mounted &&
                 queueGeneration == uploadGeneration.value &&
                 draftRevision.value == clearedDraftRevision) {
@@ -927,6 +995,7 @@ class ComposeBar extends HookConsumerWidget {
               attachments: attachments.value,
               onRemoveAttachment: removeAttachment,
               uploadError: uploadError.value,
+              sendOutcome: sendOutcome.value,
               isExpanded: isComposerExpanded.value,
               controller: controller,
               focusNode: focusNode,

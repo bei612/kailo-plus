@@ -900,6 +900,11 @@ export interface VersionElement {
      */
     canPublish?: boolean;
     /**
+     * 当前 HUMAN 对此 exact PUBLISHED 的已登记 EXPLICIT retire 动作及 fresh Asset manage
+     * 资格；缺字段不允许退役，退役只禁止新安装，保留既有安装与在途的固定版本。
+     */
+    canRetire?: boolean;
+    /**
      * 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
      */
     canUpdate?:       boolean;
@@ -939,6 +944,11 @@ export interface AgentVersionView {
      * 资格；缺字段不允许发布，不证明已安装或可运行。
      */
     canPublish?: boolean;
+    /**
+     * 当前 HUMAN 对此 exact PUBLISHED 的已登记 EXPLICIT retire 动作及 fresh Asset manage
+     * 资格；缺字段不允许退役，退役只禁止新安装，保留既有安装与在途的固定版本。
+     */
+    canRetire?: boolean;
     /**
      * 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
      */

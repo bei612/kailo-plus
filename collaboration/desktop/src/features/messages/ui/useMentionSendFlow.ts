@@ -12,6 +12,7 @@ import {
 import { useActivePreparedLinkPreviews } from "./useActivePreparedLinkPreviews";
 import {
   formatMessageSendError,
+  relayPublishFailureText,
   getErrorMessage,
   type PendingMentionSend,
   resolvePreviewTags,
@@ -19,6 +20,7 @@ import {
   uniqueNormalizedPubkeys,
 } from "./useMentionSendFlow.helpers";
 import type { UseMentionSendFlowOptions } from "./useMentionSendFlow.types";
+import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
 
 export function useMentionSendFlow({
   channelId,
@@ -40,6 +42,15 @@ export function useMentionSendFlow({
   setSpoileredAttachmentUrls,
 }: UseMentionSendFlowOptions) {
   const [isMentionSendPending, setIsMentionSendPending] = React.useState(false);
+  // Relay 没有接受发送时留在 composer 上的确定状态（被拒、限流、未发出、结果
+  // 不明）。一闪而过的 toast 在用户离开窗口时就等于没有提示，常驻 toast 又会
+  // 盖住发送按钮，所以放在 composer 里；按草稿键记，只在同一草稿上显示。
+  const [sendOutcome, setSendOutcome] = React.useState<{
+    draftKey: string | null | undefined;
+    text: string;
+    /** 结果不明不是失败：不以错误样式显示 */
+    unknown: boolean;
+  } | null>(null);
   // Persistence identity is independent of the host component and destination
   // channel. A -> B -> A must not revive A's previous recovery.
   const sourceOwner = React.useMemo(
@@ -51,6 +62,30 @@ export function useMentionSendFlow({
   const isMentionSendPendingRef = React.useRef(false);
   const isMountedRef = React.useRef(false);
   const activePreparedLinkPreviews = useActivePreparedLinkPreviews();
+
+  const reportSendFailure = React.useCallback(
+    (error: unknown, draftKey: string | null | undefined) => {
+      const text = relayPublishFailureText(error);
+      if (text === null) {
+        toast.error(formatMessageSendError(error));
+        return;
+      }
+      if (
+        !isMountedRef.current ||
+        draftKey !== sourceOwnerRef.current.draftKey
+      ) {
+        // 用户已离开这份草稿：草稿已持久保留，此处只能以通知告知
+        toast.error(text);
+        return;
+      }
+      setSendOutcome({
+        draftKey,
+        text,
+        unknown: classifyRelayPublishFailure(error)?.kind === "outcomeUnknown",
+      });
+    },
+    [],
+  );
 
   React.useEffect(() => {
     isMountedRef.current = true;
@@ -226,7 +261,7 @@ export function useMentionSendFlow({
                 await finishSend(uploaded, signal);
               } catch (error) {
                 restoreComposerAfterFailure();
-                toast.error(formatMessageSendError(error));
+                reportSendFailure(error, draft.sourceOwner.draftKey);
               } finally {
                 settleUpload();
               }
@@ -253,7 +288,7 @@ export function useMentionSendFlow({
             await finishSend([]);
           } catch (error) {
             restoreComposerAfterFailure();
-            toast.error(formatMessageSendError(error));
+            reportSendFailure(error, draft.sourceOwner.draftKey);
           }
         }
       } finally {
@@ -273,6 +308,7 @@ export function useMentionSendFlow({
       hasUnsavedMedia,
       mentions.restoreDraftMentionRefs,
       onSendRef,
+      reportSendFailure,
       restoreQueuedAttachments,
       richText.setContent,
       runComposerUpdate,
@@ -299,6 +335,8 @@ export function useMentionSendFlow({
       }
       isMentionSendPendingRef.current = true;
       setIsMentionSendPending(true);
+      // 新的一次发送取代上一次的未接受状态
+      setSendOutcome(null);
       // Bind settlement to this authored visit before reading its recipients.
       claimDraftSend(effectiveDraftKey);
       const composerRevision = getComposerRevision();
@@ -368,8 +406,15 @@ export function useMentionSendFlow({
       sourceOwner,
     ],
   );
+  const visibleSendOutcome =
+    sendOutcome && sendOutcome.draftKey === effectiveDraftKey
+      ? { text: sendOutcome.text, unknown: sendOutcome.unknown }
+      : null;
+  const clearSendOutcome = React.useCallback(() => setSendOutcome(null), []);
   return {
     isPreparingMentionSend: isMentionSendPending,
     sendMessageWithMentionFlow,
+    sendOutcome: visibleSendOutcome,
+    clearSendOutcome,
   };
 }

@@ -8,10 +8,7 @@ use crate::{
         SendChannelMessageResponse, ThreadRepliesResponse,
     },
     nostr_convert,
-    relay::{
-        assert_expected_relay_scope, assert_expected_signer, query_relay,
-        submit_event_at_created_at,
-    },
+    relay::{assert_expected_relay_scope, assert_expected_signer, query_relay},
 };
 
 // ── Reads (pure-nostr) ──────────────────────────────────────────────────────
@@ -226,6 +223,8 @@ pub use event_batch::{get_event, get_events};
 mod thread_ref;
 use thread_ref::thread_ref;
 
+mod unconfirmed;
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn send_channel_message(
@@ -306,8 +305,15 @@ pub async fn send_channel_message(
     // Submit through the base resolved (and scope-checked) above and the
     // identity snapshotted (and signer-checked) above — a re-resolve or key
     // re-read here would reopen the mid-command switch window.
-    let (result, created_at) =
-        submit_event_at_created_at(builder, &state, &relay_base, &signing_keys).await?;
+    //
+    // 同一内容上一次结果不明时原样重发那个已签名事件（见 `unconfirmed`），
+    // Relay 以 `duplicate:` 接受，不会出现第二条消息。
+    let fresh = builder
+        .sign_with_keys(&signing_keys)
+        .map_err(|e| format!("failed to sign event: {e}"))?;
+    let (result, event) =
+        unconfirmed::submit_reusing_unconfirmed(fresh, &state, &relay_base, &signing_keys).await?;
+    let created_at = event.created_at.as_secs() as i64;
 
     let depth = match (&parent_event_id, &resolved_root) {
         (None, _) => 0,

@@ -24,6 +24,7 @@ capabilities:
   - agent.version.create
   - agent.version.update
   - agent.version.publish
+  - agent.version.retire
   - resource.transfer_owner
   - automation.create
   - automation.publish_version

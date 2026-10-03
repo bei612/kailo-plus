@@ -306,6 +306,88 @@ void _insertTriggerAtCursor(
 String _composeSendErrorMessage(Object error) =>
     error.toString().replaceFirst('Exception: ', '');
 
+/// 一次发送没有被 Relay 接受时，composer 上持续显示的确定状态（apps/06 §4）。
+///
+/// 发送是 fire-and-forget，瞬时的 SnackBar 在键盘弹起或页面切换时很容易看不到，
+/// 于是「被挡下」就成了静默失败。这里的状态留在 composer 上，直到下一次发送、
+/// 切换草稿，或（结果不明时）确认 Relay 已存储该事件。
+enum _ComposeSendOutcomeKind {
+  /// Relay 以 `OK false` 明确拒绝：确定未存储
+  rejected,
+
+  /// Relay 限流（`rate-limited:`）：确定未存储，稍后可重试
+  rateLimited,
+
+  /// EVENT 没有离开本机：确定未发送
+  notSent,
+
+  /// EVENT 已发出而没有 `OK`：不是成功也不是失败
+  outcomeUnknown,
+}
+
+@immutable
+class _ComposeSendOutcome {
+  const _ComposeSendOutcome(
+    this.kind, {
+    this.retryAfterSeconds,
+    this.eventId,
+    this.restoredText,
+  });
+
+  final _ComposeSendOutcomeKind kind;
+  final int? retryAfterSeconds;
+
+  /// 结果不明时的事件 id：它出现在 Relay 的消息流里即证明已存储
+  final String? eventId;
+
+  /// 结果不明时恢复到 composer 的正文；确认送达时只在正文未被改动时清空
+  final String? restoredText;
+
+  _ComposeSendOutcome withRestoredText(String text) => _ComposeSendOutcome(
+    kind,
+    retryAfterSeconds: retryAfterSeconds,
+    eventId: eventId,
+    restoredText: text,
+  );
+}
+
+/// 把发布失败归入确定的界面状态；不是 Relay 发布失败的错误返回 null。
+_ComposeSendOutcome? _composeSendOutcomeFor(Object error) => switch (error) {
+  RelayPublishRejected(rateLimited: true, :final retryAfterSeconds) =>
+    _ComposeSendOutcome(
+      _ComposeSendOutcomeKind.rateLimited,
+      retryAfterSeconds: retryAfterSeconds,
+    ),
+  RelayPublishRejected() => const _ComposeSendOutcome(
+    _ComposeSendOutcomeKind.rejected,
+  ),
+  RelayPublishNotSent() => const _ComposeSendOutcome(
+    _ComposeSendOutcomeKind.notSent,
+  ),
+  RelayPublishOutcomeUnknown(:final eventId) => _ComposeSendOutcome(
+    _ComposeSendOutcomeKind.outcomeUnknown,
+    eventId: eventId,
+  ),
+  _ => null,
+};
+
+/// 状态文案只来自共享平台文案目录；Relay 的原文只作诊断，不上屏。
+String _composeSendOutcomeText(_ComposeSendOutcome outcome) =>
+    switch (outcome.kind) {
+      _ComposeSendOutcomeKind.rejected => platformText(
+        PlatformMessageKey.nativeSendRejected,
+      ),
+      _ComposeSendOutcomeKind.rateLimited => _rateLimitedText(
+        outcome.retryAfterSeconds,
+      ),
+      _ComposeSendOutcomeKind.notSent => platformText(
+        PlatformMessageKey.nativeSendNotConnected,
+      ),
+      _ComposeSendOutcomeKind.outcomeUnknown => platformText(
+        PlatformMessageKey.nativeSendOutcomeUnknown,
+      ),
+    };
+
 /// Reports a send that was cancelled because the active community changed.
 ///
 /// The send path is fire-and-forget, so a `StateError` escaping it would be
@@ -367,3 +449,11 @@ class _OutgoingMentions {
     ]);
   }
 }
+
+String _rateLimitedText(int? retryAfterSeconds) =>
+    retryAfterSeconds != null && retryAfterSeconds > 0
+    ? platformText(
+        PlatformMessageKey.nativeSendRateLimited,
+        variables: {'seconds': retryAfterSeconds},
+      )
+    : platformText(PlatformMessageKey.nativeSendRateLimitedNoHint);

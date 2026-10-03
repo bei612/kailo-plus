@@ -46,6 +46,9 @@ pub async fn submit_signed_event_at_with_keys(
     }
 
     let result: SubmitEventResponse = parse_json_response(response).await?;
+    if result.event_id != event.id.to_hex() {
+        return Err("relay returned malformed response: event ID mismatch".to_string());
+    }
     if !result.accepted {
         return Err(format!("relay rejected event: {}", result.message));
     }
@@ -69,35 +72,4 @@ pub async fn submit_event_at_with_keys(
         .sign_with_keys(keys)
         .map_err(|e| format!("failed to sign event: {e}"))?;
     submit_signed_event_at_with_keys(&event, state, api_base_url, keys).await
-}
-
-/// Sign with an explicit identity, submit to an explicit HTTP API base URL,
-/// and also return the signed event's `created_at`.
-///
-/// Callers that persist a timestamp as an event cursor (e.g. the Projects
-/// conversation opener) need the signed event's own second — a
-/// post-publication clock read can land a second later and permanently
-/// exclude other events stamped in the event's real second.
-///
-/// The explicit base (rather than a re-read of the workspace override at
-/// submit time) matters for the same callers: they validated a tenant scope
-/// against the resolved base earlier in the same command, and re-resolving
-/// here would reopen the window where a workspace switch retargets the event
-/// after the check passed. The explicit `keys` close the sibling window: the
-/// relay URL and the signing keys mutate under separate locks during a
-/// workspace switch, so re-reading the keys here could sign — and NIP-98
-/// authenticate — the event as the *new* tenant's identity after the caller
-/// validated the old one. The caller passes the exact snapshot it asserted.
-pub async fn submit_event_at_created_at(
-    builder: nostr::EventBuilder,
-    state: &AppState,
-    api_base_url: &str,
-    keys: &nostr::Keys,
-) -> Result<(SubmitEventResponse, i64), String> {
-    let event = builder
-        .sign_with_keys(keys)
-        .map_err(|e| format!("failed to sign event: {e}"))?;
-    let created_at = event.created_at.as_secs() as i64;
-    let result = submit_signed_event_at_with_keys(&event, state, api_base_url, keys).await?;
-    Ok((result, created_at))
 }
