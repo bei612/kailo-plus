@@ -1770,3 +1770,45 @@ diff 检查退出 0。首次快照漏 buzz-core，以及宽快照含既有格式
 `2c503b0c202fe183db521b79f323007404cec241` 的原 `tools/check.sh --full`
 实际退出 0，末行“全部通过”：18 条追溯、26 个发布产物证明、6 份上游来源通过。
 补写本节结果仅走原文档快路径，不再次编译；未将该结果提升为生产或设备验收。
+
+### 同批 Core 实际部署与原安装恢复观察
+
+上述源码与验证已提交并普通 push 为
+`eef540705af9de3a2dd338ea7f5e8129f29bdee4`（9 文件、+432/-47），远端 main
+读回一致。原 clean-commit release 的 Core artifact 为
+`sha256:50ab55f3a02224619ab1927d1c00c5bd6ce0245d9fabb536f6c30006ecec222e`；
+SPDX 92 个包、provenance 的 subject、源码 commit、原依赖锁摘要均核对一致。
+registry push 退出 0，独立 GET 为 200，manifest 原始字节摘要与发布摘要一致。
+Runtime 仍复用 `ad13c952…`，没有重建或修改其权限。
+
+原配置预检与 `start-core.sh --no-build` 均退出 0；新 Core 容器
+`1e686f0cc5c79b8d7e3f475095bb6c9fb691a0071f7e2b6a18953eabb54cdeea`
+启动于 `2026-10-03T20:24:54.051428524Z`，实际镜像为上述 digest，healthz 200。
+部署前后 24 个运行服务比较只有 Core 的 ID、image、启动时间改变，Worker、
+Web、Gateway 和其他 20 个运行服务未变。本批无新迁移，不重复迁移或初始化。
+初次 inspect 请求不存在的 Health 字段返回模板错误，改为实际 State 字段和
+原 healthz 后取得上述证据；不将模板错误当业务启动失败。
+
+20:25:48 的只读采样证明同一 WorkflowRef workspace 已补齐、version 3，原 run
+`01a10338-aa45-7574-b043-a76f1e89c13f` 不变；模型 binding 从零条推进至 generation 1
+PENDING，secret_version 已存在且 native_dispatch_started=true，原生 key ID/revision
+尚无读回。Installation/Resource 仍 PROVISIONING、Runtime projection PENDING，
+Task RUNNING/UNKNOWN_EXTERNAL_RESULT，无 Codex 子进程；本次修复越过 scope
+阻点，但不因此宣称安装、模型首轮、普通触发、回复或计量闭合。
+真实浏览器登录与共享 Agent 管理页读取退出 0，相关 BFF 200、pageerror 0，
+安装仍显示 Being installed，未把结果不明渲染为成功。
+
+发布原件为
+`/volumes/data/kailo/tmp/codex-workflow-scope-core-worker-release-20261003.BIpjWH/`
+的 `release.log`、`core-push.log`、`core-proof-readback.log` 和 `apps/dist/` 两份
+Core 原证明；部署原件为上述 `ry3CqV/` 中的 `start-core.log`、`core-health.log`、
+`live-before.txt`、`live-after.txt`、`management-after.log`；恢复采样为上述
+`e4agxD/recovery-after-deploy-1.log`。仅按真实产物更新 Compose Core pin 与原
+14 条 trace 引用，不修改旧工作树的其他配置或将 Worker 新构建等同已部署。
+
+随后原 release 完整退出 0；Worker artifact
+`sha256:555a0d33a1b68cadfba17f10cdb27908880982fd68d9d43fde12c69010ca6f61`
+也已 push、registry GET 200、SPDX/provenance 核对通过，但不替换未改源码的
+线上 Worker。原 release 输入 Git archive 前后 SHA 完全一致、clean HEAD/tree
+不变，原 builder OOM 计数为 0；准备阶段全仓文件摘要因 tracked symlink 退出
+123 的失败保留，实际来源按原 release archive 输入核验，不修工具绕过。
