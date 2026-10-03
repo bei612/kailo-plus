@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_delegation_target_page.schema.json",
+  "title": "AgentDelegationTargetPage",
+  "description": "原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["installationResourceId", "resourceVersion", "workspaceId", "scopes"],
+  "properties": {
+    "installationResourceId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer", "minimum": 1},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "scopes": {"type": "array", "items": {"$ref": "../domain/delegation_scope_parameters.schema.json"}},
+    "nextOffset": {"type": "integer", "minimum": 1}
+  }
+}

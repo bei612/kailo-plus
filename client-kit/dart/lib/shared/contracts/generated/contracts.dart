@@ -5,12 +5,20 @@
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
 //     final agentDefinitionPage = agentDefinitionPageFromJson(jsonString);
 //     final agentDefinitionView = agentDefinitionViewFromJson(jsonString);
+//     final agentDelegationPage = agentDelegationPageFromJson(jsonString);
+//     final agentDelegationTargetPage = agentDelegationTargetPageFromJson(jsonString);
+//     final agentDelegationView = agentDelegationViewFromJson(jsonString);
+//     final agentInstallationCandidate = agentInstallationCandidateFromJson(jsonString);
+//     final agentInstallationCandidatePage = agentInstallationCandidatePageFromJson(jsonString);
 //     final agentInstallationPage = agentInstallationPageFromJson(jsonString);
 //     final agentInstallationProjectionView = agentInstallationProjectionViewFromJson(jsonString);
 //     final agentInstallationView = agentInstallationViewFromJson(jsonString);
 //     final agentMemoryEntryPage = agentMemoryEntryPageFromJson(jsonString);
 //     final agentMemoryEntryView = agentMemoryEntryViewFromJson(jsonString);
 //     final agentMemoryReadView = agentMemoryReadViewFromJson(jsonString);
+//     final agentVersionConfigurationPage = agentVersionConfigurationPageFromJson(jsonString);
+//     final agentVersionPage = agentVersionPageFromJson(jsonString);
+//     final agentVersionRouteOption = agentVersionRouteOptionFromJson(jsonString);
 //     final agentVersionView = agentVersionViewFromJson(jsonString);
 //     final approvalDecisionRequest = approvalDecisionRequestFromJson(jsonString);
 //     final approvalView = approvalViewFromJson(jsonString);
@@ -45,8 +53,10 @@
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
+//     final delegationScopeParameters = delegationScopeParametersFromJson(jsonString);
 //     final errorBody = errorBodyFromJson(jsonString);
 //     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
+//     final llmRouteCreateInput = llmRouteCreateInputFromJson(jsonString);
 //     final runtimeProfileDirectory = runtimeProfileDirectoryFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
@@ -101,6 +111,38 @@ AgentDefinitionView agentDefinitionViewFromJson(String str) =>
 String agentDefinitionViewToJson(AgentDefinitionView data) =>
     json.encode(data.toJson());
 
+AgentDelegationPage agentDelegationPageFromJson(String str) =>
+    AgentDelegationPage.fromJson(json.decode(str));
+
+String agentDelegationPageToJson(AgentDelegationPage data) =>
+    json.encode(data.toJson());
+
+AgentDelegationTargetPage agentDelegationTargetPageFromJson(String str) =>
+    AgentDelegationTargetPage.fromJson(json.decode(str));
+
+String agentDelegationTargetPageToJson(AgentDelegationTargetPage data) =>
+    json.encode(data.toJson());
+
+AgentDelegationView agentDelegationViewFromJson(String str) =>
+    AgentDelegationView.fromJson(json.decode(str));
+
+String agentDelegationViewToJson(AgentDelegationView data) =>
+    json.encode(data.toJson());
+
+AgentInstallationCandidate agentInstallationCandidateFromJson(String str) =>
+    AgentInstallationCandidate.fromJson(json.decode(str));
+
+String agentInstallationCandidateToJson(AgentInstallationCandidate data) =>
+    json.encode(data.toJson());
+
+AgentInstallationCandidatePage agentInstallationCandidatePageFromJson(
+  String str,
+) => AgentInstallationCandidatePage.fromJson(json.decode(str));
+
+String agentInstallationCandidatePageToJson(
+  AgentInstallationCandidatePage data,
+) => json.encode(data.toJson());
+
 AgentInstallationPage agentInstallationPageFromJson(String str) =>
     AgentInstallationPage.fromJson(json.decode(str));
 
@@ -137,6 +179,26 @@ AgentMemoryReadView agentMemoryReadViewFromJson(String str) =>
     AgentMemoryReadView.fromJson(json.decode(str));
 
 String agentMemoryReadViewToJson(AgentMemoryReadView data) =>
+    json.encode(data.toJson());
+
+AgentVersionConfigurationPage agentVersionConfigurationPageFromJson(
+  String str,
+) => AgentVersionConfigurationPage.fromJson(json.decode(str));
+
+String agentVersionConfigurationPageToJson(
+  AgentVersionConfigurationPage data,
+) => json.encode(data.toJson());
+
+AgentVersionPage agentVersionPageFromJson(String str) =>
+    AgentVersionPage.fromJson(json.decode(str));
+
+String agentVersionPageToJson(AgentVersionPage data) =>
+    json.encode(data.toJson());
+
+AgentVersionRouteOption agentVersionRouteOptionFromJson(String str) =>
+    AgentVersionRouteOption.fromJson(json.decode(str));
+
+String agentVersionRouteOptionToJson(AgentVersionRouteOption data) =>
     json.encode(data.toJson());
 
 AgentVersionView agentVersionViewFromJson(String str) =>
@@ -331,6 +393,12 @@ DelegationGrantParameters delegationGrantParametersFromJson(String str) =>
 String delegationGrantParametersToJson(DelegationGrantParameters data) =>
     json.encode(data.toJson());
 
+DelegationScopeParameters delegationScopeParametersFromJson(String str) =>
+    DelegationScopeParameters.fromJson(json.decode(str));
+
+String delegationScopeParametersToJson(DelegationScopeParameters data) =>
+    json.encode(data.toJson());
+
 ErrorBody errorBodyFromJson(String str) => ErrorBody.fromJson(json.decode(str));
 
 String errorBodyToJson(ErrorBody data) => json.encode(data.toJson());
@@ -339,6 +407,12 @@ ResolvedIdentity resolvedIdentityFromJson(String str) =>
     ResolvedIdentity.fromJson(json.decode(str));
 
 String resolvedIdentityToJson(ResolvedIdentity data) =>
+    json.encode(data.toJson());
+
+LlmRouteCreateInput llmRouteCreateInputFromJson(String str) =>
+    LlmRouteCreateInput.fromJson(json.decode(str));
+
+String llmRouteCreateInputToJson(LlmRouteCreateInput data) =>
     json.encode(data.toJson());
 
 RuntimeProfileDirectory runtimeProfileDirectoryFromJson(String str) =>
@@ -687,7 +761,7 @@ class ActionCommand {
   final AutomationVersionContentClass? automationVersionContent;
 
   ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
-  final DelegationGrantClass? delegationGrant;
+  final ParametersClass? delegationGrant;
 
   ///显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
   final String? delegationId;
@@ -706,6 +780,9 @@ class ActionCommand {
 
   ///tenant.member.invite.revoke 的目标邀请
   final String? invitationId;
+
+  ///仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+  final LlmRouteCreateClass? llmRouteCreate;
 
   ///仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
   ///输入；其他命令禁止携带。
@@ -748,6 +825,7 @@ class ActionCommand {
     this.explicitConfirmation,
     required this.idempotencyKey,
     this.invitationId,
+    this.llmRouteCreate,
     this.memoryWrite,
     this.name,
     this.originalActionExecutionId,
@@ -773,13 +851,16 @@ class ActionCommand {
           ),
     delegationGrant: json["delegationGrant"] == null
         ? null
-        : DelegationGrantClass.fromJson(json["delegationGrant"]),
+        : ParametersClass.fromJson(json["delegationGrant"]),
     delegationId: json["delegationId"],
     delegationVersion: json["delegationVersion"],
     executorInstallationResourceId: json["executorInstallationResourceId"],
     explicitConfirmation: json["explicitConfirmation"],
     idempotencyKey: json["idempotencyKey"],
     invitationId: json["invitationId"],
+    llmRouteCreate: json["llmRouteCreate"] == null
+        ? null
+        : LlmRouteCreateClass.fromJson(json["llmRouteCreate"]),
     memoryWrite: json["memoryWrite"] == null
         ? null
         : MemoryWriteClass.fromJson(json["memoryWrite"]),
@@ -806,6 +887,7 @@ class ActionCommand {
     "explicitConfirmation": explicitConfirmation,
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
+    "llmRouteCreate": llmRouteCreate?.toJson(),
     "memoryWrite": memoryWrite?.toJson(),
     "name": name,
     "originalActionExecutionId": originalActionExecutionId,
@@ -1074,25 +1156,25 @@ final triggerKindValues = EnumValues({
 });
 
 ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
-class DelegationGrantClass {
+class ParametersClass {
   final DateTime expiresAt;
   final int? maxUses;
-  final List<DelegationGrantScope> scopes;
+  final List<ScopeElement> scopes;
   final DateTime validFrom;
 
-  DelegationGrantClass({
+  ParametersClass({
     required this.expiresAt,
     this.maxUses,
     required this.scopes,
     required this.validFrom,
   });
 
-  factory DelegationGrantClass.fromJson(Map<String, dynamic> json) =>
-      DelegationGrantClass(
+  factory ParametersClass.fromJson(Map<String, dynamic> json) =>
+      ParametersClass(
         expiresAt: DateTime.parse(json["expiresAt"]),
         maxUses: json["maxUses"],
-        scopes: List<DelegationGrantScope>.from(
-          json["scopes"].map((x) => DelegationGrantScope.fromJson(x)),
+        scopes: List<ScopeElement>.from(
+          json["scopes"].map((x) => ScopeElement.fromJson(x)),
         ),
         validFrom: DateTime.parse(json["validFrom"]),
       );
@@ -1105,7 +1187,8 @@ class DelegationGrantClass {
   });
 }
 
-class DelegationGrantScope {
+///03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
+class ScopeElement {
   final String actionKey;
   final int actionVersion;
   final String? createWorkspaceId;
@@ -1116,7 +1199,7 @@ class DelegationGrantScope {
   final String targetType;
   final String? toolResourceId;
 
-  DelegationGrantScope({
+  ScopeElement({
     required this.actionKey,
     required this.actionVersion,
     this.createWorkspaceId,
@@ -1128,19 +1211,18 @@ class DelegationGrantScope {
     this.toolResourceId,
   });
 
-  factory DelegationGrantScope.fromJson(Map<String, dynamic> json) =>
-      DelegationGrantScope(
-        actionKey: json["actionKey"],
-        actionVersion: json["actionVersion"],
-        createWorkspaceId: json["createWorkspaceId"],
-        outputSchemaHash: json["outputSchemaHash"],
-        redactionPolicy: json["redactionPolicy"],
-        resultExposureMode:
-            resultExposureModeValues.map[json["resultExposureMode"]]!,
-        targetId: json["targetId"],
-        targetType: json["targetType"],
-        toolResourceId: json["toolResourceId"],
-      );
+  factory ScopeElement.fromJson(Map<String, dynamic> json) => ScopeElement(
+    actionKey: json["actionKey"],
+    actionVersion: json["actionVersion"],
+    createWorkspaceId: json["createWorkspaceId"],
+    outputSchemaHash: json["outputSchemaHash"],
+    redactionPolicy: json["redactionPolicy"],
+    resultExposureMode:
+        resultExposureModeValues.map[json["resultExposureMode"]]!,
+    targetId: json["targetId"],
+    targetType: json["targetType"],
+    toolResourceId: json["toolResourceId"],
+  );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "actionKey": actionKey,
@@ -1162,6 +1244,75 @@ final resultExposureModeValues = EnumValues({
   "EXPORT": ResultExposureMode.EXPORT,
   "READ": ResultExposureMode.READ,
 });
+
+///仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+///
+///受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+class LlmRouteCreateClass {
+  final Model model;
+  final Model provider;
+  final LlmRouteCreateProviderSecretRef providerSecretRef;
+
+  LlmRouteCreateClass({
+    required this.model,
+    required this.provider,
+    required this.providerSecretRef,
+  });
+
+  factory LlmRouteCreateClass.fromJson(Map<String, dynamic> json) =>
+      LlmRouteCreateClass(
+        model: Model.fromJson(json["model"]),
+        provider: Model.fromJson(json["provider"]),
+        providerSecretRef: LlmRouteCreateProviderSecretRef.fromJson(
+          json["providerSecretRef"],
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "model": model.toJson(),
+    "provider": provider.toJson(),
+    "providerSecretRef": providerSecretRef.toJson(),
+  });
+}
+
+class Model {
+  final String id;
+  final int revision;
+  final String sha256;
+
+  Model({required this.id, required this.revision, required this.sha256});
+
+  factory Model.fromJson(Map<String, dynamic> json) =>
+      Model(id: json["id"], revision: json["revision"], sha256: json["sha256"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"id": id, "revision": revision, "sha256": sha256});
+}
+
+class LlmRouteCreateProviderSecretRef {
+  final String audience;
+  final String locator;
+  final int version;
+
+  LlmRouteCreateProviderSecretRef({
+    required this.audience,
+    required this.locator,
+    required this.version,
+  });
+
+  factory LlmRouteCreateProviderSecretRef.fromJson(Map<String, dynamic> json) =>
+      LlmRouteCreateProviderSecretRef(
+        audience: json["audience"],
+        locator: json["locator"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "locator": locator,
+    "version": version,
+  });
+}
 
 ///仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
 ///输入；其他命令禁止携带。
@@ -1568,6 +1719,277 @@ class AgentDefinitionView {
     "resourceVersion": resourceVersion,
     "stableSlug": stableSlug,
     "status": status,
+  });
+}
+
+class AgentDelegationPage {
+  final bool canGrant;
+  final bool canRevoke;
+  final List<GrantElement> grants;
+  final String installationResourceId;
+  final int? nextOffset;
+  final int resourceVersion;
+  final String workspaceId;
+
+  AgentDelegationPage({
+    required this.canGrant,
+    required this.canRevoke,
+    required this.grants,
+    required this.installationResourceId,
+    this.nextOffset,
+    required this.resourceVersion,
+    required this.workspaceId,
+  });
+
+  factory AgentDelegationPage.fromJson(Map<String, dynamic> json) =>
+      AgentDelegationPage(
+        canGrant: json["canGrant"],
+        canRevoke: json["canRevoke"],
+        grants: List<GrantElement>.from(
+          json["grants"].map((x) => GrantElement.fromJson(x)),
+        ),
+        installationResourceId: json["installationResourceId"],
+        nextOffset: json["nextOffset"],
+        resourceVersion: json["resourceVersion"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canGrant": canGrant,
+    "canRevoke": canRevoke,
+    "grants": List<dynamic>.from(grants.map((x) => x.toJson())),
+    "installationResourceId": installationResourceId,
+    "nextOffset": nextOffset,
+    "resourceVersion": resourceVersion,
+    "workspaceId": workspaceId,
+  });
+}
+
+///同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+class GrantElement {
+  final String delegationId;
+  final int delegationVersion;
+  final String grantorPrincipalId;
+  final ParametersClass parameters;
+  final GrantState state;
+  final int uses;
+
+  GrantElement({
+    required this.delegationId,
+    required this.delegationVersion,
+    required this.grantorPrincipalId,
+    required this.parameters,
+    required this.state,
+    required this.uses,
+  });
+
+  factory GrantElement.fromJson(Map<String, dynamic> json) => GrantElement(
+    delegationId: json["delegationId"],
+    delegationVersion: json["delegationVersion"],
+    grantorPrincipalId: json["grantorPrincipalId"],
+    parameters: ParametersClass.fromJson(json["parameters"]),
+    state: grantStateValues.map[json["state"]]!,
+    uses: json["uses"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "delegationId": delegationId,
+    "delegationVersion": delegationVersion,
+    "grantorPrincipalId": grantorPrincipalId,
+    "parameters": parameters.toJson(),
+    "state": grantStateValues.reverse[state],
+    "uses": uses,
+  });
+}
+
+enum GrantState { ACTIVE, EXPIRED, REVOKED, REVOKING }
+
+final grantStateValues = EnumValues({
+  "ACTIVE": GrantState.ACTIVE,
+  "EXPIRED": GrantState.EXPIRED,
+  "REVOKED": GrantState.REVOKED,
+  "REVOKING": GrantState.REVOKING,
+});
+
+///原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
+class AgentDelegationTargetPage {
+  final String installationResourceId;
+  final int? nextOffset;
+  final int resourceVersion;
+  final List<ScopeElement> scopes;
+  final String workspaceId;
+
+  AgentDelegationTargetPage({
+    required this.installationResourceId,
+    this.nextOffset,
+    required this.resourceVersion,
+    required this.scopes,
+    required this.workspaceId,
+  });
+
+  factory AgentDelegationTargetPage.fromJson(Map<String, dynamic> json) =>
+      AgentDelegationTargetPage(
+        installationResourceId: json["installationResourceId"],
+        nextOffset: json["nextOffset"],
+        resourceVersion: json["resourceVersion"],
+        scopes: List<ScopeElement>.from(
+          json["scopes"].map((x) => ScopeElement.fromJson(x)),
+        ),
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "installationResourceId": installationResourceId,
+    "nextOffset": nextOffset,
+    "resourceVersion": resourceVersion,
+    "scopes": List<dynamic>.from(scopes.map((x) => x.toJson())),
+    "workspaceId": workspaceId,
+  });
+}
+
+///同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+class AgentDelegationView {
+  final String delegationId;
+  final int delegationVersion;
+  final String grantorPrincipalId;
+  final ParametersClass parameters;
+  final GrantState state;
+  final int uses;
+
+  AgentDelegationView({
+    required this.delegationId,
+    required this.delegationVersion,
+    required this.grantorPrincipalId,
+    required this.parameters,
+    required this.state,
+    required this.uses,
+  });
+
+  factory AgentDelegationView.fromJson(Map<String, dynamic> json) =>
+      AgentDelegationView(
+        delegationId: json["delegationId"],
+        delegationVersion: json["delegationVersion"],
+        grantorPrincipalId: json["grantorPrincipalId"],
+        parameters: ParametersClass.fromJson(json["parameters"]),
+        state: grantStateValues.map[json["state"]]!,
+        uses: json["uses"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "delegationId": delegationId,
+    "delegationVersion": delegationVersion,
+    "grantorPrincipalId": grantorPrincipalId,
+    "parameters": parameters.toJson(),
+    "state": grantStateValues.reverse[state],
+    "uses": uses,
+  });
+}
+
+///实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
+class AgentInstallationCandidate {
+  final String agentResourceId;
+  final String agentVersionAssetId;
+  final int assetVersion;
+  final String displayName;
+  final int ordinal;
+  final int resourceVersion;
+
+  AgentInstallationCandidate({
+    required this.agentResourceId,
+    required this.agentVersionAssetId,
+    required this.assetVersion,
+    required this.displayName,
+    required this.ordinal,
+    required this.resourceVersion,
+  });
+
+  factory AgentInstallationCandidate.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationCandidate(
+        agentResourceId: json["agentResourceId"],
+        agentVersionAssetId: json["agentVersionAssetId"],
+        assetVersion: json["assetVersion"],
+        displayName: json["displayName"],
+        ordinal: json["ordinal"],
+        resourceVersion: json["resourceVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentResourceId": agentResourceId,
+    "agentVersionAssetId": agentVersionAssetId,
+    "assetVersion": assetVersion,
+    "displayName": displayName,
+    "ordinal": ordinal,
+    "resourceVersion": resourceVersion,
+  });
+}
+
+class AgentInstallationCandidatePage {
+  ///原 Installation create exposure、目录与 fresh Workspace create；每个候选还须 consume/投影查证，提交时全部重验。
+  final bool canCreate;
+  final List<CandidateElement> candidates;
+  final int? nextOffset;
+  final String workspaceId;
+
+  AgentInstallationCandidatePage({
+    required this.canCreate,
+    required this.candidates,
+    this.nextOffset,
+    required this.workspaceId,
+  });
+
+  factory AgentInstallationCandidatePage.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationCandidatePage(
+        canCreate: json["canCreate"],
+        candidates: List<CandidateElement>.from(
+          json["candidates"].map((x) => CandidateElement.fromJson(x)),
+        ),
+        nextOffset: json["nextOffset"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canCreate": canCreate,
+    "candidates": List<dynamic>.from(candidates.map((x) => x.toJson())),
+    "nextOffset": nextOffset,
+    "workspaceId": workspaceId,
+  });
+}
+
+///实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
+class CandidateElement {
+  final String agentResourceId;
+  final String agentVersionAssetId;
+  final int assetVersion;
+  final String displayName;
+  final int ordinal;
+  final int resourceVersion;
+
+  CandidateElement({
+    required this.agentResourceId,
+    required this.agentVersionAssetId,
+    required this.assetVersion,
+    required this.displayName,
+    required this.ordinal,
+    required this.resourceVersion,
+  });
+
+  factory CandidateElement.fromJson(Map<String, dynamic> json) =>
+      CandidateElement(
+        agentResourceId: json["agentResourceId"],
+        agentVersionAssetId: json["agentVersionAssetId"],
+        assetVersion: json["assetVersion"],
+        displayName: json["displayName"],
+        ordinal: json["ordinal"],
+        resourceVersion: json["resourceVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentResourceId": agentResourceId,
+    "agentVersionAssetId": agentVersionAssetId,
+    "assetVersion": assetVersion,
+    "displayName": displayName,
+    "ordinal": ordinal,
+    "resourceVersion": resourceVersion,
   });
 }
 
@@ -2076,20 +2498,229 @@ final agentMemoryReadViewStateValues = EnumValues({
   "UNREADABLE": AgentMemoryReadViewState.UNREADABLE,
 });
 
-class AgentVersionView {
+///DD-24/25/26：Definition 范围的受权版本配置目录，消费平台发布 RuntimeProfile 合同与已治理 Route。缺真实来源时两目录为空且
+///canCreate=false；目录或 canCreate 不授予发布、安装和运行权限。
+class AgentVersionConfigurationPage {
+  final String agentResourceId;
+  final bool canCreate;
+  final int? nextOffset;
+  final List<RuntimeProfileDirectorySchema> profiles;
+  final int resourceVersion;
+  final List<RouteElement> routes;
+
+  AgentVersionConfigurationPage({
+    required this.agentResourceId,
+    required this.canCreate,
+    required this.nextOffset,
+    required this.profiles,
+    required this.resourceVersion,
+    required this.routes,
+  });
+
+  factory AgentVersionConfigurationPage.fromJson(Map<String, dynamic> json) =>
+      AgentVersionConfigurationPage(
+        agentResourceId: json["agentResourceId"],
+        canCreate: json["canCreate"],
+        nextOffset: json["nextOffset"],
+        profiles: List<RuntimeProfileDirectorySchema>.from(
+          json["profiles"].map(
+            (x) => RuntimeProfileDirectorySchema.fromJson(x),
+          ),
+        ),
+        resourceVersion: json["resourceVersion"],
+        routes: List<RouteElement>.from(
+          json["routes"].map((x) => RouteElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentResourceId": agentResourceId,
+    "canCreate": canCreate,
+    "nextOffset": nextOffset,
+    "profiles": List<dynamic>.from(profiles.map((x) => x.toJson())),
+    "resourceVersion": resourceVersion,
+    "routes": List<dynamic>.from(routes.map((x) => x.toJson())),
+  });
+}
+
+class RuntimeProfileDirectorySchema {
+  final PurpleCapabilityContract capabilityContract;
+  final String key;
+  final RuntimeProfileKind kind;
+  final String status;
+  final String webAvailability;
+
+  RuntimeProfileDirectorySchema({
+    required this.capabilityContract,
+    required this.key,
+    required this.kind,
+    required this.status,
+    required this.webAvailability,
+  });
+
+  factory RuntimeProfileDirectorySchema.fromJson(Map<String, dynamic> json) =>
+      RuntimeProfileDirectorySchema(
+        capabilityContract: PurpleCapabilityContract.fromJson(
+          json["capabilityContract"],
+        ),
+        key: json["key"],
+        kind: runtimeProfileKindValues.map[json["kind"]]!,
+        status: json["status"],
+        webAvailability: json["webAvailability"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "capabilityContract": capabilityContract.toJson(),
+    "key": key,
+    "kind": runtimeProfileKindValues.reverse[kind],
+    "status": status,
+    "webAvailability": webAvailability,
+  });
+}
+
+class PurpleCapabilityContract {
+  final List<String> capabilityRequirements;
+  final int maxIdleTimeoutSeconds;
+  final int maxParallelism;
+  final int maxTurnDurationSeconds;
+  final List<String> replyPolicies;
+
+  PurpleCapabilityContract({
+    required this.capabilityRequirements,
+    required this.maxIdleTimeoutSeconds,
+    required this.maxParallelism,
+    required this.maxTurnDurationSeconds,
+    required this.replyPolicies,
+  });
+
+  factory PurpleCapabilityContract.fromJson(Map<String, dynamic> json) =>
+      PurpleCapabilityContract(
+        capabilityRequirements: List<String>.from(
+          json["capabilityRequirements"].map((x) => x),
+        ),
+        maxIdleTimeoutSeconds: json["maxIdleTimeoutSeconds"],
+        maxParallelism: json["maxParallelism"],
+        maxTurnDurationSeconds: json["maxTurnDurationSeconds"],
+        replyPolicies: List<String>.from(json["replyPolicies"].map((x) => x)),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "capabilityRequirements": List<dynamic>.from(
+      capabilityRequirements.map((x) => x),
+    ),
+    "maxIdleTimeoutSeconds": maxIdleTimeoutSeconds,
+    "maxParallelism": maxParallelism,
+    "maxTurnDurationSeconds": maxTurnDurationSeconds,
+    "replyPolicies": List<dynamic>.from(replyPolicies.map((x) => x)),
+  });
+}
+
+enum RuntimeProfileKind { LOCAL_ACP, REMOTE_PROVIDER, SERVER_CODEX }
+
+final runtimeProfileKindValues = EnumValues({
+  "LOCAL_ACP": RuntimeProfileKind.LOCAL_ACP,
+  "REMOTE_PROVIDER": RuntimeProfileKind.REMOTE_PROVIDER,
+  "SERVER_CODEX": RuntimeProfileKind.SERVER_CODEX,
+});
+
+///03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+///已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+class RouteElement {
+  final String? homeWorkspaceId;
+  final String nativeConfigHash;
+  final String nativeConfigResourceId;
+  final int nativeRevision;
+  final String ownerPrincipalId;
+  final String resourceId;
+  final int resourceVersion;
+
+  RouteElement({
+    required this.homeWorkspaceId,
+    required this.nativeConfigHash,
+    required this.nativeConfigResourceId,
+    required this.nativeRevision,
+    required this.ownerPrincipalId,
+    required this.resourceId,
+    required this.resourceVersion,
+  });
+
+  factory RouteElement.fromJson(Map<String, dynamic> json) => RouteElement(
+    homeWorkspaceId: json["homeWorkspaceId"],
+    nativeConfigHash: json["nativeConfigHash"],
+    nativeConfigResourceId: json["nativeConfigResourceId"],
+    nativeRevision: json["nativeRevision"],
+    ownerPrincipalId: json["ownerPrincipalId"],
+    resourceId: json["resourceId"],
+    resourceVersion: json["resourceVersion"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "homeWorkspaceId": homeWorkspaceId,
+    "nativeConfigHash": nativeConfigHash,
+    "nativeConfigResourceId": nativeConfigResourceId,
+    "nativeRevision": nativeRevision,
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+    "resourceVersion": resourceVersion,
+  });
+}
+
+///DD-24/25、17 §3/8：同 Definition 下逐项 fresh Asset read 后的版本目录；DRAFT 可发现，PUBLISHED/RETIRED
+///不可编辑。nextOffset 属原始扫描窗口，空的受权页不证明全集为空。
+class AgentVersionPage {
+  final String agentResourceId;
+  final int? nextOffset;
+  final int resourceVersion;
+  final List<VersionElement> versions;
+
+  AgentVersionPage({
+    required this.agentResourceId,
+    required this.nextOffset,
+    required this.resourceVersion,
+    required this.versions,
+  });
+
+  factory AgentVersionPage.fromJson(Map<String, dynamic> json) =>
+      AgentVersionPage(
+        agentResourceId: json["agentResourceId"],
+        nextOffset: json["nextOffset"],
+        resourceVersion: json["resourceVersion"],
+        versions: List<VersionElement>.from(
+          json["versions"].map((x) => VersionElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentResourceId": agentResourceId,
+    "nextOffset": nextOffset,
+    "resourceVersion": resourceVersion,
+    "versions": List<dynamic>.from(versions.map((x) => x.toJson())),
+  });
+}
+
+class VersionElement {
   final String agentResourceId;
   final String assetId;
   final int assetVersion;
+
+  ///当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
+  ///资格；缺字段不允许发布，不证明已安装或可运行。
+  final bool? canPublish;
+
+  ///当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
+  final bool? canUpdate;
   final String configHash;
   final ContentClass content;
   final int ordinal;
   final String ownerPrincipalId;
   final AgentVersionState state;
 
-  AgentVersionView({
+  VersionElement({
     required this.agentResourceId,
     required this.assetId,
     required this.assetVersion,
+    this.canPublish,
+    this.canUpdate,
     required this.configHash,
     required this.content,
     required this.ordinal,
@@ -2097,22 +2728,25 @@ class AgentVersionView {
     required this.state,
   });
 
-  factory AgentVersionView.fromJson(Map<String, dynamic> json) =>
-      AgentVersionView(
-        agentResourceId: json["agentResourceId"],
-        assetId: json["assetId"],
-        assetVersion: json["assetVersion"],
-        configHash: json["configHash"],
-        content: ContentClass.fromJson(json["content"]),
-        ordinal: json["ordinal"],
-        ownerPrincipalId: json["ownerPrincipalId"],
-        state: agentVersionStateValues.map[json["state"]]!,
-      );
+  factory VersionElement.fromJson(Map<String, dynamic> json) => VersionElement(
+    agentResourceId: json["agentResourceId"],
+    assetId: json["assetId"],
+    assetVersion: json["assetVersion"],
+    canPublish: json["canPublish"],
+    canUpdate: json["canUpdate"],
+    configHash: json["configHash"],
+    content: ContentClass.fromJson(json["content"]),
+    ordinal: json["ordinal"],
+    ownerPrincipalId: json["ownerPrincipalId"],
+    state: agentVersionStateValues.map[json["state"]]!,
+  );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "agentResourceId": agentResourceId,
     "assetId": assetId,
     "assetVersion": assetVersion,
+    "canPublish": canPublish,
+    "canUpdate": canUpdate,
     "configHash": configHash,
     "content": content.toJson(),
     "ordinal": ordinal,
@@ -2128,6 +2762,107 @@ final agentVersionStateValues = EnumValues({
   "PUBLISHED": AgentVersionState.PUBLISHED,
   "RETIRED": AgentVersionState.RETIRED,
 });
+
+///03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+///已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+class AgentVersionRouteOption {
+  final String? homeWorkspaceId;
+  final String nativeConfigHash;
+  final String nativeConfigResourceId;
+  final int nativeRevision;
+  final String ownerPrincipalId;
+  final String resourceId;
+  final int resourceVersion;
+
+  AgentVersionRouteOption({
+    required this.homeWorkspaceId,
+    required this.nativeConfigHash,
+    required this.nativeConfigResourceId,
+    required this.nativeRevision,
+    required this.ownerPrincipalId,
+    required this.resourceId,
+    required this.resourceVersion,
+  });
+
+  factory AgentVersionRouteOption.fromJson(Map<String, dynamic> json) =>
+      AgentVersionRouteOption(
+        homeWorkspaceId: json["homeWorkspaceId"],
+        nativeConfigHash: json["nativeConfigHash"],
+        nativeConfigResourceId: json["nativeConfigResourceId"],
+        nativeRevision: json["nativeRevision"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        resourceId: json["resourceId"],
+        resourceVersion: json["resourceVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "homeWorkspaceId": homeWorkspaceId,
+    "nativeConfigHash": nativeConfigHash,
+    "nativeConfigResourceId": nativeConfigResourceId,
+    "nativeRevision": nativeRevision,
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+    "resourceVersion": resourceVersion,
+  });
+}
+
+class AgentVersionView {
+  final String agentResourceId;
+  final String assetId;
+  final int assetVersion;
+
+  ///当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
+  ///资格；缺字段不允许发布，不证明已安装或可运行。
+  final bool? canPublish;
+
+  ///当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
+  final bool? canUpdate;
+  final String configHash;
+  final ContentClass content;
+  final int ordinal;
+  final String ownerPrincipalId;
+  final AgentVersionState state;
+
+  AgentVersionView({
+    required this.agentResourceId,
+    required this.assetId,
+    required this.assetVersion,
+    this.canPublish,
+    this.canUpdate,
+    required this.configHash,
+    required this.content,
+    required this.ordinal,
+    required this.ownerPrincipalId,
+    required this.state,
+  });
+
+  factory AgentVersionView.fromJson(Map<String, dynamic> json) =>
+      AgentVersionView(
+        agentResourceId: json["agentResourceId"],
+        assetId: json["assetId"],
+        assetVersion: json["assetVersion"],
+        canPublish: json["canPublish"],
+        canUpdate: json["canUpdate"],
+        configHash: json["configHash"],
+        content: ContentClass.fromJson(json["content"]),
+        ordinal: json["ordinal"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        state: agentVersionStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentResourceId": agentResourceId,
+    "assetId": assetId,
+    "assetVersion": assetVersion,
+    "canPublish": canPublish,
+    "canUpdate": canUpdate,
+    "configHash": configHash,
+    "content": content.toJson(),
+    "ordinal": ordinal,
+    "ownerPrincipalId": ownerPrincipalId,
+    "state": agentVersionStateValues.reverse[state],
+  });
+}
 
 ///POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为
 ///ApprovalDecisionOutcome。
@@ -2614,7 +3349,7 @@ class AutomationDetailView {
   final List<DelegationElement> delegations;
   final int? nextDelegationOffset;
   final int? nextVersionOffset;
-  final List<VersionElement> versions;
+  final List<VersionClass> versions;
 
   AutomationDetailView({
     required this.automation,
@@ -2634,8 +3369,8 @@ class AutomationDetailView {
         ),
         nextDelegationOffset: json["nextDelegationOffset"],
         nextVersionOffset: json["nextVersionOffset"],
-        versions: List<VersionElement>.from(
-          json["versions"].map((x) => VersionElement.fromJson(x)),
+        versions: List<VersionClass>.from(
+          json["versions"].map((x) => VersionClass.fromJson(x)),
         ),
       );
 
@@ -2745,7 +3480,7 @@ class DelegationElement {
 }
 
 ///Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
-class VersionElement {
+class VersionClass {
   final String assetId;
   final int assetVersion;
   final String automationResourceId;
@@ -2755,7 +3490,7 @@ class VersionElement {
   final String ownerPrincipalId;
   final AgentVersionState state;
 
-  VersionElement({
+  VersionClass({
     required this.assetId,
     required this.assetVersion,
     required this.automationResourceId,
@@ -2766,7 +3501,7 @@ class VersionElement {
     required this.state,
   });
 
-  factory VersionElement.fromJson(Map<String, dynamic> json) => VersionElement(
+  factory VersionClass.fromJson(Map<String, dynamic> json) => VersionClass(
     assetId: json["assetId"],
     assetVersion: json["assetVersion"],
     automationResourceId: json["automationResourceId"],
@@ -4285,7 +5020,7 @@ class AutomationVersionContentTrigger {
 class DelegationGrantParameters {
   final DateTime expiresAt;
   final int? maxUses;
-  final List<DelegationGrantParametersScope> scopes;
+  final List<ScopeElement> scopes;
   final DateTime validFrom;
 
   DelegationGrantParameters({
@@ -4299,8 +5034,8 @@ class DelegationGrantParameters {
       DelegationGrantParameters(
         expiresAt: DateTime.parse(json["expiresAt"]),
         maxUses: json["maxUses"],
-        scopes: List<DelegationGrantParametersScope>.from(
-          json["scopes"].map((x) => DelegationGrantParametersScope.fromJson(x)),
+        scopes: List<ScopeElement>.from(
+          json["scopes"].map((x) => ScopeElement.fromJson(x)),
         ),
         validFrom: DateTime.parse(json["validFrom"]),
       );
@@ -4313,7 +5048,8 @@ class DelegationGrantParameters {
   });
 }
 
-class DelegationGrantParametersScope {
+///03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
+class DelegationScopeParameters {
   final String actionKey;
   final int actionVersion;
   final String? createWorkspaceId;
@@ -4324,7 +5060,7 @@ class DelegationGrantParametersScope {
   final String targetType;
   final String? toolResourceId;
 
-  DelegationGrantParametersScope({
+  DelegationScopeParameters({
     required this.actionKey,
     required this.actionVersion,
     this.createWorkspaceId,
@@ -4336,8 +5072,8 @@ class DelegationGrantParametersScope {
     this.toolResourceId,
   });
 
-  factory DelegationGrantParametersScope.fromJson(Map<String, dynamic> json) =>
-      DelegationGrantParametersScope(
+  factory DelegationScopeParameters.fromJson(Map<String, dynamic> json) =>
+      DelegationScopeParameters(
         actionKey: json["actionKey"],
         actionVersion: json["actionVersion"],
         createWorkspaceId: json["createWorkspaceId"],
@@ -4425,6 +5161,60 @@ class ResolvedIdentity {
   });
 }
 
+///受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+class LlmRouteCreateInput {
+  final Model model;
+  final Model provider;
+  final LlmRouteCreateInputProviderSecretRef providerSecretRef;
+
+  LlmRouteCreateInput({
+    required this.model,
+    required this.provider,
+    required this.providerSecretRef,
+  });
+
+  factory LlmRouteCreateInput.fromJson(Map<String, dynamic> json) =>
+      LlmRouteCreateInput(
+        model: Model.fromJson(json["model"]),
+        provider: Model.fromJson(json["provider"]),
+        providerSecretRef: LlmRouteCreateInputProviderSecretRef.fromJson(
+          json["providerSecretRef"],
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "model": model.toJson(),
+    "provider": provider.toJson(),
+    "providerSecretRef": providerSecretRef.toJson(),
+  });
+}
+
+class LlmRouteCreateInputProviderSecretRef {
+  final String audience;
+  final String locator;
+  final int version;
+
+  LlmRouteCreateInputProviderSecretRef({
+    required this.audience,
+    required this.locator,
+    required this.version,
+  });
+
+  factory LlmRouteCreateInputProviderSecretRef.fromJson(
+    Map<String, dynamic> json,
+  ) => LlmRouteCreateInputProviderSecretRef(
+    audience: json["audience"],
+    locator: json["locator"],
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "locator": locator,
+    "version": version,
+  });
+}
+
 ///03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
 class RuntimeProfileDirectory {
   final List<Profile> profiles;
@@ -4444,7 +5234,7 @@ class RuntimeProfileDirectory {
 }
 
 class Profile {
-  final CapabilityContract capabilityContract;
+  final FluffyCapabilityContract capabilityContract;
   final String key;
   final RuntimeProfileKind kind;
   final String status;
@@ -4459,7 +5249,9 @@ class Profile {
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) => Profile(
-    capabilityContract: CapabilityContract.fromJson(json["capabilityContract"]),
+    capabilityContract: FluffyCapabilityContract.fromJson(
+      json["capabilityContract"],
+    ),
     key: json["key"],
     kind: runtimeProfileKindValues.map[json["kind"]]!,
     status: json["status"],
@@ -4475,14 +5267,14 @@ class Profile {
   });
 }
 
-class CapabilityContract {
+class FluffyCapabilityContract {
   final List<String> capabilityRequirements;
   final int maxIdleTimeoutSeconds;
   final int maxParallelism;
   final int maxTurnDurationSeconds;
   final List<String> replyPolicies;
 
-  CapabilityContract({
+  FluffyCapabilityContract({
     required this.capabilityRequirements,
     required this.maxIdleTimeoutSeconds,
     required this.maxParallelism,
@@ -4490,8 +5282,8 @@ class CapabilityContract {
     required this.replyPolicies,
   });
 
-  factory CapabilityContract.fromJson(Map<String, dynamic> json) =>
-      CapabilityContract(
+  factory FluffyCapabilityContract.fromJson(Map<String, dynamic> json) =>
+      FluffyCapabilityContract(
         capabilityRequirements: List<String>.from(
           json["capabilityRequirements"].map((x) => x),
         ),
@@ -4511,14 +5303,6 @@ class CapabilityContract {
     "replyPolicies": List<dynamic>.from(replyPolicies.map((x) => x)),
   });
 }
-
-enum RuntimeProfileKind { LOCAL_ACP, REMOTE_PROVIDER, SERVER_CODEX }
-
-final runtimeProfileKindValues = EnumValues({
-  "LOCAL_ACP": RuntimeProfileKind.LOCAL_ACP,
-  "REMOTE_PROVIDER": RuntimeProfileKind.REMOTE_PROVIDER,
-  "SERVER_CODEX": RuntimeProfileKind.SERVER_CODEX,
-});
 
 ///Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId
 ///单调 upsert，eventId 不大于已有值的报告按幂等成功忽略。

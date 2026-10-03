@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/llm_route_create_input.schema.json",
+  "title": "LlmRouteCreateInput",
+  "description": "受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["provider", "model", "providerSecretRef"],
+  "properties": {
+    "provider": { "$ref": "#/$defs/nativeSource" },
+    "model": { "$ref": "#/$defs/nativeSource" },
+    "providerSecretRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "version", "audience"],
+      "properties": {
+        "locator": { "type": "string", "minLength": 1 },
+        "version": { "type": "integer", "minimum": 1 },
+        "audience": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "nativeSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "sha256"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  }
+}

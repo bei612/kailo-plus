@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_version_page.schema.json",
+  "title": "AgentVersionPage",
+  "description": "DD-24/25、17 §3/8：同 Definition 下逐项 fresh Asset read 后的版本目录；DRAFT 可发现，PUBLISHED/RETIRED 不可编辑。nextOffset 属原始扫描窗口，空的受权页不证明全集为空。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agentResourceId", "resourceVersion", "versions", "nextOffset"],
+  "properties": {
+    "agentResourceId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer", "minimum": 1},
+    "versions": {"type": "array", "items": {"$ref": "agent_version_view.schema.json"}},
+    "nextOffset": {"type": ["integer", "null"], "minimum": 0}
+  }
+}

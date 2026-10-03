@@ -1289,6 +1289,7 @@ fn verify_projection(
         match field.get("effectiveValueHash") {
             Some(serde_json::Value::String(effective))
                 if effective == &hash
+                    && supports_effective_field(content, key)
                     && field
                         .get("reasonCode")
                         .is_some_and(serde_json::Value::is_null) => {}
@@ -1335,6 +1336,27 @@ fn projection_hash(
     )))
 }
 
+// Only the actual consumers below establish support; a RuntimeProfile key in
+// the directory alone does not define reply semantics or grant Memory writes.
+fn supports_effective_field(content: &AgentVersionContent, key: &str) -> bool {
+    match key {
+        // runtime_facts checks the SERVER_CODEX profile contract; ensure then
+        // verifies the loaded instructions/model route through config/read.
+        "instructions" | "runtimeProfileKey" | "modelRouteResourceId" => true,
+        // Both consumers load this Invocation's immutable Version: Capacity
+        // serializes parallelism; Task observes native time and interrupts.
+        "parallelism" | "turnLimits" => true,
+        // HUMAN writes use their governed owner path; Codex memories and MCP
+        // are disabled/read back by ensure. Other Agent write modes need their
+        // own actual admission/approval consumer and cannot borrow this proof.
+        "memoryPolicy" => {
+            content.memory_policy.core_write == contracts::AgentMemoryCoreWrite::HumanOnly
+                && content.memory_policy.cold_write == contracts::AgentMemoryColdWrite::Disabled
+        }
+        _ => false,
+    }
+}
+
 // Candidate only: it becomes evidence after ensure's native config/read and the
 // locked CAS below. Unimplemented execution/write policies remain unavailable.
 fn initialization_fields(
@@ -1342,32 +1364,25 @@ fn initialization_fields(
     installation: Uuid,
     version: Uuid,
     generation: i64,
+    content: &AgentVersionContent,
 ) -> Result<(serde_json::Value, String), Refusal> {
     let mut fields = row.effective_fields.clone();
     let entries = fields.as_array_mut().ok_or_else(invalid)?;
-    if entries.iter().all(|field| {
-        field
-            .get("effectiveValueHash")
-            .is_some_and(serde_json::Value::is_null)
-    }) {
-        for field in entries {
-            let key = field
-                .get("fieldKey")
-                .and_then(serde_json::Value::as_str)
+    for field in entries {
+        let key = field
+            .get("fieldKey")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(invalid)?;
+        if supports_effective_field(content, key) {
+            let hash = field
+                .get("requestedValueHash")
+                .cloned()
                 .ok_or_else(invalid)?;
-            if matches!(
-                key,
-                "instructions" | "runtimeProfileKey" | "modelRouteResourceId"
-            ) {
-                let hash = field
-                    .get("requestedValueHash")
-                    .cloned()
-                    .ok_or_else(invalid)?;
-                field["effectiveValueHash"] = hash;
-                field["reasonCode"] = serde_json::Value::Null;
-            } else {
-                field["reasonCode"] = serde_json::json!("NOT_SUPPORTED_BY_RUNTIME");
-            }
+            field["effectiveValueHash"] = hash;
+            field["reasonCode"] = serde_json::Value::Null;
+        } else {
+            field["effectiveValueHash"] = serde_json::Value::Null;
+            field["reasonCode"] = serde_json::json!("NOT_SUPPORTED_BY_RUNTIME");
         }
     }
     let hash = projection_hash(row, installation, version, generation, &fields)?;
@@ -1465,7 +1480,13 @@ async fn initialize(
         crate::model_route::resolve(state, installation, version, generation).await?
     };
     let (effective_fields, effective_hash) = if provisioning {
-        initialization_fields(&facts.snapshot, installation, version, generation)?
+        initialization_fields(
+            &facts.snapshot,
+            installation,
+            version,
+            generation,
+            &facts.content,
+        )?
     } else {
         (
             facts.snapshot.effective_fields.clone(),
@@ -1798,4 +1819,144 @@ async fn initialization_authorization(
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
     Ok(checked.zed_token)
+}
+
+#[cfg(test)]
+mod effective_field_tests {
+    use super::*;
+
+    #[test]
+    fn partial_fields_converge_without_claiming_unimplemented_policy() {
+        // Pure projection values only: no catalog entry, business object,
+        // runtime default, database, native process or admission is created.
+        let mut content = AgentVersionContent {
+            capability_requirements: Vec::new(),
+            declared_tool_resource_ids: Vec::new(),
+            instructions: EFFECTIVE_FIELDS[0].into(),
+            memory_policy: contracts::ContentMemoryPolicy {
+                core_write: contracts::AgentMemoryCoreWrite::HumanOnly,
+                cold_write: contracts::AgentMemoryColdWrite::Disabled,
+            },
+            model_route_resource_id: Uuid::nil().to_string(),
+            parallelism: 1,
+            persona_identity: contracts::ContentPersonaIdentity {
+                display_name: EFFECTIVE_FIELDS[0].into(),
+                avatar_url: None,
+                description: None,
+            },
+            reply_policy: EFFECTIVE_FIELDS[6].into(),
+            runtime_profile_key: EFFECTIVE_FIELDS[1].into(),
+            skill_version_asset_ids: Vec::new(),
+            trigger_defaults: Vec::new(),
+            turn_limits: contracts::ContentTurnLimits {
+                idle_timeout_seconds: 1,
+                max_turn_duration_seconds: 1,
+            },
+        };
+        assert!(supports_effective_field(&content, "parallelism"));
+        assert!(supports_effective_field(&content, "turnLimits"));
+        assert!(!supports_effective_field(&content, "replyPolicy"));
+        for core_write in [
+            contracts::AgentMemoryCoreWrite::HumanOnly,
+            contracts::AgentMemoryCoreWrite::AgentWithApproval,
+        ] {
+            for cold_write in [
+                contracts::AgentMemoryColdWrite::Disabled,
+                contracts::AgentMemoryColdWrite::InvocationScoped,
+            ] {
+                content.memory_policy = contracts::ContentMemoryPolicy {
+                    core_write: core_write.clone(),
+                    cold_write: cold_write.clone(),
+                };
+                assert_eq!(
+                    supports_effective_field(&content, "memoryPolicy"),
+                    core_write == contracts::AgentMemoryCoreWrite::HumanOnly
+                        && cold_write == contracts::AgentMemoryColdWrite::Disabled,
+                );
+            }
+        }
+        content.memory_policy = contracts::ContentMemoryPolicy {
+            core_write: contracts::AgentMemoryCoreWrite::HumanOnly,
+            cold_write: contracts::AgentMemoryColdWrite::Disabled,
+        };
+        let (requested, version_config_hash) = crate::agent_version::content(&content).unwrap();
+        let mut fields = EFFECTIVE_FIELDS
+            .iter()
+            .map(|key| {
+                let hash = hex::encode(Sha256::digest(
+                    serde_json::to_vec(&requested[*key]).unwrap(),
+                ));
+                serde_json::json!({"fieldKey":key,"requestedValueHash":hash,
+                    "effectiveValueHash":null,"source":"AGENT_VERSION",
+                    "reasonCode":"PROJECTION_FAILED"})
+            })
+            .collect::<Vec<_>>();
+        let field = fields.first_mut().unwrap();
+        field["effectiveValueHash"] = field["requestedValueHash"].clone();
+        field["reasonCode"] = serde_json::Value::Null;
+        let mut row = InstallationRow {
+            tenant_id: Uuid::nil(),
+            workspace_id: Uuid::nil(),
+            owner_principal_id: Uuid::nil(),
+            agent_principal_id: Uuid::nil(),
+            resource_version: 1,
+            projection_action_execution_id: None,
+            config_hash: String::new(),
+            version_config_hash,
+            runtime_profile_key: content.runtime_profile_key.clone(),
+            model_route_resource_id: Uuid::nil(),
+            gateway_resource_ids: vec![Uuid::nil()],
+            skill_root_ref: None,
+            effective_fields: serde_json::Value::Array(fields),
+            content: requested,
+            agent_pubkey: String::new(),
+            agent_locator: String::new(),
+            agent_secret_version: 0,
+            agent_audience: String::new(),
+            agent_binding_version: 0,
+            counterparty_pubkey: String::new(),
+            counterparty_locator: String::new(),
+            counterparty_secret_version: 0,
+            counterparty_audience: String::new(),
+            counterparty_binding_version: 0,
+            channel_id: Uuid::nil(),
+            normalized_host: String::new(),
+            memory_version: 0,
+        };
+        let before = row.effective_fields.clone();
+        let (fields, hash) =
+            initialization_fields(&row, Uuid::nil(), Uuid::nil(), 1, &content).unwrap();
+        for (old, new) in before
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(fields.as_array().unwrap())
+        {
+            assert_eq!(new["requestedValueHash"], old["requestedValueHash"]);
+            assert_eq!(new["source"], old["source"]);
+            if new["fieldKey"] == "replyPolicy" {
+                assert!(new["effectiveValueHash"].is_null());
+                assert_eq!(new["reasonCode"], "NOT_SUPPORTED_BY_RUNTIME");
+            } else {
+                assert_eq!(new["effectiveValueHash"], new["requestedValueHash"]);
+                assert!(new["reasonCode"].is_null());
+            }
+        }
+        row.effective_fields = fields;
+        row.config_hash = hash;
+        assert!(verify_projection(&row, Uuid::nil(), Uuid::nil(), 1, &content, true).is_ok());
+        assert!(verify_projection(&row, Uuid::nil(), Uuid::nil(), 1, &content, false).is_err());
+        let reply = row
+            .effective_fields
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|field| field["fieldKey"] == "replyPolicy")
+            .unwrap();
+        reply["effectiveValueHash"] = reply["requestedValueHash"].clone();
+        reply["reasonCode"] = serde_json::Value::Null;
+        row.config_hash =
+            projection_hash(&row, Uuid::nil(), Uuid::nil(), 1, &row.effective_fields).unwrap();
+        assert!(verify_projection(&row, Uuid::nil(), Uuid::nil(), 1, &content, true).is_err());
+    }
 }

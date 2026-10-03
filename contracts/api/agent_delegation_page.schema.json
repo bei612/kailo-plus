@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_delegation_page.schema.json",
+  "title": "AgentDelegationPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["installationResourceId", "resourceVersion", "workspaceId", "canGrant", "canRevoke", "grants"],
+  "properties": {
+    "installationResourceId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer", "minimum": 1},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "canGrant": {"type": "boolean"},
+    "canRevoke": {"type": "boolean"},
+    "grants": {"type": "array", "items": {"$ref": "agent_delegation_view.schema.json"}},
+    "nextOffset": {"type": "integer", "minimum": 1}
+  }
+}

@@ -405,10 +405,27 @@ pub(crate) async fn frozen_owners(
         where tenant_id=$1 and state<>'DELETED' order by resource_id,id for update",
     )
     .bind(tenant)
-    .fetch_all(conn)
+    .fetch_all(&mut *conn)
     .await?;
-    if resources.iter().chain(&assets).any(|r| r.3.is_some()) {
+    if assets.iter().any(|r| r.3.is_some()) {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    for (id, _, _, pending) in &resources {
+        if let Some(action) = pending {
+            let known: bool = sqlx::query_scalar("select exists(select 1 from catalog.resource r
+                join catalog.model_route_projection p on p.resource_id=r.id
+                join admission.action_execution a on a.id=p.action_execution_id
+                where r.id=$1 and r.tenant_id=$2 and r.type_key='llm_route' and r.state='PROVISIONING'
+                and p.action_execution_id=$3 and r.projection_action_execution_id=$3
+                and a.tenant_id=r.tenant_id and a.target_id=r.id and a.action_key='llm_route.create'
+                and a.initiator_principal_id=r.owner_principal_id and a.actor_principal_id=a.initiator_principal_id
+                and a.workspace_id is not distinct from r.home_workspace_id and a.gate_state='ALLOWED'
+                and a.dispatch_state in ('NOT_DISPATCHED','UNKNOWN'))")
+                .bind(id).bind(tenant).bind(action).fetch_one(&mut *conn).await?;
+            if !known {
+                return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+            }
+        }
     }
     Ok(serde_json::Value::Array(
         [("RESOURCE", resources), ("ASSET", assets)]
@@ -437,7 +454,8 @@ async fn lifecycle_resource(
                 and exists(select 1 from catalog.agent_definition d where d.resource_id=r.id))
             or (r.type_key='agent.installation' and exists(select 1 from catalog.agent_installation i
                 where i.resource_id=r.id and i.workspace_id=r.home_workspace_id))
-            or (r.type_key='llm_route' and exists(select 1 from catalog.model_route m where m.resource_id=r.id))
+            or (r.type_key='llm_route' and (exists(select 1 from catalog.model_route m where m.resource_id=r.id)
+                or exists(select 1 from catalog.model_route_projection p where p.resource_id=r.id)))
             or (r.type_key='automation' and exists(select 1 from catalog.automation_definition d
                 where d.resource_id=r.id and d.workspace_id=r.home_workspace_id))) for update of r")
         .bind(tenant).bind(id).fetch_optional(conn).await
@@ -594,10 +612,16 @@ pub(crate) async fn validate_frozen_owners(
             }
             _ => return Ok(false),
         };
-        if r.projection_action_execution_id.is_some()
-            || !active_owner(conn, tenant, r.owner_principal_id).await?
-        {
+        if !active_owner(conn, tenant, r.owner_principal_id).await? {
             return Ok(false);
+        }
+        if r.projection_action_execution_id.is_some() {
+            if owner.target_type != "RESOURCE"
+                || !crate::model_route::pending_owner(gov, conn, &r).await?
+            {
+                return Ok(false);
+            }
+            continue;
         }
         let projection = match r.state.as_str() {
             "ACTIVE" => gov

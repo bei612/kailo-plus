@@ -515,6 +515,7 @@ impl Governance {
             delegation_grant: None,
             automation_version_content: None,
             executor_installation_resource_id: None,
+            llm_route_create: None,
         };
         let admit = match open_execution(
             &mut tx,

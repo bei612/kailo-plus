@@ -1,5 +1,264 @@
 # AgentDefinition 与 Resource owner 实现核验
 
+## 2026-10-03 10:05 UTC 完整检查通过与 UNKNOWN 真实修复
+
+固定树 `0c07ea4e6c8031ce0dac47403c676c597fda58cc` 的原
+`tools/check.sh --full` 实际退出 0。原件
+`codex-agent-management-close-20261003.8e3wdG/full-corrected.log`
+SHA-256 为 `7168e61efcf5f96237bdb3c62ef0809f3e05859add72141eebae42577ca69605`。
+132 schema、四侧兼容、Core/Go/TS/Dart、replay、18 条追溯、20 份发布证明、
+六份来源和 28 服务静态边界通过。数据库与真实配置仍 SKIP，三项外部演练
+ignored、gitleaks 未安装，Win11 unsigned/设备与 Mobile 签名缺口未关闭。
+本结果不证明 Installation ACTIVE、真实模型调用、计量或三端业务验收。
+
+实现后交叉复核定位到同一 TS 管理页三处真实错误：首次请求已 UNKNOWN，
+后续同键重查返回 403/409 却释放原 intent 和锁。现在 Installation、
+Delegation 和 Version 共用原状态语义，重查失败不改变原未知结果，
+不生成替代幂等键；首次明确拒绝仍按原行为解锁。
+依据为 AGENTS 规则10、06 §4 与 DD-25/50/66/67；影响仅为三个现有管理消费者，
+不变更契约、事务、权限、Workflow、SecretRef 或 Mobile 只读边界。
+并发沿原 inFlight，原 AE/operation 不符仍保持未知，只有同一请求可核验结果
+才解除未知；权限撤回后的拒绝不能用来推断已派发动作的终态。
+
+先修生产逻辑，再在既有 pages 文件追加12项检查。三消费者类型检查和原平台
+完整目标 148/148 实际退出 0；私有 SDK 中删除三处生产 UNKNOWN catch guard，
+六项 UNKNOWN/TransportError→403→409 用例实际失败，Vitest 退出 1。
+精确还原源后，三类型与完整148项再次退出 0。源
+`agents.tsx` SHA 为
+`837ce00e541ff886cad8cc0900075a12bee5371e1390ffd01893f3d87be1cd29`，
+后置检查最终 SHA 为
+`f1e91fcd4c80b6d3c9cdb05e571e921249c8b1d5b99b27a40b9d4edc4f0bf55f`。
+原件位于 `codex-shared-management-unknown-fix-20261003.Ew1h5v`：
+`sdk-mutation-unknown-guards.log` SHA 为
+`51692f39310a38c65bc4fee3b2c7d0c6a19f63ad77266d09dd673909bd6c74d2`，
+`sdk-restored-final.log` SHA 为
+`e534e8550feea30701f8a59f6d58754ff58afb59611f93ae149c8c484604f277`。
+首次导出遗漏不存在的 .npmrc，以及随后测试断言误解编辑表单的导航锁和
+错写 Cancel 文案的失败均保留，不改记生产反例或通过；还原后验证已终结。
+上述新 TS 修复不在前述完整检查树中，对应原 Web/Win11 helper 正在集中构建；
+本批源码与后置核验作阶段提交；Win11 新包尚未完成，最终 full 与部署另据实际结果记录。
+
+## 2026-10-03 09:25 UTC 实现后支持边界与真实 Gateway 产物
+
+Installation 选定格式化源码 SHA-256 为
+`c4b6810ae183890c0481dab5aff55de4cbf9dfcdb0b3ca01536a532813003d10`。
+原不可变检查 SDK 中单个既有 binary 目标实际 0→101→0：
+`partial_fields_converge_without_claiming_unimplemented_policy` 正常与还原均
+1 passed、56 filtered；仅删除生产支持 guard 后伪 reply 断言实际失败。
+原件位于 `codex-installation-effective-evidence-20261003.s7ruVj`，
+`sdk-baseline-bin.log` SHA-256 为
+`9f01eb71ba19783caa01640f1597cc8ddc4c30b4685ebf87e8f6069fcb2c0f37`，
+`sdk-mutation.log` 为
+`13b588606da3431168b83199803a369be09db1a8f80bf89b97de663694453043`，
+`sdk-restored.log` 为
+`466e4262c51cc28bdd949945c12b2f82a70dcaa94eba272632adcab415720505`。
+首个误用 --lib 的 101 不是 guard 反例，原日志保留。SDK 已清理，源逐字还原；
+这不是其余56项、真实安装、Capacity并发或 Agent 首 turn 验收。
+
+Gateway 原产物输入失配仅为 htpasswd fork README 的 CRLF/LF 字节：Git 实际
+LF 与选定导出相同，四个 Rust 源未变。沿原 helper 以真实 LF 输入重新完成，
+source 为 `sha256:c606f8245b8af8b5172b8feb9f5f24a781750dc41c4aac05e69bc41265967fe5`，
+artifact 为 `sha256:14bf9f878fbca870361171331ac4401f7c3fa5cd8168c665ae9061a4b2a674e7`。
+helper 实际退出 0，registry GET 200，header 与 manifest 字节摘要一致。
+原件 `codex-agent-management-web-win-20261003.yUA7u9/gateway-lf-helper.log`
+SHA-256 为 `f700d89df9fd70020438214d1672dda58350917f2f0b1d0baae1719afdc7da93`。
+只同步真实 metadata、Compose 与两条实际引用；不改 attributes、不伪造摘要，
+Web/Win11 不重建。下文 f300/14dc 是原历史产物记录，仍保留其真实边界。
+当前尚未再次完整检查、Git 提交或部署；ReplyPolicy 与真实 LLM/用量链未验收。
+
+## 2026-10-03 09:01 UTC 选定树完整检查失败与修正
+
+固定树 `47bb3fe503620fc097cd174989b70e8e434afffd` 原 full 实际退出 1。
+原件 `codex-agent-management-close-20261003.8e3wdG/full.log` SHA-256 为
+`d47854f8dbbf757cb7946b28a81ef662d19a5f955f67fd059e38aa671c499cab`。
+失败包括 invitation 的 Params 消费遗漏、S5 记录混入 S1/S3 决策、旧 provenance
+检查遗漏实际 release 的 Runtime buildArgs，以及 Gateway 构建输入换行失配。
+四侧、132 schema 兼容、Go/TS/Dart、replay、文档与部署静态边界通过；
+数据库与真实部署配置 SKIP 不改记通过，Core 编译失败不算业务检查通过。
+
+选定 invitation 已补原生成参数的 None 消费；追溯保留 S5 决策，跨阶段依赖
+通过原验证记录关联，不改变设计覆盖矩阵、能力状态或入口。发布证明的原检查
+现按每个产物对应 commit 的真实 release 脚本、Runtime manifest 与 OCI 依赖
+核对 buildArgs；locator 仍是发布配置，不写死地址，也不改历史产物证明。
+在受限 SDK 中同时破坏 Runtime 构建参数和依赖为另一真实镜像摘要，原检查块
+退出 1；原字节复制还原、cmp 与原检查块退出 0。原件同目录
+`provenance-mutated.log` SHA 为
+`30d69e6effedbd4f9e7b6a0b9701a68798b7742d1095c4ef11768ef65441b994`，
+`provenance-restored.log` 为
+`0038a7380a1abbbd687dd23b6badf200c4aba623c9e09c7f4637ecc96ae9aec7`。
+这是原 Python 产物核对块的结果，不是完整 supply/full 或新 release 通过。
+前两次窄 SDK 调用的工作目录与缓存投递错误保留，未改产品源码迁就它们。
+
+Installation 原窗口依据 DD-25/50/66/67/69 和设计17 §3–5，按实际消费者
+逐字段更新 EffectiveField：Capacity 消费 immutable Version 的 parallelism，
+Task 消费同版本的 native-time turnLimits；Memory 只支持 HUMAN_ONLY+DISABLED。
+初始化与查证共用同一支持谓词，已有部分投影不阻断后续字段收敛；未知字段、
+不支持的 Memory 与 ReplyPolicy 均拒绝，不借 requested hash 冒充运行事实。
+Runtime config/read、fresh authorization、固定 generation/hash 与锁内 CAS
+仍是写入边界；ReplyPolicy 未映射，ACTIVE/首 turn 仍关闭。原窄窗口与四步
+事实位于 `codex-runtime-effective-window-20261003.32sDIx/handoff.md`。
+修正后集中 full、Git 提交与部署尚未完成，不继承上轮失败树的通过项。
+
+## 2026-10-03 08:26 UTC 数据库、产物与恢复错误传播增量
+
+已实现的管理批在独立空库完成 55→54→53→55、原 SQLx prepare --check、44 项枚举
+核对及 Version 4 / Installation 5 / Delegation 4 共 13 条实际 SQL 执行，均退出 0。
+真实 Installation 列变异报 42703、枚举约束变异令原检查退出 1；精确还原均为 0。
+原件在 `/volumes/data/kailo/tmp/codex-agent-management-db-20261003.op9BvB/`，
+`handoff.md` SHA-256 为
+`e4942ddcb41efc7096cb5832432b1fb8ed0b2245bc611d48e404c3beca8d4140`。
+九个 domain 表仍为零对象；不把 SQL 或 ACTIVE 目录行当授权、创建或业务 E2E。
+
+随后 `model_route.rs` 修正原已派发恢复的错误出口：配置/SecretRef、缺冻结 hash、
+fresh/projection/Check 不可查证走原 `creation_unknown`，同一 AE 持久 UNKNOWN 审计；
+未派发拒绝保留原行为，恢复不重写 native。原 dispatch 只记录并吞返回错误，
+原重放读取同 AE；此前这些出口可留下 NOT_DISPATCHED，而不是已证实自动改成失败。
+数据库本身不可用时不能伪称 UNKNOWN 已提交；既有持久 fence 防止重派，沿原对账收敛。
+单源窗口 81+/44-，原件在
+`/volumes/data/kailo/tmp/codex-route-unknown-propagation-20261003.QJ8pYZ/`。
+diff/reverse-apply 检查均为 0；原受限 SDK 单文件 rustfmt 退出 0，实际最终源 SHA 为
+`52f21696d18c4273670b834f7f37aea67d1f90e2e6e681a8be0654f5579f0da8`。
+最新修复尚未集中编译，不继承旧 SDK 或上述空库的验收范围。
+
+新 Web 原 helper 退出 0、registry HTTP200 与 manifest digest 相等；source 为
+`ae932dd5126a68bb120361d2851b3f43983838f47e2bb93930ccb70d13aeffed`，
+artifact 为 `d4f30d4ec9a5c21594fc361557e4bdd181eb1f4588a971b2ac028cc8cf6f2857`。
+原件 `codex-agent-management-web-win-20261003.yUA7u9/web-helper-corrected.log`
+SHA-256 为 `c1332b9dcb8a4d1b8f1c43ca18899ba56b66c41f8c153712661831836bfa087b`。
+首次 registry 参数重复端口导致 helper 1 的日志保留；没有改源码迁就参数错误。
+Win11 原 helper 退出 0；2255 个输入 source 为
+`d4a48dddf3f6d8d55e2edfd0b20736dcc7981f5c5d882d5c888f8eff591e4d17`，
+15,087,391 字节 NSIS 包 artifact 为
+`d8a87009a238d8ba787b0510e777086fb49885c0dbd0bc977bf3090bdffd9db4`。
+同目录 `win-helper.log` SHA 为
+`eb5f955640465cd9ac382395abe622ba435b8ae1259105b822bc8038e33d87e2`；
+原日志明确跳过 signing，未安装或设备验收，不解除生产发布门禁。
+本批新 Gateway/Web 未部署、完整门禁与提交尚未完成。
+真实 CHECK、模型/用量、Agent 工具/主动 Memory、删除及设备链仍未验收；
+不把没有适用封闭产出方/可证上界的 STRICT 登记变成额外前置条件（ADR-14）。
+
+## 2026-10-03 07:53 UTC 管理后端与原生模型投递收口
+
+本节记录已实现代码及后置检查，不新增产品要求。权威为 DD-13/37/70/71/99/100、
+设计03 §9 与设计17 §9；Core 只持有原 Resource/ActionExecution、SecretRef 与
+投影引用，原 OpenBao 保持秘密权威，AgentGateway 保持原生配置权威。
+
+原 Core SDK 集中 clippy 最终退出 0，workspace 检查汇总 131 passed、3 ignored。
+原件在 `/volumes/data/kailo/tmp/codex-agent-management-core-sdk-20261003.5f3C7V/`；
+`clippy-final.log` SHA-256 为
+`9684c78c4cc26841452f13a7d2d4b595e729c08b4b01d91d67cfd37b6b0b606c`，
+`cargo-test.log` 为
+`2f4ed225ef2a6548bc77b9405777fa6ff2130a4c56b54a7ee7e6715b322f75c5`。
+真实数据库配置未投递，依赖外部服务的早返与 ignored 不记 E2E。
+
+随后仅修正 `model_route.rs` 两处真实语义错误：冻结 SecretRef 消费配置的同租户
+namespace/mount 与确切 locator，不要求不存在写者的 Provider 专用路径；首次和
+UNKNOWN 恢复共用原 fresh authorization、audit 与确切版本读取，恢复 hash 必须
+匹配原持久 intent。失效或未知保持原 UNKNOWN，不重派 Gateway 写入。原 AE、
+Tenant、Resource/intent 锁序、Provider/Model revision/hash、审批、投影与退休路径
+不变；不引入秘密写者、注册表或新状态。44 行新增、18 行删除，冻结源 SHA-256 为
+`bb816c1588d9ff897bcf3770ed74588b3b4beea1f123bb93dff1f1d2129da917`。
+这两处修正尚未重新编译或真实运行；不能继承前述 SDK 的通过结果。
+随后原 SDK 的单文件格式检查先退出 1，机械格式化后退出 0；语义不变，
+本批实际源 SHA-256 为
+`f14a6ea8792b386666eb38d1db110d8388968bc9f53784289c7fc38f2af05259`。
+
+原 Gateway helper 首次编译退出 1：新 `Path<Uuid>` 不满足当前固定 UUID 的
+serde 条件。现沿原 router 使用 `Path<String>` 后严格解析，非法、非 canonical
+或 nil UUID 仍拒绝，不更改依赖或权限。修正后原 release helper 退出 0，source
+`14dcdee04d6f6a18cbe506505bd6d3c51cf134aaefe207d0459503c3ca98fd99`，
+artifact `f3008585dadda509afc738dd28de925e37019abe64a100b3d928fe071a3a91a0`。
+原件在 `/volumes/data/kailo/tmp/codex-route-native-delivery-20261003.5lJP72/`。
+原两个 UI 检查直接消费新 handler，baseline 与精确还原均 2/2、退出 0。
+将真实 create 拒绝回应破坏为 200，检查报 `200 != 403`；删除真实空 secret 拒绝，
+检查报 `503 != 400`，两次 Cargo 均退出 101。第一次仅删冗余 guard 未破坏拒绝
+性质而仍通过，原日志保留、不计有效负向。这不是 Provider/配置事务或 HTTP E2E。
+
+选定输入的原四侧生成、原能力注册表生成及比对均退出 0，后者为 18 能力、
+18 个封闭 workflow kind。新 Web/Win11 打包、两对迁移与实际查询、完整门禁、
+Git 提交/push 和部署尚未收口；真实 Agent、严格额度、工具/主动 Memory 与
+三端设备验收仍未通过，结果不明不渲染为成功或失败。
+
+## 2026-10-03 07:14 UTC 共享 Agent 管理与 Mobile 只读历史检查
+
+本节为实现后的检查事实，依据 REQ-08/21、DD-24/25/36/53/74/75 和设计17 §8；
+不另立页面、治理权限、版本状态、主题或验收要求。此前各节的失败、SKIP 与
+历史产物保留原范围，不能据本节窄 PASS 宣称 Stage 5、设备或业务 E2E 通过。
+
+### 共享 Version/Installation/Grant 真实消费
+
+Web/Desktop 继续消费同一 `AgentDefinitionsPage` 与原 ActionClient、生成合同。
+Version 目录和配置分页、真实 Profile/受权 Route 选择、exact DRAFT 修改及
+EXPLICIT 发布已经实现；缺 `canUpdate/canPublish` 或合法来源时不生成写入口。
+Installation/Grant 复用原治理动作，UNKNOWN 保留同一 immutable command 与
+幂等键；后续返回的 AE/operation 不匹配不能解锁或生成替代请求。权限仍由
+Core fresh 查证，UI 不作授权权威，也不通过保存或发布推断可执行。
+
+不可变 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+在实际 UID1000:1000、4 CPU/8 GiB/swap0 与原 Data 缓存运行。原共享包、Web、
+Desktop 三消费者 typecheck 均退出 0；原 pages 的管理目标 20/20、退出 0。
+七次实际生产变异分别破坏分页游标、Route 选择、publish 显式确认、缺权限、
+UNKNOWN 原键、Installation exact 引用和 Grant exact 引用；均退出 1，逐次
+SHA 还原后同一 20 项目标退出 0。正式源未变异，没有新增业务对象或夹具。
+
+原件目录为 `/volumes/data/kailo/tmp/codex-shared-management-sdk-20261003.ZKfIHW/`：
+`ui-baseline.log` 保留初次类型退出 2，`ui-corrected.log` 保存三类型通过及首次
+导出漏既有 vector 的失败；`ui-full-target-final.log` 保留 144 通过、1 个旧
+theme scanner 失败。七组 `mutation-v2-*.log`、`restored-v2-*.log` 及
+`mutation-receipt.json` 保存实际 1/0；还原 `agents.tsx` SHA-256 为
+`fe1410de7684349ae92a1868d203919bfb4862b8b765c85d855139eace373c90`。
+初次逆变异匹配另一同形表达式的 SHA 失配亦保留，核完整 diff 后已精确还原；
+没有把该失配或依赖投递错误改记为产品负向通过。
+
+### 原生主题检查纠偏与完整目标收口
+
+DD-36/53 要求沿用 Buzz 原生主题，不禁止宿主选择的 Shiki token 颜色。
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/shared/ui/markdown/CodeBlock.tsx::SyntaxHighlightedCode` 为实际来源。
+现有 theme describe 通过 AST 核 exported 同名共享函数、`codeToTokens` 的 theme、
+token cache/map 和 exact 属性 `style={token.color ? { color: token.color } : undefined}`，
+并核 Desktop/Web 的 ThemeProvider→`resolveShikiThemeName`→共享 highlighter
+调用链。只从扫描输入移除该已核属性，仍扫描其余完整组件和全部原禁用模式，
+不是按文件/函数豁免，不新增 palette、样式注入或独立主题。生产源只删除原
+`rounded-2xl` 已覆盖的冗余 radius；原 CSS、高亮及 Desktop hook/ref 保持。
+
+原 `pnpm --dir client-kit/ts/platform test`（含 test TypeScript compilation）
+完整七文件 145/145、退出 0。私有同文件新增独立颜色 style 后原扫描断言退出 1；
+还原 SHA 后两项 theme 检查退出 0。将原 token 色改成字面色后 exact 来源断言
+退出 1；再次 SHA 还原后完整 145/145、退出 0。两次实际失败而非 harness 失败，
+证明例外没有放行同文件新 style 或 native 属性内的字面颜色。
+
+原件在 `/volumes/data/kailo/tmp/codex-message-theme-source-20261003.zVCYMC/`：
+`platform-positive.log` 与 `platform-restored.log` 均为 0；
+`theme-mutation-independent-style.log`、`theme-mutation-native-literal.log` 均为 1。
+最终完整日志 SHA-256 为
+`b6b3917017d06910213eb5ebd5d11ef82026cbaa69730d59f27a9c005701ae87`。
+formal/SDK 两源字节一致，diffcheck 0；源码 07:00:13 UTC 冻结，SDK 终态 0、
+OOMfalse 并已清理。此项没有重跑三消费者类型或构建/部署。
+
+### Mobile 只读历史与批次边界
+
+Mobile 原 Definition 详情增加受权 Version 历史，沿真实 BFF 分页与生成 Dart
+类型，保持原 exactPublished 读取；Installation/Grant/Memory 仍只读。
+当前原 pages 73/73；历史字段校验、未知枚举、分页三组生产变异实际非零，
+逐次精确还原后 format、analyze 和完整 73 项均退出 0。原件在
+`/volumes/data/kailo/tmp/codex-version-mobile-current-20261003.FcF3LO/` 的
+`mutation-history-validation.log`、`mutation-history-enum.log`、
+`mutation-history-pagination.log` 与 `restored-history-final.log`；最终日志
+SHA-256 为 `4f23761580cac6d54246547eb9f91abfd8869d3aff591c02c1f0b1d24256fc65`。
+这不是 Mobile 设备/签名或新 ModelRoute 合同业务验收。
+
+本次核对时 main/远端 main 为 `4b44ac6b266345fbc19e3c315df5c3d9bd0af00b`：
+上一 Memory 批 ab27→4b 为 81 文件 +8282/-599，原 full 0、实际
+Core/Worker/Web/Relay 部署与 53 条迁移已有独立记录。本节后续共享管理源码
+未因此记为已提交/部署。Core 管理集中 clippy 两轮 101 保留，修正后 SDK 44114
+正在 clippy→test、尚无终态；Gateway 原 helper 82517 仍在构建，不记成功。
+18 条追溯顶层 status 为 7 shipped/11 in_progress，release.gate 为
+7 shipped/7 ready/1 closed/3 blocked_until_seams_closed，不是 18 项完成。
+真实 Agent/Memory/用量业务验收、STRICT、Agent 工具与 Memory caller、
+Win11/Mobile 设备验收仍未闭合；HUMAN writer 与正常 turn 结算已有实现，
+不误记为尚未开发。Cells/WeKnora/Wren 未接入且属于可选 EXT，平台仍未生产就绪。
+
 ## 2026-10-03 HUMAN Memory 三项读取：实现后的窄证据
 
 本刀实现 `agent.memory.core.read`、`agent.memory.entry.list` 与

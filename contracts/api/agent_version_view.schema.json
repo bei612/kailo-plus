@@ -13,6 +13,8 @@
     "ownerPrincipalId": {"type": "string", "format": "uuid"},
     "content": {"$ref": "../domain/agent_version_content.schema.json"},
     "configHash": {"type": "string"},
-    "state": {"$ref": "../enums/agent_version_state.schema.json"}
+    "state": {"$ref": "../enums/agent_version_state.schema.json"},
+    "canUpdate": {"type": "boolean", "description": "当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。"},
+    "canPublish": {"type": "boolean", "description": "当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage 资格；缺字段不允许发布，不证明已安装或可运行。"}
   }
 }

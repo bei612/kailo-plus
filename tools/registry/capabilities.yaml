@@ -13,9 +13,17 @@ capabilities:
   - /api/v1/agent-installations/{resource_id}/memory/core
   - /api/v1/agent-installations/{resource_id}/memory/entries
   - /api/v1/agent-installations/{resource_id}/memory/entry
+  - /api/v1/agent-installation-candidates
+  - /api/v1/agent-installations/{resource_id}/delegations
+  - /api/v1/agent-installations/{resource_id}/delegation-targets
+  - /api/v1/agent-definitions/{resource_id}/version-configuration
+  - /api/v1/agent-definitions/{resource_id}/versions
   actions:
   - agent.definition.create
   - agent.definition.update
+  - agent.version.create
+  - agent.version.update
+  - agent.version.publish
   - resource.transfer_owner
   - automation.create
   - automation.publish_version
@@ -29,8 +37,13 @@ capabilities:
   - agent.memory.entry.set
   - agent.memory.entry.patch
   - agent.memory.entry.remove
+  - agent.installation.create
+  - agent.delegation.grant
+  - agent.delegation.revoke
+  - llm_route.create
   tools: []
-  workflow_kinds: []
+  workflow_kinds:
+  - AGENT_INSTALLATION
 - id: collab.channel.media
   exposure: end_user
   routes:

@@ -55,6 +55,10 @@
       "$ref": "../domain/agent_version_content.schema.json",
       "description": "仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。"
     },
+    "llmRouteCreate": {
+      "$ref": "../domain/llm_route_create_input.schema.json",
+      "description": "仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。"
+    },
     "automationVersionContent": {
       "$ref": "../domain/automation_version_content.schema.json",
       "description": "仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。"

@@ -1001,3 +1001,39 @@ Win11 新 unsigned 包独立见 Desktop 记录，真实 Memory/Agent/计量 E2E 
 指针修正树 `433be885faead1e95072e10ca447d36b660a1fa7` 的原 full 实际退出 0；
 日志 SHA `b6557aced681ee364ede8f722761a1e7a4c76835267f09d29962b95efa738210`，
 原 full1 保留。数据库/.env SKIP、三项演练 ignored，Web97 与运行服务均未改变。
+
+## 2026-10-03：共享管理 UNKNOWN 保留修正与真实 Web 产物
+
+本增量沿 DD-74/75、原 Governed Action 与 UNKNOWN 不盲目重放边界，
+修正同一共享 `agents.tsx` 的 Installation、Delegation 和 Version 提交消费者：
+一次结果不明后，后续 403/409 或传输失败不证明原请求失败，仍保留原完整命令、
+幂等键、已知 AE/Operation、锁与未知呈现。首次明确拒绝仍可解除；
+Version 编辑表单关闭后才恢复目录交互，不引入新状态、权限或接口。
+
+实现之后追加原 pages 的 12 项证据。固定 10ad SDK、UID1000:1000、
+4CPU/8GiB/memory=swap、实际 swap.max=0、Data 缓存下，原三消费者类型检查
+与平台完整 148/148 最终退出 0。私有副本破坏三处生产 UNKNOWN catch guard，
+六个真实重查用例全部失败、原 vitest 退出 1；按 SHA 精确还原后完整目标再为 0。
+两轮新断言错误的原失败保留，未改变生产语义或旧 Memory/主题检查使其通过。
+原件在 `/volumes/data/kailo/tmp/codex-shared-management-unknown-fix-20261003.Ew1h5v/`，
+`sdk-restored-final.log` SHA-256 为
+`e534e8550feea30701f8a59f6d58754ff58afb59611f93ae149c8c484604f277`。
+
+只对 8e3 私有选定输入执行原 `tools/build-upstream.sh web-client`，
+helper 83193 实际退出 0，包含构建、load、registry push 和原来源写回。
+98 个输入的原算法 source 为
+`sha256:3415b3ce07defdd966051a00d7009cc1811d28a7d8a5bbe35752ea7ca92e0391`；
+artifact 为
+`sha256:66646d2a6bcf46a19852ca182af8a51bf31aa33563fdcecce94e6527ec5e9f3e`。
+registry 独立 HTTP200、响应正文 SHA、digest header 与原 record 逐字一致；
+首次读回漏 OCI manifest Accept 类型的 HTTP404 保留，补齐实际类型后读回成功，
+没有因此重建产物。npm audit 为 0，原 Vite 大 chunk 警告保留。
+
+原件目录为 `/volumes/data/kailo/tmp/codex-agent-management-web-win-20261003.yUA7u9/`；
+`web-unknown-fix-helper.log` SHA-256 为
+`58f61c88f04d542f7c2b3fef764a5c680eb51fe92b6bb8acf7badbdcf86d77cc`。
+实际 builder 为既有 kailo-core-data、8CPU/16GiB/swap0、Data 持久缓存，
+没有宿主 SDK、新 builder 或 NEXT 合同输入。四步结论：权威沿用既定动作，
+影响仅真实共享管理消费者及其两端产物，外发仍经原 BFF，异常保留同请求 UNKNOWN。
+本节是私有候选的交互和产物证据，不是 full、Git、部署、浏览器或 Agent 业务验收；
+未将旧 Web/Win 产物冒充修正后来源。

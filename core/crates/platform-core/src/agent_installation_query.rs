@@ -242,6 +242,10 @@ pub async fn get(
         )
         .await
     {
+        Ok(c) if c.zed_token.is_empty() => {
+            return Refusal::Unavailable("Installation read 缺原生 checked revision".into())
+                .respond(None);
+        }
         Ok(c) if c.allowed => {}
         Ok(_) => return StatusCode::FORBIDDEN.into_response(),
         Err(e) => return Refusal::Unavailable(e.to_string()).respond(None),
@@ -250,4 +254,211 @@ pub async fn get(
         Ok(v) => Json(v).into_response(),
         Err(r) => r,
     }
+}
+
+#[derive(FromRow)]
+struct CandidateRow {
+    resource_id: Uuid,
+    resource_version: i32,
+    display_name: String,
+    owner_principal_id: Uuid,
+    asset_id: Uuid,
+}
+
+/// Exact published sources only. This read never provisions an identity, checks
+/// runtime health, selects a default model, or follows the latest pointer on write.
+pub async fn candidates(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(error) => return error,
+    };
+    if let Err(error) = scope(&state, &ctx, q.workspace_id).await {
+        return error;
+    }
+    let limit = i64::from(state.governance.cfg.relationship_page);
+    let offset = q.offset.unwrap_or(0);
+    if offset < 0 || limit <= 0 || offset.checked_add(limit).is_none() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let checked = match state
+        .governance
+        .spicedb
+        .check(
+            "workspace",
+            &q.workspace_id.to_string(),
+            "create",
+            &ctx.tenant_principal_id.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+    {
+        Ok(checked) if !checked.zed_token.is_empty() => checked,
+        _ => {
+            return Refusal::Unavailable("安装来源权限缺原生 checked revision".into()).respond(None)
+        }
+    };
+    let mut conn = match state.pool.acquire().await {
+        Ok(conn) => conn,
+        Err(error) => return crate::service_api::unavailable(error),
+    };
+    let registered: bool = match sqlx::query_scalar(
+        "select exists(select 1 from catalog.action_definition
+        where action_key='agent.installation.create' and status='ACTIVE'
+          and target_type='RESOURCE' and tenant_rule='SESSION_TENANT' and workspace_rule='WORKSPACE_REQUIRED'
+          and permission_object_type='workspace' and permission='create' and execution_mode='TEMPORAL'
+          and workflow_type='ComponentTaskWorkflow' and workflow_kind='AGENT_INSTALLATION'
+          and confirmation_mode='NONE' and approval_policy_id is null and approval_policy_version is null
+          and capacity_policy='NONE' and quota_policy='NONE' and cardinality(meters)=0)",
+    ).fetch_one(&mut *conn).await {
+        Ok(registered) => registered,
+        Err(error) => return crate::service_api::unavailable(error),
+    };
+    let can_create = checked.allowed
+        && registered
+        && crate::capability_registry::action_exposed("agent.installation.create");
+    if !can_create {
+        return Json(contracts::AgentInstallationCandidatePage {
+            workspace_id: q.workspace_id.to_string(),
+            can_create,
+            candidates: Vec::new(),
+            next_offset: None,
+        })
+        .into_response();
+    }
+    let rows: Vec<CandidateRow> = match sqlx::query_as(
+        "select r.id resource_id,r.version resource_version,d.display_name,r.owner_principal_id,v.asset_id
+        from catalog.agent_definition d join catalog.resource r on r.id=d.resource_id
+        join identity.principal owner on owner.id=r.owner_principal_id and owner.tenant_id=r.tenant_id
+        join identity.tenant_membership tm on tm.tenant_principal_id=owner.id and tm.tenant_id=r.tenant_id
+        join catalog.agent_version v on v.agent_resource_id=r.id
+        join catalog.asset a on a.id=v.asset_id and a.resource_id=r.id and a.tenant_id=r.tenant_id
+        join identity.principal asset_owner on asset_owner.id=a.owner_principal_id and asset_owner.tenant_id=r.tenant_id
+        join identity.tenant_membership asset_tm on asset_tm.tenant_principal_id=asset_owner.id and asset_tm.tenant_id=r.tenant_id
+        where r.tenant_id=$1 and r.type_key='agent.definition' and r.home_workspace_id is null
+          and r.state='ACTIVE' and r.projection_action_execution_id is null and d.status='ACTIVE'
+          and owner.kind='HUMAN' and owner.status='ACTIVE' and tm.state='ACTIVE'
+          and asset_owner.kind='HUMAN' and asset_owner.status='ACTIVE' and asset_tm.state='ACTIVE'
+          and a.type_key='agent.version' and a.state='PUBLISHED' and v.state='PUBLISHED'
+          and a.projection_action_execution_id is null
+        order by r.id,v.ordinal desc offset $2 limit $3",
+    ).bind(ctx.tenant_id).bind(offset).bind(limit).fetch_all(&mut *conn).await {
+        Ok(rows) => rows,
+        Err(error) => return crate::service_api::unavailable(error),
+    };
+    let next =
+        (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);
+    let mut candidates = Vec::new();
+    for row in rows {
+        let checked = match state
+            .governance
+            .spicedb
+            .check(
+                "asset",
+                &row.asset_id.to_string(),
+                "consume",
+                &ctx.tenant_principal_id.to_string(),
+                Consistency::FullyConsistent,
+            )
+            .await
+        {
+            Ok(checked) if !checked.zed_token.is_empty() => checked,
+            _ => return Refusal::Unavailable("安装版本 consume 不可核验".into()).respond(None),
+        };
+        if !checked.allowed {
+            continue;
+        }
+        let version = match crate::agent_version::version(
+            &mut conn,
+            ctx.tenant_id,
+            row.asset_id,
+            false,
+        )
+        .await
+        {
+            Ok(Some(version))
+                if version.agent_resource_id == row.resource_id
+                    && version.state == "PUBLISHED"
+                    && version.asset_state == "PUBLISHED"
+                    && version.projection_action_execution_id.is_none() =>
+            {
+                version
+            }
+            Ok(_) => {
+                return Refusal::Conflict(contracts::ReasonCode::TargetStateConflict).respond(None)
+            }
+            Err(error) => return crate::service_api::unavailable(error),
+        };
+        let content: contracts::ContentClass = match serde_json::from_value(version.content.clone())
+        {
+            Ok(content) => content,
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        };
+        if !crate::agent_version::content(&content)
+            .is_ok_and(|(_, hash)| hash == version.config_hash)
+        {
+            return Refusal::Unavailable("安装版本内容 hash 不一致".into()).respond(None);
+        }
+        // These declared producers are not yet implemented; don't present them
+        // as an installable source and don't replace them with an empty config.
+        if !content.declared_tool_resource_ids.is_empty()
+            || !content.skill_version_asset_ids.is_empty()
+        {
+            continue;
+        }
+        match crate::agent_version::runtime_profile(&content) {
+            Ok(()) => {}
+            Err(Refusal::Blocked(_)) => continue,
+            Err(error) => return error.respond(None),
+        }
+        let route_id = match Uuid::parse_str(&content.model_route_resource_id) {
+            Ok(id) => id,
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        };
+        let route: Option<Uuid> = match sqlx::query_scalar(
+            "select route.id from catalog.resource route
+            join identity.principal owner on owner.id=route.owner_principal_id and owner.tenant_id=route.tenant_id
+            join identity.tenant_membership tm on tm.tenant_principal_id=owner.id and tm.tenant_id=route.tenant_id
+            where route.id=$1 and route.tenant_id=$2 and route.type_key='llm_route' and route.state='ACTIVE'
+              and route.application_binding_id is null and route.projection_action_execution_id is null
+              and (route.home_workspace_id is null or route.home_workspace_id=$3)
+              and route.native_id is not null and length(route.native_id)>0
+              and owner.kind='HUMAN' and owner.status='ACTIVE' and tm.state='ACTIVE'",
+        ).bind(route_id).bind(ctx.tenant_id).bind(q.workspace_id).fetch_optional(&mut *conn).await {
+            Ok(route) => route,
+            Err(error) => return crate::service_api::unavailable(error),
+        };
+        if route.is_none() {
+            continue;
+        }
+        let parent = crate::agent_definition::projection_matches(
+            &state.governance,
+            row.resource_id,
+            ctx.tenant_id,
+            row.owner_principal_id,
+        )
+        .await;
+        let asset = crate::agent_version::projection_matches(&state.governance, &version).await;
+        if !matches!(parent, Ok(true)) || !matches!(asset, Ok(true)) {
+            return Refusal::Unavailable("安装来源投影不可核验".into()).respond(None);
+        }
+        match serde_json::from_value::<contracts::CandidateElement>(json!({
+            "agentResourceId":row.resource_id,"resourceVersion":row.resource_version,
+            "displayName":row.display_name,"agentVersionAssetId":version.asset_id,
+            "assetVersion":version.version,"ordinal":version.ordinal,
+        })) {
+            Ok(candidate) => candidates.push(candidate),
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        }
+    }
+    Json(contracts::AgentInstallationCandidatePage {
+        workspace_id: q.workspace_id.to_string(),
+        can_create,
+        candidates,
+        next_offset: next,
+    })
+    .into_response()
 }

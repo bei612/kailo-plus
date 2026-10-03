@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_installation_candidate_page.schema.json",
+  "title": "AgentInstallationCandidatePage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspaceId", "canCreate", "candidates"],
+  "properties": {
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "canCreate": {"type": "boolean", "description": "原 Installation create exposure、目录与 fresh Workspace create；每个候选还须 consume/投影查证，提交时全部重验。"},
+    "candidates": {"type": "array", "items": {"$ref": "agent_installation_candidate.schema.json"}},
+    "nextOffset": {"type": "integer", "minimum": 1}
+  }
+}

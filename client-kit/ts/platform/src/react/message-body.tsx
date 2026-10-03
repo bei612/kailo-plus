@@ -151,7 +151,6 @@ export function MessageCodeBlock({
       <pre
         ref={ref}
         className="max-h-[400px] overflow-x-auto overflow-y-auto rounded-2xl border border-border/70 bg-muted/60 px-3 py-1.5 pr-12 shadow-xs"
-        style={{ borderRadius: "1rem" }}
       >
         {language && (
           <div className="mb-1 text-xs text-muted-foreground/70">

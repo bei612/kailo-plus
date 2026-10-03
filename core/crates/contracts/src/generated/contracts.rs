@@ -162,7 +162,7 @@ pub struct ActionCommand {
 
     /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub delegation_grant: Option<DelegationGrantClass>,
+    pub delegation_grant: Option<ParametersClass>,
 
     /// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -186,6 +186,10 @@ pub struct ActionCommand {
     /// tenant.member.invite.revoke 的目标邀请
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invitation_id: Option<String>,
+
+    /// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_route_create: Option<LlmRouteCreateClass>,
 
     /// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
     /// 输入；其他命令禁止携带。
@@ -374,20 +378,21 @@ pub enum TriggerKind {
 /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DelegationGrantClass {
+pub struct ParametersClass {
     pub expires_at: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_uses: Option<i64>,
 
-    pub scopes: Vec<DelegationGrantScope>,
+    pub scopes: Vec<ScopeElement>,
 
     pub valid_from: String,
 }
 
+/// 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DelegationGrantScope {
+pub struct ScopeElement {
     pub action_key: String,
 
     pub action_version: i64,
@@ -419,6 +424,37 @@ pub enum ResultExposureMode {
     Export,
 
     Read,
+}
+
+/// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+///
+/// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmRouteCreateClass {
+    pub model: Model,
+
+    pub provider: Model,
+
+    pub provider_secret_ref: LlmRouteCreateProviderSecretRef,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Model {
+    pub id: String,
+
+    pub revision: i64,
+
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LlmRouteCreateProviderSecretRef {
+    pub audience: String,
+
+    pub locator: String,
+
+    pub version: i64,
 }
 
 /// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
@@ -765,6 +801,138 @@ pub struct AgentDefinitionView {
     pub status: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDelegationPage {
+    pub can_grant: bool,
+
+    pub can_revoke: bool,
+
+    pub grants: Vec<GrantElement>,
+
+    pub installation_resource_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub resource_version: i64,
+
+    pub workspace_id: String,
+}
+
+/// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantElement {
+    pub delegation_id: String,
+
+    pub delegation_version: i64,
+
+    pub grantor_principal_id: String,
+
+    pub parameters: ParametersClass,
+
+    pub state: GrantState,
+
+    pub uses: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GrantState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "EXPIRED")]
+    Expired,
+
+    #[serde(rename = "REVOKED")]
+    Revoked,
+
+    #[serde(rename = "REVOKING")]
+    Revoking,
+}
+
+/// 原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDelegationTargetPage {
+    pub installation_resource_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub resource_version: i64,
+
+    pub scopes: Vec<ScopeElement>,
+
+    pub workspace_id: String,
+}
+
+/// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDelegationView {
+    pub delegation_id: String,
+
+    pub delegation_version: i64,
+
+    pub grantor_principal_id: String,
+
+    pub parameters: ParametersClass,
+
+    pub state: GrantState,
+
+    pub uses: i64,
+}
+
+/// 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationCandidate {
+    pub agent_resource_id: String,
+
+    pub agent_version_asset_id: String,
+
+    pub asset_version: i64,
+
+    pub display_name: String,
+
+    pub ordinal: i64,
+
+    pub resource_version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationCandidatePage {
+    /// 原 Installation create exposure、目录与 fresh Workspace create；每个候选还须 consume/投影查证，提交时全部重验。
+    pub can_create: bool,
+
+    pub candidates: Vec<CandidateElement>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub workspace_id: String,
+}
+
+/// 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateElement {
+    pub agent_resource_id: String,
+
+    pub agent_version_asset_id: String,
+
+    pub asset_version: i64,
+
+    pub display_name: String,
+
+    pub ordinal: i64,
+
+    pub resource_version: i64,
+}
+
 /// 按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1053,14 +1221,119 @@ pub enum AgentMemoryReadViewState {
     Unreadable,
 }
 
+/// DD-24/25/26：Definition 范围的受权版本配置目录，消费平台发布 RuntimeProfile 合同与已治理 Route。缺真实来源时两目录为空且
+/// canCreate=false；目录或 canCreate 不授予发布、安装和运行权限。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentVersionView {
+pub struct AgentVersionConfigurationPage {
+    pub agent_resource_id: String,
+
+    pub can_create: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub profiles: Vec<RuntimeProfileDirectorySchema>,
+
+    pub resource_version: i64,
+
+    pub routes: Vec<RouteElement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeProfileDirectorySchema {
+    pub capability_contract: PurpleCapabilityContract,
+
+    pub key: String,
+
+    pub kind: RuntimeProfileKind,
+
+    pub status: String,
+
+    pub web_availability: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurpleCapabilityContract {
+    pub capability_requirements: Vec<String>,
+
+    pub max_idle_timeout_seconds: i64,
+
+    pub max_parallelism: i64,
+
+    pub max_turn_duration_seconds: i64,
+
+    pub reply_policies: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum RuntimeProfileKind {
+    #[serde(rename = "LOCAL_ACP")]
+    LocalAcp,
+
+    #[serde(rename = "REMOTE_PROVIDER")]
+    RemoteProvider,
+
+    #[serde(rename = "SERVER_CODEX")]
+    ServerCodex,
+}
+
+/// 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+/// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteElement {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_workspace_id: Option<String>,
+
+    pub native_config_hash: String,
+
+    pub native_config_resource_id: String,
+
+    pub native_revision: i64,
+
+    pub owner_principal_id: String,
+
+    pub resource_id: String,
+
+    pub resource_version: i64,
+}
+
+/// DD-24/25、17 §3/8：同 Definition 下逐项 fresh Asset read 后的版本目录；DRAFT 可发现，PUBLISHED/RETIRED
+/// 不可编辑。nextOffset 属原始扫描窗口，空的受权页不证明全集为空。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVersionPage {
+    pub agent_resource_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub resource_version: i64,
+
+    pub versions: Vec<VersionElement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VersionElement {
     pub agent_resource_id: String,
 
     pub asset_id: String,
 
     pub asset_version: i64,
+
+    /// 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
+    /// 资格；缺字段不允许发布，不证明已安装或可运行。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_publish: Option<bool>,
+
+    /// 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_update: Option<bool>,
 
     pub config_hash: String,
 
@@ -1083,6 +1356,56 @@ pub enum AgentVersionState {
 
     #[serde(rename = "RETIRED")]
     Retired,
+}
+
+/// 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+/// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVersionRouteOption {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_workspace_id: Option<String>,
+
+    pub native_config_hash: String,
+
+    pub native_config_resource_id: String,
+
+    pub native_revision: i64,
+
+    pub owner_principal_id: String,
+
+    pub resource_id: String,
+
+    pub resource_version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVersionView {
+    pub agent_resource_id: String,
+
+    pub asset_id: String,
+
+    pub asset_version: i64,
+
+    /// 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
+    /// 资格；缺字段不允许发布，不证明已安装或可运行。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_publish: Option<bool>,
+
+    /// 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_update: Option<bool>,
+
+    pub config_hash: String,
+
+    pub content: ContentClass,
+
+    pub ordinal: i64,
+
+    pub owner_principal_id: String,
+
+    pub state: AgentVersionState,
 }
 
 /// POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为
@@ -1459,7 +1782,7 @@ pub struct AutomationDetailView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_version_offset: Option<i64>,
 
-    pub versions: Vec<VersionElement>,
+    pub versions: Vec<VersionClass>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1521,7 +1844,7 @@ pub struct DelegationElement {
 /// Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct VersionElement {
+pub struct VersionClass {
     pub asset_id: String,
 
     pub asset_version: i64,
@@ -2411,14 +2734,15 @@ pub struct DelegationGrantParameters {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_uses: Option<i64>,
 
-    pub scopes: Vec<DelegationGrantParametersScope>,
+    pub scopes: Vec<ScopeElement>,
 
     pub valid_from: String,
 }
 
+/// 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DelegationGrantParametersScope {
+pub struct DelegationScopeParameters {
     pub action_key: String,
 
     pub action_version: i64,
@@ -2471,6 +2795,26 @@ pub struct ResolvedIdentity {
     pub tenant_principal_id: String,
 }
 
+/// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmRouteCreateInput {
+    pub model: Model,
+
+    pub provider: Model,
+
+    pub provider_secret_ref: LlmRouteCreateInputProviderSecretRef,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LlmRouteCreateInputProviderSecretRef {
+    pub audience: String,
+
+    pub locator: String,
+
+    pub version: i64,
+}
+
 /// 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeProfileDirectory {
@@ -2480,7 +2824,7 @@ pub struct RuntimeProfileDirectory {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
-    pub capability_contract: CapabilityContract,
+    pub capability_contract: FluffyCapabilityContract,
 
     pub key: String,
 
@@ -2493,7 +2837,7 @@ pub struct Profile {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CapabilityContract {
+pub struct FluffyCapabilityContract {
     pub capability_requirements: Vec<String>,
 
     pub max_idle_timeout_seconds: i64,
@@ -2503,19 +2847,6 @@ pub struct CapabilityContract {
     pub max_turn_duration_seconds: i64,
 
     pub reply_policies: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum RuntimeProfileKind {
-    #[serde(rename = "LOCAL_ACP")]
-    LocalAcp,
-
-    #[serde(rename = "REMOTE_PROVIDER")]
-    RemoteProvider,
-
-    #[serde(rename = "SERVER_CODEX")]
-    ServerCodex,
 }
 
 /// Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId

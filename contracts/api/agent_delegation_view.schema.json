@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_delegation_view.schema.json",
+  "title": "AgentDelegationView",
+  "description": "同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["delegationId", "delegationVersion", "grantorPrincipalId", "state", "uses", "parameters"],
+  "properties": {
+    "delegationId": {"type": "string", "format": "uuid"},
+    "delegationVersion": {"type": "integer", "minimum": 1},
+    "grantorPrincipalId": {"type": "string", "format": "uuid"},
+    "state": {"type": "string", "enum": ["ACTIVE", "REVOKING", "REVOKED", "EXPIRED"]},
+    "uses": {"type": "integer", "minimum": 0},
+    "parameters": {"$ref": "../domain/delegation_grant_parameters.schema.json"}
+  }
+}

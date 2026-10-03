@@ -4,7 +4,70 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 当前功能批（2026-10-03，集中收口）
+## 最新实现状态（2026-10-03 10:05 UTC，Agent 管理批）
+
+修正后固定树 `0c07ea4e6c8031ce0dac47403c676c597fda58cc` 的原完整检查
+已实际退出 0：132 schema、四侧、Core/Worker/replay、18 条追溯与真实产物来源通过。
+数据库与实际配置预检仍 SKIP；Win11 unsigned、设备与 Mobile 签名缺口未关闭。
+随后交叉复核发现三处 UNKNOWN 重查收到 403/409 时错误解锁，已直接修正共用 TS：
+保留原 command、幂等键与未知状态，只有可核验原请求结果才能解除未知。
+三消费者类型及原平台 148/148 检查退出 0；删除真实 guard 后六项检查失败，
+精确 SHA 还原后同一完整目标再次退出 0。此前错误断言与失败日志保留。
+该修复不在上述 full 的输入中；对应 Web/Win11 沿原 helper 集中构建，
+源码与后置核验作为本批阶段提交；Win11 新安装包尚在原 helper 构建中，
+最终 full 与部署未完成，不把旧 full 结果外推给新源码或标记生产就绪。
+Gateway LF 产物仍为 `sha256:14bf9f878fbca870361171331ac4401f7c3fa5cd8168c665ae9061a4b2a674e7`。
+Installation 支持 guard 的后置检查已实际 0→101→0；ReplyPolicy 映射与四侧生成
+在独立下一批推进，当前批不能标记 ACTIVE 或首 turn 通过。
+详见 [Agent 核验记录](core/verify/agent-definition.md)。
+
+Version 配置与历史、Installation/Grant 管理、模型 Route 产出和原生凭据投递
+已进入本批选定实现；Web/Desktop 继续使用同一 TypeScript 主体，Mobile 只读。
+本节记录源码阶段提交，不是部署或生产就绪声明；最近实际部署仍为下节的 Memory 批。
+
+- 集中 Core clippy 与原 workspace 检查退出 0，汇总 131 passed、3 ignored；
+  没有投递真实数据库配置的早返不算业务验收。随后 ModelRoute 秘密路径与
+  UNKNOWN 恢复修正尚未集中编译，不能借此前结果记为通过。
+- 共享管理检查 20/20、完整共享检查 145/145；Mobile 页面 73/73。
+  已记录的实际生产变异与精确还原均完成，设备与真实 Agent E2E 仍未验收。
+  选定输入的原四侧生成与能力注册表生成/比对退出 0。
+- Gateway 原 helper 首次编译退出 1，修正严格 UUID 路径解析后重跑退出 0，
+  产出 `sha256:f3008585dadda509afc738dd28de925e37019abe64a100b3d928fe071a3a91a0`；
+  两项原 handler 检查通过，错误拒绝响应与空密钥的两次有效破坏均报错，还原通过。
+  新镜像未部署。新 Web 原 helper 已退出 0，registry 独立读回一致，artifact 为
+  `sha256:d4f30d4ec9a5c21594fc361557e4bdd181eb1f4588a971b2ac028cc8cf6f2857`；
+  Win11 原打包退出 0，15,087,391 字节 x64 NSIS 包摘要为
+  `sha256:d8a87009a238d8ba787b0510e777086fb49885c0dbd0bc977bf3090bdffd9db4`；
+  未签名、未安装或设备验收。本批完整门禁、提交与部署未完成。
+- 全新隔离库 55 条迁移、两对回退/再前进、原 SQLx 和 44 项枚举核对退出 0；
+  Version/Installation/Delegation 的 13 条真实 SQL 执行退出 0，两项破坏被拒绝并还原。
+  空库不算业务验收，在线库仍沿最近已部署批的 53 条迁移。
+
+真实 CHECK 准入、Agent 工具/主动 Memory 调用、完整模型/用量业务链、Tenant 删除与
+Win11/Mobile 设备及签名验收仍未闭合。Cells、WeKnora、Wren 尚未接入，属于
+可选能力扩展，不作为本批核心开发等待条件。实际日志与证据边界见
+[Agent 记录](core/verify/agent-definition.md)。
+
+STRICT 只对已有封闭产出方与可证上界的适用动作登记；不另造无调用方的额度账本，
+也不把它泛化为首批 Codex/automation CHECK 链的前置条件（ADR-14）。
+
+## 最近已交付状态（2026-10-03，Memory 功能批）
+
+本批已正式提交并普通 push 为 `4b44ac6b266345fbc19e3c315df5c3d9bd0af00b`，
+本地与远端 main 实际一致；相对 `ab27c8ed5cd4cd4c0fda8e7748a18649cfbffde4`
+为 81 文件、8282 行新增、599 行删除。固定实现树原 full 退出 0，追加证据的
+原文档快路径亦退出 0。Core/Worker 原 release、registry push 与独立 digest 读回均为 0；
+本批 Core `577c2740…`、Worker `d10b5184…`、Web `97bc2379…`、Relay `d42f83fa…`
+已限定替换，原在线库仅 forward，由 50 条迁移至 53 条全部成功。
+Core healthz、Web/Relay 原健康检查通过，Worker 启动原 Task Queue。
+另外原 Kafka 曾退出 137/OOM，随后同 ID 原样启动一次恢复 healthy；
+原 JVM heap=1GiB、容器 limit=1GiB 未调整，重复 OOM 风险未消除。
+原 full 内数据库/.env SKIP 与三项外部演练 ignored 保留；native 用量日志为空，
+没有真实 Memory/计量 E2E、设备或签名验收，不称生产就绪。
+本批实际构建、四份证明、启动失败与恢复边界见 [release 记录](core/verify/release-artifacts.md)。
+Version 管理、Installation/Grant 生产者与模型路由后续工作树不属于该已交付批。
+
+## 本批实现后的检查与构建历史
 
 **仍未生产就绪。** 当前选定实现包含 Memory 原生读取与 HUMAN owner 四写动作、
 正常 turn 的全集用量结算、确定无模型派发的取消收敛，以及共源客户端消费。

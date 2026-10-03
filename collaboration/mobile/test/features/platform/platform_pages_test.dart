@@ -115,6 +115,196 @@ void main() {
       },
     };
     const detail = PlatformAgentDefinitionDetailPage(resourceId: 'agent-1');
+    const emptyVersions = {
+      'agentResourceId': 'agent-1',
+      'resourceVersion': 1,
+      'versions': <Object>[],
+      'nextOffset': null,
+    };
+
+    testWidgets(
+      'version history keeps filtered-page cursors and remains read-only',
+      (tester) async {
+        final offsets = <String?>[];
+        final requests = <http.Request>[];
+        await _pump(tester, detail, (request) async {
+          requests.add(request);
+          return _bff({
+            'GET /api/v1/agent-definitions/agent-1': (_) => jsonResponse(
+              {...definition}..remove('currentPublishedVersionAssetId'),
+            ),
+            'GET /api/v1/agent-definitions/agent-1/versions': (request) {
+              final offset = request.url.queryParameters['offset'];
+              offsets.add(offset);
+              return jsonResponse(
+                offset == '0'
+                    ? {...emptyVersions, 'nextOffset': 40}
+                    : {
+                        ...emptyVersions,
+                        'versions': [
+                          {
+                            ...version,
+                            'assetId': 'draft-2',
+                            'ordinal': 2,
+                            'state': 'DRAFT',
+                            'canUpdate': true,
+                            'canPublish': true,
+                          },
+                          {
+                            ...version,
+                            'assetId': 'retired-3',
+                            'ordinal': 3,
+                            'state': 'RETIRED',
+                          },
+                        ],
+                      },
+              );
+            },
+          })(request);
+        });
+        expect(
+          find.text('No authorized versions on this page.'),
+          findsOneWidget,
+        );
+        await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('platform-agent-versions-next')),
+          180,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('platform-agent-versions-next')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('platform-agent-version-draft-2')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('platform-agent-version-retired-3')),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Draft'), findsOneWidget);
+        expect(find.textContaining('Retired'), findsOneWidget);
+        expect(find.byType(TextField), findsNothing);
+        expect(
+          find.byKey(const ValueKey('platform-agent-versions-next')),
+          findsNothing,
+        );
+        await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('platform-agent-versions-previous')),
+          180,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('platform-agent-versions-previous')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text('No authorized versions on this page.'),
+          findsOneWidget,
+        );
+        expect(offsets, ['0', '40', '0']);
+        expect(
+          requests
+              .where((request) => request.url.path.startsWith('/api/v1/'))
+              .every((request) => request.method == 'GET'),
+          isTrue,
+        );
+      },
+    );
+
+    for (final (name, page) in [
+      (
+        'foreign history scope',
+        {...emptyVersions, 'agentResourceId': 'other-agent'},
+      ),
+      ('changed Definition version', {...emptyVersions, 'resourceVersion': 2}),
+      ('repeated history cursor', {...emptyVersions, 'nextOffset': 0}),
+      (
+        'foreign history row',
+        {
+          ...emptyVersions,
+          'versions': [
+            {...version, 'agentResourceId': 'other-agent'},
+          ],
+        },
+      ),
+      (
+        'duplicate history asset',
+        {
+          ...emptyVersions,
+          'versions': [
+            version,
+            {...version, 'ordinal': 2},
+          ],
+        },
+      ),
+      (
+        'duplicate history ordinal',
+        {
+          ...emptyVersions,
+          'versions': [
+            version,
+            {...version, 'assetId': 'other-version'},
+          ],
+        },
+      ),
+      (
+        'unknown history state',
+        {
+          ...emptyVersions,
+          'versions': [
+            {...version, 'state': 'FUTURE'},
+          ],
+        },
+      ),
+      (
+        'invalid history hash',
+        {
+          ...emptyVersions,
+          'versions': [
+            {...version, 'configHash': ''},
+          ],
+        },
+      ),
+      (
+        'published history claims draft write',
+        {
+          ...emptyVersions,
+          'versions': [
+            {...version, 'canUpdate': true},
+          ],
+        },
+      ),
+    ]) {
+      testWidgets('$name fails closed instead of an empty history', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          detail,
+          _bff({
+            'GET /api/v1/agent-definitions/agent-1': (_) => jsonResponse(
+              {...definition}..remove('currentPublishedVersionAssetId'),
+            ),
+            'GET /api/v1/agent-definitions/agent-1/versions': (_) =>
+                jsonResponse(page),
+          }),
+        );
+        expect(
+          find.byKey(const ValueKey('platform-view-error')),
+          findsOneWidget,
+        );
+        expect(find.text('No authorized versions on this page.'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('platform-agent-version-version-1')),
+          findsNothing,
+        );
+        expect(find.byType(TextField), findsNothing);
+      });
+    }
 
     testWidgets(
       'empty authorized directory page preserves next and previous cursors',
@@ -173,6 +363,8 @@ void main() {
             }),
             'GET /api/v1/agent-definitions/agent-1': (_) =>
                 jsonResponse(definition),
+            'GET /api/v1/agent-definitions/agent-1/versions': (_) =>
+                jsonResponse(emptyVersions),
             'GET /api/v1/agent-versions/version-1': (_) =>
                 jsonResponse(version),
           })(request);
@@ -221,6 +413,8 @@ void main() {
             'GET /api/v1/agent-definitions/agent-1': (_) => jsonResponse(
               {...definition}..remove('currentPublishedVersionAssetId'),
             ),
+            'GET /api/v1/agent-definitions/agent-1/versions': (_) =>
+                jsonResponse(emptyVersions),
           })(request);
         });
         expect(find.text('No published version.'), findsOneWidget);
@@ -313,6 +507,8 @@ void main() {
             _bff({
               'GET /api/v1/agent-definitions/agent-1': (_) =>
                   jsonResponse(definition),
+              'GET /api/v1/agent-definitions/agent-1/versions': (_) =>
+                  jsonResponse(emptyVersions),
               'GET /api/v1/agent-versions/version-1': (_) => reply,
             }),
           );

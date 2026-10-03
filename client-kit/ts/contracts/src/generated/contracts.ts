@@ -150,6 +150,10 @@ export interface ActionCommand {
      */
     invitationId?: string;
     /**
+     * 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+     */
+    llmRouteCreate?: LlmRouteCreateClass;
+    /**
      * 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
      * 输入；其他命令禁止携带。
      */
@@ -288,11 +292,14 @@ export enum TriggerKind {
 export interface DelegationGrantClass {
     expiresAt: Date;
     maxUses?:  number;
-    scopes:    DelegationGrantScope[];
+    scopes:    ScopeElement[];
     validFrom: Date;
 }
 
-export interface DelegationGrantScope {
+/**
+ * 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
+ */
+export interface ScopeElement {
     actionKey:          string;
     actionVersion:      number;
     createWorkspaceId?: string;
@@ -308,6 +315,29 @@ export enum ResultExposureMode {
     ConsumeOnly = "CONSUME_ONLY",
     Export = "EXPORT",
     Read = "READ",
+}
+
+/**
+ * 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+ *
+ * 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+ */
+export interface LlmRouteCreateClass {
+    model:             Model;
+    provider:          Model;
+    providerSecretRef: LlmRouteCreateProviderSecretRef;
+}
+
+export interface Model {
+    id:       string;
+    revision: number;
+    sha256:   string;
+}
+
+export interface LlmRouteCreateProviderSecretRef {
+    audience: string;
+    locator:  string;
+    version:  number;
 }
 
 /**
@@ -511,6 +541,92 @@ export interface AgentDefinitionView {
     status:                          string;
 }
 
+export interface AgentDelegationPage {
+    canGrant:               boolean;
+    canRevoke:              boolean;
+    grants:                 GrantElement[];
+    installationResourceId: string;
+    nextOffset?:            number;
+    resourceVersion:        number;
+    workspaceId:            string;
+}
+
+/**
+ * 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+ */
+export interface GrantElement {
+    delegationId:       string;
+    delegationVersion:  number;
+    grantorPrincipalId: string;
+    parameters:         DelegationGrantClass;
+    state:              GrantState;
+    uses:               number;
+}
+
+export enum GrantState {
+    Active = "ACTIVE",
+    Expired = "EXPIRED",
+    Revoked = "REVOKED",
+    Revoking = "REVOKING",
+}
+
+/**
+ * 原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
+ */
+export interface AgentDelegationTargetPage {
+    installationResourceId: string;
+    nextOffset?:            number;
+    resourceVersion:        number;
+    scopes:                 ScopeElement[];
+    workspaceId:            string;
+}
+
+/**
+ * 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+ */
+export interface AgentDelegationView {
+    delegationId:       string;
+    delegationVersion:  number;
+    grantorPrincipalId: string;
+    parameters:         DelegationGrantClass;
+    state:              GrantState;
+    uses:               number;
+}
+
+/**
+ * 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
+ */
+export interface AgentInstallationCandidate {
+    agentResourceId:     string;
+    agentVersionAssetId: string;
+    assetVersion:        number;
+    displayName:         string;
+    ordinal:             number;
+    resourceVersion:     number;
+}
+
+export interface AgentInstallationCandidatePage {
+    /**
+     * 原 Installation create exposure、目录与 fresh Workspace create；每个候选还须 consume/投影查证，提交时全部重验。
+     */
+    canCreate:   boolean;
+    candidates:  CandidateElement[];
+    nextOffset?: number;
+    workspaceId: string;
+}
+
+/**
+ * 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
+ */
+export interface CandidateElement {
+    agentResourceId:     string;
+    agentVersionAssetId: string;
+    assetVersion:        number;
+    displayName:         string;
+    ordinal:             number;
+    resourceVersion:     number;
+}
+
 /**
  * 按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
  */
@@ -694,10 +810,79 @@ export enum AgentMemoryReadViewState {
     Unreadable = "UNREADABLE",
 }
 
-export interface AgentVersionView {
-    agentResourceId:  string;
-    assetId:          string;
-    assetVersion:     number;
+/**
+ * DD-24/25/26：Definition 范围的受权版本配置目录，消费平台发布 RuntimeProfile 合同与已治理 Route。缺真实来源时两目录为空且
+ * canCreate=false；目录或 canCreate 不授予发布、安装和运行权限。
+ */
+export interface AgentVersionConfigurationPage {
+    agentResourceId: string;
+    canCreate:       boolean;
+    nextOffset:      number | null;
+    profiles:        RuntimeProfileDirectorySchema[];
+    resourceVersion: number;
+    routes:          RouteElement[];
+}
+
+export interface RuntimeProfileDirectorySchema {
+    capabilityContract: PurpleCapabilityContract;
+    key:                string;
+    kind:               RuntimeProfileKind;
+    status:             string;
+    webAvailability:    string;
+}
+
+export interface PurpleCapabilityContract {
+    capabilityRequirements: string[];
+    maxIdleTimeoutSeconds:  number;
+    maxParallelism:         number;
+    maxTurnDurationSeconds: number;
+    replyPolicies:          string[];
+}
+
+export enum RuntimeProfileKind {
+    LocalACP = "LOCAL_ACP",
+    RemoteProvider = "REMOTE_PROVIDER",
+    ServerCodex = "SERVER_CODEX",
+}
+
+/**
+ * 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+ * 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+ */
+export interface RouteElement {
+    homeWorkspaceId:        null | string;
+    nativeConfigHash:       string;
+    nativeConfigResourceId: string;
+    nativeRevision:         number;
+    ownerPrincipalId:       string;
+    resourceId:             string;
+    resourceVersion:        number;
+}
+
+/**
+ * DD-24/25、17 §3/8：同 Definition 下逐项 fresh Asset read 后的版本目录；DRAFT 可发现，PUBLISHED/RETIRED
+ * 不可编辑。nextOffset 属原始扫描窗口，空的受权页不证明全集为空。
+ */
+export interface AgentVersionPage {
+    agentResourceId: string;
+    nextOffset:      number | null;
+    resourceVersion: number;
+    versions:        VersionElement[];
+}
+
+export interface VersionElement {
+    agentResourceId: string;
+    assetId:         string;
+    assetVersion:    number;
+    /**
+     * 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
+     * 资格；缺字段不允许发布，不证明已安装或可运行。
+     */
+    canPublish?: boolean;
+    /**
+     * 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
+     */
+    canUpdate?:       boolean;
     configHash:       string;
     content:          AgentVersionContentClass;
     ordinal:          number;
@@ -709,6 +894,40 @@ export enum AgentVersionState {
     Draft = "DRAFT",
     Published = "PUBLISHED",
     Retired = "RETIRED",
+}
+
+/**
+ * 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+ * 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+ */
+export interface AgentVersionRouteOption {
+    homeWorkspaceId:        null | string;
+    nativeConfigHash:       string;
+    nativeConfigResourceId: string;
+    nativeRevision:         number;
+    ownerPrincipalId:       string;
+    resourceId:             string;
+    resourceVersion:        number;
+}
+
+export interface AgentVersionView {
+    agentResourceId: string;
+    assetId:         string;
+    assetVersion:    number;
+    /**
+     * 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
+     * 资格；缺字段不允许发布，不证明已安装或可运行。
+     */
+    canPublish?: boolean;
+    /**
+     * 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
+     */
+    canUpdate?:       boolean;
+    configHash:       string;
+    content:          AgentVersionContentClass;
+    ordinal:          number;
+    ownerPrincipalId: string;
+    state:            AgentVersionState;
 }
 
 /**
@@ -945,7 +1164,7 @@ export interface AutomationDetailView {
     delegations:           DelegationElement[];
     nextDelegationOffset?: number;
     nextVersionOffset?:    number;
-    versions:              VersionElement[];
+    versions:              VersionClass[];
 }
 
 export interface AutomationElement {
@@ -987,7 +1206,7 @@ export interface DelegationElement {
 /**
  * Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
  */
-export interface VersionElement {
+export interface VersionClass {
     assetId:              string;
     assetVersion:         number;
     automationResourceId: string;
@@ -1664,11 +1883,14 @@ export interface AutomationVersionContentTriggerClass {
 export interface DelegationGrantParameters {
     expiresAt: Date;
     maxUses?:  number;
-    scopes:    DelegationGrantParametersScope[];
+    scopes:    ScopeElement[];
     validFrom: Date;
 }
 
-export interface DelegationGrantParametersScope {
+/**
+ * 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
+ */
+export interface DelegationScopeParameters {
     actionKey:          string;
     actionVersion:      number;
     createWorkspaceId?: string;
@@ -1707,6 +1929,21 @@ export interface ResolvedIdentity {
 }
 
 /**
+ * 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+ */
+export interface LlmRouteCreateInput {
+    model:             Model;
+    provider:          Model;
+    providerSecretRef: LlmRouteCreateInputProviderSecretRef;
+}
+
+export interface LlmRouteCreateInputProviderSecretRef {
+    audience: string;
+    locator:  string;
+    version:  number;
+}
+
+/**
  * 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
  */
 export interface RuntimeProfileDirectory {
@@ -1714,25 +1951,19 @@ export interface RuntimeProfileDirectory {
 }
 
 export interface Profile {
-    capabilityContract: CapabilityContract;
+    capabilityContract: FluffyCapabilityContract;
     key:                string;
     kind:               RuntimeProfileKind;
     status:             string;
     webAvailability:    string;
 }
 
-export interface CapabilityContract {
+export interface FluffyCapabilityContract {
     capabilityRequirements: string[];
     maxIdleTimeoutSeconds:  number;
     maxParallelism:         number;
     maxTurnDurationSeconds: number;
     replyPolicies:          string[];
-}
-
-export enum RuntimeProfileKind {
-    LocalACP = "LOCAL_ACP",
-    RemoteProvider = "REMOTE_PROVIDER",
-    ServerCodex = "SERVER_CODEX",
 }
 
 /**

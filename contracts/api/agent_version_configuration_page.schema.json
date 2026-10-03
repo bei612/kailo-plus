@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_version_configuration_page.schema.json",
+  "title": "AgentVersionConfigurationPage",
+  "description": "DD-24/25/26：Definition 范围的受权版本配置目录，消费平台发布 RuntimeProfile 合同与已治理 Route。缺真实来源时两目录为空且 canCreate=false；目录或 canCreate 不授予发布、安装和运行权限。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agentResourceId", "resourceVersion", "profiles", "routes", "nextOffset", "canCreate"],
+  "properties": {
+    "agentResourceId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer", "minimum": 1},
+    "profiles": {
+      "type": "array",
+      "items": {"$ref": "../domain/runtime_profile_directory.schema.json#/properties/profiles/items"}
+    },
+    "routes": {
+      "type": "array",
+      "items": {"$ref": "agent_version_route_option.schema.json"}
+    },
+    "nextOffset": {"type": ["integer", "null"], "minimum": 0},
+    "canCreate": {"type": "boolean"}
+  }
+}

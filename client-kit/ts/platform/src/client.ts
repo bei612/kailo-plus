@@ -9,10 +9,15 @@ import type {
   AgentDefinitionPage,
   AgentDefinitionView,
   AgentInstallationPage,
+  AgentInstallationCandidatePage,
+  AgentDelegationPage,
+  AgentDelegationTargetPage,
   AgentInstallationView,
   AgentMemoryReadView,
   AgentMemoryEntryPage,
   AgentVersionView,
+  AgentVersionPage,
+  AgentVersionConfigurationPage,
   AutomationPage,
   AutomationDetailView,
   ApprovalControlOutcome,
@@ -73,6 +78,10 @@ export function createBffClient(transport: BffTransport) {
       get<AgentDefinitionView>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}`),
     agentVersion: (assetId: string) =>
       get<AgentVersionView>(`/api/v1/agent-versions/${encodeURIComponent(assetId)}`),
+    agentVersions: (resourceId: string, offset?: number) =>
+      get<AgentVersionPage>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}/versions${offset !== undefined ? `?offset=${offset}` : ""}`),
+    agentVersionConfiguration: (resourceId: string, offset?: number) =>
+      get<AgentVersionConfigurationPage>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}/version-configuration${offset !== undefined ? `?offset=${offset}` : ""}`),
 
     /** Installation 是独立 Workspace Resource；读取不创建安装或启动 runtime。 */
     agentInstallations: (workspaceId: string, offset?: number) => {
@@ -82,6 +91,19 @@ export function createBffClient(transport: BffTransport) {
     },
     agentInstallation: (resourceId: string) =>
       get<AgentInstallationView>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}`),
+
+    /** 实际受权的确切 PUBLISHED 安装来源；不从定义的当前指针选默认版本。 */
+    agentInstallationCandidates: (workspaceId: string, offset?: number) => {
+      const query = new URLSearchParams({ workspaceId });
+      if (offset !== undefined) query.set("offset", String(offset));
+      return get<AgentInstallationCandidatePage>(`/api/v1/agent-installation-candidates?${query}`);
+    },
+
+    /** 原 Grant 与受权 exact scopes；权限和实际调用方均由 Core 重查。 */
+    agentDelegations: (resourceId: string, offset?: number) =>
+      get<AgentDelegationPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/delegations${offset !== undefined ? `?offset=${offset}` : ""}`),
+    agentDelegationTargets: (resourceId: string, offset?: number) =>
+      get<AgentDelegationTargetPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/delegation-targets${offset !== undefined ? `?offset=${offset}` : ""}`),
 
     /** DD-66/68: BFF alone owns CONTROL custody and native pair selection. */
     agentMemoryCore: (resourceId: string) =>

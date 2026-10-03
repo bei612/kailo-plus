@@ -194,6 +194,7 @@ pub(crate) async fn frozen_agent_inventory(
     .fetch_one(&mut *conn)
     .await?;
     let routes = crate::model_route::freeze(conn, tenant).await?;
+    let creates = crate::model_route::freeze_creations(conn, tenant).await?;
     inventory
         .as_object_mut()
         .ok_or_else(|| crate::governance::Refusal::Unavailable("Agent inventory 不是对象".into()))?
@@ -201,6 +202,14 @@ pub(crate) async fn frozen_agent_inventory(
             "model_routes".into(),
             serde_json::to_value(routes)
                 .map_err(|e| crate::governance::Refusal::Unavailable(e.to_string()))?,
+        );
+    inventory
+        .as_object_mut()
+        .ok_or_else(|| crate::governance::Refusal::Unavailable("Agent inventory 不是对象".into()))?
+        .insert(
+            "model_route_creates".into(),
+            serde_json::to_value(creates)
+                .map_err(|error| crate::governance::Refusal::Unavailable(error.to_string()))?,
         );
     Ok(inventory)
 }
@@ -214,6 +223,21 @@ fn agent_rows<'a>(inventory: &'a Value, category: &str) -> Result<&'a [Value], s
 }
 
 fn same_agent_inventory(mut current: Value, mut frozen: Value) -> Result<bool, sqlx::Error> {
+    // An old snapshot may omit the newly introduced category only when there are no new intents.
+    if frozen.get("model_route_creates").is_none() {
+        if current
+            .get("model_route_creates")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+        {
+            current
+                .as_object_mut()
+                .ok_or_else(|| sqlx::Error::Protocol("Agent inventory 不是对象".into()))?
+                .remove("model_route_creates");
+        } else {
+            return Ok(false);
+        }
+    }
     let current_routes = current
         .get_mut("model_routes")
         .and_then(Value::as_array_mut)
@@ -639,13 +663,33 @@ async fn retire_agents(state: &ServiceState, deletion: &Delete) -> Result<bool, 
             }
         }
     }
+    let creates: Vec<crate::model_route::FrozenCreation> = serde_json::from_value(
+        inventory
+            .get("model_route_creates")
+            .cloned()
+            .unwrap_or_else(|| json!([])),
+    )
+    .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    let create_absence = match crate::model_route::retire_creations(
+        state,
+        deletion.tenant_id,
+        &creates,
+    )
+    .await
+    {
+        Ok(evidence) => evidence,
+        Err(error) => {
+            tracing::warn!(tenant_id=%deletion.tenant_id,error=?error,"Gateway 创建意图销毁未查证");
+            return Ok(false);
+        }
+    };
     persist(
         state,
         deletion,
         Some((
             "GATEWAY",
             json!({"deleted":true,
-        "inventory_digest":deletion.inventory_digest,"native_absence":absent}),
+        "inventory_digest":deletion.inventory_digest,"native_absence":absent,"creation_absence":create_absence}),
         )),
     )
     .await?;

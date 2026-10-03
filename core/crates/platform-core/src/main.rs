@@ -12,6 +12,7 @@ mod agent_runtime;
 mod agent_session;
 mod agent_task;
 mod agent_version;
+mod agent_version_query;
 mod audit;
 mod audit_views;
 mod automation;
@@ -21,6 +22,7 @@ mod capability_registry;
 mod capacity;
 mod client_keys;
 mod component_task;
+mod delegation_query;
 mod external_human;
 mod gateway_usage;
 mod governance;
@@ -172,6 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             temporal: std::sync::Arc::clone(&temporal),
             spicedb: spicedb::SpiceDb::from_env(reqwest::Client::new())?,
             secrets: std::sync::Arc::clone(&secrets),
+            audit: std::sync::Arc::clone(&audit),
             openmeter: std::sync::Arc::clone(&openmeter),
             cfg: governance::GovernanceConfig::from_env()?,
         });

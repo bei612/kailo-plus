@@ -41,6 +41,7 @@ pub mod llm;
 pub mod management;
 pub mod mcp;
 pub mod parse;
+mod provider_credentials;
 pub mod proxy;
 pub mod resource_manager;
 pub mod serdes;

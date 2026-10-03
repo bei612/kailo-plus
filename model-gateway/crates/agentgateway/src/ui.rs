@@ -89,6 +89,16 @@ pub fn router(
 		.route("/api/config/effective", get(get_effective_config))
 		.route("/api/config/resources", get(list_config_resources))
 		.route(
+			"/api/config/provider-credentials/{tenant}/{route}/{version}",
+			get(crate::provider_credentials::read)
+				.put(crate::provider_credentials::put)
+				.delete(crate::provider_credentials::delete),
+		)
+		.route(
+			"/api/config/routes/{id}",
+			put(create_governed_route).delete(retire_governed_route),
+		)
+		.route(
 			"/api/config/resources/{kind}",
 			get(list_config_resources_by_kind).put(upsert_config_resources_by_kind),
 		)
@@ -453,6 +463,104 @@ async fn upsert_config_resources_by_kind(
 		.parse::<ConfigResourceKind>()
 		.map_err(resource_api_error)?;
 	upsert_config_resources(&app, kind, request).await.map(Json)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct GovernedRouteResource {
+	kind: ConfigResourceKind,
+	value: Value,
+}
+
+/// One native ConfigResource transaction, not three partially published model writes.
+/// Only the existing Core-authenticated admin plane can reach this handler.
+async fn create_governed_route(
+	State(app): State<App>,
+	Path(id): Path<String>,
+	Json(request): Json<Vec<GovernedRouteResource>>,
+) -> Result<Json<UiConfigResourcesResponse>, ErrorResponse> {
+	let id = uuid::Uuid::parse_str(&id).map_err(|_| {
+		ErrorResponse::Status(StatusCode::BAD_REQUEST, "invalid governed route ID".into())
+	})?;
+	app.ensure_writable()?;
+	let store = app.config_resource_store()?;
+	let kinds = [
+		ConfigResourceKind::LlmProvider,
+		ConfigResourceKind::LlmModel,
+		ConfigResourceKind::LlmVirtualModel,
+	];
+	if id.is_nil() || request.len() != kinds.len() {
+		return Err(ErrorResponse::Status(
+			StatusCode::BAD_REQUEST,
+			"incomplete governed route projection".into(),
+		));
+	}
+	let mut prepared = Vec::with_capacity(kinds.len());
+	for kind in kinds {
+		let mut matching = request.iter().filter(|resource| resource.kind == kind);
+		let resource = matching.next().ok_or_else(|| {
+			ErrorResponse::Status(
+				StatusCode::BAD_REQUEST,
+				"incomplete governed route projection".into(),
+			)
+		})?;
+		if matching.next().is_some() {
+			return Err(ErrorResponse::Status(
+				StatusCode::BAD_REQUEST,
+				"duplicate governed route projection".into(),
+			));
+		}
+		let resource = crate::config_store::prepare_resource(kind, resource.value.clone())
+			.map_err(resource_api_error)?;
+		if resource.id != id.to_string() {
+			return Err(ErrorResponse::Status(
+				StatusCode::BAD_REQUEST,
+				"governed route ID mismatch".into(),
+			));
+		}
+		prepared.push(resource);
+	}
+	let resources = store.list(None).await.map_err(resource_api_error)?;
+	if resources
+		.iter()
+		.any(|resource| resource.id == id.to_string() && kinds.contains(&resource.kind))
+	{
+		return Err(ErrorResponse::Status(
+			StatusCode::CONFLICT,
+			"governed route projection already exists; read back the original intent".into(),
+		));
+	}
+	let candidate =
+		crate::config_store::apply_prepared_upsert(resources, &prepared).map_err(resource_api_error)?;
+	validate_materialized_config(&app, &candidate).await?;
+	store
+		.create_prepared(prepared)
+		.await
+		.map(Into::into)
+		.map(Json)
+		.map_err(resource_api_error)
+}
+
+async fn retire_governed_route(
+	State(app): State<App>,
+	Path(id): Path<String>,
+) -> Result<Json<bool>, ErrorResponse> {
+	let id = uuid::Uuid::parse_str(&id).map_err(|_| {
+		ErrorResponse::Status(StatusCode::BAD_REQUEST, "invalid governed route ID".into())
+	})?;
+	app.ensure_writable()?;
+	if id.is_nil() {
+		return Err(ErrorResponse::Status(
+			StatusCode::BAD_REQUEST,
+			"invalid governed route ID".into(),
+		));
+	}
+	app
+		.config_resource_store()?
+		.retire_route(&id.to_string())
+		.await
+		.map_err(resource_api_error)?;
+	Ok(Json(true))
 }
 
 async fn upsert_config_resources(
@@ -1100,11 +1208,53 @@ mod tests {
 			.expect_err("should be forbidden")
 			.into_response();
 		assert_eq!(response.status(), StatusCode::FORBIDDEN);
+		let route = uuid::Uuid::new_v4().to_string();
+		let create = create_governed_route(State(app.clone()), Path(route.clone()), Json(Vec::new()))
+			.await
+			.into_response();
+		assert_eq!(create.status(), StatusCode::FORBIDDEN);
+		let retire = retire_governed_route(State(app), Path(route))
+			.await
+			.into_response();
+		assert_eq!(retire.status(), StatusCode::FORBIDDEN);
 	}
 
 	#[tokio::test]
 	async fn ensure_writable_allows_when_not_read_only() {
 		let app = test_app(false);
 		assert!(app.ensure_writable().is_ok());
+		let create = create_governed_route(State(app.clone()), Path(String::new()), Json(Vec::new()))
+			.await
+			.into_response();
+		assert_eq!(create.status(), StatusCode::BAD_REQUEST);
+		let retire = retire_governed_route(State(app), Path(String::new()))
+			.await
+			.into_response();
+		assert_eq!(retire.status(), StatusCode::BAD_REQUEST);
+		let invalid_reference = Path((String::new(), String::new(), 1));
+		let read = crate::provider_credentials::read(invalid_reference)
+			.await
+			.into_response();
+		assert_eq!(read.status(), StatusCode::BAD_REQUEST);
+		let invalid_reference = Path((String::new(), String::new(), 1));
+		let delete = crate::provider_credentials::delete(invalid_reference)
+			.await
+			.into_response();
+		assert_eq!(delete.status(), StatusCode::BAD_REQUEST);
+		let empty_credential = serde_json::from_value::<crate::provider_credentials::ProjectionInput>(
+			serde_json::json!({"value": ""}),
+		)
+		.unwrap();
+		let empty = crate::provider_credentials::put(
+			Path((
+				uuid::Uuid::new_v4().to_string(),
+				uuid::Uuid::new_v4().to_string(),
+				1,
+			)),
+			Json(empty_credential),
+		)
+		.await
+		.into_response();
+		assert_eq!(empty.status(), StatusCode::BAD_REQUEST);
 	}
 }

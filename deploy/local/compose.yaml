@@ -28,6 +28,7 @@ volumes:
   temporal-db-data:
   spicedb-db-data:
   agentgateway-db-data:
+  agentgateway-provider-secrets:
   keycloak-data:
   openmeter-postgres-data:
   openmeter-kafka-data:
@@ -506,6 +507,7 @@ services:
       OPENMETER_CORE_TOKEN_FILE: ${OPENMETER_CORE_TOKEN_FILE:?必须显式提供，禁止硬编码}
       AGENTGATEWAY_ADMIN_URL: ${AGENTGATEWAY_ADMIN_URL:?必须显式提供已认证的管理入口}
       AGENTGATEWAY_ADMIN_TIMEOUT_SECONDS: ${AGENTGATEWAY_ADMIN_TIMEOUT_SECONDS:?必须显式提供管理请求时限}
+      AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY: ${AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY:?必须显式提供 Gateway 独占凭据目录}
       AGENT_CAPACITY_POOL_KEY: ${AGENT_CAPACITY_POOL_KEY:?必须显式提供平台槽位池}
       AGENT_CAPACITY_POOL_UNITS: ${AGENT_CAPACITY_POOL_UNITS:?必须显式提供平台槽位容量}
       AGENT_CAPACITY_UNITS_PER_INVOCATION: ${AGENT_CAPACITY_UNITS_PER_INVOCATION:?必须显式提供单次占用}
@@ -660,7 +662,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:97bc23790559a9019feaba5bb9e514d19730410b20beb9cc8dca2924823fb69e
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:66646d2a6bcf46a19852ca182af8a51bf31aa33563fdcecce94e6527ec5e9f3e
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
@@ -673,7 +675,7 @@ services:
   agentgateway:
     # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:471fa4e93689fc0a896b641decd94ca14fa7e76765899c6a8c1dea2c94e881ad
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:14bf9f878fbca870361171331ac4401f7c3fa5cd8168c665ae9061a4b2a674e7
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个
@@ -710,11 +712,14 @@ services:
       # 该 client 就是 Core 自己的 service client，不另设身份。
       AGENTGATEWAY_ADMIN_CLIENT_ID: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
       AGENTGATEWAY_ADMIN_AUDIENCE: ${AGENTGATEWAY_ADMIN_AUDIENCE:?必须显式提供，禁止硬编码}
+      AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY: ${AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY:?必须显式提供 Gateway 独占凭据目录}
     env_file:
       # 浏览器客户端密钥由网关持有，浏览器不持有。文件在 gitignore 的 secrets/ 下。
       - ./secrets/browser-client.env
       # 日志库连接串（含口令），由 bootstrap.sh 从 agentgateway_db_password 派生
       - ./secrets/agentgateway-db.env
+    volumes:
+      - agentgateway-provider-secrets:${AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY:?必须显式提供 Gateway 独占凭据目录}
     configs:
       - source: agentgateway_config
         target: /etc/agentgateway/config.yaml

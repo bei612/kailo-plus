@@ -141,6 +141,7 @@ pub struct Governance {
     pub temporal: std::sync::Arc<TemporalClient>,
     pub spicedb: SpiceDb,
     pub secrets: std::sync::Arc<SecretStore>,
+    pub audit: std::sync::Arc<secret_store::AuditObserver>,
     pub openmeter: std::sync::Arc<crate::openmeter::OpenMeter>,
     pub cfg: GovernanceConfig,
 }
@@ -414,6 +415,7 @@ pub enum Semantic {
     /// DD-85：旧平台 namespace 中的同一私钥归位，不更换 Buzz pubkey。
     SecretRefRehome,
     AgentDefinitionCreate,
+    LlmRouteCreate,
     AgentDefinitionUpdate,
     AgentVersionCreate,
     AgentVersionUpdate,
@@ -452,6 +454,7 @@ impl Semantic {
             key if key.starts_with("task.rerun.") => Self::TaskRerun,
             "identity.secret_ref.rehome" => Self::SecretRefRehome,
             "agent.definition.create" => Self::AgentDefinitionCreate,
+            "llm_route.create" => Self::LlmRouteCreate,
             "agent.definition.update" => Self::AgentDefinitionUpdate,
             "agent.version.create" => Self::AgentVersionCreate,
             "agent.version.update" => Self::AgentVersionUpdate,
@@ -527,6 +530,7 @@ impl Semantic {
                 Self::TenantMemberRevoke
                     | Self::TenantDelete
                     | Self::AgentDefinitionCreate
+                    | Self::LlmRouteCreate
                     | Self::AgentDefinitionUpdate
                     | Self::AgentVersionCreate
                     | Self::AgentVersionUpdate
@@ -560,6 +564,7 @@ impl Semantic {
             || matches!(
                 self,
                 Self::SecretRefRehome
+                    | Self::LlmRouteCreate
                     | Self::TenantSuspend
                     | Self::TenantRestore
                     | Self::AgentVersionPublish
@@ -603,6 +608,7 @@ pub struct Params {
     pub delegation_grant: Option<contracts::DelegationGrantParameters>,
     pub automation_version_content: Option<Value>,
     pub executor_installation_resource_id: Option<Uuid>,
+    pub llm_route_create: Option<Value>,
 }
 
 impl Params {
@@ -652,6 +658,9 @@ impl Params {
         }
         if let Some(content) = &self.automation_version_content {
             m.insert("automationVersionContent".into(), content.clone());
+        }
+        if let Some(source) = &self.llm_route_create {
+            m.insert("llmRouteCreate".into(), source.clone());
         }
         if let Some(id) = self.executor_installation_resource_id {
             m.insert("executorInstallationResourceId".into(), json!(id));
@@ -708,6 +717,7 @@ impl Params {
                 .ok()?,
             automation_version_content: v.get("automationVersionContent").cloned(),
             executor_installation_resource_id: uuid("executorInstallationResourceId"),
+            llm_route_create: v.get("llmRouteCreate").cloned(),
         })
     }
 }
@@ -775,7 +785,16 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .transpose()
             .map_err(|_| bad())?,
         executor_installation_resource_id: uuid(&cmd.executor_installation_resource_id)?,
+        llm_route_create: cmd
+            .llm_route_create
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|_| bad())?,
     };
+    if sem != Semantic::LlmRouteCreate && p.llm_route_create.is_some() {
+        return Err(bad());
+    }
     if sem.is_automation() {
         crate::automation::validate_management_params(sem, &p)?;
         return Ok(p);
@@ -822,6 +841,21 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Err(bad());
     }
     let ok = match sem {
+        Semantic::LlmRouteCreate => {
+            p.tenant_id.is_none()
+                && p.principal_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.resource_id.is_none()
+                && p.resource_version.is_none()
+                && p.asset_id.is_none()
+                && p.asset_version.is_none()
+                && p.agent_version_content.is_none()
+                && p.llm_route_create.is_some()
+                && p.explicit_confirmation == Some(true)
+        }
         Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke => {
             p.workspace_id.is_none()
                 && p.principal_id.is_none()
@@ -1099,6 +1133,9 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::LlmRouteCreate => {
+            crate::model_route::create_target(conn, tenant, def, p, frozen, lock).await
+        }
         Semantic::AutomationCreate
         | Semantic::AutomationPublish
         | Semantic::AutomationEnable
@@ -1777,6 +1814,15 @@ impl Governance {
         def: &Definition,
         target: &Target,
     ) -> Result<Evaluation, Refusal> {
+        let is_installation_create = def.action_key == "agent.installation.create";
+        let is_route_create = def.action_key == "llm_route.create";
+        let declared_workspace =
+            def.workspace_rule == "DECLARED_WORKSPACE" && target.workspace_id.is_some();
+        let permission_object_type = if declared_workspace {
+            "workspace"
+        } else {
+            def.permission_object_type.as_str()
+        };
         let is_memory = matches!(
             def.action_key.as_str(),
             "agent.memory.core.read"
@@ -1850,6 +1896,7 @@ impl Governance {
         // `.design/03` §2）：SUSPENDING/SUSPENDED/RESTORING 期间，成员、角色与任务
         // 控制等 Workspace scope 的新动作一律在 permission Check 之前拒绝
         if def.workspace_rule == "WORKSPACE_REQUIRED"
+            || declared_workspace
             || def.action_key.starts_with("automation.")
             || matches!(
                 def.action_key.as_str(),
@@ -1874,7 +1921,7 @@ impl Governance {
             }
         }
 
-        let object_id = match def.permission_object_type.as_str() {
+        let object_id = match permission_object_type {
             "tenant" => actor.tenant_id,
             "workspace" => match target.workspace_id {
                 Some(w) => w,
@@ -2061,7 +2108,7 @@ impl Governance {
         let checked = self
             .spicedb
             .check(
-                &def.permission_object_type,
+                permission_object_type,
                 &object_id.to_string(),
                 &def.permission,
                 &actor.principal_id.to_string(),
@@ -2080,6 +2127,8 @@ impl Governance {
         //   不要求先加入 Workspace 的 Workspace admin。
         // 本切片 Workspace 动作检查的正是 workspace manage，Check 为假时不设例外。
         if (is_memory
+            || is_route_create
+            || is_installation_create
             || def.action_key.starts_with("automation.")
             || matches!(
                 def.action_key.as_str(),
@@ -2092,6 +2141,7 @@ impl Governance {
             ));
         }
         if def.workspace_rule == "WORKSPACE_REQUIRED"
+            || declared_workspace
             || def.action_key.starts_with("automation.")
             || matches!(
                 def.action_key.as_str(),
@@ -2107,9 +2157,11 @@ impl Governance {
             .fetch_optional(&self.pool)
             .await?;
             let mut workspace_manage = def.permission == "manage"
-                && def.permission_object_type == "workspace"
+                && permission_object_type == "workspace"
                 && checked.allowed;
             if (is_memory
+                || is_route_create
+                || is_installation_create
                 || def.action_key.starts_with("automation.")
                 || matches!(
                     def.action_key.as_str(),
@@ -2156,6 +2208,8 @@ impl Governance {
                         .await
                         .map_err(|e| Refusal::Unavailable(e.to_string()))?;
                     if (is_memory
+                        || is_route_create
+                        || is_installation_create
                         || def.action_key.starts_with("automation.")
                         || matches!(
                             def.action_key.as_str(),
@@ -2556,6 +2610,7 @@ impl Governance {
             delegation_grant: None,
             automation_version_content: None,
             executor_installation_resource_id: None,
+            llm_route_create: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -2646,6 +2701,7 @@ impl Governance {
             delegation_grant: None,
             automation_version_content: None,
             executor_installation_resource_id: None,
+            llm_route_create: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -3735,7 +3791,9 @@ impl Governance {
         if sem.is_automation()
             || matches!(
                 sem,
-                Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
+                Semantic::AgentDelegationGrant
+                    | Semantic::AgentDelegationRevoke
+                    | Semantic::LlmRouteCreate
             )
         {
             // Installation target 已锁 Workspace；已有成员行同锁覆盖 fresh check 到
@@ -3753,6 +3811,7 @@ impl Governance {
             || matches!(
                 sem,
                 Semantic::AgentDefinitionCreate
+                    | Semantic::LlmRouteCreate
                     | Semantic::AgentDefinitionUpdate
                     | Semantic::ResourceTransferOwner
                     | Semantic::AgentVersionCreate
@@ -3772,6 +3831,7 @@ impl Governance {
                 sem,
                 Semantic::TenantDelete
                     | Semantic::AgentDefinitionCreate
+                    | Semantic::LlmRouteCreate
                     | Semantic::AgentDefinitionUpdate
                     | Semantic::ResourceTransferOwner
                     | Semantic::AgentVersionCreate
@@ -3964,6 +4024,10 @@ impl Governance {
                         )
                         .await?;
                     }
+                    Ok(None)
+                }
+                Semantic::LlmRouteCreate => {
+                    crate::model_route::create_prewrite(tx, ae, def, params).await?;
                     Ok(None)
                 }
                 Semantic::TenantMemberInvite => {
@@ -4163,6 +4227,7 @@ impl Governance {
             | Semantic::TaskCancel
             | Semantic::TaskRerun
             | Semantic::AgentDefinitionCreate
+            | Semantic::LlmRouteCreate
             | Semantic::AgentDefinitionUpdate
             | Semantic::ResourceTransferOwner
             | Semantic::AgentDelegationGrant
@@ -5614,6 +5679,8 @@ impl Governance {
             // 在准入事务里已完成的同步动作没有可派发的东西；走到这里只可能是角色
             return if sem == Semantic::AgentVersionCreate {
                 crate::agent_version::dispatch(self, ae_id, &def).await
+            } else if sem == Semantic::LlmRouteCreate {
+                crate::model_route::create_dispatch(self, ae_id, &def).await
             } else if sem.is_automation() {
                 crate::automation::management_dispatch(self, ae_id, &def, sem).await
             } else if matches!(
@@ -5711,6 +5778,7 @@ impl Governance {
                 | Semantic::TaskCancel
                 | Semantic::TaskRerun
                 | Semantic::AgentDefinitionCreate
+                | Semantic::LlmRouteCreate
                 | Semantic::AgentDefinitionUpdate
                 | Semantic::ResourceTransferOwner
                 | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish

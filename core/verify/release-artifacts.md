@@ -65,3 +65,58 @@ worker sha256:9e7d3a6d48b1d0281974db4806a307d44f3f30b72348c76a1bb3c18707bfd46c
 本地镜像尚未作为 OCI referrer 连同 SBOM/provenance 推送到共享 registry，
 也没有远端签名及部署前验签；这按 `ADR-06` 在出现共享 registry 时启用。
 本记录不证明 Desktop/Mobile 的安装包供应链，也不代替 Stage 2 业务门禁。
+
+## 2026-10-03：公开 Memory 批 release 与限定部署
+
+源码来自已普通 push 的 `4b44ac6b266345fbc19e3c315df5c3d9bd0af00b` clean 私有快照，
+origin 为实际 `git@github.com:bei612/kailo-plus.git`；不纳正式工作树的后续功能。
+原 `tools/release.sh` 完整退出 0，源码 Git blob 回执前后逐字相等；
+没有重建 Runtime `ad13c952…`、Web `97bc2379…`、Relay `d42f83fa…` 或 Win11 `5378f370…`。
+
+```text
+core   sha256:577c274086d1528c30c41fef92d47066a555a3c2c06ac335fe8e4f1c9e93fa6f
+worker sha256:d10b518458921cf2ff400e9069f5fe2905aae567f6c81a3410e194a469f3b78c
+```
+
+两项原 registry push 均为 0，OCI manifest GET 均 HTTP200，正文 SHA 与 digest 相等。
+原 syft 生成的 SPDX/SLSA provenance 均实存于项目 ignored `dist/`，subject 对齐上列产物；
+源 commit 均为 `4b44ac6b…`，依赖锁摘要均为
+`76be59e4720e1f1f2653857787fd9bc712fbaeda83fb919746c5daf9ef32eb27`。
+按 Core provenance、Core SPDX、Worker provenance、Worker SPDX 次序，四份文件 SHA-256 为：
+
+```text
+391525447407c93415ad9cbf3d39542810a030006c7d6efad9bf064df365b73a
+0081d410cfd5aade8dfe0d596472b5973053ea4c7ef9a77e2709ae693e6cd7c7
+9d3db14a54f8f1ac4ccd8656793ced444b07334715767fad44bed237a1d2c9ac
+e97659206c70c61c06cb2143b3bc58a9e4184db84b7a6feeeacd8f003548a589
+```
+
+原安全入口返回 0。实际 BuildKit 父 cgroup 为 8CPU、16GiB、swap0，
+Data 缓存不变；没有以宿主无 swap 推断限额，没有降 Cargo 并行度。
+完整原件在 `/volumes/data/kailo/tmp/codex-memory-core-worker-release-20261003.j7LhAk/`；
+`release.log` SHA-256 为 `b9b6534ef28103edc355803b062b03d9e734cf4f8a8ccdc1527763769eb02ecc`。
+原 `migrate_core_database` 对在线库仅 forward，50 条迁移前进至 53 条且全部成功，
+没有 rollback、删库或业务 seed；`live-forward.log` SHA-256 为
+`e2bfc8ab4524df697d5166272cff4168c35856ebaca62f1a7dd94a31a579cbc5`。
+
+首次原 `start-core.sh --no-build` 因私有快照未投递相邻 `.design` 而在 registry 预检退出 1，
+发生于 wrapping/create 前，旧 Core/Worker 未动。使用原脚本支持的
+`DESIGN=/volumes/kailo/.design` 后退出 0，正常取得三份新的一次性 wrapping；
+不重用已消费凭据，不改工具或设计正文。Core 首次过早 curl 56 保留，随后 healthz 为 0。
+仅替换 Core、Worker、Web、Relay，Worker 启动原 Task Queue，Web/Relay 原 healthcheck healthy。
+
+首次对照发现原 OpenMeter Kafka 在替换前的 `06:18:27Z` 退出 137/OOM。
+主线明确授权后只执行一次原容器启动，`06:37:03Z` 同 ID/镜像/volume/参数恢复 healthy。
+原 OpenMeter 鉴权 Customer health 脚本独立 HTTP200/退出 0；原 Kafka consumer 查询退出 0，
+真实 `openmeter-sink-worker` member 已连接，但 `om_default_events` log-end-offset 为 0。
+Kafka 原有效 JVM 为 `-Xms1G -Xmx1G`，实际 cgroup 为 2CPU/1GiB/swap0，
+heap 等于总内存 limit；未调整配置，不能声称重复 OOM 风险已消除。
+最终 28 个平台容器中 24 running：四个替换、Kafka 同 ID 一次恢复，其他 23 个所有
+原对照字段逐字相同。保留首次失败、137/OOM、恢复及 health/consumer 原件。
+live Compose 使用此 clean Data 快照，受控 secret/data 仍绑定唯一正式投递目录，
+下一原部署替换前须保留该快照与绑定，不将临时目录清理当作业务数据清理。
+
+四步结论：复用既有发布、wrapping 与部署权威；影响为真实产物指针、三条 forward
+迁移和上述限定服务操作；权限、正文瞬态、UNKNOWN 与 native stored 权威不变；
+原 full1/full0/SKIP/ignored 保留，健康不代替真实 Memory/计量 E2E、AGENT 运行或
+Win11/Mobile 设备验收，亦不证明远端签名或部署验签。

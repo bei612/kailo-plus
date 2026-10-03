@@ -166,6 +166,52 @@ final platformAgentPublishedVersionProvider = FutureProvider.autoDispose
       return row;
     }, retry: _noRetry);
 
+/// 17 §8：BFF 逐项 fresh Asset read 后的历史；不把空受权页解释成不存在版本。
+final platformAgentVersionsProvider = FutureProvider.autoDispose
+    .family<
+      AgentVersionPage,
+      ({String resourceId, int resourceVersion, int offset})
+    >((ref, query) async {
+      if (query.resourceId.isEmpty ||
+          query.resourceVersion <= 0 ||
+          query.offset < 0) {
+        throw const FormatException('Version directory scope');
+      }
+      final params = Uri(queryParameters: {'offset': '${query.offset}'}).query;
+      final page = await _fetchOne(
+        ref,
+        '/api/v1/agent-definitions/${Uri.encodeComponent(query.resourceId)}/versions?$params',
+        AgentVersionPage.fromJson,
+      );
+      if (page.agentResourceId != query.resourceId ||
+          page.resourceVersion != query.resourceVersion ||
+          (page.nextOffset != null && page.nextOffset! <= query.offset)) {
+        throw const FormatException(
+          'Version directory identity/version/cursor',
+        );
+      }
+      final assets = <String>{};
+      final ordinals = <int>{};
+      for (final item in page.versions) {
+        final row = AgentVersionView.fromJson(item.toJson());
+        if (row.agentResourceId != query.resourceId ||
+            row.assetId.isEmpty ||
+            row.ownerPrincipalId.isEmpty ||
+            row.assetVersion <= 0 ||
+            row.ordinal <= 0 ||
+            !assets.add(row.assetId) ||
+            !ordinals.add(row.ordinal) ||
+            !RegExp(r'^[0-9a-f]{64}$').hasMatch(row.configHash) ||
+            row.content.runtimeProfileKey.isEmpty ||
+            row.content.modelRouteResourceId.isEmpty ||
+            (row.state != AgentVersionState.DRAFT &&
+                (row.canUpdate == true || row.canPublish == true))) {
+          throw const FormatException('Version directory record');
+        }
+      }
+      return page;
+    }, retry: _noRetry);
+
 /// DD-25/50、17 §8：按选定 Workspace 分页读取，不能据空授权页断言全域为空。
 final platformAgentInstallationsProvider = FutureProvider.autoDispose
     .family<AgentInstallationPage, ({String workspaceId, int offset})>((
@@ -358,6 +404,145 @@ void _validateMemoryHead(String eventId, int createdAt) {
       !RegExp(r'^[0-9a-f]{64}$').hasMatch(eventId) ||
       createdAt < 0) {
     throw const FormatException('Memory head');
+  }
+}
+
+/// 17 §6/8、REQ-21：只读安装来源，不从 canCreate 生成 Mobile 写入口。
+final platformAgentInstallationCandidatesProvider = FutureProvider.autoDispose
+    .family<AgentInstallationCandidatePage, ({String workspaceId, int offset})>(
+      (ref, query) async {
+        if (query.workspaceId.isEmpty || query.offset < 0) {
+          throw const FormatException('Installation candidate scope');
+        }
+        final params = Uri(
+          queryParameters: {
+            'workspaceId': query.workspaceId,
+            'offset': '${query.offset}',
+          },
+        ).query;
+        final page = await _fetchOne(
+          ref,
+          '/api/v1/agent-installation-candidates?$params',
+          AgentInstallationCandidatePage.fromJson,
+        );
+        _validateAutomationCursor(query.offset, page.nextOffset);
+        if (page.workspaceId != query.workspaceId) {
+          throw const FormatException('Installation candidate workspace');
+        }
+        final assets = <String>{};
+        for (final row in page.candidates) {
+          if (row.agentResourceId.isEmpty ||
+              row.agentVersionAssetId.isEmpty ||
+              row.displayName.trim().isEmpty ||
+              row.resourceVersion <= 0 ||
+              row.assetVersion <= 0 ||
+              row.ordinal <= 0 ||
+              !assets.add(row.agentVersionAssetId)) {
+            throw const FormatException('Installation candidate record');
+          }
+        }
+        return page;
+      },
+      retry: _noRetry,
+    );
+
+/// 03 §6/17 §8：锁定打开的 Installation 版本，不拼接旧 pin 与新授权页。
+final platformAgentDelegationsProvider = FutureProvider.autoDispose
+    .family<
+      AgentDelegationPage,
+      ({String workspaceId, String resourceId, int resourceVersion, int offset})
+    >((ref, query) async {
+      final page = await _fetchOne(
+        ref,
+        '/api/v1/agent-installations/${Uri.encodeComponent(query.resourceId)}/delegations?offset=${query.offset}',
+        AgentDelegationPage.fromJson,
+      );
+      _validateAutomationCursor(query.offset, page.nextOffset);
+      if (query.workspaceId.isEmpty ||
+          query.resourceId.isEmpty ||
+          query.resourceVersion <= 0 ||
+          page.workspaceId != query.workspaceId ||
+          page.installationResourceId != query.resourceId ||
+          page.resourceVersion != query.resourceVersion) {
+        throw const FormatException('Delegation page scope/version');
+      }
+      final ids = <String>{};
+      for (final row in page.grants) {
+        final parameters = row.parameters;
+        if (row.delegationId.isEmpty ||
+            row.grantorPrincipalId.isEmpty ||
+            row.delegationVersion <= 0 ||
+            row.uses < 0 ||
+            !ids.add(row.delegationId) ||
+            !parameters.validFrom.isUtc ||
+            !parameters.expiresAt.isUtc ||
+            !parameters.expiresAt.isAfter(parameters.validFrom) ||
+            (parameters.maxUses != null && parameters.maxUses! <= 0) ||
+            parameters.scopes.isEmpty ||
+            !const {
+              'ACTIVE',
+              'REVOKING',
+              'REVOKED',
+              'EXPIRED',
+            }.contains(row.toJson()['state'])) {
+          throw const FormatException('Delegation record');
+        }
+        for (final scope in parameters.scopes) {
+          _validateDelegationScope(
+            DelegationScopeParameters.fromJson(scope.toJson()),
+          );
+        }
+      }
+      return page;
+    }, retry: _noRetry);
+
+/// 显式打开才 GET 当前受权 Scope；目录不等于已有 Grant 或执行许可。
+final platformAgentDelegationTargetsProvider = FutureProvider.autoDispose
+    .family<
+      AgentDelegationTargetPage,
+      ({String workspaceId, String resourceId, int resourceVersion, int offset})
+    >((ref, query) async {
+      final page = await _fetchOne(
+        ref,
+        '/api/v1/agent-installations/${Uri.encodeComponent(query.resourceId)}/delegation-targets?offset=${query.offset}',
+        AgentDelegationTargetPage.fromJson,
+      );
+      _validateAutomationCursor(query.offset, page.nextOffset);
+      if (query.workspaceId.isEmpty ||
+          query.resourceId.isEmpty ||
+          query.resourceVersion <= 0 ||
+          page.workspaceId != query.workspaceId ||
+          page.installationResourceId != query.resourceId ||
+          page.resourceVersion != query.resourceVersion) {
+        throw const FormatException('Delegation target scope/version');
+      }
+      final scopes = <String>{};
+      for (final item in page.scopes) {
+        final scope = DelegationScopeParameters.fromJson(item.toJson());
+        _validateDelegationScope(scope);
+        if (!scopes.add(jsonEncode(scope.toJson()))) {
+          throw const FormatException('Delegation duplicate scope');
+        }
+      }
+      return page;
+    }, retry: _noRetry);
+
+void _validateDelegationScope(DelegationScopeParameters scope) {
+  if (scope.actionKey.isEmpty ||
+      scope.actionVersion <= 0 ||
+      scope.targetType.isEmpty ||
+      scope.redactionPolicy.isEmpty ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(scope.outputSchemaHash) ||
+      (scope.targetId == null) == (scope.createWorkspaceId == null) ||
+      scope.targetId?.isEmpty == true ||
+      scope.createWorkspaceId?.isEmpty == true ||
+      scope.toolResourceId?.isEmpty == true ||
+      !const {
+        'CONSUME_ONLY',
+        'READ',
+        'EXPORT',
+      }.contains(scope.toJson()['resultExposureMode'])) {
+    throw const FormatException('Delegation scope evidence');
   }
 }
 

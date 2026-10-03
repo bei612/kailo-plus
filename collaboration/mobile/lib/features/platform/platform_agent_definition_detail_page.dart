@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import '../../shared/platform/platform_views.dart';
 import '../../shared/theme/theme.dart';
@@ -44,6 +46,7 @@ class PlatformAgentDefinitionDetailPage extends ConsumerWidget {
                   )),
                 );
               }
+              ref.invalidate(platformAgentVersionsProvider);
               ref.invalidate(provider);
             },
             icon: const Icon(Icons.refresh),
@@ -149,9 +152,109 @@ class PlatformAgentDefinitionDetailPage extends ConsumerWidget {
                   );
                 },
               ),
+            _VersionHistory(
+              key: ValueKey((row.resourceId, row.resourceVersion)),
+              resourceId: row.resourceId,
+              resourceVersion: row.resourceVersion,
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 与 Web/Desktop 相同的受权历史目录；Mobile 不消费 canUpdate/canPublish 生成命令。
+class _VersionHistory extends HookConsumerWidget {
+  const _VersionHistory({
+    super.key,
+    required this.resourceId,
+    required this.resourceVersion,
+  });
+
+  final String resourceId;
+  final int resourceVersion;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    String text(PlatformMessageKey key) => platformText(key, locale: locale);
+    final offsets = useState<List<int>>([0]);
+    final pageIndex = useState(0);
+    final provider = platformAgentVersionsProvider((
+      resourceId: resourceId,
+      resourceVersion: resourceVersion,
+      offset: offsets.value[pageIndex.value],
+    ));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(Grid.gutter),
+          child: Text(
+            text(PlatformMessageKey.agentsVersionHistory),
+            style: context.textTheme.titleSmall,
+          ),
+        ),
+        PlatformAsyncView(
+          value: ref.watch(provider),
+          onRetry: () => ref.invalidate(provider),
+          builder: (context, page) => Column(
+            children: [
+              if (page.versions.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(Grid.gutter),
+                  child: Text(text(PlatformMessageKey.agentsVersionNone)),
+                )
+              else
+                AppListCard(
+                  children: [
+                    for (final row in page.versions)
+                      AppListRow(
+                        key: ValueKey('platform-agent-version-${row.assetId}'),
+                        title:
+                            '${text(PlatformMessageKey.agentsVersionOrdinal)}: ${row.ordinal}',
+                        subtitle:
+                            '${text(switch (row.state) {
+                              AgentVersionState.DRAFT => PlatformMessageKey.agentsVersionDraft,
+                              AgentVersionState.PUBLISHED => PlatformMessageKey.agentsVersionPublished,
+                              AgentVersionState.RETIRED => PlatformMessageKey.agentsVersionRetired,
+                            })}\n${row.assetId}\n${row.configHash}',
+                        subtitleMaxLines: 3,
+                      ),
+                  ],
+                ),
+              Padding(
+                padding: const EdgeInsets.all(Grid.gutter),
+                child: Wrap(
+                  spacing: Grid.xs,
+                  runSpacing: Grid.xs,
+                  children: [
+                    if (pageIndex.value > 0)
+                      OutlinedButton(
+                        key: const ValueKey('platform-agent-versions-previous'),
+                        onPressed: () => pageIndex.value--,
+                        child: Text(text(PlatformMessageKey.rolesPrevious)),
+                      ),
+                    if (page.nextOffset != null)
+                      OutlinedButton(
+                        key: const ValueKey('platform-agent-versions-next'),
+                        onPressed: () {
+                          offsets.value = [
+                            ...offsets.value.take(pageIndex.value + 1),
+                            page.nextOffset!,
+                          ];
+                          pageIndex.value++;
+                        },
+                        child: Text(text(PlatformMessageKey.rolesNext)),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

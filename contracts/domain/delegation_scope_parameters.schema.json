@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/delegation_scope_parameters.schema.json",
+  "title": "DelegationScopeParameters",
+  "description": "03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionKey", "actionVersion", "targetType", "resultExposureMode", "outputSchemaHash", "redactionPolicy"],
+  "properties": {
+    "actionKey": {"type": "string", "minLength": 1},
+    "actionVersion": {"type": "integer", "minimum": 1},
+    "targetType": {"type": "string", "minLength": 1},
+    "targetId": {"type": "string", "format": "uuid"},
+    "createWorkspaceId": {"type": "string", "format": "uuid"},
+    "toolResourceId": {"type": "string", "format": "uuid"},
+    "resultExposureMode": {"type": "string", "enum": ["CONSUME_ONLY", "READ", "EXPORT"]},
+    "outputSchemaHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "redactionPolicy": {"type": "string", "minLength": 1}
+  }
+}

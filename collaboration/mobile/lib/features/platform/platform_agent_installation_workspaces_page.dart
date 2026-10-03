@@ -8,6 +8,7 @@ import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import 'platform_agent_definitions_page.dart';
 import 'platform_agent_installations_page.dart';
+import 'platform_agent_installation_candidates_page.dart';
 import 'platform_automations_page.dart';
 import 'platform_async_view.dart';
 
@@ -97,6 +98,23 @@ class PlatformAgentInstallationWorkspacesPage extends ConsumerWidget {
                           builder: (_) => PlatformAgentInstallationsPage(
                             workspaceId: workspace.id,
                             title: workspace.name,
+                          ),
+                        ),
+                      ),
+                    ),
+                    AppListRow(
+                      key: ValueKey(
+                        'platform-installation-candidates-${workspace.id}',
+                      ),
+                      title: platformText(
+                        PlatformMessageKey.agentsInstallationCandidates,
+                        locale: locale,
+                      ),
+                      subtitle: '${workspace.name} · ${workspace.slug}',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => PlatformAgentInstallationCandidatesPage(
+                            workspaceId: workspace.id,
                           ),
                         ),
                       ),

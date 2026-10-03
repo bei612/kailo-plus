@@ -14,6 +14,894 @@ use crate::{
     spicedb::{Consistency, Relationship, Write},
 };
 
+type CreateInput = contracts::LlmRouteCreateInput;
+
+fn create_input(params: &crate::governance::Params) -> Result<CreateInput, Refusal> {
+    let input: CreateInput = serde_json::from_value(
+        params
+            .llm_route_create
+            .clone()
+            .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?,
+    )
+    .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    let valid_hash = |hash: &str| {
+        hash.len() == 64
+            && hash
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    };
+    if input.provider.id.is_empty()
+        || input.provider.revision <= 0
+        || !valid_hash(&input.provider.sha256)
+        || input.model.id.is_empty()
+        || input.model.revision <= 0
+        || !valid_hash(&input.model.sha256)
+        || provider_version(&input).is_err()
+        || input.provider_secret_ref.locator.is_empty()
+        || input.provider_secret_ref.audience.is_empty()
+    {
+        return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
+    }
+    Ok(input)
+}
+
+fn provider_version(input: &CreateInput) -> Result<u32, Refusal> {
+    u32::try_from(input.provider_secret_ref.version)
+        .ok()
+        .filter(|version| *version > 0)
+        .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))
+}
+
+pub(crate) async fn create_target(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    def: &crate::governance::Definition,
+    params: &crate::governance::Params,
+    frozen: Option<Uuid>,
+    lock: bool,
+) -> Result<crate::governance::Target, Refusal> {
+    if def.target_type != "RESOURCE"
+        || def.permission_object_type != "tenant"
+        || def.permission != "create"
+        || def.tenant_rule != "SESSION_TENANT"
+        || def.workspace_rule != "DECLARED_WORKSPACE"
+        || def.execution_mode != "SYNC"
+        || def.confirmation_mode != "EXPLICIT"
+        || def.quota_policy != "NONE"
+        || !def.meters.is_empty()
+        || def.workflow_kind.is_some()
+        || def.approval_policy_id.is_some()
+        || def.approval_policy_version.is_some()
+        || def.result_exposure != "NONE"
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let capacity_none: bool = sqlx::query_scalar(
+        "select exists(select 1 from catalog.action_definition
+        where action_key=$1 and version=$2
+        and capacity_policy='NONE' and capacity_pool_key is null and workflow_type is null)",
+    )
+    .bind(&def.action_key)
+    .bind(def.version)
+    .fetch_one(&mut *conn)
+    .await?;
+    if !capacity_none {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    create_input(params)?;
+    if let Some(workspace) = params.workspace_id {
+        let active: Option<Uuid> = sqlx::query_scalar(&format!(
+            "select id from identity.workspace where id=$1 and tenant_id=$2 and state='ACTIVE'{}",
+            if lock { " for update" } else { "" }
+        ))
+        .bind(workspace)
+        .bind(tenant)
+        .fetch_optional(&mut *conn)
+        .await?;
+        if active.is_none() {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
+    }
+    Ok(crate::governance::Target {
+        id: frozen.unwrap_or_else(Uuid::new_v4),
+        version: 0,
+        workspace_id: params.workspace_id,
+    })
+}
+
+pub(crate) async fn create_prewrite(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &crate::governance::Execution,
+    def: &crate::governance::Definition,
+    params: &crate::governance::Params,
+) -> Result<(), Refusal> {
+    let input = create_input(params)?;
+    if !crate::agent_definition::active_owner(tx, ae.tenant_id, ae.initiator_principal_id).await? {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let registered: bool = sqlx::query_scalar(
+        "select exists(select 1 from catalog.resource_type_definition
+        where type_key='llm_route' and status='ACTIVE' and capability_category is null
+        and tenant_delete_action_key='tenant.delete')",
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    if !registered {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    sqlx::query("insert into catalog.resource
+        (id,tenant_id,type_key,owner_principal_id,home_workspace_id,component_type_key,native_type,native_id,state,version,projection_action_execution_id)
+        values($1,$2,'llm_route',$3,$4,$5,'llm.virtualModel',$1::text,'PROVISIONING',1,$6)")
+        .bind(ae.target_id).bind(ae.tenant_id).bind(ae.initiator_principal_id)
+        .bind(ae.workspace_id).bind(&def.component_type_key).bind(ae.id).execute(&mut **tx).await?;
+    sqlx::query(
+        "insert into catalog.model_route_projection(resource_id,action_execution_id,source_refs)
+        values($1,$2,$3)",
+    )
+    .bind(ae.target_id)
+    .bind(ae.id)
+    .bind(serde_json::to_value(input).map_err(|_| unavailable())?)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+#[derive(FromRow)]
+struct Creation {
+    source_refs: Value,
+    dispatch_started: bool,
+    projection_hashes: Option<Value>,
+    credential_hash: Option<String>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize, FromRow)]
+pub(crate) struct FrozenCreation {
+    resource_id: Uuid,
+    resource_version: i32,
+    action_execution_id: Uuid,
+    source_refs: Value,
+    dispatch_started: bool,
+    projection_hashes: Option<Value>,
+    credential_hash: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct CreationAbsence {
+    kind: String,
+    id: String,
+    revision: Option<i64>,
+    absent: bool,
+}
+
+/// Includes PROVISIONING intent before a ConfigResource revision exists. No invented revision.
+pub(crate) async fn freeze_creations(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+) -> Result<Vec<FrozenCreation>, sqlx::Error> {
+    let orphan: bool = sqlx::query_scalar(
+        "select exists(select 1 from catalog.resource r
+        left join catalog.model_route m on m.resource_id=r.id
+        left join catalog.model_route_projection p on p.resource_id=r.id
+        where r.tenant_id=$1 and r.type_key='llm_route' and r.state<>'DELETED'
+        and m.resource_id is null and p.resource_id is null)",
+    )
+    .bind(tenant)
+    .fetch_one(&mut *conn)
+    .await?;
+    if orphan {
+        return Err(sqlx::Error::Protocol(
+            "Route 库存缺原生事实和创建意图".into(),
+        ));
+    }
+    sqlx::query_as(
+        "select r.id as resource_id,r.version as resource_version,p.action_execution_id,
+        p.source_refs,p.dispatch_started,p.projection_hashes,p.credential_hash
+        from catalog.resource r join catalog.model_route_projection p on p.resource_id=r.id
+        where r.tenant_id=$1 and r.type_key='llm_route' and r.state<>'DELETED'
+        order by r.id for update of r,p",
+    )
+    .bind(tenant)
+    .fetch_all(conn)
+    .await
+}
+
+/// Lifecycle-only qualification for a real, not-yet-materialized create. It never grants CRUD.
+pub(crate) async fn pending_owner(
+    gov: &crate::governance::Governance,
+    conn: &mut sqlx::PgConnection,
+    row: &crate::agent_definition::Resource,
+) -> Result<bool, Refusal> {
+    let Some(action) = row.projection_action_execution_id else {
+        return Ok(false);
+    };
+    if row.state != "PROVISIONING" {
+        return Ok(false);
+    }
+    let refs: Option<Value> = sqlx::query_scalar("select p.source_refs from catalog.model_route_projection p
+        join catalog.resource r on r.id=p.resource_id
+        join admission.action_execution a on a.id=p.action_execution_id
+        where r.id=$1 and r.tenant_id=$2 and r.owner_principal_id=$3 and r.type_key='llm_route'
+        and r.projection_action_execution_id=$4 and r.state='PROVISIONING'
+        and a.id=$4 and a.tenant_id=r.tenant_id and a.target_id=r.id
+        and a.workspace_id is not distinct from r.home_workspace_id
+        and a.initiator_principal_id=r.owner_principal_id and a.actor_principal_id=a.initiator_principal_id
+        and a.action_key='llm_route.create' and a.gate_state='ALLOWED'
+        and a.dispatch_state in ('NOT_DISPATCHED','UNKNOWN')
+        and p.source_refs is not distinct from a.parameters->'params'->'llmRouteCreate'
+        for update of p")
+        .bind(row.id).bind(row.tenant_id).bind(row.owner_principal_id).bind(action)
+        .fetch_optional(&mut *conn).await?;
+    let Some(refs) = refs else {
+        return Ok(false);
+    };
+    let _: CreateInput = serde_json::from_value(refs).map_err(|_| unavailable())?;
+    if !crate::agent_definition::active_owner(conn, row.tenant_id, row.owner_principal_id).await? {
+        return Ok(false);
+    }
+    if gov
+        .spicedb
+        .resource_projection_matches_in_workspace(
+            &row.id.to_string(),
+            &row.tenant_id.to_string(),
+            &row.owner_principal_id.to_string(),
+            row.home_workspace_id.map(|id| id.to_string()).as_deref(),
+            gov.cfg.relationship_page,
+        )
+        .await
+        .map_err(|_| unavailable())?
+    {
+        return Ok(true);
+    }
+    let id = row.id.to_string();
+    let relations = gov
+        .spicedb
+        .read_native(
+            &crate::spicedb::RelationshipFilter {
+                object_type: "resource",
+                object_id: Some(&id),
+                relation: None,
+                subject_principal: None,
+            },
+            gov.cfg.relationship_page,
+        )
+        .await
+        .map_err(|_| unavailable())?;
+    // Empty is a positively observed native set, not an unavailable/partial projection.
+    if !relations.is_empty() {
+        return Ok(false);
+    }
+    Gateway::from_env()?.creation_absent(row.id).await
+}
+
+pub(crate) async fn retire_creations(
+    state: &ServiceState,
+    tenant: Uuid,
+    frozen: &[FrozenCreation],
+) -> Result<Vec<CreationAbsence>, Refusal> {
+    let mut tx = state.pool.begin().await?;
+    let deleting: Option<bool> =
+        sqlx::query_scalar("select state='DELETING' from identity.tenant where id=$1 for update")
+            .bind(tenant)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if deleting != Some(true) {
+        return Err(conflict());
+    }
+    let current = freeze_creations(&mut tx, tenant).await?;
+    if serde_json::to_value(&current).map_err(|_| unavailable())?
+        != serde_json::to_value(frozen).map_err(|_| unavailable())?
+    {
+        return Err(conflict());
+    }
+    if current.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut evidence = Vec::new();
+    let gateway = Gateway::from_env()?;
+    for intent in current {
+        let active_consumer: bool = sqlx::query_scalar("select exists(select 1 from catalog.agent_invocation i
+            join catalog.agent_model_binding b on b.installation_resource_id=i.installation_resource_id
+            and b.projection_generation=i.projection_generation
+            where b.model_route_resource_id=$1 and i.status not in ('COMPLETED','FAILED','CANCELED'))")
+            .bind(intent.resource_id).fetch_one(&mut *tx).await?;
+        if active_consumer {
+            return Err(unavailable());
+        }
+        let input: CreateInput =
+            serde_json::from_value(intent.source_refs).map_err(|_| unavailable())?;
+        let previous: Option<Value> = sqlx::query_scalar(
+            "select retired_absence from catalog.model_route_projection
+            where resource_id=$1 and action_execution_id=$2 for update",
+        )
+        .bind(intent.resource_id)
+        .bind(intent.action_execution_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if let Some(previous) = previous {
+            let previous: Vec<CreationAbsence> =
+                serde_json::from_value(previous).map_err(|_| unavailable())?;
+            if !gateway.creation_absent(intent.resource_id).await?
+                || !gateway
+                    .admin(
+                        &[
+                            "api",
+                            "config",
+                            "provider-credentials",
+                            &tenant.to_string(),
+                            &intent.resource_id.to_string(),
+                            &input.provider_secret_ref.version.to_string(),
+                        ],
+                        None,
+                    )
+                    .await?
+                    .is_null()
+            {
+                return Err(unavailable());
+            }
+            evidence.extend(previous);
+            continue;
+        }
+        let absent = gateway
+            .retire_creation(
+                tenant,
+                intent.resource_id,
+                provider_version(&input)?,
+                intent.projection_hashes.as_ref(),
+            )
+            .await?;
+        sqlx::query(
+            "update catalog.model_route_projection set retired_absence=$2 where resource_id=$1",
+        )
+        .bind(intent.resource_id)
+        .bind(serde_json::to_value(&absent).map_err(|_| unavailable())?)
+        .execute(&mut *tx)
+        .await?;
+        evidence.extend(absent);
+    }
+    tx.commit().await?;
+    Ok(evidence)
+}
+
+async fn creation_abort(
+    gov: &crate::governance::Governance,
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &crate::governance::Execution,
+    def: &crate::governance::Definition,
+    input: &CreateInput,
+) -> Result<(), Refusal> {
+    let hashes: Option<Value> = sqlx::query_scalar(
+        "select projection_hashes from catalog.model_route_projection
+        where resource_id=$1 and action_execution_id=$2 for update",
+    )
+    .bind(ae.target_id)
+    .bind(ae.id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let (gateway, version) =
+        match Gateway::from_env().and_then(|gateway| Ok((gateway, provider_version(input)?))) {
+            Ok(prepared) => prepared,
+            Err(_) => return creation_unknown(tx, ae, def).await,
+        };
+    let absence = match gateway
+        .retire_creation(ae.tenant_id, ae.target_id, version, hashes.as_ref())
+        .await
+    {
+        Ok(absence) => absence,
+        Err(_) => return creation_unknown(tx, ae, def).await,
+    };
+    let token = match gov.spicedb.delete_resource_projection(ae.target_id).await {
+        Ok(token) if !token.is_empty() => token,
+        _ => return creation_unknown(tx, ae, def).await,
+    };
+    sqlx::query(
+        "update catalog.model_route_projection set retired_absence=$2 where resource_id=$1",
+    )
+    .bind(ae.target_id)
+    .bind(serde_json::to_value(absence).map_err(|_| unavailable())?)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "update catalog.resource set state='DELETED',projection_action_execution_id=null,
+        version=version+1 where id=$1 and tenant_id=$2 and projection_action_execution_id=$3",
+    )
+    .bind(ae.target_id)
+    .bind(ae.tenant_id)
+    .bind(ae.id)
+    .execute(&mut *tx)
+    .await?;
+    crate::governance::record_dispatch(
+        &mut tx,
+        ae.id,
+        def.audit_class(),
+        Err(axum::http::StatusCode::FORBIDDEN),
+        vec![crate::audit::Evidence::new(
+            contracts::EvidenceKind::SpicedbZedtoken,
+            token,
+        )],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn creation_unknown(
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &crate::governance::Execution,
+    def: &crate::governance::Definition,
+) -> Result<(), Refusal> {
+    crate::governance::record_dispatch(
+        &mut tx,
+        ae.id,
+        def.audit_class(),
+        Err(axum::http::StatusCode::SERVICE_UNAVAILABLE),
+        Vec::new(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn creation_fresh(
+    gov: &crate::governance::Governance,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &crate::governance::Execution,
+) -> Result<bool, Refusal> {
+    if !crate::agent_definition::active_owner(tx, ae.tenant_id, ae.initiator_principal_id).await? {
+        return Ok(false);
+    }
+    let scope = gov
+        .spicedb
+        .check(
+            if ae.workspace_id.is_some() {
+                "workspace"
+            } else {
+                "tenant"
+            },
+            &ae.workspace_id.unwrap_or(ae.tenant_id).to_string(),
+            "create",
+            &ae.initiator_principal_id.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| unavailable())?;
+    if scope.zed_token.is_empty() {
+        return Err(unavailable());
+    }
+    if !scope.allowed {
+        return Ok(false);
+    }
+    if let Some(workspace) = ae.workspace_id {
+        let active: Option<Uuid> = sqlx::query_scalar(
+            "select id from identity.workspace
+            where id=$1 and tenant_id=$2 and state='ACTIVE' for update",
+        )
+        .bind(workspace)
+        .bind(ae.tenant_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if active.is_none() {
+            return Ok(false);
+        }
+        let membership: Option<String> = sqlx::query_scalar(
+            "select state from identity.workspace_membership
+            where workspace_id=$1 and tenant_principal_id=$2 for update",
+        )
+        .bind(workspace)
+        .bind(ae.initiator_principal_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if membership.as_deref() != Some("ACTIVE") {
+            let management = gov
+                .spicedb
+                .check(
+                    if membership.is_some() {
+                        "tenant"
+                    } else {
+                        "workspace"
+                    },
+                    &if membership.is_some() {
+                        ae.tenant_id
+                    } else {
+                        workspace
+                    }
+                    .to_string(),
+                    "manage",
+                    &ae.initiator_principal_id.to_string(),
+                    Consistency::FullyConsistent,
+                )
+                .await
+                .map_err(|_| unavailable())?;
+            if management.zed_token.is_empty() {
+                return Err(unavailable());
+            }
+            if !management.allowed {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+fn pinned_resource(
+    rows: &[Value],
+    id: &str,
+    revision: i64,
+    sha256: &str,
+) -> Result<Value, Refusal> {
+    let mut matching = rows
+        .iter()
+        .filter(|row| row.get("id").and_then(Value::as_str) == Some(id));
+    let row = matching.next().ok_or_else(conflict)?;
+    let body = row.get("value").ok_or_else(unavailable)?;
+    if matching.next().is_some()
+        || row.get("revision").and_then(Value::as_i64) != Some(revision)
+        || digest(body)? != sha256
+    {
+        return Err(conflict());
+    }
+    Ok(body.clone())
+}
+
+async fn desired_route(
+    gateway: &Gateway,
+    input: &CreateInput,
+    id: Uuid,
+    file: &str,
+) -> Result<Vec<Value>, Refusal> {
+    let mut provider = pinned_resource(
+        &gateway.resources("llm.provider").await?,
+        &input.provider.id,
+        input.provider.revision,
+        &input.provider.sha256,
+    )?;
+    let mut model = pinned_resource(
+        &gateway.resources("llm.model").await?,
+        &input.model.id,
+        input.model.revision,
+        &input.model.sha256,
+    )?;
+    // A supplied key must be the only credential source; native defaults/environment cannot win.
+    let provider_object = provider.as_object_mut().ok_or_else(unavailable)?;
+    if provider_object
+        .get("defaults")
+        .is_some_and(|value| !value.is_null())
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let params = provider_object
+        .get_mut("params")
+        .and_then(Value::as_object_mut)
+        .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    let endpoint = params
+        .get("baseUrl")
+        .and_then(Value::as_str)
+        .and_then(|value| reqwest::Url::parse(value).ok())
+        .ok_or_else(unavailable)?;
+    if !matches!(endpoint.scheme(), "http" | "https")
+        || endpoint.host_str().is_none()
+        || !endpoint.username().is_empty()
+        || endpoint.password().is_some()
+        || endpoint.query().is_some()
+        || endpoint.fragment().is_some()
+    {
+        return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
+    }
+    params.insert("apiKey".into(), json!({"file":file}));
+    provider_object.insert("name".into(), json!(id));
+    let model_object = model.as_object_mut().ok_or_else(unavailable)?;
+    if model_object
+        .get("provider")
+        .and_then(|value| value.get("reference"))
+        .and_then(Value::as_str)
+        != Some(&input.provider.id)
+        || model_object
+            .get("authorization")
+            .is_none_or(|value| value.is_null())
+        || model_object
+            .get("auth")
+            .is_some_and(|value| !value.is_null())
+        || model_object
+            .get("requestHeaders")
+            .is_some_and(|value| !value.is_null())
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let model_params = model_object
+        .get("params")
+        .and_then(Value::as_object)
+        .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    if model_params.keys().any(|key| key != "model")
+        || !model_params
+            .get("model")
+            .and_then(Value::as_str)
+            .is_some_and(|model| !model.is_empty() && !model.contains('*'))
+    {
+        return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
+    }
+    model_object.insert("id".into(), json!(id));
+    model_object.insert("name".into(), json!(id));
+    model_object.insert("provider".into(), json!({"reference":id}));
+    Ok(vec![
+        json!({"kind":"llm.provider","value":provider}),
+        json!({"kind":"llm.model","value":model}),
+        json!({"kind":"llm.virtualModel","value":{"name":id,
+            "routing":{"weighted":{"targets":[{"model":id}]}}}}),
+    ])
+}
+
+pub(crate) async fn create_dispatch(
+    gov: &crate::governance::Governance,
+    id: Uuid,
+    def: &crate::governance::Definition,
+) -> Result<(), Refusal> {
+    let mut tx = gov.pool.begin().await?;
+    let ae = crate::governance::lock_execution(&mut tx, id).await?;
+    if ae.gate_state != "ALLOWED"
+        || !matches!(ae.dispatch_state.as_str(), "NOT_DISPATCHED" | "UNKNOWN")
+    {
+        return Ok(());
+    }
+    let active: Option<bool> =
+        sqlx::query_scalar("select state='ACTIVE' from identity.tenant where id=$1 for update")
+            .bind(ae.tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let resource: Option<Uuid> = sqlx::query_scalar(
+        "select id from catalog.resource
+        where id=$1 and tenant_id=$2 and type_key='llm_route' and state='PROVISIONING'
+        and owner_principal_id=$3 and home_workspace_id is not distinct from $4
+        and projection_action_execution_id=$5 for update",
+    )
+    .bind(ae.target_id)
+    .bind(ae.tenant_id)
+    .bind(ae.initiator_principal_id)
+    .bind(ae.workspace_id)
+    .bind(ae.id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let intent: Creation = sqlx::query_as("select source_refs,dispatch_started,projection_hashes,credential_hash
+        from catalog.model_route_projection where resource_id=$1 and action_execution_id=$2 for update")
+        .bind(ae.target_id).bind(ae.id).fetch_one(&mut *tx).await?;
+    if resource.is_none() {
+        return if intent.dispatch_started {
+            creation_unknown(tx, &ae, def).await
+        } else {
+            Err(conflict())
+        };
+    }
+    // Configuration/SecretRef failure cannot prove that a previous native write
+    // did not happen. Only an intent that has never dispatched may return it directly.
+    let prepared: Result<(CreateInput, Gateway, u32), Refusal> = async {
+        let input: CreateInput =
+            serde_json::from_value(intent.source_refs).map_err(|_| unavailable())?;
+        let gateway = Gateway::from_env()?;
+        let version = provider_version(&input)?;
+        // The configured Tenant namespace/mount is the frozen SecretRef scope authority.
+        let tenant_prefix = gov.secrets.tenant_locator(ae.tenant_id, "");
+        let same_tenant_path = input
+            .provider_secret_ref
+            .locator
+            .strip_prefix(&tenant_prefix)
+            .is_some_and(|path| {
+                !path.is_empty()
+                    && path
+                        .split('/')
+                        .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+                    && !path.bytes().any(|byte| {
+                        byte.is_ascii_control() || matches!(byte, b'\\' | b'%' | b'?' | b'#')
+                    })
+            });
+        let audience = std::env::var("OPENBAO_SERVICE_IDENTITY").map_err(|_| unavailable())?;
+        if !same_tenant_path || input.provider_secret_ref.audience != audience {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
+        Ok((input, gateway, version))
+    }
+    .await;
+    let (input, gateway, version) = match prepared {
+        Ok(prepared) => prepared,
+        Err(_) if intent.dispatch_started => return creation_unknown(tx, &ae, def).await,
+        Err(error) => return Err(error),
+    };
+    let mut planned = intent.projection_hashes;
+    let mut credential_hash = intent.credential_hash;
+    let fresh = if active == Some(true) {
+        creation_fresh(gov, &mut tx, &ae).await
+    } else {
+        Ok(false)
+    };
+    match fresh {
+        Ok(true) => {}
+        _ if intent.dispatch_started => return creation_unknown(tx, &ae, def).await,
+        Ok(false) => return creation_abort(gov, tx, &ae, def, &input).await,
+        Err(error) => return Err(error),
+    }
+    // Recovery must prove the same exact version is still auditably readable;
+    // a matching Gateway projection alone cannot establish SecretRef readiness.
+    let readable: Result<SecretValue, Refusal> = async {
+        if gov
+            .audit
+            .enabled_devices()
+            .await
+            .map_err(|_| unavailable())?
+            == 0
+        {
+            return Err(unavailable());
+        }
+        let secret = gov
+            .secrets
+            .read(
+                &SecretRef {
+                    locator: input.provider_secret_ref.locator.clone(),
+                    version,
+                    audience: input.provider_secret_ref.audience.clone(),
+                },
+                "value",
+            )
+            .await
+            .map_err(|_| unavailable())?;
+        if secret.expose().is_empty() {
+            return Err(unavailable());
+        }
+        Ok(secret)
+    }
+    .await;
+    let secret = match readable {
+        Ok(secret) => secret,
+        Err(_) if intent.dispatch_started => return creation_unknown(tx, &ae, def).await,
+        Err(error) => return Err(error),
+    };
+    let hash = hex::encode(Sha256::digest(secret.expose().as_bytes()));
+    if intent.dispatch_started && credential_hash.as_deref() != Some(hash.as_str()) {
+        return creation_unknown(tx, &ae, def).await;
+    }
+    if !intent.dispatch_started {
+        let file = gateway.credential_file(ae.tenant_id, ae.target_id, version)?;
+        let desired = desired_route(&gateway, &input, ae.target_id, &file).await?;
+        let hashes = desired
+            .iter()
+            .map(|resource| {
+                Ok((
+                    resource["kind"]
+                        .as_str()
+                        .ok_or_else(unavailable)?
+                        .to_owned(),
+                    Value::String(digest(&resource["value"])?),
+                ))
+            })
+            .collect::<Result<serde_json::Map<String, Value>, Refusal>>()?;
+        sqlx::query(
+            "update catalog.model_route_projection set dispatch_started=true,projection_hashes=$2,
+            credential_hash=$3 where resource_id=$1 and not dispatch_started",
+        )
+        .bind(ae.target_id)
+        .bind(Value::Object(hashes.clone()))
+        .bind(&hash)
+        .execute(&mut *tx)
+        .await?;
+        // Intent survives a crash before either native write. After this point UNKNOWN only observes.
+        tx.commit().await?;
+        tx = gov.pool.begin().await?;
+        let locked = crate::governance::lock_execution(&mut tx, ae.id).await?;
+        let tenant: Option<bool> =
+            sqlx::query_scalar("select state='ACTIVE' from identity.tenant where id=$1 for update")
+                .bind(ae.tenant_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        let fresh = if locked.gate_state == "ALLOWED" && tenant == Some(true) {
+            creation_fresh(gov, &mut tx, &ae).await
+        } else {
+            Ok(false)
+        };
+        match fresh {
+            Ok(true) => {}
+            Ok(false) => return creation_abort(gov, tx, &ae, def, &input).await,
+            Err(_) => return creation_unknown(tx, &ae, def).await,
+        }
+        if gov
+            .spicedb
+            .replace_resource_projection(
+                &ae.target_id.to_string(),
+                &ae.tenant_id.to_string(),
+                &ae.initiator_principal_id.to_string(),
+                &ae.initiator_principal_id.to_string(),
+                ae.workspace_id.map(|id| id.to_string()).as_deref(),
+            )
+            .await
+            .is_err()
+            || gateway
+                .project_credential(ae.tenant_id, ae.target_id, version, &secret, &hash)
+                .await
+                .is_err()
+            || gateway
+                .admin(
+                    &["api", "config", "routes", &ae.target_id.to_string()],
+                    Some(Value::Array(desired)),
+                )
+                .await
+                .is_err()
+        {
+            return creation_unknown(tx, &ae, def).await;
+        }
+        planned = Some(Value::Object(hashes));
+        credential_hash = Some(hash);
+    }
+    let (Some(planned), Some(credential_hash)) = (planned.as_ref(), credential_hash.as_deref())
+    else {
+        return creation_unknown(tx, &ae, def).await;
+    };
+    let observed = match gateway
+        .observe_creation(
+            ae.tenant_id,
+            ae.target_id,
+            version,
+            planned,
+            credential_hash,
+        )
+        .await
+    {
+        Ok(Some(observed)) => observed,
+        _ => return creation_unknown(tx, &ae, def).await,
+    };
+    let projected = match gov
+        .spicedb
+        .resource_projection_matches_in_workspace(
+            &ae.target_id.to_string(),
+            &ae.tenant_id.to_string(),
+            &ae.initiator_principal_id.to_string(),
+            ae.workspace_id.map(|id| id.to_string()).as_deref(),
+            gov.cfg.relationship_page,
+        )
+        .await
+    {
+        Ok(projected) => projected,
+        Err(_) => return creation_unknown(tx, &ae, def).await,
+    };
+    if !projected || active != Some(true) {
+        return creation_unknown(tx, &ae, def).await;
+    }
+    match creation_fresh(gov, &mut tx, &ae).await {
+        Ok(true) => {}
+        _ => return creation_unknown(tx, &ae, def).await,
+    }
+    let proof = match gov
+        .spicedb
+        .check(
+            "resource",
+            &ae.target_id.to_string(),
+            "read",
+            &ae.initiator_principal_id.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+    {
+        Ok(proof) => proof,
+        Err(_) => return creation_unknown(tx, &ae, def).await,
+    };
+    if !proof.allowed || proof.zed_token.is_empty() {
+        return creation_unknown(tx, &ae, def).await;
+    }
+    sqlx::query("insert into catalog.model_route(resource_id,action_execution_id,native_revision,native_config_hash)
+        values($1,$2,$3,$4)").bind(ae.target_id).bind(ae.id).bind(observed.0).bind(observed.1)
+        .execute(&mut *tx).await?;
+    sqlx::query("update catalog.resource set state='ACTIVE',version=version+1,projection_action_execution_id=null
+        where id=$1 and tenant_id=$2 and projection_action_execution_id=$3")
+        .bind(ae.target_id).bind(ae.tenant_id).bind(ae.id).execute(&mut *tx).await?;
+    crate::governance::record_dispatch(
+        &mut tx,
+        ae.id,
+        def.audit_class(),
+        Ok(()),
+        vec![crate::audit::Evidence::new(
+            contracts::EvidenceKind::SpicedbZedtoken,
+            proof.zed_token,
+        )],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// SecretRef 只传 Core 内部，不能序列化到客户端、Workflow 或配置文件。
 pub(crate) struct RuntimeModel {
     pub model: String,
@@ -346,6 +1234,9 @@ struct Route {
     resource_version: i32,
     native_revision: i64,
     native_config_hash: String,
+    creation_source_refs: Option<Value>,
+    creation_hashes: Option<Value>,
+    credential_hash: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -573,8 +1464,10 @@ async fn ensure_usage_subject(
 }
 
 const ROUTE: &str = "select r.tenant_id,r.owner_principal_id,r.home_workspace_id,r.native_id,
-    r.version as resource_version,m.native_revision,m.native_config_hash
+    r.version as resource_version,m.native_revision,m.native_config_hash,
+    p.source_refs as creation_source_refs,p.projection_hashes as creation_hashes,p.credential_hash
     from catalog.resource r join catalog.model_route m on m.resource_id=r.id
+    left join catalog.model_route_projection p on p.resource_id=r.id
     join catalog.resource_type_definition rt on rt.type_key=r.type_key and rt.status='ACTIVE'
       and rt.tenant_delete_action_key='tenant.delete'
     join identity.tenant t on t.id=r.tenant_id and t.state='ACTIVE'
@@ -584,6 +1477,58 @@ const ROUTE: &str = "select r.tenant_id,r.owner_principal_id,r.home_workspace_id
       and om.tenant_id=t.id and om.state='ACTIVE'
     where r.id=$1 and r.tenant_id=$2 and r.type_key='llm_route' and r.state='ACTIVE'
       and r.projection_action_execution_id is null";
+
+/// Version 发布与 Installation readiness 共用原 Route/native 投影事实。
+/// ConfigResource 存在不注册 llm_route，也不替代 revision/hash/effective 查证。
+pub(crate) async fn validate_reference(
+    governance: &crate::governance::Governance,
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    human: Uuid,
+    id: Uuid,
+) -> Result<(), Refusal> {
+    let route: Route = sqlx::query_as(ROUTE)
+        .bind(id)
+        .bind(tenant)
+        .fetch_optional(conn)
+        .await?
+        .ok_or(Refusal::Precondition(ReasonCode::BindingNotActive))?;
+    if !governance
+        .spicedb
+        .resource_projection_matches_in_workspace(
+            &id.to_string(),
+            &tenant.to_string(),
+            &route.owner_principal_id.to_string(),
+            route
+                .home_workspace_id
+                .map(|workspace| workspace.to_string())
+                .as_deref(),
+            governance.cfg.relationship_page,
+        )
+        .await
+        .map_err(|_| unavailable())?
+    {
+        return Err(unavailable());
+    }
+    let checked = governance
+        .spicedb
+        .check(
+            "resource",
+            &id.to_string(),
+            "read",
+            &human.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| unavailable())?;
+    if checked.zed_token.is_empty() {
+        return Err(unavailable());
+    }
+    if !checked.allowed {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    Gateway::from_env()?.check_route(&route).await
+}
 
 /// 同一已有 Installation projection 的凭据生产；没有新 Action/Workflow 权威。
 /// 外部 key 创建先写持久 intent。原生 ID 随机，回应丢失只按摘要/scope 查证，
@@ -1242,7 +2187,270 @@ impl Gateway {
         Ok(rows.clone())
     }
 
+    fn credential_file(&self, tenant: Uuid, route: Uuid, version: u32) -> Result<String, Refusal> {
+        let root = std::path::PathBuf::from(
+            std::env::var("AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY").map_err(|_| unavailable())?,
+        );
+        if !root.is_absolute()
+            || root.parent().is_none()
+            || root.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::CurDir
+                )
+            })
+            || version == 0
+        {
+            return Err(unavailable());
+        }
+        root.join(format!("{tenant}.{route}.{version}"))
+            .into_os_string()
+            .into_string()
+            .map_err(|_| unavailable())
+    }
+
+    async fn project_credential(
+        &self,
+        tenant: Uuid,
+        route: Uuid,
+        version: u32,
+        secret: &SecretValue,
+        expected_hash: &str,
+    ) -> Result<(), Refusal> {
+        let observed = self
+            .admin(
+                &[
+                    "api",
+                    "config",
+                    "provider-credentials",
+                    &tenant.to_string(),
+                    &route.to_string(),
+                    &version.to_string(),
+                ],
+                Some(json!({"value":secret.expose()})),
+            )
+            .await?;
+        if observed.get("file").and_then(Value::as_str)
+            != Some(self.credential_file(tenant, route, version)?.as_str())
+            || observed.get("version").and_then(Value::as_u64) != Some(u64::from(version))
+            || observed.get("sha256").and_then(Value::as_str) != Some(expected_hash)
+        {
+            return Err(unavailable());
+        }
+        Ok(())
+    }
+
+    async fn observe_creation(
+        &self,
+        tenant: Uuid,
+        route: Uuid,
+        version: u32,
+        hashes: &Value,
+        credential_hash: &str,
+    ) -> Result<Option<(i64, String)>, Refusal> {
+        let credential = self
+            .admin(
+                &[
+                    "api",
+                    "config",
+                    "provider-credentials",
+                    &tenant.to_string(),
+                    &route.to_string(),
+                    &version.to_string(),
+                ],
+                None,
+            )
+            .await?;
+        if credential.is_null() {
+            return Ok(None);
+        }
+        if credential.get("file").and_then(Value::as_str)
+            != Some(self.credential_file(tenant, route, version)?.as_str())
+            || credential.get("version").and_then(Value::as_u64) != Some(u64::from(version))
+            || credential.get("sha256").and_then(Value::as_str) != Some(credential_hash)
+        {
+            return Err(conflict());
+        }
+        let effective = self.admin(&["api", "config", "effective"], None).await?;
+        let mut result = None;
+        for (kind, collection) in [
+            ("llm.provider", "providers"),
+            ("llm.model", "models"),
+            ("llm.virtualModel", "virtualModels"),
+        ] {
+            let rows = self.resources(kind).await?;
+            let mut matching = rows.iter().filter(|row| {
+                row.get("id").and_then(Value::as_str) == Some(route.to_string().as_str())
+            });
+            let Some(row) = matching.next() else {
+                return Ok(None);
+            };
+            let value = row.get("value").ok_or_else(unavailable)?;
+            let expected = hashes
+                .get(kind)
+                .and_then(Value::as_str)
+                .ok_or_else(unavailable)?;
+            if matching.next().is_some() || digest(value)? != expected {
+                return Err(conflict());
+            }
+            let revision = row
+                .get("revision")
+                .and_then(Value::as_i64)
+                .filter(|version| *version > 0)
+                .ok_or_else(unavailable)?;
+            let values = effective
+                .get("llm")
+                .and_then(|llm| llm.get(collection))
+                .and_then(Value::as_array)
+                .ok_or_else(unavailable)?;
+            let mut matching = values.iter().filter(|value| {
+                value.get("name").and_then(Value::as_str) == Some(route.to_string().as_str())
+            });
+            let materialized = matching.next().ok_or_else(unavailable)?;
+            if matching.next().is_some() || digest(materialized)? != expected {
+                return Err(conflict());
+            }
+            if kind == "llm.virtualModel" {
+                result = Some((revision, expected.to_owned()));
+            }
+        }
+        Ok(result)
+    }
+
+    async fn retire_creation(
+        &self,
+        tenant: Uuid,
+        route: Uuid,
+        version: u32,
+        hashes: Option<&Value>,
+    ) -> Result<Vec<CreationAbsence>, Refusal> {
+        let mut absent = Vec::new();
+        for kind in ["llm.provider", "llm.model", "llm.virtualModel"] {
+            let rows = self.resources(kind).await?;
+            let mut matching = rows.iter().filter(|row| {
+                row.get("id").and_then(Value::as_str) == Some(route.to_string().as_str())
+            });
+            let row = matching.next();
+            if matching.next().is_some() {
+                return Err(conflict());
+            }
+            let revision = if let Some(row) = row {
+                let expected = hashes
+                    .and_then(|hashes| hashes.get(kind))
+                    .and_then(Value::as_str)
+                    .ok_or_else(unavailable)?;
+                if digest(row.get("value").ok_or_else(unavailable)?)? != expected {
+                    return Err(conflict());
+                }
+                let revision = row
+                    .get("revision")
+                    .and_then(Value::as_i64)
+                    .filter(|version| *version > 0)
+                    .ok_or_else(unavailable)?;
+                Some(revision)
+            } else {
+                None
+            };
+            absent.push(CreationAbsence {
+                kind: kind.into(),
+                id: route.to_string(),
+                revision,
+                absent: true,
+            });
+        }
+        // Native tombstones cover all three IDs atomically, including never-created IDs.
+        self.admin_delete(&["api", "config", "routes", &route.to_string()])
+            .await?;
+        if !self.creation_absent(route).await? {
+            return Err(unavailable());
+        }
+        // All native users are gone before destroying the file; old generations are drained upstream.
+        self.admin_delete(&[
+            "api",
+            "config",
+            "provider-credentials",
+            &tenant.to_string(),
+            &route.to_string(),
+            &version.to_string(),
+        ])
+        .await?;
+        if !self
+            .admin(
+                &[
+                    "api",
+                    "config",
+                    "provider-credentials",
+                    &tenant.to_string(),
+                    &route.to_string(),
+                    &version.to_string(),
+                ],
+                None,
+            )
+            .await?
+            .is_null()
+        {
+            return Err(unavailable());
+        }
+        absent.push(CreationAbsence {
+            kind: "providerCredential".into(),
+            id: format!("{tenant}.{route}.{version}"),
+            revision: Some(i64::from(version)),
+            absent: true,
+        });
+        Ok(absent)
+    }
+
+    async fn creation_absent(&self, route: Uuid) -> Result<bool, Refusal> {
+        let effective = self.admin(&["api", "config", "effective"], None).await?;
+        for (kind, collection) in [
+            ("llm.provider", "providers"),
+            ("llm.model", "models"),
+            ("llm.virtualModel", "virtualModels"),
+        ] {
+            if self.resources(kind).await?.iter().any(|row| {
+                row.get("id").and_then(Value::as_str) == Some(route.to_string().as_str())
+            }) {
+                return Ok(false);
+            }
+            if let Some(values) = effective.get("llm").and_then(|llm| llm.get(collection)) {
+                let values = values.as_array().ok_or_else(unavailable)?;
+                if values.iter().any(|value| {
+                    value.get("name").and_then(Value::as_str) == Some(route.to_string().as_str())
+                }) {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
     async fn check_route(&self, route: &Route) -> Result<(), Refusal> {
+        match (
+            &route.creation_source_refs,
+            &route.creation_hashes,
+            &route.credential_hash,
+        ) {
+            (Some(source), Some(hashes), Some(credential_hash)) => {
+                let input: CreateInput =
+                    serde_json::from_value(source.clone()).map_err(|_| unavailable())?;
+                let id = Uuid::parse_str(&route.native_id).map_err(|_| unavailable())?;
+                if self
+                    .observe_creation(
+                        route.tenant_id,
+                        id,
+                        provider_version(&input)?,
+                        hashes,
+                        credential_hash,
+                    )
+                    .await?
+                    != Some((route.native_revision, route.native_config_hash.clone()))
+                {
+                    return Err(conflict());
+                }
+            }
+            (None, None, None) => (),
+            _ => return Err(unavailable()),
+        }
         let rows = self.resources("llm.virtualModel").await?;
         let matches: Vec<_> = rows
             .iter()
@@ -1349,11 +2557,16 @@ impl Gateway {
     }
 
     async fn delete(&self, kind: &str, id: &str) -> Result<(), Refusal> {
+        self.admin_delete(&["api", "config", "resources", kind, id])
+            .await
+    }
+
+    async fn admin_delete(&self, segments: &[&str]) -> Result<(), Refusal> {
         let mut url = self.admin.clone();
         url.path_segments_mut()
             .map_err(|_| unavailable())?
             .pop_if_empty()
-            .extend(["api", "config", "resources", kind, id]);
+            .extend(segments);
         let bearer = self.tokens.token().await.map_err(|_| unavailable())?;
         let response = reqwest::Client::new()
             .delete(url)

@@ -9,6 +9,7 @@ import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import 'platform_agent_memory_page.dart';
 import 'platform_async_view.dart';
+import 'platform_agent_delegations_page.dart';
 
 /// 精确 pin、身份、频道与持久投影摘要，不读取 prompt/secret/隔离目录或执行状态。
 class PlatformAgentInstallationDetailPage extends ConsumerWidget {
@@ -165,6 +166,26 @@ class PlatformAgentInstallationDetailPage extends ConsumerWidget {
                     ),
                 ],
               ),
+              if (facts['state'] == 'ACTIVE' &&
+                  row.resourceState == ResourceState.ACTIVE)
+                AppListCard(
+                  children: [
+                    AppListRow(
+                      key: const ValueKey('platform-installation-delegations'),
+                      title: text(PlatformMessageKey.agentsDelegationTitle),
+                      subtitle: text(PlatformMessageKey.agentsDelegationReadOnly),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => PlatformAgentDelegationsPage(
+                            workspaceId: row.workspaceId,
+                            resourceId: row.resourceId,
+                            resourceVersion: row.resourceVersion,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               AppListCard(
                 children: [
                   AppListRow(

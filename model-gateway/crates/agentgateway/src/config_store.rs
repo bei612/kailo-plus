@@ -231,11 +231,12 @@ impl ConfigResourceStore {
 		prepared: Vec<PreparedResource>,
 	) -> anyhow::Result<ConfigResourcesResponse> {
 		let resources = match &self.pool {
-			DatabasePool::Sqlite(pool) => upsert_sqlite(pool, prepared).await?,
+			DatabasePool::Sqlite(pool) => upsert_sqlite(pool, prepared, false).await?,
 			DatabasePool::Postgres(pool) => {
 				upsert_postgres(
 					pool,
 					prepared,
+					false,
 					self
 						.notification_id
 						.as_deref()
@@ -248,6 +249,75 @@ impl ConfigResourceStore {
 			self.notify_changed();
 		}
 		Ok(ConfigResourcesResponse { resources })
+	}
+
+	pub(crate) async fn create_prepared(
+		&self,
+		prepared: Vec<PreparedResource>,
+	) -> anyhow::Result<ConfigResourcesResponse> {
+		let resources = match &self.pool {
+			DatabasePool::Sqlite(pool) => upsert_sqlite(pool, prepared, true).await?,
+			DatabasePool::Postgres(pool) => {
+				upsert_postgres(
+					pool,
+					prepared,
+					true,
+					self
+						.notification_id
+						.as_deref()
+						.ok_or_else(|| anyhow::anyhow!("missing notification identity"))?,
+				)
+				.await?
+			},
+		};
+		self.notify_changed();
+		Ok(ConfigResourcesResponse { resources })
+	}
+
+	/// Native deleted_at rows also fence create-only requests that arrive after retirement.
+	pub(crate) async fn retire_route(&self, id: &str) -> anyhow::Result<()> {
+		validate_id(id)?;
+		let kinds = [
+			ConfigResourceKind::LlmProvider,
+			ConfigResourceKind::LlmModel,
+			ConfigResourceKind::LlmVirtualModel,
+		];
+		match &self.pool {
+			DatabasePool::Sqlite(pool) => {
+				let mut tx = pool.begin().await?;
+				let now = Utc::now().to_rfc3339();
+				for kind in kinds {
+					sqlx::query("INSERT INTO agw_config_resources(kind,id,value_json,revision,created_at,updated_at,deleted_at)
+						VALUES(?,?,'null',1,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET
+						revision=agw_config_resources.revision+1,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at
+						WHERE agw_config_resources.deleted_at IS NULL")
+						.bind(kind.as_str()).bind(id).bind(&now).bind(&now).bind(&now).execute(&mut *tx).await?;
+				}
+				tx.commit().await?;
+			},
+			DatabasePool::Postgres(pool) => {
+				let mut tx = pool.begin().await?;
+				let now = Utc::now();
+				for kind in kinds {
+					sqlx::query("INSERT INTO agw_config_resources(kind,id,value_json,revision,created_at,updated_at,deleted_at)
+						VALUES($1,$2,'null'::jsonb,1,$3,$3,$3) ON CONFLICT(kind,id) DO UPDATE SET
+						revision=agw_config_resources.revision+1,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at
+						WHERE agw_config_resources.deleted_at IS NULL")
+						.bind(kind.as_str()).bind(id).bind(now).execute(&mut *tx).await?;
+				}
+				notify_postgres(
+					&mut tx,
+					self
+						.notification_id
+						.as_deref()
+						.ok_or_else(|| anyhow::anyhow!("missing notification identity"))?,
+				)
+				.await?;
+				tx.commit().await?;
+			},
+		}
+		self.notify_changed();
+		Ok(())
 	}
 
 	pub(crate) async fn rename_prepared(
@@ -1491,13 +1561,17 @@ async fn list_postgres(
 async fn upsert_sqlite(
 	pool: &SqlitePool,
 	prepared: Vec<PreparedResource>,
+	create_only: bool,
 ) -> anyhow::Result<Vec<ConfigResource>> {
 	let mut tx = pool.begin().await?;
 	let mut changed = Vec::with_capacity(prepared.len());
 	for PreparedResource { kind, id, value } in prepared {
 		validate_id(&id)?;
 		let now = Utc::now().to_rfc3339();
-		sqlx::query(
+		let result = sqlx::query(if create_only {
+			"INSERT INTO agw_config_resources (kind,id,value_json,revision,created_at,updated_at,deleted_at)
+			 VALUES(?,?,?,1,?,?,NULL) ON CONFLICT(kind,id) DO NOTHING"
+		} else {
 			"INSERT INTO agw_config_resources \
 			 (kind, id, value_json, revision, created_at, updated_at, deleted_at) \
 			 VALUES (?, ?, ?, 1, ?, ?, NULL) \
@@ -1505,8 +1579,8 @@ async fn upsert_sqlite(
 				value_json = excluded.value_json, \
 				revision = agw_config_resources.revision + 1, \
 				updated_at = excluded.updated_at, \
-				deleted_at = NULL",
-		)
+				deleted_at = NULL"
+		})
 		.bind(kind.as_str())
 		.bind(&id)
 		.bind(serde_json::to_string(&value)?)
@@ -1514,6 +1588,11 @@ async fn upsert_sqlite(
 		.bind(&now)
 		.execute(&mut *tx)
 		.await?;
+		if create_only && result.rows_affected() != 1 {
+			return Err(
+				ConfigResourceError::Conflict("governed route ID already created or retired".into()).into(),
+			);
+		}
 		changed.push((kind, id));
 	}
 
@@ -1530,6 +1609,7 @@ async fn upsert_sqlite(
 async fn upsert_postgres(
 	pool: &PgPool,
 	prepared: Vec<PreparedResource>,
+	create_only: bool,
 	notification_id: &str,
 ) -> anyhow::Result<Vec<ConfigResource>> {
 	let mut tx = pool.begin().await?;
@@ -1537,7 +1617,10 @@ async fn upsert_postgres(
 	for PreparedResource { kind, id, value } in prepared {
 		validate_id(&id)?;
 		let now = Utc::now();
-		sqlx::query(
+		let result = sqlx::query(if create_only {
+			"INSERT INTO agw_config_resources (kind,id,value_json,revision,created_at,updated_at,deleted_at)
+			 VALUES($1,$2,$3,1,$4,$4,NULL) ON CONFLICT(kind,id) DO NOTHING"
+		} else {
 			"INSERT INTO agw_config_resources \
 			 (kind, id, value_json, revision, created_at, updated_at, deleted_at) \
 			 VALUES ($1, $2, $3, 1, $4, $4, NULL) \
@@ -1545,14 +1628,19 @@ async fn upsert_postgres(
 				value_json = excluded.value_json, \
 				revision = agw_config_resources.revision + 1, \
 				updated_at = excluded.updated_at, \
-				deleted_at = NULL",
-		)
+				deleted_at = NULL"
+		})
 		.bind(kind.as_str())
 		.bind(&id)
 		.bind(Json(value))
 		.bind(now)
 		.execute(&mut *tx)
 		.await?;
+		if create_only && result.rows_affected() != 1 {
+			return Err(
+				ConfigResourceError::Conflict("governed route ID already created or retired".into()).into(),
+			);
+		}
 		changed.push((kind, id));
 	}
 

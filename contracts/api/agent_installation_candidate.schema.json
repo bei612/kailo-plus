@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_installation_candidate.schema.json",
+  "title": "AgentInstallationCandidate",
+  "description": "实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agentResourceId", "resourceVersion", "displayName", "agentVersionAssetId", "assetVersion", "ordinal"],
+  "properties": {
+    "agentResourceId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer", "minimum": 1},
+    "displayName": {"type": "string", "minLength": 1},
+    "agentVersionAssetId": {"type": "string", "format": "uuid"},
+    "assetVersion": {"type": "integer", "minimum": 1},
+    "ordinal": {"type": "integer", "minimum": 1}
+  }
+}

@@ -523,7 +523,7 @@ step_supply()   { hdr "7/10 secret、依赖、许可证与供应链"
   # provenance 的 subject/digest/源码 commit，以及该 commit 的依赖锁摘要。
   if [ -d dist ] && [ -n "$(ls -A dist 2>/dev/null)" ]; then
     python3 - <<'PY' || FAIL=1
-import glob, hashlib, json, os, re, subprocess, sys
+import glob, hashlib, json, os, re, subprocess, sys, yaml
 bad = []
 empty = [f for f in glob.glob("dist/*") if os.path.getsize(f) == 0]
 bad += [f"{f}: 0 字节产物" for f in empty]
@@ -551,7 +551,8 @@ def release_form(provenance):
     image = re.search(r'^\s*tag="([a-z0-9-]+)/\$unit:\$COMMIT"', script, re.M)
     build_type = re.search(r'"buildType": "([^"]+)"', script)
     context = re.search(r'"externalParameters":\s*\{[^\n]*"context":\s*"([^"]+)"', script)
-    return (image.group(1), build_type.group(1), context.group(1), root) if image and build_type and context else None
+    return (image.group(1), build_type.group(1), context.group(1), root,
+            '"buildArgs": {"AGENT_RUNTIME_IMAGE": runtime_image} if runtime_image else {}' in script) if image and build_type and context else None
 
 for name in sorted(names):
     m = re.fullmatch(r"(core|worker)\.([0-9a-f]{64})\.(spdx|provenance)\.json", name)
@@ -573,7 +574,7 @@ for name in sorted(names):
         if form is None:
             bad.append(f"{name}: 取不到生成它的 release.sh，构建形态无从核对")
             continue
-        image, build_type, context, root = form
+        image, build_type, context, root, records_runtime_args = form
         if kind == "spdx":
             if document.get("name") != f"{image}/{unit}" or document.get("spdxVersion") != "SPDX-2.3":
                 bad.append(f"{name}: SBOM 单元或 SPDX 版本不匹配")
@@ -581,14 +582,44 @@ for name in sorted(names):
         if document.get("subject") != [{"name": f"{image}/{unit}", "digest": {"sha256": digest}}]:
             bad.append(f"{name}: provenance subject 与文件 digest 不匹配")
         definition = document["predicate"]["buildDefinition"]
-        if (document.get("_type") != "https://in-toto.io/Statement/v1"
-                or document.get("predicateType") != "https://slsa.dev/provenance/v1"
-                or definition.get("buildType") != build_type
-                or definition.get("externalParameters") != {"dockerfile": f"{unit}/Dockerfile", "context": context}):
-            bad.append(f"{name}: provenance 构建形态不匹配")
         dependencies = definition["resolvedDependencies"]
         commit = next((x.get("digest", {}).get("gitCommit") for x in dependencies
                        if x.get("digest", {}).get("gitCommit")), None)
+        expected_parameters = {"dockerfile": f"{unit}/Dockerfile", "context": context}
+        if records_runtime_args:
+            expected_parameters["buildArgs"] = {}
+            if unit == "core":
+                # Runtime 的摘要取自实际源码 commit；registry locator 是发布配置，
+                # 不能固定为本机地址，也不能只信证明中自报的 Runtime 摘要。
+                manifest = yaml.safe_load(subprocess.run(
+                    ["git", "show", f"{commit}:{root}agent-runtime/fork/upstream.yaml"],
+                    capture_output=True, text=True, check=True).stdout)
+                runtimes = [artifact for artifact in manifest["artifacts"]
+                            if artifact.get("name") == "agent-runtime"]
+                runtime_digest = runtimes[0].get("artifact_digest") if len(runtimes) == 1 else None
+                parameters = definition.get("externalParameters") or {}
+                runtime_image = (parameters.get("buildArgs") or {}).get("AGENT_RUNTIME_IMAGE")
+                if (not isinstance(runtime_digest, str)
+                        or not re.fullmatch(r"sha256:[0-9a-f]{64}", runtime_digest)
+                        or not isinstance(runtime_image, str)
+                        or not re.fullmatch(r"[^@\s]+@sha256:[0-9a-f]{64}", runtime_image)
+                        or not runtime_image.endswith("@" + runtime_digest)):
+                    bad.append(f"{name}: Runtime 构建参数与源码 commit 固定产物不匹配")
+                    continue
+                expected_parameters["buildArgs"] = {"AGENT_RUNTIME_IMAGE": runtime_image}
+                expected_runtime = [{"uri": "oci://" + runtime_image.split("@")[0],
+                                     "digest": {"sha256": runtime_digest.removeprefix("sha256:")}}]
+            else:
+                expected_runtime = []
+            runtime_dependencies = [dependency for dependency in dependencies
+                                    if str(dependency.get("uri", "")).startswith("oci://")]
+            if runtime_dependencies != expected_runtime:
+                bad.append(f"{name}: Runtime 依赖证明与构建参数不匹配")
+        if (document.get("_type") != "https://in-toto.io/Statement/v1"
+                or document.get("predicateType") != "https://slsa.dev/provenance/v1"
+                or definition.get("buildType") != build_type
+                or definition.get("externalParameters") != expected_parameters):
+            bad.append(f"{name}: provenance 构建形态不匹配")
         lock_digest = next((x.get("digest", {}).get("sha256") for x in dependencies
                             if x.get("name") == "dependency-locks"), None)
         if not commit or not re.fullmatch(r"[0-9a-f]{40}", commit):
@@ -609,7 +640,7 @@ for name in sorted(names):
                               if blob_ids else "none")
         if lock_digest != actual_lock_digest:
             bad.append(f"{name}: 依赖锁摘要与源码 commit 不匹配")
-    except (KeyError, TypeError, ValueError, subprocess.CalledProcessError) as error:
+    except (AttributeError, KeyError, TypeError, ValueError, yaml.YAMLError, subprocess.CalledProcessError) as error:
         bad.append(f"{name}: 产物元数据不可验证（{type(error).__name__}）")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)

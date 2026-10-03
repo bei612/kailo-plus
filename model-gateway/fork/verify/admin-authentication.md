@@ -90,3 +90,71 @@ config:
   （issuer=`OIDC_ISSUER`、clientId=`OIDC_SERVICE_CLIENT_ID`、jwks=`OIDC_JWKS_URI`）；
 - 网络：admin 端口不发布到宿主，不接入 `mgmt`（`check.sh` 禁止 edge 与 mgmt 同属一个服务），Core 经
   两者共有的 `app` 网络访问；网络隔离只是纵深防御，认证不依赖它。
+
+## 2026-10-03 本窗口原生构建与拒绝边界终态
+
+本节为前一源码窗口实施后的实际执行记录，不改写上述历史。原件全部位于
+`/volumes/data/kailo/tmp/codex-route-native-delivery-20261003.5lJP72`。
+
+原 native 固定 commit `1f7ebbf87cbdbe9517f6f181221879d04dc50692` 的
+`Cargo.toml`（uuid 依赖）与 `crates/agentgateway/src/ui.rs::App::ensure_writable`、
+`App::config_resource_store`、`upsert_config_resources_by_kind` 已以只读 `git show` 重验。
+上游 Git 树路径为 `crates/agentgateway/src/...`；此前 2026-10-02 文中
+`agentgateway/crates/...` 的前缀是外层目录描述，不是该 commit 内的 Git 路径，引用在此纠正。
+上游 uuid 只有 v4/v7、没有 serde，原 Path 提取器使用 String。
+
+- 原不可变 SDK 内 rustfmt 对四 native 源实际退出 0，UID1000:1000、4 CPU、8 GiB、
+  memory+swap=8 GiB。它是原 Rust1.90 格式工具，不冒称为下面的 Rust1.98 native 编译。
+  初始纯格式原件 `native-format-only.diff`；后续真实修复原件
+  `native-format-and-compile-repair.diff`，SHA-256
+  `6bc8b70224838b529c735ca40d38cfe7237510ef112a0a0acd7e0328d0bf1304`。
+- 第一次原 `tools/build-upstream.sh model-gateway` 实际退出 1，五个 Axum Handler E0277
+  原件保留在 `model-gateway-build-first-failed.log`、`build-model-gateway.jaIueJ.log`。
+  新 Path<Uuid> 不满足既有依赖的反序列化条件，已直接沿原 Path<String> 加原
+  `Uuid::parse_str` 严格解析；credential 三路使用原 String tuple 后同样核 nil/version。
+  没有改依赖、认证、Future Send、生产配置或 credential 正文边界。
+- 原两个 `ui::tests::ensure_writable` 在实现后增加对真实新 Handler 的拒绝断言，
+  未新增测试函数、fixture、Provider、模型或有效 key。沿已存在 native SDK
+  `sha256:17a2ffedc7792a8dc0bfb17f34d6dd928db5efff67d5698d3c449cb6ffb94936`，
+  实际 Rust/Cargo1.98.0、4 CPU、8 GiB、swap.max=0、Cargo jobs 未设置。
+  `cargo test --offline --locked --profile ci -p agentgateway --lib ui::tests::ensure_writable -- --test-threads=1`
+  原件 `native-handler-check-baseline-retry.log`：退出 0，2 passed / 0 failed。
+  首次离线启动因 rust-toolchain 短名触发 rustup 下载而退出 1，原件
+  `native-handler-check-baseline.log`；显式用原镜像已安装的 1.98.0 后才进入上述检查。
+- 后置 Data 变异不接触正式或 helper 输入。仅删除 create 的冗余 ensure_writable 仍 0，
+  因原 config_resource_store 对 ReadOnly 仍 403，不冒充有效负向。实际把新 create 的拒绝
+  响应变成 200 后检查退出 101（200≠403）；实际移除 credential 空值拒绝后检查退出 101
+  （503≠400）。原件为 `native-handler-response-mutation.log`、
+  `native-secret-empty-mutation.log`。没有投递 secret directory，变异不写凭据文件。
+  两源逐字还原后 `native-handler-secret-restored.log` 退出 0，2 passed / 0 failed，
+  与正式及 helper 输入 cmp 相同，四源 SHA 核对全部 OK，检查容器均已清理。
+- 原 helper 重试 45510 实际退出 0。已有 builder 保持 8 CPU、16 GiB、Data 原缓存，
+  Cargo 并行不改变；原 pinned Node UI 构建在首轮实际通过，重试使用其真实缓存。
+  原 Rust1.98 release 编译实际 13m40s，binary 原版本自检 0，完整过程
+  `model-gateway-build-retry.log` / `build-model-gateway.c5Q1Fz.log`。
+  原 source_digest 算法对正式和机械导出均为 2658 输入、
+  `sha256:14dcdee04d6f6a18cbe506505bd6d3c51cf134aaefe207d0459503c3ca98fd99`。
+  helper 只写 Data manifest 两字段，真实产物为
+  `sha256:f3008585dadda509afc738dd28de925e37019abe64a100b3d928fe071a3a91a0`。
+  registry 实际读取 200，Docker-Content-Digest 与 manifest 字节 SHA 都等于该 digest；
+  原件 `registry-readback.headers` / `registry-readback.manifest.json` /
+  `registry-readback.receipt`。正式 manifest、Git index、提交与部署不由本刀修改。
+
+两项直接 Handler 检查证明 readonly、非法引用、空 credential 的拒绝边界及其错误分类，
+不是 create-only DB transaction 或真实 credential 写/退役的业务验收。未创建业务 Provider、
+模型、Key 或默认配置；真实租户 OpenBao SecretRef、Gateway requested/effective 回读、
+DD-110 Responses/function tool/stream 以及 LLM 业务 E2E仍未验收。
+镜像/registry 成功不提升这些验收状态；Core 本刀 paired migration、全量门禁由主线另列。
+
+### 2026-10-03 Git 导出输入换行收口
+
+上述 f300/14dc 保留为原历史。原完整检查发现 Git LF 导出与当时 README CRLF
+构建字节不一致；实际唯一差异为 `crates/htpasswd-verify-fork/README.md`，
+四个 Rust 源完全相同。未更改 Git attributes、输入算法或源码能力。
+沿原 helper 以 Git 实际 LF 字节重新构建，实际退出 0；source 为
+`sha256:c606f8245b8af8b5172b8feb9f5f24a781750dc41c4aac05e69bc41265967fe5`，
+artifact 为 `sha256:14bf9f878fbca870361171331ac4401f7c3fa5cd8168c665ae9061a4b2a674e7`。
+registry GET 200，header 与 manifest body SHA 独立读回一致；选定与正式实际
+source 均相同。原件 `codex-agent-management-web-win-20261003.yUA7u9/gateway-lf-helper.log`
+SHA-256 为 `f700d89df9fd70020438214d1672dda58350917f2f0b1d0baae1719afdc7da93`。
+真实 helper 仅更新两字段 metadata；未重建 Web/Win、未部署、未进行 LLM 业务验收。

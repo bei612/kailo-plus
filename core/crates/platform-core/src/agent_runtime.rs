@@ -1060,7 +1060,7 @@ mod activity_tests {
                 kind: contracts::RuntimeProfileKind::ServerCodex,
                 status: "DRAFT".into(),
                 web_availability: "DISABLED".into(),
-                capability_contract: contracts::CapabilityContract {
+                capability_contract: contracts::FluffyCapabilityContract {
                     capability_requirements: Vec::new(),
                     reply_policies: Vec::new(),
                     max_parallelism: 0,

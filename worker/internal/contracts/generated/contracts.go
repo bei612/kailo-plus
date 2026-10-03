@@ -16,6 +16,21 @@
 //    agentDefinitionView, err := UnmarshalAgentDefinitionView(bytes)
 //    bytes, err = agentDefinitionView.Marshal()
 //
+//    agentDelegationPage, err := UnmarshalAgentDelegationPage(bytes)
+//    bytes, err = agentDelegationPage.Marshal()
+//
+//    agentDelegationTargetPage, err := UnmarshalAgentDelegationTargetPage(bytes)
+//    bytes, err = agentDelegationTargetPage.Marshal()
+//
+//    agentDelegationView, err := UnmarshalAgentDelegationView(bytes)
+//    bytes, err = agentDelegationView.Marshal()
+//
+//    agentInstallationCandidate, err := UnmarshalAgentInstallationCandidate(bytes)
+//    bytes, err = agentInstallationCandidate.Marshal()
+//
+//    agentInstallationCandidatePage, err := UnmarshalAgentInstallationCandidatePage(bytes)
+//    bytes, err = agentInstallationCandidatePage.Marshal()
+//
 //    agentInstallationPage, err := UnmarshalAgentInstallationPage(bytes)
 //    bytes, err = agentInstallationPage.Marshal()
 //
@@ -33,6 +48,15 @@
 //
 //    agentMemoryReadView, err := UnmarshalAgentMemoryReadView(bytes)
 //    bytes, err = agentMemoryReadView.Marshal()
+//
+//    agentVersionConfigurationPage, err := UnmarshalAgentVersionConfigurationPage(bytes)
+//    bytes, err = agentVersionConfigurationPage.Marshal()
+//
+//    agentVersionPage, err := UnmarshalAgentVersionPage(bytes)
+//    bytes, err = agentVersionPage.Marshal()
+//
+//    agentVersionRouteOption, err := UnmarshalAgentVersionRouteOption(bytes)
+//    bytes, err = agentVersionRouteOption.Marshal()
 //
 //    agentVersionView, err := UnmarshalAgentVersionView(bytes)
 //    bytes, err = agentVersionView.Marshal()
@@ -136,11 +160,17 @@
 //    delegationGrantParameters, err := UnmarshalDelegationGrantParameters(bytes)
 //    bytes, err = delegationGrantParameters.Marshal()
 //
+//    delegationScopeParameters, err := UnmarshalDelegationScopeParameters(bytes)
+//    bytes, err = delegationScopeParameters.Marshal()
+//
 //    errorBody, err := UnmarshalErrorBody(bytes)
 //    bytes, err = errorBody.Marshal()
 //
 //    resolvedIdentity, err := UnmarshalResolvedIdentity(bytes)
 //    bytes, err = resolvedIdentity.Marshal()
+//
+//    llmRouteCreateInput, err := UnmarshalLlmRouteCreateInput(bytes)
+//    bytes, err = llmRouteCreateInput.Marshal()
 //
 //    runtimeProfileDirectory, err := UnmarshalRuntimeProfileDirectory(bytes)
 //    bytes, err = runtimeProfileDirectory.Marshal()
@@ -270,6 +300,56 @@ func (r *AgentDefinitionView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAgentDelegationPage(data []byte) (AgentDelegationPage, error) {
+	var r AgentDelegationPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentDelegationPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentDelegationTargetPage(data []byte) (AgentDelegationTargetPage, error) {
+	var r AgentDelegationTargetPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentDelegationTargetPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentDelegationView(data []byte) (AgentDelegationView, error) {
+	var r AgentDelegationView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentDelegationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationCandidate(data []byte) (AgentInstallationCandidate, error) {
+	var r AgentInstallationCandidate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationCandidate) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationCandidatePage(data []byte) (AgentInstallationCandidatePage, error) {
+	var r AgentInstallationCandidatePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationCandidatePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAgentInstallationPage(data []byte) (AgentInstallationPage, error) {
 	var r AgentInstallationPage
 	err := json.Unmarshal(data, &r)
@@ -327,6 +407,36 @@ func UnmarshalAgentMemoryReadView(data []byte) (AgentMemoryReadView, error) {
 }
 
 func (r *AgentMemoryReadView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentVersionConfigurationPage(data []byte) (AgentVersionConfigurationPage, error) {
+	var r AgentVersionConfigurationPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentVersionConfigurationPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentVersionPage(data []byte) (AgentVersionPage, error) {
+	var r AgentVersionPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentVersionPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentVersionRouteOption(data []byte) (AgentVersionRouteOption, error) {
+	var r AgentVersionRouteOption
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentVersionRouteOption) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -670,6 +780,16 @@ func (r *DelegationGrantParameters) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalDelegationScopeParameters(data []byte) (DelegationScopeParameters, error) {
+	var r DelegationScopeParameters
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *DelegationScopeParameters) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalErrorBody(data []byte) (ErrorBody, error) {
 	var r ErrorBody
 	err := json.Unmarshal(data, &r)
@@ -687,6 +807,16 @@ func UnmarshalResolvedIdentity(data []byte) (ResolvedIdentity, error) {
 }
 
 func (r *ResolvedIdentity) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalLlmRouteCreateInput(data []byte) (LlmRouteCreateInput, error) {
+	var r LlmRouteCreateInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *LlmRouteCreateInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -997,6 +1127,8 @@ type ActionCommand struct {
 	IdempotencyKey string `json:"idempotencyKey"`
 	// tenant.member.invite.revoke 的目标邀请
 	InvitationID *string `json:"invitationId,omitempty"`
+	// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+	LlmRouteCreate *LlmRouteCreateClass `json:"llmRouteCreate,omitempty"`
 	// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
 	// 输入；其他命令禁止携带。
 	MemoryWrite *MemoryWriteClass `json:"memoryWrite,omitempty"`
@@ -1078,13 +1210,14 @@ type AutomationVersionContentTrigger struct {
 
 // 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 type DelegationGrantClass struct {
-	ExpiresAt time.Time              `json:"expiresAt"`
-	MaxUses   *int64                 `json:"maxUses,omitempty"`
-	Scopes    []DelegationGrantScope `json:"scopes"`
-	ValidFrom time.Time              `json:"validFrom"`
+	ExpiresAt time.Time      `json:"expiresAt"`
+	MaxUses   *int64         `json:"maxUses,omitempty"`
+	Scopes    []ScopeElement `json:"scopes"`
+	ValidFrom time.Time      `json:"validFrom"`
 }
 
-type DelegationGrantScope struct {
+// 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
+type ScopeElement struct {
 	ActionKey          string             `json:"actionKey"`
 	ActionVersion      int64              `json:"actionVersion"`
 	CreateWorkspaceID  *string            `json:"createWorkspaceId,omitempty"`
@@ -1094,6 +1227,27 @@ type DelegationGrantScope struct {
 	TargetID           *string            `json:"targetId,omitempty"`
 	TargetType         string             `json:"targetType"`
 	ToolResourceID     *string            `json:"toolResourceId,omitempty"`
+}
+
+// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+//
+// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+type LlmRouteCreateClass struct {
+	Model             Model                           `json:"model"`
+	Provider          Model                           `json:"provider"`
+	ProviderSecretRef LlmRouteCreateProviderSecretRef `json:"providerSecretRef"`
+}
+
+type Model struct {
+	ID       string `json:"id"`
+	Revision int64  `json:"revision"`
+	Sha256   string `json:"sha256"`
+}
+
+type LlmRouteCreateProviderSecretRef struct {
+	Audience string `json:"audience"`
+	Locator  string `json:"locator"`
+	Version  int64  `json:"version"`
 }
 
 // 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
@@ -1166,6 +1320,73 @@ type AgentDefinitionView struct {
 	ResourceVersion                int64         `json:"resourceVersion"`
 	StableSlug                     string        `json:"stableSlug"`
 	Status                         string        `json:"status"`
+}
+
+type AgentDelegationPage struct {
+	CanGrant               bool           `json:"canGrant"`
+	CanRevoke              bool           `json:"canRevoke"`
+	Grants                 []GrantElement `json:"grants"`
+	InstallationResourceID string         `json:"installationResourceId"`
+	NextOffset             *int64         `json:"nextOffset,omitempty"`
+	ResourceVersion        int64          `json:"resourceVersion"`
+	WorkspaceID            string         `json:"workspaceId"`
+}
+
+// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+type GrantElement struct {
+	DelegationID       string               `json:"delegationId"`
+	DelegationVersion  int64                `json:"delegationVersion"`
+	GrantorPrincipalID string               `json:"grantorPrincipalId"`
+	Parameters         DelegationGrantClass `json:"parameters"`
+	State              GrantState           `json:"state"`
+	Uses               int64                `json:"uses"`
+}
+
+// 原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
+type AgentDelegationTargetPage struct {
+	InstallationResourceID string         `json:"installationResourceId"`
+	NextOffset             *int64         `json:"nextOffset,omitempty"`
+	ResourceVersion        int64          `json:"resourceVersion"`
+	Scopes                 []ScopeElement `json:"scopes"`
+	WorkspaceID            string         `json:"workspaceId"`
+}
+
+// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+type AgentDelegationView struct {
+	DelegationID       string               `json:"delegationId"`
+	DelegationVersion  int64                `json:"delegationVersion"`
+	GrantorPrincipalID string               `json:"grantorPrincipalId"`
+	Parameters         DelegationGrantClass `json:"parameters"`
+	State              GrantState           `json:"state"`
+	Uses               int64                `json:"uses"`
+}
+
+// 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
+type AgentInstallationCandidate struct {
+	AgentResourceID     string `json:"agentResourceId"`
+	AgentVersionAssetID string `json:"agentVersionAssetId"`
+	AssetVersion        int64  `json:"assetVersion"`
+	DisplayName         string `json:"displayName"`
+	Ordinal             int64  `json:"ordinal"`
+	ResourceVersion     int64  `json:"resourceVersion"`
+}
+
+type AgentInstallationCandidatePage struct {
+	// 原 Installation create exposure、目录与 fresh Workspace create；每个候选还须 consume/投影查证，提交时全部重验。
+	CanCreate   bool               `json:"canCreate"`
+	Candidates  []CandidateElement `json:"candidates"`
+	NextOffset  *int64             `json:"nextOffset,omitempty"`
+	WorkspaceID string             `json:"workspaceId"`
+}
+
+// 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
+type CandidateElement struct {
+	AgentResourceID     string `json:"agentResourceId"`
+	AgentVersionAssetID string `json:"agentVersionAssetId"`
+	AssetVersion        int64  `json:"assetVersion"`
+	DisplayName         string `json:"displayName"`
+	Ordinal             int64  `json:"ordinal"`
+	ResourceVersion     int64  `json:"resourceVersion"`
 }
 
 // 按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
@@ -1285,10 +1506,91 @@ type AgentMemoryReadView struct {
 	WorkspaceID string  `json:"workspaceId"`
 }
 
+// DD-24/25/26：Definition 范围的受权版本配置目录，消费平台发布 RuntimeProfile 合同与已治理 Route。缺真实来源时两目录为空且
+// canCreate=false；目录或 canCreate 不授予发布、安装和运行权限。
+type AgentVersionConfigurationPage struct {
+	AgentResourceID string                          `json:"agentResourceId"`
+	CanCreate       bool                            `json:"canCreate"`
+	NextOffset      *int64                          `json:"nextOffset"`
+	Profiles        []RuntimeProfileDirectorySchema `json:"profiles"`
+	ResourceVersion int64                           `json:"resourceVersion"`
+	Routes          []RouteElement                  `json:"routes"`
+}
+
+type RuntimeProfileDirectorySchema struct {
+	CapabilityContract PurpleCapabilityContract `json:"capabilityContract"`
+	Key                string                   `json:"key"`
+	Kind               RuntimeProfileKind       `json:"kind"`
+	Status             string                   `json:"status"`
+	WebAvailability    string                   `json:"webAvailability"`
+}
+
+type PurpleCapabilityContract struct {
+	CapabilityRequirements []string `json:"capabilityRequirements"`
+	MaxIdleTimeoutSeconds  int64    `json:"maxIdleTimeoutSeconds"`
+	MaxParallelism         int64    `json:"maxParallelism"`
+	MaxTurnDurationSeconds int64    `json:"maxTurnDurationSeconds"`
+	ReplyPolicies          []string `json:"replyPolicies"`
+}
+
+// 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+type RouteElement struct {
+	HomeWorkspaceID        *string `json:"homeWorkspaceId"`
+	NativeConfigHash       string  `json:"nativeConfigHash"`
+	NativeConfigResourceID string  `json:"nativeConfigResourceId"`
+	NativeRevision         int64   `json:"nativeRevision"`
+	OwnerPrincipalID       string  `json:"ownerPrincipalId"`
+	ResourceID             string  `json:"resourceId"`
+	ResourceVersion        int64   `json:"resourceVersion"`
+}
+
+// DD-24/25、17 §3/8：同 Definition 下逐项 fresh Asset read 后的版本目录；DRAFT 可发现，PUBLISHED/RETIRED
+// 不可编辑。nextOffset 属原始扫描窗口，空的受权页不证明全集为空。
+type AgentVersionPage struct {
+	AgentResourceID string           `json:"agentResourceId"`
+	NextOffset      *int64           `json:"nextOffset"`
+	ResourceVersion int64            `json:"resourceVersion"`
+	Versions        []VersionElement `json:"versions"`
+}
+
+type VersionElement struct {
+	AgentResourceID string `json:"agentResourceId"`
+	AssetID         string `json:"assetId"`
+	AssetVersion    int64  `json:"assetVersion"`
+	// 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
+	// 资格；缺字段不允许发布，不证明已安装或可运行。
+	CanPublish *bool `json:"canPublish,omitempty"`
+	// 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
+	CanUpdate        *bool                    `json:"canUpdate,omitempty"`
+	ConfigHash       string                   `json:"configHash"`
+	Content          AgentVersionContentClass `json:"content"`
+	Ordinal          int64                    `json:"ordinal"`
+	OwnerPrincipalID string                   `json:"ownerPrincipalId"`
+	State            AgentVersionState        `json:"state"`
+}
+
+// 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+type AgentVersionRouteOption struct {
+	HomeWorkspaceID        *string `json:"homeWorkspaceId"`
+	NativeConfigHash       string  `json:"nativeConfigHash"`
+	NativeConfigResourceID string  `json:"nativeConfigResourceId"`
+	NativeRevision         int64   `json:"nativeRevision"`
+	OwnerPrincipalID       string  `json:"ownerPrincipalId"`
+	ResourceID             string  `json:"resourceId"`
+	ResourceVersion        int64   `json:"resourceVersion"`
+}
+
 type AgentVersionView struct {
-	AgentResourceID  string                   `json:"agentResourceId"`
-	AssetID          string                   `json:"assetId"`
-	AssetVersion     int64                    `json:"assetVersion"`
+	AgentResourceID string `json:"agentResourceId"`
+	AssetID         string `json:"assetId"`
+	AssetVersion    int64  `json:"assetVersion"`
+	// 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
+	// 资格；缺字段不允许发布，不证明已安装或可运行。
+	CanPublish *bool `json:"canPublish,omitempty"`
+	// 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
+	CanUpdate        *bool                    `json:"canUpdate,omitempty"`
 	ConfigHash       string                   `json:"configHash"`
 	Content          AgentVersionContentClass `json:"content"`
 	Ordinal          int64                    `json:"ordinal"`
@@ -1388,7 +1690,7 @@ type AutomationDetailView struct {
 	Delegations          []DelegationElement `json:"delegations"`
 	NextDelegationOffset *int64              `json:"nextDelegationOffset,omitempty"`
 	NextVersionOffset    *int64              `json:"nextVersionOffset,omitempty"`
-	Versions             []VersionElement    `json:"versions"`
+	Versions             []VersionClass      `json:"versions"`
 }
 
 type AutomationElement struct {
@@ -1414,7 +1716,7 @@ type DelegationElement struct {
 }
 
 // Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
-type VersionElement struct {
+type VersionClass struct {
 	AssetID              string                        `json:"assetId"`
 	AssetVersion         int64                         `json:"assetVersion"`
 	AutomationResourceID string                        `json:"automationResourceId"`
@@ -1800,13 +2102,14 @@ type AutomationVersionContentTriggerClass struct {
 }
 
 type DelegationGrantParameters struct {
-	ExpiresAt time.Time                        `json:"expiresAt"`
-	MaxUses   *int64                           `json:"maxUses,omitempty"`
-	Scopes    []DelegationGrantParametersScope `json:"scopes"`
-	ValidFrom time.Time                        `json:"validFrom"`
+	ExpiresAt time.Time      `json:"expiresAt"`
+	MaxUses   *int64         `json:"maxUses,omitempty"`
+	Scopes    []ScopeElement `json:"scopes"`
+	ValidFrom time.Time      `json:"validFrom"`
 }
 
-type DelegationGrantParametersScope struct {
+// 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
+type DelegationScopeParameters struct {
 	ActionKey          string             `json:"actionKey"`
 	ActionVersion      int64              `json:"actionVersion"`
 	CreateWorkspaceID  *string            `json:"createWorkspaceId,omitempty"`
@@ -1836,20 +2139,33 @@ type ResolvedIdentity struct {
 	TenantPrincipalID  string  `json:"tenantPrincipalId"`
 }
 
+// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。端点、模型正文与 key 不进入 Core 参数。
+type LlmRouteCreateInput struct {
+	Model             Model                                `json:"model"`
+	Provider          Model                                `json:"provider"`
+	ProviderSecretRef LlmRouteCreateInputProviderSecretRef `json:"providerSecretRef"`
+}
+
+type LlmRouteCreateInputProviderSecretRef struct {
+	Audience string `json:"audience"`
+	Locator  string `json:"locator"`
+	Version  int64  `json:"version"`
+}
+
 // 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
 type RuntimeProfileDirectory struct {
 	Profiles []Profile `json:"profiles"`
 }
 
 type Profile struct {
-	CapabilityContract CapabilityContract `json:"capabilityContract"`
-	Key                string             `json:"key"`
-	Kind               RuntimeProfileKind `json:"kind"`
-	Status             string             `json:"status"`
-	WebAvailability    string             `json:"webAvailability"`
+	CapabilityContract FluffyCapabilityContract `json:"capabilityContract"`
+	Key                string                   `json:"key"`
+	Kind               RuntimeProfileKind       `json:"kind"`
+	Status             string                   `json:"status"`
+	WebAvailability    string                   `json:"webAvailability"`
 }
 
-type CapabilityContract struct {
+type FluffyCapabilityContract struct {
 	CapabilityRequirements []string `json:"capabilityRequirements"`
 	MaxIdleTimeoutSeconds  int64    `json:"maxIdleTimeoutSeconds"`
 	MaxParallelism         int64    `json:"maxParallelism"`
@@ -2326,6 +2642,15 @@ const (
 	RetainedReadOnly          ResourceState = "RETAINED_READ_ONLY"
 )
 
+type GrantState string
+
+const (
+	StateACTIVE   GrantState = "ACTIVE"
+	StateEXPIRED  GrantState = "EXPIRED"
+	StateREVOKED  GrantState = "REVOKED"
+	StateREVOKING GrantState = "REVOKING"
+)
+
 type AgentPrincipalState string
 
 const (
@@ -2376,6 +2701,14 @@ const (
 	StateABSENT AgentMemoryReadViewState = "ABSENT"
 	StateFOUND  AgentMemoryReadViewState = "FOUND"
 	Unreadable  AgentMemoryReadViewState = "UNREADABLE"
+)
+
+type RuntimeProfileKind string
+
+const (
+	LocalACP       RuntimeProfileKind = "LOCAL_ACP"
+	RemoteProvider RuntimeProfileKind = "REMOTE_PROVIDER"
+	ServerCodex    RuntimeProfileKind = "SERVER_CODEX"
 )
 
 type AgentVersionState string
@@ -2659,14 +2992,6 @@ const (
 	WorkspaceMembershipStatePROVISIONING WorkspaceMembershipState = "PROVISIONING"
 	WorkspaceMembershipStateREVOKED      WorkspaceMembershipState = "REVOKED"
 	WorkspaceMembershipStateREVOKING     WorkspaceMembershipState = "REVOKING"
-)
-
-type RuntimeProfileKind string
-
-const (
-	LocalACP       RuntimeProfileKind = "LOCAL_ACP"
-	RemoteProvider RuntimeProfileKind = "REMOTE_PROVIDER"
-	ServerCodex    RuntimeProfileKind = "SERVER_CODEX"
 )
 
 // ApprovalPolicy.owner_requirement（.design/03 §4）。

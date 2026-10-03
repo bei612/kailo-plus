@@ -10,16 +10,16 @@ use uuid::Uuid;
 use super::{Definition, Execution, Governance, Params, Refusal, Semantic, Target};
 
 #[derive(sqlx::FromRow)]
-pub(super) struct Installation {
-    pub(super) id: Uuid,
+pub(crate) struct Installation {
+    pub(crate) id: Uuid,
     tenant_id: Uuid,
-    pub(super) workspace_id: Uuid,
+    pub(crate) workspace_id: Uuid,
     owner_principal_id: Uuid,
-    agent_principal_id: Uuid,
-    pub(super) version: i32,
+    pub(crate) agent_principal_id: Uuid,
+    pub(crate) version: i32,
 }
 
-pub(super) async fn installation(
+pub(crate) async fn installation(
     conn: &mut PgConnection,
     tenant: Uuid,
     id: Uuid,
@@ -43,7 +43,7 @@ pub(super) async fn installation(
     .bind(id).bind(tenant).fetch_optional(conn).await
 }
 
-pub(super) async fn projection_matches(
+pub(crate) async fn projection_matches(
     g: &Governance,
     row: &Installation,
 ) -> Result<bool, Refusal> {
@@ -104,6 +104,15 @@ fn has_agent_consumer(key: &str) -> bool {
         key,
         "resource.create" | "resource.grant_read" | "resource.revoke_read"
     ) && Semantic::from_key(key).is_some()
+}
+
+pub(crate) fn output_schema_hash() -> String {
+    format!(
+        "{:x}",
+        Sha256::digest(
+            include_str!("../../../../contracts/api/action_submission.schema.json").as_bytes()
+        )
+    )
 }
 
 pub(super) fn normalize(
@@ -217,131 +226,137 @@ pub(super) async fn target_gate(
     }
     let mut scopes = std::collections::HashSet::new();
     for scope in &grant.scopes {
-        let target = scope
-            .target_id
-            .as_deref()
-            .map(Uuid::parse_str)
-            .transpose()
-            .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
-        let create = scope
-            .create_workspace_id
-            .as_deref()
-            .map(Uuid::parse_str)
-            .transpose()
-            .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
-        if target.is_some() == create.is_some()
-            || create.is_some_and(|w| w != row.workspace_id)
-            || target.is_some_and(|id| id.is_nil())
-            || scope.action_version <= 0
-            || !scopes.insert((
-                scope.action_key.clone(),
-                scope.action_version,
-                scope.target_type.clone(),
-                target,
-                create,
-                scope.tool_resource_id.clone(),
-            ))
-        {
+        if !scopes.insert((
+            scope.action_key.clone(),
+            scope.action_version,
+            scope.target_type.clone(),
+            scope.target_id.clone(),
+            scope.create_workspace_id.clone(),
+            scope.tool_resource_id.clone(),
+        )) {
             return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
         }
-        let action:Option<(String,String,String,String,String,String)>=sqlx::query_as(
+        validate_scope(g, conn, tenant, initiator, &row, scope).await?;
+    }
+    Ok(())
+}
+
+/// The management directory and the write admission consume this same scope
+/// check. A listed target never grants permission, and a later write rechecks it.
+pub(crate) async fn validate_scope(
+    g: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    initiator: Uuid,
+    row: &Installation,
+    scope: &contracts::ScopeElement,
+) -> Result<(), Refusal> {
+    let target = scope
+        .target_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    let create = scope
+        .create_workspace_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    if target.is_some() == create.is_some()
+        || create.is_some_and(|w| w != row.workspace_id)
+        || target.is_some_and(|id| id.is_nil())
+        || scope.action_version <= 0
+    {
+        return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
+    }
+    let action:Option<(String,String,String,String,String,String)>=sqlx::query_as(
             "select target_type,permission_object_type,permission,result_exposure,obs_redaction_policy,workspace_rule
              from catalog.action_definition where action_key=$1 and version=$2 and status='ACTIVE'")
             .bind(&scope.action_key).bind(i32::try_from(scope.action_version)
                 .map_err(|_|Refusal::Precondition(ReasonCode::InvalidParameters))?)
             .fetch_optional(&mut *conn).await?;
-        let Some((target_type, object_type, permission, exposure, redaction, workspace_rule)) =
-            action
-        else {
-            return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-        };
-        let automation = scope.action_key == "automation.run";
-        if (!automation && !has_agent_consumer(&scope.action_key))
-            || scope.tool_resource_id.is_some()
+    let Some((target_type, object_type, permission, exposure, redaction, workspace_rule)) = action
+    else {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    };
+    let automation = scope.action_key == "automation.run";
+    if (!automation && !has_agent_consumer(&scope.action_key)) || scope.tool_resource_id.is_some() {
+        // ToolDefinition/PEP 当前没有真实生产者，不查询不存在的表或编造输出合同。
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    if scope.target_type != target_type
+        || scope.redaction_policy != redaction
+        || exposure != "NONE"
+        || serde_json::to_value(&scope.result_exposure_mode).ok()
+            != Some(serde_json::Value::String("CONSUME_ONLY".into()))
+        || scope.output_schema_hash != output_schema_hash()
+    {
+        return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
+    }
+    let object = if let Some(target) = target {
+        if object_type != "resource"
+            || !matches!(
+                workspace_rule.as_str(),
+                "TARGET_HOME_WORKSPACE" | "INHERIT_PARENT"
+            )
         {
-            // ToolDefinition/PEP 当前没有真实生产者，不查询不存在的表或编造输出合同。
             return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
         }
-        if scope.target_type != target_type
-            || scope.redaction_policy != redaction
-            || exposure != "NONE"
-            || serde_json::to_value(&scope.result_exposure_mode).ok()
-                != Some(serde_json::Value::String("CONSUME_ONLY".into()))
-            || scope.output_schema_hash
-                != format!(
-                    "{:x}",
-                    Sha256::digest(
-                        include_str!("../../../../contracts/api/action_submission.schema.json")
-                            .as_bytes()
-                    )
-                )
-        {
-            return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
-        }
-        let object = if let Some(target) = target {
-            if object_type != "resource"
-                || !matches!(
-                    workspace_rule.as_str(),
-                    "TARGET_HOME_WORKSPACE" | "INHERIT_PARENT"
-                )
-            {
-                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-            }
-            let valid:bool=sqlx::query_scalar("select exists(select 1 from catalog.resource
+        let valid:bool=sqlx::query_scalar("select exists(select 1 from catalog.resource
                 where id=$1 and tenant_id=$2 and state='ACTIVE' and projection_action_execution_id is null
                   and (home_workspace_id is null or home_workspace_id=$3) and application_binding_id is null)")
                 .bind(target).bind(tenant).bind(row.workspace_id).fetch_one(&mut *conn).await?;
-            if !valid {
-                return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
-            }
-            if automation {
-                crate::automation::delegation_target(
-                    g,
-                    conn,
-                    tenant,
-                    row.workspace_id,
-                    row.id,
-                    initiator,
-                    (target, scope.action_version),
-                )
-                .await?;
-            }
-            target
-        } else {
-            if object_type != "workspace" || scope.action_key != "resource.create" {
-                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-            }
-            row.workspace_id
-        };
-        for (subject, check_permission) in [
-            (initiator, permission.as_str()),
-            (row.agent_principal_id, permission.as_str()),
-            (initiator, "delegate"),
-        ] {
-            // workspace 的 schema 不含 delegate；创建授权来自 Installation delegate
-            // 加 grantor/Agent 对指定 Workspace 的 create，不能替造 workspace relation。
-            if object_type == "workspace" && check_permission == "delegate" {
-                continue;
-            }
-            let checked = g
-                .spicedb
-                .check(
-                    &object_type,
-                    &object.to_string(),
-                    check_permission,
-                    &subject.to_string(),
-                    crate::spicedb::Consistency::FullyConsistent,
-                )
-                .await
-                .map_err(|_| Refusal::Unavailable("Delegation fresh permission 不可核验".into()))?;
-            if checked.zed_token.is_empty() {
-                return Err(Refusal::Unavailable(
-                    "Delegation fresh permission 缺 checked revision".into(),
-                ));
-            }
-            if !checked.allowed {
-                return Err(Refusal::Denied(ReasonCode::PermissionDenied));
-            }
+        if !valid {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
+        if automation {
+            crate::automation::delegation_target(
+                g,
+                conn,
+                tenant,
+                row.workspace_id,
+                row.id,
+                initiator,
+                (target, scope.action_version),
+            )
+            .await?;
+        }
+        target
+    } else {
+        if object_type != "workspace" || scope.action_key != "resource.create" {
+            return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+        }
+        row.workspace_id
+    };
+    for (subject, check_permission) in [
+        (initiator, permission.as_str()),
+        (row.agent_principal_id, permission.as_str()),
+        (initiator, "delegate"),
+    ] {
+        // workspace 的 schema 不含 delegate；创建授权来自 Installation delegate
+        // 加 grantor/Agent 对指定 Workspace 的 create，不能替造 workspace relation。
+        if object_type == "workspace" && check_permission == "delegate" {
+            continue;
+        }
+        let checked = g
+            .spicedb
+            .check(
+                &object_type,
+                &object.to_string(),
+                check_permission,
+                &subject.to_string(),
+                crate::spicedb::Consistency::FullyConsistent,
+            )
+            .await
+            .map_err(|_| Refusal::Unavailable("Delegation fresh permission 不可核验".into()))?;
+        if checked.zed_token.is_empty() {
+            return Err(Refusal::Unavailable(
+                "Delegation fresh permission 缺 checked revision".into(),
+            ));
+        }
+        if !checked.allowed {
+            return Err(Refusal::Denied(ReasonCode::PermissionDenied));
         }
     }
     Ok(())

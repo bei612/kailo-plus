@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_version_route_option.schema.json",
+  "title": "AgentVersionRouteOption",
+  "description": "03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "resourceVersion", "ownerPrincipalId", "homeWorkspaceId", "nativeConfigResourceId", "nativeRevision", "nativeConfigHash"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer", "minimum": 1},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "homeWorkspaceId": {"type": ["string", "null"], "format": "uuid"},
+    "nativeConfigResourceId": {"type": "string"},
+    "nativeRevision": {"type": "integer", "minimum": 1},
+    "nativeConfigHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

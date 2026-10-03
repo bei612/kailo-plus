@@ -151,7 +151,7 @@ pub(crate) fn runtime_profile_directory() -> Result<contracts::RuntimeProfileDir
 }
 
 /// 发布只消费已投递合同，profile 的 ACTIVE 不能从 runtime spawn 推导。
-fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal> {
+pub(crate) fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal> {
     let directory = runtime_profile_directory()?;
     let profile = directory
         .profiles
@@ -189,117 +189,11 @@ pub(crate) async fn validate_references(
 ) -> Result<(), Refusal> {
     runtime_profile(value)?;
     let route = Uuid::parse_str(&value.model_route_resource_id).map_err(|_| invalid())?;
-    let row: Option<(String, Uuid)> = sqlx::query_as(
-        "select native_id,owner_principal_id from catalog.resource
-         where tenant_id=$1 and id=$2 and type_key='llm_route' and state='ACTIVE'
-           and projection_action_execution_id is null and native_id is not null",
-    )
-    .bind(tenant)
-    .bind(route)
-    .fetch_optional(&mut *conn)
-    .await?;
-    let Some((native, owner)) = row else {
-        return Err(Refusal::Precondition(ReasonCode::TargetNotFound));
-    };
-    if !crate::agent_definition::active_owner(conn, tenant, owner).await? {
-        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
-    }
-    // 只以受控 Core 服务身份读原生已登记 route，不复制配置正文或 provider credential。
-    native_route(&native).await?;
     if !value.declared_tool_resource_ids.is_empty() || !value.skill_version_asset_ids.is_empty() {
         // 未实现的 Tool/Skill producer 不靠一个裸 Resource/Asset UUID 冒充。
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
-    let checked = gov
-        .spicedb
-        .check(
-            "resource",
-            &route.to_string(),
-            "read",
-            &human.to_string(),
-            Consistency::FullyConsistent,
-        )
-        .await
-        .map_err(|e| Refusal::Unavailable(e.to_string()))?;
-    if !checked.allowed {
-        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
-    }
-    Ok(())
-}
-
-async fn native_route(id: &str) -> Result<(), Refusal> {
-    let base = std::env::var("AGENTGATEWAY_ADMIN_URL")
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    let seconds = std::env::var("AGENTGATEWAY_ADMIN_TIMEOUT_SECONDS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .filter(|v| *v > 0)
-        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    let mut url =
-        reqwest::Url::parse(&base).map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    if !matches!(url.scheme(), "http" | "https")
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-    }
-    url.path_segments_mut()
-        .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?
-        .pop_if_empty()
-        .extend(["api", "config", "resources", "llm.virtualModel"]);
-    let tokens = crate::oidc::TokenSource::from_env()
-        .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    let bearer = tokens
-        .token()
-        .await
-        .map_err(|_| Refusal::Unavailable("Gateway Core 服务身份不可用".into()))?;
-    let response = reqwest::Client::new()
-        .get(url)
-        .bearer_auth(bearer)
-        .timeout(std::time::Duration::from_secs(seconds))
-        .send()
-        .await
-        .map_err(|_| Refusal::Unavailable("Gateway route 原生读取不可达".into()))?;
-    if !response.status().is_success() {
-        return Err(Refusal::Unavailable(format!(
-            "Gateway route 读取 HTTP {}",
-            response.status()
-        )));
-    }
-    let result: Value = response
-        .json()
-        .await
-        .map_err(|_| Refusal::Unavailable("Gateway route 原生回应不可解析".into()))?;
-    let rows = result
-        .get("resources")
-        .and_then(Value::as_array)
-        .ok_or_else(|| Refusal::Unavailable("Gateway route 回应缺 resources".into()))?;
-    let mut found = 0;
-    for row in rows {
-        if row.get("kind").and_then(Value::as_str) != Some("llm.virtualModel")
-            || row.get("id").and_then(Value::as_str).is_none()
-            || row
-                .get("revision")
-                .and_then(Value::as_i64)
-                .is_none_or(|v| v <= 0)
-        {
-            return Err(Refusal::Unavailable(
-                "Gateway route 原生回应形状不符".into(),
-            ));
-        }
-        if row.get("id").and_then(Value::as_str) == Some(id) {
-            found += 1;
-        }
-    }
-    if found != 1 {
-        return Err(Refusal::Precondition(ReasonCode::TargetNotFound));
-    }
-    Ok(())
+    crate::model_route::validate_reference(gov, conn, tenant, human, route).await
 }
 
 pub(crate) async fn prewrite(
@@ -601,31 +495,40 @@ pub async fn get(
         Ok(c) => c,
         Err(e) => return crate::service_api::unavailable(e),
     };
-    let v = match version(&mut conn, ctx.tenant_id, id, false).await {
+    match read(&state, &ctx, &mut conn, id).await {
+        Ok(view) => Json(view).into_response(),
+        Err(response) => response,
+    }
+}
+
+/// 目录与 exact GET 复用同一状态、投影、fresh read 与内容 hash 查证。
+pub(crate) async fn read(
+    state: &crate::bff::BffState,
+    ctx: &crate::bff::ExecutionContext,
+    conn: &mut PgConnection,
+    id: Uuid,
+) -> Result<contracts::AgentVersionView, axum::response::Response> {
+    let v = match version(conn, ctx.tenant_id, id, false).await {
         Ok(Some(v))
             if v.projection_action_execution_id.is_none()
                 && matches!(v.asset_state.as_str(), "DRAFT" | "PUBLISHED" | "RETIRED") =>
         {
             v
         }
-        Ok(_) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return crate::service_api::unavailable(e),
+        Ok(_) => return Err(StatusCode::NOT_FOUND.into_response()),
+        Err(e) => return Err(crate::service_api::unavailable(e)),
     };
     if v.asset_state != v.state {
-        return Refusal::Unavailable("Asset 与 Version 状态不一致".into()).respond(None);
+        return Err(Refusal::Unavailable("Asset 与 Version 状态不一致".into()).respond(None));
     }
-    let parent = match crate::agent_definition::resource(
-        &mut conn,
-        ctx.tenant_id,
-        v.agent_resource_id,
-        false,
-    )
-    .await
-    {
-        Ok(Some(r)) if r.state == "ACTIVE" && r.projection_action_execution_id.is_none() => r,
-        Ok(_) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return crate::service_api::unavailable(e),
-    };
+    let parent =
+        match crate::agent_definition::resource(conn, ctx.tenant_id, v.agent_resource_id, false)
+            .await
+        {
+            Ok(Some(r)) if r.state == "ACTIVE" && r.projection_action_execution_id.is_none() => r,
+            Ok(_) => return Err(StatusCode::NOT_FOUND.into_response()),
+            Err(e) => return Err(crate::service_api::unavailable(e)),
+        };
     match crate::agent_definition::projection_matches(
         &state.governance,
         parent.id,
@@ -635,13 +538,15 @@ pub async fn get(
     .await
     {
         Ok(true) => {}
-        Ok(false) => return Refusal::Unavailable("父 Resource 投影不一致".into()).respond(None),
-        Err(e) => return e.respond(None),
+        Ok(false) => {
+            return Err(Refusal::Unavailable("父 Resource 投影不一致".into()).respond(None))
+        }
+        Err(e) => return Err(e.respond(None)),
     }
     match projection_matches(&state.governance, &v).await {
         Ok(true) => {}
-        Ok(false) => return Refusal::Unavailable("Asset 投影不一致".into()).respond(None),
-        Err(e) => return e.respond(None),
+        Ok(false) => return Err(Refusal::Unavailable("Asset 投影不一致".into()).respond(None)),
+        Err(e) => return Err(e.respond(None)),
     }
     match state
         .governance
@@ -655,24 +560,31 @@ pub async fn get(
         )
         .await
     {
+        Ok(c) if c.zed_token.is_empty() => {
+            return Err(
+                Refusal::Unavailable("Version read 缺原生 checked revision".into()).respond(None),
+            );
+        }
         Ok(c) if c.allowed => {}
-        Ok(_) => return StatusCode::FORBIDDEN.into_response(),
-        Err(e) => return Refusal::Unavailable(e.to_string()).respond(None),
+        Ok(_) => return Err(StatusCode::FORBIDDEN.into_response()),
+        Err(e) => return Err(Refusal::Unavailable(e.to_string()).respond(None)),
     }
+    let (can_update, can_publish) =
+        crate::agent_version_query::draft_permissions(state, ctx, conn, &v, &parent).await?;
     let content: AgentVersionContent = match serde_json::from_value(v.content) {
         Ok(c) => c,
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
     };
     if !self::content(&content).is_ok_and(|(_, hash)| hash == v.config_hash) {
-        return Refusal::Unavailable("AgentVersion config_hash 不一致".into()).respond(None);
+        return Err(Refusal::Unavailable("AgentVersion config_hash 不一致".into()).respond(None));
     }
     let state = match v.state.as_str() {
         "DRAFT" => contracts::AgentVersionState::Draft,
         "PUBLISHED" => contracts::AgentVersionState::Published,
         "RETIRED" => contracts::AgentVersionState::Retired,
-        _ => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        _ => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
     };
-    Json(contracts::AgentVersionView {
+    Ok(contracts::AgentVersionView {
         asset_id: v.asset_id.to_string(),
         agent_resource_id: v.agent_resource_id.to_string(),
         ordinal: i64::from(v.ordinal),
@@ -681,6 +593,7 @@ pub async fn get(
         content,
         config_hash: v.config_hash,
         state,
+        can_update: Some(can_update),
+        can_publish: Some(can_publish),
     })
-    .into_response()
 }

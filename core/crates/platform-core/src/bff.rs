@@ -349,12 +349,32 @@ pub fn router(state: BffState) -> Router {
             get(crate::agent_definition::get),
         )
         .exposed_route(
+            "/api/v1/agent-definitions/{resource_id}/version-configuration",
+            get(crate::agent_version_query::configuration),
+        )
+        .exposed_route(
+            "/api/v1/agent-definitions/{resource_id}/versions",
+            get(crate::agent_version_query::versions),
+        )
+        .exposed_route(
             "/api/v1/agent-installations",
             get(crate::agent_installation_query::list),
         )
         .exposed_route(
+            "/api/v1/agent-installation-candidates",
+            get(crate::agent_installation_query::candidates),
+        )
+        .exposed_route(
             "/api/v1/agent-installations/{resource_id}",
             get(crate::agent_installation_query::get),
+        )
+        .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/delegations",
+            get(crate::delegation_query::list),
+        )
+        .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/delegation-targets",
+            get(crate::delegation_query::targets),
         )
         .exposed_route(
             "/api/v1/agent-installations/{resource_id}/memory/core",
