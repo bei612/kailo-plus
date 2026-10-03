@@ -6,6 +6,31 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### 16:06 UTC 首轮入口复核与撤回
+
+`bd7cdfc3bf4190287a37f0ef8b4e1fddc77166e5` 已普通 push；相对
+`f535e7d07843119b01ee30a1625fb459c44edd82` 为 8 文件、+552/-37。
+Customer 初始化与运行目录登记已进入源码提交，但尚未构建部署，不能称为首轮通过。
+
+本次源码复核确认首轮实现存在入口偏差：
+[Agent 管理设计](../.design/17-Agent管理平面设计.md) §2 明确规定
+ChannelAgentBinding 的 mention/manual-assignment 与 Automation 是独立路径；
+目前唯一的 `catalog.agent_invocation` 插入在 `automation.rs`，Session 建立、
+Task 首轮和 Runtime 派发又依赖 `automation::fresh_invocation`。
+普通频道 mention 的独立生产者尚不存在。Automation 的 executor 授权缺口
+不能据此解释为普通对话的设计前置，也不能继续只修 Automation 代替普通入口。
+
+冻结合同尚未给出普通 mention 的完整准入策略，以及 Automation executor
+的显式授予/撤销动作策略；DD-82 的 HUMAN 管理员动作不能替代 Agent 资源授权。
+同时，本次新增的 `tool.definition.create` 没有专属冻结策略，不能以
+AgentDefinition 的确认/审批策略代用。该未提交工具入口及尚无真实消费者的
+Gateway 服务身份接线已安排精确撤回，私有源码和检查原件保留；未改变已提交版本、
+权限边界、业务数据或线上服务。这些是实施缺口和设计决策缺项，不是图谱阻塞。
+
+Win11 unsigned 包有构建成功记录，但原 helper 构建中自动补写 Desktop 锁文件；
+来源闭合与原生发送核验尚未完成，不能称为可复现正式包或 Win11 设备通过。
+本次复核不新增业务验收通过项；以下带时间的记录保留原时点边界。
+
 ### 15:38 UTC 首轮 Agent 主线增量
 
 `f535e7d07843119b01ee30a1625fb459c44edd82` 已普通 push，较上一提交
