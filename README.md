@@ -6,6 +6,25 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### 14:40 UTC 部署与真实创建结果
+
+`3d8c0c11285fbf1cfa447ba21e465842ceb4abf3` 的正式 Core/Worker 及同源 Web
+已经限定部署：Core `e51b71ff…`、Worker `dcbbbd6c…`、Web `42afa40d…`。
+Gateway 沿用 `14bf9f87…`，只重新加载已验证配置；没有重建数据库或 Runtime。
+原迁移入口向前执行两条迁移，在线库实查 57 条成功记录；Core healthz 200、
+Worker 原队列启动、Web healthy、真实管理员 OIDC 登录成功。
+
+实际 `workspace.create` 已由 Temporal 执行至 `COMPLETED`，Workspace 为 `ACTIVE`。
+实际 `llm_route.create` 经原 BFF 准入生成 Resource，实查 `ACTIVE`、version 2；
+Gateway 同 ID 的原生 virtual model revision 1 读回 200。模型提供方为运维配置的
+Qwen 服务；该证据证明配置创建与投影，不证明模型推理或 Agent 回答。
+RuntimeProfile 目录仍为空，Version 配置入口因此关闭；没有伪造 Installation 就绪。
+
+Codex hosted web search 默认路径及 OpenMeter meter selector 的两个修复已写入后续
+工作树，但不属于上述部署。真实首 turn、工具/MCP、计量收尾、Win11/Mobile 设备
+及完整一期验收仍未闭合。构建来源与部署原件见
+[发布回执](core/verify/release-artifacts.md)。以下各批回执保留原时点边界。
+
 模型/回复策略与撤权批已普通 push 为 `632ccb1fc`，27文件、+1819/-289。
 三端发送与 Version 退役选定源码树 `c84d321d533a0d8c15c0b82dd979c06a60013577`
 相对该提交为42文件、+2465/-134（包含必需继承发送链）。四侧生成比对、Core

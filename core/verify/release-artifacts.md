@@ -120,3 +120,69 @@ live Compose 使用此 clean Data 快照，受控 secret/data 仍绑定唯一正
 迁移和上述限定服务操作；权限、正文瞬态、UNKNOWN 与 native stored 权威不变；
 原 full1/full0/SKIP/ignored 保留，健康不代替真实 Memory/计量 E2E、AGENT 运行或
 Win11/Mobile 设备验收，亦不证明远端签名或部署验签。
+
+## 2026-10-03：3d8c0c1 checkpoint Core/Worker 产物
+
+唯一输入为公开提交 `3d8c0c11285fbf1cfa447ba21e465842ceb4abf3` 的 clean Data
+clone，origin 为实际 Github 来源。原 `tools/release.sh` 一次退出 0；
+整树输入前后 SHA-256 均为 `9738c33b20bbc6ceda87c6c4dec19e0fd374d82e5dd0bdd54823a4c3af23b9bb`，
+clone 仍 clean，不纳后续工作树。复用登记 Runtime `ad13c952…`，没有重建它。
+
+```text
+core   sha256:e51b71ff686be05af1e3e0db252883f25baa32c3e8deae0a03c87a6b3ccbc350
+worker sha256:dcbbbd6cf583048aad89ee996d37ec201be829c292f3e4d717cfba07eb8eb0f0
+```
+
+两项正常 registry push 均退出 0，HEAD/manifest GET 均 HTTP200，manifest 正文
+SHA 与上列 digest、原 SPDX/provenance subject 一致。四份原 syft/SPDX/SLSA
+文件实存 `dist/`；依赖锁摘要仍为 `76be59e4720e1f1f2653857787fd9bc712fbaeda83fb919746c5daf9ef32eb27`。
+原 `tools/check.sh supply` 退出 0、SKIP/FAIL 均为 0；未安装 gitleaks，
+原上游 added-lines 内置扫描 PASS，2 个真实产物的 SBOM/provenance/commit/锁摘要 PASS。
+
+实际执行者为既有 `kailo-core-data`，8CPU/16GiB，父 cgroup swap0、
+max/oom/oom_kill 均为 0，Data 缓存与配方不变。Core Rust 原层成功后
+才释放 Win Rust 窗口，Worker Go 接续；没有降低并行度或另建 builder。
+原件在 `/volumes/data/kailo/tmp/codex-final-core-worker-release-20261003.CepL5P/`；
+`release.log` SHA 为 `d85388a736d0e92e469ee2378cf8572d70756d58696e7867e95fee7963edaeeb`，
+`supply.log` SHA 为 `a1cc6f7bea5391b1d43d6003d84ee1cbad5ee39ca027ec02af49bce6f8a910b3`。
+
+四步结论：既有 clean-commit release、Runtime 与 registry 为原权威；
+影响仅真实产物及已有 Trace digest；未改业务、权限或运行配置；
+失败保持原证据，此次未运行 full、部署、迁移或 Agent 联合 E2E，
+不能由 build/supply 0 声称 Agent READY 或生产可用。
+
+### 同批产物实际部署与治理创建（2026-10-03）
+
+原 `bootstrap.sh --validate-config`、`init-local.sh` 的原迁移函数、
+`start-core.sh --no-build` 和三个目标服务的 `compose up --no-deps --no-build`
+均实际退出 0。只替换 Core、Worker、Web、Gateway，不执行初始化重置。
+迁移实际新增 `20261003100000`、`20261003130000`，原生数据库只读计数为 57。
+Core 与 Worker 使用上列产物；Web 使用同一公开 checkpoint 的 98 个真实输入，
+source `b6a0c1159a5d84fa8454622816638a06b5fc0d21f72112f5cf719f9e0f451df4`，
+artifact `42afa40d12af5ae1d17dd7571a31375b948983e65031b6976c37effbf2b8d498`。
+Gateway 原产物 `14bf9f87…` 未重新构建，重新加载私有严格 LLM listener 与持久配置。
+
+Core healthz 200；Worker 原 `kailo-component-task` 队列启动；Web healthy。
+真实管理员完成 OIDC 登录；私有模型目录匿名请求 401。管理员经原 BFF 提交
+`workspace.create`，ActionExecution `0056fb6d-792d-41bf-a2ba-d1242ca853cb`
+的 Temporal task 读回 `COMPLETED`，Workspace
+`ad9a6443-f0a2-47d2-895d-f11b8fef9e38` 读回 `ACTIVE`。
+原生 provider/model 经已认证配置 API 登记，再由 `llm_route.create`
+ActionExecution `93444fce-67cf-415d-9a99-237be9c6debd` 创建受治理 Resource
+`eb0d3d98-b49f-4002-b9b4-f00023ea35ab`：实际 `ACTIVE`、version 2、
+native revision 1、hash `8a12148819ddde184110b2becba6678b2d33a65ad8e6e73e88c426710088c013`。
+原 Gateway 集合接口读回同 ID 的 virtual model revision 1；没有直接写业务表。
+
+原件在 `/volumes/data/kailo/tmp/codex-agent-chain-deploy-20261003.sAsJuW/`：
+`live-forward.log`、`start-core.log`、`replace-three.log`、
+`model-source-readback.log`、`model-route-create.log`、`route-state-readback.log`、
+`route-native-collection-readback.log`。早期短 tag 不存在、查询误用表/列及单资源
+GET 返回 405 均为操作失败，未写业务状态；更正为真实 full-commit tag、既有
+数据库列和原集合接口后得到上述结果，不把失败记为通过。
+
+四步结论：权威为 DD-13/70/71 与现有 Resource、Action、Workspace 生命周期；
+影响仅已发布镜像、非密配置投递、原迁移和经治理创建的业务对象，不改契约；
+不复制模型配置正文到 Core、不共享模型凭据、不绕过权限；重复或未知创建保留
+原 ActionExecution 观察，不生成第二个请求。目录缺 RuntimeProfile 时继续关闭
+Version 入口。此次没有运行 full，没有创建 Agent Installation 或实际调用模型，
+未证明计量、工具、客户端设备或一期生产就绪。

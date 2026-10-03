@@ -663,7 +663,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:66646d2a6bcf46a19852ca182af8a51bf31aa33563fdcecce94e6527ec5e9f3e
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:42afa40d12af5ae1d17dd7571a31375b948983e65031b6976c37effbf2b8d498
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
@@ -727,9 +727,9 @@ services:
         target: /etc/agentgateway/config.yaml
     command: ["-f", "/etc/agentgateway/config.yaml"]
     ports:
-      - "127.0.0.1:${AGENTGATEWAY_PORT:?必须显式提供，禁止硬编码}:8080"
+      - "${PUBLIC_BIND_ADDR:?必须显式提供公开入口发布地址}:${AGENTGATEWAY_PORT:?必须显式提供，禁止硬编码}:8080"
       # 原生端入口。容器端口是网关配置里 native bind 的端口
-      - "127.0.0.1:${AGENTGATEWAY_NATIVE_PORT:?必须显式提供，禁止硬编码}:8091"
+      - "${PUBLIC_BIND_ADDR:?必须显式提供，禁止硬编码}:${AGENTGATEWAY_NATIVE_PORT:?必须显式提供，禁止硬编码}:8091"
 
   # AgentGateway 的 request log 与 durable usage outbox 库（SS-AGW-USAGE）。只在
   # agentgateway-data：除网关外没有服务能到达它；Core 只经已认证的 admin 接口读游标。
@@ -884,7 +884,7 @@ services:
         export KC_BOOTSTRAP_ADMIN_PASSWORD="$$(cat /run/secrets/keycloak_admin_password)"
         exec /opt/keycloak/bin/kc.sh start-dev --import-realm
     ports:
-      - "127.0.0.1:${KEYCLOAK_PORT:?必须显式提供，禁止硬编码}:8080"
+      - "${PUBLIC_BIND_ADDR:?必须显式提供公开入口发布地址}:${KEYCLOAK_PORT:?必须显式提供，禁止硬编码}:8080"
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '\"UP\"' <&3"]
       interval: 5s
