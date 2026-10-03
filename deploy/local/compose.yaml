@@ -326,6 +326,7 @@ services:
     mem_limit: ${OPENMETER_KAFKA_MEMORY:?必须显式提供本机运行预算}
     memswap_limit: ${OPENMETER_KAFKA_MEMORY:?必须显式提供本机运行预算}
     environment:
+      KAFKA_HEAP_OPTS: ${OPENMETER_KAFKA_HEAP_OPTS:?必须显式提供原生 JVM heap，禁止默认值}
       CLUSTER_ID: ${OPENMETER_KAFKA_CLUSTER_ID:?必须显式提供，禁止硬编码}
       KAFKA_BROKER_ID: "0"
       KAFKA_PROCESS_ROLES: broker,controller
@@ -345,7 +346,8 @@ services:
       - openmeter-kafka-data:/var/lib/kafka/data
       - openmeter-kafka-secrets:/etc/kafka/secrets
     healthcheck:
-      test: [CMD-SHELL, "kafka-topics --bootstrap-server openmeter-kafka:9092 --list >/dev/null"]
+      # 健康 CLI 复用原生客户端 heap，不能继承 broker 的整份 JVM heap。
+      test: [CMD-SHELL, "env -u KAFKA_HEAP_OPTS kafka-topics --bootstrap-server openmeter-kafka:9092 --list >/dev/null"]
       interval: 5s
       timeout: 3s
       retries: 30

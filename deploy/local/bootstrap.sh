@@ -25,6 +25,7 @@ cd "$(dirname "$0")"
   "${OPENMETER_KAFKA_CLUSTER_ID:?缺少 OPENMETER_KAFKA_CLUSTER_ID}" \
   "${OPENMETER_API_CPUS:?缺少 OPENMETER_API_CPUS}" "${OPENMETER_API_MEMORY:?缺少 OPENMETER_API_MEMORY}" \
   "${OPENMETER_KAFKA_CPUS:?缺少 OPENMETER_KAFKA_CPUS}" "${OPENMETER_KAFKA_MEMORY:?缺少 OPENMETER_KAFKA_MEMORY}" \
+  "${OPENMETER_KAFKA_HEAP_OPTS:?缺少 OPENMETER_KAFKA_HEAP_OPTS}" \
   "${OPENMETER_CLICKHOUSE_CPUS:?缺少 OPENMETER_CLICKHOUSE_CPUS}" "${OPENMETER_CLICKHOUSE_MEMORY:?缺少 OPENMETER_CLICKHOUSE_MEMORY}" \
   "${OPENMETER_POSTGRES_CPUS:?缺少 OPENMETER_POSTGRES_CPUS}" "${OPENMETER_POSTGRES_MEMORY:?缺少 OPENMETER_POSTGRES_MEMORY}"
 # 本地拓扑导入 Keycloak realm；issuer 的 realm 必须与导入对象完全相同。
@@ -45,6 +46,7 @@ OPENMETER_CLICKHOUSE_DB_NAME="$OPENMETER_CLICKHOUSE_DB_NAME" OPENMETER_CLICKHOUS
 OPENMETER_KAFKA_CLUSTER_ID="$OPENMETER_KAFKA_CLUSTER_ID" \
 OPENMETER_API_CPUS="$OPENMETER_API_CPUS" OPENMETER_API_MEMORY="$OPENMETER_API_MEMORY" \
 OPENMETER_KAFKA_CPUS="$OPENMETER_KAFKA_CPUS" OPENMETER_KAFKA_MEMORY="$OPENMETER_KAFKA_MEMORY" \
+OPENMETER_KAFKA_HEAP_OPTS="$OPENMETER_KAFKA_HEAP_OPTS" \
 OPENMETER_CLICKHOUSE_CPUS="$OPENMETER_CLICKHOUSE_CPUS" OPENMETER_CLICKHOUSE_MEMORY="$OPENMETER_CLICKHOUSE_MEMORY" \
 OPENMETER_POSTGRES_CPUS="$OPENMETER_POSTGRES_CPUS" OPENMETER_POSTGRES_MEMORY="$OPENMETER_POSTGRES_MEMORY" \
 PLATFORM_DISPLAY_NAME="${PLATFORM_DISPLAY_NAME:-}" \
@@ -130,6 +132,7 @@ path = PurePosixPath(raw)
 if (invalid_chars(raw) or not raw.startswith("/") or raw.endswith("/")
         or str(path) != raw or ".." in path.parts):
     raise SystemExit("OPENMETER_CORE_TOKEN_FILE 必须是规范的容器内绝对文件路径")
+memory_values = {}
 for component in ("API", "KAFKA", "CLICKHOUSE", "POSTGRES"):
     name = f"OPENMETER_{component}_CPUS"
     try:
@@ -141,6 +144,19 @@ for component in ("API", "KAFKA", "CLICKHOUSE", "POSTGRES"):
     name = f"OPENMETER_{component}_MEMORY"
     if not re.fullmatch(r"[1-9][0-9]*(?:[bBkKmMgG]|[kKmMgG][bB])?", os.environ[name]):
         raise SystemExit(f"{name} 必须是正的 Compose 内存容量")
+    amount, suffix = re.fullmatch(r"([1-9][0-9]*)([a-z]*)", os.environ[name].lower()).groups()
+    memory_values[component] = int(amount) * 1024 ** {"": 0, "b": 0, "k": 1, "kb": 1,
+                                                     "m": 2, "mb": 2, "g": 3, "gb": 3}[suffix]
+kafka_heap = {}
+for option in os.environ["OPENMETER_KAFKA_HEAP_OPTS"].split():
+    match = re.fullmatch(r"-Xm([sx])([1-9][0-9]*)([kKmMgG]?)", option)
+    if not match or match[1] in kafka_heap:
+        raise SystemExit("OPENMETER_KAFKA_HEAP_OPTS 必须恰含一份正容量 -Xms 与 -Xmx")
+    kafka_heap[match[1]] = int(match[2]) * 1024 ** {"": 0, "k": 1, "m": 2, "g": 3}[match[3].lower()]
+if set(kafka_heap) != {"s", "x"} or kafka_heap["s"] > kafka_heap["x"]:
+    raise SystemExit("OPENMETER_KAFKA_HEAP_OPTS 必须含 -Xms<=-Xmx")
+if kafka_heap["x"] >= memory_values["KAFKA"]:
+    raise SystemExit("Kafka -Xmx 必须小于容器预算，保留非堆内存与健康检查余量")
 PYCONFIG
 # 三个 IdP 用户各自只属于一个 Tenant：一期同一 HumanIdentity 在多个 Tenant 有
 # ACTIVE membership 时登录被拒（TENANT_SELECTION_NOT_AVAILABLE），Catalog admin 也
