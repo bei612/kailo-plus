@@ -173,6 +173,42 @@ test("sign out revokes the session through platform_sign_out and returns to sign
     ).map((entry) => entry.command),
   );
   expect(commands).toContain("platform_sign_out");
+  // 服务端两步都确认时不显示「服务端未确认」
+  await expect(page.getByTestId("native-signout-unconfirmed")).toHaveCount(0);
+  // 退出后不留以设备身份认证的 Relay 连接
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __BUZZ_E2E_OPEN_MOCK_WEBSOCKETS__?: () => number;
+            }
+          ).__BUZZ_E2E_OPEN_MOCK_WEBSOCKETS__?.() ?? -1,
+      ),
+    )
+    .toBe(0);
+});
+
+test("a sign-out the server did not confirm says so instead of claiming success", async ({
+  page,
+}) => {
+  await installMockBridge(page, {
+    platform: {
+      signOut: { coreSessionRevoked: true, refreshTokenRevoked: false },
+    },
+  });
+  await page.goto("/");
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+
+  await page.getByTestId("sidebar-profile-avatar-button").click();
+  await page.getByTestId("profile-popover-sign-out").click();
+
+  // 本机已退出（回到登录），但如实说明服务端未确认结束登录
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByTestId("native-signout-unconfirmed")).toHaveText(
+    "Signed out on this device. The server did not confirm that your sign-in was ended; it will expire on its own.",
+  );
 });
 
 const APPROVAL_WF = "platform:APPROVAL:t-1:ae-1:1";

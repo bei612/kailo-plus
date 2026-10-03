@@ -56,6 +56,7 @@ class PlatformLinkState {
     this.error,
     this.detail,
     this.manualRecheck = false,
+    this.signOutUnconfirmed = false,
   });
 
   final PlatformLinkPhase phase;
@@ -68,6 +69,10 @@ class PlatformLinkState {
 
   /// 老服务端没有提供重查间隔时只允许用户主动确认，不猜自动重查频率。
   final bool manualRecheck;
+
+  /// 上一次注销时服务端没有确认结束登录（Core 会话撤销或 IdP 刷新令牌撤销未得到
+  /// 200）。本机凭据已丢弃；界面须如实说明服务端未确认，不能说成已完全退出。
+  final bool signOutUnconfirmed;
 
   bool get busy => switch (phase) {
     PlatformLinkPhase.signingIn ||
@@ -108,10 +113,14 @@ final platformBrowserProvider = Provider<PlatformBrowser>(
 
 class PlatformLinkNotifier extends Notifier<PlatformLinkState> {
   Completer<void>? _cancelSignIn;
-  bool _cancelActivation = false;
+  int _generation = 0;
+  bool _signingOut = false;
+  Future<void>? _adoptingCommunity;
 
   @override
   PlatformLinkState build() {
+    _generation++;
+    ref.onDispose(_invalidate);
     final config = ref.watch(platformConfigProvider);
     return PlatformLinkState(
       config == null
@@ -122,14 +131,15 @@ class PlatformLinkNotifier extends Notifier<PlatformLinkState> {
 
   NativeSession get _session => ref.read(nativeSessionProvider);
   DeviceKeyStore get _deviceKeys => ref.read(deviceKeyStoreProvider);
+  bool _current(int generation) => generation == _generation && !_signingOut;
 
   /// 走一次完整的登录与连接。
   Future<void> signIn() async {
     final config = ref.read(platformConfigProvider);
-    if (config == null || state.busy) return;
-    _cancelSignIn?.complete();
+    if (config == null || state.busy || _signingOut) return;
+    final generation = ++_generation;
+    if (_cancelSignIn?.isCompleted == false) _cancelSignIn!.complete();
     final cancel = _cancelSignIn = Completer<void>();
-    _cancelActivation = false;
     state = const PlatformLinkState(PlatformLinkPhase.signingIn);
     final browser = ref.read(platformBrowserProvider);
     try {
@@ -141,54 +151,82 @@ class PlatformLinkNotifier extends Notifier<PlatformLinkState> {
         callbacks: browser.callbacks(),
         cancelled: cancel.future,
       );
+      if (!_current(generation)) return;
       await _session.adopt(tokens);
     } on OidcCancelled {
+      if (!_current(generation)) return;
       state = const PlatformLinkState(PlatformLinkPhase.signedOut);
       return;
     } on OidcFailure catch (error) {
+      if (!_current(generation)) return;
+      await _dropCommunity();
+      if (!_current(generation)) return;
       state = PlatformLinkState(
         PlatformLinkPhase.failed,
         detail: error.message,
       );
       return;
+    } on PlatformNotSignedIn {
+      if (!_current(generation)) return;
+      state = const PlatformLinkState(PlatformLinkPhase.signedOut);
+      return;
+    } on Exception {
+      if (!_current(generation)) return;
+      await _dropCommunity();
+      if (!_current(generation)) return;
+      state = const PlatformLinkState(PlatformLinkPhase.outcomeUnknown);
+      return;
     } finally {
       if (identical(_cancelSignIn, cancel)) _cancelSignIn = null;
     }
-    await _link(config);
+    if (_current(generation)) await _link(config, generation);
   }
 
   /// 放弃进行中的登录或等待。
   void cancel() {
-    _cancelSignIn?.complete();
-    _cancelSignIn = null;
-    _cancelActivation = true;
-    if (state.phase == PlatformLinkPhase.awaitingActivation &&
-        state.manualRecheck) {
+    _invalidate();
+    if (state.busy) {
       state = const PlatformLinkState(PlatformLinkPhase.signedOut);
     }
+    if (_adoptingCommunity != null) {
+      _signingOut = true;
+      unawaited(_dropCommunity().whenComplete(() => _signingOut = false));
+    }
+  }
+
+  void _invalidate() {
+    _generation++;
+    if (_cancelSignIn?.isCompleted == false) _cancelSignIn!.complete();
+    _cancelSignIn = null;
   }
 
   /// 启动时核对：本机凭据仍在就重走一遍登记与连接事实（已 ACTIVE 的设备重复登记
   /// 只回 200，不起新的 Workflow）；凭据已不在就撤掉残留的协作连接。
   Future<void> reconcile() async {
     final config = ref.read(platformConfigProvider);
-    if (config == null || (state.busy && !state.manualRecheck)) return;
-    if (state.manualRecheck) {
-      state = const PlatformLinkState(PlatformLinkPhase.registering);
+    if (config == null || _signingOut || (state.busy && !state.manualRecheck)) {
+      return;
     }
-    _cancelActivation = false;
+    final generation = ++_generation;
+    state = const PlatformLinkState(PlatformLinkPhase.registering);
     if (!await _session.hasCredentials()) {
+      if (!_current(generation)) return;
       await _dropCommunity();
+      if (!_current(generation)) return;
       state = const PlatformLinkState(PlatformLinkPhase.signedOut);
       return;
     }
-    await _link(config);
+    if (_current(generation)) await _link(config, generation);
   }
 
-  Future<void> _link(PlatformConfig config) async {
+  Future<void> _link(PlatformConfig config, int generation) async {
     try {
-      final keys = await _registerUntilActive(config);
-      if (keys == null) return;
+      final keys = await _registerUntilActive(config, generation);
+      if (!_current(generation)) return;
+      if (keys == null) {
+        await _dropCommunity();
+        return;
+      }
       // 部署显示名只影响显示，与连接并行读取，不阻断连接（DD-111）
       unawaited(ref.read(platformDisplayNameProvider.notifier).refresh(config));
       state = const PlatformLinkState(PlatformLinkPhase.fetchingCommunity);
@@ -197,26 +235,46 @@ class PlatformLinkNotifier extends Notifier<PlatformLinkState> {
         PlatformMethod.get,
         '/api/v1/native/community',
       );
+      if (!_current(generation)) return;
       if (response.status != 200) {
+        await _dropCommunity();
+        if (!_current(generation)) return;
         _fail(response);
         return;
       }
       final facts = NativeCommunityFacts.fromJson(
         response.body! as Map<String, dynamic>,
       );
-      await _adoptCommunity(facts, keys);
+      final adopting = _adoptingCommunity = _adoptCommunity(facts, keys);
+      try {
+        await adopting;
+      } finally {
+        if (identical(_adoptingCommunity, adopting)) _adoptingCommunity = null;
+      }
+      if (!_current(generation)) return;
       state = const PlatformLinkState(PlatformLinkPhase.linked);
     } on PlatformNotSignedIn {
+      if (!_current(generation)) return;
       await _dropCommunity();
+      if (!_current(generation)) return;
       state = const PlatformLinkState(PlatformLinkPhase.signedOut);
     } on PlatformUnavailable catch (error) {
+      if (!_current(generation)) return;
+      await _dropCommunity();
+      if (!_current(generation)) return;
       state = PlatformLinkState(
         PlatformLinkPhase.outcomeUnknown,
         detail: error.message,
       );
     } on PlatformApiError catch (error) {
+      if (!_current(generation)) return;
+      await _dropCommunity();
+      if (!_current(generation)) return;
       _fail(error.response);
     } on TypeError {
+      if (!_current(generation)) return;
+      await _dropCommunity();
+      if (!_current(generation)) return;
       // 回应不符合契约（缺字段、本端不认识的枚举值）：不猜它的意思
       state = const PlatformLinkState(
         PlatformLinkPhase.outcomeUnknown,
@@ -227,26 +285,39 @@ class PlatformLinkNotifier extends Notifier<PlatformLinkState> {
 
   /// 登记本机设备公钥并等到 `ACTIVE`。返回可用的设备密钥；失败或被放弃时返回
   /// null，并已把原因写进状态。
-  Future<nostr.Keys?> _registerUntilActive(PlatformConfig config) async {
+  Future<nostr.Keys?> _registerUntilActive(
+    PlatformConfig config,
+    int generation,
+  ) async {
     state = const PlatformLinkState(PlatformLinkPhase.registering);
     var keys = await ensureDeviceKeys(_deviceKeys);
+    if (!_current(generation)) return null;
     var response = await registerDeviceKey(_session, config, keys);
+    if (!_current(generation)) return null;
     if (response.error?.reason == ReasonCode.CLIENT_KEY_ALREADY_BOUND) {
       // 本机这把钥匙已被撤销（撤销的身份不复活），换一把新钥匙重新登记
       await _deviceKeys.delete();
       await _dropCommunity();
+      if (!_current(generation)) return null;
       keys = await ensureDeviceKeys(_deviceKeys);
+      if (!_current(generation)) return null;
       response = await registerDeviceKey(_session, config, keys);
+      if (!_current(generation)) return null;
     }
     if (response.status != 200 && response.status != 202) {
+      await _dropCommunity();
+      if (!_current(generation)) return null;
       _fail(response);
       return null;
     }
     var status = ClientKeyStatus.fromJson(
       response.body! as Map<String, dynamic>,
     );
+    if (status.pubkey != keys.public) throw TypeError();
     while (status.state != BuzzIdentityState.ACTIVE) {
       if (status.state != BuzzIdentityState.RECONCILING) {
+        await _dropCommunity();
+        if (!_current(generation)) return null;
         // 登记中途被撤销：这把钥匙不会再 ACTIVE
         state = PlatformLinkState(
           PlatformLinkPhase.failed,
@@ -265,13 +336,13 @@ class PlatformLinkNotifier extends Notifier<PlatformLinkState> {
       }
       state = const PlatformLinkState(PlatformLinkPhase.awaitingActivation);
       await Future<void>.delayed(Duration(milliseconds: recheckAfterMillis));
-      if (_cancelActivation) {
-        state = const PlatformLinkState(PlatformLinkPhase.signedOut);
-        return null;
-      }
+      if (!_current(generation)) return null;
       final keysNow = await listDeviceKeys(_session, config);
+      if (!_current(generation)) return null;
       final mine = keysNow.where((k) => k.pubkey == keys.public).firstOrNull;
       if (mine == null) {
+        await _dropCommunity();
+        if (!_current(generation)) return null;
         state = const PlatformLinkState(
           PlatformLinkPhase.failed,
           detail: 'This device key is no longer registered',
@@ -312,7 +383,7 @@ class PlatformLinkNotifier extends Notifier<PlatformLinkState> {
 
   void _fail(PlatformResponse response) {
     final error = response.error;
-    state = error == null
+    state = error == null || error.errorBodyClass == ErrorClass.UNKNOWN
         ? PlatformLinkState(
             PlatformLinkPhase.outcomeUnknown,
             detail: 'HTTP ${response.status}',
@@ -321,30 +392,49 @@ class PlatformLinkNotifier extends Notifier<PlatformLinkState> {
   }
 
   Future<void> _dropCommunity() async {
-    if (ref.read(authProvider).value?.status == AuthStatus.authenticated) {
+    await _adoptingCommunity;
+    if ((await ref.read(authProvider.future)).status ==
+        AuthStatus.authenticated) {
       await ref.read(authProvider.notifier).signOut();
     }
   }
 
-  /// 注销：先撤销 Core 的 PlatformSession，再丢弃本机令牌与协作连接。撤销未到达
-  /// Core 不阻止本机丢弃——本机不再持有它才是用户要的结果；Core 侧会话按其有效期
-  /// 过期。设备密钥保留：它仍是这台设备在平台的身份，下次登录直接复用。
+  /// 注销：丢弃本机令牌并断开协作连接，独立以旧快照撤销 Core 与 IdP
+  /// （[NativeSession.endSession]）。服务端未确认不阻止本机丢弃——本机
+  /// 不再持有凭据才是用户要的结果——但状态如实带上「服务端未确认」。设备密钥
+  /// 保留：它仍是这台设备在平台的身份，下次登录直接复用。
   Future<void> signOut() async {
-    cancel();
+    if (_signingOut) return;
+    _invalidate();
+    _signingOut = true;
     final config = ref.read(platformConfigProvider);
-    if (config != null) {
-      try {
-        await _session.send(config, PlatformMethod.post, '/api/v1/logout');
-      } on Exception {
-        // 见上：本机丢弃不以 Core 收到注销为前提
-      }
+    // 本机删除尚未确认：先撤下协作面，不提前声称本机已退出。
+    state = const PlatformLinkState(PlatformLinkPhase.outcomeUnknown);
+    var confirmed = true;
+    try {
+      await Future.wait<void>([
+        // 断开独立设备身份的协作面，不等待 Core/IdP 的远端注销结果。
+        _dropCommunity(),
+        () async {
+          if (config != null) {
+            confirmed = (await _session.endSession(config)).confirmed;
+          } else {
+            await _session.discardCredentials();
+          }
+        }(),
+      ]);
+    } on Exception {
+      await _dropCommunity();
+      state = const PlatformLinkState(PlatformLinkPhase.outcomeUnknown);
+      return;
+    } finally {
+      _signingOut = false;
     }
-    await _session.discardCredentials();
-    await _dropCommunity();
     state = PlatformLinkState(
       config == null
           ? PlatformLinkPhase.unconfigured
           : PlatformLinkPhase.signedOut,
+      signOutUnconfirmed: !confirmed,
     );
   }
 

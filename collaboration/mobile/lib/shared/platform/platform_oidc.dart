@@ -53,10 +53,18 @@ class OidcTokens {
 }
 
 class OidcEndpoints {
-  const OidcEndpoints({required this.authorization, required this.token});
+  const OidcEndpoints({
+    required this.authorization,
+    required this.token,
+    this.revocation,
+  });
 
   final Uri authorization;
   final Uri token;
+
+  /// RFC 7009 令牌撤销端点（RFC 8414 的 `revocation_endpoint`）。IdP 不公布时为
+  /// null：此时本机无法让 IdP 作废刷新令牌，注销只能如实报告未确认。
+  final Uri? revocation;
 }
 
 Future<OidcEndpoints> discoverOidc(
@@ -76,9 +84,11 @@ Future<OidcEndpoints> discoverOidc(
   }
   try {
     final json = jsonDecode(response.body) as Map<String, dynamic>;
+    final revocation = json['revocation_endpoint'];
     return OidcEndpoints(
       authorization: Uri.parse(json['authorization_endpoint'] as String),
       token: Uri.parse(json['token_endpoint'] as String),
+      revocation: revocation is String ? Uri.parse(revocation) : null,
     );
   } on Object {
     throw const OidcUnavailable(
@@ -202,28 +212,33 @@ Future<OidcTokens> signInWithAuthorizationCode({
   required Stream<Uri> callbacks,
   required Future<void> cancelled,
 }) async {
-  final request = await AuthorizationRequest.start(
-    client,
-    config,
-    redirectUri: redirectUri,
-  );
-  final callback = Completer<Uri>();
-  final subscription = callbacks.listen((uri) {
-    if (!callback.isCompleted && request.owns(uri)) callback.complete(uri);
+  var isCancelled = false;
+  final cancellation = cancelled.then<OidcTokens>((_) {
+    isCancelled = true;
+    throw const OidcCancelled();
   });
-  unawaited(
-    cancelled.then((_) {
-      if (!callback.isCompleted) {
-        callback.completeError(const OidcCancelled());
-      }
-    }),
-  );
-  try {
+  StreamSubscription<Uri>? subscription;
+  Future<OidcTokens> authorize() async {
+    final request = await AuthorizationRequest.start(
+      client,
+      config,
+      redirectUri: redirectUri,
+    );
+    if (isCancelled) throw const OidcCancelled();
+    final callback = Completer<Uri>();
+    subscription = callbacks.listen((uri) {
+      if (!callback.isCompleted && request.owns(uri)) callback.complete(uri);
+    });
     await open(request.authorizeUri);
+    if (isCancelled) throw const OidcCancelled();
     final uri = await callback.future;
-    return await request.complete(client, config, uri);
+    return request.complete(client, config, uri);
+  }
+
+  try {
+    return await Future.any([authorize(), cancellation]);
   } finally {
-    await subscription.cancel();
+    await subscription?.cancel();
   }
 }
 
@@ -234,11 +249,48 @@ Future<OidcTokens> refreshOidcTokens(
   String refreshToken,
 ) async {
   final endpoints = await discoverOidc(client, config);
-  return _tokenRequest(client, endpoints.token, {
+  final tokens = await _tokenRequest(client, endpoints.token, {
     'grant_type': 'refresh_token',
     'refresh_token': refreshToken,
     'client_id': config.oidcClientId,
   });
+  // RFC 6749 §6：只有签发新刷新令牌时才替换；省略不代表撤销旧令牌。
+  return OidcTokens(
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken ?? refreshToken,
+  );
+}
+
+/// 请 IdP 作废刷新令牌（RFC 7009 §2.1，公共客户端以 `client_id` 标识自己）。
+///
+/// 只有 IdP 以 200 回答才算确认（§2.2：已失效的令牌同样回 200）。IdP 没有公布
+/// 撤销端点、不可达或回其他状态时返回 false——调用方不得把它说成已撤销。
+Future<bool> revokeRefreshToken(
+  http.Client client,
+  PlatformConfig config,
+  String refreshToken,
+) async {
+  final OidcEndpoints endpoints;
+  try {
+    endpoints = await discoverOidc(client, config);
+  } on OidcFailure {
+    return false;
+  }
+  final revocation = endpoints.revocation;
+  if (revocation == null) return false;
+  try {
+    final response = await client.post(
+      revocation,
+      body: {
+        'token': refreshToken,
+        'token_type_hint': 'refresh_token',
+        'client_id': config.oidcClientId,
+      },
+    );
+    return response.statusCode == 200;
+  } on Exception {
+    return false;
+  }
 }
 
 Future<OidcTokens> _tokenRequest(
@@ -253,7 +305,7 @@ Future<OidcTokens> _tokenRequest(
     throw OidcUnavailable('Token endpoint unreachable: $error');
   }
   if (response.statusCode != 200) {
-    // 错误体可能含 IdP 的诊断文本，但不含令牌；只取 error 字段
+    // 只用协议字段区分明确 invalid_grant；未知原始错误不回显。
     String error = '';
     try {
       final json = jsonDecode(response.body);
@@ -261,20 +313,21 @@ Future<OidcTokens> _tokenRequest(
     } on FormatException {
       // 非 JSON 错误体：只报状态码
     }
-    final message = 'Token endpoint returned HTTP ${response.statusCode} $error'
-        .trim();
-    // 4xx 是 IdP 的判定（invalid_grant 等）；5xx 是它暂时不可用
-    if (response.statusCode >= 400 && response.statusCode < 500) {
-      throw OidcRejected(message);
+    if (response.statusCode == 400 && error == 'invalid_grant') {
+      throw const OidcRejected('Token grant was rejected');
     }
-    throw OidcUnavailable(message);
+    throw OidcUnavailable(
+      'Token endpoint returned HTTP ${response.statusCode}',
+    );
   }
   try {
     final json = jsonDecode(response.body) as Map<String, dynamic>;
-    return OidcTokens(
-      accessToken: json['access_token'] as String,
-      refreshToken: json['refresh_token'] as String?,
-    );
+    final accessToken = json['access_token'] as String;
+    final refreshToken = json['refresh_token'] as String?;
+    if (accessToken.trim().isEmpty || refreshToken?.trim().isEmpty == true) {
+      throw const FormatException('Empty token');
+    }
+    return OidcTokens(accessToken: accessToken, refreshToken: refreshToken);
   } on Object {
     throw const OidcUnavailable('Token response is malformed');
   }

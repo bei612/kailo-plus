@@ -21,8 +21,10 @@ import 'package:buzz/shared/platform/platform_api.dart';
 import 'package:buzz/shared/platform/platform_config.dart';
 import 'package:buzz/shared/platform/platform_device.dart';
 import 'package:buzz/shared/platform/platform_link.dart';
+import 'package:buzz/shared/platform/platform_oidc.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme_provider.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
@@ -33,6 +35,11 @@ import '../shared/community/community_storage_test.dart';
 import '../shared/platform/platform_test_support.dart';
 
 String? _env(String name) => Platform.environment[name];
+
+/// 让测试在注销前读出本机持有的刷新令牌，注销后向 IdP 验证它已作废。
+final _refreshStoreProvider = Provider<MemoryRefreshStore>(
+  (ref) => MemoryRefreshStore(),
+);
 
 /// 模拟用户在浏览器里的操作：打开授权页，按登录表单填入口令，读出 IdP 把浏览器
 /// 送回应用的地址。cookie 手工携带：只有这一个站点、两次请求。
@@ -106,7 +113,7 @@ void main() {
           nativeSessionProvider.overrideWith(
             (ref) => NativeSession(
               client: ref.watch(platformHttpClientProvider),
-              refreshStore: MemoryRefreshStore(),
+              refreshStore: ref.watch(_refreshStoreProvider),
             ),
           ),
           communityStorageProvider.overrideWithValue(
@@ -217,21 +224,57 @@ void main() {
         expect(DateTime.now().isBefore(deadline), isTrue, reason: '撤销未收敛');
         await Future<void>.delayed(const Duration(milliseconds: 500));
       }
-      await expectLater(
-        signer.submit(
+      // 被拒的必须是 Relay：EVENT 发出后收到 OK false（RelayPublishRejected），
+      // 或 Relay 在 NIP-42 AUTH 阶段拒绝这把钥匙。客户端自己挡下（NotSent）
+      // 证明不了 Relay 会拒绝，因此先确保连接在、再发。
+      Object? afterRevoke;
+      try {
+        if (container.read(relaySessionProvider).status !=
+            SessionStatus.connected) {
+          await relay.reconnect();
+          await Future<void>.delayed(const Duration(seconds: 2));
+        }
+        await signer.submit(
           kind: EventKind.streamMessage,
           content: 'after revocation',
           tags: [
             ['h', workspace],
           ],
-        ),
-        throwsA(anything),
-        reason: '撤销后 Relay 必须拒绝这台设备',
+        );
+      } on Object catch (error) {
+        afterRevoke = error;
+      }
+      final sessionAfter = container.read(relaySessionProvider);
+      expect(
+        afterRevoke is RelayPublishRejected ||
+            (afterRevoke is RelayPublishNotSent && sessionAfter.authRejected),
+        isTrue,
+        reason:
+            '撤销后 Relay 必须拒绝这台设备，实际：$afterRevoke '
+            '（authRejected=${sessionAfter.authRejected}）',
       );
+      debugPrint('撤销后发布的结果：$afterRevoke');
 
-      // 7. 注销
+      // 7. 注销：撤销 Core 会话、在 IdP 作废刷新令牌、丢弃本机凭据
+      final refreshStore = container.read(_refreshStoreProvider);
+      final heldRefresh = await refreshStore.load();
+      expect(heldRefresh, isNotNull);
       await link.signOut();
       expect(await session.hasCredentials(), isFalse);
+      expect(
+        container.read(platformLinkProvider).signOutUnconfirmed,
+        isFalse,
+        reason: 'Core 与 IdP 都应确认结束登录',
+      );
+      await expectLater(
+        refreshOidcTokens(
+          container.read(platformHttpClientProvider),
+          config,
+          heldRefresh!,
+        ),
+        throwsA(isA<OidcRejected>()),
+        reason: '注销后原刷新令牌必须被 IdP 拒绝',
+      );
     },
     skip: skip,
     timeout: const Timeout(Duration(minutes: 5)),

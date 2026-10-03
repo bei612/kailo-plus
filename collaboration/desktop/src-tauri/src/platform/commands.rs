@@ -6,7 +6,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
-use super::api::{ApiResponse, NativeSession};
+use super::api::{ApiResponse, NativeSession, SignOutReport};
 use super::config::{self, PlatformConfig};
 use super::oidc;
 use crate::app_state::AppState;
@@ -32,7 +32,7 @@ pub(crate) fn platform_set_config(app: AppHandle, config: PlatformConfig) -> Res
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PlatformStatus {
     configured: bool,
-    /// keyring 中有刷新令牌。它是否仍被 IdP 接受，要到下一次调用才知道。
+    /// 本机有访问或刷新令牌。它是否仍被服务端接受，要到下一次调用才知道。
     signed_in: bool,
 }
 
@@ -54,40 +54,57 @@ pub(crate) async fn platform_sign_in(
     session: State<'_, NativeSession>,
 ) -> Result<(), String> {
     let cfg = require_config(&app)?;
+    let generation = session.begin_sign_in()?;
     let open = |url: &str| {
         app.opener()
             .open_url(url, None::<&str>)
             .map_err(|e| format!("无法打开系统浏览器：{e}"))
     };
     let tokens = oidc::sign_in(open, &state.http_client, &cfg, &session.pending).await?;
-    session.adopt(tokens).await
+    session.adopt_for(generation, tokens)
 }
 
 #[tauri::command]
 pub(crate) fn platform_cancel_sign_in(session: State<'_, NativeSession>) -> Result<(), String> {
-    if let Some(cancel) = session.pending.0.lock().map_err(|e| e.to_string())?.take() {
-        let _ = cancel.send(());
-    }
+    // 即使回调已完成、正等令牌端点，取消也必须阻止迟到令牌落盘。
+    session.begin_sign_in()?;
+    session.pending.cancel();
     Ok(())
 }
 
-/// 注销：先撤销 Core 的 PlatformSession，再丢弃本机令牌。撤销失败不阻止丢弃
-/// 本机令牌——本机不再持有它才是用户要的结果；Core 侧会话按其有效期过期。
+/// 注销：先丢弃本机令牌，再以原凭据快照撤销 Core 的 PlatformSession 和 IdP
+/// 刷新令牌（[`NativeSession::end_session`]）。服务端未确认不阻止本机退出——本机
+/// 不再持有它才是用户要的结果——但如实返回给前端，由它说明服务端未确认。
 #[tauri::command]
 pub(crate) async fn platform_sign_out(
     app: AppHandle,
     state: State<'_, AppState>,
     session: State<'_, NativeSession>,
-) -> Result<(), String> {
-    if let Ok(cfg) = require_config(&app) {
-        if let Err(e) = session
-            .call(&state.http_client, &cfg, Method::POST, "/api/v1/logout", None)
-            .await
-        {
-            eprintln!("platform: logout 未到达 Core：{e}");
+) -> Result<SignOutReport, String> {
+    match require_config(&app) {
+        Ok(cfg) => {
+            let report = session.end_session(&state.http_client, &cfg).await?;
+            if report
+                != (SignOutReport {
+                    core_session_revoked: true,
+                    refresh_token_revoked: true,
+                })
+            {
+                eprintln!("platform: 服务端未确认注销：{report:?}");
+            }
+            Ok(report)
+        }
+        Err(_) => {
+            // 没有部署配置就到不了任何服务端：本机若还持有凭据，服务端未确认
+            let held = session.has_credentials();
+            session.sign_out().await?;
+            let held = held.unwrap_or(true);
+            Ok(SignOutReport {
+                core_session_revoked: !held,
+                refresh_token_revoked: !held,
+            })
         }
     }
-    session.sign_out().await
 }
 
 /// 代发一次管理平面请求。只接受 `/api/v1/` 下的路径与常用方法。

@@ -19,7 +19,8 @@ use super::commands::register_device;
 use super::config::PlatformConfig;
 use super::oidc;
 
-struct MemoryStore(std::sync::Mutex<Option<String>>);
+#[derive(Clone, Default)]
+struct MemoryStore(std::sync::Arc<std::sync::Mutex<Option<String>>>);
 
 impl RefreshStore for MemoryStore {
     fn load(&self) -> Result<Option<String>, String> {
@@ -73,7 +74,7 @@ async fn browse(authorize: String, user: String, password: String) {
         .and_then(|v| v.to_str().ok())
         .expect("登录后应重定向回回环地址")
         .to_owned();
-    assert!(back.starts_with("http://127.0.0.1:"), "回到的不是回环地址：{back}");
+    assert!(back.starts_with("http://127.0.0.1:"), "回到的不是回环地址");
     http.get(&back).send().await.expect("访问回环回调");
 }
 
@@ -125,7 +126,8 @@ async fn desktop_signs_in_registers_device_and_publishes_through_relay() {
     let bound = Duration::from_secs(env("PLATFORM_E2E_CONVERGE_SECS").parse().expect("秒数"));
     let state = crate::app_state::build_app_state();
     let http = state.http_client.clone();
-    let session = NativeSession::with_store(Box::new(MemoryStore(Default::default())));
+    let refresh_store = MemoryStore::default();
+    let session = NativeSession::with_store(Box::new(refresh_store.clone()));
 
     // 1. RFC 8252 登录
     let open = |url: &str| {
@@ -152,7 +154,10 @@ async fn desktop_signs_in_registers_device_and_publishes_through_relay() {
         .await
         .expect("连接事实");
     assert_eq!(facts.status, 200, "{}", facts.body);
-    let relay_url = facts.body["relayUrl"].as_str().expect("relayUrl").to_owned();
+    let relay_url = facts.body["relayUrl"]
+        .as_str()
+        .expect("relayUrl")
+        .to_owned();
     let api_base = crate::relay::relay_http_base_url(&relay_url);
 
     // 4. 以设备私钥直连 Relay：找到自己所在的 Channel 并发消息
@@ -228,13 +233,28 @@ async fn desktop_signs_in_registers_device_and_publishes_through_relay() {
     )
     .expect("构造消息");
     let rejected = crate::relay::submit_event_at_with_keys(after, &state, &api_base, &device).await;
-    assert!(rejected.is_err(), "撤销后 Relay 必须拒绝这台设备");
+    // 拒绝必须来自 Relay（HTTP 4xx 或 accepted=false），而不是连不上
+    let error = rejected.expect_err("撤销后 Relay 必须拒绝这台设备");
+    assert!(
+        error.starts_with("relay returned 4") || error.starts_with("relay rejected event:"),
+        "撤销后的拒绝应来自 Relay：{error}"
+    );
+    println!("撤销后发布的结果：{error}");
 
-    // 7. 注销
-    let out = session
-        .call(&http, &cfg, Method::POST, "/api/v1/logout", None)
-        .await
-        .expect("注销");
-    assert!(out.status < 300, "注销：{} {}", out.status, out.body);
-    session.sign_out().await.expect("清除令牌");
+    // 7. 注销：撤销 Core 会话、在 IdP 作废刷新令牌、丢弃本机凭据
+    let held = refresh_store
+        .load()
+        .expect("读刷新令牌")
+        .expect("应持有刷新令牌");
+    let report = session.end_session(&http, &cfg).await.expect("注销");
+    assert!(
+        report.core_session_revoked && report.refresh_token_revoked,
+        "Core 与 IdP 都应确认结束登录：{report:?}"
+    );
+    assert!(!session.has_credentials().expect("读凭据"));
+    let reused = oidc::refresh(&http, &cfg, &held).await;
+    assert!(
+        matches!(reused, Err(oidc::OidcError::Rejected(_))),
+        "注销后原刷新令牌必须被 IdP 拒绝（不输出响应中的凭据）"
+    );
 }

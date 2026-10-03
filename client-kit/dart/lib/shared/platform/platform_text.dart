@@ -550,6 +550,7 @@ enum PlatformMessageKey {
   nativeSendOutcomeUnknown,
   nativeSyncReconnecting,
   nativeSyncRejected,
+  nativeSignOutServerUnconfirmed,
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
@@ -1834,8 +1835,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.nativeConfigSaving: ('Saving…', '正在保存…'),
   PlatformMessageKey.nativeConfigEdit: ('Change connection settings', '修改连接设置'),
   PlatformMessageKey.nativeConfigRejected: (
-    'These settings were not accepted: {message}',
-    '设置未被接受：{message}',
+    'These settings were not accepted.',
+    '设置未被接受。',
   ),
   PlatformMessageKey.nativeSignInTitle: ('Sign in', '登录'),
   PlatformMessageKey.nativeSignInTitleNamed: ('Sign in to {name}', '登录{name}'),
@@ -1850,8 +1851,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.nativeSignInCancel: ('Cancel', '取消'),
   PlatformMessageKey.nativeSignInFailed: (
-    'Sign-in did not complete: {message}',
-    '登录未完成：{message}',
+    'Sign-in did not complete.',
+    '登录未完成。',
   ),
   PlatformMessageKey.nativeStatusUnconfigured: (
     'The server is not set up on this device.',
@@ -1934,8 +1935,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '未能取得 Community 连接信息{reason}。',
   ),
   PlatformMessageKey.nativeConnectFailed: (
-    'Couldn\'t connect to your community: {message}',
-    '未能连接 Community：{message}',
+    'Couldn\'t connect to your community.',
+    '未能连接 Community。',
   ),
   PlatformMessageKey.nativeSendRejected: (
     'Not sent: the server refused this message. Your text is kept.',
@@ -1964,6 +1965,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.nativeSyncRejected: (
     'Not synced: the server no longer accepts this device.',
     '未同步：服务器已不再接受本机。',
+  ),
+  PlatformMessageKey.nativeSignOutServerUnconfirmed: (
+    'Signed out on this device. The server did not confirm that your sign-in was ended; it will expire on its own.',
+    '本机已退出。服务器未确认结束登录，它将按有效期自行失效。',
   ),
 };
 

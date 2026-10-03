@@ -832,8 +832,8 @@ export const platformMessages = {
   "native.config.saving": { en: "Saving…", "zh-CN": "正在保存…" },
   "native.config.edit": { en: "Change connection settings", "zh-CN": "修改连接设置" },
   "native.config.rejected": {
-    en: "These settings were not accepted: {message}",
-    "zh-CN": "设置未被接受：{message}",
+    en: "These settings were not accepted.",
+    "zh-CN": "设置未被接受。",
   },
   "native.signIn.title": { en: "Sign in", "zh-CN": "登录" },
   "native.signIn.titleNamed": { en: "Sign in to {name}", "zh-CN": "登录{name}" },
@@ -847,7 +847,7 @@ export const platformMessages = {
     "zh-CN": "正在等待浏览器中的登录完成…",
   },
   "native.signIn.cancel": { en: "Cancel", "zh-CN": "取消" },
-  "native.signIn.failed": { en: "Sign-in did not complete: {message}", "zh-CN": "登录未完成：{message}" },
+  "native.signIn.failed": { en: "Sign-in did not complete.", "zh-CN": "登录未完成。" },
   "native.status.unconfigured": {
     en: "The server is not set up on this device.", "zh-CN": "本机尚未配置服务器连接。",
   },
@@ -922,8 +922,8 @@ export const platformMessages = {
     "zh-CN": "未能取得 Community 连接信息{reason}。",
   },
   "native.connect.failed": {
-    en: "Couldn't connect to your community: {message}",
-    "zh-CN": "未能连接 Community：{message}",
+    en: "Couldn't connect to your community.",
+    "zh-CN": "未能连接 Community。",
   },
   "native.send.rejected": {
     en: "Not sent: the server refused this message. Your text is kept.",
@@ -952,6 +952,10 @@ export const platformMessages = {
   "native.sync.rejected": {
     en: "Not synced: the server no longer accepts this device.",
     "zh-CN": "未同步：服务器已不再接受本机。",
+  },
+  "native.signOut.serverUnconfirmed": {
+    en: "Signed out on this device. The server did not confirm that your sign-in was ended; it will expire on its own.",
+    "zh-CN": "本机已退出。服务器未确认结束登录，它将按有效期自行失效。",
   },
 } as const;
 

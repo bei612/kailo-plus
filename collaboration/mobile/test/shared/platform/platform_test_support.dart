@@ -68,6 +68,7 @@ http.Response? oidcRoutes(http.Request request, {required String refreshed}) {
 }
 
 Map<String, Object?> sessionView() => {
+  'accessMode': 'FULL',
   'humanIdentityId': '00000000-0000-4000-8000-000000000001',
   'displayName': 'Tester',
   'tenantId': '00000000-0000-4000-8000-000000000002',

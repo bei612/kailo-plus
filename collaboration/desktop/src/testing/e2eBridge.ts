@@ -217,6 +217,11 @@ type PlatformMockOptions = {
   community?: PlatformReply;
   /** Reply to `DELETE /api/v1/identity/client-keys/{pubkey}`. */
   revoke?: PlatformReply;
+  /**
+   * What `platform_sign_out` reports about the server side (Core session
+   * revocation, IdP refresh-token revocation). Defaults to both confirmed.
+   */
+  signOut?: { coreSessionRevoked: boolean; refreshTokenRevoked: boolean };
   workspaces?: Array<{ id: string; name: string; slug: string }>;
   members?: unknown[];
   audit?: unknown[];
@@ -543,6 +548,7 @@ declare global {
     /** Queue CLOSED responses for channel history REQs. */
     __BUZZ_E2E_QUEUE_CHANNEL_HISTORY_CLOSES__?: (reasons: string[]) => void;
     __BUZZ_E2E_SET_STALL_WEBSOCKET_SENDS__?: (stall: boolean) => void;
+    __BUZZ_E2E_OPEN_MOCK_WEBSOCKETS__?: () => number;
     __BUZZ_E2E_DISCONNECT_MOCK_WEBSOCKETS__?: () => number;
     __BUZZ_E2E_RESTART_MOCK_WEBSOCKETS__?: () => number;
     __BUZZ_E2E_SET_MOCK_WEBSOCKET_UNAVAILABLE__?: (
@@ -2288,7 +2294,12 @@ async function handlePlatformCommand(
       return null;
     case "platform_sign_out":
       platformMock.signedIn = false;
-      return null;
+      return (
+        options?.signOut ?? {
+          coreSessionRevoked: true,
+          refreshTokenRevoked: true,
+        }
+      );
     case "platform_register_device": {
       if (!platformMock.signedIn) throw "PLATFORM_NOT_SIGNED_IN";
       const replies = options?.register ?? [
@@ -4746,6 +4757,7 @@ export function maybeInstallE2eTauriMocks() {
     config.mock.stallWebsocketSends = stall;
     if (!stall) mockWebsocketSendMutexWedged = false;
   };
+  window.__BUZZ_E2E_OPEN_MOCK_WEBSOCKETS__ = () => mockSockets.size;
   window.__BUZZ_E2E_DISCONNECT_MOCK_WEBSOCKETS__ = () => {
     const socketIds = [...mockSockets.keys()];
     for (const socketId of socketIds) disconnectMockSocket(socketId);

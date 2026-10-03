@@ -104,6 +104,22 @@ class PlatformApiError implements Exception {
 
 enum PlatformMethod { get, post, put, delete }
 
+/// 一次注销在服务端的结果。仅本机凭据清理成功后返回；这里只回答服务端是否确认。
+class PlatformSignOutReport {
+  const PlatformSignOutReport({
+    required this.coreSessionRevoked,
+    required this.refreshTokenRevoked,
+  });
+
+  /// Core 以契约 200 回答了 `POST /api/v1/logout`（含幂等撤销结果）
+  final bool coreSessionRevoked;
+
+  /// IdP 以 200 回答了刷新令牌撤销（RFC 7009），或本机本就没有刷新令牌
+  final bool refreshTokenRevoked;
+
+  bool get confirmed => coreSessionRevoked && refreshTokenRevoked;
+}
+
 class NativeSession {
   NativeSession({
     required http.Client client,
@@ -115,51 +131,151 @@ class NativeSession {
   final RefreshTokenStore _refreshStore;
   String? _accessToken;
   Future<String>? _refreshing;
+  int _generation = 0;
+  Future<void> _credentialWrite = Future<void>.value();
+
+  void _requireCurrent(int generation) {
+    if (generation != _generation) {
+      // 旧请求不代表当前登录失效，调用方不得据此清除新会话。
+      throw const PlatformUnavailable('The platform session changed');
+    }
+  }
+
+  // 安全存储写入也异步：删除排在旧写入之后，旧刷新不能复活已退出的会话。
+  Future<void> _writeCredentials(Future<void> Function() write) {
+    final pending = _credentialWrite.then((_) => write());
+    _credentialWrite = pending.then<void>((_) {}, onError: (Object _) {});
+    return pending;
+  }
 
   /// 采用一次登录或刷新得到的令牌。刷新令牌是长期凭据：没有它，下次启动就得
   /// 重新登录；有它却存不进安全存储，就不能假装已经持久登录。
   Future<void> adopt(OidcTokens tokens) async {
-    final refresh = tokens.refreshToken;
-    if (refresh != null) {
-      await _refreshStore.store(refresh);
-    } else {
-      await _refreshStore.delete();
-    }
-    _accessToken = tokens.accessToken;
+    final generation = ++_generation;
+    _refreshing = null;
+    _accessToken = null;
+    await _adopt(tokens, generation);
   }
+
+  Future<void> _adopt(OidcTokens tokens, int generation) =>
+      _writeCredentials(() async {
+        _requireCurrent(generation);
+        final refresh = tokens.refreshToken;
+        if (refresh != null) {
+          await _refreshStore.store(refresh);
+        } else {
+          await _refreshStore.delete();
+        }
+        _requireCurrent(generation);
+        _accessToken = tokens.accessToken;
+      });
 
   /// 本机持有刷新令牌。它是否仍被 IdP 接受，要到下一次调用才知道。
   Future<bool> hasCredentials() async => await _refreshStore.load() != null;
 
-  Future<void> discardCredentials() async {
+  /// 结束本机的平台登录（SS-AGW-OIDC 的原生部分）：先快照并丢弃本机凭据，
+  /// 再仅以该快照撤销 Core 的 PlatformSession 与 IdP 刷新令牌。后续登录不受
+  /// 旧注销请求影响；返回服务端两步是否都得到确认。
+  Future<PlatformSignOutReport> endSession(PlatformConfig config) async {
+    final refreshInFlight = _refreshing != null;
+    var accessToken = _accessToken;
+    String? refreshToken;
+    _generation++;
+    _refreshing = null;
     _accessToken = null;
-    await _refreshStore.delete();
+    await _writeCredentials(() async {
+      try {
+        refreshToken = await _refreshStore.load();
+      } finally {
+        await _refreshStore.delete();
+      }
+    });
+    var coreSessionRevoked = false;
+    try {
+      if (accessToken == null && refreshToken != null) {
+        final tokens = await refreshOidcTokens(_client, config, refreshToken!);
+        accessToken = tokens.accessToken;
+        refreshToken = tokens.refreshToken;
+      }
+      if (accessToken != null) {
+        var response = await _request(
+          config,
+          PlatformMethod.post,
+          '/api/v1/logout',
+          accessToken,
+        );
+        if (response.status == 401 && refreshToken != null) {
+          final tokens = await refreshOidcTokens(
+            _client,
+            config,
+            refreshToken!,
+          );
+          refreshToken = tokens.refreshToken;
+          response = await _request(
+            config,
+            PlatformMethod.post,
+            '/api/v1/logout',
+            tokens.accessToken,
+          );
+        }
+        coreSessionRevoked =
+            response.status == 200 &&
+            response.body is Map<String, dynamic> &&
+            (response.body! as Map<String, dynamic>)['revoked'] is bool;
+      }
+    } on OidcFailure {
+      // 旧会话的刷新或注销没有确认；绝不触碰并发建立的新会话。
+    } on PlatformUnavailable {
+      // Core 未确认，仍继续撤销快照里的旧刷新令牌。
+    }
+    final refreshTokenRevoked = refreshToken == null
+        ? true
+        : await revokeRefreshToken(_client, config, refreshToken!);
+    return PlatformSignOutReport(
+      coreSessionRevoked: coreSessionRevoked,
+      // 在途刷新可能已轮换，旧令牌的 200 撤销不能确认该未知新令牌也已撤销。
+      refreshTokenRevoked: refreshTokenRevoked && !refreshInFlight,
+    );
+  }
+
+  Future<void> discardCredentials() async {
+    _generation++;
+    _refreshing = null;
+    _accessToken = null;
+    await _writeCredentials(_refreshStore.delete);
   }
 
   Future<String> _refresh(PlatformConfig config) {
     // 并发的 401 共用同一次刷新：刷新令牌可能是一次性的，两次并发刷新会让
     // 后一次因令牌已被消费而被判为需要重新登录
-    return _refreshing ??= () async {
+    if (_refreshing != null) return _refreshing!;
+    final generation = _generation;
+    late final Future<String> refreshing;
+    refreshing = () async {
       try {
         final refreshToken = await _refreshStore.load();
+        _requireCurrent(generation);
         if (refreshToken == null) throw const PlatformNotSignedIn();
         final OidcTokens tokens;
         try {
           tokens = await refreshOidcTokens(_client, config, refreshToken);
         } on OidcRejected {
           // 刷新令牌被 IdP 拒绝（过期、撤销、会话已结束）：只能重新登录
+          _requireCurrent(generation);
           await discardCredentials();
           throw const PlatformNotSignedIn();
         } on OidcUnavailable catch (error) {
           // IdP 暂不可达：凭据留着，稍后再试
+          _requireCurrent(generation);
           throw PlatformUnavailable(error.message);
         }
-        await adopt(tokens);
+        await _adopt(tokens, generation);
         return tokens.accessToken;
       } finally {
-        _refreshing = null;
+        if (identical(_refreshing, refreshing)) _refreshing = null;
       }
     }();
+    return _refreshing = refreshing;
   }
 
   /// 以 Bearer 调用一个 BFF 路径。401 时刷新一次并重试一次。
@@ -176,23 +292,13 @@ class NativeSession {
         'only paths under $platformApiPrefix are sent',
       );
     }
-    final uri = config.apiUri(path);
+    final generation = _generation;
     var token = _accessToken ?? await _refresh(config);
     for (var attempt = 0; attempt < 2; attempt++) {
-      final request = http.Request(method.name.toUpperCase(), uri)
-        ..headers['Authorization'] = 'Bearer $token'
-        ..headers['Accept'] = 'application/json';
-      if (body != null) {
-        request.headers['Content-Type'] = 'application/json';
-        request.body = jsonEncode(body);
-      }
-      final http.Response response;
-      try {
-        response = await http.Response.fromStream(await _client.send(request));
-      } on Exception catch (error) {
-        throw PlatformUnavailable('The platform is unreachable: $error');
-      }
-      if (response.statusCode == 401) {
+      _requireCurrent(generation);
+      final response = await _request(config, method, path, token, body: body);
+      _requireCurrent(generation);
+      if (response.status == 401) {
         if (attempt == 0) {
           token = await _refresh(config);
           continue;
@@ -200,9 +306,33 @@ class NativeSession {
         await discardCredentials();
         throw const PlatformNotSignedIn();
       }
-      return PlatformResponse(response.statusCode, _decode(response));
+      return response;
     }
     throw const PlatformNotSignedIn();
+  }
+
+  Future<PlatformResponse> _request(
+    PlatformConfig config,
+    PlatformMethod method,
+    String path,
+    String token, {
+    Object? body,
+  }) async {
+    final request = http.Request(method.name.toUpperCase(), config.apiUri(path))
+      ..headers['Authorization'] = 'Bearer $token'
+      ..headers['Accept'] = 'application/json';
+    if (body != null) {
+      request.headers['Content-Type'] = 'application/json';
+      request.body = jsonEncode(body);
+    }
+    try {
+      final response = await http.Response.fromStream(
+        await _client.send(request),
+      );
+      return PlatformResponse(response.statusCode, _decode(response));
+    } on Exception catch (error) {
+      throw PlatformUnavailable('The platform is unreachable: $error');
+    }
   }
 
   static Object? _decode(http.Response response) {

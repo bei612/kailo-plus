@@ -15,6 +15,7 @@ import {
   BuzzIdentityState,
   type ClientKeyStatus,
   type NativeCommunityFacts,
+  PlatformSessionAccessMode,
   ReasonCode,
 } from "@client-kit/contracts";
 import {
@@ -33,9 +34,11 @@ import {
   createNativeHost,
   type Invoke,
   type NativeConfig,
+  type NativeSignOutReport,
 } from "../native";
 import { BffError, isOutcomeUnknown, SessionEndedError, unwrap } from "../transport";
 import { PlatformProvider, type Translate, useT } from "./context";
+import { LifecycleRestrictedView } from "./governance";
 import { RedemptionProgress } from "./invitations";
 import { Button, Notice } from "./ui";
 
@@ -55,9 +58,10 @@ type Step =
   | { kind: "loading" }
   | { kind: "loadFailed"; message: string }
   | { kind: "config"; initial: NativeConfig | null; rejected?: string }
-  | { kind: "signIn"; failed?: string }
+  | { kind: "signIn"; failed?: string; signOutUnconfirmed?: boolean }
   | { kind: "signingIn" }
   | { kind: "registering" }
+  | { kind: "restricted" }
   | { kind: "devicePending"; pubkey: string; state: string; recheckAfterMillis?: number }
   | { kind: "deviceUnknown"; operationId?: string }
   | { kind: "deviceRejected"; reason: string; revoked: boolean }
@@ -93,7 +97,7 @@ export function NativeBootstrap({
 }: {
   invoke: Invoke;
   /** 用连接事实连 Relay（宿主既有的连接路径）；失败以 reject 表示 */
-  connect: (facts: NativeCommunityFacts) => Promise<void>;
+  connect: (facts: NativeCommunityFacts, signal: AbortSignal) => Promise<void>;
   locale?: PlatformLocale;
   children: (session: NativeSession) => ReactNode;
 }) {
@@ -101,17 +105,27 @@ export function NativeBootstrap({
   const [displayName, setDisplayName] = useState<string | null>(null);
   // 当前服务器的配置：显示名缓存以它的原生入口地址为键
   const configRef = useRef<NativeConfig | null>(null);
-  // 登录被取消后，那次 signIn 的 reject 不是失败，不显示
-  const cancelled = useRef(false);
+  // 每次登录/退出/配置切换属于一个流程；失效流程的异步结果不能恢复旧身份。
+  const flow = useRef(0);
+  const connection = useRef<AbortController | null>(null);
+  const invalidateFlow = useCallback(() => {
+    flow.current += 1;
+    connection.current?.abort();
+    connection.current = null;
+    return flow.current;
+  }, []);
   // 自动重查与用户手动重查共用一条请求，不能并发叠加。
-  const recheckInFlight = useRef(false);
+  const recheckInFlight = useRef<number | null>(null);
   // 宿主每次渲染都可能给出新的 connect；引导流程不因此重来
   const connectRef = useRef(connect);
   connectRef.current = connect;
 
-  const onSessionEnded = useCallback(() => setStep({ kind: "signIn" }), []);
+  const onSessionEnded = useCallback(() => {
+    invalidateFlow();
+    setStep({ kind: "signIn" });
+  }, [invalidateFlow]);
   const { host, client } = useMemo(() => {
-    const options = { onSessionEnded };
+    const options = { onSessionEnded, sessionGeneration: () => flow.current };
     return {
       host: createNativeHost(invoke, options),
       client: createBffClient(createInvokeTransport(invoke, options)),
@@ -121,6 +135,7 @@ export function NativeBootstrap({
   // 已登录：读部署的显示名并按服务器缓存。它只影响显示，读不到时保留此前的缓存值，
   // 不阻断连接，也不猜一个名字。
   const refreshDisplayName = useCallback(async () => {
+    const epoch = flow.current;
     const config = configRef.current;
     let name: string;
     try {
@@ -128,19 +143,21 @@ export function NativeBootstrap({
     } catch {
       return;
     }
-    if (!name || configRef.current !== config) return;
+    if (!name || flow.current !== epoch || configRef.current !== config) return;
     if (config?.nativeApiUrl) window.localStorage.setItem(displayNameKey(config), name);
     setDisplayName(name);
   }, [client]);
 
   const fetchCommunity = useCallback(
-    async (pubkey: string) => {
+    async (pubkey: string, epoch = flow.current) => {
+      if (flow.current !== epoch) return;
       setStep({ kind: "community", pubkey });
       void refreshDisplayName();
       let facts: NativeCommunityFacts;
       try {
         facts = await client.nativeCommunity();
       } catch (e) {
+        if (flow.current !== epoch) return;
         if (e instanceof SessionEndedError) return;
         setStep({
           kind: "communityFailed",
@@ -149,18 +166,48 @@ export function NativeBootstrap({
         });
         return;
       }
+      if (flow.current !== epoch) return;
       setStep({ kind: "connecting", pubkey, facts });
+      connection.current?.abort();
+      const controller = new AbortController();
+      connection.current = controller;
       try {
-        await connectRef.current(facts);
+        await connectRef.current(facts, controller.signal);
+        if (flow.current !== epoch) return;
         setStep({ kind: "ready", pubkey, facts });
       } catch (e) {
+        if (flow.current !== epoch) return;
         setStep({ kind: "connectFailed", pubkey, facts, message: message(e) });
       }
     },
     [client, refreshDisplayName],
   );
 
-  const register = useCallback(async () => {
+  const register = useCallback(async (epoch = flow.current) => {
+    if (flow.current !== epoch) return;
+    setStep({ kind: "loading" });
+    try {
+      const session = await client.session();
+      if (flow.current !== epoch) return;
+      if (session.accessMode === PlatformSessionAccessMode.LifecycleRestricted) {
+        void refreshDisplayName();
+        setStep({ kind: "restricted" });
+        return;
+      }
+    } catch (e) {
+      if (flow.current !== epoch) return;
+      if (e instanceof SessionEndedError) return;
+      if (
+        e instanceof BffError &&
+        (e.reason === ReasonCode.TenantMembershipNotActive || e.reason === ReasonCode.IdentityUnknown)
+      ) {
+        setStep({ kind: "deviceRejected", reason: e.reason, revoked: false });
+      } else {
+        // 会话读取失败时尚未登记设备，不把读失败称为写入结果不明。
+        setStep({ kind: "loadFailed", message: message(e) });
+      }
+      return;
+    }
     setStep({ kind: "registering" });
     let status: ClientKeyStatus;
     try {
@@ -169,6 +216,7 @@ export function NativeBootstrap({
         await host.registerDevice(),
       );
     } catch (e) {
+      if (flow.current !== epoch) return;
       if (e instanceof SessionEndedError) return;
       if (isOutcomeUnknown(e)) {
         setStep({
@@ -186,8 +234,9 @@ export function NativeBootstrap({
       });
       return;
     }
+    if (flow.current !== epoch) return;
     if (status.state === BuzzIdentityState.Active) {
-      await fetchCommunity(status.pubkey);
+      await fetchCommunity(status.pubkey, epoch);
     } else if (status.state === BuzzIdentityState.Reconciling) {
       setStep({
         kind: "devicePending",
@@ -198,18 +247,20 @@ export function NativeBootstrap({
     } else {
       setStep({ kind: "deviceRejected", reason: status.state, revoked: true });
     }
-  }, [host, fetchCommunity]);
+  }, [client, host, fetchCommunity, refreshDisplayName]);
 
   // 投影进行中：只按登记回应里服务端给出的间隔重查。老服务端没有该字段时保持
   // 手动重查，不在客户端猜一个 fallback。读不到不是失败，保持「处理中」。
   const recheck = useCallback(
     async (pubkey: string, recheckAfterMillis?: number) => {
-      if (recheckInFlight.current) return;
-      recheckInFlight.current = true;
+      const epoch = flow.current;
+      if (recheckInFlight.current === epoch) return;
+      recheckInFlight.current = epoch;
       try {
         const keys = await client.clientKeys();
+        if (flow.current !== epoch) return;
         const mine = keys.find((k) => k.pubkey === pubkey);
-        if (mine?.state === BuzzIdentityState.Active) await fetchCommunity(pubkey);
+        if (mine?.state === BuzzIdentityState.Active) await fetchCommunity(pubkey, epoch);
         else if (mine?.state === BuzzIdentityState.Reconciling)
           setStep({ kind: "devicePending", pubkey, state: mine.state, recheckAfterMillis });
         else if (mine)
@@ -218,10 +269,10 @@ export function NativeBootstrap({
           setStep({ kind: "deviceRejected", reason: ReasonCode.ClientKeyNotFound, revoked: true });
       } catch (e) {
         // 读不到只说明这一轮没有答案：保持「处理中」，下一轮再读
-        if (!(e instanceof SessionEndedError))
+        if (flow.current === epoch && !(e instanceof SessionEndedError))
           setStep((s) => (s.kind === "devicePending" ? { ...s } : s));
       } finally {
-        recheckInFlight.current = false;
+        if (recheckInFlight.current === epoch) recheckInFlight.current = null;
       }
     },
     [client, fetchCommunity],
@@ -237,67 +288,94 @@ export function NativeBootstrap({
   }, [step, recheck]);
 
   const start = useCallback(async () => {
+    const epoch = invalidateFlow();
     setStep({ kind: "loading" });
     try {
       const [config, status] = await Promise.all([host.getConfig(), host.status()]);
+      if (flow.current !== epoch) return;
       configRef.current = config;
       setDisplayName(cachedDisplayName(config));
       if (!config) setStep({ kind: "config", initial: null });
       else if (!status.signedIn) setStep({ kind: "signIn" });
-      else await register();
+      else await register(epoch);
     } catch (e) {
+      if (flow.current !== epoch) return;
       setStep({ kind: "loadFailed", message: message(e) });
     }
-  }, [host, register]);
+  }, [host, register, invalidateFlow]);
 
   useEffect(() => {
     void start();
-  }, [start]);
+    return () => { invalidateFlow(); };
+  }, [start, invalidateFlow]);
 
   const signIn = async () => {
-    cancelled.current = false;
+    const epoch = invalidateFlow();
     setStep({ kind: "signingIn" });
     try {
       await host.signIn();
     } catch (e) {
-      setStep(cancelled.current ? { kind: "signIn" } : { kind: "signIn", failed: message(e) });
+      if (flow.current !== epoch) return;
+      setStep({ kind: "signIn", failed: message(e) });
       return;
     }
-    await register();
+    if (flow.current === epoch) await register(epoch);
   };
 
   const cancelSignIn = async () => {
-    cancelled.current = true;
-    await host.cancelSignIn();
+    const epoch = invalidateFlow();
+    setStep({ kind: "loading" });
+    try {
+      await host.cancelSignIn();
+      if (flow.current === epoch) setStep({ kind: "signIn" });
+    } catch (e) {
+      if (flow.current === epoch) setStep({ kind: "loadFailed", message: message(e) });
+    }
   };
 
   const signOut = useCallback(async () => {
+    const epoch = invalidateFlow();
+    setStep({ kind: "loading" });
+    let report: NativeSignOutReport;
     try {
-      await host.signOut();
+      report = await host.signOut();
     } catch (e) {
+      if (flow.current !== epoch) return;
       // 本机令牌没能丢弃：不能显示成已退出
       setStep({ kind: "loadFailed", message: message(e) });
       return;
     }
-    setStep({ kind: "signIn" });
-  }, [host]);
+    if (flow.current !== epoch) return;
+    // 本机已退出；服务器没有两项都确认时如实说明，登录会按有效期自行失效
+    setStep({
+      kind: "signIn",
+      signOutUnconfirmed: !(report.coreSessionRevoked && report.refreshTokenRevoked),
+    });
+  }, [host, invalidateFlow]);
 
   const saveConfig = async (config: NativeConfig) => {
+    const epoch = invalidateFlow();
     try {
       await host.setConfig(config);
     } catch (e) {
+      if (flow.current !== epoch) return;
       setStep({ kind: "config", initial: config, rejected: message(e) });
       return;
     }
+    if (flow.current !== epoch) return;
     configRef.current = config;
     setDisplayName(cachedDisplayName(config));
     const status = await host.status().catch(() => null);
-    if (status?.signedIn) await register();
+    if (flow.current !== epoch) return;
+    if (status?.signedIn) await register(epoch);
     else setStep({ kind: "signIn" });
   };
 
   const editConfig = async () => {
+    const epoch = invalidateFlow();
+    setStep({ kind: "loading" });
     const initial = await host.getConfig().catch(() => null);
+    if (flow.current !== epoch) return;
     setStep({ kind: "config", initial });
   };
 
@@ -311,7 +389,9 @@ export function NativeBootstrap({
 
   return (
     <PlatformProvider client={client} locale={locale}>
-      {session ? (
+      {step.kind === "restricted" ? (
+        <LifecycleRestrictedView displayName={displayName} onSignOut={() => void signOut()} />
+      ) : session ? (
         children(session)
       ) : (
         <Screen>
@@ -362,9 +442,13 @@ function Title({ children }: { children: ReactNode }) {
   return <h1 className="text-lg font-semibold">{children}</h1>;
 }
 
-function Detail({ children, alert }: { children: ReactNode; alert?: boolean }) {
+function Detail({ children, alert, testId }: { children: ReactNode; alert?: boolean; testId?: string }) {
   return (
-    <p className={`text-sm ${alert ? "text-destructive" : "text-muted-foreground"}`} role={alert ? "alert" : undefined}>
+    <p
+      className={`text-sm ${alert ? "text-destructive" : "text-muted-foreground"}`}
+      role={alert ? "alert" : undefined}
+      data-testid={testId}
+    >
       {children}
     </p>
   );
@@ -386,11 +470,12 @@ function StepView({
   switch (step.kind) {
     case "loading":
     case "ready":
+    case "restricted":
       return <Notice role="status">{t("platform.loading")}</Notice>;
     case "loadFailed":
       return (
         <>
-          <Detail alert>{step.message}</Detail>
+          <Detail alert>{t("platform.loadFailed")}</Detail>
           <Button onClick={actions.retryLoad}>{t("platform.retry")}</Button>
         </>
       );
@@ -400,8 +485,11 @@ function StepView({
       return (
         <>
           <Title>{signInTitle}</Title>
+          {step.signOutUnconfirmed ? (
+            <Detail testId="native-signout-unconfirmed">{t("native.signOut.serverUnconfirmed")}</Detail>
+          ) : null}
           <Detail>{t("native.signIn.explain")}</Detail>
-          {step.failed ? <Detail alert>{t("native.signIn.failed", { message: step.failed })}</Detail> : null}
+          {step.failed ? <Detail alert>{t("native.signIn.failed")}</Detail> : null}
           <Button onClick={actions.signIn}>{t("native.signIn.start")}</Button>
           <Button onClick={actions.editConfig}>{t("native.config.edit")}</Button>
         </>
@@ -475,7 +563,7 @@ function StepView({
     case "connectFailed":
       return (
         <>
-          <Detail alert>{t("native.connect.failed", { message: step.message })}</Detail>
+          <Detail alert>{t("native.connect.failed")}</Detail>
           <Button onClick={() => actions.fetchCommunity(step.pubkey)}>{t("platform.retry")}</Button>
           <Button onClick={actions.signOut}>{t("platform.signOut")}</Button>
         </>
@@ -530,7 +618,7 @@ function ConfigForm({
           />
         </label>
       ))}
-      {rejected ? <Detail alert>{t("native.config.rejected", { message: rejected })}</Detail> : null}
+      {rejected ? <Detail alert>{t("native.config.rejected")}</Detail> : null}
       <Button disabled={saving} type="submit">
         {saving ? t("native.config.saving") : t("native.config.save")}
       </Button>

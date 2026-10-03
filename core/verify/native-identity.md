@@ -244,3 +244,65 @@ realm 只在 IdP 首次启动时导入，已运行的 IdP 改登记要经管理�
 环境变量，各以自己的代码走完登录 → 设备登记 → `ACTIVE` → 取连接事实 → 直连 Relay 发消息 →
 自建 Channel 被拒 → 撤销后被拒 → 注销。Desktop 跑 `src-tauri` 的 `kailo::e2e`，Mobile 跑
 `mobile/test/kailo_e2e`。
+
+## 2026-10-03：原生会话异步归属收口
+
+权威沿 DD-75/78/79/96 与现有 `identity.client_keys`、PlatformSession 合同。
+本批修正既有登录、设备登记、刷新、退出和 Community 连接的异步归属，
+不是新增身份、注册表、权限或工作流。Web/Desktop 继续消费同一个 TypeScript
+平台主体；Mobile 仍使用原生 OIDC 与 Relay 路径，没有组件宿主或 WebView。
+
+影响面为共享 `NativeBootstrap`、原生 invoke 传输，以及 Desktop/Mobile 原有
+会话与连接实现。每个异步结果只作用于发起时的本机流程；取消、退出、换配置
+使旧结果失效，旧会话失效通知不能退出新登录。连接取消还传给原 Desktop
+宿主，避免仅忽略界面结果却留下旧连接。本机代际不持久化、不作为服务端
+鉴权事实，不改变 schema、BFF API、Workflow history 或数据库兼容性。
+
+副作用仍走原入口：退出冻结该次凭据，远端撤销不得读取或清除后来登录的
+凭据；刷新不可达不等于凭据被明确拒绝。未知会话模式不登记设备，受限会话
+只挂既有生命周期任务与审批。结果不明保持未确认，不以任意 2xx 冒充注销终态。
+并发刷新、迟到成功/拒绝、登录取消、退出中刷新和新登录分别核对归属；
+网络/凭据存储失败继续采用原不可达、未登录或 UNKNOWN 分类，不新增业务状态。
+
+共享端先实现后验证：固定检查 SDK 内 `typecheck` 与原平台测试，选定输入
+170 项通过；私有副本移除会话失效校验，2 项断言失败，原命令退出 1；
+再分别破坏传输通知归属、未知模式拒绝与受限准入，5 项断言失败、退出 1。
+逐字还原选定实现后，同一检查再次 170 项通过、退出 0。原件位于
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/native-session-batch.0ZyXoF/`。
+离线缺依赖、旧 SDK 网络不可达和快照缺少既有检查输入的失败日志全部保留；
+补齐投递后使用相同锁文件与原检查，不改产品代码迁就检查环境。
+这不是 Win11/手机设备验收、业务 E2E、安装包或部署完成声明。
+
+Desktop 同批原 `cargo test --locked --lib platform:: -- --nocapture` 为
+14 passed / 1 ignored，`cargo clippy --locked --lib --tests -- -D warnings`
+和限定源 `rustfmt --check` 退出 0；连接模块 3 项检查通过。私有删除代际
+检查与回退 OAuth/注销确认分类分别触发 3 项断言失败、退出 101；连接取消
+守卫破坏亦失败，恢复后通过。固定 SDK、限额、原失败和恢复输出保存在
+`/volumes/data/kailo/tmp/codex-desktop-session-20261003.uWm6ft/`。
+`native-final.log` 的 SHA-256 为
+`ebcb46105334c4d7fdc9a9f3affe9763b6128b7c274a3980a0dac3098c5f8e48`；
+`native-clippy-final.log` 为
+`115262dbd4a4f6ee06c3a8f2ba2781bf78b6734b575e7632309d70587b29dccb`。
+明确 ignored 的真实 E2E 没有运行，不以 fake IdP/BFF 断言代替设备或服务验收。
+
+Mobile 最终使用原 Flutter 3.41.7 / Dart 3.11.5 SDK，限定 7 源格式检查与
+分析退出 0，31 项通过，1 项需要真实环境的 E2E 明确跳过。五次私有生产
+守卫破坏分别触发 1/1/1/6/2 项断言失败、命令退出 1；逐次恢复，最终源码
+与正式 7 路径 SHA 全部一致。注销过渡为既有 outcomeUnknown，只有本机凭据
+清除成功后才呈现 signedOut；远端未确认不冒充全端撤销。证据原件位于
+`/volumes/data/kailo/tmp/codex-mobile-session-lifecycle-20261003.OmU4VS/`，
+`delivery-final.log` SHA-256 为
+`77e6f91d1cccff96149d9f34f22361c567cce0db7cd07f424e2e3a1fdf43661b`。
+本批没有 Mobile 安装包、签名或手机设备验收。
+
+两端沿原 helper、原配方从冻结树
+`26afb30cc06176846be2a3656786fe1ba62ae457` 顺序构建，均退出 0。
+Web source 为 `e6fe9478955d95079f997432941cc5859f4eada2bd6fdee278c9ce5bfdbe7b7f`，
+镜像为 `sha256:7576e989296abaab3de5150f0010187a137467eb843c827743638b57bed3e767`，
+registry 读回 HTTP 200，header 与 body 摘要一致。
+Win11 x64 source 为 `5a85c94e4be590901cb5fd127bab76c43d7a3ac3b9d973b06ffcde0a0d57eb45`，
+`Kailo_0.5.23_x64-setup.exe` SHA-256 为
+`336e70ca054dae71b9c0add734c4d25475141fcf25cad23a099e752f0dc6f3f6`。
+原件、两次 helper 日志与 NSIS 包在
+`/volumes/data/kailo/tmp/codex-desktop-session-web-win-20261003.6ZOd0g/`。
+构建明确保留交叉编译、未签名提示；没有安装运行或部署声明。

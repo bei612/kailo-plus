@@ -39,5 +39,5 @@ release:
     - name: model-gateway
       digest: sha256:c51204516640511a2753fe9449c3a3976384e685fba378db852ad32c6a648d91
     - name: web-client
-      digest: sha256:b366d565242d9efd9e1812110bbd400c936d8f53b5fcd8ca87b687d4d707d85b
+      digest: sha256:7576e989296abaab3de5150f0010187a137467eb843c827743638b57bed3e767
   gate: shipped

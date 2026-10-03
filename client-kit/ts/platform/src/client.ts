@@ -44,6 +44,7 @@ import type {
   WorkspaceMemberView,
   WorkspaceView,
 } from "@client-kit/contracts";
+import { PlatformSessionAccessMode } from "@client-kit/contracts";
 import { type BffRequest, type BffTransport, unwrap } from "./transport";
 
 export type BffClient = ReturnType<typeof createBffClient>;
@@ -60,7 +61,17 @@ export function createBffClient(transport: BffTransport) {
     platformInfo: () => get<PlatformInfo>("/api/v1/platform-info"),
 
     /** 当前会话。撤权后下一次调用即 403——会话不由客户端持有，不需要它主动丢弃。 */
-    session: () => get<PlatformSessionView>("/api/v1/session"),
+    session: async () => {
+      const session = await get<PlatformSessionView>("/api/v1/session");
+      // 未知或旧回应缺字段不是任何一种可用会话，不猜默认准入模式（DD-96）。
+      if (
+        session?.accessMode !== PlatformSessionAccessMode.Full &&
+        session?.accessMode !== PlatformSessionAccessMode.LifecycleRestricted
+      ) {
+        throw new Error("会话响应缺少受支持的 accessMode");
+      }
+      return session;
+    },
 
     /**
      * 撤销本次 PlatformSession 并关闭它的流。Web 必须在网关 logout 之前调它：网关的

@@ -44,6 +44,37 @@ const approvalTone: Record<ApprovalStatus, Tone> = {
   [ApprovalStatus.Invalidated]: "negative",
 };
 
+/** DD-96：受限会话只挂现有生命周期任务与审批，不挂普通协作/管理页。 */
+export function LifecycleRestrictedView({
+  displayName,
+  onSignOut,
+}: {
+  displayName: string | null;
+  onSignOut: () => void;
+}) {
+  const t = useT();
+  const [tab, setTab] = useState<"tasks" | "approvals">("tasks");
+  return (
+    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b p-4">
+        {displayName ? <strong>{displayName}</strong> : null}
+        <Button onClick={onSignOut}>{t("platform.signOut")}</Button>
+      </header>
+      <nav className="flex gap-2 border-b p-4">
+        <Button aria-pressed={tab === "tasks"} onClick={() => setTab("tasks")}>
+          {t("platform.tab.tasks")}
+        </Button>
+        <Button aria-pressed={tab === "approvals"} onClick={() => setTab("approvals")}>
+          {t("platform.tab.approvals")}
+        </Button>
+      </nav>
+      <main className="mx-auto w-full max-w-5xl p-4">
+        {tab === "tasks" ? <TasksPage /> : <ApprovalsPage />}
+      </main>
+    </div>
+  );
+}
+
 function When({ at }: { at: string }) {
   const locale = useLocale();
   return <span title={at}>{relativeTime(locale, at)}</span>;

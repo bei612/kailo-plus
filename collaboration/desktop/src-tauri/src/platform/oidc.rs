@@ -22,7 +22,8 @@ use url::Url;
 use super::config::PlatformConfig;
 
 /// 回调页。只告诉用户可以回到应用，不回显任何参数。
-const CALLBACK_HTML: &str = "<!doctype html><meta charset=utf-8><title>登录已完成 · Sign-in complete</title>\
+const CALLBACK_HTML: &str =
+    "<!doctype html><meta charset=utf-8><title>登录已完成 · Sign-in complete</title>\
 <p>登录已完成，可以回到桌面端了。</p><p>Sign-in complete. You can return to the desktop app.</p>";
 
 /// 令牌请求的失败分两种，对调用方意义相反：IdP 明确拒绝（刷新令牌过期或被撤销，
@@ -45,6 +46,10 @@ impl std::fmt::Display for OidcError {
 struct Discovery {
     authorization_endpoint: String,
     token_endpoint: String,
+    /// RFC 7009 令牌撤销端点（RFC 8414 的 `revocation_endpoint`）。IdP 不公布时
+    /// 本机无法让 IdP 作废刷新令牌，注销只能如实报告未确认。
+    #[serde(default)]
+    revocation_endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -56,6 +61,22 @@ pub(crate) struct TokenResponse {
 /// 进行中的登录。只允许一个：新的一次会取消上一次。
 #[derive(Default)]
 pub(crate) struct PendingLogin(pub Mutex<Option<oneshot::Sender<()>>>);
+
+impl PendingLogin {
+    pub(crate) fn cancel(&self) {
+        if let Some(cancel) = self.0.lock().ok().and_then(|mut pending| pending.take()) {
+            let _ = cancel.send(());
+        }
+    }
+}
+
+struct CallbackServer(tokio::task::JoinHandle<()>);
+
+impl Drop for CallbackServer {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 
 struct Callback {
     state: String,
@@ -130,75 +151,79 @@ pub(crate) async fn sign_in(
     cfg: &PlatformConfig,
     pending: &PendingLogin,
 ) -> Result<TokenResponse, String> {
-    let endpoints = discover(http, cfg).await.map_err(|e| e.to_string())?;
-    let (verifier, challenge) = pkce()?;
-    let state = random_b64(16)?;
-
-    // RFC 8252 §7.3：回环 IP 字面量，端口由系统分配
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .map_err(|e| format!("无法启动本机回调：{e}"))?;
-    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-    let redirect_uri = format!("http://127.0.0.1:{port}/callback");
-
-    let (sender, receiver) = oneshot::channel();
-    let router = Router::new()
-        .route("/callback", get(callback))
-        .with_state(std::sync::Arc::new(Callback {
-            state: state.clone(),
-            sender: Mutex::new(Some(sender)),
-        }));
-    let server = tokio::spawn(async move {
-        let _ = axum::serve(listener, router).await;
-    });
-
-    let mut authorize =
-        Url::parse(&endpoints.authorization_endpoint).map_err(|e| format!("授权端点无效：{e}"))?;
-    authorize
-        .query_pairs_mut()
-        .append_pair("response_type", "code")
-        .append_pair("client_id", &cfg.oidc_client_id)
-        .append_pair("redirect_uri", &redirect_uri)
-        .append_pair("scope", "openid")
-        .append_pair("state", &state)
-        .append_pair("code_challenge", &challenge)
-        .append_pair("code_challenge_method", "S256");
-
+    // 从 discovery 开始就可取消；令牌交换期间取消也不能留下监听任务。
     let (cancel_tx, cancel_rx) = oneshot::channel();
     if let Some(previous) = pending
         .0
         .lock()
-        .map_err(|e| e.to_string())?
+        .map_err(|_| "登录状态不可用")?
         .replace(cancel_tx)
     {
         let _ = previous.send(());
     }
+    let login = async {
+        let endpoints = discover(http, cfg).await.map_err(|e| e.to_string())?;
+        let (verifier, challenge) = pkce()?;
+        let state = random_b64(16)?;
 
-    if let Err(e) = open(authorize.as_str()) {
-        server.abort();
-        return Err(e);
-    }
+        // RFC 8252 §7.3：回环 IP 字面量，端口由系统分配
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| format!("无法启动本机回调：{e}"))?;
+        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+        let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
-    let code = tokio::select! {
-        r = receiver => r.map_err(|_| "本机回调意外结束".to_owned()).and_then(|r| r),
-        _ = cancel_rx => Err("登录已取消".to_owned()),
+        let (sender, receiver) = oneshot::channel();
+        let router =
+            Router::new()
+                .route("/callback", get(callback))
+                .with_state(std::sync::Arc::new(Callback {
+                    state: state.clone(),
+                    sender: Mutex::new(Some(sender)),
+                }));
+        let server = CallbackServer(tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        }));
+
+        let mut authorize = Url::parse(&endpoints.authorization_endpoint)
+            .map_err(|e| format!("授权端点无效：{e}"))?;
+        authorize
+            .query_pairs_mut()
+            .append_pair("response_type", "code")
+            .append_pair("client_id", &cfg.oidc_client_id)
+            .append_pair("redirect_uri", &redirect_uri)
+            .append_pair("scope", "openid")
+            .append_pair("state", &state)
+            .append_pair("code_challenge", &challenge)
+            .append_pair("code_challenge_method", "S256");
+
+        open(authorize.as_str())?;
+
+        let code = receiver
+            .await
+            .map_err(|_| "本机回调意外结束".to_owned())
+            .and_then(|r| r);
+        drop(server);
+        let code = code?;
+
+        token_request(
+            http,
+            &endpoints.token_endpoint,
+            &[
+                ("grant_type", "authorization_code"),
+                ("code", &code),
+                ("redirect_uri", &redirect_uri),
+                ("client_id", &cfg.oidc_client_id),
+                ("code_verifier", &verifier),
+            ],
+        )
+        .await
+        .map_err(|e| e.to_string())
     };
-    server.abort();
-    let code = code?;
-
-    token_request(
-        http,
-        &endpoints.token_endpoint,
-        &[
-            ("grant_type", "authorization_code"),
-            ("code", &code),
-            ("redirect_uri", &redirect_uri),
-            ("client_id", &cfg.oidc_client_id),
-            ("code_verifier", &verifier),
-        ],
-    )
-    .await
-    .map_err(|e| e.to_string())
+    tokio::select! {
+        result = login => result,
+        _ = cancel_rx => Err("登录已取消".to_owned()),
+    }
 }
 
 /// 以刷新令牌换新的访问令牌。
@@ -220,6 +245,36 @@ pub(crate) async fn refresh(
     .await
 }
 
+/// 请 IdP 作废刷新令牌（RFC 7009 §2.1，公共客户端以 `client_id` 标识自己）。
+///
+/// 只有 IdP 以 200 回答才算确认（§2.2：已失效的令牌同样回 200）。没有公布撤销
+/// 端点、不可达或其他回答一律返回 false——调用方不得把它说成已撤销。
+pub(crate) async fn revoke_refresh_token(
+    http: &reqwest::Client,
+    cfg: &PlatformConfig,
+    refresh_token: &str,
+) -> bool {
+    let Ok(endpoints) = discover(http, cfg).await else {
+        return false;
+    };
+    let Some(endpoint) = endpoints.revocation_endpoint else {
+        return false;
+    };
+    match http
+        .post(&endpoint)
+        .form(&[
+            ("token", refresh_token),
+            ("token_type_hint", "refresh_token"),
+            ("client_id", cfg.oidc_client_id.as_str()),
+        ])
+        .send()
+        .await
+    {
+        Ok(resp) => resp.status() == reqwest::StatusCode::OK,
+        Err(_) => false,
+    }
+}
+
 async fn token_request(
     http: &reqwest::Client,
     endpoint: &str,
@@ -232,7 +287,7 @@ async fn token_request(
         .await
         .map_err(|e| OidcError::Unavailable(format!("令牌端点不可达：{e}")))?;
     if !resp.status().is_success() {
-        // 错误体可能含 IdP 的诊断文本，但不含令牌；只取 error 字段
+        // 只识别协议错误码，不把不受信任的诊断正文返回给 WebView。
         let status = resp.status();
         let error = resp
             .json::<serde_json::Value>()
@@ -240,13 +295,16 @@ async fn token_request(
             .ok()
             .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(str::to_owned))
             .unwrap_or_default();
-        // 4xx 是 IdP 的判定（invalid_grant 等）；5xx 是它暂时不可用
-        let message = format!("令牌端点回 HTTP {status} {error}");
-        return Err(if status.is_client_error() {
-            OidcError::Rejected(message)
-        } else {
-            OidcError::Unavailable(message)
-        });
+        // invalid_grant 才证明这份 grant 无效。429、客户端配置错误、代理4xx
+        // 或非协议正文都不能证明刷新令牌被撤销，不因此删除本机凭据。
+        let message = format!("令牌端点回 HTTP {status}");
+        return Err(
+            if status == reqwest::StatusCode::BAD_REQUEST && error == "invalid_grant" {
+                OidcError::Rejected(message)
+            } else {
+                OidcError::Unavailable(message)
+            },
+        );
     }
     resp.json()
         .await
@@ -267,5 +325,44 @@ mod tests {
         );
         let (other, _) = pkce().unwrap();
         assert_ne!(verifier, other, "每次登录的 verifier 不同");
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_discovery_does_not_open_a_browser() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let entered = std::sync::Arc::new(tokio::sync::Notify::new());
+        let signal = entered.clone();
+        let router = Router::new().route(
+            "/realm/.well-known/openid-configuration",
+            get(move || {
+                let signal = signal.clone();
+                async move {
+                    signal.notify_one();
+                    std::future::pending::<String>().await
+                }
+            }),
+        );
+        let server = CallbackServer(tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap()
+        }));
+        let cfg = PlatformConfig {
+            native_api_url: base.clone(),
+            oidc_issuer: format!("{base}/realm"),
+            oidc_client_id: "test".into(),
+        };
+        let pending = PendingLogin::default();
+        let http = reqwest::Client::new();
+        let (result, ()) = tokio::join!(
+            sign_in(|_| panic!("取消后不能打开浏览器"), &http, &cfg, &pending),
+            async {
+                tokio::time::timeout(std::time::Duration::from_secs(5), entered.notified())
+                    .await
+                    .unwrap();
+                pending.cancel();
+            }
+        );
+        assert_eq!(result.unwrap_err(), "登录已取消");
+        drop(server);
     }
 }

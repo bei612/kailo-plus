@@ -46,17 +46,55 @@ async function resetCommunityState(): Promise<void> {
 // 本进程里是否已经连过一次。首次连接不清理：那时单例本就是空的，而冷启动时已排队
 // 的导航深链（例如从通知或 buzz://channel 打开应用）必须留给路由器取走。
 let connectedBefore = false;
+let connectionGeneration = 0;
+let connecting: Promise<void> = Promise.resolve();
 
 /** 失败以 reject 表示，由登录引导如实显示并提供重试。 */
-export async function connectCommunity(
+export function connectCommunity(
   facts: NativeCommunityFacts,
+  signal: AbortSignal,
 ): Promise<void> {
-  if (connectedBefore) await resetCommunityState();
-  connectedBefore = true;
-  // 不传 nsec：签名用的是 keyring 中的设备私钥，也就是刚登记的那一把
-  await applyCommunity(facts.relayUrl);
-  // Relay 覆盖地址装好之后再刷新依赖它的媒体状态：冷启动时 mediaUrl 可能已按
-  // 缺省地址缓存了来源，留着它会把本 Relay 的媒体当成外部资源
-  resetMediaCaches();
-  initDraftStore((await getIdentity()).pubkey, facts.relayUrl);
+  const generation = ++connectionGeneration;
+  const checkCurrent = () => {
+    signal.throwIfAborted();
+    if (generation !== connectionGeneration) {
+      throw new Error("PLATFORM_OPERATION_SUPERSEDED");
+    }
+  };
+  const disconnect = () => {
+    if (generation === connectionGeneration) relayClient.disconnect();
+  };
+  signal.addEventListener("abort", disconnect, { once: true });
+  // 原生 apply_workspace 不能中途取消：按调用顺序串行，保证旧 IPC 完成后才
+  // 安装下一代地址。取消的旧连接只停止，不清理后来的连接或草稿。
+  const result = connecting.then(async () => {
+    checkCurrent();
+    if (connectedBefore) {
+      await resetCommunityState();
+      checkCurrent();
+    }
+    connectedBefore = true;
+    // 不传 nsec：签名仍用 keyring 中刚登记的设备私钥。
+    await applyCommunity(facts.relayUrl);
+    checkCurrent();
+    resetMediaCaches();
+    const identity = await getIdentity();
+    checkCurrent();
+    initDraftStore(identity.pubkey, facts.relayUrl);
+  });
+  connecting = result.catch(() => undefined);
+  return result.catch((error) => {
+    signal.removeEventListener("abort", disconnect);
+    throw error;
+  });
+}
+
+/**
+ * 协作面卸载（注销、会话失效、换设备登记）时撤下以设备身份认证的 Relay 连接。
+ * 不撤的话，退出后单例的 socket 与重连循环仍以本机设备密钥连着 Relay，继续收
+ * Channel 的事件。其余单例状态照旧留到下一次 `connectCommunity` 清理。
+ */
+export function disconnectCommunity(): void {
+  connectionGeneration += 1;
+  relayClient.disconnect();
 }

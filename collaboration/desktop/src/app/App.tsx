@@ -14,7 +14,10 @@ import {
   ActiveCommunityProvider,
   useActiveCommunity,
 } from "@/features/platform/activeCommunity";
-import { connectCommunity } from "@/features/platform/connectCommunity";
+import {
+  connectCommunity,
+  disconnectCommunity,
+} from "@/features/platform/connectCommunity";
 import { DeviceIdentityGate } from "@/features/platform/DeviceIdentityGate";
 import { createBuzzQueryClient } from "@/shared/api/queryClient";
 import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
@@ -152,6 +155,8 @@ function CommunityQueryProvider({
 function CommunityApp({ devicePubkey }: { devicePubkey: string }) {
   const community = useActiveCommunity();
   const bootSplashPhase = useBootSplashHold();
+  // 注销后不留以设备身份认证的 Relay 连接（见 disconnectCommunity）
+  useEffect(() => disconnectCommunity, []);
 
   return (
     <CommunityQueryProvider pubkey={devicePubkey} relayUrl={community.relayUrl}>

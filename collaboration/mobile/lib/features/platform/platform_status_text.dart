@@ -42,6 +42,12 @@ String? platformOutcomeText(PlatformLinkState state, {String? locale}) {
     case PlatformLinkPhase.outcomeUnknown:
       // 原始异常只作诊断证据，不向用户显示，更不把结果不明渲染为失败。
       return platformPhaseText(state.phase, locale: locale);
+    case PlatformLinkPhase.signedOut when state.signOutUnconfirmed:
+      // 本机已退出，但服务端没有确认结束登录：不说成完全退出
+      return platformText(
+        PlatformMessageKey.nativeSignOutServerUnconfirmed,
+        locale: locale,
+      );
     default:
       return null;
   }
