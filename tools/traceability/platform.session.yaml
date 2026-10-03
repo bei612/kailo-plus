@@ -37,7 +37,7 @@ release:
     - name: core
       digest: sha256:50ab55f3a02224619ab1927d1c00c5bd6ce0245d9fabb536f6c30006ecec222e
     - name: model-gateway
-      digest: sha256:b9e3bf8d84cf24fc81930c70a6c2df19e32b077412a72aa16d11b9279ad5898d
+      digest: sha256:c51204516640511a2753fe9449c3a3976384e685fba378db852ad32c6a648d91
     - name: web-client
       digest: sha256:b366d565242d9efd9e1812110bbd400c936d8f53b5fcd8ca87b687d4d707d85b
   gate: shipped

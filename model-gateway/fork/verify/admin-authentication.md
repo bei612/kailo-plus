@@ -200,3 +200,62 @@ SHA-256 为 `f700d89df9fd70020438214d1672dda58350917f2f0b1d0baae1719afdc7da93`�
 native SDK 缺 rustfmt 的退出 1 保留；复用原检查 SDK `10ad51a2…` 的 Rust1.90
 格式工具，显式 toolchain 与 edition 2024 检查最终源码退出 0。文档原检查退出 0；
 此检查点尚未运行本批 full、构建、部署或原安装恢复验收，不登记新 artifact digest。
+
+### 同批负向与最终还原结果
+
+源码检查点已普通 push 为 `d82f0f0613168c8080029ee292ea28dc2f1fcd59`，远端读回
+一致，相对 `f3323b6c1` 为 2 文件、+237/-21。只有私有 Data 副本恢复原生产列表
+函数，保留全部四项后置检查及认证结果断言；编译成功后四项均实际断言失败，
+退出 101，而不是用编译错误充当负向。逐字还原到已提交源码 SHA-256
+`eb631c72396e8c432712b36f6ddcfecc3ab0cfcc2e8e8f70bac57e28e78a5435` 后，
+同 SDK、同目标最终退出 0：4 passed、0 failed、0 ignored、2129 filtered out。
+未改变原 API key/模型/virtual 目标授权，Core 恰好一个授权模型的检查不变。
+
+原件仍在上述 `Mjt4jr` 目录：`mutation-old-production.log` 的 SHA-256 为
+`162781566d3b1d07c37b4fdc6dd9b74284a71d92b491e7d91899df2b530c1bba`，
+`restored-final.log` 为
+`2110e29fd9c9d771ab50afddeea1d660fe9833acbc830dfa5a6ddac8f1e23ca1`。
+这是原生列表行为验证，不证明新 Gateway 已部署、安装已激活或 Agent 已完成首轮。
+
+同一干净 `d82f0f0613168c8080029ee292ea28dc2f1fcd59` 的原 Gateway helper 仅执行
+一次并退出 0，原 release 编译 15m35s，二进制版本自检通过；没有重建其他组件。
+source digest 为 `sha256:74b922a507c5fdaa2caa9a9b7b791741feded364fffee914ae394645dc5b2de3`，
+artifact 为 `sha256:c51204516640511a2753fe9449c3a3976384e685fba378db852ad32c6a648d91`。
+registry 按该摘要 GET 200，响应头、1436 字节 manifest 的独立 SHA 与 Docker
+RepoDigest 一致。原件位于
+`/volumes/data/kailo/tmp/codex-model-discovery-release-20261003.z7rXAL/`；
+`helper.log` SHA-256 为
+`bc81867ab92f40183f76e17beb8590b9c0b9d3bbce3f16be283d5ed584b1685b`。
+只同步本产物的来源、Compose 与两项既有追溯 pin；不提升任何业务能力状态。
+
+固定树 `489a89e02c16e7e77f1ddce326d8bd8b9087c7d2` 的原
+`tools/check.sh --full` 实际退出 0。日志在
+`/volumes/data/kailo/tmp/codex-model-discovery-delivery-20261003.QiAOML/full.log`，
+SHA-256 `a37caf7079673c973cc1901a38ce42013ce0cef8a47f5d5aa0c6f68d9ddb8009`。
+143 个 schema 与三份历史契约兼容、四侧、Core、Worker/replay、追溯与产物来源
+通过；未提供真实 DATABASE_URL 的迁移演练、导出树的实际 .env 预检仍 SKIP，
+gitleaks 未安装；没有新增迁移。宿主原 `bootstrap.sh --validate-config` 另退出 0。
+
+21:16:52 UTC，原 Compose `up -d --no-deps --no-build agentgateway` 退出 0，
+部署上列 c512 产物；新容器为
+`c97f3aa016f82ca0f522f9bbed68bc30476c365a1bb9df4e9987f44236cb41df`。
+同目录 `live-before.txt`/`live-after.txt` 逐行比较仅 Gateway 改变，另外 23 个运行
+服务的容器、镜像与启动时间未变。未重建 Core、Worker、Web 或任何数据库。
+
+原 Installation `8f240978-34bb-437d-97ee-498a30e67e86` 在 21:17 UTC 已读回
+Resource/Installation/runtime generation 1/model credential/ChannelAgentBinding
+全部 ACTIVE，原 Resource projection 闭合；Core 内受监督 `codex-app-serve`
+子进程 PID 541423 实际存在，未打印参数或凭据。任务稍后由原 Workflow 对账
+自然收敛：21:23:43.172042 UTC 的 READ ONLY/ROLLBACK 回执退出 0，原 run
+`01a10338-aa45-7574-b043-a76f1e89c13f` 保持、WorkflowRef TERMINAL/version 4、
+Task COMPLETED/event 1947，waiting_reason 为空、observation_gap=false。
+AE 的 DISPATCHED 是既有派发字段，不冒充待完成，也不直接修改。
+`installation-terminal-readback.log` SHA-256 为
+`68429423f2dc717cdc4050a52c608c13a2cfd87e9faa2fda9412ff281bfd5189`。
+
+原只读浏览器 helper 退出 0：真实 OIDC 登录后的共源管理页展示 Active installation
+record，相关 BFF 读取均为 200，pageErrors 为空；它记录的稍早 Running 意图由上述
+后续终态回执解释，不改写历史日志。`management-after.log` SHA-256 为
+`33f63e8add86d19cb90af390664f184cb0fb9dbb88d80faf22643d44c937b0ec`。
+这些证据关闭本次原安装初始化问题；不证明首轮模型执行、频道回复或用量收尾，
+也不替代 Win11/Mobile 设备与签名验收。本批无新安装、未知操作重放或业务 SQL 写入。

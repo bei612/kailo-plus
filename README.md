@@ -6,6 +6,29 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### 21:23 UTC 原安装完成，Codex 进程已就绪
+
+Gateway 模型发现修复已提交并普通 push 为
+`d82f0f0613168c8080029ee292ea28dc2f1fcd59`，相对 `f3323b6c1` 为
+2 文件、+237/-21。原生列表四项验证通过，恢复旧生产函数后四项均断言失败，
+逐字还原后通过；Core 原模型唯一性和授权检查未放宽。
+原 helper 对该干净提交构建一次并退出 0，Gateway `c5120451…` 于 21:16 UTC
+限定部署；24 个运行服务中只替换 Gateway，其余 23 个未变。
+
+原 Installation `8f240978-34bb-437d-97ee-498a30e67e86` 的 Resource、安装、
+runtime generation 1、模型凭据和频道绑定均已读回 ACTIVE，Core 中真实存在
+受监督的 Codex app-server 子进程。原 Workflow/run 未重建；21:23 UTC 只读
+回执确认 Workflow TERMINAL、Task COMPLETED、UNKNOWN 等待原因清空。
+浏览器真实登录后显示 Active installation record，相关 BFF 读取均为 200、
+pageerror 为 0；稍早浏览器记录中的 Running 已由上述后续终态回执收敛。
+
+本批固定树原 `tools/check.sh --full` 退出 0，实际部署配置预检另行通过；
+没有数据库迁移，full 内迁移演练与实际配置仍按原输出 SKIP，未安装 gitleaks。
+安装完成不等于 Agent 首轮成功：普通 mention/manual-assignment 的完整动作目录、
+真实模型首轮、频道回复、用量收尾和三端设备/签名验收仍未闭合。没有新建安装、
+重放未知操作或直接改写业务状态。完整回执见
+[模型发现与原安装恢复记录](model-gateway/fork/verify/admin-authentication.md)。
+
 ### Workflow scope 修复已部署，原安装推进至模型凭据对账
 
 `66c48e80994437685c1eaa713b93a4bac43b8207` 已普通 push，远端 main 读回一致；
