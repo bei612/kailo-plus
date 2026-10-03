@@ -4,7 +4,41 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 最新交付状态（2026-10-02 22:28 UTC）
+## 最新交付状态（2026-10-03 01:26 UTC）
+
+**仍未生产就绪。** Runtime 配置与正式打包输入批已提交并普通 push 为
+`67b48b7c027317efb59533ee9dcb5bc9b4a1a892`；该源码提交已与远端 main 核对。
+源码验证、构建、部署与业务验收分别计数，下面不代表后续工作树已经通过。
+
+- 正式构建：原 `tools/release.sh` 从干净的上述提交实际退出 0，Core 为
+  `sha256:18d0f0713e4cbf7e782d68d666759422403e0cfb3223a9504be4d4580afd0c1c`，Worker 为
+  `sha256:62d20be0d7d8d44b8f75d2a4a386eab448c819eb4ef8c08709a357e67af8c9a1`。
+  两份 SPDX SBOM 和 provenance 已产出，均指向该提交和同一依赖锁摘要；Core 原生 Runtime
+  依赖仍为已登记的 `ad13c952…`，没有重新实现 Codex。
+- 实际部署：本地只替换 Core、Worker 和已构建的 Web `6f54ce37…`，没有重建或重置环境。
+  Core 经原 wrapping 启动入口恢复，实际 `/healthz` 为 HTTP 200；Worker 日志确认原 Temporal
+  队列启动；Web healthy。仅容器运行不能证明 Agent 执行或三端业务验收。
+- 实际数据库：原生 SQLx 从该提交的迁移目录向前执行 13 条，实际库从 37 条到 50 条，
+  退出 0；未清数据、未运行回退、未插入 Agent 测试对象。AgentDefinition 与 AutomationDefinition
+  实查均为 0，不将零条目列表当作创建、执行或计量闭环通过。
+- 浏览器实查：现有首位管理员经原 OIDC 登录成功，共用 Agent 管理页面与左侧七项导航实际
+  渲染；session、workspaces、tasks、agent-definitions 的已观察请求均为 HTTP 200，页面错误
+  为 0。未创建业务对象、调用模型或读取 Memory；Installation/Automation 子列表请求未观察到，
+  不将页面标题呈现计为这两项业务验收，也不代替 Win11 设备验收。
+- 并行开发：Memory 原生复用与 BFF 治理、Gateway 持久用量、取消收敛和正常 turn 最终结算
+  正在独立窗口集中收口；后续源码不属于上述 release。Memory 写入、模型/工具治理、严格预留、
+  真实 Agent 全链路以及 Win11/Mobile 设备和签名门禁仍未闭合。
+
+原正式构建日志在 `/volumes/data/kailo/tmp/codex-automation-core-worker-release-20261002.FSYx6e/release-67b48b7c.log`，
+SHA-256 `fa6dff0195aa8e6fecb1584995fda0aaf0d342c26372825c60f20eae93b1bf2e`；
+实际库向前日志在 `/volumes/data/kailo/tmp/codex-live-migrate-67b48b7c.PHQkYc/forward.log`，
+SHA-256 `bcee1b9831bb660f2e9a34fb8f2f3dc490ecc27cec7711057844fa5a544b8579`。
+浏览器原件在 `/volumes/data/kailo/tmp/codex-live-web-67b48b7c-20261003.HHmRdh/`，
+`observation.json` SHA-256 `77ec0edbcd2cf12087605355b2869e4ba0e1d1ddb797252ab4418a49f6173b70`；
+同目录保存了实际截图，不保存口令或会话 cookie。
+Win11 unsigned 测试包仍保留此前实际产物，不替代安装、登录、本机持钥和业务验收。
+
+## 上一批交付状态（2026-10-02 22:28 UTC）
 
 **仍未生产就绪。** 上一批 Agent 主线已提交并普通 push 为 `fc0c2e0dbd33af72ab5a16cd621715f3a33ad4a6`，本地与远端 main 已核对一致。本批接续实际功能，不再使用 GitNexus；集中验证和阶段提交不在小改动或 push 时重复触发。
 
