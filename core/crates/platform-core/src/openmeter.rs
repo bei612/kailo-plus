@@ -106,6 +106,19 @@ pub(crate) struct InvocationMeter {
     pub event_type: String,
 }
 
+impl InvocationMeter {
+    /// Only the registered Automation action has invocation COUNT usage. A
+    /// normal Agent turn still has its native model SUM meters, not a fabricated
+    /// automation run. Unknown actions cannot use absence as an exemption.
+    pub(crate) fn for_action(action: &str, meter: Option<Self>) -> Result<Option<Self>, Error> {
+        match (action, meter) {
+            ("automation.run", Some(meter)) if meter.key == "automation.run" => Ok(Some(meter)),
+            ("agent.invoke", None) => Ok(None),
+            _ => Err(Error::Precondition),
+        }
+    }
+}
+
 /// 19 §6 的两个已定 HUMAN-read meter；配置与 ID 只取原生 OpenMeter。
 #[derive(Serialize, Deserialize, PartialEq)]
 pub(crate) struct MemoryMeter {
@@ -795,8 +808,9 @@ impl OpenMeter {
         tenant: Uuid,
         customer_id: &str,
         subject: &str,
+        action: &str,
         keys: &[String],
-    ) -> Result<(Vec<GatewayMeter>, InvocationMeter), Error> {
+    ) -> Result<(Vec<GatewayMeter>, Option<InvocationMeter>), Error> {
         let customer = self
             .customer_by_id(customer_id, tenant)
             .await?
@@ -903,7 +917,7 @@ impl OpenMeter {
         if selected.is_empty() {
             return Err(Error::Precondition);
         }
-        Ok((selected, invocation.ok_or(Error::Precondition)?))
+        Ok((selected, InvocationMeter::for_action(action, invocation)?))
     }
 
     pub(crate) async fn memory_read_meters(

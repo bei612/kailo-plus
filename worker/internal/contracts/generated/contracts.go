@@ -1144,6 +1144,8 @@ type ActionCommand struct {
 	ResourceVersion *int64 `json:"resourceVersion,omitempty"`
 	// workspace.create 或 agent.definition.create 的稳定 slug
 	Slug *string `json:"slug,omitempty"`
+	// 仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
+	SourceEventID *string `json:"sourceEventId,omitempty"`
 	// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
 	TenantID *string `json:"tenantId,omitempty"`
 	// Workspace 内动作的执行 Workspace
@@ -1400,25 +1402,34 @@ type AgentInstallationPage struct {
 // 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
 // 正文、执行或管理权限。
 type InstallationElement struct {
-	ActiveProjectionGeneration *int64                      `json:"activeProjectionGeneration,omitempty"`
-	AgentPrincipalID           string                      `json:"agentPrincipalId"`
-	AgentPrincipalState        AgentPrincipalState         `json:"agentPrincipalState"`
-	AgentResourceID            string                      `json:"agentResourceId"`
-	ChannelBinding             *InstallationChannelBinding `json:"channelBinding,omitempty"`
-	OwnerPrincipalID           string                      `json:"ownerPrincipalId"`
-	PinnedVersionAssetID       string                      `json:"pinnedVersionAssetId"`
-	Projection                 *ProjectionClass            `json:"projection,omitempty"`
-	ResourceID                 string                      `json:"resourceId"`
-	ResourceState              ResourceState               `json:"resourceState"`
-	ResourceVersion            int64                       `json:"resourceVersion"`
-	State                      AgentInstallationState      `json:"state"`
-	WorkspaceID                string                      `json:"workspaceId"`
+	ActiveProjectionGeneration *int64                           `json:"activeProjectionGeneration,omitempty"`
+	AgentPrincipalID           string                           `json:"agentPrincipalId"`
+	AgentPrincipalState        AgentPrincipalState              `json:"agentPrincipalState"`
+	AgentResourceID            string                           `json:"agentResourceId"`
+	ChannelBinding             *InstallationChannelBinding      `json:"channelBinding,omitempty"`
+	ExecutionPermission        *InstallationExecutionPermission `json:"executionPermission,omitempty"`
+	OwnerPrincipalID           string                           `json:"ownerPrincipalId"`
+	PinnedVersionAssetID       string                           `json:"pinnedVersionAssetId"`
+	Projection                 *ProjectionClass                 `json:"projection,omitempty"`
+	ResourceID                 string                           `json:"resourceId"`
+	ResourceState              ResourceState                    `json:"resourceState"`
+	ResourceVersion            int64                            `json:"resourceVersion"`
+	State                      AgentInstallationState           `json:"state"`
+	WorkspaceID                string                           `json:"workspaceId"`
 }
 
 type InstallationChannelBinding struct {
 	ChannelID *string        `json:"channelId,omitempty"`
 	Status    Status         `json:"status"`
 	Triggers  []AgentTrigger `json:"triggers"`
+}
+
+type InstallationExecutionPermission struct {
+	CanGrant                 bool    `json:"canGrant"`
+	CanRevoke                bool    `json:"canRevoke"`
+	Effective                bool    `json:"effective"`
+	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
+	Requested                bool    `json:"requested"`
 }
 
 // 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
@@ -1442,25 +1453,34 @@ type AgentInstallationProjectionView struct {
 // 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
 // 正文、执行或管理权限。
 type AgentInstallationView struct {
-	ActiveProjectionGeneration *int64                               `json:"activeProjectionGeneration,omitempty"`
-	AgentPrincipalID           string                               `json:"agentPrincipalId"`
-	AgentPrincipalState        AgentPrincipalState                  `json:"agentPrincipalState"`
-	AgentResourceID            string                               `json:"agentResourceId"`
-	ChannelBinding             *AgentInstallationViewChannelBinding `json:"channelBinding,omitempty"`
-	OwnerPrincipalID           string                               `json:"ownerPrincipalId"`
-	PinnedVersionAssetID       string                               `json:"pinnedVersionAssetId"`
-	Projection                 *ProjectionClass                     `json:"projection,omitempty"`
-	ResourceID                 string                               `json:"resourceId"`
-	ResourceState              ResourceState                        `json:"resourceState"`
-	ResourceVersion            int64                                `json:"resourceVersion"`
-	State                      AgentInstallationState               `json:"state"`
-	WorkspaceID                string                               `json:"workspaceId"`
+	ActiveProjectionGeneration *int64                                    `json:"activeProjectionGeneration,omitempty"`
+	AgentPrincipalID           string                                    `json:"agentPrincipalId"`
+	AgentPrincipalState        AgentPrincipalState                       `json:"agentPrincipalState"`
+	AgentResourceID            string                                    `json:"agentResourceId"`
+	ChannelBinding             *AgentInstallationViewChannelBinding      `json:"channelBinding,omitempty"`
+	ExecutionPermission        *AgentInstallationViewExecutionPermission `json:"executionPermission,omitempty"`
+	OwnerPrincipalID           string                                    `json:"ownerPrincipalId"`
+	PinnedVersionAssetID       string                                    `json:"pinnedVersionAssetId"`
+	Projection                 *ProjectionClass                          `json:"projection,omitempty"`
+	ResourceID                 string                                    `json:"resourceId"`
+	ResourceState              ResourceState                             `json:"resourceState"`
+	ResourceVersion            int64                                     `json:"resourceVersion"`
+	State                      AgentInstallationState                    `json:"state"`
+	WorkspaceID                string                                    `json:"workspaceId"`
 }
 
 type AgentInstallationViewChannelBinding struct {
 	ChannelID *string        `json:"channelId,omitempty"`
 	Status    Status         `json:"status"`
 	Triggers  []AgentTrigger `json:"triggers"`
+}
+
+type AgentInstallationViewExecutionPermission struct {
+	CanGrant                 bool    `json:"canGrant"`
+	CanRevoke                bool    `json:"canRevoke"`
+	Effective                bool    `json:"effective"`
+	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
+	Requested                bool    `json:"requested"`
 }
 
 // 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple

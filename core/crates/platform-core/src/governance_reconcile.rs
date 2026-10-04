@@ -70,6 +70,7 @@ const OPEN_STATES: &[(&str, &str)] = &[
     ("WAITING", "NOT_DISPATCHED"),
     ("ALLOWED", "NOT_DISPATCHED"),
     ("ALLOWED", "UNKNOWN"),
+    ("REVOKED", "UNKNOWN"),
 ];
 
 pub fn spawn(
@@ -169,6 +170,10 @@ pub fn spawn(
             if let Err(error) = crate::automation::reconcile(&state, cfg.batch).await {
                 tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
                     state="UNKNOWN", "自动化持久触发对账未完成；原 checkpoint 保留");
+            }
+            if let Err(error) = crate::agent_invocation::reconcile(&state, cfg.batch).await {
+                tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
+                    state="UNKNOWN", "普通 Agent 持久触发对账未完成；原 checkpoint 保留");
             }
             // Usage 与 ActionExecution 各自收敛：缺归因保留 Gateway 原游标，
             // 不把它伪结算，也不让它阻止本轮其他治理动作。
@@ -414,6 +419,7 @@ async fn pass(
          from admission.action_execution
          where gate_state in ('EVALUATING', 'WAITING')
             or (gate_state = 'ALLOWED' and dispatch_state <> 'DISPATCHED' and dispatch_state <> 'ABORTED')
+            or (gate_state = 'REVOKED' and dispatch_state = 'UNKNOWN')
          group by gate_state, dispatch_state",
     )
     .fetch_all(&g.pool)

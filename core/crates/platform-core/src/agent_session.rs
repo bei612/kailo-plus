@@ -66,7 +66,7 @@ pub(crate) async fn birth(
     if session.status != "PENDING" || session.runtime_thread_id.is_some() {
         return Err(RuntimeError::Unavailable);
     }
-    crate::automation::fresh_invocation(state, &mut tx, invocation_id)
+    crate::agent_invocation::fresh_invocation(state, &mut tx, invocation_id)
         .await
         .map_err(|_| RuntimeError::AdmissionRequired)?;
     // 同一事务的 Invocation/lifecycle fence；不另起 memory Action，且不读缓存 head。
@@ -124,7 +124,7 @@ pub(crate) async fn birth(
     {
         return Err(RuntimeError::Unknown);
     }
-    crate::automation::fresh_invocation(state, &mut tx, invocation_id)
+    crate::agent_invocation::fresh_invocation(state, &mut tx, invocation_id)
         .await
         .map_err(|_| RuntimeError::AdmissionRequired)?;
     let observed = runtime.start_thread(projection).await;
@@ -177,7 +177,7 @@ pub(crate) async fn fixed_core(
     if session.status != "ACTIVE" || session.runtime_thread_id.is_none() {
         return Err(RuntimeError::Unavailable);
     }
-    crate::automation::fresh_invocation(state, &mut tx, invocation_id)
+    crate::agent_invocation::fresh_invocation(state, &mut tx, invocation_id)
         .await
         .map_err(|_| RuntimeError::AdmissionRequired)?;
     let memory = match (

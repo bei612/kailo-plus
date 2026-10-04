@@ -737,7 +737,7 @@ async fn prepare_dispatch(
     {
         return Err(RuntimeError::AdmissionRequired);
     }
-    crate::automation::fresh_invocation(state, &mut tx, invocation.id)
+    crate::agent_invocation::fresh_invocation(state, &mut tx, invocation.id)
         .await
         .map_err(|_| RuntimeError::AdmissionRequired)?;
     let changed = sqlx::query(
@@ -1331,12 +1331,11 @@ async fn lock_reply(
            and s.agent_version_asset_id=i.agent_version_asset_id and s.projection_generation=i.projection_generation
          join catalog.agent_runtime_projection p on p.installation_resource_id=i.installation_resource_id
            and p.generation=i.projection_generation and p.agent_version_asset_id=i.agent_version_asset_id
-         join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
+         left join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
            and v.automation_resource_id=i.automation_resource_id and v.state='PUBLISHED'
            and v.action->>'kind'='AGENT_TURN' and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION')
            and v.result_target='TRIGGER_THREAD'
          join catalog.agent_installation a on a.resource_id=i.installation_resource_id and a.workspace_id=i.workspace_id
-           and a.pinned_version_asset_id=i.agent_version_asset_id and a.active_projection_generation=i.projection_generation
          join catalog.agent_version av on av.asset_id=i.agent_version_asset_id
            and av.agent_resource_id=a.agent_resource_id and av.state in ('PUBLISHED','RETIRED')
          join catalog.asset va on va.id=av.asset_id and va.tenant_id=i.tenant_id
@@ -1350,6 +1349,9 @@ async fn lock_reply(
          join projection.tenant_buzz_binding tb on tb.tenant_id=i.tenant_id and tb.state='ACTIVE'
          join projection.workspace_buzz_binding wb on wb.workspace_id=i.workspace_id and wb.state='ACTIVE'
          where i.id=$1 and i.action_execution_id=$2 and i.tenant_id=$3 and i.workspace_id=$4
+           and ((i.automation_resource_id is not null and v.asset_id is not null)
+             or (i.automation_resource_id is null and i.automation_version_asset_id is null
+               and exists(select 1 from admission.action_execution ae where ae.id=i.action_execution_id and ae.action_key='agent.invoke')))
            and i.installation_resource_id=$5 and i.agent_version_asset_id=$6 and i.projection_generation=$7
            and p.config_hash=$8 and p.state='ACTIVE' and s.status='ACTIVE' and s.runtime_thread_id=$9
            and i.status in ('RUNNING','UNKNOWN') and i.native_status='completed' and i.runtime_turn_id=$10
@@ -1500,7 +1502,7 @@ async fn publish_reply(
         return Err(Refusal::Precondition(ReasonCode::BindingNotActive));
     }
     let revision =
-        crate::automation::fresh_reply(state, &mut tx, invocation.id, turn_id, None).await?;
+        crate::agent_invocation::fresh_reply(state, &mut tx, invocation.id, turn_id, None).await?;
     let event = client
         .sign_channel_reply_at(
             &binding.channel_id.to_string(),
@@ -1584,8 +1586,14 @@ async fn publish_reply(
         {
             return Err(unknown());
         }
-        crate::automation::fresh_reply(state, &mut guard, invocation.id, turn_id, Some(&event_id))
-            .await?;
+        crate::agent_invocation::fresh_reply(
+            state,
+            &mut guard,
+            invocation.id,
+            turn_id,
+            Some(&event_id),
+        )
+        .await?;
         Ok::<_, Refusal>(guard)
     }
     .await;

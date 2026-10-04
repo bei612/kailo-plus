@@ -183,6 +183,10 @@ export interface ActionCommand {
      */
     slug?: string;
     /**
+     * 仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
+     */
+    sourceEventId?: string;
+    /**
      * tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
      */
     tenantId?: string;
@@ -655,6 +659,7 @@ export interface InstallationElement {
     agentPrincipalState:         AgentPrincipalState;
     agentResourceId:             string;
     channelBinding?:             InstallationChannelBinding;
+    executionPermission?:        InstallationExecutionPermission;
     ownerPrincipalId:            string;
     pinnedVersionAssetId:        string;
     projection?:                 ProjectionClass;
@@ -680,6 +685,14 @@ export enum Status {
     Active = "ACTIVE",
     Disabled = "DISABLED",
     Error = "ERROR",
+}
+
+export interface InstallationExecutionPermission {
+    canGrant:                  boolean;
+    canRevoke:                 boolean;
+    effective:                 boolean;
+    pendingActionExecutionId?: string;
+    requested:                 boolean;
 }
 
 /**
@@ -735,6 +748,7 @@ export interface AgentInstallationView {
     agentPrincipalState:         AgentPrincipalState;
     agentResourceId:             string;
     channelBinding?:             AgentInstallationViewChannelBinding;
+    executionPermission?:        AgentInstallationViewExecutionPermission;
     ownerPrincipalId:            string;
     pinnedVersionAssetId:        string;
     projection?:                 ProjectionClass;
@@ -749,6 +763,14 @@ export interface AgentInstallationViewChannelBinding {
     channelId?: string;
     status:     Status;
     triggers:   AgentTrigger[];
+}
+
+export interface AgentInstallationViewExecutionPermission {
+    canGrant:                  boolean;
+    canRevoke:                 boolean;
+    effective:                 boolean;
+    pendingActionExecutionId?: string;
+    requested:                 boolean;
 }
 
 /**

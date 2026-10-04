@@ -18,6 +18,7 @@ import {
   ResourceState,
   ResultExposureMode,
   TaskStatus,
+  WorkflowKind,
   type ActionCommand,
   type ActionSubmission,
   type AgentDefinitionView,
@@ -569,6 +570,10 @@ function validInstallation(row: AgentInstallationView): boolean {
     || !Object.values(AgentRuntimeProjectionState).includes(projection.state))) return false;
   if (row.activeProjectionGeneration !== undefined && (!Number.isSafeInteger(row.activeProjectionGeneration)
     || row.activeProjectionGeneration <= 0 || projection?.generation !== row.activeProjectionGeneration)) return false;
+  const execution = row.executionPermission;
+  if (execution !== undefined && (!execution
+    || ![execution.requested, execution.effective, execution.canGrant, execution.canRevoke].every((value) => typeof value === "boolean")
+    || (execution.pendingActionExecutionId !== undefined && (typeof execution.pendingActionExecutionId !== "string" || !execution.pendingActionExecutionId)))) return false;
   return row.state !== AgentInstallationState.Active || (row.resourceState === ResourceState.Active
     && row.activeProjectionGeneration !== undefined && projection?.state === AgentRuntimeProjectionState.Active);
 }
@@ -581,6 +586,7 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
   const [locked, setLocked] = useState(false);
   const [revision, setRevision] = useState(0);
   const [delegationTarget, setDelegationTarget] = useState<AgentInstallationView | null>(null);
+  const [permissionTarget, setPermissionTarget] = useState<AgentInstallationView | null>(null);
   const value = state.status === "ok" ? state.data : null;
   const workspaces = value && Array.isArray(value) && value.every((w) => w && typeof w.id === "string" && !!w.id
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(value.map((w) => w.id)).size === value.length ? value : null;
@@ -595,7 +601,7 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
       : <>
         <label className="flex flex-col gap-1 text-sm">{t("platform.workspace")}
           <select disabled={locked} className="h-8 rounded-md border border-input bg-background px-2" value={workspace.id}
-            onChange={(event) => { setSelected(event.target.value); setDelegationTarget(null); }}>
+            onChange={(event) => { setSelected(event.target.value); setDelegationTarget(null); setPermissionTarget(null); }}>
             {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </label>
@@ -605,7 +611,9 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
       onRecorded={() => setRevision((old) => old + 1)} />
     <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
       onRecorded={() => setRevision((old) => old + 1)} />
-    {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onManage={setDelegationTarget} /> : null}
+    {permissionTarget ? <InstallationExecute key={`${permissionTarget.resourceId}:${permissionTarget.workspaceId}`} installation={permissionTarget} locked={locked} onLocked={setLocked}
+      onRecorded={() => setRevision((old) => old + 1)} /> : null}
+    {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onPermission={setPermissionTarget} onManage={setDelegationTarget} /> : null}
   </section>;
 }
 
@@ -616,6 +624,50 @@ function validInstallationCandidate(row: AgentInstallationCandidate): boolean {
     && Number.isSafeInteger(row.resourceVersion) && row.resourceVersion > 0
     && Number.isSafeInteger(row.assetVersion) && row.assetVersion > 0
     && Number.isSafeInteger(row.ordinal) && row.ordinal > 0;
+}
+
+function matchingInstallationTask(task: TaskView, receipt: ActionSubmission, workspaceId: string): boolean {
+  return validDefinitionTask(task) && task.actionKey === "agent.installation.create"
+    && task.actionKey === receipt.actionKey && task.actionExecutionId === receipt.actionExecutionId
+    && task.operationId === receipt.operationId && task.workspaceId === workspaceId
+    && Number.isSafeInteger(task.actionVersion) && task.actionVersion > 0
+    && typeof task.createdAt === "string" && Number.isFinite(Date.parse(task.createdAt))
+    && (task.reason === undefined || Object.values(ReasonCode).includes(task.reason))
+    && (task.observation === undefined || Object.values(ReasonCode).includes(task.observation))
+    && (task.waitingReason === undefined || typeof task.waitingReason === "string")
+    && (task.workflowId === undefined ? task.workflowKind === undefined && task.taskStatus === undefined
+      : task.workflowKind === WorkflowKind.AgentInstallation)
+    && (receipt.workflowId === undefined || task.workflowId === receipt.workflowId)
+    // Installation is Temporal-backed; a dispatched receipt without its Workflow
+    // cannot inherit the synchronous "applied" presentation from generic Tasks.
+    && (task.gateState !== ActionGateState.Allowed || task.dispatchState !== ActionDispatchState.Dispatched
+      || task.workflowId !== undefined || task.observation !== undefined);
+}
+
+function InstallationTaskReceipt({ receipt, workspaceId }: { receipt: ActionSubmission; workspaceId: string }) {
+  const client = useBffClient();
+  const t = useT();
+  const reasonText = useReasonText();
+  const [state, reload] = useLoad(`installation-task:${workspaceId}:${receipt.actionExecutionId}:${receipt.operationId}:${receipt.workflowId ?? ""}`,
+    () => client.task(receipt.actionExecutionId));
+  const task = state.status === "ok" && matchingInstallationTask(state.data, receipt, workspaceId) ? state.data : null;
+  const phase = task ? taskPhase(task) : null;
+  return <section className="flex flex-col gap-2 rounded-md border p-3 text-sm" data-testid="agent-installation-task">
+    <div className="flex items-center gap-2"><h4 className="font-medium">{t("tasks.title")}</h4>
+      <Button onClick={reload}>{t("platform.refresh")}</Button></div>
+    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
+      : !task || !phase ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      : <>
+        <p role="status"><Badge tone={phase.tone}>{t(phase.label)}</Badge></p>
+        {task.observation ? <p>{reasonText(task.observation)}</p> : null}
+        {task.reason ? <p>{reasonText(task.reason)}</p> : null}
+        {task.waitingReason ? <p>{t("tasks.waitingReason")}: {task.waitingReason}</p> : null}
+        <p className="break-words">{t("tasks.execution")}: {task.actionExecutionId}</p>
+        <p className="break-words">{t("tasks.operation")}: {task.operationId}</p>
+        <p className="break-words">{t("tasks.target")}: {task.targetId}</p>
+        {task.workflowId ? <p className="break-words">{t("tasks.workflow")}: {task.workflowId}</p> : null}
+      </>}
+  </section>;
 }
 
 function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked, onLocked, onRecorded }: {
@@ -631,6 +683,7 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
   const [intent, setIntent] = useState<{ command: ActionCommand; name: string; workspace: string; ordinal: number } | null>(null);
   const [failure, setFailure] = useState<WriteFailure | null>(null);
   const [submission, setSubmission] = useState<ActionSubmission | null>(null);
+  const [submissionScope, setSubmissionScope] = useState<{ workspaceId: string; client: typeof client } | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const offset = offsets[index] ?? 0;
@@ -659,7 +712,7 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
       workspaceId, resourceId: candidate.agentResourceId, resourceVersion: candidate.resourceVersion,
       assetId: candidate.agentVersionAssetId, assetVersion: candidate.assetVersion }, name: candidate.displayName,
       workspace: workspaceName, ordinal: candidate.ordinal });
-    setFailure(null); setSubmission(null); onLocked(true);
+    setFailure(null); setSubmission(null); setSubmissionScope(null); onLocked(true);
   };
   const submit = async () => {
     if (!intent || inFlight.current) return;
@@ -677,6 +730,7 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
         || (result.gateState === ActionGateState.Waiting && !result.approvalWorkflowId)
         || (result.gateState === ActionGateState.Denied && !result.reason)) throw new TransportError(t("platform.loadFailed"));
       setFailure(null); setSubmission(result);
+      setSubmissionScope({ workspaceId: intent.command.workspaceId!, client });
       if (result.dispatchState !== ActionDispatchState.Unknown && result.gateState !== ActionGateState.Evaluating
         && !(result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.NotDispatched)) {
         setIntent(null); setSelected(""); onLocked(false); onRecorded(); reloadSources();
@@ -721,8 +775,12 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
       <div className="flex gap-2"><Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
         {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}</div>
     </div>}
-    {submission ? <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId })
-      : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}{submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}
+    {submission && submissionScope && submissionScope.workspaceId === workspaceId && submissionScope.client === client ? <>
+      <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId })
+        : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}{submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p>
+      <InstallationTaskReceipt key={`${workspaceId}:${submission.actionExecutionId}:${submission.operationId}`}
+        receipt={submission} workspaceId={submissionScope.workspaceId} />
+    </> : null}
     {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="text-sm">{failure.kind === "unknown"
       ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : t("roles.rejected", { reason: failureText(failure) })}</p> : null}
     {!taskRows ? <Notice role="status">{t("agents.inFlightUnavailable")}<Button onClick={reloadTasks}>{t("platform.retry")}</Button></Notice>
@@ -804,7 +862,8 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
   const targetPage = targets.status === "ok" && targets.data && installation
     && targets.data.installationResourceId === installation.resourceId && targets.data.workspaceId === installation.workspaceId
     && targets.data.resourceVersion === installation.resourceVersion && Array.isArray(targets.data.scopes)
-    && targets.data.scopes.every((scope) => validDelegationScope(scope) && scope.actionKey === "automation.run"
+    && targets.data.scopes.every((scope) => validDelegationScope(scope)
+      && (scope.actionKey === "automation.run" || (scope.actionKey === "agent.invoke" && scope.targetId === installation.resourceId))
       && scope.targetType === "RESOURCE" && scope.targetId !== undefined && scope.createWorkspaceId === undefined && scope.toolResourceId === undefined)
     && new Set(targets.data.scopes.map(scopeKey)).size === targets.data.scopes.length
     && (targets.data.nextOffset === undefined || (Number.isSafeInteger(targets.data.nextOffset) && targets.data.nextOffset > targetOffset))
@@ -954,8 +1013,8 @@ function DelegationScope({ scope }: { scope: DelegationScopeParameters }) {
   </div>;
 }
 
-function InstallationList({ workspaceId, locked, onManage }: {
-  workspaceId: string; locked: boolean; onManage: (row: AgentInstallationView) => void;
+function InstallationList({ workspaceId, locked, onPermission, onManage }: {
+  workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -987,13 +1046,13 @@ function InstallationList({ workspaceId, locked, onManage }: {
           {pageIndex > 0 ? <Button disabled={locked} onClick={() => changePage(pageIndex - 1)}>{t("roles.previous")}</Button> : null}
           {next !== undefined ? <Button disabled={locked} onClick={() => { setOffsets((old) => [...old.slice(0, pageIndex + 1), next]); changePage(pageIndex + 1); }}>{t("roles.next")}</Button> : null}
         </div>
-        {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onManage={onManage} /> : null}
+        {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onPermission={onPermission} onManage={onManage} /> : null}
       </>}
   </div>;
 }
 
-function InstallationDetail({ resourceId, workspaceId, locked, onManage }: {
-  resourceId: string; workspaceId: string; locked: boolean; onManage: (row: AgentInstallationView) => void;
+function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage }: {
+  resourceId: string; workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -1027,7 +1086,103 @@ function InstallationDetail({ resourceId, workspaceId, locked, onManage }: {
     {row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active
       ? <Button className="w-fit" disabled={locked} onClick={() => onManage(row)}>{t("agents.delegation.open")}</Button> : null}
     <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
+    {row.state === AgentInstallationState.Active ? <Button className="w-fit" disabled={locked} onClick={() => onPermission(row)}>{t("agents.execute.open")}</Button> : null}
     {row.state === AgentInstallationState.Active ? <InstallationMemory resourceId={resourceId} workspaceId={workspaceId} installation={row} /> : null}
+  </section>;
+}
+
+function InstallationExecute({ installation, locked, onLocked, onRecorded }: {
+  installation: AgentInstallationView; locked: boolean; onLocked: (value: boolean) => void; onRecorded: () => void;
+}) {
+  const client = useBffClient();
+  const t = useT();
+  const reasonText = useReasonText();
+  const failureText = useFailureText();
+  const [read, reloadPermission] = useLoad(`installation-execute-read:${installation.resourceId}:${installation.workspaceId}`,
+    () => client.agentInstallation(installation.resourceId));
+  const row = read.status === "ok" && validInstallation(read.data) && read.data.resourceId === installation.resourceId
+    && read.data.workspaceId === installation.workspaceId ? read.data : null;
+  const permission = row?.executionPermission;
+  const [intent, setIntent] = useState<{ command: ActionCommand; client: typeof client; agent: string; workspace: string } | null>(null);
+  const [submission, setSubmission] = useState<ActionSubmission | null>(null);
+  const [receiptClient, setReceiptClient] = useState<typeof client | null>(null);
+  const [failure, setFailure] = useState<WriteFailure | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+  const current = useRef({ client, id: installation.resourceId, workspace: installation.workspaceId });
+  current.current = { client, id: installation.resourceId, workspace: installation.workspaceId };
+  const sameScope = intent?.client === client && intent.command.resourceId === installation.resourceId
+    && intent.workspace === installation.workspaceId;
+  const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
+    || submission?.gateState === ActionGateState.Evaluating
+    || (submission?.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.NotDispatched);
+  const [tasks, reloadTasks] = useLoad(`installation-execute:${installation.resourceId}`, client.tasks);
+  const rows = tasks.status === "ok" && Array.isArray(tasks.data) && tasks.data.every(validDefinitionTask) ? tasks.data : null;
+  const pending = rows?.some((row) => row.targetId === installation.resourceId
+    && ["agent.installation.execute.grant", "agent.installation.execute.revoke"].includes(row.actionKey)
+    && taskPhase(row).tone === "neutral") ?? true;
+  const prepare = (grant: boolean) => {
+    if (locked || intent || busy || !permission || !rows || !row
+      || !(grant ? permission.canGrant && !pending : permission.canRevoke)) return;
+    const command: ActionCommand = { actionKey: grant ? "agent.installation.execute.grant" : "agent.installation.execute.revoke",
+      resourceId: row.resourceId, resourceVersion: row.resourceVersion, idempotencyKey: newIdempotencyKey(),
+      ...(grant ? {} : { explicitConfirmation: true }) };
+    setIntent({ command, client, agent: row.agentPrincipalId, workspace: row.workspaceId });
+    setSubmission(null); setFailure(null); onLocked(true);
+  };
+  const submit = async () => {
+    if (!intent || !sameScope || inFlight.current) return;
+    const captured = intent;
+    const active = () => current.current.client === captured.client && current.current.id === captured.command.resourceId
+      && current.current.workspace === captured.workspace;
+    inFlight.current = true; setBusy(true);
+    try {
+      const result = await captured.client.submitAction(captured.command);
+      if (!active()) return;
+      if (!result || result.actionKey !== captured.command.actionKey || !result.actionExecutionId || !result.operationId
+        || typeof result.actionExecutionId !== "string" || typeof result.operationId !== "string"
+        || !Object.values(ActionGateState).includes(result.gateState) || !Object.values(ActionDispatchState).includes(result.dispatchState)
+        || (result.reason !== undefined && !Object.values(ReasonCode).includes(result.reason))
+        || (result.gateState === ActionGateState.Waiting && !result.approvalWorkflowId)
+        || (submission && (submission.operationId !== result.operationId || submission.actionExecutionId !== result.actionExecutionId))) {
+        throw new TransportError(t("platform.loadFailed"));
+      }
+      setSubmission(result); setReceiptClient(client); setFailure(null);
+      if (result.dispatchState !== ActionDispatchState.Unknown && result.gateState !== ActionGateState.Evaluating
+        && !(result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.NotDispatched)) {
+        setIntent(null); onLocked(false); onRecorded(); reloadPermission();
+      }
+    } catch (error) {
+      if (active() && !unknown) {
+        const failed = writeFailure(error); setFailure(failed);
+        if (failed.kind !== "unknown") { setIntent(null); onLocked(false); }
+      }
+    } finally {
+      inFlight.current = false;
+      if (active()) { setBusy(false); reloadTasks(); }
+    }
+  };
+  return <section className="flex flex-col gap-2 rounded-md border p-3" data-testid="agent-installation-execute">
+    <h4 className="text-sm font-medium">{t("agents.execute.title")}</h4>
+    <p className="text-sm text-muted-foreground">{t("agents.execute.boundary")}</p>
+    {permission ? <p role="status" className="text-sm">{permission.effective ? t("agents.execute.effective") : t("agents.execute.notEffective")}
+      {permission.pendingActionExecutionId ? ` · ${permission.pendingActionExecutionId}` : ""}</p> : <Notice>{t("agents.execute.unverified")}</Notice>}
+    {intent ? <div className="flex flex-col gap-2 text-sm" role="group">
+      <p className="break-all">{intent.command.actionKey} · {intent.command.resourceId} · {intent.command.resourceVersion}</p>
+      <p className="break-all">{t("agents.installation.principal")}: {intent.agent}</p>
+      <p className="break-all">{t("platform.workspace")}: {intent.workspace}</p>
+      <p>{intent.command.actionKey.endsWith(".grant") ? t("agents.execute.approval") : t("agents.execute.revokeWarning")}</p>
+      <div className="flex gap-2"><Button disabled={busy || !sameScope} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
+        {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}</div>
+    </div> : <div className="flex gap-2">
+      {permission?.canGrant ? <Button disabled={locked || !rows || pending} onClick={() => prepare(true)}>{t("agents.execute.grant")}</Button> : null}
+      {permission?.canRevoke ? <Button disabled={locked || !rows} onClick={() => prepare(false)}>{t("agents.execute.revoke")}</Button> : null}
+    </div>}
+    {submission && receiptClient === client ? <p role="status" className="break-all text-sm">{t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}
+      {submission.reason ? ` · ${reasonText(submission.reason)}` : ""} {submission.approvalWorkflowId ?? ""}</p> : null}
+    {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="text-sm">{failure.kind === "unknown"
+      ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : failureText(failure)}</p> : null}
+    <Button className="w-fit" onClick={() => { reloadTasks(); reloadPermission(); onRecorded(); }}>{t("platform.refresh")}</Button>
   </section>;
 }
 

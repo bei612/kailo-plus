@@ -125,6 +125,14 @@ async fn view(
         (None, None, None, None, None) => None,
         _ => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
     };
+    let permission = crate::governance::installation_permission::view(
+        &state.governance,
+        ctx.tenant_id,
+        ctx.tenant_principal_id,
+        row.resource_id,
+    )
+    .await
+    .map_err(|e| e.respond(None))?;
     // 用原四侧合同解码，未知 enum 或畸形持久事实不下发为可用状态。
     serde_json::from_value(json!({
         "resourceId": row.resource_id.to_string(), "workspaceId": row.workspace_id.to_string(),
@@ -135,7 +143,7 @@ async fn view(
         "ownerPrincipalId": row.owner_principal_id.to_string(),
         "resourceVersion": row.resource_version, "resourceState": row.resource_state,
         "state": row.state, "activeProjectionGeneration": row.active_projection_generation,
-        "channelBinding": channel, "projection": projection,
+        "channelBinding": channel, "projection": projection, "executionPermission": permission,
     }))
     .map_err(|_| {
         tracing::error!("Installation 查询事实不符合共享契约");

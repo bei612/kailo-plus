@@ -450,10 +450,10 @@ impl Supervisor {
         )
         .await
         .map_err(|_| RuntimeError::Unknown)?;
-        crate::automation::fresh_invocation(state, &mut guard, invocation)
+        crate::agent_invocation::fresh_invocation(state, &mut guard, invocation)
             .await
             .map_err(|_| RuntimeError::AdmissionRequired)?;
-        let template = crate::automation::turn_template(&state.pool, invocation)
+        let template = crate::agent_invocation::turn_template(&state.pool, invocation)
             .await
             .map_err(|_| RuntimeError::AdmissionRequired)?;
         // Session birth 已按 AE→Tenant→Session→Process 持锁；dispatch 必须先取得
@@ -492,7 +492,7 @@ impl Supervisor {
         // Process 等待和 native idle-read 可以跨过 Grant/Lease 期限。重用已持有
         // Invocation/lifecycle 锁的同一 guard fresh 授权；模型 CHECK 后最后以
         // clock_timestamp 核同一冻结事实，不开第二事务或借事务 now 放行。
-        crate::automation::fresh_invocation(state, &mut guard, invocation)
+        crate::agent_invocation::fresh_invocation(state, &mut guard, invocation)
             .await
             .map_err(|_| RuntimeError::AdmissionRequired)?;
         crate::gateway_usage::recheck_dispatch(
@@ -507,10 +507,22 @@ impl Supervisor {
         let context = core_memory.map(
             |profile| json!({"platform.agent-memory.core":{"value":profile,"kind":"untrusted"}}),
         );
-        let result=process.rpc_traced("turn/start",json!({"threadId":thread,
-            "clientUserMessageId":invocation.to_string(),"input":[{"type":"text","text":template,"textElements":[]},
-                {"type":"text","text":input,"textElements":[]}],
-            "additionalContext":context}),Some(&trace),self.timeout,self.max_message_bytes).await;
+        let mut inputs = Vec::new();
+        if let Some(template) = template {
+            inputs.push(json!({"type":"text","text":template,"textElements":[]}));
+        }
+        inputs.push(json!({"type":"text","text":input,"textElements":[]}));
+        let result = process
+            .rpc_traced(
+                "turn/start",
+                json!({"threadId":thread,
+            "clientUserMessageId":invocation.to_string(),"input":inputs,
+            "additionalContext":context}),
+                Some(&trace),
+                self.timeout,
+                self.max_message_bytes,
+            )
+            .await;
         // 事务只提供 fence；无论 RPC 结果如何，先前已提交的 trace/native 意图都保留。
         guard.commit().await.map_err(|_| RuntimeError::Unknown)?;
         let response = result?;

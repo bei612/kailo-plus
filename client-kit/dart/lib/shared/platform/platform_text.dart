@@ -152,6 +152,16 @@ enum PlatformMessageKey {
   agentsInstallationCreateUnavailable,
   agentsInstallationNotReady,
   agentsDelegationOpen,
+  agentsExecuteTitle,
+  agentsExecuteOpen,
+  agentsExecuteBoundary,
+  agentsExecuteEffective,
+  agentsExecuteNotEffective,
+  agentsExecuteUnverified,
+  agentsExecuteGrant,
+  agentsExecuteRevoke,
+  agentsExecuteApproval,
+  agentsExecuteRevokeWarning,
   agentsDelegationTitle,
   agentsDelegationNone,
   agentsDelegationNoTarget,
@@ -941,6 +951,43 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '此请求创建固定到所示版本的安装。建立投影、授权与运行时就绪是独立事实；请求已派发不等于 Agent 可运行。',
   ),
   PlatformMessageKey.agentsDelegationOpen: ('View delegation grants', '查看委托授权'),
+  PlatformMessageKey.agentsExecuteTitle: (
+    'Agent self-installation execute permission',
+    'Agent 自身安装执行权限',
+  ),
+  PlatformMessageKey.agentsExecuteOpen: (
+    'View self-installation permission',
+    '查看自身安装权限',
+  ),
+  PlatformMessageKey.agentsExecuteBoundary: (
+    'This permission applies only to this installation. It grants no model, tool or other resource access. Delegation, human permissions, quota and runtime readiness remain separate requirements.',
+    '此权限仅适用于自身安装，不授予模型、工具或其他资源权限。委托、HUMAN 权限、额度与运行就绪仍是独立条件。',
+  ),
+  PlatformMessageKey.agentsExecuteEffective: (
+    'Fresh execute check passed for this installation',
+    '自身安装 fresh execute 已通过',
+  ),
+  PlatformMessageKey.agentsExecuteNotEffective: (
+    'Self-installation execute is not effective',
+    '自身安装执行权限未生效',
+  ),
+  PlatformMessageKey.agentsExecuteUnverified: (
+    'Execute permission cannot be verified. No permission action is offered.',
+    '执行权限不可查证，不提供权限操作。',
+  ),
+  PlatformMessageKey.agentsExecuteGrant: ('Review execute grant', '预览授予执行权限'),
+  PlatformMessageKey.agentsExecuteRevoke: (
+    'Review execute revocation',
+    '预览撤销执行权限',
+  ),
+  PlatformMessageKey.agentsExecuteApproval: (
+    'The exact installation owner must approve. Submission does not grant execution permission.',
+    '须由此安装的确切 owner 审批，提交不构成执行授权。',
+  ),
+  PlatformMessageKey.agentsExecuteRevokeWarning: (
+    'Revoke only this agent\'s self-installation executor relationship. Pending grants are invalidated and existing ordinary invocations receive cancellation requests; cancellation is not a terminal result.',
+    '仅撤销此 Agent 自身安装的 executor 关系。待处理授予会失效，已有普通 Invocation 记录取消请求；取消请求不是终态。',
+  ),
   PlatformMessageKey.agentsDelegationTitle: (
     'Installation delegation grants',
     '安装的委托授权',

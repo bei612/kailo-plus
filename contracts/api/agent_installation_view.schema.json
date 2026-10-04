@@ -28,6 +28,18 @@
         "channelId": {"type": "string", "format": "uuid"}
       }
     },
-    "projection": {"$ref": "agent_installation_projection_view.schema.json"}
+    "projection": {"$ref": "agent_installation_projection_view.schema.json"},
+    "executionPermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "effective", "canGrant", "canRevoke"],
+      "properties": {
+        "requested": {"type": "boolean"},
+        "effective": {"type": "boolean"},
+        "canGrant": {"type": "boolean"},
+        "canRevoke": {"type": "boolean"},
+        "pendingActionExecutionId": {"type": "string", "format": "uuid"}
+      }
+    }
   }
 }

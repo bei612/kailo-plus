@@ -42,6 +42,11 @@
       "type": "integer",
       "description": "调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT"
     },
+    "sourceEventId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。"
+    },
     "assetId": {
       "type": "string",
       "format": "uuid",

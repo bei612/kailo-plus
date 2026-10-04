@@ -4,29 +4,47 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 最新复核与投递事实（2026-10-03）
+## 最新复核与投递事实（2026-10-04）
 
-### AgentTask 分页恢复与原可选 meter 投递：源码已修，业务首轮未闭合
+### 当前交付：旧 Core 已限定替换，普通调用仍在源码与验收阶段
 
-前一批 Runtime 恢复源码已提交并普通 push 为
-`d4e86374b6917244c4d911cb38c40b545266af5b`，尚未部署；原安装就绪事实不变。
-本批修复未绑定 turn 时读取完整原生分页历史，再以唯一 clientId 交给原 CAS；
+Runtime 恢复与 AgentTask 分页恢复已提交并普通 push，固定输入
+`8b3882d35b84b2c0d6bfcb29321c62c7a44f82d4` 的 Core 原构建、registry 读回及
+原 `start-core.sh --no-build` 均退出 0，00:21 UTC 仅替换 Core 为 `c970fc9d…`，
+healthz 200、受监督 Codex 进程存活；原 Installation 仍为 ACTIVE generation 1，
+Invocation 仍为 0，57 条迁移不变，未重发安装或模型首轮。
+本次只改私有 Compose image pin，sole `.env` 未变；运行容器已替换不等于默认
+部署配置已升级，下一次无该 override 的启动不保证使用上述产物。
+详见 [Core 发布回执](core/verify/release-artifacts.md)。
+
+已提交分页修复在未绑定 turn 时读取完整原生历史，再以唯一 clientId 交给原 CAS；
 原目标 8 项通过、两次生产变异分别抓住 2 项和 1 项，精确还原后 8 项通过，
 格式与 Clippy 退出 0。可选 `AUTOMATION_RUN_METERS_JSON` 改由原 base Compose
 统一消费，移除 start-core 的重复专属 overlay；原 start-core 此前已经能投递非空值，
-线上 UNSET 不是已证实的 launcher 丢配置。本批固定选定树原集中 full 已退出 0；
+线上 UNSET 不是已证实的 launcher 丢配置。该固定选定树原集中 full 已退出 0；
 实际数据库演练和部署配置预检 SKIP，不外推为部署或首轮验收。
 
 主线只读核对线上 Core：`automation.*` 仅 create、disable、enable、pause、
 publish_version 五项 ACTIVE 管理 Action，没有 `automation.run`；Invocation 与
 AutomationDefinition 均为 0。OpenMeter meters、features、entitlements 各为 0。
-真实 meter、feature 和额度尚未投递，不能由源码虚构；普通入口的完整安全政策
-仍缺，未开放普通 mention/manual 入口，也未发生真实 Agent 模型回合或用量终态。
+真实 meter、feature 和额度尚未投递，不能由源码虚构。本批普通 `agent.invoke`
+生产者、Installation 自身 execute 权限面与共享管理 UI 已实现并冻结，定向验收
+已完成；固定私有树的集中 full 实际退出 1，唯一失败维度是共享输入已变化而
+Web/Win11 产物来源落后。源码静态、四语言验证/契约、replay 与追溯通过，
+不是本批完整收口或发布通过。实际数据库演练与部署配置预检 SKIP；59 迁移往返
+与 19 SQL PREPARE 属另一项隔离定向验收。本批尚未发布或部署；普通模型调用
+只结算原生模型 SUM，不借用
+`automation.run` COUNT。计量目标 9 项通过、两次生产变异实际失败、精确还原后
+检查与 Clippy 通过；独占临时库迁移往返通过，有普通 trace 时回滚被拒绝且数据
+未变。隔离夹具不是真实调用；线上仍未开放普通入口，未发生真实模型回合或用量终态。
+生产计量配置尚缺不阻止后续在明确隔离的验收 Tenant 中使用原生 meter、
+entitlement 与真实模型调用继续验收；当前源码检查尚未提供该端到端结果。
 两数据库查询均为显式只读（Core 只读事务、OpenMeter 只读会话），
 没有创建业务对象。详见 [AgentTask 证据](core/verify/agent-definition.md)；
-本批不重建镜像、不发布、不部署，也不把已有安装 ACTIVE 当作 Agent 已可使用。
+普通链新源码不在上述旧 Core 镜像内；已有安装 ACTIVE 不等于 Agent 已可使用，
+18 条追溯也不是 18 项业务目标全部完成。
 
-### Runtime 恢复锁序与原生投影：源码已修复，尚未部署
+### 历史验证时点：Runtime 恢复锁序与原生投影
 
 Core Runtime 已修复进程清理与 Invocation 行锁的反向等待，恢复同一 thread 时
 补齐既有模型、目录和审批字段回读；停机清理仅作用于本机仍持有的进程及其代际。

@@ -1499,8 +1499,8 @@ async fn recheck_invocation(
         .and_then(|p| p.get("sourcePubkey"))
         .and_then(Value::as_str)
         .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
-    source_human(g, tx, &row, author, pubkey).await?;
-    fresh_runtime(state, tx, &row).await?;
+    source_human(g, tx, &runtime_scope(&row), author, pubkey).await?;
+    fresh_runtime(state, tx, &runtime_scope(&row)).await?;
     let revision = fresh(g, tx, &row, &def, Some(frozen.operation_id)).await?;
     g.record_automation_decision(tx, &ae, &def, "RECHECK", Ok(revision.clone()))
         .await?;
@@ -1520,10 +1520,32 @@ struct RuntimeFence {
     channel_id: Uuid,
 }
 
-async fn fresh_runtime(
+pub(crate) struct RuntimeScope {
+    pub tenant_id: Uuid,
+    pub workspace_id: Uuid,
+    pub executor_installation_resource_id: Uuid,
+    pub agent_version_asset_id: Uuid,
+    pub projection_generation: i64,
+    pub owner_principal_id: Uuid,
+    pub agent_principal_id: Uuid,
+}
+
+fn runtime_scope(row: &Run) -> RuntimeScope {
+    RuntimeScope {
+        tenant_id: row.tenant_id,
+        workspace_id: row.workspace_id,
+        executor_installation_resource_id: row.executor_installation_resource_id,
+        agent_version_asset_id: row.agent_version_asset_id,
+        projection_generation: row.projection_generation,
+        owner_principal_id: row.owner_principal_id,
+        agent_principal_id: row.agent_principal_id,
+    }
+}
+
+pub(crate) async fn fresh_runtime(
     state: &ServiceState,
     tx: &mut Transaction<'_, Postgres>,
-    row: &Run,
+    row: &RuntimeScope,
 ) -> Result<(), Refusal> {
     let fence:RuntimeFence=sqlx::query_as("select ir.owner_principal_id installation_owner,
         p.model_route_resource_id model_route,mr.owner_principal_id model_owner,
@@ -1700,10 +1722,10 @@ async fn fresh_runtime(
     Ok(())
 }
 
-async fn source_human(
+pub(crate) async fn source_human(
     g: &Governance,
     tx: &mut Transaction<'_, Postgres>,
-    row: &Run,
+    row: &RuntimeScope,
     principal: Uuid,
     pubkey: &str,
 ) -> Result<(), Refusal> {
@@ -2141,12 +2163,12 @@ async fn admit(
         source_human(
             &state.governance,
             &mut tx,
-            &row,
+            &runtime_scope(&row),
             author,
             &event.pubkey.to_hex(),
         )
         .await?;
-        fresh_runtime(state, &mut tx, &row).await?;
+        fresh_runtime(state, &mut tx, &runtime_scope(&row)).await?;
         fresh(&state.governance, &mut tx, &row, def, None).await
     }
     .await;
@@ -2271,7 +2293,7 @@ async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
         }
         let used:bool=sqlx::query_scalar("select exists(select 1 from admission.delegation_use where delegation_id=$1 and operation_id=$2)")
             .bind(row.delegation_id).bind(ae.operation_id).fetch_one(&mut *tx).await?;
-        fresh_runtime(state, &mut tx, &row).await?;
+        fresh_runtime(state, &mut tx, &runtime_scope(&row)).await?;
         let revision = fresh(
             &state.governance,
             &mut tx,

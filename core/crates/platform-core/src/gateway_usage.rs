@@ -140,6 +140,7 @@ struct TurnFacts {
     namespace: String,
     subject_key_prefix: String,
     binding_version: i32,
+    action_key: String,
     meters: Vec<String>,
 }
 
@@ -159,16 +160,28 @@ struct Correlation {
 }
 
 #[derive(FromRow)]
+struct FrozenTrace {
+    gateway_principal_id: Uuid,
+    openmeter_customer_id: String,
+    openmeter_namespace: String,
+    subject_key: String,
+    binding_version: i32,
+    meter_projection: Value,
+    invocation_meter_projection: Option<Value>,
+}
+
+#[derive(FromRow)]
 struct InvocationUsage {
     tenant_id: Uuid,
     workspace_id: Uuid,
     operation_id: Uuid,
     installation_resource_id: Uuid,
     agent_version_asset_id: Uuid,
-    automation_resource_id: Uuid,
+    automation_resource_id: Option<Uuid>,
+    action_key: String,
     customer_id: String,
     subject_key: String,
-    invocation_meter_projection: Value,
+    invocation_meter_projection: Option<Value>,
 }
 
 #[derive(FromRow)]
@@ -193,7 +206,8 @@ struct SettlementFacts {
     namespace: String,
     subject_key: String,
     meter_projection: Value,
-    invocation_meter_projection: Value,
+    invocation_meter_projection: Option<Value>,
+    action_key: String,
     meters: Vec<String>,
 }
 
@@ -218,7 +232,7 @@ const CORRELATION: &str = "select t.invocation_id,t.operation_id,t.tenant_id,t.w
 /// 同一准入后的事实；不取 Agent 自报 subject/model/meter 或 Core 运行身份作模型身份。
 const TURN_FACTS: &str = "select i.id invocation_id,a.operation_id,i.tenant_id,i.workspace_id,
  i.installation_resource_id,i.projection_generation,p.config_hash,
- b.gateway_principal_id,o.customer_id,o.namespace,o.subject_key_prefix,o.version binding_version,d.meters
+ b.gateway_principal_id,o.customer_id,o.namespace,o.subject_key_prefix,o.version binding_version,a.action_key,d.meters
  from catalog.agent_invocation i join admission.action_execution a on a.id=i.action_execution_id
  join catalog.action_definition d on d.action_key=a.action_key and d.version=a.action_version
  join catalog.agent_session s on s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
@@ -240,6 +254,10 @@ const TURN_FACTS: &str = "select i.id invocation_id,a.operation_id,i.tenant_id,i
  where i.id=$1 and i.status='DISPATCHING' and i.runtime_turn_id is null
  and a.tenant_id=i.tenant_id and a.workspace_id=i.workspace_id and a.gate_state='ALLOWED'
  and d.quota_policy='CHECK' and cardinality(d.meters)>0
+ and ((a.action_key='automation.run' and a.target_id=i.automation_resource_id
+     and i.automation_resource_id is not null and i.automation_version_asset_id is not null)
+   or (a.action_key='agent.invoke' and a.target_id=i.installation_resource_id
+     and i.automation_resource_id is null and i.automation_version_asset_id is null))
  and s.status='ACTIVE' and s.runtime_thread_id=$2 and s.projection_generation=i.projection_generation
  and s.agent_version_asset_id=i.agent_version_asset_id
  and installation.state='ACTIVE' and installation.active_projection_generation=i.projection_generation
@@ -248,6 +266,43 @@ const TURN_FACTS: &str = "select i.id invocation_id,a.operation_id,i.tenant_id,i
  and principal.kind='SERVICE' and principal.status='ACTIVE' and o.status='ACTIVE'
  and lease.state='HELD' and lease.expires_at>clock_timestamp()
  and delegation.state='ACTIVE' and delegation.valid_from<=clock_timestamp() and delegation.expires_at>clock_timestamp()";
+
+fn frozen_invocation_meter(
+    action: &str,
+    projection: Option<Value>,
+) -> Result<Option<InvocationMeter>, &'static str> {
+    let meter = projection
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|_| "Invocation 冻结 COUNT meter 不可读")?;
+    InvocationMeter::for_action(action, meter)
+        .map_err(|_| "Invocation COUNT meter 与冻结 Action 来源不一致")
+}
+
+fn frozen_turn_meters(
+    action: &str,
+    projection: Value,
+    count_projection: Option<Value>,
+    action_meters: &[String],
+) -> Result<(Vec<GatewayMeter>, Option<InvocationMeter>), &'static str> {
+    let meters: Vec<GatewayMeter> =
+        serde_json::from_value(projection).map_err(|_| "计量查证冻结 SUM meter 不可读")?;
+    let count = frozen_invocation_meter(action, count_projection)?;
+    let mut keys: HashSet<String> = meters.iter().map(|meter| meter.key.clone()).collect();
+    let requested: HashSet<String> = action_meters.iter().cloned().collect();
+    if meters.is_empty()
+        || keys.len() != meters.len()
+        || keys.contains("automation.run")
+        || count
+            .as_ref()
+            .is_some_and(|count| !keys.insert(count.key.clone()))
+        || requested.len() != action_meters.len()
+        || keys != requested
+    {
+        return Err("计量查证 SUM/COUNT 集合与原 CHECK 动作不一致");
+    }
+    Ok((meters, count))
+}
 
 async fn lock_tenant(
     tx: &mut Transaction<'_, Postgres>,
@@ -294,7 +349,13 @@ pub(crate) async fn prepare_turn(
         facts.subject_key_prefix, facts.installation_resource_id
     );
     let (meters, invocation_meter) = openmeter
-        .turn_meters(facts.tenant_id, &facts.customer_id, &subject, &facts.meters)
+        .turn_meters(
+            facts.tenant_id,
+            &facts.customer_id,
+            &subject,
+            &facts.action_key,
+            &facts.meters,
+        )
         .await
         .map_err(|_| "模型实际 meter/Customer subject 映射不可核验")?;
     if !openmeter
@@ -313,7 +374,7 @@ pub(crate) async fn prepare_turn(
         .bind(facts.invocation_id).bind(&trace).bind(&span).bind(facts.operation_id).bind(facts.tenant_id)
         .bind(facts.workspace_id).bind(facts.gateway_principal_id).bind(&facts.customer_id).bind(&facts.namespace)
         .bind(&subject).bind(facts.binding_version).bind(serde_json::to_value(meters).map_err(|_| "模型 meter 投影不可编码")?)
-        .bind(serde_json::to_value(invocation_meter).map_err(|_| "Invocation meter 投影不可编码")?)
+        .bind(invocation_meter.map(serde_json::to_value).transpose().map_err(|_| "Invocation meter 投影不可编码")?)
         .execute(&mut *tx).await.map_err(|_| "模型 trace 不可持久")?;
     if inserted.rows_affected() != 1 {
         return Err("模型已有 dispatch 意图；只能按原生引用观察");
@@ -371,12 +432,20 @@ pub(crate) async fn recheck_dispatch(
     {
         return Err("模型 generation 已失效");
     }
-    let frozen: Option<(Uuid,String,String,String,i32,Value,Value)> = sqlx::query_as(
+    let frozen: Option<FrozenTrace> = sqlx::query_as(
         "select gateway_principal_id,openmeter_customer_id,openmeter_namespace,subject_key,binding_version,meter_projection,invocation_meter_projection
          from projection.agent_model_trace where invocation_id=$1 and operation_id=$2")
         .bind(invocation).bind(facts.operation_id).fetch_optional(&mut **tx).await
         .map_err(|_| "模型写前 trace 意图不可读")?;
-    let Some((principal, customer, namespace, subject, version, meters, invocation_meter)) = frozen
+    let Some(FrozenTrace {
+        gateway_principal_id: principal,
+        openmeter_customer_id: customer,
+        openmeter_namespace: namespace,
+        subject_key: subject,
+        binding_version: version,
+        meter_projection: meters,
+        invocation_meter_projection: invocation_meter,
+    }) = frozen
     else {
         return Err("模型写前 trace 缺失");
     };
@@ -393,12 +462,16 @@ pub(crate) async fn recheck_dispatch(
     {
         return Err("模型写前 binding/trace 已失效");
     }
-    let frozen: Vec<GatewayMeter> =
-        serde_json::from_value(meters).map_err(|_| "模型冻结 meter 不可读")?;
-    let frozen_invocation: InvocationMeter =
-        serde_json::from_value(invocation_meter).map_err(|_| "Invocation 冻结 meter 不可读")?;
+    let (frozen, frozen_invocation) =
+        frozen_turn_meters(&facts.action_key, meters, invocation_meter, &facts.meters)?;
     let (current, current_invocation) = openmeter
-        .turn_meters(facts.tenant_id, &customer, &subject, &facts.meters)
+        .turn_meters(
+            facts.tenant_id,
+            &customer,
+            &subject,
+            &facts.action_key,
+            &facts.meters,
+        )
         .await
         .map_err(|_| "模型发派前 meter/Customer 映射不可核验")?;
     if current != frozen
@@ -441,21 +514,26 @@ pub(crate) async fn record_invocation_usage(
         .map_err(|_| "Invocation usage 事务不可用")?;
     let origin: Option<InvocationUsage> = sqlx::query_as(
         "select t.tenant_id,t.workspace_id,t.operation_id,i.installation_resource_id,i.agent_version_asset_id,
-            i.automation_resource_id,t.openmeter_customer_id customer_id,t.subject_key,t.invocation_meter_projection
+            i.automation_resource_id,a.action_key,t.openmeter_customer_id customer_id,t.subject_key,t.invocation_meter_projection
          from projection.agent_model_trace t join catalog.agent_invocation i on i.id=t.invocation_id
          join admission.action_execution a on a.id=i.action_execution_id
          where i.id=$1 and i.runtime_turn_id=$2 and i.status in ('DISPATCHING','RUNNING','UNKNOWN')
            and a.operation_id=t.operation_id and a.tenant_id=t.tenant_id and a.workspace_id=t.workspace_id
-           and a.action_key='automation.run'")
+           and ((a.action_key='automation.run' and a.target_id=i.automation_resource_id
+               and i.automation_resource_id is not null and i.automation_version_asset_id is not null)
+             or (a.action_key='agent.invoke' and a.target_id=i.installation_resource_id
+               and i.automation_resource_id is null and i.automation_version_asset_id is null))")
         .bind(invocation).bind(turn).fetch_optional(&mut *tx).await.map_err(|_| "Invocation usage 归属不可读")?;
     let Some(origin) = origin else {
         return Err("Invocation usage 没有同 operation 的已绑定 native turn");
     };
-    let meter: InvocationMeter = serde_json::from_value(origin.invocation_meter_projection)
-        .map_err(|_| "Invocation meter 不可读")?;
-    if meter.key != "automation.run" {
-        return Err("Invocation 未知计数 meter");
-    }
+    let Some(meter) =
+        frozen_invocation_meter(&origin.action_key, origin.invocation_meter_projection)?
+    else {
+        // The ordinary turn's model events are reconciled by the same durable
+        // Gateway ingress. No COUNT producer applies to this native turn.
+        return Ok(());
+    };
     let id = Uuid::new_v5(
         &Uuid::NAMESPACE_URL,
         format!(
@@ -1014,6 +1092,8 @@ impl Ingress {
              join catalog.agent_runtime_projection p on p.installation_resource_id=i.installation_resource_id
                and p.generation=i.projection_generation and p.agent_version_asset_id=i.agent_version_asset_id
              where i.status in ('DISPATCHING','RUNNING','UNKNOWN') and a.action_key='automation.run'
+               and a.target_id=i.automation_resource_id
+               and i.automation_resource_id is not null and i.automation_version_asset_id is not null
                and i.runtime_turn_id is not null and s.runtime_thread_id is not null
                and not exists(select 1 from outbox.usage_event u where u.invocation_id=i.id
                  and u.source_type='AGENT_INVOCATION' and u.source_id=i.id and u.meter_key='automation.run')
@@ -1155,7 +1235,7 @@ impl Ingress {
 }
 
 /// CHECK completion consumes the actual native dispatch set and the separately
-/// acknowledged turn COUNT. This is committed metering, not invoice finalization
+/// acknowledged COUNT when the frozen action is Automation. This is committed metering, not invoice finalization
 /// or STRICT reservation release. An empty native set is never zero usage proof.
 pub(crate) async fn committed_turn(
     pool: &PgPool,
@@ -1170,13 +1250,17 @@ pub(crate) async fn committed_turn(
     let facts: SettlementFacts = sqlx::query_as(
         "select t.trace_id,t.operation_id,t.tenant_id,t.workspace_id,t.gateway_principal_id,
            t.openmeter_customer_id customer_id,t.openmeter_namespace namespace,t.subject_key,
-           t.meter_projection,t.invocation_meter_projection,d.meters
+           t.meter_projection,t.invocation_meter_projection,a.action_key,d.meters
          from projection.agent_model_trace t join catalog.agent_invocation i on i.id=t.invocation_id
          join admission.action_execution a on a.id=i.action_execution_id
          join catalog.action_definition d on d.action_key=a.action_key and d.version=a.action_version
          join admission.capacity_lease l on l.invocation_id=i.id and l.operation_id=a.operation_id
          where i.id=$1 and i.runtime_turn_id=$2 and i.native_status=$3 and i.status in ('RUNNING','UNKNOWN')
-           and a.action_key='automation.run' and a.operation_id=t.operation_id
+           and ((a.action_key='automation.run' and a.target_id=i.automation_resource_id
+               and i.automation_resource_id is not null and i.automation_version_asset_id is not null)
+             or (a.action_key='agent.invoke' and a.target_id=i.installation_resource_id
+               and i.automation_resource_id is null and i.automation_version_asset_id is null))
+           and a.operation_id=t.operation_id
            and a.tenant_id=t.tenant_id and a.workspace_id=t.workspace_id
            and i.tenant_id=t.tenant_id and i.workspace_id=t.workspace_id
            and a.gate_state='ALLOWED' and d.quota_policy='CHECK'
@@ -1189,21 +1273,12 @@ pub(crate) async fn committed_turn(
     if facts.namespace != openmeter.namespace() {
         return Err("计量查证 namespace 与冻结 trace 不一致");
     }
-    let meters: Vec<GatewayMeter> = serde_json::from_value(facts.meter_projection)
-        .map_err(|_| "计量查证冻结 SUM meter 不可读")?;
-    let count: InvocationMeter = serde_json::from_value(facts.invocation_meter_projection)
-        .map_err(|_| "计量查证冻结 COUNT meter 不可读")?;
-    let mut meter_keys: HashSet<String> = meters.iter().map(|meter| meter.key.clone()).collect();
-    let action_meters: HashSet<String> = facts.meters.iter().cloned().collect();
-    if meters.is_empty()
-        || meter_keys.len() != meters.len()
-        || !meter_keys.insert(count.key.clone())
-        || count.key != "automation.run"
-        || action_meters.len() != facts.meters.len()
-        || meter_keys != action_meters
-    {
-        return Err("计量查证 SUM/COUNT 集合与原 CHECK 动作不一致");
-    }
+    let (meters, count) = frozen_turn_meters(
+        &facts.action_key,
+        facts.meter_projection,
+        facts.invocation_meter_projection,
+        &facts.meters,
+    )?;
     let batch = std::env::var("GOVERNANCE_RECONCILE_BATCH")
         .ok()
         .and_then(|value| value.parse::<i64>().ok())
@@ -1218,7 +1293,9 @@ pub(crate) async fn committed_turn(
     .await
     .map_err(|_| "Gateway 请求全集查证超时；保留原用量待对账")??;
     let mut expected = HashSet::new();
-    expected.insert(("AGENT_INVOCATION".to_owned(), invocation, count.key));
+    if let Some(count) = count {
+        expected.insert(("AGENT_INVOCATION".to_owned(), invocation, count.key));
+    }
     let mut evidence = vec![Evidence::new(EvidenceKind::TraceId, &facts.trace_id)];
     let mut tx = pool.begin().await.map_err(|_| "计量全集关联事务不可用")?;
     for entry in &entries {
@@ -1380,7 +1457,7 @@ fn delivery_committed(status: &str, stored_at: Option<DateTime<Utc>>) -> bool {
 
 #[cfg(test)]
 mod usage_tests {
-    use super::{delivery_committed, Page, RequestSet};
+    use super::{delivery_committed, frozen_turn_meters, Page, RequestSet};
     use chrono::Utc;
     use serde_json::{json, Value};
     use uuid::Uuid;
@@ -1551,5 +1628,78 @@ mod usage_tests {
         assert!(!delivery_committed("COMMITTED", None));
         assert!(!delivery_committed("ACCEPTED", Some(Utc::now())));
         assert!(delivery_committed("COMMITTED", Some(Utc::now())));
+    }
+
+    #[test]
+    fn ordinary_turn_freezes_only_registered_model_sum_without_count() {
+        let sum = json!([{"key":"model.tokens", "id":"native-meter", "event_type":"native.model",
+            "value_property":"$.totalTokens"}]);
+        let (meters, count) = frozen_turn_meters(
+            "agent.invoke",
+            sum.clone(),
+            None,
+            &["model.tokens".to_owned()],
+        )
+        .expect("ordinary native SUM projection");
+        assert_eq!(meters.len(), 1);
+        assert!(count.is_none());
+        assert!(frozen_turn_meters(
+            "agent.invoke",
+            sum.clone(),
+            Some(Value::Null),
+            &["model.tokens".to_owned()]
+        )
+        .is_err());
+        assert!(frozen_turn_meters("agent.invoke", sum, None, &[]).is_err());
+        assert!(frozen_turn_meters("agent.invoke", json!([]), None, &[]).is_err());
+    }
+
+    #[test]
+    fn automation_cannot_drop_count_and_ordinary_cannot_borrow_it() {
+        let sum = json!([{"key":"model.tokens", "id":"native-meter", "event_type":"native.model",
+            "value_property":"$.totalTokens"}]);
+        let count =
+            json!({"key":"automation.run", "id":"native-count", "event_type":"native.automation"});
+        let keys = ["model.tokens".to_owned(), "automation.run".to_owned()];
+        assert!(
+            frozen_turn_meters("automation.run", sum.clone(), Some(count.clone()), &keys).is_ok()
+        );
+        assert!(frozen_turn_meters(
+            "automation.run",
+            sum.clone(),
+            None,
+            &["model.tokens".to_owned()]
+        )
+        .is_err());
+        assert!(
+            frozen_turn_meters("agent.invoke", sum.clone(), Some(count.clone()), &keys).is_err()
+        );
+        assert!(frozen_turn_meters("future.invoke", sum, Some(count), &keys).is_err());
+    }
+
+    #[test]
+    fn ordinary_null_is_not_a_meter_or_unknown_action_exemption() {
+        let sum = json!([{"key":"model.tokens", "id":"native-meter", "event_type":"native.model",
+            "value_property":"$.totalTokens"}]);
+        let keys = ["model.tokens".to_owned()];
+        assert!(frozen_turn_meters("future.invoke", sum.clone(), None, &keys).is_err());
+        assert!(frozen_turn_meters(
+            "agent.invoke",
+            sum.clone(),
+            None,
+            &["model.tokens".to_owned(), "model.tokens".to_owned()]
+        )
+        .is_err());
+        assert!(frozen_turn_meters(
+            "agent.invoke",
+            json!([sum[0].clone(), sum[0].clone()]),
+            None,
+            &keys
+        )
+        .is_err());
+        assert!(
+            frozen_turn_meters("agent.invoke", sum, None, &["different.tokens".to_owned()])
+                .is_err()
+        );
     }
 }

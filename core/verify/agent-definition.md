@@ -2028,3 +2028,128 @@ fmt/Clippy、Go/TS/Dart 静态与验证、143 schema 四侧同步、Workflow rep
 meter/额度投递及 Agent 模型首轮/回复/用量 E2E 未闭合；源码检查不填补这些事实。
 没有构建、部署或设备验收。此后仅更新 README 摘要与追加本回执，再运行原
 文档快路径，不为证据文字重新执行 full。
+
+### 2026-10-04 普通 Agent 模型计量分流：实现与定向验收
+
+基准为 `8b3882d35b84b2c0d6bfcb29321c62c7a44f82d4`。本刀只实现
+`gateway_usage.rs`、`openmeter.rs` 与 `20261004002000_agent_invoke_model_usage`
+上下迁移，四路径 +623/-42；原 OpenMeter 两处继承格式差异未选入。
+精确补丁为 `/volumes/data/kailo/tmp/codex-agent-invoke-billing-20261004.Ss6wwe/canonical-head.patch`，
+SHA-256 `de8549141161d3ba3c49547a8cc5246ebd3f2865d7400ddfd1b62949817ce113`。
+
+四步结论：权威为 `03` §8、`11` 与 DD-21/38/51，普通 `agent.invoke` 只消费
+实际模型 SUM，不能套用 Automation COUNT；真实影响为 `prepare`、
+`recheck_dispatch`、`record_invocation_usage`、`committed_turn` 同一调用链及
+原 trace guard。Action、Invocation Automation 引用对及 AE target 必须一致：
+`automation.run` 保留原非空 COUNT，`agent.invoke` 仅允许 SQL NULL 计数投影。
+副作用仍以原生完整请求集、逐条 exact outbox ID、`stored_at` 和既有审计为权威，
+Scope/Grant/Capacity/最终真实时钟与 Quota 核验未削弱；空页/202 不等于零用量或结算。
+旧 Automation writer 保持兼容，普通登记、消费者与迁移须同批投递；存在普通 trace
+时 down 在 DDL 前明确拒绝，不删除用量或历史事实。
+
+复用原不可变 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 4CPU/8Gi/swap0、UID1000:1000，命令显式 `CARGO_BUILD_JOBS=16`。
+原 `cargo test --offline --locked -p platform-core --bin platform-core gateway_usage::usage_tests`
+基线 9 passed；私有生产分流分别改成拒绝普通 NULL、接受 Automation NULL，
+两次实际退出 101，各 8 passed / 1 failed，逐字还原。原 Clippy 首轮实际 101
+为查询 tuple 的 `type_complexity`，改用真实 `FromRow` 查询结果后，最终 session
+22263 退出 0：9 passed、两源 rustfmt check 0、Clippy `-D warnings` 0。
+原测试日志只含 stdout，编译/Clippy stderr 留于实际工具回执，目录中的
+`clippy-console-receipt.txt` 明确是转录而非原始完整日志。
+
+沿原私有 PG 新建唯一验收库 `agent_invoke_billing_ss6wwe`，未使用作者库或业务库；
+原 SQLx 58 条迁移前进、仅末条回退、再前进退出 0。最小同 Scope 测试夹具保留
+全部原 FK/CHECK/trigger，仅 PROVISIONING/PENDING 引用，无原生凭据、meter 或模型用量；
+实际插入一条 SQL NULL 普通 trace 后，原 down 退出 1，提示必须保留该事实。
+schema/data dump 除原 pg_dump 随机 restrict 元命令外逐字相等；原 SQLx 清理该
+唯一临时库退出 0，原 PG/SDK/网络未删除。这是约束与回滚验收，不是模型调用。
+
+上述原件在 `Ss6wwe`：最终 `restored-clippy-repaired.log` SHA-256
+`54cb39c78180a923e74423325e3d50bd85212488f40d45b15f6e30a63f8cbe48`；
+`migrations-run-revert-run.log` 为 `38facf1820a77f9ba9fdde027b764c90601bb3ec03c730f1915c434e40012699`，
+`ordinary-trace-down-refusal.log` 为 `ea04b0cb8e4e6778406f7f470387c2e5665626908c4b0780be6727058f3c0039`。
+本阶段尚未运行组合批 full/SQLx prepare、发布或部署普通入口。生产原生 meter/credit
+配置尚缺，不等于禁止后续使用明确隔离的验收 Tenant、原生 meter/entitlement 与真实
+模型调用进行端到端验收；当前定向检查未证明该 E2E、设备或生产计费可用。
+
+### 2026-10-04 普通调用生产者：冻结与组合定向证据
+
+本刀复用 `03`/`05`/`12`/`17` 的既有普通 mention/manual 要求，不再将 Action
+登记字段误判为必须新增产品政策。真实链为签名 Relay HUMAN 事件 → 同一
+Session/Invocation/AE/Grant → 原 AgentTask/Runtime/native turn；manual 仅引用
+本人已持久消息，与 mention 按原 source event/Installation 共用唯一幂等事实。
+先冻结真实权限、CHECK、PLATFORM_SLOT 和版本/代际，再执行副作用；配置缺席
+不登记 `agent.invoke`，不写默认权限、meter 或额度。Automation 仍以原 action
+与非空 Automation 引用对进入原链，普通调用不借其 executor 或 COUNT。
+未知 Start/回复仍按原 thread/turn/WorkflowRef 观察，不改 ID、重建根或重复 turn。
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的只读来源为
+`.references/buzz/crates/buzz-acp/src/relay.rs::{query,query_raw,query_raw_all,send_subscribe}`
+与 `.references/buzz/crates/buzz-core/src/nip10.rs::{ThreadMarkers::resolve,parse_thread_markers}`；
+相对证据根为 `/volumes/kailo`。Codex 来源仍为
+`7498521d288b9b3b96ffba4eedf089d8d6e06a84`，本批未改 native 协议。
+普通 canonical 为 `yK1eTV/canonical-owned.patch`，20 路径 +1750/-66，SHA-256
+`4741ced8d4bc15d1db3c0502fd6bdee3646daaf407e63b2394184e922da544be`；
+包含唯一 executionPermission schema 与合并四侧，权限代码另片合入，不重复生成。
+
+实际原件 `/volumes/data/kailo/tmp/codex-agent-invoke-20261004.yK1eTV/`：
+原 binary 89 passed / 4 ignored、Clippy 0、12 源 fmt check 0、四侧 gen 0；
+参数匹配两处生产 guard 破坏实际 101、2 项断言失败，旧 ComponentTask 专用查询
+恢复后真实隔离 PG 断言实际 101；原字节恢复后 binary/PG 通过。早期类型转换、
+变异编译写法与 lint 失败保留，不计作有效负向或最终通过。随后合并权限 DTO 的
+组合 binary 92 passed / 4 ignored、Clippy 0；隔离库 59 迁移末条往返与当前
+19 SQL PREPARE/ROLLBACK 通过，均为定向证据而非本批 full 或在线业务。
+REVOKED/UNKNOWN 的原 open/count/age 统计两行另片合入，原只读 aggregate 实证
+包含该行并排除 ABORTED/DISPATCHED；未改变驱动循环或创建第二监控权威。
+
+### 2026-10-04 Installation 自身 execute 显式授权：实现后证据
+
+四步影响结论：
+
+1. 权威：03§5 的 Resource executor/share、17§6/8 的安装不等于授权和 Agent 权限管理；授予复用 05§2.8 grant_read 的确切 owner 审批，撤销复用明确确认的收窄路径。仅 HUMAN、同 Tenant/Workspace、确切 Installation 的持久唯一 AGENT，不接受客户端 subject，不授予模型/Tool/其它 Resource 或 admin。
+2. 真实调用：原 `/api/v1/actions` → Governance 两个 Semantic → 同模块 installation_permission gate/prewrite/dispatch → 原 SpiceDB executor Touch/Delete 与 native 读回；TARGET_OWNER 只由此 grant 消费。原 Installation query 给可选 executionPermission，原 Web/Desktop AgentDefinitionsPage 共用 InstallationExecute 与 client.submitAction。Delegation 目录允许后端真实 agent.invoke 且 target 必须当前 Installation；无新 Route/Workflow/权限权威。
+3. 副作用：原 AE/Operation 参数冻结 owner/version/唯一 Agent；审批前后版本查证分开，外发前检查批准、消费时限及 owner 资格。撤销仅给同 Installation、同冻结 generation 的普通 agent.invoke 记录原 cancel_pending，沿既有 Task/native/usage 收敛，不影响 Automation/其它 Grant。UI 将授权、委托和运行条件明确分离，GET Refresh 不派写，UNKNOWN 保持原键。
+4. 异常：缺/未知权限投影、撤权、暂停、审批失效或不认识的策略均拒绝。新 revoke 与旧 grant UNKNOWN 相撞不能以瞬时 absence 证明旧 Touch 不会迟到；保留确切 AE/Installation pending fence 和原 operation，重入只 native 查证，不重写或生成替代请求。该分支沿原 RB-05 open/oldest_open_age、治理周期与 ADMISSION_EVALUATION_TIMEOUT_SECONDS + 两个周期告警（WAITING 以原策略 expires_in 为界），超界由 Core 值班负责人依 RB-07 留操作号、最近核查/下一次核查时间并升级实施负责人；禁止人工改库清 fence。REVOKED/UNKNOWN 的原统计纳入由 ordinary 作者另交独立两行补丁，无新增指标或调度框架。
+
+后端原件见 `/volumes/data/kailo/tmp/codex-agent-invoke-20261004.yK1eTV/permission-validation-handoff.md`。首次组合编译真实 101（误读 Definition 两字段、Workflow owner DTO 类型），已修为 exact catalog 查询和四字段转换；随后新模块 3 项 0，删除 owner_policy 的 action==GRANT 真生产 guard 后 2 pass/1 fail、101，格式化源逐字恢复。最终合并 DTO 的 binary 92 pass/4 ignored、Clippy-Dwarnings 0，03000 forward/down/up 与当前实际 19 SQL PREPARE/ROLLBACK 0；临时空库无业务 seed，已删除。三项审批断言属于新 Rust 模块，不是被排除的继承 governance.tsx ApprovalPanel 变更或其验收。
+
+共享 UI 原页 6 项定向检查 0；删除 InstallationExecute 的 Installation+Workspace key 后旧回执泄漏断言真实失败（Vitest 1，不是编译失败），恢复 agents.tsx SHA 83b21a9d93461273b1b3a5e5a322a72275a752eb3da3558ff10a93fb4dd1528e 后 6 pass/120 filtered、0。共享生产与检查 TypeScript、Web、Desktop typecheck 全 0。Desktop 首次缺依赖/离线默认 store 失败原件保留；使用原 collaboration pnpm11.4.0/frozen lock 与已存在 `/cache/pnpm-memory-read` 后成功，未改锁。原 8b i18n generator 对本批 10 keys 生成/检查 0，原 registry 生成/检查 0；没有选入继承 generator/Dart/ApprovalPanel 改动。
+
+以上不是 full、真实 SpiceDB 授予/撤销、Temporal owner 审批、进行中 Codex cancel/usage 联合 E2E、客户端产物或部署通过。完整 full 由收口负责人单次执行；未解除 Agent 运行与真实用量验收边界。
+审计缺口另沿原 RB-06 按 operation/evidence_refs 定位，由治理责任人处理；
+不补造 OUTCOME/usage、不删除 fence、审计或 checkpoint 来消除未决事实。
+
+### 2026-10-04 普通调用与权限批集中检查：源码阶段回执
+
+以 8b 为底，普通、模型 SUM 分流、Installation execute/UI 与自有记录选定为
+37 路径 +4038/-146，固定检查树 `58b4e93b9ffc54214078fde697cff60853d8ec0e`。
+共享 Governance 窄合并，schema/四侧只选一次；旧 Runtime/OpenMeter/Compose、
+ApprovalPanel、生成器及发布记录的继承差异未纳入。默认 Git index 未动。
+
+原 `bash tools/check.sh --full`，`CHECK_SOURCE_REF` 精确上述树，Data 缓存、
+固定 10ad SDK、实际 4CPU/8Gi/swap0、UID1000:1000、显式 Cargo16、OOM 0。
+首次 session 68286 在 pnpm 依赖准备退出 2；复用已验实 warm store 后 session
+28341 在 Dart pub.dev 准备退出 2，两次均未进入门禁。未改源码/锁/检查器或全局
+DNS；按原已成功 host/PUB_CACHE 执行配置恢复，最终 session 23139 实际退出 1。
+原 launcher 已清理三次自有检查容器，未删除共享 SDK 或原私有 PG。
+
+最终原件 `/volumes/data/kailo/tmp/codex-agent-invoke-selected-20261004.y6aUqf/full-host.log`，
+SHA-256 `c7aee775bbaeef96f4ee64bdcd2df7e3afdf773e70684c97c5c92f561d489637`。
+fmt/Clippy、Go/TS/Dart 静态、四侧生成同步及既有 canary round-trip、143 schema
+相对 contracts-v0.1.0 的兼容检查（匹配 3 个历史 schema）、四语言验证均通过；
+Core binary 92 passed / 4 ignored。Workflow replay、18 追溯/18 kind、28 产物
+供应链、安全静态与文档通过；未安装 gitleaks，仅原内置扫描通过。
+该兼容结果不外推为全部新旧业务 payload 的端到端验证。
+
+仅 seam 两项真实失败：Web 登记 `e6fe9478955d95079f997432941cc5859f4eada2bd6fdee278c9ce5bfdbe7b7f`，
+当前输入 `ab052e9ebb4e5d711851e773beb5958a7fb78ce8bbdd536fc57f9915b59fd19e`；
+Win11 登记 `5a85c94e4be590901cb5fd127bab76c43d7a3ac3b9d973b06ffcde0a0d57eb45`，
+当前输入 `bed08156b752485f403d8ac3b923613e59b25fa6bdfe81f67c8f02d498f38d1e`。
+不手改摘要、不继承旧产物为当前源码，不重复源码检查；两端原 helper 交付另批收口。
+
+本次 host 执行未投递 DATABASE_URL 或真实 `.env`，实际迁移/SQLx 与部署预检
+明确 SKIP；前述 59 迁移往返、19 PREPARE 和普通 trace 不可逆验证为独立隔离
+定向证据，不能冒称本次 full 已跑数据库。原拟用于 full 的唯一空库
+`agent_invoke_full_y6auqf` 未运行迁移，已用原 SQLx 精确删除；原 PG 保留。
+本批只作源码阶段记录，不称 full 0、客户端产物/部署/设备或真实模型联合 E2E
+通过。生产 meter/credit 尚缺与可继续原生隔离验收分开；本轮之后仅 docs 快路径。

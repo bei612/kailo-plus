@@ -220,6 +220,10 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
 
+    /// 仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_event_id: Option<String>,
+
     /// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_id: Option<String>,
@@ -974,6 +978,9 @@ pub struct InstallationElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_binding: Option<InstallationChannelBinding>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_permission: Option<InstallationExecutionPermission>,
+
     pub owner_principal_id: String,
 
     pub pinned_version_asset_id: String,
@@ -1022,6 +1029,21 @@ pub enum Status {
 
     #[serde(rename = "ERROR")]
     Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallationExecutionPermission {
+    pub can_grant: bool,
+
+    pub can_revoke: bool,
+
+    pub effective: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_action_execution_id: Option<String>,
+
+    pub requested: bool,
 }
 
 /// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
@@ -1106,6 +1128,9 @@ pub struct AgentInstallationView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_binding: Option<AgentInstallationViewChannelBinding>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_permission: Option<AgentInstallationViewExecutionPermission>,
+
     pub owner_principal_id: String,
 
     pub pinned_version_asset_id: String,
@@ -1133,6 +1158,21 @@ pub struct AgentInstallationViewChannelBinding {
     pub status: Status,
 
     pub triggers: Vec<AgentTrigger>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationViewExecutionPermission {
+    pub can_grant: bool,
+
+    pub can_revoke: bool,
+
+    pub effective: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_action_execution_id: Option<String>,
+
+    pub requested: bool,
 }
 
 /// 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple

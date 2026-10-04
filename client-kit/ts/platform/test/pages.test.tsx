@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { AgentMemoryEntryPageState, AgentMemoryReadViewState, type AgentMemoryEntryPage, type AgentMemoryReadView } from "@client-kit/contracts";
-import { act } from "react";
+import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { AgentDefinitionsPage, AuditPage, DevicesPage, WorkspaceMembersPage } from "../src/react/pages";
@@ -31,6 +31,97 @@ const key = (pubkey: string, state = "ACTIVE") => ({
   pubkey,
   state,
   createdAt: new Date().toISOString(),
+});
+
+describe("Installation execute permission actions", () => {
+  const installation = {
+    resourceId: "installation-execute", workspaceId: "workspace-execute", agentResourceId: "definition-execute",
+    pinnedVersionAssetId: "version-execute", agentPrincipalId: "agent-execute", agentPrincipalState: "ACTIVE",
+    ownerPrincipalId: "human-owner", resourceVersion: 3, resourceState: "ACTIVE", state: "ACTIVE",
+    activeProjectionGeneration: 1, projection: { generation: 1, agentVersionAssetId: "version-execute",
+      runtimeProfileKey: "profile-execute", configHash: "a".repeat(64), state: "ACTIVE" },
+    executionPermission: { requested: false, effective: false, canGrant: true, canRevoke: true },
+  };
+  const setup = async (action: Route, permission?: unknown) => {
+    let row = { ...installation, executionPermission: permission };
+    const changeTarget = (id: string) => { row = { ...row, resourceId: id }; };
+    const t = transport((r) => {
+      if (r.path === "/api/v1/actions") return action(r);
+      if (r.path === "/api/v1/tasks") return { status: 200, body: [] };
+      if (r.path === "/api/v1/agent-definitions") return { status: 200, body: { definitions: [] } };
+      if (r.path === "/api/v1/workspaces") return { status: 200, body: [{ id: row.workspaceId, name: "Execute workspace", slug: "execute" }] };
+      if (r.path.startsWith("/api/v1/agent-installation-candidates")) return { status: 200, body: { workspaceId: row.workspaceId, canCreate: false, candidates: [] } };
+      if (r.path.startsWith("/api/v1/agent-installations?")) return { status: 200, body: { installations: [row] } };
+      if (r.path === `/api/v1/agent-installations/${row.resourceId}`) return { status: 200, body: row };
+      return { status: 503, body: undefined };
+    });
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    if (!host.textContent?.includes("View installation")) return { host, t, changeTarget };
+    await click(button(host.querySelector("[data-testid=agent-installations]") as HTMLElement, "View installation"));
+    await click(button(host, "View self-installation permission"));
+    await settle();
+    return { host, t, changeTarget };
+  };
+
+  it("submits exact target and version, never a browser-selected Agent; waiting remains approval", async () => {
+    const { host, t } = await setup((r) => ({ status: 202, body: { actionKey: (r.body as { actionKey: string }).actionKey,
+      actionExecutionId: "permission-ae", operationId: "permission-op", gateState: "WAITING", dispatchState: "NOT_DISPATCHED",
+      approvalWorkflowId: "permission-approval" } }), installation.executionPermission);
+    const section = host.querySelector("[data-testid=agent-installation-execute]") as HTMLElement;
+    await click(button(section, "Review execute grant"));
+    expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions")).toHaveLength(0);
+    await click(button(section, "Submit governed request"));
+    const submitted = t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body as Record<string, unknown>;
+    expect(submitted).toEqual({ actionKey: "agent.installation.execute.grant", idempotencyKey: expect.any(String),
+      resourceId: installation.resourceId, resourceVersion: installation.resourceVersion });
+    expect(section.textContent).toContain("permission-approval");
+    expect(section.textContent).toContain("Self-installation execute is not effective");
+    expect(section.textContent).not.toContain("Fresh execute check passed");
+  });
+
+  it("unknown revocation preserves the exact key across GET refresh and retry", async () => {
+    const { host, t } = await setup((r) => ({ status: 202, body: { actionKey: (r.body as { actionKey: string }).actionKey,
+      actionExecutionId: "revoke-ae", operationId: "revoke-op", gateState: "ALLOWED", dispatchState: "UNKNOWN" } }), installation.executionPermission);
+    const section = host.querySelector("[data-testid=agent-installation-execute]") as HTMLElement;
+    await click(button(section, "Review execute revocation"));
+    await click(button(section, "Submit governed request"));
+    await click(button(section, "Refresh"));
+    await settle();
+    expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions")).toHaveLength(1);
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions").map(([r]) => r.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[0]).toMatchObject({ actionKey: "agent.installation.execute.revoke", resourceId: installation.resourceId,
+      resourceVersion: installation.resourceVersion, explicitConfirmation: true });
+  });
+
+  it("switching exact installation clears the old receipt in the same shared component", async () => {
+    const { host, changeTarget } = await setup((r) => ({ status: 200, body: { actionKey: (r.body as { actionKey: string }).actionKey,
+      actionExecutionId: "old-permission-ae", operationId: "old-permission-op", gateState: "ALLOWED", dispatchState: "DISPATCHED" } }), installation.executionPermission);
+    let section = host.querySelector("[data-testid=agent-installation-execute]") as HTMLElement;
+    await click(button(section, "Review execute grant"));
+    await click(button(section, "Submit governed request"));
+    expect(section.textContent).toContain("old-permission-op");
+    changeTarget("installation-other");
+    await click(button(section, "Refresh"));
+    await settle();
+    await click(button(host.querySelector("[data-testid=agent-installations]") as HTMLElement, "View installation"));
+    await click(button(host, "View self-installation permission"));
+    await settle();
+    section = host.querySelector("[data-testid=agent-installation-execute]") as HTMLElement;
+    expect(section.textContent).not.toContain("old-permission-op");
+    expect(section.textContent).not.toContain("old-permission-ae");
+  });
+
+  it.each([undefined, { requested: true, effective: false, canGrant: false, canRevoke: false },
+    { requested: false, effective: "UNKNOWN", canGrant: true, canRevoke: true }])("missing, disabled or malformed authority offers no write (%j)", async (permission) => {
+    const { host, t } = await setup(() => ({ status: 500, body: undefined }), permission);
+    expect(host.textContent).not.toContain("Review execute grant");
+    expect(host.textContent).not.toContain("Review execute revocation");
+    expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions")).toHaveLength(0);
+  });
 });
 
 describe("InstallationMemory BFF read boundaries", () => {
@@ -125,7 +216,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     parameters: { validFrom: "2026-10-01T00:00:00.000Z", expiresAt: "2027-10-01T00:00:00.000Z", maxUses: 5, scopes: [scope] } };
   const submission = (actionKey: string, dispatchState = "DISPATCHED") => ({ actionKey,
     actionExecutionId: "exact-ae", operationId: "exact-operation", gateState: "ALLOWED", dispatchState });
-  function routes(extra?: (request: BffRequest) => BffReply | undefined) {
+  function routes(extra?: (request: BffRequest) => BffReply | Promise<BffReply> | undefined) {
     return transport((r) => {
       const reply = extra?.(r);
       if (reply) return reply;
@@ -481,6 +572,133 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(button(host, "View definition").disabled).toBe(false);
   });
 
+  const installationTask = { ...submission("agent.installation.create"), actionVersion: 1,
+    workspaceId: installation.workspaceId, targetId: "new-installation-2", createdAt: "2026-10-04T00:00:00.000Z",
+    workflowId: "installation-workflow-1", workflowKind: "AGENT_INSTALLATION", taskStatus: "RUNNING" };
+  async function install(host: HTMLElement) {
+    const action = section(host, "agent-installation-create");
+    await change(action, "Definition reference", installation.pinnedVersionAssetId);
+    await click(button(action, "Review request"));
+    await click(button(action, "Submit governed request"));
+    return action;
+  }
+
+  it("reads the exact installation receipt Task and refreshes outcome without another install", async () => {
+    let reads = 0;
+    const t = routes((r) => r.path === "/api/v1/actions" ? { status: 200, body: {
+      ...submission("agent.installation.create"), workflowId: installationTask.workflowId } }
+      : r.path === "/api/v1/tasks/exact-ae" ? { status: 200, body: {
+        ...installationTask, taskStatus: ++reads === 1 ? "RUNNING" : "COMPLETED" } } : undefined);
+    const host = await open(t);
+    await install(host);
+    const task = section(host, "agent-installation-task");
+    expect(task.textContent).toContain("Running");
+    expect(task.textContent).toContain(installationTask.targetId);
+    expect(task.textContent).toContain(installationTask.workflowId);
+    expect(task.textContent).toContain("exact-operation");
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/tasks/exact-ae" });
+    await click(button(task, "Refresh"));
+    expect(task.textContent).toContain("Completed");
+    expect(reads).toBe(2);
+    expect(posts(t)).toHaveLength(1);
+  });
+
+  it.each([
+    { actionExecutionId: "another-ae" }, { operationId: "another-operation" },
+    { actionKey: "agent.version.publish" }, { workspaceId: "another-workspace" },
+    { workflowId: "another-workflow" }, { workflowKind: "TENANT_LIFECYCLE" },
+    { workflowId: undefined }, { workflowKind: undefined }, { taskStatus: "FUTURE_STATE" },
+    { waitingReason: { stage: "native" } },
+  ])("rejects a foreign or incomplete installation Task receipt (%j)", async (changed) => {
+    const t = routes((r) => r.path === "/api/v1/actions" ? { status: 200, body: {
+      ...submission("agent.installation.create"), workflowId: installationTask.workflowId } }
+      : r.path === "/api/v1/tasks/exact-ae" ? { status: 200, body: {
+        ...installationTask, taskStatus: "COMPLETED", ...changed } } : undefined);
+    const host = await open(t);
+    await install(host);
+    const task = section(host, "agent-installation-task");
+    expect(task.textContent).toContain("the result is unknown");
+    expect(task.textContent).not.toContain("Completed");
+    expect(task.textContent).not.toContain("Applied");
+    expect(task.textContent).not.toContain(installationTask.targetId);
+    expect(posts(t)).toHaveLength(1);
+  });
+
+  it.each([
+    { observation: "EXTERNAL_RESULT_UNKNOWN", label: "Outcome not known yet" },
+    { observation: "PROJECTION_DELAYED", label: "Status may be out of date" },
+  ])("does not treat an observed installation %s as a terminal outcome", async ({ observation, label }) => {
+    const t = routes((r) => r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.installation.create", "UNKNOWN") }
+      : r.path === "/api/v1/tasks/exact-ae" ? { status: 200, body: {
+        ...installationTask, taskStatus: "COMPLETED", observation } } : undefined);
+    const host = await open(t);
+    const action = await install(host);
+    const task = section(host, "agent-installation-task");
+    expect(task.textContent).toContain(label);
+    expect(task.textContent).not.toContain("Completed");
+    expect(action.textContent).toContain("Outcome is not confirmed.");
+    expect(button(action, "Re-check same request")).toBeTruthy();
+    expect(section(host, "agent-installations").querySelector("select")?.disabled).toBe(true);
+    await click(button(task, "Refresh"));
+    expect(posts(t)).toHaveLength(1);
+  });
+
+  it("does not present a dispatched installation without Workflow evidence as a synchronous applied action", async () => {
+    const t = routes((r) => r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.installation.create") }
+      : r.path === "/api/v1/tasks/exact-ae" ? { status: 200, body: {
+        ...installationTask, workflowId: undefined, workflowKind: undefined, taskStatus: undefined } } : undefined);
+    const host = await open(t);
+    await install(host);
+    const task = section(host, "agent-installation-task");
+    expect(task.textContent).toContain("the result is unknown");
+    expect(task.textContent).not.toContain("Applied");
+    expect(task.textContent).not.toContain(installationTask.targetId);
+    expect(posts(t)).toHaveLength(1);
+  });
+
+  it("drops a late installation Task response after switching Workspace", async () => {
+    let resolveTask: (reply: BffReply) => void = () => {};
+    const t = routes((r) => r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.installation.create") }
+      : r.path === "/api/v1/tasks/exact-ae" ? new Promise<BffReply>((resolve) => { resolveTask = resolve; })
+      : r.path === "/api/v1/workspaces" ? { status: 200, body: [
+        { id: installation.workspaceId, name: "Ops", slug: "ops" }, { id: "workspace-2", name: "Other", slug: "other" } ] }
+      : undefined);
+    const host = await open(t);
+    await install(host);
+    expect(section(host, "agent-installation-task").textContent).toContain("Loading");
+    await change(section(host, "agent-installations"), "Workspace", "workspace-2");
+    expect(host.querySelector("[data-testid=agent-installation-task]")).toBeNull();
+    await act(async () => resolveTask({ status: 200, body: { ...installationTask, taskStatus: "COMPLETED" } }));
+    await settle();
+    expect(host.querySelector("[data-testid=agent-installation-task]")).toBeNull();
+    expect(section(host, "agent-installation-create").textContent).not.toContain("exact-operation");
+    expect(posts(t)).toHaveLength(1);
+  });
+
+  it("drops a late installation Task response when the host replaces its session client", async () => {
+    let resolveTask: (reply: BffReply) => void = () => {};
+    const t = routes((r) => r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.installation.create") }
+      : r.path === "/api/v1/tasks/exact-ae" ? new Promise<BffReply>((resolve) => { resolveTask = resolve; }) : undefined);
+    const next = routes();
+    let changeSession = () => {};
+    function SessionHost() {
+      const [client, setClient] = useState(() => createBffClient(t));
+      changeSession = () => setClient(createBffClient(next));
+      return <PlatformProvider client={client} locale="en"><AgentDefinitionsPage /></PlatformProvider>;
+    }
+    const host = await render(<SessionHost />);
+    await settle();
+    await click(button(host, "View definition"));
+    await install(host);
+    await act(async () => changeSession());
+    await act(async () => resolveTask({ status: 200, body: { ...installationTask, taskStatus: "COMPLETED" } }));
+    await settle();
+    expect(host.querySelector("[data-testid=agent-installation-task]")).toBeNull();
+    expect(section(host, "agent-installation-create").textContent).not.toContain("exact-operation");
+    expect(posts(t)).toHaveLength(1);
+    expect(posts(next)).toHaveLength(0);
+  });
+
   it("installation UNKNOWN freezes the exact published candidate and rejects another operation", async () => {
     let count = 0;
     const t = routes((r) => {
@@ -611,7 +829,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
         await click(button(action, "Re-check same request"));
         expect(action.textContent).toContain("Outcome is not confirmed.");
         expect(action.textContent).not.toContain("Request recorded.");
-        expect(action.querySelector("[role=alert]")).toBeNull();
+        expect(action.querySelector(":scope > [role=alert]")).toBeNull();
         expect([...action.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Cancel request");
         if (!transportUnknown) expect(action.textContent).toContain("exact-operation");
         if (kind === "version") expect(button(host, "View definition").disabled).toBe(true);

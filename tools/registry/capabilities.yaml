@@ -42,6 +42,9 @@ capabilities:
   - agent.delegation.grant
   - agent.delegation.revoke
   - llm_route.create
+  - agent.invoke
+  - agent.installation.execute.grant
+  - agent.installation.execute.revoke
   tools: []
   workflow_kinds:
   - AGENT_INSTALLATION

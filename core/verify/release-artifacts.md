@@ -259,3 +259,46 @@ Core/Worker 静态检查与既有验证、四侧生成与 143 个 schema 兼容�
 实际 `.env` 预检在该隔离检查中 SKIP，三项显式业务演练 ignored，未安装 gitleaks；
 Win11 实机/签名与 Mobile release 签名仍未闭合。本轮追加回执走原文档快路径，
 不重新编译 Core/Worker 或重跑 full；客户端来源在其独立交付批次收口。
+
+### 2026-10-04 固定 8b Core 交付与限定容器替换
+
+干净输入为 `8b3882d35b84b2c0d6bfcb29321c62c7a44f82d4`，包含 Runtime 恢复
+锁序及 AgentTask 跨页恢复。沿原 `release.sh` 的 Core 构建/pin/Syft/provenance
+步骤执行，未改发布工具、未构建 Worker/Web/Win/Gateway/Runtime。原构建 session
+69355、push 与独立 manifest byte 读回 64702 均退出 0；Core artifact 为
+`sha256:c970fc9d076640fbf0f0176ef13b2dbbe9e30ca757ec7e8950622d4efa6dbf54`，
+复用 Runtime `sha256:ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec`。
+既有 builder 实际 8CPU/16Gi/swap0、Data 缓存；原 Core 配方未显式设置
+`CARGO_BUILD_JOBS`，不能由后来定向 SDK 的 16 推导构建参数。
+
+原件目录 `/volumes/data/kailo/tmp/codex-core-runtime-task-delivery-20261004.d2t87J/`。
+同 artifact 的 SPDX SHA-256 为 `d4ea2401ef741aa88bc332f7c80f4ce182108af952dc5749e9c12d8268750457`，
+provenance 为 `631e95e83fd6f495e5353de60501db0e39e1aacd9c0091a59a9e49f1ca00eb04`，
+其来源提交为上述 8b；原输入 allowlist 前后 SHA 相同：
+`2a047b705f4d326c5370e7e88a1a273ba6020009f1aca53778205a9b83dfba9f`。
+
+仅私有干净 Compose 的 Core image pin 选用该 artifact。原 `start-core.sh --no-build`
+session 66580 退出 0，fresh wrapping 后仅 Core 被替换，新容器
+`f2d6b36e805cdfeeb5383cdfd0da64d801a27374e537b19bc2beee75ad65b52f`，
+StartedAt `2026-10-04T00:21:25.204388912Z`；healthz 200、Core/原生 Codex child
+存活、OOMKilled=false。唯一 `.env` 未改，SHA-256
+`9542763e36156af691b6f74c2bbb3076031ac3f5f25c873cf2a8c2ce0a45be31`。
+因此只证明当前运行 Core 已替换，不宣称正式默认 Compose pin 已升级，
+也不保证下一次不带该私有 pin 的启动会选择此产物。
+
+原 profiles RO 内容及 state RW 挂载保持；只读数据库前后事实一致：Installation
+`8f240978-34bb-437d-97ee-498a30e67e86` 仍 ACTIVE generation 1，固定 Version
+`cc099e7c-74d6-48a8-86c2-63bb878551ea`，projection hash
+`118822289da62c5ccf3020ad75a06806d719b74cc8e9cc9ec3ec2505802074c7` 不变，
+Invocation 0、成功迁移 57。未重发安装、Workflow 或模型 turn。
+所有既有容器前后 ID/image/StartedAt 对比仅 Core 变化；另一 lane 新增自身 SDK，
+故不声称全宿主容器集合不变。Gateway/Worker/Web、数字人与其他既有服务未替换。
+
+原日志 SHA-256：`core-release.log` 为
+`6cbf713fca57d3bdbfacfa012ea633c4602f3605775ac22d77d765e07f49e6cb`；
+`core-registry-readback.log` 为 `9d4e148141cab261ad6516e125f530aa1e009e89b512ad21230be92b5c3fe4c2`；
+`core-start.log` 为 `5cf4aeaaf9a07048396712a2c8c7a80e0fcd82cc2535fb3791a2b7f91536076e`；
+`core-health-runtime.log` 为 `855470cc8028306a206c60d5165aabafef133289a898ff5e7e1dae4b05d27ca4`。
+四步边界：权威为原发布步骤与已提交 Runtime/Task 消费者；影响仅固定旧源码产物
+和运行 Core；副作用未改变配置秘密、数据库事实或其他服务；本批普通 `agent.invoke`
+与权限/模型 SUM 结算源码尚未部署，不继承本节健康、来源或 SBOM 为新入口/业务验收。

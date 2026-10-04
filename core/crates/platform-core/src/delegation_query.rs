@@ -199,6 +199,7 @@ pub async fn list(
 #[derive(FromRow)]
 struct TargetRow {
     resource_id: Uuid,
+    action_key: String,
     action_version: i32,
     target_type: String,
     redaction_policy: String,
@@ -234,16 +235,23 @@ pub async fn targets(
     let mut scopes = Vec::new();
     let mut next = None;
     if can_grant {
-        // Only the existing real run consumer, not every row in the catalog.
+        // Only the two real Invocation producers, not every row in the catalog.
         // No Tool/CRUD placeholder, no permission derived from a Grant or route.
         let rows: Vec<TargetRow> = match sqlx::query_as(
-            "select r.id resource_id,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy
+            "select * from (select r.id resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy
             from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id
             join catalog.action_definition a on a.action_key='automation.run' and a.status='ACTIVE'
             where r.tenant_id=$1 and r.home_workspace_id=$2 and r.type_key='automation'
               and r.owner_principal_id=$3 and r.state='ACTIVE' and r.projection_action_execution_id is null
               and r.application_binding_id is null and d.workspace_id=$2 and d.executor_installation_resource_id=$4
-            order by r.id offset $5 limit $6",
+            union all
+            select r.id resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy
+            from catalog.resource r join catalog.agent_installation i on i.resource_id=r.id
+            join catalog.action_definition a on a.action_key='agent.invoke' and a.status='ACTIVE'
+            where r.id=$4 and r.tenant_id=$1 and r.home_workspace_id=$2 and r.type_key='agent.installation'
+              and r.state='ACTIVE' and r.projection_action_execution_id is null and r.application_binding_id is null
+              and i.workspace_id=$2 and i.state='ACTIVE') targets
+            order by resource_id,action_key offset $5 limit $6",
         ).bind(ctx.tenant_id).bind(installation.workspace_id).bind(ctx.tenant_principal_id)
             .bind(id).bind(offset).bind(limit).fetch_all(&mut *conn).await {
             Ok(rows) => rows, Err(error) => return crate::service_api::unavailable(error),
@@ -252,7 +260,7 @@ pub async fn targets(
             (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);
         for row in rows {
             let scope = contracts::ScopeElement {
-                action_key: "automation.run".into(),
+                action_key: row.action_key,
                 action_version: i64::from(row.action_version),
                 target_type: row.target_type,
                 target_id: Some(row.resource_id.to_string()),

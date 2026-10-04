@@ -302,7 +302,13 @@ pub(crate) async fn validate_scope(
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     };
     let automation = scope.action_key == "automation.run";
-    if (!automation && !has_agent_consumer(&scope.action_key)) || scope.tool_resource_id.is_some() {
+    let invocation = scope.action_key == crate::agent_invocation::ACTION;
+    if invocation && !crate::capability_registry::action_exposed(crate::agent_invocation::ACTION) {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    if (!automation && !invocation && !has_agent_consumer(&scope.action_key))
+        || scope.tool_resource_id.is_some()
+    {
         // ToolDefinition/PEP 当前没有真实生产者，不查询不存在的表或编造输出合同。
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
@@ -329,6 +335,9 @@ pub(crate) async fn validate_scope(
                   and (home_workspace_id is null or home_workspace_id=$3) and application_binding_id is null)")
                 .bind(target).bind(tenant).bind(row.workspace_id).fetch_one(&mut *conn).await?;
         if !valid {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
+        if invocation && target != row.id {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
         if automation {

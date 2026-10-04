@@ -55,6 +55,9 @@ use crate::temporal::{ObservedState, TemporalClient, TemporalError, UpdateOutcom
 #[path = "delegation.rs"]
 pub(crate) mod delegation;
 
+#[path = "agent_installation_permission.rs"]
+pub(crate) mod installation_permission;
+
 /// Worker 注册的审批 Workflow 类型名，两侧逐字相同。
 pub const APPROVAL_WORKFLOW_TYPE: &str = "ApprovalWorkflow";
 /// 审批 workflow ID 的类型段。它不是 ComponentTaskWorkflow 的 kind，只占
@@ -422,6 +425,8 @@ pub enum Semantic {
     AgentVersionPublish,
     AgentVersionRetire,
     AgentInstallationCreate,
+    AgentInstallationExecuteGrant,
+    AgentInstallationExecuteRevoke,
     AgentDelegationGrant,
     AgentDelegationRevoke,
     AutomationCreate,
@@ -462,6 +467,8 @@ impl Semantic {
             "agent.version.publish" => Self::AgentVersionPublish,
             "agent.version.retire" => Self::AgentVersionRetire,
             "agent.installation.create" => Self::AgentInstallationCreate,
+            "agent.installation.execute.grant" => Self::AgentInstallationExecuteGrant,
+            "agent.installation.execute.revoke" => Self::AgentInstallationExecuteRevoke,
             "agent.delegation.grant" => Self::AgentDelegationGrant,
             "agent.delegation.revoke" => Self::AgentDelegationRevoke,
             "automation.create" => Self::AutomationCreate,
@@ -488,6 +495,13 @@ impl Semantic {
                 | Self::AutomationEnable
                 | Self::AutomationPause
                 | Self::AutomationDisable
+        )
+    }
+
+    fn is_installation_permission(self) -> bool {
+        matches!(
+            self,
+            Self::AgentInstallationExecuteGrant | Self::AgentInstallationExecuteRevoke
         )
     }
 
@@ -527,6 +541,7 @@ impl Semantic {
     /// 会改变「有效 Tenant admin」集合的动作在 Tenant 行锁下判定与写入（DD-82）。
     fn serializes_on_tenant(self) -> bool {
         self.is_role()
+            || self.is_installation_permission()
             || self.is_automation()
             || matches!(
                 self,
@@ -540,6 +555,7 @@ impl Semantic {
                     | Self::AgentVersionPublish
                     | Self::AgentVersionRetire
                     | Self::AgentInstallationCreate
+                    | Self::AgentInstallationExecuteRevoke
                     | Self::AgentDelegationGrant
                     | Self::AgentDelegationRevoke
                     | Self::ResourceTransferOwner
@@ -565,6 +581,7 @@ impl Semantic {
     /// 由用户在目标详情上显式确认、确认位冻结在参数里的语义（`confirmation_mode=EXPLICIT`）。
     fn takes_explicit_confirmation(self) -> bool {
         self.is_automation()
+            || self == Self::AgentInstallationExecuteRevoke
             || matches!(
                 self,
                 Self::SecretRefRehome
@@ -820,6 +837,8 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             | Semantic::AgentVersionPublish
             | Semantic::AgentVersionRetire
             | Semantic::AgentInstallationCreate
+            | Semantic::AgentInstallationExecuteGrant
+            | Semantic::AgentInstallationExecuteRevoke
             | Semantic::AgentDelegationGrant
             | Semantic::AgentDelegationRevoke
     ) && (p.resource_id.is_some() || p.resource_version.is_some())
@@ -848,6 +867,22 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Err(bad());
     }
     let ok = match sem {
+        Semantic::AgentInstallationExecuteGrant | Semantic::AgentInstallationExecuteRevoke => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.resource_id.is_some_and(|id| !id.is_nil())
+                && p.resource_version.is_some_and(|v| v > 0)
+                && p.explicit_confirmation
+                    == if sem == Semantic::AgentInstallationExecuteRevoke {
+                        Some(true)
+                    } else {
+                        None
+                    }
+        }
         Semantic::LlmRouteCreate => {
             p.tenant_id.is_none()
                 && p.principal_id.is_none()
@@ -1141,6 +1176,9 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::AgentInstallationExecuteGrant | Semantic::AgentInstallationExecuteRevoke => {
+            installation_permission::target(conn, tenant, def, sem, p, frozen, lock).await
+        }
         Semantic::LlmRouteCreate => {
             crate::model_route::create_target(conn, tenant, def, p, frozen, lock).await
         }
@@ -1840,6 +1878,10 @@ impl Governance {
         target: &Target,
     ) -> Result<Evaluation, Refusal> {
         let is_installation_create = def.action_key == "agent.installation.create";
+        let is_installation_permission = matches!(
+            def.action_key.as_str(),
+            installation_permission::GRANT | installation_permission::REVOKE
+        );
         let is_route_create = def.action_key == "llm_route.create";
         let declared_workspace =
             def.workspace_rule == "DECLARED_WORKSPACE" && target.workspace_id.is_some();
@@ -1921,6 +1963,7 @@ impl Governance {
         // `.design/03` §2）：SUSPENDING/SUSPENDED/RESTORING 期间，成员、角色与任务
         // 控制等 Workspace scope 的新动作一律在 permission Check 之前拒绝
         if def.workspace_rule == "WORKSPACE_REQUIRED"
+            || is_installation_permission
             || declared_workspace
             || def.action_key.starts_with("automation.")
             || matches!(
@@ -1993,6 +2036,16 @@ impl Governance {
                             ReasonCode::ScopeGuardFailed,
                         ));
                     }
+                    target.id
+                } else if is_installation_permission {
+                    let mut conn = self.pool.acquire().await?;
+                    installation_permission::evaluate_target(
+                        self,
+                        &mut conn,
+                        actor.tenant_id,
+                        target,
+                    )
+                    .await?;
                     target.id
                 } else if is_memory
                     || matches!(
@@ -2151,7 +2204,8 @@ impl Governance {
         // - 从未加入：fresh workspace manage 为真即满足（`03` §2），即由 DD-82 授予、
         //   不要求先加入 Workspace 的 Workspace admin。
         // 本切片 Workspace 动作检查的正是 workspace manage，Check 为假时不设例外。
-        if (is_memory
+        if (is_installation_permission
+            || is_memory
             || is_route_create
             || is_installation_create
             || def.action_key.starts_with("automation.")
@@ -3102,17 +3156,23 @@ pub(crate) async fn record_dispatch(
     let row: Option<(Option<String>, bool)> = sqlx::query_as(
         "select coalesce(ae.temporal_workflow_id,
                          (select w.workflow_id from projection.workflow_ref w
-                          where w.action_execution_id = ae.id and w.workflow_type = $2)),
+                          where w.action_execution_id = ae.id and w.workflow_type = d.workflow_type
+                            and w.kind is not distinct from d.workflow_kind
+                            and w.tenant_id=ae.tenant_id and w.workspace_id is not distinct from ae.workspace_id
+                            and w.operation_id=ae.operation_id)),
                 exists (select 1 from projection.workflow_ref w
-                        where w.workflow_type = $2
-                          and (w.action_execution_id = ae.id
-                               or w.workflow_id = ae.temporal_workflow_id)
+                        where w.workflow_type = d.workflow_type and w.kind is not distinct from d.workflow_kind
+                          and w.action_execution_id = ae.id
+                          and (ae.temporal_workflow_id is null or w.workflow_id = ae.temporal_workflow_id)
+                          and w.tenant_id=ae.tenant_id and w.workspace_id is not distinct from ae.workspace_id
+                          and w.operation_id=ae.operation_id
                           and (w.run_id is not null
                                or w.projection_state in ('RUNNING', 'TERMINAL')))
-         from admission.action_execution ae where ae.id = $1 for update",
+         from admission.action_execution ae join catalog.action_definition d
+           on d.action_key=ae.action_key and d.version=ae.action_version
+         where ae.id = $1 for update of ae",
     )
     .bind(action_execution_id)
-    .bind(component_task::WORKFLOW_TYPE)
     .fetch_optional(&mut **tx)
     .await?;
     let (workflow_id, executed) = row.unwrap_or((None, false));
@@ -3412,6 +3472,13 @@ impl Governance {
         drop(conn);
 
         let mut tx = self.pool.begin().await.map_err(|e| (e.into(), None))?;
+        let revoked = if sem == Semantic::AgentInstallationExecuteRevoke {
+            installation_permission::prepare_revoke(self, &mut tx, actor, &params)
+                .await
+                .map_err(|e| (e, None))?
+        } else {
+            Vec::new()
+        };
         let inserted = open_execution(
             &mut tx,
             actor,
@@ -3440,6 +3507,9 @@ impl Governance {
             .await
             .map_err(|e| (e.into(), Some(ae.operation_id)))?;
 
+        for old in revoked {
+            self.invalidate(old).await;
+        }
         self.decide(actor, ae.id, &def, sem, &params).await
     }
 
@@ -3813,7 +3883,8 @@ impl Governance {
         {
             return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
         }
-        if sem.is_automation()
+        if sem.is_installation_permission()
+            || sem.is_automation()
             || matches!(
                 sem,
                 Semantic::AgentDelegationGrant
@@ -3832,7 +3903,8 @@ impl Governance {
             .fetch_optional(&mut **tx)
             .await?;
         }
-        if (sem.is_automation()
+        if (sem.is_installation_permission()
+            || sem.is_automation()
             || matches!(
                 sem,
                 Semantic::AgentDefinitionCreate
@@ -3852,7 +3924,8 @@ impl Governance {
         {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
-        let locked_evaluation = if sem.is_automation()
+        let locked_evaluation = if sem.is_installation_permission()
+            || sem.is_automation()
             || matches!(
                 sem,
                 Semantic::TenantDelete
@@ -3898,6 +3971,9 @@ impl Governance {
             params,
         )
         .await?;
+        if sem == Semantic::AgentInstallationExecuteGrant {
+            installation_permission::validate_approval_owner(self, tx, ae, false).await?;
+        }
         if matches!(sem, Semantic::TaskCancel | Semantic::TaskRerun) {
             // 控制动作先独立完成准入；取消向原 Workflow 发请求，重跑仅在
             // 派发前重新核实旧终态后才原子分配新的 WorkflowRef。
@@ -3978,6 +4054,11 @@ impl Governance {
             )
             .await?;
             return match sem {
+                Semantic::AgentInstallationExecuteGrant
+                | Semantic::AgentInstallationExecuteRevoke => {
+                    installation_permission::prewrite(tx, ae).await?;
+                    Ok(None)
+                }
                 Semantic::AutomationCreate
                 | Semantic::AutomationPublish
                 | Semantic::AutomationEnable
@@ -4262,6 +4343,8 @@ impl Governance {
             | Semantic::ResourceTransferOwner
             | Semantic::AgentDelegationGrant
             | Semantic::AgentDelegationRevoke
+            | Semantic::AgentInstallationExecuteGrant
+            | Semantic::AgentInstallationExecuteRevoke
             | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish | Semantic::AgentVersionRetire
             | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
             | Semantic::AutomationPause | Semantic::AutomationDisable
@@ -4764,6 +4847,9 @@ impl Governance {
         sem: Semantic,
         p: &Params,
     ) -> Result<(), Refusal> {
+        if sem.is_installation_permission() {
+            return installation_permission::gate(self, conn, tenant, initiator, p).await;
+        }
         if matches!(
             sem,
             Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
@@ -5033,7 +5119,7 @@ fn zed_evidence(token: Option<&str>) -> Vec<Evidence> {
 
 /// 把一条 ActionExecution 写成 BFF 回应。门禁未决或已派发都是 2xx；结果不明
 /// 用 202 并带 dispatchState=UNKNOWN，不说成功也不说失败。
-fn submission_result(
+pub(crate) fn submission_result(
     ae: &Execution,
 ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
     let op = Some(ae.operation_id);
@@ -5707,7 +5793,15 @@ impl Governance {
         }
         if def.execution_mode == "SYNC" {
             // 在准入事务里已完成的同步动作没有可派发的东西；走到这里只可能是角色
-            return if sem == Semantic::AgentVersionCreate {
+            return if sem.is_installation_permission() {
+                installation_permission::dispatch(
+                    self,
+                    ae_id,
+                    &def,
+                    sem == Semantic::AgentInstallationExecuteGrant,
+                )
+                .await
+            } else if sem == Semantic::AgentVersionCreate {
                 crate::agent_version::dispatch(self, ae_id, &def).await
             } else if sem == Semantic::LlmRouteCreate {
                 crate::model_route::create_dispatch(self, ae_id, &def).await
@@ -5815,6 +5909,7 @@ impl Governance {
                 | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
                 | Semantic::AutomationPause | Semantic::AutomationDisable
                 | Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
+                | Semantic::AgentInstallationExecuteGrant | Semantic::AgentInstallationExecuteRevoke
                 // 业务 Tenant 生命周期由 dispatch_tenant_lifecycle 派发
                 | Semantic::TenantSuspend
                 | Semantic::TenantRestore => Err(StatusCode::CONFLICT.into_response()),
@@ -5881,7 +5976,9 @@ impl Governance {
         // .design/10 §2）：RESOURCE_APPROVER 需要 Resource 目标，WORKSPACE_ADMIN 需要
         // 冻结 Workspace；本切片的目标都没有 owner 事实。不换用更宽的角色。
         let deletion = def.action_key == "tenant.delete";
+        let installation_owner = installation_permission::owner_policy(&ae.action_key, &policy);
         let resolvable = (policy.owner_requirement == "NONE"
+            || installation_owner
             || (deletion && policy.owner_requirement == "ALL_AFFECTED_OWNERS"))
             && policy.role_requirements.iter().all(|r| match r.selector {
                 ApprovalSelector::TenantAdmin => true,
@@ -5915,6 +6012,43 @@ impl Governance {
         }
         let mut deletion_refs = Vec::new();
         let mut locked_evaluation = None;
+        if installation_owner {
+            if !crate::roles::lock_tenant(&mut tx, ae.tenant_id)
+                .await
+                .map_err(|e| (e.into(), op))?
+            {
+                return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), op));
+            }
+            let owner =
+                installation_permission::owner_ref(self, &mut tx, ae.tenant_id, ae.target_id)
+                    .await
+                    .map_err(|e| (e, op))?;
+            if Some(owner.target_version) != ae.frozen_target_version().map(i64::from) {
+                return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), op));
+            }
+            let params = ae
+                .params()
+                .ok_or((Refusal::Precondition(ReasonCode::InvalidParameters), op))?;
+            installation_permission::gate(
+                self,
+                &mut tx,
+                ae.tenant_id,
+                ae.initiator_principal_id,
+                &params,
+            )
+            .await
+            .map_err(|e| (e, op))?;
+            sqlx::query("update admission.action_execution set parameters=jsonb_set(parameters,'{permissionApprovalOwner}',$2)
+                where id=$1 and not (parameters ? 'permissionApprovalOwner')")
+                .bind(ae.id).bind(serde_json::to_value(&owner).map_err(|e| (Refusal::Unavailable(e.to_string()), op))?)
+                .execute(&mut *tx).await.map_err(|e| (e.into(), op))?;
+            let frozen = lock_execution(&mut tx, ae.id)
+                .await
+                .map_err(|e| (e.into(), op))?;
+            if installation_permission::frozen_owner(&frozen).map_err(|e| (e, op))? != owner {
+                return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), op));
+            }
+        }
         if deletion {
             if policy.owner_requirement != "ALL_AFFECTED_OWNERS"
                 || policy.self_approval != "ALLOW"
@@ -6101,7 +6235,10 @@ impl Governance {
         let expires = ae
             .approval_expires_at
             .ok_or_else(|| Refusal::Unavailable("WAITING 缺冻结的过期时刻".into()))?;
-        let affected_owner_refs = if policy.owner_requirement == "ALL_AFFECTED_OWNERS" {
+        let affected_owner_refs: Vec<contracts::AffectedOwnerRefElement> = if policy
+            .owner_requirement
+            == "ALL_AFFECTED_OWNERS"
+        {
             let refs: Value = sqlx::query_scalar(
                 "select resource_owner_versions || asset_owner_versions from admission.tenant_lifecycle_snapshot
                 where action_execution_id=$1 and tenant_id=$2",
@@ -6111,6 +6248,14 @@ impl Governance {
             .fetch_one(&self.pool)
             .await?;
             serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
+        } else if installation_permission::owner_policy(&ae.action_key, &policy) {
+            let owner = installation_permission::frozen_owner(ae)?;
+            vec![contracts::AffectedOwnerRefElement {
+                target_type: owner.target_type,
+                target_id: owner.target_id,
+                target_version: owner.target_version,
+                owner_principal_id: owner.owner_principal_id,
+            }]
         } else {
             Vec::new()
         };
@@ -6657,11 +6802,12 @@ impl Governance {
         let policy = exact_policy(&self.pool, pid, pver).await?;
         let approver = Uuid::parse_str(&req.approver_principal_id)
             .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
-        // TARGET_OWNER 尚无本次真实动作消费者；不能把它或未知枚举按 NONE 处理。
+        let installation_owner = installation_permission::owner_policy(&ae.action_key, &policy);
         if !matches!(
             policy.owner_requirement.as_str(),
             "NONE" | "ALL_AFFECTED_OWNERS"
-        ) {
+        ) && !installation_owner
+        {
             return Ok(Some(FreshApprovalAdmissionResult {
                 admitted: false,
                 reason: Some(ReasonCode::ApprovalSelectorUnresolvable),
@@ -6715,13 +6861,23 @@ impl Governance {
                     .fetch_one(&mut *tx)
                     .await?;
                 serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
+            } else if installation_owner {
+                vec![installation_permission::frozen_owner(&ae)?]
             } else {
                 Vec::new()
             };
             let owners_current =
                 crate::agent_definition::validate_frozen_owners(self, &mut tx, ae.tenant_id, &refs)
                     .await?;
-            let target_current = if def.target_type == "RESOURCE" {
+            let target_current = if installation_owner {
+                match installation_permission::validate_approval_owner(self, &mut tx, &ae, false)
+                    .await
+                {
+                    Ok(_) => true,
+                    Err(Refusal::Conflict(_)) | Err(Refusal::Denied(_)) => false,
+                    Err(e) => return Err(e),
+                }
+            } else if def.target_type == "RESOURCE" {
                 match crate::agent_definition::resource(&mut tx, ae.tenant_id, ae.target_id, true)
                     .await?
                 {
@@ -6887,7 +7043,9 @@ impl Governance {
             .map(|(r, s)| (r.as_str(), s.as_str()))
             .unwrap_or(("", ""));
         match (ae.gate_state.as_str(), ae.dispatch_state.as_str()) {
-            ("EVALUATING", _) if stale && ae.action_key == "automation.run" => {
+            ("EVALUATING", _)
+                if stale && matches!(ae.action_key.as_str(), "automation.run" | "agent.invoke") =>
+            {
                 let def = exact_definition(&self.pool, &ae.action_key, ae.action_version).await?;
                 let mut tx = self.pool.begin().await?;
                 let current = lock_execution(&mut tx, ae.id).await?;

@@ -1724,6 +1724,8 @@ async fn initialize(
     if changed.rows_affected() != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
+    crate::agent_invocation::initialize_ingress(&mut tx, facts.tenant_id, installation, generation)
+        .await?;
     projection_audit(
         &mut tx,
         &locked,

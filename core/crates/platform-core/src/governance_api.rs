@@ -71,7 +71,12 @@ pub async fn submit_action(
     {
         return Refusal::Denied(ReasonCode::ScopeGuardFailed).respond(None);
     }
-    let result = if crate::agent_memory::write::is_action(&cmd.action_key) {
+    if cmd.source_event_id.is_some() && cmd.action_key != crate::agent_invocation::ACTION {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
+    let result = if cmd.action_key == crate::agent_invocation::ACTION {
+        crate::agent_invocation::submit_manual(&state, &ctx, &cmd).await
+    } else if crate::agent_memory::write::is_action(&cmd.action_key) {
         state.governance.submit_memory(&state, &ctx, &cmd).await
     } else {
         state.governance.submit(actor(&ctx), &cmd).await
@@ -623,7 +628,17 @@ async fn eligible(
             return Ok(true);
         }
     }
-    if row.action_key == "tenant.delete" {
+    if row.action_key == crate::governance::installation_permission::GRANT
+        && ctx.access_mode == contracts::PlatformSessionAccessMode::Full
+    {
+        crate::governance::installation_permission::approval_owner_eligible(
+            g,
+            ctx.tenant_id,
+            ctx.tenant_principal_id,
+            row.action_execution_id,
+        )
+        .await
+    } else if row.action_key == "tenant.delete" {
         crate::bff::lifecycle_owner_eligible(
             g,
             ctx.tenant_id,

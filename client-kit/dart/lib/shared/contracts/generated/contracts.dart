@@ -806,6 +806,9 @@ class ActionCommand {
   ///workspace.create 或 agent.definition.create 的稳定 slug
   final String? slug;
 
+  ///仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
+  final String? sourceEventId;
+
   ///tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
   final String? tenantId;
 
@@ -833,6 +836,7 @@ class ActionCommand {
     this.resourceId,
     this.resourceVersion,
     this.slug,
+    this.sourceEventId,
     this.tenantId,
     this.workspaceId,
   });
@@ -870,6 +874,7 @@ class ActionCommand {
     resourceId: json["resourceId"],
     resourceVersion: json["resourceVersion"],
     slug: json["slug"],
+    sourceEventId: json["sourceEventId"],
     tenantId: json["tenantId"],
     workspaceId: json["workspaceId"],
   );
@@ -895,6 +900,7 @@ class ActionCommand {
     "resourceId": resourceId,
     "resourceVersion": resourceVersion,
     "slug": slug,
+    "sourceEventId": sourceEventId,
     "tenantId": tenantId,
     "workspaceId": workspaceId,
   });
@@ -2038,6 +2044,7 @@ class InstallationElement {
   final AgentPrincipalState agentPrincipalState;
   final String agentResourceId;
   final InstallationChannelBinding? channelBinding;
+  final InstallationExecutionPermission? executionPermission;
   final String ownerPrincipalId;
   final String pinnedVersionAssetId;
   final ProjectionClass? projection;
@@ -2053,6 +2060,7 @@ class InstallationElement {
     required this.agentPrincipalState,
     required this.agentResourceId,
     this.channelBinding,
+    this.executionPermission,
     required this.ownerPrincipalId,
     required this.pinnedVersionAssetId,
     this.projection,
@@ -2073,6 +2081,11 @@ class InstallationElement {
         channelBinding: json["channelBinding"] == null
             ? null
             : InstallationChannelBinding.fromJson(json["channelBinding"]),
+        executionPermission: json["executionPermission"] == null
+            ? null
+            : InstallationExecutionPermission.fromJson(
+                json["executionPermission"],
+              ),
         ownerPrincipalId: json["ownerPrincipalId"],
         pinnedVersionAssetId: json["pinnedVersionAssetId"],
         projection: json["projection"] == null
@@ -2092,6 +2105,7 @@ class InstallationElement {
         agentPrincipalStateValues.reverse[agentPrincipalState],
     "agentResourceId": agentResourceId,
     "channelBinding": channelBinding?.toJson(),
+    "executionPermission": executionPermission?.toJson(),
     "ownerPrincipalId": ownerPrincipalId,
     "pinnedVersionAssetId": pinnedVersionAssetId,
     "projection": projection?.toJson(),
@@ -2146,6 +2160,39 @@ final statusValues = EnumValues({
   "DISABLED": Status.DISABLED,
   "ERROR": Status.ERROR,
 });
+
+class InstallationExecutionPermission {
+  final bool canGrant;
+  final bool canRevoke;
+  final bool effective;
+  final String? pendingActionExecutionId;
+  final bool requested;
+
+  InstallationExecutionPermission({
+    required this.canGrant,
+    required this.canRevoke,
+    required this.effective,
+    this.pendingActionExecutionId,
+    required this.requested,
+  });
+
+  factory InstallationExecutionPermission.fromJson(Map<String, dynamic> json) =>
+      InstallationExecutionPermission(
+        canGrant: json["canGrant"],
+        canRevoke: json["canRevoke"],
+        effective: json["effective"],
+        pendingActionExecutionId: json["pendingActionExecutionId"],
+        requested: json["requested"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canGrant": canGrant,
+    "canRevoke": canRevoke,
+    "effective": effective,
+    "pendingActionExecutionId": pendingActionExecutionId,
+    "requested": requested,
+  });
+}
 
 ///17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
 class ProjectionClass {
@@ -2244,6 +2291,7 @@ class AgentInstallationView {
   final AgentPrincipalState agentPrincipalState;
   final String agentResourceId;
   final AgentInstallationViewChannelBinding? channelBinding;
+  final AgentInstallationViewExecutionPermission? executionPermission;
   final String ownerPrincipalId;
   final String pinnedVersionAssetId;
   final ProjectionClass? projection;
@@ -2259,6 +2307,7 @@ class AgentInstallationView {
     required this.agentPrincipalState,
     required this.agentResourceId,
     this.channelBinding,
+    this.executionPermission,
     required this.ownerPrincipalId,
     required this.pinnedVersionAssetId,
     this.projection,
@@ -2281,6 +2330,11 @@ class AgentInstallationView {
             : AgentInstallationViewChannelBinding.fromJson(
                 json["channelBinding"],
               ),
+        executionPermission: json["executionPermission"] == null
+            ? null
+            : AgentInstallationViewExecutionPermission.fromJson(
+                json["executionPermission"],
+              ),
         ownerPrincipalId: json["ownerPrincipalId"],
         pinnedVersionAssetId: json["pinnedVersionAssetId"],
         projection: json["projection"] == null
@@ -2300,6 +2354,7 @@ class AgentInstallationView {
         agentPrincipalStateValues.reverse[agentPrincipalState],
     "agentResourceId": agentResourceId,
     "channelBinding": channelBinding?.toJson(),
+    "executionPermission": executionPermission?.toJson(),
     "ownerPrincipalId": ownerPrincipalId,
     "pinnedVersionAssetId": pinnedVersionAssetId,
     "projection": projection?.toJson(),
@@ -2338,6 +2393,40 @@ class AgentInstallationViewChannelBinding {
     "triggers": List<dynamic>.from(
       triggers.map((x) => agentTriggerValues.reverse[x]),
     ),
+  });
+}
+
+class AgentInstallationViewExecutionPermission {
+  final bool canGrant;
+  final bool canRevoke;
+  final bool effective;
+  final String? pendingActionExecutionId;
+  final bool requested;
+
+  AgentInstallationViewExecutionPermission({
+    required this.canGrant,
+    required this.canRevoke,
+    required this.effective,
+    this.pendingActionExecutionId,
+    required this.requested,
+  });
+
+  factory AgentInstallationViewExecutionPermission.fromJson(
+    Map<String, dynamic> json,
+  ) => AgentInstallationViewExecutionPermission(
+    canGrant: json["canGrant"],
+    canRevoke: json["canRevoke"],
+    effective: json["effective"],
+    pendingActionExecutionId: json["pendingActionExecutionId"],
+    requested: json["requested"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canGrant": canGrant,
+    "canRevoke": canRevoke,
+    "effective": effective,
+    "pendingActionExecutionId": pendingActionExecutionId,
+    "requested": requested,
   });
 }
 
