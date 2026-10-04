@@ -3104,7 +3104,8 @@ const (
 type ActionKind string
 
 const (
-	AgentTurn ActionKind = "AGENT_TURN"
+	AgentTurn   ActionKind = "AGENT_TURN"
+	PostMessage ActionKind = "POST_MESSAGE"
 )
 
 type AutomationResultTarget string

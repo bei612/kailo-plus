@@ -23,7 +23,7 @@
       "additionalProperties": false,
       "required": ["kind", "template"],
       "properties": {
-        "kind": {"type": "string", "enum": ["AGENT_TURN"]},
+        "kind": {"type": "string", "enum": ["AGENT_TURN", "POST_MESSAGE"]},
         "template": {"type": "string", "minLength": 1}
       }
     },

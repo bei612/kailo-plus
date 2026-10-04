@@ -170,7 +170,7 @@ function validAutomationVersion(row: AutomationVersionView, parent: AutomationVi
     && (content.trigger.kind === TriggerKind.Mention
       ? typeof content.trigger.mentionPrincipalId === "string" && !!content.trigger.mentionPrincipalId
       : content.trigger.mentionPrincipalId === undefined)
-    && !!content.action && content.action.kind === ActionKind.AgentTurn
+    && !!content.action && [ActionKind.AgentTurn, ActionKind.PostMessage].includes(content.action.kind)
     && typeof content.action.template === "string" && !!content.action.template.trim()
     && (content.trigger.kind === TriggerKind.Schedule
       ? content.resultTarget === ResultTarget.Channel && content.trigger.textPrefix === undefined
@@ -361,6 +361,8 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   const [offsetSeconds, setOffsetSeconds] = useState("");
   const [catchupWindowSeconds, setCatchupWindowSeconds] = useState("");
   const [template, setTemplate] = useState("");
+  const [actionKind, setActionKind] = useState(ActionKind.AgentTurn);
+  const frozenResponse = useRef<{ operationId: string; actionExecutionId: string } | null>(null);
   const [versionId, setVersionId] = useState("");
   const [grantId, setGrantId] = useState("");
   const [intent, setIntent] = useState<ActionCommand | null>(null);
@@ -421,6 +423,7 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     setOffsetSeconds(content?.trigger.scheduleSpec?.offsetSeconds.toString() ?? "");
     setCatchupWindowSeconds(content?.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
     setTemplate(content?.action.template ?? "");
+    setActionKind(content?.action.kind ?? ActionKind.AgentTurn);
     setVersionId(""); setGrantId(""); setExecutorId("");
   }, [edit, workspaceId]);
   useEffect(() => { setExecutorIndex(0); setExecutorOffsets([0]); }, [workspaceId]);
@@ -437,7 +440,7 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     if (contentAction) command.automationVersionContent = {
       trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
         ...(trigger === TriggerKind.Mention ? { mentionPrincipalId: executor!.agentPrincipalId } : {}) },
-      action: { kind: ActionKind.AgentTurn, template },
+      action: { kind: actionKind, template },
       resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
     };
     if (edit?.action === "enable" && version && grant) {
@@ -454,14 +457,19 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     try {
       const result = await client.submitAction(intent);
       if (!result || result.actionKey !== intent.actionKey || !result.actionExecutionId || !result.operationId
+        || (priorOperation !== undefined && result.operationId !== priorOperation)
+        || (frozenResponse.current !== null && (result.operationId !== frozenResponse.current.operationId
+          || result.actionExecutionId !== frozenResponse.current.actionExecutionId))
         || !Object.values(ActionGateState).includes(result.gateState) || !Object.values(ActionDispatchState).includes(result.dispatchState)
         || (result.reason !== undefined && !Object.values(ReasonCode).includes(result.reason))
         || (result.gateState === ActionGateState.Waiting && !result.approvalWorkflowId)
         || (result.gateState === ActionGateState.Denied && !result.reason)) throw new TransportError(t("platform.loadFailed"));
       setSubmission(result);
+      frozenResponse.current = { operationId: result.operationId, actionExecutionId: result.actionExecutionId };
       if (result.dispatchState !== ActionDispatchState.Unknown && result.gateState !== ActionGateState.Evaluating
         && !(result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.NotDispatched)) {
         setIntent(null); onLocked(false); onReset(); onRecorded(); reloadAdmission(); reloadInstallations();
+        frozenResponse.current = null;
       }
     } catch (error) {
       const failed = writeFailure(error);
@@ -520,6 +528,14 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
         </> : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
           <input value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
         </label>}
+        <label className="flex flex-col gap-1 text-sm">{t("agents.automation.action")}
+          <select value={actionKind} onChange={(event) => {
+            if (event.target.value === ActionKind.AgentTurn || event.target.value === ActionKind.PostMessage) setActionKind(event.target.value);
+          }} className="h-8 rounded-md border border-input bg-background px-2">
+            <option value={ActionKind.AgentTurn}>{t("agents.automation.agentTurn")}</option>
+            <option value={ActionKind.PostMessage}>{t("agents.automation.postMessage")}</option>
+          </select>
+        </label>
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
           <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
         </label>

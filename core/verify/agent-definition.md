@@ -3134,3 +3134,168 @@ Win11 设备与签名、Mobile release 或生产验收。
 停止的 `full.log` SHA `8db231e714f90133de6ce435b459f8e9099fecf1695a29d6f1e27f4e1d5cc313`；
 最终 `full-selected.log` SHA `4f07e5a9dc03a9572dcd577ef948f0dec012db2d39a0d1e5046f02c9c4afcc7b`。
 回执与 README 状态更新只走原文档快路径，不重编译本批产品。
+
+## 2026-10-04：POST_MESSAGE 原链实现与隔离证据
+
+候选基底 `acbab8036911922c0dad4b4d28c7bb8e13c03afc`，tree
+`8aa144d6e408d7fbef3857512d6883b1cf6415bd`，26 文件 +1738/-65；源码已进入
+正式工作树，不含已有无关修改。本节不是提交、部署或真实消息发送回执。
+
+四步结论：
+
+1. 权威为 DD-107、设计 `05` §2.9、`06` §9/9.1：POST_MESSAGE 复用原
+   automation.run、AgentTaskWorkflow、Installation 身份与 Delegation；不创建
+   新动作策略、工作流种类、消息存储、模型 trace 或计量权威。
+2. 影响原 Relay/Schedule 准入、AgentTask、Session 首轮判断、OpenMeter COUNT、
+   AutomationVersion 契约和共用管理表单。仅精确 frozen version 的 POST_MESSAGE
+   使用 automation.run COUNT 与 Capacity NONE；AGENT_TURN 保留模型与 slot 门禁。
+   四侧生成契约同步；16000 迁移保留 15500 的 Memory shape 与 BUZZ_EVENT_ID 修正。
+3. 发布前在同一既有 Invocation 上以 CAS 固定签名事件 ID 与无正文意图；唯一
+   获胜者再次检查权限、binding、额度和实际 Temporal Activity attempt 后投递。
+   COUNT 的稳定 ID 避免重复计量，Relay 精确查证与原生 stored_at 缺一不可完成。
+4. 意图落存后、deliver 调用前的确定拒绝可记录 NOT_DELIVERED；超时、崩溃、
+   撤销中断或查证缺事件都不能推断未投递，保持 UNKNOWN 且不重发。原 Task/Workflow
+   继续负责查证；本批没有承诺无法证明的有限时间自动终结。含新 POST 事实时 down
+   明确停止，禁止以回滚抹掉外部副作用证据。
+
+Session 原 SQL 曾把无 native turn 的已完成 POST 当成未绑定模型 dispatch，
+阻断之后的首个真实回合。现仅排除同租户、Workspace、Automation、automation.run
+ActionExecution 精确关联且无 native/model trace 的 frozen POST；未知动作与
+矛盾模型证据仍拒绝，不伪造 Memory 已消费事实或新增 Session 状态。
+
+隔离 SDK 固定镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 4 CPU/8 GiB/swap 0、Data 缓存，Cargo 保持 16 jobs。实际结果：
+
+```text
+cargo fmt / cargo clippy -D warnings                 exit 0
+automation::management_evidence                      7 passed
+agent_task::                                        19 passed
+agent_session::memory_phase_tests                    3 passed
+Rust / TypeScript / Go / Dart contract roundtrip     exit 0
+shared pages                                        188 passed
+shared typecheck / i18n / registry                   exit 0
+SQLx 70 up; 16000 down/up                            exit 0
+16000 down with persisted POST evidence              exit 1 (expected refusal)
+```
+
+生产逻辑变异：移除 COUNT 发布证据约束，原 PG 检查退出 3；移除 native attempt
+相等检查，原 Rust 断言退出 101；移除 UNKNOWN 的 Operation/AE 关联检查，共享 UI
+两断言失败；破坏真实 Memory phase SQL，PG 检查退出 3。逐字还原后各目标退出 0。
+POST 样本改成未知 action 字段时四语言解码均拒绝，恢复后往返通过；首轮 Dart
+依赖缺失退出 65 不计有效变异，补齐原离线依赖后实际解码失败退出 1。
+真实 PG 事务也拒绝意图漂移、伪造模型 turn、过早完成及无发布证据 COUNT。
+这些是有真实约束的合成关系事实，不是生产 Relay/OpenMeter E2E。
+
+原件目录 `/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/post-message-RGXfe7/`：
+`canonical.patch` SHA `d0a080152a553f17218dcbfce3e1f701f95be5d3750325c47db82b45d11c4272`；
+`handoff.md`、`source.sha256`、`evidence.sha256`、`final-core.log`、`final-clients.log`、
+`final-session.log`、`session-phase-restored.log` 保存命令、原始失败和恢复结果。
+两份自有合成数据库已精确删除，名称读回 0，其他数据库与生产数据未动。
+未运行新整批 full，未构建产物、发送真实模板消息、续授权或重放旧模型调用。
+
+WEBHOOK 专属阻断：设计 `06` §9 要求异步消费触发正文，`04` 存储权威表与
+`05` §7 禁止 Core/审计/Temporal history 代存；当前 SourceRef 只有 Relay 事件与
+原生 Schedule 来源，没有已冻结的 webhook payload 持久/恢复权威。
+`agent_task::source_message` 因此不能凭 delivery ID 恢复正文。保持该入口不存在，
+不新增无调用方验签代码或借密钥/可选业务存储绕过。审批关卡也不在本候选完成范围。
+
+### POST_MESSAGE 交叉复核修正
+
+COUNT 消费者支持原生 `$.automation_resource_id` 分组，原候选却遗漏该字段。
+现在 `record_count` 从同一锁定 Invocation 读取非空 Automation UUID，同时写入
+dimensions 和 CloudEvent；16000 的原精确约束核对同一字段，不取客户端或最新版本。
+最终源码 tree `9be52b40ba26ead79558ef75a0045cda263a03a9` 相对上述基底为
+26 文件 +1739/-65；增量两文件 +5/-4，不改变发布重试、UNKNOWN 或其他计量分支。
+
+原 SDK 中 fmt 与 POST Rust 目标退出 0，1 passed。隔离库原 70 条迁移通过，
+COUNT 正向 1 项、负向 6 项通过；删除实际目标守卫后退出 3，报告
+`TEST FAILURE: count missing automation target accepted`，原函数逐字恢复后再退出 0。
+自有隔离库已删除并读回不存在，未修改线上数据库。
+原件同目录 `count-target-handoff.md`；增量 patch SHA
+`2ccd7dd4fa34c67c247e9067cfc370bc945a89415b43d155feaa2f761b12e135`，
+最终 Rust 日志 SHA `40cd4ee2a44cdb111169a637c07185653e90b833dbd97d75f53c0228b2e568df`。
+
+### Mobile 同批只读消费
+
+按 REQ-21、设计 `17` §8 与 DD-107，Mobile 仍只通过 BFF 读取，不新增管理写入口。
+原 provider 已改用生成的封闭 ActionKind，保留 scope、版本和模板检查；详情页对
+AGENT_TURN/POST_MESSAGE 使用同源文案。未知枚举仍解码失败，不展示模板正文。
+变更三文件 +56/-2，包含实现后补充的双动作、双语言只读及未知动作五项场景。
+
+固定 Flutter 3.41.7/Dart 3.11.5 镜像 `644e3cea…`、实际 4 CPU/8 GiB/swap 0 中，
+原 format、analyze 退出 0，pages/read_state 两目标共 99 passed。首轮仅新增检查闭包
+格式失败，保留该退出 1；纠正机械格式后通过。恢复旧 AGENT_TURN-only 生产限制、
+错置 POST_MESSAGE 展示文案两次变异各令双语言断言失败，均退出 1；逐字还原后
+format/analyze/99 项再次退出 0。生成物、锁文件和三源摘要还原一致。
+原件 `/volumes/data/kailo/tmp/codex-mobile-post-consumer-20261004.COYIcL/handoff.md`，
+最终日志 SHA `82df70d3e14b22a61a7832d7baaf084b28a115a3141103c0677de4e5512a4921`。
+本次是模拟 BFF 的真实 widget 检查，不是设备、真实发布或签名验收；自有 SDK 已删除，
+证据保留，服务和业务数据未动。
+
+### Relay 触发与版本回读的消费遗漏
+
+主线全引用复核发现原候选仍有两处 AGENT_TURN-only 限制：
+`automation::inspect` 拒绝消息/提及触发的 POST_MESSAGE，
+`automation_query::versions` 拒绝回读其版本。这会让表单与执行器已有支持却无法使用。
+两处实际消费者已修为同一封闭动作集合，未知动作、审批未实现、scope 与触发限制
+保留；模型专属 `turn_template` 和模型回复读取的 AGENT_TURN 条件不移除。
+这属于 DD-107 已定范围内的消费缺口，不改契约、迁移、UI 输入或运行数据。
+定向验证与最终合并门禁须以本修正后的树为准，不沿用前述候选通过记录。
+
+修正后的生产入口分别调用原模块私有守卫，版本动作由既有生成 ContentAction
+解码，未知字段和空模板继续拒绝。最终增量 tree
+`517fdc310913dd889de75df53268322df05bd280`，相对上述 `9be52b40…` 为三文件
++86/-16。原 post_message 过滤目标 4 passed；将两生产守卫恢复为旧单动作限制后
+2 failed、退出 101；逐字还原后同目标 4 passed，fmt 和 Clippy `--tests -D warnings`
+退出 0。未以此声称真实 Relay 端到端发送通过。
+同目录 `relay-reader-increment.patch` SHA
+`e712c8997d95091300c5c618bfdc95bb35f21eff8c30adff5b5191ed53d515ef`；
+`relay-reader-restored.log` SHA `20e78cc6d48706ff497b4ea9b567b4d7d452dd2377feaab462e9fd56e923af57`。
+
+### 同批 Web 产物
+
+选定源码在独立交付树沿原 `tools/build-upstream.sh web-client` 构建退出 0；
+实际 builder 为既有 `kailo-core-data`，8 CPU/16 GiB/swap 0、Data 持久缓存。
+没有为小修正重建客户端：上述两后端入口修正和 Mobile 不改变 Web 输入。
+原 helper 登记 source `9abde23f874d145c5218d41d57313705ffd07aad7cc4c48bf61491297dd792f9`，
+artifact `616c02549f3b4f7d13d6a68165aa31720960897c15d5e4ca8e3b2c8a34de1ac0`；
+registry manifest 独立 GET 的 SHA-256、image ID 与 RepoDigest 一致。
+日志 `/volumes/data/kailo/tmp/codex-post-message-delivery-20261004.E3t8Tv/web-build.log`，
+SHA `6457c7df8c64ff6fb466ce63717aee665485989c683dcc0b393940362a2bc146`。
+本段记录构建与来源，不是新 Web 部署或真实模板消息的业务终态。
+
+### 同批 Win11 产物与输入闭合
+
+同一交付树的原 `tools/build-upstream.sh desktop-client` 已实际退出 0；没有重启或
+另开第二次构建。原 Windows x64 NSIS 包为 15,114,394 字节，source
+`27fcae1e610a8a7de0f9cbc0d4ef9f919074a7a6f92bd05a2d28caa95c8872e1`，artifact
+`712e4667df1a180b54dbf1642ddc67d6fa211a896565888468c97424206ccb23`。
+2,267 个实际输入的路径、类型与字节摘要前后 cmp 退出 0；原 pnpm 与 Desktop
+Cargo 两锁 SHA-256 校验均为 OK，没有构建中升级锁或源码。
+
+包位于 `/volumes/data/kailo/tmp/codex-post-message-delivery-20261004.E3t8Tv/apps/dist/desktop-client/Kailo_0.5.23_x64-setup.exe`。
+同目录上级交付原件 `desktop-build.exit` 为 0，`desktop-inputs-result.log` 留存输入核对；
+`desktop-build.log` SHA 为 `7cbad88abb53e850f05c686b7fa841e327ec3332bd6fb52253b20b9b181a4217`。
+实际执行者仍为既有 8 CPU/16 GiB/swap 0 的受限 BuildKit 与 Data 缓存。
+冷 APT 安装实际耗时 1,045 秒；原 Rust release 2 分 24 秒、NSIS 生成成功。
+上游 dead-code、跨平台打包与跳过签名警告保留；本包未签名、未在 Win11 安装运行，
+不能据此关闭设备、真实模板发布或生产门禁。仅同步产物来源，不部署本批服务。
+
+### 模板消息整批门禁回执
+
+相对 `ea06cf9da925a5eec23591d14e61658764ef2093`，冻结树
+`d3d8722f54bfac38115d77df007a4b281dc5efd2` 为 49 文件 +2071/-103。
+原 `./tools/check.sh --full` 实际退出 0；本次只执行一次，没有重打产品镜像。
+SDK 为 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 4 CPU/8 GiB/swap 0、Cargo 16，缓存仍在 Data 卷。
+Rust/Go/TypeScript/Dart、167 个 schema 同步及兼容、Workflow replay、19 条追溯、
+六份来源、32 个产物与原安全门禁通过。Core 单元 144 passed、5 ignored；另两项
+外部演练 ignored。依赖外部配置而早返的目标不计业务验收。
+
+未提供 `DATABASE_URL` 的实际迁移演练、导出树没有 `.env` 的实际部署预检均 SKIP；
+隔离库迁移证据见本批前文，不将其冒充本次全量入口的实际数据库演练。
+内置秘密扫描通过但未安装 gitleaks。Win11 签名/设备验收、Mobile release 签名及
+真实 Relay/OpenMeter 模板发送终态仍未闭合。没有部署服务或修改线上业务数据。
+原件 `/volumes/data/kailo/tmp/codex-post-message-delivery-20261004.E3t8Tv/full.log`，
+SHA-256 `59cd18c81bd4db0be233437c559e7223f25ab10bd1b9a226be9016b09c43236b`。
+追加回执只走原文档快路径；实际提交与 push 以 Git 历史为准。

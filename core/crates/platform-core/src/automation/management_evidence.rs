@@ -137,9 +137,16 @@ fn management_content_rejects_unimplemented_or_ambiguous_policy() {
         invalid["action"]["template"] = template;
         assert!(management_content(&invalid).is_err());
     }
-    let mut invalid = content.clone();
-    invalid["action"]["kind"] = json!("POST_MESSAGE");
-    assert!(management_content(&invalid).is_err());
+    let mut message = content.clone();
+    message["action"]["kind"] = json!("POST_MESSAGE");
+    assert_eq!(
+        management_content(&message).unwrap()["action"],
+        message["action"]
+    );
+    for kind in [json!("FUTURE_ACTION"), serde_json::Value::Null] {
+        message["action"]["kind"] = kind;
+        assert!(management_content(&message).is_err());
+    }
     for prefix in [serde_json::Value::Null, json!(""), json!(1)] {
         let mut invalid = content.clone();
         invalid["trigger"]["textPrefix"] = prefix;
@@ -284,6 +291,44 @@ async fn real_run_query_and_pause_predicate_remain_valid_in_empty_database() {
     }
     pool.close().await;
 }
+#[test]
+fn relay_inspect_admits_post_message_and_agent_turn_for_both_native_triggers() {
+    for kind in ["AGENT_TURN", "POST_MESSAGE"] {
+        for trigger in ["CHANNEL_MESSAGE", "MENTION"] {
+            assert!(
+                super::relay_trigger_supported(
+                    None,
+                    &serde_json::json!({"kind":kind}),
+                    &serde_json::json!({"kind":trigger})
+                ),
+                "{kind}/{trigger}"
+            );
+        }
+    }
+    for action in [
+        serde_json::json!({}),
+        serde_json::json!({"kind":"UNKNOWN"}),
+        serde_json::json!({"kind":null}),
+    ] {
+        assert!(!super::relay_trigger_supported(
+            None,
+            &action,
+            &serde_json::json!({"kind":"MENTION"})
+        ));
+    }
+    for trigger in ["SCHEDULE", "WEBHOOK", "UNKNOWN"] {
+        assert!(!super::relay_trigger_supported(
+            None,
+            &serde_json::json!({"kind":"POST_MESSAGE"}),
+            &serde_json::json!({"kind":trigger})
+        ));
+    }
+    assert!(!super::relay_trigger_supported(
+        Some(uuid::Uuid::new_v4()),
+        &serde_json::json!({"kind":"POST_MESSAGE"}),
+        &serde_json::json!({"kind":"MENTION"})
+    ));
+}
 
 #[tokio::test]
 async fn first_turn_and_completed_reply_have_disjoint_native_fences() {
@@ -300,21 +345,24 @@ async fn first_turn_and_completed_reply_have_disjoint_native_fences() {
             .bind(ACTION)
             .bind(turn)
             .bind(Option::<&str>::None)
+            .bind(false)
+            .bind(false)
             .fetch_all(&pool)
             .await
             .expect("真实冻结Invocation SQL");
     }
     let predicate = FROZEN_INVOCATION_SQL
-        .split_once("and (($3::text is null")
+        .split_once("and ((")
         .expect("原首turn/回复阶段谓词")
         .1
         .split_once("\n           and a.action_key=")
         .expect("原阶段谓词末端")
         .0;
     let sql = format!(
-        "select coalesce(not i.cancel_pending and (($3::text is null{predicate},false)
-        from (select $1::text status,$2::text native_status,$5::text runtime_turn_id,
-          $6::text reply_event_id,$7::boolean cancel_pending) i"
+        "select coalesce(not i.cancel_pending and (({predicate},false)
+        from (select $1::text status,$2::text native_status,$7::text runtime_turn_id,
+          $8::text reply_event_id,$9::boolean cancel_pending,
+          null::uuid automation_version_asset_id,null::uuid automation_resource_id) i"
     );
     for status in [
         "CREATED",
@@ -340,6 +388,8 @@ async fn first_turn_and_completed_reply_have_disjoint_native_fences() {
                                 .bind(native)
                                 .bind(completed_turn)
                                 .bind(expected_reply)
+                                .bind(false)
+                                .bind(false)
                                 .bind(runtime_turn)
                                 .bind(reply)
                                 .bind(cancel_pending)

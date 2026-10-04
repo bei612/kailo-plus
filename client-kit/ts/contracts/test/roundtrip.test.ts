@@ -8,6 +8,22 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 import type { AutomationRunPage } from "../src/generated/contracts.js";
+import type { AutomationVersionContent } from "../src/generated/contracts.js";
+
+test("automation POST_MESSAGE round-trip preserves action and native schedule", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/automation-post-message.sample.json", import.meta.url), "utf8");
+  const original: unknown = JSON.parse(raw);
+  const typed: AutomationVersionContent = JSON.parse(raw);
+  ok(typed.action.kind === "POST_MESSAGE");
+  const reconstructed: AutomationVersionContent = {
+    trigger: { kind: typed.trigger.kind, scheduleSpec: typed.trigger.scheduleSpec && {
+      everySeconds: typed.trigger.scheduleSpec.everySeconds, offsetSeconds: typed.trigger.scheduleSpec.offsetSeconds,
+      catchupWindowSeconds: typed.trigger.scheduleSpec.catchupWindowSeconds,
+    } },
+    action: { kind: typed.action.kind, template: typed.action.template }, resultTarget: typed.resultTarget,
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
+});
 
 test("automation run pages preserve UNKNOWN and empty page", () => {
   const raw = readFileSync(new URL("../../../../contracts/samples/automation-run-pages.sample.json", import.meta.url), "utf8");

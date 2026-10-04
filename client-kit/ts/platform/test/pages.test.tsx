@@ -241,7 +241,7 @@ describe("shared Automation schedule consumer", () => {
   };
   const scheduleContent = { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
     action: { kind: "AGENT_TURN", template: "Report" }, resultTarget: "CHANNEL" };
-  const setup = async (targets: unknown, content?: unknown, recheckStatus?: number) => {
+  const setup = async (targets: unknown, content?: unknown, recheckStatus?: number, recheck?: Record<string, unknown>) => {
     const automation = { resourceId: "schedule-automation", workspaceId: installation.workspaceId,
       ownerPrincipalId: installation.ownerPrincipalId, executorInstallationResourceId: installation.resourceId,
       resourceVersion: 2, resourceState: "ACTIVE", state: "DRAFT" };
@@ -266,6 +266,7 @@ describe("shared Automation schedule consumer", () => {
       if (r.path === "/api/v1/actions") return { status: 202, body: {
         actionKey: (r.body as { actionKey: string }).actionKey, actionExecutionId: "schedule-ae", operationId: "schedule-op",
         gateState: "ALLOWED", dispatchState: "UNKNOWN",
+        ...(writes > 1 ? recheck : {}),
       } };
       return { status: 503, body: undefined };
     });
@@ -321,6 +322,37 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "Re-check same request"));
     expect(section.textContent).toContain("Outcome is not confirmed");
     expect(section.textContent).toContain("schedule-op");
+    expect([...section.querySelectorAll("button")].map((node) => node.textContent)).not.toContain("Cancel request");
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions");
+    expect(writes).toHaveLength(3);
+    expect(writes[1]?.[0].body).toEqual(writes[0]?.[0].body);
+    expect(writes[2]?.[0].body).toEqual(writes[0]?.[0].body);
+  });
+
+  it("freezes POST_MESSAGE as the existing governed automation action", async () => {
+    const { section, t, choose, fill } = await setup(["TRIGGER_THREAD"]);
+    await choose("Action", "POST_MESSAGE");
+    await fill("Instruction template", "Literal ${source} template");
+    await click(button(section, "Review request"));
+    await click(button(section, "Submit governed request"));
+    const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.[0].body).toMatchObject({ actionKey: "automation.create",
+      automationVersionContent: { action: { kind: "POST_MESSAGE", template: "Literal ${source} template" },
+        resultTarget: "TRIGGER_THREAD" } });
+  });
+
+  it.each(["operationId", "actionExecutionId"])("rejects another %s while reconciling the frozen UNKNOWN request", async (field) => {
+    const { section, t, fill } = await setup(["TRIGGER_THREAD"], undefined, undefined,
+      { [field]: "foreign-operation", gateState: "DENIED", dispatchState: "NOT_DISPATCHED", reason: "PERMISSION_DENIED" });
+    await fill("Instruction template", "Report");
+    await click(button(section, "Review request"));
+    await click(button(section, "Submit governed request"));
+    await click(button(section, "Re-check same request"));
+    expect(section.textContent).toContain("Outcome is not confirmed");
+    expect(section.textContent).toContain("schedule-op");
+    expect(section.textContent).not.toContain("foreign-operation");
     expect([...section.querySelectorAll("button")].map((node) => node.textContent)).not.toContain("Cancel request");
     await click(button(section, "Re-check same request"));
     const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions");

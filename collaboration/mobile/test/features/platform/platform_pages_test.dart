@@ -98,6 +98,7 @@ void main() {
       Map<String, Object?> trigger,
       String target, {
       String workspace = 'workspace-1',
+      String action = 'AGENT_TURN',
     }) => {
       'automation': {
         'resourceId': 'automation-1',
@@ -120,7 +121,7 @@ void main() {
           'configHash': _thisDevice,
           'content': {
             'trigger': trigger,
-            'action': {'kind': 'AGENT_TURN', 'template': 'Authorized template'},
+            'action': {'kind': action, 'template': 'Authorized template'},
             'resultTarget': target,
           },
         },
@@ -190,6 +191,51 @@ void main() {
         );
       });
     }
+
+    for (final locale in [const Locale('en'), const Locale('zh', 'CN')]) {
+      for (final (kind, label) in [
+        ('AGENT_TURN', PlatformMessageKey.agentsAutomationAgentTurn),
+        ('POST_MESSAGE', PlatformMessageKey.agentsAutomationPostMessage),
+      ]) {
+        testWidgets('$kind action is readable without controls in $locale', (
+          tester,
+        ) async {
+          await show(
+            tester,
+            detail(schedule, 'CHANNEL', action: kind),
+            locale: locale,
+          );
+          expect(
+            find.byKey(const ValueKey('platform-automation-detail')),
+            findsOneWidget,
+          );
+          expect(
+            find.text(platformText(label, locale: locale.toLanguageTag())),
+            findsOneWidget,
+          );
+          expect(find.text('Authorized template'), findsOneWidget);
+          expect(find.byType(TextField), findsNothing);
+          expect(find.byType(TextFormField), findsNothing);
+          for (final key in [
+            PlatformMessageKey.agentsAutomationPublish,
+            PlatformMessageKey.agentsAutomationEnable,
+            PlatformMessageKey.agentsAutomationDisable,
+          ]) {
+            expect(
+              find.text(platformText(key, locale: locale.toLanguageTag())),
+              findsNothing,
+            );
+          }
+        });
+      }
+    }
+    testWidgets('Unknown action cannot reveal template content', (
+      tester,
+    ) async {
+      await show(tester, detail(schedule, 'CHANNEL', action: 'FUTURE'));
+      expect(find.byKey(const ValueKey('platform-view-error')), findsOneWidget);
+      expect(find.text('Authorized template'), findsNothing);
+    });
 
     for (final (trigger, label) in [
       (

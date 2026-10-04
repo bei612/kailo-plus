@@ -1,0 +1,5 @@
+{
+  "trigger": {"kind": "SCHEDULE", "scheduleSpec": {"everySeconds": 60, "offsetSeconds": 0, "catchupWindowSeconds": 10}},
+  "action": {"kind": "POST_MESSAGE", "template": "Literal ${source} template"},
+  "resultTarget": "CHANNEL"
+}

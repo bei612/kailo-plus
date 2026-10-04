@@ -259,10 +259,23 @@ pub(crate) async fn fixed_core(
 // agent_invocation::dispatch can also finalize a never-started CREATED row as
 // FAILED. record_dispatch persists its certain refusal as ABORTED, not
 // NOT_DISPATCHED. Other failed/unknown rows remain unresolved without a turn.
+// Frozen POST_MESSAGE rows did not enter Codex. Exclude them only with exact
+// Automation/AE scope and no model evidence; unknown/missing kinds still block.
 const MEMORY_PHASE_FACTS: &str =
     "select coalesce(bool_or(prior.runtime_turn_id is not null),false),
             coalesce(bool_or(prior.id is not null and prior.runtime_turn_id is null
               and prior.status not in ('CREATED','CANCELED')
+              and not (prior.native_status is null
+                and not exists(select 1 from projection.agent_model_trace mt
+                  where mt.invocation_id=prior.id)
+                and exists(select 1 from catalog.automation_version av
+                  join admission.action_execution ae on ae.id=prior.action_execution_id
+                  where av.asset_id=prior.automation_version_asset_id
+                    and av.automation_resource_id=prior.automation_resource_id
+                    and av.action->>'kind'='POST_MESSAGE'
+                    and ae.action_key='automation.run' and ae.tenant_id=prior.tenant_id
+                    and ae.workspace_id=prior.workspace_id
+                    and ae.target_id=prior.automation_resource_id))
               and not (prior.status='FAILED' and prior.native_status is null
                 and prior.reply_event_id is null
                 and not exists(select 1 from projection.agent_model_trace mt

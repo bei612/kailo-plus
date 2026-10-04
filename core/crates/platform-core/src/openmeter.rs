@@ -811,6 +811,44 @@ impl OpenMeter {
         action: &str,
         keys: &[String],
     ) -> Result<(Vec<GatewayMeter>, Option<InvocationMeter>), Error> {
+        self.execution_meters(tenant, customer_id, subject, action, keys, true)
+            .await
+    }
+
+    /// DD-107 POST_MESSAGE has exactly the native COUNT meter, not a synthetic
+    /// model request. All native Customer/subject/meter uniqueness checks below
+    /// are shared with the model producer.
+    pub(crate) async fn message_meter(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+        subject: &str,
+    ) -> Result<InvocationMeter, Error> {
+        let (models, count) = self
+            .execution_meters(
+                tenant,
+                customer_id,
+                subject,
+                "automation.run",
+                &["automation.run".to_owned()],
+                false,
+            )
+            .await?;
+        if !models.is_empty() {
+            return Err(Error::Precondition);
+        }
+        count.ok_or(Error::Precondition)
+    }
+
+    async fn execution_meters(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+        subject: &str,
+        action: &str,
+        keys: &[String],
+        require_model: bool,
+    ) -> Result<(Vec<GatewayMeter>, Option<InvocationMeter>), Error> {
         let customer = self
             .customer_by_id(customer_id, tenant)
             .await?
@@ -914,7 +952,7 @@ impl OpenMeter {
                 value_property: property.to_owned(),
             });
         }
-        if selected.is_empty() {
+        if require_model && selected.is_empty() {
             return Err(Error::Precondition);
         }
         Ok((selected, InvocationMeter::for_action(action, invocation)?))

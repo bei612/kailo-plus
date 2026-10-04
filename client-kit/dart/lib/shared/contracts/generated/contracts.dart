@@ -1256,9 +1256,12 @@ class ContentAction {
   });
 }
 
-enum ActionKind { AGENT_TURN }
+enum ActionKind { AGENT_TURN, POST_MESSAGE }
 
-final actionKindValues = EnumValues({"AGENT_TURN": ActionKind.AGENT_TURN});
+final actionKindValues = EnumValues({
+  "AGENT_TURN": ActionKind.AGENT_TURN,
+  "POST_MESSAGE": ActionKind.POST_MESSAGE,
+});
 
 enum AutomationResultTarget { CHANNEL, TRIGGER_THREAD }
 

@@ -20,6 +20,16 @@ fn sample_path() -> PathBuf {
 }
 
 #[test]
+fn automation_post_message_roundtrip_preserves_action_and_native_schedule() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("automation-post-message.sample.json"))
+            .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::AutomationVersionContent = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
 fn canary_roundtrip_preserves_every_field() {
     let raw = fs::read_to_string(sample_path()).expect("读取样例");
     let original: serde_json::Value = serde_json::from_str(&raw).expect("样例是合法 JSON");

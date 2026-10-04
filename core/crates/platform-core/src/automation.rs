@@ -17,6 +17,7 @@ use crate::{
 
 const ACTION: &str = "automation.run";
 
+pub(crate) mod post_message;
 mod schedule;
 pub(crate) use schedule::converge_scope_schedules;
 pub(crate) use schedule::interval as schedule_spec;
@@ -168,7 +169,10 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
     }) || action
         .keys()
         .any(|key| !matches!(key.as_str(), "kind" | "template"))
-        || action.get("kind").and_then(Value::as_str) != Some("AGENT_TURN")
+        || !matches!(
+            action.get("kind").and_then(Value::as_str),
+            Some("AGENT_TURN" | "POST_MESSAGE")
+        )
         || action
             .get("template")
             .and_then(Value::as_str)
@@ -434,7 +438,7 @@ async fn management_installation(
         join catalog.asset a on a.id=v.asset_id and a.tenant_id=r.tenant_id
         join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
           and p.generation=i.active_projection_generation and p.agent_version_asset_id=v.asset_id
-        join catalog.agent_model_binding b on b.installation_resource_id=i.resource_id
+        left join catalog.agent_model_binding b on b.installation_resource_id=i.resource_id
           and b.projection_generation=p.generation and b.model_route_resource_id=p.model_route_resource_id
         join identity.principal agent on agent.id=i.agent_principal_id and agent.tenant_id=r.tenant_id
         join identity.principal owner on owner.id=r.owner_principal_id and owner.tenant_id=r.tenant_id
@@ -444,14 +448,16 @@ async fn management_installation(
         where r.id=$1 and r.tenant_id=$2 and i.workspace_id=$3 and r.home_workspace_id=$3
           and r.state='ACTIVE' and r.projection_action_execution_id is null and i.state='ACTIVE'
           and v.state='PUBLISHED' and a.state='PUBLISHED' and a.projection_action_execution_id is null
-          and p.state='ACTIVE' and b.secret_status='ACTIVE' and b.secret_version>0
+          and p.state='ACTIVE' and ($4 or (b.secret_status='ACTIVE' and b.secret_version>0
           and length(b.secret_locator)>0 and length(b.secret_audience)>0
-          and length(b.native_key_id)>0 and b.native_key_revision>0
+          and length(b.native_key_id)>0 and b.native_key_revision>0))
           and agent.kind='AGENT' and agent.status='ACTIVE'
           and owner.kind='HUMAN' and owner.status='ACTIVE' and tm.state='ACTIVE'
           and version_owner.kind='HUMAN' and version_owner.status='ACTIVE' and version_tm.state='ACTIVE'
-        for update of r,i,v,a,p,b,agent,owner,tm,version_owner,version_tm")
-        .bind(installation).bind(tenant).bind(workspace).fetch_optional(&mut **tx).await?;
+        for update of r,i,v,a,p,agent,owner,tm,version_owner,version_tm")
+        .bind(installation).bind(tenant).bind(workspace)
+        .bind(content.pointer("/action/kind").and_then(Value::as_str)==Some("POST_MESSAGE"))
+        .fetch_optional(&mut **tx).await?;
     let Some((agent, requested)) = actual else {
         return Err(Refusal::Precondition(ReasonCode::BindingNotActive));
     };
@@ -474,7 +480,11 @@ async fn management_installation(
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
-    crate::agent_version::validate_references(g, tx, tenant, human, &requested).await
+    if content.pointer("/action/kind").and_then(Value::as_str) == Some("POST_MESSAGE") {
+        Ok(())
+    } else {
+        crate::agent_version::validate_references(g, tx, tenant, human, &requested).await
+    }
 }
 
 pub(crate) async fn management_prewrite(
@@ -1165,9 +1175,8 @@ const RUN: &str = "select r.id resource_id,r.tenant_id,d.workspace_id,r.version 
     join catalog.resource ir on ir.id=i.resource_id and ir.tenant_id=t.id and ir.home_workspace_id=w.id
     join identity.principal agent on agent.id=i.agent_principal_id and agent.tenant_id=t.id
     join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
-      and p.generation=i.active_projection_generation and p.agent_version_asset_id=i.pinned_version_asset_id
-      and ($2::uuid is null or (p.generation=invocation.projection_generation
-        and p.agent_version_asset_id=invocation.agent_version_asset_id))
+      and p.generation=case when $2::uuid is null then i.active_projection_generation else invocation.projection_generation end
+      and p.agent_version_asset_id=case when $2::uuid is null then i.pinned_version_asset_id else invocation.agent_version_asset_id end
     where r.id=$1 and r.type_key='automation' and r.home_workspace_id=w.id
       and r.application_binding_id is null and r.state='ACTIVE' and r.projection_action_execution_id is null
       and type.status='ACTIVE' and d.enabled_at is not null
@@ -1254,13 +1263,15 @@ async fn fresh(
     def: &Definition,
     operation: Option<Uuid>,
 ) -> Result<String, Refusal> {
-    // 此切片只接真实 AGENT_TURN。尚无 child step-approval/POST_MESSAGE producer 时不开放。
-    if row.action.get("kind").and_then(Value::as_str) != Some("AGENT_TURN")
-        || row
-            .action
-            .get("template")
-            .and_then(Value::as_str)
-            .is_none_or(|s| s.trim().is_empty())
+    // Both DD-107 action consumers exist; child step approval is still closed.
+    if !matches!(
+        row.action.get("kind").and_then(Value::as_str),
+        Some("AGENT_TURN" | "POST_MESSAGE")
+    ) || row
+        .action
+        .get("template")
+        .and_then(Value::as_str)
+        .is_none_or(|s| s.trim().is_empty())
         || !matches!(
             row.trigger.get("kind").and_then(Value::as_str),
             Some("CHANNEL_MESSAGE" | "MENTION" | "SCHEDULE")
@@ -1380,7 +1391,13 @@ async fn fresh(
         }
         revision = Some(checked.zed_token);
     }
-    g.check_automation_quota(row.tenant_id, def).await?;
+    // DD-107: the registered meter set is the maximum for this Action. A
+    // template publication does not request or consume model capacity/quota.
+    let mut effective = def.clone();
+    if row.action.get("kind").and_then(Value::as_str) == Some("POST_MESSAGE") {
+        effective.meters.retain(|meter| meter == "automation.run");
+    }
+    g.check_automation_quota(row.tenant_id, &effective).await?;
     // 外部 permission、runtime 与 quota 读取可能跨过到期时刻；原 Grant 行锁
     // 阻止 revoke 写入，但不能冻结时钟。每个真实副作用前按当前数据库时钟收口。
     let still_valid: bool = sqlx::query_scalar(
@@ -1426,7 +1443,11 @@ const FROZEN_INVOCATION_SQL: &str = "select i.automation_resource_id,i.automatio
             i.source_event_id,i.root_event_id
          from catalog.agent_invocation i join admission.action_execution a on a.id=i.action_execution_id
          where i.id=$1 and not i.cancel_pending
-           and ((not $5 and $3::text is null and $4::text is null and i.status in ('CREATED','DISPATCHING') and i.runtime_turn_id is null)
+           and (($6 and not $5 and $3::text is null and i.status in ('CREATED','DISPATCHING','UNKNOWN')
+                 and i.runtime_turn_id is null and i.native_status is null and i.reply_event_id is not distinct from $4::text
+                 and exists(select 1 from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
+                   and v.automation_resource_id=i.automation_resource_id and v.action->>'kind'='POST_MESSAGE'))
+             or (not $6 and not $5 and $3::text is null and $4::text is null and i.status in ('CREATED','DISPATCHING') and i.runtime_turn_id is null)
              or (not $5 and $3::text is not null and i.status in ('RUNNING','UNKNOWN')
                and i.native_status='completed' and i.runtime_turn_id=$3 and i.reply_event_id is not distinct from $4::text)
              or ($5 and $4::text is null and i.status='RUNNING' and i.native_status='inProgress'
@@ -1440,7 +1461,7 @@ pub(crate) async fn fresh_invocation(
     tx: &mut Transaction<'_, Postgres>,
     invocation: Uuid,
 ) -> Result<(), Refusal> {
-    recheck_invocation(state, tx, invocation, None, None, false)
+    recheck_invocation(state, tx, invocation, None, None, false, false)
         .await
         .map(|_| ())
 }
@@ -1456,7 +1477,16 @@ pub(crate) async fn fresh_reply(
     if turn_id.trim().is_empty() || expected_reply.is_some_and(|reply| reply.trim().is_empty()) {
         return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
     }
-    recheck_invocation(state, tx, invocation, Some(turn_id), expected_reply, false).await
+    recheck_invocation(
+        state,
+        tx,
+        invocation,
+        Some(turn_id),
+        expected_reply,
+        false,
+        false,
+    )
+    .await
 }
 
 /// Same frozen Automation checks, only for the existing live native tool turn.
@@ -1469,7 +1499,7 @@ pub(crate) async fn fresh_tool(
     if turn.is_empty() {
         return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
     }
-    recheck_invocation(state, tx, invocation, Some(turn), None, true).await
+    recheck_invocation(state, tx, invocation, Some(turn), None, true, false).await
 }
 
 async fn recheck_invocation(
@@ -1479,6 +1509,7 @@ async fn recheck_invocation(
     completed_turn: Option<&str>,
     expected_reply: Option<&str>,
     tool: bool,
+    post_message: bool,
 ) -> Result<String, Refusal> {
     let g = &state.governance;
     let frozen: Option<FrozenInvocation> = sqlx::query_as(FROZEN_INVOCATION_SQL)
@@ -1487,6 +1518,7 @@ async fn recheck_invocation(
         .bind(completed_turn)
         .bind(expected_reply)
         .bind(tool)
+        .bind(post_message)
         .fetch_optional(&mut **tx)
         .await?;
     let Some(frozen) = frozen else {
@@ -1576,7 +1608,7 @@ async fn recheck_invocation(
             .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
         source_human(g, tx, &runtime_scope(&row), author, pubkey).await?;
     }
-    fresh_runtime(state, tx, &runtime_scope(&row)).await?;
+    fresh_executor(state, tx, &row).await?;
     let revision = fresh(g, tx, &row, &def, Some(frozen.operation_id)).await?;
     g.record_automation_decision(tx, &ae, &def, "RECHECK", Ok(revision.clone()))
         .await?;
@@ -1616,6 +1648,49 @@ fn runtime_scope(row: &Run) -> RuntimeScope {
         owner_principal_id: row.owner_principal_id,
         agent_principal_id: row.agent_principal_id,
     }
+}
+
+async fn fresh_executor(
+    state: &ServiceState,
+    tx: &mut Transaction<'_, Postgres>,
+    row: &Run,
+) -> Result<(), Refusal> {
+    match row.action.get("kind").and_then(Value::as_str) {
+        Some("AGENT_TURN") => fresh_runtime(state, tx, &runtime_scope(row)).await,
+        Some("POST_MESSAGE") => post_message::fresh(state, tx, &runtime_scope(row)).await,
+        _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
+    }
+}
+
+/// Called only by the original AgentTask Activity's template branch. The same
+/// immutable Automation/Delegation/source checks are repeated before publish.
+pub(crate) async fn fresh_post_message(
+    state: &ServiceState,
+    tx: &mut Transaction<'_, Postgres>,
+    invocation: Uuid,
+    expected_reply: Option<&str>,
+) -> Result<(String, post_message::MessageBinding, String), Refusal> {
+    let revision =
+        recheck_invocation(state, tx, invocation, None, expected_reply, false, true).await?;
+    let resource: Uuid = sqlx::query_scalar(
+        "select automation_resource_id from catalog.agent_invocation where id=$1",
+    )
+    .bind(invocation)
+    .fetch_one(&mut **tx)
+    .await?;
+    let row = run(tx, resource, Some(invocation)).await?;
+    if row.action.get("kind").and_then(Value::as_str) != Some("POST_MESSAGE") {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let binding = post_message::binding(tx, &runtime_scope(&row)).await?;
+    let template = row
+        .action
+        .get("template")
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(invalid_management)?
+        .to_owned();
+    Ok((template, binding, revision))
 }
 
 pub(crate) async fn fresh_runtime(
@@ -1906,6 +1981,18 @@ struct Cursor {
     before_id: Option<String>,
 }
 
+fn relay_trigger_supported(policy: Option<Uuid>, action: &Value, trigger: &Value) -> bool {
+    policy.is_none()
+        && matches!(
+            action.get("kind").and_then(Value::as_str),
+            Some("AGENT_TURN" | "POST_MESSAGE")
+        )
+        && matches!(
+            trigger.get("kind").and_then(Value::as_str),
+            Some("CHANNEL_MESSAGE" | "MENTION")
+        )
+}
+
 async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(), Refusal> {
     let mut conn = state.pool.begin().await?;
     // 没有持有 Tenant/Resource 写锁的网络读取；真正准入之后重新锁所有事实。
@@ -1916,13 +2003,7 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
         .await?
         .ok_or(Refusal::Precondition(ReasonCode::TargetStateConflict))?;
     let def = definition(&state.governance).await?;
-    if row.approval_policy_id.is_some()
-        || row.action.get("kind").and_then(Value::as_str) != Some("AGENT_TURN")
-        || !matches!(
-            row.trigger.get("kind").and_then(Value::as_str),
-            Some("CHANNEL_MESSAGE" | "MENTION")
-        )
-    {
+    if !relay_trigger_supported(row.approval_policy_id, &row.action, &row.trigger) {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     let key = format!(
@@ -2169,13 +2250,18 @@ async fn admit(
     if existed {
         return Ok(());
     }
-    let ready = crate::agent_installation::admit_runtime(
-        state,
-        snapshot.executor_installation_resource_id,
-        snapshot.agent_version_asset_id,
-        snapshot.projection_generation,
-    )
-    .await;
+    let ready = if snapshot.action.get("kind").and_then(Value::as_str) == Some("POST_MESSAGE") {
+        Ok(None)
+    } else {
+        crate::agent_installation::admit_runtime(
+            state,
+            snapshot.executor_installation_resource_id,
+            snapshot.agent_version_asset_id,
+            snapshot.projection_generation,
+        )
+        .await
+        .map(Some)
+    };
     let mut tx = state.pool.begin().await?;
     let active: bool =
         sqlx::query_scalar("select state='ACTIVE' from identity.tenant where id=$1 for update")
@@ -2235,7 +2321,9 @@ async fn admit(
     .await?;
     let result = async {
         let ready = ready?;
-        if ready.tenant_id != row.tenant_id || ready.workspace_id != row.workspace_id {
+        if ready.is_some_and(|ready| {
+            ready.tenant_id != row.tenant_id || ready.workspace_id != row.workspace_id
+        }) {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
         source_human(
@@ -2246,7 +2334,7 @@ async fn admit(
             &event.pubkey.to_hex(),
         )
         .await?;
-        fresh_runtime(state, &mut tx, &runtime_scope(&row)).await?;
+        fresh_executor(state, &mut tx, &row).await?;
         fresh(&state.governance, &mut tx, &row, def, None).await
     }
     .await;
@@ -2371,7 +2459,7 @@ async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
         }
         let used:bool=sqlx::query_scalar("select exists(select 1 from admission.delegation_use where delegation_id=$1 and operation_id=$2)")
             .bind(row.delegation_id).bind(ae.operation_id).fetch_one(&mut *tx).await?;
-        fresh_runtime(state, &mut tx, &runtime_scope(&row)).await?;
+        fresh_executor(state, &mut tx, &row).await?;
         let revision = fresh(
             &state.governance,
             &mut tx,

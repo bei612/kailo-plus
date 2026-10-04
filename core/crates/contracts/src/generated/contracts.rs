@@ -356,6 +356,9 @@ pub struct ContentAction {
 pub enum ActionKind {
     #[serde(rename = "AGENT_TURN")]
     AgentTurn,
+
+    #[serde(rename = "POST_MESSAGE")]
+    PostMessage,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

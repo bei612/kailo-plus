@@ -637,7 +637,6 @@ final platformAutomationProvider = FutureProvider.autoDispose
             version.ordinal <= 0 ||
             version.ownerPrincipalId.isEmpty ||
             !RegExp(r'^[0-9a-f]{64}$').hasMatch(version.configHash) ||
-            content.action.kind != ActionKind.AGENT_TURN ||
             content.action.template.trim().isEmpty ||
             !validTrigger ||
             trigger.textPrefix?.isEmpty == true) {

@@ -154,6 +154,15 @@ class PlatformAutomationDetailPage extends HookConsumerWidget {
                       ),
                     ],
                     field(
+                      PlatformMessageKey.agentsAutomationAction,
+                      text(switch (version.content.action.kind) {
+                        ActionKind.AGENT_TURN =>
+                          PlatformMessageKey.agentsAutomationAgentTurn,
+                        ActionKind.POST_MESSAGE =>
+                          PlatformMessageKey.agentsAutomationPostMessage,
+                      }),
+                    ),
+                    field(
                       PlatformMessageKey.agentsAutomationTemplate,
                       version.content.action.template,
                     ),

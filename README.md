@@ -24,6 +24,31 @@ Workflows 独立呈现 Automation 创建区，Agents 不再重复展示；没有
 Wren 不能记为已集成可用。完整产物、迁移与浏览器原件见
 [发布记录](core/verify/release-artifacts.md)。
 
+### 下一源码批：Automation 模板消息（未部署）
+
+DD-107 的 `POST_MESSAGE` 已接入原 `automation.run` 与 AgentTaskWorkflow，
+以执行 Installation 的既有 Buzz 身份发布模板，不启动 Codex、不伪造模型用量，
+也不占用模型 Capacity。发布前持久化事件意图并 fresh 校验；结果不明只查证，
+不重发。只有 Relay 精确事件回读与原 OpenMeter COUNT 落存都确认后才完成。
+Web/Desktop 仍消费同一 Workflows 表单与四侧生成契约；Mobile 没有新增写入口。
+该实现候选相对 `acbab8036911922c0dad4b4d28c7bb8e13c03afc` 为 26 文件
++1739/-65，已并入当前工作树；定向检查、四侧往返、隔离迁移和变异还原通过。
+随后补齐 Relay 触发、版本回读与 Mobile 两种动作消费；共享 Web 产物已沿原入口
+构建并独立核对 registry 摘要，Win11 同批原打包已退出 0，输入和锁文件未变。
+安装包仍未签名、未设备验收。整批固定树 `d3d8722f54bfac38115d77df007a4b281dc5efd2`
+的原 `./tools/check.sh --full` 已退出 0；数据库演练与部署配置预检仍明确跳过，
+七项显式演练 ignored，不把构建和检查通过记为真实消息发送或部署完成。原件见
+[Agent 记录](core/verify/agent-definition.md)。
+
+交叉复核已补齐 COUNT 的冻结 Automation 分组字段，缺失或错属均被数据库拒绝；
+Mobile 原只读详情也已接入两种动作的同源文案，仍无编辑或执行入口。
+
+WEBHOOK 仍不生成入口：设计 `06` §9 要求异步使用请求正文，但 `04` 的存储权威
+和 `05` §7 禁止把正文放入 Core、审计或 Temporal history，当前没有已定的
+webhook 正文持久来源与恢复接缝。不能借 OpenBao、影子 Relay 或可选业务组件
+代存；此缺口只阻断该触发，不阻断消息、定时和模板消息实现。审批关卡仍在开发，
+上述源码不得记作 Workflows 全范围完成。
+
 ### 当前源码批：原生工具治理与可插拔能力契约
 
 本批基于 `56ee0bbcfc5a8bcb0cd1b1e4e2c9dc985e39b6a3` 集中实现；现已随上述批次部署。

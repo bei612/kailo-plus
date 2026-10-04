@@ -754,7 +754,7 @@ async fn admit_once(
             .await?
             .ok_or_else(invalid_management)?;
         management_authorized(&state.governance, &mut tx, &ae, &def, &management).await?;
-        fresh_runtime(state, &mut tx, &runtime_scope(&row)).await?;
+        fresh_executor(state, &mut tx, &row).await?;
         fresh(&state.governance, &mut tx, &row, &def, None).await
     }
     .await;

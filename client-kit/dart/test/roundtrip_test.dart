@@ -9,6 +9,20 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'automation POST_MESSAGE round-trip preserves action and native schedule',
+    () {
+      final original = jsonDecode(
+        File(
+          '../../contracts/samples/automation-post-message.sample.json',
+        ).readAsStringSync(),
+      );
+      final typed = AutomationVersionContent.fromJson(
+        original as Map<String, dynamic>,
+      );
+      expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+    },
+  );
   test('automation run pages preserve UNKNOWN and empty page', () {
     final original =
         jsonDecode(

@@ -280,6 +280,7 @@ export interface AutomationVersionContentAction {
 
 export enum ActionKind {
     AgentTurn = "AGENT_TURN",
+    PostMessage = "POST_MESSAGE",
 }
 
 export enum AutomationResultTarget {

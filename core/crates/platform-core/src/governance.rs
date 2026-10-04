@@ -2548,6 +2548,15 @@ impl Governance {
         phase: &str,
         result: Result<String, &Refusal>,
     ) -> Result<(), sqlx::Error> {
+        let message_only: bool = sqlx::query_scalar(
+            "select exists(select 1 from catalog.automation_version v
+            where v.asset_id=($1::jsonb->>'automationVersionAssetId')::uuid
+              and v.automation_resource_id=$2 and v.action->>'kind'='POST_MESSAGE')",
+        )
+        .bind(&ae.parameters)
+        .bind(ae.target_id)
+        .fetch_one(&mut **tx)
+        .await?;
         let (outcome, token, reason) = match &result {
             Ok(token) => ("ALLOW", Some(token.as_str()), None),
             Err(Refusal::Unavailable(_)) => (
@@ -2563,11 +2572,12 @@ impl Governance {
              scope_decision,authorization_decision,delegation_decision,approval_decision,
              capacity_decision,quota_decision,audit_decision,zed_token,reason_code)
             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,$13,
-                    'NOT_APPLICABLE','REQUIRED',$13,'RECORDED',$14,$15)")
+                    'NOT_APPLICABLE',$16,$13,'RECORDED',$14,$15)")
             .bind(Uuid::new_v4()).bind(ae.operation_id).bind(ae.id).bind(phase).bind(ae.tenant_id)
             .bind(ae.workspace_id).bind(ae.initiator_principal_id).bind(ae.actor_principal_id)
             .bind(&ae.action_key).bind(ae.action_version).bind(ae.target_id).bind(&ae.parameter_hash)
-            .bind(outcome).bind(token).bind(reason.as_ref().map(wire)).execute(&mut **tx).await?;
+            .bind(outcome).bind(token).bind(reason.as_ref().map(wire))
+            .bind(if message_only { "NOT_APPLICABLE" } else { "REQUIRED" }).execute(&mut **tx).await?;
         let source = ae
             .parameters
             .as_ref()

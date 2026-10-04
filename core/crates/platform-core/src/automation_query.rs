@@ -104,6 +104,25 @@ fn run_query() -> String {
 mod run_history_tests {
     use super::*;
 
+    #[test]
+    fn post_message_version_reader_preserves_both_implemented_actions() {
+        for kind in ["POST_MESSAGE", "AGENT_TURN"] {
+            assert!(version_action_supported(
+                &json!({"kind":kind,"template":"Frozen body"})
+            ));
+        }
+        for invalid in [
+            json!({"kind":"UNKNOWN","template":"body"}),
+            json!({"kind":null,"template":"body"}),
+            json!({"template":"body"}),
+            json!({"kind":"POST_MESSAGE"}),
+            json!({"kind":"POST_MESSAGE","template":"  "}),
+            json!({"kind":"POST_MESSAGE","template":"body","extra":true}),
+        ] {
+            assert!(!version_action_supported(&invalid));
+        }
+    }
+
     fn cursor() -> RunCursor {
         RunCursor {
             tenant: Uuid::from_u128(1),
@@ -635,7 +654,6 @@ async fn versions(
             continue;
         }
         let trigger = version.trigger.as_object().ok_or_else(unavailable)?;
-        let action = version.action.as_object().ok_or_else(unavailable)?;
         if version.asset_version <= 0
             || version.ordinal <= 0
             || trigger.keys().any(|key| {
@@ -644,14 +662,7 @@ async fn versions(
                     "kind" | "text_prefix" | "mention_principal_id" | "schedule_spec"
                 )
             })
-            || action
-                .keys()
-                .any(|key| !matches!(key.as_str(), "kind" | "template"))
-            || action.get("kind").and_then(Value::as_str) != Some("AGENT_TURN")
-            || action
-                .get("template")
-                .and_then(Value::as_str)
-                .is_none_or(|text| text.trim().is_empty())
+            || !version_action_supported(&version.action)
             || trigger
                 .get("text_prefix")
                 .is_some_and(|value| value.as_str().is_none_or(str::is_empty))
@@ -728,6 +739,21 @@ async fn versions(
     }
     Ok((values, next))
 }
+fn version_action_supported(value: &Value) -> bool {
+    let Some(action) = value.as_object() else {
+        return false;
+    };
+    action
+        .keys()
+        .all(|key| matches!(key.as_str(), "kind" | "template"))
+        && serde_json::from_value::<contracts::ContentAction>(value.clone()).is_ok_and(|action| {
+            matches!(
+                action.kind,
+                contracts::ActionKind::AgentTurn | contracts::ActionKind::PostMessage
+            ) && !action.template.trim().is_empty()
+        })
+}
+
 #[derive(FromRow)]
 struct GrantRow {
     id: Uuid,

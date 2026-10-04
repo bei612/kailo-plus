@@ -22,6 +22,7 @@ use crate::{
 };
 
 pub(crate) const WORKFLOW_TYPE: &str = "AgentTaskWorkflow";
+mod post_message;
 
 #[derive(FromRow)]
 struct Invocation {
@@ -43,13 +44,16 @@ struct Invocation {
     status: String,
     cancel_pending: bool,
     observation_cursor: Option<String>,
+    automation_action_kind: Option<String>,
 }
 
 const LOAD: &str =
     "select i.id,i.tenant_id,i.workspace_id,i.root_event_id,i.source_event_id,i.source_kind,
     i.installation_resource_id,i.agent_version_asset_id,i.projection_generation,
     i.action_execution_id,i.workflow_id,s.runtime_thread_id,i.runtime_turn_id,
-    i.native_status,i.reply_event_id,i.status,i.cancel_pending,i.observation_cursor
+    i.native_status,i.reply_event_id,i.status,i.cancel_pending,i.observation_cursor,
+    (select v.action->>'kind' from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
+      and v.automation_resource_id=i.automation_resource_id) automation_action_kind
     from catalog.agent_invocation i join catalog.agent_session s
       on s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
       and s.installation_resource_id=i.installation_resource_id where i.id=$1";
@@ -118,6 +122,9 @@ pub(crate) async fn advance(
     let Ok(attempt) = i32::try_from(input.attempt) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
+    if invocation.automation_action_kind.as_deref() == Some("POST_MESSAGE") {
+        return post_message::advance(&state, &invocation, &input).await;
+    }
     let holder = match state
         .capacity
         .acquire_or_renew(
@@ -485,7 +492,11 @@ async fn cancel_before_dispatch(
         (
             "canceled-before-dispatch",
             "OUTCOME",
-            "CANCELED_BEFORE_MODEL_DISPATCH",
+            if invocation.automation_action_kind.as_deref() == Some("POST_MESSAGE") {
+                "CANCELED_BEFORE_MESSAGE_DISPATCH"
+            } else {
+                "CANCELED_BEFORE_MODEL_DISPATCH"
+            },
         ),
         vec![
             crate::audit::Evidence::new(EvidenceKind::ActionExecutionId, ae.id),
@@ -1367,7 +1378,7 @@ async fn observe(
                 }
             },
         };
-        let waiting = match reconcile_reply(state, invocation, id, &event_id).await {
+        let waiting = match reconcile_reply(state, invocation, Some(id), &event_id).await {
             Ok(Some(delivered)) => {
                 return finish_billed_turn(
                     state,
@@ -1623,10 +1634,21 @@ fn reply_activity_current(
     attempt: i32,
     now: chrono::DateTime<chrono::Utc>,
 ) -> bool {
+    activity_current(observed, invocation, generation, attempt, now, false)
+}
+
+fn activity_current(
+    observed: &crate::temporal::ActivityObservation,
+    invocation: Uuid,
+    generation: i64,
+    attempt: i32,
+    now: chrono::DateTime<chrono::Utc>,
+    allow_cancel: bool,
+) -> bool {
     if observed.invocation_id != invocation.to_string()
         || observed.projection_generation != generation
         || observed.scheduled_event_id <= 0
-        || observed.workflow_cancel_requested
+        || (!allow_cancel && observed.workflow_cancel_requested)
         || attempt <= 0
     {
         return false;
@@ -1654,7 +1676,7 @@ fn reply_activity_current(
 
 #[cfg(test)]
 mod released_reply_activity_tests {
-    use super::reply_activity_current;
+    use super::{activity_current, reply_activity_current};
     use crate::temporal::{ActivityObservation, ActivityState};
     use chrono::{TimeDelta, TimeZone, Utc};
     use uuid::Uuid;
@@ -1672,6 +1694,27 @@ mod released_reply_activity_tests {
                 heartbeat_timeout_seconds: 10,
             },
         }
+    }
+
+    #[test]
+    fn post_message_cancel_observation_still_requires_current_native_attempt() {
+        let invocation = Uuid::new_v4();
+        let now = Utc.timestamp_opt(110, 0).unwrap();
+        let mut observed = started(invocation);
+        observed.workflow_cancel_requested = true;
+        assert!(activity_current(&observed, invocation, 3, 2, now, true));
+        assert!(!activity_current(&observed, invocation, 3, 2, now, false));
+        assert!(!activity_current(&observed, invocation, 3, 1, now, true));
+        assert!(!activity_current(
+            &observed,
+            Uuid::new_v4(),
+            3,
+            2,
+            now,
+            true
+        ));
+        observed.state = ActivityState::Unconfirmed;
+        assert!(!activity_current(&observed, invocation, 3, 2, now, true));
     }
 
     #[test]
@@ -2037,7 +2080,7 @@ const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.hu
   join admission.action_execution ae on ae.id=i.action_execution_id
     and ae.tenant_id=i.tenant_id and ae.workspace_id=i.workspace_id
   join catalog.agent_installation a on a.resource_id=i.installation_resource_id
-    and a.workspace_id=i.workspace_id and a.pinned_version_asset_id=i.agent_version_asset_id
+    and a.workspace_id=i.workspace_id
   join catalog.resource r on r.id=a.resource_id and r.tenant_id=i.tenant_id
     and r.home_workspace_id=i.workspace_id and r.type_key='agent.installation'
   join catalog.agent_runtime_projection p on p.installation_resource_id=a.resource_id
@@ -2066,15 +2109,22 @@ const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.hu
     and o.evidence_refs @> jsonb_build_array(
       jsonb_build_object('kind','BUZZ_EVENT_ID','value',i.reply_event_id),
       jsonb_build_object('kind','ACTION_EXECUTION_ID','value',ae.id::text))
-  where i.id=$1 and i.reply_event_id=$2 and i.runtime_turn_id=$3
-    and i.native_status='completed' and i.status in ('RUNNING','UNKNOWN')";
+  where i.id=$1 and i.reply_event_id=$2 and i.runtime_turn_id is not distinct from $3::text
+    and ((i.native_status='completed' and $3::text is not null)
+      or ($3::text is null and i.native_status is null and i.post_message_intent is not null
+        and exists(select 1 from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
+          and v.automation_resource_id=i.automation_resource_id and v.action->>'kind'='POST_MESSAGE')))
+    and i.status in ('DISPATCHING','RUNNING','UNKNOWN')";
 
 /// Consume only an existing stable Reply intent. There is no publisher or
-/// model replay here, and a missing event is never a terminal delivery result.
+/// model replay here. Absence cannot prove an already admitted native writer
+/// has stopped: an expired signature may have passed its time check before a
+/// stalled Relay transaction. Keep UNKNOWN without positive delivery or the
+/// live publisher's definite no-delivery evidence.
 async fn reconcile_reply(
     state: &ServiceState,
     invocation: &Invocation,
-    turn_id: &str,
+    turn_id: Option<&str>,
     event_id: &str,
 ) -> Result<Option<bool>, sqlx::Error> {
     let intents: Vec<ReplyIntent> = sqlx::query_as(REPLY_INTENT)
@@ -2127,8 +2177,8 @@ async fn reconcile_reply(
     }
     let mut tx = state.pool.begin().await?;
     let locked: Option<Uuid> = sqlx::query_scalar(
-        "select id from catalog.agent_invocation where id=$1 and status in ('RUNNING','UNKNOWN')
-         and native_status='completed' and runtime_turn_id=$2 and reply_event_id=$3 for update",
+        "select id from catalog.agent_invocation where id=$1 and status in ('DISPATCHING','RUNNING','UNKNOWN')
+         and runtime_turn_id is not distinct from $2::text and reply_event_id=$3 for update",
     )
     .bind(invocation.id)
     .bind(turn_id)
