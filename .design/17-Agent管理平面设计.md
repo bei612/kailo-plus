@@ -35,7 +35,7 @@ Tenant
 
 - Agent 在 Tenant 定义，避免每个 Workspace 复制 Persona；Definition 的稳定身份与已发布行为版本分离。
 - Workspace 安装确定版本，不安装“latest”。发布新版本不会改变任何 Installation。
-- 一期 Workspace 与 Buzz Channel 一对一，因此 ChannelAgentBinding 不再创建新 scope；它只控制 mention/manual-assignment 触发。用户定义的自动化（频道消息、@提及、定时或 webhook 触发，REQ-23）是另一条触发路径：它指定一个 AgentInstallation 作执行者，经 Governed Action `automation.run` 与 `AgentTaskWorkflow` 执行，不经 ChannelAgentBinding 扩大触发面，也不使用 Buzz 自带 workflow（DD-106/107）。
+- 一期 Workspace 与 Buzz Channel 一对一，因此 ChannelAgentBinding 不再创建新 scope；它只控制 mention/manual-assignment 触发。用户定义的自动化（频道消息、@提及、定时或 webhook 触发，REQ-23）是另一条触发路径：它指定一个 AgentInstallation 作执行者，经 Governed Action `automation.run` 与 `AgentTaskWorkflow` 执行，不经 ChannelAgentBinding 扩大触发面，也不使用 Buzz 自带 workflow（DD-106/107）。Workflows 是 Web/Desktop 独立的左侧导航页面，集中管理 AutomationDefinition/AutomationVersion 与关联运行历史（`06` §9.1）；Agents 页负责 Agent 定义、版本、Installation 与 Channel 触发绑定，通过引用选择执行者，不以 Agents 内嵌自动化区域替代 Workflows 入口，也不复制一套自动化管理主体。
 - 一个 Installation 只有一个 AgentPrincipal 和一个独立 Buzz pubkey。跨 Workspace 复用同一 Definition 时建立不同 Installation/Principal，不共享权限、委托、会话、额度或运行状态。
 - Skill 与 Tool 是独立受治理 Resource；AgentVersion 只声明期望 Skill 版本与能力需求（契约键与版本），Workspace Installation 再把需求绑定到该 Workspace 内 active 实现的 Tool（DD-92）。
 

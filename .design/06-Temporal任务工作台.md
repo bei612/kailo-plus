@@ -203,3 +203,13 @@ trigger（HUMAN 消息 / @提及 / Temporal Schedule / webhook）
 - `WEBHOOK` 触发经 AgentGateway 公开路由进入 BFF：校验 HMAC-SHA256 签名（覆盖时间戳与正文）、5 分钟时间窗与 delivery ID 去重后才建立 ActionExecution；签名不符直接拒绝并只计入度量。正文作为不可信触发内容进入模板上下文，不能携带 Tenant、Workspace、Principal 或权限。
 - 审批关卡是 step approval：child ActionExecution 与 child ApprovalWorkflow 在第一个副作用之前，父 Workflow 等待结果；拒绝或过期时该次运行以对应原因终结。
 - 每次运行在准入时 fresh 检查 owner、执行 Installation、Delegation、Workspace 状态与 Quota；`AGENT_TURN` 经 CapacityLease 取得 Codex slot，其余同普通 Agent 回合。运行进入任务工作台，与其他 Workflow 同一投影、控制与观测规则。
+
+### 9.1 Workflows 产品页
+
+Workflows（工作流）是 Web/Desktop 左侧导航的独立平台核心页面，不是 Agents 页内的附属区域，也不以 Tasks、Approvals 或 Temporal UI 代替。两端使用同一 TypeScript 页面主体、Buzz 主题与 i18n；仅宿主导航接入不同，所有管理读写经 BFF。该入口不依赖任何业务能力 binding；页面可见不授予对象访问或执行权限。
+
+- 定义列表按当前授权 Workspace 查询 AutomationDefinition，展示 owner、状态、已固定版本与执行 Installation 引用；无定义显示真实空状态，鉴权失败、依赖不可用或投影落后不得显示成“没有工作流”。
+- 创建、版本查看与发布、启用、暂停、停用只消费 `05` §2.9 已登记的管理动作；已发布版本不可原地修改，编辑内容形成新版本，启用固定已发布版本。提交时由服务端重查权限、scope 和版本事实，不信任页面缓存。
+- 配置以 DD-107 为界：四类触发、每版本一个 AGENT_TURN 或 POST_MESSAGE 动作、审批策略及结果位置。独立页面不等于原 Buzz YAML、多步骤执行、复制、删除、手动触发能力全部等价；未进入冻结动作与版本模型的能力不得因恢复页面而生成入口。
+- Run History（运行历史）是该自动化关联的 ActionExecution、WorkflowRef 与 TaskProjection 的授权视图，展示运行状态、等待原因、进度与用量引用，并进入同一 Tasks/Approvals 详情查看执行与审批轨迹；不另建运行、审批或审计权威，不向浏览器暴露原始 Temporal history、密钥或模型提示正文。
+- UNKNOWN、投影落后与部分结果沿用本章终态纪律；控制动作仅按 §8 已登记范围开放，不因历史列表存在而增加重放、取消或重跑权限。Mobile 仅提供 REQ-21 允许的只读视图，不提供定义编辑、发布、启停或运行控制。
