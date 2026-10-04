@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
@@ -16,7 +17,84 @@ const AgentTaskKind = "AgentTaskWorkflow"
 
 // AgentTask 保留同一 Invocation/Workflow 引用跨 continue-as-new。Core 的持久
 // dispatch intent 是副作用防重边界；UNKNOWN 轮次只能对账，不能重新发 turn。
-func AgentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error {
+func AgentTask(ctx workflow.Context, raw json.RawMessage) error {
+	// 原 input 未含 sourceKind，保持旧 history 的第一条 command 不变。
+	// Schedule 变体仅由 native Schedule 写入，Core 首 Activity 查原生 start。
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return temporal.NewNonRetryableApplicationError("AgentTask input 不可解析", activities.ErrTypeRejected, nil)
+	}
+	var in generated.AgentTaskWorkflowInput
+	if kind, schedule := fields["sourceKind"]; schedule {
+		if string(kind) != `"SCHEDULE"` {
+			return temporal.NewNonRetryableApplicationError("AgentTask source 未实现", activities.ErrTypeRejected, nil)
+		}
+		for key := range fields {
+			if key != "sourceKind" && key != "scheduleId" && key != "automationResourceId" && key != "automationVersionAssetId" && key != "cancelPending" {
+				return temporal.NewNonRetryableApplicationError("Schedule input 含未知字段", activities.ErrTypeRejected, nil)
+			}
+		}
+		cancelPending := false
+		if value, present := fields["cancelPending"]; present {
+			if string(value) == "null" || json.Unmarshal(value, &cancelPending) != nil {
+				return temporal.NewNonRetryableApplicationError("Schedule cancel checkpoint 不成立", activities.ErrTypeRejected, nil)
+			}
+		}
+		// 续跑位只能收窄为取消，不作为 native Schedule input 或准入事实。
+		delete(fields, "cancelPending")
+		sourceJSON, err := json.Marshal(fields)
+		if err != nil {
+			return temporal.NewNonRetryableApplicationError("Schedule input 不可序列化", activities.ErrTypeRejected, nil)
+		}
+		var source generated.AutomationScheduleTaskInput
+		if json.Unmarshal(sourceJSON, &source) != nil || source.ScheduleID == "" || source.AutomationResourceID == "" || source.AutomationVersionAssetID == "" {
+			return temporal.NewNonRetryableApplicationError("Schedule input 缺固定引用", activities.ErrTypeRejected, nil)
+		}
+		// ACK 丢失可能发生在 Core 已提交 ALLOWED 之后。包括 service 4xx、
+		// Activity 超时或取消在内的 transport error 都不能裁定原准入未发生。
+		// 只有同 native Workflow/key 的明确 admitted=false 才是业务拒绝。
+		loop, _ := workflow.NewDisconnectedContext(ctx)
+		for {
+			cancelPending = cancelPending || ctx.Err() != nil
+			options := workflow.WithActivityOptions(loop, activityOptions())
+			var admitted generated.AutomationScheduleAdmitResult
+			err := workflow.ExecuteActivity(options, (*activities.CoreAPI).AdmitAutomationSchedule, source).Get(loop, &admitted)
+			cancelPending = cancelPending || ctx.Err() != nil
+			if err == nil {
+				if !admitted.Admitted {
+					return temporal.NewNonRetryableApplicationError("Schedule 准入被拒绝", activities.ErrTypeRejected, nil)
+				}
+				if admitted.TaskInput != nil {
+					in = generated.AgentTaskWorkflowInput(*admitted.TaskInput)
+					in.CancelPending = in.CancelPending || cancelPending
+					break
+				}
+			}
+			workflow.GetLogger(ctx).Warn("Schedule 准入未确认，保留同源等待下一轮")
+			if err := workflow.Sleep(loop, retry.RoundInterval); err != nil {
+				continue
+			}
+			cancelPending = cancelPending || ctx.Err() != nil
+			if workflow.GetInfo(loop).GetContinueAsNewSuggested() {
+				if cancelPending {
+					fields["cancelPending"] = json.RawMessage("true")
+				}
+				next, err := json.Marshal(fields)
+				if err != nil {
+					return temporal.NewNonRetryableApplicationError("Schedule checkpoint 不可序列化", activities.ErrTypeUnknownExternalResult, nil)
+				}
+				// Core 沿 native first-execution chain 验证原 scheduler start，
+				// 新 run 不是新的计划时间、授权或模型执行意图。
+				return workflow.NewContinueAsNewError(loop, AgentTask, json.RawMessage(next))
+			}
+		}
+	} else if json.Unmarshal(raw, &in) != nil {
+		return temporal.NewNonRetryableApplicationError("AgentTask input 不成立", activities.ErrTypeRejected, nil)
+	}
+	return agentTask(ctx, in)
+}
+
+func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error {
 	if in.InvocationID == "" || in.InstallationID == "" || in.AgentVersionAssetID == "" || in.ProjectionGeneration <= 0 || in.EventBase < 0 ||
 		in.HeartbeatTimeoutSeconds <= 0 || in.HeartbeatIntervalSeconds <= 0 || in.ObservationIntervalSeconds <= 0 ||
 		in.HeartbeatIntervalSeconds >= in.HeartbeatTimeoutSeconds ||
@@ -89,7 +167,9 @@ func AgentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 		}
 		if workflow.GetInfo(loop).GetContinueAsNewSuggested() {
 			in.EventBase += int64(workflow.GetInfo(loop).GetCurrentHistoryLength())
-			return workflow.NewContinueAsNewError(loop, AgentTask, in)
+			// Registered name preserves the original typed payload; the public
+			// entry now also accepts the Schedule JSON discriminant.
+			return workflow.NewContinueAsNewError(loop, AgentTaskKind, in)
 		}
 	}
 }

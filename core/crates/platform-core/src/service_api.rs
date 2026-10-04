@@ -65,6 +65,10 @@ pub fn router(state: ServiceState) -> Router {
             post(crate::agent_task::advance),
         )
         .route(
+            "/service/v1/automations/schedule-admit",
+            post(crate::automation::admit_schedule),
+        )
+        .route(
             "/service/v1/agent-installations/advance",
             post(crate::agent_installation::advance),
         )

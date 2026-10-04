@@ -11,8 +11,8 @@ import {
   RuntimeProfileKind,
   ActionKind,
   AutomationState,
-  ResultTarget,
-  TriggerKind,
+  AutomationResultTarget as ResultTarget,
+  AutomationTriggerKind as TriggerKind,
   ErrorClass,
   ReasonCode,
   ResourceState,
@@ -170,6 +170,14 @@ function validAutomation(row: AutomationView): boolean {
     && (row.state !== AutomationState.Enabled || (!!row.pinnedVersionAssetId && !!row.delegationId));
 }
 
+function validSchedule(spec: AutomationVersionView["content"]["trigger"]["scheduleSpec"]): boolean {
+  // Same explicit interval accepted by Core: Temporal's native catch-up minimum is 10 seconds.
+  return !!spec && Object.keys(spec).length === 3
+    && Number.isSafeInteger(spec.everySeconds) && spec.everySeconds > 0
+    && Number.isSafeInteger(spec.offsetSeconds) && spec.offsetSeconds >= 0 && spec.offsetSeconds < spec.everySeconds
+    && Number.isSafeInteger(spec.catchupWindowSeconds) && spec.catchupWindowSeconds >= 10;
+}
+
 function validAutomationVersion(row: AutomationVersionView, parent: AutomationView): boolean {
   const content = row?.content;
   return !!row && row.automationResourceId === parent.resourceId
@@ -178,14 +186,18 @@ function validAutomationVersion(row: AutomationVersionView, parent: AutomationVi
     && Number.isSafeInteger(row.ordinal) && row.ordinal > 0
     && Object.values(AgentVersionState).includes(row.state)
     && typeof row.configHash === "string" && /^[0-9a-f]{64}$/.test(row.configHash)
-    && !!content && !!content.trigger && Object.values(TriggerKind).includes(content.trigger.kind)
+    && !!content && !!content.trigger
     && (content.trigger.textPrefix === undefined || (typeof content.trigger.textPrefix === "string" && !!content.trigger.textPrefix))
     && (content.trigger.kind === TriggerKind.Mention
       ? typeof content.trigger.mentionPrincipalId === "string" && !!content.trigger.mentionPrincipalId
       : content.trigger.mentionPrincipalId === undefined)
     && !!content.action && content.action.kind === ActionKind.AgentTurn
     && typeof content.action.template === "string" && !!content.action.template.trim()
-    && content.resultTarget === ResultTarget.TriggerThread;
+    && (content.trigger.kind === TriggerKind.Schedule
+      ? content.resultTarget === ResultTarget.Channel && content.trigger.textPrefix === undefined
+        && validSchedule(content.trigger.scheduleSpec)
+      : (content.trigger.kind === TriggerKind.ChannelMessage || content.trigger.kind === TriggerKind.Mention)
+        && content.resultTarget === ResultTarget.TriggerThread && content.trigger.scheduleSpec === undefined);
 }
 
 function validAutomationDetail(value: AutomationDetailView, resource: string, workspace: string): boolean {
@@ -310,10 +322,21 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit }: {
       {row.state !== AutomationState.Disabled ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "disable" })}>{t("agents.automation.disable")}</Button> : null}
     </div> : null}
     {detail.versions.length === 0 ? <Notice>{t("agents.automation.noVersion")}</Notice>
-      : <Table head={[t("agents.publishedVersion"), t("agents.resourceVersion"), t("platform.state"), t("agents.automation.template")]}>
+      : <Table head={[t("agents.publishedVersion"), t("agents.resourceVersion"), t("platform.state"), t("agents.automation.trigger"), t("agents.automation.template")]}>
         {detail.versions.map((version) => <tr key={version.assetId}>
           <Cell mono>{version.assetId}</Cell><Cell>{version.assetVersion}</Cell>
-          <Cell><Badge tone="neutral">{t(automationVersionLabels[version.state])}</Badge></Cell><Cell><span className="whitespace-pre-wrap">{version.content.action.template}</span></Cell>
+          <Cell><Badge tone="neutral">{t(automationVersionLabels[version.state])}</Badge></Cell>
+          <Cell>
+            <p>{t(version.content.trigger.kind === TriggerKind.Schedule ? "agents.automation.schedule"
+              : version.content.trigger.kind === TriggerKind.Mention ? "agents.installation.trigger.mention" : "agents.automation.channelMessage")}</p>
+            {version.content.trigger.scheduleSpec ? <>
+              <p>{t("agents.automation.everySeconds")}: {version.content.trigger.scheduleSpec.everySeconds}</p>
+              <p>{t("agents.automation.offsetSeconds")}: {version.content.trigger.scheduleSpec.offsetSeconds}</p>
+              <p>{t("agents.automation.catchupWindowSeconds")}: {version.content.trigger.scheduleSpec.catchupWindowSeconds}</p>
+            </> : null}
+            <p>{t("agents.automation.resultTarget")}: {t(version.content.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
+          </Cell>
+          <Cell><span className="whitespace-pre-wrap">{version.content.action.template}</span></Cell>
         </tr>)}
       </Table>}
     <div className="flex gap-2">
@@ -348,6 +371,9 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   const [executorId, setExecutorId] = useState("");
   const [trigger, setTrigger] = useState(TriggerKind.ChannelMessage);
   const [prefix, setPrefix] = useState("");
+  const [everySeconds, setEverySeconds] = useState("");
+  const [offsetSeconds, setOffsetSeconds] = useState("");
+  const [catchupWindowSeconds, setCatchupWindowSeconds] = useState("");
   const [template, setTemplate] = useState("");
   const [versionId, setVersionId] = useState("");
   const [grantId, setGrantId] = useState("");
@@ -381,6 +407,9 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     && selectedInstallation.data.workspaceId === workspaceId && selectedInstallation.data.state === AgentInstallationState.Active
     && selectedInstallation.data.agentPrincipalState === "ACTIVE" ? selectedInstallation.data : undefined
     : executors.find((row) => row.resourceId === executorId);
+  const targets = executor?.automationResultTargets;
+  const scheduleSupported = Array.isArray(targets) && targets.every((target) => Object.values(ResultTarget).includes(target))
+    && new Set(targets).size === targets.length && targets.includes(ResultTarget.Channel);
   const canCreate = admission.status === "ok" && admission.data && Array.isArray(admission.data.automations)
     && admission.data.automations.every((row) => validAutomation(row) && row.workspaceId === workspaceId)
     && typeof admission.data.canCreate === "boolean" && admission.data.canCreate;
@@ -389,12 +418,22 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   const version = versions.find((row) => row.assetId === versionId);
   const grant = grants.find((row) => row.delegationId === grantId);
   const contentAction = !edit || edit.action === "publish_version";
+  const scheduleSpec = { everySeconds: Number(everySeconds), offsetSeconds: Number(offsetSeconds),
+    catchupWindowSeconds: Number(catchupWindowSeconds) };
+  const scheduleValid = [everySeconds, offsetSeconds, catchupWindowSeconds].every((value) => /^\d+$/.test(value))
+    && validSchedule(scheduleSpec);
+  const contentAvailable = trigger !== TriggerKind.Schedule || (scheduleSupported && scheduleValid);
+  const enableAvailable = !!version && !!grant
+    && (version.content.trigger.kind !== TriggerKind.Schedule || scheduleSupported);
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
     || submission?.gateState === ActionGateState.Evaluating
     || (submission?.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.NotDispatched);
   useEffect(() => {
     const content = edit?.detail.versions[0]?.content;
     setTrigger(content?.trigger.kind ?? TriggerKind.ChannelMessage); setPrefix(content?.trigger.textPrefix ?? "");
+    setEverySeconds(content?.trigger.scheduleSpec?.everySeconds.toString() ?? "");
+    setOffsetSeconds(content?.trigger.scheduleSpec?.offsetSeconds.toString() ?? "");
+    setCatchupWindowSeconds(content?.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
     setTemplate(content?.action.template ?? "");
     setVersionId(""); setGrantId(""); setExecutorId("");
   }, [edit, workspaceId]);
@@ -403,15 +442,17 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     if (intent || busy || requestBlocked || !workspaceId || (!edit && (!canCreate || !executor))
       || (edit && !edit.detail.canManage) || (contentAction && !template.trim())
       || (contentAction && trigger === TriggerKind.Mention && !executor)
-      || (edit?.action === "enable" && (!version || !grant))) return;
+      || (contentAction && !contentAvailable)
+      || (edit?.action === "enable" && !enableAvailable)) return;
     const command: ActionCommand = { actionKey: edit ? `automation.${edit.action}` : "automation.create",
       idempotencyKey: newIdempotencyKey(), explicitConfirmation: true };
     if (edit) { command.resourceId = edit.detail.automation.resourceId; command.resourceVersion = edit.detail.automation.resourceVersion; }
     else { command.workspaceId = workspaceId; command.executorInstallationResourceId = executor!.resourceId; }
     if (contentAction) command.automationVersionContent = {
-      trigger: { kind: trigger, ...(prefix ? { textPrefix: prefix } : {}),
+      trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
         ...(trigger === TriggerKind.Mention ? { mentionPrincipalId: executor!.agentPrincipalId } : {}) },
-      action: { kind: ActionKind.AgentTurn, template }, resultTarget: ResultTarget.TriggerThread,
+      action: { kind: ActionKind.AgentTurn, template },
+      resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
     };
     if (edit?.action === "enable" && version && grant) {
       command.assetId = version.assetId; command.assetVersion = version.assetVersion;
@@ -466,17 +507,33 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
       {contentAction ? <>
         {edit && selectedInstallation.status === "error" ? <AgentReadFailure error={selectedInstallation.error} onRetry={reloadSelectedInstallation} /> : null}
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.trigger")}
-          <select value={trigger} onChange={(event) => { const value = Object.values(TriggerKind).find((v) => v === event.target.value); if (value) setTrigger(value); }} className="h-8 rounded-md border border-input bg-background px-2">
+          <select value={trigger} onChange={(event) => {
+            const value = [TriggerKind.ChannelMessage, TriggerKind.Mention, ...(scheduleSupported ? [TriggerKind.Schedule] : [])]
+              .find((candidate) => candidate === event.target.value);
+            if (value) setTrigger(value);
+          }} className="h-8 rounded-md border border-input bg-background px-2">
             <option value={TriggerKind.ChannelMessage}>{t("agents.automation.channelMessage")}</option><option value={TriggerKind.Mention}>{t("agents.installation.trigger.mention")}</option>
+            {scheduleSupported || trigger === TriggerKind.Schedule ? <option value={TriggerKind.Schedule} disabled={!scheduleSupported}>{t("agents.automation.schedule")}</option> : null}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
+        {trigger === TriggerKind.Schedule ? <>
+          <label className="flex flex-col gap-1 text-sm">{t("agents.automation.everySeconds")}
+            <input required inputMode="numeric" value={everySeconds} onChange={(event) => setEverySeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">{t("agents.automation.offsetSeconds")}
+            <input required inputMode="numeric" value={offsetSeconds} onChange={(event) => setOffsetSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">{t("agents.automation.catchupWindowSeconds")}
+            <input required inputMode="numeric" value={catchupWindowSeconds} onChange={(event) => setCatchupWindowSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
+          </label>
+          <p className="text-sm text-muted-foreground">{t("agents.automation.scheduleRules")}</p>
+        </> : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
           <input value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
-        </label>
+        </label>}
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
           <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
         </label>
-        <p className="text-sm">{t("agents.automation.resultTarget")}: {t("agents.automation.thread")}</p>
+        <p className="text-sm">{t("agents.automation.resultTarget")}: {t(trigger === TriggerKind.Schedule ? "agents.automation.channel" : "agents.automation.thread")}</p>
       </> : null}
       {edit?.action === "enable" ? <>
         <label className="flex flex-col gap-1 text-sm">{t("agents.publishedVersion")}
@@ -490,9 +547,12 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
           </select>
         </label>
       </> : null}
+      {((contentAction && trigger === TriggerKind.Schedule) || (edit?.action === "enable" && version?.content.trigger.kind === TriggerKind.Schedule))
+        && !scheduleSupported ? <Notice role="status">{t("agents.automation.scheduleUnavailable")}</Notice> : null}
       <div className="flex gap-2">
-        {edit || (canCreate && executor) ? <Button type="submit" disabled={requestBlocked || (edit?.action === "enable" && (!version || !grant))
-          || (contentAction && trigger === TriggerKind.Mention && !executor)}>{t("agents.review")}</Button> : null}
+        {edit || (canCreate && executor) ? <Button type="submit" disabled={requestBlocked || (edit?.action === "enable" && !enableAvailable)
+          || (contentAction && trigger === TriggerKind.Mention && !executor)
+          || (contentAction && !contentAvailable)}>{t("agents.review")}</Button> : null}
         {edit ? <Button onClick={onReset}>{t("agents.cancel")}</Button> : null}
       </div>
       {!edit && admission.status === "error" ? <AgentReadFailure error={admission.error} onRetry={reloadAdmission} /> : null}
@@ -501,10 +561,15 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
       {intent.automationVersionContent ? <>
         <p className="break-words">{t("agents.automation.executor")}: {intent.executorInstallationResourceId ?? edit?.detail.automation.executorInstallationResourceId}</p>
         <p>{t("agents.automation.trigger")}: {intent.automationVersionContent.trigger.kind === TriggerKind.Mention
-          ? t("agents.installation.trigger.mention") : t("agents.automation.channelMessage")}</p>
+          ? t("agents.installation.trigger.mention") : t(intent.automationVersionContent.trigger.kind === TriggerKind.Schedule ? "agents.automation.schedule" : "agents.automation.channelMessage")}</p>
+        {intent.automationVersionContent.trigger.scheduleSpec ? <>
+          <p>{t("agents.automation.everySeconds")}: {intent.automationVersionContent.trigger.scheduleSpec.everySeconds}</p>
+          <p>{t("agents.automation.offsetSeconds")}: {intent.automationVersionContent.trigger.scheduleSpec.offsetSeconds}</p>
+          <p>{t("agents.automation.catchupWindowSeconds")}: {intent.automationVersionContent.trigger.scheduleSpec.catchupWindowSeconds}</p>
+        </> : null}
         {intent.automationVersionContent.trigger.textPrefix ? <p className="break-words">{t("agents.automation.prefix")}: {intent.automationVersionContent.trigger.textPrefix}</p> : null}
         <p className="whitespace-pre-wrap">{intent.automationVersionContent.action.template}</p>
-        <p>{t("agents.automation.resultTarget")}: {t("agents.automation.thread")}</p>
+        <p>{t("agents.automation.resultTarget")}: {t(intent.automationVersionContent.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
       </> : null}
       {intent.assetId ? <p className="break-words">{intent.assetId} · {intent.assetVersion} · {intent.delegationId} · {intent.delegationVersion}</p> : null}
       <p className="text-muted-foreground">{t("agents.admission")}</p>

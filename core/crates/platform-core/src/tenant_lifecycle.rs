@@ -1531,6 +1531,21 @@ pub async fn converge_workspace_channel_archive(
             Ok(r) => r,
             Err(r) => return r,
         };
+    if req.archived {
+        match crate::automation::converge_scope_schedules(
+            &state,
+            tenant_id,
+            Some(req.workspace_id),
+            req.workspace_version,
+            true,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            Err(e) => return unavailable(e),
+        }
+    }
     // 暂停时归档是撤出方向；恢复时解档是投入方向
     let direction = if req.archived {
         ProjectionDirection::Withdraw
@@ -1545,7 +1560,19 @@ pub async fn converge_workspace_channel_archive(
         .converge_channel_archived(&state.http, &channel_id.to_string(), req.archived)
         .await
     {
-        Ok(true) => StatusCode::OK.into_response(),
+        Ok(true) => match crate::automation::converge_scope_schedules(
+            &state,
+            tenant_id,
+            Some(req.workspace_id),
+            req.workspace_version,
+            req.archived,
+        )
+        .await
+        {
+            Ok(true) => StatusCode::OK.into_response(),
+            Ok(false) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            Err(e) => unavailable(e),
+        },
         Ok(false) => {
             tracing::warn!(workspace = %req.workspace_id, archived = req.archived, "Channel 归档状态回读未达目标");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
@@ -1931,9 +1958,38 @@ pub async fn converge_tenant_community_archive(
         Ok(o) => o,
         Err(r) => return r,
     };
+    if req.archived {
+        match crate::automation::converge_scope_schedules(
+            &state,
+            req.tenant_id,
+            None,
+            req.tenant_version,
+            true,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            Err(e) => return unavailable(e),
+        }
+    }
     if !req.archived {
         match community_archived(&state, &operator, &owner, &host).await {
-            Ok(Some(false)) => return StatusCode::OK.into_response(),
+            Ok(Some(false)) => {
+                return match crate::automation::converge_scope_schedules(
+                    &state,
+                    req.tenant_id,
+                    None,
+                    req.tenant_version,
+                    false,
+                )
+                .await
+                {
+                    Ok(true) => StatusCode::OK.into_response(),
+                    Ok(false) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+                    Err(e) => unavailable(e),
+                }
+            }
             Ok(_) => {}
             Err(r) => return r,
         }
@@ -1960,7 +2016,19 @@ pub async fn converge_tenant_community_archive(
         }
     }
     match community_archived(&state, &operator, &owner, &host).await {
-        Ok(Some(now)) if now == req.archived => StatusCode::OK.into_response(),
+        Ok(Some(now)) if now == req.archived => match crate::automation::converge_scope_schedules(
+            &state,
+            req.tenant_id,
+            None,
+            req.tenant_version,
+            req.archived,
+        )
+        .await
+        {
+            Ok(true) => StatusCode::OK.into_response(),
+            Ok(false) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            Err(e) => unavailable(e),
+        },
         Ok(_) => {
             tracing::warn!(tenant = %req.tenant_id, archived = req.archived, "Community 归档状态回读未达目标");
             StatusCode::SERVICE_UNAVAILABLE.into_response()

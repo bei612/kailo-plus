@@ -243,25 +243,48 @@ impl IdentityClient {
         ancestry: (&str, &str),
         completed_at: u64,
     ) -> Result<Event, OperatorError> {
-        let root = nostr::EventId::from_hex(ancestry.0)
-            .map_err(|_| OperatorError::Sign("Reply root is invalid".into()))?;
-        let source = nostr::EventId::from_hex(ancestry.1)
-            .map_err(|_| OperatorError::Sign("Reply source is invalid".into()))?;
-        let tags = [
-            vec!["h".to_owned(), channel_id.to_owned()],
-            vec![
-                "e".to_owned(),
-                root.to_hex(),
-                String::new(),
-                "root".to_owned(),
-            ],
-            vec![
-                "e".to_owned(),
-                source.to_hex(),
-                String::new(),
-                "reply".to_owned(),
-            ],
-        ];
+        self.sign_channel_result_at(channel_id, content, Some(ancestry), None, completed_at)
+    }
+
+    /// 同一原生 kind:9 builder；Schedule 结果没有虚构 NIP-10 ancestry。
+    pub fn sign_channel_result_at(
+        &self,
+        channel_id: &str,
+        content: &str,
+        ancestry: Option<(&str, &str)>,
+        invocation: Option<uuid::Uuid>,
+        completed_at: u64,
+    ) -> Result<Event, OperatorError> {
+        let mut tags = vec![vec!["h".to_owned(), channel_id.to_owned()]];
+        if ancestry.is_some() == invocation.is_some() {
+            return Err(OperatorError::Sign(
+                "Result source reference is invalid".into(),
+            ));
+        }
+        if let Some(invocation) = invocation {
+            // 原生外部 reference tag，不是 Buzz Event/Thread ID。
+            tags.push(vec!["r".to_owned(), format!("urn:uuid:{invocation}")]);
+        }
+        if let Some(ancestry) = ancestry {
+            let root = nostr::EventId::from_hex(ancestry.0)
+                .map_err(|_| OperatorError::Sign("Reply root is invalid".into()))?;
+            let source = nostr::EventId::from_hex(ancestry.1)
+                .map_err(|_| OperatorError::Sign("Reply source is invalid".into()))?;
+            tags.extend([
+                vec![
+                    "e".to_owned(),
+                    root.to_hex(),
+                    String::new(),
+                    "root".to_owned(),
+                ],
+                vec![
+                    "e".to_owned(),
+                    source.to_hex(),
+                    String::new(),
+                    "reply".to_owned(),
+                ],
+            ]);
+        }
         let tags = tags
             .into_iter()
             .map(Tag::parse)
@@ -391,6 +414,19 @@ impl IdentityClient {
         channel_id: &str,
         ancestry: (&str, &str),
     ) -> Result<bool, OperatorError> {
+        self.channel_result_exists(http, event_id, author, channel_id, Some(ancestry), None)
+            .await
+    }
+
+    pub async fn channel_result_exists(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+        author: &str,
+        channel_id: &str,
+        ancestry: Option<(&str, &str)>,
+        invocation: Option<uuid::Uuid>,
+    ) -> Result<bool, OperatorError> {
         let page = self
             .query(http, &[serde_json::json!({ "ids": [event_id] })])
             .await?;
@@ -422,12 +458,34 @@ impl IdentityClient {
                 observed_channel = parts.get(1);
             }
         }
+        let expected_reference = invocation.map(|id| format!("urn:uuid:{id}"));
+        let references: Vec<_> = event
+            .tags
+            .iter()
+            .filter_map(|tag| {
+                let row = tag.as_slice();
+                (row.first().map(String::as_str) == Some("r")).then_some(row)
+            })
+            .collect();
+        let reference_matches = match expected_reference.as_deref() {
+            Some(reference) => {
+                references.len() == 1 && references[0].len() == 2 && references[0][1] == reference
+            }
+            None => references.is_empty(),
+        };
         let observed_ancestry = buzz_core::nip10::parse_thread_markers(&event.tags).resolve();
         if observed_channel.map(String::as_str) != Some(channel_id)
             || observed_ancestry
                 .as_ref()
                 .map(|(root, parent)| (root.as_str(), parent.as_str()))
-                != Some(ancestry)
+                != ancestry
+            || !reference_matches
+            || ancestry.is_some() == invocation.is_some()
+            || (ancestry.is_none()
+                && event
+                    .tags
+                    .iter()
+                    .any(|tag| tag.as_slice().first().map(String::as_str) == Some("e")))
         {
             return Err(OperatorError::NotConverged(
                 "Reply 不属于冻结的 Channel、root 或 source event".into(),

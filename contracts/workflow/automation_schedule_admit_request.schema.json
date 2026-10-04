@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/automation_schedule_admit_request.schema.json",
+  "title": "AutomationScheduleAdmitRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["input", "workflowId", "runId"],
+  "properties": {
+    "input": {"$ref": "automation_schedule_task_input.schema.json"},
+    "workflowId": {"type": "string"},
+    "runId": {"type": "string", "format": "uuid"}
+  }
+}

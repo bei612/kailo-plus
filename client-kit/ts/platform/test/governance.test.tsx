@@ -293,6 +293,84 @@ describe("ApprovalsPage", () => {
     return { el, send: m.send };
   };
 
+  it.each([
+    ["waiting", approval()],
+    ["terminal", approval({ status: ApprovalStatus.Consumed })],
+    ["delayed", approval({ observation: ReasonCode.ProjectionDelayed })],
+  ])("refresh clears the prior confirmation before a %s projection", async (_, refreshed) => {
+    let reads = 0;
+    const { el, send } = await openFirst(() => ({
+      status: 200,
+      body: ++reads === 1 ? approval() : refreshed,
+    }));
+    await click(button(el, "Approve"));
+    expect(el.textContent).toContain("cannot be changed afterwards");
+    await click(button(el, "Refresh"));
+    expect(el.textContent).not.toContain("cannot be changed afterwards");
+    expect([...el.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Confirm");
+    expect(posts(send)).toHaveLength(0);
+  });
+
+  it.each([
+    ["transport", 403],
+    ["transport", 409],
+    ["UNKNOWN", 403],
+    ["UNKNOWN", 409],
+  ] as const)("retains the original %s decision across repeated %s recheck refusals", async (initial, status) => {
+    let writes = 0;
+    let finishRetry: ((reply: BffReply) => void) | undefined;
+    const refusal: BffReply = {
+      status,
+      body: {
+        class: status === 403 ? ErrorClass.Denied : ErrorClass.Conflict,
+        reason: status === 403 ? ReasonCode.ApproverNotEligible : ReasonCode.DuplicateDecision,
+        operationId: "other-operation",
+      },
+    };
+    const { el, send } = await openFirst((r) => {
+      if (r.method !== "POST") return { status: 200, body: approval() };
+      writes += 1;
+      if (writes === 1) {
+        if (initial === "transport") throw new TransportError("connection lost");
+        return {
+          status: 503,
+          body: { class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable, operationId: "original-operation" },
+        };
+      }
+      if (writes === 2) return new Promise<BffReply>((resolve) => { finishRetry = resolve; });
+      if (writes === 3) return refusal;
+      return { status: 200, body: { approverPrincipalId: "me", admitted: true, decision: "APPROVE", status: "APPROVED" } };
+    });
+    await click(button(el, "Approve"));
+    await click(button(el, "Confirm"));
+    await click(button(el, "Send the same decision again"));
+    // The original uncertainty remains visible even while the retry is in flight.
+    expect(el.querySelector("[role=alert]")?.textContent).toContain("not known");
+    expect(button(el, "Send the same decision again").disabled).toBe(true);
+    expect(finishRetry).toBeDefined();
+    finishRetry?.(refusal);
+    await settle();
+    await click(button(el, "Send the same decision again"));
+    await click(button(el, "Refresh"));
+    const alert = el.querySelector("[role=alert]")?.textContent ?? "";
+    expect(alert).toContain("not known");
+    expect(alert).not.toContain("not accepted");
+    expect(alert).not.toContain("other-operation");
+    if (initial === "UNKNOWN") expect(alert).toContain("original-operation");
+    const controls = [...el.querySelectorAll("button")].map((b) => b.textContent);
+    expect(controls).not.toContain("Approve");
+    expect(controls).not.toContain("Deny");
+    expect(controls).not.toContain("Confirm");
+    await click(button(el, "Send the same decision again"));
+    expect(posts(send).map((r) => ({ path: r.path, body: r.body }))).toEqual(
+      Array.from({ length: 4 }, () => ({
+        path: `/api/v1/approvals/${encodeURIComponent(WF)}/decision`,
+        body: { decision: "APPROVE" },
+      })),
+    );
+    expect(el.querySelector("[role=status]")?.textContent).toContain("Approved, not carried out yet");
+  });
+
   it("批准需确认，经决定端点提交，显示记录后的状态", async () => {
     const { el, send } = await openFirst((r) =>
       r.method === "POST"
@@ -338,5 +416,8 @@ describe("ApprovalsPage", () => {
     expect(el.querySelector("[role=alert]")?.textContent).toBe(
       "Your decision was not accepted: You already recorded a different decision, which cannot be changed. (DUPLICATE_DECISION)",
     );
+    // A first, definite refusal is not an uncertain earlier decision.
+    expect(button(el, "Approve").disabled).toBe(false);
+    expect(button(el, "Deny").disabled).toBe(false);
   });
 });

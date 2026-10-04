@@ -157,6 +157,9 @@
 //    agentVersionContent, err := UnmarshalAgentVersionContent(bytes)
 //    bytes, err = agentVersionContent.Marshal()
 //
+//    automationScheduleSpec, err := UnmarshalAutomationScheduleSpec(bytes)
+//    bytes, err = automationScheduleSpec.Marshal()
+//
 //    automationVersionContent, err := UnmarshalAutomationVersionContent(bytes)
 //    bytes, err = automationVersionContent.Marshal()
 //
@@ -234,6 +237,15 @@
 //
 //    approvalStateReport, err := UnmarshalApprovalStateReport(bytes)
 //    bytes, err = approvalStateReport.Marshal()
+//
+//    automationScheduleAdmitRequest, err := UnmarshalAutomationScheduleAdmitRequest(bytes)
+//    bytes, err = automationScheduleAdmitRequest.Marshal()
+//
+//    automationScheduleAdmitResult, err := UnmarshalAutomationScheduleAdmitResult(bytes)
+//    bytes, err = automationScheduleAdmitResult.Marshal()
+//
+//    automationScheduleTaskInput, err := UnmarshalAutomationScheduleTaskInput(bytes)
+//    bytes, err = automationScheduleTaskInput.Marshal()
 //
 //    freshApprovalAdmissionRequest, err := UnmarshalFreshApprovalAdmissionRequest(bytes)
 //    bytes, err = freshApprovalAdmissionRequest.Marshal()
@@ -773,6 +785,16 @@ func (r *AgentVersionContent) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAutomationScheduleSpec(data []byte) (AutomationScheduleSpec, error) {
+	var r AutomationScheduleSpec
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationScheduleSpec) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAutomationVersionContent(data []byte) (AutomationVersionContent, error) {
 	var r AutomationVersionContent
 	err := json.Unmarshal(data, &r)
@@ -1033,6 +1055,36 @@ func (r *ApprovalStateReport) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAutomationScheduleAdmitRequest(data []byte) (AutomationScheduleAdmitRequest, error) {
+	var r AutomationScheduleAdmitRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationScheduleAdmitRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationScheduleAdmitResult(data []byte) (AutomationScheduleAdmitResult, error) {
+	var r AutomationScheduleAdmitResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationScheduleAdmitResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationScheduleTaskInput(data []byte) (AutomationScheduleTaskInput, error) {
+	var r AutomationScheduleTaskInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationScheduleTaskInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalFreshApprovalAdmissionRequest(data []byte) (FreshApprovalAdmissionRequest, error) {
 	var r FreshApprovalAdmissionRequest
 	err := json.Unmarshal(data, &r)
@@ -1204,11 +1256,10 @@ type AgentVersionContentTurnLimits struct {
 
 // 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
 //
-// REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
-// AGENT_TURN；不含消息正文、provider 配置或凭据。
+// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 type AutomationVersionContentClass struct {
 	Action       AutomationVersionContentAction  `json:"action"`
-	ResultTarget ResultTarget                    `json:"resultTarget"`
+	ResultTarget AutomationResultTarget          `json:"resultTarget"`
 	Trigger      AutomationVersionContentTrigger `json:"trigger"`
 }
 
@@ -1218,9 +1269,18 @@ type AutomationVersionContentAction struct {
 }
 
 type AutomationVersionContentTrigger struct {
-	Kind               TriggerKind `json:"kind"`
-	MentionPrincipalID *string     `json:"mentionPrincipalId,omitempty"`
-	TextPrefix         *string     `json:"textPrefix,omitempty"`
+	Kind               AutomationTriggerKind `json:"kind"`
+	MentionPrincipalID *string               `json:"mentionPrincipalId,omitempty"`
+	ScheduleSpec       *ScheduleSpecClass    `json:"scheduleSpec,omitempty"`
+	TextPrefix         *string               `json:"textPrefix,omitempty"`
+}
+
+// Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
+// SKIP，不另实现 cron。
+type ScheduleSpecClass struct {
+	CatchupWindowSeconds int64 `json:"catchupWindowSeconds"`
+	EverySeconds         int64 `json:"everySeconds"`
+	OffsetSeconds        int64 `json:"offsetSeconds"`
 }
 
 // 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -1415,20 +1475,23 @@ type AgentInstallationPage struct {
 // 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
 // 正文、执行或管理权限。
 type InstallationElement struct {
-	ActiveProjectionGeneration *int64                           `json:"activeProjectionGeneration,omitempty"`
-	AgentPrincipalID           string                           `json:"agentPrincipalId"`
-	AgentPrincipalState        AgentPrincipalState              `json:"agentPrincipalState"`
-	AgentResourceID            string                           `json:"agentResourceId"`
-	ChannelBinding             *InstallationChannelBinding      `json:"channelBinding,omitempty"`
-	ExecutionPermission        *InstallationExecutionPermission `json:"executionPermission,omitempty"`
-	OwnerPrincipalID           string                           `json:"ownerPrincipalId"`
-	PinnedVersionAssetID       string                           `json:"pinnedVersionAssetId"`
-	Projection                 *ProjectionClass                 `json:"projection,omitempty"`
-	ResourceID                 string                           `json:"resourceId"`
-	ResourceState              ResourceState                    `json:"resourceState"`
-	ResourceVersion            int64                            `json:"resourceVersion"`
-	State                      AgentInstallationState           `json:"state"`
-	WorkspaceID                string                           `json:"workspaceId"`
+	ActiveProjectionGeneration *int64              `json:"activeProjectionGeneration,omitempty"`
+	AgentPrincipalID           string              `json:"agentPrincipalId"`
+	AgentPrincipalState        AgentPrincipalState `json:"agentPrincipalState"`
+	AgentResourceID            string              `json:"agentResourceId"`
+	// 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
+	// Schedule。
+	AutomationResultTargets []AutomationResultTarget         `json:"automationResultTargets,omitempty"`
+	ChannelBinding          *InstallationChannelBinding      `json:"channelBinding,omitempty"`
+	ExecutionPermission     *InstallationExecutionPermission `json:"executionPermission,omitempty"`
+	OwnerPrincipalID        string                           `json:"ownerPrincipalId"`
+	PinnedVersionAssetID    string                           `json:"pinnedVersionAssetId"`
+	Projection              *ProjectionClass                 `json:"projection,omitempty"`
+	ResourceID              string                           `json:"resourceId"`
+	ResourceState           ResourceState                    `json:"resourceState"`
+	ResourceVersion         int64                            `json:"resourceVersion"`
+	State                   AgentInstallationState           `json:"state"`
+	WorkspaceID             string                           `json:"workspaceId"`
 }
 
 type InstallationChannelBinding struct {
@@ -1466,20 +1529,23 @@ type AgentInstallationProjectionView struct {
 // 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
 // 正文、执行或管理权限。
 type AgentInstallationView struct {
-	ActiveProjectionGeneration *int64                                    `json:"activeProjectionGeneration,omitempty"`
-	AgentPrincipalID           string                                    `json:"agentPrincipalId"`
-	AgentPrincipalState        AgentPrincipalState                       `json:"agentPrincipalState"`
-	AgentResourceID            string                                    `json:"agentResourceId"`
-	ChannelBinding             *AgentInstallationViewChannelBinding      `json:"channelBinding,omitempty"`
-	ExecutionPermission        *AgentInstallationViewExecutionPermission `json:"executionPermission,omitempty"`
-	OwnerPrincipalID           string                                    `json:"ownerPrincipalId"`
-	PinnedVersionAssetID       string                                    `json:"pinnedVersionAssetId"`
-	Projection                 *ProjectionClass                          `json:"projection,omitempty"`
-	ResourceID                 string                                    `json:"resourceId"`
-	ResourceState              ResourceState                             `json:"resourceState"`
-	ResourceVersion            int64                                     `json:"resourceVersion"`
-	State                      AgentInstallationState                    `json:"state"`
-	WorkspaceID                string                                    `json:"workspaceId"`
+	ActiveProjectionGeneration *int64              `json:"activeProjectionGeneration,omitempty"`
+	AgentPrincipalID           string              `json:"agentPrincipalId"`
+	AgentPrincipalState        AgentPrincipalState `json:"agentPrincipalState"`
+	AgentResourceID            string              `json:"agentResourceId"`
+	// 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
+	// Schedule。
+	AutomationResultTargets []AutomationResultTarget                  `json:"automationResultTargets,omitempty"`
+	ChannelBinding          *AgentInstallationViewChannelBinding      `json:"channelBinding,omitempty"`
+	ExecutionPermission     *AgentInstallationViewExecutionPermission `json:"executionPermission,omitempty"`
+	OwnerPrincipalID        string                                    `json:"ownerPrincipalId"`
+	PinnedVersionAssetID    string                                    `json:"pinnedVersionAssetId"`
+	Projection              *ProjectionClass                          `json:"projection,omitempty"`
+	ResourceID              string                                    `json:"resourceId"`
+	ResourceState           ResourceState                             `json:"resourceState"`
+	ResourceVersion         int64                                     `json:"resourceVersion"`
+	State                   AgentInstallationState                    `json:"state"`
+	WorkspaceID             string                                    `json:"workspaceId"`
 }
 
 type AgentInstallationViewChannelBinding struct {
@@ -2147,11 +2213,18 @@ type AgentVersionContentTurnLimitsClass struct {
 	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
 }
 
-// REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
-// AGENT_TURN；不含消息正文、provider 配置或凭据。
+// Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
+// SKIP，不另实现 cron。
+type AutomationScheduleSpec struct {
+	CatchupWindowSeconds int64 `json:"catchupWindowSeconds"`
+	EverySeconds         int64 `json:"everySeconds"`
+	OffsetSeconds        int64 `json:"offsetSeconds"`
+}
+
+// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 type AutomationVersionContent struct {
 	Action       AutomationVersionContentActionClass  `json:"action"`
-	ResultTarget ResultTarget                         `json:"resultTarget"`
+	ResultTarget AutomationResultTarget               `json:"resultTarget"`
 	Trigger      AutomationVersionContentTriggerClass `json:"trigger"`
 }
 
@@ -2161,9 +2234,10 @@ type AutomationVersionContentActionClass struct {
 }
 
 type AutomationVersionContentTriggerClass struct {
-	Kind               TriggerKind `json:"kind"`
-	MentionPrincipalID *string     `json:"mentionPrincipalId,omitempty"`
-	TextPrefix         *string     `json:"textPrefix,omitempty"`
+	Kind               AutomationTriggerKind `json:"kind"`
+	MentionPrincipalID *string               `json:"mentionPrincipalId,omitempty"`
+	ScheduleSpec       *ScheduleSpecClass    `json:"scheduleSpec,omitempty"`
+	TextPrefix         *string               `json:"textPrefix,omitempty"`
 }
 
 type DelegationGrantParameters struct {
@@ -2495,6 +2569,51 @@ type ApprovalStateReport struct {
 	WorkflowID string         `json:"workflowId"`
 }
 
+type AutomationScheduleAdmitRequest struct {
+	Input      InputClass `json:"input"`
+	RunID      string     `json:"runId"`
+	WorkflowID string     `json:"workflowId"`
+}
+
+// DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
+type InputClass struct {
+	AutomationResourceID     string `json:"automationResourceId"`
+	AutomationVersionAssetID string `json:"automationVersionAssetId"`
+	// 原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。
+	CancelPending *bool                    `json:"cancelPending,omitempty"`
+	ScheduleID    string                   `json:"scheduleId"`
+	SourceKind    AutomationScheduleSource `json:"sourceKind"`
+}
+
+type AutomationScheduleAdmitResult struct {
+	Admitted   bool            `json:"admitted"`
+	ReasonCode string          `json:"reasonCode"`
+	TaskInput  *TaskInputClass `json:"taskInput,omitempty"`
+}
+
+// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
+type TaskInputClass struct {
+	AgentVersionAssetID        string `json:"agentVersionAssetId"`
+	CancelPending              bool   `json:"cancelPending"`
+	EventBase                  int64  `json:"eventBase"`
+	HeartbeatIntervalSeconds   int64  `json:"heartbeatIntervalSeconds"`
+	HeartbeatTimeoutSeconds    int64  `json:"heartbeatTimeoutSeconds"`
+	InstallationID             string `json:"installationId"`
+	InvocationID               string `json:"invocationId"`
+	ObservationIntervalSeconds int64  `json:"observationIntervalSeconds"`
+	ProjectionGeneration       int64  `json:"projectionGeneration"`
+}
+
+// DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
+type AutomationScheduleTaskInput struct {
+	AutomationResourceID     string `json:"automationResourceId"`
+	AutomationVersionAssetID string `json:"automationVersionAssetId"`
+	// 原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。
+	CancelPending *bool                    `json:"cancelPending,omitempty"`
+	ScheduleID    string                   `json:"scheduleId"`
+	SourceKind    AutomationScheduleSource `json:"sourceKind"`
+}
+
 // FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh
 // 选择器 permission、owner 对账与职责分离由 Core 判定。
 type FreshApprovalAdmissionRequest struct {
@@ -2593,17 +2712,19 @@ const (
 	AgentTurn ActionKind = "AGENT_TURN"
 )
 
-type ResultTarget string
+type AutomationResultTarget string
 
 const (
-	TriggerThread ResultTarget = "TRIGGER_THREAD"
+	Channel       AutomationResultTarget = "CHANNEL"
+	TriggerThread AutomationResultTarget = "TRIGGER_THREAD"
 )
 
-type TriggerKind string
+type AutomationTriggerKind string
 
 const (
-	ChannelMessage TriggerKind = "CHANNEL_MESSAGE"
-	KindMENTION    TriggerKind = "MENTION"
+	AutomationTriggerKindMENTION  AutomationTriggerKind = "MENTION"
+	AutomationTriggerKindSCHEDULE AutomationTriggerKind = "SCHEDULE"
+	ChannelMessage                AutomationTriggerKind = "CHANNEL_MESSAGE"
 )
 
 type ResultExposureMode string
@@ -3092,4 +3213,10 @@ type ApprovalSelfApproval string
 const (
 	Allow                    ApprovalSelfApproval = "ALLOW"
 	ApprovalSelfApprovalDENY ApprovalSelfApproval = "DENY"
+)
+
+type AutomationScheduleSource string
+
+const (
+	AutomationScheduleSourceSCHEDULE AutomationScheduleSource = "SCHEDULE"
 )

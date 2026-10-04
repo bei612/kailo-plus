@@ -29,6 +29,8 @@ use temporalio_common::protos::utilities::decode_status_detail;
 
 use crate::oidc::TokenSource;
 
+mod schedule;
+
 /// 调用方标识。它出现在 Temporal 的 history 与 task 归属里，用来分辨
 /// 「谁启动的」——Core 与 Worker 必须不同，否则运维面看不出区别。
 const IDENTITY: &str = "platform-core";
@@ -545,6 +547,20 @@ impl TemporalClient {
         first_run_id: &str,
         action_execution_id: uuid::Uuid,
     ) -> Result<bool, TemporalError> {
+        self.cancel_history(workflow_id, first_run_id, Some(action_execution_id), None)
+            .await
+    }
+
+    // Both the control AE and Schedule continue-as-new consume the same native
+    // history walker. `before_run` never interprets a cancel in the current run
+    // as an immutable input bit that should already have been present at birth.
+    async fn cancel_history(
+        &self,
+        workflow_id: &str,
+        first_run_id: &str,
+        action_execution_id: Option<uuid::Uuid>,
+        before_run: Option<&str>,
+    ) -> Result<bool, TemporalError> {
         if first_run_id.is_empty() {
             return Err(TemporalError::Encode("取消请求缺冻结的首次 run ID".into()));
         }
@@ -552,6 +568,9 @@ impl TemporalClient {
         let mut run_id = first_run_id.to_owned();
         let mut visited_runs = HashSet::new();
         loop {
+            if before_run == Some(run_id.as_str()) {
+                return Ok(false);
+            }
             if !visited_runs.insert(run_id.clone()) {
                 return Err(TemporalError::Unknown(
                     "Temporal execution 链出现循环".into(),
@@ -594,8 +613,9 @@ impl TemporalClient {
                 for event in history.events {
                     match event.attributes {
                         Some(Attributes::WorkflowExecutionCancelRequestedEventAttributes(a))
-                            if a.cause == action_execution_id.to_string()
-                                && a.identity == IDENTITY =>
+                            if action_execution_id.is_none_or(|id| {
+                                a.cause == id.to_string() && a.identity == IDENTITY
+                            }) =>
                         {
                             return Ok(true);
                         }
@@ -634,6 +654,11 @@ impl TemporalClient {
                     return Err(TemporalError::Unknown(
                         "Temporal execution 链的下一 run ID 为空".into(),
                     ));
+                }
+                None if before_run.is_some() => {
+                    return Err(TemporalError::Unknown(
+                        "Schedule current run 不属于原生 execution 链".into(),
+                    ))
                 }
                 None => return Ok(false),
             }

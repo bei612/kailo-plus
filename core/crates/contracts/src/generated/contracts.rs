@@ -325,14 +325,13 @@ pub struct ContentTurnLimits {
 
 /// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
 ///
-/// REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
-/// AGENT_TURN；不含消息正文、provider 配置或凭据。
+/// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationVersionContentClass {
     pub action: ContentAction,
 
-    pub result_target: ResultTarget,
+    pub result_target: AutomationResultTarget,
 
     pub trigger: ContentTrigger,
 }
@@ -353,7 +352,9 @@ pub enum ActionKind {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ResultTarget {
+pub enum AutomationResultTarget {
+    Channel,
+
     #[serde(rename = "TRIGGER_THREAD")]
     TriggerThread,
 }
@@ -361,10 +362,13 @@ pub enum ResultTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentTrigger {
-    pub kind: TriggerKind,
+    pub kind: AutomationTriggerKind,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mention_principal_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_spec: Option<ScheduleSpecClass>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_prefix: Option<String>,
@@ -372,11 +376,25 @@ pub struct ContentTrigger {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TriggerKind {
+pub enum AutomationTriggerKind {
     #[serde(rename = "CHANNEL_MESSAGE")]
     ChannelMessage,
 
     Mention,
+
+    Schedule,
+}
+
+/// Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
+/// SKIP，不另实现 cron。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleSpecClass {
+    pub catchup_window_seconds: i64,
+
+    pub every_seconds: i64,
+
+    pub offset_seconds: i64,
 }
 
 /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -975,6 +993,11 @@ pub struct InstallationElement {
 
     pub agent_resource_id: String,
 
+    /// 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
+    /// Schedule。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_result_targets: Option<Vec<AutomationResultTarget>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_binding: Option<InstallationChannelBinding>,
 
@@ -1124,6 +1147,11 @@ pub struct AgentInstallationView {
     pub agent_principal_state: AgentPrincipalState,
 
     pub agent_resource_id: String,
+
+    /// 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
+    /// Schedule。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_result_targets: Option<Vec<AutomationResultTarget>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_binding: Option<AgentInstallationViewChannelBinding>,
@@ -2800,14 +2828,25 @@ pub struct AgentVersionContentTurnLimits {
     pub max_turn_duration_seconds: i64,
 }
 
-/// REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
-/// AGENT_TURN；不含消息正文、provider 配置或凭据。
+/// Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
+/// SKIP，不另实现 cron。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationScheduleSpec {
+    pub catchup_window_seconds: i64,
+
+    pub every_seconds: i64,
+
+    pub offset_seconds: i64,
+}
+
+/// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationVersionContent {
     pub action: AutomationVersionContentAction,
 
-    pub result_target: ResultTarget,
+    pub result_target: AutomationResultTarget,
 
     pub trigger: AutomationVersionContentTrigger,
 }
@@ -2822,10 +2861,13 @@ pub struct AutomationVersionContentAction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationVersionContentTrigger {
-    pub kind: TriggerKind,
+    pub kind: AutomationTriggerKind,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mention_principal_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_spec: Option<ScheduleSpecClass>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_prefix: Option<String>,
@@ -3396,6 +3438,90 @@ pub struct ApprovalStateReport {
     pub status: ApprovalStatus,
 
     pub workflow_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationScheduleAdmitRequest {
+    pub input: InputClass,
+
+    pub run_id: String,
+
+    pub workflow_id: String,
+}
+
+/// DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InputClass {
+    pub automation_resource_id: String,
+
+    pub automation_version_asset_id: String,
+
+    /// 原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancel_pending: Option<bool>,
+
+    pub schedule_id: String,
+
+    pub source_kind: AutomationScheduleSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AutomationScheduleSource {
+    #[serde(rename = "SCHEDULE")]
+    Schedule,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationScheduleAdmitResult {
+    pub admitted: bool,
+
+    pub reason_code: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_input: Option<TaskInputClass>,
+}
+
+/// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskInputClass {
+    pub agent_version_asset_id: String,
+
+    pub cancel_pending: bool,
+
+    pub event_base: i64,
+
+    pub heartbeat_interval_seconds: i64,
+
+    pub heartbeat_timeout_seconds: i64,
+
+    pub installation_id: String,
+
+    pub invocation_id: String,
+
+    pub observation_interval_seconds: i64,
+
+    pub projection_generation: i64,
+}
+
+/// DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationScheduleTaskInput {
+    pub automation_resource_id: String,
+
+    pub automation_version_asset_id: String,
+
+    /// 原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancel_pending: Option<bool>,
+
+    pub schedule_id: String,
+
+    pub source_kind: AutomationScheduleSource,
 }
 
 /// FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh

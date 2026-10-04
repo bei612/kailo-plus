@@ -141,6 +141,14 @@ pub(crate) async fn frozen_agent_inventory(
                    v.result_target,v.config_hash,v.state
             from catalog.automation_version v join catalog.resource r on r.id=v.automation_resource_id
             where r.tenant_id=$1 order by v.automation_resource_id,v.ordinal for update of v) x),
+          'automation_schedule_refs', (select coalesce(jsonb_agg(x.id order by x.id),'[]'::jsonb) from (
+            select d.schedule_id id from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id
+              where r.tenant_id=$1 and d.schedule_id is not null
+            union select ae.parameters#>>'{scheduleIntent,id}' from admission.action_execution ae
+              where ae.tenant_id=$1 and ae.action_key='automation.enable' and ae.parameters#>>'{scheduleIntent,id}' is not null
+            union select ae.parameters#>>'{scheduleIntent,oldId}' from admission.action_execution ae
+              where ae.tenant_id=$1 and ae.action_key in ('automation.enable','automation.pause','automation.disable')
+                and ae.parameters#>>'{scheduleIntent,oldId}' is not null) x),
           'installations', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
             select i.resource_id,i.workspace_id,i.agent_resource_id,i.pinned_version_asset_id,
                    i.agent_principal_id,i.runtime_isolation_ref
@@ -161,12 +169,12 @@ pub(crate) async fn frozen_agent_inventory(
             from catalog.agent_memory_binding b join catalog.resource r on r.id=b.installation_resource_id
             where r.tenant_id=$1 order by b.installation_resource_id for update of b) x),
           'sessions', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
-            select tenant_id,workspace_id,root_event_id,installation_resource_id,
+            select tenant_id,workspace_id,root_event_id,source_kind,installation_resource_id,
                    agent_version_asset_id,projection_generation
             from catalog.agent_session where tenant_id=$1
             order by workspace_id,root_event_id,installation_resource_id for update) x),
           'invocations', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
-            select id,tenant_id,workspace_id,root_event_id,source_event_id,installation_resource_id,
+            select id,tenant_id,workspace_id,root_event_id,source_event_id,source_kind,schedule_id,scheduled_at,installation_resource_id,
                    agent_version_asset_id,projection_generation,parent_invocation_id,
                    delegation_id,automation_version_asset_id,action_execution_id,workflow_id
             from catalog.agent_invocation where tenant_id=$1 order by id for update) x),
@@ -223,6 +231,51 @@ fn agent_rows<'a>(inventory: &'a Value, category: &str) -> Result<&'a [Value], s
 }
 
 fn same_agent_inventory(mut current: Value, mut frozen: Value) -> Result<bool, sqlx::Error> {
+    // Additive Schedule metadata cannot invalidate an older, Buzz-only snapshot.
+    // Any new native reference or non-Buzz source still fails the original fence.
+    if frozen.get("automation_schedule_refs").is_none() {
+        if !current
+            .get("automation_schedule_refs")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+        {
+            return Ok(false);
+        }
+        current
+            .as_object_mut()
+            .ok_or_else(|| sqlx::Error::Protocol("Agent inventory 不是对象".into()))?
+            .remove("automation_schedule_refs");
+        for category in ["sessions", "invocations"] {
+            let old = agent_rows(&frozen, category)?;
+            let rows = current
+                .get_mut(category)
+                .and_then(Value::as_array_mut)
+                .ok_or_else(|| sqlx::Error::Protocol("Agent source inventory 缺失".into()))?;
+            if rows.len() != old.len() {
+                return Ok(false);
+            }
+            for (row, old) in rows.iter_mut().zip(old) {
+                if old.get("source_kind").is_none() {
+                    if row.get("source_kind").and_then(Value::as_str) != Some("BUZZ_EVENT") {
+                        return Ok(false);
+                    }
+                    row.as_object_mut()
+                        .ok_or_else(|| sqlx::Error::Protocol("Agent source 不是对象".into()))?
+                        .remove("source_kind");
+                }
+                for key in ["schedule_id", "scheduled_at"] {
+                    if old.get(key).is_none() {
+                        if row.get(key).is_some_and(|v| !v.is_null()) {
+                            return Ok(false);
+                        }
+                        row.as_object_mut()
+                            .ok_or_else(|| sqlx::Error::Protocol("Agent source 不是对象".into()))?
+                            .remove(key);
+                    }
+                }
+            }
+        }
+    }
     // An old snapshot may omit the newly introduced category only when there are no new intents.
     if frozen.get("model_route_creates").is_none() {
         if current
@@ -595,6 +648,119 @@ async fn drain_agents(state: &ServiceState, deletion: &Delete) -> Result<bool, s
     deletion
         .audit(&mut tx, "AGENT_DRAIN", "RECONCILIATION", "DRAINED", refs)
         .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+async fn retire_schedules(state: &ServiceState, deletion: &Delete) -> Result<bool, sqlx::Error> {
+    let frozen = deletion
+        .frozen_inventory
+        .pointer("/agent_inventory/automation_schedule_refs")
+        .cloned();
+    // Before Schedule existed, an absent category is compatible only with no
+    // persisted native Schedule intent/reference. Never invent an absence receipt.
+    let frozen = if let Some(value) = frozen {
+        value
+    } else {
+        let exists:bool=sqlx::query_scalar("select exists(select 1 from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id
+            where r.tenant_id=$1 and d.schedule_id is not null) or exists(select 1 from admission.action_execution
+            where tenant_id=$1 and parameters ? 'scheduleIntent')")
+            .bind(deletion.tenant_id).fetch_one(&state.pool).await?;
+        if exists {
+            return Ok(false);
+        }
+        json!([])
+    };
+    let ids: Vec<String> =
+        serde_json::from_value(frozen).map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+    for id in &ids {
+        let mut tx = state.pool.begin().await?;
+        let current: Option<(String, i32)> =
+            sqlx::query_as("select state,version from identity.tenant where id=$1 for update")
+                .bind(deletion.tenant_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        let durable = load(&mut tx, deletion.tenant_id, deletion.snapshot_id)
+            .await?
+            .ok_or_else(|| sqlx::Error::Protocol("Schedule 删除原 subprocess 缺失".into()))?;
+        if current != Some(("DELETING".into(), deletion.tenant_version + 1))
+            || !durable.irreversible_dispatch_started
+            || durable.inventory_digest != deletion.inventory_digest
+        {
+            return Ok(false);
+        }
+        let observed = state
+            .temporal
+            .describe_schedule(id)
+            .await
+            .map_err(|_| sqlx::Error::Protocol("Schedule 删除 Describe 未知".into()))?;
+        if observed.is_none() {
+            tx.commit().await?;
+            continue;
+        }
+        let started: Vec<String> = serde_json::from_value(
+            durable
+                .provider_evidence
+                .pointer("/TEMPORAL_SCHEDULES/dispatched")
+                .cloned()
+                .unwrap_or_else(|| json!([])),
+        )
+        .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        if started.contains(id) {
+            return Ok(false);
+        }
+        let mut started = started;
+        started.push(id.clone());
+        sqlx::query("update admission.tenant_delete_subprocess set provider_evidence=provider_evidence||jsonb_build_object('TEMPORAL_SCHEDULES',$2::jsonb) where id=$1")
+            .bind(durable.subprocess_id).bind(json!({"dispatched":started,"inventory_digest":deletion.inventory_digest,"deleted":false}))
+            .execute(&mut *tx).await?;
+        tx.commit().await?;
+        let mut guard = state.pool.begin().await?;
+        let current: Option<(String, i32)> =
+            sqlx::query_as("select state,version from identity.tenant where id=$1 for update")
+                .bind(deletion.tenant_id)
+                .fetch_optional(&mut *guard)
+                .await?;
+        if current != Some(("DELETING".into(), deletion.tenant_version + 1)) {
+            return Ok(false);
+        }
+        if state.temporal.delete_schedule(id).await.is_err() {
+            return Ok(false);
+        }
+        // ACK 不充当缺席证据；只能查同 native ID。
+        if state
+            .temporal
+            .describe_schedule(id)
+            .await
+            .map_err(|_| sqlx::Error::Protocol("Schedule 删除结果未知".into()))?
+            .is_some()
+        {
+            return Ok(false);
+        }
+        guard.commit().await?;
+    }
+    let mut tx = state.pool.begin().await?;
+    let durable = load(&mut tx, deletion.tenant_id, deletion.snapshot_id)
+        .await?
+        .ok_or_else(|| sqlx::Error::Protocol("Schedule 删除原 subprocess 缺失".into()))?;
+    let mut evidence = durable
+        .provider_evidence
+        .get("TEMPORAL_SCHEDULES")
+        .cloned()
+        .unwrap_or_else(|| json!({"dispatched":[]}));
+    let object = evidence
+        .as_object_mut()
+        .ok_or_else(|| sqlx::Error::Protocol("Schedule 删除证据损坏".into()))?;
+    object.insert("deleted".into(), Value::Bool(true));
+    object.insert(
+        "inventory_digest".into(),
+        Value::String(deletion.inventory_digest.clone()),
+    );
+    object.insert("native_absence".into(), json!(ids));
+    // Keep every pre-RPC dispatch flag even after native absence was confirmed.
+    // A later reappearance cannot authorize a second delete of that exact ID.
+    sqlx::query("update admission.tenant_delete_subprocess set provider_evidence=provider_evidence||jsonb_build_object('TEMPORAL_SCHEDULES',$2::jsonb) where id=$1")
+        .bind(durable.subprocess_id).bind(evidence).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(true)
 }
@@ -1168,6 +1334,16 @@ async fn advance_inner(
 
     // drain 未证实前保留 runtime、模型 credential、Buzz Memory 与 namespace，
     // 让原 AgentTaskWorkflow 继续 interrupt/usage/capacity 对账，绝不抹掉 UNKNOWN。
+    match retire_schedules(state, &deletion).await {
+        Ok(true) => {}
+        result => {
+            if let Err(error) = result {
+                tracing::warn!(tenant_id=%tenant,error=%error,"Schedule 库存销毁未查证");
+            }
+            persist(state, &deletion, None).await?;
+            return reload_result(state, tenant, snapshot).await;
+        }
+    }
     match retire_agents(state, &deletion).await {
         Ok(true) => {}
         result => {
@@ -1778,16 +1954,21 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
     if !durable.irreversible_dispatch_started
         || current != Some(("DELETING".into(), deletion.tenant_version + 1))
         || durable.provider_evidence.pointer("/AGENT_DRAIN/drained") != Some(&Value::Bool(true))
-        || ["AGENT_DRAIN", "AGENT_RUNTIME", "GATEWAY"]
-            .iter()
-            .any(|kind| {
-                durable
-                    .provider_evidence
-                    .get(*kind)
-                    .and_then(|v| v.get("inventory_digest"))
-                    .and_then(Value::as_str)
-                    != Some(&durable.inventory_digest)
-            })
+        || [
+            "AGENT_DRAIN",
+            "AGENT_RUNTIME",
+            "GATEWAY",
+            "TEMPORAL_SCHEDULES",
+        ]
+        .iter()
+        .any(|kind| {
+            durable
+                .provider_evidence
+                .get(*kind)
+                .and_then(|v| v.get("inventory_digest"))
+                .and_then(Value::as_str)
+                != Some(&durable.inventory_digest)
+        })
         || durable
             .frozen_inventory
             .get("openmeter_binding")
@@ -1806,16 +1987,23 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
             != durable
                 .frozen_inventory
                 .pointer("/openmeter_binding/namespace")
-        || ["BUZZ", "SPICEDB", "OPENBAO", "AGENT_RUNTIME", "GATEWAY"]
-            .iter()
-            .any(|kind| {
-                durable
-                    .provider_evidence
-                    .get(*kind)
-                    .and_then(|v| v.get("deleted"))
-                    .and_then(Value::as_bool)
-                    != Some(true)
-            })
+        || [
+            "BUZZ",
+            "SPICEDB",
+            "OPENBAO",
+            "AGENT_RUNTIME",
+            "GATEWAY",
+            "TEMPORAL_SCHEDULES",
+        ]
+        .iter()
+        .any(|kind| {
+            durable
+                .provider_evidence
+                .get(*kind)
+                .and_then(|v| v.get("deleted"))
+                .and_then(Value::as_bool)
+                != Some(true)
+        })
     {
         return Ok(());
     }

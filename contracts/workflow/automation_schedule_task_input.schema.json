@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/automation_schedule_task_input.schema.json",
+  "title": "AutomationScheduleTaskInput",
+  "description": "DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sourceKind", "scheduleId", "automationResourceId", "automationVersionAssetId"],
+  "properties": {
+    "cancelPending": {"type": "boolean", "description": "原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。"},
+    "sourceKind": {"$ref": "../enums/automation_schedule_source.schema.json"},
+    "scheduleId": {"type": "string"},
+    "automationResourceId": {"type": "string", "format": "uuid"},
+    "automationVersionAssetId": {"type": "string", "format": "uuid"}
+  }
+}

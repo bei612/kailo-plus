@@ -190,13 +190,31 @@ pub(crate) fn reply_policy_contract(
         .as_deref()
         .and_then(|mappings| mappings.iter().find(|mapping| mapping.key == key))
         .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    // Buzz ResolvedPersona exposes two independent native booleans. The
-    // existing Task consumer publishes only a reply to the triggering thread;
-    // neither an opaque key nor broadcast support can borrow that execution.
-    if !mapping.thread_replies || mapping.broadcast_replies {
+    // Exactly one native delivery mode: ordinary triggers use their Thread;
+    // DD-107 Schedule uses the Workspace Channel. Neither BOTH nor NONE can
+    // borrow a different consumer or an opaque policy key.
+    if mapping.thread_replies == mapping.broadcast_replies {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     Ok(())
+}
+
+pub(crate) fn reply_to_channel(value: &AgentVersionContent) -> Result<bool, Refusal> {
+    runtime_profile(value)?;
+    let directory = runtime_profile_directory()?;
+    let profile = directory
+        .profiles
+        .iter()
+        .find(|p| p.key == value.runtime_profile_key)
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    reply_policy_contract(&profile.capability_contract, Some(&value.reply_policy))?;
+    let mapping = profile
+        .capability_contract
+        .reply_policy_mappings
+        .as_deref()
+        .and_then(|items| items.iter().find(|m| m.key == value.reply_policy))
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    Ok(mapping.broadcast_replies)
 }
 
 /// 发布只消费已投递合同，profile 的 ACTIVE 不能从 runtime spawn 推导。
@@ -726,10 +744,10 @@ mod reply_policy_tests {
     }
 
     #[test]
-    fn only_exact_registered_thread_only_mapping_is_supported() {
+    fn only_exact_registered_exclusive_reply_mapping_is_supported() {
         for (thread, broadcast, supported) in [
             (false, false, false),
-            (false, true, false),
+            (false, true, true),
             (true, false, true),
             (true, true, false),
         ] {

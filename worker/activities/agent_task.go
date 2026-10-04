@@ -119,3 +119,25 @@ func (c *CoreAPI) ProjectAgentTaskState(ctx context.Context, in generated.TaskSt
 }
 
 const ErrTypeUnknownExternalResult = "UNKNOWN_EXTERNAL_RESULT"
+
+// Native scheduler 已启动原 Workflow。只有原 SERVICE 调用面可回填准入，
+// planned time 不由 Worker 提供；Core 独立查 start history/native SA。
+func (c *CoreAPI) AdmitAutomationSchedule(ctx context.Context, source generated.AutomationScheduleTaskInput) (generated.AutomationScheduleAdmitResult, error) {
+	var out generated.AutomationScheduleAdmitResult
+	info := activity.GetInfo(ctx)
+	if !info.IsWorkflowActivity() || info.IsLocalActivity || info.WorkflowExecution.ID == "" || info.WorkflowExecution.RunID == "" {
+		return out, temporal.NewNonRetryableApplicationError("Schedule Activity 不成立", ErrTypeRejected, nil)
+	}
+	in := generated.AutomationScheduleAdmitRequest{Input: generated.InputClass(source), WorkflowID: info.WorkflowExecution.ID, RunID: info.WorkflowExecution.RunID}
+	var raw json.RawMessage
+	if err := c.post(ctx, "/service/v1/automations/schedule-admit", in, &raw); err != nil {
+		return out, err
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields["admitted"] == nil || fields["reasonCode"] == nil ||
+		string(fields["admitted"]) == "null" || json.Unmarshal(raw, &out) != nil || out.ReasonCode == "" ||
+		(out.Admitted && out.TaskInput == nil) || (!out.Admitted && out.TaskInput != nil) {
+		return out, temporal.NewNonRetryableApplicationError("Schedule admission 未确认", ErrTypeUnknownExternalResult, nil)
+	}
+	return out, nil
+}

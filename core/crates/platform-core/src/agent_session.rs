@@ -27,6 +27,31 @@ pub(crate) struct Birth {
     pub core_memory: Option<CoreMemory>,
 }
 
+/// Only the first Session turn may carry plaintext core context. A continued
+/// turn carries the pinned metadata solely for the dispatch-time recheck.
+pub(crate) enum TurnMemory {
+    Initial(Option<CoreMemory>),
+    Continued {
+        state: String,
+        event: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MemoryPhase {
+    Initial,
+    Continued,
+}
+
+impl TurnMemory {
+    pub(crate) fn phase(&self) -> MemoryPhase {
+        match self {
+            Self::Initial(_) => MemoryPhase::Initial,
+            Self::Continued { .. } => MemoryPhase::Continued,
+        }
+    }
+}
+
 #[derive(FromRow)]
 struct BirthSession {
     tenant_id: Uuid,
@@ -160,14 +185,14 @@ pub(crate) async fn birth(
     })
 }
 
-/// A crash after thread birth must not refresh the Session's memory snapshot.
-/// Read its exact encrypted native event again, or retain UNREADABLE. Known
-/// ABSENT stays ABSENT even if a later replaceable head now exists.
+/// A thread ID alone does not prove a first turn: a crash after birth must
+/// still consume the frozen core. Once an exact scoped Invocation has a native
+/// turn reference, later turns resume history without reading/injecting core.
 pub(crate) async fn fixed_core(
     state: &ServiceState,
     invocation_id: Uuid,
     projection: &RuntimeRef,
-) -> Result<Option<CoreMemory>, RuntimeError> {
+) -> Result<TurnMemory, RuntimeError> {
     let mut tx = state
         .pool
         .begin()
@@ -180,6 +205,24 @@ pub(crate) async fn fixed_core(
     crate::agent_invocation::fresh_invocation(state, &mut tx, invocation_id)
         .await
         .map_err(|_| RuntimeError::AdmissionRequired)?;
+    if !matches!(
+        (
+            session.core_memory_state.as_str(),
+            session.core_memory_event_id.as_deref()
+        ),
+        ("FOUND", Some(_)) | ("ABSENT" | "UNREADABLE", None)
+    ) {
+        return Err(RuntimeError::Unavailable);
+    }
+    // lock_birth holds the exact Session lock. A previous unbound dispatch
+    // cannot be guessed consumed, nor authorize another first turn.
+    if memory_phase(&mut tx, invocation_id).await? == MemoryPhase::Continued {
+        tx.commit().await.map_err(|_| RuntimeError::Unknown)?;
+        return Ok(TurnMemory::Continued {
+            state: session.core_memory_state,
+            event: session.core_memory_event_id,
+        });
+    }
     let memory = match (
         session.core_memory_state.as_str(),
         session.core_memory_event_id.as_deref(),
@@ -204,7 +247,60 @@ pub(crate) async fn fixed_core(
         _ => return Err(RuntimeError::Unavailable),
     };
     tx.commit().await.map_err(|_| RuntimeError::Unknown)?;
-    Ok(memory)
+    Ok(TurnMemory::Initial(memory))
+}
+
+/// Caller holds the Session row lock through its decision/CAS. Reuse only
+/// immutable native turn references within this exact Session version/scope;
+/// CREATED or canceled-before-dispatch siblings did not consume core.
+// agent_invocation::dispatch can also finalize a never-started CREATED row as
+// FAILED. record_dispatch persists its certain refusal as ABORTED, not
+// NOT_DISPATCHED. Other failed/unknown rows remain unresolved without a turn.
+const MEMORY_PHASE_FACTS: &str =
+    "select coalesce(bool_or(prior.runtime_turn_id is not null),false),
+            coalesce(bool_or(prior.id is not null and prior.runtime_turn_id is null
+              and prior.status not in ('CREATED','CANCELED')
+              and not (prior.status='FAILED' and prior.native_status is null
+                and prior.reply_event_id is null
+                and not exists(select 1 from projection.agent_model_trace mt
+                  where mt.invocation_id=prior.id)
+                and exists(select 1 from admission.action_execution ae
+                  where ae.id=prior.action_execution_id and ae.tenant_id=prior.tenant_id
+                    and ae.workspace_id=prior.workspace_id and ae.action_key='agent.invoke'
+                    and ae.gate_state='ALLOWED' and ae.dispatch_state='ABORTED'))),false)
+     from catalog.agent_invocation i
+     left join catalog.agent_invocation prior on prior.id<>i.id
+       and prior.tenant_id=i.tenant_id and prior.workspace_id=i.workspace_id
+       and prior.root_event_id=i.root_event_id
+       and prior.installation_resource_id=i.installation_resource_id
+       and prior.agent_version_asset_id=i.agent_version_asset_id
+       and prior.projection_generation=i.projection_generation
+     where i.id=$1 group by i.id";
+
+pub(crate) async fn memory_phase(
+    tx: &mut Transaction<'_, Postgres>,
+    invocation: Uuid,
+) -> Result<MemoryPhase, RuntimeError> {
+    let facts: Option<(bool, bool)> = sqlx::query_as(MEMORY_PHASE_FACTS)
+        .bind(invocation)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
+    let (has_turn, unbound_dispatch) = facts.ok_or(RuntimeError::Unavailable)?;
+    phase_from_invocations(has_turn, unbound_dispatch)
+}
+
+fn phase_from_invocations(
+    has_turn: bool,
+    unbound_dispatch: bool,
+) -> Result<MemoryPhase, RuntimeError> {
+    if unbound_dispatch {
+        Err(RuntimeError::Unknown)
+    } else if has_turn {
+        Ok(MemoryPhase::Continued)
+    } else {
+        Ok(MemoryPhase::Initial)
+    }
 }
 
 async fn lock_birth(
@@ -361,4 +457,38 @@ pub(crate) async fn resume_existing(
     }
     tx.commit().await.map_err(|_| RuntimeError::Unknown)?;
     observed
+}
+
+#[cfg(test)]
+mod memory_phase_tests {
+    use super::{phase_from_invocations, MemoryPhase};
+    use crate::agent_runtime::RuntimeError;
+
+    #[test]
+    fn thread_birth_without_a_native_turn_still_requires_initial_core() {
+        // The durable thread may already exist, but no scoped Invocation has
+        // consumed a turn. CREATED/canceled-before-dispatch is not consumption.
+        assert_eq!(
+            phase_from_invocations(false, false).unwrap(),
+            MemoryPhase::Initial
+        );
+    }
+
+    #[test]
+    fn bound_native_turn_uses_history_instead_of_another_core_context() {
+        assert_eq!(
+            phase_from_invocations(true, false).unwrap(),
+            MemoryPhase::Continued
+        );
+    }
+
+    #[test]
+    fn unbound_dispatch_remains_unknown_even_with_another_known_turn() {
+        for has_turn in [false, true] {
+            assert!(matches!(
+                phase_from_invocations(has_turn, true),
+                Err(RuntimeError::Unknown)
+            ));
+        }
+    }
 }

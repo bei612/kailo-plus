@@ -2524,3 +2524,182 @@ Win11 签名/设备与 Mobile 签名仍缺，不宣称生产或真实业务通�
 SHA `6cb1196787da8593f6c445f68a6f9a2b5217be9335dff64cabace5a31b7ee70b`。
 独立窄复核未发现该冻结修复窗口的新缺陷；此后只追加检查事实并走原文档快路径，
 不重建镜像、不重跑整批编译，也不把未验证的并行 Schedule 纳入该通过声明。
+
+## 2026-10-04 Session 首轮记忆三态消费修正
+
+实现依据为 `.design/19` §4、§7，`DD-65/68/92`、`SF-BUZ-17`、
+`SF-COD-16`，沿本追溯的 `SS-BUZ-ENGRAM/SS-COD-APP`，不新增记忆权威。
+四步影响结论：
+
+1. 权威：Buzz native core head/body 仍唯一持久记忆；Codex thread 保存已消费的
+   运行上下文。原 `first_turn` 把 `None` 当执行阻断，偏离已冻结的 UNREADABLE
+   语义；原 ABSENT 不投递引导，同样遗漏已有要求，不是新增功能范围。
+2. 影响：`agent_task.rs` 的首轮调用、事务内冻结记忆匹配及上下文选择，
+   `agent_session::fixed_core` 的首次/继续会话判定，及原 `agent_memory::observe`
+   的前提与内容读取超时分类。`birth/read_core/agent_runtime::start_turn`
+   已逐调用点核对；无契约、数据库迁移、Workflow
+   类型或三端独立实现。Web/Desktop/Mobile 继续经同一服务端 Invocation 路径。
+3. 副作用：FOUND 只消费原固定 event 的 profile；ABSENT 注入固定引导，要求先
+   向当前 HUMAN 了解 identity/goals，任何 core 写入仍须原 memory Action 与
+   所需审批，不注入上游 `buzz mem set` 命令。UNREADABLE 不注入任何记忆提示，
+   不写、不覆盖、不重新选 head。上下文沿原 reserved key、kind=untrusted，
+   不写入 AgentVersion developer instructions。
+4. 边界：只有冻结为 UNREADABLE 且无 event 的 Session 可无记忆启动；FOUND
+   取回失败、event 不同、未知状态与不一致 state/event 仍拒绝 dispatch。
+   冻结 ABSENT 在重试时仍 ABSENT；DISPATCHING 后仍只查同一 native 请求，
+   不重复模型执行。身份、scope、binding、SecretRef、投影、AE、Activity/lease
+   与 fresh authorization 原门禁不放宽；读取失败不推断写成功/失败。
+   失配沿原 RUNTIME_ADMISSION_UNAVAILABLE，结果不明沿 UNKNOWN_EXTERNAL_RESULT；
+   UNREADABLE 本身是已定义的外部上下文状态，不伪装为认证或额度失败。
+
+实现后窄复核发现同一 ACTIVE Session 后续 Invocation 也调用 `first_turn`，
+故既有 FOUND 与新增 ABSENT 均须限制为 Session 首 turn，而非每次 Invocation。
+同 scope/version/generation 的已持久 native turn 引用用于证明继续会话；
+只有 thread 引用不能证明首轮上下文已消费。首次派发结果不明时不跳过或重注入，
+准备 dispatch 时在原 Session 锁内复核，继续会话不重新读取 core。
+另核到原外层 timeout 把 audit、密钥、NIP-11 投影读取超时也归为 Native，
+这在允许 UNREADABLE 继续后会错误放宽安全前提。现沿同一配置截止时间分段：
+前提超时仍 Binding/refusal，只有完成前提后的 native 内容超时才是 UNREADABLE；
+不增加超时值、默认值或第二次时间预算。原报告的 Binding 错误也不被重分类。
+
+重新核对的只读上游：Buzz commit
+`779af8886caae1317b4de962082429867ab61503`，
+`crates/buzz-acp/src/engram_fetch.rs::{build_core_section,fetch_core_body,decode_core_body}`
+及 `ONBOARDING_NUDGE`；Codex commit
+`7498521d288b9b3b96ffba4eedf089d8d6e06a84`，
+`codex-rs/app-server-protocol/src/protocol/v2/turn.rs::{TurnStartParams,AdditionalContextEntry,AdditionalContextKind}`。
+本次没有执行 `.references` 内容，没有新增 MCP 路径、memory 写入口、模型调用
+或计量权威。实现后在原 binary 中形成 11 项相关断言（deadline 3、Session
+phase 3、上下文及冻结复核 5）；执行结果按下述实际轮次记录，尚未提交或部署。
+
+后续组合快照 `automation-schedule/apps` 的原 all-targets Clippy 已退出 0；
+首次 Core binary 检查总计 110 passed/2 failed/4 ignored。上述记忆相关的 11 项
+全部通过：超时分类 3、Session 首轮/继续/不明 3、上下文及冻结复核 5。
+整轮仍为退出 101，两项失败在本批 CHANNEL 映射的旧 configuration profile
+断言，不能把这 11 项通过外推为整批验收；生产变异、最终还原及 full 另据实际
+结果收口。原件 `codex-automation-schedule-20261004.2uaAPZ/targets-baseline.log`
+与 `core-corrected.log` 均保留。
+
+## 2026-10-04 共用 Schedule 管理消费者定向证据
+
+基底 `ed9cc16c89c2c82ec75487bb1d95de8e3fe63719`，该 UI 选定树
+`2298a5dd56d20884dbe27b761430939362b1fbd4`，4 文件 +289/-20。
+依据 `DD-107`、设计 03 §7/06 §9，沿原 Web/Desktop 共用 Agents 页面接入
+SCHEDULE 显式间隔、偏移、catchup 参数和 CHANNEL 结果；不新增调度器或 Web UI。
+只消费同 pin/generation 后端提供的 `automationResultTargets`，缺失、重复、
+未知或不含 CHANNEL 时不允许创建/发布/启用 Schedule，不以该目录事实授予执行、
+委托或额度。切换到 thread-only Installation 后，保留表单不能继续提交。
+MENTION/CHANNEL_MESSAGE 仍使用 TRIGGER_THREAD；未知写结果仍只重查原冻结命令。
+Mobile 只有同源生成文案，没有新增组件或编辑宿主。
+
+原生 catchup 最小值来源为 Temporal
+`d94e34a1ebba5410a2e7d07119a76896909591aa`，
+`service/worker/scheduler/workflow.go::defaultTweakables.MinCatchupWindow` 与
+`scheduler.getCatchupWindow`；无业务默认间隔、默认预算或假能力。
+变更影响为原共享 React 消费者、TS 文案与同源 Dart 文案、原 pages 检查；
+后端仍重复进行真实准入。非 Schedule 的旧持久 JSON 形状保留，schema 和四侧
+生成由同批后端统一交付，单独 UI 树不是可发布整批。
+
+原 SDK `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID/GID 1000:1000，4 CPU/8 GiB/no extra swap、Data 源与缓存，原资源预检 0。
+在固定快照使用原 `pnpm --dir client-kit/ts/platform typecheck` 与 `test`：
+最终 7 文件、219 项通过，包括 Schedule 20 项及原审批 21 项。
+私有生产变异把 TRIGGER_THREAD 错当 CHANNEL，原 Schedule 目标退出 1，
+3 failed/17 passed；apply_patch 精确恢复、cmp 0 后同组合再次退出 0。
+原 `gen-platform-i18n.py --check` 与 Dart format check 均 0。
+首次 PATH 漏 Dart 退出 1、实际生成 enum 更名引起 TS2305 退出 2、固定快照漏
+原 Tailwind fixture 退出 1，均保留；纠正投递及真实 consumer 后才得到通过。
+选定 Dart 窄增量不包含继承的 locale/time-helper 改动，不修改原生成器。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/schedule-ui-EjsSpi/`。
+`canonical.patch` SHA `8b4c30cd6cb99c0d556bb11cbebb9629dbd194a936e3eebbcb866d94206272fb`；
+`mutation-native-target.log` SHA `bda37ebbea804cb7a038e407cf4a3ce12295f964b196b858beeb87f606b6f394`；
+`restored.log` SHA `8199f3efc3ee0d1039239f17cf0978698465798de12e0769098e9aef9b4663f7`。
+这是 shared consumer 与模拟 BFF 边界的定向证据，不是实际 Schedule 创建、
+Temporal/Agent/Relay 业务端到端、full、产物、设备或部署验收。
+
+## 2026-10-04 原生 Schedule 后端与 Worker 组合验证
+
+本批沿 `DD-107`、设计 03 §7、06 §3.1/§9 实现 Temporal 原生 interval
+Schedule，不建立 Core 计时器。新计划、暂停、恢复和删除沿原管理 ActionExecution
+保存派发意图；UNKNOWN 仅 Describe 原 native ID，不重新创建。计划启动后的
+首 Activity 核对 native scheduler identity、原生计划时间、输入与 Workflow 链，
+同 Automation 与 nominal time 沿原准入和 Invocation 去重。Scope 生命周期
+沿原 Activity 暂停/恢复计划，管理 PAUSED/DISABLED 不被恢复成 ENABLED。
+
+影响面是 Automation 原管理/查询、Tenant/Workspace 生命周期、AgentTask 来源
+及频道回复、原 Temporal/Worker 调用、七个新增与两个扩展 schema、四侧生成物
+和同源界面。Schedule 来源显式区分于 BUZZ_EVENT，不伪造 Nostr 根事件；
+CHANNEL 结果用真实 Invocation 引用防止同秒同内容碰撞。原普通消息输入和
+Workflow 类型保留，ContinueAsNew 沿同一注册名与原 typed payload；计划续跑
+只添加收窄取消的 `cancelPending`，不获得新的准入或模型派发权。
+
+Worker 原先缺少准入 Activity 注册，且首准入 ACK 丢失后会过早退出；现均已
+修正。只有明确的同源 admitted=false 才结束拒绝，transport/ACK 错误沿既有
+有界 Activity 与 durable timer 继续核对，取消也须先找回原 Invocation 再收尾。
+身份、scope、权限、委托、额度、Activity 与终态证据仍由原治理路径核验；
+缺失或未知不降级为默认身份、重复执行或假成功。没有增加生产预算或模型调用。
+
+组合验证原件目录：
+`/volumes/data/kailo/tmp/codex-automation-schedule-20261004.2uaAPZ/`。
+首次 Clippy 因直接引用未声明的 prost_types 失败；改用已引入的官方 proto
+Duration 和标准 Duration 转换，不新增依赖。首次迁移错误地重复处理已经拆分
+的来源唯一索引，纠正为保留现存索引后，第 61 条迁移 forward/down/up 退出 0。
+`migrations-corrected.log` SHA
+`16c97d29d91883a37976f7fae7e6565fc068bad57697a75d87b690d4928d606d`。
+42 条主要 SQL、10 条变更 SQL 和 2 条 Installation reader SQL 的实际
+PREPARE/ROLLBACK 均通过；它们不是生产 Schedule 端到端。
+
+修正两项旧 CHANNEL 映射期望后，原 Core binary 112 passed/4 ignored，
+Bridge 8 passed，Worker 全包及既有 replay 全部退出 0。
+`targets-corrected.log` SHA
+`b9cc5e83ce773b46ca95a228fbe61f7a42d4a81b39f139234b63427a2ce3e668`。
+私有生产变异移除 interval 下界、降级前置超时和移除记忆 phase 守卫，原检查
+实际 109 passed/3 failed/4 ignored、退出 101；
+`core-production-mutation-corrected.log` SHA
+`af514c6e7db52eaf45b91927a05fcb80594b1129790a51b5754195cbac2357d4`。
+把准入错误改成直接返回，原 Worker 三项确切失败、退出 1；
+`worker-production-mutation.log` SHA
+`420a6b7dbbfaca9a3ddced8ba9311774d5d49801e95b9bd2da87546d81bb7b86`。
+错置 CHANNEL 的 Invocation 引用也触发原断言失败、退出 101；
+`bridge-production-mutation.log` SHA
+`4ceef78347829f3b8b38169e23750da336c81d6000715d9aa0f516bbd89e7d08`。
+生产源按原字节恢复；最终修正后的验证结果另记，不把首次通过冒称最终全量。
+
+交叉复核另发现 native Describe 会规范化 Keyword 搜索属性元数据和 NORMAL
+TaskQueue kind，导致未显式构造这些字段时 exact action equality 永远不成立。
+本批按原生字段修正构造，保留严格比较；另修正 Session 对明确派发前拒绝
+与真正未确认派发的区分。两者不改变上述初轮结果，也不伪造已部署回执。
+对应只读证据已重新解析：Temporal commit
+`d94e34a1ebba5410a2e7d07119a76896909591aa`，
+`service/frontend/workflow_handler.go::{validateStartWorkflowArgsForSchedule,annotateSearchAttributesOfScheduledWorkflow}`、
+`common/enums/defaults.go::SetDefaultTaskQueueKind`、
+`common/searchattribute/search_attirbute.go::ApplyTypeMap`。
+
+最终冻结恢复回执：原 SDK session 45703 实际退出 0，Core 113 passed/
+4 ignored（Memory 11 项均通过）、Bridge 8 passed、all-target Clippy
+`-D warnings`、Worker 全包、原 replay 及 6 项新增 AgentTask 断言全部通过。
+`targets-restored-final.log` SHA
+`b52ad3d6b1636f20c9548a34142e7eaf5f69992c0213dc73953dcaa402c01a0b`；
+37 路径生产源清单 `source-final.sha256` 的 SHA
+`d07747ba6aa88605491450112ec1d5022f8ea6f2897190fde11c0dd4b9af1cee`。
+两次 native Describe 形状生产变异（旧 Normal/Keyword 值与单独错误 metadata）
+均实际退出 101，原字节还原后上述最终检查通过；不是仅比较自造成功常量。
+最终 canonical 相对 ed9 为 37 路径 +3698/-328，SHA
+`552a64b21ba851d26b832f0381409591e4e04486a7971d2f09b8476b3812570a`，
+干净原生 ed9 导出 apply check、路径集合比对及 diffcheck 均 0。
+
+明确派发前 FAILED 的排除只针对同 scope 的原 `agent.invoke` AE
+`ALLOWED/ABORTED`、turn/native status/reply 全空且无 model trace 的事实；
+不能泛化为所有 FAILED 都没执行。生产 SQL 在隔离库实际 READ ONLY
+PREPARE、EXPLAIN、ROLLBACK 通过，未造业务对象或冒称真实状态迁移已验收；
+`memory-phase-final-prepare.log` SHA
+`d7827bcd09535f7e73b44602f4b72a25852f8db1f6c465f4ccfeeecc6af85d45`。
+
+这次阶段源码提交/push 不等待 Win11 安装包，不把产物检查变成普通 push
+前置动作。Web 固定客户端输入树 `644b04df139a67f1e63198464805bd2366a1a003`
+原 helper 已退出 0，registry HEAD/GET 均 200，独立 manifest 摘要均为
+`sha256:12dea304f8d399c5a27cee861efb97eb5222aff43a9d0e0eac425455a2b30aa1`。
+Win11 原同批 helper 仍执行；本批原 full、设备及实际 Schedule/Agent 业务
+未完成，不将定向检查、registry push 或 Git push 写成生产就绪。

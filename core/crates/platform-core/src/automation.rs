@@ -17,6 +17,11 @@ use crate::{
 
 const ACTION: &str = "automation.run";
 
+mod schedule;
+pub(crate) use schedule::converge_scope_schedules;
+pub(crate) use schedule::interval as schedule_spec;
+pub(crate) use schedule::{admit_schedule, schedule_pending};
+
 fn configured_run_meters() -> Result<Option<Vec<String>>, String> {
     match std::env::var("AUTOMATION_RUN_METERS_JSON") {
         Err(std::env::VarError::NotPresent) => Ok(None),
@@ -155,12 +160,14 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
         .get("action")
         .and_then(Value::as_object)
         .ok_or_else(invalid_management)?;
-    if trigger
+    if trigger.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "kind" | "textPrefix" | "mentionPrincipalId" | "scheduleSpec"
+        )
+    }) || action
         .keys()
-        .any(|key| !matches!(key.as_str(), "kind" | "textPrefix" | "mentionPrincipalId"))
-        || action
-            .keys()
-            .any(|key| !matches!(key.as_str(), "kind" | "template"))
+        .any(|key| !matches!(key.as_str(), "kind" | "template"))
         || action.get("kind").and_then(Value::as_str) != Some("AGENT_TURN")
         || action
             .get("template")
@@ -177,8 +184,10 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
         native_trigger["text_prefix"] = prefix.clone();
     }
     match trigger.get("kind").and_then(Value::as_str) {
-        Some("CHANNEL_MESSAGE") if !trigger.contains_key("mentionPrincipalId") => {}
-        Some("MENTION") => {
+        Some("CHANNEL_MESSAGE")
+            if !trigger.contains_key("mentionPrincipalId")
+                && !trigger.contains_key("scheduleSpec") => {}
+        Some("MENTION") if !trigger.contains_key("scheduleSpec") => {
             let id = trigger
                 .get("mentionPrincipalId")
                 .and_then(Value::as_str)
@@ -187,12 +196,27 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
                 .ok_or_else(invalid_management)?;
             native_trigger["mention_principal_id"] = json!(id);
         }
+        Some("SCHEDULE")
+            if !trigger.contains_key("textPrefix")
+                && !trigger.contains_key("mentionPrincipalId") =>
+        {
+            let spec = trigger.get("scheduleSpec").ok_or_else(invalid_management)?;
+            schedule::interval(spec)?;
+            native_trigger["schedule_spec"] = spec.clone();
+        }
         _ => return Err(invalid_management()),
     }
     let result = value
         .get("resultTarget")
         .and_then(Value::as_str)
-        .filter(|result| *result == "TRIGGER_THREAD")
+        .filter(|result| {
+            *result
+                == if trigger.get("kind").and_then(Value::as_str) == Some("SCHEDULE") {
+                    "CHANNEL"
+                } else {
+                    "TRIGGER_THREAD"
+                }
+        })
         .ok_or_else(invalid_management)?;
     Ok(
         json!({"trigger":native_trigger,"action":action,"approvalPolicyId":null,"resultTarget":result}),
@@ -362,8 +386,7 @@ pub(crate) async fn management_target(
             && frozen.is_none_or(|id| id == r.id)
     })
     .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
-    if row.schedule_id.is_some()
-        || row.webhook_secret_ref.is_some()
+    if row.webhook_secret_ref.is_some()
         || !matches!(
             row.automation_state.as_str(),
             "DRAFT" | "ENABLED" | "PAUSED" | "DISABLED"
@@ -446,6 +469,11 @@ async fn management_installation(
     }
     let requested: contracts::ContentClass = serde_json::from_value(requested)
         .map_err(|_| Refusal::Unavailable("Installation 已发布 Version 不符合共享契约".into()))?;
+    if crate::agent_version::reply_to_channel(&requested)?
+        != (content.get("resultTarget").and_then(Value::as_str) == Some("CHANNEL"))
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
     crate::agent_version::validate_references(g, tx, tenant, human, &requested).await
 }
 
@@ -556,13 +584,33 @@ pub(crate) async fn management_prewrite(
             )
             .await?;
             management_grant(g, tx, &row, p).await?;
-            sqlx::query("update catalog.automation_definition set pinned_version_asset_id=$2,delegation_id=$3,
+            let schedule_id = (version
+                .content
+                .pointer("/trigger/kind")
+                .and_then(Value::as_str)
+                == Some("SCHEDULE"))
+            .then(|| {
+                format!(
+                    "platform:automation_schedule:{}:{}:{}",
+                    ae.tenant_id, row.id, ae.id
+                )
+            });
+            sqlx::query("update catalog.automation_definition set pinned_version_asset_id=$2,delegation_id=$3,schedule_id=$4,
                 state='ENABLED',enabled_at=clock_timestamp(),version=version+1 where resource_id=$1")
-                .bind(row.id).bind(p.asset_id).bind(p.delegation_id).execute(&mut **tx).await?;
+                .bind(row.id).bind(p.asset_id).bind(p.delegation_id).bind(&schedule_id).execute(&mut **tx).await?;
             sqlx::query("update catalog.resource set version=version+1 where id=$1")
                 .bind(row.id)
                 .execute(&mut **tx)
                 .await?;
+            schedule::freeze(
+                tx,
+                ae,
+                &row,
+                schedule_id.as_deref(),
+                Some(&version.content),
+                sem,
+            )
+            .await?;
             Ok(())
         }
         Semantic::AutomationPause | Semantic::AutomationDisable => {
@@ -573,6 +621,7 @@ pub(crate) async fn management_prewrite(
                 .bind(row.id)
                 .execute(&mut **tx)
                 .await?;
+            schedule::freeze(tx, ae, &row, None, None, sem).await?;
             Ok(())
         }
         _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
@@ -749,7 +798,8 @@ pub(crate) async fn management_dispatch(
     }
     let creating = sem == Semantic::AutomationCreate;
     if !creating && sem != Semantic::AutomationPublish {
-        return Ok(());
+        drop(tx);
+        return schedule::dispatch(g, id, def, sem).await;
     }
     let active: bool =
         sqlx::query_scalar("select state='ACTIVE' from identity.tenant where id=$1 for update")
@@ -1213,10 +1263,15 @@ async fn fresh(
             .is_none_or(|s| s.trim().is_empty())
         || !matches!(
             row.trigger.get("kind").and_then(Value::as_str),
-            Some("CHANNEL_MESSAGE" | "MENTION")
+            Some("CHANNEL_MESSAGE" | "MENTION" | "SCHEDULE")
         )
         || row.approval_policy_id.is_some()
-        || row.result_target != "TRIGGER_THREAD"
+        || row.result_target
+            != if row.trigger.get("kind").and_then(Value::as_str) == Some("SCHEDULE") {
+                "CHANNEL"
+            } else {
+                "TRIGGER_THREAD"
+            }
         || row.config_hash
             != collab_bridge::limits::canonical_digest(&json!({
             "trigger":row.trigger,"action":row.action,"approvalPolicyId":row.approval_policy_id,
@@ -1486,20 +1541,24 @@ async fn recheck_invocation(
     {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
-    let author = ae
-        .parameters
-        .as_ref()
-        .and_then(|p| p.get("sourcePrincipalId"))
-        .and_then(Value::as_str)
-        .and_then(|p| Uuid::parse_str(p).ok())
-        .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
-    let pubkey = ae
-        .parameters
-        .as_ref()
-        .and_then(|p| p.get("sourcePubkey"))
-        .and_then(Value::as_str)
-        .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
-    source_human(g, tx, &runtime_scope(&row), author, pubkey).await?;
+    if row.trigger.get("kind").and_then(Value::as_str) == Some("SCHEDULE") {
+        schedule::frozen_source(g, tx, &ae, &frozen).await?;
+    } else {
+        let author = ae
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("sourcePrincipalId"))
+            .and_then(Value::as_str)
+            .and_then(|p| Uuid::parse_str(p).ok())
+            .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
+        let pubkey = ae
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("sourcePubkey"))
+            .and_then(Value::as_str)
+            .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
+        source_human(g, tx, &runtime_scope(&row), author, pubkey).await?;
+    }
     fresh_runtime(state, tx, &runtime_scope(&row)).await?;
     let revision = fresh(g, tx, &row, &def, Some(frozen.operation_id)).await?;
     g.record_automation_decision(tx, &ae, &def, "RECHECK", Ok(revision.clone()))
@@ -1802,9 +1861,11 @@ pub(crate) async fn reconcile(state: &ServiceState, batch: i64) -> Result<(), Re
         "select d.resource_id from catalog.automation_definition d
         join catalog.resource r on r.id=d.resource_id
         join catalog.resource_type_definition t on t.type_key=r.type_key
+        join catalog.automation_version v on v.asset_id=d.pinned_version_asset_id
         left join projection.ingress_checkpoint c on c.source_key=
             'relay:automation:'||d.resource_id::text||':'||d.pinned_version_asset_id::text
         where d.state='ENABLED' and r.state='ACTIVE' and t.status='ACTIVE'
+          and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION')
           and r.projection_action_execution_id is null
         order by c.updated_at nulls first,d.resource_id limit $1",
     )

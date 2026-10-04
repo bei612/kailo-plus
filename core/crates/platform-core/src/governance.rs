@@ -4065,7 +4065,7 @@ impl Governance {
                 | Semantic::AutomationPause
                 | Semantic::AutomationDisable => {
                     crate::automation::management_prewrite(self, tx, ae, def, sem, params).await?;
-                    if completes {
+                    if completes && !crate::automation::schedule_pending(tx, ae.id).await? {
                         self.record_local_outcome(
                             tx,
                             ae,

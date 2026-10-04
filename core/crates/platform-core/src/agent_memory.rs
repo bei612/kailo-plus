@@ -302,43 +302,36 @@ async fn observe(
     request: ReadRequest<'_>,
     budget: Option<std::sync::Arc<collab_bridge::limits::ApiBudget>>,
 ) -> Result<Observed, ObserveError> {
-    tokio::time::timeout(
-        config.read_timeout,
-        observe_native(state, binding, config, request, budget),
-    )
-    .await
-    .unwrap_or(Err(ObserveError::Native(MemoryError::Unavailable)))
-}
-
-async fn observe_native(
-    state: &ServiceState,
-    binding: &Binding,
-    config: &Config,
-    request: ReadRequest<'_>,
-    budget: Option<std::sync::Arc<collab_bridge::limits::ApiBudget>>,
-) -> Result<Observed, ObserveError> {
-    crate::service_api::audit_gate(state)
-        .await
-        .map_err(|_| ObserveError::Binding)?;
-    let counterparty = read_counterparty(state, binding).await?;
-    let mut client = IdentityClient::new(
-        Custody::Server,
-        &counterparty.secret_key().to_secret_hex(),
-        &state.relay_transport,
-        &binding.normalized_host,
-    )
-    .map_err(|_| ObserveError::Binding)?;
-    if let Some(budget) = budget {
-        client = client.with_budget(budget);
-    }
-    let transport =
-        reqwest::Url::parse(&state.relay_transport).map_err(|_| ObserveError::Binding)?;
-    let nip11 = fetch_nip11(&state.http, &transport, &binding.normalized_host)
-        .await
-        .map_err(|_| ObserveError::Binding)?;
-    if binding.nip11_snapshot_digest.as_deref() != Some(nip11.digest.as_str()) {
-        return Err(ObserveError::Binding);
-    }
+    // One configured deadline covers both admission prerequisites and native
+    // content. A slow key/audit/projection read is not unreadable memory.
+    let deadline = tokio::time::Instant::now() + config.read_timeout;
+    let (counterparty, client, nip11) =
+        read_before_deadline(deadline, ObserveError::Binding, async {
+            crate::service_api::audit_gate(state)
+                .await
+                .map_err(|_| ObserveError::Binding)?;
+            let counterparty = read_counterparty(state, binding).await?;
+            let mut client = IdentityClient::new(
+                Custody::Server,
+                &counterparty.secret_key().to_secret_hex(),
+                &state.relay_transport,
+                &binding.normalized_host,
+            )
+            .map_err(|_| ObserveError::Binding)?;
+            if let Some(budget) = budget {
+                client = client.with_budget(budget);
+            }
+            let transport =
+                reqwest::Url::parse(&state.relay_transport).map_err(|_| ObserveError::Binding)?;
+            let nip11 = fetch_nip11(&state.http, &transport, &binding.normalized_host)
+                .await
+                .map_err(|_| ObserveError::Binding)?;
+            if binding.nip11_snapshot_digest.as_deref() != Some(nip11.digest.as_str()) {
+                return Err(ObserveError::Binding);
+            }
+            Ok((counterparty, client, nip11))
+        })
+        .await?;
     let reader = Reader::new(
         &client,
         &counterparty,
@@ -348,38 +341,55 @@ async fn observe_native(
     )
     .map_err(ObserveError::Native)?;
     let now = u64::try_from(chrono::Utc::now().timestamp()).map_err(|_| ObserveError::Binding)?;
-    match request {
-        ReadRequest::Core => reader
-            .read_core(&state.http, now)
-            .await
-            .map(Observed::Core)
-            .map_err(ObserveError::Native),
-        ReadRequest::CoreManagement => reader
-            .read_core_entry(&state.http, now)
-            .await
-            .map(Observed::Entry)
-            .map_err(ObserveError::Native),
-        ReadRequest::CoreEvent(event) => reader
-            .read_core_event(&state.http, event, now)
-            .await
-            .map(Observed::Core)
-            .map_err(ObserveError::Native),
-        ReadRequest::Snapshot => reader
-            .inspect(&state.http, now)
-            .await
-            .map(Observed::Snapshot)
-            .map_err(ObserveError::Native),
-        ReadRequest::Entries => reader
-            .list_entries(&state.http, now)
-            .await
-            .map(|(entries, bytes)| Observed::Entries(entries, bytes))
-            .map_err(ObserveError::Native),
-        ReadRequest::Entry(slug) => reader
-            .read_entry(&state.http, slug, now)
-            .await
-            .map(Observed::Entry)
-            .map_err(ObserveError::Native),
-    }
+    read_before_deadline(
+        deadline,
+        ObserveError::Native(MemoryError::Unavailable),
+        async {
+            match request {
+                ReadRequest::Core => reader
+                    .read_core(&state.http, now)
+                    .await
+                    .map(Observed::Core)
+                    .map_err(ObserveError::Native),
+                ReadRequest::CoreManagement => reader
+                    .read_core_entry(&state.http, now)
+                    .await
+                    .map(Observed::Entry)
+                    .map_err(ObserveError::Native),
+                ReadRequest::CoreEvent(event) => reader
+                    .read_core_event(&state.http, event, now)
+                    .await
+                    .map(Observed::Core)
+                    .map_err(ObserveError::Native),
+                ReadRequest::Snapshot => reader
+                    .inspect(&state.http, now)
+                    .await
+                    .map(Observed::Snapshot)
+                    .map_err(ObserveError::Native),
+                ReadRequest::Entries => reader
+                    .list_entries(&state.http, now)
+                    .await
+                    .map(|(entries, bytes)| Observed::Entries(entries, bytes))
+                    .map_err(ObserveError::Native),
+                ReadRequest::Entry(slug) => reader
+                    .read_entry(&state.http, slug, now)
+                    .await
+                    .map(Observed::Entry)
+                    .map_err(ObserveError::Native),
+            }
+        },
+    )
+    .await
+}
+
+async fn read_before_deadline<T>(
+    deadline: tokio::time::Instant,
+    timeout_error: ObserveError,
+    read: impl std::future::Future<Output = Result<T, ObserveError>>,
+) -> Result<T, ObserveError> {
+    tokio::time::timeout_at(deadline, read)
+        .await
+        .unwrap_or(Err(timeout_error))
 }
 
 async fn read_counterparty(
@@ -1091,4 +1101,43 @@ async fn record(
 
 fn unavailable(message: &str) -> Refusal {
     Refusal::Unavailable(message.into())
+}
+
+#[cfg(test)]
+mod read_deadline_tests {
+    use super::{read_before_deadline, MemoryError, ObserveError};
+    use std::future::pending;
+    use tokio::time::Instant;
+
+    #[tokio::test]
+    async fn prerequisite_timeout_stays_binding_failure_not_unreadable_memory() {
+        let result =
+            read_before_deadline::<()>(Instant::now(), ObserveError::Binding, pending()).await;
+        assert!(matches!(result, Err(ObserveError::Binding)));
+    }
+
+    #[tokio::test]
+    async fn native_content_timeout_is_unreadable_without_a_new_deadline() {
+        let result = read_before_deadline::<()>(
+            Instant::now(),
+            ObserveError::Native(MemoryError::Unavailable),
+            pending(),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(ObserveError::Native(MemoryError::Unavailable))
+        ));
+    }
+
+    #[tokio::test]
+    async fn native_read_cannot_reclassify_a_reported_binding_failure() {
+        let result = read_before_deadline::<()>(
+            Instant::now(),
+            ObserveError::Native(MemoryError::Unavailable),
+            async { Err(ObserveError::Binding) },
+        )
+        .await;
+        assert!(matches!(result, Err(ObserveError::Binding)));
+    }
 }

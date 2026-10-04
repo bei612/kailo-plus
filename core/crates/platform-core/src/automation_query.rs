@@ -285,7 +285,7 @@ async fn versions(
             || trigger.keys().any(|key| {
                 !matches!(
                     key.as_str(),
-                    "kind" | "text_prefix" | "mention_principal_id"
+                    "kind" | "text_prefix" | "mention_principal_id" | "schedule_spec"
                 )
             })
             || action
@@ -299,18 +299,32 @@ async fn versions(
             || trigger
                 .get("text_prefix")
                 .is_some_and(|value| value.as_str().is_none_or(str::is_empty))
-            || version.result_target != "TRIGGER_THREAD"
         {
             return Err(unavailable());
         }
         match trigger.get("kind").and_then(Value::as_str) {
-            Some("CHANNEL_MESSAGE") if !trigger.contains_key("mention_principal_id") => {}
+            Some("CHANNEL_MESSAGE")
+                if !trigger.contains_key("mention_principal_id")
+                    && !trigger.contains_key("schedule_spec")
+                    && version.result_target == "TRIGGER_THREAD" => {}
             Some("MENTION")
                 if trigger
                     .get("mention_principal_id")
                     .and_then(Value::as_str)
                     .and_then(|value| Uuid::parse_str(value).ok())
-                    == Some(executor) => {}
+                    == Some(executor)
+                    && !trigger.contains_key("schedule_spec")
+                    && version.result_target == "TRIGGER_THREAD" => {}
+            Some("SCHEDULE")
+                if !trigger.contains_key("text_prefix")
+                    && !trigger.contains_key("mention_principal_id")
+                    && version.result_target == "CHANNEL" =>
+            {
+                crate::automation::schedule_spec(
+                    trigger.get("schedule_spec").ok_or_else(unavailable)?,
+                )
+                .map_err(|e| e.respond(None))?;
+            }
             _ => return Err(unavailable()),
         }
         let content = json!({"trigger":version.trigger,"action":version.action,
@@ -345,6 +359,9 @@ async fn versions(
         }
         if let Some(value) = content["trigger"].get("mention_principal_id") {
             trigger["mentionPrincipalId"] = value.clone();
+        }
+        if let Some(value) = content["trigger"].get("schedule_spec") {
+            trigger["scheduleSpec"] = value.clone();
         }
         let value=serde_json::from_value(json!({"assetId":version.asset_id,"automationResourceId":row.resource_id,
             "ownerPrincipalId":version.owner_principal_id,"assetVersion":version.asset_version,

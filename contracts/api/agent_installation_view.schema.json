@@ -29,6 +29,11 @@
       }
     },
     "projection": {"$ref": "agent_installation_projection_view.schema.json"},
+    "automationResultTargets": {
+      "type": "array",
+      "description": "同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持 Schedule。",
+      "items": {"$ref": "../enums/automation_result_target.schema.json"}
+    },
     "executionPermission": {
       "type": "object",
       "additionalProperties": false,

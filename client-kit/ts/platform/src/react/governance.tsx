@@ -446,10 +446,16 @@ function ApprovalPanel({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ControlOutcome | null>(null);
 
+  const refresh = () => {
+    setConfirming(null);
+    reload();
+  };
+
   const run = async (control: ApprovalDecision | "withdraw") => {
     setConfirming(null);
     setBusy(true);
-    setOutcome(null);
+    const unknown = outcome?.kind === "failed" && outcome.failure.kind === "unknown";
+    if (!unknown) setOutcome(null);
     try {
       if (control === "withdraw") {
         const r = await client.withdraw(workflowId);
@@ -459,15 +465,18 @@ function ApprovalPanel({
         setOutcome({ kind: "decided", outcome: r });
       }
     } catch (e) {
-      // 决定是按人去重的 Update：结果不明时原样重发是安全的
-      setOutcome({
-        kind: "failed",
-        failure: writeFailure(e),
-        retry: control === "withdraw" ? undefined : control,
-      });
+      // 同人同值 Update 可重发；重发的准入拒绝不能否定原未知决定。
+      // 保留原决定与 operation 查证引用，直到该 Update 返回确定结论。
+      if (!unknown) {
+        setOutcome({
+          kind: "failed",
+          failure: writeFailure(e),
+          retry: control === "withdraw" ? undefined : control,
+        });
+      }
     } finally {
       setBusy(false);
-      reload();
+      refresh();
       onChanged?.();
     }
   };
@@ -515,14 +524,15 @@ function ApprovalPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <Toolbar onBack={onBack} onRefresh={reload} />
+      <Toolbar onBack={onBack} onRefresh={refresh} />
       {outcomeView}
-      <Resource state={state} reload={reload}>
+      <Resource state={state} reload={refresh}>
         {(a) => {
           // 投影不可担保为当前时不给控制：先对账，再决定。本人刚得到确定结论（决定已记录、
-          // 已撤回）时也不再给：投影可能还停在未决，那是写回尚未到达，不是还能再做一次
-          const settled = outcome !== null && outcome.kind !== "failed";
-          const controllable = approvalOpen(a.status) && !a.observation && !busy && !settled;
+          // 已撤回）或结果不明时也不再给新控制：未决投影不能证明此前决定尚未记录。
+          const submitted = outcome !== null &&
+            (outcome.kind !== "failed" || outcome.failure.kind === "unknown");
+          const controllable = approvalOpen(a.status) && !a.observation && !busy && !submitted;
           return (
             <div className="flex flex-col gap-4">
               {role === "approver" ? <h2 className="text-sm font-medium">{a.actionKey}</h2> : null}
@@ -572,7 +582,7 @@ function ApprovalPanel({
                   </Table>
                 )}
               </section>
-              {confirming ? (
+              {controllable && confirming ? (
                 <Confirm
                   prompt={
                     confirming === "withdraw"

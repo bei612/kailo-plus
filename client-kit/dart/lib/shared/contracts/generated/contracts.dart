@@ -52,6 +52,7 @@
 //     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
 //     final agentMemoryWriteInput = agentMemoryWriteInputFromJson(jsonString);
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
+//     final automationScheduleSpec = automationScheduleSpecFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
 //     final delegationScopeParameters = delegationScopeParametersFromJson(jsonString);
@@ -78,6 +79,9 @@
 //     final approvalResume = approvalResumeFromJson(jsonString);
 //     final approvalRoleRequirement = approvalRoleRequirementFromJson(jsonString);
 //     final approvalStateReport = approvalStateReportFromJson(jsonString);
+//     final automationScheduleAdmitRequest = automationScheduleAdmitRequestFromJson(jsonString);
+//     final automationScheduleAdmitResult = automationScheduleAdmitResultFromJson(jsonString);
+//     final automationScheduleTaskInput = automationScheduleTaskInputFromJson(jsonString);
 //     final freshApprovalAdmissionRequest = freshApprovalAdmissionRequestFromJson(jsonString);
 //     final freshApprovalAdmissionResult = freshApprovalAdmissionResultFromJson(jsonString);
 //     final tenantDeleteAdvanceRequest = tenantDeleteAdvanceRequestFromJson(jsonString);
@@ -388,6 +392,12 @@ AgentVersionContent agentVersionContentFromJson(String str) =>
 String agentVersionContentToJson(AgentVersionContent data) =>
     json.encode(data.toJson());
 
+AutomationScheduleSpec automationScheduleSpecFromJson(String str) =>
+    AutomationScheduleSpec.fromJson(json.decode(str));
+
+String automationScheduleSpecToJson(AutomationScheduleSpec data) =>
+    json.encode(data.toJson());
+
 AutomationVersionContent automationVersionContentFromJson(String str) =>
     AutomationVersionContent.fromJson(json.decode(str));
 
@@ -544,6 +554,28 @@ ApprovalStateReport approvalStateReportFromJson(String str) =>
     ApprovalStateReport.fromJson(json.decode(str));
 
 String approvalStateReportToJson(ApprovalStateReport data) =>
+    json.encode(data.toJson());
+
+AutomationScheduleAdmitRequest automationScheduleAdmitRequestFromJson(
+  String str,
+) => AutomationScheduleAdmitRequest.fromJson(json.decode(str));
+
+String automationScheduleAdmitRequestToJson(
+  AutomationScheduleAdmitRequest data,
+) => json.encode(data.toJson());
+
+AutomationScheduleAdmitResult automationScheduleAdmitResultFromJson(
+  String str,
+) => AutomationScheduleAdmitResult.fromJson(json.decode(str));
+
+String automationScheduleAdmitResultToJson(
+  AutomationScheduleAdmitResult data,
+) => json.encode(data.toJson());
+
+AutomationScheduleTaskInput automationScheduleTaskInputFromJson(String str) =>
+    AutomationScheduleTaskInput.fromJson(json.decode(str));
+
+String automationScheduleTaskInputToJson(AutomationScheduleTaskInput data) =>
     json.encode(data.toJson());
 
 FreshApprovalAdmissionRequest freshApprovalAdmissionRequestFromJson(
@@ -1083,11 +1115,10 @@ class ContentTurnLimits {
 
 ///仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
 ///
-///REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
-///AGENT_TURN；不含消息正文、provider 配置或凭据。
+///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 class AutomationVersionContentClass {
   final ContentAction action;
-  final ResultTarget resultTarget;
+  final AutomationResultTarget resultTarget;
   final ContentTrigger trigger;
 
   AutomationVersionContentClass({
@@ -1099,13 +1130,13 @@ class AutomationVersionContentClass {
   factory AutomationVersionContentClass.fromJson(Map<String, dynamic> json) =>
       AutomationVersionContentClass(
         action: ContentAction.fromJson(json["action"]),
-        resultTarget: resultTargetValues.map[json["resultTarget"]]!,
+        resultTarget: automationResultTargetValues.map[json["resultTarget"]]!,
         trigger: ContentTrigger.fromJson(json["trigger"]),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "action": action.toJson(),
-    "resultTarget": resultTargetValues.reverse[resultTarget],
+    "resultTarget": automationResultTargetValues.reverse[resultTarget],
     "trigger": trigger.toJson(),
   });
 }
@@ -1131,42 +1162,77 @@ enum ActionKind { AGENT_TURN }
 
 final actionKindValues = EnumValues({"AGENT_TURN": ActionKind.AGENT_TURN});
 
-enum ResultTarget { TRIGGER_THREAD }
+enum AutomationResultTarget { CHANNEL, TRIGGER_THREAD }
 
-final resultTargetValues = EnumValues({
-  "TRIGGER_THREAD": ResultTarget.TRIGGER_THREAD,
+final automationResultTargetValues = EnumValues({
+  "CHANNEL": AutomationResultTarget.CHANNEL,
+  "TRIGGER_THREAD": AutomationResultTarget.TRIGGER_THREAD,
 });
 
 class ContentTrigger {
-  final TriggerKind kind;
+  final AutomationTriggerKind kind;
   final String? mentionPrincipalId;
+  final ScheduleSpecClass? scheduleSpec;
   final String? textPrefix;
 
   ContentTrigger({
     required this.kind,
     this.mentionPrincipalId,
+    this.scheduleSpec,
     this.textPrefix,
   });
 
   factory ContentTrigger.fromJson(Map<String, dynamic> json) => ContentTrigger(
-    kind: triggerKindValues.map[json["kind"]]!,
+    kind: automationTriggerKindValues.map[json["kind"]]!,
     mentionPrincipalId: json["mentionPrincipalId"],
+    scheduleSpec: json["scheduleSpec"] == null
+        ? null
+        : ScheduleSpecClass.fromJson(json["scheduleSpec"]),
     textPrefix: json["textPrefix"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
-    "kind": triggerKindValues.reverse[kind],
+    "kind": automationTriggerKindValues.reverse[kind],
     "mentionPrincipalId": mentionPrincipalId,
+    "scheduleSpec": scheduleSpec?.toJson(),
     "textPrefix": textPrefix,
   });
 }
 
-enum TriggerKind { CHANNEL_MESSAGE, MENTION }
+enum AutomationTriggerKind { CHANNEL_MESSAGE, MENTION, SCHEDULE }
 
-final triggerKindValues = EnumValues({
-  "CHANNEL_MESSAGE": TriggerKind.CHANNEL_MESSAGE,
-  "MENTION": TriggerKind.MENTION,
+final automationTriggerKindValues = EnumValues({
+  "CHANNEL_MESSAGE": AutomationTriggerKind.CHANNEL_MESSAGE,
+  "MENTION": AutomationTriggerKind.MENTION,
+  "SCHEDULE": AutomationTriggerKind.SCHEDULE,
 });
+
+///Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
+///SKIP，不另实现 cron。
+class ScheduleSpecClass {
+  final int catchupWindowSeconds;
+  final int everySeconds;
+  final int offsetSeconds;
+
+  ScheduleSpecClass({
+    required this.catchupWindowSeconds,
+    required this.everySeconds,
+    required this.offsetSeconds,
+  });
+
+  factory ScheduleSpecClass.fromJson(Map<String, dynamic> json) =>
+      ScheduleSpecClass(
+        catchupWindowSeconds: json["catchupWindowSeconds"],
+        everySeconds: json["everySeconds"],
+        offsetSeconds: json["offsetSeconds"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "catchupWindowSeconds": catchupWindowSeconds,
+    "everySeconds": everySeconds,
+    "offsetSeconds": offsetSeconds,
+  });
+}
 
 ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 class ParametersClass {
@@ -2050,6 +2116,10 @@ class InstallationElement {
   final String agentPrincipalId;
   final AgentPrincipalState agentPrincipalState;
   final String agentResourceId;
+
+  ///同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
+  ///Schedule。
+  final List<AutomationResultTarget>? automationResultTargets;
   final InstallationChannelBinding? channelBinding;
   final InstallationExecutionPermission? executionPermission;
   final String ownerPrincipalId;
@@ -2066,6 +2136,7 @@ class InstallationElement {
     required this.agentPrincipalId,
     required this.agentPrincipalState,
     required this.agentResourceId,
+    this.automationResultTargets,
     this.channelBinding,
     this.executionPermission,
     required this.ownerPrincipalId,
@@ -2085,6 +2156,13 @@ class InstallationElement {
         agentPrincipalState:
             agentPrincipalStateValues.map[json["agentPrincipalState"]]!,
         agentResourceId: json["agentResourceId"],
+        automationResultTargets: json["automationResultTargets"] == null
+            ? null
+            : List<AutomationResultTarget>.from(
+                json["automationResultTargets"]!.map(
+                  (x) => automationResultTargetValues.map[x]!,
+                ),
+              ),
         channelBinding: json["channelBinding"] == null
             ? null
             : InstallationChannelBinding.fromJson(json["channelBinding"]),
@@ -2111,6 +2189,13 @@ class InstallationElement {
     "agentPrincipalState":
         agentPrincipalStateValues.reverse[agentPrincipalState],
     "agentResourceId": agentResourceId,
+    "automationResultTargets": automationResultTargets == null
+        ? null
+        : List<dynamic>.from(
+            automationResultTargets!.map(
+              (x) => automationResultTargetValues.reverse[x],
+            ),
+          ),
     "channelBinding": channelBinding?.toJson(),
     "executionPermission": executionPermission?.toJson(),
     "ownerPrincipalId": ownerPrincipalId,
@@ -2297,6 +2382,10 @@ class AgentInstallationView {
   final String agentPrincipalId;
   final AgentPrincipalState agentPrincipalState;
   final String agentResourceId;
+
+  ///同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
+  ///Schedule。
+  final List<AutomationResultTarget>? automationResultTargets;
   final AgentInstallationViewChannelBinding? channelBinding;
   final AgentInstallationViewExecutionPermission? executionPermission;
   final String ownerPrincipalId;
@@ -2313,6 +2402,7 @@ class AgentInstallationView {
     required this.agentPrincipalId,
     required this.agentPrincipalState,
     required this.agentResourceId,
+    this.automationResultTargets,
     this.channelBinding,
     this.executionPermission,
     required this.ownerPrincipalId,
@@ -2332,6 +2422,13 @@ class AgentInstallationView {
         agentPrincipalState:
             agentPrincipalStateValues.map[json["agentPrincipalState"]]!,
         agentResourceId: json["agentResourceId"],
+        automationResultTargets: json["automationResultTargets"] == null
+            ? null
+            : List<AutomationResultTarget>.from(
+                json["automationResultTargets"]!.map(
+                  (x) => automationResultTargetValues.map[x]!,
+                ),
+              ),
         channelBinding: json["channelBinding"] == null
             ? null
             : AgentInstallationViewChannelBinding.fromJson(
@@ -2360,6 +2457,13 @@ class AgentInstallationView {
     "agentPrincipalState":
         agentPrincipalStateValues.reverse[agentPrincipalState],
     "agentResourceId": agentResourceId,
+    "automationResultTargets": automationResultTargets == null
+        ? null
+        : List<dynamic>.from(
+            automationResultTargets!.map(
+              (x) => automationResultTargetValues.reverse[x],
+            ),
+          ),
     "channelBinding": channelBinding?.toJson(),
     "executionPermission": executionPermission?.toJson(),
     "ownerPrincipalId": ownerPrincipalId,
@@ -5178,11 +5282,37 @@ class AgentVersionContentTurnLimits {
   });
 }
 
-///REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
-///AGENT_TURN；不含消息正文、provider 配置或凭据。
+///Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
+///SKIP，不另实现 cron。
+class AutomationScheduleSpec {
+  final int catchupWindowSeconds;
+  final int everySeconds;
+  final int offsetSeconds;
+
+  AutomationScheduleSpec({
+    required this.catchupWindowSeconds,
+    required this.everySeconds,
+    required this.offsetSeconds,
+  });
+
+  factory AutomationScheduleSpec.fromJson(Map<String, dynamic> json) =>
+      AutomationScheduleSpec(
+        catchupWindowSeconds: json["catchupWindowSeconds"],
+        everySeconds: json["everySeconds"],
+        offsetSeconds: json["offsetSeconds"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "catchupWindowSeconds": catchupWindowSeconds,
+    "everySeconds": everySeconds,
+    "offsetSeconds": offsetSeconds,
+  });
+}
+
+///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 class AutomationVersionContent {
   final AutomationVersionContentAction action;
-  final ResultTarget resultTarget;
+  final AutomationResultTarget resultTarget;
   final AutomationVersionContentTrigger trigger;
 
   AutomationVersionContent({
@@ -5194,13 +5324,13 @@ class AutomationVersionContent {
   factory AutomationVersionContent.fromJson(Map<String, dynamic> json) =>
       AutomationVersionContent(
         action: AutomationVersionContentAction.fromJson(json["action"]),
-        resultTarget: resultTargetValues.map[json["resultTarget"]]!,
+        resultTarget: automationResultTargetValues.map[json["resultTarget"]]!,
         trigger: AutomationVersionContentTrigger.fromJson(json["trigger"]),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "action": action.toJson(),
-    "resultTarget": resultTargetValues.reverse[resultTarget],
+    "resultTarget": automationResultTargetValues.reverse[resultTarget],
     "trigger": trigger.toJson(),
   });
 }
@@ -5224,26 +5354,32 @@ class AutomationVersionContentAction {
 }
 
 class AutomationVersionContentTrigger {
-  final TriggerKind kind;
+  final AutomationTriggerKind kind;
   final String? mentionPrincipalId;
+  final ScheduleSpecClass? scheduleSpec;
   final String? textPrefix;
 
   AutomationVersionContentTrigger({
     required this.kind,
     this.mentionPrincipalId,
+    this.scheduleSpec,
     this.textPrefix,
   });
 
   factory AutomationVersionContentTrigger.fromJson(Map<String, dynamic> json) =>
       AutomationVersionContentTrigger(
-        kind: triggerKindValues.map[json["kind"]]!,
+        kind: automationTriggerKindValues.map[json["kind"]]!,
         mentionPrincipalId: json["mentionPrincipalId"],
+        scheduleSpec: json["scheduleSpec"] == null
+            ? null
+            : ScheduleSpecClass.fromJson(json["scheduleSpec"]),
         textPrefix: json["textPrefix"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
-    "kind": triggerKindValues.reverse[kind],
+    "kind": automationTriggerKindValues.reverse[kind],
     "mentionPrincipalId": mentionPrincipalId,
+    "scheduleSpec": scheduleSpec?.toJson(),
     "textPrefix": textPrefix,
   });
 }
@@ -6456,6 +6592,184 @@ class ApprovalStateReport {
     "runId": runId,
     "status": approvalStatusValues.reverse[status],
     "workflowId": workflowId,
+  });
+}
+
+class AutomationScheduleAdmitRequest {
+  final InputClass input;
+  final String runId;
+  final String workflowId;
+
+  AutomationScheduleAdmitRequest({
+    required this.input,
+    required this.runId,
+    required this.workflowId,
+  });
+
+  factory AutomationScheduleAdmitRequest.fromJson(Map<String, dynamic> json) =>
+      AutomationScheduleAdmitRequest(
+        input: InputClass.fromJson(json["input"]),
+        runId: json["runId"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "input": input.toJson(),
+    "runId": runId,
+    "workflowId": workflowId,
+  });
+}
+
+///DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
+class InputClass {
+  final String automationResourceId;
+  final String automationVersionAssetId;
+
+  ///原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。
+  final bool? cancelPending;
+  final String scheduleId;
+  final AutomationScheduleSource sourceKind;
+
+  InputClass({
+    required this.automationResourceId,
+    required this.automationVersionAssetId,
+    this.cancelPending,
+    required this.scheduleId,
+    required this.sourceKind,
+  });
+
+  factory InputClass.fromJson(Map<String, dynamic> json) => InputClass(
+    automationResourceId: json["automationResourceId"],
+    automationVersionAssetId: json["automationVersionAssetId"],
+    cancelPending: json["cancelPending"],
+    scheduleId: json["scheduleId"],
+    sourceKind: automationScheduleSourceValues.map[json["sourceKind"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "automationResourceId": automationResourceId,
+    "automationVersionAssetId": automationVersionAssetId,
+    "cancelPending": cancelPending,
+    "scheduleId": scheduleId,
+    "sourceKind": automationScheduleSourceValues.reverse[sourceKind],
+  });
+}
+
+enum AutomationScheduleSource { SCHEDULE }
+
+final automationScheduleSourceValues = EnumValues({
+  "SCHEDULE": AutomationScheduleSource.SCHEDULE,
+});
+
+class AutomationScheduleAdmitResult {
+  final bool admitted;
+  final String reasonCode;
+  final TaskInputClass? taskInput;
+
+  AutomationScheduleAdmitResult({
+    required this.admitted,
+    required this.reasonCode,
+    this.taskInput,
+  });
+
+  factory AutomationScheduleAdmitResult.fromJson(Map<String, dynamic> json) =>
+      AutomationScheduleAdmitResult(
+        admitted: json["admitted"],
+        reasonCode: json["reasonCode"],
+        taskInput: json["taskInput"] == null
+            ? null
+            : TaskInputClass.fromJson(json["taskInput"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "admitted": admitted,
+    "reasonCode": reasonCode,
+    "taskInput": taskInput?.toJson(),
+  });
+}
+
+///DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
+class TaskInputClass {
+  final String agentVersionAssetId;
+  final bool cancelPending;
+  final int eventBase;
+  final int heartbeatIntervalSeconds;
+  final int heartbeatTimeoutSeconds;
+  final String installationId;
+  final String invocationId;
+  final int observationIntervalSeconds;
+  final int projectionGeneration;
+
+  TaskInputClass({
+    required this.agentVersionAssetId,
+    required this.cancelPending,
+    required this.eventBase,
+    required this.heartbeatIntervalSeconds,
+    required this.heartbeatTimeoutSeconds,
+    required this.installationId,
+    required this.invocationId,
+    required this.observationIntervalSeconds,
+    required this.projectionGeneration,
+  });
+
+  factory TaskInputClass.fromJson(Map<String, dynamic> json) => TaskInputClass(
+    agentVersionAssetId: json["agentVersionAssetId"],
+    cancelPending: json["cancelPending"],
+    eventBase: json["eventBase"],
+    heartbeatIntervalSeconds: json["heartbeatIntervalSeconds"],
+    heartbeatTimeoutSeconds: json["heartbeatTimeoutSeconds"],
+    installationId: json["installationId"],
+    invocationId: json["invocationId"],
+    observationIntervalSeconds: json["observationIntervalSeconds"],
+    projectionGeneration: json["projectionGeneration"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentVersionAssetId": agentVersionAssetId,
+    "cancelPending": cancelPending,
+    "eventBase": eventBase,
+    "heartbeatIntervalSeconds": heartbeatIntervalSeconds,
+    "heartbeatTimeoutSeconds": heartbeatTimeoutSeconds,
+    "installationId": installationId,
+    "invocationId": invocationId,
+    "observationIntervalSeconds": observationIntervalSeconds,
+    "projectionGeneration": projectionGeneration,
+  });
+}
+
+///DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
+class AutomationScheduleTaskInput {
+  final String automationResourceId;
+  final String automationVersionAssetId;
+
+  ///原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。
+  final bool? cancelPending;
+  final String scheduleId;
+  final AutomationScheduleSource sourceKind;
+
+  AutomationScheduleTaskInput({
+    required this.automationResourceId,
+    required this.automationVersionAssetId,
+    this.cancelPending,
+    required this.scheduleId,
+    required this.sourceKind,
+  });
+
+  factory AutomationScheduleTaskInput.fromJson(Map<String, dynamic> json) =>
+      AutomationScheduleTaskInput(
+        automationResourceId: json["automationResourceId"],
+        automationVersionAssetId: json["automationVersionAssetId"],
+        cancelPending: json["cancelPending"],
+        scheduleId: json["scheduleId"],
+        sourceKind: automationScheduleSourceValues.map[json["sourceKind"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "automationResourceId": automationResourceId,
+    "automationVersionAssetId": automationVersionAssetId,
+    "cancelPending": cancelPending,
+    "scheduleId": scheduleId,
+    "sourceKind": automationScheduleSourceValues.reverse[sourceKind],
   });
 }
 

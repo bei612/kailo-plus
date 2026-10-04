@@ -76,6 +76,56 @@ fn client_custody_identity_is_never_signed_by_core() {
 
 /// 实现后的离线原生签名断言：不创建业务对象、不发送事件或投递凭据。
 #[test]
+fn channel_result_has_stable_invocation_reference_without_fake_thread() {
+    let keys = Keys::generate();
+    let client = IdentityClient::new(
+        Custody::Server,
+        &keys.secret_key().to_secret_hex(),
+        "http://unused.invalid",
+        "unused.platform.test",
+    )
+    .unwrap();
+    let id = uuid::Uuid::new_v4();
+    let event = client
+        .sign_channel_result_at("channel", "native answer", None, Some(id), 105)
+        .unwrap();
+    assert_eq!(
+        event.id,
+        client
+            .sign_channel_result_at("channel", "native answer", None, Some(id), 105)
+            .unwrap()
+            .id
+    );
+    assert_ne!(
+        event.id,
+        client
+            .sign_channel_result_at(
+                "channel",
+                "native answer",
+                None,
+                Some(uuid::Uuid::new_v4()),
+                105
+            )
+            .unwrap()
+            .id
+    );
+    assert_eq!(event.created_at.as_secs(), 105);
+    let reference = format!("urn:uuid:{id}");
+    assert!(event
+        .tags
+        .iter()
+        .any(|tag| tag.as_slice() == ["r", reference.as_str()]));
+    assert!(event
+        .tags
+        .iter()
+        .all(|tag| tag.as_slice().first().map(String::as_str) != Some("e")));
+    assert!(event.verify().is_ok());
+    assert!(client
+        .sign_channel_result_at("channel", "native answer", None, None, 105)
+        .is_err());
+}
+
+#[test]
 fn task_reply_id_is_fixed_by_native_time_body_and_thread_ancestry() {
     let keys = Keys::generate();
     let client = IdentityClient::new(

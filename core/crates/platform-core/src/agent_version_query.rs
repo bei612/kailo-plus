@@ -501,12 +501,15 @@ mod configuration_profile_tests {
         profiles.retain_mut(retain_consumable_profile);
         assert_eq!(profiles.len(), 1);
         let mut expected = original;
-        expected["capabilityContract"]["replyPolicies"] = json!(["policy-a"]);
-        expected["capabilityContract"]["replyPolicyMappings"] =
-            json!([expected["capabilityContract"]["replyPolicyMappings"][0].clone()]);
+        expected["capabilityContract"]["replyPolicies"] = json!(["policy-a", "policy-b"]);
+        expected["capabilityContract"]["replyPolicyMappings"] = json!([
+            expected["capabilityContract"]["replyPolicyMappings"][0].clone(),
+            expected["capabilityContract"]["replyPolicyMappings"][1].clone()
+        ]);
         assert_eq!(serde_json::to_value(&profiles[0]).unwrap(), expected);
         assert!(reply_policy_contract(&profiles[0].capability_contract, None).is_ok());
         assert!(reply_policy_contract(&profiles[0].capability_contract, Some("policy-a")).is_ok());
+        assert!(reply_policy_contract(&profiles[0].capability_contract, Some("policy-b")).is_ok());
     }
 
     #[test]
@@ -514,12 +517,11 @@ mod configuration_profile_tests {
         let mut missing = profile();
         missing["capabilityContract"]["replyPolicyMappings"] = json!([]);
         let mut unsupported = profile();
-        unsupported["capabilityContract"]["replyPolicies"] =
-            json!(["policy-b", "policy-c", "policy-d"]);
+        unsupported["capabilityContract"]["replyPolicies"] = json!(["policy-c", "policy-d"]);
         unsupported["capabilityContract"]["replyPolicyMappings"]
             .as_array_mut()
             .unwrap()
-            .remove(0);
+            .drain(..2);
         let mut profiles: Vec<contracts::Profile> =
             serde_json::from_value(json!([missing, unsupported])).unwrap();
         profiles.retain_mut(retain_consumable_profile);

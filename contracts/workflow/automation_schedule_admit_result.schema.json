@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/automation_schedule_admit_result.schema.json",
+  "title": "AutomationScheduleAdmitResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["admitted", "reasonCode"],
+  "properties": {
+    "admitted": {"type": "boolean"},
+    "reasonCode": {"type": "string"},
+    "taskInput": {"$ref": "agent_task_workflow_input.schema.json"}
+  }
+}

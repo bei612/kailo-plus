@@ -237,6 +237,13 @@ enum PlatformMessageKey {
   agentsAutomationSelect,
   agentsAutomationTrigger,
   agentsAutomationChannelMessage,
+  agentsAutomationSchedule,
+  agentsAutomationEverySeconds,
+  agentsAutomationOffsetSeconds,
+  agentsAutomationCatchupWindowSeconds,
+  agentsAutomationScheduleRules,
+  agentsAutomationChannel,
+  agentsAutomationScheduleUnavailable,
   agentsAutomationPrefix,
   agentsAutomationTemplate,
   agentsAutomationResultTarget,
@@ -1196,10 +1203,35 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Choose a verified record',
     '选择已查证的记录',
   ),
-  PlatformMessageKey.agentsAutomationTrigger: ('Relay trigger', 'Relay 触发方式'),
+  PlatformMessageKey.agentsAutomationTrigger: ('Trigger', '触发方式'),
   PlatformMessageKey.agentsAutomationChannelMessage: (
     'Channel message',
     '频道消息',
+  ),
+  PlatformMessageKey.agentsAutomationSchedule: (
+    'Temporal schedule',
+    'Temporal 定时触发',
+  ),
+  PlatformMessageKey.agentsAutomationEverySeconds: (
+    'Interval (seconds)',
+    '间隔（秒）',
+  ),
+  PlatformMessageKey.agentsAutomationOffsetSeconds: (
+    'Offset (seconds)',
+    '偏移（秒）',
+  ),
+  PlatformMessageKey.agentsAutomationCatchupWindowSeconds: (
+    'Catch-up window (seconds)',
+    '补偿窗口（秒）',
+  ),
+  PlatformMessageKey.agentsAutomationScheduleRules: (
+    'Enter all three values explicitly: a positive interval, an offset below the interval, and a catch-up window of at least 10 seconds. Overlapping runs are skipped.',
+    '请显式填写三项：正数间隔、小于间隔的非负偏移、至少 10 秒的补偿窗口；重叠运行将被跳过。',
+  ),
+  PlatformMessageKey.agentsAutomationChannel: ('Workspace channel', '工作区频道'),
+  PlatformMessageKey.agentsAutomationScheduleUnavailable: (
+    'This executor has no verified channel reply capability. Scheduling is unavailable.',
+    '该执行器没有已查证的频道回复能力，无法定时运行。',
   ),
   PlatformMessageKey.agentsAutomationPrefix: (
     'Optional text prefix',

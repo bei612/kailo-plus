@@ -44,6 +44,7 @@ struct InstallationRow {
     runtime_profile_key: Option<String>,
     projection_config_hash: Option<String>,
     projection_state: Option<String>,
+    version_content: serde_json::Value,
 }
 
 // 只选已固定的 Installation/Version/AGENT 关系。正文、SecretRef、Gateway key、
@@ -53,7 +54,7 @@ const ROW: &str = "select i.resource_id,i.workspace_id,i.agent_resource_id,i.pin
     r.version as resource_version,r.state as resource_state,i.state,i.active_projection_generation,
     cb.status as channel_status,cb.triggers as channel_triggers,wb.channel_id,
     p.generation as projection_generation,p.agent_version_asset_id as projection_version,
-    p.runtime_profile_key,p.config_hash as projection_config_hash,p.state as projection_state
+    p.runtime_profile_key,p.config_hash as projection_config_hash,p.state as projection_state,v.content version_content
   from catalog.agent_installation i
   join catalog.resource r on r.id=i.resource_id and r.type_key='agent.installation'
     and r.home_workspace_id=i.workspace_id
@@ -133,6 +134,22 @@ async fn view(
     )
     .await
     .map_err(|e| e.respond(None))?;
+    let mut result_targets = Vec::new();
+    if row.state == "ACTIVE"
+        && row.resource_state == "ACTIVE"
+        && row.agent_principal_state == "ACTIVE"
+        && projection.as_ref().is_some_and(|p| {
+            p["state"] == "ACTIVE" && p["generation"].as_i64() == row.active_projection_generation
+        })
+    {
+        let content: contracts::ContentClass = serde_json::from_value(row.version_content)
+            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+        match crate::agent_version::reply_to_channel(&content) {
+            Ok(channel) => result_targets.push(if channel { "CHANNEL" } else { "TRIGGER_THREAD" }),
+            Err(Refusal::Blocked(_) | Refusal::Precondition(_)) => {}
+            Err(error) => return Err(error.respond(None)),
+        }
+    }
     // 用原四侧合同解码，未知 enum 或畸形持久事实不下发为可用状态。
     serde_json::from_value(json!({
         "resourceId": row.resource_id.to_string(), "workspaceId": row.workspace_id.to_string(),
@@ -144,6 +161,7 @@ async fn view(
         "resourceVersion": row.resource_version, "resourceState": row.resource_state,
         "state": row.state, "activeProjectionGeneration": row.active_projection_generation,
         "channelBinding": channel, "projection": projection, "executionPermission": permission,
+        "automationResultTargets": result_targets,
     }))
     .map_err(|_| {
         tracing::error!("Installation 查询事实不符合共享契约");

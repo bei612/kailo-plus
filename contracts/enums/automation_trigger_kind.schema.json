@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/automation_trigger_kind.schema.json",
+  "title": "AutomationTriggerKind",
+  "type": "string",
+  "enum": ["CHANNEL_MESSAGE", "MENTION", "SCHEDULE"]
+}

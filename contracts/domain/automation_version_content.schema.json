@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/automation_version_content.schema.json",
   "title": "AutomationVersionContent",
-  "description": "REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与 AGENT_TURN；不含消息正文、provider 配置或凭据。",
+  "description": "REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。",
   "type": "object",
   "additionalProperties": false,
   "required": ["trigger", "action", "resultTarget"],
@@ -12,9 +12,10 @@
       "additionalProperties": false,
       "required": ["kind"],
       "properties": {
-        "kind": {"type": "string", "enum": ["CHANNEL_MESSAGE", "MENTION"]},
+        "kind": {"$ref": "../enums/automation_trigger_kind.schema.json"},
         "textPrefix": {"type": "string"},
-        "mentionPrincipalId": {"type": "string", "format": "uuid"}
+        "mentionPrincipalId": {"type": "string", "format": "uuid"},
+        "scheduleSpec": {"$ref": "automation_schedule_spec.schema.json"}
       }
     },
     "action": {
@@ -26,6 +27,6 @@
         "template": {"type": "string", "minLength": 1}
       }
     },
-    "resultTarget": {"type": "string", "enum": ["TRIGGER_THREAD"]}
+    "resultTarget": {"$ref": "../enums/automation_result_target.schema.json"}
   }
 }

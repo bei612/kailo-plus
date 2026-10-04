@@ -257,12 +257,11 @@ export interface AgentVersionContentTurnLimits {
 /**
  * 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
  *
- * REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
- * AGENT_TURN；不含消息正文、provider 配置或凭据。
+ * REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
  */
 export interface AutomationVersionContentClass {
     action:       AutomationVersionContentAction;
-    resultTarget: ResultTarget;
+    resultTarget: AutomationResultTarget;
     trigger:      AutomationVersionContentTrigger;
 }
 
@@ -275,19 +274,32 @@ export enum ActionKind {
     AgentTurn = "AGENT_TURN",
 }
 
-export enum ResultTarget {
+export enum AutomationResultTarget {
+    Channel = "CHANNEL",
     TriggerThread = "TRIGGER_THREAD",
 }
 
 export interface AutomationVersionContentTrigger {
-    kind:                TriggerKind;
+    kind:                AutomationTriggerKind;
     mentionPrincipalId?: string;
+    scheduleSpec?:       ScheduleSpecClass;
     textPrefix?:         string;
 }
 
-export enum TriggerKind {
+export enum AutomationTriggerKind {
     ChannelMessage = "CHANNEL_MESSAGE",
     Mention = "MENTION",
+    Schedule = "SCHEDULE",
+}
+
+/**
+ * Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
+ * SKIP，不另实现 cron。
+ */
+export interface ScheduleSpecClass {
+    catchupWindowSeconds: number;
+    everySeconds:         number;
+    offsetSeconds:        number;
 }
 
 /**
@@ -658,16 +670,21 @@ export interface InstallationElement {
     agentPrincipalId:            string;
     agentPrincipalState:         AgentPrincipalState;
     agentResourceId:             string;
-    channelBinding?:             InstallationChannelBinding;
-    executionPermission?:        InstallationExecutionPermission;
-    ownerPrincipalId:            string;
-    pinnedVersionAssetId:        string;
-    projection?:                 ProjectionClass;
-    resourceId:                  string;
-    resourceState:               ResourceState;
-    resourceVersion:             number;
-    state:                       AgentInstallationState;
-    workspaceId:                 string;
+    /**
+     * 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
+     * Schedule。
+     */
+    automationResultTargets?: AutomationResultTarget[];
+    channelBinding?:          InstallationChannelBinding;
+    executionPermission?:     InstallationExecutionPermission;
+    ownerPrincipalId:         string;
+    pinnedVersionAssetId:     string;
+    projection?:              ProjectionClass;
+    resourceId:               string;
+    resourceState:            ResourceState;
+    resourceVersion:          number;
+    state:                    AgentInstallationState;
+    workspaceId:              string;
 }
 
 export enum AgentPrincipalState {
@@ -747,16 +764,21 @@ export interface AgentInstallationView {
     agentPrincipalId:            string;
     agentPrincipalState:         AgentPrincipalState;
     agentResourceId:             string;
-    channelBinding?:             AgentInstallationViewChannelBinding;
-    executionPermission?:        AgentInstallationViewExecutionPermission;
-    ownerPrincipalId:            string;
-    pinnedVersionAssetId:        string;
-    projection?:                 ProjectionClass;
-    resourceId:                  string;
-    resourceState:               ResourceState;
-    resourceVersion:             number;
-    state:                       AgentInstallationState;
-    workspaceId:                 string;
+    /**
+     * 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
+     * Schedule。
+     */
+    automationResultTargets?: AutomationResultTarget[];
+    channelBinding?:          AgentInstallationViewChannelBinding;
+    executionPermission?:     AgentInstallationViewExecutionPermission;
+    ownerPrincipalId:         string;
+    pinnedVersionAssetId:     string;
+    projection?:              ProjectionClass;
+    resourceId:               string;
+    resourceState:            ResourceState;
+    resourceVersion:          number;
+    state:                    AgentInstallationState;
+    workspaceId:              string;
 }
 
 export interface AgentInstallationViewChannelBinding {
@@ -1932,12 +1954,21 @@ export interface AgentVersionContentTurnLimitsClass {
 }
 
 /**
- * REQ-23、DD-107、03 §7 的 Core 自有自动化版本内容。当前真实触发消费为 Relay CHANNEL_MESSAGE/MENTION 与
- * AGENT_TURN；不含消息正文、provider 配置或凭据。
+ * Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
+ * SKIP，不另实现 cron。
+ */
+export interface AutomationScheduleSpec {
+    catchupWindowSeconds: number;
+    everySeconds:         number;
+    offsetSeconds:        number;
+}
+
+/**
+ * REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
  */
 export interface AutomationVersionContent {
     action:       AutomationVersionContentActionClass;
-    resultTarget: ResultTarget;
+    resultTarget: AutomationResultTarget;
     trigger:      AutomationVersionContentTriggerClass;
 }
 
@@ -1947,8 +1978,9 @@ export interface AutomationVersionContentActionClass {
 }
 
 export interface AutomationVersionContentTriggerClass {
-    kind:                TriggerKind;
+    kind:                AutomationTriggerKind;
     mentionPrincipalId?: string;
+    scheduleSpec?:       ScheduleSpecClass;
     textPrefix?:         string;
 }
 
@@ -2404,6 +2436,65 @@ export interface ApprovalStateReport {
     runId:      string;
     status:     ApprovalStatus;
     workflowId: string;
+}
+
+export interface AutomationScheduleAdmitRequest {
+    input:      InputClass;
+    runId:      string;
+    workflowId: string;
+}
+
+/**
+ * DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
+ */
+export interface InputClass {
+    automationResourceId:     string;
+    automationVersionAssetId: string;
+    /**
+     * 原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。
+     */
+    cancelPending?: boolean;
+    scheduleId:     string;
+    sourceKind:     AutomationScheduleSource;
+}
+
+export enum AutomationScheduleSource {
+    Schedule = "SCHEDULE",
+}
+
+export interface AutomationScheduleAdmitResult {
+    admitted:   boolean;
+    reasonCode: string;
+    taskInput?: TaskInputClass;
+}
+
+/**
+ * DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
+ */
+export interface TaskInputClass {
+    agentVersionAssetId:        string;
+    cancelPending:              boolean;
+    eventBase:                  number;
+    heartbeatIntervalSeconds:   number;
+    heartbeatTimeoutSeconds:    number;
+    installationId:             string;
+    invocationId:               string;
+    observationIntervalSeconds: number;
+    projectionGeneration:       number;
+}
+
+/**
+ * DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
+ */
+export interface AutomationScheduleTaskInput {
+    automationResourceId:     string;
+    automationVersionAssetId: string;
+    /**
+     * 原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。
+     */
+    cancelPending?: boolean;
+    scheduleId:     string;
+    sourceKind:     AutomationScheduleSource;
 }
 
 /**

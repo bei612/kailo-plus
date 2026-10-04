@@ -151,6 +151,46 @@ fn management_content_rejects_unimplemented_or_ambiguous_policy() {
 }
 
 #[test]
+fn schedule_requires_explicit_native_interval_and_channel_result() {
+    let content = json!({"trigger":{"kind":"SCHEDULE","scheduleSpec":{
+        "everySeconds":60,"offsetSeconds":5,"catchupWindowSeconds":10}},
+        "action":{"kind":"AGENT_TURN","template":"literal ${source}"},"resultTarget":"CHANNEL"});
+    let normalized = management_content(&content).expect("原 Schedule producer");
+    assert_eq!(
+        normalized["trigger"]["schedule_spec"],
+        content["trigger"]["scheduleSpec"]
+    );
+    assert_eq!(
+        normalized["action"]["template"],
+        content["action"]["template"]
+    );
+    for spec in [
+        json!({}),
+        json!({"everySeconds":0,"offsetSeconds":0,"catchupWindowSeconds":10}),
+        json!({"everySeconds":60,"offsetSeconds":60,"catchupWindowSeconds":10}),
+        json!({"everySeconds":60,"offsetSeconds":-1,"catchupWindowSeconds":10}),
+        json!({"everySeconds":60,"offsetSeconds":0,"catchupWindowSeconds":9}),
+        json!({"everySeconds":60,"offsetSeconds":0,"catchupWindowSeconds":10,"cron":"*"}),
+        json!({"everySeconds":"60","offsetSeconds":0,"catchupWindowSeconds":10}),
+    ] {
+        let mut invalid = content.clone();
+        invalid["trigger"]["scheduleSpec"] = spec;
+        assert!(management_content(&invalid).is_err());
+    }
+    for (key, value) in [
+        ("textPrefix", json!("!")),
+        ("mentionPrincipalId", json!(Uuid::new_v4())),
+    ] {
+        let mut invalid = content.clone();
+        invalid["trigger"][key] = value;
+        assert!(management_content(&invalid).is_err());
+    }
+    let mut invalid = content;
+    invalid["resultTarget"] = json!("TRIGGER_THREAD");
+    assert!(management_content(&invalid).is_err());
+}
+
+#[test]
 fn mention_is_explicit_and_normalization_preserves_literal_template() {
     let agent = Uuid::new_v4();
     let content = json!({"trigger":{"kind":"MENTION","mentionPrincipalId":agent,"textPrefix":"!"},

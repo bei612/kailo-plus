@@ -96,6 +96,7 @@ func main() {
 	w.RegisterActivity(core.FreshApprovalAdmission)
 	w.RegisterActivity(core.AdvanceSecretRefRehome)
 	w.RegisterActivity(core.AdvanceAgentTask)
+	w.RegisterActivity(core.AdmitAutomationSchedule)
 	w.RegisterActivity(core.AdvanceAgentInstallation)
 	w.RegisterActivity(core.ProjectAgentTaskState)
 

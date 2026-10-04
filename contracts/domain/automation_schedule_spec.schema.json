@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/automation_schedule_spec.schema.json",
+  "title": "AutomationScheduleSpec",
+  "description": "Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定 SKIP，不另实现 cron。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["everySeconds", "offsetSeconds", "catchupWindowSeconds"],
+  "properties": {
+    "everySeconds": {"type": "integer", "minimum": 1},
+    "offsetSeconds": {"type": "integer", "minimum": 0},
+    "catchupWindowSeconds": {"type": "integer", "minimum": 10}
+  }
+}

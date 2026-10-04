@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use crate::{
     agent_runtime::RuntimeRef,
+    agent_session::{MemoryPhase, TurnMemory},
     service_api::{authorize, unavailable, ServiceState},
 };
 
@@ -29,6 +30,7 @@ struct Invocation {
     workspace_id: Uuid,
     root_event_id: String,
     source_event_id: String,
+    source_kind: String,
     installation_resource_id: Uuid,
     agent_version_asset_id: Uuid,
     projection_generation: i64,
@@ -43,7 +45,8 @@ struct Invocation {
     observation_cursor: Option<String>,
 }
 
-const LOAD: &str = "select i.id,i.tenant_id,i.workspace_id,i.root_event_id,i.source_event_id,
+const LOAD: &str =
+    "select i.id,i.tenant_id,i.workspace_id,i.root_event_id,i.source_event_id,i.source_kind,
     i.installation_resource_id,i.agent_version_asset_id,i.projection_generation,
     i.action_execution_id,i.workflow_id,s.runtime_thread_id,i.runtime_turn_id,
     i.native_status,i.reply_event_id,i.status,i.cancel_pending,i.observation_cursor
@@ -230,6 +233,9 @@ pub(crate) async fn advance(
             drop(facts);
             let memory = match crate::agent_session::fixed_core(&state, id, &projection).await {
                 Ok(memory) => memory,
+                Err(crate::agent_runtime::RuntimeError::Unknown) => {
+                    return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT")
+                }
                 Err(_) => return result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE"),
             };
             return first_turn(&state, &invocation, &projection, thread, memory, &input).await;
@@ -319,7 +325,7 @@ pub(crate) async fn advance(
                 &invocation,
                 &projection,
                 &birth.runtime_thread_id,
-                birth.core_memory,
+                TurnMemory::Initial(birth.core_memory),
                 &input,
             )
             .await
@@ -499,12 +505,9 @@ async fn first_turn(
     invocation: &Invocation,
     projection: &RuntimeRef,
     thread: &str,
-    memory: Option<CoreMemory>,
+    memory: TurnMemory,
     holder: &AgentTaskAdvanceRequest,
 ) -> Response {
-    let Some(memory) = memory else {
-        return result(invocation.id, TaskStatus::Running, "MEMORY_UNREADABLE");
-    };
     let source = match source_message(state, invocation).await {
         Ok(source) => source,
         Err(_) => {
@@ -527,7 +530,7 @@ async fn first_turn(
         invocation,
         projection,
         thread,
-        &source.author,
+        source.author.as_deref(),
         &memory,
         holder,
     )
@@ -549,10 +552,7 @@ async fn first_turn(
             )
         }
     }
-    let core = match &memory {
-        CoreMemory::Found { profile, .. } => Some(profile.as_str()),
-        CoreMemory::Absent => None,
-    };
+    let core = first_turn_memory_context(&memory);
     // Context reads can outlive the original Activity observation. Before a
     // new native side effect, re-read that same run/activity/attempt; a retry
     // holder is not authorization for a delayed earlier HTTP request.
@@ -600,11 +600,34 @@ async fn first_turn(
     }
 }
 
+struct TaskSource {
+    author: Option<String>,
+    content: String,
+}
+
 async fn source_message(
     state: &ServiceState,
     invocation: &Invocation,
-) -> Result<collab_bridge::memory::SourceMessage, crate::agent_runtime::RuntimeError> {
+) -> Result<TaskSource, crate::agent_runtime::RuntimeError> {
     use crate::agent_runtime::RuntimeError;
+    if invocation.source_kind == "SCHEDULE" {
+        let source:Option<String>=sqlx::query_scalar("select i.source_event_id from catalog.agent_invocation i
+            join admission.action_execution ae on ae.id=i.action_execution_id
+            join projection.workflow_ref w on w.workflow_id=i.workflow_id and w.action_execution_id=ae.id
+              and w.tenant_id=i.tenant_id and w.workspace_id=i.workspace_id
+            where i.id=$1 and i.source_kind='SCHEDULE' and i.schedule_id is not null and i.scheduled_at is not null
+              and ae.action_key='automation.run' and ae.parameters->>'sourceKind'='SCHEDULE'
+              and ae.parameters->>'scheduleId'=i.schedule_id and ae.parameters->>'scheduledAt'=i.source_event_id
+              and ae.parameters->>'rootEventId'=i.root_event_id and w.run_id is not null")
+            .bind(invocation.id).fetch_optional(&state.pool).await.map_err(|_|RuntimeError::Unavailable)?;
+        return Ok(TaskSource {
+            author: None,
+            content: source.ok_or(RuntimeError::AdmissionRequired)?,
+        });
+    }
+    if invocation.source_kind != "BUZZ_EVENT" {
+        return Err(RuntimeError::AdmissionRequired);
+    }
     let channel: Option<Uuid> = sqlx::query_scalar(
         "select b.channel_id from projection.workspace_buzz_binding b
          join identity.workspace w on w.id=b.workspace_id and w.tenant_id=$2 and w.state='ACTIVE'
@@ -623,7 +646,7 @@ async fn source_message(
     )
     .await
     .map_err(|_| RuntimeError::Unavailable)?;
-    client
+    let source = client
         .source_message(
             &state.http,
             &invocation.source_event_id,
@@ -631,7 +654,47 @@ async fn source_message(
             &invocation.root_event_id,
         )
         .await
-        .map_err(|_| RuntimeError::Unavailable)
+        .map_err(|_| RuntimeError::Unavailable)?;
+    Ok(TaskSource {
+        author: Some(source.author),
+        content: source.content,
+    })
+}
+
+// Design 19 §4: absence is confirmed, not inferred from a read failure.
+// This is external context, never developer instructions or write authority.
+const ABSENT_CORE_CONTEXT: &str = "No core memory exists for this AgentInstallation. First ask the current HUMAN about your identity and goals. Any core memory creation must use the governed memory Action and its required approval; this context does not authorize a write.";
+
+fn first_turn_memory_context(memory: &TurnMemory) -> Option<&str> {
+    match memory {
+        TurnMemory::Initial(Some(CoreMemory::Found { profile, .. })) => Some(profile.as_str()),
+        TurnMemory::Initial(Some(CoreMemory::Absent)) => Some(ABSENT_CORE_CONTEXT),
+        TurnMemory::Initial(None) | TurnMemory::Continued { .. } => None,
+    }
+}
+
+fn frozen_memory_matches(
+    memory: &TurnMemory,
+    phase: MemoryPhase,
+    state: &str,
+    event: Option<&str>,
+) -> bool {
+    if memory.phase() != phase {
+        return false;
+    }
+    match memory {
+        TurnMemory::Initial(Some(CoreMemory::Found { head, .. })) => {
+            state == "FOUND" && event == Some(head.event_id.as_str())
+        }
+        TurnMemory::Initial(Some(CoreMemory::Absent)) => state == "ABSENT" && event.is_none(),
+        // Only a Session born UNREADABLE may omit context. A lost pinned
+        // FOUND event must not silently become an unremembered Session.
+        TurnMemory::Initial(None) => state == "UNREADABLE" && event.is_none(),
+        TurnMemory::Continued {
+            state: pinned_state,
+            event: pinned_event,
+        } => state == pinned_state && event == pinned_event.as_deref(),
+    }
 }
 
 async fn prepare_dispatch(
@@ -639,8 +702,8 @@ async fn prepare_dispatch(
     invocation: &Invocation,
     projection: &RuntimeRef,
     thread: &str,
-    source_author: &str,
-    memory: &CoreMemory,
+    source_author: Option<&str>,
+    memory: &TurnMemory,
     holder: &AgentTaskAdvanceRequest,
 ) -> Result<(), crate::agent_runtime::RuntimeError> {
     use crate::agent_runtime::RuntimeError;
@@ -672,14 +735,15 @@ async fn prepare_dispatch(
     {
         return Err(RuntimeError::AdmissionRequired);
     }
-    let frozen: Option<(String,Option<String>,Option<String>)> = sqlx::query_as(
-        "select s.core_memory_state,s.core_memory_event_id,i.runtime_turn_id
+    let frozen: Option<(String,Option<String>,Option<String>,Value)> = sqlx::query_as(
+        "select s.core_memory_state,s.core_memory_event_id,i.runtime_turn_id,v.content
          from catalog.agent_invocation i join catalog.agent_session s
            on s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
            and s.installation_resource_id=i.installation_resource_id and s.tenant_id=i.tenant_id
            and s.agent_version_asset_id=i.agent_version_asset_id and s.projection_generation=i.projection_generation
          join catalog.agent_runtime_projection p on p.installation_resource_id=i.installation_resource_id
            and p.generation=i.projection_generation and p.agent_version_asset_id=i.agent_version_asset_id
+         join catalog.agent_version v on v.asset_id=i.agent_version_asset_id
          where i.id=$1 and i.status='CREATED' and not i.cancel_pending and i.runtime_turn_id is null
            and i.action_execution_id=$2 and i.tenant_id=$3 and i.workspace_id=$4
            and i.installation_resource_id=$5 and i.agent_version_asset_id=$6
@@ -698,15 +762,25 @@ async fn prepare_dispatch(
         .bind(&holder.activity_id)
         .bind(i32::try_from(holder.attempt).map_err(|_| RuntimeError::AdmissionRequired)?)
         .fetch_optional(&mut *tx).await.map_err(|_| RuntimeError::Unknown)?;
-    let Some((memory_state, memory_event, None)) = frozen else {
+    let Some((memory_state, memory_event, None, content)) = frozen else {
         return Err(RuntimeError::AdmissionRequired);
     };
-    let memory_matches = match memory {
-        CoreMemory::Found { head, .. } => {
-            memory_state == "FOUND" && memory_event.as_deref() == Some(head.event_id.as_str())
-        }
-        CoreMemory::Absent => memory_state == "ABSENT" && memory_event.is_none(),
-    };
+    let content: contracts::ContentClass =
+        serde_json::from_value(content).map_err(|_| RuntimeError::AdmissionRequired)?;
+    let channel = crate::agent_version::reply_to_channel(&content)
+        .map_err(|_| RuntimeError::AdmissionRequired)?;
+    if !matches!(
+        (invocation.source_kind.as_str(), channel),
+        ("BUZZ_EVENT", false) | ("SCHEDULE", true)
+    ) {
+        return Err(RuntimeError::AdmissionRequired);
+    }
+    // Recheck under the same Session lock as the dispatch CAS. Two callers
+    // which both read Initial cannot both inject core: the committed sibling
+    // dispatch is either still unknown or proves the phase has changed.
+    let phase = crate::agent_session::memory_phase(&mut tx, invocation.id).await?;
+    let memory_matches =
+        frozen_memory_matches(memory, phase, &memory_state, memory_event.as_deref());
     let source: bool = sqlx::query_scalar(
         "select exists(select 1 from identity.buzz_identity_binding b
          join identity.principal p on p.id=b.principal_id and p.tenant_id=b.tenant_id
@@ -726,15 +800,28 @@ async fn prepare_dispatch(
     .fetch_one(&mut *tx)
     .await
     .map_err(|_| RuntimeError::Unknown)?;
-    if !memory_matches
-        || !source
-        || ae
-            .parameters
-            .as_ref()
-            .and_then(|p| p.get("sourcePubkey"))
-            .and_then(Value::as_str)
-            != Some(source_author)
-    {
+    let source_matches = match invocation.source_kind.as_str() {
+        "SCHEDULE" => {
+            source_author.is_none()
+                && ae
+                    .parameters
+                    .as_ref()
+                    .and_then(|p| p.get("sourceKind"))
+                    .and_then(Value::as_str)
+                    == Some("SCHEDULE")
+        }
+        "BUZZ_EVENT" => {
+            source
+                && ae
+                    .parameters
+                    .as_ref()
+                    .and_then(|p| p.get("sourcePubkey"))
+                    .and_then(Value::as_str)
+                    == source_author
+        }
+        _ => false,
+    };
+    if !memory_matches || !source_matches {
         return Err(RuntimeError::AdmissionRequired);
     }
     crate::agent_invocation::fresh_invocation(state, &mut tx, invocation.id)
@@ -753,9 +840,18 @@ async fn prepare_dispatch(
     }
     let mut evidence = vec![
         crate::audit::Evidence::new(EvidenceKind::ActionExecutionId, ae.id),
-        crate::audit::Evidence::new(EvidenceKind::BuzzEventId, &invocation.source_event_id),
-        crate::audit::Evidence::new(EvidenceKind::BuzzPubkey, source_author),
+        crate::audit::Evidence::new(EvidenceKind::TemporalWorkflowId, &invocation.workflow_id),
     ];
+    if let Some(author) = source_author {
+        evidence.push(crate::audit::Evidence::new(
+            EvidenceKind::BuzzEventId,
+            &invocation.source_event_id,
+        ));
+        evidence.push(crate::audit::Evidence::new(
+            EvidenceKind::BuzzPubkey,
+            author,
+        ));
+    }
     if let Some(event) = memory_event {
         evidence.push(crate::audit::Evidence::new(
             EvidenceKind::BuzzEventId,
@@ -1360,8 +1456,9 @@ async fn lock_reply(
            and p.generation=i.projection_generation and p.agent_version_asset_id=i.agent_version_asset_id
          left join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
            and v.automation_resource_id=i.automation_resource_id and v.state='PUBLISHED'
-           and v.action->>'kind'='AGENT_TURN' and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION')
-           and v.result_target='TRIGGER_THREAD'
+           and v.action->>'kind'='AGENT_TURN'
+           and ((i.source_kind='BUZZ_EVENT' and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION') and v.result_target='TRIGGER_THREAD')
+             or (i.source_kind='SCHEDULE' and v.trigger->>'kind'='SCHEDULE' and v.result_target='CHANNEL'))
          join catalog.agent_installation a on a.resource_id=i.installation_resource_id and a.workspace_id=i.workspace_id
          join catalog.agent_version av on av.asset_id=i.agent_version_asset_id
            and av.agent_resource_id=a.agent_resource_id and av.state in ('PUBLISHED','RETIRED')
@@ -1400,10 +1497,14 @@ async fn lock_reply(
             "Agent reply 的固定版本摘要不可查证".into(),
         ));
     }
-    // Both pre-sign and pre-delivery callers take this fence. The current
-    // Automation result target remains TRIGGER_THREAD; no broadcast publisher
-    // is introduced, and an already persisted reply ID is only observed.
-    crate::agent_version::runtime_profile(&content)?;
+    // Both pre-sign and pre-delivery callers take this fence. Frozen Automation
+    // source selects TRIGGER_THREAD for Buzz or CHANNEL for Schedule; an already
+    // persisted reply ID is only observed.
+    if crate::agent_version::reply_to_channel(&content)? != (invocation.source_kind == "SCHEDULE")
+        || !matches!(invocation.source_kind.as_str(), "BUZZ_EVENT" | "SCHEDULE")
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
     Ok((ae, binding))
 }
 
@@ -1643,6 +1744,13 @@ mod released_reply_activity_tests {
     }
 }
 
+fn reply_ancestry(invocation: &Invocation) -> Option<(&str, &str)> {
+    (invocation.source_kind == "BUZZ_EVENT").then_some((
+        invocation.root_event_id.as_str(),
+        invocation.source_event_id.as_str(),
+    ))
+}
+
 async fn publish_reply(
     state: &ServiceState,
     invocation: &Invocation,
@@ -1702,10 +1810,11 @@ async fn publish_reply(
     let revision =
         crate::agent_invocation::fresh_reply(state, &mut tx, invocation.id, turn_id, None).await?;
     let event = client
-        .sign_channel_reply_at(
+        .sign_channel_result_at(
             &binding.channel_id.to_string(),
             text,
-            (&invocation.root_event_id, &invocation.source_event_id),
+            reply_ancestry(invocation),
+            (invocation.source_kind == "SCHEDULE").then_some(invocation.id),
             completed_at,
         )
         .map_err(|_| unknown())?;
@@ -2003,12 +2112,13 @@ async fn reconcile_reply(
         return Ok(None);
     };
     let observed = control
-        .channel_reply_exists(
+        .channel_result_exists(
             &state.http,
             event_id,
             &intent.agent_pubkey,
             &intent.channel_id.to_string(),
-            (&invocation.root_event_id, &invocation.source_event_id),
+            reply_ancestry(invocation),
+            (invocation.source_kind == "SCHEDULE").then_some(invocation.id),
         )
         .await;
     if !matches!(observed, Ok(true)) {
@@ -2325,6 +2435,153 @@ fn result(id: Uuid, status: TaskStatus, waiting: &str) -> Response {
         }),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod memory_context_tests {
+    use super::{first_turn_memory_context, frozen_memory_matches, ABSENT_CORE_CONTEXT};
+    use crate::agent_session::{MemoryPhase, TurnMemory};
+    use collab_bridge::memory::{CoreMemory, Head};
+
+    #[test]
+    fn confirmed_absence_has_bootstrap_but_unreadable_has_no_context() {
+        assert_eq!(
+            first_turn_memory_context(&TurnMemory::Initial(Some(CoreMemory::Absent))),
+            Some(ABSENT_CORE_CONTEXT)
+        );
+        assert!(ABSENT_CORE_CONTEXT.contains("current HUMAN"));
+        assert!(ABSENT_CORE_CONTEXT.contains("required approval"));
+        assert_eq!(first_turn_memory_context(&TurnMemory::Initial(None)), None);
+    }
+
+    #[test]
+    fn found_context_uses_the_exact_pinned_profile() {
+        let core = TurnMemory::Initial(Some(CoreMemory::Found {
+            head: Head {
+                event_id: "pinned-event".into(),
+                created_at: 1,
+            },
+            profile: "Existing native memory, not bootstrap context".into(),
+        }));
+        assert_eq!(
+            first_turn_memory_context(&core),
+            Some("Existing native memory, not bootstrap context")
+        );
+        assert!(frozen_memory_matches(
+            &core,
+            MemoryPhase::Initial,
+            "FOUND",
+            Some("pinned-event")
+        ));
+        for event in [None, Some("newer-head")] {
+            assert!(!frozen_memory_matches(
+                &core,
+                MemoryPhase::Initial,
+                "FOUND",
+                event
+            ));
+        }
+        for state in ["ABSENT", "UNREADABLE", "future-state", ""] {
+            assert!(!frozen_memory_matches(
+                &core,
+                MemoryPhase::Initial,
+                state,
+                Some("pinned-event")
+            ));
+        }
+    }
+
+    #[test]
+    fn unreadable_and_absent_cannot_substitute_for_each_other_or_lost_found() {
+        for state in ["FOUND", "ABSENT", "UNREADABLE", "future-state", ""] {
+            for event in [None, Some("pinned-event")] {
+                assert_eq!(
+                    frozen_memory_matches(
+                        &TurnMemory::Initial(None),
+                        MemoryPhase::Initial,
+                        state,
+                        event
+                    ),
+                    state == "UNREADABLE" && event.is_none()
+                );
+                assert_eq!(
+                    frozen_memory_matches(
+                        &TurnMemory::Initial(Some(CoreMemory::Absent)),
+                        MemoryPhase::Initial,
+                        state,
+                        event
+                    ),
+                    state == "ABSENT" && event.is_none()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn continued_turn_omits_core_and_bootstrap_but_keeps_exact_pinned_metadata() {
+        for (state, event) in [
+            ("FOUND", Some("pinned-event")),
+            ("ABSENT", None),
+            ("UNREADABLE", None),
+        ] {
+            let memory = TurnMemory::Continued {
+                state: state.into(),
+                event: event.map(str::to_owned),
+            };
+            assert_eq!(first_turn_memory_context(&memory), None);
+            assert!(frozen_memory_matches(
+                &memory,
+                MemoryPhase::Continued,
+                state,
+                event
+            ));
+            assert!(!frozen_memory_matches(
+                &memory,
+                MemoryPhase::Continued,
+                "future-state",
+                event
+            ));
+            assert!(!frozen_memory_matches(
+                &memory,
+                MemoryPhase::Continued,
+                state,
+                Some("new-head")
+            ));
+        }
+    }
+
+    #[test]
+    fn dispatch_rejects_a_phase_changed_after_context_read() {
+        let initial = TurnMemory::Initial(Some(CoreMemory::Absent));
+        let continued = TurnMemory::Continued {
+            state: "ABSENT".into(),
+            event: None,
+        };
+        assert!(!frozen_memory_matches(
+            &initial,
+            MemoryPhase::Continued,
+            "ABSENT",
+            None
+        ));
+        assert!(!frozen_memory_matches(
+            &continued,
+            MemoryPhase::Initial,
+            "ABSENT",
+            None
+        ));
+        assert!(frozen_memory_matches(
+            &initial,
+            MemoryPhase::Initial,
+            "ABSENT",
+            None
+        ));
+        assert!(frozen_memory_matches(
+            &continued,
+            MemoryPhase::Continued,
+            "ABSENT",
+            None
+        ));
+    }
 }
 
 #[cfg(test)]

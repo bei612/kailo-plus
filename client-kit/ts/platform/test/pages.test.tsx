@@ -11,7 +11,7 @@ import { InstallationMemory, validMemoryEntries, validMemoryRead } from "../src/
 import { LegacySecretRefManagement, RoleManagement, RoleMembers } from "../src/react/roles";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { TransportError } from "../src/transport";
-import { button, click, render, settle } from "./render";
+import { button, click, render, settle, type } from "./render";
 
 type Route = (request: BffRequest) => BffReply | Promise<BffReply>;
 
@@ -31,6 +31,171 @@ const key = (pubkey: string, state = "ACTIVE") => ({
   pubkey,
   state,
   createdAt: new Date().toISOString(),
+});
+
+describe("shared Automation schedule consumer", () => {
+  const installation = {
+    resourceId: "schedule-installation", workspaceId: "schedule-workspace", agentResourceId: "schedule-definition",
+    pinnedVersionAssetId: "schedule-agent-version", agentPrincipalId: "schedule-agent", agentPrincipalState: "ACTIVE",
+    ownerPrincipalId: "schedule-human", resourceVersion: 1, resourceState: "ACTIVE", state: "ACTIVE",
+    activeProjectionGeneration: 1, projection: { generation: 1, agentVersionAssetId: "schedule-agent-version",
+      runtimeProfileKey: "schedule-profile", configHash: "a".repeat(64), state: "ACTIVE" },
+  };
+  const scheduleContent = { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
+    action: { kind: "AGENT_TURN", template: "Report" }, resultTarget: "CHANNEL" };
+  const setup = async (targets: unknown, content?: unknown) => {
+    const automation = { resourceId: "schedule-automation", workspaceId: installation.workspaceId,
+      ownerPrincipalId: installation.ownerPrincipalId, executorInstallationResourceId: installation.resourceId,
+      resourceVersion: 2, resourceState: "ACTIVE", state: "DRAFT" };
+    const t = transport((r) => {
+      if (r.path === "/api/v1/tasks") return { status: 200, body: [] };
+      if (r.path === "/api/v1/agent-definitions") return { status: 200, body: { definitions: [] } };
+      if (r.path === "/api/v1/workspaces") return { status: 200, body: [{ id: installation.workspaceId, name: "Schedule workspace", slug: "schedule" }] };
+      if (r.path.startsWith("/api/v1/automations?")) return { status: 200, body: { automations: content ? [automation] : [], canCreate: true } };
+      if (r.path.startsWith("/api/v1/automations/schedule-automation?")) return { status: 200, body: {
+        automation, canManage: true, versions: [{ assetId: "schedule-version", automationResourceId: automation.resourceId,
+          ownerPrincipalId: installation.ownerPrincipalId, assetVersion: 1, ordinal: 1, state: "PUBLISHED", configHash: "b".repeat(64), content }],
+        delegations: [{ delegationId: "schedule-grant", delegationVersion: 1, ownerPrincipalId: installation.ownerPrincipalId,
+          executorInstallationResourceId: installation.resourceId, expiresAt: "2099-01-01T00:00:00Z" }],
+      } };
+      if (r.path === `/api/v1/agent-installations/${installation.resourceId}`) return { status: 200, body: { ...installation, automationResultTargets: targets } };
+      if (r.path.startsWith("/api/v1/agent-installations?")) return { status: 200, body: { installations: [
+        { ...installation, automationResultTargets: targets },
+        { ...installation, resourceId: "thread-only", automationResultTargets: ["TRIGGER_THREAD"] },
+      ] } };
+      if (r.path === "/api/v1/actions") return { status: 202, body: {
+        actionKey: (r.body as { actionKey: string }).actionKey, actionExecutionId: "schedule-ae", operationId: "schedule-op",
+        gateState: "ALLOWED", dispatchState: "UNKNOWN",
+      } };
+      return { status: 503, body: undefined };
+    });
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    const section = host.querySelector("[data-testid=agent-automations]") as HTMLElement;
+    const field = (label: string) => [...section.querySelectorAll("label")].find((node) => node.textContent?.startsWith(label))!;
+    const choose = async (label: string, value: string) => {
+      const select = field(label).querySelector("select")!;
+      await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
+      await settle();
+    };
+    const fill = async (label: string, value: string) => {
+      const input = field(label).querySelector("input,textarea")!;
+      if (input instanceof HTMLInputElement) await type(input, value);
+      else await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await settle();
+    };
+    await choose("Executor installation", installation.resourceId);
+    return { section, t, field, choose, fill };
+  };
+
+  it("freezes explicit native interval and channel target, preserving the same UNKNOWN request", async () => {
+    const { section, t, field, choose, fill } = await setup(["CHANNEL"]);
+    await choose("Trigger", "SCHEDULE");
+    expect(field("Interval (seconds)").querySelector("input")!.value).toBe("");
+    expect(button(section, "Review request").disabled).toBe(true);
+    await fill("Interval (seconds)", "300");
+    await fill("Offset (seconds)", "0");
+    await fill("Catch-up window (seconds)", "60");
+    await fill("Instruction template", "Report workspace progress");
+    await click(button(section, "Review request"));
+    expect(section.textContent).toContain("Workspace channel");
+    await click(button(section, "Submit governed request"));
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions").map(([r]) => r.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[0]).toEqual({ actionKey: "automation.create", idempotencyKey: expect.any(String), explicitConfirmation: true,
+      workspaceId: installation.workspaceId, executorInstallationResourceId: installation.resourceId,
+      automationVersionContent: { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
+        action: { kind: "AGENT_TURN", template: "Report workspace progress" }, resultTarget: "CHANNEL" } });
+  });
+
+  it.each([undefined, [], ["TRIGGER_THREAD"], ["CHANNEL", "CHANNEL"], ["CHANNEL", "FUTURE"]].map((targets) => ({ targets })))(
+    "does not offer Schedule for absent or unverified native capability (%j)", async ({ targets }) => {
+      const { section, t } = await setup(targets);
+      expect(section.querySelector('option[value="SCHEDULE"]')).toBeNull();
+      expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions")).toHaveLength(0);
+    },
+  );
+
+  it("cannot submit a retained Schedule after selecting an executor without channel replies", async () => {
+    const { section, t, choose, fill } = await setup(["CHANNEL"]);
+    await choose("Trigger", "SCHEDULE");
+    await fill("Interval (seconds)", "300"); await fill("Offset (seconds)", "0"); await fill("Catch-up window (seconds)", "60");
+    await fill("Instruction template", "Report");
+    await choose("Executor installation", "thread-only");
+    expect(button(section, "Review request").disabled).toBe(true);
+    await act(async () => section.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(section.textContent).toContain("Scheduling is unavailable");
+    expect(section.textContent).not.toContain("Submit governed request");
+    expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions")).toHaveLength(0);
+  });
+
+  it.each([["0", "0", "10"], ["300", "300", "10"], ["300", "0", "9"], ["300", "", "10"], ["1.5", "0", "10"]])(
+    "rejects invalid or implicit interval values %j/%j/%j", async (every, offset, catchup) => {
+      const { section, choose, fill } = await setup(["CHANNEL"]);
+      await choose("Trigger", "SCHEDULE");
+      await fill("Interval (seconds)", every); await fill("Offset (seconds)", offset); await fill("Catch-up window (seconds)", catchup);
+      await fill("Instruction template", "Report");
+      expect(button(section, "Review request").disabled).toBe(true);
+    },
+  );
+
+  it("keeps the existing MENTION trigger and thread result without schedule fields", async () => {
+    const { section, t, choose, fill } = await setup(["TRIGGER_THREAD"]);
+    await choose("Trigger", "MENTION"); await fill("Optional text prefix", "help"); await fill("Instruction template", "Reply");
+    await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
+    expect(t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body).toMatchObject({
+      automationVersionContent: { trigger: { kind: "MENTION", textPrefix: "help", mentionPrincipalId: installation.agentPrincipalId },
+        action: { kind: "AGENT_TURN", template: "Reply" }, resultTarget: "TRIGGER_THREAD" },
+    });
+    const content = (t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body as { automationVersionContent: { trigger: object } }).automationVersionContent;
+    expect(content.trigger).not.toHaveProperty("scheduleSpec");
+  });
+
+  it("reads and republishes the explicit Schedule version without changing its parameters", async () => {
+    const { section, t } = await setup(["CHANNEL"], scheduleContent);
+    await click(button(section, "View definition"));
+    expect(section.textContent).toContain("Interval (seconds): 300");
+    await click(button(section, "Publish a new version"));
+    await settle();
+    await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
+    expect(t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body).toMatchObject({
+      actionKey: "automation.publish_version", resourceId: "schedule-automation", resourceVersion: 2,
+      automationVersionContent: scheduleContent,
+    });
+  });
+
+  it.each([{ targets: ["CHANNEL"] }, { targets: ["TRIGGER_THREAD"] }])("enable checks the selected executor's actual native target %j", async ({ targets }) => {
+    const { section, t, choose } = await setup(targets, scheduleContent);
+    await click(button(section, "View definition")); await click(button(section, "Enable"));
+    await choose("Published version", "schedule-version"); await choose("Verified delegation", "schedule-grant");
+    const supported = targets.includes("CHANNEL");
+    expect(button(section, "Review request").disabled).toBe(!supported);
+    await act(async () => section.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    if (supported) {
+      await click(button(section, "Submit governed request"));
+      expect(t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body).toMatchObject({
+        actionKey: "automation.enable", assetId: "schedule-version", assetVersion: 1, delegationId: "schedule-grant", delegationVersion: 1,
+      });
+    } else expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions")).toHaveLength(0);
+  });
+
+  it.each([
+    { ...scheduleContent, resultTarget: "TRIGGER_THREAD" },
+    { ...scheduleContent, trigger: { ...scheduleContent.trigger, textPrefix: "hidden" } },
+    { ...scheduleContent, trigger: { kind: "WEBHOOK" } },
+    { ...scheduleContent, trigger: { kind: "CHANNEL_MESSAGE", scheduleSpec: scheduleContent.trigger.scheduleSpec }, resultTarget: "TRIGGER_THREAD" },
+  ])("rejects unsupported or mismatched version combinations rather than enabling them", async (content) => {
+    const { section, t } = await setup(["CHANNEL"], content);
+    await click(button(section, "View definition"));
+    expect([...section.querySelectorAll("button")].some((node) => node.textContent === "Enable")).toBe(false);
+    expect([...section.querySelectorAll("button")].some((node) => node.textContent === "Publish a new version")).toBe(false);
+    expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions")).toHaveLength(0);
+  });
 });
 
 describe("Installation execute permission actions", () => {
