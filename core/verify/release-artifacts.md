@@ -4,6 +4,59 @@
 `03-验证发布与验收门禁.md` §5。本记录只证明本机固定提交的两个自建发布单元；
 不把本机 provenance 断言等同于远端签名或三端发布验收。
 
+## 2026-10-04 15:58 UTC：组件批准批恢复发布并完成限定部署
+
+权威为 DD-75、DD-107、ADR-06 与已经通过完整检查的提交
+`9fa402fbe529f3bf4ba9e77f9825413c574411e0`，固定树
+`20348b1251da28c025f39a1b2219df1350ec3038`。影响是既有 Core/Worker 镜像指针、
+四条原迁移和三个运行容器，不新增契约、权限或 Workflow。外部副作用仍走原治理链，
+历史不明任务不重放；部署失败不自动 down 数据库，也不把健康响应当作业务终态。
+Web/Desktop 共享源码边界不变，本次没有安装 Desktop/Mobile 或绕过其签名门禁。
+
+| 运行单元 | 实际镜像 digest |
+|---|---|
+| Core | `sha256:53e94494f9b36c0109607d0cf8cf6e425527bc359305aa7866b137b5821d496a` |
+| Worker | `sha256:91c47ea6ca4b853eefcf3ae4880ea7ac41c5f1f17f697ff37046341f92377ba5` |
+| Web | `sha256:7df928821ac674deebd167b51c9b5326107e4f04ad9715a2bfe01a0bfead6e3d` |
+
+原 `tools/release.sh` 在相同干净源码于 15:24:18–15:51:46 UTC 退出 0；
+两个镜像 push 退出 0，独立 registry HEAD/GET 均 200，header、manifest 原字节
+摘要、image ID、RepoDigest 与本地 provenance 相符。499 项源码输入、Git entries
+和三份锁文件未变。原受限 BuildKit 与 Data 缓存不变，没有改 DNS、镜像配方或来源；
+下节首次 IPv6 访问失败保留。锁摘要清单初次逐字比较因行序不同退出 1，逐文件校验
+全部通过，不据此宣称锁文件变化。原 SBOM/provenance 不是远端签名或 OCI referrer。
+
+15:58 UTC 原 `migrate_core_database` 退出 0：`20261004015000`、`20261004016000`、
+`20261004017000`、`20261004018000` 四条成功；实际库为 73 条、最高版本
+`20261004018000`、失败 0。迁移使用固定 SDK，实际限额 4 CPU、8 GiB、swap 0。
+原 `start-core.sh --no-build` 首次退出 1：私有候选缺少相邻 `.design` 路径，
+在生成 registry 前停止，没有启动旧凭据。补齐指向设计权威的只读使用路径后，
+原 helper 重新签发 wrapping 并退出 0；Worker/Web 原
+`compose up -d --no-deps --no-build --pull never worker buzz-web` 退出 0。
+
+37 个既有运行容器前后比较仅 Core、Worker、Web 三项 ID 改变，其余 34 项未变。
+sole `.env` 仅从已有 `.env.example` 补发构建信息观察的 timeout 与 max bytes；
+部署后与投递后基准摘要一致，Runtime profiles 原摘要也保持一致。
+Core BFF `/healthz` HTTP 200，Worker 日志确认开始轮询 `kailo-component-task`，
+Web running/healthy。首次将 `/healthz` 发到 service listener 得到 HTTP 404，
+按现有路由改查 BFF listener 后返回 200，前者不作为服务健康结论。
+历史 Gateway usage 缺 Core trace 仍保留原游标并报告 UNKNOWN，不猜测归因。
+
+原完整检查 `full-final.log` 退出 0，SHA-256
+`d0ef4f4b50d28bad9ea14b3eae6fbe367c4538cc55fdba9a3dd3039f207ce7f9`；
+固定可执行树与发布树仅差回执文档。本次投递没有重复产品完整编译或 Web/Win 打包。
+真实模型回复、组件审批终态与参考组件接入不由此证明；binding 合同冲突、工具授权、
+设备验收及签名仍为开放缺口。本节优先于以下历史“未部署”状态。
+
+发布原件目录 `/volumes/data/kailo/tmp/codex-component-approval-release-20261004.UTIeIb/`：
+`release-resumed.log/.exit`、`artifact-readback.log`、四份原 SBOM/provenance；
+完整交接 `release-resumed-handoff.md` SHA-256
+`ba60acbd4a05e1e0cd650ceadfe8e7761a597e58936a437172f205c0a1ff4147`。
+部署原件目录 `/volumes/data/kailo/tmp/codex-component-delivery-live-20261004.gEnXVl/`：
+`migration-forward.log/.exit`、`core-start.log/.exit`、`core-start-restored.log/.exit`、
+`worker-web-start.log/.exit`、`containers-before.txt`、`containers-after.txt`、
+`container-comparison.txt`、`targets-after.txt`、`core-health.txt` 及两份配置摘要。
+
 ## 2026-10-04 15:14 UTC：组件批准批发布受阻，未切换运行版本
 
 本次仅投递已验收提交 `9fa402fbe529f3bf4ba9e77f9825413c574411e0`，固定树

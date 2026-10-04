@@ -6,7 +6,26 @@
 
 ## 最新复核与投递事实（2026-10-04）
 
-### 最新投递尝试：基础镜像访问失败（15:14 UTC）
+### 当前部署：模板消息、步骤审批与组件登记／批准（15:58 UTC）
+
+已验收源码 `9fa402fbe529f3bf4ba9e77f9825413c574411e0` 已经切到本地运行环境。
+原 Core/Worker 发布入口最终退出 0，两个镜像 push 与 registry 独立读回通过；
+Web 复用本批已核验产物，未重复构建。原迁移入口完成四条向前迁移，实际库现有
+73 条成功迁移、失败 0。37 个既有容器全部保留，仅 Core、Worker、Web 三项替换；
+Core 的 BFF 健康检查 HTTP 200、Worker 开始轮询原任务队列、Web healthy。
+sole `.env` 仅补发模板已有的两项构建信息观察配置，Runtime profiles 未改变。
+相对上一在线源码 `acbab8036911922c0dad4b4d28c7bb8e13c03afc`，本次部署累计
+140 文件 +15902/-816；这是已检查批次集中交付，不是新增一套业务实现。
+
+这证明新版本已部署，不代表真实 Agent 回复、审批执行或外部组件已经验收。
+Cells、WeKnora、Wren 仍缺实际 release/binding 接入，不能记为可用；ApplicationBinding
+合同冲突、工具 consume 授权、历史缺 trace 用量、三端设备与签名门禁仍未关闭。
+Workflows 全功能和原 Buzz 全部用户设置也没有补齐。真实模型与页面验证分别进行，
+不以健康检查或表单出现代替业务成功。镜像、命令、失败及原件见
+[发布记录](core/verify/release-artifacts.md)。以下小节保留各批发生时的状态，
+其中“未部署”不覆盖本节已经确认的 15:58 UTC 部署事实。
+
+### 历史投递尝试：基础镜像访问失败（15:14 UTC）
 
 组件批准批已提交并 push：`9fa402fbe529f3bf4ba9e77f9825413c574411e0`，相对
 `dd57f8bbf85fdf0b7b91e6e6aea445a909c0b046` 为 64 文件 +2004/-68；原完整检查
@@ -16,7 +35,7 @@ Docker Hub 的固定 Rust 基础镜像元数据请求解析到不可达 IPv6，�
 因此在线版本仍是下方 12:15 UTC 的版本，新源码不能记为已部署。
 完整失败原件、固定输入及恢复边界见 [发布记录](core/verify/release-artifacts.md)。
 
-### 当前部署：Inbox 与独立 Workflows 页面（12:15 UTC）
+### 上一部署：Inbox 与独立 Workflows 页面（12:15 UTC）
 
 源码 `acbab8036911922c0dad4b4d28c7bb8e13c03afc` 已提交并 push；相对
 `a535179baea0fc92f8515d32102288262e4161a6` 为 72 文件 +4457/-596。
