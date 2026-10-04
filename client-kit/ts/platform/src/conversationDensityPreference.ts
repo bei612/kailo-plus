@@ -1,6 +1,6 @@
 import * as React from "react";
 
-/** Device-level spacing used across conversation surfaces. */
+/** Buzz device-level spacing shared by Web and Desktop conversation surfaces. */
 export type ConversationDensity = "compact" | "comfortable" | "spacious";
 
 export const CONVERSATION_DENSITY_STORAGE_KEY =

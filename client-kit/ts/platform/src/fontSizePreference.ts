@@ -1,6 +1,6 @@
 import * as React from "react";
 
-/** Device-level type scale applied throughout the desktop interface. */
+/** Buzz device-level type scale shared by Web and Desktop. */
 export type FontSize = "smaller" | "default" | "larger";
 
 export const FONT_SIZE_STORAGE_KEY = "buzz.appearance.fontSize";

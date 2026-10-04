@@ -6,6 +6,27 @@
 
 ## 最新复核与投递事实（2026-10-04）
 
+### 核心业务现场核对（17:49–17:56 UTC）
+
+最新已提交并 push 的源码为 `9273f48cb042ad866d2c173e77b8d11b80423e6d`，
+相对 `d247288b40ca443c653fee8d928f1adb0da010d5` 为 49 文件 +1509/-153；
+下节的 Web/Gateway 开发预览已经部署，但多人、多 Agent 的频道协作尚未联合验收。
+不能以两个 ACTIVE Installation、页面读取成功或完整检查通过代替有效回复、
+权限与会话隔离、审批和用量终态的业务证据。
+
+正常 OIDC/BFF 的当前身份、Workspace、Installation、Automation 等八项 GET
+均返回 200；当前 Automation 为零。只读实查确认：运行配置
+`AUTOMATION_RUN_METERS_JSON` 为空、目录未登记 `automation.run`，OpenMeter
+没有该 COUNT meter、feature 或当前租户 entitlement。既有配置投递链完整，
+不是环境变量丢失；该前提未投递之前不创建测试 Automation、不发消息，也不借用
+模型 SUM meter。步骤审批、模板消息代码已部署仍不等于它们可以实际执行。
+
+历史两次调用的容量均已释放；其中一条 8872 tokens 已结算但没有回复，另一条
+仍因原始用量归因缺失停留在 `BILLING_UNAVAILABLE`，未重放或伪造终态。
+Cells、WeKnora、Wren 仍未实际接入可用；组件 binding 合同冲突、原生工具授权、
+修复后的真实模型回合及设备/签名门禁仍未关闭。现场命令、失败与范围见
+[Agent 记录](core/verify/agent-definition.md)末节“自动化与历史调用现场核对”。
+
 ### Web 设置与组件目录开发预览（16:54 UTC）
 
 共享设置批以 `d247288b40ca443c653fee8d928f1adb0da010d5` 为基准，Web/Desktop

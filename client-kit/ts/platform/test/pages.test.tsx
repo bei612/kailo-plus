@@ -2070,14 +2070,14 @@ describe("platform pages render only through the host theme", () => {
   );
   const semanticColors = [
     "accent", "accent-foreground", "background", "border", "destructive", "destructive-foreground",
-    "foreground", "input", "muted", "muted-foreground", "primary", "secondary", "secondary-foreground",
+    "foreground", "input", "muted", "muted-foreground", "primary", "ring", "secondary", "secondary-foreground", "popover-foreground",
     "sidebar-ring", "sidebar-accent", "sidebar-accent-foreground", "sidebar-active", "sidebar-active-foreground",
   ];
   const neutral = new Set(["transparent", "current", "inherit"]);
   const notColor =
     /^(xs|sm|base|lg|xl|[2-9]xl|left|center|right|justify|start|end|[tblrxyse]|\d+|none|solid|dashed|dotted|double|collapse|separate|wrap|nowrap|balance|pretty|ellipsis|clip)$/;
   const colorUtility =
-    /\b(bg|text|border|ring|outline|fill|stroke|divide|placeholder|from|via|to|accent|caret|decoration|shadow)-([a-z][a-z0-9-]*)(?:\/\d+)?/g;
+    /(?:^|[\s"'`:])(bg|text|border|ring|outline|fill|stroke|divide|placeholder|from|via|to|accent|caret|decoration|shadow)-([a-z][a-z0-9-]*)(?:\/\d+)?/g;
 
   it("uses no own theme, colour literal or dark variant", async () => {
     expect(sources.length).toBeGreaterThan(0);
@@ -2154,11 +2154,68 @@ describe("platform pages render only through the host theme", () => {
     for (const node of inboxRanges) inspectedInbox = inspectedInbox.slice(0, node.getStart(inboxParsed)) + inspectedInbox.slice(node.end);
     expect(inspectedInbox.match(/bg-\[var\(--inbox-row-highlight-bg\)\]/g)).toHaveLength(4);
     inspectedInbox = inspectedInbox.replaceAll("bg-[var(--inbox-row-highlight-bg)]", "");
+    // The fixed Buzz SegmentedControl uses inline geometry, not inline colour.
+    // Validate precisely those two original expressions; do not exempt the file.
+    const segmented = sources.find(({ name }) => name === "segmented-control.tsx");
+    if (!segmented) throw new Error("Shared native segmented control is missing");
+    const segmentedParsed = ts.createSourceFile(segmented.name, segmented.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const segmentedStyles: import("typescript").JsxAttribute[] = [];
+    const visitSegmented = (node: import("typescript").Node) => {
+      if (ts.isJsxAttribute(node) && node.name.getText(segmentedParsed) === "style") segmentedStyles.push(node);
+      ts.forEachChild(node, visitSegmented);
+    };
+    visitSegmented(segmentedParsed);
+    expect(segmentedStyles.map((node) => node.getText(segmentedParsed).replace(/\s+/g, ""))).toEqual([
+      'style={{transform:`translateX(${selectedIndex*100}%)`,width:`calc((100%-0.25rem)/${options.length})`,}}',
+    ]);
+    const segmentedStyle = segmentedStyles[0]!;
+    const inspectedSegmented = segmented.text.slice(0, segmentedStyle.getStart(segmentedParsed)) + segmented.text.slice(segmentedStyle.end);
+    // Fixed Buzz 779af8886caae1317b4de962082429867ab61503:
+    // desktop/src/shared/ui/popoverSurface.ts::POPOVER_SURFACE_CLASS/POPOVER_SHADOW.
+    // Verify the original host-variable mix and shadow, never exempt their module.
+    const surface = sources.find(({ name }) => name === "popover-surface.ts")!;
+    const surfaceParsed = ts.createSourceFile(surface.name, surface.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const constants = new Map<string, import("typescript").Expression>();
+    for (const statement of surfaceParsed.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        if (declaration.initializer) constants.set(declaration.name.getText(surfaceParsed), declaration.initializer);
+      }
+    }
+    const mix = constants.get("POPOVER_SURFACE_CLASS")!;
+    const shadow = constants.get("POPOVER_SHADOW")!;
+    expect(ts.isStringLiteral(mix) && mix.text).toBe("border border-border/60 bg-[color-mix(in_srgb,hsl(var(--background))_80%,hsl(var(--muted))_20%)] text-popover-foreground");
+    expect(ts.isStringLiteral(shadow) && shadow.text).toBe("0 6px 18px lch(0% 0 0 / 0.02), 0 3px 9px lch(0% 0 0 / 0.04), 0 1px 1px lch(0% 0 0 / 0.04)");
+    const shadowStyle = constants.get("POPOVER_SHADOW_STYLE")!;
+    if (!ts.isObjectLiteralExpression(shadowStyle)) throw new Error("Native popover shadow is not an object");
+    expect(shadowStyle.properties).toHaveLength(1);
+    expect(shadowStyle.properties[0]!.getText(surfaceParsed)).toBe("boxShadow: POPOVER_SHADOW");
+    let inspectedSurface = surface.text;
+    for (const expression of [mix, shadow].sort((a, b) => b.getStart(surfaceParsed) - a.getStart(surfaceParsed))) {
+      inspectedSurface = inspectedSurface.slice(0, expression.getStart(surfaceParsed)) + inspectedSurface.slice(expression.end);
+    }
+    const picker = sources.find(({ name }) => name === "mention-autocomplete.tsx")!;
+    const pickerParsed = ts.createSourceFile(picker.name, picker.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const pickerStyles: import("typescript").JsxAttribute[] = [];
+    const visitPicker = (node: import("typescript").Node) => {
+      if (ts.isJsxAttribute(node) && node.name.getText(pickerParsed) === "style") pickerStyles.push(node);
+      ts.forEachChild(node, visitPicker);
+    };
+    visitPicker(pickerParsed);
+    expect(pickerStyles.map((node) => node.getText(pickerParsed))).toEqual(["style={POPOVER_SHADOW_STYLE}"]);
+    expect(pickerParsed.statements.some((node) => ts.isImportDeclaration(node)
+      && ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text === "./popover-surface"
+      && node.importClause?.namedBindings?.getText(pickerParsed).includes("POPOVER_SHADOW_STYLE"))).toBe(true);
+    const pickerStyle = pickerStyles[0]!;
+    const inspectedPicker = picker.text.slice(0, pickerStyle.getStart(pickerParsed)) + picker.text.slice(pickerStyle.end);
     for (const { name, text } of sources) {
       // Remove just the verified JSX attribute, not its function or file.
       const inspected = name === native.name
         ? text.slice(0, nativeStyle.getStart(parsed)) + text.slice(nativeStyle.end)
-        : name === inbox.name ? inspectedInbox : text;
+        : name === inbox.name ? inspectedInbox
+        : name === segmented.name ? inspectedSegmented
+        : name === surface.name ? inspectedSurface
+        : name === picker.name ? inspectedPicker : text;
       for (const pattern of [
         /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/,
         /\b(?:rgba?|hsla?|oklch|oklab|lab|lch|color-mix)\(/,
@@ -2192,12 +2249,25 @@ describe("platform pages render only through the host theme", () => {
           }
           continue;
         }
+        if (utility === "text" && token === "message-timestamp") {
+          for (const config of hosts) {
+            expect(config).toContain('"var(--conversation-timestamp-font-size)"');
+            expect(config).toContain('lineHeight: "var(--conversation-timestamp-line-height)"');
+          }
+          continue;
+        }
         if (!notColor.test(token!) && !neutral.has(token!)) used.add(token!);
       }
     }
     expect([...used].filter((token) => !semanticColors.includes(token))).toEqual([]);
     for (const token of semanticColors) {
       for (const config of hosts) expect(config).toContain(`var(--${token})`);
+    }
+    for (const config of hosts) {
+      expect(config).toContain('"conversation-body": "var(--conversation-body-gap)"');
+      expect(config).toContain('"conversation-row": "var(--conversation-row-padding-block)"');
+      expect(config).toContain('"message-author": "var(--conversation-author-line-height)"');
+      expect(config).toContain('"2xs": "calc(var(--buzz-type-rem) * 0.6875)"');
     }
   });
 });

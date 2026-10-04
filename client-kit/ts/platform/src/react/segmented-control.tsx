@@ -1,7 +1,5 @@
 import * as React from "react";
 
-import { cn } from "@/shared/lib/cn";
-
 type SegmentOption<Value extends string> = {
   value: Value;
   label: string;
@@ -18,7 +16,6 @@ const SIZE_CLASSES: Record<SegmentedControlSize, string> = {
 
 /** A mutually exclusive control with equal-width, optionally scrubbable options. */
 export function SegmentedControl<Value extends string>({
-  className,
   disabled = false,
   indicatorTestId,
   legend,
@@ -30,7 +27,6 @@ export function SegmentedControl<Value extends string>({
   testId,
   value,
 }: {
-  className?: string;
   disabled?: boolean;
   indicatorTestId?: string;
   legend: string;
@@ -159,13 +155,14 @@ export function SegmentedControl<Value extends string>({
 
   return (
     <fieldset
-      className={cn(
+      className={[
         "relative isolate h-8 max-w-full shrink-0 overflow-hidden rounded-md bg-muted/45 p-0.5",
         SIZE_CLASSES[size],
         onPreviewChange && "touch-none select-none cursor-ew-resize",
         "disabled:pointer-events-none disabled:opacity-50",
-        className,
-      )}
+      ]
+        .filter(Boolean)
+        .join(" ")}
       data-slot="segmented-control"
       data-testid={testId}
       disabled={disabled}
@@ -179,10 +176,12 @@ export function SegmentedControl<Value extends string>({
       <legend className="sr-only">{legend}</legend>
       <div
         aria-hidden="true"
-        className={cn(
-          "absolute bottom-0.5 left-0.5 top-0.5 z-0 rounded-md bg-background shadow-sm transition-transform duration-200 ease-in-out motion-reduce:transition-none",
-          previewValue && "duration-0",
-        )}
+        className={[
+          "absolute bottom-0.5 left-0.5 top-0.5 z-0 rounded-md bg-background shadow-sm transition-transform ease-in-out motion-reduce:transition-none",
+          previewValue ? "duration-0" : "duration-200",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         data-testid={indicatorTestId ?? `${testId}-indicator`}
         style={{
           transform: `translateX(${selectedIndex * 100}%)`,
@@ -195,12 +194,14 @@ export function SegmentedControl<Value extends string>({
         {options.map(({ value: optionValue, label, Icon }) => (
           <button
             aria-pressed={value === optionValue}
-            className={cn(
+            className={[
               "relative z-10 flex h-full items-center justify-center gap-1.5 rounded-md bg-transparent px-2.5 text-xs font-medium transition-colors duration-150 ease-out focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
               displayedValue === optionValue
                 ? "text-foreground"
                 : "text-muted-foreground hover:text-foreground",
-            )}
+            ]
+              .filter(Boolean)
+              .join(" ")}
             data-testid={`${optionTestIdPrefix}-${optionValue}`}
             key={optionValue}
             onClick={(event) => {

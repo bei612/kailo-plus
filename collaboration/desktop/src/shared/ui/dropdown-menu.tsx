@@ -8,7 +8,7 @@ import {
   POPOVER_RADIX_SIDE_MOTION_CLASS,
   POPOVER_SHADOW_STYLE,
   POPOVER_SURFACE_CLASS,
-} from "@/shared/ui/popoverSurface";
+} from "@client-kit/platform/react/popover-surface";
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
 

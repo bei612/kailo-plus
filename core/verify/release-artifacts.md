@@ -743,3 +743,61 @@ source 1/reply 0，Delegation EXPIRED version 2/uses 1；未续预算、改权�
 产物、15 个持久 pin/trace digest 值及一次 Core 替换；副作用未改变 DB 业务事实、
 profile/秘密配置、权限、预算或其它容器；本次健康/配置恢复不证明新模型调用、旧无 trace
 用量修复、回复或计量终态，不重复 full，不扩大 Win11/Mobile 设备验收结论。
+
+### 2026-10-04 客户端准入、提及与共享设置集中收口
+
+基准 `9273f48cb042ad866d2c173e77b8d11b80423e6d`；源码冻结树
+`b6dc5839d2280459a9d6936a6cf4d22046531599`，产物引用同步后的完整检查树
+`dbe2e25fb8c5be669d7dcc442bfa95f5304bded0`，均为选定的 62 文件 +2499/-501。
+包含共享设置、撤权停流、多 Agent 提及与 Core 同 Session 派发重核；未混入正式树
+历史脏改。四步边界：复用原宿主/BFF、共享组件与原 Invocation 权威；影响为选定源码
+及真实产物引用；本次副作用仅私有构建、registry push 和隔离检查库；未部署、未发送
+消息、未调用模型、未追加额度或改写历史 UNKNOWN。验收不等于真实多 Agent E2E。
+
+先在固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+内执行原 `pnpm -r typecheck && pnpm -r test`、Web `npm run typecheck && npm test`、
+Desktop 同名命令：共享 307、Web 39、Desktop 2302 项均通过，类型检查退出 0。
+Web 依赖沿 `npm ci --offline --ignore-scripts --no-audit --no-fund` 安装；Desktop
+首次依赖副本缺少祖先 pnpm 目录而退出 1，补齐既有 ignored 依赖后原命令退出 0，
+没有修改产品源码或锁文件迁就环境。
+
+原 `./tools/build-upstream.sh web-client` 与 `desktop-client` 分别为 session 9922、
+9930，实际退出 0。原 `kailo-core-data` BuildKit 为 8 CPU/16 GiB、memory=swap，
+缓存位于 Data；未调整配方、并行度或忽略规则。两份 plan 构建前后逐字相同，
+共享、Web、collaboration 三份锁文件 SHA 核对一致。Core/Worker/Gateway 未重建。
+
+| 产物 | source digest | artifact digest |
+|---|---|---|
+| Web | `a56840b9cff74320164a8b83df3c5d330e5972a700750255f4a9dd85ed72c5dc` | `ebfbe53111f329afe7fd46bb52f6e95764127bad98fb240da49ffffe3a95453e` |
+| Win11 x64 | `4325bd6d4867a8ef0c5a93df8702330662346de3b65bc08387cd4005155b39c6` | `f93b0f36cc1096bb4911a4d54c08ff9edacd05ea0e344397794d0eae5bb66de5` |
+
+Web registry 独立 GET 200，响应 manifest 原字节 SHA 与 artifact 一致。Win 包为
+`dist/desktop-client/Kailo_0.5.23_x64-setup.exe`，15,120,596 字节，未签名、未安装或
+设备验收。候选仅同步两原 manifest、Compose Web pin 与既有追溯 digest。
+
+首轮 `full.log` 实际退出 1，保留 TypeScript 主题守卫、README 链接、追溯阶段和
+来源摘要不符的原失败，不以通过其它项覆盖失败。主题检查暴露 Web 缺少原 Buzz
+字体映射；修复后私有 `color:red` 与错误 timestamp 映射两处生产变异使两个断言
+失败，逐字还原后原共享 307 项再次通过。最初 Web 构建期间源码变化，后续的
+`06480e20…`/`1d7bc93a…` 也因合并修正失配；均保留原件，不用旧产物冒认新来源。
+
+最终同 SDK 4 CPU/8 GiB、无额外 swap、UID 1000、Cargo 16、Data 缓存执行原
+`./tools/check.sh --full`，session 72628 实际退出 0；全过程产品源码与锁文件未变。
+独立 `client_admission_full_jdneh9` 库迁移前进/回退/再前进、SQLx 与 44 枚举约束通过，
+最终 73 条迁移、最高 20261004018000、失败 0；193 schema 兼容、四语言验证、
+Workflow replay、20 份追溯、六个源码产物和原 Core/Worker 四份供应链证明通过。
+Core 主单元 155 passed/9 ignored，另两项显式演练 ignored；这些不计业务 PASS。
+实际部署 `.env` 预检 SKIP，未安装 gitleaks、仅内置扫描；Mobile 签名缺口保留。
+
+原件目录 `/volumes/data/kailo/tmp/codex-client-admission-20261004.JdnEH9/`：
+
+| 原件 | SHA-256 |
+|---|---|
+| `merged-targeted.log` | `a37e1e759c1b02536459303b165354f18f56002f20a085e2c8f93a2715f97852` |
+| `merged-desktop-targeted-corrected.log` | `19046721b726b798493f7809e34ace8163e666ecf5fff34e8abfc1e9d653ac47` |
+| `merged-web-build.log` | `531068b4d8e74a14f2d3497ebc79a2afb1ad2eb65e2e676f98de02c8fb58b159` |
+| `merged-desktop-build.log` | `261d3ad98dc813e97d5b5c1478433539c32eadca8436ea23a6b592f55e1b0af1` |
+| `full.log`（首次 1） | `ecb5d397267afbb553d551938805abc1ee6aeada1cd3c07bb11ed69b62cf64d3` |
+| `theme-production-mutant.log`（1） | `2ca1b467f39454bc8dde8d23691d338bc03a29a7c58aa3ecd89ff15a4345f79c` |
+| `theme-final-restored.log`（0） | `013171c37b31d05262a744ac6f31b33679c234656bc0e294b14191ce26e366f4` |
+| `merged-full.log`（最终 0） | `e728ca351e03f6e20b256010fc31e7d1745a476f2b56bc740349208ff709f61d` |

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkspaceNotifications } from "./SettingsPane";
+import { SettingsPane, WorkspaceNotifications } from "./SettingsPane";
 
 const state = vi.hoisted(() => ({
   workspaces: {
@@ -20,7 +20,8 @@ const state = vi.hoisted(() => ({
   },
   write: vi.fn(),
   invalidate: vi.fn(),
-  mutate: null as null | ((input: { id: string; muted: boolean }) => Promise<void>),
+  mutate: null as
+    null | ((input: { id: string; muted: boolean }) => Promise<void>),
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryKey: string[] }) =>
@@ -37,6 +38,9 @@ vi.mock("@/platform/bff-client", () => ({
   setWorkspacePreference: state.write,
 }));
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en" }));
+vi.mock("@/shared/theme/ThemeProvider", () => ({
+  useTheme: () => ({ theme: "system", setTheme: vi.fn() }),
+}));
 
 beforeEach(() => {
   state.write.mockReset().mockResolvedValue({ version: 8 });
@@ -49,6 +53,13 @@ beforeEach(() => {
   state.preferences.isFetching = false;
 });
 describe("Web settings existing user-state CAS consumer", () => {
+  it("hosts the same Buzz font and conversation controls without native credentials", () => {
+    const markup = renderToStaticMarkup(<SettingsPane />);
+    expect(markup).toContain('data-testid="conversation-display-group"');
+    expect(markup).toContain('data-testid="font-size-larger"');
+    expect(markup).toContain('data-testid="conversation-density-spacious"');
+    expect(markup).not.toMatch(/private.key|provider.credential|pairing/i);
+  });
   it("writes exact workspace/current version while preserving the existing star", async () => {
     renderToStaticMarkup(<WorkspaceNotifications />);
     await state.mutate!({ id: "workspace-a", muted: true });
@@ -69,7 +80,9 @@ describe("Web settings existing user-state CAS consumer", () => {
   it("refetches after a lost response without replaying the write", async () => {
     state.write.mockRejectedValue(new Error("private native detail"));
     renderToStaticMarkup(<WorkspaceNotifications />);
-    await expect(state.mutate!({ id: "workspace-a", muted: true })).rejects.toThrow();
+    await expect(
+      state.mutate!({ id: "workspace-a", muted: true }),
+    ).rejects.toThrow();
     expect(state.write).toHaveBeenCalledTimes(1);
     expect(state.invalidate).toHaveBeenCalledOnce();
   });

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { translate } from "@client-kit/platform/i18n";
+import { ConversationDisplaySettings } from "@client-kit/platform/react/conversation-display-settings";
 import {
   SettingsPage,
   ShortcutSettings,
@@ -20,7 +21,10 @@ export function SettingsPane() {
   return (
     <SettingsPage locale={locale} section={section} onSelect={setSection}>
       {section === "appearance" ? (
-        <ThemeModeControl locale={locale} value={theme} onChange={setTheme} />
+        <div className="flex flex-col gap-6">
+          <ThemeModeControl locale={locale} value={theme} onChange={setTheme} />
+          <ConversationDisplaySettings locale={locale} />
+        </div>
       ) : section === "notifications" ? (
         <WorkspaceNotifications />
       ) : (

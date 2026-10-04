@@ -28,7 +28,7 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/stream.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/collab-bridge, web-client]
+  paths: [core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/stream.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/collab-bridge, web-client, client-kit/ts/platform/src/react/mention-autocomplete.tsx, client-kit/ts/platform/src/react/use-mention-selection.ts, collaboration/desktop/src/features/messages/ui/MentionAutocomplete.tsx]
   surfaces: [web]
   schemas: []
   migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql]
@@ -42,7 +42,7 @@ release:
     - name: core
       digest: sha256:2052ea7ea693af5755b61746744ef6fb61128b33eeff34054b225131f0002df2
     - name: web-client
-      digest: sha256:7cadbf96ea96fe1abfb9b3218e6b3c7cc5802839488dde5d15e90a0102eac6d9
+      digest: sha256:ebfbe53111f329afe7fd46bb52f6e95764127bad98fb240da49ffffe3a95453e
     - name: collaboration-relay
       digest: sha256:d42f83fa0dadcd78c4ad721047433a9a7c8e522767edd96cb326d641c5dd0056
   gate: shipped

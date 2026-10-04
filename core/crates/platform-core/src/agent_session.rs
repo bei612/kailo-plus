@@ -319,6 +319,39 @@ fn phase_from_invocations(
     }
 }
 
+/// The caller holds this exact Session row lock until its dispatch CAS commits.
+/// A sibling may have started after an earlier resume/idle check. Leave this
+/// Invocation CREATED until that original turn and its uncertain result close;
+/// never persist a new dispatch intent merely to have native idle reject it.
+pub(crate) async fn require_dispatch_idle(
+    tx: &mut Transaction<'_, Postgres>,
+    invocation: Uuid,
+) -> Result<(), RuntimeError> {
+    let certain: bool = sqlx::query_scalar(
+        "select not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+          and not exists(select 1 from catalog.agent_invocation prior
+            where prior.id<>i.id and prior.tenant_id=i.tenant_id
+              and prior.workspace_id=i.workspace_id and prior.root_event_id=i.root_event_id
+              and prior.installation_resource_id=i.installation_resource_id
+              and prior.agent_version_asset_id=i.agent_version_asset_id
+              and prior.projection_generation=i.projection_generation
+              and (prior.status in ('DISPATCHING','RUNNING','UNKNOWN')
+                or ((prior.runtime_turn_id is not null or exists(select 1
+                    from projection.agent_model_trace t where t.invocation_id=prior.id))
+                  and coalesce(prior.native_status,'') not in ('completed','failed','interrupted'))))
+         from catalog.agent_invocation i where i.id=$1 and i.native_status is null",
+    )
+    .bind(invocation)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|_| RuntimeError::Unknown)?
+    .ok_or(RuntimeError::Unknown)?;
+    if !certain {
+        return Err(RuntimeError::Unknown);
+    }
+    Ok(())
+}
+
 async fn lock_birth(
     tx: &mut Transaction<'_, Postgres>,
     invocation: Uuid,
@@ -432,24 +465,7 @@ async fn resume_for_dispatch(
         .runtime_thread_id
         .as_deref()
         .ok_or(RuntimeError::Unknown)?;
-    let certain: bool = sqlx::query_scalar(
-        "select not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
-          and not exists(select 1 from catalog.agent_invocation prior
-            where prior.id<>i.id and prior.tenant_id=i.tenant_id
-              and prior.workspace_id=i.workspace_id and prior.root_event_id=i.root_event_id
-              and prior.installation_resource_id=i.installation_resource_id
-              and prior.agent_version_asset_id=i.agent_version_asset_id
-              and prior.projection_generation=i.projection_generation
-              and (prior.status in ('DISPATCHING','RUNNING','UNKNOWN')
-                or ((prior.runtime_turn_id is not null or exists(select 1
-                    from projection.agent_model_trace t where t.invocation_id=prior.id))
-                  and coalesce(prior.native_status,'') not in ('completed','failed','interrupted'))))
-         from catalog.agent_invocation i where i.id=$1 and i.native_status is null")
-        .bind(invocation).fetch_optional(&mut *tx).await
-        .map_err(|_| RuntimeError::Unknown)?.ok_or(RuntimeError::Unknown)?;
-    if !certain {
-        return Err(RuntimeError::Unknown);
-    }
+    require_dispatch_idle(&mut tx, invocation).await?;
     crate::agent_invocation::fresh_invocation(state, &mut tx, invocation)
         .await
         .map_err(|_| RuntimeError::AdmissionRequired)?;
@@ -588,5 +604,139 @@ mod memory_phase_tests {
                 Err(RuntimeError::Unknown)
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod dispatch_idle_tests {
+    use super::require_dispatch_idle;
+    use crate::agent_runtime::RuntimeError;
+    use uuid::Uuid;
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn sibling_turn_arriving_after_idle_keeps_original_invocation_created() {
+        let pool = sqlx::PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = Uuid::new_v4();
+        // Real migrated constraints remain enabled. Fixtures are private and
+        // rolled back; no runtime, Relay, authorization or model is fabricated.
+        sqlx::raw_sql(&format!(
+            r#"DO $$
+            DECLARE
+              tenant uuid:='{tenant}'; workspace uuid:=gen_random_uuid();
+              human uuid:=gen_random_uuid(); human_identity uuid:=gen_random_uuid();
+              agent_a uuid:=gen_random_uuid(); agent_b uuid:=gen_random_uuid();
+              definition uuid:=gen_random_uuid(); version_asset uuid:=gen_random_uuid();
+              installation_a uuid:=gen_random_uuid(); installation_b uuid:=gen_random_uuid();
+              route uuid:=gen_random_uuid(); installation uuid; invocation uuid; action uuid;
+              n integer;
+            BEGIN
+              INSERT INTO identity.tenant(id,slug,name,state)
+                VALUES(tenant,'session-dispatch-'||tenant,'Session dispatch fixture','ACTIVE');
+              INSERT INTO identity.workspace(id,tenant_id,slug,name,state)
+                VALUES(workspace,tenant,'session-dispatch','Session dispatch fixture','ACTIVE');
+              INSERT INTO identity.human_identity(id,display_name,status)
+                VALUES(human_identity,'Session dispatch fixture','ACTIVE');
+              INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES
+                (human,tenant,'HUMAN','ACTIVE'),(agent_a,tenant,'AGENT','ACTIVE'),(agent_b,tenant,'AGENT','ACTIVE');
+              INSERT INTO identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state)
+                VALUES(gen_random_uuid(),tenant,human_identity,human,'ACTIVE');
+              INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,
+                component_type_key,native_id,state,version) VALUES
+                (definition,tenant,'agent.definition',NULL,human,'core',definition::text,'PROVISIONING',1),
+                (route,tenant,'llm_route',workspace,human,'core',route::text,'PROVISIONING',1),
+                (installation_a,tenant,'agent.installation',workspace,human,'core',installation_a::text,'PROVISIONING',1),
+                (installation_b,tenant,'agent.installation',workspace,human,'core',installation_b::text,'PROVISIONING',1);
+              INSERT INTO catalog.agent_definition(resource_id,stable_slug,display_name,status)
+                VALUES(definition,'session-dispatch','Session dispatch fixture','PROVISIONING');
+              INSERT INTO catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,native_ref,state,version)
+                VALUES(version_asset,tenant,definition,'agent.version',human,version_asset::text,'DRAFT',1);
+              INSERT INTO catalog.agent_version(asset_id,agent_resource_id,ordinal,content,config_hash,state)
+                VALUES(version_asset,definition,1,
+                  jsonb_build_object('runtimeProfileKey','session-dispatch-fixture','modelRouteResourceId',route),
+                  repeat('a',64),'DRAFT');
+              INSERT INTO catalog.agent_installation(resource_id,workspace_id,agent_resource_id,pinned_version_asset_id,
+                agent_principal_id,runtime_isolation_ref,state) VALUES
+                (installation_a,workspace,definition,version_asset,agent_a,'fixture:'||installation_a,'PROVISIONING'),
+                (installation_b,workspace,definition,version_asset,agent_b,'fixture:'||installation_b,'PROVISIONING');
+              INSERT INTO catalog.agent_runtime_projection(installation_resource_id,generation,agent_version_asset_id,
+                runtime_profile_key,model_route_resource_id,gateway_resource_ids,effective_fields,config_hash,state) VALUES
+                (installation_a,1,version_asset,'session-dispatch-fixture',route,'{{}}','[]',repeat('a',64),'PENDING'),
+                (installation_b,1,version_asset,'session-dispatch-fixture',route,'{{}}','[]',repeat('a',64),'PENDING');
+              INSERT INTO catalog.agent_session(tenant_id,workspace_id,root_event_id,installation_resource_id,
+                agent_version_asset_id,projection_generation,runtime_thread_id,core_memory_state,status) VALUES
+                (tenant,workspace,repeat('a',64),installation_a,version_asset,1,gen_random_uuid()::text,'ABSENT','ACTIVE'),
+                (tenant,workspace,repeat('a',64),installation_b,version_asset,1,gen_random_uuid()::text,'ABSENT','ACTIVE'),
+                (tenant,workspace,repeat('b',64),installation_a,version_asset,1,gen_random_uuid()::text,'ABSENT','ACTIVE');
+              FOR n IN 1..4 LOOP
+                installation:=CASE WHEN n=3 THEN installation_b ELSE installation_a END;
+                invocation:=gen_random_uuid(); action:=gen_random_uuid();
+                INSERT INTO admission.action_execution(id,operation_id,tenant_id,workspace_id,action_key,action_version,
+                  initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
+                  VALUES(action,gen_random_uuid(),tenant,workspace,'agent.installation.create',1,
+                    human,human,installation,repeat('a',64),'ALLOWED','DISPATCHED',gen_random_uuid());
+                INSERT INTO catalog.agent_invocation(id,tenant_id,workspace_id,root_event_id,source_event_id,
+                  installation_resource_id,agent_version_asset_id,projection_generation,action_execution_id,workflow_id,status)
+                  VALUES(invocation,tenant,workspace,CASE WHEN n=4 THEN repeat('b',64) ELSE repeat('a',64) END,
+                    repeat(n::text,64),installation,version_asset,1,action,'session-dispatch:'||invocation,'CREATED');
+              END LOOP;
+            END $$;"#
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let rows: Vec<(Uuid, String)> = sqlx::query_as(
+            "select id,source_event_id from catalog.agent_invocation where tenant_id=$1 order by source_event_id",
+        )
+        .bind(tenant)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 4);
+        let first = rows[0].0;
+        let queued = rows[1].0;
+        sqlx::query("select installation_resource_id from catalog.agent_session where tenant_id=$1 for update")
+            .bind(tenant).fetch_all(&mut *tx).await.unwrap();
+        require_dispatch_idle(&mut tx, queued).await.unwrap();
+        // Both callers previously observed idle. The first now binds a turn
+        // before the second reaches its lock-held dispatch CAS.
+        sqlx::query("update catalog.agent_invocation set status='RUNNING',runtime_turn_id='original-turn',native_status='inProgress' where id=$1")
+            .bind(first).execute(&mut *tx).await.unwrap();
+        assert!(matches!(
+            require_dispatch_idle(&mut tx, queued).await,
+            Err(RuntimeError::Unknown)
+        ));
+        let unchanged: (String, Option<String>, bool) = sqlx::query_as(
+            "select status,runtime_turn_id,exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+             from catalog.agent_invocation i where id=$1",
+        ).bind(queued).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(unchanged, ("CREATED".into(), None, false));
+        // The same channel can independently reach another
+        // Installation, and a separate root has its own durable Session.
+        require_dispatch_idle(&mut tx, rows[2].0).await.unwrap();
+        require_dispatch_idle(&mut tx, rows[3].0).await.unwrap();
+        sqlx::query("update catalog.agent_invocation set status='UNKNOWN',native_status='completed' where id=$1")
+            .bind(first).execute(&mut *tx).await.unwrap();
+        assert!(matches!(
+            require_dispatch_idle(&mut tx, queued).await,
+            Err(RuntimeError::Unknown)
+        ));
+        sqlx::query("update catalog.agent_invocation set status='FAILED',native_status='failed' where id=$1")
+            .bind(first).execute(&mut *tx).await.unwrap();
+        require_dispatch_idle(&mut tx, queued).await.unwrap();
+        // Missing/uncertain native completion cannot be treated as idle.
+        sqlx::query("update catalog.agent_invocation set native_status=null where id=$1")
+            .bind(first)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(matches!(
+            require_dispatch_idle(&mut tx, queued).await,
+            Err(RuntimeError::Unknown)
+        ));
+        tx.rollback().await.unwrap();
     }
 }

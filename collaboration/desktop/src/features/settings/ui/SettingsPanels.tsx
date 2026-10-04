@@ -43,13 +43,13 @@ import {
 } from "@/shared/theme/useThemePreviewVars";
 import {
   AccentPickerContent,
-  ConversationDisplaySettings,
   GlassBackgroundSetting,
   LinkPreviewStyleSetting,
   ProminentActiveTabSetting,
   ThreadLayoutSetting,
 } from "./AppearanceSettingsControls";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
+import { ConversationDisplaySettings } from "@client-kit/platform/react/conversation-display-settings";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
 import {
   SettingsOptionGroup,
@@ -620,7 +620,7 @@ function ThemeSettingsCard() {
           data-testid="appearance-preferences-card"
           title="Preferences"
         >
-          <ConversationDisplaySettings />
+          <ConversationDisplaySettings locale={locale} />
           <LinkPreviewStyleSetting />
           <ThreadLayoutSetting />
         </SettingsOptionGroup>

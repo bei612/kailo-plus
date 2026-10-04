@@ -1,9 +1,7 @@
 import * as React from "react";
 
-import type { MentionSuggestion } from "@/features/messages/ui/MentionAutocomplete";
-
 /** Highlighted row in the mention picker, clamped to the current suggestions. */
-export function useMentionSelection(suggestions: MentionSuggestion[]) {
+export function useMentionSelection(suggestions: readonly unknown[]) {
   const [mentionSelectedIndex, setMentionSelectedIndex] = React.useState(0);
 
   React.useEffect(() => {

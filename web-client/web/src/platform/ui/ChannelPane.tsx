@@ -3,7 +3,10 @@
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
 // signer——签名由 BFF 以本人身份代做。
 
-import { AgentTrigger, ReasonCode } from "@client-kit/contracts";
+import { AgentTrigger, ReasonCode, type AgentInstallationView } from "@client-kit/contracts";
+import { MentionAutocomplete } from "@client-kit/platform/react/mention-autocomplete";
+import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
+import { useReasonText } from "@client-kit/platform/react/context";
 import { isOutcomeUnknown } from "@client-kit/platform/transport";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, X } from "lucide-react";
@@ -35,14 +38,18 @@ const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
  * 重连中——结果不明不渲染成成功。
  */
 function useChannelStream(workspaceId: string) {
+  const reasonText = useReasonText();
   const [events, setEvents] = useState<BuzzEvent[]>([]);
   const [status, setStatus] = useState(t("platform.stream.connecting"));
   const [live, setLive] = useState(false);
+  const [denied, setDenied] = useState(false);
 
   useEffect(() => {
     let closed = false;
     setEvents([]);
     setLive(false);
+    setDenied(false);
+    setStatus(t("platform.stream.connecting"));
     const stop = openStream(workspaceId, (frame: StreamFrame) => {
       if (closed) return;
       switch (frame.type) {
@@ -60,11 +67,24 @@ function useChannelStream(workspaceId: string) {
           break;
         case "closed":
           setLive(false);
-          setStatus(
-            frame.reason === "session-revoked"
-              ? t("platform.stream.revoked")
-              : `${t("platform.stream.reconnecting")}（${frame.reason}）`,
-          );
+          if (
+            frame.reason === "session-revoked" ||
+            frame.reason === "scope-revoked" ||
+            frame.reason === "identity-revoked"
+          ) {
+            closed = true;
+            setDenied(true);
+            setEvents([]);
+            setStatus(
+              reasonText(
+                frame.reason === "session-revoked"
+                  ? ReasonCode.SessionNotActive
+                  : ReasonCode.PermissionDenied,
+              ),
+            );
+          } else {
+            setStatus(`${t("platform.stream.reconnecting")}（${frame.reason}）`);
+          }
           break;
         case "interrupted":
           setLive(false);
@@ -80,9 +100,9 @@ function useChannelStream(workspaceId: string) {
       closed = true;
       stop();
     };
-  }, [workspaceId]);
+  }, [workspaceId, reasonText]);
 
-  return { events, status, live };
+  return { events, status, live, denied };
 }
 
 /** 页面是否在前台。已读只在用户真的看得见时推进。 */
@@ -104,7 +124,7 @@ export function ChannelPane({
   myPrincipalId: string;
 }) {
   const queryClient = useQueryClient();
-  const { events, status, live } = useChannelStream(workspaceId);
+  const { events, status, live, denied } = useChannelStream(workspaceId);
   const visible = useVisible();
   const members = useQuery(platformQueries.members(workspaceId));
   const userState = useQuery(platformQueries.userState);
@@ -211,7 +231,7 @@ export function ChannelPane({
           );
         })}
       </ul>
-      <Composer workspaceId={workspaceId} />
+      {denied ? null : <Composer workspaceId={workspaceId} />}
     </div>
   );
 }
@@ -230,12 +250,13 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-function Composer({ workspaceId }: { workspaceId: string }) {
+export function Composer({ workspaceId }: { workspaceId: string }) {
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
-  const [mentionInstallationId, setMentionInstallationId] = useState("");
+  const [mentionInstallationIds, setMentionInstallationIds] = useState<string[]>([]);
+  const [mentionPickerOpen, setMentionPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const installations = useInfiniteQuery({
     queryKey: ["platform", "mention-installations", workspaceId],
@@ -243,22 +264,32 @@ function Composer({ workspaceId }: { workspaceId: string }) {
     initialPageParam: 0,
     getNextPageParam: (page) => page.nextOffset ?? undefined,
   });
-  const mentionable =
-    installations.data?.pages
-      .flatMap((page) => page.installations)
-      .filter(
-        (installation) =>
-          installation.workspaceId === workspaceId &&
-          installation.state === "ACTIVE" &&
-          installation.resourceState === "ACTIVE" &&
-          installation.agentPrincipalState === "ACTIVE" &&
-          installation.channelBinding?.status === "ACTIVE" &&
-          installation.channelBinding.triggers.includes(AgentTrigger.Mention),
-      ) ?? [];
-  const mentionVerified =
-    !mentionInstallationId ||
-    (installations.isSuccess &&
-      mentionable.some((installation) => installation.resourceId === mentionInstallationId));
+  const mentionable = useMemo(() => {
+    const byId = new Map<string, AgentInstallationView>();
+    const invalid = new Set<string>();
+    for (const installation of installations.data?.pages.flatMap((page) => page.installations) ?? []) {
+      if (installation.workspaceId !== workspaceId || installation.state !== "ACTIVE" ||
+          installation.resourceState !== "ACTIVE" || installation.agentPrincipalState !== "ACTIVE" ||
+          installation.channelBinding?.status !== "ACTIVE" ||
+          !installation.channelBinding.triggers.includes(AgentTrigger.Mention)) {
+        invalid.add(installation.resourceId);
+      }
+      byId.set(installation.resourceId, installation);
+    }
+    // Overlapping offset pages cannot let an old ACTIVE row conceal a revoked one.
+    return [...byId.values()].filter((installation) => !invalid.has(installation.resourceId));
+  }, [installations.data, workspaceId]);
+  const mentionVerified = mentionInstallationIds.length === 0 || (installations.isSuccess &&
+    mentionInstallationIds.every((id) => mentionable.some((installation) => installation.resourceId === id)));
+  const suggestions = useMemo(() => mentionable.filter((installation) =>
+    !mentionInstallationIds.includes(installation.resourceId)), [mentionable, mentionInstallationIds]);
+  const { mentionSelectedIndex, setMentionSelectedIndex } = useMentionSelection(suggestions);
+  const selectMention = (installation: AgentInstallationView) => {
+    if (sending || !installations.isSuccess || !mentionable.includes(installation)) return;
+    setMentionInstallationIds((current) => [...new Set([...current, installation.resourceId])].sort());
+    setMentionPickerOpen(false);
+    setMentionSelectedIndex(0);
+  };
   const picker = useRef<HTMLInputElement>(null);
   // 当前发送意图：内容与附件不变时重发沿用同一个键——结果不明之后再点发送，
   // BFF 回答原操作的结论而不是再发一条（DD-81）。确定的结论之后换新键。
@@ -295,7 +326,6 @@ function Composer({ workspaceId }: { workspaceId: string }) {
     // 不本地插入这条消息：它要等 Relay 接受并回传 event id 才算发出去。
     // 先渲染再等确认，会让一条被拒绝的消息看起来已经发出。草稿与附件也只在
     // 确认后才清空——发送失败时它们都还在。
-    const mentionInstallationIds = mentionInstallationId ? [mentionInstallationId] : [];
     const signature = JSON.stringify([
       content,
       attachments.map((a) => a.sha256),
@@ -311,7 +341,7 @@ function Composer({ workspaceId }: { workspaceId: string }) {
         if (intent.current?.key === key) intent.current = null;
         setDraft((current) => (current.trim() === content ? "" : current));
         setPending((current) => current.filter((p) => !attachments.includes(p.descriptor)));
-        setMentionInstallationId((current) => (current === mentionInstallationId ? "" : current));
+        setMentionInstallationIds((current) => current.filter((id) => !mentionInstallationIds.includes(id)));
       })
       .catch((e: unknown) => {
         if (isOutcomeUnknown(e)) {
@@ -330,25 +360,39 @@ function Composer({ workspaceId }: { workspaceId: string }) {
         }
       })
       .finally(() => setSending(false));
-  }, [draft, pending, workspaceId, mentionInstallationId, mentionVerified, sending]);
+  }, [draft, pending, workspaceId, mentionInstallationIds, mentionVerified, sending]);
 
   return (
-    <div className="flex flex-col gap-1">
-      <label className="flex items-center gap-2 text-xs">
-        {t("platform.mentionAgent")}
-        <select
-          aria-label={t("platform.mentionAgent")}
-          value={mentionInstallationId}
-          onChange={(event) => setMentionInstallationId(event.target.value)}
-          disabled={sending || installations.isPending || installations.isError}
-        >
-          <option value="">{t("platform.noMention")}</option>
-          {mentionable.map((installation) => (
-            <option key={installation.resourceId} value={installation.resourceId}>
-              {installation.resourceId}
-            </option>
-          ))}
-        </select>
+    <form className="flex flex-col gap-1" onSubmit={(event) => event.preventDefault()}>
+      <div className="relative flex flex-wrap items-center gap-2 text-xs">
+        <Button type="button" variant="ghost" data-mention-picker-trigger=""
+        onKeyDown={(event) => {
+          if (!mentionPickerOpen) return;
+          if (event.key === "Escape") { event.preventDefault(); setMentionPickerOpen(false); }
+          else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            setMentionSelectedIndex((current) => Math.max(0, Math.min(suggestions.length - 1,
+              current + (event.key === "ArrowDown" ? 1 : -1))));
+          } else if (event.key === "Enter" && suggestions[mentionSelectedIndex]) {
+            event.preventDefault(); selectMention(suggestions[mentionSelectedIndex]);
+          }
+        }}
+          aria-expanded={mentionPickerOpen}
+          onClick={() => setMentionPickerOpen((current) => !current)}
+          disabled={sending || installations.isPending || installations.isError}>
+          {t("platform.mentionAgent")}
+        </Button>
+        {mentionInstallationIds.map((id) => <Button key={id} type="button" variant="ghost"
+          disabled={sending} aria-pressed="true"
+          onClick={() => setMentionInstallationIds((current) => current.filter((value) => value !== id))}>
+          {id}<X className="h-3 w-3" aria-hidden="true" />
+        </Button>)}
+        <MentionAutocomplete suggestions={suggestions} selectedIndex={mentionSelectedIndex}
+          composerOwnsFocus={mentionPickerOpen && !sending && installations.isSuccess}
+          suggestionKey={(installation) => installation.resourceId}
+          suggestionLabel={(installation) => `${t("platform.mentionAgent")} ${installation.resourceId}`}
+          renderSuggestion={(installation) => <span className="break-all">{installation.resourceId}</span>}
+          onSelect={selectMention} onDismiss={() => setMentionPickerOpen(false)} />
         {installations.hasNextPage ? (
           <Button
             type="button"
@@ -359,7 +403,7 @@ function Composer({ workspaceId }: { workspaceId: string }) {
             {t("platform.moreMentionAgents")}
           </Button>
         ) : null}
-      </label>
+      </div>
       {installations.isError || !mentionVerified ? (
         <div role="alert">{t("platform.mentionAgentsUnavailable")}</div>
       ) : null}
@@ -413,6 +457,7 @@ function Composer({ workspaceId }: { workspaceId: string }) {
           <Paperclip />
         </Button>
         <Input
+          data-testid="message-input"
           aria-label={t("platform.message")}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -428,6 +473,6 @@ function Composer({ workspaceId }: { workspaceId: string }) {
           {t("platform.send")}
         </Button>
       </div>
-    </div>
+    </form>
   );
 }

@@ -18,7 +18,7 @@ globalThis.document = {
   },
 };
 
-const preference = await import("./conversationDensityPreference.ts");
+const preference = await import("../../../../../client-kit/ts/platform/src/conversationDensityPreference.ts");
 
 test("defaults invalid and missing conversation densities to comfortable", () => {
   assert.equal(preference.parseConversationDensity(null), "comfortable");

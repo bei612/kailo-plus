@@ -864,6 +864,9 @@ async fn prepare_dispatch(
     // which both read Initial cannot both inject core: the committed sibling
     // dispatch is either still unknown or proves the phase has changed.
     let phase = crate::agent_session::memory_phase(&mut tx, invocation.id).await?;
+    // Resume's earlier idle observation does not reserve a turn. Recheck while
+    // holding the same Session lock as this CREATED -> DISPATCHING transition.
+    crate::agent_session::require_dispatch_idle(&mut tx, invocation.id).await?;
     let memory_matches =
         frozen_memory_matches(memory, phase, &memory_state, memory_event.as_deref());
     let source: bool = sqlx::query_scalar(

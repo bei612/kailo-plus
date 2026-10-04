@@ -12,7 +12,7 @@ import {
   POPOVER_RADIX_SIDE_MOTION_CLASS,
   POPOVER_SHADOW_STYLE,
   POPOVER_SURFACE_CLASS,
-} from "@/shared/ui/popoverSurface";
+} from "@client-kit/platform/react/popover-surface";
 
 // Radix Popover has no hover timing API: controlled hover popovers must use this
 // shared dwell default themselves. Keep click and keyboard opens immediate.

@@ -3,14 +3,24 @@ export default {
   theme: {
     extend: {
       fontSize: {
+        "2xs": "calc(var(--buzz-type-rem) * 0.6875)",
         message: [
           "var(--conversation-message-font-size)",
           { lineHeight: "var(--conversation-message-line-height)" },
         ],
+        "message-timestamp": [
+          "var(--conversation-timestamp-font-size)",
+          { lineHeight: "var(--conversation-timestamp-line-height)" },
+        ],
+      },
+      lineHeight: {
+        "message-author": "var(--conversation-author-line-height)",
       },
       spacing: {
+        "conversation-body": "var(--conversation-body-gap)",
         "conversation-list": "var(--conversation-list-item-gap)",
         "conversation-paragraph": "var(--conversation-paragraph-gap)",
+        "conversation-row": "var(--conversation-row-padding-block)",
       },
       boxShadow: {
         "content-edge": "-1px -1px 0 0 hsl(var(--sidebar-border) / 0.45)",

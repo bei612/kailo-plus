@@ -10,9 +10,17 @@
 // 未启用的能力不在这里出现。不渲染一个点进去说「未启用」的入口——
 // 那是把阻断项做成了可见功能。
 
-import { type PlatformSessionView, ReasonCode } from "@client-kit/contracts";
+import {
+  PlatformSessionAccessMode,
+  type PlatformSessionView,
+  ReasonCode,
+} from "@client-kit/contracts";
 import { PlatformProvider } from "@client-kit/platform/react/context";
-import { ApprovalsPage, TasksPage } from "@client-kit/platform/react/governance";
+import {
+  ApprovalsPage,
+  LifecycleRestrictedView,
+  TasksPage,
+} from "@client-kit/platform/react/governance";
 import { WorkflowsPage } from "@client-kit/platform/react/workflows";
 import { RedemptionProgress, TenantInvitations } from "@client-kit/platform/react/invitations";
 import {
@@ -99,7 +107,14 @@ export function PlatformApp() {
   if (!session) return <Notice text={t("platform.loadingIdentity")} />;
   return (
     <PlatformProvider client={bff} locale={getLocale()}>
-      <SignedIn session={session} />
+      {session.accessMode === PlatformSessionAccessMode.LifecycleRestricted ? (
+        <LifecycleRestrictedView
+          displayName={t("platform.title")}
+          onSignOut={() => void signOut()}
+        />
+      ) : (
+        <SignedIn session={session} />
+      )}
     </PlatformProvider>
   );
 }

@@ -7,8 +7,13 @@
     "src"
   ],
   "exports": {
+    "./react/use-mention-selection": "./src/react/use-mention-selection.ts",
+    "./react/mention-autocomplete": "./src/react/mention-autocomplete.tsx",
+    "./react/popover-surface": "./src/react/popover-surface.ts",
     "./client": "./src/client.ts",
     "./format": "./src/format.ts",
+    "./fontSizePreference": "./src/fontSizePreference.ts",
+    "./conversationDensityPreference": "./src/conversationDensityPreference.ts",
     "./governance": "./src/governance.ts",
     "./i18n": "./src/i18n.ts",
     "./inbox": "./src/inbox.ts",
@@ -25,6 +30,8 @@
     "./react/pages": "./src/react/pages.tsx",
     "./react/roles": "./src/react/roles.tsx",
     "./react/settings": "./src/react/settings.tsx",
+    "./react/conversation-display-settings": "./src/react/conversation-display-settings.tsx",
+    "./react/segmented-control": "./src/react/segmented-control.tsx",
     "./react/surfaces": "./src/react/surfaces.tsx",
     "./react/tenants": "./src/react/tenants.tsx",
     "./react/ui": "./src/react/ui.tsx",

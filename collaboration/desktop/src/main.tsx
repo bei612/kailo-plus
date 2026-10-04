@@ -15,8 +15,8 @@ import { Toaster } from "@/shared/ui/sonner";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 import { recoverLocalStorageQuotaOnStartup } from "@/shared/lib/localStorageQuota";
 import { startLocalStorageSweep } from "@/shared/lib/localStorageSweep";
-import { initializeConversationDensityPreference } from "@/shared/lib/conversationDensityPreference";
-import { initializeFontSizePreference } from "@/shared/lib/fontSizePreference";
+import { initializeConversationDensityPreference } from "@client-kit/platform/conversationDensityPreference";
+import { initializeFontSizePreference } from "@client-kit/platform/fontSizePreference";
 
 type E2eWindow = Window & {
   __BUZZ_E2E__?: unknown;

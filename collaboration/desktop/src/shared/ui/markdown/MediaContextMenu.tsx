@@ -6,7 +6,7 @@ import {
   POPOVER_CUSTOM_ENTER_MOTION_CLASS,
   POPOVER_SHADOW_STYLE,
   POPOVER_SURFACE_CLASS,
-} from "@/shared/ui/popoverSurface";
+} from "@client-kit/platform/react/popover-surface";
 
 export type MediaContextMenuPosition = {
   x: number;

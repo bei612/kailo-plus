@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 import { PlatformApp } from "./PlatformApp";
 
-const state = vi.hoisted(() => ({ hook: 0 }));
+const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL" }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
   return {
@@ -11,7 +11,11 @@ vi.mock("react", async (original) => {
       const index = state.hook++;
       return [
         index === 0
-          ? { tenantPrincipalId: "human-a", currentWorkspaceId: "workspace-b" }
+          ? {
+              tenantPrincipalId: "human-a",
+              currentWorkspaceId: "workspace-b",
+              accessMode: state.accessMode,
+            }
           : initial === "channel"
             ? "members"
             : initial,
@@ -37,6 +41,11 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 vi.mock("@client-kit/platform/react/context", () => ({
   PlatformProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+vi.mock("@client-kit/platform/react/governance", () => ({
+  LifecycleRestrictedView: () => <div data-testid="shared-lifecycle-restricted" />,
+  TasksPage: () => null,
+  ApprovalsPage: () => null,
 }));
 vi.mock("@client-kit/platform/react/pages", () => ({
   WorkspaceManagementPanels: () => <div data-testid="shared-management-panels" />,
@@ -65,6 +74,15 @@ vi.mock("@/platform/bff-client", () => ({
 
 beforeEach(() => {
   state.hook = 0;
+  state.accessMode = "FULL";
+});
+it("uses the native shared restricted view without mounting ordinary workspace menus", () => {
+  state.accessMode = "LIFECYCLE_RESTRICTED";
+  const markup = renderToStaticMarkup(<PlatformApp />);
+  expect(markup).toContain('data-testid="shared-lifecycle-restricted"');
+  expect(markup).not.toContain('data-testid="shared-management-panels"');
+  expect(markup).not.toContain('data-testid="sidebar-settings"');
+  expect(markup).not.toContain('data-testid="workspace-members"');
 });
 it("retains the host-selected Workspace and mounts all shared management panels plus invitations", () => {
   const markup = renderToStaticMarkup(<PlatformApp />);

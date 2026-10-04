@@ -27,7 +27,7 @@ globalThis.document = {
   },
 };
 
-const preference = await import("./fontSizePreference.ts");
+const preference = await import("../../../../../client-kit/ts/platform/src/fontSizePreference.ts");
 
 test("scales fixed line-height utilities with the typography rem", () => {
   assert.deepEqual(config.theme.extend.lineHeight, {

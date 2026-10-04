@@ -3409,3 +3409,95 @@ source `sha256:9e52f5337c3b67515ba8371869098368c2654bedcb5da36603be45af093ccfa9`
 原生 dead-code、chunk 体积和跨平台未签名警告保留；未在 Win11 安装运行，
 不能据此关闭设备或生产门禁。Web 同批一次构建与 registry 回读结果见
 [组件登记记录](component-release-registration.md)；两份产物均未据此部署。
+
+### 同 Session 并发派发前的 idle 重核
+
+本批基准 `9273f48cb042ad866d2c173e77b8d11b80423e6d`，仅两处 Core 源码及本记录。
+依据设计 `03` 的 Invocation/Session 固定归属、`05` 的副作用前 fresh 与 `17` 的
+Installation 隔离：同频道不同 Installation 仍各有 Session；问题只在同一
+Installation/root 的两个 CREATED Invocation 先后通过 resume 的 idle 观察时。
+
+1. 原 `resume_for_dispatch` 释放 Session 锁后，另一调用可能先绑定 RUNNING turn；
+   第二调用的 `prepare_dispatch` 只重核 MemoryPhase，Continued 并不能证明 idle。
+2. 原生固定 Codex `7498521d288b9b3b96ffba4eedf089d8d6e06a84` 的
+   `codex-rs/app-server/src/request_processors/turn_processor.rs::turn_start_inner`
+   同时允许 Started/Steered 返回 turn；Kailo 原 native idle 守卫必须保留，不能放宽。
+3. 本修复提取并复用原 idle SQL，在 `prepare_dispatch` 的既有 Session 锁内、
+   CREATED→DISPATCHING CAS/审计提交之前再调用。保持原 AE→Tenant→Session 锁序，
+   sibling 查询不加行锁；busy、缺失或读取未知均不提交新派发/trace。
+4. `RuntimeError::Unknown` 仍沿原 first_turn 返回 Running/UNKNOWN_EXTERNAL_RESULT，
+   Invocation 保持 CREATED；Worker 用同一 InvocationID 轮询并续跑，不创建新请求。
+   已 DISPATCHING/UNKNOWN 的原不明结果不重发、不改成确定失败。
+
+真实执行使用原固定 SDK `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+4 CPU/8 GiB/swap 0，Cargo16；复用私有 `runtime-session-UQJGvp/target`，未写公共
+Rust target。执行前 host 可用内存约 37.9 GiB、memory PSI 0，未见既有 Cargo/rustc。
+原隔离 PG `kailo-installation-scope-pg-e4agxd` 为 2 CPU/1 GiB/swap 0；仅新库
+`session_dispatch_znimzr` 用原 SQLx 迁入 73 项（至 `20261004018000`），退出 0。
+检查夹具全在事务内回滚，最终该库 Tenant/Invocation 数均为 0；未碰运行库。
+
+原目标 `cargo test --locked -p platform-core agent_session:: -- --include-ignored`
+基线退出 0，4 项通过，其中一项实际 PG 调用原 idle SQL，覆盖迟到 sibling turn、
+不同 Installation/root、UNKNOWN、缺失 native completion 与确定 native failed。
+私有将生产 `if !certain` 改为 `if false && !certain` 后，同 PG 断言真实失败，
+退出 101；逐字恢复并 cmp 0。恢复组合原 rustfmt --check、Session 4 项、AgentTask
+19 项及 `cargo clippy --locked -p platform-core --bin platform-core -- -D warnings`
+全部退出 0（handle `73986`）；随后仅纠正一处测试注释，不改变执行代码。
+Core Cargo.lock 与基准逐字摘要相同。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/multi-installation-zniMZR/`。
+`session-baseline.log` SHA-256
+`20adc4f60c22b72b1fbfb8b21e854b5b821a29246809e0857424d0af877fbbb5`；
+`session-busy-mutation.log` SHA-256
+`544fb568058d0f9a8d9b95357043b30ff20c9464dc9c4c2ceb3db819d8709e81`；
+`restored-final.log` SHA-256
+`edbd6b68fcbfa0103a58b972cc368b3e390c5a7a96867b69fd6622251a54e1e5`。
+
+覆盖边界：PG 断言直接执行生产 idle helper，并非真实 `prepare_dispatch`/ServiceState
+联合夹具；删除该新消费调用本身不会使这些断言失败。锁内实际调用、事务早退及
+Worker 同 Invocation 等待由源码链核对；尚未验证真实多消息并发、Temporal/Codex/
+Relay/OpenMeter 联合 E2E。本批没有模型调用、live 权限/额度/配置变更、契约迁移
+变更、full、产品构建或部署，不将原生状态或取消请求伪装为业务终态。
+
+## 自动化与历史调用现场核对（2026-10-04）
+
+17:49–17:56 UTC，基准 `9273f48cb042ad866d2c173e77b8d11b80423e6d`。
+本项只读取正常 OIDC/BFF 和原 Core/OpenMeter 事实，没有源码、权限、配置、
+额度或业务数据写入，没有模型调用、编译或部署。
+
+- 权威：设计 `05` §2.9 的 `automation.run` 使用原 COUNT meter；`06` §9
+  的模板消息沿 Relay/Schedule、原 AgentTask 与 fresh Delegation 执行，
+  不要求 Codex 或模型 Capacity；不能以手动伪造触发或借用 Installation 权限替代。
+- 影响面：sole `.env` 的 `AUTOMATION_RUN_METERS_JSON` 经原 Compose 传给
+  Core，`automation::configured_run_meters/register_run` 负责固定目录登记；
+  原 OpenMeter Customer、feature/entitlement 为额度权威。现有配置链没有缺项，
+  空配置按设计不登记，没有新增工具、默认 meter 或第二计量实现。
+- 实际身份为 FULL、Workspace ACTIVE、两个 Installation ACTIVE，Automation
+  列表为空且 canCreate=true；现有 Grant 均过期。八项正常 BFF GET 全部 200，
+  只证明当前读取，不证明对尚不存在的 Automation Resource 已有执行授权。
+- Core 与 OpenMeter 均以 `BEGIN READ ONLY` / `ROLLBACK` 查询。当前没有
+  `automation.run` Action、COUNT meter、对应 feature 或该租户 entitlement；
+  唯一原生 meter 为模型 SUM，不能复用为执行次数。因此在触发之前停止，未创建
+  定义或 Grant，不声称 Relay/Temporal/OpenMeter 联合终态通过。
+- 首次 BFF 观察脚本误读 `principalId`，退出 1；首次 SQL 使用不存在的
+  `catalog.workspace`，退出 3；纠正为原契约字段与真实表后均退出 0。
+  这两次是观察命令错误，原件保留，不记为产品故障或成功验收。
+
+自动化原件：
+`/volumes/data/kailo/tmp/codex-post-message-live-20261004.gCzRvI/`。
+`handoff.md` SHA-256 `7eb06ca6aa69a65d0d047a0a3ca85c8783db9938be4c2a31c82120ce35c6626b`；
+`bff-preconditions-corrected.log` SHA-256
+`308d98105f6489f1f0c262a12c6fe85330cbaeee1fe39aa0a78743ad26c62974`；
+`core-metadata-corrected.log` SHA-256
+`d9b904839bd95c6a58d7f890083aa48ee378915f43aac30296eac7ba396f60e7`。
+
+同轮历史调用查证：`4cfe99fe-1e45-46d2-834b-411027412a9d` native completed，
+业务仍 RUNNING / BILLING_UNAVAILABLE，没有可归属的 UsageEvent；
+`b74498cd-a9f6-48ea-8b7d-7ed592ea8e79` 为 FAILED / Workflow TERMINAL，
+唯一 8872 tokens 事件为 COMMITTED。二者都没有有效回复，Capacity 都为 RELEASED；
+Gateway 用量 tail cursor 仍为 0。不能以 native completed 推断业务成功，不能
+把别的事件补给缺归因调用、弱化结算守卫或重放原调用；继续沿原 RB-06 对账边界处置。
+原只读命令退出 0，原件
+`/volumes/data/kailo/tmp/codex-agent-terminal-readback-20261004.TVmhGa/settlement-readback.log`，
+SHA-256 `328a32ca5abfe6fd898c4c41ec8906150e1f82348a3b036a367581026049b1fc`。

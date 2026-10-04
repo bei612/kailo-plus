@@ -162,8 +162,8 @@ export type StreamFrame =
  * 重开即重取 snapshot。从未收到过间隔（第一次连接就失败）时不自定时长，
  * 如实显示已断开。
  *
- * 唯一需要主动停下的是 `session-revoked`：那是确定的撤销，再连只会被拒。
- * 其余关闭原因（包括 `readmission-unavailable`）都是结果不明，交给重连。
+ * session/scope/identity revoked 是确定的拒绝，关闭连接并停止重连。
+ * 其余关闭原因（包括 readmission-unavailable）仍是结果不明，交给重连。
  */
 export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) => void): () => void {
   let source: EventSource | undefined;
@@ -172,44 +172,64 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
   let stopped = false;
 
   const open = () => {
+    if (stopped) return;
+    clearTimeout(reopen);
+    reopen = undefined;
     const es = new EventSource(`/api/v1/workspaces/${workspaceId}/stream`);
     source = es;
     es.addEventListener("retry", (e) => {
+      if (stopped || source !== es) return;
       const ms = Number((e as MessageEvent<string>).data);
       if (Number.isFinite(ms) && ms > 0) retryMillis = ms;
     });
-    es.addEventListener("snapshot", (e) =>
+    es.addEventListener("snapshot", (e) => {
+      if (stopped || source !== es) return;
       onFrame({
         type: "snapshot",
         events: JSON.parse((e as MessageEvent<string>).data) as BuzzEvent[],
-      }),
-    );
-    es.addEventListener("event", (e) =>
+      });
+    });
+    es.addEventListener("event", (e) => {
+      if (stopped || source !== es) return;
       onFrame({
         type: "event",
         event: JSON.parse((e as MessageEvent<string>).data) as BuzzEvent,
-      }),
-    );
-    es.addEventListener("live", () => onFrame({ type: "live" }));
+      });
+    });
+    es.addEventListener("live", () => {
+      if (stopped || source !== es) return;
+      onFrame({ type: "live" });
+    });
     es.addEventListener("closed", (e) => {
+      if (stopped || source !== es) return;
       const reason = (e as MessageEvent<string>).data;
-      onFrame({ type: "closed", reason });
-      if (reason === "session-revoked") {
+      if (
+        reason === "session-revoked" ||
+        reason === "scope-revoked" ||
+        reason === "identity-revoked"
+      ) {
         stopped = true;
+        clearTimeout(reopen);
+        reopen = undefined;
         es.close();
       }
+      onFrame({ type: "closed", reason });
     });
     es.addEventListener("error", () => {
+      if (stopped || source !== es) return;
       if (es.readyState !== EventSource.CLOSED) {
         onFrame({ type: "interrupted" });
         return;
       }
-      if (stopped || retryMillis === undefined) {
+      // A permanently closed source cannot supply more authoritative frames.
+      source = undefined;
+      if (retryMillis === undefined) {
         onFrame({ type: "ended" });
         return;
       }
-      onFrame({ type: "interrupted" });
+      clearTimeout(reopen);
       reopen = setTimeout(open, retryMillis);
+      onFrame({ type: "interrupted" });
     });
   };
 

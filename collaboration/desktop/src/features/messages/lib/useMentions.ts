@@ -17,7 +17,7 @@ import {
   selectedMentionLabel,
 } from "./extractMentionPubkeys";
 import { useDraftMentionRouting } from "./useDraftMentionRouting";
-import { useMentionSelection } from "./useMentionSelection";
+import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
 import { rankMentionCandidates } from "./mentionRanking";
 import { mapMentionCandidateToSuggestion } from "./mentionSuggestionMapping";
 import { appendUniqueName, mentionCandidateLabel } from "./mentionCandidates";

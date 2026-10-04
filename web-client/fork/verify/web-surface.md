@@ -1248,3 +1248,168 @@ Desktop 原 `npm run typecheck` 及
 本组没有运行 full、产品构建／部署、浏览器或 Windows 设备验收，也没有执行真实
 偏好写入。三个设置分组不等于原 Buzz 16 项全部恢复；Web 只展示实际存在的主题、
 Workspace 静音和 Enter 发送说明，其他原生设置未全部本地化。后续随主线合批验收。
+
+## 2026-10-04 同条频道消息多 Agent 提及（实现后证据）
+
+本组基于 `9273f48cb042ad866d2c173e77b8d11b80423e6d`，实现与检查均在独立
+`/volumes/data/kailo/tmp/codex-multi-mention-20261004.qlM03z/apps`，未修改正式树。
+
+- 权威：design/09 §3、DD-75／DD-81 与 design/03 ChannelAgentBinding；固定 Buzz
+  `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/features/messages/ui/MentionAutocomplete.tsx::MentionAutocomplete`、
+  `desktop/src/features/messages/lib/useMentionSelection.ts::useMentionSelection`、
+  `desktop/src/features/messages/lib/useMentions.ts::useMentions` 和
+  `desktop/src/shared/ui/popoverSurface.ts::POPOVER_SHADOW_STYLE` 均只读核验。
+  `python3 tools/upstream_manifest.py status collaboration` 退出 0，引用 HEAD 与 pin 一致。
+- 影响：将原列表／焦点／外部点击行为、选择下标 hook 与原弹层样式移入 client-kit，
+  Desktop 与 Web 有实际消费者；删除原 hook／样式旧路径。Desktop 原 pubkey、头像与
+  身份 renderer 保留。Web 消费现有 AgentInstallationView，展示真实 resourceId，
+  不将 UUID 伪装成 pubkey。原 WebPublishMessageRequest 已定义数组，不改数据契约。
+- 副作用：仍走原 BFF publishMessage 与 Core web_transport.rs::resolve_mentions，
+  后端对每个目标重验 scope、安装／频道投影与权限，不将无权目标静默删去后发送。
+  Web 不持签名密钥、不直连 Relay；Mobile 未变更。多选集合去重、排序后参与原
+  幂等意图，结果不明保留草稿、附件、完整目标集合和原 key，不乐观插入消息。
+- 异常：重叠分页去重；同 ID 任一已加载记录撤权即阻止发送，旧 ACTIVE 行不能掩盖。
+  空选沿原普通消息路径；重复选择不重复目标；UNKNOWN 后移除再加入同一集合仍复用
+  原 key，真正改变集合才产生新意图。途中撤权仍由服务端拒绝。选择／Escape／
+  外部点击／卸载结束本地弹层状态，无新业务状态、工作流、数据库或第二权限权威。
+
+复用固定 10ad SDK（完整镜像摘要同上），实际 4 CPU／8 GiB、Data 缓存，先确认
+其他工具链窗口已结束与实际 CPU／内存压力。原共享 `tsc --noEmit -p tsconfig.test.json`、
+`vitest run test/pages.test.tsx -t "platform pages render only through the host theme"`
+退出 0（2 项，其余 190 项未选择）；真实 Composer 的
+`vitest run src/platform/ui/Composer.test.tsx --environment jsdom` 退出 0（4 项），
+Web／Desktop `tsc --noEmit` 均退出 0。主题检查精确核验固定上游阴影常量及唯一
+style 引用后才按 AST 排除这些表达式，其余源与两宿主语义色仍逐项核验，不整文件豁免。
+
+实现后的生产变异将多选退回单选、全体有效 guard 改成任一有效，实际 3 项 Composer
+失败；单独保留任一有效缺陷时实际 1 项失败。向原阴影对象注入 color 与破坏 Web
+popover-foreground 映射，实际两项主题检查失败。三个生产源逐字还原、cmp 退出 0；
+上述 4 项 Composer、2 项主题及三处 TS 检查再次退出 0。
+原件目录 `/volumes/data/kailo/tmp/codex-multi-mention-20261004.qlM03z`：
+`mutation.log` SHA-256 `78d04522fd9d1017596aefea7f3204dbdddfa9293627cc615efd67b40b8bb4d5`；
+`mutation-authorization.log` `5a1dd4b959c0ea853e1ef3310e3f42d6e09ebf998824971541ebf411a49ce847`；
+`restored.log` `d76fb9d86b4f44b57f2e7e68d7f229195e49715cd1d402e748f222e1aebe2264`。
+
+初次命令相对路径错误退出 127；初次跨包共享 React renderer 造成 4 项 hook 失败，
+改为 Web 自己的 ReactDOM renderer 后通过。最初主题扫描的两项失败如实保留，未以
+新视觉值迁就扫描。离线依赖解析 ENOTCACHED、一次隔离网络解析超时 124 及最后离线
+安装缺 xmlchars tarball 退出 1 均不计通过；jsdom 使用共享平台相同版本并由原 npm
+机械生成 Web 锁，未手写 lock。这里未执行 full、产品构建／部署、真实消息发布、
+模型调用、权限写入或 Windows 实机验收；本地 ReactDOM／BFF 夹具不等于上线验收。
+
+随后授权的同镜像受限依赖窗口通过原 `npm ci --ignore-scripts`、
+`npm run typecheck` 与 `npm test`，退出 0：Web 8 个文件、27 项全部通过；
+不借共享包 Vitest binary 作为标准 Web 入口完成证据。
+同目录 `web-standard-online.log` SHA-256
+`27abb61d163e15f99d418b5c1141ab895dbe3044ceafc355e601f6dccaf75875`。
+
+## 2026-10-04 Web 撤权与受限会话的提交缺口收口
+
+基准 `9273f48cb042ad866d2c173e77b8d11b80423e6d`。正式工作树保留的撤权停流与
+受限会话接线此前未进入该提交；本候选只选择这两项既定功能，未携带其他历史改动。
+实现后补齐永久关闭源的迟到回调隔离，以及确定撤权后移除发送与附件入口。
+
+四步影响结论：
+
+1. 权威为 DD-39/41/45/46/96、设计 `03` §2 与 `10` §4–5。Core 的
+   `stream.rs` 已分别发出 session/scope/identity revoked，`session()` 已封闭校验
+   FULL/LIFECYCLE_RESTRICTED；本批修的是 Web 对既有事实的消费，不增加授权权威。
+2. 源码检索确认唯一 Web `openStream` 消费者为 ChannelPane，父页以 Workspace ID
+   为 key；受限页面复用 Desktop 的 `LifecycleRestrictedView`。服务端、契约、持久
+   数据、Workflow history 和原生两端 Relay 连接均不变，无数据迁移或兼容双读。
+3. 明确撤权先停止连接和 timer，再通知 UI 清除消息并卸载 Composer；永久关闭源不再
+   接受迟到帧，重连仍使用服务端下发间隔。没有补造默认 scope、伪造写入成功或自动重发消息。
+4. 空 snapshot、重复 event 沿原逻辑；三种撤权为 DENIED，依赖不可用仍是结果不明，
+   不伪装为撤权。无 retry 帧就结束，不自定重试上限。cleanup 取消待重开，Workspace
+   换页销毁旧消费者；这只有连接生命周期状态，无新增需持久对账的业务状态。其它
+   PRECONDITION/LIMIT/CONFLICT/BLOCKED 与写入 UNKNOWN 沿原 BFF 消费路径。
+
+原 SDK `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+以 UID 1000、4 CPU、8 GiB、memory+swap 同限额执行，依赖复用 Data 离线缓存，锁文件
+未修改。`npm run typecheck && npm test` 退出 0，9 文件 34 项通过。主动破坏三个
+生产守卫（不识别 scope-revoked、保留 Composer、颠倒受限会话分支），原检查实际
+6 项失败、退出 1；三源逐字还原 SHA 一致，同命令恢复 34 项通过、退出 0。
+
+原件目录 `/volumes/data/kailo/tmp/codex-client-admission-20261004.JdnEH9`：
+`client-check.log` SHA-256 `096f9f5902320b62f499a7392e304b9e254462f1a01331c8cfa16251f08c5cc0`；
+`client-mutation.log` `7e5ede36aba2cb1fed5a7828bd304e828b4ccbbec824cd68baf77a69973f151c`；
+`client-restored.log` `c14681f8b91c57e6d81bab1c65279d4c785daad1d6ef778902c0829e379bbeb7`。
+组件检查使用模拟流与 React hook 状态的真实渲染，不冒充真实撤权、浏览器或设备验收。
+源码交叉复核未发现确定阻断。集中 full、产物和 Git 交付按最终合批记录分别判定。
+
+## 2026-10-04 原 Buzz 字号与会话密度同源复用（实现后，未发布）
+
+基准 `9273f48cb042ad866d2c173e77b8d11b80423e6d`。本组只恢复已有
+设备呈现偏好，不增加模型、身份、权限、业务配置或 Mobile 宿主能力。
+
+1. 权威：REQ-08/21、DD-53/74；固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::ConversationDisplaySettings`、
+   `desktop/src/shared/lib/fontSizePreference.ts::initializeFontSizePreference`、
+   `desktop/src/shared/lib/conversationDensityPreference.ts::initializeConversationDensityPreference`、
+   `desktop/src/shared/ui/segmented-control.tsx::SegmentedControl` 只读逐符号核验。
+2. 影响：原两个 preference 模块与 SegmentedControl 移到
+   `client-kit/ts/platform`，删除 Desktop 旧路径；字号/密度控件也由共享包提供。
+   Desktop 原设置、Web SettingsPane 和两宿主启动恢复均真实消费同一实现；
+   原 localStorage key、默认值、封闭枚举、预览与根属性及共享 typography CSS 不变。
+   原文案纳入已有 i18n 生成链，无契约字段、DB 或兼容迁移。
+3. 副作用：只有设备偏好写入；不调用 BFF，不复制业务权威，不改变准入。
+   localStorage 不可用沿原实现保持当次内存呈现，不声称业务动作成功。
+4. 边界：空值/未知枚举沿原默认；跨窗口 storage 与 clear 事件同步；
+   预览不持久化，指针取消沿原控件恢复。没有新业务状态或外部副作用；
+   六类业务错误分类无适用对象，原管理面错误处理未变。Mobile 无新增入口。
+
+原受限 SDK 镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID 1000、4 CPU、8 GiB、memory+swap 同限额；先核实际进程与压力，复用 Data
+离线依赖。原 `python3 tools/gen-platform-i18n.py` 与 `--check` 均退出 0；
+共享 `tsc --noEmit -p tsconfig.test.json` 与设置 6 项退出 0；
+Web `tsc --noEmit` 与 SettingsPane 5 项退出 0；
+Desktop `tsc --noEmit` 与原两个 preference Node 检查 15 项退出 0。
+主动删除真实 setter 的根属性应用：字号组及单独密度组各 2 项失败、退出 1；
+逐字恢复与原源 cmp 退出 0，恢复后共享 6 项再次通过、退出 0。
+
+原件目录 `/volumes/data/kailo/tmp/codex-settings-reading-20261004.taLrhP`：
+`targeted.log` SHA-256 `ef79b9e0d7da6c6db3b689526033b449c568ba437147f4a13d7cf218614f4c1f`；
+`hosts.log` `96b46ee7b05912511ae137451617969b68bed33dc986a16a194f297ff6ee57ba`；
+`mutation-production.log` `2786ee048d7cddefa821000f6ff9e86d9a9f37bc9cc442eebe1fd2a38a43d983`；
+`mutation-density.log` `46b0e45d8a8362c07f946655bfefd96a72b31586da8546d1d8beffffb0e5813a`；
+`restored-final.log` `550b766488e271c5d0d6374e3b0e8583452146bd4b72922468641abb0529897d`。
+首个变异命令误用 Web Vitest，缺 jsdom、退出 1，没有执行检查，不计作捕获：
+`mutation.log` `4e1a448f8886e76e7312c52bf2365307b545ef3f67142160ee9f3a4b8d7857ae`；
+改用共享包本身 Vitest 后获得上述真实断言失败。一次未提权 Docker inspect
+权限拒绝未修改环境，随后按既有 sudo 容器入口执行。
+本组未独立运行 docs/full、产品构建或部署，按主线要求留给联合候选一次收口；
+未做浏览器/Windows 设备验收，不能据 Node/SSR 声称已发布或原 Buzz 全部恢复。
+
+同批交叉复核纠正 SegmentedControl 抽取后的一个真实差异：去掉桌面 cn 时，
+原 tailwind-merge 对 duration-200/duration-0 的覆盖语义丢失。现有共享控件
+改成两类互斥，未引入依赖或更改设置语义。后置原 settings 检查通过实际
+pointerdown/move/cancel 验证瞬时字号、未持久化、指示器位移及取消恢复；
+DOM 环境只模拟边界几何与 pointer capture API，执行真实 React 指针处理函数。
+同一原 SDK 内共享 typecheck 与 7 项退出 0；生产变异恢复两个 duration 同时存在，
+恰有该指针检查失败、退出 1；原源逐字还原 cmp 0，7 项再次通过、退出 0。
+原件仍在上述 taLrhP 目录：
+`pointer.log` SHA-256 `c656e73f9c49cdc534b54781d49872bb09983b4a2a166a4c752a6a482bee94f2`；
+`pointer-mutation.log` `469f08efe646d1d6b454a159856fb651e046e03e2118541d327e5aeb3cc5a197`；
+`pointer-restored.log` `cab4a69a756443bb7929670c5a7e8a2c9899617d7a52fcb8d7b9f8c6d56ec765`。
+
+联合检查暴露了 Web 宿主遗漏的原生排版映射：共享设置使用的 timestamp、author、
+body、row 与 2xs 类在 Desktop 有定义，Web 未全部接线。现直接复用固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/tailwind.config.js::theme.extend` 对应项，仍消费既有共享 CSS variables；
+不新增主题、偏好状态或业务配置，也不改变原生两端。原主题检查精确核对
+SegmentedControl 的 transform/width 几何表达式而不豁免文件，同时区分字号类与
+颜色类，并核对两宿主的实际映射。没有以删除检查掩盖缺失的 Web 呈现。
+原 `pnpm -r test` 诊断为 305 通过、2 失败；修正后同命令 307 项通过、退出 0。
+原件位于 `codex-client-admission-20261004.JdnEH9/full-ts-diagnostic.log`；
+完整检查首次退出 1 的记录保留，先前构建产物不再代表修正后的源码。
+
+随后实际破坏两处生产对象：在 Segment 控件的几何 style 中加入独立颜色，并把
+Web timestamp 映射改成消息字号；原主题两项均失败、退出 1。两源逐字还原 cmp 0，
+原 `pnpm -r test` 再次 307/307、退出 0。原件同目录：
+`theme-production-mutant.log` SHA-256 `2ca1b467f39454bc8dde8d23691d338bc03a29a7c58aa3ecd89ff15a4345f79c`；
+`theme-final-restored.log` `013171c37b31d05262a744ac6f31b33679c234656bc0e294b14191ce26e366f4`。
+首次 `full.log` 为 `ecb5d397267afbb553d551938805abc1ee6aeada1cd3c07bb11ed69b62cf64d3`，
+含原 TypeScript、文档追溯及修改后来源不匹配失败，不作为最终合批的通过证据。

@@ -6,10 +6,14 @@ import "@fontsource-variable/inter/wght.css";
 import "@/shared/styles/globals.css";
 import { initializeDocumentLanguage } from "@/shared/i18n";
 import { ThemeProvider } from "@/shared/theme/ThemeProvider";
+import { initializeConversationDensityPreference } from "@client-kit/platform/conversationDensityPreference";
+import { initializeFontSizePreference } from "@client-kit/platform/fontSizePreference";
 import { Toaster } from "@/shared/ui/sonner";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 
 initializeDocumentLanguage();
+initializeFontSizePreference();
+initializeConversationDensityPreference();
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {

@@ -20,6 +20,13 @@ base_divergence: none
 # Workflow、Huddle、自建 Channel/DM、推送、年龄门禁等，见 mobile-client.md；REQ-21、V-SCN-65）。
 # 与实际一致由 `upstream_manifest.py diff collaboration --check` 核对。
 remove_paths:
+  # Device typography preferences and their real control moved to the shared TypeScript package.
+  - desktop/src/shared/lib/fontSizePreference.ts
+  - desktop/src/shared/lib/conversationDensityPreference.ts
+  - desktop/src/shared/ui/segmented-control.tsx
+  # Original picker selection and popover surface are shared by Web and Desktop.
+  - desktop/src/features/messages/lib/useMentionSelection.ts
+  - desktop/src/shared/ui/popoverSurface.ts
   - .github/workflows/desktop-release-cache-proof.yml
   - .github/workflows/desktop-release-candidate.yml
   - .github/workflows/linux-canary.yml
@@ -1000,8 +1007,8 @@ artifacts:
     # 安装包显示名由发布配置注入（DD-111），不写在源码里
     build_args: [PLATFORM_DISPLAY_NAME]
     blocked: Win11 x64 unsigned 测试安装包已生成；代码签名、Win11 安装运行与业务验收未完成
-    source_digest: sha256:3f4783a0df074942e4473575f17b601d861f407d1919b32d252ea8d65955e329
-    artifact_digest: sha256:aeb33abd15314ed6b1d932524eb2cb9c92872d2e0a9df5d3c29ec3b9eda69580
+    source_digest: sha256:4325bd6d4867a8ef0c5a93df8702330662346de3b65bc08387cd4005155b39c6
+    artifact_digest: sha256:f93b0f36cc1096bb4911a4d54c08ff9edacd05ea0e344397794d0eae5bb66de5
   # Android release APK（ADR-06 客户端发布单元按端分离：应用商店包，带平台签名）。
   # 阻断：release 签名所需的 upload keystore 未提供。上游 release 构建缺 keystore 即失败，
   # 不以 debug 证书冒充 release；profile/debug APK 只是测试构建，不登记为发布产物。
