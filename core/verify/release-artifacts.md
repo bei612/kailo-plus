@@ -302,3 +302,55 @@ Invocation 0、成功迁移 57。未重发安装、Workflow 或模型 turn。
 四步边界：权威为原发布步骤与已提交 Runtime/Task 消费者；影响仅固定旧源码产物
 和运行 Core；副作用未改变配置秘密、数据库事实或其他服务；本批普通 `agent.invoke`
 与权限/模型 SUM 结算源码尚未部署，不继承本节健康、来源或 SBOM 为新入口/业务验收。
+
+### 2026-10-04 固定 13a8 普通 Core 交付：02:02 UTC 限定部署
+
+干净提交 `13a8af775afb5232a5ce590bd9d5750cbb0f1a73`、源码树
+`bf6ddebe2a37ca5905b8ba16529b28daa1c3853c`，沿原 `tools/release.sh` 的 clean/pin/
+Core/Syft/provenance 步骤，只在内存收窄 unit 为 Core；原脚本、锁和配方未改。
+session 32339 退出 0，未重建 Worker/Runtime/Gateway/Web/Win。复用既有 builder
+8CPU/16Gi/swap0 与 Data 缓存；原 Core 配方无显式 Cargo jobs，不推定为 SDK16。
+Core artifact 为 `sha256:bd5c5f57b34dd3e93a34ee8a924294049b9ed688aa7ead154552ecfed0054c54`，
+Runtime 仍为 `sha256:ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec`。
+原 registry push 0；独立 HTTP200、manifest 原字节 SHA 与 header digest 均匹配。
+输入 allowlist 前后 SHA 同为 `0b71cbe02d844a6d9cf57a16211f26521c06bb65613ea03f90521f7d1796dce7`。
+原 SPDX SHA 为 `dafdbdc3350afdebbecafd8dff25f183b6c4423ef7eca0abf669a2a2a79b2039`，
+provenance SHA 为 `249697420c1ab84ccf03c422893929fa01652d0ea2105544925633ea9973df79`；
+subject/source/runtime 已读回，未重造证明。
+
+原 init-local 迁移函数在固定 10ad SDK、4CPU/8Gi/swap0/UID1000 内执行；仅 forward
+`20261004002000_agent_invoke_model_usage` 和 `20261004003000_agent_installation_execute`，
+线上成功迁移 57→59，无 rollback/reset/夹具。原 `start-core.sh --no-build`
+session 49374 退出 0；新 Core `1b9a987e6957970b4cb73375682b8c373fbbff9a43ce092bf323654ce9d99da3`
+StartedAt `2026-10-04T02:02:49.594758448Z`，healthz 200、OOMKilled=false、Codex child 存活。
+原 profiles RO/state RW、固定 Installation/version/generation/hash 不变；Invocation
+在本 lane 部署后首次只读为 0，不重发安装或 turn。Core 阶段 Web 已是另一 lane 的
+`b399d911…`；本阶段其余 23 个平台容器及 5 个既有数字人容器 ID/image/StartedAt/status
+均未变。Worker/Gateway/存储/IdP/OpenBao/OpenMeter 未替换。
+
+运维先将真实隔离验收 meter 投递 sole `.env`；本 lane 前后 env/profile SHA 相同。
+持久 Core pin 与 14 条 trace artifact 引用窄补丁已交主线并选入，未操作默认 index；
+运行替换不等于该元数据已提交，最终以主线实际 checkpoint 为准。02:05–02:07 原
+BFF owner 审批及 uses0/maxUses1 的 ACTIVE Delegation 回读见
+[Agent 记录](agent-definition.md)，不是模型首轮或业务终态。
+
+原件 `/volumes/data/kailo/tmp/codex-agent-invoke-core-delivery-20261004.HRUiTs/`：
+`core-release.log` SHA `249b803a348cacb26bccda18fb689ee17a632de981e766be2db68d12428e2b77`；
+`core-proof-push.log` 为 `02aaf3cddccff2e0d8ebb89f8a5fb4620a591ea3b26318f876ab254762344922`；
+`forward-migrations.log` 为 `763b1b26a3bee7e06e92981f823e0e7b490d9b5ab8d61aaa40f0c0c645bc4f3b`；
+`core-start.log` 为 `a764a4d2c8435c3ec008e05e7c2b8462cdd1b8705816c53094285de681b9cf37`；
+`core-health-runtime.log` 为 `d9ac559b8519c24b5ef1c679c047d924d99fc445d2ba9bc4f5c416f9c5c72d62`；
+`deployment-comparison.log` 为 `387dc814b1dc71fb30e69d808138c279881f11356a35ee2604b55db82f2838b7`。
+
+四步结论：权威为已提交普通调用、原发布/迁移/启动与 Approval/计量链；影响仅固定
+源码产物、两条 online migration 和 Core 容器；副作用前原引用和受控凭据边界不变，
+不改业务事实或其它服务；异常仍保留原 UNKNOWN，不重放 turn。原源码阶段 full1/
+数据库 SKIP 保留，本节没有重复 full；隔离预算不等于生产计费配置，未证明真实模型、
+频道回复、stored usage、Win11 安装/签名或 Mobile 设备验收。
+
+主线元数据选定树 `d368cbb4438d7022465313a5d2f02352eaf11285`（相对 13a8
+18 文件 +36/-36）的原 `./tools/check.sh seam`，session 66154 实际退出 0。
+6 份来源/6 个当前源码产物通过，Win11 unsigned 和 Mobile release 签名 NOTE
+保留。原件 `/volumes/data/kailo/tmp/codex-agent-invoke-delivery-stage-20261004.2nYIn8/seam.log`，
+SHA `532b7b29179a81a6909e9089b06abd53a96b45bfcb207f9700da92c9d4048654`。
+这是上轮 full1 唯一产物维度的定向读回，不改写原 full 结果，不称新 full0。

@@ -6,7 +6,35 @@
 
 ## 最新复核与投递事实（2026-10-04）
 
-### 当前交付：旧 Core 已限定替换，普通调用仍在源码与验收阶段
+### 当前交付：普通调用 Core 已部署，显式授权已读回，首轮尚未验收
+
+普通调用、Installation execute 权限和模型 SUM 分流已提交并普通 push 为
+`13a8af775afb5232a5ce590bd9d5750cbb0f1a73`（37 文件 +4124/-146）。
+固定干净输入的 Core 原构建、registry push/独立读回与原启动入口均退出 0；
+02:02 UTC 仅替换 Core 为 `bd5c5f57…`，healthz 200，原 Codex 子进程恢复。
+在线迁移只向前从 57 到 59，原 Installation 保持 ACTIVE generation 1 和固定
+Version/hash，没有重建安装或重发 turn；Core 阶段其余 23 个平台容器及 5 个
+既有数字人容器未变。Web 同批原 helper 已交付并限定部署 `b399d911…`，
+Win11 原 helper 已产出未签名测试包；未做设备安装或设备验收。
+
+02:05–02:07 UTC 原 BFF 链完成 execute grant → owner APPROVE →
+CONSUMED/ALLOWED/DISPATCHED；安装 resourceVersion 3 的 executionPermission
+requested/effective 均为 true。确切 Installation 的单次 Delegation
+`a1d9a1ca-af8b-4df6-9f87-ab36e5037964` 读回 ACTIVE、uses 0/maxUses 1，
+expiresAt 为 03:35 UTC。原生隔离验收 meter 与 10000 totalTokens 硬限额已由
+运维投递，不是生产默认预算；本次部署未改 sole `.env` 或 profiles。
+
+源码阶段原 full 1（仅两端产物来源落后）的历史回执仍保留，后续实际产物不能
+倒填该结果为 full 0。主线选定元数据树的原 seam 检查退出 0：6 份来源/6 个
+当前源码产物通过，Win11 unsigned 与 Mobile 签名 NOTE 保留；这不是新 full 0。
+持久 Core/Web/Win 元数据窄补丁已由主线选入，尚待该
+交付阶段提交；Web mention 标签接缝正在另一功能批补齐。截至上述回读没有
+真实模型首轮、频道回复或 stored usage 终态，不将 ACTIVE 安装或显式授权
+等同 Agent 已可使用；普通入口以真实调用链和后续验收为准。
+详见 [Core 发布回执](core/verify/release-artifacts.md) 与
+[BFF 授权记录](core/verify/agent-definition.md)。
+
+### 历史验证时点：旧 Core 与普通调用源码阶段
 
 Runtime 恢复与 AgentTask 分页恢复已提交并普通 push，固定输入
 `8b3882d35b84b2c0d6bfcb29321c62c7a44f82d4` 的 Core 原构建、registry 读回及

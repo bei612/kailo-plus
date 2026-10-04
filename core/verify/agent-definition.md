@@ -2153,3 +2153,42 @@ Win11 登记 `5a85c94e4be590901cb5fd127bab76c43d7a3ac3b9d973b06ffcde0a0d57eb45`�
 `agent_invoke_full_y6auqf` 未运行迁移，已用原 SQLx 精确删除；原 PG 保留。
 本批只作源码阶段记录，不称 full 0、客户端产物/部署/设备或真实模型联合 E2E
 通过。生产 meter/credit 尚缺与可继续原生隔离验收分开；本轮之后仅 docs 快路径。
+
+### 2026-10-04 普通 Core 投递与显式授权：02:07 UTC 回读
+
+固定源码 `13a8af775afb5232a5ce590bd9d5750cbb0f1a73` 的 Core 原发布与 registry
+读回退出 0；原 forward migration 57→59、`start-core.sh --no-build` 退出 0，
+healthz 200、原受监督 Codex child 恢复。仅 Core 被替换，既有 Installation
+`8f240978-34bb-437d-97ee-498a30e67e86` 仍 ACTIVE generation 1，固定 Version
+`cc099e7c-74d6-48a8-86c2-63bb878551ea` 与 hash 不变，部署后首次只读 Invocation
+为 0。发布/资源/卷及其它容器证据见 [release-artifacts](release-artifacts.md)；
+不重复安装、Workflow 或模型 turn，不将在线 59 迁移冒称前节 full 内数据库通过。
+
+真实 HUMAN owner 经原 BFF 登录后，02:05 的 `agent.installation.execute.grant`
+返回原 AE `470da843-a8f3-45e1-b721-24fbaa325ae7`、WAITING/NOT_DISPATCHED；
+02:06 原 owner_requirement APPROVE admitted=true。首次准备脚本把 owner 误读
+成 roleRequirements，guard 退出 1 且未 POST；纠正为原 owner 合同后退出 0，
+没有放宽服务端策略。02:07 原任务读回 CONSUMED/ALLOWED/DISPATCHED，
+Installation resourceVersion 3、executionPermission requested/effective 均为 true。
+
+随后仅一次原 `agent.delegation.grant` Explicit Confirmation：AE
+`50efa700-ca10-4394-822a-7a81ecd2037e`、Operation
+`89da8cf6-7bf9-483c-83e1-0a7b5c4ed85e`；Delegation
+`a1d9a1ca-af8b-4df6-9f87-ab36e5037964` 读回 ACTIVE、version 1、uses 0/maxUses 1、
+expiresAt `2026-10-04T03:35:00Z`。唯一 scope 为原 `agent.invoke@1`、确切上述
+Installation、CONSUME_ONLY/PLATFORM_METADATA_ONLY；没有授予 Tool、模型管理或
+其它 Resource。原生隔离 meter `uat_kailo_verify_total_tokens_20261004` 及
+10000 totalTokens 硬限额由运维预先投递，非生产默认额度，不自动延长。
+
+原件目录 `/volumes/data/kailo/tmp/codex-agent-invoke-20261004.yK1eTV/`，SHA-256：
+`bff-execute-grant.log` 为 `fba9314294ecbdff1505e4b6138cf43e42aad5b4073dc091cb83c79eacc606c4`；
+未 POST 的 `bff-execute-approval.log` 为 `4be4c206cc7cd38baeda09fff7bc004b21b54157c158b23e187bcdaccd9dac3f`；
+`bff-execute-approval-owner.log` 为 `7c2d21b3351870f471dfa333e78dbf01304e2ba8425f838f25c3994bf8011aed`；
+`bff-delegation-grant.log` 为 `2f83160feaf372149595c456b65fada04fd01dbc1b4c2cab1c8b8bd338b5fa3c`。
+三次肯定路径退出 0，失败准备原件保留。
+
+四步结论：权威仍为 03/05§2.8/11/17 的原 Resource、Approval、Delegation 与原生
+计量；影响为同一安装的显式 execute 和单次冻结 scope，不增加授权权威；副作用
+只经原 Action/BFF/owner 审批，不直改业务状态或默认授权；未知结果仍保留原引用。
+截至此回读没有模型请求、频道回复或 stored usage 终态；Web 原消息生产者缺失
+mention 标签的修复属另一批，不继承本节为普通首轮、生产计费或设备 E2E 通过。
