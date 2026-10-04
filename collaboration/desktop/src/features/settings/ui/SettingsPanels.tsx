@@ -1,19 +1,19 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
-  platformThemeModeKeys,
   resolveLocale,
   translate,
   type PlatformThemeMode,
 } from "@client-kit/platform/i18n";
 import {
+  ThemeModeControl,
+  settingsSectionKeys,
+} from "@client-kit/platform/react/settings";
+import {
   BellRing,
   ChevronDown,
   Keyboard,
   MonitorCog,
-  Moon,
-  Sun,
-  SunMoon,
   type LucideIcon,
 } from "lucide-react";
 import type {
@@ -56,7 +56,6 @@ import {
   SettingsOptionGroupList,
   SettingsOptionRow,
 } from "./SettingsOptionGroup";
-import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 
 export type SettingsSection = "appearance" | "notifications" | "shortcuts";
@@ -98,17 +97,17 @@ export type SettingsPanelProps = {
 export const settingsSections: SettingsSectionDescriptor[] = [
   {
     value: "appearance",
-    label: "Appearance",
+    label: translate(resolveLocale(), settingsSectionKeys.appearance),
     icon: MonitorCog,
   },
   {
     value: "notifications",
-    label: "Notifications",
+    label: translate(resolveLocale(), settingsSectionKeys.notifications),
     icon: BellRing,
   },
   {
     value: "shortcuts",
-    label: "Shortcuts",
+    label: translate(resolveLocale(), settingsSectionKeys.shortcuts),
     icon: Keyboard,
   },
 ];
@@ -274,12 +273,6 @@ function SingleThemeTile({
     </button>
   );
 }
-
-const APPEARANCE_MODE_OPTIONS = [
-  { mode: "system" as const, Icon: SunMoon },
-  { mode: "light" as const, Icon: Sun },
-  { mode: "dark" as const, Icon: Moon },
-] as const;
 
 // Reveal/hide motion for the accent picker: a small translate + opacity fade.
 // The picker sits below the theme grid and reads as tucking up behind it, so
@@ -521,27 +514,10 @@ function ThemeSettingsCard() {
           title={translate(locale, "platform.settings.theme")}
         >
           <SettingsOptionRow data-testid="appearance-color-mode-row">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Color mode</p>
-              <p
-                className="text-sm font-normal text-muted-foreground/70"
-                data-settings-subcopy
-              >
-                Follow your system or choose a light or dark appearance.
-              </p>
-            </div>
-            <SegmentedControl
-              indicatorTestId="appearance-color-mode-indicator"
-              legend="Color mode"
-              onValueChange={handleModeSelect}
-              optionTestIdPrefix="appearance-mode"
-              options={APPEARANCE_MODE_OPTIONS.map(({ mode, Icon }) => ({
-                value: mode,
-                label: translate(locale, platformThemeModeKeys[mode]),
-                Icon,
-              }))}
-              testId="appearance-color-mode-control"
-              value={selectedMode}
+            <ThemeModeControl
+              locale={locale}
+              value={activeMode}
+              onChange={handleModeSelect}
             />
           </SettingsOptionRow>
 

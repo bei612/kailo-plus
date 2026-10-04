@@ -51,7 +51,7 @@ event: event
 data: {"type":"response.output_item.done","sequence_number":16,"output_index":0,"item":{"type":"message","content":[],"id":"","role":"assistant","status":"completed"}}
 
 event: event
-data: {"type":"response.completed","sequence_number":17,"response":{"created_at":123,"id":"","model":"input-model","object":"response","output":[{"type":"message","content":[],"id":"","role":"assistant","status":"completed"},{"type":"function_call","arguments":"{\"code\":\"1 + 1\"}","call_id":"call_xxx","namespace":"mcp__node_repl","name":"js","id":"","status":"completed"},{"type":"function_call","arguments":"{\"code\":\"1 + 1\"}","call_id":"call_xxx","namespace":"other_kernel","name":"js","id":"","status":"completed"},{"type":"function_call","arguments":"{}","call_id":"call_xxx","name":"finish","id":"","status":"completed"}],"status":"completed"}}
+data: {"type":"response.completed","sequence_number":17,"response":{"id":"","status":"completed","output":[{"type":"message","content":[],"id":"","role":"assistant","status":"completed"},{"type":"function_call","arguments":"{\"code\":\"1 + 1\"}","call_id":"call_xxx","namespace":"mcp__node_repl","name":"js","id":"","status":"completed"},{"type":"function_call","arguments":"{\"code\":\"1 + 1\"}","call_id":"call_xxx","namespace":"other_kernel","name":"js","id":"","status":"completed"},{"type":"function_call","arguments":"{}","call_id":"call_xxx","name":"finish","id":"","status":"completed"}],"model":"input-model","created_at":123,"object":"response"}}
 
 
 

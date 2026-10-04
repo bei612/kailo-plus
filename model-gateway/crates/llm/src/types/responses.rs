@@ -973,6 +973,23 @@ pub mod typed {
 	};
 	use serde::{Deserialize, Serialize};
 
+	// Terminal SSE responses use the same wire representation as non-streaming
+	// responses. In particular, an absent optional cache-write count is omitted,
+	// not emitted as null by async-openai's typed usage structure.
+	fn serialize_terminal_response<T: Serialize, S: serde::Serializer>(
+		event: &T,
+		serializer: S,
+	) -> Result<S::Ok, S::Error> {
+		let mut event = serde_json::to_value(event).map_err(serde::ser::Error::custom)?;
+		let response = event
+			.get_mut("response")
+			.ok_or_else(|| serde::ser::Error::custom("terminal event has no response"))?;
+		let wire: super::Response =
+			serde_json::from_value(response.take()).map_err(serde::ser::Error::custom)?;
+		*response = serde_json::to_value(wire).map_err(serde::ser::Error::custom)?;
+		event.serialize(serializer)
+	}
+
 	/// Event types for streaming responses from the Responses API (minimal strict subset).
 	#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 	#[allow(clippy::enum_variant_names)]
@@ -1016,13 +1033,22 @@ pub mod typed {
 		ResponseOutputItemDone(openai_responses::ResponseOutputItemDoneEvent),
 		/// Emitted when the model response is complete.
 		#[serde(rename = "response.completed")]
-		ResponseCompleted(openai_responses::ResponseCompletedEvent),
+		ResponseCompleted(
+			#[serde(serialize_with = "serialize_terminal_response")]
+			openai_responses::ResponseCompletedEvent,
+		),
 		/// An event that is emitted when a response finishes as incomplete.
 		#[serde(rename = "response.incomplete")]
-		ResponseIncomplete(openai_responses::ResponseIncompleteEvent),
+		ResponseIncomplete(
+			#[serde(serialize_with = "serialize_terminal_response")]
+			openai_responses::ResponseIncompleteEvent,
+		),
 		/// An event that is emitted when a response fails.
 		#[serde(rename = "response.failed")]
-		ResponseFailed(openai_responses::ResponseFailedEvent),
+		ResponseFailed(
+			#[serde(serialize_with = "serialize_terminal_response")]
+			openai_responses::ResponseFailedEvent,
+		),
 		/// Emitted when an error occurs.
 		#[serde(rename = "error")]
 		ResponseError(openai_responses::ResponseErrorEvent),

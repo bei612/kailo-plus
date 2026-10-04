@@ -4,6 +4,153 @@
 `03-验证发布与验收门禁.md` §5。本记录只证明本机固定提交的两个自建发布单元；
 不把本机 provenance 断言等同于远端签名或三端发布验收。
 
+## 2026-10-04：共用设置与原生模型终态兼容批
+
+联合候选基于 `d247288b40ca443c653fee8d928f1adb0da010d5`。DD-53／ADR-09
+要求双宿主共用设置呈现，DD-110 允许复用 AgentGateway 原生协议转换；实现与
+事后破坏还原证据分别见 [Web 接缝](../../web-client/fork/verify/web-surface.md)
+与 [原生终态兼容](../../model-gateway/fork/verify/llm-instruction-role.md)。
+两组来源及证据共 28 文件 +1255/-125，不含之后的产物记录；不复制 Core 权威，
+不改变契约、数据库、Runtime profiles、旧 Installation 或权限与额度。
+
+### Web 产物
+
+原 `./tools/build-upstream.sh web-client` 于 16:33:15–16:35:29 UTC 实际退出 0，
+只调用一次。既有 BuildKit 实际 8 CPU／16 GiB／swap 0，缓存位于
+`/volumes/data/kailo/buildkit-core-state`，执行前内存可用约 38 GiB，memory PSI 为 0；
+未改资源限额、构建配方、依赖锁或并行度。原 TypeScript/Vite 构建完成，chunk-size
+警告仍保留。原 plan 的完整前后输出逐字相同，三份锁／package 输入校验通过。
+
+来源 `sha256:c0545a66df1c67b9c8ce2db395fafb851abafe74211e31977e9e5bdb497e4d72`；
+镜像 `sha256:7cadbf96ea96fe1abfb9b3218e6b3c7cc5802839488dde5d15e90a0102eac6d9`。
+原 helper 已推送 registry 并写回原来源记录；独立 GET 返回 HTTP 200，响应 digest
+与 manifest 原字节 SHA-256 均为上述镜像摘要。这里只证明构建与 registry 投递，
+没有把它记作部署、浏览器验收、Windows 安装或原 Buzz 全部设置恢复。
+
+原件 `/volumes/data/kailo/tmp/codex-shared-settings-delivery-20261004.ci5cp1/`：
+`web-build.log` SHA-256 `bc961e0e9bd89aa437bccf6aefc6556d3481b16f361937aebbc7482e5a5500a0`，
+`web-build.exit` 为 0；`web-plan-before.log`／`web-plan-after.log`、
+`web-locks-before.sha256`、`web-registry-get.headers` 与 `web-registry-manifest.json`
+保留原始证据。本批完整检查、Git 提交与限定部署须分别记录，不由镜像成功推断。
+
+### Web 开发预览（16:54 UTC）
+
+在共享客户端定向验证与破坏还原完成后，原 Compose 命令
+`up -d --no-deps --no-build --pull never buzz-web` 实际退出 0。调用时显式使用
+正式部署目录及其唯一 `.env`，只从本候选读取新 image pin；配置解析退出 0。
+前后容器清单确认仅 `platform-local-buzz-web-1` 被替换，新容器运行上述
+`7cadbf96…` 镜像且 healthy；Core、Worker、Gateway 与其余现存容器未变。
+sole `.env` 前后摘要校验通过，没有迁移、调整权限、补发额度或调用模型。
+
+这是开发预览，不是尚未执行的联合完整检查或生产验收。匿名公共 build-info
+请求返回 HTTP 302，不能据此声称已读取构建信息。首次从 `.env` 直接读取未展开的
+派生 URL 导致 curl 退出 3；改从现有 Gateway 的有效 `PUBLIC_ORIGIN` 读取后请求
+退出 0。没有为读取信息修改认证策略。原件仍在同一目录：
+`web-deploy.log`／`web-deploy.exit`、容器前后清单、`web-deploy-changed.txt`、
+`web-deploy-readback.txt`、`web-deploy-env-before.sha256` 与 `web-build-info.headers`。
+
+16:59 UTC 的真实浏览器使用两个既有账号分别正常 OIDC 登录。业务账号可见设置
+三组，主题 dark/light 切换后恢复 system 与原本不存在的本地存储值；通知只读，
+快捷键为 Enter，Sidebar Workspace 前后相同，页面错误和 alert 均为 0。
+该账号的三项 Catalog 管理 GET 返回 403，对应目录没有渲染；Catalog 管理账号的
+组件目录 GET 返回 200，登记／批准能力为 true，release 数量为 0。页面有一处
+目录、三份空 JSON 输入，登记按钮 disabled；没有提交表单或声称组件业务通过。
+所有业务非 GET/HEAD 与模型生成请求均被观察器拦截，实际写尝试为 0。
+
+浏览器首次退出 1 是观察器 Workspace locator 同时匹配 Sidebar 与既有角色面板；
+仅限定观察范围后退出 0，未改产品。17:01 UTC 已认证的 build-info GET 返回 200，
+`buildId` 精确匹配上述 `c0545a66…` 来源。观察器初次误查不存在的 source 字段退出 1；
+对已捕获元数据按实际字段本地核对退出 0，没有重复网络请求。两次观察器失败原件
+均保留，不计为产品失败或隐藏成通过。原 Playwright 镜像和受限容器复用，不保存
+cookie／凭据，观察结束删除临时容器。
+
+同目录 `browser-preview-handoff.md` 汇总命令与边界；
+`settings-browser-corrected.log` SHA-256 为
+`821417ca215211f5714a96b89befe1dbde020d8574face9a31e81bd8253d74a9`，
+`settings-observation.json` 为
+`a658fc976e2dbe54ba784dbbcebc8a1e3f7d8c56b1787b03a0f181440aefb56b`；
+`authenticated-build-info-readback.log` 为
+`115be26941931d48de9123c115edb61993e1d13be6ae2753f31710731c3284b7`。
+截图保留设置三组、业务 Members 与 Catalog Members；这不是 Desktop 设备或组件
+登记／批准全链验收，也不重复之前的源码完整检查。
+
+### Gateway 原生兼容修复投递（17:10 UTC）
+
+原 `tools/build-upstream.sh model-gateway` 单次构建实际退出 0，源码摘要为
+`sha256:59c75732f7b5b230a98d45d0f78b88455acb6f1832996d6236b9d5e8a44de345`，
+产物为 `sha256:b7e3d559ffd7840d73e278de656879ebe12e925b3766536f9e9952d1fd7a4fff`。
+原 release 编译完成用时 19m53s；构建前后 plan 相同、两锁校验 OK，实际 builder
+仍为原限额，没有降低 Cargo 并行度。registry 独立 GET 200，其响应 digest 与
+manifest 原字节 SHA-256 均为上述产物。构建和本地协议破坏还原原件见模型核验记录。
+
+部署前只读查询有三个 Invocation：两个 FAILED、一个历史 RUNNING/native completed；
+没有修改该历史不一致或将其当成成功。原 Compose 配置解析及仅
+`up -d --no-deps --no-build --pull never agentgateway` 均退出 0。前后容器比较
+只有 `platform-local-agentgateway-1` 的 ID 改变，实际运行上述摘要，状态 running、
+exit code 0；sole `.env` 原摘要校验 OK，匿名公共 `/app/` 返回 302。
+未新增模型调用、补发额度、更新旧 Installation 或重启 Core/Worker/数据库。
+这仍是通过定向协议证据后的开发预览投递，不代替联合完整检查或真实 Agent 回合。
+
+同一原件目录保留 `gateway-registry.headers`／`gateway-registry-manifest.json`、
+`gateway-deploy.log`／`gateway-deploy.exit`、容器前后清单与唯一变更清单、
+`gateway-deploy-readback.txt`、`gateway-deploy-env-before.sha256` 及
+`gateway-public-readiness.headers`。
+
+17:11 UTC 在新 Gateway 上仅补做一次正常 OIDC 登录，session GET 200，原业务
+Tenant／HUMAN 与 FULL accessMode 保持；已认证 Web build-info GET 200，来源仍
+精确匹配 `c0545a66…`。无页面错误、业务写尝试或模型调用，不重复设置页面遍历。
+`post-gateway-browser.exit` 为 0，`post-gateway-browser.log` SHA-256 为
+`60fb26ec3bc788b05d7c16eb538778d9a2bb725fda12fd58d606d6b45618cd97`。
+
+### 同源 Windows 安装包
+
+同一候选的原 `tools/build-upstream.sh desktop-client` 单次执行退出 0，
+产物 `dist/desktop-client/Kailo_0.5.23_x64-setup.exe` 为 15119452 bytes，
+SHA-256 `aeb33abd15314ed6b1d932524eb2cb9c92872d2e0a9df5d3c29ec3b9eda69580`；
+source `sha256:3f4783a0df074942e4473575f17b601d861f407d1919b32d252ea8d65955e329`。
+2272 项真实输入的构建前后清单逐字一致，pnpm/Cargo 两锁校验 OK，原 manifest
+重算来源与登记相等。Web 与 Desktop 本次直接消费同一设置实现，不是两套页面。
+
+构建保留上游 dead-code、bundle identifier 与交叉编译实验性警告；安装包没有签名，
+没有执行 Win11 安装、Relay 连接或业务验证，不记为正式 Desktop 发布。
+原件 `desktop-build.log` SHA-256 为
+`1612cf6e0f47821a118bda3ca9086cd6e1c9f00b4b254904db0e16826a9f26a4`；
+`desktop-final-verification.log` 为
+`9fc9f5d849b606b68ed1ce5d09e295de6002ddb63e10aade4b2c4e37466829e5`。
+
+### 联合完整检查：首次失败与恢复通过
+
+首次固定树 `a57ec47164b02ff03ceb1af09d5b6b7c67cb97cf` 的原 full 退出 1：
+隔离 runner 看不到 shared clone 借用的 Git 对象，历史 tag 的 `git ls-tree` 返回
+128；缺少只读 `.references`，六个上游基准不可读；追溯中的 Web/Gateway 摘要
+仍指向旧产物，且候选 dist 没有既有 Core/Worker 的发布证明。不能把这些失败
+改写为通过。原 `full.log` SHA-256 为
+`6165c17965657d80855c7d7b4691359d6accf90fe26c6532fcb08cdbf88b0541`。
+
+只修验证环境与已有发布登记：既有历史 tag 对象由标准 Git 导入私有 clone，
+没有更改 tag/ref/历史；恢复 runner 只读挂载正式 `.references` 和原 Git 对象路径。
+16 份既有追溯只同步新 Web/Gateway 摘要，能力 gate 不提升；原 Core/Worker 的
+两份 SBOM 与两份 provenance 原字节复制到候选 dist、逐一 cmp 0，不重建或伪造。
+四侧原 npx 首轮各在 DNS 重试后使用缓存且退出 0；恢复时用已有固定版本缓存的
+offline 选项，不修改生成器、脚本或锁。额外的全文件哈希准备曾遇符号链接退出
+123，已停止；正式输入一致性以 private index 的固定 Git 树和 diff 0 为证据。
+
+恢复固定树 `585a9afe384c1a2a7455b64204afa6472ac5e148` 的原
+`./tools/check.sh --full` 实际退出 0，末行 `全部通过。`。
+原固定 SDK、4 CPU／8 GiB／swap 0、Cargo 16 与 Data 缓存不变；
+唯一隔离库 `settings_full_ci5cp1` 完成迁移前进、回退、再前进和 SQLx，
+73 条成功迁移、最高版本 `20261004018000`、失败 0；44 个枚举约束一致。
+四侧生成、193 个 schema 与 3 个历史 schema 兼容、语言验证、Workflow replay、
+20 条追溯与六份来源门禁通过。正式运行库没有参与本次数据库演练。
+
+`full-recovered.exit` 为 0，`full-recovered.log` SHA-256 为
+`26360b13a96d763aa4cfac789879736cdd0bd034858780b37eabc4b941727a3e`。
+十项显式 Rust 演练 ignored；SDK 内实际部署 `.env` 预检 SKIP（实际投递时另有
+原 Compose 配置解析与只读运行回执）；未安装 gitleaks，内置扫描通过。
+这些边界、unsigned Desktop 与 Mobile 签名阻断均不因 full 通过消失。
+此结果只覆盖选定批次，不包含正式工作树原有 67 文件 +6185/-467 未提交改动；
+原改动与未跟踪清单均保留。本节追加只属结果记录，不改变已检查的可执行源码。
+
 ## 2026-10-04 15:58 UTC：组件批准批恢复发布并完成限定部署
 
 权威为 DD-75、DD-107、ADR-06 与已经通过完整检查的提交

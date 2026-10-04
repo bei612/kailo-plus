@@ -441,3 +441,37 @@ artifact 为 `sha256:f822e88526a1a93edf07219e5a62e1f5258113c04fc9c599c3c5928d984
 APT、toolchain、cargo-xwin 的实际等待、两项 dead_code、实验性交叉编译、
 跳过签名与 NSIS charset 警告均保留。此包仍 unsigned；未安装、部署或做
 Win11 设备/业务验收，不据构建0声称本批 full、真实工作流或 Agent E2E 完成。
+
+## 2026-10-04 共用设置与管理面板批：原 Desktop 构建回执
+
+固定产品输入来自干净 `d247288b40ca443c653fee8d928f1adb0da010d5` 加已验证的
+共用设置增量；仅在联合私有候选 ci5cp1/apps 执行一次原
+`./tools/build-upstream.sh desktop-client`，会话 34562 实际退出 0。
+复用原 `kailo-core-data` BuildKit，实际 8 CPU／16 GiB／swap 0 与
+`/volumes/data/kailo/buildkit-core-state` 缓存；原压力预检通过，
+未改配方、并行度或锁。唯一非密构建参数 PLATFORM_DISPLAY_NAME 只从 sole
+`.env` 的精确键读取，未复制其他配置或秘密。执行前已确认私有 dist/desktop-client
+为 ubuntu 可写，本次没有发生前批落盘权限失败或补尾重试。
+
+原 helper 完成系统依赖、固定 Rust 1.95.0／cargo-xwin 0.23.1、tsc／Vite、
+MSVC release、NSIS 与本地导出，并由原 recorder 写回：
+
+- source：`sha256:3f4783a0df074942e4473575f17b601d861f407d1919b32d252ea8d65955e329`；
+- artifact：`sha256:aeb33abd15314ed6b1d932524eb2cb9c92872d2e0a9df5d3c29ec3b9eda69580`；
+- 包：`dist/desktop-client/Kailo_0.5.23_x64-setup.exe`，15,119,452 字节，ubuntu:ubuntu／0644。
+
+2272 个原 manifest 输入的路径／模式／内容摘要 before-after 逐字 cmp0，
+两个 JSON SHA-256 均为
+`879cb77391a33c9edf289d20811f820bceb08dcd97614e8fc77e8ce20cc5d5eb`；
+host 原 pnpm-lock.yaml 与 Desktop Cargo.lock 检查均 OK。重算 source 与已记录
+source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不修改其他产物。
+这不冒称单独核验了容器内部未读取的 lock。
+
+原件在 `/volumes/data/kailo/tmp/codex-shared-settings-delivery-20261004.ci5cp1/`：
+`desktop-preflight.log`、`desktop-inputs.before.json`／`desktop-inputs.after.json`、
+`desktop-locks.before.sha256`、`desktop-final-verification.log` 与 `desktop-build.exit`。
+`desktop-build.log` SHA-256 为
+`1612cf6e0f47821a118bda3ca9086cd6e1c9f00b4b254904db0e16826a9f26a4`。
+原慢速依赖安装、bundle/chunk、dead_code 与交叉打包提示均保留。
+本包未签名、未安装、未做 Win11 设备／业务验收；此 lane 没有部署或执行 full，
+不以打包成功替代三端业务终态。

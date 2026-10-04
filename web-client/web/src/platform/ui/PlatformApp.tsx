@@ -24,8 +24,8 @@ import {
   AuditPage,
   DevicesPage,
   MembersPane,
+  WorkspaceManagementPanels,
 } from "@client-kit/platform/react/pages";
-import { LegacySecretRefManagement, RoleManagement } from "@client-kit/platform/react/roles";
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -38,6 +38,7 @@ import {
   ListChecks,
   MonitorSmartphone,
   Star,
+  Settings,
   Users,
   Workflow,
 } from "lucide-react";
@@ -45,12 +46,13 @@ import { useCallback, useEffect, useState } from "react";
 import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
+import { SettingsPane } from "@/platform/ui/SettingsPane";
 import { translate } from "@client-kit/platform/i18n";
 import { platformQueries } from "@/platform/ui/queries";
 import { getLocale, t } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 
-type Tab = "channel" | "inbox" | PlatformNavigationSection;
+type Tab = "channel" | "inbox" | "settings" | PlatformNavigationSection;
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -151,6 +153,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       approvals: t("platform.tab.approvals"),
       devices: t("platform.tab.devices"),
       audit: t("platform.tab.audit"),
+      settings: translate(getLocale(), "platform.settings.title"),
     })[name];
 
   // 任务、审批、审计与设备都是「我自己的」，属于 Tenant 而不属于某个 Workspace，
@@ -167,7 +170,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     <MembersPane key={active} workspaceId={active} />
   );
   const body =
-    tab === "inbox" ? (
+    tab === "settings" ? (
+      <SettingsPane />
+    ) : tab === "inbox" ? (
       <InboxPane
         principalId={session.tenantPrincipalId}
         onOpen={(workspaceId) => {
@@ -191,8 +196,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       // 邀请属于 Tenant：只对 admin 出现（由邀请列表的 403 决定），不依赖 Workspace
       <div className="flex flex-col gap-6">
         {workspaceBody}
-        <RoleManagement />
-        <LegacySecretRefManagement />
+        <WorkspaceManagementPanels />
         <TenantInvitations />
       </div>
     ) : (
@@ -218,7 +222,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
           >
             <PlatformNavigation
               locale={getLocale()}
-              selectedSection={tab === "channel" || tab === "inbox" ? null : tab}
+              selectedSection={
+                tab === "channel" || tab === "inbox" || tab === "settings" ? null : tab
+              }
               onSelectSection={setTab}
               icons={{
                 members: <Users className="h-4 w-4" />,
@@ -324,6 +330,17 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
               {session.displayName}
             </span>
+            <Button
+              size="icon"
+              type="button"
+              variant="ghost"
+              aria-label={translate(getLocale(), "platform.settings.title")}
+              aria-pressed={tab === "settings"}
+              data-testid="sidebar-settings"
+              onClick={() => setTab("settings")}
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
             <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
               {t("platform.signOut")}
             </Button>

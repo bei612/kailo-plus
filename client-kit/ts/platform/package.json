@@ -24,6 +24,7 @@
     "./react/navigation": "./src/react/navigation.tsx",
     "./react/pages": "./src/react/pages.tsx",
     "./react/roles": "./src/react/roles.tsx",
+    "./react/settings": "./src/react/settings.tsx",
     "./react/surfaces": "./src/react/surfaces.tsx",
     "./react/tenants": "./src/react/tenants.tsx",
     "./react/ui": "./src/react/ui.tsx",

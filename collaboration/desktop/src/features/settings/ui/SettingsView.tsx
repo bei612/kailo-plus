@@ -1,4 +1,5 @@
 import * as React from "react";
+import { resolveLocale, translate } from "@client-kit/platform/i18n";
 import { getVersion } from "@tauri-apps/api/app";
 import { ArrowLeft } from "lucide-react";
 
@@ -32,7 +33,12 @@ type SettingsViewProps = SettingsPanelProps & {
   section: SettingsSection;
 };
 
-const settingsNavGroups = [{ label: "Personal", sections: settingsSections }];
+const settingsNavGroups = [
+  {
+    label: translate(resolveLocale(), "platform.settings.personal"),
+    sections: settingsSections,
+  },
+];
 
 function SettingsSectionButton({
   active,
@@ -141,11 +147,13 @@ export function SettingsView({
               <SidebarMenuButton
                 data-testid="settings-back-to-app"
                 onClick={onClose}
-                tooltip="Back to app"
+                tooltip={translate(resolveLocale(), "platform.settings.back")}
                 type="button"
               >
                 <ArrowLeft className="h-4 w-4" />
-                <span>Back to app</span>
+                <span>
+                  {translate(resolveLocale(), "platform.settings.back")}
+                </span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

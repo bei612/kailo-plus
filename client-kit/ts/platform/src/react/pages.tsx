@@ -132,12 +132,21 @@ export function WorkspaceMembersPage() {
         );
       }}
       </Resource>
+      <WorkspaceManagementPanels />
+    </div>
+  );
+}
+
+/** Both hosts consume the same management panels without a second Workspace selector. */
+export function WorkspaceManagementPanels() {
+  return (
+    <>
       <RoleManagement />
       <LegacySecretRefManagement />
       <PlatformTenantManagement />
       <CapabilityContractsPanel />
       <ComponentReleasesPanel />
-    </div>
+    </>
   );
 }
 

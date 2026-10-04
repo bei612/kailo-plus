@@ -1,0 +1,42 @@
+---
+source: crates/llm/src/golden_tests.rs
+expression: terminal
+---
+{
+  "type": "response.completed",
+  "sequence_number": 9,
+  "response": {
+    "id": "resp_synthetic",
+    "status": "completed",
+    "output": [
+      {
+        "type": "message",
+        "content": [
+          {
+            "type": "output_text",
+            "annotations": [],
+            "logprobs": null,
+            "text": "synthetic"
+          }
+        ],
+        "id": "msg_synthetic",
+        "role": "assistant",
+        "status": "completed"
+      }
+    ],
+    "model": "fixture",
+    "usage": {
+      "input_tokens": 8715,
+      "output_tokens": 246,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 8961
+    },
+    "created_at": 1,
+    "object": "response"
+  }
+}

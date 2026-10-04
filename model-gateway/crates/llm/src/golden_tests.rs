@@ -1703,6 +1703,110 @@ data: {"type":"message_stop"}
 	}
 
 	#[tokio::test]
+	async fn chat_responses_terminal_wire_preserves_usage_and_omits_absent_cache_write() {
+		// Reconstruct the sanitized shape observed on the failed compatibility
+		// turn: real aggregate counts, synthetic text, and no cache-write detail.
+		for (finish, event_type, status) in [
+			("stop", "response.completed", "completed"),
+			("length", "response.incomplete", "incomplete"),
+			("content_filter", "response.failed", "failed"),
+		] {
+			for cache_write in [None, Some(0), Some(19)] {
+				let mut usage = json!({"prompt_tokens":8715,"completion_tokens":246,"total_tokens":8961});
+				if let Some(count) = cache_write {
+					usage["prompt_tokens_details"] = json!({"cached_tokens":0,"cache_write_tokens":count});
+				}
+				let chunk = json!({"id":"compat","object":"chat.completion.chunk","created":1,
+					"model":"fixture","choices":[{"index":0,"delta":{"role":"assistant","content":"synthetic"},"finish_reason":finish}],"usage":usage});
+				let body = agent_http::Body::from(format!("data: {chunk}\n\ndata: [DONE]\n\n"));
+				let bytes = conversion::openai_compat::to_responses::translate_stream(
+					body,
+					1024 * 1024,
+					StreamingUsageGuard::default(),
+					LogContentFields::default(),
+					None,
+				)
+				.collect()
+				.await
+				.unwrap()
+				.to_bytes();
+				let events: Vec<Value> = std::str::from_utf8(&bytes)
+					.unwrap()
+					.lines()
+					.filter_map(|line| line.strip_prefix("data: "))
+					.filter_map(|data| serde_json::from_str(data).ok())
+					.collect();
+				let terminal = events
+					.iter()
+					.find(|event| event["type"] == event_type)
+					.unwrap();
+				assert_eq!(terminal["response"]["status"], status);
+				let usage = &terminal["response"]["usage"];
+				assert_eq!(usage["input_tokens"], 8715);
+				assert_eq!(usage["output_tokens"], 246);
+				assert_eq!(usage["total_tokens"], 8961);
+				assert_eq!(
+					usage["input_tokens_details"].get("cache_write_tokens"),
+					cache_write.map(Value::from).as_ref()
+				);
+				assert_eq!(
+					terminal["response"]["output"][0]["content"][0]["text"],
+					"synthetic"
+				);
+				if finish == "length" {
+					assert_eq!(
+						terminal["response"]["incomplete_details"]["reason"],
+						"max_tokens"
+					);
+				}
+				if finish == "content_filter" {
+					assert_eq!(terminal["response"]["error"]["code"], "content_filter");
+				}
+				if finish == "stop" && cache_write.is_none() {
+					insta::assert_json_snapshot!("kailo_chat_completed_wire", terminal, {
+						".response.id" => "resp_synthetic", ".response.created_at" => 1,
+						".response.output[].id" => "msg_synthetic",
+					});
+				}
+			}
+		}
+	}
+
+	#[test]
+	fn terminal_wire_preserves_absent_usage_and_tool_metadata() {
+		let tool = json!({"type":"function_call","id":"fc_synthetic",
+			"call_id":"call_synthetic","name":"fixture_read","arguments":"{}","status":"completed"});
+		for usage in [
+			Value::Null,
+			json!({"input_tokens":0,"output_tokens":0,"total_tokens":0,
+			"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}),
+		] {
+			let event: types::responses::typed::ResponseStreamEvent = serde_json::from_value(json!({
+				"type":"response.completed","sequence_number":7,"response":{
+					"id":"resp_synthetic","created_at":1,"model":"fixture","object":"response",
+					"status":"completed","output":[tool.clone()],"usage":usage,
+					"metadata":{"correlation":"synthetic"},"service_tier":"default"
+				}
+			}))
+			.unwrap();
+			let wire = serde_json::to_value(event).unwrap();
+			assert_eq!(wire["sequence_number"], 7);
+			assert_eq!(wire["response"]["status"], "completed");
+			assert_eq!(wire["response"]["output"][0], tool);
+			assert_eq!(
+				wire["response"]["metadata"],
+				json!({"correlation":"synthetic"})
+			);
+			assert_eq!(wire["response"]["service_tier"], "default");
+			if usage.is_null() {
+				assert!(wire["response"].get("usage").is_none());
+			} else {
+				assert_eq!(wire["response"]["usage"], usage);
+			}
+		}
+	}
+
+	#[tokio::test]
 	async fn passthrough_stream_records_inter_chunk_latencies() {
 		let input_bytes = fs::read(fixture_path("response/completions/stream.json"))
 			.expect("failed to read streaming input file");

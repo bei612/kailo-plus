@@ -1194,3 +1194,57 @@ registry 原 manifest 独立读取成功且字节摘要一致。来源、Compose
 原日志 `/volumes/data/kailo/tmp/codex-workflows-delivery-20261004.IVUu4U/web-build.log`
 SHA-256 `10200b6bdaafdf12513bd5c2a911314287a44b05d7a972fe6af654aa3040108d`。
 镜像构建与 registry push 不等于 Git push 或部署；整批 full 与新 Win11 包尚未完成。
+
+## 2026-10-04 共用设置与管理面板接线（实现后证据，未部署）
+
+本组对应 DD-53、SS-WEB-PRESENTATION、V-REQ-17 与 ADR-09。原实现补丁基于
+`4a13b24e79d84cb04f7573e0c9668c08be319567`，14 文件 +931/-108（含六个新增源／
+检查文件及原生成器产出的 Dart 文案）；随后原样应用到干净
+`d247288b40ca443c653fee8d928f1adb0da010d5`。以下是这一组的事后事实，
+不把原有发布摘要当作新设置已构建、已部署或已通过实机验收。
+
+- 权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/features/settings/ui/SettingsPanels.tsx::ThemeSettingsCard`、
+  `desktop/src/features/settings/ui/SettingsView.tsx::SettingsView`、
+  `desktop/src/features/settings/ui/KeyboardShortcutsCard.tsx::KeyboardShortcutsCard`
+  与 `desktop/src/shared/lib/keyboard-shortcuts.ts::KEYBOARD_SHORTCUTS`；
+  固定 buzz-web
+  `a6766c482533d028582d0efcfd3740769f86217c` 的
+  `web/src/shared/theme/ThemeProvider.tsx::ThemeProvider`／`useTheme`。
+  只读核验原调用，不执行 references。
+- 影响：Web 与 Desktop 消费同源 ThemeModeControl／ShortcutSettings，宿主保留原
+  theme／followSystem／本机偏好与真实键盘处理器；不新增配置权威、语言切换、
+  provider、私钥或配对入口。Desktop 当前 20 个已登记快捷键 ID 全部有同源映射，
+  Win32 与 MacIntel 原列表逐项呈现；未知 ID 不据名称猜功能，本次未扩展登记表。
+- 副作用：Web 仅接原 Workspace 静音 user-state CAS，保留当前 version 与 starred，
+  必须成功读取可访问 Workspace／偏好后才写；失去响应只重新读原权威，不乐观宣告
+  成功、不自动重发。原生 Desktop 的其他外观／通知控制保留，不虚称 Web 有系统推送。
+- 异常与兼容：失败读不变成默认未静音，不回显 native error。Web members 原先只挂
+  部分面板，使已部署组件目录不可达（主线浏览器原件在 gEnXVl）；现提取同源
+  WorkspaceManagementPanels，由两宿主共用。Web 保留唯一侧栏 Workspace 选择、
+  MembersPane 与 TenantInvitations，未引入共享页的第二个 Workspace 选择状态；
+  各面板与 BFF 原权限重验不变。
+
+复用固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 4 CPU／8 GiB／swap 0、Data 缓存；执行前压力与限额记录在私有 preflight 原件。
+原 `tools/gen-platform-i18n.py` 及 `--check` 退出 0；共享平台
+`typecheck`、`tsc --noEmit -p tsconfig.test.json`、
+`vitest run test/settings.test.tsx test/pages.test.tsx` 退出 0（195 项）；
+Web 原 `npm run typecheck`／`npm test` 退出 0（23 项）；
+Desktop 原 `npm run typecheck` 及
+`node --import ./test-loader.mjs --experimental-strip-types --test src/features/settings/ui/KeyboardShortcutsCard.test.mjs`
+退出 0（2 项）。初次 PATH、主题语义色、SSR 夹具、pnpm 自动安装与格式入口失败
+均保留原文，不计入通过；只纠正本组代码／执行输入，未安装工具链。
+
+私有一次生产破坏批分别把主题回调改为固定 system、移除 Workspace 归属 guard、
+移除管理面板挂载，实际造成共享 1 项／Web 2 项失败（各原入口退出 1）；
+三源 apply_patch 逐字还原、cmp 0 后，195 + 23 + 2 项再次退出 0。
+原件目录 `/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/shared-settings-GLhczI`：
+`baseline-final.log` SHA-256 `48efb227839811b668f7585eafcd4fb38b9730fa89cf9a694bd6ab4183a297e3`；
+`mutations.log` `7ceee31f1bb93c3cc23002a58627fa94afcb1e280e558c325e88b995bef4a7b0`；
+`restored.log` `5646e5f0dbf3e40e134fd9e609a4fef76cdbd122da5ebe96b63d529e85111e74`。
+
+单轮 Standards 只读复核未发现新增硬边界问题，不能代替执行证据。
+本组没有运行 full、产品构建／部署、浏览器或 Windows 设备验收，也没有执行真实
+偏好写入。三个设置分组不等于原 Buzz 16 项全部恢复；Web 只展示实际存在的主题、
+Workspace 静音和 Enter 发送说明，其他原生设置未全部本地化。后续随主线合批验收。
