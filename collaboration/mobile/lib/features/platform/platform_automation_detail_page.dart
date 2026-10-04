@@ -163,6 +163,15 @@ class PlatformAutomationDetailPage extends HookConsumerWidget {
                       }),
                     ),
                     field(
+                      PlatformMessageKey.agentsAutomationApprovalPolicy,
+                      switch (version.content.approvalPolicy) {
+                        final policy? => '${policy.id} · ${policy.version}',
+                        null => text(
+                          PlatformMessageKey.agentsAutomationNoApproval,
+                        ),
+                      },
+                    ),
+                    field(
                       PlatformMessageKey.agentsAutomationTemplate,
                       version.content.action.template,
                     ),

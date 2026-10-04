@@ -9,6 +9,36 @@ use serde_json::json;
 use uuid::Uuid;
 
 #[test]
+fn step_approval_reference_is_explicit_and_changes_the_frozen_version_hash() {
+    let plain = json!({"trigger":{"kind":"CHANNEL_MESSAGE"},"action":{"kind":"POST_MESSAGE","template":"literal"},"resultTarget":"TRIGGER_THREAD"});
+    let old = management_content(&plain).unwrap();
+    assert_eq!(
+        old,
+        json!({"trigger":{"kind":"CHANNEL_MESSAGE"},"action":{"kind":"POST_MESSAGE","template":"literal"},"resultTarget":"TRIGGER_THREAD","approvalPolicyId":null})
+    );
+    let mut requested = plain.clone();
+    let policy = Uuid::new_v4();
+    requested["approvalPolicy"] = json!({"id":policy,"version":2});
+    let frozen = management_content(&requested).unwrap();
+    assert_eq!(frozen["approvalPolicyId"], json!(policy));
+    assert_eq!(frozen["approvalPolicyVersion"], json!(2));
+    assert_ne!(
+        collab_bridge::limits::canonical_digest(&old),
+        collab_bridge::limits::canonical_digest(&frozen)
+    );
+    for invalid in [
+        json!(null),
+        json!({"id":policy}),
+        json!({"id":policy,"version":0}),
+        json!({"id":Uuid::nil(),"version":2}),
+        json!({"id":policy,"version":2,"selfApproval":"ALLOW"}),
+    ] {
+        requested["approvalPolicy"] = invalid;
+        assert!(management_content(&requested).is_err());
+    }
+}
+
+#[test]
 fn five_management_commands_require_their_exact_fields() {
     let workspace = Uuid::new_v4();
     let installation = Uuid::new_v4();
@@ -297,7 +327,6 @@ fn relay_inspect_admits_post_message_and_agent_turn_for_both_native_triggers() {
         for trigger in ["CHANNEL_MESSAGE", "MENTION"] {
             assert!(
                 super::relay_trigger_supported(
-                    None,
                     &serde_json::json!({"kind":kind}),
                     &serde_json::json!({"kind":trigger})
                 ),
@@ -311,23 +340,16 @@ fn relay_inspect_admits_post_message_and_agent_turn_for_both_native_triggers() {
         serde_json::json!({"kind":null}),
     ] {
         assert!(!super::relay_trigger_supported(
-            None,
             &action,
             &serde_json::json!({"kind":"MENTION"})
         ));
     }
     for trigger in ["SCHEDULE", "WEBHOOK", "UNKNOWN"] {
         assert!(!super::relay_trigger_supported(
-            None,
             &serde_json::json!({"kind":"POST_MESSAGE"}),
             &serde_json::json!({"kind":trigger})
         ));
     }
-    assert!(!super::relay_trigger_supported(
-        Some(uuid::Uuid::new_v4()),
-        &serde_json::json!({"kind":"POST_MESSAGE"}),
-        &serde_json::json!({"kind":"MENTION"})
-    ));
 }
 
 #[tokio::test]

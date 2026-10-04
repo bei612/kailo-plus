@@ -23,7 +23,7 @@ fn unknown() -> Refusal {
     Refusal::Unavailable("Template publication evidence unavailable".into())
 }
 
-async fn activity_fence(
+pub(super) async fn activity_fence(
     state: &ServiceState,
     invocation: &Invocation,
     input: &AgentTaskAdvanceRequest,

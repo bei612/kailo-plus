@@ -28,6 +28,8 @@ mod capability_contract;
 mod capability_registry;
 mod capacity;
 mod client_keys;
+mod component_conformance_identity;
+mod component_release;
 mod component_task;
 mod delegation_query;
 mod external_human;

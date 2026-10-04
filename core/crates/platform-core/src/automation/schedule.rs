@@ -503,7 +503,8 @@ pub(super) async fn dispatch(
             )
             .ok_or_else(invalid_management)?;
             let version:Option<(Uuid,Uuid,Value,String)>=sqlx::query_as("select a.id,a.owner_principal_id,
-                jsonb_build_object('trigger',v.trigger,'action',v.action,'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target),v.config_hash
+                jsonb_build_object('trigger',v.trigger,'action',v.action,'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target)
+                  || case when v.approval_policy_version is null then '{}'::jsonb else jsonb_build_object('approvalPolicyVersion',v.approval_policy_version) end,v.config_hash
                 from catalog.automation_version v join catalog.asset a on a.id=v.asset_id
                 join catalog.automation_definition d on d.resource_id=v.automation_resource_id and d.pinned_version_asset_id=v.asset_id
                 where v.asset_id=$1 and a.version=$2 and a.tenant_id=$3 and a.resource_id=$4

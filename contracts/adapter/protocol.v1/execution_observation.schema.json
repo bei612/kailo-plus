@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/execution_observation.schema.json",
+  "title": "AdapterExecutionObservation",
+  "description": "ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idempotencyKey", "nativeType", "platformStatus", "cancelCapability"],
+  "properties": {
+    "idempotencyKey": {"type": "string"},
+    "nativeType": {"type": "string"},
+    "nativeId": {"type": "string"},
+    "nativeStatus": {"type": "string"},
+    "platformStatus": {"$ref": "../../enums/external_execution_status.schema.json"},
+    "cancelCapability": {"$ref": "../../enums/native_cancel_capability.schema.json"},
+    "lastObservedAt": {"type": "string"},
+    "terminalAt": {"type": "string"}
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/external_execution_status.schema.json",
+  "title": "ExternalExecutionStatus",
+  "description": "design03§6 ExternalExecution 的既定平台状态；HTTP成功和cancel accepted均不构成终态。",
+  "type": "string",
+  "enum": ["PENDING_DISPATCH", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED", "UNKNOWN"]
+}

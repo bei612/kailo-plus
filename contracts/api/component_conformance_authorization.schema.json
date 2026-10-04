@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_conformance_authorization.schema.json",
+  "title": "ComponentConformanceAuthorization",
+  "description": "Core私网仅向受信Worker返回的逐次隔离探测凭据。token仅在Activity内存中使用，禁止进入Temporal输入、输出或报告。其声明绑定固定模拟上下文与完整实际参数，不授予生产binding授权。",
+  "type": "object", "additionalProperties": false,
+  "required": ["token", "requestDigest", "requestJson", "expectedResponseDigest", "operation"],
+  "properties": {
+    "token": {"type": "string"},
+    "requestDigest": {"type": "string"},
+    "requestJson": {"type": "string"},
+    "expectedResponseDigest": {"type": "string"},
+    "operation": {"$ref": "../enums/adapter_protocol_operation.schema.json"}
+  }
+}

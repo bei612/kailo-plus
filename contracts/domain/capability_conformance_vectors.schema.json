@@ -26,7 +26,10 @@
                 "stepKey": {"type": "string"},
                 "contractKey": {"type": "string"},
                 "inputJson": {"type": "string"},
-                "expectedOutputJson": {"type": "string"}
+                "expectedOutputJson": {"type": "string"},
+                "referenceResourceId": {"type": "string", "format": "uuid"},
+                "referenceAssetId": {"type": "string", "format": "uuid"},
+                "referenceFromStepKey": {"type": "string", "description": "只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定 Resource/Asset 目标一起进入规范化参数 hash。"}
               }
             }
           }

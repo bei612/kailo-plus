@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/scope_observation.schema.json",
+  "title": "AdapterScopeObservation",
+  "description": "DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["platformResourceRef", "result"],
+  "properties": {
+    "platformResourceRef": {"type": "string"},
+    "result": {"$ref": "../../enums/native_scope_result.schema.json"},
+    "nativeType": {"type": "string"},
+    "nativeRef": {"type": "string"}
+  }
+}

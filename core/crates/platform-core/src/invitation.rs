@@ -518,6 +518,7 @@ impl Governance {
             llm_route_create: None,
             capability_contract_registration: None,
             capability_contract_ref: None,
+            component_release_registration: None,
         };
         let admit = match open_execution(
             &mut tx,

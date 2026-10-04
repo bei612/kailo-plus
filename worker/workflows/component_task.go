@@ -96,12 +96,15 @@ type SecretRefRehomeTarget struct {
 
 // ComponentTaskInput 是 ComponentTaskWorkflow 的统一输入。
 type ComponentTaskInput struct {
-	Kind         generated.WorkflowKind                     `json:"kind"`
-	Membership   *MembershipTarget                          `json:"membership,omitempty"`
-	Scope        *ScopeTarget                               `json:"scope,omitempty"`
-	Identity     *IdentityTarget                            `json:"identity,omitempty"`
-	Rehome       *SecretRefRehomeTarget                     `json:"rehome,omitempty"`
-	Installation *generated.AgentInstallationWorkflowTarget `json:"installation,omitempty"`
+	Kind                generated.WorkflowKind                          `json:"kind"`
+	Membership          *MembershipTarget                               `json:"membership,omitempty"`
+	Scope               *ScopeTarget                                    `json:"scope,omitempty"`
+	Identity            *IdentityTarget                                 `json:"identity,omitempty"`
+	Rehome              *SecretRefRehomeTarget                          `json:"rehome,omitempty"`
+	Installation        *generated.AgentInstallationWorkflowTarget      `json:"installation,omitempty"`
+	Release             *generated.PlanClass                            `json:"release,omitempty"`
+	ReleaseObservations []generated.ComponentConformanceStepObservation `json:"releaseObservations,omitempty"`
+	ReleaseReconcile    bool                                            `json:"releaseReconcile,omitempty"`
 	// continue-as-new 时带入的 history 长度累计。投影的 event_id 按 workflow ID
 	// 单调去重（06 §2：按 workflow ID 而非 run ID 聚合），新 run 的 history 从零
 	// 数起，不加上它，续跑后的投影会被当成旧事件丢掉。
@@ -194,7 +197,7 @@ func converge(
 		workflow.GetLogger(ctx).Warn("本轮收敛未完成，等待下一轮", "error", err)
 		reason := waitingConvergence
 		// 等待原因写不进去不阻塞收敛本身：下一轮会再写
-		_ = project(ctx, generated.Running, &reason).Get(ctx, nil)
+		_ = project(ctx, generated.TaskStatusRUNNING, &reason).Get(ctx, nil)
 		if err := workflow.Sleep(ctx, retry.RoundInterval); err != nil {
 			return err
 		}
@@ -252,7 +255,7 @@ func (t *task) step(fn func(workflow.Context) workflow.Future, result interface{
 
 func (t *task) begin() error {
 	return t.step(func(ctx workflow.Context) workflow.Future {
-		return t.project(ctx, generated.Running, nil)
+		return t.project(ctx, generated.TaskStatusRUNNING, nil)
 	}, nil)
 }
 
@@ -305,7 +308,7 @@ func (t *task) cancel() error {
 // 未实现的 kind 落到 default 分支当场失败——不写一个「什么都不做就成功」的
 // 分支，那会让未实现的能力看起来像执行过了。
 func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
-	if in.CancelPending && in.Kind != generated.AgentInstallation && !(in.Kind == generated.TenantLifecycle &&
+	if in.CancelPending && in.Kind != generated.AgentInstallation && in.Kind != generated.WorkflowKind("COMPONENT_RELEASE") && !(in.Kind == generated.TenantLifecycle &&
 		in.Scope != nil && in.Scope.Operation == scopeOperationDelete) {
 		return newTask(ctx, in).cancel()
 	}
@@ -324,6 +327,8 @@ func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 		return secretRefRehome(ctx, in)
 	case generated.AgentInstallation:
 		return agentInstallation(ctx, in)
+	case generated.WorkflowKind("COMPONENT_RELEASE"):
+		return componentRelease(ctx, in)
 	default:
 		return temporal.NewNonRetryableApplicationError(
 			"kind 尚未实现", activities.ErrTypeRejected, nil)
@@ -671,7 +676,7 @@ func tenantDelete(ctx workflow.Context, in ComponentTaskInput) error {
 		// Core 没有给出确定终态时，Workflow 不写 FAILED 或 CANCELED。
 		workflow.GetLogger(execCtx).Warn("Tenant 删除尚未对账，等待下一轮")
 		reason := "PENDING_EXTERNAL"
-		_ = t.project(execCtx, generated.Running, &reason).Get(execCtx, nil)
+		_ = t.project(execCtx, generated.TaskStatusRUNNING, &reason).Get(execCtx, nil)
 		if err := workflow.Sleep(execCtx, retry.RoundInterval); err != nil {
 			continue
 		}

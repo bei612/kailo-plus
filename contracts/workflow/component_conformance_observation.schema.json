@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/component_conformance_observation.schema.json",
+  "title": "ComponentConformanceObservation",
+  "description": "受信 Worker 的一次实际线协议观察，附着冻结 ActionExecution。Core 以自身 plan 逐项匹配，不接收 pass 布尔值；UNKNOWN 不表示套件失败或成功。响应正文与测试凭据不进入报告。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "operationId", "workflowId", "runId", "componentReleaseId", "artifactDigest", "contractDigests", "suiteDigest", "planDigest", "observations"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "operationId": {"type": "string", "format": "uuid"},
+    "workflowId": {"type": "string"},
+    "runId": {"type": "string", "format": "uuid"},
+    "componentReleaseId": {"type": "string", "format": "uuid"},
+    "artifactDigest": {"type": "string"},
+    "contractDigests": {"type": "array", "items": {"type": "string"}},
+    "suiteDigest": {"type": "string"},
+    "planDigest": {"type": "string"},
+    "observations": {
+      "type": "array",
+      "items": {"$ref": "component_conformance_step_observation.schema.json"}
+    }
+  }
+}

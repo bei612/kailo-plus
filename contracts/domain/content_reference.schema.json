@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/content_reference.schema.json",
+  "title": "ContentReference",
+  "description": "design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "nativeObjectRef", "nativeRevision", "displayName", "mediaType"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "assetId": {"type": "string", "format": "uuid"},
+    "nativeObjectRef": {"type": "string"},
+    "nativeRevision": {"type": "string"},
+    "displayName": {"type": "string"},
+    "mediaType": {"type": "string"}
+  }
+}

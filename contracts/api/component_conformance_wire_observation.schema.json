@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_conformance_wire_observation.schema.json",
+  "title": "ComponentConformanceWireObservation",
+  "description": "受信Worker实际HTTP响应的瞬时核验输入。正文仅在Activity与Core请求内存中存在，不得进入Temporal历史、报告、日志或数据库；不是用户上传的通过声明。",
+  "type": "object", "additionalProperties": false,
+  "required": ["probe", "responseJson", "httpStatus"],
+  "properties": {
+    "probe": {"$ref": "../workflow/component_conformance_probe.schema.json"},
+    "responseJson": {"type": "string"},
+    "httpStatus": {"type": "integer"}
+  }
+}

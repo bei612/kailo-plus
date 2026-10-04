@@ -99,6 +99,8 @@ void main() {
       String target, {
       String workspace = 'workspace-1',
       String action = 'AGENT_TURN',
+      bool includeApprovalPolicy = false,
+      Object? approvalPolicy,
     }) => {
       'automation': {
         'resourceId': 'automation-1',
@@ -123,6 +125,7 @@ void main() {
             'trigger': trigger,
             'action': {'kind': action, 'template': 'Authorized template'},
             'resultTarget': target,
+            if (includeApprovalPolicy) 'approvalPolicy': approvalPolicy,
           },
         },
       ],
@@ -236,6 +239,116 @@ void main() {
       expect(find.byKey(const ValueKey('platform-view-error')), findsOneWidget);
       expect(find.text('Authorized template'), findsNothing);
     });
+
+    const approvalPolicy = {
+      'id': '11111111-1111-4111-8111-111111111111',
+      'version': 3,
+    };
+    for (final locale in [const Locale('en'), const Locale('zh', 'CN')]) {
+      for (final action in ['AGENT_TURN', 'POST_MESSAGE']) {
+        testWidgets('Frozen approval is read-only for $action in $locale', (
+          tester,
+        ) async {
+          await show(
+            tester,
+            detail(
+              schedule,
+              'CHANNEL',
+              action: action,
+              includeApprovalPolicy: true,
+              approvalPolicy: approvalPolicy,
+            ),
+            locale: locale,
+          );
+          expect(
+            find.byKey(const ValueKey('platform-automation-detail')),
+            findsOneWidget,
+          );
+          expect(
+            find.text(
+              platformText(
+                PlatformMessageKey.agentsAutomationApprovalPolicy,
+                locale: locale.toLanguageTag(),
+              ),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.text('11111111-1111-4111-8111-111111111111 · 3'),
+            findsOneWidget,
+          );
+          expect(find.text('Authorized template'), findsOneWidget);
+          expect(find.byType(TextField), findsNothing);
+          expect(find.byType(TextFormField), findsNothing);
+          for (final key in [
+            PlatformMessageKey.agentsAutomationPublish,
+            PlatformMessageKey.agentsAutomationEnable,
+            PlatformMessageKey.agentsAutomationDisable,
+            PlatformMessageKey.approvalsApprove,
+          ]) {
+            expect(
+              find.text(platformText(key, locale: locale.toLanguageTag())),
+              findsNothing,
+            );
+          }
+        });
+      }
+      testWidgets('Absent approval remains compatible in $locale', (
+        tester,
+      ) async {
+        await show(tester, detail(schedule, 'CHANNEL'), locale: locale);
+        expect(
+          find.byKey(const ValueKey('platform-automation-detail')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            platformText(
+              PlatformMessageKey.agentsAutomationNoApproval,
+              locale: locale.toLanguageTag(),
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Authorized template'), findsOneWidget);
+      });
+    }
+    for (final (name, policy) in <(String, Object?)>[
+      ('null', null),
+      ('unknown field', {...approvalPolicy, 'future': true}),
+      ('missing id', {'version': 3}),
+      ('missing version', {'id': approvalPolicy['id']}),
+      ('invalid id', {...approvalPolicy, 'id': 'not-a-policy-id'}),
+      ('non-string id', {...approvalPolicy, 'id': 1}),
+      ('zero version', {...approvalPolicy, 'version': 0}),
+      ('negative version', {...approvalPolicy, 'version': -1}),
+      ('fractional version', {...approvalPolicy, 'version': 1.5}),
+      ('string version', {...approvalPolicy, 'version': '3'}),
+      ('non-object', 'unverified-policy'),
+    ]) {
+      testWidgets('Invalid approval $name cannot reveal version content', (
+        tester,
+      ) async {
+        await show(
+          tester,
+          detail(
+            schedule,
+            'CHANNEL',
+            includeApprovalPolicy: true,
+            approvalPolicy: policy,
+          ),
+        );
+        expect(
+          find.byKey(const ValueKey('platform-view-error')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('platform-automation-detail')),
+          findsNothing,
+        );
+        expect(find.text('Authorized template'), findsNothing);
+      });
+    }
 
     for (final (trigger, label) in [
       (

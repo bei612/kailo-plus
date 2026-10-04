@@ -64,6 +64,18 @@ pub struct ServiceState {
 
 pub fn router(state: ServiceState) -> Router {
     let worker = Router::new()
+        .route(
+            "/service/v1/component-releases/authorize-probe",
+            post(crate::component_release::authorize_probe),
+        )
+        .route(
+            "/service/v1/component-releases/observe-probe",
+            post(crate::component_release::observe_probe),
+        )
+        .route(
+            "/service/v1/component-releases/register-result",
+            post(crate::component_release::record),
+        )
         .route("/service/v1/task-projections", post(project_task_state))
         .route(
             "/service/v1/agent-tasks/advance",

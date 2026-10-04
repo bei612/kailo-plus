@@ -345,6 +345,10 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/platform/capability-contracts",
             get(crate::capability_contract::list),
         )
+        .route(
+            "/api/v1/platform/component-releases",
+            get(crate::component_release::list),
+        )
         .exposed_route(
             "/api/v1/automations/{resource_id}",
             get(crate::automation_query::get),

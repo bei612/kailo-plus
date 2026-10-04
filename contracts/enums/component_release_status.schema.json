@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_release_status.schema.json",
+  "title": "ComponentReleaseStatus",
+  "type": "string",
+  "enum": ["REGISTERED", "APPROVED", "REJECTED", "REVOKED"]
+}

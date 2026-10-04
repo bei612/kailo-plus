@@ -38,6 +38,8 @@ const changeApprovalContinueAsNew = "approval-continue-as-new"
 // 原行为；新 run 按 Core 冻结并 fresh 核验的 owner 清单计数（DD-47/69）。
 const changeApprovalOwnerRequirements = "approval-owner-requirements"
 
+const changeApprovalConsumeFresh = "approval-consume-fresh"
+
 // errContinueAsNew 是「此处需要续跑」的内部信号：写回循环在 Server 建议续跑时以它
 // 返回，由主协程在安全点排空 handler 后续跑。它从不离开本 Workflow。
 var errContinueAsNew = errors.New("审批需要 continue-as-new")
@@ -242,7 +244,7 @@ func (a *approval) decide(ctx workflow.Context, u generated.ApprovalDecisionUpda
 		a.set(generated.ApprovalStatusDENIED, reasonPtr(generated.ApprovalDenied))
 	case a.satisfied():
 		a.consumeDeadline = workflow.Now(ctx).Add(time.Duration(a.in.ConsumeWindowSeconds) * time.Second)
-		a.set(generated.Approved, nil)
+		a.set(generated.ApprovalStatusAPPROVED, nil)
 	default:
 		a.version++
 	}
@@ -289,7 +291,7 @@ func (a *approval) admit(ctx workflow.Context, u generated.ApprovalDecisionUpdat
 }
 
 func (a *approval) validateWithdraw(workflow.Context) error {
-	if a.status == generated.Cancelled {
+	if a.status == generated.ApprovalStatusCANCELLED {
 		return nil // 重复撤回：幂等
 	}
 	if a.status != generated.Requested && a.status != generated.ApprovalStatusWAITING {
@@ -300,21 +302,79 @@ func (a *approval) validateWithdraw(workflow.Context) error {
 
 func (a *approval) withdraw(workflow.Context) (generated.ApprovalControlOutcome, error) {
 	if a.status == generated.Requested || a.status == generated.ApprovalStatusWAITING {
-		a.set(generated.Cancelled, reasonPtr(generated.ApprovalWithdrawn))
+		a.set(generated.ApprovalStatusCANCELLED, reasonPtr(generated.ApprovalWithdrawn))
 	}
 	return generated.ApprovalControlOutcome{Status: a.status}, nil
 }
 
 // validateConsume：只在 APPROVED 时接受；已 CONSUMED 是同一 Update ID 的重发。
 func (a *approval) validateConsume(workflow.Context) error {
-	if a.status == generated.Approved || a.status == generated.Consumed {
+	if a.status == generated.ApprovalStatusAPPROVED || a.status == generated.Consumed {
 		return nil
 	}
 	return refuse(generated.ApprovalNotOpen, "批准不在可消费状态")
 }
 
 func (a *approval) consume(ctx workflow.Context) (generated.ApprovalControlOutcome, error) {
-	if a.status == generated.Approved {
+	// automation.run has no admission approval; its version-pinned child is
+	// consumed before effects. Other actions currently consume after dispatch
+	// and must not be reinterpreted as pre-effect step approvals here.
+	if a.in.ActionKey == "automation.run" && a.status == generated.ApprovalStatusAPPROVED && workflow.GetVersion(ctx,
+		changeApprovalConsumeFresh, workflow.DefaultVersion, 1) == 1 {
+		// Preserve immutable decisions. Recompute each requirement using only
+		// current selectors, never the selectors saved at decision time.
+		fresh := *a
+		fresh.decisions = nil
+		for _, decision := range a.decisions {
+			if decision.Decision != generated.ApprovalDecisionAPPROVE {
+				a.set(generated.Invalidated, reasonPtr(generated.ApprovalInvalidated))
+				break
+			}
+			for {
+				if a.status != generated.ApprovalStatusAPPROVED {
+					return generated.ApprovalControlOutcome{Status: a.status}, nil
+				}
+				if !workflow.Now(ctx).Before(a.consumeDeadline) {
+					a.set(generated.Invalidated, reasonPtr(generated.ApprovalConsumeWindowClosed))
+					return generated.ApprovalControlOutcome{Status: a.status}, nil
+				}
+				if a.wantCAN || a.suggested(ctx) {
+					a.wantCAN = true
+					return generated.ApprovalControlOutcome{}, refuse(generated.DependencyUnavailable, "消费资格查证需在原审批续跑后继续")
+				}
+				var result generated.FreshApprovalAdmissionResult
+				err := workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, activityOptions()),
+					(*activities.CoreAPI).FreshApprovalAdmission, generated.FreshApprovalAdmissionRequest{
+						ApprovalWorkflowID:  workflow.GetInfo(ctx).WorkflowExecution.ID,
+						ApproverPrincipalID: decision.ApproverPrincipalID, Decision: decision.Decision,
+					}).Get(ctx, &result)
+				if a.status != generated.ApprovalStatusAPPROVED {
+					return generated.ApprovalControlOutcome{Status: a.status}, nil
+				}
+				if err != nil {
+					// Unavailable evidence is neither revocation nor consumption.
+					if err := workflow.Sleep(ctx, retry.RoundInterval); err != nil {
+						return generated.ApprovalControlOutcome{}, err
+					}
+					continue
+				}
+				if !result.Admitted {
+					a.set(generated.Invalidated, reasonPtr(generated.ApprovalInvalidated))
+					return generated.ApprovalControlOutcome{Status: a.status}, nil
+				}
+				decision.SatisfiedSelectors = result.SatisfiedSelectors
+				fresh.decisions = append(fresh.decisions, decision)
+				break
+			}
+		}
+		if a.status == generated.ApprovalStatusAPPROVED && !fresh.satisfied() {
+			a.set(generated.Invalidated, reasonPtr(generated.ApprovalInvalidated))
+		}
+		if a.status == generated.ApprovalStatusAPPROVED && !workflow.Now(ctx).Before(a.consumeDeadline) {
+			a.set(generated.Invalidated, reasonPtr(generated.ApprovalConsumeWindowClosed))
+		}
+	}
+	if a.status == generated.ApprovalStatusAPPROVED {
 		a.consumedAt = workflow.Now(ctx)
 		a.set(generated.Consumed, nil)
 	}
@@ -322,14 +382,14 @@ func (a *approval) consume(ctx workflow.Context) (generated.ApprovalControlOutco
 }
 
 func (a *approval) validateInvalidate(_ workflow.Context, _ generated.ApprovalInvalidateUpdate) error {
-	if a.status == generated.Approved || a.status == generated.Invalidated {
+	if a.status == generated.ApprovalStatusAPPROVED || a.status == generated.Invalidated {
 		return nil
 	}
 	return refuse(generated.ApprovalNotOpen, "批准不在可失效状态")
 }
 
 func (a *approval) invalidate(_ workflow.Context, u generated.ApprovalInvalidateUpdate) (generated.ApprovalControlOutcome, error) {
-	if a.status == generated.Approved {
+	if a.status == generated.ApprovalStatusAPPROVED {
 		a.set(generated.Invalidated, reasonPtr(u.Reason))
 	}
 	return generated.ApprovalControlOutcome{Status: a.status}, nil
@@ -337,7 +397,7 @@ func (a *approval) invalidate(_ workflow.Context, u generated.ApprovalInvalidate
 
 func terminal(s generated.ApprovalStatus) bool {
 	switch s {
-	case generated.ApprovalStatusDENIED, generated.ApprovalStatusEXPIRED, generated.Cancelled,
+	case generated.ApprovalStatusDENIED, generated.ApprovalStatusEXPIRED, generated.ApprovalStatusCANCELLED,
 		generated.Consumed, generated.Invalidated:
 		return true
 	}
@@ -447,7 +507,7 @@ func Approval(ctx workflow.Context, in generated.ApprovalWorkflowInput) error {
 	// 重做无害，重做后开放决定
 	if in.Resume == nil || a.status == generated.Requested {
 		w := waitingApproval
-		if err := task(generated.Running, &w); err != nil {
+		if err := task(generated.TaskStatusRUNNING, &w); err != nil {
 			return done(err)
 		}
 		// REQUESTED：请求已登记、冻结内容写入 history；随后开放决定
@@ -478,7 +538,7 @@ func Approval(ctx workflow.Context, in generated.ApprovalWorkflowInput) error {
 		case generated.ApprovalStatusWAITING:
 			deadline = a.expiresAt
 			onTimeout = func() { a.set(generated.ApprovalStatusEXPIRED, reasonPtr(generated.ApprovalExpired)) }
-		case generated.Approved:
+		case generated.ApprovalStatusAPPROVED:
 			deadline = a.consumeDeadline
 			onTimeout = func() {
 				a.set(generated.Invalidated, reasonPtr(generated.ApprovalConsumeWindowClosed))
@@ -543,7 +603,7 @@ func (a *approval) restore(r *generated.ResumeClass) error {
 
 // continueAsNew 排空 handler 后以同一冻结 input 与已有状态续跑。排空期间资格判定
 // 不再发起新一轮（admit 看见 wantCAN 即交还），新的 decide 由 Validator 拒绝；
-// consume/withdraw/invalidate 不调 Activity，照常完成，其结果随状态一起带走。
+// consume fresh 查证在 wantCAN 时交还，结果随状态一起带走。
 func (a *approval) continueAsNew(ctx workflow.Context) error {
 	a.wantCAN = true
 	if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {

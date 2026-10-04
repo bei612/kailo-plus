@@ -28,6 +28,7 @@ import type {
   ApprovalView,
   AuditEventPage,
   CapabilityContractPage,
+  ComponentReleasePage,
   ClientKeyStatus,
   ClientKeyView,
   EvidenceView,
@@ -184,6 +185,8 @@ export function createBffClient(transport: BffTransport) {
       get<PlatformTenantPage>(`/api/v1/platform/tenants${offset ? `?offset=${offset}` : ""}`),
     capabilityContracts: (offset = 0) =>
       get<CapabilityContractPage>(`/api/v1/platform/capability-contracts?offset=${offset}`),
+    componentReleases: (offset = 0) =>
+      get<ComponentReleasePage>(`/api/v1/platform/component-releases?offset=${offset}`),
 
     /** DD-85：只列当前 Tenant 可归位的旧 SERVER 身份，不返回 SecretRef 或密钥。 */
     legacySecretRefs: (cursor?: string) =>

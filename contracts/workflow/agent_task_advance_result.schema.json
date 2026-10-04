@@ -10,6 +10,8 @@
     "invocationId": { "type": "string", "format": "uuid" },
     "status": { "$ref": "../enums/task_status.schema.json" },
     "waitingReason": { "type": "string" },
-    "finishActivity": { "type": "boolean", "description": "已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。" }
+    "finishActivity": { "type": "boolean", "description": "已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。" },
+    "approvalWorkflowId": {"type":"string","minLength":1},
+    "approvalInput": {"$ref":"approval_input.schema.json"}
   }
 }

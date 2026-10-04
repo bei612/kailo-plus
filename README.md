@@ -24,7 +24,7 @@ Workflows 独立呈现 Automation 创建区，Agents 不再重复展示；没有
 Wren 不能记为已集成可用。完整产物、迁移与浏览器原件见
 [发布记录](core/verify/release-artifacts.md)。
 
-### 下一源码批：Automation 模板消息（未部署）
+### 已提交源码：Automation 模板消息（未部署）
 
 DD-107 的 `POST_MESSAGE` 已接入原 `automation.run` 与 AgentTaskWorkflow，
 以执行 Installation 的既有 Buzz 身份发布模板，不启动 Codex、不伪造模型用量，
@@ -46,8 +46,44 @@ Mobile 原只读详情也已接入两种动作的同源文案，仍无编辑或�
 WEBHOOK 仍不生成入口：设计 `06` §9 要求异步使用请求正文，但 `04` 的存储权威
 和 `05` §7 禁止把正文放入 Core、审计或 Temporal history，当前没有已定的
 webhook 正文持久来源与恢复接缝。不能借 OpenBao、影子 Relay 或可选业务组件
-代存；此缺口只阻断该触发，不阻断消息、定时和模板消息实现。审批关卡仍在开发，
-上述源码不得记作 Workflows 全范围完成。
+代存；此缺口只阻断该触发，不阻断消息、定时和模板消息实现。步骤审批的源码与
+隔离验证见下节；上述源码不得记作 Workflows 全范围完成。
+
+### 同批源码：Automation 步骤审批（未部署）
+
+AutomationVersion 可冻结同 Tenant 的既有审批策略 ID/version；原 AgentTask 在首次
+外部副作用前启动原 ApprovalWorkflow 子流程，并观察其原 consume 结果。等待期间
+不申请模型容量、不读取执行记忆、不派发 Codex 或模板消息；取消只有在事务确认
+尚无执行事实后才同时关闭子动作。Web/Desktop 共用策略选择表单，Mobile 只读展示。
+没有创建默认策略、第二套审批引擎或新的 Workflow kind；目录没有合法已投递策略
+时保持为空，不借用其他动作策略。Core、Worker、共享前端、Mobile 与隔离数据库
+定向验证及实际破坏还原已完成；组件登记与该批契约合并后四侧生成、同步检查通过。
+完整批次检查、提交、部署和真实审批链仍须独立收口，不据此声称可以正式使用。
+原始失败、验证命令和边界见 [Agent 记录](core/verify/agent-definition.md)。
+
+### 并行源码批：可插拔组件登记（未部署）
+
+ComponentRelease 登记已接入原 Catalog、Governed Action 与 ComponentTaskWorkflow，
+通过隔离 Adapter Protocol 实际调用和原生观察生成报告，不接受用户自报通过。
+Web/Desktop 共用登记面板；COMMIT 回执丢失和取消后的续跑保留原证据，不重复执行。
+合并模板消息后四侧已重新生成，引用、UNKNOWN 和省略字段的往返与破坏还原已核验。
+当前只覆盖无前端、无模型调用的 EXTERNAL/APPLICATION/REMOTE_ADAPTER 登记子集；
+REGISTERED 不是 APPROVED 或 binding 可用；release 审批仍在独立实施，步骤审批见上节。
+Cells、WeKnora、Wren 尚不能据此记为已集成。完整边界、失败与原件见
+[组件登记记录](core/verify/component-release-registration.md)。
+
+本批组件登记、步骤审批及撤权纠正的固定树
+`9e41d5c4fc6e9b074c84a3c9eef6184660b3d1ec` 已通过原 `./tools/check.sh --full`。
+相对 `75eac99e74670ecde7de38879c451fe5b2c59449`，检查时为 114 文件 +11794/-752；
+实际隔离数据库迁移、SQLx、44 个枚举约束、四侧与 Workflow replay 通过。
+首轮依赖准备退出 2、首次完整检查追溯登记退出 1 均保留原件，不改记通过。
+Web 与 Win11 各运行一次原构建；Win11 仍未签名或设备验收。没有部署本批服务，
+当前可访问版本仍是上方 12:15 UTC 的部署；完整门禁不等于业务或生产验收。
+
+release 批准另有已完成定向验证的独立候选，未混入本批。ApplicationBinding
+生产签发存在冻结合同冲突：设计 `05` §2.8 的管理动作 ResultExposure=NONE，
+而 `03` 的 ActionToken 强制引用仅含 CONSUME_ONLY/READ/EXPORT 的结果策略。
+该冲突已提出裁决，未擅自更改设计、借用策略或开放 binding；参考组件没有绕行入口。
 
 ### 当前源码批：原生工具治理与可插拔能力契约
 

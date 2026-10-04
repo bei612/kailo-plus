@@ -8,6 +8,7 @@ import (
 
 	"apps/worker/activities"
 	"apps/worker/internal/contracts/generated"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -120,6 +121,7 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 	// 同 run 的原生 cancel history 观察取消并 interrupt 原 turn；这里持续收尾。
 	loop, _ := workflow.NewDisconnectedContext(ctx)
 	begun := false
+	startedApproval := ""
 	for {
 		if ctx.Err() != nil && !in.CancelPending {
 			// cancel accepted 不是 CANCELED；脱离已取消上下文继续原生收尾观察。
@@ -129,7 +131,7 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 		if !begun {
 			// 投影的 transport/ACK 错误不证明 Invocation 失败。与后续观察
 			// 共用有界轮次，在持久 timer 后重试；未确认投影时不占 runner。
-			begun = project(loop, generated.Running, "UNKNOWN_EXTERNAL_RESULT") == nil
+			begun = project(loop, generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT") == nil
 		}
 		if begun {
 			options := activityOptions()
@@ -144,14 +146,39 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 			activityContext := workflow.WithActivityOptions(loop, options)
 			var out generated.AgentTaskAdvanceResult
 			err := workflow.ExecuteActivity(activityContext, (*activities.CoreAPI).AdvanceAgentTask, in).Get(loop, &out)
-			status, reason := generated.Running, "UNKNOWN_EXTERNAL_RESULT"
+			status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
 			if err == nil {
 				status, reason = out.Status, out.WaitingReason
+				if out.ApprovalWorkflowID != nil && out.ApprovalInput != nil && startedApproval != *out.ApprovalWorkflowID {
+					// Frozen Core input, original registered ApprovalWorkflow; no
+					// new Workflow kind or child decision authority. The child
+					// stays alive across parent ContinueAsNew, then the same ID
+					// is observed rather than creating another approval.
+					var childInput generated.ApprovalWorkflowInput
+					raw, encodeErr := json.Marshal(out.ApprovalInput)
+					if encodeErr != nil || json.Unmarshal(raw, &childInput) != nil || childInput.ActionKey != "automation.run" {
+						status, reason = generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
+					} else {
+						childContext := workflow.WithChildOptions(loop, workflow.ChildWorkflowOptions{
+							WorkflowID:            *out.ApprovalWorkflowID,
+							WorkflowIDReusePolicy: enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
+							ParentClosePolicy:     enumspb.PARENT_CLOSE_POLICY_ABANDON,
+						})
+						var execution workflow.Execution
+						startErr := workflow.ExecuteChildWorkflow(childContext, ApprovalKind, childInput).
+							GetChildWorkflowExecution().Get(loop, &execution)
+						if startErr == nil || temporal.IsWorkflowExecutionAlreadyStartedError(startErr) {
+							startedApproval = *out.ApprovalWorkflowID
+						} else {
+							status, reason = generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
+						}
+					}
+				}
 			}
 			// finishActivity 只确认结束 holder，不是业务终态。RELEASED 后
 			// 后续 Activity 只观察同一 Invocation，不由 Worker 再占 units。
 			// 任何终态都先落投影；ACK 不明时继续对账，不返回假 terminal。
-			if err := project(loop, status, reason); err == nil && status != generated.Running {
+			if err := project(loop, status, reason); err == nil && status != generated.TaskStatusRUNNING {
 				switch status {
 				case generated.Completed:
 					return nil

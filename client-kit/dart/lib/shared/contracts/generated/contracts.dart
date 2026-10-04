@@ -1,6 +1,9 @@
 // To parse this JSON data, do
 //
 //     final canary = canaryFromJson(jsonString);
+//     final adapterExecutionObservation = adapterExecutionObservationFromJson(jsonString);
+//     final adapterExecutionResponse = adapterExecutionResponseFromJson(jsonString);
+//     final adapterScopeObservation = adapterScopeObservationFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
 //     final agentDefinitionPage = agentDefinitionPageFromJson(jsonString);
@@ -34,6 +37,11 @@
 //     final capabilityContractView = capabilityContractViewFromJson(jsonString);
 //     final clientKeyView = clientKeyViewFromJson(jsonString);
 //     final clientKeyStatus = clientKeyStatusFromJson(jsonString);
+//     final componentConformanceAuthorization = componentConformanceAuthorizationFromJson(jsonString);
+//     final componentConformanceWireDigests = componentConformanceWireDigestsFromJson(jsonString);
+//     final componentConformanceWireObservation = componentConformanceWireObservationFromJson(jsonString);
+//     final componentReleasePage = componentReleasePageFromJson(jsonString);
+//     final componentReleaseReceipt = componentReleaseReceiptFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
 //     final invitationRedemptionView = invitationRedemptionViewFromJson(jsonString);
 //     final invitationRedemptionRequest = invitationRedemptionRequestFromJson(jsonString);
@@ -60,11 +68,17 @@
 //     final agentMemoryEntryReadInput = agentMemoryEntryReadInputFromJson(jsonString);
 //     final agentMemoryWriteInput = agentMemoryWriteInputFromJson(jsonString);
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
+//     final automationApprovalPolicyRef = automationApprovalPolicyRefFromJson(jsonString);
 //     final automationScheduleSpec = automationScheduleSpecFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
 //     final capabilityConformanceVectors = capabilityConformanceVectorsFromJson(jsonString);
 //     final capabilityContractRef = capabilityContractRefFromJson(jsonString);
 //     final capabilityContractRegistration = capabilityContractRegistrationFromJson(jsonString);
+//     final componentConformanceEnvironment = componentConformanceEnvironmentFromJson(jsonString);
+//     final componentConformanceFixture = componentConformanceFixtureFromJson(jsonString);
+//     final componentConformanceIdentity = componentConformanceIdentityFromJson(jsonString);
+//     final componentReleaseRegistration = componentReleaseRegistrationFromJson(jsonString);
+//     final contentReference = contentReferenceFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
 //     final delegationScopeParameters = delegationScopeParametersFromJson(jsonString);
 //     final errorBody = errorBodyFromJson(jsonString);
@@ -93,6 +107,10 @@
 //     final automationScheduleAdmitRequest = automationScheduleAdmitRequestFromJson(jsonString);
 //     final automationScheduleAdmitResult = automationScheduleAdmitResultFromJson(jsonString);
 //     final automationScheduleTaskInput = automationScheduleTaskInputFromJson(jsonString);
+//     final componentConformanceObservation = componentConformanceObservationFromJson(jsonString);
+//     final componentConformancePlan = componentConformancePlanFromJson(jsonString);
+//     final componentConformanceProbe = componentConformanceProbeFromJson(jsonString);
+//     final componentConformanceStepObservation = componentConformanceStepObservationFromJson(jsonString);
 //     final freshApprovalAdmissionRequest = freshApprovalAdmissionRequestFromJson(jsonString);
 //     final freshApprovalAdmissionResult = freshApprovalAdmissionResultFromJson(jsonString);
 //     final tenantDeleteAdvanceRequest = tenantDeleteAdvanceRequestFromJson(jsonString);
@@ -103,6 +121,24 @@ import 'dart:convert';
 Canary canaryFromJson(String str) => Canary.fromJson(json.decode(str));
 
 String canaryToJson(Canary data) => json.encode(data.toJson());
+
+AdapterExecutionObservation adapterExecutionObservationFromJson(String str) =>
+    AdapterExecutionObservation.fromJson(json.decode(str));
+
+String adapterExecutionObservationToJson(AdapterExecutionObservation data) =>
+    json.encode(data.toJson());
+
+AdapterExecutionResponse adapterExecutionResponseFromJson(String str) =>
+    AdapterExecutionResponse.fromJson(json.decode(str));
+
+String adapterExecutionResponseToJson(AdapterExecutionResponse data) =>
+    json.encode(data.toJson());
+
+AdapterScopeObservation adapterScopeObservationFromJson(String str) =>
+    AdapterScopeObservation.fromJson(json.decode(str));
+
+String adapterScopeObservationToJson(AdapterScopeObservation data) =>
+    json.encode(data.toJson());
 
 ActionCommand actionCommandFromJson(String str) =>
     ActionCommand.fromJson(json.decode(str));
@@ -302,6 +338,42 @@ ClientKeyStatus clientKeyStatusFromJson(String str) =>
 String clientKeyStatusToJson(ClientKeyStatus data) =>
     json.encode(data.toJson());
 
+ComponentConformanceAuthorization componentConformanceAuthorizationFromJson(
+  String str,
+) => ComponentConformanceAuthorization.fromJson(json.decode(str));
+
+String componentConformanceAuthorizationToJson(
+  ComponentConformanceAuthorization data,
+) => json.encode(data.toJson());
+
+ComponentConformanceWireDigests componentConformanceWireDigestsFromJson(
+  String str,
+) => ComponentConformanceWireDigests.fromJson(json.decode(str));
+
+String componentConformanceWireDigestsToJson(
+  ComponentConformanceWireDigests data,
+) => json.encode(data.toJson());
+
+ComponentConformanceWireObservation componentConformanceWireObservationFromJson(
+  String str,
+) => ComponentConformanceWireObservation.fromJson(json.decode(str));
+
+String componentConformanceWireObservationToJson(
+  ComponentConformanceWireObservation data,
+) => json.encode(data.toJson());
+
+ComponentReleasePage componentReleasePageFromJson(String str) =>
+    ComponentReleasePage.fromJson(json.decode(str));
+
+String componentReleasePageToJson(ComponentReleasePage data) =>
+    json.encode(data.toJson());
+
+ComponentReleaseReceipt componentReleaseReceiptFromJson(String str) =>
+    ComponentReleaseReceipt.fromJson(json.decode(str));
+
+String componentReleaseReceiptToJson(ComponentReleaseReceipt data) =>
+    json.encode(data.toJson());
+
 EvidenceView evidenceViewFromJson(String str) =>
     EvidenceView.fromJson(json.decode(str));
 
@@ -451,6 +523,12 @@ AgentVersionContent agentVersionContentFromJson(String str) =>
 String agentVersionContentToJson(AgentVersionContent data) =>
     json.encode(data.toJson());
 
+AutomationApprovalPolicyRef automationApprovalPolicyRefFromJson(String str) =>
+    AutomationApprovalPolicyRef.fromJson(json.decode(str));
+
+String automationApprovalPolicyRefToJson(AutomationApprovalPolicyRef data) =>
+    json.encode(data.toJson());
+
 AutomationScheduleSpec automationScheduleSpecFromJson(String str) =>
     AutomationScheduleSpec.fromJson(json.decode(str));
 
@@ -482,6 +560,38 @@ CapabilityContractRegistration capabilityContractRegistrationFromJson(
 String capabilityContractRegistrationToJson(
   CapabilityContractRegistration data,
 ) => json.encode(data.toJson());
+
+ComponentConformanceEnvironment componentConformanceEnvironmentFromJson(
+  String str,
+) => ComponentConformanceEnvironment.fromJson(json.decode(str));
+
+String componentConformanceEnvironmentToJson(
+  ComponentConformanceEnvironment data,
+) => json.encode(data.toJson());
+
+ComponentConformanceFixture componentConformanceFixtureFromJson(String str) =>
+    ComponentConformanceFixture.fromJson(json.decode(str));
+
+String componentConformanceFixtureToJson(ComponentConformanceFixture data) =>
+    json.encode(data.toJson());
+
+ComponentConformanceIdentity componentConformanceIdentityFromJson(String str) =>
+    ComponentConformanceIdentity.fromJson(json.decode(str));
+
+String componentConformanceIdentityToJson(ComponentConformanceIdentity data) =>
+    json.encode(data.toJson());
+
+ComponentReleaseRegistration componentReleaseRegistrationFromJson(String str) =>
+    ComponentReleaseRegistration.fromJson(json.decode(str));
+
+String componentReleaseRegistrationToJson(ComponentReleaseRegistration data) =>
+    json.encode(data.toJson());
+
+ContentReference contentReferenceFromJson(String str) =>
+    ContentReference.fromJson(json.decode(str));
+
+String contentReferenceToJson(ContentReference data) =>
+    json.encode(data.toJson());
 
 DelegationGrantParameters delegationGrantParametersFromJson(String str) =>
     DelegationGrantParameters.fromJson(json.decode(str));
@@ -656,6 +766,34 @@ AutomationScheduleTaskInput automationScheduleTaskInputFromJson(String str) =>
 
 String automationScheduleTaskInputToJson(AutomationScheduleTaskInput data) =>
     json.encode(data.toJson());
+
+ComponentConformanceObservation componentConformanceObservationFromJson(
+  String str,
+) => ComponentConformanceObservation.fromJson(json.decode(str));
+
+String componentConformanceObservationToJson(
+  ComponentConformanceObservation data,
+) => json.encode(data.toJson());
+
+ComponentConformancePlan componentConformancePlanFromJson(String str) =>
+    ComponentConformancePlan.fromJson(json.decode(str));
+
+String componentConformancePlanToJson(ComponentConformancePlan data) =>
+    json.encode(data.toJson());
+
+ComponentConformanceProbe componentConformanceProbeFromJson(String str) =>
+    ComponentConformanceProbe.fromJson(json.decode(str));
+
+String componentConformanceProbeToJson(ComponentConformanceProbe data) =>
+    json.encode(data.toJson());
+
+ComponentConformanceStepObservation componentConformanceStepObservationFromJson(
+  String str,
+) => ComponentConformanceStepObservation.fromJson(json.decode(str));
+
+String componentConformanceStepObservationToJson(
+  ComponentConformanceStepObservation data,
+) => json.encode(data.toJson());
 
 FreshApprovalAdmissionRequest freshApprovalAdmissionRequestFromJson(
   String str,
@@ -861,6 +999,233 @@ final variantKindValues = EnumValues({
   "TASK": VariantKind.TASK,
 });
 
+///ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
+///允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
+class AdapterExecutionObservation {
+  final NativeCancelCapability cancelCapability;
+  final String idempotencyKey;
+  final String? lastObservedAt;
+  final String? nativeId;
+  final String? nativeStatus;
+  final String nativeType;
+  final ExternalExecutionStatus platformStatus;
+  final String? terminalAt;
+
+  AdapterExecutionObservation({
+    required this.cancelCapability,
+    required this.idempotencyKey,
+    this.lastObservedAt,
+    this.nativeId,
+    this.nativeStatus,
+    required this.nativeType,
+    required this.platformStatus,
+    this.terminalAt,
+  });
+
+  factory AdapterExecutionObservation.fromJson(Map<String, dynamic> json) =>
+      AdapterExecutionObservation(
+        cancelCapability:
+            nativeCancelCapabilityValues.map[json["cancelCapability"]]!,
+        idempotencyKey: json["idempotencyKey"],
+        lastObservedAt: json["lastObservedAt"],
+        nativeId: json["nativeId"],
+        nativeStatus: json["nativeStatus"],
+        nativeType: json["nativeType"],
+        platformStatus:
+            externalExecutionStatusValues.map[json["platformStatus"]]!,
+        terminalAt: json["terminalAt"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cancelCapability": nativeCancelCapabilityValues.reverse[cancelCapability],
+    "idempotencyKey": idempotencyKey,
+    "lastObservedAt": lastObservedAt,
+    "nativeId": nativeId,
+    "nativeStatus": nativeStatus,
+    "nativeType": nativeType,
+    "platformStatus": externalExecutionStatusValues.reverse[platformStatus],
+    "terminalAt": terminalAt,
+  });
+}
+
+enum NativeCancelCapability { SUPPORTED, UNSUPPORTED }
+
+final nativeCancelCapabilityValues = EnumValues({
+  "SUPPORTED": NativeCancelCapability.SUPPORTED,
+  "UNSUPPORTED": NativeCancelCapability.UNSUPPORTED,
+});
+
+///design03§6 ExternalExecution 的既定平台状态；HTTP成功和cancel accepted均不构成终态。
+enum ExternalExecutionStatus {
+  CANCELLED,
+  FAILED,
+  PENDING_DISPATCH,
+  RUNNING,
+  SUCCEEDED,
+  UNKNOWN,
+}
+
+final externalExecutionStatusValues = EnumValues({
+  "CANCELLED": ExternalExecutionStatus.CANCELLED,
+  "FAILED": ExternalExecutionStatus.FAILED,
+  "PENDING_DISPATCH": ExternalExecutionStatus.PENDING_DISPATCH,
+  "RUNNING": ExternalExecutionStatus.RUNNING,
+  "SUCCEEDED": ExternalExecutionStatus.SUCCEEDED,
+  "UNKNOWN": ExternalExecutionStatus.UNKNOWN,
+});
+
+///ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入
+///Core 的套件报告。
+class AdapterExecutionResponse {
+  final ContentReferenceClass? contentReference;
+  final ExecutionClass execution;
+  final String? resultJson;
+
+  AdapterExecutionResponse({
+    this.contentReference,
+    required this.execution,
+    this.resultJson,
+  });
+
+  factory AdapterExecutionResponse.fromJson(Map<String, dynamic> json) =>
+      AdapterExecutionResponse(
+        contentReference: json["contentReference"] == null
+            ? null
+            : ContentReferenceClass.fromJson(json["contentReference"]),
+        execution: ExecutionClass.fromJson(json["execution"]),
+        resultJson: json["resultJson"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contentReference": contentReference?.toJson(),
+    "execution": execution.toJson(),
+    "resultJson": resultJson,
+  });
+}
+
+///design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
+class ContentReferenceClass {
+  final String? assetId;
+  final String displayName;
+  final String mediaType;
+  final String nativeObjectRef;
+  final String nativeRevision;
+  final String resourceId;
+
+  ContentReferenceClass({
+    this.assetId,
+    required this.displayName,
+    required this.mediaType,
+    required this.nativeObjectRef,
+    required this.nativeRevision,
+    required this.resourceId,
+  });
+
+  factory ContentReferenceClass.fromJson(Map<String, dynamic> json) =>
+      ContentReferenceClass(
+        assetId: json["assetId"],
+        displayName: json["displayName"],
+        mediaType: json["mediaType"],
+        nativeObjectRef: json["nativeObjectRef"],
+        nativeRevision: json["nativeRevision"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "assetId": assetId,
+    "displayName": displayName,
+    "mediaType": mediaType,
+    "nativeObjectRef": nativeObjectRef,
+    "nativeRevision": nativeRevision,
+    "resourceId": resourceId,
+  });
+}
+
+///ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
+///允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
+class ExecutionClass {
+  final NativeCancelCapability cancelCapability;
+  final String idempotencyKey;
+  final String? lastObservedAt;
+  final String? nativeId;
+  final String? nativeStatus;
+  final String nativeType;
+  final ExternalExecutionStatus platformStatus;
+  final String? terminalAt;
+
+  ExecutionClass({
+    required this.cancelCapability,
+    required this.idempotencyKey,
+    this.lastObservedAt,
+    this.nativeId,
+    this.nativeStatus,
+    required this.nativeType,
+    required this.platformStatus,
+    this.terminalAt,
+  });
+
+  factory ExecutionClass.fromJson(Map<String, dynamic> json) => ExecutionClass(
+    cancelCapability:
+        nativeCancelCapabilityValues.map[json["cancelCapability"]]!,
+    idempotencyKey: json["idempotencyKey"],
+    lastObservedAt: json["lastObservedAt"],
+    nativeId: json["nativeId"],
+    nativeStatus: json["nativeStatus"],
+    nativeType: json["nativeType"],
+    platformStatus: externalExecutionStatusValues.map[json["platformStatus"]]!,
+    terminalAt: json["terminalAt"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cancelCapability": nativeCancelCapabilityValues.reverse[cancelCapability],
+    "idempotencyKey": idempotencyKey,
+    "lastObservedAt": lastObservedAt,
+    "nativeId": nativeId,
+    "nativeStatus": nativeStatus,
+    "nativeType": nativeType,
+    "platformStatus": externalExecutionStatusValues.reverse[platformStatus],
+    "terminalAt": terminalAt,
+  });
+}
+
+///DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
+class AdapterScopeObservation {
+  final String? nativeRef;
+  final String? nativeType;
+  final String platformResourceRef;
+  final NativeScopeResult result;
+
+  AdapterScopeObservation({
+    this.nativeRef,
+    this.nativeType,
+    required this.platformResourceRef,
+    required this.result,
+  });
+
+  factory AdapterScopeObservation.fromJson(Map<String, dynamic> json) =>
+      AdapterScopeObservation(
+        nativeRef: json["nativeRef"],
+        nativeType: json["nativeType"],
+        platformResourceRef: json["platformResourceRef"],
+        result: nativeScopeResultValues.map[json["result"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nativeRef": nativeRef,
+    "nativeType": nativeType,
+    "platformResourceRef": platformResourceRef,
+    "result": nativeScopeResultValues.reverse[result],
+  });
+}
+
+enum NativeScopeResult { ABSENT_FENCED, FOUND, REFUSED }
+
+final nativeScopeResultValues = EnumValues({
+  "ABSENT_FENCED": NativeScopeResult.ABSENT_FENCED,
+  "FOUND": NativeScopeResult.FOUND,
+  "REFUSED": NativeScopeResult.REFUSED,
+});
+
 ///POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
 ///actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
 class ActionCommand {
@@ -883,6 +1248,7 @@ class ActionCommand {
 
   ///仅 capability_contract.register：真实 schema 与测试向量内容。
   final CapabilityContractRegistrationClass? capabilityContractRegistration;
+  final ComponentReleaseRegistrationClass? componentReleaseRegistration;
 
   ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
   final ParametersClass? delegationGrant;
@@ -947,6 +1313,7 @@ class ActionCommand {
     this.automationVersionContent,
     this.capabilityContractRef,
     this.capabilityContractRegistration,
+    this.componentReleaseRegistration,
     this.delegationGrant,
     this.delegationId,
     this.delegationVersion,
@@ -988,6 +1355,11 @@ class ActionCommand {
         : CapabilityContractRegistrationClass.fromJson(
             json["capabilityContractRegistration"],
           ),
+    componentReleaseRegistration: json["componentReleaseRegistration"] == null
+        ? null
+        : ComponentReleaseRegistrationClass.fromJson(
+            json["componentReleaseRegistration"],
+          ),
     delegationGrant: json["delegationGrant"] == null
         ? null
         : ParametersClass.fromJson(json["delegationGrant"]),
@@ -1022,6 +1394,7 @@ class ActionCommand {
     "automationVersionContent": automationVersionContent?.toJson(),
     "capabilityContractRef": capabilityContractRef?.toJson(),
     "capabilityContractRegistration": capabilityContractRegistration?.toJson(),
+    "componentReleaseRegistration": componentReleaseRegistration?.toJson(),
     "delegationGrant": delegationGrant?.toJson(),
     "delegationId": delegationId,
     "delegationVersion": delegationVersion,
@@ -1216,11 +1589,13 @@ class ContentTurnLimits {
 ///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 class AutomationVersionContentClass {
   final ContentAction action;
+  final ApprovalPolicyElement? approvalPolicy;
   final AutomationResultTarget resultTarget;
   final ContentTrigger trigger;
 
   AutomationVersionContentClass({
     required this.action,
+    this.approvalPolicy,
     required this.resultTarget,
     required this.trigger,
   });
@@ -1228,12 +1603,16 @@ class AutomationVersionContentClass {
   factory AutomationVersionContentClass.fromJson(Map<String, dynamic> json) =>
       AutomationVersionContentClass(
         action: ContentAction.fromJson(json["action"]),
+        approvalPolicy: json["approvalPolicy"] == null
+            ? null
+            : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
         resultTarget: automationResultTargetValues.map[json["resultTarget"]]!,
         trigger: ContentTrigger.fromJson(json["trigger"]),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "action": action.toJson(),
+    "approvalPolicy": approvalPolicy?.toJson(),
     "resultTarget": automationResultTargetValues.reverse[resultTarget],
     "trigger": trigger.toJson(),
   });
@@ -1262,6 +1641,19 @@ final actionKindValues = EnumValues({
   "AGENT_TURN": ActionKind.AGENT_TURN,
   "POST_MESSAGE": ActionKind.POST_MESSAGE,
 });
+
+///DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+class ApprovalPolicyElement {
+  final String id;
+  final int version;
+
+  ApprovalPolicyElement({required this.id, required this.version});
+
+  factory ApprovalPolicyElement.fromJson(Map<String, dynamic> json) =>
+      ApprovalPolicyElement(id: json["id"], version: json["version"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"id": id, "version": version});
+}
 
 enum AutomationResultTarget { CHANNEL, TRIGGER_THREAD }
 
@@ -1592,6 +1984,34 @@ class CapabilityContractRegistrationResourceTypeFamily {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"kind": kind, "typeKey": typeKey});
+}
+
+///组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
+///Worker 独立执行隔离套件。
+class ComponentReleaseRegistrationClass {
+  final String bindingConfigSchemaJson;
+  final String manifestJson;
+  final String packageJson;
+
+  ComponentReleaseRegistrationClass({
+    required this.bindingConfigSchemaJson,
+    required this.manifestJson,
+    required this.packageJson,
+  });
+
+  factory ComponentReleaseRegistrationClass.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentReleaseRegistrationClass(
+    bindingConfigSchemaJson: json["bindingConfigSchemaJson"],
+    manifestJson: json["manifestJson"],
+    packageJson: json["packageJson"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingConfigSchemaJson": bindingConfigSchemaJson,
+    "manifestJson": manifestJson,
+    "packageJson": packageJson,
+  });
 }
 
 ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -4233,6 +4653,7 @@ class VersionClass {
 
 class AutomationPage {
   final List<AutomationElement> automations;
+  final List<ApprovalPolicyElement>? availableApprovalPolicies;
 
   ///本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。
   final bool canCreate;
@@ -4240,6 +4661,7 @@ class AutomationPage {
 
   AutomationPage({
     required this.automations,
+    this.availableApprovalPolicies,
     required this.canCreate,
     this.nextOffset,
   });
@@ -4248,12 +4670,22 @@ class AutomationPage {
     automations: List<AutomationElement>.from(
       json["automations"].map((x) => AutomationElement.fromJson(x)),
     ),
+    availableApprovalPolicies: json["availableApprovalPolicies"] == null
+        ? null
+        : List<ApprovalPolicyElement>.from(
+            json["availableApprovalPolicies"]!.map(
+              (x) => ApprovalPolicyElement.fromJson(x),
+            ),
+          ),
     canCreate: json["canCreate"],
     nextOffset: json["nextOffset"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "automations": List<dynamic>.from(automations.map((x) => x.toJson())),
+    "availableApprovalPolicies": availableApprovalPolicies == null
+        ? null
+        : List<dynamic>.from(availableApprovalPolicies!.map((x) => x.toJson())),
     "canCreate": canCreate,
     "nextOffset": nextOffset,
   });
@@ -4438,6 +4870,7 @@ final taskStatusValues = EnumValues({
 enum WorkflowKind {
   AGENT_INSTALLATION,
   BUZZ_IDENTITY_PROJECTION,
+  COMPONENT_RELEASE,
   MEMBERSHIP_PROJECTION,
   MEMBERSHIP_REVOCATION,
   SECRET_REF_REHOME,
@@ -4448,6 +4881,7 @@ enum WorkflowKind {
 final workflowKindValues = EnumValues({
   "AGENT_INSTALLATION": WorkflowKind.AGENT_INSTALLATION,
   "BUZZ_IDENTITY_PROJECTION": WorkflowKind.BUZZ_IDENTITY_PROJECTION,
+  "COMPONENT_RELEASE": WorkflowKind.COMPONENT_RELEASE,
   "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
   "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
   "SECRET_REF_REHOME": WorkflowKind.SECRET_REF_REHOME,
@@ -4781,6 +5215,397 @@ class ClientKeyStatus {
     "recheckAfterMillis": recheckAfterMillis,
     "state": buzzIdentityStateValues.reverse[state],
     "workflowId": workflowId,
+  });
+}
+
+///
+///Core私网仅向受信Worker返回的逐次隔离探测凭据。token仅在Activity内存中使用，禁止进入Temporal输入、输出或报告。其声明绑定固定模拟上下文与完整实际参数，不授予生产binding授权。
+class ComponentConformanceAuthorization {
+  final String expectedResponseDigest;
+  final AdapterProtocolOperation operation;
+  final String requestDigest;
+  final String requestJson;
+  final String token;
+
+  ComponentConformanceAuthorization({
+    required this.expectedResponseDigest,
+    required this.operation,
+    required this.requestDigest,
+    required this.requestJson,
+    required this.token,
+  });
+
+  factory ComponentConformanceAuthorization.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentConformanceAuthorization(
+    expectedResponseDigest: json["expectedResponseDigest"],
+    operation: adapterProtocolOperationValues.map[json["operation"]]!,
+    requestDigest: json["requestDigest"],
+    requestJson: json["requestJson"],
+    token: json["token"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "expectedResponseDigest": expectedResponseDigest,
+    "operation": adapterProtocolOperationValues.reverse[operation],
+    "requestDigest": requestDigest,
+    "requestJson": requestJson,
+    "token": token,
+  });
+}
+
+///ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+enum AdapterProtocolOperation {
+  CANCEL,
+  EXECUTE,
+  EXTRACT_USAGE,
+  HANDSHAKE,
+  MAP_NATIVE_STATUS_ERROR,
+  OBSERVE,
+  QUERY_REVISION,
+  RECONCILE,
+  RESOLVE_NATIVE_SCOPE,
+  VALIDATE_BINDING,
+}
+
+final adapterProtocolOperationValues = EnumValues({
+  "cancel": AdapterProtocolOperation.CANCEL,
+  "execute": AdapterProtocolOperation.EXECUTE,
+  "extract_usage": AdapterProtocolOperation.EXTRACT_USAGE,
+  "handshake": AdapterProtocolOperation.HANDSHAKE,
+  "map_native_status_error": AdapterProtocolOperation.MAP_NATIVE_STATUS_ERROR,
+  "observe": AdapterProtocolOperation.OBSERVE,
+  "query_revision": AdapterProtocolOperation.QUERY_REVISION,
+  "reconcile": AdapterProtocolOperation.RECONCILE,
+  "resolve_native_scope": AdapterProtocolOperation.RESOLVE_NATIVE_SCOPE,
+  "validate_binding": AdapterProtocolOperation.VALIDATE_BINDING,
+});
+
+///Core原canonical_digest对同一已授权步骤实际响应的摘要；仅规范化事实，不声明套件通过或登记成功。
+class ComponentConformanceWireDigests {
+  final String requestDigest;
+  final String responseDigest;
+  final String? resultDigest;
+
+  ComponentConformanceWireDigests({
+    required this.requestDigest,
+    required this.responseDigest,
+    this.resultDigest,
+  });
+
+  factory ComponentConformanceWireDigests.fromJson(Map<String, dynamic> json) =>
+      ComponentConformanceWireDigests(
+        requestDigest: json["requestDigest"],
+        responseDigest: json["responseDigest"],
+        resultDigest: json["resultDigest"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "requestDigest": requestDigest,
+    "responseDigest": responseDigest,
+    "resultDigest": resultDigest,
+  });
+}
+
+///受信Worker实际HTTP响应的瞬时核验输入。正文仅在Activity与Core请求内存中存在，不得进入Temporal历史、报告、日志或数据库；不是用户上传的通过声明。
+class ComponentConformanceWireObservation {
+  final int httpStatus;
+  final ProbeClass probe;
+  final String responseJson;
+
+  ComponentConformanceWireObservation({
+    required this.httpStatus,
+    required this.probe,
+    required this.responseJson,
+  });
+
+  factory ComponentConformanceWireObservation.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentConformanceWireObservation(
+    httpStatus: json["httpStatus"],
+    probe: ProbeClass.fromJson(json["probe"]),
+    responseJson: json["responseJson"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "httpStatus": httpStatus,
+    "probe": probe.toJson(),
+    "responseJson": responseJson,
+  });
+}
+
+///原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
+///history 承接，不建立另一执行账本。
+class ProbeClass {
+  final ContentReferenceClass? contentReference;
+  final PlanClass plan;
+
+  ///只查询同一步冻结幂等键；不再发送原 execute/CREATE。
+  final bool? reconcile;
+  final int stepIndex;
+
+  ProbeClass({
+    this.contentReference,
+    required this.plan,
+    this.reconcile,
+    required this.stepIndex,
+  });
+
+  factory ProbeClass.fromJson(Map<String, dynamic> json) => ProbeClass(
+    contentReference: json["contentReference"] == null
+        ? null
+        : ContentReferenceClass.fromJson(json["contentReference"]),
+    plan: PlanClass.fromJson(json["plan"]),
+    reconcile: json["reconcile"],
+    stepIndex: json["stepIndex"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contentReference": contentReference?.toJson(),
+    "plan": plan.toJson(),
+    "reconcile": reconcile,
+    "stepIndex": stepIndex,
+  });
+}
+
+///受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
+class PlanClass {
+  final String actionExecutionId;
+  final String artifactDigest;
+  final String componentReleaseId;
+  final List<String> contractDigests;
+
+  ///独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
+  final String identityDigest;
+  final String operationId;
+  final String planDigest;
+
+  ///Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
+  ///Describe 与同 workflow 的当前 TaskProjection 核对。
+  final String runId;
+  final List<PlanStep> steps;
+  final String suiteDigest;
+  final String workflowId;
+
+  PlanClass({
+    required this.actionExecutionId,
+    required this.artifactDigest,
+    required this.componentReleaseId,
+    required this.contractDigests,
+    required this.identityDigest,
+    required this.operationId,
+    required this.planDigest,
+    required this.runId,
+    required this.steps,
+    required this.suiteDigest,
+    required this.workflowId,
+  });
+
+  factory PlanClass.fromJson(Map<String, dynamic> json) => PlanClass(
+    actionExecutionId: json["actionExecutionId"],
+    artifactDigest: json["artifactDigest"],
+    componentReleaseId: json["componentReleaseId"],
+    contractDigests: List<String>.from(json["contractDigests"].map((x) => x)),
+    identityDigest: json["identityDigest"],
+    operationId: json["operationId"],
+    planDigest: json["planDigest"],
+    runId: json["runId"],
+    steps: List<PlanStep>.from(json["steps"].map((x) => PlanStep.fromJson(x))),
+    suiteDigest: json["suiteDigest"],
+    workflowId: json["workflowId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "artifactDigest": artifactDigest,
+    "componentReleaseId": componentReleaseId,
+    "contractDigests": List<dynamic>.from(contractDigests.map((x) => x)),
+    "identityDigest": identityDigest,
+    "operationId": operationId,
+    "planDigest": planDigest,
+    "runId": runId,
+    "steps": List<dynamic>.from(steps.map((x) => x.toJson())),
+    "suiteDigest": suiteDigest,
+    "workflowId": workflowId,
+  });
+}
+
+class PlanStep {
+  final String caseKey;
+
+  ///只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
+  ///native 任务元数据。
+  final String? contractKey;
+  final int expectedHttpStatus;
+  final String expectedResponseJson;
+  final String idempotencyKey;
+  final AdapterProtocolOperation operation;
+  final String? referenceAssetId;
+  final String? referenceFromStepKey;
+  final String? referenceResourceId;
+  final String requestJson;
+  final String stepKey;
+
+  PlanStep({
+    required this.caseKey,
+    this.contractKey,
+    required this.expectedHttpStatus,
+    required this.expectedResponseJson,
+    required this.idempotencyKey,
+    required this.operation,
+    this.referenceAssetId,
+    this.referenceFromStepKey,
+    this.referenceResourceId,
+    required this.requestJson,
+    required this.stepKey,
+  });
+
+  factory PlanStep.fromJson(Map<String, dynamic> json) => PlanStep(
+    caseKey: json["caseKey"],
+    contractKey: json["contractKey"],
+    expectedHttpStatus: json["expectedHttpStatus"],
+    expectedResponseJson: json["expectedResponseJson"],
+    idempotencyKey: json["idempotencyKey"],
+    operation: adapterProtocolOperationValues.map[json["operation"]]!,
+    referenceAssetId: json["referenceAssetId"],
+    referenceFromStepKey: json["referenceFromStepKey"],
+    referenceResourceId: json["referenceResourceId"],
+    requestJson: json["requestJson"],
+    stepKey: json["stepKey"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "caseKey": caseKey,
+    "contractKey": contractKey,
+    "expectedHttpStatus": expectedHttpStatus,
+    "expectedResponseJson": expectedResponseJson,
+    "idempotencyKey": idempotencyKey,
+    "operation": adapterProtocolOperationValues.reverse[operation],
+    "referenceAssetId": referenceAssetId,
+    "referenceFromStepKey": referenceFromStepKey,
+    "referenceResourceId": referenceResourceId,
+    "requestJson": requestJson,
+    "stepKey": stepKey,
+  });
+}
+
+///受Catalog管理权限保护的已登记release元数据，正文与套件令牌不外露；REGISTERED不等于APPROVED或binding可用。
+class ComponentReleasePage {
+  final bool canRegister;
+  final int? nextOffset;
+  final List<ComponentReleaseView> releases;
+
+  ComponentReleasePage({
+    required this.canRegister,
+    this.nextOffset,
+    required this.releases,
+  });
+
+  factory ComponentReleasePage.fromJson(Map<String, dynamic> json) =>
+      ComponentReleasePage(
+        canRegister: json["canRegister"],
+        nextOffset: json["nextOffset"],
+        releases: List<ComponentReleaseView>.from(
+          json["releases"].map((x) => ComponentReleaseView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canRegister": canRegister,
+    "nextOffset": nextOffset,
+    "releases": List<dynamic>.from(releases.map((x) => x.toJson())),
+  });
+}
+
+class ComponentReleaseView {
+  final String artifactDigest;
+  final String componentReleaseId;
+  final String componentTypeKey;
+  final String manifestDigest;
+  final String operationId;
+  final String registeredByActionExecutionId;
+  final ComponentReleaseStatus status;
+  final String suiteDigest;
+  final String version;
+  final String workflowId;
+
+  ComponentReleaseView({
+    required this.artifactDigest,
+    required this.componentReleaseId,
+    required this.componentTypeKey,
+    required this.manifestDigest,
+    required this.operationId,
+    required this.registeredByActionExecutionId,
+    required this.status,
+    required this.suiteDigest,
+    required this.version,
+    required this.workflowId,
+  });
+
+  factory ComponentReleaseView.fromJson(Map<String, dynamic> json) =>
+      ComponentReleaseView(
+        artifactDigest: json["artifactDigest"],
+        componentReleaseId: json["componentReleaseId"],
+        componentTypeKey: json["componentTypeKey"],
+        manifestDigest: json["manifestDigest"],
+        operationId: json["operationId"],
+        registeredByActionExecutionId: json["registeredByActionExecutionId"],
+        status: componentReleaseStatusValues.map[json["status"]]!,
+        suiteDigest: json["suiteDigest"],
+        version: json["version"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "artifactDigest": artifactDigest,
+    "componentReleaseId": componentReleaseId,
+    "componentTypeKey": componentTypeKey,
+    "manifestDigest": manifestDigest,
+    "operationId": operationId,
+    "registeredByActionExecutionId": registeredByActionExecutionId,
+    "status": componentReleaseStatusValues.reverse[status],
+    "suiteDigest": suiteDigest,
+    "version": version,
+    "workflowId": workflowId,
+  });
+}
+
+enum ComponentReleaseStatus { APPROVED, REGISTERED, REJECTED, REVOKED }
+
+final componentReleaseStatusValues = EnumValues({
+  "APPROVED": ComponentReleaseStatus.APPROVED,
+  "REGISTERED": ComponentReleaseStatus.REGISTERED,
+  "REJECTED": ComponentReleaseStatus.REJECTED,
+  "REVOKED": ComponentReleaseStatus.REVOKED,
+});
+
+///原准入同事务登记后的不可变引用；不是组件激活或审批回执。
+class ComponentReleaseReceipt {
+  final String actionExecutionId;
+  final String componentReleaseId;
+  final String planDigest;
+  final ComponentReleaseStatus status;
+
+  ComponentReleaseReceipt({
+    required this.actionExecutionId,
+    required this.componentReleaseId,
+    required this.planDigest,
+    required this.status,
+  });
+
+  factory ComponentReleaseReceipt.fromJson(Map<String, dynamic> json) =>
+      ComponentReleaseReceipt(
+        actionExecutionId: json["actionExecutionId"],
+        componentReleaseId: json["componentReleaseId"],
+        planDigest: json["planDigest"],
+        status: componentReleaseStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "componentReleaseId": componentReleaseId,
+    "planDigest": planDigest,
+    "status": componentReleaseStatusValues.reverse[status],
   });
 }
 
@@ -6210,6 +7035,19 @@ class AgentVersionContentTurnLimits {
   });
 }
 
+///DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+class AutomationApprovalPolicyRef {
+  final String id;
+  final int version;
+
+  AutomationApprovalPolicyRef({required this.id, required this.version});
+
+  factory AutomationApprovalPolicyRef.fromJson(Map<String, dynamic> json) =>
+      AutomationApprovalPolicyRef(id: json["id"], version: json["version"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"id": id, "version": version});
+}
+
 ///Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
 ///SKIP，不另实现 cron。
 class AutomationScheduleSpec {
@@ -6240,11 +7078,13 @@ class AutomationScheduleSpec {
 ///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 class AutomationVersionContent {
   final AutomationVersionContentAction action;
+  final ApprovalPolicyElement? approvalPolicy;
   final AutomationResultTarget resultTarget;
   final AutomationVersionContentTrigger trigger;
 
   AutomationVersionContent({
     required this.action,
+    this.approvalPolicy,
     required this.resultTarget,
     required this.trigger,
   });
@@ -6252,12 +7092,16 @@ class AutomationVersionContent {
   factory AutomationVersionContent.fromJson(Map<String, dynamic> json) =>
       AutomationVersionContent(
         action: AutomationVersionContentAction.fromJson(json["action"]),
+        approvalPolicy: json["approvalPolicy"] == null
+            ? null
+            : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
         resultTarget: automationResultTargetValues.map[json["resultTarget"]]!,
         trigger: AutomationVersionContentTrigger.fromJson(json["trigger"]),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "action": action.toJson(),
+    "approvalPolicy": approvalPolicy?.toJson(),
     "resultTarget": automationResultTargetValues.reverse[resultTarget],
     "trigger": trigger.toJson(),
   });
@@ -6356,12 +7200,21 @@ class Step {
   final String contractKey;
   final String expectedOutputJson;
   final String inputJson;
+  final String? referenceAssetId;
+
+  ///只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定 Resource/Asset
+  ///目标一起进入规范化参数 hash。
+  final String? referenceFromStepKey;
+  final String? referenceResourceId;
   final String stepKey;
 
   Step({
     required this.contractKey,
     required this.expectedOutputJson,
     required this.inputJson,
+    this.referenceAssetId,
+    this.referenceFromStepKey,
+    this.referenceResourceId,
     required this.stepKey,
   });
 
@@ -6369,6 +7222,9 @@ class Step {
     contractKey: json["contractKey"],
     expectedOutputJson: json["expectedOutputJson"],
     inputJson: json["inputJson"],
+    referenceAssetId: json["referenceAssetId"],
+    referenceFromStepKey: json["referenceFromStepKey"],
+    referenceResourceId: json["referenceResourceId"],
     stepKey: json["stepKey"],
   );
 
@@ -6376,6 +7232,9 @@ class Step {
     "contractKey": contractKey,
     "expectedOutputJson": expectedOutputJson,
     "inputJson": inputJson,
+    "referenceAssetId": referenceAssetId,
+    "referenceFromStepKey": referenceFromStepKey,
+    "referenceResourceId": referenceResourceId,
     "stepKey": stepKey,
   });
 }
@@ -6582,6 +7441,247 @@ class CapabilityContractRegistrationResourceTypeFamilyClass {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"kind": kind, "typeKey": typeKey});
+}
+
+///07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
+///对实际请求签发，不接受静态凭据文件或用户 action 自报地址。
+class ComponentConformanceEnvironment {
+  final String adapterBaseUrl;
+  final String artifactDigest;
+  final int maxResponseBytes;
+  final int maxSteps;
+
+  ComponentConformanceEnvironment({
+    required this.adapterBaseUrl,
+    required this.artifactDigest,
+    required this.maxResponseBytes,
+    required this.maxSteps,
+  });
+
+  factory ComponentConformanceEnvironment.fromJson(Map<String, dynamic> json) =>
+      ComponentConformanceEnvironment(
+        adapterBaseUrl: json["adapterBaseUrl"],
+        artifactDigest: json["artifactDigest"],
+        maxResponseBytes: json["maxResponseBytes"],
+        maxSteps: json["maxSteps"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapterBaseUrl": adapterBaseUrl,
+    "artifactDigest": artifactDigest,
+    "maxResponseBytes": maxResponseBytes,
+    "maxSteps": maxSteps,
+  });
+}
+
+///隔离开发环境受控投递的协议夹具数据，不来自登记请求。Core 只采用固定协议用例并核对全部必需覆盖；没有脚本、条件、路径表达式或通过声明。
+class ComponentConformanceFixture {
+  final String artifactDigest;
+  final List<PlanStep> steps;
+
+  ComponentConformanceFixture({
+    required this.artifactDigest,
+    required this.steps,
+  });
+
+  factory ComponentConformanceFixture.fromJson(Map<String, dynamic> json) =>
+      ComponentConformanceFixture(
+        artifactDigest: json["artifactDigest"],
+        steps: List<PlanStep>.from(
+          json["steps"].map((x) => PlanStep.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "artifactDigest": artifactDigest,
+    "steps": List<dynamic>.from(steps.map((x) => x.toJson())),
+  });
+}
+
+///仅用于07§8A隔离套件的模拟上下文投递。不是生产 Catalog、Delegation 或
+///ResultExposurePolicy。独立密钥/issuer/audience；其完整摘要固定在原登记计划。
+class ComponentConformanceIdentity {
+  final String artifactDigest;
+  final String audience;
+  final List<ComponentConformanceIdentityContext> contexts;
+  final String issuer;
+  final String jwksFile;
+  final String privateKeyField;
+  final String secretAudience;
+  final String secretLocator;
+  final int secretVersion;
+  final int tokenSeconds;
+
+  ComponentConformanceIdentity({
+    required this.artifactDigest,
+    required this.audience,
+    required this.contexts,
+    required this.issuer,
+    required this.jwksFile,
+    required this.privateKeyField,
+    required this.secretAudience,
+    required this.secretLocator,
+    required this.secretVersion,
+    required this.tokenSeconds,
+  });
+
+  factory ComponentConformanceIdentity.fromJson(Map<String, dynamic> json) =>
+      ComponentConformanceIdentity(
+        artifactDigest: json["artifactDigest"],
+        audience: json["audience"],
+        contexts: List<ComponentConformanceIdentityContext>.from(
+          json["contexts"].map(
+            (x) => ComponentConformanceIdentityContext.fromJson(x),
+          ),
+        ),
+        issuer: json["issuer"],
+        jwksFile: json["jwksFile"],
+        privateKeyField: json["privateKeyField"],
+        secretAudience: json["secretAudience"],
+        secretLocator: json["secretLocator"],
+        secretVersion: json["secretVersion"],
+        tokenSeconds: json["tokenSeconds"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "artifactDigest": artifactDigest,
+    "audience": audience,
+    "contexts": List<dynamic>.from(contexts.map((x) => x.toJson())),
+    "issuer": issuer,
+    "jwksFile": jwksFile,
+    "privateKeyField": privateKeyField,
+    "secretAudience": secretAudience,
+    "secretLocator": secretLocator,
+    "secretVersion": secretVersion,
+    "tokenSeconds": tokenSeconds,
+  });
+}
+
+class ComponentConformanceIdentityContext {
+  final int actionDefinitionVersion;
+  final String actionKey;
+  final String actorPrincipalId;
+  final String caseKey;
+  final AdapterProtocolOperation operation;
+  final String resultExposurePolicyId;
+  final int resultExposurePolicyVersion;
+  final String stepKey;
+  final String? targetId;
+  final String targetType;
+  final String tenantId;
+  final String? workspaceId;
+
+  ComponentConformanceIdentityContext({
+    required this.actionDefinitionVersion,
+    required this.actionKey,
+    required this.actorPrincipalId,
+    required this.caseKey,
+    required this.operation,
+    required this.resultExposurePolicyId,
+    required this.resultExposurePolicyVersion,
+    required this.stepKey,
+    this.targetId,
+    required this.targetType,
+    required this.tenantId,
+    this.workspaceId,
+  });
+
+  factory ComponentConformanceIdentityContext.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentConformanceIdentityContext(
+    actionDefinitionVersion: json["actionDefinitionVersion"],
+    actionKey: json["actionKey"],
+    actorPrincipalId: json["actorPrincipalId"],
+    caseKey: json["caseKey"],
+    operation: adapterProtocolOperationValues.map[json["operation"]]!,
+    resultExposurePolicyId: json["resultExposurePolicyId"],
+    resultExposurePolicyVersion: json["resultExposurePolicyVersion"],
+    stepKey: json["stepKey"],
+    targetId: json["targetId"],
+    targetType: json["targetType"],
+    tenantId: json["tenantId"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionDefinitionVersion": actionDefinitionVersion,
+    "actionKey": actionKey,
+    "actorPrincipalId": actorPrincipalId,
+    "caseKey": caseKey,
+    "operation": adapterProtocolOperationValues.reverse[operation],
+    "resultExposurePolicyId": resultExposurePolicyId,
+    "resultExposurePolicyVersion": resultExposurePolicyVersion,
+    "stepKey": stepKey,
+    "targetId": targetId,
+    "targetType": targetType,
+    "tenantId": tenantId,
+    "workspaceId": workspaceId,
+  });
+}
+
+///组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
+///Worker 独立执行隔离套件。
+class ComponentReleaseRegistration {
+  final String bindingConfigSchemaJson;
+  final String manifestJson;
+  final String packageJson;
+
+  ComponentReleaseRegistration({
+    required this.bindingConfigSchemaJson,
+    required this.manifestJson,
+    required this.packageJson,
+  });
+
+  factory ComponentReleaseRegistration.fromJson(Map<String, dynamic> json) =>
+      ComponentReleaseRegistration(
+        bindingConfigSchemaJson: json["bindingConfigSchemaJson"],
+        manifestJson: json["manifestJson"],
+        packageJson: json["packageJson"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingConfigSchemaJson": bindingConfigSchemaJson,
+    "manifestJson": manifestJson,
+    "packageJson": packageJson,
+  });
+}
+
+///design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
+class ContentReference {
+  final String? assetId;
+  final String displayName;
+  final String mediaType;
+  final String nativeObjectRef;
+  final String nativeRevision;
+  final String resourceId;
+
+  ContentReference({
+    this.assetId,
+    required this.displayName,
+    required this.mediaType,
+    required this.nativeObjectRef,
+    required this.nativeRevision,
+    required this.resourceId,
+  });
+
+  factory ContentReference.fromJson(Map<String, dynamic> json) =>
+      ContentReference(
+        assetId: json["assetId"],
+        displayName: json["displayName"],
+        mediaType: json["mediaType"],
+        nativeObjectRef: json["nativeObjectRef"],
+        nativeRevision: json["nativeRevision"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "assetId": assetId,
+    "displayName": displayName,
+    "mediaType": mediaType,
+    "nativeObjectRef": nativeObjectRef,
+    "nativeRevision": nativeRevision,
+    "resourceId": resourceId,
+  });
 }
 
 class DelegationGrantParameters {
@@ -7197,6 +8297,9 @@ class AgentTaskAdvanceRequest {
 
 ///Core 查证的引用与状态；native completed 缺 reply/usage 证据仍 RUNNING。
 class AgentTaskAdvanceResult {
+  final ApprovalInputClass? approvalInput;
+  final String? approvalWorkflowId;
+
   ///已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
   final bool finishActivity;
   final String invocationId;
@@ -7204,6 +8307,8 @@ class AgentTaskAdvanceResult {
   final String waitingReason;
 
   AgentTaskAdvanceResult({
+    this.approvalInput,
+    this.approvalWorkflowId,
     required this.finishActivity,
     required this.invocationId,
     required this.status,
@@ -7212,6 +8317,10 @@ class AgentTaskAdvanceResult {
 
   factory AgentTaskAdvanceResult.fromJson(Map<String, dynamic> json) =>
       AgentTaskAdvanceResult(
+        approvalInput: json["approvalInput"] == null
+            ? null
+            : ApprovalInputClass.fromJson(json["approvalInput"]),
+        approvalWorkflowId: json["approvalWorkflowId"],
         finishActivity: json["finishActivity"],
         invocationId: json["invocationId"],
         status: taskStatusValues.map[json["status"]]!,
@@ -7219,12 +8328,244 @@ class AgentTaskAdvanceResult {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "approvalInput": approvalInput?.toJson(),
+    "approvalWorkflowId": approvalWorkflowId,
     "finishActivity": finishActivity,
     "invocationId": invocationId,
     "status": taskStatusValues.reverse[status],
     "waitingReason": waitingReason,
   });
 }
+
+///ApprovalWorkflow 的冻结输入（.design/06 §4）。运行中不得更换 Tenant、Workspace、target、参数摘要或策略版本；意图改变时建立新
+///ActionExecution。
+class ApprovalInputClass {
+  final int actionDefinitionVersion;
+  final String actionExecutionId;
+  final String actionKey;
+  final List<AffectedOwnerRefElement> affectedOwnerRefs;
+
+  ///APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED
+  final int consumeWindowSeconds;
+
+  ///RFC3339，UTC。Core 按 ApprovalPolicy.expires_in 在请求时冻结；Workflow 以 workflow.Now() 与之比较
+  final String expiresAt;
+  final String initiatorPrincipalId;
+  final String operationId;
+  final ApprovalOwnerRequirement ownerRequirement;
+  final String parameterHash;
+  final String policyId;
+  final int policyVersion;
+  final ResumeClass? resume;
+  final List<RoleRequirementElement> roleRequirements;
+  final ApprovalSelfApproval selfApproval;
+  final String targetId;
+  final String targetType;
+  final String tenantId;
+
+  ///TENANT_ONLY 动作缺省
+  final String? workspaceId;
+
+  ApprovalInputClass({
+    required this.actionDefinitionVersion,
+    required this.actionExecutionId,
+    required this.actionKey,
+    required this.affectedOwnerRefs,
+    required this.consumeWindowSeconds,
+    required this.expiresAt,
+    required this.initiatorPrincipalId,
+    required this.operationId,
+    required this.ownerRequirement,
+    required this.parameterHash,
+    required this.policyId,
+    required this.policyVersion,
+    this.resume,
+    required this.roleRequirements,
+    required this.selfApproval,
+    required this.targetId,
+    required this.targetType,
+    required this.tenantId,
+    this.workspaceId,
+  });
+
+  factory ApprovalInputClass.fromJson(
+    Map<String, dynamic> json,
+  ) => ApprovalInputClass(
+    actionDefinitionVersion: json["actionDefinitionVersion"],
+    actionExecutionId: json["actionExecutionId"],
+    actionKey: json["actionKey"],
+    affectedOwnerRefs: List<AffectedOwnerRefElement>.from(
+      json["affectedOwnerRefs"].map((x) => AffectedOwnerRefElement.fromJson(x)),
+    ),
+    consumeWindowSeconds: json["consumeWindowSeconds"],
+    expiresAt: json["expiresAt"],
+    initiatorPrincipalId: json["initiatorPrincipalId"],
+    operationId: json["operationId"],
+    ownerRequirement:
+        approvalOwnerRequirementValues.map[json["ownerRequirement"]]!,
+    parameterHash: json["parameterHash"],
+    policyId: json["policyId"],
+    policyVersion: json["policyVersion"],
+    resume: json["resume"] == null
+        ? null
+        : ResumeClass.fromJson(json["resume"]),
+    roleRequirements: List<RoleRequirementElement>.from(
+      json["roleRequirements"].map((x) => RoleRequirementElement.fromJson(x)),
+    ),
+    selfApproval: approvalSelfApprovalValues.map[json["selfApproval"]]!,
+    targetId: json["targetId"],
+    targetType: json["targetType"],
+    tenantId: json["tenantId"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionDefinitionVersion": actionDefinitionVersion,
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "affectedOwnerRefs": List<dynamic>.from(
+      affectedOwnerRefs.map((x) => x.toJson()),
+    ),
+    "consumeWindowSeconds": consumeWindowSeconds,
+    "expiresAt": expiresAt,
+    "initiatorPrincipalId": initiatorPrincipalId,
+    "operationId": operationId,
+    "ownerRequirement":
+        approvalOwnerRequirementValues.reverse[ownerRequirement],
+    "parameterHash": parameterHash,
+    "policyId": policyId,
+    "policyVersion": policyVersion,
+    "resume": resume?.toJson(),
+    "roleRequirements": List<dynamic>.from(
+      roleRequirements.map((x) => x.toJson()),
+    ),
+    "selfApproval": approvalSelfApprovalValues.reverse[selfApproval],
+    "targetId": targetId,
+    "targetType": targetType,
+    "tenantId": tenantId,
+    "workspaceId": workspaceId,
+  });
+}
+
+///请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
+class AffectedOwnerRefElement {
+  final String ownerPrincipalId;
+  final String targetId;
+  final String targetType;
+  final int targetVersion;
+
+  AffectedOwnerRefElement({
+    required this.ownerPrincipalId,
+    required this.targetId,
+    required this.targetType,
+    required this.targetVersion,
+  });
+
+  factory AffectedOwnerRefElement.fromJson(Map<String, dynamic> json) =>
+      AffectedOwnerRefElement(
+        ownerPrincipalId: json["ownerPrincipalId"],
+        targetId: json["targetId"],
+        targetType: json["targetType"],
+        targetVersion: json["targetVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "ownerPrincipalId": ownerPrincipalId,
+    "targetId": targetId,
+    "targetType": targetType,
+    "targetVersion": targetVersion,
+  });
+}
+
+///ApprovalPolicy.owner_requirement（.design/03 §4）。
+enum ApprovalOwnerRequirement { ALL_AFFECTED_OWNERS, NONE, TARGET_OWNER }
+
+final approvalOwnerRequirementValues = EnumValues({
+  "ALL_AFFECTED_OWNERS": ApprovalOwnerRequirement.ALL_AFFECTED_OWNERS,
+  "NONE": ApprovalOwnerRequirement.NONE,
+  "TARGET_OWNER": ApprovalOwnerRequirement.TARGET_OWNER,
+});
+
+///ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+///才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+class ResumeClass {
+  ///RFC3339，UTC
+  final String? consumedAt;
+
+  ///RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+  final String? consumeDeadline;
+  final List<DecisionElement> decisions;
+
+  ///此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+  ///从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+  final int eventBase;
+  final ReasonCode? reason;
+  final List<RefusalElement> refusals;
+  final ApprovalStatus status;
+
+  ResumeClass({
+    this.consumedAt,
+    this.consumeDeadline,
+    required this.decisions,
+    required this.eventBase,
+    this.reason,
+    required this.refusals,
+    required this.status,
+  });
+
+  factory ResumeClass.fromJson(Map<String, dynamic> json) => ResumeClass(
+    consumedAt: json["consumedAt"],
+    consumeDeadline: json["consumeDeadline"],
+    decisions: List<DecisionElement>.from(
+      json["decisions"].map((x) => DecisionElement.fromJson(x)),
+    ),
+    eventBase: json["eventBase"],
+    reason: json["reason"] == null
+        ? null
+        : reasonCodeValues.map[json["reason"]]!,
+    refusals: List<RefusalElement>.from(
+      json["refusals"].map((x) => RefusalElement.fromJson(x)),
+    ),
+    status: approvalStatusValues.map[json["status"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "consumedAt": consumedAt,
+    "consumeDeadline": consumeDeadline,
+    "decisions": List<dynamic>.from(decisions.map((x) => x.toJson())),
+    "eventBase": eventBase,
+    "reason": reasonCodeValues.reverse[reason],
+    "refusals": List<dynamic>.from(refusals.map((x) => x.toJson())),
+    "status": approvalStatusValues.reverse[status],
+  });
+}
+
+///一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+///§4）。
+class RefusalElement {
+  final String approverPrincipalId;
+  final ReasonCode reason;
+
+  RefusalElement({required this.approverPrincipalId, required this.reason});
+
+  factory RefusalElement.fromJson(Map<String, dynamic> json) => RefusalElement(
+    approverPrincipalId: json["approverPrincipalId"],
+    reason: reasonCodeValues.map[json["reason"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "approverPrincipalId": approverPrincipalId,
+    "reason": reasonCodeValues.reverse[reason],
+  });
+}
+
+///ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。
+enum ApprovalSelfApproval { ALLOW, DENY }
+
+final approvalSelfApprovalValues = EnumValues({
+  "ALLOW": ApprovalSelfApproval.ALLOW,
+  "DENY": ApprovalSelfApproval.DENY,
+});
 
 ///DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
 class AgentTaskWorkflowInput {
@@ -7502,126 +8843,6 @@ class ApprovalWorkflowInput {
     "workspaceId": workspaceId,
   });
 }
-
-///请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
-class AffectedOwnerRefElement {
-  final String ownerPrincipalId;
-  final String targetId;
-  final String targetType;
-  final int targetVersion;
-
-  AffectedOwnerRefElement({
-    required this.ownerPrincipalId,
-    required this.targetId,
-    required this.targetType,
-    required this.targetVersion,
-  });
-
-  factory AffectedOwnerRefElement.fromJson(Map<String, dynamic> json) =>
-      AffectedOwnerRefElement(
-        ownerPrincipalId: json["ownerPrincipalId"],
-        targetId: json["targetId"],
-        targetType: json["targetType"],
-        targetVersion: json["targetVersion"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "ownerPrincipalId": ownerPrincipalId,
-    "targetId": targetId,
-    "targetType": targetType,
-    "targetVersion": targetVersion,
-  });
-}
-
-///ApprovalPolicy.owner_requirement（.design/03 §4）。
-enum ApprovalOwnerRequirement { ALL_AFFECTED_OWNERS, NONE, TARGET_OWNER }
-
-final approvalOwnerRequirementValues = EnumValues({
-  "ALL_AFFECTED_OWNERS": ApprovalOwnerRequirement.ALL_AFFECTED_OWNERS,
-  "NONE": ApprovalOwnerRequirement.NONE,
-  "TARGET_OWNER": ApprovalOwnerRequirement.TARGET_OWNER,
-});
-
-///ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
-///才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
-class ResumeClass {
-  ///RFC3339，UTC
-  final String? consumedAt;
-
-  ///RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
-  final String? consumeDeadline;
-  final List<DecisionElement> decisions;
-
-  ///此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
-  ///从零数起，不加上它续跑后的投影会被当成旧事件丢掉
-  final int eventBase;
-  final ReasonCode? reason;
-  final List<RefusalElement> refusals;
-  final ApprovalStatus status;
-
-  ResumeClass({
-    this.consumedAt,
-    this.consumeDeadline,
-    required this.decisions,
-    required this.eventBase,
-    this.reason,
-    required this.refusals,
-    required this.status,
-  });
-
-  factory ResumeClass.fromJson(Map<String, dynamic> json) => ResumeClass(
-    consumedAt: json["consumedAt"],
-    consumeDeadline: json["consumeDeadline"],
-    decisions: List<DecisionElement>.from(
-      json["decisions"].map((x) => DecisionElement.fromJson(x)),
-    ),
-    eventBase: json["eventBase"],
-    reason: json["reason"] == null
-        ? null
-        : reasonCodeValues.map[json["reason"]]!,
-    refusals: List<RefusalElement>.from(
-      json["refusals"].map((x) => RefusalElement.fromJson(x)),
-    ),
-    status: approvalStatusValues.map[json["status"]]!,
-  );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "consumedAt": consumedAt,
-    "consumeDeadline": consumeDeadline,
-    "decisions": List<dynamic>.from(decisions.map((x) => x.toJson())),
-    "eventBase": eventBase,
-    "reason": reasonCodeValues.reverse[reason],
-    "refusals": List<dynamic>.from(refusals.map((x) => x.toJson())),
-    "status": approvalStatusValues.reverse[status],
-  });
-}
-
-///一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
-///§4）。
-class RefusalElement {
-  final String approverPrincipalId;
-  final ReasonCode reason;
-
-  RefusalElement({required this.approverPrincipalId, required this.reason});
-
-  factory RefusalElement.fromJson(Map<String, dynamic> json) => RefusalElement(
-    approverPrincipalId: json["approverPrincipalId"],
-    reason: reasonCodeValues.map[json["reason"]]!,
-  );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "approverPrincipalId": approverPrincipalId,
-    "reason": reasonCodeValues.reverse[reason],
-  });
-}
-
-///ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。
-enum ApprovalSelfApproval { ALLOW, DENY }
-
-final approvalSelfApprovalValues = EnumValues({
-  "ALLOW": ApprovalSelfApproval.ALLOW,
-  "DENY": ApprovalSelfApproval.DENY,
-});
 
 ///invalidate Update 的参数：Core 在批准后重新准入不通过时发出（.design/06 §4）。Update ID 固定为
 ///<action_execution_id>:invalidate。
@@ -7970,6 +9191,394 @@ class AutomationScheduleTaskInput {
     "cancelPending": cancelPending,
     "scheduleId": scheduleId,
     "sourceKind": automationScheduleSourceValues.reverse[sourceKind],
+  });
+}
+
+///受信 Worker 的一次实际线协议观察，附着冻结 ActionExecution。Core 以自身 plan 逐项匹配，不接收 pass 布尔值；UNKNOWN
+///不表示套件失败或成功。响应正文与测试凭据不进入报告。
+class ComponentConformanceObservation {
+  final String actionExecutionId;
+  final String artifactDigest;
+  final String componentReleaseId;
+  final List<String> contractDigests;
+  final List<ObservationElement> observations;
+  final String operationId;
+  final String planDigest;
+  final String runId;
+  final String suiteDigest;
+  final String workflowId;
+
+  ComponentConformanceObservation({
+    required this.actionExecutionId,
+    required this.artifactDigest,
+    required this.componentReleaseId,
+    required this.contractDigests,
+    required this.observations,
+    required this.operationId,
+    required this.planDigest,
+    required this.runId,
+    required this.suiteDigest,
+    required this.workflowId,
+  });
+
+  factory ComponentConformanceObservation.fromJson(Map<String, dynamic> json) =>
+      ComponentConformanceObservation(
+        actionExecutionId: json["actionExecutionId"],
+        artifactDigest: json["artifactDigest"],
+        componentReleaseId: json["componentReleaseId"],
+        contractDigests: List<String>.from(
+          json["contractDigests"].map((x) => x),
+        ),
+        observations: List<ObservationElement>.from(
+          json["observations"].map((x) => ObservationElement.fromJson(x)),
+        ),
+        operationId: json["operationId"],
+        planDigest: json["planDigest"],
+        runId: json["runId"],
+        suiteDigest: json["suiteDigest"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "artifactDigest": artifactDigest,
+    "componentReleaseId": componentReleaseId,
+    "contractDigests": List<dynamic>.from(contractDigests.map((x) => x)),
+    "observations": List<dynamic>.from(observations.map((x) => x.toJson())),
+    "operationId": operationId,
+    "planDigest": planDigest,
+    "runId": runId,
+    "suiteDigest": suiteDigest,
+    "workflowId": workflowId,
+  });
+}
+
+class ObservationElement {
+  final String caseKey;
+  final ContentReferenceClass? contentReference;
+  final ErrorClass? errorClass;
+  final int httpStatus;
+  final ExecutionClass? nativeObservation;
+  final NativeScopeObservationClass? nativeScopeObservation;
+  final AdapterProtocolOperation operation;
+  final String requestDigest;
+  final String responseDigest;
+
+  ///实际返回的能力结果摘要；原结果正文不进入报告或 Core。
+  final String? resultDigest;
+  final String stepKey;
+
+  ObservationElement({
+    required this.caseKey,
+    this.contentReference,
+    this.errorClass,
+    required this.httpStatus,
+    this.nativeObservation,
+    this.nativeScopeObservation,
+    required this.operation,
+    required this.requestDigest,
+    required this.responseDigest,
+    this.resultDigest,
+    required this.stepKey,
+  });
+
+  factory ObservationElement.fromJson(Map<String, dynamic> json) =>
+      ObservationElement(
+        caseKey: json["caseKey"],
+        contentReference: json["contentReference"] == null
+            ? null
+            : ContentReferenceClass.fromJson(json["contentReference"]),
+        errorClass: json["errorClass"] == null
+            ? null
+            : errorClassValues.map[json["errorClass"]]!,
+        httpStatus: json["httpStatus"],
+        nativeObservation: json["nativeObservation"] == null
+            ? null
+            : ExecutionClass.fromJson(json["nativeObservation"]),
+        nativeScopeObservation: json["nativeScopeObservation"] == null
+            ? null
+            : NativeScopeObservationClass.fromJson(
+                json["nativeScopeObservation"],
+              ),
+        operation: adapterProtocolOperationValues.map[json["operation"]]!,
+        requestDigest: json["requestDigest"],
+        responseDigest: json["responseDigest"],
+        resultDigest: json["resultDigest"],
+        stepKey: json["stepKey"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "caseKey": caseKey,
+    "contentReference": contentReference?.toJson(),
+    "errorClass": errorClassValues.reverse[errorClass],
+    "httpStatus": httpStatus,
+    "nativeObservation": nativeObservation?.toJson(),
+    "nativeScopeObservation": nativeScopeObservation?.toJson(),
+    "operation": adapterProtocolOperationValues.reverse[operation],
+    "requestDigest": requestDigest,
+    "responseDigest": responseDigest,
+    "resultDigest": resultDigest,
+    "stepKey": stepKey,
+  });
+}
+
+///DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
+class NativeScopeObservationClass {
+  final String? nativeRef;
+  final String? nativeType;
+  final String platformResourceRef;
+  final NativeScopeResult result;
+
+  NativeScopeObservationClass({
+    this.nativeRef,
+    this.nativeType,
+    required this.platformResourceRef,
+    required this.result,
+  });
+
+  factory NativeScopeObservationClass.fromJson(Map<String, dynamic> json) =>
+      NativeScopeObservationClass(
+        nativeRef: json["nativeRef"],
+        nativeType: json["nativeType"],
+        platformResourceRef: json["platformResourceRef"],
+        result: nativeScopeResultValues.map[json["result"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nativeRef": nativeRef,
+    "nativeType": nativeType,
+    "platformResourceRef": platformResourceRef,
+    "result": nativeScopeResultValues.reverse[result],
+  });
+}
+
+///受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
+class ComponentConformancePlan {
+  final String actionExecutionId;
+  final String artifactDigest;
+  final String componentReleaseId;
+  final List<String> contractDigests;
+
+  ///独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
+  final String identityDigest;
+  final String operationId;
+  final String planDigest;
+
+  ///Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
+  ///Describe 与同 workflow 的当前 TaskProjection 核对。
+  final String runId;
+  final List<ComponentConformancePlanStep> steps;
+  final String suiteDigest;
+  final String workflowId;
+
+  ComponentConformancePlan({
+    required this.actionExecutionId,
+    required this.artifactDigest,
+    required this.componentReleaseId,
+    required this.contractDigests,
+    required this.identityDigest,
+    required this.operationId,
+    required this.planDigest,
+    required this.runId,
+    required this.steps,
+    required this.suiteDigest,
+    required this.workflowId,
+  });
+
+  factory ComponentConformancePlan.fromJson(Map<String, dynamic> json) =>
+      ComponentConformancePlan(
+        actionExecutionId: json["actionExecutionId"],
+        artifactDigest: json["artifactDigest"],
+        componentReleaseId: json["componentReleaseId"],
+        contractDigests: List<String>.from(
+          json["contractDigests"].map((x) => x),
+        ),
+        identityDigest: json["identityDigest"],
+        operationId: json["operationId"],
+        planDigest: json["planDigest"],
+        runId: json["runId"],
+        steps: List<ComponentConformancePlanStep>.from(
+          json["steps"].map((x) => ComponentConformancePlanStep.fromJson(x)),
+        ),
+        suiteDigest: json["suiteDigest"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "artifactDigest": artifactDigest,
+    "componentReleaseId": componentReleaseId,
+    "contractDigests": List<dynamic>.from(contractDigests.map((x) => x)),
+    "identityDigest": identityDigest,
+    "operationId": operationId,
+    "planDigest": planDigest,
+    "runId": runId,
+    "steps": List<dynamic>.from(steps.map((x) => x.toJson())),
+    "suiteDigest": suiteDigest,
+    "workflowId": workflowId,
+  });
+}
+
+class ComponentConformancePlanStep {
+  final String caseKey;
+
+  ///只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
+  ///native 任务元数据。
+  final String? contractKey;
+  final int expectedHttpStatus;
+  final String expectedResponseJson;
+  final String idempotencyKey;
+  final AdapterProtocolOperation operation;
+  final String? referenceAssetId;
+  final String? referenceFromStepKey;
+  final String? referenceResourceId;
+  final String requestJson;
+  final String stepKey;
+
+  ComponentConformancePlanStep({
+    required this.caseKey,
+    this.contractKey,
+    required this.expectedHttpStatus,
+    required this.expectedResponseJson,
+    required this.idempotencyKey,
+    required this.operation,
+    this.referenceAssetId,
+    this.referenceFromStepKey,
+    this.referenceResourceId,
+    required this.requestJson,
+    required this.stepKey,
+  });
+
+  factory ComponentConformancePlanStep.fromJson(Map<String, dynamic> json) =>
+      ComponentConformancePlanStep(
+        caseKey: json["caseKey"],
+        contractKey: json["contractKey"],
+        expectedHttpStatus: json["expectedHttpStatus"],
+        expectedResponseJson: json["expectedResponseJson"],
+        idempotencyKey: json["idempotencyKey"],
+        operation: adapterProtocolOperationValues.map[json["operation"]]!,
+        referenceAssetId: json["referenceAssetId"],
+        referenceFromStepKey: json["referenceFromStepKey"],
+        referenceResourceId: json["referenceResourceId"],
+        requestJson: json["requestJson"],
+        stepKey: json["stepKey"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "caseKey": caseKey,
+    "contractKey": contractKey,
+    "expectedHttpStatus": expectedHttpStatus,
+    "expectedResponseJson": expectedResponseJson,
+    "idempotencyKey": idempotencyKey,
+    "operation": adapterProtocolOperationValues.reverse[operation],
+    "referenceAssetId": referenceAssetId,
+    "referenceFromStepKey": referenceFromStepKey,
+    "referenceResourceId": referenceResourceId,
+    "requestJson": requestJson,
+    "stepKey": stepKey,
+  });
+}
+
+///原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
+///history 承接，不建立另一执行账本。
+class ComponentConformanceProbe {
+  final ContentReferenceClass? contentReference;
+  final PlanClass plan;
+
+  ///只查询同一步冻结幂等键；不再发送原 execute/CREATE。
+  final bool? reconcile;
+  final int stepIndex;
+
+  ComponentConformanceProbe({
+    this.contentReference,
+    required this.plan,
+    this.reconcile,
+    required this.stepIndex,
+  });
+
+  factory ComponentConformanceProbe.fromJson(Map<String, dynamic> json) =>
+      ComponentConformanceProbe(
+        contentReference: json["contentReference"] == null
+            ? null
+            : ContentReferenceClass.fromJson(json["contentReference"]),
+        plan: PlanClass.fromJson(json["plan"]),
+        reconcile: json["reconcile"],
+        stepIndex: json["stepIndex"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contentReference": contentReference?.toJson(),
+    "plan": plan.toJson(),
+    "reconcile": reconcile,
+    "stepIndex": stepIndex,
+  });
+}
+
+class ComponentConformanceStepObservation {
+  final String caseKey;
+  final ContentReferenceClass? contentReference;
+  final ErrorClass? errorClass;
+  final int httpStatus;
+  final ExecutionClass? nativeObservation;
+  final NativeScopeObservationClass? nativeScopeObservation;
+  final AdapterProtocolOperation operation;
+  final String requestDigest;
+  final String responseDigest;
+
+  ///实际返回的能力结果摘要；原结果正文不进入报告或 Core。
+  final String? resultDigest;
+  final String stepKey;
+
+  ComponentConformanceStepObservation({
+    required this.caseKey,
+    this.contentReference,
+    this.errorClass,
+    required this.httpStatus,
+    this.nativeObservation,
+    this.nativeScopeObservation,
+    required this.operation,
+    required this.requestDigest,
+    required this.responseDigest,
+    this.resultDigest,
+    required this.stepKey,
+  });
+
+  factory ComponentConformanceStepObservation.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentConformanceStepObservation(
+    caseKey: json["caseKey"],
+    contentReference: json["contentReference"] == null
+        ? null
+        : ContentReferenceClass.fromJson(json["contentReference"]),
+    errorClass: json["errorClass"] == null
+        ? null
+        : errorClassValues.map[json["errorClass"]]!,
+    httpStatus: json["httpStatus"],
+    nativeObservation: json["nativeObservation"] == null
+        ? null
+        : ExecutionClass.fromJson(json["nativeObservation"]),
+    nativeScopeObservation: json["nativeScopeObservation"] == null
+        ? null
+        : NativeScopeObservationClass.fromJson(json["nativeScopeObservation"]),
+    operation: adapterProtocolOperationValues.map[json["operation"]]!,
+    requestDigest: json["requestDigest"],
+    responseDigest: json["responseDigest"],
+    resultDigest: json["resultDigest"],
+    stepKey: json["stepKey"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "caseKey": caseKey,
+    "contentReference": contentReference?.toJson(),
+    "errorClass": errorClassValues.reverse[errorClass],
+    "httpStatus": httpStatus,
+    "nativeObservation": nativeObservation?.toJson(),
+    "nativeScopeObservation": nativeScopeObservation?.toJson(),
+    "operation": adapterProtocolOperationValues.reverse[operation],
+    "requestDigest": requestDigest,
+    "responseDigest": responseDigest,
+    "resultDigest": resultDigest,
+    "stepKey": stepKey,
   });
 }
 

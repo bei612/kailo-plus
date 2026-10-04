@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_release_page.schema.json",
+  "title": "ComponentReleasePage",
+  "description": "受Catalog管理权限保护的已登记release元数据，正文与套件令牌不外露；REGISTERED不等于APPROVED或binding可用。",
+  "type": "object", "additionalProperties": false,
+  "required": ["releases", "canRegister"],
+  "properties": {
+    "canRegister": {"type": "boolean"},
+    "nextOffset": {"type": "integer"},
+    "releases": {
+      "type": "array",
+      "items": {
+        "title": "ComponentReleaseView",
+        "type": "object", "additionalProperties": false,
+        "required": ["componentReleaseId", "componentTypeKey", "version", "status", "artifactDigest", "manifestDigest", "registeredByActionExecutionId", "operationId", "workflowId", "suiteDigest"],
+        "properties": {
+          "componentReleaseId": {"type": "string", "format": "uuid"},
+          "componentTypeKey": {"type": "string"}, "version": {"type": "string"},
+          "status": {"$ref": "../enums/component_release_status.schema.json"},
+          "artifactDigest": {"type": "string"}, "manifestDigest": {"type": "string"},
+          "registeredByActionExecutionId": {"type": "string", "format": "uuid"},
+          "operationId": {"type": "string", "format": "uuid"},
+          "workflowId": {"type": "string"}, "suiteDigest": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -535,8 +535,11 @@ const APPROVAL_QUERY: &str = "
     join admission.action_execution ae on ae.id = ap.action_execution_id
     join projection.workflow_ref w on w.workflow_id = ap.workflow_id
     join catalog.action_definition d on d.action_key = ae.action_key and d.version = ae.action_version
+    left join catalog.agent_invocation ai on ai.action_execution_id=ae.parent_action_execution_id and ae.action_key='automation.run'
+    left join catalog.automation_version av on av.asset_id=ai.automation_version_asset_id and av.automation_resource_id=ai.automation_resource_id
     join catalog.approval_policy pol
-      on pol.id = d.approval_policy_id and pol.version = d.approval_policy_version
+      on pol.id = coalesce(d.approval_policy_id,av.approval_policy_id)
+        and pol.version = coalesce(d.approval_policy_version,av.approval_policy_version)
     where ap.tenant_id = $1";
 
 impl ApprovalRow {
@@ -589,6 +592,19 @@ async fn eligible(
 ) -> Result<bool, Refusal> {
     if row.self_approval == "DENY" && row.initiator_principal_id == ctx.tenant_principal_id {
         return Ok(false);
+    }
+    if row.action_key == crate::automation::ACTION {
+        return if ctx.access_mode == contracts::PlatformSessionAccessMode::Full {
+            crate::automation::step_approval::approver_eligible(
+                g,
+                row.action_execution_id,
+                ctx.tenant_id,
+                ctx.tenant_principal_id,
+            )
+            .await
+        } else {
+            Ok(false)
+        };
     }
     let catalog_approval = row.action_key == crate::capability_contract::APPROVE;
     if catalog_approval {

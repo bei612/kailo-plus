@@ -59,6 +59,14 @@ Component SDK 与示例组件（`DD-76`、`DD-101`），三者必须对同一条
    （`.design/06` §5.1）。
 5. **网络位置。** adapter 运行体在平台运维域内（`DD-94`）；出站与入站流量只走该 binding 的
    私有数据网络，不经公开入口与 AgentGateway 的 Browser 路由。
+6. **内容引用编码。** `contracts/domain/content_reference.schema.json` 固定 `.design/03` 的六个
+   原字段；可空 Asset 以字段缺省表示。执行响应以唯一 `contentReference` typed 槽传递引用，
+   `resultJson` 不作为引用的第二来源，平台不猜测其中的路径或用原生 API 重建引用。后续 execute
+   将该完整引用作为规范化 args 的一部分，并进入 request digest 与 ActionToken 参数 hash。
+   隔离一致性向量只用同 case 的前序 `stepKey` 引用此槽，同时固定 Resource/Asset 授权目标；
+   Core/Worker 校验实际返回的 target、native ref 与 revision，缺少引用、串 scope 或往返漂移均拒绝。
+   此编码没有新增 Adapter 逻辑操作、内容权威或表达式语言。静态测试 token 不证明动态参数的授权
+   绑定；生产签发仍服从第 2 条与 `.design/03` §6，隔离模拟身份不构成生产 binding 验收。
 
 ## 后果
 

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/native_scope_result.schema.json",
+  "title": "NativeScopeResult",
+  "type": "string",
+  "enum": ["FOUND", "REFUSED", "ABSENT_FENCED"]
+}

@@ -77,7 +77,7 @@ impl jsonschema::Retrieve for NoExternalSchema {
     }
 }
 
-fn schema_validator(
+pub(crate) fn schema_validator(
     schema: &Value,
     documents: &BTreeMap<String, Value>,
 ) -> Result<jsonschema::Validator, Refusal> {
@@ -155,10 +155,45 @@ fn vectors(
             return Err(bad());
         }
         let mut step_keys = BTreeSet::new();
+        let mut reference_targets = BTreeMap::new();
         for step in steps {
             let key = step["stepKey"].as_str().ok_or_else(bad)?.to_owned();
             if !identifier(&key) || !step_keys.insert(key) {
                 return Err(bad());
+            }
+            match step.get("referenceResourceId") {
+                Some(resource) => {
+                    let resource =
+                        Uuid::parse_str(resource.as_str().ok_or_else(bad)?).map_err(|_| bad())?;
+                    if resource.is_nil() {
+                        return Err(bad());
+                    }
+                    let asset = step
+                        .get("referenceAssetId")
+                        .map(|asset| {
+                            Uuid::parse_str(asset.as_str().ok_or_else(bad)?).map_err(|_| bad())
+                        })
+                        .transpose()?;
+                    if asset.is_some_and(|asset| asset.is_nil()) {
+                        return Err(bad());
+                    }
+                    if let Some(previous) = step.get("referenceFromStepKey") {
+                        let previous = previous.as_str().ok_or_else(bad)?;
+                        if reference_targets.get(previous) != Some(&(resource, asset)) {
+                            return Err(bad());
+                        }
+                    }
+                    reference_targets.insert(
+                        step["stepKey"].as_str().ok_or_else(bad)?.to_owned(),
+                        (resource, asset),
+                    );
+                }
+                None if step.get("referenceAssetId").is_some()
+                    || step.get("referenceFromStepKey").is_some() =>
+                {
+                    return Err(bad())
+                }
+                None => {}
             }
             let contract_key = step["contractKey"].as_str().ok_or_else(bad)?.to_owned();
             let operation = operations.get(contract_key.as_str()).ok_or_else(bad)?;

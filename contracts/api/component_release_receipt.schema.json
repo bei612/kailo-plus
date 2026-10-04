@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_release_receipt.schema.json",
+  "title": "ComponentReleaseReceipt",
+  "description": "原准入同事务登记后的不可变引用；不是组件激活或审批回执。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "componentReleaseId", "planDigest", "status"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "componentReleaseId": {"type": "string", "format": "uuid"},
+    "planDigest": {"type": "string"},
+    "status": {"$ref": "../enums/component_release_status.schema.json"}
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/adapter_protocol_operation.schema.json",
+  "title": "AdapterProtocolOperation",
+  "description": "ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。",
+  "type": "string",
+  "enum": ["handshake", "validate_binding", "resolve_native_scope", "execute", "observe", "cancel", "reconcile", "query_revision", "extract_usage", "map_native_status_error"]
+}

@@ -100,6 +100,91 @@ export enum VariantKind {
 }
 
 /**
+ * ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
+ * 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
+ */
+export interface AdapterExecutionObservation {
+    cancelCapability: NativeCancelCapability;
+    idempotencyKey:   string;
+    lastObservedAt?:  string;
+    nativeId?:        string;
+    nativeStatus?:    string;
+    nativeType:       string;
+    platformStatus:   ExternalExecutionStatus;
+    terminalAt?:      string;
+}
+
+export enum NativeCancelCapability {
+    Supported = "SUPPORTED",
+    Unsupported = "UNSUPPORTED",
+}
+
+/**
+ * design03§6 ExternalExecution 的既定平台状态；HTTP成功和cancel accepted均不构成终态。
+ */
+export enum ExternalExecutionStatus {
+    Cancelled = "CANCELLED",
+    Failed = "FAILED",
+    PendingDispatch = "PENDING_DISPATCH",
+    Running = "RUNNING",
+    Succeeded = "SUCCEEDED",
+    Unknown = "UNKNOWN",
+}
+
+/**
+ * ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入
+ * Core 的套件报告。
+ */
+export interface AdapterExecutionResponse {
+    contentReference?: ContentReferenceClass;
+    execution:         ExecutionClass;
+    resultJson?:       string;
+}
+
+/**
+ * design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
+ */
+export interface ContentReferenceClass {
+    assetId?:        string;
+    displayName:     string;
+    mediaType:       string;
+    nativeObjectRef: string;
+    nativeRevision:  string;
+    resourceId:      string;
+}
+
+/**
+ * ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
+ * 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
+ */
+export interface ExecutionClass {
+    cancelCapability: NativeCancelCapability;
+    idempotencyKey:   string;
+    lastObservedAt?:  string;
+    nativeId?:        string;
+    nativeStatus?:    string;
+    nativeType:       string;
+    platformStatus:   ExternalExecutionStatus;
+    terminalAt?:      string;
+}
+
+/**
+ * DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
+ */
+export interface AdapterScopeObservation {
+    nativeRef?:          string;
+    nativeType?:         string;
+    platformResourceRef: string;
+    result:              NativeScopeResult;
+}
+
+export enum NativeScopeResult {
+    AbsentFenced = "ABSENT_FENCED",
+    Found = "FOUND",
+    Refused = "REFUSED",
+}
+
+/**
  * POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
  * actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
  */
@@ -129,6 +214,7 @@ export interface ActionCommand {
      * 仅 capability_contract.register：真实 schema 与测试向量内容。
      */
     capabilityContractRegistration?: CapabilityContractRegistrationClass;
+    componentReleaseRegistration?:   ComponentReleaseRegistrationClass;
     /**
      * 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
      */
@@ -268,9 +354,10 @@ export interface AgentVersionContentTurnLimits {
  * REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
  */
 export interface AutomationVersionContentClass {
-    action:       AutomationVersionContentAction;
-    resultTarget: AutomationResultTarget;
-    trigger:      AutomationVersionContentTrigger;
+    action:          AutomationVersionContentAction;
+    approvalPolicy?: ApprovalPolicyElement;
+    resultTarget:    AutomationResultTarget;
+    trigger:         AutomationVersionContentTrigger;
 }
 
 export interface AutomationVersionContentAction {
@@ -281,6 +368,14 @@ export interface AutomationVersionContentAction {
 export enum ActionKind {
     AgentTurn = "AGENT_TURN",
     PostMessage = "POST_MESSAGE",
+}
+
+/**
+ * DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+ */
+export interface ApprovalPolicyElement {
+    id:      string;
+    version: number;
 }
 
 export enum AutomationResultTarget {
@@ -393,6 +488,16 @@ export enum CapabilityRequiredDeclaration {
 export interface CapabilityContractRegistrationResourceTypeFamily {
     kind:    string;
     typeKey: string;
+}
+
+/**
+ * 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
+ * Worker 独立执行隔离套件。
+ */
+export interface ComponentReleaseRegistrationClass {
+    bindingConfigSchemaJson: string;
+    manifestJson:            string;
+    packageJson:             string;
 }
 
 /**
@@ -1403,7 +1508,8 @@ export interface VersionClass {
 }
 
 export interface AutomationPage {
-    automations: AutomationElement[];
+    automations:                AutomationElement[];
+    availableApprovalPolicies?: ApprovalPolicyElement[];
     /**
      * 本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。
      */
@@ -1494,6 +1600,7 @@ export enum TaskStatus {
 export enum WorkflowKind {
     AgentInstallation = "AGENT_INSTALLATION",
     BuzzIdentityProjection = "BUZZ_IDENTITY_PROJECTION",
+    ComponentRelease = "COMPONENT_RELEASE",
     MembershipProjection = "MEMBERSHIP_PROJECTION",
     MembershipRevocation = "MEMBERSHIP_REVOCATION",
     SecretRefRehome = "SECRET_REF_REHOME",
@@ -1621,6 +1728,147 @@ export interface ClientKeyStatus {
      * 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
      */
     workflowId?: string;
+}
+
+/**
+ *
+ * Core私网仅向受信Worker返回的逐次隔离探测凭据。token仅在Activity内存中使用，禁止进入Temporal输入、输出或报告。其声明绑定固定模拟上下文与完整实际参数，不授予生产binding授权。
+ */
+export interface ComponentConformanceAuthorization {
+    expectedResponseDigest: string;
+    operation:              AdapterProtocolOperation;
+    requestDigest:          string;
+    requestJson:            string;
+    token:                  string;
+}
+
+/**
+ * ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+ */
+export enum AdapterProtocolOperation {
+    Cancel = "cancel",
+    Execute = "execute",
+    ExtractUsage = "extract_usage",
+    Handshake = "handshake",
+    MapNativeStatusError = "map_native_status_error",
+    Observe = "observe",
+    QueryRevision = "query_revision",
+    Reconcile = "reconcile",
+    ResolveNativeScope = "resolve_native_scope",
+    ValidateBinding = "validate_binding",
+}
+
+/**
+ * Core原canonical_digest对同一已授权步骤实际响应的摘要；仅规范化事实，不声明套件通过或登记成功。
+ */
+export interface ComponentConformanceWireDigests {
+    requestDigest:  string;
+    responseDigest: string;
+    resultDigest?:  string;
+}
+
+/**
+ * 受信Worker实际HTTP响应的瞬时核验输入。正文仅在Activity与Core请求内存中存在，不得进入Temporal历史、报告、日志或数据库；不是用户上传的通过声明。
+ */
+export interface ComponentConformanceWireObservation {
+    httpStatus:   number;
+    probe:        ProbeClass;
+    responseJson: string;
+}
+
+/**
+ * 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
+ * history 承接，不建立另一执行账本。
+ */
+export interface ProbeClass {
+    contentReference?: ContentReferenceClass;
+    plan:              PlanClass;
+    /**
+     * 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
+     */
+    reconcile?: boolean;
+    stepIndex:  number;
+}
+
+/**
+ * 受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
+ */
+export interface PlanClass {
+    actionExecutionId:  string;
+    artifactDigest:     string;
+    componentReleaseId: string;
+    contractDigests:    string[];
+    /**
+     * 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
+     */
+    identityDigest: string;
+    operationId:    string;
+    planDigest:     string;
+    /**
+     * Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
+     * Describe 与同 workflow 的当前 TaskProjection 核对。
+     */
+    runId:       string;
+    steps:       PlanStep[];
+    suiteDigest: string;
+    workflowId:  string;
+}
+
+export interface PlanStep {
+    caseKey: string;
+    /**
+     * 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
+     * native 任务元数据。
+     */
+    contractKey?:          string;
+    expectedHttpStatus:    number;
+    expectedResponseJson:  string;
+    idempotencyKey:        string;
+    operation:             AdapterProtocolOperation;
+    referenceAssetId?:     string;
+    referenceFromStepKey?: string;
+    referenceResourceId?:  string;
+    requestJson:           string;
+    stepKey:               string;
+}
+
+/**
+ * 受Catalog管理权限保护的已登记release元数据，正文与套件令牌不外露；REGISTERED不等于APPROVED或binding可用。
+ */
+export interface ComponentReleasePage {
+    canRegister: boolean;
+    nextOffset?: number;
+    releases:    ComponentReleaseView[];
+}
+
+export interface ComponentReleaseView {
+    artifactDigest:                string;
+    componentReleaseId:            string;
+    componentTypeKey:              string;
+    manifestDigest:                string;
+    operationId:                   string;
+    registeredByActionExecutionId: string;
+    status:                        ComponentReleaseStatus;
+    suiteDigest:                   string;
+    version:                       string;
+    workflowId:                    string;
+}
+
+export enum ComponentReleaseStatus {
+    Approved = "APPROVED",
+    Registered = "REGISTERED",
+    Rejected = "REJECTED",
+    Revoked = "REVOKED",
+}
+
+/**
+ * 原准入同事务登记后的不可变引用；不是组件激活或审批回执。
+ */
+export interface ComponentReleaseReceipt {
+    actionExecutionId:  string;
+    componentReleaseId: string;
+    planDigest:         string;
+    status:             ComponentReleaseStatus;
 }
 
 /**
@@ -2243,6 +2491,14 @@ export interface AgentVersionContentTurnLimitsClass {
 }
 
 /**
+ * DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+ */
+export interface AutomationApprovalPolicyRef {
+    id:      string;
+    version: number;
+}
+
+/**
  * Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
  * SKIP，不另实现 cron。
  */
@@ -2256,9 +2512,10 @@ export interface AutomationScheduleSpec {
  * REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
  */
 export interface AutomationVersionContent {
-    action:       AutomationVersionContentActionClass;
-    resultTarget: AutomationResultTarget;
-    trigger:      AutomationVersionContentTriggerClass;
+    action:          AutomationVersionContentActionClass;
+    approvalPolicy?: ApprovalPolicyElement;
+    resultTarget:    AutomationResultTarget;
+    trigger:         AutomationVersionContentTriggerClass;
 }
 
 export interface AutomationVersionContentActionClass {
@@ -2291,7 +2548,14 @@ export interface Step {
     contractKey:        string;
     expectedOutputJson: string;
     inputJson:          string;
-    stepKey:            string;
+    referenceAssetId?:  string;
+    /**
+     * 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定 Resource/Asset
+     * 目标一起进入规范化参数 hash。
+     */
+    referenceFromStepKey?: string;
+    referenceResourceId?:  string;
+    stepKey:               string;
 }
 
 export enum CapabilityVectorFormat {
@@ -2343,6 +2607,79 @@ export interface CapabilityContractRegistrationOperationContractClass {
 export interface CapabilityContractRegistrationResourceTypeFamilyClass {
     kind:    string;
     typeKey: string;
+}
+
+/**
+ * 07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
+ * 对实际请求签发，不接受静态凭据文件或用户 action 自报地址。
+ */
+export interface ComponentConformanceEnvironment {
+    adapterBaseUrl:   string;
+    artifactDigest:   string;
+    maxResponseBytes: number;
+    maxSteps:         number;
+}
+
+/**
+ * 隔离开发环境受控投递的协议夹具数据，不来自登记请求。Core 只采用固定协议用例并核对全部必需覆盖；没有脚本、条件、路径表达式或通过声明。
+ */
+export interface ComponentConformanceFixture {
+    artifactDigest: string;
+    steps:          PlanStep[];
+}
+
+/**
+ * 仅用于07§8A隔离套件的模拟上下文投递。不是生产 Catalog、Delegation 或
+ * ResultExposurePolicy。独立密钥/issuer/audience；其完整摘要固定在原登记计划。
+ */
+export interface ComponentConformanceIdentity {
+    artifactDigest:  string;
+    audience:        string;
+    contexts:        ComponentConformanceIdentityContext[];
+    issuer:          string;
+    jwksFile:        string;
+    privateKeyField: string;
+    secretAudience:  string;
+    secretLocator:   string;
+    secretVersion:   number;
+    tokenSeconds:    number;
+}
+
+export interface ComponentConformanceIdentityContext {
+    actionDefinitionVersion:     number;
+    actionKey:                   string;
+    actorPrincipalId:            string;
+    caseKey:                     string;
+    operation:                   AdapterProtocolOperation;
+    resultExposurePolicyId:      string;
+    resultExposurePolicyVersion: number;
+    stepKey:                     string;
+    targetId?:                   string;
+    targetType:                  string;
+    tenantId:                    string;
+    workspaceId?:                string;
+}
+
+/**
+ * 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
+ * Worker 独立执行隔离套件。
+ */
+export interface ComponentReleaseRegistration {
+    bindingConfigSchemaJson: string;
+    manifestJson:            string;
+    packageJson:             string;
+}
+
+/**
+ * design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
+ */
+export interface ContentReference {
+    assetId?:        string;
+    displayName:     string;
+    mediaType:       string;
+    nativeObjectRef: string;
+    nativeRevision:  string;
+    resourceId:      string;
 }
 
 export interface DelegationGrantParameters {
@@ -2549,6 +2886,8 @@ export interface AgentTaskAdvanceRequest {
  * Core 查证的引用与状态；native completed 缺 reply/usage 证据仍 RUNNING。
  */
 export interface AgentTaskAdvanceResult {
+    approvalInput?:      ApprovalInputClass;
+    approvalWorkflowId?: string;
     /**
      * 已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
      */
@@ -2556,6 +2895,101 @@ export interface AgentTaskAdvanceResult {
     invocationId:   string;
     status:         TaskStatus;
     waitingReason:  string;
+}
+
+/**
+ * ApprovalWorkflow 的冻结输入（.design/06 §4）。运行中不得更换 Tenant、Workspace、target、参数摘要或策略版本；意图改变时建立新
+ * ActionExecution。
+ */
+export interface ApprovalInputClass {
+    actionDefinitionVersion: number;
+    actionExecutionId:       string;
+    actionKey:               string;
+    affectedOwnerRefs:       AffectedOwnerRefElement[];
+    /**
+     * APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED
+     */
+    consumeWindowSeconds: number;
+    /**
+     * RFC3339，UTC。Core 按 ApprovalPolicy.expires_in 在请求时冻结；Workflow 以 workflow.Now() 与之比较
+     */
+    expiresAt:            string;
+    initiatorPrincipalId: string;
+    operationId:          string;
+    ownerRequirement:     ApprovalOwnerRequirement;
+    parameterHash:        string;
+    policyId:             string;
+    policyVersion:        number;
+    resume?:              ResumeClass;
+    roleRequirements:     RoleRequirementElement[];
+    selfApproval:         ApprovalSelfApproval;
+    targetId:             string;
+    targetType:           string;
+    tenantId:             string;
+    /**
+     * TENANT_ONLY 动作缺省
+     */
+    workspaceId?: string;
+}
+
+/**
+ * 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
+ */
+export interface AffectedOwnerRefElement {
+    ownerPrincipalId: string;
+    targetId:         string;
+    targetType:       string;
+    targetVersion:    number;
+}
+
+/**
+ * ApprovalPolicy.owner_requirement（.design/03 §4）。
+ */
+export enum ApprovalOwnerRequirement {
+    AllAffectedOwners = "ALL_AFFECTED_OWNERS",
+    None = "NONE",
+    TargetOwner = "TARGET_OWNER",
+}
+
+/**
+ * ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+ * 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+ */
+export interface ResumeClass {
+    /**
+     * RFC3339，UTC
+     */
+    consumedAt?: string;
+    /**
+     * RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+     */
+    consumeDeadline?: string;
+    decisions:        DecisionElement[];
+    /**
+     * 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+     * 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+     */
+    eventBase: number;
+    reason?:   ReasonCode;
+    refusals:  RefusalElement[];
+    status:    ApprovalStatus;
+}
+
+/**
+ * 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+ * §4）。
+ */
+export interface RefusalElement {
+    approverPrincipalId: string;
+    reason:              ReasonCode;
+}
+
+/**
+ * ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。
+ */
+export enum ApprovalSelfApproval {
+    Allow = "ALLOW",
+    Deny = "DENY",
 }
 
 /**
@@ -2656,66 +3090,6 @@ export interface ApprovalWorkflowInput {
      * TENANT_ONLY 动作缺省
      */
     workspaceId?: string;
-}
-
-/**
- * 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
- */
-export interface AffectedOwnerRefElement {
-    ownerPrincipalId: string;
-    targetId:         string;
-    targetType:       string;
-    targetVersion:    number;
-}
-
-/**
- * ApprovalPolicy.owner_requirement（.design/03 §4）。
- */
-export enum ApprovalOwnerRequirement {
-    AllAffectedOwners = "ALL_AFFECTED_OWNERS",
-    None = "NONE",
-    TargetOwner = "TARGET_OWNER",
-}
-
-/**
- * ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
- * 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
- */
-export interface ResumeClass {
-    /**
-     * RFC3339，UTC
-     */
-    consumedAt?: string;
-    /**
-     * RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
-     */
-    consumeDeadline?: string;
-    decisions:        DecisionElement[];
-    /**
-     * 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
-     * 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
-     */
-    eventBase: number;
-    reason?:   ReasonCode;
-    refusals:  RefusalElement[];
-    status:    ApprovalStatus;
-}
-
-/**
- * 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
- * §4）。
- */
-export interface RefusalElement {
-    approverPrincipalId: string;
-    reason:              ReasonCode;
-}
-
-/**
- * ApprovalPolicy.self_approval：发起者能否批准自己的请求（职责分离）。
- */
-export enum ApprovalSelfApproval {
-    Allow = "ALLOW",
-    Deny = "DENY",
 }
 
 /**
@@ -2856,6 +3230,123 @@ export interface AutomationScheduleTaskInput {
     cancelPending?: boolean;
     scheduleId:     string;
     sourceKind:     AutomationScheduleSource;
+}
+
+/**
+ * 受信 Worker 的一次实际线协议观察，附着冻结 ActionExecution。Core 以自身 plan 逐项匹配，不接收 pass 布尔值；UNKNOWN
+ * 不表示套件失败或成功。响应正文与测试凭据不进入报告。
+ */
+export interface ComponentConformanceObservation {
+    actionExecutionId:  string;
+    artifactDigest:     string;
+    componentReleaseId: string;
+    contractDigests:    string[];
+    observations:       ObservationElement[];
+    operationId:        string;
+    planDigest:         string;
+    runId:              string;
+    suiteDigest:        string;
+    workflowId:         string;
+}
+
+export interface ObservationElement {
+    caseKey:                 string;
+    contentReference?:       ContentReferenceClass;
+    errorClass?:             ErrorClass;
+    httpStatus:              number;
+    nativeObservation?:      ExecutionClass;
+    nativeScopeObservation?: NativeScopeObservationClass;
+    operation:               AdapterProtocolOperation;
+    requestDigest:           string;
+    responseDigest:          string;
+    /**
+     * 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
+     */
+    resultDigest?: string;
+    stepKey:       string;
+}
+
+/**
+ * DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
+ */
+export interface NativeScopeObservationClass {
+    nativeRef?:          string;
+    nativeType?:         string;
+    platformResourceRef: string;
+    result:              NativeScopeResult;
+}
+
+/**
+ * 受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
+ */
+export interface ComponentConformancePlan {
+    actionExecutionId:  string;
+    artifactDigest:     string;
+    componentReleaseId: string;
+    contractDigests:    string[];
+    /**
+     * 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
+     */
+    identityDigest: string;
+    operationId:    string;
+    planDigest:     string;
+    /**
+     * Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
+     * Describe 与同 workflow 的当前 TaskProjection 核对。
+     */
+    runId:       string;
+    steps:       ComponentConformancePlanStep[];
+    suiteDigest: string;
+    workflowId:  string;
+}
+
+export interface ComponentConformancePlanStep {
+    caseKey: string;
+    /**
+     * 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
+     * native 任务元数据。
+     */
+    contractKey?:          string;
+    expectedHttpStatus:    number;
+    expectedResponseJson:  string;
+    idempotencyKey:        string;
+    operation:             AdapterProtocolOperation;
+    referenceAssetId?:     string;
+    referenceFromStepKey?: string;
+    referenceResourceId?:  string;
+    requestJson:           string;
+    stepKey:               string;
+}
+
+/**
+ * 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
+ * history 承接，不建立另一执行账本。
+ */
+export interface ComponentConformanceProbe {
+    contentReference?: ContentReferenceClass;
+    plan:              PlanClass;
+    /**
+     * 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
+     */
+    reconcile?: boolean;
+    stepIndex:  number;
+}
+
+export interface ComponentConformanceStepObservation {
+    caseKey:                 string;
+    contentReference?:       ContentReferenceClass;
+    errorClass?:             ErrorClass;
+    httpStatus:              number;
+    nativeObservation?:      ExecutionClass;
+    nativeScopeObservation?: NativeScopeObservationClass;
+    operation:               AdapterProtocolOperation;
+    requestDigest:           string;
+    responseDigest:          string;
+    /**
+     * 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
+     */
+    resultDigest?: string;
+    stepKey:       string;
 }
 
 /**

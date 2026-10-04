@@ -98,6 +98,8 @@ func main() {
 	w.RegisterActivity(core.AdvanceAgentTask)
 	w.RegisterActivity(core.AdmitAutomationSchedule)
 	w.RegisterActivity(core.AdvanceAgentInstallation)
+	w.RegisterActivity(core.RunComponentConformanceStep)
+	w.RegisterActivity(core.RecordComponentConformance)
 	w.RegisterActivity(core.ProjectAgentTaskState)
 
 	if err := w.Run(worker.InterruptCh()); err != nil {

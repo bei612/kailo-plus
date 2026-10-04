@@ -357,7 +357,7 @@ pub struct Policy {
     pub expires_in_seconds: i32,
 }
 
-async fn exact_policy(pool: &PgPool, id: Uuid, version: i32) -> Result<Policy, Refusal> {
+pub(crate) async fn exact_policy(pool: &PgPool, id: Uuid, version: i32) -> Result<Policy, Refusal> {
     let row: (Value, String, String, i32) = sqlx::query_as(
         "select role_requirements, owner_requirement, self_approval, expires_in_seconds
          from catalog.approval_policy where id = $1 and version = $2",
@@ -421,6 +421,7 @@ pub enum Semantic {
     CapabilityContractRegister,
     CapabilityContractApprove,
     CapabilityContractDeprecate,
+    ComponentReleaseRegister,
     LlmRouteCreate,
     AgentDefinitionUpdate,
     AgentVersionCreate,
@@ -468,6 +469,7 @@ impl Semantic {
             "capability_contract.register" => Self::CapabilityContractRegister,
             "capability_contract.approve" => Self::CapabilityContractApprove,
             "capability_contract.deprecate" => Self::CapabilityContractDeprecate,
+            "component_release.register" => Self::ComponentReleaseRegister,
             "llm_route.create" => Self::LlmRouteCreate,
             "agent.definition.update" => Self::AgentDefinitionUpdate,
             "agent.version.create" => Self::AgentVersionCreate,
@@ -554,7 +556,8 @@ impl Semantic {
 
     /// 会改变「有效 Tenant admin」集合的动作在 Tenant 行锁下判定与写入（DD-82）。
     fn serializes_on_tenant(self) -> bool {
-        self.is_role()
+        self == Self::ComponentReleaseRegister
+            || self.is_role()
             || self.is_capability_contract()
             || self.is_installation_permission()
             || self.is_automation()
@@ -595,7 +598,8 @@ impl Semantic {
 
     /// 由用户在目标详情上显式确认、确认位冻结在参数里的语义（`confirmation_mode=EXPLICIT`）。
     fn takes_explicit_confirmation(self) -> bool {
-        self.is_automation()
+        self == Self::ComponentReleaseRegister
+            || self.is_automation()
             || matches!(
                 self,
                 Self::CapabilityContractRegister | Self::CapabilityContractDeprecate
@@ -664,11 +668,15 @@ pub struct Params {
     pub llm_route_create: Option<Value>,
     pub capability_contract_registration: Option<Value>,
     pub capability_contract_ref: Option<Value>,
+    pub component_release_registration: Option<Value>,
 }
 
 impl Params {
-    fn to_json(&self) -> Value {
+    pub(crate) fn to_json(&self) -> Value {
         let mut m = serde_json::Map::new();
+        if let Some(registration) = &self.component_release_registration {
+            m.insert("componentReleaseRegistration".into(), registration.clone());
+        }
         if let Some(w) = self.workspace_id {
             m.insert("workspaceId".into(), json!(w));
         }
@@ -784,6 +792,7 @@ impl Params {
             llm_route_create: v.get("llmRouteCreate").cloned(),
             capability_contract_registration: v.get("capabilityContractRegistration").cloned(),
             capability_contract_ref: v.get("capabilityContractRef").cloned(),
+            component_release_registration: v.get("componentReleaseRegistration").cloned(),
         })
     }
 }
@@ -811,6 +820,12 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map_err(|_| bad())
     };
     let p = Params {
+        component_release_registration: cmd
+            .component_release_registration
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|_| bad())?,
         workspace_id: uuid(&cmd.workspace_id)?,
         tenant_id: uuid(&cmd.tenant_id)?,
         principal_id: uuid(&cmd.principal_id)?,
@@ -870,6 +885,13 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .transpose()
             .map_err(|_| bad())?,
     };
+    if sem == Semantic::ComponentReleaseRegister {
+        crate::component_release::validate_params(&p)?;
+        return Ok(p);
+    }
+    if p.component_release_registration.is_some() {
+        return Err(bad());
+    }
     if sem.is_capability_contract() {
         crate::capability_contract::validate_params(sem, &p)?;
         return Ok(p);
@@ -1165,7 +1187,8 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::AutomationDisable
         | Semantic::CapabilityContractRegister
         | Semantic::CapabilityContractApprove
-        | Semantic::CapabilityContractDeprecate => false,
+        | Semantic::CapabilityContractDeprecate
+        | Semantic::ComponentReleaseRegister => false,
     };
     if ok {
         Ok(p)
@@ -1260,6 +1283,9 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::ComponentReleaseRegister => {
+            crate::component_release::target(conn, tenant, def, p, frozen).await
+        }
         Semantic::CapabilityContractRegister
         | Semantic::CapabilityContractApprove
         | Semantic::CapabilityContractDeprecate => {
@@ -2797,6 +2823,7 @@ impl Governance {
             llm_route_create: None,
             capability_contract_registration: None,
             capability_contract_ref: None,
+            component_release_registration: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -2890,6 +2917,7 @@ impl Governance {
             llm_route_create: None,
             capability_contract_registration: None,
             capability_contract_ref: None,
+            component_release_registration: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -3214,7 +3242,7 @@ async fn open_execution_in_operation(
 
 /// 审计事实。event_key 按 operation 与阶段稳定：重试不写第二条（.design/03 §8）。
 #[allow(clippy::too_many_arguments)]
-async fn audit(
+pub(crate) async fn audit(
     tx: &mut Transaction<'_, Postgres>,
     ae: &Execution,
     def: &Definition,
@@ -3517,7 +3545,7 @@ pub struct DecisionSubject<'a> {
 }
 
 impl Execution {
-    fn subject(&self) -> DecisionSubject<'_> {
+    pub(crate) fn subject(&self) -> DecisionSubject<'_> {
         DecisionSubject {
             action_execution_id: self.id,
             operation_id: self.operation_id,
@@ -3532,7 +3560,7 @@ impl Execution {
     }
 }
 
-fn approval_workflow_id(tenant: Uuid, action_execution_id: Uuid) -> String {
+pub(crate) fn approval_workflow_id(tenant: Uuid, action_execution_id: Uuid) -> String {
     component_task::workflow_id(
         APPROVAL_ID_SEGMENT,
         tenant,
@@ -4114,7 +4142,8 @@ impl Governance {
             .fetch_optional(&mut **tx)
             .await?;
         }
-        if (sem.is_installation_permission()
+        if (sem == Semantic::ComponentReleaseRegister
+            || sem.is_installation_permission()
             || sem.is_capability_contract()
             || sem.is_automation()
             || matches!(
@@ -4136,7 +4165,8 @@ impl Governance {
         {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
-        let locked_evaluation = if sem.is_installation_permission()
+        let locked_evaluation = if sem == Semantic::ComponentReleaseRegister
+            || sem.is_installation_permission()
             || sem.is_capability_contract()
             || sem.is_automation()
             || matches!(
@@ -4458,6 +4488,9 @@ impl Governance {
                 version
             }
             Semantic::SecretRefRehome => 1,
+            Semantic::ComponentReleaseRegister => {
+                crate::component_release::prewrite(tx, ae, params).await?
+            }
             Semantic::AgentInstallationCreate => {
                 crate::agent_installation::prewrite(self, tx, ae, params).await?
             }
@@ -6093,6 +6126,9 @@ impl Governance {
             Ok(())
         } else {
             let started = match sem {
+                Semantic::ComponentReleaseRegister => {
+                    crate::component_release::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
+                }
                 Semantic::AgentInstallationCreate => {
                     crate::agent_installation::start(
                         &self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id,
@@ -6491,20 +6527,28 @@ impl Governance {
 
     /// 冻结的 Workflow input。按同一 ID 重新 Start 时它必须逐字相同，因此全部取自
     /// 已持久化的事实（确切版本的定义与策略、冻结的过期时刻），不取「当前」。
-    async fn approval_input(&self, ae: &Execution) -> Result<ApprovalWorkflowInput, Refusal> {
+    pub(crate) async fn approval_input(
+        &self,
+        ae: &Execution,
+    ) -> Result<ApprovalWorkflowInput, Refusal> {
         let def = exact_definition(&self.pool, &ae.action_key, ae.action_version).await?;
-        let (Some(pid), Some(pver)) = (def.approval_policy_id, def.approval_policy_version) else {
-            return Err(Refusal::Unavailable("审批动作的定义缺策略".into()));
-        };
-        let policy = exact_policy(&self.pool, pid, pver).await?;
+        let policy = self.effective_approval_policy(ae, &def).await?;
         let expires = ae
             .approval_expires_at
             .ok_or_else(|| Refusal::Unavailable("WAITING 缺冻结的过期时刻".into()))?;
-        let affected_owner_refs: Vec<contracts::AffectedOwnerRefElement> = if policy
-            .owner_requirement
-            == "ALL_AFFECTED_OWNERS"
-        {
-            let refs: Value = sqlx::query_scalar(
+        let affected_owner_refs: Vec<contracts::AffectedOwnerRefElement> =
+            if crate::automation::step_approval::is_child(ae) {
+                crate::automation::step_approval::owners(ae)?
+                    .into_iter()
+                    .map(|owner| contracts::AffectedOwnerRefElement {
+                        target_type: owner.target_type,
+                        target_id: owner.target_id,
+                        target_version: owner.target_version,
+                        owner_principal_id: owner.owner_principal_id,
+                    })
+                    .collect()
+            } else if policy.owner_requirement == "ALL_AFFECTED_OWNERS" {
+                let refs: Value = sqlx::query_scalar(
                 "select resource_owner_versions || asset_owner_versions from admission.tenant_lifecycle_snapshot
                 where action_execution_id=$1 and tenant_id=$2",
             )
@@ -6512,18 +6556,18 @@ impl Governance {
             .bind(ae.tenant_id)
             .fetch_one(&self.pool)
             .await?;
-            serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
-        } else if installation_permission::owner_policy(&ae.action_key, &policy) {
-            let owner = installation_permission::frozen_owner(ae)?;
-            vec![contracts::AffectedOwnerRefElement {
-                target_type: owner.target_type,
-                target_id: owner.target_id,
-                target_version: owner.target_version,
-                owner_principal_id: owner.owner_principal_id,
-            }]
-        } else {
-            Vec::new()
-        };
+                serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
+            } else if installation_permission::owner_policy(&ae.action_key, &policy) {
+                let owner = installation_permission::frozen_owner(ae)?;
+                vec![contracts::AffectedOwnerRefElement {
+                    target_type: owner.target_type,
+                    target_id: owner.target_id,
+                    target_version: owner.target_version,
+                    owner_principal_id: owner.owner_principal_id,
+                }]
+            } else {
+                Vec::new()
+            };
         Ok(ApprovalWorkflowInput {
             action_execution_id: ae.id.to_string(),
             operation_id: ae.operation_id.to_string(),
@@ -6564,6 +6608,10 @@ impl Governance {
             let Some(ae) = load_execution(&self.pool, ae_id).await? else {
                 return Ok::<(), Refusal>(());
             };
+            // Step approvals are actual children of the original AgentTask.
+            if crate::automation::step_approval::is_child(&ae) {
+                return Ok(());
+            }
             let Some(wf) = ae.approval_workflow_id.clone() else {
                 return Ok(());
             };
@@ -6610,6 +6658,9 @@ impl Governance {
         let Some(ae) = load_execution(&self.pool, ae_id).await? else {
             return Ok(());
         };
+        if crate::automation::step_approval::is_child(&ae) {
+            return Ok(());
+        }
         if ae.gate_state != "WAITING" {
             return Ok(());
         }
@@ -7047,6 +7098,20 @@ impl Governance {
 // ---------------------------------------------------------------------------
 
 impl Governance {
+    async fn effective_approval_policy(
+        &self,
+        ae: &Execution,
+        def: &Definition,
+    ) -> Result<Policy, Refusal> {
+        if let Some(policy) = crate::automation::step_approval::child_policy(self, ae).await? {
+            return Ok(policy);
+        }
+        let (Some(pid), Some(pver)) = (def.approval_policy_id, def.approval_policy_version) else {
+            return Err(Refusal::Unavailable("审批动作的定义缺策略".into()));
+        };
+        exact_policy(&self.pool, pid, pver).await
+    }
+
     pub async fn fresh_approval_admission(
         &self,
         req: &FreshApprovalAdmissionRequest,
@@ -7061,17 +7126,17 @@ impl Governance {
             return Ok(None);
         };
         let def = exact_definition(&self.pool, &ae.action_key, ae.action_version).await?;
-        let (Some(pid), Some(pver)) = (def.approval_policy_id, def.approval_policy_version) else {
-            return Err(Refusal::Unavailable("审批动作的定义缺策略".into()));
-        };
-        let policy = exact_policy(&self.pool, pid, pver).await?;
+        let policy = self.effective_approval_policy(&ae, &def).await?;
         let approver = Uuid::parse_str(&req.approver_principal_id)
             .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
         let installation_owner = installation_permission::owner_policy(&ae.action_key, &policy);
+        let step_owner = crate::automation::step_approval::is_child(&ae)
+            && policy.owner_requirement == "TARGET_OWNER";
         if !matches!(
             policy.owner_requirement.as_str(),
             "NONE" | "ALL_AFFECTED_OWNERS"
         ) && !installation_owner
+            && !step_owner
         {
             return Ok(Some(FreshApprovalAdmissionResult {
                 admitted: false,
@@ -7110,6 +7175,10 @@ impl Governance {
         let mut zed = None;
         let result = if active.is_none() {
             refuse(ReasonCode::ApproverNotEligible)
+        } else if crate::automation::step_approval::is_child(&ae)
+            && !crate::automation::step_approval::parent_pending(&mut tx, ae.id).await?
+        {
+            refuse(ReasonCode::ApprovalInvalidated)
         } else if policy.self_approval == "DENY" && approver == ae.initiator_principal_id {
             // 职责分离：发起者不能批准也不能否决自己的请求
             refuse(ReasonCode::SelfApprovalDenied)
@@ -7118,10 +7187,11 @@ impl Governance {
         {
             refuse(ReasonCode::SelfApprovalDenied)
         } else {
-            let refs: Vec<contracts::AffectedOwnerRef> = if policy.owner_requirement
-                == "ALL_AFFECTED_OWNERS"
-            {
-                let refs: Value = sqlx::query_scalar(
+            let refs: Vec<contracts::AffectedOwnerRef> =
+                if crate::automation::step_approval::is_child(&ae) {
+                    crate::automation::step_approval::owners(&ae)?
+                } else if policy.owner_requirement == "ALL_AFFECTED_OWNERS" {
+                    let refs: Value = sqlx::query_scalar(
                         "select resource_owner_versions || asset_owner_versions from admission.tenant_lifecycle_snapshot
                     where action_execution_id=$1 and tenant_id=$2",
                     )
@@ -7129,16 +7199,18 @@ impl Governance {
                     .bind(ae.tenant_id)
                     .fetch_one(&mut *tx)
                     .await?;
-                serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
-            } else if installation_owner {
-                vec![installation_permission::frozen_owner(&ae)?]
-            } else {
-                Vec::new()
-            };
+                    serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
+                } else if installation_owner {
+                    vec![installation_permission::frozen_owner(&ae)?]
+                } else {
+                    Vec::new()
+                };
             let owners_current =
                 crate::agent_definition::validate_frozen_owners(self, &mut tx, ae.tenant_id, &refs)
                     .await?;
-            let target_current = if installation_owner {
+            let target_current = if crate::automation::step_approval::is_child(&ae) {
+                crate::automation::step_approval::target_current(self, &mut tx, &ae).await?
+            } else if installation_owner {
                 match installation_permission::validate_approval_owner(self, &mut tx, &ae, false)
                     .await
                 {

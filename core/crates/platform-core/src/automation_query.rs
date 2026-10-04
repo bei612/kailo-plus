@@ -91,6 +91,7 @@ fn run_query() -> String {
             where u.tenant_id=$1 and u.workspace_id=$5 and u.operation_id=task.operation_id
             order by u.id) usage_event_ids
         from ({} and ae.action_key='automation.run'
+            and ae.parent_action_execution_id is null
             and ae.target_id=$4 and ae.workspace_id=$5
             and ($6::timestamptz is null or (ae.created_at,ae.id)<($6,$7::uuid))
             order by ae.created_at desc,ae.id desc limit $8) task
@@ -597,8 +598,28 @@ pub async fn list(
         Ok(allowed) => allowed && crate::capability_registry::action_exposed("automation.create"),
         Err(error) => return error,
     };
+    let policies:Vec<(Uuid,i32)>=match sqlx::query_as("select id,version from catalog.approval_policy
+        where tenant_id=$1 and action_key='automation.run' and target_type='RESOURCE' and status='ACTIVE' order by id,version")
+        .bind(ctx.tenant_id).fetch_all(&mut *tx).await {
+        Ok(rows)=>rows,Err(error)=>return crate::service_api::unavailable(error),
+    };
+    let mut available = Vec::new();
+    for (id, version) in policies {
+        if let Err(error) = crate::automation::step_approval::validate_policy(
+            &mut tx,
+            ctx.tenant_id,
+            Some(id),
+            Some(version),
+            true,
+        )
+        .await
+        {
+            return error.respond(None);
+        }
+        available.push(json!({"id":id,"version":version}));
+    }
     match serde_json::from_value::<contracts::AutomationPage>(
-        json!({"automations":values,"canCreate":can_create,"nextOffset":next}),
+        json!({"automations":values,"canCreate":can_create,"nextOffset":next,"availableApprovalPolicies":available}),
     ) {
         Ok(value) => Json(value).into_response(),
         Err(_) => unavailable(),
@@ -617,6 +638,7 @@ struct VersionRow {
     trigger: Value,
     action: Value,
     approval_policy_id: Option<Uuid>,
+    approval_policy_version: Option<i32>,
     result_target: String,
 }
 async fn versions(
@@ -628,7 +650,7 @@ async fn versions(
     limit: i64,
 ) -> Result<(Vec<contracts::AutomationVersionView>, Option<i64>), Response> {
     let rows:Vec<VersionRow>=sqlx::query_as("select a.id asset_id,a.owner_principal_id,a.version asset_version,
-        a.state asset_state,v.ordinal,v.state,v.config_hash,v.trigger,v.action,v.approval_policy_id,v.result_target
+        a.state asset_state,v.ordinal,v.state,v.config_hash,v.trigger,v.action,v.approval_policy_id,v.approval_policy_version,v.result_target
         from catalog.automation_version v join catalog.asset a on a.id=v.asset_id
         where v.automation_resource_id=$1 and a.resource_id=$1 and a.tenant_id=$2
           and a.type_key='automation.version' and a.state<>'DELETED' and a.projection_action_execution_id is null
@@ -694,10 +716,23 @@ async fn versions(
             }
             _ => return Err(unavailable()),
         }
-        let content = json!({"trigger":version.trigger,"action":version.action,
-            "approvalPolicyId":version.approval_policy_id,"resultTarget":version.result_target});
+        crate::automation::step_approval::validate_policy(
+            conn,
+            ctx.tenant_id,
+            version.approval_policy_id,
+            version.approval_policy_version,
+            false,
+        )
+        .await
+        .map_err(|error| error.respond(None))?;
+        let content = crate::automation::version_content(
+            version.trigger,
+            version.action,
+            version.approval_policy_id,
+            version.approval_policy_version,
+            &version.result_target,
+        );
         if version.state != version.asset_state
-            || version.approval_policy_id.is_some()
             || collab_bridge::limits::canonical_digest(&content) != version.config_hash
             || !active_owner(conn, ctx.tenant_id, version.owner_principal_id)
                 .await
@@ -730,11 +765,19 @@ async fn versions(
         if let Some(value) = content["trigger"].get("schedule_spec") {
             trigger["scheduleSpec"] = value.clone();
         }
-        let value=serde_json::from_value(json!({"assetId":version.asset_id,"automationResourceId":row.resource_id,
+        let mut exposed_content = json!({"trigger":trigger,"action":content["action"],"resultTarget":content["resultTarget"]});
+        if let (Some(id), Some(version)) =
+            (version.approval_policy_id, version.approval_policy_version)
+        {
+            exposed_content["approvalPolicy"] = json!({"id":id,"version":version});
+        }
+        let value = serde_json::from_value(
+            json!({"assetId":version.asset_id,"automationResourceId":row.resource_id,
             "ownerPrincipalId":version.owner_principal_id,"assetVersion":version.asset_version,
             "ordinal":version.ordinal,"state":version.state,"configHash":version.config_hash,
-            "content":{"trigger":trigger,"action":content["action"],"resultTarget":content["resultTarget"]}}))
-            .map_err(|_|unavailable())?;
+            "content":exposed_content}),
+        )
+        .map_err(|_| unavailable())?;
         values.push(value);
     }
     Ok((values, next))

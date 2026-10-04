@@ -15,10 +15,11 @@ use crate::{
     spicedb::Consistency,
 };
 
-const ACTION: &str = "automation.run";
+pub(crate) const ACTION: &str = "automation.run";
 
 pub(crate) mod post_message;
 mod schedule;
+pub(crate) mod step_approval;
 pub(crate) use schedule::converge_scope_schedules;
 pub(crate) use schedule::interval as schedule_spec;
 pub(crate) use schedule::{admit_schedule, schedule_pending};
@@ -147,10 +148,12 @@ fn invalid_management() -> Refusal {
 /// 使用共享命令契约产生的值；数据库存储沿原 Relay consumer 的 native 字段名。
 fn management_content(value: &Value) -> Result<Value, Refusal> {
     let object = value.as_object().ok_or_else(invalid_management)?;
-    if object
-        .keys()
-        .any(|key| !matches!(key.as_str(), "trigger" | "action" | "resultTarget"))
-    {
+    if object.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "trigger" | "action" | "resultTarget" | "approvalPolicy"
+        )
+    }) {
         return Err(invalid_management());
     }
     let trigger = value
@@ -222,9 +225,49 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
                 }
         })
         .ok_or_else(invalid_management)?;
-    Ok(
-        json!({"trigger":native_trigger,"action":action,"approvalPolicyId":null,"resultTarget":result}),
-    )
+    let (policy, version) = match value.get("approvalPolicy") {
+        None => (None, None),
+        Some(raw) => {
+            let object = raw
+                .as_object()
+                .filter(|o| o.len() == 2 && o.contains_key("id") && o.contains_key("version"))
+                .ok_or_else(invalid_management)?;
+            let id = object["id"]
+                .as_str()
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .filter(|id| !id.is_nil())
+                .ok_or_else(invalid_management)?;
+            let version = object["version"]
+                .as_i64()
+                .and_then(|v| i32::try_from(v).ok())
+                .filter(|v| *v > 0)
+                .ok_or_else(invalid_management)?;
+            (Some(id), Some(version))
+        }
+    };
+    Ok(version_content(
+        native_trigger,
+        json!(action),
+        policy,
+        version,
+        result,
+    ))
+}
+
+pub(crate) fn version_content(
+    trigger: Value,
+    action: Value,
+    policy: Option<Uuid>,
+    version: Option<i32>,
+    result: &str,
+) -> Value {
+    let mut content =
+        json!({"trigger":trigger,"action":action,"approvalPolicyId":policy,"resultTarget":result});
+    // Preserve the exact pre-step hash for existing versions with no policy.
+    if let Some(version) = version {
+        content["approvalPolicyVersion"] = json!(version);
+    }
+    content
 }
 
 pub(crate) fn validate_management_params(
@@ -469,10 +512,19 @@ async fn management_installation(
     {
         return Err(invalid_management());
     }
-    if !content.get("approvalPolicyId").is_none_or(Value::is_null) {
-        // 当前首 turn 没有 child step Approval consumer；不让发布假装可运行。
-        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-    }
+    let policy = content
+        .get("approvalPolicyId")
+        .and_then(Value::as_str)
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| invalid_management())?;
+    let version = content
+        .get("approvalPolicyVersion")
+        .and_then(Value::as_i64)
+        .map(i32::try_from)
+        .transpose()
+        .map_err(|_| invalid_management())?;
+    step_approval::validate_policy(tx, tenant, policy, version, true).await?;
     let requested: contracts::ContentClass = serde_json::from_value(requested)
         .map_err(|_| Refusal::Unavailable("Installation 已发布 Version 不符合共享契约".into()))?;
     if crate::agent_version::reply_to_channel(&requested)?
@@ -546,7 +598,8 @@ pub(crate) async fn management_prewrite(
                 "select a.id asset_id,a.owner_principal_id,
                 a.state,a.projection_action_execution_id,v.config_hash,
                 jsonb_build_object('trigger',v.trigger,'action',v.action,
-                'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target) content
+                'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target)
+                || case when v.approval_policy_version is null then '{}'::jsonb else jsonb_build_object('approvalPolicyVersion',v.approval_policy_version) end content
                 from catalog.automation_version v join catalog.asset a on a.id=v.asset_id
                 where v.asset_id=$1 and v.automation_resource_id=$2 and v.state='PUBLISHED'
                   and a.tenant_id=$3 and a.resource_id=$2 and a.state='PUBLISHED' and a.version=$4
@@ -657,10 +710,11 @@ async fn management_insert_version(
         values($1,$2,$3,'automation.version',$4,$4,$1::text,'DRAFT',1,$1)")
         .bind(ae.id).bind(ae.tenant_id).bind(resource).bind(ae.initiator_principal_id).execute(&mut **tx).await?;
     sqlx::query("insert into catalog.automation_version
-        (asset_id,automation_resource_id,ordinal,trigger,action,approval_policy_id,result_target,config_hash,state)
-        values($1,$2,$3,$4,$5,$6,$7,$8,'DRAFT')")
+        (asset_id,automation_resource_id,ordinal,trigger,action,approval_policy_id,result_target,config_hash,state,approval_policy_version)
+        values($1,$2,$3,$4,$5,$6,$7,$8,'DRAFT',$9)")
         .bind(ae.id).bind(resource).bind(ordinal).bind(&content["trigger"]).bind(&content["action"])
         .bind(approval).bind(content["resultTarget"].as_str()).bind(collab_bridge::limits::canonical_digest(&content))
+        .bind(content.get("approvalPolicyVersion").and_then(Value::as_i64).and_then(|v|i32::try_from(v).ok()))
         .execute(&mut **tx).await?;
     Ok(())
 }
@@ -822,7 +876,8 @@ pub(crate) async fn management_dispatch(
         .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
     let version:ManagementVersion=sqlx::query_as("select a.id asset_id,a.owner_principal_id,a.state,
         a.projection_action_execution_id,v.config_hash,jsonb_build_object('trigger',v.trigger,'action',v.action,
-          'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target) content
+          'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target)
+          || case when v.approval_policy_version is null then '{}'::jsonb else jsonb_build_object('approvalPolicyVersion',v.approval_policy_version) end content
         from catalog.asset a join catalog.automation_version v on v.asset_id=a.id
         where a.id=$1 and a.tenant_id=$2 and a.resource_id=$3 and a.type_key='automation.version'
           and v.automation_resource_id=$3 for update of a,v")
@@ -1144,6 +1199,7 @@ struct Run {
     trigger: Value,
     action: Value,
     approval_policy_id: Option<Uuid>,
+    approval_policy_version: Option<i32>,
     result_target: String,
     config_hash: String,
     enabled_at: DateTime<Utc>,
@@ -1155,7 +1211,7 @@ const RUN: &str = "select r.id resource_id,r.tenant_id,d.workspace_id,r.version 
     r.owner_principal_id,tm.human_identity_id,i.resource_id executor_installation_resource_id,
     i.agent_principal_id,case when $2::uuid is null then d.delegation_id else invocation.delegation_id end delegation_id,
     v.asset_id automation_version_asset_id,a.version automation_version,p.agent_version_asset_id,
-    p.generation projection_generation,v.trigger,v.action,v.approval_policy_id,
+    p.generation projection_generation,v.trigger,v.action,v.approval_policy_id,v.approval_policy_version,
     v.result_target,v.config_hash,d.enabled_at,a.owner_principal_id version_owner_principal_id
     from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id
     join catalog.resource_type_definition type on type.type_key=r.type_key
@@ -1263,7 +1319,8 @@ async fn fresh(
     def: &Definition,
     operation: Option<Uuid>,
 ) -> Result<String, Refusal> {
-    // Both DD-107 action consumers exist; child step approval is still closed.
+    // Policy selection is immutable version metadata; the child gate runs in
+    // AgentTask before Capacity or the first external business side effect.
     if !matches!(
         row.action.get("kind").and_then(Value::as_str),
         Some("AGENT_TURN" | "POST_MESSAGE")
@@ -1276,7 +1333,6 @@ async fn fresh(
             row.trigger.get("kind").and_then(Value::as_str),
             Some("CHANNEL_MESSAGE" | "MENTION" | "SCHEDULE")
         )
-        || row.approval_policy_id.is_some()
         || row.result_target
             != if row.trigger.get("kind").and_then(Value::as_str) == Some("SCHEDULE") {
                 "CHANNEL"
@@ -1284,12 +1340,24 @@ async fn fresh(
                 "TRIGGER_THREAD"
             }
         || row.config_hash
-            != collab_bridge::limits::canonical_digest(&json!({
-            "trigger":row.trigger,"action":row.action,"approvalPolicyId":row.approval_policy_id,
-            "resultTarget":row.result_target}))
+            != collab_bridge::limits::canonical_digest(&version_content(
+                row.trigger.clone(),
+                row.action.clone(),
+                row.approval_policy_id,
+                row.approval_policy_version,
+                &row.result_target,
+            ))
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
+    step_approval::validate_policy(
+        tx,
+        row.tenant_id,
+        row.approval_policy_id,
+        row.approval_policy_version,
+        false,
+    )
+    .await?;
     let grant: Option<(Uuid,Uuid,Uuid,Uuid,Uuid,Option<i64>)> = sqlx::query_as(
         "select tenant_id,workspace_id,grantor_principal_id,installation_resource_id,agent_principal_id,max_uses
          from admission.delegation_grant where id=$1 and state='ACTIVE' and valid_from<=clock_timestamp() and expires_at>clock_timestamp()
@@ -1981,16 +2049,14 @@ struct Cursor {
     before_id: Option<String>,
 }
 
-fn relay_trigger_supported(policy: Option<Uuid>, action: &Value, trigger: &Value) -> bool {
-    policy.is_none()
-        && matches!(
-            action.get("kind").and_then(Value::as_str),
-            Some("AGENT_TURN" | "POST_MESSAGE")
-        )
-        && matches!(
-            trigger.get("kind").and_then(Value::as_str),
-            Some("CHANNEL_MESSAGE" | "MENTION")
-        )
+fn relay_trigger_supported(action: &Value, trigger: &Value) -> bool {
+    matches!(
+        action.get("kind").and_then(Value::as_str),
+        Some("AGENT_TURN" | "POST_MESSAGE")
+    ) && matches!(
+        trigger.get("kind").and_then(Value::as_str),
+        Some("CHANNEL_MESSAGE" | "MENTION")
+    )
 }
 
 async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(), Refusal> {
@@ -2003,9 +2069,17 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
         .await?
         .ok_or(Refusal::Precondition(ReasonCode::TargetStateConflict))?;
     let def = definition(&state.governance).await?;
-    if !relay_trigger_supported(row.approval_policy_id, &row.action, &row.trigger) {
+    if !relay_trigger_supported(&row.action, &row.trigger) {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
+    step_approval::validate_policy(
+        &mut conn,
+        row.tenant_id,
+        row.approval_policy_id,
+        row.approval_policy_version,
+        false,
+    )
+    .await?;
     let key = format!(
         "relay:automation:{}:{}",
         row.resource_id, row.automation_version_asset_id

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/component_conformance_plan.schema.json",
+  "title": "ComponentConformancePlan",
+  "description": "受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "operationId", "workflowId", "runId", "componentReleaseId", "artifactDigest", "contractDigests", "suiteDigest", "planDigest", "identityDigest", "steps"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "operationId": {"type": "string", "format": "uuid"},
+    "workflowId": {"type": "string"},
+    "runId": {"type": "string", "description": "Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以 Describe 与同 workflow 的当前 TaskProjection 核对。"},
+    "componentReleaseId": {"type": "string", "format": "uuid"},
+    "artifactDigest": {"type": "string"},
+    "contractDigests": {"type": "array", "items": {"type": "string"}},
+    "suiteDigest": {"type": "string"},
+    "planDigest": {"type": "string"},
+    "identityDigest": {"type": "string", "description": "独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。"},
+    "steps": {
+      "type": "array",
+      "items": {
+        "title": "ComponentConformanceStep",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["caseKey", "stepKey", "operation", "idempotencyKey", "requestJson", "expectedResponseJson", "expectedHttpStatus"],
+        "properties": {
+          "caseKey": {"type": "string"},
+          "stepKey": {"type": "string"},
+          "operation": {"$ref": "../enums/adapter_protocol_operation.schema.json"},
+          "contractKey": {"type": "string", "description": "只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是 native 任务元数据。"},
+          "idempotencyKey": {"type": "string"},
+          "requestJson": {"type": "string"},
+          "expectedResponseJson": {"type": "string"},
+          "expectedHttpStatus": {"type": "integer"}
+          ,"referenceResourceId": {"type": "string", "format": "uuid"}
+          ,"referenceAssetId": {"type": "string", "format": "uuid"}
+          ,"referenceFromStepKey": {"type": "string"}
+        }
+      }
+    }
+  }
+}

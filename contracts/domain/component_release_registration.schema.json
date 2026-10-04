@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_release_registration.schema.json",
+  "title": "ComponentReleaseRegistration",
+  "description": "组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原 Worker 独立执行隔离套件。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifestJson", "packageJson", "bindingConfigSchemaJson"],
+  "properties": {
+    "manifestJson": {"type": "string"},
+    "packageJson": {"type": "string"},
+    "bindingConfigSchemaJson": {"type": "string"}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_conformance_wire_digests.schema.json",
+  "title": "ComponentConformanceWireDigests",
+  "description": "Core原canonical_digest对同一已授权步骤实际响应的摘要；仅规范化事实，不声明套件通过或登记成功。",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestDigest", "responseDigest"],
+  "properties": {
+    "requestDigest": {"type": "string"},
+    "responseDigest": {"type": "string"},
+    "resultDigest": {"type": "string"}
+  }
+}

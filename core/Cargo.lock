@@ -2294,6 +2294,7 @@ dependencies = [
  "ring",
  "rmcp",
  "secret-store",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml",

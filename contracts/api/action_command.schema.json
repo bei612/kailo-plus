@@ -109,6 +109,9 @@
       "format": "uuid",
       "description": "任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析"
     },
+    "componentReleaseRegistration": {
+      "$ref": "../domain/component_release_registration.schema.json"
+    },
     "capabilityContractRegistration": {
       "$ref": "../domain/capability_contract_registration.schema.json",
       "description": "仅 capability_contract.register：真实 schema 与测试向量内容。"

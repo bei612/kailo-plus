@@ -87,6 +87,12 @@ pub struct Nip11Document {
 /// `serde_json::Value` 的 `Map` 默认按插入序，因此必须显式重排；直接对响应原文取
 /// hash 会让上游换一次字段顺序就产生一个新 digest。
 pub fn canonical_digest(v: &Value) -> String {
+    hex::encode(Sha256::digest(canonical_json(v).as_bytes()))
+}
+
+/// The exact bytes hashed by canonical_digest. Consumers forwarding a frozen
+/// request use these bytes rather than introducing another JSON serializer.
+pub fn canonical_json(v: &Value) -> String {
     fn canon(v: &Value) -> Value {
         match v {
             Value::Object(m) => {
@@ -102,7 +108,7 @@ pub fn canonical_digest(v: &Value) -> String {
             other => other.clone(),
         }
     }
-    hex::encode(Sha256::digest(canon(v).to_string().as_bytes()))
+    canon(v).to_string()
 }
 
 /// 按 Community host 抓 NIP-11。

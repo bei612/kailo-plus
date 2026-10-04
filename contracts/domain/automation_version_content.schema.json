@@ -7,6 +7,7 @@
   "additionalProperties": false,
   "required": ["trigger", "action", "resultTarget"],
   "properties": {
+    "approvalPolicy":{"$ref":"automation_approval_policy_ref.schema.json"},
     "trigger": {
       "type": "object",
       "additionalProperties": false,

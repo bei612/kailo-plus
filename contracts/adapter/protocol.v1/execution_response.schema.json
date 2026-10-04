@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/execution_response.schema.json",
+  "title": "AdapterExecutionResponse",
+  "description": "ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入 Core 的套件报告。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["execution"],
+  "properties": {
+    "execution": {"$ref": "execution_observation.schema.json"},
+    "resultJson": {"type": "string"},
+    "contentReference": {"$ref": "../../domain/content_reference.schema.json"}
+  }
+}

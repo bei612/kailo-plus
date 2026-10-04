@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_conformance_fixture.schema.json",
+  "title": "ComponentConformanceFixture",
+  "description": "隔离开发环境受控投递的协议夹具数据，不来自登记请求。Core 只采用固定协议用例并核对全部必需覆盖；没有脚本、条件、路径表达式或通过声明。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactDigest", "steps"],
+  "properties": {
+    "artifactDigest": {"type": "string"},
+    "steps": {"$ref": "../workflow/component_conformance_plan.schema.json#/properties/steps"}
+  }
+}

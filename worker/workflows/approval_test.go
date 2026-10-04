@@ -119,6 +119,110 @@ func admitted(generated.FreshApprovalAdmissionRequest) generated.FreshApprovalAd
 	return generated.FreshApprovalAdmissionResult{Admitted: true, SatisfiedSelectors: []generated.ApprovalSelector{generated.TenantAdmin}}
 }
 
+func TestConsumeRechecksOriginalApprovers(t *testing.T) {
+	for _, mode := range []string{"revoked", "selectors-shrunk", "unavailable", "current", "legacy", "admission"} {
+		t.Run(mode, func(t *testing.T) {
+			calls := 0
+			env, rec, in := setup(t, func(generated.FreshApprovalAdmissionRequest) generated.FreshApprovalAdmissionResult {
+				calls++
+				selectors := []generated.ApprovalSelector{generated.WorkspaceAdmin, generated.TenantAdmin}
+				if calls > 1 && mode == "revoked" {
+					return generated.FreshApprovalAdmissionResult{Admitted: false}
+				}
+				if calls > 1 && mode == "selectors-shrunk" {
+					selectors = []generated.ApprovalSelector{generated.TenantAdmin}
+				}
+				return generated.FreshApprovalAdmissionResult{Admitted: true, SatisfiedSelectors: selectors}
+			})
+			in.ActionKey = "automation.run"
+			if mode == "admission" {
+				in.ActionKey = "tenant.member.revoke"
+			}
+			in.RoleRequirements = []generated.RoleRequirementElement{{Selector: generated.WorkspaceAdmin, MinDistinct: 1}}
+			if mode == "legacy" {
+				env.OnGetVersion(changeApprovalConsumeFresh, workflow.DefaultVersion, 1).Return(workflow.DefaultVersion)
+			}
+			decideAt(env, time.Minute, approverB, generated.ApprovalDecisionAPPROVE, &updateResult{})
+			var consumed updateResult
+			env.RegisterDelayedCallback(func() {
+				if mode == "unavailable" {
+					rec.set(func(r *recorder) { r.admitDown = true })
+				}
+				env.UpdateWorkflow(UpdateConsume, in.ActionExecutionID+":consume", consumed.callbacks())
+			}, 2*time.Minute)
+			env.ExecuteWorkflow(Approval, in)
+			if err := env.GetWorkflowError(); err != nil {
+				t.Fatal(err)
+			}
+			want := generated.Invalidated
+			if mode == "current" || mode == "legacy" || mode == "admission" {
+				want = generated.Consumed
+			}
+			last := rec.last()
+			if last.Status != want {
+				t.Fatalf("%s: got %s want %s", mode, last.Status, want)
+			}
+			if want == generated.Invalidated && last.ConsumedAt != nil {
+				t.Fatal("unusable approval acquired consumedAt")
+			}
+			if mode != "legacy" && mode != "admission" && mode != "unavailable" && calls != 2 {
+				t.Fatalf("must recheck the original approver, calls=%d", calls)
+			}
+			if (mode == "legacy" || mode == "admission") && calls != 1 {
+				t.Fatal("legacy command sequence changed")
+			}
+			// Fresh evaluation must not rewrite the immutable decision record.
+			if len(last.Decisions) != 1 || len(last.Decisions[0].SatisfiedSelectors) != 2 {
+				t.Fatal("original decision was rewritten")
+			}
+		})
+	}
+}
+
+func TestConsumeRecomputesDistinctSelectors(t *testing.T) {
+	calls := 0
+	env, rec, in := setup(t, func(req generated.FreshApprovalAdmissionRequest) generated.FreshApprovalAdmissionResult {
+		calls++
+		selectors := []generated.ApprovalSelector{generated.WorkspaceAdmin}
+		if calls > 2 && req.ApproverPrincipalID == approverB {
+			selectors = []generated.ApprovalSelector{generated.TenantAdmin}
+		}
+		return generated.FreshApprovalAdmissionResult{Admitted: true, SatisfiedSelectors: selectors}
+	})
+	in.ActionKey = "automation.run"
+	in.RoleRequirements = []generated.RoleRequirementElement{{Selector: generated.WorkspaceAdmin, MinDistinct: 2}}
+	decideAt(env, time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &updateResult{})
+	decideAt(env, 2*time.Minute, approverB, generated.ApprovalDecisionAPPROVE, &updateResult{})
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow(UpdateConsume, in.ActionExecutionID+":consume", (&updateResult{}).callbacks())
+	}, 3*time.Minute)
+	env.ExecuteWorkflow(Approval, in)
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 4 || rec.last().Status != generated.Invalidated {
+		t.Fatalf("fresh distinct quorum not enforced: calls=%d status=%s", calls, rec.last().Status)
+	}
+}
+
+func TestConsumedRemainsIdempotentWithoutFreshActivity(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(func(ctx workflow.Context) error {
+		a := approval{status: generated.Consumed}
+		for i := 0; i < 2; i++ {
+			result, err := a.consume(ctx)
+			if err != nil || result.Status != generated.Consumed {
+				return errors.New("already consumed approval reopened")
+			}
+		}
+		return nil
+	})
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 type updateResult struct {
 	rejected error
 	outcome  any
@@ -168,7 +272,7 @@ func TestApproveThenConsume(t *testing.T) {
 	if err := env.GetWorkflowError(); err != nil {
 		t.Fatalf("workflow 失败: %v", err)
 	}
-	if dec.err != nil || dec.outcome.(generated.ApprovalDecisionOutcome).Status != generated.Approved {
+	if dec.err != nil || dec.outcome.(generated.ApprovalDecisionOutcome).Status != generated.ApprovalStatusAPPROVED {
 		t.Fatalf("批准未使状态进入 APPROVED: %+v %v", dec.outcome, dec.err)
 	}
 	if dup.rejected != nil || !dup.outcome.(generated.ApprovalDecisionOutcome).Admitted {
@@ -177,7 +281,7 @@ func TestApproveThenConsume(t *testing.T) {
 	if reasonOf(conflict.rejected) != string(generated.DuplicateDecision) {
 		t.Fatalf("冲突值应被拒绝为 DUPLICATE_DECISION，得到 %v", conflict.rejected)
 	}
-	want := []generated.ApprovalStatus{generated.Requested, generated.ApprovalStatusWAITING, generated.Approved, generated.Consumed}
+	want := []generated.ApprovalStatus{generated.Requested, generated.ApprovalStatusWAITING, generated.ApprovalStatusAPPROVED, generated.Consumed}
 	if got := rec.statuses(); len(got) != len(want) || got[3] != want[3] || got[2] != want[2] {
 		t.Fatalf("投影序列 %v，期望 %v", got, want)
 	}
@@ -277,7 +381,7 @@ func TestWithdraw(t *testing.T) {
 	}, time.Minute)
 	decideAt(env, 2*time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &d)
 	env.ExecuteWorkflow(ApprovalKind, in)
-	if rec.last().Status != generated.Cancelled {
+	if rec.last().Status != generated.ApprovalStatusCANCELLED {
 		t.Fatalf("撤回应 CANCELLED: %+v", rec.last())
 	}
 	// 撤回之后审批已终结：决定不被接受（Workflow 已关闭或 Validator 拒绝），也不进投影
@@ -333,7 +437,7 @@ func TestMultiRoleRequirementsCountDistinctApprovers(t *testing.T) {
 	if s := b.outcome.(generated.ApprovalDecisionOutcome).Status; s != generated.ApprovalStatusWAITING {
 		t.Fatalf("第二位只满足 WORKSPACE_ADMIN 不应批准，状态 %v", s)
 	}
-	if s := c.outcome.(generated.ApprovalDecisionOutcome).Status; s != generated.Approved {
+	if s := c.outcome.(generated.ApprovalDecisionOutcome).Status; s != generated.ApprovalStatusAPPROVED {
 		t.Fatalf("第二位不同的 TENANT_ADMIN 批准后应 APPROVED，状态 %v", s)
 	}
 	if rec.last().Status != generated.Consumed || len(rec.last().Decisions) != 3 {

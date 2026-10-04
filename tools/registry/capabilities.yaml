@@ -88,6 +88,15 @@ capabilities:
   - capability_contract.deprecate
   tools: []
   workflow_kinds: []
+- id: component.release_registration
+  exposure: tenant_admin
+  routes:
+  - /api/v1/platform/component-releases
+  actions:
+  - component_release.register
+  tools: []
+  workflow_kinds:
+  - COMPONENT_RELEASE
 - id: governance.action_admission
   exposure: end_user
   routes:

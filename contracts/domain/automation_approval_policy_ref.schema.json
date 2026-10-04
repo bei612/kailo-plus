@@ -1,0 +1,13 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"domain/automation_approval_policy_ref.schema.json",
+  "title":"AutomationApprovalPolicyRef",
+  "description":"DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["id","version"],
+  "properties":{
+    "id":{"type":"string","format":"uuid"},
+    "version":{"type":"integer","minimum":1}
+  }
+}

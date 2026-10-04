@@ -9,6 +9,34 @@ import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 import type { AutomationRunPage } from "../src/generated/contracts.js";
 import type { AutomationVersionContent } from "../src/generated/contracts.js";
+import type { ComponentConformanceStepObservation } from "../src/generated/contracts.js";
+
+test("component observations preserve references, UNKNOWN and absent evidence", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/component-conformance-observations.sample.json", import.meta.url), "utf8");
+  const original: unknown = JSON.parse(raw);
+  const typed: ComponentConformanceStepObservation[] = JSON.parse(raw);
+  const reconstructed: ComponentConformanceStepObservation[] = typed.map(step => ({
+    caseKey: step.caseKey, stepKey: step.stepKey, operation: step.operation,
+    requestDigest: step.requestDigest, responseDigest: step.responseDigest,
+    resultDigest: step.resultDigest, httpStatus: step.httpStatus, errorClass: step.errorClass,
+    contentReference: step.contentReference && {
+      resourceId: step.contentReference.resourceId, assetId: step.contentReference.assetId,
+      nativeObjectRef: step.contentReference.nativeObjectRef, nativeRevision: step.contentReference.nativeRevision,
+      displayName: step.contentReference.displayName, mediaType: step.contentReference.mediaType,
+    },
+    nativeObservation: step.nativeObservation && {
+      idempotencyKey: step.nativeObservation.idempotencyKey, nativeType: step.nativeObservation.nativeType,
+      nativeId: step.nativeObservation.nativeId, nativeStatus: step.nativeObservation.nativeStatus,
+      platformStatus: step.nativeObservation.platformStatus, cancelCapability: step.nativeObservation.cancelCapability,
+      lastObservedAt: step.nativeObservation.lastObservedAt, terminalAt: step.nativeObservation.terminalAt,
+    },
+    nativeScopeObservation: step.nativeScopeObservation && {
+      platformResourceRef: step.nativeScopeObservation.platformResourceRef, result: step.nativeScopeObservation.result,
+      nativeType: step.nativeScopeObservation.nativeType, nativeRef: step.nativeScopeObservation.nativeRef,
+    },
+  }));
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
+});
 
 test("automation POST_MESSAGE round-trip preserves action and native schedule", () => {
   const raw = readFileSync(new URL("../../../../contracts/samples/automation-post-message.sample.json", import.meta.url), "utf8");
@@ -21,6 +49,7 @@ test("automation POST_MESSAGE round-trip preserves action and native schedule", 
       catchupWindowSeconds: typed.trigger.scheduleSpec.catchupWindowSeconds,
     } },
     action: { kind: typed.action.kind, template: typed.action.template }, resultTarget: typed.resultTarget,
+    ...(typed.approvalPolicy ? { approvalPolicy: { id: typed.approvalPolicy.id, version: typed.approvalPolicy.version } } : {}),
   };
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
 });

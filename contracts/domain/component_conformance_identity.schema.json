@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_conformance_identity.schema.json",
+  "title": "ComponentConformanceIdentity",
+  "description": "仅用于07§8A隔离套件的模拟上下文投递。不是生产 Catalog、Delegation 或 ResultExposurePolicy。独立密钥/issuer/audience；其完整摘要固定在原登记计划。",
+  "type": "object", "additionalProperties": false,
+  "required": ["artifactDigest", "issuer", "audience", "tokenSeconds", "secretLocator", "secretVersion", "secretAudience", "privateKeyField", "jwksFile", "contexts"],
+  "properties": {
+    "artifactDigest": {"type": "string"},
+    "issuer": {"type": "string"},
+    "audience": {"type": "string"},
+    "tokenSeconds": {"type": "integer", "minimum": 1},
+    "secretLocator": {"type": "string"},
+    "secretVersion": {"type": "integer", "minimum": 1},
+    "secretAudience": {"type": "string"},
+    "privateKeyField": {"type": "string"},
+    "jwksFile": {"type": "string"},
+    "contexts": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "title": "ComponentConformanceIdentityContext",
+        "type": "object", "additionalProperties": false,
+        "required": ["caseKey", "stepKey", "operation", "tenantId", "actorPrincipalId", "actionKey", "actionDefinitionVersion", "targetType", "resultExposurePolicyId", "resultExposurePolicyVersion"],
+        "properties": {
+          "caseKey": {"type": "string"}, "stepKey": {"type": "string"},
+          "operation": {"$ref": "../enums/adapter_protocol_operation.schema.json"},
+          "tenantId": {"type": "string", "format": "uuid"},
+          "workspaceId": {"type": "string", "format": "uuid"},
+          "actorPrincipalId": {"type": "string", "format": "uuid"},
+          "actionKey": {"type": "string"},
+          "actionDefinitionVersion": {"type": "integer", "minimum": 1},
+          "targetType": {"type": "string"},
+          "targetId": {"type": "string", "format": "uuid"},
+          "resultExposurePolicyId": {"type": "string", "format": "uuid"},
+          "resultExposurePolicyVersion": {"type": "integer", "minimum": 1}
+        }
+      }
+    }
+  }
+}

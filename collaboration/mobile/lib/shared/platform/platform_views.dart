@@ -594,7 +594,7 @@ final platformAutomationProvider = FutureProvider.autoDispose
       final detail = await _fetchOne(
         ref,
         '/api/v1/automations/${Uri.encodeComponent(query.resourceId)}?$params',
-        AutomationDetailView.fromJson,
+        _automationDetailFromJson,
       );
       final row = AutomationView.fromJson(detail.automation.toJson());
       _validateAutomation(row, query.workspaceId);
@@ -661,6 +661,27 @@ final platformAutomationProvider = FutureProvider.autoDispose
       }
       return detail;
     }, retry: _noRetry);
+
+AutomationDetailView _automationDetailFromJson(Map<String, dynamic> json) {
+  // The generated optional decoder erases null/unknown keys. Validate the
+  // frozen reference before decoding; absence remains the original contract.
+  for (final version in json['versions'] as List<dynamic>) {
+    final content = version['content'] as Map<String, dynamic>;
+    if (!content.containsKey('approvalPolicy')) continue;
+    final policy = content['approvalPolicy'];
+    if (policy is! Map<String, dynamic> ||
+        policy.length != 2 ||
+        policy['id'] is! String ||
+        !RegExp(
+          r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+        ).hasMatch(policy['id'] as String) ||
+        policy['version'] is! int ||
+        (policy['version'] as int) < 1) {
+      throw const FormatException('Automation approval policy');
+    }
+  }
+  return AutomationDetailView.fromJson(json);
+}
 
 void _validateAutomationCursor(int offset, int? next) {
   if (offset < 0 || (next != null && next <= offset)) {

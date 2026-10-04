@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_conformance_environment.schema.json",
+  "title": "ComponentConformanceEnvironment",
+  "description": "07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core 对实际请求签发，不接受静态凭据文件或用户 action 自报地址。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactDigest", "adapterBaseUrl", "maxResponseBytes", "maxSteps"],
+  "properties": {
+    "artifactDigest": {"type": "string"},
+    "adapterBaseUrl": {"type": "string"},
+    "maxResponseBytes": {"type": "integer"},
+    "maxSteps": {"type": "integer"}
+  }
+}

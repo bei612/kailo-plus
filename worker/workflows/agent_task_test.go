@@ -184,7 +184,7 @@ func TestAgentTaskOrdinaryContinueAsNewKeepsTypedPayload(t *testing.T) {
 	env, in, _ := scheduleTaskTest(t)
 	env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(nil)
 	env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(
-		generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.Running, WaitingReason: "UNKNOWN_EXTERNAL_RESULT", FinishActivity: true}, nil)
+		generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING, WaitingReason: "UNKNOWN_EXTERNAL_RESULT", FinishActivity: true}, nil)
 	env.RegisterDelayedCallback(func() { env.SetContinueAsNewSuggested(true) }, 30*time.Second)
 	env.ExecuteWorkflow(AgentTaskKind, in)
 	var next *workflow.ContinueAsNewError
@@ -200,4 +200,72 @@ func TestAgentTaskOrdinaryContinueAsNewKeepsTypedPayload(t *testing.T) {
 		t.Fatal("ordinary continuation changed the original frozen payload or registered type")
 	}
 	env.AssertNotCalled(t, "AdmitAutomationSchedule", mock.Anything, mock.Anything)
+}
+
+func TestAgentTaskStepApprovalStartsOriginalChildOnceWithoutWaitingForItsCompletion(t *testing.T) {
+	env, in, _ := scheduleTaskTest(t)
+	startedAt := env.Now()
+	var terminalAt time.Time
+	childID := "platform:approval:step-fixture"
+	child := generated.ApprovalInputClass{ActionKey: "automation.run", ActionExecutionID: "child", PolicyID: "policy", PolicyVersion: 2}
+	starts, advances := 0, 0
+	env.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context, actual generated.ApprovalWorkflowInput) error {
+			starts++
+			if actual.ActionExecutionID != "child" || actual.PolicyID != "policy" || actual.PolicyVersion != 2 {
+				t.Fatal("child lost the Core-frozen approval input")
+			}
+			return workflow.Sleep(ctx, time.Hour)
+		}, workflow.RegisterOptions{Name: ApprovalKind})
+	env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(nil)
+	env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(
+		func(context.Context, generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
+			advances++
+			out := generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING, WaitingReason: "WAITING_APPROVAL", FinishActivity: true,
+				ApprovalWorkflowID: &childID, ApprovalInput: &child}
+			if advances == 3 {
+				terminalAt = env.Now()
+				out.Status, out.WaitingReason, out.ApprovalWorkflowID, out.ApprovalInput = generated.Completed, "NONE", nil, nil
+			}
+			return out, nil
+		})
+	env.ExecuteWorkflow(AgentTaskKind, in)
+	if err := env.GetWorkflowError(); err != nil || starts != 1 || advances != 3 {
+		t.Fatalf("same child must be polled without a second start: %v starts=%d advances=%d", err, starts, advances)
+	}
+	if terminalAt.IsZero() || terminalAt.Sub(startedAt) >= time.Hour {
+		t.Fatal("parent waited for child completion rather than its native start acknowledgement")
+	}
+}
+
+func TestAgentTaskStepApprovalCancellationRemainsOnOriginalInvocation(t *testing.T) {
+	env, in, _ := scheduleTaskTest(t)
+	childID := "platform:approval:cancel-fixture"
+	child := generated.ApprovalInputClass{ActionKey: "automation.run"}
+	env.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context, _ generated.ApprovalWorkflowInput) error {
+			return workflow.Sleep(ctx, time.Hour)
+		}, workflow.RegisterOptions{Name: ApprovalKind})
+	env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(nil)
+	advances := 0
+	env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(
+		func(_ context.Context, actual generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
+			advances++
+			if actual.InvocationID != in.InvocationID {
+				t.Fatal("changed original Invocation")
+			}
+			if advances == 1 {
+				return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING, WaitingReason: "WAITING_APPROVAL", FinishActivity: true,
+					ApprovalWorkflowID: &childID, ApprovalInput: &child}, nil
+			}
+			if !actual.CancelPending {
+				t.Fatal("lost cancellation while approval was pending")
+			}
+			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.Canceled, WaitingReason: "NONE", FinishActivity: true}, nil
+		})
+	env.RegisterDelayedCallback(env.CancelWorkflow, 30*time.Second)
+	env.ExecuteWorkflow(AgentTaskKind, in)
+	if !temporal.IsCanceledError(env.GetWorkflowError()) || advances != 2 {
+		t.Fatalf("cancel did not drain original gate: %v", env.GetWorkflowError())
+	}
 }

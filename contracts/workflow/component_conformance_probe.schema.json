@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/component_conformance_probe.schema.json",
+  "title": "ComponentConformanceProbe",
+  "description": "原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal history 承接，不建立另一执行账本。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan", "stepIndex"],
+  "properties": {
+    "reconcile": {"type": "boolean", "description": "只查询同一步冻结幂等键；不再发送原 execute/CREATE。"},
+    "plan": {"$ref": "component_conformance_plan.schema.json"},
+    "stepIndex": {"type": "integer"},
+    "contentReference": {"$ref": "../domain/content_reference.schema.json"}
+  }
+}

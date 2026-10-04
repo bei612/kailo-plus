@@ -241,7 +241,7 @@ describe("shared Automation schedule consumer", () => {
   };
   const scheduleContent = { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
     action: { kind: "AGENT_TURN", template: "Report" }, resultTarget: "CHANNEL" };
-  const setup = async (targets: unknown, content?: unknown, recheckStatus?: number, recheck?: Record<string, unknown>) => {
+  const setup = async (targets: unknown, content?: unknown, recheckStatus?: number, recheck?: Record<string, unknown>, policies?: unknown) => {
     const automation = { resourceId: "schedule-automation", workspaceId: installation.workspaceId,
       ownerPrincipalId: installation.ownerPrincipalId, executorInstallationResourceId: installation.resourceId,
       resourceVersion: 2, resourceState: "ACTIVE", state: "DRAFT" };
@@ -250,7 +250,7 @@ describe("shared Automation schedule consumer", () => {
       if (r.path === "/api/v1/tasks") return { status: 200, body: [] };
       if (r.path === "/api/v1/agent-definitions") return { status: 200, body: { definitions: [] } };
       if (r.path === "/api/v1/workspaces") return { status: 200, body: [{ id: installation.workspaceId, name: "Schedule workspace", slug: "schedule" }] };
-      if (r.path.startsWith("/api/v1/automations?")) return { status: 200, body: { automations: content ? [automation] : [], canCreate: true } };
+      if (r.path.startsWith("/api/v1/automations?")) return { status: 200, body: { automations: content ? [automation] : [], canCreate: true, availableApprovalPolicies: policies } };
       if (r.path.startsWith("/api/v1/automations/schedule-automation?")) return { status: 200, body: {
         automation, canManage: true, versions: [{ assetId: "schedule-version", automationResourceId: automation.resourceId,
           ownerPrincipalId: installation.ownerPrincipalId, assetVersion: 1, ordinal: 1, state: "PUBLISHED", configHash: "b".repeat(64), content }],
@@ -343,6 +343,21 @@ describe("shared Automation schedule consumer", () => {
         resultTarget: "TRIGGER_THREAD" } });
   });
 
+  it("freezes only the selected deployed step approval policy, including UNKNOWN retry", async () => {
+    const policy={id:"88888888-8888-4888-8888-888888888888",version:2};
+    const {section,t,choose,fill}=await setup(["TRIGGER_THREAD"],undefined,undefined,undefined,[policy]);
+    await choose("Approval before execution",`${policy.id}:2`);
+    await fill("Instruction template","Review before execution");
+    await click(button(section,"Review request"));
+    expect(section.textContent).toContain(policy.id);
+    await click(button(section,"Submit governed request"));
+    await click(button(section,"Re-check same request"));
+    const writes=t.send.mock.calls.filter(([r])=>r.path==="/api/v1/actions").map(([r])=>r.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[0]).toMatchObject({automationVersionContent:{approvalPolicy:policy}});
+    expect(writes[1]).toEqual(writes[0]);
+  });
+
   it.each(["operationId", "actionExecutionId"])("rejects another %s while reconciling the frozen UNKNOWN request", async (field) => {
     const { section, t, fill } = await setup(["TRIGGER_THREAD"], undefined, undefined,
       { [field]: "foreign-operation", gateState: "DENIED", dispatchState: "NOT_DISPATCHED", reason: "PERMISSION_DENIED" });
@@ -416,6 +431,19 @@ describe("shared Automation schedule consumer", () => {
       automationVersionContent: scheduleContent,
     });
   });
+
+  it.each([undefined, [], [{id:"88888888-8888-4888-8888-888888888888",version:3}]])(
+    "does not silently remove a version's unavailable step policy (%j)", async (policies) => {
+      const content={...scheduleContent,approvalPolicy:{id:"88888888-8888-4888-8888-888888888888",version:2}};
+      const {section,t}=await setup(["CHANNEL"],content,undefined,undefined,policies);
+      await click(button(section,"View definition"));
+      expect(section.textContent).toContain(content.approvalPolicy.id);
+      await click(button(section,"Publish a new version")); await settle();
+      expect(button(section,"Review request").disabled).toBe(true);
+      await act(async()=>section.querySelector("form")!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));
+      expect(t.send.mock.calls.filter(([r])=>r.path==="/api/v1/actions")).toHaveLength(0);
+      expect(section.textContent).toContain("cannot be verified");
+    });
 
   it.each([{ targets: ["CHANNEL"] }, { targets: ["TRIGGER_THREAD"] }])("enable checks the selected executor's actual native target %j", async ({ targets }) => {
     const { section, t, choose } = await setup(targets, scheduleContent);

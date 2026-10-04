@@ -122,6 +122,80 @@ pub(crate) async fn advance(
     let Ok(attempt) = i32::try_from(input.attempt) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
+    if invocation.automation_action_kind.is_some()
+        && matches!(invocation.status.as_str(), "FAILED" | "CANCELED")
+    {
+        let unstarted:bool=match sqlx::query_scalar("select exists(select 1 from catalog.agent_invocation i
+            join catalog.automation_version v on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id
+            where i.id=$1 and v.approval_policy_id is not null and i.runtime_turn_id is null and i.reply_event_id is null
+              and not exists(select 1 from admission.capacity_lease l where l.invocation_id=i.id)
+              and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id))")
+            .bind(id).fetch_one(&state.pool).await {Ok(value)=>value,Err(error)=>return unavailable(error)};
+        if unstarted {
+            return result(
+                id,
+                if invocation.status == "FAILED" {
+                    TaskStatus::Failed
+                } else {
+                    TaskStatus::Canceled
+                },
+                "NONE",
+            );
+        }
+    }
+    if invocation.automation_action_kind.is_some() && invocation.status == "CREATED" {
+        let cancel = match post_message::activity_fence(&state, &invocation, &input, true).await {
+            Ok(native) => native || input.cancel_requested || invocation.cancel_pending,
+            Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+        };
+        match crate::automation::step_approval::gate(&state, id, cancel).await {
+            Ok(crate::automation::step_approval::Gate::Ready) => (),
+            Ok(crate::automation::step_approval::Gate::Waiting { workflow_id, input }) => {
+                return (
+                    StatusCode::OK,
+                    Json(serde_json::json!({"invocationId":id,"status":"RUNNING",
+                    "waitingReason":"WAITING_APPROVAL","finishActivity":true,
+                    "approvalWorkflowId":workflow_id,"approvalInput":input})),
+                )
+                    .into_response();
+            }
+            Ok(crate::automation::step_approval::Gate::Refused(reason)) => {
+                return match refuse_step_before_dispatch(&state, &invocation, &reason, cancel).await
+                {
+                    Ok(true) => result(
+                        id,
+                        if cancel {
+                            TaskStatus::Canceled
+                        } else {
+                            TaskStatus::Failed
+                        },
+                        &crate::governance::wire(&reason),
+                    ),
+                    _ => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+                };
+            }
+            Err(error) => {
+                if definite_reply_refusal(&error)
+                    && matches!(
+                        refuse_step_before_dispatch(&state, &invocation, &error.reason(), cancel)
+                            .await,
+                        Ok(true)
+                    )
+                {
+                    return result(
+                        id,
+                        if cancel {
+                            TaskStatus::Canceled
+                        } else {
+                            TaskStatus::Failed
+                        },
+                        &crate::governance::wire(&error.reason()),
+                    );
+                }
+                return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT");
+            }
+        }
+    }
     if invocation.automation_action_kind.as_deref() == Some("POST_MESSAGE") {
         return post_message::advance(&state, &invocation, &input).await;
     }
@@ -2440,6 +2514,51 @@ fn billed_outcome(
     }
 }
 
+async fn refuse_step_before_dispatch(
+    state: &ServiceState,
+    invocation: &Invocation,
+    reason: &contracts::ReasonCode,
+    cancel: bool,
+) -> Result<bool, crate::governance::Refusal> {
+    let mut tx = state.pool.begin().await?;
+    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+    let changed=sqlx::query("update catalog.agent_invocation i set status=$3,updated_at=now()
+        where i.id=$1 and i.action_execution_id=$2 and i.status='CREATED'
+          and i.runtime_turn_id is null and i.native_status is null and i.reply_event_id is null and i.post_message_intent is null
+          and not exists(select 1 from admission.capacity_lease l where l.invocation_id=i.id)
+          and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+          and not exists(select 1 from outbox.usage_event u where u.invocation_id=i.id)")
+        .bind(invocation.id).bind(ae.id).bind(if cancel {"CANCELED"}else{"FAILED"}).execute(&mut *tx).await?;
+    if changed.rows_affected() != 1 {
+        return Ok(false);
+    }
+    crate::automation::step_approval::close_before_effect(
+        &state.governance,
+        &mut tx,
+        ae.id,
+        reason,
+    )
+    .await?;
+    turn_audit(
+        state,
+        &mut tx,
+        &ae,
+        invocation.id,
+        (
+            "approval-step:refused",
+            "OUTCOME",
+            &crate::governance::wire(reason),
+        ),
+        vec![crate::audit::Evidence::new(
+            EvidenceKind::ActionExecutionId,
+            ae.id,
+        )],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
 async fn release_holder(state: &ServiceState, id: Uuid, released: bool, waiting: &str) -> Response {
     let finish_activity = if released {
         true
@@ -2465,6 +2584,8 @@ async fn release_holder(state: &ServiceState, id: Uuid, released: bool, waiting:
             }
             .to_owned(),
             finish_activity,
+            approval_workflow_id: None,
+            approval_input: None,
         }),
     )
         .into_response()
@@ -2482,6 +2603,8 @@ fn result(id: Uuid, status: TaskStatus, waiting: &str) -> Response {
             status,
             waiting_reason: waiting.to_owned(),
             finish_activity,
+            approval_workflow_id: None,
+            approval_input: None,
         }),
     )
         .into_response()

@@ -90,11 +90,16 @@ func (c *CoreAPI) advanceAgentTaskOnce(ctx context.Context, in generated.AgentTa
 	if json.Unmarshal(raw, &out) != nil || out.InvocationID != in.InvocationID || out.WaitingReason == "" {
 		return out, temporal.NewNonRetryableApplicationError("AgentTask 回应与冻结 Invocation 不符", ErrTypeUnknownExternalResult, nil)
 	}
-	if out.Status != generated.Running && !out.FinishActivity {
+	if out.Status != generated.TaskStatusRUNNING && !out.FinishActivity {
 		return out, temporal.NewNonRetryableApplicationError("AgentTask 终态缺 Activity 收尾证据", ErrTypeUnknownExternalResult, nil)
 	}
+	if (out.ApprovalWorkflowID == nil) != (out.ApprovalInput == nil) ||
+		(out.ApprovalWorkflowID != nil && (*out.ApprovalWorkflowID == "" || out.Status != generated.TaskStatusRUNNING ||
+			!out.FinishActivity || out.WaitingReason != "WAITING_APPROVAL")) {
+		return out, temporal.NewNonRetryableApplicationError("AgentTask step approval reference is incomplete", ErrTypeUnknownExternalResult, nil)
+	}
 	switch out.Status {
-	case generated.Running, generated.Completed, generated.TaskStatusFAILED, generated.Canceled:
+	case generated.TaskStatusRUNNING, generated.Completed, generated.TaskStatusFAILED, generated.Canceled:
 		return out, nil
 	default:
 		return out, temporal.NewNonRetryableApplicationError("AgentTask 回应状态未知", ErrTypeUnknownExternalResult, nil)

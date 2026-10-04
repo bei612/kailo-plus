@@ -9,6 +9,24 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('component observations preserve references, UNKNOWN and absence', () {
+    final original =
+        jsonDecode(
+              File(
+                '../../contracts/samples/component-conformance-observations.sample.json',
+              ).readAsStringSync(),
+            )
+            as List<dynamic>;
+    final typed = original.map(
+      (step) => ComponentConformanceStepObservation.fromJson(
+        step as Map<String, dynamic>,
+      ),
+    );
+    expect(
+      jsonDecode(jsonEncode(typed.map((step) => step.toJson()).toList())),
+      equals(original),
+    );
+  });
   test(
     'automation POST_MESSAGE round-trip preserves action and native schedule',
     () {

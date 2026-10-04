@@ -50,11 +50,11 @@ func agentInstallation(ctx workflow.Context, in ComponentTaskInput) error {
 				WorkflowID: info.WorkflowExecution.ID, RunID: info.WorkflowExecution.RunID,
 				CancelRequested: in.CancelPending,
 			}).Get(loop, &out)
-		status, reason := generated.Running, "UNKNOWN_EXTERNAL_RESULT"
+		status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
 		if err == nil {
 			status, reason = out.Status, out.WaitingReason
 		}
-		if err := project(loop, status, reason); err == nil && status != generated.Running {
+		if err := project(loop, status, reason); err == nil && status != generated.TaskStatusRUNNING {
 			switch status {
 			case generated.Completed:
 				return nil

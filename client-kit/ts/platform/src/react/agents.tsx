@@ -172,11 +172,18 @@ function validAutomationVersion(row: AutomationVersionView, parent: AutomationVi
       : content.trigger.mentionPrincipalId === undefined)
     && !!content.action && [ActionKind.AgentTurn, ActionKind.PostMessage].includes(content.action.kind)
     && typeof content.action.template === "string" && !!content.action.template.trim()
+    && (content.approvalPolicy === undefined || validApprovalPolicy(content.approvalPolicy))
     && (content.trigger.kind === TriggerKind.Schedule
       ? content.resultTarget === ResultTarget.Channel && content.trigger.textPrefix === undefined
         && validSchedule(content.trigger.scheduleSpec)
       : (content.trigger.kind === TriggerKind.ChannelMessage || content.trigger.kind === TriggerKind.Mention)
         && content.resultTarget === ResultTarget.TriggerThread && content.trigger.scheduleSpec === undefined);
+}
+
+function validApprovalPolicy(value: AutomationVersionView["content"]["approvalPolicy"]): boolean {
+  return !!value && Object.keys(value).length === 2
+    && typeof value.id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.id)
+    && Number.isSafeInteger(value.version) && value.version > 0;
 }
 
 function validAutomationDetail(value: AutomationDetailView, resource: string, workspace: string): boolean {
@@ -320,6 +327,9 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, renderRunHi
               <p>{t("agents.automation.catchupWindowSeconds")}: {version.content.trigger.scheduleSpec.catchupWindowSeconds}</p>
             </> : null}
             <p>{t("agents.automation.resultTarget")}: {t(version.content.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
+            <p>{t("agents.automation.approvalPolicy")}: {version.content.approvalPolicy
+              ? `${version.content.approvalPolicy.id} · ${version.content.approvalPolicy.version}`
+              : t("agents.automation.noApproval")}</p>
           </Cell>
           <Cell><span className="whitespace-pre-wrap">{version.content.action.template}</span></Cell>
         </tr>)}
@@ -362,6 +372,7 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   const [catchupWindowSeconds, setCatchupWindowSeconds] = useState("");
   const [template, setTemplate] = useState("");
   const [actionKind, setActionKind] = useState(ActionKind.AgentTurn);
+  const [policyKey, setPolicyKey] = useState("");
   const frozenResponse = useRef<{ operationId: string; actionExecutionId: string } | null>(null);
   const [versionId, setVersionId] = useState("");
   const [grantId, setGrantId] = useState("");
@@ -402,6 +413,12 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     && admission.data.automations.every((row) => validAutomation(row) && row.workspaceId === workspaceId)
     && typeof admission.data.canCreate === "boolean" && admission.data.canCreate;
   const versions = edit?.detail.versions.filter((row) => row.state === AgentVersionState.Published) ?? [];
+  const rawPolicies = admission.status === "ok" ? admission.data?.availableApprovalPolicies : undefined;
+  const policies = Array.isArray(rawPolicies) && rawPolicies.every(validApprovalPolicy)
+    && new Set(rawPolicies.map((row) => `${row.id}:${row.version}`)).size === rawPolicies.length ? rawPolicies : null;
+  const selectedPolicy = policies?.find((row) => `${row.id}:${row.version}` === policyKey);
+  // A stale or unavailable selected policy never silently becomes no approval.
+  const policyAvailable = policyKey === "" || selectedPolicy !== undefined;
   const grants = edit?.detail.delegations.filter((row) => new Date(row.expiresAt).getTime() > Date.now()) ?? [];
   const version = versions.find((row) => row.assetId === versionId);
   const grant = grants.find((row) => row.delegationId === grantId);
@@ -410,7 +427,8 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     catchupWindowSeconds: Number(catchupWindowSeconds) };
   const scheduleValid = [everySeconds, offsetSeconds, catchupWindowSeconds].every((value) => /^\d+$/.test(value))
     && validSchedule(scheduleSpec);
-  const contentAvailable = trigger !== TriggerKind.Schedule || (scheduleSupported && scheduleValid);
+  const contentAvailable = policyAvailable
+    && (trigger !== TriggerKind.Schedule || (scheduleSupported && scheduleValid));
   const enableAvailable = !!version && !!grant
     && (version.content.trigger.kind !== TriggerKind.Schedule || scheduleSupported);
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
@@ -424,6 +442,7 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     setCatchupWindowSeconds(content?.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
     setTemplate(content?.action.template ?? "");
     setActionKind(content?.action.kind ?? ActionKind.AgentTurn);
+    setPolicyKey(content?.approvalPolicy ? `${content.approvalPolicy.id}:${content.approvalPolicy.version}` : "");
     setVersionId(""); setGrantId(""); setExecutorId("");
   }, [edit, workspaceId]);
   useEffect(() => { setExecutorIndex(0); setExecutorOffsets([0]); }, [workspaceId]);
@@ -441,6 +460,7 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
       trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
         ...(trigger === TriggerKind.Mention ? { mentionPrincipalId: executor!.agentPrincipalId } : {}) },
       action: { kind: actionKind, template },
+      ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
       resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
     };
     if (edit?.action === "enable" && version && grant) {
@@ -539,6 +559,18 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
           <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
         </label>
+        {policies?.length || policyKey ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.approvalPolicy")}
+          <select value={policyKey} disabled={!policies} onChange={(event) => {
+            if (event.target.value === "" || policies?.some((row) => `${row.id}:${row.version}` === event.target.value))
+              setPolicyKey(event.target.value);
+          }} className="h-8 rounded-md border border-input bg-background px-2">
+            <option value="">{t("agents.automation.noApproval")}</option>
+            {policyKey && !selectedPolicy ? <option value={policyKey} disabled>{policyKey}</option> : null}
+            {policies?.map((row) => <option key={`${row.id}:${row.version}`} value={`${row.id}:${row.version}`}>{row.id} · {row.version}</option>)}
+          </select>
+        </label> : null}
+        {!policyAvailable ? <Notice role="status">{t("agents.automation.approvalUnavailable")}
+          <Button onClick={reloadAdmission}>{t("platform.retry")}</Button></Notice> : null}
         <p className="text-sm">{t("agents.automation.resultTarget")}: {t(trigger === TriggerKind.Schedule ? "agents.automation.channel" : "agents.automation.thread")}</p>
       </> : null}
       {edit?.action === "enable" ? <>
@@ -575,6 +607,9 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
         </> : null}
         {intent.automationVersionContent.trigger.textPrefix ? <p className="break-words">{t("agents.automation.prefix")}: {intent.automationVersionContent.trigger.textPrefix}</p> : null}
         <p className="whitespace-pre-wrap">{intent.automationVersionContent.action.template}</p>
+        <p>{t("agents.automation.approvalPolicy")}: {intent.automationVersionContent.approvalPolicy
+          ? `${intent.automationVersionContent.approvalPolicy.id} · ${intent.automationVersionContent.approvalPolicy.version}`
+          : t("agents.automation.noApproval")}</p>
         <p>{t("agents.automation.resultTarget")}: {t(intent.automationVersionContent.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
       </> : null}
       {intent.assetId ? <p className="break-words">{intent.assetId} · {intent.assetVersion} · {intent.delegationId} · {intent.delegationVersion}</p> : null}

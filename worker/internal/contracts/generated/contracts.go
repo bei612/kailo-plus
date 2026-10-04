@@ -4,6 +4,15 @@
 //    canary, err := UnmarshalCanary(bytes)
 //    bytes, err = canary.Marshal()
 //
+//    adapterExecutionObservation, err := UnmarshalAdapterExecutionObservation(bytes)
+//    bytes, err = adapterExecutionObservation.Marshal()
+//
+//    adapterExecutionResponse, err := UnmarshalAdapterExecutionResponse(bytes)
+//    bytes, err = adapterExecutionResponse.Marshal()
+//
+//    adapterScopeObservation, err := UnmarshalAdapterScopeObservation(bytes)
+//    bytes, err = adapterScopeObservation.Marshal()
+//
 //    actionCommand, err := UnmarshalActionCommand(bytes)
 //    bytes, err = actionCommand.Marshal()
 //
@@ -103,6 +112,21 @@
 //    clientKeyStatus, err := UnmarshalClientKeyStatus(bytes)
 //    bytes, err = clientKeyStatus.Marshal()
 //
+//    componentConformanceAuthorization, err := UnmarshalComponentConformanceAuthorization(bytes)
+//    bytes, err = componentConformanceAuthorization.Marshal()
+//
+//    componentConformanceWireDigests, err := UnmarshalComponentConformanceWireDigests(bytes)
+//    bytes, err = componentConformanceWireDigests.Marshal()
+//
+//    componentConformanceWireObservation, err := UnmarshalComponentConformanceWireObservation(bytes)
+//    bytes, err = componentConformanceWireObservation.Marshal()
+//
+//    componentReleasePage, err := UnmarshalComponentReleasePage(bytes)
+//    bytes, err = componentReleasePage.Marshal()
+//
+//    componentReleaseReceipt, err := UnmarshalComponentReleaseReceipt(bytes)
+//    bytes, err = componentReleaseReceipt.Marshal()
+//
 //    evidenceView, err := UnmarshalEvidenceView(bytes)
 //    bytes, err = evidenceView.Marshal()
 //
@@ -181,6 +205,9 @@
 //    agentVersionContent, err := UnmarshalAgentVersionContent(bytes)
 //    bytes, err = agentVersionContent.Marshal()
 //
+//    automationApprovalPolicyRef, err := UnmarshalAutomationApprovalPolicyRef(bytes)
+//    bytes, err = automationApprovalPolicyRef.Marshal()
+//
 //    automationScheduleSpec, err := UnmarshalAutomationScheduleSpec(bytes)
 //    bytes, err = automationScheduleSpec.Marshal()
 //
@@ -195,6 +222,21 @@
 //
 //    capabilityContractRegistration, err := UnmarshalCapabilityContractRegistration(bytes)
 //    bytes, err = capabilityContractRegistration.Marshal()
+//
+//    componentConformanceEnvironment, err := UnmarshalComponentConformanceEnvironment(bytes)
+//    bytes, err = componentConformanceEnvironment.Marshal()
+//
+//    componentConformanceFixture, err := UnmarshalComponentConformanceFixture(bytes)
+//    bytes, err = componentConformanceFixture.Marshal()
+//
+//    componentConformanceIdentity, err := UnmarshalComponentConformanceIdentity(bytes)
+//    bytes, err = componentConformanceIdentity.Marshal()
+//
+//    componentReleaseRegistration, err := UnmarshalComponentReleaseRegistration(bytes)
+//    bytes, err = componentReleaseRegistration.Marshal()
+//
+//    contentReference, err := UnmarshalContentReference(bytes)
+//    bytes, err = contentReference.Marshal()
 //
 //    delegationGrantParameters, err := UnmarshalDelegationGrantParameters(bytes)
 //    bytes, err = delegationGrantParameters.Marshal()
@@ -280,6 +322,18 @@
 //    automationScheduleTaskInput, err := UnmarshalAutomationScheduleTaskInput(bytes)
 //    bytes, err = automationScheduleTaskInput.Marshal()
 //
+//    componentConformanceObservation, err := UnmarshalComponentConformanceObservation(bytes)
+//    bytes, err = componentConformanceObservation.Marshal()
+//
+//    componentConformancePlan, err := UnmarshalComponentConformancePlan(bytes)
+//    bytes, err = componentConformancePlan.Marshal()
+//
+//    componentConformanceProbe, err := UnmarshalComponentConformanceProbe(bytes)
+//    bytes, err = componentConformanceProbe.Marshal()
+//
+//    componentConformanceStepObservation, err := UnmarshalComponentConformanceStepObservation(bytes)
+//    bytes, err = componentConformanceStepObservation.Marshal()
+//
 //    freshApprovalAdmissionRequest, err := UnmarshalFreshApprovalAdmissionRequest(bytes)
 //    bytes, err = freshApprovalAdmissionRequest.Marshal()
 //
@@ -305,6 +359,36 @@ func UnmarshalCanary(data []byte) (Canary, error) {
 }
 
 func (r *Canary) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterExecutionObservation(data []byte) (AdapterExecutionObservation, error) {
+	var r AdapterExecutionObservation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterExecutionObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterExecutionResponse(data []byte) (AdapterExecutionResponse, error) {
+	var r AdapterExecutionResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterExecutionResponse) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterScopeObservation(data []byte) (AdapterScopeObservation, error) {
+	var r AdapterScopeObservation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterScopeObservation) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -638,6 +722,56 @@ func (r *ClientKeyStatus) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentConformanceAuthorization(data []byte) (ComponentConformanceAuthorization, error) {
+	var r ComponentConformanceAuthorization
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformanceAuthorization) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentConformanceWireDigests(data []byte) (ComponentConformanceWireDigests, error) {
+	var r ComponentConformanceWireDigests
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformanceWireDigests) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentConformanceWireObservation(data []byte) (ComponentConformanceWireObservation, error) {
+	var r ComponentConformanceWireObservation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformanceWireObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentReleasePage(data []byte) (ComponentReleasePage, error) {
+	var r ComponentReleasePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentReleasePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentReleaseReceipt(data []byte) (ComponentReleaseReceipt, error) {
+	var r ComponentReleaseReceipt
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentReleaseReceipt) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalEvidenceView(data []byte) (EvidenceView, error) {
 	var r EvidenceView
 	err := json.Unmarshal(data, &r)
@@ -898,6 +1032,16 @@ func (r *AgentVersionContent) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAutomationApprovalPolicyRef(data []byte) (AutomationApprovalPolicyRef, error) {
+	var r AutomationApprovalPolicyRef
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationApprovalPolicyRef) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAutomationScheduleSpec(data []byte) (AutomationScheduleSpec, error) {
 	var r AutomationScheduleSpec
 	err := json.Unmarshal(data, &r)
@@ -945,6 +1089,56 @@ func UnmarshalCapabilityContractRegistration(data []byte) (CapabilityContractReg
 }
 
 func (r *CapabilityContractRegistration) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentConformanceEnvironment(data []byte) (ComponentConformanceEnvironment, error) {
+	var r ComponentConformanceEnvironment
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformanceEnvironment) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentConformanceFixture(data []byte) (ComponentConformanceFixture, error) {
+	var r ComponentConformanceFixture
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformanceFixture) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentConformanceIdentity(data []byte) (ComponentConformanceIdentity, error) {
+	var r ComponentConformanceIdentity
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformanceIdentity) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentReleaseRegistration(data []byte) (ComponentReleaseRegistration, error) {
+	var r ComponentReleaseRegistration
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentReleaseRegistration) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalContentReference(data []byte) (ContentReference, error) {
+	var r ContentReference
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ContentReference) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1228,6 +1422,46 @@ func (r *AutomationScheduleTaskInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentConformanceObservation(data []byte) (ComponentConformanceObservation, error) {
+	var r ComponentConformanceObservation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformanceObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentConformancePlan(data []byte) (ComponentConformancePlan, error) {
+	var r ComponentConformancePlan
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformancePlan) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentConformanceProbe(data []byte) (ComponentConformanceProbe, error) {
+	var r ComponentConformanceProbe
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformanceProbe) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentConformanceStepObservation(data []byte) (ComponentConformanceStepObservation, error) {
+	var r ComponentConformanceStepObservation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformanceStepObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalFreshApprovalAdmissionRequest(data []byte) (FreshApprovalAdmissionRequest, error) {
 	var r FreshApprovalAdmissionRequest
 	err := json.Unmarshal(data, &r)
@@ -1309,6 +1543,58 @@ type Variant struct {
 	TaskAttempt *int64      `json:"taskAttempt,omitempty"`
 }
 
+// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
+// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
+type AdapterExecutionObservation struct {
+	CancelCapability NativeCancelCapability  `json:"cancelCapability"`
+	IdempotencyKey   string                  `json:"idempotencyKey"`
+	LastObservedAt   *string                 `json:"lastObservedAt,omitempty"`
+	NativeID         *string                 `json:"nativeId,omitempty"`
+	NativeStatus     *string                 `json:"nativeStatus,omitempty"`
+	NativeType       string                  `json:"nativeType"`
+	PlatformStatus   ExternalExecutionStatus `json:"platformStatus"`
+	TerminalAt       *string                 `json:"terminalAt,omitempty"`
+}
+
+// ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入
+// Core 的套件报告。
+type AdapterExecutionResponse struct {
+	ContentReference *ContentReferenceClass `json:"contentReference,omitempty"`
+	Execution        ExecutionClass         `json:"execution"`
+	ResultJSON       *string                `json:"resultJson,omitempty"`
+}
+
+// design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
+type ContentReferenceClass struct {
+	AssetID         *string `json:"assetId,omitempty"`
+	DisplayName     string  `json:"displayName"`
+	MediaType       string  `json:"mediaType"`
+	NativeObjectRef string  `json:"nativeObjectRef"`
+	NativeRevision  string  `json:"nativeRevision"`
+	ResourceID      string  `json:"resourceId"`
+}
+
+// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
+// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
+type ExecutionClass struct {
+	CancelCapability NativeCancelCapability  `json:"cancelCapability"`
+	IdempotencyKey   string                  `json:"idempotencyKey"`
+	LastObservedAt   *string                 `json:"lastObservedAt,omitempty"`
+	NativeID         *string                 `json:"nativeId,omitempty"`
+	NativeStatus     *string                 `json:"nativeStatus,omitempty"`
+	NativeType       string                  `json:"nativeType"`
+	PlatformStatus   ExternalExecutionStatus `json:"platformStatus"`
+	TerminalAt       *string                 `json:"terminalAt,omitempty"`
+}
+
+// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
+type AdapterScopeObservation struct {
+	NativeRef           *string           `json:"nativeRef,omitempty"`
+	NativeType          *string           `json:"nativeType,omitempty"`
+	PlatformResourceRef string            `json:"platformResourceRef"`
+	Result              NativeScopeResult `json:"result"`
+}
+
 // POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
 // actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
 type ActionCommand struct {
@@ -1325,6 +1611,7 @@ type ActionCommand struct {
 	CapabilityContractRef *CapabilityContractRefClass `json:"capabilityContractRef,omitempty"`
 	// 仅 capability_contract.register：真实 schema 与测试向量内容。
 	CapabilityContractRegistration *CapabilityContractRegistrationClass `json:"capabilityContractRegistration,omitempty"`
+	ComponentReleaseRegistration   *ComponentReleaseRegistrationClass   `json:"componentReleaseRegistration,omitempty"`
 	// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 	DelegationGrant *DelegationGrantClass `json:"delegationGrant,omitempty"`
 	// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
@@ -1405,14 +1692,21 @@ type AgentVersionContentTurnLimits struct {
 //
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 type AutomationVersionContentClass struct {
-	Action       AutomationVersionContentAction  `json:"action"`
-	ResultTarget AutomationResultTarget          `json:"resultTarget"`
-	Trigger      AutomationVersionContentTrigger `json:"trigger"`
+	Action         AutomationVersionContentAction  `json:"action"`
+	ApprovalPolicy *ApprovalPolicyElement          `json:"approvalPolicy,omitempty"`
+	ResultTarget   AutomationResultTarget          `json:"resultTarget"`
+	Trigger        AutomationVersionContentTrigger `json:"trigger"`
 }
 
 type AutomationVersionContentAction struct {
 	Kind     ActionKind `json:"kind"`
 	Template string     `json:"template"`
+}
+
+// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+type ApprovalPolicyElement struct {
+	ID      string `json:"id"`
+	Version int64  `json:"version"`
 }
 
 type AutomationVersionContentTrigger struct {
@@ -1473,6 +1767,14 @@ type CapabilityContractRegistrationOperationContract struct {
 type CapabilityContractRegistrationResourceTypeFamily struct {
 	Kind    string `json:"kind"`
 	TypeKey string `json:"typeKey"`
+}
+
+// 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
+// Worker 独立执行隔离套件。
+type ComponentReleaseRegistrationClass struct {
+	BindingConfigSchemaJSON string `json:"bindingConfigSchemaJson"`
+	ManifestJSON            string `json:"manifestJson"`
+	PackageJSON             string `json:"packageJson"`
 }
 
 // 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -2053,7 +2355,8 @@ type VersionClass struct {
 }
 
 type AutomationPage struct {
-	Automations []AutomationElement `json:"automations"`
+	Automations               []AutomationElement     `json:"automations"`
+	AvailableApprovalPolicies []ApprovalPolicyElement `json:"availableApprovalPolicies,omitempty"`
 	// 本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。
 	CanCreate  bool   `json:"canCreate"`
 	NextOffset *int64 `json:"nextOffset,omitempty"`
@@ -2183,6 +2486,101 @@ type ClientKeyStatus struct {
 	State              BuzzIdentityState `json:"state"`
 	// 推进该状态的 Workflow；本次调用没有需要推进的状态时缺省
 	WorkflowID *string `json:"workflowId,omitempty"`
+}
+
+// Core私网仅向受信Worker返回的逐次隔离探测凭据。token仅在Activity内存中使用，禁止进入Temporal输入、输出或报告。其声明绑定固定模拟上下文与完整实际参数，不授予生产binding授权。
+type ComponentConformanceAuthorization struct {
+	ExpectedResponseDigest string                   `json:"expectedResponseDigest"`
+	Operation              AdapterProtocolOperation `json:"operation"`
+	RequestDigest          string                   `json:"requestDigest"`
+	RequestJSON            string                   `json:"requestJson"`
+	Token                  string                   `json:"token"`
+}
+
+// Core原canonical_digest对同一已授权步骤实际响应的摘要；仅规范化事实，不声明套件通过或登记成功。
+type ComponentConformanceWireDigests struct {
+	RequestDigest  string  `json:"requestDigest"`
+	ResponseDigest string  `json:"responseDigest"`
+	ResultDigest   *string `json:"resultDigest,omitempty"`
+}
+
+// 受信Worker实际HTTP响应的瞬时核验输入。正文仅在Activity与Core请求内存中存在，不得进入Temporal历史、报告、日志或数据库；不是用户上传的通过声明。
+type ComponentConformanceWireObservation struct {
+	HTTPStatus   int64      `json:"httpStatus"`
+	Probe        ProbeClass `json:"probe"`
+	ResponseJSON string     `json:"responseJson"`
+}
+
+// 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
+// history 承接，不建立另一执行账本。
+type ProbeClass struct {
+	ContentReference *ContentReferenceClass `json:"contentReference,omitempty"`
+	Plan             PlanClass              `json:"plan"`
+	// 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
+	Reconcile *bool `json:"reconcile,omitempty"`
+	StepIndex int64 `json:"stepIndex"`
+}
+
+// 受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
+type PlanClass struct {
+	ActionExecutionID  string   `json:"actionExecutionId"`
+	ArtifactDigest     string   `json:"artifactDigest"`
+	ComponentReleaseID string   `json:"componentReleaseId"`
+	ContractDigests    []string `json:"contractDigests"`
+	// 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
+	IdentityDigest string `json:"identityDigest"`
+	OperationID    string `json:"operationId"`
+	PlanDigest     string `json:"planDigest"`
+	// Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
+	// Describe 与同 workflow 的当前 TaskProjection 核对。
+	RunID       string     `json:"runId"`
+	Steps       []PlanStep `json:"steps"`
+	SuiteDigest string     `json:"suiteDigest"`
+	WorkflowID  string     `json:"workflowId"`
+}
+
+type PlanStep struct {
+	CaseKey string `json:"caseKey"`
+	// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
+	// native 任务元数据。
+	ContractKey          *string                  `json:"contractKey,omitempty"`
+	ExpectedHTTPStatus   int64                    `json:"expectedHttpStatus"`
+	ExpectedResponseJSON string                   `json:"expectedResponseJson"`
+	IdempotencyKey       string                   `json:"idempotencyKey"`
+	Operation            AdapterProtocolOperation `json:"operation"`
+	ReferenceAssetID     *string                  `json:"referenceAssetId,omitempty"`
+	ReferenceFromStepKey *string                  `json:"referenceFromStepKey,omitempty"`
+	ReferenceResourceID  *string                  `json:"referenceResourceId,omitempty"`
+	RequestJSON          string                   `json:"requestJson"`
+	StepKey              string                   `json:"stepKey"`
+}
+
+// 受Catalog管理权限保护的已登记release元数据，正文与套件令牌不外露；REGISTERED不等于APPROVED或binding可用。
+type ComponentReleasePage struct {
+	CanRegister bool                   `json:"canRegister"`
+	NextOffset  *int64                 `json:"nextOffset,omitempty"`
+	Releases    []ComponentReleaseView `json:"releases"`
+}
+
+type ComponentReleaseView struct {
+	ArtifactDigest                string                 `json:"artifactDigest"`
+	ComponentReleaseID            string                 `json:"componentReleaseId"`
+	ComponentTypeKey              string                 `json:"componentTypeKey"`
+	ManifestDigest                string                 `json:"manifestDigest"`
+	OperationID                   string                 `json:"operationId"`
+	RegisteredByActionExecutionID string                 `json:"registeredByActionExecutionId"`
+	Status                        ComponentReleaseStatus `json:"status"`
+	SuiteDigest                   string                 `json:"suiteDigest"`
+	Version                       string                 `json:"version"`
+	WorkflowID                    string                 `json:"workflowId"`
+}
+
+// 原准入同事务登记后的不可变引用；不是组件激活或审批回执。
+type ComponentReleaseReceipt struct {
+	ActionExecutionID  string                 `json:"actionExecutionId"`
+	ComponentReleaseID string                 `json:"componentReleaseId"`
+	PlanDigest         string                 `json:"planDigest"`
+	Status             ComponentReleaseStatus `json:"status"`
 }
 
 // GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
@@ -2548,6 +2946,12 @@ type AgentVersionContentTurnLimitsClass struct {
 	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
 }
 
+// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+type AutomationApprovalPolicyRef struct {
+	ID      string `json:"id"`
+	Version int64  `json:"version"`
+}
+
 // Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
 // SKIP，不另实现 cron。
 type AutomationScheduleSpec struct {
@@ -2558,9 +2962,10 @@ type AutomationScheduleSpec struct {
 
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 type AutomationVersionContent struct {
-	Action       AutomationVersionContentActionClass  `json:"action"`
-	ResultTarget AutomationResultTarget               `json:"resultTarget"`
-	Trigger      AutomationVersionContentTriggerClass `json:"trigger"`
+	Action         AutomationVersionContentActionClass  `json:"action"`
+	ApprovalPolicy *ApprovalPolicyElement               `json:"approvalPolicy,omitempty"`
+	ResultTarget   AutomationResultTarget               `json:"resultTarget"`
+	Trigger        AutomationVersionContentTriggerClass `json:"trigger"`
 }
 
 type AutomationVersionContentActionClass struct {
@@ -2588,10 +2993,15 @@ type Case struct {
 }
 
 type Step struct {
-	ContractKey        string `json:"contractKey"`
-	ExpectedOutputJSON string `json:"expectedOutputJson"`
-	InputJSON          string `json:"inputJson"`
-	StepKey            string `json:"stepKey"`
+	ContractKey        string  `json:"contractKey"`
+	ExpectedOutputJSON string  `json:"expectedOutputJson"`
+	InputJSON          string  `json:"inputJson"`
+	ReferenceAssetID   *string `json:"referenceAssetId,omitempty"`
+	// 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定 Resource/Asset
+	// 目标一起进入规范化参数 hash。
+	ReferenceFromStepKey *string `json:"referenceFromStepKey,omitempty"`
+	ReferenceResourceID  *string `json:"referenceResourceId,omitempty"`
+	StepKey              string  `json:"stepKey"`
 }
 
 // 固定 Catalog 自然键，不授予业务能力 consume 权限。
@@ -2633,6 +3043,69 @@ type CapabilityContractRegistrationOperationContractClass struct {
 type CapabilityContractRegistrationResourceTypeFamilyClass struct {
 	Kind    string `json:"kind"`
 	TypeKey string `json:"typeKey"`
+}
+
+// 07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
+// 对实际请求签发，不接受静态凭据文件或用户 action 自报地址。
+type ComponentConformanceEnvironment struct {
+	AdapterBaseURL   string `json:"adapterBaseUrl"`
+	ArtifactDigest   string `json:"artifactDigest"`
+	MaxResponseBytes int64  `json:"maxResponseBytes"`
+	MaxSteps         int64  `json:"maxSteps"`
+}
+
+// 隔离开发环境受控投递的协议夹具数据，不来自登记请求。Core 只采用固定协议用例并核对全部必需覆盖；没有脚本、条件、路径表达式或通过声明。
+type ComponentConformanceFixture struct {
+	ArtifactDigest string     `json:"artifactDigest"`
+	Steps          []PlanStep `json:"steps"`
+}
+
+// 仅用于07§8A隔离套件的模拟上下文投递。不是生产 Catalog、Delegation 或
+// ResultExposurePolicy。独立密钥/issuer/audience；其完整摘要固定在原登记计划。
+type ComponentConformanceIdentity struct {
+	ArtifactDigest  string                                `json:"artifactDigest"`
+	Audience        string                                `json:"audience"`
+	Contexts        []ComponentConformanceIdentityContext `json:"contexts"`
+	Issuer          string                                `json:"issuer"`
+	JwksFile        string                                `json:"jwksFile"`
+	PrivateKeyField string                                `json:"privateKeyField"`
+	SecretAudience  string                                `json:"secretAudience"`
+	SecretLocator   string                                `json:"secretLocator"`
+	SecretVersion   int64                                 `json:"secretVersion"`
+	TokenSeconds    int64                                 `json:"tokenSeconds"`
+}
+
+type ComponentConformanceIdentityContext struct {
+	ActionDefinitionVersion     int64                    `json:"actionDefinitionVersion"`
+	ActionKey                   string                   `json:"actionKey"`
+	ActorPrincipalID            string                   `json:"actorPrincipalId"`
+	CaseKey                     string                   `json:"caseKey"`
+	Operation                   AdapterProtocolOperation `json:"operation"`
+	ResultExposurePolicyID      string                   `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64                    `json:"resultExposurePolicyVersion"`
+	StepKey                     string                   `json:"stepKey"`
+	TargetID                    *string                  `json:"targetId,omitempty"`
+	TargetType                  string                   `json:"targetType"`
+	TenantID                    string                   `json:"tenantId"`
+	WorkspaceID                 *string                  `json:"workspaceId,omitempty"`
+}
+
+// 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
+// Worker 独立执行隔离套件。
+type ComponentReleaseRegistration struct {
+	BindingConfigSchemaJSON string `json:"bindingConfigSchemaJson"`
+	ManifestJSON            string `json:"manifestJson"`
+	PackageJSON             string `json:"packageJson"`
+}
+
+// design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
+type ContentReference struct {
+	AssetID         *string `json:"assetId,omitempty"`
+	DisplayName     string  `json:"displayName"`
+	MediaType       string  `json:"mediaType"`
+	NativeObjectRef string  `json:"nativeObjectRef"`
+	NativeRevision  string  `json:"nativeRevision"`
+	ResourceID      string  `json:"resourceId"`
 }
 
 type DelegationGrantParameters struct {
@@ -2797,11 +3270,71 @@ type AgentTaskAdvanceRequest struct {
 
 // Core 查证的引用与状态；native completed 缺 reply/usage 证据仍 RUNNING。
 type AgentTaskAdvanceResult struct {
+	ApprovalInput      *ApprovalInputClass `json:"approvalInput,omitempty"`
+	ApprovalWorkflowID *string             `json:"approvalWorkflowId,omitempty"`
 	// 已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
 	FinishActivity bool       `json:"finishActivity"`
 	InvocationID   string     `json:"invocationId"`
 	Status         TaskStatus `json:"status"`
 	WaitingReason  string     `json:"waitingReason"`
+}
+
+// ApprovalWorkflow 的冻结输入（.design/06 §4）。运行中不得更换 Tenant、Workspace、target、参数摘要或策略版本；意图改变时建立新
+// ActionExecution。
+type ApprovalInputClass struct {
+	ActionDefinitionVersion int64                     `json:"actionDefinitionVersion"`
+	ActionExecutionID       string                    `json:"actionExecutionId"`
+	ActionKey               string                    `json:"actionKey"`
+	AffectedOwnerRefs       []AffectedOwnerRefElement `json:"affectedOwnerRefs"`
+	// APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED
+	ConsumeWindowSeconds int64 `json:"consumeWindowSeconds"`
+	// RFC3339，UTC。Core 按 ApprovalPolicy.expires_in 在请求时冻结；Workflow 以 workflow.Now() 与之比较
+	ExpiresAt            string                   `json:"expiresAt"`
+	InitiatorPrincipalID string                   `json:"initiatorPrincipalId"`
+	OperationID          string                   `json:"operationId"`
+	OwnerRequirement     ApprovalOwnerRequirement `json:"ownerRequirement"`
+	ParameterHash        string                   `json:"parameterHash"`
+	PolicyID             string                   `json:"policyId"`
+	PolicyVersion        int64                    `json:"policyVersion"`
+	Resume               *ResumeClass             `json:"resume,omitempty"`
+	RoleRequirements     []RoleRequirementElement `json:"roleRequirements"`
+	SelfApproval         ApprovalSelfApproval     `json:"selfApproval"`
+	TargetID             string                   `json:"targetId"`
+	TargetType           string                   `json:"targetType"`
+	TenantID             string                   `json:"tenantId"`
+	// TENANT_ONLY 动作缺省
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
+type AffectedOwnerRefElement struct {
+	OwnerPrincipalID string `json:"ownerPrincipalId"`
+	TargetID         string `json:"targetId"`
+	TargetType       string `json:"targetType"`
+	TargetVersion    int64  `json:"targetVersion"`
+}
+
+// ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
+// 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
+type ResumeClass struct {
+	// RFC3339，UTC
+	ConsumedAt *string `json:"consumedAt,omitempty"`
+	// RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
+	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
+	Decisions       []DecisionElement `json:"decisions"`
+	// 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
+	// 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
+	EventBase int64            `json:"eventBase"`
+	Reason    *ReasonCode      `json:"reason,omitempty"`
+	Refusals  []RefusalElement `json:"refusals"`
+	Status    ApprovalStatus   `json:"status"`
+}
+
+// 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
+// §4）。
+type RefusalElement struct {
+	ApproverPrincipalID string     `json:"approverPrincipalId"`
+	Reason              ReasonCode `json:"reason"`
 }
 
 // DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
@@ -2876,37 +3409,6 @@ type ApprovalWorkflowInput struct {
 	TenantID             string                   `json:"tenantId"`
 	// TENANT_ONLY 动作缺省
 	WorkspaceID *string `json:"workspaceId,omitempty"`
-}
-
-// 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
-type AffectedOwnerRefElement struct {
-	OwnerPrincipalID string `json:"ownerPrincipalId"`
-	TargetID         string `json:"targetId"`
-	TargetType       string `json:"targetType"`
-	TargetVersion    int64  `json:"targetVersion"`
-}
-
-// ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
-// 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
-type ResumeClass struct {
-	// RFC3339，UTC
-	ConsumedAt *string `json:"consumedAt,omitempty"`
-	// RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
-	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
-	Decisions       []DecisionElement `json:"decisions"`
-	// 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
-	// 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
-	EventBase int64            `json:"eventBase"`
-	Reason    *ReasonCode      `json:"reason,omitempty"`
-	Refusals  []RefusalElement `json:"refusals"`
-	Status    ApprovalStatus   `json:"status"`
-}
-
-// 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
-// §4）。
-type RefusalElement struct {
-	ApproverPrincipalID string     `json:"approverPrincipalId"`
-	Reason              ReasonCode `json:"reason"`
 }
 
 // invalidate Update 的参数：Core 在批准后重新准入不通过时发出（.design/06 §4）。Update ID 固定为
@@ -3009,6 +3511,103 @@ type AutomationScheduleTaskInput struct {
 	SourceKind    AutomationScheduleSource `json:"sourceKind"`
 }
 
+// 受信 Worker 的一次实际线协议观察，附着冻结 ActionExecution。Core 以自身 plan 逐项匹配，不接收 pass 布尔值；UNKNOWN
+// 不表示套件失败或成功。响应正文与测试凭据不进入报告。
+type ComponentConformanceObservation struct {
+	ActionExecutionID  string               `json:"actionExecutionId"`
+	ArtifactDigest     string               `json:"artifactDigest"`
+	ComponentReleaseID string               `json:"componentReleaseId"`
+	ContractDigests    []string             `json:"contractDigests"`
+	Observations       []ObservationElement `json:"observations"`
+	OperationID        string               `json:"operationId"`
+	PlanDigest         string               `json:"planDigest"`
+	RunID              string               `json:"runId"`
+	SuiteDigest        string               `json:"suiteDigest"`
+	WorkflowID         string               `json:"workflowId"`
+}
+
+type ObservationElement struct {
+	CaseKey                string                       `json:"caseKey"`
+	ContentReference       *ContentReferenceClass       `json:"contentReference,omitempty"`
+	ErrorClass             *ErrorClass                  `json:"errorClass,omitempty"`
+	HTTPStatus             int64                        `json:"httpStatus"`
+	NativeObservation      *ExecutionClass              `json:"nativeObservation,omitempty"`
+	NativeScopeObservation *NativeScopeObservationClass `json:"nativeScopeObservation,omitempty"`
+	Operation              AdapterProtocolOperation     `json:"operation"`
+	RequestDigest          string                       `json:"requestDigest"`
+	ResponseDigest         string                       `json:"responseDigest"`
+	// 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
+	ResultDigest *string `json:"resultDigest,omitempty"`
+	StepKey      string  `json:"stepKey"`
+}
+
+// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
+type NativeScopeObservationClass struct {
+	NativeRef           *string           `json:"nativeRef,omitempty"`
+	NativeType          *string           `json:"nativeType,omitempty"`
+	PlatformResourceRef string            `json:"platformResourceRef"`
+	Result              NativeScopeResult `json:"result"`
+}
+
+// 受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
+type ComponentConformancePlan struct {
+	ActionExecutionID  string   `json:"actionExecutionId"`
+	ArtifactDigest     string   `json:"artifactDigest"`
+	ComponentReleaseID string   `json:"componentReleaseId"`
+	ContractDigests    []string `json:"contractDigests"`
+	// 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
+	IdentityDigest string `json:"identityDigest"`
+	OperationID    string `json:"operationId"`
+	PlanDigest     string `json:"planDigest"`
+	// Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
+	// Describe 与同 workflow 的当前 TaskProjection 核对。
+	RunID       string                         `json:"runId"`
+	Steps       []ComponentConformancePlanStep `json:"steps"`
+	SuiteDigest string                         `json:"suiteDigest"`
+	WorkflowID  string                         `json:"workflowId"`
+}
+
+type ComponentConformancePlanStep struct {
+	CaseKey string `json:"caseKey"`
+	// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
+	// native 任务元数据。
+	ContractKey          *string                  `json:"contractKey,omitempty"`
+	ExpectedHTTPStatus   int64                    `json:"expectedHttpStatus"`
+	ExpectedResponseJSON string                   `json:"expectedResponseJson"`
+	IdempotencyKey       string                   `json:"idempotencyKey"`
+	Operation            AdapterProtocolOperation `json:"operation"`
+	ReferenceAssetID     *string                  `json:"referenceAssetId,omitempty"`
+	ReferenceFromStepKey *string                  `json:"referenceFromStepKey,omitempty"`
+	ReferenceResourceID  *string                  `json:"referenceResourceId,omitempty"`
+	RequestJSON          string                   `json:"requestJson"`
+	StepKey              string                   `json:"stepKey"`
+}
+
+// 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
+// history 承接，不建立另一执行账本。
+type ComponentConformanceProbe struct {
+	ContentReference *ContentReferenceClass `json:"contentReference,omitempty"`
+	Plan             PlanClass              `json:"plan"`
+	// 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
+	Reconcile *bool `json:"reconcile,omitempty"`
+	StepIndex int64 `json:"stepIndex"`
+}
+
+type ComponentConformanceStepObservation struct {
+	CaseKey                string                       `json:"caseKey"`
+	ContentReference       *ContentReferenceClass       `json:"contentReference,omitempty"`
+	ErrorClass             *ErrorClass                  `json:"errorClass,omitempty"`
+	HTTPStatus             int64                        `json:"httpStatus"`
+	NativeObservation      *ExecutionClass              `json:"nativeObservation,omitempty"`
+	NativeScopeObservation *NativeScopeObservationClass `json:"nativeScopeObservation,omitempty"`
+	Operation              AdapterProtocolOperation     `json:"operation"`
+	RequestDigest          string                       `json:"requestDigest"`
+	ResponseDigest         string                       `json:"responseDigest"`
+	// 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
+	ResultDigest *string `json:"resultDigest,omitempty"`
+	StepKey      string  `json:"stepKey"`
+}
+
 // FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh
 // 选择器 permission、owner 对账与职责分离由 Core 判定。
 type FreshApprovalAdmissionRequest struct {
@@ -3080,6 +3679,33 @@ const (
 	Task    VariantKind = "TASK"
 )
 
+type NativeCancelCapability string
+
+const (
+	Supported   NativeCancelCapability = "SUPPORTED"
+	Unsupported NativeCancelCapability = "UNSUPPORTED"
+)
+
+// design03§6 ExternalExecution 的既定平台状态；HTTP成功和cancel accepted均不构成终态。
+type ExternalExecutionStatus string
+
+const (
+	ExternalExecutionStatusCANCELLED ExternalExecutionStatus = "CANCELLED"
+	ExternalExecutionStatusFAILED    ExternalExecutionStatus = "FAILED"
+	ExternalExecutionStatusRUNNING   ExternalExecutionStatus = "RUNNING"
+	ExternalExecutionStatusUNKNOWN   ExternalExecutionStatus = "UNKNOWN"
+	PendingDispatch                  ExternalExecutionStatus = "PENDING_DISPATCH"
+	Succeeded                        ExternalExecutionStatus = "SUCCEEDED"
+)
+
+type NativeScopeResult string
+
+const (
+	AbsentFenced           NativeScopeResult = "ABSENT_FENCED"
+	NativeScopeResultFOUND NativeScopeResult = "FOUND"
+	Refused                NativeScopeResult = "REFUSED"
+)
+
 type AgentMemoryColdWrite string
 
 const (
@@ -3126,20 +3752,20 @@ const (
 type CapabilityPermission string
 
 const (
-	Approve       CapabilityPermission = "approve"
-	Audit         CapabilityPermission = "audit"
-	Consume       CapabilityPermission = "consume"
-	Create        CapabilityPermission = "create"
-	Delegate      CapabilityPermission = "delegate"
-	Delete        CapabilityPermission = "delete"
-	Discover      CapabilityPermission = "discover"
-	Execute       CapabilityPermission = "execute"
-	Export        CapabilityPermission = "export"
-	Manage        CapabilityPermission = "manage"
-	Read          CapabilityPermission = "read"
-	Share         CapabilityPermission = "share"
-	TransferOwner CapabilityPermission = "transfer_owner"
-	Update        CapabilityPermission = "update"
+	Approve                     CapabilityPermission = "approve"
+	Audit                       CapabilityPermission = "audit"
+	CapabilityPermissionExecute CapabilityPermission = "execute"
+	Consume                     CapabilityPermission = "consume"
+	Create                      CapabilityPermission = "create"
+	Delegate                    CapabilityPermission = "delegate"
+	Delete                      CapabilityPermission = "delete"
+	Discover                    CapabilityPermission = "discover"
+	Export                      CapabilityPermission = "export"
+	Manage                      CapabilityPermission = "manage"
+	Read                        CapabilityPermission = "read"
+	Share                       CapabilityPermission = "share"
+	TransferOwner               CapabilityPermission = "transfer_owner"
+	Update                      CapabilityPermission = "update"
 )
 
 type CapabilitySurface string
@@ -3384,14 +4010,14 @@ const (
 type ApprovalStatus string
 
 const (
-	ApprovalStatusDENIED  ApprovalStatus = "DENIED"
-	ApprovalStatusEXPIRED ApprovalStatus = "EXPIRED"
-	ApprovalStatusWAITING ApprovalStatus = "WAITING"
-	Approved              ApprovalStatus = "APPROVED"
-	Cancelled             ApprovalStatus = "CANCELLED"
-	Consumed              ApprovalStatus = "CONSUMED"
-	Invalidated           ApprovalStatus = "INVALIDATED"
-	Requested             ApprovalStatus = "REQUESTED"
+	ApprovalStatusAPPROVED  ApprovalStatus = "APPROVED"
+	ApprovalStatusCANCELLED ApprovalStatus = "CANCELLED"
+	ApprovalStatusDENIED    ApprovalStatus = "DENIED"
+	ApprovalStatusEXPIRED   ApprovalStatus = "EXPIRED"
+	ApprovalStatusWAITING   ApprovalStatus = "WAITING"
+	Consumed                ApprovalStatus = "CONSUMED"
+	Invalidated             ApprovalStatus = "INVALIDATED"
+	Requested               ApprovalStatus = "REQUESTED"
 )
 
 // AuditEvent 的类型（.design/03 §9）。tenant_id 为空只允许 AUTHENTICATION 与 SESSION，且仅限 AgentGateway
@@ -3484,12 +4110,12 @@ const (
 type TaskStatus string
 
 const (
-	Canceled         TaskStatus = "CANCELED"
-	Completed        TaskStatus = "COMPLETED"
-	Running          TaskStatus = "RUNNING"
-	TaskStatusFAILED TaskStatus = "FAILED"
-	Terminated       TaskStatus = "TERMINATED"
-	TimedOut         TaskStatus = "TIMED_OUT"
+	Canceled          TaskStatus = "CANCELED"
+	Completed         TaskStatus = "COMPLETED"
+	TaskStatusFAILED  TaskStatus = "FAILED"
+	TaskStatusRUNNING TaskStatus = "RUNNING"
+	Terminated        TaskStatus = "TERMINATED"
+	TimedOut          TaskStatus = "TIMED_OUT"
 )
 
 // ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
@@ -3499,6 +4125,7 @@ type WorkflowKind string
 const (
 	AgentInstallation      WorkflowKind = "AGENT_INSTALLATION"
 	BuzzIdentityProjection WorkflowKind = "BUZZ_IDENTITY_PROJECTION"
+	ComponentRelease       WorkflowKind = "COMPONENT_RELEASE"
 	MembershipProjection   WorkflowKind = "MEMBERSHIP_PROJECTION"
 	MembershipRevocation   WorkflowKind = "MEMBERSHIP_REVOCATION"
 	SecretRefRehome        WorkflowKind = "SECRET_REF_REHOME"
@@ -3524,6 +4151,31 @@ const (
 	BuzzIdentityStateREVOKING BuzzIdentityState = "REVOKING"
 	PendingSecret             BuzzIdentityState = "PENDING_SECRET"
 	Reconciling               BuzzIdentityState = "RECONCILING"
+)
+
+// ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+type AdapterProtocolOperation string
+
+const (
+	AdapterProtocolOperationCancel  AdapterProtocolOperation = "cancel"
+	AdapterProtocolOperationExecute AdapterProtocolOperation = "execute"
+	AdapterProtocolOperationObserve AdapterProtocolOperation = "observe"
+	ExtractUsage                    AdapterProtocolOperation = "extract_usage"
+	Handshake                       AdapterProtocolOperation = "handshake"
+	MapNativeStatusError            AdapterProtocolOperation = "map_native_status_error"
+	QueryRevision                   AdapterProtocolOperation = "query_revision"
+	Reconcile                       AdapterProtocolOperation = "reconcile"
+	ResolveNativeScope              AdapterProtocolOperation = "resolve_native_scope"
+	ValidateBinding                 AdapterProtocolOperation = "validate_binding"
+)
+
+type ComponentReleaseStatus string
+
+const (
+	ComponentReleaseStatusAPPROVED ComponentReleaseStatus = "APPROVED"
+	ComponentReleaseStatusREVOKED  ComponentReleaseStatus = "REVOKED"
+	Registered                     ComponentReleaseStatus = "REGISTERED"
+	Rejected                       ComponentReleaseStatus = "REJECTED"
 )
 
 // 解引用只显示不可用时的原因：原证据已不存在（HTTP 404）、敏感级别未获授权、存量种类不可识别、权威源无法按该 ID 查证其仍存在。

@@ -3299,3 +3299,113 @@ Rust/Go/TypeScript/Dart、167 个 schema 同步及兼容、Workflow replay、19 
 原件 `/volumes/data/kailo/tmp/codex-post-message-delivery-20261004.E3t8Tv/full.log`，
 SHA-256 `59cd18c81bd4db0be233437c559e7223f25ab10bd1b9a226be9016b09c43236b`。
 追加回执只走原文档快路径；实际提交与 push 以 Git 历史为准。
+
+## 2026-10-04 Automation 步骤审批合并候选
+
+### 权威、影响与异常
+
+设计 `05` §2 的可选版本审批和冻结 owner/role/target，`06` 的原 ApprovalWorkflow、
+FreshApprovalAdmission 与 AgentTask 首次副作用门禁是本次实现依据（DD-107）。
+不新增审批权威、默认策略或 Workflow kind。AutomationVersion 的可选 `{id,version}`
+引用由同 Tenant、`automation.run`、RESOURCE 的真实策略目录写入并冻结；旧版没有
+该字段时保持原字节与无步骤审批行为，未知字段、错属或无效策略拒绝。
+
+影响面包含原版本创建/读取/触发、AgentTask advance、原治理资格/consume、共享
+Workflows 表单和 Mobile BFF 只读详情。迁移 17000 保留原 Memory 动作族锁与约束，
+补齐同 Tenant 策略与唯一子动作关系；已存在策略/版本/子动作引用时停止回退。
+Worker 以固定子 ID、REJECT_DUPLICATE 和 ABANDON 接原 ApprovalWorkflow，父任务
+续跑不产生另一审批实例。结果不明只观察同一子动作，不启动另一个模型回合。
+
+审批门禁先于 POST_MESSAGE 发布意图及 AGENT_TURN Capacity、Memory、原生执行。
+fresh 权限、Delegation、quota 和原 consume 继续重验。取消/拒绝仅在 CAS 证实
+Invocation 没有执行事实时，与子动作关闭同事务提交；已派发的任务仍走原观察与
+取消路径。策略被撤销、身份/投影/外部证据不可核验不回退无审批，不把 UNKNOWN
+当成功或失败；错误仍归原六类，未新增第七类。没有额外业务正文持久化。
+
+### 实际验证与证据
+
+作者冻结树 `290985fe5a209a81fb4591a179db244a45d89102`，基底
+`75eac99e74670ecde7de38879c451fe5b2c59449`；源补丁 25 文件 +1407/-101，
+四侧生成不在该补丁内，主线合并组件契约后使用原 `tools/gen.sh` 统一生成。
+原件目录 `/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/step-approval-uO83oN/`，
+`handoff.md`、`final.sha256` 留存精确命令、补丁和日志摘要。
+
+- 既有受限 SDK 镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+  4 CPU/8 GiB/swap 0、Cargo 16、Data 缓存；没有宿主项目工具链或产品构建。
+- 原 `cargo fmt --all --check`、`cargo test -p platform-core automation:: -- --include-ignored`
+  和 `cargo clippy -p platform-core --all-targets -- -D warnings` 退出 0；11 项通过，
+  显式投递隔离数据库，不把未投递依赖的早返当通过。
+- 原 Go AgentTask/Approval 目标和契约 Automation 目标退出 0。最初夹具误把 SDK
+  测试环境 drain ABANDON child 的结束时刻当父终态，实际失败保留；改为读取父终态
+  时间后 `go-restored-terminal-clock.log` 通过，没有改变生产行为迎合夹具。
+- 共享 TypeScript 类型检查退出 0，原 pages 192 项通过；当时 TS 契约往返 6 项、
+  Dart 7 项通过。隔离 PG 71 条迁移前进、空引用 17000 回退/再前进退出 0；已有
+  真实引用时原回退退出 1，报告 `Automation step approval references exist; stop rollback`。
+- 删除 SQL 同 Tenant 守卫后实际断言退出 3，删除 Core 策略 tenant 谓词后退出 101，
+  关闭 Worker 子流程启动后退出 1，删共享已选策略可用性守卫后 3 项失败、退出 1。
+  逐字恢复后上述目标均通过。初次无效 SQL 变异与 Go 夹具退出 143 原件保留，
+  不作为有效捕错证据。自有数据库已精确清理并读回不存在。
+
+Mobile 独立三路径 +144/-1，原件
+`/volumes/data/kailo/tmp/codex-mobile-step-approval-20261004.xJCHuV/handoff.md`。
+真实详情解码器先核对原 JSON 引用的字段、UUID 与版本，再调用同一生成类型；显式
+null、未知字段等不会被生成解码器擦掉后伪装为合法。原 format/analyze 与两既有
+pages/read_state 目标退出 0，116 项通过；两个生产变异分别造成 1 和 4 项失败，
+逐字还原后 116 项再次通过。最终日志 SHA
+`fec501b02cbaa6574ba125ca923060fef141c929930f01c1883c4ab610912a29`。
+这是模拟 BFF 的 widget 证据，不是设备、实际审批、APK/iOS 或签名验收。
+
+主线合并只调整 Go 生成枚举引用为合并契约的准确符号，不改线协议值。原生成和
+`--check` 退出 0，日志 `codex-component-post-integration-20261004.jHCT3k/step-generation-offline.log`
+位于 Data 临时根。首次无网络容器的 npx 试图请求 registry，终止本次自有生成进程
+退出 143；使用已有缓存的 offline 执行通过，没有升级依赖或修改生成工具。
+
+没有调用真实 BFF 决策、生产 Temporal child、SpiceDB 或模型/Relay 执行；没有
+上线步骤审批。策略目录依赖运维显式投递的合法既有策略，当前不自动开通。
+WEBHOOK 正文权威缺口仍独立阻断；本批不增 webhook 入口或影子正文存储。
+
+### 步骤批准消费前的资格纠正
+
+合并后交叉复核发现：步骤批准后若批准者失去角色，原 consume 仅变更状态，
+不能证明执行前仍满足冻结条件。依据设计 `05` §5，修复复用原
+`FreshApprovalAdmission`，在 `automation.run` 子审批消费前逐人重查，并用原
+`satisfied()` 重算 owner 与每项 `minDistinct`；不改写不可变决定。确定撤权或
+人数不足进入 INVALIDATED；依赖不可用留在原期限内查证，不消费、不派发。
+超时或并发失效优先于迟到 Activity，续跑保留原决定与截止时间。
+
+改动仅 Worker 两路径 +165/-1。`approval-consume-fresh` 的 GetVersion 保持
+旧 history；已 CONSUMED 不再查证。范围仅限首次副作用前消费的步骤审批：其他
+原动作在 dispatch 后消费，本次不改变其命令序列，也不声称全平台审批已整改。
+没有 Core、契约、迁移或客户端变化，因此未重新构建 Web/Desktop。
+
+原受限 SDK 中 `gofmt`、`go test ./... -count=1 -timeout=120s` 与
+`go vet ./...` 全部退出 0，包含既有 replay。撤权、角色集合缩水、两人阈值跌破、
+依赖不可用、旧版本、非 automation 路径及已消费重入均有实际断言。
+将生产 fresh 条件破坏为恒假后五个断言失败，退出 1；逐字恢复后原全包与 vet
+再次退出 0。首次窄快照缺 samples 的实际退出 1 保留，补齐同源输入后通过，
+没有更改产品以绕过检查。这是模拟 Activity 的 Temporal SDK 验证，不是真实
+SpiceDB/Temporal E2E。
+
+原件 `/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/approval-consume-fresh/`。
+最终 `final.log` SHA-256
+`6d0a5ad606e169014ab8f3da4e1edbcae6e8001d3d256ccc55a3652a090c553f`；
+`scoped-mutation.log` SHA-256
+`4502e0ca28fa7504f726c04c5e3e4218766ecd7d43763acac6b816c19739e9fd`。
+
+### 本批共享客户端产物
+
+组件登记与步骤审批共用原 Web/Desktop TypeScript 主体。Win11 仅运行一次原
+`tools/build-upstream.sh desktop-client`，实际退出 0；原受限 BuildKit 8 CPU/
+16 GiB/swap 0，Data 缓存，未变更限额或 Cargo 并行度。2269 个输入前后逐字一致，
+pnpm/Cargo 锁未变；独立导出的选定树 `3b82ceea39337e70144ec7d26a722e1df3e21cd7`
+沿原工具计算的全部输入也与构建快照一致，不以正式脏工作树代替选定源码。
+
+source `sha256:9e52f5337c3b67515ba8371869098368c2654bedcb5da36603be45af093ccfa9`；
+安装包 `Kailo_0.5.23_x64-setup.exe`，15118736 字节，artifact
+`sha256:4edf3d34902c7c5ed9b0158d3cde1c5eb37564c9a06a852a3891e80254292874`。
+原件目录 `codex-component-post-integration-20261004.jHCT3k/` 位于 Data 临时根，
+`desktop-build.log` SHA-256
+`fdb6295559332062e750d1f96e6038bcd72910e8072273263dc0d013a3ebc69c`。
+原生 dead-code、chunk 体积和跨平台未签名警告保留；未在 Win11 安装运行，
+不能据此关闭设备或生产门禁。Web 同批一次构建与 registry 回读结果见
+[组件登记记录](component-release-registration.md)；两份产物均未据此部署。

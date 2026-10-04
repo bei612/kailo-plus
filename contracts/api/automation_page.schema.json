@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": ["automations", "canCreate"],
   "properties": {
+    "availableApprovalPolicies":{"type":"array","items":{"$ref":"../domain/automation_approval_policy_ref.schema.json"}},
     "automations": {"type": "array", "items": {"$ref": "automation_view.schema.json"}},
     "canCreate": {"type": "boolean", "description": "本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。"},
     "nextOffset": {"type": "integer", "minimum": 1}

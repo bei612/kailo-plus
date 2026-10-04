@@ -32,6 +32,7 @@ import { type Loaded, useLoad } from "./use-load";
 import { LegacySecretRefManagement, RoleManagement } from "./roles";
 import { PlatformTenantManagement } from "./tenants";
 import { CapabilityContractsPanel } from "./capability-contracts";
+import { ComponentReleasesPanel } from "./component-releases";
 
 export { AgentDefinitionsPage } from "./agents";
 
@@ -135,6 +136,7 @@ export function WorkspaceMembersPage() {
       <LegacySecretRefManagement />
       <PlatformTenantManagement />
       <CapabilityContractsPanel />
+      <ComponentReleasesPanel />
     </div>
   );
 }

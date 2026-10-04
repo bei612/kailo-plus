@@ -6,6 +6,18 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn component_observations_roundtrip_preserves_references_unknown_and_absence() {
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("component-conformance-observations.sample.json"),
+    )
+    .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: Vec<contracts::ComponentConformanceStepObservation> =
+        serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
 fn automation_run_pages_roundtrip_preserves_unknown_and_empty_page() {
     let raw = fs::read_to_string(sample_path().with_file_name("automation-run-pages.sample.json"))
         .unwrap();

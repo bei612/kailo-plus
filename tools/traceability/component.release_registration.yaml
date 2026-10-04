@@ -1,0 +1,42 @@
+capability_id: component.release_registration
+title: Catalog 组件发行登记与原工作流一致性取证
+stage: EXT-BASE
+status: in_progress
+exposure: tenant_admin
+
+design:
+  requirements: [V-REQ-04]
+  decisions: [DD-88, DD-102]
+  # DD-100 的首个归属为 S3；本能力消费其动作策略，证据正文保留该依据。
+  facts: []
+  seams: []
+  blockers: []
+  entities: [ComponentDefinition, ComponentRelease, ActionExecution, WorkflowRef]
+
+validation:
+  scenarios: []
+  evidence:
+    - dimension: 安全边界
+      ref: core/verify/component-release-registration.md
+    - dimension: 合同一致
+      ref: core/verify/component-release-registration.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/component_release.rs, core/crates/platform-core/src/component_conformance_identity.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/component_task.rs, core/crates/platform-core/src/service_api.rs, core/crates/platform-core/src/bff.rs, worker/activities/component_conformance.go, worker/workflows/component_release.go, client-kit/ts/platform/src/client.ts, client-kit/ts/platform/src/react/component-releases.tsx, client-kit/ts/platform/src/react/pages.tsx, client-kit/ts/platform/src/i18n.ts]
+  surfaces: [web, desktop]
+  schemas: [contracts/api/action_command.schema.json, contracts/api/component_release_page.schema.json, contracts/domain/component_release_registration.schema.json, contracts/workflow/component_conformance_plan.schema.json, contracts/workflow/component_conformance_observation.schema.json]
+  migrations: [core/migrations/20261004015000_component_release.up.sql, core/migrations/20261004015000_component_release.down.sql]
+
+runtime:
+  routes: [/api/v1/platform/component-releases]
+  actions: [component_release.register]
+  tools: []
+  workflow_kinds: [COMPONENT_RELEASE]
+
+release:
+  artifacts:
+    - name: web-client
+      digest: sha256:a49e108c5cbef35c9876e05ab940ebd6a3cd48f71ab743eaeb91acadcc70686e
+  # 仅记录已构建的共享管理页；尚未部署，不代替 Core/Worker 或业务验收。
+  gate: blocked_until_seams_closed

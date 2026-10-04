@@ -1,0 +1,323 @@
+//! §8A isolated test identity, never a production ActionToken issuer.
+//! The original Catalog HUMAN action authorizes running a suite; simulated
+//! capability actors/policies remain in the developer environment. In particular
+//! registration's result NONE is not translated into a delegation policy.
+
+use contracts::ReasonCode;
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use serde_json::{json, Value};
+use uuid::Uuid;
+
+use crate::governance::Refusal;
+
+fn refused() -> Refusal {
+    Refusal::Precondition(ReasonCode::InvalidParameters)
+}
+
+fn nonempty<'a>(value: &'a Value, key: &str) -> Result<&'a str, Refusal> {
+    value[key]
+        .as_str()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(refused)
+}
+
+pub(crate) fn load(artifact: &str, production_audience: &str) -> Result<Value, Refusal> {
+    let file = std::env::var("COMPONENT_CONFORMANCE_IDENTITY_FILE")
+        .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    let bytes = std::fs::read(file)
+        .map_err(|_| Refusal::Unavailable("isolated identity delivery unavailable".into()))?;
+    let identity: contracts::ComponentConformanceIdentity =
+        serde_json::from_slice(&bytes).map_err(|_| refused())?;
+    let value = serde_json::to_value(identity).map_err(|_| refused())?;
+    // Exact round-trip rejects unknown fields instead of letting a signed
+    // configuration have two meanings across consumers.
+    if serde_json::from_slice::<Value>(&bytes).map_err(|_| refused())? != value {
+        return Err(refused());
+    }
+    validate(&value, artifact, production_audience)?;
+    Ok(value)
+}
+
+fn validate(value: &Value, artifact: &str, production_audience: &str) -> Result<(), Refusal> {
+    if value["artifactDigest"] != artifact
+        || nonempty(value, "audience")? == production_audience
+        || value["tokenSeconds"].as_u64().is_none_or(|v| v == 0)
+        || value["secretVersion"]
+            .as_u64()
+            .is_none_or(|v| v == 0 || v > u32::MAX.into())
+        || !nonempty(value, "secretLocator")?.starts_with("platform/")
+        || !std::path::Path::new(nonempty(value, "jwksFile")?).is_absolute()
+    {
+        return Err(refused());
+    }
+    for key in ["issuer", "secretAudience", "privateKeyField"] {
+        nonempty(value, key)?;
+    }
+    let contexts = value["contexts"]
+        .as_array()
+        .filter(|c| !c.is_empty())
+        .ok_or_else(refused)?;
+    let mut unique = std::collections::BTreeSet::new();
+    for context in contexts {
+        let key = (
+            nonempty(context, "caseKey")?,
+            nonempty(context, "stepKey")?,
+            nonempty(context, "operation")?,
+        );
+        if !unique.insert(key) {
+            return Err(refused());
+        }
+        for field in ["tenantId", "actorPrincipalId", "resultExposurePolicyId"] {
+            if Uuid::parse_str(nonempty(context, field)?)
+                .map_err(|_| refused())?
+                .is_nil()
+            {
+                return Err(refused());
+            }
+        }
+        for field in ["workspaceId", "targetId"] {
+            if context.get(field).is_some()
+                && Uuid::parse_str(nonempty(context, field)?)
+                    .map_err(|_| refused())?
+                    .is_nil()
+            {
+                return Err(refused());
+            }
+        }
+        for field in ["actionDefinitionVersion", "resultExposurePolicyVersion"] {
+            if context[field].as_u64().is_none_or(|v| v == 0) {
+                return Err(refused());
+            }
+        }
+        nonempty(context, "actionKey")?;
+        if !matches!(
+            nonempty(context, "targetType")?,
+            "TENANT" | "WORKSPACE" | "RESOURCE" | "ASSET"
+        ) {
+            return Err(refused());
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn context<'a>(
+    identity: &'a Value,
+    step: &Value,
+    operation: &str,
+) -> Result<&'a Value, Refusal> {
+    let found = identity["contexts"]
+        .as_array()
+        .ok_or_else(refused)?
+        .iter()
+        .find(|context| {
+            context["caseKey"] == step["caseKey"]
+                && context["stepKey"] == step["stepKey"]
+                && context["operation"] == operation
+        })
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    if let Some(contract) = step.get("contractKey") {
+        if found["actionKey"] != *contract {
+            return Err(refused());
+        }
+    }
+    if let Some(resource) = step.get("referenceResourceId") {
+        let (kind, target) = step
+            .get("referenceAssetId")
+            .map_or(("RESOURCE", resource), |asset| ("ASSET", asset));
+        if found["targetType"] != kind || found["targetId"] != *target {
+            return Err(refused());
+        }
+    }
+    Ok(found)
+}
+
+pub(crate) fn check_plan(identity: &Value, steps: &[Value]) -> Result<(), Refusal> {
+    for (index, step) in steps.iter().enumerate() {
+        let operation = nonempty(step, "operation")?;
+        let principal = context(identity, step, operation)?;
+        if nonempty(step, "stepKey")?.starts_with("permission-denied:") {
+            let previous = steps
+                .get(index.checked_sub(1).ok_or_else(refused)?)
+                .ok_or_else(refused)?;
+            let original = context(identity, previous, operation)?;
+            if step["requestJson"] != previous["requestJson"]
+                || step["caseKey"] != previous["caseKey"]
+                || principal["actorPrincipalId"] == original["actorPrincipalId"]
+            {
+                return Err(refused());
+            }
+            for field in [
+                "tenantId",
+                "workspaceId",
+                "actionKey",
+                "actionDefinitionVersion",
+                "targetType",
+                "targetId",
+                "resultExposurePolicyId",
+                "resultExposurePolicyVersion",
+            ] {
+                if principal.get(field) != original.get(field) {
+                    return Err(refused());
+                }
+            }
+        }
+        if matches!(operation, "execute" | "cancel" | "observe" | "reconcile") {
+            context(identity, step, "reconcile")?;
+        }
+    }
+    Ok(())
+}
+
+/// Only Core reads the dedicated versioned private key. Publication is checked
+/// against the Agent-delivered JWKS on every issue, so switching the signing
+/// version before public-key delivery fails closed. No file/public-key endpoint
+/// is created here and no private key or resulting token is persisted.
+pub(crate) async fn sign(
+    state: &crate::service_api::ServiceState,
+    identity: &Value,
+    context: &Value,
+    action: Uuid,
+    operation: Uuid,
+    protocol_operation: &str,
+    parameters: &Value,
+) -> Result<String, Refusal> {
+    let issuer = nonempty(identity, "issuer")?;
+    let audience = nonempty(identity, "audience")?;
+    if state.auth.shares_identity(issuer, audience)
+        || state
+            .gateway_service_auth
+            .as_ref()
+            .is_some_and(|auth| auth.shares_identity(issuer, audience))
+        || nonempty(identity, "secretAudience")? != state.secret_audience
+    {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    let version = u32::try_from(identity["secretVersion"].as_u64().ok_or_else(refused)?)
+        .map_err(|_| refused())?;
+    let reference = secret_store::SecretRef {
+        locator: nonempty(identity, "secretLocator")?.into(),
+        version,
+        audience: state.secret_audience.clone(),
+    };
+    // The key itself carries its restricted purpose at the same KV version.
+    // Reusing a production/session private-key record is not a fallback.
+    let purpose = state
+        .secrets
+        .read(&reference, "purpose")
+        .await
+        .map_err(|_| Refusal::Unavailable("isolated signing purpose unavailable".into()))?;
+    if purpose.expose() != "COMPONENT_CONFORMANCE" {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    let key = state
+        .secrets
+        .read(&reference, nonempty(identity, "privateKeyField")?)
+        .await
+        .map_err(|_| Refusal::Unavailable("isolated signing key unavailable".into()))?;
+    let encoding = EncodingKey::from_ec_pem(key.expose().as_bytes()).map_err(|_| refused())?;
+    let now = chrono::Utc::now().timestamp();
+    let duration = i64::try_from(identity["tokenSeconds"].as_u64().ok_or_else(refused)?)
+        .map_err(|_| refused())?;
+    let expiry = now.checked_add(duration).ok_or_else(refused)?;
+    let mut claims = json!({"jti":Uuid::new_v4(),"iss":issuer,"aud":audience,"iat":now,"exp":expiry,
+        "tenant_id":context["tenantId"],"actor_principal_id":context["actorPrincipalId"],
+        "operation_id":operation,"action_execution_id":action,
+        "action_key":context["actionKey"],"action_definition_version":context["actionDefinitionVersion"],
+        "target_type":context["targetType"],
+        "normalized_parameter_hash":collab_bridge::limits::canonical_digest(&json!({"operation":protocol_operation,"arguments":parameters})),
+        "result_exposure_policy_id":context["resultExposurePolicyId"],
+        "result_exposure_policy_version":context["resultExposurePolicyVersion"]});
+    for (source, destination) in [("workspaceId", "workspace_id"), ("targetId", "target_id")] {
+        if let Some(value) = context.get(source) {
+            claims[destination] = value.clone();
+        }
+    }
+    let kid = version.to_string();
+    let mut header = Header::new(Algorithm::ES256);
+    header.kid = Some(kid.clone());
+    let token = jsonwebtoken::encode(&header, &claims, &encoding).map_err(|_| refused())?;
+    let published: jsonwebtoken::jwk::JwkSet = serde_json::from_slice(
+        &std::fs::read(nonempty(identity, "jwksFile")?)
+            .map_err(|_| Refusal::Unavailable("isolated JWKS delivery unavailable".into()))?,
+    )
+    .map_err(|_| refused())?;
+    if published
+        .keys
+        .iter()
+        .filter(|key| key.common.key_id.as_deref() == Some(kid.as_str()))
+        .count()
+        != 1
+    {
+        return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
+    }
+    let public = published
+        .find(&kid)
+        .ok_or(Refusal::Precondition(ReasonCode::ProjectionDelayed))?;
+    let decoding = DecodingKey::from_jwk(public).map_err(|_| refused())?;
+    let mut validation = Validation::new(Algorithm::ES256);
+    validation.set_issuer(&[issuer]);
+    validation.set_audience(&[audience]);
+    validation.leeway = 0;
+    let verified = jsonwebtoken::decode::<Value>(&token, &decoding, &validation)
+        .map_err(|_| Refusal::Precondition(ReasonCode::ProjectionDelayed))?;
+    if verified.claims != claims {
+        return Err(refused());
+    }
+    Ok(token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn identity() -> Value {
+        json!({"artifactDigest":"candidate-artifact","issuer":"isolated-issuer","audience":"isolated-adapter",
+            "tokenSeconds":30,"secretLocator":"platform/kv/isolated-suite","secretVersion":2,
+            "secretAudience":"core-only","privateKeyField":"privateKey","jwksFile":"/fixture/jwks.json",
+            "contexts":[{"caseKey":"roundtrip","stepKey":"consume","operation":"execute",
+                "tenantId":Uuid::new_v4(),"actorPrincipalId":Uuid::new_v4(),"actionKey":"document.read",
+                "actionDefinitionVersion":1,"targetType":"RESOURCE","targetId":Uuid::new_v4(),
+                "resultExposurePolicyId":Uuid::new_v4(),"resultExposurePolicyVersion":1}]})
+    }
+
+    #[test]
+    fn isolated_context_cannot_reuse_production_audience_or_unknown_scope() {
+        let value = identity();
+        assert!(validate(&value, "candidate-artifact", "production-adapter").is_ok());
+        for (key, replacement) in [
+            ("audience", json!("production-adapter")),
+            ("artifactDigest", json!("other")),
+            ("secretLocator", json!("tenant/kv/key")),
+            ("secretVersion", json!(0)),
+            ("tokenSeconds", json!(0)),
+            ("jwksFile", json!("relative.json")),
+        ] {
+            let mut changed = value.clone();
+            changed[key] = replacement;
+            assert!(
+                validate(&changed, "candidate-artifact", "production-adapter").is_err(),
+                "{key}"
+            );
+        }
+        let mut duplicate = value.clone();
+        duplicate["contexts"]
+            .as_array_mut()
+            .unwrap()
+            .push(value["contexts"][0].clone());
+        assert!(validate(&duplicate, "candidate-artifact", "production-adapter").is_err());
+    }
+
+    #[test]
+    fn dynamic_reference_target_and_contract_select_exact_mock_context() {
+        let value = identity();
+        let mut step = json!({"caseKey":"roundtrip","stepKey":"consume","contractKey":"document.read",
+            "referenceResourceId":value["contexts"][0]["targetId"]});
+        assert!(context(&value, &step, "execute").is_ok());
+        assert!(context(&value, &step, "reconcile").is_err());
+        step["referenceResourceId"] = json!(Uuid::new_v4());
+        assert!(context(&value, &step, "execute").is_err());
+        step["referenceResourceId"] = value["contexts"][0]["targetId"].clone();
+        step["contractKey"] = json!("document.export");
+        assert!(context(&value, &step, "execute").is_err());
+    }
+}

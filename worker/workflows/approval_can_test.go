@@ -85,7 +85,7 @@ func TestContinueAsNewResumesWithoutLosingDecisions(t *testing.T) {
 	if err := env.GetWorkflowError(); err != nil {
 		t.Fatalf("续跑后的 run 失败: %v", err)
 	}
-	if bo, ok := b.outcome.(generated.ApprovalDecisionOutcome); !ok || bo.Status != generated.Approved {
+	if bo, ok := b.outcome.(generated.ApprovalDecisionOutcome); !ok || bo.Status != generated.ApprovalStatusAPPROVED {
 		t.Fatalf("B 的批准应与续跑带来的 A 一起满足两人要求: %+v %v", b.outcome, b.err)
 	}
 	out, ok := again.outcome.(generated.ApprovalDecisionOutcome)
