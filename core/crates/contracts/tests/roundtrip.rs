@@ -24,3 +24,16 @@ fn canary_roundtrip_preserves_every_field() {
         "round-trip 后与样例不等，说明生成类型丢了信息"
     );
 }
+
+#[test]
+fn web_publish_message_roundtrip_preserves_mentions_and_legacy_absence() {
+    for sample in [
+        "web-publish-mention.sample.json",
+        "web-publish-content-only.sample.json",
+    ] {
+        let raw = fs::read_to_string(sample_path().with_file_name(sample)).unwrap();
+        let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let typed: contracts::WebPublishMessageRequest = serde_json::from_str(&raw).unwrap();
+        assert_eq!(original, serde_json::to_value(typed).unwrap(), "{sample}");
+    }
+}

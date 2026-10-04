@@ -9,6 +9,20 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  for (final sample in [
+    'web-publish-mention.sample.json',
+    'web-publish-content-only.sample.json',
+  ]) {
+    test('WebPublishMessageRequest round-trip $sample', () {
+      final original = jsonDecode(
+        File('../../contracts/samples/$sample').readAsStringSync(),
+      );
+      final typed = WebPublishMessageRequest.fromJson(
+        original as Map<String, dynamic>,
+      );
+      expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+    });
+  }
   test('canary round-trip 保留每个字段', () {
     // 相对包根定位样例，不依赖调用时的工作目录
     final file = File('../../contracts/samples/canary.sample.json');

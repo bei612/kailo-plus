@@ -13,6 +13,8 @@ import type {
   ReadMarkRequest,
   UserStateVersion,
   WorkspacePreferenceRequest,
+  WebMessageAttachment,
+  WebPublishMessageRequest,
 } from "@client-kit/contracts";
 import { createBffClient } from "@client-kit/platform/client";
 import { type BffRequest, unwrap } from "@client-kit/platform/transport";
@@ -51,7 +53,7 @@ export type UserState = {
 };
 
 /** 一份已上传的媒体（Blossom descriptor）。发消息时原样带回，由 Core 生成 imeta。 */
-export type MediaDescriptor = { url: string; sha256: string; size: number; type: string };
+export type MediaDescriptor = WebMessageAttachment;
 
 /**
  * 退出。顺序固定：先让 Core 撤销会话并关闭流，再让网关清 cookie。网关的 logout
@@ -79,6 +81,7 @@ export async function publishMessage(
   content: string,
   attachments: readonly MediaDescriptor[],
   idempotencyKey: string,
+  mentionInstallationIds: string[] = [],
 ): Promise<{ eventId: string; operationId: string }> {
   const path = `/api/v1/workspaces/${workspaceId}/messages`;
   return unwrap(
@@ -86,7 +89,11 @@ export async function publishMessage(
     await transport.exchange(path, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify({ content, attachments }),
+      body: JSON.stringify({
+        content,
+        attachments: [...attachments],
+        mentionInstallationIds,
+      } satisfies WebPublishMessageRequest),
     }),
   );
 }

@@ -1,0 +1,10 @@
+{
+  "content": "Please answer this message.",
+  "attachments": [{
+    "url": "https://relay.example/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "type": "image/png",
+    "size": 42
+  }],
+  "mentionInstallationIds": ["00000000-0000-4000-8000-000000000001"]
+}

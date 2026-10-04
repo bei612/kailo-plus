@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_publish_message_request.schema.json",
+  "title": "WebPublishMessageRequest",
+  "description": "Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed event。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["content"],
+  "properties": {
+    "content": {"type": "string"},
+    "attachments": {
+      "type": "array",
+      "items": {
+        "title": "WebMessageAttachment",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "sha256", "type", "size"],
+        "properties": {
+          "url": {"type": "string"},
+          "sha256": {"type": "string"},
+          "type": {"type": "string"},
+          "size": {"type": "integer"}
+        }
+      }
+    },
+    "mentionInstallationIds": {
+      "type": "array",
+      "items": {"type": "string", "format": "uuid"},
+      "description": "用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。"
+    }
+  }
+}

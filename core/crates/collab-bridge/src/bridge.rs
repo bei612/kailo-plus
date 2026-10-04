@@ -212,8 +212,25 @@ impl IdentityClient {
         content: &str,
         media_tags: &[Vec<String>],
     ) -> Result<Event, OperatorError> {
+        self.sign_channel_message_mentions(channel_id, content, media_tags, &[])
+    }
+
+    /// Root message mentions are exact public keys resolved by the governed caller.
+    /// No thread reference is fabricated for a top-level Channel message.
+    pub fn sign_channel_message_mentions(
+        &self,
+        channel_id: &str,
+        content: &str,
+        media_tags: &[Vec<String>],
+        mention_pubkeys: &[String],
+    ) -> Result<Event, OperatorError> {
         let mut tags = vec![vec!["h".to_owned(), channel_id.to_owned()]];
         tags.extend(media_tags.iter().cloned());
+        for pubkey in mention_pubkeys {
+            let key = nostr::PublicKey::from_hex(pubkey)
+                .map_err(|_| OperatorError::Sign("Mention public key is invalid".into()))?;
+            tags.push(vec!["p".to_owned(), key.to_hex()]);
+        }
         self.sign(KIND_CHANNEL_MESSAGE, content, &tags)
     }
 
@@ -882,3 +899,52 @@ impl IdentityClient {
 const KIND_BLOSSOM_AUTH: u16 = 24242;
 /// 授权有效期。短窗口：这份授权由 Core 代签，泄漏出去也只能用很短一段时间。
 const BLOSSOM_AUTH_TTL_SECS: u64 = 600;
+
+#[cfg(test)]
+mod mention_tests {
+    use super::*;
+
+    #[test]
+    fn root_mention_signs_exact_p_and_keeps_media_without_thread() {
+        let keys = Keys::generate();
+        let agent = Keys::generate().public_key().to_hex();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://relay.example",
+            "relay.example",
+        )
+        .unwrap();
+        let media = vec![vec![
+            "imeta".into(),
+            "url https://relay.example/media/image.png".into(),
+        ]];
+        let event = client
+            .sign_channel_message_mentions("channel", "hello", &media, std::slice::from_ref(&agent))
+            .unwrap();
+        event.verify().unwrap();
+        let tags: Vec<_> = event
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect();
+        assert_eq!(event.kind, Kind::Custom(9));
+        assert_eq!(event.pubkey, keys.public_key());
+        assert_eq!(
+            tags,
+            vec![
+                vec!["h".to_owned(), "channel".into()],
+                media[0].clone(),
+                vec!["p".into(), agent]
+            ]
+        );
+        assert!(!tags.iter().any(|tag| tag[0] == "e"));
+        let ordinary = client
+            .sign_channel_message("channel", "ordinary", &[])
+            .unwrap();
+        assert_eq!(ordinary.tags.len(), 1);
+        assert!(client
+            .sign_channel_message_mentions("channel", "hello", &[], &["invalid".into()])
+            .is_err());
+    }
+}

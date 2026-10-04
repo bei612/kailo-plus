@@ -48,6 +48,13 @@ const messages = {
   "platform.sendRejected": { en: "The message was rejected", "zh-CN": "消息被拒绝" },
   "platform.message": { en: "Message", "zh-CN": "消息" },
   "platform.send": { en: "Send", "zh-CN": "发送" },
+  "platform.mentionAgent": { en: "Mention Agent installation", "zh-CN": "提及 Agent 安装" },
+  "platform.noMention": { en: "No mention", "zh-CN": "不提及" },
+  "platform.moreMentionAgents": { en: "Load more installations", "zh-CN": "加载更多安装" },
+  "platform.mentionAgentsUnavailable": {
+    en: "Agent installations could not be loaded",
+    "zh-CN": "无法读取 Agent 安装",
+  },
   "error.attachmentImagePrepare": {
     en: "We couldn't prepare this image for upload.",
     "zh-CN": "无法处理此图片以上传。",

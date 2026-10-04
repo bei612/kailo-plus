@@ -46,6 +46,7 @@
 //     final taskView = taskViewFromJson(jsonString);
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
 //     final userStateVersion = userStateVersionFromJson(jsonString);
+//     final webPublishMessageRequest = webPublishMessageRequestFromJson(jsonString);
 //     final workspaceView = workspaceViewFromJson(jsonString);
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
 //     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
@@ -350,6 +351,12 @@ UserStateVersion userStateVersionFromJson(String str) =>
     UserStateVersion.fromJson(json.decode(str));
 
 String userStateVersionToJson(UserStateVersion data) =>
+    json.encode(data.toJson());
+
+WebPublishMessageRequest webPublishMessageRequestFromJson(String str) =>
+    WebPublishMessageRequest.fromJson(json.decode(str));
+
+String webPublishMessageRequestToJson(WebPublishMessageRequest data) =>
     json.encode(data.toJson());
 
 WorkspaceView workspaceViewFromJson(String str) =>
@@ -4818,6 +4825,72 @@ class UserStateVersion {
       UserStateVersion(version: json["version"]);
 
   Map<String, dynamic> toJson() => _stripNulls({"version": version});
+}
+
+///Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed
+///event。
+class WebPublishMessageRequest {
+  final List<WebMessageAttachment>? attachments;
+  final String content;
+
+  ///用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
+  final List<String>? mentionInstallationIds;
+
+  WebPublishMessageRequest({
+    this.attachments,
+    required this.content,
+    this.mentionInstallationIds,
+  });
+
+  factory WebPublishMessageRequest.fromJson(Map<String, dynamic> json) =>
+      WebPublishMessageRequest(
+        attachments: json["attachments"] == null
+            ? null
+            : List<WebMessageAttachment>.from(
+                json["attachments"]!.map(
+                  (x) => WebMessageAttachment.fromJson(x),
+                ),
+              ),
+        content: json["content"],
+        mentionInstallationIds: json["mentionInstallationIds"] == null
+            ? null
+            : List<String>.from(json["mentionInstallationIds"]!.map((x) => x)),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "attachments": attachments == null
+        ? null
+        : List<dynamic>.from(attachments!.map((x) => x.toJson())),
+    "content": content,
+    "mentionInstallationIds": mentionInstallationIds == null
+        ? null
+        : List<dynamic>.from(mentionInstallationIds!.map((x) => x)),
+  });
+}
+
+class WebMessageAttachment {
+  final String sha256;
+  final int size;
+  final String type;
+  final String url;
+
+  WebMessageAttachment({
+    required this.sha256,
+    required this.size,
+    required this.type,
+    required this.url,
+  });
+
+  factory WebMessageAttachment.fromJson(Map<String, dynamic> json) =>
+      WebMessageAttachment(
+        sha256: json["sha256"],
+        size: json["size"],
+        type: json["type"],
+        url: json["url"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"sha256": sha256, "size": size, "type": type, "url": url});
 }
 
 ///GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的

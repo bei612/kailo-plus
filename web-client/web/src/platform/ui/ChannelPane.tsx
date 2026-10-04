@@ -3,14 +3,15 @@
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
 // signer——签名由 BFF 以本人身份代做。
 
-import { ReasonCode } from "@client-kit/contracts";
+import { AgentTrigger, ReasonCode } from "@client-kit/contracts";
 import { isOutcomeUnknown } from "@client-kit/platform/transport";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
 import {
   BffError,
+  bff,
   type BuzzEvent,
   type MediaDescriptor,
   markRead,
@@ -234,6 +235,30 @@ function Composer({ workspaceId }: { workspaceId: string }) {
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
+  const [mentionInstallationId, setMentionInstallationId] = useState("");
+  const [sending, setSending] = useState(false);
+  const installations = useInfiniteQuery({
+    queryKey: ["platform", "mention-installations", workspaceId],
+    queryFn: ({ pageParam }) => bff.agentInstallations(workspaceId, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (page) => page.nextOffset ?? undefined,
+  });
+  const mentionable =
+    installations.data?.pages
+      .flatMap((page) => page.installations)
+      .filter(
+        (installation) =>
+          installation.workspaceId === workspaceId &&
+          installation.state === "ACTIVE" &&
+          installation.resourceState === "ACTIVE" &&
+          installation.agentPrincipalState === "ACTIVE" &&
+          installation.channelBinding?.status === "ACTIVE" &&
+          installation.channelBinding.triggers.includes(AgentTrigger.Mention),
+      ) ?? [];
+  const mentionVerified =
+    !mentionInstallationId ||
+    (installations.isSuccess &&
+      mentionable.some((installation) => installation.resourceId === mentionInstallationId));
   const picker = useRef<HTMLInputElement>(null);
   // 当前发送意图：内容与附件不变时重发沿用同一个键——结果不明之后再点发送，
   // BFF 回答原操作的结论而不是再发一条（DD-81）。确定的结论之后换新键。
@@ -262,6 +287,7 @@ function Composer({ workspaceId }: { workspaceId: string }) {
   );
 
   const send = useCallback(() => {
+    if (sending || !mentionVerified) return;
     const content = draft.trim();
     if (!content && pending.length === 0) return;
     setProblem(null);
@@ -269,15 +295,23 @@ function Composer({ workspaceId }: { workspaceId: string }) {
     // 不本地插入这条消息：它要等 Relay 接受并回传 event id 才算发出去。
     // 先渲染再等确认，会让一条被拒绝的消息看起来已经发出。草稿与附件也只在
     // 确认后才清空——发送失败时它们都还在。
-    const signature = JSON.stringify([content, attachments.map((a) => a.sha256)]);
+    const mentionInstallationIds = mentionInstallationId ? [mentionInstallationId] : [];
+    const signature = JSON.stringify([
+      content,
+      attachments.map((a) => a.sha256),
+      mentionInstallationIds,
+    ]);
     if (intent.current?.signature !== signature) {
       intent.current = { key: newIntentKey(), signature };
     }
-    void publishMessage(workspaceId, content, attachments, intent.current.key)
+    const key = intent.current.key;
+    setSending(true);
+    void publishMessage(workspaceId, content, attachments, key, mentionInstallationIds)
       .then(() => {
-        intent.current = null;
+        if (intent.current?.key === key) intent.current = null;
         setDraft((current) => (current.trim() === content ? "" : current));
         setPending((current) => current.filter((p) => !attachments.includes(p.descriptor)));
+        setMentionInstallationId((current) => (current === mentionInstallationId ? "" : current));
       })
       .catch((e: unknown) => {
         if (isOutcomeUnknown(e)) {
@@ -294,11 +328,41 @@ function Composer({ workspaceId }: { workspaceId: string }) {
         } else {
           setProblem(t("platform.sendFailed"));
         }
-      });
-  }, [draft, pending, workspaceId]);
+      })
+      .finally(() => setSending(false));
+  }, [draft, pending, workspaceId, mentionInstallationId, mentionVerified, sending]);
 
   return (
     <div className="flex flex-col gap-1">
+      <label className="flex items-center gap-2 text-xs">
+        {t("platform.mentionAgent")}
+        <select
+          aria-label={t("platform.mentionAgent")}
+          value={mentionInstallationId}
+          onChange={(event) => setMentionInstallationId(event.target.value)}
+          disabled={sending || installations.isPending || installations.isError}
+        >
+          <option value="">{t("platform.noMention")}</option>
+          {mentionable.map((installation) => (
+            <option key={installation.resourceId} value={installation.resourceId}>
+              {installation.resourceId}
+            </option>
+          ))}
+        </select>
+        {installations.hasNextPage ? (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={installations.isFetchingNextPage}
+            onClick={() => void installations.fetchNextPage()}
+          >
+            {t("platform.moreMentionAgents")}
+          </Button>
+        ) : null}
+      </label>
+      {installations.isError || !mentionVerified ? (
+        <div role="alert">{t("platform.mentionAgentsUnavailable")}</div>
+      ) : null}
       {problem ? (
         <div className="text-xs text-destructive" role="alert">
           {problem}
@@ -356,7 +420,11 @@ function Composer({ workspaceId }: { workspaceId: string }) {
             if (e.key === "Enter") send();
           }}
         />
-        <Button type="button" onClick={send} disabled={uploading > 0}>
+        <Button
+          type="button"
+          onClick={send}
+          disabled={uploading > 0 || sending || !mentionVerified}
+        >
           {t("platform.send")}
         </Button>
       </div>

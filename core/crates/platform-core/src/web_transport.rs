@@ -28,7 +28,7 @@ use collab_bridge::operator::{LimitKind, OperatorError};
 use contracts::EvidenceKind;
 use contracts::{ErrorBody, ErrorClass, ReasonCode};
 use secret_store::SecretRef;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -38,27 +38,13 @@ use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
 /// 消息发布的 action key。审计、对账与度量都按它找这一类动作。
 pub const PUBLISH_ACTION: &str = "workspace.message.publish";
 
-#[derive(Debug, Deserialize)]
-pub struct PublishRequest {
-    /// 消息正文。它是业务数据，进 Relay 不进 Core——Core 只存 scope、owner、
-    /// binding、准入、投影、审计与外部引用（`.design/01`）。
-    pub content: String,
-    /// 先经 `upload_media` 上传、再随消息引用的媒体。
-    #[serde(default)]
-    pub attachments: Vec<Attachment>,
+type PublishRequest = contracts::WebPublishMessageRequest;
+
+trait RenderAttachment {
+    fn render(&self, community_host: &str) -> Option<(String, Vec<String>)>;
 }
 
-/// 一份已上传的媒体，即 `upload_media` 返回的 Blossom descriptor。
-#[derive(Debug, Deserialize)]
-pub struct Attachment {
-    pub url: String,
-    pub sha256: String,
-    #[serde(rename = "type")]
-    pub mime: String,
-    pub size: u64,
-}
-
-impl Attachment {
+impl RenderAttachment for contracts::WebMessageAttachment {
     /// 按上游客户端的同一形式输出：正文追加一行 markdown，另带一条 NIP-92
     /// `imeta`。形式必须与原生端一致，否则原生端收到 Web 发的图看不见
     /// （上游 `formatImetaMediaLine`/`buildImetaTags`，`SF-BUZ-36`）。
@@ -71,7 +57,10 @@ impl Attachment {
     /// 地址的引用。blob 是否存在、MIME 与大小是否属实，由 Relay 按自己的
     /// sidecar 核对（`verify_imeta_blobs`），这里不再做一遍。
     fn render(&self, community_host: &str) -> Option<(String, Vec<String>)> {
-        let kind = match self.mime.split_once('/') {
+        if self.size < 0 {
+            return None;
+        }
+        let kind = match self.web_message_attachment_type.split_once('/') {
             Some(("image", _)) => "image",
             Some(("video", _)) => "video",
             _ => return None,
@@ -105,7 +94,7 @@ impl Attachment {
         let mut tag = vec![
             "imeta".to_owned(),
             format!("url {}", self.url),
-            format!("m {}", self.mime),
+            format!("m {}", self.web_message_attachment_type),
             format!("x {}", self.sha256),
         ];
         if self.size > 0 {
@@ -127,6 +116,98 @@ pub struct PublishResponse {
 #[derive(Debug, Serialize)]
 pub struct QueryResponse {
     pub events: serde_json::Value,
+}
+
+fn mention_targets(ids: Option<&[String]>) -> Option<Vec<Uuid>> {
+    let mut ids: Vec<Uuid> = ids
+        .unwrap_or_default()
+        .iter()
+        .map(|id| Uuid::parse_str(id).ok())
+        .collect::<Option<_>>()?;
+    ids.sort_unstable();
+    ids.dedup();
+    Some(ids)
+}
+
+fn mention_intent_matches(frozen: &[Uuid], requested: &[Uuid]) -> bool {
+    frozen == requested
+}
+
+fn publish_scope_matches(frozen: &[Option<Uuid>], requested: Uuid) -> bool {
+    frozen == [Some(requested)]
+}
+
+/// Resolve semantic Installation references inside the already admitted Workspace.
+/// Mentioning is not execution authorization: agent.invoke still performs its own
+/// HUMAN ∩ AGENT ∩ Delegation, quota and capacity admission after Relay acceptance.
+async fn resolve_mentions(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    workspace: Uuid,
+    ids: &[Uuid],
+) -> Result<Vec<String>, Response> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "select i.resource_id,b.pubkey from catalog.agent_installation i
+         join catalog.resource r on r.id=i.resource_id and r.type_key='agent.installation'
+           and r.home_workspace_id=i.workspace_id and r.state='ACTIVE'
+           and r.projection_action_execution_id is null
+         join identity.principal a on a.id=i.agent_principal_id and a.tenant_id=r.tenant_id
+           and a.kind='AGENT' and a.status='ACTIVE'
+         join identity.buzz_identity_binding b on b.principal_id=a.id and b.tenant_id=r.tenant_id
+           and b.kind='AGENT' and b.state='ACTIVE' and b.custody='SERVER'
+         join catalog.channel_agent_binding cb on cb.installation_resource_id=i.resource_id
+           and cb.workspace_id=i.workspace_id and cb.status='ACTIVE' and 'MENTION'=any(cb.triggers)
+         join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
+           and p.generation=i.active_projection_generation
+           and p.agent_version_asset_id=i.pinned_version_asset_id and p.state='ACTIVE'
+         where r.tenant_id=$1 and i.workspace_id=$2 and i.state='ACTIVE'
+           and i.resource_id=any($3) order by i.resource_id",
+    )
+    .bind(ctx.tenant_id)
+    .bind(workspace)
+    .bind(ids)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(crate::service_api::unavailable)?;
+    // Exact coverage, not first key wins: malformed or duplicate bindings are not
+    // silently reduced to an ordinary unmentioned message.
+    if rows.iter().map(|(id, _)| id).ne(ids.iter()) {
+        return Err(StatusCode::FORBIDDEN.into_response());
+    }
+    for id in ids {
+        match state
+            .governance
+            .spicedb
+            .check(
+                "resource",
+                &id.to_string(),
+                "read",
+                &ctx.tenant_principal_id.to_string(),
+                crate::spicedb::Consistency::FullyConsistent,
+            )
+            .await
+        {
+            Ok(check) if check.zed_token.is_empty() => {
+                return Err(StatusCode::SERVICE_UNAVAILABLE.into_response())
+            }
+            Ok(check) if check.allowed => {}
+            Ok(_) => return Err(StatusCode::FORBIDDEN.into_response()),
+            Err(error) => {
+                tracing::warn!(%error, "mention Installation read unavailable");
+                return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+            }
+        }
+    }
+    rows.into_iter()
+        .map(|(_, key)| {
+            nostr::PublicKey::from_hex(&key)
+                .map(|key| key.to_hex())
+                .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())
+        })
+        .collect()
 }
 
 /// 发一条 Workspace 消息。
@@ -159,18 +240,34 @@ pub async fn publish_message(
         Err(r) => return r,
     };
 
+    let mention_ids = match mention_targets(req.mention_installation_ids.as_deref()) {
+        Some(ids) => ids,
+        None => return StatusCode::BAD_REQUEST.into_response(),
+    };
+
     // 同一个键已经发过：不再发，回答那次的结论。只有确定未送达才允许重新发送。
-    let previous = match sqlx::query!(
-        r#"select a.operation_id, a.event_id,
+    #[derive(sqlx::FromRow)]
+    struct PreviousPublish {
+        operation_id: Uuid,
+        event_id: String,
+        result: Option<String>,
+        mention_installation_ids: Vec<Uuid>,
+        workspace_ids: Vec<Option<Uuid>>,
+    }
+    let previous = match sqlx::query_as::<_, PreviousPublish>(
+        r#"select a.operation_id, a.event_id, a.mention_installation_ids,
+                  array(select r.workspace_id from audit.audit_event r
+                    where r.operation_id=a.operation_id and r.event_type='DISPATCH'
+                      and r.action_key='workspace.message.publish') as workspace_ids,
                   (select r.result_code from audit.audit_event r
                     where r.operation_id = a.operation_id
                       and r.event_type in ('OUTCOME', 'RECONCILIATION')
-                    order by r.occurred_at desc limit 1) as "result?"
+                    order by r.occurred_at desc limit 1) as result
            from admission.publish_attempt a
            where a.tenant_principal_id = $1 and a.idempotency_key = $2"#,
-        ctx.tenant_principal_id,
-        idempotency_key
     )
+    .bind(ctx.tenant_principal_id)
+    .bind(idempotency_key)
     .fetch_optional(&state.pool)
     .await
     {
@@ -186,6 +283,11 @@ pub async fn publish_message(
         }
     };
     if let Some(p) = &previous {
+        if !publish_scope_matches(&p.workspace_ids, workspace_id)
+            || !mention_intent_matches(&p.mention_installation_ids, &mention_ids)
+        {
+            return StatusCode::CONFLICT.into_response();
+        }
         match p.result.as_deref() {
             Some("ACCEPTED") => {
                 return (
@@ -218,6 +320,11 @@ pub async fn publish_message(
         }
     }
 
+    let mentions = match resolve_mentions(&state, &ctx, workspace_id, &mention_ids).await {
+        Ok(keys) => keys,
+        Err(response) => return response,
+    };
+
     let keys = match actor_keys(&state, &ctx).await {
         Ok(k) => k,
         Err(r) => return r,
@@ -228,8 +335,9 @@ pub async fn publish_message(
     };
 
     let mut content = req.content;
-    let mut media_tags = Vec::with_capacity(req.attachments.len());
-    for a in &req.attachments {
+    let attachments = req.attachments.unwrap_or_default();
+    let mut media_tags = Vec::with_capacity(attachments.len());
+    for a in &attachments {
         let Some((line, tag)) = a.render(&scope.community_host) else {
             return StatusCode::BAD_REQUEST.into_response();
         };
@@ -269,7 +377,12 @@ pub async fn publish_message(
     // 先签名：event id 在签完时就确定。把它连同 actor、scope、operation 落进
     // DISPATCH 审计之后才发送——之后无论结果如何，这条消息动作都可关联
     // （Stage 1 退出门禁），结果不明时也有一个能去 Relay 查证的键（DD-81）。
-    let event = match client.sign_channel_message(&scope.channel_id, &content, &media_tags) {
+    let event = match client.sign_channel_message_mentions(
+        &scope.channel_id,
+        &content,
+        &media_tags,
+        &mentions,
+    ) {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!(error = %e, "签名失败");
@@ -309,7 +422,12 @@ pub async fn publish_message(
 
     // 没落账就不发：一条发出去却无从关联的消息，正是「成功但不可核验」。
     // 幂等记录与 DISPATCH 同一事务：两者只能一起成立。
-    let dispatched: Result<bool, sqlx::Error> = async {
+    enum Claim {
+        Acquired,
+        Pending,
+        TargetMismatch,
+    }
+    let dispatched: Result<Claim, sqlx::Error> = async {
         let mut tx = state.pool.begin().await?;
         let claimed = match &previous {
             // 上一次确定未送达：把这个键改指向新的一次，条件是它仍指向上一次
@@ -326,22 +444,33 @@ pub async fn publish_message(
             .execute(&mut *tx)
             .await?
             .rows_affected(),
-            None => sqlx::query!(
+            None => sqlx::query(
                 "insert into admission.publish_attempt
-                     (tenant_principal_id, idempotency_key, operation_id, event_id)
-                 values ($1, $2, $3, $4) on conflict do nothing",
-                ctx.tenant_principal_id,
-                idempotency_key,
-                operation_id,
-                event_id,
+                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids)
+                 values ($1, $2, $3, $4, $5) on conflict do nothing"
             )
+            .bind(ctx.tenant_principal_id)
+            .bind(idempotency_key)
+            .bind(operation_id)
+            .bind(&event_id)
+            .bind(&mention_ids)
             .execute(&mut *tx)
             .await?
             .rows_affected(),
         };
         if claimed == 0 {
             // 同一个键的另一次请求抢先了：那一次在发，这一次不发
-            return Ok(false);
+            let (frozen, workspaces): (Vec<Uuid>, Vec<Option<Uuid>>) = sqlx::query_as(
+                "select a.mention_installation_ids,
+                    array(select r.workspace_id from audit.audit_event r
+                      where r.operation_id=a.operation_id and r.event_type='DISPATCH'
+                        and r.action_key='workspace.message.publish')
+                 from admission.publish_attempt a
+                 where a.tenant_principal_id=$1 and a.idempotency_key=$2")
+                .bind(ctx.tenant_principal_id).bind(idempotency_key)
+                .fetch_one(&mut *tx).await?;
+            return Ok(if publish_scope_matches(&workspaces, workspace_id)
+                && mention_intent_matches(&frozen, &mention_ids) { Claim::Pending } else { Claim::TargetMismatch });
         }
         append(
             &mut tx,
@@ -353,12 +482,13 @@ pub async fn publish_message(
         )
         .await?;
         tx.commit().await?;
-        Ok(true)
+        Ok(Claim::Acquired)
     }
     .await;
     match dispatched {
-        Ok(true) => {}
-        Ok(false) => {
+        Ok(Claim::Acquired) => {}
+        Ok(Claim::TargetMismatch) => return StatusCode::CONFLICT.into_response(),
+        Ok(Claim::Pending) => {
             return error_body(
                 StatusCode::SERVICE_UNAVAILABLE,
                 ErrorClass::Unknown,
@@ -1109,6 +1239,79 @@ pub async fn fetch_media(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mention_intent_is_a_canonical_installation_set() {
+        let first = Uuid::from_u128(1);
+        let second = Uuid::from_u128(2);
+        assert_eq!(mention_targets(None), Some(vec![]));
+        assert_eq!(mention_targets(Some(&[])), Some(vec![]));
+        assert_eq!(
+            mention_targets(Some(&[
+                second.to_string(),
+                first.to_string(),
+                second.to_string()
+            ])),
+            Some(vec![first, second])
+        );
+        assert!(mention_targets(Some(&["not-an-installation".into()])).is_none());
+        // Same key cannot switch targets or turn a mention into an ordinary message.
+        assert_ne!(
+            mention_targets(Some(&[first.to_string()])),
+            mention_targets(Some(&[second.to_string()]))
+        );
+        assert_ne!(
+            mention_targets(Some(&[first.to_string()])),
+            mention_targets(None)
+        );
+        assert!(mention_intent_matches(&[first, second], &[first, second]));
+        assert!(mention_intent_matches(&[], &[]));
+        assert!(!mention_intent_matches(&[first], &[second]));
+        assert!(!mention_intent_matches(&[first], &[]));
+        assert!(!mention_intent_matches(&[], &[first]));
+    }
+
+    #[test]
+    fn publish_replay_requires_exact_original_dispatch_workspace() {
+        let original = Uuid::from_u128(1);
+        let other = Uuid::from_u128(2);
+        assert!(publish_scope_matches(&[Some(original)], original));
+        assert!(!publish_scope_matches(&[Some(original)], other));
+        assert!(!publish_scope_matches(&[], original));
+        assert!(!publish_scope_matches(&[None], original));
+        assert!(!publish_scope_matches(
+            &[Some(original), Some(original)],
+            original
+        ));
+        assert!(!publish_scope_matches(
+            &[Some(original), Some(other)],
+            original
+        ));
+    }
+
+    #[test]
+    fn mention_contract_preserves_attachments() {
+        let hash = "a".repeat(64);
+        let request: PublishRequest = serde_json::from_value(serde_json::json!({
+            "content": "hello", "mentionInstallationIds": [Uuid::from_u128(1).to_string()],
+            "attachments": [{"url":format!("https://relay.example/media/{hash}.png"),
+                "sha256":hash,"type":"image/png","size":42}]
+        }))
+        .unwrap();
+        assert_eq!(request.mention_installation_ids.unwrap().len(), 1);
+        let mut attachment = request.attachments.unwrap().remove(0);
+        let (_, tags) = attachment.render("relay.example").unwrap();
+        assert_eq!(tags[0], "imeta");
+        assert!(tags.contains(&"m image/png".to_owned()));
+        assert!(tags.contains(&"size 42".to_owned()));
+        assert!(attachment.render("other.example").is_none());
+        attachment.size = -1;
+        assert!(attachment.render("relay.example").is_none());
+        let ordinary: PublishRequest =
+            serde_json::from_value(serde_json::json!({"content":"old client"})).unwrap();
+        assert!(ordinary.attachments.is_none());
+        assert!(ordinary.mention_installation_ids.is_none());
+    }
 
     async fn parts(r: Response) -> (StatusCode, Option<String>, serde_json::Value) {
         let status = r.status();

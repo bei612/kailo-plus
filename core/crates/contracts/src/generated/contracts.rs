@@ -2632,6 +2632,33 @@ pub struct UserStateVersion {
     pub version: i64,
 }
 
+/// Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed
+/// event。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebPublishMessageRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<WebMessageAttachment>>,
+
+    pub content: String,
+
+    /// 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mention_installation_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebMessageAttachment {
+    pub sha256: String,
+
+    pub size: i64,
+
+    #[serde(rename = "type")]
+    pub web_message_attachment_type: String,
+
+    pub url: String,
+}
+
 /// GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的
 /// Workspace。Workspace id 同时是其 Channel id（DD-80）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

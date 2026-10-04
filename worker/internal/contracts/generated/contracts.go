@@ -139,6 +139,9 @@
 //    userStateVersion, err := UnmarshalUserStateVersion(bytes)
 //    bytes, err = userStateVersion.Marshal()
 //
+//    webPublishMessageRequest, err := UnmarshalWebPublishMessageRequest(bytes)
+//    bytes, err = webPublishMessageRequest.Marshal()
+//
 //    workspaceView, err := UnmarshalWorkspaceView(bytes)
 //    bytes, err = workspaceView.Marshal()
 //
@@ -707,6 +710,16 @@ func UnmarshalUserStateVersion(data []byte) (UserStateVersion, error) {
 }
 
 func (r *UserStateVersion) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebPublishMessageRequest(data []byte) (WebPublishMessageRequest, error) {
+	var r WebPublishMessageRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebPublishMessageRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2041,6 +2054,22 @@ type TenantInvitationView struct {
 // /api/v1/user-state/workspaces/{workspaceId} 的 200 回应）。
 type UserStateVersion struct {
 	Version int64 `json:"version"`
+}
+
+// Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed
+// event。
+type WebPublishMessageRequest struct {
+	Attachments []WebMessageAttachment `json:"attachments,omitempty"`
+	Content     string                 `json:"content"`
+	// 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
+	MentionInstallationIDS []string `json:"mentionInstallationIds,omitempty"`
+}
+
+type WebMessageAttachment struct {
+	Sha256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+	Type   string `json:"type"`
+	URL    string `json:"url"`
 }
 
 // GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的

@@ -1800,6 +1800,26 @@ export interface UserStateVersion {
 }
 
 /**
+ * Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed
+ * event。
+ */
+export interface WebPublishMessageRequest {
+    attachments?: WebMessageAttachment[];
+    content:      string;
+    /**
+     * 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
+     */
+    mentionInstallationIds?: string[];
+}
+
+export interface WebMessageAttachment {
+    sha256: string;
+    size:   number;
+    type:   string;
+    url:    string;
+}
+
+/**
  * GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的
  * Workspace。Workspace id 同时是其 Channel id（DD-80）。
  */

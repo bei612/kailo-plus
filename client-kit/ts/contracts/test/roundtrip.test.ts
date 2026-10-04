@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
-import type { Canary } from "../src/generated/contracts.js";
+import type { Canary, WebPublishMessageRequest } from "../src/generated/contracts.js";
 
 const samplePath = fileURLToPath(
   new URL("../../../../contracts/samples/canary.sample.json", import.meta.url),
@@ -33,3 +33,19 @@ test("canary round-trip 保留每个字段", () => {
     ok(iface.includes(key), `生成的 Canary 接口缺少字段 ${key}`);
   }
 });
+
+for (const sample of ["web-publish-mention.sample.json", "web-publish-content-only.sample.json"]) {
+  test(`WebPublishMessageRequest round-trip ${sample}`, () => {
+    const raw = readFileSync(new URL(`../../../../contracts/samples/${sample}`, import.meta.url), "utf8");
+    const original: unknown = JSON.parse(raw);
+    const typed = JSON.parse(raw) as WebPublishMessageRequest;
+    deepStrictEqual(JSON.parse(JSON.stringify(typed)), original);
+    const src = readFileSync(new URL("../src/generated/contracts.ts", import.meta.url), "utf8");
+    const iface = src.match(/export interface WebPublishMessageRequest \{([^}]+)\}/s)?.[1] ?? "";
+    for (const key of Object.keys(typed)) ok(iface.includes(key), `request field ${key}`);
+    const attachment = src.match(/export interface WebMessageAttachment \{([^}]+)\}/s)?.[1] ?? "";
+    for (const item of typed.attachments ?? []) {
+      for (const key of Object.keys(item)) ok(attachment.includes(key), `attachment field ${key}`);
+    }
+  });
+}

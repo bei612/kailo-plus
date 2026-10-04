@@ -46,3 +46,33 @@ func TestCanaryRoundtripPreservesEveryField(t *testing.T) {
 		t.Fatalf("round-trip 后与样例不等，说明生成类型丢了信息\n样例: %s\n结果: %s", raw, encoded)
 	}
 }
+
+func TestWebPublishMessageRoundtrip(t *testing.T) {
+	for _, sample := range []string{"web-publish-mention.sample.json", "web-publish-content-only.sample.json"} {
+		t.Run(sample, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", sample))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var original map[string]any
+			if err := json.Unmarshal(raw, &original); err != nil {
+				t.Fatal(err)
+			}
+			var typed generated.WebPublishMessageRequest
+			if err := json.Unmarshal(raw, &typed); err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(typed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var back map[string]any
+			if err := json.Unmarshal(encoded, &back); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(original, back) {
+				t.Fatalf("round-trip changed fields: %s", encoded)
+			}
+		})
+	}
+}
