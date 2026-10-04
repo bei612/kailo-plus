@@ -1,6 +1,8 @@
 //! DD-47/48/65、06 §6：AgentInvocation 持久意图与 Temporal 的实际消费端。
 //! 不创建第二 Workflow 权威，不从未查证的 runtime/tool/usage 事实推断成功。
 
+use std::collections::HashSet;
+
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -239,13 +241,33 @@ pub(crate) async fn advance(
                 let _ = runtime.interrupt(&projection, thread, turn).await;
             }
         }
-        // 未绑定 turn 时从头读取；只在完整单页证明唯一 clientId 时回填，
-        // 不把分页某一段的命中冒充整个 thread 的唯一关联。
-        let cursor = invocation
-            .runtime_turn_id
-            .as_ref()
-            .and(invocation.observation_cursor.as_deref());
-        let page = match runtime.turns(&projection, thread, cursor).await {
+        let observed = if invocation.runtime_turn_id.is_some() {
+            runtime
+                .turns(
+                    &projection,
+                    thread,
+                    invocation.observation_cursor.as_deref(),
+                )
+                .await
+        } else {
+            // A lost turn/start receipt is recovered from the complete native
+            // cursor chain, not an eternally repeated first page. Keep only the
+            // one candidate in memory; no body or partial match is persisted.
+            tokio::time::timeout(runtime.observation_timeout(), async {
+                let mut history = UnboundTurnHistory::default();
+                loop {
+                    let page = runtime
+                        .turns(&projection, thread, history.cursor.as_deref())
+                        .await?;
+                    if let Some(complete) = history.observe(page, invocation.id)? {
+                        return Ok(complete);
+                    }
+                }
+            })
+            .await
+            .unwrap_or(Err(crate::agent_runtime::RuntimeError::Unknown))
+        };
+        let page = match observed {
             Ok(page) => page,
             Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
         };
@@ -861,6 +883,72 @@ async fn turn_audit(
         },
     )
     .await
+}
+
+/// Ephemeral native-history scan for an already persisted dispatch intent.
+/// A candidate is not evidence of uniqueness until the opaque cursor chain ends.
+#[derive(Default)]
+struct UnboundTurnHistory {
+    cursor: Option<String>,
+    cursors: HashSet<String>,
+    matched: Option<Value>,
+}
+
+impl UnboundTurnHistory {
+    fn observe(
+        &mut self,
+        page: Value,
+        invocation: Uuid,
+    ) -> Result<Option<Value>, crate::agent_runtime::RuntimeError> {
+        use crate::agent_runtime::RuntimeError;
+        let client_id = invocation.to_string();
+        let turns = page
+            .get("data")
+            .and_then(Value::as_array)
+            .ok_or(RuntimeError::Protocol)?;
+        for turn in turns {
+            if turn.get("itemsView").and_then(Value::as_str) != Some("full")
+                || turn
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_none_or(|id| Uuid::parse_str(id).is_err())
+                || !matches!(
+                    turn.get("status").and_then(Value::as_str),
+                    Some("inProgress" | "completed" | "failed" | "interrupted")
+                )
+            {
+                return Err(RuntimeError::Protocol);
+            }
+            let items = turn
+                .get("items")
+                .and_then(Value::as_array)
+                .ok_or(RuntimeError::Protocol)?;
+            let correlations = items
+                .iter()
+                .filter(|item| {
+                    item.get("type").and_then(Value::as_str) == Some("userMessage")
+                        && item.get("clientId").and_then(Value::as_str) == Some(client_id.as_str())
+                })
+                .count();
+            if correlations != 0 {
+                if correlations != 1 || self.matched.is_some() {
+                    return Err(RuntimeError::Protocol);
+                }
+                self.matched = Some(turn.clone());
+            }
+        }
+        match page.get("nextCursor") {
+            Some(Value::Null) => Ok(Some(serde_json::json!({
+                "data": self.matched.take().into_iter().collect::<Vec<_>>(),
+                "nextCursor": null
+            }))),
+            Some(Value::String(next)) if !next.is_empty() && self.cursors.insert(next.clone()) => {
+                self.cursor = Some(next.clone());
+                Ok(None)
+            }
+            _ => Err(RuntimeError::Protocol),
+        }
+    }
 }
 
 async fn observe(
@@ -2059,8 +2147,126 @@ fn result(id: Uuid, status: TaskStatus, waiting: &str) -> Response {
 
 #[cfg(test)]
 mod reply_tests {
-    use super::{billed_outcome, definite_reply_refusal, native_reply};
+    use super::{billed_outcome, definite_reply_refusal, native_reply, UnboundTurnHistory};
     use serde_json::json;
+    use uuid::Uuid;
+
+    fn history_turn(invocation: Uuid) -> serde_json::Value {
+        json!({"id":Uuid::new_v4(),"itemsView":"full","status":"completed",
+            "startedAt":100,"completedAt":105,"items":[
+                {"type":"userMessage","clientId":invocation.to_string()},
+                {"type":"agentMessage","id":"answer","phase":"final_answer","text":"native answer"}]})
+    }
+
+    #[test]
+    fn unbound_turn_waits_for_last_page_and_recovers_a_later_page() {
+        let invocation = Uuid::new_v4();
+        let candidate = history_turn(invocation);
+        let unrelated = history_turn(Uuid::new_v4());
+        for first_match in [true, false] {
+            let mut history = UnboundTurnHistory::default();
+            let first = if first_match { &candidate } else { &unrelated };
+            let last = if first_match { &unrelated } else { &candidate };
+            assert!(
+                history
+                    .observe(
+                        json!({"data":[first],"nextCursor":"native:opaque/+="}),
+                        invocation
+                    )
+                    .unwrap()
+                    .is_none(),
+                "a match before EOF must not bind a turn"
+            );
+            assert_eq!(history.cursor.as_deref(), Some("native:opaque/+="));
+            let complete = history
+                .observe(json!({"data":[last],"nextCursor":null}), invocation)
+                .unwrap()
+                .unwrap();
+            assert_eq!(complete, json!({"data":[candidate],"nextCursor":null}));
+            assert_eq!(
+                native_reply(&complete["data"][0]),
+                Some(("native answer", 105))
+            );
+        }
+        let complete = UnboundTurnHistory::default()
+            .observe(json!({"data":[unrelated],"nextCursor":null}), invocation)
+            .unwrap()
+            .unwrap();
+        assert_eq!(complete, json!({"data":[],"nextCursor":null}));
+    }
+
+    #[test]
+    fn unbound_turn_rejects_duplicate_client_ids_and_cyclic_cursors() {
+        let invocation = Uuid::new_v4();
+        let candidate = history_turn(invocation);
+        let mut history = UnboundTurnHistory::default();
+        assert!(history
+            .observe(json!({"data":[candidate],"nextCursor":"one"}), invocation)
+            .unwrap()
+            .is_none());
+        assert!(history
+            .observe(
+                json!({"data":[history_turn(invocation)],"nextCursor":null}),
+                invocation
+            )
+            .is_err());
+        let mut repeated = candidate.clone();
+        repeated["items"]
+            .as_array_mut()
+            .unwrap()
+            .push(candidate["items"][0].clone());
+        assert!(UnboundTurnHistory::default()
+            .observe(json!({"data":[repeated],"nextCursor":null}), invocation)
+            .is_err());
+        let mut history = UnboundTurnHistory::default();
+        for next in ["one", "two"] {
+            assert!(history
+                .observe(json!({"data":[],"nextCursor":next}), invocation)
+                .unwrap()
+                .is_none());
+        }
+        assert!(history
+            .observe(json!({"data":[],"nextCursor":"one"}), invocation)
+            .is_err());
+    }
+
+    #[test]
+    fn unbound_turn_rejects_incomplete_or_unknown_native_pages() {
+        let invocation = Uuid::new_v4();
+        let candidate = history_turn(invocation);
+        for page in [
+            json!({}),
+            json!({"data":[]}),
+            json!({"data":{},"nextCursor":null}),
+            json!({"data":[candidate],"nextCursor":""}),
+            json!({"data":[candidate],"nextCursor":7}),
+        ] {
+            assert!(UnboundTurnHistory::default()
+                .observe(page, invocation)
+                .is_err());
+        }
+        for (field, bad) in [
+            ("itemsView", json!("summary")),
+            ("status", json!("futureStatus")),
+            ("items", json!({})),
+            ("id", json!("not-a-native-id")),
+        ] {
+            for value in [Some(bad), None] {
+                let mut turn = candidate.clone();
+                match value {
+                    Some(value) => {
+                        turn[field] = value;
+                    }
+                    None => {
+                        turn.as_object_mut().unwrap().remove(field);
+                    }
+                }
+                assert!(UnboundTurnHistory::default()
+                    .observe(json!({"data":[turn],"nextCursor":null}), invocation)
+                    .is_err());
+            }
+        }
+    }
 
     #[test]
     fn revoked_completed_turn_requires_delivery_or_exact_rejection_proof() {

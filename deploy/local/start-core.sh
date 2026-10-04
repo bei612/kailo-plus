@@ -34,13 +34,11 @@ if [ "$runtime_present" -ne 0 ] && [ "$runtime_present" -ne "${#runtime_names[@]
   exit 2
 fi
 runtime_config=
-automation_config=
 tmp=
 cleanup_start_core() {
   local status=$?
   trap - EXIT
   if [ -n "$runtime_config" ]; then rm -f -- "$runtime_config" || status=2; fi
-  if [ -n "$automation_config" ]; then rm -f -- "$automation_config" || status=2; fi
   if [ -n "$tmp" ]; then rm -f -- "$tmp" || status=2; fi
   exit "$status"
 }
@@ -90,19 +88,6 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
     json.dump({"services": {"core-bff": {"environment": values, "volumes": volumes}}}, stream)
 PYRUNTIME
   runtime_compose=(-f "$runtime_config")
-fi
-if [ -n "${AUTOMATION_RUN_METERS_JSON:-}" ]; then
-  automation_config=$(mktemp)
-  AUTOMATION_RUN_METERS_JSON="$AUTOMATION_RUN_METERS_JSON" python3 - "$automation_config" <<'PYAUTOMATION'
-import json
-import os
-import sys
-
-with open(sys.argv[1], "w", encoding="utf-8") as stream:
-    json.dump({"services": {"core-bff": {"environment": {
-        "AUTOMATION_RUN_METERS_JSON": os.environ["AUTOMATION_RUN_METERS_JSON"]}}}}, stream)
-PYAUTOMATION
-  runtime_compose+=(-f "$automation_config")
 fi
 project=$(python3 -c 'import re,io;print(re.search(r"^name: (\S+)", io.open("compose.yaml",encoding="utf-8").read(), re.M).group(1))')
 app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')

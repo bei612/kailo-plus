@@ -1901,3 +1901,130 @@ SHA-256 `eb760b8034caabdfb9a2913417ee901c5daf9d550dec8f9d48c739c0fcc73b66`。
 未安装 gitleaks，仅原内置扫描通过。完整 full 通过不替代真实 Codex/模型、
 线上 crash recovery、Agent 首轮、普通触发或设备验收。此后仅更新本刀 README
 摘要与追加本回执，再用原文档快路径核对，不为记录文字重跑 full。
+
+## 2026-10-03 AgentTask 未绑定 turn 的跨页恢复
+
+本刀基于 `d4e86374b6917244c4d911cb38c40b545266af5b`，仅修改
+`core/crates/platform-core/src/agent_task.rs`（+214/-8，无继承改动）；
+`agent_session.rs` 核对后不改。以下为实现后证据，尚未部署，不代表真实
+Automation 首轮、Codex IPC 或 Relay 回复端到端验收。
+
+四步影响：
+
+1. 权威：遵守 `.design/12` §2/§6、`17` §5/§10、`05` §2.9 既有原生恢复及
+   `automation.run` 政策。只读 Codex 固定 commit
+   `7498521d288b9b3b96ffba4eedf089d8d6e06a84`，完整路径
+   `/volumes/kailo/.references/codex/codex-rs/app-server-protocol/src/protocol/v2/thread.rs`，
+   `ThreadTurnsListParams` / `ThreadTurnsListResponse` 明确 opaque cursor 与 null EOF；
+   不新增权限、默认审批或普通 mention/manual 入口。
+2. 影响面：原 `advance` 在缺少 `runtime_turn_id` 时每次从第一页开始，原 `observe`
+   又拒绝非末页，导致丢失 `turn/start` 回执的多页历史无法恢复。本次在原
+   `Supervisor::observation_timeout` 总预算内读完所有页，再把唯一候选交给未改的
+   `observe` CAS；与 `gateway_usage::invocation_started_at` 既有分页语义对照，
+   不提取跨模块抽象。已绑定 turn、Session 创建/恢复、原生 start、准入、回复及计量不改。
+3. 副作用：分页只读原 thread；局部 `UnboundTurnHistory` 仅保留一个候选及已见 cursor，
+   不落库部分候选/游标，不引入业务状态或注册表。必须读到 EOF 才证明 clientId 唯一；
+   绑定、取消和回复仍走原 Invocation/Session/generation 守卫；无匹配保留 UNKNOWN。
+4. 异常：缺字段、非法 UUID、未知 status/itemsView、页内/跨页重复 clientId、循环或
+   非法 cursor、原生错误及总预算耗尽均保留原 UNKNOWN/intent/thread，不重发
+   `turn/start`；没有新增硬编码时限、页数上限或迁移。
+
+复用已有 `kailo-installation-scope-sdk-e4agxd`，固定镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+Rust/Cargo 1.90.0、Cargo16，实际 4 CPU / 8 GiB / swap0。每次 Cargo 前执行原
+container-safety 资源/进程/压力预检；未新建 SDK、降低并行或运行 full/build。
+使用私有 `/evidence/runtime-session-UQJGvp/core` 与其 `target`，
+`CARGO_NET_OFFLINE=true SQLX_OFFLINE=true`，不消费生产数据库。
+
+实际命令与退出：
+
+- `cargo test -p platform-core --bin platform-core agent_task::reply_tests -- --nocapture`：
+  `baseline.log` 退出 0，8 passed / 75 filtered。
+- 仅私有生产源码恢复“非末页直接 UNKNOWN”，断言不改，同目标
+  `mutation-first-page.log` 退出 101，6 passed / 2 failed。
+- 还原分页后移除跨页候选唯一性守卫，断言不改，同目标
+  `mutation-uniqueness.log` 退出 101，7 passed / 1 failed。
+- 两变异均以 `apply_patch` 精确还原，正式/私有源码 `cmp` 一致；同目标
+  `restored.log` 退出 0，8 passed / 75 filtered。
+- 固定 SDK `rustfmt --edition 2021 --check crates/platform-core/src/agent_task.rs`
+  及正式 `git diff --check` 退出 0；
+  `cargo clippy -p platform-core --bin platform-core --tests -- -D warnings`
+  实际退出 0，41.66s。
+
+原件目录 `/volumes/data/kailo/tmp/codex-agent-turn-recovery-20261003.AuWqo9`。
+冻结源码/`agent_task.final.rs` SHA-256
+`5342c8a887402dee5497faeda40fdb745decd2fc1518b0d71f19065f934109b8`；
+`agent-task.patch` SHA-256
+`5bb353e434743f8fdeb50545165a353a02a2bf060b630af32123edd875c06589`。
+日志 SHA-256：
+
+| 原件 | SHA-256 |
+| --- | --- |
+| baseline.log | `5f27e6c45e24e42ebee3b4359f0de0eac10816853fb6952dd975122c49fafbd2` |
+| mutation-first-page.log | `fc39f0cb40afeae49f367765660fedd0650afa58c1757815c1114a3c36e82173` |
+| mutation-uniqueness.log | `ab577a98ec8c0361a957ba04a62c6f1d9c564e7b23b20b5936c6f86bd2f02494` |
+| restored.log | `fd3891721594b40cadb1f2f68ba1a79a0bd15251988ce53ca57095729f42a14e` |
+| clippy.log | `c9dd5edf979529283d97768658306dadd6bd0dd475900f2b33558ed6eb34dc5f` |
+| format.log | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+
+三个新增测试验证真实生产分页解析：候选等待 EOF、后页候选、opaque cursor 原样传递、
+无候选、页内/跨页重复、循环游标、缺字段/未知枚举，并复用原 native reply 提取。
+这不是实际 Codex IPC/history、PostgreSQL CAS、Relay 投递或 OpenMeter 结算；
+总预算耗尽在实际 `advance` 读循环受控，但本组解析测试未动态触发该超时。
+未重放安装、写生产 SQL、提交或部署；后续由主线集中 full/交付，不以本组窄验证
+宣称未补定政策的普通触发或真实 Agent 首轮已经闭环。
+
+### 2026-10-03 automation.run 可选配置同源投递纠偏
+
+原 `start-core.sh` 已在非空 `AUTOMATION_RUN_METERS_JSON` 时生成专属 Compose
+overlay；线上 UNSET 不能归因于该 launcher 不支持投递。本次只补基础
+`compose.yaml` 的 `${AUTOMATION_RUN_METERS_JSON:-}` Core 环境投影，同时移除
+launcher 的重复 overlay/清理分支，保留 Runtime overlay 与原 wrapping。
+Compose 从唯一 `--env-file .env` 自行解析，不依赖 sudo 保留该 shell 变量。
+
+四步结论：权威为 `05` §2.9/DD-107 的 CHECK 与显式 meter pin、工程 `07` §2
+唯一配置来源；影响限两部署文件，实际 reader 仍是 `automation::register_run`；
+副作用仅配置渲染，未选择或创建 meter/feature/entitlement、写实际 `.env` 或部署；
+缺席/空配置仍由既有 reader 返回 None、不登记运行 Action，非法非空配置仍拒绝。
+
+原 `bootstrap.sh --validate-config`、`bash -n start-core.sh`、`git diff --check`
+均退出 0。原 `docker compose config --no-env-resolution --format json core-bff`
+只投影检查目标变量：缺席、空值及非空协议负例 `[]` 均逐字一致，退出 0；
+原 launcher overlay 的 `[]` 与新基础投影等价，退出 0。`[]` 不含任何 meter，
+只验证传输，不执行 Core 登记或计量准入。仅 Data 副本删除真实投影行后，
+环境存在性断言实际退出 1；按原字节恢复 cmp0/SHA 相等后投影检查退出 0。
+bootstrap 本身不检测该删除，不能将这次投影断言冒称完整预检或业务验收。
+
+原件 `/volumes/data/kailo/tmp/codex-automation-meter-forwarding-20261003.qBJ6ka/`；
+两源窄 patch SHA-256 `400bee61d63c3dcc9e3368dc87cd427f4d9729066b9cdf82df9dd68d6f42b4fb`。
+未运行 full/build/SDK、部署、登记原生用量或真实 AgentInvocation；原生 meter 库存
+为空的计量配置缺口未解除，不能据此称首轮可用。本记录由收口负责人集中验证。
+
+### 2026-10-03 AgentTask 分页与可选 meter 投递集中收口回执
+
+以 `d4e86374b6917244c4d911cb38c40b545266af5b` 为底，只选本刀 AgentTask、
+Compose/start-core、README 与本记录五路径；原 Compose 三处继承差异未选入。
+检查固定树 `076f35b1c1d82b0825191e33827258cec5198836`，没有消费流动工作树。
+
+原命令 `bash tools/check.sh --full`，显式 `CHECK_SOURCE_REF` 为上述树；
+`TMPDIR=/volumes/data/kailo/tmp CHECK_CPUS=4 CHECK_MEMORY=8g CHECK_NETWORK=host`，
+`CHECK_CACHE_ROOT=/volumes/data/kailo/check-cache CARGO_BUILD_JOBS=16`；
+没有投递 `DATABASE_URL` 或真实 `deploy/local/.env`。资源预检无 Cargo/rustc 作业，
+原固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID1000:1000；实际 `cpu.max=400000 100000`、`memory.max=8589934592`、
+`memory.swap.max=0`、Cargo16、OOM 事件为 0。
+
+原 session 58118 实际退出 0；原件
+`/volumes/data/kailo/tmp/codex-agent-turn-meter-close-20261003.gDQyrE/full.log`，
+SHA-256 `a4d772a153f76a0c84ca5784c4e37504249e301dad19a3c40d5572875cfe9b50`。
+fmt/Clippy、Go/TS/Dart 静态与验证、143 schema 四侧同步、Workflow replay、
+18 条追溯/18 workflow kind、供应链与文档门禁均通过；Core 80 passed / 3 ignored，
+另外两项运维演练 ignored。实际数据库迁移演练及实际部署配置预检明确 SKIP；
+未安装 gitleaks，仅原内置扫描通过。原 launcher 已清理唯一检查容器。
+
+三生产源终态 SHA 与选定输入一致；本次没有迁移、原生配置或业务对象写入。
+线上只有五个 Automation 管理 Action，无 `automation.run`、Invocation/Automation
+记录；OpenMeter meter/feature/entitlement 各为 0。普通触发完整安全政策、真实
+meter/额度投递及 Agent 模型首轮/回复/用量 E2E 未闭合；源码检查不填补这些事实。
+没有构建、部署或设备验收。此后仅更新 README 摘要与追加本回执，再运行原
+文档快路径，不为证据文字重新执行 full。

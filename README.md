@@ -6,6 +6,26 @@
 
 ## 最新复核与投递事实（2026-10-03）
 
+### AgentTask 分页恢复与原可选 meter 投递：源码已修，业务首轮未闭合
+
+前一批 Runtime 恢复源码已提交并普通 push 为
+`d4e86374b6917244c4d911cb38c40b545266af5b`，尚未部署；原安装就绪事实不变。
+本批修复未绑定 turn 时读取完整原生分页历史，再以唯一 clientId 交给原 CAS；
+原目标 8 项通过、两次生产变异分别抓住 2 项和 1 项，精确还原后 8 项通过，
+格式与 Clippy 退出 0。可选 `AUTOMATION_RUN_METERS_JSON` 改由原 base Compose
+统一消费，移除 start-core 的重复专属 overlay；原 start-core 此前已经能投递非空值，
+线上 UNSET 不是已证实的 launcher 丢配置。本批固定选定树原集中 full 已退出 0；
+实际数据库演练和部署配置预检 SKIP，不外推为部署或首轮验收。
+
+主线只读核对线上 Core：`automation.*` 仅 create、disable、enable、pause、
+publish_version 五项 ACTIVE 管理 Action，没有 `automation.run`；Invocation 与
+AutomationDefinition 均为 0。OpenMeter meters、features、entitlements 各为 0。
+真实 meter、feature 和额度尚未投递，不能由源码虚构；普通入口的完整安全政策
+仍缺，未开放普通 mention/manual 入口，也未发生真实 Agent 模型回合或用量终态。
+两数据库查询均为显式只读（Core 只读事务、OpenMeter 只读会话），
+没有创建业务对象。详见 [AgentTask 证据](core/verify/agent-definition.md)；
+本批不重建镜像、不发布、不部署，也不把已有安装 ACTIVE 当作 Agent 已可使用。
+
 ### Runtime 恢复锁序与原生投影：源码已修复，尚未部署
 
 Core Runtime 已修复进程清理与 Invocation 行锁的反向等待，恢复同一 thread 时
