@@ -6,9 +6,27 @@
 
 ## 最新复核与投递事实（2026-10-04）
 
+### 当前部署：Inbox 与独立 Workflows 页面（12:15 UTC）
+
+源码 `acbab8036911922c0dad4b4d28c7bb8e13c03afc` 已提交并 push；相对
+`a535179baea0fc92f8515d32102288262e4161a6` 为 72 文件 +4457/-596。
+该源码批已在原完整检查通过后集中发布：Core、Worker 原发布命令退出 0，
+两镜像 registry 独立读回通过；Web 复用已核验产物，没有再次构建客户端。
+现有数据库从 61 条向前迁移至 69 条，失败 0；仅 Core、Worker、Web 三个容器
+替换，其余容器、Relay 局域网入口、原 `.env` 与 Runtime profiles 保持不变。
+
+真实浏览器在 `http://192.168.0.193:58090/app/` 完成业务账号登录并打开 Inbox、
+Workflows、Agents：相关读取接口均 HTTP 200，页面异常与 alert 均为 0。
+Workflows 独立呈现 Automation 创建区，Agents 不再重复展示；没有在本次检查
+发送消息、创建 Automation、修改权限或调用模型。此证据不是工作流执行终态、
+真实 Agent 回复或 Win11/Mobile 设备验收。原生工具 consume 授权、模型回复、
+历史缺 trace 用量、组件 release/binding 和设备验收仍未关闭；Cells、WeKnora、
+Wren 不能记为已集成可用。完整产物、迁移与浏览器原件见
+[发布记录](core/verify/release-artifacts.md)。
+
 ### 当前源码批：原生工具治理与可插拔能力契约
 
-本批基于 `56ee0bbcfc5a8bcb0cd1b1e4e2c9dc985e39b6a3` 集中实现；新增 Core/Worker 尚未部署。
+本批基于 `56ee0bbcfc5a8bcb0cd1b1e4e2c9dc985e39b6a3` 集中实现；现已随上述批次部署。
 Core 复用 AgentGateway 原生 ExtMcp 双阶段检查、rmcp Streamable HTTP 与 Codex
 原生 MCP 配置，将原 Session 身份、ToolBinding、逐次权限和 Memory 读取关联到
 既有 ActionExecution/Operation、审计与用量，不建立第二套 Memory 或工具执行权威。
@@ -87,7 +105,7 @@ EXE `206c62bfb829ca5a02874a88b14fe40f8c9c7aa85c4f3ddd23ed57386944e790`，15,115,
 
 Web 与 Desktop 已在源码中共用 Inbox 聚合、行呈现和 Core user-state CAS 消费；
 Web 消息仍由 Core 经 BFF 读取，Desktop 保留原生 Relay 消费，不在浏览器持钥。
-该 Inbox 子切片为 15 文件 +1360/-371；已合入本批，Web 与 Win11 已打包，尚未部署。
+该 Inbox 子切片为 15 文件 +1360/-371；已合入本批，Web 已部署；Win11 已打包、未设备验收。
 隔离候选三套类型检查及 Shared 10/Web 18/Desktop 30 项定向检查通过，
 两项生产守卫破坏验证确实失败并恢复；这些不替代合并批次 full 或设备验收。
 Web 当前读取每个可访问 Workspace 的已有有界消息页，明确展示此范围；没有
@@ -112,8 +130,8 @@ registry 独立读回核对；Win11 原打包退出 0，未签名 EXE 摘要为
 19 条追溯与六个当前源码产物通过。数据库全量演练和实际部署配置检查明确跳过；
 Core 单元 140 passed/5 ignored，另两项外部演练 ignored，早返的外部用例不计 E2E。
 本批另修正原生 Memory 子调用的用量约束和审计枚举匹配，没有另建记忆权威；
-独立空库 69 条 up 通过，两项原逻辑变异被实际拒绝、还原通过。尚未部署；
-不将源码与隔离验证冒充用户已可访问。原件见 [Web 面记录](web-client/fork/verify/web-surface.md)
+独立空库 69 条 up 通过，两项原逻辑变异被实际拒绝、还原通过。部署与浏览器
+可访问结果另见本页 12:15 UTC 回执。原件见 [Web 面记录](web-client/fork/verify/web-surface.md)
 及 [Agent 记录](core/verify/agent-definition.md)。
 
 DD-106 关闭 Buzz 自带 WorkflowEngine、cron 和 workflow/webhook 路由；不保留第二套

@@ -4,6 +4,54 @@
 `03-验证发布与验收门禁.md` §5。本记录只证明本机固定提交的两个自建发布单元；
 不把本机 provenance 断言等同于远端签名或三端发布验收。
 
+## 2026-10-04：Inbox/Workflows 集中发布与限定部署
+
+权威：DD-75、DD-106/107、ADR-06 及已检查提交
+`acbab8036911922c0dad4b4d28c7bb8e13c03afc`（tree
+`ab96952c8c8ca4fc9cab34b319001d7e816bbe1a`）。影响仅原发布产物、两个
+Compose image pin、原迁移链与三个运行容器；不改契约、上游版本、权限、额度、
+Runtime profile 或工作流定义。数据库先执行原 forward 迁移，Core 启动复用原
+一次性 OpenBao wrapping 投递；不重放历史不明模型回合，不自动 down 已有数据。
+
+| 运行单元 | 实际镜像 digest |
+|---|---|
+| Core | `sha256:aee20a37489e37f3f43c4437fae1aa5bea02ef7592c751ae17823669ea532df4` |
+| Worker | `sha256:ffc2b19b2127d1bacdc69cb4e970cf147a5f00b79e93f136e22002e357821002` |
+| Web | `sha256:924abf4b367e1521102b2eb1d31df11bd725fb1ebe145401728cb455775e8ccf` |
+
+原 `tools/release.sh` 于 11:55:41–12:08:56 UTC 退出 0，两组 SPDX/provenance
+均生成；registry HEAD/GET 各 200，manifest 原字节 SHA、header、image ID 与
+RepoDigest 一致。19216 个 tracked entries、477 个发布输入和三份实际锁文件
+前后 cmp 0。复用已有受限 builder（8 CPU、16 GiB、swap 0、Data 缓存），没有
+修改 Cargo 并行度或重复构建 Web/Win。首次缺少 `REGISTRY` 在构建前退出 1，
+改为显式消费既有 `.env` 的 `REGISTRY_HOST` 后执行上述唯一一次实际构建。
+发布原件目录 `/volumes/data/kailo/tmp/codex-workflows-core-worker-release-20261004.5W7pia/`，
+`release-handoff.md` SHA `e77d4605535ed4a4613528e08f967305fde58732713edd54ce9c4bbf4ef85885`；
+`release.log` SHA `233f0a8b656135402cd2ad0ce700cda9fe7f9a4642e2e92dc2455fea5ad18601`。
+
+12:14–12:15 UTC 只调用原 `migrate_core_database`、`start-core.sh --no-build`
+及 `compose up -d --no-deps --no-build --pull never worker buzz-web`，均退出 0。
+实际数据库从 61 条成功迁移到 69 条，最高版本 `20261004015500`，失败 0。
+迁移 SDK 实际限额 4 CPU、8 GiB、swap 0；原 SQLx 工具来自固定检查镜像。
+37 个既有运行容器前后比较仅 Core、Worker、Web 三项改变；原 Relay、数据库、
+其他应用容器没有替换，sole `.env` 与 Runtime profiles SHA 均不变。
+首次 checksum 命令从错误 cwd 读取相对 `.env` 路径失败；在工程根重跑两项均 OK，
+不将路径失败记作配置变化或部署失败。
+
+原 Worker 实际开始轮询既有 TaskQueue。浏览器受限容器只执行登录及读取，
+阻止业务写请求，12:15:26–12:15:27 UTC 完成 Inbox、Workflows、Agents 页面观察：
+相关 API 全部 HTTP 200，pageErrors/alerts 均为空；Automation 区域仅在 Workflows
+出现。浏览器没有生成工作流或消息，因此不证明执行历史、回复或外部副作用成功。
+原完整检查固定可执行树 `0bd70a9070913e3770760d7d397ecd9e061fb705` 已退出 0，
+本次只登记投递事实，不重复产品编译；全局数据库门禁此前 SKIP 与本次实际
+forward 迁移是两项不同证据。历史缺 trace 用量仍 UNKNOWN，日志明确不重发模型；
+真实 Agent 回复、工具 consume 授权、组件 release/binding、设备安装和签名仍未验收。
+
+部署原件目录 `/volumes/data/kailo/tmp/codex-workflows-live-20261004.gP82UK/`：
+`migration-forward.log/.exit`、`database-after.txt`、`core-start.log/.exit`、
+`worker-web-start.log/.exit`、`containers-before.txt`、`containers-after.txt`、
+`delivery-after-check.txt`、`browser.log/.exit`、`observation.json` 与三页截图。
+
 ## 固定输入与资源边界
 
 - 源提交：`4e0dc502a118cf45c99048e39928ee943ebc47e6`；工作树干净。
