@@ -415,3 +415,51 @@ trace/Invocation/operation，不能从共用 Gateway principal 猜关联；未�
 副作用保留原 Installation/Workflow/业务数据与受控凭据，不扩大权限、不重放 UNKNOWN；
 健康、来源和原 ID 接受不等于模型业务结算，trace 缺失、reply NULL/usage 未提交仍待原链对账。
 本节没有重复 full，不证明 Win11 安装/签名、Mobile 设备或生产计费配置完备。
+
+### 2026-10-04 固定 99dd 原生 trace Core：03:45 UTC 限定交付
+
+干净输入 `99dd3ebba3d278ca2c373b390909d72c0a4d5cbd`，tree
+`7cc70711ee8281ce580227d5182b4c3daf6eef95`。原 `tools/release.sh` 在内存仅收窄
+unit 为 Core，其 clean/archive、Runtime pin、原 Core 配方、Syft 与 provenance 均保留；
+session 22942 退出 0。原 builder 8CPU/16Gi/swap0、Data 缓存及 Cargo 配方未改，
+不把 SDK 的 jobs=16 推导为构建实参。Runtime 复用
+`sha256:ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec`，
+Worker/Gateway/Web/Win 均未构建。Core artifact 为
+`sha256:50bd7f19299544399da452481be06ff312dd11c486ccaff8edbbe691cccafd16`；
+原 push 0，独立 registry HTTP200，header 与 manifest 原字节 SHA 均等于 artifact。
+构建输入 archive 前后 SHA 同为
+`96273c28d1dd36dcd95063c854a04d92b4457df944d03cf9435a4f027e0acce7`，逐字源核对 0。
+SPDX SHA `a6fbd7ff6a09577990db2322975ecaf7f0cd9a5256381193367d0275cfba5548`、
+provenance SHA `78c3114d6676c609221e51374731799756e5f413a14ade4bbf420b79074b33d4`；
+subject/source/Runtime 实际核验 0，两份原 proof 已逐字交付正式 ignored `dist/`，cmp 0。
+
+03:41:47 只读部署前核验 active/unconfirmed native turn 为 0；旧 Invocation 原生
+completed，不是业务成功。原 `start-core.sh --no-build` session 71353 退出 0，
+新容器 `b532c724acb3ffab66961dcd678ad767cc43644b976b45ebb8cf4ae3c6f3fd29`，
+StartedAt `2026-10-04T03:45:34.719770259Z`；healthz HTTP200、OOMKilled=false，
+仅 Core ID/image/StartedAt 改变，其余 27 个既有平台容器完整比较不变。
+没有新迁移，线上成功迁移仍 60；sole `.env` 与 profiles 前后 SHA/cmp 均不变。
+原 Supervisor 恢复唯一 Codex child；`agent_runtime::Supervisor::ensure` 只有原生
+initialize/config/read 全部 guard 通过后才保存 process，失败由 kill_on_drop 关闭。
+本次不另开生产 RPC 或第二进程；同 Installation ACTIVE、generation 1、resourceVersion 3
+与 config hash `118822289da62c5ccf3020ad75a06806d719b74cc8e9cc9ec3ec2505802074c7`
+保持不变。仅辅助读取原配置的 OTel 字段：trace endpoint 为原 collector `/v1/traces`、
+binary，logs/metrics exporter 为 none、prompt=false；磁盘读取不冒充独立 native 回读。
+主线原 browser read 03:47:04 退出 0，旧 Task 仍 RUNNING/BILLING_UNAVAILABLE，
+source 1/reply 0，Delegation EXPIRED version 2/uses 1；未续预算、改权限或重发旧回合。
+
+原件目录 `/volumes/data/kailo/tmp/codex-native-trace-core-delivery-20261004.7a3Hd1/`：
+
+| 文件 | SHA-256 |
+|---|---|
+| `core-release.log` | `b80877b8636caca2dfa4ac0bdb1d2483eb54f8f659b74b48fa1d6b3aa5e2ebd0` |
+| `core-proof-readback.log` | `63678ded80ec73de82c66c8c9f863f818afac700626a394b34472d465c936870` |
+| `core-start.log` | `5cf4aeaaf9a07048396712a2c8c7a80e0fcd82cc2535fb3791a2b7f91536076e` |
+| `core-health.log` | `279563bb5e00563f197cd3fcf8e247f57aad3eeda2c301ea89906d3a1623d33d` |
+| `native-config-selected.log` | `19543b3b766b5795f052f97fc5a3bf941633ea58a5fcc4698ea7313e2475d043` |
+| `bff-after-core-read.log` | `2edb5ebc7f84af2d4b6fc91de11f9f424fd2e0e999752d0e5ebf1f16e52479cf` |
+
+四步结论：权威是固定提交、原 Core 发布/启动链与强制 config/read guard；影响仅 Core
+产物、15 个持久 pin/trace digest 值及一次 Core 替换；副作用未改变 DB 业务事实、
+profile/秘密配置、权限、预算或其它容器；本次健康/配置恢复不证明新模型调用、旧无 trace
+用量修复、回复或计量终态，不重复 full，不扩大 Win11/Mobile 设备验收结论。

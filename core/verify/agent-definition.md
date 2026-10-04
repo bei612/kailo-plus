@@ -2390,3 +2390,15 @@ seam、安全边界及文档检查通过；14 条 Core trace 的发布产物证�
 日志 `full-proof-delivered.log` 位于同一 YtxgqE 目录，SHA
 `0324567501ad15d1e3eb0f83f7b5367816e40f0e42a8ac7d02d4f0f4633b6f2b`。
 本段只是检查后追加回执，随后走原文档检查，不再次编译。
+
+### 03:47 UTC 部署后原浏览器读回
+
+Runtime 修复已提交并普通 push 为 `99dd3ebba3d278ca2c373b390909d72c0a4d5cbd`。
+仅 Core 部署 `sha256:50bd7f19299544399da452481be06ff312dd11c486ccaff8edbbe691cccafd16`；
+构建、原生回读及部署边界见发布记录。原浏览器 OIDC→BFF 只读脚本退出 0：
+同一 Installation ACTIVE generation 1/resourceVersion 3/configHash 不变；
+原 task RUNNING/BILLING_UNAVAILABLE，原消息一条、关联回复零条；原委托
+EXPIRED version 2、uses 1/maxUses 1。没有 POST、重发消息或模型请求。
+原件 `/volumes/data/kailo/tmp/codex-native-trace-core-delivery-20261004.7a3Hd1/bff-after-core-read.log`
+SHA `2edb5ebc7f84af2d4b6fc91de11f9f424fd2e0e999752d0e5ebf1f16e52479cf`。
+本结果证明部署后原身份/安装仍可读，不证明旧未知账恢复或新模型回合完成。

@@ -40,7 +40,7 @@ runtime:
 release:
   artifacts:
     - name: core
-      digest: sha256:cae7005b2dcaecea2fbacf5edbc32421f08f61dca2b574ae3a1b92202dc0fcb4
+      digest: sha256:50bd7f19299544399da452481be06ff312dd11c486ccaff8edbbe691cccafd16
     - name: web-client
       digest: sha256:69a956b6748661c8c15263c7838e34d7065bbe6e58f951891a6bdf10f289520f
     - name: collaboration-relay

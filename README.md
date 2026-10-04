@@ -41,7 +41,11 @@ Invocation 仍 RUNNING/UNKNOWN_EXTERNAL_RESULT，回复未确认、usage_event 0
 该接缝已补齐原生 OTel 配置及回读守卫；隔离原生 HTTP 实证 trace ID 传播一致，
 没有再次调用生产模型。选定树 `311a29212fae412900e4cd5ebe157b3893b9ac02`
 原 `./tools/check.sh --full` 已退出 0；实际数据库/部署配置 SKIP 和设备/签名
-缺口保留。修复尚未部署，旧 NULL trace 不被补造为已对账；该旧事件阻塞全局
+缺口保留。03:45 UTC 修复已仅部署到 Core，镜像 `50bd7f19…`，healthz 200，
+原 Supervisor 恢复唯一 Codex 子进程，其余 27 个容器未变。03:47 UTC 原浏览器
+复查 Installation 仍 ACTIVE generation 1，旧任务为 RUNNING/BILLING_UNAVAILABLE，
+消息一条、回复零条，旧单次委托已 EXPIRED/uses=1；没有重发调用。
+旧 NULL trace 不被补造为已对账；该旧事件阻塞全局
 tail，但已有按单个 Invocation 精确 trace 结算的原生消费路径，不需另造通道。
 详见 [Agent 调用记录](core/verify/agent-definition.md)。
 
