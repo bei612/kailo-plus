@@ -2192,3 +2192,201 @@ Installation、CONSUME_ONLY/PLATFORM_METADATA_ONLY；没有授予 Tool、模型�
 只经原 Action/BFF/owner 审批，不直改业务状态或默认授权；未知结果仍保留原引用。
 截至此回读没有模型请求、频道回复或 stored usage 终态；Web 原消息生产者缺失
 mention 标签的修复属另一批，不继承本节为普通首轮、生产计费或设备 E2E 通过。
+
+### 2026-10-04 Web 根消息 MENTION：源码接缝与后置验证
+
+权威：`.design/12` §2、`17` §2/§7 允许普通顶层 Channel mention；固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src-tauri/src/events.rs::build_message_with_client_tags` 在无 thread_ref 时只写
+h、mention_tags 与媒体；`crates/buzz-core/src/nip10.rs::ThreadMarkers::resolve` 无 reply
+marker 即顶层。原 Web Composer→publishMessage→BFF 原发布只产 h+imeta，缺 p，
+故不能用旧 POST messages 的成功冒称 mention 成功；本批不新增 thread 编辑器。
+
+影响：唯一 `WebPublishMessageRequest` schema 及四侧生成物新增
+mentionInstallationIds。Web 从原受权 Installation 分页目录明确选择 UUID；BFF
+在原 Tenant/Workspace 内 fresh 核 ACTIVE Installation/AGENT、当前 generation 与
+MENTION Channel binding，恰好一把合法 SERVER key 后才签 p。附件原 URL/hash/type/size
+校验保留。选择失效、目录未知或跨 Workspace 不清选择后偷偷发普通消息；
+agent.invoke 的执行权限、Delegation、Quota/Capacity 仍独立裁决，不因 mention 授权。
+
+异常与兼容：原 publish_attempt 新增排序去重 UUID[] 引用，旧 writer 缺省空集；
+初读与并发 claim 冲突均对比原目标。同 key 还须匹配原 DISPATCH audit 唯一 Workspace，
+缺失/重复/异 scope 拒绝；同 scope 原 ACCEPTED 准确回读，不因后来撤权改判旧结果。
+UNKNOWN 不重发，NOT_DELIVERED 保持原 CAS。迁移 `20261004004000_web_message_mentions`
+down 遇非空引用明确停止，不丢幂等事实；不保存正文/hash，不改原生 Desktop 身份链。
+
+实际验证复用固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+4 CPU/8 GiB/无额外 swap、Cargo16。原 `collab-bridge --lib mention_tests` 1 passed、
+`platform-core --bin platform-core web_transport::tests` 6 passed，Clippy `-D warnings`
+与两源 rustfmt check 均退出 0。私有生产删 p、放开目标比对、放开 Workspace 比对
+三变异分别退出 101；逐字还原/cmp 后最终原目标通过。初次快照依赖缺项及本刀
+SpiceDbError 调用边界编译错误原件保留，修正后才记通过。
+
+隔离 network-none PG 新库真实 60 迁移成功；原 resolver/insert/replay SQL PREPARE，
+同 key 不覆盖目标、旧空集、原 ACCEPTED 唯一 Workspace、非空 down 拒绝以及清理
+本夹具后 down/up 均有实际回执。最终精确删除本私有库并读回 0，未写生产 SQL。
+原 tools/gen.sh 经现有 `/cache/npm` 生成四侧退出 0（此前 EAI_AGAIN/ENOTCACHED 原文保留）。
+两个公共样例经原四侧 roundtrip 入口实际验证：Rust 2 tests、Go 2 主 test/2 子 case、
+TS 3 tests 与类型检查、Dart 4 tests 均通过，覆盖 mentions+attachments 与旧 content-only；
+生成差异仅新增两个类型，无既有字段删除。Web 原类型检查与 14 tests 退出 0；
+这不是新 Composer 的动态浏览器用例或 Relay/Codex 首轮 E2E。
+
+原件 `/volumes/data/kailo/tmp/codex-agent-invoke-20261004.yK1eTV/`：
+`mention-final-scope-core.log`、`mention-mutations.log`、`mention-scope-mutation.log`、
+`mention-final-pg.log`、`mention-generation-cached.log`、`mention-four-side-roundtrip*.log`；
+TS 冻结原件 `/volumes/data/kailo/tmp/codex-mention-ts-review-20261004.T5kzbg/ts-targeted-frozen.log`。
+选定 canonical SHA-256 `88794896845ce2aaa29eccc782bed0be652c00f29ab830fb3ce12326edcb2d07`，
+相对 `f81f6ca84d5d4773920a3e7744eb24614376551f` 为 18 files +679/-52，排除继承
+stream/openStream/i18n 差异。此处仅源码与窄验证；未 full、构建、部署或发送真实消息，
+不将前节已完成的授权与 Delegation 当作本节原生执行、回复或计量终态。
+
+四侧本类型反例随后已实际闭合：只在私有同一样例把 mentionInstallationIds 改成
+unknownMentionIds，原四入口分别退出 Rust 101 / Go 1 / TS 1 / Dart 1，均命中字段
+丢失/未知接口字段断言（`mention-four-side-mutation.log`）。样例逐字恢复并 cmp，
+SHA-256 `b66b72c310cd0f8321ac44e83329c6dab70bbc14bdb84cda7a3a8f8047462616`，
+四原入口最终复跑全部退出 0（`mention-four-side-restored.log`）；未改生产输入或重跑 Core 主包/full。
+
+### 2026-10-04 02:54 UTC：MENTION 原页面首发与原生拒绝
+
+源码 `b2829522227d7f17053228835c9fac61734a04ef` 的 Core `cae7005b…` 与 Web
+`69a956b6…` 已经原构建、独立 registry 读回及限定服务投递。在线迁移 60，
+原安装 ACTIVE generation 1、固定 Version/hash 未变。ADR-09 明确保留宿主提及
+接线；此次 Web 选择控件不是 Desktop 共用控件，不声称整个 Composer 单源。
+
+原受控浏览器以原 OIDC 登录同一隔离 Tenant/HUMAN，在真实页面选择 Workspace
+与 Installation，再点一次发送；未直接调用模型或生成原生 tags 绕过 BFF。
+意图 `8577b796-5f7b-489c-894d-ae08548d562d` 的目标为原安装
+`8f240978-34bb-437d-97ee-498a30e67e86`，返回 HTTP 403、DENIED/PUBLISH_REJECTED，
+Operation `04d4210b-af84-4556-ad47-64a8ec974e22`。Core 02:54:27.762234 UTC
+原日志原因是 Relay `HTTP 400 {"error":"restricted: not a channel member"}`。
+这是确定拒绝，不是 UNKNOWN、成功或模型调用失败；没有重发、改授权或追加额度。
+
+只读采样 Invocation 0、Session 0；Delegation
+`a1d9a1ca-af8b-4df6-9f87-ab36e5037964` ACTIVE、uses 0/maxUses 1、仍于 03:35 UTC
+到期。原件目录 `/volumes/data/kailo/tmp/codex-agent-invoke-20261004.yK1eTV/`：
+`bff-mention-ui-first-send.log` 实际退出 1（PUBLISH_NOT_CONFIRMED）；
+`first-turn-baseline.log` 只读退出 0，SHA-256
+`9d42afbb477422bd639c8d3acc2a6d39e091de5a34753ab69e9665e7ea04033d`。
+该回执未证明 Relay 发布、AgentInvocation、模型首轮、频道回复或 stored usage
+任一正向终态；成员准入拒绝仍需沿原身份/投影权威定位，不放宽准入充当通过。
+
+后续沿原权威确认：该 HUMAN 只有管理权限，没有 WorkspaceMembership，原生
+拒绝符合边界，不修改生产授权逻辑。02:59:12 UTC 由同一 HUMAN 经原
+`POST /api/v1/actions` 显式执行 `workspace.member.add`，ActionExecution
+`19045819-7c6d-4667-95d3-38c75c5ecec3`、Operation
+`566ba2f2-8810-4ea6-8289-16ac854c95d1` ALLOWED/DISPATCHED；原 Temporal
+MEMBERSHIP_PROJECTION 收敛为 TERMINAL/COMPLETED，membership
+`cadb4300-d6d3-412f-9c77-09816024fcee` ACTIVE v2，无观察缺口。
+原件 `bff-workspace-explicit-join.log`、`publish-membership-joined.log` 均退出 0。
+
+03:00:14 UTC 重新核 ACTIVE 成员、公钥、安装与未消耗单次 Delegation 后，页面
+发送新的明确意图 `210f8d1c-347f-4d07-adaf-473edd0df879`；不是重放 UNKNOWN。
+原 BFF HTTP 200，Operation `2f388115-2b12-42cc-9164-e725a6455698`，Relay 准确
+回读 event `2f0844e4a88272160e01f8826f9528381fd882c1f033810ea1397997fb0805e2`，
+kind 9、同 Workspace h、准确 AGENT p、没有伪造 thread/e tag。
+`bff-mention-ui-member-send.log` 实际退出 0，仅证明消息发布，不是整个 Agent E2E。
+
+原只读 `first-turn-observe-1.log` 确认 Invocation
+`4cfe99fe-1e45-46d2-834b-411027412a9d`，Session ACTIVE，Codex thread
+`01a104da-e960-7ed0-b2a3-7d047d88792e`、turn `01a104da-ef92-7c32-91a9-70a742645180`
+native_status completed；AgentTask 仍 RUNNING/UNKNOWN_EXTERNAL_RESULT、reply NULL，
+usage_event 0，Delegation uses 1/maxUses 1。Core 冻结 trace
+`c0cf9530367e4505860a9e4eb1a0108a`；Gateway 原请求
+`01a104db-1d99-7e81-9e50-e28a0baff358` HTTP 200、input 8726/output 37/total 8763，
+native usage_outbox seq 1，但 request_logs/usage_dispatches 的 trace_id 均 NULL。
+因此保持终态未确认，不凭 principal 或时间反向归属、不回填旧账、不重发模型；
+修复追踪传播与对账此旧回合是不同事项，不因源码修正自动把本条改记为成功。
+
+同一固定 b282 输入的 Web/Win 原 helper 分别仅运行一次，均退出 0。
+Web source `daff300fdc8af1625d67b8b82dbcfe298fb01aa9371b62c06445551c1d74ee17`
+（98 输入），artifact `69a956b6748661c8c15263c7838e34d7065bbe6e58f951891a6bdf10f289520f`；
+registry HEAD/GET、manifest SHA 与 RepoDigest 一致。02:53:47 UTC 仅 buzz-web 替换，
+其余容器 ID/image/state 比对一致；新容器 healthy、匿名入口仍为原 OIDC 302。
+Win source `a5a15c115d9ca77aae3bde19ce9a3cb12f14f013c874cc1e8e6b3b5b2af73c70`
+（2259 输入），原生 x64 NSIS 包 15,112,383 bytes，artifact SHA
+`526e951cfeb5e0f651c108aad0542a936339bef857a145e76cd755122c474194`。
+源码摘要与 Cargo.lock 前后均一致；unsigned 签名 SKIP，未作 Win11 安装或设备验收。
+原件目录 `/volumes/data/kailo/tmp/codex-agent-mention-client-delivery-20261004.yz97Gk/`，
+`handoff.md` SHA `0b682a520ad72286b019dc1a4a17568384072f4e1cd21eadc7d2ce48c357bb62`；
+Web helper log SHA `20b568da97ba3361d50443feba0b4bd7b44c25a4b26fe829b2da4d043efae607`，
+Desktop helper log SHA `d52541fb9dc7dbfe50d549358e4d2b2c7ed8d3fc1a2c7e07a7072303e30686eb`。
+编译、来源与服务健康不解除上述 trace/usage/回复终态缺口或三端生产门禁。
+
+## 2026-10-04 03:11 UTC：原生 trace 传播缺口的限定修复（未部署）
+
+首个已接受 mention 的 Invocation `4cfe99fe-1e45-46d2-834b-411027412a9d`
+已有原生 completed turn；Gateway HTTP 200 记录
+`01a104db-1d99-7e81-9e50-e28a0baff358` 的 input/output/total 为
+8726/37/8763，原生 usage_outbox seq=1，但 request 与 dispatch 的 trace 均 NULL。
+Core 冻结 trace `c0cf9530367e4505860a9e4eb1a0108a` 因此不能归因；
+Invocation/回复/用量不宣称完成，不按时间或 Principal 回填原生引用。
+
+四步影响：权威仍是原 Codex W3C propagation 与 Gateway durable usage；
+只改 Runtime 的原生配置投递及 config/read 查证，复用 Core 既有
+`OTEL_EXPORTER_OTLP_ENDPOINT` 的 HTTP `/v1/traces`，不新增身份或关联表。
+副作用仅启用既有 Collector trace pipeline；原生 log/metrics exporter
+显式 none、log_user_prompt=false，不采用上游 Statsig 默认外发。
+缺配置、未知协议或回读不符拒绝初始化；旧 NULL trace、单次 Delegation
+uses=1 与已发生的 8763 tokens 保持不变，本次不再发消息或模型请求。
+
+固定 Codex `7498521d288b9b3b96ffba4eedf089d8d6e06a84`：
+`codex-rs/core/src/config/otel.rs::resolve_config` 默认 trace none；
+`codex-rs/app-server/src/otel_reloader.rs::layers` 只有 tracer 存在才装层；
+`codex-rs/otel/src/trace_context.rs::span_w3c_trace_context` 与
+`codex-rs/http-client/src/client.rs::trace_headers` 消费当前原生 span。
+配置 enum/字段来自 `codex-rs/config/src/types.rs`；
+原 `Config::additional` 保留 config/read 的 otel 字段。
+
+复用原 10ad SDK，4 CPU/8 GiB、memory+swap 8 GiB、Cargo16，执行前原
+container-safety 预检通过。原目标
+`cargo test --manifest-path core/Cargo.toml -p platform-core --bin platform-core agent_runtime::activity_tests -- --nocapture`
+退出 0：7 passed、1 既有隔离 DB 专用场景 ignored。私有源码把实际
+native_trace_verified 改为无条件 true，同新增目标真实失败 101；
+逐字还原后原目标再过，`cargo clippy --manifest-path core/Cargo.toml -p platform-core --bin platform-core -- -D warnings`
+及私有单文件 rustfmt --check 均 0。未重跑 Core full 或数据库锁场景。
+已部署 Codex 原二进制 SHA
+`be14b6a4245d2e416727c0afc6f28bc8c953c2cb054ff84b39c8877d06116265`
+在同 SDK 独立 CODEX_HOME 仅 initialize→config/read，生产 guard 的字段
+实读一致、退出 0；未创建 thread/turn、无模型凭据。首次私有断言因 native
+额外默认 headers={}、tls=null 的字典精确比较退出 1，保留原件；
+改为与生产相同逐字段断言后通过，未据此修改生产配置。
+
+全部原件在 `/volumes/data/kailo/tmp/codex-agent-invoke-20261004.yK1eTV/`：
+`trace-runtime-restored.log` SHA
+`4c868ac837eb9c2a39d0fb344cd9758927016d75db9a52c45da99d66a69d91a0`；
+`trace-runtime-mutant.log` SHA
+`536d942a0b0e95fd7a7346db851b06f9b53416b2b48a677c7a7a138da7ed59f4`；
+`trace-native-readback-final.log` SHA
+`d3af2876cc405516308d8cdf3616809026e14693cb89dc26b87f29da88d7dd51`。
+owned canonical 仅 Runtime +94 行及 07 §1 表项 +1 行，排除两文件继承脏改；
+SHA `5091c93307bce1d1b19d1999f34ecbbcfdbc9aea023480e96e7e99c40782630e`。
+本次原生配置回读不等于修复后真实模型 E2E；下一次受权回合与旧回合未知账须分别验收。
+
+后续隔离传播实证复用同一原生 Codex 二进制与独立 CODEX_HOME，模型及
+Collector 均指向私有回环接收端，无生产凭据。RPC fixture trace
+`8b11ad9ac81e44adb400e31740cfd354` 与唯一模型 HTTP 的 traceparent trace ID
+逐字一致；接收端明确 HTTP 400，Authorization 不存在，生产模型调用 0。
+进程与接收端已退出。这只证明原生传播接缝，不代表模型或业务成功。
+原件 `trace-native-http-propagation-final.log` SHA
+`cb771d4ddbde8de045b43194889137dc07f166dd80f53e8353b632567f69e1cd`，
+同上 yK1eTV 目录。首次 inline 命令因 shell 引号错误退出 1，未启动子进程；
+修正私有命令后实证退出 0，生产源码不变。
+
+集中检查树 `02cac43772830864fd8da1c3d3e301d49b9fca1a` 的原
+`./tools/check.sh --full` 退出 1：四语言静态与测试、契约兼容、Workflow replay、
+seam、安全边界及文档检查通过；14 条 Core trace 的发布产物证据没有投递到
+检查挂载的正式 ignored dist，报“digest 在 dist/ 中没有对应的发布产物”。
+不将该结果改写为通过，不改变门禁；实际数据库演练及部署配置检查分别因
+未投递 DATABASE_URL、deploy/local/.env 而 SKIP。原日志
+`/volumes/data/kailo/tmp/codex-mention-selected-20261004.YtxgqE/full.log` SHA
+`6c0f95d646cf79b7e5ec6481f0070756345c3cc78e7abfd6937f6aaa26b57cf6`。
+
+原两份 Core SBOM/provenance 核对 b282 源 commit、cae700 产物及 ad13 Runtime 后，
+仅复制到正式 ignored dist 并 cmp 通过，未重建或修改检查规则。包含上述证据追加的
+树 `311a29212fae412900e4cd5ebe157b3893b9ac02` 再运行原 `./tools/check.sh --full`
+退出 0，末行“全部通过。”；29 个产物 digest 的 SBOM/provenance 与锁摘要一致，
+18 条追溯、144 schema 兼容及四侧验证通过。实际数据库/配置 SKIP、隔离数据库
+专用 ignored、未安装 gitleaks、Win11 未签名/设备未验收及 Mobile 签名缺口保留。
+日志 `full-proof-delivered.log` 位于同一 YtxgqE 目录，SHA
+`0324567501ad15d1e3eb0f83f7b5367816e40f0e42a8ac7d02d4f0f4633b6f2b`。
+本段只是检查后追加回执，随后走原文档检查，不再次编译。

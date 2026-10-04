@@ -354,3 +354,64 @@ BFF owner 审批及 uses0/maxUses1 的 ACTIVE Delegation 回读见
 保留。原件 `/volumes/data/kailo/tmp/codex-agent-invoke-delivery-stage-20261004.2nYIn8/seam.log`，
 SHA `532b7b29179a81a6909e9089b06abd53a96b45bfcb207f9700da92c9d4048654`。
 这是上轮 full1 唯一产物维度的定向读回，不改写原 full 结果，不称新 full0。
+
+### 2026-10-04 固定 b282 MENTION Core：02:51 UTC 交付与拒绝边界
+
+干净输入为 `b2829522227d7f17053228835c9fac61734a04ef`，tree
+`41d61388c80614fba10e7ac46a9fe58361cd92ba`。复用原 `tools/release.sh`
+clean/pin/Core/Syft/provenance 步骤，仅在内存收窄 unit 为 Core；session 28771
+实际退出 0，不构建 Worker/Runtime/Gateway/Web/Win。原 builder 为 8CPU/16Gi/swap0、
+Data 缓存，Core 配方未显式设置 Cargo jobs，不以 SDK16 推导构建参数。
+Core artifact 为 `sha256:cae7005b2dcaecea2fbacf5edbc32421f08f61dca2b574ae3a1b92202dc0fcb4`，
+复用 Runtime `sha256:ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec`。
+原 push 0，独立 registry HTTP200、header 与 manifest 原字节 SHA 均匹配 artifact。
+Git archive 前后 SHA 同为 `bb19c184495a4282d36e5627e88428958f56219ef93a7e965ee859e40fe69a2f`，
+原构建输入与固定提交的逐字比较为 0。SPDX SHA 为
+`f77f17796f861665709455d6f4f5d899f79fa00e2ca52bf63a82fb18538b6bcf`；
+provenance SHA 为 `e6211ae8c2c25d1ef222b53e927c2032fe55e80ad50de9edbd41dcdf90b31e81`，
+subject/source/runtime 均实际读回。首次 proof 路径读取误用 `with_suffix` 退出 1，
+发生在成功 push 后；保留原件，修正文件名读取后 0，没有重复构建或推送。
+
+原 init-local 迁移函数在固定 10ad SDK、4CPU/8Gi/swap0/UID1000 内只 forward
+`20261004004000_web_message_mentions`，线上成功迁移 59→60，新增 mentions 列
+NOT NULL/default 读回一致。首次函数提取错误退出 127，未执行数据库动作；
+原函数正确调用后 0，没有 rollback/reset、夹具或安装重放。
+原 `start-core.sh --no-build` session 65219 退出 0，新 Core
+`8d0efc4c1366890b75aba3e43a1c17479e196ecb4d3972bf58ec2976465d78e7`，
+StartedAt `2026-10-04T02:51:01.388831144Z`；healthz 200、OOMKilled=false、
+原 Codex child 存活。sole env/profile 字节前后相同，profiles RO/state RW 未变；
+该阶段只有 Core ID/image/StartedAt/status 改变，其余 27 个既有平台容器不变，
+不将其中非运行容器写作健康。原 Installation 仍 ACTIVE generation 1，固定
+Version/hash 不变；部署后的 Invocation 0 是首次 UI 发送前的时间点，不是最终业务结论。
+Core pin 与 14 条 trace digest 的 15 行独立补丁已同步并交主线选入；未操作默认 index。
+
+首次 UI 发布的原 403/Relay 400 `restricted: not a channel member` 是合法拒绝：
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`.references/buzz/crates/buzz-relay/src/handlers/ingest.rs::{ingest_event,check_channel_membership}`
+与本 fork 相应消费者读取认证 `auth.pubkey()`，不是 `p` 目标；平台 governed 分支
+仅认原生 roster。主线经原 BFF 明确添加 WorkspaceMembership 后，03:03:13 UTC
+native 只读查询证实同 community/Workspace 下 sender `76bc7224…` 为 member，
+joined_at `02:59:12.490892Z`、removed_at NULL、active count 1；本 lane 未写 Relay、
+授权或业务对象，未重启或重发。主线 03:00:14 的单次消息已由 Relay 原 ID 读回。
+该消息后 native turn completed，但本节不能声称 Invocation/回复/计量终态：
+03:03:16/31 Core 仍明确拒绝 native usage `01a104db-1d99-7e81-9e50-e28a0baff358`
+缺 Core trace，checkpoint cursor 0 留存。`gateway_usage::correlate` 只消费写前冻结的
+trace/Invocation/operation，不能从共用 Gateway principal 猜关联；未弱化该 failclosed。
+
+原件目录 `/volumes/data/kailo/tmp/codex-mention-core-delivery-20261004.pf77zn/`：
+
+| 文件 | SHA-256 |
+|---|---|
+| `core-release.log` | `d1226ef4f0b720dedabf04f7c7fea1881f5c716687f62c18bd0da8350e3f2bdc` |
+| `core-proof-readback.log` | `0e90497ca55b2ba2f0cfde1f4814191267c878c0125f138191b3ce627c571652` |
+| `forward-migrations.log` | `f7b214023cbdc43f4366e235d3f3bc496e42e026a02b40857e159e617fd4c351` |
+| `core-start.log` | `5cf4aeaaf9a07048396712a2c8c7a80e0fcd82cc2535fb3791a2b7f91536076e` |
+| `deployment-comparison.log` | `9f26800370a8211c08b00e9c3859469f479feb72ad105f55abf78a2bc0145eb7` |
+| `relay-membership-readonly.log` | `c69e3014a44c6d1d229e954982660f57f7969765d4db7ab270cdc7aa5e7026cb` |
+| `usage-tail-rejection.log` | `3a1a08444d8af99fc555b6cff8e39f47376787f2deb905300dd2a6d3daea2b0c` |
+
+四步结论：权威为已提交 MENTION、原发布/迁移/启动、Relay sender roster 与冻结计量归因；
+影响仅该 Core 产物、一次 forward migration 和 Core 容器，Relay 拒绝无需源码改动；
+副作用保留原 Installation/Workflow/业务数据与受控凭据，不扩大权限、不重放 UNKNOWN；
+健康、来源和原 ID 接受不等于模型业务结算，trace 缺失、reply NULL/usage 未提交仍待原链对账。
+本节没有重复 full，不证明 Win11 安装/签名、Mobile 设备或生产计费配置完备。

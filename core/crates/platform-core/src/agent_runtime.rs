@@ -53,6 +53,7 @@ type ProcessSlot = Arc<Mutex<Option<Process>>>;
 pub(crate) struct Supervisor {
     binary: PathBuf,
     root: PathBuf,
+    trace_endpoint: String,
     timeout: Duration,
     max_message_bytes: usize,
     // The map lock only locates installation-local slots; no RPC/DB wait holds it.
@@ -88,6 +89,50 @@ struct NativeActivity {
 
 fn hosted_search_disabled(config: &Value) -> bool {
     config.get("web_search").and_then(Value::as_str) == Some("disabled")
+}
+
+fn native_trace_config(endpoint: &str) -> Result<String, RuntimeError> {
+    let endpoint = reqwest::Url::parse(endpoint).map_err(|_| RuntimeError::Unavailable)?;
+    if !matches!(endpoint.scheme(), "http" | "https")
+        || endpoint.host_str().is_none()
+        || !endpoint.username().is_empty()
+        || endpoint.password().is_some()
+        || endpoint.query().is_some()
+        || endpoint.fragment().is_some()
+    {
+        return Err(RuntimeError::Unavailable);
+    }
+    let endpoint = format!("{}/v1/traces", endpoint.as_str().trim_end_matches('/'));
+    // Fixed Codex installs its propagation layer only with a native trace exporter.
+    // Reuse Core's existing OTLP HTTP receiver; never export prompts or native logs.
+    Ok(format!(
+        "\n[otel]\nexporter = \"none\"\nmetrics_exporter = \"none\"\nlog_user_prompt = false\ntrace_exporter = {{ otlp-http = {{ endpoint = {}, protocol = \"binary\" }} }}\n",
+        serde_json::to_string(&endpoint).map_err(|_| RuntimeError::Protocol)?
+    ))
+}
+
+fn native_trace_verified(config: &Value, endpoint: &str) -> bool {
+    let Ok(endpoint) = reqwest::Url::parse(endpoint) else {
+        return false;
+    };
+    let expected = format!("{}/v1/traces", endpoint.as_str().trim_end_matches('/'));
+    config.pointer("/otel/exporter").and_then(Value::as_str) == Some("none")
+        && config
+            .pointer("/otel/metrics_exporter")
+            .and_then(Value::as_str)
+            == Some("none")
+        && config
+            .pointer("/otel/log_user_prompt")
+            .and_then(Value::as_bool)
+            == Some(false)
+        && config
+            .pointer("/otel/trace_exporter/otlp-http/endpoint")
+            .and_then(Value::as_str)
+            == Some(expected.as_str())
+        && config
+            .pointer("/otel/trace_exporter/otlp-http/protocol")
+            .and_then(Value::as_str)
+            == Some("binary")
 }
 
 impl Supervisor {
@@ -136,9 +181,13 @@ impl Supervisor {
         // 不等到发布才发现缺文件，不把可读文件或进程存在当 profile ACTIVE。
         value(4)?;
         crate::agent_version::runtime_profile_directory().map_err(|_| RuntimeError::Unavailable)?;
+        let trace_endpoint =
+            std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").map_err(|_| RuntimeError::Unavailable)?;
+        native_trace_config(&trace_endpoint)?;
         Ok(Some(Self {
             binary,
             root,
+            trace_endpoint,
             timeout: Duration::from_secs(seconds),
             max_message_bytes,
             processes: Mutex::new(HashMap::new()),
@@ -258,6 +307,7 @@ impl Supervisor {
         // 固定 Codex 的 custom provider 也默认启用 hosted web search/cached；
         // 该路径不经 MCP/ExtMcp，不能成为 ToolBinding/Admission 的替代入口。
         let config = format!("model = {}\nmodel_provider = \"platform_gateway\"\napproval_policy = \"on-request\"\napprovals_reviewer = \"user\"\nweb_search = \"disabled\"\nsqlite_home = {}\ndeveloper_instructions = {}\n[skills.bundled]\nenabled = false\n[features]\nmemories = false\nshell_tool = false\ntool_call_mcp_elicitation = true\n[model_providers.platform_gateway]\nname = \"Platform AgentGateway\"\nbase_url = {}\nwire_api = \"responses\"\nenv_key = \"KAILO_CODEX_MODEL_TOKEN\"\n", quoted(&projection.model)?, quoted(&home.to_string_lossy())?, quoted(&projection.instructions)?, quoted(&projection.gateway_base_url)?);
+        let config = config + &native_trace_config(&self.trace_endpoint)?;
         tokio::fs::write(home.join("config.toml"), config)
             .await
             .map_err(|_| RuntimeError::Unavailable)?;
@@ -328,6 +378,7 @@ impl Supervisor {
             || config.get("approval_policy").and_then(Value::as_str) != Some("on-request")
             || config.get("approvals_reviewer").and_then(Value::as_str) != Some("user")
             || !hosted_search_disabled(config)
+            || !native_trace_verified(config, &self.trace_endpoint)
             || config.get("developer_instructions").and_then(Value::as_str) != Some(projection.instructions.as_str())
             || config.pointer("/skills/bundled/enabled").and_then(Value::as_bool) != Some(false)
             // 固定 ConfigToml 的 MCP 默认是空 map；显式未知形状或非空配置
@@ -1184,6 +1235,7 @@ mod activity_tests {
         let supervisor = Arc::new(Supervisor {
             binary: PathBuf::from("/unused"),
             root: PathBuf::from("/unused"),
+            trace_endpoint: "http://collector.invalid:4318".into(),
             timeout: Duration::from_secs(2),
             max_message_bytes: 4096,
             processes: Mutex::new(HashMap::from([(installation, Arc::clone(&slot))])),
@@ -1484,6 +1536,44 @@ mod activity_tests {
     }
 
     #[test]
+    fn native_trace_config_and_readback_fail_closed() {
+        let endpoint = "http://collector.invalid:4318/";
+        let generated = native_trace_config(endpoint).unwrap();
+        assert!(generated.contains("[otel]\nexporter = \"none\""));
+        assert!(generated.contains("metrics_exporter = \"none\""));
+        assert!(generated.contains("log_user_prompt = false"));
+        assert!(generated.contains("trace_exporter = { otlp-http = { endpoint = \"http://collector.invalid:4318/v1/traces\", protocol = \"binary\" } }"));
+        let config = json!({"otel": {
+            "exporter":"none", "metrics_exporter":"none", "log_user_prompt":false,
+            "trace_exporter":{"otlp-http":{"endpoint":"http://collector.invalid:4318/v1/traces","protocol":"binary"}}
+        }});
+        assert!(native_trace_verified(&config, endpoint));
+        for pointer in [
+            "/otel/exporter",
+            "/otel/metrics_exporter",
+            "/otel/log_user_prompt",
+            "/otel/trace_exporter/otlp-http/endpoint",
+            "/otel/trace_exporter/otlp-http/protocol",
+        ] {
+            let mut missing = config.clone();
+            *missing.pointer_mut(pointer).unwrap() = Value::Null;
+            assert!(!native_trace_verified(&missing, endpoint), "{pointer}");
+        }
+        let mut disabled = config.clone();
+        disabled["otel"]["trace_exporter"] = json!("none");
+        assert!(!native_trace_verified(&disabled, endpoint));
+        assert!(!native_trace_verified(&config, "http://other.invalid:4318"));
+        for invalid in [
+            "",
+            "file:///tmp/traces",
+            "http://user:password@collector.invalid",
+            "http://collector.invalid?token=x",
+        ] {
+            assert!(native_trace_config(invalid).is_err());
+        }
+    }
+
+    #[test]
     fn effective_web_search_requires_explicit_disabled() {
         for config in [
             serde_json::json!({}),
@@ -1583,6 +1673,10 @@ mod activity_tests {
                     "agent_runtime::activity_tests::runtime_delivery_probe",
                     "--nocapture",
                 ])
+                .env(
+                    "OTEL_EXPORTER_OTLP_ENDPOINT",
+                    "http://collector.invalid:4318",
+                )
                 .env("KAILO_RUNTIME_DELIVERY_EXPECTED", expected);
             for (name, value) in names.iter().zip(env) {
                 child.env_remove(name);

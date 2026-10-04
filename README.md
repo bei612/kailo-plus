@@ -6,7 +6,46 @@
 
 ## 最新复核与投递事实（2026-10-04）
 
-### 当前交付：普通调用 Core 已部署，显式授权已读回，首轮尚未验收
+### 当前交付：真实 Codex 回合已发生，用量追踪关联仍阻断终态
+
+普通顶层消息的 Agent 提及已提交并普通 push 为
+`b2829522227d7f17053228835c9fac61734a04ef`，相对
+`f81f6ca84d5d4773920a3e7744eb24614376551f` 为 18 文件 +679/-52。
+原四侧契约往返、Core 定向验证、Web 类型与既有检查通过；三个生产守卫变异与
+四语言未知字段反例实际失败，逐字还原后通过。此为源码及定向证据，不是 full 或业务通过。
+
+固定上述干净提交的 Core 与 Web 原构建、registry 独立摘要读回均退出 0；
+02:51 UTC 仅替换 Core 为 `cae7005b…`，在线迁移向前到 60，healthz 200；
+02:53 UTC 仅替换 Web 为 `69a956b6…`，healthy。两次投递各自其余容器不变，
+未改 sole `.env`、profiles、授权或预算。共用平台包与生成契约保持单源；本次
+Composer 选择控件属于 Web BFF 宿主接线，不称 Desktop/Web 整个 Composer 共用
+（ADR-09 保留各宿主提及处理）。Win11 x64 原 NSIS 构建随后退出 0，包摘要
+`526e951c…`；仍为未签名测试包，未作 Win11 安装或设备业务验收。
+
+02:54 UTC 真实 OIDC 登录后从页面明确选中同一安装并仅发送一次消息，
+BFF 返回 `403 / DENIED / PUBLISH_REJECTED`；Core 原日志确认 Relay 返回
+`HTTP 400: restricted: not a channel member`。Operation
+`04d4210b-af84-4556-ad47-64a8ec974e22` 保留为确定拒绝，不盲重发或放宽成员校验。
+当时只读采样 Invocation、Session 均为 0，原单次 Delegation uses 0。
+根因是验收 HUMAN 没有 WorkspaceMembership；管理权限不自动授予协作成员身份。
+02:59 UTC 通过原 BFF 显式 `workspace.member.add`，原 Temporal 成员投影完成，
+membership ACTIVE。03:00 UTC 后续页面发送被 Relay 接受并准确回读；没有改权限逻辑。
+
+同一根消息已产生 Invocation `4cfe99fe-1e45-46d2-834b-411027412a9d`、原生
+Codex thread/turn 与 Temporal AgentTask；Codex 回报 completed，Gateway 实际
+HTTP 200、input 8726/output 37/total 8763 tokens。但原生 request_logs 与
+usage_dispatches 的 trace_id 均为空，Core 不能把这份用量关联为可核验终态。
+Invocation 仍 RUNNING/UNKNOWN_EXTERNAL_RESULT，回复未确认、usage_event 0；
+不按时间或 principal 回填关联，不盲重发、不追加或延长本次隔离预算。
+当前修复范围是原生追踪传播接缝，不把 native completed 或 HTTP 200 当成业务成功。
+该接缝已补齐原生 OTel 配置及回读守卫；隔离原生 HTTP 实证 trace ID 传播一致，
+没有再次调用生产模型。选定树 `311a29212fae412900e4cd5ebe157b3893b9ac02`
+原 `./tools/check.sh --full` 已退出 0；实际数据库/部署配置 SKIP 和设备/签名
+缺口保留。修复尚未部署，旧 NULL trace 不被补造为已对账；该旧事件阻塞全局
+tail，但已有按单个 Invocation 精确 trace 结算的原生消费路径，不需另造通道。
+详见 [Agent 调用记录](core/verify/agent-definition.md)。
+
+### 历史交付时点：普通调用 Core 已部署，显式授权已读回，首轮尚未验收
 
 普通调用、Installation execute 权限和模型 SUM 分流已提交并普通 push 为
 `13a8af775afb5232a5ce590bd9d5750cbb0f1a73`（37 文件 +4124/-146）。
