@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/capability_contract_ref.schema.json",
+  "title": "CapabilityContractRef",
+  "description": "固定 Catalog 自然键，不授予业务能力 consume 权限。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["categoryKey", "contractVersion"],
+  "properties": {
+    "categoryKey": {"type": "string"},
+    "contractVersion": {"type": "integer"}
+  }
+}

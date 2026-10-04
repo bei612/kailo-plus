@@ -8,6 +8,18 @@
 RFC 8252 登录 IdP、在本机生成设备密钥、自己签名直连 Relay。Desktop 与 Mobile 应用本身是各自的
 交付物，不由本文证明。
 
+## 2026-10-04 开发组织 IP 改址
+
+- 权威：DD-75/78 要求原生端本机持钥直连；DD-114 保留 Host 对 Community 的唯一绑定与 NIP-11 查证。Buzz 固定 `779af8886caae1317b4de962082429867ab61503` 的 `crates/buzz-core/src/tenant.rs::relay_url_authority/normalize_host` 原生接受 IP 与非默认端口，不要求 DNS 名称。
+- 影响：只调整 Relay 发布地址与当前业务组织的两个 host 字段；不改协议、契约、工作流 kind、成员、设备密钥、Community/Channel ID 或签名历史。Web 仍走 BFF，原生端仍直连，无第二条身份路径。
+- 副作用与边界：新 authority 必须在两库均无冲突；创建 Workflow 已 TERMINAL，不重跑旧 provision。事务断言原 host、ID、版本与状态，条件不符回滚。迁移中失败不报 ACTIVE，原对账器查证 NIP-43、self 和上界后才恢复。未知 Host/匿名请求继续拒绝。旧草稿留本机旧地址桶，不宣称自动迁移。
+- 迁移前：Relay 只绑宿主回环，LAN health 为 curl 7/HTTP 000。当前组织 33 条事件没有旧域名正文或 tag 引用，因此没有改写签名媒体引用；NIP-AE 密钥派生与读取不依赖 Host（同固定 Buzz 的 `crates/buzz-core/src/engram.rs::conversation_key/d_tag`）。
+- 运行操作：先沿原 Compose 单服务重建发布地址，保持镜像 `sha256:d42f83fa0dadcd78c4ad721047433a9a7c8e522767edd96cb326d641c5dd0056`；不构建、不拉取、不清 orphan。其余 133 个已有容器的 ID/image/StartedAt 前后不变。
+- 同一维护 operation `1be55225-2174-48f9-940f-636f53b7e0b0` 先记录 INTENT，再将 Community `c0de7b7b-20b6-4f72-813c-d0f53c589dda` 的 host 与 Tenant `6179e160-6055-4e9a-ae63-1793509c230c` 的 binding 改为 `192.168.0.193:8090`。Buzz 事务确认除 host 外该行摘要一致；Core 经 RECONCILING/version 3，于 09:43:29 UTC 由原对账器恢复 ACTIVE/version 4，随后追加维护查证回执。
+- 新 IP NIP-11 的 self 仍为 `069f93ec989725fdc2309f1673e2a5c0201161a3f3e257816afb543bd2767462`，广告 NIP-43、auth_required=true；新 IP 匿名 query 401、旧 Host query 404。IP WebSocket 握手 101，探针主动 2 秒结束返回 curl 28/收到 79 字节，不冒充 NIP-42 认证通过。
+- 原生事实仍由 ACTIVE binding 和原 `ws://{host}` 模板生成，即 `ws://192.168.0.193:8090`；客户端需重新登录读取，设备密钥不重发。未进行 Windows 登录、发消息或本机草稿迁移验收，不宣称完整桌面已可用。
+- Compose 与容器对比原件：`/volumes/data/kailo/tmp/codex-relay-native-publish-20261004.RgOLgJ/`。改址本身不要求客户端重打包；同批工具 UI 的新 Win11 包及完整阶段检查另行记录，不混为此次改址验收。
+
 ## 入口
 
 | 请求 | 结果 |

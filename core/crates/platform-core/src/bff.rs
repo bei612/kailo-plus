@@ -340,6 +340,11 @@ pub fn router(state: BffState) -> Router {
             get(crate::agent_definition::list),
         )
         .exposed_route("/api/v1/automations", get(crate::automation_query::list))
+        .exposed_route("/api/v1/platform-tools", get(crate::agent_tool::list))
+        .exposed_route(
+            "/api/v1/platform/capability-contracts",
+            get(crate::capability_contract::list),
+        )
         .exposed_route(
             "/api/v1/automations/{resource_id}",
             get(crate::automation_query::get),

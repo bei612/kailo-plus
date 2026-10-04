@@ -13,7 +13,7 @@ use serde_json::json;
 
 use crate::{bridge::IdentityClient, limits::RelayLimits};
 
-pub use buzz_core::engram::{validate_slug, NIP44_PLAINTEXT_MAX};
+pub use buzz_core::engram::{validate_slug, value_hash, NIP44_PLAINTEXT_MAX};
 
 /// Delivered limits; neither missing configuration nor an unknown Relay bound
 /// is interpreted as unlimited. The body ceiling also obeys native NIP-44.

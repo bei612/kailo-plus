@@ -1426,9 +1426,11 @@ const FROZEN_INVOCATION_SQL: &str = "select i.automation_resource_id,i.automatio
             i.source_event_id,i.root_event_id
          from catalog.agent_invocation i join admission.action_execution a on a.id=i.action_execution_id
          where i.id=$1 and not i.cancel_pending
-           and (($3::text is null and $4::text is null and i.status in ('CREATED','DISPATCHING') and i.runtime_turn_id is null)
-             or ($3::text is not null and i.status in ('RUNNING','UNKNOWN')
-               and i.native_status='completed' and i.runtime_turn_id=$3 and i.reply_event_id is not distinct from $4::text))
+           and ((not $5 and $3::text is null and $4::text is null and i.status in ('CREATED','DISPATCHING') and i.runtime_turn_id is null)
+             or (not $5 and $3::text is not null and i.status in ('RUNNING','UNKNOWN')
+               and i.native_status='completed' and i.runtime_turn_id=$3 and i.reply_event_id is not distinct from $4::text)
+             or ($5 and $4::text is null and i.status='RUNNING' and i.native_status='inProgress'
+               and i.runtime_turn_id=$3 and i.reply_event_id is null))
            and a.action_key=$2 and a.gate_state='ALLOWED' and a.dispatch_state='DISPATCHED'
            and a.tenant_id=i.tenant_id and a.workspace_id=i.workspace_id for update of i,a";
 
@@ -1438,7 +1440,7 @@ pub(crate) async fn fresh_invocation(
     tx: &mut Transaction<'_, Postgres>,
     invocation: Uuid,
 ) -> Result<(), Refusal> {
-    recheck_invocation(state, tx, invocation, None, None)
+    recheck_invocation(state, tx, invocation, None, None, false)
         .await
         .map(|_| ())
 }
@@ -1454,7 +1456,20 @@ pub(crate) async fn fresh_reply(
     if turn_id.trim().is_empty() || expected_reply.is_some_and(|reply| reply.trim().is_empty()) {
         return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
     }
-    recheck_invocation(state, tx, invocation, Some(turn_id), expected_reply).await
+    recheck_invocation(state, tx, invocation, Some(turn_id), expected_reply, false).await
+}
+
+/// Same frozen Automation checks, only for the existing live native tool turn.
+pub(crate) async fn fresh_tool(
+    state: &ServiceState,
+    tx: &mut Transaction<'_, Postgres>,
+    invocation: Uuid,
+    turn: &str,
+) -> Result<String, Refusal> {
+    if turn.is_empty() {
+        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+    }
+    recheck_invocation(state, tx, invocation, Some(turn), None, true).await
 }
 
 async fn recheck_invocation(
@@ -1463,6 +1478,7 @@ async fn recheck_invocation(
     invocation: Uuid,
     completed_turn: Option<&str>,
     expected_reply: Option<&str>,
+    tool: bool,
 ) -> Result<String, Refusal> {
     let g = &state.governance;
     let frozen: Option<FrozenInvocation> = sqlx::query_as(FROZEN_INVOCATION_SQL)
@@ -1470,6 +1486,7 @@ async fn recheck_invocation(
         .bind(ACTION)
         .bind(completed_turn)
         .bind(expected_reply)
+        .bind(tool)
         .fetch_optional(&mut **tx)
         .await?;
     let Some(frozen) = frozen else {

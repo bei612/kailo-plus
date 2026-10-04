@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/platform_tool_view.schema.json",
+  "title": "PlatformToolView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "resourceVersion", "ownerPrincipalId", "name", "source", "status", "resourceState", "actionKey", "inputSchemaHash", "outputSchemaHash", "canConsume"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer", "minimum": 1},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "name": {"type": "string", "enum": ["agent.memory.entry.list", "agent.memory.entry.read"]},
+    "source": {"type": "string", "enum": ["PLATFORM_NATIVE"]},
+    "status": {"type": "string", "enum": ["PROVISIONING", "ACTIVE"]},
+    "resourceState": {"$ref": "../enums/resource_state.schema.json"},
+    "actionKey": {"type": "string", "enum": ["agent.memory.entry.list", "agent.memory.entry.read"]},
+    "inputSchemaHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "outputSchemaHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "canConsume": {"type": "boolean"}
+  }
+}

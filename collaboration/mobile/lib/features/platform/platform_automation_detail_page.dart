@@ -119,12 +119,14 @@ class PlatformAutomationDetailPage extends HookConsumerWidget {
                     ),
                     field(
                       PlatformMessageKey.agentsAutomationTrigger,
-                      text(
-                        version.content.trigger.kind == TriggerKind.MENTION
-                            ? PlatformMessageKey
-                                  .agentsInstallationTriggerMention
-                            : PlatformMessageKey.agentsAutomationChannelMessage,
-                      ),
+                      text(switch (version.content.trigger.kind) {
+                        AutomationTriggerKind.MENTION =>
+                          PlatformMessageKey.agentsInstallationTriggerMention,
+                        AutomationTriggerKind.CHANNEL_MESSAGE =>
+                          PlatformMessageKey.agentsAutomationChannelMessage,
+                        AutomationTriggerKind.SCHEDULE =>
+                          PlatformMessageKey.agentsAutomationSchedule,
+                      }),
                     ),
                     if (version.content.trigger.mentionPrincipalId != null)
                       field(
@@ -136,13 +138,33 @@ class PlatformAutomationDetailPage extends HookConsumerWidget {
                         PlatformMessageKey.agentsAutomationPrefix,
                         version.content.trigger.textPrefix,
                       ),
+                    if (version.content.trigger.scheduleSpec
+                        case final spec?) ...[
+                      field(
+                        PlatformMessageKey.agentsAutomationEverySeconds,
+                        '${spec.everySeconds}',
+                      ),
+                      field(
+                        PlatformMessageKey.agentsAutomationOffsetSeconds,
+                        '${spec.offsetSeconds}',
+                      ),
+                      field(
+                        PlatformMessageKey.agentsAutomationCatchupWindowSeconds,
+                        '${spec.catchupWindowSeconds}',
+                      ),
+                    ],
                     field(
                       PlatformMessageKey.agentsAutomationTemplate,
                       version.content.action.template,
                     ),
                     field(
                       PlatformMessageKey.agentsAutomationResultTarget,
-                      text(PlatformMessageKey.agentsAutomationThread),
+                      text(switch (version.content.resultTarget) {
+                        AutomationResultTarget.TRIGGER_THREAD =>
+                          PlatformMessageKey.agentsAutomationThread,
+                        AutomationResultTarget.CHANNEL =>
+                          PlatformMessageKey.agentsAutomationChannel,
+                      }),
                     ),
                   ],
                 ],

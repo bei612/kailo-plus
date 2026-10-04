@@ -26,6 +26,7 @@ import type {
   ApprovalDecisionRequest,
   ApprovalView,
   AuditEventPage,
+  CapabilityContractPage,
   ClientKeyStatus,
   ClientKeyView,
   EvidenceView,
@@ -35,6 +36,7 @@ import type {
   NativeCommunityFacts,
   OwnAuditEntry,
   PlatformInfo,
+  PlatformToolPage,
   PlatformSessionView,
   PlatformTenantPage,
   RoleMemberPage,
@@ -85,6 +87,8 @@ export function createBffClient(transport: BffTransport) {
     /** Tenant 稳定定义；列表逐项经 discover 过滤，详情和 Version 由 BFF fresh read。 */
     agentDefinitions: (offset?: number) =>
       get<AgentDefinitionPage>(`/api/v1/agent-definitions${offset ? `?offset=${offset}` : ""}`),
+    platformTools: (offset = 0) =>
+      get<PlatformToolPage>(`/api/v1/platform-tools?offset=${offset}`),
     agentDefinition: (resourceId: string) =>
       get<AgentDefinitionView>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}`),
     agentVersion: (assetId: string) =>
@@ -159,6 +163,8 @@ export function createBffClient(transport: BffTransport) {
     /** DD-96：Platform Catalog 会话的业务 Tenant 管理视图；非 Catalog 或无权即 403。 */
     platformTenants: (offset?: number) =>
       get<PlatformTenantPage>(`/api/v1/platform/tenants${offset ? `?offset=${offset}` : ""}`),
+    capabilityContracts: (offset = 0) =>
+      get<CapabilityContractPage>(`/api/v1/platform/capability-contracts?offset=${offset}`),
 
     /** DD-85：只列当前 Tenant 可归位的旧 SERVER 身份，不返回 SecretRef 或密钥。 */
     legacySecretRefs: (cursor?: string) =>

@@ -8,6 +8,7 @@ import { createBffClient } from "../src/client";
 import { AgentDefinitionsPage, AuditPage, DevicesPage, WorkspaceMembersPage } from "../src/react/pages";
 import { PlatformProvider } from "../src/react/context";
 import { InstallationMemory, validMemoryEntries, validMemoryRead } from "../src/react/memory";
+import { ToolManagement, validPlatformToolPage } from "../src/react/tools";
 import { LegacySecretRefManagement, RoleManagement, RoleMembers } from "../src/react/roles";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { TransportError } from "../src/transport";
@@ -31,6 +32,65 @@ const key = (pubkey: string, state = "ACTIVE") => ({
   pubkey,
   state,
   createdAt: new Date().toISOString(),
+});
+
+describe("shared governed platform Tool catalog", () => {
+  const tool = { resourceId: "tool-resource", resourceVersion: 1, ownerPrincipalId: "tool-owner",
+    name: "agent.memory.entry.list", actionKey: "agent.memory.entry.list", source: "PLATFORM_NATIVE",
+    status: "ACTIVE", resourceState: "ACTIVE", inputSchemaHash: "a".repeat(64), outputSchemaHash: "b".repeat(64), canConsume: true };
+  const page = { tools: [tool], nextOffset: null };
+  it("reads the catalog without generating a registration request or consulting write tasks", async () => {
+    const t = transport(() => ({ status: 200, body: page }));
+    const host = await mount(t, <ToolManagement />);
+    expect(host.textContent).toContain("Read-only tool catalog");
+    expect(host.textContent).toContain(tool.resourceId);
+    await click(button(host, "Refresh"));
+    expect(t.send.mock.calls.every(([request]) => request.method === "GET"
+      && request.path.startsWith("/api/v1/platform-tools?"))).toBe(true);
+    expect(host.querySelector("form")).toBeNull();
+    expect([...host.querySelectorAll("button")].some((node) => node.textContent?.startsWith("Register tool"))).toBe(false);
+  });
+  it("discards a previous client's late directory response after identity replacement", async () => {
+    let finishRead!: (value: BffReply) => void;
+    const first = transport(() => new Promise<BffReply>((resolve) => { finishRead = resolve; }));
+    const second = transport(() => ({ status: 200, body: { tools: [] } }));
+    const clients = [createBffClient(first), createBffClient(second)];
+    function Host() {
+      const [index, setIndex] = useState(0);
+      return <><button type="button" onClick={() => setIndex(1)}>Change client</button>
+        <PlatformProvider client={clients[index]!} locale="en"><ToolManagement /></PlatformProvider></>;
+    }
+    const host = await render(<Host />);
+    await click(button(host, "Change client"));
+    await act(async () => finishRead({ status: 200, body: page }));
+    await settle();
+    expect(host.textContent).not.toContain(tool.resourceId);
+    expect(host.textContent).toContain("No visible registered tools");
+  });
+  it.each([
+    { ...page, tools: [{ ...tool, status: "FUTURE" }] },
+    { ...page, tools: [{ ...tool, source: "APPLICATION" }] },
+    { ...page, tools: [{ ...tool, resourceState: "PROVISIONING" }] },
+    { ...page, tools: [{ ...tool, actionKey: "agent.memory.entry.read" }] },
+    { ...page, tools: [{ ...tool, outputSchemaHash: "unknown" }] },
+    { ...page, tools: [tool, tool] },
+    { ...page, nextOffset: 0 },
+  ])("rejects malformed or falsely consumable directory facts (%j)", (value) => {
+    expect(validPlatformToolPage(JSON.parse(JSON.stringify(value)), 0)).toBe(false);
+  });
+  it("continues a filtered empty scan page", async () => {
+    const t = transport((request) => ({ status: 200, body: request.path.endsWith("offset=0")
+      ? { tools: [], nextOffset: 7 } : page }));
+    const host = await mount(t, <ToolManagement />);
+    expect(host.textContent).toContain("No visible registered tools");
+    await click(button(host, "Next page"));
+    expect(host.textContent).toContain(tool.resourceId);
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/platform-tools?offset=7" });
+  });
+  it("does not render an unreadable catalog as empty", async () => {
+    const host = await mount(transport(() => ({ status: 403, body: undefined })), <ToolManagement />);
+    expect(host.textContent).not.toContain("No visible registered tools");
+  });
 });
 
 describe("shared Automation schedule consumer", () => {
@@ -207,8 +267,8 @@ describe("Installation execute permission actions", () => {
       runtimeProfileKey: "profile-execute", configHash: "a".repeat(64), state: "ACTIVE" },
     executionPermission: { requested: false, effective: false, canGrant: true, canRevoke: true },
   };
-  const setup = async (action: Route, permission?: unknown) => {
-    let row = { ...installation, executionPermission: permission };
+  const setup = async (action: Route, permission?: unknown, readPermission?: unknown) => {
+    let row = { ...installation, executionPermission: permission, readPermission };
     const changeTarget = (id: string) => { row = { ...row, resourceId: id }; };
     const t = transport((r) => {
       if (r.path === "/api/v1/actions") return action(r);
@@ -261,6 +321,57 @@ describe("Installation execute permission actions", () => {
     expect(writes[0]).toMatchObject({ actionKey: "agent.installation.execute.revoke", resourceId: installation.resourceId,
       resourceVersion: installation.resourceVersion, explicitConfirmation: true });
   });
+
+  it("memory read grant uses the same permission control but freezes the exact Agent and requires owner approval", async () => {
+    const { host, t } = await setup((r) => ({ status: 202, body: {
+      actionKey: (r.body as { actionKey: string }).actionKey, actionExecutionId: "read-ae", operationId: "read-op",
+      gateState: "WAITING", dispatchState: "NOT_DISPATCHED", approvalWorkflowId: "read-owner-approval",
+    } }), installation.executionPermission, installation.executionPermission);
+    const section = host.querySelector("[data-testid=agent-installation-read]") as HTMLElement;
+    await click(button(section, "Review memory read grant"));
+    expect(section.textContent).toContain("exact installation owner must approve");
+    expect(section.textContent).toContain(installation.agentPrincipalId);
+    expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions")).toHaveLength(0);
+    expect(button(host.querySelector("[data-testid=agent-installation-execute]") as HTMLElement, "Review execute grant").disabled).toBe(true);
+    await click(button(section, "Submit governed request"));
+    expect(t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body).toEqual({
+      actionKey: "resource.grant_read", resourceId: installation.resourceId, resourceVersion: installation.resourceVersion,
+      principalId: installation.agentPrincipalId, idempotencyKey: expect.any(String),
+    });
+    expect(section.textContent).toContain("read-owner-approval");
+    expect(section.textContent).toContain("Self-installation memory read is not effective");
+    expect(section.textContent).not.toContain("Fresh memory read check passed");
+  });
+
+  it("memory revocation keeps the original unknown intent when refreshed and then denied", async () => {
+    let calls = 0;
+    const { host, t } = await setup((r) => ++calls === 1 ? { status: 202, body: {
+      actionKey: (r.body as { actionKey: string }).actionKey, actionExecutionId: "read-revoke-ae", operationId: "read-revoke-op",
+      gateState: "ALLOWED", dispatchState: "UNKNOWN",
+    } } : { status: 403, body: undefined }, installation.executionPermission, installation.executionPermission);
+    const section = host.querySelector("[data-testid=agent-installation-read]") as HTMLElement;
+    await click(button(section, "Review memory read revocation"));
+    expect(section.textContent).toContain("reader relationship");
+    await click(button(section, "Submit governed request"));
+    await click(button(section, "Refresh"));
+    await settle();
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions").map(([r]) => r.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[0]).toMatchObject({ actionKey: "resource.revoke_read", principalId: installation.agentPrincipalId,
+      resourceId: installation.resourceId, resourceVersion: installation.resourceVersion, explicitConfirmation: true });
+    expect(button(section, "Re-check same request")).toBeTruthy();
+    expect([...section.querySelectorAll("button")].some((node) => node.textContent === "Cancel")).toBe(false);
+  });
+
+  it.each([undefined, { requested: false, effective: "UNKNOWN", canGrant: true, canRevoke: true }])(
+    "absent or malformed read permission never enables memory authorization (%j)", async (readPermission) => {
+      const { host, t } = await setup(() => ({ status: 500, body: undefined }), installation.executionPermission, readPermission);
+      expect(host.querySelector("[data-testid=agent-installation-read]")).toBeNull();
+      expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions")).toHaveLength(0);
+    },
+  );
 
   it("switching exact installation clears the old receipt in the same shared component", async () => {
     const { host, changeTarget } = await setup((r) => ({ status: 200, body: { actionKey: (r.body as { actionKey: string }).actionKey,
@@ -431,6 +542,64 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await settle();
   }
   const posts = (t: ReturnType<typeof routes>) => t.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
+
+  it("preserves explicit Tool references across directory pages and freezes them into draft content", async () => {
+    const first = { resourceId: "list-tool", resourceVersion: 1, ownerPrincipalId: "human-1", name: "agent.memory.entry.list",
+      actionKey: "agent.memory.entry.list", source: "PLATFORM_NATIVE", status: "ACTIVE", resourceState: "ACTIVE",
+      canConsume: true, inputSchemaHash: "a".repeat(64), outputSchemaHash: "b".repeat(64) };
+    const second = { ...first, resourceId: "read-tool", name: "agent.memory.entry.read", actionKey: "agent.memory.entry.read" };
+    const t = routes((r) => r.path.startsWith("/api/v1/platform-tools?") ? { status: 200, body: {
+      tools: [r.path.endsWith("offset=0") ? first : second],
+      nextOffset: r.path.endsWith("offset=0") ? 7 : null,
+    } } : r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.version.update") } : undefined);
+    const host = await open(t);
+    await click(button(section(host, "agent-version-directory"), "Edit draft"));
+    const action = section(host, "agent-version-action");
+    const tools = [...action.querySelectorAll("fieldset")].find((node) => node.querySelector("legend")?.textContent === "Requested tools")!;
+    const choose = async (name: string) => {
+      const label = [...tools.querySelectorAll("label")].find((node) => node.textContent?.includes(name))!;
+      await act(async () => label.querySelector("input")!.click()); await settle();
+    };
+    await choose(first.name);
+    await click(button(tools, "Next page"));
+    await choose(second.name);
+    expect(tools.textContent).toContain(first.resourceId);
+    expect(tools.textContent).toContain(second.resourceId);
+    await click(button(action, "Review request"));
+    expect(posts(t)).toHaveLength(0);
+    expect(action.textContent).toContain("list-tool, read-tool");
+    await click(button(action, "Submit governed request"));
+    expect(posts(t)[0]?.body).toMatchObject({ agentVersionContent: { declaredToolResourceIds: [first.resourceId, second.resourceId] } });
+  });
+
+  it("does not silently clear a saved Tool reference when its directory is unavailable", async () => {
+    const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
+      agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+      versions: [{ ...version, content: { ...content, declaredToolResourceIds: ["unavailable-tool"] } }], nextOffset: null,
+    } } : undefined);
+    const host = await open(t);
+    await click(button(section(host, "agent-version-directory"), "Edit draft"));
+    const action = section(host, "agent-version-action");
+    expect(action.textContent).toContain("unavailable-tool");
+    expect(button(action, "Review request").disabled).toBe(true);
+    expect(posts(t)).toHaveLength(0);
+    await click(button(action, "Remove reference"));
+    expect(button(action, "Review request").disabled).toBe(false);
+  });
+
+  it("never permits selecting a provisioning Tool", async () => {
+    const t = routes((r) => r.path.startsWith("/api/v1/platform-tools?") ? { status: 200, body: {
+      tools: [{ resourceId: "pending-tool", resourceVersion: 1, ownerPrincipalId: "human-1", name: "agent.memory.entry.list",
+        actionKey: "agent.memory.entry.list", source: "PLATFORM_NATIVE", status: "PROVISIONING", resourceState: "PROVISIONING",
+        canConsume: false, inputSchemaHash: "a".repeat(64), outputSchemaHash: "b".repeat(64) }],
+    } } : undefined);
+    const host = await open(t);
+    await click(button(section(host, "agent-version-directory"), "Edit draft"));
+    const action = section(host, "agent-version-action");
+    const label = [...action.querySelectorAll("label")].find((node) => node.textContent?.includes("pending-tool"))!;
+    expect(label.querySelector("input")!.disabled).toBe(true);
+    expect(posts(t)).toHaveLength(0);
+  });
 
   it("continues authorized empty Version/configuration scan pages and treats null as the end", async () => {
     const t = routes((r) => r.path.endsWith("/versions?offset=0") ? { status: 200, body: {

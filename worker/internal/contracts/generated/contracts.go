@@ -85,6 +85,12 @@
 //    automationView, err := UnmarshalAutomationView(bytes)
 //    bytes, err = automationView.Marshal()
 //
+//    capabilityContractPage, err := UnmarshalCapabilityContractPage(bytes)
+//    bytes, err = capabilityContractPage.Marshal()
+//
+//    capabilityContractView, err := UnmarshalCapabilityContractView(bytes)
+//    bytes, err = capabilityContractView.Marshal()
+//
 //    clientKeyView, err := UnmarshalClientKeyView(bytes)
 //    bytes, err = clientKeyView.Marshal()
 //
@@ -117,6 +123,12 @@
 //
 //    platformTenantPage, err := UnmarshalPlatformTenantPage(bytes)
 //    bytes, err = platformTenantPage.Marshal()
+//
+//    platformToolPage, err := UnmarshalPlatformToolPage(bytes)
+//    bytes, err = platformToolPage.Marshal()
+//
+//    platformToolView, err := UnmarshalPlatformToolView(bytes)
+//    bytes, err = platformToolView.Marshal()
 //
 //    readMarkRequest, err := UnmarshalReadMarkRequest(bytes)
 //    bytes, err = readMarkRequest.Marshal()
@@ -151,6 +163,12 @@
 //    workspacePreferenceRequest, err := UnmarshalWorkspacePreferenceRequest(bytes)
 //    bytes, err = workspacePreferenceRequest.Marshal()
 //
+//    agentMemoryEntryListInput, err := UnmarshalAgentMemoryEntryListInput(bytes)
+//    bytes, err = agentMemoryEntryListInput.Marshal()
+//
+//    agentMemoryEntryReadInput, err := UnmarshalAgentMemoryEntryReadInput(bytes)
+//    bytes, err = agentMemoryEntryReadInput.Marshal()
+//
 //    agentMemoryWriteInput, err := UnmarshalAgentMemoryWriteInput(bytes)
 //    bytes, err = agentMemoryWriteInput.Marshal()
 //
@@ -162,6 +180,12 @@
 //
 //    automationVersionContent, err := UnmarshalAutomationVersionContent(bytes)
 //    bytes, err = automationVersionContent.Marshal()
+//
+//    capabilityContractRef, err := UnmarshalCapabilityContractRef(bytes)
+//    bytes, err = capabilityContractRef.Marshal()
+//
+//    capabilityContractRegistration, err := UnmarshalCapabilityContractRegistration(bytes)
+//    bytes, err = capabilityContractRegistration.Marshal()
 //
 //    delegationGrantParameters, err := UnmarshalDelegationGrantParameters(bytes)
 //    bytes, err = delegationGrantParameters.Marshal()
@@ -545,6 +569,26 @@ func (r *AutomationView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalCapabilityContractPage(data []byte) (CapabilityContractPage, error) {
+	var r CapabilityContractPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *CapabilityContractPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalCapabilityContractView(data []byte) (CapabilityContractView, error) {
+	var r CapabilityContractView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *CapabilityContractView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalClientKeyView(data []byte) (ClientKeyView, error) {
 	var r ClientKeyView
 	err := json.Unmarshal(data, &r)
@@ -652,6 +696,26 @@ func UnmarshalPlatformTenantPage(data []byte) (PlatformTenantPage, error) {
 }
 
 func (r *PlatformTenantPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPlatformToolPage(data []byte) (PlatformToolPage, error) {
+	var r PlatformToolPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PlatformToolPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPlatformToolView(data []byte) (PlatformToolView, error) {
+	var r PlatformToolView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PlatformToolView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -765,6 +829,26 @@ func (r *WorkspacePreferenceRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAgentMemoryEntryListInput(data []byte) (AgentMemoryEntryListInput, error) {
+	var r AgentMemoryEntryListInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentMemoryEntryListInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentMemoryEntryReadInput(data []byte) (AgentMemoryEntryReadInput, error) {
+	var r AgentMemoryEntryReadInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentMemoryEntryReadInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAgentMemoryWriteInput(data []byte) (AgentMemoryWriteInput, error) {
 	var r AgentMemoryWriteInput
 	err := json.Unmarshal(data, &r)
@@ -802,6 +886,26 @@ func UnmarshalAutomationVersionContent(data []byte) (AutomationVersionContent, e
 }
 
 func (r *AutomationVersionContent) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalCapabilityContractRef(data []byte) (CapabilityContractRef, error) {
+	var r CapabilityContractRef
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *CapabilityContractRef) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalCapabilityContractRegistration(data []byte) (CapabilityContractRegistration, error) {
+	var r CapabilityContractRegistration
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *CapabilityContractRegistration) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1178,6 +1282,10 @@ type ActionCommand struct {
 	AssetVersion *int64 `json:"assetVersion,omitempty"`
 	// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
 	AutomationVersionContent *AutomationVersionContentClass `json:"automationVersionContent,omitempty"`
+	// 仅 capability_contract.approve/deprecate：固定已登记版本。
+	CapabilityContractRef *CapabilityContractRefClass `json:"capabilityContractRef,omitempty"`
+	// 仅 capability_contract.register：真实 schema 与测试向量内容。
+	CapabilityContractRegistration *CapabilityContractRegistrationClass `json:"capabilityContractRegistration,omitempty"`
 	// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 	DelegationGrant *DelegationGrantClass `json:"delegationGrant,omitempty"`
 	// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
@@ -1281,6 +1389,49 @@ type ScheduleSpecClass struct {
 	CatchupWindowSeconds int64 `json:"catchupWindowSeconds"`
 	EverySeconds         int64 `json:"everySeconds"`
 	OffsetSeconds        int64 `json:"offsetSeconds"`
+}
+
+// 仅 capability_contract.approve/deprecate：固定已登记版本。
+//
+// 固定 Catalog 自然键，不授予业务能力 consume 权限。
+type CapabilityContractRefClass struct {
+	CategoryKey     string `json:"categoryKey"`
+	ContractVersion int64  `json:"contractVersion"`
+}
+
+// 仅 capability_contract.register：真实 schema 与测试向量内容。
+//
+// DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
+type CapabilityContractRegistrationClass struct {
+	CategoryKey               string                                                  `json:"categoryKey"`
+	ContentReferenceSemantics CapabilityContractRegistrationContentReferenceSemantics `json:"contentReferenceSemantics"`
+	ContractVersion           int64                                                   `json:"contractVersion"`
+	OperationContracts        []CapabilityContractRegistrationOperationContract       `json:"operationContracts"`
+	ProtocolSessionKinds      []string                                                `json:"protocolSessionKinds"`
+	RequiredDeclarations      []CapabilityRequiredDeclaration                         `json:"requiredDeclarations"`
+	ResourceTypeFamily        []CapabilityContractRegistrationResourceTypeFamily      `json:"resourceTypeFamily"`
+	SchemaDocuments           []string                                                `json:"schemaDocuments"`
+	TestVectorsJSON           string                                                  `json:"testVectorsJson"`
+}
+
+type CapabilityContractRegistrationContentReferenceSemantics struct {
+	AuthorizationTargetRule string `json:"authorizationTargetRule"`
+	NativeObjectRefRule     string `json:"nativeObjectRefRule"`
+	NativeRevisionRule      string `json:"nativeRevisionRule"`
+}
+
+type CapabilityContractRegistrationOperationContract struct {
+	ContractKey        string               `json:"contractKey"`
+	InputSchemaDigest  string               `json:"inputSchemaDigest"`
+	OutputSchemaDigest string               `json:"outputSchemaDigest"`
+	Permission         CapabilityPermission `json:"permission"`
+	Surface            CapabilitySurface    `json:"surface"`
+	TargetType         string               `json:"targetType"`
+}
+
+type CapabilityContractRegistrationResourceTypeFamily struct {
+	Kind    string `json:"kind"`
+	TypeKey string `json:"typeKey"`
 }
 
 // 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -1487,6 +1638,7 @@ type InstallationElement struct {
 	OwnerPrincipalID        string                           `json:"ownerPrincipalId"`
 	PinnedVersionAssetID    string                           `json:"pinnedVersionAssetId"`
 	Projection              *ProjectionClass                 `json:"projection,omitempty"`
+	ReadPermission          *InstallationReadPermission      `json:"readPermission,omitempty"`
 	ResourceID              string                           `json:"resourceId"`
 	ResourceState           ResourceState                    `json:"resourceState"`
 	ResourceVersion         int64                            `json:"resourceVersion"`
@@ -1495,9 +1647,9 @@ type InstallationElement struct {
 }
 
 type InstallationChannelBinding struct {
-	ChannelID *string        `json:"channelId,omitempty"`
-	Status    Status         `json:"status"`
-	Triggers  []AgentTrigger `json:"triggers"`
+	ChannelID *string              `json:"channelId,omitempty"`
+	Status    ChannelBindingStatus `json:"status"`
+	Triggers  []AgentTrigger       `json:"triggers"`
 }
 
 type InstallationExecutionPermission struct {
@@ -1515,6 +1667,14 @@ type ProjectionClass struct {
 	Generation          int64                       `json:"generation"`
 	RuntimeProfileKey   string                      `json:"runtimeProfileKey"`
 	State               AgentRuntimeProjectionState `json:"state"`
+}
+
+type InstallationReadPermission struct {
+	CanGrant                 bool    `json:"canGrant"`
+	CanRevoke                bool    `json:"canRevoke"`
+	Effective                bool    `json:"effective"`
+	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
+	Requested                bool    `json:"requested"`
 }
 
 // 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
@@ -1541,6 +1701,7 @@ type AgentInstallationView struct {
 	OwnerPrincipalID        string                                    `json:"ownerPrincipalId"`
 	PinnedVersionAssetID    string                                    `json:"pinnedVersionAssetId"`
 	Projection              *ProjectionClass                          `json:"projection,omitempty"`
+	ReadPermission          *AgentInstallationViewReadPermission      `json:"readPermission,omitempty"`
 	ResourceID              string                                    `json:"resourceId"`
 	ResourceState           ResourceState                             `json:"resourceState"`
 	ResourceVersion         int64                                     `json:"resourceVersion"`
@@ -1549,12 +1710,20 @@ type AgentInstallationView struct {
 }
 
 type AgentInstallationViewChannelBinding struct {
-	ChannelID *string        `json:"channelId,omitempty"`
-	Status    Status         `json:"status"`
-	Triggers  []AgentTrigger `json:"triggers"`
+	ChannelID *string              `json:"channelId,omitempty"`
+	Status    ChannelBindingStatus `json:"status"`
+	Triggers  []AgentTrigger       `json:"triggers"`
 }
 
 type AgentInstallationViewExecutionPermission struct {
+	CanGrant                 bool    `json:"canGrant"`
+	CanRevoke                bool    `json:"canRevoke"`
+	Effective                bool    `json:"effective"`
+	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
+	Requested                bool    `json:"requested"`
+}
+
+type AgentInstallationViewReadPermission struct {
 	CanGrant                 bool    `json:"canGrant"`
 	CanRevoke                bool    `json:"canRevoke"`
 	Effective                bool    `json:"effective"`
@@ -1873,6 +2042,36 @@ type AutomationView struct {
 	WorkspaceID                    string          `json:"workspaceId"`
 }
 
+type CapabilityContractPage struct {
+	CanRegister bool              `json:"canRegister"`
+	Contracts   []ContractElement `json:"contracts"`
+	NextOffset  *int64            `json:"nextOffset,omitempty"`
+}
+
+// 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
+type ContractElement struct {
+	CanApprove                    bool                     `json:"canApprove"`
+	CanDeprecate                  bool                     `json:"canDeprecate"`
+	CategoryKey                   string                   `json:"categoryKey"`
+	ConformanceSuiteDigest        string                   `json:"conformanceSuiteDigest"`
+	ContractVersion               int64                    `json:"contractVersion"`
+	RegisteredByActionExecutionID string                   `json:"registeredByActionExecutionId"`
+	SchemaSetDigest               string                   `json:"schemaSetDigest"`
+	Status                        CapabilityContractStatus `json:"status"`
+}
+
+// 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
+type CapabilityContractView struct {
+	CanApprove                    bool                     `json:"canApprove"`
+	CanDeprecate                  bool                     `json:"canDeprecate"`
+	CategoryKey                   string                   `json:"categoryKey"`
+	ConformanceSuiteDigest        string                   `json:"conformanceSuiteDigest"`
+	ContractVersion               int64                    `json:"contractVersion"`
+	RegisteredByActionExecutionID string                   `json:"registeredByActionExecutionId"`
+	SchemaSetDigest               string                   `json:"schemaSetDigest"`
+	Status                        CapabilityContractStatus `json:"status"`
+}
+
 // GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
 type ClientKeyView struct {
 	// RFC3339
@@ -1997,6 +2196,39 @@ type PlatformTenantView struct {
 	Name               string                    `json:"name"`
 	Slug               string                    `json:"slug"`
 	State              TenantState               `json:"state"`
+}
+
+type PlatformToolPage struct {
+	NextOffset *int64        `json:"nextOffset,omitempty"`
+	Tools      []ToolElement `json:"tools"`
+}
+
+type ToolElement struct {
+	ActionKey        ActionKey     `json:"actionKey"`
+	CanConsume       bool          `json:"canConsume"`
+	InputSchemaHash  string        `json:"inputSchemaHash"`
+	Name             ActionKey     `json:"name"`
+	OutputSchemaHash string        `json:"outputSchemaHash"`
+	OwnerPrincipalID string        `json:"ownerPrincipalId"`
+	ResourceID       string        `json:"resourceId"`
+	ResourceState    ResourceState `json:"resourceState"`
+	ResourceVersion  int64         `json:"resourceVersion"`
+	Source           Source        `json:"source"`
+	Status           ToolStatus    `json:"status"`
+}
+
+type PlatformToolView struct {
+	ActionKey        ActionKey     `json:"actionKey"`
+	CanConsume       bool          `json:"canConsume"`
+	InputSchemaHash  string        `json:"inputSchemaHash"`
+	Name             ActionKey     `json:"name"`
+	OutputSchemaHash string        `json:"outputSchemaHash"`
+	OwnerPrincipalID string        `json:"ownerPrincipalId"`
+	ResourceID       string        `json:"resourceId"`
+	ResourceState    ResourceState `json:"resourceState"`
+	ResourceVersion  int64         `json:"resourceVersion"`
+	Source           Source        `json:"source"`
+	Status           ToolStatus    `json:"status"`
 }
 
 // PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
@@ -2163,6 +2395,15 @@ type WorkspacePreferenceRequest struct {
 	Version int64 `json:"version"`
 }
 
+// Installation 只取自受验签的 Invocation Session，不接受调用方目标覆盖。
+type AgentMemoryEntryListInput struct {
+}
+
+// 只读当前 Invocation Installation 的 cold mem entry，不接受 core 或其他 Installation。
+type AgentMemoryEntryReadInput struct {
+	Slug string `json:"slug"`
+}
+
 // HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
 type AgentMemoryWriteInput struct {
 	// entry.patch 当前原生 value 的 SHA-256。
@@ -2238,6 +2479,45 @@ type AutomationVersionContentTriggerClass struct {
 	MentionPrincipalID *string               `json:"mentionPrincipalId,omitempty"`
 	ScheduleSpec       *ScheduleSpecClass    `json:"scheduleSpec,omitempty"`
 	TextPrefix         *string               `json:"textPrefix,omitempty"`
+}
+
+// 固定 Catalog 自然键，不授予业务能力 consume 权限。
+type CapabilityContractRef struct {
+	CategoryKey     string `json:"categoryKey"`
+	ContractVersion int64  `json:"contractVersion"`
+}
+
+// DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
+type CapabilityContractRegistration struct {
+	CategoryKey               string                                                       `json:"categoryKey"`
+	ContentReferenceSemantics CapabilityContractRegistrationContentReferenceSemanticsClass `json:"contentReferenceSemantics"`
+	ContractVersion           int64                                                        `json:"contractVersion"`
+	OperationContracts        []CapabilityContractRegistrationOperationContractClass       `json:"operationContracts"`
+	ProtocolSessionKinds      []string                                                     `json:"protocolSessionKinds"`
+	RequiredDeclarations      []CapabilityRequiredDeclaration                              `json:"requiredDeclarations"`
+	ResourceTypeFamily        []CapabilityContractRegistrationResourceTypeFamilyClass      `json:"resourceTypeFamily"`
+	SchemaDocuments           []string                                                     `json:"schemaDocuments"`
+	TestVectorsJSON           string                                                       `json:"testVectorsJson"`
+}
+
+type CapabilityContractRegistrationContentReferenceSemanticsClass struct {
+	AuthorizationTargetRule string `json:"authorizationTargetRule"`
+	NativeObjectRefRule     string `json:"nativeObjectRefRule"`
+	NativeRevisionRule      string `json:"nativeRevisionRule"`
+}
+
+type CapabilityContractRegistrationOperationContractClass struct {
+	ContractKey        string               `json:"contractKey"`
+	InputSchemaDigest  string               `json:"inputSchemaDigest"`
+	OutputSchemaDigest string               `json:"outputSchemaDigest"`
+	Permission         CapabilityPermission `json:"permission"`
+	Surface            CapabilitySurface    `json:"surface"`
+	TargetType         string               `json:"targetType"`
+}
+
+type CapabilityContractRegistrationResourceTypeFamilyClass struct {
+	Kind    string `json:"kind"`
+	TypeKey string `json:"typeKey"`
 }
 
 type DelegationGrantParameters struct {
@@ -2727,12 +3007,51 @@ const (
 	ChannelMessage                AutomationTriggerKind = "CHANNEL_MESSAGE"
 )
 
+type CapabilityPermission string
+
+const (
+	Approve       CapabilityPermission = "approve"
+	Audit         CapabilityPermission = "audit"
+	Consume       CapabilityPermission = "consume"
+	Create        CapabilityPermission = "create"
+	Delegate      CapabilityPermission = "delegate"
+	Delete        CapabilityPermission = "delete"
+	Discover      CapabilityPermission = "discover"
+	Execute       CapabilityPermission = "execute"
+	Export        CapabilityPermission = "export"
+	Manage        CapabilityPermission = "manage"
+	Read          CapabilityPermission = "read"
+	Share         CapabilityPermission = "share"
+	TransferOwner CapabilityPermission = "transfer_owner"
+	Update        CapabilityPermission = "update"
+)
+
+type CapabilitySurface string
+
+const (
+	Action CapabilitySurface = "ACTION"
+	Tool   CapabilitySurface = "TOOL"
+)
+
+type CapabilityRequiredDeclaration string
+
+const (
+	Cancel         CapabilityRequiredDeclaration = "CANCEL"
+	Meter          CapabilityRequiredDeclaration = "METER"
+	Observe        CapabilityRequiredDeclaration = "OBSERVE"
+	OnlineEditing  CapabilityRequiredDeclaration = "ONLINE_EDITING"
+	ReadEdge       CapabilityRequiredDeclaration = "READ_EDGE"
+	RevisionQuery  CapabilityRequiredDeclaration = "REVISION_QUERY"
+	TenantDelete   CapabilityRequiredDeclaration = "TENANT_DELETE"
+	VersionedModel CapabilityRequiredDeclaration = "VERSIONED_MODEL"
+)
+
 type ResultExposureMode string
 
 const (
-	ConsumeOnly ResultExposureMode = "CONSUME_ONLY"
-	Export      ResultExposureMode = "EXPORT"
-	Read        ResultExposureMode = "READ"
+	ConsumeOnly              ResultExposureMode = "CONSUME_ONLY"
+	ResultExposureModeEXPORT ResultExposureMode = "EXPORT"
+	ResultExposureModeREAD   ResultExposureMode = "READ"
 )
 
 // 提供方认证的显式封闭选择；NONE 不豁免 Gateway 调用者认证或业务授权。
@@ -2862,12 +3181,12 @@ const (
 	AgentPrincipalStateDISABLED AgentPrincipalState = "DISABLED"
 )
 
-type Status string
+type ChannelBindingStatus string
 
 const (
-	StatusACTIVE   Status = "ACTIVE"
-	StatusDISABLED Status = "DISABLED"
-	StatusERROR    Status = "ERROR"
+	PurpleACTIVE   ChannelBindingStatus = "ACTIVE"
+	StatusDISABLED ChannelBindingStatus = "DISABLED"
+	StatusERROR    ChannelBindingStatus = "ERROR"
 )
 
 // 03 §7 的静态运行投影状态，不承载 Invocation 动态准入。
@@ -2918,9 +3237,9 @@ const (
 type AgentVersionState string
 
 const (
-	AgentVersionStateDRAFT AgentVersionState = "DRAFT"
-	Published              AgentVersionState = "PUBLISHED"
-	Retired                AgentVersionState = "RETIRED"
+	AgentVersionStateDRAFT   AgentVersionState = "DRAFT"
+	AgentVersionStateRETIRED AgentVersionState = "RETIRED"
+	Published                AgentVersionState = "PUBLISHED"
 )
 
 // approver 的不可变决定（.design/03 §6）。
@@ -2929,8 +3248,8 @@ const (
 type ApprovalDecision string
 
 const (
-	ApprovalDecisionDENY ApprovalDecision = "DENY"
-	Approve              ApprovalDecision = "APPROVE"
+	ApprovalDecisionAPPROVE ApprovalDecision = "APPROVE"
+	ApprovalDecisionDENY    ApprovalDecision = "DENY"
 )
 
 // ApprovalPolicy.role_requirements 的角色选择器（.design/03 §4、.design/10 §2）：RESOURCE_APPROVER
@@ -3043,6 +3362,15 @@ const (
 	Paused                  AutomationState = "PAUSED"
 )
 
+type CapabilityContractStatus string
+
+const (
+	CapabilityContractStatusACTIVE  CapabilityContractStatus = "ACTIVE"
+	CapabilityContractStatusDRAFT   CapabilityContractStatus = "DRAFT"
+	CapabilityContractStatusRETIRED CapabilityContractStatus = "RETIRED"
+	Deprecated                      CapabilityContractStatus = "DEPRECATED"
+)
+
 // BuzzIdentityBinding 状态机。custody=CLIENT 时跳过 PENDING_SECRET，自 RECONCILING 起始。
 type BuzzIdentityState string
 
@@ -3108,6 +3436,26 @@ const (
 	TenantStateRESTORING    TenantState = "RESTORING"
 	TenantStateSUSPENDED    TenantState = "SUSPENDED"
 	TenantStateSUSPENDING   TenantState = "SUSPENDING"
+)
+
+type ActionKey string
+
+const (
+	AgentMemoryEntryList ActionKey = "agent.memory.entry.list"
+	AgentMemoryEntryRead ActionKey = "agent.memory.entry.read"
+)
+
+type Source string
+
+const (
+	PlatformNative Source = "PLATFORM_NATIVE"
+)
+
+type ToolStatus string
+
+const (
+	FluffyACTIVE       ToolStatus = "ACTIVE"
+	StatusPROVISIONING ToolStatus = "PROVISIONING"
 )
 
 type CreateActionKey string

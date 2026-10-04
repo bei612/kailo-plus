@@ -31,6 +31,7 @@ import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { type Loaded, useLoad } from "./use-load";
 import { LegacySecretRefManagement, RoleManagement } from "./roles";
 import { PlatformTenantManagement } from "./tenants";
+import { CapabilityContractsPanel } from "./capability-contracts";
 
 export { AgentDefinitionsPage } from "./agents";
 
@@ -133,6 +134,7 @@ export function WorkspaceMembersPage() {
       <RoleManagement />
       <LegacySecretRefManagement />
       <PlatformTenantManagement />
+      <CapabilityContractsPanel />
     </div>
   );
 }

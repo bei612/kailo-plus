@@ -6,6 +6,7 @@ import 'package:buzz/features/platform/platform_agent_definition_detail_page.dar
 import 'package:buzz/features/platform/platform_agent_installation_workspaces_page.dart';
 import 'package:buzz/features/platform/platform_agent_installation_detail_page.dart';
 import 'package:buzz/features/platform/platform_agent_memory_page.dart';
+import 'package:buzz/features/platform/platform_automation_detail_page.dart';
 import 'package:buzz/features/platform/platform_devices_page.dart';
 import 'package:buzz/features/platform/platform_members_page.dart';
 import 'package:buzz/shared/platform/platform_api.dart';
@@ -80,6 +81,218 @@ Future<http.Response> Function(http.Request) _bff(
 };
 
 void main() {
+  group('Automation trigger and result read-only contract', () {
+    const page = PlatformAutomationDetailPage(
+      workspaceId: 'workspace-1',
+      resourceId: 'automation-1',
+    );
+    const schedule = {
+      'kind': 'SCHEDULE',
+      'scheduleSpec': {
+        'everySeconds': 1800,
+        'offsetSeconds': 37,
+        'catchupWindowSeconds': 90,
+      },
+    };
+    Map<String, Object?> detail(
+      Map<String, Object?> trigger,
+      String target, {
+      String workspace = 'workspace-1',
+    }) => {
+      'automation': {
+        'resourceId': 'automation-1',
+        'workspaceId': workspace,
+        'ownerPrincipalId': 'owner-1',
+        'resourceVersion': 1,
+        'resourceState': 'ACTIVE',
+        'state': 'PAUSED',
+        'executorInstallationResourceId': 'installation-1',
+        'pinnedVersionAssetId': 'automation-version-1',
+      },
+      'versions': [
+        {
+          'assetId': 'automation-version-1',
+          'automationResourceId': 'automation-1',
+          'assetVersion': 1,
+          'ordinal': 1,
+          'ownerPrincipalId': 'owner-1',
+          'state': 'PUBLISHED',
+          'configHash': _thisDevice,
+          'content': {
+            'trigger': trigger,
+            'action': {'kind': 'AGENT_TURN', 'template': 'Authorized template'},
+            'resultTarget': target,
+          },
+        },
+      ],
+      'delegations': <Object>[],
+      'canManage': true,
+    };
+    Future<void> show(
+      WidgetTester tester,
+      Map<String, Object?> body, {
+      Locale locale = const Locale('en'),
+    }) async {
+      tester.view.physicalSize = const Size(1000, 2600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await _pump(
+        tester,
+        page,
+        _bff({
+          'GET /api/v1/automations/automation-1': (request) {
+            expect(request.url.queryParameters, {
+              'versionOffset': '0',
+              'delegationOffset': '0',
+            });
+            return jsonResponse(body);
+          },
+        }),
+        locale: locale,
+      );
+    }
+
+    for (final locale in [const Locale('en'), const Locale('zh', 'CN')]) {
+      testWidgets('Schedule channel and seconds are explicit in $locale', (
+        tester,
+      ) async {
+        await show(tester, detail(schedule, 'CHANNEL'), locale: locale);
+        expect(
+          find.byKey(const ValueKey('platform-automation-detail')),
+          findsOneWidget,
+        );
+        for (final key in [
+          PlatformMessageKey.agentsAutomationSchedule,
+          PlatformMessageKey.agentsAutomationChannel,
+          PlatformMessageKey.agentsAutomationEverySeconds,
+          PlatformMessageKey.agentsAutomationOffsetSeconds,
+          PlatformMessageKey.agentsAutomationCatchupWindowSeconds,
+        ]) {
+          expect(
+            find.text(platformText(key, locale: locale.toLanguageTag())),
+            findsOneWidget,
+          );
+        }
+        for (final value in ['1800', '37', '90']) {
+          expect(find.text(value), findsOneWidget);
+        }
+        expect(find.byType(TextField), findsNothing);
+        expect(find.byType(TextFormField), findsNothing);
+        expect(
+          find.text(
+            platformText(
+              PlatformMessageKey.agentsAutomationThread,
+              locale: locale.toLanguageTag(),
+            ),
+          ),
+          findsNothing,
+        );
+      });
+    }
+
+    for (final (trigger, label) in [
+      (
+        {'kind': 'MENTION', 'mentionPrincipalId': 'human-1'},
+        PlatformMessageKey.agentsInstallationTriggerMention,
+      ),
+      (
+        {'kind': 'CHANNEL_MESSAGE', 'textPrefix': 'review'},
+        PlatformMessageKey.agentsAutomationChannelMessage,
+      ),
+    ]) {
+      testWidgets('Message trigger ${trigger['kind']} keeps thread result', (
+        tester,
+      ) async {
+        await show(tester, detail(trigger, 'TRIGGER_THREAD'));
+        expect(find.text(platformText(label, locale: 'en')), findsOneWidget);
+        expect(find.text('Trigger thread'), findsOneWidget);
+        expect(find.text('Interval (seconds)'), findsNothing);
+      });
+    }
+
+    for (final (name, trigger, target) in [
+      ('schedule thread', schedule, 'TRIGGER_THREAD'),
+      (
+        'mention channel',
+        {'kind': 'MENTION', 'mentionPrincipalId': 'human-1'},
+        'CHANNEL',
+      ),
+      ('message channel', {'kind': 'CHANNEL_MESSAGE'}, 'CHANNEL'),
+      ('missing schedule', {'kind': 'SCHEDULE'}, 'CHANNEL'),
+      (
+        'mixed schedule message',
+        {...schedule, 'textPrefix': 'review'},
+        'CHANNEL',
+      ),
+      (
+        'message schedule',
+        {'kind': 'CHANNEL_MESSAGE', 'scheduleSpec': schedule['scheduleSpec']},
+        'TRIGGER_THREAD',
+      ),
+      (
+        'zero interval',
+        {
+          'kind': 'SCHEDULE',
+          'scheduleSpec': {
+            'everySeconds': 0,
+            'offsetSeconds': 0,
+            'catchupWindowSeconds': 90,
+          },
+        },
+        'CHANNEL',
+      ),
+      (
+        'offset outside interval',
+        {
+          'kind': 'SCHEDULE',
+          'scheduleSpec': {
+            'everySeconds': 1800,
+            'offsetSeconds': 1800,
+            'catchupWindowSeconds': 90,
+          },
+        },
+        'CHANNEL',
+      ),
+      (
+        'short catchup',
+        {
+          'kind': 'SCHEDULE',
+          'scheduleSpec': {
+            'everySeconds': 1800,
+            'offsetSeconds': 37,
+            'catchupWindowSeconds': 9,
+          },
+        },
+        'CHANNEL',
+      ),
+      ('unknown trigger', {'kind': 'FUTURE'}, 'TRIGGER_THREAD'),
+      ('unknown target', schedule, 'FUTURE'),
+    ]) {
+      testWidgets('$name is not a verifiable Automation version', (
+        tester,
+      ) async {
+        await show(tester, detail(trigger, target));
+        expect(
+          find.byKey(const ValueKey('platform-view-error')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('platform-automation-detail')),
+          findsNothing,
+        );
+        expect(find.text('Authorized template'), findsNothing);
+      });
+    }
+    testWidgets('Foreign workspace cannot reveal Schedule content', (
+      tester,
+    ) async {
+      await show(tester, detail(schedule, 'CHANNEL', workspace: 'workspace-2'));
+      expect(find.byKey(const ValueKey('platform-view-error')), findsOneWidget);
+      expect(find.text('Authorized template'), findsNothing);
+    });
+  });
+
   group('Agent Definition and published Version read-only', () {
     const definition = {
       'resourceId': 'agent-1',

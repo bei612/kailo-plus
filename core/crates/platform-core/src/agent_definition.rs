@@ -457,7 +457,9 @@ async fn lifecycle_resource(
             or (r.type_key='llm_route' and (exists(select 1 from catalog.model_route m where m.resource_id=r.id)
                 or exists(select 1 from catalog.model_route_projection p where p.resource_id=r.id)))
             or (r.type_key='automation' and exists(select 1 from catalog.automation_definition d
-                where d.resource_id=r.id and d.workspace_id=r.home_workspace_id))) for update of r")
+                where d.resource_id=r.id and d.workspace_id=r.home_workspace_id))
+            or (r.type_key='tool.definition' and r.home_workspace_id is null
+                and exists(select 1 from catalog.tool_definition t where t.resource_id=r.id))) for update of r")
         .bind(tenant).bind(id).fetch_optional(conn).await
 }
 

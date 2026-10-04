@@ -796,7 +796,7 @@ async fn retire_subject(
     }
     let action: Option<Uuid> = sqlx::query_scalar(
         "select id from admission.action_execution where operation_id = $1 and tenant_id = $2
-         order by created_at, id limit 1",
+         and parent_action_execution_id is null",
     )
     .bind(operation)
     .bind(tenant_id)

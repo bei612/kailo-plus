@@ -291,6 +291,12 @@ pub(crate) async fn validate_scope(
     {
         return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
     }
+    if matches!(
+        scope.action_key.as_str(),
+        "agent.memory.entry.list" | "agent.memory.entry.read"
+    ) {
+        return validate_memory_scope(g, conn, tenant, initiator, row, scope, target).await;
+    }
     let action:Option<(String,String,String,String,String,String)>=sqlx::query_as(
             "select target_type,permission_object_type,permission,result_exposure,obs_redaction_policy,workspace_rule
              from catalog.action_definition where action_key=$1 and version=$2 and status='ACTIVE'")
@@ -389,6 +395,65 @@ pub(crate) async fn validate_scope(
             return Err(Refusal::Denied(ReasonCode::PermissionDenied));
         }
     }
+    Ok(())
+}
+
+// 19 §5 / DD-105: only the installed Agent's own Memory, an actual immutable
+// ToolBinding, and both HUMAN/AGENT fresh rights can become a Tool scope.
+// Binding never grants discover/consume/read, and this path never starts approval.
+async fn validate_memory_scope(
+    g: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    initiator: Uuid,
+    row: &Installation,
+    scope: &contracts::ScopeElement,
+    target: Option<Uuid>,
+) -> Result<(), Refusal> {
+    let tool = scope
+        .tool_resource_id
+        .as_deref()
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .filter(|id| !id.is_nil())
+        .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    let definition = crate::agent_memory::read_definition(&g.pool, &scope.action_key).await?;
+    let hashes = crate::agent_tool::schema_hashes(&scope.action_key)?;
+    if target != Some(row.id)
+        || scope.create_workspace_id.is_some()
+        || scope.target_type != "RESOURCE"
+        || scope.action_version != i64::from(definition.version)
+        || scope.redaction_policy != "PLATFORM_METADATA_ONLY"
+        || scope.output_schema_hash != hashes.1
+        || serde_json::to_value(&scope.result_exposure_mode).ok()
+            != Some(serde_json::Value::String("CONSUME_ONLY".into()))
+    {
+        return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
+    }
+    let valid: bool = sqlx::query_scalar("select exists(select 1 from catalog.tool_binding b
+        join catalog.agent_installation i on i.resource_id=b.installation_resource_id
+          and i.active_projection_generation=b.projection_generation and i.pinned_version_asset_id=b.agent_version_asset_id
+        join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
+          and p.generation=b.projection_generation and p.agent_version_asset_id=b.agent_version_asset_id and p.state='ACTIVE'
+        join catalog.agent_version v on v.asset_id=b.agent_version_asset_id
+        join catalog.tool_definition t on t.resource_id=b.tool_resource_id and t.source='PLATFORM_NATIVE'
+          and t.backend_ref='CORE_STREAMABLE_MCP' and t.status='ACTIVE'
+        join catalog.resource r on r.id=t.resource_id and r.tenant_id=$1 and r.state='ACTIVE'
+          and r.type_key='tool.definition' and r.projection_action_execution_id is null
+        where b.installation_resource_id=$2 and b.tool_resource_id=$3 and b.workspace_id=$4
+          and b.status in ('NO_PERMISSION','ACTIVE') and t.action_key=$5 and t.name=$5
+          and t.input_schema_hash=$6 and t.output_schema_hash=$7
+          and v.content->'declaredToolResourceIds' @> jsonb_build_array(t.resource_id::text))")
+        .bind(tenant).bind(row.id).bind(tool).bind(row.workspace_id).bind(&scope.action_key)
+        .bind(&hashes.0).bind(&hashes.1).fetch_one(&mut *conn).await?;
+    if !valid {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    for subject in [initiator, row.agent_principal_id] {
+        crate::agent_tool::permission(g, tool, subject, "discover").await?;
+        crate::agent_tool::permission(g, tool, subject, "consume").await?;
+        crate::agent_tool::permission(g, row.id, subject, "read").await?;
+    }
+    crate::agent_tool::permission(g, row.id, initiator, "delegate").await?;
     Ok(())
 }
 

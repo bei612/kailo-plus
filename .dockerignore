@@ -9,10 +9,16 @@
 !core/Cargo.lock
 !core/crates
 !core/.sqlx
+!model-gateway/crates/protos/proto/ext_mcp.proto
 !collaboration/Cargo.toml
 !collaboration/crates/buzz-core
 !tools/registry/capabilities.yaml
 !contracts/api/action_submission.schema.json
+!contracts/api/agent_memory_entry_page.schema.json
+!contracts/api/agent_memory_entry_view.schema.json
+!contracts/api/agent_memory_read_view.schema.json
+!contracts/domain/agent_memory_entry_list_input.schema.json
+!contracts/domain/agent_memory_entry_read_input.schema.json
 !agent-runtime/fork/upstream.yaml
 !worker
 **/target

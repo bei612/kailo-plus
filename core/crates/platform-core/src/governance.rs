@@ -418,6 +418,9 @@ pub enum Semantic {
     /// DD-85：旧平台 namespace 中的同一私钥归位，不更换 Buzz pubkey。
     SecretRefRehome,
     AgentDefinitionCreate,
+    CapabilityContractRegister,
+    CapabilityContractApprove,
+    CapabilityContractDeprecate,
     LlmRouteCreate,
     AgentDefinitionUpdate,
     AgentVersionCreate,
@@ -427,6 +430,8 @@ pub enum Semantic {
     AgentInstallationCreate,
     AgentInstallationExecuteGrant,
     AgentInstallationExecuteRevoke,
+    ResourceGrantRead,
+    ResourceRevokeRead,
     AgentDelegationGrant,
     AgentDelegationRevoke,
     AutomationCreate,
@@ -460,6 +465,9 @@ impl Semantic {
             key if key.starts_with("task.rerun.") => Self::TaskRerun,
             "identity.secret_ref.rehome" => Self::SecretRefRehome,
             "agent.definition.create" => Self::AgentDefinitionCreate,
+            "capability_contract.register" => Self::CapabilityContractRegister,
+            "capability_contract.approve" => Self::CapabilityContractApprove,
+            "capability_contract.deprecate" => Self::CapabilityContractDeprecate,
             "llm_route.create" => Self::LlmRouteCreate,
             "agent.definition.update" => Self::AgentDefinitionUpdate,
             "agent.version.create" => Self::AgentVersionCreate,
@@ -469,6 +477,8 @@ impl Semantic {
             "agent.installation.create" => Self::AgentInstallationCreate,
             "agent.installation.execute.grant" => Self::AgentInstallationExecuteGrant,
             "agent.installation.execute.revoke" => Self::AgentInstallationExecuteRevoke,
+            "resource.grant_read" => Self::ResourceGrantRead,
+            "resource.revoke_read" => Self::ResourceRevokeRead,
             "agent.delegation.grant" => Self::AgentDelegationGrant,
             "agent.delegation.revoke" => Self::AgentDelegationRevoke,
             "automation.create" => Self::AutomationCreate,
@@ -501,27 +511,31 @@ impl Semantic {
     fn is_installation_permission(self) -> bool {
         matches!(
             self,
-            Self::AgentInstallationExecuteGrant | Self::AgentInstallationExecuteRevoke
+            Self::AgentInstallationExecuteGrant
+                | Self::AgentInstallationExecuteRevoke
+                | Self::ResourceGrantRead
+                | Self::ResourceRevokeRead
         )
     }
 
     /// 在准入落定的同一事务里完成、没有外部副作用的同步动作：门禁 ALLOWED 与
     /// 派发 DISPATCHED 同事务写入，没有「已允许未派发」的中间态
     fn completes_in_admission(self) -> bool {
-        matches!(
-            self,
-            Self::TenantMemberInvite
-                | Self::TenantMemberInviteRevoke
-                | Self::AgentDefinitionUpdate
-                | Self::AgentVersionUpdate
-                | Self::AgentVersionPublish
-                | Self::AgentVersionRetire
-                | Self::AgentDelegationGrant
-                | Self::AgentDelegationRevoke
-                | Self::AutomationEnable
-                | Self::AutomationPause
-                | Self::AutomationDisable
-        )
+        self.is_capability_contract()
+            || matches!(
+                self,
+                Self::TenantMemberInvite
+                    | Self::TenantMemberInviteRevoke
+                    | Self::AgentDefinitionUpdate
+                    | Self::AgentVersionUpdate
+                    | Self::AgentVersionPublish
+                    | Self::AgentVersionRetire
+                    | Self::AgentDelegationGrant
+                    | Self::AgentDelegationRevoke
+                    | Self::AutomationEnable
+                    | Self::AutomationPause
+                    | Self::AutomationDisable
+            )
     }
 
     fn is_role(self) -> bool {
@@ -541,6 +555,7 @@ impl Semantic {
     /// 会改变「有效 Tenant admin」集合的动作在 Tenant 行锁下判定与写入（DD-82）。
     fn serializes_on_tenant(self) -> bool {
         self.is_role()
+            || self.is_capability_contract()
             || self.is_installation_permission()
             || self.is_automation()
             || matches!(
@@ -581,7 +596,14 @@ impl Semantic {
     /// 由用户在目标详情上显式确认、确认位冻结在参数里的语义（`confirmation_mode=EXPLICIT`）。
     fn takes_explicit_confirmation(self) -> bool {
         self.is_automation()
-            || self == Self::AgentInstallationExecuteRevoke
+            || matches!(
+                self,
+                Self::CapabilityContractRegister | Self::CapabilityContractDeprecate
+            )
+            || matches!(
+                self,
+                Self::AgentInstallationExecuteRevoke | Self::ResourceRevokeRead
+            )
             || matches!(
                 self,
                 Self::SecretRefRehome
@@ -604,6 +626,15 @@ impl Semantic {
             Self::WorkspaceRestore => Some((&["SUSPENDED"], "RESTORING", ScopeOperation::Restore)),
             _ => None,
         }
+    }
+
+    pub(crate) fn is_capability_contract(self) -> bool {
+        matches!(
+            self,
+            Self::CapabilityContractRegister
+                | Self::CapabilityContractApprove
+                | Self::CapabilityContractDeprecate
+        )
     }
 }
 
@@ -631,6 +662,8 @@ pub struct Params {
     pub automation_version_content: Option<Value>,
     pub executor_installation_resource_id: Option<Uuid>,
     pub llm_route_create: Option<Value>,
+    pub capability_contract_registration: Option<Value>,
+    pub capability_contract_ref: Option<Value>,
 }
 
 impl Params {
@@ -683,6 +716,15 @@ impl Params {
         }
         if let Some(source) = &self.llm_route_create {
             m.insert("llmRouteCreate".into(), source.clone());
+        }
+        if let Some(registration) = &self.capability_contract_registration {
+            m.insert(
+                "capabilityContractRegistration".into(),
+                registration.clone(),
+            );
+        }
+        if let Some(reference) = &self.capability_contract_ref {
+            m.insert("capabilityContractRef".into(), reference.clone());
         }
         if let Some(id) = self.executor_installation_resource_id {
             m.insert("executorInstallationResourceId".into(), json!(id));
@@ -740,6 +782,8 @@ impl Params {
             automation_version_content: v.get("automationVersionContent").cloned(),
             executor_installation_resource_id: uuid("executorInstallationResourceId"),
             llm_route_create: v.get("llmRouteCreate").cloned(),
+            capability_contract_registration: v.get("capabilityContractRegistration").cloned(),
+            capability_contract_ref: v.get("capabilityContractRef").cloned(),
         })
     }
 }
@@ -813,7 +857,26 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map(serde_json::to_value)
             .transpose()
             .map_err(|_| bad())?,
+        capability_contract_registration: cmd
+            .capability_contract_registration
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|_| bad())?,
+        capability_contract_ref: cmd
+            .capability_contract_ref
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|_| bad())?,
     };
+    if sem.is_capability_contract() {
+        crate::capability_contract::validate_params(sem, &p)?;
+        return Ok(p);
+    }
+    if p.capability_contract_registration.is_some() || p.capability_contract_ref.is_some() {
+        return Err(bad());
+    }
     if sem != Semantic::LlmRouteCreate && p.llm_route_create.is_some() {
         return Err(bad());
     }
@@ -839,6 +902,8 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             | Semantic::AgentInstallationCreate
             | Semantic::AgentInstallationExecuteGrant
             | Semantic::AgentInstallationExecuteRevoke
+            | Semantic::ResourceGrantRead
+            | Semantic::ResourceRevokeRead
             | Semantic::AgentDelegationGrant
             | Semantic::AgentDelegationRevoke
     ) && (p.resource_id.is_some() || p.resource_version.is_some())
@@ -867,6 +932,22 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Err(bad());
     }
     let ok = match sem {
+        Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead => {
+            p.workspace_id.is_none()
+                && p.principal_id.is_some_and(|id| !id.is_nil())
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.resource_id.is_some_and(|id| !id.is_nil())
+                && p.resource_version.is_some_and(|v| v > 0)
+                && p.explicit_confirmation
+                    == if sem == Semantic::ResourceRevokeRead {
+                        Some(true)
+                    } else {
+                        None
+                    }
+        }
         Semantic::AgentInstallationExecuteGrant | Semantic::AgentInstallationExecuteRevoke => {
             p.workspace_id.is_none()
                 && p.principal_id.is_none()
@@ -1081,7 +1162,10 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::AutomationPublish
         | Semantic::AutomationEnable
         | Semantic::AutomationPause
-        | Semantic::AutomationDisable => false,
+        | Semantic::AutomationDisable
+        | Semantic::CapabilityContractRegister
+        | Semantic::CapabilityContractApprove
+        | Semantic::CapabilityContractDeprecate => false,
     };
     if ok {
         Ok(p)
@@ -1176,7 +1260,15 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
-        Semantic::AgentInstallationExecuteGrant | Semantic::AgentInstallationExecuteRevoke => {
+        Semantic::CapabilityContractRegister
+        | Semantic::CapabilityContractApprove
+        | Semantic::CapabilityContractDeprecate => {
+            crate::capability_contract::target(conn, tenant, def, sem, p, frozen, lock).await
+        }
+        Semantic::AgentInstallationExecuteGrant
+        | Semantic::AgentInstallationExecuteRevoke
+        | Semantic::ResourceGrantRead
+        | Semantic::ResourceRevokeRead => {
             installation_permission::target(conn, tenant, def, sem, p, frozen, lock).await
         }
         Semantic::LlmRouteCreate => {
@@ -1880,7 +1972,10 @@ impl Governance {
         let is_installation_create = def.action_key == "agent.installation.create";
         let is_installation_permission = matches!(
             def.action_key.as_str(),
-            installation_permission::GRANT | installation_permission::REVOKE
+            installation_permission::GRANT
+                | installation_permission::REVOKE
+                | installation_permission::READ_GRANT
+                | installation_permission::READ_REVOKE
         );
         let is_route_create = def.action_key == "llm_route.create";
         let declared_workspace =
@@ -2690,6 +2785,8 @@ impl Governance {
             automation_version_content: None,
             executor_installation_resource_id: None,
             llm_route_create: None,
+            capability_contract_registration: None,
+            capability_contract_ref: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -2781,6 +2878,8 @@ impl Governance {
             automation_version_content: None,
             executor_installation_resource_id: None,
             llm_route_create: None,
+            capability_contract_registration: None,
+            capability_contract_ref: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -2977,14 +3076,99 @@ pub(crate) async fn open_execution_values(
     idempotency_key: Uuid,
     correlation_id: Option<Uuid>,
 ) -> Result<Execution, sqlx::Error> {
+    open_execution_in_operation(
+        tx,
+        actor,
+        acting_principal,
+        def,
+        target,
+        parameters,
+        hash,
+        idempotency_key,
+        correlation_id,
+        None,
+    )
+    .await
+}
+
+/// DD-105: a governed Tool call is a child Action, never a second Operation.
+/// Only the admitted root Invocation can supply scope/actor/correlation.
+pub(crate) async fn open_memory_child(
+    tx: &mut Transaction<'_, Postgres>,
+    parent: &Execution,
+    def: &Definition,
+    target: &Target,
+    parameters: Value,
+    idempotency_key: Uuid,
+) -> Result<Execution, Refusal> {
+    let root: bool = sqlx::query_scalar(
+        "select parent_action_execution_id is null
+        from admission.action_execution where id=$1 for update",
+    )
+    .bind(parent.id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !root
+        || parent.gate_state != "ALLOWED"
+        || parent.dispatch_state != "DISPATCHED"
+        || !matches!(
+            parent.action_key.as_str(),
+            "agent.invoke" | "automation.run"
+        )
+        || !matches!(
+            def.action_key.as_str(),
+            "agent.memory.entry.list" | "agent.memory.entry.read"
+        )
+        || parent.workspace_id.is_none()
+        || target.workspace_id != parent.workspace_id
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let hash = collab_bridge::limits::canonical_digest(&json!({"actionKey":def.action_key,
+        "actionVersion":def.version,"targetId":target.id,"parameters":parameters}));
+    Ok(open_execution_in_operation(
+        tx,
+        Actor {
+            tenant_id: parent.tenant_id,
+            principal_id: parent.initiator_principal_id,
+            human_identity_id: None,
+        },
+        parent.actor_principal_id,
+        def,
+        target,
+        parameters,
+        hash,
+        idempotency_key,
+        Some(parent.correlation_id),
+        Some((parent.id, parent.operation_id)),
+    )
+    .await?)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn open_execution_in_operation(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Actor,
+    acting_principal: Uuid,
+    def: &Definition,
+    target: &Target,
+    parameters: Value,
+    hash: String,
+    idempotency_key: Uuid,
+    correlation_id: Option<Uuid>,
+    parent: Option<(Uuid, Uuid)>,
+) -> Result<Execution, sqlx::Error> {
     let ae_id = Uuid::new_v4();
-    let operation_id = Uuid::new_v4();
+    let operation_id = parent
+        .map(|(_, operation)| operation)
+        .unwrap_or_else(Uuid::new_v4);
     sqlx::query(
         "insert into admission.action_execution
              (id, operation_id, tenant_id, workspace_id, action_key, action_version,
               initiator_principal_id, actor_principal_id, target_id, parameter_hash,
-              parameters, idempotency_key, gate_state, dispatch_state, correlation_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$13,$8,$9,$10,$11,'EVALUATING','NOT_DISPATCHED',$12)",
+              parameters, idempotency_key, gate_state, dispatch_state, correlation_id,
+              parent_action_execution_id)
+         values ($1,$2,$3,$4,$5,$6,$7,$13,$8,$9,$10,$11,'EVALUATING','NOT_DISPATCHED',$12,$14)",
     )
     .bind(ae_id)
     .bind(operation_id)
@@ -2999,6 +3183,7 @@ pub(crate) async fn open_execution_values(
     .bind(idempotency_key)
     .bind(correlation_id.unwrap_or(operation_id))
     .bind(acting_principal)
+    .bind(parent.map(|(id, _)| id))
     .execute(&mut **tx)
     .await?;
     let ae = lock_execution(tx, ae_id).await?;
@@ -3056,10 +3241,21 @@ async fn audit_as(
     human: Option<Uuid>,
     evidence: Vec<Evidence>,
 ) -> Result<(), sqlx::Error> {
+    let child: bool = sqlx::query_scalar(
+        "select parent_action_execution_id is not null
+        from admission.action_execution where id=$1",
+    )
+    .bind(ae.id)
+    .fetch_one(&mut **tx)
+    .await?;
     append(
         tx,
         AuditEntry {
-            event_key: format!("{}:{stage}", ae.operation_id),
+            event_key: if child {
+                format!("{}:child:{}:{stage}", ae.operation_id, ae.id)
+            } else {
+                format!("{}:{stage}", ae.operation_id)
+            },
             tenant_id: Some(ae.tenant_id),
             // Workspace 与 ActionDefinition 的 WorkspaceRule 解析结果一致（.design/03 §8）
             workspace_id: ae.workspace_id,
@@ -3269,8 +3465,10 @@ pub(crate) async fn record_decision(
               target_id, parameter_hash, scope_decision, authorization_decision,
               delegation_decision, approval_decision, capacity_decision, quota_decision,
               audit_decision, zed_token, reason_code)
-         values ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,
-                 'NOT_APPLICABLE',$14,'NOT_APPLICABLE',$15,'RECORDED',$16,$17)",
+         values ($1,$2,$3,$4,$5,$6,$7,
+                 (select actor_principal_id from admission.action_execution where id=$3),$8,$9,$10,$11,$12,$13,
+                 case when (select parent_action_execution_id is not null from admission.action_execution where id=$3)
+                   then 'ALLOW' else 'NOT_APPLICABLE' end,$14,'NOT_APPLICABLE',$15,'RECORDED',$16,$17)",
     )
     .bind(Uuid::new_v4())
     .bind(ae.operation_id)
@@ -3472,8 +3670,11 @@ impl Governance {
         drop(conn);
 
         let mut tx = self.pool.begin().await.map_err(|e| (e.into(), None))?;
-        let revoked = if sem == Semantic::AgentInstallationExecuteRevoke {
-            installation_permission::prepare_revoke(self, &mut tx, actor, &params)
+        let revoked = if matches!(
+            sem,
+            Semantic::AgentInstallationExecuteRevoke | Semantic::ResourceRevokeRead
+        ) {
+            installation_permission::prepare_revoke(self, &mut tx, actor, &params, &def.action_key)
                 .await
                 .map_err(|e| (e, None))?
         } else {
@@ -3904,6 +4105,7 @@ impl Governance {
             .await?;
         }
         if (sem.is_installation_permission()
+            || sem.is_capability_contract()
             || sem.is_automation()
             || matches!(
                 sem,
@@ -3925,6 +4127,7 @@ impl Governance {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
         let locked_evaluation = if sem.is_installation_permission()
+            || sem.is_capability_contract()
             || sem.is_automation()
             || matches!(
                 sem,
@@ -3971,7 +4174,10 @@ impl Governance {
             params,
         )
         .await?;
-        if sem == Semantic::AgentInstallationExecuteGrant {
+        if matches!(
+            sem,
+            Semantic::AgentInstallationExecuteGrant | Semantic::ResourceGrantRead
+        ) {
             installation_permission::validate_approval_owner(self, tx, ae, false).await?;
         }
         if matches!(sem, Semantic::TaskCancel | Semantic::TaskRerun) {
@@ -4054,8 +4260,30 @@ impl Governance {
             )
             .await?;
             return match sem {
+                Semantic::CapabilityContractRegister
+                | Semantic::CapabilityContractApprove
+                | Semantic::CapabilityContractDeprecate => {
+                    crate::capability_contract::prewrite(self, tx, ae, sem, params).await?;
+                    self.record_local_outcome(
+                        tx,
+                        ae,
+                        def,
+                        match sem {
+                            Semantic::CapabilityContractRegister => {
+                                "CAPABILITY_CONTRACT_REGISTERED"
+                            }
+                            Semantic::CapabilityContractApprove => "CAPABILITY_CONTRACT_APPROVED",
+                            _ => "CAPABILITY_CONTRACT_DEPRECATED",
+                        },
+                        Vec::new(),
+                    )
+                    .await?;
+                    Ok(None)
+                }
                 Semantic::AgentInstallationExecuteGrant
-                | Semantic::AgentInstallationExecuteRevoke => {
+                | Semantic::AgentInstallationExecuteRevoke
+                | Semantic::ResourceGrantRead
+                | Semantic::ResourceRevokeRead => {
                     installation_permission::prewrite(tx, ae).await?;
                     Ok(None)
                 }
@@ -4338,6 +4566,9 @@ impl Governance {
             | Semantic::TaskCancel
             | Semantic::TaskRerun
             | Semantic::AgentDefinitionCreate
+            | Semantic::CapabilityContractRegister
+            | Semantic::CapabilityContractApprove
+            | Semantic::CapabilityContractDeprecate
             | Semantic::LlmRouteCreate
             | Semantic::AgentDefinitionUpdate
             | Semantic::ResourceTransferOwner
@@ -4345,6 +4576,7 @@ impl Governance {
             | Semantic::AgentDelegationRevoke
             | Semantic::AgentInstallationExecuteGrant
             | Semantic::AgentInstallationExecuteRevoke
+            | Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead
             | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish | Semantic::AgentVersionRetire
             | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
             | Semantic::AutomationPause | Semantic::AutomationDisable
@@ -4847,8 +5079,20 @@ impl Governance {
         sem: Semantic,
         p: &Params,
     ) -> Result<(), Refusal> {
+        if sem.is_capability_contract() {
+            crate::capability_contract::target(conn, tenant, def, sem, p, None, false).await?;
+            return Ok(());
+        }
         if sem.is_installation_permission() {
-            return installation_permission::gate(self, conn, tenant, initiator, p).await;
+            return installation_permission::gate(
+                self,
+                conn,
+                tenant,
+                initiator,
+                p,
+                &def.action_key,
+            )
+            .await;
         }
         if matches!(
             sem,
@@ -5793,12 +6037,18 @@ impl Governance {
         }
         if def.execution_mode == "SYNC" {
             // 在准入事务里已完成的同步动作没有可派发的东西；走到这里只可能是角色
-            return if sem.is_installation_permission() {
+            return if sem.is_capability_contract() {
+                // Catalog writes and their OUTCOME commit in the admission transaction.
+                // A pending legacy row has no safe external dispatch/replay path.
+                Err(Refusal::Unavailable(
+                    "Catalog admission outcome unavailable".into(),
+                ))
+            } else if sem.is_installation_permission() {
                 installation_permission::dispatch(
                     self,
                     ae_id,
                     &def,
-                    sem == Semantic::AgentInstallationExecuteGrant,
+                    installation_permission::is_grant(&def.action_key),
                 )
                 .await
             } else if sem == Semantic::AgentVersionCreate {
@@ -5902,6 +6152,9 @@ impl Governance {
                 | Semantic::TaskCancel
                 | Semantic::TaskRerun
                 | Semantic::AgentDefinitionCreate
+                | Semantic::CapabilityContractRegister
+                | Semantic::CapabilityContractApprove
+                | Semantic::CapabilityContractDeprecate
                 | Semantic::LlmRouteCreate
                 | Semantic::AgentDefinitionUpdate
                 | Semantic::ResourceTransferOwner
@@ -5910,6 +6163,7 @@ impl Governance {
                 | Semantic::AutomationPause | Semantic::AutomationDisable
                 | Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
                 | Semantic::AgentInstallationExecuteGrant | Semantic::AgentInstallationExecuteRevoke
+                | Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead
                 // 业务 Tenant 生命周期由 dispatch_tenant_lifecycle 派发
                 | Semantic::TenantSuspend
                 | Semantic::TenantRestore => Err(StatusCode::CONFLICT.into_response()),
@@ -6035,6 +6289,7 @@ impl Governance {
                 ae.tenant_id,
                 ae.initiator_principal_id,
                 &params,
+                &ae.action_key,
             )
             .await
             .map_err(|e| (e, op))?;
@@ -6847,6 +7102,10 @@ impl Governance {
             refuse(ReasonCode::ApproverNotEligible)
         } else if policy.self_approval == "DENY" && approver == ae.initiator_principal_id {
             // 职责分离：发起者不能批准也不能否决自己的请求
+            refuse(ReasonCode::SelfApprovalDenied)
+        } else if ae.action_key == crate::capability_contract::APPROVE
+            && !crate::capability_contract::approver_separated(&mut tx, &ae, approver).await?
+        {
             refuse(ReasonCode::SelfApprovalDenied)
         } else {
             let refs: Vec<contracts::AffectedOwnerRef> = if policy.owner_requirement

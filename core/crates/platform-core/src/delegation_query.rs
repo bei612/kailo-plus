@@ -203,6 +203,8 @@ struct TargetRow {
     action_version: i32,
     target_type: String,
     redaction_policy: String,
+    tool_resource_id: Option<Uuid>,
+    output_schema_hash: Option<String>,
 }
 
 pub async fn targets(
@@ -238,20 +240,33 @@ pub async fn targets(
         // Only the two real Invocation producers, not every row in the catalog.
         // No Tool/CRUD placeholder, no permission derived from a Grant or route.
         let rows: Vec<TargetRow> = match sqlx::query_as(
-            "select * from (select r.id resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy
+            "select * from (select r.id resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy,
+            null::uuid tool_resource_id,null::text output_schema_hash
             from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id
             join catalog.action_definition a on a.action_key='automation.run' and a.status='ACTIVE'
             where r.tenant_id=$1 and r.home_workspace_id=$2 and r.type_key='automation'
               and r.owner_principal_id=$3 and r.state='ACTIVE' and r.projection_action_execution_id is null
               and r.application_binding_id is null and d.workspace_id=$2 and d.executor_installation_resource_id=$4
             union all
-            select r.id resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy
+            select r.id resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy,
+            null::uuid tool_resource_id,null::text output_schema_hash
             from catalog.resource r join catalog.agent_installation i on i.resource_id=r.id
             join catalog.action_definition a on a.action_key='agent.invoke' and a.status='ACTIVE'
             where r.id=$4 and r.tenant_id=$1 and r.home_workspace_id=$2 and r.type_key='agent.installation'
               and r.state='ACTIVE' and r.projection_action_execution_id is null and r.application_binding_id is null
-              and i.workspace_id=$2 and i.state='ACTIVE') targets
-            order by resource_id,action_key offset $5 limit $6",
+              and i.workspace_id=$2 and i.state='ACTIVE'
+            union all
+            select i.resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy,
+            t.resource_id tool_resource_id,t.output_schema_hash
+            from catalog.tool_binding b join catalog.agent_installation i on i.resource_id=b.installation_resource_id
+            join catalog.resource r on r.id=i.resource_id and r.tenant_id=$1 and r.home_workspace_id=$2
+              and r.state='ACTIVE' and r.projection_action_execution_id is null
+            join catalog.tool_definition t on t.resource_id=b.tool_resource_id and t.status='ACTIVE' and t.source='PLATFORM_NATIVE'
+            join catalog.action_definition a on a.action_key=t.action_key and a.status='ACTIVE'
+            where i.resource_id=$4 and i.state='ACTIVE' and i.workspace_id=$2 and b.workspace_id=$2
+              and b.projection_generation=i.active_projection_generation and b.agent_version_asset_id=i.pinned_version_asset_id
+              and b.status in ('NO_PERMISSION','ACTIVE') and t.action_key in ('agent.memory.entry.list','agent.memory.entry.read')) targets
+            order by resource_id,action_key,tool_resource_id offset $5 limit $6",
         ).bind(ctx.tenant_id).bind(installation.workspace_id).bind(ctx.tenant_principal_id)
             .bind(id).bind(offset).bind(limit).fetch_all(&mut *conn).await {
             Ok(rows) => rows, Err(error) => return crate::service_api::unavailable(error),
@@ -265,9 +280,11 @@ pub async fn targets(
                 target_type: row.target_type,
                 target_id: Some(row.resource_id.to_string()),
                 create_workspace_id: None,
-                tool_resource_id: None,
+                tool_resource_id: row.tool_resource_id.map(|id| id.to_string()),
                 result_exposure_mode: contracts::ResultExposureMode::ConsumeOnly,
-                output_schema_hash: delegation::output_schema_hash(),
+                output_schema_hash: row
+                    .output_schema_hash
+                    .unwrap_or_else(delegation::output_schema_hash),
                 redaction_policy: row.redaction_policy,
             };
             match delegation::validate_scope(

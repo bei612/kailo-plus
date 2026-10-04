@@ -131,6 +131,11 @@ pub(crate) async fn frozen_agent_inventory(
 ) -> Result<Value, crate::governance::Refusal> {
     let mut inventory: Value = sqlx::query_scalar(
         "select jsonb_build_object(
+          'tools', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
+            select t.resource_id,t.name,t.source,t.action_key,t.capability_contract_key,
+                   t.input_schema_hash,t.output_schema_hash,t.backend_ref
+            from catalog.tool_definition t join catalog.resource r on r.id=t.resource_id
+            where r.tenant_id=$1 order by t.resource_id for update of t) x),
           'automations', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
             select d.resource_id,d.workspace_id,d.executor_installation_resource_id,d.delegation_id,
                    d.pinned_version_asset_id,d.schedule_id,d.webhook_secret_ref,d.state,d.version,d.enabled_at
@@ -811,6 +816,12 @@ async fn retire_agents(state: &ServiceState, deletion: &Delete) -> Result<bool, 
     {
         // 已查证的 native absence 可在 namespace 销毁后恢复，不能再读已删 SecretRef。
         return Ok(true);
+    }
+    if crate::agent_tool_runtime::retire(state, deletion.tenant_id)
+        .await
+        .is_err()
+    {
+        return Ok(false);
     }
     let routes: Vec<crate::model_route::FrozenRoute> = serde_json::from_value(
         inventory
@@ -2043,6 +2054,7 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.agent_version set state='RETIRED' where asset_id in (select id from catalog.asset where tenant_id=$1) and state<>'RETIRED'",
         "update catalog.asset set state='DELETED',version=version+1,projection_action_execution_id=null where tenant_id=$1 and state<>'DELETED'",
         "update catalog.resource set state='DELETED',version=version+1,projection_action_execution_id=null where tenant_id=$1 and state<>'DELETED'",
+        "update catalog.tool_definition set status='DELETED' where resource_id in (select id from catalog.resource where tenant_id=$1 and state='DELETED') and status<>'DELETED'",
         "delete from identity.collaboration_user_state where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         "delete from admission.publish_attempt where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         "update identity.platform_session set status = 'REVOKED' where tenant_membership_id in (select id from identity.tenant_membership where tenant_id = $1) and status = 'ACTIVE'",

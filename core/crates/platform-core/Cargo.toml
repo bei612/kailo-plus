@@ -10,7 +10,7 @@ identity = { path = "../identity" }
 collab-bridge = { path = "../collab-bridge" }
 secret-store = { path = "../secret-store" }
 async-stream = "0.3"
-axum = { version = "0.8", features = ["macros"] }
+axum = { version = "0.8", features = ["macros", "http2"] }
 futures-util = "0.3"
 getrandom = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "process", "io-util", "time", "sync", "fs"] }
@@ -18,9 +18,17 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 chrono = { version = "0.4", default-features = false, features = ["serde"] }
 hex = "0.4"
 jsonwebtoken = "9"
+jsonschema = { version = "=0.33.0", default-features = false }
+base64 = "0.22"
+ring = "0.17"
 nostr = { version = "0.44", default-features = false, features = ["std"] }
 sha2 = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rmcp = { version = "=3.1.2", default-features = false, features = ["server", "transport-streamable-http-server"] }
+prost = "0.14"
+prost-wkt-types = { version = "0.7", features = ["vendored-protox"] }
+tonic = { version = "0.14", features = ["codegen", "transport"] }
+tonic-prost = "0.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
@@ -34,8 +42,12 @@ opentelemetry = { version = "0.33", default-features = false, features = ["metri
 opentelemetry_sdk = { version = "0.33", default-features = false, features = ["metrics", "rt-tokio"] }
 opentelemetry-otlp = { version = "0.33", default-features = false, features = ["metrics", "http-proto", "reqwest-blocking-client"] }
 
+[build-dependencies]
+prost-build = "0.14"
+protox = "0.9"
+tonic-prost-build = "0.14"
+
 [dev-dependencies]
-base64 = "0.22"
 futures-util = "0.3"
 nostr = { version = "0.44", default-features = false, features = ["std"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }

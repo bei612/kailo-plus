@@ -6,6 +6,8 @@
 //!
 //! service identity 只认证服务，不表达业务授权（`DD-37`）：这些 endpoint 写的
 //! 是 Workflow 自己的投影，不代替任何 HUMAN/AGENT 的 permission 判定。
+//! DD-105 的 MCP 与 ExtMcp 也只复用此私网 listener，但使用独立 Gateway
+//! service 身份；每个工具请求仍经过原 Invocation/child AE 的两相 PEP。
 
 use std::sync::Arc;
 
@@ -27,6 +29,9 @@ use crate::service_auth::{ServiceAuth, ServiceAuthError};
 pub struct ServiceState {
     pub pool: PgPool,
     pub auth: Arc<ServiceAuth>,
+    /// Independent native Gateway jwtSign identity; absence disables MCP.
+    pub(crate) gateway_service_auth: Option<Arc<crate::service_auth::GatewayServiceAuth>>,
+    pub(crate) agent_tool_sessions: Option<Arc<crate::agent_tool_session::SessionSigner>>,
     pub secrets: Arc<SecretStore>,
     /// 部署 audit device 清单的观察者。任一 binding 推进到 ACTIVE 之前都要它
     /// 给出非空（DD-70），见 `audit_gate`。
@@ -58,7 +63,7 @@ pub struct ServiceState {
 }
 
 pub fn router(state: ServiceState) -> Router {
-    Router::new()
+    let worker = Router::new()
         .route("/service/v1/task-projections", post(project_task_state))
         .route(
             "/service/v1/agent-tasks/advance",
@@ -160,7 +165,25 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/secret-ref-rehomes/advance",
             post(crate::secret_ref_rehome::advance),
         )
-        .with_state(state)
+        .with_state(state.clone());
+    match (
+        state.gateway_service_auth.clone(),
+        state.agent_tool_sessions.clone(),
+    ) {
+        (Some(auth), Some(sessions)) => {
+            let policy = crate::agent_tool_pep::Policy::new(state.clone(), sessions, auth.clone());
+            let pep = tonic::service::Routes::new(
+                crate::agent_tool_mcp::wire::ext_mcp_server::ExtMcpServer::new(policy),
+            )
+            .into_axum_router();
+            worker
+                .merge(crate::agent_tool_mcp::router(state, auth))
+                .merge(pep)
+        }
+        // Startup rejects partial configuration. With neither identity
+        // configured, zero-Tool installations add no public or private route.
+        _ => worker,
+    }
 }
 
 #[derive(Debug, Serialize)]

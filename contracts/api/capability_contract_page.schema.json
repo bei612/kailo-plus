@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/capability_contract_page.schema.json",
+  "title": "CapabilityContractPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contracts", "canRegister"],
+  "properties": {
+    "contracts": {"type": "array", "items": {"$ref": "./capability_contract_view.schema.json"}},
+    "canRegister": {"type": "boolean"},
+    "nextOffset": {"type": "integer"}
+  }
+}

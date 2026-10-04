@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/capability_contract_status.schema.json",
+  "title": "CapabilityContractStatus",
+  "type": "string",
+  "enum": ["DRAFT", "ACTIVE", "DEPRECATED", "RETIRED"]
+}

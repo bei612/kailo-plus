@@ -18,6 +18,7 @@ capabilities:
   - /api/v1/agent-installations/{resource_id}/delegation-targets
   - /api/v1/agent-definitions/{resource_id}/version-configuration
   - /api/v1/agent-definitions/{resource_id}/versions
+  - /api/v1/platform-tools
   actions:
   - agent.definition.create
   - agent.definition.update
@@ -45,6 +46,8 @@ capabilities:
   - agent.invoke
   - agent.installation.execute.grant
   - agent.installation.execute.revoke
+  - resource.grant_read
+  - resource.revoke_read
   tools: []
   workflow_kinds:
   - AGENT_INSTALLATION
@@ -72,6 +75,16 @@ capabilities:
   - /api/v1/user-state/workspaces/{workspace_id}
   - /api/v1/user-state/read
   actions: []
+  tools: []
+  workflow_kinds: []
+- id: component.capability_contracts
+  exposure: tenant_admin
+  routes:
+  - /api/v1/platform/capability-contracts
+  actions:
+  - capability_contract.register
+  - capability_contract.approve
+  - capability_contract.deprecate
   tools: []
   workflow_kinds: []
 - id: governance.action_admission

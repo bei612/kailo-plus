@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/capability_permission.schema.json",
+  "title": "CapabilityPermission",
+  "type": "string",
+  "enum": ["discover", "consume", "read", "export", "create", "update", "delete", "share", "manage", "execute", "approve", "delegate", "transfer_owner", "audit"]
+}

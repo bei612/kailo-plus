@@ -82,6 +82,9 @@ pub(crate) async fn birth(
         .agent_runtime
         .as_ref()
         .ok_or(RuntimeError::Unavailable)?;
+    let tool_config = crate::agent_tool_runtime::configuration(state, invocation_id, projection)
+        .await
+        .map_err(|_| RuntimeError::AdmissionRequired)?;
     let mut tx = state
         .pool
         .begin()
@@ -152,7 +155,7 @@ pub(crate) async fn birth(
     crate::agent_invocation::fresh_invocation(state, &mut tx, invocation_id)
         .await
         .map_err(|_| RuntimeError::AdmissionRequired)?;
-    let observed = runtime.start_thread(projection).await;
+    let observed = runtime.start_thread(projection, &tool_config).await;
     let thread = observed.as_ref().ok().map(String::as_str);
     let changed = sqlx::query(
         "update catalog.agent_session set runtime_thread_id=$1,status=$2
@@ -390,6 +393,77 @@ async fn lock_birth(
     Ok(session)
 }
 
+/// Only an unstarted invocation may replace its native MCP Session configuration.
+/// Hold the original admission/Session fence, and reject any uncertain prior
+/// dispatch in this exact Session. Waiting for native idle unload does not
+/// rewrite Session status or turn an unsubscribe ACK into completion.
+async fn resume_for_dispatch(
+    state: &ServiceState,
+    invocation: Uuid,
+    projection: &RuntimeRef,
+) -> Result<(), RuntimeError> {
+    let config = crate::agent_tool_runtime::configuration(state, invocation, projection)
+        .await
+        .map_err(|_| RuntimeError::AdmissionRequired)?;
+    let runtime = state
+        .agent_runtime
+        .as_ref()
+        .ok_or(RuntimeError::Unavailable)?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
+    let session = lock_birth(&mut tx, invocation, projection).await?;
+    let thread = session
+        .runtime_thread_id
+        .as_deref()
+        .ok_or(RuntimeError::Unknown)?;
+    let certain: bool = sqlx::query_scalar(
+        "select not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+          and not exists(select 1 from catalog.agent_invocation prior
+            where prior.id<>i.id and prior.tenant_id=i.tenant_id
+              and prior.workspace_id=i.workspace_id and prior.root_event_id=i.root_event_id
+              and prior.installation_resource_id=i.installation_resource_id
+              and prior.agent_version_asset_id=i.agent_version_asset_id
+              and prior.projection_generation=i.projection_generation
+              and (prior.status in ('DISPATCHING','RUNNING','UNKNOWN')
+                or ((prior.runtime_turn_id is not null or exists(select 1
+                    from projection.agent_model_trace t where t.invocation_id=prior.id))
+                  and coalesce(prior.native_status,'') not in ('completed','failed','interrupted'))))
+         from catalog.agent_invocation i where i.id=$1 and i.native_status is null")
+        .bind(invocation).fetch_optional(&mut *tx).await
+        .map_err(|_| RuntimeError::Unknown)?.ok_or(RuntimeError::Unknown)?;
+    if !certain {
+        return Err(RuntimeError::Unknown);
+    }
+    crate::agent_invocation::fresh_invocation(state, &mut tx, invocation)
+        .await
+        .map_err(|_| RuntimeError::AdmissionRequired)?;
+    // All-absent Tool deployment cannot have installed a ticket in this process;
+    // keep the original zero-Tool recovery. With the signer enabled, even an
+    // empty map must cold-resume so a formerly granted directory cannot linger.
+    if state.agent_tool_sessions.is_none() {
+        runtime.resume_thread(projection, thread).await?;
+    } else {
+        runtime.refresh_thread(projection, thread, &config).await?;
+    }
+    sqlx::query(
+        "update catalog.agent_session set status='ACTIVE'
+        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3
+          and projection_generation=$4 and runtime_thread_id=$5",
+    )
+    .bind(session.workspace_id)
+    .bind(&session.root_event_id)
+    .bind(session.installation_resource_id)
+    .bind(session.projection_generation)
+    .bind(thread)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| RuntimeError::Unknown)?;
+    tx.commit().await.map_err(|_| RuntimeError::Unknown)
+}
+
 /// 只由 AgentTask 的已知 thread 观察/取消分支调用。恢复同一 durable ID
 /// 不发新 turn；事务锁串行化同一 root Session 的并发恢复和关闭。
 pub(crate) async fn resume_existing(
@@ -397,6 +471,17 @@ pub(crate) async fn resume_existing(
     invocation_id: Uuid,
     projection: &RuntimeRef,
 ) -> Result<(), RuntimeError> {
+    let undispatched: Option<bool> = sqlx::query_scalar(
+        "select status='CREATED' and runtime_turn_id is null and not cancel_pending
+         from catalog.agent_invocation where id=$1",
+    )
+    .bind(invocation_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| RuntimeError::Unknown)?;
+    if undispatched == Some(true) {
+        return resume_for_dispatch(state, invocation_id, projection).await;
+    }
     let runtime = state
         .agent_runtime
         .as_ref()

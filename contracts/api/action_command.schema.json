@@ -109,6 +109,14 @@
       "format": "uuid",
       "description": "任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析"
     },
+    "capabilityContractRegistration": {
+      "$ref": "../domain/capability_contract_registration.schema.json",
+      "description": "仅 capability_contract.register：真实 schema 与测试向量内容。"
+    },
+    "capabilityContractRef": {
+      "$ref": "../domain/capability_contract_ref.schema.json",
+      "description": "仅 capability_contract.approve/deprecate：固定已登记版本。"
+    },
     "explicitConfirmation": {
       "type": "boolean",
       "description": "EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带"

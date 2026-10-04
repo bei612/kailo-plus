@@ -1005,7 +1005,7 @@ async fn finish(
     tx.commit().await?;
     let stored = tokio::time::timeout(
         state.memory_service.agent_memory.read_timeout,
-        super::confirm_memory_usage(state, &ae, &ids),
+        super::confirm_memory_usage(&state.memory_service, &ae, &ids),
     )
     .await;
     if !matches!(stored, Ok(Ok(true))) {

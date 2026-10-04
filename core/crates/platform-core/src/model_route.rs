@@ -2181,7 +2181,7 @@ fn key_projection(
             "agentPrincipalId":agent,"servicePrincipalId":service,"installationResourceId":installation,"projectionGeneration":generation}})
 }
 
-struct Gateway {
+pub(crate) struct Gateway {
     admin: reqwest::Url,
     model_base: reqwest::Url,
     timeout: std::time::Duration,
@@ -2189,7 +2189,7 @@ struct Gateway {
 }
 
 impl Gateway {
-    fn from_env() -> Result<Self, Refusal> {
+    pub(crate) fn from_env() -> Result<Self, Refusal> {
         let url = |name| -> Result<reqwest::Url, Refusal> {
             let raw = std::env::var(name).map_err(|_| unavailable())?;
             let url = reqwest::Url::parse(&raw).map_err(|_| unavailable())?;
@@ -2217,7 +2217,11 @@ impl Gateway {
         })
     }
 
-    async fn admin(&self, segments: &[&str], body: Option<Value>) -> Result<Value, Refusal> {
+    pub(crate) async fn admin(
+        &self,
+        segments: &[&str],
+        body: Option<Value>,
+    ) -> Result<Value, Refusal> {
         let mut url = self.admin.clone();
         url.path_segments_mut()
             .map_err(|_| unavailable())?
@@ -2241,7 +2245,7 @@ impl Gateway {
         response.json().await.map_err(|_| unavailable())
     }
 
-    async fn resources(&self, kind: &str) -> Result<Vec<Value>, Refusal> {
+    pub(crate) async fn resources(&self, kind: &str) -> Result<Vec<Value>, Refusal> {
         let body = self
             .admin(&["api", "config", "resources", kind], None)
             .await?;
@@ -2642,7 +2646,7 @@ impl Gateway {
         Ok(())
     }
 
-    async fn delete(&self, kind: &str, id: &str) -> Result<(), Refusal> {
+    pub(crate) async fn delete(&self, kind: &str, id: &str) -> Result<(), Refusal> {
         self.admin_delete(&["api", "config", "resources", kind, id])
             .await
     }

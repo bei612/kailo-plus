@@ -223,8 +223,7 @@ pub(crate) async fn prewrite(
     if version.config_hash != content_hash {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
-    if !content.skill_version_asset_ids.is_empty() || !content.declared_tool_resource_ids.is_empty()
-    {
+    if !content.skill_version_asset_ids.is_empty() {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     let route = Uuid::parse_str(&content.model_route_resource_id).map_err(|_| invalid())?;
@@ -315,6 +314,15 @@ pub(crate) async fn prewrite(
     .bind(serde_json::Value::Array(fields))
     .bind(hash)
     .execute(&mut **tx)
+    .await?;
+    crate::agent_tool::install_bindings(
+        gov,
+        tx,
+        ae,
+        version_id,
+        1,
+        &content.declared_tool_resource_ids,
+    )
     .await?;
     Ok(1)
 }

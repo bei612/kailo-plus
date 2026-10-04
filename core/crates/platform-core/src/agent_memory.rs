@@ -31,6 +31,9 @@ pub(crate) struct Config {
 }
 
 impl Config {
+    pub(crate) fn tool_timeout(&self) -> std::time::Duration {
+        self.read_timeout
+    }
     /// One required deployment source, no local fallback or invented native
     /// threshold. `Reader` additionally enforces the exported NIP-44 ceiling.
     pub(crate) fn from_env() -> Result<Self, Refusal> {
@@ -629,29 +632,11 @@ async fn management_result(
     } else {
         "agent.memory.entry.read"
     };
-    let definition = crate::governance::active_definition(&state.pool, action)
-        .await?
-        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    if definition.permission != "read"
-        || definition.permission_object_type != "resource"
-        || definition.target_type != "RESOURCE"
-        || definition.tenant_rule != "SESSION_TENANT"
-        || definition.workspace_rule != "WORKSPACE_REQUIRED"
-        || definition.execution_mode != "SYNC"
-        || definition.confirmation_mode != "NONE"
-        || definition.approval_policy_id.is_some()
-        || definition.approval_policy_version.is_some()
-        || definition.workflow_kind.is_some()
-        || definition.quota_policy != "NONE"
-        || definition.result_exposure != "READ"
-        || definition.meters != ["agent_memory_read_count", "agent_memory_plaintext_bytes"]
-    {
-        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-    }
+    let definition = read_definition(&state.pool, action).await?;
     let mut tx = state.pool.begin().await?;
     let binding = lock_read_context(ctx, installation, &mut tx).await?;
     let revision = read_permission(state, ctx, &binding, &definition).await?;
-    let billing = memory_billing(&mut tx, state, &binding).await?;
+    let billing = memory_billing(&mut tx, &state.memory_service, &binding).await?;
     let digest = hex::encode(Sha256::digest(slug.as_bytes()));
     let parameters = json!({"memoryUsage":billing,"slugDigest":digest,
         "targetVersion":binding.resource_version,"platformSessionId":ctx.session_id});
@@ -709,12 +694,808 @@ async fn management_result(
         Some(state.relay_budget.clone()),
     )
     .await;
-    let mut result = json!({"installationResourceId": installation, "workspaceId": binding.workspace_id,
+    let ReadResult {
+        value: result,
+        plaintext_bytes,
+        outcome,
+        evidence,
+    } = observed_result(
+        installation,
+        binding.workspace_id,
+        operation,
+        listing,
+        slug,
+        observed,
+        vec![crate::audit::Evidence::new(
+            EvidenceKind::PlatformSessionId,
+            ctx.session_id,
+        )],
+    )?;
+    // Do not expose already decrypted data after a fresh permission failure.
+    read_permission(state, ctx, &binding, &definition).await?;
+    crate::audit::append(
+        &mut tx,
+        crate::audit::AuditEntry {
+            event_key: format!("memory:{operation}"),
+            tenant_id: Some(ctx.tenant_id),
+            workspace_id: Some(binding.workspace_id),
+            operation_id: operation,
+            event_type: "ACCESS",
+            human_identity_id: Some(ctx.human_identity_id),
+            initiator_principal_id: Some(ctx.tenant_principal_id),
+            actor_principal_id: Some(ctx.tenant_principal_id),
+            action_key: action,
+            action_version: definition.version,
+            component_type_key: "agent.installation",
+            target_type: Some("RESOURCE"),
+            target_id: Some(installation),
+            parameter_hash: &digest,
+            decision: "ALLOW",
+            result_code: outcome,
+            result_exposure: "NONE",
+            evidence_refs: evidence.clone(),
+            correlation_id: operation,
+        },
+    )
+    .await?;
+    let usage_ids = if let Some(bytes) = plaintext_bytes {
+        record_memory_usage(&mut tx, &ae, &billing, bytes, outcome, &evidence).await?
+    } else {
+        Vec::new()
+    };
+    crate::governance::record_dispatch(
+        &mut tx,
+        ae.id,
+        definition.audit_class(),
+        if plaintext_bytes.is_some() {
+            Ok(())
+        } else {
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        },
+        evidence,
+    )
+    .await?;
+    tx.commit().await?;
+    if !usage_ids.is_empty() {
+        let settled = tokio::time::timeout(
+            state.memory_service.agent_memory.read_timeout,
+            confirm_memory_usage(&state.memory_service, &ae, &usage_ids),
+        )
+        .await;
+        if !matches!(settled, Ok(Ok(true))) {
+            return Err(unavailable(
+                "BILLING_UNAVAILABLE: Memory 计量未获原生存储证据",
+            ));
+        }
+    }
+    // Delivery released the original transaction. Reacquire the SAME scope and
+    // current session/owner/read authority before disclosing any plaintext.
+    let mut tx = state.pool.begin().await?;
+    let current = lock_read_context(ctx, installation, &mut tx).await?;
+    if !same_binding(&current, &binding) {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    if plaintext_bytes.is_some()
+        && memory_billing(&mut tx, &state.memory_service, &current).await? != billing
+    {
+        return Err(unavailable("BILLING_UNAVAILABLE: Memory 计量映射已变化"));
+    }
+    if plaintext_bytes.is_some() {
+        tokio::time::timeout(
+            state.memory_service.agent_memory.read_timeout,
+            read_counterparty(&state.memory_service, &current),
+        )
+        .await
+        .map_err(|_| unavailable("Memory disclosure 身份不可查证"))?
+        .map_err(|_| unavailable("Memory disclosure 身份不可查证"))?;
+    }
+    let revision = read_permission(state, ctx, &current, &definition).await?;
+    let session_current: bool = sqlx::query_scalar(
+        "select exists(select 1 from identity.platform_session
+        where id=$1 and status='ACTIVE' and expires_at>clock_timestamp())",
+    )
+    .bind(ctx.session_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !session_current {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    crate::audit::append(
+        &mut tx,
+        crate::audit::AuditEntry {
+            event_key: format!("memory:{operation}:disclosure"),
+            tenant_id: Some(ctx.tenant_id),
+            workspace_id: Some(current.workspace_id),
+            operation_id: operation,
+            event_type: "ACCESS",
+            human_identity_id: Some(ctx.human_identity_id),
+            initiator_principal_id: Some(ctx.tenant_principal_id),
+            actor_principal_id: Some(ctx.tenant_principal_id),
+            action_key: action,
+            action_version: definition.version,
+            component_type_key: "agent.installation",
+            target_type: Some("RESOURCE"),
+            target_id: Some(installation),
+            parameter_hash: &digest,
+            decision: "ALLOW",
+            result_code: outcome,
+            result_exposure: if plaintext_bytes.is_some() {
+                "READ"
+            } else {
+                "NONE"
+            },
+            evidence_refs: vec![crate::audit::Evidence::new(
+                EvidenceKind::SpicedbZedtoken,
+                revision,
+            )],
+            correlation_id: operation,
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+pub(crate) async fn read_definition(
+    pool: &sqlx::PgPool,
+    action: &str,
+) -> Result<crate::governance::Definition, Refusal> {
+    if !matches!(
+        action,
+        "agent.memory.core.read" | "agent.memory.entry.list" | "agent.memory.entry.read"
+    ) {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let definition = crate::governance::active_definition(pool, action)
+        .await?
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    if definition.permission != "read"
+        || definition.permission_object_type != "resource"
+        || definition.target_type != "RESOURCE"
+        || definition.tenant_rule != "SESSION_TENANT"
+        || definition.workspace_rule != "WORKSPACE_REQUIRED"
+        || definition.execution_mode != "SYNC"
+        || definition.confirmation_mode != "NONE"
+        || definition.approval_policy_id.is_some()
+        || definition.approval_policy_version.is_some()
+        || definition.workflow_kind.is_some()
+        || definition.quota_policy != "NONE"
+        || definition.result_exposure != "READ"
+        || definition.meters != ["agent_memory_read_count", "agent_memory_plaintext_bytes"]
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    Ok(definition)
+}
+
+fn same_binding(current: &Binding, frozen: &Binding) -> bool {
+    current.workspace_id == frozen.workspace_id
+        && current.tenant_id == frozen.tenant_id
+        && current.agent_pubkey == frozen.agent_pubkey
+        && current.counterparty_pubkey == frozen.counterparty_pubkey
+        && current.resource_version == frozen.resource_version
+        && current.memory_version == frozen.memory_version
+        && current.agent_locator == frozen.agent_locator
+        && current.agent_secret_version == frozen.agent_secret_version
+        && current.counterparty_locator == frozen.counterparty_locator
+        && current.counterparty_secret_version == frozen.counterparty_secret_version
+        && current.normalized_host == frozen.normalized_host
+        && current.nip11_snapshot_digest == frozen.nip11_snapshot_digest
+}
+
+/// Original contract normalization; no target, identity, Relay or filter input.
+pub(crate) fn tool_arguments(name: &str, arguments: &Value) -> Result<String, Refusal> {
+    let invalid = || Refusal::Precondition(ReasonCode::InvalidParameters);
+    match name {
+        "agent.memory.entry.list" if arguments.as_object().is_some_and(|a| a.is_empty()) => {
+            Ok(String::new())
+        }
+        "agent.memory.entry.read" => {
+            let input: contracts::AgentMemoryEntryReadInput =
+                serde_json::from_value(arguments.clone()).map_err(|_| invalid())?;
+            if serde_json::to_value(&input).map_err(|_| invalid())? != *arguments
+                || input.slug == "core"
+                || collab_bridge::memory::validate_slug(&input.slug).is_err()
+            {
+                return Err(invalid());
+            }
+            Ok(input.slug)
+        }
+        _ => Err(invalid()),
+    }
+}
+
+pub(crate) async fn prepare_tool_read(
+    state: &ServiceState,
+    invocation: Uuid,
+    name: &str,
+    arguments: &Value,
+) -> Result<crate::governance::Execution, Refusal> {
+    let slug = tool_arguments(name, arguments)?;
+    let argument_hash = collab_bridge::limits::canonical_digest(arguments);
+    let definition = read_definition(&state.pool, name).await?;
+    let mut tx = state.pool.begin().await?;
+    let (context, parent) =
+        crate::agent_tool::invocation_context(state, &mut tx, invocation, true).await?;
+    let tool = crate::agent_tool::bound_tools(
+        &state.governance,
+        &mut tx,
+        context.tenant_id,
+        context.installation_resource_id,
+        context.projection_generation,
+        context.agent_principal_id,
+    )
+    .await?
+    .into_iter()
+    .find(|tool| tool.name == name)
+    .ok_or(Refusal::Denied(ReasonCode::PermissionDenied))?;
+    let revision =
+        crate::agent_tool::tool_admission(state, &mut tx, &context, &parent, &tool, &definition)
+            .await?;
+    // Parent lock serializes this exact Session/tool/normalized-params query.
+    // An unconfirmed read is never replaced with a new child/key or replayed.
+    let pending: bool = sqlx::query_scalar("select exists(select 1 from admission.action_execution
+        where parent_action_execution_id=$1 and action_key=$2 and parameters->>'toolParameterHash'=$3
+          and parameters->>'runtimeTurnId'=$4 and dispatch_state in ('NOT_DISPATCHED','UNKNOWN','DISPATCHED'))")
+        .bind(parent.id).bind(name).bind(&argument_hash).bind(context.runtime_turn_id.as_deref())
+        .fetch_one(&mut *tx).await?;
+    if pending {
+        return Err(unavailable("UNKNOWN_EXTERNAL_RESULT"));
+    }
+    let binding = binding(&mut tx, context.installation_resource_id, false).await?;
+    let billing = memory_billing(&mut tx, state, &binding).await?;
+    let parameters = json!({"toolResourceId":tool.resource_id,"toolParameterHash":argument_hash,
+        "invocationId":context.id,"runtimeTurnId":context.runtime_turn_id,
+        "targetVersion":binding.resource_version,"slugDigest":hex::encode(Sha256::digest(slug.as_bytes())),
+        "memoryUsage":billing});
+    let ae = crate::governance::open_memory_child(
+        &mut tx,
+        &parent,
+        &definition,
+        &crate::governance::Target {
+            id: context.installation_resource_id,
+            version: binding.resource_version,
+            workspace_id: Some(context.workspace_id),
+        },
+        parameters,
+        Uuid::new_v4(),
+    )
+    .await?;
+    crate::governance::record_owned_decision(
+        &mut tx,
+        &crate::governance::DecisionSubject {
+            action_execution_id: ae.id,
+            operation_id: ae.operation_id,
+            tenant_id: ae.tenant_id,
+            workspace_id: ae.workspace_id,
+            principal_id: ae.initiator_principal_id,
+            action_key: &ae.action_key,
+            action_version: ae.action_version,
+            target_id: ae.target_id,
+            parameter_hash: &ae.parameter_hash,
+        },
+        &revision,
+    )
+    .await?;
+    sqlx::query("update admission.action_execution set gate_state='ALLOWED',updated_at=now() where id=$1 and gate_state='EVALUATING'")
+        .bind(ae.id).execute(&mut *tx).await?;
+    let allowed = crate::governance::lock_execution(&mut tx, ae.id).await?;
+    tx.commit().await?;
+    Ok(allowed)
+}
+
+async fn tool_context(
+    state: &ServiceState,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    child: Uuid,
+    name: &str,
+    arguments: &Value,
+) -> Result<
+    (
+        crate::governance::Execution,
+        crate::agent_tool::InvocationContext,
+        crate::governance::Execution,
+        crate::agent_tool::BoundTool,
+        crate::governance::Definition,
+        Binding,
+    ),
+    Refusal,
+> {
+    let reference: Option<(Uuid, Uuid)> = sqlx::query_as(
+        "select parent_action_execution_id,
+        (parameters->>'invocationId')::uuid from admission.action_execution where id=$1
+          and parent_action_execution_id is not null and action_key=$2",
+    )
+    .bind(child)
+    .bind(name)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let (parent_id, invocation) = reference.ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
+    // Same root→child lock order as admission; never lock child then its root.
+    let (context, parent) =
+        crate::agent_tool::invocation_context(state, tx, invocation, true).await?;
+    let ae = crate::governance::lock_execution(tx, child).await?;
+    let def = read_definition(&state.pool, name).await?;
+    let params = ae
+        .parameters
+        .as_ref()
+        .ok_or_else(|| unavailable("Memory child intent unavailable"))?;
+    let slug = tool_arguments(name, arguments)?;
+    if parent.id != parent_id
+        || ae.operation_id != parent.operation_id
+        || ae.tenant_id != parent.tenant_id
+        || ae.workspace_id != parent.workspace_id
+        || ae.target_id != context.installation_resource_id
+        || ae.actor_principal_id != context.agent_principal_id
+        || ae.initiator_principal_id != parent.initiator_principal_id
+        || ae.gate_state != "ALLOWED"
+        || ae.action_version != def.version
+        || params["toolParameterHash"] != json!(collab_bridge::limits::canonical_digest(arguments))
+        || params["runtimeTurnId"] != json!(context.runtime_turn_id)
+        || params["slugDigest"] != json!(hex::encode(Sha256::digest(slug.as_bytes())))
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let tool = crate::agent_tool::bound_tools(
+        &state.governance,
+        tx,
+        context.tenant_id,
+        context.installation_resource_id,
+        context.projection_generation,
+        context.agent_principal_id,
+    )
+    .await?
+    .into_iter()
+    .find(|tool| tool.name == name && params["toolResourceId"] == json!(tool.resource_id))
+    .ok_or(Refusal::Denied(ReasonCode::PermissionDenied))?;
+    crate::agent_tool::tool_admission(state, tx, &context, &parent, &tool, &def).await?;
+    let current = binding(tx, context.installation_resource_id, false).await?;
+    if params["targetVersion"].as_i64() != Some(i64::from(current.resource_version))
+        || current.memory_state != "ACTIVE"
+        || current.agent_binding_state != "ACTIVE"
+        || current.counterparty_binding_state != "ACTIVE"
+        || current.agent_secret_status.as_deref() != Some("ACTIVE")
+        || current.counterparty_secret_status.as_deref() != Some("ACTIVE")
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    Ok((ae, context, parent, tool, def, current))
+}
+
+/// DD-105: only the PEP's exact admitted child can invoke the existing native
+/// Memory reader. Plaintext is temporary and is never persisted for retries.
+pub(crate) async fn execute_tool_read(
+    state: &ServiceState,
+    child: Uuid,
+    name: &str,
+    arguments: &Value,
+) -> Result<Value, Refusal> {
+    let slug = tool_arguments(name, arguments)?;
+    let mut tx = state.pool.begin().await?;
+    let (ae, _, _, _, _, _) = tool_context(state, &mut tx, child, name, arguments).await?;
+    if ae.dispatch_state != "NOT_DISPATCHED" {
+        return Err(unavailable("UNKNOWN_EXTERNAL_RESULT"));
+    }
+    sqlx::query(
+        "update admission.action_execution set dispatch_state='UNKNOWN',updated_at=now()
+        where id=$1 and gate_state='ALLOWED' and dispatch_state='NOT_DISPATCHED'",
+    )
+    .bind(child)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    // Only this request knows it claimed a not-yet-read child. A crash leaves
+    // UNKNOWN; recovered calls cannot sign, rerun or replay a stored body.
+    let mut tx = state.pool.begin().await?;
+    let (ae, context, parent, tool, def, frozen) =
+        tool_context(state, &mut tx, child, name, arguments).await?;
+    if ae.dispatch_state != "UNKNOWN" {
+        return Err(unavailable("UNKNOWN_EXTERNAL_RESULT"));
+    }
+    let billing = ae
+        .parameters
+        .as_ref()
+        .and_then(|p| p.get("memoryUsage"))
+        .ok_or_else(|| unavailable("Memory billing pin missing"))?;
+    if memory_billing(&mut tx, state, &frozen).await? != *billing {
+        return Err(unavailable("BILLING_UNAVAILABLE"));
+    }
+    let listing = name == "agent.memory.entry.list";
+    let request = if listing {
+        ReadRequest::Entries
+    } else {
+        ReadRequest::Entry(&slug)
+    };
+    let observed = observe(state, &frozen, &state.agent_memory, request, None).await;
+    let ReadResult {
+        value,
+        plaintext_bytes,
+        outcome,
+        evidence,
+    } = observed_result(
+        ae.target_id,
+        context.workspace_id,
+        ae.operation_id,
+        listing,
+        &slug,
+        observed,
+        vec![crate::audit::Evidence::new(
+            EvidenceKind::ActionExecutionId,
+            child,
+        )],
+    )?;
+    crate::agent_tool::tool_admission(state, &mut tx, &context, &parent, &tool, &def).await?;
+    memory_child_audit(&mut tx, &ae, "read", outcome, "NONE", evidence.clone()).await?;
+    let ids = if let Some(bytes) = plaintext_bytes {
+        record_memory_usage(&mut tx, &ae, billing, bytes, outcome, &evidence).await?
+    } else {
+        Vec::new()
+    };
+    crate::governance::record_dispatch(
+        &mut tx,
+        ae.id,
+        def.audit_class(),
+        if plaintext_bytes.is_some() {
+            Ok(())
+        } else {
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        },
+        evidence,
+    )
+    .await?;
+    tx.commit().await?;
+    if plaintext_bytes.is_none() {
+        return Err(unavailable("UNKNOWN_EXTERNAL_RESULT"));
+    }
+    if !matches!(
+        tokio::time::timeout(
+            state.agent_memory.read_timeout,
+            confirm_memory_usage(state, &ae, &ids)
+        )
+        .await,
+        Ok(Ok(true))
+    ) {
+        return Err(unavailable("BILLING_UNAVAILABLE"));
+    }
+    let mut tx = state.pool.begin().await?;
+    let (current, context, parent, tool, def, current_binding) =
+        tool_context(state, &mut tx, child, name, arguments).await?;
+    if current.dispatch_state != "DISPATCHED"
+        || !same_binding(&current_binding, &frozen)
+        || memory_billing(&mut tx, state, &current_binding).await? != *billing
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    read_before_deadline(
+        tokio::time::Instant::now() + state.agent_memory.read_timeout,
+        ObserveError::Binding,
+        read_counterparty(state, &current_binding),
+    )
+    .await
+    .map_err(|_| unavailable("Memory disclosure identity unavailable"))?;
+    let revision =
+        crate::agent_tool::tool_admission(state, &mut tx, &context, &parent, &tool, &def).await?;
+    memory_child_audit(
+        &mut tx,
+        &current,
+        "disclosure",
+        outcome,
+        "READ",
+        vec![crate::audit::Evidence::new(
+            EvidenceKind::SpicedbZedtoken,
+            revision,
+        )],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(value)
+}
+
+async fn memory_child_audit(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &crate::governance::Execution,
+    stage: &str,
+    outcome: &str,
+    exposure: &str,
+    evidence: Vec<crate::audit::Evidence>,
+) -> Result<(), sqlx::Error> {
+    crate::audit::append(
+        tx,
+        crate::audit::AuditEntry {
+            event_key: format!("memory-child:{}:{stage}", ae.id),
+            tenant_id: Some(ae.tenant_id),
+            workspace_id: ae.workspace_id,
+            operation_id: ae.operation_id,
+            event_type: "ACCESS",
+            human_identity_id: None,
+            initiator_principal_id: Some(ae.initiator_principal_id),
+            actor_principal_id: Some(ae.actor_principal_id),
+            action_key: &ae.action_key,
+            action_version: ae.action_version,
+            component_type_key: "agent.installation",
+            target_type: Some("RESOURCE"),
+            target_id: Some(ae.target_id),
+            parameter_hash: &ae.parameter_hash,
+            decision: "ALLOW",
+            result_code: outcome,
+            result_exposure: exposure,
+            evidence_refs: evidence,
+            correlation_id: ae.correlation_id,
+        },
+    )
+    .await
+}
+
+/// CheckResponse owns no plaintext cache or alternate read. Validate the
+/// original generated response and the child's native head/storage evidence,
+/// then redo the same live Invocation/read/Delegation checks before disclosure.
+pub(crate) async fn disclose_tool_result(
+    state: &ServiceState,
+    invocation: Uuid,
+    child: Uuid,
+    operation: Uuid,
+    name: &str,
+    value: &Value,
+) -> Result<(), Refusal> {
+    let (arguments, outcome, heads) =
+        tool_result_shape(name, value, state.agent_memory.limits.plaintext_bytes)?;
+    let mut tx = state.pool.begin().await?;
+    let (ae, context, parent, tool, def, current) =
+        tool_context(state, &mut tx, child, name, &arguments).await?;
+    if ae.operation_id != operation
+        || context.id != invocation
+        || ae.dispatch_state != "DISPATCHED"
+        || value["operationId"] != json!(operation)
+        || value["workspaceId"] != json!(context.workspace_id)
+        || value["installationResourceId"] != json!(context.installation_resource_id)
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let billing = ae
+        .parameters
+        .as_ref()
+        .and_then(|p| p.get("memoryUsage"))
+        .ok_or_else(|| unavailable("Memory billing pin missing"))?;
+    if memory_billing(&mut tx, state, &current).await? != *billing {
+        return Err(unavailable("BILLING_UNAVAILABLE"));
+    }
+    let events: Vec<(Uuid, Value)> = sqlx::query_as(
+        "select id,dimensions from outbox.usage_event
+        where tenant_id=$1 and operation_id=$2 and source_type='BUZZ_AGENT_MEMORY' and source_id=$3
+          and invocation_id=$4 and settlement_status='COMMITTED' and stored_at is not null
+          order by meter_key",
+    )
+    .bind(ae.tenant_id)
+    .bind(operation)
+    .bind(child)
+    .bind(invocation)
+    .fetch_all(&mut *tx)
+    .await?;
+    let ids: Vec<Uuid> = events.iter().map(|(id, _)| *id).collect();
+    if events.len() != 2
+        || events.iter().any(|(_, dimensions)| {
+            dimensions["read_outcome"] != json!(outcome)
+                || dimensions["native_event_ids"] != json!(heads)
+        })
+    {
+        return Err(unavailable(
+            "Memory result lacks exact native read evidence",
+        ));
+    }
+    if !matches!(
+        tokio::time::timeout(
+            state.agent_memory.read_timeout,
+            confirm_memory_usage(state, &ae, &ids)
+        )
+        .await,
+        Ok(Ok(true))
+    ) {
+        return Err(unavailable("BILLING_UNAVAILABLE"));
+    }
+    read_before_deadline(
+        tokio::time::Instant::now() + state.agent_memory.read_timeout,
+        ObserveError::Binding,
+        read_counterparty(state, &current),
+    )
+    .await
+    .map_err(|_| unavailable("Memory response identity unavailable"))?;
+    let revision =
+        crate::agent_tool::tool_admission(state, &mut tx, &context, &parent, &tool, &def).await?;
+    memory_child_audit(
+        &mut tx,
+        &ae,
+        "pep-disclosure",
+        outcome,
+        "READ",
+        vec![crate::audit::Evidence::new(
+            EvidenceKind::SpicedbZedtoken,
+            revision,
+        )],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+fn tool_result_shape(
+    name: &str,
+    value: &Value,
+    limit: usize,
+) -> Result<(Value, &'static str, Vec<String>), Refusal> {
+    let invalid = || Refusal::Denied(ReasonCode::ScopeGuardFailed);
+    let head = |event: &str| {
+        event.len() == 64
+            && event
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    };
+    match name {
+        "agent.memory.entry.list" => {
+            let page: contracts::AgentMemoryEntryPage =
+                serde_json::from_value(value.clone()).map_err(|_| invalid())?;
+            if serde_json::to_value(&page).map_err(|_| invalid())? != *value
+                || page.state != contracts::AgentMemoryEntryPageState::Complete
+            {
+                return Err(invalid());
+            }
+            let mut slugs = std::collections::HashSet::new();
+            let mut events = std::collections::HashSet::new();
+            if page.entries.iter().any(|entry| {
+                entry.slug == "core"
+                    || collab_bridge::memory::validate_slug(&entry.slug).is_err()
+                    || !head(&entry.event_id)
+                    || entry.created_at < 0
+                    || !slugs.insert(&entry.slug)
+                    || !events.insert(&entry.event_id)
+            }) {
+                return Err(invalid());
+            }
+            Ok((
+                json!({}),
+                "COMPLETE",
+                page.entries
+                    .into_iter()
+                    .map(|entry| entry.event_id)
+                    .collect(),
+            ))
+        }
+        "agent.memory.entry.read" => {
+            let entry: contracts::AgentMemoryReadView =
+                serde_json::from_value(value.clone()).map_err(|_| invalid())?;
+            let arguments = json!({"slug":entry.slug});
+            tool_arguments(name, &arguments)?;
+            if serde_json::to_value(&entry).map_err(|_| invalid())? != *value
+                || entry.event_id.is_some() != entry.created_at.is_some()
+                || entry.event_id.as_deref().is_some_and(|id| !head(id))
+                || entry.created_at.is_some_and(|time| time < 0)
+            {
+                return Err(invalid());
+            }
+            let outcome = match entry.state {
+                contracts::AgentMemoryReadViewState::Found => {
+                    let content = entry.content.as_deref().ok_or_else(invalid)?;
+                    if content.len() > limit
+                        || entry.event_id.is_none()
+                        || entry.content_bytes != i64::try_from(content.len()).ok()
+                        || entry.value_hash.as_deref()
+                            != Some(collab_bridge::memory::value_hash(content).as_str())
+                    {
+                        return Err(invalid());
+                    }
+                    "FOUND"
+                }
+                contracts::AgentMemoryReadViewState::Absent
+                    if entry.content.is_none()
+                        && entry.content_bytes.is_none()
+                        && entry.value_hash.is_none() =>
+                {
+                    "ABSENT"
+                }
+                _ => return Err(invalid()),
+            };
+            Ok((arguments, outcome, entry.event_id.into_iter().collect()))
+        }
+        _ => Err(invalid()),
+    }
+}
+
+#[cfg(test)]
+mod memory_tool_tests {
+    use super::*;
+
+    fn read() -> Value {
+        let content = "原生记忆";
+        json!({"installationResourceId":Uuid::new_v4(),"workspaceId":Uuid::new_v4(),
+            "operationId":Uuid::new_v4(),"slug":"mem/notes","state":"FOUND",
+            "eventId":"a".repeat(64),"createdAt":1,"content":content,
+            "contentBytes":content.len(),"valueHash":collab_bridge::memory::value_hash(content)})
+    }
+
+    #[test]
+    fn arguments_cannot_supply_scope_core_or_unknown_fields() {
+        assert!(tool_arguments("agent.memory.entry.list", &json!({})).is_ok());
+        assert!(tool_arguments(
+            "agent.memory.entry.list",
+            &json!({"workspaceId":Uuid::new_v4()})
+        )
+        .is_err());
+        assert_eq!(
+            tool_arguments("agent.memory.entry.read", &json!({"slug":"mem/notes"})).unwrap(),
+            "mem/notes"
+        );
+        assert!(tool_arguments("agent.memory.entry.read", &json!({"slug":"core"})).is_err());
+        assert!(tool_arguments(
+            "agent.memory.entry.read",
+            &json!({"slug":"mem/notes","operationId":Uuid::new_v4()})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn disclosure_requires_native_body_hash_bytes_and_known_outcome() {
+        let value = read();
+        assert!(tool_result_shape("agent.memory.entry.read", &value, 64).is_ok());
+        for (field, replacement) in [
+            ("state", json!("UNREADABLE")),
+            ("valueHash", json!("b".repeat(64))),
+            ("contentBytes", json!(1)),
+            ("content", json!("changed")),
+            ("unverified", json!(true)),
+        ] {
+            let mut changed = value.clone();
+            changed[field] = replacement;
+            assert!(
+                tool_result_shape("agent.memory.entry.read", &changed, 64).is_err(),
+                "{field}"
+            );
+        }
+        assert!(tool_result_shape("agent.memory.entry.read", &value, 1).is_err());
+        let mut absent = value;
+        absent["state"] = json!("ABSENT");
+        assert!(tool_result_shape("agent.memory.entry.read", &absent, 64).is_err());
+        for field in ["content", "contentBytes", "valueHash"] {
+            absent.as_object_mut().unwrap().remove(field);
+        }
+        assert!(tool_result_shape("agent.memory.entry.read", &absent, 64).is_ok());
+    }
+
+    #[test]
+    fn listing_unknown_or_duplicate_heads_never_becomes_empty_success() {
+        let mut page = json!({"installationResourceId":Uuid::new_v4(),"workspaceId":Uuid::new_v4(),
+            "operationId":Uuid::new_v4(),"state":"COMPLETE","entries":[]});
+        assert!(tool_result_shape("agent.memory.entry.list", &page, 64).is_ok());
+        page["state"] = json!("UNKNOWN");
+        assert!(tool_result_shape("agent.memory.entry.list", &page, 64).is_err());
+        page["state"] = json!("COMPLETE");
+        let entry =
+            json!({"slug":"mem/notes","eventId":"a".repeat(64),"createdAt":1,"tombstone":false});
+        page["entries"] = json!([entry.clone()]);
+        assert!(tool_result_shape("agent.memory.entry.list", &page, 64).is_ok());
+        page["entries"] = json!([entry.clone(), entry]);
+        assert!(tool_result_shape("agent.memory.entry.list", &page, 64).is_err());
+    }
+}
+
+// Temporary native plaintext has one renderer for HUMAN and governed AGENT reads.
+// This value is neither serializable nor a persisted recovery authority.
+struct ReadResult {
+    value: Value,
+    plaintext_bytes: Option<usize>,
+    outcome: &'static str,
+    evidence: Vec<crate::audit::Evidence>,
+}
+
+fn observed_result(
+    installation: Uuid,
+    workspace: Uuid,
+    operation: Uuid,
+    listing: bool,
+    slug: &str,
+    observed: Result<Observed, ObserveError>,
+    mut evidence: Vec<crate::audit::Evidence>,
+) -> Result<ReadResult, Refusal> {
+    let mut result = json!({"installationResourceId": installation, "workspaceId": workspace,
         "operationId": operation});
-    let mut evidence = vec![crate::audit::Evidence::new(
-        EvidenceKind::PlatformSessionId,
-        ctx.session_id,
-    )];
     let outcome;
     let plaintext_bytes;
     if listing {
@@ -805,143 +1586,17 @@ async fn management_result(
         )
         .map_err(|_| unavailable("Memory read 不可编码"))?;
     }
-    // Do not expose already decrypted data after a fresh permission failure.
-    read_permission(state, ctx, &binding, &definition).await?;
-    crate::audit::append(
-        &mut tx,
-        crate::audit::AuditEntry {
-            event_key: format!("memory:{operation}"),
-            tenant_id: Some(ctx.tenant_id),
-            workspace_id: Some(binding.workspace_id),
-            operation_id: operation,
-            event_type: "ACCESS",
-            human_identity_id: Some(ctx.human_identity_id),
-            initiator_principal_id: Some(ctx.tenant_principal_id),
-            actor_principal_id: Some(ctx.tenant_principal_id),
-            action_key: action,
-            action_version: definition.version,
-            component_type_key: "agent.installation",
-            target_type: Some("RESOURCE"),
-            target_id: Some(installation),
-            parameter_hash: &digest,
-            decision: "ALLOW",
-            result_code: outcome,
-            result_exposure: "NONE",
-            evidence_refs: evidence.clone(),
-            correlation_id: operation,
-        },
-    )
-    .await?;
-    let usage_ids = if let Some(bytes) = plaintext_bytes {
-        record_memory_usage(&mut tx, &ae, &billing, bytes, outcome, &evidence).await?
-    } else {
-        Vec::new()
-    };
-    crate::governance::record_dispatch(
-        &mut tx,
-        ae.id,
-        definition.audit_class(),
-        if plaintext_bytes.is_some() {
-            Ok(())
-        } else {
-            Err(StatusCode::SERVICE_UNAVAILABLE)
-        },
+    Ok(ReadResult {
+        value: result,
+        plaintext_bytes,
+        outcome,
         evidence,
-    )
-    .await?;
-    tx.commit().await?;
-    if !usage_ids.is_empty() {
-        let settled = tokio::time::timeout(
-            state.memory_service.agent_memory.read_timeout,
-            confirm_memory_usage(state, &ae, &usage_ids),
-        )
-        .await;
-        if !matches!(settled, Ok(Ok(true))) {
-            return Err(unavailable(
-                "BILLING_UNAVAILABLE: Memory 计量未获原生存储证据",
-            ));
-        }
-    }
-    // Delivery released the original transaction. Reacquire the SAME scope and
-    // current session/owner/read authority before disclosing any plaintext.
-    let mut tx = state.pool.begin().await?;
-    let current = lock_read_context(ctx, installation, &mut tx).await?;
-    if current.workspace_id != binding.workspace_id
-        || current.agent_pubkey != binding.agent_pubkey
-        || current.counterparty_pubkey != binding.counterparty_pubkey
-        || current.resource_version != binding.resource_version
-        || current.memory_version != binding.memory_version
-        || current.agent_locator != binding.agent_locator
-        || current.agent_secret_version != binding.agent_secret_version
-        || current.counterparty_locator != binding.counterparty_locator
-        || current.counterparty_secret_version != binding.counterparty_secret_version
-        || current.normalized_host != binding.normalized_host
-        || current.nip11_snapshot_digest != binding.nip11_snapshot_digest
-    {
-        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
-    }
-    if plaintext_bytes.is_some() && memory_billing(&mut tx, state, &current).await? != billing {
-        return Err(unavailable("BILLING_UNAVAILABLE: Memory 计量映射已变化"));
-    }
-    if plaintext_bytes.is_some() {
-        tokio::time::timeout(
-            state.memory_service.agent_memory.read_timeout,
-            read_counterparty(&state.memory_service, &current),
-        )
-        .await
-        .map_err(|_| unavailable("Memory disclosure 身份不可查证"))?
-        .map_err(|_| unavailable("Memory disclosure 身份不可查证"))?;
-    }
-    let revision = read_permission(state, ctx, &current, &definition).await?;
-    let session_current: bool = sqlx::query_scalar(
-        "select exists(select 1 from identity.platform_session
-        where id=$1 and status='ACTIVE' and expires_at>clock_timestamp())",
-    )
-    .bind(ctx.session_id)
-    .fetch_one(&mut *tx)
-    .await?;
-    if !session_current {
-        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
-    }
-    crate::audit::append(
-        &mut tx,
-        crate::audit::AuditEntry {
-            event_key: format!("memory:{operation}:disclosure"),
-            tenant_id: Some(ctx.tenant_id),
-            workspace_id: Some(current.workspace_id),
-            operation_id: operation,
-            event_type: "ACCESS",
-            human_identity_id: Some(ctx.human_identity_id),
-            initiator_principal_id: Some(ctx.tenant_principal_id),
-            actor_principal_id: Some(ctx.tenant_principal_id),
-            action_key: action,
-            action_version: definition.version,
-            component_type_key: "agent.installation",
-            target_type: Some("RESOURCE"),
-            target_id: Some(installation),
-            parameter_hash: &digest,
-            decision: "ALLOW",
-            result_code: outcome,
-            result_exposure: if plaintext_bytes.is_some() {
-                "READ"
-            } else {
-                "NONE"
-            },
-            evidence_refs: vec![crate::audit::Evidence::new(
-                EvidenceKind::SpicedbZedtoken,
-                revision,
-            )],
-            correlation_id: operation,
-        },
-    )
-    .await?;
-    tx.commit().await?;
-    Ok(result)
+    })
 }
 
 async fn memory_billing(
     conn: &mut PgConnection,
-    state: &crate::bff::BffState,
+    state: &ServiceState,
     binding: &Binding,
 ) -> Result<Value, Refusal> {
     let row: Option<(String, String, String, i32)> = sqlx::query_as(
@@ -953,14 +1608,13 @@ async fn memory_billing(
     .await?;
     let (customer, namespace, prefix, version) =
         row.ok_or_else(|| unavailable("BILLING_UNAVAILABLE: Memory 缺真实 Customer binding"))?;
-    if namespace != state.memory_service.openmeter.namespace() {
+    if namespace != state.openmeter.namespace() {
         return Err(unavailable("BILLING_UNAVAILABLE: Memory namespace 不匹配"));
     }
     let subject = format!("{prefix}{}", binding.installation_resource_id);
     let meters = tokio::time::timeout(
-        state.memory_service.agent_memory.read_timeout,
+        state.agent_memory.read_timeout,
         state
-            .memory_service
             .openmeter
             .memory_read_meters(binding.tenant_id, &customer, &subject),
     )
@@ -1001,6 +1655,17 @@ async fn record_memory_usage(
         "slug_digest":ae.parameters.as_ref().and_then(|p| p.get("slugDigest"))
             .ok_or_else(|| unavailable("Memory read 缺冻结 slug digest"))?,
         "read_outcome":outcome,"native_event_ids":heads});
+    let invocation = ae
+        .parameters
+        .as_ref()
+        .and_then(|p| p.get("invocationId"))
+        .map(|value| {
+            value
+                .as_str()
+                .and_then(|v| Uuid::parse_str(v).ok())
+                .ok_or_else(|| unavailable("Memory child invocation attribution invalid"))
+        })
+        .transpose()?;
     let mut ids = Vec::new();
     for meter in meters {
         let quantity = match meter.key.as_str() {
@@ -1017,25 +1682,23 @@ async fn record_memory_usage(
         sqlx::query("insert into outbox.usage_event
             (id,operation_id,tenant_id,workspace_id,openmeter_customer_id,agent_installation_resource_id,
              source_type,source_id,meter_key,subject_key,quantity,occurred_at,dimensions,openmeter_event_id,event,
-             settlement_status,openmeter_namespace)
-            values($1,$2,$3,$4,$5,$6,'BUZZ_AGENT_MEMORY',$7,$8,$9,$10,$11,$12,$1,$13,'PENDING_PUBLISH',$14)")
+             settlement_status,openmeter_namespace,invocation_id)
+            values($1,$2,$3,$4,$5,$6,'BUZZ_AGENT_MEMORY',$7,$8,$9,$10,$11,$12,$1,$13,'PENDING_PUBLISH',$14,$15)")
             .bind(id).bind(ae.operation_id).bind(ae.tenant_id).bind(ae.workspace_id)
             .bind(billing["customer_id"].as_str()).bind(ae.target_id).bind(ae.id).bind(meter.key)
             .bind(billing["subject"].as_str()).bind(quantity).bind(occurred).bind(&dimensions).bind(event)
-            .bind(billing["namespace"].as_str()).execute(&mut **tx).await?;
+            .bind(billing["namespace"].as_str()).bind(invocation).execute(&mut **tx).await?;
         ids.push(id);
     }
     Ok(ids)
 }
 
 async fn confirm_memory_usage(
-    state: &crate::bff::BffState,
+    state: &ServiceState,
     ae: &crate::governance::Execution,
     ids: &[Uuid],
 ) -> Result<bool, &'static str> {
-    if !crate::gateway_usage::settle_events(&state.pool, ids, &state.memory_service.openmeter)
-        .await?
-    {
+    if !crate::gateway_usage::settle_events(&state.pool, ids, &state.openmeter).await? {
         return Ok(false);
     }
     let events: Vec<(Uuid, Value, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
@@ -1055,7 +1718,6 @@ async fn confirm_memory_usage(
     }
     for (_, event, stored_at) in events {
         let evidence = state
-            .memory_service
             .openmeter
             .stored_usage(&event)
             .await

@@ -14,6 +14,32 @@ use crate::spicedb::{Consistency, Relationship, RelationshipFilter, Write};
 
 pub(crate) const GRANT: &str = "agent.installation.execute.grant";
 pub(crate) const REVOKE: &str = "agent.installation.execute.revoke";
+pub(crate) const READ_GRANT: &str = "resource.grant_read";
+pub(crate) const READ_REVOKE: &str = "resource.revoke_read";
+
+pub(crate) fn is_grant(action: &str) -> bool {
+    matches!(action, GRANT | READ_GRANT)
+}
+
+fn is_read(action: &str) -> bool {
+    matches!(action, READ_GRANT | READ_REVOKE)
+}
+
+fn relation(action: &str) -> &'static str {
+    if is_read(action) {
+        "reader"
+    } else {
+        "executor"
+    }
+}
+
+fn permission(action: &str) -> &'static str {
+    if is_read(action) {
+        "read"
+    } else {
+        "execute"
+    }
+}
 
 #[derive(sqlx::FromRow)]
 pub(crate) struct Installation {
@@ -48,7 +74,8 @@ async fn installation(
           and (r.projection_action_execution_id is null or exists (
             select 1 from admission.action_execution ae where ae.id=r.projection_action_execution_id
               and ae.tenant_id=r.tenant_id and ae.workspace_id=w.id and ae.target_id=r.id
-              and ae.action_key in ('agent.installation.execute.grant','agent.installation.execute.revoke')))
+              and ae.action_key in ('agent.installation.execute.grant','agent.installation.execute.revoke',
+                'resource.grant_read','resource.revoke_read')))
         {}", if lock { "for update of r,i,w,a,p,tm" } else { "" }))
         .bind(id).bind(tenant).fetch_optional(conn).await
 }
@@ -69,7 +96,10 @@ pub(super) async fn target(
     frozen: Option<Uuid>,
     lock: bool,
 ) -> Result<Target, Refusal> {
-    let grant = sem == Semantic::AgentInstallationExecuteGrant;
+    let grant = matches!(
+        sem,
+        Semantic::AgentInstallationExecuteGrant | Semantic::ResourceGrantRead
+    );
     if def.target_type != "RESOURCE"
         || def.permission_object_type != "resource"
         || def.permission != "share"
@@ -111,6 +141,7 @@ pub(super) async fn target(
     if Some(row.version) != params.resource_version
         || frozen.is_some_and(|v| v != row.id)
         || (grant && row.projection_action_execution_id.is_some())
+        || (is_read(&def.action_key) && params.principal_id != Some(row.agent_principal_id))
     {
         return Err(conflict());
     }
@@ -123,7 +154,13 @@ pub(super) async fn target(
             .bind(tenant)
             .fetch_one(&mut *conn)
             .await?;
-            if key != GRANT {
+            if key
+                != if is_read(&def.action_key) {
+                    READ_GRANT
+                } else {
+                    GRANT
+                }
+            {
                 return Err(conflict());
             }
         }
@@ -158,6 +195,7 @@ async fn human(
     conn: &mut PgConnection,
     row: &Installation,
     principal: Uuid,
+    action: &str,
 ) -> Result<(), Refusal> {
     if !crate::agent_definition::active_owner(conn, row.tenant_id, principal).await? {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
@@ -203,7 +241,9 @@ async fn human(
         .await?;
     }
     checked(g, "resource", row.id, "share", principal).await?;
-    checked(g, "resource", row.id, "execute", principal).await?;
+    if !is_read(action) {
+        checked(g, "resource", row.id, "execute", principal).await?;
+    }
     Ok(())
 }
 
@@ -240,6 +280,7 @@ pub(super) async fn gate(
     tenant: Uuid,
     principal: Uuid,
     params: &Params,
+    action: &str,
 ) -> Result<(), Refusal> {
     let row = installation(
         conn,
@@ -253,7 +294,10 @@ pub(super) async fn gate(
         return Err(conflict());
     }
     projection(g, &row).await?;
-    human(g, conn, &row, principal).await
+    if is_read(action) && params.principal_id != Some(row.agent_principal_id) {
+        return Err(conflict());
+    }
+    human(g, conn, &row, principal, action).await
 }
 
 pub(super) async fn evaluate_target(
@@ -273,7 +317,7 @@ pub(super) async fn evaluate_target(
 
 /// The only TARGET_OWNER consumer introduced here. No fallback to current owner.
 pub(super) fn owner_policy(action: &str, policy: &super::Policy) -> bool {
-    action == GRANT
+    is_grant(action)
         && policy.owner_requirement == "TARGET_OWNER"
         && policy.self_approval == "ALLOW"
         && policy.role_requirements.is_empty()
@@ -284,7 +328,7 @@ pub(super) fn frozen_owner(ae: &Execution) -> Result<contracts::AffectedOwnerRef
     let owner: contracts::AffectedOwnerRef =
         serde_json::from_value(parameters["permissionApprovalOwner"].clone())
             .map_err(|_| unavailable())?;
-    if ae.action_key != GRANT
+    if !is_grant(&ae.action_key)
         || !owner_reference_matches(&owner, ae.target_id, ae.frozen_target_version())
     {
         return Err(conflict());
@@ -343,7 +387,7 @@ pub(crate) async fn approval_owner_eligible(
     let Some(ae) = super::load_execution(&g.pool, id).await? else {
         return Ok(false);
     };
-    if ae.tenant_id != tenant || ae.action_key != GRANT {
+    if ae.tenant_id != tenant || !is_grant(&ae.action_key) {
         return Ok(false);
     }
     let mut tx = g.pool.begin().await?;
@@ -415,13 +459,15 @@ pub(super) async fn prepare_revoke(
     tx: &mut Transaction<'_, Postgres>,
     actor: Actor,
     params: &Params,
+    action: &str,
 ) -> Result<Vec<Uuid>, Refusal> {
     let id = params.resource_id.ok_or_else(conflict)?;
     let ids: Vec<Uuid> = sqlx::query_scalar("select id from admission.action_execution
-        where tenant_id=$1 and target_id=$2 and action_key='agent.installation.execute.grant'
+        where tenant_id=$1 and target_id=$2 and action_key=$3
           and (gate_state in ('EVALUATING','WAITING') or (gate_state='ALLOWED' and dispatch_state in ('NOT_DISPATCHED','UNKNOWN')))
         order by id for update")
-        .bind(actor.tenant_id).bind(id).fetch_all(&mut **tx).await?;
+        .bind(actor.tenant_id).bind(id).bind(if is_read(action) { READ_GRANT } else { GRANT })
+        .fetch_all(&mut **tx).await?;
     if !crate::roles::lock_tenant(tx, actor.tenant_id).await? {
         return Err(conflict());
     }
@@ -432,7 +478,10 @@ pub(super) async fn prepare_revoke(
         return Err(conflict());
     }
     projection(g, &row).await?;
-    human(g, tx, &row, actor.principal_id).await?;
+    if is_read(action) && params.principal_id != Some(row.agent_principal_id) {
+        return Err(conflict());
+    }
+    human(g, tx, &row, actor.principal_id, action).await?;
     for id in &ids {
         let ae = lock_execution(tx, *id).await?;
         let def = exact_definition(&g.pool, &ae.action_key, ae.action_version).await?;
@@ -500,7 +549,7 @@ pub(super) async fn prewrite(
     Ok(())
 }
 
-async fn held(g: &Governance, row: &Installation) -> Result<bool, Refusal> {
+async fn held(g: &Governance, row: &Installation, relation: &str) -> Result<bool, Refusal> {
     let resource = row.id.to_string();
     let agent = row.agent_principal_id.to_string();
     let rels = g
@@ -509,7 +558,7 @@ async fn held(g: &Governance, row: &Installation) -> Result<bool, Refusal> {
             &RelationshipFilter {
                 object_type: "resource",
                 object_id: Some(&resource),
-                relation: Some("executor"),
+                relation: Some(relation),
                 subject_principal: Some(&agent),
             },
             g.cfg.relationship_page,
@@ -520,7 +569,7 @@ async fn held(g: &Governance, row: &Installation) -> Result<bool, Refusal> {
         || rels.iter().any(|r| {
             r.object_type != "resource"
                 || r.object_id != resource
-                || r.relation != "executor"
+                || r.relation != relation
                 || r.subject_principal != agent
         })
     {
@@ -583,7 +632,7 @@ pub(super) async fn dispatch(
     }
     projection(g, &row).await?;
     let fresh = async {
-        human(g, &mut tx, &row, ae.initiator_principal_id).await?;
+        human(g, &mut tx, &row, ae.initiator_principal_id, &ae.action_key).await?;
         if grant && first {
             approved(g, &mut tx, &ae).await?;
         }
@@ -620,7 +669,7 @@ pub(super) async fn dispatch(
         let rel = Relationship {
             object_type: "resource".into(),
             object_id: row.id.to_string(),
-            relation: "executor".into(),
+            relation: relation(&ae.action_key).into(),
             subject_principal: row.agent_principal_id.to_string(),
         };
         match g
@@ -640,7 +689,7 @@ pub(super) async fn dispatch(
         .check(
             "resource",
             &row.id.to_string(),
-            "execute",
+            permission(&ae.action_key),
             &row.agent_principal_id.to_string(),
             token.as_ref().map_or(Consistency::FullyConsistent, |s| {
                 Consistency::AtLeastAsFresh(s.as_str())
@@ -648,7 +697,10 @@ pub(super) async fn dispatch(
         )
         .await
         .map_err(|_| unavailable())?;
-    if c.zed_token.is_empty() || held(g, &row).await? != grant || c.allowed != grant {
+    if c.zed_token.is_empty()
+        || held(g, &row, relation(&ae.action_key)).await? != grant
+        || c.allowed != grant
+    {
         audit(
             &mut tx,
             &ae,
@@ -670,11 +722,16 @@ pub(super) async fn dispatch(
     if !grant
         && sqlx::query_scalar::<_, bool>(
             "select exists(select 1 from admission.action_execution
-        where tenant_id=$1 and target_id=$2 and action_key='agent.installation.execute.grant'
+        where tenant_id=$1 and target_id=$2 and action_key=$3
           and gate_state='REVOKED' and dispatch_state='UNKNOWN')",
         )
         .bind(ae.tenant_id)
         .bind(ae.target_id)
+        .bind(if is_read(&ae.action_key) {
+            READ_GRANT
+        } else {
+            GRANT
+        })
         .fetch_one(&mut *tx)
         .await?
     {
@@ -711,8 +768,10 @@ pub(super) async fn dispatch(
     evidence.push(crate::audit::Evidence::new(
         EvidenceKind::SpicedbRelationship,
         format!(
-            "resource:{}#executor@principal:{}",
-            row.id, row.agent_principal_id
+            "resource:{}#{}@principal:{}",
+            row.id,
+            relation(&ae.action_key),
+            row.agent_principal_id
         ),
     ));
     audit(
@@ -722,7 +781,11 @@ pub(super) async fn dispatch(
         "permission-outcome",
         "OUTCOME",
         "ALLOW",
-        if grant {
+        if is_read(&ae.action_key) && grant {
+            "INSTALLATION_READ_GRANTED"
+        } else if is_read(&ae.action_key) {
+            "INSTALLATION_READ_REVOKED"
+        } else if grant {
             "INSTALLATION_EXECUTE_GRANTED"
         } else {
             "INSTALLATION_EXECUTE_REVOKED"
@@ -744,18 +807,38 @@ pub(crate) async fn view(
     principal: Uuid,
     id: Uuid,
 ) -> Result<Option<Value>, Refusal> {
+    permission_view(g, tenant, principal, id, GRANT, REVOKE).await
+}
+
+pub(crate) async fn read_view(
+    g: &Governance,
+    tenant: Uuid,
+    principal: Uuid,
+    id: Uuid,
+) -> Result<Option<Value>, Refusal> {
+    permission_view(g, tenant, principal, id, READ_GRANT, READ_REVOKE).await
+}
+
+async fn permission_view(
+    g: &Governance,
+    tenant: Uuid,
+    principal: Uuid,
+    id: Uuid,
+    grant_key: &str,
+    revoke_key: &str,
+) -> Result<Option<Value>, Refusal> {
     let mut conn = g.pool.acquire().await?;
     let Some(row) = installation(&mut conn, tenant, id, false).await? else {
         return Ok(None);
     };
     projection(g, &row).await?;
-    let requested = held(g, &row).await?;
+    let requested = held(g, &row, relation(grant_key)).await?;
     let c = g
         .spicedb
         .check(
             "resource",
             &id.to_string(),
-            "execute",
+            permission(grant_key),
             &row.agent_principal_id.to_string(),
             Consistency::FullyConsistent,
         )
@@ -764,13 +847,13 @@ pub(crate) async fn view(
     if c.zed_token.is_empty() {
         return Err(unavailable());
     }
-    let can_manage = match human(g, &mut conn, &row, principal).await {
+    let can_manage = match human(g, &mut conn, &row, principal, grant_key).await {
         Ok(()) => true,
         Err(Refusal::Denied(_)) => false,
         Err(e) => return Err(e),
     };
     let mut enabled = Vec::new();
-    for key in [GRANT, REVOKE] {
+    for key in [grant_key, revoke_key] {
         enabled.push(
             crate::capability_registry::action_exposed(key)
                 && super::active_definition(&g.pool, key).await?.is_some(),
@@ -781,7 +864,7 @@ pub(crate) async fn view(
     "canRevoke":can_manage && enabled[1] && match row.projection_action_execution_id {
         None => true,
         Some(pending) => sqlx::query_scalar::<_, String>("select action_key from admission.action_execution where id=$1 and tenant_id=$2")
-            .bind(pending).bind(tenant).fetch_one(&mut *conn).await? == GRANT,
+            .bind(pending).bind(tenant).fetch_one(&mut *conn).await? == grant_key,
     }});
     if let Some(pending) = row.projection_action_execution_id {
         result["pendingActionExecutionId"] = json!(pending);
@@ -794,7 +877,7 @@ mod approval_tests {
     use super::*;
 
     #[test]
-    fn only_exact_installation_grant_resolves_target_owner() {
+    fn only_exact_installation_permission_grants_resolve_target_owner() {
         let policy = super::super::Policy {
             id: Uuid::new_v4(),
             version: 1,
@@ -804,12 +887,8 @@ mod approval_tests {
             expires_in_seconds: 1,
         };
         assert!(owner_policy(GRANT, &policy));
-        for action in [
-            REVOKE,
-            "resource.grant_read",
-            "resource.transfer_owner",
-            "unknown",
-        ] {
+        assert!(owner_policy(READ_GRANT, &policy));
+        for action in [REVOKE, READ_REVOKE, "resource.transfer_owner", "unknown"] {
             assert!(!owner_policy(action, &policy));
         }
         for requirement in ["NONE", "ALL_AFFECTED_OWNERS", "UNKNOWN"] {

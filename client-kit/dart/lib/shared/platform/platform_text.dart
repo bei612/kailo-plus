@@ -5,6 +5,25 @@ import 'dart:io' show Platform;
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  capabilitiesTitle,
+  capabilitiesBoundary,
+  capabilitiesDocument,
+  capabilitiesDocumentHelp,
+  capabilitiesInvalid,
+  capabilitiesRegister,
+  capabilitiesApprove,
+  capabilitiesDeprecate,
+  capabilitiesRegisterWarning,
+  capabilitiesApproveWarning,
+  capabilitiesDeprecateWarning,
+  capabilitiesNone,
+  capabilitiesKey,
+  capabilitiesSchemaDigest,
+  capabilitiesSuiteDigest,
+  capabilitiesDraft,
+  capabilitiesActive,
+  capabilitiesDeprecated,
+  capabilitiesRetired,
   platformTitle,
   platformWorkspace,
   platformWorkspaces,
@@ -138,6 +157,14 @@ enum PlatformMessageKey {
   agentsVersionManualAssignment,
   agentsVersionCapabilities,
   agentsVersionToolsUnavailable,
+  agentsToolsTitle,
+  agentsToolsBoundary,
+  agentsToolsNone,
+  agentsToolsProvisioning,
+  agentsToolsAvailable,
+  agentsToolsUnavailable,
+  agentsToolsSelected,
+  agentsToolsRemove,
   agentsVersionSaveReview,
   agentsVersionPublishReview,
   agentsVersionRetireReview,
@@ -153,6 +180,15 @@ enum PlatformMessageKey {
   agentsInstallationNotReady,
   agentsDelegationOpen,
   agentsExecuteTitle,
+  agentsReadTitle,
+  agentsReadBoundary,
+  agentsReadEffective,
+  agentsReadNotEffective,
+  agentsReadUnverified,
+  agentsReadGrant,
+  agentsReadRevoke,
+  agentsReadApproval,
+  agentsReadRevokeWarning,
   agentsExecuteOpen,
   agentsExecuteBoundary,
   agentsExecuteEffective,
@@ -571,6 +607,64 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.capabilitiesTitle: ('Capability contracts', '能力契约'),
+  PlatformMessageKey.capabilitiesBoundary: (
+    'Catalog contracts define replaceable component capabilities. An active contract does not activate a component, binding or Tool permission.',
+    'Catalog 契约定义可替换的组件能力。契约生效不代表组件、binding 或 Tool 权限已启用。',
+  ),
+  PlatformMessageKey.capabilitiesDocument: (
+    'Registration document (JSON)',
+    '登记文档（JSON）',
+  ),
+  PlatformMessageKey.capabilitiesDocumentHelp: (
+    'Provide the complete registration document, including actual schemaDocuments and testVectorsJson. Core validates and fixes their digests; supplying hashes alone is insufficient.',
+    '提交完整登记文档，包含实际 schemaDocuments 和 testVectorsJson。Core 校验并固定摘要，不能只提供摘要。',
+  ),
+  PlatformMessageKey.capabilitiesInvalid: (
+    'The registration document is not valid JSON or lacks required contract fields.',
+    '登记文档不是有效 JSON，或缺少必需的契约字段。',
+  ),
+  PlatformMessageKey.capabilitiesRegister: (
+    'Review contract registration',
+    '预览契约登记',
+  ),
+  PlatformMessageKey.capabilitiesApprove: (
+    'Request contract approval',
+    '申请批准契约',
+  ),
+  PlatformMessageKey.capabilitiesDeprecate: (
+    'Review contract deprecation',
+    '预览弃用契约',
+  ),
+  PlatformMessageKey.capabilitiesRegisterWarning: (
+    'Registration creates a draft only. It does not activate a capability or install a component.',
+    '登记只创建草稿，不激活能力，也不安装组件。',
+  ),
+  PlatformMessageKey.capabilitiesApproveWarning: (
+    'Another Catalog tenant administrator must approve. Submission is not approval; an active contract is immutable.',
+    '必须由另一位 Catalog Tenant 管理员批准。提交不构成批准；生效后的契约不可变。',
+  ),
+  PlatformMessageKey.capabilitiesDeprecateWarning: (
+    'Reject new releases using this contract. Existing bindings remain available; their data is not deleted.',
+    '拒绝新 release 使用此契约；已有 binding 继续可用，不删除其数据。',
+  ),
+  PlatformMessageKey.capabilitiesNone: (
+    'No capability contracts on this page.',
+    '本页没有能力契约。',
+  ),
+  PlatformMessageKey.capabilitiesKey: ('Category / version', '能力类别／版本'),
+  PlatformMessageKey.capabilitiesSchemaDigest: (
+    'Schema set digest',
+    'Schema 集合摘要',
+  ),
+  PlatformMessageKey.capabilitiesSuiteDigest: (
+    'Conformance suite digest',
+    '一致性套件摘要',
+  ),
+  PlatformMessageKey.capabilitiesDraft: ('Draft', '草稿'),
+  PlatformMessageKey.capabilitiesActive: ('Active contract', '契约已生效'),
+  PlatformMessageKey.capabilitiesDeprecated: ('Deprecated', '已弃用'),
+  PlatformMessageKey.capabilitiesRetired: ('Retired', '已退役'),
   PlatformMessageKey.platformTitle: ('Platform', '平台'),
   PlatformMessageKey.platformWorkspace: ('Workspace', '工作区'),
   PlatformMessageKey.platformWorkspaces: ('Workspaces', '工作区'),
@@ -905,9 +999,32 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '声明的能力合同',
   ),
   PlatformMessageKey.agentsVersionToolsUnavailable: (
-    'This implementation has no governed Skill/Tool producer; new drafts declare neither. Capability requirements do not grant permissions or install a provider.',
-    '当前实现尚无受治理的 Skill/Tool 产出链，新草稿不声明两者。能力需求不授予权限，也不安装实现。',
+    'Skill publication is unavailable. Tool references request capabilities; they do not grant permissions, bind an installation or authorize execution.',
+    'Skill 发布尚不可用。Tool 引用仅声明需求，不授予权限、不建立安装绑定，也不授权执行。',
   ),
+  PlatformMessageKey.agentsToolsTitle: ('Platform tools', '平台原生工具'),
+  PlatformMessageKey.agentsToolsBoundary: (
+    'Read-only tool catalog. A version reference grants no memory access, ToolBinding or delegation. Every invocation is admitted separately.',
+    '只读工具目录。版本引用不授予记忆读取权限、ToolBinding 或委托。每次调用仍须单独准入。',
+  ),
+  PlatformMessageKey.agentsToolsNone: (
+    'No visible registered tools on this page.',
+    '本页没有可见的已登记工具。',
+  ),
+  PlatformMessageKey.agentsToolsProvisioning: (
+    'Registration awaiting verification',
+    '登记等待查证',
+  ),
+  PlatformMessageKey.agentsToolsAvailable: (
+    'May be requested in a version',
+    '可在版本中声明需求',
+  ),
+  PlatformMessageKey.agentsToolsUnavailable: (
+    'Unavailable for this version; remove the reference or verify its permission and registration.',
+    '此版本当前无法使用该引用；请移除，或查证其权限与登记状态。',
+  ),
+  PlatformMessageKey.agentsToolsSelected: ('Requested tools', '声明的工具需求'),
+  PlatformMessageKey.agentsToolsRemove: ('Remove reference', '移除引用'),
   PlatformMessageKey.agentsVersionSaveReview: (
     'Save only this draft content. Core validates the declared sources and freezes its hash; installations and runtime projections are unchanged. Management quota/capacity is NONE; scope and permission are rechecked.',
     '仅保存此草稿正文。Core 查证声明来源并固定摘要；已有安装和运行投影不变。管理额度/容量为 NONE，scope 与权限仍重查。',
@@ -961,6 +1078,42 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsExecuteTitle: (
     'Agent self-installation execute permission',
     'Agent 自身安装执行权限',
+  ),
+  PlatformMessageKey.agentsReadTitle: (
+    'Agent self-installation memory read permission',
+    'Agent 自身安装记忆读取权限',
+  ),
+  PlatformMessageKey.agentsReadBoundary: (
+    'This grants this agent read access only to its own installation memory. It grants no Tool consume permission, delegation or access to another installation.',
+    '仅授予此 Agent 读取自身安装记忆的权限，不授予 Tool consume、委托或其他安装的访问权限。',
+  ),
+  PlatformMessageKey.agentsReadEffective: (
+    'Fresh memory read check passed for this installation',
+    '自身安装记忆 fresh read 已通过',
+  ),
+  PlatformMessageKey.agentsReadNotEffective: (
+    'Self-installation memory read is not effective',
+    '自身安装记忆读取权限未生效',
+  ),
+  PlatformMessageKey.agentsReadUnverified: (
+    'Memory read permission cannot be verified. No permission action is offered.',
+    '记忆读取权限不可查证，不提供权限操作。',
+  ),
+  PlatformMessageKey.agentsReadGrant: (
+    'Review memory read grant',
+    '预览授予记忆读取权限',
+  ),
+  PlatformMessageKey.agentsReadRevoke: (
+    'Review memory read revocation',
+    '预览撤销记忆读取权限',
+  ),
+  PlatformMessageKey.agentsReadApproval: (
+    'The exact installation owner must approve. Submission does not grant memory read permission.',
+    '须由此安装的确切 owner 审批，提交不构成记忆读取授权。',
+  ),
+  PlatformMessageKey.agentsReadRevokeWarning: (
+    'Revoke only this agent\'s self-installation reader relationship. Pending grants are invalidated; each subsequent memory read must pass a fresh permission check.',
+    '仅撤销此 Agent 自身安装的 reader 关系。待处理授予会失效；后续每次记忆读取必须重新通过权限校验。',
   ),
   PlatformMessageKey.agentsExecuteOpen: (
     'View self-installation permission',

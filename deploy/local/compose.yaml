@@ -288,9 +288,9 @@ services:
     env_file:
       - ./secrets/buzz-relay.env
     ports:
-      # operator 面的签名 URL 必须逐字符等于 RELAY_OPERATOR_API_ORIGIN，
-      # 因此本机核验也要用同一主机名与端口；仅绑回环。
-      - "127.0.0.1:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}"
+      # Desktop/Mobile 直连的协作入口，复用公开绑定地址；Community Host 与
+      # operator 签名 URL 保持原值，宿主发布地址不参与身份或签名目标计算。
+      - "${PUBLIC_BIND_ADDR:?必须显式提供公开入口发布地址}:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}:${BUZZ_RELAY_PORT:?必须显式提供，禁止硬编码}"
     healthcheck:
       # 镜像里只有 curl，没有 nc。/health 在主路由上（router.rs 的 route("/health")），
       # 不在 BUZZ_HEALTH_PORT 那个探针监听上。
@@ -573,6 +573,22 @@ services:
       # 「这张票是开给 Core 的」与「是谁来敲的」是两件事，两条都要核。
       SERVICE_OIDC_AUDIENCE: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
       SERVICE_CALLER_CLIENT_ID: ${OIDC_WORKER_CLIENT_ID:?必须显式提供，禁止硬编码}
+      # DD-105: optional as one complete group, never a Worker credential alias.
+      GATEWAY_SERVICE_ISSUER: ${GATEWAY_SERVICE_ISSUER:-}
+      GATEWAY_SERVICE_AUDIENCE: ${GATEWAY_SERVICE_AUDIENCE:-}
+      GATEWAY_SERVICE_CALLER_ID: ${GATEWAY_SERVICE_CALLER_ID:-}
+      GATEWAY_SERVICE_JWKS_FILE: ${GATEWAY_SERVICE_JWKS_FILE:-}
+      GATEWAY_SERVICE_MAX_TOKEN_SECONDS: ${GATEWAY_SERVICE_MAX_TOKEN_SECONDS:-}
+      GATEWAY_SERVICE_SIGNING_KEY_FILE: ${GATEWAY_SERVICE_SIGNING_KEY_FILE:-}
+      GATEWAY_SERVICE_KEY_ID: ${GATEWAY_SERVICE_KEY_ID:-}
+      GATEWAY_SERVICE_TOKEN_SECONDS: ${GATEWAY_SERVICE_TOKEN_SECONDS:-}
+      AGENT_TOOL_MCP_URL: ${AGENT_TOOL_MCP_URL:-}
+      AGENT_TOOL_EXT_MCP_URL: ${AGENT_TOOL_EXT_MCP_URL:-}
+      AGENT_TOOL_SESSION_ISSUER: ${AGENT_TOOL_SESSION_ISSUER:-}
+      AGENT_TOOL_SESSION_AUDIENCE: ${AGENT_TOOL_SESSION_AUDIENCE:-}
+      AGENT_TOOL_SESSION_TOKEN_SECONDS: ${AGENT_TOOL_SESSION_TOKEN_SECONDS:-}
+      AGENT_TOOL_GATEWAY_URL: ${AGENT_TOOL_GATEWAY_URL:-}
+      AGENT_TOOL_GATEWAY_NAME: ${AGENT_TOOL_GATEWAY_NAME:-}
       # SecretRef 解析（DD-70）。role_id/secret_id 经 env_file 投递，
       # 由 secret-store-init.sh 生成并被 gitignore；不进 .env、不上命令行。
       OPENBAO_ADDR: ${OPENBAO_ADDR:?必须显式提供，禁止硬编码}
@@ -753,7 +769,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:12dea304f8d399c5a27cee861efb97eb5222aff43a9d0e0eac425455a2b30aa1
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:fd617659f3545e6f1d57d9fb12317220ee5ac6d1a2fcbbb56b1dee8df1ee4640
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}

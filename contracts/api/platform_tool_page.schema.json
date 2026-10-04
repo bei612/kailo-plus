@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/platform_tool_page.schema.json",
+  "title": "PlatformToolPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tools"],
+  "properties": {
+    "tools": {"type": "array", "items": {"$ref": "platform_tool_view.schema.json"}},
+    "nextOffset": {"type": "integer", "minimum": 0}
+  }
+}

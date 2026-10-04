@@ -12,6 +12,11 @@ mod agent_policy;
 mod agent_runtime;
 mod agent_session;
 mod agent_task;
+mod agent_tool;
+mod agent_tool_mcp;
+mod agent_tool_pep;
+mod agent_tool_runtime;
+mod agent_tool_session;
 mod agent_version;
 mod agent_version_query;
 mod audit;
@@ -19,6 +24,7 @@ mod audit_views;
 mod automation;
 mod automation_query;
 mod bff;
+mod capability_contract;
 mod capability_registry;
 mod capacity;
 mod client_keys;
@@ -188,9 +194,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             role_reconcile::Config::from_env()?,
         );
 
+        let worker_service_auth = std::sync::Arc::new(service_auth::ServiceAuth::from_env()?);
+        let gateway_service_auth =
+            service_auth::GatewayServiceAuth::from_env(&worker_service_auth)?
+                .map(std::sync::Arc::new);
+        if let Some(auth) = &gateway_service_auth {
+            auth.validate_configuration()
+                .await
+                .map_err(|_| "Gateway service 公钥投递不可核验")?;
+        }
+        let agent_tool_sessions = agent_tool_session::SessionSigner::from_env(
+            &worker_service_auth,
+            gateway_service_auth.as_deref(),
+        )?
+        .map(std::sync::Arc::new);
         let service_state = service_api::ServiceState {
             pool: pool.clone(),
-            auth: std::sync::Arc::new(service_auth::ServiceAuth::from_env()?),
+            auth: worker_service_auth,
+            gateway_service_auth,
+            agent_tool_sessions,
             secrets: std::sync::Arc::clone(&secrets),
             audit: std::sync::Arc::clone(&audit),
             catalog_tenant,

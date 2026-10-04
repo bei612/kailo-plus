@@ -426,10 +426,13 @@ impl Supervisor {
 
     /// Fixed Codex 7498521d288b9b3b96ffba4eedf089d8d6e06a84,
     /// codex-rs/app-server-protocol/src/protocol/v2/thread.rs::ThreadStartParams.
-    /// Durable thread only; no environment, model fallback or credential/config override.
+    /// Durable thread only; the only override is the original, admitted MCP
+    /// server map. Session tickets remain in this RPC/config memory, never
+    /// config.toml or a persisted Profile/Workflow input.
     pub(crate) async fn start_thread(
         &self,
         projection: &RuntimeRef,
+        tool_config: &Value,
     ) -> Result<String, RuntimeError> {
         let response = self
             .call(
@@ -439,6 +442,7 @@ impl Supervisor {
                     "ephemeral":false,
                     "environments":[],
                     "allowProviderModelFallback":false,
+                    "config":tool_config,
                 }),
             )
             .await?;
@@ -446,8 +450,8 @@ impl Supervisor {
         Ok(thread_id.to_owned())
     }
 
-    /// SF-COD-09：客户端恢复只使用已持久 thread ID，不传 path/history/config。
-    /// 不启动新 turn；承重隔离仍由本进程 generation/hash 与无 environment 提供。
+    /// SF-COD-09：只恢复已持久 thread ID，不传 path/history，不启动新 turn。
+    /// Observation/cancellation never replace a live thread's MCP configuration.
     pub(crate) async fn resume_thread(
         &self,
         projection: &RuntimeRef,
@@ -463,6 +467,88 @@ impl Supervisor {
                 json!({"threadId":thread_id,"excludeTurns":true}),
             )
             .await?;
+        if isolated_thread_id(&response)? != thread_id {
+            return Err(RuntimeError::Protocol);
+        }
+        Ok(())
+    }
+
+    /// DD-105: only a fenced, certainly undispatched Invocation may refresh its
+    /// thread. Loaded resume ignores config in fixed Codex; unsubscribe ACK is
+    /// not shutdown proof. Let the native idle-unload and existing Activity
+    /// reconciliation run, then require native absence before cold resume.
+    pub(crate) async fn refresh_thread(
+        &self,
+        projection: &RuntimeRef,
+        thread_id: &str,
+        tool_config: &Value,
+    ) -> Result<(), RuntimeError> {
+        if Uuid::parse_str(thread_id).is_err()
+            || tool_config.as_object().is_none_or(|config| {
+                config.len() != 1 || config.get("mcp_servers").is_none_or(|v| !v.is_object())
+            })
+        {
+            return Err(RuntimeError::Protocol);
+        }
+        let slot = self
+            .processes
+            .lock()
+            .await
+            .get(&projection.installation_id)
+            .cloned()
+            .ok_or(RuntimeError::Unavailable)?;
+        let mut slot = slot.lock().await;
+        let process = slot.as_mut().ok_or(RuntimeError::Unavailable)?;
+        process
+            .check(projection.generation, &projection.config_hash)
+            .await?;
+        let current = process
+            .rpc(
+                "thread/read",
+                json!({"threadId":thread_id,"includeTurns":false}),
+                self.timeout,
+                self.max_message_bytes,
+            )
+            .await?;
+        if !refresh_state(&current, thread_id)? {
+            let response = process
+                .rpc(
+                    "thread/unsubscribe",
+                    json!({"threadId":thread_id}),
+                    self.timeout,
+                    self.max_message_bytes,
+                )
+                .await?;
+            if !matches!(
+                response.get("status").and_then(Value::as_str),
+                Some("unsubscribed" | "notSubscribed" | "notLoaded")
+            ) {
+                return Err(RuntimeError::Protocol);
+            }
+            // Even notLoaded here does not turn this ACK into a successful
+            // refresh. The next original Activity must observe absence.
+            return Err(RuntimeError::Unknown);
+        }
+        // Fixed native default is an unbounded complete loaded-ID list. Reject
+        // partial/unknown responses; a missing page is not proof of absence.
+        let loaded = process
+            .rpc(
+                "thread/loaded/list",
+                json!({}),
+                self.timeout,
+                self.max_message_bytes,
+            )
+            .await?;
+        require_unloaded(&loaded, thread_id)?;
+        let response = process
+            .rpc(
+                "thread/resume",
+                json!({"threadId":thread_id,"excludeTurns":true,"config":tool_config}),
+                self.timeout,
+                self.max_message_bytes,
+            )
+            .await?;
+        check_thread_projection(&response, &process.model, &process.home)?;
         if isolated_thread_id(&response)? != thread_id {
             return Err(RuntimeError::Protocol);
         }
@@ -893,6 +979,41 @@ fn check_thread_projection(response: &Value, model: &str, home: &Path) -> Result
     Ok(())
 }
 
+fn refresh_state(response: &Value, thread: &str) -> Result<bool, RuntimeError> {
+    if response.pointer("/thread/id").and_then(Value::as_str) != Some(thread) {
+        return Err(RuntimeError::Protocol);
+    }
+    match response
+        .pointer("/thread/status/type")
+        .and_then(Value::as_str)
+    {
+        Some("notLoaded") => Ok(true),
+        Some("idle") => Ok(false),
+        _ => Err(RuntimeError::Unknown),
+    }
+}
+
+fn require_unloaded(response: &Value, thread: &str) -> Result<(), RuntimeError> {
+    if response.get("nextCursor") != Some(&Value::Null) {
+        return Err(RuntimeError::Unknown);
+    }
+    let ids = response
+        .get("data")
+        .and_then(Value::as_array)
+        .ok_or(RuntimeError::Protocol)?;
+    let mut seen = std::collections::HashSet::new();
+    for value in ids {
+        let id = value.as_str().ok_or(RuntimeError::Protocol)?;
+        if Uuid::parse_str(id).is_err() || !seen.insert(id) {
+            return Err(RuntimeError::Protocol);
+        }
+        if id == thread {
+            return Err(RuntimeError::Unknown);
+        }
+    }
+    Ok(())
+}
+
 fn isolated_thread_id(response: &Value) -> Result<&str, RuntimeError> {
     let thread = response.get("thread").ok_or(RuntimeError::Protocol)?;
     let id = thread
@@ -1169,6 +1290,52 @@ fn record_native_activity(
 
 #[cfg(test)]
 mod activity_tests {
+    #[test]
+    fn mcp_refresh_requires_exact_native_idle_or_unloaded_thread() {
+        let thread = Uuid::new_v4().to_string();
+        for (status, expected) in [("idle", false), ("notLoaded", true)] {
+            assert_eq!(
+                refresh_state(
+                    &json!({"thread":{"id":thread,"status":{"type":status}}}),
+                    &thread
+                )
+                .unwrap(),
+                expected
+            );
+        }
+        for status in ["active", "systemError", "future", ""] {
+            assert!(refresh_state(
+                &json!({"thread":{"id":thread,"status":{"type":status}}}),
+                &thread
+            )
+            .is_err());
+        }
+        assert!(refresh_state(
+            &json!({"thread":{"id":Uuid::new_v4(),"status":{"type":"idle"}}}),
+            &thread
+        )
+        .is_err());
+        assert!(refresh_state(&json!({"thread":{"id":thread}}), &thread).is_err());
+    }
+
+    #[test]
+    fn mcp_refresh_requires_complete_native_unload_proof() {
+        let thread = Uuid::new_v4().to_string();
+        let other = Uuid::new_v4().to_string();
+        require_unloaded(&json!({"data":[],"nextCursor":null}), &thread).unwrap();
+        require_unloaded(&json!({"data":[other],"nextCursor":null}), &thread).unwrap();
+        for response in [
+            json!({"data":[thread],"nextCursor":null}),
+            json!({"data":[],"nextCursor":"next"}),
+            json!({"data":[]}),
+            json!({"data":[other,other],"nextCursor":null}),
+            json!({"data":["unknown"],"nextCursor":null}),
+            json!({"nextCursor":null}),
+        ] {
+            assert!(require_unloaded(&response, &thread).is_err());
+        }
+    }
+
     // Post-implementation regression: real PostgreSQL row/advisory locks plus
     // controlled stdio children; no model, production database or installation.
     #[tokio::test]
@@ -1447,6 +1614,63 @@ mod activity_tests {
             .await
             .unwrap();
         supervisor.stop(installation).await.unwrap();
+
+        // Real stdio path: an idle unsubscribe ACK is never cold-resume proof.
+        let idle = json!({"thread":{"id":thread,"status":{"type":"idle"}}});
+        let script = format!("IFS= read -r request; printf '%s\\n' '{}'; IFS= read -r request; printf '%s\\n' '{}'; exec sleep 300",
+            json!({"id":1,"result":idle}), json!({"id":2,"result":{"status":"unsubscribed"}}));
+        *slot.lock().await = Some(recovery_process(&pool, installation, &hash, &script).await);
+        assert!(matches!(
+            supervisor
+                .refresh_thread(&projection, &thread, &json!({"mcp_servers":{}}))
+                .await,
+            Err(RuntimeError::Unknown)
+        ));
+        assert_eq!(
+            slot.lock().await.as_ref().unwrap().next_id,
+            2,
+            "unsubscribe must not be followed by an unproven hot resume"
+        );
+        supervisor.stop(installation).await.unwrap();
+
+        // Both renewal and removal use the exact supplied native in-memory map.
+        for config in [
+            json!({"mcp_servers":{}}),
+            json!({"mcp_servers":{"fixture":{"http_headers":{"Authorization":"Bearer fixture-only"}}}}),
+        ] {
+            let mut script = String::new();
+            for (id, method, params, response) in [
+                (
+                    1,
+                    "thread/read",
+                    json!({"threadId":thread,"includeTurns":false}),
+                    json!({"thread":{"id":thread,"status":{"type":"notLoaded"}}}),
+                ),
+                (
+                    2,
+                    "thread/loaded/list",
+                    json!({}),
+                    json!({"data":[],"nextCursor":null}),
+                ),
+                (
+                    3,
+                    "thread/resume",
+                    json!({"threadId":thread,"excludeTurns":true,"config":config}),
+                    valid.clone(),
+                ),
+            ] {
+                script.push_str(&format!("IFS= read -r request; [ \"$request\" = '{}' ] || exit 7; printf '%s\\n' '{}'; ",
+                    json!({"id":id,"method":method,"params":params}),json!({"id":id,"result":response})));
+            }
+            script.push_str("exec sleep 300");
+            *slot.lock().await = Some(recovery_process(&pool, installation, &hash, &script).await);
+            supervisor
+                .refresh_thread(&projection, &thread, &config)
+                .await
+                .unwrap();
+            assert_eq!(slot.lock().await.as_ref().unwrap().next_id, 3);
+            supervisor.stop(installation).await.unwrap();
+        }
 
         // A remembered empty slot owns nothing. Shutdown must not touch another
         // Core's invocation, nor a different generation of the same installation.

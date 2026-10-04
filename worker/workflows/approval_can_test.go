@@ -26,7 +26,7 @@ func canInput(t *testing.T) (generated.ApprovalWorkflowInput, generated.Approval
 		env.SetContinueAsNewSuggested(true)
 	}, 30*time.Second)
 	var a updateResult
-	decideAt(env, time.Minute, approverA, generated.Approve, &a)
+	decideAt(env, time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &a)
 	env.ExecuteWorkflow(ApprovalKind, in)
 
 	var can *workflow.ContinueAsNewError
@@ -58,7 +58,7 @@ func TestContinueAsNewCarriesFrozenInputAndDecisions(t *testing.T) {
 		t.Fatalf("续跑改动了冻结 input：\n%+v\n%+v", frozen, in)
 	}
 	if r.Status != generated.ApprovalStatusWAITING || len(r.Decisions) != 1 ||
-		r.Decisions[0].ApproverPrincipalID != approverA || r.Decisions[0].Decision != generated.Approve {
+		r.Decisions[0].ApproverPrincipalID != approverA || r.Decisions[0].Decision != generated.ApprovalDecisionAPPROVE {
 		t.Fatalf("续跑没有带上 A 的决定: %+v", r)
 	}
 }
@@ -71,8 +71,8 @@ func TestContinueAsNewResumesWithoutLosingDecisions(t *testing.T) {
 	env, rec, _ := setup(t, admitted)
 	var again, conflict, b, consumed updateResult
 	// B 一人批准即满足「两人」：另一票只能是续跑带来的 A
-	decideAt(env, time.Minute, approverB, generated.Approve, &b)
-	decideAt(env, 90*time.Second, approverA, generated.Approve, &again)
+	decideAt(env, time.Minute, approverB, generated.ApprovalDecisionAPPROVE, &b)
+	decideAt(env, 90*time.Second, approverA, generated.ApprovalDecisionAPPROVE, &again)
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow(UpdateDecide, "wf:"+approverA+":again", conflict.callbacks(),
 			generated.ApprovalDecisionUpdate{ApproverPrincipalID: approverA, Decision: generated.ApprovalDecisionDENY})
@@ -89,7 +89,7 @@ func TestContinueAsNewResumesWithoutLosingDecisions(t *testing.T) {
 		t.Fatalf("B 的批准应与续跑带来的 A 一起满足两人要求: %+v %v", b.outcome, b.err)
 	}
 	out, ok := again.outcome.(generated.ApprovalDecisionOutcome)
-	if again.err != nil || !ok || !out.Admitted || out.Decision == nil || *out.Decision != generated.Approve {
+	if again.err != nil || !ok || !out.Admitted || out.Decision == nil || *out.Decision != generated.ApprovalDecisionAPPROVE {
 		t.Fatalf("A 重发应拿回续跑前的决定: %+v %v", again.outcome, again.err)
 	}
 	if reasonOf(conflict.rejected) != string(generated.DuplicateDecision) {
@@ -111,7 +111,7 @@ func TestContinueAsNewDrainsPendingAdmission(t *testing.T) {
 	rec.set(func(r *recorder) { r.admitDown = true })
 	env.RegisterDelayedCallback(func() { env.SetContinueAsNewSuggested(true) }, 30*time.Second)
 	var a updateResult
-	decideAt(env, time.Minute, approverA, generated.Approve, &a)
+	decideAt(env, time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &a)
 	env.ExecuteWorkflow(ApprovalKind, in)
 
 	var can *workflow.ContinueAsNewError

@@ -590,6 +590,18 @@ async fn eligible(
     if row.self_approval == "DENY" && row.initiator_principal_id == ctx.tenant_principal_id {
         return Ok(false);
     }
+    let catalog_approval = row.action_key == crate::capability_contract::APPROVE;
+    if catalog_approval {
+        let ae = crate::governance::load_execution(&g.pool, row.action_execution_id)
+            .await?
+            .ok_or_else(|| Refusal::Unavailable("Catalog approval action unavailable".into()))?;
+        let mut conn = g.pool.acquire().await?;
+        if !crate::capability_contract::approver_separated(&mut conn, &ae, ctx.tenant_principal_id)
+            .await?
+        {
+            return Ok(false);
+        }
+    }
     let reqs: Vec<contracts::ApprovalRoleRequirement> =
         serde_json::from_value(row.role_requirements.clone()).unwrap_or_default();
     for r in reqs {
@@ -600,7 +612,7 @@ async fn eligible(
         };
         let Some((ty, id)) = object else { continue };
         let key = (ty.to_owned(), id);
-        let allowed = match cache.get(&key) {
+        let allowed = match cache.get(&key).filter(|_| !catalog_approval) {
             Some(a) => *a,
             None => {
                 let c = g
@@ -610,8 +622,9 @@ async fn eligible(
                         &id.to_string(),
                         "manage",
                         &ctx.tenant_principal_id.to_string(),
-                        if ctx.access_mode
-                            == contracts::PlatformSessionAccessMode::LifecycleRestricted
+                        if catalog_approval
+                            || ctx.access_mode
+                                == contracts::PlatformSessionAccessMode::LifecycleRestricted
                         {
                             Consistency::FullyConsistent
                         } else {
@@ -628,7 +641,7 @@ async fn eligible(
             return Ok(true);
         }
     }
-    if row.action_key == crate::governance::installation_permission::GRANT
+    if crate::governance::installation_permission::is_grant(&row.action_key)
         && ctx.access_mode == contracts::PlatformSessionAccessMode::Full
     {
         crate::governance::installation_permission::approval_owner_eligible(

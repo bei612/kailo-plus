@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/capability_contract_registration.schema.json",
+  "title": "CapabilityContractRegistration",
+  "description": "DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["categoryKey", "contractVersion", "resourceTypeFamily", "operationContracts", "contentReferenceSemantics", "requiredDeclarations", "protocolSessionKinds", "schemaDocuments", "testVectorsJson"],
+  "properties": {
+    "categoryKey": {"type": "string"},
+    "contractVersion": {"type": "integer"},
+    "resourceTypeFamily": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["typeKey", "kind"],
+        "properties": {"typeKey": {"type": "string"}, "kind": {"type": "string"}}
+      }
+    },
+    "operationContracts": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["contractKey", "surface", "inputSchemaDigest", "outputSchemaDigest", "permission", "targetType"],
+        "properties": {
+          "contractKey": {"type": "string"},
+          "surface": {"$ref": "../enums/capability_surface.schema.json"},
+          "inputSchemaDigest": {"type": "string"},
+          "outputSchemaDigest": {"type": "string"},
+          "permission": {"$ref": "../enums/capability_permission.schema.json"},
+          "targetType": {"type": "string"}
+        }
+      }
+    },
+    "contentReferenceSemantics": {
+      "type": "object", "additionalProperties": false,
+      "required": ["nativeObjectRefRule", "nativeRevisionRule", "authorizationTargetRule"],
+      "properties": {
+        "nativeObjectRefRule": {"type": "string"},
+        "nativeRevisionRule": {"type": "string"},
+        "authorizationTargetRule": {"type": "string"}
+      }
+    },
+    "requiredDeclarations": {"type": "array", "items": {"$ref": "../enums/capability_required_declaration.schema.json"}},
+    "protocolSessionKinds": {"type": "array", "items": {"type": "string"}},
+    "schemaDocuments": {"type": "array", "items": {"type": "string"}},
+    "testVectorsJson": {"type": "string"}
+  }
+}

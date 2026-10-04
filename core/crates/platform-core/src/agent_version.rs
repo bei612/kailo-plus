@@ -255,9 +255,13 @@ pub(crate) async fn validate_references(
 ) -> Result<(), Refusal> {
     runtime_profile(value)?;
     let route = Uuid::parse_str(&value.model_route_resource_id).map_err(|_| invalid())?;
-    if !value.declared_tool_resource_ids.is_empty() || !value.skill_version_asset_ids.is_empty() {
-        // 未实现的 Tool/Skill producer 不靠一个裸 Resource/Asset UUID 冒充。
+    if !value.skill_version_asset_ids.is_empty() {
+        // Skill 尚无真实 producer；Tool 仅引用受控、受权的原生目录。
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    for tool in &value.declared_tool_resource_ids {
+        let tool = Uuid::parse_str(tool).map_err(|_| invalid())?;
+        crate::agent_tool::validate_reference(gov, conn, tenant, human, tool).await?;
     }
     crate::model_route::validate_reference(gov, conn, tenant, human, route).await
 }

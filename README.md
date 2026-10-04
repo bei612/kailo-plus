@@ -6,6 +6,104 @@
 
 ## 最新复核与投递事实（2026-10-04）
 
+### 当前源码批：原生工具治理与可插拔能力契约
+
+本批基于 `56ee0bbcfc5a8bcb0cd1b1e4e2c9dc985e39b6a3` 集中实现；新增 Core/Worker 尚未部署。
+Core 复用 AgentGateway 原生 ExtMcp 双阶段检查、rmcp Streamable HTTP 与 Codex
+原生 MCP 配置，将原 Session 身份、ToolBinding、逐次权限和 Memory 读取关联到
+既有 ActionExecution/Operation、审计与用量，不建立第二套 Memory 或工具执行权威。
+Web/Desktop 仍共用同一 TypeScript 管理主体；Mobile 补齐已有 Schedule 的只读呈现。
+能力契约登记、审批和弃用已接入原治理路径，登记人与审批人分离；这仅是可插拔
+能力的契约部分，不等于 Cells、WeKnora、Wren 已集成，也不等于 release/binding 可用。
+
+本批撤回登记动作前，组合 Core 定向检查 21 项、Clippy、共享前端 258 项已通过。三处生产保护逻辑
+的合并破坏检查实际失败并逐字恢复；数据库独立演练、前端破坏检查及原始失败
+分别保留于 [Agent 记录](core/verify/agent-definition.md)和
+[能力契约记录](core/verify/capability-contracts.md)。这些不是本批完整检查、
+运行部署或真实 Agent 回复验收。固定树 `bc33b124ef78d85ebea6ed1f2eb11214350e4fb8`
+首轮原 `check.sh --full` 退出 1：Go 审批消费者尚引用生成前的枚举符号、
+新增追溯产物名与能力注册表未同步、Web/Win11 产物来源落后于本批源码。
+Rust、TS、Dart、四侧契约与原安全检查通过；数据库与实际部署配置检查跳过。
+Go 消费点已修正为生成的 `ApprovalDecisionAPPROVE`，不改审批值或 Workflow 历史；
+对应纠正与最终回执见下文，不将首轮失败改记通过。
+复核发现本批 `tool.definition.create` 的完整动作策略没有 `.design` 冻结依据，
+先前实施裁决不能替代设计权威；该创建入口与专属策略已从源码撤回，不作为已交付能力。
+撤回后原共享前端检查为 254 项通过；重新插入登记表单时原断言实际失败，
+逐字恢复后目录目标 11 项通过。四语言契约和同源 i18n 已重新生成；新隔离空库
+67 条前进、最后六条回退再前进退出 0。生成和迁移证据不替代最终整批检查。
+Codex 固定版本对已加载 thread 的 resume 会忽略新配置，本批已修正为仅在
+确定未派发的新轮、确认原生 thread 已卸载后更新配置；不重启 Installation，
+不重放不明 turn，也不把 unsubscribe 回执当成卸载完成。
+冷恢复定向 9 项及原隔离 PG/stdio 1 项通过、Clippy 0，两处生产变异实际失败后
+逐字还原；这不代替新合并候选的完整检查或真实模型业务验收。
+Tool consume 的显式授权缺口、真实回复缺失及三端设备/签名边界仍未关闭。
+下述已部署版本和既有真实回合结论不因本批源码变化而改变。
+
+### Desktop Relay 连通与开发组织改址（2026-10-04 09:44 UTC）
+
+用户设备报告无法连接 Relay。实查原容器仅发布宿主回环端口，服务器经局域网
+IP 访问也返回 curl 7/HTTP 000；这与 DD-75/78 的原生端直连要求冲突。
+现已将 Compose 的 Relay 发布地址改为既有 `PUBLIC_BIND_ADDR`，不改原生 URL
+模板、Community Host、身份或持久数据。Web 仍经 BFF，Desktop/Mobile 仍本机持钥。
+影响仅为 Relay 宿主监听，没有契约、状态机、迁移或工作流变化；operator 签名目标
+仍是原配置，未知 Host 不回退租户，匿名请求不因局域网可达而获得权限。
+
+使用原部署快照仅应用这一端口改动，以 `up -d --no-deps --no-build --pull never
+buzz-relay` 重建单个容器，复用 `sha256:d42f83fa0dadcd78c4ad721047433a9a7c8e522767edd96cb326d641c5dd0056`，
+没有编译、拉取镜像或清理 orphan。重建期间首次探测仍为 curl 7/HTTP 000；随后
+容器 healthy、局域网 IP 的 health HTTP 200。显式 DNS 覆写探针以原 Community
+Host 取得 NIP-11，`auth_required=true` 且广告 NIP-43；匿名 query HTTP 401，
+直接 IP Host 的 query HTTP 404。该覆写仅用于定位，不是客户端 DNS 已可用的证据。
+134 个已有容器的 ID、镜像与启动时间前后比较，仅 Relay 改变；原始快照与本次
+部署 Compose 位于 `/volumes/data/kailo/tmp/codex-relay-native-publish-20261004.RgOLgJ/`。
+
+随后按用户要求，把当前业务组织的同一 Community 从旧测试域名迁至现有公开
+IP authority `192.168.0.193:8090`；原生端重新读取连接事实后使用
+`ws://192.168.0.193:8090`，不再依赖该组织的 `.local` DNS。
+迁移先追加意图审计，再分别条件更新 Relay host 与 Core binding；Community ID、
+设备/服务密钥、成员与消息未重建。Core binding 从版本 2 经 RECONCILING 版本 3，
+由原 NIP-11 对账器查证为 ACTIVE 版本 4，09:43:29 UTC 保存新观察。
+同一运维 operation `1be55225-2174-48f9-940f-636f53b7e0b0` 留下意图、改址及查证回执。
+新 IP NIP-11 的 Relay self 未变，匿名 query 401；旧 Host query 404；IP WebSocket
+握手 101（探针收到 79 字节后到达主动设定的 2 秒观察期限，curl 28，不计认证通过）。
+原组织 33 条事件保持，未找到旧域名引用。其他组织未迁移，也没有默认租户回退。
+这只是当前开发组织的已授权维护，不是公开 Host 修改动作；不重跑旧 Tenant 创建流程。
+Windows 须退出后重新登录以刷新地址；本机旧地址草稿桶未自动迁移，签名历史不改写。
+Windows 实际认证与消息接收仍须设备复验，不将服务端连通当作桌面完整验收。
+
+同批 Win11 原构建现已退出 0：源摘要 `573744325964317ffb594da24a2b0c354dc67f583d49626e4111d9e9c8db95d4`，
+EXE `206c62bfb829ca5a02874a88b14fe40f8c9c7aa85c4f3ddd23ed57386944e790`，15,115,577 字节。
+本次改址本身不要求更新安装包；该包包含之前冻结的工具治理 UI 批次，未签名、未设备验收。
+本批固定树 `148a4b49bf8a0308167ed1799367145253a0f0c6` 的原
+`./tools/check.sh --full` 已实际退出 0：151 个 schema、四侧验证、Workflow
+重放、19 条追溯和六个当前源码产物通过。此前 `55661145…` 的 full 退出 1，
+唯一失败为运维文档多一个空行，修正未改变可执行源码，原失败回执保留。
+实际数据库演练、部署配置预检仍 SKIP；Core 单元 136 passed/4 ignored，
+另有两项外部演练 ignored，依赖外部配置而早返的检查不计业务验收。
+追加此回执仅走文档快检查，不重打产品镜像；Git 提交与 push 以实际历史为准。
+原件与摘要见 [整批检查回执](core/verify/agent-definition.md)。
+
+### Buzz Workflows 的承接边界
+
+DD-106 关闭 Buzz 自带 WorkflowEngine、cron 和 workflow/webhook 路由；不保留第二套
+执行权威。用户可见自动化由 DD-107 的 Core 定义/版本及 Temporal 执行承接，复用
+AgentTaskWorkflow 与审批子流程。Tasks/Approvals 展示运行和审批，不等于自动化编辑器。
+DD-107 冻结 CHANNEL_MESSAGE、MENTION、SCHEDULE、WEBHOOK 四种触发与 AGENT_TURN、
+POST_MESSAGE 两种动作；设计范围不等于已完整交付。当前定时自动化已有源码和既有部署，
+其真实业务验收与其余触发/动作的完整闭环仍须逐项证据，不能将“Temporal 已接入”
+写成原版 Workflows 全功能等价完成。
+
+### 当前 Web 登录核对（2026-10-04 08:55 UTC）
+
+实际浏览器以业务引导账号 `kailo-bootstrap-admin` 完成 OIDC 登录，频道同步、
+已有消息与七项导航正常呈现；Agents 页可读回已有定义、发布版本和 Installation。
+未发送消息、创建对象、修改权限或调用模型。`seam-verifier` 仅为隔离验收账号，
+其旧测试 Tenant 成员资格已撤销，不能作为正常使用账号；此前提供该账号有误。
+业务账号的现有密码由 `deploy/local/secrets/bootstrap_user_password` 受控保存，
+不在文档中复制。数据库读回业务 Tenant、Principal、Tenant/Workspace 成员均 ACTIVE。
+本次仅证明现部署 Web 的实际登录与上述页面读取，不改变 Agent 回复、组件集成、
+Win11 设备验收或生产就绪的未完成状态。
+
 ### 当前交付批：原生定时自动化与 Session 首轮记忆消费
 
 终态结算修正已提交并普通 push：

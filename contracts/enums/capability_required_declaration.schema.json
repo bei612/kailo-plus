@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/capability_required_declaration.schema.json",
+  "title": "CapabilityRequiredDeclaration",
+  "type": "string",
+  "enum": ["CANCEL", "OBSERVE", "METER", "TENANT_DELETE", "REVISION_QUERY", "VERSIONED_MODEL", "ONLINE_EDITING", "READ_EDGE"]
+}

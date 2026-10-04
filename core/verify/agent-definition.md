@@ -2812,3 +2812,228 @@ last_agent_message 证据保持成立。现在可以确认真实 8872 用量已�
 `handoff.md` 保存全部构建、迁移、部署原命令和真实失败边界；
 `settlement-readback.log`、`gateway-usage-readback-corrected.log` 与
 `openmeter-stored-usage-readback.log` 保存上述最新只读证据。
+
+### 2026-10-04：共享 Tool 目录与版本引用消费（源码，尚未部署）
+
+本批直接扩展 Web/Desktop 共用平台包，没有新建 Web 页面副本。目录只消费
+生成的 PlatformToolPage；版本保存实际
+选择的 Tool 引用，不再固定写空数组。PROVISIONING、无 consume 权限或无法查证
+的引用不能提交；旧引用保持可见，必须明确移除，不静默丢弃。Skill 入口仍关闭。
+
+- 权威与影响：DD-24/49/105、设计 17 的声明/绑定/执行分离；BFF 是目录写者，
+  共享 TS 是管理消费者，Dart 文案由同一 TS 原生成器产出。未改业务契约正文，
+  消费后端本批四侧生成物；Mobile 未增加管理动作、组件宿主或编辑入口。
+- 副作用：只读目录与版本引用不授予记忆读权限、ToolBinding 或 Delegation。
+  复核发现 Tool 创建动作没有冻结策略，已撤掉共享页登记表单、写入命令及专属锁；
+  不用实施裁决补充设计权限，不改 `.design` 迁就实现。
+- 边界：分页可为空但必须单调，未知枚举/无效摘要/重复资源拒绝；跨页选择保持。
+  BFF 客户端身份更换时由共享 Provider 重建消费者子树，旧异步回执不进入新身份；
+  语言变化不改变身份。错误仍消费既有六类分类，403/404 与 UNKNOWN 分开显示。
+
+以下是撤回登记表单之前的历史验证，不证明撤回后的最终候选通过。
+固定 SDK `10ad51a2…`、4 CPU/8 GiB、无额外 swap、Data 缓存内执行原
+`pnpm --filter @client-kit/platform test`：类型检查及 237 项检查退出 0。
+初轮曾 230 通过/4 失败：新目录把确定的 403/404 误显示为 UNKNOWN；已将原
+AgentReadFailure 收为共享 ReadFailure 并直接复用，未删除原断言。
+私有快照实际移除 Provider 身份隔离、移除 UNKNOWN 拒绝保护，分别捕获 2 项失败，
+两处逐字恢复后同一 237 项全部通过。原 `gen-platform-i18n.py` 生成及 `--check`
+退出 0，正式 Dart 文件保留原有其他未提交改动，只合入真实生成文案增量。
+
+原件目录为
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/tool-ui.AGEadQ/`。
+恢复日志 `restored-final.log` SHA-256 为
+`e903e5de3c692a9a5b59e922e905defee8a7393daa507111ed1db19b1e898fb4`；
+两个实际失败日志为 `mutation-scope.log`、`mutation-unknown.log`。
+本节不是 Core/MCP 端到端、整批 full、构建或部署证据，不提高业务完成状态。
+
+撤回未冻结创建动作后，原 SDK 中实际生成的新 DTO 与共享 TS 原检查为
+254 passed/8 files、退出 0。仅在私有生产 `tools.tsx` 重新加入登记 form，
+原目录检查实际 1 failed/10 passed、退出 1；撤销变异并与正式源码逐字比较后，
+同目录 11 项退出 0。创建专属检查随已删除的实现移除，未削弱目录/身份隔离检查。
+原件为 `/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/tool-create-withdrawal-fvG7yl/`，
+`ui-baseline.log` SHA `e95c9bc3f95444b9a84561446b173fd5099dde217eb1f9284eb89cad95dc7952`，
+`ui-mutation.log` SHA `873c41a72ae986ec2c024a28cf9c67237264860234cf53472e09d62cec2fcdc4`，
+`ui-restored.log` SHA `5540f78cae0cac1850dbc430747fca6ab066667a255db771daaad44e2107e60c`。
+
+### 2026-10-04：自身安装记忆读取授权消费（源码，尚未部署）
+
+依据 `.design/05` §2.8 的 `resource.grant_read/revoke_read` 与 `17` 的
+Installation 权限边界，共享 TS 直接复用原安装执行权限控件：授权目标来自
+BFF 的确切 Installation 与 Agent，不允许浏览器另选 Principal；授予进入原
+TARGET_OWNER 审批，撤销走显式确认。`read` 不代表 Tool `consume`、Delegation
+或其他安装的读取权，不创建第二套权限权威。
+
+影响限于生成的可选 `AgentInstallationView.readPermission` 的读取、共享权限
+控件和同源文案。旧回应缺该字段时不渲染读取授权入口，字段存在但布尔值等形状
+不合法时拒绝消费；无需前端数据迁移。与 execute 共用意图锁，避免同一安装上的
+两种权限操作在界面并发提交；Core 仍重新判断权限、版本和状态。
+等待审批不显示为权限生效，UNKNOWN 保留原幂等键与确切目标，刷新和后续 403
+不能把原副作用误判为失败。错误复用原六类处理，没有新错误类别或默认授权。
+Web/Desktop 仍使用同一主体；Mobile 仅更新原生成文案，不新增写入口。
+
+私有快照从 `56ee0bbcfc5a8bcb0cd1b1e4e2c9dc985e39b6a3` 导出后放入本批真实
+Tool/read schema 与共享源码，固定 SDK 内运行原 `tools/gen.sh` 四侧生成退出 0。
+原 `pnpm --filter @client-kit/platform test` 的类型检查及 241 项检查退出 0。
+随后在私有快照实际去掉命令的 `principalId`，两项检查失败、退出 1；恢复后再
+去掉 `readPermission` 形状校验，一项检查失败、退出 1。两处逐字恢复并与正式
+源码 `cmp` 一致后，原 241 项再次通过，`gen-platform-i18n.py --check` 退出 0。
+正式 Dart 只合入该原生成器的九条读取授权文案，保留已有其他未提交改动。
+
+证据位于
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/tool-read-ui.HdaCOl/`：
+`generate.log`、`baseline.log`、`mutation-principal.log`、`mutation-permission.log`、
+`restored-final.log`、`i18n-check.log`；恢复日志 SHA-256 为
+`3e695b18ec0a540bd7bc23a387f53e41a3cb3906d0f3cc7890a714fee49d9ab7`。
+这是共享消费者的验证，不证明后端权限投影、ExtMcp、整批 full 或实际部署通过。
+
+### 2026-10-04：原生 Memory 读取 Tool 消费与隔离 SQL 验收
+
+本节为固定选定树 `bc33b124ef78d85ebea6ed1f2eb11214350e4fb8` 后的事后证据；
+不改变旧部署、真实回合或历史检查结果。本批尚未部署，集中 full 结果由主线另记。
+
+1. 权威：设计 03 §7、12 §3–4/DD-105、17 与 19 §5，支持既有原生
+   `agent.memory.entry.list/read` 的治理消费。原候选自行登记的
+   `tool.definition.create` 完整策略没有冻结依据，已撤回其生产者、命令字段和
+   共享页入口；上述设计段落不能作为该创建策略的授权依据。
+2. 影响：`agent_tool::{install_bindings,invocation_tools,tool_admission}`、
+   `agent_tool_pep::Policy`、`agent_tool_runtime::configuration` 与
+   `agent_memory::{prepare_tool_read,execute_tool_read,disclose_tool_result}`
+   接入既有 Invocation、父/子 AE 同 Operation、独立服务身份及内存 Session 票。
+   `gateway_usage::committed_turn` 同时核对模型事件与 child 两个冻结 meter；
+   全部原生 stored_at、安装/turn/审计证据仍须可核验，未知来源不被过滤成成功。
+3. 副作用：Tool Catalog 与 Binding 不授予 consume/discover/read 或 Delegation；
+   read 仍走原 owner 审批生产者，执行前与披露前均重查权限。票据只在进程内及
+   当前 thread 配置传递，不进入审计、数据库或日志；没有新增 Memory 写工具。
+4. 边界：原零 Tool 路径无新凭据依赖；非空工具的显式 consume/discover 授权
+   生产策略仍缺，NO_PERMISSION/fresh check 保持关闭，不暗授关系。同 turn、
+   同工具和参数的原 DISPATCHED child 仍阻止重放，即使前次已结束也不猜新调用；
+   固定 ExtMcp 消息不提供稳定 MCP 请求 ID，本批未建立第二调用标识权威。
+
+固定 AgentGateway `1f7ebbf87cbdbe9517f6f181221879d04dc50692`：
+`crates/protos/proto/ext_mcp.proto::{McpRequest,McpResponse}`、
+`crates/agentgateway/src/mcp/guardrails/client.rs::{apply_header_mutation,build_metadata}`；
+沿原 SET 后 REMOVE 顺序，响应 metadata 由原 CEL 显式投递而非假设自动回送。
+固定 Codex `7498521d288b9b3b96ffba4eedf089d8d6e06a84`：
+`codex-rs/config/src/mcp_types.rs::RawMcpServerConfig` 与
+`codex-rs/app-server-protocol/src/protocol/v2/thread.rs::{ThreadStartParams,ThreadResumeParams}`。
+原生 slug/hash 复用 Buzz `779af8886caae1317b4de962082429867ab61503`
+`crates/buzz-core/src/engram.rs::{validate_slug,value_hash}`，不另造算法。
+
+原 SDK 10ad、4 CPU/8 GiB、UID 1000、无额外 swap，Cargo jobs 16、Data target；
+原 `cargo test -p platform-core --bin platform-core` 的 agent_tool、
+service_auth::gateway_tests、capability_contract::registration_tests、
+memory_tool_tests 与 usage_tests::memory_child_set_requires_both_frozen_meters_and_certain_same_turn
+共 21 项退出 0；随后 Clippy 首轮 101，修正后原 fmt/Clippy -D warnings 退出 0。
+私有候选合并破坏 Session sub、Gateway 最大 TTL、登记/审批分离三个生产守卫，
+三个真实断言失败、退出 101；随后三源逐字恢复 cmp 0，恢复 canonical 交集中 full。
+未额外伪报一次恢复目标或真实 MCP E2E。网络、编译、非法 slug 夹具与初轮 Clippy
+失败日志均保留。组合原件目录：
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/mcp-combined-jG0sIv/`。
+`targeted-final.log` SHA `6bfb0a36f8e54d9667b7f44874cd11d5d858bd4adf3322ef0cb27967946b0c2a`；
+`clippy-corrected.log` SHA `3142225800436720c3770ecfb6838b3852c71f53e4226392e638b15bc0d86463`；
+`mutation-batch.log` SHA `54f51c6b6de4483c5ba86b007966fa16e6d03aecd5e946de33a700ed0207fac9`。
+
+独占隔离库 `capability_family_rsfdrk`、PG `1ac30ea5e2af`，不使用业务库。
+沿原 SDK/SQLx，仅把 DATABASE_URL 的 dbname 换为该库，执行
+`sqlx migrate run --source /evidence/capability-family-RSFDrk/migrations`：
+补 11000/12000，现 67 条 up 退出 0。再将原 12000 down、11000 down、
+11000 up、12000 up 依次交 native `psql -X --single-transaction --set ON_ERROR_STOP=1`
+执行，退出 0。隔离 Tool/usage 表为空，未删除事实；不能外推为有已发生工具用量时可回滚。
+实际生产模块抽取的 105 条 SQL 在原 `BEGIN READ ONLY; PREPARE …; ROLLBACK;`
+全部退出 0；两处参数按真实 Rust bind 指定 UUID/text 与 timestamptz OID，保留
+此前裸 PREPARE 类型推导失败，不改生产 SQL 来适配证据。库与 SDK 已释放，保留供主线 full。
+原件目录 `/volumes/data/kailo/tmp/codex-native-memory-tool-20261004.e1McEQ/`：
+`migrations-up.log` SHA `df9995b2876c862576c57cf01f78a453d88928c874bb05726817744b9cca5788`；
+`migrations-down-up.log` SHA `b06520b56d2fc4b75e9fda09150e3e1bbe6f8d558d71236850d39a67dc914a2c`；
+`actual-module-prepare-final.log` SHA `2cc692f0e6d072da90ff464d762fe4428b2dfac81d88178bef0a2654ce841f82`。
+没有模型、Memory 生产读取、MCP 两相运行、quota 业务或部署验收；不提高业务完成状态。
+
+### 2026-10-04：原生 MCP 会话配置冷恢复纠偏
+
+固定 Codex `7498521d288b9b3b96ffba4eedf089d8d6e06a84` 的
+`codex-rs/app-server/src/request_processors/thread_processor.rs::resume_running_thread`
+对已有订阅的 loaded thread 忽略新配置，原生同步 shutdown 超时也可返回 hot resume。
+因此 resume 成功不证明 Session 票或工具集合已更新；只重复调用该 RPC 不成立。
+
+影响限于 `agent_session::resume_for_dispatch`、`agent_runtime::refresh_thread`
+及 Capacity 的原观察调用。仅确切 CREATED、无 turn/trace/native_status、无取消，
+且同 Session 无在途或不明调用时，在原 AE→Tenant→Session 锁与 fresh 授权下更新。
+观察、取消、Capacity 收尾保持原无配置 resume，不卸载执行现场或重启 Installation。
+
+原生 idle 只允许 unsubscribe，ACK 不记为卸载完成。沿原 Activity 轮转，后续读回
+同 thread 的 notLoaded 与完整 loaded/list 缺席，才用相同 ID 冷恢复内存配置。
+配置投递存在但工具集合变空时同样清理旧集合；整组未投递的原零 Tool 恢复不新增依赖。
+等待不写 Invocation/Session UNKNOWN，原 CREATED 仍可轮转；未知响应、部分列表、
+活动 thread 或超时拒绝继续，永不发替代 turn。原生卸载由上述固定 commit 的
+`codex-rs/app-server/src/request_processors/thread_lifecycle.rs::UnloadingState`
+及 `unload_thread_without_subscribers` 执行，仅 Shutdown Complete 后移除对应运行实例；
+没有新增定时器、会话权威、落盘票据或自设超时。
+
+原 SDK `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+内，`agent_runtime::activity_tests` 9 passed/1 ignored；原隔离 PG 与真实 stdio
+目标显式运行后 1 passed，Clippy -D warnings 退出 0。私有生产变异同时删除
+ACK 停止与 loaded-ID 拒绝，两项断言实际失败、退出 101；原字节恢复 cmp 0。
+一次性 `runtime_recovery_verify_cespor` 测试库已清理，原证据与其他演练库保留。
+原件 `/volumes/data/kailo/tmp/codex-mcp-cold-resume-20261004.cespoR/`，
+`targeted.log` SHA `1bff879dd99c0874a74dfe603d348333b64f364a7ff47438ad65a108a82e6ce4`；
+`mutation.log` SHA `6fdd4e0ba49f7de5f853899044c4220cb4f6ccc46f2ea7366a4c3b5df058bb92`。
+这是受控 stdio/隔离数据库证据，不是实际 Codex/MCP/模型业务验收，未部署或重放旧回合。
+
+### 2026-10-04：撤回未冻结 Tool 登记动作后的迁移复验
+
+前述 Tool 登记动作撤回后，重新冻结全部 134 份 SQL；09000–13000 的十份
+up/down 与 `bc33b124ef78d85ebea6ed1f2eb11214350e4fb8` 逐文件一致，
+08000 使用不登记创建 Action 的版本。此前含登记动作的迁移回执不外推到此版本。
+
+在既有隔离 PostgreSQL 中新建一次性空库 `tool_withdrawal_final_verify`，
+原 SDK 执行 `sqlx migrate run --source migrations`、六次原
+`sqlx migrate revert --source migrations`、再次 migrate run，
+成功迁移计数实查为 67 → 61 → 67，最终退出 0；Tool Action 目录读回为零行。
+首次日志保留 67 次成功前进后 psql 取证连接配置失败；先核实已完成迁移，
+只纠正连接环境再继续回退与前进，没有修改 checksum 或重放未明副作用。
+
+各 down 的已存在业务事实拒绝条件仍保留；本次为空库往返，未重新执行有数据的
+负向边界，不意味着已填充部署可回退。仅删除本任务一次性测试库，原生目录读回
+已不存在；其他演练库、业务库、SDK 与原件保留，未部署。
+原件目录：
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/withdrawal-migrate.YFIUAq/`。
+`migration.log` SHA `af13a6c8706e23d36cf9c7f0a93f7444de665c8dba5c99fff3add7e271bc579e`；
+`down-up-complete.log` SHA `23bc274f701e1cf55391ad0f043baa63cc10895f3507914875afb1af526c7d9c`；
+`source.sha256` SHA `5fa9fcf717644346319c7d961e9081a45069a54845532082dc9a7b919e8a3c41`。
+
+### 2026-10-04：撤回后共享 Web 产物
+
+固定源码树 `bc997abb306b2ffe62da32274460083a98187cfc` 经原发布入口构建 Web，
+退出 0；101 个真实输入的 source digest 为
+`sha256:6eb04fa249de1404f4b7346e61b024e01afa4e29878ed1f374961bdd7a8ec32f`。
+artifact 为 `sha256:fd617659f3545e6f1d57d9fb12317220ee5ac6d1a2fcbbb56b1dee8df1ee4640`，
+原 registry HEAD/GET 均 200，响应正文 SHA 与 Docker RepoDigest 精确相同。
+官方来源清单、Compose pin 与十五份既有追溯引用同步，不手改源码摘要。
+这仅是构建与来源登记，运行容器仍为此前 `12dea304…`，未部署。
+原件目录 `/volumes/data/kailo/tmp/codex-tool-client-readonly-delivery-20261004.6CIKke/`，
+`web-helper.log` SHA `bb8a8e2c415149d27d76b4b3ca36b4976cb30d25aa97172ebb07f7699e8a1832`。
+Win11 打包与最终整批检查另记其实际结果，不由 Web 成功推定通过。
+
+### 2026-10-04：原生 Tool 与能力契约整批检查收口
+
+固定候选 `148a4b49bf8a0308167ed1799367145253a0f0c6` 相对
+`56ee0bbcfc5a8bcb0cd1b1e4e2c9dc985e39b6a3` 为 112 文件、+10334/-445。
+原 `./tools/check.sh --full` 在原 SDK 10ad、4 CPU/8 GiB、Cargo jobs 16 与
+既有 Data 缓存内实际退出 0；未构建或部署新产品镜像。
+
+- Rust/Go/TypeScript/Dart 静态与既有验证、151 个 schema 的四侧生成及兼容、
+  原 Workflow replay、19 条追溯、六份来源与六个当前源码产物均通过。
+- Core 单元 136 passed/4 ignored；另有审批续跑、Relay outage 两项外部
+  演练 ignored。未投递 DATABASE_URL 或实际部署配置，这两步骤 SKIP；
+  其他依赖外部配置而早返的检查不作为实际业务链验收。未安装 gitleaks，
+  仅内置秘密扫描通过。Win11 签名/设备与 Mobile release 签名仍阻断。
+- 前一候选 `55661145bf7635a6bec974dbbc269395e12d4844` 的 full 退出 1，
+  唯一失败为 `07` 第 88 行 MD012 双空行。两树仅该文档删除一个空行，
+  原失败不改记通过；没有通过改检查、缩减源码或改 artifact 摘要消除失败。
+- 本回执追加后只运行原文档快路径；原生 Tool consume 授权缺口、真实 Agent
+  回复、组件 release/binding 和三端业务验收仍未闭合，不因 full 通过而开放。
+
+失败原件：`/volumes/data/kailo/tmp/codex-native-tool-final-full-20261004.KfFrg1/full.log`，
+SHA-256 `2a6d6f333e13e0756f11eafce672c2a971c8c0a2dd060f2ae812f637e15caf3f`。
+最终原件：`/volumes/data/kailo/tmp/codex-native-tool-corrected-full-20261004.EfWrnN/full.log`，
+SHA-256 `8eb3c092fbf2504650183aa42de26420e8e7da6c5c4bf788f4c45f5b40450d0e`。

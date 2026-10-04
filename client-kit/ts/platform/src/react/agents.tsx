@@ -13,7 +13,6 @@ import {
   AutomationState,
   AutomationResultTarget as ResultTarget,
   AutomationTriggerKind as TriggerKind,
-  ErrorClass,
   ReasonCode,
   ResourceState,
   ResultExposureMode,
@@ -32,16 +31,18 @@ import {
   type AutomationDetailView,
   type AutomationVersionView,
   type TaskView,
+  type PlatformToolPage,
 } from "@client-kit/contracts";
 import { useEffect, useRef, useState } from "react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
-import { BffError, TransportError, type WriteFailure, writeFailure } from "../transport";
+import { TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
-import { Badge, Button, Cell, Notice, Table } from "./ui";
+import { Badge, Button, Cell, Notice, Table, ReadFailure as AgentReadFailure } from "./ui";
 import { useLoad } from "./use-load";
 import { InstallationMemory } from "./memory";
+import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 
 function validDefinition(value: AgentDefinitionView): boolean {
   return !!value && typeof value.resourceId === "string" && !!value.resourceId
@@ -62,28 +63,6 @@ function validDefinitionTask(task: TaskView): boolean {
     && Object.values(ActionDispatchState).includes(task.dispatchState)
     && (task.taskStatus === undefined || Object.values(TaskStatus).includes(task.taskStatus))
     && (task.workflowId === undefined || (typeof task.workflowId === "string" && !!task.workflowId));
-}
-
-function AgentReadFailure({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const t = useT();
-  const reasonText = useReasonText();
-  const response = error instanceof BffError ? error : null;
-  const knownClass = response?.errorClass !== undefined
-    && Object.values(ErrorClass).includes(response.errorClass);
-  // 管理 GET 的裸 403/404 是确定的读取拒绝；不据状态码制造错误分类或 reason。
-  // 显式 UNKNOWN、未知分类和无可用响应优先保留未知，不能退回成确定失败。
-  const refusal = response && (response.errorClass === undefined || knownClass)
-    && response.errorClass !== ErrorClass.Unknown
-    && (knownClass || response.status === 403 || response.status === 404) ? response : null;
-  const reason = refusal?.reason;
-  const text = !refusal ? t("platform.loadFailed")
-    : reason !== undefined && Object.values(ReasonCode).includes(reason) ? reasonText(reason)
-    : refusal.status === 403 ? t("tasks.status.denied")
-    : refusal.status === 404 ? t("native.unavailable.title")
-    : t("workspace.lifecycle.rejected", { reason: String(refusal.status) });
-  return <Notice role={refusal ? "alert" : "status"}>
-    {text}<Button onClick={onRetry}>{t("platform.retry")}</Button>
-  </Notice>;
 }
 
 export function AgentDefinitionsPage() {
@@ -143,6 +122,7 @@ export function AgentDefinitionsPage() {
       </section>
       {selected ? <DefinitionDetail key={`${selected}:${versionRevision}`} resourceId={selected} locked={blocked || versionEdit !== null}
         onEdit={(target, owner) => setEdit({ target, owner })} onVersionEdit={setVersionEdit} /> : null}
+      <ToolManagement />
       <InstallationManagement versionRevision={versionRevision} />
       <AutomationManagement />
     </div>
@@ -635,10 +615,11 @@ function validInstallation(row: AgentInstallationView): boolean {
     || !Object.values(AgentRuntimeProjectionState).includes(projection.state))) return false;
   if (row.activeProjectionGeneration !== undefined && (!Number.isSafeInteger(row.activeProjectionGeneration)
     || row.activeProjectionGeneration <= 0 || projection?.generation !== row.activeProjectionGeneration)) return false;
-  const execution = row.executionPermission;
-  if (execution !== undefined && (!execution
-    || ![execution.requested, execution.effective, execution.canGrant, execution.canRevoke].every((value) => typeof value === "boolean")
-    || (execution.pendingActionExecutionId !== undefined && (typeof execution.pendingActionExecutionId !== "string" || !execution.pendingActionExecutionId)))) return false;
+  for (const permission of [row.executionPermission, row.readPermission]) {
+    if (permission !== undefined && (!permission
+      || ![permission.requested, permission.effective, permission.canGrant, permission.canRevoke].every((value) => typeof value === "boolean")
+      || (permission.pendingActionExecutionId !== undefined && (typeof permission.pendingActionExecutionId !== "string" || !permission.pendingActionExecutionId)))) return false;
+  }
   return row.state !== AgentInstallationState.Active || (row.resourceState === ResourceState.Active
     && row.activeProjectionGeneration !== undefined && projection?.state === AgentRuntimeProjectionState.Active);
 }
@@ -676,8 +657,12 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
       onRecorded={() => setRevision((old) => old + 1)} />
     <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
       onRecorded={() => setRevision((old) => old + 1)} />
-    {permissionTarget ? <InstallationExecute key={`${permissionTarget.resourceId}:${permissionTarget.workspaceId}`} installation={permissionTarget} locked={locked} onLocked={setLocked}
-      onRecorded={() => setRevision((old) => old + 1)} /> : null}
+    {permissionTarget ? <>
+      <InstallationPermission key={`execute:${permissionTarget.resourceId}:${permissionTarget.workspaceId}`} kind="execute" installation={permissionTarget} locked={locked} onLocked={setLocked}
+        onRecorded={() => setRevision((old) => old + 1)} />
+      {permissionTarget.readPermission ? <InstallationPermission key={`read:${permissionTarget.resourceId}:${permissionTarget.workspaceId}`} kind="read" installation={permissionTarget} locked={locked} onLocked={setLocked}
+        onRecorded={() => setRevision((old) => old + 1)} /> : null}
+    </> : null}
     {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onPermission={setPermissionTarget} onManage={setDelegationTarget} /> : null}
   </section>;
 }
@@ -1156,18 +1141,22 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
   </section>;
 }
 
-function InstallationExecute({ installation, locked, onLocked, onRecorded }: {
-  installation: AgentInstallationView; locked: boolean; onLocked: (value: boolean) => void; onRecorded: () => void;
+function InstallationPermission({ kind, installation, locked, onLocked, onRecorded }: {
+  kind: "execute" | "read"; installation: AgentInstallationView; locked: boolean; onLocked: (value: boolean) => void; onRecorded: () => void;
 }) {
   const client = useBffClient();
   const t = useT();
   const reasonText = useReasonText();
   const failureText = useFailureText();
-  const [read, reloadPermission] = useLoad(`installation-execute-read:${installation.resourceId}:${installation.workspaceId}`,
+  const labels = kind === "read" ? "agents.read" : "agents.execute";
+  const actions = kind === "read"
+    ? { grant: "resource.grant_read", revoke: "resource.revoke_read" }
+    : { grant: "agent.installation.execute.grant", revoke: "agent.installation.execute.revoke" };
+  const [read, reloadPermission] = useLoad(`installation-${kind}-read:${installation.resourceId}:${installation.workspaceId}`,
     () => client.agentInstallation(installation.resourceId));
   const row = read.status === "ok" && validInstallation(read.data) && read.data.resourceId === installation.resourceId
     && read.data.workspaceId === installation.workspaceId ? read.data : null;
-  const permission = row?.executionPermission;
+  const permission = kind === "read" ? row?.readPermission : row?.executionPermission;
   const [intent, setIntent] = useState<{ command: ActionCommand; client: typeof client; agent: string; workspace: string } | null>(null);
   const [submission, setSubmission] = useState<ActionSubmission | null>(null);
   const [receiptClient, setReceiptClient] = useState<typeof client | null>(null);
@@ -1181,16 +1170,17 @@ function InstallationExecute({ installation, locked, onLocked, onRecorded }: {
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
     || submission?.gateState === ActionGateState.Evaluating
     || (submission?.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.NotDispatched);
-  const [tasks, reloadTasks] = useLoad(`installation-execute:${installation.resourceId}`, client.tasks);
+  const [tasks, reloadTasks] = useLoad(`installation-${kind}:${installation.resourceId}`, client.tasks);
   const rows = tasks.status === "ok" && Array.isArray(tasks.data) && tasks.data.every(validDefinitionTask) ? tasks.data : null;
   const pending = rows?.some((row) => row.targetId === installation.resourceId
-    && ["agent.installation.execute.grant", "agent.installation.execute.revoke"].includes(row.actionKey)
+    && [actions.grant, actions.revoke].includes(row.actionKey)
     && taskPhase(row).tone === "neutral") ?? true;
   const prepare = (grant: boolean) => {
     if (locked || intent || busy || !permission || !rows || !row
       || !(grant ? permission.canGrant && !pending : permission.canRevoke)) return;
-    const command: ActionCommand = { actionKey: grant ? "agent.installation.execute.grant" : "agent.installation.execute.revoke",
+    const command: ActionCommand = { actionKey: grant ? actions.grant : actions.revoke,
       resourceId: row.resourceId, resourceVersion: row.resourceVersion, idempotencyKey: newIdempotencyKey(),
+      ...(kind === "read" ? { principalId: row.agentPrincipalId } : {}),
       ...(grant ? {} : { explicitConfirmation: true }) };
     setIntent({ command, client, agent: row.agentPrincipalId, workspace: row.workspaceId });
     setSubmission(null); setFailure(null); onLocked(true);
@@ -1227,21 +1217,21 @@ function InstallationExecute({ installation, locked, onLocked, onRecorded }: {
       if (active()) { setBusy(false); reloadTasks(); }
     }
   };
-  return <section className="flex flex-col gap-2 rounded-md border p-3" data-testid="agent-installation-execute">
-    <h4 className="text-sm font-medium">{t("agents.execute.title")}</h4>
-    <p className="text-sm text-muted-foreground">{t("agents.execute.boundary")}</p>
-    {permission ? <p role="status" className="text-sm">{permission.effective ? t("agents.execute.effective") : t("agents.execute.notEffective")}
-      {permission.pendingActionExecutionId ? ` · ${permission.pendingActionExecutionId}` : ""}</p> : <Notice>{t("agents.execute.unverified")}</Notice>}
+  return <section className="flex flex-col gap-2 rounded-md border p-3" data-testid={`agent-installation-${kind}`}>
+    <h4 className="text-sm font-medium">{t(`${labels}.title`)}</h4>
+    <p className="text-sm text-muted-foreground">{t(`${labels}.boundary`)}</p>
+    {permission ? <p role="status" className="text-sm">{permission.effective ? t(`${labels}.effective`) : t(`${labels}.notEffective`)}
+      {permission.pendingActionExecutionId ? ` · ${permission.pendingActionExecutionId}` : ""}</p> : <Notice>{t(`${labels}.unverified`)}</Notice>}
     {intent ? <div className="flex flex-col gap-2 text-sm" role="group">
       <p className="break-all">{intent.command.actionKey} · {intent.command.resourceId} · {intent.command.resourceVersion}</p>
       <p className="break-all">{t("agents.installation.principal")}: {intent.agent}</p>
       <p className="break-all">{t("platform.workspace")}: {intent.workspace}</p>
-      <p>{intent.command.actionKey.endsWith(".grant") ? t("agents.execute.approval") : t("agents.execute.revokeWarning")}</p>
+      <p>{intent.command.actionKey === actions.grant ? t(`${labels}.approval`) : t(`${labels}.revokeWarning`)}</p>
       <div className="flex gap-2"><Button disabled={busy || !sameScope} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
         {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}</div>
     </div> : <div className="flex gap-2">
-      {permission?.canGrant ? <Button disabled={locked || !rows || pending} onClick={() => prepare(true)}>{t("agents.execute.grant")}</Button> : null}
-      {permission?.canRevoke ? <Button disabled={locked || !rows} onClick={() => prepare(false)}>{t("agents.execute.revoke")}</Button> : null}
+      {permission?.canGrant ? <Button disabled={locked || !rows || pending} onClick={() => prepare(true)}>{t(`${labels}.grant`)}</Button> : null}
+      {permission?.canRevoke ? <Button disabled={locked || !rows} onClick={() => prepare(false)}>{t(`${labels}.revoke`)}</Button> : null}
     </div>}
     {submission && receiptClient === client ? <p role="status" className="break-all text-sm">{t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}
       {submission.reason ? ` · ${reasonText(submission.reason)}` : ""} {submission.approvalWorkflowId ?? ""}</p> : null}
@@ -1453,6 +1443,9 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
   const [coldWrite, setColdWrite] = useState("");
   const [triggers, setTriggers] = useState<AgentTrigger[]>([]);
   const [capabilities, setCapabilities] = useState<string[]>([]);
+  const [toolIds, setToolIds] = useState<string[]>([]);
+  const [toolOffsets, setToolOffsets] = useState([0]);
+  const [toolIndex, setToolIndex] = useState(0);
   const [offsets, setOffsets] = useState([0]);
   const [index, setIndex] = useState(0);
   const [intent, setIntent] = useState<ActionCommand | null>(null);
@@ -1468,12 +1461,24 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
     setDuration(content ? String(content.turnLimits.maxTurnDurationSeconds) : "");
     setCoreWrite(content?.memoryPolicy.coreWrite ?? ""); setColdWrite(content?.memoryPolicy.coldWrite ?? "");
     setTriggers(content?.triggerDefaults ?? []); setCapabilities(content?.capabilityRequirements ?? []);
+    setToolIds(content?.declaredToolResourceIds ?? []); setToolOffsets([0]); setToolIndex(0);
     setOffsets(edit?.configurationOffsets ?? [0]); setIndex((edit?.configurationOffsets.length ?? 1) - 1);
   }, [edit]);
   const offset = offsets[index] ?? 0;
   const [configuration, reloadConfiguration] = useLoad(`version-action-sources:${edit?.definition.resourceId ?? "none"}:${edit?.mode ?? "none"}:${offset}`,
     () => edit && edit.mode !== "retire" ? client.agentVersionConfiguration(edit.definition.resourceId, offset) : Promise.resolve(null));
   const [tasks, reloadTasks] = useLoad("agent-version-actions-in-flight", client.tasks);
+  // Re-read visited directory pages as one snapshot. An unavailable page never
+  // becomes an empty set, and pagination never discards a selected reference.
+  const [tools, reloadTools] = useLoad(`version-tools:${edit?.definition.resourceId ?? "none"}:${edit?.version?.assetId ?? "new"}:${edit?.mode ?? "none"}:${toolOffsets.join(",")}`,
+    () => edit && edit.mode !== "retire" ? Promise.all(toolOffsets.map((value) => client.platformTools(value))) : Promise.resolve([]));
+  const toolPages: PlatformToolPage[] | null = tools.status === "ok" && tools.data.length === toolOffsets.length
+    && tools.data.every((page, pageIndex) => validPlatformToolPage(page, toolOffsets[pageIndex]!)
+      && (pageIndex === 0 || tools.data[pageIndex - 1]?.nextOffset === toolOffsets[pageIndex]))
+    && new Set(tools.data.flatMap((page) => page.tools.map((tool) => tool.resourceId))).size
+      === tools.data.reduce((total, page) => total + page.tools.length, 0) ? tools.data : null;
+  const toolPage = toolPages?.[toolIndex];
+  const availableTools = toolPages?.flatMap((page) => page.tools).filter(selectableTool) ?? [];
   const source = edit && configuration.status === "ok" && configuration.data
     && validVersionConfiguration(configuration.data, edit.definition, offset) ? configuration.data : null;
   const profile = source?.profiles.find((value) => value.key === profileKey);
@@ -1494,7 +1499,8 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
     : !!edit && !!source && source.routes.length > 0
       && (edit.version ? edit.version.state === AgentVersionState.Draft && (publishing ? edit.version.canPublish === true : edit.version.canUpdate === true) : source.canCreate);
   const sourceContent = edit?.version?.content;
-  const supported = !sourceContent || (sourceContent.skillVersionAssetIds.length === 0 && sourceContent.declaredToolResourceIds.length === 0);
+  const supported = (!sourceContent || sourceContent.skillVersionAssetIds.length === 0)
+    && (toolIds.length === 0 || (!!toolPages && toolIds.every((id) => availableTools.some((tool) => tool.resourceId === id))));
   const integer = (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
   const valid = retiring ? permitted : permitted && supported && !!profile && !!route && !!contract && !!name.trim() && !!instructions.trim()
     && contract.replyPolicies.includes(reply) && capabilities.every((key) => contract.capabilityRequirements.includes(key))
@@ -1516,7 +1522,7 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
       instructions, runtimeProfileKey: profileKey, modelRouteResourceId: routeId, replyPolicy: reply,
       parallelism: Number(parallelism), turnLimits: { idleTimeoutSeconds: Number(idle), maxTurnDurationSeconds: Number(duration) },
       memoryPolicy: { coreWrite: corePolicy, coldWrite: coldPolicy },
-      capabilityRequirements: [...capabilities], triggerDefaults: [...triggers], skillVersionAssetIds: [], declaredToolResourceIds: [],
+      capabilityRequirements: [...capabilities], triggerDefaults: [...triggers], skillVersionAssetIds: [], declaredToolResourceIds: [...toolIds],
     };
     setIntent(command); setSubmission(null); setFailure(null); onLocked(true);
   };
@@ -1563,6 +1569,7 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
       <p>{t("agents.version.coreWrite")}: {coreWrite === AgentMemoryCoreWrite.HumanOnly ? t("agents.version.coreHumanOnly") : t("agents.version.coreApproval")}</p>
       <p>{t("agents.version.coldWrite")}: {coldWrite === AgentMemoryColdWrite.Disabled ? t("agents.version.coldDisabled") : t("agents.version.coldInvocation")}</p>
       <p className="break-words">{t("agents.version.capabilities")}: {capabilities.join(", ") || "—"}</p>
+      <p className="break-words">{t("agents.tools.selected")}: {toolIds.join(", ") || "—"}</p>
       <p>{t("agents.version.triggers")}: {triggers.map((trigger) => t(trigger === AgentTrigger.Mention ? "agents.installation.trigger.mention" : "agents.version.manualAssignment")).join(", ") || "—"}</p>
       <pre className="whitespace-pre-wrap break-words">{instructions}</pre>
       <p>{t(retiring ? "agents.version.retireReview" : publishing ? "agents.version.publishReview" : "agents.version.saveReview")}</p><p>{t("agents.admission")}</p>
@@ -1579,7 +1586,7 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
         : !source ? <AgentReadFailure error={configuration.status === "error" ? configuration.error : undefined} onRetry={reloadConfiguration} />
         : <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
           {!permitted || !supported ? <Notice>{t("agents.version.createUnavailable")}</Notice> : null}
-          <fieldset disabled={publishing || !permitted || !supported} className="flex flex-col gap-3">
+          <fieldset disabled={publishing || !permitted || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0} className="flex flex-col gap-3">
             <label className="flex flex-col gap-1 text-sm">{t("agents.name")}<input required value={name} onChange={(event) => setName(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.avatar")}<input value={avatar} onChange={(event) => setAvatar(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.description")}<textarea value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-16 rounded-md border border-input bg-background p-2" /></label>
@@ -1600,6 +1607,30 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
             <fieldset className="flex flex-col gap-1 text-sm"><legend>{t("agents.version.triggers")}</legend>{Object.values(AgentTrigger).map((trigger) => <label className="flex gap-2" key={trigger}><input type="checkbox" checked={triggers.includes(trigger)} onChange={(event) => setTriggers((values) => event.target.checked ? [...values, trigger] : values.filter((value) => value !== trigger))} />{t(trigger === AgentTrigger.Mention ? "agents.installation.trigger.mention" : "agents.version.manualAssignment")}</label>)}</fieldset>
             <fieldset className="flex flex-col gap-1 text-sm"><legend>{t("agents.version.capabilities")}</legend>{contract?.capabilityRequirements.map((key) => <label className="flex gap-2" key={key}><input type="checkbox" checked={capabilities.includes(key)} onChange={(event) => setCapabilities((values) => event.target.checked ? [...values, key] : values.filter((value) => value !== key))} />{key}</label>)}</fieldset>
             <p className="text-sm text-muted-foreground">{t("agents.version.toolsUnavailable")}</p>
+            <fieldset className="flex flex-col gap-2 text-sm"><legend>{t("agents.tools.selected")}</legend>
+              {toolIds.map((id) => <div key={id} className="flex flex-wrap items-center gap-2">
+                <span className="break-all font-mono text-xs">{id}</span>
+                {!availableTools.some((tool) => tool.resourceId === id) ? <span>{t("agents.tools.unavailable")}</span> : null}
+                <Button onClick={() => setToolIds((values) => values.filter((value) => value !== id))}>{t("agents.tools.remove")}</Button>
+              </div>)}
+              <Button className="w-fit" onClick={reloadTools}>{t("platform.refresh")}</Button>
+              {tools.status === "pending" ? <p role="status">{t("platform.loading")}</p>
+                : !toolPage ? <p role="status">{t("platform.loadFailed")}</p>
+                : <>
+                  {toolPage.tools.length === 0 ? <p>{t("agents.tools.none")}</p> : toolPage.tools.map((tool) =>
+                    <label className="flex gap-2" key={tool.resourceId}><input type="checkbox" disabled={!selectableTool(tool)}
+                      checked={toolIds.includes(tool.resourceId)} onChange={(event) => setToolIds((values) => event.target.checked
+                        ? [...new Set([...values, tool.resourceId])] : values.filter((id) => id !== tool.resourceId))} />
+                      <span className="break-all">{tool.name} · {tool.resourceId}</span></label>)}
+                  <div className="flex flex-wrap gap-2">
+                    {toolIndex > 0 ? <Button onClick={() => setToolIndex(toolIndex - 1)}>{t("roles.previous")}</Button> : null}
+                    {toolPage.nextOffset != null ? <Button onClick={() => {
+                      const next = toolPage.nextOffset!;
+                      setToolOffsets((values) => [...values.slice(0, toolIndex + 1), next]); setToolIndex(toolIndex + 1);
+                    }}>{t("roles.next")}</Button> : null}
+                  </div>
+                </>}
+            </fieldset>
           </fieldset>
           <div className="flex gap-2">{index > 0 ? <Button onClick={() => setIndex(index - 1)}>{t("roles.previous")}</Button> : null}
             {source.nextOffset != null ? <Button onClick={() => { setOffsets((values) => [...values.slice(0, index + 1), source.nextOffset!]); setIndex(index + 1); }}>{t("roles.next")}</Button> : null}</div>

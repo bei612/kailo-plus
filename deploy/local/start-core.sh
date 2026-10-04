@@ -34,11 +34,13 @@ if [ "$runtime_present" -ne 0 ] && [ "$runtime_present" -ne "${#runtime_names[@]
   exit 2
 fi
 runtime_config=
+gateway_config=
 tmp=
 cleanup_start_core() {
   local status=$?
   trap - EXIT
   if [ -n "$runtime_config" ]; then rm -f -- "$runtime_config" || status=2; fi
+  if [ -n "$gateway_config" ]; then rm -f -- "$gateway_config" || status=2; fi
   if [ -n "$tmp" ]; then rm -f -- "$tmp" || status=2; fi
   exit "$status"
 }
@@ -89,12 +91,134 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
 PYRUNTIME
   runtime_compose=(-f "$runtime_config")
 fi
+# DD-105: exact public-only file mount is present only for a complete native
+# Tool deployment. No signing key is read or mounted into Core, and no key is
+# generated here. Validate before obtaining any one-use OpenBao delivery.
+gateway_names=(GATEWAY_SERVICE_ISSUER GATEWAY_SERVICE_AUDIENCE GATEWAY_SERVICE_CALLER_ID
+  GATEWAY_SERVICE_JWKS_FILE GATEWAY_SERVICE_MAX_TOKEN_SECONDS GATEWAY_SERVICE_SIGNING_KEY_FILE
+  GATEWAY_SERVICE_KEY_ID GATEWAY_SERVICE_TOKEN_SECONDS AGENT_TOOL_MCP_URL AGENT_TOOL_EXT_MCP_URL
+  AGENT_TOOL_SESSION_ISSUER AGENT_TOOL_SESSION_AUDIENCE AGENT_TOOL_SESSION_TOKEN_SECONDS
+  AGENT_TOOL_GATEWAY_URL AGENT_TOOL_GATEWAY_NAME)
+gateway_present=0
+for gateway_name in "${gateway_names[@]}"; do
+  if [ -n "${!gateway_name:-}" ]; then gateway_present=$((gateway_present + 1)); fi
+done
+if [ "$gateway_present" -ne 0 ] && [ "$gateway_present" -ne "${#gateway_names[@]}" ]; then
+  echo 'Gateway service/Tool Session 配置必须全缺省或完整投递' >&2
+  exit 2
+fi
+gateway_compose=()
+if [ "$gateway_present" -ne 0 ]; then
+  gateway_config=$(mktemp)
+  for gateway_name in "${gateway_names[@]}"; do export "$gateway_name"; done
+  OIDC_ISSUER="$OIDC_ISSUER" OIDC_SERVICE_CLIENT_ID="$OIDC_SERVICE_CLIENT_ID" \
+  OIDC_WORKER_CLIENT_ID="$OIDC_WORKER_CLIENT_ID" BFF_SERVICE_NAME="$BFF_SERVICE_NAME" \
+  SERVICE_CONTAINER_PORT="$SERVICE_CONTAINER_PORT" \
+  AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY="$AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY" \
+  python3 - "$gateway_config" <<'PYGATEWAY'
+import base64
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import sys
+from urllib.parse import urlsplit
+
+def reject():
+    raise SystemExit("Gateway service/Tool 投递无效；必须独立身份、精确私网 URL 与真实 public-only JWKS")
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            reject()
+        result[key] = value
+    return result
+
+def canonical(name):
+    raw = os.environ[name]
+    path = PurePosixPath(raw)
+    if not path.is_absolute() or path == PurePosixPath("/") or ".." in path.parts or str(path) != raw:
+        reject()
+    return path
+
+try:
+    public = Path(canonical("GATEWAY_SERVICE_JWKS_FILE"))
+    private = canonical("GATEWAY_SERVICE_SIGNING_KEY_FILE")
+    private_root = canonical("AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY")
+    if private_root not in private.parents or private_root in public.parents or private == public:
+        reject()
+    if not public.is_file() or public.resolve(strict=True) != public:
+        reject()
+    document = json.loads(public.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    if not isinstance(document, dict) or set(document) != {"keys"}:
+        reject()
+    keys = document["keys"]
+    if not isinstance(keys, list) or not keys:
+        reject()
+    ids = set()
+    for key in keys:
+        if not isinstance(key, dict) or set(key) - {"kty", "crv", "x", "y", "kid", "alg", "use", "key_ops"}:
+            reject()
+        if key.get("kty") != "EC" or key.get("crv") != "P-256" or key.get("alg") != "ES256":
+            reject()
+        if ("use" in key and key["use"] != "sig") or ("key_ops" in key and key["key_ops"] != ["verify"]):
+            reject()
+        kid = key["kid"]
+        if not isinstance(kid, str) or not kid or kid in ids:
+            reject()
+        ids.add(kid)
+        for coordinate in ("x", "y"):
+            value = key[coordinate]
+            if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", value):
+                reject()
+            if len(base64.urlsafe_b64decode(value + "=")) != 32:
+                reject()
+    if os.environ["GATEWAY_SERVICE_KEY_ID"] not in ids:
+        reject()
+    for native, worker in (("ISSUER", "OIDC_ISSUER"), ("AUDIENCE", "OIDC_SERVICE_CLIENT_ID"),
+                           ("CALLER_ID", "OIDC_WORKER_CLIENT_ID")):
+        if os.environ["GATEWAY_SERVICE_" + native] == os.environ[worker]:
+            reject()
+    lifetime = os.environ["GATEWAY_SERVICE_TOKEN_SECONDS"]
+    maximum = os.environ["GATEWAY_SERVICE_MAX_TOKEN_SECONDS"]
+    if not re.fullmatch(r"[1-9][0-9]*", lifetime) or not re.fullmatch(r"[1-9][0-9]*", maximum):
+        reject()
+    if int(lifetime) + 10 > int(maximum):
+        reject()
+    if not re.fullmatch(r"[1-9][0-9]*", os.environ["AGENT_TOOL_SESSION_TOKEN_SECONDS"]):
+        reject()
+    if (os.environ["AGENT_TOOL_SESSION_ISSUER"] in (os.environ["OIDC_ISSUER"], os.environ["GATEWAY_SERVICE_ISSUER"])
+        or os.environ["AGENT_TOOL_SESSION_AUDIENCE"] in (os.environ["OIDC_SERVICE_CLIENT_ID"], os.environ["GATEWAY_SERVICE_AUDIENCE"])):
+        reject()
+    gateway = urlsplit(os.environ["AGENT_TOOL_GATEWAY_URL"])
+    if (gateway.scheme not in ("http", "https") or not gateway.hostname
+        or gateway.username is not None or gateway.password is not None or gateway.query or gateway.fragment
+        or not os.environ["AGENT_TOOL_GATEWAY_NAME"].strip()):
+        reject()
+    for name, path in (("AGENT_TOOL_MCP_URL", "/service/v1/agent-tools/mcp"),
+                       ("AGENT_TOOL_EXT_MCP_URL", "/")):
+        url = urlsplit(os.environ[name])
+        if (url.scheme != "http" or url.hostname != os.environ["BFF_SERVICE_NAME"]
+            or url.port != int(os.environ["SERVICE_CONTAINER_PORT"])
+            or url.path not in (path, "" if path == "/" else path)
+            or url.username is not None or url.password is not None or url.query or url.fragment):
+            reject()
+except (OSError, ValueError, KeyError, TypeError):
+    reject()
+
+with open(sys.argv[1], "w", encoding="utf-8") as stream:
+    json.dump({"services": {"core-bff": {"volumes": [{"type": "bind", "source": str(public),
+        "target": str(public), "read_only": True, "bind": {"create_host_path": False}}]}}}, stream)
+PYGATEWAY
+  gateway_compose=(-f "$gateway_config")
+fi
 project=$(python3 -c 'import re,io;print(re.search(r"^name: (\S+)", io.open("compose.yaml",encoding="utf-8").read(), re.M).group(1))')
 app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
 [ -n "$app_cidr" ] || { echo "取不到 ${project}_app 网络子网，拒绝创建 Tenant AppRole" >&2; exit 2; }
 
 # sudo 只保留受控构建器选择，避免 Core 镜像构建落到无 cgroup 限额的默认 builder。
-compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "${runtime_compose[@]}" "$@"; }
+compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "${runtime_compose[@]}" "${gateway_compose[@]}" "$@"; }
 root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
 # 令牌经 stdin 进入容器，不上命令行（与 secret-store-init.sh 的 run_bao 同一做法）
 run_bao() {

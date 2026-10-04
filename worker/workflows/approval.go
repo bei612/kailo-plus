@@ -109,7 +109,7 @@ func (a *approval) satisfied() bool {
 		// 不伪造 owner，角色票仍独立必需；零约束不能自动批准。
 		for _, owner := range a.in.AffectedOwnerRefs {
 			d := a.recorded(owner.OwnerPrincipalID)
-			if d == nil || d.Decision != generated.Approve {
+			if d == nil || d.Decision != generated.ApprovalDecisionAPPROVE {
 				return false
 			}
 			required = true
@@ -123,7 +123,7 @@ func (a *approval) satisfied() bool {
 			return false
 		}
 		d := a.recorded(owner.OwnerPrincipalID)
-		if d == nil || d.Decision != generated.Approve {
+		if d == nil || d.Decision != generated.ApprovalDecisionAPPROVE {
 			return false
 		}
 		required = true
@@ -133,7 +133,7 @@ func (a *approval) satisfied() bool {
 	for _, req := range a.in.RoleRequirements {
 		approvers := map[string]struct{}{}
 		for _, d := range a.decisions {
-			if d.Decision != generated.Approve {
+			if d.Decision != generated.ApprovalDecisionAPPROVE {
 				continue
 			}
 			for _, s := range d.SatisfiedSelectors {
@@ -153,7 +153,7 @@ func (a *approval) satisfied() bool {
 // validateDecide 是 decide 的 Validator：只做确定性的状态判断，不调度 Activity、
 // 不改状态（SF-TSDK-09）。重放时整段跳过，因此它的结论不能是 history 的一部分。
 func (a *approval) validateDecide(ctx workflow.Context, u generated.ApprovalDecisionUpdate) error {
-	if u.Decision != generated.Approve && u.Decision != generated.ApprovalDecisionDENY {
+	if u.Decision != generated.ApprovalDecisionAPPROVE && u.Decision != generated.ApprovalDecisionDENY {
 		return refuse(generated.InvalidParameters, "决定只能是 APPROVE 或 DENY")
 	}
 	if u.ApproverPrincipalID == "" {

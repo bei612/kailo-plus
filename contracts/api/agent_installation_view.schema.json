@@ -34,6 +34,18 @@
       "description": "同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持 Schedule。",
       "items": {"$ref": "../enums/automation_result_target.schema.json"}
     },
+    "readPermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "effective", "canGrant", "canRevoke"],
+      "properties": {
+        "requested": {"type": "boolean"},
+        "effective": {"type": "boolean"},
+        "canGrant": {"type": "boolean"},
+        "canRevoke": {"type": "boolean"},
+        "pendingActionExecutionId": {"type": "string", "format": "uuid"}
+      }
+    },
     "executionPermission": {
       "type": "object",
       "additionalProperties": false,

@@ -1,7 +1,7 @@
 // 平台页的宿主注入点：宿主给出 BFF 客户端（其传输决定了这是 Web 还是 Desktop）与
 // 当前语言。页面只从这里取依赖，不 import 任一宿主的模块。
 
-import { createContext, type ReactNode, useCallback, useContext } from "react";
+import { createContext, Fragment, type ReactNode, useCallback, useContext, useState } from "react";
 import type { BffClient } from "../client";
 import type { ReasonCode } from "@client-kit/contracts";
 import type { WriteFailure } from "../transport";
@@ -28,9 +28,14 @@ export function PlatformProvider({
   locale?: PlatformLocale;
   children: ReactNode;
 }) {
+  // A replacement client is a new authenticated transport scope. Reset its
+  // consumers together: read snapshots, frozen writes and late receipts must
+  // never migrate to another identity. Locale changes preserve the same scope.
+  const [scope, setScope] = useState({ client, generation: 0 });
+  if (scope.client !== client) setScope({ client, generation: scope.generation + 1 });
   return (
     <PlatformContext.Provider value={{ client, locale: locale ?? resolveLocale() }}>
-      {children}
+      <Fragment key={scope.generation}>{children}</Fragment>
     </PlatformContext.Provider>
   );
 }

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/agent_memory_entry_read_input.schema.json",
+  "title": "AgentMemoryEntryReadInput",
+  "description": "只读当前 Invocation Installation 的 cold mem entry，不接受 core 或其他 Installation。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["slug"],
+  "properties": {"slug": {"type": "string", "pattern": "^mem/[a-zA-Z0-9._/-]+$"}}
+}

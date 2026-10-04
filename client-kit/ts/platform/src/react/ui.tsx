@@ -3,6 +3,30 @@
 // 登记为 Tailwind 的扫描源（@source），类名就按宿主自己的主题生成。
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { ErrorClass, ReasonCode } from "@client-kit/contracts";
+import { BffError } from "../transport";
+import { useReasonText, useT } from "./context";
+
+/** A definitive GET refusal is not an unknown external write outcome. */
+export function ReadFailure({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const t = useT();
+  const reasonText = useReasonText();
+  const response = error instanceof BffError ? error : null;
+  const knownClass = response?.errorClass !== undefined
+    && Object.values(ErrorClass).includes(response.errorClass);
+  const refusal = response && (response.errorClass === undefined || knownClass)
+    && response.errorClass !== ErrorClass.Unknown
+    && (knownClass || response.status === 403 || response.status === 404) ? response : null;
+  const reason = refusal?.reason;
+  const text = !refusal ? t("platform.loadFailed")
+    : reason !== undefined && Object.values(ReasonCode).includes(reason) ? reasonText(reason)
+    : refusal.status === 403 ? t("tasks.status.denied")
+    : refusal.status === 404 ? t("native.unavailable.title")
+    : t("workspace.lifecycle.rejected", { reason: String(refusal.status) });
+  return <Notice role={refusal ? "alert" : "status"}>
+    {text}<Button onClick={onRetry}>{t("platform.retry")}</Button>
+  </Notice>;
+}
 
 export function Notice({ children, role }: { children: ReactNode; role?: "alert" | "status" }) {
   return (

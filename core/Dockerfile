@@ -12,10 +12,13 @@ WORKDIR /build/apps/core
 COPY core/Cargo.toml core/Cargo.lock* ./
 COPY core/crates ./crates
 COPY core/.sqlx ./.sqlx
+COPY model-gateway/crates/protos/proto/ext_mcp.proto /build/apps/model-gateway/crates/protos/proto/ext_mcp.proto
 COPY collaboration/Cargo.toml /build/apps/collaboration/Cargo.toml
 COPY collaboration/crates/buzz-core /build/apps/collaboration/crates/buzz-core
 COPY tools/registry/capabilities.yaml /build/apps/tools/registry/capabilities.yaml
 COPY contracts/api/action_submission.schema.json /build/apps/contracts/api/action_submission.schema.json
+COPY contracts/api/agent_memory_entry_page.schema.json contracts/api/agent_memory_entry_view.schema.json contracts/api/agent_memory_read_view.schema.json /build/apps/contracts/api/
+COPY contracts/domain/agent_memory_entry_list_input.schema.json contracts/domain/agent_memory_entry_read_input.schema.json /build/apps/contracts/domain/
 # 离线编译：镜像构建时没有数据库，用入库的 sqlx 查询快照做编译期 SQL 校验
 ENV SQLX_OFFLINE=true
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

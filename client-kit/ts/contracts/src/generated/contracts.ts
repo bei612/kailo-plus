@@ -122,6 +122,14 @@ export interface ActionCommand {
      */
     automationVersionContent?: AutomationVersionContentClass;
     /**
+     * 仅 capability_contract.approve/deprecate：固定已登记版本。
+     */
+    capabilityContractRef?: CapabilityContractRefClass;
+    /**
+     * 仅 capability_contract.register：真实 schema 与测试向量内容。
+     */
+    capabilityContractRegistration?: CapabilityContractRegistrationClass;
+    /**
      * 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
      */
     delegationGrant?: DelegationGrantClass;
@@ -300,6 +308,86 @@ export interface ScheduleSpecClass {
     catchupWindowSeconds: number;
     everySeconds:         number;
     offsetSeconds:        number;
+}
+
+/**
+ * 仅 capability_contract.approve/deprecate：固定已登记版本。
+ *
+ * 固定 Catalog 自然键，不授予业务能力 consume 权限。
+ */
+export interface CapabilityContractRefClass {
+    categoryKey:     string;
+    contractVersion: number;
+}
+
+/**
+ * 仅 capability_contract.register：真实 schema 与测试向量内容。
+ *
+ * DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
+ */
+export interface CapabilityContractRegistrationClass {
+    categoryKey:               string;
+    contentReferenceSemantics: CapabilityContractRegistrationContentReferenceSemantics;
+    contractVersion:           number;
+    operationContracts:        CapabilityContractRegistrationOperationContract[];
+    protocolSessionKinds:      string[];
+    requiredDeclarations:      CapabilityRequiredDeclaration[];
+    resourceTypeFamily:        CapabilityContractRegistrationResourceTypeFamily[];
+    schemaDocuments:           string[];
+    testVectorsJson:           string;
+}
+
+export interface CapabilityContractRegistrationContentReferenceSemantics {
+    authorizationTargetRule: string;
+    nativeObjectRefRule:     string;
+    nativeRevisionRule:      string;
+}
+
+export interface CapabilityContractRegistrationOperationContract {
+    contractKey:        string;
+    inputSchemaDigest:  string;
+    outputSchemaDigest: string;
+    permission:         CapabilityPermission;
+    surface:            CapabilitySurface;
+    targetType:         string;
+}
+
+export enum CapabilityPermission {
+    Approve = "approve",
+    Audit = "audit",
+    Consume = "consume",
+    Create = "create",
+    Delegate = "delegate",
+    Delete = "delete",
+    Discover = "discover",
+    Execute = "execute",
+    Export = "export",
+    Manage = "manage",
+    Read = "read",
+    Share = "share",
+    TransferOwner = "transfer_owner",
+    Update = "update",
+}
+
+export enum CapabilitySurface {
+    Action = "ACTION",
+    Tool = "TOOL",
+}
+
+export enum CapabilityRequiredDeclaration {
+    Cancel = "CANCEL",
+    Meter = "METER",
+    Observe = "OBSERVE",
+    OnlineEditing = "ONLINE_EDITING",
+    ReadEdge = "READ_EDGE",
+    RevisionQuery = "REVISION_QUERY",
+    TenantDelete = "TENANT_DELETE",
+    VersionedModel = "VERSIONED_MODEL",
+}
+
+export interface CapabilityContractRegistrationResourceTypeFamily {
+    kind:    string;
+    typeKey: string;
 }
 
 /**
@@ -680,6 +768,7 @@ export interface InstallationElement {
     ownerPrincipalId:         string;
     pinnedVersionAssetId:     string;
     projection?:              ProjectionClass;
+    readPermission?:          InstallationReadPermission;
     resourceId:               string;
     resourceState:            ResourceState;
     resourceVersion:          number;
@@ -694,11 +783,11 @@ export enum AgentPrincipalState {
 
 export interface InstallationChannelBinding {
     channelId?: string;
-    status:     Status;
+    status:     ChannelBindingStatus;
     triggers:   AgentTrigger[];
 }
 
-export enum Status {
+export enum ChannelBindingStatus {
     Active = "ACTIVE",
     Disabled = "DISABLED",
     Error = "ERROR",
@@ -731,6 +820,14 @@ export enum AgentRuntimeProjectionState {
     Error = "ERROR",
     Pending = "PENDING",
     Revoked = "REVOKED",
+}
+
+export interface InstallationReadPermission {
+    canGrant:                  boolean;
+    canRevoke:                 boolean;
+    effective:                 boolean;
+    pendingActionExecutionId?: string;
+    requested:                 boolean;
 }
 
 /**
@@ -774,6 +871,7 @@ export interface AgentInstallationView {
     ownerPrincipalId:         string;
     pinnedVersionAssetId:     string;
     projection?:              ProjectionClass;
+    readPermission?:          AgentInstallationViewReadPermission;
     resourceId:               string;
     resourceState:            ResourceState;
     resourceVersion:          number;
@@ -783,11 +881,19 @@ export interface AgentInstallationView {
 
 export interface AgentInstallationViewChannelBinding {
     channelId?: string;
-    status:     Status;
+    status:     ChannelBindingStatus;
     triggers:   AgentTrigger[];
 }
 
 export interface AgentInstallationViewExecutionPermission {
+    canGrant:                  boolean;
+    canRevoke:                 boolean;
+    effective:                 boolean;
+    pendingActionExecutionId?: string;
+    requested:                 boolean;
+}
+
+export interface AgentInstallationViewReadPermission {
     canGrant:                  boolean;
     canRevoke:                 boolean;
     effective:                 boolean;
@@ -1326,6 +1432,47 @@ export interface AutomationView {
     workspaceId:                    string;
 }
 
+export interface CapabilityContractPage {
+    canRegister: boolean;
+    contracts:   ContractElement[];
+    nextOffset?: number;
+}
+
+/**
+ * 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
+ */
+export interface ContractElement {
+    canApprove:                    boolean;
+    canDeprecate:                  boolean;
+    categoryKey:                   string;
+    conformanceSuiteDigest:        string;
+    contractVersion:               number;
+    registeredByActionExecutionId: string;
+    schemaSetDigest:               string;
+    status:                        CapabilityContractStatus;
+}
+
+export enum CapabilityContractStatus {
+    Active = "ACTIVE",
+    Deprecated = "DEPRECATED",
+    Draft = "DRAFT",
+    Retired = "RETIRED",
+}
+
+/**
+ * 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
+ */
+export interface CapabilityContractView {
+    canApprove:                    boolean;
+    canDeprecate:                  boolean;
+    categoryKey:                   string;
+    conformanceSuiteDigest:        string;
+    contractVersion:               number;
+    registeredByActionExecutionId: string;
+    schemaSetDigest:               string;
+    status:                        CapabilityContractStatus;
+}
+
 /**
  * GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
  */
@@ -1573,6 +1720,53 @@ export enum TenantState {
     Restoring = "RESTORING",
     Suspended = "SUSPENDED",
     Suspending = "SUSPENDING",
+}
+
+export interface PlatformToolPage {
+    nextOffset?: number;
+    tools:       ToolElement[];
+}
+
+export interface ToolElement {
+    actionKey:        ActionKey;
+    canConsume:       boolean;
+    inputSchemaHash:  string;
+    name:             ActionKey;
+    outputSchemaHash: string;
+    ownerPrincipalId: string;
+    resourceId:       string;
+    resourceState:    ResourceState;
+    resourceVersion:  number;
+    source:           Source;
+    status:           ToolStatus;
+}
+
+export enum ActionKey {
+    AgentMemoryEntryList = "agent.memory.entry.list",
+    AgentMemoryEntryRead = "agent.memory.entry.read",
+}
+
+export enum Source {
+    PlatformNative = "PLATFORM_NATIVE",
+}
+
+export enum ToolStatus {
+    Active = "ACTIVE",
+    Provisioning = "PROVISIONING",
+}
+
+export interface PlatformToolView {
+    actionKey:        ActionKey;
+    canConsume:       boolean;
+    inputSchemaHash:  string;
+    name:             ActionKey;
+    outputSchemaHash: string;
+    ownerPrincipalId: string;
+    resourceId:       string;
+    resourceState:    ResourceState;
+    resourceVersion:  number;
+    source:           Source;
+    status:           ToolStatus;
 }
 
 /**
@@ -1886,6 +2080,19 @@ export interface WorkspacePreferenceRequest {
 }
 
 /**
+ * Installation 只取自受验签的 Invocation Session，不接受调用方目标覆盖。
+ */
+export interface AgentMemoryEntryListInput {
+}
+
+/**
+ * 只读当前 Invocation Installation 的 cold mem entry，不接受 core 或其他 Installation。
+ */
+export interface AgentMemoryEntryReadInput {
+    slug: string;
+}
+
+/**
  * HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
  */
 export interface AgentMemoryWriteInput {
@@ -1982,6 +2189,49 @@ export interface AutomationVersionContentTriggerClass {
     mentionPrincipalId?: string;
     scheduleSpec?:       ScheduleSpecClass;
     textPrefix?:         string;
+}
+
+/**
+ * 固定 Catalog 自然键，不授予业务能力 consume 权限。
+ */
+export interface CapabilityContractRef {
+    categoryKey:     string;
+    contractVersion: number;
+}
+
+/**
+ * DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
+ */
+export interface CapabilityContractRegistration {
+    categoryKey:               string;
+    contentReferenceSemantics: CapabilityContractRegistrationContentReferenceSemanticsClass;
+    contractVersion:           number;
+    operationContracts:        CapabilityContractRegistrationOperationContractClass[];
+    protocolSessionKinds:      string[];
+    requiredDeclarations:      CapabilityRequiredDeclaration[];
+    resourceTypeFamily:        CapabilityContractRegistrationResourceTypeFamilyClass[];
+    schemaDocuments:           string[];
+    testVectorsJson:           string;
+}
+
+export interface CapabilityContractRegistrationContentReferenceSemanticsClass {
+    authorizationTargetRule: string;
+    nativeObjectRefRule:     string;
+    nativeRevisionRule:      string;
+}
+
+export interface CapabilityContractRegistrationOperationContractClass {
+    contractKey:        string;
+    inputSchemaDigest:  string;
+    outputSchemaDigest: string;
+    permission:         CapabilityPermission;
+    surface:            CapabilitySurface;
+    targetType:         string;
+}
+
+export interface CapabilityContractRegistrationResourceTypeFamilyClass {
+    kind:    string;
+    typeKey: string;
 }
 
 export interface DelegationGrantParameters {

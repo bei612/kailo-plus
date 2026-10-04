@@ -134,6 +134,14 @@ async fn view(
     )
     .await
     .map_err(|e| e.respond(None))?;
+    let read_permission = crate::governance::installation_permission::read_view(
+        &state.governance,
+        ctx.tenant_id,
+        ctx.tenant_principal_id,
+        row.resource_id,
+    )
+    .await
+    .map_err(|e| e.respond(None))?;
     let mut result_targets = Vec::new();
     if row.state == "ACTIVE"
         && row.resource_state == "ACTIVE"
@@ -161,6 +169,7 @@ async fn view(
         "resourceVersion": row.resource_version, "resourceState": row.resource_state,
         "state": row.state, "activeProjectionGeneration": row.active_projection_generation,
         "channelBinding": channel, "projection": projection, "executionPermission": permission,
+        "readPermission": read_permission,
         "automationResultTargets": result_targets,
     }))
     .map_err(|_| {

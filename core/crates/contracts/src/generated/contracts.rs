@@ -160,6 +160,14 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_version_content: Option<AutomationVersionContentClass>,
 
+    /// 仅 capability_contract.approve/deprecate：固定已登记版本。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_contract_ref: Option<CapabilityContractRefClass>,
+
+    /// 仅 capability_contract.register：真实 schema 与测试向量内容。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_contract_registration: Option<CapabilityContractRegistrationClass>,
+
     /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegation_grant: Option<ParametersClass>,
@@ -395,6 +403,143 @@ pub struct ScheduleSpecClass {
     pub every_seconds: i64,
 
     pub offset_seconds: i64,
+}
+
+/// 仅 capability_contract.approve/deprecate：固定已登记版本。
+///
+/// 固定 Catalog 自然键，不授予业务能力 consume 权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRefClass {
+    pub category_key: String,
+
+    pub contract_version: i64,
+}
+
+/// 仅 capability_contract.register：真实 schema 与测试向量内容。
+///
+/// DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistrationClass {
+    pub category_key: String,
+
+    pub content_reference_semantics: CapabilityContractRegistrationContentReferenceSemantics,
+
+    pub contract_version: i64,
+
+    pub operation_contracts: Vec<CapabilityContractRegistrationOperationContract>,
+
+    pub protocol_session_kinds: Vec<String>,
+
+    pub required_declarations: Vec<CapabilityRequiredDeclaration>,
+
+    pub resource_type_family: Vec<CapabilityContractRegistrationResourceTypeFamily>,
+
+    pub schema_documents: Vec<String>,
+
+    pub test_vectors_json: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistrationContentReferenceSemantics {
+    pub authorization_target_rule: String,
+
+    pub native_object_ref_rule: String,
+
+    pub native_revision_rule: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistrationOperationContract {
+    pub contract_key: String,
+
+    pub input_schema_digest: String,
+
+    pub output_schema_digest: String,
+
+    pub permission: CapabilityPermission,
+
+    pub surface: CapabilitySurface,
+
+    pub target_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityPermission {
+    Approve,
+
+    Audit,
+
+    Consume,
+
+    Create,
+
+    Delegate,
+
+    Delete,
+
+    Discover,
+
+    Execute,
+
+    Export,
+
+    Manage,
+
+    Read,
+
+    Share,
+
+    #[serde(rename = "transfer_owner")]
+    TransferOwner,
+
+    Update,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum CapabilitySurface {
+    #[serde(rename = "ACTION")]
+    Action,
+
+    #[serde(rename = "TOOL")]
+    Tool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CapabilityRequiredDeclaration {
+    Cancel,
+
+    Meter,
+
+    Observe,
+
+    #[serde(rename = "ONLINE_EDITING")]
+    OnlineEditing,
+
+    #[serde(rename = "READ_EDGE")]
+    ReadEdge,
+
+    #[serde(rename = "REVISION_QUERY")]
+    RevisionQuery,
+
+    #[serde(rename = "TENANT_DELETE")]
+    TenantDelete,
+
+    #[serde(rename = "VERSIONED_MODEL")]
+    VersionedModel,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistrationResourceTypeFamily {
+    pub kind: String,
+
+    pub type_key: String,
 }
 
 /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -1011,6 +1156,9 @@ pub struct InstallationElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub projection: Option<ProjectionClass>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_permission: Option<InstallationReadPermission>,
+
     pub resource_id: String,
 
     pub resource_state: ResourceState,
@@ -1037,13 +1185,13 @@ pub struct InstallationChannelBinding {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_id: Option<String>,
 
-    pub status: Status,
+    pub status: ChannelBindingStatus,
 
     pub triggers: Vec<AgentTrigger>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Status {
+pub enum ChannelBindingStatus {
     #[serde(rename = "ACTIVE")]
     Active,
 
@@ -1098,6 +1246,21 @@ pub enum AgentRuntimeProjectionState {
 
     #[serde(rename = "REVOKED")]
     Revoked,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallationReadPermission {
+    pub can_grant: bool,
+
+    pub can_revoke: bool,
+
+    pub effective: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_action_execution_id: Option<String>,
+
+    pub requested: bool,
 }
 
 /// 03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
@@ -1166,6 +1329,9 @@ pub struct AgentInstallationView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub projection: Option<ProjectionClass>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_permission: Option<AgentInstallationViewReadPermission>,
+
     pub resource_id: String,
 
     pub resource_state: ResourceState,
@@ -1183,7 +1349,7 @@ pub struct AgentInstallationViewChannelBinding {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_id: Option<String>,
 
-    pub status: Status,
+    pub status: ChannelBindingStatus,
 
     pub triggers: Vec<AgentTrigger>,
 }
@@ -1191,6 +1357,21 @@ pub struct AgentInstallationViewChannelBinding {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentInstallationViewExecutionPermission {
+    pub can_grant: bool,
+
+    pub can_revoke: bool,
+
+    pub effective: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_action_execution_id: Option<String>,
+
+    pub requested: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationViewReadPermission {
     pub can_grant: bool,
 
     pub can_revoke: bool,
@@ -2025,6 +2206,74 @@ pub struct AutomationView {
     pub workspace_id: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractPage {
+    pub can_register: bool,
+
+    pub contracts: Vec<ContractElement>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+}
+
+/// 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContractElement {
+    pub can_approve: bool,
+
+    pub can_deprecate: bool,
+
+    pub category_key: String,
+
+    pub conformance_suite_digest: String,
+
+    pub contract_version: i64,
+
+    pub registered_by_action_execution_id: String,
+
+    pub schema_set_digest: String,
+
+    pub status: CapabilityContractStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum CapabilityContractStatus {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DEPRECATED")]
+    Deprecated,
+
+    #[serde(rename = "DRAFT")]
+    Draft,
+
+    #[serde(rename = "RETIRED")]
+    Retired,
+}
+
+/// 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractView {
+    pub can_approve: bool,
+
+    pub can_deprecate: bool,
+
+    pub category_key: String,
+
+    pub conformance_suite_digest: String,
+
+    pub contract_version: i64,
+
+    pub registered_by_action_execution_id: String,
+
+    pub schema_set_digest: String,
+
+    pub status: CapabilityContractStatus,
+}
+
 /// GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2326,6 +2575,92 @@ pub enum TenantState {
 
     #[serde(rename = "SUSPENDING")]
     Suspending,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformToolPage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub tools: Vec<ToolElement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolElement {
+    pub action_key: ActionKey,
+
+    pub can_consume: bool,
+
+    pub input_schema_hash: String,
+
+    pub name: ActionKey,
+
+    pub output_schema_hash: String,
+
+    pub owner_principal_id: String,
+
+    pub resource_id: String,
+
+    pub resource_state: ResourceState,
+
+    pub resource_version: i64,
+
+    pub source: Source,
+
+    pub status: ToolStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ActionKey {
+    #[serde(rename = "agent.memory.entry.list")]
+    AgentMemoryEntryList,
+
+    #[serde(rename = "agent.memory.entry.read")]
+    AgentMemoryEntryRead,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Source {
+    #[serde(rename = "PLATFORM_NATIVE")]
+    PlatformNative,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ToolStatus {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformToolView {
+    pub action_key: ActionKey,
+
+    pub can_consume: bool,
+
+    pub input_schema_hash: String,
+
+    pub name: ActionKey,
+
+    pub output_schema_hash: String,
+
+    pub owner_principal_id: String,
+
+    pub resource_id: String,
+
+    pub resource_state: ResourceState,
+
+    pub resource_version: i64,
+
+    pub source: Source,
+
+    pub status: ToolStatus,
 }
 
 /// PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
@@ -2742,6 +3077,16 @@ pub struct WorkspacePreferenceRequest {
     pub version: i64,
 }
 
+/// Installation 只取自受验签的 Invocation Session，不接受调用方目标覆盖。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentMemoryEntryListInput {}
+
+/// 只读当前 Invocation Installation 的 cold mem entry，不接受 core 或其他 Installation。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentMemoryEntryReadInput {
+    pub slug: String,
+}
+
 /// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2871,6 +3216,72 @@ pub struct AutomationVersionContentTrigger {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_prefix: Option<String>,
+}
+
+/// 固定 Catalog 自然键，不授予业务能力 consume 权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRef {
+    pub category_key: String,
+
+    pub contract_version: i64,
+}
+
+/// DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistration {
+    pub category_key: String,
+
+    pub content_reference_semantics: CapabilityContractRegistrationContentReferenceSemanticsClass,
+
+    pub contract_version: i64,
+
+    pub operation_contracts: Vec<CapabilityContractRegistrationOperationContractClass>,
+
+    pub protocol_session_kinds: Vec<String>,
+
+    pub required_declarations: Vec<CapabilityRequiredDeclaration>,
+
+    pub resource_type_family: Vec<CapabilityContractRegistrationResourceTypeFamilyClass>,
+
+    pub schema_documents: Vec<String>,
+
+    pub test_vectors_json: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistrationContentReferenceSemanticsClass {
+    pub authorization_target_rule: String,
+
+    pub native_object_ref_rule: String,
+
+    pub native_revision_rule: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistrationOperationContractClass {
+    pub contract_key: String,
+
+    pub input_schema_digest: String,
+
+    pub output_schema_digest: String,
+
+    pub permission: CapabilityPermission,
+
+    pub surface: CapabilitySurface,
+
+    pub target_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistrationResourceTypeFamilyClass {
+    pub kind: String,
+
+    pub type_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

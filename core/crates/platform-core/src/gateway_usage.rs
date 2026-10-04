@@ -220,6 +220,41 @@ struct SettlementEvent {
     native_turn_id: Option<String>,
 }
 
+fn memory_child_meters(
+    child: Uuid,
+    parameters: &Value,
+    dispatch: &str,
+    exact_context: bool,
+) -> Result<Vec<(String, Uuid, String)>, &'static str> {
+    if dispatch != "DISPATCHED" || !exact_context {
+        return Err("Memory child 缺同 root/Invocation/turn 的确定读取证据");
+    }
+    let meters: Vec<crate::openmeter::MemoryMeter> =
+        serde_json::from_value(parameters["memoryUsage"]["meters"].clone())
+            .map_err(|_| "Memory child 缺冻结原生 meter")?;
+    let mut seen = HashSet::new();
+    for meter in &meters {
+        if meter.id.is_empty()
+            || meter.event_type.is_empty()
+            || !seen.insert(meter.key.as_str())
+            || !matches!(
+                (meter.key.as_str(), meter.value_property.as_deref()),
+                ("agent_memory_read_count", None)
+                    | ("agent_memory_plaintext_bytes", Some("$.plaintext_bytes"))
+            )
+        {
+            return Err("Memory child 原生 meter 集合无效");
+        }
+    }
+    if seen.len() != 2 {
+        return Err("Memory child 缺读次数或真实字节 meter");
+    }
+    Ok(meters
+        .into_iter()
+        .map(|meter| ("BUZZ_AGENT_MEMORY".to_owned(), child, meter.key))
+        .collect())
+}
+
 const CORRELATION: &str = "select t.invocation_id,t.operation_id,t.tenant_id,t.workspace_id,
  i.installation_resource_id,i.agent_version_asset_id,t.gateway_principal_id,
  t.openmeter_customer_id customer_id,t.openmeter_namespace namespace,t.subject_key,
@@ -735,7 +770,7 @@ async fn usage_audit(
         from admission.action_execution a join catalog.action_definition d
           on d.action_key=a.action_key and d.version=a.action_version
         left join identity.tenant_membership m on m.tenant_id=a.tenant_id and m.tenant_principal_id=a.initiator_principal_id
-        where a.operation_id=$1")
+        where a.operation_id=$1 and a.parent_action_execution_id is null")
         .bind(operation).fetch_one(&mut **tx).await.map_err(|_| "Usage 审计 scope 不可读")?;
     append(
         tx,
@@ -1311,6 +1346,37 @@ pub(crate) async fn committed_turn(
         }
         evidence.push(Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id));
     }
+    // The same root Operation also owns its governed Memory read children.
+    // Do not filter them out of the Invocation set or mistake their usage for
+    // model SUM/Automation COUNT. An uncertain child still blocks completion.
+    let children: Vec<(Uuid, Value, String, bool)> = sqlx::query_as(
+        "select c.id,c.parameters,c.dispatch_state,coalesce(
+           c.gate_state='ALLOWED' and c.operation_id=parent.operation_id
+           and c.tenant_id=parent.tenant_id and c.workspace_id=parent.workspace_id
+           and c.initiator_principal_id=parent.initiator_principal_id
+           and c.actor_principal_id=parent.actor_principal_id
+           and c.target_id=i.installation_resource_id
+           and c.parameters->>'invocationId'=i.id::text
+           and c.parameters->>'runtimeTurnId'=i.runtime_turn_id
+           and c.parameters->'memoryUsage'->>'namespace'=$2
+           and c.parameters->'memoryUsage'->>'customer_id'=$3
+           and c.parameters->'memoryUsage'->>'subject'=$4,false)
+         from catalog.agent_invocation i
+         join admission.action_execution parent on parent.id=i.action_execution_id
+           and parent.parent_action_execution_id is null
+         join admission.action_execution c on c.parent_action_execution_id=parent.id
+         where i.id=$1 and c.action_key in ('agent.memory.entry.list','agent.memory.entry.read')",
+    )
+    .bind(invocation)
+    .bind(&facts.namespace)
+    .bind(&facts.customer_id)
+    .bind(&facts.subject_key)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|_| "Memory child 用量集合不可读")?;
+    for (child, parameters, dispatch, exact) in children {
+        expected.extend(memory_child_meters(child, &parameters, &dispatch, exact)?);
+    }
     let events: Vec<SettlementEvent> = sqlx::query_as(
         "select id,source_type,source_id,meter_key,native_turn_id from outbox.usage_event
          where invocation_id=$1 and operation_id=$2 and tenant_id=$3 and workspace_id=$4
@@ -1330,12 +1396,42 @@ pub(crate) async fn committed_turn(
         return Err("计量全集缺 SUM/COUNT 事件或包含额外来源");
     }
     let mut ids = Vec::with_capacity(events.len());
+    let mut memory_ids = Vec::new();
     for event in events {
         if !expected.remove(&(event.source_type.clone(), event.source_id, event.meter_key))
             || (event.source_type == "AGENT_INVOCATION"
                 && event.native_turn_id.as_deref() != Some(turn))
         {
             return Err("计量全集的 source/meter/native turn 不一致");
+        }
+        if event.source_type == "BUZZ_AGENT_MEMORY" {
+            // The migration binds frozen quantity/head/outcome to this exact
+            // child's ACCESS audit. Recheck that authority, not just the type.
+            let verified: bool = sqlx::query_scalar(
+                "select exists(select 1 from outbox.usage_event u
+                 join admission.action_execution c on c.id=u.source_id
+                 join audit.audit_event a on a.event_key='memory-child:'||c.id::text||':read'
+                   and a.event_type='ACCESS' and a.decision='ALLOW'
+                   and a.operation_id=c.operation_id and a.tenant_id=c.tenant_id
+                   and a.workspace_id=c.workspace_id and a.target_id=c.target_id
+                   and a.actor_principal_id=c.actor_principal_id
+                   and a.initiator_principal_id=c.initiator_principal_id
+                   and a.action_key=c.action_key and a.action_version=c.action_version
+                   and a.parameter_hash=c.parameter_hash
+                 where u.id=$1 and u.invocation_id=$2
+                   and u.dimensions->>'read_outcome'=a.result_code
+                   and a.result_code in ('FOUND','ABSENT','COMPLETE')
+                   and u.dimensions->>'slug_digest'=c.parameters->>'slugDigest'
+                   and not exists(select 1 from jsonb_array_elements_text(u.dimensions->'native_event_ids') n(id)
+                     where n.id !~ '^[0-9a-f]{64}$' or not exists(
+                       select 1 from jsonb_array_elements(a.evidence_refs) e(value)
+                       where e.value->>'kind'='BuzzEventId' and e.value->>'value'=n.id)))",
+            ).bind(event.id).bind(invocation).fetch_one(&mut *tx).await
+                .map_err(|_| "Memory child 原生内容证据不可读")?;
+            if !verified {
+                return Err("Memory child 原生内容与冻结读取不一致");
+            }
+            memory_ids.push(event.id);
         }
         ids.push(event.id);
         evidence.push(Evidence::new(EvidenceKind::UsageEventId, event.id));
@@ -1344,6 +1440,25 @@ pub(crate) async fn committed_turn(
     tx.commit().await.map_err(|_| "计量全集关联提交结果不明")?;
     if !settle_events(pool, &ids, openmeter).await? {
         return Ok(None);
+    }
+    for id in memory_ids {
+        let (event, stored_at): (Value, DateTime<Utc>) = sqlx::query_as(
+            "select event,stored_at from outbox.usage_event where id=$1
+             and settlement_status='COMMITTED' and stored_at is not null",
+        )
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .map_err(|_| "Memory child stored_at 不可读")?;
+        let native = openmeter
+            .stored_usage(&event)
+            .await
+            .map_err(|_| "Memory child 原生 stored_at 尚未可查证")?;
+        if !native
+            .is_some_and(|native| native.stored_at == stored_at && !native.configuration_warning)
+        {
+            return Ok(None);
+        }
     }
     Ok(Some((ids, evidence)))
 }
@@ -1457,7 +1572,7 @@ fn delivery_committed(status: &str, stored_at: Option<DateTime<Utc>>) -> bool {
 
 #[cfg(test)]
 mod usage_tests {
-    use super::{delivery_committed, frozen_turn_meters, Page, RequestSet};
+    use super::{delivery_committed, frozen_turn_meters, memory_child_meters, Page, RequestSet};
     use chrono::Utc;
     use serde_json::{json, Value};
     use uuid::Uuid;
@@ -1471,6 +1586,32 @@ mod usage_tests {
             "untrackedRequests": 0, "requestSetComplete": true
         }))
         .expect("native Page field types")
+    }
+
+    #[test]
+    fn memory_child_set_requires_both_frozen_meters_and_certain_same_turn() {
+        let child = Uuid::new_v4();
+        let parameters = json!({"memoryUsage":{"meters":[
+            {"key":"agent_memory_read_count","id":"count","event_type":"read","value_property":null},
+            {"key":"agent_memory_plaintext_bytes","id":"bytes","event_type":"read","value_property":"$.plaintext_bytes"}
+        ]}});
+        let expected = memory_child_meters(child, &parameters, "DISPATCHED", true).unwrap();
+        assert_eq!(expected.len(), 2);
+        assert!(expected
+            .iter()
+            .all(|(source, id, _)| source == "BUZZ_AGENT_MEMORY" && *id == child));
+        for dispatch in ["UNKNOWN", "NOT_DISPATCHED"] {
+            assert!(memory_child_meters(child, &parameters, dispatch, true).is_err());
+        }
+        assert!(memory_child_meters(child, &parameters, "DISPATCHED", false).is_err());
+        let mut changed = parameters.clone();
+        changed["memoryUsage"]["meters"]
+            .as_array_mut()
+            .unwrap()
+            .pop();
+        assert!(memory_child_meters(child, &changed, "DISPATCHED", true).is_err());
+        changed["memoryUsage"]["meters"][0]["key"] = json!("automation.run");
+        assert!(memory_child_meters(child, &changed, "DISPATCHED", true).is_err());
     }
 
     fn entry(id: Uuid, seq: i64, trace: &str, principal: Uuid) -> Value {

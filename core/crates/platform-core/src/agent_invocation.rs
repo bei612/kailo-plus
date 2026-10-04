@@ -362,7 +362,7 @@ pub(crate) async fn fresh_invocation(
     if action(tx, id).await? == "automation.run" {
         return crate::automation::fresh_invocation(state, tx, id).await;
     }
-    recheck(state, tx, id, None, None).await.map(|_| ())
+    recheck(state, tx, id, None, None, false).await.map(|_| ())
 }
 
 pub(crate) async fn fresh_reply(
@@ -378,7 +378,24 @@ pub(crate) async fn fresh_reply(
     if turn.is_empty() || reply.is_some_and(str::is_empty) {
         return Err(conflict());
     }
-    recheck(state, tx, id, Some(turn), reply).await
+    recheck(state, tx, id, Some(turn), reply, false).await
+}
+
+/// Tool PEP reuses the admitted Invocation's exact frozen source/runtime/Grant.
+/// A live native turn is neither a first-turn nor a completed-reply admission.
+pub(crate) async fn fresh_tool(
+    state: &ServiceState,
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    turn: &str,
+) -> Result<String, Refusal> {
+    if turn.is_empty() {
+        return Err(conflict());
+    }
+    if action(tx, id).await? == "automation.run" {
+        return crate::automation::fresh_tool(state, tx, id, turn).await;
+    }
+    recheck(state, tx, id, Some(turn), None, true).await
 }
 
 #[derive(FromRow)]
@@ -422,14 +439,17 @@ async fn recheck(
     id: Uuid,
     turn: Option<&str>,
     reply: Option<&str>,
+    tool: bool,
 ) -> Result<String, Refusal> {
     let frozen: Frozen = sqlx::query_as("select installation_resource_id,agent_version_asset_id,
         projection_generation,delegation_id,action_execution_id,source_event_id,root_event_id
         from catalog.agent_invocation where id=$1 and automation_resource_id is null and not cancel_pending
-          and (($2::text is null and status in ('CREATED','DISPATCHING') and runtime_turn_id is null)
-            or ($2::text is not null and status in ('RUNNING','UNKNOWN') and native_status='completed'
-              and runtime_turn_id=$2 and reply_event_id is not distinct from $3::text)) for update")
-        .bind(id).bind(turn).bind(reply).fetch_optional(&mut **tx).await?.ok_or_else(conflict)?;
+          and ((not $4 and $2::text is null and status in ('CREATED','DISPATCHING') and runtime_turn_id is null)
+            or (not $4 and $2::text is not null and status in ('RUNNING','UNKNOWN') and native_status='completed'
+              and runtime_turn_id=$2 and reply_event_id is not distinct from $3::text)
+            or ($4 and $3::text is null and status='RUNNING' and native_status='inProgress'
+              and runtime_turn_id=$2 and reply_event_id is null)) for update")
+        .bind(id).bind(turn).bind(reply).bind(tool).fetch_optional(&mut **tx).await?.ok_or_else(conflict)?;
     let ae = governance::lock_execution(tx, frozen.action_execution_id).await?;
     let row = installation_at(
         tx,

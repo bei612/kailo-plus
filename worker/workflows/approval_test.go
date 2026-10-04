@@ -151,9 +151,9 @@ func reasonOf(err error) string {
 func TestApproveThenConsume(t *testing.T) {
 	env, rec, in := setup(t, admitted)
 	var dec, dup, conflict, consumed updateResult
-	decideAt(env, time.Minute, approverA, generated.Approve, &dec)
+	decideAt(env, time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &dec)
 	// 同值重复：幂等，回原决定
-	decideAt(env, 2*time.Minute, approverA, generated.Approve, &dup)
+	decideAt(env, 2*time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &dup)
 	// 冲突值：Validator 拒绝。用另一个 Update ID 才能走到 Validator——同一 ID 由
 	// Server 去重，直接拿回第一次的结论（Core 比对后回 DUPLICATE_DECISION）
 	env.RegisterDelayedCallback(func() {
@@ -203,7 +203,7 @@ func TestExpiry(t *testing.T) {
 	env, rec, in := setup(t, admitted)
 	var late updateResult
 	// 过期之后的决定：Validator 拒绝，不形成决定
-	decideAt(env, 2*time.Hour, approverA, generated.Approve, &late)
+	decideAt(env, 2*time.Hour, approverA, generated.ApprovalDecisionAPPROVE, &late)
 	env.ExecuteWorkflow(ApprovalKind, in)
 	if rec.last().Status != generated.ApprovalStatusEXPIRED || len(rec.last().Decisions) != 0 {
 		t.Fatalf("到期应 EXPIRED 且没有决定: %+v", rec.last())
@@ -216,7 +216,7 @@ func TestExpiry(t *testing.T) {
 func TestConsumeDeadlineInvalidates(t *testing.T) {
 	env, rec, in := setup(t, admitted)
 	var d updateResult
-	decideAt(env, time.Minute, approverA, generated.Approve, &d)
+	decideAt(env, time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &d)
 	env.ExecuteWorkflow(ApprovalKind, in)
 	last := rec.last()
 	if last.Status != generated.Invalidated || *last.Reason != generated.ApprovalConsumeWindowClosed {
@@ -227,7 +227,7 @@ func TestConsumeDeadlineInvalidates(t *testing.T) {
 func TestInvalidateAfterApproval(t *testing.T) {
 	env, rec, in := setup(t, admitted)
 	var d, inv, consume updateResult
-	decideAt(env, time.Minute, approverA, generated.Approve, &d)
+	decideAt(env, time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &d)
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow(UpdateInvalidate, in.ActionExecutionID+":invalidate", inv.callbacks(),
 			generated.ApprovalInvalidateUpdate{Reason: generated.PermissionDenied})
@@ -255,7 +255,7 @@ func TestIneligibleApproverDoesNotDecide(t *testing.T) {
 	})
 	var a, b updateResult
 	decideAt(env, time.Minute, approverA, generated.ApprovalDecisionDENY, &a)
-	decideAt(env, 2*time.Minute, approverB, generated.Approve, &b)
+	decideAt(env, 2*time.Minute, approverB, generated.ApprovalDecisionAPPROVE, &b)
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow(UpdateConsume, in.ActionExecutionID+":consume", (&updateResult{}).callbacks())
 	}, 3*time.Minute)
@@ -275,7 +275,7 @@ func TestWithdraw(t *testing.T) {
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow(UpdateWithdraw, in.ActionExecutionID+":withdraw", w.callbacks())
 	}, time.Minute)
-	decideAt(env, 2*time.Minute, approverA, generated.Approve, &d)
+	decideAt(env, 2*time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &d)
 	env.ExecuteWorkflow(ApprovalKind, in)
 	if rec.last().Status != generated.Cancelled {
 		t.Fatalf("撤回应 CANCELLED: %+v", rec.last())
@@ -310,15 +310,15 @@ func TestMultiRoleRequirementsCountDistinctApprovers(t *testing.T) {
 		{Selector: generated.WorkspaceAdmin, MinDistinct: 1},
 	}
 	var a, again, b, c updateResult
-	decideAt(env, time.Minute, approverA, generated.Approve, &a)
+	decideAt(env, time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &a)
 	// 同一人换一个 Update ID 再批：仍只算一个决定，不能凑出第二位 TENANT_ADMIN
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow(UpdateDecide, "wf:"+approverA+":again", again.callbacks(),
-			generated.ApprovalDecisionUpdate{ApproverPrincipalID: approverA, Decision: generated.Approve})
+			generated.ApprovalDecisionUpdate{ApproverPrincipalID: approverA, Decision: generated.ApprovalDecisionAPPROVE})
 	}, 90*time.Second)
 	// 只满足 WORKSPACE_ADMIN 的第二人也不够
-	decideAt(env, 2*time.Minute, approverB, generated.Approve, &b)
-	decideAt(env, 3*time.Minute, approverC, generated.Approve, &c)
+	decideAt(env, 2*time.Minute, approverB, generated.ApprovalDecisionAPPROVE, &b)
+	decideAt(env, 3*time.Minute, approverC, generated.ApprovalDecisionAPPROVE, &c)
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow(UpdateConsume, in.ActionExecutionID+":consume", (&updateResult{}).callbacks())
 	}, 4*time.Minute)

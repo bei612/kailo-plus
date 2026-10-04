@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/agent_memory_entry_list_input.schema.json",
+  "title": "AgentMemoryEntryListInput",
+  "description": "Installation 只取自受验签的 Invocation Session，不接受调用方目标覆盖。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {}
+}

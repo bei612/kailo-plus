@@ -609,6 +609,27 @@ final platformAutomationProvider = FutureProvider.autoDispose
       final versions = <String>{};
       for (final version in detail.versions) {
         final content = version.content;
+        final trigger = content.trigger;
+        final spec = trigger.scheduleSpec;
+        final validTrigger = switch (trigger.kind) {
+          AutomationTriggerKind.MENTION =>
+            content.resultTarget == AutomationResultTarget.TRIGGER_THREAD &&
+                trigger.mentionPrincipalId?.isNotEmpty == true &&
+                spec == null,
+          AutomationTriggerKind.CHANNEL_MESSAGE =>
+            content.resultTarget == AutomationResultTarget.TRIGGER_THREAD &&
+                trigger.mentionPrincipalId == null &&
+                spec == null,
+          AutomationTriggerKind.SCHEDULE =>
+            content.resultTarget == AutomationResultTarget.CHANNEL &&
+                trigger.mentionPrincipalId == null &&
+                trigger.textPrefix == null &&
+                spec != null &&
+                spec.everySeconds > 0 &&
+                spec.offsetSeconds >= 0 &&
+                spec.offsetSeconds < spec.everySeconds &&
+                spec.catchupWindowSeconds >= 10,
+        };
         if (!versions.add(version.assetId) ||
             version.assetId.isEmpty ||
             version.automationResourceId != row.resourceId ||
@@ -616,12 +637,10 @@ final platformAutomationProvider = FutureProvider.autoDispose
             version.ordinal <= 0 ||
             version.ownerPrincipalId.isEmpty ||
             !RegExp(r'^[0-9a-f]{64}$').hasMatch(version.configHash) ||
-            content.resultTarget != ResultTarget.TRIGGER_THREAD ||
             content.action.kind != ActionKind.AGENT_TURN ||
             content.action.template.trim().isEmpty ||
-            (content.trigger.kind == TriggerKind.MENTION
-                ? content.trigger.mentionPrincipalId?.isNotEmpty != true
-                : content.trigger.mentionPrincipalId != null)) {
+            !validTrigger ||
+            trigger.textPrefix?.isEmpty == true) {
           throw const FormatException('Automation version');
         }
         if (version.assetId == row.pinnedVersionAssetId &&

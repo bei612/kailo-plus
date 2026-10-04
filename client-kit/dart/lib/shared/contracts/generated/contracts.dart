@@ -28,6 +28,8 @@
 //     final automationPage = automationPageFromJson(jsonString);
 //     final automationVersionView = automationVersionViewFromJson(jsonString);
 //     final automationView = automationViewFromJson(jsonString);
+//     final capabilityContractPage = capabilityContractPageFromJson(jsonString);
+//     final capabilityContractView = capabilityContractViewFromJson(jsonString);
 //     final clientKeyView = clientKeyViewFromJson(jsonString);
 //     final clientKeyStatus = clientKeyStatusFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
@@ -39,6 +41,8 @@
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
 //     final platformInfo = platformInfoFromJson(jsonString);
 //     final platformTenantPage = platformTenantPageFromJson(jsonString);
+//     final platformToolPage = platformToolPageFromJson(jsonString);
+//     final platformToolView = platformToolViewFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
 //     final roleMemberPage = roleMemberPageFromJson(jsonString);
 //     final roleWorkspacePage = roleWorkspacePageFromJson(jsonString);
@@ -50,10 +54,14 @@
 //     final workspaceView = workspaceViewFromJson(jsonString);
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
 //     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
+//     final agentMemoryEntryListInput = agentMemoryEntryListInputFromJson(jsonString);
+//     final agentMemoryEntryReadInput = agentMemoryEntryReadInputFromJson(jsonString);
 //     final agentMemoryWriteInput = agentMemoryWriteInputFromJson(jsonString);
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
 //     final automationScheduleSpec = automationScheduleSpecFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
+//     final capabilityContractRef = capabilityContractRefFromJson(jsonString);
+//     final capabilityContractRegistration = capabilityContractRegistrationFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
 //     final delegationScopeParameters = delegationScopeParametersFromJson(jsonString);
 //     final errorBody = errorBodyFromJson(jsonString);
@@ -256,6 +264,18 @@ AutomationView automationViewFromJson(String str) =>
 
 String automationViewToJson(AutomationView data) => json.encode(data.toJson());
 
+CapabilityContractPage capabilityContractPageFromJson(String str) =>
+    CapabilityContractPage.fromJson(json.decode(str));
+
+String capabilityContractPageToJson(CapabilityContractPage data) =>
+    json.encode(data.toJson());
+
+CapabilityContractView capabilityContractViewFromJson(String str) =>
+    CapabilityContractView.fromJson(json.decode(str));
+
+String capabilityContractViewToJson(CapabilityContractView data) =>
+    json.encode(data.toJson());
+
 ClientKeyView clientKeyViewFromJson(String str) =>
     ClientKeyView.fromJson(json.decode(str));
 
@@ -316,6 +336,18 @@ PlatformTenantPage platformTenantPageFromJson(String str) =>
     PlatformTenantPage.fromJson(json.decode(str));
 
 String platformTenantPageToJson(PlatformTenantPage data) =>
+    json.encode(data.toJson());
+
+PlatformToolPage platformToolPageFromJson(String str) =>
+    PlatformToolPage.fromJson(json.decode(str));
+
+String platformToolPageToJson(PlatformToolPage data) =>
+    json.encode(data.toJson());
+
+PlatformToolView platformToolViewFromJson(String str) =>
+    PlatformToolView.fromJson(json.decode(str));
+
+String platformToolViewToJson(PlatformToolView data) =>
     json.encode(data.toJson());
 
 ReadMarkRequest readMarkRequestFromJson(String str) =>
@@ -380,6 +412,18 @@ WorkspacePreferenceRequest workspacePreferenceRequestFromJson(String str) =>
 String workspacePreferenceRequestToJson(WorkspacePreferenceRequest data) =>
     json.encode(data.toJson());
 
+AgentMemoryEntryListInput agentMemoryEntryListInputFromJson(String str) =>
+    AgentMemoryEntryListInput.fromJson(json.decode(str));
+
+String agentMemoryEntryListInputToJson(AgentMemoryEntryListInput data) =>
+    json.encode(data.toJson());
+
+AgentMemoryEntryReadInput agentMemoryEntryReadInputFromJson(String str) =>
+    AgentMemoryEntryReadInput.fromJson(json.decode(str));
+
+String agentMemoryEntryReadInputToJson(AgentMemoryEntryReadInput data) =>
+    json.encode(data.toJson());
+
 AgentMemoryWriteInput agentMemoryWriteInputFromJson(String str) =>
     AgentMemoryWriteInput.fromJson(json.decode(str));
 
@@ -403,6 +447,20 @@ AutomationVersionContent automationVersionContentFromJson(String str) =>
 
 String automationVersionContentToJson(AutomationVersionContent data) =>
     json.encode(data.toJson());
+
+CapabilityContractRef capabilityContractRefFromJson(String str) =>
+    CapabilityContractRef.fromJson(json.decode(str));
+
+String capabilityContractRefToJson(CapabilityContractRef data) =>
+    json.encode(data.toJson());
+
+CapabilityContractRegistration capabilityContractRegistrationFromJson(
+  String str,
+) => CapabilityContractRegistration.fromJson(json.decode(str));
+
+String capabilityContractRegistrationToJson(
+  CapabilityContractRegistration data,
+) => json.encode(data.toJson());
 
 DelegationGrantParameters delegationGrantParametersFromJson(String str) =>
     DelegationGrantParameters.fromJson(json.decode(str));
@@ -799,6 +857,12 @@ class ActionCommand {
   ///仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
   final AutomationVersionContentClass? automationVersionContent;
 
+  ///仅 capability_contract.approve/deprecate：固定已登记版本。
+  final CapabilityContractRefClass? capabilityContractRef;
+
+  ///仅 capability_contract.register：真实 schema 与测试向量内容。
+  final CapabilityContractRegistrationClass? capabilityContractRegistration;
+
   ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
   final ParametersClass? delegationGrant;
 
@@ -860,6 +924,8 @@ class ActionCommand {
     this.assetId,
     this.assetVersion,
     this.automationVersionContent,
+    this.capabilityContractRef,
+    this.capabilityContractRegistration,
     this.delegationGrant,
     this.delegationId,
     this.delegationVersion,
@@ -891,6 +957,15 @@ class ActionCommand {
         ? null
         : AutomationVersionContentClass.fromJson(
             json["automationVersionContent"],
+          ),
+    capabilityContractRef: json["capabilityContractRef"] == null
+        ? null
+        : CapabilityContractRefClass.fromJson(json["capabilityContractRef"]),
+    capabilityContractRegistration:
+        json["capabilityContractRegistration"] == null
+        ? null
+        : CapabilityContractRegistrationClass.fromJson(
+            json["capabilityContractRegistration"],
           ),
     delegationGrant: json["delegationGrant"] == null
         ? null
@@ -924,6 +999,8 @@ class ActionCommand {
     "assetId": assetId,
     "assetVersion": assetVersion,
     "automationVersionContent": automationVersionContent?.toJson(),
+    "capabilityContractRef": capabilityContractRef?.toJson(),
+    "capabilityContractRegistration": capabilityContractRegistration?.toJson(),
     "delegationGrant": delegationGrant?.toJson(),
     "delegationId": delegationId,
     "delegationVersion": delegationVersion,
@@ -1232,6 +1309,262 @@ class ScheduleSpecClass {
     "everySeconds": everySeconds,
     "offsetSeconds": offsetSeconds,
   });
+}
+
+///仅 capability_contract.approve/deprecate：固定已登记版本。
+///
+///固定 Catalog 自然键，不授予业务能力 consume 权限。
+class CapabilityContractRefClass {
+  final String categoryKey;
+  final int contractVersion;
+
+  CapabilityContractRefClass({
+    required this.categoryKey,
+    required this.contractVersion,
+  });
+
+  factory CapabilityContractRefClass.fromJson(Map<String, dynamic> json) =>
+      CapabilityContractRefClass(
+        categoryKey: json["categoryKey"],
+        contractVersion: json["contractVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "categoryKey": categoryKey,
+    "contractVersion": contractVersion,
+  });
+}
+
+///仅 capability_contract.register：真实 schema 与测试向量内容。
+///
+///DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
+class CapabilityContractRegistrationClass {
+  final String categoryKey;
+  final CapabilityContractRegistrationContentReferenceSemantics
+  contentReferenceSemantics;
+  final int contractVersion;
+  final List<CapabilityContractRegistrationOperationContract>
+  operationContracts;
+  final List<String> protocolSessionKinds;
+  final List<CapabilityRequiredDeclaration> requiredDeclarations;
+  final List<CapabilityContractRegistrationResourceTypeFamily>
+  resourceTypeFamily;
+  final List<String> schemaDocuments;
+  final String testVectorsJson;
+
+  CapabilityContractRegistrationClass({
+    required this.categoryKey,
+    required this.contentReferenceSemantics,
+    required this.contractVersion,
+    required this.operationContracts,
+    required this.protocolSessionKinds,
+    required this.requiredDeclarations,
+    required this.resourceTypeFamily,
+    required this.schemaDocuments,
+    required this.testVectorsJson,
+  });
+
+  factory CapabilityContractRegistrationClass.fromJson(
+    Map<String, dynamic> json,
+  ) => CapabilityContractRegistrationClass(
+    categoryKey: json["categoryKey"],
+    contentReferenceSemantics:
+        CapabilityContractRegistrationContentReferenceSemantics.fromJson(
+          json["contentReferenceSemantics"],
+        ),
+    contractVersion: json["contractVersion"],
+    operationContracts:
+        List<CapabilityContractRegistrationOperationContract>.from(
+          json["operationContracts"].map(
+            (x) => CapabilityContractRegistrationOperationContract.fromJson(x),
+          ),
+        ),
+    protocolSessionKinds: List<String>.from(
+      json["protocolSessionKinds"].map((x) => x),
+    ),
+    requiredDeclarations: List<CapabilityRequiredDeclaration>.from(
+      json["requiredDeclarations"].map(
+        (x) => capabilityRequiredDeclarationValues.map[x]!,
+      ),
+    ),
+    resourceTypeFamily:
+        List<CapabilityContractRegistrationResourceTypeFamily>.from(
+          json["resourceTypeFamily"].map(
+            (x) => CapabilityContractRegistrationResourceTypeFamily.fromJson(x),
+          ),
+        ),
+    schemaDocuments: List<String>.from(json["schemaDocuments"].map((x) => x)),
+    testVectorsJson: json["testVectorsJson"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "categoryKey": categoryKey,
+    "contentReferenceSemantics": contentReferenceSemantics.toJson(),
+    "contractVersion": contractVersion,
+    "operationContracts": List<dynamic>.from(
+      operationContracts.map((x) => x.toJson()),
+    ),
+    "protocolSessionKinds": List<dynamic>.from(
+      protocolSessionKinds.map((x) => x),
+    ),
+    "requiredDeclarations": List<dynamic>.from(
+      requiredDeclarations.map(
+        (x) => capabilityRequiredDeclarationValues.reverse[x],
+      ),
+    ),
+    "resourceTypeFamily": List<dynamic>.from(
+      resourceTypeFamily.map((x) => x.toJson()),
+    ),
+    "schemaDocuments": List<dynamic>.from(schemaDocuments.map((x) => x)),
+    "testVectorsJson": testVectorsJson,
+  });
+}
+
+class CapabilityContractRegistrationContentReferenceSemantics {
+  final String authorizationTargetRule;
+  final String nativeObjectRefRule;
+  final String nativeRevisionRule;
+
+  CapabilityContractRegistrationContentReferenceSemantics({
+    required this.authorizationTargetRule,
+    required this.nativeObjectRefRule,
+    required this.nativeRevisionRule,
+  });
+
+  factory CapabilityContractRegistrationContentReferenceSemantics.fromJson(
+    Map<String, dynamic> json,
+  ) => CapabilityContractRegistrationContentReferenceSemantics(
+    authorizationTargetRule: json["authorizationTargetRule"],
+    nativeObjectRefRule: json["nativeObjectRefRule"],
+    nativeRevisionRule: json["nativeRevisionRule"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "authorizationTargetRule": authorizationTargetRule,
+    "nativeObjectRefRule": nativeObjectRefRule,
+    "nativeRevisionRule": nativeRevisionRule,
+  });
+}
+
+class CapabilityContractRegistrationOperationContract {
+  final String contractKey;
+  final String inputSchemaDigest;
+  final String outputSchemaDigest;
+  final CapabilityPermission permission;
+  final CapabilitySurface surface;
+  final String targetType;
+
+  CapabilityContractRegistrationOperationContract({
+    required this.contractKey,
+    required this.inputSchemaDigest,
+    required this.outputSchemaDigest,
+    required this.permission,
+    required this.surface,
+    required this.targetType,
+  });
+
+  factory CapabilityContractRegistrationOperationContract.fromJson(
+    Map<String, dynamic> json,
+  ) => CapabilityContractRegistrationOperationContract(
+    contractKey: json["contractKey"],
+    inputSchemaDigest: json["inputSchemaDigest"],
+    outputSchemaDigest: json["outputSchemaDigest"],
+    permission: capabilityPermissionValues.map[json["permission"]]!,
+    surface: capabilitySurfaceValues.map[json["surface"]]!,
+    targetType: json["targetType"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contractKey": contractKey,
+    "inputSchemaDigest": inputSchemaDigest,
+    "outputSchemaDigest": outputSchemaDigest,
+    "permission": capabilityPermissionValues.reverse[permission],
+    "surface": capabilitySurfaceValues.reverse[surface],
+    "targetType": targetType,
+  });
+}
+
+enum CapabilityPermission {
+  APPROVE,
+  AUDIT,
+  CONSUME,
+  CREATE,
+  DELEGATE,
+  DELETE,
+  DISCOVER,
+  EXECUTE,
+  EXPORT,
+  MANAGE,
+  READ,
+  SHARE,
+  TRANSFER_OWNER,
+  UPDATE,
+}
+
+final capabilityPermissionValues = EnumValues({
+  "approve": CapabilityPermission.APPROVE,
+  "audit": CapabilityPermission.AUDIT,
+  "consume": CapabilityPermission.CONSUME,
+  "create": CapabilityPermission.CREATE,
+  "delegate": CapabilityPermission.DELEGATE,
+  "delete": CapabilityPermission.DELETE,
+  "discover": CapabilityPermission.DISCOVER,
+  "execute": CapabilityPermission.EXECUTE,
+  "export": CapabilityPermission.EXPORT,
+  "manage": CapabilityPermission.MANAGE,
+  "read": CapabilityPermission.READ,
+  "share": CapabilityPermission.SHARE,
+  "transfer_owner": CapabilityPermission.TRANSFER_OWNER,
+  "update": CapabilityPermission.UPDATE,
+});
+
+enum CapabilitySurface { ACTION, TOOL }
+
+final capabilitySurfaceValues = EnumValues({
+  "ACTION": CapabilitySurface.ACTION,
+  "TOOL": CapabilitySurface.TOOL,
+});
+
+enum CapabilityRequiredDeclaration {
+  CANCEL,
+  METER,
+  OBSERVE,
+  ONLINE_EDITING,
+  READ_EDGE,
+  REVISION_QUERY,
+  TENANT_DELETE,
+  VERSIONED_MODEL,
+}
+
+final capabilityRequiredDeclarationValues = EnumValues({
+  "CANCEL": CapabilityRequiredDeclaration.CANCEL,
+  "METER": CapabilityRequiredDeclaration.METER,
+  "OBSERVE": CapabilityRequiredDeclaration.OBSERVE,
+  "ONLINE_EDITING": CapabilityRequiredDeclaration.ONLINE_EDITING,
+  "READ_EDGE": CapabilityRequiredDeclaration.READ_EDGE,
+  "REVISION_QUERY": CapabilityRequiredDeclaration.REVISION_QUERY,
+  "TENANT_DELETE": CapabilityRequiredDeclaration.TENANT_DELETE,
+  "VERSIONED_MODEL": CapabilityRequiredDeclaration.VERSIONED_MODEL,
+});
+
+class CapabilityContractRegistrationResourceTypeFamily {
+  final String kind;
+  final String typeKey;
+
+  CapabilityContractRegistrationResourceTypeFamily({
+    required this.kind,
+    required this.typeKey,
+  });
+
+  factory CapabilityContractRegistrationResourceTypeFamily.fromJson(
+    Map<String, dynamic> json,
+  ) => CapabilityContractRegistrationResourceTypeFamily(
+    kind: json["kind"],
+    typeKey: json["typeKey"],
+  );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"kind": kind, "typeKey": typeKey});
 }
 
 ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -2125,6 +2458,7 @@ class InstallationElement {
   final String ownerPrincipalId;
   final String pinnedVersionAssetId;
   final ProjectionClass? projection;
+  final InstallationReadPermission? readPermission;
   final String resourceId;
   final ResourceState resourceState;
   final int resourceVersion;
@@ -2142,6 +2476,7 @@ class InstallationElement {
     required this.ownerPrincipalId,
     required this.pinnedVersionAssetId,
     this.projection,
+    this.readPermission,
     required this.resourceId,
     required this.resourceState,
     required this.resourceVersion,
@@ -2176,6 +2511,9 @@ class InstallationElement {
         projection: json["projection"] == null
             ? null
             : ProjectionClass.fromJson(json["projection"]),
+        readPermission: json["readPermission"] == null
+            ? null
+            : InstallationReadPermission.fromJson(json["readPermission"]),
         resourceId: json["resourceId"],
         resourceState: resourceStateValues.map[json["resourceState"]]!,
         resourceVersion: json["resourceVersion"],
@@ -2201,6 +2539,7 @@ class InstallationElement {
     "ownerPrincipalId": ownerPrincipalId,
     "pinnedVersionAssetId": pinnedVersionAssetId,
     "projection": projection?.toJson(),
+    "readPermission": readPermission?.toJson(),
     "resourceId": resourceId,
     "resourceState": resourceStateValues.reverse[resourceState],
     "resourceVersion": resourceVersion,
@@ -2218,7 +2557,7 @@ final agentPrincipalStateValues = EnumValues({
 
 class InstallationChannelBinding {
   final String? channelId;
-  final Status status;
+  final ChannelBindingStatus status;
   final List<AgentTrigger> triggers;
 
   InstallationChannelBinding({
@@ -2230,7 +2569,7 @@ class InstallationChannelBinding {
   factory InstallationChannelBinding.fromJson(Map<String, dynamic> json) =>
       InstallationChannelBinding(
         channelId: json["channelId"],
-        status: statusValues.map[json["status"]]!,
+        status: channelBindingStatusValues.map[json["status"]]!,
         triggers: List<AgentTrigger>.from(
           json["triggers"].map((x) => agentTriggerValues.map[x]!),
         ),
@@ -2238,19 +2577,19 @@ class InstallationChannelBinding {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "channelId": channelId,
-    "status": statusValues.reverse[status],
+    "status": channelBindingStatusValues.reverse[status],
     "triggers": List<dynamic>.from(
       triggers.map((x) => agentTriggerValues.reverse[x]),
     ),
   });
 }
 
-enum Status { ACTIVE, DISABLED, ERROR }
+enum ChannelBindingStatus { ACTIVE, DISABLED, ERROR }
 
-final statusValues = EnumValues({
-  "ACTIVE": Status.ACTIVE,
-  "DISABLED": Status.DISABLED,
-  "ERROR": Status.ERROR,
+final channelBindingStatusValues = EnumValues({
+  "ACTIVE": ChannelBindingStatus.ACTIVE,
+  "DISABLED": ChannelBindingStatus.DISABLED,
+  "ERROR": ChannelBindingStatus.ERROR,
 });
 
 class InstallationExecutionPermission {
@@ -2330,6 +2669,39 @@ final agentRuntimeProjectionStateValues = EnumValues({
   "REVOKED": AgentRuntimeProjectionState.REVOKED,
 });
 
+class InstallationReadPermission {
+  final bool canGrant;
+  final bool canRevoke;
+  final bool effective;
+  final String? pendingActionExecutionId;
+  final bool requested;
+
+  InstallationReadPermission({
+    required this.canGrant,
+    required this.canRevoke,
+    required this.effective,
+    this.pendingActionExecutionId,
+    required this.requested,
+  });
+
+  factory InstallationReadPermission.fromJson(Map<String, dynamic> json) =>
+      InstallationReadPermission(
+        canGrant: json["canGrant"],
+        canRevoke: json["canRevoke"],
+        effective: json["effective"],
+        pendingActionExecutionId: json["pendingActionExecutionId"],
+        requested: json["requested"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canGrant": canGrant,
+    "canRevoke": canRevoke,
+    "effective": effective,
+    "pendingActionExecutionId": pendingActionExecutionId,
+    "requested": requested,
+  });
+}
+
 ///03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
 enum AgentInstallationState { ACTIVE, DISABLED, DRAINING, ERROR, PROVISIONING }
 
@@ -2391,6 +2763,7 @@ class AgentInstallationView {
   final String ownerPrincipalId;
   final String pinnedVersionAssetId;
   final ProjectionClass? projection;
+  final AgentInstallationViewReadPermission? readPermission;
   final String resourceId;
   final ResourceState resourceState;
   final int resourceVersion;
@@ -2408,6 +2781,7 @@ class AgentInstallationView {
     required this.ownerPrincipalId,
     required this.pinnedVersionAssetId,
     this.projection,
+    this.readPermission,
     required this.resourceId,
     required this.resourceState,
     required this.resourceVersion,
@@ -2415,41 +2789,43 @@ class AgentInstallationView {
     required this.workspaceId,
   });
 
-  factory AgentInstallationView.fromJson(Map<String, dynamic> json) =>
-      AgentInstallationView(
-        activeProjectionGeneration: json["activeProjectionGeneration"],
-        agentPrincipalId: json["agentPrincipalId"],
-        agentPrincipalState:
-            agentPrincipalStateValues.map[json["agentPrincipalState"]]!,
-        agentResourceId: json["agentResourceId"],
-        automationResultTargets: json["automationResultTargets"] == null
-            ? null
-            : List<AutomationResultTarget>.from(
-                json["automationResultTargets"]!.map(
-                  (x) => automationResultTargetValues.map[x]!,
-                ),
-              ),
-        channelBinding: json["channelBinding"] == null
-            ? null
-            : AgentInstallationViewChannelBinding.fromJson(
-                json["channelBinding"],
-              ),
-        executionPermission: json["executionPermission"] == null
-            ? null
-            : AgentInstallationViewExecutionPermission.fromJson(
-                json["executionPermission"],
-              ),
-        ownerPrincipalId: json["ownerPrincipalId"],
-        pinnedVersionAssetId: json["pinnedVersionAssetId"],
-        projection: json["projection"] == null
-            ? null
-            : ProjectionClass.fromJson(json["projection"]),
-        resourceId: json["resourceId"],
-        resourceState: resourceStateValues.map[json["resourceState"]]!,
-        resourceVersion: json["resourceVersion"],
-        state: agentInstallationStateValues.map[json["state"]]!,
-        workspaceId: json["workspaceId"],
-      );
+  factory AgentInstallationView.fromJson(
+    Map<String, dynamic> json,
+  ) => AgentInstallationView(
+    activeProjectionGeneration: json["activeProjectionGeneration"],
+    agentPrincipalId: json["agentPrincipalId"],
+    agentPrincipalState:
+        agentPrincipalStateValues.map[json["agentPrincipalState"]]!,
+    agentResourceId: json["agentResourceId"],
+    automationResultTargets: json["automationResultTargets"] == null
+        ? null
+        : List<AutomationResultTarget>.from(
+            json["automationResultTargets"]!.map(
+              (x) => automationResultTargetValues.map[x]!,
+            ),
+          ),
+    channelBinding: json["channelBinding"] == null
+        ? null
+        : AgentInstallationViewChannelBinding.fromJson(json["channelBinding"]),
+    executionPermission: json["executionPermission"] == null
+        ? null
+        : AgentInstallationViewExecutionPermission.fromJson(
+            json["executionPermission"],
+          ),
+    ownerPrincipalId: json["ownerPrincipalId"],
+    pinnedVersionAssetId: json["pinnedVersionAssetId"],
+    projection: json["projection"] == null
+        ? null
+        : ProjectionClass.fromJson(json["projection"]),
+    readPermission: json["readPermission"] == null
+        ? null
+        : AgentInstallationViewReadPermission.fromJson(json["readPermission"]),
+    resourceId: json["resourceId"],
+    resourceState: resourceStateValues.map[json["resourceState"]]!,
+    resourceVersion: json["resourceVersion"],
+    state: agentInstallationStateValues.map[json["state"]]!,
+    workspaceId: json["workspaceId"],
+  );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "activeProjectionGeneration": activeProjectionGeneration,
@@ -2469,6 +2845,7 @@ class AgentInstallationView {
     "ownerPrincipalId": ownerPrincipalId,
     "pinnedVersionAssetId": pinnedVersionAssetId,
     "projection": projection?.toJson(),
+    "readPermission": readPermission?.toJson(),
     "resourceId": resourceId,
     "resourceState": resourceStateValues.reverse[resourceState],
     "resourceVersion": resourceVersion,
@@ -2479,7 +2856,7 @@ class AgentInstallationView {
 
 class AgentInstallationViewChannelBinding {
   final String? channelId;
-  final Status status;
+  final ChannelBindingStatus status;
   final List<AgentTrigger> triggers;
 
   AgentInstallationViewChannelBinding({
@@ -2492,7 +2869,7 @@ class AgentInstallationViewChannelBinding {
     Map<String, dynamic> json,
   ) => AgentInstallationViewChannelBinding(
     channelId: json["channelId"],
-    status: statusValues.map[json["status"]]!,
+    status: channelBindingStatusValues.map[json["status"]]!,
     triggers: List<AgentTrigger>.from(
       json["triggers"].map((x) => agentTriggerValues.map[x]!),
     ),
@@ -2500,7 +2877,7 @@ class AgentInstallationViewChannelBinding {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "channelId": channelId,
-    "status": statusValues.reverse[status],
+    "status": channelBindingStatusValues.reverse[status],
     "triggers": List<dynamic>.from(
       triggers.map((x) => agentTriggerValues.reverse[x]),
     ),
@@ -2525,6 +2902,40 @@ class AgentInstallationViewExecutionPermission {
   factory AgentInstallationViewExecutionPermission.fromJson(
     Map<String, dynamic> json,
   ) => AgentInstallationViewExecutionPermission(
+    canGrant: json["canGrant"],
+    canRevoke: json["canRevoke"],
+    effective: json["effective"],
+    pendingActionExecutionId: json["pendingActionExecutionId"],
+    requested: json["requested"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canGrant": canGrant,
+    "canRevoke": canRevoke,
+    "effective": effective,
+    "pendingActionExecutionId": pendingActionExecutionId,
+    "requested": requested,
+  });
+}
+
+class AgentInstallationViewReadPermission {
+  final bool canGrant;
+  final bool canRevoke;
+  final bool effective;
+  final String? pendingActionExecutionId;
+  final bool requested;
+
+  AgentInstallationViewReadPermission({
+    required this.canGrant,
+    required this.canRevoke,
+    required this.effective,
+    this.pendingActionExecutionId,
+    required this.requested,
+  });
+
+  factory AgentInstallationViewReadPermission.fromJson(
+    Map<String, dynamic> json,
+  ) => AgentInstallationViewReadPermission(
     canGrant: json["canGrant"],
     canRevoke: json["canRevoke"],
     effective: json["effective"],
@@ -3915,6 +4326,134 @@ class AutomationView {
   });
 }
 
+class CapabilityContractPage {
+  final bool canRegister;
+  final List<ContractElement> contracts;
+  final int? nextOffset;
+
+  CapabilityContractPage({
+    required this.canRegister,
+    required this.contracts,
+    this.nextOffset,
+  });
+
+  factory CapabilityContractPage.fromJson(Map<String, dynamic> json) =>
+      CapabilityContractPage(
+        canRegister: json["canRegister"],
+        contracts: List<ContractElement>.from(
+          json["contracts"].map((x) => ContractElement.fromJson(x)),
+        ),
+        nextOffset: json["nextOffset"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canRegister": canRegister,
+    "contracts": List<dynamic>.from(contracts.map((x) => x.toJson())),
+    "nextOffset": nextOffset,
+  });
+}
+
+///受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
+class ContractElement {
+  final bool canApprove;
+  final bool canDeprecate;
+  final String categoryKey;
+  final String conformanceSuiteDigest;
+  final int contractVersion;
+  final String registeredByActionExecutionId;
+  final String schemaSetDigest;
+  final CapabilityContractStatus status;
+
+  ContractElement({
+    required this.canApprove,
+    required this.canDeprecate,
+    required this.categoryKey,
+    required this.conformanceSuiteDigest,
+    required this.contractVersion,
+    required this.registeredByActionExecutionId,
+    required this.schemaSetDigest,
+    required this.status,
+  });
+
+  factory ContractElement.fromJson(Map<String, dynamic> json) =>
+      ContractElement(
+        canApprove: json["canApprove"],
+        canDeprecate: json["canDeprecate"],
+        categoryKey: json["categoryKey"],
+        conformanceSuiteDigest: json["conformanceSuiteDigest"],
+        contractVersion: json["contractVersion"],
+        registeredByActionExecutionId: json["registeredByActionExecutionId"],
+        schemaSetDigest: json["schemaSetDigest"],
+        status: capabilityContractStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canApprove": canApprove,
+    "canDeprecate": canDeprecate,
+    "categoryKey": categoryKey,
+    "conformanceSuiteDigest": conformanceSuiteDigest,
+    "contractVersion": contractVersion,
+    "registeredByActionExecutionId": registeredByActionExecutionId,
+    "schemaSetDigest": schemaSetDigest,
+    "status": capabilityContractStatusValues.reverse[status],
+  });
+}
+
+enum CapabilityContractStatus { ACTIVE, DEPRECATED, DRAFT, RETIRED }
+
+final capabilityContractStatusValues = EnumValues({
+  "ACTIVE": CapabilityContractStatus.ACTIVE,
+  "DEPRECATED": CapabilityContractStatus.DEPRECATED,
+  "DRAFT": CapabilityContractStatus.DRAFT,
+  "RETIRED": CapabilityContractStatus.RETIRED,
+});
+
+///受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
+class CapabilityContractView {
+  final bool canApprove;
+  final bool canDeprecate;
+  final String categoryKey;
+  final String conformanceSuiteDigest;
+  final int contractVersion;
+  final String registeredByActionExecutionId;
+  final String schemaSetDigest;
+  final CapabilityContractStatus status;
+
+  CapabilityContractView({
+    required this.canApprove,
+    required this.canDeprecate,
+    required this.categoryKey,
+    required this.conformanceSuiteDigest,
+    required this.contractVersion,
+    required this.registeredByActionExecutionId,
+    required this.schemaSetDigest,
+    required this.status,
+  });
+
+  factory CapabilityContractView.fromJson(Map<String, dynamic> json) =>
+      CapabilityContractView(
+        canApprove: json["canApprove"],
+        canDeprecate: json["canDeprecate"],
+        categoryKey: json["categoryKey"],
+        conformanceSuiteDigest: json["conformanceSuiteDigest"],
+        contractVersion: json["contractVersion"],
+        registeredByActionExecutionId: json["registeredByActionExecutionId"],
+        schemaSetDigest: json["schemaSetDigest"],
+        status: capabilityContractStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canApprove": canApprove,
+    "canDeprecate": canDeprecate,
+    "categoryKey": categoryKey,
+    "conformanceSuiteDigest": conformanceSuiteDigest,
+    "contractVersion": contractVersion,
+    "registeredByActionExecutionId": registeredByActionExecutionId,
+    "schemaSetDigest": schemaSetDigest,
+    "status": capabilityContractStatusValues.reverse[status],
+  });
+}
+
 ///GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
 class ClientKeyView {
   ///RFC3339
@@ -4411,6 +4950,157 @@ final tenantStateValues = EnumValues({
   "SUSPENDED": TenantState.SUSPENDED,
   "SUSPENDING": TenantState.SUSPENDING,
 });
+
+class PlatformToolPage {
+  final int? nextOffset;
+  final List<ToolElement> tools;
+
+  PlatformToolPage({this.nextOffset, required this.tools});
+
+  factory PlatformToolPage.fromJson(Map<String, dynamic> json) =>
+      PlatformToolPage(
+        nextOffset: json["nextOffset"],
+        tools: List<ToolElement>.from(
+          json["tools"].map((x) => ToolElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nextOffset": nextOffset,
+    "tools": List<dynamic>.from(tools.map((x) => x.toJson())),
+  });
+}
+
+class ToolElement {
+  final ActionKey actionKey;
+  final bool canConsume;
+  final String inputSchemaHash;
+  final ActionKey name;
+  final String outputSchemaHash;
+  final String ownerPrincipalId;
+  final String resourceId;
+  final ResourceState resourceState;
+  final int resourceVersion;
+  final Source source;
+  final ToolStatus status;
+
+  ToolElement({
+    required this.actionKey,
+    required this.canConsume,
+    required this.inputSchemaHash,
+    required this.name,
+    required this.outputSchemaHash,
+    required this.ownerPrincipalId,
+    required this.resourceId,
+    required this.resourceState,
+    required this.resourceVersion,
+    required this.source,
+    required this.status,
+  });
+
+  factory ToolElement.fromJson(Map<String, dynamic> json) => ToolElement(
+    actionKey: actionKeyValues.map[json["actionKey"]]!,
+    canConsume: json["canConsume"],
+    inputSchemaHash: json["inputSchemaHash"],
+    name: actionKeyValues.map[json["name"]]!,
+    outputSchemaHash: json["outputSchemaHash"],
+    ownerPrincipalId: json["ownerPrincipalId"],
+    resourceId: json["resourceId"],
+    resourceState: resourceStateValues.map[json["resourceState"]]!,
+    resourceVersion: json["resourceVersion"],
+    source: sourceValues.map[json["source"]]!,
+    status: toolStatusValues.map[json["status"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKeyValues.reverse[actionKey],
+    "canConsume": canConsume,
+    "inputSchemaHash": inputSchemaHash,
+    "name": actionKeyValues.reverse[name],
+    "outputSchemaHash": outputSchemaHash,
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+    "resourceState": resourceStateValues.reverse[resourceState],
+    "resourceVersion": resourceVersion,
+    "source": sourceValues.reverse[source],
+    "status": toolStatusValues.reverse[status],
+  });
+}
+
+enum ActionKey { AGENT_MEMORY_ENTRY_LIST, AGENT_MEMORY_ENTRY_READ }
+
+final actionKeyValues = EnumValues({
+  "agent.memory.entry.list": ActionKey.AGENT_MEMORY_ENTRY_LIST,
+  "agent.memory.entry.read": ActionKey.AGENT_MEMORY_ENTRY_READ,
+});
+
+enum Source { PLATFORM_NATIVE }
+
+final sourceValues = EnumValues({"PLATFORM_NATIVE": Source.PLATFORM_NATIVE});
+
+enum ToolStatus { ACTIVE, PROVISIONING }
+
+final toolStatusValues = EnumValues({
+  "ACTIVE": ToolStatus.ACTIVE,
+  "PROVISIONING": ToolStatus.PROVISIONING,
+});
+
+class PlatformToolView {
+  final ActionKey actionKey;
+  final bool canConsume;
+  final String inputSchemaHash;
+  final ActionKey name;
+  final String outputSchemaHash;
+  final String ownerPrincipalId;
+  final String resourceId;
+  final ResourceState resourceState;
+  final int resourceVersion;
+  final Source source;
+  final ToolStatus status;
+
+  PlatformToolView({
+    required this.actionKey,
+    required this.canConsume,
+    required this.inputSchemaHash,
+    required this.name,
+    required this.outputSchemaHash,
+    required this.ownerPrincipalId,
+    required this.resourceId,
+    required this.resourceState,
+    required this.resourceVersion,
+    required this.source,
+    required this.status,
+  });
+
+  factory PlatformToolView.fromJson(Map<String, dynamic> json) =>
+      PlatformToolView(
+        actionKey: actionKeyValues.map[json["actionKey"]]!,
+        canConsume: json["canConsume"],
+        inputSchemaHash: json["inputSchemaHash"],
+        name: actionKeyValues.map[json["name"]]!,
+        outputSchemaHash: json["outputSchemaHash"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        resourceId: json["resourceId"],
+        resourceState: resourceStateValues.map[json["resourceState"]]!,
+        resourceVersion: json["resourceVersion"],
+        source: sourceValues.map[json["source"]]!,
+        status: toolStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKeyValues.reverse[actionKey],
+    "canConsume": canConsume,
+    "inputSchemaHash": inputSchemaHash,
+    "name": actionKeyValues.reverse[name],
+    "outputSchemaHash": outputSchemaHash,
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+    "resourceState": resourceStateValues.reverse[resourceState],
+    "resourceVersion": resourceVersion,
+    "source": sourceValues.reverse[source],
+    "status": toolStatusValues.reverse[status],
+  });
+}
 
 ///PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
 ///ID、msg:<Buzz event id> 或 thread:<Buzz root event id>；version 是读到的 CollaborationUserState
@@ -5080,6 +5770,28 @@ class WorkspacePreferenceRequest {
       _stripNulls({"muted": muted, "starred": starred, "version": version});
 }
 
+///Installation 只取自受验签的 Invocation Session，不接受调用方目标覆盖。
+class AgentMemoryEntryListInput {
+  AgentMemoryEntryListInput();
+
+  factory AgentMemoryEntryListInput.fromJson(Map<String, dynamic> json) =>
+      AgentMemoryEntryListInput();
+
+  Map<String, dynamic> toJson() => _stripNulls({});
+}
+
+///只读当前 Invocation Installation 的 cold mem entry，不接受 core 或其他 Installation。
+class AgentMemoryEntryReadInput {
+  final String slug;
+
+  AgentMemoryEntryReadInput({required this.slug});
+
+  factory AgentMemoryEntryReadInput.fromJson(Map<String, dynamic> json) =>
+      AgentMemoryEntryReadInput(slug: json["slug"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"slug": slug});
+}
+
 ///HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
 class AgentMemoryWriteInput {
   ///entry.patch 当前原生 value 的 SHA-256。
@@ -5382,6 +6094,201 @@ class AutomationVersionContentTrigger {
     "scheduleSpec": scheduleSpec?.toJson(),
     "textPrefix": textPrefix,
   });
+}
+
+///固定 Catalog 自然键，不授予业务能力 consume 权限。
+class CapabilityContractRef {
+  final String categoryKey;
+  final int contractVersion;
+
+  CapabilityContractRef({
+    required this.categoryKey,
+    required this.contractVersion,
+  });
+
+  factory CapabilityContractRef.fromJson(Map<String, dynamic> json) =>
+      CapabilityContractRef(
+        categoryKey: json["categoryKey"],
+        contractVersion: json["contractVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "categoryKey": categoryKey,
+    "contractVersion": contractVersion,
+  });
+}
+
+///DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
+class CapabilityContractRegistration {
+  final String categoryKey;
+  final CapabilityContractRegistrationContentReferenceSemanticsClass
+  contentReferenceSemantics;
+  final int contractVersion;
+  final List<CapabilityContractRegistrationOperationContractClass>
+  operationContracts;
+  final List<String> protocolSessionKinds;
+  final List<CapabilityRequiredDeclaration> requiredDeclarations;
+  final List<CapabilityContractRegistrationResourceTypeFamilyClass>
+  resourceTypeFamily;
+  final List<String> schemaDocuments;
+  final String testVectorsJson;
+
+  CapabilityContractRegistration({
+    required this.categoryKey,
+    required this.contentReferenceSemantics,
+    required this.contractVersion,
+    required this.operationContracts,
+    required this.protocolSessionKinds,
+    required this.requiredDeclarations,
+    required this.resourceTypeFamily,
+    required this.schemaDocuments,
+    required this.testVectorsJson,
+  });
+
+  factory CapabilityContractRegistration.fromJson(
+    Map<String, dynamic> json,
+  ) => CapabilityContractRegistration(
+    categoryKey: json["categoryKey"],
+    contentReferenceSemantics:
+        CapabilityContractRegistrationContentReferenceSemanticsClass.fromJson(
+          json["contentReferenceSemantics"],
+        ),
+    contractVersion: json["contractVersion"],
+    operationContracts:
+        List<CapabilityContractRegistrationOperationContractClass>.from(
+          json["operationContracts"].map(
+            (x) =>
+                CapabilityContractRegistrationOperationContractClass.fromJson(
+                  x,
+                ),
+          ),
+        ),
+    protocolSessionKinds: List<String>.from(
+      json["protocolSessionKinds"].map((x) => x),
+    ),
+    requiredDeclarations: List<CapabilityRequiredDeclaration>.from(
+      json["requiredDeclarations"].map(
+        (x) => capabilityRequiredDeclarationValues.map[x]!,
+      ),
+    ),
+    resourceTypeFamily:
+        List<CapabilityContractRegistrationResourceTypeFamilyClass>.from(
+          json["resourceTypeFamily"].map(
+            (x) =>
+                CapabilityContractRegistrationResourceTypeFamilyClass.fromJson(
+                  x,
+                ),
+          ),
+        ),
+    schemaDocuments: List<String>.from(json["schemaDocuments"].map((x) => x)),
+    testVectorsJson: json["testVectorsJson"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "categoryKey": categoryKey,
+    "contentReferenceSemantics": contentReferenceSemantics.toJson(),
+    "contractVersion": contractVersion,
+    "operationContracts": List<dynamic>.from(
+      operationContracts.map((x) => x.toJson()),
+    ),
+    "protocolSessionKinds": List<dynamic>.from(
+      protocolSessionKinds.map((x) => x),
+    ),
+    "requiredDeclarations": List<dynamic>.from(
+      requiredDeclarations.map(
+        (x) => capabilityRequiredDeclarationValues.reverse[x],
+      ),
+    ),
+    "resourceTypeFamily": List<dynamic>.from(
+      resourceTypeFamily.map((x) => x.toJson()),
+    ),
+    "schemaDocuments": List<dynamic>.from(schemaDocuments.map((x) => x)),
+    "testVectorsJson": testVectorsJson,
+  });
+}
+
+class CapabilityContractRegistrationContentReferenceSemanticsClass {
+  final String authorizationTargetRule;
+  final String nativeObjectRefRule;
+  final String nativeRevisionRule;
+
+  CapabilityContractRegistrationContentReferenceSemanticsClass({
+    required this.authorizationTargetRule,
+    required this.nativeObjectRefRule,
+    required this.nativeRevisionRule,
+  });
+
+  factory CapabilityContractRegistrationContentReferenceSemanticsClass.fromJson(
+    Map<String, dynamic> json,
+  ) => CapabilityContractRegistrationContentReferenceSemanticsClass(
+    authorizationTargetRule: json["authorizationTargetRule"],
+    nativeObjectRefRule: json["nativeObjectRefRule"],
+    nativeRevisionRule: json["nativeRevisionRule"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "authorizationTargetRule": authorizationTargetRule,
+    "nativeObjectRefRule": nativeObjectRefRule,
+    "nativeRevisionRule": nativeRevisionRule,
+  });
+}
+
+class CapabilityContractRegistrationOperationContractClass {
+  final String contractKey;
+  final String inputSchemaDigest;
+  final String outputSchemaDigest;
+  final CapabilityPermission permission;
+  final CapabilitySurface surface;
+  final String targetType;
+
+  CapabilityContractRegistrationOperationContractClass({
+    required this.contractKey,
+    required this.inputSchemaDigest,
+    required this.outputSchemaDigest,
+    required this.permission,
+    required this.surface,
+    required this.targetType,
+  });
+
+  factory CapabilityContractRegistrationOperationContractClass.fromJson(
+    Map<String, dynamic> json,
+  ) => CapabilityContractRegistrationOperationContractClass(
+    contractKey: json["contractKey"],
+    inputSchemaDigest: json["inputSchemaDigest"],
+    outputSchemaDigest: json["outputSchemaDigest"],
+    permission: capabilityPermissionValues.map[json["permission"]]!,
+    surface: capabilitySurfaceValues.map[json["surface"]]!,
+    targetType: json["targetType"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contractKey": contractKey,
+    "inputSchemaDigest": inputSchemaDigest,
+    "outputSchemaDigest": outputSchemaDigest,
+    "permission": capabilityPermissionValues.reverse[permission],
+    "surface": capabilitySurfaceValues.reverse[surface],
+    "targetType": targetType,
+  });
+}
+
+class CapabilityContractRegistrationResourceTypeFamilyClass {
+  final String kind;
+  final String typeKey;
+
+  CapabilityContractRegistrationResourceTypeFamilyClass({
+    required this.kind,
+    required this.typeKey,
+  });
+
+  factory CapabilityContractRegistrationResourceTypeFamilyClass.fromJson(
+    Map<String, dynamic> json,
+  ) => CapabilityContractRegistrationResourceTypeFamilyClass(
+    kind: json["kind"],
+    typeKey: json["typeKey"],
+  );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"kind": kind, "typeKey": typeKey});
 }
 
 class DelegationGrantParameters {
