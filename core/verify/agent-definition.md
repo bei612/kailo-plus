@@ -2703,3 +2703,40 @@ PREPARE、EXPLAIN、ROLLBACK 通过，未造业务对象或冒称真实状态迁
 `sha256:12dea304f8d399c5a27cee861efb97eb5222aff43a9d0e0eac425455a2b30aa1`。
 Win11 原同批 helper 仍执行；本批原 full、设备及实际 Schedule/Agent 业务
 未完成，不将定向检查、registry push 或 Git push 写成生产就绪。
+
+### 同批客户端产物终态与源码阶段提交
+
+源码阶段提交 `e7a5e50bc176994e4e6c74850474a4e81ccba292` 已普通 push；
+远端 main 独立读回相同完整 commit。相对 ed9 为 62 文件 +4370/-383。
+上述“仍执行”是源码提交时点，不代表后续 Win11 构建失败。
+
+同一固定客户端树的原 Win11 helper session 76507 最终退出 0，原 NSIS
+安装包 15115840 字节，SHA-256
+`4f1b6ed3c7522473119f28879fce7b78337a56923722df377c4e2ab6b461a430`。
+来源摘要 `58c65dbf0a054834445a37bb273b762bff81ff11d9c2adb3a2c424ca7d5b369a`
+包含 2259 个实际输入；构建前后来源与 Cargo.lock 比对均为 0。沿原构建入口
+和既有受限 builder 执行，未更改配方、并行度或限额，未重复构建。
+原日志位于
+`/volumes/data/kailo/tmp/codex-schedule-client-delivery-20261004.JRVeHM/desktop-client-helper.log`，
+SHA-256 `0c5c232bb661903ee0ed2347a878a17306d8edae77dfcc9c32fd2b92e41505f4`。
+安装包已复制到正式 ignored dist 并逐字比对；替换前文件保存在
+`/volumes/data/kailo/tmp/codex-schedule-final-20261004.sbZpN7/desktop-client-before.exe`。
+只选入 Desktop 来源记录的 source/artifact 两字段，没有夹带继承的其它来源改动。
+Web/Desktop 共用平台主体未分叉；Mobile 没有新增组件或文档编辑宿主。
+本节仅记录构建终态：Win11 未签名、未作设备安装或业务验收；Web 未因构建
+自动部署，真实 Agent 回复与 Schedule 业务终态仍不能由安装包摘要替代。
+
+同批固定候选 tree `d1a691e5f3a72c6b67dcab2f17a5b9a1cb9b1c11`（e7 源码、
+上述 Desktop 两字段与交付说明）的原 `./tools/check.sh --full` session 52688
+实际退出 0。检查镜像仍为
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+4 CPU/8 GiB、memory+swap 相等，Cargo jobs 16 与 Data 缓存由执行配置投递。
+151 schema 四侧同步和历史兼容、Rust/Go/TS/Dart 验证、原 Workflow replay、
+18 条追溯、来源/安全/文档检查通过；日志
+`/volumes/data/kailo/tmp/codex-schedule-final-20261004.sbZpN7/full.log` 的 SHA-256
+为 `29b390e97b0b2f488352188cb3ba30ed67b12951c06c4fe7d75c748907c439fc`。
+实际数据库演练（无 DATABASE_URL）和部署配置预检（无 .env）均 SKIP；
+显式隔离场景仍 ignored、gitleaks 未安装、客户端签名与设备缺口仍保留。
+同批另发现 Mobile 原读取器拒绝 CHANNEL、详情页将非 MENTION 显示为频道消息，
+且仍引用旧生成枚举；该 Flutter 具体消费者不在上述生成库检查覆盖范围内，
+修正进入下一源码批。本节不将 full 0 外推为 Mobile 页面或真实模型回复通过。
