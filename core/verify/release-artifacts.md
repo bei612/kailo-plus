@@ -4,6 +4,38 @@
 `03-验证发布与验收门禁.md` §5。本记录只证明本机固定提交的两个自建发布单元；
 不把本机 provenance 断言等同于远端签名或三端发布验收。
 
+## 2026-10-04 15:14 UTC：组件批准批发布受阻，未切换运行版本
+
+本次仅投递已验收提交 `9fa402fbe529f3bf4ba9e77f9825413c574411e0`，固定树
+`20348b1251da28c025f39a1b2219df1350ec3038`，不增加产品需求、契约或工作流。
+相对当前在线源码 `acbab8036911922c0dad4b4d28c7bb8e13c03afc`，累计差异为
+140 文件 +15902/-816；本次投递尝试本身没有修改产品源码。
+原 `tools/release.sh` 在干净私有 clone 中于 15:14:14–15:14:18 UTC 退出 1。
+固定 Rust 基础镜像 digest 为
+`sha256:64232e656c058f4468e8d024e990acff04f0fd5a5c0a88a574dc37773d7325c9`；
+`registry-1.docker.io` 的 HEAD 请求解析到不可达 IPv6，原始错误为
+`connect: network is unreachable`。本地 registry 的既有 Runtime 镜像读取成功。
+
+失败发生于 Core 基础镜像元数据读取，尚未执行 Cargo；Worker、SBOM/provenance
+与镜像 push 未执行。原 builder 限额和 Data 缓存未改变，未重复构建 Web/Win。
+只读排查未找到现成代理或镜像 mirror；没有修改全局 DNS、daemon、builder 或配方，
+没有以另一个 Rust digest 替代固定输入。恢复原 registry 可达性后，继续同一固定
+提交的原发布入口；不因本次失败重复此前已通过的产品完整检查。
+
+部署前只读查询确认旧库仍为 69 条成功迁移、最高版本 `20261004015500`；没有执行
+新增四条迁移、修改运行配置或替换容器。一个历史 Invocation 为 RUNNING、原生状态
+completed、无 reply，另一个为 FAILED；没有重发、不明转成功或修改这些业务状态。
+两次元数据查询因 shell 引号错误失败，修正后的只读查询退出 0；这些错误不是迁移失败。
+组件批准所需两项构建信息观察配置尚未投递，缺失时按原实现拒绝批准。
+本次未运行新版本浏览器验收，旧在线页面不能充当新提交业务链证据。
+
+原件目录 `/volumes/data/kailo/tmp/codex-component-approval-release-20261004.UTIeIb/`：
+`release.exit` 为 1，`release.log` SHA-256 为
+`d55f7f19ffdb86ac2ff4aeffc52f1b386708134c0df7acf85f211a791191c0c3`；
+`release-handoff.md` SHA-256 为
+`02af61209344ef3fcc8d4dbb45dc523f246dd5612b932bd320137523ccdb5397`。
+源码与锁文件前后相同；既有完整检查退出 0 与本次发布退出 1 是独立结果。
+
 ## 2026-10-04：Inbox/Workflows 集中发布与限定部署
 
 权威：DD-75、DD-106/107、ADR-06 及已检查提交
