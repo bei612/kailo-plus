@@ -42,9 +42,9 @@ runtime:
 release:
   artifacts:
     - name: core
-      digest: sha256:2052ea7ea693af5755b61746744ef6fb61128b33eeff34054b225131f0002df2
+      digest: sha256:2f17c22140f4a71a684ff50c5872a7d72af0d71b878f50cd6b96d81b3303682a
     - name: worker
-      digest: sha256:a393942f72249da5d3d5593913771df0da1e6258bd22c6c78d38d163a991f9ca
+      digest: sha256:996c777cae940a2155282428fcc18f246bb622cd65299e1833a7d78a62bc3e14
     - name: model-gateway
       digest: sha256:b7e3d559ffd7840d73e278de656879ebe12e925b3766536f9e9952d1fd7a4fff
     - name: web-client

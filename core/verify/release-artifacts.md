@@ -801,3 +801,80 @@ Core 主单元 155 passed/9 ignored，另两项显式演练 ignored；这些不�
 | `theme-production-mutant.log`（1） | `2ca1b467f39454bc8dde8d23691d338bc03a29a7c58aa3ecd89ff15a4345f79c` |
 | `theme-final-restored.log`（0） | `013171c37b31d05262a744ac6f31b33679c234656bc0e294b14191ce26e366f4` |
 | `merged-full.log`（最终 0） | `e728ca351e03f6e20b256010fc31e7d1745a476f2b56bc740349208ff709f61d` |
+
+### 2026-10-04 a0defa2 交付与新来源证明核对
+
+发布源码为已提交的 `a0defa2eb067362fb37e3e224a48b3c6b674bc4f`，使用 Data 干净克隆，
+没有从正式脏工作树抓取产品。原 `./tools/release.sh` session 8490 退出 0，保持既定
+Core、Worker 两单元；Worker 业务源码未改，因原入口固定发布两单元而一并产出。
+Core/Worker 各一次 registry push 退出 0，独立 HTTP 200 的 manifest body/header、
+image ID、RepoDigest 与原 provenance subject 一致。Core/Worker 尚未部署。
+
+| 单元 | 新 registry artifact digest |
+|---|---|
+| Core | `2f17c22140f4a71a684ff50c5872a7d72af0d71b878f50cd6b96d81b3303682a` |
+| Worker | `996c777cae940a2155282428fcc18f246bb622cd65299e1833a7d78a62bc3e14` |
+
+原 provenance 精确记录 source commit 和 `PLATFORM_BUILD_ID=a0defa2…`，Core Runtime
+仍为 `ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec`。
+依赖锁摘要为 `6d85e3bb36aa52c803938ca949d49a587408452fe7325440615e041f3bc885e8`，
+原 Git 索引与三份受跟踪锁构建前后核对不变。BuildKit 沿原 8 CPU/16 GiB、无额外
+swap、Data 缓存；调用环境保留 Cargo 16，但原 Dockerfile 未转发 jobs 参数，不能
+声称容器内另有该参数。未改全局网络、工具链、配方或并行度；builder OOM 计数为 0。
+
+19:10 UTC，仅用冻结 Compose 原 `up -d --no-deps --no-build --pull never buzz-web`
+替换 Web，session 45277 退出 0；新容器 `914e005e…`、镜像 `ebfbe531…` healthy。
+全体现有容器 ID/image/StartedAt 比较只有 Web 改变，sole `.env` SHA 不变。实际
+HTTP health、页面、两份 JS、一份 CSS 和 build-info 均 200；build-info 的 BUZZ_WEB
+来源 `a56840b9…c5dc` 与本批 manifest 相同，公开匿名入口仍 302 OIDC 跳转。
+Win `f93b0f36…` 已逐字放入既有 `dist/desktop-client/Kailo_0.5.23_x64-setup.exe`，
+旧 `206c62bf…` 包在 Data 原件目录备份；未创建下载服务，仍未签名、未设备验收。
+
+真实浏览器以既有业务身份读取设置，Composer 同时选中两个 Agent；无 API 写入、
+消息或模型调用。首次 build-info 路径误读 404 保留，使用真实路径的后续 GET 200
+精确核对来源，不能把两项选择当作两个 Agent 已执行或回复。另一次身份只读核验：
+bootstrap 所在频道有 1 个 ACTIVE HUMAN、2 个 ACTIVE Installation；seam-verifier
+OIDC 成功但四项业务 GET 均 403/TENANT_MEMBERSHIP_NOT_ACTIVE，不证明多人协作。
+
+首次原 `check.sh supply` 退出 1：检查器只识别旧 `release.sh` 的 buildArgs 字面形态，
+拒绝了本次真实包含 PLATFORM_BUILD_ID 的两份证明。本批只修原消费者，从证明所记
+commit 的发布脚本确认形态，build ID 必须等于该 commit，继续精确比较完整参数，
+并保留 Runtime pin/OCI dependency 严格校验；旧形态仅验证其真实历史产物。
+因此本次收口不再是纯元数据批，须在两项反例还原后运行一次原完整检查。
+此前 trace/seam/security 均 0；实际 `.env` 预检 SKIP、内置扫描而非 gitleaks 的边界保留。
+
+原件目录 `/volumes/data/kailo/tmp/codex-client-core-delivery-20261004.fXcD9L/`，
+`artifact-readback.log` 保存 commit/build ID/锁/原证明与 registry 核验。
+
+| 原件 | SHA-256 |
+|---|---|
+| `release.log`（0） | `cfb30e1b07ebee6653b7fe2a7a6fbb79fb673859a96faff58f3cf17e65f6017f` |
+| Core SPDX | `6d718238295ea04f62b2bc3e5f604cbcd902605864062f24f47cf827213656e7` |
+| Core provenance | `06c16042baff01f9ee3df75e23b27d7b5a0b648550c236c4ef0f17aad25c081d` |
+| Worker SPDX | `99667395056afe23804e4d349070a981c7d294b02446cc97c8c2abc59ebca3d6` |
+| Worker provenance | `94c11c8b3e8357914e2425a38db4f7f8facd992a81c10c1982bc7a8d8de3f9a3` |
+| `../codex-multi-mention-20261004.qlM03z/live-browser.log` | `d9a787ebb54587b28895190429f5750dc776ac81ad9946793aa756a317d38cf8` |
+| `../codex-multi-mention-20261004.qlM03z/live-browser-build.log` | `0cf7fab3e902ba68b84c0b4cdfedaa69c3a5e1caad2a60de2eea17b9061a29ba` |
+| `../codex-multi-mention-20261004.qlM03z/two-identities-readonly.log` | `d810708e146106c61e4eafd9a9ebe8b158601c9d285204f9ff3d65d6c595fa30` |
+
+随后两个实际反例分别退出 1：把 Core 证明的 build ID 改为其它值，原供应链检查
+拒绝构建形态；把 Runtime digest 改为其它值，原检查拒绝与 source commit 的 pin
+不符。其它证明不改。首次文本还原多出 EOF 换行而 cmp 失败，已从保留的原生成
+文件逐字恢复，四份原 proof SHA 全部一致；此恢复完成于 full 的 lint 阶段，早于
+供应链消费，产品源码和原证明内容没有改变，未手调 artifact digest。
+
+最终固定树 `bbf990d8f4ebd51ba56b45cacda9236fe7952061` 的原
+`./tools/check.sh --full` session 90620 实际退出 0；沿原固定 SDK 4 CPU/8 GiB、
+无额外 swap、UID 1000、Cargo 16 和 Data 缓存，复用原独立验证库而非生产库。
+73 条迁移往返、SQLx、193 schema、四语言验证、Workflow replay、20 条追溯、
+新两镜像的供应链证明与六产物接缝通过。Core 主单元 155 passed/9 ignored，另两项
+显式演练 ignored；实际部署配置预检仍 SKIP，未安装 gitleaks，只运行内置扫描。
+此 full 覆盖检查器修正及新产物引用；上节 dbe2 产品树的 full 是独立原件，不改写。
+本段仅追加验收结果，随后只运行原文档快检查，不重新构建或部署 Core/Worker。
+
+| 原件 | SHA-256 |
+|---|---|
+| `metadata-supply.log`（首次 1） | `0333cecfbc2d2e363a583238df998da702c93d199b55246b8dc167f4fd0182eb` |
+| `supply-build-id-mutant.log`（1） | `825c7f19e3bda47f41b208a36e939b5ca3b49ebcee5c7704555b31c54839916b` |
+| `supply-runtime-mutant.log`（1） | `25a960569132fe21275fc3f96db6440669ef69d7bc9b9e538ad95819dc5cdfcb` |
+| `full.log`（0） | `6bacffd9494503c5301cbe9d26c32c35d0ed18627d85f2d056f39dfd04bb7ea5` |

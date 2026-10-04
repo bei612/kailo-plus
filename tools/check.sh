@@ -551,8 +551,14 @@ def release_form(provenance):
     image = re.search(r'^\s*tag="([a-z0-9-]+)/\$unit:\$COMMIT"', script, re.M)
     build_type = re.search(r'"buildType": "([^"]+)"', script)
     context = re.search(r'"externalParameters":\s*\{[^\n]*"context":\s*"([^"]+)"', script)
+    records_build_id = '"buildArgs": {"PLATFORM_BUILD_ID": commit,' in script
+    if records_build_id and '--build-arg "PLATFORM_BUILD_ID=$COMMIT"' not in script:
+        return None
+    records_runtime_args = (
+        '"buildArgs": {"AGENT_RUNTIME_IMAGE": runtime_image} if runtime_image else {}' in script
+        or '**({"AGENT_RUNTIME_IMAGE": runtime_image} if runtime_image else {})' in script)
     return (image.group(1), build_type.group(1), context.group(1), root,
-            '"buildArgs": {"AGENT_RUNTIME_IMAGE": runtime_image} if runtime_image else {}' in script) if image and build_type and context else None
+            records_runtime_args, records_build_id) if image and build_type and context else None
 
 for name in sorted(names):
     m = re.fullmatch(r"(core|worker)\.([0-9a-f]{64})\.(spdx|provenance)\.json", name)
@@ -574,7 +580,7 @@ for name in sorted(names):
         if form is None:
             bad.append(f"{name}: 取不到生成它的 release.sh，构建形态无从核对")
             continue
-        image, build_type, context, root, records_runtime_args = form
+        image, build_type, context, root, records_runtime_args, records_build_id = form
         if kind == "spdx":
             if document.get("name") != f"{image}/{unit}" or document.get("spdxVersion") != "SPDX-2.3":
                 bad.append(f"{name}: SBOM 单元或 SPDX 版本不匹配")
@@ -586,8 +592,10 @@ for name in sorted(names):
         commit = next((x.get("digest", {}).get("gitCommit") for x in dependencies
                        if x.get("digest", {}).get("gitCommit")), None)
         expected_parameters = {"dockerfile": f"{unit}/Dockerfile", "context": context}
+        if records_build_id:
+            expected_parameters["buildArgs"] = {"PLATFORM_BUILD_ID": commit}
         if records_runtime_args:
-            expected_parameters["buildArgs"] = {}
+            expected_parameters.setdefault("buildArgs", {})
             if unit == "core":
                 # Runtime 的摘要取自实际源码 commit；registry locator 是发布配置，
                 # 不能固定为本机地址，也不能只信证明中自报的 Runtime 摘要。
@@ -606,7 +614,7 @@ for name in sorted(names):
                         or not runtime_image.endswith("@" + runtime_digest)):
                     bad.append(f"{name}: Runtime 构建参数与源码 commit 固定产物不匹配")
                     continue
-                expected_parameters["buildArgs"] = {"AGENT_RUNTIME_IMAGE": runtime_image}
+                expected_parameters["buildArgs"]["AGENT_RUNTIME_IMAGE"] = runtime_image
                 expected_runtime = [{"uri": "oci://" + runtime_image.split("@")[0],
                                      "digest": {"sha256": runtime_digest.removeprefix("sha256:")}}]
             else:
