@@ -2740,3 +2740,75 @@ Web/Desktop 共用平台主体未分叉；Mobile 没有新增组件或文档编�
 同批另发现 Mobile 原读取器拒绝 CHANNEL、详情页将非 MENTION 显示为频道消息，
 且仍引用旧生成枚举；该 Flutter 具体消费者不在上述生成库检查覆盖范围内，
 修正进入下一源码批。本节不将 full 0 外推为 Mobile 页面或真实模型回复通过。
+
+### 2026-10-04 06:18–06:31 UTC：固定 e7 三服务部署与原回合结算读回
+
+固定源码 `e7a5e50bc176994e4e6c74850474a4e81ccba292` 的原
+`tools/release.sh` 一次顺序构建 Core、Worker，session 45439 实际退出 0；
+没有混入后续 MCP/Mobile 开发，也没有重建 Runtime。原 builder
+`kailo-core-data` 实际 8 CPU/16 GiB、memory+swap 相等，Data 缓存不变。
+Core 复用 Runtime `ad13c952e20c134c70cc4ba0293e2d568aa98641fe16ede4cceb2671d10887ec`。
+
+| 产物 | SHA-256 |
+|---|---|
+| Core | `2052ea7ea693af5755b61746744ef6fb61128b33eeff34054b225131f0002df2` |
+| Worker | `a393942f72249da5d3d5593913771df0da1e6258bd22c6c78d38d163a991f9ca` |
+| Web | `12dea304f8d399c5a27cee861efb97eb5222aff43a9d0e0eac425455a2b30aa1` |
+
+两镜像 registry HEAD/GET 均 200，header、manifest 字节 SHA、RepoDigest
+一致；原 SPDX/provenance 两组的 subject、e7 commit、锁摘要与 Runtime
+参数查证通过。四个原件复制到正式 ignored dist 后逐字比对 0，未删除旧证据。
+Web/Win11 来源为同批固定客户端树 644b04df；Win11 原 helper 0、包摘要
+`4f1b6ed3c7522473119f28879fce7b78337a56923722df377c4e2ab6b461a430`，
+仍未签名、未作 Win11 安装或设备业务验收。前述 full 0 与
+`dbd53da14baddae7f93e850cca4db7147f318093` 收口记录不被改写为业务成功。
+
+部署前只读证明：在线 60 条迁移全成功，AutomationDefinition、enabled、
+Schedule reference/version 都是 0；仅两条原 Invocation，native 均 completed，
+Capacity 均 RELEASED，未确认 native 回合数为 0。三目标服务环境在内存中逐项
+与既有容器比对无变化，sole `.env` 与 runtime profiles 前后 SHA 相同。
+仅调用原 `migrate_core_database` forward 05000 到 61，实际退出 0；
+无 down、seed 或业务 SQL 修改。存在 Schedule 引用/history/intent 时原 down
+明确拒绝，本次未执行回滚。
+
+原 `start-core.sh --no-build` 首次在最前 registry 只读检查因私有 `.design`
+路径缺失而退出 1，尚未取 wrapping 或替换 Core；确认旧容器未变后，投递原工具
+已有的 DESIGN 路径，原入口带新 OpenBao wrapping 退出 0。随后原
+`compose up --no-deps --force-recreate --no-build worker` 退出 0；两者就绪后
+才同样替换 Web，退出 0。06:18:44 Core `9754e340…`、Worker `4cd61e31…`
+running；Core healthz 200、唯一 Codex 子进程恢复，Worker 原生 Started Worker
+记录为 kailo-component-task。06:20:46 Web `123391a4…` running/healthy，
+镜像原 healthcheck 端口 8080 上 `/app/healthz` 与 `/app/` 均 HTTP 200。
+第一次 HTTP 探测错误使用 80 而 connection-refused，按原镜像端口纠正后通过，
+没有因此重启服务。平台范围仅这三项替换，其余 25 个平台容器及 5 个数字人
+容器的 ID/image/status/StartedAt 均不变。全 Docker 比较另观察到并行 Mobile
+SDK 容器独立替换，故不声称所有 Docker 容器未变。
+
+06:28:42 Core READ ONLY 与 06:30:30 Gateway READ ONLY 进一步核实：
+
+- b74498cd 原 Invocation/Task FAILED、Workflow TERMINAL，native completed、
+  cancel_pending=true、reply 为空，原 turn ID 未变。唯一模型 SUM UsageEvent
+  `25653806-ee26-54fe-802c-65822e059c2c` 对应原 Gateway request
+  `01a10512-9853-7d23-b116-08193ed383de` / seq 2，数量 8872、COMMITTED，
+  stored_at 为 05:00:44 UTC。06:31:18 原 OpenMeter 精确 source/id/subject/type
+  GET 返回 200、唯一同内容事件、totalTokens=8872、validation_errors 0。
+  该时间早于本次部署，不将既有结算倒记成本次新执行。冻结 Action 为 agent.invoke /
+  CHECK、无 COUNT 投影；不能把模型 SUM 结算说成 STRICT reservation 或调用次数收费。
+- 旧 4cfe99fe 仍 RUNNING/BILLING_UNAVAILABLE、无 UsageEvent/回复；原 Gateway
+  seq 1 的 request/dispatch trace 仍均 NULL，8763 tokens 事实未改。
+  `agentgateway-durable-usage-tail` cursor 仍 0，更新时间仍为 10-03 00:54:58。
+  RB-06 的未归因阻断仍在，不按 principal/time 猜归因、不跳游标、不重放。
+
+04:01 原生 history 的 UserMessage/Reasoning、缺 AgentMessage 和空
+last_agent_message 证据保持成立。现在可以确认真实 8872 用量已经存储并收口为
+失败任务，不能宣称已有真实 Agent 回复。缺失原 provider SSE/body 的既有回执
+不足以证明 Gateway 丢失 assistant，也不足以指定新的转换修复；本轮不猜改源码。
+没有新增预算、Delegation、消息、模型调用、Automation/Schedule 或旧 UNKNOWN 重试。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-schedule-core-worker-delivery-20261004.na5lep/`。
+`release.log` SHA 为
+`1d4876e83a07cf0514971b30b38384307a0af019c653c78724a4ff7f8e8c657d`；
+`handoff.md` 保存全部构建、迁移、部署原命令和真实失败边界；
+`settlement-readback.log`、`gateway-usage-readback-corrected.log` 与
+`openmeter-stored-usage-readback.log` 保存上述最新只读证据。

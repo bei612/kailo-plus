@@ -6,12 +6,13 @@
 
 ## 最新复核与投递事实（2026-10-04）
 
-### 当前开发批：原生定时自动化与 Session 首轮记忆消费
+### 当前交付批：原生定时自动化与 Session 首轮记忆消费
 
 终态结算修正已提交并普通 push：
 `ed9cc16c89c2c82ec75487bb1d95de8e3fe63719`，相对
 `aa19c8fe39cb7e71aa01c354a4a121e05c881998` 为 3 文件 +403/-67。
-该提交的固定候选原全量检查通过；尚未部署，不据此改写下面真实回合的终态。
+该提交的固定候选原全量检查通过，现已随下述 e7 批次部署；
+部署健康不代替真实回合的回复与用量终态证据。
 
 本批已实现并完成定向恢复验证，沿既有 `DD-107`：Temporal 原生 Schedule 创建、读回、
 暂停/恢复/删除；首个 AgentTask Activity 以原生计划时间做 run admission；
@@ -29,13 +30,18 @@ Core 113 项通过/4 项忽略、Bridge 8 项通过，Worker
 通过。Web 原构建与 registry 独立读回通过，Win11 同批原打包已退出 0，
 安装包摘要为 `4f1b6ed3…`；仍未签名、未作设备安装与业务验收。
 本批固定候选原 `./tools/check.sh --full` 已退出 0；实际数据库演练与部署配置
-预检跳过，部署尚未完成，源码阶段交付不能计作用户已可使用。Mobile 对新增
+预检跳过；产物与检查记录已随 `dbd53da14baddae7f93e850cca4db7147f318093`
+提交并普通 push。06:18–06:20 UTC，固定 e7 源码的 Core `2052ea7e…`、
+Worker `a393942f…` 与同批 Web `12dea304…` 已沿原入口限定部署，在线迁移
+仅向前到 61。Core healthz 200、唯一 Codex 子进程恢复，Worker 原任务队列
+已开始轮询，Web healthy 且 HTTP 200；其余 25 个平台容器不变。
+没有新建自动化或调用模型，不能将这些健康回执计作 Schedule 业务验收。Mobile 对新增
 Schedule/CHANNEL 的读取与展示遗漏另行修正，原 full 不替代 Flutter 页面验收。
 真实 Agent 回复与用量业务终态、受治理工具调用、完整计量/额度及三端设备交付
 仍须各自实际证据；Cells/WeKnora/Wren 的可选扩展未因此变成已集成。
 不把 18 条追溯数量当作 18 项业务目标完成数。
 
-### 当前交付：新回合 trace 已贯通，回复与终态收尾仍未验收
+### 当前回合事实：原生用量已结算，真实回复仍缺失
 
 04:01 UTC，在已部署的 `99dd3ebba3d278ca2c373b390909d72c0a4d5cbd` Core
 上完成一个新的隔离、单次受权调用。新 Invocation
@@ -45,13 +51,18 @@ Gateway 实际 HTTP 200、input 8740/output 132/total 8872 tokens。
 这证明修复后的真实追踪关联成立，不是完整业务成功。
 
 该原生回合 completed，但 durable history 只有 UserMessage 与 Reasoning，
-没有 AgentMessage，`last_agent_message` 为空。回复未发布、业务任务仍结果不明，
+没有 AgentMessage，`last_agent_message` 为空。当时回复未发布、业务任务结果不明，
 不能把 reasoning 当正文或再次执行模型。04:10 UTC 只读采样还发现原代码把
 运行容量释放和用量结算排在回复处理之后，导致已结束回合仍持有 UNKNOWN lease。
 本批已修正这一收尾顺序，并按固定 Codex 原生语义接纳合法的无 phase 回复；
 定向 12 项、两次生产变异/还原、Clippy 与固定候选原全量检查通过。
-后者不解决本次根本没有 assistant 消息的问题。修复尚未部署，不算业务可用；
-实际数据库/部署配置检查跳过，设备与签名缺口保留。
+后者不解决本次根本没有 assistant 消息的问题；修复现已随上述 e7 批次部署。
+06:28–06:31 UTC 只读查证：b744 Invocation/Task 为 FAILED、Workflow TERMINAL、
+Capacity RELEASED，仍没有回复；唯一 SUM 事件为 8872 tokens、COMMITTED，
+OpenMeter 原生 GET 200 读回相同事件，stored_at 为 05:00:44 UTC、无验证错误。
+这是既有回合的实际用量收口，不是本次部署新发模型或成功回复。其 frozen quota
+为 CHECK，不冒称发生 STRICT reservation；旧 4cfe 的 NULL trace 与 tail 阻塞未改。
+设备与签名缺口保留。
 完整事实、外部证据缺口与新旧回合的隔离边界见
 [Agent 调用记录](core/verify/agent-definition.md)。
 
