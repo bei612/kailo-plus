@@ -45,5 +45,5 @@ release:
     - name: worker
       digest: sha256:a393942f72249da5d3d5593913771df0da1e6258bd22c6c78d38d163a991f9ca
     - name: web-client
-      digest: sha256:a49e108c5cbef35c9876e05ab940ebd6a3cd48f71ab743eaeb91acadcc70686e
+      digest: sha256:7df928821ac674deebd167b51c9b5326107e4f04ad9715a2bfe01a0bfead6e3d
   gate: ready

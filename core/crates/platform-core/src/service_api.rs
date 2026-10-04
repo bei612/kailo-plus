@@ -76,6 +76,10 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/component-releases/register-result",
             post(crate::component_release::record),
         )
+        .route(
+            "/service/v1/component-releases/approve",
+            post(crate::component_release::approval::record),
+        )
         .route("/service/v1/task-projections", post(project_task_state))
         .route(
             "/service/v1/agent-tasks/advance",

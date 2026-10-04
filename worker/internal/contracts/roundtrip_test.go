@@ -40,6 +40,32 @@ func TestComponentObservationsRoundtrip(t *testing.T) {
 	}
 }
 
+func TestComponentReleaseApprovalRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "component-release-approval.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original any
+	if err := json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	var typed generated.ComponentReleaseApprovalReport
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back any
+	if err := json.Unmarshal(encoded, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, back) {
+		t.Fatalf("approval report changed wire fields: %s", encoded)
+	}
+}
+
 func TestAutomationRunPagesRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "automation-run-pages.sample.json"))
 	if err != nil {

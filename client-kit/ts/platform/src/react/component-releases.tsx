@@ -22,12 +22,15 @@ const statusLabels = {
 
 function validPage(page: ComponentReleasePage, offset: number): boolean {
   return !!page && typeof page.canRegister === "boolean" && Array.isArray(page.releases)
+    && (page.canApprove === undefined || typeof page.canApprove === "boolean")
     && (page.nextOffset === undefined || (Number.isSafeInteger(page.nextOffset) && page.nextOffset > offset))
     && new Set(page.releases.map((release) => release?.componentReleaseId)).size === page.releases.length
     && page.releases.every((release) => !!release && Object.values(ComponentReleaseStatus).includes(release.status)
       && [release.componentReleaseId, release.componentTypeKey, release.version,
         release.registeredByActionExecutionId, release.operationId, release.workflowId]
         .every((value) => typeof value === "string" && !!value.trim())
+      && (release.approvedByActionExecutionId === undefined || (typeof release.approvedByActionExecutionId === "string" && !!release.approvedByActionExecutionId.trim()))
+      && (release.status !== ComponentReleaseStatus.Approved || !!release.approvedByActionExecutionId)
       && [release.manifestDigest, release.artifactDigest, release.suiteDigest]
         .every((value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value)));
 }
@@ -91,7 +94,8 @@ export function ComponentReleasesPanel() {
         || !Object.values(ActionDispatchState).includes(result.dispatchState)
         || (result.reason !== undefined && !Object.values(ReasonCode).includes(result.reason))
         || (result.gateState === ActionGateState.Denied && !result.reason)
-        || result.gateState === ActionGateState.Waiting
+        || (result.gateState === ActionGateState.Waiting && (intent.actionKey !== "component_release.approve"
+          || !result.approvalWorkflowId || result.dispatchState !== ActionDispatchState.NotDispatched))
         || (result.dispatchState === ActionDispatchState.Dispatched
           && (result.gateState !== ActionGateState.Allowed || typeof result.workflowId !== "string" || !result.workflowId))
         || (submission && (result.actionExecutionId !== submission.actionExecutionId || result.operationId !== submission.operationId))) {
@@ -103,7 +107,7 @@ export function ComponentReleasesPanel() {
         setIntent(null);
         // A dispatched Workflow is not REGISTERED. The task remains the actual
         // execution authority; only the scoped Catalog read supplies a release.
-        if (result.dispatchState === ActionDispatchState.Dispatched) {
+        if (result.dispatchState === ActionDispatchState.Dispatched && intent.actionKey === "component_release.register") {
           setManifest(""); setComponentPackage(""); setBindingSchema("");
         }
       }
@@ -120,9 +124,9 @@ export function ComponentReleasesPanel() {
   return <section className="flex flex-col gap-3 border-t pt-3" data-testid="component-releases">
     <h2 className="font-medium">{t("components.title")}</h2>
     <p className="text-sm text-muted-foreground">{t("components.boundary")}</p>
-    {intent?.componentReleaseRegistration ? <div role="group" className="flex flex-col gap-2 text-sm">
-      <p>{t("components.registerWarning")}</p>
-      <pre className="overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(intent.componentReleaseRegistration, null, 2)}</pre>
+    {intent ? <div role="group" className="flex flex-col gap-2 text-sm">
+      <p>{t(intent.actionKey === "component_release.register" ? "components.registerWarning" : "components.approveWarning")}</p>
+      <pre className="overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(intent.componentReleaseRegistration ?? { componentReleaseId: intent.componentReleaseId }, null, 2)}</pre>
       <div className="flex gap-2">
         <Button disabled={busy} onClick={() => void submit()}>{t(busy ? "platform.loading" : unknown ? "agents.retry" : "agents.confirm")}</Button>
         {!busy && !unknown ? <Button onClick={() => setIntent(null)}>{t("platform.cancel")}</Button> : null}
@@ -165,7 +169,14 @@ export function ComponentReleasesPanel() {
               <Cell>{release.componentTypeKey} · {release.version}</Cell>
               <Cell><Badge tone="neutral">{t(statusLabels[release.status])}</Badge></Cell>
               <Cell mono>{release.artifactDigest}</Cell><Cell mono>{release.suiteDigest}</Cell>
-              <Cell><Button onClick={() => setTask(release.registeredByActionExecutionId)}>{t("components.viewTask")}</Button></Cell>
+              <Cell><div className="flex flex-wrap gap-2">
+                <Button onClick={() => setTask(release.registeredByActionExecutionId)}>{t("components.viewTask")}</Button>
+                {release.approvedByActionExecutionId ? <Button onClick={() => setTask(release.approvedByActionExecutionId!)}>{t("components.approvalTask")}</Button> : null}
+                {page.canApprove === true && release.status === ComponentReleaseStatus.Registered ? <Button disabled={frozen} onClick={() => {
+                  setSubmission(null); setFailure(null);
+                  setIntent({ actionKey: "component_release.approve", idempotencyKey: newIdempotencyKey(), componentReleaseId: release.componentReleaseId });
+                }}>{t("components.requestApproval")}</Button> : null}
+              </div></Cell>
             </tr>)}
           </Table>
         </div>}

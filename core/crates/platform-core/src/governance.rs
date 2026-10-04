@@ -422,6 +422,7 @@ pub enum Semantic {
     CapabilityContractApprove,
     CapabilityContractDeprecate,
     ComponentReleaseRegister,
+    ComponentReleaseApprove,
     LlmRouteCreate,
     AgentDefinitionUpdate,
     AgentVersionCreate,
@@ -470,6 +471,7 @@ impl Semantic {
             "capability_contract.approve" => Self::CapabilityContractApprove,
             "capability_contract.deprecate" => Self::CapabilityContractDeprecate,
             "component_release.register" => Self::ComponentReleaseRegister,
+            "component_release.approve" => Self::ComponentReleaseApprove,
             "llm_route.create" => Self::LlmRouteCreate,
             "agent.definition.update" => Self::AgentDefinitionUpdate,
             "agent.version.create" => Self::AgentVersionCreate,
@@ -556,8 +558,10 @@ impl Semantic {
 
     /// 会改变「有效 Tenant admin」集合的动作在 Tenant 行锁下判定与写入（DD-82）。
     fn serializes_on_tenant(self) -> bool {
-        self == Self::ComponentReleaseRegister
-            || self.is_role()
+        matches!(
+            self,
+            Self::ComponentReleaseRegister | Self::ComponentReleaseApprove
+        ) || self.is_role()
             || self.is_capability_contract()
             || self.is_installation_permission()
             || self.is_automation()
@@ -669,11 +673,15 @@ pub struct Params {
     pub capability_contract_registration: Option<Value>,
     pub capability_contract_ref: Option<Value>,
     pub component_release_registration: Option<Value>,
+    pub component_release_id: Option<Uuid>,
 }
 
 impl Params {
     pub(crate) fn to_json(&self) -> Value {
         let mut m = serde_json::Map::new();
+        if let Some(id) = self.component_release_id {
+            m.insert("componentReleaseId".into(), json!(id));
+        }
         if let Some(registration) = &self.component_release_registration {
             m.insert("componentReleaseRegistration".into(), registration.clone());
         }
@@ -793,6 +801,7 @@ impl Params {
             capability_contract_registration: v.get("capabilityContractRegistration").cloned(),
             capability_contract_ref: v.get("capabilityContractRef").cloned(),
             component_release_registration: v.get("componentReleaseRegistration").cloned(),
+            component_release_id: uuid("componentReleaseId"),
         })
     }
 }
@@ -820,6 +829,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map_err(|_| bad())
     };
     let p = Params {
+        component_release_id: uuid(&cmd.component_release_id)?,
         component_release_registration: cmd
             .component_release_registration
             .as_ref()
@@ -885,11 +895,15 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .transpose()
             .map_err(|_| bad())?,
     };
+    if sem == Semantic::ComponentReleaseApprove {
+        crate::component_release::approval::validate_params(&p)?;
+        return Ok(p);
+    }
     if sem == Semantic::ComponentReleaseRegister {
         crate::component_release::validate_params(&p)?;
         return Ok(p);
     }
-    if p.component_release_registration.is_some() {
+    if p.component_release_registration.is_some() || p.component_release_id.is_some() {
         return Err(bad());
     }
     if sem.is_capability_contract() {
@@ -1188,7 +1202,8 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::CapabilityContractRegister
         | Semantic::CapabilityContractApprove
         | Semantic::CapabilityContractDeprecate
-        | Semantic::ComponentReleaseRegister => false,
+        | Semantic::ComponentReleaseRegister
+        | Semantic::ComponentReleaseApprove => false,
     };
     if ok {
         Ok(p)
@@ -1285,6 +1300,9 @@ async fn resolve_target(
     match sem {
         Semantic::ComponentReleaseRegister => {
             crate::component_release::target(conn, tenant, def, p, frozen).await
+        }
+        Semantic::ComponentReleaseApprove => {
+            crate::component_release::approval::target(conn, tenant, def, p, frozen).await
         }
         Semantic::CapabilityContractRegister
         | Semantic::CapabilityContractApprove
@@ -2824,6 +2842,7 @@ impl Governance {
             capability_contract_registration: None,
             capability_contract_ref: None,
             component_release_registration: None,
+            component_release_id: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -2918,6 +2937,7 @@ impl Governance {
             capability_contract_registration: None,
             capability_contract_ref: None,
             component_release_registration: None,
+            component_release_id: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -4142,8 +4162,10 @@ impl Governance {
             .fetch_optional(&mut **tx)
             .await?;
         }
-        if (sem == Semantic::ComponentReleaseRegister
-            || sem.is_installation_permission()
+        if (matches!(
+            sem,
+            Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
+        ) || sem.is_installation_permission()
             || sem.is_capability_contract()
             || sem.is_automation()
             || matches!(
@@ -4165,8 +4187,10 @@ impl Governance {
         {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
-        let locked_evaluation = if sem == Semantic::ComponentReleaseRegister
-            || sem.is_installation_permission()
+        let locked_evaluation = if matches!(
+            sem,
+            Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
+        ) || sem.is_installation_permission()
             || sem.is_capability_contract()
             || sem.is_automation()
             || matches!(
@@ -4491,6 +4515,9 @@ impl Governance {
             Semantic::ComponentReleaseRegister => {
                 crate::component_release::prewrite(tx, ae, params).await?
             }
+            Semantic::ComponentReleaseApprove => {
+                crate::component_release::approval::prewrite(self, tx, ae, params).await?
+            }
             Semantic::AgentInstallationCreate => {
                 crate::agent_installation::prewrite(self, tx, ae, params).await?
             }
@@ -4631,7 +4658,10 @@ impl Governance {
         };
         // 一条归位 ActionExecution 一条独立目标 locator；不能以 Principal 版本作
         // workflow ID，否则一次确定失败后的新治理动作会撞上旧 ID。
-        let workflow_entity = if sem == Semantic::SecretRefRehome {
+        let workflow_entity = if matches!(
+            sem,
+            Semantic::SecretRefRehome | Semantic::ComponentReleaseApprove
+        ) {
             ae.id
         } else {
             target.id
@@ -6129,6 +6159,9 @@ impl Governance {
                 Semantic::ComponentReleaseRegister => {
                     crate::component_release::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
                 }
+                Semantic::ComponentReleaseApprove => {
+                    crate::component_release::approval::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
+                }
                 Semantic::AgentInstallationCreate => {
                     crate::agent_installation::start(
                         &self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id,
@@ -7182,9 +7215,16 @@ impl Governance {
         } else if policy.self_approval == "DENY" && approver == ae.initiator_principal_id {
             // 职责分离：发起者不能批准也不能否决自己的请求
             refuse(ReasonCode::SelfApprovalDenied)
-        } else if ae.action_key == crate::capability_contract::APPROVE
-            && !crate::capability_contract::approver_separated(&mut tx, &ae, approver).await?
-        {
+        } else if match ae.action_key.as_str() {
+            crate::capability_contract::APPROVE => {
+                !crate::capability_contract::approver_separated(&mut tx, &ae, approver).await?
+            }
+            crate::component_release::approval::APPROVE => {
+                !crate::component_release::approval::approver_separated(&mut tx, &ae, approver)
+                    .await?
+            }
+            _ => false,
+        } {
             refuse(ReasonCode::SelfApprovalDenied)
         } else {
             let refs: Vec<contracts::AffectedOwnerRef> =

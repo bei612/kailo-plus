@@ -21,6 +21,8 @@ COPY contracts/api/agent_memory_entry_page.schema.json contracts/api/agent_memor
 COPY contracts/domain/agent_memory_entry_list_input.schema.json contracts/domain/agent_memory_entry_read_input.schema.json /build/apps/contracts/domain/
 # 离线编译：镜像构建时没有数据库，用入库的 sqlx 查询快照做编译期 SQL 校验
 ENV SQLX_OFFLINE=true
+ARG PLATFORM_BUILD_ID
+ENV PLATFORM_BUILD_ID=${PLATFORM_BUILD_ID}
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked --bin platform-core
 

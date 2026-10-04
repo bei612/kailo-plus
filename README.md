@@ -68,7 +68,7 @@ ComponentRelease 登记已接入原 Catalog、Governed Action 与 ComponentTaskW
 Web/Desktop 共用登记面板；COMMIT 回执丢失和取消后的续跑保留原证据，不重复执行。
 合并模板消息后四侧已重新生成，引用、UNKNOWN 和省略字段的往返与破坏还原已核验。
 当前只覆盖无前端、无模型调用的 EXTERNAL/APPLICATION/REMOTE_ADAPTER 登记子集；
-REGISTERED 不是 APPROVED 或 binding 可用；release 审批仍在独立实施，步骤审批见上节。
+REGISTERED 不是 APPROVED 或 binding 可用；后续批准源码见下节，步骤审批见上节。
 Cells、WeKnora、Wren 尚不能据此记为已集成。完整边界、失败与原件见
 [组件登记记录](core/verify/component-release-registration.md)。
 
@@ -80,7 +80,22 @@ Cells、WeKnora、Wren 尚不能据此记为已集成。完整边界、失败与
 Web 与 Win11 各运行一次原构建；Win11 仍未签名或设备验收。没有部署本批服务，
 当前可访问版本仍是上方 12:15 UTC 的部署；完整门禁不等于业务或生产验收。
 
-release 批准另有已完成定向验证的独立候选，未混入本批。ApplicationBinding
+### 后续源码批：组件发行批准（未部署）
+
+组件批准已移植到 `dd57f8bbf85fdf0b7b91e6e6aea445a909c0b046` 后的独立候选，
+源码增量为 41 文件 +1324/-31（生成与本段回执之前）。共享组件目录可发起批准，
+仍走原 Action Admission、ApprovalWorkflow 和 COMPONENT_RELEASE 任务；实际审批人
+不得是登记人或申请人。Core 读取自身、Worker 与当前 Web 的构建事实，复核原登记
+套件和当前能力契约后，同事务保存兼容观察、APPROVED 状态及审计；丢失提交回执
+按同一执行读回，不重复批准。无前端、无模型的 Remote Adapter 子集边界不变。
+组合树 `0980546205fc1bfa8264e0aca9a0848025933cbd` 的原完整检查已退出 0；
+四侧生成/兼容、73 条隔离迁移往返、SQLx 与 Workflow replay 通过。Web 一次构建
+成功；Win11 一次编译及导出成功，交付目录权限失败后仅恢复原尾步骤，没有重编译。
+初次 full 退出 1 和原 Win11 helper 退出 1 均保留原件。安装包仍未签名、未设备验收；
+本批未部署，不能据此把当前在线版本、binding 或参考组件记为可用。
+详见 [组件批准记录](core/verify/component-release-approval.md)。
+
+ApplicationBinding
 生产签发存在冻结合同冲突：设计 `05` §2.8 的管理动作 ResultExposure=NONE，
 而 `03` 的 ActionToken 强制引用仅含 CONSUME_ONLY/READ/EXPORT 的结果策略。
 该冲突已提出裁决，未擅自更改设计、借用策略或开放 binding；参考组件没有绕行入口。

@@ -1,0 +1,17 @@
+{
+  "target": {
+    "actionExecutionId": "4137a2fc-cbf7-4452-a22f-e168fdf68799",
+    "componentReleaseId": "f963aab2-3c3c-4c39-982c-a2369605cf04",
+    "workflowId": "component-release-approval-contract-fixture"
+  },
+  "runId": "component-release-approval-contract-run",
+  "workerBuild": {
+    "subject": "WORKER",
+    "buildId": "contract-fixture-not-deployment-attestation",
+    "hostApiVersion": "NONE",
+    "adapterProtocolVersions": ["1"],
+    "driverRegistryKeys": [],
+    "platformPortKeys": [],
+    "reportedAt": "2026-10-04T00:00:00Z"
+  }
+}

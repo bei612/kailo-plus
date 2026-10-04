@@ -10,6 +10,7 @@ import test from "node:test";
 import type { AutomationRunPage } from "../src/generated/contracts.js";
 import type { AutomationVersionContent } from "../src/generated/contracts.js";
 import type { ComponentConformanceStepObservation } from "../src/generated/contracts.js";
+import type { ComponentReleaseApprovalReport } from "../src/generated/contracts.js";
 
 test("component observations preserve references, UNKNOWN and absent evidence", () => {
   const raw = readFileSync(new URL("../../../../contracts/samples/component-conformance-observations.sample.json", import.meta.url), "utf8");
@@ -52,6 +53,19 @@ test("automation POST_MESSAGE round-trip preserves action and native schedule", 
     ...(typed.approvalPolicy ? { approvalPolicy: { id: typed.approvalPolicy.id, version: typed.approvalPolicy.version } } : {}),
   };
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
+});
+
+test("component release approval preserves deployment subject and NONE host API", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/component-release-approval.sample.json", import.meta.url), "utf8");
+  const typed: ComponentReleaseApprovalReport = JSON.parse(raw);
+  const reconstructed: ComponentReleaseApprovalReport = {
+    target: { actionExecutionId: typed.target.actionExecutionId, componentReleaseId: typed.target.componentReleaseId, workflowId: typed.target.workflowId },
+    runId: typed.runId,
+    workerBuild: { subject: typed.workerBuild.subject, buildId: typed.workerBuild.buildId, hostApiVersion: typed.workerBuild.hostApiVersion,
+      adapterProtocolVersions: typed.workerBuild.adapterProtocolVersions, driverRegistryKeys: typed.workerBuild.driverRegistryKeys,
+      platformPortKeys: typed.workerBuild.platformPortKeys, reportedAt: typed.workerBuild.reportedAt },
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
 });
 
 test("automation run pages preserve UNKNOWN and empty page", () => {

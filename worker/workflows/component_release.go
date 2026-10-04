@@ -12,6 +12,9 @@ import (
 // ComponentTask owns the execution history. There is no runner job registry or
 // per-probe Core state machine. A lost mutating reply never repeats the write.
 func componentRelease(ctx workflow.Context, in ComponentTaskInput) error {
+	if in.ReleaseApproval != nil {
+		return componentReleaseApproval(ctx, in)
+	}
 	plan := in.Release
 	if plan == nil || len(plan.Steps) == 0 || len(in.ReleaseObservations) > len(plan.Steps) ||
 		plan.WorkflowID != workflow.GetInfo(ctx).WorkflowExecution.ID {

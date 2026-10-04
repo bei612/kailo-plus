@@ -35,6 +35,9 @@ enum PlatformMessageKey {
   componentsInvalid,
   componentsRegister,
   componentsRegisterWarning,
+  componentsRequestApproval,
+  componentsApprovalTask,
+  componentsApproveWarning,
   componentsWorkflow,
   componentsRecorded,
   componentsViewTask,
@@ -722,13 +725,19 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Confirm these exact documents and start the isolated suite. Registration is recorded only after every required check has native evidence; submitting a task is not registration success.',
     '确认这些原始清单并启动隔离套件。全部必需检查取得原生证据后才会登记；任务提交不表示登记成功。',
   ),
+  PlatformMessageKey.componentsRequestApproval: ('Request approval', '申请批准'),
+  PlatformMessageKey.componentsApprovalTask: ('Approval task', '批准任务'),
+  PlatformMessageKey.componentsApproveWarning: (
+    'Request Catalog approval for this exact release. The registrar and requester cannot approve it. Approval also requires the current deployed platform capabilities; no business binding will be activated.',
+    '为这个确切版本申请 Catalog 批准。登记人和申请人不能审批；批准还必须通过当前部署能力兼容核验，不会启用业务 binding。',
+  ),
   PlatformMessageKey.componentsWorkflow: (
-    'Registration workflow: {workflow}',
-    '登记工作流：{workflow}',
+    'Release workflow: {workflow}',
+    '发行工作流：{workflow}',
   ),
   PlatformMessageKey.componentsRecorded: (
-    'Registration request recorded. Check the task for its outcome. Execution: {execution}; operation: {operation}.',
-    '登记请求已记录，请在任务中查看实际结果。执行：{execution}；操作：{operation}。',
+    'Release request recorded. Check the task for its outcome. Execution: {execution}; operation: {operation}.',
+    '发行请求已记录，请在任务中查看实际结果。执行：{execution}；操作：{operation}。',
   ),
   PlatformMessageKey.componentsViewTask: ('View registration task', '查看登记任务'),
   PlatformMessageKey.componentsNone: (

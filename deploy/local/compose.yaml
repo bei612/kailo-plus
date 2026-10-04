@@ -648,6 +648,9 @@ services:
       # （SF-BUZ-32），必须稳定可推导。
       BUZZ_COMMUNITY_DOMAIN: ${BUZZ_COMMUNITY_DOMAIN:?必须显式提供，禁止硬编码}
       CORE_DB_MAX_CONNECTIONS: ${CORE_DB_MAX_CONNECTIONS:?必须显式提供，禁止硬编码}
+      BUZZ_WEB_BUILD_INFO_URL: http://${WEB_SERVICE_NAME:?必须显式提供，禁止硬编码}:${WEB_CONTAINER_PORT:?必须显式提供，禁止硬编码}/app/platform-build-info.json
+      COMPONENT_BUILD_INFO_TIMEOUT_SECONDS: ${COMPONENT_BUILD_INFO_TIMEOUT_SECONDS:-}
+      COMPONENT_BUILD_INFO_MAX_BYTES: ${COMPONENT_BUILD_INFO_MAX_BYTES:-}
       # 运维信号只经 OTLP 交给 Collector（ADR-05）；导出周期是 SDK 的标准变量
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?必须显式提供，禁止硬编码}
       OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:?必须显式提供，禁止硬编码}
@@ -769,7 +772,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:a49e108c5cbef35c9876e05ab940ebd6a3cd48f71ab743eaeb91acadcc70686e
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:7df928821ac674deebd167b51c9b5326107e4f04ad9715a2bfe01a0bfead6e3d
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}

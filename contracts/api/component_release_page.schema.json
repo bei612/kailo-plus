@@ -7,6 +7,7 @@
   "required": ["releases", "canRegister"],
   "properties": {
     "canRegister": {"type": "boolean"},
+    "canApprove": {"type": "boolean"},
     "nextOffset": {"type": "integer"},
     "releases": {
       "type": "array",
@@ -20,6 +21,7 @@
           "status": {"$ref": "../enums/component_release_status.schema.json"},
           "artifactDigest": {"type": "string"}, "manifestDigest": {"type": "string"},
           "registeredByActionExecutionId": {"type": "string", "format": "uuid"},
+          "approvedByActionExecutionId": {"type": "string", "format": "uuid"},
           "operationId": {"type": "string", "format": "uuid"},
           "workflowId": {"type": "string"}, "suiteDigest": {"type": "string"}
         }

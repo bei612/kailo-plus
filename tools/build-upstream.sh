@@ -77,6 +77,7 @@ if [ "$kind" = image ]; then
     "${dockerfile_args[@]}" "${secret_args[@]}" "${arg_args[@]}" \
     --build-arg "VERSION=${base:0:12}" \
     --build-arg "GIT_REVISION=$base" \
+    --build-arg "PLATFORM_BUILD_ID=$source_build_id" \
     -t "$tag" "$src/$ctx" 2>&1 | tee "$build_log"
   # 推入本地 registry：自建产物只有 image ID，必须先入 registry 才能按 digest
   # 引用（ADR-06）。REGISTRY 由调用方给出，接入托管 registry 后只改这一个值。

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_release_approval_target.schema.json",
+  "title": "ComponentReleaseApprovalTarget",
+  "description": "原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "componentReleaseId", "workflowId"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "componentReleaseId": {"type": "string", "format": "uuid"},
+    "workflowId": {"type": "string", "minLength": 1}
+  }
+}

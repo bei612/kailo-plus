@@ -80,7 +80,7 @@ PY
   fi
   # 校验与执行使用同一 Docker 身份；服务端限额约束真正的编译进程。
   "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --load --progress=plain \
-    "${build_args[@]}" -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" 2>&1 | tee "$build_log" \
+    "${build_args[@]}" --build-arg "PLATFORM_BUILD_ID=$COMMIT" -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" 2>&1 | tee "$build_log" \
     || die "$unit 构建失败"
   digest=$("${CONTAINER_DOCKER[@]}" image inspect --format '{{.Id}}' "$tag")
   pass "镜像 $digest"
@@ -113,7 +113,8 @@ json.dump({
         "buildDefinition": {
             "buildType": "https://platform.local/docker-build/v1",
             "externalParameters": {"dockerfile": f"{unit}/Dockerfile", "context": ".",
-                                   "buildArgs": {"AGENT_RUNTIME_IMAGE": runtime_image} if runtime_image else {}},
+                                   "buildArgs": {"PLATFORM_BUILD_ID": commit,
+                                                 **({"AGENT_RUNTIME_IMAGE": runtime_image} if runtime_image else {})}},
             "resolvedDependencies": [
                 {"uri": remote, "digest": {"gitCommit": commit}},
                 {"name": "dependency-locks", "digest": {"sha256": lock_digest}},

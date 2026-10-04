@@ -121,6 +121,9 @@
 //    componentConformanceWireObservation, err := UnmarshalComponentConformanceWireObservation(bytes)
 //    bytes, err = componentConformanceWireObservation.Marshal()
 //
+//    componentReleaseApprovalReport, err := UnmarshalComponentReleaseApprovalReport(bytes)
+//    bytes, err = componentReleaseApprovalReport.Marshal()
+//
 //    componentReleasePage, err := UnmarshalComponentReleasePage(bytes)
 //    bytes, err = componentReleasePage.Marshal()
 //
@@ -232,6 +235,9 @@
 //    componentConformanceIdentity, err := UnmarshalComponentConformanceIdentity(bytes)
 //    bytes, err = componentConformanceIdentity.Marshal()
 //
+//    componentReleaseApprovalTarget, err := UnmarshalComponentReleaseApprovalTarget(bytes)
+//    bytes, err = componentReleaseApprovalTarget.Marshal()
+//
 //    componentReleaseRegistration, err := UnmarshalComponentReleaseRegistration(bytes)
 //    bytes, err = componentReleaseRegistration.Marshal()
 //
@@ -252,6 +258,9 @@
 //
 //    llmRouteCreateInput, err := UnmarshalLlmRouteCreateInput(bytes)
 //    bytes, err = llmRouteCreateInput.Marshal()
+//
+//    platformBuildInfo, err := UnmarshalPlatformBuildInfo(bytes)
+//    bytes, err = platformBuildInfo.Marshal()
 //
 //    runtimeProfileDirectory, err := UnmarshalRuntimeProfileDirectory(bytes)
 //    bytes, err = runtimeProfileDirectory.Marshal()
@@ -752,6 +761,16 @@ func (r *ComponentConformanceWireObservation) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentReleaseApprovalReport(data []byte) (ComponentReleaseApprovalReport, error) {
+	var r ComponentReleaseApprovalReport
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentReleaseApprovalReport) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentReleasePage(data []byte) (ComponentReleasePage, error) {
 	var r ComponentReleasePage
 	err := json.Unmarshal(data, &r)
@@ -1122,6 +1141,16 @@ func (r *ComponentConformanceIdentity) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentReleaseApprovalTarget(data []byte) (ComponentReleaseApprovalTarget, error) {
+	var r ComponentReleaseApprovalTarget
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentReleaseApprovalTarget) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentReleaseRegistration(data []byte) (ComponentReleaseRegistration, error) {
 	var r ComponentReleaseRegistration
 	err := json.Unmarshal(data, &r)
@@ -1189,6 +1218,16 @@ func UnmarshalLlmRouteCreateInput(data []byte) (LlmRouteCreateInput, error) {
 }
 
 func (r *LlmRouteCreateInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPlatformBuildInfo(data []byte) (PlatformBuildInfo, error) {
+	var r PlatformBuildInfo
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PlatformBuildInfo) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1611,7 +1650,9 @@ type ActionCommand struct {
 	CapabilityContractRef *CapabilityContractRefClass `json:"capabilityContractRef,omitempty"`
 	// 仅 capability_contract.register：真实 schema 与测试向量内容。
 	CapabilityContractRegistration *CapabilityContractRegistrationClass `json:"capabilityContractRegistration,omitempty"`
-	ComponentReleaseRegistration   *ComponentReleaseRegistrationClass   `json:"componentReleaseRegistration,omitempty"`
+	// 仅组件批准：已登记的不可变ComponentRelease标识。
+	ComponentReleaseID           *string                            `json:"componentReleaseId,omitempty"`
+	ComponentReleaseRegistration *ComponentReleaseRegistrationClass `json:"componentReleaseRegistration,omitempty"`
 	// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 	DelegationGrant *DelegationGrantClass `json:"delegationGrant,omitempty"`
 	// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
@@ -2555,14 +2596,41 @@ type PlanStep struct {
 	StepKey              string                   `json:"stepKey"`
 }
 
+// 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
+type ComponentReleaseApprovalReport struct {
+	RunID       string           `json:"runId"`
+	Target      TargetClass      `json:"target"`
+	WorkerBuild WorkerBuildClass `json:"workerBuild"`
+}
+
+// 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
+type TargetClass struct {
+	ActionExecutionID  string `json:"actionExecutionId"`
+	ComponentReleaseID string `json:"componentReleaseId"`
+	WorkflowID         string `json:"workflowId"`
+}
+
+// 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
+type WorkerBuildClass struct {
+	AdapterProtocolVersions []string          `json:"adapterProtocolVersions"`
+	BuildID                 string            `json:"buildId"`
+	DriverRegistryKeys      []string          `json:"driverRegistryKeys"`
+	HostAPIVersion          string            `json:"hostApiVersion"`
+	PlatformPortKeys        []PlatformPortKey `json:"platformPortKeys"`
+	ReportedAt              time.Time         `json:"reportedAt"`
+	Subject                 Subject           `json:"subject"`
+}
+
 // 受Catalog管理权限保护的已登记release元数据，正文与套件令牌不外露；REGISTERED不等于APPROVED或binding可用。
 type ComponentReleasePage struct {
+	CanApprove  *bool                  `json:"canApprove,omitempty"`
 	CanRegister bool                   `json:"canRegister"`
 	NextOffset  *int64                 `json:"nextOffset,omitempty"`
 	Releases    []ComponentReleaseView `json:"releases"`
 }
 
 type ComponentReleaseView struct {
+	ApprovedByActionExecutionID   *string                `json:"approvedByActionExecutionId,omitempty"`
 	ArtifactDigest                string                 `json:"artifactDigest"`
 	ComponentReleaseID            string                 `json:"componentReleaseId"`
 	ComponentTypeKey              string                 `json:"componentTypeKey"`
@@ -3090,6 +3158,13 @@ type ComponentConformanceIdentityContext struct {
 	WorkspaceID                 *string                  `json:"workspaceId,omitempty"`
 }
 
+// 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
+type ComponentReleaseApprovalTarget struct {
+	ActionExecutionID  string `json:"actionExecutionId"`
+	ComponentReleaseID string `json:"componentReleaseId"`
+	WorkflowID         string `json:"workflowId"`
+}
+
 // 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
 // Worker 独立执行隔离套件。
 type ComponentReleaseRegistration struct {
@@ -3159,6 +3234,17 @@ type LlmRouteCreateInputProviderSecretRef struct {
 	Audience string `json:"audience"`
 	Locator  string `json:"locator"`
 	Version  int64  `json:"version"`
+}
+
+// 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
+type PlatformBuildInfo struct {
+	AdapterProtocolVersions []string          `json:"adapterProtocolVersions"`
+	BuildID                 string            `json:"buildId"`
+	DriverRegistryKeys      []string          `json:"driverRegistryKeys"`
+	HostAPIVersion          string            `json:"hostApiVersion"`
+	PlatformPortKeys        []PlatformPortKey `json:"platformPortKeys"`
+	ReportedAt              time.Time         `json:"reportedAt"`
+	Subject                 Subject           `json:"subject"`
 }
 
 // 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
@@ -4041,13 +4127,13 @@ const (
 type EvidenceAuthority string
 
 const (
-	Agentgateway EvidenceAuthority = "AGENTGATEWAY"
-	Buzz         EvidenceAuthority = "BUZZ"
-	Core         EvidenceAuthority = "CORE"
-	Oidc         EvidenceAuthority = "OIDC"
-	Openmeter    EvidenceAuthority = "OPENMETER"
-	Spicedb      EvidenceAuthority = "SPICEDB"
-	Temporal     EvidenceAuthority = "TEMPORAL"
+	Agentgateway          EvidenceAuthority = "AGENTGATEWAY"
+	Buzz                  EvidenceAuthority = "BUZZ"
+	EvidenceAuthorityCORE EvidenceAuthority = "CORE"
+	Oidc                  EvidenceAuthority = "OIDC"
+	Openmeter             EvidenceAuthority = "OPENMETER"
+	Spicedb               EvidenceAuthority = "SPICEDB"
+	Temporal              EvidenceAuthority = "TEMPORAL"
 )
 
 // 存量种类不可识别时缺省
@@ -4167,6 +4253,27 @@ const (
 	Reconcile                       AdapterProtocolOperation = "reconcile"
 	ResolveNativeScope              AdapterProtocolOperation = "resolve_native_scope"
 	ValidateBinding                 AdapterProtocolOperation = "validate_binding"
+)
+
+type PlatformPortKey string
+
+const (
+	AIGateway          PlatformPortKey = "AI_GATEWAY"
+	ApprovalWorkflow   PlatformPortKey = "APPROVAL_WORKFLOW"
+	Authorization      PlatformPortKey = "AUTHORIZATION"
+	CollaborationRelay PlatformPortKey = "COLLABORATION_RELAY"
+	CoreInternal       PlatformPortKey = "CORE_INTERNAL"
+	IdentityEdge       PlatformPortKey = "IDENTITY_EDGE"
+	MeteringBilling    PlatformPortKey = "METERING_BILLING"
+	SecretStore        PlatformPortKey = "SECRET_STORE"
+)
+
+type Subject string
+
+const (
+	BuzzWeb     Subject = "BUZZ_WEB"
+	SubjectCORE Subject = "CORE"
+	Worker      Subject = "WORKER"
 )
 
 type ComponentReleaseStatus string

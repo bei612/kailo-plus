@@ -112,6 +112,11 @@
     "componentReleaseRegistration": {
       "$ref": "../domain/component_release_registration.schema.json"
     },
+    "componentReleaseId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "仅组件批准：已登记的不可变ComponentRelease标识。"
+    },
     "capabilityContractRegistration": {
       "$ref": "../domain/capability_contract_registration.schema.json",
       "description": "仅 capability_contract.register：真实 schema 与测试向量内容。"

@@ -509,6 +509,7 @@ def plan(name):
     print(f"artifact={q(art['name'])}")
     print(f"kind={q(str(art['kind']))}")
     print(f"base={q(str(m['implementation_base_commit']))}")
+    print(f"source_build_id={q(source_digest(art))}")
     print(f"ctx={q(str(art['build_context']))}")
     print(f"dockerfile={q(str(art.get('build_dockerfile') or ''))}")
     print("secrets=(" + " ".join(q(x) for x in _list(art, "build_secrets")) + ")")

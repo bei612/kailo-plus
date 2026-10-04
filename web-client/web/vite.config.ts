@@ -6,6 +6,24 @@ import { defineConfig } from "vite";
 export default defineConfig({
   base: process.env.VITE_BASE_PATH || "/",
   plugins: [
+    {
+      name: "deployed-platform-build-info",
+      apply: "build",
+      generateBundle() {
+        const buildId = process.env.PLATFORM_BUILD_ID;
+        if (!buildId || !/^sha256:[a-f0-9]{64}$/.test(buildId)) {
+          this.error("PLATFORM_BUILD_ID must come from the original source manifest");
+        }
+        this.emitFile({
+          type: "asset", fileName: "platform-build-info.json",
+          source: JSON.stringify({
+            subject: "BUZZ_WEB", buildId, hostApiVersion: "NONE",
+            adapterProtocolVersions: [], driverRegistryKeys: [], platformPortKeys: [],
+            reportedAt: new Date().toISOString(),
+          }),
+        });
+      },
+    },
     tanstackRouter({
       target: "react",
       routesDirectory: "./src/app/routes",

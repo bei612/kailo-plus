@@ -103,6 +103,7 @@ type ComponentTaskInput struct {
 	Rehome              *SecretRefRehomeTarget                          `json:"rehome,omitempty"`
 	Installation        *generated.AgentInstallationWorkflowTarget      `json:"installation,omitempty"`
 	Release             *generated.PlanClass                            `json:"release,omitempty"`
+	ReleaseApproval     *generated.ComponentReleaseApprovalTarget       `json:"releaseApproval,omitempty"`
 	ReleaseObservations []generated.ComponentConformanceStepObservation `json:"releaseObservations,omitempty"`
 	ReleaseReconcile    bool                                            `json:"releaseReconcile,omitempty"`
 	// continue-as-new 时带入的 history 长度累计。投影的 event_id 按 workflow ID

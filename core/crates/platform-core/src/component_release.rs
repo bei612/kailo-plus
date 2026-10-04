@@ -11,6 +11,9 @@ use uuid::Uuid;
 
 use crate::governance::{Definition, Execution, Params, Refusal, Target};
 
+#[path = "component_release_approval.rs"]
+pub(crate) mod approval;
+
 pub(crate) const REGISTER: &str = "component_release.register";
 pub(crate) const KIND: &str = "COMPONENT_RELEASE";
 
@@ -2029,6 +2032,14 @@ pub(crate) async fn list(
         } else {
             false
         };
+        let definition =
+            crate::governance::active_definition(&state.pool, approval::APPROVE).await?;
+        result.can_approve = Some(if let Some(definition) = definition {
+            crate::capability_registry::action_exposed(approval::APPROVE)
+                && approval::valid_policy(&mut conn, &definition).await?
+        } else {
+            false
+        });
         Ok::<_, Refusal>(result)
     }
     .await;
@@ -2048,11 +2059,11 @@ async fn read_releases(
     if page <= 0 || offset < 0 {
         return Err(bad());
     }
-    let mut rows:Vec<Value>=sqlx::query_scalar("select jsonb_build_object(
+    let mut rows:Vec<Value>=sqlx::query_scalar("select jsonb_strip_nulls(jsonb_build_object(
             'componentReleaseId',r.id,'componentTypeKey',r.component_type_key,'version',r.version,'status',r.status,
             'artifactDigest',r.adapter_build_ref,'manifestDigest',r.manifest_digest,
-            'registeredByActionExecutionId',r.registered_by_action_execution_id,'operationId',ae.operation_id,
-            'workflowId',ae.temporal_workflow_id,'suiteDigest',ae.component_conformance_observation->>'suiteDigest')
+            'registeredByActionExecutionId',r.registered_by_action_execution_id,'approvedByActionExecutionId',r.approved_by_action_execution_id,'operationId',ae.operation_id,
+            'workflowId',ae.temporal_workflow_id,'suiteDigest',ae.component_conformance_observation->>'suiteDigest'))
             from catalog.component_release r join admission.action_execution ae on ae.id=r.registered_by_action_execution_id
             where r.catalog_tenant_id=$1 and ae.tenant_id=r.catalog_tenant_id
             order by r.component_type_key,r.version,r.id limit $2 offset $3")

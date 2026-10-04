@@ -41,6 +41,26 @@ void main() {
       expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
     },
   );
+  test(
+    'component release approval preserves deployment subject and NONE host API',
+    () {
+      final original =
+          jsonDecode(
+                File(
+                  '../../contracts/samples/component-release-approval.sample.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      final typed = ComponentReleaseApprovalReport.fromJson(original);
+      // The generated date-time consumer preserves the instant, not the
+      // optional fractional-second spelling of RFC 3339.
+      final workerBuild = original['workerBuild'] as Map<String, dynamic>;
+      workerBuild['reportedAt'] = DateTime.parse(
+        workerBuild['reportedAt'] as String,
+      ).toIso8601String();
+      expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+    },
+  );
   test('automation run pages preserve UNKNOWN and empty page', () {
     final original =
         jsonDecode(

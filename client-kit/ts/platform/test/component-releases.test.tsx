@@ -27,6 +27,23 @@ async function prepare(host: HTMLElement) {
 }
 
 describe("shared ComponentRelease registration", () => {
+  it("requests approval through the existing Action and keeps WAITING distinct from APPROVED", async () => {
+    const release = { componentReleaseId: "registered-release", componentTypeKey: "fixture", version: "1", status: "REGISTERED",
+      artifactDigest: "a".repeat(64), manifestDigest: "b".repeat(64), suiteDigest: "c".repeat(64),
+      registeredByActionExecutionId: pending.actionExecutionId, operationId: pending.operationId, workflowId: pending.workflowId };
+    const { host, send } = await mount((request) => request.method === "GET"
+      ? { status: 200, body: { releases: [release], canRegister: false, canApprove: true } }
+      : { status: 200, body: { actionKey: "component_release.approve", actionExecutionId: "approval-action", operationId: "approval-operation",
+        gateState: "WAITING", dispatchState: "NOT_DISPATCHED", approvalWorkflowId: "approval-workflow" } });
+    await click(button(host, "Request approval"));
+    await click(button(host, "Submit governed request"));
+    const writes = send.mock.calls.filter(([request]) => request.method === "POST");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.[0]).toMatchObject({ path: "/api/v1/actions", body: { actionKey: "component_release.approve", componentReleaseId: release.componentReleaseId } });
+    expect(host.textContent).toContain("approval-action");
+    expect(host.textContent).toContain("Registered");
+    expect(host.textContent).not.toContain("Approved");
+  });
   it("sends exact source documents through the original governed Action and does not call dispatch success REGISTERED", async () => {
     const { host, send } = await mount((request) => request.method === "GET"
       ? { status: 200, body: { releases: [], canRegister: true } }
@@ -67,6 +84,17 @@ describe("shared ComponentRelease registration", () => {
       const { host, send } = await mount(() => reply);
       expect(host.querySelector("textarea")).toBeNull();
       expect(send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+    }
+  });
+
+  it("does not advertise approval without its server capability fact", async () => {
+    for (const canApprove of [undefined, false]) {
+      const { host } = await mount(() => ({ status: 200, body: { canRegister: false, canApprove, releases: [{
+        componentReleaseId: "registered-release", componentTypeKey: "fixture", version: "1", status: "REGISTERED",
+        artifactDigest: "a".repeat(64), manifestDigest: "b".repeat(64), suiteDigest: "c".repeat(64),
+        registeredByActionExecutionId: pending.actionExecutionId, operationId: pending.operationId, workflowId: pending.workflowId,
+      }] } }));
+      expect([...host.querySelectorAll("button")].some((node) => node.textContent === "Request approval")).toBe(false);
     }
   });
 

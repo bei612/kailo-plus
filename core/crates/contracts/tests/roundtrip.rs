@@ -18,6 +18,16 @@ fn component_observations_roundtrip_preserves_references_unknown_and_absence() {
 }
 
 #[test]
+fn component_release_approval_roundtrip_preserves_actual_subject_and_none_host_api() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("component-release-approval.sample.json"))
+            .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::ComponentReleaseApprovalReport = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
 fn automation_run_pages_roundtrip_preserves_unknown_and_empty_page() {
     let raw = fs::read_to_string(sample_path().with_file_name("automation-run-pages.sample.json"))
         .unwrap();

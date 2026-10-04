@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/platform_build_info.schema.json",
+  "title": "PlatformBuildInfo",
+  "description": "设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["subject", "buildId", "hostApiVersion", "adapterProtocolVersions", "driverRegistryKeys", "platformPortKeys", "reportedAt"],
+  "properties": {
+    "subject": {"type": "string", "enum": ["BUZZ_WEB", "CORE", "WORKER"]},
+    "buildId": {"type": "string", "minLength": 1},
+    "hostApiVersion": {"type": "string", "minLength": 1},
+    "adapterProtocolVersions": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "driverRegistryKeys": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "platformPortKeys": {"type": "array", "uniqueItems": true, "items": {"type": "string", "enum": ["CORE_INTERNAL", "IDENTITY_EDGE", "AUTHORIZATION", "APPROVAL_WORKFLOW", "METERING_BILLING", "AI_GATEWAY", "SECRET_STORE", "COLLABORATION_RELAY"]}},
+    "reportedAt": {"type": "string", "format": "date-time"}
+  }
+}

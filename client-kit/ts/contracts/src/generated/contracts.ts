@@ -214,7 +214,11 @@ export interface ActionCommand {
      * 仅 capability_contract.register：真实 schema 与测试向量内容。
      */
     capabilityContractRegistration?: CapabilityContractRegistrationClass;
-    componentReleaseRegistration?:   ComponentReleaseRegistrationClass;
+    /**
+     * 仅组件批准：已登记的不可变ComponentRelease标识。
+     */
+    componentReleaseId?:           string;
+    componentReleaseRegistration?: ComponentReleaseRegistrationClass;
     /**
      * 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
      */
@@ -1833,15 +1837,65 @@ export interface PlanStep {
 }
 
 /**
+ * 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
+ */
+export interface ComponentReleaseApprovalReport {
+    runId:       string;
+    target:      TargetClass;
+    workerBuild: WorkerBuildClass;
+}
+
+/**
+ * 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
+ */
+export interface TargetClass {
+    actionExecutionId:  string;
+    componentReleaseId: string;
+    workflowId:         string;
+}
+
+/**
+ * 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
+ */
+export interface WorkerBuildClass {
+    adapterProtocolVersions: string[];
+    buildId:                 string;
+    driverRegistryKeys:      string[];
+    hostApiVersion:          string;
+    platformPortKeys:        PlatformPortKey[];
+    reportedAt:              Date;
+    subject:                 Subject;
+}
+
+export enum PlatformPortKey {
+    AIGateway = "AI_GATEWAY",
+    ApprovalWorkflow = "APPROVAL_WORKFLOW",
+    Authorization = "AUTHORIZATION",
+    CollaborationRelay = "COLLABORATION_RELAY",
+    CoreInternal = "CORE_INTERNAL",
+    IdentityEdge = "IDENTITY_EDGE",
+    MeteringBilling = "METERING_BILLING",
+    SecretStore = "SECRET_STORE",
+}
+
+export enum Subject {
+    BuzzWeb = "BUZZ_WEB",
+    Core = "CORE",
+    Worker = "WORKER",
+}
+
+/**
  * 受Catalog管理权限保护的已登记release元数据，正文与套件令牌不外露；REGISTERED不等于APPROVED或binding可用。
  */
 export interface ComponentReleasePage {
+    canApprove?: boolean;
     canRegister: boolean;
     nextOffset?: number;
     releases:    ComponentReleaseView[];
 }
 
 export interface ComponentReleaseView {
+    approvedByActionExecutionId?:  string;
     artifactDigest:                string;
     componentReleaseId:            string;
     componentTypeKey:              string;
@@ -2661,6 +2715,15 @@ export interface ComponentConformanceIdentityContext {
 }
 
 /**
+ * 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
+ */
+export interface ComponentReleaseApprovalTarget {
+    actionExecutionId:  string;
+    componentReleaseId: string;
+    workflowId:         string;
+}
+
+/**
  * 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
  * Worker 独立执行隔离套件。
  */
@@ -2745,6 +2808,19 @@ export interface LlmRouteCreateInputProviderSecretRef {
     audience: string;
     locator:  string;
     version:  number;
+}
+
+/**
+ * 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
+ */
+export interface PlatformBuildInfo {
+    adapterProtocolVersions: string[];
+    buildId:                 string;
+    driverRegistryKeys:      string[];
+    hostApiVersion:          string;
+    platformPortKeys:        PlatformPortKey[];
+    reportedAt:              Date;
+    subject:                 Subject;
 }
 
 /**

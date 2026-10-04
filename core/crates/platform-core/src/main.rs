@@ -47,6 +47,7 @@ mod native;
 mod oidc;
 mod openmeter;
 mod platform_bootstrap;
+mod platform_build_info;
 mod platform_info;
 mod platform_keys;
 mod platform_views;

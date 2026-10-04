@@ -305,6 +305,10 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_contract_registration: Option<CapabilityContractRegistrationClass>,
 
+    /// 仅组件批准：已登记的不可变ComponentRelease标识。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_release_id: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub component_release_registration: Option<ComponentReleaseRegistrationClass>,
 
@@ -2788,10 +2792,92 @@ pub struct PlanStep {
     pub step_key: String,
 }
 
+/// 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentReleaseApprovalReport {
+    pub run_id: String,
+
+    pub target: TargetClass,
+
+    pub worker_build: WorkerBuildClass,
+}
+
+/// 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetClass {
+    pub action_execution_id: String,
+
+    pub component_release_id: String,
+
+    pub workflow_id: String,
+}
+
+/// 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerBuildClass {
+    pub adapter_protocol_versions: Vec<String>,
+
+    pub build_id: String,
+
+    pub driver_registry_keys: Vec<String>,
+
+    pub host_api_version: String,
+
+    pub platform_port_keys: Vec<PlatformPortKey>,
+
+    pub reported_at: String,
+
+    pub subject: Subject,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PlatformPortKey {
+    #[serde(rename = "AI_GATEWAY")]
+    AiGateway,
+
+    #[serde(rename = "APPROVAL_WORKFLOW")]
+    ApprovalWorkflow,
+
+    Authorization,
+
+    #[serde(rename = "COLLABORATION_RELAY")]
+    CollaborationRelay,
+
+    #[serde(rename = "CORE_INTERNAL")]
+    CoreInternal,
+
+    #[serde(rename = "IDENTITY_EDGE")]
+    IdentityEdge,
+
+    #[serde(rename = "METERING_BILLING")]
+    MeteringBilling,
+
+    #[serde(rename = "SECRET_STORE")]
+    SecretStore,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Subject {
+    #[serde(rename = "BUZZ_WEB")]
+    BuzzWeb,
+
+    Core,
+
+    Worker,
+}
+
 /// 受Catalog管理权限保护的已登记release元数据，正文与套件令牌不外露；REGISTERED不等于APPROVED或binding可用。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentReleasePage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_approve: Option<bool>,
+
     pub can_register: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2803,6 +2889,9 @@ pub struct ComponentReleasePage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentReleaseView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approved_by_action_execution_id: Option<String>,
+
     pub artifact_digest: String,
 
     pub component_release_id: String,
@@ -3907,6 +3996,17 @@ pub struct ComponentConformanceIdentityContext {
     pub workspace_id: Option<String>,
 }
 
+/// 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentReleaseApprovalTarget {
+    pub action_execution_id: String,
+
+    pub component_release_id: String,
+
+    pub workflow_id: String,
+}
+
 /// 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
 /// Worker 独立执行隔离套件。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4028,6 +4128,25 @@ pub struct LlmRouteCreateInputProviderSecretRef {
     pub locator: String,
 
     pub version: i64,
+}
+
+/// 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformBuildInfo {
+    pub adapter_protocol_versions: Vec<String>,
+
+    pub build_id: String,
+
+    pub driver_registry_keys: Vec<String>,
+
+    pub host_api_version: String,
+
+    pub platform_port_keys: Vec<PlatformPortKey>,
+
+    pub reported_at: String,
+
+    pub subject: Subject,
 }
 
 /// 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。

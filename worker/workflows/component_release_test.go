@@ -40,6 +40,31 @@ func releaseWorkflowTest(t *testing.T, project ...func(context.Context, generate
 	return env, ComponentTaskInput{Kind: generated.WorkflowKind("COMPONENT_RELEASE"), Release: plan}
 }
 
+func TestComponentReleaseApprovalUsesOriginalTaskAndRejectsWrongReceipt(t *testing.T) {
+	for _, status := range []generated.ComponentReleaseStatus{"APPROVED", "REGISTERED"} {
+		t.Run(string(status), func(t *testing.T) {
+			env, in := releaseWorkflowTest(t)
+			in.Release = nil
+			in.ReleaseApproval = &generated.ComponentReleaseApprovalTarget{ActionExecutionID: "approval-action", ComponentReleaseID: "registered-release", WorkflowID: t.Name()}
+			calls := 0
+			env.OnActivity("ApproveComponentRelease", mock.Anything, mock.Anything).Return(func(_ context.Context, report generated.ComponentReleaseApprovalReport) (generated.ComponentReleaseReceipt, error) {
+				calls++
+				if report.Target.ActionExecutionID != in.ReleaseApproval.ActionExecutionID || report.Target.ComponentReleaseID != in.ReleaseApproval.ComponentReleaseID || report.RunID == "" || report.WorkerBuild.BuildID != "" {
+					t.Fatal("workflow substituted admission or fabricated deployment facts")
+				}
+				if calls == 1 {
+					return generated.ComponentReleaseReceipt{}, errors.New("approval commit ACK lost")
+				}
+				return generated.ComponentReleaseReceipt{ActionExecutionID: report.Target.ActionExecutionID, ComponentReleaseID: report.Target.ComponentReleaseID, Status: status}, nil
+			})
+			env.ExecuteWorkflow(ComponentTaskKind, in)
+			if calls != 2 || (env.GetWorkflowError() == nil) != (status == "APPROVED") {
+				t.Fatalf("calls=%d status=%s err=%v", calls, status, env.GetWorkflowError())
+			}
+		})
+	}
+}
+
 func TestComponentReleaseLostACKOnlyReconcilesOriginalAttempt(t *testing.T) {
 	env, in := releaseWorkflowTest(t)
 	attempts, reports := 0, 0

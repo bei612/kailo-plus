@@ -94,6 +94,7 @@ capabilities:
   - /api/v1/platform/component-releases
   actions:
   - component_release.register
+  - component_release.approve
   tools: []
   workflow_kinds:
   - COMPONENT_RELEASE

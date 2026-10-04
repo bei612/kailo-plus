@@ -40,6 +40,7 @@
 //     final componentConformanceAuthorization = componentConformanceAuthorizationFromJson(jsonString);
 //     final componentConformanceWireDigests = componentConformanceWireDigestsFromJson(jsonString);
 //     final componentConformanceWireObservation = componentConformanceWireObservationFromJson(jsonString);
+//     final componentReleaseApprovalReport = componentReleaseApprovalReportFromJson(jsonString);
 //     final componentReleasePage = componentReleasePageFromJson(jsonString);
 //     final componentReleaseReceipt = componentReleaseReceiptFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
@@ -77,6 +78,7 @@
 //     final componentConformanceEnvironment = componentConformanceEnvironmentFromJson(jsonString);
 //     final componentConformanceFixture = componentConformanceFixtureFromJson(jsonString);
 //     final componentConformanceIdentity = componentConformanceIdentityFromJson(jsonString);
+//     final componentReleaseApprovalTarget = componentReleaseApprovalTargetFromJson(jsonString);
 //     final componentReleaseRegistration = componentReleaseRegistrationFromJson(jsonString);
 //     final contentReference = contentReferenceFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
@@ -84,6 +86,7 @@
 //     final errorBody = errorBodyFromJson(jsonString);
 //     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
 //     final llmRouteCreateInput = llmRouteCreateInputFromJson(jsonString);
+//     final platformBuildInfo = platformBuildInfoFromJson(jsonString);
 //     final runtimeProfileDirectory = runtimeProfileDirectoryFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
@@ -362,6 +365,14 @@ String componentConformanceWireObservationToJson(
   ComponentConformanceWireObservation data,
 ) => json.encode(data.toJson());
 
+ComponentReleaseApprovalReport componentReleaseApprovalReportFromJson(
+  String str,
+) => ComponentReleaseApprovalReport.fromJson(json.decode(str));
+
+String componentReleaseApprovalReportToJson(
+  ComponentReleaseApprovalReport data,
+) => json.encode(data.toJson());
+
 ComponentReleasePage componentReleasePageFromJson(String str) =>
     ComponentReleasePage.fromJson(json.decode(str));
 
@@ -581,6 +592,14 @@ ComponentConformanceIdentity componentConformanceIdentityFromJson(String str) =>
 String componentConformanceIdentityToJson(ComponentConformanceIdentity data) =>
     json.encode(data.toJson());
 
+ComponentReleaseApprovalTarget componentReleaseApprovalTargetFromJson(
+  String str,
+) => ComponentReleaseApprovalTarget.fromJson(json.decode(str));
+
+String componentReleaseApprovalTargetToJson(
+  ComponentReleaseApprovalTarget data,
+) => json.encode(data.toJson());
+
 ComponentReleaseRegistration componentReleaseRegistrationFromJson(String str) =>
     ComponentReleaseRegistration.fromJson(json.decode(str));
 
@@ -619,6 +638,12 @@ LlmRouteCreateInput llmRouteCreateInputFromJson(String str) =>
     LlmRouteCreateInput.fromJson(json.decode(str));
 
 String llmRouteCreateInputToJson(LlmRouteCreateInput data) =>
+    json.encode(data.toJson());
+
+PlatformBuildInfo platformBuildInfoFromJson(String str) =>
+    PlatformBuildInfo.fromJson(json.decode(str));
+
+String platformBuildInfoToJson(PlatformBuildInfo data) =>
     json.encode(data.toJson());
 
 RuntimeProfileDirectory runtimeProfileDirectoryFromJson(String str) =>
@@ -1248,6 +1273,9 @@ class ActionCommand {
 
   ///仅 capability_contract.register：真实 schema 与测试向量内容。
   final CapabilityContractRegistrationClass? capabilityContractRegistration;
+
+  ///仅组件批准：已登记的不可变ComponentRelease标识。
+  final String? componentReleaseId;
   final ComponentReleaseRegistrationClass? componentReleaseRegistration;
 
   ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -1313,6 +1341,7 @@ class ActionCommand {
     this.automationVersionContent,
     this.capabilityContractRef,
     this.capabilityContractRegistration,
+    this.componentReleaseId,
     this.componentReleaseRegistration,
     this.delegationGrant,
     this.delegationId,
@@ -1355,6 +1384,7 @@ class ActionCommand {
         : CapabilityContractRegistrationClass.fromJson(
             json["capabilityContractRegistration"],
           ),
+    componentReleaseId: json["componentReleaseId"],
     componentReleaseRegistration: json["componentReleaseRegistration"] == null
         ? null
         : ComponentReleaseRegistrationClass.fromJson(
@@ -1394,6 +1424,7 @@ class ActionCommand {
     "automationVersionContent": automationVersionContent?.toJson(),
     "capabilityContractRef": capabilityContractRef?.toJson(),
     "capabilityContractRegistration": capabilityContractRegistration?.toJson(),
+    "componentReleaseId": componentReleaseId,
     "componentReleaseRegistration": componentReleaseRegistration?.toJson(),
     "delegationGrant": delegationGrant?.toJson(),
     "delegationId": delegationId,
@@ -5489,13 +5520,148 @@ class PlanStep {
   });
 }
 
+///原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
+class ComponentReleaseApprovalReport {
+  final String runId;
+  final TargetClass target;
+  final WorkerBuildClass workerBuild;
+
+  ComponentReleaseApprovalReport({
+    required this.runId,
+    required this.target,
+    required this.workerBuild,
+  });
+
+  factory ComponentReleaseApprovalReport.fromJson(Map<String, dynamic> json) =>
+      ComponentReleaseApprovalReport(
+        runId: json["runId"],
+        target: TargetClass.fromJson(json["target"]),
+        workerBuild: WorkerBuildClass.fromJson(json["workerBuild"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "runId": runId,
+    "target": target.toJson(),
+    "workerBuild": workerBuild.toJson(),
+  });
+}
+
+///原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
+class TargetClass {
+  final String actionExecutionId;
+  final String componentReleaseId;
+  final String workflowId;
+
+  TargetClass({
+    required this.actionExecutionId,
+    required this.componentReleaseId,
+    required this.workflowId,
+  });
+
+  factory TargetClass.fromJson(Map<String, dynamic> json) => TargetClass(
+    actionExecutionId: json["actionExecutionId"],
+    componentReleaseId: json["componentReleaseId"],
+    workflowId: json["workflowId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "componentReleaseId": componentReleaseId,
+    "workflowId": workflowId,
+  });
+}
+
+///设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
+class WorkerBuildClass {
+  final List<String> adapterProtocolVersions;
+  final String buildId;
+  final List<String> driverRegistryKeys;
+  final String hostApiVersion;
+  final List<PlatformPortKey> platformPortKeys;
+  final DateTime reportedAt;
+  final Subject subject;
+
+  WorkerBuildClass({
+    required this.adapterProtocolVersions,
+    required this.buildId,
+    required this.driverRegistryKeys,
+    required this.hostApiVersion,
+    required this.platformPortKeys,
+    required this.reportedAt,
+    required this.subject,
+  });
+
+  factory WorkerBuildClass.fromJson(Map<String, dynamic> json) =>
+      WorkerBuildClass(
+        adapterProtocolVersions: List<String>.from(
+          json["adapterProtocolVersions"].map((x) => x),
+        ),
+        buildId: json["buildId"],
+        driverRegistryKeys: List<String>.from(
+          json["driverRegistryKeys"].map((x) => x),
+        ),
+        hostApiVersion: json["hostApiVersion"],
+        platformPortKeys: List<PlatformPortKey>.from(
+          json["platformPortKeys"].map((x) => platformPortKeyValues.map[x]!),
+        ),
+        reportedAt: DateTime.parse(json["reportedAt"]),
+        subject: subjectValues.map[json["subject"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapterProtocolVersions": List<dynamic>.from(
+      adapterProtocolVersions.map((x) => x),
+    ),
+    "buildId": buildId,
+    "driverRegistryKeys": List<dynamic>.from(driverRegistryKeys.map((x) => x)),
+    "hostApiVersion": hostApiVersion,
+    "platformPortKeys": List<dynamic>.from(
+      platformPortKeys.map((x) => platformPortKeyValues.reverse[x]),
+    ),
+    "reportedAt": reportedAt.toIso8601String(),
+    "subject": subjectValues.reverse[subject],
+  });
+}
+
+enum PlatformPortKey {
+  AI_GATEWAY,
+  APPROVAL_WORKFLOW,
+  AUTHORIZATION,
+  COLLABORATION_RELAY,
+  CORE_INTERNAL,
+  IDENTITY_EDGE,
+  METERING_BILLING,
+  SECRET_STORE,
+}
+
+final platformPortKeyValues = EnumValues({
+  "AI_GATEWAY": PlatformPortKey.AI_GATEWAY,
+  "APPROVAL_WORKFLOW": PlatformPortKey.APPROVAL_WORKFLOW,
+  "AUTHORIZATION": PlatformPortKey.AUTHORIZATION,
+  "COLLABORATION_RELAY": PlatformPortKey.COLLABORATION_RELAY,
+  "CORE_INTERNAL": PlatformPortKey.CORE_INTERNAL,
+  "IDENTITY_EDGE": PlatformPortKey.IDENTITY_EDGE,
+  "METERING_BILLING": PlatformPortKey.METERING_BILLING,
+  "SECRET_STORE": PlatformPortKey.SECRET_STORE,
+});
+
+enum Subject { BUZZ_WEB, CORE, WORKER }
+
+final subjectValues = EnumValues({
+  "BUZZ_WEB": Subject.BUZZ_WEB,
+  "CORE": Subject.CORE,
+  "WORKER": Subject.WORKER,
+});
+
 ///受Catalog管理权限保护的已登记release元数据，正文与套件令牌不外露；REGISTERED不等于APPROVED或binding可用。
 class ComponentReleasePage {
+  final bool? canApprove;
   final bool canRegister;
   final int? nextOffset;
   final List<ComponentReleaseView> releases;
 
   ComponentReleasePage({
+    this.canApprove,
     required this.canRegister,
     this.nextOffset,
     required this.releases,
@@ -5503,6 +5669,7 @@ class ComponentReleasePage {
 
   factory ComponentReleasePage.fromJson(Map<String, dynamic> json) =>
       ComponentReleasePage(
+        canApprove: json["canApprove"],
         canRegister: json["canRegister"],
         nextOffset: json["nextOffset"],
         releases: List<ComponentReleaseView>.from(
@@ -5511,6 +5678,7 @@ class ComponentReleasePage {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "canApprove": canApprove,
     "canRegister": canRegister,
     "nextOffset": nextOffset,
     "releases": List<dynamic>.from(releases.map((x) => x.toJson())),
@@ -5518,6 +5686,7 @@ class ComponentReleasePage {
 }
 
 class ComponentReleaseView {
+  final String? approvedByActionExecutionId;
   final String artifactDigest;
   final String componentReleaseId;
   final String componentTypeKey;
@@ -5530,6 +5699,7 @@ class ComponentReleaseView {
   final String workflowId;
 
   ComponentReleaseView({
+    this.approvedByActionExecutionId,
     required this.artifactDigest,
     required this.componentReleaseId,
     required this.componentTypeKey,
@@ -5544,6 +5714,7 @@ class ComponentReleaseView {
 
   factory ComponentReleaseView.fromJson(Map<String, dynamic> json) =>
       ComponentReleaseView(
+        approvedByActionExecutionId: json["approvedByActionExecutionId"],
         artifactDigest: json["artifactDigest"],
         componentReleaseId: json["componentReleaseId"],
         componentTypeKey: json["componentTypeKey"],
@@ -5557,6 +5728,7 @@ class ComponentReleaseView {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "approvedByActionExecutionId": approvedByActionExecutionId,
     "artifactDigest": artifactDigest,
     "componentReleaseId": componentReleaseId,
     "componentTypeKey": componentTypeKey,
@@ -7619,6 +7791,32 @@ class ComponentConformanceIdentityContext {
   });
 }
 
+///原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
+class ComponentReleaseApprovalTarget {
+  final String actionExecutionId;
+  final String componentReleaseId;
+  final String workflowId;
+
+  ComponentReleaseApprovalTarget({
+    required this.actionExecutionId,
+    required this.componentReleaseId,
+    required this.workflowId,
+  });
+
+  factory ComponentReleaseApprovalTarget.fromJson(Map<String, dynamic> json) =>
+      ComponentReleaseApprovalTarget(
+        actionExecutionId: json["actionExecutionId"],
+        componentReleaseId: json["componentReleaseId"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "componentReleaseId": componentReleaseId,
+    "workflowId": workflowId,
+  });
+}
+
 ///组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
 ///Worker 独立执行隔离套件。
 class ComponentReleaseRegistration {
@@ -7888,6 +8086,58 @@ class LlmRouteCreateInputProviderSecretRef {
     "audience": audience,
     "locator": locator,
     "version": version,
+  });
+}
+
+///设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
+class PlatformBuildInfo {
+  final List<String> adapterProtocolVersions;
+  final String buildId;
+  final List<String> driverRegistryKeys;
+  final String hostApiVersion;
+  final List<PlatformPortKey> platformPortKeys;
+  final DateTime reportedAt;
+  final Subject subject;
+
+  PlatformBuildInfo({
+    required this.adapterProtocolVersions,
+    required this.buildId,
+    required this.driverRegistryKeys,
+    required this.hostApiVersion,
+    required this.platformPortKeys,
+    required this.reportedAt,
+    required this.subject,
+  });
+
+  factory PlatformBuildInfo.fromJson(Map<String, dynamic> json) =>
+      PlatformBuildInfo(
+        adapterProtocolVersions: List<String>.from(
+          json["adapterProtocolVersions"].map((x) => x),
+        ),
+        buildId: json["buildId"],
+        driverRegistryKeys: List<String>.from(
+          json["driverRegistryKeys"].map((x) => x),
+        ),
+        hostApiVersion: json["hostApiVersion"],
+        platformPortKeys: List<PlatformPortKey>.from(
+          json["platformPortKeys"].map((x) => platformPortKeyValues.map[x]!),
+        ),
+        reportedAt: DateTime.parse(json["reportedAt"]),
+        subject: subjectValues.map[json["subject"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapterProtocolVersions": List<dynamic>.from(
+      adapterProtocolVersions.map((x) => x),
+    ),
+    "buildId": buildId,
+    "driverRegistryKeys": List<dynamic>.from(driverRegistryKeys.map((x) => x)),
+    "hostApiVersion": hostApiVersion,
+    "platformPortKeys": List<dynamic>.from(
+      platformPortKeys.map((x) => platformPortKeyValues.reverse[x]),
+    ),
+    "reportedAt": reportedAt.toIso8601String(),
+    "subject": subjectValues.reverse[subject],
   });
 }
 
