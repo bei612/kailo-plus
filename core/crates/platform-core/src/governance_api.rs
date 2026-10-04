@@ -207,8 +207,8 @@ mod action_command_tests {
 // ---------------------------------------------------------------------------
 
 #[derive(sqlx::FromRow)]
-struct TaskRow {
-    id: Uuid,
+pub(crate) struct TaskRow {
+    pub(crate) id: Uuid,
     operation_id: Uuid,
     action_key: String,
     action_version: i32,
@@ -219,7 +219,7 @@ struct TaskRow {
     reason_code: Option<String>,
     approval_workflow_id: Option<String>,
     temporal_workflow_id: Option<String>,
-    created_at: DateTime<Utc>,
+    pub(crate) created_at: DateTime<Utc>,
     approval_status: Option<String>,
     approval_ref_state: Option<String>,
     approval_ref_stale: Option<bool>,
@@ -231,7 +231,7 @@ struct TaskRow {
     observation_gap: Option<bool>,
 }
 
-const TASK_QUERY: &str = "
+pub(crate) const TASK_QUERY: &str = "
     select ae.id, ae.operation_id, ae.action_key, ae.action_version, ae.workspace_id, ae.target_id,
            ae.gate_state, ae.dispatch_state, ae.reason_code, ae.approval_workflow_id,
            ae.temporal_workflow_id, ae.created_at,
@@ -304,7 +304,7 @@ fn observation(r: &TaskRow) -> Option<ReasonCode> {
 }
 
 #[allow(clippy::result_large_err)]
-fn task_view(r: TaskRow) -> Result<TaskView, Response> {
+pub(crate) fn task_view(r: TaskRow) -> Result<TaskView, Response> {
     let e = |c: &str, v: &str| {
         tracing::error!(column = c, value = v, "库中的状态值不在契约枚举内");
         Refusal::Unavailable(format!("任务投影的 {c} 状态值不在契约枚举内"))

@@ -8,6 +8,7 @@ import {
   ListChecks,
   MonitorSmartphone,
   Users,
+  Workflow,
 } from "lucide-react";
 
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
@@ -27,6 +28,7 @@ type SidebarSelectedView = "home" | "channel" | "platform";
 const PLATFORM_SECTION_ICON = {
   members: <Users className="h-4 w-4" />,
   agents: <Bot className="h-4 w-4" />,
+  workflows: <Workflow className="h-4 w-4" />,
   tasks: <ListChecks className="h-4 w-4" />,
   approvals: <ClipboardCheck className="h-4 w-4" />,
   audit: <History className="h-4 w-4" />,

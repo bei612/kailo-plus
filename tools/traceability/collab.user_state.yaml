@@ -19,11 +19,13 @@ validation:
       ref: web-client/fork/verify/web-surface.md
     - dimension: 端到端场景
       ref: web-client/fork/verify/web-surface.md
+    - dimension: 故障与恢复
+      ref: web-client/fork/verify/web-surface.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/user_state.rs, web-client]
-  surfaces: [web]
+  paths: [core/crates/platform-core/src/user_state.rs, web-client, client-kit/ts/platform/src/inbox.ts, client-kit/ts/platform/src/react/inbox-row.tsx, client-kit/ts/platform/src/react/use-inbox-state.ts, client-kit/ts/platform/test/inbox.test.tsx, collaboration/desktop/src/features/home/lib/inbox.ts, collaboration/desktop/src/features/home/lib/inboxViewHelpers.ts, collaboration/desktop/src/features/home/ui/HomeView.tsx, collaboration/desktop/src/features/home/ui/InboxListPane.tsx]
+  surfaces: [web, desktop]
   schemas: [contracts/api/read_mark.schema.json, contracts/api/workspace_preference.schema.json, contracts/api/user_state_version.schema.json]
   migrations: [core/migrations/20260923020000_collaboration_user_state.up.sql]
 
@@ -35,5 +37,5 @@ release:
     - name: core
       digest: sha256:2052ea7ea693af5755b61746744ef6fb61128b33eeff34054b225131f0002df2
     - name: web-client
-      digest: sha256:fd617659f3545e6f1d57d9fb12317220ee5ac6d1a2fcbbb56b1dee8df1ee4640
+      digest: sha256:924abf4b367e1521102b2eb1d31df11bd725fb1ebe145401728cb455775e8ccf
   gate: shipped

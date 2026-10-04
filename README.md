@@ -83,7 +83,38 @@ EXE `206c62bfb829ca5a02874a88b14fe40f8c9c7aa85c4f3ddd23ed57386944e790`，15,115,
 追加此回执仅走文档快检查，不重打产品镜像；Git 提交与 push 以实际历史为准。
 原件与摘要见 [整批检查回执](core/verify/agent-definition.md)。
 
-### Buzz Workflows 的承接边界
+### Inbox 共用主体源码（2026-10-04）
+
+Web 与 Desktop 已在源码中共用 Inbox 聚合、行呈现和 Core user-state CAS 消费；
+Web 消息仍由 Core 经 BFF 读取，Desktop 保留原生 Relay 消费，不在浏览器持钥。
+该 Inbox 子切片为 15 文件 +1360/-371；已合入本批，Web 与 Win11 已打包，尚未部署。
+隔离候选三套类型检查及 Shared 10/Web 18/Desktop 30 项定向检查通过，
+两项生产守卫破坏验证确实失败并恢复；这些不替代合并批次 full 或设备验收。
+Web 当前读取每个可访问 Workspace 的已有有界消息页，明确展示此范围；没有
+宣称完整历史或实时撤权联合验收。原始证据见 [Web 面记录](web-client/fork/verify/web-surface.md)。
+
+### Workflows 独立页面与执行边界
+
+设计修订 `e0900662dea78a48c65cbfdd54508314947b8512` 已独立发布到
+`design-authority`，CI 固定到该版本。REQ-23、DD-106/107 和设计 `06` §9.1
+明确要求 Web/Desktop 左侧独立 Workflows 页面并共用 TypeScript 主体；关闭的是
+Buzz 原生工作流执行链，不是取消产品入口。本批源码已把原 Automation 管理移至
+独立 Workflows 页面，两宿主导入同一组件，Agents 不再重复呈现该管理区。
+运行历史由 BFF 按当前用户、Tenant、Workspace 和 Automation 精确分页，复用原
+TaskProjection 与 Tasks/Approvals 详情；页面明确标为“我的运行历史”，不扩大读取权限。
+共享检查 286 项、Web 18 项及两宿主类型检查通过；四处生产变异触发六个断言失败，
+逐字恢复后共享 286 项再次通过。后端三项定向、Clippy 与四语言往返通过，
+两处生产变异实际失败并恢复。同批 Web 原构建退出 0，产物 `924abf4b…` 已从
+registry 独立读回核对；Win11 原打包退出 0，未签名 EXE 摘要为
+`f822e88526a1a93edf07219e5a62e1f5258113c04fc9c599c3c5928d98417f78`，
+15,116,346 字节，尚未设备验收。本批固定树 `0bd70a9070913e3770760d7d397ecd9e061fb705`
+的原 `./tools/check.sh --full` 已退出 0；163 个 schema、四侧验证、Workflow replay、
+19 条追溯与六个当前源码产物通过。数据库全量演练和实际部署配置检查明确跳过；
+Core 单元 140 passed/5 ignored，另两项外部演练 ignored，早返的外部用例不计 E2E。
+本批另修正原生 Memory 子调用的用量约束和审计枚举匹配，没有另建记忆权威；
+独立空库 69 条 up 通过，两项原逻辑变异被实际拒绝、还原通过。尚未部署；
+不将源码与隔离验证冒充用户已可访问。原件见 [Web 面记录](web-client/fork/verify/web-surface.md)
+及 [Agent 记录](core/verify/agent-definition.md)。
 
 DD-106 关闭 Buzz 自带 WorkflowEngine、cron 和 workflow/webhook 路由；不保留第二套
 执行权威。用户可见自动化由 DD-107 的 Core 定义/版本及 Temporal 执行承接，复用
@@ -161,6 +192,10 @@ OpenMeter 原生 GET 200 读回相同事件，stored_at 为 05:00:44 UTC、无�
 这是既有回合的实际用量收口，不是本次部署新发模型或成功回复。其 frozen quota
 为 CHECK，不冒称发生 STRICT reservation；旧 4cfe 的 NULL trace 与 tail 阻塞未改。
 设备与签名缺口保留。
+2026-10-04 用户确认模型服务为第三方、无法提供服务端访问权限；不再将该权限
+作为客户端或组件开发的前提。旧响应原始 SSE 未留存，缺少回复的根因仍未确定；
+后续兼容性只能在受权的新调用中从 Kailo/Gateway/Codex 可观察边界取证，
+不重放旧回合、不用 reasoning 补造回复，也不把该局部阻断记作整个主体不可开发。
 完整事实、外部证据缺口与新旧回合的隔离边界见
 [Agent 调用记录](core/verify/agent-definition.md)。
 

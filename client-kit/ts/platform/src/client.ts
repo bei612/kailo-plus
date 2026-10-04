@@ -20,6 +20,7 @@ import type {
   AgentVersionConfigurationPage,
   AutomationPage,
   AutomationDetailView,
+  AutomationRunPage,
   ApprovalControlOutcome,
   ApprovalDecision,
   ApprovalDecisionOutcome,
@@ -45,7 +46,10 @@ import type {
   TenantInvitationView,
   WorkspaceMemberView,
   WorkspaceView,
+  ReadMarkRequest,
+  UserStateVersion,
 } from "@client-kit/contracts";
+import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
 import { type BffRequest, type BffTransport, unwrap } from "./transport";
 
@@ -83,6 +87,14 @@ export function createBffClient(transport: BffTransport) {
 
     /** 我能进的 Workspace。列表已排除进不去的——列出一个点进去 403 的比不列更糟。 */
     workspaces: () => get<WorkspaceView[]>("/api/v1/workspaces"),
+
+    collaborationUserState: () => get<CollaborationUserState>("/api/v1/user-state"),
+    workspaceMessages: (workspaceId: string) =>
+      get<{ events: unknown }>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages`,
+      ),
+    markRead: (body: ReadMarkRequest) =>
+      call<UserStateVersion>({ method: "PUT", path: "/api/v1/user-state/read", body }),
 
     /** Tenant 稳定定义；列表逐项经 discover 过滤，详情和 Version 由 BFF fresh read。 */
     agentDefinitions: (offset?: number) =>
@@ -141,6 +153,13 @@ export function createBffClient(transport: BffTransport) {
       if (versionOffset !== undefined) query.set("versionOffset", String(versionOffset));
       if (delegationOffset !== undefined) query.set("delegationOffset", String(delegationOffset));
       return get<AutomationDetailView>(`/api/v1/automations/${encodeURIComponent(resourceId)}?${query}`);
+    },
+    /** Exact Automation + current initiator history; an opaque cursor never grants access. */
+    automationRuns: (resourceId: string, cursor?: string) => {
+      const query = new URLSearchParams();
+      if (cursor !== undefined) query.set("cursor", cursor);
+      const suffix = query.size ? `?${query}` : "";
+      return get<AutomationRunPage>(`/api/v1/automations/${encodeURIComponent(resourceId)}/runs${suffix}`);
     },
 
     /** 成员按人聚合：`pubkeys` 是此人全部 ACTIVE 的 Buzz 公钥（DD-77）。 */

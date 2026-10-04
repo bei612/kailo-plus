@@ -5,8 +5,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgConnection};
@@ -30,6 +31,361 @@ pub struct DetailQuery {
     version_offset: Option<i64>,
     #[serde(rename = "delegationOffset")]
     delegation_offset: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunQuery {
+    cursor: Option<String>,
+}
+
+// Pagination is not authority. Bind the boundary to the authenticated reader and
+// exact resource scope, then repeat the same admission/read checks on every page.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RunCursor {
+    tenant: Uuid,
+    principal: Uuid,
+    automation: Uuid,
+    workspace: Uuid,
+    created_at: DateTime<Utc>,
+    id: Uuid,
+}
+
+impl RunCursor {
+    fn decode(
+        value: &str,
+        tenant: Uuid,
+        principal: Uuid,
+        automation: Uuid,
+        workspace: Uuid,
+    ) -> Option<Self> {
+        let cursor: Self = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(value).ok()?).ok()?;
+        (cursor.tenant == tenant
+            && cursor.principal == principal
+            && cursor.automation == automation
+            && cursor.workspace == workspace)
+            .then_some(cursor)
+    }
+
+    fn encode(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_vec(self).map(|bytes| URL_SAFE_NO_PAD.encode(bytes))
+    }
+}
+
+#[derive(FromRow)]
+struct RunRow {
+    #[sqlx(flatten)]
+    task: crate::governance_api::TaskRow,
+    progress: Option<String>,
+    usage_event_ids: Vec<Uuid>,
+}
+
+fn run_query() -> String {
+    // Both existing producers freeze the Automation as the root AE target, even
+    // when admission refuses before an Invocation exists. Do not join through
+    // Invocation or filter a globally limited /tasks result.
+    format!(
+        "select task.*, tp.progress,
+        array(select u.id from outbox.usage_event u
+            where u.tenant_id=$1 and u.workspace_id=$5 and u.operation_id=task.operation_id
+            order by u.id) usage_event_ids
+        from ({} and ae.action_key='automation.run'
+            and ae.target_id=$4 and ae.workspace_id=$5
+            and ($6::timestamptz is null or (ae.created_at,ae.id)<($6,$7::uuid))
+            order by ae.created_at desc,ae.id desc limit $8) task
+        left join projection.task_projection tp on tp.workflow_id=task.temporal_workflow_id
+        order by task.created_at desc,task.id desc",
+        crate::governance_api::TASK_QUERY
+    )
+}
+
+#[cfg(test)]
+mod run_history_tests {
+    use super::*;
+
+    fn cursor() -> RunCursor {
+        RunCursor {
+            tenant: Uuid::from_u128(1),
+            principal: Uuid::from_u128(2),
+            automation: Uuid::from_u128(3),
+            workspace: Uuid::from_u128(4),
+            created_at: "2026-10-04T10:00:00Z".parse().unwrap(),
+            id: Uuid::from_u128(5),
+        }
+    }
+
+    #[test]
+    fn cursor_roundtrip_keeps_exact_scope_and_same_timestamp_tiebreaker() {
+        let c = cursor();
+        let encoded = c.encode().unwrap();
+        let decoded =
+            RunCursor::decode(&encoded, c.tenant, c.principal, c.automation, c.workspace).unwrap();
+        assert_eq!(decoded.id, c.id);
+        assert_eq!(decoded.created_at, c.created_at);
+        assert!(RunCursor::decode(
+            &encoded,
+            Uuid::nil(),
+            c.principal,
+            c.automation,
+            c.workspace
+        )
+        .is_none());
+        assert!(
+            RunCursor::decode(&encoded, c.tenant, Uuid::nil(), c.automation, c.workspace).is_none()
+        );
+        assert!(
+            RunCursor::decode(&encoded, c.tenant, c.principal, Uuid::nil(), c.workspace).is_none()
+        );
+        assert!(
+            RunCursor::decode(&encoded, c.tenant, c.principal, c.automation, Uuid::nil()).is_none()
+        );
+    }
+
+    #[test]
+    fn invalid_or_unknown_cursor_fields_are_not_a_first_page() {
+        let c = cursor();
+        for encoded in [
+            "".to_owned(),
+            "invalid!".to_owned(),
+            URL_SAFE_NO_PAD.encode(b"{}"),
+        ] {
+            assert!(
+                RunCursor::decode(&encoded, c.tenant, c.principal, c.automation, c.workspace)
+                    .is_none()
+            );
+        }
+        let mut extra = serde_json::to_value(&c).unwrap();
+        extra["owner"] = json!(c.principal);
+        assert!(RunCursor::decode(
+            &URL_SAFE_NO_PAD.encode(serde_json::to_vec(&extra).unwrap()),
+            c.tenant,
+            c.principal,
+            c.automation,
+            c.workspace
+        )
+        .is_none());
+    }
+
+    // Execute the production SELECT in an explicitly isolated, empty PostgreSQL
+    // database. Minimal read-side relations exercise query semantics, not writer
+    // admission or an end-to-end Automation execution.
+    #[tokio::test]
+    #[ignore = "requires an empty workflow_history_verify_* PostgreSQL database"]
+    async fn sql_history_is_self_scoped_and_keyset_paged_before_projection() {
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("WORKFLOW_HISTORY_TEST_DATABASE_URL").unwrap())
+                .await
+                .unwrap();
+        let database: String = sqlx::query_scalar("select current_database()")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(database.starts_with("workflow_history_verify_"));
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql("create schema admission; create schema projection; create schema outbox;
+            create table admission.action_execution(
+                id uuid,operation_id uuid,tenant_id uuid,initiator_principal_id uuid,workspace_id uuid,
+                target_id uuid,action_key text,action_version int,gate_state text,dispatch_state text,
+                reason_code text,approval_workflow_id text,temporal_workflow_id text,created_at timestamptz);
+            create table projection.approval_projection(workflow_id text,status text);
+            create table projection.workflow_ref(workflow_id text,projection_state text,created_at timestamptz,kind text);
+            create table projection.task_projection(workflow_id text,status text,waiting_reason text,observation_gap bool,progress text);
+            create table outbox.usage_event(id uuid,tenant_id uuid,workspace_id uuid,operation_id uuid);")
+            .execute(&mut *tx).await.unwrap();
+        let c = cursor();
+        for n in 1..=8u128 {
+            sqlx::query("insert into admission.action_execution values($1,$1,$2,$3,$4,$5,$6,1,'DENIED','NOT_DISPATCHED',
+                null,null,null,$7)")
+                .bind(Uuid::from_u128(n))
+                .bind(if n==4 {Uuid::nil()} else {c.tenant})
+                .bind(if n==5 {Uuid::nil()} else {c.principal})
+                .bind(if n==6 {Uuid::nil()} else {c.workspace})
+                .bind(if n==7 {Uuid::nil()} else {c.automation})
+                .bind(if n==8 {"automation.enable"} else {"automation.run"})
+                .bind(c.created_at).execute(&mut *tx).await.unwrap();
+        }
+        sqlx::query("update admission.action_execution set temporal_workflow_id='run',gate_state='ALLOWED',dispatch_state='UNKNOWN' where id=$1")
+            .bind(Uuid::from_u128(3)).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql("insert into projection.workflow_ref values('run','UNKNOWN',now(),null);
+            insert into projection.task_projection values('run','RUNNING','BILLING_UNAVAILABLE',false,'native completed');")
+            .execute(&mut *tx).await.unwrap();
+        for n in 1..=3u128 {
+            sqlx::query("insert into outbox.usage_event values($1,$2,$3,$4)")
+                .bind(Uuid::from_u128(100 + n))
+                .bind(if n == 2 { Uuid::nil() } else { c.tenant })
+                .bind(if n == 3 { Uuid::nil() } else { c.workspace })
+                .bind(Uuid::from_u128(3))
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        let page: Vec<RunRow> = sqlx::query_as(&run_query())
+            .bind(c.tenant)
+            .bind(c.principal)
+            .bind(60i64)
+            .bind(c.automation)
+            .bind(c.workspace)
+            .bind(None::<DateTime<Utc>>)
+            .bind(None::<Uuid>)
+            .bind(2i64)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            page.iter().map(|r| r.task.id).collect::<Vec<_>>(),
+            vec![Uuid::from_u128(3), Uuid::from_u128(2)]
+        );
+        assert_eq!(page[0].progress.as_deref(), Some("native completed"));
+        assert_eq!(page[0].usage_event_ids, vec![Uuid::from_u128(101)]);
+        let last = page.last().unwrap();
+        let following: Vec<RunRow> = sqlx::query_as(&run_query())
+            .bind(c.tenant)
+            .bind(c.principal)
+            .bind(60i64)
+            .bind(c.automation)
+            .bind(c.workspace)
+            .bind(last.task.created_at)
+            .bind(last.task.id)
+            .bind(2i64)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            following.iter().map(|r| r.task.id).collect::<Vec<_>>(),
+            vec![Uuid::from_u128(1)]
+        );
+        assert_eq!(
+            crate::governance_api::task_view(page.into_iter().next().unwrap().task)
+                .unwrap()
+                .observation,
+            Some(contracts::ReasonCode::ExternalResultUnknown)
+        );
+        assert!(
+            crate::governance_api::task_view(following.into_iter().next().unwrap().task)
+                .unwrap()
+                .workflow_id
+                .is_none()
+        );
+        tx.rollback().await.unwrap();
+    }
+}
+
+/// Authorized Automation read + existing self-owned Task visibility, never a
+/// Workspace-wide run/approval authority or an additional workflow-control path.
+pub async fn runs(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Query(q): Query<RunQuery>,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(error) => return error,
+    };
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(error) => return crate::service_api::unavailable(error),
+    };
+    let row: AutomationRow = match sqlx::query_as(&format!("{ROW} and r.id=$2"))
+        .bind(ctx.tenant_id)
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(error) => return crate::service_api::unavailable(error),
+    };
+    if let Err(error) = scope(&state, &ctx, row.workspace_id).await {
+        return error;
+    }
+    if let Err(error) = view(&state, &mut tx, &ctx, &row).await {
+        return error;
+    }
+    match permission(&state, &ctx, "resource", id, "read").await {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::FORBIDDEN.into_response(),
+        Err(error) => return error,
+    }
+    let cursor = match q.cursor {
+        Some(value) => match RunCursor::decode(
+            &value,
+            ctx.tenant_id,
+            ctx.tenant_principal_id,
+            id,
+            row.workspace_id,
+        ) {
+            Some(value) => Some(value),
+            None => return StatusCode::BAD_REQUEST.into_response(),
+        },
+        None => None,
+    };
+    let limit = state.governance.cfg.page_limit;
+    let Some(fetch_limit) = limit.checked_add(1).filter(|_| limit > 0) else {
+        return unavailable();
+    };
+    let mut rows: Vec<RunRow> = match sqlx::query_as(&run_query())
+        .bind(ctx.tenant_id)
+        .bind(ctx.tenant_principal_id)
+        .bind(state.governance.cfg.projection_freshness_seconds)
+        .bind(id)
+        .bind(row.workspace_id)
+        .bind(cursor.as_ref().map(|c| c.created_at))
+        .bind(cursor.as_ref().map(|c| c.id))
+        .bind(fetch_limit)
+        .fetch_all(&mut *tx)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(error) => return crate::service_api::unavailable(error),
+    };
+    let more = rows.len() as i64 > limit;
+    if more {
+        rows.pop();
+    }
+    let next = if more {
+        let Some(last) = rows.last() else {
+            return unavailable();
+        };
+        match (RunCursor {
+            tenant: ctx.tenant_id,
+            principal: ctx.tenant_principal_id,
+            automation: id,
+            workspace: row.workspace_id,
+            created_at: last.task.created_at,
+            id: last.task.id,
+        })
+        .encode()
+        {
+            Ok(cursor) => Some(cursor),
+            Err(_) => return unavailable(),
+        }
+    } else {
+        None
+    };
+    let mut values = Vec::with_capacity(rows.len());
+    for row in rows {
+        let task = match crate::governance_api::task_view(row.task) {
+            Ok(task) => task,
+            Err(error) => return error,
+        };
+        // Omit optional fields rather than emit null; use the generated contract
+        // for the same TaskView enum/freshness handling as the original Tasks UI.
+        let mut value = json!({"task":task,"usageEventIds":row.usage_event_ids});
+        if let Some(progress) = row.progress {
+            value["progress"] = json!(progress);
+        }
+        values.push(value);
+    }
+    let mut page = json!({"automationResourceId":id,"runs":values});
+    if let Some(next) = next {
+        page["nextCursor"] = json!(next);
+    }
+    match serde_json::from_value::<contracts::AutomationRunPage>(page) {
+        Ok(page) => Json(page).into_response(),
+        Err(_) => unavailable(),
+    }
 }
 #[derive(FromRow)]
 struct AutomationRow {

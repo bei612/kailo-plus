@@ -18,6 +18,7 @@ export const PLATFORM_SECTION_LABEL: Record<
 > = {
   members: "platform.tab.members",
   agents: "platform.tab.agents",
+  workflows: "platform.tab.workflows",
   tasks: "platform.tab.tasks",
   approvals: "platform.tab.approvals",
   audit: "platform.tab.audit",

@@ -79,6 +79,12 @@
 //    automationPage, err := UnmarshalAutomationPage(bytes)
 //    bytes, err = automationPage.Marshal()
 //
+//    automationRunPage, err := UnmarshalAutomationRunPage(bytes)
+//    bytes, err = automationRunPage.Marshal()
+//
+//    automationRunView, err := UnmarshalAutomationRunView(bytes)
+//    bytes, err = automationRunView.Marshal()
+//
 //    automationVersionView, err := UnmarshalAutomationVersionView(bytes)
 //    bytes, err = automationVersionView.Marshal()
 //
@@ -180,6 +186,9 @@
 //
 //    automationVersionContent, err := UnmarshalAutomationVersionContent(bytes)
 //    bytes, err = automationVersionContent.Marshal()
+//
+//    capabilityConformanceVectors, err := UnmarshalCapabilityConformanceVectors(bytes)
+//    bytes, err = capabilityConformanceVectors.Marshal()
 //
 //    capabilityContractRef, err := UnmarshalCapabilityContractRef(bytes)
 //    bytes, err = capabilityContractRef.Marshal()
@@ -549,6 +558,26 @@ func (r *AutomationPage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAutomationRunPage(data []byte) (AutomationRunPage, error) {
+	var r AutomationRunPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationRunPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationRunView(data []byte) (AutomationRunView, error) {
+	var r AutomationRunView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationRunView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAutomationVersionView(data []byte) (AutomationVersionView, error) {
 	var r AutomationVersionView
 	err := json.Unmarshal(data, &r)
@@ -886,6 +915,16 @@ func UnmarshalAutomationVersionContent(data []byte) (AutomationVersionContent, e
 }
 
 func (r *AutomationVersionContent) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalCapabilityConformanceVectors(data []byte) (CapabilityConformanceVectors, error) {
+	var r CapabilityConformanceVectors
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *CapabilityConformanceVectors) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1411,7 +1450,9 @@ type CapabilityContractRegistrationClass struct {
 	RequiredDeclarations      []CapabilityRequiredDeclaration                         `json:"requiredDeclarations"`
 	ResourceTypeFamily        []CapabilityContractRegistrationResourceTypeFamily      `json:"resourceTypeFamily"`
 	SchemaDocuments           []string                                                `json:"schemaDocuments"`
-	TestVectorsJSON           string                                                  `json:"testVectorsJson"`
+	// CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
+	// 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
+	TestVectorsJSON string `json:"testVectorsJson"`
 }
 
 type CapabilityContractRegistrationContentReferenceSemantics struct {
@@ -2018,6 +2059,59 @@ type AutomationPage struct {
 	NextOffset *int64 `json:"nextOffset,omitempty"`
 }
 
+// GET /api/v1/automations/{resource_id}/runs：可读 Automation 的本人运行历史。游标只作分页，不授予权限；每页重新核验。
+type AutomationRunPage struct {
+	AutomationResourceID string `json:"automationResourceId"`
+	// 不透明 createdAt/id 稳定分页边界；缺省表示本次查询没有更多行。
+	NextCursor *string      `json:"nextCursor,omitempty"`
+	Runs       []RunElement `json:"runs"`
+}
+
+// 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
+type RunElement struct {
+	// 原 TaskProjection 进度；缺省不推测百分比或成功。
+	Progress *string   `json:"progress,omitempty"`
+	Task     TaskClass `json:"task"`
+	// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
+	UsageEventIDS []string `json:"usageEventIds"`
+}
+
+// GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
+// 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
+type TaskClass struct {
+	ActionExecutionID  string          `json:"actionExecutionId"`
+	ActionKey          string          `json:"actionKey"`
+	ActionVersion      int64           `json:"actionVersion"`
+	ApprovalStatus     *ApprovalStatus `json:"approvalStatus,omitempty"`
+	ApprovalWorkflowID *string         `json:"approvalWorkflowId,omitempty"`
+	// 仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入
+	CancelActionKey *string `json:"cancelActionKey,omitempty"`
+	// RFC3339，UTC
+	CreatedAt     string              `json:"createdAt"`
+	DispatchState ActionDispatchState `json:"dispatchState"`
+	GateState     ActionGateState     `json:"gateState"`
+	Observation   *ReasonCode         `json:"observation,omitempty"`
+	OperationID   string              `json:"operationId"`
+	Reason        *ReasonCode         `json:"reason,omitempty"`
+	// 仅任务详情且 Core 证明原 Workflow 已关闭、终态投影一致、原目标仍在收敛版本并完成本人和权限重查后提供；提交与派发时仍重新准入
+	RerunActionKey *string       `json:"rerunActionKey,omitempty"`
+	TargetID       string        `json:"targetId"`
+	TaskStatus     *TaskStatus   `json:"taskStatus,omitempty"`
+	WaitingReason  *string       `json:"waitingReason,omitempty"`
+	WorkflowID     *string       `json:"workflowId,omitempty"`
+	WorkflowKind   *WorkflowKind `json:"workflowKind,omitempty"`
+	WorkspaceID    *string       `json:"workspaceId,omitempty"`
+}
+
+// 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
+type AutomationRunView struct {
+	// 原 TaskProjection 进度；缺省不推测百分比或成功。
+	Progress *string   `json:"progress,omitempty"`
+	Task     TaskClass `json:"task"`
+	// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
+	UsageEventIDS []string `json:"usageEventIds"`
+}
+
 // Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
 type AutomationVersionView struct {
 	AssetID              string                        `json:"assetId"`
@@ -2481,6 +2575,25 @@ type AutomationVersionContentTriggerClass struct {
 	TextPrefix         *string               `json:"textPrefix,omitempty"`
 }
 
+// DD-102 / ADR-12：能力契约固定的机器向量。每个 case 按 steps 顺序执行契约操作，参数与预期结果是实际
+// JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。
+type CapabilityConformanceVectors struct {
+	Cases         []Case                 `json:"cases"`
+	FormatVersion CapabilityVectorFormat `json:"formatVersion"`
+}
+
+type Case struct {
+	CaseKey string `json:"caseKey"`
+	Steps   []Step `json:"steps"`
+}
+
+type Step struct {
+	ContractKey        string `json:"contractKey"`
+	ExpectedOutputJSON string `json:"expectedOutputJson"`
+	InputJSON          string `json:"inputJson"`
+	StepKey            string `json:"stepKey"`
+}
+
 // 固定 Catalog 自然键，不授予业务能力 consume 权限。
 type CapabilityContractRef struct {
 	CategoryKey     string `json:"categoryKey"`
@@ -2497,7 +2610,9 @@ type CapabilityContractRegistration struct {
 	RequiredDeclarations      []CapabilityRequiredDeclaration                              `json:"requiredDeclarations"`
 	ResourceTypeFamily        []CapabilityContractRegistrationResourceTypeFamilyClass      `json:"resourceTypeFamily"`
 	SchemaDocuments           []string                                                     `json:"schemaDocuments"`
-	TestVectorsJSON           string                                                       `json:"testVectorsJson"`
+	// CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
+	// 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
+	TestVectorsJSON string `json:"testVectorsJson"`
 }
 
 type CapabilityContractRegistrationContentReferenceSemanticsClass struct {
@@ -3362,6 +3477,34 @@ const (
 	Paused                  AutomationState = "PAUSED"
 )
 
+// TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
+// status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
+// WorkflowRef 进入 TERMINAL。
+type TaskStatus string
+
+const (
+	Canceled         TaskStatus = "CANCELED"
+	Completed        TaskStatus = "COMPLETED"
+	Running          TaskStatus = "RUNNING"
+	TaskStatusFAILED TaskStatus = "FAILED"
+	Terminated       TaskStatus = "TERMINATED"
+	TimedOut         TaskStatus = "TIMED_OUT"
+)
+
+// ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
+// 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
+type WorkflowKind string
+
+const (
+	AgentInstallation      WorkflowKind = "AGENT_INSTALLATION"
+	BuzzIdentityProjection WorkflowKind = "BUZZ_IDENTITY_PROJECTION"
+	MembershipProjection   WorkflowKind = "MEMBERSHIP_PROJECTION"
+	MembershipRevocation   WorkflowKind = "MEMBERSHIP_REVOCATION"
+	SecretRefRehome        WorkflowKind = "SECRET_REF_REHOME"
+	TenantLifecycle        WorkflowKind = "TENANT_LIFECYCLE"
+	WorkspaceLifecycle     WorkflowKind = "WORKSPACE_LIFECYCLE"
+)
+
 type CapabilityContractStatus string
 
 const (
@@ -3496,34 +3639,6 @@ const (
 	LifecycleRestricted PlatformSessionAccessMode = "LIFECYCLE_RESTRICTED"
 )
 
-// TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
-// status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
-// WorkflowRef 进入 TERMINAL。
-type TaskStatus string
-
-const (
-	Canceled         TaskStatus = "CANCELED"
-	Completed        TaskStatus = "COMPLETED"
-	Running          TaskStatus = "RUNNING"
-	TaskStatusFAILED TaskStatus = "FAILED"
-	Terminated       TaskStatus = "TERMINATED"
-	TimedOut         TaskStatus = "TIMED_OUT"
-)
-
-// ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
-// 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
-type WorkflowKind string
-
-const (
-	AgentInstallation      WorkflowKind = "AGENT_INSTALLATION"
-	BuzzIdentityProjection WorkflowKind = "BUZZ_IDENTITY_PROJECTION"
-	MembershipProjection   WorkflowKind = "MEMBERSHIP_PROJECTION"
-	MembershipRevocation   WorkflowKind = "MEMBERSHIP_REVOCATION"
-	SecretRefRehome        WorkflowKind = "SECRET_REF_REHOME"
-	TenantLifecycle        WorkflowKind = "TENANT_LIFECYCLE"
-	WorkspaceLifecycle     WorkflowKind = "WORKSPACE_LIFECYCLE"
-)
-
 // TenantInvitation 在视图中的状态（DD-83）。库里只存 ISSUED/REDEEMED/REVOKED；EXPIRED 是查询时判定：expires_at
 // 已过的 ISSUED 邀请即 EXPIRED，没有回收作业去写它。
 type TenantInvitationStatus string
@@ -3544,6 +3659,12 @@ const (
 	WorkspaceMembershipStatePROVISIONING WorkspaceMembershipState = "PROVISIONING"
 	WorkspaceMembershipStateREVOKED      WorkspaceMembershipState = "REVOKED"
 	WorkspaceMembershipStateREVOKING     WorkspaceMembershipState = "REVOKING"
+)
+
+type CapabilityVectorFormat string
+
+const (
+	V1 CapabilityVectorFormat = "V1"
 )
 
 // ApprovalPolicy.owner_requirement（.design/03 §4）。

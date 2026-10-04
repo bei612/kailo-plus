@@ -1,6 +1,10 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { translate, resolveLocale } from "@client-kit/platform/i18n";
-import { ApprovalsPage, TasksPage } from "@client-kit/platform/react/governance";
+import {
+  ApprovalsPage,
+  TasksPage,
+} from "@client-kit/platform/react/governance";
+import { WorkflowsPage } from "@client-kit/platform/react/workflows";
 import { TenantInvitations } from "@client-kit/platform/react/invitations";
 import {
   AgentDefinitionsPage,
@@ -54,6 +58,8 @@ function PlatformScreen({ section }: { section: PlatformSection }) {
         </div>
       ) : section === "agents" ? (
         <AgentDefinitionsPage />
+      ) : section === "workflows" ? (
+        <WorkflowsPage />
       ) : section === "tasks" ? (
         <TasksPage />
       ) : section === "approvals" ? (

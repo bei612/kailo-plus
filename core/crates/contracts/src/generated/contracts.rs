@@ -438,6 +438,8 @@ pub struct CapabilityContractRegistrationClass {
 
     pub schema_documents: Vec<String>,
 
+    /// CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
+    /// 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
     pub test_vectors_json: String,
 }
 
@@ -2161,6 +2163,152 @@ pub struct AutomationPage {
     pub next_offset: Option<i64>,
 }
 
+/// GET /api/v1/automations/{resource_id}/runs：可读 Automation 的本人运行历史。游标只作分页，不授予权限；每页重新核验。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationRunPage {
+    pub automation_resource_id: String,
+
+    /// 不透明 createdAt/id 稳定分页边界；缺省表示本次查询没有更多行。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+
+    pub runs: Vec<RunElement>,
+}
+
+/// 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunElement {
+    /// 原 TaskProjection 进度；缺省不推测百分比或成功。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<String>,
+
+    pub task: TaskClass,
+
+    /// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
+    pub usage_event_ids: Vec<String>,
+}
+
+/// GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
+/// 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskClass {
+    pub action_execution_id: String,
+
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_status: Option<ApprovalStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_workflow_id: Option<String>,
+
+    /// 仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancel_action_key: Option<String>,
+
+    /// RFC3339，UTC
+    pub created_at: String,
+
+    pub dispatch_state: ActionDispatchState,
+
+    pub gate_state: ActionGateState,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observation: Option<ReasonCode>,
+
+    pub operation_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<ReasonCode>,
+
+    /// 仅任务详情且 Core 证明原 Workflow 已关闭、终态投影一致、原目标仍在收敛版本并完成本人和权限重查后提供；提交与派发时仍重新准入
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rerun_action_key: Option<String>,
+
+    pub target_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_status: Option<TaskStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting_reason: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow_kind: Option<WorkflowKind>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
+/// status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
+/// WorkflowRef 进入 TERMINAL。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TaskStatus {
+    Canceled,
+
+    Completed,
+
+    Failed,
+
+    Running,
+
+    Terminated,
+
+    #[serde(rename = "TIMED_OUT")]
+    TimedOut,
+}
+
+/// ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
+/// 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum WorkflowKind {
+    #[serde(rename = "AGENT_INSTALLATION")]
+    AgentInstallation,
+
+    #[serde(rename = "BUZZ_IDENTITY_PROJECTION")]
+    BuzzIdentityProjection,
+
+    #[serde(rename = "MEMBERSHIP_PROJECTION")]
+    MembershipProjection,
+
+    #[serde(rename = "MEMBERSHIP_REVOCATION")]
+    MembershipRevocation,
+
+    #[serde(rename = "SECRET_REF_REHOME")]
+    SecretRefRehome,
+
+    #[serde(rename = "TENANT_LIFECYCLE")]
+    TenantLifecycle,
+
+    #[serde(rename = "WORKSPACE_LIFECYCLE")]
+    WorkspaceLifecycle,
+}
+
+/// 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationRunView {
+    /// 原 TaskProjection 进度；缺省不推测百分比或成功。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<String>,
+
+    pub task: TaskClass,
+
+    /// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
+    pub usage_event_ids: Vec<String>,
+}
+
 /// Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2880,53 +3028,6 @@ pub struct TaskView {
     pub workspace_id: Option<String>,
 }
 
-/// TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
-/// status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
-/// WorkflowRef 进入 TERMINAL。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TaskStatus {
-    Canceled,
-
-    Completed,
-
-    Failed,
-
-    Running,
-
-    Terminated,
-
-    #[serde(rename = "TIMED_OUT")]
-    TimedOut,
-}
-
-/// ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
-/// 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum WorkflowKind {
-    #[serde(rename = "AGENT_INSTALLATION")]
-    AgentInstallation,
-
-    #[serde(rename = "BUZZ_IDENTITY_PROJECTION")]
-    BuzzIdentityProjection,
-
-    #[serde(rename = "MEMBERSHIP_PROJECTION")]
-    MembershipProjection,
-
-    #[serde(rename = "MEMBERSHIP_REVOCATION")]
-    MembershipRevocation,
-
-    #[serde(rename = "SECRET_REF_REHOME")]
-    SecretRefRehome,
-
-    #[serde(rename = "TENANT_LIFECYCLE")]
-    TenantLifecycle,
-
-    #[serde(rename = "WORKSPACE_LIFECYCLE")]
-    WorkspaceLifecycle,
-}
-
 /// GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
 /// 的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -3218,6 +3319,41 @@ pub struct AutomationVersionContentTrigger {
     pub text_prefix: Option<String>,
 }
 
+/// DD-102 / ADR-12：能力契约固定的机器向量。每个 case 按 steps 顺序执行契约操作，参数与预期结果是实际
+/// JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityConformanceVectors {
+    pub cases: Vec<Case>,
+
+    pub format_version: CapabilityVectorFormat,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Case {
+    pub case_key: String,
+
+    pub steps: Vec<Step>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Step {
+    pub contract_key: String,
+
+    pub expected_output_json: String,
+
+    pub input_json: String,
+
+    pub step_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum CapabilityVectorFormat {
+    V1,
+}
+
 /// 固定 Catalog 自然键，不授予业务能力 consume 权限。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3247,6 +3383,8 @@ pub struct CapabilityContractRegistration {
 
     pub schema_documents: Vec<String>,
 
+    /// CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
+    /// 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
     pub test_vectors_json: String,
 }
 

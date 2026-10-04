@@ -1,0 +1,22 @@
+{
+  "formatVersion": "V1",
+  "cases": [
+    {
+      "caseKey": "revision_roundtrip",
+      "steps": [
+        {
+          "stepKey": "read",
+          "contractKey": "records.read@v1",
+          "inputJson": "{\"nativeObjectRef\":\"fixture-object\",\"nativeRevision\":\"fixture-revision\"}",
+          "expectedOutputJson": "{\"nativeObjectRef\":\"fixture-object\",\"nativeRevision\":\"fixture-revision\"}"
+        },
+        {
+          "stepKey": "read_again",
+          "contractKey": "records.read@v1",
+          "inputJson": "{\"nativeObjectRef\":\"fixture-object\",\"nativeRevision\":\"fixture-revision\"}",
+          "expectedOutputJson": "{\"nativeObjectRef\":\"fixture-object\",\"nativeRevision\":\"fixture-revision\"}"
+        }
+      ]
+    }
+  ]
+}

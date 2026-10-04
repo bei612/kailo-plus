@@ -334,7 +334,11 @@ export interface CapabilityContractRegistrationClass {
     requiredDeclarations:      CapabilityRequiredDeclaration[];
     resourceTypeFamily:        CapabilityContractRegistrationResourceTypeFamily[];
     schemaDocuments:           string[];
-    testVectorsJson:           string;
+    /**
+     * CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
+     * 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
+     */
+    testVectorsJson: string;
 }
 
 export interface CapabilityContractRegistrationContentReferenceSemantics {
@@ -1407,6 +1411,111 @@ export interface AutomationPage {
 }
 
 /**
+ * GET /api/v1/automations/{resource_id}/runs：可读 Automation 的本人运行历史。游标只作分页，不授予权限；每页重新核验。
+ */
+export interface AutomationRunPage {
+    automationResourceId: string;
+    /**
+     * 不透明 createdAt/id 稳定分页边界；缺省表示本次查询没有更多行。
+     */
+    nextCursor?: string;
+    runs:        RunElement[];
+}
+
+/**
+ * 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
+ */
+export interface RunElement {
+    /**
+     * 原 TaskProjection 进度；缺省不推测百分比或成功。
+     */
+    progress?: string;
+    task:      TaskClass;
+    /**
+     * 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
+     */
+    usageEventIds: string[];
+}
+
+/**
+ * GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
+ * 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
+ */
+export interface TaskClass {
+    actionExecutionId:   string;
+    actionKey:           string;
+    actionVersion:       number;
+    approvalStatus?:     ApprovalStatus;
+    approvalWorkflowId?: string;
+    /**
+     * 仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入
+     */
+    cancelActionKey?: string;
+    /**
+     * RFC3339，UTC
+     */
+    createdAt:     string;
+    dispatchState: ActionDispatchState;
+    gateState:     ActionGateState;
+    observation?:  ReasonCode;
+    operationId:   string;
+    reason?:       ReasonCode;
+    /**
+     * 仅任务详情且 Core 证明原 Workflow 已关闭、终态投影一致、原目标仍在收敛版本并完成本人和权限重查后提供；提交与派发时仍重新准入
+     */
+    rerunActionKey?: string;
+    targetId:        string;
+    taskStatus?:     TaskStatus;
+    waitingReason?:  string;
+    workflowId?:     string;
+    workflowKind?:   WorkflowKind;
+    workspaceId?:    string;
+}
+
+/**
+ * TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
+ * status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
+ * WorkflowRef 进入 TERMINAL。
+ */
+export enum TaskStatus {
+    Canceled = "CANCELED",
+    Completed = "COMPLETED",
+    Failed = "FAILED",
+    Running = "RUNNING",
+    Terminated = "TERMINATED",
+    TimedOut = "TIMED_OUT",
+}
+
+/**
+ * ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
+ * 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
+ */
+export enum WorkflowKind {
+    AgentInstallation = "AGENT_INSTALLATION",
+    BuzzIdentityProjection = "BUZZ_IDENTITY_PROJECTION",
+    MembershipProjection = "MEMBERSHIP_PROJECTION",
+    MembershipRevocation = "MEMBERSHIP_REVOCATION",
+    SecretRefRehome = "SECRET_REF_REHOME",
+    TenantLifecycle = "TENANT_LIFECYCLE",
+    WorkspaceLifecycle = "WORKSPACE_LIFECYCLE",
+}
+
+/**
+ * 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
+ */
+export interface AutomationRunView {
+    /**
+     * 原 TaskProjection 进度；缺省不推测百分比或成功。
+     */
+    progress?: string;
+    task:      TaskClass;
+    /**
+     * 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
+     */
+    usageEventIds: string[];
+}
+
+/**
  * Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
  */
 export interface AutomationVersionView {
@@ -1934,34 +2043,6 @@ export interface TaskView {
 }
 
 /**
- * TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
- * status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
- * WorkflowRef 进入 TERMINAL。
- */
-export enum TaskStatus {
-    Canceled = "CANCELED",
-    Completed = "COMPLETED",
-    Failed = "FAILED",
-    Running = "RUNNING",
-    Terminated = "TERMINATED",
-    TimedOut = "TIMED_OUT",
-}
-
-/**
- * ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
- * 必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
- */
-export enum WorkflowKind {
-    AgentInstallation = "AGENT_INSTALLATION",
-    BuzzIdentityProjection = "BUZZ_IDENTITY_PROJECTION",
-    MembershipProjection = "MEMBERSHIP_PROJECTION",
-    MembershipRevocation = "MEMBERSHIP_REVOCATION",
-    SecretRefRehome = "SECRET_REF_REHOME",
-    TenantLifecycle = "TENANT_LIFECYCLE",
-    WorkspaceLifecycle = "WORKSPACE_LIFECYCLE",
-}
-
-/**
  * GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
  * 的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。
  */
@@ -2192,6 +2273,31 @@ export interface AutomationVersionContentTriggerClass {
 }
 
 /**
+ * DD-102 / ADR-12：能力契约固定的机器向量。每个 case 按 steps 顺序执行契约操作，参数与预期结果是实际
+ * JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。
+ */
+export interface CapabilityConformanceVectors {
+    cases:         Case[];
+    formatVersion: CapabilityVectorFormat;
+}
+
+export interface Case {
+    caseKey: string;
+    steps:   Step[];
+}
+
+export interface Step {
+    contractKey:        string;
+    expectedOutputJson: string;
+    inputJson:          string;
+    stepKey:            string;
+}
+
+export enum CapabilityVectorFormat {
+    V1 = "V1",
+}
+
+/**
  * 固定 Catalog 自然键，不授予业务能力 consume 权限。
  */
 export interface CapabilityContractRef {
@@ -2211,7 +2317,11 @@ export interface CapabilityContractRegistration {
     requiredDeclarations:      CapabilityRequiredDeclaration[];
     resourceTypeFamily:        CapabilityContractRegistrationResourceTypeFamilyClass[];
     schemaDocuments:           string[];
-    testVectorsJson:           string;
+    /**
+     * CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
+     * 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
+     */
+    testVectorsJson: string;
 }
 
 export interface CapabilityContractRegistrationContentReferenceSemanticsClass {

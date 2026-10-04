@@ -1,7 +1,8 @@
 import * as React from "react";
 import { RefreshCcw } from "lucide-react";
 
-import { useAppShell } from "@/app/AppShellContext";
+import { inboxReply } from "@client-kit/platform/inbox";
+import { useT } from "@client-kit/platform/react/context";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { RightAuxiliaryPane } from "@/features/channels/ui/RightAuxiliaryPane";
 import {
@@ -16,7 +17,11 @@ import { useInboxSelectionAnchor } from "@/features/home/useInboxSelectionAnchor
 import { matchesInboxFilter } from "@/features/home/lib/inboxViewHelpers";
 import { resolveInboxFilterSelection } from "@/features/home/lib/inboxSelection";
 import { useHomeDrafts } from "@/features/home/useHomeDrafts";
-import { useHomeInboxReadState } from "@/features/home/useHomeInboxReadState";
+import {
+  inboxReadContexts,
+  useInboxState,
+} from "@client-kit/platform/react/use-inbox-state";
+import { useNativeSession } from "@/features/platform/activeCommunity";
 import { useHomeInboxAutoSelection } from "@/features/home/useHomeInboxAutoSelection";
 import { useHomeInboxContextMessages } from "@/features/home/useHomeInboxContextMessages";
 import { useInboxThreadContext } from "@/features/home/useInboxThreadContext";
@@ -75,6 +80,7 @@ export function HomeView({
   onOpenContext,
   onRefresh,
 }: HomeViewProps) {
+  const t = useT();
   const relaySelfPubkey = useRelaySelfQuery().data;
   const [homeInboxRef, homeInboxWidthPx] = useElementWidth<HTMLDivElement>();
   const isNarrowHomeViewport =
@@ -149,26 +155,56 @@ export function HomeView({
     handleInboxListWidthReset,
     inboxListWidthPx,
   } = useResizableInboxListWidth();
+  const coreReads = useInboxState(useNativeSession().client);
+  const admittedChannelIds = React.useMemo(
+    () =>
+      new Set(
+        [...availableChannelIds].filter((id) =>
+          coreReads.visibleChannels.has(id),
+        ),
+      ),
+    [availableChannelIds, coreReads.visibleChannels],
+  );
+  const admittedFeed = React.useMemo(
+    () =>
+      feed && coreReads.state
+        ? {
+            mentions: feed.mentions.filter(
+              (item) =>
+                item.channelId && coreReads.visibleChannels.has(item.channelId),
+            ),
+            activity: feed.activity.filter(
+              (item) =>
+                item.channelId && coreReads.visibleChannels.has(item.channelId),
+            ),
+          }
+        : undefined,
+    [feed, coreReads.state, coreReads.visibleChannels],
+  );
+  const getMessageReadAt = React.useCallback(
+    (id: string) => coreReads.readAt(`msg:${id}`),
+    [coreReads.readAt],
+  );
+  const getThreadReadAt = React.useCallback(
+    (id: string) => coreReads.readAt(`thread:${id}`),
+    [coreReads.readAt],
+  );
+  const readStateVersion = coreReads.state?.version ?? -1;
   const {
-    clearChannelUnreadSource,
-    getChannelReadAt,
-    getThreadReadAt,
-    getMessageReadAt,
-    feedItemState,
-    markChannelRead,
-    markChannelUnread,
-    markMessageRead,
-    markThreadRead,
-    readStateVersion,
-  } = useAppShell();
-  const { doneSet, markDone, markUnread, undoDone, undoUnread, unreadSet } =
-    feedItemState;
-  const { feedItems, activeLatchedItem, coldResolutionPending } =
-    useInboxSelectionAnchor({
-      feed,
-      selectedEventId,
-      availableChannelIds,
-    });
+    feedItems,
+    activeLatchedItem: latchedItem,
+    coldResolutionPending,
+  } = useInboxSelectionAnchor({
+    feed: admittedFeed,
+    selectedEventId,
+    availableChannelIds: admittedChannelIds,
+  });
+  // Native's same-anchor latch is useful for paging, but it is not an access
+  // grant. Revalidate it synchronously before deriving context/detail queries.
+  const activeLatchedItem =
+    latchedItem?.channelId && admittedChannelIds.has(latchedItem.channelId)
+      ? latchedItem
+      : null;
 
   const threadContextFeedItem = activeLatchedItem;
   // Derive the default composer parent from the active anchor's own tags so
@@ -226,7 +262,7 @@ export function HomeView({
       buildInboxItems({
         channels,
         currentPubkey,
-        feed,
+        feed: admittedFeed,
         getMessageReadAt,
         getThreadReadAt,
         profiles: feedProfiles,
@@ -234,32 +270,40 @@ export function HomeView({
     [
       channels,
       currentPubkey,
-      feed,
+      admittedFeed,
       feedProfiles,
       getMessageReadAt,
       getThreadReadAt,
       readStateVersion,
+      coreReads.state,
+      coreReads.visibleChannels,
     ],
   );
-  const { effectiveDoneSet, markItemRead, markItemUnread } =
-    useHomeInboxReadState({
-      items: inboxItems,
-      getChannelReadAt,
-      getThreadReadAt,
-      getMessageReadAt,
-      readStateVersion,
-      localDoneSet: doneSet,
-      localUnreadSet: unreadSet,
-      clearChannelUnreadSource,
-      markChannelRead,
-      markChannelUnread,
-      markMessageRead,
-      markThreadRead,
-      markDoneLocal: markDone,
-      markUnreadLocal: markUnread,
-      undoDoneLocal: undoDone,
-      undoUnreadLocal: undoUnread,
-    });
+  const effectiveDoneSet = React.useMemo(
+    () =>
+      new Set(
+        inboxItems
+          .filter((row) =>
+            row.groupItems.every(
+              (event) =>
+                event.createdAt <=
+                (coreReads.readAt(
+                  inboxReply(event.tags)
+                    ? `msg:${event.id}`
+                    : (event.channelId ?? ""),
+                ) ?? 0),
+            ),
+          )
+          .map((row) => row.id),
+      ),
+    [inboxItems, coreReads.readAt],
+  );
+  const markInbox = (id: string, read: boolean) => {
+    const row = inboxItems.find((item) => item.id === id);
+    if (row) coreReads.write(inboxReadContexts(row.groupItems, read));
+  };
+  const markItemRead = (id: string) => markInbox(id, true);
+  const markItemUnread = (id: string) => markInbox(id, false);
   // Resolve selection before filtering so unread-only can retain its active row.
   const selectedItemFromAll = React.useMemo(
     () =>
@@ -403,11 +447,11 @@ export function HomeView({
     ],
   );
 
-  if (isLoading && !feed) {
+  if ((isLoading && !feed) || (!coreReads.state && !coreReads.failed)) {
     return <HomeLoadingState />;
   }
 
-  if (!feed) {
+  if (!feed || !coreReads.state || coreReads.unknown) {
     return (
       <div className="flex-1 overflow-hidden px-4 pb-3 pt-4 sm:px-6">
         <div className="flex w-full max-w-3xl flex-col gap-4">
@@ -416,9 +460,22 @@ export function HomeView({
               Home feed unavailable
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              {errorMessage ?? "The relay did not return a feed response."}
+              {coreReads.failed || coreReads.unknown
+                ? t(
+                    coreReads.unknown
+                      ? "inbox.readUnknown"
+                      : "inbox.readUnavailable",
+                  )
+                : (errorMessage ?? "The relay did not return a feed response.")}
             </p>
-            <Button className="mt-5" onClick={onRefresh} type="button">
+            <Button
+              className="mt-5"
+              onClick={() => {
+                onRefresh();
+                void coreReads.refresh();
+              }}
+              type="button"
+            >
               <RefreshCcw className="h-4 w-4" />
               Try again
             </Button>
@@ -430,7 +487,7 @@ export function HomeView({
 
   const { canReply, disabledReplyReason } = getHomeMessageCapabilities(
     selectedItem,
-    availableChannelIds,
+    admittedChannelIds,
   );
   const detailMode = isDrafts || selectedDraftItem ? "drafts" : "messages";
   const {

@@ -33,7 +33,7 @@ import {
   type TaskView,
   type PlatformToolPage,
 } from "@client-kit/contracts";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
@@ -124,7 +124,6 @@ export function AgentDefinitionsPage() {
         onEdit={(target, owner) => setEdit({ target, owner })} onVersionEdit={setVersionEdit} /> : null}
       <ToolManagement />
       <InstallationManagement versionRevision={versionRevision} />
-      <AutomationManagement />
     </div>
   );
 }
@@ -197,7 +196,9 @@ function validAutomationDetail(value: AutomationDetailView, resource: string, wo
 
 type AutomationEdit = { detail: AutomationDetailView; action: "publish_version" | "enable" | "pause" | "disable" };
 
-function AutomationManagement() {
+export function AutomationManagement({ renderRunHistory }: {
+  renderRunHistory?: (resourceId: string, workspaceId: string) => ReactNode;
+}) {
   const client = useBffClient();
   const t = useT();
   const [state, reload] = useLoad("automation-workspaces", client.workspaces);
@@ -209,8 +210,7 @@ function AutomationManagement() {
   const workspaces = data && Array.isArray(data) && data.every((w) => w && typeof w.id === "string" && !!w.id
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(data.map((w) => w.id)).size === data.length ? data : null;
   const workspace = workspaces?.find((w) => w.id === selected) ?? workspaces?.[0];
-  return <section className="flex flex-col gap-3 border-t pt-4" data-testid="agent-automations">
-    <h2 className="font-medium">{t("agents.automation.title")}</h2>
+  return <section className="flex flex-col gap-3" data-testid="agent-automations">
     <p className="text-sm text-muted-foreground">{t("agents.automation.scope")}</p>
     <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
@@ -225,12 +225,14 @@ function AutomationManagement() {
     {/* 未知写意图不随 Workspace、列表或详情重载卸载。 */}
     <AutomationAction workspaceId={workspace?.id} edit={edit} onReset={() => setEdit(null)} onLocked={setLocked}
       onRecorded={() => { setEdit(null); setRevision((old) => old + 1); }} />
-    {workspace ? <AutomationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onEdit={setEdit} /> : null}
+    {workspace ? <AutomationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onEdit={setEdit}
+      renderRunHistory={renderRunHistory} /> : null}
   </section>;
 }
 
-function AutomationList({ workspaceId, locked, onEdit }: {
+function AutomationList({ workspaceId, locked, onEdit, renderRunHistory }: {
   workspaceId: string; locked: boolean; onEdit: (edit: AutomationEdit) => void;
+  renderRunHistory?: (resourceId: string, workspaceId: string) => ReactNode;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -250,9 +252,10 @@ function AutomationList({ workspaceId, locked, onEdit }: {
       : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : <>
         {page.automations.length === 0 ? <Notice>{t("agents.automation.none")}</Notice>
-          : <Table head={[t("agents.installation.id"), t("agents.automation.executor"), t("agents.owner"), t("platform.state"), ""]}>
+          : <Table head={[t("agents.installation.id"), t("agents.automation.executor"), t("agents.owner"), t("agents.automation.pinned"), t("platform.state"), ""]}>
             {page.automations.map((row) => <tr key={row.resourceId}>
               <Cell mono>{row.resourceId}</Cell><Cell mono>{row.executorInstallationResourceId}</Cell><Cell mono>{row.ownerPrincipalId}</Cell>
+              <Cell mono>{row.pinnedVersionAssetId ?? "—"}</Cell>
               <Cell><Badge tone="neutral">{t(automationLabels[row.state])}</Badge></Cell>
               <Cell><Button disabled={locked} onClick={() => setSelected(row.resourceId)}>{t("agents.open")}</Button></Cell>
             </tr>)}
@@ -264,12 +267,14 @@ function AutomationList({ workspaceId, locked, onEdit }: {
           }}>{t("roles.next")}</Button> : null}
         </div>
       </>}
-    {selected ? <AutomationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onEdit={onEdit} /> : null}
+    {selected ? <AutomationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onEdit={onEdit}
+      renderRunHistory={renderRunHistory} /> : null}
   </div>;
 }
 
-function AutomationDetail({ resourceId, workspaceId, locked, onEdit }: {
+function AutomationDetail({ resourceId, workspaceId, locked, onEdit, renderRunHistory }: {
   resourceId: string; workspaceId: string; locked: boolean; onEdit: (edit: AutomationEdit) => void;
+  renderRunHistory?: (resourceId: string, workspaceId: string) => ReactNode;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -337,6 +342,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit }: {
         }}>{t("roles.next")}</Button> : null}
       </div>
     </> : null}
+    {renderRunHistory?.(resourceId, workspaceId)}
   </section>;
 }
 
@@ -442,6 +448,8 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   };
   const submit = async () => {
     if (!intent || inFlight.current) return;
+    const wasUnknown = unknown;
+    const priorOperation = submission?.operationId ?? (failure?.kind === "unknown" ? failure.operationId : undefined);
     inFlight.current = true; setBusy(true); setFailure(null); setSubmission(null);
     try {
       const result = await client.submitAction(intent);
@@ -456,8 +464,10 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
         setIntent(null); onLocked(false); onReset(); onRecorded(); reloadAdmission(); reloadInstallations();
       }
     } catch (error) {
-      const failed = writeFailure(error); setFailure(failed);
-      if (failed.kind !== "unknown") { setIntent(null); onLocked(false); }
+      const failed = writeFailure(error);
+      setFailure(wasUnknown ? { kind: "unknown", operationId: priorOperation } : failed);
+      // A later HTTP refusal cannot prove that the original uncertain write never happened.
+      if (failed.kind !== "unknown" && !wasUnknown) { setIntent(null); onLocked(false); }
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
   const title = !edit ? "agents.automation.create" : edit.action === "publish_version" ? "agents.automation.publish"

@@ -15,6 +15,7 @@ import type {
 } from "@/shared/api/types";
 import { formatItemTimestamp } from "@/shared/lib/datetime";
 import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
+import { aggregateInbox, inboxConversation } from "@client-kit/platform/inbox";
 
 export type InboxFilter = "all" | "mention" | "thread" | "drafts";
 
@@ -107,29 +108,6 @@ export function isThreadActivityItem(item: FeedItem) {
   return thread.parentId !== null && !isBroadcastReply(item.tags);
 }
 
-function isThreadReplyItem(item: FeedItem) {
-  const thread = getThreadReference(item.tags);
-  return thread.parentId !== null && !isBroadcastReply(item.tags);
-}
-
-function uniqueItemsById(items: readonly FeedItem[]) {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    if (seen.has(item.id)) return false;
-    seen.add(item.id);
-    return true;
-  });
-}
-
-function isItemUnread(
-  item: FeedItem,
-  readAt: number | null,
-  getMessageReadAt?: (messageId: string) => number | null,
-) {
-  const messageReadAt = getMessageReadAt?.(item.id) ?? null;
-  return item.createdAt > Math.max(readAt ?? 0, messageReadAt ?? 0);
-}
-
 function resolveItemChannel(
   item: FeedItem,
   channelById: ReadonlyMap<string, InboxChannel>,
@@ -188,10 +166,6 @@ export function formatInboxTypeLabel(item: InboxItem) {
     : label.text;
 }
 
-function categoryPriority(category: FeedItemCategory) {
-  return category === "mention" ? 0 : 1;
-}
-
 /**
  * Returns the stable conversation ID for any FeedItem or relay event: the
  * NIP-10 root, parent-reply tag, then event id. This is the same derivation
@@ -201,8 +175,7 @@ export function getInboxConversationId(
   tags: string[][],
   eventId: string,
 ): string {
-  const thread = getThreadReference(tags);
-  return thread.rootId ?? thread.parentId ?? eventId;
+  return inboxConversation({ tags, id: eventId });
 }
 
 /** Returns the stable conversation identity for a complete Inbox feed item. */
@@ -266,84 +239,15 @@ export function buildInboxItems({
     return [];
   }
 
-  const feedItems = [
-    ...feed.mentions.map((item) => ({
-      ...item,
-      category: "mention" as const,
-    })),
-    ...feed.activity.map((item) => ({
-      ...item,
-      category: "activity" as const,
-    })),
-  ];
   const channelById = new Map(
     (channels ?? []).map((channel) => [channel.id, channel]),
   );
 
-  const threadGroups = new Map<
-    string,
-    {
-      items: FeedItem[];
-      latestActivityAt: number;
-      rootItem: FeedItem | null;
-    }
-  >();
-
-  for (const item of feedItems) {
-    const threadKey = getInboxItemConversationId(item);
-    const group = threadGroups.get(threadKey) ?? {
-      items: [],
-      latestActivityAt: 0,
-      rootItem: null,
-    };
-
-    group.items.push(item);
-    group.latestActivityAt = Math.max(group.latestActivityAt, item.createdAt);
-    if (item.id === getInboxItemConversationId(item)) {
-      group.rootItem = item;
-    }
-
-    threadGroups.set(threadKey, group);
-  }
-
-  return [...threadGroups.entries()]
-    .sort(
-      ([, left], [, right]) => right.latestActivityAt - left.latestActivityAt,
-    )
-    .map(([, group]) => {
-      const conversationId = getInboxItemConversationId(group.items[0]);
-      const latestItem = group.items.reduce((latest, current) =>
-        current.createdAt > latest.createdAt ? current : latest,
-      );
-      const groupChannel = resolveGroupChannel(
-        latestItem,
-        group.items,
-        channelById,
-      );
-      const groupChannelId = group.items.find(
-        (candidate) => candidate.channelId,
-      )?.channelId;
-      const uniqueGroupItems = uniqueItemsById(group.items);
-      const threadReplyItems = uniqueGroupItems.filter(isThreadReplyItem);
-      const threadReadAt =
-        threadReplyItems.length > 0 && getThreadReadAt
-          ? getThreadReadAt(conversationId, groupChannelId)
-          : undefined;
-      const unreadItems = (
-        threadReplyItems.length > 0 && getMessageReadAt
-          ? threadReplyItems.filter((candidate) =>
-              isItemUnread(candidate, null, getMessageReadAt),
-            )
-          : threadReadAt !== undefined
-            ? threadReplyItems.filter((candidate) =>
-                isItemUnread(candidate, threadReadAt),
-              )
-            : []
-      ).sort((left, right) => left.createdAt - right.createdAt);
-      const item = unreadItems[0] ?? latestItem;
-      const categories = [
-        ...new Set(group.items.map((groupItem) => groupItem.category)),
-      ].sort((left, right) => categoryPriority(left) - categoryPriority(right));
+  return aggregateInbox(feed, getMessageReadAt, getThreadReadAt).map(
+    (group) => {
+      const { conversationId, item } = group;
+      const groupChannel = resolveGroupChannel(item, group.items, channelById);
+      const categories = group.categories;
       const senderLabel = resolveUserLabel({
         pubkey: item.pubkey,
         currentPubkey,
@@ -381,7 +285,8 @@ export function buildInboxItems({
         senderLabel,
         subject,
         timestampLabel: formatInboxTimestamp(group.latestActivityAt),
-        unreadCount: unreadItems.length,
+        unreadCount: group.unreadCount,
       };
-    });
+    },
+  );
 }

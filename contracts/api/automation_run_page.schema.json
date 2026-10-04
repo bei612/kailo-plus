@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/automation_run_page.schema.json",
+  "title": "AutomationRunPage",
+  "description": "GET /api/v1/automations/{resource_id}/runs：可读 Automation 的本人运行历史。游标只作分页，不授予权限；每页重新核验。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["automationResourceId", "runs"],
+  "properties": {
+    "automationResourceId": {"type": "string", "format": "uuid"},
+    "runs": {"type": "array", "items": {"$ref": "automation_run_view.schema.json"}},
+    "nextCursor": {"type": "string", "description": "不透明 createdAt/id 稳定分页边界；缺省表示本次查询没有更多行。"}
+  }
+}

@@ -9,6 +9,33 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('automation run pages preserve UNKNOWN and empty page', () {
+    final original =
+        jsonDecode(
+              File(
+                '../../contracts/samples/automation-run-pages.sample.json',
+              ).readAsStringSync(),
+            )
+            as List<dynamic>;
+    final typed = original
+        .map((page) => AutomationRunPage.fromJson(page as Map<String, dynamic>))
+        .toList();
+    expect(
+      jsonDecode(jsonEncode(typed.map((page) => page.toJson()).toList())),
+      equals(original),
+    );
+  });
+  test('capability vectors round-trip preserves steps and encoded values', () {
+    final original = jsonDecode(
+      File(
+        '../../contracts/samples/capability-conformance-vectors.sample.json',
+      ).readAsStringSync(),
+    );
+    final typed = CapabilityConformanceVectors.fromJson(
+      original as Map<String, dynamic>,
+    );
+    expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+  });
   for (final sample in [
     'web-publish-mention.sample.json',
     'web-publish-content-only.sample.json',

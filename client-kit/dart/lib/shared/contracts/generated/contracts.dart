@@ -26,6 +26,8 @@
 //     final automationDelegationView = automationDelegationViewFromJson(jsonString);
 //     final automationDetailView = automationDetailViewFromJson(jsonString);
 //     final automationPage = automationPageFromJson(jsonString);
+//     final automationRunPage = automationRunPageFromJson(jsonString);
+//     final automationRunView = automationRunViewFromJson(jsonString);
 //     final automationVersionView = automationVersionViewFromJson(jsonString);
 //     final automationView = automationViewFromJson(jsonString);
 //     final capabilityContractPage = capabilityContractPageFromJson(jsonString);
@@ -60,6 +62,7 @@
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
 //     final automationScheduleSpec = automationScheduleSpecFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
+//     final capabilityConformanceVectors = capabilityConformanceVectorsFromJson(jsonString);
 //     final capabilityContractRef = capabilityContractRefFromJson(jsonString);
 //     final capabilityContractRegistration = capabilityContractRegistrationFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
@@ -252,6 +255,18 @@ AutomationPage automationPageFromJson(String str) =>
     AutomationPage.fromJson(json.decode(str));
 
 String automationPageToJson(AutomationPage data) => json.encode(data.toJson());
+
+AutomationRunPage automationRunPageFromJson(String str) =>
+    AutomationRunPage.fromJson(json.decode(str));
+
+String automationRunPageToJson(AutomationRunPage data) =>
+    json.encode(data.toJson());
+
+AutomationRunView automationRunViewFromJson(String str) =>
+    AutomationRunView.fromJson(json.decode(str));
+
+String automationRunViewToJson(AutomationRunView data) =>
+    json.encode(data.toJson());
 
 AutomationVersionView automationVersionViewFromJson(String str) =>
     AutomationVersionView.fromJson(json.decode(str));
@@ -446,6 +461,12 @@ AutomationVersionContent automationVersionContentFromJson(String str) =>
     AutomationVersionContent.fromJson(json.decode(str));
 
 String automationVersionContentToJson(AutomationVersionContent data) =>
+    json.encode(data.toJson());
+
+CapabilityConformanceVectors capabilityConformanceVectorsFromJson(String str) =>
+    CapabilityConformanceVectors.fromJson(json.decode(str));
+
+String capabilityConformanceVectorsToJson(CapabilityConformanceVectors data) =>
     json.encode(data.toJson());
 
 CapabilityContractRef capabilityContractRefFromJson(String str) =>
@@ -1350,6 +1371,9 @@ class CapabilityContractRegistrationClass {
   final List<CapabilityContractRegistrationResourceTypeFamily>
   resourceTypeFamily;
   final List<String> schemaDocuments;
+
+  ///CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
+  ///校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
   final String testVectorsJson;
 
   CapabilityContractRegistrationClass({
@@ -4232,6 +4256,231 @@ class AutomationPage {
   });
 }
 
+///GET /api/v1/automations/{resource_id}/runs：可读 Automation 的本人运行历史。游标只作分页，不授予权限；每页重新核验。
+class AutomationRunPage {
+  final String automationResourceId;
+
+  ///不透明 createdAt/id 稳定分页边界；缺省表示本次查询没有更多行。
+  final String? nextCursor;
+  final List<RunElement> runs;
+
+  AutomationRunPage({
+    required this.automationResourceId,
+    this.nextCursor,
+    required this.runs,
+  });
+
+  factory AutomationRunPage.fromJson(Map<String, dynamic> json) =>
+      AutomationRunPage(
+        automationResourceId: json["automationResourceId"],
+        nextCursor: json["nextCursor"],
+        runs: List<RunElement>.from(
+          json["runs"].map((x) => RunElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "automationResourceId": automationResourceId,
+    "nextCursor": nextCursor,
+    "runs": List<dynamic>.from(runs.map((x) => x.toJson())),
+  });
+}
+
+///本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
+class RunElement {
+  ///原 TaskProjection 进度；缺省不推测百分比或成功。
+  final String? progress;
+  final TaskClass task;
+
+  ///同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
+  final List<String> usageEventIds;
+
+  RunElement({this.progress, required this.task, required this.usageEventIds});
+
+  factory RunElement.fromJson(Map<String, dynamic> json) => RunElement(
+    progress: json["progress"],
+    task: TaskClass.fromJson(json["task"]),
+    usageEventIds: List<String>.from(json["usageEventIds"].map((x) => x)),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "progress": progress,
+    "task": task.toJson(),
+    "usageEventIds": List<dynamic>.from(usageEventIds.map((x) => x)),
+  });
+}
+
+///GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
+///非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
+class TaskClass {
+  final String actionExecutionId;
+  final String actionKey;
+  final int actionVersion;
+  final ApprovalStatus? approvalStatus;
+  final String? approvalWorkflowId;
+
+  ///仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入
+  final String? cancelActionKey;
+
+  ///RFC3339，UTC
+  final String createdAt;
+  final ActionDispatchState dispatchState;
+  final ActionGateState gateState;
+  final ReasonCode? observation;
+  final String operationId;
+  final ReasonCode? reason;
+
+  ///仅任务详情且 Core 证明原 Workflow 已关闭、终态投影一致、原目标仍在收敛版本并完成本人和权限重查后提供；提交与派发时仍重新准入
+  final String? rerunActionKey;
+  final String targetId;
+  final TaskStatus? taskStatus;
+  final String? waitingReason;
+  final String? workflowId;
+  final WorkflowKind? workflowKind;
+  final String? workspaceId;
+
+  TaskClass({
+    required this.actionExecutionId,
+    required this.actionKey,
+    required this.actionVersion,
+    this.approvalStatus,
+    this.approvalWorkflowId,
+    this.cancelActionKey,
+    required this.createdAt,
+    required this.dispatchState,
+    required this.gateState,
+    this.observation,
+    required this.operationId,
+    this.reason,
+    this.rerunActionKey,
+    required this.targetId,
+    this.taskStatus,
+    this.waitingReason,
+    this.workflowId,
+    this.workflowKind,
+    this.workspaceId,
+  });
+
+  factory TaskClass.fromJson(Map<String, dynamic> json) => TaskClass(
+    actionExecutionId: json["actionExecutionId"],
+    actionKey: json["actionKey"],
+    actionVersion: json["actionVersion"],
+    approvalStatus: json["approvalStatus"] == null
+        ? null
+        : approvalStatusValues.map[json["approvalStatus"]]!,
+    approvalWorkflowId: json["approvalWorkflowId"],
+    cancelActionKey: json["cancelActionKey"],
+    createdAt: json["createdAt"],
+    dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
+    gateState: actionGateStateValues.map[json["gateState"]]!,
+    observation: json["observation"] == null
+        ? null
+        : reasonCodeValues.map[json["observation"]]!,
+    operationId: json["operationId"],
+    reason: json["reason"] == null
+        ? null
+        : reasonCodeValues.map[json["reason"]]!,
+    rerunActionKey: json["rerunActionKey"],
+    targetId: json["targetId"],
+    taskStatus: json["taskStatus"] == null
+        ? null
+        : taskStatusValues.map[json["taskStatus"]]!,
+    waitingReason: json["waitingReason"],
+    workflowId: json["workflowId"],
+    workflowKind: json["workflowKind"] == null
+        ? null
+        : workflowKindValues.map[json["workflowKind"]]!,
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "approvalStatus": approvalStatusValues.reverse[approvalStatus],
+    "approvalWorkflowId": approvalWorkflowId,
+    "cancelActionKey": cancelActionKey,
+    "createdAt": createdAt,
+    "dispatchState": actionDispatchStateValues.reverse[dispatchState],
+    "gateState": actionGateStateValues.reverse[gateState],
+    "observation": reasonCodeValues.reverse[observation],
+    "operationId": operationId,
+    "reason": reasonCodeValues.reverse[reason],
+    "rerunActionKey": rerunActionKey,
+    "targetId": targetId,
+    "taskStatus": taskStatusValues.reverse[taskStatus],
+    "waitingReason": waitingReason,
+    "workflowId": workflowId,
+    "workflowKind": workflowKindValues.reverse[workflowKind],
+    "workspaceId": workspaceId,
+  });
+}
+
+///TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
+///status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
+///WorkflowRef 进入 TERMINAL。
+enum TaskStatus { CANCELED, COMPLETED, FAILED, RUNNING, TERMINATED, TIMED_OUT }
+
+final taskStatusValues = EnumValues({
+  "CANCELED": TaskStatus.CANCELED,
+  "COMPLETED": TaskStatus.COMPLETED,
+  "FAILED": TaskStatus.FAILED,
+  "RUNNING": TaskStatus.RUNNING,
+  "TERMINATED": TaskStatus.TERMINATED,
+  "TIMED_OUT": TaskStatus.TIMED_OUT,
+});
+
+///ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
+///必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
+enum WorkflowKind {
+  AGENT_INSTALLATION,
+  BUZZ_IDENTITY_PROJECTION,
+  MEMBERSHIP_PROJECTION,
+  MEMBERSHIP_REVOCATION,
+  SECRET_REF_REHOME,
+  TENANT_LIFECYCLE,
+  WORKSPACE_LIFECYCLE,
+}
+
+final workflowKindValues = EnumValues({
+  "AGENT_INSTALLATION": WorkflowKind.AGENT_INSTALLATION,
+  "BUZZ_IDENTITY_PROJECTION": WorkflowKind.BUZZ_IDENTITY_PROJECTION,
+  "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
+  "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
+  "SECRET_REF_REHOME": WorkflowKind.SECRET_REF_REHOME,
+  "TENANT_LIFECYCLE": WorkflowKind.TENANT_LIFECYCLE,
+  "WORKSPACE_LIFECYCLE": WorkflowKind.WORKSPACE_LIFECYCLE,
+});
+
+///本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
+class AutomationRunView {
+  ///原 TaskProjection 进度；缺省不推测百分比或成功。
+  final String? progress;
+  final TaskClass task;
+
+  ///同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
+  final List<String> usageEventIds;
+
+  AutomationRunView({
+    this.progress,
+    required this.task,
+    required this.usageEventIds,
+  });
+
+  factory AutomationRunView.fromJson(Map<String, dynamic> json) =>
+      AutomationRunView(
+        progress: json["progress"],
+        task: TaskClass.fromJson(json["task"]),
+        usageEventIds: List<String>.from(json["usageEventIds"].map((x) => x)),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "progress": progress,
+    "task": task.toJson(),
+    "usageEventIds": List<dynamic>.from(usageEventIds.map((x) => x)),
+  });
+}
+
 ///Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
 class AutomationVersionView {
   final String assetId;
@@ -5480,42 +5729,6 @@ class TaskView {
   });
 }
 
-///TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
-///status 一一对应：Workflow 自己写回的只有 COMPLETED 与 FAILED，其余三个只来自兜底对账对 Temporal 的观察。任一终态都使
-///WorkflowRef 进入 TERMINAL。
-enum TaskStatus { CANCELED, COMPLETED, FAILED, RUNNING, TERMINATED, TIMED_OUT }
-
-final taskStatusValues = EnumValues({
-  "CANCELED": TaskStatus.CANCELED,
-  "COMPLETED": TaskStatus.COMPLETED,
-  "FAILED": TaskStatus.FAILED,
-  "RUNNING": TaskStatus.RUNNING,
-  "TERMINATED": TaskStatus.TERMINATED,
-  "TIMED_OUT": TaskStatus.TIMED_OUT,
-});
-
-///ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
-///必须同时出现在那里，否则能力注册表在构建期拒绝。本文件只含已实现的 kind。
-enum WorkflowKind {
-  AGENT_INSTALLATION,
-  BUZZ_IDENTITY_PROJECTION,
-  MEMBERSHIP_PROJECTION,
-  MEMBERSHIP_REVOCATION,
-  SECRET_REF_REHOME,
-  TENANT_LIFECYCLE,
-  WORKSPACE_LIFECYCLE,
-}
-
-final workflowKindValues = EnumValues({
-  "AGENT_INSTALLATION": WorkflowKind.AGENT_INSTALLATION,
-  "BUZZ_IDENTITY_PROJECTION": WorkflowKind.BUZZ_IDENTITY_PROJECTION,
-  "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
-  "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
-  "SECRET_REF_REHOME": WorkflowKind.SECRET_REF_REHOME,
-  "TENANT_LIFECYCLE": WorkflowKind.TENANT_LIFECYCLE,
-  "WORKSPACE_LIFECYCLE": WorkflowKind.WORKSPACE_LIFECYCLE,
-});
-
 ///GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
 ///的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。
 class TenantInvitationView {
@@ -6096,6 +6309,80 @@ class AutomationVersionContentTrigger {
   });
 }
 
+///DD-102 / ADR-12：能力契约固定的机器向量。每个 case 按 steps 顺序执行契约操作，参数与预期结果是实际
+///JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。
+class CapabilityConformanceVectors {
+  final List<Case> cases;
+  final CapabilityVectorFormat formatVersion;
+
+  CapabilityConformanceVectors({
+    required this.cases,
+    required this.formatVersion,
+  });
+
+  factory CapabilityConformanceVectors.fromJson(Map<String, dynamic> json) =>
+      CapabilityConformanceVectors(
+        cases: List<Case>.from(json["cases"].map((x) => Case.fromJson(x))),
+        formatVersion: capabilityVectorFormatValues.map[json["formatVersion"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cases": List<dynamic>.from(cases.map((x) => x.toJson())),
+    "formatVersion": capabilityVectorFormatValues.reverse[formatVersion],
+  });
+}
+
+class Case {
+  final String caseKey;
+  final List<Step> steps;
+
+  Case({required this.caseKey, required this.steps});
+
+  factory Case.fromJson(Map<String, dynamic> json) => Case(
+    caseKey: json["caseKey"],
+    steps: List<Step>.from(json["steps"].map((x) => Step.fromJson(x))),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "caseKey": caseKey,
+    "steps": List<dynamic>.from(steps.map((x) => x.toJson())),
+  });
+}
+
+class Step {
+  final String contractKey;
+  final String expectedOutputJson;
+  final String inputJson;
+  final String stepKey;
+
+  Step({
+    required this.contractKey,
+    required this.expectedOutputJson,
+    required this.inputJson,
+    required this.stepKey,
+  });
+
+  factory Step.fromJson(Map<String, dynamic> json) => Step(
+    contractKey: json["contractKey"],
+    expectedOutputJson: json["expectedOutputJson"],
+    inputJson: json["inputJson"],
+    stepKey: json["stepKey"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contractKey": contractKey,
+    "expectedOutputJson": expectedOutputJson,
+    "inputJson": inputJson,
+    "stepKey": stepKey,
+  });
+}
+
+enum CapabilityVectorFormat { V1 }
+
+final capabilityVectorFormatValues = EnumValues({
+  "V1": CapabilityVectorFormat.V1,
+});
+
 ///固定 Catalog 自然键，不授予业务能力 consume 权限。
 class CapabilityContractRef {
   final String categoryKey;
@@ -6131,6 +6418,9 @@ class CapabilityContractRegistration {
   final List<CapabilityContractRegistrationResourceTypeFamilyClass>
   resourceTypeFamily;
   final List<String> schemaDocuments;
+
+  ///CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
+  ///校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
   final String testVectorsJson;
 
   CapabilityContractRegistration({

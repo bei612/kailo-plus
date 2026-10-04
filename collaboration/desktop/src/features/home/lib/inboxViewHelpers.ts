@@ -16,6 +16,7 @@ import type {
   UserProfileSummary,
 } from "@/shared/api/types";
 import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
+import { matchesInbox } from "@client-kit/platform/inbox";
 
 function hasThreadReplyTags(tags: string[][]) {
   const thread = getThreadReference(tags);
@@ -39,17 +40,16 @@ export function matchesInboxFilter(
   },
   filter: InboxFilter,
 ) {
-  if (filter === "all") {
-    return matchesInboxAllView(item);
-  }
-
-  if (filter === "thread") {
-    return [item.item, ...(item.groupItems ?? [])].some((groupItem) =>
-      groupItem ? hasThreadReplyTags(groupItem.tags) : false,
-    );
-  }
-
-  return item.categories.includes(filter);
+  return matchesInbox(
+    {
+      ...item,
+      groupItems: [
+        ...(item.item ? [item.item] : []),
+        ...(item.groupItems ?? []),
+      ],
+    },
+    filter,
+  );
 }
 
 export function matchesInboxAllView(item: {
@@ -57,12 +57,7 @@ export function matchesInboxAllView(item: {
   groupItems?: readonly FeedItem[];
   item?: FeedItem;
 }): boolean {
-  return (
-    item.categories.includes("mention") ||
-    [item.item, ...(item.groupItems ?? [])].some((groupItem) =>
-      groupItem ? hasThreadReplyTags(groupItem.tags) : false,
-    )
-  );
+  return matchesInboxFilter(item, "all");
 }
 
 export function getContextMessageDepth(

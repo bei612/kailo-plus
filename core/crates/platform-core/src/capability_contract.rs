@@ -77,6 +77,22 @@ impl jsonschema::Retrieve for NoExternalSchema {
     }
 }
 
+fn schema_validator(
+    schema: &Value,
+    documents: &BTreeMap<String, Value>,
+) -> Result<jsonschema::Validator, Refusal> {
+    let mut options = jsonschema::options().with_retriever(NoExternalSchema);
+    for other in documents.values() {
+        if let Some(id) = other.get("$id").and_then(Value::as_str) {
+            options = options.with_resource(
+                id.to_owned(),
+                jsonschema::Resource::from_contents(other.clone()).map_err(|_| bad())?,
+            );
+        }
+    }
+    options.build(schema).map_err(|_| bad())
+}
+
 fn validate_schemas(documents: &BTreeMap<String, Value>) -> Result<(), Refusal> {
     let mut ids = BTreeSet::new();
     for schema in documents.values() {
@@ -93,18 +109,79 @@ fn validate_schemas(documents: &BTreeMap<String, Value>) -> Result<(), Refusal> 
         }
     }
     for schema in documents.values() {
-        let mut options = jsonschema::options().with_retriever(NoExternalSchema);
-        for other in documents.values() {
-            if let Some(id) = other.get("$id").and_then(Value::as_str) {
-                options = options.with_resource(
-                    id.to_owned(),
-                    jsonschema::Resource::from_contents(other.clone()).map_err(|_| bad())?,
-                );
-            }
-        }
-        options.build(schema).map_err(|_| bad())?;
+        schema_validator(schema, documents)?;
     }
     Ok(())
+}
+
+/// Versioned data, not executable text. The catalog stores only canonical input
+/// and expected output after both have passed the operation's fixed schemas.
+/// This proves runnable shape and coverage, never actual adapter conformance.
+fn vectors(
+    encoded: &str,
+    operations: &[Value],
+    documents: &BTreeMap<String, Value>,
+) -> Result<Value, Refusal> {
+    let raw: Value = serde_json::from_str(encoded).map_err(|_| bad())?;
+    let typed: contracts::CapabilityConformanceVectors =
+        serde_json::from_value(raw.clone()).map_err(|_| bad())?;
+    let mut canonical = serde_json::to_value(typed).map_err(|_| bad())?;
+    // Generated Rust intentionally shares the other languages' wire shape;
+    // serde by itself would discard unknown fields. Never digest that loss.
+    if canonical != raw {
+        return Err(bad());
+    }
+    let validators = documents
+        .iter()
+        .map(|(digest, schema)| Ok((digest.as_str(), schema_validator(schema, documents)?)))
+        .collect::<Result<BTreeMap<_, _>, Refusal>>()?;
+    let operations: BTreeMap<_, _> = operations
+        .iter()
+        .map(|op| Ok((op["contractKey"].as_str().ok_or_else(bad)?, op)))
+        .collect::<Result<_, Refusal>>()?;
+    let cases = canonical["cases"].as_array_mut().ok_or_else(bad)?;
+    if cases.is_empty() {
+        return Err(bad());
+    }
+    let mut case_keys = BTreeSet::new();
+    let mut covered = BTreeSet::new();
+    for case in cases {
+        let key = case["caseKey"].as_str().ok_or_else(bad)?.to_owned();
+        if !identifier(&key) || !case_keys.insert(key) {
+            return Err(bad());
+        }
+        let steps = case["steps"].as_array_mut().ok_or_else(bad)?;
+        if steps.is_empty() {
+            return Err(bad());
+        }
+        let mut step_keys = BTreeSet::new();
+        for step in steps {
+            let key = step["stepKey"].as_str().ok_or_else(bad)?.to_owned();
+            if !identifier(&key) || !step_keys.insert(key) {
+                return Err(bad());
+            }
+            let contract_key = step["contractKey"].as_str().ok_or_else(bad)?.to_owned();
+            let operation = operations.get(contract_key.as_str()).ok_or_else(bad)?;
+            covered.insert(contract_key);
+            for (field, digest_field) in [
+                ("inputJson", "inputSchemaDigest"),
+                ("expectedOutputJson", "outputSchemaDigest"),
+            ] {
+                let document: Value = serde_json::from_str(step[field].as_str().ok_or_else(bad)?)
+                    .map_err(|_| bad())?;
+                let digest = operation[digest_field].as_str().ok_or_else(bad)?;
+                if !validators.get(digest).ok_or_else(bad)?.is_valid(&document) {
+                    return Err(bad());
+                }
+                // Insignificant JSON whitespace/key ordering is not a new suite.
+                step[field] = json!(serde_json::to_string(&document).map_err(|_| bad())?);
+            }
+        }
+    }
+    if covered.len() != operations.len() {
+        return Err(bad());
+    }
+    Ok(canonical)
 }
 
 /// 验证实际文档与引用并固定 canonical 内容；不是 adapter 一致性通过证明。
@@ -192,14 +269,11 @@ fn registration(raw: &Value) -> Result<Registration, Refusal> {
     if documents.is_empty() || referenced.len() != documents.len() {
         return Err(bad());
     }
-    let vectors: Value = serde_json::from_str(value["testVectorsJson"].as_str().ok_or_else(bad)?)
-        .map_err(|_| bad())?;
-    if !vectors
-        .as_array()
-        .is_some_and(|a| !a.is_empty() && a.iter().all(Value::is_object))
-    {
-        return Err(bad());
-    }
+    let vectors = vectors(
+        value["testVectorsJson"].as_str().ok_or_else(bad)?,
+        operations,
+        &documents,
+    )?;
     let schemas = json!(documents
         .into_iter()
         .map(|(digest, schema)| json!({"digest":digest,"schema":schema}))
@@ -570,6 +644,13 @@ pub async fn list(
 mod registration_tests {
     use super::*;
 
+    fn vector_input(input: Value, output: Value) -> Value {
+        json!({"formatVersion":"V1","cases":[{"caseKey":"read_roundtrip","steps":[{
+            "stepKey":"read", "contractKey":"records.read@v1",
+            "inputJson":input.to_string(), "expectedOutputJson":output.to_string()
+        }]}]})
+    }
+
     fn input(schema: Value) -> Value {
         let digest = collab_bridge::limits::canonical_digest(&schema);
         json!({"categoryKey":"records","contractVersion":1,
@@ -578,7 +659,8 @@ mod registration_tests {
                 "inputSchemaDigest":digest,"outputSchemaDigest":digest,"permission":"read","targetType":"RESOURCE"}],
             "contentReferenceSemantics":{"nativeObjectRefRule":"opaque native ID","nativeRevisionRule":"opaque immutable revision",
                 "authorizationTargetRule":"same resource or asset"},"requiredDeclarations":["OBSERVE"],"protocolSessionKinds":[],
-            "schemaDocuments":[schema.to_string()],"testVectorsJson":"[{\"case\":\"read\",\"expected\":\"same revision\"}]"})
+            "schemaDocuments":[schema.to_string()],
+            "testVectorsJson":vector_input(json!({}),json!({})).to_string()})
     }
 
     #[test]
@@ -594,7 +676,8 @@ mod registration_tests {
         assert_ne!(first.schema_digest, second.schema_digest);
         let mut changed = input(json!({"type":"object"}));
         let previous = registration(&changed).expect("actual schema");
-        changed["testVectorsJson"] = json!("[{\"case\":\"read\",\"expected\":\"refused\"}]");
+        changed["testVectorsJson"] =
+            json!(vector_input(json!({}), json!({"ref":"fixed"})).to_string());
         assert_ne!(
             previous.suite_digest,
             registration(&changed).expect("actual vector").suite_digest
@@ -627,9 +710,105 @@ mod registration_tests {
             .unwrap()
             .push(json!(other.to_string()));
         value["operationContracts"][0]["outputSchemaDigest"] = json!(digest);
+        value["testVectorsJson"] = json!(vector_input(json!({}), json!("result")).to_string());
         assert!(registration(&value).is_ok());
         value["schemaDocuments"].as_array_mut().unwrap().pop();
         assert!(registration(&value).is_err());
+    }
+
+    #[test]
+    fn executable_vectors_reject_unknown_shape_missing_coverage_and_schema_mismatch() {
+        let schema = json!({"type":"object","additionalProperties":false,
+            "required":["nativeRef"],"properties":{"nativeRef":{"type":"string"}}});
+        let mut value = input(schema);
+        let valid = vector_input(
+            json!({"nativeRef":"fixture"}),
+            json!({"nativeRef":"fixture"}),
+        );
+        value["testVectorsJson"] = json!(valid.to_string());
+        assert!(registration(&value).is_ok());
+        for invalid in [
+            json!([{"case":"read","expected":"same revision"}]),
+            json!({"formatVersion":"V2","cases":valid["cases"]}),
+            json!({"formatVersion":"V1","cases":[]}),
+            json!({"formatVersion":"V1","cases":[{"caseKey":"empty","steps":[]}]}),
+            vector_input(json!({}), json!({"nativeRef":"fixture"})),
+            vector_input(json!({"nativeRef":"fixture"}), json!({"nativeRef":false})),
+        ] {
+            value["testVectorsJson"] = json!(invalid.to_string());
+            assert!(registration(&value).is_err(), "{invalid}");
+        }
+        for (pointer, replacement) in [
+            ("/formatVersion", json!("UNKNOWN")),
+            ("/cases/0/caseKey", json!("")),
+            ("/cases/0/steps/0/contractKey", json!("records.write@v1")),
+            ("/cases/0/steps/0/inputJson", json!("not json")),
+        ] {
+            let mut invalid = valid.clone();
+            *invalid.pointer_mut(pointer).unwrap() = replacement;
+            value["testVectorsJson"] = json!(invalid.to_string());
+            assert!(registration(&value).is_err());
+        }
+        for pointer in ["", "/cases/0", "/cases/0/steps/0"] {
+            let mut invalid = valid.clone();
+            invalid
+                .pointer_mut(pointer)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert("unrecognized".into(), json!(true));
+            value["testVectorsJson"] = json!(invalid.to_string());
+            assert!(registration(&value).is_err());
+        }
+        for pointer in ["/cases", "/cases/0/steps"] {
+            let mut invalid = valid.clone();
+            let items = invalid
+                .pointer_mut(pointer)
+                .unwrap()
+                .as_array_mut()
+                .unwrap();
+            items.push(items[0].clone());
+            value["testVectorsJson"] = json!(invalid.to_string());
+            assert!(registration(&value).is_err());
+        }
+        value["testVectorsJson"] = json!(valid.to_string());
+        let mut missing = value["operationContracts"][0].clone();
+        missing["contractKey"] = json!("records.write@v1");
+        value["operationContracts"]
+            .as_array_mut()
+            .unwrap()
+            .push(missing);
+        assert!(registration(&value).is_err());
+    }
+
+    #[test]
+    fn executable_vector_inner_json_is_canonical_and_case_order_is_preserved() {
+        let mut value = input(json!({"type":"object"}));
+        let mut vectors = vector_input(json!({"a":1,"b":2}), json!({}));
+        value["testVectorsJson"] = json!(vectors.to_string());
+        let original = registration(&value).unwrap();
+        vectors["cases"][0]["steps"][0]["inputJson"] = json!(" { \"b\" : 2, \"a\" : 1 } ");
+        value["testVectorsJson"] = json!(vectors.to_string());
+        let reordered = registration(&value).unwrap();
+        assert_eq!(original.suite_digest, reordered.suite_digest);
+        assert_eq!(original.vectors, reordered.vectors);
+        let mut second = vectors["cases"][0]["steps"][0].clone();
+        second["stepKey"] = json!("read_again");
+        vectors["cases"][0]["steps"]
+            .as_array_mut()
+            .unwrap()
+            .push(second);
+        value["testVectorsJson"] = json!(vectors.to_string());
+        let ordered = registration(&value).unwrap();
+        vectors["cases"][0]["steps"]
+            .as_array_mut()
+            .unwrap()
+            .reverse();
+        value["testVectorsJson"] = json!(vectors.to_string());
+        assert_ne!(
+            ordered.suite_digest,
+            registration(&value).unwrap().suite_digest
+        );
     }
 
     #[test]

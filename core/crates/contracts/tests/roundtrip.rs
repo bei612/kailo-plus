@@ -5,6 +5,15 @@
 
 use std::{fs, path::PathBuf};
 
+#[test]
+fn automation_run_pages_roundtrip_preserves_unknown_and_empty_page() {
+    let raw = fs::read_to_string(sample_path().with_file_name("automation-run-pages.sample.json"))
+        .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: Vec<contracts::AutomationRunPage> = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
 fn sample_path() -> PathBuf {
     // 相对本 crate 的 manifest 定位，不依赖调用时的工作目录
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../contracts/samples/canary.sample.json")
@@ -36,4 +45,15 @@ fn web_publish_message_roundtrip_preserves_mentions_and_legacy_absence() {
         let typed: contracts::WebPublishMessageRequest = serde_json::from_str(&raw).unwrap();
         assert_eq!(original, serde_json::to_value(typed).unwrap(), "{sample}");
     }
+}
+
+#[test]
+fn capability_vectors_roundtrip_preserves_order_and_encoded_values() {
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("capability-conformance-vectors.sample.json"),
+    )
+    .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::CapabilityConformanceVectors = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
 }

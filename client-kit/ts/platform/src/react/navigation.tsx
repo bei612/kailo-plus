@@ -9,6 +9,7 @@ import {
 export const platformNavigationSections = [
   "members",
   "agents",
+  "workflows",
   "tasks",
   "approvals",
   "audit",
@@ -21,6 +22,7 @@ export type PlatformNavigationSection =
 const sectionLabel: Record<PlatformNavigationSection, PlatformMessageKey> = {
   members: "platform.tab.members",
   agents: "platform.tab.agents",
+  workflows: "platform.tab.workflows",
   tasks: "platform.tab.tasks",
   approvals: "platform.tab.approvals",
   audit: "platform.tab.audit",

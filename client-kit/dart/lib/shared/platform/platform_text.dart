@@ -5,6 +5,22 @@ import 'dart:io' show Platform;
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  inboxTitle,
+  inboxAll,
+  inboxMention,
+  inboxThread,
+  inboxEmpty,
+  inboxScope,
+  inboxUnreadOnly,
+  inboxMentionedIn,
+  inboxThreadIn,
+  inboxOpen,
+  inboxOpenItem,
+  inboxMarkRead,
+  inboxMarkUnread,
+  inboxUnreadCount,
+  inboxReadUnavailable,
+  inboxReadUnknown,
   capabilitiesTitle,
   capabilitiesBoundary,
   capabilitiesDocument,
@@ -56,6 +72,11 @@ enum PlatformMessageKey {
   tenantsConfirmRestore,
   platformTabMembers,
   platformTabAgents,
+  platformTabWorkflows,
+  workflowsHistory,
+  workflowsNoRuns,
+  workflowsProgress,
+  workflowsUsage,
   agentsNone,
   agentsMemoryTitle,
   agentsMemoryReadOnly,
@@ -607,6 +628,37 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.inboxTitle: ('Inbox', '收件箱'),
+  PlatformMessageKey.inboxAll: ('All', '全部'),
+  PlatformMessageKey.inboxMention: ('Mentions', '提及'),
+  PlatformMessageKey.inboxThread: ('Threads', '线程'),
+  PlatformMessageKey.inboxEmpty: (
+    'No activity in the available message pages',
+    '可读取的消息页中暂无相关活动',
+  ),
+  PlatformMessageKey.inboxScope: (
+    'Mentions and replies in your threads, from each currently accessible Workspace\'s bounded message page.',
+    '逐个读取当前可访问 Workspace 的有界消息页，显示对你的提及及你参与的线程回复。',
+  ),
+  PlatformMessageKey.inboxUnreadOnly: ('Show unread only', '仅显示未读'),
+  PlatformMessageKey.inboxMentionedIn: ('Mentioned in', '提及于'),
+  PlatformMessageKey.inboxThreadIn: ('Thread in', '线程于'),
+  PlatformMessageKey.inboxOpen: ('Open in channel', '在频道中打开'),
+  PlatformMessageKey.inboxOpenItem: (
+    'Open inbox item from {sender}',
+    '打开来自 {sender} 的收件箱消息',
+  ),
+  PlatformMessageKey.inboxMarkRead: ('Mark as read', '标为已读'),
+  PlatformMessageKey.inboxMarkUnread: ('Mark unread', '标为未读'),
+  PlatformMessageKey.inboxUnreadCount: ('{count} unread', '{count} 条未读'),
+  PlatformMessageKey.inboxReadUnavailable: (
+    'Core read state is unavailable.',
+    'Core 已读状态暂不可查证。',
+  ),
+  PlatformMessageKey.inboxReadUnknown: (
+    'Read position is unconfirmed. Recheck before making another change.',
+    '已读位置的写入结果不明，请重新查证后再更改。',
+  ),
   PlatformMessageKey.capabilitiesTitle: ('Capability contracts', '能力契约'),
   PlatformMessageKey.capabilitiesBoundary: (
     'Catalog contracts define replaceable component capabilities. An active contract does not activate a component, binding or Tool permission.',
@@ -739,6 +791,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.platformTabMembers: ('Members', '成员'),
   PlatformMessageKey.platformTabAgents: ('Agents', 'Agent'),
+  PlatformMessageKey.platformTabWorkflows: ('Workflows', '工作流'),
+  PlatformMessageKey.workflowsHistory: ('My run history', '我的运行历史'),
+  PlatformMessageKey.workflowsNoRuns: (
+    'No visible runs on this page.',
+    '本页没有可见运行。',
+  ),
+  PlatformMessageKey.workflowsProgress: ('Progress', '进度'),
+  PlatformMessageKey.workflowsUsage: ('Usage references', '用量引用'),
   PlatformMessageKey.agentsNone: (
     'No definitions visible on this page.',
     '本页没有可见的定义。',

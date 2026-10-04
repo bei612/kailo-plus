@@ -13,12 +13,18 @@
 import { type PlatformSessionView, ReasonCode } from "@client-kit/contracts";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { ApprovalsPage, TasksPage } from "@client-kit/platform/react/governance";
+import { WorkflowsPage } from "@client-kit/platform/react/workflows";
 import { RedemptionProgress, TenantInvitations } from "@client-kit/platform/react/invitations";
 import {
   PlatformNavigation,
   type PlatformNavigationSection,
 } from "@client-kit/platform/react/navigation";
-import { AgentDefinitionsPage, AuditPage, DevicesPage, MembersPane } from "@client-kit/platform/react/pages";
+import {
+  AgentDefinitionsPage,
+  AuditPage,
+  DevicesPage,
+  MembersPane,
+} from "@client-kit/platform/react/pages";
 import { LegacySecretRefManagement, RoleManagement } from "@client-kit/platform/react/roles";
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,20 +33,24 @@ import {
   Bot,
   ClipboardCheck,
   Hash,
+  Inbox,
   History,
   ListChecks,
   MonitorSmartphone,
   Star,
   Users,
+  Workflow,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
+import { InboxPane } from "@/platform/ui/InboxPane";
+import { translate } from "@client-kit/platform/i18n";
 import { platformQueries } from "@/platform/ui/queries";
 import { getLocale, t } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 
-type Tab = "channel" | PlatformNavigationSection;
+type Tab = "channel" | "inbox" | PlatformNavigationSection;
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -133,8 +143,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const tabLabel = (name: Tab) =>
     ({
       channel: t("platform.tab.channel"),
+      inbox: translate(getLocale(), "inbox.title"),
       members: t("platform.tab.members"),
       agents: t("platform.tab.agents"),
+      workflows: translate(getLocale(), "platform.tab.workflows"),
       tasks: t("platform.tab.tasks"),
       approvals: t("platform.tab.approvals"),
       devices: t("platform.tab.devices"),
@@ -155,8 +167,18 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     <MembersPane key={active} workspaceId={active} />
   );
   const body =
-    tab === "agents" ? (
+    tab === "inbox" ? (
+      <InboxPane
+        principalId={session.tenantPrincipalId}
+        onOpen={(workspaceId) => {
+          setChosen(workspaceId);
+          setTab("channel");
+        }}
+      />
+    ) : tab === "agents" ? (
       <AgentDefinitionsPage />
+    ) : tab === "workflows" ? (
+      <WorkflowsPage />
     ) : tab === "tasks" ? (
       <TasksPage />
     ) : tab === "approvals" ? (
@@ -196,33 +218,52 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
           >
             <PlatformNavigation
               locale={getLocale()}
-              selectedSection={tab === "channel" ? null : tab}
+              selectedSection={tab === "channel" || tab === "inbox" ? null : tab}
               onSelectSection={setTab}
               icons={{
                 members: <Users className="h-4 w-4" />,
                 agents: <Bot className="h-4 w-4" />,
+                workflows: <Workflow className="h-4 w-4" />,
                 tasks: <ListChecks className="h-4 w-4" />,
                 approvals: <ClipboardCheck className="h-4 w-4" />,
                 audit: <History className="h-4 w-4" />,
                 devices: <MonitorSmartphone className="h-4 w-4" />,
               }}
               firstRow={
-                <li className="group/menu-item relative" data-sidebar="menu-item">
-                  <Button
-                    aria-pressed={tab === "channel"}
-                    className="h-8 w-full justify-start gap-2 text-left font-normal"
-                    data-testid="sidebar-channel"
-                    data-sidebar="menu-button"
-                    data-active={tab === "channel"}
-                    size="sm"
-                    type="button"
-                    variant={tab === "channel" ? "secondary" : "ghost"}
-                    onClick={() => setTab("channel")}
-                  >
-                    <Hash className="h-4 w-4" />
-                    {t("platform.tab.channel")}
-                  </Button>
-                </li>
+                <>
+                  <li className="group/menu-item relative" data-sidebar="menu-item">
+                    <Button
+                      aria-pressed={tab === "inbox"}
+                      className="h-8 w-full justify-start gap-2 text-left font-normal"
+                      data-testid="sidebar-inbox"
+                      data-sidebar="menu-button"
+                      data-active={tab === "inbox"}
+                      size="sm"
+                      type="button"
+                      variant={tab === "inbox" ? "secondary" : "ghost"}
+                      onClick={() => setTab("inbox")}
+                    >
+                      <Inbox className="h-4 w-4" />
+                      {translate(getLocale(), "inbox.title")}
+                    </Button>
+                  </li>
+                  <li className="group/menu-item relative" data-sidebar="menu-item">
+                    <Button
+                      aria-pressed={tab === "channel"}
+                      className="h-8 w-full justify-start gap-2 text-left font-normal"
+                      data-testid="sidebar-channel"
+                      data-sidebar="menu-button"
+                      data-active={tab === "channel"}
+                      size="sm"
+                      type="button"
+                      variant={tab === "channel" ? "secondary" : "ghost"}
+                      onClick={() => setTab("channel")}
+                    >
+                      <Hash className="h-4 w-4" />
+                      {t("platform.tab.channel")}
+                    </Button>
+                  </li>
+                </>
               }
             />
           </nav>

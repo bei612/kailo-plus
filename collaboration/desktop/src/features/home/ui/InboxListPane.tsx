@@ -1,11 +1,11 @@
 import { Ellipsis, ExternalLink, MailOpen } from "lucide-react";
 import * as React from "react";
+import { InboxRow } from "@client-kit/platform/react/inbox-row";
 
 import {
   getInboxTypeLabel,
   type InboxFilter,
   type InboxItem,
-  type InboxTypeLabel,
 } from "@/features/home/lib/inbox";
 import { hasRenderedVideoAttachment } from "@/features/messages/lib/videoReviewContext";
 import { getThreadReference } from "@/features/messages/lib/threading";
@@ -25,10 +25,6 @@ import {
   ContextMenuTrigger,
 } from "@/shared/ui/context-menu";
 import { VideoReviewCommentMarkdown } from "@/shared/ui/VideoReviewCommentMarkdown";
-import {
-  MENTION_CHIP_BASE_CLASSES,
-  MESSAGE_MARKDOWN_CLASS,
-} from "@/shared/ui/mentionChip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { Separator } from "@/shared/ui/separator";
 import { Switch } from "@/shared/ui/switch";
@@ -54,40 +50,6 @@ const INBOX_HEADER_ICON_BUTTON_CLASS =
   "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-[state=open]:bg-muted/70 data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0";
 const INBOX_PANE_RIGHT_DIVIDER_CLASS =
   "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']";
-
-function InboxLabel({
-  isDone,
-  label,
-}: {
-  isDone: boolean;
-  label: InboxTypeLabel;
-}) {
-  return (
-    <div
-      className={cn(
-        MESSAGE_MARKDOWN_CLASS,
-        "mt-0 flex min-h-[var(--inline-chip-min-height)] min-w-0 items-center gap-1.5 text-2xs leading-3 group-hover/inbox-item:pr-[6.75rem] group-focus-within/inbox-item:pr-[6.75rem]",
-        isDone
-          ? "font-normal text-muted-foreground/70"
-          : "font-medium text-muted-foreground/80",
-      )}
-      data-inbox-type-label=""
-    >
-      <span className="shrink-0">{label.text}</span>
-      {label.channelLabel ? (
-        <span
-          className={cn(
-            MENTION_CHIP_BASE_CLASSES,
-            "inbox-channel-chip min-w-0 max-w-full overflow-hidden",
-          )}
-          data-channel-link=""
-        >
-          <span className="truncate">#{label.channelLabel}</span>
-        </span>
-      ) : null}
-    </div>
-  );
-}
 
 function getInboxVideoReviewCommentRootId(item: InboxItem) {
   const feedItems = [item.item, ...item.groupItems];
@@ -178,156 +140,83 @@ export function InboxListPane({
     const openLabel = canOpen ? "Open in channel" : "No channel link";
     const typeLabel = getInboxTypeLabel(item);
     const videoReviewCommentRootId = getInboxVideoReviewCommentRootId(item);
-    const rowHighlightColor = isSelected
-      ? "color-mix(in srgb, hsl(var(--background)) 70%, hsl(var(--muted)) 30%)"
-      : "color-mix(in srgb, hsl(var(--background)) 75%, hsl(var(--muted)) 25%)";
-    const handleRowContentClick = (event: React.MouseEvent<HTMLElement>) => {
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        target.closest("[data-inbox-profile-trigger]")
-      ) {
-        return;
-      }
-      onSelect(item.id);
-    };
     const row = (
-      <div
-        aria-current={isSelected ? "true" : undefined}
-        className="group/inbox-item relative"
-        data-testid={`home-inbox-item-${item.id}`}
-        style={
-          {
-            "--inbox-row-highlight-bg": rowHighlightColor,
-          } as React.CSSProperties
+      <InboxRow
+        id={item.id}
+        selected={isSelected}
+        read={isDone}
+        openLabel={`Open inbox item from ${item.senderLabel}`}
+        onSelect={() => onSelect(item.id)}
+        timestamp={item.timestampLabel}
+        unread={
+          item.unreadCount > 1 ? (
+            <span data-testid="home-inbox-unread-count">
+              {item.unreadCount} unread
+            </span>
+          ) : null
         }
-      >
-        <button
-          aria-label={`Open inbox item from ${item.senderLabel}`}
-          className="absolute inset-0 z-0 block w-full border-l border-l-transparent text-left"
-          onClick={() => onSelect(item.id)}
-          type="button"
-        >
-          <span
-            aria-hidden="true"
-            className={cn(
-              "pointer-events-none absolute inset-y-0 left-0 right-0 transition-colors",
-              isSelected
-                ? "bg-[var(--inbox-row-highlight-bg)]"
-                : "group-hover/inbox-item:bg-[var(--inbox-row-highlight-bg)] group-focus-within/inbox-item:bg-[var(--inbox-row-highlight-bg)] group-active/inbox-item:bg-muted/40",
-            )}
-          />
-        </button>
-
-        {/* biome-ignore lint/a11y: The sibling full-row button provides keyboard/screen-reader row activation; this wrapper delegates pointer selection while allowing nested profile triggers. */}
-        <div
-          className="relative z-10 block w-full cursor-pointer px-3 py-4 text-left"
-          onClick={handleRowContentClick}
-        >
-          <div className="flex min-w-0 items-start gap-2.5">
-            <div
-              className="relative shrink-0"
-              data-inbox-profile-trigger="true"
-            >
-              <UserProfilePopover
-                pubkey={item.item.pubkey}
-                triggerClassName="shrink-0 rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-                triggerElement="span"
-                triggerTestId={`home-inbox-avatar-${item.id}`}
-              >
-                <span className="inline-flex shrink-0">
-                  <UserAvatar
-                    avatarUrl={item.avatarUrl}
-                    className="h-9 w-9"
-                    displayName={item.senderLabel}
-                    size="md"
-                  />
-                </span>
-              </UserProfilePopover>
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-start gap-2">
-                <span
-                  className="flex min-w-0 flex-1 items-start leading-4"
-                  data-inbox-profile-trigger="true"
-                >
-                  <UserProfilePopover
-                    pubkey={item.item.pubkey}
-                    triggerElement="span"
-                  >
-                    <span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
-                      {item.senderLabel}
-                    </span>
-                  </UserProfilePopover>
-                </span>
-                <span
-                  className={cn(
-                    "flex shrink-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground/70 transition-opacity group-hover/inbox-item:opacity-0 group-focus-within/inbox-item:opacity-0",
-                    isDone ? "font-normal" : "font-medium",
-                  )}
-                >
-                  {!isDone ? (
-                    <span
-                      aria-hidden="true"
-                      className="h-1.5 w-1.5 rounded-full bg-primary"
-                    />
-                  ) : null}
-                  {item.unreadCount > 1 ? (
-                    <span data-testid="home-inbox-unread-count">
-                      {item.unreadCount} unread
-                    </span>
-                  ) : null}
-                  {item.timestampLabel}
-                </span>
-              </div>
-              <InboxLabel isDone={isDone} label={typeLabel} />
-
-              <div
-                className={cn(
-                  "mt-1.5 text-message [&_a]:font-medium [&_a]:text-current",
-                  isDone
-                    ? "font-normal text-muted-foreground"
-                    : "font-semibold text-foreground",
-                )}
-              >
-                <VideoReviewCommentMarkdown
-                  className="inbox-preview-markdown text-inherit"
-                  content={item.preview}
-                  interactive={false}
-                  mentionNames={item.mentionNames}
-                  videoReviewCommentRootId={videoReviewCommentRootId}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="pointer-events-none absolute right-3 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--inbox-row-highlight-bg)] p-1 opacity-0 transition-opacity duration-150 ease-out group-hover/inbox-item:pointer-events-auto group-hover/inbox-item:opacity-100 group-focus-within/inbox-item:pointer-events-auto group-focus-within/inbox-item:opacity-100">
-          {isDone ? (
-            <InboxRowActionButton
-              label="Mark unread"
-              onClick={() => onMarkUnread(item.id)}
-            >
-              <MailOpen className="!h-4 !w-4" />
-            </InboxRowActionButton>
-          ) : (
-            <InboxRowActionButton
-              label="Mark as read"
-              onClick={() => onMarkRead(item.id)}
-            >
-              <MailOpen className="!h-4 !w-4" />
-            </InboxRowActionButton>
-          )}
-          <InboxRowActionButton
-            disabled={!canOpen}
-            label={openLabel}
-            onClick={() => onOpenDirect(item)}
+        label={typeLabel.text}
+        channel={typeLabel.channelLabel}
+        avatar={
+          <UserProfilePopover
+            pubkey={item.item.pubkey}
+            triggerClassName="shrink-0 rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            triggerElement="span"
+            triggerTestId={`home-inbox-avatar-${item.id}`}
           >
-            <ExternalLink className="!h-4 !w-4" />
-          </InboxRowActionButton>
-        </div>
-      </div>
+            <span className="inline-flex shrink-0">
+              <UserAvatar
+                avatarUrl={item.avatarUrl}
+                className="h-9 w-9"
+                displayName={item.senderLabel}
+                size="md"
+              />
+            </span>
+          </UserProfilePopover>
+        }
+        sender={
+          <UserProfilePopover pubkey={item.item.pubkey} triggerElement="span">
+            <span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
+              {item.senderLabel}
+            </span>
+          </UserProfilePopover>
+        }
+        preview={
+          <VideoReviewCommentMarkdown
+            className="inbox-preview-markdown text-inherit"
+            content={item.preview}
+            interactive={false}
+            mentionNames={item.mentionNames}
+            videoReviewCommentRootId={videoReviewCommentRootId}
+          />
+        }
+        actions={
+          <>
+            {isDone ? (
+              <InboxRowActionButton
+                label="Mark unread"
+                onClick={() => onMarkUnread(item.id)}
+              >
+                <MailOpen className="!h-4 !w-4" />
+              </InboxRowActionButton>
+            ) : (
+              <InboxRowActionButton
+                label="Mark as read"
+                onClick={() => onMarkRead(item.id)}
+              >
+                <MailOpen className="!h-4 !w-4" />
+              </InboxRowActionButton>
+            )}
+            <InboxRowActionButton
+              disabled={!canOpen}
+              label={openLabel}
+              onClick={() => onOpenDirect(item)}
+            >
+              <ExternalLink className="!h-4 !w-4" />
+            </InboxRowActionButton>
+          </>
+        }
+      />
     );
 
     return (
@@ -455,7 +344,9 @@ export function InboxListPane({
           {items.length > 0 ? (
             <VirtualizedList
               estimateSize={96}
-              getItemKey={(item) => item.conversationId}
+              getItemKey={(item) =>
+                `${item.item.channelId ?? ""}:${item.conversationId}`
+              }
               items={items}
               renderItem={(item) => renderItem(item)}
               scrollRef={scrollRef}

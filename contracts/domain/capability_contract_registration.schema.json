@@ -44,6 +44,6 @@
     "requiredDeclarations": {"type": "array", "items": {"$ref": "../enums/capability_required_declaration.schema.json"}},
     "protocolSessionKinds": {"type": "array", "items": {"type": "string"}},
     "schemaDocuments": {"type": "array", "items": {"type": "string"}},
-    "testVectorsJson": {"type": "string"}
+    "testVectorsJson": {"type": "string", "description": "CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。"}
   }
 }

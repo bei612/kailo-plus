@@ -110,3 +110,60 @@ SDK 的 SQLx/psql；仅创建独占库 `capability_family_rsfdrk`，未连接运
 数据库夹具仅证明约束，Tenant/Workspace/Installation 保持 PROVISIONING、Version
 保持 DRAFT，无实际权限、native key、模型、RuntimeProfile 或外部调用。它们不
 证明受权 Catalog 操作、ApprovalWorkflow、组件 conformance 或 Agent E2E；未部署。
+
+## 版本化机器向量登记（2026-10-04）
+
+本批基线为树 `bc997abb306b2ffe62da32274460083a98187cfc`。直接修正原登记路径
+将任意非空对象数组当作测试向量的问题：`CapabilityConformanceVectors` 的 V1
+编码固定有序 case/step、contractKey、实际 inputJson 与 expectedOutputJson。
+Core 拒绝自然语言数组、未知格式/字段、空 case/step、重复标识、未登记契约键、
+漏掉任何 operation contract，以及不符合该操作实际输入/输出 schema 的值。
+步骤顺序参与摘要，内层 JSON 的空白和对象键顺序不产生第二个 suite digest。
+这只是能力契约元数据登记校验，不代表适配器真的执行了这些步骤。
+
+四步影响结论：
+
+1. DD-102、`03` §3、`07` §2.4/§8A 与 ADR-12 决定向量是平台运行器的数据，
+   不是用户上传的“pass”或可执行文本。本批没有添加 runner、报告签名或 Release
+   入口；后续实际套件与隔离环境取证仍必须闭合，不能把登记通过当执行证明。
+2. 写者仍是原 `capability_contract.register`；目录只读摘要，不返回向量正文。
+   新类型来自 contracts，四侧生成；Web/Desktop 仍共用原页面，Mobile 无新入口。
+   原 testVectorsJson 字段不变，但内容收紧为 V1；旧自然语言数组不兼容、不双读。
+3. Core 仍复用原 jsonschema 库和关闭外部解析的 retriever；不执行网络、模型、
+   代码片段或业务数据库操作，不改变权限/审批/额度/审计权威。
+4. `14000` 在空 Catalog 上将 test_vectors 的约束从 array 收缩为 V1 envelope，
+   缺格式、缺 cases 不能利用 SQL NULL 通过。已有任意不可变契约时停止迁移；
+   有新格式记录时停止回滚，不改写摘要、不自动生成预期值、不删除旧记录。
+   迁移失败须停止发布并处理真实旧数据，不能把历史隔离库零行当生产事实。
+
+原件与隔离验证目录：
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/component-vectors.YyRwwt/`。
+使用既有 `kailo-installation-scope-sdk-e4agxd`，镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+回读实际 4 CPU、8 GiB memory/memory+swap、Data cache，Cargo jobs 保持 16。
+
+实际命令与输出：
+
+- `bash tools/gen.sh`：四侧 OK，退出 0；首次在线 npm 元数据查询较慢，终止
+  本任务该次生成进程后使用同一已缓存固定 quicktype 离线重跑成功。
+- 原 `tools/check.sh` 的 `step_contract` 在真实 `contracts-v0.1.0` Git bundle
+  上执行：四侧同步，`165 个 schema，匹配 3 个历史 schema`，无破坏性变更，退出 0。
+  此检查只覆盖该旧发布 tag；不证明未发布自然语言数组可以继续登记。
+- `cargo test --locked -p platform-core --bin platform-core capability_contract::registration_tests`：
+  `7 passed; 0 failed`。实现后将 operation 覆盖条件改为永不执行，检查真实
+  `FAILED. 0 passed; 1 failed`、退出 101；还原后 7 项通过。
+- `cargo test --locked -p contracts --test roundtrip`：3 项通过；
+  `go test ./internal/contracts -run Roundtrip -count=1`：通过；
+  TS contracts `npm test`：4 项通过；Dart `dart test test/roundtrip_test.dart`：5 项通过。
+  在样例中主动删去第一个 step 的 expectedOutputJson，四侧分别退出
+  101、1、1、1；Rust 报 missing field，Go 检出多出的空值，TS 检出 undefined
+  字段，Dart 报 Null 非 String。还原后四侧全部通过。
+- 独占隔离库 `component_vectors_yyrwwt` 上原 `sqlx migrate run`：68 条前进成功；
+  `14000` 原 revert → run 均成功。两条独立回滚事务分别放入旧数组/新 envelope，
+  原 up/down 分别报 requires an empty contract catalog，psql 都退出 3；断开后
+  查询 Catalog 行数 0、成功迁移数 68，未留下脏夹具。夹具只在该独占库事务内
+  临时关闭关系 trigger 以构造迁移前置，不用于声称治理准入通过。
+
+未运行本批 full、产品镜像/安装包构建、模型调用或实际组件套件；未写业务库、
+未部署。ComponentRelease register/approve/revoke 与 Cells/WeKnora/Wren 集成
+不因本批变为完成。

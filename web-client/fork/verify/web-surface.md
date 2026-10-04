@@ -1092,3 +1092,105 @@ source `e8a4dc259f440233f3851598bb1a5a980865dbc4c28c0ee2a87a7d118a7cd3c7`，
 初次参数路径错误 127、后置符号链接解析错误 1 的原件保留；两者不是 helper
 构建失败，纠正后的两端 helper 和来源回读均退出 0。原 builder 的实际父 cgroup
 为 8 CPU/16 GiB/swap 0，OOM 0；未改变 Cargo 并行度，也未新增第三套构建入口。
+
+## Inbox 共用主体合入（2026-10-04）
+
+冻结候选基于 `581d64bb2fd8e0f523bc4a668ab4c3a23cd046bc`，树
+`107d16ab4645864e2e5897a651003cb50f0a07fb`，15 文件 +1360/-371。
+窄补丁对正式 `a535179baea0fc92f8515d32102288262e4161a6` 的实际脏树
+`git apply --check` 退出 0，按原 hunk 合入并保留其余修改，合入后 diff 检查退出 0。
+
+四步影响结论：
+
+1. 权威为设计 `09` 的协作 user-state、DD-40、SS-WEB-RELAY 与 V-SCN-28。
+   Buzz 固定版本 `779af8886caae1317b4de962082429867ab61503` 的
+   `buzz/desktop/src/features/home/ui/HomeView.tsx::HomeView` 与
+   `buzz/desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane` 已按 commit
+   重新定位；Web 复用该主体提取的聚合与行呈现，不另造 Inbox 语义。
+2. 两端实际调用共享 `aggregateInbox`、`InboxRow`、`useInboxState`；Desktop
+   保留原 Relay/profile/Markdown/detail 适配，Web 复用原 workspaces、members、
+   messages 与 ChannelPane。读写仍经原 Core user-state 与生成的 CAS 合同，
+   不继续消费本地 Inbox 已读覆盖，不新增实体、API、迁移或四侧契约字段。
+3. Browser 不获得签名密钥或直连 Relay 能力；Web 每个事件核验唯一且相等的
+   h scope，读取后再核对 Workspace。两个 Workspace 的相同 thread 不合并，
+   页面交集不替代服务端 fresh admission，不复制消息正文到 Core。
+4. 加载或 scope 失败清除呈现，generation 丢弃旧请求；CAS 未知结果保留冻结
+   intent，同版本读回不冒充成功，读到更高版本仅关闭旧 CAS 写窗口，不冒充原
+   请求成功。未知 shape/时间戳拒绝，显式刷新与 focus 重读仍保留错误/未知状态。
+
+原件目录 `/volumes/data/kailo/tmp/codex-web-inbox-20261004.l5kw1b/`；补丁
+`canonical-owned.patch` SHA-256
+`2679292a313d98bde05032ec7f5e9dfeb82d623eb97b45fe6d7c96929187529d`，
+完整路径摘要及命令回执见该目录 `source.sha256`、`evidence.sha256`、`handoff.md`。
+使用既有受限 SDK 镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 UID 1000、4 CPU、8 GiB memory、swap 0，复用 Data 缓存，不新装工具链。
+
+- Shared `npm run typecheck` 与原 Inbox 检查 10/10；Web 类型与 Inbox 检查 18/18；
+  Desktop 类型与原 inbox/inboxViewHelpers/inboxSelection 检查 30/30，均退出 0。
+- 原 `tools/gen-platform-i18n.py` 生成与 `--check` 退出 0；四侧契约生成物未变。
+- 隔离副本删除 h 相等保护：Web 原检查退出 1；删除未决 intent 保护：Shared
+  原检查退出 1。两处逐字恢复、各自原检查再次退出 0；不是编译失败代替变异证据。
+- 初次严格类型、依赖副本及 Desktop loader 路径失败原件保留，纠正后通过，
+  不将这些环境失败算作保护逻辑有效的证明。
+
+上述是隔离候选证据。尚无此合并批次 full、产品镜像/安装包、部署或 Win11 验收。
+Web 仍读取每 Workspace 原有界消息页并显示范围，不宣称全历史；没有新增 Inbox
+SSE fan-out，也没有实时撤权或真实跨端 CAS/Relay 联合验收结论。
+
+合入复核定位到共享 `useInboxState` 的读写竞态：手动刷新递增读 generation，
+在途 PUT 的迟到回执被正确丢弃，但原清理分支也被同一 generation 拦住，导致
+`pending` 永久为 true；同时原刷新未把尚未决出的 intent 标为未知。
+现由同一串行写队列结束时释放 pending，刷新显式保留未决意图的 UNKNOWN；
+仍不接受旧回执、不清空 intent、不重新发送 PUT。两端实际调用者一起继承修复，
+无新状态、契约、超时或副作用路径；高版本读回沿原 CAS 规则关闭旧写窗口。
+新增的实际 hook 消费场景覆盖在途刷新、迟到回执、同版本禁止重发和高版本恢复；
+该场景现已实际通过，共享 Inbox 目标为 11 项；随下述组合共享检查一起验证，
+删除刷新时 UNKNOWN 保留的生产逻辑时两项断言失败，逐字还原后通过。
+
+## 独立 Workflows 共用页面（2026-10-04）
+
+设计提交 `e0900662dea78a48c65cbfdd54508314947b8512` 的 REQ-23、DD-106/107
+与 `06` §9.1 是本次依据。Web/Desktop 通过同一个 `WorkflowsPage` 消费原
+AutomationManagement；Agents 的旧内嵌入口删除，不另建执行引擎、运行台账、
+审批或审计。Mobile 仅同步生成文案，不新增编辑或控制入口。
+
+两个实际宿主的导航及路由均接线至共享页面。运行历史使用生成的 AutomationRunPage，
+调用精确 Automation 的 BFF 查询，不读取全局 Tasks 后在浏览器过滤；当前用户权限
+边界保持原后端 Task 查询规则，因此标题明确为“我的运行历史”。状态与详情分别
+复用 TaskStatusBadge、TaskDetail；usage 仅展示既有事件引用，不假定已经结算。
+不新增 Action、Workflow kind 或权限；四侧新增只读返回契约证据见 Core Agent 记录。
+
+Workspace、目标、未知枚举、重复游标与不明关联均拒绝呈现；换 scope 丢弃迟到读。
+Automation 写请求曾进入 UNKNOWN 后，再次查询遇到 403/409 仍保留原意图及幂等键，
+不得据后一次拒绝宣称原副作用未发生或允许重新创建请求。空结果仅在成功读取后呈现。
+无新增业务状态、迁移、超时或对账权威，终态仍由原 Action/Workflow/Projection 决定。
+
+冻结增量为 13 文件 +474/-20，基于 Inbox 树 `107d16ab4645864e2e5897a651003cb50f0a07fb`；
+补丁 SHA-256 `8a424444bf76f47022e5a2121d7eef3f766b6cec5d32834174b8aff0d6b27407`。
+正式工作树 PlatformApp 含另一批生命周期修改，合入保留该修改；选定候选只取上述
+13 路径的 Workflows 增量，不将未验证的其他修改混入产品构建。
+
+同一既有受限 SDK 内，原共享类型检查及 9 文件 286 项检查退出 0；Web 类型与
+5 文件 18 项检查退出 0；Desktop 类型退出 0；同源 i18n 生成/比对退出 0。
+四处生产变异（历史 scope、UNKNOWN 意图、Inbox 刷新、原生主题变量）触发
+六个真实断言失败、退出 1；四源逐字还原后，共享类型及 286 项再次退出 0。
+原主题检查原先误拒 Buzz 固定版本 InboxListPane 的两条 color-mix 表达式，
+现仅在精确核对这两式、唯一 style 与四处变量引用后排除该原生片段；未放开任意
+内联样式或颜色。初次游标夹具、主题扫描与格式入口失败均保留，不当作最终通过。
+
+原件同上目录，`workflows-handoff.md` 与 `workflows-evidence.sha256` 登记命令和摘要。
+变异日志 SHA-256 `bb72fc2d09076fffec4e6cecfd4e2b3f597bde9e50962004ee2ac295d4a54b9a`；
+最终恢复日志 SHA-256 `3699e43ddb7b8394e4dd801af8c2146013620c67c52adb733ab3fac074ee1976`。
+上述不替代整批 full、实际产品构建、部署、真实 Workflow 运行或 Win11 设备验收。
+
+同批 Web 原 `tools/build-upstream.sh web-client` 已实际退出 0，输入为选定树
+`35afeb574bfa46a5e74cf2b0cfda62503055b1fc`，不含正式工作树其余生命周期修改。
+13 个 Workflows 路径与上述已验证副本逐字一致。原 helper 生成 source
+`sha256:40237be8868af091d01c20c8375f3a7f41c871ebc3af71b3c6333402969d2c2b`，
+镜像 artifact `sha256:924abf4b367e1521102b2eb1d31df11bd725fb1ebe145401728cb455775e8ccf`；
+registry 原 manifest 独立读取成功且字节摘要一致。来源、Compose 与既有追溯引用
+已同步这个真实产物，不改业务源码或借旧产物摘要通过检查。
+本次执行复用既有 BuildKit，实际 8 CPU、16 GiB memory、swap 0，Data 缓存；
+原日志 `/volumes/data/kailo/tmp/codex-workflows-delivery-20261004.IVUu4U/web-build.log`
+SHA-256 `10200b6bdaafdf12513bd5c2a911314287a44b05d7a972fe6af654aa3040108d`。
+镜像构建与 registry push 不等于 Git push 或部署；整批 full 与新 Win11 包尚未完成。

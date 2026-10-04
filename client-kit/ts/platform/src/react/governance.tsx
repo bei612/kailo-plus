@@ -146,7 +146,7 @@ function Confirm({
 // 本人任务
 // ---------------------------------------------------------------------------
 
-function TaskStatusBadge({ task }: { task: TaskView }) {
+export function TaskStatusBadge({ task }: { task: TaskView }) {
   const t = useT();
   const phase = taskPhase(task);
   return <Badge tone={phase.tone}>{t(phase.label)}</Badge>;
@@ -198,7 +198,7 @@ function TaskList({ onOpen }: { onOpen: (actionExecutionId: string) => void }) {
 
 type TaskControl = "cancel" | "rerun";
 
-function TaskDetail({
+export function TaskDetail({
   actionExecutionId,
   onBack,
   onOpen,

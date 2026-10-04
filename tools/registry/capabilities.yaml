@@ -10,6 +10,7 @@ capabilities:
   - /api/v1/agent-installations/{resource_id}
   - /api/v1/automations
   - /api/v1/automations/{resource_id}
+  - /api/v1/automations/{resource_id}/runs
   - /api/v1/agent-installations/{resource_id}/memory/core
   - /api/v1/agent-installations/{resource_id}/memory/entries
   - /api/v1/agent-installations/{resource_id}/memory/entry

@@ -415,3 +415,29 @@ Web 与 Desktop 的原 source 前后逐字一致；没有手调摘要、lock 或
 本节仅记录私有构建和实现后检查，不声称 full、Git、部署或三端通过。
 原实验性交叉编译、跳过签名及 NSIS charset 警告保留：本包 unsigned，
 没有 Win11 安装、登录、持钥、真实 Agent/Memory/计量 E2E 或签名 release 验收。
+
+## 2026-10-04：Inbox / Workflows 共用主体的 Win11 测试产物
+
+本次仅消费选定产品树 `35afeb574bfa46a5e74cf2b0cfda62503055b1fc`；
+原 `tools/build-upstream.sh desktop-client` session5906 实际退出 0，未重复构建。
+固定 Buzz 上游为 `779af8886caae1317b4de962082429867ab61503`，
+原 `upstream_manifest.py status collaboration` 只读核对实际 HEAD 相等。
+既有 kailo-core-data 的实测父 cgroup 为 8CPU/16GiB/swap0，沿 Data 缓存；
+原资源预检通过，不改 Cargo 并行度、锁文件或 Windows 配方。
+
+2267 个原算法输入的 source 为
+`sha256:f59abf4bf832f1c737aa1641bc80fc4f541dafde66010a943e3b844fa9615eb8`。
+原算法输入数/摘要以及 host `src-tauri/Cargo.lock`、`pnpm-lock.yaml`
+前后均逐字 cmp0；这不替代未单独读取的构建内部 lock 证明。
+NSIS 包 `dist/desktop-client/Kailo_0.5.23_x64-setup.exe` 为 15,116,346 字节，
+artifact 为 `sha256:f822e88526a1a93edf07219e5a62e1f5258113c04fc9c599c3c5928d98417f78`，
+文件 SHA 与原 helper record 一致。Manifest 仅更新该产物的两字段。
+已有追溯无 Desktop 摘要引用，不新增虚构 artifact 消费者。
+
+原件目录 `/volumes/data/kailo/tmp/codex-workflows-delivery-20261004.IVUu4U/`：
+`desktop-build.log` SHA `a9abbf4933e9db9205d174957180ee6882d289aecb8f37928fe0ae736fda8464`；
+原 `build-desktop-client.p5P71J.log` SHA
+`99558695df27d4c702c3b8dcfd124768165be0926bfbcc319044536a897ababb`。
+APT、toolchain、cargo-xwin 的实际等待、两项 dead_code、实验性交叉编译、
+跳过签名与 NSIS charset 警告均保留。此包仍 unsigned；未安装、部署或做
+Win11 设备/业务验收，不据构建0声称本批 full、真实工作流或 Agent E2E 完成。

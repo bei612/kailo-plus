@@ -2437,7 +2437,10 @@ AgentMessage；task_complete 的 last_agent_message 为空。04:10 UTC 原 lease
 `resp_ba35dd7743a1d41f` 只读回查返回 404 / invalid_request_error。
 现有证据不能区分 provider 只输出 reasoning 与流缺少可识别消息事件，
 因此不在 Gateway 猜改转换、不公开 reasoning、不补造 assistant 消息、不重发模型。
-进一步判因需要该响应原始 SSE 或 provider 已有日志。
+该历史响应进一步判因需要原始 SSE 或 provider 已有日志；2026-10-04 用户明确
+该服务为第三方，无法提供服务端权限。该证据缺口保留，不再向用户索取其没有的
+权限，不据此停止独立客户端、自动化和组件开发。后续受权新调用的兼容性查证
+只使用 Kailo/Gateway/Codex 可观察边界；它不能补证或重放本次历史回合。
 
 原件目录：`/volumes/data/kailo/tmp/codex-agent-invoke-20261004.yK1eTV/post-99dd/`。
 `native-terminal-shape.log` SHA
@@ -3037,3 +3040,97 @@ Win11 打包与最终整批检查另记其实际结果，不由 Web 成功推定
 SHA-256 `2a6d6f333e13e0756f11eafce672c2a971c8c0a2dd060f2ae812f637e15caf3f`。
 最终原件：`/volumes/data/kailo/tmp/codex-native-tool-corrected-full-20261004.EfWrnN/full.log`，
 SHA-256 `8eb3c092fbf2504650183aa42de26420e8e7da6c5c4bf788f4c45f5b40450d0e`。
+
+## 独立 Workflows 的本人运行历史（2026-10-04）
+
+设计 `e0900662dea78a48c65cbfdd54508314947b8512` 的 `06` §9.1、REQ-23、
+DD-107 要求独立 Workflows 与关联运行历史。本批后端 16 文件 +1092/-148，
+已按窄补丁合入并逐文件 SHA 核对一致；尚未提交、构建或部署。
+
+1. 权威与范围：沿原 ActionExecution、WorkflowRef、TaskProjection、UsageEvent；
+   原 TaskView 为当前 HUMAN 本人发起的任务，不把 Automation 的 read 权限扩张
+   为他人任务读取权限，页面标题为“我的运行历史”。
+2. 影响：新只读 `/api/v1/automations/{resource_id}/runs` 每页重查 Workspace
+   准入、owner/projection 与 FullyConsistent resource read。原两条运行生产者
+   已冻结 Automation 为 AE.target_id，因此在数据库 LIMIT 前按 action、target、
+   Workspace 过滤；不截取全局 Tasks 后再过滤，也不依赖 Invocation 必须存在。
+   新增两份响应 schema 并由原生成器产出四侧；旧 Tasks 线格式与控制权限不变。
+3. 副作用：没有新历史表、迁移、Workflow kind 或执行入口。进度只取原投影，
+   用量只返回同 Tenant/Workspace/Operation 的 UsageEvent ID；引用存在不证明
+   已结算，空集合不证明零用量，不输出消息正文、凭据或原始 Temporal history。
+4. 异常：created_at/id 稳定倒序分页，游标绑定 Tenant/HUMAN/Automation/Workspace；
+   非法或串 scope 游标拒绝，不回退首页。原 task_view 决定 UNKNOWN/投影迟滞，
+   AgentTask 的 kind 缺省保持合法，不补造枚举；查询失败不渲染为真实空页。
+
+隔离证据根目录为
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/workflow-history-qWNMzd/`；
+`canonical.patch` SHA-256
+`d3fce4ebb4cb4b42687e17d40a7a79cb654835813698dee619f5eff0f395474c`。
+使用同批现有 SDK `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实核 4 CPU/8 GiB/swap 0/UID 1000，复用 Data 缓存，没有宿主工具链或新构建。
+
+- 原生成及 `--check`、既有 registry 生成/比对、Clippy 均退出 0；四语言各一项
+  新响应往返实际通过，覆盖 UNKNOWN、进度、用量引用、游标与空页。
+- `cargo test --locked -p platform-core run_history_tests -- --include-ignored --nocapture`
+  实际 3 passed，含新隔离空库的生产 SELECT，而非只检查 SQL 字符串。
+- 私有撤掉 target 精确谓词及 cursor Automation 隔离，实际 2 failed/退出 101；
+  逐字恢复后 3 passed、格式检查 0。失败日志 `mutation.log` SHA-256
+  `a97532f1fbbc0d98178938c6a25efb2d75a1c0cfb3e63874fe08d57929c2a1fd`；
+  恢复日志 `restored.log` SHA-256
+  `b277791f0c0d95a97eeb3e0db54cab10a0a553e5bab0f163d4fec675d581378d`。
+- 初次生成缺输入和 PG 连接投递失败如实保留；纠正输入后通过，不据环境失败
+  宣称守卫有效。唯一临时测试库已删除并读回不存在，可重新创建，不涉及业务数据。
+
+这些是查询、契约及隔离恢复证据，不是在线 BFF/SpiceDB 授权、真实 Automation
+运行、三端设备或整批 full 验收；用户可见页面与产物由同批另行交付。
+
+## 2026-10-04：原生 Memory 子调用的用量入库修正
+
+权威仍为 DD-65/67/105、设计 19 §5–6 的 Buzz 原生 Memory 与既有
+Invocation、UsageEvent、Audit；没有新增记忆存储、检索器或工作流。
+生产 `agent_memory.rs::record_memory_usage` 为 Agent 子调用写入父 Invocation，
+但旧 `usage_native_source_shape` 要求 Memory 的 Invocation 为空，实际拒绝该行。
+另一个实际矛盾是 SQL 用 Rust 变体 `BuzzEventId` 匹配审计，而既有契约在线值为
+`BUZZ_EVENT_ID`，因此带原生 head 引用的读取也被错误拒绝。
+
+迁移 `20261004015500` 只解除 Memory 的该空值限制，并修正原守卫三处枚举匹配；
+完整父子 AE、Invocation、scope、actor、native head、meter 与审计守卫保留。
+HUMAN 的空 Invocation 仍合法，跨 scope/orphan、错误 meter/native turn/seq 仍拒绝。
+不改契约、API 或 Workflow history；不补造既有失败用量、不重复执行原生读写。
+回滚遇到新格式的 Invocation 或非空 native event 引用时明确停止，不删除权威事实。
+用量仍走原 outbox 的重试与对账；终态证据缺失仍不得显示成功。
+
+实现后在现有隔离 PostgreSQL 容器的新空库 `memory_usage_shape_20261004` 执行
+全部当前 up 迁移，退出 0，不修改在线业务库。实际约束的 10 项输入、实际守卫的
+三处枚举谓词正反共 6 项、真实 orphan usage INSERT 的拒绝均通过。
+主动回滚约束后，同一检查退出 3：`native source shape mismatch`；还原后再换回
+旧原生函数，同一检查退出 3：`contract wire kind rejected`；最终还原检查退出 0。
+原件位于 `/volumes/data/kailo/tmp/codex-memory-usage-shape-20261004.uwqHX4/`，
+包括 `verify.sql`、`verify.log`、`mutation-shape.log`、`mutation-wire-kind.log`、
+`restored.log`。事务包装产生的嵌套 BEGIN/ROLLBACK 警告保留，均无持久业务写入。
+
+以上不替代完整授权子调用的真实正向 E2E、Relay 或模型回复验收；回滚对含新格式
+业务行的停止条件已写入，但未以真实完整业务夹具演练。此次未部署迁移。
+
+## 2026-10-04：Inbox / Workflows 与 Memory 修正整批门禁
+
+固定候选 `0bd70a9070913e3770760d7d397ecd9e061fb705` 相对
+`a535179baea0fc92f8515d32102288262e4161a6` 为 72 文件 +4427/-596。
+原 `./tools/check.sh --full` 实际退出 0。检查镜像为 `10ad51a2…`，实际
+4 CPU/8 GiB/swap 0，复用 Data 缓存；未运行 GitNexus，未重复产品构建。
+四侧静态与验证、163 个 schema 生成/兼容、Workflow replay、19 条追溯、
+供应链与六个当前源码产物的来源核验均通过。
+
+Core 单元为 140 passed/5 ignored，另两项外部演练 ignored；未提供
+DATABASE_URL 与实际部署配置，因此全量迁移/SQLx prepare、配置预检 SKIP。
+依赖外部配置而早返的用例不作实际业务验收；未安装 gitleaks，仅内置扫描通过。
+本节不将包构建、source 一致或 full 0 代替真实 Agent 回复、组件 binding、
+Win11 设备与签名、Mobile release 或生产验收。
+
+之前候选 `85af74880e361716584e1875f7b6086e1ae05d53` 误纳工作区历史文档，
+在静态检查阶段主动停止，退出 137，不是 OOM 或通过；将无关内容仅从私有提交
+索引排除，原工作树未回退，修正候选再执行上述 full。可执行源码没有因该纠正改变。
+原件目录 `/volumes/data/kailo/tmp/codex-workflows-delivery-20261004.IVUu4U/`：
+停止的 `full.log` SHA `8db231e714f90133de6ce435b459f8e9099fecf1695a29d6f1e27f4e1d5cc313`；
+最终 `full-selected.log` SHA `4f07e5a9dc03a9572dcd577ef948f0dec012db2d39a0d1e5046f02c9c4afcc7b`。
+回执与 README 状态更新只走原文档快路径，不重编译本批产品。

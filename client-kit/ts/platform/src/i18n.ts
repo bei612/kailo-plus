@@ -60,6 +60,37 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
+  "inbox.title": { en: "Inbox", "zh-CN": "收件箱" },
+  "inbox.all": { en: "All", "zh-CN": "全部" },
+  "inbox.mention": { en: "Mentions", "zh-CN": "提及" },
+  "inbox.thread": { en: "Threads", "zh-CN": "线程" },
+  "inbox.empty": {
+    en: "No activity in the available message pages",
+    "zh-CN": "可读取的消息页中暂无相关活动",
+  },
+  "inbox.scope": {
+    en: "Mentions and replies in your threads, from each currently accessible Workspace's bounded message page.",
+    "zh-CN": "逐个读取当前可访问 Workspace 的有界消息页，显示对你的提及及你参与的线程回复。",
+  },
+  "inbox.unreadOnly": { en: "Show unread only", "zh-CN": "仅显示未读" },
+  "inbox.mentionedIn": { en: "Mentioned in", "zh-CN": "提及于" },
+  "inbox.threadIn": { en: "Thread in", "zh-CN": "线程于" },
+  "inbox.open": { en: "Open in channel", "zh-CN": "在频道中打开" },
+  "inbox.openItem": {
+    en: "Open inbox item from {sender}",
+    "zh-CN": "打开来自 {sender} 的收件箱消息",
+  },
+  "inbox.markRead": { en: "Mark as read", "zh-CN": "标为已读" },
+  "inbox.markUnread": { en: "Mark unread", "zh-CN": "标为未读" },
+  "inbox.unreadCount": { en: "{count} unread", "zh-CN": "{count} 条未读" },
+  "inbox.readUnavailable": {
+    en: "Core read state is unavailable.",
+    "zh-CN": "Core 已读状态暂不可查证。",
+  },
+  "inbox.readUnknown": {
+    en: "Read position is unconfirmed. Recheck before making another change.",
+    "zh-CN": "已读位置的写入结果不明，请重新查证后再更改。",
+  },
   "capabilities.title": { en: "Capability contracts", "zh-CN": "能力契约" },
   "capabilities.boundary": { en: "Catalog contracts define replaceable component capabilities. An active contract does not activate a component, binding or Tool permission.", "zh-CN": "Catalog 契约定义可替换的组件能力。契约生效不代表组件、binding 或 Tool 权限已启用。" },
   "capabilities.document": { en: "Registration document (JSON)", "zh-CN": "登记文档（JSON）" },
@@ -147,6 +178,11 @@ export const platformMessages = {
   },
   "platform.tab.members": { en: "Members", "zh-CN": "成员" },
   "platform.tab.agents": { en: "Agents", "zh-CN": "Agent" },
+  "platform.tab.workflows": { en: "Workflows", "zh-CN": "工作流" },
+  "workflows.history": { en: "My run history", "zh-CN": "我的运行历史" },
+  "workflows.noRuns": { en: "No visible runs on this page.", "zh-CN": "本页没有可见运行。" },
+  "workflows.progress": { en: "Progress", "zh-CN": "进度" },
+  "workflows.usage": { en: "Usage references", "zh-CN": "用量引用" },
   "agents.none": { en: "No definitions visible on this page.", "zh-CN": "本页没有可见的定义。" },
   "agents.memory.title": { en: "Agent memory", "zh-CN": "Agent 记忆" },
   "agents.memory.readOnly": { en: "Read through Core authorization. This page cannot write memory or grant runtime permissions.", "zh-CN": "经 Core 授权读取。本页不写入记忆，也不授予运行权限。" },

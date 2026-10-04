@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/automation_run_view.schema.json",
+  "title": "AutomationRunView",
+  "description": "本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task", "usageEventIds"],
+  "properties": {
+    "task": {"$ref": "task_view.schema.json"},
+    "progress": {"type": "string", "description": "原 TaskProjection 进度；缺省不推测百分比或成功。"},
+    "usageEventIds": {"type": "array", "items": {"type": "string", "format": "uuid"}, "description": "同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。"}
+  }
+}

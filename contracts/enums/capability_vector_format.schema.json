@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/capability_vector_format.schema.json",
+  "title": "CapabilityVectorFormat",
+  "type": "string",
+  "enum": ["V1"]
+}

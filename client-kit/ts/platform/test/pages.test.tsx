@@ -9,6 +9,8 @@ import { AgentDefinitionsPage, AuditPage, DevicesPage, WorkspaceMembersPage } fr
 import { PlatformProvider } from "../src/react/context";
 import { InstallationMemory, validMemoryEntries, validMemoryRead } from "../src/react/memory";
 import { ToolManagement, validPlatformToolPage } from "../src/react/tools";
+import { WorkflowsPage, validAutomationRuns } from "../src/react/workflows";
+import { PlatformNavigation, platformNavigationSections } from "../src/react/navigation";
 import { LegacySecretRefManagement, RoleManagement, RoleMembers } from "../src/react/roles";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { TransportError } from "../src/transport";
@@ -93,6 +95,142 @@ describe("shared governed platform Tool catalog", () => {
   });
 });
 
+describe("independent shared Workflows page", () => {
+  const definition = { resourceId: "workflow-one", workspaceId: "workspace-one", resourceVersion: 1,
+    resourceState: "ACTIVE", ownerPrincipalId: "human", executorInstallationResourceId: "installation-one", state: "DRAFT" };
+  const run = { task: { operationId: "run-operation", actionExecutionId: "run-ae", actionKey: "automation.run",
+    actionVersion: 1, targetId: definition.resourceId, workspaceId: definition.workspaceId,
+    gateState: "ALLOWED", dispatchState: "UNKNOWN", workflowId: "platform:automation_run:tenant:workflow-one:source",
+    taskStatus: "COMPLETED", createdAt: "2026-10-04T01:00:00Z", waitingReason: "Waiting for reconciliation" },
+    progress: "1/2", usageEventIds: ["usage-one"] };
+  const page = { automationResourceId: definition.resourceId, runs: [run] };
+  function routes(extra: (request: BffRequest) => BffReply | Promise<BffReply> | undefined = () => undefined) {
+    return transport((request) => {
+      const response = extra(request);
+      if (response !== undefined) return response;
+      if (request.path === "/api/v1/workspaces") return { status: 200, body: [
+        { id: definition.workspaceId, name: "First workspace", slug: "first" }, { id: "workspace-two", name: "Second workspace", slug: "second" },
+      ] };
+      if (request.path.startsWith("/api/v1/automations?")) return { status: 200, body: {
+        automations: request.path.includes("workspace-one") ? [definition] : [], canCreate: false,
+      } };
+      if (request.path.startsWith("/api/v1/automations/workflow-one?")) return { status: 200, body: {
+        automation: definition, versions: [], delegations: [], canManage: false,
+      } };
+      if (request.path.startsWith("/api/v1/automations/workflow-one/runs")) return { status: 200, body: page };
+      if (request.path === "/api/v1/tasks/run-ae") return { status: 200, body: run.task };
+      if (request.path === "/api/v1/agent-definitions") return { status: 200, body: { definitions: [] } };
+      if (request.path.startsWith("/api/v1/platform-tools?")) return { status: 200, body: { tools: [] } };
+      if (request.path.startsWith("/api/v1/agent-installations?")) return { status: 200, body: { installations: [] } };
+      if (request.path === "/api/v1/tasks") return { status: 200, body: [] };
+      return { status: 503, body: undefined };
+    });
+  }
+  async function openHistory(t = routes()) {
+    const host = await mount(t, <WorkflowsPage />);
+    await click(button(host.querySelector("[data-testid=agent-automations]") as HTMLElement, "View definition"));
+    return { host, history: host.querySelector("[data-testid=workflow-runs]") as HTMLElement, t };
+  }
+  it("uses the shared navigation for the independent page and removes the Agents mount", async () => {
+    const t = routes();
+    function Host() {
+      const [section, setSection] = useState<"agents" | "workflows">("agents");
+      return <><PlatformNavigation locale="en" selectedSection={section}
+        onSelectSection={(next) => { if (next === "agents" || next === "workflows") setSection(next); }}
+        icons={{ members: null, agents: null, workflows: null, tasks: null, approvals: null, audit: null, devices: null }} />
+        {section === "agents" ? <AgentDefinitionsPage /> : <WorkflowsPage />}</>;
+    }
+    const host = await mount(t, <Host />);
+    expect(host.querySelector("[data-testid=agent-automations]")).toBeNull();
+    expect(t.send.mock.calls.some(([request]) => request.path.startsWith("/api/v1/automations"))).toBe(false);
+    expect(platformNavigationSections).toContain("workflows");
+    await click(host.querySelector("[data-testid=sidebar-platform-workflows]") as HTMLElement);
+    expect(host.querySelector("[data-testid=workflows-page]")).not.toBeNull();
+    expect(host.textContent).toContain("workflow-one");
+  });
+  it("both host routes import and render the same page export", () => {
+    const root = resolve(import.meta.dirname, "../../../..");
+    for (const path of ["web-client/web/src/platform/ui/PlatformApp.tsx", "collaboration/desktop/src/app/routes/platform.$section.tsx"]) {
+      const source = readFileSync(join(root, path), "utf8");
+      expect(source).toContain('import { WorkflowsPage } from "@client-kit/platform/react/workflows"');
+      expect(source).toContain("<WorkflowsPage />");
+    }
+  });
+  it.each([403, 503])("does not represent definition read failure (%s) as an empty page", async (status) => {
+    const host = await mount(routes((request) => request.path.startsWith("/api/v1/automations?")
+      ? { status, body: undefined } : undefined), <WorkflowsPage />);
+    expect(host.textContent).not.toContain("No readable, materialized automation");
+    expect(host.querySelector("[data-testid=workflow-runs]")).toBeNull();
+    expect(host.querySelector("[role=alert], [role=status]")).not.toBeNull();
+  });
+  it("renders a real empty definition page only after a successful read", async () => {
+    const host = await mount(routes((request) => request.path.startsWith("/api/v1/automations?")
+      ? { status: 200, body: { automations: [], canCreate: false } } : undefined), <WorkflowsPage />);
+    expect(host.textContent).toContain("No readable, materialized automation");
+  });
+  it("reuses Task state and detail, retaining UNKNOWN even with a completed projection", async () => {
+    const { history, t } = await openHistory();
+    expect(history.textContent).toContain("My run history");
+    expect(history.textContent).toContain("1/2");
+    expect(history.textContent).toContain("usage-one");
+    expect(history.textContent).toContain("Waiting for reconciliation");
+    expect(history.textContent).not.toContain("Completed");
+    await click(button(history, "run-ae"));
+    expect(history.querySelector("[data-testid=task-detail]")).not.toBeNull();
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/tasks/run-ae" });
+    expect(t.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+  });
+  it("uses the opaque history cursor verbatim and supports empty filtered pages", async () => {
+    const cursor = "opaque/+?=&";
+    const { history, t } = await openHistory(routes((request) => request.path === "/api/v1/automations/workflow-one/runs"
+      ? { status: 200, body: { automationResourceId: definition.resourceId, runs: [], nextCursor: cursor } } : undefined));
+    expect(history.textContent).toContain("No visible runs on this page");
+    await click(button(history, "Next page"));
+    expect(history.textContent).toContain("run-ae");
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/automations/workflow-one/runs?cursor=opaque%2F%2B%3F%3D%26" });
+    await click(button(history, "Previous page"));
+    expect(history.textContent).toContain("No visible runs on this page");
+  });
+  it("rejects a repeated cursor after its actual first page was read", async () => {
+    const { history } = await openHistory(routes((request) => request.path.includes("/runs")
+      ? { status: 200, body: { ...page, nextCursor: "already-read" } } : undefined));
+    await click(button(history, "Next page"));
+    expect(history.textContent).not.toContain("run-ae");
+    expect(history.textContent).not.toContain("No visible runs on this page");
+  });
+  it.each([403, 503])("does not represent history refusal (%s) as zero runs", async (status) => {
+    const { history } = await openHistory(routes((request) => request.path.includes("/runs") ? { status, body: undefined } : undefined));
+    expect(history.textContent).not.toContain("No visible runs on this page");
+    expect(history.textContent).not.toContain("run-ae");
+  });
+  it("discards an old Workspace history result after selection changes", async () => {
+    let finish!: (reply: BffReply) => void;
+    const { host } = await openHistory(routes((request) => request.path.includes("/runs")
+      ? new Promise((resolve) => { finish = resolve; }) : undefined));
+    const select = host.querySelector("select") as HTMLSelectElement;
+    await act(async () => { select.value = "workspace-two"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => finish({ status: 200, body: page }));
+    await settle();
+    expect(host.textContent).not.toContain("run-ae");
+    expect(host.querySelector("[data-testid=workflow-runs]")).toBeNull();
+  });
+  it.each([
+    { ...page, automationResourceId: "another-automation" },
+    { ...page, runs: [{ ...run, task: { ...run.task, targetId: "another-automation" } }] },
+    { ...page, runs: [{ ...run, task: { ...run.task, workspaceId: "workspace-two" } }] },
+    { ...page, runs: [{ ...run, task: { ...run.task, taskStatus: "FUTURE" } }] },
+    { ...page, runs: [{ ...run, task: { ...run.task, waitingReason: {} } }] },
+    { ...page, runs: [{ ...run, task: { ...run.task, workflowKind: "COMPONENT_TASK" } }] },
+    { ...page, runs: [run, run] },
+    { ...page, nextCursor: "" },
+  ])("rejects unprovable association/enums/cursors before rendering %j", async (value) => {
+    expect(validAutomationRuns(JSON.parse(JSON.stringify(value)), definition.resourceId, definition.workspaceId, [undefined, "already-read"])).toBe(false);
+    const { history } = await openHistory(routes((request) => request.path.includes("/runs") ? { status: 200, body: value } : undefined));
+    expect(history.textContent).not.toContain("run-ae");
+    expect(history.textContent).not.toContain("No visible runs on this page");
+  });
+});
+
 describe("shared Automation schedule consumer", () => {
   const installation = {
     resourceId: "schedule-installation", workspaceId: "schedule-workspace", agentResourceId: "schedule-definition",
@@ -103,10 +241,11 @@ describe("shared Automation schedule consumer", () => {
   };
   const scheduleContent = { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
     action: { kind: "AGENT_TURN", template: "Report" }, resultTarget: "CHANNEL" };
-  const setup = async (targets: unknown, content?: unknown) => {
+  const setup = async (targets: unknown, content?: unknown, recheckStatus?: number) => {
     const automation = { resourceId: "schedule-automation", workspaceId: installation.workspaceId,
       ownerPrincipalId: installation.ownerPrincipalId, executorInstallationResourceId: installation.resourceId,
       resourceVersion: 2, resourceState: "ACTIVE", state: "DRAFT" };
+    let writes = 0;
     const t = transport((r) => {
       if (r.path === "/api/v1/tasks") return { status: 200, body: [] };
       if (r.path === "/api/v1/agent-definitions") return { status: 200, body: { definitions: [] } };
@@ -123,13 +262,14 @@ describe("shared Automation schedule consumer", () => {
         { ...installation, automationResultTargets: targets },
         { ...installation, resourceId: "thread-only", automationResultTargets: ["TRIGGER_THREAD"] },
       ] } };
+      if (r.path === "/api/v1/actions" && ++writes > 1 && recheckStatus) return { status: recheckStatus, body: undefined };
       if (r.path === "/api/v1/actions") return { status: 202, body: {
         actionKey: (r.body as { actionKey: string }).actionKey, actionExecutionId: "schedule-ae", operationId: "schedule-op",
         gateState: "ALLOWED", dispatchState: "UNKNOWN",
       } };
       return { status: 503, body: undefined };
     });
-    const host = await mount(t, <AgentDefinitionsPage />);
+    const host = await mount(t, <WorkflowsPage />);
     await settle();
     const section = host.querySelector("[data-testid=agent-automations]") as HTMLElement;
     const field = (label: string) => [...section.querySelectorAll("label")].find((node) => node.textContent?.startsWith(label))!;
@@ -171,6 +311,22 @@ describe("shared Automation schedule consumer", () => {
       workspaceId: installation.workspaceId, executorInstallationResourceId: installation.resourceId,
       automationVersionContent: { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
         action: { kind: "AGENT_TURN", template: "Report workspace progress" }, resultTarget: "CHANNEL" } });
+  });
+
+  it.each([403, 409])("retains the original uncertain request after a later refusal (%s)", async (status) => {
+    const { section, t, fill } = await setup(["TRIGGER_THREAD"], undefined, status);
+    await fill("Instruction template", "Report");
+    await click(button(section, "Review request"));
+    await click(button(section, "Submit governed request"));
+    await click(button(section, "Re-check same request"));
+    expect(section.textContent).toContain("Outcome is not confirmed");
+    expect(section.textContent).toContain("schedule-op");
+    expect([...section.querySelectorAll("button")].map((node) => node.textContent)).not.toContain("Cancel request");
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions");
+    expect(writes).toHaveLength(3);
+    expect(writes[1]?.[0].body).toEqual(writes[0]?.[0].body);
+    expect(writes[2]?.[0].body).toEqual(writes[0]?.[0].body);
   });
 
   it.each([undefined, [], ["TRIGGER_THREAD"], ["CHANNEL", "CHANNEL"], ["CHANNEL", "FUTURE"]].map((targets) => ({ targets })))(
@@ -1854,7 +2010,7 @@ describe("platform pages render only through the host theme", () => {
   );
   const semanticColors = [
     "accent", "accent-foreground", "background", "border", "destructive", "destructive-foreground",
-    "foreground", "input", "muted", "muted-foreground", "secondary", "secondary-foreground",
+    "foreground", "input", "muted", "muted-foreground", "primary", "secondary", "secondary-foreground",
     "sidebar-ring", "sidebar-accent", "sidebar-accent-foreground", "sidebar-active", "sidebar-active-foreground",
   ];
   const neutral = new Set(["transparent", "current", "inherit"]);
@@ -1865,7 +2021,7 @@ describe("platform pages render only through the host theme", () => {
 
   it("uses no own theme, colour literal or dark variant", async () => {
     expect(sources.length).toBeGreaterThan(0);
-    // DD-36/53: the only exception is Buzz's native token colour, selected
+    // DD-36/53: Buzz's native token colour is selected
     // by the host. Pin779af8886caae1317b4de962082429867ab61503,
     // desktop/src/shared/ui/markdown/CodeBlock.tsx::SyntaxHighlightedCode.
     const ts = await import("typescript");
@@ -1909,11 +2065,40 @@ describe("platform pages render only through the host theme", () => {
     if (!ts.isArrowFunction(tokenLoop)) throw new Error("Native token style has no token source");
     expect(tokenLoop.parameters.map((parameter) => parameter.name.getText(parsed))).toEqual(["token", "tokenIdx"]);
     expect(tokenLoop.parent.getText(parsed)).toContain("renderedTokens.map(");
+    // InboxListPane at the same fixed Buzz pin, L331–333: this exact row
+    // highlight mixes only two host variables. Do not exempt arbitrary CSS.
+    const inbox = sources.find(({ name }) => name === "inbox-row.tsx");
+    if (!inbox) throw new Error("Shared native Inbox row is missing");
+    const inboxParsed = ts.createSourceFile(inbox.name, inbox.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const row = inboxParsed.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "InboxRow");
+    if (!row || !ts.isFunctionDeclaration(row) || !row.body) throw new Error("Native Inbox row symbol is missing");
+    const declaration = row.body.statements.find((node) => ts.isVariableStatement(node)
+      && node.declarationList.declarations.some((item) => item.name.getText(inboxParsed) === "highlight"));
+    if (!declaration || !ts.isVariableStatement(declaration)) throw new Error("Native Inbox highlight is missing");
+    expect(declaration.declarationList.declarations).toHaveLength(1);
+    const value = declaration.declarationList.declarations[0]?.initializer;
+    if (!value || !ts.isConditionalExpression(value)) throw new Error("Native Inbox highlight is not conditional");
+    expect(value.condition.getText(inboxParsed)).toBe("selected");
+    expect(ts.isStringLiteral(value.whenTrue) && value.whenTrue.text).toBe("color-mix(in srgb, hsl(var(--background)) 70%, hsl(var(--muted)) 30%)");
+    expect(ts.isStringLiteral(value.whenFalse) && value.whenFalse.text).toBe("color-mix(in srgb, hsl(var(--background)) 75%, hsl(var(--muted)) 25%)");
+    const inboxStyles: import("typescript").JsxAttribute[] = [];
+    const visitInbox = (node: import("typescript").Node) => {
+      if (ts.isJsxAttribute(node) && node.name.getText(inboxParsed) === "style") inboxStyles.push(node);
+      ts.forEachChild(node, visitInbox);
+    };
+    visitInbox(row);
+    expect(inboxStyles.map((node) => node.getText(inboxParsed))).toEqual(['style={{ "--inbox-row-highlight-bg": highlight } as CSSProperties}']);
+    const inboxStyle = inboxStyles[0]!;
+    const inboxRanges = [declaration, inboxStyle].sort((a, b) => b.getStart(inboxParsed) - a.getStart(inboxParsed));
+    let inspectedInbox = inbox.text;
+    for (const node of inboxRanges) inspectedInbox = inspectedInbox.slice(0, node.getStart(inboxParsed)) + inspectedInbox.slice(node.end);
+    expect(inspectedInbox.match(/bg-\[var\(--inbox-row-highlight-bg\)\]/g)).toHaveLength(4);
+    inspectedInbox = inspectedInbox.replaceAll("bg-[var(--inbox-row-highlight-bg)]", "");
     for (const { name, text } of sources) {
       // Remove just the verified JSX attribute, not its function or file.
       const inspected = name === native.name
         ? text.slice(0, nativeStyle.getStart(parsed)) + text.slice(nativeStyle.end)
-        : text;
+        : name === inbox.name ? inspectedInbox : text;
       for (const pattern of [
         /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/,
         /\b(?:rgba?|hsla?|oklch|oklab|lab|lch|color-mix)\(/,
@@ -1933,6 +2118,7 @@ describe("platform pages render only through the host theme", () => {
       for (const [, utility, token] of text.matchAll(colorUtility)) {
         if (utility === "outline" && token === "hidden") continue;
         if (utility === "border" && /^[tblrxyse]-\d+$/.test(token!)) continue;
+        if (utility === "border" && token === "l-transparent") continue;
         if (utility === "shadow" && token === "content-edge") {
           for (const config of hosts) {
             expect(config).toContain('"content-edge": "-1px -1px 0 0 hsl(var(--sidebar-border) / 0.45)"');

@@ -7,12 +7,49 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
+import type { AutomationRunPage } from "../src/generated/contracts.js";
 
-import type { Canary, WebPublishMessageRequest } from "../src/generated/contracts.js";
+test("automation run pages preserve UNKNOWN and empty page", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/automation-run-pages.sample.json", import.meta.url), "utf8");
+  const original: unknown = JSON.parse(raw);
+  const typed: AutomationRunPage[] = JSON.parse(raw);
+  const reconstructed: AutomationRunPage[] = typed.map(page => ({
+    automationResourceId: page.automationResourceId,
+    runs: page.runs.map(run => ({
+      task: run.task,
+      progress: run.progress,
+      usageEventIds: run.usageEventIds,
+    })),
+    nextCursor: page.nextCursor,
+  }));
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
+});
+
+import type { Canary, CapabilityConformanceVectors, WebPublishMessageRequest } from "../src/generated/contracts.js";
 
 const samplePath = fileURLToPath(
   new URL("../../../../contracts/samples/canary.sample.json", import.meta.url),
 );
+
+test("capability vectors round-trip preserves steps and encoded values", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/capability-conformance-vectors.sample.json", import.meta.url), "utf8");
+  const original: unknown = JSON.parse(raw);
+  const typed: CapabilityConformanceVectors = JSON.parse(raw);
+  deepStrictEqual(JSON.parse(JSON.stringify(typed)), original);
+  // Explicit construction makes deletion/type drift of a nested field a compile
+  // error; a JSON cast alone would not verify the generated TypeScript contract.
+  const reconstructed: CapabilityConformanceVectors = {
+    formatVersion: typed.formatVersion,
+    cases: typed.cases.map(item => ({
+      caseKey: item.caseKey,
+      steps: item.steps.map(step => ({
+        stepKey: step.stepKey, contractKey: step.contractKey,
+        inputJson: step.inputJson, expectedOutputJson: step.expectedOutputJson,
+      })),
+    })),
+  };
+  deepStrictEqual(reconstructed, original);
+});
 
 test("canary round-trip 保留每个字段", () => {
   const raw = readFileSync(samplePath, "utf8");
