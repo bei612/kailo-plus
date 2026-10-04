@@ -1123,12 +1123,22 @@ async fn observe(
             );
         }
     }
+    let terminal = matches!(status, "completed" | "failed" | "interrupted");
+    if terminal && !released {
+        // Native execution is over even when its timestamps/reply or billing
+        // are unavailable. End the holder Activity first; only native Activity
+        // terminal reconciliation confirms RELEASED on the next pass.
+        return release_holder(state, invocation.id, false, "CAPACITY_UNAVAILABLE").await;
+    }
     let Some(started_at) = turn
         .get("startedAt")
         .and_then(Value::as_i64)
         .filter(|seconds| *seconds > 0)
         .and_then(|seconds| chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0))
     else {
+        if terminal {
+            return release_holder(state, invocation.id, true, "UNKNOWN_EXTERNAL_RESULT").await;
+        }
         return result(
             invocation.id,
             TaskStatus::Running,
@@ -1211,17 +1221,39 @@ async fn observe(
     }
     if !usage_recorded {
         // Billing 拒绝不是 native failure，也不绕过已到期回合的安全取消。
+        if terminal {
+            return release_holder(state, invocation.id, true, "BILLING_UNAVAILABLE").await;
+        }
         return result(invocation.id, TaskStatus::Running, "BILLING_UNAVAILABLE");
     }
+    if !terminal {
+        return result(invocation.id, TaskStatus::Running, "NONE");
+    }
+    // The exact completed native request set is charged independently of reply
+    // availability. Missing/ambiguous reply evidence never discards real usage.
+    let proof = match crate::gateway_usage::committed_turn(
+        &state.pool,
+        &state.openmeter,
+        invocation.id,
+        id,
+        status,
+    )
+    .await
+    {
+        Ok(Some(proof)) => proof,
+        Ok(None) => return release_holder(state, invocation.id, true, "BILLING_UNAVAILABLE").await,
+        Err(reason) => {
+            tracing::warn!(invocation_id=%invocation.id, reason_code="BILLING_UNAVAILABLE", %reason,
+                "Agent native terminal 的真实用量尚未收敛；不重发模型或回复");
+            return release_holder(state, invocation.id, true, "BILLING_UNAVAILABLE").await;
+        }
+    };
     if status == "completed" {
         if invocation.cancel_pending && invocation.reply_event_id.is_none() {
             // Known native completion is not a successful governed reply. A
             // revoked run cannot create a new reply intent, but must settle its
             // actual usage and release its holder before business failure.
-            if released {
-                return finish_billed_turn(state, invocation, id, status, None, None).await;
-            }
-            return release_holder(state, invocation.id, false, "CAPACITY_UNAVAILABLE").await;
+            return finish_billed_turn(state, invocation, id, status, None, None, proof).await;
         }
         let event_id = match invocation.reply_event_id.as_deref() {
             Some(event_id) => event_id.to_owned(),
@@ -1229,16 +1261,18 @@ async fn observe(
                 Ok(event_id) => event_id,
                 Err(error) => {
                     // 新回复仍须 fresh 准入；没有已持久意图时不把拒绝伪装为发送。
-                    return result(
+                    return release_holder(
+                        state,
                         invocation.id,
-                        TaskStatus::Running,
+                        true,
                         &crate::governance::wire(&error.reason()),
-                    );
+                    )
+                    .await;
                 }
             },
         };
         let waiting = match reconcile_reply(state, invocation, id, &event_id).await {
-            Ok(Some(delivered)) if released => {
+            Ok(Some(delivered)) => {
                 return finish_billed_turn(
                     state,
                     invocation,
@@ -1246,10 +1280,10 @@ async fn observe(
                     status,
                     Some(&event_id),
                     Some(delivered),
+                    proof,
                 )
                 .await;
             }
-            Ok(Some(_)) => "CAPACITY_UNAVAILABLE",
             Ok(None) => {
                 let changed = match sqlx::query("update catalog.agent_invocation set status='UNKNOWN',updated_at=now() where id=$1 and status='RUNNING' and native_status='completed' and runtime_turn_id=$2 and reply_event_id=$3")
                         .bind(invocation.id).bind(id).bind(&event_id)
@@ -1267,16 +1301,9 @@ async fn observe(
             }
             Err(error) => return unavailable(error),
         };
-        return release_holder(state, invocation.id, released, waiting).await;
+        return release_holder(state, invocation.id, true, waiting).await;
     }
-    if matches!(status, "failed" | "interrupted") {
-        if released {
-            return finish_billed_turn(state, invocation, id, status, None, None).await;
-        }
-        return release_holder(state, invocation.id, false, "CAPACITY_UNAVAILABLE").await;
-    }
-    // 原生 usage notification 仍不替代 durable Usage 与 reply/sideeffect receipts。
-    result(invocation.id, TaskStatus::Running, "NONE")
+    finish_billed_turn(state, invocation, id, status, None, None, proof).await
 }
 
 #[derive(FromRow, PartialEq)]
@@ -1381,8 +1408,10 @@ async fn lock_reply(
 }
 
 /// Full durable history is already fenced by the unique Invocation clientId.
-/// Only an explicit final_answer is publishable; unknown phases/async questions
-/// do not become a guessed reply, and completion time never comes from a poll.
+/// Match Codex ThreadState::track_current_turn_event: the last nonempty
+/// final_answer or legacy unphased message is the answer. An absent phase is
+/// not an unknown enum value; unknown phases/async questions remain closed.
+/// Completion time never comes from a poll.
 fn native_reply(turn: &Value) -> Option<(&str, u64)> {
     if turn.get("status").and_then(Value::as_str) != Some("completed")
         || turn.get("itemsView").and_then(Value::as_str) != Some("full")
@@ -1412,11 +1441,16 @@ fn native_reply(turn: &Value) -> Option<(&str, u64)> {
         {
             return None;
         }
-        match message.get("phase").and_then(Value::as_str) {
+        let phase = match message.get("phase") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(phase)) => Some(phase.as_str()),
+            _ => return None,
+        };
+        match phase {
             Some("commentary") => {}
-            Some("final_answer") => {
-                if final_message.replace(message).is_some() {
-                    return None;
+            Some("final_answer") | None => {
+                if !message.get("text")?.as_str()?.trim().is_empty() {
+                    final_message = Some(message);
                 }
             }
             _ => return None,
@@ -1428,6 +1462,185 @@ fn native_reply(turn: &Value) -> Option<(&str, u64)> {
         .as_str()
         .filter(|text| !text.trim().is_empty())?;
     Some((text, u64::try_from(completed).ok()?))
+}
+
+// Runtime slot ownership ends before metering/reply. The released lease still
+// proves the frozen Invocation/run chain; the current native Activity must
+// independently be Started at this exact attempt, not an old terminal holder.
+async fn reply_activity_fence(
+    state: &ServiceState,
+    invocation: &Invocation,
+    activity: &AgentTaskAdvanceRequest,
+) -> Result<(), crate::governance::Refusal> {
+    use crate::governance::Refusal;
+    use contracts::ReasonCode;
+    let unknown = || Refusal::Unavailable("Agent reply Activity cannot be verified".into());
+    let attempt = i32::try_from(activity.attempt).map_err(|_| unknown())?;
+    let holder = state
+        .capacity
+        .acquire_or_renew(
+            &state.pool,
+            &state.temporal,
+            invocation.id,
+            &activity.run_id,
+            &activity.activity_id,
+            attempt,
+        )
+        .await
+        .map_err(|_| unknown())?;
+    if !holder.released || holder.workflow_cancel_requested || invocation.cancel_pending {
+        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+    }
+    let observed = state
+        .temporal
+        .activity(
+            &invocation.workflow_id,
+            &activity.run_id,
+            &activity.activity_id,
+        )
+        .await
+        .map_err(|_| unknown())?;
+    if matches!(&observed.state, crate::temporal::ActivityState::Unconfirmed) {
+        return Err(unknown());
+    }
+    if !reply_activity_current(
+        &observed,
+        invocation.id,
+        invocation.projection_generation,
+        attempt,
+        chrono::Utc::now(),
+    ) {
+        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+    }
+    Ok(())
+}
+
+fn reply_activity_current(
+    observed: &crate::temporal::ActivityObservation,
+    invocation: Uuid,
+    generation: i64,
+    attempt: i32,
+    now: chrono::DateTime<chrono::Utc>,
+) -> bool {
+    if observed.invocation_id != invocation.to_string()
+        || observed.projection_generation != generation
+        || observed.scheduled_event_id <= 0
+        || observed.workflow_cancel_requested
+        || attempt <= 0
+    {
+        return false;
+    }
+    let crate::temporal::ActivityState::Started {
+        attempt: native_attempt,
+        started_at,
+        heartbeat_at,
+        heartbeat_timeout_seconds,
+    } = &observed.state
+    else {
+        return false;
+    };
+    let base = heartbeat_at
+        .filter(|at| *at >= *started_at)
+        .unwrap_or(*started_at);
+    *native_attempt == attempt
+        && *started_at <= now
+        && base <= now
+        && *heartbeat_timeout_seconds > 0
+        && chrono::TimeDelta::try_seconds(*heartbeat_timeout_seconds)
+            .and_then(|timeout| base.checked_add_signed(timeout))
+            .is_some_and(|deadline| deadline > now)
+}
+
+#[cfg(test)]
+mod released_reply_activity_tests {
+    use super::reply_activity_current;
+    use crate::temporal::{ActivityObservation, ActivityState};
+    use chrono::{TimeDelta, TimeZone, Utc};
+    use uuid::Uuid;
+
+    fn started(invocation: Uuid) -> ActivityObservation {
+        ActivityObservation {
+            scheduled_event_id: 11,
+            invocation_id: invocation.to_string(),
+            projection_generation: 3,
+            workflow_cancel_requested: false,
+            state: ActivityState::Started {
+                attempt: 2,
+                started_at: Utc.timestamp_opt(100, 0).unwrap(),
+                heartbeat_at: Some(Utc.timestamp_opt(105, 0).unwrap()),
+                heartbeat_timeout_seconds: 10,
+            },
+        }
+    }
+
+    #[test]
+    fn released_reply_requires_exact_started_invocation_generation_attempt() {
+        let invocation = Uuid::new_v4();
+        let now = Utc.timestamp_opt(110, 0).unwrap();
+        let mut observed = started(invocation);
+        assert!(reply_activity_current(&observed, invocation, 3, 2, now));
+        assert!(!reply_activity_current(
+            &observed,
+            Uuid::new_v4(),
+            3,
+            2,
+            now
+        ));
+        assert!(!reply_activity_current(&observed, invocation, 4, 2, now));
+        assert!(!reply_activity_current(&observed, invocation, 3, 1, now));
+        assert!(!reply_activity_current(&observed, invocation, 3, 0, now));
+        observed.scheduled_event_id = 0;
+        assert!(!reply_activity_current(&observed, invocation, 3, 2, now));
+    }
+
+    #[test]
+    fn released_reply_rejects_old_terminal_unknown_and_canceled_activity() {
+        let invocation = Uuid::new_v4();
+        let now = Utc.timestamp_opt(110, 0).unwrap();
+        let mut observed = started(invocation);
+        observed.workflow_cancel_requested = true;
+        assert!(!reply_activity_current(&observed, invocation, 3, 2, now));
+        observed.workflow_cancel_requested = false;
+        observed.state = ActivityState::Terminal {
+            event_id: 13,
+            at: now,
+        };
+        assert!(!reply_activity_current(&observed, invocation, 3, 2, now));
+        observed.state = ActivityState::Unconfirmed;
+        assert!(!reply_activity_current(&observed, invocation, 3, 2, now));
+    }
+
+    #[test]
+    fn released_reply_requires_live_native_heartbeat_without_new_timeout() {
+        let invocation = Uuid::new_v4();
+        let now = Utc.timestamp_opt(110, 0).unwrap();
+        let mut observed = started(invocation);
+        assert!(!reply_activity_current(
+            &observed,
+            invocation,
+            3,
+            2,
+            now + TimeDelta::seconds(5)
+        ));
+        if let ActivityState::Started { heartbeat_at, .. } = &mut observed.state {
+            *heartbeat_at = None;
+        }
+        assert!(!reply_activity_current(&observed, invocation, 3, 2, now));
+        if let ActivityState::Started { heartbeat_at, .. } = &mut observed.state {
+            *heartbeat_at = Some(now + TimeDelta::seconds(1));
+        }
+        assert!(!reply_activity_current(&observed, invocation, 3, 2, now));
+        if let ActivityState::Started {
+            heartbeat_at,
+            heartbeat_timeout_seconds,
+            ..
+        } = &mut observed.state
+        {
+            *heartbeat_at = Some(now);
+            *heartbeat_timeout_seconds = i64::MAX;
+        }
+        assert!(!reply_activity_current(&observed, invocation, 3, 2, now));
+    }
 }
 
 async fn publish_reply(
@@ -1443,22 +1656,7 @@ async fn publish_reply(
     let unknown = || Refusal::Unavailable("Agent reply evidence cannot be verified".into());
     let (text, completed_at) = native_reply(turn).ok_or_else(unknown)?;
     let turn_id = turn.get("id").and_then(Value::as_str).ok_or_else(unknown)?;
-    let attempt = i32::try_from(activity.attempt).map_err(|_| unknown())?;
-    let holder = state
-        .capacity
-        .acquire_or_renew(
-            &state.pool,
-            &state.temporal,
-            invocation.id,
-            &activity.run_id,
-            &activity.activity_id,
-            attempt,
-        )
-        .await
-        .map_err(|_| unknown())?;
-    if !holder.held || holder.workflow_cancel_requested || invocation.cancel_pending {
-        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
-    }
+    reply_activity_fence(state, invocation, activity).await?;
     crate::service_api::audit_gate(state)
         .await
         .map_err(|_| unknown())?;
@@ -1551,21 +1749,7 @@ async fn publish_reply(
     // A crash after this commit leaves only the stable ID. Future observations
     // query it; they cannot sign again or reconstruct/replay a second reply.
     let prepared = async {
-        let holder = state
-            .capacity
-            .acquire_or_renew(
-                &state.pool,
-                &state.temporal,
-                invocation.id,
-                &activity.run_id,
-                &activity.activity_id,
-                attempt,
-            )
-            .await
-            .map_err(|_| unknown())?;
-        if !holder.held || holder.workflow_cancel_requested {
-            return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
-        }
+        reply_activity_fence(state, invocation, activity).await?;
         let mut guard = state.pool.begin().await?;
         let (current_ae, current_binding) =
             lock_reply(&mut guard, invocation, projection, turn_id, Some(&event_id)).await?;
@@ -1897,6 +2081,7 @@ async fn finish_billed_turn(
     native_status: &str,
     reply: Option<&str>,
     reply_delivered: Option<bool>,
+    proof: (Vec<Uuid>, Vec<crate::audit::Evidence>),
 ) -> Response {
     let Some((status, wire_status)) = billed_outcome(
         native_status,
@@ -1910,20 +2095,9 @@ async fn finish_billed_turn(
             "UNKNOWN_EXTERNAL_RESULT",
         );
     };
-    let (ids, mut evidence) = match crate::gateway_usage::committed_turn(
-        &state.pool,
-        &state.openmeter,
-        invocation.id,
-        turn,
-        native_status,
-    )
-    .await
-    {
-        Ok(Some(proof)) => proof,
-        Ok(None) | Err(_) => {
-            return release_holder(state, invocation.id, true, "BILLING_UNAVAILABLE").await;
-        }
-    };
+    // Observe already settled this exact turn before reply handling. The final
+    // transaction below rechecks every committed ID/scope and release receipt.
+    let (ids, mut evidence) = proof;
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(error) => return unavailable(error),
@@ -2355,18 +2529,38 @@ mod reply_tests {
     }
 
     #[test]
-    fn completed_reply_rejects_unknown_or_missing_phase_even_alongside_final() {
+    fn completed_reply_rejects_unknown_phase_even_alongside_final() {
         let mut turn = json!({"status":"completed","itemsView":"full","startedAt":100,
             "completedAt":105,"items":[
                 {"type":"agentMessage","id":"note","phase":"commentary","text":"working"},
                 {"type":"agentMessage","id":"answer","phase":"final_answer","text":"native answer"}]});
-        for phase in [json!("future_phase"), json!(null), json!(7)] {
+        for phase in [json!("future_phase"), json!(7), json!({})] {
             turn["items"][0]["phase"] = phase;
             assert!(native_reply(&turn).is_none());
         }
+    }
+
+    #[test]
+    fn completed_reply_uses_native_last_final_or_legacy_message() {
+        let mut turn = json!({"status":"completed","itemsView":"full","startedAt":100,
+            "completedAt":105,"items":[
+                {"type":"agentMessage","id":"earlier","phase":null,"text":"earlier answer"},
+                {"type":"agentMessage","id":"answer","phase":"final_answer","text":"native answer"}]});
+        assert_eq!(native_reply(&turn), Some(("native answer", 105)));
         turn["items"][0].as_object_mut().unwrap().remove("phase");
-        assert!(native_reply(&turn).is_none());
+        assert_eq!(native_reply(&turn), Some(("native answer", 105)));
         turn["items"][0]["phase"] = json!("final_answer");
+        assert_eq!(native_reply(&turn), Some(("native answer", 105)));
+        turn["items"][1]["phase"] = json!(null);
+        assert_eq!(native_reply(&turn), Some(("native answer", 105)));
+        turn["items"][1].as_object_mut().unwrap().remove("phase");
+        assert_eq!(native_reply(&turn), Some(("native answer", 105)));
+        turn["items"][1]["text"] = json!(" ");
+        assert_eq!(native_reply(&turn), Some(("earlier answer", 105)));
+        turn["items"][1]["phase"] = json!("commentary");
+        turn["items"][1]["text"] = json!("not a final answer");
+        assert_eq!(native_reply(&turn), Some(("earlier answer", 105)));
+        turn["items"] = json!([{"type":"reasoning","id":"reasoning"}]);
         assert!(native_reply(&turn).is_none());
     }
 

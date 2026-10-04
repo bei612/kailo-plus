@@ -6,7 +6,27 @@
 
 ## 最新复核与投递事实（2026-10-04）
 
-### 当前交付：真实 Codex 回合已发生，用量追踪关联仍阻断终态
+### 当前交付：新回合 trace 已贯通，回复与终态收尾仍未验收
+
+04:01 UTC，在已部署的 `99dd3ebba3d278ca2c373b390909d72c0a4d5cbd` Core
+上完成一个新的隔离、单次受权调用。新 Invocation
+`b74498cd-a9f6-48ea-8b7d-7ed592ea8e79` 的 Core trace 与 Gateway request、
+durable usage dispatch trace 均为 `314bb1b1d4cf4c6cbab5a06ad7d2bda4`；
+Gateway 实际 HTTP 200、input 8740/output 132/total 8872 tokens。
+这证明修复后的真实追踪关联成立，不是完整业务成功。
+
+该原生回合 completed，但 durable history 只有 UserMessage 与 Reasoning，
+没有 AgentMessage，`last_agent_message` 为空。回复未发布、业务任务仍结果不明，
+不能把 reasoning 当正文或再次执行模型。04:10 UTC 只读采样还发现原代码把
+运行容量释放和用量结算排在回复处理之后，导致已结束回合仍持有 UNKNOWN lease。
+本批已修正这一收尾顺序，并按固定 Codex 原生语义接纳合法的无 phase 回复；
+定向 12 项、两次生产变异/还原、Clippy 与固定候选原全量检查通过。
+后者不解决本次根本没有 assistant 消息的问题。修复尚未部署，不算业务可用；
+实际数据库/部署配置检查跳过，设备与签名缺口保留。
+完整事实、外部证据缺口与新旧回合的隔离边界见
+[Agent 调用记录](core/verify/agent-definition.md)。
+
+### 历史交付时点：首个回合缺失原生 trace
 
 普通顶层消息的 Agent 提及已提交并普通 push 为
 `b2829522227d7f17053228835c9fac61734a04ef`，相对

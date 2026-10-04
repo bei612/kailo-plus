@@ -2402,3 +2402,125 @@ EXPIRED version 2、uses 1/maxUses 1。没有 POST、重发消息或模型请求
 原件 `/volumes/data/kailo/tmp/codex-native-trace-core-delivery-20261004.7a3Hd1/bff-after-core-read.log`
 SHA `2edb5ebc7f84af2d4b6fc91de11f9f424fd2e0e999752d0e5ebf1f16e52479cf`。
 本结果证明部署后原身份/安装仍可读，不证明旧未知账恢复或新模型回合完成。
+
+## 2026-10-04 04:01 UTC：新受权回合 trace 贯通，缺少 assistant 终态正文
+
+原部署 `99dd3ebba3d278ca2c373b390909d72c0a4d5cbd`，Core 镜像
+`sha256:50bd7f19299544399da452481be06ff312dd11c486ccaff8edbbe691cccafd16`。
+同一隔离验收 Tenant 使用独立单次 Delegation
+`c8b46dff-4116-4891-a597-5b66c403c989`（maxUses=1，05:00 UTC 过期），
+原生 OpenMeter 临时 grant `01M42H46PRDAX03ZGNCPZ0546Y` 为 10000 totalTokens、
+一小时且不续期。新 grant 创建 201；BFF 委托和原页面单次 mention 发送均退出 0。
+未扩展旧委托或旧预算，未改 sole `.env`、生产默认额度或治理准入。
+
+- 源事件：`d0b497817e3b5c421309f6b89502bc31b973b8df80fa9e80dc1db0eb674e01c6`。
+- Invocation：`b74498cd-a9f6-48ea-8b7d-7ed592ea8e79`；ActionExecution：
+  `e37f1f27-e4c1-499f-98ab-7719795c3d3e`。
+- 原生 thread：`01a10512-94fa-72f0-a271-bdf4cf5aa8c2`；turn：
+  `01a10512-9812-7f82-a6b2-6f6476ae1412`。
+- Core / Gateway request / durable dispatch 三者 trace 均为
+  `314bb1b1d4cf4c6cbab5a06ad7d2bda4`；Gateway 稳定 request ID
+  `01a10512-9853-7d23-b116-08193ed383de`，outbox seq=2。
+- Gateway HTTP 200，input 8740 / output 132 / total 8872 tokens；
+  原生 task_started 时间 1791086467，task_complete 时间 1791086472。
+
+04:02 UTC 读回 native_status=completed，但 Invocation 为 RUNNING、
+waitingReason=UNKNOWN_EXTERNAL_RESULT、reply_event_id 为空、usage_event 0，
+Delegation uses=1。原生持久 history 仅 UserMessage 与 Reasoning，没有
+AgentMessage；task_complete 的 last_agent_message 为空。04:10 UTC 原 lease
+为 UNKNOWN，native_release_confirmed_at 与 terminal_event_id/at 均空。
+这些观测不构成已回复、已计量或业务成功，不能从 HTTP 200 猜测终态。
+
+当前路由的 provider formats 为 responses，baseUrl 为用户指定模型服务的
+`/v1`，实际请求 `/v1/responses`，是 Responses→Responses 直通而非 Chat 转换。
+原 request log 没有 payload；按原生 response ID
+`resp_ba35dd7743a1d41f` 只读回查返回 404 / invalid_request_error。
+现有证据不能区分 provider 只输出 reasoning 与流缺少可识别消息事件，
+因此不在 Gateway 猜改转换、不公开 reasoning、不补造 assistant 消息、不重发模型。
+进一步判因需要该响应原始 SSE 或 provider 已有日志。
+
+原件目录：`/volumes/data/kailo/tmp/codex-agent-invoke-20261004.yK1eTV/post-99dd/`。
+`native-terminal-shape.log` SHA
+`0e0e1d06deed807356ac6ab55b71fc46f4cd774e0c250ddf898e17a4e4ad1ec9`；
+`gateway-response-shape-5.log` SHA
+`3e0bbfa4c6b5523b27fe29c0fd0b426f57b369f945409ff894774ba60672d1ed`；
+`provider-response-readback.log` SHA
+`9c48a3c32991757128faea957c7a019dee4fceb282e0170cad4097836e2647ae`。
+首次浏览器只读命令因私有 browser-tmp 目录不存在而在启动前退出 1；
+补齐目录后原命令退出 0，不曾因此重复发送业务消息。
+
+### 已写入的原生回复兼容修正：四步影响与边界
+
+1. 权威：固定 Codex `7498521d288b9b3b96ffba4eedf089d8d6e06a84` 的
+   `codex-rs/app-server/src/thread_state.rs::ThreadState::track_current_turn_event`
+   选择最后一条非空 `final_answer` 或无 phase AgentMessage；
+   `codex-rs/protocol/src/models.rs::MessagePhase` 保留旧 provider 的可选 phase。
+   Core 原先要求唯一显式 final_answer 是适配错误，不是新增产品语义。
+2. 影响面：只修 `agent_task::native_reply` 的原生 full-history 消费及其原测试；
+   Web/Desktop/Mobile 均消费同一受治理 Relay 回复，不新增前端或契约字段，
+   无数据库迁移、旧格式迁移或新存储权威。
+3. 副作用：completed、原生时间、唯一 Invocation/turn 关联、消息 ID、错误与
+   async question/delivery 守卫不变；不将 commentary 或 reasoning 当回复，
+   不改变回复签名、审计、权限、Relay 发送与查证路径。
+4. 异常：空回复仍 UNKNOWN；合法缺省 phase 与未知枚举区分，未知字符串或
+   非字符串/非 null phase 仍拒绝；多条合法消息按原生最后非空规则消费。
+   本次 reasoning-only 回合仍不能提取回复。实现之后补原测试，实际运行结果
+   另记；本节不宣称编译、验收、发布或部署通过。
+
+### 2026-10-04：原生终态独立释放与计量的实现后验收
+
+1. 权威：`.design/11` §2–4 将 Capacity、实际 Usage 与回复结果分开。
+   原调用在 `publish_reply` 不可核验时提前返回，既未结束 holder Activity，
+   也未进入 `committed_turn`；上述实际 completed/UNKNOWN/usage 0 证明该死路。
+   修复沿原 native turn CAS → `begin_release` → 原 Activity terminal 对账
+   → RELEASED → 同 `committed_turn` 精确请求全集/stored_at → 原回复/业务终态。
+2. 影响面：仅 `agent_task.rs` 的 observe、终态提交与回复 Activity 校验；
+   不改 Capacity/Temporal 权威、Gateway correlation、计量 identity、Workflow、
+   schema、注册目录或旧游标。终态提交仍同事务重核原 scope、turn、lease、
+   UsageEvent 全集与 stored_at；原生回复兼容修正一并验证。
+3. 副作用：原生执行结束即请求释放；只有原 Activity terminal 证据才能归还
+   units。后续回复使用已 RELEASED 的原 lease，不再占 runtime slot；两处
+   发送前校验仍核同 Invocation/generation、当前 run/Activity 的真实 Started、
+   精确 attempt、native heartbeat 与 cancel，再执行原两道 fresh 授权。
+   所有用量仍来自既有 durable Gateway 请求，不以 reasoning/通知伪造回复或账。
+4. 异常：缺时间/回复、计量不可用不再扣住已结束 runtime 的 slot；缺/未知
+   Activity 仍 fail closed。缺 final message 仍 UNKNOWN，不改为成功；缺 trace
+   的旧 seq=1 不归因、不跳过，新 seq=2 也必须取得原完整计量证据。此修复
+   尚未部署，未声称两笔真实 UNKNOWN 已自然收敛或产品端到端已成功。
+
+冻结基底 `aa19c8fe39cb7e71aa01c354a4a121e05c881998`，单模块私有树
+`fbd6d83689777cc2f188833b9cf917d64042a373`，260+/66−；不含在写 Schedule、
+共享审批 TS 或继承脏改。沿原 SDK `10ad51a…`、4 CPU/8 GiB/no extra swap、
+Cargo 16，04:19 预检 MemAvailable 41.35 GB、memory PSI 0。实际命令：
+`cargo test --manifest-path core/Cargo.toml -p platform-core --bin platform-core agent_task:: -- --nocapture`
+初轮 12 passed/exit 0；包含 reply_tests 9 项及 RELEASED 后 Activity 身份/心跳
+3 项。私有生产变异一恢复仅显式 final_answer，原目标 8 passed/1 failed/101；
+变异二将精确 native attempt 改为任意正值，原目标 2 passed/1 failed/101。
+两次均 apply_patch 精确还原、cmp 0；最终同目标 12 passed/0、
+`cargo clippy --manifest-path core/Cargo.toml -p platform-core --bin platform-core -- -D warnings`
+退出 0（23.29s），原 rustfmt 单文件 check 0。第二变异首次执行因容器名末字母
+大小写误写而 exit 1，未进入 Cargo；纠正到原容器后的 101 才是有效破坏证据。
+
+原件目录 `/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/terminal-settlement-9CWZMX/`：
+`agent-task-final.rs` SHA `0e12f6b08127af2dc9870e67669b33015a27111ba5b5a8fe47a6bd840ea9fd91`；
+`canonical.patch` SHA `ef66b2e13accda6fb7de2495cf894bd30fd7bc4de147c2f946d776939e954ddb`；
+`baseline.log` SHA `98e90e903d7543c49dea38989958fcd341e7f868db0a8f1d019e9c7cd063dd87`；
+`mutant-final-only.log` SHA `5f83edf804df68f96a30a8639719b612b97725872b49440f81d260261596600a`；
+`mutant-activity-attempt-corrected.log` SHA `b783e21f34611ae47fc4cd14c70d5552ffda15f969c6bc36122382c9b656e66f`；
+`restored-final.log` SHA `c69b1a4557956a7c36d4f85122238622ba99b25f88068d3f1d9d303a66e6eda2`。
+这是源级定向与生产变异证据，尚非真实 Temporal release→OpenMeter stored_at→
+Relay 回复端到端回执；没有新增模型请求、预算、授权或生产数据修补。
+
+集中候选 `b92d74350a4057283748435000b4587c6a0ef251` 的原
+`./tools/check.sh --full` 实际退出 0，末行“全部通过。”；候选相对 aa19
+为 3 文件 +387/-67，不含 Schedule、审批 TS 或其他继承工作区改动。
+检查镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 4 CPU/8 GiB、memory+swap 同值、Cargo16、Data 缓存；执行前原预检通过。
+144 schema 四侧生成/兼容、Core/Worker/TS/Dart 验证与 replay、18 条追溯、
+30 个产物来源及原 seam 检查通过。实际迁移演练无 DATABASE_URL、部署配置
+无 `.env`，均 SKIP；隔离数据库及显式演练 ignored、gitleaks 未安装、
+Win11 签名/设备与 Mobile 签名仍缺，不宣称生产或真实业务通过。
+日志 `/volumes/data/kailo/tmp/codex-terminal-settlement-batch-20261004.36Gp7X/full.log`，
+SHA `6cb1196787da8593f6c445f68a6f9a2b5217be9335dff64cabace5a31b7ee70b`。
+独立窄复核未发现该冻结修复窗口的新缺陷；此后只追加检查事实并走原文档快路径，
+不重建镜像、不重跑整批编译，也不把未验证的并行 Schedule 纳入该通过声明。
