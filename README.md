@@ -6,6 +6,24 @@
 
 ## 最新复核与投递事实（2026-10-04）
 
+### 多 Agent 选择与会话派发保护已投递（19:46 UTC）
+
+源码 `a0defa2eb067362fb37e3e224a48b3c6b674bc4f` 已提交并 push，包含共享
+多 Agent 选择、同 Session 并发派发保护、原 Buzz 字号／密度设置复用和撤权断连处理。
+产物登记与来源检查修正已 push 为 `32eb863d846efde47fd1e1dc045b6f51c4704257`；
+两提交相对 `9273f48cb042ad866d2c173e77b8d11b80423e6d` 共 65 文件 +2671/-530。
+原完整检查和最终文档检查均退出 0，反例与跳过范围见
+[发布记录](core/verify/release-artifacts.md)。
+
+Web 已投递且真实页面可同时选择两个 Agent；Core、Worker 已按已验镜像限定替换，
+Core health HTTP 200、Worker 已开始原队列轮询。配置与 73 条迁移未变，没有重放
+历史任务或调用模型。Win11 原测试包已放入现有交付目录，仍未签名、未设备验收。
+
+多人、多 Agent 真实协作仍未验收：当前频道只有一个 ACTIVE HUMAN；第二测试身份
+OIDC 成功，但业务读取返回 `TENANT_MEMBERSHIP_NOT_ACTIVE`。加入普通测试成员、
+本次模型测试额度及有效委托／审批仍需合法流程，不能由 ACTIVE Installation 推断。
+Cells、WeKnora、Wren 未接入可用，组件与原生工具授权门禁、三端设备验收仍未关闭。
+
 ### 核心业务现场核对（17:49–17:56 UTC）
 
 最新已提交并 push 的源码为 `9273f48cb042ad866d2c173e77b8d11b80423e6d`，

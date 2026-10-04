@@ -878,3 +878,27 @@ commit 的发布脚本确认形态，build ID 必须等于该 commit，继续精
 | `supply-build-id-mutant.log`（1） | `825c7f19e3bda47f41b208a36e939b5ca3b49ebcee5c7704555b31c54839916b` |
 | `supply-runtime-mutant.log`（1） | `25a960569132fe21275fc3f96db6440669ef69d7bc9b9e538ad95819dc5cdfcb` |
 | `full.log`（0） | `6bacffd9494503c5301cbe9d26c32c35d0ed18627d85f2d056f39dfd04bb7ea5` |
+
+### 2026-10-04 19:46 UTC：已验 Core / Worker 限定部署
+
+来源登记提交 `32eb863d846efde47fd1e1dc045b6f51c4704257` 已普通 push；
+实际产品来源仍为 `a0defa2eb067362fb37e3e224a48b3c6b674bc4f`。
+冻结 Compose 通过原 `start-core.sh --no-build` 使用 fresh wrapping 启动 Core，
+Worker 通过原 `up -d --no-deps --no-build --pull never worker` 启动；两命令退出 0。
+完整容器比较仅 Core 和 Worker 改变，实际 image ID 为上节 `2f17c221…` 与
+`996c777c…`，与原证明一致。Core health HTTP 200，Worker 于 19:46:10 开始
+原队列轮询；源码身份以实际 image → 原 provenance 的 build ID 关联核对，
+没有声称访问公开 Core build-info 端点。
+
+sole `.env` 与 Runtime profiles 摘要不变；迁移前后均 73 条、失败 0。
+三条历史调用的 native 均终态且容量 RELEASED，旧 `4cfe99fe…` 仍保留
+`BILLING_UNAVAILABLE`，未重放或补写用量。首次只读预检查询错误表名失败，
+纠正为真实表后退出 0；不掩盖首次失败。没有修改权限、成员、额度或发起模型调用。
+本节仅记录部署事实，不代表真实回复、多用户协作或生产就绪。
+
+原件仍为上节 `fXcD9L` 目录：`core-start.exit`、`worker-start.exit` 均为 0；
+`deploy-containers.diff.log` 为限定变更证据，`deploy-after.log` 为只读回读。
+`core-health.headers` SHA-256 为
+`ec16965c8a02823ee28903c7769eae039cc4ada4c7521200a61abdc84a6773a4`；
+`deploy-identity.log` 为 `7103af17d0336972cbee4b1f739dd6803e53988510724db65a505145c3f07300`；
+`deploy-config.after.log` 为 `f74db10a410f11ff18135185895973c80bcba26e8fe76eac45d6b46b993ce3ae`。
