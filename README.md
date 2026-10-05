@@ -6,6 +6,28 @@
 
 ## 最新复核与投递事实（2026-10-05）
 
+### 共享 Workflows、原版外观与组件适配批已提交（18:25 UTC）
+
+源码 `306aa41bdfbee661572262aba6aba68cf095ef39` 已普通 push，远端 main
+独立读回一致；相对 `4496c98f7981394b187ea91849e57acdac7df7ad` 为
+117 文件 +10218/-2430。包含 Web/Desktop 共用表单与 YAML、工作流复制及
+步骤审批导航、原 Buzz 外观控件复用、binding/generation 独立凭据、Cells
+原生版本查询及 Wren 原生登录/CSRF/查询历史接线。原有未选 66 文件
++6107/-422 保留在工作区，不混入该提交。
+
+固定树 `58299f2bfc08e1951a5652cd187bd03194a99a04` 的原
+`./tools/check.sh --full` 实际退出 0；四侧生成与验证、218 个 schema、
+Workflow replay、21 条追溯、供应链及当前源码产物核对通过。实际数据库演练
+与部署配置预检明确 SKIP，未安装 gitleaks；Git alternates 路径警告保留，
+没有将其隐藏或将独立组件、设备签名缺口改为通过。
+原件为 Data 的 `codex-workflows-peer-integration-20261005.HB7iuF/full-integration-final.log`，
+SHA256 `f49d8bee45b3b7efd3d202f039b452ba9c32e5aef75faafe1109290c8176bd8b`。
+
+该提交尚未部署，下面 16:54 Core 和 14:03 Worker/Web 仍是实际运行版本。
+Core/Worker 原正式发布已从干净提交启动；现有 Web/Windows/Relay 产物复用，
+不重复构建。这不代表三个独立服务业务、完整 Workflows、原版全部设置或
+三端生产验收完成，新的 ProtocolSession 与 HUMAN 组件动作仍在独立后续批。
+
 ### Workflows 频道消息触发与模板回复已实际完成（17:42–17:46 UTC）
 
 当前已部署的 57ad Core 与原 Worker/Web 上，已有自动化经正常页面发布新版本、
