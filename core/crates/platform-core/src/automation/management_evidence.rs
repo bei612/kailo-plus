@@ -8,6 +8,94 @@ use governance::{Params, Semantic};
 use serde_json::json;
 use uuid::Uuid;
 
+#[tokio::test]
+#[ignore = "requires an isolated migrated schedule_dispatch_verify_* PostgreSQL database"]
+async fn schedule_intent_keeps_the_original_admission_dispatchable() {
+    let pool = sqlx::PgPool::connect(
+        &std::env::var("SCHEDULE_DISPATCH_TEST_DATABASE_URL").expect("isolated test database"),
+    )
+    .await
+    .unwrap();
+    let database: String = sqlx::query_scalar("select current_database()")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(database.starts_with("schedule_dispatch_verify_"));
+    let mut tx = pool.begin().await.unwrap();
+    let tenant = Uuid::new_v4();
+    let principal = Uuid::new_v4();
+    sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'Schedule dispatch evidence','ACTIVE')")
+        .bind(tenant).bind(format!("schedule-dispatch-{tenant}")).execute(&mut *tx).await.unwrap();
+    sqlx::query(
+        "insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')",
+    )
+    .bind(principal)
+    .bind(tenant)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    for action in [
+        "automation.enable",
+        "automation.pause",
+        "automation.disable",
+    ] {
+        for intent in [
+            None,
+            Some(json!({"scheduleIntent":{"id":"native-schedule","started":false}})),
+        ] {
+            let id = Uuid::new_v4();
+            // Exactly the original SYNC admission state before management
+            // prewrite returns; all real migrated constraints remain enabled.
+            sqlx::query("insert into admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+                initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id,parameters)
+                values($1,$1,$2,$3,1,$4,$4,$4,'isolated-schedule-intent','ALLOWED','DISPATCHED',$1,$5)")
+                .bind(id).bind(tenant).bind(action).bind(principal).bind(&intent).execute(&mut *tx).await.unwrap();
+            let deferred = super::defer_schedule_dispatch(&mut tx, id).await.unwrap();
+            let (actual_id,state,parameters):(Uuid,String,Option<serde_json::Value>) = sqlx::query_as(
+                "select id,dispatch_state,parameters from admission.action_execution where id=$1")
+                .bind(id).fetch_one(&mut *tx).await.unwrap();
+            assert_eq!(actual_id, id);
+            assert_eq!(
+                parameters, intent,
+                "intent must remain the native authority reference"
+            );
+            assert_eq!(deferred, intent.is_some());
+            assert_eq!(
+                state,
+                if intent.is_some() {
+                    "NOT_DISPATCHED"
+                } else {
+                    "DISPATCHED"
+                },
+                "{action}"
+            );
+            if intent.is_some() {
+                sqlx::query(
+                    "update admission.action_execution set dispatch_state='UNKNOWN' where id=$1",
+                )
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+                assert!(
+                    super::defer_schedule_dispatch(&mut tx, id).await.is_err(),
+                    "recovery must not reset an UNKNOWN native write"
+                );
+                let state: String = sqlx::query_scalar(
+                    "select dispatch_state from admission.action_execution where id=$1",
+                )
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+                assert_eq!(state, "UNKNOWN");
+            }
+        }
+    }
+    tx.rollback().await.unwrap();
+    pool.close().await;
+}
+
 #[test]
 fn step_approval_reference_is_explicit_and_changes_the_frozen_version_hash() {
     let plain = json!({"trigger":{"kind":"CHANNEL_MESSAGE"},"action":{"kind":"POST_MESSAGE","template":"literal"},"resultTarget":"TRIGGER_THREAD"});

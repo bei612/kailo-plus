@@ -77,6 +77,7 @@ pub(crate) async fn birth(
     state: &ServiceState,
     invocation_id: Uuid,
     projection: &RuntimeRef,
+    holder: &contracts::AgentTaskAdvanceRequest,
 ) -> Result<Birth, RuntimeError> {
     let runtime = state
         .agent_runtime
@@ -90,6 +91,14 @@ pub(crate) async fn birth(
         .begin()
         .await
         .map_err(|_| RuntimeError::Unknown)?;
+    if holder.invocation_id != invocation_id.to_string() {
+        return Err(RuntimeError::Unavailable);
+    }
+    state
+        .capacity
+        .lock_birth_holder(&mut tx, holder)
+        .await
+        .map_err(|_| RuntimeError::Unavailable)?;
     let session = lock_birth(&mut tx, invocation_id, projection).await?;
     if session.status != "PENDING" || session.runtime_thread_id.is_some() {
         return Err(RuntimeError::Unavailable);

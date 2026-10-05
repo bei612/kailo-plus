@@ -210,15 +210,33 @@ impl Capacity {
                     workflow_cancel_requested: observed.workflow_cancel_requested,
                 });
             }
-            // 换 Activity/run 不是 retry；旧 holder 的 UNKNOWN 必须独立对账。
+            // 换 Activity/run 不是 SDK retry。只有旧 Activity 的原生终态和
+            // 被同一 birth fence 锁住的「尚未发出」事实同时成立才可移交。
             if lease.run_id != run
                 || lease.activity_id != activity_id
                 || lease.scheduled_event_id != observed.scheduled_event_id
             {
+                let previous = temporal
+                    .activity(
+                        &lease.workflow_id,
+                        &lease.run_id.to_string(),
+                        &lease.activity_id,
+                    )
+                    .await
+                    .map_err(|_| CapacityError::Unknown)?;
+                let held = self
+                    .recover_unstarted(
+                        &mut tx,
+                        &lease,
+                        &facts,
+                        (run, activity_id, attempt),
+                        (&previous, &observed),
+                    )
+                    .await?;
                 tx.commit().await?;
                 return Ok(Observation {
                     lease_id: lease.id,
-                    held: false,
+                    held,
                     released: false,
                     workflow_cancel_requested: observed.workflow_cancel_requested,
                 });
@@ -324,6 +342,133 @@ impl Capacity {
             released: false,
             workflow_cancel_requested: observed.workflow_cancel_requested,
         })
+    }
+
+    async fn recover_unstarted(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        lease: &Lease,
+        facts: &Facts,
+        holder: (Uuid, &str, i32),
+        evidence: (&ActivityObservation, &ActivityObservation),
+    ) -> Result<bool, CapacityError> {
+        let (run, activity, attempt) = holder;
+        let (previous, observed) = evidence;
+        if facts.gate_state != "ALLOWED"
+            || lease.native_release_confirmed_at.is_some()
+            || !matches!(lease.state.as_str(), "HELD" | "UNKNOWN" | "EXPIRED")
+            || observed.workflow_cancel_requested
+        {
+            return Ok(false);
+        }
+        let ActivityState::Started {
+            attempt: native_attempt,
+            started_at,
+            heartbeat_at,
+            heartbeat_timeout_seconds,
+        } = &observed.state
+        else {
+            return Ok(false);
+        };
+        let base = heartbeat_at
+            .filter(|at| *at >= *started_at)
+            .unwrap_or(*started_at);
+        let expires = base
+            .checked_add_signed(TimeDelta::seconds(self.lease_seconds))
+            .ok_or(CapacityError::Rejected)?;
+        let deadline = base
+            .checked_add_signed(TimeDelta::seconds(self.heartbeat_timeout_seconds))
+            .ok_or(CapacityError::Rejected)?;
+        if *native_attempt != attempt
+            || *heartbeat_timeout_seconds != self.heartbeat_timeout_seconds
+            || *started_at < lease.acquired_at
+            || deadline <= Utc::now()
+            || expires <= Utc::now()
+        {
+            return Ok(false);
+        }
+        let ActivityState::Terminal { event_id, at } = &previous.state else {
+            return Ok(false);
+        };
+        if previous.scheduled_event_id != lease.scheduled_event_id
+            || previous.invocation_id != lease.invocation_id.to_string()
+            || previous.projection_generation != facts.projection_generation
+            || *event_id <= lease.scheduled_event_id
+            || *at > *started_at
+        {
+            return Ok(false);
+        }
+        // pool→lease→Invocation/Session. birth takes the same pool/lease fence
+        // before it can commit STARTING, so absence cannot race a late old RPC.
+        let unstarted: bool =
+            sqlx::query_scalar("select admission.capacity_invocation_unstarted($1)")
+                .bind(lease.invocation_id)
+                .fetch_one(&mut **tx)
+                .await?;
+        if !unstarted {
+            return Ok(false);
+        }
+        sqlx::query(
+            "update admission.capacity_lease set terminal_event_id=$2,terminal_event_at=$3,
+            state='UNKNOWN',updated_at=now() where id=$1",
+        )
+        .bind(lease.id)
+        .bind(event_id)
+        .bind(at)
+        .execute(&mut **tx)
+        .await?;
+        // The guard appends the old terminal/run and new holder to the original
+        // audit table in this transaction. No RELEASED interval or extra units.
+        sqlx::query(
+            "update admission.capacity_lease set run_id=$2,activity_id=$3,attempt=$4,
+            scheduled_event_id=$5,renewed_at=$6,expires_at=$7,state='HELD',
+            terminal_event_id=null,terminal_event_at=null,updated_at=now() where id=$1",
+        )
+        .bind(lease.id)
+        .bind(run)
+        .bind(activity)
+        .bind(attempt)
+        .bind(observed.scheduled_event_id)
+        .bind(base)
+        .bind(expires)
+        .execute(&mut **tx)
+        .await?;
+        Ok(true)
+    }
+
+    /// A delayed request from a terminal holder must not borrow its successor's
+    /// HELD lease. Keep this lock until Session STARTING commits.
+    pub(crate) async fn lock_birth_holder(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        input: &contracts::AgentTaskAdvanceRequest,
+    ) -> Result<(), CapacityError> {
+        let invocation =
+            Uuid::parse_str(&input.invocation_id).map_err(|_| CapacityError::Rejected)?;
+        let run = Uuid::parse_str(&input.run_id).map_err(|_| CapacityError::Rejected)?;
+        sqlx::query("select pool_key from admission.capacity_pool where pool_key=$1 for update")
+            .bind(&self.pool_key)
+            .fetch_one(&mut **tx)
+            .await?;
+        let owned: Option<Uuid> = sqlx::query_scalar(
+            "select id from admission.capacity_lease
+            where invocation_id=$1 and pool_key=$2 and workflow_id=$3 and run_id=$4
+              and activity_id=$5 and attempt::bigint=$6 and state='HELD'
+              and expires_at>clock_timestamp() and native_release_confirmed_at is null
+              and terminal_event_id is null for update",
+        )
+        .bind(invocation)
+        .bind(&self.pool_key)
+        .bind(&input.workflow_id)
+        .bind(run)
+        .bind(&input.activity_id)
+        .bind(input.attempt)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if owned.is_none() {
+            return Err(CapacityError::Rejected);
+        }
+        Ok(())
     }
 
     async fn renew(
@@ -477,7 +622,11 @@ impl Capacity {
                 .bind(lease.id)
                 .fetch_one(&mut *tx)
                 .await?;
-            if current.state == "RELEASED" {
+            if current.state == "RELEASED"
+                || current.run_id != lease.run_id
+                || current.activity_id != lease.activity_id
+                || current.scheduled_event_id != lease.scheduled_event_id
+            {
                 continue;
             }
             match observed {
@@ -813,5 +962,258 @@ async fn native_turn(
             }
             _ => return None,
         };
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn terminal_holder_recovers_without_releasing_units_and_fences_old_birth() {
+        let pool = PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = Uuid::new_v4();
+        let run = Uuid::new_v4();
+        // Original Session fixture and real migrated constraints; transaction is rolled back.
+        sqlx::raw_sql(&format!(r#"DO $$
+            DECLARE
+              tenant uuid:='{tenant}'; workspace uuid:=gen_random_uuid();
+              human uuid:=gen_random_uuid(); human_identity uuid:=gen_random_uuid();
+              agent_a uuid:=gen_random_uuid(); agent_b uuid:=gen_random_uuid();
+              definition uuid:=gen_random_uuid(); version_asset uuid:=gen_random_uuid();
+              installation_a uuid:=gen_random_uuid(); installation_b uuid:=gen_random_uuid();
+              route uuid:=gen_random_uuid(); installation uuid; invocation uuid; action uuid;
+              n integer;
+            BEGIN
+              INSERT INTO identity.tenant(id,slug,name,state)
+                VALUES(tenant,'capacity-recovery-'||tenant,'Session dispatch fixture','ACTIVE');
+              INSERT INTO identity.workspace(id,tenant_id,slug,name,state)
+                VALUES(workspace,tenant,'capacity-recovery','Session dispatch fixture','ACTIVE');
+              INSERT INTO identity.human_identity(id,display_name,status)
+                VALUES(human_identity,'Session dispatch fixture','ACTIVE');
+              INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES
+                (human,tenant,'HUMAN','ACTIVE'),(agent_a,tenant,'AGENT','ACTIVE'),(agent_b,tenant,'AGENT','ACTIVE');
+              INSERT INTO identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state)
+                VALUES(gen_random_uuid(),tenant,human_identity,human,'ACTIVE');
+              INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,
+                component_type_key,native_id,state,version) VALUES
+                (definition,tenant,'agent.definition',NULL,human,'core',definition::text,'PROVISIONING',1),
+                (route,tenant,'llm_route',workspace,human,'core',route::text,'PROVISIONING',1),
+                (installation_a,tenant,'agent.installation',workspace,human,'core',installation_a::text,'PROVISIONING',1),
+                (installation_b,tenant,'agent.installation',workspace,human,'core',installation_b::text,'PROVISIONING',1);
+              INSERT INTO catalog.agent_definition(resource_id,stable_slug,display_name,status)
+                VALUES(definition,'capacity-recovery','Session dispatch fixture','PROVISIONING');
+              INSERT INTO catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,native_ref,state,version)
+                VALUES(version_asset,tenant,definition,'agent.version',human,version_asset::text,'DRAFT',1);
+              INSERT INTO catalog.agent_version(asset_id,agent_resource_id,ordinal,content,config_hash,state)
+                VALUES(version_asset,definition,1,
+                  jsonb_build_object('runtimeProfileKey','capacity-recovery-fixture','modelRouteResourceId',route),
+                  repeat('a',64),'DRAFT');
+              INSERT INTO catalog.agent_installation(resource_id,workspace_id,agent_resource_id,pinned_version_asset_id,
+                agent_principal_id,runtime_isolation_ref,state) VALUES
+                (installation_a,workspace,definition,version_asset,agent_a,'fixture:'||installation_a,'PROVISIONING'),
+                (installation_b,workspace,definition,version_asset,agent_b,'fixture:'||installation_b,'PROVISIONING');
+              INSERT INTO catalog.agent_runtime_projection(installation_resource_id,generation,agent_version_asset_id,
+                runtime_profile_key,model_route_resource_id,gateway_resource_ids,effective_fields,config_hash,state) VALUES
+                (installation_a,1,version_asset,'capacity-recovery-fixture',route,'{{}}','[]',repeat('a',64),'PENDING'),
+                (installation_b,1,version_asset,'capacity-recovery-fixture',route,'{{}}','[]',repeat('a',64),'PENDING');
+              INSERT INTO catalog.agent_session(tenant_id,workspace_id,root_event_id,installation_resource_id,
+                agent_version_asset_id,projection_generation,runtime_thread_id,core_memory_state,status) VALUES
+                (tenant,workspace,repeat('a',64),installation_a,version_asset,1,NULL,'UNREADABLE','PENDING'),
+                (tenant,workspace,repeat('a',64),installation_b,version_asset,1,NULL,'UNREADABLE','PENDING'),
+                (tenant,workspace,repeat('b',64),installation_a,version_asset,1,NULL,'UNREADABLE','PENDING');
+              INSERT INTO catalog.action_definition
+                (action_key,version,component_type_key,target_type,tenant_rule,workspace_rule,
+                 permission,permission_object_type,execution_mode,confirmation_mode,
+                 workflow_type,capacity_policy,capacity_pool_key,quota_policy,meters,
+                 result_exposure,audit_policy,obs_correlation_mode,obs_progress_source,
+                 obs_terminal_source,obs_usage_source,obs_cost_source,obs_redaction_policy,status)
+                VALUES('agent.invoke',1,'core','RESOURCE','SESSION_TENANT','TARGET_HOME_WORKSPACE',
+                  'execute','resource','TEMPORAL','NONE','AgentTaskWorkflow','PLATFORM_SLOT',
+                  'capacity-recovery','CHECK',ARRAY['fixture.model.tokens'],'NONE','FULL_LIFECYCLE',
+                  'OPERATION_REF','TEMPORAL','TEMPORAL','OPENMETER','NONE','PLATFORM_METADATA_ONLY','ACTIVE');
+              FOR n IN 1..1 LOOP
+                installation:=CASE WHEN n=3 THEN installation_b ELSE installation_a END;
+                invocation:=gen_random_uuid(); action:=gen_random_uuid();
+                INSERT INTO admission.action_execution(id,operation_id,tenant_id,workspace_id,action_key,action_version,
+                  initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
+                  VALUES(action,gen_random_uuid(),tenant,workspace,'agent.invoke',1,
+                    human,human,installation,repeat('a',64),'ALLOWED','DISPATCHED',gen_random_uuid());
+                INSERT INTO catalog.agent_invocation(id,tenant_id,workspace_id,root_event_id,source_event_id,
+                  installation_resource_id,agent_version_asset_id,projection_generation,action_execution_id,workflow_id,status)
+                  VALUES(invocation,tenant,workspace,CASE WHEN n=4 THEN repeat('b',64) ELSE repeat('a',64) END,
+                    repeat(n::text,64),installation,version_asset,1,action,'capacity-recovery:'||invocation,'CREATED');
+                INSERT INTO projection.workflow_ref(workflow_id,run_id,workflow_type,workflow_version,
+                  tenant_id,workspace_id,operation_id,action_execution_id,projection_state)
+                  SELECT 'capacity-recovery:'||invocation,'{run}','AgentTaskWorkflow',1,tenant,workspace,
+                    operation_id,action,'RUNNING' FROM admission.action_execution WHERE id=action;
+                UPDATE admission.action_execution SET temporal_workflow_id='capacity-recovery:'||invocation WHERE id=action;
+                INSERT INTO admission.capacity_pool(pool_key,capacity_units) VALUES('capacity-recovery',1);
+                INSERT INTO admission.capacity_lease(id,invocation_id,operation_id,tenant_id,workspace_id,pool_key,
+                  workflow_id,run_id,activity_id,attempt,scheduled_event_id,units,acquired_at,expires_at,state)
+                  SELECT gen_random_uuid(),invocation,operation_id,tenant,workspace,'capacity-recovery',
+                    'capacity-recovery:'||invocation,'{run}','old-activity',12,9,1,
+                    clock_timestamp()-interval '1 minute',clock_timestamp()+interval '1 minute','UNKNOWN'
+                  FROM admission.action_execution WHERE id=action;
+              END LOOP;
+            END $$;"#)).execute(&mut *tx).await.unwrap();
+        let lease: Lease = sqlx::query_as(&format!("{LEASE} where tenant_id=$1"))
+            .bind(tenant)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        let scope: (Uuid, Uuid, Uuid) = sqlx::query_as(
+            "select action_execution_id,workspace_id,installation_resource_id from catalog.agent_invocation where id=$1")
+            .bind(lease.invocation_id).fetch_one(&mut *tx).await.unwrap();
+        let operation: Uuid =
+            sqlx::query_scalar("select operation_id from admission.action_execution where id=$1")
+                .bind(scope.0)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        let facts = Facts {
+            operation_id: operation,
+            tenant_id: tenant,
+            workspace_id: scope.1,
+            workflow_id: lease.workflow_id.clone(),
+            projection_generation: 1,
+            first_run: Some(run.to_string()),
+            gate_state: "ALLOWED".into(),
+            capacity_policy: "PLATFORM_SLOT".into(),
+            capacity_pool_key: Some(lease.pool_key.clone()),
+        };
+        let meter = opentelemetry::global::meter("capacity-recovery-fixture");
+        let capacity = Capacity {
+            pool_key: lease.pool_key.clone(),
+            pool_units: 1,
+            invocation_units: 1,
+            lease_seconds: 60,
+            heartbeat_timeout_seconds: 30,
+            occupied_units: meter.u64_gauge("occupied").build(),
+            unknown_leases: meter.u64_gauge("unknown").build(),
+            oldest_unknown_seconds: meter.u64_gauge("age").build(),
+        };
+        let now = Utc::now();
+        let mut previous = ActivityObservation {
+            scheduled_event_id: 9,
+            invocation_id: lease.invocation_id.to_string(),
+            projection_generation: 1,
+            workflow_cancel_requested: false,
+            state: ActivityState::Unconfirmed,
+        };
+        let mut next = ActivityObservation {
+            scheduled_event_id: 26,
+            invocation_id: lease.invocation_id.to_string(),
+            projection_generation: 1,
+            workflow_cancel_requested: false,
+            state: ActivityState::Started {
+                attempt: 1,
+                started_at: now,
+                heartbeat_at: Some(now),
+                heartbeat_timeout_seconds: 30,
+            },
+        };
+        let holder = (run, "new-activity", 1);
+        assert!(
+            !capacity
+                .recover_unstarted(&mut tx, &lease, &facts, holder, (&previous, &next))
+                .await
+                .unwrap(),
+            "UNKNOWN/timeout alone cannot reassign capacity"
+        );
+        previous.state = ActivityState::Terminal {
+            event_id: 13,
+            at: now - TimeDelta::seconds(1),
+        };
+        next.workflow_cancel_requested = true;
+        assert!(!capacity
+            .recover_unstarted(&mut tx, &lease, &facts, holder, (&previous, &next))
+            .await
+            .unwrap());
+        next.workflow_cancel_requested = false;
+        for status in ["STARTING", "UNKNOWN"] {
+            sqlx::query(
+                "update catalog.agent_session set status=$2 where installation_resource_id=$1",
+            )
+            .bind(scope.2)
+            .bind(status)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            assert!(
+                !capacity
+                    .recover_unstarted(&mut tx, &lease, &facts, holder, (&previous, &next))
+                    .await
+                    .unwrap(),
+                "native intent must not be replayed: {status}"
+            );
+        }
+        sqlx::query(
+            "update catalog.agent_session set status='PENDING' where installation_resource_id=$1",
+        )
+        .bind(scope.2)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        previous.projection_generation = 2;
+        assert!(!capacity
+            .recover_unstarted(&mut tx, &lease, &facts, holder, (&previous, &next))
+            .await
+            .unwrap());
+        previous.projection_generation = 1;
+        assert!(capacity
+            .recover_unstarted(&mut tx, &lease, &facts, holder, (&previous, &next))
+            .await
+            .unwrap());
+        let recovered: Lease = sqlx::query_as(&format!("{LEASE} where id=$1"))
+            .bind(lease.id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(recovered.activity_id, "new-activity");
+        assert_eq!(recovered.attempt, 1);
+        assert_eq!(recovered.state, "HELD");
+        assert_eq!(recovered.units, lease.units);
+        assert_eq!(recovered.acquired_at, lease.acquired_at);
+        let occupied: (i64,i64) = sqlx::query_as("select count(*),sum(units)::bigint from admission.capacity_lease where pool_key=$1 and state<>'RELEASED'")
+            .bind(&lease.pool_key).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(occupied, (1, 1));
+        let audit: (String,serde_json::Value) = sqlx::query_as(
+            "select result_code,evidence_refs from audit.audit_event where operation_id=$1 and result_code='CAPACITY_HOLDER_RECOVERED'")
+            .bind(operation).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(audit.1[1]["version"], 13);
+        assert_eq!(audit.1[2]["version"], 26);
+        let mut request = contracts::AgentTaskAdvanceRequest {
+            activity_id: "old-activity".into(),
+            agent_version_asset_id: Uuid::new_v4().to_string(),
+            attempt: 12,
+            cancel_requested: false,
+            heartbeat_interval_seconds: 1,
+            installation_id: scope.2.to_string(),
+            invocation_id: lease.invocation_id.to_string(),
+            observation_interval_seconds: 1,
+            projection_generation: 1,
+            run_id: run.to_string(),
+            workflow_id: lease.workflow_id.clone(),
+        };
+        assert!(
+            matches!(
+                capacity.lock_birth_holder(&mut tx, &request).await,
+                Err(CapacityError::Rejected)
+            ),
+            "late old HTTP request cannot borrow new HELD lease"
+        );
+        request.activity_id = "new-activity".into();
+        request.attempt = 1;
+        capacity.lock_birth_holder(&mut tx, &request).await.unwrap();
+        assert!(capacity.renew(&mut tx, &recovered, &next, 1).await.unwrap());
+        let audit_count:i64=sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1 and result_code='CAPACITY_HOLDER_RECOVERED'")
+            .bind(operation).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(audit_count, 1, "same-holder retry never repeats handover");
+        tx.rollback().await.unwrap();
     }
 }

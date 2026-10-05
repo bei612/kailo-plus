@@ -4483,7 +4483,7 @@ impl Governance {
                 | Semantic::AutomationPause
                 | Semantic::AutomationDisable => {
                     crate::automation::management_prewrite(self, tx, ae, def, sem, params).await?;
-                    if completes && !crate::automation::schedule_pending(tx, ae.id).await? {
+                    if completes && !crate::automation::defer_schedule_dispatch(tx, ae.id).await? {
                         self.record_local_outcome(
                             tx,
                             ae,

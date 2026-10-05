@@ -399,7 +399,7 @@ pub(crate) async fn advance(
     };
     // birth owns its lifecycle/fresh authorization transaction; the plaintext
     // is passed directly to this first turn and is never a durable Task input.
-    match crate::agent_session::birth(&state, id, &projection).await {
+    match crate::agent_session::birth(&state, id, &projection, &input).await {
         Ok(birth) => {
             first_turn(
                 &state,

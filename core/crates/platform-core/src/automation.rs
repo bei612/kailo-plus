@@ -22,7 +22,7 @@ mod schedule;
 pub(crate) mod step_approval;
 pub(crate) use schedule::converge_scope_schedules;
 pub(crate) use schedule::interval as schedule_spec;
-pub(crate) use schedule::{admit_schedule, schedule_pending};
+pub(crate) use schedule::{admit_schedule, defer_schedule_dispatch};
 
 fn configured_run_meters() -> Result<Option<Vec<String>>, String> {
     match std::env::var("AUTOMATION_RUN_METERS_JSON") {

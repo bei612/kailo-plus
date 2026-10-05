@@ -203,3 +203,62 @@ trace 与 docs，不新增检查脚本。生成物漂移、缺配对 down、命�
 造 Tenant、Invocation、event/history 充验收。SDK、实际数据库与负向结果
 只认主线之后的原始日志。本节尚未运行 docs 门禁，由批次负责人集中执行；
 本批未提交、未部署，不提高 Stage 或生产完成度。
+
+## 2026-10-05：未派发 Invocation 的 Capacity holder 恢复
+
+本次基线为 `6112fdb6dfbdee9897a34e374988e6d79f37406c`。真实故障为旧
+Activity 已终结，新 Activity 已开始，但旧 lease 仍 UNKNOWN；原实现把
+整个 Workflow 关闭作为 CREATED 的收口前提，活 Workflow 因而无法前进。
+这不是容量不足，也不能通过到期释放或重新发起 Invocation 解决。
+
+四步影响结论：
+
+1. 权威是 `.design/03` §8、`11` §2、DD-47 的原 CapacityLease 与 Temporal
+   holder/终态。复核只读上游 `temporal-sdk-go` 完整提交
+   `b7c242c6894df088a57a85b33d0586e908da8b93`，路径
+   `temporal-sdk-go/activity/activity.go::GetInfo` 与
+   `temporal-sdk-go/internal/activity.go::ActivityInfo`；不新增调度器。
+2. 实际写者为 `capacity.rs::acquire_or_renew/recover_unstarted`，消费者为
+   `agent_session.rs::birth` 和原 AgentTask 调用；原 reconcile 比对完整
+   run/activity/scheduledEvent，丢弃移交前读到的旧观察。19000 配对迁移
+   修改原 lease guard，旧 holder 终态在原 append-only AuditEvent 留证。
+   不改四侧线格式、运行配置、Agent 权限或业务用量。
+3. 移交仅发生在原 Activity 确切终态、新 Activity 原生 Started/heartbeat
+   有效、同 Invocation/generation/Workflow 执行链，且数据库锁内证实
+   CREATED、Session PENDING、无 thread/turn/native status/reply/trace/usage。
+   全程同一 lease ID/units/operation/scope，没有 RELEASED 空窗。
+   birth 在提交 STARTING 前按同一 pool→lease 顺序锁住 exact holder；
+   迟到旧 HTTP 请求不能借新 holder 的 HELD 状态创建 thread。
+4. 缺终态、未知原生状态、取消、过期 heartbeat、错 generation、STARTING
+   或 UNKNOWN Session 均保留不可派发状态。旧 terminal 与新 schedule
+   同事务关联审计；事务失败不移交。已有 native UNKNOWN 不在本修复的
+   可重试集合内，仍沿原生观察收敛，绝不推断成功或失败。
+
+实现后证据位于
+`/volumes/data/kailo/tmp/codex-capacity-holder-recovery-20261005.fAEvCi/`。
+原受限 SDK `kailo-installation-scope-sdk-e4agxd` 使用固定镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+4 CPU、8 GiB、无额外 swap、Cargo 16、原 Data cache。
+
+- 独立库 `capacity_holder_faevci` 的模板实际为 80 条/max17000/失败0，
+  不是摘要中的81条。原 `sqlx migrate run` 补固定16000及19000后，
+  读回 `82|20261005019000|0`；19000 原 `revert`→`run` 均退出0。
+- `cargo test --locked --offline -p platform-core --bin platform-core
+  capacity::recovery_tests -- --ignored --nocapture` 实际1 passed/0 failed；
+  `cargo clippy --locked --offline -p platform-core --all-targets -- -D warnings`
+  退出0。目标使用原生产恢复函数与真实迁移约束，验证 UNKNOWN 不移交、
+  在途 Session 拒绝、错 generation 拒绝、同 lease 恢复、审计13→26、
+  旧 holder 拒绝及同 holder 重试不新增槽位/审计。
+- 在隔离执行副本移除 birth SQL 的 activity/attempt 精确匹配，原目标
+  实际退出101/1 failed：`late old HTTP request cannot borrow new HELD lease`。
+  用 `apply_patch` 还原，`cmp` 为0，原目标恢复1 passed/退出0。
+- `target.log` SHA-256：`4680c8759fb38d3d5ac055d7200fd0c0cf3b17c4a615253c8cd0d7e52a2c1b07`。
+  `mutation.log`：`03f81ec6dbda7561fe19adcb42514070af8aee68765dd53d3cbfb797b8ffc72c`。
+  `restored.log`：`ea423bf6fb56e173eafabe9d97255edb31aa13db3f35fb9ded4d160d61ce78d6`。
+- 用例事务已回滚；最终独立库82条/失败0、其它连接0。仅删除本次独立库，
+  原生读回不存在（0）；没有删除 PG、模板库或业务对象。
+
+本切片未运行 full、产品构建、部署或真实模型回合；docs 由主线合批。
+这证明本地原恢复消费者和持久约束，不声称两个线上 Invocation 已恢复。
+最初 runtime admission 拒绝属于另一个实际 SQL 接缝，由主线独立修复；
+本补丁不能用容量恢复掩盖该准入拒绝。

@@ -39,6 +39,42 @@ fn output_value(
 mod application_tool_tests {
     use super::*;
 
+    #[tokio::test]
+    #[ignore = "requires an isolated migrated application_tool_verify_* PostgreSQL database"]
+    async fn zero_application_bindings_do_not_block_installation_resolution() {
+        let pool = sqlx::PgPool::connect(
+            &std::env::var("APPLICATION_TOOL_TEST_DATABASE_URL").expect("isolated test database"),
+        )
+        .await
+        .unwrap();
+        let database: String = sqlx::query_scalar("select current_database()")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(database.starts_with("application_tool_verify_"));
+        let mut tx = pool.begin().await.unwrap();
+        let bindings: i64 = sqlx::query_scalar("select count(*) from catalog.application_binding")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            bindings, 0,
+            "this case requires the zero-component deployment"
+        );
+        // Execute the production query against the real migration schema.
+        // Empty input must not hide invalid column references in the INSERT.
+        resolve_installation(&mut tx, Uuid::new_v4(), Uuid::new_v4(), 1)
+            .await
+            .unwrap();
+        let tools: i64 = sqlx::query_scalar("select count(*) from catalog.tool_binding")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(tools, 0);
+        tx.rollback().await.unwrap();
+        pool.close().await;
+    }
+
     #[test]
     fn peer_terminal_requires_schema_valid_result_or_explicit_native_error() {
         use rmcp::model::{CallToolResult, ContentBlock};
@@ -1086,7 +1122,7 @@ pub(crate) async fn resolve_installation(
         where i.resource_id=$2 order by c.category_key,c.workspace_id nulls last
       ) insert into catalog.tool_binding(installation_resource_id,projection_generation,workspace_id,
           agent_version_asset_id,tool_resource_id,action_execution_id,status)
-        select i.resource_id,p.generation,i.workspace_id,p.agent_version_asset_id,t.resource_id,p.action_execution_id,'NO_PERMISSION'
+        select i.resource_id,p.generation,i.workspace_id,p.agent_version_asset_id,t.resource_id,runtime.action_execution_id,'NO_PERMISSION'
         from catalog.agent_installation i join catalog.resource ir on ir.id=i.resource_id and ir.tenant_id=$1
         join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id and p.generation=$3
         join catalog.agent_version v on v.asset_id=p.agent_version_asset_id

@@ -292,12 +292,19 @@ pub(super) async fn freeze(
     Ok(())
 }
 
-pub(crate) async fn schedule_pending(
+/// Called inside the original SYNC admission transaction, after prewrite has
+/// frozen the real native Schedule intent. Local-only lifecycle changes retain
+/// their synchronous outcome; native work must remain available to dispatch.
+pub(crate) async fn defer_schedule_dispatch(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar(
-        "select parameters ? 'scheduleIntent' from admission.action_execution where id=$1",
+        "update admission.action_execution
+         set dispatch_state=case when parameters ? 'scheduleIntent' then 'NOT_DISPATCHED' else dispatch_state end
+         where id=$1 and gate_state='ALLOWED' and dispatch_state='DISPATCHED'
+           and action_key in ('automation.enable','automation.pause','automation.disable')
+         returning coalesce(parameters ? 'scheduleIntent',false)",
     )
     .bind(id)
     .fetch_one(&mut **tx)

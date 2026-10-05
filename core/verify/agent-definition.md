@@ -3618,3 +3618,116 @@ SHA-256 `a76c6336c6512980e3d9c4815c4bc8dc73bcdf4f6b8e9d94b09235e6c9fac39e`。
 `restored.log` SHA-256 `a9c9f8267f6fad71c9b8543e831583c6e76a6b402485cd5d06ec76de430a51f8`；
 `mutation.log` SHA-256 `dcf17449dc78a6c576a14a7eae06f616b707ffcda4d9216fde51985868a3a64c`。
 此阶段尚未部署，不能把配置中的 2 秒或单元用例推断成实际回复耗时。
+
+### 2026-10-05 Schedule 管理派发状态修正
+
+本项只修 DD-107 / `05` §2.9 已有的 enable/pause/disable 消费链，不包含
+未交付的 Webhook。对比基线为 `cd97616a4b5fcaabac8855e8828275f7af2962ac`
+（主线冻结树 `1e47fd38a922b288499672b08ab997784aa7d7ca`）。
+实际接点为 `core/crates/platform-core/src/governance.rs::Governance::allow_in_tx`、
+`core/crates/platform-core/src/automation.rs::management_dispatch` 与
+`core/crates/platform-core/src/automation/schedule.rs::{defer_schedule_dispatch,dispatch}`。
+
+1. 权威与根因：原 SYNC admission 把上述三动作先写为 `DISPATCHED`，
+   `schedule::freeze` 随后冻结真实原生 intent，但原 `schedule_pending` 只跳过
+   local outcome；`management_dispatch` 拒绝 `DISPATCHED`，因此 native Schedule
+   RPC 没有机会执行。不是 Temporal 原生接口不支持，也不是新增执行引擎。
+2. 影响面：原 `governance` 准入消费者改调用 `defer_schedule_dispatch`，在同一
+   原事务中把带 `scheduleIntent` 的原 AE 留为 `NOT_DISPATCHED`；无 intent 的
+   本地 SYNC 动作保持原完成语义。原 Schedule 的 Describe/create/pause/delete、
+   Workflow、SpiceDB、额度、三端 ActionCommand 与公开契约均不改变。
+3. 副作用：仅原 ALLOWED/DISPATCHED 的三种管理 action 可经过此转换；不新增
+   AE、operation、Schedule ID、业务状态或授权来源。已有 UNKNOWN 不复位，
+   不把再次受理管理请求当成允许重派结果不明的原生副作用。
+4. 异常边界：缺原行、非允许门禁或非目标动作拒绝匹配；零外部对象直接沿原
+   local outcome；真正的 native 拒绝与 UNKNOWN 继续原派发/观察语义。本项
+   不宣称触发执行、原生 Schedule 三动作的远端 E2E 或运行期部署已验收。
+
+原固定 SDK 的 4 CPU / 8 GiB / swap=0、Cargo 16 与 Data 缓存保持不变。
+隔离库 `schedule_dispatch_verify_t8vlfm` 从已有本任务私有迁移库复制，读回
+81 条迁移、最大 `20261005017000`、失败 0；没有访问业务数据库。
+原 `management_evidence` 后置调用生产函数，事务内使用真实迁移表/约束核验
+三动作各有/无 intent 的六组情况，并核验 UNKNOWN 不重置；保留原 AE 与 intent，
+事务最终回滚。正向命令为 `cargo test --locked --offline -p platform-core
+--bin platform-core automation::management_evidence::schedule_intent_keeps_the_original_admission_dispatchable
+-- --ignored --exact --nocapture`，实际 1 passed / 0 failed，exit 0。
+
+启动前两次失败均保留：login shell 未保留镜像 Cargo PATH，exit 127；第一次
+导出缺原 `collaboration/crates/buzz-core` path dependency，exit 101。纠正为
+镜像原 PATH，并从同一基线补原协作 crate 与 Gateway proto 后执行上述目标，
+没有安装工具、换缓存、修改 `.references` 或绕过依赖。
+
+随后将生产 UPDATE 的 `NOT_DISPATCHED` 破坏为原先的 `DISPATCHED`，同一个
+真实函数目标 actual exit 101 / 1 failed：`automation.enable` 的实际状态为
+`DISPATCHED`、预期 `NOT_DISPATCHED`。用 `apply_patch` 还原且与冻结源 `cmp` 0，
+同目标恢复 1 passed / exit 0；原 `cargo clippy --locked --offline -p platform-core
+--bin platform-core -- -D warnings` 退出 0。没有另跑 full、生成、产品构建或部署，
+这些由主线合批收口；此证据也不替代 native Schedule 远端业务验收。
+
+原件目录为 `/volumes/data/kailo/tmp/codex-automation-schedule-dispatch-20261005.T8VlFM/`：
+
+- `target.log`：最初 PATH 失败，exit 127。
+- `target-corrected.log`：导出依赖缺失，exit 101。
+- `target-inputs-restored.log`：正向实际 1 passed，exit 0；SHA-256
+  `69196cb8e95dc340a6bad95f19008bb51437ae3e897b6aee5b74b6b7805401f8`。
+- `mutation.log`：实际旧行为反例失败，exit 101；SHA-256
+  `362da34dc900ed73e78fcd65eef47c03c203572023e136f1c5f0b9d9e578ae34`。
+- `restored.log`：恢复目标与 Clippy 均 0；SHA-256
+  `3d30aa842093f1aa0f714a6dfaace883e7429b0028f9dd513a1ad35653ca79e6`。
+
+结束前专用库读回仍为 81 / 最大 17000 / 0 失败、活跃连接 0；仅删除
+`schedule_dispatch_verify_t8vlfm`，随后存在性计数 0。其来源私库和业务库未修改。
+
+## 2026-10-05：组件工具空集合阻断 Agent 启动的修复
+
+已部署源码 `6112fdb6dfbdee9897a34e374988e6d79f37406c` 在 14:48 UTC 的原
+三人、两 Agent 场景中，三名 HUMAN 正常登录，首条消息发布 HTTP 200，
+但 240 秒内没有 Agent 回复。原日志
+`codex-application-core-worker-release-20261005.2Co1Ge/live-collaboration-6112.log`
+保留该失败，不能以 05:01 的历史成功替代本版本验收。
+
+四步影响结论：
+
+1. 权威为 DD-87/92、设计 README 的零业务 binding 核心可用及 17 §5。
+   这不是新增能力，也不是模型服务拒绝。原 `resolve_installation` SQL
+   引用 `catalog.agent_runtime_projection` 不存在的 `action_execution_id`；
+   PostgreSQL 在空结果下仍解析全部列，所以无应用组件也阻断 Session birth。
+2. 调用经 `agent_session::birth`、`agent_tool_runtime::configuration` 到原
+   APPLICATION 工具解析；绑定创建也消费同一函数。正确来源是已 JOIN 的
+   `projection.application_runtime.action_execution_id`，即既有组件 binding
+   原 AE。13000 迁移的 `catalog.guard_platform_tool_binding` 已允许同 scope
+   的 `application_binding.create` AE，不新增表、契约字段或迁移。
+3. 只纠正原 SQL 的列所属表，不跳过组件查询、不改变 fresh permission、
+   Delegation、Secret 或 quota，也不写假 ToolBinding。无匹配返回零绑定；
+   有匹配继续由原 DB guard 核验 AE 与 binding。Core 不复制组件业务内容。
+4. 缺列原本映射 Runtime unavailable；修复不把 UNKNOWN 转为成功或失败。
+   外部派发前失败仍由原 Session/Invocation 事务回滚。现存无派发任务的
+   Capacity 恢复另由 19000 和 exact-holder fence 处理，不重发已有 native
+   副作用。三端共用该服务端消费者，客户端身份与传输边界不变。
+
+实际实现后验证：
+
+- 首次 HB 联合快照在共享 SDK 命中不匹配的 contracts/SecretStore 依赖，
+  编译退出 101；原日志保留于
+  `codex-installation-runtime-rootcause-20261003.e4agxD/application-tool-8bl5nH/positive.log`。
+  未修改产品代码迁就该执行副本，改用冻结核心发布批的完整输入。
+- 全新隔离库 `application_tool_verify_empty_hb7iuf` 从 template0 建立，
+  原 `sqlx migrate run` 实际执行到 19000；没有删除或改写业务数据库。
+  模板副本此前有一条应用 binding，未清除它冒充空环境。
+- 原受限 SDK（固定 10ad 镜像、4 CPU/8 GiB、Cargo 16、Data cache）执行
+  `cargo test --locked --offline -p platform-core --bin platform-core
+  application_tool::application_tool_tests::zero_application_bindings_do_not_block_installation_resolution
+  -- --ignored --exact --nocapture`：实际 1 passed，退出 0。用例执行真实
+  生产 SQL 和迁移约束，明确断言零应用 binding、零工具 binding。
+- 仅在隔离执行副本将列改回 `p.action_execution_id` 后，原目标退出 101：
+  `column p.action_execution_id does not exist`，1 failed。随后 apply_patch
+  逐字还原，cmp 为 0；同一目标恢复 1 passed，合入的 Capacity 恢复目标
+  也 1 passed，原 all-target Clippy 退出 0。
+- 原件为 `codex-capacity-holder-recovery-20261005.fAEvCi/sql-positive.log`
+  （SHA-256 `35b7d2bfac66aca7cf7c8b6d178419608d5fe958f967ae51e70675aa746f4d31`）、
+  `sql-mutation.log`
+  （`33a427e4e7dbfface6be91ed2b933c117c042b9b823704fba9f4479fe6a50164`）
+  与 `sql-restored-combined.log`。
+
+以上只证明 SQL 修复、容量本地恢复及静态检查，不证明线上两个 Invocation
+已恢复。本批发布与原多人多 Agent 复验需要分别记录；不以窄检查宣称生产就绪。
