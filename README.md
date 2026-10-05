@@ -6,6 +6,40 @@
 
 ## 最新复核与投递事实（2026-10-05）
 
+### 新共享 Web 已投递，真实运行历史读回通过（18:54–18:56 UTC）
+
+原容器执行异常恢复后，旧 Web 在没有重启的情况下先恢复 healthy。随后仅以
+干净 `306aa41` 的 Compose、唯一原 `.env` 和 `--no-deps --no-build --pull never`
+投递已经构建的 Web 镜像，没有重新编译或修改业务配置。实际运行镜像为
+`sha256:1f7c2596ab2c1ebe67a562f63101b00d01fd578d1a2eef534294cd0738699c18`，
+新容器 healthy；前后快照中其余 22 个项目容器 ID 与镜像均未变化。
+Core/Worker 仍为原已部署版本，不能把 Web 投递称为整批后端升级。
+
+正常 OIDC 登录后的原浏览器操作退出 0：Workflows 读回原已完成运行，
+页面显示 Completed、用量引用及步骤审批列；打开原任务详情仍显示 Completed。
+本次不发送消息、不调用模型、不创建自动化，未伪造新运行或步骤审批对象。
+新增 `stepApprovalTask` 是可选字段，旧 Core 未返回时只显示缺省占位，不推测
+“无需审批”。表单/YAML、复制与外观的新增页面走查单列，不借历史读取证明全功能。
+
+Data 原件位于 `codex-release-306aa41-20261005.RPxWPS/`：
+`web-deploy.log` SHA256 为
+`0c9d447b0a60555ee0161b71a691ca73630ea7623b4456e6a69a3a751e0d2331`；
+`web-workflow-history.log` SHA256 为
+`137552c7551ba55def1386e4678d517d3e818960f3920270f9ebd9043b840eb2`。
+Windows 包已按下节投递，三组件与三端生产验收仍未完成。
+
+随后原浏览器 surface 操作退出 0：正常登录后读取已有定义，复制到本地草稿，
+切换 YAML 并确认原 CHANNEL_MESSAGE / POST_MESSAGE 配置，再切回表单读回
+非空模板；未提交新草稿、发送消息或调用模型。设置页实际展开、收起原版主题
+样式控件，未持久修改偏好。这只证明复制预览、编辑器切换与控件操作，不证明
+复制后的保存、全部 Workflows 或全部设置功能。
+
+两次先前操作退出 1 的原件保留：精确标签匹配包含 textarea 正文的 wrapping
+label 失败；实际 DOM 已在表单、模板存在、alert 为空。按观察到的唯一 textbox
+修正操作程序后通过，没有修改产品源码或重建产物。最终原件为同目录
+`web-workflow-settings-surface-final.log`，SHA256
+`aee553a054244e07c46c427ea42de393a515264ad45757350e0a0ffe1afb1e3d`。
+
 ### 共享 Workflows／外观 Windows 包已投递，Web 更新尚未执行（18:48 UTC）
 
 已将 `306aa41bdfbee661572262aba6aba68cf095ef39` 登记的既有 Windows 产物
