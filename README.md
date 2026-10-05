@@ -6,6 +6,13 @@
 
 ## 最新复核与投递事实（2026-10-04）
 
+2026-10-05 的独立现场验收已确认同一频道三名 HUMAN 的 Tenant/Workspace
+成员关系均 ACTIVE，分别经正常 OIDC 页面各发送一条普通消息，并在三方 DOM
+准确读回全部三条；Invocation 数量保持 3→3。原件为 Data 目录
+`codex-three-humans-20261005.wYPEYv/handoff.md` 与 `plain-channel.log`，
+受控凭据不入库。原 Agent Delegation 已过期、当前原生额度为 0；本记录不代表
+双 Agent 模型调用或回复验收，以下旧成员数量保留其当时事实。
+
 ### 多 Agent 选择与会话派发保护已投递（19:46 UTC）
 
 源码 `a0defa2eb067362fb37e3e224a48b3c6b674bc4f` 已提交并 push，包含共享

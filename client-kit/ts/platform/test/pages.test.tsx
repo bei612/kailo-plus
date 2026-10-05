@@ -2233,6 +2233,13 @@ describe("platform pages render only through the host theme", () => {
     const used = new Set<string>();
     for (const { text } of sources) {
       for (const [, utility, token] of text.matchAll(colorUtility)) {
+        // Native Switch ring-offset utilities are width or a host colour,
+        // not colours named "offset-2" / "offset-background".
+        if (utility === "ring" && /^offset-\d+$/.test(token!)) continue;
+        if (utility === "ring" && token!.startsWith("offset-")) {
+          used.add(token!.slice("offset-".length));
+          continue;
+        }
         if (utility === "outline" && token === "hidden") continue;
         if (utility === "border" && /^[tblrxyse]-\d+$/.test(token!)) continue;
         if (utility === "border" && token === "l-transparent") continue;

@@ -39,7 +39,7 @@ vi.mock("@/platform/bff-client", () => ({
 }));
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en" }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({
-  useTheme: () => ({ theme: "system", setTheme: vi.fn() }),
+  useTheme: () => ({ theme: "system", setTheme: vi.fn(), prominentActiveTab: false, setProminentActiveTab: vi.fn() }),
 }));
 
 beforeEach(() => {
@@ -56,6 +56,8 @@ describe("Web settings existing user-state CAS consumer", () => {
   it("hosts the same Buzz font and conversation controls without native credentials", () => {
     const markup = renderToStaticMarkup(<SettingsPane />);
     expect(markup).toContain('data-testid="conversation-display-group"');
+    expect(markup).toContain('data-testid="prominent-active-tab-toggle"');
+    expect(markup).toContain('role="switch"');
     expect(markup).toContain('data-testid="font-size-larger"');
     expect(markup).toContain('data-testid="conversation-density-spacious"');
     expect(markup).not.toMatch(/private.key|provider.credential|pairing/i);

@@ -1413,3 +1413,95 @@ Web timestamp 映射改成消息字号；原主题两项均失败、退出 1。�
 `theme-final-restored.log` `013171c37b31d05262a744ac6f31b33679c234656bc0e294b14191ce26e366f4`。
 首次 `full.log` 为 `ecb5d397267afbb553d551938805abc1ee6aeada1cd3c07bb11ed69b62cf64d3`，
 含原 TypeScript、文档追溯及修改后来源不匹配失败，不作为最终合批的通过证据。
+
+## 原 Buzz 高对比选中导航共享复用（2026-10-04）
+
+基线为 `a714684260d261ce520f6f3a625a197c83b07e9c`；仅恢复现有外观能力，
+不是多人协作、Agent 回复或组件接入完成证据。四步影响结论如下。
+
+1. 权威：DD-53 的设备本地主题偏好与 Host 主题边界不变。只读复核 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::ProminentActiveTabSetting`、
+   `desktop/src/shared/theme/ThemeProvider.tsx::ThemeProvider` 与
+   `desktop/src/shared/ui/switch.tsx::Switch`，直接抽取原控件、偏好和 Radix Switch。
+2. 影响：共享 `prominent-active-tab-setting.tsx`、`prominent-active-tab.ts`、
+   `switch.tsx` 同时由 Web/Desktop 原宿主消费。删除桌面旧控件/偏好逻辑及旧 Switch
+   文件，三个旧 Switch 调用点只迁移导入；Inbox 与通知行为不变。原存储键
+   `buzz-prominent-active-tab`、布尔字符串格式、默认 false 无迁移，旧版仍可读取。
+   Web 仍只有原 Buzz 的 light/dark/system；Mobile 仅同步原生成翻译，无新增入口。
+3. 副作用：只改当前设备的原 localStorage 和 root attribute；无 BFF 写入、
+   身份/权限/额度/审计/模型调用，也无第二套偏好权威。原共享 theme.css 已提供
+   两宿主的高对比导航规则，不自建主题。Switch 保留原样式及 tailwind-merge 语义。
+4. 边界：空/非法存储值与初始读取异常仍取原 false；写入先于 state 更新，
+   写入抛错不伪装持久化成功。非 Buzz 主题移除呈现 attribute 但保留原偏好，
+   切回恢复；没有新业务状态、终态或六类业务错误分类。原主题扫描区分 ring-offset
+   数值宽度与宿主语义色，后缀仍必须通过两宿主 CSS 映射，不作文件豁免。
+
+实现后在固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+内定向验证；实际 4 CPU / 8 GiB / swap 0、UID 1000，执行前检查宿主压力与现存进程。
+根 pnpm 10.33.4、Desktop pnpm 11.4.0、Web npm 原 lockfile-only/ignore-scripts
+生成锁，未手写锁或升级整库依赖。Desktop peer 检查唯一告警为原锁已有的
+typography 0.5.20 / tailwindcss 4.3.0，不是本次 Switch peer；未改其版本。
+
+原命令 `pnpm --filter @client-kit/platform typecheck`、同包
+`exec tsc --noEmit -p tsconfig.test.json`、
+`exec vitest run test/settings.test.tsx test/pages.test.tsx`：204 项通过。
+Web `npm run typecheck && npm test`：39 项通过；Desktop `pnpm typecheck`：退出 0。
+这组串行命令末尾 i18n 检查因短容器缺 Dart PATH 退出 1，不能将整组声称退出 0。
+单补 PATH 后 Dart analytics 写入短容器不可写的默认目录，退出 255；未安装工具，
+改用原 e4agxd SDK 已配置环境与 `/usr/lib/dart/bin` 执行
+`python3 tools/gen-platform-i18n.py --check`：退出 0。其 TS 输入与生成 Dart 文件
+同候选逐字 cmp 0，未重复前三组。原件目录为
+`/volumes/data/kailo/tmp/codex-prominent-setting-20261004.QIXoZe`。
+
+实际生产变异：移除 Buzz 主题门禁、将 Switch 的 ring-offset-background 改为
+foreign-color、删除 Web 共享入口；分别触发 settings、主题检查、Web 宿主各一项
+真实断言失败，组合退出 1。三个源 apply_patch 还原、cmp 均 0，随后上述 204/39
+与 Desktop 类型检查再次通过。首次共享检查的两项失败也保留：注释误命中
+ThemeProvider、原 ring-offset 被扫描器误判颜色；没有改变原控件样式迎合检查。
+
+原件 SHA-256：`production-mutation.log`
+`8618812bed182363b9e52d6aa7dc8a012150a171f192a013231f1613b8d90765`；
+`restored-final.log`
+`ae63c71ad96ff3bd107ec8cd5d7d1f564fb959e17032d125c94c84de34ec6ac5`。
+`i18n-final-existing-sdk.log`
+`740ff5452b680e6c0b9419bf56d4b4787754c67a74c6cd0f00822dbfc3411b30`。
+离线锁生成缺 Radix metadata 的失败在 `dependency-locks.log`；Desktop 首次误用
+pnpm 10 自动切换权限失败在 `desktop-lock-online.log`，随后直接使用缓存固定 11
+成功，未创建新工具链。没有独立 docs/full、镜像构建、发布或真实设备验收；
+旧 Web/Desktop 产物不代表本候选源码，不清除来源记录绕过 full 门禁。
+
+### 2026-10-05 频道已读失败重试收敛
+
+基线 `a714684260d261ce520f6f3a625a197c83b07e9c`。真实三浏览器观察
+`codex-three-humans-20261005.wYPEYv/plain-channel.log` 在首秒出现 88 次已读 PUT；
+同目录 `plain-channel-inline.txt` 只中止这些 PUT，没有主动调用已读或刷新循环。
+根因是 ChannelPane 的失败 invalidate 与 pending 复位，让 effect 用同一 CAS
+version 再次写入。此日志是故障证据，不是修复后的浏览器验收。
+
+改前四步影响结论：权威仍为设计 03 DD-40 的 Core HUMAN 用户状态，原
+`user_state.rs::update` 的 version CAS 不变；影响仅 Web ChannelPane 的真实
+自动标记与现有错误重试按钮；失败不推进 lastRead，同版本自动请求只发一次，
+明确重新读取更高 version 才重新比较；显式重试先 GET，同版本仅重发冻结原请求，
+读取或写入中禁重复操作，撤权、关闭或跨频道的迟到结果不写入。没有新增定时器、
+重试上限、状态字段或配置权威，也不把 UNKNOWN 当作已读。
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 原证据：
+`desktop/src/features/channels/ui/useChannelOpenReadState.ts::useChannelOpenReadState`
+与 `desktop/src/features/channels/useUnreadChannels.ts::markChannelRead`。
+Web 继续使用 Core CAS，不复制桌面本机已读权威。
+
+实现后在既有固定 SDK（4 CPU、8 GiB、UID 1000）运行原 Web 入口：
+`npm run typecheck && npm test && npm run check:i18n && npm run check:file-sizes`
+实际退出 0，11 文件 44 项全部通过。新增 5 项执行真实 React/Query 消费者，
+覆盖网络未知、明确拒绝、CAS 冲突、冻结重试、重复点击及撤权期间迟到读取。
+首次夹具缺少 getLocale 导致 5 项失败，补齐既有接口后 5 项通过；原件保留。
+私有生产变异删除 attemptedRead 的同版本守卫，4 项失败、退出 1；逐字还原
+cmp 0 后上述 44 项重新通过。未修改鉴权、服务端状态、正式脏树或运行数据。
+
+原件目录 `codex-channel-read-recovery-20261005.tLs1fL`：
+`final-targeted.log` SHA-256
+`62bf79b31deec1ef3e64fad74500fcb0d691c0173ed8d43f0b50f52eb67300be`；
+`mutation.log` SHA-256
+`eb455b7dee14c177bd634170b1fb71b29f8c30c3641161f42b3e06fc12c166cf`。
+此定向阶段未运行 full、产品构建、部署或新的真实消息/模型调用；联合交付另记。

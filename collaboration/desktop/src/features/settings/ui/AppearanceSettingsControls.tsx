@@ -25,40 +25,10 @@ import {
   useTheme,
 } from "@/shared/theme/ThemeProvider";
 
-import { Switch } from "@/shared/ui/switch";
+import { Switch } from "@client-kit/platform/react/switch";
 import { SettingsOptionRow } from "./SettingsOptionGroup";
 import { SettingsSlider } from "./SettingsSlider";
 import { SegmentedControl } from "@client-kit/platform/react/segmented-control";
-
-/** Buzz navigation can use either its production tint or a stronger tab. */
-export function ProminentActiveTabSetting() {
-  const { prominentActiveTab, setProminentActiveTab } = useTheme();
-
-  return (
-    <SettingsOptionRow data-testid="prominent-active-tab-row">
-      <div className="min-w-0">
-        <label
-          className="text-sm font-medium"
-          htmlFor="prominent-active-tab-switch"
-        >
-          Prominent active tab
-        </label>
-        <p
-          className="text-sm font-normal text-muted-foreground/70"
-          data-settings-subcopy
-        >
-          Give the selected navigation item a higher-contrast background.
-        </p>
-      </div>
-      <Switch
-        checked={prominentActiveTab}
-        data-testid="prominent-active-tab-toggle"
-        id="prominent-active-tab-switch"
-        onCheckedChange={setProminentActiveTab}
-      />
-    </SettingsOptionRow>
-  );
-}
 
 const LINK_PREVIEW_STYLE_OPTIONS: {
   value: LinkPreviewStyle;

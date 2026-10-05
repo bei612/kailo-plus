@@ -720,6 +720,8 @@ export const platformMessages = {
   "platform.settings.sendShortcut": { en: "Send the current message", "zh-CN": "发送当前消息" },
   "platform.settings.appearance": { en: "Appearance", "zh-CN": "外观" },
   "platform.settings.theme": { en: "Theme", "zh-CN": "主题" },
+  "platform.settings.prominentActiveTab": { en: "Prominent active tab", "zh-CN": "突出显示当前导航" },
+  "platform.settings.prominentActiveTabDescription": { en: "Give the selected navigation item a higher-contrast background.", "zh-CN": "为当前选中的导航项使用更高对比度的背景。" },
   "platform.settings.fontSize": { en: "Font size", "zh-CN": "字号" },
   "platform.settings.fontSizeDescription": { en: "Applies across conversations and interface text", "zh-CN": "应用于会话和界面文字" },
   "platform.settings.conversationDensity": { en: "Conversation density", "zh-CN": "会话密度" },

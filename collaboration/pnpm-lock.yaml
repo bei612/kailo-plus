@@ -71,7 +71,7 @@ importers:
         version: file:../client-kit/ts/contracts
       '@client-kit/platform':
         specifier: file:../../client-kit/ts/platform
-        version: file:../client-kit/ts/platform(@client-kit/contracts@file:../client-kit/ts/contracts)(@types/react@19.2.18)(react@19.2.8)(shiki@4.1.0)
+        version: file:../client-kit/ts/platform(@client-kit/contracts@file:../client-kit/ts/contracts)(@radix-ui/react-switch@1.2.6(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@types/react@19.2.18)(react@19.2.8)(shiki@4.1.0)(tailwind-merge@3.6.0)
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -546,9 +546,11 @@ packages:
     resolution: {directory: ../client-kit/ts/platform, type: directory}
     peerDependencies:
       '@client-kit/contracts': 0.0.0
+      '@radix-ui/react-switch': ^1.2.6
       '@types/react': ^19.1.8
       react: ^19.1.0
       shiki: ^4.0.2
+      tailwind-merge: ^3.5.0
     peerDependenciesMeta:
       '@types/react':
         optional: true
@@ -3709,11 +3711,13 @@ snapshots:
 
   '@client-kit/contracts@file:../client-kit/ts/contracts': {}
 
-  '@client-kit/platform@file:../client-kit/ts/platform(@client-kit/contracts@file:../client-kit/ts/contracts)(@types/react@19.2.18)(react@19.2.8)(shiki@4.1.0)':
+  '@client-kit/platform@file:../client-kit/ts/platform(@client-kit/contracts@file:../client-kit/ts/contracts)(@radix-ui/react-switch@1.2.6(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@types/react@19.2.18)(react@19.2.8)(shiki@4.1.0)(tailwind-merge@3.6.0)':
     dependencies:
       '@client-kit/contracts': file:../client-kit/ts/contracts
+      '@radix-ui/react-switch': 1.2.6(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react: 19.2.8
       shiki: 4.1.0
+      tailwind-merge: 3.6.0
     optionalDependencies:
       '@types/react': 19.2.18
 

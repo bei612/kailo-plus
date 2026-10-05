@@ -902,3 +902,52 @@ sole `.env` 与 Runtime profiles 摘要不变；迁移前后均 73 条、失败 
 `ec16965c8a02823ee28903c7769eae039cc4ada4c7521200a61abdc84a6773a4`；
 `deploy-identity.log` 为 `7103af17d0336972cbee4b1f739dd6803e53988510724db65a505145c3f07300`；
 `deploy-config.after.log` 为 `f74db10a410f11ff18135185895973c80bcba26e8fe76eac45d6b46b993ce3ae`。
+
+### 2026-10-05 共享导航设置与频道已读失败恢复联合产物
+
+基线 `a714684260d261ce520f6f3a625a197c83b07e9c`，仅私有干净候选
+`codex-channel-read-recovery-20261005.tLs1fL/apps`；正式历史脏改动未写入。
+产品源码冻结树 `ebcc7c4a5f0abc18c0fae94b2def4e8334033f7c`，合并原 Buzz
+突出当前导航设置复用与频道已读失败恢复。两组生产变异和定向结果见
+[Web 验证记录](../../web-client/fork/verify/web-surface.md)。
+
+原 `./tools/build-upstream.sh web-client`、`desktop-client` 分别仅运行一次，
+session 12881、46168 实际退出 0；使用既有 kailo-core-data BuildKit，
+实际 8 CPU / 16 GiB / memory+swap 同限额，缓存位于 Data，不降低并行度。
+Windows 原交叉构建经历基础依赖冷层，最终产出 Win11 x64 NSIS 测试包，
+不是 Linux 包；不改变配方、锁或忽略规则来绕过来源检查。
+
+| 产物 | 冻结源码 SHA-256 | 实际 artifact SHA-256 |
+|---|---|---|
+| Web | `f76af8a137a7f962d08d2971583c2a131fdc9ae363e2cf787d59e846e2d0e8e2` | `d3e75136ed23120f28386824bb4dd5914cc236d8f7ca2101031559d4ac1eeb41` |
+| Windows | `fda858436b076f9fb88b5000e6996c00d2c0d47d5950abc3322ec99f8433ec0e` | `1342aa56420ba9c0dc11f5860c9f5531037694a767d060b879116055f1bf28d2` |
+| Relay | `4ffa0b5a3f5f223c9f455c682f31f7959b6347632288b1c534e0e750f12bc9f2` | `af0453a61bb2fe9d4576d2cd59f7e7608a04c12719d2ec1dfa50ee48bf011c11` |
+
+首次原 `./tools/check.sh --full`（77150）退出 1，唯一失败是 Relay source_digest：
+原 manifest 把 `collaboration/pnpm-lock.yaml` 计入 Relay 输入，本批共享 peer
+依赖的机械锁更新正是唯一变化的 Relay 输入；`relay-rust.diff` 为空。
+经明确授权追加原 `./tools/build-upstream.sh collaboration-relay` 一次（93916），
+实际退出 0，未重建 Web/Windows/Core/Worker。两镜像均独立 registry GET 200，
+响应体 SHA 与记录 digest 相同；Windows 包字节 SHA 相同。三个原 source plan
+前后 cmp 0，三份 pnpm/npm 锁 SHA 未变，Compose/trace 只同步实际摘要。
+
+最终检查固定树 `76f231cab5c2ea544277bc4d870e012c4f5fd9e5`，44 文件 +756/-111。
+同固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`、
+4 CPU / 8 GiB / memory+swap 同限额、Cargo 16、原 Data 缓存执行
+`./tools/check.sh --full`（38778），实际退出 0。独立空库
+`channel_read_final_tls1fl` 完成 73 条迁移（最高 20261004018000）前进/回退/再前进
+及 SQLx 核对，193 个 schema、六产物来源、供应链、追溯与安全门禁均通过。
+首次失败原件完整保留，不用最终通过覆盖失败历史。
+
+原 Core 主目标 155 passed / 9 ignored；另有审批 CAN 与停启 Relay 的两项演练
+保持 ignored，缺其专用夹具/操作授权，不计为通过。未向候选投递线上 `.env`，
+实际部署配置预检明确 SKIP。Mobile 签名阻断保留；Windows 未签名、未设备安装运行。
+本批只生成和登记产物，未部署任何服务，未做修复后的真实浏览器已读验收、
+双 Agent 模型回合、权限或额度写入，也未触碰旧 UNKNOWN。
+
+完整原件在上述 `tLs1fL` 目录，各命令 `.exit` 与原日志并存。日志 SHA-256：
+`web-build.log` `743bc415e9275c9bb88dca031a627c21e3a794b240bed2543dd585b5757196ae`；
+`desktop-build.log` `74a59f6fe866274a2998d2bd210a6cdb3530cd43f41117af2bd08086cd5bac03`；
+`relay-build.log` `0a9b5edfd3c638a8b2c563b855fb21d66c0b0e4941efc99e3010660a79083f5c`；
+`full.log` `d511bd89dcd9b75733d1a676367e7cc7cffab0596194ba25fa9560825797794b`；
+`full-final.log` `081a8c923e4f08ee93a0c364bec6727cbc7fdd727458f7e56e7dce8e70d969fc`。

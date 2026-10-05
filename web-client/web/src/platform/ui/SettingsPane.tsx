@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { translate } from "@client-kit/platform/i18n";
 import { ConversationDisplaySettings } from "@client-kit/platform/react/conversation-display-settings";
+import { ProminentActiveTabSetting } from "@client-kit/platform/react/prominent-active-tab-setting";
 import {
   SettingsPage,
   ShortcutSettings,
@@ -16,13 +17,15 @@ import { platformQueries } from "./queries";
 
 export function SettingsPane() {
   const locale = getLocale();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, prominentActiveTab, setProminentActiveTab } = useTheme();
   const [section, setSection] = useState<SettingsSection>("appearance");
   return (
     <SettingsPage locale={locale} section={section} onSelect={setSection}>
       {section === "appearance" ? (
         <div className="flex flex-col gap-6">
           <ThemeModeControl locale={locale} value={theme} onChange={setTheme} />
+          <ProminentActiveTabSetting locale={locale} prominentActiveTab={prominentActiveTab}
+            setProminentActiveTab={setProminentActiveTab} />
           <ConversationDisplaySettings locale={locale} />
         </div>
       ) : section === "notifications" ? (

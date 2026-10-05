@@ -45,9 +45,9 @@ import {
   AccentPickerContent,
   GlassBackgroundSetting,
   LinkPreviewStyleSetting,
-  ProminentActiveTabSetting,
   ThreadLayoutSetting,
 } from "./AppearanceSettingsControls";
+import { ProminentActiveTabSetting } from "@client-kit/platform/react/prominent-active-tab-setting";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
 import { ConversationDisplaySettings } from "@client-kit/platform/react/conversation-display-settings";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
@@ -299,6 +299,8 @@ function ThemeSettingsCard() {
     setAccentColor,
     followSystem,
     setFollowSystem,
+    prominentActiveTab,
+    setProminentActiveTab,
   } = useTheme();
 
   // Buzz themes pin a neutral accent (GitHub black in light, white in dark),
@@ -613,7 +615,8 @@ function ThemeSettingsCard() {
           )}
 
           <GlassBackgroundSetting />
-          {buzzThemeSelected ? <ProminentActiveTabSetting /> : null}
+          {buzzThemeSelected ? <ProminentActiveTabSetting locale={locale}
+            prominentActiveTab={prominentActiveTab} setProminentActiveTab={setProminentActiveTab} /> : null}
         </SettingsOptionGroup>
 
         <SettingsOptionGroup

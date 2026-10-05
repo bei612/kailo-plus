@@ -20,6 +20,7 @@ base_divergence: none
 # Workflow、Huddle、自建 Channel/DM、推送、年龄门禁等，见 mobile-client.md；REQ-21、V-SCN-65）。
 # 与实际一致由 `upstream_manifest.py diff collaboration --check` 核对。
 remove_paths:
+  - desktop/src/shared/ui/switch.tsx
   # Device typography preferences and their real control moved to the shared TypeScript package.
   - desktop/src/shared/lib/fontSizePreference.ts
   - desktop/src/shared/lib/conversationDensityPreference.ts
@@ -992,8 +993,8 @@ artifacts:
     build_dockerfile: collaboration/Dockerfile
     inputs: [collaboration/]
     exclude: [collaboration/desktop/, collaboration/mobile/, collaboration/fork/packaging/]
-    source_digest: sha256:e68add606d98c362e49f9a9fbf33cc4deb24936d065e1ac4f5ef456e79ec30fe
-    artifact_digest: sha256:d42f83fa0dadcd78c4ad721047433a9a7c8e522767edd96cb326d641c5dd0056
+    source_digest: sha256:4ffa0b5a3f5f223c9f455c682f31f7959b6347632288b1c534e0e750f12bc9f2
+    artifact_digest: sha256:af0453a61bb2fe9d4576d2cd59f7e7608a04c12719d2ec1dfa50ee48bf011c11
   # Windows x64 NSIS 测试安装包：官方 Tauri cargo-xwin 同主体交叉打包，不作为带签名正式发布。
   # artifact_digest 记安装包字节的 SHA-256（06 §2）。mobile/ 与 crates/buzz-relay/ 不是它的输入：
   # desktop/src-tauri 不在根 Cargo workspace 内，其 Cargo.lock 不含 buzz-relay；pnpm workspace
@@ -1007,8 +1008,8 @@ artifacts:
     # 安装包显示名由发布配置注入（DD-111），不写在源码里
     build_args: [PLATFORM_DISPLAY_NAME]
     blocked: Win11 x64 unsigned 测试安装包已生成；代码签名、Win11 安装运行与业务验收未完成
-    source_digest: sha256:4325bd6d4867a8ef0c5a93df8702330662346de3b65bc08387cd4005155b39c6
-    artifact_digest: sha256:f93b0f36cc1096bb4911a4d54c08ff9edacd05ea0e344397794d0eae5bb66de5
+    source_digest: sha256:fda858436b076f9fb88b5000e6996c00d2c0d47d5950abc3322ec99f8433ec0e
+    artifact_digest: sha256:1342aa56420ba9c0dc11f5860c9f5531037694a767d060b879116055f1bf28d2
   # Android release APK（ADR-06 客户端发布单元按端分离：应用商店包，带平台签名）。
   # 阻断：release 签名所需的 upload keystore 未提供。上游 release 构建缺 keystore 即失败，
   # 不以 debug 证书冒充 release；profile/debug APK 只是测试构建，不登记为发布产物。

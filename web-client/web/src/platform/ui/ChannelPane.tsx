@@ -3,11 +3,11 @@
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
 // signer——签名由 BFF 以本人身份代做。
 
-import { AgentTrigger, ReasonCode, type AgentInstallationView } from "@client-kit/contracts";
+import { AgentTrigger, ReasonCode, type AgentInstallationView, type ReadMarkRequest } from "@client-kit/contracts";
 import { MentionAutocomplete } from "@client-kit/platform/react/mention-autocomplete";
 import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
 import { useReasonText } from "@client-kit/platform/react/context";
-import { isOutcomeUnknown } from "@client-kit/platform/transport";
+import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -169,23 +169,64 @@ export function ChannelPane({
   ).length;
   const newest = events[events.length - 1];
 
+  const attemptedRead = useRef<ReadMarkRequest | null>(null);
+  const [readRechecking, setReadRechecking] = useState(false);
+  const rechecking = useRef(false);
+  const readScope = useRef({ active: true, live, visible, denied, channelId });
+  readScope.current = { active: true, live, visible, denied, channelId };
+  useEffect(() => {
+    readScope.current.active = true;
+    return () => { readScope.current.active = false; };
+  }, []);
   const read = useMutation({
-    mutationFn: markRead,
-    // 成功或冲突都重新取状态：冲突说明别的端先写了，拿新版本再比一次
+    retry: false,
+    mutationFn: async (request: ReadMarkRequest) => {
+      const result = await markRead(request);
+      if (result?.version !== request.version + 1)
+        throw new TransportError("Invalid user-state CAS response");
+      return result;
+    },
+    // Readback is not permission to resend: only a higher CAS version fences
+    // the old request. Never advance lastRead optimistically after an error.
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey }),
   });
   const readPending = read.isPending;
   const readMutate = read.mutate;
   useEffect(() => {
-    if (!live || !visible || !channelId || !newest || !userState.data || readPending) return;
+    if (!live || !visible || denied || !channelId || !newest || !userState.isSuccess
+      || userState.isFetching || !userState.data || readPending || readRechecking) return;
     if (newest.created_at <= lastRead) return;
-    readMutate({
+    if (attemptedRead.current && userState.data.version <= attemptedRead.current.version) return;
+    const request = {
       contextKey: channelId,
       lastReadAt: toIso(newest.created_at),
       version: userState.data.version,
-    });
-  }, [live, visible, channelId, newest, lastRead, userState.data, readPending, readMutate]);
+    };
+    attemptedRead.current = request;
+    readMutate(request);
+  }, [live, visible, denied, channelId, newest, lastRead, userState.data,
+    userState.isSuccess, userState.isFetching, readPending, readRechecking, readMutate]);
+
+  const retryRead = async () => {
+    const request = attemptedRead.current;
+    if (!request || readPending || rechecking.current) return;
+    rechecking.current = true;
+    setReadRechecking(true);
+    try {
+      const observed = await userState.refetch();
+      const scope = readScope.current;
+      if (!scope.active || !scope.live || !scope.visible || scope.denied
+        || scope.channelId !== request.contextKey || !observed.isSuccess) return;
+      // Explicit retry with the unchanged CAS version is the unchanged intent,
+      // even if newer messages arrived while its result was unknown.
+      if (observed.data.version === request.version) readMutate(request);
+      else if (observed.data.version > request.version) read.reset();
+    } finally {
+      rechecking.current = false;
+      if (readScope.current.active) setReadRechecking(false);
+    }
+  };
 
   // 页面在后台时，未读数进标签页标题；静音的 Workspace 不提示
   useEffect(() => {
@@ -202,6 +243,11 @@ export function ChannelPane({
       <div className="text-xs text-muted-foreground" role="status">
         {status}
       </div>
+      {read.isError && !denied ? <div role="alert" className="text-sm text-destructive">
+        {t(isOutcomeUnknown(read.error) ? "inbox.readUnknown" : "inbox.readUnavailable")}
+        <Button disabled={readPending || readRechecking || !live || !visible}
+          onClick={() => { void retryRead(); }}>{t("platform.retry")}</Button>
+      </div> : null}
       <ul className="min-h-0 flex-1 space-y-2 overflow-auto" aria-label={t("platform.tab.channel")}>
         {events.map((e, i) => {
           const author = byPubkey.get(e.pubkey);

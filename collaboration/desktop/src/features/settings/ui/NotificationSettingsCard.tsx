@@ -11,7 +11,7 @@ import {
   type SoundSlot,
 } from "@/features/notifications/lib/sound";
 import { cn } from "@/shared/lib/cn";
-import { Switch } from "@/shared/ui/switch";
+import { Switch } from "@client-kit/platform/react/switch";
 import {
   SettingsOptionGroup,
   SettingsOptionGroupList,

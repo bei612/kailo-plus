@@ -514,6 +514,8 @@ enum PlatformMessageKey {
   platformSettingsSendShortcut,
   platformSettingsAppearance,
   platformSettingsTheme,
+  platformSettingsProminentActiveTab,
+  platformSettingsProminentActiveTabDescription,
   platformSettingsFontSize,
   platformSettingsFontSizeDescription,
   platformSettingsConversationDensity,
@@ -2099,6 +2101,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.platformSettingsAppearance: ('Appearance', '外观'),
   PlatformMessageKey.platformSettingsTheme: ('Theme', '主题'),
+  PlatformMessageKey.platformSettingsProminentActiveTab: (
+    'Prominent active tab',
+    '突出显示当前导航',
+  ),
+  PlatformMessageKey.platformSettingsProminentActiveTabDescription: (
+    'Give the selected navigation item a higher-contrast background.',
+    '为当前选中的导航项使用更高对比度的背景。',
+  ),
   PlatformMessageKey.platformSettingsFontSize: ('Font size', '字号'),
   PlatformMessageKey.platformSettingsFontSizeDescription: (
     'Applies across conversations and interface text',

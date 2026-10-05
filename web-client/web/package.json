@@ -17,6 +17,7 @@
     "test": "vitest run src"
   },
   "dependencies": {
+    "@radix-ui/react-switch": "^1.2.6",
     "@client-kit/contracts": "file:../../client-kit/ts/contracts",
     "@client-kit/platform": "file:../../client-kit/ts/platform",
     "@fontsource-variable/inter": "^5.2.8",

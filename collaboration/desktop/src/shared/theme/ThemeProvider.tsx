@@ -12,6 +12,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invokeTauri } from "@/shared/api/tauri";
 import { isMacPlatform } from "@/shared/lib/platform";
 import { getStorageItem } from "@/shared/lib/safeStorage";
+import { useProminentActiveTab } from "@client-kit/platform/theme/prominent-active-tab";
 import {
   applyNeutralThemeAccent,
   createThemeVars,
@@ -31,11 +32,9 @@ const CACHE_KEY = "buzz-theme-cache";
 export const ACCENT_STORAGE_KEY = "buzz-accent-color";
 export const GLASS_BACKGROUND_STORAGE_KEY = "buzz-glass-background";
 export const GLASS_OPACITY_STORAGE_KEY = "buzz-glass-opacity";
-export const PROMINENT_ACTIVE_TAB_STORAGE_KEY = "buzz-prominent-active-tab";
 export const GLASS_OPACITY_MIN = 30;
 export const GLASS_OPACITY_MAX = 90;
 export const DEFAULT_GLASS_OPACITY = 65;
-export const DEFAULT_PROMINENT_ACTIVE_TAB = false;
 export const NEUTRAL_ACCENT = "neutral";
 const FOLLOW_SYSTEM_KEY = "buzz-follow-system";
 const VIDEO_REVIEW_CHIP_SURFACE = "#161616";
@@ -280,14 +279,6 @@ function setGlassBackgroundActive(enabled: boolean) {
   }
 }
 
-/** Apply the optional higher-contrast selected navigation surface. */
-function setProminentActiveTabActive(enabled: boolean) {
-  document.documentElement.toggleAttribute(
-    "data-prominent-active-tab",
-    enabled,
-  );
-}
-
 function clampGlassOpacity(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_GLASS_OPACITY;
   return Math.min(
@@ -495,12 +486,6 @@ export function ThemeProvider({
     applyGlassOpacity(opacity);
     return opacity;
   });
-  const [prominentActiveTab, setProminentActiveTabState] = useState<boolean>(
-    () => {
-      const stored = getStorageItem(PROMINENT_ACTIVE_TAB_STORAGE_KEY);
-      return stored === null ? DEFAULT_PROMINENT_ACTIVE_TAB : stored === "true";
-    },
-  );
   const [followSystem, setFollowSystemState] = useState<boolean>(() => {
     const stored = getStorageItem(FOLLOW_SYSTEM_KEY);
     if (stored !== null) return stored === "true";
@@ -518,6 +503,9 @@ export function ThemeProvider({
     if (!followSystem || !isValidThemeName(selectedTheme)) return selectedTheme;
     return resolveSystemTheme(selectedTheme as SyntaxThemeName, systemIsDark);
   })();
+  const { prominentActiveTab, setProminentActiveTab } = useProminentActiveTab(
+    isBuzzTheme(effectiveTheme),
+  );
 
   // Check if the selected theme has a pair (for UI hint)
   const hasPair = isValidThemeName(selectedTheme)
@@ -552,15 +540,6 @@ export function ThemeProvider({
     // first frame is the accepted worst case for glass users.
     void applyWindowGlass(glassBackground);
   }, [glassBackground]);
-
-  // The stronger selected-row treatment belongs exclusively to Buzz. Keep
-  // the saved preference so it is restored when the user returns to Buzz,
-  // but remove the live marker for every other theme.
-  useEffect(() => {
-    setProminentActiveTabActive(
-      prominentActiveTab && isBuzzTheme(effectiveTheme),
-    );
-  }, [effectiveTheme, prominentActiveTab]);
 
   // Listen for system color scheme changes when followSystem is enabled
   useEffect(() => {
@@ -680,14 +659,6 @@ export function ThemeProvider({
     window.localStorage.setItem(GLASS_OPACITY_STORAGE_KEY, String(nextOpacity));
     applyGlassOpacity(nextOpacity);
     setGlassOpacityState(nextOpacity);
-  }, []);
-
-  const setProminentActiveTab = useCallback((enabled: boolean) => {
-    window.localStorage.setItem(
-      PROMINENT_ACTIVE_TAB_STORAGE_KEY,
-      enabled ? "true" : "false",
-    );
-    setProminentActiveTabState(enabled);
   }, []);
 
   const value: ThemeContextValue = {

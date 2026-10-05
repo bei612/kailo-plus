@@ -1,4 +1,5 @@
 import { type PlatformThemeMode, platformThemeModeKeys } from "@client-kit/platform/i18n";
+import { useProminentActiveTab } from "@client-kit/platform/theme/prominent-active-tab";
 import {
   applyNeutralThemeAccent,
   createThemeVars,
@@ -25,6 +26,8 @@ type ThemeContextValue = {
   theme: Theme;
   isDark: boolean;
   setTheme: (theme: Theme) => void;
+  prominentActiveTab: boolean;
+  setProminentActiveTab: (enabled: boolean) => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -70,6 +73,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [themeError, setThemeError] = useState<unknown>(null);
   const generation = useRef(0);
   const isDark = theme === "system" ? systemIsDark : theme === "dark";
+  // This host's light/dark/system modes all resolve to the original Buzz pair.
+  const prominent = useProminentActiveTab(true);
 
   useEffect(() => {
     const request = ++generation.current;
@@ -102,7 +107,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   if (themeError !== null) throw themeError;
 
   return (
-    <ThemeContext.Provider value={{ theme, isDark, setTheme }}>{children}</ThemeContext.Provider>
+    <ThemeContext.Provider value={{ theme, isDark, setTheme, ...prominent }}>{children}</ThemeContext.Provider>
   );
 }
 

@@ -7,6 +7,9 @@
     "src"
   ],
   "exports": {
+    "./theme/prominent-active-tab": "./src/theme/prominent-active-tab.ts",
+    "./react/prominent-active-tab-setting": "./src/react/prominent-active-tab-setting.tsx",
+    "./react/switch": "./src/react/switch.tsx",
     "./react/use-mention-selection": "./src/react/use-mention-selection.ts",
     "./react/mention-autocomplete": "./src/react/mention-autocomplete.tsx",
     "./react/popover-surface": "./src/react/popover-surface.ts",
@@ -48,12 +51,16 @@
     "test": "tsc --noEmit -p tsconfig.test.json && vitest run"
   },
   "peerDependencies": {
+    "@radix-ui/react-switch": "^1.2.6",
+    "tailwind-merge": "^3.5.0",
     "@client-kit/contracts": "0.0.0",
     "@types/react": "^19.1.8",
     "react": "^19.1.0",
     "shiki": "^4.0.2"
   },
   "devDependencies": {
+    "@radix-ui/react-switch": "^1.2.6",
+    "tailwind-merge": "^3.5.0",
     "@client-kit/contracts": "workspace:*",
     "@types/node": "^24.9.2",
     "@types/react": "^19.1.8",

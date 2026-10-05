@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { act } from "react";
 import { ConversationDisplaySettings } from "../src/react/conversation-display-settings";
+import { ProminentActiveTabSetting } from "../src/react/prominent-active-tab-setting";
+import {
+  PROMINENT_ACTIVE_TAB_STORAGE_KEY,
+  useProminentActiveTab,
+} from "../src/theme/prominent-active-tab";
 import {
   FONT_SIZE_STORAGE_KEY,
   getFontSize,
@@ -26,6 +31,53 @@ import type { PlatformThemeMode } from "../src/i18n";
 import { button, click, render } from "./render";
 
 describe("shared Buzz settings presentation", () => {
+  it("preserves the original high-contrast navigation preference across Buzz theme changes", async () => {
+    localStorage.clear();
+    let preference: ReturnType<typeof useProminentActiveTab>;
+    let changeTheme: (buzz: boolean) => void;
+    function Host() {
+      const [buzz, setBuzz] = useState(true);
+      changeTheme = setBuzz;
+      preference = useProminentActiveTab(buzz);
+      return <ProminentActiveTabSetting locale="zh-CN" {...preference} />;
+    }
+    const host = await render(<Host />);
+    const toggle = host.querySelector<HTMLButtonElement>('[role="switch"]')!;
+    expect(host.textContent).toContain("突出显示当前导航");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(document.documentElement.hasAttribute("data-prominent-active-tab")).toBe(false);
+    await click(toggle);
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(localStorage.getItem(PROMINENT_ACTIVE_TAB_STORAGE_KEY)).toBe("true");
+    expect(document.documentElement.hasAttribute("data-prominent-active-tab")).toBe(true);
+    await act(async () => changeTheme(false));
+    expect(document.documentElement.hasAttribute("data-prominent-active-tab")).toBe(false);
+    expect(localStorage.getItem(PROMINENT_ACTIVE_TAB_STORAGE_KEY)).toBe("true");
+    await act(async () => changeTheme(true));
+    expect(document.documentElement.hasAttribute("data-prominent-active-tab")).toBe(true);
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage unavailable", "QuotaExceededError");
+    });
+    try {
+      expect(() => preference.setProminentActiveTab(false)).toThrow("Storage unavailable");
+      expect(toggle.getAttribute("aria-checked")).toBe("true");
+      expect(document.documentElement.hasAttribute("data-prominent-active-tab")).toBe(true);
+    } finally { write.mockRestore(); }
+    await click(toggle);
+    expect(localStorage.getItem(PROMINENT_ACTIVE_TAB_STORAGE_KEY)).toBe("false");
+    expect(document.documentElement.hasAttribute("data-prominent-active-tab")).toBe(false);
+  });
+  it.each([null, "unknown", "false", "true"])("reads original saved prominent-tab value %s", async (stored) => {
+    localStorage.clear();
+    if (stored !== null) localStorage.setItem(PROMINENT_ACTIVE_TAB_STORAGE_KEY, stored);
+    function Host() {
+      const preference = useProminentActiveTab(true);
+      return <ProminentActiveTabSetting locale="en" {...preference} />;
+    }
+    const host = await render(<Host />);
+    expect(host.querySelector('[role="switch"]')!.getAttribute("aria-checked")).toBe(String(stored === "true"));
+    expect(document.documentElement.hasAttribute("data-prominent-active-tab")).toBe(stored === "true");
+  });
   it("previews pointer scrubbing without saving and restores one transition duration on cancel", async () => {
     localStorage.clear();
     initializeFontSizePreference();
