@@ -23,7 +23,7 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 | ComponentRelease 登记/批准/撤销 | `ComponentTaskWorkflow(kind=COMPONENT_RELEASE)`，input 固定按 `admission_path` 取证的来源标识（`BUILTIN_REFERENCE` 为 source commit，`EXTERNAL` 为 vendor、artifact version 与 artifact digest，DD-94(1)）、manifest/API range、全部合同与 artifact digest；审批决定仍由 ApprovalWorkflow 承接 |
 | PlatformProviderBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=PLATFORM_PROVIDER`、port、binding、old/new release、old/new generation 与 provider projection refs |
 | ApplicationBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=APPLICATION`、binding、old/new release、old/new generation、native scope 与全部投影 refs；类别内换成另一实现是新 binding 的建立加旧 binding 的 `COMPONENT_DISABLE`，不是同一 binding 的 generation 切换（DD-88） |
-| 应用 Resource 首次创建（`resource.create`） | `ComponentTaskWorkflow(kind=RESOURCE_PROVISION)`，input 固定 Resource ID/version、type_key、ApplicationBinding ID/version、release 与 generation；先写 SpiceDB relationship，再以 Resource ID 为幂等键经 Adapter Protocol `resolve_native_scope(mode=CREATE)` 创建或取回 native 对象；结果不明只以同一 Resource ref 调 `mode=LOOKUP` 对账，不以 `CREATE` 重放、不换幂等键（DD-98） |
+| Core 授权引用首次登记（`resource.create`） | 复用 `ComponentTaskWorkflow(kind=RESOURCE_PROVISION)`；input 固定 Resource ID/version、type_key、ApplicationBinding ID/version、release/generation、引用来源及证据。写 SpiceDB relationship 并复检后，已有对象只核同一冻结引用与 binding/native scope 的可复核证据，不发 CREATE；证据不明保持 `UNKNOWN`，只查原引用。明确 `REMOTE_ADAPTER` 原生创建才沿原 Resource ID 幂等 `CREATE`、未知只 `LOOKUP/ABSENT_FENCED` 流程；不重放 CREATE、不换幂等键（DD-98） |
 | 两类 Binding 停用 | `ComponentTaskWorkflow(kind=COMPONENT_DISABLE)`，input 固定 binding kind/ID/version 和受影响 refs |
 | 协议会话结果不明的对账 | `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，input 固定 ProtocolSession ref（ID/version）、实现 binding refs、base revision 与 native correlation；查证手段为该 binding 经 Adapter Protocol `query_revision` 提供的 revision 查询（DD-90） |
 | AgentInstallation 建立/升级/停用的多投影收敛 | `ComponentTaskWorkflow(kind=AGENT_INSTALLATION)`，input 固定 Installation ID/version、exact AgentVersion、projection generation、AgentPrincipal/BuzzIdentity、SpiceDB 与 Channel roster refs |
@@ -97,7 +97,7 @@ Codex MCP approval seam 在工具调用前暂停：`SERVER_CODEX` 固定启用 `
 
 业务差异由 ActionDefinition、Workflow input 和 Adapter 表达，不为某个能力类别或产品建只转发一次 API 的浅 Workflow。AgentTaskWorkflow 始终固定触发时的 AgentVersion 与 projection generation；Installation 升级不修改运行中 history。Child Agent 只在有独立生命周期、独立频道回复或脱离 parent turn 继续时建立新 AgentTaskWorkflow。
 
-`ComponentTaskWorkflow` kind 只允许两类（DD-90）：平台生命周期类 `RESOURCE_EXPORT`、`RESOURCE_IMPORT`、`TENANT_LIFECYCLE`、`WORKSPACE_LIFECYCLE`、`MEMBERSHIP_PROJECTION`、`MEMBERSHIP_REVOCATION`、`BUZZ_IDENTITY_PROJECTION`、`SECRET_REF_REHOME`、`AGENT_INSTALLATION`；通用组件类 `COMPONENT_RELEASE`、`COMPONENT_BINDING`、`COMPONENT_DISABLE`、`RESOURCE_PROVISION`（DD-98）、`PROTOCOL_SESSION_RECONCILE`、`CAPABILITY_VERSION_PUBLISH`。它们都不增加顶层 Workflow 引擎或新工作台；任何 kind 都不以某个业务能力服务的存在为前提，也不以产品命名。`DOCUMENT_RECONCILE`、`MODEL_PUBLISH`、`MATERIALIZATION` 已撤销。
+`ComponentTaskWorkflow` kind 只允许两类（DD-90）：平台生命周期类 `RESOURCE_EXPORT`、`RESOURCE_IMPORT`、`TENANT_LIFECYCLE`、`WORKSPACE_LIFECYCLE`、`MEMBERSHIP_PROJECTION`、`MEMBERSHIP_REVOCATION`、`BUZZ_IDENTITY_PROJECTION`、`SECRET_REF_REHOME`、`AGENT_INSTALLATION`；通用组件类 `COMPONENT_RELEASE`、`COMPONENT_BINDING`、`COMPONENT_DISABLE`、`RESOURCE_PROVISION`（Core 引用登记与明确的原生创建共用，DD-98）、`PROTOCOL_SESSION_RECONCILE`、`CAPABILITY_VERSION_PUBLISH`。它们都不增加顶层 Workflow 引擎或新工作台；任何 kind 都不以某个业务能力服务的存在为前提，也不以产品命名。`DOCUMENT_RECONCILE`、`MODEL_PUBLISH`、`MATERIALIZATION` 已撤销。
 
 ### 5.1 Activity 选项纪律
 
