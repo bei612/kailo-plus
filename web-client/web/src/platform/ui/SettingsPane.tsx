@@ -1,3 +1,5 @@
+import { ThemeSettingsControls } from "@client-kit/platform/react/theme-settings-controls";
+import { isBuzzTheme } from "@client-kit/platform/theme/use-appearance";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { translate } from "@client-kit/platform/i18n";
@@ -6,7 +8,6 @@ import { ProminentActiveTabSetting } from "@client-kit/platform/react/prominent-
 import {
   SettingsPage,
   ShortcutSettings,
-  ThemeModeControl,
   type SettingsSection,
 } from "@client-kit/platform/react/settings";
 import { setWorkspacePreference } from "@/platform/bff-client";
@@ -17,15 +18,15 @@ import { platformQueries } from "./queries";
 
 export function SettingsPane() {
   const locale = getLocale();
-  const { theme, setTheme, prominentActiveTab, setProminentActiveTab } = useTheme();
+  const appearance = useTheme();
   const [section, setSection] = useState<SettingsSection>("appearance");
   return (
     <SettingsPage locale={locale} section={section} onSelect={setSection}>
       {section === "appearance" ? (
         <div className="flex flex-col gap-6">
-          <ThemeModeControl locale={locale} value={theme} onChange={setTheme} />
-          <ProminentActiveTabSetting locale={locale} prominentActiveTab={prominentActiveTab}
-            setProminentActiveTab={setProminentActiveTab} />
+          <ThemeSettingsControls locale={locale} name={translate(locale, "platform.title")} appearance={appearance}>
+            {isBuzzTheme(appearance.themeName) ? <ProminentActiveTabSetting locale={locale} prominentActiveTab={appearance.prominentActiveTab} setProminentActiveTab={appearance.setProminentActiveTab} /> : null}
+          </ThemeSettingsControls>
           <ConversationDisplaySettings locale={locale} />
         </div>
       ) : section === "notifications" ? (

@@ -30,10 +30,12 @@ import {
   type AutomationView,
   type AutomationDetailView,
   type AutomationVersionView,
+  type AutomationVersionContent,
   type TaskView,
   type PlatformToolPage,
 } from "@client-kit/contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { parseDocument, stringify } from "yaml";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
@@ -43,6 +45,7 @@ import { Badge, Button, Cell, Notice, Table, ReadFailure as AgentReadFailure } f
 import { useLoad } from "./use-load";
 import { InstallationMemory } from "./memory";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
+import { WorkflowYamlEditor } from "./workflow-yaml-editor";
 
 function validDefinition(value: AgentDefinitionView): boolean {
   return !!value && typeof value.resourceId === "string" && !!value.resourceId
@@ -165,19 +168,50 @@ function validAutomationVersion(row: AutomationVersionView, parent: AutomationVi
     && Number.isSafeInteger(row.ordinal) && row.ordinal > 0
     && Object.values(AgentVersionState).includes(row.state)
     && typeof row.configHash === "string" && /^[0-9a-f]{64}$/.test(row.configHash)
-    && !!content && !!content.trigger
-    && (content.trigger.textPrefix === undefined || (typeof content.trigger.textPrefix === "string" && !!content.trigger.textPrefix))
-    && (content.trigger.kind === TriggerKind.Mention
-      ? typeof content.trigger.mentionPrincipalId === "string" && !!content.trigger.mentionPrincipalId
-      : content.trigger.mentionPrincipalId === undefined)
-    && !!content.action && [ActionKind.AgentTurn, ActionKind.PostMessage].includes(content.action.kind)
-    && typeof content.action.template === "string" && !!content.action.template.trim()
-    && (content.approvalPolicy === undefined || validApprovalPolicy(content.approvalPolicy))
-    && (content.trigger.kind === TriggerKind.Schedule
-      ? content.resultTarget === ResultTarget.Channel && content.trigger.textPrefix === undefined
-        && validSchedule(content.trigger.scheduleSpec)
-      : (content.trigger.kind === TriggerKind.ChannelMessage || content.trigger.kind === TriggerKind.Mention)
-        && content.resultTarget === ResultTarget.TriggerThread && content.trigger.scheduleSpec === undefined);
+    && validAutomationContent(content);
+}
+
+function objectFields(value: unknown, keys: string[]): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).every((key) => keys.includes(key));
+}
+
+function validAutomationContent(value: unknown): value is AutomationVersionContent {
+  if (!objectFields(value, ["trigger", "action", "resultTarget", "approvalPolicy"])
+    || !objectFields(value.trigger, ["kind", "textPrefix", "mentionPrincipalId", "scheduleSpec"])
+    || !objectFields(value.action, ["kind", "template"])) return false;
+  // The generated contract remains the data model; this is the existing form's
+  // accepted subset, also used for authorized read and YAML input.
+  const content = value;
+  const trigger = value.trigger;
+  const action = value.action;
+  return (trigger.textPrefix === undefined || (typeof trigger.textPrefix === "string" && !!trigger.textPrefix))
+    && (trigger.kind === TriggerKind.Mention
+      ? typeof trigger.mentionPrincipalId === "string" && !!trigger.mentionPrincipalId
+      : trigger.mentionPrincipalId === undefined)
+    && (action.kind === ActionKind.AgentTurn || action.kind === ActionKind.PostMessage)
+    && typeof action.template === "string" && !!action.template.trim()
+    && (content.approvalPolicy === undefined || (objectFields(content.approvalPolicy, ["id", "version"])
+      && typeof content.approvalPolicy.id === "string" && typeof content.approvalPolicy.version === "number"
+      && validApprovalPolicy({ id: content.approvalPolicy.id, version: content.approvalPolicy.version })))
+    && (trigger.kind === TriggerKind.Schedule
+      ? content.resultTarget === ResultTarget.Channel && trigger.textPrefix === undefined
+        && objectFields(trigger.scheduleSpec, ["everySeconds", "offsetSeconds", "catchupWindowSeconds"])
+        && typeof trigger.scheduleSpec.everySeconds === "number" && typeof trigger.scheduleSpec.offsetSeconds === "number"
+        && typeof trigger.scheduleSpec.catchupWindowSeconds === "number"
+        && validSchedule({ everySeconds: trigger.scheduleSpec.everySeconds, offsetSeconds: trigger.scheduleSpec.offsetSeconds,
+          catchupWindowSeconds: trigger.scheduleSpec.catchupWindowSeconds })
+      : (trigger.kind === TriggerKind.ChannelMessage || trigger.kind === TriggerKind.Mention)
+        && content.resultTarget === ResultTarget.TriggerThread && trigger.scheduleSpec === undefined);
+}
+
+function automationFromYaml(text: string): AutomationVersionContent | null {
+  try {
+    const document = parseDocument(text);
+    if (document.errors.length || document.warnings.length) return null;
+    const content: unknown = document.toJS();
+    return validAutomationContent(content) ? content : null;
+  } catch { return null; }
 }
 
 function validApprovalPolicy(value: AutomationVersionView["content"]["approvalPolicy"]): boolean {
@@ -201,7 +235,8 @@ function validAutomationDetail(value: AutomationDetailView, resource: string, wo
     && new Set(value.delegations.map((row) => row.delegationId)).size === value.delegations.length;
 }
 
-type AutomationEdit = { detail: AutomationDetailView; action: "publish_version" | "enable" | "pause" | "disable" };
+type AutomationEdit = { detail: AutomationDetailView; action: "publish_version" | "enable" | "pause" | "disable" }
+  | { detail: AutomationDetailView; action: "copy"; content: AutomationVersionView["content"] };
 
 export function AutomationManagement({ renderRunHistory }: {
   renderRunHistory?: (resourceId: string, workspaceId: string) => ReactNode;
@@ -290,8 +325,16 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, renderRunHi
   const [grantOffsets, setGrantOffsets] = useState([0]);
   const [versionIndex, setVersionIndex] = useState(0);
   const [grantIndex, setGrantIndex] = useState(0);
+  const [copying, setCopying] = useState(false);
+  const [copyError, setCopyError] = useState<unknown>();
+  const copyRequest = useRef(0);
   const versionOffset = versionOffsets[versionIndex] ?? 0;
   const grantOffset = grantOffsets[grantIndex] ?? 0;
+  useEffect(() => {
+    copyRequest.current += 1;
+    setCopying(false); setCopyError(undefined);
+    return () => { copyRequest.current += 1; };
+  }, [client, resourceId, workspaceId, versionOffset, grantOffset, locked]);
   const [state, reload] = useLoad(`automation:${resourceId}:${versionOffset}:${grantOffset}`,
     () => client.automation(resourceId, versionOffset, grantOffset));
   const value = state.status === "ok" ? state.data : null;
@@ -303,6 +346,22 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, renderRunHi
   const row = detail.automation;
   const published = detail.versions.filter((v) => v.state === AgentVersionState.Published);
   const grants = detail.delegations.filter((g) => new Date(g.expiresAt).getTime() > Date.now());
+  const copy = async (assetId: string) => {
+    if (locked || copying) return;
+    const request = ++copyRequest.current;
+    setCopying(true); setCopyError(undefined);
+    try {
+      // Re-read the selected page through the existing authorized reader; a stale
+      // local definition is not permission to copy after access was revoked.
+      const fresh = await client.automation(resourceId, versionOffset, grantOffset);
+      if (request !== copyRequest.current) return;
+      const version = validAutomationDetail(fresh, resourceId, workspaceId)
+        ? fresh.versions.find((candidate) => candidate.assetId === assetId) : undefined;
+      if (!version) throw new TransportError(t("platform.loadFailed"));
+      onEdit({ detail: fresh, action: "copy", content: version.content });
+    } catch (error) { if (request === copyRequest.current) setCopyError(error); }
+    finally { if (request === copyRequest.current) setCopying(false); }
+  };
   return <section className="flex flex-col gap-3 border-t pt-3">
     <p className="break-words text-sm">{row.resourceId} · {t("agents.resourceVersion")}: {row.resourceVersion}</p>
     <p className="break-words text-sm">{t("agents.automation.pinned")}: {row.pinnedVersionAssetId ?? "—"} · {t("agents.automation.grant")}: {row.delegationId ?? "—"}</p>
@@ -314,7 +373,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, renderRunHi
       {row.state !== AutomationState.Disabled ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "disable" })}>{t("agents.automation.disable")}</Button> : null}
     </div> : null}
     {detail.versions.length === 0 ? <Notice>{t("agents.automation.noVersion")}</Notice>
-      : <Table head={[t("agents.publishedVersion"), t("agents.resourceVersion"), t("platform.state"), t("agents.automation.trigger"), t("agents.automation.template")]}>
+      : <Table head={[t("agents.publishedVersion"), t("agents.resourceVersion"), t("platform.state"), t("agents.automation.trigger"), t("agents.automation.template"), ""]}>
         {detail.versions.map((version) => <tr key={version.assetId}>
           <Cell mono>{version.assetId}</Cell><Cell>{version.assetVersion}</Cell>
           <Cell><Badge tone="neutral">{t(automationVersionLabels[version.state])}</Badge></Cell>
@@ -332,8 +391,10 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, renderRunHi
               : t("agents.automation.noApproval")}</p>
           </Cell>
           <Cell><span className="whitespace-pre-wrap">{version.content.action.template}</span></Cell>
+          <Cell><Button disabled={locked || copying} onClick={() => { void copy(version.assetId); }}>{t("agents.automation.copy")}</Button></Cell>
         </tr>)}
       </Table>}
+    {copyError ? <AgentReadFailure error={copyError} onRetry={() => setCopyError(undefined)} /> : null}
     <div className="flex gap-2">
       {versionIndex > 0 ? <Button disabled={locked} onClick={() => setVersionIndex(versionIndex - 1)}>{t("roles.previous")}</Button> : null}
       {detail.nextVersionOffset !== undefined ? <Button disabled={locked} onClick={() => {
@@ -364,6 +425,7 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   const t = useT();
   const reasonText = useReasonText();
   const failureText = useFailureText();
+  const creating = !edit || edit.action === "copy";
   const [executorId, setExecutorId] = useState("");
   const [trigger, setTrigger] = useState(TriggerKind.ChannelMessage);
   const [prefix, setPrefix] = useState("");
@@ -373,6 +435,9 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   const [template, setTemplate] = useState("");
   const [actionKind, setActionKind] = useState(ActionKind.AgentTurn);
   const [policyKey, setPolicyKey] = useState("");
+  const [editorMode, setEditorMode] = useState<"form" | "yaml">("form");
+  const [yamlText, setYamlText] = useState("");
+  const [editorError, setEditorError] = useState(false);
   const frozenResponse = useRef<{ operationId: string; actionExecutionId: string } | null>(null);
   const [versionId, setVersionId] = useState("");
   const [grantId, setGrantId] = useState("");
@@ -386,7 +451,7 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   const executorOffset = executorOffsets[executorIndex] ?? 0;
   const [installations, reloadInstallations] = useLoad(`automation-executors:${workspaceId}:${executorOffset}`,
     () => workspaceId ? client.agentInstallations(workspaceId, executorOffset) : Promise.resolve(null));
-  const executorResource = edit?.detail.automation.executorInstallationResourceId;
+  const executorResource = creating ? undefined : edit.detail.automation.executorInstallationResourceId;
   const [selectedInstallation, reloadSelectedInstallation] = useLoad(`automation-executor:${executorResource}`,
     () => executorResource ? client.agentInstallation(executorResource) : Promise.resolve(null));
   const [admission, reloadAdmission] = useLoad(`automation-create:${workspaceId}`,
@@ -394,14 +459,14 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   const [tasks, reloadTasks] = useLoad("automation-actions-in-flight", client.tasks);
   const taskRows = tasks.status === "ok" && Array.isArray(tasks.data) && tasks.data.every(validDefinitionTask) ? tasks.data : null;
   const pending = taskRows?.filter((task) => task.actionKey.startsWith("automation.") && taskPhase(task).tone === "neutral") ?? [];
-  const requestBlocked = !taskRows || pending.some((task) => edit ? task.targetId === edit.detail.automation.resourceId : task.actionKey === "automation.create");
+  const requestBlocked = !taskRows || pending.some((task) => !creating ? task.targetId === edit.detail.automation.resourceId : task.actionKey === "automation.create");
   const executorPage = installations.status === "ok" && installations.data && Array.isArray(installations.data.installations)
     && installations.data.installations.every((row) => validInstallation(row) && row.workspaceId === workspaceId)
     && new Set(installations.data.installations.map((row) => row.resourceId)).size === installations.data.installations.length
     && (installations.data.nextOffset === undefined || (Number.isSafeInteger(installations.data.nextOffset) && installations.data.nextOffset > executorOffset))
     ? installations.data : null;
   const executors = executorPage?.installations.filter((row) => row.state === AgentInstallationState.Active && row.agentPrincipalState === "ACTIVE") ?? [];
-  const executor = edit ? selectedInstallation.status === "ok" && selectedInstallation.data
+  const executor = !creating ? selectedInstallation.status === "ok" && selectedInstallation.data
     && validInstallation(selectedInstallation.data) && selectedInstallation.data.resourceId === executorResource
     && selectedInstallation.data.workspaceId === workspaceId && selectedInstallation.data.state === AgentInstallationState.Active
     && selectedInstallation.data.agentPrincipalState === "ACTIVE" ? selectedInstallation.data : undefined
@@ -422,20 +487,35 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   const grants = edit?.detail.delegations.filter((row) => new Date(row.expiresAt).getTime() > Date.now()) ?? [];
   const version = versions.find((row) => row.assetId === versionId);
   const grant = grants.find((row) => row.delegationId === grantId);
-  const contentAction = !edit || edit.action === "publish_version";
+  const contentAction = creating || edit.action === "publish_version";
   const scheduleSpec = { everySeconds: Number(everySeconds), offsetSeconds: Number(offsetSeconds),
     catchupWindowSeconds: Number(catchupWindowSeconds) };
   const scheduleValid = [everySeconds, offsetSeconds, catchupWindowSeconds].every((value) => /^\d+$/.test(value))
     && validSchedule(scheduleSpec);
-  const contentAvailable = policyAvailable
-    && (trigger !== TriggerKind.Schedule || (scheduleSupported && scheduleValid));
+  const formContent: AutomationVersionContent = {
+    trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
+      ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
+    action: { kind: actionKind, template },
+    ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
+    resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
+  };
+  const yamlContent = editorMode === "yaml" ? automationFromYaml(yamlText) : null;
+  const content = editorMode === "yaml" ? yamlContent : formContent;
+  const contentUsable = (value: AutomationVersionContent | null): value is AutomationVersionContent => !!value
+    && validAutomationContent(value)
+    && (value.trigger.kind !== TriggerKind.Mention || value.trigger.mentionPrincipalId === executor?.agentPrincipalId)
+    && (value.trigger.kind !== TriggerKind.Schedule || scheduleSupported)
+    && (value.approvalPolicy === undefined || policies?.some((policy) => policy.id === value.approvalPolicy?.id
+      && policy.version === value.approvalPolicy.version) === true);
+  const contentAvailable = contentUsable(content) && (editorMode === "yaml"
+    || (policyAvailable && (trigger !== TriggerKind.Schedule || scheduleValid)));
   const enableAvailable = !!version && !!grant
     && (version.content.trigger.kind !== TriggerKind.Schedule || scheduleSupported);
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
     || submission?.gateState === ActionGateState.Evaluating
     || (submission?.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.NotDispatched);
   useEffect(() => {
-    const content = edit?.detail.versions[0]?.content;
+    const content = edit?.action === "copy" ? edit.content : edit?.detail.versions[0]?.content;
     setTrigger(content?.trigger.kind ?? TriggerKind.ChannelMessage); setPrefix(content?.trigger.textPrefix ?? "");
     setEverySeconds(content?.trigger.scheduleSpec?.everySeconds.toString() ?? "");
     setOffsetSeconds(content?.trigger.scheduleSpec?.offsetSeconds.toString() ?? "");
@@ -444,25 +524,38 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     setActionKind(content?.action.kind ?? ActionKind.AgentTurn);
     setPolicyKey(content?.approvalPolicy ? `${content.approvalPolicy.id}:${content.approvalPolicy.version}` : "");
     setVersionId(""); setGrantId(""); setExecutorId("");
+    setEditorMode("form"); setYamlText(""); setEditorError(false);
   }, [edit, workspaceId]);
   useEffect(() => { setExecutorIndex(0); setExecutorOffsets([0]); }, [workspaceId]);
+  const changeEditor = (mode: "form" | "yaml") => {
+    if (mode === editorMode) return;
+    if (mode === "yaml") {
+      // Never serialize an unavailable policy as NONE or turn an invalid numeric
+      // form draft into a different valid configuration.
+      if (!policyAvailable || (trigger === TriggerKind.Schedule && !scheduleValid)
+        || (trigger === TriggerKind.Mention && !executor)) { setEditorError(true); return; }
+      setYamlText(stringify(formContent)); setEditorMode(mode); setEditorError(false);
+      return;
+    }
+    if (!contentUsable(yamlContent)) { setEditorError(true); return; }
+    setTrigger(yamlContent.trigger.kind); setPrefix(yamlContent.trigger.textPrefix ?? "");
+    setEverySeconds(yamlContent.trigger.scheduleSpec?.everySeconds.toString() ?? "");
+    setOffsetSeconds(yamlContent.trigger.scheduleSpec?.offsetSeconds.toString() ?? "");
+    setCatchupWindowSeconds(yamlContent.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
+    setTemplate(yamlContent.action.template); setActionKind(yamlContent.action.kind);
+    setPolicyKey(yamlContent.approvalPolicy ? `${yamlContent.approvalPolicy.id}:${yamlContent.approvalPolicy.version}` : "");
+    setEditorMode(mode); setEditorError(false);
+  };
   const prepare = () => {
-    if (intent || busy || requestBlocked || !workspaceId || (!edit && (!canCreate || !executor))
-      || (edit && !edit.detail.canManage) || (contentAction && !template.trim())
-      || (contentAction && trigger === TriggerKind.Mention && !executor)
+    if (intent || busy || requestBlocked || !workspaceId || (creating && (!canCreate || !executor))
+      || (!creating && !edit.detail.canManage)
       || (contentAction && !contentAvailable)
       || (edit?.action === "enable" && !enableAvailable)) return;
-    const command: ActionCommand = { actionKey: edit ? `automation.${edit.action}` : "automation.create",
+    const command: ActionCommand = { actionKey: !creating ? `automation.${edit.action}` : "automation.create",
       idempotencyKey: newIdempotencyKey(), explicitConfirmation: true };
-    if (edit) { command.resourceId = edit.detail.automation.resourceId; command.resourceVersion = edit.detail.automation.resourceVersion; }
+    if (!creating) { command.resourceId = edit.detail.automation.resourceId; command.resourceVersion = edit.detail.automation.resourceVersion; }
     else { command.workspaceId = workspaceId; command.executorInstallationResourceId = executor!.resourceId; }
-    if (contentAction) command.automationVersionContent = {
-      trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
-        ...(trigger === TriggerKind.Mention ? { mentionPrincipalId: executor!.agentPrincipalId } : {}) },
-      action: { kind: actionKind, template },
-      ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
-      resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
-    };
+    if (contentAction && content) command.automationVersionContent = content;
     if (edit?.action === "enable" && version && grant) {
       command.assetId = version.assetId; command.assetVersion = version.assetVersion;
       command.delegationId = grant.delegationId; command.delegationVersion = grant.delegationVersion;
@@ -498,15 +591,15 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
       if (failed.kind !== "unknown" && !wasUnknown) { setIntent(null); onLocked(false); }
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
-  const title = !edit ? "agents.automation.create" : edit.action === "publish_version" ? "agents.automation.publish"
+  const title = creating ? "agents.automation.create" : edit.action === "publish_version" ? "agents.automation.publish"
     : edit.action === "enable" ? "agents.automation.enable" : edit.action === "pause" ? "agents.automation.pause" : "agents.automation.disable";
   // Scope 尚未读成真实 Workspace 时不制造空执行器/未知创建表单；已冻结的写意图仍保留。
   if (!workspaceId && !intent) return null;
   return <section className="flex flex-col gap-3 rounded-md border p-3">
     <h3 className="text-sm font-medium">{t(title)}</h3>
     {!intent ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
-      {edit ? <p className="break-words text-sm">{edit.detail.automation.resourceId} · {t("agents.resourceVersion")}: {edit.detail.automation.resourceVersion}</p> : null}
-      {!edit ? <>
+      {!creating ? <p className="break-words text-sm">{edit.detail.automation.resourceId} · {t("agents.resourceVersion")}: {edit.detail.automation.resourceVersion}</p> : null}
+      {creating ? <>
         {installations.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
           : !executorPage ? <AgentReadFailure error={installations.status === "error" ? installations.error : undefined} onRetry={reloadInstallations} />
           : executors.length === 0 ? <Notice>{t("agents.automation.noExecutor")}</Notice>
@@ -523,7 +616,13 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
         </div>
       </> : null}
       {contentAction ? <>
-        {edit && selectedInstallation.status === "error" ? <AgentReadFailure error={selectedInstallation.error} onRetry={reloadSelectedInstallation} /> : null}
+        {!creating && selectedInstallation.status === "error" ? <AgentReadFailure error={selectedInstallation.error} onRetry={reloadSelectedInstallation} /> : null}
+        <div className="flex gap-2" role="group" aria-label={t("agents.automation.yaml")}>
+          <Button aria-pressed={editorMode === "form"} onClick={() => changeEditor("form")}>{t("agents.automation.form")}</Button>
+          <Button aria-pressed={editorMode === "yaml"} onClick={() => changeEditor("yaml")}>{t("agents.automation.yaml")}</Button>
+        </div>
+        {editorError || (editorMode === "yaml" && !contentAvailable) ? <Notice role="alert">{t("agents.automation.yamlInvalid")}</Notice> : null}
+        {editorMode === "yaml" ? <WorkflowYamlEditor value={yamlText} onChange={(value) => { setYamlText(value); setEditorError(false); }} /> : <>
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.trigger")}
           <select value={trigger} onChange={(event) => {
             const value = [TriggerKind.ChannelMessage, TriggerKind.Mention, ...(scheduleSupported ? [TriggerKind.Schedule] : [])]
@@ -572,6 +671,7 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
         {!policyAvailable ? <Notice role="status">{t("agents.automation.approvalUnavailable")}
           <Button onClick={reloadAdmission}>{t("platform.retry")}</Button></Notice> : null}
         <p className="text-sm">{t("agents.automation.resultTarget")}: {t(trigger === TriggerKind.Schedule ? "agents.automation.channel" : "agents.automation.thread")}</p>
+        </>}
       </> : null}
       {edit?.action === "enable" ? <>
         <label className="flex flex-col gap-1 text-sm">{t("agents.publishedVersion")}
@@ -588,12 +688,11 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
       {((contentAction && trigger === TriggerKind.Schedule) || (edit?.action === "enable" && version?.content.trigger.kind === TriggerKind.Schedule))
         && !scheduleSupported ? <Notice role="status">{t("agents.automation.scheduleUnavailable")}</Notice> : null}
       <div className="flex gap-2">
-        {edit || (canCreate && executor) ? <Button type="submit" disabled={requestBlocked || (edit?.action === "enable" && !enableAvailable)
-          || (contentAction && trigger === TriggerKind.Mention && !executor)
+        {!creating || (canCreate && executor) ? <Button type="submit" disabled={requestBlocked || (edit?.action === "enable" && !enableAvailable)
           || (contentAction && !contentAvailable)}>{t("agents.review")}</Button> : null}
         {edit ? <Button onClick={onReset}>{t("agents.cancel")}</Button> : null}
       </div>
-      {!edit && admission.status === "error" ? <AgentReadFailure error={admission.error} onRetry={reloadAdmission} /> : null}
+      {creating && admission.status === "error" ? <AgentReadFailure error={admission.error} onRetry={reloadAdmission} /> : null}
     </form> : <div className="flex flex-col gap-2 text-sm" role="group">
       <p className="break-words">{intent.actionKey} · {intent.resourceId ?? intent.workspaceId} · {intent.resourceVersion ?? "—"}</p>
       {intent.automationVersionContent ? <>

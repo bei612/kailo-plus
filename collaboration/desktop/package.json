@@ -25,6 +25,7 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "yaml": "^2.8.3",
     "@client-kit/contracts": "file:../../client-kit/ts/contracts",
     "@client-kit/platform": "file:../../client-kit/ts/platform",
     "@dnd-kit/core": "^6.3.1",

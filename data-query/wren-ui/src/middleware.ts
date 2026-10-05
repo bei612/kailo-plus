@@ -79,6 +79,22 @@ function denied(status: number, code: string) {
 }
 
 export async function middleware(request: NextRequest) {
+  // Exact machine routes authenticate in their original Node handler: Gateway
+  // service JWT for MCP; ActionToken + fresh Core PEP for lifecycle/observation.
+  // No other native page/API is exempt from the dedicated browser identity.
+  if (
+    [
+      '/api/platform-adapter/mcp',
+      '/api/platform-adapter/observe',
+      '/platform-adapter/v1/observe',
+      '/api/platform-adapter/handshake',
+      '/api/platform-adapter/validate_binding',
+      '/platform-adapter/v1/handshake',
+      '/platform-adapter/v1/validate_binding',
+    ].includes(request.nextUrl.pathname)
+  ) {
+    return NextResponse.next();
+  }
   let configured: ReturnType<typeof nativeIdentity>;
   try {
     configured = nativeIdentity();

@@ -20,9 +20,10 @@ pub(crate) const ACTION: &str = "automation.run";
 pub(crate) mod post_message;
 mod schedule;
 pub(crate) mod step_approval;
+mod webhook_secret;
+pub(crate) use schedule::admit_schedule;
 pub(crate) use schedule::converge_scope_schedules;
 pub(crate) use schedule::interval as schedule_spec;
-pub(crate) use schedule::{admit_schedule, defer_schedule_dispatch};
 
 fn configured_run_meters() -> Result<Option<Vec<String>>, String> {
     match std::env::var("AUTOMATION_RUN_METERS_JSON") {
@@ -401,7 +402,8 @@ pub(crate) fn validate_management_params(
         Semantic::AutomationPublish
         | Semantic::AutomationEnable
         | Semantic::AutomationPause
-        | Semantic::AutomationDisable => {
+        | Semantic::AutomationDisable
+        | Semantic::AutomationRotateWebhookSecret => {
             p.workspace_id.is_none()
                 && p.executor_installation_resource_id.is_none()
                 && p.resource_id.is_some_and(|id| !id.is_nil())
@@ -522,12 +524,10 @@ pub(crate) async fn management_target(
             && frozen.is_none_or(|id| id == r.id)
     })
     .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
-    if row.webhook_secret_ref.is_some()
-        || !matches!(
-            row.automation_state.as_str(),
-            "DRAFT" | "ENABLED" | "PAUSED" | "DISABLED"
-        )
-    {
+    if !matches!(
+        row.automation_state.as_str(),
+        "DRAFT" | "ENABLED" | "PAUSED" | "DISABLED"
+    ) {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     if (sem == Semantic::AutomationPause && row.automation_state != "ENABLED")
@@ -535,6 +535,16 @@ pub(crate) async fn management_target(
         || (sem == Semantic::AutomationDisable && row.automation_state == "DISABLED")
     {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    if sem == Semantic::AutomationRotateWebhookSecret {
+        let webhook: bool = sqlx::query_scalar("select exists(select 1 from catalog.automation_definition d
+            join catalog.automation_version v on v.asset_id=d.pinned_version_asset_id and v.automation_resource_id=d.resource_id
+            where d.resource_id=$1 and d.state in ('ENABLED','PAUSED') and d.webhook_secret_ref is not null
+              and v.state='PUBLISHED' and v.trigger->>'kind'='WEBHOOK')")
+            .bind(row.id).fetch_one(&mut *conn).await?;
+        if !webhook {
+            return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+        }
     }
     let workspace: Option<Uuid> = sqlx::query_scalar(&format!(
         "select id from identity.workspace
@@ -664,6 +674,9 @@ pub(crate) async fn management_prewrite(
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
     match sem {
+        Semantic::AutomationRotateWebhookSecret => {
+            webhook_secret::freeze(g, tx, ae, &row).await.map(|_| ())
+        }
         Semantic::AutomationPublish => {
             let normalized = management_content(
                 p.automation_version_content
@@ -747,9 +760,11 @@ pub(crate) async fn management_prewrite(
                     ae.tenant_id, row.id, ae.id
                 )
             });
+            let webhook = webhook_secret::freeze(g, tx, ae, &row).await?;
             sqlx::query("update catalog.automation_definition set pinned_version_asset_id=$2,delegation_id=$3,schedule_id=$4,
+                webhook_secret_ref=coalesce($5,webhook_secret_ref),
                 state='ENABLED',enabled_at=clock_timestamp(),version=version+1 where resource_id=$1")
-                .bind(row.id).bind(p.asset_id).bind(p.delegation_id).bind(&schedule_id).execute(&mut **tx).await?;
+                .bind(row.id).bind(p.asset_id).bind(p.delegation_id).bind(&schedule_id).bind(webhook).execute(&mut **tx).await?;
             sqlx::query("update catalog.resource set version=version+1 where id=$1")
                 .bind(row.id)
                 .execute(&mut **tx)
@@ -766,6 +781,9 @@ pub(crate) async fn management_prewrite(
             Ok(())
         }
         Semantic::AutomationPause | Semantic::AutomationDisable => {
+            if sem == Semantic::AutomationDisable {
+                webhook_secret::freeze(g, tx, ae, &row).await?;
+            }
             sqlx::query("update catalog.automation_definition set state=$2,version=version+1 where resource_id=$1")
                 .bind(row.id).bind(if sem==Semantic::AutomationPause{"PAUSED"}else{"DISABLED"})
                 .execute(&mut **tx).await?;
@@ -934,6 +952,69 @@ struct ManagementVersion {
     content: Value,
 }
 
+/// Native lifecycle work cannot inherit the local SYNC transaction's success.
+pub(crate) async fn defer_management_dispatch(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "update admission.action_execution
+         set dispatch_state=case when parameters ?| array['scheduleIntent','webhookSecretIntent']
+           then 'NOT_DISPATCHED' else dispatch_state end
+         where id=$1 and gate_state='ALLOWED' and dispatch_state='DISPATCHED'
+           and action_key in ('automation.enable','automation.pause','automation.disable','automation.rotate_webhook_secret')
+         returning coalesce(parameters ?| array['scheduleIntent','webhookSecretIntent'],false)",
+    )
+    .bind(id)
+    .fetch_one(&mut **tx)
+    .await
+}
+
+fn management_intents_complete(parameters: &Value) -> bool {
+    let intents = ["scheduleIntent", "webhookSecretIntent"];
+    intents.iter().any(|key| parameters.get(key).is_some())
+        && intents.iter().all(|key| {
+            parameters
+                .get(key)
+                .is_none_or(|intent| intent["complete"] == true)
+        })
+}
+
+/// Called under the original AE/resource locks, only after native read-back.
+/// The last receipt owns the single dispatch/audit terminal and projection unlock.
+async fn complete_management_intent(
+    tx: &mut Transaction<'_, Postgres>,
+    ae: &governance::Execution,
+    def: &Definition,
+    key: &str,
+) -> Result<(), Refusal> {
+    let parameters: Value = sqlx::query_scalar(
+        "update admission.action_execution set parameters=jsonb_set(parameters,ARRAY[$2,'complete'],'true'::jsonb)
+         where id=$1 and parameters ? $2 returning parameters",
+    )
+    .bind(ae.id).bind(key).fetch_one(&mut **tx).await?;
+    if !management_intents_complete(&parameters) {
+        governance::record_dispatch(
+            tx,
+            ae.id,
+            def.audit_class(),
+            Err(axum::http::StatusCode::SERVICE_UNAVAILABLE),
+            Vec::new(),
+        )
+        .await?;
+        return Ok(());
+    }
+    sqlx::query("update catalog.resource set projection_action_execution_id=null where id=$1 and projection_action_execution_id=$2")
+        .bind(ae.target_id).bind(ae.id).execute(&mut **tx).await?;
+    let outcome = if parameters["webhookSecretIntent"]["aborting"] == true {
+        Err(axum::http::StatusCode::FORBIDDEN)
+    } else {
+        Ok(())
+    };
+    governance::record_dispatch(tx, ae.id, def.audit_class(), outcome, Vec::new()).await?;
+    Ok(())
+}
+
 /// create/publish 的唯一派发入口。native关系写入的未知结果沿同AE读回，不分配新ID。
 pub(crate) async fn management_dispatch(
     g: &Governance,
@@ -951,6 +1032,19 @@ pub(crate) async fn management_dispatch(
     }
     let creating = sem == Semantic::AutomationCreate;
     if !creating && sem != Semantic::AutomationPublish {
+        drop(tx);
+        // Finish credential preparation before touching the previous Schedule.
+        // Both native receipts still belong to this original management AE.
+        webhook_secret::dispatch(g, id, def).await?;
+        let mut tx = g.pool.begin().await?;
+        let latest = governance::lock_execution(&mut tx, id).await?;
+        let secret = latest
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("webhookSecretIntent"));
+        if secret.is_some_and(|intent| intent["complete"] != true) {
+            return Ok(());
+        }
         drop(tx);
         return schedule::dispatch(g, id, def, sem).await;
     }

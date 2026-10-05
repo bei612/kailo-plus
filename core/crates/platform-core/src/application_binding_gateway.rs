@@ -31,8 +31,8 @@ pub(crate) fn route_url(
 
 pub(super) async fn publish(state: &ServiceState, ae: &Execution) -> Result<(), Refusal> {
     let mut tx = state.pool.begin().await?;
-    let row:Option<(i64,String,String,String,Value)>=sqlx::query_as(
-        "select p.generation,b.adapter_service_ref,b.native_instance_ref,s.audience,r.manifest
+    let row:Option<(i64,String,String,String,Value,Value)>=sqlx::query_as(
+        "select p.generation,b.adapter_service_ref,b.native_instance_ref,s.audience,r.manifest,p.observation
          from catalog.application_binding b join projection.application_runtime p on p.binding_id=b.id
          join catalog.component_release r on r.id=b.component_release_id and r.status='APPROVED'
          join identity.service_principal s on s.principal_id=b.service_principal_id
@@ -43,7 +43,8 @@ pub(super) async fn publish(state: &ServiceState, ae: &Execution) -> Result<(), 
          for update of b,p")
         .bind(ae.target_id).bind(ae.tenant_id).bind(ae.workspace_id).bind(ae.id)
         .fetch_optional(&mut *tx).await?;
-    let (generation, reference, instance, audience, manifest) = row.ok_or_else(conflict)?;
+    let (generation, reference, instance, audience, manifest, observation) =
+        row.ok_or_else(conflict)?;
     let names: Vec<String> = sqlx::query_scalar(
         "select t.name from catalog.tool_definition t
         join catalog.resource r on r.id=t.resource_id
@@ -88,6 +89,8 @@ pub(super) async fn publish(state: &ServiceState, ae: &Execution) -> Result<(), 
     if native::Connector::from_manifest(&manifest)? == native::Connector::RemoteAdapter {
         native_target["policies"] =
             json!({"backendAuth":service.adapter_backend_auth(&audience).map_err(|_| blocked())?});
+    } else if let Some(auth) = credentials::backend_auth(&observation["nativeCredentials"])? {
+        native_target["policies"] = json!({"backendAuth":auth});
     }
     let route = json!({"name":target,"gateways":[signer.gateway_name()],"matches":[{"path":{"exact":url.path()}}],
         "policies":{"mcpAuthentication":{"mode":"strict","issuer":signer.issuer(),"audiences":[signer.audience()],
@@ -156,7 +159,20 @@ pub(super) async fn publish_validation(
     ae: &Execution,
     generation: i64,
     adapter: &native::Adapter,
-) -> Result<reqwest::Url, Refusal> {
+    binding: &Value,
+    manifest: &Value,
+) -> Result<(reqwest::Url, Value), Refusal> {
+    let mut tx = state.pool.begin().await?;
+    let current:bool=sqlx::query_scalar("select exists(select 1 from catalog.application_binding b
+        join projection.application_runtime p on p.binding_id=b.id and p.action_execution_id=b.projection_action_execution_id
+        where b.id=$1 and b.projection_action_execution_id=$2 and b.state='PROVISIONING' and p.state='PENDING'
+          and p.generation=$3 and b.version=$4 for update of b,p)").bind(ae.target_id).bind(ae.id).bind(generation)
+        .bind(binding["bindingVersion"].as_i64().ok_or_else(invalid)? as i32).fetch_one(&mut *tx).await?;
+    if !current {
+        return Err(conflict());
+    }
+    let credential_projection =
+        credentials::prepare(state, ae, generation, binding, manifest, adapter).await?;
     let signer = state.agent_tool_sessions.as_ref().ok_or_else(blocked)?;
     let service = state.gateway_service_auth.as_ref().ok_or_else(blocked)?;
     let mut url = route_url(signer, ae.target_id, generation)?;
@@ -164,6 +180,10 @@ pub(super) async fn publish_validation(
         .map_err(|_| invalid())?
         .push("validation");
     let target = peer::target(ae.target_id, generation);
+    let mut native_target = json!({"name":target,"mcp":{"host":adapter.mcp_url()?.as_str()}});
+    if let Some(auth) = credentials::backend_auth(&credential_projection)? {
+        native_target["policies"] = json!({"backendAuth":auth});
+    }
     let route = json!({"name":target,"gateways":[signer.gateway_name()],"matches":[{"path":{"exact":url.path()}}],
         "policies":{"jwtAuth":state.auth.core_mcp_authentication().map_err(|_| blocked())?,
             "mcpAuthorization":{"rules":["mcp.methodName in ['initialize', 'ping', 'notifications/initialized', 'tools/list']"]},
@@ -174,15 +194,7 @@ pub(super) async fn publish_validation(
                 "metadata":{"managementAction":"has(mcpGuardrails.managementAction) ? mcpGuardrails.managementAction : ''",
                     "managementBearer":"has(mcpGuardrails.managementBearer) ? mcpGuardrails.managementBearer : ''"}}]}},
         "backends":[{"mcp":{"statefulMode":"stateless","prefixMode":"conditional","failureMode":"failClosed",
-            "targets":[{"name":target,"mcp":{"host":adapter.mcp_url()?.as_str()}}]}}]});
-    let mut tx = state.pool.begin().await?;
-    let current:bool=sqlx::query_scalar("select exists(select 1 from catalog.application_binding b
-        join projection.application_runtime p on p.binding_id=b.id and p.action_execution_id=b.projection_action_execution_id
-        where b.id=$1 and b.projection_action_execution_id=$2 and b.state='PROVISIONING' and p.state='PENDING'
-          and p.generation=$3 for update of b,p)").bind(ae.target_id).bind(ae.id).bind(generation).fetch_one(&mut *tx).await?;
-    if !current {
-        return Err(conflict());
-    }
+            "targets":[native_target]}}]});
     let gateway = crate::model_route::Gateway::from_env()?;
     gateway
         .admin(
@@ -192,7 +204,7 @@ pub(super) async fn publish_validation(
         .await?;
     crate::agent_tool_runtime::require_route(&gateway, &target, Some(&route)).await?;
     tx.commit().await?;
-    Ok(url)
+    Ok((url, credential_projection))
 }
 
 pub(super) async fn revoke(state: &ServiceState, ae: &Execution) -> Result<(), Refusal> {

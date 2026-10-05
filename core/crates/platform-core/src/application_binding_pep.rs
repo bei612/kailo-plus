@@ -13,6 +13,17 @@ use axum::{
 
 type BindingIdentity = (Uuid, Option<Uuid>, String, String, String, Option<Uuid>);
 
+// Transport classification only; the ActionExecution remains the authority.
+// Business reads cannot borrow the DISABLING/system-observation exception.
+fn business_operation(operation: &str, status: &str) -> Result<(bool, bool), Refusal> {
+    match (operation, status) {
+        ("observe" | "extract_usage", "ACTIVE" | "DISABLING") => Ok((true, false)),
+        ("execute", "ACTIVE") => Ok((false, false)),
+        ("query_revision", "ACTIVE") => Ok((false, true)),
+        _ => Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)),
+    }
+}
+
 pub(crate) async fn check(
     State(state): State<ServiceState>,
     headers: HeaderMap,
@@ -78,10 +89,10 @@ pub(crate) async fn check(
                   and b.state in ('ACTIVE','DISABLING') and b.active_projection_generation=a.component_projection_generation)")
                 .bind(ae.id).bind(binding).fetch_one(&mut *tx).await?;
             let expected_workspace=ae.workspace_id.map(|id|json!(id));
-            let observing=matches!(operation,"observe"|"extract_usage");
-            let hash=if observing {collab_bridge::limits::canonical_digest(&json!({"operation":operation,"arguments":arguments}))}
+            let (observing,querying)=business_operation(operation,&status)?;
+            let hash=if observing || querying {collab_bridge::limits::canonical_digest(&json!({"operation":operation,"arguments":arguments}))}
                 else {collab_bridge::limits::canonical_digest(&arguments)};
-            if !attached || (!observing && (operation!="execute" || status!="ACTIVE")) || raw.get("contentReference").is_some()
+            if !attached || raw.get("contentReference").is_some()
                 || ae.gate_state!="ALLOWED" || ae.dispatch_state!="DISPATCHED"
                 || claims["tenant_id"]!=json!(ae.tenant_id) || claims.get("workspace_id")!=expected_workspace.as_ref()
                 || claims["actor_principal_id"]!=json!(ae.actor_principal_id)
@@ -90,18 +101,21 @@ pub(crate) async fn check(
                 || claims["operation_id"]!=json!(ae.operation_id) || claims["action_key"]!=ae.action_key
                 || claims["action_definition_version"]!=ae.action_version || claims["target_type"]!=def.target_type
                 || claims["target_id"]!=json!(ae.target_id)
-                || (!observing && claims["normalized_parameter_hash"]!=parameters["toolParameterHash"])
+                || (!observing && !querying && claims["normalized_parameter_hash"]!=parameters["toolParameterHash"])
                 || claims["normalized_parameter_hash"]!=hash
                 || claims["result_exposure_policy_id"]!=parameters["resultExposurePolicyId"]
                 || claims["result_exposure_policy_version"]!=parameters["resultExposurePolicyVersion"]
                 || claims["delegation_id"]!=parameters["delegationId"] || claims["delegation_version"]!=parameters["delegationVersion"]
                 || claims["authorization_min_zed_token"].as_str().is_none_or(str::is_empty)
-                || (!observing && crate::application_tool::target(&arguments)?!=(def.target_type.as_str(),ae.target_id)) {
+                || (!observing && !querying && crate::application_tool::target(&arguments)?!=(def.target_type.as_str(),ae.target_id)) {
                 return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
             }
             tx.commit().await?;
             let revision=if observing {
                 crate::action_token::observation_revision(&state,&ae,binding,operation,&arguments).await?
+            } else if querying {
+                let (_,revision)=crate::application_tool::fresh_revision_read(&state,&ae,&arguments).await?;
+                revision
             } else {
                 let decision=crate::application_tool::fresh_execution(&state.governance,&ae).await?;
                 if !decision.allowed {return Err(Refusal::Denied(ReasonCode::PermissionDenied));}
@@ -150,5 +164,32 @@ pub(crate) async fn check(
     match result {
         Ok(value) => Json(value).into_response(),
         Err(error) => error.respond(None),
+    }
+}
+
+#[cfg(test)]
+mod revision_pep_tests {
+    use super::*;
+
+    #[test]
+    fn revision_read_requires_active_business_binding_not_observation_exception() {
+        assert_eq!(
+            business_operation("query_revision", "ACTIVE").unwrap(),
+            (false, true)
+        );
+        assert_eq!(
+            business_operation("execute", "ACTIVE").unwrap(),
+            (false, false)
+        );
+        for operation in ["observe", "extract_usage"] {
+            assert_eq!(
+                business_operation(operation, "DISABLING").unwrap(),
+                (true, false)
+            );
+        }
+        for status in ["PROVISIONING", "DISABLING", "DISABLED", "UNKNOWN"] {
+            assert!(business_operation("query_revision", status).is_err());
+        }
+        assert!(business_operation("query_revision_other", "ACTIVE").is_err());
     }
 }

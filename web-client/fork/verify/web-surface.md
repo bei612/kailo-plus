@@ -1538,3 +1538,71 @@ Web 检查外推为原生端撤权或设备验收。
 `mutation.log` SHA-256 `7116d66b48966d83a0e7bc36c05b79036edeb9f98406380a280ee3936285a248`；
 `restored.log` SHA-256 `afa2e4b8752fa7089748a8871605493b128e4cc85106af13121dda0b1a715e7e`。
 本阶段没有产品构建、部署或 full，源码提交与联合交付分别收口。
+
+## 原 Buzz 完整外观设置共用（2026-10-05）
+
+基线 `6112fdb6dfbdee9897a34e374988e6d79f37406c`。设计修正已独立提交并推送
+`06c10a0f560c1ee2e5439e4127e0d1d865bd601a`；本节仅是实现后窄验证，
+不表示新客户端已构建、部署或整组设置全部交付。
+
+1. 权威：DD-53、SF-DSK-04。只读复核 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `buzz/desktop/src/features/settings/ui/SettingsPanels.tsx::ThemeSettingsCard/useThemeCategories`、
+   `buzz/desktop/src/shared/theme/ThemeProvider.tsx::ThemeProvider/readStoredTheme/applyTheme/resolveEffectiveAccent`
+   与 `buzz/desktop/src/shared/theme/theme-loader.ts::loadThemeData/getThemePair/resolveSystemTheme`。
+   直接抽取原样式选项、预览、强调色和偏好状态，复用原 loader，不造第二主题引擎。
+2. 影响：原 Desktop SettingsPanels 和 Web SettingsPane 均消费共享
+   ThemeSettingsControls/useAppearance；桌面原非原生实现删除，旧导入点仅重导出。
+   原 native glass/window 事件仍限 Desktop。Web 代码块高亮跟随真实主题名。
+   原 `buzz-theme/buzz-accent-color/buzz-follow-system` 是唯一偏好键；
+   Web 旧 `buzz-web-theme` 在不存在原生偏好时一次迁移，成功写入后删除。
+   原有桌面偏好不覆盖；Mobile 无新入口，仅同步原 i18n 生成输出。
+3. 副作用：仅设备 localStorage、DOM 样式/属性和原 Desktop window glass；
+   无服务器写入、权限/密钥/额度/工作流改变。跨组件 Host 仍只公开 light/dark 与
+   locale，不将样式名变成组件协议。原 motion/lucide 依赖按现有版本范围复用。
+4. 异常：非法旧模式不迁移；存储写入失败撤销本次部分写入、保留旧键供重试；
+   系统颜色改变只解析原主题 pair，不改所选样式；Buzz 强制原中性强调色但保留
+   非 Buzz 偏好；过时异步加载不能覆盖后选主题。原语义色检查仅精确核验原预览
+   四个 style 表达式，非文件豁免；JSX key/testid 不作为 CSS 颜色类。
+   无新增业务状态，六类业务错误合同不变。
+
+实际使用既有固定 SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+4 CPU / 8 GiB / swap 0、UID 1000、Data 缓存；检查前核对运行进程与资源压力。
+原 root pnpm、Desktop pnpm 与 Web npm 的 lockfile-only/ignore-scripts 生成锁，
+无手写锁或整库升级。原 i18n 生成器同步 Dart；没有新增契约。
+
+实现后原命令：
+
+- 共享 `pnpm --filter @client-kit/platform typecheck`、测试 tsconfig 的
+  `tsc --noEmit`：退出 0；原 Vitest settings/pages/theme-appearance 三文件
+  211 项通过。测试真实共享控件、原 loader、DOM CSS 和存储，不以假主题代替。
+- `python3 tools/gen-platform-i18n.py --check`：退出 0。
+- Web `npm ci --ignore-scripts --no-audit --no-fund && npm run typecheck && npm test`：
+  退出 0，11 文件 47 项通过。
+- Desktop 原 `pnpm install --frozen-lockfile --ignore-scripts --store-dir /cache/pnpm-memory-read`
+  及 `pnpm exec tsc --noEmit`：退出 0。
+
+真实变异仅在隔离执行副本：破坏 Buzz 中性强调色、系统变化、旧键删除、
+原生偏好保护和过期加载五处生产逻辑，并向原预览注入固定颜色及 foreign-color 类。
+原两文件检查实际 9 项失败、190 项通过，退出 1；逐字 apply_patch 还原，
+两源 cmp 0 后原三文件 211 项重新通过、退出 0。颜色门禁没有因抽取控件而放宽。
+
+原件根目录：
+`/volumes/data/kailo/tmp/codex-buzz-appearance-20261005.zLvGRy`。
+`hosts-target.log` SHA-256
+`db02b7caf744ea0f734341c63edcc018be41996fe6172b8d1b81fe2063ead1b9`；
+`mutation.log`
+`f047ac8e9d43c5611e3096394db271bc60b14a5f979b5c652285a8f9e4ecc45a`；
+`restored.log`
+`a78766d32af6f9717ce0b1602a6a19d1a4e56ab8c009ba84d17c550de38f6f81`。
+
+失败原件保留：首次执行副本缺 Desktop 原 patch 导致安装退出 254；
+补全已审计 workspace 输入后成功。一次 sparse-checkout 命令退出 139，
+未改正式树或修 Git 元数据，改以只读 archive 提供执行副本。
+首次共享严格 TS 检查捕捉原 Desktop 数组/正则推断差异，按已验证固定下标收束；
+随后旧扫描器误将控件 testid 当颜色及拒绝原 style，两项失败后精确修正。
+`combined-target.log` 的共享 211 项已通过，但串行脚本错误 cwd 导致末项退出 2；
+纠正后只运行未完成宿主项，不将前次整组算成功。npm 配置/peer 告警、
+Motion reduced-motion 与 React act 告警保留。未执行本批 full、产品构建、
+部署或真实设备验收；旧产物摘要不代表本候选，后续由联合批集中收口。

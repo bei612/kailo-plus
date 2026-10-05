@@ -24,6 +24,7 @@ function reply(response, status, value) {
 }
 
 async function setup(t, changes = {}) {
+  const requestArguments = changes.arguments ?? args;
   const directory = await mkdtemp(join(tmpdir(), 'file-storage-adapter-'));
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const jwksFile = join(directory, 'jwks.json');
@@ -50,7 +51,7 @@ async function setup(t, changes = {}) {
       const parsed = JSON.parse(body);
       assert.equal(parsed.bindingId, ids[0]);
       assert.equal(parsed.operation, 'query_revision');
-      assert.deepEqual(JSON.parse(parsed.argumentsJson), args);
+      assert.deepEqual(JSON.parse(parsed.argumentsJson), requestArguments);
       if (changes.pep) return changes.pep(state, response, parsed);
       return reply(response, 200, { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: `fresh-${state.peps}` });
     }
@@ -62,6 +63,9 @@ async function setup(t, changes = {}) {
     state.nativeReads.push(request.url);
     if (request.url === `/v2/n/node/${ids[2]}?Flags=WithVersionsAll`) return reply(response, 200, changes.root ?? root);
     if (request.url === `/v2/n/node/${ids[3]}?Flags=WithVersionsAll`) return reply(response, 200, changes.target ?? target);
+    if (request.url === `/v2/n/node/${ids[10]}?Flags=WithVersionsAll`) return reply(response, 200, changes.authorized ?? {
+      Uuid: ids[10], Type: 'COLLECTION', Path: 'documents/root/authorized', ContextWorkspace: { Uuid: ids[1] },
+    });
     if (request.url === `/v2/n/node/${ids[3]}/versions`) {
       assert.equal(request.method, 'POST');
       let body = '';
@@ -92,7 +96,7 @@ async function setup(t, changes = {}) {
       initiating_human_principal_id: ids[9], operation_id: ids[6], action_execution_id: ids[7],
       target_type: 'RESOURCE', target_id: ids[10], action_key: 'file_storage.read', action_definition_version: 1,
       delegation_id: ids[11], delegation_version: 1, result_exposure_policy_id: ids[9], result_exposure_policy_version: 1,
-      authorization_min_zed_token: 'original', normalized_parameter_hash: queryDigest(args), ...change };
+      authorization_min_zed_token: 'original', normalized_parameter_hash: queryDigest(requestArguments), ...change };
     const encodedHeader = Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'test-current', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
     const signature = sign('sha256', Buffer.from(`${encodedHeader}.${payload}`), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url');
@@ -101,7 +105,7 @@ async function setup(t, changes = {}) {
   async function invoke(options = {}) {
     return fetch(`${adapterOrigin}${options.path ?? '/platform-adapter/v1/query_revision'}`, {
       method: 'POST', headers: { authorization: `Bearer ${options.token ?? token()}`, 'content-type': 'application/json',
-        'idempotency-key': options.key ?? args.idempotencyKey }, body: options.raw ?? JSON.stringify(args),
+        'idempotency-key': options.key ?? requestArguments.idempotencyKey }, body: options.raw ?? JSON.stringify(requestArguments),
     });
   }
   return { state, token, invoke, target };
@@ -202,4 +206,44 @@ test('same read intent remains fresh and unknown operations create no capability
   assert.equal(state.peps, 4);
   assert.equal((await invoke({ path: '/platform-adapter/v1/execute' })).status, 404);
   assert.equal(state.peps, 4);
+});
+
+test('general Resource queries resolve signed authorization root before disclosing its native descendant head', async (t) => {
+  const requestArguments = { authorizationTargetNativeRef: ids[10], ...args };
+  const { state, invoke } = await setup(t, { arguments: requestArguments,
+    target: { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/authorized/nested/file.txt', ContextWorkspace: { Uuid: ids[1] } } });
+  const response = await invoke();
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { nativeObjectRef: ids[3], nativeRevision: 'head-native-version' });
+  assert.equal(state.peps, 2);
+  assert.equal(state.nativeReads.length, 4);
+});
+
+test('binding-wide scope cannot substitute for the original authorized Resource subtree', async (t) => {
+  const authorized = { Uuid: ids[10], Type: 'COLLECTION', Path: 'documents/root/authorized', ContextWorkspace: { Uuid: ids[1] } };
+  const requestArguments = { authorizationTargetNativeRef: ids[10], ...args };
+  for (const change of [
+    { target: { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/authorized-other/file.txt', ContextWorkspace: { Uuid: ids[1] } } },
+    { authorized: { ...authorized, Path: 'documents/foreign' } },
+    { authorized: { ...authorized, ContextWorkspace: { Uuid: ids[0] } } },
+    { authorized: { ...authorized, IsRecycled: true } },
+    { authorized: { ...authorized, Type: 'LEAF' } },
+  ]) {
+    await t.test(JSON.stringify(change), async (nested) => {
+      const { state, invoke } = await setup(nested, { arguments: requestArguments, ...change });
+      assert.notEqual((await invoke()).status, 200);
+      assert.equal(state.queries.length, 0);
+    });
+  }
+});
+
+test('Asset scope never becomes a general subtree and authorization root is covered by token hash', async (t) => {
+  const scoped = { authorizationTargetNativeRef: ids[10], ...args };
+  const { state, token, invoke } = await setup(t, { arguments: scoped });
+  assert.equal((await invoke({ token: token({ target_type: 'ASSET' }) })).status, 403);
+  assert.equal(state.queries.length, 0);
+  const mismatched = JSON.stringify({ ...scoped, authorizationTargetNativeRef: ids[2] });
+  assert.equal((await invoke({ raw: mismatched })).status, 401);
+  const exact = await setup(t, { arguments: { authorizationTargetNativeRef: ids[3], ...args } });
+  assert.equal((await exact.invoke({ token: exact.token({ target_type: 'ASSET' }) })).status, 200);
 });

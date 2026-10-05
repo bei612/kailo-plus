@@ -31,6 +31,22 @@ const nextConfig = withLess({
     return config;
   },
   // routes redirect
+  async rewrites() {
+    return [
+      {
+        source: '/platform-adapter/v1/handshake',
+        destination: '/api/platform-adapter/handshake',
+      },
+      {
+        source: '/platform-adapter/v1/validate_binding',
+        destination: '/api/platform-adapter/validate_binding',
+      },
+      {
+        source: '/platform-adapter/v1/observe',
+        destination: '/api/platform-adapter/observe',
+      },
+    ];
+  },
   async redirects() {
     return [
       {

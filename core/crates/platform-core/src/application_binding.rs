@@ -10,6 +10,8 @@ use uuid::Uuid;
 
 use crate::governance::{Definition, Execution, Params, Refusal, Target};
 
+#[path = "application_binding_credentials.rs"]
+pub(crate) mod credentials;
 #[path = "application_binding_gateway.rs"]
 pub(crate) mod gateway;
 #[path = "application_binding_native.rs"]
@@ -452,6 +454,23 @@ pub(crate) async fn prewrite(
             return Err(conflict());
         }
         let manifest = approved_release(tx, ae.tenant_id, &request).await?;
+        if native::Connector::from_manifest(&manifest)? == native::Connector::ProtocolPeer {
+            let adapter = native::Adapter::resolve(
+                &request.adapter_ref,
+                &request.native_instance,
+                &manifest,
+            )?;
+            let mut binding = json!({"bindingId":request.id,"tenantId":ae.tenant_id,
+                "servicePrincipalId":request.service,"configDigest":request.config_digest,
+                "isolationMode":request.isolation,"secretRefs":request.secret_refs});
+            if let Some(workspace) = ae.workspace_id {
+                binding["workspaceId"] = json!(workspace);
+            }
+            if let Some(scope) = request.native_scope.as_ref() {
+                binding["nativeScopeRef"] = json!(scope);
+            }
+            credentials::validate_admission(&binding, &manifest, &adapter)?;
+        }
         // Retire and create serialize on these exact original category rows,
         // in category-key order. The SQL trigger repeats this for every writer.
         let mut categories = request.categories.clone();
@@ -878,6 +897,9 @@ async fn finish_generation(
         if pending {
             return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
         }
+        // Routes and every frozen consumer are terminal before retiring the
+        // Gateway file. The OpenBao source version is not destroyed here.
+        credentials::retire(&mut tx, ae).await?;
         sqlx::query(
             "update catalog.resource set state='RETAINED_READ_ONLY',version=version+1
             where application_binding_id=$1 and state='ACTIVE'",

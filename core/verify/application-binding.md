@@ -464,3 +464,42 @@ SBOM/provenance/commit/锁摘要检查通过。反例未进入最终源码树。
 `535f3f00eb94302e2dbaba1fd7f1d69af789a19caa395c733ae92b7270e07d4f`，
 旁置 exit 文件为 1；外层预期失败核对退出 0。原入口临时目录清理曾等待磁盘写回，
 没有中断重跑。还原后的最终完整检查另行记录，不以此反例替代恢复验证。
+
+### 原生 MCP 的绑定级凭据投递（独立后续源码批）
+
+本增量基于上一批树 `e0f5d21ba755a6de51fc93ff976b8a493fd4bf09`，不回写主线
+联合候选。依据 DD-12/58/70/71/94，复用原 SecretStore audience、OpenBao KV
+固定版本与真实 audit request ID，以及原 Gateway provider-credentials 文件投递。
+不同 binding/generation/secretKey 派生不同文件身份；目录只保存 SecretRef 和认证
+header/prefix 映射，原路由只含受控文件引用，不含密钥值，不透传平台 Session 票。
+
+本批只消费 `STRING / SERVICE_CREDENTIAL / FILE / restartRequired=false` 声明。
+`lengthOrFormat` 使用显式 string JSON Schema，只接受 type/minLength/maxLength/pattern；
+未知词汇、外部引用、DATA_KEY、环境变量投递或缺少匹配目录事实均拒绝。
+准入冻结 tenant、binding、service、scope、generation、locator、version、audience；
+调用与披露再次读取原 KV 固定版本、核审计及 Gateway 文件摘要。缺失或撤销不回退
+其他身份。停用先撤路由并等待原在途消费者收敛，随后沿原文件退休/tombstone 链确认
+删除，不销毁 OpenBao 源版本。没有新增绑定轮换动作；新 KV head 不替换已冻结版本，
+新引用须通过既有治理创建/停用生命周期，不能冒称原地轮换已交付。
+
+受限原 SDK 为 4 CPU/8 GiB、swap 总限额等于内存、Cargo jobs16，复用 Data 缓存。
+实现后的 Core 凭据目标 3 项、SecretStore 原 lib 16 项、Rust 契约 11 项与 Clippy
+all-targets 实际通过。Go 原契约目标退出 0，TypeScript 12 项、Dart 13 项通过；
+四侧原 gen/check 均退出 0。同一 MCP 两份 binding/SecretRef 的样例不含密钥值。
+移除版本核对及文件 binding 归属后，Core 两个断言失败、退出 101；移除原 audience
+守卫后，真实 HTTP SecretStore 消费者失败、退出 101。逐字恢复后上述目标通过。
+
+原件位于 Data 目录 `codex-peer-secret-20261005.NKsxUm`：`core-targeted-2.log`
+SHA-256 `7aacd20d0cb205c795d15973858135a8562b89ce609364304881b3cdc66da75d`，
+`mutation.log` SHA-256 `e588765f258323f099ff44ce07e705cbae309145e57bc21d92eda074d04e80a6`。
+恢复批 `restored.log` 中 Core/Go/TS 已通过，但 Dart 缺执行副本锁而联网失败，整体
+退出 65；复用已核同源 pubspec 的现成锁后，原离线解析和 Dart 13 项退出 0，
+`dart-restored.log` SHA-256
+`8365a0811669bc4b7eff295b9dd08f318a22e3fd74d7823ebb113376e13bed66`。
+首次 Rust 局部空列表借用错误退出 101 的原件同样保留。
+
+上述证据覆盖实际 SecretStore HTTP 消费、原生产投影计划和四侧编码，不是完整
+OpenBao/Gateway/第三方 MCP 两账号端到端调用，也未执行真实 disable 或轮换。
+线上需另有获批 release、两份受控 binding/native scope 事实、准确 SecretRef 版本、
+原审计与 Gateway 投递配置，以及实际 Resource/ToolBinding 和调用授权；没有因
+本批测试创建这些业务对象。未构建、部署、运行 full 或调用模型。

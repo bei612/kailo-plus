@@ -7,6 +7,8 @@ exposure: end_user
 design:
   requirements: [V-REQ-04]
   decisions: [DD-58, DD-88, DD-94, DD-98]
+  # 此列表仅登记 EXT-BASE 决策；跨阶段消费者由既有核验记录关联。
+  # DD-12 属 EXT-DATA，DD-70/DD-71 属 S1，不把通用接入重新归为具体组件。
   facts: []
   seams: []
   blockers: []
@@ -17,6 +19,8 @@ validation:
   evidence:
     - dimension: 安全边界
       ref: core/verify/application-binding.md
+    - dimension: 安全边界
+      ref: core/verify/cells-query-disclosure.md
     - dimension: 合同一致
       ref: core/verify/application-binding-client.md
 
@@ -27,6 +31,7 @@ implementation:
     - core/crates/platform-core/src/application_binding_peer.rs
     - core/crates/platform-core/src/application_binding_native.rs
     - core/crates/platform-core/src/application_binding_gateway.rs
+    - core/crates/platform-core/src/application_binding_credentials.rs
     - core/crates/platform-core/src/application_binding_read.rs
     - core/crates/platform-core/src/application_binding_pep.rs
     - core/crates/platform-core/src/application_tool.rs
@@ -44,6 +49,8 @@ implementation:
     - contracts/api/application_native_page.schema.json
     - contracts/domain/application_binding_create.schema.json
     - contracts/domain/application_adapter_directory.schema.json
+    - contracts/adapter/protocol.v1/query_revision_request.schema.json
+    - contracts/adapter/protocol.v1/query_revision_response.schema.json
     - contracts/domain/action_token_signing_delivery.schema.json
     - contracts/workflow/application_binding_advance_request.schema.json
     - contracts/workflow/application_binding_advance_result.schema.json
@@ -76,6 +83,6 @@ runtime:
 release:
   artifacts:
     - name: web-client
-      digest: sha256:3336de5375dccfbcb72865e4ad44bf1e2799136779cf00830c8b64861fd4d173
+      digest: sha256:1f7c2596ab2c1ebe67a562f63101b00d01fd578d1a2eef534294cd0738699c18
   # 该 digest 仅指 Web 产物；不证明本批新增服务端逻辑或独立组件已验收。
   gate: blocked_until_seams_closed

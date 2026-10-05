@@ -433,7 +433,17 @@ struct TenantConfig {
 
 #[derive(Deserialize)]
 struct KvResponse {
+    #[serde(default)]
+    request_id: Option<String>,
     data: KvOuter,
+}
+
+/// Native read receipt, never a business secret registry. The secret remains
+/// memory-only; the request ID is checked against the original audit device.
+pub struct SecretReadReceipt {
+    pub value: SecretValue,
+    pub request_id: String,
+    pub role_name: String,
 }
 #[derive(Deserialize)]
 struct KvOuter {
@@ -728,6 +738,31 @@ impl SecretStore {
             return Err(SecretError::Refused);
         }
         self.destroy_version_one(locator, true).await
+    }
+
+    /// DD-107: each governed webhook rotation owns one CAS=0 location. The
+    /// caller freezes the action ID before writing and proves old consumers
+    /// terminal before retiring a referenced key. This does not broaden the
+    /// platform Nostr-key deletion authority.
+    pub async fn retire_automation_webhook(
+        &self,
+        tenant_id: Uuid,
+        automation_id: Uuid,
+        action_id: Uuid,
+        reference: &SecretRef,
+        unbound: bool,
+    ) -> Result<(), SecretError> {
+        if reference.version != 1
+            || reference.audience != self.identity
+            || reference.locator
+                != self.tenant_locator(
+                    tenant_id,
+                    &format!("automation-webhook/{automation_id}/{action_id}"),
+                )
+        {
+            return Err(SecretError::Refused);
+        }
+        self.destroy_version_one(&reference.locator, unbound).await
     }
 
     /// DD-113 (1)：平台自持私钥各自独占的 locator 形状。HUMAN 与 CONTROL 只在该
@@ -1281,6 +1316,7 @@ impl SecretStore {
              path \"{mount}/delete/buzz-ref-rehome/*\" {{ capabilities = [\"update\"] }}\n\
              path \"{mount}/destroy/buzz-human/*\" {{ capabilities = [\"update\"] }}\n\
              path \"{mount}/destroy/buzz-control/*\" {{ capabilities = [\"update\"] }}\n\
+             path \"{mount}/destroy/automation-webhook/*\" {{ capabilities = [\"update\"] }}\n\
              path \"{mount}/destroy/buzz-ref-rehome/*\" {{ capabilities = [\"update\"] }}\n",
             mount = self.tenant.mount
         );
@@ -1469,6 +1505,35 @@ impl SecretStore {
     /// 成功的判据包含**返回的版本号等于请求的版本号**：KV v2 在版本被删除时
     /// 仍返回 200 与空 data，只靠状态码会把「已删除」读成「拿到了」。
     pub async fn read(&self, r: &SecretRef, field: &str) -> Result<SecretValue, SecretError> {
+        self.read_response(r, field).await.map(|(value, _)| value)
+    }
+
+    pub async fn read_audited(
+        &self,
+        r: &SecretRef,
+        field: &str,
+    ) -> Result<SecretReadReceipt, SecretError> {
+        let (value, request_id) = self.read_response(r, field).await?;
+        let request_id = request_id.ok_or(SecretError::VersionUnavailable)?;
+        Uuid::parse_str(&request_id).map_err(|_| SecretError::Malformed)?;
+        let (namespace, _, _) = split_locator(&r.locator)?;
+        let role_name = if namespace == self.session.namespace {
+            self.session.role_name.clone()
+        } else {
+            self.tenant.role_name.clone()
+        };
+        Ok(SecretReadReceipt {
+            value,
+            request_id,
+            role_name,
+        })
+    }
+
+    async fn read_response(
+        &self,
+        r: &SecretRef,
+        field: &str,
+    ) -> Result<(SecretValue, Option<String>), SecretError> {
         if r.audience != self.identity {
             return Err(SecretError::AudienceMismatch);
         }
@@ -1492,12 +1557,14 @@ impl SecretStore {
         if body.data.metadata.version != r.version {
             return Err(SecretError::VersionUnavailable);
         }
-        body.data
+        let value = body
+            .data
             .data
             .get(field)
             .cloned()
             .map(SecretValue)
-            .ok_or(SecretError::VersionUnavailable)
+            .ok_or(SecretError::VersionUnavailable)?;
+        Ok((value, body.request_id))
     }
 
     /// 写入一个新版本，返回该版本号。
@@ -2018,6 +2085,103 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn audited_binding_credentials_keep_native_version_audience_and_receipt() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let request_a = Uuid::from_u128(11).to_string();
+        let request_b = Uuid::from_u128(12).to_string();
+        let a = request_a.clone();
+        let b = request_b.clone();
+        let server = std::thread::spawn(move || {
+            let replies=[
+                ("200 OK",serde_json::json!({"request_id":a,"data":{"data":{"value":"fixture-account-a"},"metadata":{"version":2}}}).to_string()),
+                ("200 OK",serde_json::json!({"request_id":b,"data":{"data":{"value":"fixture-account-b"},"metadata":{"version":7}}}).to_string()),
+                ("404 Not Found",String::new()),
+                ("200 OK",serde_json::json!({"data":{"data":{"value":"fixture-account-b"},"metadata":{"version":7}}}).to_string()),
+            ];
+            let mut requests = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while requests.len() < replies.len() && std::time::Instant::now() < deadline {
+                let (mut stream, _) = match listener.accept() {
+                    Ok(connection) => connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(error) => panic!("fixture accept: {error}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut byte = [0u8; 1];
+                while !request.ends_with(b"\r\n\r\n") {
+                    if stream.read(&mut byte).unwrap() == 0 {
+                        break;
+                    }
+                    request.push(byte[0]);
+                }
+                let (status, body) = &replies[requests.len()];
+                write!(stream,"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+                requests.push(String::from_utf8(request).unwrap());
+            }
+            requests
+        });
+        let tenant = Uuid::from_u128(21);
+        let store = fake_tenant_store(&format!("http://{addr}"), tenant).await;
+        let a = SecretRef {
+            locator: format!("tenants/{tenant}/kv/binding-a"),
+            version: 2,
+            audience: "core".into(),
+        };
+        let b = SecretRef {
+            locator: format!("tenants/{tenant}/kv/binding-b"),
+            version: 7,
+            audience: "core".into(),
+        };
+        let first = store.read_audited(&a, "value").await.unwrap();
+        let second = store.read_audited(&b, "value").await.unwrap();
+        assert_eq!(first.value.expose(), "fixture-account-a");
+        assert_eq!(second.value.expose(), "fixture-account-b");
+        assert_eq!(
+            (first.request_id, second.request_id),
+            (request_a, request_b)
+        );
+        assert_eq!(first.role_name, "role");
+        let wrong = SecretRef {
+            locator: a.locator.clone(),
+            version: 2,
+            audience: "another-reader".into(),
+        };
+        assert!(matches!(
+            store.read_audited(&wrong, "value").await,
+            Err(SecretError::AudienceMismatch)
+        ));
+        assert!(matches!(
+            store.read_audited(&a, "value").await,
+            Err(SecretError::VersionUnavailable)
+        ));
+        assert!(matches!(
+            store.read_audited(&b, "value").await,
+            Err(SecretError::VersionUnavailable)
+        ));
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 4);
+        for (request, path) in requests.iter().zip([
+            "/v1/kv/data/binding-a?version=2",
+            "/v1/kv/data/binding-b?version=7",
+            "/v1/kv/data/binding-a?version=2",
+            "/v1/kv/data/binding-b?version=7",
+        ]) {
+            assert!(request.starts_with(&format!("GET {path} HTTP/1.1")));
+            assert!(request
+                .to_ascii_lowercase()
+                .contains(&format!("x-vault-namespace: tenants/{tenant}")));
+        }
+    }
+
     #[test]
     fn path_may_contain_slashes() {
         // 第三段是完整路径，内部的 / 属于它，不再继续切分
@@ -2494,6 +2658,64 @@ mod tests {
         ));
         let requests = server.join().unwrap();
         assert_eq!(requests.len(), 4, "版本 2 时不发 delete");
+    }
+
+    #[tokio::test]
+    async fn automation_webhook_retirement_uses_exact_original_locator_and_native_receipt() {
+        let tenant = Uuid::from_u128(1);
+        let automation = Uuid::from_u128(2);
+        let action = Uuid::from_u128(3);
+        let (addr, server) = scripted_openbao(vec![
+            ("200 OK", r#"{"data":{"current_version":1}}"#),
+            (
+                "200 OK",
+                r#"{"data":{"current_version":1,"versions":{"1":{"destroyed":false}}}}"#,
+            ),
+            ("", ""), // Native destroy succeeds but its response is lost.
+            (
+                "200 OK",
+                r#"{"data":{"current_version":1,"versions":{"1":{"destroyed":true}}}}"#,
+            ),
+        ]);
+        let store = fake_tenant_store(&addr, tenant).await;
+        let reference = SecretRef {
+            locator: store
+                .tenant_locator(tenant, &format!("automation-webhook/{automation}/{action}")),
+            audience: store.identity.clone(),
+            version: 1,
+        };
+        for (owner, intent, version, audience) in [
+            (Uuid::from_u128(4), action, 1, store.identity.clone()),
+            (automation, Uuid::from_u128(5), 1, store.identity.clone()),
+            (automation, action, 2, store.identity.clone()),
+            (automation, action, 1, "foreign-audience".into()),
+        ] {
+            let wrong = SecretRef {
+                locator: reference.locator.clone(),
+                audience,
+                version,
+            };
+            assert!(matches!(
+                store
+                    .retire_automation_webhook(tenant, owner, intent, &wrong, false)
+                    .await,
+                Err(SecretError::Refused)
+            ));
+        }
+        store
+            .retire_automation_webhook(tenant, automation, action, &reference, false)
+            .await
+            .unwrap();
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 4);
+        assert!(requests[0].starts_with(&format!(
+            "GET /v1/kv/metadata/automation-webhook/{automation}/{action} "
+        )));
+        assert!(requests[2].starts_with(&format!(
+            "POST /v1/kv/destroy/automation-webhook/{automation}/{action} "
+        )));
+        assert!(requests[2].contains("\"versions\":[1]"));
+        assert!(requests[3].starts_with("GET /v1/kv/metadata/automation-webhook/"));
     }
 
     #[tokio::test]

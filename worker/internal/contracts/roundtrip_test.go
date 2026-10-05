@@ -19,6 +19,7 @@ func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 		name   string
 		target any
 	}{
+		{"application-peer-credentials.sample.json", new(generated.ApplicationAdapterDirectory)},
 		{"application-binding-observations.sample.json", new([]generated.AdapterBindingObservation)},
 		{"adapter-execution-references.sample.json", new([]generated.AdapterExecutionReference)},
 		{"resource-create.sample.json", new(generated.ActionCommand)},

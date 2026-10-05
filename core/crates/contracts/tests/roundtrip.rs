@@ -4,6 +4,16 @@
 //! 没有把可选当必填、没有把未知枚举值吞掉。
 
 use std::{fs, path::PathBuf};
+#[test]
+fn peer_credentials_roundtrip_keeps_binding_generation_and_exact_references() {
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("application-peer-credentials.sample.json"),
+    )
+    .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::ApplicationAdapterDirectory = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
 
 #[test]
 fn resource_reference_roundtrip_preserves_evidence_and_original_workflow() {

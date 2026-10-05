@@ -6,7 +6,6 @@ import {
   useThreadViewMode,
   type ThreadViewMode,
 } from "@/features/channels/lib/threadViewModePreference";
-import { contrastColorForBackground } from "@/features/settings/lib/colorContrast";
 import {
   setLinkPreviewStyle,
   useLinkPreviewStyle,
@@ -17,11 +16,9 @@ import type { ResolvedLinkPreview } from "@/shared/lib/useResolvedLinkPreviews";
 import { LinkPreviewAttachmentPresentation } from "@/shared/ui/link-preview-attachment";
 import type { LinkPreviewImageLightboxProps } from "@/shared/ui/rich-link-preview-attachment";
 import {
-  ACCENT_COLORS,
   DEFAULT_GLASS_OPACITY,
   GLASS_OPACITY_MAX,
   GLASS_OPACITY_MIN,
-  NEUTRAL_ACCENT,
   useTheme,
 } from "@/shared/theme/ThemeProvider";
 
@@ -429,71 +426,5 @@ export function ThreadLayoutSetting() {
       </SettingsOptionRow>
       <ThreadLayoutPreview mode={displayedMode} />
     </div>
-  );
-}
-
-/** Accent swatches — shared by the animated and reduced-motion reveal paths. */
-export function AccentPickerContent({
-  accentColor,
-  isDark,
-  setAccentColor,
-}: {
-  accentColor: string;
-  isDark: boolean;
-  setAccentColor: (value: string) => void;
-}) {
-  return (
-    <SettingsOptionRow className="items-start">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">Accent color</p>
-        <p
-          className="text-sm font-normal text-muted-foreground/70"
-          data-settings-subcopy
-        >
-          Choose the highlight color used throughout Buzz.
-        </p>
-      </div>
-      <div
-        className="min-w-0 max-w-[34rem] shrink-0 overflow-x-auto rounded-xl bg-muted p-2"
-        data-testid="accent-color-options"
-      >
-        <div className="flex w-max min-w-full flex-nowrap justify-end gap-2">
-          {ACCENT_COLORS.map((color) => {
-            const isNeutral = color.value === NEUTRAL_ACCENT;
-            const isSelected = accentColor === color.value;
-            const swatchColor = isNeutral
-              ? "hsl(var(--foreground))"
-              : color.value;
-            const selectionColor = isNeutral
-              ? isDark
-                ? "#000000"
-                : "#FFFFFF"
-              : contrastColorForBackground(color.value);
-
-            return (
-              <button
-                aria-label={`Use ${color.name} accent`}
-                aria-pressed={isSelected}
-                className="relative h-9 w-9 shrink-0 rounded-full border border-border transition-transform duration-200 ease-out hover:scale-[1.15] focus-visible:scale-[1.15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transform-none motion-reduce:transition-none"
-                data-testid={`accent-color-${color.name.toLowerCase()}`}
-                key={color.value}
-                onClick={() => setAccentColor(color.value)}
-                style={{ backgroundColor: swatchColor }}
-                title={color.name}
-                type="button"
-              >
-                {isSelected ? (
-                  <span
-                    className="absolute inset-1 rounded-full border-[3px]"
-                    data-testid="accent-color-selection"
-                    style={{ borderColor: selectionColor }}
-                  />
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </SettingsOptionRow>
   );
 }

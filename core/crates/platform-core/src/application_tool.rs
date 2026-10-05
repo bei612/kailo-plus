@@ -22,14 +22,16 @@ fn output_value(
     raw: &Value,
     output: &Value,
     documents: &BTreeMap<String, Value>,
+    verified_reference: Option<&Value>,
 ) -> Result<Value, Refusal> {
     let value: Value = serde_json::from_str(raw["resultJson"].as_str().ok_or_else(invalid)?)
         .map_err(|_| invalid())?;
     if !crate::capability_contract::schema_validator(output, documents)?.is_valid(&value) {
         return Err(invalid());
     }
-    // An envelope reference is not proof of native ownership or revision.
-    if raw.get("contentReference").is_some() {
+    // Only the exact typed slot verified by the native query may be exposed.
+    // A reference inferred from resultJson or another envelope is not proof.
+    if raw.get("contentReference") != verified_reference {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     Ok(value)
@@ -113,7 +115,7 @@ mod application_tool_tests {
             "required":["answer"],"properties":{"answer":{"type":"string"}}});
         let envelope = json!({"execution":{"nativeId":"private-execution"},
             "resultJson":"{\n  \"answer\": \"allowed\"\n}"});
-        let value = output_value(&envelope, &schema, &BTreeMap::new()).unwrap();
+        let value = output_value(&envelope, &schema, &BTreeMap::new(), None).unwrap();
         assert_eq!(value, json!({"answer":"allowed"}));
         let wire = serde_json::to_value(rmcp::model::CallToolResult::structured(value)).unwrap();
         assert_eq!(wire["structuredContent"], json!({"answer":"allowed"}));
@@ -121,12 +123,12 @@ mod application_tool_tests {
         assert!(!wire.to_string().contains("resultJson"));
         let mut wrong = envelope.clone();
         wrong["resultJson"] = json!("{\"answer\":42}");
-        assert!(output_value(&wrong, &schema, &BTreeMap::new()).is_err());
+        assert!(output_value(&wrong, &schema, &BTreeMap::new(), None).is_err());
         wrong["resultJson"] = json!("{\"answer\":\"allowed\",\"extra\":\"denied\"}");
-        assert!(output_value(&wrong, &schema, &BTreeMap::new()).is_err());
+        assert!(output_value(&wrong, &schema, &BTreeMap::new(), None).is_err());
         wrong = envelope;
         wrong["contentReference"] = json!({"resourceId":Uuid::new_v4()});
-        assert!(output_value(&wrong, &schema, &BTreeMap::new()).is_err());
+        assert!(output_value(&wrong, &schema, &BTreeMap::new(), None).is_err());
     }
 
     #[test]
@@ -398,6 +400,426 @@ pub(crate) async fn fresh_execution(
         zed_token: Some(proof),
         reason: None,
     })
+}
+
+/// Ephemeral facts read from the original child/target/binding. No token or
+/// native revision is persisted as a new permission or content authority.
+#[derive(sqlx::FromRow)]
+pub(crate) struct RevisionRead {
+    pub(crate) resource_id: Uuid,
+    pub(crate) asset_id: Option<Uuid>,
+    pub(crate) native_ref: String,
+    pub(crate) adapter_service_ref: String,
+    pub(crate) native_instance_ref: String,
+    pub(crate) manifest: Value,
+    pub(crate) audience: String,
+    category_key: String,
+    contract_version: i32,
+    target_version: i32,
+    policy_mode: String,
+    redaction_policy: String,
+    output_schema_hash: String,
+    tool_output_schema_hash: String,
+}
+
+fn revision_arguments(child: Uuid, arguments: &Value) -> Result<(), Refusal> {
+    let typed: contracts::AdapterQueryRevisionRequest =
+        serde_json::from_value(arguments.clone()).map_err(|_| invalid())?;
+    if serde_json::to_value(typed).map_err(|_| invalid())? != *arguments
+        || arguments["idempotencyKey"] != json!(child)
+        || arguments["nativeObjectRef"]
+            .as_str()
+            .is_none_or(|value| value.is_empty() || value.trim() != value)
+        || arguments
+            .get("authorizationTargetNativeRef")
+            .is_some_and(|value| {
+                value
+                    .as_str()
+                    .is_none_or(|value| value.is_empty() || value.trim() != value)
+            })
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
+/// query_revision is a business read of a dispatched child, not system observe.
+/// Re-check the actual target read for BOTH original principals in addition to
+/// the original Tool/Delegation/turn admission. A bare native ID grants nothing.
+pub(crate) async fn fresh_revision_read(
+    state: &ServiceState,
+    ae: &Execution,
+    arguments: &Value,
+) -> Result<(RevisionRead, String), Refusal> {
+    revision_arguments(ae.id, arguments)?;
+    let (facts, proof) = fresh_revision_target(state, ae).await?;
+    revision_target_arguments(arguments, &facts)?;
+    Ok((facts, proof))
+}
+
+fn revision_target_arguments(arguments: &Value, facts: &RevisionRead) -> Result<(), Refusal> {
+    // The opaque authorization root is derived from the original admitted
+    // target, never from the Tool result or a browser. A fine-grained Asset
+    // permits only its exact native object. General Resource descendants are
+    // resolved and checked by the approved adapter's native scope consumer.
+    if arguments
+        .get("authorizationTargetNativeRef")
+        .is_some_and(|value| *value != facts.native_ref)
+        || (arguments.get("authorizationTargetNativeRef").is_none() || facts.asset_id.is_some())
+            && arguments["nativeObjectRef"] != facts.native_ref
+    {
+        return Err(denied());
+    }
+    Ok(())
+}
+
+async fn fresh_revision_target(
+    state: &ServiceState,
+    ae: &Execution,
+) -> Result<(RevisionRead, String), Refusal> {
+    if ae.gate_state != "ALLOWED" || ae.dispatch_state != "DISPATCHED" {
+        return Err(denied());
+    }
+    let decision = fresh_execution(&state.governance, ae).await?;
+    if !decision.allowed {
+        return Err(denied());
+    }
+    let facts: RevisionRead = sqlx::query_as(
+        "select r.id resource_id, asset.id asset_id,
+          case when a.parameters->>'targetType'='ASSET' then asset.native_ref else r.native_id end native_ref,
+          b.adapter_service_ref,b.native_instance_ref,release.manifest,service.audience,
+          type.capability_category category_key,type.capability_contract_version contract_version,
+          case when a.parameters->>'targetType'='ASSET' then asset.version else r.version end target_version,
+          policy.mode policy_mode,policy.redaction_policy,policy.output_schema_hash,
+          tool.output_schema_hash tool_output_schema_hash
+         from admission.action_execution a
+         left join catalog.asset asset on a.parameters->>'targetType'='ASSET' and asset.id=a.target_id
+           and asset.tenant_id=a.tenant_id and asset.state='ACTIVE' and asset.projection_action_execution_id is null
+         join catalog.resource r on r.id=case when a.parameters->>'targetType'='RESOURCE' then a.target_id
+           when a.parameters->>'targetType'='ASSET' then asset.resource_id end
+           and r.tenant_id=a.tenant_id and r.state='ACTIVE' and r.projection_action_execution_id is null
+           and (r.home_workspace_id is null or r.home_workspace_id=a.workspace_id)
+         join catalog.application_binding b on b.id=a.component_binding_id and b.id=r.application_binding_id
+           and b.tenant_id=a.tenant_id and (b.workspace_id is null or b.workspace_id=a.workspace_id)
+           and b.state='ACTIVE' and b.active_projection_generation=a.component_projection_generation
+           and b.component_release_id=a.component_release_id
+         join projection.application_runtime runtime on runtime.binding_id=b.id and runtime.state='ACTIVE'
+           and runtime.generation=a.component_projection_generation and runtime.component_release_id=a.component_release_id
+         join catalog.component_release release on release.id=a.component_release_id and release.status='APPROVED'
+           and release.manifest_digest=runtime.normalized_manifest_digest
+         join catalog.action_definition definition on definition.id=a.action_definition_id
+           and definition.action_key=a.action_key and definition.version=a.action_version
+           and definition.component_release_id=a.component_release_id and definition.status='ACTIVE'
+           and definition.result_exposure in ('READ','CONSUME_ONLY','EXPORT')
+         join catalog.resource_type_definition type on type.id=r.resource_type_definition_id and type.type_key=r.type_key
+           and type.component_release_id=a.component_release_id and type.status='ACTIVE'
+         join identity.service_principal service on service.principal_id=b.service_principal_id
+           and service.component_binding_kind='APPLICATION' and service.component_binding_id=b.id
+         join identity.principal principal on principal.id=service.principal_id and principal.tenant_id=a.tenant_id
+           and principal.kind='SERVICE' and principal.status='ACTIVE'
+         join catalog.result_exposure_policy policy on policy.id=(a.parameters->>'resultExposurePolicyId')::uuid
+           and policy.version=(a.parameters->>'resultExposurePolicyVersion')::integer
+           and policy.tenant_id=a.tenant_id and policy.status='ACTIVE'
+         join catalog.tool_definition tool on tool.resource_id=(a.parameters->>'toolResourceId')::uuid and tool.status='ACTIVE'
+         where a.id=$1 and a.target_id=$2 and a.tenant_id=$3 and a.workspace_id is not distinct from $4
+           and a.gate_state='ALLOWED' and a.dispatch_state='DISPATCHED'
+           and a.component_binding_kind='APPLICATION'",
+    )
+    .bind(ae.id).bind(ae.target_id).bind(ae.tenant_id).bind(ae.workspace_id)
+    .fetch_optional(&state.pool).await?.ok_or_else(denied)?;
+    let parameters = ae.parameters.as_ref().ok_or_else(denied)?;
+    if Connector::from_manifest(&facts.manifest)? != Connector::RemoteAdapter
+        || facts.native_ref.is_empty()
+        || parameters["targetVersion"] != facts.target_version
+        || !matches!(
+            facts.policy_mode.as_str(),
+            "CONSUME_ONLY" | "READ" | "EXPORT"
+        )
+        || facts.redaction_policy != "PLATFORM_METADATA_ONLY"
+        || facts.output_schema_hash != facts.tool_output_schema_hash
+    {
+        return Err(denied());
+    }
+    require_revision_support(&facts.manifest, &facts.category_key, facts.contract_version)?;
+    let object_type = match parameters["targetType"].as_str() {
+        Some("RESOURCE") => "resource",
+        Some("ASSET") => "asset",
+        _ => return Err(invalid()),
+    };
+    let mut proof = decision
+        .zed_token
+        .filter(|value| !value.is_empty())
+        .ok_or_else(unavailable)?;
+    for subject in [ae.initiator_principal_id, ae.actor_principal_id] {
+        proof = permission_read(state, object_type, ae.target_id, subject).await?;
+    }
+    Ok((facts, proof))
+}
+
+fn require_revision_support(manifest: &Value, category: &str, version: i32) -> Result<(), Refusal> {
+    if Connector::from_manifest(manifest)? != Connector::RemoteAdapter {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let declarations = manifest["capabilityDeclarations"]
+        .as_array()
+        .ok_or_else(unavailable)?;
+    let declared: Vec<_> = declarations
+        .iter()
+        .filter(|declaration| {
+            declaration["categoryKey"] == category && declaration["contractVersion"] == version
+        })
+        .collect();
+    if declared.len() != 1 || declared[0]["revisionQuery"] != "SUPPORTED" {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    Ok(())
+}
+
+async fn permission_read(
+    state: &ServiceState,
+    object_type: &str,
+    target: Uuid,
+    subject: Uuid,
+) -> Result<String, Refusal> {
+    let proof = state
+        .governance
+        .spicedb
+        .check(
+            object_type,
+            &target.to_string(),
+            "read",
+            &subject.to_string(),
+            crate::spicedb::Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| unavailable())?;
+    if !proof.allowed || proof.zed_token.is_empty() {
+        return Err(denied());
+    }
+    Ok(proof.zed_token)
+}
+
+fn reference_target(reference: &Value, facts: &RevisionRead) -> Result<(), Refusal> {
+    let typed: contracts::ContentReference =
+        serde_json::from_value(reference.clone()).map_err(|_| invalid())?;
+    if serde_json::to_value(typed).map_err(|_| invalid())? != *reference
+        || reference["resourceId"] != json!(facts.resource_id)
+        || reference.get("assetId") != facts.asset_id.map(|id| json!(id)).as_ref()
+        || reference["nativeObjectRef"]
+            .as_str()
+            .is_none_or(|value| value.is_empty() || value.trim() != value)
+        || facts.asset_id.is_some() && reference["nativeObjectRef"] != facts.native_ref
+        || reference["nativeRevision"]
+            .as_str()
+            .is_none_or(str::is_empty)
+    {
+        return Err(denied());
+    }
+    Ok(())
+}
+
+fn require_current_revision(reference: &Value, response: &Value) -> Result<(), Refusal> {
+    let typed: contracts::AdapterQueryRevisionResponse =
+        serde_json::from_value(response.clone()).map_err(|_| unavailable())?;
+    if serde_json::to_value(typed).map_err(|_| unavailable())? != *response {
+        return Err(unavailable());
+    }
+    if response["nativeObjectRef"] != reference["nativeObjectRef"]
+        || response["nativeRevision"] != reference["nativeRevision"]
+        || response["nativeRevision"]
+            .as_str()
+            .is_none_or(str::is_empty)
+    {
+        // Current-head evidence cannot prove an old revision. Do not substitute
+        // the native response into the immutable result reference.
+        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+    }
+    Ok(())
+}
+
+async fn verify_content_reference(
+    state: &ServiceState,
+    ae: &Execution,
+    reference: &Value,
+) -> Result<(), Refusal> {
+    let (facts, _) = fresh_revision_target(state, ae).await?;
+    reference_target(reference, &facts)?;
+    let arguments = json!({"nativeObjectRef":reference["nativeObjectRef"],"idempotencyKey":ae.id,
+        "authorizationTargetNativeRef":facts.native_ref});
+    let adapter = crate::application_binding::native::Adapter::resolve(
+        &facts.adapter_service_ref,
+        &facts.native_instance_ref,
+        &facts.manifest,
+    )?;
+    let response = adapter
+        .call(state, ae, "query_revision", ae.id, &arguments)
+        .await?;
+    require_current_revision(reference, &response)?;
+    // No parent lock is held across the HTTP call: its two original PEP
+    // callbacks take that lock themselves. Re-check after native observation.
+    let (current, _) = fresh_revision_read(state, ae, &arguments).await?;
+    reference_target(reference, &current)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod revision_read_tests {
+    use super::*;
+
+    fn facts(asset: Option<Uuid>) -> RevisionRead {
+        RevisionRead {
+            resource_id: Uuid::from_u128(1),
+            asset_id: asset,
+            native_ref: "opaque-native-object".into(),
+            adapter_service_ref: "original-adapter".into(),
+            native_instance_ref: "original-instance".into(),
+            manifest: manifest(),
+            audience: "original-audience".into(),
+            category_key: "FILE_STORAGE".into(),
+            contract_version: 1,
+            target_version: 2,
+            policy_mode: "READ".into(),
+            redaction_policy: "PLATFORM_METADATA_ONLY".into(),
+            output_schema_hash: "frozen".into(),
+            tool_output_schema_hash: "frozen".into(),
+        }
+    }
+
+    fn manifest() -> Value {
+        json!({"executionConnector":{"mode":"REMOTE_ADAPTER","adapterProtocolRange":"1",
+            "actionTokenAudience":"original-audience"},"capabilityDeclarations":[{
+                "categoryKey":"FILE_STORAGE","contractVersion":1,"revisionQuery":"SUPPORTED"}]})
+    }
+
+    fn reference() -> Value {
+        json!({"resourceId":Uuid::from_u128(1),"nativeObjectRef":"opaque-native-object",
+            "nativeRevision":"opaque-current-revision","displayName":"display","mediaType":"text/plain"})
+    }
+
+    #[test]
+    fn query_preserves_original_child_and_closed_wire_intent() {
+        let child = Uuid::from_u128(3);
+        let args = json!({"idempotencyKey":child,"nativeObjectRef":"opaque-native-object"});
+        revision_arguments(child, &args).unwrap();
+        for bad in [
+            json!({"idempotencyKey":Uuid::from_u128(4),"nativeObjectRef":"opaque-native-object"}),
+            json!({"idempotencyKey":child,"nativeObjectRef":""}),
+            json!({"idempotencyKey":child,"nativeObjectRef":" leading"}),
+            json!({"idempotencyKey":child,"nativeObjectRef":"opaque-native-object","targetId":child}),
+            json!({"idempotencyKey":child,"nativeObjectRef":null}),
+            json!({"idempotencyKey":child,"nativeObjectRef":"opaque-native-object","authorizationTargetNativeRef":null}),
+            json!({"idempotencyKey":child,"nativeObjectRef":"opaque-native-object","authorizationTargetNativeRef":""}),
+        ] {
+            assert!(revision_arguments(child, &bad).is_err());
+        }
+    }
+
+    #[test]
+    fn only_exact_approved_adapter_revision_declaration_is_usable() {
+        let manifest = manifest();
+        require_revision_support(&manifest, "FILE_STORAGE", 1).unwrap();
+        assert!(require_revision_support(&manifest, "FILE_STORAGE", 2).is_err());
+        assert!(require_revision_support(&manifest, "OTHER", 1).is_err());
+        for marker in ["UNSUPPORTED", "UNKNOWN", "supported"] {
+            let mut bad = manifest.clone();
+            bad["capabilityDeclarations"][0]["revisionQuery"] = json!(marker);
+            assert!(require_revision_support(&bad, "FILE_STORAGE", 1).is_err());
+        }
+        let mut duplicate = manifest.clone();
+        duplicate["capabilityDeclarations"]
+            .as_array_mut()
+            .unwrap()
+            .push(manifest["capabilityDeclarations"][0].clone());
+        assert!(require_revision_support(&duplicate, "FILE_STORAGE", 1).is_err());
+        let mut peer = manifest;
+        peer["executionConnector"] = json!({"mode":"PROTOCOL_PEER","adapterProtocolRange":"NONE","actionTokenAudience":"NONE"});
+        assert!(require_revision_support(&peer, "FILE_STORAGE", 1).is_err());
+    }
+
+    #[test]
+    fn typed_reference_keeps_platform_target_and_exact_asset_native_target() {
+        let original = reference();
+        reference_target(&original, &facts(None)).unwrap();
+        for (field, value) in [
+            ("resourceId", json!(Uuid::from_u128(2))),
+            ("assetId", json!(Uuid::from_u128(2))),
+            ("nativeObjectRef", json!("")),
+            ("nativeRevision", json!("")),
+            ("unknown", json!(true)),
+        ] {
+            let mut bad = original.clone();
+            bad[field] = value;
+            assert!(reference_target(&bad, &facts(None)).is_err());
+        }
+        let asset = Uuid::from_u128(2);
+        let mut fine = original;
+        fine["assetId"] = json!(asset);
+        reference_target(&fine, &facts(Some(asset))).unwrap();
+        assert!(reference_target(&fine, &facts(Some(Uuid::from_u128(3)))).is_err());
+        fine["nativeObjectRef"] = json!("another-object");
+        assert!(reference_target(&fine, &facts(Some(asset))).is_err());
+        let mut descendant = reference();
+        descendant["nativeObjectRef"] = json!("opaque-native-child");
+        reference_target(&descendant, &facts(None)).unwrap();
+    }
+
+    #[test]
+    fn descendants_require_signed_exact_authorization_root_and_never_widen_asset() {
+        let child = Uuid::from_u128(3);
+        let old = json!({"idempotencyKey":child,"nativeObjectRef":"opaque-native-object"});
+        revision_target_arguments(&old, &facts(None)).unwrap();
+        let descendant = json!({"idempotencyKey":child,"nativeObjectRef":"opaque-native-child",
+            "authorizationTargetNativeRef":"opaque-native-object"});
+        revision_target_arguments(&descendant, &facts(None)).unwrap();
+        assert!(revision_target_arguments(&descendant, &facts(Some(Uuid::from_u128(2)))).is_err());
+        for bad in [
+            json!({"idempotencyKey":child,"nativeObjectRef":"opaque-native-child"}),
+            json!({"idempotencyKey":child,"nativeObjectRef":"opaque-native-child","authorizationTargetNativeRef":"other-root"}),
+        ] {
+            assert!(revision_target_arguments(&bad, &facts(None)).is_err());
+        }
+    }
+
+    #[test]
+    fn current_query_never_replaces_historical_or_other_object_reference() {
+        let frozen = reference();
+        let current = json!({"nativeObjectRef":"opaque-native-object","nativeRevision":"opaque-current-revision"});
+        require_current_revision(&frozen, &current).unwrap();
+        for bad in [
+            json!({"nativeObjectRef":"opaque-native-object","nativeRevision":"newer-head"}),
+            json!({"nativeObjectRef":"other-object","nativeRevision":"opaque-current-revision"}),
+            json!({"nativeObjectRef":"opaque-native-object","nativeRevision":""}),
+            json!({"nativeObjectRef":"opaque-native-object","nativeRevision":null}),
+            json!({"nativeObjectRef":"opaque-native-object","nativeRevision":"opaque-current-revision","body":"not-a-query-result"}),
+        ] {
+            assert!(require_current_revision(&frozen, &bad).is_err());
+        }
+        assert_eq!(frozen, reference());
+    }
+
+    #[test]
+    fn native_reference_proof_does_not_bypass_output_schema_or_leak_envelope() {
+        let frozen = reference();
+        let current = json!({"nativeObjectRef":"opaque-native-object","nativeRevision":"opaque-current-revision"});
+        require_current_revision(&frozen, &current).unwrap();
+        let raw = json!({"execution":{"nativeId":"private"},"resultJson":"\"allowed\"","contentReference":frozen});
+        let schema = json!({"type":"string"});
+        assert!(output_value(&raw, &schema, &BTreeMap::new(), None).is_err());
+        assert_eq!(
+            output_value(&raw, &schema, &BTreeMap::new(), raw.get("contentReference")).unwrap(),
+            json!("allowed")
+        );
+        assert!(output_value(
+            &raw,
+            &json!({"type":"number"}),
+            &BTreeMap::new(),
+            raw.get("contentReference")
+        )
+        .is_err());
+        let mut other = frozen;
+        other["nativeRevision"] = json!("unproven");
+        assert!(output_value(&raw, &schema, &BTreeMap::new(), Some(&other)).is_err());
+    }
 }
 
 pub(crate) async fn prepare(
@@ -693,6 +1115,13 @@ pub(crate) async fn dispatch(
     }
     connector.validate_action(&application.declaration)?;
     if connector == Connector::ProtocolPeer {
+        crate::application_binding::credentials::require_live(
+            state,
+            &mut tx,
+            tool.binding_id,
+            tool.generation,
+        )
+        .await?;
         // No native job exists for this connector. Persist the original child
         // dispatch before Gateway Pass; a missing callback remains UNKNOWN.
         // The admission lookup never dispatches a DISPATCHED child again.
@@ -923,6 +1352,14 @@ pub(crate) async fn disclose(
     if !decision.allowed {
         return Err(denied());
     }
+    let reference = if connector == Connector::RemoteAdapter {
+        raw.and_then(|value| value.get("contentReference"))
+    } else {
+        None
+    };
+    if let Some(reference) = reference {
+        verify_content_reference(state, &ae, reference).await?;
+    }
     let mut tx = state.pool.begin().await?;
     let (context, parent) =
         crate::agent_tool::invocation_context(state, &mut tx, invocation, true).await?;
@@ -957,13 +1394,25 @@ pub(crate) async fn disclose(
     {
         return Err(denied());
     }
+    if reference.is_some() {
+        let object_type = match parameters["targetType"].as_str() {
+            Some("RESOURCE") => "resource",
+            Some("ASSET") => "asset",
+            _ => return Err(invalid()),
+        };
+        for subject in [ae.initiator_principal_id, ae.actor_principal_id] {
+            permission_read(state, object_type, ae.target_id, subject).await?;
+        }
+    }
     let documents = schemas(&mut tx, tool.binding_id, &tool.action_key).await?;
     let output = documents.get(&digest).ok_or_else(unavailable)?;
-    // Typed transport and matching platform IDs do not prove native ownership
-    // or the referenced revision. Until the original Adapter resolution path
-    // verifies those facts, retain execution/usage evidence but disclose none.
+    // The exact typed reference was checked through the original native query,
+    // not inferred from business output. Unsupported historical references are
+    // still rejected; the original reference is never replaced with the head.
     let value = match connector {
-        Connector::RemoteAdapter => output_value(raw.ok_or_else(invalid)?, output, &documents)?,
+        Connector::RemoteAdapter => {
+            output_value(raw.ok_or_else(invalid)?, output, &documents, reference)?
+        }
         Connector::ProtocolPeer => {
             let value = crate::application_binding::peer::result_value(result)?;
             if !crate::capability_contract::schema_validator(output, &documents)?.is_valid(&value) {

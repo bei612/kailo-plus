@@ -3619,6 +3619,112 @@ SHA-256 `a76c6336c6512980e3d9c4815c4bc8dc73bcdf4f6b8e9d94b09235e6c9fac39e`。
 `mutation.log` SHA-256 `dcf17449dc78a6c576a14a7eae06f616b707ffcda4d9216fde51985868a3a64c`。
 此阶段尚未部署，不能把配置中的 2 秒或单元用例推断成实际回复耗时。
 
+### 2026-10-05 Workflows 运行历史消费原步骤审批
+
+本次实现基线为 assembly tree `e9e779a64f0c137a9ee43392cd79b95f866a549a`，
+私有导出基线 commit `9599e2eb755dde9caf872fca0a3c58060883a24e`。
+四步影响结论如下，证据产生于实现之后：
+
+1. 权威：设计 06 §9.1 与 DD-107 要求共享 Workflows 页面消费原 Task/Approval。
+   `automation::step_approval::ensure` 已创建同 Operation 的审批 child AE；原
+   `automation_query::runs` 只返回父任务，页面无法从该运行打开步骤审批。
+   本次修的是读取与导航，不增加动作、Workflow、运行或审批权威。
+2. 影响：原授权 runs reader 按原 parent/Invocation/AutomationVersion 精确关联
+   child，复用 `governance_api::TASK_QUERY`、`task_view` 的本人可见性与投影语义。
+   `AutomationRunView.stepApprovalTask` 为可选 TaskView；四侧由原生成器产生。
+   无数据库迁移，旧格式仍可读；新字段缺省不代表无需审批。Web/Desktop 共用
+   `workflows.tsx`，详情继续用原 TaskDetail/ApprovalPanel 再次授权读取。
+   Mobile 没有新增管理或组件宿主入口。
+3. 副作用：此路径只 GET，不启动、重放、批准或取消执行；不写业务正文、用量或
+   第二份任务状态。关联核对 tenant/workspace/target/actor/initiator/operation、
+   原父动作版本与冻结审批 policy 引用；串运行、串主体不能显示为合法审批。
+4. 边界：零 child 返回缺省；超过一条符合关系的 child 拒绝读取，不任意选一条。
+   原 keyset 分页/游标范围、本人任务限制和 fresh Resource 权限保持。投影落后与
+   UNKNOWN 继续原 TaskView observation，不显示为执行成功/失败；详情途中撤权
+   由原 Tasks/Approvals 拒绝，不复用列表读权限。并发/重复投递/重启不产生新写者，
+   审批耗时与执行前额度由原工作流控制。原六类错误保持，依赖异常是 UNKNOWN，
+   权限拒绝是 DENIED，不新增错误分类。
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/workflows/ui/WorkflowDialog.tsx::getInitialYaml` 和
+`desktop/src/features/workflows/hooks.ts::useDeleteWorkflowMutation` 确有原版
+复制/YAML/删除调用；本批没有把已关闭的 Relay Workflow 写链重新接入，也未生成
+冻结模型之外的手动执行入口。复制/YAML 的设计修正由主线另行收口，不将此导航
+增量称作原版全部功能完成。
+
+原受限 SDK 为 4 CPU/8 GiB、Cargo16、Data 缓存；没有产品构建或部署。
+`tools/gen.sh && tools/gen.sh --check` 实际退出 0；共享 TypeScript typecheck 0，
+原 Workflows 页面目标 27 项通过。主动删除生产 `step.operationId` 同链守卫，
+关联拒绝目标真实 1 项失败/exit1；原样还原后同 27 项通过/exit0。
+首轮页面 import 缺私有导出的宿主 tailwind 文件，退出 1；补齐同一冻结树原文件
+后通过，没有放宽主题检查。首次 Core 入口缺私有导出的 buzz-core，退出 101，
+未进入编译；补齐后第二轮在 build.rs 发现私有导出缺原 Gateway proto 目录，
+退出 101，仍未运行后端断言。两次缺项均以相同冻结树原文件补齐，不改构建接缝。
+含新字段的原序列化样例由 TypeScript 12 项、Go 单目标、Dart 单目标实际消费，
+均退出 0。Dart 复用相同 pubspec 的原锁与离线缓存，无依赖升级。
+原件目录为 `/volumes/data/kailo/tmp/codex-workflow-step-history-20261005.W8X2Ns`。
+
+依赖输入审计补齐后，原 `run_history_tests -- --include-ignored --nocapture`
+4 项实际通过，含专用隔离库上的生产 `step_approval_task` 读取；原 Rust
+`automation_run_pages_roundtrip` 1 项通过，`cargo clippy --locked --offline
+-p platform-core --all-targets -- -D warnings` 退出 0，见 `core-positive.log`。
+随后只在 SDK 执行副本删除生产 SQL 的 `parent.operation_id=ae.operation_id`，
+`sql_history_is_self_scoped_and_keyset_paged_before_projection` 对错 Operation
+的真实读取断言失败/退出 101，见 `core-mutation.log`；原样还原、与候选 cmp 0
+后同 4 项退出 0，见 `core-restored.log`。无生产库、审批写入或模型调用。
+此处隔离只读 fixture 不冒充 Temporal 审批执行验收；本增量尚未提交、部署或
+运行全量检查，交主线合批收口。
+
+### 2026-10-05 Workflows 原版复制与 YAML／表单
+
+本增量在上述 history 切片之后实现，依据已独立推送的设计
+`5287d4cfe61fe30be14a1a0717cc7e5147e72642`（REQ-23、DD-107）；不是新动作或
+新执行器。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/workflows/ui/WorkflowDialog.tsx::getInitialYaml`、
+`handleEditorModeChange`、`desktop/src/features/workflows/ui/workflowYamlDocument.ts`
+使用原 `yaml` 库；`desktop/src/features/workflows/ui/WorkflowFormBuilder.tsx`
+的 YAML 分支及 `desktop/src/shared/ui/textarea.tsx::Textarea` 直接复用到共享
+`WorkflowYamlEditor`。原 `cn` 的类合并保持为既有 `twMerge`；没有另造编辑器。
+
+1. 权威：两种编辑模式只形成原 `AutomationVersionContent`，解析用原
+   `parseDocument`／`stringify`，提交仍是原 BFF ActionCommand。不存在 YAML
+   持久化或第二 Workflow 定义。源定义读取与目标创建权限独立，服务端仍重做。
+2. 影响：Web/Desktop 继续消费同一 `AutomationManagement`；复制位于实际版本
+   行，重新 GET 同页并核对资源、Workspace 和所选版本后仅带入 content。
+   创建清空执行器、版本与委托选择，仍走 `automation.create` 新建 DRAFT；不继承
+   原 Resource/Asset ID、owner、pin、状态、实际 Schedule、SecretRef、Delegation
+   或执行/审批历史。Mobile 仅同源词条生成，不新增编辑或宿主入口。无迁移或
+   新 schema，现有启动/暂停/审批/Quota 与终态消费者不变。
+3. 副作用：YAML 未知字段/枚举、语法错误、非既定结构、错执行器 mention、
+   不可用 Schedule 或审批 policy 均阻止切回表单与提交，保留原文；不会删字段后
+   假装成功。复制途中 scope/client/page/写锁变化使迟到读回失效。编辑只在本地，
+   确认后冻结原结构与幂等键，UNKNOWN 锁定表单，复查不修改请求、不重放历史。
+4. 边界：空模板与非法 interval 不制造默认值；零可用执行器不能创建。创建拒绝
+   与 source 403 继续原六类错误，未知提交保持 UNKNOWN。复制不要求源 manage，
+   但 source 的实际 authorized reader 必须成功，目标 create 和实际 executor/
+   policy 由原读取与最终 Action Admission 校验；没有新增 MANUAL、删除或多步骤。
+
+依赖只恢复原 `yaml ^2.8.3`，三处原锁一致固定 `2.9.1`；没有升级其余包。
+原 4 CPU/8 GiB 固定 SDK 内 lock-only 首次离线缺 metadata/exit1，原联网命令
+随后 root pnpm、Web npm、Desktop 原 pnpm 均 0；首个 YAML registry 请求发生
+ECONNRESET 后由原包管理器重试完成。Web 初次副本遗漏原 `.npmrc`，其 link
+形态锁不采纳；补原 `install-links=true` 后从原锁离线机械重生/exit0，保留文件
+副本模式。npm audit 0 vulnerabilities；Desktop 原输出有 peer 与 deprecated
+警告，不把它们报告为零警告。原件 `yaml-lock-offline.log`、
+`yaml-lock-online.log`、`yaml-web-lock-configured.log`。
+
+实现后原共享类型检查通过；首次页面 65 通过/1 失败仅测试误期望旧英文
+“Denied”，实际原文案为 “Not allowed”，改断言而非产品错误分类。
+加入原主题目标后 67 通过/1 失败是执行导出缺两个宿主 CodeBlock/MessageContent
+文件；补同基线原文件后 68 通过/exit0，未放宽扫描器。移除生产未知字段守卫、
+把复制的 fresh GET 改回缓存详情后，原检查真实 3 失败/exit1；恢复源码 cmp0。
+原件 `yaml-shared-first.log`、`yaml-shared-positive.log`、
+`yaml-shared-complete.log`、`yaml-mutation.log`。恢复组合中生产 tsc 与原 i18n
+检查 0，测试 tsc 暴露 mock API 联合类型错误/exit1；随后使用同原 transport
+fixture 的 typed refusal 回调修正，不改变产品行为；最终测试 tsc 和同 68 项
+实际退出 0，见 `yaml-final.log`。
+没有 full、客户端产品构建、部署、业务消息或模型调用；合并与发布由主线集中。
+
 ### 2026-10-05 Schedule 管理派发状态修正
 
 本项只修 DD-107 / `05` §2.9 已有的 enable/pause/disable 消费链，不包含

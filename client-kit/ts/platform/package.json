@@ -44,21 +44,32 @@
     "./theme.css": "./src/theme.css",
     "./typography.css": "./src/typography.css",
     "./transport": "./src/transport.ts",
-    "./web-fetch": "./src/web-fetch.ts"
+    "./web-fetch": "./src/web-fetch.ts",
+    "./react/theme-settings-controls": "./src/react/theme-settings-controls.tsx",
+    "./react/settings-option-group": "./src/react/settings-option-group.tsx",
+    "./theme/use-appearance": "./src/theme/use-appearance.ts",
+    "./theme/safe-storage": "./src/theme/safe-storage.ts",
+    "./theme/theme-preview-frame": "./src/theme/theme-preview-frame.tsx",
+    "./theme/use-theme-preview-vars": "./src/theme/use-theme-preview-vars.ts",
+    "./theme/color-contrast": "./src/theme/color-contrast.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsc --noEmit -p tsconfig.test.json && vitest run"
   },
   "peerDependencies": {
+    "yaml": "^2.8.3",
     "@radix-ui/react-switch": "^1.2.6",
     "tailwind-merge": "^3.5.0",
     "@client-kit/contracts": "0.0.0",
     "@types/react": "^19.1.8",
     "react": "^19.1.0",
-    "shiki": "^4.0.2"
+    "shiki": "^4.0.2",
+    "motion": "^12.38.0",
+    "lucide-react": "^1.0.0"
   },
   "devDependencies": {
+    "yaml": "^2.8.3",
     "@radix-ui/react-switch": "^1.2.6",
     "tailwind-merge": "^3.5.0",
     "@client-kit/contracts": "workspace:*",
@@ -70,7 +81,9 @@
     "react-dom": "^19.1.0",
     "shiki": "^4.0.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "motion": "^12.38.0",
+    "lucide-react": "^1.0.0"
   },
   "peerDependenciesMeta": {
     "@types/react": {

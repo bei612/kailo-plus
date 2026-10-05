@@ -387,6 +387,30 @@ pub struct AdapterPepCheckResponse {
     pub operation_id: String,
 }
 
+///
+/// 07§5.2与ADR-12：查询同一native对象当前权威revision；ActionToken通过Authorization头传输，幂等键与Idempotency-Key头一致。authorizationTargetNativeRef仅为Core从实际受权Resource/Asset解析的原生目标定位，参与同一参数签名；adapter须核实被查对象在该目标及固定binding
+/// scope内。缺省保持确切目标查询，不授予一般子对象读取。不是execute或权限授予。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterQueryRevisionRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization_target_native_ref: Option<String>,
+
+    pub idempotency_key: String,
+
+    pub native_object_ref: String,
+}
+
+///
+/// 07§5.2与18§5：只返回被查证同一native对象当前权威revision，不替换调用方冻结ContentReference、不以mtime/ETag猜测revision。未知或fresh授权失败不得生成成功应答。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterQueryRevisionResponse {
+    pub native_object_ref: String,
+
+    pub native_revision: String,
+}
+
 /// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2686,12 +2710,18 @@ pub struct RunElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<String>,
 
+    /// 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_approval_task: Option<TaskClass>,
+
     pub task: TaskClass,
 
     /// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
     pub usage_event_ids: Vec<String>,
 }
 
+/// 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
+///
 /// GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
 /// 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2816,6 +2846,10 @@ pub struct AutomationRunView {
     /// 原 TaskProjection 进度；缺省不推测百分比或成功。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<String>,
+
+    /// 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_approval_task: Option<TaskClass>,
 
     pub task: TaskClass,
 
@@ -4214,7 +4248,14 @@ pub struct ApplicationProtocolPeerBindingDelivery {
 
     pub config_digest: String,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_generation: Option<i64>,
+
     pub isolation_mode: String,
+
+    /// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_credentials: Option<Vec<ApplicationPeerCredentialDelivery>>,
 
     /// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4228,6 +4269,22 @@ pub struct ApplicationProtocolPeerBindingDelivery {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationPeerCredentialDelivery {
+    pub audience: String,
+
+    pub header: String,
+
+    pub locator: String,
+
+    pub prefix: String,
+
+    pub secret_key: String,
+
+    pub version: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

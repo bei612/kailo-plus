@@ -15,6 +15,7 @@
     "generate-gql": "yarn graphql-codegen --config codegen.yaml"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.26.0",
     "@google-cloud/bigquery": "^6.0.3",
     "@google-cloud/storage": "^6.10.1",
     "apollo-server-micro": "^3.10.2",
@@ -36,7 +37,8 @@
     "posthog-node": "^4.3.2",
     "sharp": "0.34.5",
     "sql-formatter": "^15.3.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@apollo/client": "^3.6.9",

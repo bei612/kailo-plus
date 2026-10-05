@@ -13,6 +13,31 @@ import type { ComponentConformanceStepObservation } from "../src/generated/contr
 import type { ComponentReleaseApprovalReport } from "../src/generated/contracts.js";
 import type { ApplicationNativePage } from "../src/generated/contracts.js";
 import type { AdapterBindingObservation, AdapterExecutionReference } from "../src/generated/contracts.js";
+import type { ApplicationAdapterDirectory } from "../src/generated/contracts.js";
+
+test("native credential delivery preserves exact binding, generation and references", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/application-peer-credentials.sample.json", import.meta.url), "utf8");
+  const typed: ApplicationAdapterDirectory = JSON.parse(raw);
+  const reconstructed: ApplicationAdapterDirectory = {
+    adapters: typed.adapters,
+    protocolPeers: typed.protocolPeers?.map(peer => ({
+      adapterServiceRef: peer.adapterServiceRef, mcpUrl: peer.mcpUrl,
+      nativeInstanceRef: peer.nativeInstanceRef, artifactDigest: peer.artifactDigest,
+      timeoutSeconds: peer.timeoutSeconds, maxResponseBytes: peer.maxResponseBytes,
+      bindings: peer.bindings.map(binding => ({
+        bindingId: binding.bindingId, tenantId: binding.tenantId, workspaceId: binding.workspaceId,
+        servicePrincipalId: binding.servicePrincipalId, nativeScopeRef: binding.nativeScopeRef,
+        configDigest: binding.configDigest, isolationMode: binding.isolationMode,
+        credentialGeneration: binding.credentialGeneration,
+        nativeCredentials: binding.nativeCredentials?.map(credential => ({
+          secretKey: credential.secretKey, locator: credential.locator, version: credential.version,
+          audience: credential.audience, header: credential.header, prefix: credential.prefix,
+        })),
+      })),
+    })),
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
+});
 import type { ActionCommand, ResourceProvisionAdvanceRequest } from "../src/generated/contracts.js";
 
 test("resource reference keeps evidence and original workflow without inventing scope",()=>{
@@ -135,6 +160,7 @@ test("automation run pages preserve UNKNOWN and empty page", () => {
     automationResourceId: page.automationResourceId,
     runs: page.runs.map(run => ({
       task: run.task,
+      stepApprovalTask: run.stepApprovalTask,
       progress: run.progress,
       usageEventIds: run.usageEventIds,
     })),

@@ -292,25 +292,6 @@ pub(super) async fn freeze(
     Ok(())
 }
 
-/// Called inside the original SYNC admission transaction, after prewrite has
-/// frozen the real native Schedule intent. Local-only lifecycle changes retain
-/// their synchronous outcome; native work must remain available to dispatch.
-pub(crate) async fn defer_schedule_dispatch(
-    tx: &mut Transaction<'_, Postgres>,
-    id: Uuid,
-) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar(
-        "update admission.action_execution
-         set dispatch_state=case when parameters ? 'scheduleIntent' then 'NOT_DISPATCHED' else dispatch_state end
-         where id=$1 and gate_state='ALLOWED' and dispatch_state='DISPATCHED'
-           and action_key in ('automation.enable','automation.pause','automation.disable')
-         returning coalesce(parameters ? 'scheduleIntent',false)",
-    )
-    .bind(id)
-    .fetch_one(&mut **tx)
-    .await
-}
-
 fn input(id: &str, origin: &Origin) -> Value {
     json!({"sourceKind":"SCHEDULE","scheduleId":id,"automationResourceId":origin.resource,
         "automationVersionAssetId":origin.version})
@@ -342,6 +323,9 @@ pub(super) async fn dispatch(
             return Ok(());
         };
         let intent = intent.clone();
+        if intent["complete"] == true {
+            return Ok(());
+        }
         let active: bool =
             sqlx::query_scalar("select state='ACTIVE' from identity.tenant where id=$1 for update")
                 .bind(ae.tenant_id)
@@ -433,10 +417,7 @@ pub(super) async fn dispatch(
                 sqlx::query("update catalog.automation_definition set schedule_id=null,version=version+1 where resource_id=$1")
                     .bind(row.id).execute(&mut *tx).await?;
             }
-            sqlx::query("update catalog.resource set projection_action_execution_id=null where id=$1 and projection_action_execution_id=$2")
-                .bind(row.id).bind(ae.id).execute(&mut *tx).await?;
-            governance::record_dispatch(&mut tx, ae.id, def.audit_class(), Ok(()), Vec::new())
-                .await?;
+            complete_management_intent(&mut tx, &ae, def, "scheduleIntent").await?;
             tx.commit().await?;
             return Ok(());
         }

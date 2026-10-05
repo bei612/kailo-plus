@@ -1,0 +1,96 @@
+# Optional overlay for the existing source-built native UI. It does not create
+# a binding, grant a role, publish tools, or manufacture validation evidence.
+# The directory is populated by controlled component deployment/OpenBao Agent;
+# it must not be a user's upload directory or contain platform admin tokens.
+services:
+  wren-query-secret-agent:
+    image: ${WREN_QUERY_OPENBAO_IMAGE:?fixed source-built OpenBao image is required}
+    command: ['agent', '-config=/etc/kailo-query/agent.hcl']
+    restart: on-failure
+    # Explicit deployment ownership must allow the native UI to read rendered
+    # files without making them world-readable. It is not a service identity.
+    user: ${WREN_QUERY_AGENT_UID:?delivery UID is required}:${WREN_QUERY_AGENT_GID:?delivery GID is required}
+    environment:
+      BAO_ADDR: ${WREN_QUERY_OPENBAO_ADDR:?existing OpenBao endpoint is required}
+      BAO_NAMESPACE: ${WREN_QUERY_OPENBAO_NAMESPACE:?exact binding namespace is required}
+      WREN_QUERY_ACTION_JWKS_PATH: ${WREN_QUERY_ACTION_JWKS_PATH:?exact ActionToken public JWKS locator is required}
+      WREN_QUERY_ACTION_JWKS_VERSION: ${WREN_QUERY_ACTION_JWKS_VERSION:?frozen public JWKS version is required}
+      WREN_QUERY_GATEWAY_JWKS_PATH: ${WREN_QUERY_GATEWAY_JWKS_PATH:?exact Gateway public JWKS locator is required}
+      WREN_QUERY_GATEWAY_JWKS_VERSION: ${WREN_QUERY_GATEWAY_JWKS_VERSION:?frozen Gateway public JWKS version is required}
+      WREN_QUERY_SERVICE_SECRET_PATH: ${WREN_QUERY_SERVICE_SECRET_PATH:?exact binding service credential locator is required}
+      WREN_QUERY_SERVICE_SECRET_VERSION: ${WREN_QUERY_SERVICE_SECRET_VERSION:?frozen service credential version is required}
+    volumes:
+      - ${WREN_QUERY_AGENT_BOOTSTRAP_DIR:?controlled AppRole wrapping delivery is required}:/run/kailo-query-bootstrap:ro
+      - ./query-secrets:/etc/kailo-query/templates:ro
+      - ${WREN_QUERY_DELIVERY_DIR:?component-specific OpenBao Agent delivery directory is required}:/run/kailo-query
+    networks:
+      - query-platform
+    configs:
+      - source: query-secret-agent
+        target: /etc/kailo-query/agent.hcl
+
+  wren-ui:
+    environment:
+      WREN_PLATFORM_QUERY_CONFIG_FILE: /run/kailo-query/query.json
+      WREN_PLATFORM_BINDING_CONFIG_FILE: /run/kailo-query/binding.json
+    volumes:
+      - type: bind
+        source: ${WREN_QUERY_DELIVERY_DIR:?component-specific OpenBao Agent delivery directory is required}
+        target: /run/kailo-query
+        read_only: true
+    networks:
+      - wren
+      - query-platform
+
+networks:
+  query-platform:
+    external: true
+    name: ${WREN_QUERY_PLATFORM_NETWORK:?existing private platform protocol network is required}
+
+configs:
+  query-secret-agent:
+    # Metadata only. No auto-auth token sink, inline secret or network listener.
+    # Native Agent owns authentication, renewal and atomic template rendering.
+    content: |
+      auto_auth {
+        method "approle" {
+          mount_path = "auth/approle"
+          config = {
+            role_id_file_path = "/run/kailo-query-bootstrap/role-id"
+            secret_id_file_path = "/run/kailo-query-bootstrap/wrapped-secret-id"
+            secret_id_response_wrapping_path = "auth/approle/role/${WREN_QUERY_APPROLE_NAME:?exact binding AppRole is required}/secret-id"
+            remove_secret_id_file_after_reading = false
+          }
+        }
+      }
+      template_config {
+        exit_on_retry_failure = true
+      }
+      listener "unix" {
+        address = "/run/kailo-query/bao.sock"
+        socket_mode = "0600"
+        socket_user = "${WREN_QUERY_AGENT_UID}"
+        socket_group = "${WREN_QUERY_AGENT_GID}"
+        tls_disable = true
+      }
+      api_proxy {
+        use_auto_auth_token = "force"
+      }
+      template {
+        source = "/etc/kailo-query/templates/action-jwks.ctmpl"
+        destination = "/run/kailo-query/action-jwks.json"
+        perms = "0400"
+        error_on_missing_key = true
+      }
+      template {
+        source = "/etc/kailo-query/templates/gateway-jwks.ctmpl"
+        destination = "/run/kailo-query/gateway-jwks.json"
+        perms = "0400"
+        error_on_missing_key = true
+      }
+      template {
+        source = "/etc/kailo-query/templates/service-secret.ctmpl"
+        destination = "/run/kailo-query/service-secret"
+        perms = "0400"
+        error_on_missing_key = true
+      }

@@ -181,6 +181,8 @@ impl Adapter {
         let token = if matches!(ae.action_key.as_str(), super::CREATE | super::DISABLE) {
             crate::action_token::issue_binding_management(state, ae, audience, operation, arguments)
                 .await?
+        } else if operation == "query_revision" {
+            crate::action_token::issue_query_revision(state, ae, audience, arguments).await?
         } else {
             crate::action_token::issue_application_observation(
                 state, ae, audience, operation, arguments,
@@ -188,12 +190,21 @@ impl Adapter {
             .await?
         };
         let origin = text(&self.value, "baseUrl")?.trim_end_matches('/');
-        let mut response = self
+        let request = self
             .http
             .post(format!("{origin}/platform-adapter/v1/{operation}"))
             .bearer_auth(&token)
-            .header("Idempotency-Key", key.to_string())
-            .json(arguments)
+            .header("Idempotency-Key", key.to_string());
+        // The revision endpoint compares exactly the same bytes used in the
+        // signed parameter hash; no parallel serializer or target envelope.
+        let request = if operation == "query_revision" {
+            request
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(collab_bridge::limits::canonical_json(arguments))
+        } else {
+            request.json(arguments)
+        };
+        let mut response = request
             .send()
             .await
             .map_err(|_| Refusal::Unavailable("adapter response unknown".into()))?;

@@ -9,6 +9,17 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('native credentials preserve binding generation and exact references', () {
+    final original =
+        jsonDecode(
+              File(
+                '../../contracts/samples/application-peer-credentials.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final typed = ApplicationAdapterDirectory.fromJson(original);
+    expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+  });
   test('resource reference preserves evidence and original workflow', () {
     final original =
         jsonDecode(

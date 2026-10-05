@@ -90,7 +90,10 @@ async function boundedBody(stream, limit) {
 function requestValue(raw, key) {
   let value;
   try { value = JSON.parse(raw); } catch { throw new Refused(400); }
-  if (!exactKeys(value, ['nativeObjectRef', 'idempotencyKey']) || !UUID.test(value.nativeObjectRef)
+  const keys = ['nativeObjectRef', 'idempotencyKey'];
+  if (object(value) && Object.hasOwn(value, 'authorizationTargetNativeRef')) keys.push('authorizationTargetNativeRef');
+  if (!exactKeys(value, keys) || !UUID.test(value.nativeObjectRef)
+    || (value.authorizationTargetNativeRef !== undefined && !UUID.test(value.authorizationTargetNativeRef))
     || !nonempty(value.idempotencyKey) || /[\r\n]/.test(value.idempotencyKey)
     || value.idempotencyKey !== key) throw new Refused(400);
   // Core emits canonical JSON. Exact comparison also rejects duplicate keys,
@@ -210,7 +213,9 @@ function nativeNode(value, id, workspaceId, type) {
   return nativePath(value.Path);
 }
 
-async function currentRevision(config, deadline, args) {
+async function currentRevision(config, deadline, args, claims) {
+  if (claims.target_type === 'ASSET' && args.authorizationTargetNativeRef !== undefined
+    && args.authorizationTargetNativeRef !== args.nativeObjectRef) throw new Refused(403);
   const bearer = await secret(config.cellsBearerFile);
   const base = fixedUrl(config.cellsRestBaseUrl);
   base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
@@ -220,9 +225,23 @@ async function currentRevision(config, deadline, args) {
   // WithVersionsAll does not request pre-signed URLs; no path comes from input.
   const root = await jsonFetch(config, deadline, nodeUrl(config.nativeRootRef), { headers });
   const rootPath = nativeNode(root, config.nativeRootRef, config.nativeWorkspaceId, 'COLLECTION');
-  const target = await jsonFetch(config, deadline, nodeUrl(args.nativeObjectRef), { headers });
+  let authorized;
+  let authorizedPath;
+  if (args.authorizationTargetNativeRef !== undefined) {
+    authorized = args.authorizationTargetNativeRef === config.nativeRootRef ? root
+      : await jsonFetch(config, deadline, nodeUrl(args.authorizationTargetNativeRef), { headers });
+    if (!['COLLECTION', 'LEAF'].includes(authorized?.Type)) throw new Refused(503);
+    authorizedPath = nativeNode(authorized, args.authorizationTargetNativeRef, config.nativeWorkspaceId, authorized.Type);
+    if (authorized.Uuid !== config.nativeRootRef && !authorizedPath.startsWith(`${rootPath}/`)) throw new Refused(403);
+  }
+  const target = authorized?.Uuid === args.nativeObjectRef ? authorized
+    : await jsonFetch(config, deadline, nodeUrl(args.nativeObjectRef), { headers });
   const targetPath = nativeNode(target, args.nativeObjectRef, config.nativeWorkspaceId, 'LEAF');
   if (!targetPath.startsWith(`${rootPath}/`)) throw new Refused(403);
+  if (authorized) {
+    if (authorized.Type === 'LEAF' ? authorized.Uuid !== target.Uuid
+      : !targetPath.startsWith(`${authorizedPath}/`)) throw new Refused(403);
+  }
   const response = await jsonFetch(config, deadline, new URL(`n/node/${args.nativeObjectRef}/versions`, base), {
     method: 'POST', headers,
     // Fixed c57f02f... NodeVersions reads Query directly, not {Query: ...}.
@@ -256,7 +275,7 @@ export function createAdapter(rawConfig) {
       const token = request.headers.authorization.slice(7);
       const claims = await verifyToken(token, config, args);
       await freshPep(config, deadline, token, args, claims);
-      const nativeRevision = await currentRevision(config, deadline, args);
+      const nativeRevision = await currentRevision(config, deadline, args, claims);
       // A read can race revocation or token expiry. Never disclose a revision
       // on the strength of only the earlier PEP result.
       const currentClaims = await verifyToken(token, config, args);

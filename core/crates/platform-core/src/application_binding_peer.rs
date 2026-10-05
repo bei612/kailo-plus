@@ -173,8 +173,6 @@ pub(super) async fn validate(
             .get("nativeScopeRef")
             .is_some_and(|scope| scope != &fact["nativeScopeRef"])
         || text(fact, "nativeScopeRef").is_err()
-        || binding["secretRefs"] != json!([])
-        || manifest["secretSchema"] != json!([])
     {
         return Err(blocked());
     }
@@ -186,7 +184,8 @@ pub(super) async fn validate(
     .bind(ae.id)
     .fetch_one(&state.pool)
     .await?;
-    let url = gateway::publish_validation(state, ae, generation, &delivered).await?;
+    let (url, credential_projection) =
+        gateway::publish_validation(state, ae, generation, &delivered, binding, manifest).await?;
     let seconds = delivered.value["timeoutSeconds"]
         .as_u64()
         .ok_or_else(invalid)?;
@@ -229,6 +228,7 @@ pub(super) async fn validate(
         "nativeScopeRef":fact["nativeScopeRef"],"configDigest":binding["configDigest"],
         "isolationMode":binding["isolationMode"],"artifactDigest":manifest["adapterBuildRef"],
         "secretRefDigest":collab_bridge::limits::canonical_digest(&binding["secretRefs"]),
+        "nativeCredentials":credential_projection,
         "protocol":"MCP","toolSchemaDigest":collab_bridge::limits::canonical_digest(&serde_json::to_value(observed).map_err(|_| invalid())?)}),
     )
 }

@@ -2270,7 +2270,12 @@ impl Gateway {
         Ok(rows.clone())
     }
 
-    fn credential_file(&self, tenant: Uuid, route: Uuid, version: u32) -> Result<String, Refusal> {
+    pub(crate) fn credential_file(
+        &self,
+        tenant: Uuid,
+        route: Uuid,
+        version: u32,
+    ) -> Result<String, Refusal> {
         let root = std::path::PathBuf::from(
             std::env::var("AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY").map_err(|_| unavailable())?,
         );
@@ -2292,7 +2297,7 @@ impl Gateway {
             .map_err(|_| unavailable())
     }
 
-    async fn project_credential(
+    pub(crate) async fn project_credential(
         &self,
         tenant: Uuid,
         route: Uuid,
@@ -2654,7 +2659,7 @@ impl Gateway {
             .await
     }
 
-    async fn admin_delete(&self, segments: &[&str]) -> Result<(), Refusal> {
+    pub(crate) async fn admin_delete(&self, segments: &[&str]) -> Result<(), Refusal> {
         let mut url = self.admin.clone();
         url.path_segments_mut()
             .map_err(|_| unavailable())?

@@ -237,7 +237,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:af0453a61bb2fe9d4576d2cd59f7e7608a04c12719d2ec1dfa50ee48bf011c11
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:3ee0bfd3472f810ecec1503082ad8787ecb878d3b8efb39340d980c4662015bd
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -256,7 +256,7 @@ services:
   # 镜像是带 SS-BUZ-GOVERNANCE 改动的本仓库构建（collaboration/），不是上游
   # 发布镜像：上游的 NIP-29 权限比平台宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:af0453a61bb2fe9d4576d2cd59f7e7608a04c12719d2ec1dfa50ee48bf011c11
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:3ee0bfd3472f810ecec1503082ad8787ecb878d3b8efb39340d980c4662015bd
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
@@ -724,7 +724,7 @@ services:
   # API（状态投影与 Buzz roster 投影）——Buzz 的签名留在 Core，CONTROL 私钥在
   # 那里（DD-72）。
   worker:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:f6ba77ea30ea7fa2beafd4669bf380122cb78bc478936ef1f35a74b0ebb3cd04
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:36ce8000303eef14fd4ca8a53b25febea79c6ec83c7f01d0d050cff8bb8601de
     build:
       context: ../..
       dockerfile: worker/Dockerfile
@@ -775,7 +775,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:3336de5375dccfbcb72865e4ad44bf1e2799136779cf00830c8b64861fd4d173
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:1f7c2596ab2c1ebe67a562f63101b00d01fd578d1a2eef534294cd0738699c18
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}

@@ -42,6 +42,16 @@
             "servicePrincipalId": {"type": "string", "format": "uuid"},
             "nativeScopeRef": {"type": "string"}, "configDigest": {"type": "string"},
             "isolationMode": {"type": "string"},
+            "credentialGeneration": {"type":"integer", "minimum":1},
+            "nativeCredentials": {"type":"array", "description":"原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。", "items":{
+              "title":"ApplicationPeerCredentialDelivery", "type":"object", "additionalProperties":false,
+              "required":["secretKey","locator","version","audience","header","prefix"],
+              "properties":{
+                "secretKey":{"type":"string"},"locator":{"type":"string"},
+                "version":{"type":"integer","minimum":1},"audience":{"type":"string"},
+                "header":{"type":"string"},"prefix":{"type":"string"}
+              }
+            }},
             "nativeResources": {"type": "array", "description": "绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。", "items": {
               "title": "ApplicationNativeResourceDelivery", "type": "object", "additionalProperties": false,
               "required": ["typeKey", "nativeType", "nativeRef", "evidenceRef", "evidenceDigest"],

@@ -8,6 +8,8 @@
 //     final adapterExecutionUsage = adapterExecutionUsageFromJson(jsonString);
 //     final adapterPepCheckRequest = adapterPepCheckRequestFromJson(jsonString);
 //     final adapterPepCheckResponse = adapterPepCheckResponseFromJson(jsonString);
+//     final adapterQueryRevisionRequest = adapterQueryRevisionRequestFromJson(jsonString);
+//     final adapterQueryRevisionResponse = adapterQueryRevisionResponseFromJson(jsonString);
 //     final adapterScopeObservation = adapterScopeObservationFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
@@ -183,6 +185,18 @@ AdapterPepCheckResponse adapterPepCheckResponseFromJson(String str) =>
     AdapterPepCheckResponse.fromJson(json.decode(str));
 
 String adapterPepCheckResponseToJson(AdapterPepCheckResponse data) =>
+    json.encode(data.toJson());
+
+AdapterQueryRevisionRequest adapterQueryRevisionRequestFromJson(String str) =>
+    AdapterQueryRevisionRequest.fromJson(json.decode(str));
+
+String adapterQueryRevisionRequestToJson(AdapterQueryRevisionRequest data) =>
+    json.encode(data.toJson());
+
+AdapterQueryRevisionResponse adapterQueryRevisionResponseFromJson(String str) =>
+    AdapterQueryRevisionResponse.fromJson(json.decode(str));
+
+String adapterQueryRevisionResponseToJson(AdapterQueryRevisionResponse data) =>
     json.encode(data.toJson());
 
 AdapterScopeObservation adapterScopeObservationFromJson(String str) =>
@@ -1640,6 +1654,57 @@ class AdapterPepCheckResponse {
     "actionExecutionId": actionExecutionId,
     "authorizationMinZedToken": authorizationMinZedToken,
     "operationId": operationId,
+  });
+}
+
+///
+///07§5.2与ADR-12：查询同一native对象当前权威revision；ActionToken通过Authorization头传输，幂等键与Idempotency-Key头一致。authorizationTargetNativeRef仅为Core从实际受权Resource/Asset解析的原生目标定位，参与同一参数签名；adapter须核实被查对象在该目标及固定binding
+///scope内。缺省保持确切目标查询，不授予一般子对象读取。不是execute或权限授予。
+class AdapterQueryRevisionRequest {
+  final String? authorizationTargetNativeRef;
+  final String idempotencyKey;
+  final String nativeObjectRef;
+
+  AdapterQueryRevisionRequest({
+    this.authorizationTargetNativeRef,
+    required this.idempotencyKey,
+    required this.nativeObjectRef,
+  });
+
+  factory AdapterQueryRevisionRequest.fromJson(Map<String, dynamic> json) =>
+      AdapterQueryRevisionRequest(
+        authorizationTargetNativeRef: json["authorizationTargetNativeRef"],
+        idempotencyKey: json["idempotencyKey"],
+        nativeObjectRef: json["nativeObjectRef"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "authorizationTargetNativeRef": authorizationTargetNativeRef,
+    "idempotencyKey": idempotencyKey,
+    "nativeObjectRef": nativeObjectRef,
+  });
+}
+
+///
+///07§5.2与18§5：只返回被查证同一native对象当前权威revision，不替换调用方冻结ContentReference、不以mtime/ETag猜测revision。未知或fresh授权失败不得生成成功应答。
+class AdapterQueryRevisionResponse {
+  final String nativeObjectRef;
+  final String nativeRevision;
+
+  AdapterQueryRevisionResponse({
+    required this.nativeObjectRef,
+    required this.nativeRevision,
+  });
+
+  factory AdapterQueryRevisionResponse.fromJson(Map<String, dynamic> json) =>
+      AdapterQueryRevisionResponse(
+        nativeObjectRef: json["nativeObjectRef"],
+        nativeRevision: json["nativeRevision"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nativeObjectRef": nativeObjectRef,
+    "nativeRevision": nativeRevision,
   });
 }
 
@@ -5553,26 +5618,40 @@ class AutomationRunPage {
 class RunElement {
   ///原 TaskProjection 进度；缺省不推测百分比或成功。
   final String? progress;
+
+  ///同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
+  final TaskClass? stepApprovalTask;
   final TaskClass task;
 
   ///同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
   final List<String> usageEventIds;
 
-  RunElement({this.progress, required this.task, required this.usageEventIds});
+  RunElement({
+    this.progress,
+    this.stepApprovalTask,
+    required this.task,
+    required this.usageEventIds,
+  });
 
   factory RunElement.fromJson(Map<String, dynamic> json) => RunElement(
     progress: json["progress"],
+    stepApprovalTask: json["stepApprovalTask"] == null
+        ? null
+        : TaskClass.fromJson(json["stepApprovalTask"]),
     task: TaskClass.fromJson(json["task"]),
     usageEventIds: List<String>.from(json["usageEventIds"].map((x) => x)),
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "progress": progress,
+    "stepApprovalTask": stepApprovalTask?.toJson(),
     "task": task.toJson(),
     "usageEventIds": List<dynamic>.from(usageEventIds.map((x) => x)),
   });
 }
 
+///同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
+///
 ///GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
 ///非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
 class TaskClass {
@@ -5727,6 +5806,9 @@ final workflowKindValues = EnumValues({
 class AutomationRunView {
   ///原 TaskProjection 进度；缺省不推测百分比或成功。
   final String? progress;
+
+  ///同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
+  final TaskClass? stepApprovalTask;
   final TaskClass task;
 
   ///同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
@@ -5734,6 +5816,7 @@ class AutomationRunView {
 
   AutomationRunView({
     this.progress,
+    this.stepApprovalTask,
     required this.task,
     required this.usageEventIds,
   });
@@ -5741,12 +5824,16 @@ class AutomationRunView {
   factory AutomationRunView.fromJson(Map<String, dynamic> json) =>
       AutomationRunView(
         progress: json["progress"],
+        stepApprovalTask: json["stepApprovalTask"] == null
+            ? null
+            : TaskClass.fromJson(json["stepApprovalTask"]),
         task: TaskClass.fromJson(json["task"]),
         usageEventIds: List<String>.from(json["usageEventIds"].map((x) => x)),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "progress": progress,
+    "stepApprovalTask": stepApprovalTask?.toJson(),
     "task": task.toJson(),
     "usageEventIds": List<dynamic>.from(usageEventIds.map((x) => x)),
   });
@@ -8258,7 +8345,11 @@ class ApplicationProtocolPeerDelivery {
 class ApplicationProtocolPeerBindingDelivery {
   final String bindingId;
   final String configDigest;
+  final int? credentialGeneration;
   final String isolationMode;
+
+  ///原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
+  final List<ApplicationPeerCredentialDelivery>? nativeCredentials;
 
   ///绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
   final List<ApplicationNativeResourceDelivery>? nativeResources;
@@ -8270,7 +8361,9 @@ class ApplicationProtocolPeerBindingDelivery {
   ApplicationProtocolPeerBindingDelivery({
     required this.bindingId,
     required this.configDigest,
+    this.credentialGeneration,
     required this.isolationMode,
+    this.nativeCredentials,
     this.nativeResources,
     required this.nativeScopeRef,
     required this.servicePrincipalId,
@@ -8283,7 +8376,15 @@ class ApplicationProtocolPeerBindingDelivery {
   ) => ApplicationProtocolPeerBindingDelivery(
     bindingId: json["bindingId"],
     configDigest: json["configDigest"],
+    credentialGeneration: json["credentialGeneration"],
     isolationMode: json["isolationMode"],
+    nativeCredentials: json["nativeCredentials"] == null
+        ? null
+        : List<ApplicationPeerCredentialDelivery>.from(
+            json["nativeCredentials"]!.map(
+              (x) => ApplicationPeerCredentialDelivery.fromJson(x),
+            ),
+          ),
     nativeResources: json["nativeResources"] == null
         ? null
         : List<ApplicationNativeResourceDelivery>.from(
@@ -8300,7 +8401,11 @@ class ApplicationProtocolPeerBindingDelivery {
   Map<String, dynamic> toJson() => _stripNulls({
     "bindingId": bindingId,
     "configDigest": configDigest,
+    "credentialGeneration": credentialGeneration,
     "isolationMode": isolationMode,
+    "nativeCredentials": nativeCredentials == null
+        ? null
+        : List<dynamic>.from(nativeCredentials!.map((x) => x.toJson())),
     "nativeResources": nativeResources == null
         ? null
         : List<dynamic>.from(nativeResources!.map((x) => x.toJson())),
@@ -8308,6 +8413,44 @@ class ApplicationProtocolPeerBindingDelivery {
     "servicePrincipalId": servicePrincipalId,
     "tenantId": tenantId,
     "workspaceId": workspaceId,
+  });
+}
+
+class ApplicationPeerCredentialDelivery {
+  final String audience;
+  final String header;
+  final String locator;
+  final String prefix;
+  final String secretKey;
+  final int version;
+
+  ApplicationPeerCredentialDelivery({
+    required this.audience,
+    required this.header,
+    required this.locator,
+    required this.prefix,
+    required this.secretKey,
+    required this.version,
+  });
+
+  factory ApplicationPeerCredentialDelivery.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationPeerCredentialDelivery(
+    audience: json["audience"],
+    header: json["header"],
+    locator: json["locator"],
+    prefix: json["prefix"],
+    secretKey: json["secretKey"],
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "header": header,
+    "locator": locator,
+    "prefix": prefix,
+    "secretKey": secretKey,
+    "version": version,
   });
 }
 

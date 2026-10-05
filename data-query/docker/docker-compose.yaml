@@ -8,6 +8,34 @@ networks:
     driver: bridge
 
 services:
+  # Separate native OIDC policy/cookies and configuration ownership. Core's
+  # dynamic MCP projections never write this gateway's listener or Admin API.
+  wren-native-gateway:
+    image: ${WREN_GATEWAY_IMAGE:?source-built AgentGateway image is required}
+    restart: on-failure
+    platform: ${PLATFORM}
+    command: ["-f", "/etc/agentgateway/native-gateway.yaml"]
+    env_file:
+      # Deliver WREN_OIDC_CLIENT_SECRET and independent OIDC_COOKIE_SECRET.
+      # Controlled component-specific delivery only; never the platform .env.
+      - ${WREN_OIDC_SECRET_ENV_FILE:?dedicated OIDC secret delivery file is required}
+    environment:
+      WREN_OIDC_ISSUER: ${WREN_OIDC_ISSUER:?dedicated issuer is required}
+      WREN_OIDC_CLIENT_ID: ${WREN_OIDC_CLIENT_ID:?dedicated browser client is required}
+      WREN_OIDC_REDIRECT_URI: ${WREN_OIDC_REDIRECT_URI:?native callback URI is required}
+      WREN_GATEWAY_HTTP_PORT: ${WREN_GATEWAY_HTTP_PORT:?native Gateway listen port is required}
+      WREN_GATEWAY_ADMIN_PORT: ${WREN_GATEWAY_ADMIN_PORT:?loopback admin port is required}
+      # Original native Dockerfile fixes PORT/EXPOSE to 3000.
+      WREN_UI_UPSTREAM: wren-ui:3000
+    volumes:
+      - ./native-gateway.yaml:/etc/agentgateway/native-gateway.yaml:ro
+    ports:
+      - ${HOST_PORT}:${WREN_GATEWAY_HTTP_PORT:?native Gateway listen port is required}
+    networks:
+      - wren
+    depends_on:
+      - wren-ui
+
   bootstrap:
     image: ghcr.io/canner/wren-bootstrap:${WREN_BOOTSTRAP_VERSION}
     restart: on-failure
@@ -109,9 +137,8 @@ services:
       EXPERIMENTAL_ENGINE_RUST_VERSION: ${EXPERIMENTAL_ENGINE_RUST_VERSION}
       # configs
       WREN_PRODUCT_VERSION: ${WREN_PRODUCT_VERSION}
-    ports:
-      # HOST_PORT is the port you want to expose to the host machine
-      - ${HOST_PORT}:3000
+    expose:
+      - 3000
     volumes:
       - data:/app/data
     networks:

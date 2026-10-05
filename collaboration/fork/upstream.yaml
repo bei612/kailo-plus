@@ -993,8 +993,8 @@ artifacts:
     build_dockerfile: collaboration/Dockerfile
     inputs: [collaboration/]
     exclude: [collaboration/desktop/, collaboration/mobile/, collaboration/fork/packaging/]
-    source_digest: sha256:4ffa0b5a3f5f223c9f455c682f31f7959b6347632288b1c534e0e750f12bc9f2
-    artifact_digest: sha256:af0453a61bb2fe9d4576d2cd59f7e7608a04c12719d2ec1dfa50ee48bf011c11
+    source_digest: sha256:b07acb21d13d36dc7ea8f8a9870e7b7911328153a80e280662973850691e0fdb
+    artifact_digest: sha256:3ee0bfd3472f810ecec1503082ad8787ecb878d3b8efb39340d980c4662015bd
   # Windows x64 NSIS 测试安装包：官方 Tauri cargo-xwin 同主体交叉打包，不作为带签名正式发布。
   # artifact_digest 记安装包字节的 SHA-256（06 §2）。mobile/ 与 crates/buzz-relay/ 不是它的输入：
   # desktop/src-tauri 不在根 Cargo workspace 内，其 Cargo.lock 不含 buzz-relay；pnpm workspace
@@ -1008,8 +1008,8 @@ artifacts:
     # 安装包显示名由发布配置注入（DD-111），不写在源码里
     build_args: [PLATFORM_DISPLAY_NAME]
     blocked: Win11 x64 unsigned 测试安装包已生成；代码签名、Win11 安装运行与业务验收未完成
-    source_digest: sha256:7b89dba2d4a4fdb66a4be4504c1e8b085b0db20321bcbd519a8273c2a9b7ac50
-    artifact_digest: sha256:620e6d3b6b976ca70022de22b9d5e93eacb1edd91f24f743665bda1a474c784a
+    source_digest: sha256:6f7c2b5b684020e3846c52512697f08fa4d1e48a65e53ed1034e19c16e14ca36
+    artifact_digest: sha256:eddf9d1f7ebb144f9535f979dc1bc82ba66e0d13f090352c2183c64564c6a0c0
   # Android release APK（ADR-06 客户端发布单元按端分离：应用商店包，带平台签名）。
   # 阻断：release 签名所需的 upload keystore 未提供。上游 release 构建缺 keystore 即失败，
   # 不以 debug 证书冒充 release；profile/debug APK 只是测试构建，不登记为发布产物。

@@ -51,6 +51,7 @@ export function validAutomationRuns(
 		Array.isArray(page.runs) &&
 		page.runs.every((run) => {
 			const task = run?.task;
+			const step = run?.stepApprovalTask;
 			return (
 				!!task &&
 				task.actionKey === "automation.run" &&
@@ -81,6 +82,17 @@ export function validAutomationRuns(
 				(task.waitingReason === undefined ||
 					typeof task.waitingReason === "string") &&
 				(run.progress === undefined || typeof run.progress === "string") &&
+				(step === undefined || (!!step &&
+					step.actionExecutionId !== task.actionExecutionId &&
+					step.operationId === task.operationId &&
+					step.actionVersion === task.actionVersion &&
+					nonempty(step.approvalWorkflowId) &&
+					step.workflowId === undefined &&
+					step.workflowKind === undefined &&
+					step.taskStatus === undefined &&
+					validAutomationRuns({ automationResourceId: resourceId,
+						runs: [{ task: step, usageEventIds: [] }] }, resourceId, workspaceId, [])
+				)) &&
 				Array.isArray(run.usageEventIds) &&
 				run.usageEventIds.every(nonempty) &&
 				new Set(run.usageEventIds).size === run.usageEventIds.length
@@ -161,6 +173,7 @@ function AutomationRunHistory({
 										t("tasks.waitingReason"),
 										t("workflows.progress"),
 										t("workflows.usage"),
+										t("workflows.stepApproval"),
 									]}
 								>
 									{page.runs.map((run) => (
@@ -181,6 +194,12 @@ function AutomationRunHistory({
 											<Cell>{run.task.waitingReason ?? "—"}</Cell>
 											<Cell>{run.progress ?? "—"}</Cell>
 											<Cell mono>{run.usageEventIds.join(", ") || "—"}</Cell>
+											<Cell>{run.stepApprovalTask ? <div className="flex flex-col gap-1">
+												<TaskStatusBadge task={run.stepApprovalTask} />
+												<Button onClick={() => setOpen(run.stepApprovalTask!.actionExecutionId)}>
+													{t("workflows.stepApproval")}
+												</Button>
+											</div> : "—"}</Cell>
 										</tr>
 									))}
 								</Table>

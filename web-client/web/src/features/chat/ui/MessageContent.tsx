@@ -14,8 +14,6 @@ import {
   extractLanguage,
 } from "@client-kit/platform/react/message-body";
 import {
-  BUZZ_DARK_THEME_NAME,
-  BUZZ_THEME_NAME,
   resolveShikiThemeName,
 } from "@client-kit/platform/theme/theme-loader";
 import { Bot, Download, ImageOff } from "lucide-react";
@@ -194,13 +192,13 @@ function ThemedCodeBlock({ code, language, ...props }: {
   code: string;
   language: string;
 } & ComponentProps<"code">) {
-  const { isDark } = useTheme();
+  const { themeName } = useTheme();
   return (
     <SyntaxHighlightedCode
       {...props}
       code={code}
       language={language}
-      shikiTheme={resolveShikiThemeName(isDark ? BUZZ_DARK_THEME_NAME : BUZZ_THEME_NAME)}
+      shikiTheme={resolveShikiThemeName(themeName)}
     />
   );
 }

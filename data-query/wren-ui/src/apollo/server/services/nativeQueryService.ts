@@ -1,0 +1,386 @@
+import { randomUUID } from 'crypto';
+import {
+  ApiHistory,
+  ApiHistoryRepository,
+  ApiType,
+} from '../repositories/apiHistoryRepository';
+import { IDeployLogRepository } from '../repositories/deployLogRepository';
+import { IProjectRepository } from '../repositories/projectRepository';
+import { Manifest } from '../mdl/type';
+import { IQueryService, PreviewDataResponse } from './queryService';
+import { verifyPostgresReader } from './nativeBindingService';
+import { toIbisConnectionInfo } from '../dataSource';
+import { DataSourceName } from '../types';
+import {
+  authorizeQuery,
+  digest,
+  NativeQueryDelivery,
+  NativeQueryRefusal,
+} from './nativeQueryAdmission';
+
+export type GovernedQueryInput = {
+  sql: string;
+  deploymentId: number;
+  deploymentHash: string;
+  limit: number;
+};
+
+const invalid = () => new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
+const scopeDenied = () => new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+const unavailable = () =>
+  new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+const uuid =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const nativeType = 'wren.api_history';
+
+function queryInput(raw: unknown): GovernedQueryInput {
+  const value = raw as GovernedQueryInput;
+  if (
+    !value ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join(',') !==
+      'deploymentHash,deploymentId,limit,sql' ||
+    typeof value.sql !== 'string' ||
+    !value.sql.trim() ||
+    !Number.isSafeInteger(value.deploymentId) ||
+    value.deploymentId <= 0 ||
+    !Number.isSafeInteger(value.limit) ||
+    value.limit <= 0 ||
+    typeof value.deploymentHash !== 'string' ||
+    !/^[a-f0-9]{40}$/.test(value.deploymentHash)
+  ) {
+    throw invalid();
+  }
+  return value;
+}
+
+// The original native query history supplies native identity and terminal
+// evidence. There is no invented database job, cancellation or replay engine.
+export class NativeQueryService {
+  constructor(
+    private readonly config: NativeQueryDelivery,
+    private readonly projects: IProjectRepository,
+    private readonly deployments: IDeployLogRepository,
+    private readonly history: ApiHistoryRepository,
+    private readonly queries: IQueryService,
+  ) {}
+
+  private observation(record: ApiHistory) {
+    return {
+      idempotencyKey: record.governanceKey,
+      nativeType,
+      nativeId: record.id,
+      platformStatus: record.governanceState,
+      nativeStatus: record.governanceState,
+      lastObservedAt: new Date().toISOString(),
+      cancelCapability: 'UNSUPPORTED',
+      ...(record.governanceState === 'SUCCEEDED' ||
+      record.governanceState === 'FAILED'
+        ? { terminalAt: record.updatedAt }
+        : {}),
+    };
+  }
+
+  async execute(
+    token: string,
+    key: string,
+    action: 'data_query.query' | 'data_query.dry_run' | 'data_query.describe',
+    raw: unknown,
+  ) {
+    if (!uuid.test(key)) throw invalid();
+    const describing = action === 'data_query.describe';
+    if (
+      describing &&
+      (!raw ||
+        Array.isArray(raw) ||
+        typeof raw !== 'object' ||
+        Object.keys(raw).length !== 0)
+    )
+      throw invalid();
+    const input = describing ? undefined : queryInput(raw);
+    // Read target claims only to reconstruct Core's already-frozen envelope.
+    // No native scope or identity is trusted until JOSE and original PEP pass.
+    let targetClaims: Record<string, unknown>;
+    try {
+      targetClaims = JSON.parse(
+        Buffer.from(token.split('.')[1], 'base64url').toString('utf8'),
+      );
+    } catch {
+      throw scopeDenied();
+    }
+    const envelope = {
+      target: { resourceId: targetClaims.target_id },
+      input: raw,
+    };
+    const claims = await authorizeQuery(
+      this.config,
+      token,
+      'execute',
+      envelope,
+    );
+    if (
+      claims.action_key !== action ||
+      claims.action_definition_version !== 1 ||
+      claims.target_type !== 'RESOURCE' ||
+      typeof claims.target_id !== 'string' ||
+      !uuid.test(claims.target_id)
+    ) {
+      throw scopeDenied();
+    }
+    const project = await this.projects.findOneBy({
+      id: this.config.projectId,
+    });
+    // Never silently follow a native UI connection/account change under an
+    // already-frozen binding. This private fingerprint is not result evidence
+    // or a claim that a database role has been made read-only.
+    if (
+      !project ||
+      digest({
+        type: project.type,
+        connectionInfo: project.connectionInfo,
+        catalog: project.catalog,
+        schema: project.schema,
+      }) !== this.config.projectConnectionDigest
+    ) {
+      throw new NativeQueryRefusal(412, 'QUERY_NATIVE_SCOPE_CHANGED');
+    }
+    const deployment = describing
+      ? await this.deployments.findLastProjectDeployLog(this.config.projectId)
+      : await this.deployments.findOneBy({
+          id: input.deploymentId,
+          projectId: this.config.projectId,
+          hash: input.deploymentHash,
+          status: 'SUCCESS',
+        });
+    // Consume the original deployment identity/hash, not a new hash of a
+    // PostgreSQL JSONB reserialization (which need not preserve key order).
+    if (
+      !project ||
+      !deployment ||
+      deployment.projectId !== project.id ||
+      deployment.status !== 'SUCCESS' ||
+      !/^[a-f0-9]{40}$/.test(deployment.hash)
+    ) {
+      throw new NativeQueryRefusal(412, 'QUERY_DEPLOYMENT_CHANGED');
+    }
+    const id = randomUUID();
+    const hash = String(claims.normalized_parameter_hash);
+    const record: ApiHistory = {
+      id,
+      projectId: project.id,
+      apiType: describing ? ApiType.GET_MODELS : ApiType.RUN_SQL,
+      // Native SQL stays in the original native history, never Core/Temporal.
+      requestPayload: { action, ...input },
+      headers: {},
+      statusCode: 202,
+      durationMs: 0,
+      governanceBindingId: this.config.bindingId,
+      governanceKey: key,
+      governanceActionExecutionId: String(claims.action_execution_id),
+      governanceOperationId: String(claims.operation_id),
+      governanceParameterHash: hash,
+      governanceState: 'UNKNOWN',
+      governanceDeploymentId: deployment.id,
+      governanceDeploymentHash: deployment.hash,
+    };
+    const inserted = await this.history.reserveGovernedQuery(record);
+    if (!inserted) {
+      const prior = await this.history.findOneBy({
+        governanceBindingId: this.config.bindingId,
+        governanceKey: key,
+      });
+      if (
+        !prior ||
+        prior.governanceParameterHash !== hash ||
+        prior.governanceActionExecutionId !== claims.action_execution_id ||
+        prior.governanceOperationId !== claims.operation_id
+      )
+        throw scopeDenied();
+      // Same intent may be observed, never executed again, even if the first
+      // writer died between reservation and the database call.
+      if (prior.governanceState === 'SUCCEEDED') {
+        await authorizeQuery(this.config, token, 'execute', envelope);
+        if (!prior.responsePayload || typeof prior.responsePayload !== 'object')
+          throw unavailable();
+        return {
+          execution: this.observation(prior),
+          resultJson: JSON.stringify(prior.responsePayload),
+        };
+      }
+      return { execution: this.observation(prior) };
+    }
+    // Recheck immediately before the original engine call. Here alone we can
+    // prove no native call occurred, unlike an exception from QueryService.
+    try {
+      if (project.type === DataSourceName.POSTGRES) {
+        const connection = toIbisConnectionInfo(
+          project.type,
+          project.connectionInfo,
+        );
+        await verifyPostgresReader(
+          connection.connectionUrl,
+          this.config.requestTimeoutMs,
+        );
+      }
+      await authorizeQuery(this.config, token, 'execute', envelope);
+    } catch {
+      if (!(await this.history.rejectUnsentGovernedQuery(id, hash)))
+        throw unavailable();
+      const rejected = await this.history.findOneBy({
+        id,
+        governanceBindingId: this.config.bindingId,
+      });
+      if (!rejected || rejected.governanceState !== 'FAILED')
+        throw unavailable();
+      return { execution: this.observation(rejected) };
+    }
+    const started = Date.now();
+    let value: Record<string, unknown>;
+    try {
+      if (describing) {
+        const manifest = deployment.manifest as Manifest;
+        if (!Array.isArray(manifest.models)) throw unavailable();
+        value = {
+          deploymentId: deployment.id,
+          deploymentHash: deployment.hash,
+          models: manifest.models.map((model) => ({
+            name: model.name,
+            columns: model.columns.map((column) => ({
+              name: column.name,
+              type: column.type,
+            })),
+          })),
+        };
+      } else {
+        const result = await this.queries.preview(input.sql, {
+          project,
+          manifest: deployment.manifest as Manifest,
+          limit: input.limit,
+          dryRun: action === 'data_query.dry_run',
+          cacheEnabled: false,
+        });
+        if (action === 'data_query.dry_run') {
+          // QueryService returns true (Engine) or Ibis's successful metadata.
+          if (result !== true && (!result || typeof result !== 'object'))
+            throw unavailable();
+          value = {
+            valid: true,
+            deploymentId: deployment.id,
+            deploymentHash: deployment.hash,
+          };
+        } else {
+          const preview = result as PreviewDataResponse;
+          if (
+            !preview ||
+            !Array.isArray(preview.columns) ||
+            !Array.isArray(preview.data) ||
+            preview.columns.some(
+              (column) =>
+                typeof column.name !== 'string' ||
+                typeof column.type !== 'string',
+            ) ||
+            preview.data.some(
+              (row) =>
+                !Array.isArray(row) || row.length !== preview.columns.length,
+            )
+          )
+            throw unavailable();
+          value = {
+            columns: preview.columns,
+            data: preview.data,
+            deploymentId: deployment.id,
+            deploymentHash: deployment.hash,
+          };
+        }
+      }
+      // Serialization failure is not a successful native result either.
+      JSON.stringify(value);
+    } catch {
+      // A transport exception cannot prove the database never executed SQL.
+      // Preserve UNKNOWN and do not leak SQL, connection strings or driver logs.
+      return { execution: this.observation(record) };
+    }
+    if (
+      !(await this.history.completeGovernedQuery(
+        id,
+        hash,
+        value,
+        Date.now() - started,
+      ))
+    )
+      throw unavailable();
+    const completed = await this.history.findOneBy({
+      id,
+      governanceBindingId: this.config.bindingId,
+    });
+    if (!completed || completed.governanceState !== 'SUCCEEDED')
+      throw unavailable();
+    // Observation may converge after revocation, but result disclosure must
+    // still pass the original fresh business authorization.
+    await authorizeQuery(this.config, token, 'execute', envelope);
+    return {
+      execution: this.observation(completed),
+      resultJson: JSON.stringify(value),
+    };
+  }
+
+  async observe(token: string, raw: unknown) {
+    const reference = raw as Record<string, unknown>;
+    if (
+      !reference ||
+      Array.isArray(reference) ||
+      Object.keys(reference).some(
+        (key) =>
+          ![
+            'externalExecutionId',
+            'idempotencyKey',
+            'nativeType',
+            'nativeId',
+          ].includes(key),
+      ) ||
+      typeof reference.externalExecutionId !== 'string' ||
+      !uuid.test(reference.externalExecutionId) ||
+      typeof reference.idempotencyKey !== 'string' ||
+      !uuid.test(reference.idempotencyKey) ||
+      reference.nativeType !== nativeType ||
+      (reference.nativeId !== undefined &&
+        (typeof reference.nativeId !== 'string' ||
+          !uuid.test(reference.nativeId)))
+    )
+      throw invalid();
+    const claims = await authorizeQuery(
+      this.config,
+      token,
+      'observe',
+      reference,
+    );
+    const record = await this.history.findOneBy({
+      governanceBindingId: this.config.bindingId,
+      governanceKey: reference.idempotencyKey,
+    });
+    if (!record) {
+      // Absence is not a writer fence and cannot become NOT_DELIVERED.
+      return {
+        idempotencyKey: reference.idempotencyKey,
+        nativeType,
+        platformStatus: 'UNKNOWN',
+        cancelCapability: 'UNSUPPORTED',
+      };
+    }
+    const management =
+      ['application_binding.create', 'application_binding.disable'].includes(
+        String(claims.action_key),
+      ) &&
+      claims.target_type === 'APPLICATION_BINDING' &&
+      claims.target_id === this.config.bindingId;
+    if (
+      record.projectId !== this.config.projectId ||
+      (!management &&
+        (record.governanceActionExecutionId !== claims.action_execution_id ||
+          record.governanceOperationId !== claims.operation_id)) ||
+      (reference.nativeId !== undefined && record.id !== reference.nativeId)
+    )
+      throw scopeDenied();
+    return this.observation(record);
+  }
+}

@@ -262,3 +262,78 @@ Activity 已终结，新 Activity 已开始，但旧 lease 仍 UNKNOWN；原实�
 这证明本地原恢复消费者和持久约束，不声称两个线上 Invocation 已恢复。
 最初 runtime admission 拒绝属于另一个实际 SQL 接缝，由主线独立修复；
 本补丁不能用容量恢复掩盖该准入拒绝。
+
+## Automation 原管理 AE 的联合原生回执（2026-10-05）
+
+本切片对应 DD-107、`.design/03` §7 AutomationDefinition 与 SecretRef、
+`05` §2.9。它收口原 Schedule 与 Tenant OpenBao 引用的管理副作用，
+不是公开 WEBHOOK 触发验收，也没有注册尚不能真实运行的 Webhook 入口。
+
+四步变更边界：
+
+1. 继续复用原 SYNC Action Admission、AE 恢复驱动、Temporal Schedule
+   和 SecretStore；不新增 Workflow、调度器、Secret 账本或执行权威。
+   固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `buzz/crates/buzz-relay/src/api/bridge.rs::workflow_webhook` 是旧共享
+   secret header/query 路径，不能替代 DD-107 的 HMAC/timestamp 准入。
+   固定 OpenBao `735723da5628148f232497a48a35a137b6512103` 的
+   `openbao/internal/builtin/logical/kv/path_data.go::versionedKVBackend.pathDataWrite`
+   真实调用 CAS 校验；`openbao/internal/builtin/logical/kv/path_destroy.go::versionedKVBackend.pathDestroyWrite`
+   按给定版本销毁。删除 ACK 本身不代表对象曾存在或版本已核验。
+2. 真实调用链为原 `management_prewrite` 冻结同 AE 两种原生意图，
+   `defer_management_dispatch` 保持可派发，原 `management_dispatch`
+   先核验 Secret 再收敛 Schedule。各原生消费者读回后记录自己已完成；
+   `complete_management_intent` 只在所有现存意图齐全时清原 Resource
+   projection fence，并调用原 `record_dispatch` 写同一终态/审计。
+   重入不换 AE、operation、scope、Schedule ID 或 Secret locator。
+   原 Schedule-only 行无新字段也能继续收敛；没有四侧线格式变更。
+3. Secret 明文只在原 OpenBao 客户端内存中存在。每个原 AE 独占
+   CAS=0 路径，丢 ACK 后读取确切 version=1；不再用进程内标记推断
+   写入是否发生。旧引用必须属于同 Automation/Tenant/Workspace 的
+   原 enable/rotation AE，且既有 Invocation、Workflow、capacity 与
+   usage 全部收敛后才销毁。不因 initiator 撤权向其披露新密钥。
+4. 只完成一项、依赖失败、未知版本和未收敛旧执行均保持 UNKNOWN 与
+   projection fence。Secret 准备被撤权时清理自己的 CAS 路径；只有
+   Schedule 两个外发标记仍为 false 才能恢复旧配置，不能重造已删除的
+   Schedule。Secret-first 顺序避免本实现先删旧 Schedule 再准备新密钥。
+   rotate 不改变旧正文或运行记录；没有新模型调用、额度或权限写入。
+
+公开触发正文目前没有已冻结且已实现的可恢复引用生产者，不能写进
+Core/Temporal，也不能自造 Relay 正文路径。NONE 管理结果不向浏览器
+返回 HMAC 密钥；外部发送方的受控交接尚未成为现有 BFF 消费者。
+本切片没有开放这些入口，不将内部生命周期代码等同 Webhook 全链完成。
+
+实现后原件位于
+`/volumes/data/kailo/tmp/codex-workflow-webhook-20261005.Vw8Snz/`。
+原固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+实查 4 CPU/8 GiB/无额外 swap，Cargo 16、Data 原缓存；没有宿主 SDK。
+
+- `cargo test --locked --offline -p platform-core --bin platform-core
+  automation::management_evidence -- --include-ignored`：12 passed，退出0。
+  新真实 PG 目标按两种回执顺序调用生产 `complete_management_intent`，
+  第一项后 AE 仍 UNKNOWN、Resource 仍锁定；同项丢回应重入不解锁；
+  第二项完成后原 AE DISPATCHED、原 fence 清除。旧准入目标同时覆盖
+  Schedule-only、Secret-only、两者并存及 UNKNOWN 不重置。
+- `cargo test --locked --offline -p secret-store`：17 个本地/HTTP 目标
+  通过。新增目标拒绝错 Automation/AE/version/audience，并实际发出
+  原 metadata→destroy→metadata 请求，丢 destroy ACK 后只以确切版本
+  destroyed 回读成功。真实 OpenBao 集成用例没有启用
+  `PLATFORM_INTEGRATION=1`，其空返回不计原生部署验收。
+- `cargo clippy --locked --offline -p platform-core -p secret-store
+  --all-targets -- -D warnings` 退出0（`webhook-secret-restored.log`）。
+- 隔离副本将生产联合判断 `all` 改成 `any`，Core 两项实际失败/101；
+  删除 Secret 版本守卫，原 HTTP 目标实际失败/101。随后 `apply_patch`
+  还原，两源 `cmp` 为0；rustfmt check、Core 12项、SecretStore 17项
+  恢复退出0。`webhook-mutation.log` SHA-256
+  `ca7d8566eff893766afee561d1ddc948fa5c0a49a550b928eb34b6de103f05b8`；
+  `webhook-final-restore.log`
+  `ff03e8d591ad72e2b431d059a6de993aebde0bb9cd8d7293db56740c71cf3320`。
+- 原失败全部保留：首轮多余 unwrap 与共享旧 contracts/SecretStore
+  缓存；仅清两个包后重新编译。旧 RUN 用例读取 SDK 默认旧库报42703，
+  显式将两种数据库环境变量投递本专库后通过。SecretStore 后置夹具
+  曾使用该 crate 未启用的 UUID v4，并漏一次 metadata 读取；均按原
+  crate/真实调用顺序修正，没有放宽生产实现。
+- 专用库 `schedule_dispatch_verify_vw8snz` 实际80迁移/max17000/失败0，
+  用例事务回滚，结束确认其它连接0后仅删除此库，原生读回不存在0。
+  未运行迁移、业务库写入、模型调用、full、产品构建或部署；没有
+  四侧契约变动，文档快检查交主线合批。

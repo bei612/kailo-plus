@@ -86,6 +86,14 @@ impl Policy {
                     tool.generation,
                 )]
             {
+                let mut conn = self.state.pool.acquire().await?;
+                crate::application_binding::credentials::require_live(
+                    &self.state,
+                    &mut conn,
+                    tool.binding_id,
+                    tool.generation,
+                )
+                .await?;
                 return Ok((invocation, Some((tool.binding_id, tool.generation))));
             }
         }
@@ -165,6 +173,8 @@ impl Policy {
                     set: Vec::new(),
                     remove: vec![
                         "authorization".into(),
+                        "cookie".into(),
+                        "proxy-authorization".into(),
                         "idempotency-key".into(),
                         crate::application_binding::peer::HEADER.into(),
                         crate::application_binding::peer::PROBE_HEADER.into(),
@@ -295,9 +305,12 @@ impl Policy {
         }
         let mut headers = reference_headers(set, calling);
         if application.is_some() && (!calling || peer_call) {
-            headers
-                .remove
-                .extend(["authorization".into(), "idempotency-key".into()]);
+            headers.remove.extend([
+                "authorization".into(),
+                "cookie".into(),
+                "proxy-authorization".into(),
+                "idempotency-key".into(),
+            ]);
         }
         if peer_call {
             headers.set.clear();

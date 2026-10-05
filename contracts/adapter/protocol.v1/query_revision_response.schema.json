@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/query_revision_response.schema.json",
+  "title": "AdapterQueryRevisionResponse",
+  "description": "07§5.2与18§5：只返回被查证同一native对象当前权威revision，不替换调用方冻结ContentReference、不以mtime/ETag猜测revision。未知或fresh授权失败不得生成成功应答。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["nativeObjectRef", "nativeRevision"],
+  "properties": {
+    "nativeObjectRef": {"type": "string"},
+    "nativeRevision": {"type": "string"}
+  }
+}

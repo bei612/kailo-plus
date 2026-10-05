@@ -17,6 +17,20 @@
         "observation": "EXTERNAL_RESULT_UNKNOWN",
         "createdAt": "2026-10-04T10:00:00Z"
       },
+      "stepApprovalTask": {
+        "operationId": "00000000-0000-0000-0000-000000000011",
+        "actionExecutionId": "00000000-0000-0000-0000-000000000014",
+        "actionKey": "automation.run",
+        "actionVersion": 1,
+        "workspaceId": "00000000-0000-0000-0000-000000000004",
+        "targetId": "00000000-0000-0000-0000-000000000003",
+        "gateState": "WAITING",
+        "dispatchState": "NOT_DISPATCHED",
+        "approvalWorkflowId": "isolated-fixture-step-approval",
+        "approvalStatus": "WAITING",
+        "observation": "PROJECTION_DELAYED",
+        "createdAt": "2026-10-04T10:00:00Z"
+      },
       "progress": "native completed",
       "usageEventIds": ["00000000-0000-0000-0000-000000000013"]
     }],

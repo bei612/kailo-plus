@@ -1,0 +1,47 @@
+# SS-WRN-IDENTITY: this is the native service's dedicated browser gateway,
+# not the platform's dynamic Tool/ModelRoute gateway configuration.
+# OIDC creates its own encrypted HttpOnly browser cookie. Only its verified
+# component-specific ID token is forwarded on the private backend hop.
+config:
+  adminAddr: 127.0.0.1:${WREN_GATEWAY_ADMIN_PORT}
+binds:
+  - port: ${WREN_GATEWAY_HTTP_PORT}
+    listeners:
+      - name: wren-native-browser
+        protocol: HTTP
+        policies:
+          oidc:
+            issuer: ${WREN_OIDC_ISSUER}
+            clientId: ${WREN_OIDC_CLIENT_ID}
+            clientSecret: ${WREN_OIDC_CLIENT_SECRET}
+            redirectURI: ${WREN_OIDC_REDIRECT_URI}
+            scopes: [profile]
+            login:
+              path: /auth/login
+            logout:
+              path: /auth/logout
+              redirect: /
+          transformations:
+            request:
+              remove:
+                - authorization
+                - cookie
+                - proxy-authorization
+                - x-platform-oidc-issuer
+                - x-platform-oidc-subject
+                - x-platform-tenant
+                - x-platform-workspace
+                - x-platform-principal
+        routes:
+          - name: native-ui
+            matches:
+              - path:
+                  pathPrefix: /
+            policies:
+              # The pinned Gateway exposes CSRF on routes, not listener policy.
+              # This catch-all covers every native UI write with no extra origin.
+              csrf: {}
+              backendAuth:
+                passthrough: {}
+            backends:
+              - host: ${WREN_UI_UPSTREAM}

@@ -101,6 +101,51 @@ fn run_query() -> String {
     )
 }
 
+fn step_approval_query() -> String {
+    format!(
+        "{} and ae.action_key='automation.run' and ae.approval_workflow_id is not null
+        and ae.parent_action_execution_id=$4
+        and exists(select 1 from admission.action_execution parent
+            join catalog.agent_invocation i on i.action_execution_id=parent.id
+            join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
+              and v.automation_resource_id=i.automation_resource_id
+            where parent.id=$4 and parent.parent_action_execution_id is null
+              and parent.action_key='automation.run' and parent.tenant_id=ae.tenant_id
+              and parent.workspace_id=ae.workspace_id and parent.target_id=ae.target_id
+              and parent.operation_id=ae.operation_id and parent.action_version=ae.action_version
+              and parent.initiator_principal_id=ae.initiator_principal_id
+              and parent.actor_principal_id=ae.actor_principal_id
+              and i.tenant_id=ae.tenant_id and i.workspace_id=ae.workspace_id
+              and i.automation_resource_id=ae.target_id
+              and ae.parameters->'automationStepApproval'->>'invocationId'=i.id::text
+              and ae.parameters->'automationStepApproval'->>'policyId'=v.approval_policy_id::text
+              and ae.parameters->'automationStepApproval'->>'policyVersion'=v.approval_policy_version::text)
+        limit 2",
+        crate::governance_api::TASK_QUERY
+    )
+}
+
+async fn step_approval_task(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    principal: Uuid,
+    freshness: i64,
+    parent: Uuid,
+) -> Result<Option<contracts::TaskView>, Response> {
+    let mut rows: Vec<crate::governance_api::TaskRow> = sqlx::query_as(&step_approval_query())
+        .bind(tenant)
+        .bind(principal)
+        .bind(freshness)
+        .bind(parent)
+        .fetch_all(conn)
+        .await
+        .map_err(crate::service_api::unavailable)?;
+    if rows.len() > 1 {
+        return Err(unavailable());
+    }
+    rows.pop().map(crate::governance_api::task_view).transpose()
+}
+
 #[cfg(test)]
 mod run_history_tests {
     use super::*;
@@ -213,9 +258,24 @@ mod run_history_tests {
             create table projection.task_projection(workflow_id text,status text,waiting_reason text,observation_gap bool,progress text);
             create table outbox.usage_event(id uuid,tenant_id uuid,workspace_id uuid,operation_id uuid);")
             .execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(
+            "alter table admission.action_execution add column parent_action_execution_id uuid;
+            alter table admission.action_execution add column actor_principal_id uuid;
+            alter table admission.action_execution add column parameters jsonb;
+            create schema catalog;
+            create table catalog.agent_invocation(id uuid,action_execution_id uuid,tenant_id uuid,
+                workspace_id uuid,automation_resource_id uuid,automation_version_asset_id uuid);
+            create table catalog.automation_version(asset_id uuid,automation_resource_id uuid,
+                approval_policy_id uuid,approval_policy_version int);",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
         let c = cursor();
         for n in 1..=8u128 {
-            sqlx::query("insert into admission.action_execution values($1,$1,$2,$3,$4,$5,$6,1,'DENIED','NOT_DISPATCHED',
+            sqlx::query("insert into admission.action_execution(id,operation_id,tenant_id,initiator_principal_id,
+                workspace_id,target_id,action_key,action_version,gate_state,dispatch_state,reason_code,
+                approval_workflow_id,temporal_workflow_id,created_at) values($1,$1,$2,$3,$4,$5,$6,1,'DENIED','NOT_DISPATCHED',
                 null,null,null,$7)")
                 .bind(Uuid::from_u128(n))
                 .bind(if n==4 {Uuid::nil()} else {c.tenant})
@@ -286,6 +346,73 @@ mod run_history_tests {
                 .unwrap()
                 .workflow_id
                 .is_none()
+        );
+        let parent = Uuid::from_u128(3);
+        let child = Uuid::from_u128(20);
+        sqlx::query("update admission.action_execution set actor_principal_id=$1 where id=$2")
+            .bind(c.principal)
+            .bind(parent)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("insert into catalog.automation_version values($1,$2,$3,1)")
+            .bind(Uuid::from_u128(30))
+            .bind(c.automation)
+            .bind(Uuid::from_u128(31))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("insert into catalog.agent_invocation values($1,$2,$3,$4,$5,$6)")
+            .bind(Uuid::from_u128(32))
+            .bind(parent)
+            .bind(c.tenant)
+            .bind(c.workspace)
+            .bind(c.automation)
+            .bind(Uuid::from_u128(30))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("insert into admission.action_execution
+            select $1,operation_id,tenant_id,initiator_principal_id,workspace_id,target_id,action_key,
+                action_version,'WAITING','NOT_DISPATCHED','WAITING_APPROVAL','step-approval',null,
+                created_at,id,actor_principal_id,$3 from admission.action_execution where id=$2")
+            .bind(child).bind(parent).bind(json!({"automationStepApproval":{
+                "invocationId":Uuid::from_u128(32),"policyId":Uuid::from_u128(31),"policyVersion":1}}))
+            .execute(&mut *tx).await.unwrap();
+        let step = step_approval_task(&mut tx, c.tenant, c.principal, 60, parent)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(step.action_execution_id, child.to_string());
+        assert_eq!(step.gate_state, contracts::ActionGateState::Waiting);
+        assert_eq!(step.approval_workflow_id.as_deref(), Some("step-approval"));
+        assert!(
+            step_approval_task(&mut tx, c.tenant, Uuid::nil(), 60, parent)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        sqlx::query("update admission.action_execution set operation_id=$1 where id=$2")
+            .bind(Uuid::nil())
+            .bind(child)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            step_approval_task(&mut tx, c.tenant, c.principal, 60, parent)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        sqlx::query("update admission.action_execution set operation_id=$1,dispatch_state='UNKNOWN' where id=$2")
+            .bind(parent).bind(child).execute(&mut *tx).await.unwrap();
+        let unknown = step_approval_task(&mut tx, c.tenant, c.principal, 60, parent)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            unknown.observation,
+            Some(contracts::ReasonCode::ExternalResultUnknown)
         );
         tx.rollback().await.unwrap();
     }
@@ -386,6 +513,18 @@ pub async fn runs(
     };
     let mut values = Vec::with_capacity(rows.len());
     for row in rows {
+        let step = match step_approval_task(
+            &mut tx,
+            ctx.tenant_id,
+            ctx.tenant_principal_id,
+            state.governance.cfg.projection_freshness_seconds,
+            row.task.id,
+        )
+        .await
+        {
+            Ok(step) => step,
+            Err(error) => return error,
+        };
         let task = match crate::governance_api::task_view(row.task) {
             Ok(task) => task,
             Err(error) => return error,
@@ -393,6 +532,9 @@ pub async fn runs(
         // Omit optional fields rather than emit null; use the generated contract
         // for the same TaskView enum/freshness handling as the original Tasks UI.
         let mut value = json!({"task":task,"usageEventIds":row.usage_event_ids});
+        if let Some(step) = step {
+            value["stepApprovalTask"] = json!(step);
+        }
         if let Some(progress) = row.progress {
             value["progress"] = json!(progress);
         }

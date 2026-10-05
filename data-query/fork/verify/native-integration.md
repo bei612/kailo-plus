@@ -204,3 +204,330 @@ and `sharp-smoke.log`. No product image was built, no service was deployed,
 and no release digest, full reproducibility or completed native governance
 integration is asserted. OS package resolution and the original complete
 Node 18 image build still require their actual release execution.
+
+## Native browser session consumer (2026-10-05)
+
+DD-87/DD-93 and SS-WRN-IDENTITY require an independently authenticated native
+service, not a platform administrative token or an iframe-only access path.
+The prior Compose published the Bearer-only Next backend directly. Its JOSE
+middleware could reject requests correctly but no browser login consumer could
+establish that credential. This change makes the original AgentGateway OIDC
+policy the native public entry, using a dedicated client, cookie key and
+read-only configuration. The original complete UI and Next middleware remain
+unchanged. The backend has no public host port. Core's dynamic Tool/ModelRoute
+projections do not own this separate native Gateway configuration.
+
+The fixed AgentGateway source is
+`1f7ebbf87cbdbe9517f6f181221879d04dc50692`:
+`crates/agentgateway/src/http/oidc/mod.rs::OidcPolicy::apply` validates the
+native browser session; `crates/agentgateway/src/http/auth/mod.rs::apply_backend_auth_kind`
+forwards only its verified `Claims.jwt`; and
+`crates/agentgateway/src/http/oidc/browser.rs::OidcPolicy::handle_logout`
+requires a same-origin POST. Browser Authorization, Cookie and platform identity
+headers are removed before restoring that verified component token. The
+existing `wren-ui/src/middleware.ts::middleware` independently checks issuer,
+audience, subject and signed instance grant, then strips credentials before
+native handlers. Its write-origin rejection is unchanged.
+
+New listener/admin ports are explicit deployment inputs. Private UI port 3000
+comes from the original `wren-ui/Dockerfile` `PORT`/`EXPOSE` declarations.
+The original Gateway requires a dedicated 32-byte hex `OIDC_COOKIE_SECRET` in
+addition to its client secret. Both belong in the component's controlled
+secret-delivery file, never in source, client bundles, platform configuration
+reuse or rendered/logged Compose output. Missing keys fail startup.
+
+Post-implementation verification runs the original Jest entry with
+`WREN_TEST_GATEWAY_BINARY` pointing at an already-built, pinned Gateway binary:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand \
+  src/nativeBrowserSession.test.ts src/middleware.test.ts
+```
+
+The binary was copied read-only from the existing source-built image with
+RepoDigest `sha256:b7e3d559ffd7840d73e278de656879ebe12e925b3766536f9e9952d1fd7a4fff`;
+binary SHA-256 is `f2009b6f653495646202a015dd48ca55acd7496a5ba927c84ec0e229daf7c439`.
+No reference checkout was executed. The existing SDK has 4 CPU, 4 GiB and no
+additional swap, UID 1000; tests use isolated loopback listeners, ephemeral
+test keys and the actual production YAML. The local protocol issuer exercises
+authorization code, PKCE, nonce, native audience and instance-grant rejection.
+Cookie-only page/API/asset requests invoke the real Next middleware. A supplied
+attacker Bearer cannot replace the verified identity; logout and post-logout
+fetch rejection are checked. This is HTTP browser-protocol evidence, not a
+Chromium DOM, real organizational IdP or production Node 18 image acceptance.
+
+The first two runs exited 1 during Gateway startup/readiness; the actual
+missing cookie-key input was corrected, not bypassed. The third exited 1
+because Node fetch overwrote the fixture's navigation header with `cors`.
+A direct readback confirmed that header; the fixture now uses original Node
+HTTP requests to represent navigation without relaxing the production fetch
+rejection. `browser-targeted-4.log` then recorded 37 passed, exit 0 (34 existing
+middleware cases and 3 native session cases). Removing production backendAuth
+only in the execution copy caused two actual failures, exit 1: authenticated
+requests reached the backend without the verified native token. The production
+YAML was restored byte-for-byte before the final same-target run.
+`browser-restored.log` records all 37 passed again, actual exit 0.
+
+Raw logs and exits are retained under `codex-wren-browser-20261005.vK7Equ`.
+Normal unit runs without the explicit binary skip these three integration
+cases and cannot be cited as their acceptance. No product image, deployment,
+real account/grant change, model call or full platform check was performed.
+NativePage uses the same origin and login chain; IdP frame policy and Lax-cookie
+restrictions can still require opening the independent native address. Neither
+embedded UI compatibility nor SS-WRN-GOVERNANCE's native query/workflow/approval
+integration is declared complete by this authentication slice.
+
+### Native browser CSRF correction (2026-10-05)
+
+Cookie-authenticated writes now use the original AgentGateway CSRF policy on
+the native UI catch-all route. Fixed revision
+`1f7ebbf87cbdbe9517f6f181221879d04dc50692`,
+`crates/agentgateway/src/http/csrf.rs::Csrf::apply` accepts safe methods,
+checks Fetch Metadata for writes, then uses the request URI origin when
+Fetch Metadata is absent. `additionalOrigins` remains empty: a same-site
+sibling is not a trusted origin. No second Next CSRF implementation was added.
+The pinned listener policy schema does not accept `csrf`; the actual failed
+startup was retained, then the same original policy was placed on the route.
+OIDC GET/callback and the original logout same-origin check are preserved.
+
+The existing bounded SDK and original Jest consumers were reused, with the
+same already-built Gateway binary and production YAML. Exact command:
+
+```sh
+sudo -n -H docker exec -w /work/browser-vK7Equ/wren-ui \
+  -e WREN_TEST_GATEWAY_BINARY=/work/wren-test-agentgateway \
+  kailo-wren-native-sdk-vuc6uo \
+  node node_modules/jest/bin/jest.js --runInBand \
+  src/nativeBrowserSession.test.ts src/middleware.test.ts
+```
+
+Evidence directory: `codex-wren-governance-20261005.Itgs2N`.
+`csrf-targeted.log` and `csrf-targeted-2.log` are actual exit 1, not acceptance.
+`csrf-targeted-3.log` is 38/38 passed, exit 0. The new real-Gateway case covers
+POST/PUT/PATCH/DELETE to both GraphQL and run_sql: same-origin succeeds;
+cross-site and same-site sibling requests return 403 without reaching the
+backend. Origin fallback without Fetch Metadata is checked as well.
+Removing the actual route `csrf` policy made this consumer fail (1 failed,
+37 passed, exit 1): backend request count increased despite Next's existing
+origin denial. Exact restoration had `cmp` exit 0 and `csrf-restored.log`
+returned 38/38 passed, exit 0. No product build or deployment was performed.
+The backend invokes real Next middleware but not real native SQL or business
+mutations; fixture IdP sessions do not prove a live organizational login.
+
+- Positive log SHA-256: `3f6d6d58b7bf8eeab045530d52a5c9d55ea900e77b1be90a0fee45f8f271da45`.
+- Mutation log SHA-256: `7a5faad30c1e307d9bf1383a8fbe5d8795a12ffb3ac5fdd2a0efab5449c3d075`.
+- Restored log SHA-256: `3c27f07a9e2e8abb04a0e0debbc4364187cc391d705930c3a92ff62d079dfbbd`.
+
+## Native query admission consumer — 2026-10-05
+
+This independent source slice follows SS-WRN-GOVERNANCE on the complete
+`c5f02a0391c87420dba78632dcd86073710deb72` GenBI source. It does not substitute
+the unrelated Python v2 MCP product or change the frozen browser/CSRF results.
+
+The implemented inputs and consumers are:
+
+1. `wren-ui/src/pages/api/platform-adapter/[operation].ts::handler` uses the
+   official MCP TypeScript SDK 1.26.0 stateless HTTP transport. Its exact machine
+   endpoints independently authenticate; no browser cookie or native UI token
+   becomes a platform ActionToken. Original native UI routes retain their OIDC
+   middleware. The original Next rewrite exposes only the matching observe path.
+2. `wren-ui/src/apollo/server/services/nativeQueryAdmission.ts::authorizeQuery`
+   validates the original signed ActionToken and exact parameter hash, then calls
+   the existing Core adapter PEP using the dedicated binding service identity.
+   Configuration and key files are controlled delivery inputs, not request fields.
+   Service secrets and both tokens remain in memory, not native API history.
+3. `wren-ui/src/apollo/server/services/nativeQueryService.ts::execute` pins the
+   configured native project, its connection fingerprint and original successful
+   deployment ID/hash. It calls the original `QueryService.preview`, not another
+   SQL engine. Describe returns model/column metadata only. The native
+   `ApiHistoryRepository.reserveGovernedQuery` commits intent before execution;
+   exact binding/key and binding/ActionExecution uniqueness prevent repeat SQL.
+4. Query exceptions preserve UNKNOWN. Absence is not a writer fence. Only a
+   refusal before invoking QueryService establishes NOT_DISPATCHED. Completion
+   is stored in the original native history; result disclosure still performs
+   fresh Core authorization. `observe` returns original record metadata, never
+   query contents or fabricated asynchronous job/cancellation evidence.
+
+Implementation preceded these checks. The original resource-limited 10ad SDK
+ran with UID 1000, 4 CPU, 4 GiB RAM and equal memory/swap limit. It shared only
+the existing isolated test PostgreSQL network namespace and used a unique
+`wren_query_itgs2n` database. The original 45 Wren migrations, including the
+native history extension, were applied there; no business database was touched.
+
+The original commands, from the native `wren-ui` directory, were:
+
+```sh
+node .yarn/releases/yarn-4.5.3.cjs check-types
+node node_modules/jest/bin/jest.js --runInBand \
+  src/nativeQuery.test.ts src/middleware.test.ts \
+  src/apollo/server/repositories/apiHistoryRepository.test.ts \
+  src/apollo/server/services/tests/queryService.test.ts
+```
+
+`WREN_QUERY_TEST_DATABASE_URL` selects the explicit isolated database. The test
+uses the real Next handler, official MCP client/server, QueryService,
+WrenEngineAdaptor and Knex repositories. Core PEP, OIDC and Engine HTTP are
+bounded fixtures: this is not a deployed platform/Temporal/data-source E2E.
+The original type check and all 52 tests passed (exit 0). Eight actual handler
+cases cover scoped query/describe/dry-run, duplicate intent, changed key/SQL,
+UNKNOWN observation, pre-dispatch refusal, changed deployment/credentials,
+post-completion revocation and anonymous/browser-channel rejection.
+
+Two production guards were removed together in the execution copy: the native
+connection fingerprint and the last fresh check before result disclosure. The
+real handler tests failed twice (exit 1), with a result returned where rejection
+was required. Exact source restoration was checked with `cmp`, then the original
+type check and all 52 tests passed again (exit 0).
+
+Raw logs and exit files are in `codex-wren-governance-20261005.Itgs2N`:
+
+- `query-combined.log`: SHA-256 `fc2c54a41cbca0e87c515a7e1efca424c38554789029ef14fc020536835399bf`.
+- `query-mutation.log`: SHA-256 `cb1b6295c799d5f2dc7c1e7f5c6c38cf61dc80ee9e15c12f1a5e93c96d6ba0f3`.
+- `query-restored.log`: SHA-256 `929a830daf9750d6e2074a7dda59bd46ff75f0e4c3bb82659484dfbda4a94ca1`.
+
+Initial failures are retained: the original Jest configuration lacked the
+existing TypeScript `@/` alias (zero tests ran); two subsequent negative cases
+initially expected `isError` instead of the official SDK's rejected MCP protocol
+error. Production authorization was not weakened. Yarn lock resolution exited
+0; an online immutable install failed in Yarn's fetch cancellation, and the
+same lock completed an offline immutable, script-disabled install using the
+existing native Yarn cache. This does not establish product Node 18 native ABI
+or image build acceptance.
+
+Remaining boundary: this slice does not activate a Wren ApplicationBinding.
+The normal lifecycle handshake/validation and SecretStore read receipts,
+approved catalog contracts/usage declaration, reliable native read-only database
+role evidence, and a real platform caller/configuration still need integration.
+A connection fingerprint alone is not a read-only-role proof. No zero usage is
+fabricated. Native UI internal queries are not claimed to acquire a Human
+platform workflow simply because these machine handlers exist. No full check,
+product build, live model call, live SQL, publication or deployment was performed.
+
+### Original Agent file-delivery continuation
+
+The optional `docker/query-governance.yaml` now wires the original OpenBao Agent
+to the actual native query file consumers. Three original Agent templates read
+explicit KV v2 paths/versions. AppRole bootstrap stays in a separate read-only
+mount; the UI only receives the rendered directory read-only. The configuration
+has no auto-auth token sink/listener and renders each consumed file as `0400`.
+This is a runtime delivery overlay, not a new secret or binding authority.
+
+Post-implementation `src/nativeQueryDelivery.test.ts` executed the existing
+OpenBao binary from image config ID
+`sha256:7d26314820a535ef346f1e63911809e4d356b48068fef00a9dcb3400bb9e11b6`
+inside the same bounded SDK. Its reported revision is
+`ccc04f0952a84846330def323da1db6f8416a79e`; binary SHA-256 is
+`08cc9b8dcf33e54a57d21bfd004c636fcfd09bcacc5d79fc70f9d4831372ca9c`.
+The image config ID is not represented as an OCI manifest digest.
+
+The test loads the production HCL and templates, performs real Agent wrapping
+lookup/unwrap/AppRole login and versioned KV rendering against a bounded HTTP
+fixture, then runs actual `loadQueryDelivery`, Gateway JOSE verification and
+`authorizeQuery` using the rendered files. It verifies file mode, exact namespace,
+three distinct secret reads and absence of credential values in captured logs.
+It does not contact the business OpenBao service or claim audited live reads.
+
+The native Agent case passed. Changing the production service-credential
+template to read the ActionToken JWKS secret instead produced a real failed
+assertion (exit 1). After exact template restoration (`cmp` 0), original
+`check-types` and all five Jest entries passed: 53/53, exit 0. The extra entry is
+`src/nativeQueryDelivery.test.ts`, with `WREN_TEST_BAO_BINARY` selecting the
+existing test executable and `WREN_QUERY_DELIVERY_SOURCE` selecting exact
+production Docker source bytes. No toolchain or product image was rebuilt.
+
+- Positive `query-delivery-3.log`: SHA-256 `e76d22f8592aef78283bae461e9722adee7250594f6831e7c72d0327a50d104b`.
+- Mutation `query-delivery-mutation.log`: SHA-256 `784cd4552dca7d4e2f807a04207e0de70421e38732b70c8322d18bffcbd1d394`.
+- Restored `query-delivery-restored.log`: SHA-256 `799d0c943d176b43011fd6292936a7f38050927e947d4ac86ff31b26806e8281`.
+
+Earlier delivery attempts remain recorded: a test-only missing `NODE_ENV` type
+field prevented execution, and incomplete fixture KV metadata omitted the native
+`deletion_time` field, so Agent correctly refused rendering. Neither was hidden
+or treated as a production success. The real data-source and lifecycle boundaries
+listed above remain; this continuation closes credential file delivery only.
+
+### Original binding lifecycle continuation
+
+The next increment remains based on the frozen 18-path query/delivery patch,
+not on the integration assembly. It implements the existing
+`SS-WRN-GOVERNANCE` / DD-70/71/93 management caller: Core's original
+`application_binding.create` ActionToken reaches the native Next
+`/platform-adapter/v1/handshake` and `/validate_binding` handlers. The actual
+`NativeBindingService.call` invokes the same JOSE/fresh Core PEP consumer,
+matches the controlled frozen binding/release/project metadata, and returns
+the existing `AdapterBindingObservation` shape. Other management actions,
+wrong scopes, browser cookies and Origin requests do not acquire this path.
+No Core, Worker, platform contract, permission or workflow authority changed.
+
+The native project is read through the original `ProjectRepository`; its
+decrypted PostgreSQL connection must equal the exact versioned SecretRef value
+read through the original OpenBao Agent. This first validator supports a
+PostgreSQL project `NAMESPACE` with one connection SecretRef. It does not echo
+unverified `DEDICATED_INSTANCE` or other isolation claims. Existing native UI
+datasource support is not removed, but unsupported platform validators cannot
+activate a binding through this consumer.
+
+Static rendered receipts cannot satisfy Core's lifecycle-time audit check.
+The same Agent now exposes only its owner-mode Unix API proxy, using its original
+AppRole in memory, without a token sink, cache or network listener. The exact
+KV version is read afresh, and its actual request ID is returned for Core's
+existing audit verification. Native source
+`/volumes/kailo/.references/openbao/internal/command/agentproxyshared/cache/listener.go`
+requires socket mode, user and group together before constructing the Unix
+permission configuration; the deployment now supplies all three from the same
+explicit UID/GID. This is not a second secret broker.
+
+Before successful validation, the existing `pg` driver reads the datasource's
+roles and ACLs; before a native Postgres query dispatch the same check runs again.
+It includes both `session_user` and `current_user` plus assumable roles, so an
+initial SET ROLE cannot hide privileges recoverable with RESET ROLE. It rejects
+database/schema creation, temporary objects, table/sequence writes/ownership,
+privileged roles and executable non-system routines. The sole system-view
+exception is `pg_catalog.pg_settings`: its UPDATE changes session parameters,
+not stored business data, as documented by the
+[PostgreSQL source documentation](https://www.postgresql.org/docs/current/view-pg-settings.html).
+The component does not grant permissions or treat a `readOnly` config flag as
+proof. The native database remains the permission authority; this is not a new
+general SQL policy engine.
+
+Post-implementation validation used the same fixed 10ad SDK at 4 CPU/4 GiB,
+UID 1000, no extra swap, with the original Data dependency cache and isolated
+PostgreSQL namespace. `check-types` exited 0. The five original Jest entry
+points listed above passed 54/54, including the new actual Next management
+handler with real project/repository access and native PostgreSQL ACL reads.
+The case covers direct and inherited writes, resettable login roles, wrong
+connection credentials, unsupported isolation, non-management actions and
+fresh refusal after the native checks. Each case-created database/role belongs
+only to the isolated fixture and was cleaned up; no business role was changed.
+The actual OpenBao executable also authenticated, rendered files and proxied
+a fresh Unix-socket request without a caller token, with socket mode 0600.
+Its HTTP authority and Core PEP remain fixtures: this is not live OpenBao audit
+verification, platform approval, a real datasource query or a Temporal E2E.
+
+The first combined run had 52 passed / 2 failed, exit 1: the Agent fixture
+reached its bounded rendering deadline and the first ACL implementation
+mistook `pg_settings` for a business write. The next diagnostic exposed the
+actual 0755 socket mode caused by incomplete original listener configuration.
+All original outputs remain. After those fixes, the original combined command
+passed. Removing the production writable-role refusal and making the actual
+Agent socket 0666 produced two failed consumer assertions, exit 1. Both changes
+were restored; the source/mirror comparison passed and the original typecheck
+plus five Jest entries again passed 54/54. The final isolation fixture was then
+separated from its wrong-secret condition; its actual handler target passed
+again (one selected, eight unselected). No failed output was replaced.
+
+Original files are under
+`/volumes/data/kailo/tmp/codex-wren-governance-20261005.Itgs2N/`:
+
+- `binding-targeted.log`, exit 1, SHA-256 `3b02753152e0e8698e8e0cfae67dea05e085fdd67037f2e5db43bde7bfbe4159`.
+- `binding-targeted-2.log`, exit 0, SHA-256 `6f7fcc910b5fb106c270550ae1ebc6b373506eaed02d21b948d147733b49a36a`.
+- `binding-mutation.log`, exit 1, SHA-256 `04b38fcb6355c244d29466e28f46a9fb48b5644e3788e9eb58d91ab6868e1b28`.
+- `binding-restored.log`, exit 0, SHA-256 `d0c22c4d0d9629f34576a29d56e07651f265e9cf0fff8018c0ae5ffb0fc3d67d`.
+- `binding-final-scope.log` and its `.exit` retain the final selected target.
+
+No full check, product build, commit, push or deployment occurred. Real readonly
+datasource/project/SecretRef facts, approved release/binding/resource/tool
+configuration and a real AgentTask/usage invocation remain unverified. The new
+lifecycle is no longer an unimplemented always-refusing endpoint, but these
+fixture results do not prove a live binding ACTIVE. The native browser's own
+query path still has no Human platform Action producer; the machine consumer
+must not be represented as completion of that separate entry path.

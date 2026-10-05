@@ -191,6 +191,37 @@ describe("independent shared Workflows page", () => {
     await click(button(history, "Previous page"));
     expect(history.textContent).toContain("No visible runs on this page");
   });
+  it("opens the exact step approval child through the existing Tasks and Approvals readers", async () => {
+    const step = { ...run.task, actionExecutionId: "approval-child", gateState: "WAITING",
+      dispatchState: "NOT_DISPATCHED", workflowId: undefined, taskStatus: undefined,
+      approvalWorkflowId: "step-approval-workflow", approvalStatus: "WAITING" };
+    const { history, t } = await openHistory(routes((request) => {
+      if (request.path.includes("/runs")) return { status: 200, body: {
+        ...page, runs: [{ ...run, stepApprovalTask: step }],
+      } };
+      if (request.path === "/api/v1/tasks/approval-child") return { status: 200, body: step };
+      if (request.path === "/api/v1/approvals/step-approval-workflow") return { status: 403, body: undefined };
+      return undefined;
+    }));
+    expect(history.textContent).toContain("Waiting for approval");
+    await click(button(history, "Step approval"));
+    expect(history.querySelector("[data-testid=task-detail]")).not.toBeNull();
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/tasks/approval-child" });
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/approvals/step-approval-workflow" });
+    expect(t.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+    expect(history.textContent).not.toContain("Completed");
+  });
+  it.each([
+    { operationId: "another-operation" }, { workspaceId: "another-workspace" },
+    { targetId: "another-resource" }, { actionExecutionId: "run-ae" },
+    { approvalWorkflowId: "" }, { gateState: "FUTURE" }, { actionVersion: 2 },
+  ])("rejects an unprovable step approval association %j", (change) => {
+    const step = { ...run.task, actionExecutionId: "approval-child", workflowId: undefined,
+      taskStatus: undefined, approvalWorkflowId: "step-approval-workflow", ...change };
+    expect(validAutomationRuns(JSON.parse(JSON.stringify({ ...page,
+      runs: [{ ...run, stepApprovalTask: step }] })), definition.resourceId,
+      definition.workspaceId, [])).toBe(false);
+  });
   it("rejects a repeated cursor after its actual first page was read", async () => {
     const { history } = await openHistory(routes((request) => request.path.includes("/runs")
       ? { status: 200, body: { ...page, nextCursor: "already-read" } } : undefined));
@@ -241,12 +272,15 @@ describe("shared Automation schedule consumer", () => {
   };
   const scheduleContent = { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
     action: { kind: "AGENT_TURN", template: "Report" }, resultTarget: "CHANNEL" };
-  const setup = async (targets: unknown, content?: unknown, recheckStatus?: number, recheck?: Record<string, unknown>, policies?: unknown) => {
+  const setup = async (targets: unknown, content?: unknown, recheckStatus?: number, recheck?: Record<string, unknown>, policies?: unknown,
+    readOverride?: (request: BffRequest) => BffReply | undefined) => {
     const automation = { resourceId: "schedule-automation", workspaceId: installation.workspaceId,
       ownerPrincipalId: installation.ownerPrincipalId, executorInstallationResourceId: installation.resourceId,
       resourceVersion: 2, resourceState: "ACTIVE", state: "DRAFT" };
     let writes = 0;
     const t = transport((r) => {
+      const overridden = readOverride?.(r);
+      if (overridden) return overridden;
       if (r.path === "/api/v1/tasks") return { status: 200, body: [] };
       if (r.path === "/api/v1/agent-definitions") return { status: 200, body: { definitions: [] } };
       if (r.path === "/api/v1/workspaces") return { status: 200, body: [{ id: installation.workspaceId, name: "Schedule workspace", slug: "schedule" }] };
@@ -312,6 +346,88 @@ describe("shared Automation schedule consumer", () => {
       workspaceId: installation.workspaceId, executorInstallationResourceId: installation.resourceId,
       automationVersionContent: { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
         action: { kind: "AGENT_TURN", template: "Report workspace progress" }, resultTarget: "CHANNEL" } });
+  });
+
+  const writeYaml = async (section: HTMLElement, text: string) => {
+    const textarea = section.querySelector('textarea[aria-label="Workflow YAML"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, text);
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+  };
+
+  it("roundtrips the original YAML editor into the same form and freezes structured UNKNOWN submission", async () => {
+    const { section, t, field, fill } = await setup(["TRIGGER_THREAD"]);
+    await fill("Instruction template", "Original");
+    await click(button(section, "Workflow YAML"));
+    const text = 'trigger:\n  kind: CHANNEL_MESSAGE\n  textPrefix: report\naction:\n  kind: POST_MESSAGE\n  template: "Result ${source}"\nresultTarget: TRIGGER_THREAD\n';
+    await writeYaml(section, text);
+    await click(button(section, "Form"));
+    expect(field("Instruction template").querySelector("textarea")!.value).toBe("Result ${source}");
+    expect(field("Action").querySelector("select")!.value).toBe("POST_MESSAGE");
+    await click(button(section, "Workflow YAML"));
+    expect(section.querySelector('textarea[aria-label="Workflow YAML"]')?.textContent).toContain("POST_MESSAGE");
+    await click(button(section, "Review request"));
+    await click(button(section, "Submit governed request"));
+    expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).toBeNull();
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions").map(([request]) => request.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[0]).toMatchObject({ actionKey: "automation.create", automationVersionContent: {
+      trigger: { kind: "CHANNEL_MESSAGE", textPrefix: "report" },
+      action: { kind: "POST_MESSAGE", template: "Result ${source}" }, resultTarget: "TRIGGER_THREAD",
+    } });
+    expect(writes[0]).not.toHaveProperty("yaml");
+  });
+
+  it.each([
+    'trigger: [',
+    'trigger: {kind: FUTURE}\naction: {kind: POST_MESSAGE, template: hello}\nresultTarget: TRIGGER_THREAD',
+    'trigger: {kind: CHANNEL_MESSAGE}\naction: {kind: POST_MESSAGE, template: hello, secretRef: hidden}\nresultTarget: TRIGGER_THREAD',
+    'trigger: {kind: CHANNEL_MESSAGE}\naction: {kind: POST_MESSAGE, template: hello}\nresultTarget: TRIGGER_THREAD\nresourceId: source',
+    'trigger: {kind: MENTION, mentionPrincipalId: another-agent}\naction: {kind: POST_MESSAGE, template: hello}\nresultTarget: TRIGGER_THREAD',
+    'trigger: {kind: CHANNEL_MESSAGE}\naction: {kind: POST_MESSAGE, template: hello}\nresultTarget: TRIGGER_THREAD\napprovalPolicy: {id: 88888888-8888-4888-8888-888888888888, version: 99}',
+    'trigger: {kind: SCHEDULE, scheduleSpec: {everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60}}\naction: {kind: POST_MESSAGE, template: hello}\nresultTarget: CHANNEL',
+  ])("keeps unsupported YAML intact without form fallback or a write (%s)", async (text) => {
+    const { section, t, fill } = await setup(["TRIGGER_THREAD"]);
+    await fill("Instruction template", "Original"); await click(button(section, "Workflow YAML"));
+    await writeYaml(section, text); await click(button(section, "Form"));
+    expect(section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value).toBe(text);
+    expect(section.textContent).toContain("Your text has been kept");
+    expect(button(section, "Review request").disabled).toBe(true);
+    await act(async () => section.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
+  });
+
+  it("copies a freshly read version only, requiring a new executor and creating no inherited identity", async () => {
+    const copied = { trigger: { kind: "CHANNEL_MESSAGE", textPrefix: "copy" },
+      action: { kind: "POST_MESSAGE", template: "Copied instruction" }, resultTarget: "TRIGGER_THREAD" };
+    const { section, t, choose, field } = await setup(["TRIGGER_THREAD"], copied);
+    await click(button(section, "View definition"));
+    await click(button(section, "Copy as new draft"));
+    expect(field("Executor installation").querySelector("select")!.value).toBe("");
+    expect([...section.querySelectorAll("button")].some((node) => node.textContent === "Review request")).toBe(false);
+    await choose("Executor installation", "thread-only");
+    await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
+    const request = t.send.mock.calls.find(([entry]) => entry.path === "/api/v1/actions")![0].body;
+    expect(request).toEqual({ actionKey: "automation.create", idempotencyKey: expect.any(String), explicitConfirmation: true,
+      workspaceId: installation.workspaceId, executorInstallationResourceId: "thread-only", automationVersionContent: copied });
+    expect(t.send.mock.calls.filter(([entry]) => entry.path.startsWith("/api/v1/automations/schedule-automation?"))).toHaveLength(2);
+  });
+
+  it("does not copy a stale version after source permission is revoked", async () => {
+    let revoked = false;
+    const { section, t } = await setup(["CHANNEL"], scheduleContent, undefined, undefined, undefined,
+      (request) => revoked && request.path.startsWith("/api/v1/automations/schedule-automation?")
+        ? { status: 403, body: undefined } : undefined);
+    await click(button(section, "View definition"));
+    revoked = true;
+    await click(button(section, "Copy as new draft"));
+    expect(section.textContent).toContain("Not allowed");
+    expect(section.querySelector('option[value="schedule-installation"]')?.parentElement).toHaveProperty("value", installation.resourceId);
+    expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
   });
 
   it.each([403, 409])("retains the original uncertain request after a later refusal (%s)", async (status) => {
@@ -2114,9 +2230,9 @@ describe("platform pages render only through the host theme", () => {
     expect(desktop).toContain("SyntaxHighlightedCode as SharedSyntaxHighlightedCode");
     expect(desktop).toContain("const { themeName } = useTheme()");
     expect(desktop).toContain("shikiTheme={resolveShikiThemeName(themeName)}");
-    expect(web).toContain("const { isDark } = useTheme()");
+    expect(web).toContain("const { themeName } = useTheme()");
     expect(web).toContain("<SyntaxHighlightedCode");
-    expect(web).toContain("shikiTheme={resolveShikiThemeName(isDark ? BUZZ_DARK_THEME_NAME : BUZZ_THEME_NAME)}");
+    expect(web).toContain("shikiTheme={resolveShikiThemeName(themeName)}");
     expect(loader).toContain("if (name === BUZZ_THEME_NAME) return BUZZ_BASE_THEME");
     expect(loader).toContain("if (name === BUZZ_DARK_THEME_NAME) return BUZZ_DARK_BASE_THEME");
     const nativeStyle = styles[0]!;
@@ -2208,6 +2324,35 @@ describe("platform pages render only through the host theme", () => {
       && node.importClause?.namedBindings?.getText(pickerParsed).includes("POPOVER_SHADOW_STYLE"))).toBe(true);
     const pickerStyle = pickerStyles[0]!;
     const inspectedPicker = picker.text.slice(0, pickerStyle.getStart(pickerParsed)) + picker.text.slice(pickerStyle.end);
+    // DD-53: reuse the fixed Buzz appearance picker, including its preview
+    // gradients and explicit accent swatches. Validate each expression before
+    // removing only those nodes from the general page-colour scan.
+    const appearance = sources.find(({ name }) => name === "theme-settings-controls.tsx")!;
+    const appearanceParsed = ts.createSourceFile(appearance.name, appearance.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const appearanceStyles: import("typescript").JsxAttribute[] = [];
+    const appearanceColors: import("typescript").VariableDeclaration[] = [];
+    const visitAppearance = (node: import("typescript").Node) => {
+      if (ts.isJsxAttribute(node) && node.name.getText(appearanceParsed) === "style") appearanceStyles.push(node);
+      if (ts.isVariableDeclaration(node) && ["swatchColor", "selectionColor"].includes(node.name.getText(appearanceParsed))) appearanceColors.push(node);
+      ts.forEachChild(node, visitAppearance);
+    };
+    visitAppearance(appearanceParsed);
+    expect(appearanceStyles.map((node) => node.getText(appearanceParsed).replace(/\s+/g, ""))).toEqual([
+      'style={{background:"linear-gradient(tobottom,hsl(var(--background)),hsl(var(--background)/0))",}}',
+      'style={{background:"linear-gradient(totop,hsl(var(--background)),hsl(var(--background)/0))",}}',
+      'style={{backgroundColor:swatchColor}}',
+      'style={{borderColor:selectionColor}}',
+    ]);
+    expect(appearanceColors.map((node) => node.getText(appearanceParsed).replace(/\s+/g, ""))).toEqual([
+      'swatchColor=isNeutral?"hsl(var(--foreground))":color.value',
+      'selectionColor=isNeutral?isDark?"#000000":"#FFFFFF":contrastColorForBackground(color.value)',
+    ]);
+    expect(appearance.text).toContain("ACCENT_COLORS.map((color)");
+    expect(appearance.text).toContain('from "../theme/use-appearance"');
+    let inspectedAppearance = appearance.text;
+    for (const node of [...appearanceStyles, ...appearanceColors].sort((a, b) => b.getStart(appearanceParsed) - a.getStart(appearanceParsed))) {
+      inspectedAppearance = inspectedAppearance.slice(0, node.getStart(appearanceParsed)) + inspectedAppearance.slice(node.end);
+    }
     for (const { name, text } of sources) {
       // Remove just the verified JSX attribute, not its function or file.
       const inspected = name === native.name
@@ -2215,7 +2360,8 @@ describe("platform pages render only through the host theme", () => {
         : name === inbox.name ? inspectedInbox
         : name === segmented.name ? inspectedSegmented
         : name === surface.name ? inspectedSurface
-        : name === picker.name ? inspectedPicker : text;
+        : name === picker.name ? inspectedPicker
+        : name === appearance.name ? inspectedAppearance : text;
       for (const pattern of [
         /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/,
         /\b(?:rgba?|hsla?|oklch|oklab|lab|lch|color-mix)\(/,
@@ -2229,9 +2375,21 @@ describe("platform pages render only through the host theme", () => {
     }
   });
 
-  it("uses only semantic colours that both hosts map to their root CSS variables", () => {
+  it("uses only semantic colours that both hosts map to their root CSS variables", async () => {
     const used = new Set<string>();
-    for (const { text } of sources) {
+    const ts = await import("typescript");
+    for (const source of sources) {
+      // React keys and test selectors are not CSS utilities. Strip only their
+      // AST attributes; className and all executable colour expressions remain.
+      const parsed = ts.createSourceFile(source.name, source.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const metadata: import("typescript").JsxAttribute[] = [];
+      const visit = (node: import("typescript").Node) => {
+        if (ts.isJsxAttribute(node) && ["key", "data-testid"].includes(node.name.getText(parsed))) metadata.push(node);
+        ts.forEachChild(node, visit);
+      };
+      visit(parsed);
+      let text = source.text;
+      for (const node of metadata.sort((a, b) => b.getStart(parsed) - a.getStart(parsed))) text = text.slice(0, node.getStart(parsed)) + text.slice(node.end);
       for (const [, utility, token] of text.matchAll(colorUtility)) {
         // Native Switch ring-offset utilities are width or a host colour,
         // not colours named "offset-2" / "offset-background".

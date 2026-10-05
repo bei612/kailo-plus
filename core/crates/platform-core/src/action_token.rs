@@ -296,6 +296,36 @@ pub(crate) async fn issue_application(
     Ok((token, audience))
 }
 
+/// A native revision query is a fresh business read, never an observation of a
+/// retired actor or a NONE lifecycle exception. Reuse the original child claims
+/// and sign only the canonical query intent for its exact binding audience.
+pub(crate) async fn issue_query_revision(
+    state: &ServiceState,
+    ae: &Execution,
+    audience: &str,
+    arguments: &Value,
+) -> Result<String, Refusal> {
+    let (facts, revision) =
+        crate::application_tool::fresh_revision_read(state, ae, arguments).await?;
+    if audience != facts.audience {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let hash = collab_bridge::limits::canonical_digest(&json!({
+        "operation":"query_revision", "arguments":arguments,
+    }));
+    sign_claims(
+        state,
+        audience,
+        application_claims(
+            ae,
+            ae.parameters.as_ref().ok_or_else(invalid)?,
+            json!(hash),
+            revision,
+        )?,
+    )
+    .await
+}
+
 fn application_claims(
     ae: &Execution,
     parameters: &Value,

@@ -467,6 +467,7 @@ pub enum Semantic {
     AutomationEnable,
     AutomationPause,
     AutomationDisable,
+    AutomationRotateWebhookSecret,
     ResourceTransferOwner,
     ResourceCreate,
 }
@@ -519,6 +520,7 @@ impl Semantic {
             "automation.enable" => Self::AutomationEnable,
             "automation.pause" => Self::AutomationPause,
             "automation.disable" => Self::AutomationDisable,
+            "automation.rotate_webhook_secret" => Self::AutomationRotateWebhookSecret,
             "resource.transfer_owner" => Self::ResourceTransferOwner,
             "resource.create" => Self::ResourceCreate,
             _ => return None,
@@ -539,6 +541,7 @@ impl Semantic {
                 | Self::AutomationEnable
                 | Self::AutomationPause
                 | Self::AutomationDisable
+                | Self::AutomationRotateWebhookSecret
         )
     }
 
@@ -1296,6 +1299,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::AutomationEnable
         | Semantic::AutomationPause
         | Semantic::AutomationDisable
+        | Semantic::AutomationRotateWebhookSecret
         | Semantic::CapabilityContractRegister
         | Semantic::CapabilityContractApprove
         | Semantic::CapabilityContractDeprecate
@@ -1428,7 +1432,8 @@ async fn resolve_target(
         | Semantic::AutomationPublish
         | Semantic::AutomationEnable
         | Semantic::AutomationPause
-        | Semantic::AutomationDisable => {
+        | Semantic::AutomationDisable
+        | Semantic::AutomationRotateWebhookSecret => {
             crate::automation::management_target(conn, tenant, initiator, def, p, frozen, lock)
                 .await
         }
@@ -4481,9 +4486,11 @@ impl Governance {
                 | Semantic::AutomationPublish
                 | Semantic::AutomationEnable
                 | Semantic::AutomationPause
-                | Semantic::AutomationDisable => {
+                | Semantic::AutomationDisable
+                | Semantic::AutomationRotateWebhookSecret => {
                     crate::automation::management_prewrite(self, tx, ae, def, sem, params).await?;
-                    if completes && !crate::automation::defer_schedule_dispatch(tx, ae.id).await? {
+                    if completes && !crate::automation::defer_management_dispatch(tx, ae.id).await?
+                    {
                         self.record_local_outcome(
                             tx,
                             ae,
@@ -4779,7 +4786,7 @@ impl Governance {
             | Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead
             | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish | Semantic::AgentVersionRetire
             | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
-            | Semantic::AutomationPause | Semantic::AutomationDisable
+            | Semantic::AutomationPause | Semantic::AutomationDisable | Semantic::AutomationRotateWebhookSecret
             // 业务 Tenant 生命周期在上面单独落定
             | Semantic::TenantSuspend
             | Semantic::TenantRestore => {
@@ -6375,7 +6382,7 @@ impl Governance {
                 | Semantic::ResourceTransferOwner
                 | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish | Semantic::AgentVersionRetire
                 | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
-                | Semantic::AutomationPause | Semantic::AutomationDisable
+                | Semantic::AutomationPause | Semantic::AutomationDisable | Semantic::AutomationRotateWebhookSecret
                 | Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
                 | Semantic::AgentInstallationExecuteGrant | Semantic::AgentInstallationExecuteRevoke
                 | Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead

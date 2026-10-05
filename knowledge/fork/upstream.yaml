@@ -1,5 +1,5 @@
 # Full native source fork; identity/correlation changes retain the native UI.
-# The native UI image is built; app/document-reader images and deployment remain unverified.
+# Native UI and adapted app images are built; document reader and deployment remain unverified.
 project: knowledge
 reference_tree: WeKnora
 upstream_url: https://github.com/Tencent/WeKnora
@@ -14,9 +14,9 @@ artifacts:
     build_dockerfile: knowledge/docker/Dockerfile.app
     inputs: [knowledge/]
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
-    source_digest: none
-    artifact_digest: none
-    blocked: Native identity/correlation source verified separately; this fork image, service credentials, deployment and Gateway/Core MCP consumption remain unverified.
+    source_digest: sha256:d8b22b7e06470d70d67ad6e7230c1f0ec5ddd9a6048940bed9a65578f5766cdd
+    artifact_digest: sha256:db4ec09f76ee61b403cc79cf56c131dbfb6810e473dc7fadb0fb21ff2f08a8c8
+    blocked: Adapted native service image built; service credentials, deployment and Gateway/Core MCP consumption remain unverified.
   - name: knowledge-native-ui
     kind: image
     build_context: knowledge/frontend

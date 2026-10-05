@@ -39,7 +39,7 @@ vi.mock("@/platform/bff-client", () => ({
 }));
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en" }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({
-  useTheme: () => ({ theme: "system", setTheme: vi.fn(), prominentActiveTab: false, setProminentActiveTab: vi.fn() }),
+  useTheme: () => ({ themeName: "buzz", selectedThemeName: "buzz", isDark: false, isLoading: false, followSystem: true, accentColor: "neutral", hasPair: true, setTheme: vi.fn(), setAccentColor: vi.fn(), setFollowSystem: vi.fn(), applyAppearance: vi.fn(), prominentActiveTab: false, setProminentActiveTab: vi.fn() }),
 }));
 
 beforeEach(() => {

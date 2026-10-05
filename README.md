@@ -42,6 +42,25 @@ Workflows、三端设备/签名或 Cells/WeKnora/Wren 接入验收。三组件�
 实际命令、失败、原件摘要与边界见 [Agent 验证](core/verify/agent-definition.md)
 末节；下方历史记录只保留各自时点事实。
 
+### 14:03 UTC：6112 已部署，后续功能仍独立开发
+
+源码 `6112fdb6dfbdee9897a34e374988e6d79f37406c` 已提交、push 并投递。
+该提交的原完整检查最终退出 0，Core/Worker 原正式构建、SBOM/provenance、
+三镜像 push 与 registry digest 独立读回均通过；Web 复用既有本批产物，没有重编译。
+两条原迁移向前执行成功，线上从 79 增至 81 条，失败 0。仅替换 Core、Worker、
+Web，其余 21 个运行中项目容器 ID 不变；Core health 200、Web healthy，
+公共页面仍要求登录，Worker 开始原队列轮询。没有新增模型调用、权限或额度写入。
+同批 Windows 未签名测试包已投递到原 `dist/desktop-client/Kailo_0.5.23_x64-setup.exe`，
+SHA256 `620e6d3b6b976ca70022de22b9d5e93eacb1edd91f24f743665bda1a474c784a`；
+旧包另存于上述发布原件目录，未重复编译，未声称 Win11 实机验收。
+
+该次 Core 为 `sha256:c9673fc00a86eb6517c8528c0dde4302cfd5590b731581e9e80f40cfc2d46007`，
+Worker 为 `sha256:36ce8000303eef14fd4ca8a53b25febea79c6ec83c7f01d0d050cff8bb8601de`，
+Web 为 `sha256:3336de5375dccfbcb72865e4ad44bf1e2799136779cf00830c8b64861fd4d173`。
+Data 原件为 `codex-application-core-worker-release-20261005.2Co1Ge/deployment-6112-receipt.md`。
+本次未重新做登录业务验收；三组件真实服务、完整 Workflows/原版设置与三端设备
+验收仍未完成。后续联合候选不在本次部署范围。下方“未部署”仅保留其记录时事实。
+
 ### 当前源码收口：原生服务完整源码与资源引用（未部署）
 
 本次私有联合候选在已部署 `d343a33ed491f12f60efbddfd973a1053461c8ef` 上补入

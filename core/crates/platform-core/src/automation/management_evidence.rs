@@ -38,10 +38,15 @@ async fn schedule_intent_keeps_the_original_admission_dispatchable() {
         "automation.enable",
         "automation.pause",
         "automation.disable",
+        "automation.rotate_webhook_secret",
     ] {
         for intent in [
             None,
             Some(json!({"scheduleIntent":{"id":"native-schedule","started":false}})),
+            Some(json!({"webhookSecretIntent":{"newStatus":"PENDING"}})),
+            Some(
+                json!({"scheduleIntent":{"started":false},"webhookSecretIntent":{"newStatus":"PENDING"}}),
+            ),
         ] {
             let id = Uuid::new_v4();
             // Exactly the original SYNC admission state before management
@@ -50,7 +55,7 @@ async fn schedule_intent_keeps_the_original_admission_dispatchable() {
                 initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id,parameters)
                 values($1,$1,$2,$3,1,$4,$4,$4,'isolated-schedule-intent','ALLOWED','DISPATCHED',$1,$5)")
                 .bind(id).bind(tenant).bind(action).bind(principal).bind(&intent).execute(&mut *tx).await.unwrap();
-            let deferred = super::defer_schedule_dispatch(&mut tx, id).await.unwrap();
+            let deferred = super::defer_management_dispatch(&mut tx, id).await.unwrap();
             let (actual_id,state,parameters):(Uuid,String,Option<serde_json::Value>) = sqlx::query_as(
                 "select id,dispatch_state,parameters from admission.action_execution where id=$1")
                 .bind(id).fetch_one(&mut *tx).await.unwrap();
@@ -78,7 +83,7 @@ async fn schedule_intent_keeps_the_original_admission_dispatchable() {
                 .await
                 .unwrap();
                 assert!(
-                    super::defer_schedule_dispatch(&mut tx, id).await.is_err(),
+                    super::defer_management_dispatch(&mut tx, id).await.is_err(),
                     "recovery must not reset an UNKNOWN native write"
                 );
                 let state: String = sqlx::query_scalar(
@@ -91,6 +96,125 @@ async fn schedule_intent_keeps_the_original_admission_dispatchable() {
                 assert_eq!(state, "UNKNOWN");
             }
         }
+    }
+    tx.rollback().await.unwrap();
+    pool.close().await;
+}
+
+#[test]
+fn native_intents_require_every_receipt_before_the_same_ae_can_complete() {
+    for first in ["scheduleIntent", "webhookSecretIntent"] {
+        let other = if first == "scheduleIntent" {
+            "webhookSecretIntent"
+        } else {
+            "scheduleIntent"
+        };
+        let mut parameters =
+            json!({"scheduleIntent":{"started":true},"webhookSecretIntent":{"writeStarted":true}});
+        assert!(!super::management_intents_complete(&parameters));
+        parameters[first]["complete"] = json!(true);
+        assert!(
+            !super::management_intents_complete(&parameters),
+            "the first native receipt is not the AE terminal"
+        );
+        parameters[other]["complete"] = json!(true);
+        assert!(super::management_intents_complete(&parameters));
+        for unknown in [json!(null), json!("true"), json!(false), json!({})] {
+            parameters[other]["complete"] = unknown;
+            assert!(!super::management_intents_complete(&parameters));
+        }
+    }
+    assert!(!super::management_intents_complete(&json!({})));
+    assert!(super::management_intents_complete(
+        &json!({"scheduleIntent":{"complete":true}})
+    ));
+    assert!(super::management_intents_complete(
+        &json!({"webhookSecretIntent":{"complete":true}})
+    ));
+}
+
+#[tokio::test]
+#[ignore = "requires an isolated migrated schedule_dispatch_verify_* PostgreSQL database"]
+async fn joint_native_receipts_keep_the_projection_fenced_until_both_are_confirmed() {
+    let pool =
+        sqlx::PgPool::connect(&std::env::var("SCHEDULE_DISPATCH_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+    let database: String = sqlx::query_scalar("select current_database()")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(database.starts_with("schedule_dispatch_verify_"));
+    let def = governance::exact_definition(&pool, "automation.disable", 1)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let tenant = Uuid::new_v4();
+    let human = Uuid::new_v4();
+    let workspace = Uuid::new_v4();
+    sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$1::text,'Joint native evidence','ACTIVE')").bind(tenant).execute(&mut *tx).await.unwrap();
+    sqlx::query("insert into identity.human_identity(id,display_name,status) values($1,'Joint native evidence','ACTIVE')").bind(human).execute(&mut *tx).await.unwrap();
+    sqlx::query(
+        "insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')",
+    )
+    .bind(human)
+    .bind(tenant)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query("insert into identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) values($1,$2,$1,$1,'ACTIVE')").bind(human).bind(tenant).execute(&mut *tx).await.unwrap();
+    sqlx::query("insert into identity.workspace(id,tenant_id,slug,name,state) values($1,$2,$1::text,'Joint native evidence','ACTIVE')").bind(workspace).bind(tenant).execute(&mut *tx).await.unwrap();
+    for first in ["scheduleIntent", "webhookSecretIntent"] {
+        let other = if first == "scheduleIntent" {
+            "webhookSecretIntent"
+        } else {
+            "scheduleIntent"
+        };
+        let id = Uuid::new_v4();
+        let resource = Uuid::new_v4();
+        sqlx::query("insert into admission.action_execution(id,operation_id,tenant_id,workspace_id,action_key,action_version,
+            initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id,parameters)
+            values($1,$1,$2,$3,'automation.disable',1,$4,$4,$5,'isolated-joint-native','ALLOWED','UNKNOWN',$1,$6)")
+            .bind(id).bind(tenant).bind(workspace).bind(human).bind(resource)
+            .bind(json!({"scheduleIntent":{"started":true},"webhookSecretIntent":{"writeStarted":true}}))
+            .execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,
+            native_type,native_id,state,version,projection_action_execution_id)
+            values($1,$2,'automation',$3,$4,'core','automation',$1::text,'ACTIVE',2,$5)")
+            .bind(resource).bind(tenant).bind(workspace).bind(human).bind(id).execute(&mut *tx).await.unwrap();
+        let ae = governance::lock_execution(&mut tx, id).await.unwrap();
+        super::complete_management_intent(&mut tx, &ae, &def, first)
+            .await
+            .unwrap();
+        let partial:(String,Option<Uuid>) = sqlx::query_as("select a.dispatch_state,r.projection_action_execution_id
+            from admission.action_execution a join catalog.resource r on r.id=a.target_id where a.id=$1")
+            .bind(id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(
+            partial,
+            ("UNKNOWN".into(), Some(id)),
+            "{first} cannot complete the joint AE"
+        );
+        // Reentry after a lost response reads the original receipt, not a new
+        // operation; repeated receipt must not unlock the unfinished sibling.
+        let resumed = governance::lock_execution(&mut tx, id).await.unwrap();
+        super::complete_management_intent(&mut tx, &resumed, &def, first)
+            .await
+            .unwrap();
+        let still_fenced: Option<Uuid> = sqlx::query_scalar(
+            "select projection_action_execution_id from catalog.resource where id=$1",
+        )
+        .bind(resource)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(still_fenced, Some(id));
+        super::complete_management_intent(&mut tx, &resumed, &def, other)
+            .await
+            .unwrap();
+        let complete:(String,Option<Uuid>) = sqlx::query_as("select a.dispatch_state,r.projection_action_execution_id
+            from admission.action_execution a join catalog.resource r on r.id=a.target_id where a.id=$1")
+            .bind(id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(complete, ("DISPATCHED".into(), None));
     }
     tx.rollback().await.unwrap();
     pool.close().await;

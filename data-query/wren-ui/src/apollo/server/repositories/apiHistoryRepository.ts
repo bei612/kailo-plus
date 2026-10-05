@@ -52,6 +52,14 @@ export interface ApiHistory {
   durationMs?: number;
   createdAt?: string;
   updatedAt?: string;
+  governanceBindingId?: string;
+  governanceKey?: string;
+  governanceActionExecutionId?: string;
+  governanceOperationId?: string;
+  governanceParameterHash?: string;
+  governanceState?: 'UNKNOWN' | 'SUCCEEDED' | 'FAILED';
+  governanceDeploymentId?: number;
+  governanceDeploymentHash?: string;
 }
 
 export interface PaginationOptions {
@@ -84,6 +92,62 @@ export class ApiHistoryRepository
 
   constructor(knexPg: Knex) {
     super({ knexPg, tableName: 'api_history' });
+  }
+
+  // Commit the original query record before calling the native engine. A
+  // duplicate key never starts another query, including after process death.
+  public async reserveGovernedQuery(record: ApiHistory): Promise<boolean> {
+    const rows = await this.knex(this.tableName)
+      .insert(this.transformToDBData(record))
+      .onConflict(['governance_binding_id', 'governance_key'])
+      .ignore()
+      .returning('id');
+    return rows.length === 1;
+  }
+
+  public async completeGovernedQuery(
+    id: string,
+    parameterHash: string,
+    result: Record<string, unknown>,
+    durationMs: number,
+  ): Promise<boolean> {
+    const changed = await this.knex(this.tableName)
+      .where({
+        id,
+        governance_parameter_hash: parameterHash,
+        governance_state: 'UNKNOWN',
+      })
+      .update(
+        this.transformToDBData({
+          governanceState: 'SUCCEEDED',
+          responsePayload: result,
+          statusCode: 200,
+          durationMs,
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+    return changed === 1;
+  }
+
+  public async rejectUnsentGovernedQuery(
+    id: string,
+    parameterHash: string,
+  ): Promise<boolean> {
+    const changed = await this.knex(this.tableName)
+      .where({
+        id,
+        governance_parameter_hash: parameterHash,
+        governance_state: 'UNKNOWN',
+      })
+      .update(
+        this.transformToDBData({
+          governanceState: 'FAILED',
+          responsePayload: { error: 'NOT_DISPATCHED' },
+          statusCode: 403,
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+    return changed === 1;
   }
 
   /**

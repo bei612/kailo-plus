@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/query_revision_request.schema.json",
+  "title": "AdapterQueryRevisionRequest",
+  "description": "07§5.2与ADR-12：查询同一native对象当前权威revision；ActionToken通过Authorization头传输，幂等键与Idempotency-Key头一致。authorizationTargetNativeRef仅为Core从实际受权Resource/Asset解析的原生目标定位，参与同一参数签名；adapter须核实被查对象在该目标及固定binding scope内。缺省保持确切目标查询，不授予一般子对象读取。不是execute或权限授予。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["nativeObjectRef", "idempotencyKey"],
+  "properties": {
+    "nativeObjectRef": {"type": "string"},
+    "idempotencyKey": {"type": "string"},
+    "authorizationTargetNativeRef": {"type": "string"}
+  }
+}

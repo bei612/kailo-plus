@@ -1,0 +1,3 @@
+{{- with secret (printf "%s?version=%s" (env "WREN_QUERY_ACTION_JWKS_PATH") (env "WREN_QUERY_ACTION_JWKS_VERSION")) -}}
+{{- .Data.data.value -}}
+{{- end -}}
