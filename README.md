@@ -6,6 +6,18 @@
 
 ## 最新复核与投递事实（2026-10-05）
 
+### Workflows 频道消息触发与模板回复已实际完成（17:42–17:46 UTC）
+
+当前已部署的 57ad Core 与原 Worker/Web 上，已有自动化经正常页面发布新版本、
+按目录返回的确切 scope 授权并启用。随后发送一条无 Agent 提及的普通频道消息，
+真实模板回复出现；唯一 Invocation 和 Task 均 COMPLETED，automation.run
+计量 1 已 COMMITTED，Codex turn、模型 trace 和 CapacityLease 均为 0。
+Workflows 的“我的运行历史”和原任务详情均实际显示该次 Completed。
+没有重新构建或部署，没有直接写入业务库或 SpiceDB，授权期限沿已有开发配置。
+实际命令、原件摘要及操作程序失败见 [Agent 验证](core/verify/agent-definition.md)
+末节。这只覆盖 CHANNEL_MESSAGE → POST_MESSAGE，不等于完整 Workflows、
+三组件或三端生产交付完成。
+
 ### Agent 回归已修复并恢复三人、两 Agent 协作（16:58 UTC）
 
 源码 `57adcd1612bfd421c8b93d843deae7c4b66604bb` 已提交并 push；相对

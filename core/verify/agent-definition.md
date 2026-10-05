@@ -3799,3 +3799,55 @@ marker 为 KAILO-57AD-20261005T165604Z-，三条源事件：
 
 本次是当前版本基本多人多 Agent 协作及旧未派发任务恢复验收，不是故障注入、
 持续负载、完整工具/Memory/Workflows、三端设备或独立业务组件的总体验收。
+
+## 2026-10-05 Workflows 原生频道触发、模板回帖与历史闭环
+
+本次沿 DD-107、设计 06 §9.1，使用当前已部署的 57ad Core、原 Worker/Web；
+不改代码、契约、计量配置或角色，不创建替代工作流引擎。既有样例
+Automation 680f1b27-d9ba-4186-b32f-8e81f0e7891a 的授权目录起初没有
+automation.run；源码中的 project_executor 已在提交树内，不能归因为
+“修复未提交”。经原页面发布新版本，原管理 AE 正常收敛执行者关系，
+目录随后返回确切 automation.run scope。没有手工补 SpiceDB 关系。
+
+原 Playwright 操作程序 ui-post-message.cjs 在既有 happy_nobel 容器运行，
+实查 4 CPU/8 GiB；正常 OIDC，密码仅读取既有受控挂载。非 GET 请求默认
+阻止，仅一次性放行当前页面提交的确切动作或消息；没有改写响应。
+原件根为 Data 目录 codex-three-human-two-agent-20261005.poEa9c/automation/。
+
+- 正常发布新版本 f0291e5a-8f65-4114-b886-9a1b34c11e80，
+  republish-57ad.log 退出0；原请求 AE DISPATCHED，版本 PUBLISHED。
+- 原安装页面从 BFF 目录选择该 Automation 的 scope，建立委托
+  78a98186-76d0-4765-a5df-1dcfd6a4d431；期限沿同用户已有开发委托，
+  不设置额外 maxUses。grant-ui-corrected-57ad.log 退出0。
+- 原页面启用固定版本与委托，enable-57ad.log 退出0；
+  原管理 AE cb7fac3a-9a82-4752-9b8f-0c0c0581c0d7 DISPATCHED，
+  Automation 回读 ENABLED、Resource version=5。
+- 17:42:22 仅发送一条匹配原 textPrefix 的普通频道消息，无附件、无
+  mentionInstallationIds。源事件为
+  740d99a32c5a8d18a2e119f460539f9a2bdb24d6fb701605dd49aae7ee7f8a82；
+  页面真实读回原模板 KAILO_POST_MESSAGE_NATIVE_20261005_OK。
+- 原 Invocation 86eb20be-47e0-422c-a0a2-741d7091e885 与 Task 均
+  COMPLETED；回复事件为
+  38286ca74fae44401934c794b2d96519a3f1c0f017dcee5771a42eba43babd9a。
+  原库只读查得该源仅一条 Invocation、runtime_turn_id=null、
+  modelTraces=0、capacity=0；automation.run 数量1、COMMITTED。
+- observe-task-57ad.log 退出0：真实 Workflows 运行历史和原 TaskDetail
+  均显示该次 Completed，AE b5d38005-999c-4df5-8fb1-e78c26bf3e17，
+  usage ref 983d2085-153d-5070-8e70-929a04f9a888。
+
+失败不改记通过：两次授权操作程序因 wrapping label 精确匹配不到 select
+退出1，均未提交写请求；按实际 DOM 改为唯一 combobox 后才提交一次。
+trigger-57ad.log 在消息和回复都已成功后，额外历史 GET 因多带接口不接受的
+workspaceId 返回非 JSON，程序退出1。未重发消息；按现有 client.ts 的
+automationRuns 路径读取，独立 observe-task-57ad.log 与原库终态读回通过。
+此处没有把操作程序问题冒称产品修复，也不声称已做反例故障注入。
+
+原件 SHA-256：
+
+- trigger-57ad.log：ac78dfca69eb7545d8a4c7239460dafb11e176dcbdc46a92d6f64b8a53d08a7f
+- observe-task-57ad.log：1714e39ebdab6bd09466e5cb8365d36a3ccae7d337d8eabd5d97cb2d4c967905
+- terminal-57ad.log：592a5a7ce978fe160463d42374ab194be9457ff74866d2e97ab0acff623c4068
+
+本次未跑 full、产品构建或部署；文档变更单独跑原 check-docs.sh。
+只证明当前版本的 CHANNEL_MESSAGE → POST_MESSAGE 及关联历史，
+不覆盖 Schedule、Webhook、步骤审批、所有管理动作、组件或三端交付。
