@@ -6,6 +6,30 @@
 
 ## 最新复核与投递事实（2026-10-05）
 
+### Agent 回归已修复并恢复三人、两 Agent 协作（16:58 UTC）
+
+源码 `57adcd1612bfd421c8b93d843deae7c4b66604bb` 已提交并 push；相对
+`6112fdb6dfbdee9897a34e374988e6d79f37406c` 为 13 文件 +852/-10，选定源码的
+原 `tools/check.sh --full` 退出 0。修复组件工具空集合的 SQL 列归属错误、
+未派发任务的原 Capacity holder 恢复及 Schedule 管理派发状态，不跳过治理链。
+
+16:54 UTC 仅 Core 替换为
+`sha256:ff7c389aa1ac48bebb94434b095ae267e4cd71e69daa163b71b6412401098fe2`；
+原 19000 迁移执行后线上 82 条、失败 0，Core 直接 health 为 200。
+Worker、Web 和其余项目容器未变。原 14:48 卡住的两任务自动恢复 COMPLETED，
+两条回复存在，用量 8921/9032 tokens 均 COMMITTED、两槽 RELEASED；没有重发
+旧消息或直接修改业务状态。整批 release 的 Worker 步骤因上游镜像下载失败退出 1，
+没有把该失败改记为整批发布成功；只部署已独立构建并核对来源的 Core。
+
+16:56–16:58 三名独立 HUMAN 正常登录当前 Web，各发送一条同时提及两个 Agent
+的新消息。每条的两条真实回复均在三人的独立页面读回；六 Invocation/Task 全部
+COMPLETED、六槽 RELEASED、六条用量共 54142 tokens 全部 COMMITTED，浏览器
+操作退出 0。三轮从发布到三方读回分别为 48.154、44.499、29.592 秒。
+本次证明当前部署版本的三人、两 Agent 频道基本协作，不替代长期稳定性、完整
+Workflows、三端设备/签名或 Cells/WeKnora/Wren 接入验收。三组件仍未交付可用。
+实际命令、失败、原件摘要与边界见 [Agent 验证](core/verify/agent-definition.md)
+末节；下方历史记录只保留各自时点事实。
+
 ### 当前源码收口：原生服务完整源码与资源引用（未部署）
 
 本次私有联合候选在已部署 `d343a33ed491f12f60efbddfd973a1053461c8ef` 上补入

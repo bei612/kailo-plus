@@ -3731,3 +3731,71 @@ SHA-256 `a76c6336c6512980e3d9c4815c4bc8dc73bcdf4f6b8e9d94b09235e6c9fac39e`。
 
 以上只证明 SQL 修复、容量本地恢复及静态检查，不证明线上两个 Invocation
 已恢复。本批发布与原多人多 Agent 复验需要分别记录；不以窄检查宣称生产就绪。
+
+### 16:54 修复部署与 16:58 当前版本真实协作验收
+
+权威与影响沿本节四步分析：DD-47/87/92 的单一容量权威、无可选组件时核心可用，
+没有改变契约或 Worker payload。19000 只扩展原 guard：必须有旧 holder 的真实
+Temporal 终态、确定未派发的 Invocation/Session 和新 holder；没有释放再抢占的
+窗口，原审计追加 CAPACITY_HOLDER_RECOVERED。Web/原生端身份与传输边界不变。
+
+源码 `57adcd1612bfd421c8b93d843deae7c4b66604bb` 相对 6112 为 13 文件 +852/-10，
+固定树 `c5d0f1e29da7dd97637e2fa59da5696c493b6c2d` 原完整检查退出 0；Core 189 passed /
+14 ignored、契约 11 passed、四侧生成和 216 schemas/3 份历史契约兼容通过。
+完整检查内 DATABASE_URL、实际部署配置明确 SKIP，未安装 gitleaks；上节真实隔离库
+目标及本次真实配置/迁移分别补证，不把 ignored 当业务验收。
+
+实际操作与失败保留（Data 原件根为 `codex-capacity-holder-recovery-20261005.fAEvCi/`）：
+
+- 原 `tools/release.sh` 固定源码构建 Core 成功，并生成 SBOM/provenance；原脚本仍
+  尝试未改动的 Worker，但 Docker Hub token 下载返回 network unreachable，整批退出 1。
+  此前缺 BUILDX_BUILDER/REGISTRY 的两次配置错误均在编译前失败，原日志保留。
+- Core 镜像按原产物标记正常 `docker tag/push`；registry HTTP 200 回读 digest
+  `sha256:ff7c389aa1ac48bebb94434b095ae267e4cd71e69daa163b71b6412401098fe2`，
+  provenance 明确关联 57ad。首次查找误用 registry 短 tag 返回 No such image，
+  随后核对原 helper 的 `platform/core:<完整commit>`；未重编译。
+- 独立 0700 目录保存 pg_dump（0600，正文不入库）；复用原 init-local.sh 的
+  migrate_core_database，以同一受控连接投递、固定检查镜像、4 CPU/8 GiB 执行。
+  `Applied 20261005019000/migrate capacity holder recovery`，退出 0；线上读回
+  `82|20261005019000|0`。迁移未修改 Invocation 或人为重发任何外部副作用。
+- 原 bootstrap.sh --validate-config 退出 0。两次 start-core 的前置登记核验因
+  私有目录缺设计输入/设计归档多一层而失败，均未替换容器；按原 DESIGN 参数指定
+  同一固定 `8d0c75ec177d7c7dd1a9183fe571f8c6cb6fa158` 的 `.design` 后，原
+  `start-core.sh --no-build` 退出 0。只重建 core-bff，新的三份一次性 wrapping
+  沿原受控入口投递，未复制 secret 内容到日志、参数或源码。
+- Core 于 16:54:05 UTC 启动，直接 health HTTP 200。PUBLIC_ORIGIN/healthz 的
+  302 仅是公共网关结果，不记作 Core 健康；一次不存在的 BFF_HOST_BIND 环境名
+  查询在 curl 前退出，随后以实际已绑定端口查证。部署前后容器记录只有 Core 变化。
+
+原两 Invocation `5549f8b1-4875-408d-ac39-c003383f54fd`、
+`0b314183-dba5-476b-8883-a9b89a249f21` 均自动恢复：旧 activity :9 原终态证据
+保留于两条 CAPACITY_HOLDER_RECOVERED 审计，新 holder :213 继续原 Workflow。
+16:55 只读查证两 Invocation/Task COMPLETED，native completed，存在各自 reply
+event/thread/turn；8921/9032 tokens COMMITTED，两个原 lease RELEASED。
+
+随后复用现有 Playwright 三用户操作程序（4 CPU/8 GiB 浏览器容器，凭据仅 stdin），
+正常 OIDC、真实 UI 提及两安装并发送，每用户只允许一次匹配消息写入；不伪造响应。
+安装为 2989b1ec-f3fa-468d-89c5-4a8be226c97c、f66a3b3e-589e-4c27-965c-8d2b4cebb995。
+marker 为 KAILO-57AD-20261005T165604Z-，三条源事件：
+
+| HUMAN | 源事件 | 发布到三方读回两回复 |
+|---|---|---|
+| bootstrap | 92ace3e57553ac0fd4ad983066c7922f64f1c5bdd910bf80647cee04f96c7b77 | 48.154 秒 |
+| seam | cb03d03f5ae9088d17aae9e6d9f6fc5d791b1443f6c38849b9d48ce6b56acc52 | 44.499 秒 |
+| third | 1cdf9e0ef3745f2d05060b0199e4ac2c282034c745c971f8bde619fb93ae4171 | 29.592 秒 |
+
+原浏览器 handle 88155 退出 0，三条消息共九次独立页面读回，每次 exact reply 数 2。
+后台逐源事件只读结果均 `2|2|2|2`（Invocation/COMPLETED/reply/Task COMPLETED），
+`RELEASED|6`、`COMMITTED|6|54142`。没有新增权限、额度或模型配置。
+
+| 原件 | SHA-256 |
+|---|---|
+| core-regression-full-final.log | 3904c408ce251333717e5c2b9de5a9da81579ce5c0af74be9f38ca3f14cd5b63 |
+| migration-57ad.log | 2c4a87990f1687e57868307e87c117493470209a087d60dc1b1aa1eb43e66ebd |
+| deploy-core-57ad-pinned-design.log | 95e3858088f0cefd033f6366c6612cf6293dc60badab1acbcb223c6b829ce7ef |
+| original-invocations-recovered.log | 410029a192cf5773a344cdea8cca817392966cf863ecb5239c8faec83b7a7386 |
+| live-collaboration-57ad.log | 19937d60292bf5e6bbcd70538da66a2c6a514f0ed1e8f3657db652bba4b7410e |
+| live-collaboration-57ad-final.log | ca2977563bf24ceead6a53689fd52ddd2ae1940844d21abed06ac0e9aabc478d |
+
+本次是当前版本基本多人多 Agent 协作及旧未派发任务恢复验收，不是故障注入、
+持续负载、完整工具/Memory/Workflows、三端设备或独立业务组件的总体验收。
