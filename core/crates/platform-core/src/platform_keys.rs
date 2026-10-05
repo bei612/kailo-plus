@@ -203,6 +203,8 @@ pub(crate) async fn action_audit_context(
          from admission.action_execution ae
          left join catalog.action_definition d
            on d.action_key = ae.action_key and d.version = ae.action_version
+             and ((ae.action_definition_id=d.id and d.component_release_id is not distinct from ae.component_release_id)
+               or (ae.action_definition_id is null and ae.component_binding_kind is null and d.component_release_id is null))
          where ae.id = $1 and ae.tenant_id = $2",
     )
     .bind(action_id)

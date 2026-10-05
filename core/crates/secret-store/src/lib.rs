@@ -1647,12 +1647,152 @@ pub struct AuditObserver {
     session: AppRoleSession,
 }
 
+/// Expected identity comes from the controlled adapter directory, never from
+/// its self-reported audit observation. Only references enter this structure.
+pub struct AuditedSecretRead<'a> {
+    pub reference: &'a SecretRef,
+    pub request_id: &'a str,
+    pub role_name: &'a str,
+    pub not_before: chrono::DateTime<chrono::Utc>,
+}
+
 #[derive(Deserialize)]
 struct AuditTable {
     data: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl AuditObserver {
+    /// DD-70: inspect the original OpenBao file device, not an adapter's pass
+    /// assertion. At the pinned version HashAuth leaves role_name un-HMACed;
+    /// KV response metadata.version is numeric and is likewise not HMACed.
+    /// Token/accessor and secret data are neither decoded nor returned.
+    pub async fn verify_secret_reads(
+        &self,
+        reads: &[AuditedSecretRead<'_>],
+    ) -> Result<(), SecretError> {
+        if self.enabled_devices().await? == 0 {
+            return Err(SecretError::VersionUnavailable);
+        }
+        if reads.is_empty() {
+            return Ok(());
+        }
+        let path =
+            std::env::var("OPENBAO_AUDIT_LOG_FILE").map_err(|_| SecretError::VersionUnavailable)?;
+        let maximum: u64 = std::env::var("OPENBAO_AUDIT_LOG_MAX_BYTES")
+            .map_err(|_| SecretError::VersionUnavailable)?
+            .parse()
+            .map_err(|_| SecretError::Malformed)?;
+        if !std::path::Path::new(&path).is_absolute() || maximum == 0 {
+            return Err(SecretError::Malformed);
+        }
+        let mut expected = HashMap::new();
+        for read in reads {
+            let (namespace, mount, key) = split_locator(&read.reference.locator)?;
+            if read.role_name.is_empty()
+                || read.reference.version == 0
+                || Uuid::parse_str(read.request_id).is_err()
+                || expected
+                    .insert(
+                        read.request_id,
+                        (
+                            format!("{namespace}/"),
+                            format!("{mount}/data/{key}"),
+                            read.reference.version,
+                            read.role_name,
+                            read.not_before,
+                        ),
+                    )
+                    .is_some()
+            {
+                return Err(SecretError::Malformed);
+            }
+        }
+        use std::io::{BufRead, BufReader, Read};
+        let file = std::fs::File::open(path).map_err(|_| SecretError::VersionUnavailable)?;
+        let length = file
+            .metadata()
+            .map_err(|_| SecretError::VersionUnavailable)?
+            .len();
+        if length > maximum {
+            return Err(SecretError::VersionUnavailable);
+        }
+        // Bound this exact snapshot. A response appended later is unavailable
+        // this round and will be observed by the original Workflow next round.
+        let reader = BufReader::new(file.take(length));
+        let mut requests = HashMap::new();
+        let mut responses = HashMap::new();
+        for line in reader.lines() {
+            let line = line.map_err(|_| SecretError::VersionUnavailable)?;
+            let entry: AuditedReadEntry =
+                serde_json::from_str(&line).map_err(|_| SecretError::Malformed)?;
+            let Some(request) = entry.request else {
+                continue;
+            };
+            let Some((namespace, path, version, role, not_before)) =
+                expected.get(request.id.as_str())
+            else {
+                continue;
+            };
+            let at = chrono::DateTime::parse_from_rfc3339(
+                entry.time.as_deref().ok_or(SecretError::Malformed)?,
+            )
+            .map_err(|_| SecretError::Malformed)?;
+            if request.operation.as_deref() != Some("read")
+                || request.path.as_deref() != Some(path)
+                || request.namespace.as_ref().and_then(|v| v.path.as_deref()) != Some(namespace)
+                || entry
+                    .error
+                    .as_deref()
+                    .is_some_and(|error| !error.is_empty())
+                || entry
+                    .auth
+                    .as_ref()
+                    .and_then(|a| a.metadata.as_ref())
+                    .and_then(|m| m.role_name.as_deref())
+                    != Some(*role)
+                || entry
+                    .auth
+                    .as_ref()
+                    .and_then(|a| a.policy_results.as_ref())
+                    .is_none_or(|p| !p.allowed)
+                || at < *not_before
+                || at > chrono::Utc::now()
+            {
+                return Err(SecretError::Refused);
+            }
+            match entry.kind.as_str() {
+                "request" => {
+                    if requests.insert(request.id, at).is_some() {
+                        return Err(SecretError::Malformed);
+                    }
+                }
+                "response" => {
+                    if entry
+                        .response
+                        .as_ref()
+                        .and_then(|r| r.data.as_ref())
+                        .and_then(|d| d.metadata.as_ref())
+                        .and_then(|m| m.version)
+                        != Some(*version)
+                        || responses.insert(request.id, at).is_some()
+                    {
+                        return Err(SecretError::VersionUnavailable);
+                    }
+                }
+                _ => return Err(SecretError::Malformed),
+            }
+        }
+        if requests.len() != expected.len()
+            || responses.len() != expected.len()
+            || requests
+                .iter()
+                .any(|(id, at)| responses.get(id).is_none_or(|response| response < at))
+        {
+            return Err(SecretError::VersionUnavailable);
+        }
+        Ok(())
+    }
+
     pub fn from_env() -> Result<Self, String> {
         let get = |k: &str| std::env::var(k).map_err(|_| format!("缺少 {k}"));
         let (role_id, role_name, wrapped) = delivered("OPENBAO_AUDIT")?;
@@ -1702,6 +1842,55 @@ impl AuditObserver {
             _ => Err(SecretError::Malformed),
         }
     }
+}
+
+// Narrow native audit decoding: serde discards all secret data, HMAC tokens,
+// headers and unrelated metadata. No native audit log is copied into Core.
+#[derive(Deserialize)]
+struct AuditedReadEntry {
+    #[serde(rename = "type")]
+    kind: String,
+    time: Option<String>,
+    request: Option<AuditedReadRequest>,
+    response: Option<AuditedReadResponse>,
+    auth: Option<AuditedReadAuth>,
+    error: Option<String>,
+}
+#[derive(Deserialize)]
+struct AuditedReadRequest {
+    id: String,
+    operation: Option<String>,
+    path: Option<String>,
+    namespace: Option<AuditedReadNamespace>,
+}
+#[derive(Deserialize)]
+struct AuditedReadNamespace {
+    path: Option<String>,
+}
+#[derive(Deserialize)]
+struct AuditedReadAuth {
+    metadata: Option<AuditedReadIdentity>,
+    policy_results: Option<AuditedReadPolicy>,
+}
+#[derive(Deserialize)]
+struct AuditedReadIdentity {
+    role_name: Option<String>,
+}
+#[derive(Deserialize)]
+struct AuditedReadPolicy {
+    allowed: bool,
+}
+#[derive(Deserialize)]
+struct AuditedReadResponse {
+    data: Option<AuditedReadData>,
+}
+#[derive(Deserialize)]
+struct AuditedReadData {
+    metadata: Option<AuditedReadVersion>,
+}
+#[derive(Deserialize)]
+struct AuditedReadVersion {
+    version: Option<u32>,
 }
 
 /// platform/ 的 locator 是 namespace/mount/path；Tenant namespace 固定为

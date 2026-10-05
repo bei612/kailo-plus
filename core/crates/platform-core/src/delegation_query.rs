@@ -205,6 +205,7 @@ struct TargetRow {
     redaction_policy: String,
     tool_resource_id: Option<Uuid>,
     output_schema_hash: Option<String>,
+    result_exposure_mode: Option<String>,
 }
 
 pub async fn targets(
@@ -237,35 +238,70 @@ pub async fn targets(
     let mut scopes = Vec::new();
     let mut next = None;
     if can_grant {
-        // Only the two real Invocation producers, not every row in the catalog.
-        // No Tool/CRUD placeholder, no permission derived from a Grant or route.
+        // Real Invocation producers and immutable installed ToolBindings only.
+        // Approved metadata never substitutes for the per-target fresh checks.
         let rows: Vec<TargetRow> = match sqlx::query_as(
             "select * from (select r.id resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy,
-            null::uuid tool_resource_id,null::text output_schema_hash
+            null::uuid tool_resource_id,null::text output_schema_hash,null::text result_exposure_mode
             from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id
-            join catalog.action_definition a on a.action_key='automation.run' and a.status='ACTIVE'
+            join catalog.action_definition a on a.action_key='automation.run' and a.status='ACTIVE' and a.component_release_id is null
             where r.tenant_id=$1 and r.home_workspace_id=$2 and r.type_key='automation'
               and r.owner_principal_id=$3 and r.state='ACTIVE' and r.projection_action_execution_id is null
               and r.application_binding_id is null and d.workspace_id=$2 and d.executor_installation_resource_id=$4
             union all
             select r.id resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy,
-            null::uuid tool_resource_id,null::text output_schema_hash
+            null::uuid tool_resource_id,null::text output_schema_hash,null::text result_exposure_mode
             from catalog.resource r join catalog.agent_installation i on i.resource_id=r.id
-            join catalog.action_definition a on a.action_key='agent.invoke' and a.status='ACTIVE'
+            join catalog.action_definition a on a.action_key='agent.invoke' and a.status='ACTIVE' and a.component_release_id is null
             where r.id=$4 and r.tenant_id=$1 and r.home_workspace_id=$2 and r.type_key='agent.installation'
               and r.state='ACTIVE' and r.projection_action_execution_id is null and r.application_binding_id is null
               and i.workspace_id=$2 and i.state='ACTIVE'
             union all
             select i.resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy,
-            t.resource_id tool_resource_id,t.output_schema_hash
+            t.resource_id tool_resource_id,t.output_schema_hash,null::text result_exposure_mode
             from catalog.tool_binding b join catalog.agent_installation i on i.resource_id=b.installation_resource_id
             join catalog.resource r on r.id=i.resource_id and r.tenant_id=$1 and r.home_workspace_id=$2
               and r.state='ACTIVE' and r.projection_action_execution_id is null
             join catalog.tool_definition t on t.resource_id=b.tool_resource_id and t.status='ACTIVE' and t.source='PLATFORM_NATIVE'
-            join catalog.action_definition a on a.action_key=t.action_key and a.status='ACTIVE'
+            join catalog.action_definition a on a.action_key=t.action_key and a.status='ACTIVE' and a.component_release_id is null
             where i.resource_id=$4 and i.state='ACTIVE' and i.workspace_id=$2 and b.workspace_id=$2
               and b.projection_generation=i.active_projection_generation and b.agent_version_asset_id=i.pinned_version_asset_id
-              and b.status in ('NO_PERMISSION','ACTIVE') and t.action_key in ('agent.memory.entry.list','agent.memory.entry.read')) targets
+              and b.status in ('NO_PERMISSION','ACTIVE') and t.action_key in ('agent.memory.entry.list','agent.memory.entry.read')
+            union all
+            select target.id resource_id,a.action_key,a.version action_version,a.target_type,a.obs_redaction_policy redaction_policy,
+              t.resource_id tool_resource_id,t.output_schema_hash,a.result_exposure result_exposure_mode
+            from catalog.tool_binding tool_binding
+            join catalog.agent_installation i on i.resource_id=tool_binding.installation_resource_id
+              and i.active_projection_generation=tool_binding.projection_generation
+              and i.pinned_version_asset_id=tool_binding.agent_version_asset_id
+            join catalog.agent_runtime_projection agent on agent.installation_resource_id=i.resource_id
+              and agent.generation=tool_binding.projection_generation and agent.agent_version_asset_id=tool_binding.agent_version_asset_id
+              and agent.state='ACTIVE'
+            join catalog.agent_version v on v.asset_id=tool_binding.agent_version_asset_id
+            join catalog.tool_definition t on t.resource_id=tool_binding.tool_resource_id and t.source='APPLICATION' and t.status='ACTIVE'
+            join catalog.resource tool on tool.id=t.resource_id and tool.tenant_id=$1 and tool.state='ACTIVE'
+              and tool.type_key='tool.definition' and tool.projection_action_execution_id is null
+            join catalog.application_binding implementation on implementation.id=tool.application_binding_id
+              and implementation.tenant_id=$1 and implementation.state='ACTIVE'
+              and (implementation.workspace_id is null or implementation.workspace_id=$2)
+            join projection.application_runtime runtime on runtime.binding_id=implementation.id
+              and runtime.generation=t.application_projection_generation and runtime.state='ACTIVE' and runtime.gateway_state='ACTIVE'
+              and implementation.active_projection_generation=runtime.generation
+              and runtime.component_release_id=implementation.component_release_id
+            join catalog.action_definition a on a.component_release_id=runtime.component_release_id
+              and a.action_key=t.action_key and a.status='ACTIVE'
+            join catalog.resource r on r.application_binding_id=implementation.id and r.tenant_id=$1
+              and r.state='ACTIVE' and r.projection_action_execution_id is null
+              and (r.home_workspace_id is null or r.home_workspace_id=$2)
+            join catalog.resource_type_definition type on type.id=r.resource_type_definition_id
+              and type.type_key=r.type_key and type.component_release_id=runtime.component_release_id and type.status='ACTIVE'
+            join lateral (select r.id where a.target_type='RESOURCE'
+              union all select asset.id from catalog.asset asset where a.target_type='ASSET'
+                and asset.resource_id=r.id and asset.tenant_id=r.tenant_id and asset.state='ACTIVE'
+                and asset.projection_action_execution_id is null) target on true
+            where i.resource_id=$4 and i.state='ACTIVE' and i.workspace_id=$2
+              and tool_binding.workspace_id=$2 and tool_binding.status in ('NO_PERMISSION','ACTIVE')
+              and v.content->'capabilityRequirements' @> jsonb_build_array(t.capability_contract_key)) targets
             order by resource_id,action_key,tool_resource_id offset $5 limit $6",
         ).bind(ctx.tenant_id).bind(installation.workspace_id).bind(ctx.tenant_principal_id)
             .bind(id).bind(offset).bind(limit).fetch_all(&mut *conn).await {
@@ -274,6 +310,13 @@ pub async fn targets(
         next =
             (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);
         for row in rows {
+            let mode = match row.result_exposure_mode {
+                Some(mode) => match serde_json::from_value(serde_json::Value::String(mode)) {
+                    Ok(mode) => mode,
+                    Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+                },
+                None => contracts::ResultExposureMode::ConsumeOnly,
+            };
             let scope = contracts::ScopeElement {
                 action_key: row.action_key,
                 action_version: i64::from(row.action_version),
@@ -281,7 +324,7 @@ pub async fn targets(
                 target_id: Some(row.resource_id.to_string()),
                 create_workspace_id: None,
                 tool_resource_id: row.tool_resource_id.map(|id| id.to_string()),
-                result_exposure_mode: contracts::ResultExposureMode::ConsumeOnly,
+                result_exposure_mode: mode,
                 output_schema_hash: row
                     .output_schema_hash
                     .unwrap_or_else(delegation::output_schema_hash),

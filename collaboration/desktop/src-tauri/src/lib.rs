@@ -193,6 +193,7 @@ pub fn run() {
             platform::commands::platform_cancel_sign_in,
             platform::commands::platform_sign_out,
             platform::commands::platform_api,
+            platform::native_page::platform_open_native_page,
             platform::commands::platform_register_device,
             acknowledge_pending_navigation_deep_link,
             apply_workspace,

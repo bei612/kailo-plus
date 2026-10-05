@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/application_model_call_mode.schema.json",
+  "title": "ApplicationModelCallMode", "type": "string",
+  "enum": ["PLATFORM_LLM_ROUTE", "SELF_MANAGED_MODEL", "NONE"]
+}

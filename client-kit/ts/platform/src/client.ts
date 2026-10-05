@@ -6,6 +6,8 @@
 import type {
   ActionCommand,
   ActionSubmission,
+  ApplicationBindingPage,
+  ApplicationNativePage,
   AgentDefinitionPage,
   AgentDefinitionView,
   AgentInstallationPage,
@@ -88,6 +90,14 @@ export function createBffClient(transport: BffTransport) {
 
     /** 我能进的 Workspace。列表已排除进不去的——列出一个点进去 403 的比不列更糟。 */
     workspaces: () => get<WorkspaceView[]>("/api/v1/workspaces"),
+
+    /** Integration metadata only; credentials and native administration stay server-side. */
+    applicationNativePage: (bindingId: string) => get<ApplicationNativePage>(`/api/v1/application-bindings/${encodeURIComponent(bindingId)}/native-page`),
+    applicationBindings: (workspaceId?: string, offset = 0) => {
+      const query = new URLSearchParams({ offset: String(offset) });
+      if (workspaceId !== undefined) query.set("workspaceId", workspaceId);
+      return get<ApplicationBindingPage>(`/api/v1/application-bindings?${query}`);
+    },
 
     collaborationUserState: () => get<CollaborationUserState>("/api/v1/user-state"),
     workspaceMessages: (workspaceId: string) =>

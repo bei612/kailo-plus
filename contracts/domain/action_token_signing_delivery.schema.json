@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/action_token_signing_delivery.schema.json",
+  "title": "ActionTokenSigningDelivery",
+  "description": "DD-49/70/71/94：Core-only签发投递。只有版本化OpenBao引用及Agent已发布JWKS文件引用，不含私钥正文。",
+  "type": "object", "additionalProperties": false,
+  "required": ["issuer", "tokenSeconds", "secretLocator", "secretVersion", "secretAudience", "privateKeyField", "jwksFile"],
+  "properties": {
+    "issuer": {"type": "string"}, "tokenSeconds": {"type": "integer"},
+    "secretLocator": {"type": "string"}, "secretVersion": {"type": "integer"},
+    "secretAudience": {"type": "string"}, "privateKeyField": {"type": "string"},
+    "jwksFile": {"type": "string"}
+  }
+}

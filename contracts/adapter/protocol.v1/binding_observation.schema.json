@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/binding_observation.schema.json",
+  "title": "AdapterBindingObservation",
+  "description": "07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。",
+  "type": "object", "additionalProperties": false,
+  "required": ["bindingId", "tenantId", "nativeInstanceRef", "nativeScopeRef", "isolationMode", "configDigest", "secretRefDigest", "artifactDigest", "secretReads", "executionMappings"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"}, "tenantId": {"type": "string", "format": "uuid"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "nativeInstanceRef": {"type": "string"}, "nativeScopeRef": {"type": "string"},
+    "isolationMode": {"$ref": "../../enums/application_isolation_mode.schema.json"},
+    "configDigest": {"type": "string"}, "secretRefDigest": {"type": "string"}, "artifactDigest": {"type": "string"},
+    "executionMappings": {"type": "array", "items": {
+      "title": "AdapterExecutionMapping", "type": "object", "additionalProperties": false,
+      "required": ["actionKey", "actionVersion", "nativeType", "cancelCapability"],
+      "properties": {
+        "actionKey": {"type": "string"}, "actionVersion": {"type": "integer"},
+        "nativeType": {"type": "string"},
+        "cancelCapability": {"$ref": "../../enums/native_cancel_capability.schema.json"}
+      }
+    }},
+    "secretReads": {"type": "array", "items": {
+      "title": "AdapterSecretRead", "type": "object", "additionalProperties": false,
+      "required": ["secretKey", "requestId", "version", "audience"],
+      "properties": {
+        "secretKey": {"type": "string"}, "requestId": {"type": "string", "format": "uuid"},
+        "version": {"type": "integer"}, "audience": {"type": "string"}
+      }
+    }}
+  }
+}

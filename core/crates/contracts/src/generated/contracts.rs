@@ -137,6 +137,85 @@ pub enum VariantKind {
     Task,
 }
 
+/// 07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterBindingObservation {
+    pub artifact_digest: String,
+
+    pub binding_id: String,
+
+    pub config_digest: String,
+
+    pub execution_mappings: Vec<AdapterExecutionMapping>,
+
+    pub isolation_mode: ApplicationIsolationMode,
+
+    pub native_instance_ref: String,
+
+    pub native_scope_ref: String,
+
+    pub secret_reads: Vec<AdapterSecretRead>,
+
+    pub secret_ref_digest: String,
+
+    pub tenant_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterExecutionMapping {
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    pub cancel_capability: NativeCancelCapability,
+
+    pub native_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum NativeCancelCapability {
+    #[serde(rename = "SUPPORTED")]
+    Supported,
+
+    #[serde(rename = "UNSUPPORTED")]
+    Unsupported,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ApplicationIsolationMode {
+    #[serde(rename = "DEDICATED_INSTANCE")]
+    DedicatedInstance,
+
+    Namespace,
+
+    #[serde(rename = "NATIVE_TENANT")]
+    NativeTenant,
+
+    #[serde(rename = "RESOURCE_FILTER")]
+    ResourceFilter,
+
+    #[serde(rename = "RESOURCE_INSTANCE")]
+    ResourceInstance,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterSecretRead {
+    pub audience: String,
+
+    pub request_id: String,
+
+    pub secret_key: String,
+
+    pub version: i64,
+}
+
 /// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
 /// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -163,15 +242,6 @@ pub struct AdapterExecutionObservation {
     pub terminal_at: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum NativeCancelCapability {
-    #[serde(rename = "SUPPORTED")]
-    Supported,
-
-    #[serde(rename = "UNSUPPORTED")]
-    Unsupported,
-}
-
 /// design03§6 ExternalExecution 的既定平台状态；HTTP成功和cancel accepted均不构成终态。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -188,6 +258,21 @@ pub enum ExternalExecutionStatus {
     Succeeded,
 
     Unknown,
+}
+
+/// 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
+/// 未取得时只用冻结幂等键查证。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterExecutionReference {
+    pub external_execution_id: String,
+
+    pub idempotency_key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_id: Option<String>,
+
+    pub native_type: String,
 }
 
 /// ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入
@@ -248,6 +333,60 @@ pub struct ExecutionClass {
     pub terminal_at: Option<String>,
 }
 
+/// DD-48/51/94 extract_usage 的原生终态用量元数据；scope/customer/dimensions 只由 Core 原
+/// ExternalExecution 决定。完整集合与冻结 action meters 精确相等，缺失不是零。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterExecutionUsage {
+    pub external_execution_id: String,
+
+    pub idempotency_key: String,
+
+    pub measurements: Vec<Measurement>,
+
+    pub native_id: String,
+
+    pub native_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Measurement {
+    pub meter_key: String,
+
+    pub occurred_at: String,
+
+    pub quantity: i64,
+}
+
+/// ADR-12
+/// adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterPepCheckRequest {
+    pub action_token: String,
+
+    pub arguments_json: String,
+
+    pub binding_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_reference: Option<ContentReferenceClass>,
+
+    pub operation: String,
+}
+
+/// 只在原动作和精确binding仍被fresh授权时返回当前授权revision；不是可复用的新授权票据。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterPepCheckResponse {
+    pub action_execution_id: String,
+
+    pub authorization_min_zed_token: String,
+
+    pub operation_id: String,
+}
+
 /// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -284,6 +423,15 @@ pub struct ActionCommand {
     /// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_version_content: Option<ContentClass>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_binding_create: Option<ApplicationBindingCreateClass>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_binding_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_binding_version: Option<i64>,
 
     /// AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -473,6 +621,83 @@ pub struct ContentTurnLimits {
     pub idle_timeout_seconds: i64,
 
     pub max_turn_duration_seconds: i64,
+}
+
+/// DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
+/// ActionCommand。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingCreateClass {
+    pub adapter_service_ref: String,
+
+    pub binding_id: String,
+
+    pub call_identity_mode: ApplicationCallIdentityMode,
+
+    pub capability_categories: Vec<ApplicationBindingCreateCapabilityCategory>,
+
+    pub component_release_id: String,
+
+    pub isolation_mode: ApplicationIsolationMode,
+
+    pub model_call_mode: ApplicationModelCallMode,
+
+    pub native_instance_ref: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_scope_ref: Option<String>,
+
+    pub normalized_config_json: String,
+
+    pub retain_on_tenant_delete: bool,
+
+    pub secret_refs: Vec<ApplicationBindingCreateSecretRef>,
+
+    pub service_principal_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ApplicationCallIdentityMode {
+    #[serde(rename = "END_USER_TOKEN")]
+    EndUserToken,
+
+    #[serde(rename = "INSTANCE_SERVICE")]
+    InstanceService,
+
+    #[serde(rename = "TENANT_SERVICE")]
+    TenantService,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ApplicationBindingCreateCapabilityCategory {
+    pub category: String,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ApplicationModelCallMode {
+    None,
+
+    #[serde(rename = "PLATFORM_LLM_ROUTE")]
+    PlatformLlmRoute,
+
+    #[serde(rename = "SELF_MANAGED_MODEL")]
+    SelfManagedModel,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingCreateSecretRef {
+    pub audience: String,
+
+    pub locator: String,
+
+    pub secret_key: String,
+
+    pub version: i64,
 }
 
 /// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
@@ -1865,6 +2090,93 @@ pub struct AgentVersionView {
     pub owner_principal_id: String,
 
     pub state: AgentVersionState,
+}
+
+/// 当前HUMAN管理scope内的真实接入元数据。不是组件内部状态、配置、SecretRef或原生管理credential。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingPage {
+    pub bindings: Vec<ApplicationBindingView>,
+
+    pub can_create: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_projection_generation: Option<i64>,
+
+    pub binding_id: String,
+
+    pub can_disable: bool,
+
+    pub capability_categories: Vec<ApplicationBindingCapability>,
+
+    pub component_release_id: String,
+
+    pub component_type_key: String,
+
+    /// Approved release declares an independent native page. Launch still freshly checks
+    /// binding, scope and deployment origins.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_native_page: Option<bool>,
+
+    pub state: ApplicationBindingState,
+
+    pub tenant_id: String,
+
+    pub version: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ApplicationBindingCapability {
+    pub category: String,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ApplicationBindingState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+
+    #[serde(rename = "DISABLING")]
+    Disabling,
+
+    #[serde(rename = "ERROR")]
+    Error,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+
+    #[serde(rename = "UPGRADING")]
+    Upgrading,
+}
+
+/// Authorized ACTIVE binding's independent native page. Exact origin is release and
+/// deployment approved; no native credential or page body is returned.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationNativePage {
+    pub allowed_origins: Vec<String>,
+
+    pub binding_id: String,
+
+    pub origin: String,
+
+    pub projection_generation: i64,
+
+    pub url: String,
 }
 
 /// POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为
@@ -3651,6 +3963,25 @@ pub struct WorkspacePreferenceRequest {
     pub version: i64,
 }
 
+/// DD-49/70/71/94：Core-only签发投递。只有版本化OpenBao引用及Agent已发布JWKS文件引用，不含私钥正文。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionTokenSigningDelivery {
+    pub issuer: String,
+
+    pub jwks_file: String,
+
+    pub private_key_field: String,
+
+    pub secret_audience: String,
+
+    pub secret_locator: String,
+
+    pub secret_version: i64,
+
+    pub token_seconds: i64,
+}
+
 /// Installation 只取自受验签的 Invocation Session，不接受调用方目标覆盖。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentMemoryEntryListInput {}
@@ -3745,6 +4076,97 @@ pub struct AgentVersionContentTurnLimits {
     pub idle_timeout_seconds: i64,
 
     pub max_turn_duration_seconds: i64,
+}
+
+/// DD-94部署投递面：adapter服务引用解析到固定部署产物/原生实例与受限传输。不是Catalog或业务授权。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ApplicationAdapterDirectory {
+    pub adapters: Vec<ApplicationAdapterDelivery>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationAdapterDelivery {
+    pub action_token_audience: String,
+
+    pub adapter_service_ref: String,
+
+    pub artifact_digest: String,
+
+    pub base_url: String,
+
+    pub max_response_bytes: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_url: Option<String>,
+
+    pub native_instance_ref: String,
+
+    pub secret_readers: Vec<ApplicationSecretReader>,
+
+    pub timeout_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationSecretReader {
+    pub audience: String,
+
+    pub role_name: String,
+
+    pub service_principal_id: String,
+}
+
+/// DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
+/// ActionCommand。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingCreate {
+    pub adapter_service_ref: String,
+
+    pub binding_id: String,
+
+    pub call_identity_mode: ApplicationCallIdentityMode,
+
+    pub capability_categories: Vec<ApplicationBindingCreateCapabilityCategoryClass>,
+
+    pub component_release_id: String,
+
+    pub isolation_mode: ApplicationIsolationMode,
+
+    pub model_call_mode: ApplicationModelCallMode,
+
+    pub native_instance_ref: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_scope_ref: Option<String>,
+
+    pub normalized_config_json: String,
+
+    pub retain_on_tenant_delete: bool,
+
+    pub secret_refs: Vec<ApplicationBindingCreateSecretRefClass>,
+
+    pub service_principal_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ApplicationBindingCreateCapabilityCategoryClass {
+    pub category: String,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingCreateSecretRefClass {
+    pub audience: String,
+
+    pub locator: String,
+
+    pub secret_key: String,
+
+    pub version: i64,
 }
 
 /// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
@@ -4490,6 +4912,50 @@ pub struct AgentTaskWorkflowInput {
     pub observation_interval_seconds: i64,
 
     pub projection_generation: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingAdvanceRequest {
+    pub cancel_requested: bool,
+
+    pub run_id: String,
+
+    pub target: ApplicationBindingAdvanceRequestTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingAdvanceRequestTarget {
+    pub action_execution_id: String,
+
+    pub binding_id: String,
+
+    pub binding_version: i64,
+
+    pub workflow_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingAdvanceResult {
+    pub binding_id: String,
+
+    pub status: TaskStatus,
+
+    pub waiting_reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingTarget {
+    pub action_execution_id: String,
+
+    pub binding_id: String,
+
+    pub binding_version: i64,
+
+    pub workflow_id: String,
 }
 
 /// consume、invalidate、withdraw 三个 Update 的结果：执行后的 Approval 状态。

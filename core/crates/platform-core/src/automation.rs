@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{
     governance::{self, Actor, Definition, Governance, Refusal, Target},
     service_api::ServiceState,
-    spicedb::Consistency,
+    spicedb::{Consistency, Relationship, RelationshipFilter, SpiceDb, Write},
 };
 
 pub(crate) const ACTION: &str = "automation.run";
@@ -144,6 +144,90 @@ pub(crate) async fn management_projection(
         )
         .await
         .map_err(|_| Refusal::Unavailable("Automation owner 投影不可核验".into()))
+}
+
+// DD-107: the explicit definition selects one Installation, not a set of
+// independently privileged Agents. Keep its executor relationship exact while
+// leaving owner/reader and every other Resource relationship untouched.
+async fn project_executor(
+    spicedb: &SpiceDb,
+    resource: Uuid,
+    agent: Uuid,
+    page: u32,
+) -> Result<(), Refusal> {
+    let resource = resource.to_string();
+    let agent = agent.to_string();
+    let filter = RelationshipFilter {
+        object_type: "resource",
+        object_id: Some(&resource),
+        relation: Some("executor"),
+        subject_principal: None,
+    };
+    let read = || async {
+        let rows = spicedb
+            .read_native(&filter, page)
+            .await
+            .map_err(|_| Refusal::Unavailable("Automation executor 投影不可读".into()))?;
+        rows.into_iter()
+            .map(|row| {
+                let text = |path| row.pointer(path).and_then(Value::as_str);
+                if text("/resource/objectType") != Some("resource")
+                    || text("/resource/objectId") != Some(resource.as_str())
+                    || text("/relation") != Some("executor")
+                    || text("/subject/object/objectType") != Some("principal")
+                    || text("/subject/optionalRelation").is_some_and(|value| !value.is_empty())
+                    || text("/optionalCaveat/caveatName").is_some_and(|value| !value.is_empty())
+                {
+                    return Err(Refusal::Unavailable(
+                        "Automation executor 投影形状不可核验".into(),
+                    ));
+                }
+                let principal = text("/subject/object/objectId")
+                    .and_then(|value| Uuid::parse_str(value).ok())
+                    .ok_or_else(|| {
+                        Refusal::Unavailable("Automation executor 主体不可核验".into())
+                    })?;
+                if text("/subject/object/objectId") != Some(principal.to_string().as_str()) {
+                    return Err(Refusal::Unavailable(
+                        "Automation executor 非规范主体".into(),
+                    ));
+                }
+                Ok(principal.to_string())
+            })
+            .collect::<Result<Vec<_>, Refusal>>()
+    };
+    let before = read().await?;
+    let relationship = |subject_principal| Relationship {
+        object_type: "resource".into(),
+        object_id: resource.clone(),
+        relation: "executor".into(),
+        subject_principal,
+    };
+    let mut updates: Vec<_> = before
+        .iter()
+        .filter(|subject| *subject != &agent)
+        .map(|subject| (Write::Delete, relationship(subject.clone())))
+        .collect();
+    if !before.contains(&agent) {
+        updates.push((Write::Touch, relationship(agent.clone())));
+    }
+    if !updates.is_empty() {
+        let revision = spicedb
+            .write(&updates)
+            .await
+            .map_err(|_| Refusal::Unavailable("Automation executor 投影写入结果不明".into()))?;
+        if revision.is_empty() {
+            return Err(Refusal::Unavailable(
+                "Automation executor 投影缺少 revision".into(),
+            ));
+        }
+    }
+    if read().await? != vec![agent] {
+        return Err(Refusal::Unavailable(
+            "Automation executor 投影尚未精确收敛".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn invalid_management() -> Refusal {
@@ -944,6 +1028,26 @@ pub(crate) async fn management_dispatch(
             };
         }
     }
+    // Resolve from the frozen definition, never the request's principal. Row
+    // locks cover revoke/retire while the original AE performs its projection.
+    let executor: Option<Uuid> = sqlx::query_scalar(
+        "select i.agent_principal_id from catalog.agent_installation i
+        join catalog.resource r on r.id=i.resource_id
+        join identity.principal p on p.id=i.agent_principal_id
+        where i.resource_id=$1 and i.workspace_id=$2 and i.state='ACTIVE'
+          and r.tenant_id=$3 and r.home_workspace_id=$2 and r.type_key='agent.installation'
+          and r.state='ACTIVE' and r.projection_action_execution_id is null
+          and p.tenant_id=$3 and p.kind='AGENT' and p.status='ACTIVE'
+        for update of i,r,p",
+    )
+    .bind(row.executor_installation_resource_id)
+    .bind(row.workspace_id)
+    .bind(row.tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(executor) = executor else {
+        return management_abort(g, tx, &ae, def, &row, version.asset_id, creating).await;
+    };
     let parent = match management_projection(g, &row).await {
         Ok(matched) => matched,
         Err(_) => return management_unknown(tx, &ae, def).await,
@@ -965,6 +1069,14 @@ pub(crate) async fn management_dispatch(
         {
             return management_unknown(tx, &ae, def).await;
         }
+    }
+    // A publish of an existing definition also reconciles this exact original
+    // authority; missing legacy projection is not repaired through a DB seed.
+    if project_executor(&g.spicedb, row.id, executor, g.cfg.relationship_page)
+        .await
+        .is_err()
+    {
+        return management_unknown(tx, &ae, def).await;
     }
     let asset = match g
         .spicedb
@@ -2635,5 +2747,193 @@ mod run_registration_tests {
                 "{rejected}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod executor_projection_tests {
+    use super::*;
+    use axum::{
+        extract::State,
+        http::{StatusCode, Uri},
+        response::IntoResponse,
+        Json, Router,
+    };
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct Native {
+        rows: Vec<Value>,
+        writes: Vec<Value>,
+        lose_ack: bool,
+        ignore_write: bool,
+        unavailable: bool,
+    }
+
+    fn executor(resource: Uuid, agent: Uuid) -> Value {
+        json!({"resource":{"objectType":"resource","objectId":resource},"relation":"executor",
+            "subject":{"object":{"objectType":"principal","objectId":agent}}})
+    }
+
+    async fn native(
+        State(state): State<Arc<Mutex<Native>>>,
+        uri: Uri,
+        Json(body): Json<Value>,
+    ) -> axum::response::Response {
+        let mut state = state.lock().unwrap();
+        if uri.path() == "/v1/relationships/read" {
+            assert_eq!(body["consistency"], json!({"fullyConsistent":true}));
+            assert_eq!(body["relationshipFilter"]["resourceType"], "resource");
+            assert_eq!(body["relationshipFilter"]["optionalRelation"], "executor");
+            assert!(
+                body["relationshipFilter"]
+                    .get("optionalSubjectFilter")
+                    .is_none(),
+                "must read all prior executors"
+            );
+            if state.unavailable {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+            return state
+                .rows
+                .iter()
+                .map(|row| json!({"result":{"relationship":row}}).to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+                .into_response();
+        }
+        assert_eq!(uri.path(), "/v1/relationships/write");
+        state.writes.push(body.clone());
+        if !state.ignore_write {
+            for update in body["updates"].as_array().unwrap() {
+                let row = &update["relationship"];
+                assert_eq!(row["relation"], "executor");
+                state.rows.retain(|old| old != row);
+                if update["operation"] == "OPERATION_TOUCH" {
+                    state.rows.push(row.clone());
+                } else {
+                    assert_eq!(update["operation"], "OPERATION_DELETE");
+                }
+            }
+        }
+        if state.lose_ack {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+        Json(json!({"writtenAt":{"token":"native-revision"}})).into_response()
+    }
+
+    async fn fixture(
+        initial: Native,
+    ) -> (SpiceDb, Arc<Mutex<Native>>, tokio::task::JoinHandle<()>) {
+        let state = Arc::new(Mutex::new(initial));
+        let app = Router::new().fallback(native).with_state(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let spice = SpiceDb::for_test(format!("http://{}", listener.local_addr().unwrap()));
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (spice, state, task)
+    }
+
+    #[tokio::test]
+    async fn explicit_executor_is_projected_and_reentry_does_not_regrant() {
+        let resource = Uuid::new_v4();
+        let agent = Uuid::new_v4();
+        let (spice, state, task) = fixture(Native::default()).await;
+        project_executor(&spice, resource, agent, 100)
+            .await
+            .unwrap();
+        project_executor(&spice, resource, agent, 100)
+            .await
+            .unwrap();
+        assert_eq!(state.lock().unwrap().rows, vec![executor(resource, agent)]);
+        assert_eq!(state.lock().unwrap().writes.len(), 1);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn publish_removes_other_executors_without_touching_owner_permissions() {
+        let resource = Uuid::new_v4();
+        let agent = Uuid::new_v4();
+        let (spice, state, task) = fixture(Native {
+            rows: vec![
+                executor(resource, Uuid::new_v4()),
+                executor(resource, agent),
+            ],
+            ..Default::default()
+        })
+        .await;
+        project_executor(&spice, resource, agent, 100)
+            .await
+            .unwrap();
+        assert_eq!(state.lock().unwrap().rows, vec![executor(resource, agent)]);
+        assert_eq!(
+            state.lock().unwrap().writes[0]["updates"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            state.lock().unwrap().writes[0]["updates"][0]["operation"],
+            "OPERATION_DELETE"
+        );
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn lost_write_ack_stays_unknown_until_exact_native_readback() {
+        let resource = Uuid::new_v4();
+        let agent = Uuid::new_v4();
+        let (spice, state, task) = fixture(Native {
+            lose_ack: true,
+            ..Default::default()
+        })
+        .await;
+        assert!(project_executor(&spice, resource, agent, 100)
+            .await
+            .is_err());
+        project_executor(&spice, resource, agent, 100)
+            .await
+            .unwrap();
+        assert_eq!(state.lock().unwrap().writes.len(), 1);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn successful_ack_or_unreadable_relationship_is_not_projection_proof() {
+        let resource = Uuid::new_v4();
+        let agent = Uuid::new_v4();
+        let (spice, _, task) = fixture(Native {
+            ignore_write: true,
+            ..Default::default()
+        })
+        .await;
+        assert!(project_executor(&spice, resource, agent, 100)
+            .await
+            .is_err());
+        task.abort();
+        let (spice, state, task) = fixture(Native {
+            unavailable: true,
+            ..Default::default()
+        })
+        .await;
+        assert!(project_executor(&spice, resource, agent, 100)
+            .await
+            .is_err());
+        assert!(state.lock().unwrap().writes.is_empty());
+        task.abort();
+        let mut invalid = executor(resource, agent);
+        invalid["optionalCaveat"] = json!({"caveatName":"unknown"});
+        let (spice, state, task) = fixture(Native {
+            rows: vec![invalid],
+            ..Default::default()
+        })
+        .await;
+        assert!(project_executor(&spice, resource, agent, 100)
+            .await
+            .is_err());
+        assert!(state.lock().unwrap().writes.is_empty());
+        task.abort();
     }
 }

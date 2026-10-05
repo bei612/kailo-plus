@@ -14,6 +14,67 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
+	for _, fixture := range []struct {
+		name   string
+		target any
+	}{
+		{"application-binding-observations.sample.json", new([]generated.AdapterBindingObservation)},
+		{"adapter-execution-references.sample.json", new([]generated.AdapterExecutionReference)},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", fixture.name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var original any
+			if err := json.Unmarshal(raw, &original); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(raw, fixture.target); err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(fixture.target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var back any
+			if err := json.Unmarshal(encoded, &back); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(original, back) {
+				t.Fatalf("binding protocol reference changed: %s", encoded)
+			}
+		})
+	}
+}
+
+func TestNativePageRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "application-native-page.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original any
+	if err := json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	var typed generated.ApplicationNativePage
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back any
+	if err := json.Unmarshal(encoded, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, back) {
+		t.Fatalf("native page reference changed: %s", encoded)
+	}
+}
+
 func TestComponentObservationsRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "component-conformance-observations.sample.json"))
 	if err != nil {

@@ -1413,6 +1413,14 @@ async fn observe(
     if !terminal {
         return result(invocation.id, TaskStatus::Running, "NONE");
     }
+    // Recover only the original Application EE references. Lost Tool response
+    // callbacks do not replay execute, disclose content, or invent zero usage.
+    if !matches!(
+        crate::application_execution::reconcile_turn(state, invocation.id, id).await,
+        Ok(true)
+    ) {
+        return release_holder(state, invocation.id, true, "BILLING_UNAVAILABLE").await;
+    }
     // The exact completed native request set is charged independently of reply
     // availability. Missing/ambiguous reply evidence never discards real usage.
     let proof = match crate::gateway_usage::committed_turn(

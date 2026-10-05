@@ -1,0 +1,7 @@
+{
+  "bindingId": "46a9c817-97b1-4a71-b292-51bc3b5261a0",
+  "projectionGeneration": 7,
+  "url": "https://service.example.test/admin/#/settings",
+  "origin": "https://service.example.test",
+  "allowedOrigins": ["https://service.example.test", "https://login.example.test"]
+}

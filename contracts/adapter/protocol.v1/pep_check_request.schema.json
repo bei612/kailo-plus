@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/pep_check_request.schema.json",
+  "title": "AdapterPepCheckRequest",
+  "description": "ADR-12 adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bindingId", "actionToken", "operation", "argumentsJson"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"},
+    "actionToken": {"type": "string"},
+    "operation": {"type": "string"},
+    "argumentsJson": {"type": "string"},
+    "contentReference": {"$ref": "../../domain/content_reference.schema.json"}
+  }
+}

@@ -1,0 +1,67 @@
+capability_id: component.application_binding
+title: 独立服务接入、原生页面引用与受治理工具派发
+stage: EXT-BASE
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-04]
+  decisions: [DD-88, DD-94]
+  facts: []
+  seams: []
+  blockers: []
+  entities: [ApplicationBinding, ComponentRuntimeProjection, ExternalExecution, ActionTokenClaims]
+
+validation:
+  scenarios: []
+  evidence:
+    - dimension: 安全边界
+      ref: core/verify/application-binding.md
+    - dimension: 合同一致
+      ref: core/verify/application-binding-client.md
+
+implementation:
+  owners: [team-platform]
+  paths:
+    - core/crates/platform-core/src/application_binding.rs
+    - core/crates/platform-core/src/application_binding_read.rs
+    - core/crates/platform-core/src/application_binding_pep.rs
+    - core/crates/platform-core/src/application_tool.rs
+    - core/crates/platform-core/src/application_execution.rs
+    - core/crates/platform-core/src/application_page.rs
+    - core/crates/platform-core/src/bff.rs
+    - worker/workflows/application_binding.go
+    - client-kit/ts/platform/src/react/application-bindings.tsx
+  surfaces: [web, desktop]
+  schemas:
+    - contracts/api/application_binding_page.schema.json
+    - contracts/api/application_native_page.schema.json
+    - contracts/domain/application_binding_create.schema.json
+    - contracts/domain/application_adapter_directory.schema.json
+    - contracts/domain/action_token_signing_delivery.schema.json
+    - contracts/workflow/application_binding_advance_request.schema.json
+    - contracts/workflow/application_binding_advance_result.schema.json
+  migrations:
+    - core/migrations/20261005010000_application_binding.up.sql
+    - core/migrations/20261005010000_application_binding.down.sql
+    - core/migrations/20261005012000_application_binding_execution.up.sql
+    - core/migrations/20261005012000_application_binding_execution.down.sql
+    - core/migrations/20261005013000_application_tool_projection.up.sql
+    - core/migrations/20261005013000_application_tool_projection.down.sql
+    - core/migrations/20261005014000_application_catalog.up.sql
+    - core/migrations/20261005014000_application_catalog.down.sql
+    - core/migrations/20261005015000_application_execution_usage.up.sql
+    - core/migrations/20261005015000_application_execution_usage.down.sql
+
+runtime:
+  routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page"]
+  actions: [application_binding.create, application_binding.disable]
+  tools: []
+  workflow_kinds: [COMPONENT_BINDING, COMPONENT_DISABLE]
+
+release:
+  artifacts:
+    - name: web-client
+      digest: sha256:d60e187b0429a7879600ab36c09d2b83de2290169d54b0e3d8bf81f659ce1668
+  # 仅共享客户端实际构建；不是 Core/Worker 部署或独立组件业务验收。
+  gate: blocked_until_seams_closed

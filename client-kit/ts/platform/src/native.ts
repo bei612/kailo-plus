@@ -117,6 +117,7 @@ export function signOutReport(value: unknown): NativeSignOutReport {
 
 /** 登录引导用到的全部原生命令。 */
 export type NativeHost = {
+  openNativePage(bindingId: string): Promise<void>;
   getConfig(): Promise<NativeConfig | null>;
   /** Rust 侧校验；不合法时以说明原因的消息拒绝 */
   setConfig(config: NativeConfig): Promise<void>;
@@ -144,6 +145,7 @@ export function createNativeHost(
   };
   return {
     getConfig: () => run<NativeConfig | null>("platform_get_config"),
+    openNativePage: (bindingId) => run<void>("platform_open_native_page", { bindingId }),
     setConfig: (config) => run<void>("platform_set_config", { config }),
     status: () => run<NativeStatus>("platform_status"),
     signIn: () => run<void>("platform_sign_in"),

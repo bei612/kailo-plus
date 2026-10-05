@@ -80,6 +80,16 @@ pub enum Write {
 }
 
 impl SpiceDb {
+    #[cfg(test)]
+    pub(crate) fn for_test(base: String) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            check_url: format!("{base}/v1/permissions/check"),
+            base,
+            key: "isolated-test-service".into(),
+        }
+    }
+
     /// Tenant 删除只删除一个明确 object 的全部关系（含 workspace#tenant），
     /// 再以 FullyConsistent 原生 ReadRelationships 查证为空。不经只返回
     /// principal 关系的角色列表读取，否则会遗漏 workspace 的 tenant 箭头。

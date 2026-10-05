@@ -68,16 +68,18 @@ pub(crate) async fn configuration(
             Err(error) => return Err(error),
         }
     }
+    let scope = scope.scope();
+    let mut servers =
+        crate::application_tool::configuration(state, &mut tx, &context, &parent, &scope).await?;
     if names.is_empty() {
         tx.commit().await?;
-        return Ok(json!({"mcp_servers":{}}));
+        return Ok(json!({"mcp_servers":servers}));
     }
     let signer = state.agent_tool_sessions.as_ref().ok_or_else(unavailable)?;
     let service = state
         .gateway_service_auth
         .as_ref()
         .ok_or_else(unavailable)?;
-    let scope = scope.scope();
     let target = crate::agent_tool_pep::target_name(
         scope.installation_resource_id,
         scope.projection_generation,
@@ -136,12 +138,11 @@ pub(crate) async fn configuration(
     tx.commit().await?;
     let token = signer.issue(&scope).map_err(|_| unavailable())?;
     let url = route_url(signer, &scope)?;
-    Ok(
-        json!({"mcp_servers":{target:{"url":url.as_str(),"http_headers":{"Authorization":format!("Bearer {token}")},
+    servers.insert(target,json!({"url":url.as_str(),"http_headers":{"Authorization":format!("Bearer {token}")},
         "enabled":true,"required":true,"supports_parallel_tool_calls":false,"enabled_tools":names,
         "default_tools_approval_mode":"approve","startup_timeout_sec":state.agent_memory.tool_timeout().as_secs_f64(),
-        "tool_timeout_sec":state.agent_memory.tool_timeout().as_secs_f64()}}}),
-    )
+        "tool_timeout_sec":state.agent_memory.tool_timeout().as_secs_f64()}));
+    Ok(json!({"mcp_servers":servers}))
 }
 
 #[derive(sqlx::FromRow)]
@@ -223,7 +224,7 @@ fn route(
     )
 }
 
-async fn require_route(
+pub(crate) async fn require_route(
     gateway: &crate::model_route::Gateway,
     id: &str,
     desired: Option<&Value>,

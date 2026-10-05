@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/pep_check_response.schema.json",
+  "title": "AdapterPepCheckResponse",
+  "description": "只在原动作和精确binding仍被fresh授权时返回当前授权revision；不是可复用的新授权票据。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "operationId", "authorizationMinZedToken"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "operationId": {"type": "string", "format": "uuid"},
+    "authorizationMinZedToken": {"type": "string"}
+  }
+}

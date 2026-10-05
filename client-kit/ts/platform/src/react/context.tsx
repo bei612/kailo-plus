@@ -14,7 +14,7 @@ import {
   translate,
 } from "../i18n";
 
-type Platform = { client: BffClient; locale: PlatformLocale };
+type Platform = { client: BffClient; locale: PlatformLocale; openNativePage?: (bindingId: string) => Promise<void> };
 
 const PlatformContext = createContext<Platform | null>(null);
 
@@ -22,11 +22,13 @@ export function PlatformProvider({
   client,
   locale,
   children,
+  openNativePage,
 }: {
   client: BffClient;
   /** 缺省按浏览器/系统语言 */
   locale?: PlatformLocale;
   children: ReactNode;
+  openNativePage?: (bindingId: string) => Promise<void>;
 }) {
   // A replacement client is a new authenticated transport scope. Reset its
   // consumers together: read snapshots, frozen writes and late receipts must
@@ -34,7 +36,7 @@ export function PlatformProvider({
   const [scope, setScope] = useState({ client, generation: 0 });
   if (scope.client !== client) setScope({ client, generation: scope.generation + 1 });
   return (
-    <PlatformContext.Provider value={{ client, locale: locale ?? resolveLocale() }}>
+    <PlatformContext.Provider value={{ client, locale: locale ?? resolveLocale(), openNativePage }}>
       <Fragment key={scope.generation}>{children}</Fragment>
     </PlatformContext.Provider>
   );
@@ -49,6 +51,8 @@ function usePlatform(): Platform {
 export function useBffClient(): BffClient {
   return usePlatform().client;
 }
+
+export function useNativePageHost() { return usePlatform().openNativePage; }
 
 export function useLocale(): PlatformLocale {
   return usePlatform().locale;

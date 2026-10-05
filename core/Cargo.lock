@@ -3104,6 +3104,7 @@ dependencies = [
 name = "secret-store"
 version = "0.0.0"
 dependencies = [
+ "chrono",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

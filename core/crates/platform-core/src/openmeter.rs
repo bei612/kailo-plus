@@ -128,6 +128,16 @@ pub(crate) struct MemoryMeter {
     pub value_property: Option<String>,
 }
 
+/// Frozen native projection for an ApplicationBinding execution. No locally
+/// invented meter, balance or aggregation is accepted.
+#[derive(Serialize, Deserialize, PartialEq)]
+pub(crate) struct ApplicationMeter {
+    pub key: String,
+    pub id: String,
+    pub event_type: String,
+    pub value_property: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct StoredEventPage {
     data: Vec<StoredEvent>,
@@ -1077,6 +1087,78 @@ impl OpenMeter {
         Ok(result)
     }
 
+    pub(crate) async fn application_meters(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+        subject: &str,
+        keys: &[String],
+    ) -> Result<Vec<ApplicationMeter>, Error> {
+        let customer = self
+            .customer_by_id(customer_id, tenant)
+            .await?
+            .ok_or(Error::Precondition)?;
+        if !customer.is_active()
+            || !customer
+                .usage_attribution
+                .as_ref()
+                .is_some_and(|a| a.subject_keys.iter().any(|s| s == subject))
+        {
+            return Err(Error::Precondition);
+        }
+        self.verify_subject_owner(tenant, customer_id, subject)
+            .await?;
+        let native: Vec<Meter> = self.collection(self.collection_url("meters")?).await?;
+        let mut seen = HashSet::new();
+        let mut result = Vec::new();
+        for key in keys {
+            if !seen.insert(key) {
+                return Err(Error::Precondition);
+            }
+            let matched: Vec<_> = native
+                .iter()
+                .filter(|m| &m.key == key && m.deleted_at.is_none())
+                .collect();
+            let [meter] = matched.as_slice() else {
+                return Err(Error::Precondition);
+            };
+            if !valid_customer_id(&meter.id)
+                || meter.event_type.is_empty()
+                || !((meter.aggregation == "count" && meter.value_property.is_none())
+                    || (meter.aggregation == "sum"
+                        && meter.value_property.as_deref() == Some("$.quantity")))
+                || native
+                    .iter()
+                    .filter(|m| m.deleted_at.is_none() && m.event_type == meter.event_type)
+                    .count()
+                    != 1
+                || meter.dimensions.as_ref().is_some_and(|d| {
+                    d.values().any(|p| {
+                        !matches!(
+                            p.as_str(),
+                            "$.tenant_id"
+                                | "$.workspace_id"
+                                | "$.operation_id"
+                                | "$.component_binding_id"
+                                | "$.component_release_id"
+                                | "$.component_projection_generation"
+                                | "$.resource_id"
+                        )
+                    })
+                })
+            {
+                return Err(Error::Precondition);
+            }
+            result.push(ApplicationMeter {
+                key: key.clone(),
+                id: meter.id.clone(),
+                event_type: meter.event_type.clone(),
+                value_property: meter.value_property.clone(),
+            });
+        }
+        Ok(result)
+    }
+
     /// 调用前已持久同一 CloudEvent。202 仅 ACCEPTED；网络/未知状态只 UNKNOWN。
     pub(crate) async fn publish_usage(&self, event: &Value) -> Result<(), Error> {
         let response = self
@@ -1297,6 +1379,152 @@ mod meter_key_tests {
             native_meter_key("model_tokens", None).unwrap(),
             "model_tokens"
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the isolated APPLICATION database and dispatch fixture"]
+    async fn application_preflight_failure_rolls_back_original_dispatch() {
+        use super::OpenMeter;
+        use axum::{
+            http::{StatusCode, Uri},
+            response::IntoResponse,
+            Json, Router,
+        };
+        use serde_json::json;
+        use sqlx::{Acquire, Connection};
+        use std::sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            Arc,
+        };
+        use uuid::Uuid;
+        const CUSTOMER: &str = "00000000000000000000000001";
+        let mut conn = sqlx::PgConnection::connect(
+            &std::env::var("APPLICATION_EXECUTION_TEST_DATABASE_URL")
+                .expect("isolated database URL"),
+        )
+        .await
+        .unwrap();
+        let mut outer = sqlx::Connection::begin(&mut conn).await.unwrap();
+        let fixture = include_str!("../../../verify/application-execution-dispatch.sql");
+        sqlx::raw_sql(fixture).execute(&mut *outer).await.unwrap();
+        let (child, binding, release, workflow, ee): (Uuid, Uuid, Uuid, String, Uuid) =
+            sqlx::query_as(
+                "select child,binding,release,workflow,ee from application_dispatch_fixture",
+            )
+            .fetch_one(&mut *outer)
+            .await
+            .unwrap();
+        let tenant = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let customer = json!({"id":CUSTOMER,"key":tenant,
+            "usage_attribution":{"subject_keys":[format!("isolated:{binding}")]}});
+        let reject = Arc::new(AtomicBool::new(true));
+        let requests = Arc::new(AtomicUsize::new(0));
+        let handler_reject = reject.clone();
+        let handler_requests = requests.clone();
+        let app = Router::new().fallback(move |uri: Uri| {
+            let customer = customer.clone();
+            let reject = handler_reject.clone();
+            let requests = handler_requests.clone();
+            async move {
+                requests.fetch_add(1, Ordering::SeqCst);
+                if reject.load(Ordering::SeqCst) {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                }
+                let url = reqwest::Url::parse(&format!("http://localhost{uri}")).unwrap();
+                let page = |data: Vec<serde_json::Value>| json!({"meta":{"page":{"number":1,"size":100,"total":data.len()}},"data":data});
+                let value = if url.path().ends_with(CUSTOMER) {
+                    customer
+                } else if url.path().ends_with("/customers") {
+                    if url.query_pairs().any(|(key,_)| key == "filter[key][eq]") {
+                        page(vec![])
+                    } else { page(vec![customer]) }
+                } else if url.path().ends_with("/meters") {
+                    page(vec![json!({"id":"00000000000000000000000002","key":"native_read_count",
+                        "aggregation":"count","event_type":"native.read"})])
+                } else { panic!("unexpected native request: {uri}") };
+                Json(value).into_response()
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = OpenMeter {
+            http: reqwest::Client::new(),
+            customers: reqwest::Url::parse(&format!("http://{address}/api/v3/openmeter/customers"))
+                .unwrap(),
+            namespace: "isolated".into(),
+            automation_native_meter_key: None,
+        };
+        for first in [true, false] {
+            let mut tx = outer.begin().await.unwrap();
+            let ae = crate::governance::lock_execution(&mut tx, child)
+                .await
+                .unwrap();
+            assert_eq!(ae.dispatch_state, "NOT_DISPATCHED");
+            let key: Uuid = sqlx::query_scalar(
+                "select idempotency_key from admission.action_execution where id=$1",
+            )
+            .bind(child)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            assert_eq!(key, child, "retry must retain the original admission key");
+            sqlx::query(
+                "update admission.action_execution set dispatch_state='DISPATCHED' where id=$1",
+            )
+            .bind(child)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            sqlx::query("insert into admission.external_execution(id,operation_id,workflow_id,action_execution_id,
+                tenant_id,component_binding_id,component_binding_version,component_release_id,component_projection_generation,
+                protocol_operation,native_type,idempotency_key,request_digest,platform_status,cancel_capability)
+                values($1,$2,$3,$2,$4,$5,2,$6,1,'execute','document.lookup',$1,$7,'PENDING_DISPATCH','UNSUPPORTED')")
+                .bind(ee).bind(child).bind(&workflow).bind(tenant).bind(binding).bind(release).bind("b".repeat(64))
+                .execute(&mut *tx).await.unwrap();
+            let result =
+                crate::application_execution::prepare_in_transaction(&client, &mut tx, &ae, ee)
+                    .await;
+            if first {
+                assert!(
+                    result.is_err(),
+                    "actual native HTTP failure must reject preparation"
+                );
+                assert!(
+                    requests.load(Ordering::SeqCst) > 0,
+                    "must reach the real OpenMeter client"
+                );
+                tx.rollback().await.unwrap();
+                let absent: bool = sqlx::query_scalar(
+                    "select not exists(select 1 from admission.external_execution where id=$1)",
+                )
+                .bind(ee)
+                .fetch_one(&mut *outer)
+                .await
+                .unwrap();
+                assert!(
+                    absent,
+                    "failed dispatch cannot retain EE or its usage projection"
+                );
+                reject.store(false, Ordering::SeqCst);
+            } else {
+                result.unwrap();
+                let frozen: bool = sqlx::query_scalar("select usage_projection->'meters'->0->>'key'='native_read_count' from admission.external_execution where id=$1")
+                    .bind(ee).fetch_one(&mut *tx).await.unwrap();
+                assert!(frozen);
+                let changed = sqlx::query("update admission.external_execution set platform_status='UNKNOWN'
+                    where id=$1 and platform_status='PENDING_DISPATCH' and usage_projection is not null")
+                    .bind(ee).execute(&mut *tx).await.unwrap();
+                assert_eq!(changed.rows_affected(), 1);
+                tx.commit().await.unwrap();
+            }
+        }
+        let final_state: (String,String) = sqlx::query_as("select a.dispatch_state,e.platform_status
+            from admission.action_execution a join admission.external_execution e on e.action_execution_id=a.id where a.id=$1")
+            .bind(child).fetch_one(&mut *outer).await.unwrap();
+        assert_eq!(final_state, ("DISPATCHED".into(), "UNKNOWN".into()));
+        outer.rollback().await.unwrap();
+        server.abort();
     }
 
     #[tokio::test]

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/application_adapter_directory.schema.json",
+  "title": "ApplicationAdapterDirectory",
+  "description": "DD-94部署投递面：adapter服务引用解析到固定部署产物/原生实例与受限传输。不是Catalog或业务授权。",
+  "type": "object", "additionalProperties": false, "required": ["adapters"],
+  "properties": {
+    "adapters": {"type": "array", "items": {
+      "title": "ApplicationAdapterDelivery", "type": "object", "additionalProperties": false,
+      "required": ["adapterServiceRef", "baseUrl", "nativeInstanceRef", "artifactDigest", "actionTokenAudience", "timeoutSeconds", "maxResponseBytes", "secretReaders"],
+      "properties": {
+        "adapterServiceRef": {"type": "string"}, "baseUrl": {"type": "string"},
+        "mcpUrl": {"type": "string"},
+        "nativeInstanceRef": {"type": "string"}, "artifactDigest": {"type": "string"},
+        "actionTokenAudience": {"type": "string"}, "timeoutSeconds": {"type": "integer"},
+        "maxResponseBytes": {"type": "integer"},
+        "secretReaders": {"type": "array", "items": {
+          "title": "ApplicationSecretReader", "type": "object", "additionalProperties": false,
+          "required": ["servicePrincipalId", "roleName", "audience"],
+          "properties": {
+            "servicePrincipalId": {"type": "string", "format": "uuid"},
+            "roleName": {"type": "string"}, "audience": {"type": "string"}
+          }
+        }}
+      }
+    }}
+  }
+}

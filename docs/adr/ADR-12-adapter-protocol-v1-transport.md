@@ -52,7 +52,10 @@ Component SDK 与示例组件（`DD-76`、`DD-101`），三者必须对同一条
    在 IdP 中预先登记，`client_id` 写入 binding 的规范化配置，client secret 作为 `SecretRef`
    经 OpenBao Agent 投递给该 adapter。Core 沿用 `service_auth` 的规则逐条核对 issuer、audience
    （Core PEP 受众）、签名与有效期，并把 `azp` 精确映射到已登记且 binding 为 `ACTIVE` 的
-   ServicePrincipal；未登记、binding 非 `ACTIVE` 或映射不唯一时拒绝，不做通配。
+   ServicePrincipal；未登记或映射不唯一时拒绝，不做通配。业务调用要求 `ACTIVE`；建立与停用的
+   `pep_check` 仅按原管理 ActionExecution、目标 binding 与确切协议操作接受 `PROVISIONING` 或
+   `DISABLING`，不将这一管理例外用于业务 execute 或正文读取。否则建立前要求 ACTIVE 会形成
+   自身循环依赖，停用也会失去观察已发起执行的合法路径。
 4. **结果语义。** HTTP 状态只表示传输结果；业务结果、native status 与错误分类都在回应体内，
    按 `06-工程基线规范.md` §4 的错误六分类映射。请求超时、连接中断或回应体无法按 schema 解析
    一律按「结果不明」处理，进入 ExternalExecution `UNKNOWN`，只按登记的幂等键对账，不自动重放
@@ -67,16 +70,51 @@ Component SDK 与示例组件（`DD-76`、`DD-101`），三者必须对同一条
    Core/Worker 校验实际返回的 target、native ref 与 revision，缺少引用、串 scope 或往返漂移均拒绝。
    此编码没有新增 Adapter 逻辑操作、内容权威或表达式语言。静态测试 token 不证明动态参数的授权
    绑定；生产签发仍服从第 2 条与 `.design/03` §6，隔离模拟身份不构成生产 binding 验收。
+7. **APPLICATION MCP 的两层认证与目标编码。** MCP 与上面的生命周期 HTTP 操作保持不同传输。
+   adapter MCP 端点从受控部署目录解析；Core 只把已批准的 binding/generation 及 Tool 声明投影
+   给 AgentGateway，注册、发现、调用的实际路由权威仍是 AgentGateway。Gateway 复用原机器
+   `jwtSign` 身份、签名文件与公钥投递，为确切 adapter audience 签发短期传输凭据，写入
+   `X-Kailo-Gateway-Authorization: Bearer ...`，不覆盖业务 `Authorization`。initialize、ping
+   与 tools/list 只具传输身份，不伪造业务 ActionToken；tools/call 必须另经原 ExtMcp 准入，
+   将 Core 为原业务子 ActionExecution 签发的 ActionToken 放入 `Authorization`。adapter 不以
+   机器凭据替代 binding 的独立 ServicePrincipal、SecretRef、scope 与 fresh 业务授权。
+
+   模型可见的 tools/list 参数使用 `{target, input}` envelope；target 严格复用 ActionCommand
+   的 `resourceId` / `assetId` 二选一语义，input 是原能力 inputSchema。PEP 验证两者及其统一
+   规范化 hash 后才转发原 input；能力契约自身 schema/hash 不变，不猜测业务字段中的目标。
+   固定 Codex 的 `_meta` 仅接受实际发送的非权威关联字段并剥离，不能携带或覆盖 target、AE、
+   operation、身份。机器元数据不参与授权或幂等定位。
+
+   固定源码依据：AgentGateway commit `1f7ebbf87cbdbe9517f6f181221879d04dc50692`，
+   `crates/agentgateway/src/http/auth/jwt_sign.rs::LocalJwtSignAuth` 的 `location` 与
+   `crates/agentgateway/src/http/auth/mod.rs::AuthorizationLocation::Header` 支持独立 header；
+   `crates/agentgateway/src/mcp/guardrails/client.rs::check_request` 消费原 ExtMcp 参数替换。
+   Codex commit `7498521d288b9b3b96ffba4eedf089d8d6e06a84`，
+   `codex-rs/core/src/tools/handlers/mcp.rs::McpHandler::handle_call` 与
+   `codex-rs/core/src/mcp_tool_call.rs::call_with_preparation` 分开模型 arguments 和关联 metadata，
+   `codex-rs/rmcp-client/src/rmcp_client.rs::RmcpClient::call_tool` 分别发送 arguments 与 meta；
+   因此不把模型不会构造的 `_meta` 当作业务目标通道。
+8. **既有执行的系统对账。** `observe` / `extract_usage` 使用原 ExternalExecution 的严格 typed
+   reference：EE ID、冻结幂等键、native type 和已取得的 native ID。Core 的受信收敛消费者
+   沿原 child AE、root Workflow、binding/release/generation 校验引用后签发短期令牌，hash 绑定
+   确切操作与该引用，不接收业务正文，不接受 execute、泛化读取或另一个 EE。此系统能力也用于
+   已派发的 COMPONENT_DISABLE 排空其原 binding 的执行；不把原发起人的旧授权宣称为现行授权。
+   token 中的身份、policy 引用与原授权 revision 是原执行归属证据，不能用它们通过正文读取。
+   普通 execute 与向 Agent/用户披露结果仍重新检查现行 Delegation、目标权限、binding 与内容
+   policy。撤权后的系统观察只提交原 EE 终态、原用量 outbox 与审计引用，不返回业务结果。
 
 ## 后果
 
 - 一致性套件、SDK 的服务端骨架与示例组件共享 `contracts/adapter/protocol.v1/` 这一份 schema；
   改动按 `contracts/` 的兼容规则发布，不兼容变更只能以 `protocol.v2` 发布并重发 Core/adapter
-  （`.design/07` §9）。
+   （`.design/07` §9）。
 - 每个 binding 需要部署运维在 IdP 登记一个 client；这是 binding 建立的前置配置，缺失时
   `validate_binding` 不通过、binding 停在 `PROVISIONING`，不以共享 client 代替。
 - Core 的 service 认证从「单一 Worker client」扩展为「Worker client 加已登记 binding 的
-  client 集合」，集合随 binding 状态收缩：binding 离开 `ACTIVE` 即不再接受其入站令牌。
+  client 集合」；binding 离开 `ACTIVE` 即拒绝新业务调用，管理对账只保留第 3 条的原目标与操作。
+- MCP 机器凭据只供 adapter 私有网络验传输身份，不能直接用于 Core Worker API 或业务授权；
+  如果固定 Gateway 不再支持独立 header 或原 ExtMcp 参数替换，则重新评估第 7 条并保持入口关闭，
+  不回退为共享业务身份或另写代理。
 
 ## 重新评估条件
 

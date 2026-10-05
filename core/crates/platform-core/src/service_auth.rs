@@ -196,6 +196,23 @@ impl GatewayServiceAuth {
         }})
     }
 
+    /// ADR-12: transport identity is distinct from the per-action bearer.
+    /// The existing native signer still owns its private key; Core only
+    /// projects the approved adapter's exact audience and header location.
+    pub(crate) fn adapter_backend_auth(
+        &self,
+        audience: &str,
+    ) -> Result<serde_json::Value, ServiceAuthError> {
+        if audience.is_empty() || audience.trim() != audience || audience == self.audience {
+            return Err(ServiceAuthError::TokenInvalid);
+        }
+        let mut auth = self.backend_auth();
+        auth["jwtSign"]["claims"]["aud"] = serde_json::json!(audience);
+        auth["jwtSign"]["location"] = serde_json::json!({"header":{
+            "name":"x-kailo-gateway-authorization","prefix":"Bearer "}});
+        Ok(auth)
+    }
+
     pub(crate) async fn validate_configuration(&self) -> Result<(), ServiceAuthError> {
         let bytes = tokio::fs::read(&self.jwks_file)
             .await
@@ -342,6 +359,31 @@ impl ServiceAuth {
 
     /// 校验一个 Bearer 令牌，通过则返回授权方 client_id。
     pub async fn verify(&self, header_value: Option<&str>) -> Result<String, ServiceAuthError> {
+        self.verify_client(header_value, &self.caller_client_id)
+            .await
+    }
+
+    /// Adapter callbacks use the same IdP/JWKS verifier, but their expected
+    /// client must be resolved from the exact binding by the caller. This does
+    /// not add any client to Worker routes or make audience a principal lookup.
+    pub(crate) async fn verify_binding_client(
+        &self,
+        header_value: Option<&str>,
+        client_id: &str,
+    ) -> Result<(), ServiceAuthError> {
+        if client_id.is_empty() || client_id == self.caller_client_id {
+            return Err(ServiceAuthError::TokenInvalid);
+        }
+        self.verify_client(header_value, client_id)
+            .await
+            .map(|_| ())
+    }
+
+    async fn verify_client(
+        &self,
+        header_value: Option<&str>,
+        expected_client: &str,
+    ) -> Result<String, ServiceAuthError> {
         let token = header_value
             .and_then(|v| v.strip_prefix("Bearer "))
             .filter(|t| !t.is_empty())
@@ -386,7 +428,7 @@ impl ServiceAuth {
 
         // audience 说明「这张票是开给 Core 的」，azp 说明「是谁来敲的」。
         // 两者都要：同 realm 内别的客户端也可能被配上同一 audience。
-        if data.claims.azp != self.caller_client_id {
+        if data.claims.azp != expected_client {
             return Err(ServiceAuthError::TokenInvalid);
         }
         Ok(data.claims.azp)

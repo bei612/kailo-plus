@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/application_binding_state.schema.json",
+  "title": "ApplicationBindingState",
+  "type": "string",
+  "enum": ["PROVISIONING", "ACTIVE", "UPGRADING", "DISABLING", "DISABLED", "ERROR"]
+}

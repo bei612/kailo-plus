@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/execution_usage.schema.json",
+  "title": "AdapterExecutionUsage",
+  "description": "DD-48/51/94 extract_usage 的原生终态用量元数据；scope/customer/dimensions 只由 Core 原 ExternalExecution 决定。完整集合与冻结 action meters 精确相等，缺失不是零。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["externalExecutionId", "idempotencyKey", "nativeType", "nativeId", "measurements"],
+  "properties": {
+    "externalExecutionId": {"type": "string", "format": "uuid"},
+    "idempotencyKey": {"type": "string", "format": "uuid"},
+    "nativeType": {"type": "string"},
+    "nativeId": {"type": "string"},
+    "measurements": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["meterKey", "quantity", "occurredAt"],
+        "properties": {
+          "meterKey": {"type": "string"},
+          "quantity": {"type": "integer"},
+          "occurredAt": {"type": "string"}
+        }
+      }
+    }
+  }
+}

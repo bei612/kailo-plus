@@ -14,7 +14,7 @@ use crate::app_state::AppState;
 /// 设备登记端点（`DD-79`）。持钥证明的 `u` 标签必须指向它。
 const REGISTER_PATH: &str = "/api/v1/identity/client-keys";
 
-fn require_config(app: &AppHandle) -> Result<PlatformConfig, String> {
+pub(super) fn require_config(app: &AppHandle) -> Result<PlatformConfig, String> {
     config::load(app)?.ok_or_else(|| "尚未配置平台服务".to_owned())
 }
 
@@ -81,6 +81,7 @@ pub(crate) async fn platform_sign_out(
     state: State<'_, AppState>,
     session: State<'_, NativeSession>,
 ) -> Result<SignOutReport, String> {
+    super::native_page::close_all(&app);
     match require_config(&app) {
         Ok(cfg) => {
             let report = session.end_session(&state.http_client, &cfg).await?;

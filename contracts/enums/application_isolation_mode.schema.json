@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/application_isolation_mode.schema.json",
+  "title": "ApplicationIsolationMode", "type": "string",
+  "enum": ["DEDICATED_INSTANCE", "NATIVE_TENANT", "NAMESPACE", "RESOURCE_FILTER", "RESOURCE_INSTANCE"]
+}

@@ -9,6 +9,49 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('binding observation preserves mappings and optional scope', () {
+    final original =
+        jsonDecode(
+              File(
+                '../../contracts/samples/application-binding-observations.sample.json',
+              ).readAsStringSync(),
+            )
+            as List<dynamic>;
+    final typed = original.map(
+      (row) => AdapterBindingObservation.fromJson(row as Map<String, dynamic>),
+    );
+    expect(
+      jsonDecode(jsonEncode(typed.map((row) => row.toJson()).toList())),
+      equals(original),
+    );
+  });
+  test('execution reference does not invent an unknown native ID', () {
+    final original =
+        jsonDecode(
+              File(
+                '../../contracts/samples/adapter-execution-references.sample.json',
+              ).readAsStringSync(),
+            )
+            as List<dynamic>;
+    final typed = original.map(
+      (row) => AdapterExecutionReference.fromJson(row as Map<String, dynamic>),
+    );
+    expect(
+      jsonDecode(jsonEncode(typed.map((row) => row.toJson()).toList())),
+      equals(original),
+    );
+  });
+  test('native page preserves binding generation and exact origins', () {
+    final original =
+        jsonDecode(
+              File(
+                '../../contracts/samples/application-native-page.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final typed = ApplicationNativePage.fromJson(original);
+    expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+  });
   test('component observations preserve references, UNKNOWN and absence', () {
     final original =
         jsonDecode(

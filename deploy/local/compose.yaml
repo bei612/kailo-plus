@@ -556,6 +556,8 @@ services:
       BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS: ${BFF_CLIENT_KEY_PROOF_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
       # 部署显示名（DD-111）：BFF 的公开平台信息与 Web 静态入口投影自同一个值；缺失即拒绝启动
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?必须显式提供，禁止硬编码}
+      NATIVE_PAGE_ORIGINS: ${NATIVE_PAGE_ORIGINS:-}
       # 每人可同时登记的原生设备上界（DD-77）
       BFF_CLIENT_KEYS_PER_PRINCIPAL: ${BFF_CLIENT_KEYS_PER_PRINCIPAL:?必须显式提供，禁止硬编码}
       # 设备投影仍在收敛时，原生端按服务端给出的间隔重查，不在客户端写死
@@ -773,10 +775,11 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:8631abc89b4e6a4b8287771ee60e3b3816a40875a0083cdcfd1b162cb33cf909
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:d60e187b0429a7879600ab36c09d2b83de2290169d54b0e3d8bf81f659ce1668
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
+      NATIVE_PAGE_ORIGINS: ${NATIVE_PAGE_ORIGINS:-}
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 
   # AgentGateway 是 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。

@@ -33,6 +33,7 @@ import { LegacySecretRefManagement, RoleManagement } from "./roles";
 import { PlatformTenantManagement } from "./tenants";
 import { CapabilityContractsPanel } from "./capability-contracts";
 import { ComponentReleasesPanel } from "./component-releases";
+import { ApplicationBindingsPanel } from "./application-bindings";
 
 export { AgentDefinitionsPage } from "./agents";
 
@@ -146,6 +147,7 @@ export function WorkspaceManagementPanels() {
       <PlatformTenantManagement />
       <CapabilityContractsPanel />
       <ComponentReleasesPanel />
+      <ApplicationBindingsPanel />
     </>
   );
 }

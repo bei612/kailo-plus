@@ -100,6 +100,50 @@ export enum VariantKind {
 }
 
 /**
+ * 07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
+ */
+export interface AdapterBindingObservation {
+    artifactDigest:    string;
+    bindingId:         string;
+    configDigest:      string;
+    executionMappings: AdapterExecutionMapping[];
+    isolationMode:     ApplicationIsolationMode;
+    nativeInstanceRef: string;
+    nativeScopeRef:    string;
+    secretReads:       AdapterSecretRead[];
+    secretRefDigest:   string;
+    tenantId:          string;
+    workspaceId?:      string;
+}
+
+export interface AdapterExecutionMapping {
+    actionKey:        string;
+    actionVersion:    number;
+    cancelCapability: NativeCancelCapability;
+    nativeType:       string;
+}
+
+export enum NativeCancelCapability {
+    Supported = "SUPPORTED",
+    Unsupported = "UNSUPPORTED",
+}
+
+export enum ApplicationIsolationMode {
+    DedicatedInstance = "DEDICATED_INSTANCE",
+    Namespace = "NAMESPACE",
+    NativeTenant = "NATIVE_TENANT",
+    ResourceFilter = "RESOURCE_FILTER",
+    ResourceInstance = "RESOURCE_INSTANCE",
+}
+
+export interface AdapterSecretRead {
+    audience:  string;
+    requestId: string;
+    secretKey: string;
+    version:   number;
+}
+
+/**
  * ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
  * 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
  */
@@ -114,11 +158,6 @@ export interface AdapterExecutionObservation {
     terminalAt?:      string;
 }
 
-export enum NativeCancelCapability {
-    Supported = "SUPPORTED",
-    Unsupported = "UNSUPPORTED",
-}
-
 /**
  * design03§6 ExternalExecution 的既定平台状态；HTTP成功和cancel accepted均不构成终态。
  */
@@ -129,6 +168,17 @@ export enum ExternalExecutionStatus {
     Running = "RUNNING",
     Succeeded = "SUCCEEDED",
     Unknown = "UNKNOWN",
+}
+
+/**
+ * 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
+ * 未取得时只用冻结幂等键查证。
+ */
+export interface AdapterExecutionReference {
+    externalExecutionId: string;
+    idempotencyKey:      string;
+    nativeId?:           string;
+    nativeType:          string;
 }
 
 /**
@@ -169,6 +219,45 @@ export interface ExecutionClass {
 }
 
 /**
+ * DD-48/51/94 extract_usage 的原生终态用量元数据；scope/customer/dimensions 只由 Core 原
+ * ExternalExecution 决定。完整集合与冻结 action meters 精确相等，缺失不是零。
+ */
+export interface AdapterExecutionUsage {
+    externalExecutionId: string;
+    idempotencyKey:      string;
+    measurements:        Measurement[];
+    nativeId:            string;
+    nativeType:          string;
+}
+
+export interface Measurement {
+    meterKey:   string;
+    occurredAt: string;
+    quantity:   number;
+}
+
+/**
+ * ADR-12
+ * adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。
+ */
+export interface AdapterPepCheckRequest {
+    actionToken:       string;
+    argumentsJson:     string;
+    bindingId:         string;
+    contentReference?: ContentReferenceClass;
+    operation:         string;
+}
+
+/**
+ * 只在原动作和精确binding仍被fresh授权时返回当前授权revision；不是可复用的新授权票据。
+ */
+export interface AdapterPepCheckResponse {
+    actionExecutionId:        string;
+    authorizationMinZedToken: string;
+    operationId:              string;
+}
+
+/**
  * DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
  */
 export interface AdapterScopeObservation {
@@ -193,7 +282,10 @@ export interface ActionCommand {
     /**
      * 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
      */
-    agentVersionContent?: AgentVersionContentClass;
+    agentVersionContent?:       AgentVersionContentClass;
+    applicationBindingCreate?:  ApplicationBindingCreateClass;
+    applicationBindingId?:      string;
+    applicationBindingVersion?: number;
     /**
      * AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。
      */
@@ -350,6 +442,50 @@ export enum AgentTrigger {
 export interface AgentVersionContentTurnLimits {
     idleTimeoutSeconds:     number;
     maxTurnDurationSeconds: number;
+}
+
+/**
+ * DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
+ * ActionCommand。
+ */
+export interface ApplicationBindingCreateClass {
+    adapterServiceRef:    string;
+    bindingId:            string;
+    callIdentityMode:     ApplicationCallIdentityMode;
+    capabilityCategories: ApplicationBindingCreateCapabilityCategory[];
+    componentReleaseId:   string;
+    isolationMode:        ApplicationIsolationMode;
+    modelCallMode:        ApplicationModelCallMode;
+    nativeInstanceRef:    string;
+    nativeScopeRef?:      string;
+    normalizedConfigJson: string;
+    retainOnTenantDelete: boolean;
+    secretRefs:           ApplicationBindingCreateSecretRef[];
+    servicePrincipalId:   string;
+}
+
+export enum ApplicationCallIdentityMode {
+    EndUserToken = "END_USER_TOKEN",
+    InstanceService = "INSTANCE_SERVICE",
+    TenantService = "TENANT_SERVICE",
+}
+
+export interface ApplicationBindingCreateCapabilityCategory {
+    category: string;
+    version:  number;
+}
+
+export enum ApplicationModelCallMode {
+    None = "NONE",
+    PlatformLlmRoute = "PLATFORM_LLM_ROUTE",
+    SelfManagedModel = "SELF_MANAGED_MODEL",
+}
+
+export interface ApplicationBindingCreateSecretRef {
+    audience:  string;
+    locator:   string;
+    secretKey: string;
+    version:   number;
 }
 
 /**
@@ -1222,6 +1358,59 @@ export interface AgentVersionView {
     ordinal:          number;
     ownerPrincipalId: string;
     state:            AgentVersionState;
+}
+
+/**
+ * 当前HUMAN管理scope内的真实接入元数据。不是组件内部状态、配置、SecretRef或原生管理credential。
+ */
+export interface ApplicationBindingPage {
+    bindings:    ApplicationBindingView[];
+    canCreate:   boolean;
+    nextOffset?: number;
+}
+
+export interface ApplicationBindingView {
+    activeProjectionGeneration?: number;
+    bindingId:                   string;
+    canDisable:                  boolean;
+    capabilityCategories:        ApplicationBindingCapability[];
+    componentReleaseId:          string;
+    componentTypeKey:            string;
+    /**
+     * Approved release declares an independent native page. Launch still freshly checks
+     * binding, scope and deployment origins.
+     */
+    hasNativePage?: boolean;
+    state:          ApplicationBindingState;
+    tenantId:       string;
+    version:        number;
+    workspaceId?:   string;
+}
+
+export interface ApplicationBindingCapability {
+    category: string;
+    version:  number;
+}
+
+export enum ApplicationBindingState {
+    Active = "ACTIVE",
+    Disabled = "DISABLED",
+    Disabling = "DISABLING",
+    Error = "ERROR",
+    Provisioning = "PROVISIONING",
+    Upgrading = "UPGRADING",
+}
+
+/**
+ * Authorized ACTIVE binding's independent native page. Exact origin is release and
+ * deployment approved; no native credential or page body is returned.
+ */
+export interface ApplicationNativePage {
+    allowedOrigins:       string[];
+    bindingId:            string;
+    origin:               string;
+    projectionGeneration: number;
+    url:                  string;
 }
 
 /**
@@ -2464,6 +2653,19 @@ export interface WorkspacePreferenceRequest {
 }
 
 /**
+ * DD-49/70/71/94：Core-only签发投递。只有版本化OpenBao引用及Agent已发布JWKS文件引用，不含私钥正文。
+ */
+export interface ActionTokenSigningDelivery {
+    issuer:          string;
+    jwksFile:        string;
+    privateKeyField: string;
+    secretAudience:  string;
+    secretLocator:   string;
+    secretVersion:   number;
+    tokenSeconds:    number;
+}
+
+/**
  * Installation 只取自受验签的 Invocation Session，不接受调用方目标覆盖。
  */
 export interface AgentMemoryEntryListInput {
@@ -2542,6 +2744,63 @@ export interface AgentVersionContentPersonaIdentityClass {
 export interface AgentVersionContentTurnLimitsClass {
     idleTimeoutSeconds:     number;
     maxTurnDurationSeconds: number;
+}
+
+/**
+ * DD-94部署投递面：adapter服务引用解析到固定部署产物/原生实例与受限传输。不是Catalog或业务授权。
+ */
+export interface ApplicationAdapterDirectory {
+    adapters: ApplicationAdapterDelivery[];
+}
+
+export interface ApplicationAdapterDelivery {
+    actionTokenAudience: string;
+    adapterServiceRef:   string;
+    artifactDigest:      string;
+    baseUrl:             string;
+    maxResponseBytes:    number;
+    mcpUrl?:             string;
+    nativeInstanceRef:   string;
+    secretReaders:       ApplicationSecretReader[];
+    timeoutSeconds:      number;
+}
+
+export interface ApplicationSecretReader {
+    audience:           string;
+    roleName:           string;
+    servicePrincipalId: string;
+}
+
+/**
+ * DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
+ * ActionCommand。
+ */
+export interface ApplicationBindingCreate {
+    adapterServiceRef:    string;
+    bindingId:            string;
+    callIdentityMode:     ApplicationCallIdentityMode;
+    capabilityCategories: ApplicationBindingCreateCapabilityCategoryClass[];
+    componentReleaseId:   string;
+    isolationMode:        ApplicationIsolationMode;
+    modelCallMode:        ApplicationModelCallMode;
+    nativeInstanceRef:    string;
+    nativeScopeRef?:      string;
+    normalizedConfigJson: string;
+    retainOnTenantDelete: boolean;
+    secretRefs:           ApplicationBindingCreateSecretRefClass[];
+    servicePrincipalId:   string;
+}
+
+export interface ApplicationBindingCreateCapabilityCategoryClass {
+    category: string;
+    version:  number;
+}
+
+export interface ApplicationBindingCreateSecretRefClass {
+    audience:  string;
+    locator:   string;
+    secretKey: string;
+    version:   number;
 }
 
 /**
@@ -3081,6 +3340,32 @@ export interface AgentTaskWorkflowInput {
     invocationId:               string;
     observationIntervalSeconds: number;
     projectionGeneration:       number;
+}
+
+export interface ApplicationBindingAdvanceRequest {
+    cancelRequested: boolean;
+    runId:           string;
+    target:          ApplicationBindingAdvanceRequestTarget;
+}
+
+export interface ApplicationBindingAdvanceRequestTarget {
+    actionExecutionId: string;
+    bindingId:         string;
+    bindingVersion:    number;
+    workflowId:        string;
+}
+
+export interface ApplicationBindingAdvanceResult {
+    bindingId:     string;
+    status:        TaskStatus;
+    waitingReason: string;
+}
+
+export interface ApplicationBindingTarget {
+    actionExecutionId: string;
+    bindingId:         string;
+    bindingVersion:    number;
+    workflowId:        string;
 }
 
 /**

@@ -1,8 +1,13 @@
 // To parse this JSON data, do
 //
 //     final canary = canaryFromJson(jsonString);
+//     final adapterBindingObservation = adapterBindingObservationFromJson(jsonString);
 //     final adapterExecutionObservation = adapterExecutionObservationFromJson(jsonString);
+//     final adapterExecutionReference = adapterExecutionReferenceFromJson(jsonString);
 //     final adapterExecutionResponse = adapterExecutionResponseFromJson(jsonString);
+//     final adapterExecutionUsage = adapterExecutionUsageFromJson(jsonString);
+//     final adapterPepCheckRequest = adapterPepCheckRequestFromJson(jsonString);
+//     final adapterPepCheckResponse = adapterPepCheckResponseFromJson(jsonString);
 //     final adapterScopeObservation = adapterScopeObservationFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
@@ -23,6 +28,8 @@
 //     final agentVersionPage = agentVersionPageFromJson(jsonString);
 //     final agentVersionRouteOption = agentVersionRouteOptionFromJson(jsonString);
 //     final agentVersionView = agentVersionViewFromJson(jsonString);
+//     final applicationBindingPage = applicationBindingPageFromJson(jsonString);
+//     final applicationNativePage = applicationNativePageFromJson(jsonString);
 //     final approvalDecisionRequest = approvalDecisionRequestFromJson(jsonString);
 //     final approvalView = approvalViewFromJson(jsonString);
 //     final auditEventPage = auditEventPageFromJson(jsonString);
@@ -65,10 +72,13 @@
 //     final workspaceView = workspaceViewFromJson(jsonString);
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
 //     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
+//     final actionTokenSigningDelivery = actionTokenSigningDeliveryFromJson(jsonString);
 //     final agentMemoryEntryListInput = agentMemoryEntryListInputFromJson(jsonString);
 //     final agentMemoryEntryReadInput = agentMemoryEntryReadInputFromJson(jsonString);
 //     final agentMemoryWriteInput = agentMemoryWriteInputFromJson(jsonString);
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
+//     final applicationAdapterDirectory = applicationAdapterDirectoryFromJson(jsonString);
+//     final applicationBindingCreate = applicationBindingCreateFromJson(jsonString);
 //     final automationApprovalPolicyRef = automationApprovalPolicyRefFromJson(jsonString);
 //     final automationScheduleSpec = automationScheduleSpecFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
@@ -97,6 +107,9 @@
 //     final agentTaskAdvanceRequest = agentTaskAdvanceRequestFromJson(jsonString);
 //     final agentTaskAdvanceResult = agentTaskAdvanceResultFromJson(jsonString);
 //     final agentTaskWorkflowInput = agentTaskWorkflowInputFromJson(jsonString);
+//     final applicationBindingAdvanceRequest = applicationBindingAdvanceRequestFromJson(jsonString);
+//     final applicationBindingAdvanceResult = applicationBindingAdvanceResultFromJson(jsonString);
+//     final applicationBindingTarget = applicationBindingTargetFromJson(jsonString);
 //     final approvalControlOutcome = approvalControlOutcomeFromJson(jsonString);
 //     final approvalDecisionOutcome = approvalDecisionOutcomeFromJson(jsonString);
 //     final approvalDecisionRecord = approvalDecisionRecordFromJson(jsonString);
@@ -125,16 +138,46 @@ Canary canaryFromJson(String str) => Canary.fromJson(json.decode(str));
 
 String canaryToJson(Canary data) => json.encode(data.toJson());
 
+AdapterBindingObservation adapterBindingObservationFromJson(String str) =>
+    AdapterBindingObservation.fromJson(json.decode(str));
+
+String adapterBindingObservationToJson(AdapterBindingObservation data) =>
+    json.encode(data.toJson());
+
 AdapterExecutionObservation adapterExecutionObservationFromJson(String str) =>
     AdapterExecutionObservation.fromJson(json.decode(str));
 
 String adapterExecutionObservationToJson(AdapterExecutionObservation data) =>
     json.encode(data.toJson());
 
+AdapterExecutionReference adapterExecutionReferenceFromJson(String str) =>
+    AdapterExecutionReference.fromJson(json.decode(str));
+
+String adapterExecutionReferenceToJson(AdapterExecutionReference data) =>
+    json.encode(data.toJson());
+
 AdapterExecutionResponse adapterExecutionResponseFromJson(String str) =>
     AdapterExecutionResponse.fromJson(json.decode(str));
 
 String adapterExecutionResponseToJson(AdapterExecutionResponse data) =>
+    json.encode(data.toJson());
+
+AdapterExecutionUsage adapterExecutionUsageFromJson(String str) =>
+    AdapterExecutionUsage.fromJson(json.decode(str));
+
+String adapterExecutionUsageToJson(AdapterExecutionUsage data) =>
+    json.encode(data.toJson());
+
+AdapterPepCheckRequest adapterPepCheckRequestFromJson(String str) =>
+    AdapterPepCheckRequest.fromJson(json.decode(str));
+
+String adapterPepCheckRequestToJson(AdapterPepCheckRequest data) =>
+    json.encode(data.toJson());
+
+AdapterPepCheckResponse adapterPepCheckResponseFromJson(String str) =>
+    AdapterPepCheckResponse.fromJson(json.decode(str));
+
+String adapterPepCheckResponseToJson(AdapterPepCheckResponse data) =>
     json.encode(data.toJson());
 
 AdapterScopeObservation adapterScopeObservationFromJson(String str) =>
@@ -260,6 +303,18 @@ AgentVersionView agentVersionViewFromJson(String str) =>
     AgentVersionView.fromJson(json.decode(str));
 
 String agentVersionViewToJson(AgentVersionView data) =>
+    json.encode(data.toJson());
+
+ApplicationBindingPage applicationBindingPageFromJson(String str) =>
+    ApplicationBindingPage.fromJson(json.decode(str));
+
+String applicationBindingPageToJson(ApplicationBindingPage data) =>
+    json.encode(data.toJson());
+
+ApplicationNativePage applicationNativePageFromJson(String str) =>
+    ApplicationNativePage.fromJson(json.decode(str));
+
+String applicationNativePageToJson(ApplicationNativePage data) =>
     json.encode(data.toJson());
 
 ApprovalDecisionRequest approvalDecisionRequestFromJson(String str) =>
@@ -510,6 +565,12 @@ WorkspacePreferenceRequest workspacePreferenceRequestFromJson(String str) =>
 String workspacePreferenceRequestToJson(WorkspacePreferenceRequest data) =>
     json.encode(data.toJson());
 
+ActionTokenSigningDelivery actionTokenSigningDeliveryFromJson(String str) =>
+    ActionTokenSigningDelivery.fromJson(json.decode(str));
+
+String actionTokenSigningDeliveryToJson(ActionTokenSigningDelivery data) =>
+    json.encode(data.toJson());
+
 AgentMemoryEntryListInput agentMemoryEntryListInputFromJson(String str) =>
     AgentMemoryEntryListInput.fromJson(json.decode(str));
 
@@ -532,6 +593,18 @@ AgentVersionContent agentVersionContentFromJson(String str) =>
     AgentVersionContent.fromJson(json.decode(str));
 
 String agentVersionContentToJson(AgentVersionContent data) =>
+    json.encode(data.toJson());
+
+ApplicationAdapterDirectory applicationAdapterDirectoryFromJson(String str) =>
+    ApplicationAdapterDirectory.fromJson(json.decode(str));
+
+String applicationAdapterDirectoryToJson(ApplicationAdapterDirectory data) =>
+    json.encode(data.toJson());
+
+ApplicationBindingCreate applicationBindingCreateFromJson(String str) =>
+    ApplicationBindingCreate.fromJson(json.decode(str));
+
+String applicationBindingCreateToJson(ApplicationBindingCreate data) =>
     json.encode(data.toJson());
 
 AutomationApprovalPolicyRef automationApprovalPolicyRefFromJson(String str) =>
@@ -709,6 +782,28 @@ AgentTaskWorkflowInput agentTaskWorkflowInputFromJson(String str) =>
     AgentTaskWorkflowInput.fromJson(json.decode(str));
 
 String agentTaskWorkflowInputToJson(AgentTaskWorkflowInput data) =>
+    json.encode(data.toJson());
+
+ApplicationBindingAdvanceRequest applicationBindingAdvanceRequestFromJson(
+  String str,
+) => ApplicationBindingAdvanceRequest.fromJson(json.decode(str));
+
+String applicationBindingAdvanceRequestToJson(
+  ApplicationBindingAdvanceRequest data,
+) => json.encode(data.toJson());
+
+ApplicationBindingAdvanceResult applicationBindingAdvanceResultFromJson(
+  String str,
+) => ApplicationBindingAdvanceResult.fromJson(json.decode(str));
+
+String applicationBindingAdvanceResultToJson(
+  ApplicationBindingAdvanceResult data,
+) => json.encode(data.toJson());
+
+ApplicationBindingTarget applicationBindingTargetFromJson(String str) =>
+    ApplicationBindingTarget.fromJson(json.decode(str));
+
+String applicationBindingTargetToJson(ApplicationBindingTarget data) =>
     json.encode(data.toJson());
 
 ApprovalControlOutcome approvalControlOutcomeFromJson(String str) =>
@@ -1024,6 +1119,153 @@ final variantKindValues = EnumValues({
   "TASK": VariantKind.TASK,
 });
 
+///07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
+class AdapterBindingObservation {
+  final String artifactDigest;
+  final String bindingId;
+  final String configDigest;
+  final List<AdapterExecutionMapping> executionMappings;
+  final ApplicationIsolationMode isolationMode;
+  final String nativeInstanceRef;
+  final String nativeScopeRef;
+  final List<AdapterSecretRead> secretReads;
+  final String secretRefDigest;
+  final String tenantId;
+  final String? workspaceId;
+
+  AdapterBindingObservation({
+    required this.artifactDigest,
+    required this.bindingId,
+    required this.configDigest,
+    required this.executionMappings,
+    required this.isolationMode,
+    required this.nativeInstanceRef,
+    required this.nativeScopeRef,
+    required this.secretReads,
+    required this.secretRefDigest,
+    required this.tenantId,
+    this.workspaceId,
+  });
+
+  factory AdapterBindingObservation.fromJson(
+    Map<String, dynamic> json,
+  ) => AdapterBindingObservation(
+    artifactDigest: json["artifactDigest"],
+    bindingId: json["bindingId"],
+    configDigest: json["configDigest"],
+    executionMappings: List<AdapterExecutionMapping>.from(
+      json["executionMappings"].map((x) => AdapterExecutionMapping.fromJson(x)),
+    ),
+    isolationMode: applicationIsolationModeValues.map[json["isolationMode"]]!,
+    nativeInstanceRef: json["nativeInstanceRef"],
+    nativeScopeRef: json["nativeScopeRef"],
+    secretReads: List<AdapterSecretRead>.from(
+      json["secretReads"].map((x) => AdapterSecretRead.fromJson(x)),
+    ),
+    secretRefDigest: json["secretRefDigest"],
+    tenantId: json["tenantId"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "artifactDigest": artifactDigest,
+    "bindingId": bindingId,
+    "configDigest": configDigest,
+    "executionMappings": List<dynamic>.from(
+      executionMappings.map((x) => x.toJson()),
+    ),
+    "isolationMode": applicationIsolationModeValues.reverse[isolationMode],
+    "nativeInstanceRef": nativeInstanceRef,
+    "nativeScopeRef": nativeScopeRef,
+    "secretReads": List<dynamic>.from(secretReads.map((x) => x.toJson())),
+    "secretRefDigest": secretRefDigest,
+    "tenantId": tenantId,
+    "workspaceId": workspaceId,
+  });
+}
+
+class AdapterExecutionMapping {
+  final String actionKey;
+  final int actionVersion;
+  final NativeCancelCapability cancelCapability;
+  final String nativeType;
+
+  AdapterExecutionMapping({
+    required this.actionKey,
+    required this.actionVersion,
+    required this.cancelCapability,
+    required this.nativeType,
+  });
+
+  factory AdapterExecutionMapping.fromJson(Map<String, dynamic> json) =>
+      AdapterExecutionMapping(
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        cancelCapability:
+            nativeCancelCapabilityValues.map[json["cancelCapability"]]!,
+        nativeType: json["nativeType"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "cancelCapability": nativeCancelCapabilityValues.reverse[cancelCapability],
+    "nativeType": nativeType,
+  });
+}
+
+enum NativeCancelCapability { SUPPORTED, UNSUPPORTED }
+
+final nativeCancelCapabilityValues = EnumValues({
+  "SUPPORTED": NativeCancelCapability.SUPPORTED,
+  "UNSUPPORTED": NativeCancelCapability.UNSUPPORTED,
+});
+
+enum ApplicationIsolationMode {
+  DEDICATED_INSTANCE,
+  NAMESPACE,
+  NATIVE_TENANT,
+  RESOURCE_FILTER,
+  RESOURCE_INSTANCE,
+}
+
+final applicationIsolationModeValues = EnumValues({
+  "DEDICATED_INSTANCE": ApplicationIsolationMode.DEDICATED_INSTANCE,
+  "NAMESPACE": ApplicationIsolationMode.NAMESPACE,
+  "NATIVE_TENANT": ApplicationIsolationMode.NATIVE_TENANT,
+  "RESOURCE_FILTER": ApplicationIsolationMode.RESOURCE_FILTER,
+  "RESOURCE_INSTANCE": ApplicationIsolationMode.RESOURCE_INSTANCE,
+});
+
+class AdapterSecretRead {
+  final String audience;
+  final String requestId;
+  final String secretKey;
+  final int version;
+
+  AdapterSecretRead({
+    required this.audience,
+    required this.requestId,
+    required this.secretKey,
+    required this.version,
+  });
+
+  factory AdapterSecretRead.fromJson(Map<String, dynamic> json) =>
+      AdapterSecretRead(
+        audience: json["audience"],
+        requestId: json["requestId"],
+        secretKey: json["secretKey"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "requestId": requestId,
+    "secretKey": secretKey,
+    "version": version,
+  });
+}
+
 ///ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
 ///允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
 class AdapterExecutionObservation {
@@ -1073,13 +1315,6 @@ class AdapterExecutionObservation {
   });
 }
 
-enum NativeCancelCapability { SUPPORTED, UNSUPPORTED }
-
-final nativeCancelCapabilityValues = EnumValues({
-  "SUPPORTED": NativeCancelCapability.SUPPORTED,
-  "UNSUPPORTED": NativeCancelCapability.UNSUPPORTED,
-});
-
 ///design03§6 ExternalExecution 的既定平台状态；HTTP成功和cancel accepted均不构成终态。
 enum ExternalExecutionStatus {
   CANCELLED,
@@ -1098,6 +1333,37 @@ final externalExecutionStatusValues = EnumValues({
   "SUCCEEDED": ExternalExecutionStatus.SUCCEEDED,
   "UNKNOWN": ExternalExecutionStatus.UNKNOWN,
 });
+
+///原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
+///未取得时只用冻结幂等键查证。
+class AdapterExecutionReference {
+  final String externalExecutionId;
+  final String idempotencyKey;
+  final String? nativeId;
+  final String nativeType;
+
+  AdapterExecutionReference({
+    required this.externalExecutionId,
+    required this.idempotencyKey,
+    this.nativeId,
+    required this.nativeType,
+  });
+
+  factory AdapterExecutionReference.fromJson(Map<String, dynamic> json) =>
+      AdapterExecutionReference(
+        externalExecutionId: json["externalExecutionId"],
+        idempotencyKey: json["idempotencyKey"],
+        nativeId: json["nativeId"],
+        nativeType: json["nativeType"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "externalExecutionId": externalExecutionId,
+    "idempotencyKey": idempotencyKey,
+    "nativeId": nativeId,
+    "nativeType": nativeType,
+  });
+}
 
 ///ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入
 ///Core 的套件报告。
@@ -1213,6 +1479,130 @@ class ExecutionClass {
   });
 }
 
+///DD-48/51/94 extract_usage 的原生终态用量元数据；scope/customer/dimensions 只由 Core 原
+///ExternalExecution 决定。完整集合与冻结 action meters 精确相等，缺失不是零。
+class AdapterExecutionUsage {
+  final String externalExecutionId;
+  final String idempotencyKey;
+  final List<Measurement> measurements;
+  final String nativeId;
+  final String nativeType;
+
+  AdapterExecutionUsage({
+    required this.externalExecutionId,
+    required this.idempotencyKey,
+    required this.measurements,
+    required this.nativeId,
+    required this.nativeType,
+  });
+
+  factory AdapterExecutionUsage.fromJson(Map<String, dynamic> json) =>
+      AdapterExecutionUsage(
+        externalExecutionId: json["externalExecutionId"],
+        idempotencyKey: json["idempotencyKey"],
+        measurements: List<Measurement>.from(
+          json["measurements"].map((x) => Measurement.fromJson(x)),
+        ),
+        nativeId: json["nativeId"],
+        nativeType: json["nativeType"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "externalExecutionId": externalExecutionId,
+    "idempotencyKey": idempotencyKey,
+    "measurements": List<dynamic>.from(measurements.map((x) => x.toJson())),
+    "nativeId": nativeId,
+    "nativeType": nativeType,
+  });
+}
+
+class Measurement {
+  final String meterKey;
+  final String occurredAt;
+  final int quantity;
+
+  Measurement({
+    required this.meterKey,
+    required this.occurredAt,
+    required this.quantity,
+  });
+
+  factory Measurement.fromJson(Map<String, dynamic> json) => Measurement(
+    meterKey: json["meterKey"],
+    occurredAt: json["occurredAt"],
+    quantity: json["quantity"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "meterKey": meterKey,
+    "occurredAt": occurredAt,
+    "quantity": quantity,
+  });
+}
+
+///ADR-12
+///adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。
+class AdapterPepCheckRequest {
+  final String actionToken;
+  final String argumentsJson;
+  final String bindingId;
+  final ContentReferenceClass? contentReference;
+  final String operation;
+
+  AdapterPepCheckRequest({
+    required this.actionToken,
+    required this.argumentsJson,
+    required this.bindingId,
+    this.contentReference,
+    required this.operation,
+  });
+
+  factory AdapterPepCheckRequest.fromJson(Map<String, dynamic> json) =>
+      AdapterPepCheckRequest(
+        actionToken: json["actionToken"],
+        argumentsJson: json["argumentsJson"],
+        bindingId: json["bindingId"],
+        contentReference: json["contentReference"] == null
+            ? null
+            : ContentReferenceClass.fromJson(json["contentReference"]),
+        operation: json["operation"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionToken": actionToken,
+    "argumentsJson": argumentsJson,
+    "bindingId": bindingId,
+    "contentReference": contentReference?.toJson(),
+    "operation": operation,
+  });
+}
+
+///只在原动作和精确binding仍被fresh授权时返回当前授权revision；不是可复用的新授权票据。
+class AdapterPepCheckResponse {
+  final String actionExecutionId;
+  final String authorizationMinZedToken;
+  final String operationId;
+
+  AdapterPepCheckResponse({
+    required this.actionExecutionId,
+    required this.authorizationMinZedToken,
+    required this.operationId,
+  });
+
+  factory AdapterPepCheckResponse.fromJson(Map<String, dynamic> json) =>
+      AdapterPepCheckResponse(
+        actionExecutionId: json["actionExecutionId"],
+        authorizationMinZedToken: json["authorizationMinZedToken"],
+        operationId: json["operationId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "authorizationMinZedToken": authorizationMinZedToken,
+    "operationId": operationId,
+  });
+}
+
 ///DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
 class AdapterScopeObservation {
   final String? nativeRef;
@@ -1258,6 +1648,9 @@ class ActionCommand {
 
   ///仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
   final ContentClass? agentVersionContent;
+  final ApplicationBindingCreateClass? applicationBindingCreate;
+  final String? applicationBindingId;
+  final int? applicationBindingVersion;
 
   ///AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。
   final String? assetId;
@@ -1336,6 +1729,9 @@ class ActionCommand {
   ActionCommand({
     required this.actionKey,
     this.agentVersionContent,
+    this.applicationBindingCreate,
+    this.applicationBindingId,
+    this.applicationBindingVersion,
     this.assetId,
     this.assetVersion,
     this.automationVersionContent,
@@ -1368,6 +1764,13 @@ class ActionCommand {
     agentVersionContent: json["agentVersionContent"] == null
         ? null
         : ContentClass.fromJson(json["agentVersionContent"]),
+    applicationBindingCreate: json["applicationBindingCreate"] == null
+        ? null
+        : ApplicationBindingCreateClass.fromJson(
+            json["applicationBindingCreate"],
+          ),
+    applicationBindingId: json["applicationBindingId"],
+    applicationBindingVersion: json["applicationBindingVersion"],
     assetId: json["assetId"],
     assetVersion: json["assetVersion"],
     automationVersionContent: json["automationVersionContent"] == null
@@ -1419,6 +1822,9 @@ class ActionCommand {
   Map<String, dynamic> toJson() => _stripNulls({
     "actionKey": actionKey,
     "agentVersionContent": agentVersionContent?.toJson(),
+    "applicationBindingCreate": applicationBindingCreate?.toJson(),
+    "applicationBindingId": applicationBindingId,
+    "applicationBindingVersion": applicationBindingVersion,
     "assetId": assetId,
     "assetVersion": assetVersion,
     "automationVersionContent": automationVersionContent?.toJson(),
@@ -1612,6 +2018,156 @@ class ContentTurnLimits {
   Map<String, dynamic> toJson() => _stripNulls({
     "idleTimeoutSeconds": idleTimeoutSeconds,
     "maxTurnDurationSeconds": maxTurnDurationSeconds,
+  });
+}
+
+///DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
+///ActionCommand。
+class ApplicationBindingCreateClass {
+  final String adapterServiceRef;
+  final String bindingId;
+  final ApplicationCallIdentityMode callIdentityMode;
+  final List<ApplicationBindingCreateCapabilityCategory> capabilityCategories;
+  final String componentReleaseId;
+  final ApplicationIsolationMode isolationMode;
+  final ApplicationModelCallMode modelCallMode;
+  final String nativeInstanceRef;
+  final String? nativeScopeRef;
+  final String normalizedConfigJson;
+  final bool retainOnTenantDelete;
+  final List<ApplicationBindingCreateSecretRef> secretRefs;
+  final String servicePrincipalId;
+
+  ApplicationBindingCreateClass({
+    required this.adapterServiceRef,
+    required this.bindingId,
+    required this.callIdentityMode,
+    required this.capabilityCategories,
+    required this.componentReleaseId,
+    required this.isolationMode,
+    required this.modelCallMode,
+    required this.nativeInstanceRef,
+    this.nativeScopeRef,
+    required this.normalizedConfigJson,
+    required this.retainOnTenantDelete,
+    required this.secretRefs,
+    required this.servicePrincipalId,
+  });
+
+  factory ApplicationBindingCreateClass.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationBindingCreateClass(
+    adapterServiceRef: json["adapterServiceRef"],
+    bindingId: json["bindingId"],
+    callIdentityMode:
+        applicationCallIdentityModeValues.map[json["callIdentityMode"]]!,
+    capabilityCategories: List<ApplicationBindingCreateCapabilityCategory>.from(
+      json["capabilityCategories"].map(
+        (x) => ApplicationBindingCreateCapabilityCategory.fromJson(x),
+      ),
+    ),
+    componentReleaseId: json["componentReleaseId"],
+    isolationMode: applicationIsolationModeValues.map[json["isolationMode"]]!,
+    modelCallMode: applicationModelCallModeValues.map[json["modelCallMode"]]!,
+    nativeInstanceRef: json["nativeInstanceRef"],
+    nativeScopeRef: json["nativeScopeRef"],
+    normalizedConfigJson: json["normalizedConfigJson"],
+    retainOnTenantDelete: json["retainOnTenantDelete"],
+    secretRefs: List<ApplicationBindingCreateSecretRef>.from(
+      json["secretRefs"].map(
+        (x) => ApplicationBindingCreateSecretRef.fromJson(x),
+      ),
+    ),
+    servicePrincipalId: json["servicePrincipalId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapterServiceRef": adapterServiceRef,
+    "bindingId": bindingId,
+    "callIdentityMode":
+        applicationCallIdentityModeValues.reverse[callIdentityMode],
+    "capabilityCategories": List<dynamic>.from(
+      capabilityCategories.map((x) => x.toJson()),
+    ),
+    "componentReleaseId": componentReleaseId,
+    "isolationMode": applicationIsolationModeValues.reverse[isolationMode],
+    "modelCallMode": applicationModelCallModeValues.reverse[modelCallMode],
+    "nativeInstanceRef": nativeInstanceRef,
+    "nativeScopeRef": nativeScopeRef,
+    "normalizedConfigJson": normalizedConfigJson,
+    "retainOnTenantDelete": retainOnTenantDelete,
+    "secretRefs": List<dynamic>.from(secretRefs.map((x) => x.toJson())),
+    "servicePrincipalId": servicePrincipalId,
+  });
+}
+
+enum ApplicationCallIdentityMode {
+  END_USER_TOKEN,
+  INSTANCE_SERVICE,
+  TENANT_SERVICE,
+}
+
+final applicationCallIdentityModeValues = EnumValues({
+  "END_USER_TOKEN": ApplicationCallIdentityMode.END_USER_TOKEN,
+  "INSTANCE_SERVICE": ApplicationCallIdentityMode.INSTANCE_SERVICE,
+  "TENANT_SERVICE": ApplicationCallIdentityMode.TENANT_SERVICE,
+});
+
+class ApplicationBindingCreateCapabilityCategory {
+  final String category;
+  final int version;
+
+  ApplicationBindingCreateCapabilityCategory({
+    required this.category,
+    required this.version,
+  });
+
+  factory ApplicationBindingCreateCapabilityCategory.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationBindingCreateCapabilityCategory(
+    category: json["category"],
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"category": category, "version": version});
+}
+
+enum ApplicationModelCallMode { NONE, PLATFORM_LLM_ROUTE, SELF_MANAGED_MODEL }
+
+final applicationModelCallModeValues = EnumValues({
+  "NONE": ApplicationModelCallMode.NONE,
+  "PLATFORM_LLM_ROUTE": ApplicationModelCallMode.PLATFORM_LLM_ROUTE,
+  "SELF_MANAGED_MODEL": ApplicationModelCallMode.SELF_MANAGED_MODEL,
+});
+
+class ApplicationBindingCreateSecretRef {
+  final String audience;
+  final String locator;
+  final String secretKey;
+  final int version;
+
+  ApplicationBindingCreateSecretRef({
+    required this.audience,
+    required this.locator,
+    required this.secretKey,
+    required this.version,
+  });
+
+  factory ApplicationBindingCreateSecretRef.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationBindingCreateSecretRef(
+    audience: json["audience"],
+    locator: json["locator"],
+    secretKey: json["secretKey"],
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "locator": locator,
+    "secretKey": secretKey,
+    "version": version,
   });
 }
 
@@ -4019,6 +4575,169 @@ class AgentVersionView {
     "ordinal": ordinal,
     "ownerPrincipalId": ownerPrincipalId,
     "state": agentVersionStateValues.reverse[state],
+  });
+}
+
+///当前HUMAN管理scope内的真实接入元数据。不是组件内部状态、配置、SecretRef或原生管理credential。
+class ApplicationBindingPage {
+  final List<ApplicationBindingView> bindings;
+  final bool canCreate;
+  final int? nextOffset;
+
+  ApplicationBindingPage({
+    required this.bindings,
+    required this.canCreate,
+    this.nextOffset,
+  });
+
+  factory ApplicationBindingPage.fromJson(Map<String, dynamic> json) =>
+      ApplicationBindingPage(
+        bindings: List<ApplicationBindingView>.from(
+          json["bindings"].map((x) => ApplicationBindingView.fromJson(x)),
+        ),
+        canCreate: json["canCreate"],
+        nextOffset: json["nextOffset"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindings": List<dynamic>.from(bindings.map((x) => x.toJson())),
+    "canCreate": canCreate,
+    "nextOffset": nextOffset,
+  });
+}
+
+class ApplicationBindingView {
+  final int? activeProjectionGeneration;
+  final String bindingId;
+  final bool canDisable;
+  final List<ApplicationBindingCapability> capabilityCategories;
+  final String componentReleaseId;
+  final String componentTypeKey;
+
+  ///Approved release declares an independent native page. Launch still freshly checks
+  ///binding, scope and deployment origins.
+  final bool? hasNativePage;
+  final ApplicationBindingState state;
+  final String tenantId;
+  final int version;
+  final String? workspaceId;
+
+  ApplicationBindingView({
+    this.activeProjectionGeneration,
+    required this.bindingId,
+    required this.canDisable,
+    required this.capabilityCategories,
+    required this.componentReleaseId,
+    required this.componentTypeKey,
+    this.hasNativePage,
+    required this.state,
+    required this.tenantId,
+    required this.version,
+    this.workspaceId,
+  });
+
+  factory ApplicationBindingView.fromJson(Map<String, dynamic> json) =>
+      ApplicationBindingView(
+        activeProjectionGeneration: json["activeProjectionGeneration"],
+        bindingId: json["bindingId"],
+        canDisable: json["canDisable"],
+        capabilityCategories: List<ApplicationBindingCapability>.from(
+          json["capabilityCategories"].map(
+            (x) => ApplicationBindingCapability.fromJson(x),
+          ),
+        ),
+        componentReleaseId: json["componentReleaseId"],
+        componentTypeKey: json["componentTypeKey"],
+        hasNativePage: json["hasNativePage"],
+        state: applicationBindingStateValues.map[json["state"]]!,
+        tenantId: json["tenantId"],
+        version: json["version"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "activeProjectionGeneration": activeProjectionGeneration,
+    "bindingId": bindingId,
+    "canDisable": canDisable,
+    "capabilityCategories": List<dynamic>.from(
+      capabilityCategories.map((x) => x.toJson()),
+    ),
+    "componentReleaseId": componentReleaseId,
+    "componentTypeKey": componentTypeKey,
+    "hasNativePage": hasNativePage,
+    "state": applicationBindingStateValues.reverse[state],
+    "tenantId": tenantId,
+    "version": version,
+    "workspaceId": workspaceId,
+  });
+}
+
+class ApplicationBindingCapability {
+  final String category;
+  final int version;
+
+  ApplicationBindingCapability({required this.category, required this.version});
+
+  factory ApplicationBindingCapability.fromJson(Map<String, dynamic> json) =>
+      ApplicationBindingCapability(
+        category: json["category"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"category": category, "version": version});
+}
+
+enum ApplicationBindingState {
+  ACTIVE,
+  DISABLED,
+  DISABLING,
+  ERROR,
+  PROVISIONING,
+  UPGRADING,
+}
+
+final applicationBindingStateValues = EnumValues({
+  "ACTIVE": ApplicationBindingState.ACTIVE,
+  "DISABLED": ApplicationBindingState.DISABLED,
+  "DISABLING": ApplicationBindingState.DISABLING,
+  "ERROR": ApplicationBindingState.ERROR,
+  "PROVISIONING": ApplicationBindingState.PROVISIONING,
+  "UPGRADING": ApplicationBindingState.UPGRADING,
+});
+
+///Authorized ACTIVE binding's independent native page. Exact origin is release and
+///deployment approved; no native credential or page body is returned.
+class ApplicationNativePage {
+  final List<String> allowedOrigins;
+  final String bindingId;
+  final String origin;
+  final int projectionGeneration;
+  final String url;
+
+  ApplicationNativePage({
+    required this.allowedOrigins,
+    required this.bindingId,
+    required this.origin,
+    required this.projectionGeneration,
+    required this.url,
+  });
+
+  factory ApplicationNativePage.fromJson(Map<String, dynamic> json) =>
+      ApplicationNativePage(
+        allowedOrigins: List<String>.from(json["allowedOrigins"].map((x) => x)),
+        bindingId: json["bindingId"],
+        origin: json["origin"],
+        projectionGeneration: json["projectionGeneration"],
+        url: json["url"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "allowedOrigins": List<dynamic>.from(allowedOrigins.map((x) => x)),
+    "bindingId": bindingId,
+    "origin": origin,
+    "projectionGeneration": projectionGeneration,
+    "url": url,
   });
 }
 
@@ -6983,6 +7702,48 @@ class WorkspacePreferenceRequest {
       _stripNulls({"muted": muted, "starred": starred, "version": version});
 }
 
+///DD-49/70/71/94：Core-only签发投递。只有版本化OpenBao引用及Agent已发布JWKS文件引用，不含私钥正文。
+class ActionTokenSigningDelivery {
+  final String issuer;
+  final String jwksFile;
+  final String privateKeyField;
+  final String secretAudience;
+  final String secretLocator;
+  final int secretVersion;
+  final int tokenSeconds;
+
+  ActionTokenSigningDelivery({
+    required this.issuer,
+    required this.jwksFile,
+    required this.privateKeyField,
+    required this.secretAudience,
+    required this.secretLocator,
+    required this.secretVersion,
+    required this.tokenSeconds,
+  });
+
+  factory ActionTokenSigningDelivery.fromJson(Map<String, dynamic> json) =>
+      ActionTokenSigningDelivery(
+        issuer: json["issuer"],
+        jwksFile: json["jwksFile"],
+        privateKeyField: json["privateKeyField"],
+        secretAudience: json["secretAudience"],
+        secretLocator: json["secretLocator"],
+        secretVersion: json["secretVersion"],
+        tokenSeconds: json["tokenSeconds"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "issuer": issuer,
+    "jwksFile": jwksFile,
+    "privateKeyField": privateKeyField,
+    "secretAudience": secretAudience,
+    "secretLocator": secretLocator,
+    "secretVersion": secretVersion,
+    "tokenSeconds": tokenSeconds,
+  });
+}
+
 ///Installation 只取自受验签的 Invocation Session，不接受调用方目标覆盖。
 class AgentMemoryEntryListInput {
   AgentMemoryEntryListInput();
@@ -7204,6 +7965,232 @@ class AgentVersionContentTurnLimits {
   Map<String, dynamic> toJson() => _stripNulls({
     "idleTimeoutSeconds": idleTimeoutSeconds,
     "maxTurnDurationSeconds": maxTurnDurationSeconds,
+  });
+}
+
+///DD-94部署投递面：adapter服务引用解析到固定部署产物/原生实例与受限传输。不是Catalog或业务授权。
+class ApplicationAdapterDirectory {
+  final List<ApplicationAdapterDelivery> adapters;
+
+  ApplicationAdapterDirectory({required this.adapters});
+
+  factory ApplicationAdapterDirectory.fromJson(Map<String, dynamic> json) =>
+      ApplicationAdapterDirectory(
+        adapters: List<ApplicationAdapterDelivery>.from(
+          json["adapters"].map((x) => ApplicationAdapterDelivery.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapters": List<dynamic>.from(adapters.map((x) => x.toJson())),
+  });
+}
+
+class ApplicationAdapterDelivery {
+  final String actionTokenAudience;
+  final String adapterServiceRef;
+  final String artifactDigest;
+  final String baseUrl;
+  final int maxResponseBytes;
+  final String? mcpUrl;
+  final String nativeInstanceRef;
+  final List<ApplicationSecretReader> secretReaders;
+  final int timeoutSeconds;
+
+  ApplicationAdapterDelivery({
+    required this.actionTokenAudience,
+    required this.adapterServiceRef,
+    required this.artifactDigest,
+    required this.baseUrl,
+    required this.maxResponseBytes,
+    this.mcpUrl,
+    required this.nativeInstanceRef,
+    required this.secretReaders,
+    required this.timeoutSeconds,
+  });
+
+  factory ApplicationAdapterDelivery.fromJson(Map<String, dynamic> json) =>
+      ApplicationAdapterDelivery(
+        actionTokenAudience: json["actionTokenAudience"],
+        adapterServiceRef: json["adapterServiceRef"],
+        artifactDigest: json["artifactDigest"],
+        baseUrl: json["baseUrl"],
+        maxResponseBytes: json["maxResponseBytes"],
+        mcpUrl: json["mcpUrl"],
+        nativeInstanceRef: json["nativeInstanceRef"],
+        secretReaders: List<ApplicationSecretReader>.from(
+          json["secretReaders"].map((x) => ApplicationSecretReader.fromJson(x)),
+        ),
+        timeoutSeconds: json["timeoutSeconds"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionTokenAudience": actionTokenAudience,
+    "adapterServiceRef": adapterServiceRef,
+    "artifactDigest": artifactDigest,
+    "baseUrl": baseUrl,
+    "maxResponseBytes": maxResponseBytes,
+    "mcpUrl": mcpUrl,
+    "nativeInstanceRef": nativeInstanceRef,
+    "secretReaders": List<dynamic>.from(secretReaders.map((x) => x.toJson())),
+    "timeoutSeconds": timeoutSeconds,
+  });
+}
+
+class ApplicationSecretReader {
+  final String audience;
+  final String roleName;
+  final String servicePrincipalId;
+
+  ApplicationSecretReader({
+    required this.audience,
+    required this.roleName,
+    required this.servicePrincipalId,
+  });
+
+  factory ApplicationSecretReader.fromJson(Map<String, dynamic> json) =>
+      ApplicationSecretReader(
+        audience: json["audience"],
+        roleName: json["roleName"],
+        servicePrincipalId: json["servicePrincipalId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "roleName": roleName,
+    "servicePrincipalId": servicePrincipalId,
+  });
+}
+
+///DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
+///ActionCommand。
+class ApplicationBindingCreate {
+  final String adapterServiceRef;
+  final String bindingId;
+  final ApplicationCallIdentityMode callIdentityMode;
+  final List<ApplicationBindingCreateCapabilityCategoryClass>
+  capabilityCategories;
+  final String componentReleaseId;
+  final ApplicationIsolationMode isolationMode;
+  final ApplicationModelCallMode modelCallMode;
+  final String nativeInstanceRef;
+  final String? nativeScopeRef;
+  final String normalizedConfigJson;
+  final bool retainOnTenantDelete;
+  final List<ApplicationBindingCreateSecretRefClass> secretRefs;
+  final String servicePrincipalId;
+
+  ApplicationBindingCreate({
+    required this.adapterServiceRef,
+    required this.bindingId,
+    required this.callIdentityMode,
+    required this.capabilityCategories,
+    required this.componentReleaseId,
+    required this.isolationMode,
+    required this.modelCallMode,
+    required this.nativeInstanceRef,
+    this.nativeScopeRef,
+    required this.normalizedConfigJson,
+    required this.retainOnTenantDelete,
+    required this.secretRefs,
+    required this.servicePrincipalId,
+  });
+
+  factory ApplicationBindingCreate.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationBindingCreate(
+    adapterServiceRef: json["adapterServiceRef"],
+    bindingId: json["bindingId"],
+    callIdentityMode:
+        applicationCallIdentityModeValues.map[json["callIdentityMode"]]!,
+    capabilityCategories:
+        List<ApplicationBindingCreateCapabilityCategoryClass>.from(
+          json["capabilityCategories"].map(
+            (x) => ApplicationBindingCreateCapabilityCategoryClass.fromJson(x),
+          ),
+        ),
+    componentReleaseId: json["componentReleaseId"],
+    isolationMode: applicationIsolationModeValues.map[json["isolationMode"]]!,
+    modelCallMode: applicationModelCallModeValues.map[json["modelCallMode"]]!,
+    nativeInstanceRef: json["nativeInstanceRef"],
+    nativeScopeRef: json["nativeScopeRef"],
+    normalizedConfigJson: json["normalizedConfigJson"],
+    retainOnTenantDelete: json["retainOnTenantDelete"],
+    secretRefs: List<ApplicationBindingCreateSecretRefClass>.from(
+      json["secretRefs"].map(
+        (x) => ApplicationBindingCreateSecretRefClass.fromJson(x),
+      ),
+    ),
+    servicePrincipalId: json["servicePrincipalId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapterServiceRef": adapterServiceRef,
+    "bindingId": bindingId,
+    "callIdentityMode":
+        applicationCallIdentityModeValues.reverse[callIdentityMode],
+    "capabilityCategories": List<dynamic>.from(
+      capabilityCategories.map((x) => x.toJson()),
+    ),
+    "componentReleaseId": componentReleaseId,
+    "isolationMode": applicationIsolationModeValues.reverse[isolationMode],
+    "modelCallMode": applicationModelCallModeValues.reverse[modelCallMode],
+    "nativeInstanceRef": nativeInstanceRef,
+    "nativeScopeRef": nativeScopeRef,
+    "normalizedConfigJson": normalizedConfigJson,
+    "retainOnTenantDelete": retainOnTenantDelete,
+    "secretRefs": List<dynamic>.from(secretRefs.map((x) => x.toJson())),
+    "servicePrincipalId": servicePrincipalId,
+  });
+}
+
+class ApplicationBindingCreateCapabilityCategoryClass {
+  final String category;
+  final int version;
+
+  ApplicationBindingCreateCapabilityCategoryClass({
+    required this.category,
+    required this.version,
+  });
+
+  factory ApplicationBindingCreateCapabilityCategoryClass.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationBindingCreateCapabilityCategoryClass(
+    category: json["category"],
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"category": category, "version": version});
+}
+
+class ApplicationBindingCreateSecretRefClass {
+  final String audience;
+  final String locator;
+  final String secretKey;
+  final int version;
+
+  ApplicationBindingCreateSecretRefClass({
+    required this.audience,
+    required this.locator,
+    required this.secretKey,
+    required this.version,
+  });
+
+  factory ApplicationBindingCreateSecretRefClass.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationBindingCreateSecretRefClass(
+    audience: json["audience"],
+    locator: json["locator"],
+    secretKey: json["secretKey"],
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "locator": locator,
+    "secretKey": secretKey,
+    "version": version,
   });
 }
 
@@ -8864,6 +9851,116 @@ class AgentTaskWorkflowInput {
     "invocationId": invocationId,
     "observationIntervalSeconds": observationIntervalSeconds,
     "projectionGeneration": projectionGeneration,
+  });
+}
+
+class ApplicationBindingAdvanceRequest {
+  final bool cancelRequested;
+  final String runId;
+  final ApplicationBindingAdvanceRequestTarget target;
+
+  ApplicationBindingAdvanceRequest({
+    required this.cancelRequested,
+    required this.runId,
+    required this.target,
+  });
+
+  factory ApplicationBindingAdvanceRequest.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationBindingAdvanceRequest(
+    cancelRequested: json["cancelRequested"],
+    runId: json["runId"],
+    target: ApplicationBindingAdvanceRequestTarget.fromJson(json["target"]),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cancelRequested": cancelRequested,
+    "runId": runId,
+    "target": target.toJson(),
+  });
+}
+
+class ApplicationBindingAdvanceRequestTarget {
+  final String actionExecutionId;
+  final String bindingId;
+  final int bindingVersion;
+  final String workflowId;
+
+  ApplicationBindingAdvanceRequestTarget({
+    required this.actionExecutionId,
+    required this.bindingId,
+    required this.bindingVersion,
+    required this.workflowId,
+  });
+
+  factory ApplicationBindingAdvanceRequestTarget.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationBindingAdvanceRequestTarget(
+    actionExecutionId: json["actionExecutionId"],
+    bindingId: json["bindingId"],
+    bindingVersion: json["bindingVersion"],
+    workflowId: json["workflowId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "bindingId": bindingId,
+    "bindingVersion": bindingVersion,
+    "workflowId": workflowId,
+  });
+}
+
+class ApplicationBindingAdvanceResult {
+  final String bindingId;
+  final TaskStatus status;
+  final String waitingReason;
+
+  ApplicationBindingAdvanceResult({
+    required this.bindingId,
+    required this.status,
+    required this.waitingReason,
+  });
+
+  factory ApplicationBindingAdvanceResult.fromJson(Map<String, dynamic> json) =>
+      ApplicationBindingAdvanceResult(
+        bindingId: json["bindingId"],
+        status: taskStatusValues.map[json["status"]]!,
+        waitingReason: json["waitingReason"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "status": taskStatusValues.reverse[status],
+    "waitingReason": waitingReason,
+  });
+}
+
+class ApplicationBindingTarget {
+  final String actionExecutionId;
+  final String bindingId;
+  final int bindingVersion;
+  final String workflowId;
+
+  ApplicationBindingTarget({
+    required this.actionExecutionId,
+    required this.bindingId,
+    required this.bindingVersion,
+    required this.workflowId,
+  });
+
+  factory ApplicationBindingTarget.fromJson(Map<String, dynamic> json) =>
+      ApplicationBindingTarget(
+        actionExecutionId: json["actionExecutionId"],
+        bindingId: json["bindingId"],
+        bindingVersion: json["bindingVersion"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "bindingId": bindingId,
+    "bindingVersion": bindingVersion,
+    "workflowId": workflowId,
   });
 }
 

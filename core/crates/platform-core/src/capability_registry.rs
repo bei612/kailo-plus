@@ -71,5 +71,13 @@ mod tests {
         assert!(route_exposed("/api/v1/identity/legacy-secret-refs"));
         assert!(action_exposed("identity.secret_ref.rehome"));
         assert!(!action_exposed("tenant.delete"));
+        assert!(route_exposed("/api/v1/platform/component-releases"));
+        assert!(route_exposed("/api/v1/application-bindings"));
+        assert!(route_exposed(
+            "/api/v1/application-bindings/{id}/native-page"
+        ));
+        assert!(action_exposed("application_binding.create"));
+        assert!(action_exposed("application_binding.disable"));
+        assert!(!action_exposed("resource.create"));
     }
 }

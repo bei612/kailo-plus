@@ -70,6 +70,8 @@ pub(crate) async fn install_bindings(
         .execute(&mut **tx)
         .await?;
     }
+    crate::application_tool::resolve_installation(tx, ae.tenant_id, ae.target_id, generation)
+        .await?;
     Ok(())
 }
 
@@ -468,7 +470,7 @@ async fn directory(
         t.name,t.status,t.input_schema_hash,t.output_schema_hash
         from catalog.resource r join catalog.tool_definition t on t.resource_id=r.id
         where r.tenant_id=$1 and r.type_key='tool.definition' and r.state in ('PROVISIONING','ACTIVE')
-          and t.status in ('PROVISIONING','ACTIVE') order by r.id offset $2 limit $3")
+          and t.source='PLATFORM_NATIVE' and t.status in ('PROVISIONING','ACTIVE') order by r.id offset $2 limit $3")
         .bind(context.tenant_id).bind(offset).bind(limit).fetch_all(&mut *tx).await?;
     let next =
         (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);

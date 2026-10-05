@@ -6,6 +6,38 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn application_binding_observation_roundtrip_preserves_mapping_and_optional_scope() {
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("application-binding-observations.sample.json"),
+    )
+    .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: Vec<contracts::AdapterBindingObservation> = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
+fn execution_reference_roundtrip_does_not_invent_unknown_native_id() {
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("adapter-execution-references.sample.json"),
+    )
+    .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: Vec<contracts::AdapterExecutionReference> = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
+fn native_page_roundtrip_preserves_binding_generation_and_exact_origins() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("application-native-page.sample.json"))
+            .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::ApplicationNativePage = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
 fn component_observations_roundtrip_preserves_references_unknown_and_absence() {
     let raw = fs::read_to_string(
         sample_path().with_file_name("component-conformance-observations.sample.json"),

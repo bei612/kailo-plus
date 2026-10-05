@@ -535,6 +535,8 @@ const APPROVAL_QUERY: &str = "
     join admission.action_execution ae on ae.id = ap.action_execution_id
     join projection.workflow_ref w on w.workflow_id = ap.workflow_id
     join catalog.action_definition d on d.action_key = ae.action_key and d.version = ae.action_version
+      and ((ae.action_definition_id=d.id and d.component_release_id is not distinct from ae.component_release_id)
+        or (ae.action_definition_id is null and ae.component_binding_kind is null and d.component_release_id is null))
     left join catalog.agent_invocation ai on ai.action_execution_id=ae.parent_action_execution_id and ae.action_key='automation.run'
     left join catalog.automation_version av on av.asset_id=ai.automation_version_asset_id and av.automation_resource_id=ai.automation_resource_id
     join catalog.approval_policy pol
@@ -592,6 +594,19 @@ async fn eligible(
 ) -> Result<bool, Refusal> {
     if row.self_approval == "DENY" && row.initiator_principal_id == ctx.tenant_principal_id {
         return Ok(false);
+    }
+    let execution = crate::governance::load_execution(&g.pool, row.action_execution_id)
+        .await?
+        .ok_or_else(|| Refusal::Unavailable("Approval action unavailable".into()))?;
+    if crate::application_catalog::approval::is_application(&g.pool, &execution).await? {
+        return if ctx.access_mode == contracts::PlatformSessionAccessMode::Full
+            && execution.tenant_id == ctx.tenant_id
+        {
+            crate::application_catalog::approval::eligible(g, &execution, ctx.tenant_principal_id)
+                .await
+        } else {
+            Ok(false)
+        };
     }
     if row.action_key == crate::automation::ACTION {
         return if ctx.access_mode == contracts::PlatformSessionAccessMode::Full {

@@ -11,6 +11,44 @@ import type { AutomationRunPage } from "../src/generated/contracts.js";
 import type { AutomationVersionContent } from "../src/generated/contracts.js";
 import type { ComponentConformanceStepObservation } from "../src/generated/contracts.js";
 import type { ComponentReleaseApprovalReport } from "../src/generated/contracts.js";
+import type { ApplicationNativePage } from "../src/generated/contracts.js";
+import type { AdapterBindingObservation, AdapterExecutionReference } from "../src/generated/contracts.js";
+
+test("binding observation preserves execution mappings, credential references and optional scope", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/application-binding-observations.sample.json", import.meta.url), "utf8");
+  const typed: AdapterBindingObservation[] = JSON.parse(raw);
+  const reconstructed: AdapterBindingObservation[] = typed.map(row => ({
+    bindingId: row.bindingId, tenantId: row.tenantId, workspaceId: row.workspaceId,
+    nativeInstanceRef: row.nativeInstanceRef, nativeScopeRef: row.nativeScopeRef,
+    isolationMode: row.isolationMode, configDigest: row.configDigest,
+    secretRefDigest: row.secretRefDigest, artifactDigest: row.artifactDigest,
+    executionMappings: row.executionMappings.map(mapping => ({ actionKey: mapping.actionKey,
+      actionVersion: mapping.actionVersion, nativeType: mapping.nativeType, cancelCapability: mapping.cancelCapability })),
+    secretReads: row.secretReads.map(read => ({ secretKey: read.secretKey, requestId: read.requestId,
+      version: read.version, audience: read.audience })),
+  }));
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
+});
+
+test("execution reference does not invent an unknown native ID", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/adapter-execution-references.sample.json", import.meta.url), "utf8");
+  const typed: AdapterExecutionReference[] = JSON.parse(raw);
+  const reconstructed: AdapterExecutionReference[] = typed.map(row => ({
+    externalExecutionId: row.externalExecutionId, idempotencyKey: row.idempotencyKey,
+    nativeType: row.nativeType, nativeId: row.nativeId,
+  }));
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
+});
+
+test("native page preserves binding generation and exact origins", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/application-native-page.sample.json", import.meta.url), "utf8");
+  const typed: ApplicationNativePage = JSON.parse(raw);
+  const reconstructed: ApplicationNativePage = {
+    bindingId: typed.bindingId, projectionGeneration: typed.projectionGeneration,
+    url: typed.url, origin: typed.origin, allowedOrigins: [...typed.allowedOrigins],
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
+});
 
 test("component observations preserve references, UNKNOWN and absent evidence", () => {
   const raw = readFileSync(new URL("../../../../contracts/samples/component-conformance-observations.sample.json", import.meta.url), "utf8");

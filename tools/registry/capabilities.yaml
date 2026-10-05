@@ -78,6 +78,18 @@ capabilities:
   actions: []
   tools: []
   workflow_kinds: []
+- id: component.application_binding
+  exposure: end_user
+  routes:
+  - /api/v1/application-bindings
+  - /api/v1/application-bindings/{id}/native-page
+  actions:
+  - application_binding.create
+  - application_binding.disable
+  tools: []
+  workflow_kinds:
+  - COMPONENT_BINDING
+  - COMPONENT_DISABLE
 - id: component.capability_contracts
   exposure: tenant_admin
   routes:

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/application_binding_page.schema.json",
+  "title": "ApplicationBindingPage",
+  "description": "当前HUMAN管理scope内的真实接入元数据。不是组件内部状态、配置、SecretRef或原生管理credential。",
+  "type": "object", "additionalProperties": false,
+  "required": ["bindings", "canCreate"],
+  "properties": {
+    "canCreate": {"type": "boolean"},
+    "nextOffset": {"type": "integer"},
+    "bindings": {"type": "array", "items": {
+      "title": "ApplicationBindingView",
+      "type": "object", "additionalProperties": false,
+      "required": ["bindingId", "tenantId", "componentReleaseId", "componentTypeKey", "state", "version", "capabilityCategories", "canDisable"],
+      "properties": {
+        "canDisable": {"type": "boolean"},
+        "hasNativePage": {"type": "boolean", "description": "Approved release declares an independent native page. Launch still freshly checks binding, scope and deployment origins."},
+        "bindingId": {"type": "string", "format": "uuid"},
+        "tenantId": {"type": "string", "format": "uuid"},
+        "workspaceId": {"type": "string", "format": "uuid"},
+        "componentReleaseId": {"type": "string", "format": "uuid"},
+        "componentTypeKey": {"type": "string"},
+        "state": {"$ref": "../enums/application_binding_state.schema.json"},
+        "version": {"type": "integer"},
+        "activeProjectionGeneration": {"type": "integer"},
+        "capabilityCategories": {"type": "array", "items": {
+          "title": "ApplicationBindingCapability",
+          "type": "object", "additionalProperties": false,
+          "required": ["category", "version"],
+          "properties": {"category": {"type": "string"}, "version": {"type": "integer"}}
+        }}
+      }
+    }}
+  }
+}

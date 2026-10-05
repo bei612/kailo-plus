@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/application_binding_create.schema.json",
+  "title": "ApplicationBindingCreate",
+  "description": "DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原 ActionCommand。",
+  "type": "object", "additionalProperties": false,
+  "required": ["bindingId", "componentReleaseId", "servicePrincipalId", "adapterServiceRef", "nativeInstanceRef", "isolationMode", "capabilityCategories", "normalizedConfigJson", "secretRefs", "modelCallMode", "callIdentityMode", "retainOnTenantDelete"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"},
+    "componentReleaseId": {"type": "string", "format": "uuid"},
+    "servicePrincipalId": {"type": "string", "format": "uuid"},
+    "adapterServiceRef": {"type": "string"},
+    "nativeInstanceRef": {"type": "string"},
+    "nativeScopeRef": {"type": "string"},
+    "isolationMode": {"$ref": "../enums/application_isolation_mode.schema.json"},
+    "capabilityCategories": {
+      "type": "array", "items": {
+        "title": "ApplicationCapabilitySelection", "type": "object", "additionalProperties": false,
+        "required": ["category", "version"],
+        "properties": {"category": {"type": "string"}, "version": {"type": "integer"}}
+      }
+    },
+    "normalizedConfigJson": {"type": "string"},
+    "secretRefs": {
+      "type": "array", "items": {
+        "title": "ApplicationBindingSecretRef", "type": "object", "additionalProperties": false,
+        "required": ["secretKey", "locator", "version", "audience"],
+        "properties": {
+          "secretKey": {"type": "string"}, "locator": {"type": "string"},
+          "version": {"type": "integer"}, "audience": {"type": "string"}
+        }
+      }
+    },
+    "modelCallMode": {"$ref": "../enums/application_model_call_mode.schema.json"},
+    "callIdentityMode": {"$ref": "../enums/application_call_identity_mode.schema.json"},
+    "retainOnTenantDelete": {"type": "boolean"}
+  }
+}

@@ -1438,6 +1438,11 @@ pub(crate) async fn committed_turn(
         evidence.push(Evidence::new(EvidenceKind::OpenmeterEventId, event.id));
     }
     tx.commit().await.map_err(|_| "计量全集关联提交结果不明")?;
+    for id in crate::application_execution::committed_children(pool, invocation, turn).await? {
+        ids.push(id);
+        evidence.push(Evidence::new(EvidenceKind::UsageEventId, id));
+        evidence.push(Evidence::new(EvidenceKind::OpenmeterEventId, id));
+    }
     if !settle_events(pool, &ids, openmeter).await? {
         return Ok(None);
     }
@@ -1497,7 +1502,10 @@ pub(crate) async fn settle_events(
         };
         if !matches!(
             source_type.as_str(),
-            "GATEWAY_DURABLE_USAGE" | "AGENT_INVOCATION" | "BUZZ_AGENT_MEMORY"
+            "GATEWAY_DURABLE_USAGE"
+                | "AGENT_INVOCATION"
+                | "BUZZ_AGENT_MEMORY"
+                | "APPLICATION_ADAPTER_USAGE"
         ) {
             return Err("UsageEvent source 不可核验");
         }

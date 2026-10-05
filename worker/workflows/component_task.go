@@ -104,6 +104,7 @@ type ComponentTaskInput struct {
 	Installation        *generated.AgentInstallationWorkflowTarget      `json:"installation,omitempty"`
 	Release             *generated.PlanClass                            `json:"release,omitempty"`
 	ReleaseApproval     *generated.ComponentReleaseApprovalTarget       `json:"releaseApproval,omitempty"`
+	ApplicationBinding  *generated.ApplicationBindingTarget             `json:"applicationBinding,omitempty"`
 	ReleaseObservations []generated.ComponentConformanceStepObservation `json:"releaseObservations,omitempty"`
 	ReleaseReconcile    bool                                            `json:"releaseReconcile,omitempty"`
 	// continue-as-new 时带入的 history 长度累计。投影的 event_id 按 workflow ID
@@ -309,7 +310,8 @@ func (t *task) cancel() error {
 // 未实现的 kind 落到 default 分支当场失败——不写一个「什么都不做就成功」的
 // 分支，那会让未实现的能力看起来像执行过了。
 func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
-	if in.CancelPending && in.Kind != generated.AgentInstallation && in.Kind != generated.WorkflowKind("COMPONENT_RELEASE") && !(in.Kind == generated.TenantLifecycle &&
+	if in.CancelPending && in.Kind != generated.AgentInstallation && in.Kind != generated.WorkflowKind("COMPONENT_RELEASE") &&
+		in.Kind != generated.WorkflowKind("COMPONENT_BINDING") && in.Kind != generated.WorkflowKind("COMPONENT_DISABLE") && !(in.Kind == generated.TenantLifecycle &&
 		in.Scope != nil && in.Scope.Operation == scopeOperationDelete) {
 		return newTask(ctx, in).cancel()
 	}
@@ -330,6 +332,8 @@ func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 		return agentInstallation(ctx, in)
 	case generated.WorkflowKind("COMPONENT_RELEASE"):
 		return componentRelease(ctx, in)
+	case generated.WorkflowKind("COMPONENT_BINDING"), generated.WorkflowKind("COMPONENT_DISABLE"):
+		return applicationBinding(ctx, in)
 	default:
 		return temporal.NewNonRetryableApplicationError(
 			"kind 尚未实现", activities.ErrTypeRejected, nil)

@@ -153,13 +153,25 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
         return Err(bad());
     }
     let frontend = &manifest["frontendDelivery"];
-    exact_fields(frontend, &["mode", "extensionSlots", "editorOrigins"], &[])?;
-    if frontend["mode"] != "NONE"
+    exact_fields(
+        frontend,
+        &["mode", "extensionSlots", "editorOrigins"],
+        &["nativePageOrigins"],
+    )?;
+    if !matches!(frontend["mode"].as_str(), Some("NONE" | "NATIVE_PAGE"))
         || frontend["extensionSlots"] != json!([])
         || frontend["editorOrigins"] != json!([])
         || manifest.get("hostApiRange").is_some()
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    if frontend["mode"] == "NATIVE_PAGE" {
+        crate::application_page::release_origins(frontend)?;
+    } else if frontend
+        .get("nativePageOrigins")
+        .is_some_and(|value| value != &json!([]))
+    {
+        return Err(bad());
     }
     let connector = &manifest["executionConnector"];
     exact_fields(

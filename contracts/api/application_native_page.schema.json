@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/application_native_page.schema.json",
+  "title": "ApplicationNativePage",
+  "description": "Authorized ACTIVE binding's independent native page. Exact origin is release and deployment approved; no native credential or page body is returned.",
+  "type": "object", "additionalProperties": false,
+  "required": ["bindingId", "projectionGeneration", "url", "origin", "allowedOrigins"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"},
+    "projectionGeneration": {"type": "integer"},
+    "url": {"type": "string", "format": "uri"},
+    "origin": {"type": "string", "format": "uri"},
+    "allowedOrigins": {"type": "array", "items": {"type": "string", "format": "uri"}}
+  }
+}

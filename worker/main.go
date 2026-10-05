@@ -98,6 +98,7 @@ func main() {
 	w.RegisterActivity(core.AdvanceAgentTask)
 	w.RegisterActivity(core.AdmitAutomationSchedule)
 	w.RegisterActivity(core.AdvanceAgentInstallation)
+	w.RegisterActivity(core.AdvanceApplicationBinding)
 	w.RegisterActivity(core.RunComponentConformanceStep)
 	w.RegisterActivity(core.RecordComponentConformance)
 	w.RegisterActivity(core.ProjectAgentTaskState)

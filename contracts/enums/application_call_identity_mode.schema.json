@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/application_call_identity_mode.schema.json",
+  "title": "ApplicationCallIdentityMode", "type": "string",
+  "enum": ["END_USER_TOKEN", "TENANT_SERVICE", "INSTANCE_SERVICE"]
+}

@@ -4,11 +4,26 @@
 //    canary, err := UnmarshalCanary(bytes)
 //    bytes, err = canary.Marshal()
 //
+//    adapterBindingObservation, err := UnmarshalAdapterBindingObservation(bytes)
+//    bytes, err = adapterBindingObservation.Marshal()
+//
 //    adapterExecutionObservation, err := UnmarshalAdapterExecutionObservation(bytes)
 //    bytes, err = adapterExecutionObservation.Marshal()
 //
+//    adapterExecutionReference, err := UnmarshalAdapterExecutionReference(bytes)
+//    bytes, err = adapterExecutionReference.Marshal()
+//
 //    adapterExecutionResponse, err := UnmarshalAdapterExecutionResponse(bytes)
 //    bytes, err = adapterExecutionResponse.Marshal()
+//
+//    adapterExecutionUsage, err := UnmarshalAdapterExecutionUsage(bytes)
+//    bytes, err = adapterExecutionUsage.Marshal()
+//
+//    adapterPepCheckRequest, err := UnmarshalAdapterPepCheckRequest(bytes)
+//    bytes, err = adapterPepCheckRequest.Marshal()
+//
+//    adapterPepCheckResponse, err := UnmarshalAdapterPepCheckResponse(bytes)
+//    bytes, err = adapterPepCheckResponse.Marshal()
 //
 //    adapterScopeObservation, err := UnmarshalAdapterScopeObservation(bytes)
 //    bytes, err = adapterScopeObservation.Marshal()
@@ -69,6 +84,12 @@
 //
 //    agentVersionView, err := UnmarshalAgentVersionView(bytes)
 //    bytes, err = agentVersionView.Marshal()
+//
+//    applicationBindingPage, err := UnmarshalApplicationBindingPage(bytes)
+//    bytes, err = applicationBindingPage.Marshal()
+//
+//    applicationNativePage, err := UnmarshalApplicationNativePage(bytes)
+//    bytes, err = applicationNativePage.Marshal()
 //
 //    approvalDecisionRequest, err := UnmarshalApprovalDecisionRequest(bytes)
 //    bytes, err = approvalDecisionRequest.Marshal()
@@ -196,6 +217,9 @@
 //    workspacePreferenceRequest, err := UnmarshalWorkspacePreferenceRequest(bytes)
 //    bytes, err = workspacePreferenceRequest.Marshal()
 //
+//    actionTokenSigningDelivery, err := UnmarshalActionTokenSigningDelivery(bytes)
+//    bytes, err = actionTokenSigningDelivery.Marshal()
+//
 //    agentMemoryEntryListInput, err := UnmarshalAgentMemoryEntryListInput(bytes)
 //    bytes, err = agentMemoryEntryListInput.Marshal()
 //
@@ -207,6 +231,12 @@
 //
 //    agentVersionContent, err := UnmarshalAgentVersionContent(bytes)
 //    bytes, err = agentVersionContent.Marshal()
+//
+//    applicationAdapterDirectory, err := UnmarshalApplicationAdapterDirectory(bytes)
+//    bytes, err = applicationAdapterDirectory.Marshal()
+//
+//    applicationBindingCreate, err := UnmarshalApplicationBindingCreate(bytes)
+//    bytes, err = applicationBindingCreate.Marshal()
 //
 //    automationApprovalPolicyRef, err := UnmarshalAutomationApprovalPolicyRef(bytes)
 //    bytes, err = automationApprovalPolicyRef.Marshal()
@@ -292,6 +322,15 @@
 //    agentTaskWorkflowInput, err := UnmarshalAgentTaskWorkflowInput(bytes)
 //    bytes, err = agentTaskWorkflowInput.Marshal()
 //
+//    applicationBindingAdvanceRequest, err := UnmarshalApplicationBindingAdvanceRequest(bytes)
+//    bytes, err = applicationBindingAdvanceRequest.Marshal()
+//
+//    applicationBindingAdvanceResult, err := UnmarshalApplicationBindingAdvanceResult(bytes)
+//    bytes, err = applicationBindingAdvanceResult.Marshal()
+//
+//    applicationBindingTarget, err := UnmarshalApplicationBindingTarget(bytes)
+//    bytes, err = applicationBindingTarget.Marshal()
+//
 //    approvalControlOutcome, err := UnmarshalApprovalControlOutcome(bytes)
 //    bytes, err = approvalControlOutcome.Marshal()
 //
@@ -371,6 +410,16 @@ func (r *Canary) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAdapterBindingObservation(data []byte) (AdapterBindingObservation, error) {
+	var r AdapterBindingObservation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterBindingObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAdapterExecutionObservation(data []byte) (AdapterExecutionObservation, error) {
 	var r AdapterExecutionObservation
 	err := json.Unmarshal(data, &r)
@@ -381,6 +430,16 @@ func (r *AdapterExecutionObservation) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAdapterExecutionReference(data []byte) (AdapterExecutionReference, error) {
+	var r AdapterExecutionReference
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterExecutionReference) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAdapterExecutionResponse(data []byte) (AdapterExecutionResponse, error) {
 	var r AdapterExecutionResponse
 	err := json.Unmarshal(data, &r)
@@ -388,6 +447,36 @@ func UnmarshalAdapterExecutionResponse(data []byte) (AdapterExecutionResponse, e
 }
 
 func (r *AdapterExecutionResponse) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterExecutionUsage(data []byte) (AdapterExecutionUsage, error) {
+	var r AdapterExecutionUsage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterExecutionUsage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterPepCheckRequest(data []byte) (AdapterPepCheckRequest, error) {
+	var r AdapterPepCheckRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterPepCheckRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterPepCheckResponse(data []byte) (AdapterPepCheckResponse, error) {
+	var r AdapterPepCheckResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterPepCheckResponse) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -588,6 +677,26 @@ func UnmarshalAgentVersionView(data []byte) (AgentVersionView, error) {
 }
 
 func (r *AgentVersionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApplicationBindingPage(data []byte) (ApplicationBindingPage, error) {
+	var r ApplicationBindingPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApplicationBindingPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApplicationNativePage(data []byte) (ApplicationNativePage, error) {
+	var r ApplicationNativePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApplicationNativePage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1011,6 +1120,16 @@ func (r *WorkspacePreferenceRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalActionTokenSigningDelivery(data []byte) (ActionTokenSigningDelivery, error) {
+	var r ActionTokenSigningDelivery
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ActionTokenSigningDelivery) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAgentMemoryEntryListInput(data []byte) (AgentMemoryEntryListInput, error) {
 	var r AgentMemoryEntryListInput
 	err := json.Unmarshal(data, &r)
@@ -1048,6 +1167,26 @@ func UnmarshalAgentVersionContent(data []byte) (AgentVersionContent, error) {
 }
 
 func (r *AgentVersionContent) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApplicationAdapterDirectory(data []byte) (ApplicationAdapterDirectory, error) {
+	var r ApplicationAdapterDirectory
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApplicationAdapterDirectory) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApplicationBindingCreate(data []byte) (ApplicationBindingCreate, error) {
+	var r ApplicationBindingCreate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApplicationBindingCreate) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1331,6 +1470,36 @@ func (r *AgentTaskWorkflowInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalApplicationBindingAdvanceRequest(data []byte) (ApplicationBindingAdvanceRequest, error) {
+	var r ApplicationBindingAdvanceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApplicationBindingAdvanceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApplicationBindingAdvanceResult(data []byte) (ApplicationBindingAdvanceResult, error) {
+	var r ApplicationBindingAdvanceResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApplicationBindingAdvanceResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApplicationBindingTarget(data []byte) (ApplicationBindingTarget, error) {
+	var r ApplicationBindingTarget
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApplicationBindingTarget) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalApprovalControlOutcome(data []byte) (ApprovalControlOutcome, error) {
 	var r ApprovalControlOutcome
 	err := json.Unmarshal(data, &r)
@@ -1582,6 +1751,35 @@ type Variant struct {
 	TaskAttempt *int64      `json:"taskAttempt,omitempty"`
 }
 
+// 07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
+type AdapterBindingObservation struct {
+	ArtifactDigest    string                    `json:"artifactDigest"`
+	BindingID         string                    `json:"bindingId"`
+	ConfigDigest      string                    `json:"configDigest"`
+	ExecutionMappings []AdapterExecutionMapping `json:"executionMappings"`
+	IsolationMode     ApplicationIsolationMode  `json:"isolationMode"`
+	NativeInstanceRef string                    `json:"nativeInstanceRef"`
+	NativeScopeRef    string                    `json:"nativeScopeRef"`
+	SecretReads       []AdapterSecretRead       `json:"secretReads"`
+	SecretRefDigest   string                    `json:"secretRefDigest"`
+	TenantID          string                    `json:"tenantId"`
+	WorkspaceID       *string                   `json:"workspaceId,omitempty"`
+}
+
+type AdapterExecutionMapping struct {
+	ActionKey        string                 `json:"actionKey"`
+	ActionVersion    int64                  `json:"actionVersion"`
+	CancelCapability NativeCancelCapability `json:"cancelCapability"`
+	NativeType       string                 `json:"nativeType"`
+}
+
+type AdapterSecretRead struct {
+	Audience  string `json:"audience"`
+	RequestID string `json:"requestId"`
+	SecretKey string `json:"secretKey"`
+	Version   int64  `json:"version"`
+}
+
 // ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
 // 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
 type AdapterExecutionObservation struct {
@@ -1593,6 +1791,15 @@ type AdapterExecutionObservation struct {
 	NativeType       string                  `json:"nativeType"`
 	PlatformStatus   ExternalExecutionStatus `json:"platformStatus"`
 	TerminalAt       *string                 `json:"terminalAt,omitempty"`
+}
+
+// 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
+// 未取得时只用冻结幂等键查证。
+type AdapterExecutionReference struct {
+	ExternalExecutionID string  `json:"externalExecutionId"`
+	IdempotencyKey      string  `json:"idempotencyKey"`
+	NativeID            *string `json:"nativeId,omitempty"`
+	NativeType          string  `json:"nativeType"`
 }
 
 // ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入
@@ -1626,6 +1833,39 @@ type ExecutionClass struct {
 	TerminalAt       *string                 `json:"terminalAt,omitempty"`
 }
 
+// DD-48/51/94 extract_usage 的原生终态用量元数据；scope/customer/dimensions 只由 Core 原
+// ExternalExecution 决定。完整集合与冻结 action meters 精确相等，缺失不是零。
+type AdapterExecutionUsage struct {
+	ExternalExecutionID string        `json:"externalExecutionId"`
+	IdempotencyKey      string        `json:"idempotencyKey"`
+	Measurements        []Measurement `json:"measurements"`
+	NativeID            string        `json:"nativeId"`
+	NativeType          string        `json:"nativeType"`
+}
+
+type Measurement struct {
+	MeterKey   string `json:"meterKey"`
+	OccurredAt string `json:"occurredAt"`
+	Quantity   int64  `json:"quantity"`
+}
+
+// ADR-12
+// adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。
+type AdapterPepCheckRequest struct {
+	ActionToken      string                 `json:"actionToken"`
+	ArgumentsJSON    string                 `json:"argumentsJson"`
+	BindingID        string                 `json:"bindingId"`
+	ContentReference *ContentReferenceClass `json:"contentReference,omitempty"`
+	Operation        string                 `json:"operation"`
+}
+
+// 只在原动作和精确binding仍被fresh授权时返回当前授权revision；不是可复用的新授权票据。
+type AdapterPepCheckResponse struct {
+	ActionExecutionID        string `json:"actionExecutionId"`
+	AuthorizationMinZedToken string `json:"authorizationMinZedToken"`
+	OperationID              string `json:"operationId"`
+}
+
 // DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
 type AdapterScopeObservation struct {
 	NativeRef           *string           `json:"nativeRef,omitempty"`
@@ -1639,7 +1879,10 @@ type AdapterScopeObservation struct {
 type ActionCommand struct {
 	ActionKey string `json:"actionKey"`
 	// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
-	AgentVersionContent *AgentVersionContentClass `json:"agentVersionContent,omitempty"`
+	AgentVersionContent       *AgentVersionContentClass      `json:"agentVersionContent,omitempty"`
+	ApplicationBindingCreate  *ApplicationBindingCreateClass `json:"applicationBindingCreate,omitempty"`
+	ApplicationBindingID      *string                        `json:"applicationBindingId,omitempty"`
+	ApplicationBindingVersion *int64                         `json:"applicationBindingVersion,omitempty"`
 	// AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。
 	AssetID *string `json:"assetId,omitempty"`
 	// 调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
@@ -1727,6 +1970,36 @@ type AgentVersionContentPersonaIdentity struct {
 type AgentVersionContentTurnLimits struct {
 	IdleTimeoutSeconds     int64 `json:"idleTimeoutSeconds"`
 	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
+}
+
+// DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
+// ActionCommand。
+type ApplicationBindingCreateClass struct {
+	AdapterServiceRef    string                                       `json:"adapterServiceRef"`
+	BindingID            string                                       `json:"bindingId"`
+	CallIdentityMode     ApplicationCallIdentityMode                  `json:"callIdentityMode"`
+	CapabilityCategories []ApplicationBindingCreateCapabilityCategory `json:"capabilityCategories"`
+	ComponentReleaseID   string                                       `json:"componentReleaseId"`
+	IsolationMode        ApplicationIsolationMode                     `json:"isolationMode"`
+	ModelCallMode        ApplicationModelCallMode                     `json:"modelCallMode"`
+	NativeInstanceRef    string                                       `json:"nativeInstanceRef"`
+	NativeScopeRef       *string                                      `json:"nativeScopeRef,omitempty"`
+	NormalizedConfigJSON string                                       `json:"normalizedConfigJson"`
+	RetainOnTenantDelete bool                                         `json:"retainOnTenantDelete"`
+	SecretRefs           []ApplicationBindingCreateSecretRef          `json:"secretRefs"`
+	ServicePrincipalID   string                                       `json:"servicePrincipalId"`
+}
+
+type ApplicationBindingCreateCapabilityCategory struct {
+	Category string `json:"category"`
+	Version  int64  `json:"version"`
+}
+
+type ApplicationBindingCreateSecretRef struct {
+	Audience  string `json:"audience"`
+	Locator   string `json:"locator"`
+	SecretKey string `json:"secretKey"`
+	Version   int64  `json:"version"`
 }
 
 // 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
@@ -2264,6 +2537,44 @@ type AgentVersionView struct {
 	Ordinal          int64                    `json:"ordinal"`
 	OwnerPrincipalID string                   `json:"ownerPrincipalId"`
 	State            AgentVersionState        `json:"state"`
+}
+
+// 当前HUMAN管理scope内的真实接入元数据。不是组件内部状态、配置、SecretRef或原生管理credential。
+type ApplicationBindingPage struct {
+	Bindings   []ApplicationBindingView `json:"bindings"`
+	CanCreate  bool                     `json:"canCreate"`
+	NextOffset *int64                   `json:"nextOffset,omitempty"`
+}
+
+type ApplicationBindingView struct {
+	ActiveProjectionGeneration *int64                         `json:"activeProjectionGeneration,omitempty"`
+	BindingID                  string                         `json:"bindingId"`
+	CanDisable                 bool                           `json:"canDisable"`
+	CapabilityCategories       []ApplicationBindingCapability `json:"capabilityCategories"`
+	ComponentReleaseID         string                         `json:"componentReleaseId"`
+	ComponentTypeKey           string                         `json:"componentTypeKey"`
+	// Approved release declares an independent native page. Launch still freshly checks
+	// binding, scope and deployment origins.
+	HasNativePage *bool                   `json:"hasNativePage,omitempty"`
+	State         ApplicationBindingState `json:"state"`
+	TenantID      string                  `json:"tenantId"`
+	Version       int64                   `json:"version"`
+	WorkspaceID   *string                 `json:"workspaceId,omitempty"`
+}
+
+type ApplicationBindingCapability struct {
+	Category string `json:"category"`
+	Version  int64  `json:"version"`
+}
+
+// Authorized ACTIVE binding's independent native page. Exact origin is release and
+// deployment approved; no native credential or page body is returned.
+type ApplicationNativePage struct {
+	AllowedOrigins       []string `json:"allowedOrigins"`
+	BindingID            string   `json:"bindingId"`
+	Origin               string   `json:"origin"`
+	ProjectionGeneration int64    `json:"projectionGeneration"`
+	URL                  string   `json:"url"`
 }
 
 // POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为
@@ -2955,6 +3266,17 @@ type WorkspacePreferenceRequest struct {
 	Version int64 `json:"version"`
 }
 
+// DD-49/70/71/94：Core-only签发投递。只有版本化OpenBao引用及Agent已发布JWKS文件引用，不含私钥正文。
+type ActionTokenSigningDelivery struct {
+	Issuer          string `json:"issuer"`
+	JwksFile        string `json:"jwksFile"`
+	PrivateKeyField string `json:"privateKeyField"`
+	SecretAudience  string `json:"secretAudience"`
+	SecretLocator   string `json:"secretLocator"`
+	SecretVersion   int64  `json:"secretVersion"`
+	TokenSeconds    int64  `json:"tokenSeconds"`
+}
+
 // Installation 只取自受验签的 Invocation Session，不接受调用方目标覆盖。
 type AgentMemoryEntryListInput struct {
 }
@@ -3012,6 +3334,59 @@ type AgentVersionContentPersonaIdentityClass struct {
 type AgentVersionContentTurnLimitsClass struct {
 	IdleTimeoutSeconds     int64 `json:"idleTimeoutSeconds"`
 	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
+}
+
+// DD-94部署投递面：adapter服务引用解析到固定部署产物/原生实例与受限传输。不是Catalog或业务授权。
+type ApplicationAdapterDirectory struct {
+	Adapters []ApplicationAdapterDelivery `json:"adapters"`
+}
+
+type ApplicationAdapterDelivery struct {
+	ActionTokenAudience string                    `json:"actionTokenAudience"`
+	AdapterServiceRef   string                    `json:"adapterServiceRef"`
+	ArtifactDigest      string                    `json:"artifactDigest"`
+	BaseURL             string                    `json:"baseUrl"`
+	MaxResponseBytes    int64                     `json:"maxResponseBytes"`
+	MCPURL              *string                   `json:"mcpUrl,omitempty"`
+	NativeInstanceRef   string                    `json:"nativeInstanceRef"`
+	SecretReaders       []ApplicationSecretReader `json:"secretReaders"`
+	TimeoutSeconds      int64                     `json:"timeoutSeconds"`
+}
+
+type ApplicationSecretReader struct {
+	Audience           string `json:"audience"`
+	RoleName           string `json:"roleName"`
+	ServicePrincipalID string `json:"servicePrincipalId"`
+}
+
+// DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
+// ActionCommand。
+type ApplicationBindingCreate struct {
+	AdapterServiceRef    string                                            `json:"adapterServiceRef"`
+	BindingID            string                                            `json:"bindingId"`
+	CallIdentityMode     ApplicationCallIdentityMode                       `json:"callIdentityMode"`
+	CapabilityCategories []ApplicationBindingCreateCapabilityCategoryClass `json:"capabilityCategories"`
+	ComponentReleaseID   string                                            `json:"componentReleaseId"`
+	IsolationMode        ApplicationIsolationMode                          `json:"isolationMode"`
+	ModelCallMode        ApplicationModelCallMode                          `json:"modelCallMode"`
+	NativeInstanceRef    string                                            `json:"nativeInstanceRef"`
+	NativeScopeRef       *string                                           `json:"nativeScopeRef,omitempty"`
+	NormalizedConfigJSON string                                            `json:"normalizedConfigJson"`
+	RetainOnTenantDelete bool                                              `json:"retainOnTenantDelete"`
+	SecretRefs           []ApplicationBindingCreateSecretRefClass          `json:"secretRefs"`
+	ServicePrincipalID   string                                            `json:"servicePrincipalId"`
+}
+
+type ApplicationBindingCreateCapabilityCategoryClass struct {
+	Category string `json:"category"`
+	Version  int64  `json:"version"`
+}
+
+type ApplicationBindingCreateSecretRefClass struct {
+	Audience  string `json:"audience"`
+	Locator   string `json:"locator"`
+	SecretKey string `json:"secretKey"`
+	Version   int64  `json:"version"`
 }
 
 // DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
@@ -3436,6 +3811,32 @@ type AgentTaskWorkflowInput struct {
 	ProjectionGeneration       int64  `json:"projectionGeneration"`
 }
 
+type ApplicationBindingAdvanceRequest struct {
+	CancelRequested bool                                   `json:"cancelRequested"`
+	RunID           string                                 `json:"runId"`
+	Target          ApplicationBindingAdvanceRequestTarget `json:"target"`
+}
+
+type ApplicationBindingAdvanceRequestTarget struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	BindingID         string `json:"bindingId"`
+	BindingVersion    int64  `json:"bindingVersion"`
+	WorkflowID        string `json:"workflowId"`
+}
+
+type ApplicationBindingAdvanceResult struct {
+	BindingID     string     `json:"bindingId"`
+	Status        TaskStatus `json:"status"`
+	WaitingReason string     `json:"waitingReason"`
+}
+
+type ApplicationBindingTarget struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	BindingID         string `json:"bindingId"`
+	BindingVersion    int64  `json:"bindingVersion"`
+	WorkflowID        string `json:"workflowId"`
+}
+
 // consume、invalidate、withdraw 三个 Update 的结果：执行后的 Approval 状态。
 type ApprovalControlOutcome struct {
 	Status ApprovalStatus `json:"status"`
@@ -3772,6 +4173,16 @@ const (
 	Unsupported NativeCancelCapability = "UNSUPPORTED"
 )
 
+type ApplicationIsolationMode string
+
+const (
+	DedicatedInstance ApplicationIsolationMode = "DEDICATED_INSTANCE"
+	Namespace         ApplicationIsolationMode = "NAMESPACE"
+	NativeTenant      ApplicationIsolationMode = "NATIVE_TENANT"
+	ResourceFilter    ApplicationIsolationMode = "RESOURCE_FILTER"
+	ResourceInstance  ApplicationIsolationMode = "RESOURCE_INSTANCE"
+)
+
 // design03§6 ExternalExecution 的既定平台状态；HTTP成功和cancel accepted均不构成终态。
 type ExternalExecutionStatus string
 
@@ -3811,6 +4222,22 @@ type AgentTrigger string
 const (
 	AgentTriggerMENTION AgentTrigger = "MENTION"
 	ManualAssignment    AgentTrigger = "MANUAL_ASSIGNMENT"
+)
+
+type ApplicationCallIdentityMode string
+
+const (
+	EndUserToken    ApplicationCallIdentityMode = "END_USER_TOKEN"
+	InstanceService ApplicationCallIdentityMode = "INSTANCE_SERVICE"
+	TenantService   ApplicationCallIdentityMode = "TENANT_SERVICE"
+)
+
+type ApplicationModelCallMode string
+
+const (
+	ApplicationModelCallModeNONE ApplicationModelCallMode = "NONE"
+	PlatformLlmRoute             ApplicationModelCallMode = "PLATFORM_LLM_ROUTE"
+	SelfManagedModel             ApplicationModelCallMode = "SELF_MANAGED_MODEL"
 )
 
 type ActionKind string
@@ -4068,6 +4495,17 @@ const (
 	AgentVersionStateDRAFT   AgentVersionState = "DRAFT"
 	AgentVersionStateRETIRED AgentVersionState = "RETIRED"
 	Published                AgentVersionState = "PUBLISHED"
+)
+
+type ApplicationBindingState string
+
+const (
+	ApplicationBindingStateACTIVE       ApplicationBindingState = "ACTIVE"
+	ApplicationBindingStateDISABLED     ApplicationBindingState = "DISABLED"
+	ApplicationBindingStateERROR        ApplicationBindingState = "ERROR"
+	ApplicationBindingStatePROVISIONING ApplicationBindingState = "PROVISIONING"
+	Disabling                           ApplicationBindingState = "DISABLING"
+	Upgrading                           ApplicationBindingState = "UPGRADING"
 )
 
 // approver 的不可变决定（.design/03 §6）。

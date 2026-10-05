@@ -63,7 +63,7 @@ impl Policy {
         authorization: &str,
         services: &[String],
         calling: bool,
-    ) -> Result<Uuid, Refusal> {
+    ) -> Result<(Uuid, Option<(Uuid, i64)>), Refusal> {
         let token = authorization
             .strip_prefix("Bearer ")
             .filter(|v| !v.is_empty())
@@ -73,19 +73,33 @@ impl Policy {
             session.scope.installation_resource_id,
             session.scope.projection_generation,
         );
-        if services != [expected] {
-            return Err(denied());
+        let invocation =
+            crate::agent_tool::session_invocation(&self.state, &session.scope, calling).await?;
+        if services == [expected] {
+            return Ok((invocation, None));
         }
-        crate::agent_tool::session_invocation(&self.state, &session.scope, calling).await
+        let tools = crate::application_tool::request_tools(&self.state, invocation).await?;
+        for tool in tools {
+            if services
+                == [crate::application_binding::gateway::target(
+                    tool.binding_id,
+                    tool.generation,
+                )]
+            {
+                return Ok((invocation, Some((tool.binding_id, tool.generation))));
+            }
+        }
+        Err(denied())
     }
 
     async fn request(&self, request: &wire::McpRequest) -> Result<wire::McpRequestResult, Refusal> {
         let authorization = session_header(&request.headers)?;
         let calling = request.method == "tools/call";
-        let invocation = self
+        let (invocation, application) = self
             .invocation(authorization, &request.service_names, calling)
             .await?;
-        let mut metadata = json!({"invocationId":invocation});
+        let mut metadata = json!({"invocationId":invocation,"session":authorization});
+        let mut normalized_request = None;
         let mut set = vec![wire::McpHeader {
             key: agent_tool_mcp::INVOCATION_HEADER.into(),
             value: invocation.to_string().into_bytes(),
@@ -95,7 +109,9 @@ impl Policy {
             "tools/list" => {
                 // This is also checked by the private MCP reader, and again
                 // on CheckResponse; an authenticated backend is not a list grant.
-                crate::agent_tool::invocation_tools(&self.state, invocation).await?;
+                if application.is_none() {
+                    crate::agent_tool::invocation_tools(&self.state, invocation).await?;
+                }
                 let params = request
                     .mcp_request
                     .as_deref()
@@ -108,34 +124,58 @@ impl Policy {
                 }
             }
             "tools/call" => {
-                let raw: Value =
-                    serde_json::from_slice(request.mcp_request.as_deref().ok_or_else(invalid)?)
-                        .map_err(|_| invalid())?;
-                let call: CallToolRequestParams =
-                    serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
-                // No caller-supplied AE, operation, target or authorization
-                // context may be smuggled through MCP params/_meta.
-                if raw.get("_meta").is_some()
-                    || raw.as_object().is_none_or(|params| {
-                        params
-                            .keys()
-                            .any(|key| !matches!(key.as_str(), "name" | "arguments"))
-                    })
-                {
-                    return Err(invalid());
-                }
+                let (call, normalized) =
+                    tool_call_params(request.mcp_request.as_deref().ok_or_else(invalid)?)?;
+                normalized_request = Some(normalized);
                 let arguments = call
                     .arguments
                     .map(Value::Object)
                     .unwrap_or_else(|| json!({}));
-                crate::agent_memory::tool_arguments(&call.name, &arguments)?;
-                let child = crate::agent_memory::prepare_tool_read(
-                    &self.state,
-                    invocation,
-                    &call.name,
-                    &arguments,
-                )
-                .await?;
+                let child = if let Some((binding, generation)) = application {
+                    let child = crate::application_tool::prepare(
+                        &self.state,
+                        invocation,
+                        binding,
+                        generation,
+                        &call.name,
+                        &arguments,
+                    )
+                    .await?;
+                    let (external, key, token) = crate::application_tool::dispatch(
+                        &self.state,
+                        invocation,
+                        &child,
+                        &arguments,
+                    )
+                    .await?;
+                    metadata["externalExecutionId"] = json!(external);
+                    normalized_request = Some(
+                        serde_json::to_vec(
+                            &json!({"name":call.name,"arguments":arguments["input"]}),
+                        )
+                        .map_err(|_| invalid())?,
+                    );
+                    set.extend([
+                        wire::McpHeader {
+                            key: "authorization".into(),
+                            value: format!("Bearer {token}").into_bytes(),
+                        },
+                        wire::McpHeader {
+                            key: "idempotency-key".into(),
+                            value: key.to_string().into_bytes(),
+                        },
+                    ]);
+                    child
+                } else {
+                    crate::agent_memory::tool_arguments(&call.name, &arguments)?;
+                    crate::agent_memory::prepare_tool_read(
+                        &self.state,
+                        invocation,
+                        &call.name,
+                        &arguments,
+                    )
+                    .await?
+                };
                 metadata["childAE"] = json!(child.id);
                 metadata["operationId"] = json!(child.operation_id);
                 metadata["toolName"] = json!(call.name);
@@ -152,11 +192,20 @@ impl Policy {
             }
             _ => return Err(invalid()),
         }
+        let mut headers = reference_headers(set, calling);
+        if application.is_some() && !calling {
+            headers
+                .remove
+                .extend(["authorization".into(), "idempotency-key".into()]);
+        }
         Ok(wire::McpRequestResult {
-            result: Some(wire::mcp_request_result::Result::Pass(wire::Pass {})),
+            result: Some(match normalized_request {
+                Some(params) => wire::mcp_request_result::Result::Mutated(params),
+                None => wire::mcp_request_result::Result::Pass(wire::Pass {}),
+            }),
             // Native apply_header_mutation overwrites SET values first and
             // removes afterwards. Never also remove a freshly derived SET.
-            header_mutation: Some(reference_headers(set, calling)),
+            header_mutation: Some(headers),
             metadata: Some(serde_json::from_value(metadata).map_err(|_| invalid())?),
         })
     }
@@ -173,7 +222,7 @@ impl Policy {
             .map_err(|_| invalid())?
             .ok_or_else(invalid)?;
         let authorization = metadata["session"].as_str().ok_or_else(denied)?;
-        let invocation = self
+        let (invocation, application) = self
             .invocation(
                 authorization,
                 &response.service_names,
@@ -187,6 +236,17 @@ impl Policy {
             "tools/list" => {
                 let raw: Value =
                     serde_json::from_slice(&response.mcp_response).map_err(|_| invalid())?;
+                if let Some((binding, generation)) = application {
+                    let value = crate::application_tool::list(
+                        &self.state,
+                        invocation,
+                        binding,
+                        generation,
+                        &raw,
+                    )
+                    .await?;
+                    return Ok(mutated(serde_json::to_vec(&value).map_err(|_| invalid())?));
+                }
                 let result: ListToolsResult =
                     serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
                 if result.next_cursor.is_some() {
@@ -243,15 +303,28 @@ impl Policy {
                 {
                     return Err(invalid());
                 }
-                crate::agent_memory::disclose_tool_result(
-                    &self.state,
-                    invocation,
-                    child,
-                    operation,
-                    name,
-                    value,
-                )
-                .await?;
+                if application.is_some() {
+                    crate::application_tool::disclose(
+                        &self.state,
+                        invocation,
+                        child,
+                        uuid(&metadata, "externalExecutionId")?,
+                        operation,
+                        name,
+                        value,
+                    )
+                    .await?;
+                } else {
+                    crate::agent_memory::disclose_tool_result(
+                        &self.state,
+                        invocation,
+                        child,
+                        operation,
+                        name,
+                        value,
+                    )
+                    .await?;
+                }
                 self.sessions
                     .verify(authorization.strip_prefix("Bearer ").ok_or_else(denied)?)
                     .map_err(|_| denied())?;
@@ -294,6 +367,78 @@ fn session_header(headers: &[wire::McpHeader]) -> Result<&str, Refusal> {
         return Err(denied());
     }
     std::str::from_utf8(&value.value).map_err(|_| denied())
+}
+
+/// The pinned Codex client emits trace metadata separately from model arguments.
+/// It is never an identity, target, operation or idempotency authority. Validate
+/// its native shape, then remove it before the native upstream sees params.
+/// The original tonic request-size limit bounds these bytes before JSON parsing.
+fn tool_call_params(bytes: &[u8]) -> Result<(CallToolRequestParams, Vec<u8>), Refusal> {
+    let mut raw: Value = serde_json::from_slice(bytes).map_err(|_| invalid())?;
+    let params = raw.as_object_mut().ok_or_else(invalid)?;
+    if params
+        .keys()
+        .any(|key| !matches!(key.as_str(), "name" | "arguments" | "_meta"))
+    {
+        return Err(invalid());
+    }
+    if let Some(meta) = params.remove("_meta") {
+        let meta = meta.as_object().ok_or_else(invalid)?;
+        for (key, value) in meta {
+            let valid = match key.as_str() {
+                "callId"
+                | "threadId"
+                | "sessionId"
+                | "windowId"
+                | "itemId"
+                | "codex_bridge_mcp_call_id" => value.as_str().is_some_and(|v| !v.is_empty()),
+                "x-codex-turn-metadata" => codex_turn_metadata(value),
+                _ => false,
+            };
+            if !valid {
+                return Err(invalid());
+            }
+        }
+    }
+    let call = serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
+    Ok((call, serde_json::to_vec(&raw).map_err(|_| invalid())?))
+}
+
+fn codex_turn_metadata(value: &Value) -> bool {
+    let Some(fields) = value.as_object() else {
+        return false;
+    };
+    fields.iter().all(|(key, value)| match key.as_str() {
+        "installation_id"
+        | "session_id"
+        | "thread_id"
+        | "turn_id"
+        | "window_id"
+        | "context_window_id"
+        | "forked_from_thread_id"
+        | "parent_thread_id"
+        | "subagent_kind"
+        | "thread_source"
+        | "turn_trigger"
+        | "sandbox"
+        | "sandbox_mode"
+        | "model"
+        | "codex_version"
+        | "reasoning_effort"
+        | "workspace_kind" => value.is_string(),
+        "auto_review_enabled"
+        | "node_repl_auto_review_required"
+        | "node_repl_disabled"
+        | "user_input_requested_during_turn"
+        | "history_ingest_requested"
+        | "analytics_enabled" => value.is_boolean(),
+        "window_number" | "forked_from_ordinal_exclusive" => value.as_u64().is_some(),
+        "turn_started_at_unix_ms" => value.as_i64().is_some(),
+        // SERVER_CODEX has no environments or host workspace. Unknown nested
+        // objects cannot smuggle authorization facts through a trace field.
+        "workspaces" => value.as_object().is_some_and(|v| v.is_empty()),
+        _ => false,
+    })
 }
 
 fn uuid(value: &Value, key: &str) -> Result<Uuid, Refusal> {
@@ -371,6 +516,52 @@ impl wire::ext_mcp_server::ExtMcp for Policy {
 #[cfg(test)]
 mod tool_pep_tests {
     use super::*;
+
+    #[test]
+    fn pinned_codex_metadata_is_validated_then_removed_not_used_as_authority() {
+        let arguments = json!({"entryId":"mem/example"});
+        let wire = json!({"name":"agent.memory.entry.read","arguments":arguments,"_meta":{
+            "callId":"call-native","threadId":"thread-native","sessionId":"session-native",
+            "windowId":"window-native","itemId":"item-native","codex_bridge_mcp_call_id":"trace-native",
+            "x-codex-turn-metadata":{"session_id":"session-native","thread_id":"thread-native",
+                "turn_id":"turn-native","thread_source":"user","codex_version":"fixed",
+                "model":"fixture","reasoning_effort":"low","node_repl_disabled":true,
+                "node_repl_auto_review_required":false,"auto_review_enabled":false,
+                "turn_started_at_unix_ms":1}}});
+        let (call, forwarded) = tool_call_params(&serde_json::to_vec(&wire).unwrap()).unwrap();
+        assert_eq!(
+            call.arguments.unwrap(),
+            arguments.as_object().unwrap().clone()
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(&forwarded).unwrap(),
+            json!({"name":"agent.memory.entry.read","arguments":arguments})
+        );
+        for field in [
+            "actionExecutionId",
+            "operationId",
+            "target",
+            "actorPrincipalId",
+            "tenantId",
+        ] {
+            let mut forged = wire.clone();
+            forged["_meta"][field] = json!(Uuid::new_v4());
+            assert!(tool_call_params(&serde_json::to_vec(&forged).unwrap()).is_err());
+            let mut nested = wire.clone();
+            nested["_meta"]["x-codex-turn-metadata"][field] = json!(Uuid::new_v4());
+            assert!(tool_call_params(&serde_json::to_vec(&nested).unwrap()).is_err());
+        }
+        for wrong in [
+            Value::Null,
+            json!([]),
+            json!({"callId":{"operationId":"forged"}}),
+            json!({"x-codex-turn-metadata":{"node_repl_disabled":"true"}}),
+        ] {
+            let mut malformed = wire.clone();
+            malformed["_meta"] = wrong;
+            assert!(tool_call_params(&serde_json::to_vec(&malformed).unwrap()).is_err());
+        }
+    }
 
     #[test]
     fn derived_references_survive_native_set_then_remove_order() {

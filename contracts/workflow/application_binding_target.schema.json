@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/application_binding_target.schema.json",
+  "title": "ApplicationBindingTarget", "type": "object", "additionalProperties": false,
+  "required": ["actionExecutionId", "bindingId", "bindingVersion", "workflowId"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "bindingId": {"type": "string", "format": "uuid"},
+    "bindingVersion": {"type": "integer"}, "workflowId": {"type": "string"}
+  }
+}

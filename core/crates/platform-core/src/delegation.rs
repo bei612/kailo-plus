@@ -297,9 +297,12 @@ pub(crate) async fn validate_scope(
     ) {
         return validate_memory_scope(g, conn, tenant, initiator, row, scope, target).await;
     }
+    if scope.tool_resource_id.is_some() {
+        return validate_application_scope(g, conn, tenant, initiator, row, scope, target).await;
+    }
     let action:Option<(String,String,String,String,String,String)>=sqlx::query_as(
             "select target_type,permission_object_type,permission,result_exposure,obs_redaction_policy,workspace_rule
-             from catalog.action_definition where action_key=$1 and version=$2 and status='ACTIVE'")
+             from catalog.action_definition where action_key=$1 and version=$2 and status='ACTIVE' and component_release_id is null")
             .bind(&scope.action_key).bind(i32::try_from(scope.action_version)
                 .map_err(|_|Refusal::Precondition(ReasonCode::InvalidParameters))?)
             .fetch_optional(&mut *conn).await?;
@@ -454,6 +457,181 @@ async fn validate_memory_scope(
         crate::agent_tool::permission(g, row.id, subject, "read").await?;
     }
     crate::agent_tool::permission(g, row.id, initiator, "delegate").await?;
+    Ok(())
+}
+
+// APPLICATION Tool scopes consume the exact approved release selected by the
+// target and immutable Installation ToolBinding. Catalog metadata is not the
+// Gateway's tool discovery authority, and neither binding nor Grant is a right.
+async fn validate_application_scope(
+    g: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    initiator: Uuid,
+    row: &Installation,
+    scope: &contracts::ScopeElement,
+    target: Option<Uuid>,
+) -> Result<(), Refusal> {
+    let bad = || Refusal::Precondition(ReasonCode::InvalidParameters);
+    let target = target.ok_or_else(bad)?;
+    let tool = scope
+        .tool_resource_id
+        .as_deref()
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .filter(|id| !id.is_nil())
+        .ok_or_else(bad)?;
+    let version = i32::try_from(scope.action_version).map_err(|_| bad())?;
+    let (binding, generation, application) = match scope.target_type.as_str() {
+        "RESOURCE" => {
+            crate::application_catalog::definition_for_resource(
+                conn,
+                tenant,
+                Some(row.workspace_id),
+                target,
+                &scope.action_key,
+                version,
+            )
+            .await?
+        }
+        "ASSET" => {
+            crate::application_catalog::definition_for_asset(
+                conn,
+                tenant,
+                Some(row.workspace_id),
+                target,
+                &scope.action_key,
+                version,
+            )
+            .await?
+        }
+        _ => return Err(bad()),
+    };
+    let def = &application.definition;
+    if !application_scope_matches(scope, def, &application.declaration) {
+        return Err(bad());
+    }
+    let valid:bool=sqlx::query_scalar("select exists(select 1 from catalog.tool_binding b
+        join catalog.agent_installation i on i.resource_id=b.installation_resource_id
+          and i.active_projection_generation=b.projection_generation and i.pinned_version_asset_id=b.agent_version_asset_id
+        join catalog.agent_runtime_projection agent on agent.installation_resource_id=i.resource_id
+          and agent.generation=b.projection_generation and agent.agent_version_asset_id=b.agent_version_asset_id and agent.state='ACTIVE'
+        join catalog.agent_version v on v.asset_id=b.agent_version_asset_id
+        join catalog.tool_definition t on t.resource_id=b.tool_resource_id and t.source='APPLICATION' and t.status='ACTIVE'
+        join catalog.resource r on r.id=t.resource_id and r.tenant_id=$1 and r.state='ACTIVE'
+          and r.type_key='tool.definition' and r.projection_action_execution_id is null
+        join catalog.application_binding implementation on implementation.id=r.application_binding_id
+          and implementation.tenant_id=r.tenant_id and implementation.state='ACTIVE'
+        join projection.application_runtime runtime on runtime.binding_id=implementation.id
+          and runtime.generation=t.application_projection_generation and runtime.state='ACTIVE' and runtime.gateway_state='ACTIVE'
+        where b.installation_resource_id=$2 and b.tool_resource_id=$3 and b.workspace_id=$4
+          and i.state='ACTIVE' and i.workspace_id=$4 and b.status in ('NO_PERMISSION','ACTIVE')
+          and t.action_key=$5 and t.capability_contract_key=$5 and t.output_schema_hash=$6
+          and t.input_schema_hash=$10 and r.application_binding_id=$7 and t.application_projection_generation=$8
+          and runtime.component_release_id=$9 and implementation.component_release_id=$9
+          and implementation.active_projection_generation=$8
+          and (implementation.workspace_id is null or implementation.workspace_id=$4)
+          and r.home_workspace_id is not distinct from implementation.workspace_id
+          and v.content->'capabilityRequirements' @> jsonb_build_array(t.capability_contract_key))")
+        .bind(tenant).bind(row.id).bind(tool).bind(row.workspace_id).bind(&scope.action_key)
+        .bind(&scope.output_schema_hash).bind(binding).bind(generation).bind(application.component_release_id)
+        .bind(application.declaration["inputSchemaDigest"].as_str().ok_or_else(bad)?)
+        .fetch_one(&mut *conn).await?;
+    if !valid {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    for subject in [initiator, row.agent_principal_id] {
+        crate::agent_tool::permission(g, tool, subject, "discover").await?;
+        crate::agent_tool::permission(g, tool, subject, "consume").await?;
+        application_permission(
+            g,
+            &def.permission_object_type,
+            target,
+            subject,
+            &def.permission,
+        )
+        .await?;
+        match &scope.result_exposure_mode {
+            contracts::ResultExposureMode::ConsumeOnly => {}
+            contracts::ResultExposureMode::Read => {
+                application_permission(g, &def.permission_object_type, target, subject, "read")
+                    .await?
+            }
+            contracts::ResultExposureMode::Export => {
+                application_permission(g, &def.permission_object_type, target, subject, "export")
+                    .await?
+            }
+        }
+    }
+    application_permission(
+        g,
+        &def.permission_object_type,
+        target,
+        initiator,
+        "delegate",
+    )
+    .await
+}
+
+fn application_scope_matches(
+    scope: &contracts::ScopeElement,
+    def: &Definition,
+    declaration: &serde_json::Value,
+) -> bool {
+    let exposure = &declaration["resultExposurePolicy"];
+    def.action_key == scope.action_key
+        && i64::from(def.version) == scope.action_version
+        && def.target_type == scope.target_type
+        && scope.create_workspace_id.is_none()
+        && def.permission_object_type == scope.target_type.to_ascii_lowercase()
+        && def.tenant_rule == "SESSION_TENANT"
+        && application_exposure_within(&scope.result_exposure_mode, exposure["mode"].as_str())
+        && exposure["outputSchemaHash"] == scope.output_schema_hash
+        && exposure["redactionPolicy"] == scope.redaction_policy
+        && declaration["businessObservabilityPolicy"]["redactionPolicy"] == scope.redaction_policy
+}
+
+fn application_exposure_within(
+    mode: &contracts::ResultExposureMode,
+    maximum: Option<&str>,
+) -> bool {
+    matches!(
+        (mode, maximum),
+        (
+            contracts::ResultExposureMode::ConsumeOnly,
+            Some("CONSUME_ONLY" | "READ" | "EXPORT")
+        ) | (contracts::ResultExposureMode::Read, Some("READ" | "EXPORT"))
+            | (contracts::ResultExposureMode::Export, Some("EXPORT"))
+    )
+}
+
+async fn application_permission(
+    g: &Governance,
+    object_type: &str,
+    target: Uuid,
+    subject: Uuid,
+    permission: &str,
+) -> Result<(), Refusal> {
+    let checked = g
+        .spicedb
+        .check(
+            object_type,
+            &target.to_string(),
+            permission,
+            &subject.to_string(),
+            crate::spicedb::Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| {
+            Refusal::Unavailable("APPLICATION Delegation fresh permission unavailable".into())
+        })?;
+    if checked.zed_token.is_empty() {
+        return Err(Refusal::Unavailable(
+            "APPLICATION Delegation fresh permission lacks checked revision".into(),
+        ));
+    }
+    if !checked.allowed {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
     Ok(())
 }
 
@@ -661,8 +839,7 @@ impl Governance {
                 .await?;
             }
             flag_invocations(&mut tx, tenant, id).await?;
-            let def =
-                super::exact_definition(&self.pool, &ae.action_key, ae.action_version).await?;
+            let def = super::exact_definition_for_execution(&self.pool, &ae).await?;
             if matches!(state.as_str(), "ACTIVE" | "REVOKING") {
                 super::audit(
                     &mut tx,
@@ -828,5 +1005,99 @@ impl Governance {
             }
             Err(_) => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod application_scope_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn fixture() -> (contracts::ScopeElement, Definition, serde_json::Value) {
+        let scope = contracts::ScopeElement {
+            action_key: "isolated.lookup@v1".into(),
+            action_version: 1,
+            target_type: "RESOURCE".into(),
+            target_id: Some(Uuid::new_v4().to_string()),
+            create_workspace_id: None,
+            tool_resource_id: Some(Uuid::new_v4().to_string()),
+            result_exposure_mode: contracts::ResultExposureMode::ConsumeOnly,
+            output_schema_hash: "a".repeat(64),
+            redaction_policy: "PLATFORM_METADATA_ONLY".into(),
+        };
+        let def = Definition {
+            action_key: scope.action_key.clone(),
+            version: 1,
+            component_type_key: "isolated_adapter".into(),
+            target_type: "RESOURCE".into(),
+            tenant_rule: "SESSION_TENANT".into(),
+            workspace_rule: "TARGET_HOME_WORKSPACE".into(),
+            permission: "read".into(),
+            permission_object_type: "resource".into(),
+            confirmation_mode: "NONE".into(),
+            approval_policy_id: None,
+            approval_policy_version: None,
+            workflow_kind: None,
+            result_exposure: "CONSUME_ONLY".into(),
+            execution_mode: "PROTOCOL".into(),
+            quota_policy: "NONE".into(),
+            meters: vec![],
+            role_template_key: None,
+            role_template_version: None,
+        };
+        let declaration = json!({"resultExposurePolicy":{"mode":"CONSUME_ONLY",
+            "outputSchemaHash":scope.output_schema_hash,"redactionPolicy":"PLATFORM_METADATA_ONLY"},
+            "businessObservabilityPolicy":{"redactionPolicy":"PLATFORM_METADATA_ONLY"}});
+        (scope, def, declaration)
+    }
+
+    #[test]
+    fn application_scope_keeps_exact_contract_and_declared_exposure() {
+        let (scope, mut def, declaration) = fixture();
+        assert!(application_scope_matches(&scope, &def, &declaration));
+        def.version = 2;
+        assert!(!application_scope_matches(&scope, &def, &declaration));
+        def.version = 1;
+        def.action_key = "different.lookup@v1".into();
+        assert!(!application_scope_matches(&scope, &def, &declaration));
+    }
+
+    #[test]
+    fn application_scope_cannot_silently_broaden_or_change_output() {
+        let (mut scope, def, declaration) = fixture();
+        scope.result_exposure_mode = contracts::ResultExposureMode::Read;
+        assert!(!application_scope_matches(&scope, &def, &declaration));
+        scope.result_exposure_mode = contracts::ResultExposureMode::ConsumeOnly;
+        scope.output_schema_hash = "b".repeat(64);
+        assert!(!application_scope_matches(&scope, &def, &declaration));
+        scope.output_schema_hash = "a".repeat(64);
+        scope.redaction_policy = "other".into();
+        assert!(!application_scope_matches(&scope, &def, &declaration));
+    }
+
+    #[test]
+    fn application_scope_may_narrow_but_never_expand_declared_exposure() {
+        let (mut scope, def, mut declaration) = fixture();
+        declaration["resultExposurePolicy"]["mode"] = json!("EXPORT");
+        assert!(application_scope_matches(&scope, &def, &declaration));
+        scope.result_exposure_mode = contracts::ResultExposureMode::Read;
+        assert!(application_scope_matches(&scope, &def, &declaration));
+        scope.result_exposure_mode = contracts::ResultExposureMode::Export;
+        assert!(application_scope_matches(&scope, &def, &declaration));
+        declaration["resultExposurePolicy"]["mode"] = json!("READ");
+        assert!(!application_scope_matches(&scope, &def, &declaration));
+    }
+
+    #[test]
+    fn application_scope_rejects_unknown_missing_policy_and_create_intent() {
+        let (mut scope, def, mut declaration) = fixture();
+        declaration["resultExposurePolicy"]["mode"] = json!("FUTURE_MODE");
+        assert!(!application_scope_matches(&scope, &def, &declaration));
+        declaration["resultExposurePolicy"]["mode"] = json!("CONSUME_ONLY");
+        declaration["businessObservabilityPolicy"] = serde_json::Value::Null;
+        assert!(!application_scope_matches(&scope, &def, &declaration));
+        let (_, _, declaration) = fixture();
+        scope.create_workspace_id = Some(Uuid::new_v4().to_string());
+        assert!(!application_scope_matches(&scope, &def, &declaration));
     }
 }

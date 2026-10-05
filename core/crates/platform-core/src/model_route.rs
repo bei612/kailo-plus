@@ -1399,11 +1399,11 @@ async fn subject_audit(
 
 /// DD-38：已有安装 projection 的副作用依赖，不创建 Invocation 或商业账本。
 /// lifecycle 保留 Tenant 锁，Core-only 身份只允许此受治理写者；native PUT 没有 CAS。
-async fn ensure_usage_subject(
+pub(crate) async fn ensure_usage_subject(
     state: &ServiceState,
     lifecycle: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant: Uuid,
-    workspace: Uuid,
+    workspace: Option<Uuid>,
     installation: Uuid,
     action: Uuid,
 ) -> Result<(), Refusal> {
@@ -1425,8 +1425,11 @@ async fn ensure_usage_subject(
     }
     let context = crate::platform_keys::action_audit_context(lifecycle, action, tenant).await?;
     if context.target_id != installation
-        || context.workspace_id != Some(workspace)
-        || context.action_key != "agent.installation.create"
+        || context.workspace_id != workspace
+        || !matches!(
+            context.action_key.as_str(),
+            "agent.installation.create" | "application_binding.create"
+        )
     {
         return Err(conflict());
     }
@@ -1705,7 +1708,7 @@ pub(crate) async fn provision(
         state,
         &mut lifecycle,
         tenant,
-        workspace,
+        Some(workspace),
         installation,
         action,
     )

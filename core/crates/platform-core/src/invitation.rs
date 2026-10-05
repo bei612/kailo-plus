@@ -520,6 +520,9 @@ impl Governance {
             capability_contract_ref: None,
             component_release_registration: None,
             component_release_id: None,
+            application_binding_create: None,
+            application_binding_id: None,
+            application_binding_version: None,
         };
         let admit = match open_execution(
             &mut tx,

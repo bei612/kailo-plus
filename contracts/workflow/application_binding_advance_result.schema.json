@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/application_binding_advance_result.schema.json",
+  "title": "ApplicationBindingAdvanceResult", "type": "object", "additionalProperties": false,
+  "required": ["bindingId", "status", "waitingReason"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"},
+    "status": {"$ref": "../enums/task_status.schema.json"}, "waitingReason": {"type": "string"}
+  }
+}

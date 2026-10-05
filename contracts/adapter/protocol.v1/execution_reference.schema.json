@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/execution_reference.schema.json",
+  "title": "AdapterExecutionReference",
+  "description": "原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId 未取得时只用冻结幂等键查证。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["externalExecutionId", "idempotencyKey", "nativeType"],
+  "properties": {
+    "externalExecutionId": {"type": "string", "format": "uuid"},
+    "idempotencyKey": {"type": "string", "format": "uuid"},
+    "nativeType": {"type": "string"},
+    "nativeId": {"type": "string"}
+  }
+}

@@ -94,6 +94,10 @@ pub fn router(state: ServiceState) -> Router {
             post(crate::agent_installation::advance),
         )
         .route(
+            "/service/v1/application-bindings/advance",
+            post(crate::application_binding::advance),
+        )
+        .route(
             "/service/v1/membership-projections/buzz",
             post(crate::membership_projection::project_buzz_roster),
         )
@@ -180,6 +184,10 @@ pub fn router(state: ServiceState) -> Router {
         .route(
             "/service/v1/secret-ref-rehomes/advance",
             post(crate::secret_ref_rehome::advance),
+        )
+        .route(
+            "/service/v1/adapter/pep_check",
+            post(crate::application_binding::pep::check),
         )
         .with_state(state.clone());
     match (
