@@ -25,7 +25,7 @@ Temporal 是 Approval 与用户可见持久 Workflow 的唯一生命周期权威
 | ApplicationBinding 建立/升级/回滚 | `ComponentTaskWorkflow(kind=COMPONENT_BINDING)`，input 固定 `binding_kind=APPLICATION`、binding、old/new release、old/new generation、native scope 与全部投影 refs；类别内换成另一实现是新 binding 的建立加旧 binding 的 `COMPONENT_DISABLE`，不是同一 binding 的 generation 切换（DD-88） |
 | Core 授权引用首次登记（`resource.create`） | 复用 `ComponentTaskWorkflow(kind=RESOURCE_PROVISION)`；input 固定 Resource ID/version、type_key、ApplicationBinding ID/version、release/generation、引用来源及证据。写 SpiceDB relationship 并复检后，已有对象只核同一冻结引用与 binding/native scope 的可复核证据，不发 CREATE；证据不明保持 `UNKNOWN`，只查原引用。明确 `REMOTE_ADAPTER` 原生创建才沿原 Resource ID 幂等 `CREATE`、未知只 `LOOKUP/ABSENT_FENCED` 流程；不重放 CREATE、不换幂等键（DD-98） |
 | 两类 Binding 停用 | `ComponentTaskWorkflow(kind=COMPONENT_DISABLE)`，input 固定 binding kind/ID/version 和受影响 refs |
-| 协议会话结果不明的对账 | `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，input 固定 ProtocolSession ref（ID/version）、实现 binding refs、base revision 与 native correlation；查证手段为该 binding 经 Adapter Protocol `query_revision` 提供的 revision 查询（DD-90） |
+| 协议会话结果不明的对账 | `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，首次 UNKNOWN 的 input 固定 ProtocolSession ref（ID/version）、实现 binding refs、base revision 与 native correlation；同一 Workflow 贯穿该 Session，后续查询轮次按 §6 冻结，查证手段为该 binding 经 Adapter Protocol `query_revision` 提供的 revision 查询（DD-90） |
 | AgentInstallation 建立/升级/停用的多投影收敛 | `ComponentTaskWorkflow(kind=AGENT_INSTALLATION)`，input 固定 Installation ID/version、exact AgentVersion、projection generation、AgentPrincipal/BuzzIdentity、SpiceDB 与 Channel roster refs |
 | 业务能力实现登记的 Resource 版本发布/下线的运行时收敛 | `ComponentTaskWorkflow(kind=CAPABILITY_VERSION_PUBLISH)`，只适用于在 release 中声明 `versioned_model=SUPPORTED` 的实现（DD-90）；input 固定 Resource 版本、artifact digest、实现 binding refs、SecretRef 与该版本的运行时与工具端点 refs |
 
@@ -123,7 +123,8 @@ cancel(native_execution_ref)
 - 声明不支持 native cancel 的实现，其 ExternalExecution 取消结果固定 `UNSUPPORTED`。Workflow 只停止等待并丢弃迟到结果，不终止共享 runtime，不声称 native 执行已取消。
 - callback/observer 核对 binding、native ref、event identity/sequence 和 scope；重放/乱序不重复推进或计量。
 - 每次真实 native 副作用在 dispatch 前建立 ExternalExecution，冻结 Tenant/Workspace、binding version、request digest 与稳定 idempotency key。响应不明时允许 `native_id=NONE` 并进入 `UNKNOWN`；只有 ActionDefinition 已登记的 native query/dedupe seam 能补回 native ref 或证明未发生，不能因无 ID 自动重放（DD-48）。
-- `SOURCE_BOUND_PROTOCOL` 的保存是 ProtocolSession 协议操作，不是 native task。能力契约登记的结果证据被接受且确认新 revision 才在原 Action 内终结；写入或 revision 结果不明才创建 `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，固定 session ref、实现 binding refs、base revision 与 correlation，按该 binding 的能力契约/Adapter 登记的查证手段对账，不重新触发组件保存。内置参考实现的查证方式见 `18`。
+- `SOURCE_BOUND_PROTOCOL` 的保存是 ProtocolSession 协议操作，不是 native task。能力契约登记的结果证据被接受且确认新 revision 才完成本轮保存；写入或 revision 结果不明时，原 ActionExecution 首次启动 `ComponentTaskWorkflow(kind=PROTOCOL_SESSION_RECONCILE)`，固定 session ref、实现 binding refs、base revision 与 correlation，按该 binding 的能力契约/Adapter 登记的查证手段对账，不重新触发组件保存。内置参考实现的查证方式见 `18`。
+- 该 Workflow 在 `SAVED` 后继续等待同一 Session，`SAVED` 不是 Workflow 终态。后续每轮先由 Activity 读取原 Session 已持久化的 version、correlation 与写入 evidence，其结果进入 Temporal history 后成为该轮固定查询目标；后续查证只消费该目标，不覆盖初始 input、不改冻结 binding/base revision，不以 latest 或 callback 自报定位替代持久事实。重复 Activity、回报丢失和 continue-as-new 均保留同一 workflow ID 与原轮次证据；陈旧轮次不得推进新的写入。只有 Session 到达 `CLOSED/EXPIRED/REVOKED/FAILED`、没有未确认写入且最终投影已记录时才终结；等待与查询使用原有有界 Activity 轮次、持久 timer 与 history 分批约束，正常 Session TTL/撤权仍继续执行。
 
 ## 7. 跨 Tenant 转移与 Tenant 生命周期
 
