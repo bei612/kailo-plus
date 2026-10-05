@@ -316,6 +316,7 @@ export function Composer({ workspaceId }: { workspaceId: string }) {
     for (const installation of installations.data?.pages.flatMap((page) => page.installations) ?? []) {
       if (installation.workspaceId !== workspaceId || installation.state !== "ACTIVE" ||
           installation.resourceState !== "ACTIVE" || installation.agentPrincipalState !== "ACTIVE" ||
+          installation.executionPermission?.effective !== true ||
           installation.channelBinding?.status !== "ACTIVE" ||
           !installation.channelBinding.triggers.includes(AgentTrigger.Mention)) {
         invalid.add(installation.resourceId);

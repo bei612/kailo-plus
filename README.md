@@ -6,6 +6,26 @@
 
 ## 最新复核与投递事实（2026-10-05）
 
+### 三人、两 Agent 同频道真实回复已验收（05:01 UTC）
+
+三个独立 HUMAN 正常登录 Web 后各发送一条同时提及两个 Agent 的消息，六个
+Invocation/Task 与原 Temporal Workflow 全部 COMPLETED；每条消息的两条 Agent
+回复均在三人的独立页面读回，七个实际模型请求的 62896 tokens 全部 COMMITTED，
+六个 Capacity 全部 RELEASED。使用的安装为 `2989b1ec-f3fa-468d-89c5-4a8be226c97c`
+和 `f66a3b3e-589e-4c27-965c-8d2b4cebb995`；旧无有效回复安装已正常撤 execute。
+这次已证明 Web 多人、多 Agent 协作，不能再按下面历史记录称它尚未跑通。
+
+开发租户的原生 OpenMeter entitlement 已改为 soft limit，继续真实计量；三人均
+已有该组织/工作区业务 admin 和各自 exact-installation 委托；共享执行池为两槽。
+未关闭身份、scope、fresh authorization、审批、用量关联和终态证据检查。
+
+仍有明确体验缺口：本次三轮回复各约 164–166 秒，其中每轮均有两段 60 秒等待。
+等待逻辑及 Web 撤权安装候选过滤修复已通过定向检查，尚未发布；线上选择 Agent
+时明确选上述两个可用安装。真实命令、失败保留、终态及耗时见
+[Agent 验证](core/verify/agent-definition.md)末两节。
+Cells、WeKnora、Wren 仍未形成可用接入；Workflows 全功能、原 Buzz 完整设置、
+Desktop/Mobile 设备、签名及长期稳定性仍不据本次六调用宣称验收或生产就绪。
+
 ### 共享设置与频道已读修复已投递（03:23 UTC）
 
 源码 `7de631d841d72b5ac32c6f1093a278b5f8b8326a` 已提交并 push，

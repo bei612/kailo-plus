@@ -123,6 +123,7 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 	begun := false
 	startedApproval := ""
 	for {
+		nextRound := retry.RoundInterval
 		if ctx.Err() != nil && !in.CancelPending {
 			// cancel accepted 不是 CANCELED；脱离已取消上下文继续原生收尾观察。
 			in.CancelPending = true
@@ -178,18 +179,27 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 			// finishActivity 只确认结束 holder，不是业务终态。RELEASED 后
 			// 后续 Activity 只观察同一 Invocation，不由 Worker 再占 units。
 			// 任何终态都先落投影；ACK 不明时继续对账，不返回假 terminal。
-			if err := project(loop, status, reason); err == nil && status != generated.TaskStatusRUNNING {
-				switch status {
-				case generated.Completed:
-					return nil
-				case generated.Canceled:
-					return temporal.NewCanceledError()
-				default:
-					return temporal.NewNonRetryableApplicationError("AgentTask 权威事实确认失败", activities.ErrTypeRejected, nil)
+			if projected := project(loop, status, reason); projected == nil {
+				if status != generated.TaskStatusRUNNING {
+					switch status {
+					case generated.Completed:
+						return nil
+					case generated.Canceled:
+						return temporal.NewCanceledError()
+					default:
+						return temporal.NewNonRetryableApplicationError("AgentTask 权威事实确认失败", activities.ErrTypeRejected, nil)
+					}
+				}
+				// 已确认的 holder/usage 交接继续观察同一 Invocation，不是失败
+				// 重试。保留原生 ActivityCompleted 和最终用量核验，只解除误用
+				// 故障退避造成的每次交接整轮等待；旧 history 仍走旧 timer。
+				if err == nil && out.FinishActivity && (reason == "CAPACITY_UNAVAILABLE" || reason == "BILLING_UNAVAILABLE") &&
+					workflow.GetVersion(loop, "agent-task-confirmed-handoff-observation", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+					nextRound = time.Duration(in.ObservationIntervalSeconds) * time.Second
 				}
 			}
 		}
-		if err := workflow.Sleep(loop, retry.RoundInterval); err != nil {
+		if err := workflow.Sleep(loop, nextRound); err != nil {
 			continue
 		}
 		if workflow.GetInfo(loop).GetContinueAsNewSuggested() {

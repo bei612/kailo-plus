@@ -380,10 +380,31 @@ fn valid_resource_key(key: &str) -> bool {
 }
 
 fn valid_meter_key(key: &str) -> bool {
-    // 固定 OpenMeter Meter::Validate 只要求 key 非空。Feature ResourceKey 的
-    // 下划线规则不是 meter selector 规则；DD-107 的原计数键含点号。
-    // 调用方仍从原生集合查证 exact key/唯一 ID，不翻译或生成别名。
+    // 此处是平台语义 selector。automation.run 通过显式部署映射解析到
+    // v3 ResourceKey；原生 ID、event_type 与唯一性仍逐次查证。
     !key.is_empty()
+}
+
+pub(crate) fn configured_automation_native_meter_key() -> Result<Option<String>, String> {
+    match std::env::var("AUTOMATION_RUN_NATIVE_METER_KEY") {
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Ok(value) if value.is_empty() => Ok(None),
+        Ok(value) if valid_resource_key(&value) => Ok(Some(value)),
+        _ => Err("AUTOMATION_RUN_NATIVE_METER_KEY 必须是原生 v3 ResourceKey".into()),
+    }
+}
+
+fn native_meter_key<'a>(key: &'a str, automation: Option<&'a str>) -> Result<&'a str, Error> {
+    if key == "automation.run" {
+        automation
+            .filter(|key| valid_resource_key(key))
+            .ok_or(Error::Precondition)
+    } else if automation == Some(key) {
+        // 同一个原生 COUNT 不能再以模型 SUM selector 重复登记。
+        Err(Error::Precondition)
+    } else {
+        Ok(key)
+    }
 }
 
 #[derive(Deserialize)]
@@ -402,6 +423,7 @@ pub struct OpenMeter {
     http: reqwest::Client,
     customers: Url,
     namespace: String,
+    automation_native_meter_key: Option<String>,
 }
 
 impl OpenMeter {
@@ -466,6 +488,7 @@ impl OpenMeter {
             http,
             customers,
             namespace,
+            automation_native_meter_key: configured_automation_native_meter_key()?,
         })
     }
 
@@ -718,17 +741,21 @@ impl OpenMeter {
             if !valid_meter_key(key) {
                 return Err(Error::Precondition);
             }
+            let native_key = native_meter_key(key, self.automation_native_meter_key.as_deref())?;
             let mut meter_url = self.collection_url("meters")?;
             meter_url
                 .query_pairs_mut()
-                .append_pair("filter[key][eq]", key);
+                .append_pair("filter[key][eq]", native_key);
             let mut native_meters: Vec<Meter> = self.collection(meter_url).await?;
             let meter = match native_meters.len() {
                 0 => return Err(Error::Precondition),
                 1 => native_meters.pop().ok_or(Error::Unknown)?,
                 _ => return Err(Error::Conflict),
             };
-            if meter.key != *key || !valid_customer_id(&meter.id) || meter.deleted_at.is_some() {
+            if meter.key != native_key
+                || !valid_customer_id(&meter.id)
+                || meter.deleted_at.is_some()
+            {
                 return Err(Error::Conflict);
             }
             let mut feature_url = self.collection_url("features")?;
@@ -874,9 +901,10 @@ impl OpenMeter {
             if !valid_meter_key(key) || !seen.insert(key) {
                 return Err(Error::Precondition);
             }
+            let native_key = native_meter_key(key, self.automation_native_meter_key.as_deref())?;
             let matches: Vec<_> = native
                 .iter()
-                .filter(|m| m.key == *key && m.deleted_at.is_none())
+                .filter(|m| m.key == native_key && m.deleted_at.is_none())
                 .collect();
             let [meter] = matches.as_slice() else {
                 return Err(Error::Conflict);
@@ -1240,15 +1268,113 @@ fn status_error(status: StatusCode) -> Error {
 
 #[cfg(test)]
 mod meter_key_tests {
-    use super::{valid_meter_key, valid_resource_key};
+    use super::{native_meter_key, valid_meter_key, valid_resource_key};
 
     #[test]
-    fn native_meter_selector_does_not_use_feature_key_rules() {
+    fn logical_meter_selector_and_native_resource_key_are_distinct() {
         assert!(valid_meter_key("automation.run"));
         assert!(valid_meter_key("input_tokens"));
         assert!(!valid_meter_key(""));
         // Feature/entitlement-access 路径继续消费原生 ResourceKey，不一起放宽。
         assert!(!valid_resource_key("automation.run"));
         assert!(valid_resource_key("input_tokens"));
+    }
+
+    #[test]
+    fn automation_count_requires_explicit_valid_native_mapping() {
+        assert_eq!(
+            native_meter_key("automation.run", Some("automation_run")).unwrap(),
+            "automation_run"
+        );
+        assert!(native_meter_key("automation.run", None).is_err());
+        assert!(native_meter_key("automation.run", Some("automation.run")).is_err());
+        assert!(native_meter_key("automation_run", Some("automation_run")).is_err());
+        assert_eq!(
+            native_meter_key("model_tokens", Some("automation_run")).unwrap(),
+            "model_tokens"
+        );
+        assert_eq!(
+            native_meter_key("model_tokens", None).unwrap(),
+            "model_tokens"
+        );
+    }
+
+    #[tokio::test]
+    async fn quota_and_message_consume_same_native_count_mapping() {
+        use super::OpenMeter;
+        use axum::{http::Uri, Json, Router};
+        use serde_json::json;
+        const CUSTOMER: &str = "00000000000000000000000001";
+        const METER: &str = "00000000000000000000000002";
+        const FEATURE: &str = "00000000000000000000000003";
+        let tenant = uuid::Uuid::new_v4();
+        let subject = format!("{tenant}:workspace");
+        let customer =
+            json!({"id":CUSTOMER,"key":tenant,"usage_attribution":{"subject_keys":[subject]}});
+        let access = json!({"feature_key":"automation_runs","type":"metered","has_access":true,
+            "value":{"balance":"0","usage":"0","overage":"0","total_available_grant_amount":"0","grant_balances":{}}});
+        let app = Router::new().fallback(move |uri: Uri| {
+            let customer = customer.clone();
+            let access = access.clone();
+            async move {
+                let url = reqwest::Url::parse(&format!("http://localhost{uri}")).unwrap();
+                let filters: std::collections::BTreeMap<_,_> = url.query_pairs().collect();
+                let path = url.path();
+                let page = |data: Vec<serde_json::Value>| json!({"meta":{"page":{"number":1,"size":100,"total":data.len()}},"data":data});
+                let value = if path.ends_with("/entitlement-access/features/automation_runs") {
+                    access
+                } else if path.ends_with("/entitlement-access") {
+                    json!({"data":[access]})
+                } else if path.ends_with(CUSTOMER) {
+                    customer
+                } else if path.ends_with("/customers") {
+                    if filters.contains_key("filter[key][eq]") { page(vec![]) } else { page(vec![customer]) }
+                } else if path.ends_with("/meters") {
+                    // The real v3 API rejects dotted keys. Return no match for an
+                    // unmapped logical selector, rather than accepting a fake API.
+                    if filters.get("filter[key][eq]").is_some_and(|v| v != "automation_run") {
+                        page(vec![])
+                    } else {
+                        page(vec![json!({"id":METER,"key":"automation_run","aggregation":"count","event_type":"kailo.automation.run"})])
+                    }
+                } else if path.ends_with("/features") && filters.get("filter[meter_id][oeq]").is_some_and(|v| v == METER) {
+                    page(vec![json!({"id":FEATURE,"key":"automation_runs","meter":{"id":METER}})])
+                } else {
+                    panic!("unexpected native request: {uri}")
+                };
+                Json(value)
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut client = OpenMeter {
+            http: reqwest::Client::new(),
+            customers: reqwest::Url::parse(&format!("http://{address}/api/v3/openmeter/customers"))
+                .unwrap(),
+            namespace: "test".into(),
+            automation_native_meter_key: Some("automation_run".into()),
+        };
+        assert!(client
+            .check_quota(tenant, CUSTOMER, &["automation.run".into()])
+            .await
+            .unwrap());
+        let count = client
+            .message_meter(tenant, CUSTOMER, &subject)
+            .await
+            .unwrap();
+        assert_eq!(count.key, "automation.run");
+        assert_eq!(count.id, METER);
+        assert_eq!(count.event_type, "kailo.automation.run");
+        client.automation_native_meter_key = None;
+        assert!(client
+            .check_quota(tenant, CUSTOMER, &["automation.run".into()])
+            .await
+            .is_err());
+        assert!(client
+            .message_meter(tenant, CUSTOMER, &subject)
+            .await
+            .is_err());
+        server.abort();
     }
 }

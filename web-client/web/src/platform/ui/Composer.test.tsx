@@ -102,6 +102,12 @@ function installation(resourceId: string): AgentInstallationView {
     resourceVersion: 1,
     resourceState: ResourceState.Active,
     state: AgentInstallationState.Active,
+    executionPermission: {
+      requested: true,
+      effective: true,
+      canGrant: false,
+      canRevoke: true,
+    },
     channelBinding: {
       status: ChannelBindingStatus.Active,
       triggers: [AgentTrigger.Mention],
@@ -238,4 +244,38 @@ it("selects through the original highlighted picker row with the keyboard", asyn
   });
   expect(button(host, "agent-a").getAttribute("aria-pressed")).toBe("true");
   expect(host.querySelector('[data-testid="mention-autocomplete"]')).toBeNull();
+});
+
+it.each([false, undefined])(
+  "excludes an Agent when execution permission is %s on either overlapping page",
+  async (effective) => {
+    const unavailable = installation("agent-a");
+    unavailable.executionPermission =
+      effective === undefined
+        ? undefined
+        : { ...unavailable.executionPermission!, effective };
+    state.pages = [
+      { installations: [unavailable] },
+      { installations: [installation("agent-a"), installation("agent-b")] },
+    ];
+    const host = await render(<Composer workspaceId="workspace-a" />);
+    await click(button(host, "platform.mentionAgent"));
+    expect(host.querySelector('[data-testid="mention-suggestion-agent-a"]')).toBeNull();
+    expect(host.querySelector('[data-testid="mention-suggestion-agent-b"]')).not.toBeNull();
+  },
+);
+
+it("blocks a selected Agent after execution permission is revoked without changing installation state", async () => {
+  const host = await render(<Composer workspaceId="workspace-a" />);
+  await select(host, "agent-a");
+  const revoked = installation("agent-a");
+  revoked.executionPermission!.effective = false;
+  state.pages = [{ installations: [revoked, installation("agent-b")] }];
+  await type(
+    host.querySelector<HTMLInputElement>('[data-testid="message-input"]')!,
+    "hello",
+  );
+  expect(button(host, "platform.send").disabled).toBe(true);
+  await click(button(host, "platform.send"));
+  expect(state.publish).not.toHaveBeenCalled();
 });

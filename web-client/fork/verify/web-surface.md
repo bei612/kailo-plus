@@ -1505,3 +1505,36 @@ cmp 0 后上述 44 项重新通过。未修改鉴权、服务端状态、正式�
 `mutation.log` SHA-256
 `eb455b7dee14c177bd634170b1fb71b29f8c30c3641161f42b3e06fc12c166cf`。
 此定向阶段未运行 full、产品构建、部署或新的真实消息/模型调用；联合交付另记。
+
+### 2026-10-05 Agent 执行撤权后的提及候选
+
+基线 `6090de81a13322f85dcc77b1a862cb203dbb7422`。真实开发安装撤销 execute 后，
+Installation 仍 ACTIVE，而 Web Composer 原候选仅检查安装、主体、资源和频道绑定
+状态，导致撤权对象仍可选。修正直接消费原 BFF `executionPermission.effective`，
+不是新增授权或另一份 Agent 目录；服务端每次准入的 fresh 授权保持不变。
+
+改前四步结论：权威为设计 17 的 Installation execute 与 ChannelAgentBinding、
+DD-75 的客户端传输边界；实际影响为 `ChannelPane.tsx::Composer` 的候选和已选集合
+核验，读取原生成的 AgentInstallationView，不改契约、数据库或迁移。只有明确 true
+才可选，false/缺字段都从候选移除；分页重叠时任一撤权观察优先于旧 ACTIVE 记录。
+已选对象撤权则原发送按钮禁用、不产生 publish；空集合、请求错误和 UNKNOWN 原
+意图保护沿用现有实现，分别保留空态、既有错误与结果不明状态，不制造成功。
+没有新增配置、后台任务、持久状态、重试或外部副作用；授权拒绝仍属于原 DENIED。
+
+Web/Desktop 的提及控件仍共用 TypeScript 呈现；本次只修 Web 的 BFF 安装目录
+消费者，Desktop/Mobile 原生 Relay 成员消费与本机持钥路径未改，不能把这组
+Web 检查外推为原生端撤权或设备验收。
+
+先实现再补原 Composer 用例；在既有 SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+中执行，实际 4 CPU / 8 GiB / swap 0、UID 1000，执行前核对现存进程与宿主余量。
+私有候选从基线导出，只选两文件 +41/-0，不带入主工作区已有格式改动。
+原 `npm run typecheck && npm test && npm run check:i18n && npm run check:file-sizes`
+退出 0，11 文件 47 项通过。删除私有候选中的 effective 守卫后，原 Composer
+检查恰有 3 项失败、退出 1；apply_patch 恢复后上述完整 Web 命令再次退出 0。
+原 npm 的 store-dir 配置告警保留，没有改变工具版本或业务实现来消除告警。
+
+原件位于 `codex-channel-read-recovery-20261005.tLs1fL/full-tmp/mention-execute-20261005.dvl7K0`：
+`mutation.log` SHA-256 `7116d66b48966d83a0e7bc36c05b79036edeb9f98406380a280ee3936285a248`；
+`restored.log` SHA-256 `afa2e4b8752fa7089748a8871605493b128e4cc85106af13121dda0b1a715e7e`。
+本阶段没有产品构建、部署或 full，源码提交与联合交付分别收口。

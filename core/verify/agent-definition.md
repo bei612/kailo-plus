@@ -3501,3 +3501,120 @@ Gateway 用量 tail cursor 仍为 0。不能以 native completed 推断业务成
 原只读命令退出 0，原件
 `/volumes/data/kailo/tmp/codex-agent-terminal-readback-20261004.TVmhGa/settlement-readback.log`，
 SHA-256 `328a32ca5abfe6fd898c4c41ec8906150e1f82348a3b036a367581026049b1fc`。
+
+### 2026-10-05 三 HUMAN、两 Agent 原生协作实证
+
+用户明确授权当前开发 Tenant `6179e160-6055-4e9a-ae63-1793509c230c`、
+Workspace `ad9a6443-f0a2-47d2-895d-f11b8fef9e38` 的业务权限及委托配置。
+bootstrap、seam-verifier、collab-third 三个独立 HUMAN 均经原 BFF 读回
+Tenant/Workspace admin；没有 IdP/Catalog 管理员扩权、owner 转移或 SQL 权限写入。
+每人按真实受权目录为两可用安装签发自己的 exact RESOURCE `agent.invoke`
+Delegation，ACTIVE、maxUses 缺省、expiresAt `9999-12-31T23:59:59Z`；
+长期业务委托不改变 OIDC/Session token TTL。权限与原审批完成回执在
+`/volumes/data/kailo/tmp/codex-development-permissions-20261005.vMexIs/handoff.md`。
+
+原 `8f240978-34bb-437d-97ee-498a30e67e86` 的直通 Responses 回合只有 reasoning，
+未生成可发出的 assistant；保留原失败，不伪造回复或重放。按原 create 流程从已验证的
+PUBLISHED Version `20b0c624-5195-439c-86f7-de43467d8b19` 建立独立安装
+`f66a3b3e-589e-4c27-965c-8d2b4cebb995`，真实投影 ACTIVE；其 read/execute
+经原 owner ApprovalWorkflow 消费完成。原安装 execute revoke 生效为 false，
+仍保留 ACTIVE 资源与历史；这是正常新增/撤权，不是未实现的 pin upgrade。
+另一个可用安装为 `2989b1ec-f3fa-468d-89c5-4a8be226c97c`。
+
+三独立正常 OIDC 页面各从同频道 Composer 的 Agent 选择器明确选中上述两个可用安装，
+各只发一条新消息。三个 source event 为 `4fae6d0e…b9002`、`57becff5…7117b`、
+`4240c9c0…48bd6`；六个 Invocation/Task 均 COMPLETED，六个原 Temporal history
+均以 WORKFLOW_EXECUTION_COMPLETED 结束，六个独立回复在所有三人的 DOM 精确读回
+（九组断言各 count=2）。真实 initiator、Agent actor、Session/native thread、
+trace、本人 Grant 均由原关联读回；七个实际 native request 的 62896 tokens
+全部 COMMITTED/stored_at，六 Capacity RELEASED。旧 UNKNOWN/seq1 缺 trace 未改。
+这证明本批 Web 三人两 Agent 协作，不声称 Desktop 设备、负载或长期稳定性验收。
+
+完整原件位于 `/volumes/data/kailo/tmp/codex-three-human-two-agent-20261005.poEa9c/`：
+`ui-r2.exit=0`；`ui-r2.log` SHA-256
+`fd44980d718f3cda1a8e6bc987c8da0e9a509d96274bdbb4f984cef9b657a0f3`；
+`observe-r2-final.log` SHA-256
+`7ae5af89bb366e77c763adb52064915fc6d60d0576a23ba7f5e621f624d5e965`。
+`handoff.md` 保留首轮仅一条回复的实际失败与正常替换过程，未覆盖原件。
+当时线上旧选择器仍可能展示撤权但 ACTIVE 的旧安装，操作明确不选旧 `8f240…`；
+不能把另批尚未发布的过滤修复冒充当时 UI 行为。
+
+本批每组从发送到双回复 DOM 为 166.270/164.366/164.343 秒。
+六份原 history 元数据均有两段 60 秒 timer，native 模型 turn 本身仅
+3.875–23.572 秒。首条 native completed=04:53:23.136，首 Advance 到04:53:40，
+第一 timer 后第二 Advance=04:54:40、usage stored_at=04:54:41，第二 timer 后
+04:55:40 发布并终结；不是以 HTTP200 或 native completed 代替业务终态。
+时间线仅保存事件类型/时间/Activity/Timer 与关联 ID，不记录提示正文、reasoning 或凭据。
+
+### 2026-10-05 Automation COUNT 原生配置与映射修正
+
+开发权限授权后沿原生 API 投递 COUNT 时，真实 `POST /api/v3/openmeter/meters`
+以 `automation.run` 为 key 返回 HTTP400：v3 ResourceKey 禁止点号，未创建对象。
+固定 OpenMeter `6d76d8a6fa90fbbab2d41035d31df2acec7ad3af` 的完整路径
+`api/spec/packages/aip/src/meters/meter.tsp::Meter` 与
+`api/spec/packages/aip/src/shared/properties.tsp::ResourceKey` 是实际边界；
+仅检查内部 `openmeter/meter/meter.go::Meter.Validate` 会漏掉外层 API 校验。
+没有改用旧 API 绕过，也没有借用模型 SUM。
+
+实现保留 DD-107 的 Action/Usage 语义键 `automation.run`，增加显式受控
+`AUTOMATION_RUN_NATIVE_METER_KEY`，由原 OpenMeter `check_quota` 与
+`execution_meters` 共同解析；COUNT 的原生 ID/event_type 仍唯一查证并冻结，
+原 prepare/fresh/usage 发布消费同一投影。缺失/非法映射和与模型 selector
+碰撞均拒绝；不改原 usage 幂等键、数据库约束或结算权威。普通 Agent 调用不要求
+该映射。四源相对 `6090de81a13322f85dcc77b1a862cb203dbb7422` 为 +152/-13。
+
+原受限 SDK 4CPU/8GiB、Cargo16 定向四项通过（含真实 HTTP quota/message
+消费者），all-targets Clippy 退出0；仅在私有源将解析恢复成原 identity 映射，
+原 HTTP 消费者确实失败1/exit101，逐字恢复后3项再次通过/exit0。
+首次导出缺原 registry 输入101、恢复命令容器名拼写错误1均保留，不计通过。
+源码、原命令和日志 SHA 位于
+`/volumes/data/kailo/tmp/codex-automation-native-meter-20261005.CwjzjV/handoff.md`。
+
+当前开发 Customer `01M41A96ZS6QM302QNE3EDF3YM` 原生创建合法 COUNT
+`automation_run`（meter `01M457N6JWHJ8YKSNGDSA01666`）、
+feature `kailo_automation_run`（`01M457NJY2ABAWNBC5HP2TX1DY`）、
+metered entitlement `01M457P9M0GH2FDK42JBTXJPKE`，soft-limit=true、无信用发放，
+原生 access HTTP200/has_access=true。计量含精确 Automation/Workspace/Tenant 维度，
+没有影响其他 Customer 或原模型 SUM。sole `.env` 明确投递上述 native key，
+以及语义 COUNT+既有模型 SUM 的 Action 最大集合；POST_MESSAGE 仍只选 COUNT。
+配置原件在 `codex-three-human-two-agent-20261005.poEa9c/automation/`，
+meter-native/feature/entitlement 三步实际0。此时尚未重启 Core、创建 Automation
+或发送模板消息；不得把配置可访问记为真实 POST_MESSAGE 终态验收。
+
+### 2026-10-05 正常观察与故障轮次解耦
+
+基线 `6090de81a13322f85dcc77b1a862cb203dbb7422`；上述真实六条执行都在
+holder 结束与用量收敛之后各等待完整 60 秒。根因是三个 Core input writer 把
+`observationIntervalSeconds` 取自故障轮次配置，Worker 又无条件按该轮次 Sleep。
+改前四步结论：权威为 DD-69 与设计 06 §2–5；影响为普通 Invocation、手动
+Automation、Schedule 三入口的既有冻结字段、AgentTask timer 和 Compose 投递。
+不改 schema/数据库、不改原 Activity release、用量提交或最终投影权威。
+新启动的 input 从显式 `WORKER_AGENT_ACTIVITY_OBSERVATION_INTERVAL_SECONDS`
+读取；缺失/零值拒绝，不回退默认。当前开发配置为 2 秒，不改变全局 60 秒故障轮次。
+
+只有同一 Invocation 的 Activity 成功返回、finishActivity=true、RUNNING 的
+CAPACITY_UNAVAILABLE/BILLING_UNAVAILABLE 且投影 ACK 已确认才按冻结观察间隔
+接续；这些仍分别属于 LIMIT/UNKNOWN，观察频率不把状态改成成功。
+其他 UNKNOWN、未知 reason、审批等待、Activity 或投影 ACK 失败仍按原轮次。
+取消、撤权、暂停、额度不足继续由原 fresh admission/native 收尾决定，不抢释放
+Capacity、不重发 turn、不绕过账单。并发、重复投递、分区及重启沿原 Invocation、
+ActivityID 和 CAS；继续沿原 continue-as-new 限定 history 大小，没有第二工作流。
+Web/Desktop/Mobile 只消费原 Task 投影，无新增客户端链路；其他四类错误映射未改。
+
+Workflow 变更用 `agent-task-confirmed-handoff-observation` GetVersion 门控，
+旧 history 保留旧轮次。固定 SDK `b7c242c6894df088a57a85b33d0586e908da8b93` 的
+`workflow/workflow.go::GetVersion` 在旧无 marker 重放时返回 DefaultVersion；
+完整原生 history 已入 `worker/replay-tests/testdata/agent_task_handoff_20261005_history.json`，
+SHA-256 `a76c6336c6512980e3d9c4815c4bc8dc73bcdf4f6b8e9d94b09235e6c9fac39e`。
+逐 payload 核对仅 ID/状态/冻结时间参数，无提示、回复正文或凭据。
+
+先实现后验证：沿用受限 SDK 4 CPU/8 GiB、Data 缓存，无产品构建。
+原 `go test ./... && go vet ./...` 最终退出 0，含真实旧 history replay、九种
+交接/失败/旧版分支及取消收尾。首次整包检查因私有快照漏带 contracts/samples
+退出 1（workflows/replay 已通过），补齐同基线样例后原命令通过，未改业务迁就工具。
+主动把交接间隔改回故障轮次，原检查两项报 `handoff waited 1m0s, want 1s`，
+退出 1；恢复后整包与 vet 退出 0。原件位于
+`codex-channel-read-recovery-20261005.tLs1fL/full-tmp/agent-handoff-20261005.EGToMl`，
+`restored.log` SHA-256 `a9c9f8267f6fad71c9b8543e831583c6e76a6b402485cd5d06ec76de430a51f8`；
+`mutation.log` SHA-256 `dcf17449dc78a6c576a14a7eae06f616b707ffcda4d9216fde51985868a3a64c`。
+此阶段尚未部署，不能把配置中的 2 秒或单元用例推断成实际回复耗时。

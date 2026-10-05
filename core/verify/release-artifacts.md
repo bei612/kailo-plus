@@ -975,3 +975,43 @@ Windows 原交叉构建经历基础依赖冷层，最终产出 Win11 x64 NSIS �
 浏览器原件：`codex-three-humans-web-readback-20261005.eAonly/browser-readback.log`，
 SHA-256 `071931a44f99d7c2f51a077af329c03159b3ae907e10002ef04db1b3861d1194`；
 同目录 `command-result.json` 保存实际退出码，`browser-inline.txt` 保存完整观察代码。
+
+### 2026-10-05 Agent 交接等待、可执行候选与原生 COUNT 集中收口
+
+基线 `6090de81a13322f85dcc77b1a862cb203dbb7422`，完整检查固定树
+`9d939dab6e24b3828872236882ec1a3480afc4ef`，32 文件 +1630/-46。
+对应 DD-49/69/107：已确认 holder/usage 交接改用冻结的正常观察间隔，
+故障/UNKNOWN 仍沿原退避；Temporal GetVersion 保留旧 history。
+Web 只呈现服务端确认为可执行的安装；automation.run 保持平台语义键，
+通过部署配置解析原生 v3 COUNT ResourceKey，不复制计量账本。
+具体影响、边界、真实三人双 Agent 与生产逻辑变异证据见
+[Agent 验证](agent-definition.md)和 [Web 验证](../../web-client/fork/verify/web-surface.md)。
+本批没有 schema、迁移、业务权限或审批语义变更。
+
+原命令 `./tools/check.sh --full` 首次退出 2：隔离网络不能连接 pub.dev，
+未进入业务检查。恢复原联网验证网络后第二次退出 1：三处 cargo fmt
+及 Web source/artifact 过期；没有跳过门禁。格式修正后仅构建一次 Web；
+构建成功、推送阶段因调用方误取 REGISTRY 而退出 1，随后使用 sole
+配置 REGISTRY_HOST 对同一镜像执行原 tag/push/record 步骤，未重复编译。
+最终同原 full 命令 session 90703 退出 0。固定 SDK 10ad51a2…，
+4 CPU / 8 GiB / memory+swap 同限额、Cargo 16，缓存均在 Data；
+73 条迁移前进/回退/再前进、SQLx、44 枚举约束、193 schema、四侧验证、
+旧 Temporal history replay、来源及供应链通过。
+
+Web source `640bd4a96f14a123d392017ae89a9a68b397ad098abea6490f2e0f69357c149c`；
+artifact `8631abc89b4e6a4b8287771ee60e3b3816a40875a0083cdcfd1b162cb33cf909`，
+独立 registry GET 的响应体 SHA 与 artifact 相同。同步来源、Compose 和
+既有 trace 引用不表示它们的业务能力新增验收。
+
+原 Core 主目标为 157 passed / 9 ignored，另两项 Approval CAN、Relay outage
+演练 ignored；无线上 .env 的部署预检 SKIP，未安装 gitleaks。
+Windows unsigned/未实机验收、Mobile release 签名缺失均保持原边界。
+记录时本批未部署，约 165 秒旧耗时尚未按新运行体重新验收，
+Automation POST_MESSAGE 的真实 COUNT 与终态也尚未据本批称通过。
+
+原件位于 `/volumes/data/kailo/tmp/codex-channel-read-recovery-20261005.tLs1fL/full-tmp/channel-agent-batch-20261005.h8MShl/`：
+`full.log` SHA `f70f5e1f99ed60ddd3686fdd1bbc2bd7ca1e73a5634a82c967c32acec38aabaf`；
+`full-connected.log` SHA `aef0369307e024ecdede727c9f630cb77868afa02f961b3d5466e2f00ff0c2f6`；
+`full-final.log` SHA `bf2d249d08a97d3034f985f3bb3018f77fffd60bd6b60cb253fb3f3f456e7af5`；
+`web-build.log` SHA `d123f3c3dace69100f64a5442f739900c97daefeaf368301cb450912076619e5`。
+原有未选 66 文件 +6107/-422 保留，不混入本批。

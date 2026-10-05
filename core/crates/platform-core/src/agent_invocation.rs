@@ -841,7 +841,9 @@ async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
         cancel_pending: false,
         heartbeat_timeout_seconds: seconds("WORKER_AGENT_ACTIVITY_HEARTBEAT_TIMEOUT_SECONDS")?,
         heartbeat_interval_seconds: seconds("WORKER_AGENT_ACTIVITY_HEARTBEAT_INTERVAL_SECONDS")?,
-        observation_interval_seconds: seconds("WORKER_CONVERGE_ROUND_INTERVAL_SECONDS")?,
+        observation_interval_seconds: seconds(
+            "WORKER_AGENT_ACTIVITY_OBSERVATION_INTERVAL_SECONDS",
+        )?,
     };
     if input.heartbeat_interval_seconds >= input.heartbeat_timeout_seconds {
         return Err(blocked());

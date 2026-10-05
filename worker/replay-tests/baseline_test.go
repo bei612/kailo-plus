@@ -13,6 +13,20 @@ import (
 // 以 workflows.BaselineKind 新录制的基线 history 入库时，连同这份旧夹具与本常量一起删除（ADR-17）。
 const legacyBaselineKind = "KAILO_BASELINE"
 
+// Recorded from the real three-human/two-Agent channel run before handoff
+// observation was separated from infrastructure backoff (DD-69).
+func TestAgentTaskConfirmedHandoffLegacyReplay(t *testing.T) {
+	workflows.Configure(workflows.Retry{
+		StartToClose: time.Minute, ScheduleToClose: 2 * time.Minute, MaxAttempts: 1,
+		InitialInterval: time.Second, MaxInterval: time.Second, RoundInterval: time.Minute,
+	})
+	r := worker.NewWorkflowReplayer()
+	r.RegisterWorkflowWithOptions(workflows.AgentTask, workflowRegisterOptions(workflows.AgentTaskKind))
+	if err := r.ReplayWorkflowHistoryFromJSONFile(nil, "testdata/agent_task_handoff_20261005_history.json"); err != nil {
+		t.Fatalf("recorded AgentTask replay failed: %v", err)
+	}
+}
+
 // TestBaselineReplay 对应 00-实施总纲.md Stage 0 退出条件「空 Workflow history 可 replay」。
 // history 为最小完整事件序列，随代码入库；Workflow 行为变化必须先让本测试通过。
 func TestBaselineReplay(t *testing.T) {

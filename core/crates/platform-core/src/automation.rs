@@ -28,16 +28,21 @@ fn configured_run_meters() -> Result<Option<Vec<String>>, String> {
     match std::env::var("AUTOMATION_RUN_METERS_JSON") {
         Err(std::env::VarError::NotPresent) => Ok(None),
         Ok(value) if value.is_empty() => Ok(None),
-        Ok(value) => parse_run_meters(&value).map(Some),
+        Ok(value) => {
+            let native_key = crate::openmeter::configured_automation_native_meter_key()?
+                .ok_or("automation.run 缺少 AUTOMATION_RUN_NATIVE_METER_KEY")?;
+            parse_run_meters(&value, &native_key).map(Some)
+        }
         Err(_) => Err("AUTOMATION_RUN_METERS_JSON 不是有效 Unicode".into()),
     }
 }
 
-fn parse_run_meters(value: &str) -> Result<Vec<String>, String> {
+fn parse_run_meters(value: &str, native_count_key: &str) -> Result<Vec<String>, String> {
     let mut meters: Vec<String> = serde_json::from_str(value)
         .map_err(|_| "AUTOMATION_RUN_METERS_JSON 必须是 meter key 字符串数组")?;
     if meters.len() < 2
         || !meters.iter().any(|key| key == ACTION)
+        || meters.iter().any(|key| key == native_count_key)
         || meters
             .iter()
             .any(|key| key.trim().is_empty() || key.trim() != key)
@@ -2571,7 +2576,9 @@ async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
         cancel_pending: false,
         heartbeat_timeout_seconds: seconds("WORKER_AGENT_ACTIVITY_HEARTBEAT_TIMEOUT_SECONDS")?,
         heartbeat_interval_seconds: seconds("WORKER_AGENT_ACTIVITY_HEARTBEAT_INTERVAL_SECONDS")?,
-        observation_interval_seconds: seconds("WORKER_CONVERGE_ROUND_INTERVAL_SECONDS")?,
+        observation_interval_seconds: seconds(
+            "WORKER_AGENT_ACTIVITY_OBSERVATION_INTERVAL_SECONDS",
+        )?,
     };
     if input.heartbeat_interval_seconds >= input.heartbeat_timeout_seconds {
         return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
@@ -2606,8 +2613,8 @@ mod run_registration_tests {
     #[test]
     fn explicit_meter_policy_is_complete_unique_and_order_independent() {
         assert_eq!(
-            parse_run_meters(r#"["model_tokens", "automation.run"]"#).unwrap(),
-            parse_run_meters(r#"["automation.run", "model_tokens"]"#).unwrap()
+            parse_run_meters(r#"["model_tokens", "automation.run"]"#, "automation_run").unwrap(),
+            parse_run_meters(r#"["automation.run", "model_tokens"]"#, "automation_run").unwrap()
         );
         for rejected in [
             "null",
@@ -2620,8 +2627,13 @@ mod run_registration_tests {
             r#"["automation.run", " "]"#,
             r#"["automation.run", " model_tokens"]"#,
             r#"["automation.run", 1]"#,
+            r#"["automation.run", "automation_run"]"#,
+            r#"["automation.run", "model_tokens", "automation_run"]"#,
         ] {
-            assert!(parse_run_meters(rejected).is_err(), "{rejected}");
+            assert!(
+                parse_run_meters(rejected, "automation_run").is_err(),
+                "{rejected}"
+            );
         }
     }
 }
