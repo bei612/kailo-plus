@@ -6,6 +6,28 @@
 
 ## 最新复核与投递事实（2026-10-05）
 
+### 共享 Workflows／外观 Windows 包已投递，Web 更新尚未执行（18:48 UTC）
+
+已将 `306aa41bdfbee661572262aba6aba68cf095ef39` 登记的既有 Windows 产物
+投递到 `dist/desktop-client/Kailo_0.5.23_x64-setup.exe`，没有重新编译。
+文件为 15,147,110 字节，实际 SHA256 与提交内来源记录一致：
+`eddf9d1f7ebb144f9535f979dc1bc82ba66e0d13f090352c2183c64564c6a0c0`。
+其 source digest 为 `6f7c2b5b684020e3846c52512697f08fa4d1e48a65e53ed1034e19c16e14ca36`；
+原包 `620e6d3b…` 已保留在 Data 原件目录
+`codex-release-306aa41-20261005.RPxWPS/windows-delivery.BAY5bN/`，可恢复。
+包仍未签名、未在 Win11 实机安装验收，不将文件投递称为三端交付完成。
+
+18:43–18:47 UTC 只读核对发现旧 Web 容器 health 为 unhealthy，连续记录
+`timed out starting health check`；Web 与 Relay 的独立空操作均在 8 秒观察上限
+退出 124，Docker daemon 同时报告多个容器启动 exec 的 DeadlineExceeded。
+公开 Web 入口仍返回登录跳转 302；这些证据定位到容器执行层异常，尚不足以
+确定底层原因，也不能用入口可访问消除 health 异常。未重启 Docker、Core、
+Relay 或其他业务，未调整健康检查超时，未执行 Web 镜像替换。
+
+原 Core/Worker release 句柄仍在运行，不因观察超时重启；该次运行尚无成功
+发布回执。新 Web 已有构建产物，投递和登录业务验收仍分别缺失。
+后续组件源码独立推进，不将上述运行异常或本次包投递作为组件验收结果。
+
 ### 共享 Workflows、原版外观与组件适配批已提交（18:25 UTC）
 
 源码 `306aa41bdfbee661572262aba6aba68cf095ef39` 已普通 push，远端 main
